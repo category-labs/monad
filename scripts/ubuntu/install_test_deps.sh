@@ -1,3 +1,4 @@
+#!/bin/bash
 DEPS="
   gdb
   libbenchmark-dev
@@ -6,5 +7,5 @@ DEPS="
   valgrind
 "
 
-apt-get -q -o=Dpkg::Use-Pty=0 install ${DEPS}
+apt-get -q -y -o=Dpkg::Use-Pty=0 install ${DEPS}
 

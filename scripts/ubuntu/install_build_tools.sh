@@ -1,3 +1,4 @@
+#!/bin/bash
 DEPS="
   clang-14
   clang-tools-14
@@ -5,5 +6,5 @@ DEPS="
   ninja-build
 "
 
-apt-get -q -o=Dpkg::Use-Pty=0 install ${DEPS}
+apt-get -q -y -o=Dpkg::Use-Pty=0 install ${DEPS}
 

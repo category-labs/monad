@@ -1,0 +1,35 @@
+name: Reusable - Build Template
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        required: true
+        type: string
+
+jobs:
+  build-template:
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ inputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    strategy:
+      matrix:
+        build-type: [RelWithDebInfo, Debug]
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: BUILD_TYPE=${{ matrix.build-type }} ./configure
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        working-directory: build
+        run: ctest -C ${{ matrix.build-type }}

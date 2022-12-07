@@ -1,0 +1,27 @@
+# syntax=docker/dockerfile:1
+
+FROM ubuntu:jammy as stage-01
+
+WORKDIR install-scripts
+COPY --chmod=755 ./ubuntu/* /install-scripts/
+
+FROM stage-01 as stage-02
+USER root
+
+RUN apt-get update \
+ && /install-scripts/install_runtime_deps.sh \
+ && apt-get clean
+
+RUN /install-scripts/install_build_deps.sh \
+ && /install-scripts/install_build_tools.sh \
+ && /install-scripts/install_test_deps.sh \
+ && apt-get clean
+
+RUN apt-get -y install pkg-config git libgmp-dev sudo \
+ && apt-get clean
+
+FROM stage-02 as stage-03
+COPY --chmod=755 ./entrypoint.sh /
+ENTRYPOINT ["/entrypoint.sh"]
+
+CMD ["/bin/bash"]

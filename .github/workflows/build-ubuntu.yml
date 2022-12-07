@@ -1,0 +1,20 @@
+name: Build Ubuntu Jammy
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  UbuntuImageBuild:
+    uses: ./.github/workflows/image-template.yml
+    with:
+      dockerfile: ./scripts/docker/Dockerfile.ubuntu
+      tag_base: ubuntu_jammy
+
+  UbuntuBuild:
+    uses: ./.github/workflows/build-template.yml
+    needs: UbuntuImageBuild
+    with:
+      image: ghcr.io/${{ github.actor }}/monad/ubuntu_jammy-${{ github.ref_name }}

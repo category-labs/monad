@@ -1,0 +1,50 @@
+#!/bin/bash
+
+set -euo pipefail
+#set -x
+
+USER=monad
+BRANCH=main
+
+usage() {
+  cat <<HELP
+    Usage: "$0 [ -b BRANCH ] [ -u GITHUB_USER ] [ -- <command to run> ]
+    options:
+      b: branch build to run - default: main
+      u: user repo to pull image from - default: monad
+HELP
+}
+
+PARSED_ARGS=$(getopt -n "$0" -o d:b:u:h --long help -- "$@")
+eval set -- "${PARSED_ARGS}"
+
+while :; do
+  case "$1" in
+    -b)
+      BRANCH="${2}"; shift 2;;
+    -u)
+      USER="${2}"; shift 2;;
+    -h | --help)
+      usage; exit 0;;
+    --)
+      shift; break;;
+    *)
+      usage; exit 1;
+  esac
+done
+
+IMG_BASE=ubuntu_jammy
+
+IMG="${IMG:-ghcr.io/${USER}/monad/${IMG_BASE}-${BRANCH}:latest}"
+[[ ${IMG} =~ ^ghcr.io* ]] && docker pull "${IMG}"
+
+declare -a ARGS=()
+ARGS+=("-e" "USER_ID=$(id -u)")
+ARGS+=("-e" "USER=$(id -u -n)")
+ARGS+=("-e" "GROUP_ID=$(id -g)")
+ARGS+=("-e" "GROUP=$(id -g -n)")
+
+ARGS+=("-e" "HOME_DIR=${HOME}")
+
+set -x
+docker run -it --rm "${ARGS[@]}" -v "$PWD:$PWD" -w "$PWD" "$IMG" "$@"

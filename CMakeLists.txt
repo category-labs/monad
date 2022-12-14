@@ -33,6 +33,10 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/core/assert.h
     ${PROJECT_SOURCE_DIR}/include/monad/core/likely.h
     ${PROJECT_SOURCE_DIR}/src/monad/core/assert.c
+
+    # db
+    ${PROJECT_SOURCE_DIR}/include/monad/db/file_db.hpp
+    ${PROJECT_SOURCE_DIR}/src/monad/db/file_db.cpp
 )
 target_include_directories(monad
     PUBLIC ${PROJECT_SOURCE_DIR}/include

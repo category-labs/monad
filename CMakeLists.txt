@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 
+include(third_party/ethash/cmake/cable/bootstrap.cmake)
+include(CableBuildInfo)
+
 project(monad)
 
 ############
@@ -8,6 +11,7 @@ project(monad)
 
 find_package(Boost REQUIRED)
 
+add_subdirectory(third_party/ethash)
 add_subdirectory(third_party/intx)
 
 

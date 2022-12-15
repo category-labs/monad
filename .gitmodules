@@ -1,0 +1,4 @@
+[submodule "third_party/intx"]
+	path = third_party/intx
+	url = https://github.com/chfast/intx.git
+	branch = master

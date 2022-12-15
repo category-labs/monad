@@ -2,3 +2,6 @@
 	path = third_party/intx
 	url = https://github.com/chfast/intx.git
 	branch = master
+[submodule "tmpsrc/third_party/silkworm"]
+	path = tmpsrc/third_party/silkworm
+	url = git@github.com:monad-crypto/silkworm.git

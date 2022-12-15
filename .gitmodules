@@ -5,3 +5,6 @@
 [submodule "tmpsrc/third_party/silkworm"]
 	path = tmpsrc/third_party/silkworm
 	url = git@github.com:monad-crypto/silkworm.git
+[submodule "third_party/ethash"]
+	path = third_party/ethash
+	url = https://github.com/monad-crypto/ethash.git

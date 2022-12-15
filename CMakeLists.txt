@@ -26,7 +26,6 @@ conan_cmake_install(
     SETTINGS ${settings}
 )
 
-
 ############
 ### deps
 ############
@@ -56,7 +55,6 @@ function(monad_compile_options target)
     target_compile_options(${target} PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-missing-field-initializers>)
 endfunction()
 
-
 ############
 ### unit tests
 ############
@@ -66,6 +64,7 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/db/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/trie/test)
 
 
 ############
@@ -88,6 +87,7 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/core/int.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/likely.h
     ${PROJECT_SOURCE_DIR}/include/monad/core/size_of.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/core/variant.hpp
     ${PROJECT_SOURCE_DIR}/src/monad/core/assert.c
     ${PROJECT_SOURCE_DIR}/src/monad/core/huge_mem.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/core/int.cpp
@@ -129,7 +129,24 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/rlp/util.hpp
     ${PROJECT_SOURCE_DIR}/src/monad/rlp/decode_helpers.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/rlp/encode_helpers.cpp
+
+    # trie
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/compact_encode.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/nibbles.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/nibbles_view.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/node.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/trie.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/rocks_cursor.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/rocks_writer.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/util.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/assert.h
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/key_buffer.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/comparator.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/rocks_comparator.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/process_transformation_list.hpp
+    ${PROJECT_SOURCE_DIR}/src/monad/trie/rocks_cursor.cpp
 )
+
 target_include_directories(monad
     PUBLIC ${PROJECT_SOURCE_DIR}/include
     PRIVATE ${Boost_INCLUDE_DIRS}

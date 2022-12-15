@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ethash/keccak.hpp>
+
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/encode.hpp>
 #include <monad/rlp/util.hpp>
@@ -11,13 +13,24 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 
+#include <monad/trie/config.hpp>
+
 MONAD_NAMESPACE_BEGIN
 
 struct Account;
 
 MONAD_NAMESPACE_END
 
+MONAD_TRIE_NAMESPACE_BEGIN
+
+struct Leaf;
+struct Branch;
+
+MONAD_TRIE_NAMESPACE_END
+
 MONAD_RLP_NAMESPACE_BEGIN
+
+inline byte_string const EMPTY_STRING = {0x80};
 
 inline byte_string encode_unsigned(unsigned_integral auto const &n)
 {
@@ -41,5 +54,9 @@ byte_string encode_topics(std::vector<bytes32_t> const &topics);
 byte_string encode_log(Receipt::Log const &log);
 byte_string encode_bloom(Receipt::Bloom const &b);
 byte_string encode_receipt(Receipt const &receipt);
+
+byte_string encode_leaf(trie::Leaf const&);
+byte_string encode_branch(trie::Branch const&);
+byte_string to_node_reference(byte_string_view rlp);
 
 MONAD_RLP_NAMESPACE_END

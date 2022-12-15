@@ -8,6 +8,8 @@ project(monad)
 
 find_package(Boost REQUIRED)
 
+add_subdirectory(third_party/intx)
+
 
 ############
 ### opts
@@ -31,8 +33,10 @@ endfunction()
 add_library(monad STATIC
     # core
     ${PROJECT_SOURCE_DIR}/include/monad/core/assert.h
+    ${PROJECT_SOURCE_DIR}/include/monad/core/int.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/likely.h
     ${PROJECT_SOURCE_DIR}/src/monad/core/assert.c
+    ${PROJECT_SOURCE_DIR}/src/monad/core/int.cpp
 
     # db
     ${PROJECT_SOURCE_DIR}/include/monad/db/file_db.hpp
@@ -41,6 +45,9 @@ add_library(monad STATIC
 target_include_directories(monad
     PUBLIC ${PROJECT_SOURCE_DIR}/include
     PRIVATE ${Boost_INCLUDE_DIRS}
+)
+target_link_libraries(monad
+    PUBLIC intx::intx
 )
 target_link_options(monad
     PRIVATE LINKER:-z,defs

@@ -11,6 +11,8 @@ project(monad)
 
 find_package(Boost REQUIRED)
 
+set(BUILD_SHARED_LIBS OFF)
+
 add_subdirectory(third_party/ethash)
 add_subdirectory(third_party/evmone)
 add_subdirectory(third_party/intx)

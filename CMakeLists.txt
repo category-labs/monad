@@ -10,6 +10,8 @@ project(monad)
 ############
 
 find_package(Boost REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 
 set(BUILD_SHARED_LIBS OFF)
 
@@ -56,6 +58,9 @@ target_include_directories(monad
     PRIVATE ${Boost_INCLUDE_DIRS}
 )
 target_link_libraries(monad
+    PRIVATE PkgConfig::brotli
+    PRIVATE rocksdb  # TODO pkgconfig
+
     PUBLIC evmc
     PUBLIC intx::intx
 )

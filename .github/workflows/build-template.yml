@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v3
         with:
           submodules: recursive
-          token: ${{ secrets.monad_private }}
+          token: ${{ secrets.MONAD_PRIVATE }}
 
       - name: Configure
         run: BUILD_TYPE=${{ matrix.build-type }} ./configure

@@ -10,11 +10,6 @@ MONAD_NAMESPACE_BEGIN
 
 namespace tests_utils
 {
-constexpr auto to_bytes(std::initializer_list<uint8_t> list)
-{
-    return monad::byte_string(list);
-}
-
 constexpr auto to_nibbles(std::initializer_list<uint8_t> list)
 {
     monad::mpt::Nibbles nibbles; 

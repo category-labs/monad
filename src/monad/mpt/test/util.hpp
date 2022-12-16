@@ -8,7 +8,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-namespace tests_utils
+namespace test_util
 {
 constexpr auto to_nibbles(std::initializer_list<uint8_t> list)
 {

@@ -1,12 +1,12 @@
 #include <gtest/gtest.h>
-#include <monad/test/utils.hpp>
+#include "util.hpp"
 #include <iterator>
 #include <monad/mpt/path.hpp>
 #include <algorithm>
 #include <iostream>
 
 using namespace monad::mpt;
-using namespace monad::tests_utils;
+using namespace monad::test_util;
 
 TEST(Path, Sanity)
 {

@@ -2,6 +2,7 @@
 
 #include <concepts>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/assert.h>
 #include <monad/mpt/nibble.hpp>
 #include <cstdint>
 #include <cstddef>
@@ -176,7 +177,7 @@ public:
         bytes.push_back(first_byte);
 
         // should be an even number of hops away from the end
-        assert((std::distance(it, nibbles_.end()) % 2) == 0);
+        MONAD_ASSERT((std::distance(it, nibbles_.end()) % 2) == 0);
 
         // Should have an even number of nibbles to process now
         while (it != nibbles_.end()) {

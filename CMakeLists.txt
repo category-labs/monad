@@ -57,6 +57,15 @@ endfunction()
 ### unit tests
 ############
 
+function(monad_compile_options target)
+    set_property(TARGET ${target} PROPERTY C_STANDARD 11)
+    set_property(TARGET ${target} PROPERTY C_STANDARD_REQUIRED ON)
+    set_property(TARGET ${target} PROPERTY CXX_STANDARD 20)
+    set_property(TARGET ${target} PROPERTY CXX_STANDARD_REQUIRED ON)
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
+endfunction()
+
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/mpt/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
 
 
@@ -91,6 +100,12 @@ add_library(monad STATIC
 
     # rlp
     ${PROJECT_SOURCE_DIR}/include/monad/rlp/rlp.hpp
+
+    # mpt
+    ${PROJECT_SOURCE_DIR}/include/monad/mpt/prefix_groups.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/mpt/branches.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/mpt/path.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/mpt/nibble.hpp
 )
 target_include_directories(monad
     PUBLIC ${PROJECT_SOURCE_DIR}/include

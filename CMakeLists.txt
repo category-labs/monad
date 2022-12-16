@@ -38,6 +38,8 @@ endfunction()
 add_library(monad STATIC
     # core
     ${PROJECT_SOURCE_DIR}/include/monad/core/assert.h
+    ${PROJECT_SOURCE_DIR}/include/monad/core/byte_string.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/core/bytes.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/int.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/likely.h
     ${PROJECT_SOURCE_DIR}/src/monad/core/assert.c
@@ -52,6 +54,7 @@ target_include_directories(monad
     PRIVATE ${Boost_INCLUDE_DIRS}
 )
 target_link_libraries(monad
+    PUBLIC evmc
     PUBLIC intx::intx
 )
 target_link_options(monad

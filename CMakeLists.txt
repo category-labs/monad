@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.20)
 include(third_party/evmone/cmake/cable/bootstrap.cmake)
 include(CableBuildInfo)
 
+include(tmpsrc/bootstrap.cmake)
+
 project(monad)
 
 ############
@@ -68,3 +70,5 @@ target_link_options(monad
     PRIVATE LINKER:-z,defs
 )
 monad_compile_options(monad)
+
+include(tmpsrc/CMakeLists.txt)

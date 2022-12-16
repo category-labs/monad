@@ -79,11 +79,217 @@ static_assert(LIST_GE_55_BASE - LIST_55_BASE == 55);
 
 }
 
-struct Encoding
+class Encoding
 {
-    byte_string bytes;
+private:
+    byte_string bytes_;
+
+public:
+    constexpr explicit Encoding(byte_string_view bytes)
+        : bytes_(bytes)
+    {
+    }
+
+    constexpr auto bytes() const -> byte_string_view
+    {
+        return bytes_;
+    }
+
+    constexpr auto is_list() const
+    {
+        return not bytes_.empty() and bytes_.front() >= impl::LIST_55_MIN;
+    }
+
+    // decode encoding and store into args
+    // returns whether or not it was succesful in doing so
+    constexpr auto decode(auto&... args) const -> bool
+    {
+        auto begin = bytes_.cbegin();
+        if constexpr (sizeof...(args) == 0) {
+            // decoding with no args is only succesful for an empty list
+            return bytes_.size() == 1 and bytes_.front() == impl::LIST_55_BASE;
+        } else if constexpr (sizeof...(args) > 1) {
+            if (MONAD_UNLIKELY(not is_list())) {
+                assert(false);
+                return false;
+            }
+
+            // advance to the first payload
+            if (*begin < impl::LIST_GE_55_MIN) {
+                std::advance(begin, 1);
+            } else {
+                // Parse the size of the list
+                auto const size_of_size = *begin - impl::LIST_GE_55_BASE;
+                
+                std::advance(begin, 1);
+
+                if (MONAD_UNLIKELY(
+                            std::distance(begin, bytes_.end()) < size_of_size)) {
+                    assert(false);
+                    return false;
+                }
+
+                auto end = std::next(begin, size_of_size);
+
+                auto const size = 
+                    from_big_endian_compacted_bytes<uint64_t>(
+                            byte_string_view(begin, end));
+
+                // advance to the start of the payload
+                std::advance(begin, 1);
+
+                if (MONAD_UNLIKELY((uint64_t)std::distance(begin, bytes_.end()) != size)) {
+                    assert(false);
+                    return false;
+                }
+            }
+        }
+
+        // parse bytes and decode into args
+        (..., decode_single(begin, args));
+
+        // decoding is only succesfuly if RLP encoding is fully parsed
+        return begin == bytes_.cend();
+    }
 
     constexpr bool operator==(Encoding const&) const = default;
+
+private:
+    template <std::unsigned_integral Integral>
+    constexpr bool decode_single(auto& begin, Integral& arg) const
+    {
+        if (MONAD_UNLIKELY(begin >= bytes_.end())) {
+            return false;
+        }
+
+        // integral types should fall in the category of byte strings
+        // less than or equal to 55 bytes long
+        assert(*begin < impl::BYTES_GE_55_MIN);
+
+        if (*begin < impl::BYTES_55_MIN) {
+            // value is the encoding itself
+            arg = *begin;
+            std::advance(begin, 1);
+            return true;
+        } else if (*begin < impl::BYTES_GE_55_MIN) {
+            // byte string between [0, 55] bytes long
+            auto const size = *begin - impl::BYTES_55_BASE;
+
+            // if too many bytes to be representable in the arg 
+            if (MONAD_UNLIKELY(size > sizeof(arg))) {
+                assert(false);
+                return false;
+            }
+            
+            std::advance(begin, 1);
+
+            if (MONAD_UNLIKELY(std::distance(begin, bytes_.end()) < size)) {
+                assert(false);
+                return false;
+            }
+
+            // assert that there are in fact enough bytes
+            assert(std::distance(begin, bytes_.end()) >= size);
+
+            // deserialized Ethereum positive integers can not have leading zeroes
+            if (MONAD_UNLIKELY(*begin == 0)) {
+                assert(false);
+                return false;
+            }
+
+            auto const end = std::next(begin, size);
+            arg = from_big_endian_compacted_bytes<Integral>(byte_string_view(begin, end));
+            
+            begin = end;
+            return true;
+        }
+
+        return false;
+    }
+
+    template <std::constructible_from<byte_string_view> Constructible>
+    constexpr bool decode_single(auto& begin, Constructible& constructible)
+    {
+        if (MONAD_UNLIKELY(begin >= bytes_.end())) {
+            return false;
+        }
+
+        // make sure this is a byte string
+        assert(*begin < impl::LIST_55_MIN);
+
+        if (*begin < impl::BYTES_55_MIN) {
+            // value is the encoding itself
+            constructible = Constructible(byte_string_view(begin, begin));
+            std::advance(begin, 1);
+            return true;
+        } else if (*begin < impl::BYTES_GE_55_MIN) {
+            // byte string between [0, 55] bytes long
+            auto const size = *begin - impl::BYTES_55_BASE;
+
+            std::advance(begin, 1);
+
+            // assert that there are in fact enough bytes
+            if (MONAD_UNLIKELY(std::distance(begin, bytes_.end()) < size)) {
+                assert(false);
+                return false;
+            }
+
+            auto const end = std::next(begin, size);
+            constructible = Constructible(byte_string_view(begin, end));
+            begin = end;
+
+            return true;
+        } else if (*begin < impl::LIST_55_MIN) {
+            // byte string greater than 55 bytes long
+            auto const size_of_size = *begin - impl::BYTES_GE_55_BASE;
+
+            std::advance(begin, 1);
+
+            // check enough bytes for the size
+            if (MONAD_UNLIKELY(std::distance(begin, bytes_.end()) < size_of_size)) {
+                assert(false);
+                return false;
+            }
+
+            // parse the size
+            auto end = std::next(begin, size_of_size);
+            auto const size = from_big_endian_compacted_bytes<uint64_t>(
+                    byte_string_view(begin, end));
+
+            begin = end;
+
+            // check enough bytes for the payload
+            if (MONAD_UNLIKELY((uint64_t)std::distance(begin, bytes_.end()) < size)) {
+                assert(false);
+                return false;
+            }
+
+            // parse the payload
+            end = std::next(begin, size);
+            constructible = Constructible(byte_string_view(begin, end));
+            begin = end;
+
+            return true;
+        }
+
+        return false;
+    }
+
+    // convert byte string in big endian format to integral type, 0
+    // extending the prefix if necessary
+    template <std::unsigned_integral Integral>
+    auto from_big_endian_compacted_bytes(byte_string_view bytes) const -> Integral
+    {
+        assert(bytes.size() <= sizeof(Integral));
+
+        Integral ret = 0;
+        auto* const start = reinterpret_cast<byte_string::value_type*>(&ret) +
+                      sizeof(Integral) -
+                      bytes.size();
+        std::memcpy(start, bytes.data(), bytes.size());
+        return intx::to_big_endian(ret);
+    }
+
 };
 
 namespace impl
@@ -159,7 +365,7 @@ inline void encode_single(byte_string& target, std::string const& str)
 
 constexpr void encode_single(byte_string& target, Encoding const& encoding)
 {
-    target += encoding.bytes;
+    target += encoding.bytes();
 }
 
 // Returns the number of bytes needed to encode the bytes array
@@ -205,7 +411,7 @@ constexpr size_t size_of_encoding(std::unsigned_integral auto integral)
 
 constexpr size_t size_of_encoding(Encoding const& encoding)
 {
-    return encoding.bytes.size();
+    return encoding.bytes().size();
 }
 
 } // namespace impl
@@ -221,7 +427,7 @@ constexpr Encoding encode(auto const&... args)
     constexpr auto is_empty_list = sizeof...(args) == 0;
 
     if constexpr (is_empty_list) {
-        return Encoding{.bytes=byte_string(1, impl::LIST_55_BASE)};
+        return Encoding(byte_string(1, impl::LIST_55_BASE));
     }
 
     constexpr auto is_non_empty_list = sizeof...(args) > 1;

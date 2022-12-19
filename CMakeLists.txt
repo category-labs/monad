@@ -38,6 +38,7 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
 
 add_library(monad STATIC
     # core
+    ${PROJECT_SOURCE_DIR}/include/monad/core/address.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/assert.h
     ${PROJECT_SOURCE_DIR}/include/monad/core/byte_string.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/bytes.hpp

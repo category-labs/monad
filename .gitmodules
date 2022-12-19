@@ -1,3 +1,9 @@
+[submodule "third_party/ethash"]
+	path = third_party/ethash
+	url = https://github.com/monad-crypto/ethash.git
+[submodule "third_party/evmone"]
+	path = third_party/evmone
+	url = https://github.com/monad-crypto/evmone.git
 [submodule "third_party/intx"]
 	path = third_party/intx
 	url = https://github.com/chfast/intx.git
@@ -5,9 +11,3 @@
 [submodule "tmpsrc/third_party/silkworm"]
 	path = tmpsrc/third_party/silkworm
 	url = git@github.com:monad-crypto/silkworm.git
-[submodule "third_party/ethash"]
-	path = third_party/ethash
-	url = https://github.com/monad-crypto/ethash.git
-[submodule "third_party/evmone"]
-	path = third_party/evmone
-	url = https://github.com/monad-crypto/evmone.git

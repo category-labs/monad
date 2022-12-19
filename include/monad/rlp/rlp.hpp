@@ -90,41 +90,40 @@ namespace impl
 {
 
 // size of bytes if leading zeroes were stripped off
-constexpr auto to_compacted_size(std::unsigned_integral auto num)
+constexpr size_t size_of_compacted_num(std::unsigned_integral auto num)
 {
-    auto const* pointer = reinterpret_cast<byte_string::value_type*>(&num);
     auto const* start = reinterpret_cast<byte_string::value_type*>(&num);
+    auto const* const end = reinterpret_cast<byte_string::value_type*>(&num + 1);
 
-    while (*pointer == 0) {
-        ++pointer;
+    while (start < end && *start == 0) {
+        ++start;
     }
-
-    return sizeof(num) - (pointer - start);
+    return end - start;
 }
 
 // size of bytes required to represent num in big endian with leading
 // zeroes stripped off
-constexpr auto to_big_endian_compacted_size(std::unsigned_integral auto num)
+constexpr size_t size_of_big_endian_compacted_num(std::unsigned_integral auto num)
 {
-    return to_compacted_size(intx::to_big_endian(num));
+    return size_of_compacted_num(intx::to_big_endian(num));
 }
 
 // convert integral type into big endian and compact into byte_string
 // array, stripping off leading zeroes
-constexpr auto to_big_endian_compacted(std::unsigned_integral auto num) -> byte_string
+constexpr byte_string to_big_endian_compacted(std::unsigned_integral auto num)
 {
     num = intx::to_big_endian(num);
-    auto const compacted_size = to_compacted_size(num);
-    auto const* start = reinterpret_cast<byte_string::value_type*>(&num);
+    auto const compacted_size = size_of_compacted_num(num);
+    auto const* const start = reinterpret_cast<byte_string::value_type*>(&num);
 
     return byte_string{start + sizeof(num) - compacted_size, compacted_size};
 }
 
 // Encode bytes into the target byte array
-constexpr auto encode_single(byte_string& target, byte_string_view const& bytes)
+constexpr void encode_single(byte_string& target, byte_string_view const& bytes)
 {
     // nothing in the header
-    if (bytes.size() == 1 and bytes.front() < BYTES_55_MIN) {
+    if (bytes.size() == 1 && bytes.front() < BYTES_55_MIN) {
         target.push_back(bytes.front());
         return;
     }
@@ -132,8 +131,6 @@ constexpr auto encode_single(byte_string& target, byte_string_view const& bytes)
     if (bytes.size() <= 55) {
         target.push_back(BYTES_55_BASE + bytes.size());
     } else {
-        assert(bytes.size() < std::numeric_limits<uint64_t>::max());
-
         auto const be_compacted_size = to_big_endian_compacted(bytes.size());
         target.push_back(BYTES_GE_55_BASE + be_compacted_size.size());
         target += be_compacted_size;
@@ -143,9 +140,9 @@ constexpr auto encode_single(byte_string& target, byte_string_view const& bytes)
 }
 
 // encode header for an unsigned integral
-constexpr auto encode_single(byte_string& target, std::unsigned_integral auto num)
+constexpr void encode_single(byte_string& target, std::unsigned_integral auto num)
 {
-    if (sizeof(num) == 1 and num < BYTES_55_MIN) {
+    if (sizeof(num) == 1 && num < BYTES_55_MIN) {
         target.push_back(num);
         return;
     }
@@ -154,21 +151,21 @@ constexpr auto encode_single(byte_string& target, std::unsigned_integral auto nu
     encode_single(target, bytes);
 }
 
-inline auto encode_single(byte_string& target, std::string const& str)
+inline void encode_single(byte_string& target, std::string const& str)
 {
-    auto const* ptr = reinterpret_cast<byte_string::value_type const*>(str.data());
+    auto const* const ptr = reinterpret_cast<byte_string::value_type const*>(str.data());
     encode_single(target, byte_string_view{ptr, str.size()});
 }
 
-constexpr auto encode_single(byte_string& target, Encoding const& encoding)
+constexpr void encode_single(byte_string& target, Encoding const& encoding)
 {
     target += encoding.bytes;
 }
 
 // Returns the number of bytes needed to encode the bytes array
-constexpr auto size_of_encoding(byte_string_view bytes) -> size_t
+constexpr size_t size_of_encoding(byte_string_view bytes)
 {
-    if (bytes.size() == 1 and bytes.front() < BYTES_55_MIN) {
+    if (bytes.size() == 1 && bytes.front() < BYTES_55_MIN) {
         // encoding is itself
         return 1;
     }
@@ -181,19 +178,19 @@ constexpr auto size_of_encoding(byte_string_view bytes) -> size_t
 
     // for byte strings larger than 55, we also need to include
     // the number of bytes of the payload size
-    return first_plus_payload + to_big_endian_compacted_size(bytes.size());
+    return first_plus_payload + size_of_big_endian_compacted_num(bytes.size());
 }
 
-inline auto size_of_encoding(std::string const& str) -> size_t
+inline size_t size_of_encoding(std::string const& str)
 {
-    auto const* ptr = reinterpret_cast<byte_string::value_type const*>(str.data());
+    auto const* const ptr = reinterpret_cast<byte_string::value_type const*>(str.data());
     return size_of_encoding(byte_string_view{ptr, str.size()});
 }
 
 // Returns the number of bytes needed to encode the integral
-constexpr auto size_of_encoding(std::unsigned_integral auto integral) -> size_t
+constexpr size_t size_of_encoding(std::unsigned_integral auto integral) 
 {
-    if (sizeof(integral) == 1 and integral < BYTES_55_MIN) {
+    if (sizeof(integral) == 1 && integral < BYTES_55_MIN) {
         // encoding is itself
         return 1;
     }
@@ -203,10 +200,10 @@ constexpr auto size_of_encoding(std::unsigned_integral auto integral) -> size_t
     // defaults to prefix byte + number of bytes. for unsigned integral
     // types, this will always fall in the list-between-0-and-55 bytes
     // category
-    return 1 + to_big_endian_compacted_size(integral);
+    return 1 + size_of_big_endian_compacted_num(integral);
 }
 
-constexpr auto size_of_encoding(Encoding const& encoding) -> size_t
+constexpr size_t size_of_encoding(Encoding const& encoding)
 {
     return encoding.bytes.size();
 }
@@ -219,7 +216,7 @@ constexpr auto size_of_encoding(Encoding const& encoding) -> size_t
 //
 // Support for encoding unsigned integral types, strings, byte_string, and
 // also supports nested Encoding.
-constexpr auto encode(auto const&... args) -> Encoding
+constexpr Encoding encode(auto const&... args)
 {
     constexpr auto is_empty_list = sizeof...(args) == 0;
 

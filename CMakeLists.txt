@@ -52,7 +52,6 @@ function(monad_compile_options target)
     target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
 endfunction()
 
-
 ############
 ### unit tests
 ############

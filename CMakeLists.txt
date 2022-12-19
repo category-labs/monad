@@ -11,7 +11,7 @@ project(monad)
 ### deps
 ############
 
-find_package(Boost REQUIRED)
+find_package(Boost REQUIRED COMPONENTS fiber)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 
@@ -53,12 +53,16 @@ add_library(monad STATIC
     # db
     ${PROJECT_SOURCE_DIR}/include/monad/db/file_db.hpp
     ${PROJECT_SOURCE_DIR}/src/monad/db/file_db.cpp
+
+    # fiber
+    ${PROJECT_SOURCE_DIR}/include/monad/fiber/properties.hpp
 )
 target_include_directories(monad
     PUBLIC ${PROJECT_SOURCE_DIR}/include
     PRIVATE ${Boost_INCLUDE_DIRS}
 )
 target_link_libraries(monad
+    PRIVATE Boost::fiber
     PRIVATE PkgConfig::brotli
     PRIVATE rocksdb  # TODO pkgconfig
 

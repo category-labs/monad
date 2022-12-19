@@ -21,8 +21,15 @@ add_subdirectory(third_party/ethash)
 add_subdirectory(third_party/evmone)
 add_subdirectory(third_party/intx)
 
-include(cmake/Test.cmake)
-include(cmake/Util.cmake)
+include(cmake/test.cmake)
+
+function(monad_compile_options target)
+    set_property(TARGET ${target} PROPERTY C_STANDARD 11)
+    set_property(TARGET ${target} PROPERTY C_STANDARD_REQUIRED ON)
+    set_property(TARGET ${target} PROPERTY CXX_STANDARD 20)
+    set_property(TARGET ${target} PROPERTY CXX_STANDARD_REQUIRED ON)
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
+endfunction()
 
 ############
 ### unit tests
@@ -56,6 +63,9 @@ add_library(monad STATIC
 
     # fiber
     ${PROJECT_SOURCE_DIR}/include/monad/fiber/properties.hpp
+
+    # rlp
+    ${PROJECT_SOURCE_DIR}/include/monad/rlp/rlp.hpp
 )
 target_include_directories(monad
     PUBLIC ${PROJECT_SOURCE_DIR}/include
@@ -73,12 +83,5 @@ target_link_options(monad
     PRIVATE LINKER:-z,defs
 )
 monad_compile_options(monad)
-
-# rlp
-add_library(rlp STATIC
-    ${PROJECT_SOURCE_DIR}/include/monad/rlp/rlp.hpp
-)
-
-target_link_libraries(rlp PUBLIC monad)
 
 include(tmpsrc/CMakeLists.txt)

@@ -62,7 +62,9 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/src/monad/db/file_db.cpp
 
     # fiber
+    ${PROJECT_SOURCE_DIR}/include/monad/fiber/algorithm.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/fiber/properties.hpp
+    ${PROJECT_SOURCE_DIR}/src/monad/fiber/algorithm.cpp
 
     # rlp
     ${PROJECT_SOURCE_DIR}/include/monad/rlp/rlp.hpp

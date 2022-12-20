@@ -1,4 +1,5 @@
 DEPS="
+  libabsl-dev
   libboost-fiber1.74-dev
   libbrotli-dev
   libcli11-dev

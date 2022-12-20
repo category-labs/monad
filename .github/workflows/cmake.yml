@@ -17,10 +17,11 @@ jobs:
         include:
           - c_compiler: clang-14
             cxx_compiler: clang++-14
+          #- c_compiler: gcc-12
+          #  cxx_compiler: g++-12
 
     steps:
-      - name: Generate token
-        id: generate_token
+      - id: generate_token
         uses: tibdex/github-app-token@v1
         with:
           app_id: ${{ secrets.REPO_READONLY_GITHUB_APP_ID }}
@@ -28,8 +29,43 @@ jobs:
           permissions: >-
             {"contents": "read"}
 
-      - name: Checkout tag
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
         with:
           submodules: recursive
           token: ${{ steps.generate_token.outputs.token }}
+
+      - name: Upgrade Packages
+        run: |
+          sudo apt-get -q -o=Dpkg::Use-Pty=0 update
+          sudo apt-get -q -o=Dpkg::Use-Pty=0 upgrade
+
+      - name: Install Runtime Deps
+        run: sudo sh ${{github.workspace}}/scripts/ubuntu/install_runtime_deps.sh
+
+      - name: Install Build Deps
+        run: sudo sh ${{github.workspace}}/scripts/ubuntu/install_build_deps.sh
+
+      - name: Install Build Tools
+        run: sudo sh ${{github.workspace}}/scripts/ubuntu/install_build_tools.sh
+
+      - name: Install Test Deps
+        run: sudo sh ${{github.workspace}}/scripts/ubuntu/install_test_deps.sh
+
+      - name: Configure
+        run: cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -B ${{github.workspace}}/build -G Ninja
+        env:
+          CC: ${{matrix.c_compiler}}
+          CXX: ${{matrix.cxx_compiler}}
+
+      - name: Build
+        run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+      - name: Test
+        working-directory: ${{github.workspace}}/build
+        # Execute tests defined by the CMake configuration.
+        # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
+        run: ctest -C ${{env.BUILD_TYPE}}
+
+      #- name: Python Tests
+      #  if: startsWith(matrix.c_compiler, 'clang')
+      #  run: PYTHONPATH=${{github.workspace}} pytest-3 --pyargs monad

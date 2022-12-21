@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <bits/iterator_concepts.h>
 #include <concepts>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/assert.h>
@@ -20,118 +22,91 @@ struct EncodeExtension {};
 template <typename T>
 concept EncodeMode = std::same_as<T, EncodeLeaf> or std::same_as<T, EncodeExtension>;
 
+class Path;
+class PathView;
+
+namespace impl
+{
+template <typename DerivedPath>
+struct BasicPathTraits;
+
+template <>
+struct BasicPathTraits<Path>
+{
+    using rep = Nibbles;
+    using size_type = rep::size_type;
+    using iterator = rep::iterator; 
+    using const_iterator = rep::const_iterator;
+    using const_reference = rep::const_reference;
+    using reference = rep::reference;
+};
+
+template <>
+struct BasicPathTraits<PathView>
+{
+    using rep = NibblesView;
+    using size_type = rep::size_type;
+    using iterator = rep::iterator; 
+    using const_iterator = rep::const_iterator;
+    using const_reference = rep::const_reference;
+};
+
 // Represents a path in the trie data structure. Each element in the
 // path is a nibble.
-class Path
+template <typename PathType>
+class BasicPath
 {
-private:
-    static constexpr auto PREFIX_EXTENSION_EVEN = 0x00;
-    static constexpr auto PREFIX_EXTENSION_ODD = 0x10;
-    static constexpr auto PREFIX_LEAF_EVEN = 0x20;
-    static constexpr auto PREFIX_LEAF_ODD = 0x30;
-
-    Nibbles nibbles_;
-
 public:
-    using size_type = Nibbles::size_type;
-    using iterator = Nibbles::iterator; 
-    using const_iterator = Nibbles::const_iterator;
+    using traits_type = BasicPathTraits<PathType>;
+    using size_type = typename traits_type::size_type;
+    using iterator = typename traits_type::iterator; 
+    using const_iterator = typename traits_type::const_iterator;
+    using const_reference = typename traits_type::const_reference;
 
-    struct FromRawBytes {};
-    struct FromCompactEncoding {};
+    constexpr BasicPath() = default;
 
-    template <typename InputIt>
-    constexpr Path(InputIt first, InputIt last)
-        : nibbles_(first, last)
+    constexpr iterator begin() noexcept
     {
-    }
-
-    constexpr explicit Path(Nibbles const& nibbles) 
-        : nibbles_(nibbles)
-    {
-    }
-
-    // NB: By using this constructor, one acknowledges that only even
-    // numbers of nibbles can be represented due to the fact that
-    // the trailing nibble would not be accurately represented. This
-    // is in part what the compact encoding scheme aims to solve.
-    //
-    // Please consider using either the nibbles or the compact encoding
-    // constructor if this is a concern.
-    constexpr Path(byte_string_view raw, FromRawBytes)
-    {
-        initialize_from_raw(raw);
+        return static_cast<PathType*>(this)->begin();
     } 
 
-    // Construct a Path from a compact encoding
-    constexpr Path(byte_string_view bytes, FromCompactEncoding)
+    constexpr const_iterator cbegin() const noexcept
     {
-        // Does not make sense for compact encoding to be empty
-        assert(not bytes.empty());
+        return static_cast<PathType const* const>(this)->cbegin();
+    } 
 
-        auto const first_byte = bytes.front();
-
-        // Note: Path does not care if extension or leaf node 
-        switch (first_byte & 0xf0) {
-            case PREFIX_EXTENSION_EVEN:
-            case PREFIX_LEAF_EVEN:
-                // Second nibble should be 0x0
-                assert((first_byte & 0x0f) == 0);
-                break;
-            case PREFIX_EXTENSION_ODD:
-            case PREFIX_LEAF_ODD:
-                nibbles_.push_back(Nibble{
-                    static_cast<unsigned char>(first_byte & 0x0f)
-                });
-                break;
-            default:
-                assert(false);
-        }
-
-        // remove the first byte and process the rest as if they were
-        // raw
-        bytes.remove_prefix(1);
-        initialize_from_raw(bytes);
+    constexpr iterator end() noexcept
+    {
+        return static_cast<PathType*>(this)->end();
     }
 
-    constexpr auto begin() noexcept -> iterator { return nibbles_.begin(); } 
-    constexpr auto cbegin() const noexcept -> const_iterator { return nibbles_.cbegin(); } 
-    constexpr auto end() noexcept -> iterator { return nibbles_.end(); }
-    constexpr auto cend() const noexcept -> const_iterator { return nibbles_.cend(); }
+    constexpr const_iterator cend() const noexcept
+    {
+        return static_cast<PathType const* const>(this)->cend();
+    }
 
     // Number of *nibbles* in the path
-    constexpr auto size() const -> size_type
+    constexpr size_type size() const
     {
-        return nibbles_.size();
+        return std::distance(cbegin(), cend());
     }
 
-    constexpr auto empty() const -> bool
+    constexpr bool empty() const
     {
-        return nibbles_.empty();
+        return cbegin() == cend();
     }
 
-    // trim to the first n characters
-    constexpr auto trim_to_prefix(size_type n) -> void
+    constexpr const_reference at(size_type pos) const
     {
-        assert(n <= size());
-
-        nibbles_.resize(n);
-    }
-
-    // Remove n characters from the beginning of the path
-    constexpr auto remove_prefix(size_type n) -> void
-    {
-        assert(n <= size());
-
-        nibbles_.erase(nibbles_.begin(), std::next(nibbles_.begin(), n));
+        return static_cast<PathType const* const>(this)->at(pos);
     }
 
     // longest common prefix size
-    constexpr auto common_prefix_size(Path const& path) const -> size_type
+    constexpr size_type common_prefix_size(BasicPath const& path) const
     {
         auto const min = std::min(size(), path.size());
         for (size_type i = 0; i < min; ++i) {
-            if (nibbles_[i] != path[i]) {
+            if (at(i) != path.at(i)) {
                 return i;
             }
         }
@@ -141,20 +116,20 @@ public:
     // Transform the path to it's compact encoding
     // https://ethereum.org/en/developers/docs/data-structures-and-encoding/patricia-merkle-trie/
     template<EncodeMode Mode>
-    constexpr auto compact_encoding() const -> byte_string
+    constexpr byte_string compact_encoding() const
     {
         // Does not make sense to call this function if the path is empty
         // If this happens, then there's a bug in the code
         assert(not empty());
 
-        auto it = nibbles_.begin();
+        auto it = cbegin();
 
         byte_string bytes;
 
         // Populate first byte with the encoded path type and potentially
         // also the first nibble if number of nibbles is odd
         auto const first_byte = [&]() {
-            auto const is_even = (nibbles_.size() % 2) == 0;
+            auto const is_even = (size() % 2) == 0;
             if constexpr (std::same_as<Mode, EncodeLeaf>) {
                 if (is_even) {
                     return PREFIX_LEAF_EVEN;
@@ -177,10 +152,10 @@ public:
         bytes.push_back(first_byte);
 
         // should be an even number of hops away from the end
-        MONAD_ASSERT((std::distance(it, nibbles_.end()) % 2) == 0);
+        MONAD_ASSERT((std::distance(it, cend()) % 2) == 0);
 
         // Should have an even number of nibbles to process now
-        while (it != nibbles_.end()) {
+        while (it != cend()) {
             // Combine both nibbles and then advance past them
             bytes.push_back((*it << 4) | *std::next(it));
             std::advance(it, 2);
@@ -189,22 +164,196 @@ public:
         return bytes;
     }
 
-    constexpr bool operator==(Path const&) const = default;
+    constexpr bool operator==(BasicPath const&) const = default;
 
-    constexpr bool operator==(Nibbles const& nibbles) const
+    template <typename Comparable>
+        requires std::same_as<Comparable, Nibbles> or
+                 std::same_as<Comparable, NibblesView>
+    bool operator==(Comparable const& path) const
     {
-        return nibbles_ == nibbles;
+        // Note: Unfortunately the R&& overload (2, in cppreference)
+        // doesn't work here because clang uses std::is_array_v for
+        // const reference ranges, which the standard specifies as UB
+        // if specialized.
+        //
+        // Thus, the long form.
+        return std::ranges::equal(cbegin(), cend(), path.cbegin(), path.cend());
     }
 
-    constexpr Nibble operator[](Nibbles::size_type index) const
+
+protected:
+    static constexpr auto PREFIX_EXTENSION_EVEN = 0x00;
+    static constexpr auto PREFIX_EXTENSION_ODD = 0x10;
+    static constexpr auto PREFIX_LEAF_EVEN = 0x20;
+    static constexpr auto PREFIX_LEAF_ODD = 0x30;
+};
+
+template <typename PathType>
+class PathTemplate : public impl::BasicPath<PathType>
+{
+public:
+    using traits_type = BasicPathTraits<PathType>;
+    using rep = typename traits_type::rep;
+    using size_type = typename traits_type::size_type;
+    using iterator = typename traits_type::iterator; 
+    using const_iterator = typename traits_type::const_iterator;
+    using const_reference = typename traits_type::const_reference;
+
+protected:
+    // TODO (alee): change this to be a byte array rather than an
+    // array of nibbles so that it's friendlier on the cache lines
+    rep nibbles_;
+
+public:
+    constexpr PathTemplate() = default;
+
+    template <typename InputIt>
+    constexpr PathTemplate(InputIt first, InputIt last)
+        : nibbles_(first, last)
     {
-        assert(index < nibbles_.size());
-        return nibbles_[index];
     }
+
+    template <typename NibblesType>
+        requires std::same_as<NibblesType, Nibbles> or
+                 std::same_as<NibblesType, NibblesView>
+    constexpr explicit PathTemplate(NibblesType const& nibbles)
+        : nibbles_(nibbles)
+    {
+    }
+
+    constexpr iterator begin() noexcept
+    {
+        return nibbles_.begin();
+    } 
+
+    constexpr const_iterator cbegin() const noexcept
+    {
+        return nibbles_.cbegin();
+    } 
+
+    constexpr iterator end() noexcept
+    {
+        return nibbles_.end();
+    }
+
+    constexpr const_iterator cend() const noexcept
+    {
+        return nibbles_.cend();
+    }
+
+    constexpr const_reference at(size_type pos) const
+    {
+        return nibbles_.at(pos);
+    }
+
+    constexpr const_reference operator[](size_type pos) const
+    {
+        return nibbles_[pos];
+    }
+};
+} // namespace impl
+
+// Non-owning version of Path
+class PathView: public impl::PathTemplate<PathView>
+{
+public:
+    using base = impl::PathTemplate<PathView>;
+    using base::base;
+
+    // trim to the first n characters
+    constexpr void trim_to_prefix(size_type n)
+    {
+        assert(n <= size());
+
+        nibbles_.remove_suffix(size() - n);
+    }
+
+    // Remove n characters from the beginning of the path
+    constexpr void remove_prefix(size_type n)
+    {
+        assert(n <= size());
+
+        nibbles_.remove_prefix(n);
+    }
+
+    constexpr PathView& operator=(PathView const&) = default;
+};
+
+class Path : public impl::PathTemplate<Path>
+{
+public:
+    using base = impl::PathTemplate<Path>;
+    using traits_type = impl::BasicPathTraits<Path>;
+    using reference = traits_type::reference;
+
+    using base::base;
+
+    constexpr Path(PathView view)
+        : Path(view.cbegin(), view.cend())
+    {
+    }
+
+    struct FromRawBytes {};
+    struct FromCompactEncoding {};
+
+    // NB: By using this constructor, one acknowledges that only even
+    // numbers of nibbles can be represented due to the fact that
+    // the trailing nibble would not be accurately represented. This
+    // is in part what the compact encoding scheme aims to solve.
+    //
+    // Please consider using either the nibbles or the compact encoding
+    // constructor if this is a concern.
+    constexpr Path(byte_string_view raw, FromRawBytes)
+    {
+        initialize_from_raw(raw);
+    } 
+
+    // Construct a Path from a compact encoding
+    constexpr Path(byte_string_view bytes, FromCompactEncoding)
+    {
+        // Does not make sense for compact encoding to be empty
+        assert(not bytes.empty());
+
+        auto const first_byte = bytes.front();
+
+        // Note: Path does not care if extension or leaf node
+        switch (first_byte & 0xf0) {
+            case PREFIX_EXTENSION_EVEN:
+            case PREFIX_LEAF_EVEN:
+                // Second nibble should be 0x0
+                assert((first_byte & 0x0f) == 0);
+                break;
+            case PREFIX_EXTENSION_ODD:
+            case PREFIX_LEAF_ODD:
+                nibbles_.push_back(Nibble{
+                    static_cast<unsigned char>(first_byte & 0x0f)
+                });
+                break;
+            default:
+                assert(false);
+        }
+
+        // remove the first byte and process the rest as if they were
+        // raw
+        bytes.remove_prefix(1);
+        initialize_from_raw(bytes);
+    }
+
+    operator PathView() const
+    {
+        return PathView(cbegin(), cend());
+    }
+
+    constexpr reference operator[](size_type pos)
+    {
+        return nibbles_[pos];
+    }
+
+    constexpr Path& operator=(Path const&) = default;
 
 private:
     // convert a byte view into nibbles
-    constexpr auto initialize_from_raw(byte_string_view raw) -> void
+    constexpr void initialize_from_raw(byte_string_view raw)
     {
         constexpr auto RIGHT_NIBBLE = 0x0f;
 

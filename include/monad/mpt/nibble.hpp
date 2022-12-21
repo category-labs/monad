@@ -36,6 +36,7 @@ public:
 };
 
 using Nibbles = std::basic_string<Nibble>;
+using NibblesView = std::basic_string_view<Nibble>;
 } // namespace mpt
 
 MONAD_NAMESPACE_END

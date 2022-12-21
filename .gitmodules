@@ -11,3 +11,6 @@
 [submodule "tmpsrc/third_party/silkworm"]
 	path = tmpsrc/third_party/silkworm
 	url = git@github.com:monad-crypto/silkworm.git
+[submodule "conan/cmake-conan"]
+	path = conan/cmake-conan
+	url = https://github.com/conan-io/cmake-conan.git

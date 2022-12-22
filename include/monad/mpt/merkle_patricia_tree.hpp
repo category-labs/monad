@@ -1,5 +1,6 @@
 #pragma once
 
+#include "monad/rlp/rlp.hpp"
 #include <absl/container/flat_hash_map.h>
 #include <iterator>
 #include <monad/core/bytes.hpp>
@@ -12,31 +13,20 @@ MONAD_NAMESPACE_BEGIN
 namespace mpt
 {
 
-using KeyVal = std::pair<Path, byte_string_view>;
+using KeyVal = std::pair<Path, rlp::Encoding>;
 
+// TreeInitializer object is assumed to return KeyVal objects
+// in lexicographic order sorted on the path
 template <typename T>
-concept EmitsKeyVal = requires (T object)
+concept TreeInitializer = requires (T object)
 {
     {object()} -> std::same_as<KeyVal>;
-};
-
-template <typename T>
-concept EmitsLatestBlock = requires (T object)
-{
     {object.block_number()} -> std::same_as<uint64_t>;
+    {object.done()} -> std::same_as<bool>;
 };
-
-template <typename T>
-concept TreeInitializer = EmitsKeyVal<T> and EmitsLatestBlock<T>;
 
 template <typename T>
 concept TreeStore = std::derived_from<T, TreeStoreInterface>;
-
-struct BuildLeafAndOrBranch {};
-struct BuildExtensionAndOrBranch {};
-
-template <typename T>
-concept InitMode = std::same_as<T, BuildLeafAndOrBranch> or std::same_as<T, BuildExtensionAndOrBranch>;
 
 template <TreeStore Storage>
 class MerklePatriciaTree
@@ -54,10 +44,10 @@ public:
     // 2) if B.size() > A.size(), a new prefix group is starting
     // 3) (optional) add the extra digit (aka branch) to the current
     //    prefix group
-    // 4) If Mode is currently BuildLeafAndOrBranch, emit a LEAF.
-    //    If mode is BuildExtensionAndOrBranch, and the remainder (aka
-    //    current with the max common prefix + branch chopped) is not
-    //    empty, then emit an EXTENSION.
+    // 4) If we're current processing a leaf node, emit a LEAF.
+    //    If we are evaluating an extension node addition, and the
+    //    remainder (aka current with the max common prefix + 
+    //    branch chopped) is not empty, then emit an EXTENSION.
     // 5) if A.size() > B.size(), then at least one prefix group is
     //    being closed.
     //      1) Emit a BRANCH node, whose branches are taken from the
@@ -71,7 +61,50 @@ public:
     //         PrefixGroups
     MerklePatriciaTree(TreeInitializer auto initializer)
     {
-        PrefixGroups groups;
+        struct Current
+        {
+            Path path;
+            rlp::Encoding leaf_value;
+        };
+        std::optional<Current> current;
+        InitState state;
+
+        while (!initializer.done()) {
+            auto const [next, next_leaf_value] = initializer(); 
+
+            // keys should not be empty
+            assert(!next.empty());
+
+            if (MONAD_UNLIKELY(!current)) {
+                current = {
+                    .path=std::move(next),
+                    .leaf_value=std::move(next_leaf_value)
+                };
+                continue;
+            }
+
+            process_leaf(WorkingPathViews{
+                            .current=current->path,
+                            .next=next
+                        }, current->leaf_value, state);
+
+            current.path = std::move(next);
+            current.leaf_value = std::move(next_leaf_value);
+        }
+
+        // finalize the trie
+        if (MONAD_LIKELY(current)) {
+            process_leaf(WorkingPathViews{
+                            .current=current->path,
+                            .next={}
+                        }, current->leaf_value, state);
+
+            // Should only be the root node on the stack
+            assert(state.nodes.size() == 1);
+
+            // should be no prefix groups left open
+            assert(state.groups.empty());
+        }
     }
 
 private:
@@ -97,7 +130,7 @@ private:
     };
 
     CommonPrefixSizes get_common_prefix_sizes(
-            WorkingPathViews const& paths, InitState& state)
+            WorkingPathViews const& paths, InitState const& state)
     {
         auto const& [current, next] = paths;
 
@@ -114,35 +147,6 @@ private:
             .next = next_prefix_size,
             .max = max_prefix_size
         };
-    }
-
-    void process_leaf(WorkingPathViews const& paths,
-                      rlp::Encoding&& leaf_value,
-                      InitState& state)
-    {
-        auto const& current = paths.current;
-
-        auto const [common_prefix_sizes, size_of_path_to_node] = 
-            optionally_add_branch_to_group(paths, state);
-
-        auto const remainder = current.suffix(
-                current.size() - size_of_path_to_node); 
-
-        // Emit a leaf node
-        //
-        // Leaves should have a remainder, which in this case, is
-        // also the partial path
-        assert(not remainder.empty());
-
-        auto const leaf_node = LeafNode(
-                current.prefix(size_of_path_to_node),
-                remainder,
-                std::move(leaf_value));
-
-        storage_.insert(leaf_node);
-        state.nodes.emplace_back(std::move(leaf_node));
-        
-        optionally_close_out_prefix_group(paths, common_prefix_sizes, state);
     }
 
     // Optionally add branch to a new or existing prefix group.
@@ -176,7 +180,39 @@ private:
                 add_branch_to_new_or_existing_group);
     }
 
-    // Close out the prefix group if we need to, generating branch node
+
+    void process_leaf(WorkingPathViews const& paths,
+                      rlp::Encoding&& leaf_value,
+                      InitState& state)
+    {
+        auto const& current = paths.current;
+
+        auto const [common_prefix_sizes, size_of_path_to_node] = 
+            optionally_add_branch_to_group(paths, state);
+
+        auto const remainder = current.suffix(
+                current.size() - size_of_path_to_node); 
+
+        // Emit a leaf node
+        //
+        // Leaves should have a remainder, which in this case, is
+        // also the partial path
+        assert(not remainder.empty());
+
+        auto const leaf_node = LeafNode(
+                current.prefix(size_of_path_to_node),
+                remainder,
+                std::move(leaf_value));
+
+        storage_.insert(leaf_node);
+        state.nodes.emplace_back(std::move(leaf_node));
+        
+        optionally_close_out_prefix_group(paths, common_prefix_sizes, state);
+    }
+
+    // Close out at least one prefix group if
+    //  - previous common prefix is larger than the next common prefix, or
+    //  - we are finalizing and there currently exists a prefix group
     void optionally_close_out_prefix_group(
             WorkingPathViews const& paths,
             CommonPrefixSizes const& common_prefix_sizes,
@@ -188,11 +224,11 @@ private:
         auto& [groups, nodes] = state;
 
         // Check if we need to close out the prefix group
-        auto const is_closing_out =
+        auto const are_groups_closing =
             common_prefix_sizes.prev > common_prefix_sizes.next ||
             (is_finalizing && !groups.empty());
 
-        if (!is_closing_out) {
+        if (!are_groups_closing) {
             return;
         }
 
@@ -224,6 +260,8 @@ private:
         auto const path_to_child = start->path_to_node();
         assert(!path_to_child.empty());
 
+        // Note: suffices to only use the first child to calculate the
+        // path to branch node
         auto const branch_node = BranchNode(
                 path_to_child.prefix(path_to_child.size() - 1),
                 branches,
@@ -266,7 +304,7 @@ private:
                 current.size() - size_of_path_to_node); 
 
         // Size of remainder is 0, no extension or branch nodes needed 
-        if (remainder.size() == 0) {
+        if (remainder.empty()) {
             return;
         }
 

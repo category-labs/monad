@@ -260,20 +260,18 @@ public:
     using base = impl::PathTemplate<PathView>;
     using base::base;
 
-    // trim to the first n characters
-    constexpr void trim_to_prefix(size_type n)
-    {
-        assert(n <= size());
+    constexpr PathView(PathView const&) = default;
 
-        nibbles_.remove_suffix(size() - n);
+    constexpr PathView prefix(size_type n) const
+    {
+        assert(n < size());
+        return PathView(cbegin(), std::next(cbegin(), n));
     }
 
-    // Remove n characters from the beginning of the path
-    constexpr void remove_prefix(size_type n)
+    constexpr PathView suffix(size_type n) const
     {
-        assert(n <= size());
-
-        nibbles_.remove_prefix(n);
+        assert(n < size());
+        return PathView(std::prev(cend(), n), cend());
     }
 
     constexpr PathView& operator=(PathView const&) = default;

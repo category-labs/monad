@@ -25,15 +25,15 @@ private:
     std::stack<PrefixGroup> groups_;
 
 public:
-    auto add_branch(size_t length, Nibble branch) -> void
+    constexpr void add_branch(size_t length, Nibble branch)
     {
         // we should either be adding to the newest one or creating
         // a new group
         //
         // should not be updating an old one
-        assert(groups_.empty() or length >= groups_.top().length);
+        assert(groups_.empty() || length >= groups_.top().length);
 
-        if (not groups_.empty() and length == groups_.top().length) {
+        if (!groups_.empty() && length == groups_.top().length) {
             auto& branches = groups_.top().branches;
 
             // branch should not already exist
@@ -47,12 +47,12 @@ public:
         }
     }
 
-    auto empty() const -> bool
+    constexpr bool empty() const
     {
         return groups_.empty();
     }
 
-    auto get_current_group() const -> PrefixGroup
+    constexpr PrefixGroup get_current_group() const
     {
         // Make sure that we have a valid prefix group
         assert(not groups_.empty());
@@ -60,7 +60,7 @@ public:
         return groups_.top();
     }
 
-    auto pop_current_group() -> void
+    constexpr void pop_current_group()
     {
         // Make sure that we have a valid prefix group
         assert(not groups_.empty());

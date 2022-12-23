@@ -61,23 +61,23 @@ TEST(Path, PrefixModification)
     auto const empty_path = Path(monad::byte_string{}, Path::FromRawBytes{});
 
     // Remove prefix and check sizes for both paths
-    first_path_view.remove_prefix(4);
+    auto suffix = first_path_view.suffix(first_path_view.size() - 4);
 
     // Original path should not have changed
     EXPECT_EQ(first_path, to_nibbles({0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07}));
     EXPECT_EQ(first_path.size(), 8);
 
     // The view should have though
-    EXPECT_EQ(first_path_view, to_nibbles({0x04, 0x05, 0x06, 0x07}));
-    EXPECT_EQ(first_path_view.size(), 4);
+    EXPECT_EQ(suffix, to_nibbles({0x04, 0x05, 0x06, 0x07}));
+    EXPECT_EQ(suffix.size(), 4);
 
     auto second_path = Path(monad::byte_string({0x01, 0x23, 0x67}), Path::FromRawBytes{});
     auto second_path_view = PathView(second_path);
-    second_path_view.remove_prefix(4);
+    suffix = second_path_view.suffix(second_path_view.size() - 4);
 
-    EXPECT_FALSE(second_path_view.empty());
-    EXPECT_EQ(second_path_view.size(), 2);
-    EXPECT_EQ(second_path_view, to_nibbles({0x06, 0x07}));
+    EXPECT_FALSE(suffix.empty());
+    EXPECT_EQ(suffix.size(), 2);
+    EXPECT_EQ(suffix, to_nibbles({0x06, 0x07}));
 
     auto third_path = Path(monad::byte_string({0x45, 0x67, 0x89}), Path::FromRawBytes{});
     auto third_path_view = PathView(third_path);
@@ -86,16 +86,16 @@ TEST(Path, PrefixModification)
         to_nibbles({0x04, 0x05, 0x06, 0x07, 0x08, 0x09});
     EXPECT_EQ(third_path_view, original_expected_value);
 
-    third_path_view.trim_to_prefix(4);
-    EXPECT_EQ(third_path_view, to_nibbles({0x04, 0x05, 0x06, 0x07}));
+    auto prefix = third_path_view.prefix(4);
+    EXPECT_EQ(prefix, to_nibbles({0x04, 0x05, 0x06, 0x07}));
 
-    third_path_view.remove_prefix(2);
-    EXPECT_EQ(third_path_view, to_nibbles({0x06, 0x07}));
+    suffix = prefix.suffix(prefix.size() - 2);
+    EXPECT_EQ(suffix, to_nibbles({0x06, 0x07}));
 
-    third_path_view.remove_prefix(2);
-    EXPECT_TRUE(third_path_view.empty());
-    EXPECT_EQ(third_path_view.size(), 0);
-    EXPECT_EQ(third_path_view, Nibbles{});
+    suffix = suffix.suffix(suffix.size() - 2);
+    EXPECT_TRUE(suffix.empty());
+    EXPECT_EQ(suffix.size(), 0);
+    EXPECT_EQ(suffix, Nibbles{});
 
     // Original path should not have changed
     EXPECT_EQ(third_path.size(), 6);

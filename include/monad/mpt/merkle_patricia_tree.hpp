@@ -1,12 +1,16 @@
 #pragma once
 
-#include "monad/rlp/rlp.hpp"
-#include <absl/container/flat_hash_map.h>
 #include <iterator>
-#include <monad/core/bytes.hpp>
-#include <monad/mpt/tree_store_interface.hpp>
+#include <optional>
+
 #include <monad/config.hpp>
+#include <monad/rlp/rlp.hpp>
+#include <monad/mpt/tree_store_interface.hpp>
 #include <monad/mpt/prefix_groups.hpp>
+
+#include <range/v3/view/transform.hpp>
+#include <range/v3/view/subrange.hpp>
+#include <range/v3/range/conversion.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -248,14 +252,12 @@ private:
         // Get list of child references
         //
         // Note: copies the reference into child_references
-        using namespace std::placeholders;
-        BranchNode::ChildReferences child_references;
-        std::ranges::transform(
-                start, nodes.end(),
-                std::back_inserter(child_references),
-                [](auto const& node) {
-                     return std::visit(&BaseNode::reference_view, node);
-                });
+        using namespace ranges;
+        auto child_references = subrange(start, nodes.end())
+            | views::transform([](auto const& node) {
+                    return std::visit(&BaseNode::reference_view, node);
+                })
+            | to<BranchNode::ChildReferences>;
 
         auto const path_to_child = start->path_to_node();
         assert(!path_to_child.empty());
@@ -314,10 +316,27 @@ private:
 
         auto& child = state.nodes.back();
         auto const path_to_node = current.prefix(size_of_path_to_node);
+
+        // path to extension node should be strictly a substring of the
+        // child path to node
+        assert(path_to_node.common_prefix_size(child.path_to_node_view())
+                == path_to_node.size());
+
+        // path to extension node should be smaller than path to child
+        assert(path_to_node.size() < child.path_to_node_view().size());
+
+        using namespace ranges;
+        auto const partial_path = child.path_to_node_view() 
+            | views::drop(path_to_node.size())
+            | to<PathView>;
+
+        // child of extension node must be a branch node
+        assert(std::get_if<BranchNode>(&child) != nullptr);
+
         auto const extension_node = ExtensionNode(
             path_to_node,
-            std::visit(&BaseNode::path_to_node_view, child),
-            std::visit(&BaseNode::reference_view, child)
+            partial_path,
+            child.reference_view()
         );
 
         storage_.insert(extension_node);

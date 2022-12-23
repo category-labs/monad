@@ -85,6 +85,8 @@ private:
     byte_string bytes_;
 
 public:
+    constexpr Encoding() = default;
+
     constexpr explicit Encoding(byte_string_view bytes)
         : bytes_(bytes)
     {

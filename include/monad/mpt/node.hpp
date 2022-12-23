@@ -2,28 +2,38 @@
 
 #include <variant>
 #include <concepts>
-#include <bitset>
+
 #include <monad/config.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/hash.hpp>
 #include <monad/mpt/path.hpp>
 #include <monad/mpt/branches.hpp>
 #include <monad/rlp/rlp.hpp>
+
+#include <range/v3/view/drop.hpp>
+#include <range/v3/range/conversion.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
 namespace mpt
 {
 
+using reference_type = hash256;
+using reference_view_type = reference_type::string_view_type;
+
 class BaseNode
 {
 private:
     Path const path_to_node_;
-    byte_string const reference_;
+    reference_type const reference_;
 
 public:
-    constexpr BaseNode(PathView path_to_node, byte_string_view reference)
+    constexpr BaseNode(PathView path_to_node, rlp::Encoding&& node_encoding)
         : path_to_node_(path_to_node)
-        , reference_(reference)
+        , reference_(
+                (node_encoding.bytes().size() >= reference_type::static_capacity)
+                ? keccak256(node_encoding.bytes())
+                : hash256(node_encoding.bytes()))
     {
     }
 
@@ -32,53 +42,56 @@ public:
         return path_to_node_;
     }
 
-    constexpr byte_string_view reference_view() const
+    constexpr reference_view_type reference_view() const
     {
-        return {};
-    }
-};
-
-class ExtensionNode : public BaseNode
-{
-private:
-    Path const partial_path_;
-    byte_string const child_reference_;
-
-public:
-    constexpr ExtensionNode(PathView path_to_node, PathView path_to_child, byte_string_view child_reference)
-        : BaseNode(path_to_node, calculate_reference())
-        , partial_path_(partial_path_from_child(path_to_child))
-        , child_reference_(child_reference)
-    {
-    }
-
-private:
-    PathView partial_path_from_child(PathView path_to_child) const
-    {
-        // TODO;
-        return path_to_child;
+        return reference_;
     }
 };
 
 class BranchNode : public BaseNode
 {
 public:
-    using ChildReferences = std::vector<byte_string>;
+    using ChildReferences = std::vector<reference_type>;
 private:
     Branches const branches_;
     ChildReferences const child_references_;
 
-    // TODO: populate this
-    byte_string const reference_;
-    
 public:
     constexpr BranchNode(PathView path_to_node,
                          Branches branches,
                          ChildReferences&& child_references)
-        : BaseNode(path_to_node)
+        : BaseNode(path_to_node, calculate_rlp_encoding(branches, child_references))
         , branches_(branches)
         , child_references_(std::move(child_references))
     {
+    }
+private:
+    rlp::Encoding calculate_rlp_encoding(
+            Branches, ChildReferences const&)
+    {
+        // TODO: fill out once rlp encoding library is in
+        return {};
+    }
+};
+
+
+class ExtensionNode : public BaseNode
+{
+private:
+    Path const partial_path_;
+    reference_type const child_reference_;
+
+public:
+    constexpr ExtensionNode(PathView path_to_node,
+                            PathView partial_path,
+                            reference_view_type child_reference)
+        : BaseNode(path_to_node, rlp::encode(
+                    partial_path.compact_encoding<EncodeExtension>(),
+                    child_reference))
+        , partial_path_(partial_path)
+        , child_reference_(child_reference)
+    {
+        assert(!partial_path_.empty());
     }
 };
 
@@ -92,15 +105,13 @@ public:
     LeafNode(PathView path_to_node,
              PathView partial_path,
              rlp::Encoding&& value)
-        : BaseNode(path_to_node)
+        : BaseNode(path_to_node, rlp::encode(
+                    partial_path.compact_encoding<EncodeLeaf>(),
+                    value))
         , partial_path_(partial_path)
         , value_(std::move(value))
     {
     };
-private:
-    byte_string calculate_reference(PathView) const
-    {
-    }
 };
 
 using Node = std::variant<ExtensionNode, BranchNode, LeafNode>;

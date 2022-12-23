@@ -52,6 +52,10 @@ function(monad_compile_options target)
     target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
 endfunction()
 
+# so that string_view_type uses std::boost_string_view instead of the
+# boost analogous
+add_compile_definitions(BOOST_STATIC_STRING_STANDALONE)
+
 ############
 ### unit tests
 ############

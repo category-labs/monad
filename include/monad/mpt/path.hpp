@@ -1,14 +1,17 @@
 #pragma once
 
 #include <algorithm>
-#include <bits/iterator_concepts.h>
 #include <concepts>
+#include <bits/iterator_concepts.h>
+#include <cstdint>
+#include <cstddef>
+
 #include <monad/core/byte_string.hpp>
 #include <monad/core/assert.h>
 #include <monad/mpt/nibble.hpp>
-#include <cstdint>
-#include <cstddef>
 #include <monad/config.hpp>
+
+#include <range/v3/range_fwd.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -361,6 +364,16 @@ private:
         }
     }
 };
+
 }  // namespace mpt
 
 MONAD_NAMESPACE_END
+
+// Specify that PathView is a borrowed range
+//
+// TODO(re-evaluate this if we decide to rework Path similar to be
+// space-efficient, similar to vector of bools)
+//
+// https://en.cppreference.com/w/cpp/ranges/borrowed_range
+template <>
+inline constexpr bool ranges::enable_borrowed_range<monad::mpt::PathView> = true;

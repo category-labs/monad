@@ -1,10 +1,14 @@
 #pragma once
 
-#include <monad/config.hpp>
-#include <monad/mpt/nibble.hpp>
 #include <cstdint>
 #include <initializer_list>
 #include <algorithm>
+
+#include <monad/config.hpp>
+#include <monad/mpt/nibble.hpp>
+
+#include <range/v3/view/transform.hpp>
+#include <range/v3/range/conversion.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -12,12 +16,10 @@ namespace test_util
 {
 constexpr auto to_nibbles(std::initializer_list<uint8_t> list)
 {
-    monad::mpt::Nibbles nibbles; 
-    std::ranges::transform(list, std::back_inserter(nibbles), [](auto element) {
-        assert((element & 0xf0) == 0);
-        return monad::mpt::Nibble{element};
-    });
-    return nibbles;
+    using namespace ranges;
+    return list
+        | views::transform([](auto i) { return monad::mpt::Nibble{i}; })
+        | to<monad::mpt::Nibbles>;
 }
 } // namespace tests_utils
 

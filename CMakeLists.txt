@@ -26,7 +26,7 @@ conan_cmake_install(
 )
 
 find_package(RocksDB)
-
+find_package(range-v3 REQUIRED)
 
 ############
 ### deps
@@ -115,6 +115,7 @@ target_link_libraries(monad
     PRIVATE PkgConfig::brotli
     PRIVATE RocksDB::RocksDB
 
+    PUBLIC range-v3::range-v3
     PUBLIC evmc
     PUBLIC intx::intx
 )

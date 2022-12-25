@@ -9,6 +9,8 @@ MONAD_NAMESPACE_BEGIN
 
 using ExecutionProcessor = silkworm::ExecutionProcessor;
 
+static_assert(sizeof(ExecutionProcessor) == 512);
+
 Blockchain::Blockchain(State &state, ChainConfig const &config)
     : state_{state}
     , config_{config}
@@ -16,9 +18,7 @@ Blockchain::Blockchain(State &state, ChainConfig const &config)
 {
 }
 
-Blockchain::~Blockchain()
-{
-}
+Blockchain::~Blockchain() {}
 
 ValidationResult Blockchain::pre_validate_block(Block const &block)
 {

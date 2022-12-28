@@ -27,12 +27,13 @@ conan_cmake_install(
 
 find_package(RocksDB)
 find_package(range-v3 REQUIRED)
+find_package(tl-expected REQUIRED)
 
 ############
 ### deps
 ############
 
-find_package(Boost REQUIRED COMPONENTS fiber)
+find_package(Boost 1.81 REQUIRED COMPONENTS fiber)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 
@@ -110,9 +111,10 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/mpt/path.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/mpt/nibble.hpp
 )
+
 target_include_directories(monad
     PUBLIC ${PROJECT_SOURCE_DIR}/include
-    PRIVATE ${Boost_INCLUDE_DIRS}
+    PUBLIC ${Boost_INCLUDE_DIRS}
 )
 target_link_libraries(monad
     PRIVATE Boost::fiber
@@ -120,6 +122,7 @@ target_link_libraries(monad
     PRIVATE RocksDB::RocksDB
 
     PUBLIC range-v3::range-v3
+    PUBLIC tl::expected
     PUBLIC evmc
     PUBLIC intx::intx
 )

@@ -1,6 +1,8 @@
 [requires]
 rocksdb/6.29.5
 range-v3/0.12.0
+tl-expected/20190710@#43797426a53a4d0f86e43562d9b6924e
+boost/1.81.0@#bee81c3eabd079435aab7efe4056c07d
 
 [generators]
 cmake_find_package
@@ -17,3 +19,4 @@ rocksdb:with_zstd=False
 rocksdb:with_tbb=False  # TODO
 rocksdb:with_jemalloc=False  # TODO
 rocksdb:enable_sse=sse42
+boost:with_stacktrace_backtrace=False

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "intx/intx.hpp"
 #include <monad/config.hpp>
 
 // please do not remove this include
@@ -24,5 +25,14 @@ template <size_t N>
 using byte_string_fixed = boost::static_strings::basic_static_string<N, unsigned char>;
 
 using byte_string_view = std::basic_string_view<unsigned char>;
+
+constexpr byte_string to_big_endian_byte_string(std::unsigned_integral auto num)
+{
+    num = intx::to_big_endian(num);
+    return byte_string{
+        reinterpret_cast<byte_string::value_type*>(&num),
+        sizeof(num)
+    };
+}
 
 MONAD_NAMESPACE_END

@@ -29,14 +29,11 @@ concept TreeInitializer = requires (T object)
     {object.done()} -> std::same_as<bool>;
 };
 
-template <typename T>
-concept TreeStore = std::derived_from<T, TreeStoreInterface>;
-
-template <TreeStore Storage>
+template <typename TreeStore>
 class MerklePatriciaTree
 {
 private:
-    Storage storage_;
+    TreeStore storage_;
 
 public:
     // High level algorithm for initializing the MerklePatriciaTree is
@@ -71,7 +68,11 @@ public:
             rlp::Encoding leaf_value;
         };
         std::optional<Current> current;
-        InitState state;
+        InitState state = {
+            .groups={},
+            .nodes={},
+            .block_number=initializer.block_number()
+        };
 
         while (!initializer.done()) {
             auto const [next, next_leaf_value] = initializer(); 
@@ -90,10 +91,10 @@ public:
             process_leaf(WorkingPathViews{
                             .current=current->path,
                             .next=next
-                        }, current->leaf_value, state);
+                        }, std::move(current->leaf_value), state);
 
-            current.path = std::move(next);
-            current.leaf_value = std::move(next_leaf_value);
+            current->path = std::move(next);
+            current->leaf_value = std::move(next_leaf_value);
         }
 
         // finalize the trie
@@ -101,7 +102,7 @@ public:
             process_leaf(WorkingPathViews{
                             .current=current->path,
                             .next={}
-                        }, current->leaf_value, state);
+                        }, std::move(current->leaf_value), state);
 
             // Should only be the root node on the stack
             assert(state.nodes.size() == 1);
@@ -131,6 +132,8 @@ private:
 
         // Each element is a node reference
         std::vector<Node> nodes;
+
+        uint64_t const block_number;
     };
 
     CommonPrefixSizes get_common_prefix_sizes(
@@ -163,10 +166,10 @@ private:
         auto const& [current, next] = paths;
         auto const is_finalizing = next.empty();
 
-        auto& [groups, _] = state;
+        auto& groups = state.groups;
 
         auto const common_prefix_sizes =
-            get_common_prefix_sizes(paths, groups);
+            get_common_prefix_sizes(paths, state);
 
         // Add the extra branch character only if not finalizing or if
         // there is a working prefix group
@@ -208,7 +211,7 @@ private:
                 remainder,
                 std::move(leaf_value));
 
-        storage_.insert(leaf_node);
+        storage_.insert(leaf_node, state.block_number);
         state.nodes.emplace_back(std::move(leaf_node));
         
         optionally_close_out_prefix_group(paths, common_prefix_sizes, state);
@@ -225,7 +228,7 @@ private:
         auto const [current, next] = paths;
         auto const is_finalizing = next.empty();
 
-        auto& [groups, nodes] = state;
+        auto& [groups, nodes, block_number] = state;
 
         // Check if we need to close out the prefix group
         auto const are_groups_closing =
@@ -259,7 +262,8 @@ private:
                 })
             | to<BranchNode::ChildReferences>;
 
-        auto const path_to_child = start->path_to_node();
+        auto const path_to_child =
+            std::visit(&BaseNode::path_to_node_view, *start);
         assert(!path_to_child.empty());
 
         // Note: suffices to only use the first child to calculate the
@@ -269,7 +273,7 @@ private:
                 branches,
                 std::move(child_references));
 
-        storage_.insert(branch_node);
+        storage_.insert(branch_node, block_number);
 
         // Hijack the first element for the branch node reference 
         *start = std::move(branch_node);
@@ -289,7 +293,7 @@ private:
 
         add_extension_and_or_branch(
                 WorkingPathViews{
-                    .current=current.prefix(group_length)
+                    .current=current.prefix(group_length),
                     .next=next
                 },
                 state);
@@ -319,14 +323,15 @@ private:
 
         // path to extension node should be strictly a substring of the
         // child path to node
-        assert(path_to_node.common_prefix_size(child.path_to_node_view())
+        auto const path_to_child = std::visit(&BaseNode::path_to_node_view, child);
+        assert(path_to_node.common_prefix_size(path_to_child)
                 == path_to_node.size());
 
         // path to extension node should be smaller than path to child
-        assert(path_to_node.size() < child.path_to_node_view().size());
+        assert(path_to_node.size() < path_to_child.size());
 
         using namespace ranges;
-        auto const partial_path = child.path_to_node_view() 
+        auto const partial_path = path_to_child
             | views::drop(path_to_node.size())
             | to<PathView>;
 
@@ -336,16 +341,16 @@ private:
         auto const extension_node = ExtensionNode(
             path_to_node,
             partial_path,
-            child.reference_view()
+            std::visit(&BaseNode::reference_view, child)
         );
 
-        storage_.insert(extension_node);
+        storage_.insert(extension_node, state.block_number);
 
         // hijack the child node and replace with extension node
         child = std::move(extension_node);
 
         optionally_close_out_prefix_group(
-                paths, path_to_node, common_prefix_sizes, state);
+                paths, common_prefix_sizes, state);
     }
 };
 } // namespace mpt

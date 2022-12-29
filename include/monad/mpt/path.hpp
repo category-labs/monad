@@ -11,7 +11,7 @@
 #include <monad/mpt/nibble.hpp>
 #include <monad/config.hpp>
 
-#include <range/v3/range_fwd.hpp>
+#include <range/v3/range/conversion.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -73,6 +73,11 @@ public:
         return static_cast<PathType*>(this)->begin();
     } 
 
+    constexpr const_iterator begin() const noexcept
+    {
+        return static_cast<PathType const* const>(this)->begin();
+    }
+
     constexpr const_iterator cbegin() const noexcept
     {
         return static_cast<PathType const* const>(this)->cbegin();
@@ -81,6 +86,11 @@ public:
     constexpr iterator end() noexcept
     {
         return static_cast<PathType*>(this)->end();
+    }
+
+    constexpr const_iterator end() const noexcept
+    {
+        return static_cast<PathType const* const>(this)->end();
     }
 
     constexpr const_iterator cend() const noexcept
@@ -229,6 +239,11 @@ public:
         return nibbles_.begin();
     } 
 
+    constexpr const_iterator begin() const noexcept
+    {
+        return cbegin();
+    } 
+
     constexpr const_iterator cbegin() const noexcept
     {
         return nibbles_.cbegin();
@@ -237,6 +252,11 @@ public:
     constexpr iterator end() noexcept
     {
         return nibbles_.end();
+    }
+
+    constexpr const_iterator end() const noexcept
+    {
+        return cend();
     }
 
     constexpr const_iterator cend() const noexcept
@@ -252,6 +272,11 @@ public:
     constexpr const_reference operator[](size_type pos) const
     {
         return nibbles_[pos];
+    }
+
+    byte_string underlying_bytes() const
+    {
+        return nibbles_ | ranges::to<byte_string>();
     }
 };
 } // namespace impl
@@ -293,6 +318,8 @@ public:
         : Path(view.cbegin(), view.cend())
     {
     }
+
+    constexpr Path(Path const&) = default;
 
     struct FromRawBytes {};
     struct FromCompactEncoding {};

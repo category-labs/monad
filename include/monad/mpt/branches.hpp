@@ -21,12 +21,12 @@ public:
         add_branch(branch);
     }
 
-    constexpr auto add_branch(Nibble branch) -> void
+    constexpr void add_branch(Nibble branch)
     {
         branches_.set(branch);
     }
 
-    constexpr auto branch_exists(Nibble branch) -> bool
+    constexpr bool branch_exists(Nibble branch)
     {
         return branches_.test(branch);
     }
@@ -39,6 +39,16 @@ public:
     constexpr static auto capacity()
     {
         return NUMBER_OF_BRANCHES;
+    }
+
+    constexpr size_t size() const
+    {
+        return branches_.count();
+    }
+
+    constexpr bool empty() const
+    {
+        return branches_.none();
     }
 
     // Can make this constexpr in C++23

@@ -19,7 +19,7 @@ private:
 public:
     constexpr Nibble() = default;
 
-    constexpr explicit Nibble(byte_string::value_type nibble)
+    constexpr Nibble(byte_string::value_type nibble)
         : nibble_(nibble & 0x0f)
     {
         // Valid range for nibbles is [0x0, 0xf]

@@ -14,12 +14,9 @@ MONAD_NAMESPACE_BEGIN
 
 namespace test_util
 {
-constexpr auto to_nibbles(std::initializer_list<uint8_t> list)
+inline auto to_nibbles(std::initializer_list<uint8_t> list)
 {
-    using namespace ranges;
-    return list
-        | views::transform([](auto i) { return monad::mpt::Nibble{i}; })
-        | to<monad::mpt::Nibbles>;
+    return list | ranges::to<monad::mpt::Nibbles>();
 }
 } // namespace tests_utils
 

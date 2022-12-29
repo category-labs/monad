@@ -24,8 +24,8 @@ using reference_view_type = reference_type::string_view_type;
 class BaseNode
 {
 private:
-    Path const path_to_node_;
-    reference_type const reference_;
+    Path path_to_node_;
+    reference_type reference_;
 
 public:
     constexpr BaseNode(PathView path_to_node, rlp::Encoding&& node_encoding)
@@ -53,8 +53,8 @@ class BranchNode : public BaseNode
 public:
     using ChildReferences = std::vector<reference_type>;
 private:
-    Branches const branches_;
-    ChildReferences const child_references_;
+    Branches branches_;
+    ChildReferences child_references_;
 
 public:
     constexpr BranchNode(PathView path_to_node,
@@ -78,8 +78,8 @@ private:
 class ExtensionNode : public BaseNode
 {
 private:
-    Path const partial_path_;
-    reference_type const child_reference_;
+    Path partial_path_;
+    reference_type child_reference_;
 
 public:
     constexpr ExtensionNode(PathView path_to_node,
@@ -98,8 +98,8 @@ public:
 class LeafNode : public BaseNode
 {
 private:
-    Path const partial_path_; 
-    rlp::Encoding const value_;
+    Path partial_path_; 
+    rlp::Encoding value_;
 
 public:
     LeafNode(PathView path_to_node,

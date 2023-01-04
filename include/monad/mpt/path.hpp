@@ -162,7 +162,7 @@ public:
     using size_type = typename traits_type::size_type;
 
 protected:
-    // TODO (alee): change this to be a byte array rather than an
+    // TODO: change this to be a byte array rather than an
     // array of nibbles so that it's friendlier on the cache lines
     rep nibbles_;
 
@@ -341,12 +341,3 @@ private:
 }  // namespace mpt
 
 MONAD_NAMESPACE_END
-
-// Specify that PathView is a borrowed range
-//
-// TODO(re-evaluate this if we decide to rework Path similar to be
-// space-efficient, similar to vector of bools)
-//
-// https://en.cppreference.com/w/cpp/ranges/borrowed_range
-template <>
-inline constexpr bool ranges::enable_borrowed_range<monad::mpt::PathView> = true;

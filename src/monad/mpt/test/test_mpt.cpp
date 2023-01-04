@@ -39,7 +39,7 @@ struct TestInitializer
 };
 } // namespace
 
-TEST(MptStructure, Sanity)
+TEST(MptStructure, Small)
 {
     TestInitializer initializer(
     {
@@ -93,6 +93,51 @@ TEST(MptStructure, Single)
                 monad::to_big_endian_byte_string(
                         initializer.block_number())
                 }));
+}
+
+TEST(MptStructure, TwoUnrelated)
+{
+    TestInitializer initializer(
+    {
+        {Path({0x0a, 0x07, 0x01, 0x01, 0x03, 0x05, 0x05}), {}},
+        {Path({0x0b, 0x07, 0x07, 0x0d, 0x03, 0x03, 0x07}), {}},
+    }, 123456789);
+
+    MockDatabaseKey storage;
+
+    EXPECT_NO_THROW(MerklePatriciaTree tree(initializer, storage));
+
+    auto const block = monad::to_big_endian_byte_string(initializer.block_number());
+
+    MockDatabaseKey::rep const expected = {
+        byte_string{0x0a} + block,
+        byte_string{0x0b} + block,
+        byte_string{} + block,
+    };
+    EXPECT_TRUE(std::ranges::equal(storage, expected));
+}
+
+TEST(MptStructure, TwoRelated)
+{
+    TestInitializer initializer(
+    {
+        {Path({0x0a, 0x07, 0x01, 0x01, 0x03, 0x05, 0x05}), {}},
+        {Path({0x0a, 0x07, 0x01, 0x02, 0x03, 0x05, 0x05}), {}},
+    }, 123456789);
+
+    MockDatabaseKey storage;
+
+    EXPECT_NO_THROW(MerklePatriciaTree tree(initializer, storage));
+
+    auto const block = monad::to_big_endian_byte_string(initializer.block_number());
+
+    MockDatabaseKey::rep const expected = {
+        byte_string{0x0a, 0x07, 0x01, 0x01} + block,
+        byte_string{0x0a, 0x07, 0x01, 0x02} + block,
+        byte_string{0x0a, 0x07, 0x01} + block,
+        byte_string{} + block,
+    };
+    EXPECT_TRUE(std::ranges::equal(storage, expected));
 }
 
 TEST(MptStructure, Sample)

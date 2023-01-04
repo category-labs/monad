@@ -12,6 +12,8 @@
 #include <monad/mpt/tree_store_interface.hpp>
 #include <monad/mpt/prefix_groups.hpp>
 
+#include <range/v3/algorithm/all_of.hpp>
+#include <range/v3/algorithm/is_sorted.hpp>
 #include <range/v3/range/conversion.hpp>
 #include <range/v3/view/map.hpp>
 #include <range/v3/view/subrange.hpp>
@@ -83,16 +85,23 @@ public:
         using namespace ranges;
         using namespace std::placeholders;
 
-        // Initializer should be in lexicographically sorted order and
-        // not have duplicates
+        // EXPENSIVE DATA INTEGRITY CHECKS
+        //
+        // Initializer should be in lexicographically sorted order,
+        // not have duplicates, and all keys should be the same size
         //
         // Note: not defining custom comparators for Path because
         // that logic is not as simple as doing a lexicographical
         // comparison
-        assert(std::ranges::is_sorted(
-                    initializer | views::keys | to<std::vector>,
-                    std::bind(std::ranges::lexicographical_compare, _1, _2)));
+        assert(is_sorted(
+                    initializer,
+                    std::bind(std::ranges::lexicographical_compare, _1, _2),
+                    &KeyVal::first));
         assert(std::ranges::adjacent_find(initializer) == initializer.end());
+        assert(initializer.begin() == initializer.end() ||
+                all_of(initializer, [&](auto const& path) {
+                        return path.size() == initializer.begin()->first.size();
+                }, &KeyVal::first));
 
         // This constructor is only valid if the storage is being freshly
         // initialized

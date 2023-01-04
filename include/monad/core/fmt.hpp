@@ -113,6 +113,7 @@ struct fmt::formatter<monad::mpt::ExtensionNode>: public FmtDefaultParse
     }
 };
 
+// shamelessly taken from the boost org (thanks!)
 template<class T> struct fmt::formatter<T, char, std::enable_if_t<
     boost::describe::has_describe_enumerators<T>::value>>
 {

@@ -69,3 +69,28 @@ TEST(MptStructure, Sanity)
     // keys should be inserted in increasing order
     EXPECT_TRUE(std::ranges::equal(storage, expected));
 }
+
+TEST(MptStructure, Empty)
+{
+    TestInitializer initializer({}, 123456789);
+    MockDatabaseKey storage;
+    EXPECT_NO_THROW(MerklePatriciaTree(initializer, storage));
+    EXPECT_TRUE(std::ranges::equal(storage, MockDatabaseKey::rep{}));
+}
+
+TEST(MptStructure, Single)
+{
+    TestInitializer initializer(
+    {
+        {Path({0x0a, 0x07, 0x01, 0x01, 0x03, 0x05, 0x05}), {}},
+    }, 123456789);
+
+    MockDatabaseKey storage;
+
+    EXPECT_NO_THROW(MerklePatriciaTree tree(initializer, storage));
+
+    EXPECT_TRUE(std::ranges::equal(storage, MockDatabaseKey::rep{
+                monad::to_big_endian_byte_string(
+                        initializer.block_number())
+                }));
+}

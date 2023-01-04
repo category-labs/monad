@@ -1,7 +1,7 @@
 #pragma once
 
-#include <variant>
 #include <concepts>
+#include <variant>
 
 #include <monad/config.hpp>
 #include <monad/core/bytes.hpp>
@@ -65,6 +65,8 @@ public:
         , child_references_(std::move(child_references))
     {
     }
+
+    friend struct fmt::formatter<BranchNode>;
 private:
     rlp::Encoding calculate_rlp_encoding(
             Branches, ChildReferences const&)
@@ -73,7 +75,6 @@ private:
         return {};
     }
 };
-
 
 class ExtensionNode : public BaseNode
 {
@@ -93,6 +94,8 @@ public:
     {
         assert(!partial_path_.empty());
     }
+
+    friend struct fmt::formatter<ExtensionNode>;
 };
 
 class LeafNode : public BaseNode
@@ -112,6 +115,8 @@ public:
         , value_(std::move(value))
     {
     };
+
+    friend struct fmt::formatter<LeafNode>;
 };
 
 using Node = std::variant<ExtensionNode, BranchNode, LeafNode>;

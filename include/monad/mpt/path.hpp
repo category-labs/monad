@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <cstddef>
 
+#include <fmt/core.h>
+
 #include <monad/core/byte_string.hpp>
 #include <monad/core/assert.h>
 #include <monad/mpt/nibble.hpp>
@@ -38,10 +40,6 @@ struct BasicPathTraits<Path>
 {
     using rep = Nibbles;
     using size_type = rep::size_type;
-    using iterator = rep::iterator; 
-    using const_iterator = rep::const_iterator;
-    using const_reference = rep::const_reference;
-    using reference = rep::reference;
 };
 
 template <>
@@ -49,9 +47,6 @@ struct BasicPathTraits<PathView>
 {
     using rep = NibblesView;
     using size_type = rep::size_type;
-    using iterator = rep::iterator; 
-    using const_iterator = rep::const_iterator;
-    using const_reference = rep::const_reference;
 };
 
 // Represents a path in the trie data structure. Each element in the
@@ -62,56 +57,28 @@ class BasicPath
 public:
     using traits_type = BasicPathTraits<PathType>;
     using size_type = typename traits_type::size_type;
-    using iterator = typename traits_type::iterator; 
-    using const_iterator = typename traits_type::const_iterator;
-    using const_reference = typename traits_type::const_reference;
 
     constexpr BasicPath() = default;
 
-    constexpr iterator begin() noexcept
+    constexpr PathType& derived()
     {
-        return static_cast<PathType*>(this)->begin();
-    } 
-
-    constexpr const_iterator begin() const noexcept
-    {
-        return static_cast<PathType const* const>(this)->begin();
+        return *static_cast<PathType*>(this);
     }
 
-    constexpr const_iterator cbegin() const noexcept
+    constexpr PathType const& derived() const
     {
-        return static_cast<PathType const* const>(this)->cbegin();
-    } 
-
-    constexpr iterator end() noexcept
-    {
-        return static_cast<PathType*>(this)->end();
-    }
-
-    constexpr const_iterator end() const noexcept
-    {
-        return static_cast<PathType const* const>(this)->end();
-    }
-
-    constexpr const_iterator cend() const noexcept
-    {
-        return static_cast<PathType const* const>(this)->cend();
+        return *static_cast<PathType const*>(this);
     }
 
     // Number of *nibbles* in the path
     constexpr size_type size() const
     {
-        return std::distance(cbegin(), cend());
+        return std::distance(derived().begin(), derived().end());
     }
 
     constexpr bool empty() const
     {
-        return cbegin() == cend();
-    }
-
-    constexpr const_reference at(size_type pos) const
-    {
-        return static_cast<PathType const* const>(this)->at(pos);
+        return derived().begin() == derived().end();
     }
 
     // longest common prefix size
@@ -119,7 +86,7 @@ public:
     {
         auto const min = std::min(size(), path.size());
         for (size_type i = 0; i < min; ++i) {
-            if (at(i) != path.at(i)) {
+            if (derived()[i] != static_cast<PathType const&>(path)[i]) {
                 return i;
             }
         }
@@ -135,7 +102,7 @@ public:
         // If this happens, then there's a bug in the code
         assert(not empty());
 
-        auto it = cbegin();
+        auto it = derived().begin();
 
         byte_string bytes;
 
@@ -165,10 +132,10 @@ public:
         bytes.push_back(first_byte);
 
         // should be an even number of hops away from the end
-        MONAD_ASSERT((std::distance(it, cend()) % 2) == 0);
+        MONAD_ASSERT((std::distance(it, derived().end()) % 2) == 0);
 
         // Should have an even number of nibbles to process now
-        while (it != cend()) {
+        while (it != derived().end()) {
             // Combine both nibbles and then advance past them
             bytes.push_back((*it << 4) | *std::next(it));
             std::advance(it, 2);
@@ -190,7 +157,7 @@ public:
         // if specialized.
         //
         // Thus, the long form.
-        return std::ranges::equal(cbegin(), cend(), path.cbegin(), path.cend());
+        return std::ranges::equal(derived().begin(), derived().end(), path.begin(), path.end());
     }
 
 
@@ -208,9 +175,6 @@ public:
     using traits_type = BasicPathTraits<PathType>;
     using rep = typename traits_type::rep;
     using size_type = typename traits_type::size_type;
-    using iterator = typename traits_type::iterator; 
-    using const_iterator = typename traits_type::const_iterator;
-    using const_reference = typename traits_type::const_reference;
 
 protected:
     // TODO (alee): change this to be a byte array rather than an
@@ -234,42 +198,27 @@ public:
     {
     }
 
-    constexpr iterator begin() noexcept
+    constexpr auto begin() noexcept
     {
         return nibbles_.begin();
     } 
 
-    constexpr const_iterator begin() const noexcept
+    constexpr auto begin() const noexcept
     {
-        return cbegin();
+        return nibbles_.begin();
     } 
 
-    constexpr const_iterator cbegin() const noexcept
-    {
-        return nibbles_.cbegin();
-    } 
-
-    constexpr iterator end() noexcept
+    constexpr auto end() noexcept
     {
         return nibbles_.end();
     }
 
-    constexpr const_iterator end() const noexcept
+    constexpr auto end() const noexcept
     {
-        return cend();
+        return nibbles_.end();
     }
 
-    constexpr const_iterator cend() const noexcept
-    {
-        return nibbles_.cend();
-    }
-
-    constexpr const_reference at(size_type pos) const
-    {
-        return nibbles_.at(pos);
-    }
-
-    constexpr const_reference operator[](size_type pos) const
+    constexpr auto operator[](size_type pos) const
     {
         return nibbles_[pos];
     }
@@ -278,6 +227,12 @@ public:
     {
         return nibbles_ | ranges::to<byte_string>();
     }
+
+    auto span() const
+    {
+        return std::span(nibbles_);
+    }
+
 };
 } // namespace impl
 
@@ -292,14 +247,14 @@ public:
 
     constexpr PathView prefix(size_type n) const
     {
-        assert(n < size());
-        return PathView(cbegin(), std::next(cbegin(), n));
+        assert(n <= size());
+        return PathView(begin(), std::next(begin(), n));
     }
 
     constexpr PathView suffix(size_type n) const
     {
-        assert(n < size());
-        return PathView(std::prev(cend(), n), cend());
+        assert(n <= size());
+        return PathView(std::prev(end(), n), end());
     }
 
     constexpr PathView& operator=(PathView const&) = default;
@@ -310,12 +265,11 @@ class Path : public impl::PathTemplate<Path>
 public:
     using base = impl::PathTemplate<Path>;
     using traits_type = impl::BasicPathTraits<Path>;
-    using reference = traits_type::reference;
 
     using base::base;
 
     constexpr Path(PathView view)
-        : Path(view.cbegin(), view.cend())
+        : Path(view.begin(), view.end())
     {
     }
 
@@ -369,12 +323,7 @@ public:
 
     operator PathView() const
     {
-        return PathView(cbegin(), cend());
-    }
-
-    constexpr reference operator[](size_type pos)
-    {
-        return nibbles_[pos];
+        return PathView(begin(), end());
     }
 
     constexpr Path& operator=(Path const&) = default;
@@ -404,3 +353,19 @@ MONAD_NAMESPACE_END
 // https://en.cppreference.com/w/cpp/ranges/borrowed_range
 template <>
 inline constexpr bool ranges::enable_borrowed_range<monad::mpt::PathView> = true;
+
+template<>
+struct fmt::formatter<monad::mpt::Path>
+{
+    template<typename ParseContext>
+    constexpr auto parse(ParseContext& ctx)
+    {
+        return ctx.begin();
+    }
+
+    template<typename FormatContext>
+    auto format(monad::mpt::Path const& path, FormatContext& ctx)
+    {
+        return fmt::format_to(ctx.out(), "{}", path.underlying_bytes());
+    }
+};

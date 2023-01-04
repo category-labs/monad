@@ -28,6 +28,7 @@ conan_cmake_install(
 find_package(RocksDB)
 find_package(range-v3 REQUIRED)
 find_package(tl-expected REQUIRED)
+find_package(fmt REQUIRED)
 
 ############
 ### deps
@@ -72,7 +73,6 @@ endfunction()
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/mpt/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
 
-
 ############
 ### libs
 ############
@@ -83,8 +83,10 @@ add_library(monad STATIC
     # core
     ${PROJECT_SOURCE_DIR}/include/monad/core/address.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/assert.h
+    ${PROJECT_SOURCE_DIR}/include/monad/core/boost.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/byte_string.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/bytes.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/core/fmt.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/huge_mem.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/int.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/likely.h
@@ -110,6 +112,9 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/mpt/branches.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/mpt/path.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/mpt/nibble.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/mpt/merkle_patricia_tree.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/mpt/node.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/mpt/tree_store_interface.hpp
 )
 
 target_include_directories(monad
@@ -121,10 +126,11 @@ target_link_libraries(monad
     PRIVATE PkgConfig::brotli
     PRIVATE RocksDB::RocksDB
 
+    PUBLIC evmc
+    PUBLIC fmt::fmt
+    PUBLIC intx::intx
     PUBLIC range-v3::range-v3
     PUBLIC tl::expected
-    PUBLIC evmc
-    PUBLIC intx::intx
 )
 target_link_options(monad
     PRIVATE LINKER:-z,defs

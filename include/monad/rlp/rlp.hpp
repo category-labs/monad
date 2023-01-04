@@ -1,13 +1,16 @@
 #pragma once
 
 #include <intx/intx.hpp>
+
 #include <limits>
+#include <concepts>
+#include <cassert>
+#include <span>
+
 #include <monad/config.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/int.hpp>
-#include <concepts>
-#include <cassert>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -95,6 +98,11 @@ public:
     constexpr auto bytes() const -> byte_string_view
     {
         return bytes_;
+    }
+
+    constexpr auto span() const
+    {
+        return std::span(bytes_);
     }
 
     constexpr auto is_list() const

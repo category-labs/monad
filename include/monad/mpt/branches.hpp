@@ -12,9 +12,12 @@ namespace mpt
 {
 class Branches
 {
-private:
+public:
     constexpr static auto NUMBER_OF_BRANCHES = 16;
+
+private:
     std::bitset<NUMBER_OF_BRANCHES> branches_;
+
 public:
     constexpr explicit Branches(Nibble branch)
     {
@@ -26,7 +29,7 @@ public:
         branches_.set(branch);
     }
 
-    constexpr bool branch_exists(Nibble branch)
+    constexpr bool branch_exists(Nibble branch) const
     {
         return branches_.test(branch);
     }

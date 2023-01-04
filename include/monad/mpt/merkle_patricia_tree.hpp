@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <iterator>
 #include <optional>
 
@@ -11,6 +12,11 @@
 #include <range/v3/view/transform.hpp>
 #include <range/v3/view/subrange.hpp>
 #include <range/v3/range/conversion.hpp>
+
+#include <tl/expected.hpp>
+#include <monad/core/boost.hpp>
+
+#include <monad/core/fmt.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -24,16 +30,18 @@ using KeyVal = std::pair<Path, rlp::Encoding>;
 template <typename T>
 concept TreeInitializer = requires (T object)
 {
-    {object()} -> std::same_as<KeyVal>;
+    {object()} -> std::same_as<std::optional<KeyVal>>;
     {object.block_number()} -> std::same_as<uint64_t>;
-    {object.done()} -> std::same_as<bool>;
 };
 
-template <typename TreeStore>
+template <typename T>
+concept TreeStore = std::derived_from<T, TreeStoreInterface<T>>;
+
+template <TreeStore Storage>
 class MerklePatriciaTree
 {
 private:
-    TreeStore storage_;
+    Storage& storage_;
 
 public:
     // High level algorithm for initializing the MerklePatriciaTree is
@@ -60,7 +68,8 @@ public:
     //         BuildExtensionAndOrBranch. Recall, that the length of the
     //         previous max common prefix is being kept track by
     //         PrefixGroups
-    MerklePatriciaTree(TreeInitializer auto initializer)
+    MerklePatriciaTree(TreeInitializer auto& initializer, Storage& storage)
+        : storage_(storage)
     {
         struct Current
         {
@@ -74,8 +83,8 @@ public:
             .block_number=initializer.block_number()
         };
 
-        while (!initializer.done()) {
-            auto const [next, next_leaf_value] = initializer(); 
+        while (auto const& entry = initializer()) {
+            auto const& [next, next_leaf_value] = *entry; 
 
             // keys should not be empty
             assert(!next.empty());
@@ -142,7 +151,9 @@ private:
         auto const& [current, next] = paths;
 
         // Get the prefix lengths
-        auto const [prev_prefix_size, _] = state.groups.get_current_group();
+        auto const prev_prefix_size = state.groups.empty()
+            ? 0
+            : state.groups.get_current_group().length;
         auto const next_prefix_size = current.common_prefix_size(next); 
         auto const max_prefix_size = std::max(prev_prefix_size, next_prefix_size);
 
@@ -211,7 +222,9 @@ private:
                 remainder,
                 std::move(leaf_value));
 
-        storage_.insert(leaf_node, state.block_number);
+        storage_.insert(leaf_node, state.block_number).map_error([&](auto error) {
+            handle_storage_error(error, leaf_node, state.block_number);
+        });
         state.nodes.emplace_back(std::move(leaf_node));
         
         optionally_close_out_prefix_group(paths, common_prefix_sizes, state);
@@ -273,7 +286,9 @@ private:
                 branches,
                 std::move(child_references));
 
-        storage_.insert(branch_node, block_number);
+        storage_.insert(branch_node, block_number).map_error([&](auto error) {
+            handle_storage_error(error, branch_node, state.block_number);
+        });
 
         // Hijack the first element for the branch node reference 
         *start = std::move(branch_node);
@@ -344,13 +359,29 @@ private:
             std::visit(&BaseNode::reference_view, child)
         );
 
-        storage_.insert(extension_node, state.block_number);
+        storage_.insert(extension_node, state.block_number)
+                .map_error([&](auto error) {
+                    handle_storage_error(error, extension_node,
+                                         state.block_number);
+                });
 
         // hijack the child node and replace with extension node
         child = std::move(extension_node);
 
         optionally_close_out_prefix_group(
                 paths, common_prefix_sizes, state);
+    }
+
+private:
+    template <typename T>
+    void handle_storage_error(typename Storage::ErrorCode error,
+                              T const& node,
+                              uint64_t block_number)
+    {
+        // TODO: standardize logging 
+        fmt::print(stderr,
+                  "ERROR node insertion failed: error={} node={}, "
+                  "block_number={}\n", error, node, block_number);
     }
 };
 } // namespace mpt

@@ -1,10 +1,13 @@
 #pragma once
 
-#include <monad/config.hpp>
-#include <monad/core/byte_string.hpp>
 #include <cstddef>
 #include <cassert>
 #include <string>
+#include <span>
+
+#include <monad/config.hpp>
+#include <monad/core/byte_string.hpp>
+#include <fmt/core.h>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -33,10 +36,12 @@ public:
     {
         return nibble_;
     }
+
+    friend struct fmt::formatter<Nibble>;
 };
 
-using Nibbles = std::basic_string<Nibble>;
-using NibblesView = std::basic_string_view<Nibble>;
+using Nibbles = std::vector<Nibble>;
+using NibblesView = std::span<Nibble const>;
 } // namespace mpt
 
 MONAD_NAMESPACE_END

@@ -3,6 +3,7 @@ rocksdb/6.29.5
 range-v3/0.12.0
 tl-expected/20190710@#43797426a53a4d0f86e43562d9b6924e
 boost/1.81.0@#bee81c3eabd079435aab7efe4056c07d
+fmt/9.1.0@#811e918ca4b4e0b9ddd6d5a2883efa82
 
 [generators]
 cmake_find_package

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <bits/ranges_algo.h>
 #include <concepts>
 #include <iterator>
 #include <optional>
@@ -9,9 +11,10 @@
 #include <monad/mpt/tree_store_interface.hpp>
 #include <monad/mpt/prefix_groups.hpp>
 
-#include <range/v3/view/transform.hpp>
-#include <range/v3/view/subrange.hpp>
 #include <range/v3/range/conversion.hpp>
+#include <range/v3/view/map.hpp>
+#include <range/v3/view/subrange.hpp>
+#include <range/v3/view/transform.hpp>
 
 #include <tl/expected.hpp>
 #include <monad/core/boost.hpp>
@@ -44,6 +47,11 @@ private:
     Storage& storage_;
 
 public:
+    MerklePatriciaTree(Storage& storage)
+        : storage_(storage)
+    {
+    }
+
     // High level algorithm for initializing the MerklePatriciaTree is
     // as follows:
     // 1) Compute common prefixes between (prev, current, next)
@@ -71,6 +79,20 @@ public:
     MerklePatriciaTree(TreeInitializer auto& initializer, Storage& storage)
         : storage_(storage)
     {
+        using namespace ranges;
+        using namespace std::placeholders;
+
+        // Initializer should be in lexicographically sorted order and
+        // not have duplicates
+        //
+        // Note: not defining custom comparators for Path because
+        // that logic is not as simple as doing a lexicographical
+        // comparison
+        assert(std::ranges::is_sorted(
+                    initializer | views::keys | to<std::vector>,
+                    std::bind(std::ranges::lexicographical_compare, _1, _2)));
+        assert(std::ranges::adjacent_find(initializer) == initializer.end());
+
         struct Current
         {
             Path path;

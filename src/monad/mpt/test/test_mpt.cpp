@@ -1,15 +1,14 @@
+#include <algorithm>
 #include <gtest/gtest.h>
 #include <gmock/gmock-matchers.h>
 
 #include "mock_database.hpp"
 #include "monad/core/byte_string.hpp"
-#include "util.hpp"
 
 #include <monad/mpt/merkle_patricia_tree.hpp>
 
 using namespace monad;
 using namespace monad::mpt;
-using namespace monad::test_util;
 
 namespace
 {
@@ -26,14 +25,19 @@ struct TestInitializer
     {
     }
 
-    bool done() const
+    auto begin() const
     {
-        return index_ == state_.size();
+        return state_.begin();
+    }
+
+    auto end() const
+    {
+        return state_.end();
     }
 
     std::optional<monad::mpt::KeyVal> operator()()
     {
-        if (MONAD_UNLIKELY(done())) {
+        if (MONAD_UNLIKELY(index_ >= state_.size())) {
             return std::nullopt;
         }
 
@@ -51,10 +55,10 @@ TEST(MptStructure, Sanity)
 {
     TestInitializer initializer(
     {
-        {Path(to_nibbles({0x0a, 0x07, 0x01, 0x01, 0x03, 0x05, 0x05})), {}},
-        {Path(to_nibbles({0x0a, 0x07, 0x07, 0x0d, 0x03, 0x03, 0x07})), {}},
-        {Path(to_nibbles({0x0a, 0x07, 0x07, 0x0d, 0x03, 0x09, 0x07})), {}},
-        {Path(to_nibbles({0x0a, 0x07, 0x0f, 0x09, 0x03, 0x06, 0x05})), {}},
+        {Path({0x0a, 0x07, 0x01, 0x01, 0x03, 0x05, 0x05}), {}},
+        {Path({0x0a, 0x07, 0x07, 0x0d, 0x03, 0x03, 0x07}), {}},
+        {Path({0x0a, 0x07, 0x07, 0x0d, 0x03, 0x09, 0x07}), {}},
+        {Path({0x0a, 0x07, 0x0f, 0x09, 0x03, 0x06, 0x05}), {}},
     }, 123456789);
 
     MockDatabaseKey storage;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "monad/mpt/path.hpp"
 #include <monad/config.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/rlp/rlp.hpp>
@@ -24,13 +25,30 @@ struct FmtDefaultParse
     }
 };
 
-template<>
-struct fmt::formatter<monad::mpt::Nibble>: public fmt::formatter<monad::byte_string::value_type>
+template <>
+struct fmt::formatter<monad::mpt::Nibble>: public FmtDefaultParse
 {
-    template<typename FormatContext>
-    auto format(monad::mpt::Nibble const& nibble, FormatContext& ctx) const
+    auto format(monad::mpt::Nibble const& nibble, format_context& ctx) const
     {
         return fmt::format_to(ctx.out(), "{:#2x}", nibble.nibble_);
+    }
+};
+
+template <>
+struct fmt::formatter<monad::mpt::Path>: public FmtDefaultParse
+{
+    auto format(monad::mpt::Path const& path, format_context& ctx) const
+    {
+        return fmt::format_to(ctx.out(), "{}", path.span());
+    }
+};
+
+template <>
+struct fmt::formatter<monad::mpt::PathView>: public FmtDefaultParse
+{
+    auto format(monad::mpt::PathView const& path, format_context& ctx) const
+    {
+        return fmt::format_to(ctx.out(), "{}", path.span());
     }
 };
 
@@ -51,7 +69,7 @@ struct fmt::formatter<monad::mpt::BaseNode>: public FmtDefaultParse
     auto format(monad::mpt::BaseNode const& node, FormatContext& ctx) const
     {
         return fmt::format_to(ctx.out(), "path_to_node={} reference={}",
-                node.path_to_node_view().span(),
+                node.path_to_node_view(),
                 std::span(node.reference_view()));
     }
 };
@@ -64,7 +82,7 @@ struct fmt::formatter<monad::mpt::LeafNode>: public FmtDefaultParse
     {
         return fmt::format_to(ctx.out(), "LeafNode[{} partial_path={} value={}]",
                 static_cast<monad::mpt::BaseNode const&>(node),
-                node.partial_path_.span(), node.value_);
+                node.partial_path_, node.value_);
     }
 };
 
@@ -109,7 +127,7 @@ struct fmt::formatter<monad::mpt::ExtensionNode>: public FmtDefaultParse
         return fmt::format_to(ctx.out(),
                 "ExtensionNode[{} partial_path={} child_reference={::x}]",
                 static_cast<monad::mpt::BaseNode const&>(node),
-                node.partial_path_.span(), std::span(node.child_reference_));
+                node.partial_path_, std::span(node.child_reference_));
     }
 };
 

@@ -60,7 +60,8 @@ public:
     {
         storage_.push_back(byte_string{key});
 
-        return {};
+        return tl::unexpected(ErrorCode::DUPLICATE);
+        // return {};
     }
 };
 

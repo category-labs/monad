@@ -146,21 +146,6 @@ public:
 
     constexpr bool operator==(BasicPath const&) const = default;
 
-    template <typename Comparable>
-        requires std::same_as<Comparable, Nibbles> or
-                 std::same_as<Comparable, NibblesView>
-    bool operator==(Comparable const& path) const
-    {
-        // Note: Unfortunately the R&& overload (2, in cppreference)
-        // doesn't work here because clang uses std::is_array_v for
-        // const reference ranges, which the standard specifies as UB
-        // if specialized.
-        //
-        // Thus, the long form.
-        return std::ranges::equal(derived().begin(), derived().end(), path.begin(), path.end());
-    }
-
-
 protected:
     static constexpr auto PREFIX_EXTENSION_EVEN = 0x00;
     static constexpr auto PREFIX_EXTENSION_ODD = 0x10;
@@ -228,11 +213,15 @@ public:
         return nibbles_ | ranges::to<byte_string>();
     }
 
-    auto span() const
+    constexpr auto span() const
     {
         return std::span(nibbles_);
     }
 
+    constexpr bool operator==(PathTemplate const& t) const
+    {
+        return std::ranges::equal(begin(), end(), t.begin(), t.end());
+    }
 };
 } // namespace impl
 
@@ -258,6 +247,8 @@ public:
     }
 
     constexpr PathView& operator=(PathView const&) = default;
+
+    constexpr bool operator==(PathView const&) const = default;
 };
 
 class Path : public impl::PathTemplate<Path>
@@ -274,6 +265,12 @@ public:
     }
 
     constexpr Path(Path const&) = default;
+
+    constexpr explicit Path(std::initializer_list<Nibble> list)
+        : impl::PathTemplate<Path>(Nibbles{list})
+    {
+    }
+
 
     struct FromRawBytes {};
     struct FromCompactEncoding {};
@@ -353,19 +350,3 @@ MONAD_NAMESPACE_END
 // https://en.cppreference.com/w/cpp/ranges/borrowed_range
 template <>
 inline constexpr bool ranges::enable_borrowed_range<monad::mpt::PathView> = true;
-
-template<>
-struct fmt::formatter<monad::mpt::Path>
-{
-    template<typename ParseContext>
-    constexpr auto parse(ParseContext& ctx)
-    {
-        return ctx.begin();
-    }
-
-    template<typename FormatContext>
-    auto format(monad::mpt::Path const& path, FormatContext& ctx)
-    {
-        return fmt::format_to(ctx.out(), "{}", path.underlying_bytes());
-    }
-};

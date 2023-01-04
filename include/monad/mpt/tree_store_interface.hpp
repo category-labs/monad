@@ -61,12 +61,6 @@ public:
 
         return derived().insert(key, std::visit(&BaseNode::reference_view, node));
     }
-
-    // Node lower_bound(byte_string_view key,
-    //                  std::optional<iterator> start = std::nullopt)
-    // {
-    //     derived().lower_bound(key, start);
-    // }
 };
 } // namespace mpt
 

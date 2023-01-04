@@ -94,6 +94,10 @@ public:
                     std::bind(std::ranges::lexicographical_compare, _1, _2)));
         assert(std::ranges::adjacent_find(initializer) == initializer.end());
 
+        // This constructor is only valid if the storage is being freshly
+        // initialized
+        assert(storage.empty());
+
         struct Current
         {
             Path path;
@@ -348,49 +352,44 @@ private:
         auto const remainder = current.suffix(
                 current.size() - size_of_path_to_node); 
 
-        // Size of remainder is 0, no extension or branch nodes needed 
-        if (remainder.empty()) {
-            return;
+        // Add an extension node only if remainder is non-empty
+        if (!remainder.empty()) {
+            auto& child = state.nodes.back();
+            auto const path_to_node = current.prefix(size_of_path_to_node);
+
+            // path to extension node should be strictly a substring of the
+            // child path to node
+            auto const path_to_child =
+                std::visit(&BaseNode::path_to_node_view, child);
+            assert(path_to_node.common_prefix_size(path_to_child)
+                    == path_to_node.size());
+
+            // path to extension node should be smaller than path to child
+            assert(path_to_node.size() < path_to_child.size());
+
+            using namespace ranges;
+            auto const partial_path = path_to_child
+                | views::drop(path_to_node.size())
+                | to<PathView>;
+
+            // child of extension node must be a branch node
+            assert(std::get_if<BranchNode>(&child) != nullptr);
+
+            auto const extension_node = ExtensionNode(
+                path_to_node,
+                partial_path,
+                std::visit(&BaseNode::reference_view, child)
+            );
+
+            storage_.insert(extension_node, state.block_number)
+                    .map_error([&](auto error) {
+                        handle_storage_error(error, extension_node,
+                                             state.block_number);
+                    });
+
+            // hijack the child node and replace with extension node
+            child = std::move(extension_node);
         }
-
-        // Does not make sense to generate an extension node if no nodes
-        // currently
-        assert(!state.nodes.empty());
-
-        auto& child = state.nodes.back();
-        auto const path_to_node = current.prefix(size_of_path_to_node);
-
-        // path to extension node should be strictly a substring of the
-        // child path to node
-        auto const path_to_child = std::visit(&BaseNode::path_to_node_view, child);
-        assert(path_to_node.common_prefix_size(path_to_child)
-                == path_to_node.size());
-
-        // path to extension node should be smaller than path to child
-        assert(path_to_node.size() < path_to_child.size());
-
-        using namespace ranges;
-        auto const partial_path = path_to_child
-            | views::drop(path_to_node.size())
-            | to<PathView>;
-
-        // child of extension node must be a branch node
-        assert(std::get_if<BranchNode>(&child) != nullptr);
-
-        auto const extension_node = ExtensionNode(
-            path_to_node,
-            partial_path,
-            std::visit(&BaseNode::reference_view, child)
-        );
-
-        storage_.insert(extension_node, state.block_number)
-                .map_error([&](auto error) {
-                    handle_storage_error(error, extension_node,
-                                         state.block_number);
-                });
-
-        // hijack the child node and replace with extension node
-        child = std::move(extension_node);
 
         optionally_close_out_prefix_group(
                 paths, common_prefix_sizes, state);

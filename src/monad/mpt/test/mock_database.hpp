@@ -24,6 +24,7 @@ struct TreeStoreInterfaceTraits<MockDatabaseKey>
     using iterator = rep::iterator;
 };
 
+// Used for testing the structure of the MPT. Ignores the value
 class MockDatabaseKey : public TreeStoreInterface<MockDatabaseKey>
 {
 public:
@@ -34,29 +35,30 @@ private:
     rep storage_;
 
 public:
-    auto begin()
+    constexpr auto begin()
     {
         return storage_.begin();
     }
 
-    auto end()
+    constexpr auto end()
     {
         return storage_.end();
     }
 
-    auto begin() const
+    constexpr auto begin() const
     {
         return storage_.begin();
     }
 
-    auto end() const
+    constexpr auto end() const
     {
         return storage_.end();
     }
 
     using TreeStoreInterface::insert;
 
-    tl::expected<void, ErrorCode> insert(byte_string_view key, byte_string_view)
+    tl::expected<void, ErrorCode> insert(
+            byte_string_view key, byte_string_view /*value*/)
     {
         storage_.push_back(byte_string{key});
 

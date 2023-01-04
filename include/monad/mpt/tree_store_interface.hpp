@@ -36,14 +36,14 @@ public:
         return *static_cast<TreeStore*>(this);
     }
 
-    constexpr iterator begin()
+    constexpr TreeStore const& derived() const
     {
-        return derived().begin();
+        return *static_cast<TreeStore const*>(this);
     }
 
-    constexpr iterator end()
+    bool empty() const
     {
-        return derived().end();
+        return derived().begin() >= derived().end();
     }
 
     tl::expected<void, ErrorCode> insert(Node const& node, uint64_t block_number)

@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <gtest/gtest.h>
-#include <gmock/gmock-matchers.h>
 
 #include "mock_database.hpp"
 #include "monad/core/byte_string.hpp"
@@ -15,12 +14,10 @@ namespace
 struct TestInitializer
 {
     std::vector<monad::mpt::KeyVal> const state_;
-    size_t index_;
     uint64_t block_number_;
 
     TestInitializer(std::vector<monad::mpt::KeyVal>&& state, uint64_t block_number)
         : state_(std::move(state))
-        , index_(0)
         , block_number_(block_number)
     {
     }
@@ -33,15 +30,6 @@ struct TestInitializer
     auto end() const
     {
         return state_.end();
-    }
-
-    std::optional<monad::mpt::KeyVal> operator()()
-    {
-        if (MONAD_UNLIKELY(index_ >= state_.size())) {
-            return std::nullopt;
-        }
-
-        return state_[index_++];
     }
 
     uint64_t block_number() const

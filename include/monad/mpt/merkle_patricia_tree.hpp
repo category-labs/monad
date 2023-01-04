@@ -5,6 +5,7 @@
 #include <concepts>
 #include <iterator>
 #include <optional>
+#include <ranges>
 
 #include <monad/config.hpp>
 #include <monad/rlp/rlp.hpp>
@@ -33,7 +34,7 @@ using KeyVal = std::pair<Path, rlp::Encoding>;
 template <typename T>
 concept TreeInitializer = requires (T object)
 {
-    {object()} -> std::same_as<std::optional<KeyVal>>;
+    {std::ranges::range<T>};
     {object.block_number()} -> std::same_as<uint64_t>;
 };
 
@@ -105,8 +106,9 @@ public:
             .block_number=initializer.block_number()
         };
 
-        while (auto const& entry = initializer()) {
-            auto const& [next, next_leaf_value] = *entry; 
+        for (auto const& entry : initializer)
+        {
+            auto const& [next, next_leaf_value] = entry; 
 
             // keys should not be empty
             assert(!next.empty());

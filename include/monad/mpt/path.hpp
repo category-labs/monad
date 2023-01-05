@@ -110,25 +110,15 @@ public:
         return std::ranges::equal(begin(), end(), t.begin(), t.end());
     }
 
-    constexpr PathType& derived()
-    {
-        return *static_cast<PathType*>(this);
-    }
-
-    constexpr PathType const& derived() const
-    {
-        return *static_cast<PathType const*>(this);
-    }
-
     // Number of *nibbles* in the path
     constexpr size_type size() const
     {
-        return std::distance(derived().begin(), derived().end());
+        return std::distance(begin(), end());
     }
 
     constexpr bool empty() const
     {
-        return derived().begin() == derived().end();
+        return begin() >= end();
     }
 
     // longest common prefix size
@@ -136,7 +126,7 @@ public:
     {
         auto const min = std::min(size(), path.size());
         for (size_type i = 0; i < min; ++i) {
-            if (derived()[i] != static_cast<PathType const&>(path)[i]) {
+            if ((*this)[i] != path[i]) {
                 return i;
             }
         }
@@ -152,7 +142,7 @@ public:
         // If this happens, then there's a bug in the code
         assert(not empty());
 
-        auto it = derived().begin();
+        auto it = begin();
 
         byte_string bytes;
 
@@ -182,10 +172,10 @@ public:
         bytes.push_back(first_byte);
 
         // should be an even number of hops away from the end
-        MONAD_ASSERT((std::distance(it, derived().end()) % 2) == 0);
+        MONAD_ASSERT((std::distance(it, end()) % 2) == 0);
 
         // Should have an even number of nibbles to process now
-        while (it != derived().end()) {
+        while (it != end()) {
             // Combine both nibbles and then advance past them
             bytes.push_back((*it << 4) | *std::next(it));
             std::advance(it, 2);

@@ -37,6 +37,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 
 set(BUILD_SHARED_LIBS OFF)
+set(ETHASH_BUILD_TESTS OFF)
 
 add_subdirectory(third_party/ethash)
 add_subdirectory(third_party/evmone)

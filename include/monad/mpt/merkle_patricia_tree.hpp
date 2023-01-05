@@ -8,7 +8,8 @@
 #include <ranges>
 
 #include <monad/config.hpp>
-#include <monad/rlp/rlp.hpp>
+#include <monad/core/boost.hpp>
+#include <monad/core/fmt.hpp>
 #include <monad/mpt/tree_store_interface.hpp>
 #include <monad/mpt/prefix_groups.hpp>
 
@@ -20,9 +21,6 @@
 #include <range/v3/view/transform.hpp>
 
 #include <tl/expected.hpp>
-#include <monad/core/boost.hpp>
-
-#include <monad/core/fmt.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -31,12 +29,16 @@ namespace mpt
 
 using KeyVal = std::pair<Path, rlp::Encoding>;
 
+template <typename T>
+concept DecaysToKeyVal = std::same_as<std::decay_t<T>, KeyVal>;
+
 // TreeInitializer object is assumed to return KeyVal objects
 // in lexicographic order sorted on the path
 template <typename T>
 concept TreeInitializer = requires (T object)
 {
     {std::ranges::range<T>};
+    {*object.begin()} -> DecaysToKeyVal;
     {object.block_number()} -> std::same_as<uint64_t>;
 };
 
@@ -119,8 +121,7 @@ public:
             .block_number=initializer.block_number()
         };
 
-        for (auto const& entry : initializer)
-        {
+        for (auto const& entry : initializer) {
             auto const& [next, next_leaf_value] = entry; 
 
             // keys should not be empty
@@ -262,6 +263,7 @@ private:
         storage_.insert(leaf_node, state.block_number).map_error([&](auto error) {
             handle_storage_error(error, leaf_node, state.block_number);
         });
+
         state.nodes.emplace_back(std::move(leaf_node));
         
         optionally_close_out_prefix_group(paths, common_prefix_sizes, state);

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "intx/intx.hpp"
-#include <monad/config.hpp>
+#include <array>
+#include <cstddef>
 
 // please do not remove this include
 //
@@ -10,12 +10,15 @@
 // is needed for YCM to be happy
 #include <limits>
 
-#include <boost/static_string/static_string.hpp>
-
-#include <array>
-#include <cstddef>
 #include <string>
 #include <string_view>
+
+#include <boost/static_string/static_string.hpp>
+
+#include <intx/intx.hpp>
+
+#include <monad/config.hpp>
+
 
 MONAD_NAMESPACE_BEGIN
 

@@ -100,11 +100,6 @@ public:
         return bytes_;
     }
 
-    constexpr auto span() const
-    {
-        return std::span(bytes_);
-    }
-
     constexpr auto is_list() const
     {
         return not bytes_.empty() and bytes_.front() >= impl::LIST_55_MIN;

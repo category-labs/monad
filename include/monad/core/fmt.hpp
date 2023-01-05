@@ -39,7 +39,7 @@ struct fmt::formatter<monad::mpt::Path>: public FmtDefaultParse
 {
     auto format(monad::mpt::Path const& path, format_context& ctx) const
     {
-        return fmt::format_to(ctx.out(), "{}", path.span());
+        return fmt::format_to(ctx.out(), "{}", std::span(path));
     }
 };
 
@@ -48,7 +48,7 @@ struct fmt::formatter<monad::mpt::PathView>: public FmtDefaultParse
 {
     auto format(monad::mpt::PathView const& path, format_context& ctx) const
     {
-        return fmt::format_to(ctx.out(), "{}", path.span());
+        return fmt::format_to(ctx.out(), "{}", std::span(path));
     }
 };
 
@@ -58,7 +58,7 @@ struct fmt::formatter<monad::rlp::Encoding>: public FmtDefaultParse
     template<typename FormatContext>
     auto format(monad::rlp::Encoding const& encoding, FormatContext& ctx) const
     {
-        return fmt::format_to(ctx.out(), "{::x}", encoding.span());
+        return fmt::format_to(ctx.out(), "{::x}", std::span(encoding.bytes()));
     }
 };
 

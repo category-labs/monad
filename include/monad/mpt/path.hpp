@@ -56,9 +56,59 @@ class BasicPath
 {
 public:
     using traits_type = BasicPathTraits<PathType>;
+    using rep = typename traits_type::rep;
     using size_type = typename traits_type::size_type;
 
     constexpr BasicPath() = default;
+
+    template <typename InputIt>
+    constexpr BasicPath(InputIt first, InputIt last)
+        : nibbles_(first, last)
+    {
+    }
+
+    template <typename NibblesType>
+        requires std::same_as<NibblesType, Nibbles> or
+                 std::same_as<NibblesType, NibblesView>
+    constexpr explicit BasicPath(NibblesType const& nibbles)
+        : nibbles_(nibbles)
+    {
+    }
+
+    constexpr auto begin() noexcept
+    {
+        return nibbles_.begin();
+    } 
+
+    constexpr auto begin() const noexcept
+    {
+        return nibbles_.begin();
+    } 
+
+    constexpr auto end() noexcept
+    {
+        return nibbles_.end();
+    }
+
+    constexpr auto end() const noexcept
+    {
+        return nibbles_.end();
+    }
+
+    constexpr auto operator[](size_type pos) const
+    {
+        return nibbles_[pos];
+    }
+
+    byte_string underlying_bytes() const
+    {
+        return nibbles_ | ranges::to<byte_string>();
+    }
+
+    constexpr bool operator==(BasicPath const& t) const
+    {
+        return std::ranges::equal(begin(), end(), t.begin(), t.end());
+    }
 
     constexpr PathType& derived()
     {
@@ -144,92 +194,23 @@ public:
         return bytes;
     }
 
-    constexpr bool operator==(BasicPath const&) const = default;
-
 protected:
     static constexpr auto PREFIX_EXTENSION_EVEN = 0x00;
     static constexpr auto PREFIX_EXTENSION_ODD = 0x10;
     static constexpr auto PREFIX_LEAF_EVEN = 0x20;
     static constexpr auto PREFIX_LEAF_ODD = 0x30;
-};
 
-template <typename PathType>
-class PathTemplate : public impl::BasicPath<PathType>
-{
-public:
-    using traits_type = BasicPathTraits<PathType>;
-    using rep = typename traits_type::rep;
-    using size_type = typename traits_type::size_type;
-
-protected:
     // TODO: change this to be a byte array rather than an
     // array of nibbles so that it's friendlier on the cache lines
     rep nibbles_;
-
-public:
-    constexpr PathTemplate() = default;
-
-    template <typename InputIt>
-    constexpr PathTemplate(InputIt first, InputIt last)
-        : nibbles_(first, last)
-    {
-    }
-
-    template <typename NibblesType>
-        requires std::same_as<NibblesType, Nibbles> or
-                 std::same_as<NibblesType, NibblesView>
-    constexpr explicit PathTemplate(NibblesType const& nibbles)
-        : nibbles_(nibbles)
-    {
-    }
-
-    constexpr auto begin() noexcept
-    {
-        return nibbles_.begin();
-    } 
-
-    constexpr auto begin() const noexcept
-    {
-        return nibbles_.begin();
-    } 
-
-    constexpr auto end() noexcept
-    {
-        return nibbles_.end();
-    }
-
-    constexpr auto end() const noexcept
-    {
-        return nibbles_.end();
-    }
-
-    constexpr auto operator[](size_type pos) const
-    {
-        return nibbles_[pos];
-    }
-
-    byte_string underlying_bytes() const
-    {
-        return nibbles_ | ranges::to<byte_string>();
-    }
-
-    constexpr auto span() const
-    {
-        return std::span(nibbles_);
-    }
-
-    constexpr bool operator==(PathTemplate const& t) const
-    {
-        return std::ranges::equal(begin(), end(), t.begin(), t.end());
-    }
 };
 } // namespace impl
 
 // Non-owning version of Path
-class PathView: public impl::PathTemplate<PathView>
+class PathView: public impl::BasicPath<PathView>
 {
 public:
-    using base = impl::PathTemplate<PathView>;
+    using base = impl::BasicPath<PathView>;
     using base::base;
 
     constexpr PathView(PathView const&) = default;
@@ -251,10 +232,10 @@ public:
     constexpr bool operator==(PathView const&) const = default;
 };
 
-class Path : public impl::PathTemplate<Path>
+class Path : public impl::BasicPath<Path>
 {
 public:
-    using base = impl::PathTemplate<Path>;
+    using base = impl::BasicPath<Path>;
     using traits_type = impl::BasicPathTraits<Path>;
 
     using base::base;
@@ -267,7 +248,7 @@ public:
     constexpr Path(Path const&) = default;
 
     constexpr explicit Path(std::initializer_list<Nibble> list)
-        : impl::PathTemplate<Path>(Nibbles{list})
+        : base(Nibbles{list})
     {
     }
 

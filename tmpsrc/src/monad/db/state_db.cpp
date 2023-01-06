@@ -116,12 +116,15 @@ StateDb::~StateDb()
 
 std::optional<Account> StateDb::read_account(address_t const &address)
 {
+    (void)address;
     return {};
 }
 
 std::optional<Account> StateDb::read_account_history(
     address_t const &address, uint64_t const block_number)
 {
+    (void)address;
+    (void)block_number;
     return {};
 }
 
@@ -177,6 +180,7 @@ bytes32_t StateDb::read_storage_history(
 
 void StateDb::write_accounts(Accounts const &accounts)
 {
+    (void)accounts;
 }
 
 void StateDb::write_storage(Storage const &storage)

@@ -116,45 +116,13 @@ StateDb::~StateDb()
 
 std::optional<Account> StateDb::read_account(address_t const &address)
 {
-    rocksdb::PinnableSlice value;
-    auto const status =
-        db_->Get(rocksdb::ReadOptions{}, cfs_[1], to_slice(address), &value);
-    if (status.IsNotFound()) {
-        return std::nullopt;
-    }
-    SILKWORM_ASSERT(status.ok());
-    if (value.empty()) {
-        return std::nullopt;
-    }
-    auto const [account, err] = Account::from_encoded_storage(to_view(value));
-    silkworm::rlp::success_or_throw(err);
-    return account;
+    return {};
 }
 
 std::optional<Account> StateDb::read_account_history(
     address_t const &address, uint64_t const block_number)
 {
-    byte_string_fixed<28> key;
-    std::memcpy(&key[0], address.bytes, 20);
-    boost::endian::store_big_u64(&key[20], block_number);
-    std::unique_ptr<rocksdb::Iterator> const it{
-        db_->NewIterator(rocksdb::ReadOptions{}, cfs_[5])};
-    it->SeekForPrev(to_slice(key));
-    if (!it->Valid()) {
-        return std::nullopt;
-    }
-    auto const it_key = it->key();
-    SILKWORM_ASSERT(it_key.size() == 28);
-    if (std::memcmp(it_key.data(), address.bytes, 20)) {
-        return std::nullopt;
-    }
-    auto const value = it->value();
-    if (value.empty()) {
-        return std::nullopt;
-    }
-    auto const [account, err] = Account::from_encoded_storage(to_view(value));
-    silkworm::rlp::success_or_throw(err);
-    return account;
+    return {};
 }
 
 bytes32_t StateDb::read_storage(
@@ -209,15 +177,6 @@ bytes32_t StateDb::read_storage_history(
 
 void StateDb::write_accounts(Accounts const &accounts)
 {
-    for (auto const &[address, account] : accounts) {
-        if (account.has_value()) {
-            auto const encoded_account = account->encode_for_storage();
-            batch_->Put(cfs_[1], to_slice(address), to_slice(encoded_account));
-        }
-        else {
-            batch_->Delete(cfs_[1], to_slice(address));
-        }
-    }
 }
 
 void StateDb::write_storage(Storage const &storage)

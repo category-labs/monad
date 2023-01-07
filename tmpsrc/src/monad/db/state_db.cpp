@@ -117,6 +117,7 @@ StateDb::~StateDb()
 std::optional<Account> StateDb::read_account(address_t const &address)
 {
     (void)address;
+    (void)to_view;
     return {};
 }
 
@@ -125,6 +126,8 @@ std::optional<Account> StateDb::read_account_history(
 {
     (void)address;
     (void)block_number;
+    typedef rocksdb::Slice (*to_slice_t)(address_t const &);
+    (void)(to_slice_t)to_slice;
     return {};
 }
 

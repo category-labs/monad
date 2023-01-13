@@ -1,5 +1,7 @@
 #include "intx/intx.hpp"
 #include <gtest/gtest.h>
+#include <monad/core/bytes.hpp>
+#include <monad/core/int.hpp>
 #include <monad/rlp/rlp.hpp>
 
 using namespace monad::rlp;
@@ -28,7 +30,9 @@ TEST(Rlp, EncodeSanity)
 
     // list of two strings
     encoding = encode("cat", "dog");
-    EXPECT_EQ(encoding.bytes, monad::byte_string({ 0xc8, 0x83, 'c', 'a', 't', 0x83, 'd', 'o', 'g' }));
+    EXPECT_EQ(
+        encoding.bytes,
+        monad::byte_string({0xc8, 0x83, 'c', 'a', 't', 0x83, 'd', 'o', 'g'}));
 
     // empty string
     encoding = encode("");
@@ -54,7 +58,8 @@ TEST(Rlp, EncodeSanity)
 
     // the encoded integer 1024
     encoding = encode(monad::byte_string({0x04, 0x00}));
-    auto const ten_twenty_four_encoding = monad::byte_string({0x82, 0x04, 0x00});
+    auto const ten_twenty_four_encoding =
+        monad::byte_string({0x82, 0x04, 0x00});
     EXPECT_EQ(encoding.bytes, ten_twenty_four_encoding);
 
     encoding = encode(unsigned{1024});
@@ -64,18 +69,36 @@ TEST(Rlp, EncodeSanity)
     auto const fifty_six_char_string =
         "Lorem ipsum dolor sit amet, consectetur adipisicing elit";
     auto const fifty_six_char_string_encoding = monad::byte_string(
-            {0xb8, 0x38, 'L', 'o', 'r', 'e',
-             'm', ' ', 'i', 'p', 's', 'u', 'm', ' ', 'd', 'o', 'l',
-             'o', 'r', ' ', 's', 'i', 't', ' ', 'a', 'm', 'e', 't',
-             ',', ' ', 'c', 'o', 'n', 's', 'e', 'c', 't', 'e', 't',
-             'u', 'r', ' ', 'a', 'd', 'i', 'p', 'i', 's', 'i', 'c',
-             'i', 'n', 'g', ' ', 'e', 'l', 'i', 't'});
+        {0xb8, 0x38, 'L', 'o', 'r', 'e', 'm', ' ', 'i', 'p', 's', 'u',
+         'm',  ' ',  'd', 'o', 'l', 'o', 'r', ' ', 's', 'i', 't', ' ',
+         'a',  'm',  'e', 't', ',', ' ', 'c', 'o', 'n', 's', 'e', 'c',
+         't',  'e',  't', 'u', 'r', ' ', 'a', 'd', 'i', 'p', 'i', 's',
+         'i',  'c',  'i', 'n', 'g', ' ', 'e', 'l', 'i', 't'});
     encoding = encode(fifty_six_char_string);
     EXPECT_EQ(encoding.bytes, fifty_six_char_string_encoding);
 
     // encoding list that is larger than 55 bytes
     encoding = encode(1024u, fifty_six_char_string);
-    auto const expected_list_encoding = monad::byte_string({0xf7 + 1, 61})
-        + ten_twenty_four_encoding + fifty_six_char_string_encoding;
+    auto const expected_list_encoding = monad::byte_string({0xf7 + 1, 61}) +
+                                        ten_twenty_four_encoding +
+                                        fifty_six_char_string_encoding;
     EXPECT_EQ(encoding.bytes, expected_list_encoding);
+
+    using namespace intx;
+    encoding = encode(
+        0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_u256);
+    auto const big_num = monad::byte_string(
+        {0xa0, 0xbe, 0xa3, 0x4d, 0xd0, 0x4b, 0x09, 0xad, 0x3b, 0x60, 0x14,
+         0x25, 0x1e, 0xe2, 0x45, 0x78, 0x07, 0x40, 0x87, 0xee, 0x60, 0xfd,
+         0xa8, 0xc3, 0x91, 0xcf, 0x46, 0x6d, 0xfe, 0x5d, 0x68, 0x7d, 0x7b});
+    EXPECT_EQ(encoding.bytes, big_num);
+
+    using namespace evmc::literals;
+    encoding = encode(
+        0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32);
+    auto const big_be_num = monad::byte_string(
+        {0xa0, 0xbe, 0xa3, 0x4d, 0xd0, 0x4b, 0x09, 0xad, 0x3b, 0x60, 0x14,
+         0x25, 0x1e, 0xe2, 0x45, 0x78, 0x07, 0x40, 0x87, 0xee, 0x60, 0xfd,
+         0xa8, 0xc3, 0x91, 0xcf, 0x46, 0x6d, 0xfe, 0x5d, 0x68, 0x7d, 0x7b});
+    EXPECT_EQ(encoding.bytes, big_be_num);
 }

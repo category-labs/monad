@@ -4,10 +4,12 @@
 #include <limits>
 #include <monad/config.hpp>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/int.hpp>
 #include <concepts>
 #include <cassert>
+#include <type_traits>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -88,9 +90,11 @@ struct Encoding
 
 namespace impl
 {
+template<class T>
+concept unsigned_integral = std::unsigned_integral<T> || std::same_as<uint256_t, T>;
 
 // size of bytes if leading zeroes were stripped off
-constexpr size_t size_of_compacted_num(std::unsigned_integral auto num)
+constexpr size_t size_of_compacted_num(unsigned_integral auto num)
 {
     auto const* start = reinterpret_cast<byte_string::value_type*>(&num);
     auto const* const end = reinterpret_cast<byte_string::value_type*>(&num + 1);
@@ -103,20 +107,27 @@ constexpr size_t size_of_compacted_num(std::unsigned_integral auto num)
 
 // size of bytes required to represent num in big endian with leading
 // zeroes stripped off
-constexpr size_t size_of_big_endian_compacted_num(std::unsigned_integral auto num)
+constexpr size_t size_of_big_endian_compacted_num(unsigned_integral auto num)
 {
     return size_of_compacted_num(intx::to_big_endian(num));
 }
 
 // convert integral type into big endian and compact into byte_string
 // array, stripping off leading zeroes
-constexpr byte_string to_big_endian_compacted(std::unsigned_integral auto num)
+constexpr byte_string to_big_endian_compacted(unsigned_integral auto num)
 {
     num = intx::to_big_endian(num);
     auto const compacted_size = size_of_compacted_num(num);
     auto const* const start = reinterpret_cast<byte_string::value_type*>(&num);
 
     return byte_string{start + sizeof(num) - compacted_size, compacted_size};
+}
+
+// Note - this type is not compacted, as it is stored as a string instead
+// of a number
+constexpr byte_string to_big_endian_compacted(bytes32_t bytes)
+{
+    return byte_string{bytes.bytes, sizeof(bytes32_t)};
 }
 
 // Encode bytes into the target byte array
@@ -140,11 +151,15 @@ constexpr void encode_single(byte_string& target, byte_string_view const& bytes)
 }
 
 // encode header for an unsigned integral
-constexpr void encode_single(byte_string& target, std::unsigned_integral auto num)
+constexpr void encode_single(byte_string& target, unsigned_integral auto num)
 {
-    if (sizeof(num) == 1 && num < BYTES_55_MIN) {
+    if constexpr(sizeof(num) == 1)
+    {
+      if (num < BYTES_55_MIN)
+      {
         target.push_back(num);
         return;
+      }
     }
 
     auto const bytes = to_big_endian_compacted(num);
@@ -155,6 +170,11 @@ inline void encode_single(byte_string& target, std::string const& str)
 {
     auto const* const ptr = reinterpret_cast<byte_string::value_type const*>(str.data());
     encode_single(target, byte_string_view{ptr, str.size()});
+}
+
+inline void encode_single(byte_string& target, bytes32_t const &bytes)
+{
+   encode_single(target, byte_string_view{bytes.bytes, sizeof(bytes32_t)});
 }
 
 constexpr void encode_single(byte_string& target, Encoding const& encoding)
@@ -188,7 +208,7 @@ inline size_t size_of_encoding(std::string const& str)
 }
 
 // Returns the number of bytes needed to encode the integral
-constexpr size_t size_of_encoding(std::unsigned_integral auto integral) 
+constexpr size_t size_of_encoding(unsigned_integral auto integral)
 {
     if (sizeof(integral) == 1 && integral < BYTES_55_MIN) {
         // encoding is itself
@@ -201,6 +221,11 @@ constexpr size_t size_of_encoding(std::unsigned_integral auto integral)
     // types, this will always fall in the list-between-0-and-55 bytes
     // category
     return 1 + size_of_big_endian_compacted_num(integral);
+}
+
+constexpr size_t size_of_encoding(bytes32_t)
+{
+    return 1 + sizeof(bytes32_t);
 }
 
 constexpr size_t size_of_encoding(Encoding const& encoding)

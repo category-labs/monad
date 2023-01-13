@@ -174,7 +174,8 @@ inline void encode_single(byte_string& target, std::string const& str)
 
 inline void encode_single(byte_string& target, bytes32_t const &bytes)
 {
-   encode_single(target, byte_string_view{bytes.bytes, sizeof(bytes32_t)});
+    target.push_back(BYTES_55_BASE + sizeof(bytes32_t));
+    target.append(bytes.bytes, sizeof(bytes32_t));;
 }
 
 constexpr void encode_single(byte_string& target, Encoding const& encoding)

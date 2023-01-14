@@ -264,10 +264,12 @@ constexpr Encoding encode(auto const&... args)
 
         if (size <= 55) {
             // header is just base + size
+            bytes.reserve(size + 1);
             bytes.push_back(impl::LIST_55_BASE + size);
         } else {
             // header is (base + size of payload length, payload length)
             auto const be_compacted_size = impl::to_big_endian_compacted(size);
+            bytes.reserve(size + 1 + be_compacted_size.size());
             bytes.push_back(impl::LIST_GE_55_BASE + be_compacted_size.size());
             bytes += be_compacted_size;
         }

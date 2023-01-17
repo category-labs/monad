@@ -85,6 +85,27 @@ TEST(Rlp, EncodeSanity)
     EXPECT_EQ(encoding.bytes, expected_list_encoding);
 
     using namespace intx;
+    encoding = encode(0xbea34dd04b09ad3b6014251ee2457807_u128);
+    auto const sorta_big_num = monad::byte_string(
+        {0x90,
+         0xbe,
+         0xa3,
+         0x4d,
+         0xd0,
+         0x4b,
+         0x09,
+         0xad,
+         0x3b,
+         0x60,
+         0x14,
+         0x25,
+         0x1e,
+         0xe2,
+         0x45,
+         0x78,
+         0x07});
+    EXPECT_EQ(encoding.bytes, sorta_big_num);
+
     encoding = encode(
         0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_u256);
     auto const big_num = monad::byte_string(

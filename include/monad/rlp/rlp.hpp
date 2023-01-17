@@ -92,7 +92,8 @@ namespace rlp
     {
         template <class T>
         concept unsigned_integral =
-            std::unsigned_integral<T> || std::same_as<uint256_t, T>;
+            std::unsigned_integral<T> || std::same_as<uint128_t, T> ||
+            std::same_as<uint256_t, T>;
 
         // size of bytes if leading zeroes were stripped off
         constexpr size_t size_of_compacted_num(unsigned_integral auto num)

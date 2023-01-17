@@ -1,5 +1,9 @@
 add_unit_test(
-    TARGET monad-rlptests
-    SOURCES test_rlp.cpp rlp-account.cpp
-    LIBRARIES monad
-)
+  TARGET
+  monad-rlptests
+  SOURCES
+  test_rlp.cpp
+  rlp-account.cpp
+  rlp-transaction.cpp
+  LIBRARIES
+  monad)

@@ -12,6 +12,7 @@
 MONAD_NAMESPACE_BEGIN
 
 struct Account;
+struct Transaction;
 
 MONAD_NAMESPACE_END
 
@@ -33,5 +34,6 @@ inline byte_string encode_address(address_t const &a)
 }
 
 byte_string encode_account(Account const &, bytes32_t const &code_root);
+byte_string encode(Transaction const &);
 
 MONAD_RLP_NAMESPACE_END

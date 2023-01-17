@@ -58,6 +58,7 @@ endfunction()
 ### unit tests
 ############
 
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/core/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
 
 
@@ -80,6 +81,7 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/src/monad/core/assert.c
     ${PROJECT_SOURCE_DIR}/src/monad/core/huge_mem.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/core/int.cpp
+    ${PROJECT_SOURCE_DIR}/src/monad/core/signature.cpp
 
     # db
     ${PROJECT_SOURCE_DIR}/include/monad/db/file_db.hpp

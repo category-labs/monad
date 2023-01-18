@@ -58,6 +58,7 @@ namespace rlp
         // Single byte whose value is in [0x00, 0x7f]
         //
         // Byte string between 0 and 55 bytes long
+        constexpr inline uint8_t SIMPLE_LIST_MAX = 55;
         constexpr inline uint8_t BYTES_55_BASE = 0x80;
         constexpr inline uint8_t BYTES_55_MIN = BYTES_55_BASE;
 
@@ -183,10 +184,15 @@ namespace rlp
             encode_single(target, byte_string_view{ptr, str.size()});
         }
 
-        inline void encode_single(byte_string &target, bytes32_t const &bytes)
+        template <class T>
+            requires requires(T b) {
+                         sizeof(T) <= SIMPLE_LIST_MAX;
+                         b.bytes;
+                     }
+        inline void encode_single(byte_string &target, T const &bytes)
         {
-            target.push_back(BYTES_55_BASE + sizeof(bytes32_t));
-            target.append(bytes.bytes, sizeof(bytes32_t));
+            target.push_back(BYTES_55_BASE + sizeof(T));
+            target.append(bytes.bytes, sizeof(T));
         }
 
         constexpr void
@@ -241,6 +247,11 @@ namespace rlp
         constexpr size_t size_of_encoding(bytes32_t)
         {
             return 1 + sizeof(bytes32_t);
+        }
+
+        constexpr size_t size_of_encoding(evmc::address)
+        {
+            return 1 + sizeof(evmc::address);
         }
 
         constexpr size_t size_of_encoding(Encoding const &encoding)

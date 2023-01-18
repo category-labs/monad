@@ -231,7 +231,7 @@ namespace rlp
         // Returns the number of bytes needed to encode the integral
         constexpr size_t size_of_encoding(unsigned_integral auto integral)
         {
-            if (sizeof(integral) == 1 && integral < BYTES_55_MIN) {
+            if (integral < BYTES_55_MIN) {
                 // encoding is itself
                 return 1;
             }

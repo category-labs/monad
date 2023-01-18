@@ -65,6 +65,10 @@ TEST(Rlp, EncodeSanity)
     encoding = encode(unsigned{1024});
     EXPECT_EQ(encoding.bytes, ten_twenty_four_encoding);
 
+    // the integer list of 0 and 9
+    encoding = encode(unsigned{0}, unsigned{9});
+    EXPECT_EQ(encoding.bytes, monad::byte_string({0xC2, 0x80, 0x09}));
+
     // 56 character string
     auto const fifty_six_char_string =
         "Lorem ipsum dolor sit amet, consectetur adipisicing elit";

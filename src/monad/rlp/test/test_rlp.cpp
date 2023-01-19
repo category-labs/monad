@@ -1,16 +1,28 @@
-#include "intx/intx.hpp"
-#include <gtest/gtest.h>
+#include <monad/rlp/encode.hpp>
+#include <monad/rlp/encode_helpers.hpp>
+#include <monad/rlp/util.hpp>
+
+#include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
-#include <monad/rlp/rlp.hpp>
 
+#include <intx/intx.hpp>
+
+#include <gtest/gtest.h>
+
+using namespace monad;
 using namespace monad::rlp;
+
+byte_string_view to_byte_string_view(std::string const &s)
+{
+    return {reinterpret_cast<unsigned char const *>(&s[0]), s.size()};
+}
 
 TEST(Rlp, ToBigEndianCompacted)
 {
-    auto bytes_1 = impl::to_big_endian_compacted(uint16_t{1024});
-    auto bytes_2 = impl::to_big_endian_compacted(unsigned{1024});
-    auto bytes_3 = impl::to_big_endian_compacted(uint64_t{1024});
+    auto bytes_1 = to_big_compact(uint16_t{1024});
+    auto bytes_2 = to_big_compact(unsigned{1024});
+    auto bytes_3 = to_big_compact(uint64_t{1024});
 
     EXPECT_EQ(bytes_1, monad::byte_string({0x04, 0x00}));
     EXPECT_EQ(bytes_1, bytes_2);
@@ -20,54 +32,55 @@ TEST(Rlp, ToBigEndianCompacted)
 TEST(Rlp, EncodeSanity)
 {
     // Empty list
-    auto encoding = encode();
-    EXPECT_EQ(encoding, Encoding{monad::byte_string({0xc0})});
+    auto encoding = encode_list();
+    EXPECT_EQ(encoding, monad::byte_string({0xc0}));
 
     // simple string
-    encoding = encode("dog");
-    EXPECT_EQ(encoding.bytes.size(), 4);
-    EXPECT_EQ(encoding.bytes, monad::byte_string({0x83, 'd', 'o', 'g'}));
+    encoding = encode_string(to_byte_string_view("dog"));
+    EXPECT_EQ(encoding.size(), 4);
+    EXPECT_EQ(encoding, monad::byte_string({0x83, 'd', 'o', 'g'}));
 
     // list of two strings
-    encoding = encode("cat", "dog");
+    encoding = encode_list(
+        encode_string(to_byte_string_view("cat")),
+        encode_string(to_byte_string_view("dog")));
     EXPECT_EQ(
-        encoding.bytes,
+        encoding,
         monad::byte_string({0xc8, 0x83, 'c', 'a', 't', 0x83, 'd', 'o', 'g'}));
 
     // empty string
-    encoding = encode("");
-    EXPECT_EQ(encoding.bytes, monad::byte_string({0x80}));
+    encoding = encode_string(to_byte_string_view(""));
+    EXPECT_EQ(encoding, monad::byte_string({0x80}));
 
-    // the integer 0
-    encoding = encode(unsigned{0});
-    EXPECT_EQ(encoding.bytes, monad::byte_string({0x80}));
+    // integer 0
+    encoding = encode_unsigned(0u);
+    EXPECT_EQ(encoding, monad::byte_string({0x80}));
 
-    // the encoded integer 0
-    encoding = encode(monad::byte_string({0x00}));
-    EXPECT_EQ(encoding.bytes, monad::byte_string({0x00}));
+    // string with one char
+    encoding = encode_string(monad::byte_string({0x00}));
+    EXPECT_EQ(encoding, monad::byte_string({0x00}));
 
-    encoding = encode(uint8_t{0});
-    EXPECT_EQ(encoding.bytes, monad::byte_string({0x00}));
+    // char 0
+    encoding = encode_unsigned(uint8_t{0});
+    EXPECT_EQ(encoding, monad::byte_string({0x80}));
 
-    // the encoded integer 15
-    encoding = encode(monad::byte_string({0x0f}));
-    EXPECT_EQ(encoding.bytes, monad::byte_string({0x0f}));
+    // integer 15
+    encoding = encode_unsigned(15u);
+    EXPECT_EQ(encoding, monad::byte_string({0x0f}));
 
-    encoding = encode(uint8_t{15});
-    EXPECT_EQ(encoding.bytes, monad::byte_string({0x0f}));
+    // char 15
+    encoding = encode_unsigned(uint8_t{15});
+    EXPECT_EQ(encoding, monad::byte_string({0x0f}));
 
-    // the encoded integer 1024
-    encoding = encode(monad::byte_string({0x04, 0x00}));
+    // integer 1024
+    encoding = encode_unsigned(1024u);
     auto const ten_twenty_four_encoding =
         monad::byte_string({0x82, 0x04, 0x00});
-    EXPECT_EQ(encoding.bytes, ten_twenty_four_encoding);
-
-    encoding = encode(unsigned{1024});
-    EXPECT_EQ(encoding.bytes, ten_twenty_four_encoding);
+    EXPECT_EQ(encoding, ten_twenty_four_encoding);
 
     // the integer list of 0 and 9
-    encoding = encode(unsigned{0}, unsigned{9});
-    EXPECT_EQ(encoding.bytes, monad::byte_string({0xC2, 0x80, 0x09}));
+    encoding = encode_list(encode_unsigned(0u), encode_unsigned(9u));
+    EXPECT_EQ(encoding, monad::byte_string({0xC2, 0x80, 0x09}));
 
     // 56 character string
     auto const fifty_six_char_string =
@@ -78,18 +91,20 @@ TEST(Rlp, EncodeSanity)
          'a',  'm',  'e', 't', ',', ' ', 'c', 'o', 'n', 's', 'e', 'c',
          't',  'e',  't', 'u', 'r', ' ', 'a', 'd', 'i', 'p', 'i', 's',
          'i',  'c',  'i', 'n', 'g', ' ', 'e', 'l', 'i', 't'});
-    encoding = encode(fifty_six_char_string);
-    EXPECT_EQ(encoding.bytes, fifty_six_char_string_encoding);
+    encoding = encode_string(to_byte_string_view(fifty_six_char_string));
+    EXPECT_EQ(encoding, fifty_six_char_string_encoding);
 
     // encoding list that is larger than 55 bytes
-    encoding = encode(1024u, fifty_six_char_string);
+    encoding = encode_list(
+        encode_unsigned(1024u),
+        encode_string(to_byte_string_view(fifty_six_char_string)));
     auto const expected_list_encoding = monad::byte_string({0xf7 + 1, 61}) +
                                         ten_twenty_four_encoding +
                                         fifty_six_char_string_encoding;
-    EXPECT_EQ(encoding.bytes, expected_list_encoding);
+    EXPECT_EQ(encoding, expected_list_encoding);
 
     using namespace intx;
-    encoding = encode(0xbea34dd04b09ad3b6014251ee2457807_u128);
+    encoding = encode_unsigned(0xbea34dd04b09ad3b6014251ee2457807_u128);
     auto const sorta_big_num = monad::byte_string(
         {0x90,
          0xbe,
@@ -108,28 +123,29 @@ TEST(Rlp, EncodeSanity)
          0x45,
          0x78,
          0x07});
-    EXPECT_EQ(encoding.bytes, sorta_big_num);
+    EXPECT_EQ(encoding, sorta_big_num);
 
-    encoding = encode(
+    encoding = encode_unsigned(
         0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_u256);
     auto const big_num = monad::byte_string(
         {0xa0, 0xbe, 0xa3, 0x4d, 0xd0, 0x4b, 0x09, 0xad, 0x3b, 0x60, 0x14,
          0x25, 0x1e, 0xe2, 0x45, 0x78, 0x07, 0x40, 0x87, 0xee, 0x60, 0xfd,
          0xa8, 0xc3, 0x91, 0xcf, 0x46, 0x6d, 0xfe, 0x5d, 0x68, 0x7d, 0x7b});
-    EXPECT_EQ(encoding.bytes, big_num);
+    EXPECT_EQ(encoding, big_num);
 
     using namespace evmc::literals;
-    encoding = encode(
+    encoding = encode_bytes32(
         0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32);
     auto const big_be_num = monad::byte_string(
         {0xa0, 0xbe, 0xa3, 0x4d, 0xd0, 0x4b, 0x09, 0xad, 0x3b, 0x60, 0x14,
          0x25, 0x1e, 0xe2, 0x45, 0x78, 0x07, 0x40, 0x87, 0xee, 0x60, 0xfd,
          0xa8, 0xc3, 0x91, 0xcf, 0x46, 0x6d, 0xfe, 0x5d, 0x68, 0x7d, 0x7b});
-    EXPECT_EQ(encoding.bytes, big_be_num);
+    EXPECT_EQ(encoding, big_be_num);
 
-    encoding = encode(0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address);
+    encoding =
+        encode_address(0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address);
     auto const address = monad::byte_string(
         {0x94, 0xf8, 0x63, 0x63, 0x77, 0xb7, 0xa9, 0x98, 0xb5, 0x1a, 0x3c,
          0xf2, 0xbd, 0x71, 0x1b, 0x87, 0x0b, 0x3a, 0xb0, 0xad, 0x56});
-    EXPECT_EQ(encoding.bytes, address);
+    EXPECT_EQ(encoding, address);
 }

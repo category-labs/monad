@@ -16,4 +16,10 @@ using byte_string_fixed = std::array<unsigned char, N>;
 
 using byte_string_view = std::basic_string_view<unsigned char>;
 
+template <size_t N>
+byte_string_view to_byte_string_view(unsigned char const (&a)[N])
+{
+    return {&a[0], N};
+}
+
 MONAD_NAMESPACE_END

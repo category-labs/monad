@@ -18,6 +18,8 @@ def peek_left(i, nodes):
         if are_siblings(index, i, nodes):
             return index
 
+    return None
+
 def find_parent(i, nodes):
     if i == 0:
         return None
@@ -35,6 +37,7 @@ def is_last_in_branch(i, nodes):
         return not are_siblings(i, i+1, nodes)
 
     parent_index = find_parent(i, nodes) 
+
     assert(parent_index is not None)
     return i == (parent_index + len(nodes[parent_index].branches))
 
@@ -48,6 +51,8 @@ def peek_right(i, nodes):
     for index in range(i+1, len(nodes)):
         if are_siblings(index, i, nodes):
             return index
+
+    return None
 
 def main():
     # Assume list is sorted in lexicographic order

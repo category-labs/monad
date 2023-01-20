@@ -67,6 +67,9 @@ def main():
              Leaf  ("02112220"              ), # 8
              Leaf  ("03322130"              )] # 9
 
+    # Sorted in lexicographic order by path
+    assert(nodes == sorted(nodes, key=lambda n: n.path))
+
     assert(peek_left(0, nodes) == None)
     assert(peek_left(1, nodes) == None)
     assert(peek_left(2, nodes) == None)

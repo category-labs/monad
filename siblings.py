@@ -20,16 +20,16 @@ def are_siblings(i, j, nodes):
 
 def main():
     # Assume list is sorted in lexicographic order
-    nodes = [Branch("0"       , [0, 1, 2, 3]), # 0
-             Branch("00"      , [1, 2]      ), # 1
-             Leaf  ("00131211"              ), # 2
-             Leaf  ("00211002"              ), # 3
-             Branch("01"      , [0, 2, 3]   ), # 4
-             Leaf  ("01013302"              ), # 5
-             Leaf  ("01202113"              ), # 6
-             Leaf  ("01321132"              ), # 7
-             Leaf  ("02112220"              ), # 8
-             Leaf  ("03322130"              )] # 9
+    nodes = [Branch("0"       , ["0", "1", "2", "3"]), # 0
+             Branch("00"      , ["1", "2"]          ), # 1
+             Leaf  ("00131211"                      ), # 2
+             Leaf  ("00211002"                      ), # 3
+             Branch("01"      , ["0", "2", "3"]     ), # 4
+             Leaf  ("01013302"                      ), # 5
+             Leaf  ("01202113"                      ), # 6
+             Leaf  ("01321132"                      ), # 7
+             Leaf  ("02112220"                      ), # 8
+             Leaf  ("03322130"                      )] # 9
 
     # Sorted in lexicographic order by path
     assert(nodes == sorted(nodes, key=lambda n: n.path))

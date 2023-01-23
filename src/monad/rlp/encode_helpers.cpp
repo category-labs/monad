@@ -5,7 +5,29 @@
 #include <monad/core/signature.hpp>
 #include <monad/core/transaction.hpp>
 
+#include <algorithm>
+#include <numeric>
+#include <string>
+
 MONAD_RLP_NAMESPACE_BEGIN
+
+byte_string encode_access_list(Transaction::AccessList const &list)
+{
+    byte_string result{};
+    std::ranges::for_each(list, [&result](auto const &i) {
+        result += encode_list(
+            encode_address(i.a) + encode_list(std::accumulate(
+                                      std::cbegin(i.keys),
+                                      std::cend(i.keys),
+                                      result,
+                                      [](auto const i, auto const j) {
+                                          return std::move(i) +
+                                                 encode_bytes32(j);
+                                      })));
+    });
+
+    return encode_list(result);
+}
 
 byte_string encode_account(Account const &account, bytes32_t const &code_root)
 {
@@ -33,7 +55,19 @@ byte_string encode(Transaction const &txn)
             encode_unsigned(txn.sc.r),
             encode_unsigned(txn.sc.s));
     }
-    return encode_list();
+    MONAD_ASSERT(txn.sc.chain_id != std::nullopt);
+    return byte_string{0x01} += encode_list(
+               encode_unsigned(*txn.sc.chain_id),
+               encode_unsigned(txn.nonce),
+               encode_unsigned(txn.gas_price),
+               encode_unsigned(txn.gas_limit),
+               encode_address(*(txn.to)),
+               encode_unsigned(txn.amount),
+               encode_string(txn.data),
+               encode_access_list(txn.access_list),
+               encode_unsigned(static_cast<unsigned>(txn.sc.odd_y_parity)),
+               encode_unsigned(txn.sc.r),
+               encode_unsigned(txn.sc.s));
 }
 
 MONAD_RLP_NAMESPACE_END

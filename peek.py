@@ -1,5 +1,6 @@
-from siblings import are_siblings
+from siblings import parent_path, are_siblings
 from nodes import Leaf, Branch
+from bisect import bisect_left
 
 def is_first_in_branch(i, nodes):
     if i == 0:
@@ -24,10 +25,14 @@ def find_parent(i, nodes):
     if i == 0:
         return None
 
-    for index in range(i-1, -1, -1):
-        if isinstance(nodes[index], Branch):
-            return index
-    return None
+    target_path = parent_path(i, nodes)
+
+    parent_index = bisect_left(nodes, target_path, hi=i, key=lambda n: n.path)
+
+    assert(nodes[parent_index].path == target_path)
+    assert(isinstance(nodes[parent_index], Branch))
+
+    return parent_index
 
 def is_last_in_branch(i, nodes):
     if i == 0 or i == (len(nodes) - 1):
@@ -37,9 +42,12 @@ def is_last_in_branch(i, nodes):
         return not are_siblings(i, i+1, nodes)
 
     parent_index = find_parent(i, nodes) 
+    parent = nodes[parent_index]
 
     assert(parent_index is not None)
-    return i == (parent_index + len(nodes[parent_index].branches))
+
+    branch = nodes[i].path[len(parent.path)]
+    return parent.branches[-1] == branch
 
 def peek_right(i, nodes):
     if i == 0 or i == (len(nodes) - 1):
@@ -53,6 +61,22 @@ def peek_right(i, nodes):
             return index
 
     return None
+
+def peek_left_from_work(work_index, work, nodes):
+    assert(isinstance(work[work_index], Leaf))
+
+    if work_index == 0:
+        insort_index = bisect_left(nodes,
+                                   work[work_index].path,
+                                   key=lambda n: n.path)
+        if insort_index == 0:
+            return None
+
+        return find_parent(len(nodes)-1, nodes) \
+                if insort_index == len(nodes) \
+                else peek_left(insort_index, nodes)
+
+    return work[work_index-1]
 
 def main():
     # Assume list is sorted in lexicographic order
@@ -92,6 +116,23 @@ def main():
     assert(peek_right(8, nodes) == 9)
     assert(peek_right(9, nodes) == None)
 
+    # Unit tests for work list with single element
+    assert(peek_left_from_work(0, [Leaf("13322130")], nodes) == 0)
+    assert(peek_left_from_work(0, [Leaf("04322130")], nodes) == 0)
+
+    assert(peek_left_from_work(0, [Leaf("02112220")], nodes) == 4)
+    assert(peek_left_from_work(0, [Leaf("02212220")], nodes) == 8)
+
+    assert(peek_left_from_work(0, [Leaf("01331132")], nodes) == 4)
+    assert(peek_left_from_work(0, [Leaf("01311132")], nodes) == 6)
+
+    assert(peek_left_from_work(0, [Leaf("0 123456")], nodes) == None)
+    assert(peek_left_from_work(0, [Leaf(" 0123456")], nodes) == None)
+    assert(peek_left_from_work(0, [Leaf("00121211")], nodes) == None)
+
+    assert(peek_left_from_work(0, [Leaf("01013302")], nodes) == 1)
+    assert(peek_left_from_work(0, [Leaf("01 13302")], nodes) == 1)
+    assert(peek_left_from_work(0, [Leaf("01023302")], nodes) == 5)
 
 if __name__ == "__main__":
     main()

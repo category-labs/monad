@@ -17,7 +17,16 @@ struct Transaction
     enum class Type
     {
         eip155,
+        eip2930,
     };
+
+    struct AccessEntry
+    {
+        address_t a{};
+        std::vector<bytes32_t> keys{};
+    };
+
+    using AccessList = std::vector<AccessEntry>;
 
     SignatureAndChain sc;
     uint64_t nonce{};
@@ -28,9 +37,16 @@ struct Transaction
     std::optional<address_t> from{};
     byte_string data;
     Type type;
+    AccessList access_list{};
 };
 
-static_assert(sizeof(Transaction) == 216);
+static_assert(sizeof(Transaction::AccessEntry) == 48);
+static_assert(alignof(Transaction::AccessEntry) == 8);
+
+static_assert(sizeof(Transaction::AccessList) == 24);
+static_assert(alignof(Transaction::AccessList) == 8);
+
+static_assert(sizeof(Transaction) == 240);
 static_assert(alignof(Transaction) == 8);
 
 MONAD_NAMESPACE_END

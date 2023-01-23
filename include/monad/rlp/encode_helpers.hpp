@@ -8,11 +8,11 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
+#include <monad/core/transaction.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
 struct Account;
-struct Transaction;
 
 MONAD_NAMESPACE_END
 
@@ -32,6 +32,8 @@ inline byte_string encode_address(address_t const &a)
 {
     return encode_string(to_byte_string_view(a.bytes));
 }
+
+byte_string encode_access_list(Transaction::AccessList const &list);
 
 byte_string encode_account(Account const &, bytes32_t const &code_root);
 byte_string encode(Transaction const &);

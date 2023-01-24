@@ -111,7 +111,7 @@ def peek_right_from_work(work_index, work, nodes):
                                work[int(work_index)].path,
                                key=lambda n: n.path)
 
-    # insertion at end of the list 
+    # insertion at end of nodes 
     if insort_index == len(nodes):
         return None if work_index == (len(work)-1) else work_index+1
 

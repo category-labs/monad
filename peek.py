@@ -10,12 +10,12 @@ def is_first_in_branch(i, nodes):
 
 # Peek left from pre-existing node. Does not take into consideration
 # the work list
-def peek_left_helper(i, nodes):
+def peek_left_from_node(i, nodes):
     if i == 0:
         return None
 
     if is_first_in_branch(i, nodes):
-        return peek_left_helper(i-1, nodes)
+        return peek_left_from_node(i-1, nodes)
 
     for index in range(i-1, 0, -1):
         if are_siblings(index, i, nodes):
@@ -170,16 +170,16 @@ def main():
     # Sorted in lexicographic order by path
     assert(nodes == sorted(nodes, key=lambda n: n.path))
 
-    assert(peek_left_helper(0, nodes) == None)
-    assert(peek_left_helper(1, nodes) == None)
-    assert(peek_left_helper(2, nodes) == None)
-    assert(peek_left_helper(3, nodes) == 2)
-    assert(peek_left_helper(4, nodes) == 1)
-    assert(peek_left_helper(5, nodes) == 1)
-    assert(peek_left_helper(6, nodes) == 5)
-    assert(peek_left_helper(7, nodes) == 6)
-    assert(peek_left_helper(8, nodes) == 4)
-    assert(peek_left_helper(9, nodes) == 8)
+    assert(peek_left_from_node(0, nodes) == None)
+    assert(peek_left_from_node(1, nodes) == None)
+    assert(peek_left_from_node(2, nodes) == None)
+    assert(peek_left_from_node(3, nodes) == 2)
+    assert(peek_left_from_node(4, nodes) == 1)
+    assert(peek_left_from_node(5, nodes) == 1)
+    assert(peek_left_from_node(6, nodes) == 5)
+    assert(peek_left_from_node(7, nodes) == 6)
+    assert(peek_left_from_node(8, nodes) == 4)
+    assert(peek_left_from_node(9, nodes) == 8)
 
     assert(peek_right_helper(0, nodes) == None)
     assert(peek_right_helper(1, nodes) == 4)

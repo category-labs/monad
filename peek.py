@@ -195,6 +195,7 @@ def main():
     assert(peek_right_from_work(WorkIndex(0), [Leaf(" 1202113"), Leaf("01322132")], nodes) == 1)
     assert(peek_right_from_work(WorkIndex(0), [Leaf(" 1202113"), Leaf("00131211")], nodes) == WorkIndex(1))
     assert(peek_right_from_work(WorkIndex(0), [Leaf(" 1202113"), Leaf("00231211")], nodes) == 2)
+    assert(peek_right_from_work(WorkIndex(0), [Leaf("00211002"), Leaf("02112220")], nodes) == 4)
 
 if __name__ == "__main__":
     main()

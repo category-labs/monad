@@ -173,9 +173,9 @@ bytes32_t StateDb::read_storage(
         return {};
     }
     SILKWORM_ASSERT(status.ok());
-    SILKWORM_ASSERT(value.size() == 32);
+    SILKWORM_ASSERT(value.size() <= 32);
     bytes32_t result;
-    std::memcpy(result.bytes, value.data(), 32);
+    std::memcpy(result.bytes + 32 - value.size(), value.data(), value.size());
     return result;
 }
 

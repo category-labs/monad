@@ -26,12 +26,12 @@ MONAD_NAMESPACE_BEGIN
 
 class StateDb final
 {
+public:
     std::filesystem::path const path_;
     std::vector<rocksdb::ColumnFamilyHandle *> cfs_;
     std::unique_ptr<rocksdb::DB> const db_;
     std::unique_ptr<rocksdb::WriteBatch> const batch_;
 
-public:
     StateDb(std::filesystem::path const &);
     ~StateDb();
 

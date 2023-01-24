@@ -169,7 +169,7 @@ def main():
     assert(peek_right(8, nodes) == 9)
     assert(peek_right(9, nodes) == None)
 
-    # Unit tests for work list with single element
+    # Unit tests for work list peeking left with single element
     assert(peek_left_from_work(WorkIndex(0), [Leaf("13322130")], nodes) == 0)
     assert(peek_left_from_work(WorkIndex(0), [Leaf("04322130")], nodes) == 0)
 

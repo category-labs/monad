@@ -197,5 +197,22 @@ def main():
     assert(peek_right_from_work(WorkIndex(0), [Leaf(" 1202113"), Leaf("00231211")], nodes) == 2)
     assert(peek_right_from_work(WorkIndex(0), [Leaf("00211002"), Leaf("02112220")], nodes) == 4)
 
+    # -----------------------------------------------------------------
+
+    nodes = [Branch("45", ["1", "2"]),
+             Leaf("4511"),
+             Branch("452", ["1", "2"]),
+             Leaf("4521"),
+             Leaf("4522")]
+
+    # Sorted in lexicographic order by path
+    assert(nodes == sorted(nodes, key=lambda n: n.path))
+
+    assert(peek_right_from_work(WorkIndex(0), [Leaf("4501"), Leaf("4522")], nodes) == 1)
+    assert(peek_right_from_work(WorkIndex(0), [Leaf("4511"), Leaf("4522")], nodes) == 3)
+    assert(peek_right_from_work(WorkIndex(0), [Leaf("4511"), Leaf("4521")], nodes) == WorkIndex(1))
+    assert(peek_right_from_work(WorkIndex(0), [Leaf("5511"), Leaf("5621")], nodes) == WorkIndex(1))
+    assert(peek_right_from_work(WorkIndex(0), [Leaf("3511"), Leaf("4520")], nodes) == 1)
+
 if __name__ == "__main__":
     main()

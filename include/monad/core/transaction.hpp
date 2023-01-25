@@ -17,6 +17,7 @@ struct Transaction
     enum class Type
     {
         eip155,
+        eip1559,
         eip2930,
     };
 
@@ -38,6 +39,7 @@ struct Transaction
     byte_string data;
     Type type;
     AccessList access_list{};
+    uint64_t priority_fee{};
 };
 
 static_assert(sizeof(Transaction::AccessEntry) == 48);
@@ -46,7 +48,7 @@ static_assert(alignof(Transaction::AccessEntry) == 8);
 static_assert(sizeof(Transaction::AccessList) == 24);
 static_assert(alignof(Transaction::AccessList) == 8);
 
-static_assert(sizeof(Transaction) == 240);
+static_assert(sizeof(Transaction) == 248);
 static_assert(alignof(Transaction) == 8);
 
 MONAD_NAMESPACE_END

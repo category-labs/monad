@@ -41,7 +41,6 @@ byte_string encode_account(Account const &account, bytes32_t const &code_root)
 byte_string encode(Transaction const &txn)
 {
     MONAD_ASSERT(txn.to != std::nullopt);
-    const auto v = get_v(txn.sc);
 
     if (txn.type == Transaction::Type::eip155) {
         return encode_list(
@@ -51,23 +50,44 @@ byte_string encode(Transaction const &txn)
             encode_address(*(txn.to)),
             encode_unsigned(txn.amount),
             encode_string(txn.data),
-            encode_unsigned(v),
+            encode_unsigned(get_v(txn.sc)),
             encode_unsigned(txn.sc.r),
             encode_unsigned(txn.sc.s));
     }
+
     MONAD_ASSERT(txn.sc.chain_id != std::nullopt);
-    return byte_string{0x01} += encode_list(
-               encode_unsigned(*txn.sc.chain_id),
-               encode_unsigned(txn.nonce),
-               encode_unsigned(txn.gas_price),
-               encode_unsigned(txn.gas_limit),
-               encode_address(*(txn.to)),
-               encode_unsigned(txn.amount),
-               encode_string(txn.data),
-               encode_access_list(txn.access_list),
-               encode_unsigned(static_cast<unsigned>(txn.sc.odd_y_parity)),
-               encode_unsigned(txn.sc.r),
-               encode_unsigned(txn.sc.s));
+
+    if (txn.type == Transaction::Type::eip1559) {
+        return byte_string{0x02} += encode_list(
+                   encode_unsigned(*txn.sc.chain_id),
+                   encode_unsigned(txn.nonce),
+                   encode_unsigned(txn.priority_fee),
+                   encode_unsigned(txn.gas_price),
+                   encode_unsigned(txn.gas_limit),
+                   encode_address(*(txn.to)),
+                   encode_unsigned(txn.amount),
+                   encode_string(txn.data),
+                   encode_access_list(txn.access_list),
+                   encode_unsigned(static_cast<unsigned>(txn.sc.odd_y_parity)),
+                   encode_unsigned(txn.sc.r),
+                   encode_unsigned(txn.sc.s));
+    }
+    else if (txn.type == Transaction::Type::eip2930) {
+        return byte_string{0x01} += encode_list(
+                   encode_unsigned(*txn.sc.chain_id),
+                   encode_unsigned(txn.nonce),
+                   encode_unsigned(txn.gas_price),
+                   encode_unsigned(txn.gas_limit),
+                   encode_address(*(txn.to)),
+                   encode_unsigned(txn.amount),
+                   encode_string(txn.data),
+                   encode_access_list(txn.access_list),
+                   encode_unsigned(static_cast<unsigned>(txn.sc.odd_y_parity)),
+                   encode_unsigned(txn.sc.r),
+                   encode_unsigned(txn.sc.s));
+    }
+    assert(false);
+    return {};
 }
 
 MONAD_RLP_NAMESPACE_END

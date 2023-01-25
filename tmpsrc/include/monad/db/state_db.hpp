@@ -43,7 +43,7 @@ public:
     bytes32_t read_storage(
         address_t const &, uint64_t incarnation, bytes32_t const &location);
 
-    bytes32_t read_storage_history(
+    std::optional<bytes32_t> read_storage_history(
         address_t const &, uint64_t incarnation, bytes32_t const &location,
         uint64_t block_number);
 

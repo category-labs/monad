@@ -179,7 +179,7 @@ bytes32_t StateDb::read_storage(
     return result;
 }
 
-bytes32_t StateDb::read_storage_history(
+std::optional<bytes32_t> StateDb::read_storage_history(
     address_t const &address, uint64_t const incarnation,
     bytes32_t const &location, uint64_t const block_number)
 {
@@ -193,12 +193,12 @@ bytes32_t StateDb::read_storage_history(
         db_->NewIterator(rocksdb::ReadOptions{}, cfs_[6])};
     it->SeekForPrev(to_slice(key));
     if (!it->Valid()) {
-        return {};
+        return std::nullopt;
     }
     auto const it_key = it->key();
     SILKWORM_ASSERT(it_key.size() == 68);
     if (std::memcmp(it_key.data(), key.data(), 60)) {
-        return {};
+        return std::nullopt;
     }
     auto const value = it->value();
     SILKWORM_ASSERT(value.size() == 32);

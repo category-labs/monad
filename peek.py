@@ -95,18 +95,28 @@ def peek_left_from_work(work_index, work, nodes):
     assert(isinstance(work_index, WorkIndex))
     assert(isinstance(work[int(work_index)], Leaf))
 
+    insort_index = bisect_left(nodes,
+                               work[int(work_index)].path,
+                               key=lambda n: n.path)
+    if insort_index == 0:
+        return None if work_index == 0 else work_index-1
+
+    left_from_nodes = find_parent(len(nodes)-1, nodes) \
+            if insort_index == len(nodes) \
+            else peek_left_helper(insort_index, nodes)
+
     if work_index == 0:
-        insort_index = bisect_left(nodes,
-                                   work[int(work_index)].path,
-                                   key=lambda n: n.path)
-        if insort_index == 0:
-            return None
+        return left_from_nodes
+    
+    last_work = work[int(work_index)-1]
+    if isinstance(last_work, Branch):
+        last_branch = last_work.branches[-1]
+        if nodes[left_from_nodes].path[len(last_work.path)] <= last_branch:
+            return work_index-1
+        else:
+            return left_from_nodes
 
-        return find_parent(len(nodes)-1, nodes) \
-                if insort_index == len(nodes) \
-                else peek_left_helper(insort_index, nodes)
-
-    return work_index - 1
+    return work_index-1 if nodes[left_from_nodes].path <= last_work.path else left_from_nodes
 
 # Given the result of peeking right from the nodes list, look at the
 # next work item and reconcile the two
@@ -229,6 +239,9 @@ def main():
     
     assert(peek_right_from_node(1, WorkIndex(0), [Leaf("4501"), Leaf("4523")], nodes) == 3)
     assert(peek_right_from_node(1, WorkIndex(0), [Leaf("4501"), Leaf("4521")], nodes) == WorkIndex(1))
+
+    assert(peek_left_from_work(WorkIndex(1), [Branch("45", ["0", "1"]), Leaf("4523")], nodes) == 2)
+    assert(peek_left_from_work(WorkIndex(1), [Branch("45", ["0", "1"]), Leaf("4521")], nodes) == WorkIndex(0))
 
 if __name__ == "__main__":
     main()

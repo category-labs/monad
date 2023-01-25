@@ -103,7 +103,7 @@ def peek_left_from_work(work_index, work, nodes):
 
     left_from_nodes = find_parent(len(nodes)-1, nodes) \
             if insort_index == len(nodes) \
-            else peek_left_helper(insort_index, nodes)
+            else peek_left_from_node(insort_index, nodes)
 
     if work_index == 0:
         return left_from_nodes

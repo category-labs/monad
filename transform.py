@@ -48,7 +48,7 @@ def main():
     # no action
     assert(transform(Branch("123", ["1", "2"]) , Leaf("1234") , Leaf("1235") , None)          == None)
     assert(transform(None                      , Leaf("12345"), Leaf("12356"), Leaf("12357")) == None)
-    assert(transform(Branch("1234", ["1", "2"]), Leaf("12345"), Leaf("12356"), Leaf("12345")) == None)
+    assert(transform(Branch("1234", ["1", "2"]), Leaf("12345"), Leaf("12356"), Leaf("12357")) == None)
 
     # extend a branch
     assert(transform(None, Branch("123", ["1", "2"]), Leaf("1235"), None) == Branch("123", ["1", "2", "5"]))
@@ -63,9 +63,9 @@ def main():
     assert(transform(Branch("1", ["1", "2"]), Branch("123", ["1", "2"]), Branch("124", ["1", "2"]), Leaf("1256")) == Branch("12", ["3", "4"]))
 
     assert(transform(None, Branch("123", ["1", "2"]), Leaf("1245"), None) == Branch("12", ["3", "4"]))
-    assert(transform(Leaf("1567"), Branch("123", ["1", "2"]), Leaf("1245"), None) == Branch("12", ["3", "4"]))
+    assert(transform(Branch("11", ["1", "2"]), Branch("123", ["1", "2"]), Leaf("1245"), None) == Branch("12", ["3", "4"]))
     assert(transform(None, Branch("123", ["1", "2"]), Leaf("1245"), Leaf("1268")) == Branch("12", ["3", "4"]))
-    assert(transform(Leaf("1567"), Branch("123", ["1", "2"]), Leaf("1245"), Leaf("1268")) == Branch("12", ["3", "4"]))
+    assert(transform(Branch("11", ["1", "2"]), Branch("123", ["1", "2"]), Leaf("1245"), Leaf("1268")) == Branch("12", ["3", "4"]))
 
 if __name__ == "__main__":
     main()

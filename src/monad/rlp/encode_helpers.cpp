@@ -5,7 +5,6 @@
 #include <monad/core/signature.hpp>
 #include <monad/core/transaction.hpp>
 
-#include <algorithm>
 #include <numeric>
 #include <string>
 
@@ -14,7 +13,7 @@ MONAD_RLP_NAMESPACE_BEGIN
 byte_string encode_access_list(Transaction::AccessList const &list)
 {
     byte_string result{};
-    std::ranges::for_each(list, [&result](auto const &i) {
+    for (auto const &i : list) {
         result += encode_list(
             encode_address(i.a) + encode_list(std::accumulate(
                                       std::cbegin(i.keys),
@@ -24,7 +23,7 @@ byte_string encode_access_list(Transaction::AccessList const &list)
                                           return std::move(i) +
                                                  encode_bytes32(j);
                                       })));
-    });
+    };
 
     return encode_list(result);
 }

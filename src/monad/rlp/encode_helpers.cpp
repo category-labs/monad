@@ -2,6 +2,7 @@
 
 #include <monad/core/account.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/receipt.hpp>
 #include <monad/core/signature.hpp>
 #include <monad/core/transaction.hpp>
 
@@ -87,6 +88,49 @@ byte_string encode_transaction(Transaction const &txn)
     }
     assert(false);
     return {};
+}
+
+byte_string encode_topics(std::vector<bytes32_t> const &t)
+{
+    byte_string result{};
+    for (auto const &i : t) {
+        result += encode_bytes32(i);
+    }
+    return encode_list(result);
+}
+
+byte_string encode_log(Receipt::Log const &l)
+{
+    return encode_list(
+        encode_address(l.address),
+        encode_topics(l.topics),
+        encode_list(l.data));
+}
+
+byte_string encode_bloom(Receipt::Bloom const &b)
+{
+    return encode_string(to_byte_string_view(b));
+}
+
+byte_string encode_receipt(Receipt const &r)
+{
+    byte_string log_result{};
+    byte_string prefix{};
+
+    for (auto const &i : r.logs) {
+        log_result += encode_log(i);
+    }
+
+    if (r.type == Transaction::Type::eip1559 ||
+        r.type == Transaction::Type::eip2930) {
+        prefix = static_cast<unsigned>(r.type);
+    }
+
+    return prefix + encode_list(
+                        encode_unsigned(r.status),
+                        encode_unsigned(r.gas_used),
+                        encode_bloom(r.bloom),
+                        encode_list(log_result));
 }
 
 MONAD_RLP_NAMESPACE_END

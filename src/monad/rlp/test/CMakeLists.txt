@@ -5,6 +5,7 @@ add_unit_test(
   encode.cpp
   encode_helpers.cpp
   encode_account.cpp
+  encode_receipt.cpp
   encode_transaction.cpp
   LIBRARIES
   monad)

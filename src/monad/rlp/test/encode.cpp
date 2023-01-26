@@ -48,6 +48,10 @@ TEST(Rlp, EncodeString)
          'i',  'c',  'i', 'n', 'g', ' ', 'e', 'l', 'i', 't'});
     encoding = encode_string(to_byte_string_view(fifty_six_char_string));
     EXPECT_EQ(encoding, fifty_six_char_string_encoding);
+
+    std::array<unsigned char, 4> const an_array{0x00, 0x01, 0x02, 0x03};
+    encoding = encode_string(to_byte_string_view(an_array));
+    EXPECT_EQ(encoding, monad::byte_string({0x84, 0x00, 0x01, 0x02, 0x03}));
 }
 
 TEST(Rlp, EncodeList)

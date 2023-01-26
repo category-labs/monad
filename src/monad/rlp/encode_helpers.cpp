@@ -38,7 +38,7 @@ byte_string encode_account(Account const &account, bytes32_t const &code_root)
         encode_bytes32(account.code_hash));
 }
 
-byte_string encode(Transaction const &txn)
+byte_string encode_transaction(Transaction const &txn)
 {
     MONAD_ASSERT(txn.to != std::nullopt);
 

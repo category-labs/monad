@@ -36,9 +36,9 @@ static inline rocksdb::Slice to_slice(address_t const &address)
     return rocksdb::Slice{reinterpret_cast<char const *>(address.bytes), 20};
 }
 
-static inline rocksdb::Slice to_slice(bytes32_t const &s)
+static inline rocksdb::Slice to_slice(std::basic_string_view<uint8_t> const &s)
 {
-    return rocksdb::Slice{reinterpret_cast<char const *>(s.bytes), 32};
+    return rocksdb::Slice{reinterpret_cast<char const *>(s.data()), s.size()};
 }
 
 static inline rocksdb::Slice to_slice(std::basic_string_view<uint8_t> const &s)

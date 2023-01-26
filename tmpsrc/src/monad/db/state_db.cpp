@@ -278,7 +278,9 @@ void StateDb::commit()
 {
     rocksdb::WriteOptions options;
     options.disableWAL = true;
-    db_->Write(options, batch_.get());
+    auto status = db_->Write(options, batch_.get());
+    SILKWORM_ASSERT(status.ok());
+    batch_->Clear();
 }
 
 MONAD_NAMESPACE_END

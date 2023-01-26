@@ -8,6 +8,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
+#include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 
 MONAD_NAMESPACE_BEGIN
@@ -36,6 +37,9 @@ inline byte_string encode_address(address_t const &a)
 byte_string encode_account(Account const &, bytes32_t const &code_root);
 byte_string encode_transaction(Transaction const &);
 byte_string encode_access_list(Transaction::AccessList const &list);
-
+byte_string encode_topics(std::vector<bytes32_t> const &topics);
+byte_string encode_log(Receipt::Log const &log);
+byte_string encode_bloom(Receipt::Bloom const &b);
+byte_string encode_receipt(Receipt const &receipt);
 
 MONAD_RLP_NAMESPACE_END

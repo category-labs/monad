@@ -1,5 +1,10 @@
 from siblings import longest_common_prefix
 from nodes import Leaf, Branch
+from enum import Enum
+
+class MergeAction(Enum):
+    CONCATENATE = 1
+    NEW = 2
 
 # merge the two nodes together
 # either a new branch is created or branches are concatenated together

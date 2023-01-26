@@ -10,12 +10,12 @@ def is_first_in_branch(i, nodes):
 
 # Peek left from pre-existing node. Does not take into consideration
 # the work list
-def peek_left_from_node(i, nodes):
+def peek_left_no_work(i, nodes):
     if i == 0:
         return None
 
     if is_first_in_branch(i, nodes):
-        return peek_left_from_node(i-1, nodes)
+        return peek_left_no_work(i-1, nodes)
 
     for index in range(i-1, 0, -1):
         if are_siblings(index, i, nodes):
@@ -53,7 +53,7 @@ def is_last_in_branch(i, nodes):
 
 # Peek right from pre-existing node. Does not take into consideration
 # the work list
-def peek_right_helper(i, nodes):
+def peek_right_no_work(i, nodes):
     if i == 0 or i == (len(nodes) - 1):
         return None
 
@@ -91,20 +91,12 @@ class WorkIndex:
     def __int__(self):
         return self.index
 
-def peek_left_from_work(work_index, work, nodes):
-    assert(isinstance(work_index, WorkIndex))
-    assert(isinstance(work[int(work_index)], Leaf))
+def peek_left(target, current_work_index, work, nodes):
+    if isinstance(index, WorkIndex):
+        return peek_left_from_work(target, work, nodes)
+    return peek_left_from_node(target, current_work_index, work, nodes)
 
-    insort_index = bisect_left(nodes,
-                               work[int(work_index)].path,
-                               key=lambda n: n.path)
-    if insort_index == 0:
-        return None if work_index == 0 else work_index-1
-
-    left_from_nodes = find_parent(len(nodes)-1, nodes) \
-            if insort_index == len(nodes) \
-            else peek_left_from_node(insort_index, nodes)
-
+def peek_left_common(left_from_nodes, work_index, work, nodes):
     if work_index == 0:
         return left_from_nodes
     
@@ -117,6 +109,34 @@ def peek_left_from_work(work_index, work, nodes):
             return left_from_nodes
 
     return work_index-1 if nodes[left_from_nodes].path <= last_work.path else left_from_nodes
+
+def peek_left_from_node(node_index, current_work, work, nodes):
+    assert(isinstance(current_work, WorkIndex))
+
+    left_from_nodes = peek_left_no_work(node_index, nodes)
+
+    return peek_left_common(left_from_nodes, current_work, work, nodes)
+
+def peek_left_from_work(work_index, work, nodes):
+    assert(isinstance(work_index, WorkIndex))
+    assert(isinstance(work[int(work_index)], Leaf))
+
+    insort_index = bisect_left(nodes,
+                               work[int(work_index)].path,
+                               key=lambda n: n.path)
+    if insort_index == 0:
+        return None if work_index == 0 else work_index-1
+
+    left_from_nodes = find_parent(len(nodes)-1, nodes) \
+            if insort_index == len(nodes) \
+            else peek_left_no_work(insort_index, nodes)
+
+    return peek_left_common(left_from_nodes, work_index, work, nodes)
+
+def peek_right(target, current_work_index, work, nodes):
+    if isinstance(target, WorkIndex):
+        return peek_right_from_work(target, work, nodes)
+    return peek_right_from_node(target, current_work_index, work, nodes)
 
 # Given the result of peeking right from the nodes list, look at the
 # next work item and reconcile the two
@@ -131,12 +151,12 @@ def peek_right_common(right_from_nodes, work_index, work, nodes):
 
     return right_from_nodes if nodes[right_from_nodes].path < next_work.path else work_index+1
 
-def peek_right_from_node(node_index, last_processed_work, work, nodes):
-    assert(isinstance(last_processed_work, WorkIndex))
+def peek_right_from_node(node_index, current_work_index, work, nodes):
+    assert(isinstance(current_work_index, WorkIndex))
 
-    right_from_nodes = peek_right_helper(node_index, nodes)
+    right_from_nodes = peek_right_no_work(node_index, nodes)
 
-    return peek_right_common(right_from_nodes, last_processed_work, work, nodes)
+    return peek_right_common(right_from_nodes, current_work_index, work, nodes)
 
 def peek_right_from_work(work_index, work, nodes):
     assert(isinstance(work_index, WorkIndex))
@@ -148,7 +168,7 @@ def peek_right_from_work(work_index, work, nodes):
     if insort_index == len(nodes):
         return None if work_index == (len(work)-1) else work_index+1
 
-    right_from_nodes = peek_right_helper(insort_index, nodes) \
+    right_from_nodes = peek_right_no_work(insort_index, nodes) \
             if nodes[insort_index] == work[int(work_index)] \
             else insort_index
 
@@ -170,27 +190,27 @@ def main():
     # Sorted in lexicographic order by path
     assert(nodes == sorted(nodes, key=lambda n: n.path))
 
-    assert(peek_left_from_node(0, nodes) == None)
-    assert(peek_left_from_node(1, nodes) == None)
-    assert(peek_left_from_node(2, nodes) == None)
-    assert(peek_left_from_node(3, nodes) == 2)
-    assert(peek_left_from_node(4, nodes) == 1)
-    assert(peek_left_from_node(5, nodes) == 1)
-    assert(peek_left_from_node(6, nodes) == 5)
-    assert(peek_left_from_node(7, nodes) == 6)
-    assert(peek_left_from_node(8, nodes) == 4)
-    assert(peek_left_from_node(9, nodes) == 8)
+    assert(peek_left_no_work(0, nodes) == None)
+    assert(peek_left_no_work(1, nodes) == None)
+    assert(peek_left_no_work(2, nodes) == None)
+    assert(peek_left_no_work(3, nodes) == 2)
+    assert(peek_left_no_work(4, nodes) == 1)
+    assert(peek_left_no_work(5, nodes) == 1)
+    assert(peek_left_no_work(6, nodes) == 5)
+    assert(peek_left_no_work(7, nodes) == 6)
+    assert(peek_left_no_work(8, nodes) == 4)
+    assert(peek_left_no_work(9, nodes) == 8)
 
-    assert(peek_right_helper(0, nodes) == None)
-    assert(peek_right_helper(1, nodes) == 4)
-    assert(peek_right_helper(2, nodes) == 3)
-    assert(peek_right_helper(3, nodes) == 4)
-    assert(peek_right_helper(4, nodes) == 8)
-    assert(peek_right_helper(5, nodes) == 6)
-    assert(peek_right_helper(6, nodes) == 7)
-    assert(peek_right_helper(7, nodes) == 8)
-    assert(peek_right_helper(8, nodes) == 9)
-    assert(peek_right_helper(9, nodes) == None)
+    assert(peek_right_no_work(0, nodes) == None)
+    assert(peek_right_no_work(1, nodes) == 4)
+    assert(peek_right_no_work(2, nodes) == 3)
+    assert(peek_right_no_work(3, nodes) == 4)
+    assert(peek_right_no_work(4, nodes) == 8)
+    assert(peek_right_no_work(5, nodes) == 6)
+    assert(peek_right_no_work(6, nodes) == 7)
+    assert(peek_right_no_work(7, nodes) == 8)
+    assert(peek_right_no_work(8, nodes) == 9)
+    assert(peek_right_no_work(9, nodes) == None)
 
     # Unit tests for work list peeking left with single element
     assert(peek_left_from_work(WorkIndex(0), [Leaf("13322130")], nodes) == 0)
@@ -242,6 +262,9 @@ def main():
 
     assert(peek_left_from_work(WorkIndex(1), [Branch("45", ["0", "1"]), Leaf("4523")], nodes) == 2)
     assert(peek_left_from_work(WorkIndex(1), [Branch("45", ["0", "1"]), Leaf("4521")], nodes) == WorkIndex(0))
+
+    assert(peek_left_from_node(3, WorkIndex(1), [Branch("45", ["0", "1"]), Leaf("4523")], nodes) == WorkIndex(0))
+    assert(peek_left_from_node(4, WorkIndex(1), [Branch("45", ["0", "1"]), Leaf("4523")], nodes) == 3)
 
 if __name__ == "__main__":
     main()

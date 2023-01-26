@@ -5,6 +5,7 @@
 #include <silkworm/common/assert.hpp>
 #include <silkworm/common/log.hpp>
 #include <silkworm/common/rlp_err.hpp>
+#include <silkworm/common/util.hpp>
 
 #include <rocksdb/db.h>
 #include <rocksdb/iterator.h>
@@ -38,6 +39,11 @@ static inline rocksdb::Slice to_slice(address_t const &address)
 static inline rocksdb::Slice to_slice(bytes32_t const &s)
 {
     return rocksdb::Slice{reinterpret_cast<char const *>(s.bytes), 32};
+}
+
+static inline rocksdb::Slice to_slice(std::basic_string_view<uint8_t> const &s)
+{
+    return rocksdb::Slice{reinterpret_cast<char const *>(s.data()), s.size()};
 }
 
 static inline byte_string_view to_view(rocksdb::Slice const &s)
@@ -201,9 +207,9 @@ std::optional<bytes32_t> StateDb::read_storage_history(
         return std::nullopt;
     }
     auto const value = it->value();
-    SILKWORM_ASSERT(value.size() == 32);
+    SILKWORM_ASSERT(value.size() <= 32);
     bytes32_t result;
-    std::memcpy(result.bytes, value.data(), 32);
+    std::memcpy(result.bytes + 32 - value.size(), value.data(), value.size());
     return result;
 }
 
@@ -229,7 +235,7 @@ void StateDb::write_storage(Storage const &storage)
             boost::endian::store_big_u64(&key[20], incarnation);
             for (auto const &[location, value] : locations) {
                 std::memcpy(&key[28], location.bytes, 32);
-                batch_->Put(cfs_[2], to_slice(key), to_slice(value));
+                batch_->Put(cfs_[2], to_slice(key), to_slice(silkworm::zeroless_view(value)));
             }
         }
     }

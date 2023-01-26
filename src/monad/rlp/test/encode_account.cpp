@@ -1,7 +1,5 @@
+#include <monad/core/account.hpp>
 #include <monad/rlp/encode_helpers.hpp>
-#include <monad/core/account.hpp>
-
-#include <monad/core/account.hpp>
 
 #include <gtest/gtest.h>
 

@@ -22,4 +22,9 @@ byte_string_view to_byte_string_view(unsigned char const (&a)[N])
     return {&a[0], N};
 }
 
+inline byte_string_view to_byte_string_view(std::string const &s)
+{
+    return {reinterpret_cast<unsigned char const *>(&s[0]), s.size()};
+}
+
 MONAD_NAMESPACE_END

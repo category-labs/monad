@@ -1,6 +1,4 @@
-#include <monad/rlp/encode.hpp>
 #include <monad/rlp/encode_helpers.hpp>
-#include <monad/rlp/util.hpp>
 
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
@@ -14,52 +12,11 @@
 using namespace monad;
 using namespace monad::rlp;
 
-byte_string_view to_byte_string_view(std::string const &s)
+TEST(Rlp, EncodeUnsigned)
 {
-    return {reinterpret_cast<unsigned char const *>(&s[0]), s.size()};
-}
-
-TEST(Rlp, ToBigEndianCompacted)
-{
-    auto bytes_1 = to_big_compact(uint16_t{1024});
-    auto bytes_2 = to_big_compact(unsigned{1024});
-    auto bytes_3 = to_big_compact(uint64_t{1024});
-
-    EXPECT_EQ(bytes_1, monad::byte_string({0x04, 0x00}));
-    EXPECT_EQ(bytes_1, bytes_2);
-    EXPECT_EQ(bytes_2, bytes_3);
-}
-
-TEST(Rlp, EncodeSanity)
-{
-    // Empty list
-    auto encoding = encode_list();
-    EXPECT_EQ(encoding, monad::byte_string({0xc0}));
-
-    // simple string
-    encoding = encode_string(to_byte_string_view("dog"));
-    EXPECT_EQ(encoding.size(), 4);
-    EXPECT_EQ(encoding, monad::byte_string({0x83, 'd', 'o', 'g'}));
-
-    // list of two strings
-    encoding = encode_list(
-        encode_string(to_byte_string_view("cat")),
-        encode_string(to_byte_string_view("dog")));
-    EXPECT_EQ(
-        encoding,
-        monad::byte_string({0xc8, 0x83, 'c', 'a', 't', 0x83, 'd', 'o', 'g'}));
-
-    // empty string
-    encoding = encode_string(to_byte_string_view(""));
-    EXPECT_EQ(encoding, monad::byte_string({0x80}));
-
     // integer 0
-    encoding = encode_unsigned(0u);
+    auto encoding = encode_unsigned(0u);
     EXPECT_EQ(encoding, monad::byte_string({0x80}));
-
-    // string with one char
-    encoding = encode_string(monad::byte_string({0x00}));
-    EXPECT_EQ(encoding, monad::byte_string({0x00}));
 
     // char 0
     encoding = encode_unsigned(uint8_t{0});
@@ -78,12 +35,15 @@ TEST(Rlp, EncodeSanity)
     auto const ten_twenty_four_encoding =
         monad::byte_string({0x82, 0x04, 0x00});
     EXPECT_EQ(encoding, ten_twenty_four_encoding);
+}
 
+TEST(Rlp, EncodeCombinations)
+{
     // the integer list of 0 and 9
-    encoding = encode_list(encode_unsigned(0u), encode_unsigned(9u));
+    auto encoding = encode_list(encode_unsigned(0u), encode_unsigned(9u));
     EXPECT_EQ(encoding, monad::byte_string({0xC2, 0x80, 0x09}));
 
-    // 56 character string
+    // encoding list that is larger than 55 bytes
     auto const fifty_six_char_string =
         "Lorem ipsum dolor sit amet, consectetur adipisicing elit";
     auto const fifty_six_char_string_encoding = monad::byte_string(
@@ -92,20 +52,17 @@ TEST(Rlp, EncodeSanity)
          'a',  'm',  'e', 't', ',', ' ', 'c', 'o', 'n', 's', 'e', 'c',
          't',  'e',  't', 'u', 'r', ' ', 'a', 'd', 'i', 'p', 'i', 's',
          'i',  'c',  'i', 'n', 'g', ' ', 'e', 'l', 'i', 't'});
-    encoding = encode_string(to_byte_string_view(fifty_six_char_string));
-    EXPECT_EQ(encoding, fifty_six_char_string_encoding);
-
-    // encoding list that is larger than 55 bytes
-    encoding = encode_list(
-        encode_unsigned(1024u),
-        encode_string(to_byte_string_view(fifty_six_char_string)));
-    auto const expected_list_encoding = monad::byte_string({0xf7 + 1, 61}) +
-                                        ten_twenty_four_encoding +
-                                        fifty_six_char_string_encoding;
+    encoding =
+        encode_list(encode_string(to_byte_string_view(fifty_six_char_string)));
+    auto const expected_list_encoding =
+        monad::byte_string({0xf7 + 1, 58}) + fifty_six_char_string_encoding;
     EXPECT_EQ(encoding, expected_list_encoding);
+}
 
+TEST(Rlp, EncodeBigNumers)
+{
     using namespace intx;
-    encoding = encode_unsigned(0xbea34dd04b09ad3b6014251ee2457807_u128);
+    auto encoding = encode_unsigned(0xbea34dd04b09ad3b6014251ee2457807_u128);
     auto const sorta_big_num = monad::byte_string(
         {0x90,
          0xbe,

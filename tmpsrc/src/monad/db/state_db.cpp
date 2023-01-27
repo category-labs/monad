@@ -41,11 +41,6 @@ static inline rocksdb::Slice to_slice(std::basic_string_view<uint8_t> const &s)
     return rocksdb::Slice{reinterpret_cast<char const *>(s.data()), s.size()};
 }
 
-static inline rocksdb::Slice to_slice(std::basic_string_view<uint8_t> const &s)
-{
-    return rocksdb::Slice{reinterpret_cast<char const *>(s.data()), s.size()};
-}
-
 static inline byte_string_view to_view(rocksdb::Slice const &s)
 {
     return byte_string_view{

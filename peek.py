@@ -1,4 +1,4 @@
-from siblings import parent_path, are_siblings
+from siblings import parent_path, are_siblings, longest_common_prefix
 from nodes import Leaf, Branch
 from bisect import bisect_left
 
@@ -17,6 +17,7 @@ def peek_left_no_work(i, nodes):
     if is_first_in_branch(i, nodes):
         return peek_left_no_work(i-1, nodes)
 
+    # TODO: make this better
     for index in range(i-1, 0, -1):
         if are_siblings(index, i, nodes):
             return index
@@ -35,6 +36,10 @@ def find_parent(i, nodes):
     assert(isinstance(nodes[parent_index], Branch))
 
     return parent_index
+
+def find_element(path, nodes):
+    index = bisect_left(nodes, path, key=lambda n: n.path)
+    return None if index == len(nodes) or nodes[index].path != path else index
 
 def is_last_in_branch(i, nodes):
     if i == 0 or i == (len(nodes) - 1):
@@ -91,10 +96,16 @@ class WorkIndex:
     def __int__(self):
         return self.index
 
-def peek_left(target, current_work_index, work, nodes):
+    def __str__(self):
+        return f"WorkIndex[{self.index}]"
+
+    def __repr__(self):
+        return self.__str__()
+
+def peek_left(from_index, current_work_index, work, nodes):
     if isinstance(index, WorkIndex):
-        return peek_left_from_work(target, work, nodes)
-    return peek_left_from_node(target, current_work_index, work, nodes)
+        return peek_left_from_work(from_index, work, nodes)
+    return peek_left_from_node(from_index, current_work_index, work, nodes)
 
 def peek_left_common(left_from_nodes, work_index, work, nodes):
     if work_index == 0:
@@ -124,6 +135,7 @@ def peek_left_from_work(work_index, work, nodes):
     insort_index = bisect_left(nodes,
                                work[int(work_index)].path,
                                key=lambda n: n.path)
+
     if insort_index == 0:
         return None if work_index == 0 else work_index-1
 
@@ -133,14 +145,53 @@ def peek_left_from_work(work_index, work, nodes):
 
     return peek_left_common(left_from_nodes, work_index, work, nodes)
 
-def peek_right(target, current_work_index, work, nodes):
-    if isinstance(target, WorkIndex):
-        return peek_right_from_work(target, work, nodes)
-    return peek_right_from_node(target, current_work_index, work, nodes)
+def peek_left_from_first_work(work_index, work, nodes):
+    work_item = work[int(work_index)]
+    assert(isinstance(work_index, WorkIndex))
+    assert(isinstance(work_item, Leaf))
+
+    insort_index = bisect_left(nodes,
+                               work_item.path,
+                               key=lambda n: n.path)
+
+    if insort_index < len(nodes) and nodes[insort_index] == work_item:
+        return peek_left_no_work(insort_index, nodes)
+
+    if insort_index == 0:
+        return None
+
+    parent_path = longest_common_prefix(nodes[insort_index-1], work_item) 
+    if insort_index < len(nodes):
+        next_prefix = longest_common_prefix(nodes[insort_index], work_item)
+        parent_path = next_prefix if len(next_prefix) > len(parent_path) else parent_path
+
+    target_index = bisect_left(nodes, parent_path, key=lambda n: n.path)
+    target = nodes[target_index]
+
+    # parent exists
+    if target.path == parent_path:
+        branch_index = bisect_left(target.branches, work_item.path, key=lambda n: n.path)
+        if branch_index == 0:
+            return peek_left_no_work(target_index, nodes)
+        elif branch_index == len(target.branches):
+            return target_index
+        else:
+            return branch_index-1
+
+    # parent does not exist
+    return target_index if target.path < work_item.path else peek_left_no_work(target_index, nodes)
+
+def peek_right(from_index, current_work_index, work, nodes):
+    if isinstance(from_index, WorkIndex):
+        return peek_right_from_work(from_index, work, nodes)
+    return peek_right_from_node(from_index, current_work_index, work, nodes)
 
 # Given the result of peeking right from the nodes list, look at the
 # next work item and reconcile the two
 def peek_right_common(right_from_nodes, work_index, work, nodes):
+    if right_from_nodes is None:
+        return None if work_index == (len(work)-1) else work_index+1 
+
     if work_index == (len(work)-1):
         return right_from_nodes
 

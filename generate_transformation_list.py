@@ -2,8 +2,7 @@ from nodes import Leaf, Branch
 from peek import WorkIndex, peek_left_from_first_work, peek_left_no_work, peek_right
 
 def generate_transformation_list(work, nodes):
-    if len(work) == 0:
-        return []
+    assert(len(work) > 0)
 
     prepend = peek_left_from_first_work(work[0], nodes)
     transformation = []
@@ -47,11 +46,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# work_list = [...]
-
-# working = []
-# peek_left from work_list[0] until reach None, push to working from None to work_list[0]
-# peek_right from work_list[0] until reach None, push to working from work_list[0] to None
-# every node in work_list should be in working
-# reduce that list to root

@@ -65,6 +65,8 @@ def peek_right_no_work(i, nodes):
     if is_last_in_branch(i, nodes):
         return i+1 
 
+    # TODO: make this better
+    # AKA binary search to find parent and return sibling
     for index in range(i+1, len(nodes)):
         if are_siblings(index, i, nodes):
             return index
@@ -145,9 +147,18 @@ def peek_left_from_work(work_index, work, nodes):
 
     return peek_left_common(left_from_nodes, work_index, work, nodes)
 
-def peek_left_from_first_work(work_index, work, nodes):
-    work_item = work[int(work_index)]
-    assert(isinstance(work_index, WorkIndex))
+def get_parent_path_of_work(insort_index, work_item, nodes):
+    parent_path = None
+    if insort_index > 0:
+        parent_path = longest_common_prefix(nodes[insort_index-1], work_item) 
+
+    if insort_index < len(nodes):
+        next_prefix = longest_common_prefix(nodes[insort_index], work_item)
+        parent_path = next_prefix if len(next_prefix) > len(parent_path) else parent_path
+
+    return parent_path
+
+def peek_left_from_first_work(work_item, nodes):
     assert(isinstance(work_item, Leaf))
 
     insort_index = bisect_left(nodes,
@@ -160,10 +171,7 @@ def peek_left_from_first_work(work_index, work, nodes):
     if insort_index == 0:
         return None
 
-    parent_path = longest_common_prefix(nodes[insort_index-1], work_item) 
-    if insort_index < len(nodes):
-        next_prefix = longest_common_prefix(nodes[insort_index], work_item)
-        parent_path = next_prefix if len(next_prefix) > len(parent_path) else parent_path
+    parent_path = get_parent_path_of_work(insort_index, work_item, nodes)
 
     target_index = bisect_left(nodes, parent_path, key=lambda n: n.path)
     target = nodes[target_index]
@@ -196,8 +204,22 @@ def peek_right_common(right_from_nodes, work_index, work, nodes):
         return right_from_nodes
 
     next_work = work[int(work_index+1)]
+
+    parent_path_of_next_work = get_parent_path_of_work(
+            bisect_left(nodes, next_work.path, key=lambda n: n.path),
+            next_work, nodes)
+    branch_index = len(parent_path_of_next_work)
+
     while isinstance(nodes[right_from_nodes], Branch) and \
             next_work.path.startswith(nodes[right_from_nodes].path):
+
+        node = nodes[right_from_nodes]
+
+        # if work would be last element in branch, return the branch itself
+        if parent_path_of_next_work == node.path and \
+                node.branches[-1].path[branch_index] < next_work.path[branch_index]:
+                return right_from_nodes
+
         right_from_nodes += 1
 
     return right_from_nodes if nodes[right_from_nodes].path < next_work.path else work_index+1

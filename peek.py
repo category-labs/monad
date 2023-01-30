@@ -37,10 +37,6 @@ def find_parent(i, nodes):
 
     return parent_index
 
-def find_element(path, nodes):
-    index = bisect_left(nodes, path, key=lambda n: n.path)
-    return None if index == len(nodes) or nodes[index].path != path else index
-
 def is_last_in_branch(i, nodes):
     if i == 0 or i == (len(nodes) - 1):
         return True
@@ -103,49 +99,6 @@ class WorkIndex:
 
     def __repr__(self):
         return self.__str__()
-
-def peek_left(from_index, current_work_index, work, nodes):
-    if isinstance(index, WorkIndex):
-        return peek_left_from_work(from_index, work, nodes)
-    return peek_left_from_node(from_index, current_work_index, work, nodes)
-
-def peek_left_common(left_from_nodes, work_index, work, nodes):
-    if work_index == 0:
-        return left_from_nodes
-    
-    last_work = work[int(work_index)-1]
-    if isinstance(last_work, Branch):
-        last_branch = last_work.branches[-1]
-        if nodes[left_from_nodes].path[len(last_work.path)] <= last_branch:
-            return work_index-1
-        else:
-            return left_from_nodes
-
-    return work_index-1 if nodes[left_from_nodes].path <= last_work.path else left_from_nodes
-
-def peek_left_from_node(node_index, current_work, work, nodes):
-    assert(isinstance(current_work, WorkIndex))
-
-    left_from_nodes = peek_left_no_work(node_index, nodes)
-
-    return peek_left_common(left_from_nodes, current_work, work, nodes)
-
-def peek_left_from_work(work_index, work, nodes):
-    assert(isinstance(work_index, WorkIndex))
-    assert(isinstance(work[int(work_index)], Leaf))
-
-    insort_index = bisect_left(nodes,
-                               work[int(work_index)].path,
-                               key=lambda n: n.path)
-
-    if insort_index == 0:
-        return None if work_index == 0 else work_index-1
-
-    left_from_nodes = find_parent(len(nodes)-1, nodes) \
-            if insort_index == len(nodes) \
-            else peek_left_no_work(insort_index, nodes)
-
-    return peek_left_common(left_from_nodes, work_index, work, nodes)
 
 def get_parent_path_of_work(insort_index, work_item, nodes):
     parent_path = None
@@ -249,16 +202,19 @@ def peek_right_from_work(work_index, work, nodes):
 
 def main():
     # Assume list is sorted in lexicographic order
-    nodes = [Branch("0"       , ["0", "1", "2", "3"]), # 0
-             Branch("00"      , ["1", "2"]          ), # 1
-             Leaf  ("00131211"                      ), # 2
-             Leaf  ("00211002"                      ), # 3
-             Branch("01"      , ["0", "2", "3"]     ), # 4
-             Leaf  ("01013302"                      ), # 5
-             Leaf  ("01202113"                      ), # 6
-             Leaf  ("01321132"                      ), # 7
-             Leaf  ("02112220"                      ), # 8
-             Leaf  ("03322130"                      )] # 9
+    nodes = [Branch("0"       , [Branch("00", [Leaf("00131211"), Leaf("00211002")]),
+                                 Branch("01", [Leaf("01013302"), Leaf("01202113"), Leaf("01321132")]),
+                                 Leaf("02112220"),
+                                 Leaf("03322130")]),                                     # 0 
+             Branch("00"      , [Leaf("00131211"), Leaf("00211002")]          ),         # 1
+             Leaf  ("00131211"),                                                         # 2
+             Leaf  ("00211002"),                                                         # 3
+             Branch("01"      , [Leaf("01013302"), Leaf("01202113"), Leaf("01321132")]), # 4
+             Leaf  ("01013302"),                                                         # 5
+             Leaf  ("01202113"),                                                         # 6
+             Leaf  ("01321132"),                                                         # 7
+             Leaf  ("02112220"),                                                         # 8
+             Leaf  ("03322130")]                                                         # 9
 
     # Sorted in lexicographic order by path
     assert(nodes == sorted(nodes, key=lambda n: n.path))
@@ -286,25 +242,25 @@ def main():
     assert(peek_right_no_work(9, nodes) == None)
 
     # Unit tests for work list peeking left with single element
-    assert(peek_left_from_work(WorkIndex(0), [Leaf("13322130")], nodes) == 0)
-    assert(peek_left_from_work(WorkIndex(0), [Leaf("04322130")], nodes) == 0)
+    assert(peek_left_from_first_work(Leaf("13322130"), nodes) == 0)
+    assert(peek_left_from_first_work(Leaf("04322130"), nodes) == 0)
 
-    assert(peek_left_from_work(WorkIndex(0), [Leaf("02112220")], nodes) == 4)
-    assert(peek_left_from_work(WorkIndex(0), [Leaf("02212220")], nodes) == 8)
+    assert(peek_left_from_first_work(Leaf("02112220"), nodes) == 4)
+    assert(peek_left_from_first_work(Leaf("02212220"), nodes) == 8)
 
-    assert(peek_left_from_work(WorkIndex(0), [Leaf("01331132")], nodes) == 4)
-    assert(peek_left_from_work(WorkIndex(0), [Leaf("01311132")], nodes) == 6)
+    assert(peek_left_from_first_work(Leaf("01331132"), nodes) == 7)
+    assert(peek_left_from_first_work(Leaf("01311132"), nodes) == 6)
 
-    assert(peek_left_from_work(WorkIndex(0), [Leaf("0 123456")], nodes) == None)
-    assert(peek_left_from_work(WorkIndex(0), [Leaf(" 0123456")], nodes) == None)
-    assert(peek_left_from_work(WorkIndex(0), [Leaf("00121211")], nodes) == None)
+    assert(peek_left_from_first_work(Leaf("0 123456"), nodes) == None)
+    assert(peek_left_from_first_work(Leaf(" 0123456"), nodes) == None)
+    assert(peek_left_from_first_work(Leaf("00121211"), nodes) == None)
 
-    assert(peek_left_from_work(WorkIndex(0), [Leaf("01013302")], nodes) == 1)
-    assert(peek_left_from_work(WorkIndex(0), [Leaf("01 13302")], nodes) == 1)
-    assert(peek_left_from_work(WorkIndex(0), [Leaf("01023302")], nodes) == 5)
+    assert(peek_left_from_first_work(Leaf("01013302"), nodes) == 1)
+    assert(peek_left_from_first_work(Leaf("01 13302"), nodes) == 1)
+    assert(peek_left_from_first_work(Leaf("01023302"), nodes) == 5)
 
     # Unit tests for work list, peeking right
-    assert(peek_right_from_work(WorkIndex(0), [Leaf("00311002"), Leaf("01421132")], nodes) == 5)
+    assert(peek_right_from_work(WorkIndex(0), [Leaf("00311002"), Leaf("01421132")], nodes) == 4)
     assert(peek_right_from_work(WorkIndex(0), [Leaf("01013302"), Leaf("01102113")], nodes) == WorkIndex(1))
     assert(peek_right_from_work(WorkIndex(0), [Leaf("01202113"), Leaf("01320132")], nodes) == WorkIndex(1))
     assert(peek_right_from_work(WorkIndex(0), [Leaf("01202113"), Leaf("01322132")], nodes) == 7)
@@ -315,9 +271,9 @@ def main():
 
     # -----------------------------------------------------------------
 
-    nodes = [Branch("45", ["1", "2"]),
+    nodes = [Branch("45", [Leaf("4511"), Branch("452", [Leaf("4521"), Leaf("4522")])]),
              Leaf("4511"),
-             Branch("452", ["1", "2"]),
+             Branch("452", [Leaf("4521"), Leaf("4522")]),
              Leaf("4521"),
              Leaf("4522")]
 
@@ -330,14 +286,8 @@ def main():
     assert(peek_right_from_work(WorkIndex(0), [Leaf("5511"), Leaf("5621")], nodes) == WorkIndex(1))
     assert(peek_right_from_work(WorkIndex(0), [Leaf("3511"), Leaf("4520")], nodes) == 1)
     
-    assert(peek_right_from_node(1, WorkIndex(0), [Leaf("4501"), Leaf("4523")], nodes) == 3)
+    assert(peek_right_from_node(1, WorkIndex(0), [Leaf("4501"), Leaf("4523")], nodes) == 2)
     assert(peek_right_from_node(1, WorkIndex(0), [Leaf("4501"), Leaf("4521")], nodes) == WorkIndex(1))
-
-    assert(peek_left_from_work(WorkIndex(1), [Branch("45", ["0", "1"]), Leaf("4523")], nodes) == 2)
-    assert(peek_left_from_work(WorkIndex(1), [Branch("45", ["0", "1"]), Leaf("4521")], nodes) == WorkIndex(0))
-
-    assert(peek_left_from_node(3, WorkIndex(1), [Branch("45", ["0", "1"]), Leaf("4523")], nodes) == WorkIndex(0))
-    assert(peek_left_from_node(4, WorkIndex(1), [Branch("45", ["0", "1"]), Leaf("4523")], nodes) == 3)
 
 if __name__ == "__main__":
     main()

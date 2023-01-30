@@ -51,5 +51,27 @@ def main():
     assert(generate_transformation_list([Leaf("4511")], nodes) ==
            [Leaf("4511"), Branch("452", [Leaf("4521"), Leaf("4522")])])
 
+    # -----------------------------------------------------------------------------------------------
+
+    nodes = [Branch("0"       , [Branch("00", [Leaf("00131211"), Leaf("00211002")]),
+                                 Branch("01", [Leaf("01013302"), Leaf("01202113"), Leaf("01321132")]),
+                                 Leaf("02112220"),
+                                 Leaf("03322130")]),                                     # 0 
+             Branch("00"      , [Leaf("00131211"), Leaf("00211002")]          ),         # 1
+             Leaf  ("00131211"),                                                         # 2
+             Leaf  ("00211002"),                                                         # 3
+             Branch("01"      , [Leaf("01013302"), Leaf("01202113"), Leaf("01321132")]), # 4
+             Leaf  ("01013302"),                                                         # 5
+             Leaf  ("01202113"),                                                         # 6
+             Leaf  ("01321132"),                                                         # 7
+             Leaf  ("02112220"),                                                         # 8
+             Leaf  ("03322130")]                                                         # 9
+
+    assert(generate_transformation_list([Leaf("00131211")], nodes) ==
+           [Leaf("00131211"), Leaf("00211002"), Branch("01", [Leaf("01013302"), Leaf("01202113"), Leaf("01321132")]), Leaf("02112220"), Leaf("03322130")])
+    assert(generate_transformation_list([Leaf("00311002")], nodes) ==
+           [Branch("00", [Leaf("00131211"), Leaf("00211002")]), Leaf("00311002"), Branch("01", [Leaf("01013302"), Leaf("01202113"), Leaf("01321132")]), Leaf("02112220"), Leaf("03322130")])
+    assert(generate_transformation_list([Leaf("00311002"), Leaf("01421122")], nodes) ==
+           [Branch("00", [Leaf("00131211"), Leaf("00211002")]), Leaf("00311002"), Branch("01", [Leaf("01013302"), Leaf("01202113"), Leaf("01321132")]), Leaf("01421122"), Leaf("02112220"), Leaf("03322130")])
 if __name__ == "__main__":
     main()

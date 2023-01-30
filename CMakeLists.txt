@@ -81,6 +81,7 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/src/monad/core/assert.c
     ${PROJECT_SOURCE_DIR}/src/monad/core/huge_mem.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/core/int.cpp
+    ${PROJECT_SOURCE_DIR}/src/monad/core/receipt.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/core/signature.cpp
 
     # db

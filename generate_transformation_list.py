@@ -5,9 +5,11 @@ def generate_transformation_list(work, nodes):
     assert(len(work) > 0)
 
     prepend = peek_left_from_first_work(work[0], nodes)
+
     transformation = []
 
     while prepend is not None:
+        assert(isinstance(prepend, int))
         transformation.insert(0, prepend)
         prepend = peek_left_no_work(transformation[0], nodes)
 

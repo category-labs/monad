@@ -1,6 +1,9 @@
 from nodes import Leaf, Branch
 from peek import WorkIndex, peek_left_from_first_work, peek_left_no_work, peek_right
 
+# Given a list of nodes to update (work) and pre-existing state (nodes),
+# generate the transformation list for which to apply our transformation
+# rules on
 def generate_transformation_list(work, nodes):
     assert(len(work) > 0)
 
@@ -45,6 +48,8 @@ def main():
            [Branch("45", [Leaf("4511"), Branch("452", [Leaf("4521"), Leaf("4522")])]), Leaf("6789")])
     assert(generate_transformation_list([Leaf("4531")], nodes) ==
            [Branch("45", [Leaf("4511"), Branch("452", [Leaf("4521"), Leaf("4522")])]), Leaf("4531")])
+    assert(generate_transformation_list([Leaf("4511")], nodes) ==
+           [Leaf("4511"), Branch("452", [Leaf("4521"), Leaf("4522")])])
 
 if __name__ == "__main__":
     main()

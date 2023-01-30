@@ -2,73 +2,6 @@ from siblings import parent_path, are_siblings, longest_common_prefix
 from nodes import Leaf, Branch
 from bisect import bisect_left
 
-def is_first_in_branch(i, nodes):
-    if i == 0:
-        return False
-
-    return isinstance(nodes[i-1], Branch)
-
-# Peek left from pre-existing node. Does not take into consideration
-# the work list
-def peek_left_no_work(i, nodes):
-    if i == 0:
-        return None
-
-    if is_first_in_branch(i, nodes):
-        return peek_left_no_work(i-1, nodes)
-
-    # TODO: make this better
-    for index in range(i-1, 0, -1):
-        if are_siblings(index, i, nodes):
-            return index
-
-    return None
-
-def find_parent(i, nodes):
-    if i == 0:
-        return None
-
-    target_path = parent_path(i, nodes)
-
-    parent_index = bisect_left(nodes, target_path, hi=i, key=lambda n: n.path)
-
-    assert(nodes[parent_index].path == target_path)
-    assert(isinstance(nodes[parent_index], Branch))
-
-    return parent_index
-
-def is_last_in_branch(i, nodes):
-    if i == 0 or i == (len(nodes) - 1):
-        return True
-
-    if isinstance(nodes[i], Leaf):
-        return not are_siblings(i, i+1, nodes)
-
-    parent_index = find_parent(i, nodes) 
-    parent = nodes[parent_index]
-
-    assert(parent_index is not None)
-
-    branch = nodes[i].path[len(parent.path)]
-    return parent.branches[-1] == branch
-
-# Peek right from pre-existing node. Does not take into consideration
-# the work list
-def peek_right_no_work(i, nodes):
-    if i == 0 or i == (len(nodes) - 1):
-        return None
-
-    if is_last_in_branch(i, nodes):
-        return i+1 
-
-    # TODO: make this better
-    # AKA binary search to find parent and return sibling
-    for index in range(i+1, len(nodes)):
-        if are_siblings(index, i, nodes):
-            return index
-
-    return None
-
 class WorkIndex:
     def __init__(self, index):
         self.index = index
@@ -100,6 +33,67 @@ class WorkIndex:
     def __repr__(self):
         return self.__str__()
 
+def is_first_in_branch(i, nodes):
+    if i == 0:
+        return False
+
+    return isinstance(nodes[i-1], Branch)
+
+# Peek left from pre-existing node. Does not take into consideration
+# the work list
+def peek_left_no_work(i, nodes):
+    if i == 0:
+        return None
+
+    if is_first_in_branch(i, nodes):
+        return peek_left_no_work(i-1, nodes)
+
+    parent = find_parent(i, nodes)
+
+    if parent is None:
+        return None
+
+    branch = bisect_left(nodes[parent].branches, nodes[i].path, key=lambda n:n.path)
+    assert(nodes[parent].branches[branch] == nodes[i])
+    assert(branch > 0)
+    
+    return bisect_left(nodes, nodes[parent].branches[branch-1].path, lo=parent, key=lambda n: n.path)
+
+# given a prexisting node, find the index of the parent
+def find_parent(i, nodes):
+    if i == 0:
+        return None
+
+    target_path = parent_path(i, nodes)
+
+    parent_index = bisect_left(nodes, target_path, hi=i, key=lambda n: n.path)
+
+    assert(nodes[parent_index].path == target_path)
+    assert(isinstance(nodes[parent_index], Branch))
+
+    return parent_index
+
+# Peek right from pre-existing node. Does not take into consideration
+# the work list
+def peek_right_no_work(i, nodes):
+    if i == 0 or i == (len(nodes) - 1):
+        return None
+
+    parent = find_parent(i, nodes)
+
+    assert(parent is not None)
+
+    branch = bisect_left(nodes[parent].branches, nodes[i].path, key=lambda n:n.path)
+    assert(nodes[parent].branches[branch] == nodes[i])
+
+    # last in branch, look at parents right
+    if branch == len(nodes[parent].branches)-1:
+        return peek_right_no_work(parent, nodes)
+
+    return bisect_left(nodes, nodes[parent].branches[branch+1].path, lo=parent, key=lambda n: n.path)
+
+# Given a work item, find the path to its parent
+# Note: this node may not exist
 def get_parent_path_of_work(insort_index, work_item, nodes):
     parent_path = None
     if insort_index > 0:
@@ -111,6 +105,7 @@ def get_parent_path_of_work(insort_index, work_item, nodes):
 
     return parent_path
 
+# given the first element in the work list, find the element to its left
 def peek_left_from_first_work(work_item, nodes):
     assert(isinstance(work_item, Leaf))
 

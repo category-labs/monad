@@ -21,23 +21,9 @@ def merge(s_2, s_3):
 def transform(s_1, s_2, s_3, s_4):
     assert(s_2 is not None and s_3 is not None)
 
-    if s_1 is None and s_4 is None:
-        return merge(s_2, s_3)
-    
     curr_prefix_len = len(longest_common_prefix(s_2, s_3))
-    
-    if s_1 is None:
-        if curr_prefix_len >= len(longest_common_prefix(s_3, s_4)):
-            return merge(s_2, s_3)
-        return None
-    
-    if s_4 is None:
-        if curr_prefix_len > len(longest_common_prefix(s_1, s_2)):
-            return merge(s_2, s_3)
-        return None
-    
-    if curr_prefix_len >= len(longest_common_prefix(s_3, s_4)) and \
-        curr_prefix_len > len(longest_common_prefix(s_1, s_2)):
+    if (s_1 is None or curr_prefix_len > len(longest_common_prefix(s_1, s_2))) and \
+            (s_4 is None or curr_prefix_len >= len(longest_common_prefix(s_3, s_4))):
         return merge(s_2, s_3)
     
     return None

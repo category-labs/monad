@@ -1,6 +1,20 @@
-from siblings import parent_path, are_siblings, longest_common_prefix
 from nodes import Leaf, Branch
 from bisect import bisect_left
+
+def longest_common_prefix(first, second):
+    first = first.path
+    second = second.path
+    length = min(len(first), len(second))
+    for i in range(length):
+        if first[i] != second[i]:
+            return first[:i]
+    return first[:length]
+
+def parent_path(i, nodes):
+    if i == 0:
+        return ""
+
+    return longest_common_prefix(nodes[i], nodes[i-1])
 
 class WorkIndex:
     def __init__(self, index):

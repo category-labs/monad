@@ -17,6 +17,8 @@ struct Receipt
         byte_string data{};
         std::vector<bytes32_t> topics{};
         address_t address{};
+
+        friend bool operator==(const Log &, const Log &) = default;
     };
 
     Bloom bloom{};
@@ -24,7 +26,11 @@ struct Receipt
     uint64_t gas_used{};
     Transaction::Type type{};
     std::vector<Log> logs;
+
+    void add_log(Receipt::Log const &l);
 };
+
+void populate_bloom(Receipt::Bloom &b, Receipt::Log const &l);
 
 static_assert(sizeof(Receipt::Log) == 80);
 static_assert(alignof(Receipt::Log) == 8);

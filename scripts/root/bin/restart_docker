@@ -1,0 +1,4 @@
+#!/bin/sh
+
+systemctl restart docker.service
+

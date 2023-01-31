@@ -1,4 +1,4 @@
-from nodes import Leaf, Branch
+from nodes import Leaf, Branch, LeafAction
 from bisect import bisect_left
 
 class WorkIndex:
@@ -46,7 +46,6 @@ def parent_path(i, nodes):
         return ""
 
     return longest_common_prefix(nodes[i], nodes[i-1])
-
 
 def is_first_in_branch(i, nodes):
     if i == 0:
@@ -159,33 +158,45 @@ def peek_right(from_index, current_work_index, work, nodes):
 
 # Given the result of peeking right from the nodes list, look at the
 # next work item and reconcile the two
-def peek_right_common(right_from_nodes, work_index, work, nodes):
+def peek_right_common(right_from_nodes, current_work_index, work, nodes):
     if right_from_nodes is None:
-        return None if work_index == (len(work)-1) else work_index+1 
+        # Does not make sense for any work after this point to be leaf deletions
+        assert(all([work[i].action == LeafAction.UPSERT for i in range(int(current_work_index), len(work))]))
+        return None if current_work_index == len(work) else current_work_index
 
-    if work_index == (len(work)-1):
+    if current_work_index == len(work):
         return right_from_nodes
 
-    next_work = work[int(work_index+1)]
+    current_work = work[int(current_work_index)]
 
-    parent_path_of_next_work = get_parent_path_of_work(
-            bisect_left(nodes, next_work.path, key=lambda n: n.path),
-            next_work, nodes)
-    branch_index = len(parent_path_of_next_work)
+    parent_path_of_current_work = get_parent_path_of_work(
+            bisect_left(nodes, current_work.path, key=lambda n: n.path),
+            current_work, nodes)
+    branch_index = len(parent_path_of_current_work)
 
+    # Keep going down first branch until find branch that can be used
+    # or until we hit a leaf
     while isinstance(nodes[right_from_nodes], Branch) and \
-            next_work.path.startswith(nodes[right_from_nodes].path):
+            current_work.path.startswith(nodes[right_from_nodes].path):
 
         node = nodes[right_from_nodes]
 
-        # if work would be last element in branch, return the branch itself
-        if parent_path_of_next_work == node.path and \
-                node.branches[-1].path[branch_index] < next_work.path[branch_index]:
+        # if inserting at end of branch, return the branch itself
+        if parent_path_of_current_work == node.path and \
+                current_work.action == LeafAction.UPSERT and \
+                node.branches[-1].path[branch_index] < current_work.path[branch_index]:
                 return right_from_nodes
 
         right_from_nodes += 1
 
-    return right_from_nodes if nodes[right_from_nodes].path < next_work.path else work_index+1
+    if nodes[right_from_nodes].path < current_work.path:
+        return right_from_nodes
+
+    if current_work.action == LeafAction.DELETE:
+        assert(current_work.path == nodes[right_from_nodes].path)
+        return peek_right_from_work(current_work_index, work, nodes)
+
+    return current_work_index
 
 def peek_right_from_node(node_index, current_work_index, work, nodes):
     assert(isinstance(current_work_index, WorkIndex))
@@ -194,21 +205,27 @@ def peek_right_from_node(node_index, current_work_index, work, nodes):
 
     return peek_right_common(right_from_nodes, current_work_index, work, nodes)
 
-def peek_right_from_work(work_index, work, nodes):
-    assert(isinstance(work_index, WorkIndex))
+def peek_right_from_work(from_index, work, nodes):
+    assert(isinstance(from_index, WorkIndex))
 
     insort_index = bisect_left(nodes,
-                               work[int(work_index)].path,
+                               work[int(from_index)].path,
                                key=lambda n: n.path)
 
     if insort_index == len(nodes):
-        return None if work_index == (len(work)-1) else work_index+1
+        if from_index == (len(work)-1):
+            return None
+
+        if work[int(from_index+1)].action == LeafAction.DELETE:
+            return peek_right_from_work(from_index+1, work, nodes)
+
+        return from_index+1
 
     right_from_nodes = peek_right_no_work(insort_index, nodes) \
-            if nodes[insort_index] == work[int(work_index)] \
+            if nodes[insort_index] == work[int(from_index)] \
             else insort_index
 
-    return peek_right_common(right_from_nodes, work_index, work, nodes)
+    return peek_right_common(right_from_nodes, from_index+1, work, nodes)
 
 def main():
     # Assume list is sorted in lexicographic order
@@ -296,8 +313,8 @@ def main():
     assert(peek_right_from_work(WorkIndex(0), [Leaf("5511"), Leaf("5621")], nodes) == WorkIndex(1))
     assert(peek_right_from_work(WorkIndex(0), [Leaf("3511"), Leaf("4520")], nodes) == 1)
     
-    assert(peek_right_from_node(1, WorkIndex(0), [Leaf("4501"), Leaf("4523")], nodes) == 2)
-    assert(peek_right_from_node(1, WorkIndex(0), [Leaf("4501"), Leaf("4521")], nodes) == WorkIndex(1))
+    assert(peek_right_from_node(1, WorkIndex(1), [Leaf("4501"), Leaf("4523")], nodes) == 2)
+    assert(peek_right_from_node(1, WorkIndex(1), [Leaf("4501"), Leaf("4521")], nodes) == WorkIndex(1))
 
 if __name__ == "__main__":
     main()

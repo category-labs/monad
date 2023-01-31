@@ -1,6 +1,13 @@
+from enum import Enum
+
+class LeafAction(Enum):
+    UPSERT=1,
+    DELETE=2
+
 class Leaf:
-    def __init__(self, path):
+    def __init__(self, path, action=LeafAction.UPSERT):
         self.path = path
+        self.action = action
 
     def __str__(self):
         return f"Leaf[{self.path}]"

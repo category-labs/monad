@@ -213,13 +213,9 @@ def peek_right_from_work(from_index, work, nodes):
                                key=lambda n: n.path)
 
     if insort_index == len(nodes):
-        if from_index == (len(work)-1):
-            return None
-
-        if work[int(from_index+1)].action == LeafAction.DELETE:
-            return peek_right_from_work(from_index+1, work, nodes)
-
-        return from_index+1
+        # Does not make sense for any work after this point to be leaf deletions
+        assert(all([work[i].action == LeafAction.UPSERT for i in range(int(from_index), len(work))]))
+        return None if from_index == (len(work)-1) else from_index+1
 
     right_from_nodes = peek_right_no_work(insort_index, nodes) \
             if nodes[insort_index] == work[int(from_index)] \

@@ -132,6 +132,32 @@ std::optional<Account> StateDb::read_account(address_t const &address)
     return account;
 }
 
+std::optional<std::optional<Account>> StateDb::read_account_at_block(
+    address_t const &address, uint64_t const block_number)
+{
+    byte_string_fixed<28> key;
+    std::memcpy(&key[0], address.bytes, 20);
+    boost::endian::store_big_u64(&key[20], block_number);
+    std::unique_ptr<rocksdb::Iterator> const it{
+        db_->NewIterator(rocksdb::ReadOptions{}, cfs_[5])};
+    it->Seek(to_slice(key));
+    if (!it->Valid()) {
+        return std::nullopt;
+    }
+    auto const it_key = it->key();
+    SILKWORM_ASSERT(it_key.size() == 28);
+    if (std::memcmp(it_key.data(), address.bytes, 20)) {
+        return std::nullopt;
+    }
+    auto const value = it->value();
+    if (value.empty()) {
+        return std::make_optional<std::optional<Account>>(std::nullopt);
+    }
+    auto const [account, err] = Account::from_encoded_storage(to_view(value));
+    silkworm::rlp::success_or_throw(err);
+    return account;
+}
+
 std::optional<Account> StateDb::read_account_history(
     address_t const &address, uint64_t const block_number)
 {
@@ -146,7 +172,7 @@ std::optional<Account> StateDb::read_account_history(
     }
     auto const it_key = it->key();
     SILKWORM_ASSERT(it_key.size() == 28);
-    if (std::memcmp(it_key.data(), address.bytes, 20)) {
+    if (std::memcmp(it_key.data(), address.bytes, 28)) {
         return std::nullopt;
     }
     auto const value = it->value();
@@ -180,7 +206,7 @@ bytes32_t StateDb::read_storage(
     return result;
 }
 
-std::optional<bytes32_t> StateDb::read_storage_history(
+bytes32_t StateDb::read_storage_history(
     address_t const &address, uint64_t const incarnation,
     bytes32_t const &location, uint64_t const block_number)
 {
@@ -194,12 +220,42 @@ std::optional<bytes32_t> StateDb::read_storage_history(
         db_->NewIterator(rocksdb::ReadOptions{}, cfs_[6])};
     it->SeekForPrev(to_slice(key));
     if (!it->Valid()) {
-        return std::nullopt;
+        return {};
     }
     auto const it_key = it->key();
     SILKWORM_ASSERT(it_key.size() == 68);
     if (std::memcmp(it_key.data(), key.data(), 60)) {
-        return std::nullopt;
+        return {};
+    }
+    auto const value = it->value();
+    SILKWORM_ASSERT(value.size() <= 32);
+    bytes32_t result;
+    std::memcpy(result.bytes + 32 - value.size(), value.data(), value.size());
+    return result;
+}
+
+std::optional<bytes32_t> StateDb::read_storage_at_block(
+    address_t const &address, uint64_t const incarnation,
+    bytes32_t const &location, uint64_t const block_number)
+{
+    byte_string_fixed<68> key;
+    std::memcpy(&key[0], address.bytes, 20);
+    boost::endian::store_big_u64(&key[20], incarnation);
+    std::memcpy(&key[28], location.bytes, 32);
+    boost::endian::store_big_u64(&key[60], block_number);
+
+    std::unique_ptr<rocksdb::Iterator> const it{
+        db_->NewIterator(rocksdb::ReadOptions{}, cfs_[6])};
+    it->Seek(to_slice(key));
+    if (!it->Valid()) {
+        return {};
+    }
+    auto const it_key = it->key();
+    SILKWORM_ASSERT(it_key.size() == 68);
+
+    // Do not compare for block number
+    if (std::memcmp(it_key.data(), key.data(), 60)) {
+        return {};
     }
     auto const value = it->value();
     SILKWORM_ASSERT(value.size() <= 32);

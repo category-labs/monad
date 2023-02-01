@@ -40,12 +40,20 @@ public:
     std::optional<Account>
     read_account_history(address_t const &, uint64_t block_number);
 
+    std::optional<std::optional<Account>> 
+    read_account_at_block(address_t const &, uint64_t block_number);
+
     bytes32_t read_storage(
         address_t const &, uint64_t incarnation, bytes32_t const &location);
 
-    std::optional<bytes32_t> read_storage_history(
+    bytes32_t read_storage_history(
         address_t const &, uint64_t incarnation, bytes32_t const &location,
         uint64_t block_number);
+
+    std::optional<bytes32_t> read_storage_at_block(
+        address_t const &, uint64_t incarnation, bytes32_t const &location,
+        uint64_t block_number
+    );
 
     using Accounts =
         typename absl::btree_map<address_t, std::optional<Account>>;

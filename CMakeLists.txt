@@ -60,6 +60,7 @@ endfunction()
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/core/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/trie/test)
 
 
 ############
@@ -97,6 +98,10 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/rlp/encode_helpers.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/rlp/util.hpp
     ${PROJECT_SOURCE_DIR}/src/monad/rlp/encode_helpers.cpp
+
+    # trie
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/compact_encode.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/nibbles.hpp
 )
 target_include_directories(monad
     PUBLIC ${PROJECT_SOURCE_DIR}/include

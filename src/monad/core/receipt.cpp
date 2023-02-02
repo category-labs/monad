@@ -1,5 +1,6 @@
-#include <ethash/keccak.hpp>
 #include <monad/core/receipt.hpp>
+
+#include <ethash/keccak.hpp>
 
 #include <endian.h>
 
@@ -18,9 +19,9 @@ void set_3_bits(Receipt::Bloom &bloom, byte_string_view const bytes)
 
 void populate_bloom(Receipt::Bloom &b, Receipt::Log const &l)
 {
-    set_3_bits(b, byte_string_view{l.address.bytes, sizeof(l.address.bytes)});
+    set_3_bits(b, to_byte_string_view(l.address.bytes));
     for (auto const &i : l.topics) {
-        set_3_bits(b, byte_string_view{i.bytes, sizeof(bytes32_t)});
+        set_3_bits(b, to_byte_string_view(i.bytes));
     }
 }
 

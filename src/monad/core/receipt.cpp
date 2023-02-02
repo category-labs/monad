@@ -2,7 +2,7 @@
 
 #include <ethash/keccak.hpp>
 
-#include <endian.h>
+#include <intx/intx.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -10,8 +10,13 @@ void set_3_bits(Receipt::Bloom &bloom, byte_string_view const bytes)
 {
     auto const h{ethash::keccak256(bytes.cbegin(), bytes.size())};
     for (auto i = 0; i < 3; ++i) {
+        // Poorly named intx function, this really is taking from our hash,
+        // which is returned as big endian, to host order so we can do calcs on
+        // `bit`
         const uint16_t bit =
-            be16toh(reinterpret_cast<uint16_t const *>(h.bytes)[i]) & 2047;
+            intx::to_big_endian(
+                reinterpret_cast<uint16_t const *>(h.bytes)[i]) &
+            2047;
         const auto byte = 255 - bit / 8;
         bloom[byte] |= 1 << (bit & 7);
     }

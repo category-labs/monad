@@ -19,8 +19,6 @@ add_subdirectory(tmpsrc/third_party/silkworm)
 target_sources(monad
     PRIVATE
     # db
-    ${PROJECT_SOURCE_DIR}/tmpsrc/include/monad/core/account.hpp
-    ${PROJECT_SOURCE_DIR}/tmpsrc/include/monad/core/address.hpp
     ${PROJECT_SOURCE_DIR}/tmpsrc/include/monad/db/block_db.hpp
     ${PROJECT_SOURCE_DIR}/tmpsrc/include/monad/db/state_db.hpp
     ${PROJECT_SOURCE_DIR}/tmpsrc/src/monad/db/block_db.cpp

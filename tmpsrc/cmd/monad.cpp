@@ -58,7 +58,6 @@ int main(int argc, char *argv[])
     auto chaindata_env =
         silkworm::db::open_env(node_settings.chaindata_env_config);
     auto txn{chaindata_env.start_write()};
-    silkworm::db::RWTxn wrapped_txn{txn};
 
     node_settings.chain_config = silkworm::db::read_chain_config(txn);
     SILKWORM_ASSERT(node_settings.chain_config.has_value());
@@ -67,8 +66,8 @@ int main(int argc, char *argv[])
 
     BlockDb const block_db{node_settings.data_directory->block_db().path()};
     StateDb state_db{node_settings.data_directory->state_db().path()};
-    silkworm::stagedsync::SyncLoopContext context { .txn = wrapped_txn, .state_db = state_db, };
-    silkworm::db::Buffer buffer{block_db, context, 0};
+    silkworm::stagedsync::SyncLoopContext context;
+    silkworm::db::Buffer buffer{block_db, state_db, txn, context, 0};
 
     Blockchain blockchain{buffer, node_settings.chain_config.value()};
 

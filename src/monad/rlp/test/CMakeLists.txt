@@ -3,6 +3,7 @@ add_unit_test(
   monad-rlptests
   SOURCES
   encode.cpp
+  decode.cpp
   encode_helpers.cpp
   encode_account.cpp
   encode_receipt.cpp

@@ -47,12 +47,12 @@ TEST(Rlp, DecodeAfterEncodeString)
 TEST(Rlp, DecodeAfterEncodeList)
 {
 
-   // Empty list
+    // Empty list
     auto encoding = encode_list();
     auto decoding = decode_list<byte_string>(encoding);
     EXPECT_EQ(decoding, std::vector<byte_string>{});
 
-    // byte_string list {"cat", "dog"}
+    // Byte_string list {"cat", "dog"}
     std::vector<byte_string> candidate{ {0x63, 0x61, 0x74}, {0x64, 0x6F, 0x67}};
     encoding = encode_list(
         encode_string(candidate[0]),

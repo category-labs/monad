@@ -22,6 +22,12 @@ inline std::pair<byte_string_loc, byte_string_loc> decode_unsigned(byte_string_v
 }
 
 std::pair<Account, bytes32_t> decode_account(byte_string_view const enc);
+byte_string decode_transaction(Transaction const &);
+byte_string encode_access_list(Transaction::AccessList const &list);
+byte_string encode_topics(std::vector<bytes32_t> const &topics);
+byte_string encode_log(Receipt::Log const &log);
+byte_string encode_bloom(Receipt::Bloom const &b);
+byte_string encode_receipt(Receipt const &receipt);
 Block decode_block(byte_string const enc);
 
 MONAD_RLP_NAMESPACE_END

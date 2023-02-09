@@ -21,6 +21,9 @@ inline decoding_with_updated_ptr<byte_string_loc> decode_unsigned(byte_string_vi
     return {decode_length(dec, 0, dec.size()), end};
 }
 
+decoding_with_updated_ptr<std::vector<bytes32_t>> decode_access_entry_keys(byte_string_view const enc, byte_string_loc i);
+decoding_with_updated_ptr<Transaction::AccessEntry> decode_access_entry(byte_string_view const enc, byte_string_loc i);
+decoding_with_updated_ptr<Transaction::AccessList> decode_access_list(byte_string_view const enc, byte_string_loc i);
 std::pair<Account, bytes32_t> decode_account(byte_string_view const enc);
 decoding_with_updated_ptr<Transaction> decode_transaction(byte_string_view const enc, byte_string_loc i);
 Block decode_block(byte_string const enc);

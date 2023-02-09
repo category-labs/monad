@@ -12,6 +12,8 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
+// glee for glee: TODO remove dec_with_ptr and replace all i instances with references.
+
 template <typename T>
 inline void decode_unsigned_to_field_and_update_ptr(byte_string_view const enc, T &field, byte_string_loc &i) {
     auto dec_with_ptr = decode_unsigned(enc, i);
@@ -45,6 +47,118 @@ inline void decode_sc_to_field_and_update_ptr(byte_string_view const enc, Signat
     auto dec_with_ptr = decode_unsigned(enc, i);
     from_v(sc, dec_with_ptr.decoding);
     i = dec_with_ptr.ptr;
+}
+
+// glee for glee: TODO vector.resize() based on rlp-length to avoid unnecessary
+//                resizing on push_back()
+
+decoding_with_updated_ptr<std::vector<bytes32_t>> decode_access_entry_keys(byte_string_view const enc, byte_string_loc i)
+{
+    MONAD_ASSERT(i < enc.size());
+    std::vector<bytes32_t> keys;
+
+    byte_string_loc length;
+    const uint8_t &first = enc[i];
+    ++i;
+    MONAD_ASSERT(first >= 192);
+    if (first < 248)
+    {
+        length = first - 192;
+    }
+    else
+    {
+        byte_string_loc length_of_length;
+        length_of_length = first - 247;
+        MONAD_ASSERT(i + length_of_length < enc.size());
+
+        length = decode_length(enc, i, length_of_length);
+        i += length_of_length;
+    }
+    const byte_string_loc end = i + length;
+    MONAD_ASSERT(end <= enc.size());
+
+    while (i < end)
+    {
+        bytes32_t key;
+        decode_bytes32_to_field_and_update_ptr(enc, key, i);
+        keys.emplace_back(key);
+    }
+
+    MONAD_ASSERT(i == end);
+    return {keys, i};
+}
+
+decoding_with_updated_ptr<Transaction::AccessEntry> decode_access_entry(byte_string_view const enc, byte_string_loc i)
+{
+    MONAD_ASSERT(i < enc.size());
+    Transaction::AccessEntry ae;
+
+    byte_string_loc length;
+    const uint8_t &first = enc[i];
+    ++i;
+    MONAD_ASSERT(first >= 192);
+    if (first < 248)
+    {
+        length = first - 192;
+    }
+    else
+    {
+        byte_string_loc length_of_length;
+        length_of_length = first - 247;
+        MONAD_ASSERT(i + length_of_length < enc.size());
+
+        length = decode_length(enc, i, length_of_length);
+        i += length_of_length;
+    }
+    const byte_string_loc end = i + length;
+    MONAD_ASSERT(end <= enc.size());
+
+    while (i < end)
+    {
+        decode_address_to_field_and_update_ptr(enc, ae.a, i);
+        auto dec_with_ptr = decode_access_entry_keys(enc, i);
+        ae.keys = dec_with_ptr.decoding;
+        i = dec_with_ptr.ptr;
+    }
+
+    MONAD_ASSERT(i == end);
+    return {ae, i};
+}
+
+decoding_with_updated_ptr<Transaction::AccessList> decode_access_list(byte_string_view const enc, byte_string_loc i)
+{
+    MONAD_ASSERT(i < enc.size());
+    Transaction::AccessList al;
+
+    byte_string_loc length;
+    const uint8_t &first = enc[i];
+    ++i;
+    MONAD_ASSERT(first >= 192);
+    if (first < 248)
+    {
+        length = first - 192;
+    }
+    else
+    {
+        byte_string_loc length_of_length;
+        length_of_length = first - 247;
+        MONAD_ASSERT(i + length_of_length < enc.size());
+
+        length = decode_length(enc, i, length_of_length);
+        i += length_of_length;
+    }
+    const byte_string_loc end = i + length;
+    MONAD_ASSERT(end <= enc.size());
+
+    while (i < end)
+    {
+        auto dec_with_ptr = decode_access_entry(enc, i);
+        al.emplace_back(dec_with_ptr.decoding);
+        i = dec_with_ptr.ptr;
+    }
+
+    MONAD_ASSERT(i == end);
+    return {al, i};
 }
 
 std::pair<Account, bytes32_t> decode_account(byte_string_view const enc)
@@ -108,6 +222,7 @@ decoding_with_updated_ptr<Transaction> decode_transaction(byte_string_view const
         txn.type = Transaction::Type::eip155;
     }
 
+    MONAD_ASSERT(i < enc.size());
     const uint8_t &first = enc[i];
 
     ++i;
@@ -126,7 +241,8 @@ decoding_with_updated_ptr<Transaction> decode_transaction(byte_string_view const
         length = decode_length(enc, i, length_of_length);
         i += length_of_length;
     }
-    MONAD_ASSERT(i + length == enc.size());
+    const byte_string_loc end = i + length;
+    MONAD_ASSERT(end <= enc.size());
 
     if (txn.type == Transaction::Type::eip155)
     {
@@ -150,7 +266,9 @@ decoding_with_updated_ptr<Transaction> decode_transaction(byte_string_view const
         decode_address_to_field_and_update_ptr(enc, *txn.to, i);
         decode_unsigned_to_field_and_update_ptr(enc, txn.amount, i);
         decode_string_to_field_and_update_ptr(enc, txn.data, i);
-        // TODO access list
+        auto dec_with_ptr = decode_access_list(enc, i);
+        txn.access_list = dec_with_ptr.decoding;
+        i = dec_with_ptr.ptr;
         decode_unsigned_to_field_and_update_ptr(enc, txn.sc.odd_y_parity, i);
         decode_unsigned_to_field_and_update_ptr(enc, txn.sc.r, i);
         decode_unsigned_to_field_and_update_ptr(enc, txn.sc.s, i);
@@ -164,12 +282,15 @@ decoding_with_updated_ptr<Transaction> decode_transaction(byte_string_view const
         decode_address_to_field_and_update_ptr(enc, *txn.to, i);
         decode_unsigned_to_field_and_update_ptr(enc, txn.amount, i);
         decode_string_to_field_and_update_ptr(enc, txn.data, i);
-        // TODO access list
+        auto dec_with_ptr = decode_access_list(enc, i);
+        txn.access_list = dec_with_ptr.decoding;
+        i = dec_with_ptr.ptr;
         decode_unsigned_to_field_and_update_ptr(enc, txn.sc.odd_y_parity, i);
         decode_unsigned_to_field_and_update_ptr(enc, txn.sc.r, i);
         decode_unsigned_to_field_and_update_ptr(enc, txn.sc.s, i);
     }
 
+    MONAD_ASSERT(i == end);
     return {txn, i};
 }
 

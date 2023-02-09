@@ -6,7 +6,11 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 
+#include <vector>
 #include <concepts>
+
+// To Be Deleted
+#include <iostream>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
@@ -58,6 +62,14 @@ inline std::pair<byte_string, byte_string_loc> decode_string(byte_string_view co
 inline byte_string decode_string(byte_string_view const enc)
 {
     return decode_string(enc, 0).first;
+}
+
+// Tong: Is template here necessary?
+template <typename T>
+inline std::vector<T> decode_list(byte_string_view const enc)
+{
+    std::cout << enc.size() << std::endl;
+    return {};
 }
 
 MONAD_RLP_NAMESPACE_END

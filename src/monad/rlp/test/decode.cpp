@@ -44,18 +44,24 @@ TEST(Rlp, DecodeAfterEncodeString)
 
 // Need to have function signiture defined the 'decode.hpp'
 
-// TEST(Rlp, DecodeAfterEncodeList)
-// {
-//    // Empty list
-//     auto encoding = encode_list();
-//     auto decoding = decode_list(encoding)
-//     EXPECT_EQ(encoding, monad::byte_string({0xc0}));
+TEST(Rlp, DecodeAfterEncodeList)
+{
 
-//     // list of two strings
-//     encoding = encode_list(
-//         encode_string(to_byte_string_view("cat")),
-//         encode_string(to_byte_string_view("dog")));
-//     EXPECT_EQ(
-//         encoding,
-//         monad::byte_string({0xc8, 0x83, 'c', 'a', 't', 0x83, 'd', 'o', 'g'}));
-// }
+   // Empty list
+    auto encoding = encode_list();
+    auto decoding = decode_list<byte_string>(encoding);
+    EXPECT_EQ(decoding, std::vector<byte_string>{});
+
+    // byte_string list {"cat", "dog"}
+    std::vector<byte_string> candidate{ {0x63, 0x61, 0x74}, {0x64, 0x6F, 0x67}};
+    encoding = encode_list(
+        encode_string(candidate[0]),
+        encode_string(candidate[1]));
+    
+    decoding = decode_list<byte_string>(encoding);
+    EXPECT_EQ(decoding,candidate);
+    
+    // To Do: Transactions List
+
+    // To Do: Receipts List
+}

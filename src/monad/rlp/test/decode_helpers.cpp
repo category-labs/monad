@@ -47,7 +47,6 @@ TEST(Rlp, DecodeAfterEncodeAccount)
     };
     */
     // decode_account(monad::byte_string({0x80}));
-    EXPECT_EQ(0, 0);
 }
 
 /*

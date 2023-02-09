@@ -24,7 +24,7 @@ inline byte_string_loc decode_unsigned(byte_string_view const enc, byte_string_l
 std::vector<bytes32_t> decode_access_entry_keys(byte_string_view const enc, byte_string_loc &i);
 Transaction::AccessEntry decode_access_entry(byte_string_view const enc, byte_string_loc &i);
 Transaction::AccessList decode_access_list(byte_string_view const enc, byte_string_loc &i);
-std::pair<Account, bytes32_t> decode_account(byte_string_view const enc);
+std::pair<Account, bytes32_t> decode_account(byte_string_view const enc, byte_string_loc &i);
 Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i);
 Block decode_block(byte_string const enc);
 

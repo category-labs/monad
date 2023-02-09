@@ -139,14 +139,14 @@ Transaction::AccessList decode_access_list(byte_string_view const enc, byte_stri
     return al;
 }
 
-std::pair<Account, bytes32_t> decode_account(byte_string_view const enc)
+std::pair<Account, bytes32_t> decode_account(byte_string_view const enc, byte_string_loc &i)
 {
-    MONAD_ASSERT(enc.size() > 0);
+    MONAD_ASSERT(i < enc.size());
     Account acc;
     bytes32_t code_root;
 
-    const uint8_t &first = enc[0];
-    byte_string_loc i = 1;
+    const uint8_t &first = enc[i];
+    ++i;
     byte_string_loc length;
     MONAD_ASSERT(first >= 192);
     /**
@@ -166,14 +166,15 @@ std::pair<Account, bytes32_t> decode_account(byte_string_view const enc)
         length = decode_length(enc, i, length_of_length);
         i += length_of_length;
     }
-    MONAD_ASSERT(i + length == enc.size());
+    const byte_string_loc end = i + length;
+    MONAD_ASSERT(end <= enc.size());
 
     acc.nonce = decode_unsigned(enc, i);
     acc.balance = decode_unsigned(enc, i);
     decode_bytes32_to_field_and_update_ptr(enc, code_root, i);
     decode_bytes32_to_field_and_update_ptr(enc, acc.code_hash, i);
 
-    MONAD_ASSERT(i == enc.size());
+    MONAD_ASSERT(i == end);
     return std::make_pair(acc, code_root);
 }
 

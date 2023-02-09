@@ -27,8 +27,10 @@ TEST(Rlp_Account, DecodeAfterEncodeAccount)
         0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
     Account const a{.balance = b, .code_hash = code_hash};
     auto const encoded_account = encode_account(a, storage_root);
-    auto [dec_acc, dec_cr] = decode_account(encoded_account);
+    byte_string_loc i = 0;
+    auto [dec_acc, dec_cr] = decode_account(encoded_account, i);
 
+    EXPECT_EQ(i, encoded_account.size());
     EXPECT_EQ(storage_root, dec_cr);
     EXPECT_EQ(a.balance, dec_acc.balance);
 }

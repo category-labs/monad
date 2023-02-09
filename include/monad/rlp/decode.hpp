@@ -51,7 +51,8 @@ inline std::pair<byte_string, byte_string_loc> decode_string(byte_string_view co
         end = i + length;
     }
     MONAD_ASSERT(end <= enc.size());
-    return std::make_pair(byte_string(enc.substr(i, end)), end);
+    // Tong: Change from enc.substr(i,end) to enc.substr(i, end-i)
+    return std::make_pair(byte_string(enc.substr(i, end-i)), end);
 }
 
 inline byte_string decode_string(byte_string_view const enc)

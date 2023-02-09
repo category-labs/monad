@@ -34,8 +34,18 @@ TEST(Rlp, DecodeAfterEncodeUnsigned)
     test_single(65535);
 }
 
-TEST(Rlp, DecodeHelper)
+TEST(Rlp, DecodeAfterEncodeAccount)
 {
+    /*
+    auto test_single = [](Account acc, bytes32_t code_root)
+    {
+        const auto &enc = encode_account(acc, code_root);
+        auto [dec_acc, dec_cr] = decode_account(enc);
+        // TODO
+        // EXPECT_EQ(acc, dec_acc);
+        // EXPECT_EQ(code_root, dec_acc);
+    };
+    */
     // decode_account(monad::byte_string({0x80}));
     EXPECT_EQ(0, 0);
 }

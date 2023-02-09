@@ -13,15 +13,15 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 
-MONAD_NAMESPACE_BEGIN
-
-struct Account;
-
-MONAD_NAMESPACE_END
-
 MONAD_RLP_NAMESPACE_BEGIN
 
-std::pair<Account, bytes32_t> decode_account(byte_string const enc);
+inline std::pair<byte_string_loc, byte_string_loc> decode_unsigned(byte_string_view const enc, byte_string_loc i)
+{
+    const auto [dec, end] = decode_string(enc, i);
+    return std::make_pair(decode_length(dec, 0, dec.size()), end);
+}
+
+std::pair<Account, bytes32_t> decode_account(byte_string_view const enc);
 Block decode_block(byte_string const enc);
 
 MONAD_RLP_NAMESPACE_END

@@ -13,7 +13,7 @@ MONAD_RLP_NAMESPACE_BEGIN
 // is this big enough for payload sizes?
 using byte_string_loc = uint64_t;
 
-inline byte_string_loc decode_unsigned(byte_string_view const enc, byte_string_loc i, byte_string_loc length)
+inline byte_string_loc decode_length(byte_string_view const enc, byte_string_loc i, byte_string_loc length)
 {
     byte_string_loc result = 0;
     for (byte_string_loc j = i; j < i + length; ++j)
@@ -46,7 +46,7 @@ inline std::pair<byte_string, byte_string_loc> decode_string(byte_string_view co
         ++i;
         uint8_t length_of_length = first - 183;
         MONAD_ASSERT(i + length_of_length < enc.size());
-        byte_string_loc length = decode_unsigned(enc, i, length_of_length);
+        byte_string_loc length = decode_length(enc, i, length_of_length);
         i += length_of_length;
         end = i + length;
     }

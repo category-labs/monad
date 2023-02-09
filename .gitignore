@@ -1,6 +1,7 @@
 ### monad ignore
 
 build
+perf.data*
 
 ### github default cmake ignore
 

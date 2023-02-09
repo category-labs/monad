@@ -12,15 +12,6 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
-template <typename T>
-inline void decode_unsigned_to_field_and_update_ptr(byte_string_view const enc, T &field, byte_string_loc &i) {
-    field = decode_unsigned(enc, i);
-}
-
-inline void decode_string_to_field_and_update_ptr(byte_string_view const enc, byte_string &field, byte_string_loc &i) {
-    field = decode_string(enc, i);
-}
-
 inline void decode_bytes32_to_field_and_update_ptr(byte_string_view const enc, bytes32_t &field, byte_string_loc &i) {
     auto dec = decode_string(enc, i);
     MONAD_ASSERT(dec.size() == 32);
@@ -177,8 +168,8 @@ std::pair<Account, bytes32_t> decode_account(byte_string_view const enc)
     }
     MONAD_ASSERT(i + length == enc.size());
 
-    decode_unsigned_to_field_and_update_ptr(enc, acc.nonce, i);
-    decode_unsigned_to_field_and_update_ptr(enc, acc.balance, i);
+    acc.nonce = decode_unsigned(enc, i);
+    acc.balance = decode_unsigned(enc, i);
     decode_bytes32_to_field_and_update_ptr(enc, code_root, i);
     decode_bytes32_to_field_and_update_ptr(enc, acc.code_hash, i);
 
@@ -233,44 +224,44 @@ Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i)
 
     if (txn.type == Transaction::Type::eip155)
     {
-        decode_unsigned_to_field_and_update_ptr(enc, txn.nonce, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.gas_price, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.gas_limit, i);
+        txn.nonce = decode_unsigned(enc, i);
+        txn.gas_price = decode_unsigned(enc, i);
+        txn.gas_limit = decode_unsigned(enc, i);
         decode_address_to_field_and_update_ptr(enc, *txn.to, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.amount, i);
-        decode_string_to_field_and_update_ptr(enc, txn.data, i);
+        txn.amount = decode_unsigned(enc, i);
+        txn.data = decode_string(enc, i);
         decode_sc_to_field_and_update_ptr(enc, txn.sc, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.sc.r, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.sc.s, i);
+        txn.sc.r = decode_unsigned(enc, i);
+        txn.sc.s = decode_unsigned(enc, i);
     }
     else if (txn.type == Transaction::Type::eip1559)
     {
-        decode_unsigned_to_field_and_update_ptr(enc, *txn.sc.chain_id, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.nonce, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.priority_fee, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.gas_price, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.gas_limit, i);
+        *txn.sc.chain_id = decode_unsigned(enc, i);
+        txn.nonce = decode_unsigned(enc, i);
+        txn.priority_fee = decode_unsigned(enc, i);
+        txn.gas_price = decode_unsigned(enc, i);
+        txn.gas_limit = decode_unsigned(enc, i);
         decode_address_to_field_and_update_ptr(enc, *txn.to, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.amount, i);
-        decode_string_to_field_and_update_ptr(enc, txn.data, i);
+        txn.amount = decode_unsigned(enc, i);
+        txn.data = decode_string(enc, i);
         txn.access_list = decode_access_list(enc, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.sc.odd_y_parity, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.sc.r, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.sc.s, i);
+        txn.sc.odd_y_parity = decode_unsigned(enc, i);
+        txn.sc.r = decode_unsigned(enc, i);
+        txn.sc.s = decode_unsigned(enc, i);
     }
     else            // Transaction::type::eip2930
     {
-        decode_unsigned_to_field_and_update_ptr(enc, *txn.sc.chain_id, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.nonce, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.gas_price, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.gas_limit, i);
+        *txn.sc.chain_id = decode_unsigned(enc, i);
+        txn.nonce = decode_unsigned(enc, i);
+        txn.gas_price = decode_unsigned(enc, i);
+        txn.gas_limit = decode_unsigned(enc, i);
         decode_address_to_field_and_update_ptr(enc, *txn.to, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.amount, i);
-        decode_string_to_field_and_update_ptr(enc, txn.data, i);
+        txn.amount = decode_unsigned(enc, i);
+        txn.data = decode_string(enc, i);
         txn.access_list = decode_access_list(enc, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.sc.odd_y_parity, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.sc.r, i);
-        decode_unsigned_to_field_and_update_ptr(enc, txn.sc.s, i);
+        txn.sc.odd_y_parity = decode_unsigned(enc, i);
+        txn.sc.r = decode_unsigned(enc, i);
+        txn.sc.s = decode_unsigned(enc, i);
     }
 
     MONAD_ASSERT(i == end);

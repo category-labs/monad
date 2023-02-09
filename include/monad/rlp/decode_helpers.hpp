@@ -15,13 +15,14 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
-inline std::pair<byte_string_loc, byte_string_loc> decode_unsigned(byte_string_view const enc, byte_string_loc i)
+inline decoding_with_updated_ptr<byte_string_loc> decode_unsigned(byte_string_view const enc, byte_string_loc i)
 {
     const auto [dec, end] = decode_string(enc, i);
-    return std::make_pair(decode_length(dec, 0, dec.size()), end);
+    return {decode_length(dec, 0, dec.size()), end};
 }
 
 std::pair<Account, bytes32_t> decode_account(byte_string_view const enc);
+decoding_with_updated_ptr<Transaction> decode_transaction(byte_string_view const enc, byte_string_loc i);
 Block decode_block(byte_string const enc);
 
 MONAD_RLP_NAMESPACE_END

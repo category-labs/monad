@@ -13,6 +13,13 @@ MONAD_RLP_NAMESPACE_BEGIN
 // is this big enough for payload sizes?
 using byte_string_loc = uint64_t;
 
+template <typename T>
+struct decoding_with_updated_ptr
+{
+    T decoding;
+    byte_string_loc ptr;
+};
+
 inline byte_string_loc decode_length(byte_string_view const enc, byte_string_loc i, byte_string_loc length)
 {
     byte_string_loc result = 0;
@@ -24,7 +31,7 @@ inline byte_string_loc decode_length(byte_string_view const enc, byte_string_loc
     return result;
 }
 
-inline std::pair<byte_string, byte_string_loc> decode_string(byte_string_view const enc, byte_string_loc i)
+inline decoding_with_updated_ptr<byte_string> decode_string(byte_string_view const enc, byte_string_loc i)
 {
     MONAD_ASSERT(0 <= i && i < enc.size());
     byte_string_loc end;
@@ -51,13 +58,12 @@ inline std::pair<byte_string, byte_string_loc> decode_string(byte_string_view co
         end = i + length;
     }
     MONAD_ASSERT(end <= enc.size());
-    // Tong: Change from enc.substr(i,end) to enc.substr(i, end-i)
-    return std::make_pair(byte_string(enc.substr(i, end-i)), end);
+    return {byte_string(enc.substr(i, end-i)), end};
 }
 
 inline byte_string decode_string(byte_string_view const enc)
 {
-    return decode_string(enc, 0).first;
+    return decode_string(enc, 0).decoding;
 }
 
 MONAD_RLP_NAMESPACE_END

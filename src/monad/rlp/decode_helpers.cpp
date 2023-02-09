@@ -12,47 +12,38 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
-// glee for glee: TODO remove dec_with_ptr and replace all i instances with references.
-
 template <typename T>
 inline void decode_unsigned_to_field_and_update_ptr(byte_string_view const enc, T &field, byte_string_loc &i) {
-    auto dec_with_ptr = decode_unsigned(enc, i);
-    field = dec_with_ptr.decoding;
-    i = dec_with_ptr.ptr;
+    field = decode_unsigned(enc, i);
 }
 
 inline void decode_string_to_field_and_update_ptr(byte_string_view const enc, byte_string &field, byte_string_loc &i) {
-    auto dec_with_ptr = decode_string(enc, i);
-    field = dec_with_ptr.decoding;
-    i = dec_with_ptr.ptr;
+    field = decode_string(enc, i);
 }
 
 inline void decode_bytes32_to_field_and_update_ptr(byte_string_view const enc, bytes32_t &field, byte_string_loc &i) {
-    auto dec_with_ptr = decode_string(enc, i);
-    MONAD_ASSERT(dec_with_ptr.decoding.size() == 32);
+    auto dec = decode_string(enc, i);
+    MONAD_ASSERT(dec.size() == 32);
     // glee for shea: is memcpy appropriate?
-    memcpy(field.bytes, dec_with_ptr.decoding.data(), 32);
-    i = dec_with_ptr.ptr;
+    memcpy(field.bytes, dec.data(), 32);
 }
 
 inline void decode_address_to_field_and_update_ptr(byte_string_view const enc, address_t &field, byte_string_loc &i) {
-    auto dec_with_ptr = decode_string(enc, i);
-    MONAD_ASSERT(dec_with_ptr.decoding.size() == 20);
+    auto dec = decode_string(enc, i);
+    MONAD_ASSERT(dec.size() == 20);
     // glee for shea: is memcpy appropriate?
-    memcpy(field.bytes, dec_with_ptr.decoding.data(), 20);
-    i = dec_with_ptr.ptr;
+    memcpy(field.bytes, dec.data(), 20);
 }
 
 inline void decode_sc_to_field_and_update_ptr(byte_string_view const enc, SignatureAndChain &sc, byte_string_loc &i) {
-    auto dec_with_ptr = decode_unsigned(enc, i);
-    from_v(sc, dec_with_ptr.decoding);
-    i = dec_with_ptr.ptr;
+    auto dec = decode_unsigned(enc, i);
+    from_v(sc, dec);
 }
 
 // glee for glee: TODO vector.resize() based on rlp-length to avoid unnecessary
 //                resizing on push_back()
 
-decoding_with_updated_ptr<std::vector<bytes32_t>> decode_access_entry_keys(byte_string_view const enc, byte_string_loc i)
+std::vector<bytes32_t> decode_access_entry_keys(byte_string_view const enc, byte_string_loc &i)
 {
     MONAD_ASSERT(i < enc.size());
     std::vector<bytes32_t> keys;
@@ -85,10 +76,10 @@ decoding_with_updated_ptr<std::vector<bytes32_t>> decode_access_entry_keys(byte_
     }
 
     MONAD_ASSERT(i == end);
-    return {keys, i};
+    return keys;
 }
 
-decoding_with_updated_ptr<Transaction::AccessEntry> decode_access_entry(byte_string_view const enc, byte_string_loc i)
+Transaction::AccessEntry decode_access_entry(byte_string_view const enc, byte_string_loc &i)
 {
     MONAD_ASSERT(i < enc.size());
     Transaction::AccessEntry ae;
@@ -116,16 +107,14 @@ decoding_with_updated_ptr<Transaction::AccessEntry> decode_access_entry(byte_str
     while (i < end)
     {
         decode_address_to_field_and_update_ptr(enc, ae.a, i);
-        auto dec_with_ptr = decode_access_entry_keys(enc, i);
-        ae.keys = dec_with_ptr.decoding;
-        i = dec_with_ptr.ptr;
+        ae.keys = decode_access_entry_keys(enc, i);
     }
 
     MONAD_ASSERT(i == end);
-    return {ae, i};
+    return ae;
 }
 
-decoding_with_updated_ptr<Transaction::AccessList> decode_access_list(byte_string_view const enc, byte_string_loc i)
+Transaction::AccessList decode_access_list(byte_string_view const enc, byte_string_loc &i)
 {
     MONAD_ASSERT(i < enc.size());
     Transaction::AccessList al;
@@ -152,13 +141,11 @@ decoding_with_updated_ptr<Transaction::AccessList> decode_access_list(byte_strin
 
     while (i < end)
     {
-        auto dec_with_ptr = decode_access_entry(enc, i);
-        al.emplace_back(dec_with_ptr.decoding);
-        i = dec_with_ptr.ptr;
+        al.emplace_back(decode_access_entry(enc, i));
     }
 
     MONAD_ASSERT(i == end);
-    return {al, i};
+    return al;
 }
 
 std::pair<Account, bytes32_t> decode_account(byte_string_view const enc)
@@ -199,7 +186,7 @@ std::pair<Account, bytes32_t> decode_account(byte_string_view const enc)
     return std::make_pair(acc, code_root);
 }
 
-decoding_with_updated_ptr<Transaction> decode_transaction(byte_string_view const enc, byte_string_loc i)
+Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i)
 {
     MONAD_ASSERT(i < enc.size());
     Transaction txn;
@@ -266,9 +253,7 @@ decoding_with_updated_ptr<Transaction> decode_transaction(byte_string_view const
         decode_address_to_field_and_update_ptr(enc, *txn.to, i);
         decode_unsigned_to_field_and_update_ptr(enc, txn.amount, i);
         decode_string_to_field_and_update_ptr(enc, txn.data, i);
-        auto dec_with_ptr = decode_access_list(enc, i);
-        txn.access_list = dec_with_ptr.decoding;
-        i = dec_with_ptr.ptr;
+        txn.access_list = decode_access_list(enc, i);
         decode_unsigned_to_field_and_update_ptr(enc, txn.sc.odd_y_parity, i);
         decode_unsigned_to_field_and_update_ptr(enc, txn.sc.r, i);
         decode_unsigned_to_field_and_update_ptr(enc, txn.sc.s, i);
@@ -282,16 +267,14 @@ decoding_with_updated_ptr<Transaction> decode_transaction(byte_string_view const
         decode_address_to_field_and_update_ptr(enc, *txn.to, i);
         decode_unsigned_to_field_and_update_ptr(enc, txn.amount, i);
         decode_string_to_field_and_update_ptr(enc, txn.data, i);
-        auto dec_with_ptr = decode_access_list(enc, i);
-        txn.access_list = dec_with_ptr.decoding;
-        i = dec_with_ptr.ptr;
+        txn.access_list = decode_access_list(enc, i);
         decode_unsigned_to_field_and_update_ptr(enc, txn.sc.odd_y_parity, i);
         decode_unsigned_to_field_and_update_ptr(enc, txn.sc.r, i);
         decode_unsigned_to_field_and_update_ptr(enc, txn.sc.s, i);
     }
 
     MONAD_ASSERT(i == end);
-    return {txn, i};
+    return txn;
 }
 
 MONAD_RLP_NAMESPACE_END

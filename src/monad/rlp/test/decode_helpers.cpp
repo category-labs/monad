@@ -18,9 +18,10 @@ TEST(Rlp, DecodeAfterEncodeUnsigned)
     auto test_single = [](byte_string_loc val)
     {
         const auto &enc = encode_unsigned(val);
-        auto [dec, end] = decode_unsigned(enc, 0);
+        byte_string_loc i = 0;
+        auto dec = decode_unsigned(enc, i);
         EXPECT_EQ(val, dec);
-        EXPECT_EQ(enc.size(), end);
+        EXPECT_EQ(enc.size(), i);
     };
     test_single(0);
     test_single(15);

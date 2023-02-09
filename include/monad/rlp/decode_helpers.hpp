@@ -15,17 +15,17 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
-inline decoding_with_updated_ptr<byte_string_loc> decode_unsigned(byte_string_view const enc, byte_string_loc i)
+inline byte_string_loc decode_unsigned(byte_string_view const enc, byte_string_loc &i)
 {
-    const auto [dec, end] = decode_string(enc, i);
-    return {decode_length(dec, 0, dec.size()), end};
+    const auto dec = decode_string(enc, i);
+    return decode_length(dec, 0, dec.size());
 }
 
-decoding_with_updated_ptr<std::vector<bytes32_t>> decode_access_entry_keys(byte_string_view const enc, byte_string_loc i);
-decoding_with_updated_ptr<Transaction::AccessEntry> decode_access_entry(byte_string_view const enc, byte_string_loc i);
-decoding_with_updated_ptr<Transaction::AccessList> decode_access_list(byte_string_view const enc, byte_string_loc i);
+std::vector<bytes32_t> decode_access_entry_keys(byte_string_view const enc, byte_string_loc &i);
+Transaction::AccessEntry decode_access_entry(byte_string_view const enc, byte_string_loc &i);
+Transaction::AccessList decode_access_list(byte_string_view const enc, byte_string_loc &i);
 std::pair<Account, bytes32_t> decode_account(byte_string_view const enc);
-decoding_with_updated_ptr<Transaction> decode_transaction(byte_string_view const enc, byte_string_loc i);
+Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i);
 Block decode_block(byte_string const enc);
 
 MONAD_RLP_NAMESPACE_END

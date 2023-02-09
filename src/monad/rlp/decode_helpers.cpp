@@ -24,41 +24,11 @@ std::pair<Account, bytes32_t> decode_account(byte_string_view const enc) {
      * glee (& tong) for shea: this branch will never really occur because of
      * the `bytes32_t` fields... should we consider MONAD_ASSERT(first >= 248)?
      */
-    if (first < 248)        // [192, 247]
+    if (first < 248)
     {
         length = first - 192;
-        MONAD_ASSERT(i + length == enc.size());
-
-        {
-            auto dec_with_ptr = decode_unsigned(enc, i);
-            acc.nonce = dec_with_ptr.decoding;
-            i = dec_with_ptr.ptr;
-        }
-
-        {
-            auto dec_with_ptr = decode_unsigned(enc, i);
-            acc.balance = dec_with_ptr.decoding;
-            i = dec_with_ptr.ptr;
-        }
-
-        // glee for shea: is memcpy appropriate?
-        {
-            auto dec_with_ptr = decode_string(enc, i);
-            MONAD_ASSERT(dec_with_ptr.decoding.size() == 32);
-            memcpy(code_root.bytes, dec_with_ptr.decoding.data(), 32);
-            i = dec_with_ptr.ptr;
-        }
-
-        {
-            auto dec_with_ptr = decode_string(enc, i);
-            MONAD_ASSERT(dec_with_ptr.decoding.size() == 32);
-            memcpy(acc.code_hash.bytes, dec_with_ptr.decoding.data(), 32);
-            i = dec_with_ptr.ptr;
-        }
-
-        MONAD_ASSERT(i == enc.size());
     }
-    else                    // [248, 255]
+    else
     {
         byte_string_loc length_of_length;
         length_of_length = first - 0xf7;
@@ -66,38 +36,37 @@ std::pair<Account, bytes32_t> decode_account(byte_string_view const enc) {
 
         length = decode_length(enc, i, length_of_length);
         i += length_of_length;
-        MONAD_ASSERT(i + length == enc.size());
-
-        {
-            auto dec_with_ptr = decode_unsigned(enc, i);
-            acc.nonce = dec_with_ptr.decoding;
-            i = dec_with_ptr.ptr;
-        }
-
-        {
-            auto dec_with_ptr = decode_unsigned(enc, i);
-            acc.balance = dec_with_ptr.decoding;
-            i = dec_with_ptr.ptr;
-        }
-
-        // glee for shea: is memcpy appropriate?
-        {
-            auto dec_with_ptr = decode_string(enc, i);
-            MONAD_ASSERT(dec_with_ptr.decoding.length() == 32);
-            memcpy(code_root.bytes, dec_with_ptr.decoding.data(), 32);
-            i = dec_with_ptr.ptr;
-        }
-
-        {
-            auto dec_with_ptr = decode_string(enc, i);
-            MONAD_ASSERT(dec_with_ptr.decoding.length() == 32);
-            memcpy(acc.code_hash.bytes, dec_with_ptr.decoding.data(), 32);
-            i = dec_with_ptr.ptr;
-        }
-
-        MONAD_ASSERT(i == enc.size());
-
     }
+    MONAD_ASSERT(i + length == enc.size());
+
+    {
+        auto dec_with_ptr = decode_unsigned(enc, i);
+        acc.nonce = dec_with_ptr.decoding;
+        i = dec_with_ptr.ptr;
+    }
+
+    {
+        auto dec_with_ptr = decode_unsigned(enc, i);
+        acc.balance = dec_with_ptr.decoding;
+        i = dec_with_ptr.ptr;
+    }
+
+    // glee for shea: is memcpy appropriate?
+    {
+        auto dec_with_ptr = decode_string(enc, i);
+        MONAD_ASSERT(dec_with_ptr.decoding.size() == 32);
+        memcpy(code_root.bytes, dec_with_ptr.decoding.data(), 32);
+        i = dec_with_ptr.ptr;
+    }
+
+    {
+        auto dec_with_ptr = decode_string(enc, i);
+        MONAD_ASSERT(dec_with_ptr.decoding.size() == 32);
+        memcpy(acc.code_hash.bytes, dec_with_ptr.decoding.data(), 32);
+        i = dec_with_ptr.ptr;
+    }
+
+    MONAD_ASSERT(i == enc.size());
     return std::make_pair(acc, code_root);
 }
 

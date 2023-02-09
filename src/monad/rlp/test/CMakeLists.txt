@@ -4,6 +4,7 @@ add_unit_test(
   SOURCES
   decode.cpp
   decode_helpers.cpp
+  decode_accounts.cpp
   encode.cpp
   encode_helpers.cpp
   encode_account.cpp

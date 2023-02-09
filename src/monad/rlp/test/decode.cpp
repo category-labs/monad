@@ -41,3 +41,21 @@ TEST(Rlp, DecodeAfterEncodeString)
     test_single("monad");
     test_single("Monad Labs");
 }
+
+// Need to have function signiture defined the 'decode.hpp'
+
+// TEST(Rlp, DecodeAfterEncodeList)
+// {
+//    // Empty list
+//     auto encoding = encode_list();
+//     auto decoding = decode_list(encoding)
+//     EXPECT_EQ(encoding, monad::byte_string({0xc0}));
+
+//     // list of two strings
+//     encoding = encode_list(
+//         encode_string(to_byte_string_view("cat")),
+//         encode_string(to_byte_string_view("dog")));
+//     EXPECT_EQ(
+//         encoding,
+//         monad::byte_string({0xc8, 0x83, 'c', 'a', 't', 0x83, 'd', 'o', 'g'}));
+// }

@@ -37,7 +37,7 @@ inline bytes32_t decode_bytes32(byte_string_view const enc, byte_string_loc &i) 
     return res;
 }
 
-inline address_t decode_address(byte_string_view const enc, byte_string_loc &i) {
+address_t decode_address(byte_string_view const enc, byte_string_loc &i) {
     auto dec = decode_string(enc, i);
     MONAD_ASSERT(dec.size() == 20);
 
@@ -47,7 +47,7 @@ inline address_t decode_address(byte_string_view const enc, byte_string_loc &i) 
     return res;
 }
 
-inline SignatureAndChain decode_sc(byte_string_view const enc, byte_string_loc &i) {
+SignatureAndChain decode_sc(byte_string_view const enc, byte_string_loc &i) {
     auto dec = decode_unsigned<uint64_t>(enc, i);
 
     SignatureAndChain res;
@@ -56,7 +56,7 @@ inline SignatureAndChain decode_sc(byte_string_view const enc, byte_string_loc &
     return res;
 }
 
-inline byte_string_loc end_of_list_encoding(byte_string_view const enc, byte_string_loc &i)
+byte_string_loc end_of_list_encoding(byte_string_view const enc, byte_string_loc &i)
 {
     MONAD_ASSERT(i < enc.size());
 

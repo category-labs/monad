@@ -139,6 +139,7 @@ TEST(Rlp, DecodeEncodeBigNumers)
         byte_string_loc pos = 0;
         auto encoding = encode_bytes32(
             0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32);
+            
         auto decoding_bytes32 = decode_bytes32(encoding,pos);
         auto const big_be_num = monad::byte_string(
             {0xa0, 0xbe, 0xa3, 0x4d, 0xd0, 0x4b, 0x09, 0xad, 0x3b, 0x60, 0x14,

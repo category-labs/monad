@@ -15,19 +15,22 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
-inline std::pair<byte_string_loc, byte_string_loc> decode_unsigned(byte_string_view const enc, byte_string_loc i)
+inline byte_string_loc decode_unsigned(byte_string_view const enc, byte_string_loc &i)
 {
-    const auto [dec, end] = decode_string(enc, i);
-    return std::make_pair(decode_length(dec, 0, dec.size()), end);
+    const auto dec = decode_string(enc, i);
+    return decode_length(dec, 0, dec.size());
 }
 
-std::pair<Account, bytes32_t> decode_account(byte_string_view const enc);
-byte_string decode_transaction(Transaction const &);
-byte_string encode_access_list(Transaction::AccessList const &list);
-byte_string encode_topics(std::vector<bytes32_t> const &topics);
-byte_string encode_log(Receipt::Log const &log);
-byte_string encode_bloom(Receipt::Bloom const &b);
-byte_string encode_receipt(Receipt const &receipt);
+// Do these functions need to be written here?
+bytes32_t decode_bytes32(byte_string_view const enc, byte_string_loc &i);
+address_t decode_address(byte_string_view const enc, byte_string_loc &i);
+SignatureAndChain decode_sc(byte_string_view const enc, byte_string_loc &i);
+
+std::vector<bytes32_t> decode_access_entry_keys(byte_string_view const enc, byte_string_loc &i);
+Transaction::AccessEntry decode_access_entry(byte_string_view const enc, byte_string_loc &i);
+Transaction::AccessList decode_access_list(byte_string_view const enc, byte_string_loc &i);
+std::pair<Account, bytes32_t> decode_account(byte_string_view const enc, byte_string_loc &i);
+Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i);
 Block decode_block(byte_string const enc);
 
 MONAD_RLP_NAMESPACE_END

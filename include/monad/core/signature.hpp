@@ -18,5 +18,6 @@ static_assert(sizeof(SignatureAndChain) == 88);
 static_assert(alignof(SignatureAndChain) == 8);
 
 uint64_t get_v(SignatureAndChain const &sc) noexcept;
+void from_v(SignatureAndChain &sc, uint64_t const &v);
 
 MONAD_NAMESPACE_END

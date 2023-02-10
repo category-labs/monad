@@ -20,6 +20,7 @@ TEST(Rlp_Account, DecodeAfterEncodeAccount)
     using namespace evmc::literals;
 
     // Account w/o nonce
+    byte_string_loc pos = 0;
     static constexpr uint256_t b{24'000'000};
     static constexpr bytes32_t storage_root{
         0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32};
@@ -27,7 +28,7 @@ TEST(Rlp_Account, DecodeAfterEncodeAccount)
         0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
     Account a{.balance = b, .code_hash = code_hash};
     auto encoded_account = encode_account(a, storage_root);
-    auto [decoded_account, decoded_storage_root] = decode_account(encoded_account);
+    auto [decoded_account, decoded_storage_root] = decode_account(encoded_account,pos);
 
     EXPECT_EQ(storage_root, decoded_storage_root);
     EXPECT_EQ(a.balance, decoded_account.balance);
@@ -35,8 +36,9 @@ TEST(Rlp_Account, DecodeAfterEncodeAccount)
 
     // With nonce added
     a.nonce = 10;
+    pos = 0;
     auto encoded_account_2 = encode_account(a, storage_root);
-    auto [decoded_account_2, decoded_storage_root_2] = decode_account(encoded_account_2);
+    auto [decoded_account_2, decoded_storage_root_2] = decode_account(encoded_account_2, pos);
 
     EXPECT_EQ(a.nonce, decoded_account_2.nonce);
     EXPECT_EQ(storage_root, decoded_storage_root_2);

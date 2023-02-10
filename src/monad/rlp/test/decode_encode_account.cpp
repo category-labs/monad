@@ -1,5 +1,6 @@
 #include <monad/core/account.hpp>
 #include <monad/rlp/encode_helpers.hpp>
+#include <monad/rlp/decode_helpers.hpp>
 
 #include <gtest/gtest.h>
 
@@ -10,6 +11,8 @@ TEST(Rlp_Account, Encode)
 {
     using namespace intx;
     using namespace evmc::literals;
+
+    byte_string_loc pos = 0;
 
     static constexpr uint256_t b{24'000'000};
     static constexpr bytes32_t storage_root{
@@ -26,5 +29,12 @@ TEST(Rlp_Account, Encode)
         0x96, 0x01, 0x1b, 0xdd, 0x50, 0xcc, 0xc1, 0xd8, 0x58, 0x0c, 0x1f,
         0xfb, 0x3c, 0x89, 0xe8, 0x28, 0x46, 0x22, 0x83};
     auto const encoded_account = encode_account(a, storage_root);
+    auto [decoded_account, decoded_storage_root] = decode_account(encoded_account,pos);
+
     EXPECT_EQ(encoded_account, rlp_account);
+
+    EXPECT_EQ(storage_root, decoded_storage_root);
+    EXPECT_EQ(a.balance, decoded_account.balance);
+    EXPECT_EQ(a.code_hash, decoded_account.code_hash);
+
 }

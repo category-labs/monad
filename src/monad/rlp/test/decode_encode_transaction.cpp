@@ -1,15 +1,21 @@
+#include <monad/rlp/decode.hpp>
+
 #include <monad/core/transaction.hpp>
 #include <monad/rlp/encode_helpers.hpp>
+#include <monad/rlp/decode_helpers.hpp>
 
 #include <gtest/gtest.h>
 
 using namespace monad;
+using namespace monad::rlp;
 
 // Example data from: https://eips.ethereum.org/EIPS/eip-155
-TEST(Rlp_Transaction, EncodeLegacy)
+TEST(Rlp_Transaction, DecodeEncodeLegacy)
 {
     using namespace intx;
     using namespace evmc::literals;
+
+    byte_string_loc pos = 0;
 
     static constexpr auto price{20'000'000'000};
     static constexpr auto amount{0xde0b6b3a7640000_u128};
@@ -38,14 +44,30 @@ TEST(Rlp_Transaction, EncodeLegacy)
         0xa0, 0x67, 0xcb, 0xe9, 0xd8, 0x99, 0x7f, 0x76, 0x1a, 0xec, 0xb7,
         0x03, 0x30, 0x4b, 0x38, 0x00, 0xcc, 0xf5, 0x55, 0xc9, 0xf3, 0xdc,
         0x64, 0x21, 0x4b, 0x29, 0x7f, 0xb1, 0x96, 0x6a, 0x3b, 0x6d, 0x83};
-    auto const legacy_rlp_transaction = monad::rlp::encode_transaction(t);
+    auto const legacy_rlp_transaction = encode_transaction(t);
+    auto const decoding = decode_transaction(legacy_rlp_transaction, pos);
+
+    // Encode
     EXPECT_EQ(legacy_rlp_transaction, legacy_transaction);
+    EXPECT_EQ(decoding.nonce, t.nonce);
+    EXPECT_EQ(decoding.gas_price, t.gas_price);
+    EXPECT_EQ(decoding.gas_limit, t.gas_limit);
+    EXPECT_EQ(decoding.amount, t.amount);
+    EXPECT_EQ(*decoding.to, *t.to);
+    EXPECT_EQ(decoding.sc.r, t.sc.r);
+    EXPECT_EQ(decoding.sc.s, t.sc.s);
+
+    // TODO:
+    // @tzhi: what abou the boolean value?
+    
 }
 
 TEST(Rlp_Transaction, EncodeEip155)
 {
     using namespace intx;
     using namespace evmc::literals;
+
+    byte_string_loc pos = 0;
 
     static constexpr auto price{20'000'000'000};
     static constexpr auto amount{0xde0b6b3a7640000_u128};
@@ -74,14 +96,26 @@ TEST(Rlp_Transaction, EncodeEip155)
         0xa0, 0x67, 0xcb, 0xe9, 0xd8, 0x99, 0x7f, 0x76, 0x1a, 0xec, 0xb7,
         0x03, 0x30, 0x4b, 0x38, 0x00, 0xcc, 0xf5, 0x55, 0xc9, 0xf3, 0xdc,
         0x64, 0x21, 0x4b, 0x29, 0x7f, 0xb1, 0x96, 0x6a, 0x3b, 0x6d, 0x83};
-    auto const eip155_rlp_transaction = monad::rlp::encode_transaction(t);
+    auto const eip155_rlp_transaction = encode_transaction(t);
+    auto const decoding = decode_transaction(eip155_rlp_transaction, pos);
+
     EXPECT_EQ(eip155_rlp_transaction, eip155_transaction);
+    EXPECT_EQ(decoding.nonce, t.nonce);
+    EXPECT_EQ(decoding.gas_price, t.gas_price);
+    EXPECT_EQ(decoding.gas_limit, t.gas_limit);
+    EXPECT_EQ(decoding.amount, t.amount);
+    EXPECT_EQ(*decoding.to, *t.to);
+    EXPECT_EQ(decoding.sc.r, t.sc.r);
+    EXPECT_EQ(decoding.sc.s, t.sc.s);
+    EXPECT_EQ(*decoding.sc.chain_id, *t.sc.chain_id);
 }
 
 TEST(Rlp_Transaction, EncodeEip2930)
 {
     using namespace intx;
     using namespace evmc::literals;
+
+    byte_string_loc pos = 0;
 
     static constexpr auto price{20'000'000'000};
     static constexpr auto amount{0xde0b6b3a7640000_u128};
@@ -131,13 +165,39 @@ TEST(Rlp_Transaction, EncodeEip2930)
         0x38, 0x00, 0xcc, 0xf5, 0x55, 0xc9, 0xf3, 0xdc, 0x64, 0x21, 0x4b, 0x29,
         0x7f, 0xb1, 0x96, 0x6a, 0x3b, 0x6d, 0x83};
     auto const eip2930_rlp_transaction = monad::rlp::encode_transaction(t);
+    auto const decoding = decode_transaction(eip2930_rlp_transaction, pos);
+
     EXPECT_EQ(eip2930_rlp_transaction, eip2930_transaction);
+
+    EXPECT_EQ(decoding.nonce, t.nonce);
+    EXPECT_EQ(decoding.gas_price, t.gas_price);
+    EXPECT_EQ(decoding.gas_limit, t.gas_limit);
+    EXPECT_EQ(decoding.amount, t.amount);
+    EXPECT_EQ(*decoding.to, *t.to);
+    EXPECT_EQ(decoding.sc.r, t.sc.r);
+    EXPECT_EQ(decoding.sc.s, t.sc.s);
+    EXPECT_EQ(*decoding.sc.chain_id, *t.sc.chain_id);
+    EXPECT_EQ(decoding.type, t.type);
+
+    EXPECT_EQ(decoding.access_list.size(), t.access_list.size());
+
+
+    for(int i=0;i<static_cast<int>(t.access_list.size());++i){
+        EXPECT_EQ(decoding.access_list[i].a, t.access_list[i].a);
+        EXPECT_EQ(decoding.access_list[i].keys.size(), t.access_list[i].keys.size());
+        for(int j=0;j<static_cast<int>(t.access_list[i].keys.size());++j){
+            EXPECT_EQ(decoding.access_list[i].keys[j], t.access_list[i].keys[j]);
+        }
+    }
+    
 }
 
 TEST(Rlp_Transaction, EncodeEip1559)
 {
     using namespace intx;
     using namespace evmc::literals;
+
+    byte_string_loc pos = 0;
 
     static constexpr auto price{20'000'000'000};
     static constexpr auto amount{0xde0b6b3a7640000_u128};
@@ -175,5 +235,27 @@ TEST(Rlp_Transaction, EncodeEip1559)
         0x38, 0x00, 0xcc, 0xf5, 0x55, 0xc9, 0xf3, 0xdc, 0x64, 0x21, 0x4b, 0x29,
         0x7f, 0xb1, 0x96, 0x6a, 0x3b, 0x6d, 0x83};
     auto const eip1559_rlp_transaction = monad::rlp::encode_transaction(t);
+    auto const decoding = decode_transaction(eip1559_rlp_transaction, pos);
+
     EXPECT_EQ(eip1559_rlp_transaction, eip1559_transaction);
+
+    EXPECT_EQ(decoding.nonce, t.nonce);
+    EXPECT_EQ(decoding.gas_price, t.gas_price);
+    EXPECT_EQ(decoding.gas_limit, t.gas_limit);
+    EXPECT_EQ(decoding.amount, t.amount);
+    EXPECT_EQ(*decoding.to, *t.to);
+    EXPECT_EQ(decoding.sc.r, t.sc.r);
+    EXPECT_EQ(decoding.sc.s, t.sc.s);
+    EXPECT_EQ(*decoding.sc.chain_id, *t.sc.chain_id);
+    EXPECT_EQ(decoding.type, t.type);
+    EXPECT_EQ(decoding.priority_fee,t.priority_fee);
+
+    EXPECT_EQ(decoding.access_list.size(), t.access_list.size());
+    for(int i=0;i<static_cast<int>(t.access_list.size());++i){
+        EXPECT_EQ(decoding.access_list[i].a, t.access_list[i].a);
+        EXPECT_EQ(decoding.access_list[i].keys.size(), t.access_list[i].keys.size());
+        for(int j=0;j<static_cast<int>(t.access_list[i].keys.size());++j){
+            EXPECT_EQ(decoding.access_list[i].keys[j], t.access_list[i].keys[j]);
+        }
+    }
 }

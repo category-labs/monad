@@ -42,7 +42,11 @@ TEST(Rlp, DecodeAfterEncodeString)
     test_single("Monad Labs");
 }
 
-// Need to have function signiture defined the 'decode.hpp'
+/*
+    Currently @glee's implementation doesn't have this function (decode_list<T>)
+    @tzhi thinks this function is useful to modularize the codes.
+    So @tzhi still writes test functions for it and declares the skeleton of the function in decode_helper.hpp
+*/ 
 
 TEST(Rlp, DecodeAfterEncodeList)
 {

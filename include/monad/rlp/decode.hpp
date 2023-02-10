@@ -14,7 +14,9 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
+// TODO
 // is this big enough for payload sizes?
+// @tzhi: Not really, since the payload can be as big as uint256, but uint256_t is a intx variable and doesn't have ++method
 using byte_string_loc = uint64_t;
 
 inline byte_string_loc decode_length(byte_string_view const enc, byte_string_loc i, byte_string_loc length)
@@ -28,7 +30,7 @@ inline byte_string_loc decode_length(byte_string_view const enc, byte_string_loc
     return result;
 }
 
-inline std::pair<byte_string, byte_string_loc> decode_string(byte_string_view const enc, byte_string_loc i)
+inline byte_string decode_string(byte_string_view const enc, byte_string_loc &i)
 {
     MONAD_ASSERT(0 <= i && i < enc.size());
     byte_string_loc end;
@@ -55,13 +57,15 @@ inline std::pair<byte_string, byte_string_loc> decode_string(byte_string_view co
         end = i + length;
     }
     MONAD_ASSERT(end <= enc.size());
-    // Tong: Change from enc.substr(i,end) to enc.substr(i, end-i)
-    return std::make_pair(byte_string(enc.substr(i, end-i)), end);
+    auto dec = byte_string(enc.substr(i, end - i));
+    i = end;
+    return dec;
 }
 
 inline byte_string decode_string(byte_string_view const enc)
 {
-    return decode_string(enc, 0).first;
+    byte_string_loc i = 0;
+    return decode_string(enc, i);
 }
 
 // Tong: Is template here necessary?

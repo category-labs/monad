@@ -145,12 +145,12 @@ Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i)
 
     // Transaction type matching
     const uint8_t &type = enc[i];
-    if (type == 0x01)      // eip2930
+    if (type == 0x01)       // eip2930
     {
         ++i;
         txn.type = Transaction::Type::eip2930;
     }
-    else if (type == 0x02) // eip1559
+    else if (type == 0x02)  // eip1559
     {
         ++i;
         txn.type = Transaction::Type::eip1559;

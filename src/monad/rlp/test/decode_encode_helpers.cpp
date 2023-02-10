@@ -16,41 +16,51 @@ using namespace monad::rlp;
 TEST(Rlp, DecodeEncodeUnsigned)
 {
     // integer 0
-    byte_string_loc pos = 0;
-    auto encoding = encode_unsigned(0u);
-    auto decoding = decode_unsigned<uint8_t>(encoding,pos);
-    EXPECT_EQ(encoding, monad::byte_string({0x80}));
-    EXPECT_EQ(decoding, 0u);
+    {
+        byte_string_loc pos = 0;
+        auto encoding = encode_unsigned(0u);
+        auto decoding = decode_unsigned<uint8_t>(encoding, pos);
+        EXPECT_EQ(encoding, monad::byte_string({0x80}));
+        EXPECT_EQ(decoding, 0u);
+    }
 
     // char 0
-    pos = 0;
-    encoding = encode_unsigned(uint8_t{0});
-    decoding = decode_unsigned<uint8_t>(encoding, pos);
-    EXPECT_EQ(encoding, monad::byte_string({0x80}));
-    EXPECT_EQ(decoding,uint8_t{0});
+    {
+        byte_string_loc pos = 0;
+        auto encoding = encode_unsigned(uint8_t{0});
+        auto decoding = decode_unsigned<uint8_t>(encoding, pos);
+        EXPECT_EQ(encoding, monad::byte_string({0x80}));
+        EXPECT_EQ(decoding, uint8_t{0});
+    }
 
     // integer 15
-    pos = 0;
-    encoding = encode_unsigned(15u);
-    decoding = decode_unsigned<uint8_t>(encoding,pos);
-    EXPECT_EQ(encoding, monad::byte_string({0x0f}));
-    EXPECT_EQ(decoding,15u);
+    {
+        byte_string_loc pos = 0;
+        auto encoding = encode_unsigned(15u);
+        auto decoding = decode_unsigned<uint8_t>(encoding, pos);
+        EXPECT_EQ(encoding, monad::byte_string({0x0f}));
+        EXPECT_EQ(decoding,15u);
+    }
 
     // char 15
-    pos = 0;
-    encoding = encode_unsigned(uint8_t{15});
-    decoding = decode_unsigned<uint8_t>(encoding,pos);
-    EXPECT_EQ(encoding, monad::byte_string({0x0f}));
-    EXPECT_EQ(decoding,uint8_t{15});
+    {
+        byte_string_loc pos = 0;
+        auto encoding = encode_unsigned(uint8_t{15});
+        auto decoding = decode_unsigned<uint8_t>(encoding, pos);
+        EXPECT_EQ(encoding, monad::byte_string({0x0f}));
+        EXPECT_EQ(decoding, uint8_t{15});
+    }
 
     // integer 1024
-    pos = 0;
-    encoding = encode_unsigned(1024u);
-    decoding = decode_unsigned<uint16_t>(encoding, pos);
-    auto const ten_twenty_four_encoding =
-        monad::byte_string({0x82, 0x04, 0x00});
-    EXPECT_EQ(encoding, ten_twenty_four_encoding);
-    EXPECT_EQ(decoding, 1024u);
+    {
+        byte_string_loc pos = 0;
+        auto encoding = encode_unsigned(1024u);
+        auto decoding = decode_unsigned<uint16_t>(encoding, pos);
+        auto const ten_twenty_four_encoding =
+            monad::byte_string({0x82, 0x04, 0x00});
+        EXPECT_EQ(encoding, ten_twenty_four_encoding);
+        EXPECT_EQ(decoding, 1024u);
+    }
 }
 
 // TODO:

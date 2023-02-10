@@ -243,8 +243,8 @@ Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i)
         txn.amount = decode_unsigned(enc, i);
         txn.data = decode_string(enc, i);
         txn.sc = decode_sc(enc, i);
-        txn.sc.r = decode_unsigned(enc, i);
-        txn.sc.s = decode_unsigned(enc, i);
+        txn.sc.r = decode_unsigned<uint256_t>(enc, i);
+        txn.sc.s = decode_unsigned<uint256_t>(enc, i);
     }
     else if (txn.type == Transaction::Type::eip1559)
     {
@@ -258,8 +258,8 @@ Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i)
         txn.data = decode_string(enc, i);
         txn.access_list = decode_access_list(enc, i);
         txn.sc.odd_y_parity = decode_unsigned(enc, i);
-        txn.sc.r = decode_unsigned(enc, i);
-        txn.sc.s = decode_unsigned(enc, i);
+        txn.sc.r = decode_unsigned<uint256_t>(enc, i);
+        txn.sc.s = decode_unsigned<uint256_t>(enc, i);
     }
     else            // Transaction::type::eip2930
     {
@@ -272,8 +272,8 @@ Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i)
         txn.data = decode_string(enc, i);
         txn.access_list = decode_access_list(enc, i);
         txn.sc.odd_y_parity = decode_unsigned(enc, i);
-        txn.sc.r = decode_unsigned(enc, i);
-        txn.sc.s = decode_unsigned(enc, i);
+        txn.sc.r = decode_unsigned<uint256_t>(enc, i);
+        txn.sc.s = decode_unsigned<uint256_t>(enc, i);
     }
 
     MONAD_ASSERT(i == end);

@@ -17,17 +17,29 @@ MONAD_RLP_NAMESPACE_BEGIN
 // TODO
 // is this big enough for payload sizes?
 // @tzhi: Not really, since the payload can be as big as uint256, but uint256_t is a intx variable and doesn't have ++method
+// @glee: Actually I think this is fine. I want this type to define a location on
+//        the byte_string, and although the payload has infinite potential size,
+//        it realistically shouldn't be that big (plus byte_string won't support
+//        indexing with non-standard primitives at the moment). I've come up with
+//        a solution to your problem by templating the decoding (number) type.
 using byte_string_loc = uint64_t;
 
-inline byte_string_loc decode_length(byte_string_view const enc, byte_string_loc i, byte_string_loc length)
+// glee for shea: can't figure out how to incorporate `unsigned_integral` concept
+template <typename T>
+inline T decode_num(byte_string_view const enc, byte_string_loc i, byte_string_loc length)
 {
-    byte_string_loc result = 0;
+    T result = 0;
     for (byte_string_loc j = i; j < i + length; ++j)
     {
         result *= 256;
         result += enc[j];
     }
     return result;
+}
+
+inline byte_string_loc decode_length(byte_string_view const enc, byte_string_loc i, byte_string_loc length)
+{
+    return decode_num<byte_string_loc>(enc, i, length);
 }
 
 inline byte_string decode_string(byte_string_view const enc, byte_string_loc &i)

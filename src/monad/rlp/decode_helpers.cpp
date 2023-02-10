@@ -43,13 +43,9 @@ inline SignatureAndChain decode_sc(byte_string_view const enc, byte_string_loc &
     return res;
 }
 
-// glee for glee: TODO vector.resize() based on rlp-length to avoid unnecessary
-//                resizing on push_back()
-
-std::vector<bytes32_t> decode_access_entry_keys(byte_string_view const enc, byte_string_loc &i)
+inline byte_string_loc end_of_list_encoding(byte_string_view const enc, byte_string_loc &i)
 {
     MONAD_ASSERT(i < enc.size());
-    std::vector<bytes32_t> keys;
 
     byte_string_loc length;
     const uint8_t &first = enc[i];
@@ -70,6 +66,16 @@ std::vector<bytes32_t> decode_access_entry_keys(byte_string_view const enc, byte
     }
     const byte_string_loc end = i + length;
     MONAD_ASSERT(end <= enc.size());
+
+    return end;
+}
+
+// glee for glee: TODO vector.resize() based on rlp-length to avoid unnecessary
+//                resizing on push_back()
+std::vector<bytes32_t> decode_access_entry_keys(byte_string_view const enc, byte_string_loc &i)
+{
+    const byte_string_loc end = end_of_list_encoding(enc, i);
+    std::vector<bytes32_t> keys;
 
     while (i < end)
     {
@@ -83,29 +89,9 @@ std::vector<bytes32_t> decode_access_entry_keys(byte_string_view const enc, byte
 
 Transaction::AccessEntry decode_access_entry(byte_string_view const enc, byte_string_loc &i)
 {
-    MONAD_ASSERT(i < enc.size());
+    const byte_string_loc end = end_of_list_encoding(enc, i);
     Transaction::AccessEntry ae;
-
-    byte_string_loc length;
-    const uint8_t &first = enc[i];
-    ++i;
-    MONAD_ASSERT(first >= 192);
-    if (first < 248)
-    {
-        length = first - 192;
-    }
-    else
-    {
-        byte_string_loc length_of_length;
-        length_of_length = first - 247;
-        MONAD_ASSERT(i + length_of_length < enc.size());
-
-        length = decode_length(enc, i, length_of_length);
-        i += length_of_length;
-    }
-    const byte_string_loc end = i + length;
-    MONAD_ASSERT(end <= enc.size());
-
+    
     while (i < end)
     {
         ae.a = decode_address(enc, i);
@@ -118,29 +104,9 @@ Transaction::AccessEntry decode_access_entry(byte_string_view const enc, byte_st
 
 Transaction::AccessList decode_access_list(byte_string_view const enc, byte_string_loc &i)
 {
-    MONAD_ASSERT(i < enc.size());
+    const byte_string_loc end = end_of_list_encoding(enc, i);
     Transaction::AccessList al;
-
-    byte_string_loc length;
-    const uint8_t &first = enc[i];
-    ++i;
-    MONAD_ASSERT(first >= 192);
-    if (first < 248)
-    {
-        length = first - 192;
-    }
-    else
-    {
-        byte_string_loc length_of_length;
-        length_of_length = first - 247;
-        MONAD_ASSERT(i + length_of_length < enc.size());
-
-        length = decode_length(enc, i, length_of_length);
-        i += length_of_length;
-    }
-    const byte_string_loc end = i + length;
-    MONAD_ASSERT(end <= enc.size());
-
+    
     while (i < end)
     {
         al.emplace_back(decode_access_entry(enc, i));
@@ -152,34 +118,10 @@ Transaction::AccessList decode_access_list(byte_string_view const enc, byte_stri
 
 std::pair<Account, bytes32_t> decode_account(byte_string_view const enc, byte_string_loc &i)
 {
-    MONAD_ASSERT(i < enc.size());
+    const byte_string_loc end = end_of_list_encoding(enc, i);
     Account acc;
     bytes32_t code_root;
-
-    const uint8_t &first = enc[i];
-    ++i;
-    byte_string_loc length;
-    MONAD_ASSERT(first >= 192);
-    /**
-     * glee (& tong) for shea: this branch will never really occur because of
-     * the `bytes32_t` fields... should we consider MONAD_ASSERT(first >= 248)?
-     */
-    if (first < 248)
-    {
-        length = first - 192;
-    }
-    else
-    {
-        byte_string_loc length_of_length;
-        length_of_length = first - 247;
-        MONAD_ASSERT(i + length_of_length < enc.size());
-
-        length = decode_length(enc, i, length_of_length);
-        i += length_of_length;
-    }
-    const byte_string_loc end = i + length;
-    MONAD_ASSERT(end <= enc.size());
-
+    
     acc.nonce = decode_unsigned<uint64_t>(enc, i);
     acc.balance = decode_unsigned<uint256_t>(enc, i);
     code_root = decode_bytes32(enc, i);
@@ -212,28 +154,7 @@ Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i)
         txn.type = Transaction::Type::eip155;
     }
 
-    MONAD_ASSERT(i < enc.size());
-    const uint8_t &first = enc[i];
-
-    ++i;
-    byte_string_loc length;
-    MONAD_ASSERT(first >= 192);
-    if (first < 248)
-    {
-        length = first - 192;
-    }
-    else
-    {
-        byte_string_loc length_of_length;
-        length_of_length = first - 247;
-        MONAD_ASSERT(i + length_of_length < enc.size());
-
-        length = decode_length(enc, i, length_of_length);
-        i += length_of_length;
-    }
-    const byte_string_loc end = i + length;
-    MONAD_ASSERT(end <= enc.size());
-
+    const byte_string_loc end = end_of_list_encoding(enc, i);
     if (txn.type == Transaction::Type::eip155)
     {
         txn.nonce = decode_unsigned<uint64_t>(enc, i);

@@ -24,8 +24,7 @@ MONAD_RLP_NAMESPACE_BEGIN
 //        a solution to your problem by templating the decoding (number) type.
 using byte_string_loc = uint64_t;
 
-// glee for shea: can't figure out how to incorporate `unsigned_integral` concept
-template <typename T>
+template <unsigned_integral T>
 inline T decode_num(byte_string_view const enc, byte_string_loc i, byte_string_loc length)
 {
     T result = 0;

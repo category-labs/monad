@@ -40,9 +40,6 @@ Transaction::AccessEntry decode_access_entry(byte_string_view const enc, byte_st
 Transaction::AccessList decode_access_list(byte_string_view const enc, byte_string_loc &i);
 std::pair<Account, bytes32_t> decode_account(byte_string_view const enc, byte_string_loc &i);
 Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i);
-
-
-
-Block decode_block(byte_string const enc);
+Block decode_block(byte_string_view const enc, byte_string_loc &i);
 
 MONAD_RLP_NAMESPACE_END

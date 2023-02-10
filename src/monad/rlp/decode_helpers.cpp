@@ -75,7 +75,10 @@ inline byte_string_loc end_of_list_encoding(byte_string_view const enc, byte_str
 std::vector<bytes32_t> decode_access_entry_keys(byte_string_view const enc, byte_string_loc &i)
 {
     const byte_string_loc end = end_of_list_encoding(enc, i);
+    const byte_string_loc key_size = 33;    // 1 byte for header, 32 bytes for byte32_t
+    const byte_string_loc list_space = end - i;
     std::vector<bytes32_t> keys;
+    keys.reserve(list_space / key_size);
 
     while (i < end)
     {
@@ -84,6 +87,7 @@ std::vector<bytes32_t> decode_access_entry_keys(byte_string_view const enc, byte
     }
 
     MONAD_ASSERT(i == end);
+    MONAD_ASSERT(list_space == keys.size() * key_size);
     return keys;
 }
 
@@ -92,11 +96,8 @@ Transaction::AccessEntry decode_access_entry(byte_string_view const enc, byte_st
     const byte_string_loc end = end_of_list_encoding(enc, i);
     Transaction::AccessEntry ae;
     
-    while (i < end)
-    {
-        ae.a = decode_address(enc, i);
-        ae.keys = decode_access_entry_keys(enc, i);
-    }
+    ae.a = decode_address(enc, i);
+    ae.keys = decode_access_entry_keys(enc, i);
 
     MONAD_ASSERT(i == end);
     return ae;
@@ -105,7 +106,13 @@ Transaction::AccessEntry decode_access_entry(byte_string_view const enc, byte_st
 Transaction::AccessList decode_access_list(byte_string_view const enc, byte_string_loc &i)
 {
     const byte_string_loc end = end_of_list_encoding(enc, i);
+    // glee for shea: totally arbitrary number... maybe you can come up with a better estimate?
+    const byte_string_loc approx_num_keys = 10;
+    // 20 bytes for address, 33 bytes per key
+    const byte_string_loc access_entry_size_approx = 20 + 33 * approx_num_keys;
+    const byte_string_loc list_space = end - i;
     Transaction::AccessList al;
+    al.reserve(list_space / access_entry_size_approx);
     
     while (i < end)
     {
@@ -136,9 +143,8 @@ Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i)
     MONAD_ASSERT(i < enc.size());
     Transaction txn;
 
-    const uint8_t &type = enc[i];
-
     // Transaction type matching
+    const uint8_t &type = enc[i];
     if (type == 0x01)      // eip2930
     {
         ++i;

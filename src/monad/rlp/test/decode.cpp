@@ -42,30 +42,9 @@ TEST(Rlp, DecodeAfterEncodeString)
     test_single("Monad Labs");
 }
 
+
 /*
     Currently @glee's implementation doesn't have this function (decode_list<T>)
     @tzhi thinks this function is useful to modularize the codes.
     So @tzhi still writes test functions for it and declares the skeleton of the function in decode_helper.hpp
 */ 
-
-TEST(Rlp, DecodeAfterEncodeList)
-{
-
-    // Empty list
-    auto encoding = encode_list();
-    auto decoding = decode_list<byte_string>(encoding);
-    EXPECT_EQ(decoding, std::vector<byte_string>{});
-
-    // Byte_string list {"cat", "dog"}
-    std::vector<byte_string> candidate{ {0x63, 0x61, 0x74}, {0x64, 0x6F, 0x67}};
-    encoding = encode_list(
-        encode_string(candidate[0]),
-        encode_string(candidate[1]));
-    
-    decoding = decode_list<byte_string>(encoding);
-    EXPECT_EQ(decoding,candidate);
-    
-    // To Do: Transactions List
-
-    // To Do: Receipts List
-}

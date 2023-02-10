@@ -123,6 +123,16 @@ Transaction::AccessList decode_access_list(byte_string_view const enc, byte_stri
     return al;
 }
 
+Receipt::Bloom decode_bloom(byte_string_view const enc, byte_string_loc& i){
+    auto decoding = decode_string(enc, i);
+    MONAD_ASSERT(decoding.size() == 256);
+
+    Receipt::Bloom res;
+    memcpy(res.data(), decoding.data(), 256);
+
+    return res;
+}
+
 std::pair<Account, bytes32_t> decode_account(byte_string_view const enc, byte_string_loc &i)
 {
     const byte_string_loc end = end_of_list_encoding(enc, i);
@@ -206,5 +216,7 @@ Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i)
     MONAD_ASSERT(i == end);
     return txn;
 }
+
+
 
 MONAD_RLP_NAMESPACE_END

@@ -133,4 +133,5 @@ byte_string encode_receipt(Receipt const &r)
                         encode_list(log_result));
 }
 
+
 MONAD_RLP_NAMESPACE_END

@@ -32,11 +32,17 @@ bytes32_t decode_bytes32(byte_string_view const enc, byte_string_loc &i);
 address_t decode_address(byte_string_view const enc, byte_string_loc &i);
 SignatureAndChain decode_sc(byte_string_view const enc, byte_string_loc &i);
 
+Receipt::Bloom decode_bloom(byte_string_view const enc, byte_string_loc& i);
+Receipt::Log decode_log(byte_string_view const enc, byte_string_loc& i);
+
 std::vector<bytes32_t> decode_access_entry_keys(byte_string_view const enc, byte_string_loc &i);
 Transaction::AccessEntry decode_access_entry(byte_string_view const enc, byte_string_loc &i);
 Transaction::AccessList decode_access_list(byte_string_view const enc, byte_string_loc &i);
 std::pair<Account, bytes32_t> decode_account(byte_string_view const enc, byte_string_loc &i);
 Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i);
+
+
+
 Block decode_block(byte_string const enc);
 
 MONAD_RLP_NAMESPACE_END

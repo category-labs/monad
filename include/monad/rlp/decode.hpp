@@ -79,12 +79,4 @@ inline byte_string decode_string(byte_string_view const enc)
     return decode_string(enc, i);
 }
 
-// Tong: Is template here necessary?
-template <typename T>
-inline std::vector<T> decode_list(byte_string_view const enc)
-{
-    std::cout << enc.size() << std::endl;
-    return {};
-}
-
 MONAD_RLP_NAMESPACE_END

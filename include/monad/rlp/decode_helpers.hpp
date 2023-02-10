@@ -33,7 +33,10 @@ address_t decode_address(byte_string_view const enc, byte_string_loc &i);
 SignatureAndChain decode_sc(byte_string_view const enc, byte_string_loc &i);
 
 Receipt::Bloom decode_bloom(byte_string_view const enc, byte_string_loc& i);
-Receipt::Log decode_log(byte_string_view const enc, byte_string_loc& i);
+byte_string decode_log_data(byte_string_view enc, byte_string_loc& i);
+std::vector<bytes32_t> decode_topics(byte_string_view enc, byte_string_loc& i);
+Receipt::Log decode_log(byte_string_view enc, byte_string_loc& i);
+std::vector<Receipt::Log> decode_logs(byte_string_view const enc, byte_string_loc& i);
 
 std::vector<bytes32_t> decode_access_entry_keys(byte_string_view const enc, byte_string_loc &i);
 Transaction::AccessEntry decode_access_entry(byte_string_view const enc, byte_string_loc &i);

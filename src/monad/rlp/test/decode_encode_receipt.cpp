@@ -7,9 +7,9 @@
 using namespace monad;
 using namespace monad::rlp;
 
-TEST(Rlp_Receipt, EncodeLog)
+TEST(Rlp_Receipt, DecodeEncodeLog)
 {
-    // byte_string_loc pos = 0;
+    byte_string_loc pos = 0;
 
     // Empty Log
     {
@@ -42,8 +42,17 @@ TEST(Rlp_Receipt, EncodeLog)
             0x96, 0x01, 0x1b, 0xdd, 0x50, 0xcc, 0xc1, 0xd8, 0x58, 0x0c, 0x1f, 0xfb,
             0x3c, 0x89, 0xe8, 0x28, 0x46, 0x22, 0x83, 0xc4, 0x00, 0x01, 0x02, 0x03};
         auto encoded = encode_log(log);
-        // auto decoded = decode_log(encoded, pos);
+        auto decoded = decode_log(encoded, pos);
+
         EXPECT_EQ(encoded, rlp_log);
+
+        EXPECT_EQ(decoded.data, log.data);
+        EXPECT_EQ(decoded.address, log.address);
+
+        EXPECT_EQ(decoded.topics.size(), log.topics.size());
+        for(int i=0;i<static_cast<int>(log.topics.size());++i){
+            EXPECT_EQ(decoded.topics[i], log.topics[i]);
+        }
     }
 }
 
@@ -91,10 +100,12 @@ TEST(Rlp_Receipt, DecodeEncodeBloom)
 
 }
 
-TEST(Rlp_Receipt, EncodeEip155Receipt)
+TEST(Rlp_Receipt, DecodeEncodeEip155Receipt)
 {
     using namespace intx;
     using namespace evmc::literals;
+
+    byte_string_loc pos = 0;
 
     static constexpr uint64_t gas{2'850'010};
     static constexpr auto addr{
@@ -150,13 +161,38 @@ TEST(Rlp_Receipt, EncodeEip155Receipt)
         0x1f, 0xfb, 0x3c, 0x89, 0xe8, 0x28, 0x46, 0x22, 0x83, 0xc4, 0x00, 0x01,
         0x02, 0x03}; // logs
     auto const encoded = encode_receipt(r);
+    auto const decoded = decode_receipt(encoded, pos);
+
     EXPECT_EQ(encoded, rlp_receipt);
+
+    EXPECT_EQ(decoded.type, r.type);
+    EXPECT_EQ(decoded.gas_used, r.gas_used);
+    EXPECT_EQ(decoded.status, r.status);
+
+    // Bloom
+    for(int i=0;i<256;++i){
+        EXPECT_EQ(decoded.bloom[i],r.bloom[i]);
+    }
+
+    // Log:
+    EXPECT_EQ(decoded.logs.size(), r.logs.size());
+    for(int i=0;i<static_cast<int>(decoded.logs.size());++i){
+        EXPECT_EQ(decoded.logs[i].address, r.logs[i].address);
+        EXPECT_EQ(decoded.logs[i].topics.size(), r.logs[i].topics.size());
+        for(int j=0;j<static_cast<int>(log.topics.size());++j){
+            EXPECT_EQ(decoded.logs[i].topics[j], r.logs[i].topics[j]);
+        }
+        EXPECT_EQ(decoded.logs[i].address, r.logs[i].address);
+    }
+
 }
 
 TEST(Rlp_Receipt, EncodeEip1559Receipt)
 {
     using namespace intx;
     using namespace evmc::literals;
+
+    byte_string_loc pos = 0;
 
     static constexpr uint64_t gas{2'850'010};
     static constexpr auto addr{
@@ -212,13 +248,37 @@ TEST(Rlp_Receipt, EncodeEip1559Receipt)
         0x1f, 0xfb, 0x3c, 0x89, 0xe8, 0x28, 0x46, 0x22, 0x83, 0xc4, 0x00, 0x01,
         0x02, 0x03}; // logs
     auto const encoded = encode_receipt(r);
+    auto const decoded = decode_receipt(encoded, pos);
+
     EXPECT_EQ(encoded, rlp_receipt);
+
+    EXPECT_EQ(decoded.type, r.type);
+    EXPECT_EQ(decoded.gas_used, r.gas_used);
+    EXPECT_EQ(decoded.status, r.status);
+
+    // Bloom
+    for(int i=0;i<256;++i){
+        EXPECT_EQ(decoded.bloom[i],r.bloom[i]);
+    }
+
+    // Log:
+    EXPECT_EQ(decoded.logs.size(), r.logs.size());
+    for(int i=0;i<static_cast<int>(decoded.logs.size());++i){
+        EXPECT_EQ(decoded.logs[i].address, r.logs[i].address);
+        EXPECT_EQ(decoded.logs[i].topics.size(), r.logs[i].topics.size());
+        for(int j=0;j<static_cast<int>(log.topics.size());++j){
+            EXPECT_EQ(decoded.logs[i].topics[j], r.logs[i].topics[j]);
+        }
+        EXPECT_EQ(decoded.logs[i].address, r.logs[i].address);
+    }
 }
 
 TEST(Rlp_Receipt, EncodeEip2930Receipt)
 {
     using namespace intx;
     using namespace evmc::literals;
+
+    byte_string_loc pos = 0;
 
     static constexpr uint64_t gas{2'850'010};
     static constexpr auto addr{
@@ -274,5 +334,27 @@ TEST(Rlp_Receipt, EncodeEip2930Receipt)
         0x1f, 0xfb, 0x3c, 0x89, 0xe8, 0x28, 0x46, 0x22, 0x83, 0xc4, 0x00, 0x01,
         0x02, 0x03}; // logs
     auto const encoded = encode_receipt(r);
+    auto const decoded = decode_receipt(encoded, pos);
+
     EXPECT_EQ(encoded, rlp_receipt);
+
+    EXPECT_EQ(decoded.type, r.type);
+    EXPECT_EQ(decoded.gas_used, r.gas_used);
+    EXPECT_EQ(decoded.status, r.status);
+
+    // Bloom
+    for(int i=0;i<256;++i){
+        EXPECT_EQ(decoded.bloom[i],r.bloom[i]);
+    }
+
+    // Log:
+    EXPECT_EQ(decoded.logs.size(), r.logs.size());
+    for(int i=0;i<static_cast<int>(decoded.logs.size());++i){
+        EXPECT_EQ(decoded.logs[i].address, r.logs[i].address);
+        EXPECT_EQ(decoded.logs[i].topics.size(), r.logs[i].topics.size());
+        for(int j=0;j<static_cast<int>(log.topics.size());++j){
+            EXPECT_EQ(decoded.logs[i].topics[j], r.logs[i].topics[j]);
+        }
+        EXPECT_EQ(decoded.logs[i].address, r.logs[i].address);
+    }
 }

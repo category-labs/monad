@@ -10,6 +10,9 @@
 #include <numeric>
 #include <string>
 
+// To be Deleted
+#include <iostream>
+
 MONAD_RLP_NAMESPACE_BEGIN
 
 bytes32_t decode_bytes32(byte_string_view const enc, byte_string_loc &i) {
@@ -133,6 +136,58 @@ Receipt::Bloom decode_bloom(byte_string_view const enc, byte_string_loc& i){
     return res;
 }
 
+std::vector<bytes32_t> decode_topics(byte_string_view enc, byte_string_loc& i){
+   // @tzhi: Maybe need to do the reserve thing here too?
+    std::vector<bytes32_t> topics;
+    const byte_string_loc end = end_of_list_encoding(enc, i);
+    while(i < end){
+        topics.emplace_back(decode_bytes32(enc,i));
+    }
+
+    MONAD_ASSERT(i == end);
+    return topics;
+}
+
+// @tzhi: why do we encode data as list?
+byte_string decode_log_data(byte_string_view enc, byte_string_loc& i){
+    const byte_string_loc end = end_of_list_encoding(enc, i);
+
+    byte_string data;
+
+    while(i < end){
+        data += enc[i++];
+    }
+
+    return data;
+}
+
+Receipt::Log decode_log(byte_string_view enc, byte_string_loc& i){
+    Receipt::Log log;
+    const byte_string_loc end = end_of_list_encoding(enc, i);
+    log.address = decode_address(enc,i);
+    log.topics = decode_topics(enc,i);
+    log.data = decode_log_data(enc,i);
+
+    MONAD_ASSERT(i == end);
+
+    return log;
+}
+
+
+
+std::vector<Receipt::Log> decode_logs(byte_string_view const enc, byte_string_loc& i){
+    std::cerr << "In decode_logs" << std::endl;
+    const byte_string_loc end = end_of_list_encoding(enc, i);
+    std::cerr << int(i) << std::endl;
+    std::vector<Receipt::Log> logs;
+    while(i < end){
+        logs.emplace_back(decode_log(enc,i));
+    }
+
+    MONAD_ASSERT(i == end);
+    return logs;
+}
+
 std::pair<Account, bytes32_t> decode_account(byte_string_view const enc, byte_string_loc &i)
 {
     const byte_string_loc end = end_of_list_encoding(enc, i);
@@ -216,6 +271,30 @@ Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i)
     MONAD_ASSERT(i == end);
     return txn;
 }
+
+Receipt decode_receipt(byte_string_view const enc, byte_string_loc& i){
+    unsigned prefix = enc[i];
+    Receipt receipt;
+    if (prefix == 0x01){
+        receipt.type = Transaction::Type::eip1559;
+        ++i;
+    } else if(prefix == 0x02){
+        receipt.type = Transaction::Type::eip2930;
+        ++i;
+    }else {
+        receipt.type = Transaction::Type::eip155;
+    }
+
+    const byte_string_loc end = end_of_list_encoding(enc, i);
+    receipt.status = decode_unsigned<uint64_t>(enc, i);
+    receipt.gas_used = decode_unsigned<uint64_t>(enc,i);
+    receipt.bloom = decode_bloom(enc,i);
+    receipt.logs = decode_logs(enc,i);
+
+    MONAD_ASSERT(i == end);
+    return receipt;
+}
+
 
 
 

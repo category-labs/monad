@@ -16,9 +16,11 @@
 MONAD_RLP_NAMESPACE_BEGIN
 
 // glee for shea: not sure how to incorporate `unsigned_integral` concept...
+// -------------------------------------------------------------------------
 // glee for glee: we should remove the template default and require explicit
 //                typing to avoid unnecessary stack allocation (smaller num).
-template <typename T = byte_string_loc>
+// glee: Removed template default for reason stated above.
+template <typename T>
 inline T decode_unsigned(byte_string_view const enc, byte_string_loc &i)
 {
     const auto dec = decode_string(enc, i);

@@ -18,35 +18,35 @@ TEST(Rlp, DecodeEncodeUnsigned)
     // integer 0
     byte_string_loc pos = 0;
     auto encoding = encode_unsigned(0u);
-    auto decoding = decode_unsigned(encoding,pos);
+    auto decoding = decode_unsigned<uint8_t>(encoding,pos);
     EXPECT_EQ(encoding, monad::byte_string({0x80}));
     EXPECT_EQ(decoding, 0u);
 
     // char 0
     pos = 0;
     encoding = encode_unsigned(uint8_t{0});
-    decoding = decode_unsigned(encoding, pos);
+    decoding = decode_unsigned<uint8_t>(encoding, pos);
     EXPECT_EQ(encoding, monad::byte_string({0x80}));
     EXPECT_EQ(decoding,uint8_t{0});
 
     // integer 15
     pos = 0;
     encoding = encode_unsigned(15u);
-    decoding = decode_unsigned(encoding,pos);
+    decoding = decode_unsigned<uint8_t>(encoding,pos);
     EXPECT_EQ(encoding, monad::byte_string({0x0f}));
     EXPECT_EQ(decoding,15u);
 
     // char 15
     pos = 0;
     encoding = encode_unsigned(uint8_t{15});
-    decoding = decode_unsigned(encoding,pos);
+    decoding = decode_unsigned<uint8_t>(encoding,pos);
     EXPECT_EQ(encoding, monad::byte_string({0x0f}));
     EXPECT_EQ(decoding,uint8_t{15});
 
     // integer 1024
     pos = 0;
     encoding = encode_unsigned(1024u);
-    decoding = decode_unsigned(encoding, pos);
+    decoding = decode_unsigned<uint16_t>(encoding, pos);
     auto const ten_twenty_four_encoding =
         monad::byte_string({0x82, 0x04, 0x00});
     EXPECT_EQ(encoding, ten_twenty_four_encoding);
@@ -83,65 +83,73 @@ TEST(Rlp, DecodeEncodeBigNumers)
     using namespace intx;
 
     // uint128_t
-    byte_string_loc pos = 0;
-    auto encoding = encode_unsigned(0xbea34dd04b09ad3b6014251ee2457807_u128);
-    auto decoding_unsigned = decode_unsigned(encoding,pos);
-    auto const sorta_big_num = monad::byte_string(
-        {0x90,
-         0xbe,
-         0xa3,
-         0x4d,
-         0xd0,
-         0x4b,
-         0x09,
-         0xad,
-         0x3b,
-         0x60,
-         0x14,
-         0x25,
-         0x1e,
-         0xe2,
-         0x45,
-         0x78,
-         0x07});
-    EXPECT_EQ(encoding, sorta_big_num);
-    EXPECT_EQ(decoding_unsigned, 0xbea34dd04b09ad3b6014251ee2457807_u128);
+    {
+        byte_string_loc pos = 0;
+        auto encoding = encode_unsigned(0xbea34dd04b09ad3b6014251ee2457807_u128);
+        auto decoding_unsigned = decode_unsigned<uint128_t>(encoding,pos);
+        auto const sorta_big_num = monad::byte_string(
+            {0x90,
+            0xbe,
+            0xa3,
+            0x4d,
+            0xd0,
+            0x4b,
+            0x09,
+            0xad,
+            0x3b,
+            0x60,
+            0x14,
+            0x25,
+            0x1e,
+            0xe2,
+            0x45,
+            0x78,
+            0x07});
+        EXPECT_EQ(encoding, sorta_big_num);
+        EXPECT_EQ(decoding_unsigned, 0xbea34dd04b09ad3b6014251ee2457807_u128);
+    }
 
     // uint256_t
-    pos = 0;
-    encoding = encode_unsigned(
-        0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_u256);
-    decoding_unsigned = decode_unsigned(encoding,pos);
-    auto const big_num = monad::byte_string(
-        {0xa0, 0xbe, 0xa3, 0x4d, 0xd0, 0x4b, 0x09, 0xad, 0x3b, 0x60, 0x14,
-         0x25, 0x1e, 0xe2, 0x45, 0x78, 0x07, 0x40, 0x87, 0xee, 0x60, 0xfd,
-         0xa8, 0xc3, 0x91, 0xcf, 0x46, 0x6d, 0xfe, 0x5d, 0x68, 0x7d, 0x7b});
-    EXPECT_EQ(encoding, big_num);
-    EXPECT_EQ(decoding_unsigned, 0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_u256);
+    {
+        byte_string_loc pos = 0;
+        auto encoding = encode_unsigned(
+            0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_u256);
+        auto decoding_unsigned = decode_unsigned<uint256_t>(encoding,pos);
+        auto const big_num = monad::byte_string(
+            {0xa0, 0xbe, 0xa3, 0x4d, 0xd0, 0x4b, 0x09, 0xad, 0x3b, 0x60, 0x14,
+            0x25, 0x1e, 0xe2, 0x45, 0x78, 0x07, 0x40, 0x87, 0xee, 0x60, 0xfd,
+            0xa8, 0xc3, 0x91, 0xcf, 0x46, 0x6d, 0xfe, 0x5d, 0x68, 0x7d, 0x7b});
+        EXPECT_EQ(encoding, big_num);
+        EXPECT_EQ(decoding_unsigned, 0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_u256);
+    }
 
     using namespace evmc::literals;
     // bytes32
-    pos = 0;
-    encoding = encode_bytes32(
-        0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32);
-    auto decoding_bytes32 = decode_bytes32(encoding,pos);
-    auto const big_be_num = monad::byte_string(
-        {0xa0, 0xbe, 0xa3, 0x4d, 0xd0, 0x4b, 0x09, 0xad, 0x3b, 0x60, 0x14,
-         0x25, 0x1e, 0xe2, 0x45, 0x78, 0x07, 0x40, 0x87, 0xee, 0x60, 0xfd,
-         0xa8, 0xc3, 0x91, 0xcf, 0x46, 0x6d, 0xfe, 0x5d, 0x68, 0x7d, 0x7b});
-    EXPECT_EQ(encoding, big_be_num);
-    EXPECT_EQ(decoding_bytes32, 0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32);
+    {
+        byte_string_loc pos = 0;
+        auto encoding = encode_bytes32(
+            0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32);
+        auto decoding_bytes32 = decode_bytes32(encoding,pos);
+        auto const big_be_num = monad::byte_string(
+            {0xa0, 0xbe, 0xa3, 0x4d, 0xd0, 0x4b, 0x09, 0xad, 0x3b, 0x60, 0x14,
+            0x25, 0x1e, 0xe2, 0x45, 0x78, 0x07, 0x40, 0x87, 0xee, 0x60, 0xfd,
+            0xa8, 0xc3, 0x91, 0xcf, 0x46, 0x6d, 0xfe, 0x5d, 0x68, 0x7d, 0x7b});
+        EXPECT_EQ(encoding, big_be_num);
+        EXPECT_EQ(decoding_bytes32, 0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32);
+    }
 
     // address
-    pos = 0;
-    encoding =
-        encode_address(0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address);
-    auto decoding_address = decode_address(encoding, pos);
-    auto const address = monad::byte_string(
-        {0x94, 0xf8, 0x63, 0x63, 0x77, 0xb7, 0xa9, 0x98, 0xb5, 0x1a, 0x3c,
-         0xf2, 0xbd, 0x71, 0x1b, 0x87, 0x0b, 0x3a, 0xb0, 0xad, 0x56});
-    EXPECT_EQ(encoding, address);
-    EXPECT_EQ(decoding_address, 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address);
+    {
+        byte_string_loc pos = 0;
+        auto encoding =
+            encode_address(0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address);
+        auto decoding_address = decode_address(encoding, pos);
+        auto const address = monad::byte_string(
+            {0x94, 0xf8, 0x63, 0x63, 0x77, 0xb7, 0xa9, 0x98, 0xb5, 0x1a, 0x3c,
+            0xf2, 0xbd, 0x71, 0x1b, 0x87, 0x0b, 0x3a, 0xb0, 0xad, 0x56});
+        EXPECT_EQ(encoding, address);
+        EXPECT_EQ(decoding_address, 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address);
+    }
 }
 
 TEST(Rlp, DecodeEncodeAccessList)

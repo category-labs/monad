@@ -35,7 +35,7 @@ inline address_t decode_address(byte_string_view const enc, byte_string_loc &i) 
 }
 
 inline SignatureAndChain decode_sc(byte_string_view const enc, byte_string_loc &i) {
-    auto dec = decode_unsigned(enc, i);
+    auto dec = decode_unsigned<uint64_t>(enc, i);
 
     SignatureAndChain res;
     from_v(res, dec);
@@ -180,8 +180,8 @@ std::pair<Account, bytes32_t> decode_account(byte_string_view const enc, byte_st
     const byte_string_loc end = i + length;
     MONAD_ASSERT(end <= enc.size());
 
-    acc.nonce = decode_unsigned(enc, i);
-    acc.balance = decode_unsigned(enc, i);
+    acc.nonce = decode_unsigned<uint64_t>(enc, i);
+    acc.balance = decode_unsigned<uint256_t>(enc, i);
     code_root = decode_bytes32(enc, i);
     acc.code_hash = decode_bytes32(enc, i);
 
@@ -236,11 +236,11 @@ Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i)
 
     if (txn.type == Transaction::Type::eip155)
     {
-        txn.nonce = decode_unsigned(enc, i);
-        txn.gas_price = decode_unsigned(enc, i);
-        txn.gas_limit = decode_unsigned(enc, i);
+        txn.nonce = decode_unsigned<uint64_t>(enc, i);
+        txn.gas_price = decode_unsigned<uint64_t>(enc, i);
+        txn.gas_limit = decode_unsigned<uint64_t>(enc, i);
         *txn.to = decode_address(enc, i);
-        txn.amount = decode_unsigned(enc, i);
+        txn.amount = decode_unsigned<uint128_t>(enc, i);
         txn.data = decode_string(enc, i);
         txn.sc = decode_sc(enc, i);
         txn.sc.r = decode_unsigned<uint256_t>(enc, i);
@@ -248,30 +248,30 @@ Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i)
     }
     else if (txn.type == Transaction::Type::eip1559)
     {
-        *txn.sc.chain_id = decode_unsigned(enc, i);
-        txn.nonce = decode_unsigned(enc, i);
-        txn.priority_fee = decode_unsigned(enc, i);
-        txn.gas_price = decode_unsigned(enc, i);
-        txn.gas_limit = decode_unsigned(enc, i);
+        *txn.sc.chain_id = decode_unsigned<uint64_t>(enc, i);
+        txn.nonce = decode_unsigned<uint64_t>(enc, i);
+        txn.priority_fee = decode_unsigned<uint64_t>(enc, i);
+        txn.gas_price = decode_unsigned<uint64_t>(enc, i);
+        txn.gas_limit = decode_unsigned<uint64_t>(enc, i);
         *txn.to = decode_address(enc, i);
-        txn.amount = decode_unsigned(enc, i);
+        txn.amount = decode_unsigned<uint128_t>(enc, i);
         txn.data = decode_string(enc, i);
         txn.access_list = decode_access_list(enc, i);
-        txn.sc.odd_y_parity = decode_unsigned(enc, i);
+        txn.sc.odd_y_parity = decode_unsigned<bool>(enc, i);
         txn.sc.r = decode_unsigned<uint256_t>(enc, i);
         txn.sc.s = decode_unsigned<uint256_t>(enc, i);
     }
     else            // Transaction::type::eip2930
     {
-        *txn.sc.chain_id = decode_unsigned(enc, i);
-        txn.nonce = decode_unsigned(enc, i);
-        txn.gas_price = decode_unsigned(enc, i);
-        txn.gas_limit = decode_unsigned(enc, i);
+        *txn.sc.chain_id = decode_unsigned<uint64_t>(enc, i);
+        txn.nonce = decode_unsigned<uint64_t>(enc, i);
+        txn.gas_price = decode_unsigned<uint64_t>(enc, i);
+        txn.gas_limit = decode_unsigned<uint64_t>(enc, i);
         *txn.to = decode_address(enc, i);
-        txn.amount = decode_unsigned(enc, i);
+        txn.amount = decode_unsigned<uint128_t>(enc, i);
         txn.data = decode_string(enc, i);
         txn.access_list = decode_access_list(enc, i);
-        txn.sc.odd_y_parity = decode_unsigned(enc, i);
+        txn.sc.odd_y_parity = decode_unsigned<bool>(enc, i);
         txn.sc.r = decode_unsigned<uint256_t>(enc, i);
         txn.sc.s = decode_unsigned<uint256_t>(enc, i);
     }

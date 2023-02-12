@@ -10,10 +10,6 @@
 MONAD_NAMESPACE_BEGIN
 
 struct BlockHeader {
-    /* glee for shea: existing representation? */
-    /* self note: `byte_string_fixed` */
-    using NonceType = std::array<uint8_t, 8>;
-
     bytes32_t parent_hash{};
     bytes32_t ommers_hash{};
     address_t beneficiary{};
@@ -30,7 +26,7 @@ struct BlockHeader {
     byte_string extra_data{};
 
     bytes32_t mix_hash{};
-    NonceType nonce{};
+    byte_string_fixed<8> nonce{};
 
     std::optional<uint256_t> base_fee_per_gas{std::nullopt};  // EIP-1559
 };

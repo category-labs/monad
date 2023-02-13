@@ -61,6 +61,8 @@ byte_string_loc end_of_list_encoding(byte_string_view const enc, byte_string_loc
         i += length_of_length;
     }
     const byte_string_loc end = i + length;
+    // std::cerr << "End is: " << end << std::endl;
+    // std::cerr << "Enc.size() is: " << enc.size() << std::endl; 
     MONAD_ASSERT(end <= enc.size());
 
     return end;
@@ -167,9 +169,7 @@ Receipt::Log decode_log(byte_string_view enc, byte_string_loc& i){
 
 
 std::vector<Receipt::Log> decode_logs(byte_string_view const enc, byte_string_loc& i){
-    std::cerr << "In decode_logs" << std::endl;
     const byte_string_loc end = end_of_list_encoding(enc, i);
-    std::cerr << int(i) << std::endl;
     std::vector<Receipt::Log> logs;
     while(i < end){
         logs.emplace_back(decode_log(enc,i));

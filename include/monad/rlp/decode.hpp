@@ -45,8 +45,8 @@ inline byte_string decode_string(byte_string_view const enc, byte_string_loc &i)
 {
     MONAD_ASSERT(0 <= i && i < enc.size());
     byte_string_loc end;
-
-    const uint8_t &first = enc[i];
+    
+    const uint8_t &first = enc[i];    
     MONAD_ASSERT(first < 192);
     if (first < 128)        // [0, 127]
     {

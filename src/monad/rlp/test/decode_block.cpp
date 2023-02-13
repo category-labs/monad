@@ -34,18 +34,14 @@ inline byte_string read_block_asset(uint32_t block_num)
 
     std::ifstream input(path.c_str());
     byte_string output;
-
-    std::string line;
+    char buf;
 
     // glee: there probably is a more correct way to do this...
     if (input)
     {
-        while (std::getline(input, line))
+        while (input.read(&buf, 1))
         {
-            for (size_t i = 0; i < line.length(); ++i)
-            {
-                output += line[i];
-            }
+            output += buf;
         }
     }
     return output;

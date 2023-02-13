@@ -8,5 +8,6 @@ add_unit_test(
   decode_encode_account.cpp
   decode_encode_receipt.cpp
   decode_encode_transaction.cpp
+  decode_blocks.cpp
   LIBRARIES
   monad)

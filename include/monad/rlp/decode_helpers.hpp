@@ -27,9 +27,26 @@ inline T decode_unsigned(byte_string_view const enc, byte_string_loc &i)
     return decode_num<T>(dec, 0, dec.size());
 }
 
-// Do these functions need to be written here?
-bytes32_t decode_bytes32(byte_string_view const enc, byte_string_loc &i);
-address_t decode_address(byte_string_view const enc, byte_string_loc &i);
+inline bytes32_t decode_bytes32(byte_string_view const enc, byte_string_loc &i) {
+    auto dec = decode_string(enc, i);
+    MONAD_ASSERT(dec.size() == 32);
+
+    bytes32_t res;
+    memcpy(res.bytes, dec.data(), 32);
+
+    return res;
+}
+
+inline address_t decode_address(byte_string_view const enc, byte_string_loc &i) {
+    auto dec = decode_string(enc, i);
+    MONAD_ASSERT(dec.size() == 20);
+
+    address_t res;
+    memcpy(res.bytes, dec.data(), 20);
+
+    return res;
+}
+
 SignatureAndChain decode_sc(byte_string_view const enc, byte_string_loc &i);
 
 Receipt::Bloom decode_bloom(byte_string_view const enc, byte_string_loc& i);

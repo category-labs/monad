@@ -30,26 +30,6 @@ inline byte_string_fixed<N> decode_byte_string_fixed(byte_string_view const enc,
     return res;
 }
 
-inline bytes32_t decode_bytes32(byte_string_view const enc, byte_string_loc &i) {
-    auto dec = decode_string(enc, i);
-    MONAD_ASSERT(dec.size() == 32);
-
-    bytes32_t res;
-    memcpy(res.bytes, dec.data(), 32);
-
-    return res;
-}
-
-address_t decode_address(byte_string_view const enc, byte_string_loc &i) {
-    auto dec = decode_string(enc, i);
-    MONAD_ASSERT(dec.size() == 20);
-
-    address_t res;
-    memcpy(res.bytes, dec.data(), 20);
-
-    return res;
-}
-
 SignatureAndChain decode_sc(byte_string_view const enc, byte_string_loc &i) {
     auto dec = decode_unsigned<uint64_t>(enc, i);
 

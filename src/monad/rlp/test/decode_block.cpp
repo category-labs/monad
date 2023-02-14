@@ -181,7 +181,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
     EXPECT_EQ(block.transactions[1].gas_limit, 300000);
     EXPECT_EQ(*block.transactions[1].to, 0x65C28345d499b59606cFe3d0ed580a1d2370C7C9_address);
     EXPECT_EQ(block.transactions[1].amount, 0x0_u128);
-    EXPECT_EQ(block.transactions[1].sc.chain_id, 0x01);
+    EXPECT_EQ(block.transactions[1].sc.chain_id, std::optional<uint64_t>{}); // This transaction doesn't have a chain_id associated
     EXPECT_EQ(block.transactions[1].sc.r, 0xb821bab9f7e78c13d73beaf9cf6e9d2b33bbf2923ae25da58d7efb7a72fd607b_u256);
     EXPECT_EQ(block.transactions[1].sc.s, 0x3b6699532ca1a2115e2b516695d80f400568619e9301b55ace126558f2126d2_u256);
 

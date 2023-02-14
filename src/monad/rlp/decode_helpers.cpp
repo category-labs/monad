@@ -10,9 +10,6 @@
 #include <numeric>
 #include <string>
 
-// To be Deleted
-#include <iostream>
-
 MONAD_RLP_NAMESPACE_BEGIN
 
 // glee for glee: TODO generalize vector decoding
@@ -61,8 +58,6 @@ byte_string_loc end_of_list_encoding(byte_string_view const enc, byte_string_loc
         i += length_of_length;
     }
     const byte_string_loc end = i + length;
-    // std::cerr << "End is: " << end << std::endl;
-    // std::cerr << "Enc.size() is: " << enc.size() << std::endl; 
     MONAD_ASSERT(end <= enc.size());
 
     return end;

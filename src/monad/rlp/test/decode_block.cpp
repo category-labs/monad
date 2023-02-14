@@ -39,8 +39,9 @@ inline byte_string read_block_asset(uint32_t block_num)
     // glee: there probably is a more correct way to do this...
     if (input)
     {
-        while (input.read(&buf, 1))
+        while (input)
         {
+            input.get(buf);
             output += buf;
         }
         output = output.substr(0,output.length()-1);
@@ -65,12 +66,39 @@ TEST(Rlp_Block, DecodeBlock2730000)
     EXPECT_EQ(block.header.ommers_hash, 0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
     EXPECT_EQ(block.header.beneficiary, 0xEA674fdDe714fd979de3EdF0F56AA9716B898ec8_address);
     EXPECT_EQ(block.header.state_root, 0xbda8c4941b104eb8b2a698eef53e5bfa63f40b7497f2426a619623a82bdbfacd_bytes32);
+    EXPECT_EQ(block.header.transactions_root, 0xb8b56032319f2966f9acd212ecba4db778930400fd0e88686b4d78b0d0910f3c_bytes32);
+    EXPECT_EQ(block.header.receipts_root, 0xa0a4041c26966615a762550d5c8b741cc5df0cf2bef6c1755e0872543b2172af_bytes32);
+    const byte_string_fixed<256> bloom{
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00};
+    EXPECT_EQ(block.header.logs_bloom, bloom);
     EXPECT_EQ(block.header.difficulty, 71133750415151);
     EXPECT_EQ(block.header.number, 2730000);
     EXPECT_EQ(block.header.gas_limit, 3293766);
     EXPECT_EQ(block.header.gas_used, 84000);
     EXPECT_EQ(block.header.timestamp, 1480625618);
     EXPECT_EQ(block.header.extra_data, byte_string({0x65, 0x74, 0x68, 0x65, 0x72, 0x6d, 0x69, 0x6e, 0x65, 0x20, 0x2d, 0x20, 0x45, 0x55, 0x31}));
+    EXPECT_EQ(block.header.mix_hash, 0xddaee79223f62970af2d96b378c6069639af5c93f34cc933948ae9af3896d7e5_bytes32);
     EXPECT_EQ(block.header.nonce, byte_string_fixed<8UL>({0x5b, 0x75, 0xd1, 0x38, 0x22, 0xb5, 0xe1, 0xd4}));
 
     EXPECT_EQ(block.transactions[0].nonce, 1639528);
@@ -114,12 +142,15 @@ TEST(Rlp_Block, DecodeBlock2730001)
     EXPECT_EQ(block.header.ommers_hash, 0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
     EXPECT_EQ(block.header.beneficiary, 0xEA674fdDe714fd979de3EdF0F56AA9716B898ec8_address);
     EXPECT_EQ(block.header.state_root, 0x7b674fc920d494b1186195fd9b81067c5311373e268972bc1fd3555768c5b119_bytes32);
+    EXPECT_EQ(block.header.transactions_root, 0x485c5b45e59fa0648fca6f98da717190f5516d6c36a4d57c598efe28f6a09f30_bytes32);
+    EXPECT_EQ(block.header.receipts_root, 0x062ee20c7a32c027eeb188a5137fd7b2f1c08fd75b2bc98f543a49973deeea99_bytes32);
     EXPECT_EQ(block.header.difficulty, 71064317416445);
     EXPECT_EQ(block.header.number, 2730001);
     EXPECT_EQ(block.header.gas_limit, 3296981);
     EXPECT_EQ(block.header.gas_used, 196834);
     EXPECT_EQ(block.header.timestamp, 1480625657);
     EXPECT_EQ(block.header.extra_data, byte_string({0x65, 0x74, 0x68, 0x65, 0x72, 0x6d, 0x69, 0x6e, 0x65, 0x20, 0x2d, 0x20, 0x55, 0x53, 0x31}));
+    EXPECT_EQ(block.header.mix_hash, 0xd8f930ce60f06c311b18771b71eed46d1a62b371b9577ac2136259accf0b3033_bytes32);
     EXPECT_EQ(block.header.nonce, byte_string_fixed<8UL>({0x53, 0x29, 0x32, 0x80, 0x0d, 0x25, 0x45, 0xa0}));
 
     EXPECT_EQ(block.transactions[0].nonce, 1639530);
@@ -181,12 +212,15 @@ TEST(Rlp_Block, DecodeBlock2730002)
     EXPECT_EQ(block.header.ommers_hash, 0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
     EXPECT_EQ(block.header.beneficiary, 0x61C808D82A3Ac53231750daDc13c777b59310bD9_address);
     EXPECT_EQ(block.header.state_root, 0x0adde1fb82a1735191d30b109e92441a53a10edee0d2f4f63114f134f8db6e8c_bytes32);
+    EXPECT_EQ(block.header.transactions_root, 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
+    EXPECT_EQ(block.header.receipts_root, 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
     EXPECT_EQ(block.header.difficulty, 71029651597139);
     EXPECT_EQ(block.header.number, 2730002);
     EXPECT_EQ(block.header.gas_limit, 3294051);
     EXPECT_EQ(block.header.gas_used, 0);
     EXPECT_EQ(block.header.timestamp, 1480625678);
     EXPECT_EQ(block.header.extra_data, byte_string({0xe4, 0xb8, 0x83, 0xe5, 0xbd, 0xa9, 0xe7, 0xa5, 0x9e, 0xe4, 0xbb, 0x99, 0xe9, 0xb1, 0xbc}));
+    EXPECT_EQ(block.header.mix_hash, 0x51a858ec8d71f4ccc5a270916046928bcc5b738e418048c32a26ebb5b6614b76_bytes32);
     EXPECT_EQ(block.header.nonce, byte_string_fixed<8UL>({0x75, 0xa7, 0x11, 0x00, 0x0c, 0x57, 0xaa, 0x39}));
 
     EXPECT_EQ(block.transactions.size(), 0);
@@ -206,12 +240,15 @@ TEST(Rlp_Block, DecodeBlock2730009)
     EXPECT_EQ(block.header.ommers_hash, 0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
     EXPECT_EQ(block.header.beneficiary, 0x2a65Aca4D5fC5B5C859090a6c34d164135398226_address);
     EXPECT_EQ(block.header.state_root, 0x9be6e85fc6dcd2c9493aab527bc1eed17a2cbbefc6cae43db11a57f110ef3d7b_bytes32);
+    EXPECT_EQ(block.header.transactions_root, 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
+    EXPECT_EQ(block.header.receipts_root, 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
     EXPECT_EQ(block.header.difficulty, 71168718072168);
     EXPECT_EQ(block.header.number, 2730009);
     EXPECT_EQ(block.header.gas_limit, 3300000);
     EXPECT_EQ(block.header.gas_used, 0);
     EXPECT_EQ(block.header.timestamp, 1480625740);
     EXPECT_EQ(block.header.extra_data, byte_string({0x44, 0x77, 0x61, 0x72, 0x66, 0x50, 0x6f, 0x6f, 0x6c}));
+    EXPECT_EQ(block.header.mix_hash, 0x5ae4c715f311145efa42db41eacf339f996e247a94573692ce8f85d1e363819c_bytes32);
     EXPECT_EQ(block.header.nonce, byte_string_fixed<8UL>({0x11, 0x1a, 0x14, 0xd8, 0x09, 0x1d, 0x06, 0xe8}));
 
     EXPECT_EQ(block.transactions.size(), 0);

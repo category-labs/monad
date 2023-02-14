@@ -227,21 +227,11 @@ Transaction decode_transaction(byte_string_view const enc, byte_string_loc &i)
     if (txn.type == Transaction::Type::eip155)
     {
         txn.nonce = decode_unsigned<uint64_t>(enc, i);
-        printf("nonce: %lu\n", txn.nonce);
         txn.gas_price = decode_unsigned<uint64_t>(enc, i);
-        printf("price: %lu\n", txn.gas_price);
         txn.gas_limit = decode_unsigned<uint64_t>(enc, i);
-        printf("limit: %lu\n", txn.gas_limit);
         *txn.to = decode_address(enc, i);
 
-        printf("to: 0x");
-        for (size_t i = 0; i < 20; ++i) {
-            printf("%.2x", (*txn.to).bytes[i]);
-        }
-        printf("\n");
-
         txn.amount = decode_unsigned<uint128_t>(enc, i);
-        printf("amount: %llu\n", (unsigned long long)txn.amount);
         txn.data = decode_string(enc, i);
         txn.sc = decode_sc(enc, i);
         txn.sc.r = decode_unsigned<uint256_t>(enc, i);

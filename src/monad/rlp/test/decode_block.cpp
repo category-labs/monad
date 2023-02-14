@@ -64,7 +64,7 @@ TEST(Rlp_Block, DecodeBlock2730000)
     // Header
     EXPECT_EQ(block.header.parent_hash, 0x18057c6cc208419928dbf4891af02d865f5d72f34f1880a3a3674b6a2585d8ec_bytes32);
     EXPECT_EQ(block.header.ommers_hash, 0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
-    // EXPECT_EQ(block.header.beneficiary, 0xEA674fdDe714fd979de3EdF0F56AA9716B898ec8_address);
+    EXPECT_EQ(block.header.beneficiary, 0xEA674fdDe714fd979de3EdF0F56AA9716B898ec8_address);
     EXPECT_EQ(block.header.state_root, 0xbda8c4941b104eb8b2a698eef53e5bfa63f40b7497f2426a619623a82bdbfacd_bytes32);
     EXPECT_EQ(block.header.difficulty, 71133750415151);
     EXPECT_EQ(block.header.number, 2730000);
@@ -113,7 +113,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
     // Header
     EXPECT_EQ(block.header.parent_hash, 0xfa0e5ba976931459e7aff38ba3800dfb4e75ba52b185cd41973d013b62c30b90_bytes32);
     EXPECT_EQ(block.header.ommers_hash, 0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
-    // beneficiary
+    EXPECT_EQ(block.header.beneficiary, 0xEA674fdDe714fd979de3EdF0F56AA9716B898ec8_address);
     EXPECT_EQ(block.header.state_root, 0x7b674fc920d494b1186195fd9b81067c5311373e268972bc1fd3555768c5b119_bytes32);
     EXPECT_EQ(block.header.difficulty, 71064317416445);
     EXPECT_EQ(block.header.number, 2730001);
@@ -180,7 +180,7 @@ TEST(Rlp_Block, DecodeBlock2730002)
     // Header
     EXPECT_EQ(block.header.parent_hash, 0x46d016199b63472c503b5d26b33f22a810d20f552085433177b4817c59327eba_bytes32);
     EXPECT_EQ(block.header.ommers_hash, 0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
-    // beneficiary
+    EXPECT_EQ(block.header.beneficiary, 0x61C808D82A3Ac53231750daDc13c777b59310bD9_address);
     EXPECT_EQ(block.header.state_root, 0x0adde1fb82a1735191d30b109e92441a53a10edee0d2f4f63114f134f8db6e8c_bytes32);
     EXPECT_EQ(block.header.difficulty, 71029651597139);
     EXPECT_EQ(block.header.number, 2730002);
@@ -205,7 +205,7 @@ TEST(Rlp_Block, DecodeBlock2730009)
     // Header
     EXPECT_EQ(block.header.parent_hash, 0x278677e93d6b23c260fbedeccbace563c1c8708c6a632bf0730a55c117c4cb78_bytes32);
     EXPECT_EQ(block.header.ommers_hash, 0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
-    // beneficiary
+    EXPECT_EQ(block.header.beneficiary, 0x2a65Aca4D5fC5B5C859090a6c34d164135398226_address);
     EXPECT_EQ(block.header.state_root, 0x9be6e85fc6dcd2c9493aab527bc1eed17a2cbbefc6cae43db11a57f110ef3d7b_bytes32);
     EXPECT_EQ(block.header.difficulty, 71168718072168);
     EXPECT_EQ(block.header.number, 2730009);

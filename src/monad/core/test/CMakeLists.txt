@@ -2,6 +2,7 @@ add_unit_test(
   TARGET
   monad-coretests
   SOURCES
+  hard_fork.cpp
   receipt.cpp
   signature.cpp
   LIBRARIES

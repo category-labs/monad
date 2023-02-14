@@ -12,8 +12,6 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
-// glee for glee: TODO generalize vector decoding
-
 // glee for shea: is memcpy appropriate for various functions below?
 
 template <size_t N>
@@ -110,6 +108,7 @@ Transaction::AccessList decode_access_list(byte_string_view const enc, byte_stri
         al.emplace_back(decode_access_entry(enc, i));
     }
 
+    al.shrink_to_fit();
     MONAD_ASSERT(i == end);
     return al;
 }
@@ -125,13 +124,17 @@ Receipt::Bloom decode_bloom(byte_string_view const enc, byte_string_loc& i){
 }
 
 std::vector<bytes32_t> decode_topics(byte_string_view enc, byte_string_loc& i){
-   // @tzhi: Maybe need to do the reserve thing here too?
-    std::vector<bytes32_t> topics;
     const byte_string_loc end = end_of_list_encoding(enc, i);
+    const byte_string_loc topic_size = 33;    // 1 byte for header, 32 bytes for byte32_t
+    const byte_string_loc list_space = end - i;
+    std::vector<bytes32_t> topics;
+    topics.reserve(list_space / topic_size);
+
     while(i < end){
         topics.emplace_back(decode_bytes32(enc,i));
     }
 
+    MONAD_ASSERT(list_space == topics.size() * topic_size);
     MONAD_ASSERT(i == end);
     return topics;
 }
@@ -165,11 +168,20 @@ Receipt::Log decode_log(byte_string_view enc, byte_string_loc& i){
 
 std::vector<Receipt::Log> decode_logs(byte_string_view const enc, byte_string_loc& i){
     const byte_string_loc end = end_of_list_encoding(enc, i);
+    // glee for shea: totally arbitrary numbers... maybe you can come up with a better estimate?
+    const byte_string_loc approx_data_size = 32;
+    const byte_string_loc approx_num_topics = 10;
+    // 20 bytes for address, 33 bytes per topic
+    const byte_string_loc log_size_approx = 20 + approx_data_size + 33 * approx_num_topics;
+    const byte_string_loc list_space = end - i;
     std::vector<Receipt::Log> logs;
+    logs.resize(list_space / log_size_approx);
+
     while(i < end){
         logs.emplace_back(decode_log(enc,i));
     }
 
+    logs.shrink_to_fit();
     MONAD_ASSERT(i == end);
     return logs;
 }
@@ -316,26 +328,27 @@ inline BlockHeader decode_block_header(byte_string_view const enc, byte_string_l
     return block_header;
 }
 
-// glee for glee: TODO reserve vector size to avoid extra allocation
 inline std::vector<Transaction> decode_transaction_vector(byte_string_view const enc, byte_string_loc &i)
 {
     const byte_string_loc end = end_of_list_encoding(enc, i);
+    const byte_string_loc approx_num_transactions = 300;    // glee: based on etherscan.io
     std::vector<Transaction> txns;
+    txns.reserve(approx_num_transactions);
     
     while (i < end)
     {
         txns.emplace_back(decode_transaction(enc, i));
     }
 
+    txns.shrink_to_fit();
     MONAD_ASSERT(i == end);
     return txns;
 }
 
-// glee for glee: TODO reserve vector size to avoid extra allocation
 inline std::vector<BlockHeader> decode_block_header_vector(byte_string_view const enc, byte_string_loc &i)
 {
     const byte_string_loc end = end_of_list_encoding(enc, i);
-    std::vector<BlockHeader> ommers;
+    std::vector<BlockHeader> ommers;    // glee: upper bound is 2... no reserve
     
     while (i < end)
     {

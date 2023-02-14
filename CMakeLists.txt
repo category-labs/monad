@@ -77,6 +77,7 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/core/assert.h
     ${PROJECT_SOURCE_DIR}/include/monad/core/byte_string.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/bytes.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/core/concepts.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/huge_mem.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/int.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/likely.h

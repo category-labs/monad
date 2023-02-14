@@ -32,39 +32,21 @@ inline byte_string read_block_asset(uint32_t block_num)
                 / "block_encodings"
                 / std::to_string(block_num);
     
-    // auto output_path = monad_path
-    //             / "src"
-    //             / "monad"
-    //             / "rlp"
-    //             / "test"
-    //             / "assets"
-    //             / "block_encodings_formatted"
-    //             / std::to_string(block_num);
 
     std::ifstream input(path.c_str(),std::ios::binary);
-    // std::ofstream ofile(output_path);
 
     byte_string output;
-
-    char c;    
+    char buf;
 
     // glee: there probably is a more correct way to do this...
     if (input)
     {
-        while (input)
+        while (input.read(&buf, 1))
         {
-            input.get(c);
-            output+=c;
+            output += buf;
         }
         output = output.substr(0,output.length()-1);
     }
-    // for(int i=0;i<static_cast<int>(output.length());++i){
-    //     ofile << (int)output[i] << " ";
-    //     if((i+1)%10 == 0 && i!=0){
-    //         ofile << std::endl;
-    //     }
-    // }
-    // ofile.close();
 
     return output;
 }

@@ -9,19 +9,8 @@
 #include <vector>
 #include <concepts>
 
-// To Be Deleted
-#include <iostream>
-
 MONAD_RLP_NAMESPACE_BEGIN
 
-// TODO
-// is this big enough for payload sizes?
-// @tzhi: Not really, since the payload can be as big as uint256, but uint256_t is a intx variable and doesn't have ++method
-// @glee: Actually I think this is fine. I want this type to define a location on
-//        the byte_string, and although the payload has infinite potential size,
-//        it realistically shouldn't be that big (plus byte_string won't support
-//        indexing with non-standard primitives at the moment). I've come up with
-//        a solution to your problem by templating the decoding (number) type.
 using byte_string_loc = uint64_t;
 
 template <unsigned_integral T>

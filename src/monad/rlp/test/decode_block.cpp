@@ -36,7 +36,6 @@ inline byte_string read_block_asset(uint32_t block_num)
     byte_string output;
     char buf;    
 
-    // glee: there probably is a more correct way to do this...
     if (input)
     {
         while (input)
@@ -48,11 +47,6 @@ inline byte_string read_block_asset(uint32_t block_num)
     }
     return output;
 }
-
-// glee: Not all data can easily be retrieved, though the data that has been
-//       matches with our decoding. We believe this is fairly sufficient.
-//       Alternatively, we could hook up our implementation to existing
-//       repositories with encoders/decoders (i.e. silkworm) for testing.
 
 TEST(Rlp_Block, DecodeBlock2730000)
 {

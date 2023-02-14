@@ -15,11 +15,6 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
-// glee for shea: not sure how to incorporate `unsigned_integral` concept...
-// -------------------------------------------------------------------------
-// glee for glee: we should remove the template default and require explicit
-//                typing to avoid unnecessary stack allocation (smaller num).
-// glee: Removed template default for reason stated above.
 template <typename T>
 inline T decode_unsigned(byte_string_view const enc, byte_string_loc &i)
 {
@@ -32,7 +27,7 @@ inline bytes32_t decode_bytes32(byte_string_view const enc, byte_string_loc &i) 
     MONAD_ASSERT(dec.size() == 32);
 
     bytes32_t res;
-    memcpy(res.bytes, dec.data(), 32);
+    std::memcpy(res.bytes, dec.data(), 32);
 
     return res;
 }
@@ -42,7 +37,7 @@ inline address_t decode_address(byte_string_view const enc, byte_string_loc &i) 
     MONAD_ASSERT(dec.size() == 20);
 
     address_t res;
-    memcpy(res.bytes, dec.data(), 20);
+    std::memcpy(res.bytes, dec.data(), 20);
 
     return res;
 }

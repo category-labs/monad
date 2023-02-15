@@ -99,9 +99,12 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/src/monad/fiber/algorithm.cpp
 
     # rlp
+    ${PROJECT_SOURCE_DIR}/include/monad/rlp/decode.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/rlp/decode_helpers.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/rlp/encode.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/rlp/encode_helpers.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/rlp/util.hpp
+    ${PROJECT_SOURCE_DIR}/src/monad/rlp/decode_helpers.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/rlp/encode_helpers.cpp
 )
 target_include_directories(monad

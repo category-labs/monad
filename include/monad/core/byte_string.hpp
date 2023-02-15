@@ -16,6 +16,10 @@ using byte_string_fixed = std::array<unsigned char, N>;
 
 using byte_string_view = std::basic_string_view<unsigned char>;
 
+using byte_string_loc = uint64_t;
+
+const byte_string_loc max_byte_string_loc = ~0u;
+
 template <size_t N>
 byte_string_view to_byte_string_view(unsigned char const (&a)[N])
 {

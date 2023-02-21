@@ -7,6 +7,7 @@
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/receipt.hpp>
 #include <monad/core/signature.hpp>
 #include <monad/core/transaction.hpp>
 
@@ -35,6 +36,14 @@ decode_address(address_t &address, byte_string_view const enc)
 }
 
 byte_string_view decode_sc(SignatureAndChain &sc, byte_string_view const enc);
+byte_string_view
+decode_bloom(Receipt::Bloom &bloom, byte_string_view const enc);
+byte_string_view decode_log_data(byte_string &data, byte_string_view enc);
+byte_string_view
+decode_topics(std::vector<bytes32_t> &topics, byte_string_view enc);
+byte_string_view decode_log(Receipt::Log &log, byte_string_view enc);
+byte_string_view
+decode_logs(std::vector<Receipt::Log> &logs, byte_string_view const enc);
 
 byte_string_view decode_access_entry_keys(
     std::vector<bytes32_t> &keys, byte_string_view const enc);
@@ -47,5 +56,6 @@ byte_string_view
 decode_account(Account &acc, bytes32_t &code_root, byte_string_view const enc);
 byte_string_view
 decode_transaction(Transaction &txn, byte_string_view const enc);
+byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc);
 
 MONAD_RLP_NAMESPACE_END

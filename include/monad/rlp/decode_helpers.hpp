@@ -6,6 +6,7 @@
 
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
+#include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/signature.hpp>
@@ -57,5 +58,6 @@ decode_account(Account &acc, bytes32_t &code_root, byte_string_view const enc);
 byte_string_view
 decode_transaction(Transaction &txn, byte_string_view const enc);
 byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc);
+byte_string_view decode_block(Block &block, byte_string_view const enc);
 
 MONAD_RLP_NAMESPACE_END

@@ -6,6 +6,13 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
+template <size_t N>
+byte_string_view
+decode_byte_string_fixed(byte_string_fixed<N> &data, byte_string_view const enc)
+{
+    return decode_byte_array<N>(data.data(), enc);
+}
+
 byte_string_view decode_sc(SignatureAndChain &sc, byte_string_view const enc)
 {
     uint64_t v{};
@@ -253,6 +260,89 @@ byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
     payload = decode_unsigned<uint64_t>(receipt.gas_used, payload);
     payload = decode_bloom(receipt.bloom, payload);
     payload = decode_logs(receipt.logs, payload);
+
+    MONAD_ASSERT(payload.size() == 0);
+    return rest_of_enc;
+}
+
+byte_string_view
+decode_block_header(BlockHeader &bh, byte_string_view const enc)
+{
+    byte_string_view payload{};
+    const auto rest_of_enc = parse_list_metadata(payload, enc);
+
+    payload = decode_bytes32(bh.parent_hash, payload);
+    payload = decode_bytes32(bh.ommers_hash, payload);
+    payload = decode_address(bh.beneficiary, payload);
+    payload = decode_bytes32(bh.state_root, payload);
+    payload = decode_bytes32(bh.transactions_root, payload);
+    payload = decode_bytes32(bh.receipts_root, payload);
+    payload = decode_bloom(bh.logs_bloom, payload);
+    payload = decode_unsigned<uint256_t>(bh.difficulty, payload);
+    payload = decode_unsigned<uint64_t>(bh.number, payload);
+    payload = decode_unsigned<uint64_t>(bh.gas_limit, payload);
+    payload = decode_unsigned<uint64_t>(bh.gas_used, payload);
+    payload = decode_unsigned<uint64_t>(bh.timestamp, payload);
+    payload = decode_string(bh.extra_data, payload);
+    payload = decode_bytes32(bh.mix_hash, payload);
+    payload = decode_byte_string_fixed<8>(bh.nonce, payload);
+    if (payload.size() > 0) {
+        payload = decode_unsigned<uint64_t>(*bh.base_fee_per_gas, payload);
+    }
+    else {
+        bh.base_fee_per_gas = std::nullopt;
+    }
+
+    MONAD_ASSERT(payload.size() == 0);
+    return rest_of_enc;
+}
+
+byte_string_view decode_transaction_vector(
+    std::vector<Transaction> &txns, byte_string_view const enc)
+{
+    byte_string_view payload{};
+    const auto rest_of_enc = parse_list_metadata(payload, enc);
+    // glee: based on etherscan.io... eventually in CONFIG file
+    const byte_string_loc approx_num_transactions = 300;
+    MONAD_ASSERT(txns.size() == 0);
+    txns.reserve(approx_num_transactions);
+
+    while (payload.size() > 0) {
+        Transaction txn{};
+        payload = decode_transaction(txn, payload);
+        txns.emplace_back(txn);
+    }
+
+    MONAD_ASSERT(payload.size() == 0);
+    return rest_of_enc;
+}
+
+byte_string_view decode_block_header_vector(
+    std::vector<BlockHeader> &ommers, byte_string_view const enc)
+{
+    byte_string_view payload{};
+    const auto rest_of_enc = parse_list_metadata(payload, enc);
+    // glee: upper bound is 2... no reserve
+    MONAD_ASSERT(ommers.size() == 0);
+
+    while (payload.size() > 0) {
+        BlockHeader ommer{};
+        payload = decode_block_header(ommer, payload);
+        ommers.emplace_back(ommer);
+    }
+
+    MONAD_ASSERT(payload.size() == 0);
+    return rest_of_enc;
+}
+
+byte_string_view decode_block(Block &block, byte_string_view const enc)
+{
+    byte_string_view payload{};
+    const auto rest_of_enc = parse_list_metadata(payload, enc);
+
+    payload = decode_block_header(block.header, payload);
+    payload = decode_transaction_vector(block.transactions, payload);
+    payload = decode_block_header_vector(block.ommers, payload);
 
     MONAD_ASSERT(payload.size() == 0);
     return rest_of_enc;

@@ -1,43 +1,63 @@
 #include <monad/core/receipt.hpp>
+#include <monad/rlp/decode_helpers.hpp>
 #include <monad/rlp/encode_helpers.hpp>
 
-#include <gtest/gtest.h>
+#include <monad/rlp/test/util.hpp>
 
 using namespace monad;
 using namespace monad::rlp;
 
-TEST(Rlp_Receipt, EncodeLog)
+TEST(Rlp_Receipt, DecodeEncodeLog)
 {
-    Receipt::Log empty_log{};
-    static const byte_string empty_rlp{
-        0xd7, 0x94, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0xc0};
-    auto encoded = encode_log(empty_log);
-    EXPECT_EQ(encoded, empty_rlp);
+    // Empty Log
+    {
+        Receipt::Log empty_log{};
+        static const byte_string empty_rlp{0xd7, 0x94, 0x00, 0x00, 0x00, 0x00,
+                                           0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                           0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                           0x00, 0x00, 0x00, 0x00, 0xc0, 0xc0};
+        auto encoded = encode_log(empty_log);
+        EXPECT_EQ(encoded, empty_rlp);
+    }
 
-    static constexpr auto addr{
-        0x3535353535353535353535353535353535353535_address};
-    static constexpr auto topic1{
-        0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32};
-    static constexpr auto topic2{
-        0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
-    static const byte_string data{0x00, 0x01, 0x02, 0x03};
-    Receipt::Log log{.data = data, .topics = {topic1, topic2}, .address = addr};
+    // Actual Log
+    {
+        static constexpr auto addr{
+            0x3535353535353535353535353535353535353535_address};
+        static constexpr auto topic1{
+            0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32};
+        static constexpr auto topic2{
+            0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
+        static const byte_string data{0x00, 0x01, 0x02, 0x03};
+        Receipt::Log log{
+            .data = data, .topics = {topic1, topic2}, .address = addr};
 
-    const byte_string rlp_log{
-        0xf8, 0x5e, 0x94, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35,
-        0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0xf8,
-        0x42, 0xa0, 0xbe, 0xa3, 0x4d, 0xd0, 0x4b, 0x09, 0xad, 0x3b, 0x60, 0x14,
-        0x25, 0x1e, 0xe2, 0x45, 0x78, 0x07, 0x40, 0x87, 0xee, 0x60, 0xfd, 0xa8,
-        0xc3, 0x91, 0xcf, 0x46, 0x6d, 0xfe, 0x5d, 0x68, 0x7d, 0x7b, 0xa0, 0x6b,
-        0x8c, 0xeb, 0xdc, 0x25, 0x90, 0xb4, 0x86, 0x45, 0x7b, 0xbb, 0x28, 0x6e,
-        0x96, 0x01, 0x1b, 0xdd, 0x50, 0xcc, 0xc1, 0xd8, 0x58, 0x0c, 0x1f, 0xfb,
-        0x3c, 0x89, 0xe8, 0x28, 0x46, 0x22, 0x83, 0xc4, 0x00, 0x01, 0x02, 0x03};
-    encoded = encode_log(log);
-    EXPECT_EQ(encoded, rlp_log);
+        const byte_string rlp_log{
+            0xf8, 0x5e, 0x94, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35,
+            0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35,
+            0x35, 0xf8, 0x42, 0xa0, 0xbe, 0xa3, 0x4d, 0xd0, 0x4b, 0x09, 0xad,
+            0x3b, 0x60, 0x14, 0x25, 0x1e, 0xe2, 0x45, 0x78, 0x07, 0x40, 0x87,
+            0xee, 0x60, 0xfd, 0xa8, 0xc3, 0x91, 0xcf, 0x46, 0x6d, 0xfe, 0x5d,
+            0x68, 0x7d, 0x7b, 0xa0, 0x6b, 0x8c, 0xeb, 0xdc, 0x25, 0x90, 0xb4,
+            0x86, 0x45, 0x7b, 0xbb, 0x28, 0x6e, 0x96, 0x01, 0x1b, 0xdd, 0x50,
+            0xcc, 0xc1, 0xd8, 0x58, 0x0c, 0x1f, 0xfb, 0x3c, 0x89, 0xe8, 0x28,
+            0x46, 0x22, 0x83, 0xc4, 0x00, 0x01, 0x02, 0x03};
+        auto encoded = encode_log(log);
+        Receipt::Log decoded{};
+        EXPECT_EQ(decode_log(decoded, encoded).size(), 0);
+
+        EXPECT_EQ(encoded, rlp_log);
+
+        EXPECT_EQ(decoded.data, log.data);
+        EXPECT_EQ(decoded.address, log.address);
+
+        EXPECT_EQ(decoded.topics.size(), log.topics.size());
+        EXPECT_EQ(decoded.topics[0], log.topics[0]);
+        EXPECT_EQ(decoded.topics[1], log.topics[1]);
+    }
 }
 
-TEST(Rlp_Receipt, EncodeBloom)
+TEST(Rlp_Receipt, DecodeEncodeBloom)
 {
     static Receipt::Bloom bloom{};
     bloom[0] = 0x02;
@@ -70,10 +90,14 @@ TEST(Rlp_Receipt, EncodeBloom)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02};
 
     auto const encoded = encode_bloom(bloom);
+    Receipt::Bloom decoded{};
+    EXPECT_EQ(decode_bloom(decoded, encoded).size(), 0);
+
     EXPECT_EQ(encoded, rlp_bloom);
+    EXPECT_EQ(decoded, bloom);
 }
 
-TEST(Rlp_Receipt, EncodeEip155Receipt)
+TEST(Rlp_Receipt, DecodeEncodeEip155Receipt)
 {
     using namespace intx;
     using namespace evmc::literals;
@@ -132,7 +156,26 @@ TEST(Rlp_Receipt, EncodeEip155Receipt)
         0x1f, 0xfb, 0x3c, 0x89, 0xe8, 0x28, 0x46, 0x22, 0x83, 0xc4, 0x00, 0x01,
         0x02, 0x03}; // logs
     auto const encoded = encode_receipt(r);
+    Receipt decoded{};
+    EXPECT_EQ(decode_receipt(decoded, encoded).size(), 0);
+
     EXPECT_EQ(encoded, rlp_receipt);
+
+    EXPECT_EQ(decoded.type, r.type);
+    EXPECT_EQ(decoded.gas_used, r.gas_used);
+    EXPECT_EQ(decoded.status, r.status);
+
+    // Bloom
+    EXPECT_EQ(decoded.bloom, r.bloom);
+
+    // Log:
+    EXPECT_EQ(decoded.logs.size(), r.logs.size());
+    for (size_t i = 0u; i < decoded.logs.size(); ++i) {
+        EXPECT_EQ(decoded.logs[i].address, r.logs[i].address);
+        EXPECT_EQ(decoded.logs[i].topics.size(), r.logs[i].topics.size());
+        EXPECT_EQ(decoded.logs[i].topics, r.logs[i].topics);
+        EXPECT_EQ(decoded.logs[i].address, r.logs[i].address);
+    }
 }
 
 TEST(Rlp_Receipt, EncodeEip1559Receipt)
@@ -194,7 +237,26 @@ TEST(Rlp_Receipt, EncodeEip1559Receipt)
         0x1f, 0xfb, 0x3c, 0x89, 0xe8, 0x28, 0x46, 0x22, 0x83, 0xc4, 0x00, 0x01,
         0x02, 0x03}; // logs
     auto const encoded = encode_receipt(r);
+    Receipt decoded{};
+    EXPECT_EQ(decode_receipt(decoded, encoded).size(), 0);
+
     EXPECT_EQ(encoded, rlp_receipt);
+
+    EXPECT_EQ(decoded.type, r.type);
+    EXPECT_EQ(decoded.gas_used, r.gas_used);
+    EXPECT_EQ(decoded.status, r.status);
+
+    // Bloom
+    EXPECT_EQ(decoded.bloom, r.bloom);
+
+    // Log:
+    EXPECT_EQ(decoded.logs.size(), r.logs.size());
+    for (size_t i = 0u; i < decoded.logs.size(); ++i) {
+        EXPECT_EQ(decoded.logs[i].address, r.logs[i].address);
+        EXPECT_EQ(decoded.logs[i].topics.size(), r.logs[i].topics.size());
+        EXPECT_EQ(decoded.logs[i].topics, r.logs[i].topics);
+        EXPECT_EQ(decoded.logs[i].address, r.logs[i].address);
+    }
 }
 
 TEST(Rlp_Receipt, EncodeEip2930Receipt)
@@ -256,5 +318,24 @@ TEST(Rlp_Receipt, EncodeEip2930Receipt)
         0x1f, 0xfb, 0x3c, 0x89, 0xe8, 0x28, 0x46, 0x22, 0x83, 0xc4, 0x00, 0x01,
         0x02, 0x03}; // logs
     auto const encoded = encode_receipt(r);
+    Receipt decoded{};
+    EXPECT_EQ(decode_receipt(decoded, encoded).size(), 0);
+
     EXPECT_EQ(encoded, rlp_receipt);
+
+    EXPECT_EQ(decoded.type, r.type);
+    EXPECT_EQ(decoded.gas_used, r.gas_used);
+    EXPECT_EQ(decoded.status, r.status);
+
+    // Bloom
+    EXPECT_EQ(decoded.bloom, r.bloom);
+
+    // Log:
+    EXPECT_EQ(decoded.logs.size(), r.logs.size());
+    for (size_t i = 0u; i < decoded.logs.size(); ++i) {
+        EXPECT_EQ(decoded.logs[i].address, r.logs[i].address);
+        EXPECT_EQ(decoded.logs[i].topics.size(), r.logs[i].topics.size());
+        EXPECT_EQ(decoded.logs[i].topics, r.logs[i].topics);
+        EXPECT_EQ(decoded.logs[i].address, r.logs[i].address);
+    }
 }

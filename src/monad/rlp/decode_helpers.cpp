@@ -58,12 +58,84 @@ decode_access_list(Transaction::AccessList &al, byte_string_view const enc)
     // 20 bytes for address, 33 bytes per key
     const byte_string_loc access_entry_size_approx = 20 + 33 * approx_num_keys;
     const byte_string_loc list_space = payload.size();
+    MONAD_ASSERT(al.size() == 0);
     al.reserve(list_space / access_entry_size_approx);
 
     while (payload.size() > 0) {
         Transaction::AccessEntry ae{};
         payload = decode_access_entry(ae, payload);
         al.emplace_back(ae);
+    }
+
+    MONAD_ASSERT(payload.size() == 0);
+    return rest_of_enc;
+}
+
+byte_string_view decode_bloom(Receipt::Bloom &bloom, byte_string_view const enc)
+{
+    return decode_byte_array<256>(bloom.data(), enc);
+}
+
+byte_string_view
+decode_topics(std::vector<bytes32_t> &topics, byte_string_view enc)
+{
+    byte_string_view payload{};
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
+    const byte_string_loc topic_size =
+        33; // 1 byte for header, 32 bytes for byte32_t
+    const byte_string_loc list_space = payload.size();
+    MONAD_ASSERT(topics.size() == 0);
+    topics.reserve(list_space / topic_size);
+
+    while (payload.size() > 0) {
+        bytes32_t topic{};
+        payload = decode_bytes32(topic, payload);
+        topics.emplace_back(topic);
+    }
+
+    MONAD_ASSERT(list_space == topics.size() * topic_size);
+    MONAD_ASSERT(payload.size() == 0);
+    return rest_of_enc;
+}
+
+byte_string_view decode_log_data(byte_string &data, byte_string_view enc)
+{
+    byte_string_view payload{};
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
+    data = payload;
+    return rest_of_enc;
+}
+
+byte_string_view decode_log(Receipt::Log &log, byte_string_view enc)
+{
+    byte_string_view payload{};
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
+    payload = decode_address(log.address, payload);
+    payload = decode_topics(log.topics, payload);
+    payload = decode_log_data(log.data, payload);
+
+    MONAD_ASSERT(payload.size() == 0);
+    return rest_of_enc;
+}
+
+byte_string_view
+decode_logs(std::vector<Receipt::Log> &logs, byte_string_view const enc)
+{
+    byte_string_view payload{};
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
+    const byte_string_loc approx_data_size = 32;
+    const byte_string_loc approx_num_topics = 10;
+    // 20 bytes for address, 33 bytes per topic
+    const byte_string_loc log_size_approx =
+        20 + approx_data_size + 33 * approx_num_topics;
+    const byte_string_loc list_space = payload.size();
+    MONAD_ASSERT(logs.size() == 0);
+    logs.resize(list_space / log_size_approx);
+
+    while (payload.size() > 0) {
+        Receipt::Log log{};
+        payload = decode_log(log, payload);
+        logs.emplace_back(log);
     }
 
     MONAD_ASSERT(payload.size() == 0);
@@ -152,6 +224,35 @@ decode_transaction(Transaction &txn, byte_string_view const enc)
         payload = decode_unsigned<uint256_t>(txn.sc.s, payload);
     }
     txn.from = std::nullopt;
+
+    MONAD_ASSERT(payload.size() == 0);
+    return rest_of_enc;
+}
+
+byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
+{
+    MONAD_ASSERT(enc.size() > 0);
+    byte_string_loc i = 0;
+    unsigned prefix = enc[i];
+    if (prefix == 0x01) {
+        receipt.type = Transaction::Type::eip1559;
+        ++i;
+    }
+    else if (prefix == 0x02) {
+        receipt.type = Transaction::Type::eip2930;
+        ++i;
+    }
+    else {
+        receipt.type = Transaction::Type::eip155;
+    }
+
+    byte_string_view payload{};
+    const auto rest_of_enc =
+        parse_list_metadata(payload, enc.substr(i, enc.size() - i));
+    payload = decode_unsigned<uint64_t>(receipt.status, payload);
+    payload = decode_unsigned<uint64_t>(receipt.gas_used, payload);
+    payload = decode_bloom(receipt.bloom, payload);
+    payload = decode_logs(receipt.logs, payload);
 
     MONAD_ASSERT(payload.size() == 0);
     return rest_of_enc;

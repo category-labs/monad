@@ -1,5 +1,6 @@
 #include <monad/rlp/decode_helpers.hpp>
 #include <monad/rlp/encode_helpers.hpp>
+#include <monad/rlp/test/util.hpp>
 
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
@@ -7,8 +8,6 @@
 #include <monad/core/transaction.hpp>
 
 #include <intx/intx.hpp>
-
-#include <gtest/gtest.h>
 
 using namespace monad;
 using namespace monad::rlp;
@@ -165,17 +164,21 @@ TEST(Rlp, DecodeEncodeBigNumers)
     }
 }
 
-TEST(Rlp, EncodeAccessList)
+TEST(Rlp, DecodeEncodeAccessList)
 {
+    // Empty List
     monad::Transaction::AccessList a{};
     auto encoding = encode_access_list(a);
     auto const empty_access_list = monad::byte_string({0xc0});
     EXPECT_EQ(encoding, empty_access_list);
 
+    // Simple List
     monad::Transaction::AccessList b{
         {0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address,
          {0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32}}};
     encoding = encode_access_list(b);
+    monad::Transaction::AccessList decoding{};
+    EXPECT_EQ(decode_access_list(decoding, encoding).size(), 0);
     auto const access_list = monad::byte_string(
         {0xf8, 0x38, 0xf7, 0x94, 0xf8, 0x63, 0x63, 0x77, 0xb7, 0xa9, 0x98, 0xb5,
          0x1a, 0x3c, 0xf2, 0xbd, 0x71, 0x1b, 0x87, 0x0b, 0x3a, 0xb0, 0xad, 0x56,
@@ -183,7 +186,10 @@ TEST(Rlp, EncodeAccessList)
          0x25, 0x1e, 0xe2, 0x45, 0x78, 0x07, 0x40, 0x87, 0xee, 0x60, 0xfd, 0xa8,
          0xc3, 0x91, 0xcf, 0x46, 0x6d, 0xfe, 0x5d, 0x68, 0x7d, 0x7b});
     EXPECT_EQ(encoding, access_list);
+    EXPECT_EQ(decoding[0].a, b[0].a);
+    EXPECT_EQ(decoding[0].keys[0], b[0].keys[0]);
 
+    // More Complicated List
     static constexpr auto access_addr{
         0xa0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0_address};
     static constexpr auto key1{
@@ -203,5 +209,10 @@ TEST(Rlp, EncodeAccessList)
          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03});
 
     encoding = encode_access_list(list);
+    decoding = {};
+    EXPECT_EQ(decode_access_list(decoding, encoding).size(), 0);
+
     EXPECT_EQ(encoding, eip2930_example);
+    EXPECT_EQ(decoding[0].a, list[0].a);
+    EXPECT_EQ(decoding[0].keys, list[0].keys);
 }

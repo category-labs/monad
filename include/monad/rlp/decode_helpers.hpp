@@ -7,6 +7,8 @@
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/signature.hpp>
+#include <monad/core/transaction.hpp>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
@@ -32,7 +34,18 @@ decode_address(address_t &address, byte_string_view const enc)
     return decode_byte_array<20>(address.bytes, enc);
 }
 
+byte_string_view decode_sc(SignatureAndChain &sc, byte_string_view const enc);
+
+byte_string_view decode_access_entry_keys(
+    std::vector<bytes32_t> &keys, byte_string_view const enc);
+byte_string_view
+decode_access_entry(Transaction::AccessEntry &ae, byte_string_view const enc);
+byte_string_view
+decode_access_list(Transaction::AccessList &al, byte_string_view const enc);
+
 byte_string_view
 decode_account(Account &acc, bytes32_t &code_root, byte_string_view const enc);
+byte_string_view
+decode_transaction(Transaction &txn, byte_string_view const enc);
 
 MONAD_RLP_NAMESPACE_END

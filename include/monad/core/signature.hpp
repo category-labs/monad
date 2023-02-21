@@ -12,6 +12,8 @@ struct SignatureAndChain
     uint256_t s{};
     std::optional<uint64_t> chain_id{};
     bool odd_y_parity{};
+
+    void from_v(uint64_t const &v);
 };
 
 static_assert(sizeof(SignatureAndChain) == 88);

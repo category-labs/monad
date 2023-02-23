@@ -8,4 +8,4 @@ DEPS="
 
 apt-get -q -o=Dpkg::Use-Pty=0 install ${DEPS}
 
-pip install conan
+pip install 'conan<2.0'

@@ -52,7 +52,9 @@ jobs:
         run: sudo sh ${{github.workspace}}/scripts/ubuntu/install_test_deps.sh
 
       - name: Configure
-        run: cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -B ${{github.workspace}}/build -G Ninja
+        run: |
+          pushd tmpsrc/third_party/silkworm/third_party/libmdbx && git fetch --tags && popd
+          cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -B ${{github.workspace}}/build -G Ninja
         env:
           CC: ${{matrix.c_compiler}}
           CXX: ${{matrix.cxx_compiler}}

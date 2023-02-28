@@ -35,6 +35,7 @@ jobs:
 
       - name: Upgrade Packages
         run: |
+          sudo apt-mark hold grub-efi-amd64-signed
           sudo apt-get -q -o=Dpkg::Use-Pty=0 update
           sudo apt-get -q -o=Dpkg::Use-Pty=0 upgrade
 

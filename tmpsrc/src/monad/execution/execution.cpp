@@ -1,37 +1,27 @@
 #include <monad/execution/execution.hpp>
 
-#include <span>
-#include <string>
+#include <monad/db/buffer.hpp>
 
 #include <silkworm/common/assert.hpp>
-#include <silkworm/common/endian.hpp>
-#include <silkworm/common/log.hpp>
-#include <silkworm/common/stopwatch.hpp>
 #include <silkworm/db/access_layer.hpp>
-#include <silkworm/db/buffer.hpp>
 #include <silkworm/execution/processor.hpp>
 
 namespace silkworm::stagedsync {
 
-StageResult MonadExecution::forward(db::RWTxn& txn) {
-    auto block_num{get_progress(txn) + 1};
+StageResult MonadExecution::run(db::RWTxn& txn, monad::BlockDb const &block_db, db::MonadBuffer &buffer, silkworm::BlockNum block_num) {
+    assert(block_num == db::stages::read_stage_progress(*txn, db::stages::kExecutionKey) + 1);
     static constexpr size_t kCacheSize{5'000};
     BaselineAnalysisCache analysis_cache{kCacheSize};
     ObjectPool<EvmoneExecutionState> state_pool;
 
-    db::Buffer buffer(block_db_, state_db_, *txn, 0);
     std::vector<Receipt> receipts;
 
     Block block{};
-    if (!db::read_block_by_number(block_db_, block_num, false, block)) {
+    if (!silkworm::db::read_block_by_number(block_db, block_num, false, block)) {
         throw std::runtime_error("Unable to read block " + std::to_string(block_num));
     }
     if (block.header.number != block_num) {
         throw std::runtime_error("Bad block sequence");
-    }
-
-    if ((block_num % 64 == 0) && is_stopping()) {
-        return StageResult::kAborted;
     }
 
     ExecutionProcessor processor(block, *consensus_engine_, buffer, node_settings_->chain_config.value());
@@ -47,15 +37,8 @@ StageResult MonadExecution::forward(db::RWTxn& txn) {
     }
 
     buffer.insert_receipts(block_num, receipts);
-    buffer.write_to_db();
-
     db::stages::write_stage_progress(*txn, db::stages::kExecutionKey, block_num);
-
-    txn.commit();
-    return is_stopping() ? StageResult::kAborted : StageResult::kSuccess;
+    return StageResult::kSuccess;
 }
-
-// glee: removed in next commit
-std::vector<std::string> MonadExecution::get_log_progress() { return {}; }
 
 }  // namespace silkworm::stagedsync

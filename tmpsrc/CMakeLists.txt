@@ -22,16 +22,19 @@ target_sources(monad
     ${PROJECT_SOURCE_DIR}/tmpsrc/include/monad/core/account.hpp
     ${PROJECT_SOURCE_DIR}/tmpsrc/include/monad/core/address.hpp
     ${PROJECT_SOURCE_DIR}/tmpsrc/include/monad/db/block_db.hpp
+    ${PROJECT_SOURCE_DIR}/tmpsrc/include/monad/db/buffer.hpp
     ${PROJECT_SOURCE_DIR}/tmpsrc/include/monad/db/state_db.hpp
     ${PROJECT_SOURCE_DIR}/tmpsrc/include/monad/execution/blockchain.hpp
     ${PROJECT_SOURCE_DIR}/tmpsrc/include/monad/execution/execution.hpp
-    ${PROJECT_SOURCE_DIR}/tmpsrc/include/monad/execution/hashstate.hpp
+    ${PROJECT_SOURCE_DIR}/tmpsrc/include/monad/execution/flush.hpp
     ${PROJECT_SOURCE_DIR}/tmpsrc/include/monad/execution/interhash.hpp
+    ${PROJECT_SOURCE_DIR}/tmpsrc/include/monad/execution/stage.hpp
     ${PROJECT_SOURCE_DIR}/tmpsrc/src/monad/db/block_db.cpp
+    ${PROJECT_SOURCE_DIR}/tmpsrc/src/monad/db/buffer.cpp
     ${PROJECT_SOURCE_DIR}/tmpsrc/src/monad/db/state_db.cpp
     ${PROJECT_SOURCE_DIR}/tmpsrc/src/monad/execution/blockchain.cpp
     ${PROJECT_SOURCE_DIR}/tmpsrc/src/monad/execution/execution.cpp
-    ${PROJECT_SOURCE_DIR}/tmpsrc/src/monad/execution/hashstate.cpp
+    ${PROJECT_SOURCE_DIR}/tmpsrc/src/monad/execution/flush.cpp
     ${PROJECT_SOURCE_DIR}/tmpsrc/src/monad/execution/interhash.cpp
 )
 target_include_directories(monad

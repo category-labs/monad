@@ -1,31 +1,18 @@
 #include <monad/db/block_db.hpp>
 #include <monad/db/state_db.hpp>
-#include <monad/execution/blockchain.hpp>
 
-#include <silkworm/chain/config.hpp>
 #include <silkworm/common/assert.hpp>
-#include <silkworm/common/base.hpp>
-#include <silkworm/common/directories.hpp>
-#include <silkworm/common/log.hpp>
-#include <silkworm/common/settings.hpp>
-#include <silkworm/common/util.hpp>
+
+#include <silkworm/stagedsync/mem_stage_execution.hpp>
+#include <silkworm/stagedsync/mem_stage_flush.hpp>
+#include <silkworm/stagedsync/mem_stage_interhashes.hpp>
 #include <silkworm/db/access_layer.hpp>
 #include <silkworm/db/buffer.hpp>
-#include <silkworm/db/mdbx.hpp>
-#include <silkworm/db/stages.hpp>
-#include <silkworm/db/util.hpp>
-#include <silkworm/types/block.hpp>
-
-#include <ethash/hash_types.hpp>
-
-#include <evmc/evmc.hpp>
+#include <silkworm/common/stopwatch.hpp>
 
 #include <CLI/CLI.hpp>
 
 #include <filesystem>
-#include <map>
-#include <set>
-#include <vector>
 
 using namespace monad;
 
@@ -40,8 +27,14 @@ int main(int argc, char *argv[])
     std::filesystem::path data_dir =
         silkworm::DataDirectory::get_default_storage_path();
 
+    unsigned num_blocks = 1;
+    unsigned eth_blocks_per_monad_block = 100;
+
     cli.add_option("--datadir", data_dir, "data directory")
         ->capture_default_str();
+    cli.add_option("--blocks", num_blocks, "number of monad blocks to forward");
+    cli.add_option("--per-monad", eth_blocks_per_monad_block, "number of ethereum blocks per monad block");
+    auto *time_it = cli.add_flag("--time-it", "time the run loop");
 
     cli.parse(argc, argv);
 
@@ -65,78 +58,69 @@ int main(int argc, char *argv[])
 
     BlockDb const block_db{node_settings.data_directory->block_db().path()};
     StateDb state_db{node_settings.data_directory->state_db().path()};
+    silkworm::db::Buffer buffer(block_db, state_db, *txn, 0, std::nullopt, true);
 
-    silkworm::db::Buffer buffer{block_db, state_db, *txn, 0};
+    silkworm::stagedsync::StageResult stage_result{};
+    auto next_block_num{silkworm::db::stages::read_stage_progress(*txn, silkworm::db::stages::kExecutionKey)};
+    silkworm::stagedsync::MemExecution execution_stage(&node_settings, eth_blocks_per_monad_block);
+    silkworm::stagedsync::MemFlush flush_stage(&node_settings);
+    silkworm::stagedsync::MemInterHashes interhashes_stage(&node_settings);
 
-    Blockchain blockchain{buffer, node_settings.chain_config.value()};
+    std::chrono::_V2::steady_clock::time_point start_time{};
+    std::chrono::_V2::steady_clock::time_point execution_start_time{};
+    std::chrono::_V2::steady_clock::time_point flush_start_time{};
+    std::chrono::_V2::steady_clock::time_point interhash_start_time{};
 
-    auto const last_block = silkworm::db::stages::read_stage_progress(
-        *txn, silkworm::db::stages::kExecutionKey);
+    start_time = std::chrono::steady_clock::now();
+    uint64_t total_txns_count = 0u;
+    silkworm::log::Info() << "Execution Begin";
+    for (silkworm::BlockNum i = 0; i < num_blocks; ++i)
+    {
+        execution_start_time = std::chrono::steady_clock::now();
+        silkworm::log::Info("Begin Executing Monad Block " + std::to_string(i+1), {"silkworm_block_from", std::to_string(next_block_num+1), "silkworm_block_to", std::to_string(next_block_num + eth_blocks_per_monad_block)});
 
-    unsigned tx_count = 0;
-    for (silkworm::BlockNum i = last_block + 1; i < last_block + 101; ++i) {
-        silkworm::Block block;
-        if (!block_db.get(i, block)) {
-            break;
+        if (*time_it) {
+            silkworm::log::Info() << "Begin Stage Execution";
         }
-        silkworm::log::Info() << "block " << i << " with "
-                              << block.transactions.size() << " txns ";
-        ValidationResult const validate_result =
-            blockchain.pre_validate_block(block);
-        if (validate_result != ValidationResult::kOk) {
-            silkworm::log::Error() << "failed to validate block " << i;
-            break;
+        stage_result = execution_stage.run(txn, block_db, buffer, next_block_num + 1);
+        assert(stage_result == silkworm::stagedsync::StageResult::kSuccess);
+        next_block_num += eth_blocks_per_monad_block;
+        uint64_t txns_count = execution_stage.txns_last_block();
+        total_txns_count += txns_count;
+        if (*time_it) {
+            auto time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - execution_start_time);
+            silkworm::log::Info("Finish Stage Execution",{"time", silkworm::StopWatch::format(time_elapsed), "txns", std::to_string(txns_count), "txns/s",  std::to_string(txns_count*1000 / time_elapsed.count())});
         }
-        else {
-            silkworm::log::Info() << "validated block " << i;
+
+        if(*time_it){
+            flush_start_time = std::chrono::steady_clock::now();
+            silkworm::log::Info() << "Begin Stage Flushing";
         }
-        std::vector<Receipt> receipts;
-        ValidationResult const execution_result =
-            blockchain.execute_block(block, receipts);
-        if (validate_result == ValidationResult::kOk) {
-            buffer.insert_receipts(i, receipts);
-            silkworm::log::Info() << "executed block " << i;
+        stage_result = flush_stage.run(txn, block_db, buffer, next_block_num);
+        assert(stage_result == silkworm::stagedsync::StageResult::kSuccess);
+        if (*time_it) {
+            auto time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - flush_start_time);
+            silkworm::log::Info("Finish Stage Flushing", {"time", silkworm::StopWatch::format(time_elapsed)});
         }
-        else {
-            silkworm::log::Info() << "failed to execute block " << i;
+        if(*time_it){
+            interhash_start_time = std::chrono::steady_clock::now();
+            silkworm::log::Info() << "Begin Stage Intermediate Hashing";
         }
-        tx_count += block.transactions.size();
-        if (tx_count >= 10000) {
-            break;
+        stage_result = interhashes_stage.run(txn, block_db, buffer, next_block_num);
+        assert(stage_result == silkworm::stagedsync::StageResult::kSuccess);
+        if (*time_it) {
+            auto time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - interhash_start_time);
+            silkworm::log::Info("Finish Stage Intermediate Hashing", {"time", silkworm::StopWatch::format(time_elapsed)});
         }
+
+        auto monad_block_end_time{std::chrono::steady_clock::now()};
+        auto time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(monad_block_end_time - execution_start_time);
+        silkworm::log::Info("Run loop iteration " + std::to_string(i+1), {"time", silkworm::StopWatch::format(time_elapsed), "txns/s", std::to_string(txns_count*1'000 / (time_elapsed).count())});
     }
-
-    silkworm::log::Info() << "num tx = " << tx_count;
-
-    silkworm::log::Info() << "account changes";
-    std::set<evmc::address> account_changes;
-    for (auto const &[block_num, addresses] : buffer.account_changes()) {
-        for (auto const &[address, account] : addresses) {
-            account_changes.insert(address);
-        }
-    }
-    for (auto const &[block_num, addresses] : buffer.storage_changes()) {
-        for (auto const &[address, incarnations] : addresses) {
-            account_changes.insert(address);
-        }
-    }
-    std::map<evmc::address, ethash::hash256> account_changes_hashed;
-    unsigned i = 0;
-    uint64_t total_time = 0;
-    for (auto const &address : account_changes) {
-        auto const begin = std::chrono::steady_clock::now();
-        auto const result = silkworm::keccak256(address.bytes);
-        auto const end = std::chrono::steady_clock::now();
-        auto const duration =
-            std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
-                .count();
-        total_time += duration;
-        ++i;
-        account_changes_hashed[address] = result;
-    }
-    silkworm::log::Info() << "account changes "
-                          << account_changes_hashed.size();
-    silkworm::log::Info() << "average time = " << (total_time / i) << " ns";
-
+    
+    auto end_time{std::chrono::steady_clock::now()};
+    auto time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    silkworm::log::Info("All run loop iterations", {"time", silkworm::StopWatch::format(time_elapsed), "txns/s", std::to_string(total_txns_count*1'000 / (time_elapsed).count())});
+    
     return 0;
 }

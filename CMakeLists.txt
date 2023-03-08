@@ -38,6 +38,7 @@ find_package(RocksDB)
 find_package(Boost REQUIRED COMPONENTS fiber log)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
+find_package(tl-expected REQUIRED)
 
 set(BUILD_SHARED_LIBS OFF)
 set(ETHASH_BUILD_TESTS OFF)
@@ -62,6 +63,7 @@ endfunction()
 ############
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/core/test)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
 
 
@@ -93,6 +95,9 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/src/monad/db/file_db.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/db/state_db.cpp
 
+    # execution
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/config.hpp
+
     # fiber
     ${PROJECT_SOURCE_DIR}/include/monad/fiber/algorithm.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/fiber/properties.hpp
@@ -119,6 +124,7 @@ target_link_libraries(monad
 
     PUBLIC evmc
     PUBLIC intx::intx
+    PUBLIC tl::expected
 )
 monad_compile_options(monad)
 

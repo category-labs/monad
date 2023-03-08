@@ -1,8 +1,10 @@
 [requires]
 rocksdb/6.29.5
+tl-expected/1.0.0
 
 [generators]
 cmake_find_package
+cmake_paths
 
 [options]
 lz4:shared=True

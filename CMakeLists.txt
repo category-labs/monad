@@ -97,6 +97,8 @@ add_library(monad STATIC
 
     # execution
     ${PROJECT_SOURCE_DIR}/include/monad/execution/config.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/create_contract_address.hpp
+    ${PROJECT_SOURCE_DIR}/src/monad/execution/create_contract_address.cpp
 
     # fiber
     ${PROJECT_SOURCE_DIR}/include/monad/fiber/algorithm.hpp

@@ -3,5 +3,8 @@ add_unit_test(
   monad-executiontests
   SOURCES
   create_contract_address.cpp
+  evmc_host.cpp
+  transaction_processor.cpp
+  validation.cpp
   LIBRARIES
   monad)

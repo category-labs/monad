@@ -1,14 +1,15 @@
 #pragma once
-
-#include "evmc/evmc.hpp"
 #include <monad/config.hpp>
 #include <monad/core/address.hpp>
+#include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/signature.hpp>
 
+#include <algorithm>
 #include <optional>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -31,7 +32,7 @@ struct Transaction
 
     SignatureAndChain sc;
     uint64_t nonce{};
-    uint64_t gas_price{};
+    uint64_t gas_price{}; // max per gas fee
     uint64_t gas_limit{};
     uint128_t amount{};
     std::optional<address_t> to{};
@@ -40,6 +41,17 @@ struct Transaction
     Type type;
     AccessList access_list{};
     uint64_t priority_fee{};
+
+    // EIP-1559
+    inline uint64_t per_gas_priority_fee(uint64_t const base_fee_per_gas) const
+    {
+        return std::min(priority_fee, gas_price - base_fee_per_gas);
+    }
+
+    inline uint64_t per_gas_cost(uint64_t const base_fee_per_gas) const
+    {
+        return per_gas_priority_fee(base_fee_per_gas) + base_fee_per_gas;
+    }
 };
 
 static_assert(sizeof(Transaction::AccessEntry) == 48);

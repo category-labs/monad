@@ -1,0 +1,224 @@
+#include <monad/execution/config.hpp>
+#include <monad/execution/execution_model.hpp>
+#include <monad/execution/transaction_processor_data.hpp>
+
+#include <monad/execution/test/fakes.hpp>
+
+#include <gtest/gtest.h>
+
+using namespace monad;
+using namespace monad::execution;
+
+using state_t = fake::State;
+using traits_t = fake::traits<state_t>;
+
+template <class TTxnProc, class TExecution>
+using data_t = TransactionProcessorFiberData<
+    state_t, traits_t, TTxnProc, fake::Evm, TExecution>;
+
+enum class TestStatus
+{
+    SUCCESS,
+    LATER_NONCE,
+    INSUFFICIENT_BALANCE,
+    INVALID_GAS_LIMIT,
+    BAD_NONCE,
+    DEPLOYED_CODE,
+};
+
+TestStatus fake_status{};
+
+template <class TState, concepts::fork_traits<TState> TTraits>
+struct fakeGlobalStatusTP
+{
+    enum class Status
+    {
+        SUCCESS,
+        LATER_NONCE,
+        INSUFFICIENT_BALANCE,
+        INVALID_GAS_LIMIT,
+        BAD_NONCE,
+        DEPLOYED_CODE,
+    };
+
+    template <class TEvmHost>
+    Receipt execute(
+        TState &, TEvmHost &, BlockHeader const &, Transaction const &) const
+    {
+        return {};
+    }
+
+    Status validate(TState const &, Transaction const &, uint64_t)
+    {
+        return static_cast<Status>(fake_status);
+    }
+};
+
+struct fakeSuccessAfterYieldEM
+{
+    using fiber_t = boost::fibers::fiber;
+    static inline void yield()
+    {
+        fake_status = TestStatus::SUCCESS;
+        boost::this_fiber::yield();
+    }
+};
+
+TEST(TransactionProcessorFiberData, validation_insufficient_balance_current_txn_id)
+{
+    fake::State s{._current_txn = 10, ._applied_state = true};
+    static BlockHeader const b{};
+    static Transaction const t{.gas_limit = 15'000};
+    fake_status = TestStatus::INSUFFICIENT_BALANCE;
+
+    data_t<fakeGlobalStatusTP<state_t, traits_t>, BoostFiberExecution> d{
+        s, t, b, 10};
+    d();
+    auto const r = d.get_receipt();
+
+    EXPECT_EQ(r.status, 1u);
+    EXPECT_EQ(r.gas_used, 15'000);
+}
+
+TEST(TransactionProcessorFiberData, validation_insufficient_balance_optimistic)
+{
+    fake::State s{._current_txn = 1, ._applied_state = true};
+    static BlockHeader const b{};
+    static Transaction const t{.gas_limit = 15'000};
+    fake_status = TestStatus::INSUFFICIENT_BALANCE;
+
+    data_t<fakeGlobalStatusTP<state_t, traits_t>, fakeSuccessAfterYieldEM> d{
+        s, t, b, 10};
+    d();
+    auto const r = d.get_receipt();
+
+    EXPECT_EQ(r.status, 1u);
+    EXPECT_EQ(r.gas_used, 15'000);
+}
+
+TEST(TransactionProcessorFiberData, validation_later_nonce_current_txn_id)
+{
+    fake::State s{._current_txn = 10, ._applied_state = true};
+    static BlockHeader const b{};
+    static Transaction const t{};
+    fake_status = TestStatus::LATER_NONCE;
+
+    data_t<fakeGlobalStatusTP<state_t, traits_t>, BoostFiberExecution> d{
+        s, t, b, 10};
+    d();
+    auto const r = d.get_receipt();
+
+    // This should fail, but currently does not
+    EXPECT_EQ(r.status, 1u);
+}
+
+TEST(TransactionProcessorFiberData, validation_later_nonce_optimistic)
+{
+    fake::State s{._current_txn = 1, ._applied_state = true};
+    static BlockHeader const b{};
+    static Transaction const t{};
+    fake_status = TestStatus::LATER_NONCE;
+
+    data_t<fakeGlobalStatusTP<state_t, traits_t>, fakeSuccessAfterYieldEM> d{
+        s, t, b, 10};
+    d();
+    auto const r = d.get_receipt();
+
+    EXPECT_EQ(r.status, 0u);
+}
+
+TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_current_txn_id)
+{
+    fake::State s{._current_txn = 10, ._applied_state = true};
+    static BlockHeader const b{};
+    static Transaction const t{.gas_limit = 15'000};
+    fake_status = TestStatus::INVALID_GAS_LIMIT;
+
+    data_t<fakeGlobalStatusTP<state_t, traits_t>, BoostFiberExecution> d{
+        s, t, b, 10};
+    d();
+    auto const r = d.get_receipt();
+
+    EXPECT_EQ(r.status, 1u);
+    EXPECT_EQ(r.gas_used, 15'000);
+}
+
+TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_optimistic)
+{
+    fake::State s{._current_txn = 1, ._applied_state = true};
+    static BlockHeader const b{};
+    static Transaction const t{.gas_limit = 15'000};
+    fake_status = TestStatus::INVALID_GAS_LIMIT;
+
+    data_t<fakeGlobalStatusTP<state_t, traits_t>, fakeSuccessAfterYieldEM> d{
+        s, t, b, 10};
+    d();
+    auto const r = d.get_receipt();
+
+    EXPECT_EQ(r.status, 1u);
+    EXPECT_EQ(r.gas_used, 15'000);
+}
+
+TEST(TransactionProcessorFiberData, validation_bad_nonce_current_txn_id)
+{
+    fake::State s{._current_txn = 10, ._applied_state = true};
+    static BlockHeader const b{};
+    static Transaction const t{.gas_limit = 15'000};
+    fake_status = TestStatus::BAD_NONCE;
+
+    data_t<fakeGlobalStatusTP<state_t, traits_t>, BoostFiberExecution> d{
+        s, t, b, 10};
+    d();
+    auto const r = d.get_receipt();
+
+    EXPECT_EQ(r.status, 1u);
+    EXPECT_EQ(r.gas_used, 15'000);
+}
+
+TEST(TransactionProcessorFiberData, validation_bad_nonce_optimistic)
+{
+    fake::State s{._current_txn = 1, ._applied_state = true};
+    static BlockHeader const b{};
+    static Transaction const t{.gas_limit = 15'000};
+    fake_status = TestStatus::BAD_NONCE;
+
+    data_t<fakeGlobalStatusTP<state_t, traits_t>, fakeSuccessAfterYieldEM> d{
+        s, t, b, 10};
+    d();
+    auto const r = d.get_receipt();
+
+    EXPECT_EQ(r.status, 1u);
+    EXPECT_EQ(r.gas_used, 15'000);
+}
+
+TEST(TransactionProcessorFiberData, validation_deployed_code_current_txn_id)
+{
+    fake::State s{._current_txn = 10, ._applied_state = true};
+    static BlockHeader const b{};
+    static Transaction const t{.gas_limit = 15'000};
+    fake_status = TestStatus::DEPLOYED_CODE;
+
+    data_t<fakeGlobalStatusTP<state_t, traits_t>, BoostFiberExecution> d{
+        s, t, b, 10};
+    d();
+    auto const r = d.get_receipt();
+
+    EXPECT_EQ(r.status, 1u);
+    EXPECT_EQ(r.gas_used, 15'000);
+}
+
+TEST(TransactionProcessorFiberData, validation_deployed_code_optimistic)
+{
+    fake::State s{._current_txn = 1, ._applied_state = true};
+    static BlockHeader const b{};
+    static Transaction const t{.gas_limit = 15'000};
+    fake_status = TestStatus::DEPLOYED_CODE;
+
+    data_t<fakeGlobalStatusTP<state_t, traits_t>, fakeSuccessAfterYieldEM> d{
+        s, t, b, 10};
+    d();
+    auto const r = d.get_receipt();
+
+    EXPECT_EQ(r.status, 1u);
+    EXPECT_EQ(r.gas_used, 15'000);
+}

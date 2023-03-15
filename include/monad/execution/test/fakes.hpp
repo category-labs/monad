@@ -2,6 +2,7 @@
 
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
+#include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/concepts.hpp>
 #include <monad/core/int.hpp>
@@ -34,6 +35,8 @@ namespace fake
         uint64_t _touched_dead{};
         uint64_t _suicides{};
         uint64_t _refund{};
+        int _current_txn{};
+        bool _applied_state{};
         std::vector<Receipt::Log> _logs{};
 
         [[nodiscard]] bool account_exists(address_t const &) { return true; }
@@ -118,6 +121,12 @@ namespace fake
         void store_log(Receipt::Log &&l) { _logs.emplace_back(l); }
 
         std::vector<Receipt::Log> &logs() { return _logs; }
+
+        inline bool apply_state(State const &) { return _applied_state; }
+
+        inline int current_txn() { return _current_txn; }
+
+        inline State get_copy() { return State(*this); }
     };
 
     struct EvmHost
@@ -132,8 +141,7 @@ namespace fake
         };
 
         [[nodiscard]] constexpr inline Receipt make_receipt_from_result(
-                evmc::result const &, Transaction const &,
-                uint64_t const)
+            evmc::result const &, Transaction const &, uint64_t const)
         {
             return _receipt;
         }

@@ -2,11 +2,15 @@ add_unit_test(
   TARGET
   monad-executiontests
   SOURCES
+  block_processor.cpp
   create_contract_address.cpp
   ethereum_traits.cpp
   evm.cpp
   evmc_host.cpp
   transaction_processor.cpp
+  transaction_processor_data_succeed.cpp
+  transaction_processor_data_fail_validation.cpp
+  transaction_processor_data_fail_apply_state.cpp
   validation.cpp
   LIBRARIES
   monad)

@@ -4,6 +4,7 @@ add_unit_test(
   SOURCES
   create_contract_address.cpp
   ethereum_traits.cpp
+  evm.cpp
   evmc_host.cpp
   transaction_processor.cpp
   validation.cpp

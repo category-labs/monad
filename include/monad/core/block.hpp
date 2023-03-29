@@ -33,19 +33,12 @@ struct BlockHeader
     std::optional<uint64_t> base_fee_per_gas{std::nullopt}; // EIP-1559
 };
 
-struct BlockBody
+struct Block
 {
+    BlockHeader header;
     std::vector<Transaction> transactions;
     std::vector<BlockHeader> ommers;
 };
-
-struct Block : public BlockBody
-{
-    BlockHeader header;
-};
-
-static_assert(sizeof(BlockBody) == 48);
-static_assert(alignof(BlockBody) == 8);
 
 static_assert(sizeof(BlockHeader) == 592);
 static_assert(alignof(BlockHeader) == 8);

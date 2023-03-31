@@ -36,6 +36,20 @@ decode_address(address_t &address, byte_string_view const enc)
     return decode_byte_array<20>(address.bytes, enc);
 }
 
+inline byte_string_view
+decode_address_optional(std::optional<address_t> &address, byte_string_view const enc)
+{
+    byte_string_view payload{};
+    auto const rest_of_enc = parse_string_metadata(payload, enc);
+    if (payload.size() == sizeof(address_t)) {
+        std::memcpy(address->bytes, payload.data(), sizeof(address_t));
+    } else {
+        MONAD_ASSERT(payload.size() == 0);
+        address.reset();
+    }
+    return rest_of_enc;
+}
+
 byte_string_view decode_sc(SignatureAndChain &sc, byte_string_view const enc);
 byte_string_view
 decode_bloom(Receipt::Bloom &bloom, byte_string_view const enc);

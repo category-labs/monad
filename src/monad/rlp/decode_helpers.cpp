@@ -194,7 +194,7 @@ decode_transaction(Transaction &txn, byte_string_view const enc)
         payload = decode_unsigned<uint64_t>(txn.nonce, payload);
         payload = decode_unsigned<uint64_t>(txn.gas_price, payload);
         payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
-        payload = decode_address(*txn.to, payload);
+        payload = decode_address_optional(txn.to, payload);
 
         payload = decode_unsigned<uint128_t>(txn.amount, payload);
         payload = decode_string(txn.data, payload);
@@ -208,7 +208,7 @@ decode_transaction(Transaction &txn, byte_string_view const enc)
         payload = decode_unsigned<uint64_t>(txn.priority_fee, payload);
         payload = decode_unsigned<uint64_t>(txn.gas_price, payload);
         payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
-        payload = decode_address(*txn.to, payload);
+        payload = decode_address_optional(txn.to, payload);
         payload = decode_unsigned<uint128_t>(txn.amount, payload);
         payload = decode_string(txn.data, payload);
         payload = decode_access_list(txn.access_list, payload);
@@ -222,7 +222,7 @@ decode_transaction(Transaction &txn, byte_string_view const enc)
         payload = decode_unsigned<uint64_t>(txn.nonce, payload);
         payload = decode_unsigned<uint64_t>(txn.gas_price, payload);
         payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
-        payload = decode_address(*txn.to, payload);
+        payload = decode_address_optional(txn.to, payload);
         payload = decode_unsigned<uint128_t>(txn.amount, payload);
         payload = decode_string(txn.data, payload);
         payload = decode_access_list(txn.access_list, payload);

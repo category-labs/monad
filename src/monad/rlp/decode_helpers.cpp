@@ -287,7 +287,9 @@ decode_block_header(BlockHeader &bh, byte_string_view const enc)
     payload = decode_bytes32(bh.mix_hash, payload);
     payload = decode_byte_string_fixed<8>(bh.nonce, payload);
     if (payload.size() > 0) {
-        payload = decode_unsigned<uint64_t>(*bh.base_fee_per_gas, payload);
+        uint64_t base_fee_per_gas{};
+        payload = decode_unsigned<uint64_t>(base_fee_per_gas, payload);
+        bh.base_fee_per_gas.emplace(base_fee_per_gas);
     }
     else {
         bh.base_fee_per_gas = std::nullopt;

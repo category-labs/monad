@@ -165,75 +165,111 @@ decode_account(Account &acc, bytes32_t &code_root, byte_string_view const enc)
 }
 
 byte_string_view
-decode_transaction(Transaction &txn, byte_string_view const enc)
+decode_transaction_legacy(Transaction &txn, byte_string_view const enc)
 {
     MONAD_ASSERT(enc.size() > 0);
-
-    // Transaction type matching
-    byte_string_loc i = 0;
-    const uint8_t &type = enc[i];
-    if (type == 0x01) // eip2930
-    {
-        ++i;
-        txn.type = Transaction::Type::eip2930;
-    }
-    else if (type == 0x02) // eip1559
-    {
-        ++i;
-        txn.type = Transaction::Type::eip1559;
-    }
-    else // eip155
-    {
-        txn.type = Transaction::Type::eip155;
-    }
-
     byte_string_view payload{};
-    const auto rest_of_enc =
-        parse_list_metadata(payload, enc.substr(i, enc.size() - i));
-    if (txn.type == Transaction::Type::eip155) {
-        payload = decode_unsigned<uint64_t>(txn.nonce, payload);
-        payload = decode_unsigned<uint64_t>(txn.gas_price, payload);
-        payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
-        payload = decode_address_optional(txn.to, payload);
+    const auto rest_of_enc = parse_list_metadata(payload, enc);
 
-        payload = decode_unsigned<uint128_t>(txn.amount, payload);
-        payload = decode_string(txn.data, payload);
-        payload = decode_sc(txn.sc, payload);
-        payload = decode_unsigned<uint256_t>(txn.sc.r, payload);
-        payload = decode_unsigned<uint256_t>(txn.sc.s, payload);
-    }
-    else if (txn.type == Transaction::Type::eip1559) {
-        payload = decode_unsigned<uint64_t>(*txn.sc.chain_id, payload);
-        payload = decode_unsigned<uint64_t>(txn.nonce, payload);
-        payload = decode_unsigned<uint64_t>(txn.priority_fee, payload);
-        payload = decode_unsigned<uint64_t>(txn.gas_price, payload);
-        payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
-        payload = decode_address_optional(txn.to, payload);
-        payload = decode_unsigned<uint128_t>(txn.amount, payload);
-        payload = decode_string(txn.data, payload);
-        payload = decode_access_list(txn.access_list, payload);
-        payload = decode_bool(txn.sc.odd_y_parity, payload);
-        payload = decode_unsigned<uint256_t>(txn.sc.r, payload);
-        payload = decode_unsigned<uint256_t>(txn.sc.s, payload);
-    }
-    else // Transaction::type::eip2930
-    {
-        payload = decode_unsigned<uint64_t>(*txn.sc.chain_id, payload);
-        payload = decode_unsigned<uint64_t>(txn.nonce, payload);
-        payload = decode_unsigned<uint64_t>(txn.gas_price, payload);
-        payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
-        payload = decode_address_optional(txn.to, payload);
-        payload = decode_unsigned<uint128_t>(txn.amount, payload);
-        payload = decode_string(txn.data, payload);
-        payload = decode_access_list(txn.access_list, payload);
-        payload = decode_bool(txn.sc.odd_y_parity, payload);
-        payload = decode_unsigned<uint256_t>(txn.sc.r, payload);
-        payload = decode_unsigned<uint256_t>(txn.sc.s, payload);
-    }
+    txn.type = Transaction::Type::eip155;
+    payload = decode_unsigned<uint64_t>(txn.nonce, payload);
+    payload = decode_unsigned<uint64_t>(txn.gas_price, payload);
+    payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
+    payload = decode_address_optional(txn.to, payload);
+    payload = decode_unsigned<uint128_t>(txn.amount, payload);
+    payload = decode_string(txn.data, payload);
+    payload = decode_sc(txn.sc, payload);
+    payload = decode_unsigned<uint256_t>(txn.sc.r, payload);
+    payload = decode_unsigned<uint256_t>(txn.sc.s, payload);
     txn.from = std::nullopt;
 
     MONAD_ASSERT(payload.size() == 0);
     return rest_of_enc;
+}
+
+byte_string_view
+decode_transaction_eip2930(Transaction &txn, byte_string_view const enc)
+{
+    MONAD_ASSERT(enc.size() > 0);
+    byte_string_view payload{};
+    const auto rest_of_enc = parse_list_metadata(payload, enc);
+
+    txn.type = Transaction::Type::eip2930;
+    payload = decode_unsigned<uint64_t>(*txn.sc.chain_id, payload);
+    payload = decode_unsigned<uint64_t>(txn.nonce, payload);
+    payload = decode_unsigned<uint64_t>(txn.gas_price, payload);
+    payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
+    payload = decode_address_optional(txn.to, payload);
+    payload = decode_unsigned<uint128_t>(txn.amount, payload);
+    payload = decode_string(txn.data, payload);
+    payload = decode_access_list(txn.access_list, payload);
+    payload = decode_bool(txn.sc.odd_y_parity, payload);
+    payload = decode_unsigned<uint256_t>(txn.sc.r, payload);
+    payload = decode_unsigned<uint256_t>(txn.sc.s, payload);
+    txn.from = std::nullopt;
+
+    MONAD_ASSERT(payload.size() == 0);
+    return rest_of_enc;
+}
+
+byte_string_view
+decode_transaction_eip1559(Transaction &txn, byte_string_view const enc)
+{
+    MONAD_ASSERT(enc.size() > 0);
+    byte_string_view payload{};
+    const auto rest_of_enc = parse_list_metadata(payload, enc);
+
+    txn.type = Transaction::Type::eip1559;
+    payload = decode_unsigned<uint64_t>(*txn.sc.chain_id, payload);
+    payload = decode_unsigned<uint64_t>(txn.nonce, payload);
+    payload = decode_unsigned<uint64_t>(txn.priority_fee, payload);
+    payload = decode_unsigned<uint64_t>(txn.gas_price, payload);
+    payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
+    payload = decode_address_optional(txn.to, payload);
+    payload = decode_unsigned<uint128_t>(txn.amount, payload);
+    payload = decode_string(txn.data, payload);
+    payload = decode_access_list(txn.access_list, payload);
+    payload = decode_bool(txn.sc.odd_y_parity, payload);
+    payload = decode_unsigned<uint256_t>(txn.sc.r, payload);
+    payload = decode_unsigned<uint256_t>(txn.sc.s, payload);
+    txn.from = std::nullopt;
+
+    MONAD_ASSERT(payload.size() == 0);
+    return rest_of_enc;
+}
+
+byte_string_view
+decode_transaction(Transaction &txn, byte_string_view const enc)
+{
+    MONAD_ASSERT(enc.size() > 0);
+
+    const uint8_t &first = enc[0];
+    if (first < 0xc0) // eip 2718 - typed transaction envelope
+    {
+        byte_string_view payload{};
+        const auto rest_of_enc = parse_string_metadata(payload, enc);
+        MONAD_ASSERT(payload.size() > 0);
+
+        const uint8_t &type = payload[0];
+        const auto txn_enc = payload.substr(1, payload.size() - 1);
+
+        byte_string_view (*decoder)(Transaction &, byte_string_view const);
+        switch (type) {
+        case 0x1:
+            decoder = &decode_transaction_eip2930;
+            break;
+        case 0x2:
+            decoder = &decode_transaction_eip1559;
+            break;
+        default:
+            MONAD_ASSERT(false); // invalid transaction type
+            return {};
+        }
+        const auto rest_of_txn_enc = decoder(txn, txn_enc);
+        MONAD_ASSERT(rest_of_txn_enc.size() == 0);
+        return rest_of_enc;
+    }
+    return decode_transaction_legacy(txn, enc);
 }
 
 byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)

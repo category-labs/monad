@@ -123,6 +123,7 @@ TEST(Rlp_Block, DecodeBlock2730000)
 
     EXPECT_EQ(block.transactions.size(), 4);
 
+    EXPECT_EQ(block.transactions[0].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[0].nonce, 1639528);
     EXPECT_EQ(block.transactions[0].gas_price, 25000000000);
     EXPECT_EQ(block.transactions[0].gas_limit, 90000);
@@ -138,6 +139,7 @@ TEST(Rlp_Block, DecodeBlock2730000)
         block.transactions[0].sc.s,
         0x6a9c9bedc2c9ca2fc96dff90911540457716182822b8f28125040866b420492f_u256);
 
+    EXPECT_EQ(block.transactions[1].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[1].nonce, 886728);
     EXPECT_EQ(block.transactions[1].gas_price, 20000000000);
     EXPECT_EQ(block.transactions[1].gas_limit, 90000);
@@ -153,6 +155,7 @@ TEST(Rlp_Block, DecodeBlock2730000)
         block.transactions[1].sc.s,
         0x6b332e891a4f5b051f49016a79cfbac771061153af9660697d900325bcebef51_u256);
 
+    EXPECT_EQ(block.transactions[2].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[2].nonce, 1639529);
     EXPECT_EQ(block.transactions[2].gas_price, 25000000000);
     EXPECT_EQ(block.transactions[2].gas_limit, 90000);
@@ -168,6 +171,7 @@ TEST(Rlp_Block, DecodeBlock2730000)
         block.transactions[2].sc.s,
         0x2ef365b24554adad7514ae5337c669c59a9c2affdb5663aa96850cc2efd0df89_u256);
 
+    EXPECT_EQ(block.transactions[3].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[3].nonce, 886729);
     EXPECT_EQ(block.transactions[3].gas_price, 20000000000);
     EXPECT_EQ(block.transactions[3].gas_limit, 90000);
@@ -245,6 +249,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
 
     EXPECT_EQ(block.transactions.size(), 7);
 
+    EXPECT_EQ(block.transactions[0].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[0].nonce, 1639530);
     EXPECT_EQ(block.transactions[0].gas_price, 25000000000);
     EXPECT_EQ(block.transactions[0].gas_limit, 90000);
@@ -260,6 +265,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
         block.transactions[0].sc.s,
         0x32ad76b637d1d947936ed806b499c1b5df8d6d18fe598ba776523a2cce73dee5_u256);
 
+    EXPECT_EQ(block.transactions[1].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[1].nonce, 21);
     EXPECT_EQ(block.transactions[1].gas_price, 20000000000);
     EXPECT_EQ(block.transactions[1].gas_limit, 300000);
@@ -278,6 +284,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
         block.transactions[1].sc.s,
         0x3b6699532ca1a2115e2b516695d80f400568619e9301b55ace126558f2126d2_u256);
 
+    EXPECT_EQ(block.transactions[2].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[2].nonce, 92940);
     EXPECT_EQ(block.transactions[2].gas_price, 20000000000);
     EXPECT_EQ(block.transactions[2].gas_limit, 39000);
@@ -293,6 +300,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
         block.transactions[2].sc.s,
         0x8b6142aeaab3391881c9ebd7697285a690c9a1e328f7e4869b83da2e4690f55_u256);
 
+    EXPECT_EQ(block.transactions[3].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[3].nonce, 886730);
     EXPECT_EQ(block.transactions[3].gas_price, 20000000000);
     EXPECT_EQ(block.transactions[3].gas_limit, 90000);
@@ -308,6 +316,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
         block.transactions[3].sc.s,
         0x5cfc68a3d0a5ec17b19515b84e1de5576d5f8ffdc5eebeb4671b864c50d34ed7_u256);
 
+    EXPECT_EQ(block.transactions[4].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[4].nonce, 1639531);
     EXPECT_EQ(block.transactions[4].gas_price, 25000000000);
     EXPECT_EQ(block.transactions[4].gas_limit, 90000);
@@ -323,6 +332,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
         block.transactions[4].sc.s,
         0x7317951a0f0b2cd45647407b2b9c87fc89d311ff03913d2c2f42041c15d634a5_u256);
 
+    EXPECT_EQ(block.transactions[5].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[5].nonce, 1639532);
     EXPECT_EQ(block.transactions[5].gas_price, 25000000000);
     EXPECT_EQ(block.transactions[5].gas_limit, 90000);
@@ -338,6 +348,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
         block.transactions[5].sc.s,
         0x46c6acae965e6c8fe44785a8461b430b34c0983542aaf11a8d22de5add2f6bb2_u256);
 
+    EXPECT_EQ(block.transactions[6].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[6].nonce, 1639533);
     EXPECT_EQ(block.transactions[6].gas_price, 25000000000);
     EXPECT_EQ(block.transactions[6].gas_limit, 90000);
@@ -522,34 +533,9 @@ TEST(Rlp_Block, DecodeBlock46402)
     EXPECT_EQ(block.header.timestamp, 1438922535);
     EXPECT_EQ(
         block.header.extra_data,
-        byte_string(
-            {0x47,
-             0x65,
-             0x74,
-             0x68,
-             0x2f,
-             0x76,
-             0x31,
-             0x2e,
-             0x30,
-             0x2e,
-             0x30,
-             0x2f,
-             0x77,
-             0x69,
-             0x6e,
-             0x64,
-             0x6f,
-             0x77,
-             0x73,
-             0x2f,
-             0x67,
-             0x6f,
-             0x31,
-             0x2e,
-             0x34,
-             0x2e,
-             0x32}));
+        byte_string({0x47, 0x65, 0x74, 0x68, 0x2f, 0x76, 0x31, 0x2e, 0x30,
+                     0x2e, 0x30, 0x2f, 0x77, 0x69, 0x6e, 0x64, 0x6f, 0x77,
+                     0x73, 0x2f, 0x67, 0x6f, 0x31, 0x2e, 0x34, 0x2e, 0x32}));
     EXPECT_EQ(
         block.header.mix_hash,
         0xf8808df56cbe52ae9c97985e824da926fd05505266960c37a516219f85c131d4_bytes32);
@@ -560,12 +546,11 @@ TEST(Rlp_Block, DecodeBlock46402)
 
     EXPECT_EQ(block.transactions.size(), 1);
 
+    EXPECT_EQ(block.transactions[0].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[0].nonce, 3);
     EXPECT_EQ(block.transactions[0].gas_price, 10000000000000);
     EXPECT_EQ(block.transactions[0].gas_limit, 24000);
-    EXPECT_EQ(
-        block.transactions[0].to,
-        std::nullopt);
+    EXPECT_EQ(block.transactions[0].to, std::nullopt);
     EXPECT_EQ(block.transactions[0].amount, 0_u128);
     EXPECT_EQ(block.transactions[0].sc.chain_id, std::nullopt);
     EXPECT_EQ(
@@ -574,6 +559,117 @@ TEST(Rlp_Block, DecodeBlock46402)
     EXPECT_EQ(
         block.transactions[0].sc.s,
         0x40b1a3d6e47a04c0cd78506aa7d3aa0aeef734d7942424abdb64c88c2ba5f536_u256);
+
+    EXPECT_EQ(block.ommers.size(), 0);
+}
+
+TEST(Rlp_Block, DecodeBlock14000000)
+{
+    using namespace intx;
+
+    byte_string block_encoding = read_block_asset(14000000);
+    Block block{};
+    EXPECT_EQ(decode_block(block, block_encoding).size(), 0);
+    // Header
+    EXPECT_EQ(
+        block.header.parent_hash,
+        0x0c9ef41f038aa58a4aa2810fda03d9d82aac9082c80283230fd74cb1cceb4b00_bytes32);
+    EXPECT_EQ(
+        block.header.ommers_hash,
+        0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
+    EXPECT_EQ(
+        block.header.beneficiary,
+        0xEA674fdDe714fd979de3EdF0F56AA9716B898ec8_address);
+    EXPECT_EQ(
+        block.header.state_root,
+        0xfb3df73e7a41d500a374ee236dd613bb24f1a5fa5b80615a7953ea75c26c6a6d_bytes32);
+    EXPECT_EQ(
+        block.header.transactions_root,
+        0x16b6ff83df3ef14f614c70ac29e8a05d102c6bed0e5882c284abf0120b89529c_bytes32);
+    EXPECT_EQ(
+        block.header.receipts_root,
+        0xf7b9f8e92a4b420a27302ab91084e5499d3d711183a021f4956ff32de246e14e_bytes32);
+
+    const byte_string_fixed<256> bloom{
+        0x08, 0x38, 0x15, 0x04, 0x13, 0x00, 0x08, 0x10, 0x40, 0xf4, 0x85, 0x08,
+        0x80, 0x03, 0xde, 0x10, 0x04, 0x60, 0x40, 0x49, 0x1c, 0x3c, 0x01, 0x64,
+        0x18, 0x98, 0x30, 0xca, 0x3c, 0x2c, 0x0d, 0x11, 0x21, 0x04, 0x04, 0x93,
+        0x00, 0x8b, 0xa6, 0x00, 0x92, 0x48, 0x49, 0x82, 0x0c, 0x89, 0x01, 0x13,
+        0x0b, 0x00, 0x84, 0x03, 0x88, 0x02, 0x61, 0x07, 0x06, 0x00, 0x0b, 0x61,
+        0x01, 0xb2, 0x20, 0xd0, 0x12, 0x10, 0x00, 0x04, 0x00, 0x02, 0x0b, 0x08,
+        0x48, 0x08, 0x50, 0x88, 0x0d, 0x02, 0x26, 0xa0, 0x40, 0x24, 0xe1, 0x07,
+        0x00, 0x51, 0x14, 0x51, 0x34, 0x10, 0x02, 0x10, 0x80, 0x08, 0x04, 0x51,
+        0x12, 0x60, 0x63, 0x40, 0x0a, 0x10, 0x84, 0x02, 0x1c, 0x62, 0xbc, 0x08,
+        0x29, 0x00, 0x08, 0xa0, 0x43, 0x00, 0x81, 0x54, 0x0c, 0x89, 0x25, 0x45,
+        0x36, 0x0c, 0x40, 0x14, 0x10, 0x19, 0x40, 0x21, 0x42, 0x61, 0x03, 0x22,
+        0x82, 0x49, 0x16, 0x28, 0x00, 0xac, 0x01, 0x66, 0x01, 0x10, 0x0d, 0x05,
+        0x20, 0xb9, 0x62, 0x03, 0x43, 0x20, 0x80, 0x08, 0x6a, 0x00, 0x42, 0x4d,
+        0x82, 0x14, 0x01, 0x0b, 0x63, 0x18, 0x04, 0x71, 0x31, 0x86, 0x34, 0xd0,
+        0xae, 0x00, 0x10, 0x80, 0x41, 0xa1, 0x18, 0x44, 0x88, 0xa1, 0x08, 0x41,
+        0xa2, 0x61, 0x0e, 0x04, 0x01, 0xe9, 0x00, 0x1a, 0x50, 0x4a, 0x40, 0x10,
+        0x09, 0x81, 0x82, 0x02, 0x08, 0x08, 0x15, 0x50, 0x27, 0x00, 0x9c, 0x02,
+        0x00, 0x8e, 0x56, 0x07, 0x0c, 0x28, 0x72, 0x81, 0x14, 0x48, 0x04, 0x90,
+        0x40, 0x08, 0x01, 0xca, 0xc0, 0x10, 0x29, 0x0a, 0xe2, 0x91, 0xa0, 0x0c,
+        0xa0, 0x40, 0x8b, 0x60, 0x20, 0x4c, 0x12, 0x80, 0x12, 0x60, 0x1c, 0x10,
+        0x0a, 0x24, 0xcc, 0x01, 0xe1, 0x00, 0x89, 0x72, 0x42, 0x83, 0x2a, 0x82,
+        0x50, 0x00, 0xc1, 0xe1};
+    EXPECT_EQ(block.header.logs_bloom, bloom);
+    EXPECT_EQ(block.header.difficulty, 12316581093827601);
+    EXPECT_EQ(block.header.number, 14000000);
+    EXPECT_EQ(block.header.gas_limit, 30058561);
+    EXPECT_EQ(block.header.gas_used, 8119826);
+    EXPECT_EQ(block.header.timestamp, 1642114795);
+
+    EXPECT_EQ(
+        block.header.extra_data,
+        byte_string({0x61, 0x75, 0x73, 0x74, 0x72, 0x61, 0x6c, 0x69,
+                     0x61, 0x2d, 0x73, 0x6f, 0x75, 0x74, 0x68, 0x65,
+                     0x61, 0x73, 0x74, 0x31, 0x2d, 0x31}));
+    EXPECT_EQ(
+        block.header.mix_hash,
+        0xa832679fcf3e71f0b29bd5913955151be5bf1fc59e135e3c7eb6e30f8442a5df_bytes32);
+    EXPECT_EQ(
+        block.header.nonce,
+        byte_string_fixed<8UL>(
+            {0x31, 0xe7, 0xe9, 0x9d, 0xf1, 0x8e, 0x04, 0x24}));
+
+    EXPECT_EQ(block.transactions.size(), 112);
+
+    EXPECT_EQ(block.transactions[0].type, Transaction::Type::eip1559);
+    EXPECT_EQ(block.transactions[0].nonce, 2760);
+    EXPECT_EQ(block.transactions[0].priority_fee, 8540000000);
+    EXPECT_EQ(block.transactions[0].gas_price, 291900000000);
+    EXPECT_EQ(block.transactions[0].gas_limit, 1395940);
+    EXPECT_EQ(
+        *block.transactions[0].to,
+        0x9008d19f58aabd9ed0d60971565aa8510560ab41_address);
+    EXPECT_EQ(block.transactions[0].amount, 0_u128);
+    EXPECT_EQ(block.transactions[0].access_list.size(), 0);
+
+    EXPECT_EQ(*block.transactions[0].sc.chain_id, 0x01);
+    EXPECT_EQ(
+        block.transactions[0].sc.r,
+        0xd2fed4e113738c74b4df1ccc9b0aab7a8dcd5dd1f30b9dcca5259a16f6b7c865_u256);
+    EXPECT_EQ(
+        block.transactions[0].sc.s,
+        0x1dc7444f10bbd53b1f6f8d3a18916222a28539d76f8859ce3671f85eeb781d04_u256);
+
+    EXPECT_EQ(block.transactions[1].type, Transaction::Type::eip155);
+    EXPECT_EQ(block.transactions[1].nonce, 947217);
+    EXPECT_EQ(block.transactions[1].gas_price, 230000000000);
+    EXPECT_EQ(block.transactions[1].gas_limit, 207128);
+    EXPECT_EQ(
+        *block.transactions[1].to,
+        0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce_address);
+    EXPECT_EQ(block.transactions[1].amount, 0_u128);
+
+    EXPECT_EQ(*block.transactions[1].sc.chain_id, 0x01);
+    EXPECT_EQ(
+        block.transactions[1].sc.r,
+        0x02ea61dac7a25c05d09b36b9a8221974c109e0a8cbb656c3dfe849cdc09054b0_u256);
+    EXPECT_EQ(
+        block.transactions[1].sc.s,
+        0x09c059fae0f809e1405656d1f42efaa3e3a30b278e4d63602bbc680b33992a5c_u256);
 
     EXPECT_EQ(block.ommers.size(), 0);
 }

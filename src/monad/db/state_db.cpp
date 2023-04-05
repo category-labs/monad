@@ -1,7 +1,6 @@
-#include <monad/db/state_db.hpp>
-
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
+#include <monad/db/state_db.hpp>
 
 #include <rocksdb/db.h>
 #include <rocksdb/iterator.h>

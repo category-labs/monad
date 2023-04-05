@@ -103,6 +103,7 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/src/monad/db/state_db.cpp
 
     # execution
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/block_processor_interface.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/config.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/create_contract_address.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/fork_traits.hpp
@@ -126,6 +127,10 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/rlp/util.hpp
     ${PROJECT_SOURCE_DIR}/src/monad/rlp/decode_helpers.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/rlp/encode_helpers.cpp
+
+    # trie
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/config.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/state_trie_interface.hpp
 )
 target_include_directories(monad
     PUBLIC ${PROJECT_SOURCE_DIR}/include

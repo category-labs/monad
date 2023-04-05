@@ -127,6 +127,7 @@ target_link_libraries(monad
     PRIVATE PkgConfig::brotli
     PRIVATE RocksDB::RocksDB
 
+    PUBLIC ethash::keccak
     PUBLIC evmc
     PUBLIC intx::intx
     PUBLIC tl::expected

@@ -79,10 +79,10 @@ struct EvmcHost : public evmc::HostInterface
         return state_.copy_code(a, offset, data, size);
     }
 
-    virtual inline void selfdestruct(
+    virtual inline bool selfdestruct(
         address_t const &a, address_t const &beneficiary) noexcept override
     {
-        state_.selfdestruct(a, beneficiary);
+        return state_.selfdestruct(a, beneficiary);
     }
 
     [[nodiscard]] static constexpr inline evmc_message
@@ -110,7 +110,7 @@ struct EvmcHost : public evmc::HostInterface
     }
 
     [[nodiscard]] constexpr inline Receipt make_receipt_from_result(
-        evmc::result const &r, Transaction const &t,
+        evmc::Result const &r, Transaction const &t,
         uint64_t const gas_remaining)
     {
         Receipt receipt{
@@ -121,7 +121,7 @@ struct EvmcHost : public evmc::HostInterface
         return receipt;
     }
 
-    [[nodiscard]] virtual inline evmc::result
+    [[nodiscard]] virtual inline evmc::Result
     call(evmc_message const &m) noexcept override
     {
         if (m.kind == EVMC_CREATE || m.kind == EVMC_CREATE2) {
@@ -130,12 +130,12 @@ struct EvmcHost : public evmc::HostInterface
         return call_evm(m);
     }
 
-    [[nodiscard]] inline evmc::result
+    [[nodiscard]] inline evmc::Result
     create_contract_account(evmc_message const &m) noexcept
     {
         auto const contract_address = evm_.make_account_address(m);
         if (!contract_address) {
-            return evmc::result{contract_address.error()};
+            return evmc::Result{contract_address.error()};
         }
         // evmone execute, just this for now
         evmc_result res = {.status_code = EVMC_SUCCESS, .gas_left = 12'000};
@@ -145,14 +145,14 @@ struct EvmcHost : public evmc::HostInterface
             state_.revert();
         }
 
-        return evmc::result{res};
+        return evmc::Result{res};
     }
 
-    [[nodiscard]] inline evmc::result call_evm(evmc_message const &m) noexcept
+    [[nodiscard]] inline evmc::Result call_evm(evmc_message const &m) noexcept
     {
         if (auto const result = evm_.transfer_call_balances(m);
             result.status_code != EVMC_SUCCESS) {
-            return evmc::result{result};
+            return evmc::Result{result};
         }
         // execute on backend, just this for now
         evmc_result const result = {.status_code = EVMC_SUCCESS, .gas_left = m.gas};
@@ -161,7 +161,7 @@ struct EvmcHost : public evmc::HostInterface
             state_.revert();
         }
 
-        return evmc::result{result};
+        return evmc::Result{result};
     }
 
     virtual evmc_tx_context get_tx_context() const noexcept override
@@ -187,13 +187,13 @@ struct EvmcHost : public evmc::HostInterface
 
         if (block_header_.difficulty == 0) { // EIP-4399
             std::memcpy(
-                result.block_difficulty.bytes,
+                result.block_prev_randao.bytes,
                 block_header_.mix_hash.bytes,
                 sizeof(block_header_.mix_hash.bytes));
         }
         else {
             intx::be::store(
-                result.block_difficulty.bytes, block_header_.difficulty);
+                result.block_prev_randao.bytes, block_header_.difficulty);
         }
 
         return result;

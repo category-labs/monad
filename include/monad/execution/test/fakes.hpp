@@ -78,7 +78,10 @@ namespace fake
             return _map.at(address).code_hash;
         }
 
-        void selfdestruct(address_t const &, address_t const &) noexcept {}
+        bool selfdestruct(address_t const &, address_t const &) noexcept
+        {
+            return true;
+        }
 
         evmc_access_status access_account(address_t const &) noexcept
         {
@@ -141,14 +144,14 @@ namespace fake
         };
 
         [[nodiscard]] constexpr inline Receipt make_receipt_from_result(
-            evmc::result const &, Transaction const &, uint64_t const)
+            evmc::Result const &, Transaction const &, uint64_t const)
         {
             return _receipt;
         }
 
-        [[nodiscard]] inline evmc::result call(evmc_message const &) noexcept
+        [[nodiscard]] inline evmc::Result call(evmc_message const &) noexcept
         {
-            return evmc::result{_result};
+            return evmc::Result{_result};
         }
     };
 

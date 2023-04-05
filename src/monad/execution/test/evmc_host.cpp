@@ -32,8 +32,8 @@ bool operator==(evmc_tx_context const &lhs, evmc_tx_context const &rhs)
            lhs.block_timestamp == rhs.block_timestamp &&
            lhs.block_gas_limit == rhs.block_gas_limit &&
            !std::memcmp(
-               lhs.block_difficulty.bytes,
-               rhs.block_difficulty.bytes,
+               lhs.block_prev_randao.bytes,
+               rhs.block_prev_randao.bytes,
                sizeof(evmc_bytes32)) &&
            !std::memcmp(
                lhs.chain_id.bytes, rhs.chain_id.bytes, sizeof(evmc_bytes32)) &&
@@ -76,7 +76,7 @@ TEST(EvmcHost, get_tx_context)
         .block_number = 15'000'000,
         .block_timestamp = 1677616016,
         .block_gas_limit = 50'000,
-        .block_difficulty = evmc::uint256be{10'000'000u},
+        .block_prev_randao = evmc::uint256be{10'000'000u},
     };
     intx::be::store(ctx.tx_gas_price.bytes, gas_cost);
     intx::be::store(ctx.chain_id.bytes, chain_id);
@@ -86,7 +86,7 @@ TEST(EvmcHost, get_tx_context)
     b.difficulty = 0;
     const auto pos_result = host.get_tx_context();
     std::memcpy(
-        ctx.block_difficulty.bytes, b.mix_hash.bytes, sizeof(b.mix_hash));
+        ctx.block_prev_randao.bytes, b.mix_hash.bytes, sizeof(b.mix_hash));
     EXPECT_EQ(pos_result, ctx);
 }
 

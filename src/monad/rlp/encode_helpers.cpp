@@ -117,22 +117,23 @@ byte_string encode_bloom(Receipt::Bloom const &b)
 byte_string encode_receipt(Receipt const &r)
 {
     byte_string log_result{};
-    byte_string prefix{};
 
     for (auto const &i : r.logs) {
         log_result += encode_log(i);
     }
 
+    const auto receipt_bytes = encode_list(
+        encode_unsigned(r.status),
+        encode_unsigned(r.gas_used),
+        encode_bloom(r.bloom),
+        encode_list(log_result));
+
     if (r.type == Transaction::Type::eip1559 ||
         r.type == Transaction::Type::eip2930) {
-        prefix = static_cast<unsigned>(r.type);
+        return encode_string(
+            static_cast<unsigned char>(r.type) + receipt_bytes);
     }
-
-    return prefix + encode_list(
-                        encode_unsigned(r.status),
-                        encode_unsigned(r.gas_used),
-                        encode_bloom(r.bloom),
-                        encode_list(log_result));
+    return receipt_bytes;
 }
 
 MONAD_RLP_NAMESPACE_END

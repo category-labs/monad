@@ -18,8 +18,8 @@ struct Transaction
     enum class Type
     {
         eip155,
-        eip1559,
         eip2930,
+        eip1559,
     };
 
     struct AccessEntry

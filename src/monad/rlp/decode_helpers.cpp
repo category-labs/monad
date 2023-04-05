@@ -272,26 +272,11 @@ decode_transaction(Transaction &txn, byte_string_view const enc)
     return decode_transaction_legacy(txn, enc);
 }
 
-byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
+byte_string_view
+decode_untyped_receipt(Receipt &receipt, byte_string_view const enc)
 {
-    MONAD_ASSERT(enc.size() > 0);
-    byte_string_loc i = 0;
-    unsigned prefix = enc[i];
-    if (prefix == 0x01) {
-        receipt.type = Transaction::Type::eip1559;
-        ++i;
-    }
-    else if (prefix == 0x02) {
-        receipt.type = Transaction::Type::eip2930;
-        ++i;
-    }
-    else {
-        receipt.type = Transaction::Type::eip155;
-    }
-
     byte_string_view payload{};
-    const auto rest_of_enc =
-        parse_list_metadata(payload, enc.substr(i, enc.size() - i));
+    const auto rest_of_enc = parse_list_metadata(payload, enc);
     payload = decode_unsigned<uint64_t>(receipt.status, payload);
     payload = decode_unsigned<uint64_t>(receipt.gas_used, payload);
     payload = decode_bloom(receipt.bloom, payload);
@@ -299,6 +284,39 @@ byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
 
     MONAD_ASSERT(payload.size() == 0);
     return rest_of_enc;
+}
+
+byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
+{
+    MONAD_ASSERT(enc.size() > 0);
+
+    const uint8_t &first = enc[0];
+    receipt.type = Transaction::Type::eip155;
+    if (first < 0xc0) // eip 2718 - typed transaction envelope
+    {
+        byte_string_view payload{};
+        const auto rest_of_enc = parse_string_metadata(payload, enc);
+        MONAD_ASSERT(payload.size() > 0);
+
+        const uint8_t &type = payload[0];
+        const auto receipt_enc = payload.substr(1, payload.size() - 1);
+        switch (type) {
+        case 0x1:
+            receipt.type = Transaction::Type::eip2930;
+            break;
+        case 0x2:
+            receipt.type = Transaction::Type::eip1559;
+            break;
+        default:
+            MONAD_ASSERT(false); // invalid transaction type
+            return {};
+        }
+        const auto rest_of_receipt_enc =
+            decode_untyped_receipt(receipt, receipt_enc);
+        MONAD_ASSERT(rest_of_receipt_enc.size() == 0);
+        return rest_of_enc;
+    }
+    return decode_untyped_receipt(receipt, enc);
 }
 
 byte_string_view

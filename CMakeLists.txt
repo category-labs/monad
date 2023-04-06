@@ -92,8 +92,12 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/src/monad/core/signature.cpp
 
     # db
+    ${PROJECT_SOURCE_DIR}/include/monad/db/block_db_interface.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/db/block_db.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/db/config.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/file_db.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/state_db.hpp
+    ${PROJECT_SOURCE_DIR}/src/monad/db/block_db.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/db/file_db.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/db/state_db.cpp
 

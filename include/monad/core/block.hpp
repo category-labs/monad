@@ -9,6 +9,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
+using block_num_t = uint64_t;
+
 struct BlockHeader
 {
     Receipt::Bloom logs_bloom{};

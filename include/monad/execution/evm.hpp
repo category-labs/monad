@@ -41,57 +41,60 @@ struct Evm
         s.set_balance(to, balance + value);
     }
 
-    [[nodiscard]] static inline result_t
-    increment_sender_nonce(TState &s, evmc_message const &m) noexcept
+    [[nodiscard]] static inline auto increment_sender_nonce(TState &s) noexcept
     {
-        auto const n = s.get_nonce(m.sender) + 1;
-        if (s.get_nonce(m.sender) > n) {
-            // Match geth behavior - don't overflow nonce
-            return unexpected_t(
-                {.status_code = EVMC_ARGUMENT_OUT_OF_RANGE, .gas_left = m.gas});
-        }
-        s.set_nonce(m.sender, n);
-        return {m};
+        return [&](evmc_message const &m) {
+            auto const n = s.get_nonce(m.sender) + 1;
+            if (s.get_nonce(m.sender) > n) {
+                // Match geth behavior - don't overflow nonce
+                return result_t(unexpected_t(
+                    {.status_code = EVMC_ARGUMENT_OUT_OF_RANGE,
+                     .gas_left = m.gas}));
+            }
+            s.set_nonce(m.sender, n);
+            return result_t({m});
+        };
     }
 
-    [[nodiscard]] static inline result_t create_new_contract(
-        TState &s, evmc_message const &m, address_t &new_address) noexcept
+    [[nodiscard]] static inline auto
+    create_new_contract(TState &s, address_t &new_address) noexcept
     {
-        new_address = [&] {
-            if (m.kind == EVMC_CREATE) {
-                return create_contract_address(m.sender, s.get_nonce(m.sender));
+        return [&](evmc_message const &m) {
+            new_address = [&] {
+                if (m.kind == EVMC_CREATE) {
+                    return create_contract_address(
+                        m.sender, s.get_nonce(m.sender));
+                }
+                else if (m.kind == EVMC_CREATE2) {
+                    auto const code_hash =
+                        ethash::keccak256(m.input_data, m.input_size);
+                    return create2_contract_address(
+                        m.sender, m.create2_salt, code_hash);
+                }
+                MONAD_ASSERT(false);
+                return address_t{};
+            }();
+
+            // Prevent overwriting contracts - EIP-684
+            if (s.get_nonce(new_address) != 0 ||
+                s.get_code_hash(new_address) != NULL_HASH) {
+                return result_t(
+                    unexpected_t({.status_code = EVMC_INVALID_INSTRUCTION}));
             }
-            else if (m.kind == EVMC_CREATE2) {
-                auto const code_hash =
-                    ethash::keccak256(m.input_data, m.input_size);
-                return create2_contract_address(
-                    m.sender, m.create2_salt, code_hash);
-            }
-            MONAD_ASSERT(false);
-            return address_t{};
-        }();
 
-        // Prevent overwriting contracts - EIP-684
-        if (s.get_nonce(new_address) != 0 ||
-            s.get_code_hash(new_address) != NULL_HASH) {
-            return unexpected_t({.status_code = EVMC_INVALID_INSTRUCTION});
-        }
+            s.create_contract(new_address);
 
-        s.create_contract(new_address);
-
-        return {m};
+            return result_t({m});
+        };
     }
 
     [[nodiscard]] static new_address_t
     make_account_address(TState &s, evmc_message const &m) noexcept
     {
         address_t new_address{};
-        auto const result =
-            check_sender_balance(s, m)
-                .and_then([&](auto x) { return increment_sender_nonce(s, x); })
-                .and_then([&](auto x) {
-                    return create_new_contract(s, x, new_address);
-                });
+        auto const result = check_sender_balance(s, m)
+                                .and_then(increment_sender_nonce(s))
+                                .and_then(create_new_contract(s, new_address));
         if (!result) {
             return unexpected_t{result.error()};
         }

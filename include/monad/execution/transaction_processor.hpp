@@ -77,7 +77,8 @@ struct TransactionProcessor
 
     template <class TEvmHost>
     Receipt execute(
-        TState &s, TEvmHost &h, BlockHeader const &b, Transaction const &t) const
+        TState &s, TEvmHost &h, BlockHeader const &b,
+        Transaction const &t) const
     {
         irrevocable_change(s, t);
 
@@ -95,7 +96,9 @@ struct TransactionProcessor
         auto m = TEvmHost::make_msg_from_txn(t);
         auto result = h.call(m);
 
-        auto const gas_remaining = award_fee_and_refund(s, b, t, result.gas_left);
+		MONAD_ASSERT(result.gas_left >= 0);
+        auto const gas_remaining = award_fee_and_refund(
+            s, b, t, static_cast<uint64_t>(result.gas_left));
 
         // finalize state, Eqn. 77-79
         s.destruct_suicides();

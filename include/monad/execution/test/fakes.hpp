@@ -188,7 +188,7 @@ namespace fake
         {
             return _intrinsic_gas;
         }
-        static inline auto starting_nonce() { return 1; }
+        static inline auto starting_nonce() { return 1u; }
         static inline auto max_refund_quotient()
         {
             return _max_refund_quotient;

@@ -12,18 +12,19 @@ MONAD_RLP_NAMESPACE_BEGIN
 inline byte_string encode_string(byte_string_view const str)
 {
     byte_string result;
-    uint32_t const size = str.size();
+    uint32_t const size = static_cast<uint32_t>(str.size());
     if (size == 1 && str[0] <= 0x7f) {
         result = str;
     }
     else if (size > 55) {
         auto const size_str = to_big_compact(size);
-        result.push_back(0xb7 + size_str.size());
+		MONAD_ASSERT(size_str.size() <= 8u);
+        result.push_back(0xb7 + static_cast<unsigned char>(size_str.size()));
         result += size_str;
         result += str;
     }
     else {
-        result.push_back(0x80 + size);
+        result.push_back(0x80 + static_cast<unsigned char>(size));
         result += str;
     }
     return result;
@@ -37,11 +38,12 @@ inline byte_string encode_list(Args const &...args)
     byte_string result;
     if (size > 55) {
         auto const size_str = to_big_compact(size);
-        result += (0xf7 + size_str.size());
+		MONAD_ASSERT(size_str.size() <= 8u);
+        result += (0xf7 + static_cast<unsigned char>(size_str.size()));
         result += size_str;
     }
     else {
-        result += (0xc0 + size);
+        result += (0xc0 + static_cast<unsigned char>(size));
     }
     ([&] { result += args; }(), ...);
     return result;

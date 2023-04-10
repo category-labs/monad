@@ -16,9 +16,9 @@ void set_3_bits(Receipt::Bloom &bloom, byte_string_view const bytes)
         const uint16_t bit =
             intx::to_big_endian(
                 reinterpret_cast<uint16_t const *>(h.bytes)[i]) &
-            2047;
-        const auto byte = 255 - bit / 8;
-        bloom[byte] |= 1 << (bit & 7);
+            2047u;
+        const auto byte = 255u - bit / 8u;
+        bloom[byte] |= 1u << (bit & 7u);
     }
 }
 

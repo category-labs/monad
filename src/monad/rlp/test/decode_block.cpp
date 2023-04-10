@@ -33,7 +33,7 @@ inline byte_string read_block_asset(uint32_t block_num)
     if (input) {
         while (input) {
             input.get(c);
-            output += c;
+            output += static_cast<unsigned char>(c);
         }
         output = output.substr(0, output.length() - 1);
     }

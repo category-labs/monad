@@ -52,7 +52,7 @@ function(monad_compile_options target)
     set_property(TARGET ${target} PROPERTY C_STANDARD_REQUIRED ON)
     set_property(TARGET ${target} PROPERTY CXX_STANDARD 20)
     set_property(TARGET ${target} PROPERTY CXX_STANDARD_REQUIRED ON)
-    target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic)
 endfunction()
 
 

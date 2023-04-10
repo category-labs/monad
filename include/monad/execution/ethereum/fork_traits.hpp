@@ -16,19 +16,19 @@ namespace fork_traits
         static constexpr auto block_number = 0u;
 
         // YP, Eqn. 60, first summation
-        [[nodiscard]] static constexpr inline auto
+        [[nodiscard]] static constexpr inline uint64_t
         g_data(Transaction const &t) noexcept
         {
-            const unsigned zeros = std::count_if(
+            const auto zeros = std::count_if(
                 std::cbegin(t.data), std::cend(t.data), [](unsigned char c) {
                     return c == 0x00;
                 });
-            const auto nonzeros = t.data.size() - zeros;
-            return zeros * 4 + nonzeros * 68;
+            const auto nonzeros = t.data.size() - static_cast<uint64_t>(zeros);
+            return static_cast<uint64_t>(zeros) * 4u + nonzeros * 68u;
         }
 
         // YP, section 6.2, Eqn. 60
-        [[nodiscard]] static constexpr inline unsigned
+        [[nodiscard]] static constexpr inline uint64_t
         intrinsic_gas(Transaction const &t) noexcept
         {
             return 21'000 + g_data(t);
@@ -36,7 +36,7 @@ namespace fork_traits
 
         [[nodiscard]] static constexpr inline auto starting_nonce() noexcept
         {
-            return 0;
+            return 0u;
         }
 
         template <class TState>
@@ -61,8 +61,8 @@ namespace fork_traits
         static constexpr inline bool enough_gas_to_store_code(
             TState &s, address_t const &a, evmc_result &r) noexcept
         {
-            int const deploy_cost = r.output_size * 200;
-            if (r.gas_left >= deploy_cost) {
+            auto const deploy_cost = r.output_size * 200u;
+            if (static_cast<uint64_t>(r.gas_left) >= deploy_cost) {
                 s.set_code(a, {r.output_data, r.output_size});
                 r.gas_left -= deploy_cost;
                 r.create_address = a;
@@ -133,7 +133,7 @@ namespace fork_traits
         // https://eips.ethereum.org/EIPS/eip-161
         [[nodiscard]] static constexpr inline auto starting_nonce() noexcept
         {
-            return 1;
+            return 1u;
         }
 
         template <class TState>
@@ -201,15 +201,15 @@ namespace fork_traits
         static constexpr auto block_number = 9'069'000u;
 
         // https://eips.ethereum.org/EIPS/eip-2028
-        [[nodiscard]] static constexpr inline unsigned
+        [[nodiscard]] static constexpr inline uint64_t
         g_data(Transaction const &t) noexcept
         {
-            const unsigned zeros = std::count_if(
+            const auto zeros = std::count_if(
                 std::cbegin(t.data), std::cend(t.data), [](unsigned char c) {
                     return c == 0x00;
                 });
-            const auto nonzeros = t.data.size() - zeros;
-            return zeros * 4u + nonzeros * 16u;
+            const auto nonzeros = t.data.size() - static_cast<uint64_t>(zeros);
+            return static_cast<uint64_t>(zeros) * 4u + nonzeros * 16u;
         }
 
         [[nodiscard]] static constexpr inline auto

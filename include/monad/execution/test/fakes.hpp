@@ -9,13 +9,14 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 
+#include <monad/db/block_db_interface.hpp>
+
 #include <monad/execution/config.hpp>
 
 #include <evmc/evmc.hpp>
 
 #include <tl/expected.hpp>
 
-#include <optional>
 #include <unordered_map>
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
@@ -130,6 +131,7 @@ namespace fake
         inline int current_txn() { return _current_txn; }
 
         inline State get_copy() { return State(*this); }
+        void commit() { return; }
     };
 
     struct EvmHost
@@ -177,8 +179,9 @@ namespace fake
     template <class TState>
     struct traits
     {
+        using next_fork_t = traits;
         static inline uint64_t _sd_refund{};
-        static inline uint64_t block_number{};
+        static inline uint64_t last_block_number{};
         static inline uint64_t _intrinsic_gas{21'000u};
         static inline uint64_t _max_refund_quotient{2u};
         static inline bool _fail_store_contract{};

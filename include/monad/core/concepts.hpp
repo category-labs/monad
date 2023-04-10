@@ -14,11 +14,15 @@ namespace concepts
     {
         { T::intrinsic_gas(t) } -> std::convertible_to<uint64_t>;
         { T::starting_nonce() } -> std::convertible_to<uint64_t>;
-        { T::block_number } -> std::convertible_to<uint64_t>;
+        { T::last_block_number } -> std::convertible_to<uint64_t>;
         { T::get_selfdestruct_refund(s) } -> std::convertible_to<uint64_t>;
         { T::max_refund_quotient() } -> std::convertible_to<int>;
         { T::destruct_touched_dead(s) } -> std::convertible_to<void>;
         { T::store_contract_code(s, a, r) } -> std::convertible_to<bool>;
+        // can't get this to look like the above
+        // reason is that the compiler doesn't like the {typename T::next_fork_t} -> ...
+        // and it doesn't work w/o typename
+        std::is_convertible_v<typename T::next_fork_t, T>; 
     };
     // clang-format on
 }

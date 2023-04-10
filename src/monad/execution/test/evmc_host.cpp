@@ -63,7 +63,7 @@ TEST(EvmcHost, get_tx_context)
     fake::State s{};
     fake::Evm e{};
 
-    const static uint256_t gas_cost = t.per_gas_cost(37'000'000'000);
+    const static uint256_t gas_cost = per_gas_cost(t, 37'000'000'000);
     const static uint256_t chain_id{1};
     const static uint256_t base_fee_per_gas{37'000'000'000};
 

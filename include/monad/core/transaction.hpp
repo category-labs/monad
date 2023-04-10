@@ -41,17 +41,6 @@ struct Transaction
     Type type;
     AccessList access_list{};
     uint64_t priority_fee{};
-
-    // EIP-1559
-    inline uint64_t per_gas_priority_fee(uint64_t const base_fee_per_gas) const
-    {
-        return std::min(priority_fee, gas_price - base_fee_per_gas);
-    }
-
-    inline uint64_t per_gas_cost(uint64_t const base_fee_per_gas) const
-    {
-        return per_gas_priority_fee(base_fee_per_gas) + base_fee_per_gas;
-    }
 };
 
 static_assert(sizeof(Transaction::AccessEntry) == 48);
@@ -62,5 +51,18 @@ static_assert(alignof(Transaction::AccessList) == 8);
 
 static_assert(sizeof(Transaction) == 248);
 static_assert(alignof(Transaction) == 8);
+
+// EIP-1559
+inline uint64_t per_gas_priority_fee(
+    Transaction const &t, uint64_t const base_fee_per_gas)
+{
+    return std::min(t.priority_fee, t.gas_price - base_fee_per_gas);
+}
+
+inline uint64_t
+per_gas_cost(Transaction const &t, uint64_t const base_fee_per_gas)
+{
+    return per_gas_priority_fee(t, base_fee_per_gas) + base_fee_per_gas;
+}
 
 MONAD_NAMESPACE_END

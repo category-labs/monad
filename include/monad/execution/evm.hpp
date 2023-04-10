@@ -35,10 +35,11 @@ struct Evm
         TState &s, evmc_message const &m, address_t const &to) noexcept
     {
         auto const value = intx::be::load<uint256_t>(m.value);
-        auto balance = intx::be::load<uint256_t>(s.get_balance(m.sender));
-        s.set_balance(m.sender, balance - value);
-        balance = intx::be::load<uint256_t>(s.get_balance(to));
-        s.set_balance(to, balance + value);
+        auto const from_balance =
+            intx::be::load<uint256_t>(s.get_balance(m.sender));
+        auto const to_balance = intx::be::load<uint256_t>(s.get_balance(to));
+        s.set_balance(m.sender, from_balance - value);
+        s.set_balance(to, to_balance + value);
     }
 
     [[nodiscard]] static inline auto increment_sender_nonce(TState &s) noexcept

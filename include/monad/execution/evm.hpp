@@ -15,23 +15,15 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 template <class TState, concepts::fork_traits<TState> TTraits>
 struct Evm
 {
-    TState &state_;
-    address_t new_address_{};
-
     using result_t = tl::expected<evmc_message, evmc_result>;
     using new_address_t = tl::expected<address_t, evmc_result>;
     using unexpected_t = tl::unexpected<evmc_result>;
 
-    Evm(TState &s)
-        : state_{s}
-    {
-    }
-
-    [[nodiscard]] result_t check_sender_balance(evmc_message const &m) noexcept
+    [[nodiscard]] static result_t
+    check_sender_balance(TState &s, evmc_message const &m) noexcept
     {
         auto const value = intx::be::load<uint256_t>(m.value);
-        auto const balance =
-            intx::be::load<uint256_t>(state_.get_balance(m.sender));
+        auto const balance = intx::be::load<uint256_t>(s.get_balance(m.sender));
         if (balance < value) {
             return unexpected_t(
                 {.status_code = EVMC_INSUFFICIENT_BALANCE, .gas_left = m.gas});
@@ -39,36 +31,35 @@ struct Evm
         return {m};
     }
 
-    inline void
-    transfer_balances(evmc_message const &m, address_t const &to) noexcept
+    static inline void transfer_balances(
+        TState &s, evmc_message const &m, address_t const &to) noexcept
     {
         auto const value = intx::be::load<uint256_t>(m.value);
-        auto balance = intx::be::load<uint256_t>(state_.get_balance(m.sender));
-        state_.set_balance(m.sender, balance - value);
-        balance = intx::be::load<uint256_t>(state_.get_balance(to));
-        state_.set_balance(to, balance + value);
+        auto balance = intx::be::load<uint256_t>(s.get_balance(m.sender));
+        s.set_balance(m.sender, balance - value);
+        balance = intx::be::load<uint256_t>(s.get_balance(to));
+        s.set_balance(to, balance + value);
     }
 
-    [[nodiscard]] inline result_t
-    increment_sender_nonce(evmc_message const &m) noexcept
+    [[nodiscard]] static inline result_t
+    increment_sender_nonce(TState &s, evmc_message const &m) noexcept
     {
-        auto const n = state_.get_nonce(m.sender) + 1;
-        if (state_.get_nonce(m.sender) > n) {
+        auto const n = s.get_nonce(m.sender) + 1;
+        if (s.get_nonce(m.sender) > n) {
             // Match geth behavior - don't overflow nonce
             return unexpected_t(
                 {.status_code = EVMC_ARGUMENT_OUT_OF_RANGE, .gas_left = m.gas});
         }
-        state_.set_nonce(m.sender, n);
+        s.set_nonce(m.sender, n);
         return {m};
     }
 
-    [[nodiscard]] inline result_t
-    create_new_contract(evmc_message const &m) noexcept
+    [[nodiscard]] static inline result_t create_new_contract(
+        TState &s, evmc_message const &m, address_t &new_address) noexcept
     {
-        new_address_ = [&] {
+        new_address = [&] {
             if (m.kind == EVMC_CREATE) {
-                return create_contract_address(
-                    m.sender, state_.get_nonce(m.sender));
+                return create_contract_address(m.sender, s.get_nonce(m.sender));
             }
             else if (m.kind == EVMC_CREATE2) {
                 auto const code_hash =
@@ -81,41 +72,45 @@ struct Evm
         }();
 
         // Prevent overwriting contracts - EIP-684
-        if (state_.get_nonce(new_address_) != 0 ||
-            state_.get_code_hash(new_address_) != NULL_HASH) {
+        if (s.get_nonce(new_address) != 0 ||
+            s.get_code_hash(new_address) != NULL_HASH) {
             return unexpected_t({.status_code = EVMC_INVALID_INSTRUCTION});
         }
 
-        state_.create_contract(new_address_);
+        s.create_contract(new_address);
 
         return {m};
     }
 
-    [[nodiscard]] new_address_t
-    make_account_address(evmc_message const &m) noexcept
+    [[nodiscard]] static new_address_t
+    make_account_address(TState &s, evmc_message const &m) noexcept
     {
+        address_t new_address{};
         auto const result =
-            check_sender_balance(m)
-                .and_then([&](auto x) { return increment_sender_nonce(x); })
-                .and_then([&](auto x) { return create_new_contract(x); });
+            check_sender_balance(s, m)
+                .and_then([&](auto x) { return increment_sender_nonce(s, x); })
+                .and_then([&](auto x) {
+                    return create_new_contract(s, x, new_address);
+                });
         if (!result) {
             return unexpected_t{result.error()};
         }
 
-        state_.set_nonce(new_address_, TTraits::starting_nonce());
-        transfer_balances(m, new_address_);
-        return {new_address_};
+        s.set_nonce(new_address, TTraits::starting_nonce());
+        transfer_balances(s, m, new_address);
+        return {new_address};
     }
 
-    [[nodiscard]] evmc_result transfer_call_balances(evmc_message const &m)
+    [[nodiscard]] static evmc_result
+    transfer_call_balances(TState &s, evmc_message const &m)
     {
         if (m.kind != EVMC_DELEGATECALL) {
-            if (auto const result = check_sender_balance(m);
+            if (auto const result = check_sender_balance(s, m);
                 !result.has_value()) {
                 return result.error();
             }
             else if (m.flags != EVMC_STATIC) {
-                transfer_balances(m, m.recipient);
+                transfer_balances(s, m, m.recipient);
             }
         }
         return {.status_code = EVMC_SUCCESS};

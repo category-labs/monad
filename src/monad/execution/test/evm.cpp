@@ -31,8 +31,7 @@ TEST(Evm, make_account_address)
     uint256_t v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
-    evm_t e{s};
-    auto const result = e.make_account_address(m);
+    auto const result = evm_t::make_account_address(s, m);
 
     EXPECT_TRUE(result.has_value());
     EXPECT_EQ(*result, to);
@@ -67,8 +66,7 @@ TEST(Evm, make_account_address_create2)
     uint256_t v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
-    evm_t e{s};
-    auto const result = e.make_account_address(m);
+    auto const result = evm_t::make_account_address(s, m);
 
     EXPECT_TRUE(result.has_value());
     EXPECT_EQ(*result, new_address);
@@ -93,8 +91,7 @@ TEST(Evm, create_with_insufficient)
     uint256_t v{70'000'000'000'000'000}; // too much
     intx::be::store(m.value.bytes, v);
 
-    evm_t e{s};
-    auto const unexpected = e.make_account_address(m);
+    auto const unexpected = evm_t::make_account_address(s, m);
 
     auto const result = unexpected.error();
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
@@ -116,8 +113,7 @@ TEST(Evm, create_nonce_out_of_range)
     uint256_t v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
-    evm_t e{s};
-    auto const unexpected = e.make_account_address(m);
+    auto const unexpected = evm_t::make_account_address(s, m);
 
     auto const result = unexpected.error();
     EXPECT_EQ(result.status_code, EVMC_ARGUMENT_OUT_OF_RANGE);
@@ -142,8 +138,7 @@ TEST(Evm, eip684_existing_nonce)
     uint256_t v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
-    evm_t e{s};
-    auto const unexpected = e.make_account_address(m);
+    auto const unexpected = evm_t::make_account_address(s, m);
 
     auto const result = unexpected.error();
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
@@ -170,8 +165,7 @@ TEST(Evm, eip684_existing_code)
     uint256_t v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
-    evm_t e{s};
-    auto const unexpected = e.make_account_address(m);
+    auto const unexpected = evm_t::make_account_address(s, m);
 
     auto const result = unexpected.error();
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
@@ -197,8 +191,7 @@ TEST(Evm, transfer_call_balances)
     uint256_t v{7'000'000'000};
     intx::be::store(m.value.bytes, v);
 
-    evm_t e{s};
-    auto const result = e.transfer_call_balances(m);
+    auto const result = evm_t::transfer_call_balances(s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     EXPECT_EQ(s._map[from].balance, 3'000'000'000);
@@ -225,8 +218,7 @@ TEST(Evm, dont_transfer_on_delegatecall)
     uint256_t v{7'000'000'000};
     intx::be::store(m.value.bytes, v);
 
-    evm_t e{s};
-    auto const result = e.transfer_call_balances(m);
+    auto const result = evm_t::transfer_call_balances(s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     EXPECT_EQ(s._map[from].balance, 10'000'000'000);
@@ -254,8 +246,7 @@ TEST(Evm, dont_transfer_on_staticcall)
     uint256_t v{7'000'000'000};
     intx::be::store(m.value.bytes, v);
 
-    evm_t e{s};
-    auto const result = e.transfer_call_balances(m);
+    auto const result = evm_t::transfer_call_balances(s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     EXPECT_EQ(s._map[from].balance, 10'000'000'000);

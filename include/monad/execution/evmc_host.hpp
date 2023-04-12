@@ -15,7 +15,7 @@
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
-template <class TTraits, class TState, class TEvm>
+template <class TTraits, class TState, class TEvm, class TStaticPrecompiles>
 struct EvmcHost : public evmc::HostInterface
 {
     BlockHeader const &block_header_;
@@ -154,10 +154,16 @@ struct EvmcHost : public evmc::HostInterface
             result.status_code != EVMC_SUCCESS) {
             return evmc::Result{result};
         }
-        // execute on backend, just this for now
-        evmc_result const result = {.status_code = EVMC_SUCCESS, .gas_left = m.gas};
+        evmc_result const result =
+            TStaticPrecompiles::static_precompile_exec_func(m.code_address)
+                .transform([&](auto static_precompile_execute) {
+                    return static_precompile_execute(m);
+                })
+                // execute on backend, just this for now
+                .value_or(evmc_result{
+                    .status_code = EVMC_SUCCESS, .gas_left = m.gas});
 
-        if(result.status_code == EVMC_REVERT) {
+        if (result.status_code == EVMC_REVERT) {
             state_.revert();
         }
 

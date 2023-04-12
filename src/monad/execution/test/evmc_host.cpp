@@ -1,5 +1,6 @@
 #include <monad/execution/config.hpp>
 #include <monad/execution/evmc_host.hpp>
+#include <monad/execution/static_precompiles.hpp>
 
 #include <monad/execution/test/fakes.hpp>
 
@@ -11,8 +12,20 @@ using namespace monad;
 using namespace execution;
 
 using traits_t = fake::traits<fake::State>;
-using evmc_host_t =
-    EvmcHost<traits_t, fake::State, fake::Evm>;
+using next_traits_t = fake::next_traits<fake::State>;
+
+template <concepts::fork_traits<fake::State> TTraits>
+using traits_templated_static_precompiles_t = StaticPrecompiles<
+    fake::State, TTraits, fake::static_precompiles::Echo<fake::State, TTraits>,
+    fake::static_precompiles::OneHundredGas<fake::State, TTraits>>;
+
+template <concepts::fork_traits<fake::State> TTraits>
+using traits_templated_evmc_host_t = EvmcHost<
+    TTraits, fake::State, fake::Evm,
+    traits_templated_static_precompiles_t<TTraits>>;
+
+using evmc_host_t = traits_templated_evmc_host_t<traits_t>;
+using next_evmc_host_t = traits_templated_evmc_host_t<next_traits_t>;
 
 bool operator==(evmc_tx_context const &lhs, evmc_tx_context const &rhs)
 {
@@ -164,8 +177,8 @@ TEST(EvmcHost, fail_create_account)
     Transaction const t{};
     fake::State s{};
     fake::Evm e{};
-    e._result = fake::Evm::unexpected_t{
-        {.status_code = EVMC_INVALID_INSTRUCTION}};
+    e._result =
+        fake::Evm::unexpected_t{{.status_code = EVMC_INVALID_INSTRUCTION}};
     traits_t::_gas_creation_cost = 12'000;
     traits_t::_fail_store_contract = true;
 
@@ -178,6 +191,7 @@ TEST(EvmcHost, fail_create_account)
     EXPECT_EQ(result.create_address, null);
     EXPECT_EQ(result.gas_left, 0);
 }
+
 TEST(EvmcHost, revert_create_account)
 {
     constexpr static auto from{
@@ -202,4 +216,74 @@ TEST(EvmcHost, revert_create_account)
 
     EXPECT_EQ(result.create_address, null);
     EXPECT_EQ(result.gas_left, 0);
+}
+
+TEST(EvmcHost, static_precompile_execution)
+{
+    constexpr static auto from{
+        0x5353535353535353535353535353535353535353_address};
+    constexpr static auto code_address{
+        0x0000000000000000000000000000000000000001_address};
+    BlockHeader const b{};
+    Transaction const t{};
+    fake::State s{};
+    fake::Evm e{};
+
+    evmc_host_t host{b, t, s, e};
+    next_evmc_host_t next_host{b, t, s, e};
+
+    const auto data = "hello world";
+    const auto data_size = 11u;
+
+    evmc_message m{
+        .kind = EVMC_CALL,
+        .gas = 400,
+        .sender = from,
+        .input_data = reinterpret_cast<const unsigned char *>(data),
+        .input_size = data_size,
+        .code_address = code_address};
+
+    auto const result = host.call(m);
+    auto const next_result = next_host.call(m);
+
+    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+    EXPECT_EQ(result.gas_left, 290);
+    EXPECT_EQ(result.output_size, data_size);
+    EXPECT_EQ(std::memcmp(result.output_data, m.input_data, data_size), 0);
+    EXPECT_NE(result.output_data, m.input_data);
+
+    EXPECT_EQ(next_result.status_code, EVMC_SUCCESS);
+    EXPECT_EQ(next_result.gas_left, 235);
+    EXPECT_EQ(next_result.output_size, data_size);
+    EXPECT_EQ(std::memcmp(result.output_data, m.input_data, data_size), 0);
+    EXPECT_NE(next_result.output_data, m.input_data);
+}
+
+TEST(EvmcHost, out_of_gas_static_precompile_execution)
+{
+    constexpr static auto from{
+        0x5353535353535353535353535353535353535353_address};
+    constexpr static auto code_address{
+        0x0000000000000000000000000000000000000001_address};
+    BlockHeader const b{};
+    Transaction const t{};
+    fake::State s{};
+    fake::Evm e{};
+
+    next_evmc_host_t host{b, t, s, e};
+
+    const auto data = "hello world";
+    const auto data_size = 11u;
+
+    evmc_message m{
+        .kind = EVMC_CALL,
+        .gas = 100,
+        .sender = from,
+        .input_data = reinterpret_cast<const unsigned char *>(data),
+        .input_size = data_size,
+        .code_address = code_address};
+
+    evmc::Result const result = host.call(m);
+
+    EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
 }

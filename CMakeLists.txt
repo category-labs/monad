@@ -37,6 +37,7 @@ find_package(Boost REQUIRED COMPONENTS fiber log)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 find_package(tl-expected REQUIRED)
+find_package(tl-optional REQUIRED)
 
 set(BUILD_SHARED_LIBS OFF)
 set(ETHASH_BUILD_TESTS OFF)
@@ -100,6 +101,7 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/fork_traits.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/evm.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/evmc_host.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/static_precompiles.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/transaction_processor.hpp
     ${PROJECT_SOURCE_DIR}/src/monad/execution/create_contract_address.cpp
 
@@ -131,6 +133,7 @@ target_link_libraries(monad
     PUBLIC evmc
     PUBLIC intx::intx
     PUBLIC tl::expected
+    PUBLIC tl::optional
 )
 monad_compile_options(monad)
 

@@ -7,6 +7,7 @@ add_unit_test(
   ethereum_traits.cpp
   evm.cpp
   evmc_host.cpp
+  static_precompiles.cpp
   transaction_processor.cpp
   transaction_processor_data_succeed.cpp
   transaction_processor_data_fail_validation.cpp

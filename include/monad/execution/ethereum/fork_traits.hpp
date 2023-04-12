@@ -14,6 +14,7 @@ namespace fork_traits
     struct frontier
     {
         static constexpr auto block_number = 0u;
+        static constexpr auto static_precompiles = 4u;
 
         // YP, Eqn. 60, first summation
         [[nodiscard]] static constexpr inline uint64_t
@@ -169,6 +170,7 @@ namespace fork_traits
     struct byzantium : spurious_dragon
     {
         static constexpr auto block_number = 4'370'000;
+        static constexpr auto static_precompiles = 8u;
 
         template <class TState>
         [[nodiscard]] static constexpr inline bool store_contract_code(
@@ -199,6 +201,7 @@ namespace fork_traits
     struct istanbul : public byzantium // constantinople
     {
         static constexpr auto block_number = 9'069'000u;
+        static constexpr auto static_precompiles = 9u;
 
         // https://eips.ethereum.org/EIPS/eip-2028
         [[nodiscard]] static constexpr inline uint64_t

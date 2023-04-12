@@ -1,6 +1,7 @@
 [requires]
 rocksdb/6.29.5
 tl-expected/1.0.0
+tl-optional/1.0.0
 
 [generators]
 cmake_find_package

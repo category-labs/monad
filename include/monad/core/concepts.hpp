@@ -15,6 +15,7 @@ namespace concepts
         { T::intrinsic_gas(t) } -> std::convertible_to<uint64_t>;
         { T::starting_nonce() } -> std::convertible_to<uint64_t>;
         { T::block_number } -> std::convertible_to<uint64_t>;
+        { T::static_precompiles } -> std::convertible_to<uint64_t>;
         { T::get_selfdestruct_refund(s) } -> std::convertible_to<uint64_t>;
         { T::max_refund_quotient() } -> std::convertible_to<int>;
         { T::destruct_touched_dead(s) } -> std::convertible_to<void>;

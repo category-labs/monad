@@ -10,6 +10,7 @@
 #include <monad/core/transaction.hpp>
 
 #include <monad/execution/config.hpp>
+#include <monad/execution/static_precompiles.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -179,11 +180,13 @@ namespace fake
     {
         static inline uint64_t _sd_refund{};
         static inline uint64_t block_number{};
+        static inline uint64_t static_precompiles{1};
         static inline uint64_t _intrinsic_gas{21'000u};
         static inline uint64_t _max_refund_quotient{2u};
         static inline bool _fail_store_contract{};
         static inline uint64_t _gas_creation_cost{};
         static inline uint64_t _create_address{};
+        static inline uint64_t _echo_gas_cost{10};
         static inline auto intrinsic_gas(Transaction const &)
         {
             return _intrinsic_gas;
@@ -193,6 +196,7 @@ namespace fake
         {
             return _max_refund_quotient;
         }
+        static inline auto echo_gas_cost() { return _echo_gas_cost; }
         static inline auto get_selfdestruct_refund(TState const &)
         {
             return _sd_refund;
@@ -212,7 +216,60 @@ namespace fake
         }
     };
 
+    template <class TState>
+    struct next_traits : public traits<TState>
+    {
+        static inline uint64_t block_number{10};
+        static inline uint64_t static_precompiles{2};
+        static inline uint64_t _echo_gas_cost{15};
+        static inline auto echo_gas_cost() { return _echo_gas_cost; }
+    };
+
     static_assert(concepts::fork_traits<traits<State>, State>);
+    static_assert(concepts::fork_traits<next_traits<State>, State>);
+
+    namespace static_precompiles
+    {
+        template <class TState, concepts::fork_traits<TState> TTraits>
+        struct Echo
+        {
+            static evmc_result execute(const evmc_message &m) noexcept
+            {
+                const int64_t gas =
+                    (const int64_t)(m.input_size * TTraits::echo_gas_cost());
+                if (m.gas < gas) {
+                    return {.status_code = EVMC_OUT_OF_GAS};
+                }
+                unsigned char *output_data =
+                    (unsigned char *)std::malloc(m.input_size);
+                std::memcpy(output_data, m.input_data, m.input_size);
+                return {
+                    .status_code = EVMC_SUCCESS,
+                    .gas_left = m.gas - gas,
+                    .output_data = output_data,
+                    .output_size = m.input_size,
+                    .release = [](const evmc_result *result) {
+                        std::free((unsigned char *)result->output_data);
+                    }};
+            }
+        };
+
+        template <class TState, concepts::fork_traits<TState> TTraits>
+        struct OneHundredGas
+        {
+            static evmc_result execute(const evmc_message &m) noexcept
+            {
+                const int64_t gas = 100;
+                if (m.gas < gas) {
+                    return {.status_code = EVMC_OUT_OF_GAS};
+                }
+                return {
+                    .status_code = EVMC_SUCCESS,
+                    .gas_left = m.gas - gas,
+                    .output_size = 0u};
+            }
+        };
+    }
 }
 
 MONAD_EXECUTION_NAMESPACE_END

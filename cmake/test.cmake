@@ -14,5 +14,11 @@ function(add_unit_test)
         GTest::Main
         ${ADD_UNIT_TEST_LIBRARIES}
     )
+
+    add_custom_target(valgrind-${ADD_UNIT_TEST_TARGET}
+        COMMAND valgrind ./$<TARGET_FILE_NAME:${ADD_UNIT_TEST_TARGET}>
+        DEPENDS ${ADD_UNIT_TEST_TARGET}
+    )
+
     gtest_discover_tests(${ADD_UNIT_TEST_TARGET})
 endfunction()

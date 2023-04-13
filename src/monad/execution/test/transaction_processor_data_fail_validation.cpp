@@ -10,7 +10,7 @@ using namespace monad;
 using namespace monad::execution;
 
 using state_t = fake::State;
-using traits_t = fake::traits<state_t>;
+using traits_t = fake::traits::alpha<state_t>;
 
 template <class TTxnProc, class TExecution>
 using data_t = TransactionProcessorFiberData<
@@ -64,7 +64,9 @@ struct fakeSuccessAfterYieldEM
     }
 };
 
-TEST(TransactionProcessorFiberData, validation_insufficient_balance_current_txn_id)
+TEST(
+    TransactionProcessorFiberData,
+    validation_insufficient_balance_current_txn_id)
 {
     fake::State s{._current_txn = 10, ._applied_state = true};
     static BlockHeader const b{};

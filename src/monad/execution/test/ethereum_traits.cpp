@@ -101,7 +101,6 @@ TEST(fork_traits, homestead)
     EXPECT_EQ(h.store_contract_code(s, a, r), false);
     EXPECT_EQ(r.gas_left, 0);
     EXPECT_EQ(r.create_address, null);
-
 }
 
 static_assert(concepts::fork_traits<fork_traits::spurious_dragon, state_t>);
@@ -248,5 +247,4 @@ TEST(fork_traits, london)
     EXPECT_EQ(r.status_code, EVMC_CONTRACT_VALIDATION_FAILURE);
     EXPECT_EQ(r.gas_left, 0);
     EXPECT_EQ(r.create_address, null);
-
 }

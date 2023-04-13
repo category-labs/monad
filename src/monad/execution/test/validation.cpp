@@ -8,7 +8,7 @@
 using namespace monad;
 using namespace monad::execution;
 
-using traits_t = fake::traits<fake::State>;
+using traits_t = fake::traits::alpha<fake::State>;
 using processor_t = TransactionProcessor<fake::State, traits_t>;
 
 TEST(Execution, static_validate_no_sender)

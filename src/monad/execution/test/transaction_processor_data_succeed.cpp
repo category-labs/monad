@@ -10,7 +10,7 @@ using namespace monad;
 using namespace monad::execution;
 
 using state_t = fake::State;
-using traits_t = fake::traits<state_t>;
+using traits_t = fake::traits::alpha<state_t>;
 
 template <class TTxnProc, class TExecution>
 using data_t = TransactionProcessorFiberData<
@@ -58,4 +58,3 @@ TEST(TransactionProcessorFiberData, invoke_successfully_first_time)
 
     EXPECT_EQ(r.status, 0u);
 }
-

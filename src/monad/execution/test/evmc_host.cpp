@@ -11,8 +11,7 @@
 using namespace monad;
 using namespace execution;
 
-using traits_t = fake::traits<fake::State>;
-using next_traits_t = fake::next_traits<fake::State>;
+using traits_t = fake::traits::alpha<fake::State>;
 
 template <concepts::fork_traits<fake::State> TTraits>
 using traits_templated_static_precompiles_t = StaticPrecompiles<
@@ -25,7 +24,6 @@ using traits_templated_evmc_host_t = EvmcHost<
     traits_templated_static_precompiles_t<TTraits>>;
 
 using evmc_host_t = traits_templated_evmc_host_t<traits_t>;
-using next_evmc_host_t = traits_templated_evmc_host_t<next_traits_t>;
 
 bool operator==(evmc_tx_context const &lhs, evmc_tx_context const &rhs)
 {
@@ -220,6 +218,10 @@ TEST(EvmcHost, revert_create_account)
 
 TEST(EvmcHost, static_precompile_execution)
 {
+    using beta_traits_t = fake::traits::beta<fake::State>;
+    using alpha_evmc_host_t = evmc_host_t;
+    using beta_evmc_host_t = traits_templated_evmc_host_t<beta_traits_t>;
+
     constexpr static auto from{
         0x5353535353535353535353535353535353535353_address};
     constexpr static auto code_address{
@@ -229,8 +231,8 @@ TEST(EvmcHost, static_precompile_execution)
     fake::State s{};
     fake::Evm e{};
 
-    evmc_host_t host{b, t, s, e};
-    next_evmc_host_t next_host{b, t, s, e};
+    alpha_evmc_host_t alpha_host{b, t, s, e};
+    beta_evmc_host_t beta_host{b, t, s, e};
 
     const auto data = "hello world";
     const auto data_size = 11u;
@@ -243,20 +245,21 @@ TEST(EvmcHost, static_precompile_execution)
         .input_size = data_size,
         .code_address = code_address};
 
-    auto const result = host.call(m);
-    auto const next_result = next_host.call(m);
+    auto const alpha_result = alpha_host.call(m);
+    auto const beta_result = beta_host.call(m);
 
-    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 290);
-    EXPECT_EQ(result.output_size, data_size);
-    EXPECT_EQ(std::memcmp(result.output_data, m.input_data, data_size), 0);
-    EXPECT_NE(result.output_data, m.input_data);
+    EXPECT_EQ(alpha_result.status_code, EVMC_SUCCESS);
+    EXPECT_EQ(alpha_result.gas_left, 290);
+    EXPECT_EQ(alpha_result.output_size, data_size);
+    EXPECT_EQ(
+        std::memcmp(alpha_result.output_data, m.input_data, data_size), 0);
+    EXPECT_NE(alpha_result.output_data, m.input_data);
 
-    EXPECT_EQ(next_result.status_code, EVMC_SUCCESS);
-    EXPECT_EQ(next_result.gas_left, 235);
-    EXPECT_EQ(next_result.output_size, data_size);
-    EXPECT_EQ(std::memcmp(result.output_data, m.input_data, data_size), 0);
-    EXPECT_NE(next_result.output_data, m.input_data);
+    EXPECT_EQ(beta_result.status_code, EVMC_SUCCESS);
+    EXPECT_EQ(beta_result.gas_left, 235);
+    EXPECT_EQ(beta_result.output_size, data_size);
+    EXPECT_EQ(std::memcmp(beta_result.output_data, m.input_data, data_size), 0);
+    EXPECT_NE(beta_result.output_data, m.input_data);
 }
 
 TEST(EvmcHost, out_of_gas_static_precompile_execution)
@@ -270,7 +273,7 @@ TEST(EvmcHost, out_of_gas_static_precompile_execution)
     fake::State s{};
     fake::Evm e{};
 
-    next_evmc_host_t host{b, t, s, e};
+    evmc_host_t host{b, t, s, e};
 
     const auto data = "hello world";
     const auto data_size = 11u;

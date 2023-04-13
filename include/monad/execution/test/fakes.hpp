@@ -175,58 +175,61 @@ namespace fake
         }
     };
 
-    template <class TState>
-    struct traits
+    namespace traits
     {
-        static inline uint64_t _sd_refund{};
-        static inline uint64_t block_number{};
-        static inline uint64_t static_precompiles{1};
-        static inline uint64_t _intrinsic_gas{21'000u};
-        static inline uint64_t _max_refund_quotient{2u};
-        static inline bool _fail_store_contract{};
-        static inline uint64_t _gas_creation_cost{};
-        static inline uint64_t _create_address{};
-        static inline uint64_t _echo_gas_cost{10};
-        static inline auto intrinsic_gas(Transaction const &)
+        template <class TState>
+        struct alpha
         {
-            return _intrinsic_gas;
-        }
-        static inline auto starting_nonce() { return 1u; }
-        static inline auto max_refund_quotient()
-        {
-            return _max_refund_quotient;
-        }
-        static inline auto echo_gas_cost() { return _echo_gas_cost; }
-        static inline auto get_selfdestruct_refund(TState const &)
-        {
-            return _sd_refund;
-        }
-        static inline void destruct_touched_dead(TState &s)
-        {
-            s.destruct_touched_dead();
-        }
-        static constexpr inline bool
-        store_contract_code(TState &, address_t const &a, evmc_result &r)
-        {
-            r.gas_left -= _gas_creation_cost;
-            if (!_fail_store_contract) {
-                r.create_address = a;
+            static inline uint64_t _sd_refund{};
+            static inline uint64_t block_number{};
+            static inline uint64_t static_precompiles{1};
+            static inline uint64_t _intrinsic_gas{21'000u};
+            static inline uint64_t _max_refund_quotient{2u};
+            static inline bool _fail_store_contract{};
+            static inline uint64_t _gas_creation_cost{};
+            static inline uint64_t _create_address{};
+            static inline uint64_t _echo_gas_cost{10};
+            static inline auto intrinsic_gas(Transaction const &)
+            {
+                return _intrinsic_gas;
             }
-            return _fail_store_contract;
-        }
-    };
+            static inline auto starting_nonce() { return 1u; }
+            static inline auto max_refund_quotient()
+            {
+                return _max_refund_quotient;
+            }
+            static inline auto echo_gas_cost() { return _echo_gas_cost; }
+            static inline auto get_selfdestruct_refund(TState const &)
+            {
+                return _sd_refund;
+            }
+            static inline void destruct_touched_dead(TState &s)
+            {
+                s.destruct_touched_dead();
+            }
+            static constexpr inline bool
+            store_contract_code(TState &, address_t const &a, evmc_result &r)
+            {
+                r.gas_left -= _gas_creation_cost;
+                if (!_fail_store_contract) {
+                    r.create_address = a;
+                }
+                return _fail_store_contract;
+            }
+        };
 
-    template <class TState>
-    struct next_traits : public traits<TState>
-    {
-        static inline uint64_t block_number{10};
-        static inline uint64_t static_precompiles{2};
-        static inline uint64_t _echo_gas_cost{15};
-        static inline auto echo_gas_cost() { return _echo_gas_cost; }
-    };
+        template <class TState>
+        struct beta : public alpha<TState>
+        {
+            static inline uint64_t block_number{10};
+            static inline uint64_t static_precompiles{2};
+            static inline uint64_t _echo_gas_cost{15};
+            static inline auto echo_gas_cost() { return _echo_gas_cost; }
+        };
 
-    static_assert(concepts::fork_traits<traits<State>, State>);
-    static_assert(concepts::fork_traits<next_traits<State>, State>);
+        static_assert(concepts::fork_traits<alpha<State>, State>);
+        static_assert(concepts::fork_traits<beta<State>, State>);
+    }
 
     namespace static_precompiles
     {

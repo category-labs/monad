@@ -10,7 +10,7 @@
 using namespace monad;
 using namespace monad::execution;
 
-using evm_t = Evm<fake::State, fake::traits<fake::State>>;
+using evm_t = Evm<fake::State, fake::traits::alpha<fake::State>>;
 
 TEST(Evm, make_account_address)
 {

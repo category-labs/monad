@@ -11,24 +11,25 @@
 using namespace monad;
 using namespace execution;
 
-using traits_t = fake::traits<fake::State>;
-using next_traits_t = fake::next_traits<fake::State>;
+using alpha_traits_t = fake::traits::alpha<fake::State>;
+using beta_traits_t = fake::traits::beta<fake::State>;
 
 template <concepts::fork_traits<fake::State> TTraits>
 using traits_templated_static_precompiles_t = StaticPrecompiles<
     fake::State, TTraits, fake::static_precompiles::Echo<fake::State, TTraits>,
     fake::static_precompiles::OneHundredGas<fake::State, TTraits>>;
 
-using static_precompiles_t = traits_templated_static_precompiles_t<traits_t>;
-using next_static_precompiles_t =
-    traits_templated_static_precompiles_t<next_traits_t>;
+using alpha_static_precompiles_t =
+    traits_templated_static_precompiles_t<alpha_traits_t>;
+using beta_static_precompiles_t =
+    traits_templated_static_precompiles_t<beta_traits_t>;
 
 TEST(StaticPrecompiles, execution_echo)
 {
     constexpr static auto code_address{
         0x0000000000000000000000000000000000000001_address};
     auto exec_func =
-        static_precompiles_t::static_precompile_exec_func(code_address);
+        alpha_static_precompiles_t::static_precompile_exec_func(code_address);
 
     const auto data = "hello world";
     const auto data_size = 11u;
@@ -48,12 +49,12 @@ TEST(StaticPrecompiles, execution_echo)
     EXPECT_NE(result->output_data, m.input_data);
 }
 
-TEST(StaticPrecompiles, next_traits_execution_echo)
+TEST(StaticPrecompiles, beta_traits_execution_echo)
 {
     constexpr static auto code_address{
         0x0000000000000000000000000000000000000001_address};
     auto exec_func =
-        next_static_precompiles_t::static_precompile_exec_func(code_address);
+        beta_static_precompiles_t::static_precompile_exec_func(code_address);
 
     const auto data = "hello world";
     const auto data_size = 11u;
@@ -78,7 +79,7 @@ TEST(StaticPrecompiles, out_of_gas_execution_echo)
     constexpr static auto code_address{
         0x0000000000000000000000000000000000000001_address};
     auto exec_func =
-        next_static_precompiles_t::static_precompile_exec_func(code_address);
+        beta_static_precompiles_t::static_precompile_exec_func(code_address);
 
     const auto data = "hello world";
     const auto data_size = 11u;
@@ -99,7 +100,7 @@ TEST(StaticPrecompiles, execution_one_hundred_gas)
     constexpr static auto code_address{
         0x0000000000000000000000000000000000000002_address};
     auto exec_func =
-        next_static_precompiles_t::static_precompile_exec_func(code_address);
+        beta_static_precompiles_t::static_precompile_exec_func(code_address);
 
     evmc_message m{.gas = 400};
     auto const result =
@@ -115,7 +116,7 @@ TEST(StaticPrecompiles, out_of_gas_execution_one_hundred_gas)
     constexpr static auto code_address{
         0x0000000000000000000000000000000000000002_address};
     auto exec_func =
-        next_static_precompiles_t::static_precompile_exec_func(code_address);
+        beta_static_precompiles_t::static_precompile_exec_func(code_address);
 
     const auto data = "hello world";
     const auto data_size = 11u;
@@ -136,7 +137,7 @@ TEST(StaticPrecompiles, zero_address)
     constexpr static auto code_address{
         0x0000000000000000000000000000000000000000_address};
     auto exec_func =
-        next_static_precompiles_t::static_precompile_exec_func(code_address);
+        beta_static_precompiles_t::static_precompile_exec_func(code_address);
 
     EXPECT_EQ(exec_func.has_value(), false);
 }
@@ -146,7 +147,7 @@ TEST(StaticPrecompiles, non_static_precompile_min)
     constexpr static auto code_address{
         0x0000000000000000000000000000000000000003_address};
     auto exec_func =
-        next_static_precompiles_t::static_precompile_exec_func(code_address);
+        beta_static_precompiles_t::static_precompile_exec_func(code_address);
 
     EXPECT_EQ(exec_func.has_value(), false);
 }
@@ -156,7 +157,7 @@ TEST(StaticPrecompiles, non_static_precompile_random_bit)
     constexpr static auto code_address{
         0x1000000000000000000000000000000000000001_address};
     auto exec_func =
-        next_static_precompiles_t::static_precompile_exec_func(code_address);
+        beta_static_precompiles_t::static_precompile_exec_func(code_address);
 
     EXPECT_EQ(exec_func.has_value(), false);
 }
@@ -166,7 +167,7 @@ TEST(StaticPrecompiles, non_static_precompile_expansion)
     constexpr static auto code_address{
         0x0000000000000000000000000000000000000002_address};
     auto exec_func =
-        static_precompiles_t::static_precompile_exec_func(code_address);
+        alpha_static_precompiles_t::static_precompile_exec_func(code_address);
 
     EXPECT_EQ(exec_func.has_value(), false);
 }

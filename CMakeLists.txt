@@ -73,6 +73,9 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
 # monad
 
 add_library(monad STATIC
+
+    ${PROJECT_SOURCE_DIR}/include/monad/config.hpp
+
     # core
     ${PROJECT_SOURCE_DIR}/include/monad/core/address.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/assert.h
@@ -102,7 +105,9 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/execution/evm.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/evmc_host.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/static_precompiles.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/execution_model.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/transaction_processor.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/transaction_processor_data.hpp
     ${PROJECT_SOURCE_DIR}/src/monad/execution/create_contract_address.cpp
 
     # fiber

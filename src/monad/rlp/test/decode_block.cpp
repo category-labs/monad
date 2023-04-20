@@ -1,52 +1,132 @@
-#include <monad/rlp/decode_helpers.hpp>
-
-#include <monad/core/byte_string.hpp>
-#include <monad/core/bytes.hpp>
-#include <monad/core/int.hpp>
-#include <monad/core/transaction.hpp>
-
-#include <filesystem>
-#include <fstream>
-
-#include <intx/intx.hpp>
+#include <monad/db/block_db.hpp>
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+
 using namespace monad;
-using namespace monad::rlp;
+using namespace db;
 
-inline byte_string read_block_asset(uint32_t block_num)
+// DATA_DIR needs to be the full path (/space/ssd....)
+std::filesystem::__cxx11::path get_dir_path()
 {
-    auto monad_path = std::filesystem::current_path()
-                          .parent_path()
-                          .parent_path()
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
-    auto path = monad_path / "src" / "monad" / "rlp" / "test" / "assets" /
-                "block_encodings" / std::to_string(block_num);
-
-    std::ifstream input(path.c_str(), std::ios::binary);
-    byte_string output;
-    char c;
-
-    if (input) {
-        while (input) {
-            input.get(c);
-            output += static_cast<unsigned char>(c);
-        }
-        output = output.substr(0, output.length() - 1);
+    auto env_path = std::getenv("DATA_DIR");
+    if (env_path) {
+        return std::filesystem::__cxx11::path(env_path);
     }
-    return output;
+    else {
+        auto monad_path = std::filesystem::current_path()
+                              .parent_path()
+                              .parent_path()
+                              .parent_path()
+                              .parent_path()
+                              .parent_path();
+
+        auto dir_path =
+            monad_path / "test" / "common" / "blocks" / "compressed_blocks";
+
+        return dir_path;
+    }
+}
+
+TEST(Rlp_Block, DecodeBlock46402)
+{
+    using namespace intx;
+
+    Block block{};
+    BlockDb block_db(get_dir_path());
+    auto res = block_db.get(46'402, block);
+    EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+
+    // Header
+    EXPECT_EQ(
+        block.header.parent_hash,
+        0x6cc737fca2da03bb89557857c7558f8ad470587b99e01689efdf0df0a040b080_bytes32);
+    EXPECT_EQ(
+        block.header.ommers_hash,
+        0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
+    EXPECT_EQ(
+        block.header.beneficiary,
+        0x01434e4Ac3238bEC44a39ad642aBaBBB68D097e6_address);
+    EXPECT_EQ(
+        block.header.state_root,
+        0xbc0b8b03cb982332189c176697cfd8eaab07beef16bfb2d0ca2003a5e30a8f59_bytes32);
+    EXPECT_EQ(
+        block.header.transactions_root,
+        0x1cf10ba2b41800cc55e1a380acc3bad7f86c7ba8a7bc3d1b1759858b6ff5ea11_bytes32);
+    EXPECT_EQ(
+        block.header.receipts_root,
+        0x98584bc49df3557fabe5228b785fd5c0e6a57a663933110a60491924f6676dcc_bytes32);
+    const byte_string_fixed<256> bloom{
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00};
+    EXPECT_EQ(block.header.logs_bloom, bloom);
+    EXPECT_EQ(block.header.difficulty, 1467524208078);
+    EXPECT_EQ(block.header.number, 46402);
+    EXPECT_EQ(block.header.gas_limit, 24404);
+    EXPECT_EQ(block.header.gas_used, 24000);
+    EXPECT_EQ(block.header.timestamp, 1438922535);
+    EXPECT_EQ(
+        block.header.extra_data,
+        byte_string({0x47, 0x65, 0x74, 0x68, 0x2f, 0x76, 0x31, 0x2e, 0x30,
+                     0x2e, 0x30, 0x2f, 0x77, 0x69, 0x6e, 0x64, 0x6f, 0x77,
+                     0x73, 0x2f, 0x67, 0x6f, 0x31, 0x2e, 0x34, 0x2e, 0x32}));
+    EXPECT_EQ(
+        block.header.mix_hash,
+        0xf8808df56cbe52ae9c97985e824da926fd05505266960c37a516219f85c131d4_bytes32);
+    EXPECT_EQ(
+        block.header.nonce,
+        byte_string_fixed<8UL>(
+            {0xbc, 0xfd, 0x19, 0x03, 0x4f, 0xda, 0x04, 0x90}));
+
+    EXPECT_EQ(block.transactions.size(), 1);
+
+    EXPECT_EQ(block.transactions[0].type, Transaction::Type::eip155);
+    EXPECT_EQ(block.transactions[0].nonce, 3);
+    EXPECT_EQ(block.transactions[0].gas_price, 10000000000000);
+    EXPECT_EQ(block.transactions[0].gas_limit, 24000);
+    EXPECT_EQ(block.transactions[0].to, std::nullopt);
+    EXPECT_EQ(block.transactions[0].amount, 0_u128);
+    EXPECT_EQ(block.transactions[0].sc.chain_id, std::nullopt);
+    EXPECT_EQ(
+        block.transactions[0].sc.r,
+        0x589b4531c6d66f6850277af29e06e60b28a280916ccbb38595bf3347aca65c2c_u256);
+    EXPECT_EQ(
+        block.transactions[0].sc.s,
+        0x40b1a3d6e47a04c0cd78506aa7d3aa0aeef734d7942424abdb64c88c2ba5f536_u256);
+
+    EXPECT_EQ(block.ommers.size(), 0);
 }
 
 TEST(Rlp_Block, DecodeBlock2730000)
 {
     using namespace intx;
 
-    byte_string block_encoding = read_block_asset(2730000);
     Block block{};
-    EXPECT_EQ(decode_block(block, block_encoding).size(), 0);
+    BlockDb block_db(get_dir_path());
+    auto res = block_db.get(2'730'000, block);
+    EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+
     // Header
     EXPECT_EQ(
         block.header.parent_hash,
@@ -194,9 +274,11 @@ TEST(Rlp_Block, DecodeBlock2730001)
 {
     using namespace intx;
 
-    byte_string block_encoding = read_block_asset(2730001);
     Block block{};
-    EXPECT_EQ(decode_block(block, block_encoding).size(), 0);
+    BlockDb block_db(get_dir_path());
+    auto res = block_db.get(2'730'001, block);
+    EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+
     // Header
     EXPECT_EQ(
         block.header.parent_hash,
@@ -371,9 +453,11 @@ TEST(Rlp_Block, DecodeBlock2730002)
 {
     using namespace intx;
 
-    byte_string block_encoding = read_block_asset(2730002);
     Block block{};
-    EXPECT_EQ(decode_block(block, block_encoding).size(), 0);
+    BlockDb block_db(get_dir_path());
+    auto res = block_db.get(2'730'002, block);
+    EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+
     // Header
     EXPECT_EQ(
         block.header.parent_hash,
@@ -429,13 +513,15 @@ TEST(Rlp_Block, DecodeBlock2730002)
     EXPECT_EQ(block.ommers.size(), 0);
 }
 
-TEST(Rlp_Block, DecodeBlock2730009)
+TEST(Rlp_Block, ReadBlock2730009)
 {
     using namespace intx;
 
-    byte_string block_encoding = read_block_asset(2730009);
     Block block{};
-    EXPECT_EQ(decode_block(block, block_encoding).size(), 0);
+    BlockDb block_db(get_dir_path());
+    auto res = block_db.get(2730009, block);
+    EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+
     // Header
     EXPECT_EQ(
         block.header.parent_hash,
@@ -476,100 +562,15 @@ TEST(Rlp_Block, DecodeBlock2730009)
     EXPECT_EQ(block.ommers.size(), 0);
 }
 
-TEST(Rlp_Block, DecodeBlock46402)
-{
-    using namespace intx;
-
-    byte_string block_encoding = read_block_asset(46402);
-    Block block{};
-    EXPECT_EQ(decode_block(block, block_encoding).size(), 0);
-    // Header
-    EXPECT_EQ(
-        block.header.parent_hash,
-        0x6cc737fca2da03bb89557857c7558f8ad470587b99e01689efdf0df0a040b080_bytes32);
-    EXPECT_EQ(
-        block.header.ommers_hash,
-        0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
-    EXPECT_EQ(
-        block.header.beneficiary,
-        0x01434e4Ac3238bEC44a39ad642aBaBBB68D097e6_address);
-    EXPECT_EQ(
-        block.header.state_root,
-        0xbc0b8b03cb982332189c176697cfd8eaab07beef16bfb2d0ca2003a5e30a8f59_bytes32);
-    EXPECT_EQ(
-        block.header.transactions_root,
-        0x1cf10ba2b41800cc55e1a380acc3bad7f86c7ba8a7bc3d1b1759858b6ff5ea11_bytes32);
-    EXPECT_EQ(
-        block.header.receipts_root,
-        0x98584bc49df3557fabe5228b785fd5c0e6a57a663933110a60491924f6676dcc_bytes32);
-    const byte_string_fixed<256> bloom{
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00};
-    EXPECT_EQ(block.header.logs_bloom, bloom);
-    EXPECT_EQ(block.header.difficulty, 1467524208078);
-    EXPECT_EQ(block.header.number, 46402);
-    EXPECT_EQ(block.header.gas_limit, 24404);
-    EXPECT_EQ(block.header.gas_used, 24000);
-    EXPECT_EQ(block.header.timestamp, 1438922535);
-    EXPECT_EQ(
-        block.header.extra_data,
-        byte_string({0x47, 0x65, 0x74, 0x68, 0x2f, 0x76, 0x31, 0x2e, 0x30,
-                     0x2e, 0x30, 0x2f, 0x77, 0x69, 0x6e, 0x64, 0x6f, 0x77,
-                     0x73, 0x2f, 0x67, 0x6f, 0x31, 0x2e, 0x34, 0x2e, 0x32}));
-    EXPECT_EQ(
-        block.header.mix_hash,
-        0xf8808df56cbe52ae9c97985e824da926fd05505266960c37a516219f85c131d4_bytes32);
-    EXPECT_EQ(
-        block.header.nonce,
-        byte_string_fixed<8UL>(
-            {0xbc, 0xfd, 0x19, 0x03, 0x4f, 0xda, 0x04, 0x90}));
-
-    EXPECT_EQ(block.transactions.size(), 1);
-
-    EXPECT_EQ(block.transactions[0].type, Transaction::Type::eip155);
-    EXPECT_EQ(block.transactions[0].nonce, 3);
-    EXPECT_EQ(block.transactions[0].gas_price, 10000000000000);
-    EXPECT_EQ(block.transactions[0].gas_limit, 24000);
-    EXPECT_EQ(block.transactions[0].to, std::nullopt);
-    EXPECT_EQ(block.transactions[0].amount, 0_u128);
-    EXPECT_EQ(block.transactions[0].sc.chain_id, std::nullopt);
-    EXPECT_EQ(
-        block.transactions[0].sc.r,
-        0x589b4531c6d66f6850277af29e06e60b28a280916ccbb38595bf3347aca65c2c_u256);
-    EXPECT_EQ(
-        block.transactions[0].sc.s,
-        0x40b1a3d6e47a04c0cd78506aa7d3aa0aeef734d7942424abdb64c88c2ba5f536_u256);
-
-    EXPECT_EQ(block.ommers.size(), 0);
-}
-
 TEST(Rlp_Block, DecodeBlock14000000)
 {
     using namespace intx;
 
-    byte_string block_encoding = read_block_asset(14000000);
     Block block{};
-    EXPECT_EQ(decode_block(block, block_encoding).size(), 0);
+    BlockDb block_db(get_dir_path());
+    auto res = block_db.get(14'000'000, block);
+    EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+
     // Header
     EXPECT_EQ(
         block.header.parent_hash,

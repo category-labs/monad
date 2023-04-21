@@ -16,7 +16,6 @@
 
 #include <tl/expected.hpp>
 
-#include <optional>
 #include <unordered_map>
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
@@ -180,8 +179,10 @@ namespace fake
         template <class TState>
         struct alpha
         {
+            using next_fork_t = alpha;
             static inline uint64_t _sd_refund{};
-            static inline uint64_t block_number{};
+            static inline uint64_t last_block_number{
+                std::numeric_limits<uint64_t>::max()};
             static inline uint64_t static_precompiles{1};
             static inline uint64_t _intrinsic_gas{21'000u};
             static inline uint64_t _max_refund_quotient{2u};
@@ -221,7 +222,9 @@ namespace fake
         template <class TState>
         struct beta : public alpha<TState>
         {
-            static inline uint64_t block_number{10};
+            using next_fork_t = beta;
+            static inline uint64_t last_block_number{
+                std::numeric_limits<uint64_t>::max()};
             static inline uint64_t static_precompiles{2};
             static inline uint64_t _echo_gas_cost{15};
             static inline auto echo_gas_cost() { return _echo_gas_cost; }

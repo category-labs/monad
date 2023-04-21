@@ -1,8 +1,11 @@
 #pragma once
 
 #include <monad/config.hpp>
+
 #include <monad/core/concepts.hpp>
 #include <monad/core/transaction.hpp>
+
+#include <monad/db/block_db.hpp>
 
 #include <algorithm>
 
@@ -11,9 +14,20 @@ MONAD_NAMESPACE_BEGIN
 // https://ethereum.org/en/history/
 namespace fork_traits
 {
+    struct frontier;
+    struct homestead;
+    struct spurious_dragon;
+    struct byzantium;
+    struct istanbul;
+    struct berlin;
+    struct london;
+
+    using no_next_fork_t = london;
+
     struct frontier
     {
-        static constexpr auto block_number = 0u;
+        using next_fork_t = homestead;
+        static constexpr auto last_block_number = 1'149'999u;
         static constexpr auto static_precompiles = 4u;
 
         // YP, Eqn. 60, first summation
@@ -87,8 +101,10 @@ namespace fork_traits
 
     struct homestead : public frontier
     {
+        using next_fork_t = spurious_dragon;
+
         // https://eips.ethereum.org/EIPS/eip-2
-        static constexpr auto block_number = 1'150'000u;
+        static constexpr auto last_block_number = 2'674'999u;
 
         [[nodiscard]] static constexpr inline auto
         g_txcreate(Transaction const &t) noexcept
@@ -129,7 +145,9 @@ namespace fork_traits
 
     struct spurious_dragon : homestead
     {
-        static constexpr auto block_number = 2'675'000u;
+        using next_fork_t = byzantium;
+
+        static constexpr auto last_block_number = 4'369'999u;
 
         // https://eips.ethereum.org/EIPS/eip-161
         [[nodiscard]] static constexpr inline auto starting_nonce() noexcept
@@ -169,8 +187,9 @@ namespace fork_traits
 
     struct byzantium : spurious_dragon
     {
-        static constexpr auto block_number = 4'370'000;
+        using next_fork_t = istanbul;
         static constexpr auto static_precompiles = 8u;
+        static constexpr auto last_block_number = 9'068'999u;
 
         template <class TState>
         [[nodiscard]] static constexpr inline bool store_contract_code(
@@ -200,8 +219,9 @@ namespace fork_traits
 
     struct istanbul : public byzantium // constantinople
     {
-        static constexpr auto block_number = 9'069'000u;
+        using next_fork_t = berlin;
         static constexpr auto static_precompiles = 9u;
+        static constexpr auto last_block_number = 12'243'999u;
 
         // https://eips.ethereum.org/EIPS/eip-2028
         [[nodiscard]] static constexpr inline uint64_t
@@ -226,7 +246,9 @@ namespace fork_traits
 
     struct berlin : public istanbul
     {
-        static constexpr auto block_number = 12'244'000u;
+        using next_fork_t = london;
+
+        static constexpr auto last_block_number = 12'964'999u;
 
         // https://eips.ethereum.org/EIPS/eip-2930
         [[nodiscard]] static constexpr inline auto
@@ -249,7 +271,10 @@ namespace fork_traits
 
     struct london : public berlin
     {
-        static constexpr auto block_number = 12'965'000;
+        using next_fork_t = no_next_fork_t;
+
+        static constexpr auto last_block_number =
+            std::numeric_limits<uint64_t>::max();
 
         // https://eips.ethereum.org/EIPS/eip-3529
         template <class TState>

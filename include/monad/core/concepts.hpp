@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/config.hpp>
+
 #include <monad/core/transaction.hpp>
 
 MONAD_NAMESPACE_BEGIN
@@ -12,10 +13,11 @@ namespace concepts
     concept fork_traits = requires(TState &s, Transaction const &t,
                                    address_t const &a, evmc_result &r)
     {
+        typename T::next_fork_t;
         { T::intrinsic_gas(t) } -> std::convertible_to<uint64_t>;
         { T::starting_nonce() } -> std::convertible_to<uint64_t>;
-        { T::block_number } -> std::convertible_to<uint64_t>;
         { T::static_precompiles } -> std::convertible_to<uint64_t>;
+        { T::last_block_number } -> std::convertible_to<uint64_t>;
         { T::get_selfdestruct_refund(s) } -> std::convertible_to<uint64_t>;
         { T::max_refund_quotient() } -> std::convertible_to<int>;
         { T::destruct_touched_dead(s) } -> std::convertible_to<void>;

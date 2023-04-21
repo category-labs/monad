@@ -8,6 +8,7 @@ add_unit_test(
   evm.cpp
   evmc_host.cpp
   static_precompiles.cpp
+  replay_block_db.cpp
   transaction_processor.cpp
   transaction_processor_data_succeed.cpp
   transaction_processor_data_fail_validation.cpp

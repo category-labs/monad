@@ -3,5 +3,7 @@ add_unit_test(
   monad-dbtests
   SOURCES
   block_db.cpp
+  datum.cpp
+  value_store.cpp
   LIBRARIES
   monad)

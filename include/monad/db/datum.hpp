@@ -4,6 +4,8 @@
 #include <monad/core/bytes.hpp>
 #include <monad/db/config.hpp>
 
+#include <optional>
+
 MONAD_DB_NAMESPACE_BEGIN
 
 namespace fnv1a
@@ -12,6 +14,7 @@ namespace fnv1a
     static constexpr auto prime = 1099511628211ull;
 
     template <class T>
+        requires requires(T const &b) { b.bytes; }
     static constexpr inline auto hash(T const &b) noexcept
     {
         uint64_t h = offset_basis;
@@ -75,7 +78,6 @@ struct diff_value
     {
     }
 
-    // void operator=(diff_value const &v) { orig = v.orig; value = v.value; }
     void operator=(T const &b) { value = b; }
     void operator=(T &&b) { value = std::move(b); }
 
@@ -96,6 +98,60 @@ struct diff_value
         }
     };
 };
+
+template <class T>
+struct diff
+{
+    std::optional<T> const orig{};
+    std::optional<T> updated{};
+
+    diff() = default;
+    diff(diff const &v) = default;
+    diff(diff &&v) noexcept = default;
+    diff(T const &o, T const &v)
+        : orig{o}
+        , updated{v}
+    {
+    }
+    diff(std::optional<T> const &o, T const &v)
+        : orig{o}
+        , updated{v}
+    {
+    }
+    explicit diff(T const &v)
+        : orig{}
+        , updated{v}
+    {
+    }
+
+    void operator=(T const &b) { updated = b; }
+    void operator=(T &&b) { updated = std::move(b); }
+
+    struct equality
+    {
+        inline bool operator()(
+            diff const &first, diff const &second) const noexcept
+        {
+            return first.updated == second.updated;
+        }
+    };
+
+    struct hash
+    {
+        constexpr inline std::size_t operator()(T const &a) const
+        {
+            return fnv1a::hash(a);
+        }
+    };
+};
+
+template <class T>
+inline bool operator==(diff<T> const &a, T const &b) noexcept
+{
+    return a.updated == b;
+}
+
+
 
 template <class T>
 inline bool operator==(diff_value<T> const &a, T const &b) noexcept

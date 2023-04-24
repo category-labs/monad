@@ -17,4 +17,9 @@ struct Account
 static_assert(sizeof(Account) == 80);
 static_assert(alignof(Account) == 8);
 
+inline bool operator==(Account const &lhs, Account const &rhs)
+{
+    return lhs.balance == rhs.balance && lhs.code_hash == rhs.code_hash &&
+           lhs.nonce == rhs.nonce;
+}
 MONAD_NAMESPACE_END

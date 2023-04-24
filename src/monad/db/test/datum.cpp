@@ -1,3 +1,4 @@
+#include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
 
@@ -33,6 +34,37 @@ TEST(diff_value, bytes32_unordered_map)
     m.insert({b, diff_value<bytes32_t>{key1, key2}});
     EXPECT_EQ(m[b].orig, key1);
     EXPECT_EQ(m[b].value, key2);
+}
+
+TEST(diff, account_unordered_map)
+{
+    static constexpr auto a =
+        0xbebebebebebebebebebebebebebebebebebebebe_address;
+    static constexpr auto b =
+        0xEA674fdDe714fd979de3EdF0F56AA9716B898ec8_address;
+    static constexpr auto hash1 =
+        0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
+    static constexpr auto hash2 =
+        0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
+    static constexpr Account a1{
+        .balance = 10'000'000'000u,
+        .code_hash = hash1,
+        .nonce = 11,
+        .incarnation = 1};
+    static constexpr Account a2{
+        .balance = 20'000'000'000u,
+        .code_hash = hash2,
+        .nonce = 0,
+        .incarnation = 1};
+    std::unordered_map<address_t, diff<Account>> m{};
+    m[a] = a1;
+
+    EXPECT_FALSE(m[a].orig.has_value());
+    EXPECT_EQ(m[a].updated, a1);
+
+    m.insert({b, {a1, a2}});
+    EXPECT_EQ(*m[b].orig, a1);
+    EXPECT_EQ(m[b].updated, a2);
 }
 
 TEST(deleted_key, unordered_set)

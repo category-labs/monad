@@ -101,8 +101,8 @@ struct TransactionProcessor
             s, b, t, static_cast<uint64_t>(result.gas_left));
 
         // finalize state, Eqn. 77-79
-        s.destruct_suicides();
         TTraits::destruct_touched_dead(s);
+        s.destruct_suicides();
 
         auto receipt = h.make_receipt_from_result(result, t, gas_remaining);
         return receipt;

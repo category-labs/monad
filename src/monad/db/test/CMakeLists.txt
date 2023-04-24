@@ -5,5 +5,6 @@ add_unit_test(
   account_storage.cpp
   account_state.cpp
   datum.cpp
+  state.cpp
   LIBRARIES
   monad)

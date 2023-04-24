@@ -3,6 +3,7 @@ add_unit_test(
   monad-dbtests
   SOURCES
   account_storage.cpp
+  account_state.cpp
   datum.cpp
   LIBRARIES
   monad)

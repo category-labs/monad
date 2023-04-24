@@ -14,7 +14,7 @@ template <class TExecution>
 struct AllTxnBlockProcessor
 {
     template <class TState, class TFiberData>
-    std::vector<Receipt> execute(TState &s, Block const &b)
+    [[nodiscard]] std::vector<Receipt> execute(TState &s, Block const &b)
     {
         std::vector<TFiberData> data{};
         std::vector<typename TExecution::fiber_t> fibers{};

@@ -1,0 +1,9 @@
+add_unit_test(
+  TARGET
+  monad-dbtests
+  SOURCES
+  account_storage.cpp
+  account_state.cpp
+  datum.cpp
+  LIBRARIES
+  monad)

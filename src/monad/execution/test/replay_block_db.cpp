@@ -97,6 +97,16 @@ struct fakeEmptyTP
     }
 };
 
+template <class TState, concepts::fork_traits<TState> TTraits>
+struct fakeEmptyEvm
+{
+};
+
+template <class TTraits, class TState, class TEvm, class TStaticPrecompiles>
+struct fakeEmptyEvmHost
+{
+};
+
 template <class TExecution>
 class fakeEmptyBP
 {
@@ -171,7 +181,14 @@ TEST(ReplayFromBlockDb, invalid_end_block_number)
 
     block_db._last_block_number = 1'000u;
 
-    auto result = replay.run<traits_t, fakeEmptyTP, Evm, fakeEmptyFiberData>(
+    auto result = replay.run<
+        traits_t,
+        fakeEmptyTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeEmptyFiberData,
+        fake::static_precompiles::Echo>(
         state, state_trie, block_db, receipt_collector, output, 100u, 100u);
 
     EXPECT_EQ(result.status, replay_t::Status::INVALID_END_BLOCK_NUMBER);
@@ -189,7 +206,14 @@ TEST(ReplayFromBlockDb, invalid_end_block_number_zero)
 
     block_db._last_block_number = 1'000u;
 
-    auto result = replay.run<traits_t, fakeEmptyTP, Evm, fakeEmptyFiberData>(
+    auto result = replay.run<
+        traits_t,
+        fakeEmptyTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeEmptyFiberData,
+        fake::static_precompiles::Echo>(
         state, state_trie, block_db, receipt_collector, output, 0u, 0u);
 
     EXPECT_EQ(result.status, replay_t::Status::INVALID_END_BLOCK_NUMBER);
@@ -207,7 +231,14 @@ TEST(ReplayFromBlockDb, start_block_number_outside_db)
 
     block_db._last_block_number = 0u;
 
-    auto result = replay.run<traits_t, fakeEmptyTP, Evm, fakeEmptyFiberData>(
+    auto result = replay.run<
+        traits_t,
+        fakeEmptyTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeEmptyFiberData,
+        fake::static_precompiles::Echo>(
         state, state_trie, block_db, receipt_collector, output, 1u);
 
     EXPECT_EQ(result.status, replay_t::Status::START_BLOCK_NUMBER_OUTSIDE_DB);
@@ -223,7 +254,14 @@ TEST(ReplayFromBlockDb, decompress_block_error)
     std::stringstream output;
     replay_error_decompress_t replay;
 
-    auto result = replay.run<traits_t, fakeEmptyTP, Evm, fakeEmptyFiberData>(
+    auto result = replay.run<
+        traits_t,
+        fakeEmptyTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeEmptyFiberData,
+        fake::static_precompiles::Echo>(
         state, state_trie, block_db, receipt_collector, output, 1u);
 
     EXPECT_EQ(
@@ -241,7 +279,14 @@ TEST(ReplayFromBlockDb, decode_block_error)
     std::stringstream output;
     replay_error_decode_t replay;
 
-    auto result = replay.run<traits_t, fakeEmptyTP, Evm, fakeEmptyFiberData>(
+    auto result = replay.run<
+        traits_t,
+        fakeEmptyTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeEmptyFiberData,
+        fake::static_precompiles::Echo>(
         state, state_trie, block_db, receipt_collector, output, 1u);
 
     EXPECT_EQ(result.status, replay_error_decode_t::Status::DECODE_BLOCK_ERROR);
@@ -259,7 +304,14 @@ TEST(ReplayFromBlockDb, one_block)
 
     block_db._last_block_number = 1'000u;
 
-    auto result = replay.run<traits_t, fakeEmptyTP, Evm, fakeEmptyFiberData>(
+    auto result = replay.run<
+        traits_t,
+        fakeEmptyTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeEmptyFiberData,
+        fake::static_precompiles::Echo>(
         state, state_trie, block_db, receipt_collector, output, 100u, 101u);
 
     EXPECT_EQ(result.status, replay_t::Status::SUCCESS);
@@ -278,7 +330,14 @@ TEST(ReplayFromBlockDb, run_from_zero)
 
     block_db._last_block_number = 1'234u;
 
-    auto result = replay.run<traits_t, fakeEmptyTP, Evm, fakeEmptyFiberData>(
+    auto result = replay.run<
+        traits_t,
+        fakeEmptyTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeEmptyFiberData,
+        fake::static_precompiles::Echo>(
         state, state_trie, block_db, receipt_collector, output, 0u);
 
     EXPECT_EQ(result.status, replay_t::Status::SUCCESS_END_OF_DB);

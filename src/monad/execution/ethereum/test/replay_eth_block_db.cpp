@@ -72,6 +72,15 @@ public:
 };
 
 template <class TState, concepts::fork_traits<TState> TTraits>
+struct fakeEmptyEvm
+{
+};
+
+template <class TTraits, class TState, class TEvm, class TStaticPrecompiles>
+struct fakeEmptyEvmHost
+{
+};
+template <class TState, concepts::fork_traits<TState> TTraits>
 struct fakeEmptyTP
 {
     enum class Status
@@ -119,8 +128,7 @@ public:
     template <class TState, class TFiberData>
     std::vector<Receipt> execute(TState &, Block &)
     {
-        std::vector<TFiberData> data;
-        data.emplace_back(TFiberData{});
+        std::vector<TFiberData> data{{}};
         std::vector<Receipt> r;
         for (auto &d : data) {
             r.push_back(d.get_receipt());
@@ -181,9 +189,15 @@ TEST(ReplayFromBlockDb_Eth, invalid_end_block_number)
 
     block_db._last_block_number = 1'000u;
 
-    auto result =
-        replay_eth.run<eth_start_fork, fakeEmptyTP, Evm, fakeReceiptFiberData>(
-            state, state_trie, block_db, receipt_collector, output, 100u, 100u);
+    auto result = replay_eth.run<
+        eth_start_fork,
+        fakeEmptyTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeReceiptFiberData,
+        fake::static_precompiles::Echo>(
+        state, state_trie, block_db, receipt_collector, output, 100u, 100u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::INVALID_END_BLOCK_NUMBER);
     EXPECT_EQ(result.block_number, 100u);
@@ -200,9 +214,15 @@ TEST(ReplayFromBlockDb_Eth, invalid_end_block_number_zero)
 
     block_db._last_block_number = 1'000u;
 
-    auto result =
-        replay_eth.run<eth_start_fork, fakeEmptyTP, Evm, fakeReceiptFiberData>(
-            state, state_trie, block_db, receipt_collector, output, 0u, 0u);
+    auto result = replay_eth.run<
+        eth_start_fork,
+        fakeEmptyTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeReceiptFiberData,
+        fake::static_precompiles::Echo>(
+        state, state_trie, block_db, receipt_collector, output, 0u, 0u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::INVALID_END_BLOCK_NUMBER);
     EXPECT_EQ(result.block_number, 0u);
@@ -219,9 +239,15 @@ TEST(ReplayFromBlockDb_Eth, start_block_number_outside_db)
 
     block_db._last_block_number = 0u;
 
-    auto result =
-        replay_eth.run<eth_start_fork, fakeEmptyTP, Evm, fakeReceiptFiberData>(
-            state, state_trie, block_db, receipt_collector, output, 1u);
+    auto result = replay_eth.run<
+        eth_start_fork,
+        fakeEmptyTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeReceiptFiberData,
+        fake::static_precompiles::Echo>(
+        state, state_trie, block_db, receipt_collector, output, 1u);
 
     EXPECT_EQ(
         result.status, replay_eth_t::Status::START_BLOCK_NUMBER_OUTSIDE_DB);
@@ -235,11 +261,17 @@ TEST(ReplayFromBlockDb_Eth, decompress_block_error)
     fakeErrorDecompressBlockDb block_db;
     receipt_collector_t receipt_collector;
     std::stringstream output;
-    replay_eth_error_decompress_t replay;
+    replay_eth_error_decompress_t replay_eth;
 
-    auto result =
-        replay.run<eth_start_fork, fakeEmptyTP, Evm, fakeReceiptFiberData>(
-            state, state_trie, block_db, receipt_collector, output, 1u);
+    auto result = replay_eth.run<
+        eth_start_fork,
+        fakeEmptyTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeReceiptFiberData,
+        fake::static_precompiles::Echo>(
+        state, state_trie, block_db, receipt_collector, output, 1u);
 
     EXPECT_EQ(
         result.status,
@@ -254,11 +286,17 @@ TEST(ReplayFromBlockDb_Eth, decode_block_error)
     fakeErrorDecodeBlockDb block_db;
     receipt_collector_t receipt_collector;
     std::stringstream output;
-    replay_eth_error_decode_t replay;
+    replay_eth_error_decode_t replay_eth;
 
-    auto result =
-        replay.run<eth_start_fork, fakeEmptyTP, Evm, fakeReceiptFiberData>(
-            state, state_trie, block_db, receipt_collector, output, 1u);
+    auto result = replay_eth.run<
+        eth_start_fork,
+        fakeEmptyTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeReceiptFiberData,
+        fake::static_precompiles::Echo>(
+        state, state_trie, block_db, receipt_collector, output, 1u);
 
     EXPECT_EQ(
         result.status, replay_eth_error_decode_t::Status::DECODE_BLOCK_ERROR);
@@ -276,9 +314,15 @@ TEST(ReplayFromBlockDb_Eth, one_block)
 
     block_db._last_block_number = 1'000u;
 
-    auto result =
-        replay_eth.run<eth_start_fork, fakeEmptyTP, Evm, fakeReceiptFiberData>(
-            state, state_trie, block_db, receipt_collector, output, 100u, 101u);
+    auto result = replay_eth.run<
+        eth_start_fork,
+        fakeEmptyTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeReceiptFiberData,
+        fake::static_precompiles::Echo>(
+        state, state_trie, block_db, receipt_collector, output, 100u, 101u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::SUCCESS);
     EXPECT_EQ(result.block_number, 100u);
@@ -296,9 +340,15 @@ TEST(ReplayFromBlockDb_Eth, frontier_run_from_zero)
 
     block_db._last_block_number = 1'234u;
 
-    auto result =
-        replay_eth.run<eth_start_fork, fakeEmptyTP, Evm, fakeReceiptFiberData>(
-            state, state_trie, block_db, receipt_collector, output, 0u);
+    auto result = replay_eth.run<
+        eth_start_fork,
+        fakeEmptyTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeReceiptFiberData,
+        fake::static_precompiles::Echo>(
+        state, state_trie, block_db, receipt_collector, output, 0u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::SUCCESS_END_OF_DB);
     EXPECT_EQ(result.block_number, 1'234u);
@@ -322,15 +372,21 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_homestead)
 
     block_db._last_block_number = std::numeric_limits<uint64_t>::max();
 
-    auto result =
-        replay_eth.run<eth_start_fork, fakeEmptyTP, Evm, fakeReceiptFiberData>(
-            state,
-            state_trie,
-            block_db,
-            receipt_collector,
-            output,
-            fork_traits::frontier::last_block_number - 10u,
-            fork_traits::frontier::last_block_number + 10u);
+    auto result = replay_eth.run<
+        eth_start_fork,
+        fakeEmptyTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeReceiptFiberData,
+        fake::static_precompiles::Echo>(
+        state,
+        state_trie,
+        block_db,
+        receipt_collector,
+        output,
+        fork_traits::frontier::last_block_number - 10u,
+        fork_traits::frontier::last_block_number + 10u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::SUCCESS);
     EXPECT_EQ(result.block_number, 1'150'008u);
@@ -359,15 +415,21 @@ TEST(ReplayFromBlockDb_Eth, berlin_to_london)
 
     block_db._last_block_number = std::numeric_limits<uint64_t>::max();
 
-    auto result =
-        replay_eth.run<eth_start_fork, fakeEmptyTP, Evm, fakeReceiptFiberData>(
-            state,
-            state_trie,
-            block_db,
-            receipt_collector,
-            output,
-            fork_traits::berlin::last_block_number - 10u,
-            fork_traits::berlin::last_block_number + 10u);
+    auto result = replay_eth.run<
+        eth_start_fork,
+        fakeEmptyTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeReceiptFiberData,
+        fake::static_precompiles::Echo>(
+        state,
+        state_trie,
+        block_db,
+        receipt_collector,
+        output,
+        fork_traits::berlin::last_block_number - 10u,
+        fork_traits::berlin::last_block_number + 10u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::SUCCESS);
     EXPECT_EQ(result.block_number, 12'965'008u);
@@ -396,15 +458,21 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_spurious_dragon)
 
     block_db._last_block_number = std::numeric_limits<uint64_t>::max();
 
-    auto result =
-        replay_eth.run<eth_start_fork, fakeEmptyTP, Evm, fakeReceiptFiberData>(
-            state,
-            state_trie,
-            block_db,
-            receipt_collector,
-            output,
-            fork_traits::frontier::last_block_number - 10u,
-            fork_traits::homestead::last_block_number + 10u);
+    auto result = replay_eth.run<
+        eth_start_fork,
+        fakeEmptyTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeReceiptFiberData,
+        fake::static_precompiles::Echo>(
+        state,
+        state_trie,
+        block_db,
+        receipt_collector,
+        output,
+        fork_traits::frontier::last_block_number - 10u,
+        fork_traits::homestead::last_block_number + 10u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::SUCCESS);
     EXPECT_EQ(result.block_number, 2'675'008u);

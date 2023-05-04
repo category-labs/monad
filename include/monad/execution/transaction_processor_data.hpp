@@ -78,10 +78,15 @@ struct alignas(64) TransactionProcessorFiberData
             }
 
             auto txn_state = s_.get_copy();
-            TEvm e{};
+            TEvm
+                e{}; // e needs to be constructed with the working copy of state
             result_ = p.execute(txn_state, e, bh_, txn_);
 
             if (auto const applied = s_.apply_state(txn_state); applied) {
+                // apply_state -> can_merge_changes
+                // Can merge needs to be in yield while loop while receiving
+                // TRY_AGAIN When WILL_SUCCEED is returned, merge, and return;
+                // if ERROR is received, then error out
                 return;
             }
             TExecution::yield();

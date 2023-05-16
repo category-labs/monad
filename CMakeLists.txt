@@ -26,8 +26,6 @@ conan_cmake_install(
     SETTINGS ${settings}
 )
 
-find_package(RocksDB)
-
 
 ############
 ### deps
@@ -36,6 +34,7 @@ find_package(RocksDB)
 find_package(Boost REQUIRED COMPONENTS fiber log)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
+pkg_check_modules(rocksdb REQUIRED IMPORTED_TARGET rocksdb)
 find_package(tl-expected REQUIRED)
 find_package(tl-optional REQUIRED)
 
@@ -138,7 +137,7 @@ target_link_libraries(monad
     PRIVATE Boost::fiber
     PRIVATE Boost::log
     PRIVATE PkgConfig::brotli
-    PRIVATE RocksDB::RocksDB
+    PRIVATE PkgConfig::rocksdb
 
     PUBLIC ethash::keccak
     PUBLIC evmc

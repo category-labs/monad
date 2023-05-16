@@ -1,21 +1,7 @@
 [requires]
-rocksdb/6.29.5
 tl-expected/1.0.0
 tl-optional/1.0.0
 
 [generators]
 cmake_find_package
 cmake_paths
-
-[options]
-lz4:shared=True
-rocksdb:shared=False  # TODO
-rocksdb:lite=False
-rocksdb:with_gflags=False
-rocksdb:with_snappy=False
-rocksdb:with_lz4=True
-rocksdb:with_zlib=False
-rocksdb:with_zstd=False
-rocksdb:with_tbb=False  # TODO
-rocksdb:with_jemalloc=False  # TODO
-rocksdb:enable_sse=sse42

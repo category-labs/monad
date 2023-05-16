@@ -7,5 +7,5 @@
     {
 
 #define MONAD_DB_NAMESPACE_END                                                 \
-    MONAD_NAMESPACE_END                                                        \
-    }
+    }                                                                          \
+    MONAD_NAMESPACE_END

@@ -4,6 +4,7 @@ add_unit_test(
   SOURCES
   account_store.cpp
   block_db.cpp
+  code_store.cpp
   datum.cpp
   value_store.cpp
   LIBRARIES

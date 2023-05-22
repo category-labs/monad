@@ -97,6 +97,8 @@ struct TransactionProcessor
 
         assert(result.gas_left >= 0);
         assert(result.gas_refund >= 0);
+        assert(result.gas_left >= 0);
+        assert(t.gas_limit >= static_cast<uint64_t>(result.gas_left));
         auto const gas_remaining = award_fee_and_refund(
             s,
             b,

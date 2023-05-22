@@ -110,11 +110,10 @@ struct EvmcHost : public evmc::HostInterface
     }
 
     [[nodiscard]] constexpr inline Receipt make_receipt_from_result(
-        evmc::Result const &r, Transaction const &t,
-        uint64_t const gas_remaining)
+        evmc_status_code sc, Transaction const &t, uint64_t const gas_remaining)
     {
         Receipt receipt{
-            .status = r.status_code == EVMC_SUCCESS ? 1u : 0u,
+            .status = sc == EVMC_SUCCESS ? 1u : 0u,
             .gas_used = t.gas_limit - gas_remaining,
             .type = t.type,
             .logs = std::move(state_.logs())};
@@ -179,8 +178,8 @@ struct EvmcHost : public evmc::HostInterface
             .block_timestamp = static_cast<int64_t>(block_header_.timestamp),
             .block_gas_limit = static_cast<int64_t>(block_header_.gas_limit)};
 
-        const uint256_t gas_cost = per_gas_cost(transaction_,
-            block_header_.base_fee_per_gas.value_or(0));
+        const uint256_t gas_cost = per_gas_cost(
+            transaction_, block_header_.base_fee_per_gas.value_or(0));
         intx::be::store(result.tx_gas_price.bytes, gas_cost);
 
         // Note: is there a better place for us to get the chain_id?

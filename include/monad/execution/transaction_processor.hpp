@@ -108,7 +108,8 @@ struct TransactionProcessor
         s.destruct_suicides();
         TTraits::destruct_touched_dead(s);
 
-        auto receipt = h.make_receipt_from_result(result, t, gas_remaining);
+        auto receipt =
+            h.make_receipt_from_result(result.status_code, t, gas_remaining);
         return receipt;
     }
 

@@ -141,7 +141,7 @@ namespace fake
         };
 
         [[nodiscard]] constexpr inline Receipt make_receipt_from_result(
-            evmc::Result const &, Transaction const &, uint64_t const)
+            evmc_status_code , Transaction const &, uint64_t const)
         {
             return _receipt;
         }

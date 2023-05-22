@@ -2,6 +2,7 @@ add_unit_test(
   TARGET
   monad-dbtests
   SOURCES
+  account_store.cpp
   block_db.cpp
   datum.cpp
   value_store.cpp

@@ -14,7 +14,6 @@ using processor_t = TransactionProcessor<fake::State, traits_t>;
 TEST(TransactionProcessor, g_star)
 {
     fake::State s{};
-    s._refund = 15'000;
     traits_t::_sd_refund = 10'000;
     traits_t::_max_refund_quotient = 2;
 
@@ -24,10 +23,10 @@ TEST(TransactionProcessor, g_star)
 
     processor_t p{};
 
-    EXPECT_EQ(p.g_star(s, t, 1'002), 26'001);
-    EXPECT_EQ(p.g_star(s, t, 1'001), 26'000);
-    EXPECT_EQ(p.g_star(s, t, 1'000), 26'000);
-    EXPECT_EQ(p.g_star(s, t, 999), 25'999);
+    EXPECT_EQ(p.g_star(s, t, 1'002, 15'000), 26'001);
+    EXPECT_EQ(p.g_star(s, t, 1'001, 15'000), 26'000);
+    EXPECT_EQ(p.g_star(s, t, 1'000, 15'000), 26'000);
+    EXPECT_EQ(p.g_star(s, t, 999, 15'000), 25'999);
 }
 
 TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
@@ -40,7 +39,6 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     fake::EvmHost e{};
     s._map[from] = {.balance = 56'000'000'000'000'000, .nonce = 25};
     s._map[bene] = {.balance = 0, .nonce = 0};
-    s._refund = 1'000;
     e._result = {.status_code = EVMC_SUCCESS, .gas_left = 15'000};
     e._receipt = {.status = 1u};
     traits_t::_sd_refund = 24'000;
@@ -77,8 +75,8 @@ TEST(
     fake::EvmHost e{};
     s._map[from] = {.balance = 56'000'000'000'000'000, .nonce = 25};
     s._map[bene] = {.balance = 0, .nonce = 0};
-    s._refund = 1'000;
-    e._result = {.status_code = EVMC_SUCCESS, .gas_left = 15'000};
+    e._result = {
+        .status_code = EVMC_SUCCESS, .gas_left = 15'000, .gas_refund = 1'000};
     e._receipt = {.status = 1u};
     traits_t::_sd_refund = 24'000;
 

@@ -42,10 +42,10 @@ struct TransactionProcessor
     }
 
     // YP Eqn 72
-    uint64_t
-    g_star(TState &s, Transaction const &t, uint64_t gas_remaining) const
+    [[nodiscard]] uint64_t g_star(
+        TState &s, Transaction const &t, uint64_t gas_remaining,
+        uint64_t refund) const
     {
-        auto refund = s.get_refund();
         refund += TTraits::get_selfdestruct_refund(s);
 
         const auto refund_allowance =
@@ -56,12 +56,11 @@ struct TransactionProcessor
 
     [[nodiscard]] auto award_fee_and_refund(
         TState &s, BlockHeader const &b, Transaction const &t,
-        uint64_t const gas_leftover) const
+        uint64_t const gas_leftover, uint64_t refund) const
     {
         // refund and priority, Eqn. 73-76
-        auto const gas_remaining = g_star(s, t, gas_leftover);
-        auto const gas_cost =
-            per_gas_cost(t, b.base_fee_per_gas.value_or(0));
+        auto const gas_remaining = g_star(s, t, gas_leftover, refund);
+        auto const gas_cost = per_gas_cost(t, b.base_fee_per_gas.value_or(0));
         auto const bene_balance =
             intx::be::load<uint256_t>(s.get_balance(b.beneficiary));
 
@@ -96,9 +95,14 @@ struct TransactionProcessor
         auto m = TEvmHost::make_msg_from_txn(t);
         auto result = h.call(m);
 
-		MONAD_ASSERT(result.gas_left >= 0);
+        assert(result.gas_left >= 0);
+        assert(result.gas_refund >= 0);
         auto const gas_remaining = award_fee_and_refund(
-            s, b, t, static_cast<uint64_t>(result.gas_left));
+            s,
+            b,
+            t,
+            static_cast<uint64_t>(result.gas_left),
+            static_cast<uint64_t>(result.gas_refund));
 
         // finalize state, Eqn. 77-79
         s.destruct_suicides();

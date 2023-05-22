@@ -34,7 +34,6 @@ namespace fake
         uint64_t _selfdestructs{};
         uint64_t _touched_dead{};
         uint64_t _suicides{};
-        uint64_t _refund{};
         int _current_txn{};
         bool _applied_state{};
         std::vector<Receipt::Log> _logs{};
@@ -112,8 +111,6 @@ namespace fake
         void set_code(address_t const &, byte_string const &) {}
 
         uint64_t total_selfdestructs() const noexcept { return _selfdestructs; }
-
-        uint64_t get_refund() const noexcept { return _refund; }
 
         void destruct_touched_dead() { _touched_dead = 0; }
 

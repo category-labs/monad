@@ -6,6 +6,7 @@ add_unit_test(
   block_db.cpp
   code_store.cpp
   datum.cpp
+  state.cpp
   value_store.cpp
   LIBRARIES
   monad)

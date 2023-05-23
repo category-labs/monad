@@ -39,8 +39,8 @@ struct BlockHeader
 struct Block
 {
     BlockHeader header;
-    std::vector<Transaction> transactions;
-    std::vector<BlockHeader> ommers;
+    std::vector<Transaction> transactions{};
+    std::vector<BlockHeader> ommers{};
 };
 
 static_assert(sizeof(BlockHeader) == 592);

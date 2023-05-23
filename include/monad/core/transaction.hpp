@@ -30,15 +30,15 @@ struct Transaction
 
     using AccessList = std::vector<AccessEntry>;
 
-    SignatureAndChain sc;
+    SignatureAndChain sc{};
     uint64_t nonce{};
     uint64_t gas_price{}; // max per gas fee
     uint64_t gas_limit{};
     uint128_t amount{};
     std::optional<address_t> to{};
     std::optional<address_t> from{};
-    byte_string data;
-    Type type;
+    byte_string data{};
+    Type type{};
     AccessList access_list{};
     uint64_t priority_fee{};
 };

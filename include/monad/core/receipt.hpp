@@ -25,7 +25,7 @@ struct Receipt
     uint64_t status{};
     uint64_t gas_used{};
     Transaction::Type type{};
-    std::vector<Log> logs;
+    std::vector<Log> logs{};
 
     void add_log(Receipt::Log const &l);
 };

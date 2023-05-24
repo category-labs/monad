@@ -1,0 +1,7 @@
+#pragma once
+
+#include <monad/execution/config.hpp>
+
+#define MONAD_EXECUTION_STATS_NAMESPACE_BEGIN MONAD_EXECUTION_NAMESPACE_BEGIN namespace stats {
+
+#define MONAD_EXECUTION_STATS_NAMESPACE_END } MONAD_EXECUTION_NAMESPACE_END

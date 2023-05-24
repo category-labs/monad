@@ -111,6 +111,8 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/execution/static_precompiles.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/execution_model.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/replay_block_db.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/stats/config.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/stats/stats.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/transaction_processor.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/transaction_processor_data.hpp
     ${PROJECT_SOURCE_DIR}/src/monad/execution/create_contract_address.cpp

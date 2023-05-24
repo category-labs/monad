@@ -2,6 +2,8 @@
 #include <monad/execution/config.hpp>
 #include <monad/execution/execution_model.hpp>
 
+#include <monad/execution/stats/stats.hpp>
+
 #include <monad/execution/test/fakes.hpp>
 
 #include <boost/fiber/all.hpp>
@@ -12,12 +14,28 @@ using namespace monad;
 using namespace monad::execution;
 
 using state_t = fake::State;
+using stats_collector_t = std::vector<stats::BlockStats>;
+
+struct fakeEmptyStatsWriter
+{
+    static void start_block(stats::BlockStats &) {}
+    static void finish_block(stats::BlockStats &) {}
+
+    static void start_txn(stats::BlockStats &, int) {}
+    static void finish_txn(stats::BlockStats &, int) {}
+
+    static void take_snapshot(stats::BlockStats &) {}
+};
 
 template <class TState>
 struct EmptyFiberData
 {
     Receipt _result{};
-    EmptyFiberData(TState &, Transaction const &, BlockHeader const &, int) {}
+    EmptyFiberData(
+        TState &, Transaction const &, BlockHeader const &, int,
+        stats::BlockStats &)
+    {
+    }
     Receipt get_receipt() { return _result; }
     inline void operator()() {}
 };
@@ -26,7 +44,11 @@ template <class TState>
 struct FailedFiberData
 {
     Receipt _result{.status = 1u};
-    FailedFiberData(TState &, Transaction const &, BlockHeader const &, int) {}
+    FailedFiberData(
+        TState &, Transaction const &, BlockHeader const &, int,
+        stats::BlockStats &)
+    {
+    }
     Receipt get_receipt() { return _result; }
     inline void operator()() { boost::this_fiber::yield(); }
 };
@@ -37,12 +59,17 @@ TEST(AllTxnBlockProcessor, execute_empty)
     using fiber_data_t = EmptyFiberData<state_t>;
 
     fake::State s{};
+    stats_collector_t stats_collector;
     static Block const b{
         .header = {},
     };
 
     block_processor_t p{};
-    auto const r = p.execute<state_t, fiber_data_t>(s, b);
+    auto const r = p.execute<
+        state_t,
+        fiber_data_t,
+        stats_collector_t,
+        fakeEmptyStatsWriter>(s, b, stats_collector);
     EXPECT_EQ(r.size(), 0);
 }
 
@@ -52,13 +79,18 @@ TEST(AllTxnBlockProcessor, execute_some)
     using fiber_data_t = EmptyFiberData<state_t>;
 
     fake::State s{};
+    stats_collector_t stats_collector;
     static Block const b{
         .header = {},
         .transactions = {{}, {}, {}},
     };
 
     block_processor_t p{};
-    auto const r = p.execute<state_t, fiber_data_t>(s, b);
+    auto const r = p.execute<
+        state_t,
+        fiber_data_t,
+        stats_collector_t,
+        fakeEmptyStatsWriter>(s, b, stats_collector);
     EXPECT_EQ(r.size(), 3);
     EXPECT_EQ(r[0].status, 0u);
     EXPECT_EQ(r[1].status, 0u);
@@ -71,13 +103,18 @@ TEST(AllTxnBlockProcessor, execute_some_failed)
     using fiber_data_t = FailedFiberData<state_t>;
 
     fake::State s{};
+    stats_collector_t stats_collector;
     static Block const b{
         .header = {},
         .transactions = {{}, {}, {}, {}, {}},
     };
 
     block_processor_t p{};
-    auto const r = p.execute<state_t, fiber_data_t>(s, b);
+    auto const r = p.execute<
+        state_t,
+        fiber_data_t,
+        stats_collector_t,
+        fakeEmptyStatsWriter>(s, b, stats_collector);
     EXPECT_EQ(r.size(), 5);
     EXPECT_EQ(r[0].status, 1u);
     EXPECT_EQ(r[1].status, 1u);

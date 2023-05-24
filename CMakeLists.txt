@@ -63,6 +63,7 @@ endfunction()
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/core/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/db/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum/test)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/stats/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
 
@@ -113,9 +114,11 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/execution/replay_block_db.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/stats/config.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/stats/stats.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/stats/stats_writer.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/transaction_processor.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/transaction_processor_data.hpp
     ${PROJECT_SOURCE_DIR}/src/monad/execution/create_contract_address.cpp
+    ${PROJECT_SOURCE_DIR}/src/monad/execution/stats/stats_writer.cpp
 
     # fiber
     ${PROJECT_SOURCE_DIR}/include/monad/fiber/algorithm.hpp

@@ -4,17 +4,30 @@
 
 #include <monad/execution/test/fakes.hpp>
 
+#include <monad/execution/stats/stats.hpp>
+
 #include <gtest/gtest.h>
 
 using namespace monad;
 using namespace monad::execution;
+
+struct fakeEmptyStatsWriter
+{
+    static void start_block(stats::BlockStats &) {}
+    static void finish_block(stats::BlockStats &) {}
+
+    static void start_txn(stats::BlockStats &, int) {}
+    static void finish_txn(stats::BlockStats &, int) {}
+
+    static void take_snapshot(stats::BlockStats &) {}
+};
 
 using state_t = fake::State;
 using traits_t = fake::traits::alpha<state_t>;
 
 template <class TTxnProc, class TExecution>
 using data_t = TransactionProcessorFiberData<
-    state_t, traits_t, TTxnProc, fake::Evm, TExecution>;
+    state_t, traits_t, TTxnProc, fake::Evm, TExecution, fakeEmptyStatsWriter>;
 
 template <class TState, concepts::fork_traits<TState> TTraits>
 struct fakeSuccessfulTP
@@ -48,11 +61,13 @@ struct fakeSuccessfulTP
 TEST(TransactionProcessorFiberData, invoke_successfully_first_time)
 {
     fake::State s{._applied_state = true};
-    static BlockHeader const b{};
+    static BlockHeader const bh{};
     static Transaction const t{};
+    static Block const b{};
+    stats::BlockStats block_stats(b);
 
     data_t<fakeSuccessfulTP<state_t, traits_t>, BoostFiberExecution> d{
-        s, t, b, 0};
+        s, t, bh, 0, block_stats};
     d();
     auto const r = d.get_receipt();
 

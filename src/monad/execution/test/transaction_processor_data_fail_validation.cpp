@@ -4,6 +4,8 @@
 
 #include <monad/execution/test/fakes.hpp>
 
+#include <monad/execution/stats/stats.hpp>
+
 #include <gtest/gtest.h>
 
 using namespace monad;
@@ -12,9 +14,20 @@ using namespace monad::execution;
 using state_t = fake::State;
 using traits_t = fake::traits::alpha<state_t>;
 
+struct fakeEmptyStatsWriter
+{
+    static void start_block(stats::BlockStats &) {}
+    static void finish_block(stats::BlockStats &) {}
+
+    static void start_txn(stats::BlockStats &, int) {}
+    static void finish_txn(stats::BlockStats &, int) {}
+
+    static void take_snapshot(stats::BlockStats &) {}
+};
+
 template <class TTxnProc, class TExecution>
 using data_t = TransactionProcessorFiberData<
-    state_t, traits_t, TTxnProc, fake::Evm, TExecution>;
+    state_t, traits_t, TTxnProc, fake::Evm, TExecution, fakeEmptyStatsWriter>;
 
 enum class TestStatus
 {
@@ -69,12 +82,14 @@ TEST(
     validation_insufficient_balance_current_txn_id)
 {
     fake::State s{._current_txn = 10, ._applied_state = true};
-    static BlockHeader const b{};
+    static BlockHeader const bh{};
     static Transaction const t{.gas_limit = 15'000};
+    static Block const b{};
+    stats::BlockStats block_stats(b);
     fake_status = TestStatus::INSUFFICIENT_BALANCE;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, BoostFiberExecution> d{
-        s, t, b, 10};
+        s, t, bh, 10, block_stats};
     d();
     auto const r = d.get_receipt();
 
@@ -85,12 +100,14 @@ TEST(
 TEST(TransactionProcessorFiberData, validation_insufficient_balance_optimistic)
 {
     fake::State s{._current_txn = 1, ._applied_state = true};
-    static BlockHeader const b{};
+    static BlockHeader const bh{};
     static Transaction const t{.gas_limit = 15'000};
+    static Block const b{};
+    stats::BlockStats block_stats(b);
     fake_status = TestStatus::INSUFFICIENT_BALANCE;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, fakeSuccessAfterYieldEM> d{
-        s, t, b, 10};
+        s, t, bh, 10, block_stats};
     d();
     auto const r = d.get_receipt();
 
@@ -101,12 +118,14 @@ TEST(TransactionProcessorFiberData, validation_insufficient_balance_optimistic)
 TEST(TransactionProcessorFiberData, validation_later_nonce_current_txn_id)
 {
     fake::State s{._current_txn = 10, ._applied_state = true};
-    static BlockHeader const b{};
+    static BlockHeader const bh{};
     static Transaction const t{};
+    static Block const b{};
+    stats::BlockStats block_stats(b);
     fake_status = TestStatus::LATER_NONCE;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, BoostFiberExecution> d{
-        s, t, b, 10};
+        s, t, bh, 10, block_stats};
     d();
     auto const r = d.get_receipt();
 
@@ -117,12 +136,14 @@ TEST(TransactionProcessorFiberData, validation_later_nonce_current_txn_id)
 TEST(TransactionProcessorFiberData, validation_later_nonce_optimistic)
 {
     fake::State s{._current_txn = 1, ._applied_state = true};
-    static BlockHeader const b{};
+    static BlockHeader const bh{};
     static Transaction const t{};
+    static Block const b{};
+    stats::BlockStats block_stats(b);
     fake_status = TestStatus::LATER_NONCE;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, fakeSuccessAfterYieldEM> d{
-        s, t, b, 10};
+        s, t, bh, 10, block_stats};
     d();
     auto const r = d.get_receipt();
 
@@ -132,12 +153,14 @@ TEST(TransactionProcessorFiberData, validation_later_nonce_optimistic)
 TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_current_txn_id)
 {
     fake::State s{._current_txn = 10, ._applied_state = true};
-    static BlockHeader const b{};
+    static BlockHeader const bh{};
     static Transaction const t{.gas_limit = 15'000};
+    static Block const b{};
+    stats::BlockStats block_stats(b);
     fake_status = TestStatus::INVALID_GAS_LIMIT;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, BoostFiberExecution> d{
-        s, t, b, 10};
+        s, t, bh, 10, block_stats};
     d();
     auto const r = d.get_receipt();
 
@@ -148,12 +171,14 @@ TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_current_txn_id)
 TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_optimistic)
 {
     fake::State s{._current_txn = 1, ._applied_state = true};
-    static BlockHeader const b{};
+    static BlockHeader const bh{};
     static Transaction const t{.gas_limit = 15'000};
+    static Block const b{};
+    stats::BlockStats block_stats(b);
     fake_status = TestStatus::INVALID_GAS_LIMIT;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, fakeSuccessAfterYieldEM> d{
-        s, t, b, 10};
+        s, t, bh, 10, block_stats};
     d();
     auto const r = d.get_receipt();
 
@@ -164,12 +189,14 @@ TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_optimistic)
 TEST(TransactionProcessorFiberData, validation_bad_nonce_current_txn_id)
 {
     fake::State s{._current_txn = 10, ._applied_state = true};
-    static BlockHeader const b{};
+    static BlockHeader const bh{};
     static Transaction const t{.gas_limit = 15'000};
+    static Block const b{};
+    stats::BlockStats block_stats(b);
     fake_status = TestStatus::BAD_NONCE;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, BoostFiberExecution> d{
-        s, t, b, 10};
+        s, t, bh, 10, block_stats};
     d();
     auto const r = d.get_receipt();
 
@@ -180,12 +207,14 @@ TEST(TransactionProcessorFiberData, validation_bad_nonce_current_txn_id)
 TEST(TransactionProcessorFiberData, validation_bad_nonce_optimistic)
 {
     fake::State s{._current_txn = 1, ._applied_state = true};
-    static BlockHeader const b{};
+    static BlockHeader const bh{};
     static Transaction const t{.gas_limit = 15'000};
+    static Block const b{};
+    stats::BlockStats block_stats(b);
     fake_status = TestStatus::BAD_NONCE;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, fakeSuccessAfterYieldEM> d{
-        s, t, b, 10};
+        s, t, bh, 10, block_stats};
     d();
     auto const r = d.get_receipt();
 
@@ -196,12 +225,14 @@ TEST(TransactionProcessorFiberData, validation_bad_nonce_optimistic)
 TEST(TransactionProcessorFiberData, validation_deployed_code_current_txn_id)
 {
     fake::State s{._current_txn = 10, ._applied_state = true};
-    static BlockHeader const b{};
+    static BlockHeader const bh{};
     static Transaction const t{.gas_limit = 15'000};
+    static Block const b{};
+    stats::BlockStats block_stats(b);
     fake_status = TestStatus::DEPLOYED_CODE;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, BoostFiberExecution> d{
-        s, t, b, 10};
+        s, t, bh, 10, block_stats};
     d();
     auto const r = d.get_receipt();
 
@@ -212,12 +243,14 @@ TEST(TransactionProcessorFiberData, validation_deployed_code_current_txn_id)
 TEST(TransactionProcessorFiberData, validation_deployed_code_optimistic)
 {
     fake::State s{._current_txn = 1, ._applied_state = true};
-    static BlockHeader const b{};
+    static BlockHeader const bh{};
     static Transaction const t{.gas_limit = 15'000};
+    static Block const b{};
+    stats::BlockStats block_stats(b);
     fake_status = TestStatus::DEPLOYED_CODE;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, fakeSuccessAfterYieldEM> d{
-        s, t, b, 10};
+        s, t, bh, 10, block_stats};
     d();
     auto const r = d.get_receipt();
 

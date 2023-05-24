@@ -4,6 +4,8 @@
 
 #include <monad/execution/replay_block_db.hpp>
 
+#include <monad/execution/stats/stats.hpp>
+
 #include <monad/execution/test/fakes.hpp>
 
 using namespace monad;
@@ -125,8 +127,8 @@ template <class TExecution>
 class fakeReceiptBP
 {
 public:
-    template <class TState, class TFiberData>
-    std::vector<Receipt> execute(TState &, Block &)
+    template <class TState, class TFiberData, class TStatsCollector>
+    std::vector<Receipt> execute(TState &, Block &, TStatsCollector &)
     {
         std::vector<TFiberData> data{{}};
         std::vector<Receipt> r;
@@ -162,21 +164,22 @@ using eth_start_fork = fork_traits::frontier;
 
 using state_t = execution::fake::State;
 using receipt_collector_t = std::vector<std::vector<Receipt>>;
+using stats_collector_t = std::vector<stats::BlockStats>;
 
 using replay_eth_t = ReplayFromBlockDb<
     state_t, fakeBlockDb, BoostFiberExecution, fakeReceiptBP,
     fakeEmptyStateTrie, fakeEmptyTransactionTrie, fakeEmptyReceiptTrie,
-    receipt_collector_t>;
+    receipt_collector_t, stats_collector_t>;
 
 using replay_eth_error_decompress_t = ReplayFromBlockDb<
     state_t, fakeErrorDecompressBlockDb, BoostFiberExecution, fakeReceiptBP,
     fakeEmptyStateTrie, fakeEmptyTransactionTrie, fakeEmptyReceiptTrie,
-    receipt_collector_t>;
+    receipt_collector_t, stats_collector_t>;
 
 using replay_eth_error_decode_t = ReplayFromBlockDb<
     state_t, fakeErrorDecodeBlockDb, BoostFiberExecution, fakeReceiptBP,
     fakeEmptyStateTrie, fakeEmptyTransactionTrie, fakeEmptyReceiptTrie,
-    receipt_collector_t>;
+    receipt_collector_t, stats_collector_t>;
 
 TEST(ReplayFromBlockDb_Eth, invalid_end_block_number)
 {
@@ -184,6 +187,7 @@ TEST(ReplayFromBlockDb_Eth, invalid_end_block_number)
     fakeEmptyStateTrie<state_t> state_trie;
     fakeBlockDb block_db;
     receipt_collector_t receipt_collector;
+    stats_collector_t stats_collector;
     std::stringstream output;
     replay_eth_t replay_eth;
 
@@ -197,7 +201,14 @@ TEST(ReplayFromBlockDb_Eth, invalid_end_block_number)
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
         fake::static_precompiles::Echo>(
-        state, state_trie, block_db, receipt_collector, output, 100u, 100u);
+        state,
+        state_trie,
+        block_db,
+        receipt_collector,
+        stats_collector,
+        output,
+        100u,
+        100u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::INVALID_END_BLOCK_NUMBER);
     EXPECT_EQ(result.block_number, 100u);
@@ -209,6 +220,7 @@ TEST(ReplayFromBlockDb_Eth, invalid_end_block_number_zero)
     fakeEmptyStateTrie<state_t> state_trie;
     fakeBlockDb block_db;
     receipt_collector_t receipt_collector;
+    stats_collector_t stats_collector;
     std::stringstream output;
     replay_eth_t replay_eth;
 
@@ -222,7 +234,14 @@ TEST(ReplayFromBlockDb_Eth, invalid_end_block_number_zero)
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
         fake::static_precompiles::Echo>(
-        state, state_trie, block_db, receipt_collector, output, 0u, 0u);
+        state,
+        state_trie,
+        block_db,
+        receipt_collector,
+        stats_collector,
+        output,
+        0u,
+        0u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::INVALID_END_BLOCK_NUMBER);
     EXPECT_EQ(result.block_number, 0u);
@@ -234,6 +253,7 @@ TEST(ReplayFromBlockDb_Eth, start_block_number_outside_db)
     fakeEmptyStateTrie<state_t> state_trie;
     fakeBlockDb block_db;
     receipt_collector_t receipt_collector;
+    stats_collector_t stats_collector;
     std::stringstream output;
     replay_eth_t replay_eth;
 
@@ -247,7 +267,13 @@ TEST(ReplayFromBlockDb_Eth, start_block_number_outside_db)
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
         fake::static_precompiles::Echo>(
-        state, state_trie, block_db, receipt_collector, output, 1u);
+        state,
+        state_trie,
+        block_db,
+        receipt_collector,
+        stats_collector,
+        output,
+        1u);
 
     EXPECT_EQ(
         result.status, replay_eth_t::Status::START_BLOCK_NUMBER_OUTSIDE_DB);
@@ -260,6 +286,7 @@ TEST(ReplayFromBlockDb_Eth, decompress_block_error)
     fakeEmptyStateTrie<state_t> state_trie;
     fakeErrorDecompressBlockDb block_db;
     receipt_collector_t receipt_collector;
+    stats_collector_t stats_collector;
     std::stringstream output;
     replay_eth_error_decompress_t replay_eth;
 
@@ -271,7 +298,13 @@ TEST(ReplayFromBlockDb_Eth, decompress_block_error)
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
         fake::static_precompiles::Echo>(
-        state, state_trie, block_db, receipt_collector, output, 1u);
+        state,
+        state_trie,
+        block_db,
+        receipt_collector,
+        stats_collector,
+        output,
+        1u);
 
     EXPECT_EQ(
         result.status,
@@ -285,6 +318,7 @@ TEST(ReplayFromBlockDb_Eth, decode_block_error)
     fakeEmptyStateTrie<state_t> state_trie;
     fakeErrorDecodeBlockDb block_db;
     receipt_collector_t receipt_collector;
+    stats_collector_t stats_collector;
     std::stringstream output;
     replay_eth_error_decode_t replay_eth;
 
@@ -296,7 +330,13 @@ TEST(ReplayFromBlockDb_Eth, decode_block_error)
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
         fake::static_precompiles::Echo>(
-        state, state_trie, block_db, receipt_collector, output, 1u);
+        state,
+        state_trie,
+        block_db,
+        receipt_collector,
+        stats_collector,
+        output,
+        1u);
 
     EXPECT_EQ(
         result.status, replay_eth_error_decode_t::Status::DECODE_BLOCK_ERROR);
@@ -309,6 +349,7 @@ TEST(ReplayFromBlockDb_Eth, one_block)
     fakeEmptyStateTrie<state_t> state_trie;
     fakeBlockDb block_db;
     receipt_collector_t receipt_collector;
+    stats_collector_t stats_collector;
     std::stringstream output;
     replay_eth_t replay_eth;
 
@@ -322,7 +363,14 @@ TEST(ReplayFromBlockDb_Eth, one_block)
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
         fake::static_precompiles::Echo>(
-        state, state_trie, block_db, receipt_collector, output, 100u, 101u);
+        state,
+        state_trie,
+        block_db,
+        receipt_collector,
+        stats_collector,
+        output,
+        100u,
+        101u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::SUCCESS);
     EXPECT_EQ(result.block_number, 100u);
@@ -335,6 +383,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_run_from_zero)
     fakeEmptyStateTrie<state_t> state_trie;
     fakeBlockDb block_db;
     receipt_collector_t receipt_collector;
+    stats_collector_t stats_collector;
     std::stringstream output;
     replay_eth_t replay_eth;
 
@@ -348,7 +397,13 @@ TEST(ReplayFromBlockDb_Eth, frontier_run_from_zero)
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
         fake::static_precompiles::Echo>(
-        state, state_trie, block_db, receipt_collector, output, 0u);
+        state,
+        state_trie,
+        block_db,
+        receipt_collector,
+        stats_collector,
+        output,
+        0u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::SUCCESS_END_OF_DB);
     EXPECT_EQ(result.block_number, 1'234u);
@@ -367,6 +422,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_homestead)
     fakeEmptyStateTrie<state_t> state_trie;
     fakeBlockDb block_db;
     receipt_collector_t receipt_collector;
+    stats_collector_t stats_collector;
     std::stringstream output;
     replay_eth_t replay_eth;
 
@@ -384,6 +440,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_homestead)
         state_trie,
         block_db,
         receipt_collector,
+        stats_collector,
         output,
         fork_traits::frontier::last_block_number - 10u,
         fork_traits::frontier::last_block_number + 10u);
@@ -410,6 +467,7 @@ TEST(ReplayFromBlockDb_Eth, berlin_to_london)
     fakeEmptyStateTrie<state_t> state_trie;
     fakeBlockDb block_db;
     receipt_collector_t receipt_collector;
+    stats_collector_t stats_collector;
     std::stringstream output;
     replay_eth_t replay_eth;
 
@@ -427,6 +485,7 @@ TEST(ReplayFromBlockDb_Eth, berlin_to_london)
         state_trie,
         block_db,
         receipt_collector,
+        stats_collector,
         output,
         fork_traits::berlin::last_block_number - 10u,
         fork_traits::berlin::last_block_number + 10u);
@@ -453,6 +512,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_spurious_dragon)
     fakeEmptyStateTrie<state_t> state_trie;
     fakeBlockDb block_db;
     receipt_collector_t receipt_collector;
+    stats_collector_t stats_collector;
     std::stringstream output;
     replay_eth_t replay_eth;
 
@@ -470,6 +530,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_spurious_dragon)
         state_trie,
         block_db,
         receipt_collector,
+        stats_collector,
         output,
         fork_traits::frontier::last_block_number - 10u,
         fork_traits::homestead::last_block_number + 10u);

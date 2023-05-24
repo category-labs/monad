@@ -163,3 +163,5 @@ elseif(UBSAN)
 else()
   target_link_options(monad PRIVATE LINKER:-z,defs)
 endif()
+
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum)

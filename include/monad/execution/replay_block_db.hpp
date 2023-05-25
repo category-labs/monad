@@ -54,9 +54,9 @@ public:
     template <
         concepts::fork_traits<TState> TTraits,
         template <typename, typename> class TTxnProcessor,
-        template <typename, typename> class TEvm,
+        template <typename, typename, typename> class TEvm,
         template <typename, typename, typename...> class TStaticPrecompiles,
-        template <typename, typename, typename, typename> class TEvmHost,
+        template <typename, typename, typename> class TEvmHost,
         template <typename, typename, typename, typename, typename>
         class TFiberData,
         template <typename, typename> class... TPrecompiles>
@@ -90,13 +90,13 @@ public:
                         TTraits,
                         TTxnProcessor<TState, TTraits>,
                         TEvmHost<
-                            TTraits,
                             TState,
-                            Evm<TState, TTraits>,
+                            TTraits,
+                            Evm<TState, TTraits,
                             TStaticPrecompiles<
                                 TState,
                                 TTraits,
-                                TPrecompiles<TState, TTraits>...>>,
+                                TPrecompiles<TState, TTraits>...>>>,
                         TExecution>>(state, block);
 
                 TTransactionTrie transaction_trie(block.transactions);
@@ -145,9 +145,9 @@ public:
     template <
         concepts::fork_traits<TState> TTraits,
         template <typename, typename> class TTxnProcessor,
-        template <typename, typename> class TEvm,
+        template <typename, typename, typename> class TEvm,
         template <typename, typename, typename...> class TStaticPrecompiles,
-        template <typename, typename, typename, typename> class TEvmHost,
+        template <typename, typename, typename> class TEvmHost,
         template <typename, typename, typename, typename, typename>
         class TFiberData,
         template <typename, typename> class... TPrecompiles>

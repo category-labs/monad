@@ -97,12 +97,12 @@ struct fakeEmptyTP
     }
 };
 
-template <class TState, concepts::fork_traits<TState> TTraits>
+template <class TState, concepts::fork_traits<TState> TTraits, class TStaticPrecompiles>
 struct fakeEmptyEvm
 {
 };
 
-template <class TTraits, class TState, class TEvm, class TStaticPrecompiles>
+template <class TTraits, class TState, class TEvm>
 struct fakeEmptyEvmHost
 {
 };

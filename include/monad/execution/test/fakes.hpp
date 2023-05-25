@@ -38,7 +38,10 @@ namespace fake
         bool _applied_state{};
         std::vector<Receipt::Log> _logs{};
 
-        [[nodiscard]] bool account_exists(address_t const &) { return true; }
+        [[nodiscard]] bool account_exists(address_t const &a)
+        {
+            return _map.contains(a);
+        }
 
         [[nodiscard]] bytes32_t
         get_storage(address_t const &, bytes32_t const &) const noexcept
@@ -116,7 +119,7 @@ namespace fake
 
         void destruct_suicides() { _suicides = 0; }
 
-        void revert(){};
+        void revert() { _map.clear(); };
 
         void store_log(Receipt::Log &&l) { _logs.emplace_back(l); }
 
@@ -141,12 +144,12 @@ namespace fake
         };
 
         [[nodiscard]] constexpr inline Receipt make_receipt_from_result(
-            evmc_status_code , Transaction const &, uint64_t const)
+            evmc_status_code, Transaction const &, uint64_t const)
         {
             return _receipt;
         }
 
-        [[nodiscard]] inline evmc::Result call(evmc_message const &) noexcept
+        [[nodiscard]] virtual evmc::Result call(evmc_message const &) noexcept
         {
             return evmc::Result{_result};
         }
@@ -165,9 +168,24 @@ namespace fake
         {
             return _result;
         }
+
         [[nodiscard]] evmc_result transfer_call_balances(evmc_message const &)
         {
             return _e_result;
+        }
+
+        template <class TEvmHost>
+        [[nodiscard]] evmc::Result
+        call_evm(TEvmHost *, evmc_message const &) noexcept
+        {
+            return evmc::Result{_e_result};
+        }
+
+        template <class TEvmHost>
+        [[nodiscard]] evmc::Result
+        create_contract_account(TEvmHost *, evmc_message const &) noexcept
+        {
+            return evmc::Result{_e_result};
         }
     };
 
@@ -183,7 +201,7 @@ namespace fake
             static inline uint64_t static_precompiles{1};
             static inline uint64_t _intrinsic_gas{21'000u};
             static inline uint64_t _max_refund_quotient{2u};
-            static inline bool _fail_store_contract{};
+            static inline bool _success_store_contract{};
             static inline uint64_t _gas_creation_cost{};
             static inline uint64_t _create_address{};
             static inline uint64_t _echo_gas_cost{10};
@@ -209,10 +227,10 @@ namespace fake
             store_contract_code(TState &, address_t const &a, evmc_result &r)
             {
                 r.gas_left -= _gas_creation_cost;
-                if (!_fail_store_contract) {
+                if (_success_store_contract) {
                     r.create_address = a;
                 }
-                return _fail_store_contract;
+                return _success_store_contract;
             }
         };
 

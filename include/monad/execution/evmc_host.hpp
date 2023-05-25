@@ -3,6 +3,7 @@
 #include <monad/core/address.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/concepts.hpp>
 #include <monad/core/transaction.hpp>
 
 #include <monad/execution/config.hpp>
@@ -15,7 +16,7 @@
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
-template <class TTraits, class TState, class TEvm, class TStaticPrecompiles>
+template <class TState, concepts::fork_traits<TState> TTraits, class TEvm>
 struct EvmcHost : public evmc::HostInterface
 {
     BlockHeader const &block_header_;
@@ -35,57 +36,53 @@ struct EvmcHost : public evmc::HostInterface
     }
     virtual ~EvmcHost() noexcept = default;
 
-    virtual inline bool
-    account_exists(address_t const &a) const noexcept override
+    virtual bool account_exists(address_t const &a) const noexcept override
     {
         return state_.account_exists(a);
     }
 
-    virtual inline bytes32_t get_storage(
+    virtual bytes32_t get_storage(
         const address_t &a, const bytes32_t &key) const noexcept override
     {
         return state_.get_storage(a, key);
     }
 
-    virtual inline evmc_storage_status set_storage(
+    virtual evmc_storage_status set_storage(
         address_t const &a, bytes32_t const &key,
         bytes32_t const &value) noexcept override
     {
         return state_.set_storage(a, key, value);
     }
 
-    virtual inline uint256be
-    get_balance(address_t const &a) const noexcept override
+    virtual uint256be get_balance(address_t const &a) const noexcept override
     {
         return state_.get_balance(a);
     }
 
-    virtual inline size_t
-    get_code_size(address_t const &a) const noexcept override
+    virtual size_t get_code_size(address_t const &a) const noexcept override
     {
         return state_.get_code_size(a);
     }
 
-    virtual inline bytes32_t
-    get_code_hash(address_t const &a) const noexcept override
+    virtual bytes32_t get_code_hash(address_t const &a) const noexcept override
     {
         return state_.get_code_hash(a);
     }
 
-    virtual inline size_t copy_code(
+    virtual size_t copy_code(
         address_t const &a, size_t offset, uint8_t *data,
         size_t size) const noexcept override
     {
         return state_.copy_code(a, offset, data, size);
     }
 
-    virtual inline bool selfdestruct(
+    virtual bool selfdestruct(
         address_t const &a, address_t const &beneficiary) noexcept override
     {
         return state_.selfdestruct(a, beneficiary);
     }
 
-    [[nodiscard]] static constexpr inline evmc_message
+    [[nodiscard]] static constexpr evmc_message
     make_msg_from_txn(Transaction const &t)
     {
         const auto to_address = [&] {
@@ -109,7 +106,7 @@ struct EvmcHost : public evmc::HostInterface
         return m;
     }
 
-    [[nodiscard]] constexpr inline Receipt make_receipt_from_result(
+    [[nodiscard]] constexpr Receipt make_receipt_from_result(
         evmc_status_code sc, Transaction const &t, uint64_t const gas_remaining)
     {
         Receipt receipt{
@@ -120,53 +117,14 @@ struct EvmcHost : public evmc::HostInterface
         return receipt;
     }
 
-    [[nodiscard]] virtual inline evmc::Result
+    [[nodiscard]] virtual evmc::Result
     call(evmc_message const &m) noexcept override
     {
         if (m.kind == EVMC_CREATE || m.kind == EVMC_CREATE2) {
-            return create_contract_account(m);
-        }
-        return call_evm(m);
-    }
-
-    [[nodiscard]] inline evmc::Result
-    create_contract_account(evmc_message const &m) noexcept
-    {
-        auto const contract_address = evm_.make_account_address(m);
-        if (!contract_address) {
-            return evmc::Result{contract_address.error()};
-        }
-        // evmone execute, just this for now
-        evmc_result res = {.status_code = EVMC_SUCCESS, .gas_left = 12'000};
-
-        if (!TTraits::store_contract_code(
-                state_, contract_address.value(), res)) {
-            state_.revert();
+            return evm_.create_contract_account(this, m);
         }
 
-        return evmc::Result{res};
-    }
-
-    [[nodiscard]] inline evmc::Result call_evm(evmc_message const &m) noexcept
-    {
-        if (auto const result = evm_.transfer_call_balances(m);
-            result.status_code != EVMC_SUCCESS) {
-            return evmc::Result{result};
-        }
-        evmc_result const result =
-            TStaticPrecompiles::static_precompile_exec_func(m.code_address)
-                .transform([&](auto static_precompile_execute) {
-                    return static_precompile_execute(m);
-                })
-                // execute on backend, just this for now
-                .value_or(evmc_result{
-                    .status_code = EVMC_SUCCESS, .gas_left = m.gas});
-
-        if (result.status_code == EVMC_REVERT) {
-            state_.revert();
-        }
-
-        return evmc::Result{result};
+        return evm_.call_evm(this, m);
     }
 
     virtual evmc_tx_context get_tx_context() const noexcept override
@@ -210,7 +168,7 @@ struct EvmcHost : public evmc::HostInterface
         return state_.get_block_hash(block_number);
     };
 
-    virtual void inline emit_log(
+    virtual void emit_log(
         address_t const &addr, const uint8_t *data, size_t data_size,
         bytes32_t const topics[], size_t num_topics) noexcept override
     {
@@ -221,13 +179,13 @@ struct EvmcHost : public evmc::HostInterface
         state_.store_log(std::move(l));
     }
 
-    virtual inline evmc_access_status
+    virtual evmc_access_status
     access_account(address_t const &a) noexcept override
     {
         return state_.access_account(a);
     }
 
-    virtual inline evmc_access_status
+    virtual evmc_access_status
     access_storage(address_t const &a, bytes32_t const &key) noexcept override
     {
         return state_.access_storage(a, key);

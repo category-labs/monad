@@ -36,6 +36,7 @@ pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 pkg_check_modules(rocksdb REQUIRED IMPORTED_TARGET rocksdb)
 find_package(tl-expected REQUIRED)
 find_package(tl-optional REQUIRED)
+find_package(quill REQUIRED)
 
 set(BUILD_SHARED_LIBS OFF)
 set(ETHASH_BUILD_TESTS OFF)
@@ -179,6 +180,7 @@ target_link_libraries(monad
     PUBLIC intx::intx
     PUBLIC tl::expected
     PUBLIC tl::optional
+    PUBLIC quill::quill
 )
 monad_compile_options(monad)
 

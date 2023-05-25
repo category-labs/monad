@@ -5,6 +5,16 @@
 #include <monad/core/concepts.hpp>
 #include <monad/execution/config.hpp>
 
+#include <monad/execution/static_precompiles/big_number_add.hpp>
+#include <monad/execution/static_precompiles/big_number_multiply.hpp>
+#include <monad/execution/static_precompiles/big_number_pairing.hpp>
+#include <monad/execution/static_precompiles/blake2f.hpp>
+#include <monad/execution/static_precompiles/elliptic_curve_recover.hpp>
+#include <monad/execution/static_precompiles/identity.hpp>
+#include <monad/execution/static_precompiles/modular_exponentiation.hpp>
+#include <monad/execution/static_precompiles/ripemd160_hash.hpp>
+#include <monad/execution/static_precompiles/sha256_hash.hpp>
+
 #include <evmc/evmc.hpp>
 
 #include <tl/optional.hpp>

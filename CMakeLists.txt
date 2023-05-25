@@ -109,6 +109,16 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/fork_traits.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/evm.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/evmc_host.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/config.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/static_precompiles/elliptic_curve_recover.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/static_precompiles/sha256_hash.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/static_precompiles/ripemd160_hash.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/static_precompiles/identity.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/static_precompiles/modular_exponentiation.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/static_precompiles/big_number_add.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/static_precompiles/big_number_multiply.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/static_precompiles/big_number_pairing.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/static_precompiles/blake2f.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/static_precompiles.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/execution_model.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/replay_block_db.hpp

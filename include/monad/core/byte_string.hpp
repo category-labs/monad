@@ -38,4 +38,14 @@ inline byte_string_view to_byte_string_view(std::string const &s)
     return {reinterpret_cast<unsigned char const *>(&s[0]), s.size()};
 }
 
+struct byte_string_hasher
+{
+    size_t operator()(byte_string const &x) const
+    {
+        return std::hash<std::string>()(
+            {reinterpret_cast<std::string::value_type const *>(x.data()),
+             x.size()});
+    }
+};
+
 MONAD_NAMESPACE_END

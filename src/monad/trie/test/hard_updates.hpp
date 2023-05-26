@@ -1,0 +1,357 @@
+#pragma once
+
+#include <evmc/evmc.hpp>
+#include <monad/core/byte_string.hpp>
+#include <monad/trie/config.hpp>
+#include <monad/trie/nibbles.hpp>
+#include <monad/trie/trie.hpp>
+#include <vector>
+
+MONAD_TRIE_NAMESPACE_BEGIN
+
+using namespace evmc::literals;
+
+constexpr std::array hard_updates = {
+    std::make_pair(
+        0x009d9ee6ae2a8d2d33a6152cbd20b53e8e846228d6f5c3ba6df1c81f16d3f127_bytes32,
+        0x41bc7c43173291670eb10f71ab33b6a34f3d6e579db35659d6f1feb95f74ed46_bytes32),
+    std::make_pair(
+        0x011b4d03dd8c01f1049143cf9c4c817e4b167f1d1b83e5c6f0f10d89ba1e7bce_bytes32,
+        0xceb7bb5d7e6da5c57e30f0e5f9957c3d60257a504231acaab2188a8c6b075c73_bytes32),
+    std::make_pair(
+        0x04f4a4a9c6d36d0a720cbbc0369a0f0c50f10553d5bf85cdce61efddab992c3c_bytes32,
+        0x2ba70a242acb53c42948c21ac59f7d89dc88d11e6fe3aa494dc394b4a1c4499e_bytes32),
+    std::make_pair(
+        0x0f81fd306d0c0cddd0728a76e6bfb0dfa12891c89994d877f0445483563b380a_bytes32,
+        0x60e3d22c55b1915a6eb9fcd285b46f6cff8882d2f3ae2fd385a4e5572f5aa5f4_bytes32),
+    std::make_pair(
+        0x15fed0451499512d95f3ec5a41c878b9de55f21878b5b4e190d4667ec709b4cf_bytes32,
+        0xaf7281a4ee6398e7d7cea996b1154893081455d486bde0a063019c7a92076006_bytes32),
+    std::make_pair(
+        0x184125b2e3d1ded2ad3f82a383d9b09bd5bac4ccea4d41092f49523399598aca_bytes32,
+        0x26ddc3107bec749814c5e7d837dfc9bb4f0b22d6c868614e89672d04b1667e97_bytes32),
+    std::make_pair(
+        0x1d8453ab2f7716504a4457ebe9831dbf996267e350ad0b2029f654d0dce1e055_bytes32,
+        0x3290f093b62a83e1dba902596ead450f7b134025ed9989ec369095ddacbeda71_bytes32),
+    std::make_pair(
+        0x2039d7a642a51f16527f26c248d83d01f17bd6bb26f8f7a26a8ef0b25eba8fb5_bytes32,
+        0x49ef6c046b9034a7aa5853d67e5e386e1dc9a75613ba7ad5ff9d2aebd7a69d2d_bytes32),
+    std::make_pair(
+        0x276d032750f286c508d060efcddd1b7a9becbfdb64efb5dfcbee057f86722fef_bytes32,
+        0x4b7c90f99a32f7cd42939dde0f7ceb97abba1b04b7817964392f8a33dd45df56_bytes32),
+    std::make_pair(
+        0x290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563_bytes32,
+        0xd924bece74cfca1df3f35cf6770ad94b0489736f0934e9d9d94ddddbbe471d3f_bytes32),
+    std::make_pair(
+        0x2af357fc2ab2964b76482ec0fcac3b86f5aca1a8292676023c8b9ec392d821a0_bytes32,
+        0x777fc5eb0909658944a5d882594433ce895f6f5933bd9416b6f7bc654a3c7270_bytes32),
+    std::make_pair(
+        0x2b429e4eab6541b4beccc7b602371aa993f406b84ccf73c8867b6d83cb135f94_bytes32,
+        0x295d46a25bfa7d0e4985db9b32f0710fd18b74a59b5d013673821b8948d4be03_bytes32),
+    std::make_pair(
+        0x2ced9dd329f90a9efa5f4e1036cf7d16762391ac0cbe8efa32ce5639ae85fedc_bytes32,
+        0x5fe0ad29a9ca1a2be131d767d38e10cf4cbc99c0e60a9bf656b4dd770e9debf0_bytes32),
+    std::make_pair(
+        0x2e795758918d9c804da815b3be88b798e63d21d668c624228fbd697bff25ea3b_bytes32,
+        0xee7ddcb4ebe386781f741f9c96169d73fea0f9b88e59217192316cfc63cdaa9a_bytes32),
+    std::make_pair(
+        0x30e2bfdaad2f3c218a1a8cc54fa1c4e6182b6b7f3bca273390cf587b50b47311_bytes32,
+        0x5485e9da791cb91437f65126464669620b583691618d10f2a4ebc95f61eab7e9_bytes32),
+    std::make_pair(
+        0x3184fc86524b0495db56f434fba34e478911db355cbb44815e987625ab42e557_bytes32,
+        0x5718ef99f6395026120be81ca15ebbf6070088c64861ecc5e928bb1899790971_bytes32),
+    std::make_pair(
+        0x336c5ee8777d6ef07cafc1c552f7d0b579a7ae6e0af042e9d18981c5b78642d3_bytes32,
+        0x856f1a994bfd6fc3eeccc36d03d9e6135b106858e23c71c239ffe63172ccdd7d_bytes32),
+    std::make_pair(
+        0x39aebb35169c657d179f2c043aaa0f872996f17760662712f1dc6331fda57882_bytes32,
+        0xb6ddd6949b83c8b437eaae6bf1df332776486b83a2504aa427ddd4e345d064b2_bytes32),
+    std::make_pair(
+        0x3a709301f7eafe917c7a06e209b077a9f3942799fb24b913407674a4c1485893_bytes32,
+        0xb9c6c4378fb88d49cee1ff5a0ba8db11742704f8abe2f1e197a4413017c3569f_bytes32),
+    std::make_pair(
+        0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301_bytes32,
+        0xa530fec672450854e903f0e040018e09b2b0502c103b57d57cdb30e1be541b2d_bytes32),
+    std::make_pair(
+        0x3e327054f60b9c38a1c3fafb23d155d0f971a83a616685eb79c73127b3dfbcc5_bytes32,
+        0xb739475cf33502d6e8f9812f7c7a794d27d087f2d6f5add997eef20ac6af5365_bytes32),
+    std::make_pair(
+        0x3f6f363f9f5dc4d17b6302009df91c84926a6d7684d5200cf7564c162d14ee9e_bytes32,
+        0xe856ec919fb0c36dfb2983f919e2d5e8bd3e29cbcad5a4e6f577355cc248228f_bytes32),
+    std::make_pair(
+        0x40e863c4bf2d8368d2089be3cd3340ecb9c7be11c9c8f4588f2c50f607a3192f_bytes32,
+        0x49d1363f8bc1fce71d09133f0a75e6620b315d9d093e878ba9bea695d1ba7598_bytes32),
+    std::make_pair(
+        0x41414fecbcd48d24288f4cd69cdc4f11560667f16291c4c642082019a2c613a6_bytes32,
+        0xee7b15d99c5256e390760193f154d7309a7cd7857452c1ee50f14fcf97fd6690_bytes32),
+    std::make_pair(
+        0x44a25c9533b4c9e05472848068a6b5bcb693ce9e222f3f4ac82d2927a82a34ce_bytes32,
+        0x27e95048fd667877ca0bf0b185ad434bac70aa812d19d87fe775ed81601175e8_bytes32),
+    std::make_pair(
+        0x46700b4d40ac5c35af2c22dda2787a91eb567b06c924a8fb8ae9a05b20c08c21_bytes32,
+        0x0bbef1c0791779842aa77a6ddcb825e014947f82e0095c252a278ab62a1a310f_bytes32),
+    std::make_pair(
+        0x471ccdcb79bddea38175f8cc115b52365f2c864200fbce48e994511bb9c6006f_bytes32,
+        0x8aa1a7b2969b4f7578155e6c37601054558a47a66fb1088514a7d7e801d6fc85_bytes32),
+    std::make_pair(
+        0x496e418294117864002a95f894a01c9cc414c86e17325489a5ea2f0eef181967_bytes32,
+        0x3d2e63a91b2ecf2ed045c79f40b6f76bda5bcce6a8313c0c55a73b8d85b0652b_bytes32),
+    std::make_pair(
+        0x4d8a735acc38ab7f01310ca8e6026ed9f86de88141cd83996db741df5291fc0d_bytes32,
+        0xa3277ef3829bf16b18091531cfaecc91b5ac6792978fdffba6cb767020dc37ea_bytes32),
+    std::make_pair(
+        0x5037e1a5e02e081b1b850b130eca7ac17335fdf4c61cc5ff6ae765196fb0d5b3_bytes32,
+        0x5d6f7ffbc206483d9fd229f8b6c18c7090fc029dc1ec0f6022aa540bb0003b95_bytes32),
+    std::make_pair(
+        0x51980562e41978f15369c21f26920284ac6836d53b02cd89edf4fedc97e68215_bytes32,
+        0xa676bfdc8476e28ef0adff8750c1ae0676712a1391cf73661632accf171d0108_bytes32),
+    std::make_pair(
+        0x5380c7b7ae81a58eb98d9c78de4a1fd7fd9535fc953ed2be602daaa41767312a_bytes32,
+        0x1c97359531e581287f81fd6328c1adeb6f899ade3125ea7e56e060acf6e7bae4_bytes32),
+    std::make_pair(
+        0x53e7852638024f004d43a4be0eb8fee26a32a8372274843339b422448fd2576f_bytes32,
+        0xe9d657646f5721f860972318bfed8765866fb1f50fad2bd0ad0f4e1e920e2c3c_bytes32),
+    std::make_pair(
+        0x5429fdc28e48579bde709c0ca18c55d58f14c9438d5cd1829556be99fd68b97b_bytes32,
+        0xdb7ce7548ff79ce5b2b8c55121851c3e8df775143e2e03430bcbb372547ba067_bytes32),
+    std::make_pair(
+        0x54a8c0ab653c15bfb48b47fd011ba2b9617af01cb45cab344acd57c924d56798_bytes32,
+        0x57964a85b93f767d43ebe85377977a1330c8ff3f866fd0f312cfebf3e625dcbe_bytes32),
+    std::make_pair(
+        0x5562d44b8038c7ec81ac64c10e44ed3b5638aebd3a8cb9d4231533aa9cb3890e_bytes32,
+        0x6a8b239aed22f87fb4ee1110d33a932a9568487d32909eacb4032176be90e2e5_bytes32),
+    std::make_pair(
+        0x5706de766d5661c754fb7b4c89db363309a9f89fa2945c9d8c7a303b79943963_bytes32,
+        0x8e1b28f3926b2b3993c9ae0c0ec07a94910b3f2dac2c8219d217dda24deb8690_bytes32),
+    std::make_pair(
+        0x575b3e1ddd7d4ec1d0695cd1f4b1c0daa01cd98c8309e0d37422fa675d95c614_bytes32,
+        0x086fa79e1f55a679d1aa9a9be8e2993e61ae5388ac40664a72df2003be7b46aa_bytes32),
+    std::make_pair(
+        0x59642f809245ca2950deda7acf1d460ac419ef7a8d003ac6bb42f69b01891e5d_bytes32,
+        0x1cce20fe1fb6adcc6d962c7c7f24a92301736975626daedc392cbf6fe7474cc6_bytes32),
+    std::make_pair(
+        0x5a657105c493a1213c976c653e929218bb4a516bca307dce5861ec23fffa4e58_bytes32,
+        0x2aeecc3de2857fbce6967d86c57d05fe9fbe18e9efa58d45a8e82585f4508b7b_bytes32),
+    std::make_pair(
+        0x5b7d7eba22589dfe1bd7a5417faa2a79838f19c58fe7408d6f66be2327cc996d_bytes32,
+        0x9ed412a63f1e6af16cb430d296729f2c92fc0ac79532142d9805ea7a6674d9c5_bytes32),
+    std::make_pair(
+        0x5d8af3eccd090407b914616ecb273b9d6c3321c26358e846ccb87a888d338b27_bytes32,
+        0x1c6efa586cfffb53c830496f45274239e23d480178537b8b84326bb669262e0b_bytes32),
+    std::make_pair(
+        0x5e54bc0a1194513341483ee95706fa9d4a9831002cf6e153df784ce8a4122e31_bytes32,
+        0x56337628751dbff6354754ad54f9eb62664083b143eb993abb1bce188174a282_bytes32),
+    std::make_pair(
+        0x660b057b36925d4a0da5bf6588b4c64cff7f27ee34e9c90b052829bf8e2a3168_bytes32,
+        0xa03c98c3402151c5bd416af461d5e9d5e17ea2530d5bc8def80d330c66b55aa8_bytes32),
+    std::make_pair(
+        0x69a7b944221b2d0f646f2ce0d6fa665e124d14c473efc07ff1eb0c83454b4ae9_bytes32,
+        0x0b92d6081b191a66efc6a1a0aba4b77560bc237dcce2ddf3d66497b5103885b6_bytes32),
+    std::make_pair(
+        0x6a697d43a20a63e9c2fa5aab8419182ead1753af13004c66ad1b554bf6f4d618_bytes32,
+        0x1ed811a31fbc13c3881d6c794e9887199acbb393514ae9e7fc6d2d6693db3095_bytes32),
+    std::make_pair(
+        0x6ae96a95a7e84d959a072f5e21b3aab63a0aa74ddfcc855dd22efbd350b2b996_bytes32,
+        0xb1f780ceabd8aa55087d4ccf8fd8e5003228679339497942e2ee9ca2a730e2ee_bytes32),
+    std::make_pair(
+        0x6bd2dd6bd408cbee33429358bf24fdc64612fbf8b1b4db604518f40ffd34b607_bytes32,
+        0xfd110b28cfc998d73aa86b39b8bd43f8bfdcb1693714063d9ce87309098d2008_bytes32),
+    std::make_pair(
+        0x6f9c0300d90788e3eaa2560d9c84298b436854bda9b9a4a9e9e04faa2e5e88c4_bytes32,
+        0x2268217fa019194d3a5367d1af324f9b6e8a6ba8e2de7012ce6392886fce9cec_bytes32),
+    std::make_pair(
+        0x70464a66238eef9fe6d03af376d9ed5260552f234e748fae9663a0527ef34c5f_bytes32,
+        0xbb65555dc7a07caa57f90f12f9539823f396eb43e7e5d0400e32132d1c0d5517_bytes32),
+    std::make_pair(
+        0x72abee45b59e344af8a6e520241c4744aff26ed411f4c4b00f8af09adada43ba_bytes32,
+        0xbc4ee81ffd8672b14723a1627fb64111cdaebe0384bf7ca9d34b196fae7000bd_bytes32),
+    std::make_pair(
+        0x743fe1979ce56df143c677aee6cf53601258e834f8e5b1cbd7034b3dde6bc8de_bytes32,
+        0xf808591ba4e9326cb6e7c0b8e24688a3da18934f65bb27b985343b4ac41d9988_bytes32),
+    std::make_pair(
+        0x74723bc3efaf59d897623890ae3912b9be3c4c67ccee3ffcf10b36406c722c1b_bytes32,
+        0xdc292531a31361fc96fe90599536bb2e73366a1420d26a9708ffd4318b403f6d_bytes32),
+    std::make_pair(
+        0x767bfb6ead6760f170718f8074950b9439f9d58e73b64f2554c474039f0e3eb4_bytes32,
+        0xbce6e15314e2c5a6a0f674527511e912609d8dbddf5b83657c083d9c5654bd5f_bytes32),
+    std::make_pair(
+        0x7733ef1f65c467ebbbb75072ade6f3677cc49a146089f0a95abd1e4015c837b9_bytes32,
+        0xb6d6cc2bf4e5d304652aa0348b1d97203e1d094a7f088ff5a8ee16d2c4639833_bytes32),
+    std::make_pair(
+        0x7832a610e1da8a92556b75303c954e5e61fe6fa5c988b6cbe4bc820fca21f82c_bytes32,
+        0xb0f2c1db0555e406d674c65f119d2584b6c45aab9d6cc0b5b0cd951d8f3c527a_bytes32),
+    std::make_pair(
+        0x7cdb9d7f02ea58dfeb797ed6b4f7ea68846e4f2b0e30ed1535fc98b60c4ec809_bytes32,
+        0x95a4a365d8701653a28be599e46d6ba3c9d8e22b949bd0c5145e6128c5e70e1e_bytes32),
+    std::make_pair(
+        0x827b659bbda2a0bdecce2c91b8b68462545758f3eba2dbefef18e0daf84f5ccd_bytes32,
+        0xefce697da33fa6b3ada2712aa246088ffc1afc70a4354119494bfbf70bec56f9_bytes32),
+    std::make_pair(
+        0x8793e6836d0a81896acf9611001258236b1803cd63d84819ffc0c54e4f8bf055_bytes32,
+        0x895a15071f85acd65c8d140ef85789afff244ec52def78c46579a9fa6250882d_bytes32),
+    std::make_pair(
+        0x8c3a47de78197a12495b1b381467f70d10231a44907e73dacc7c548569326dc4_bytes32,
+        0x28151a9c7c0b9168ce54fbdf5f70c06186f80fdf54bce6cf7bbafaa68c352233_bytes32),
+    std::make_pair(
+        0x913b834257c793da6424db222da1ff2f6fd6170ac3094be0405cdcc5552e1a78_bytes32,
+        0x30f9b87636e2f8dc864863be69895cc0d909fbb1fa5dccd3c095bf859f16f4b8_bytes32),
+    std::make_pair(
+        0x9166c8d72e513a9e3b8389c11481ec071da93e37370fc62bf99c51a7b869a7dd_bytes32,
+        0x6ad0962ae65e60fbf606b5ce8f88e030ad119cf2192a43597042e86edecf71f8_bytes32),
+    std::make_pair(
+        0x94374ea151ea3e73d7dd2fb895cb7f0c645bb54bd2d9a388e6209a57af17a19f_bytes32,
+        0xcc6c269b3d0711cad8c44edd30516c588b61f5ff91150e2a26b5f8077fbc10b9_bytes32),
+    std::make_pair(
+        0x96e2012ae1835f1b97d8521c4558a877b98f5dbd5fbe082f6a7747eaa649fe09_bytes32,
+        0x6f002c350a6d7cfc47849318154e33affe35ecff131cfa4ec36c35e3e2f952f6_bytes32),
+    std::make_pair(
+        0x99ff0d9125e1fc9531a11262e15aeb2c60509a078c4cc4c64cefdfb06ff68647_bytes32,
+        0xef5b1eff5ee4745c1c0c680bc4159f6b838333dce523812329b36a9a28a2e65a_bytes32),
+    std::make_pair(
+        0x9fb46c079060b754f8d357eabb5846653dacf180a75e2fbf304b5f377689270e_bytes32,
+        0xc55dc336c09c892568dd484ebee442dc2bfcf8b05bd688d7599c3d6b050ba226_bytes32),
+    std::make_pair(
+        0xa2cb1106ca86af80134921e46c21e7552734ef973651d0bff2574d844f46f814_bytes32,
+        0x502bf37542db670363aa5227ffeb2c4712931d141eeddfe874c85f868326f84e_bytes32),
+    std::make_pair(
+        0xa533db48442c1c18882149f8a3b768b48288edf57aecf5122aa8b9170d52dcb2_bytes32,
+        0x2359f20ca3df81592f08be17ec42ea26c575d71b2d75b49b347a3e74e71c5dd5_bytes32),
+    std::make_pair(
+        0xa86d54e9aab41ae5e520ff0062ff1b4cbd0b2192bb01080a058bb170d84e6457_bytes32,
+        0x8bf962ca4e8d2fd1c0608cefcf4fa60dc4d04938936ced913a99b2bee467ea12_bytes32),
+    std::make_pair(
+        0xac5b832ce7527996a1c519945dbcd7564b88139d3ea3c59607b93459d99f841e_bytes32,
+        0x797c326b81eaaddf00d8158d381dccc21de5f50716dc1620f0f06501eb18891f_bytes32),
+    std::make_pair(
+        0xad315e209dd62516ab8c7d1c2d8c3c206525501ebef91d12c34431f9ea255371_bytes32,
+        0x97b99f6fde3650785875a310668c29a757d2a4956cc51e5375d514d845a27d80_bytes32),
+    std::make_pair(
+        0xad3228b676f7d3cd4284a5443f17f1962b36e491b30a40b2405849e597ba5fb5_bytes32,
+        0x91fb0b8ff5dd4783a9615975f3a963637005c031e41bd7180660d26e66af22a4_bytes32),
+    std::make_pair(
+        0xadaf372fcd93e6510620653a95d8b22c5e3c1ac0536d7b2362a5bbb3c7b49df1_bytes32,
+        0xc07139b17dad0894e2d8d50c25645b09fe95af9015faaf5d6eae17dc067167ef_bytes32),
+    std::make_pair(
+        0xae61b77b3e4cbac1353bfa4c59274e3ae531285c24e3cf57c11771ecbf72d9bf_bytes32,
+        0x22190e27be80950a03dda4ee386333dc9799fd2fb290daa3150e46a2d23aac30_bytes32),
+    std::make_pair(
+        0xb053beae235e330995e8af215e2c0fa8f3c3b702f86658a43c0f626cd06a9a33_bytes32,
+        0x6b4b1cbaeeb9200c66c3c15be5850f53f6b015a09b7ee379b1029afccca788c9_bytes32),
+    std::make_pair(
+        0xb696031ea0505df7c7b5cc290e50cea0402d2a396b0db1c5d08155bd219cc52e_bytes32,
+        0x41e34880ec5e32ec07537472efe0dd57523de9b94fca55420a7fdfe51032eac9_bytes32),
+    std::make_pair(
+        0xbc36789e7a1e281436464229828f817d6612f7b477d66591ff96a9e064bcc98a_bytes32,
+        0x59d235d03a9ac57d77b8d6d205980b47c5f949a783b684cfefcd042939acce08_bytes32),
+    std::make_pair(
+        0xbf1039e9d8f458cb0631edfab4902ce135879eb69e38484e881a6574a68ba9c0_bytes32,
+        0x8033016a6d51137266e6d73ea13948ae2df652462048bd240647049edb6a9885_bytes32),
+    std::make_pair(
+        0xbf53adb76067fdab0d008aef3ad8b28bbb63c2ce4c2b63394ede73f01a70c865_bytes32,
+        0xa9874fc40d57d2fb37775ef6cbd1081bc8be37fb242714d1ca9715495f57a229_bytes32),
+    std::make_pair(
+        0xc0d41db1b6c5cd39e7205798b17f08eb6fc41ffc96eeaace0bef52fdf71aa9ab_bytes32,
+        0xafd2486a3eb43dd4c9960a09b4453cdfa67eb90060ab46700a2f118975f49f10_bytes32),
+    std::make_pair(
+        0xc41589e7559804ea4a2080dad19d876a024ccb05117835447d72ce08c1d020ec_bytes32,
+        0x5e9e94afff4b984db3c26ea95e87d25c0adb0a22cb42f974d00491c42c2e2cdc_bytes32),
+    std::make_pair(
+        0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470_bytes32,
+        0xd3704792b17e570850accb6d6c29897bb8cafd93270fcc0380dac23407ad6b76_bytes32),
+    std::make_pair(
+        0xc980e59163ce244bb4bb6211f48c7b46f88a4f40943e84eb99bdc41e129bd293_bytes32,
+        0xb76d25cb5c6e232b9a47f8f62928599a6c9c0afe6a366e6aa5e27cb8aaf37190_bytes32),
+    std::make_pair(
+        0xca1c89237bece40382b71cc333f0cf90b8d896352d5f336ce534d6875b926e2b_bytes32,
+        0xc13485abfe09327a9b802a242a7a695cf09e5a983f4e9266d59269ebc4fd6ec9_bytes32),
+    std::make_pair(
+        0xcbfc9f3ace1802ac45478ea2849968b5f2a6895f1c4beea8e29085ec84a2fe43_bytes32,
+        0x72a1696c1160977295b500aaf36552bee08c368e3cb16035045b11441cc4f798_bytes32),
+    std::make_pair(
+        0xcd2548c4fa14cb15667cd5e5667dafbd0970d09185c619eb3348f5d7dbf131ba_bytes32,
+        0x00d6f6111be0b3c562ae6b6c460310cc082aca16173fead2ccd9240e81d21659_bytes32),
+    std::make_pair(
+        0xd3f825fab1d4a425ed2702aa02ab5881c1d35fb3b8b952901dbea314309e2061_bytes32,
+        0x452749607759d3f5871fc60c3ad3fb9adf3c450da0c05d2a8cf49b4fc325d3f4_bytes32),
+    std::make_pair(
+        0xdaa77426c30c02a43d9fba4e841a6556c524d47030762eb14dc4af897e605d9b_bytes32,
+        0x6070445d286cad1de38d94a0c24263c8f3848ba093befb01c0efa7355247836c_bytes32),
+    std::make_pair(
+        0xdafb08ad2e8051263f565108f38cabb76abdca652cbe1b7f859cc22e76f2f85c_bytes32,
+        0xd7e433419a84375cd5adf5740e7b966c920168c2d015913147c2fba0beb3dbbf_bytes32),
+    std::make_pair(
+        0xdcb42a70c54293e75a19dd1303d167822182d78b361dd7504758c35e516871b2_bytes32,
+        0xc458820dbb3ce7b3e8f55660338f039419e1877590a58c740af6f75535138d2f_bytes32),
+    std::make_pair(
+        0xdfcbe054725ea501056a95ff91530c2a83371e15ec9d05619f12c76baa92ee2f_bytes32,
+        0x07c20901e3d0533c01064c22ba75e8315086e5f063c6dae80f45884db4ea4d89_bytes32),
+    std::make_pair(
+        0xdff4c3682adc47c34a7d4e71e6d433ccc3cee8960cc8356979f56e9ca61a63c0_bytes32,
+        0xab7748a62c6f71d9ca7c36e477ae5c1974147858f8166ad5af453fe881889585_bytes32),
+    std::make_pair(
+        0xe168b55b543959bfc9a1ba0d6f846406e9c5078c9f20fb49488e72c3781df761_bytes32,
+        0xf541464883d3119b58a7b52f982ca83dd4ce242b8bf1c64e6b9f6f183b005d8e_bytes32),
+    std::make_pair(
+        0xe2b9f9f9430b05bfa9a3abd3bac9a181434d23a707ef1cde8bd25d30203538d8_bytes32,
+        0xb972b0667534c122caa6a16b0d25928aa04dbe95d62b67596b15e6896e304863_bytes32),
+    std::make_pair(
+        0xe540257305ba7ed8f0852280a8bb5fa439642e2bbe5efb8396023190d1d4efac_bytes32,
+        0x68298cb031cc308a3ef047b821e9f45debb014cdeae5d9b831eabe67be442fe9_bytes32),
+    std::make_pair(
+        0xe8e77626586f73b955364c7b4bbf0bb7f7685ebd40e852b164633a4acbd3244c_bytes32,
+        0x09eeb06103f5d76b0f349b485f53acd30d7fcaacee792743ede2f2742c36b72c_bytes32),
+    std::make_pair(
+        0xe8fb33650faf37535ebd07826e66bdb5c39fb2091055617df310736132d8743c_bytes32,
+        0x32728b7bfcf2eee78f3a5f725a5270daca331d7a65ee5196cc78db7af7b57d15_bytes32),
+    std::make_pair(
+        0xf39a869f62e75cf5f0bf914688a6b289caf2049435d8e68c5c5e6d05e44913f3_bytes32,
+        0x9bbbdeb7664e104a76a180e31cc2cb166c1dd60b651ae5983dd5c0e98d7ef58c_bytes32),
+    std::make_pair(
+        0xf490de2920c8a35fabeb13208852aa28c76f9be9b03a4dd2b3c075f7a26923b4_bytes32,
+        0xc194af2d01f268ddc267961ec5e25b44380aab74c13a754d335d392a5e6511a9_bytes32),
+    std::make_pair(
+        0xf548e71c32522ed78c2588df2cfdc3acd5c04cf930953ecabcc86ee3532f317c_bytes32,
+        0x0b1f54273e2159bdb379c23cff2eb452c31f7e9e781b6c08138ae0af796b1132_bytes32),
+};
+
+[[nodiscard]] constexpr Update
+make_upsert(Nibbles const &key, byte_string const &value)
+{
+    return Upsert{
+        .key = key,
+        .value = value,
+    };
+}
+
+[[nodiscard]] constexpr Update
+make_upsert(evmc::bytes32 key, byte_string const &value)
+{
+    return make_upsert(Nibbles(key), value);
+}
+
+[[nodiscard]] constexpr Update make_del(Nibbles const &key)
+{
+    return Delete{
+        .key = key,
+    };
+}
+
+[[nodiscard]] constexpr Update make_del(evmc::bytes32 key)
+{
+    return make_del(Nibbles(key));
+}
+
+[[nodiscard]] constexpr std::vector<Update> make_hard_updates()
+{
+    std::vector<Update> ret;
+    for (auto const &[key, value] : hard_updates) {
+        ret.push_back(make_upsert(
+            key,
+            byte_string(
+                reinterpret_cast<byte_string::value_type const *>(&value.bytes),
+                sizeof(value.bytes))));
+    }
+    return ret;
+}
+
+MONAD_TRIE_NAMESPACE_END

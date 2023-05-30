@@ -162,7 +162,7 @@ struct AccountStore<TAccountDB>::WorkingCopy : public AccountStore<TAccountDB>
     {
         auto const [_, inserted] =
             changed_.emplace(a, diff_t{get_committed_storage(a), Account{}});
-        assert(inserted);
+        MONAD_DEBUG_ASSERT(inserted);
     }
 
     // EVMC Host Interface

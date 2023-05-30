@@ -2,13 +2,13 @@
 
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
+#include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 
 #include <monad/db/config.hpp>
 #include <monad/db/datum.hpp>
 
 #include <algorithm>
-#include <cassert>
 #include <unordered_map>
 
 MONAD_DB_NAMESPACE_BEGIN
@@ -56,7 +56,7 @@ struct CodeStore
 
         for (auto &[a, code] : w.code_) {
             auto const &[_, inserted] = merged_.emplace(a, std::move(code));
-            assert(inserted);
+            MONAD_DEBUG_ASSERT(inserted);
         }
     }
 
@@ -72,7 +72,7 @@ struct CodeStore
 
         for (auto &[a, code] : merged_) {
             auto const &[_, inserted] = db_.emplace(a, std::move(code));
-            assert(inserted);
+            MONAD_DEBUG_ASSERT(inserted);
         }
         merged_.clear();
     }
@@ -101,7 +101,7 @@ struct CodeStore<TCodeDB>::WorkingCopy : public CodeStore<TCodeDB>
             return;
         }
         auto const &[_, inserted] = code_.emplace(a, code);
-        assert(inserted);
+        MONAD_DEBUG_ASSERT(inserted);
     }
 
     // EVMC Host Interface

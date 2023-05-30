@@ -19,3 +19,14 @@ void monad_assertion_failed(
          ? ((void)0)                                                           \
          : monad_assertion_failed(                                             \
                #expr, __PRETTY_FUNCTION__, __FILE__, __LINE__))
+
+#ifdef NDEBUG
+    #define MONAD_DEBUG_ASSERT(x)                                              \
+        do {                                                                   \
+            (void)sizeof(x);                                                   \
+        }                                                                      \
+        while (0)
+#else
+    #include <assert.h>
+    #define MONAD_DEBUG_ASSERT(x) assert(x)
+#endif

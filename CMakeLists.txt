@@ -53,7 +53,6 @@ function(monad_compile_options target)
     set_property(TARGET ${target} PROPERTY CXX_STANDARD_REQUIRED ON)
     target_compile_options(${target} PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic)
     target_compile_options(${target} PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-missing-field-initializers>)
-    target_link_options(${target} PUBLIC $<$<CXX_COMPILER_ID:GNU>:-lstdc++>)
 endfunction()
 
 ############

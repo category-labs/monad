@@ -20,99 +20,7 @@ struct AccountStore
     using diff_t = diff<std::optional<Account>>;
     using change_set_t = std::unordered_map<address_t, diff_t>;
 
-    struct WorkingCopy : public AccountStore
-    {
-        change_set_t changed_{};
-        uint64_t total_selfdestructs_{};
-
-        // EVMC Host Interface
-        [[nodiscard]] bool account_exists(address_t const &a) const noexcept
-        {
-            if (changed_.contains(a)) {
-                if (changed_.at(a).updated.has_value()) {
-                    return true;
-                }
-                return false;
-            }
-            return AccountStore::account_exists(a);
-        }
-
-        void create_contract(address_t const &a)
-        {
-            auto const [_, inserted] = changed_.emplace(
-                a, diff_t{get_committed_storage(a), Account{}});
-            assert(inserted);
-        }
-
-        // EVMC Host Interface
-        evmc_access_status access_account(address_t const &a)
-        {
-            if (changed_.contains(a)) {
-                return EVMC_ACCESS_WARM;
-            }
-            changed_.emplace(
-                a, diff_t{get_committed_storage(a), *get_committed_storage(a)});
-            return EVMC_ACCESS_COLD;
-        }
-
-        // EVMC Host Interface
-        [[nodiscard]] bytes32_t get_balance(address_t const &a) const noexcept
-        {
-            return intx::be::store<bytes32_t>(
-                changed_.at(a).updated.value_or(Account{}).balance);
-        }
-
-        void
-        set_balance(address_t const &address, uint256_t new_balance) noexcept
-        {
-            changed_.at(address).updated.value().balance = new_balance;
-        }
-
-        [[nodiscard]] uint64_t
-        get_nonce(address_t const &address) const noexcept
-        {
-            return changed_.at(address).updated.value_or(Account{}).nonce;
-        }
-
-        void set_nonce(address_t const &address, uint64_t nonce) noexcept
-        {
-            changed_.at(address).updated.value().nonce = nonce;
-        }
-
-        // EVMC Host Interface
-        [[nodiscard]] bytes32_t
-        get_code_hash(address_t const &address) const noexcept
-        {
-            return changed_.at(address).updated.value_or(Account{}).code_hash;
-        }
-
-        void
-        selfdestruct(address_t const &a, address_t const &beneficiary) noexcept
-        {
-            changed_.at(beneficiary).updated.value().balance +=
-                changed_.at(a).updated.value().balance;
-            changed_.at(a).updated.reset();
-            ++total_selfdestructs_;
-        }
-
-        void destruct_suicides() const noexcept {}
-
-        void destruct_touched_dead() noexcept
-        {
-            for (auto &i : changed_) {
-                if (i.second.updated.value() == Account{}) {
-                    i.second.updated.reset();
-                }
-            }
-        }
-
-        [[nodiscard]] uint64_t total_selfdestructs() const noexcept
-        {
-            return total_selfdestructs_;
-        }
-
-        void revert() noexcept { changed_.clear(); }
-    };
+    struct WorkingCopy;
 
     // TODO Irrevocable change separated out to avoid reversion
     TAccountDB &db_;
@@ -230,6 +138,98 @@ struct AccountStore
         }
         merged_.clear();
     }
+};
+
+template <typename TAccountDB>
+struct AccountStore<TAccountDB>::WorkingCopy : public AccountStore<TAccountDB>
+{
+    change_set_t changed_{};
+    uint64_t total_selfdestructs_{};
+
+    // EVMC Host Interface
+    [[nodiscard]] bool account_exists(address_t const &a) const noexcept
+    {
+        if (changed_.contains(a)) {
+            if (changed_.at(a).updated.has_value()) {
+                return true;
+            }
+            return false;
+        }
+        return AccountStore::account_exists(a);
+    }
+
+    void create_contract(address_t const &a)
+    {
+        auto const [_, inserted] =
+            changed_.emplace(a, diff_t{get_committed_storage(a), Account{}});
+        assert(inserted);
+    }
+
+    // EVMC Host Interface
+    evmc_access_status access_account(address_t const &a)
+    {
+        if (changed_.contains(a)) {
+            return EVMC_ACCESS_WARM;
+        }
+        changed_.emplace(
+            a, diff_t{get_committed_storage(a), *get_committed_storage(a)});
+        return EVMC_ACCESS_COLD;
+    }
+
+    // EVMC Host Interface
+    [[nodiscard]] bytes32_t get_balance(address_t const &a) const noexcept
+    {
+        return intx::be::store<bytes32_t>(
+            changed_.at(a).updated.value_or(Account{}).balance);
+    }
+
+    void set_balance(address_t const &address, uint256_t new_balance) noexcept
+    {
+        changed_.at(address).updated.value().balance = new_balance;
+    }
+
+    [[nodiscard]] uint64_t get_nonce(address_t const &address) const noexcept
+    {
+        return changed_.at(address).updated.value_or(Account{}).nonce;
+    }
+
+    void set_nonce(address_t const &address, uint64_t nonce) noexcept
+    {
+        changed_.at(address).updated.value().nonce = nonce;
+    }
+
+    // EVMC Host Interface
+    [[nodiscard]] bytes32_t
+    get_code_hash(address_t const &address) const noexcept
+    {
+        return changed_.at(address).updated.value_or(Account{}).code_hash;
+    }
+
+    void selfdestruct(address_t const &a, address_t const &beneficiary) noexcept
+    {
+        changed_.at(beneficiary).updated.value().balance +=
+            changed_.at(a).updated.value().balance;
+        changed_.at(a).updated.reset();
+        ++total_selfdestructs_;
+    }
+
+    void destruct_suicides() const noexcept {}
+
+    void destruct_touched_dead() noexcept
+    {
+        for (auto &i : changed_) {
+            if (i.second.updated.value() == Account{}) {
+                i.second.updated.reset();
+            }
+        }
+    }
+
+    [[nodiscard]] uint64_t total_selfdestructs() const noexcept
+    {
+        return total_selfdestructs_;
+    }
+
+    void revert() noexcept { changed_.clear(); }
 };
 
 MONAD_DB_NAMESPACE_END

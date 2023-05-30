@@ -14,7 +14,7 @@ using namespace monad::trie;
 using namespace evmc::literals;
 
 template <>
-inline auto injected_comparator<> = InMemoryPathComparator{};
+inline auto monad::trie::injected_comparator<> = InMemoryPathComparator{};
 
 namespace
 {

@@ -25,7 +25,7 @@ namespace impl
 
             auto const left =
                 static_cast<byte_string::value_type>(nibbles[i] << 4);
-            if (i == (nibbles.size() - 1)) {
+            if (i == (nibbles.size() - 1u)) {
                 dest.push_back(left);
                 break;
             }
@@ -173,7 +173,8 @@ struct Nibbles
         Nibbles ret = *this;
 
         if (ret.size() % 2) {
-            ret.rep.back() |= rhs.rep[1] >> 4;
+            ret.rep.back() |=
+                static_cast<byte_string::value_type>(rhs.rep[1] >> 4);
             impl::copy_from_nibbles(ret.rep, rhs.substr(1));
         }
         else {

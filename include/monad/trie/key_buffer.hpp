@@ -49,7 +49,7 @@ struct KeyBuffer
 
                 auto const left =
                     static_cast<byte_string::value_type>(nibbles[i] << 4);
-                if (i == (nibbles.size() - 1)) {
+                if (i == (nibbles.size() - 1u)) {
                     raw[buf_size] = left;
                     ++buf_size;
                     break;

@@ -21,52 +21,7 @@ struct CodeStore
 {
     using map_t = std::unordered_map<address_t, byte_string>;
 
-    struct WorkingCopy : public CodeStore
-    {
-        map_t code_{};
-
-        explicit WorkingCopy(CodeStore const &c)
-            : CodeStore(c)
-        {
-        }
-
-        [[nodiscard]] byte_string const &code_at(address_t const &a) const noexcept
-        {
-            if (code_.contains(a))
-                return code_.at(a);
-            return CodeStore::code_at(a);
-        }
-
-        void set_code(address_t const &a, byte_string const &code)
-        {
-            if (code.empty()) {
-                return;
-            }
-            auto const &[_, inserted] = code_.emplace(a, code);
-            assert(inserted);
-        }
-
-        // EVMC Host Interface
-        [[nodiscard]] size_t get_code_size(address_t const &a) const noexcept
-        {
-            return code_at(a).size();
-        }
-
-        // EVMC Host Interface
-        [[nodiscard]] size_t copy_code(
-            address_t const &a, size_t offset, uint8_t *buffer,
-            size_t buffer_size)
-        {
-            auto const &code = code_at(a);
-            assert(code.size() > offset);
-            auto const bytes_to_copy =
-                std::min(code.size() - offset, buffer_size);
-            std::memcpy(buffer, code.c_str() + offset, bytes_to_copy);
-            return bytes_to_copy;
-        }
-
-        void revert() { code_.clear(); }
-    };
+    struct WorkingCopy;
 
     TCodeDB &db_;
     map_t merged_{};
@@ -121,6 +76,52 @@ struct CodeStore
         }
         merged_.clear();
     }
+};
+
+template <typename TCodeDB>
+struct CodeStore<TCodeDB>::WorkingCopy : public CodeStore<TCodeDB>
+{
+    map_t code_{};
+
+    explicit WorkingCopy(CodeStore const &c)
+        : CodeStore(c)
+    {
+    }
+
+    [[nodiscard]] byte_string const &code_at(address_t const &a) const noexcept
+    {
+        if (code_.contains(a))
+            return code_.at(a);
+        return CodeStore::code_at(a);
+    }
+
+    void set_code(address_t const &a, byte_string const &code)
+    {
+        if (code.empty()) {
+            return;
+        }
+        auto const &[_, inserted] = code_.emplace(a, code);
+        assert(inserted);
+    }
+
+    // EVMC Host Interface
+    [[nodiscard]] size_t get_code_size(address_t const &a) const noexcept
+    {
+        return code_at(a).size();
+    }
+
+    // EVMC Host Interface
+    [[nodiscard]] size_t copy_code(
+        address_t const &a, size_t offset, uint8_t *buffer, size_t buffer_size)
+    {
+        auto const &code = code_at(a);
+        assert(code.size() > offset);
+        auto const bytes_to_copy = std::min(code.size() - offset, buffer_size);
+        std::memcpy(buffer, code.c_str() + offset, bytes_to_copy);
+        return bytes_to_copy;
+    }
+
+    void revert() { code_.clear(); }
 };
 
 MONAD_DB_NAMESPACE_END

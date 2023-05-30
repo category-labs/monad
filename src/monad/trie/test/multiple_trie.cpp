@@ -10,7 +10,7 @@ using namespace monad::trie;
 using namespace evmc::literals;
 
 template <>
-inline auto injected_comparator<> = InMemoryPrefixPathComparator{};
+inline auto monad::trie::injected_comparator<> = InMemoryPrefixPathComparator{};
 
 TEST_F(in_memory_fixture, MultipleTrie)
 {

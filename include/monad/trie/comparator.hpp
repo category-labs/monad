@@ -41,8 +41,8 @@ inline auto injected_comparator = poison_comparator{};
     }
 
     bool const odd = s1_size % 2;
-    assert(s1.size() == (1 + s1_size / 2 + odd));
-    assert(s2.size() == (1 + s1_size / 2 + odd));
+    assert(s1.size() == (1u + s1_size / 2u + odd));
+    assert(s2.size() == (1u + s1_size / 2u + odd));
     rc = std::memcmp(s1.data(), s2.data(), s1.size() - odd);
     if (rc != 0 || !odd) {
         return rc;

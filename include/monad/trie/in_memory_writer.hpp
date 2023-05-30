@@ -30,13 +30,12 @@ struct InMemoryWriter
     std::unordered_map<WriterColumn, std::vector<byte_string>>
         deleted_prefixes_;
 
-    constexpr void
-    put(WriterColumn col, KeyBuffer const &key, byte_string_view value)
+    void put(WriterColumn col, KeyBuffer const &key, byte_string_view value)
     {
         changes_[col][byte_string{key.view()}] = value;
     }
 
-    constexpr void del(WriterColumn col, KeyBuffer const &key)
+    void del(WriterColumn col, KeyBuffer const &key)
     {
         changes_[col][byte_string{key.view()}] = tl::nullopt;
     }

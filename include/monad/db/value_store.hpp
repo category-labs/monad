@@ -47,139 +47,7 @@ struct ValueStore
         }
     };
 
-    struct WorkingCopy : public ValueStore
-    {
-        InnerStorage touched_{};
-        std::unordered_map<address_t, std::unordered_set<bytes32_t>>
-            accessed_storage_{};
-        void remove_touched_key(address_t const &a, bytes32_t const &key)
-        {
-            touched_.storage_.at(a).erase(key);
-            if (touched_.storage_.at(a).empty()) {
-                touched_.storage_.erase(a);
-            }
-        }
-
-        // EVMC Host Interface
-        [[nodiscard]] bytes32_t
-        get_storage(address_t const &a, bytes32_t const &key) const noexcept
-        {
-            if (touched_.deleted_contains_key(a, key)) {
-                return {};
-            }
-            if (touched_.contains_key(a, key)) {
-                return touched_.storage_.at(a).at(key).updated;
-            }
-            return get_merged_value(a, key);
-        }
-
-        [[nodiscard]] evmc_storage_status
-        zero_out_key(address_t const &a, bytes32_t const &key) noexcept
-        {
-            // Assume empty (zero) storage is not stored in storage_
-            if (db_or_merged_contains_key(a, key)) {
-                if (touched_.contains_key(a, key)) {
-                    if (get_merged_value(a, key) ==
-                        touched_.storage_.at(a).at(key)) {
-                        remove_touched_key(a, key);
-                        return EVMC_STORAGE_DELETED;
-                    }
-                    else {
-                        remove_touched_key(a, key);
-                        touched_.deleted_storage_[a].insert(
-                            deleted_key{db_.at(a).at(key), key});
-                        return EVMC_STORAGE_MODIFIED_DELETED;
-                    }
-                }
-                else {
-                    touched_.deleted_storage_[a].insert(
-                        deleted_key{get_merged_value(a, key), key});
-                    return EVMC_STORAGE_DELETED;
-                }
-            }
-
-            if (touched_.contains_key(a, key)) {
-                remove_touched_key(a, key);
-                return EVMC_STORAGE_ADDED_DELETED;
-            }
-            return EVMC_STORAGE_ASSIGNED;
-        }
-
-        [[nodiscard]] evmc_storage_status set_current_value(
-            address_t const &a, bytes32_t const &key,
-            bytes32_t const &value) noexcept
-        {
-            if (db_or_merged_contains_key(a, key)) {
-                if (touched_.contains_key(a, key)) {
-                    if (touched_.storage_[a][key].updated == value) {
-                        return EVMC_STORAGE_ASSIGNED;
-                    }
-
-                    if (get_merged_value(a, key) == value) {
-                        remove_touched_key(a, key);
-                        return EVMC_STORAGE_MODIFIED_RESTORED;
-                    }
-
-                    touched_.storage_[a][key].updated = value;
-                    return EVMC_STORAGE_MODIFIED;
-                }
-
-                touched_.storage_[a].emplace(
-                    key, diff_t{get_merged_value(a, key), value});
-
-                if (touched_.deleted_contains_key(a, key)) {
-                    touched_.deleted_storage_.at(a).erase(deleted_key{key});
-
-                    if (get_merged_value(a, key) == value) {
-                        return EVMC_STORAGE_DELETED_RESTORED;
-                    }
-                    return EVMC_STORAGE_DELETED_ADDED;
-                }
-
-                if (get_merged_value(a, key) == value) {
-                    return EVMC_STORAGE_ASSIGNED;
-                }
-                return EVMC_STORAGE_MODIFIED;
-            }
-
-            if (!touched_.storage_.contains(a) ||
-                !touched_.storage_.at(a).contains(key)) {
-                touched_.storage_[a].emplace(key, diff_t{value});
-                return EVMC_STORAGE_ADDED;
-            }
-
-            touched_.storage_[a][key] = value;
-            return EVMC_STORAGE_ASSIGNED;
-        }
-
-        // EVMC Host Interface
-        [[nodiscard]] evmc_storage_status set_storage(
-            address_t const &a, bytes32_t const &key,
-            bytes32_t const &value) noexcept
-        {
-            if (value == bytes32_t{}) {
-                return zero_out_key(a, key);
-            }
-            return set_current_value(a, key, value);
-        }
-
-        // EVMC Host Interface
-        evmc_access_status
-        access_storage(address_t const &a, bytes32_t const &key) noexcept
-        {
-            auto const &[_, inserted] = accessed_storage_[a].insert(key);
-            if (inserted) {
-                return EVMC_ACCESS_COLD;
-            }
-            return EVMC_ACCESS_WARM;
-        }
-
-        void revert() noexcept
-        {
-            touched_.clear();
-            accessed_storage_.clear();
-        }
-    };
+    struct WorkingCopy;
 
     ValueStore(TValueDB &store)
         : db_{store}
@@ -330,6 +198,141 @@ struct ValueStore
                 merged_.storage_.at(addr).at(key).updated = value.updated;
             }
         }
+    }
+};
+
+template <typename TValueDB>
+struct ValueStore<TValueDB>::WorkingCopy : public ValueStore<TValueDB>
+{
+    InnerStorage touched_{};
+    std::unordered_map<address_t, std::unordered_set<bytes32_t>>
+        accessed_storage_{};
+    void remove_touched_key(address_t const &a, bytes32_t const &key)
+    {
+        touched_.storage_.at(a).erase(key);
+        if (touched_.storage_.at(a).empty()) {
+            touched_.storage_.erase(a);
+        }
+    }
+
+    // EVMC Host Interface
+    [[nodiscard]] bytes32_t
+    get_storage(address_t const &a, bytes32_t const &key) const noexcept
+    {
+        if (touched_.deleted_contains_key(a, key)) {
+            return {};
+        }
+        if (touched_.contains_key(a, key)) {
+            return touched_.storage_.at(a).at(key).updated;
+        }
+        return get_merged_value(a, key);
+    }
+
+    [[nodiscard]] evmc_storage_status
+    zero_out_key(address_t const &a, bytes32_t const &key) noexcept
+    {
+        // Assume empty (zero) storage is not stored in storage_
+        if (db_or_merged_contains_key(a, key)) {
+            if (touched_.contains_key(a, key)) {
+                if (get_merged_value(a, key) ==
+                    touched_.storage_.at(a).at(key)) {
+                    remove_touched_key(a, key);
+                    return EVMC_STORAGE_DELETED;
+                }
+                else {
+                    remove_touched_key(a, key);
+                    touched_.deleted_storage_[a].insert(
+                        deleted_key{db_.at(a).at(key), key});
+                    return EVMC_STORAGE_MODIFIED_DELETED;
+                }
+            }
+            else {
+                touched_.deleted_storage_[a].insert(
+                    deleted_key{get_merged_value(a, key), key});
+                return EVMC_STORAGE_DELETED;
+            }
+        }
+
+        if (touched_.contains_key(a, key)) {
+            remove_touched_key(a, key);
+            return EVMC_STORAGE_ADDED_DELETED;
+        }
+        return EVMC_STORAGE_ASSIGNED;
+    }
+
+    [[nodiscard]] evmc_storage_status set_current_value(
+        address_t const &a, bytes32_t const &key,
+        bytes32_t const &value) noexcept
+    {
+        if (db_or_merged_contains_key(a, key)) {
+            if (touched_.contains_key(a, key)) {
+                if (touched_.storage_[a][key].updated == value) {
+                    return EVMC_STORAGE_ASSIGNED;
+                }
+
+                if (get_merged_value(a, key) == value) {
+                    remove_touched_key(a, key);
+                    return EVMC_STORAGE_MODIFIED_RESTORED;
+                }
+
+                touched_.storage_[a][key].updated = value;
+                return EVMC_STORAGE_MODIFIED;
+            }
+
+            touched_.storage_[a].emplace(
+                key, diff_t{get_merged_value(a, key), value});
+
+            if (touched_.deleted_contains_key(a, key)) {
+                touched_.deleted_storage_.at(a).erase(deleted_key{key});
+
+                if (get_merged_value(a, key) == value) {
+                    return EVMC_STORAGE_DELETED_RESTORED;
+                }
+                return EVMC_STORAGE_DELETED_ADDED;
+            }
+
+            if (get_merged_value(a, key) == value) {
+                return EVMC_STORAGE_ASSIGNED;
+            }
+            return EVMC_STORAGE_MODIFIED;
+        }
+
+        if (!touched_.storage_.contains(a) ||
+            !touched_.storage_.at(a).contains(key)) {
+            touched_.storage_[a].emplace(key, diff_t{value});
+            return EVMC_STORAGE_ADDED;
+        }
+
+        touched_.storage_[a][key] = value;
+        return EVMC_STORAGE_ASSIGNED;
+    }
+
+    // EVMC Host Interface
+    [[nodiscard]] evmc_storage_status set_storage(
+        address_t const &a, bytes32_t const &key,
+        bytes32_t const &value) noexcept
+    {
+        if (value == bytes32_t{}) {
+            return zero_out_key(a, key);
+        }
+        return set_current_value(a, key, value);
+    }
+
+    // EVMC Host Interface
+    evmc_access_status
+    access_storage(address_t const &a, bytes32_t const &key) noexcept
+    {
+        auto const &[_, inserted] = accessed_storage_[a].insert(key);
+        if (inserted) {
+            return EVMC_ACCESS_COLD;
+        }
+        return EVMC_ACCESS_WARM;
+    }
+
+    void revert() noexcept
+    {
+        touched_.clear();
+        accessed_storage_.clear();
     }
 };
 

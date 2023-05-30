@@ -147,7 +147,7 @@ public:
         }();
 
         auto const finalize_and_emit = [&](LeafOrBranch auto &node,
-                                           size_t key_size) {
+                                           uint8_t key_size) {
             using DecayedNode = std::decay_t<decltype(node)>;
 
             // if the key is changing, delete the old one

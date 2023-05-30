@@ -118,7 +118,7 @@ struct Branch : public BaseNode
             std::distance(children.begin(), it.base()) - 1);
     }
 
-    constexpr void finalize(size_t s)
+    void finalize(uint8_t s)
     {
         key_size = s;
         reference = rlp::to_node_reference(rlp::encode_branch(*this));
@@ -154,7 +154,7 @@ struct Leaf : public BaseNode
     {
     }
 
-    constexpr void finalize(size_t s)
+    void finalize(uint8_t s)
     {
         key_size = s;
         reference = rlp::to_node_reference(rlp::encode_leaf(*this));

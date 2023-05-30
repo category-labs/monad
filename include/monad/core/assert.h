@@ -27,6 +27,5 @@ void monad_assertion_failed(
         }                                                                      \
         while (0)
 #else
-    #include <assert.h>
-    #define MONAD_DEBUG_ASSERT(x) assert(x)
+    #define MONAD_DEBUG_ASSERT(x) MONAD_ASSERT(x)
 #endif

@@ -54,4 +54,50 @@ struct StaticPrecompiles
     }
 };
 
+template <typename TState, concepts::fork_traits<TState> TTraits>
+using frontier_static_precompiles_t = StaticPrecompiles<
+    TState, TTraits, static_precompiles::EllipticCurveRecover<TState, TTraits>,
+    static_precompiles::Sha256Hash<TState, TTraits>,
+    static_precompiles::Ripemd160Hash<TState, TTraits>,
+    static_precompiles::Identity<TState, TTraits>>;
+
+template <typename TState, concepts::fork_traits<TState> TTraits>
+using homestead_static_precompiles_t =
+    frontier_static_precompiles_t<TState, TTraits>;
+
+template <typename TState, concepts::fork_traits<TState> TTraits>
+using spurious_dragon_static_precompiles_t =
+    homestead_static_precompiles_t<TState, TTraits>;
+
+template <typename TState, concepts::fork_traits<TState> TTraits>
+using byzantium_static_precompiles_t = StaticPrecompiles<
+    TState, TTraits, static_precompiles::EllipticCurveRecover<TState, TTraits>,
+    static_precompiles::Sha256Hash<TState, TTraits>,
+    static_precompiles::Ripemd160Hash<TState, TTraits>,
+    static_precompiles::Identity<TState, TTraits>,
+    static_precompiles::ModularExponentiation<TState, TTraits>,
+    static_precompiles::BigNumberAdd<TState, TTraits>,
+    static_precompiles::BigNumberMultiply<TState, TTraits>,
+    static_precompiles::BigNumberPairing<TState, TTraits>>;
+
+template <typename TState, concepts::fork_traits<TState> TTraits>
+using istanbul_static_precompiles_t = StaticPrecompiles<
+    TState, TTraits, static_precompiles::EllipticCurveRecover<TState, TTraits>,
+    static_precompiles::Sha256Hash<TState, TTraits>,
+    static_precompiles::Ripemd160Hash<TState, TTraits>,
+    static_precompiles::Identity<TState, TTraits>,
+    static_precompiles::ModularExponentiation<TState, TTraits>,
+    static_precompiles::BigNumberAdd<TState, TTraits>,
+    static_precompiles::BigNumberMultiply<TState, TTraits>,
+    static_precompiles::BigNumberPairing<TState, TTraits>,
+    static_precompiles::Blake2F<TState, TTraits>>;
+
+template <typename TState, concepts::fork_traits<TState> TTraits>
+using berlin_static_precompiles_t =
+    istanbul_static_precompiles_t<TState, TTraits>;
+
+template <typename TState, concepts::fork_traits<TState> TTraits>
+using london_static_precompiles_t =
+    berlin_static_precompiles_t<TState, TTraits>;
+
 MONAD_EXECUTION_NAMESPACE_END

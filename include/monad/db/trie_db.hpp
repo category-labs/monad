@@ -3,6 +3,7 @@
 #include <monad/core/account.hpp>
 #include <monad/core/assert.h>
 #include <monad/db/config.hpp>
+#include <monad/execution/execution_model.hpp>
 #include <monad/rlp/decode_helpers.hpp>
 #include <monad/trie/in_memory_comparator.hpp>
 #include <monad/trie/in_memory_cursor.hpp>
@@ -22,8 +23,7 @@ MONAD_DB_NAMESPACE_BEGIN
 
 namespace impl
 {
-
-    template <typename TDBImpl>
+    template <typename TDBImpl, typename TExecution>
     struct DBInterface
     {
         struct Updates
@@ -34,10 +34,23 @@ namespace impl
                 storage;
         } updates{};
 
+        decltype(TExecution::get_executor()) executor{
+            TExecution::get_executor()};
+
         TDBImpl &self() { return static_cast<TDBImpl &>(*this); }
         TDBImpl const &self() const
         {
             return static_cast<TDBImpl const &>(*this);
+        }
+
+        [[nodiscard]] std::optional<Account> try_find(address_t const &a) const
+        {
+            return self().try_find(a);
+        }
+
+        [[nodiscard]] std::optional<Account> query(address_t const &a) const
+        {
+            return executor([=, this]() { return try_find(a); });
         }
 
         [[nodiscard]] constexpr bool contains(address_t const &a) const
@@ -53,12 +66,28 @@ namespace impl
 
         [[nodiscard]] Account at(address_t const &a) const
         {
-            return self().at(a);
+            auto const ret = try_find(a);
+            MONAD_ASSERT(ret);
+            return ret.value();
+        }
+
+        [[nodiscard]] std::optional<bytes32_t>
+        query(address_t const &a, bytes32_t const &k) const
+        {
+            return executor([=, this]() { return try_find(a, k); });
+        }
+
+        [[nodiscard]] std::optional<bytes32_t>
+        try_find(address_t const &a, bytes32_t const &k) const
+        {
+            return self().try_find(a, k);
         }
 
         [[nodiscard]] bytes32_t at(address_t const &a, bytes32_t const &k) const
         {
-            return self().at(a, k);
+            auto const ret = try_find(a, k);
+            MONAD_ASSERT(ret);
+            return ret.value();
         }
 
         void create(address_t const &a, Account const &acct)
@@ -132,8 +161,12 @@ namespace impl
         }
     };
 
-    struct InMemoryDBImpl : public DBInterface<InMemoryDBImpl>
+    template <typename TExecution>
+    struct InMemoryDBImpl
+        : public DBInterface<InMemoryDBImpl<TExecution>, TExecution>
     {
+        using DBInterface<InMemoryDBImpl<TExecution>, TExecution>::updates;
+
         std::unordered_map<address_t, Account> accounts;
         std::unordered_map<address_t, std::unordered_map<bytes32_t, bytes32_t>>
             storage;
@@ -149,13 +182,20 @@ namespace impl
             return storage.contains(a) && storage.at(a).contains(k);
         }
 
-        [[nodiscard]] Account at(address_t const &a) const
+        [[nodiscard]] std::optional<Account> try_find(address_t const &a) const
         {
-            return accounts.at(a);
+            if (accounts.contains(a)) {
+                return accounts.at(a);
+            }
+            return std::nullopt;
         }
 
-        [[nodiscard]] bytes32_t at(address_t const &a, bytes32_t const &k) const
+        [[nodiscard]] std::optional<bytes32_t>
+        try_find(address_t const &a, bytes32_t const &k) const
         {
+            if (!contains(a, k)) {
+                return std::nullopt;
+            }
             return storage.at(a).at(k);
         }
 
@@ -193,14 +233,19 @@ namespace impl
 
     template <
         typename TAccountsCursor, typename TStorageCursor,
-        typename TAccountsWriter, typename TStorageWriter>
+        typename TAccountsWriter, typename TStorageWriter, typename TExecutor>
     struct TrieDBImpl
-        : public DBInterface<TrieDBImpl<
-              TAccountsCursor, TStorageCursor, TAccountsWriter, TStorageWriter>>
+        : public DBInterface<
+              TrieDBImpl<
+                  TAccountsCursor, TStorageCursor, TAccountsWriter,
+                  TStorageWriter, TExecutor>,
+              TExecutor>
     {
-        using DBInterface<TrieDBImpl<
-            TAccountsCursor, TStorageCursor, TAccountsWriter,
-            TStorageWriter>>::updates;
+        using DBInterface<
+            TrieDBImpl<
+                TAccountsCursor, TStorageCursor, TAccountsWriter,
+                TStorageWriter, TExecutor>,
+            TExecutor>::updates;
 
         template <typename TCursor, typename TWriter>
         struct Trie
@@ -335,10 +380,12 @@ namespace impl
             return find(a, k).has_value();
         }
 
-        [[nodiscard]] Account at(address_t const &a) const
+        [[nodiscard]] std::optional<Account> try_find(address_t const &a) const
         {
             auto const c = find(a);
-            MONAD_ASSERT(c.has_value());
+            if (!c.has_value()) {
+                return std::nullopt;
+            }
 
             auto const key =
                 c->key().transform(&decltype(c)::value_type::Key::path);
@@ -358,10 +405,13 @@ namespace impl
             return ret;
         }
 
-        [[nodiscard]] bytes32_t at(address_t const &a, bytes32_t const &k) const
+        [[nodiscard]] std::optional<bytes32_t>
+        try_find(address_t const &a, bytes32_t const &k) const
         {
             auto const c = find(a, k);
-            MONAD_ASSERT(c.has_value());
+            if (!c.has_value()) {
+                return std::nullopt;
+            }
 
             auto const key =
                 c->key().transform(&decltype(c)::value_type::Key::path);
@@ -471,9 +521,10 @@ using InMemoryTrieDB = impl::TrieDBImpl<
     trie::InMemoryCursor<trie::InMemoryPathComparator>,
     trie::InMemoryCursor<trie::InMemoryPrefixPathComparator>,
     trie::InMemoryWriter<trie::InMemoryPathComparator>,
-    trie::InMemoryWriter<trie::InMemoryPrefixPathComparator>>;
+    trie::InMemoryWriter<trie::InMemoryPrefixPathComparator>,
+    monad::execution::BoostFiberExecution>;
 
 // Database impl without trie root generating logic, backed by stl
-using InMemoryDB = impl::InMemoryDBImpl;
+using InMemoryDB = impl::InMemoryDBImpl<monad::execution::BoostFiberExecution>;
 
 MONAD_DB_NAMESPACE_END

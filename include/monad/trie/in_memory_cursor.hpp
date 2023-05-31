@@ -17,18 +17,18 @@
 MONAD_TRIE_NAMESPACE_BEGIN
 
 // Per-snapshot and prefix
-class InMemoryCursor
+template <comparator TComparator>
+struct InMemoryCursor
 {
-private:
     using element_t = std::pair<byte_string, byte_string>;
-    using iterator_t = std::vector<element_t>::iterator;
+    using storage_t = std::vector<element_t>;
+    using iterator_t = std::vector<element_t>::const_iterator;
 
-    std::vector<element_t> &storage_;
+    storage_t const &storage_;
     iterator_t it_;
 
     mutable KeyBuffer buf_;
 
-public:
     struct Key
     {
         bool has_prefix;
@@ -51,7 +51,7 @@ public:
         }
     };
 
-    constexpr InMemoryCursor(std::vector<element_t> &storage)
+    constexpr explicit InMemoryCursor(std::vector<element_t> const &storage)
         : storage_(storage)
         , it_(storage_.end())
     {
@@ -91,28 +91,22 @@ public:
         }
     }
 
-    template <typename... DummyArgs>
-        requires(sizeof...(DummyArgs) == 0)
     constexpr void lower_bound(
         Nibbles const &key, tl::optional<Key> const & /*first*/ = tl::nullopt,
         tl::optional<Key> const & /*last */ = tl::nullopt)
     {
         serialize_nibbles(buf_, key);
-        comparator auto const cmp = injected_comparator<DummyArgs...>;
         it_ = std::ranges::lower_bound(
-            storage_, buf_.view(), cmp, &element_t::first);
+            storage_, buf_.view(), TComparator{}, &element_t::first);
     }
 
     [[nodiscard]] constexpr bool valid() const { return is_it_valid(it_); }
 
-    template <typename... DummyArgs>
-        requires(sizeof...(DummyArgs) == 0)
     [[nodiscard]] constexpr bool empty() const
     {
         serialize_nibbles(buf_, Nibbles{});
-        comparator auto const cmp = injected_comparator<DummyArgs...>;
         return !is_it_valid(std::ranges::lower_bound(
-            storage_, buf_.view(), cmp, &element_t::first));
+            storage_, buf_.view(), TComparator{}, &element_t::first));
     }
 
     constexpr void set_prefix(address_t const &address)
@@ -123,7 +117,6 @@ public:
     constexpr void take_snapshot() const noexcept {};
     constexpr void release_snapshots() const noexcept {};
 
-private:
     [[nodiscard]] constexpr bool is_it_valid(iterator_t it) const
     {
         return it < storage_.end() && it->first.starts_with(buf_.prefix());

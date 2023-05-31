@@ -207,8 +207,11 @@ struct State
 
     void commit()
     {
-        accounts_.commit_all_merged();
+        // Note: storage updates must be committed prior to the account
+        // updates, since each account needs the most up-to-date storage
+        // root
         storage_.commit_all_merged();
+        accounts_.commit_all_merged();
         code_.commit_all_merged();
         current_txn_ = 0;
     }

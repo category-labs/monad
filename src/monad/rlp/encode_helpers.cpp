@@ -32,12 +32,13 @@ byte_string encode_access_list(Transaction::AccessList const &list)
     return encode_list(result);
 }
 
-byte_string encode_account(Account const &account, bytes32_t const &code_root)
+byte_string
+encode_account(Account const &account, bytes32_t const &storage_root)
 {
     return encode_list(
         encode_unsigned(account.nonce),
         encode_unsigned(account.balance),
-        encode_bytes32(code_root),
+        encode_bytes32(storage_root),
         encode_bytes32(account.code_hash));
 }
 

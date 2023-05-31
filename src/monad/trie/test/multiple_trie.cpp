@@ -9,10 +9,9 @@ using namespace monad;
 using namespace monad::trie;
 using namespace evmc::literals;
 
-template <>
-inline auto monad::trie::injected_comparator<> = InMemoryPrefixPathComparator{};
+using in_memory_fixture_t = in_memory_fixture<InMemoryPrefixPathComparator>;
 
-TEST_F(in_memory_fixture, MultipleTrie)
+TEST_F(in_memory_fixture_t, MultipleTrie)
 {
     using namespace evmc::literals;
 
@@ -133,7 +132,7 @@ TEST_F(in_memory_fixture, MultipleTrie)
         0x0835cc0ded52cfc5c950bf8f9f7daece213b5a679118f921578e8b164ab5f757_bytes32);
 }
 
-TEST_F(in_memory_fixture, MultipleTrieClear)
+TEST_F(in_memory_fixture_t, MultipleTrieClear)
 {
     using namespace evmc::literals;
 

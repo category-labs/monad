@@ -8,5 +8,6 @@ add_unit_test(
   datum.cpp
   state.cpp
   value_store.cpp
+  trie_db.cpp
   LIBRARIES
   monad)

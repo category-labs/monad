@@ -125,7 +125,7 @@ struct AccountStore
         for (auto const &[a, A] : merged_) {
             if (A.orig.has_value()) {
                 if (A.updated.has_value()) {
-                    db_[a] = A.updated.value();
+                    db_.update(a, A.updated.value());
                 }
                 else {
                     db_.erase(a);
@@ -133,10 +133,11 @@ struct AccountStore
             }
             else {
                 assert(A.updated.has_value());
-                db_.emplace(a, A.updated.value());
+                db_.create(a, A.updated.value());
             }
         }
         merged_.clear();
+        db_.commit_accounts();
     }
 };
 

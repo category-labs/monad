@@ -10,7 +10,6 @@
 #include <monad/trie/nibbles.hpp>
 #include <monad/trie/node.hpp>
 #include <monad/trie/process_transformation_list.hpp>
-#include <monad/trie/writer.hpp>
 
 #include <monad/core/assert.h>
 #include <monad/core/likely.h>
@@ -62,38 +61,34 @@ are_parents_same(Nibbles const &k1, Nibbles const &k2)
 }
 
 template <typename TCursor, typename TWriter>
-class Trie
+struct Trie
 {
-private:
     using trie_key_t = typename TCursor::Key;
 
     TCursor &leaves_cursor_;
     TCursor &trie_cursor_;
-    TWriter &writer_;
-    WriterColumn const leaves_col_;
-    WriterColumn const trie_col_;
+    TWriter &leaves_writer_;
+    TWriter &trie_writer_;
     KeyBuffer buf_;
 
-public:
     using update_iterator_t = typename std::vector<Update>::const_iterator;
     using optional_iterator_t =
         std::variant<std::monostate, trie_key_t, update_iterator_t>;
 
     constexpr Trie(
-        TCursor &leaves, TCursor &all, TWriter &writer, WriterColumn leaves_col,
-        WriterColumn trie_cursor_col)
+        TCursor &leaves, TCursor &all, TWriter &leaves_writer,
+        TWriter &trie_writer)
         : leaves_cursor_(leaves)
         , trie_cursor_(all)
-        , writer_(writer)
-        , leaves_col_(leaves_col)
-        , trie_col_(trie_cursor_col)
+        , leaves_writer_(leaves_writer)
+        , trie_writer_(trie_writer)
     {
     }
 
     constexpr void clear()
     {
-        writer_.del_prefix(leaves_col_, buf_.prefix());
-        writer_.del_prefix(trie_col_, buf_.prefix());
+        leaves_writer_.del_prefix(buf_.prefix());
+        trie_writer_.del_prefix(buf_.prefix());
     }
 
     constexpr void take_snapshot()
@@ -117,12 +112,12 @@ public:
         assert(std::ranges::is_sorted(
             updates, std::ranges::less{}, get_update_key));
 
+        assert(!updates.empty());
+
         // there should be no duplicate updates
         assert(
             std::ranges::adjacent_find(
                 updates, std::equal_to<>{}, get_update_key) == updates.end());
-
-        assert(!updates.empty());
 
         // all updates should be to leaves (approximate this by checking size)
         assert(std::ranges::all_of(
@@ -154,7 +149,7 @@ public:
             if (node.key_size && node.key_size != key_size) {
                 serialize_nibbles(
                     buf_, node.path_to_node.prefix(*node.key_size));
-                writer_.del(trie_col_, buf_);
+                trie_writer_.del(buf_);
             }
 
             node.finalize(key_size);
@@ -162,10 +157,10 @@ public:
             auto const value = serialize_node(node);
 
             serialize_nibbles(buf_, node.path_to_node.prefix(*node.key_size));
-            writer_.put(trie_col_, buf_, value);
+            trie_writer_.put(buf_, value);
             if constexpr (std::same_as<DecayedNode, Leaf>) {
                 serialize_nibbles(buf_, node.path_to_node);
-                writer_.put(leaves_col_, buf_, {});
+                leaves_writer_.put(buf_, {});
             }
         };
 
@@ -193,12 +188,15 @@ public:
                 // This will initiate less delete calls
 
                 serialize_nibbles(buf_, get_update_key(*it));
-                writer_.del(leaves_col_, buf_);
+                leaves_writer_.del(buf_);
 
                 while (!buf_.path_empty()) {
-                    writer_.del(trie_col_, buf_);
+                    trie_writer_.del(buf_);
                     buf_.path_pop_back();
                 }
+
+                // and make sure to delete the root too
+                trie_writer_.del(buf_);
             }
         }
 
@@ -264,7 +262,6 @@ public:
             trie_cursor_.key()->path(), *trie_cursor_.value()));
     }
 
-private:
     [[nodiscard]] constexpr bool at_root() const
     {
         MONAD_ASSERT(trie_cursor_.valid());

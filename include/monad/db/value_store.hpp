@@ -57,14 +57,6 @@ struct ValueStore
     TValueDB &db_;
     InnerStorage merged_{};
 
-    void remove_db_key(address_t const &a, bytes32_t const &key)
-    {
-        db_.at(a).erase(key);
-        if (db_.at(a).empty()) {
-            db_.erase(a);
-        }
-    }
-
     bool remove_merged_key_if_present(address_t const &a, bytes32_t const &key)
     {
         if (merged_.contains_key(a, key)) {
@@ -80,7 +72,7 @@ struct ValueStore
     bool
     db_contains_key(address_t const &a, bytes32_t const &key) const noexcept
     {
-        return db_.contains(a) && db_.at(a).contains(key);
+        return db_.contains(a, key);
     }
 
     bool db_or_merged_contains_key(
@@ -100,7 +92,7 @@ struct ValueStore
             return merged_.storage_.at(a).at(key).updated;
         }
         if (db_contains_key(a, key)) {
-            return db_.at(a).at(key);
+            return db_.at(a, key);
         }
         return {};
     }
@@ -110,7 +102,7 @@ struct ValueStore
         for (auto const &[a, key_set] : merged_.deleted_storage_) {
             for (auto const &[orig, key] : key_set) {
                 if (db_contains_key(a, key)) {
-                    if (db_.at(a).at(key) != orig) {
+                    if (db_.at(a, key) != orig) {
                         return false;
                     }
                 }
@@ -125,7 +117,7 @@ struct ValueStore
                     continue;
                 }
 
-                if (db_.at(a).at(k) != dv.orig) {
+                if (db_.at(a, k) != dv.orig) {
                     return false;
                 }
             }
@@ -139,16 +131,22 @@ struct ValueStore
 
         for (auto const &[addr, key_set] : merged_.deleted_storage_) {
             for (auto const &key : key_set) {
-                remove_db_key(addr, key.key);
+                db_.erase(addr, key.key);
             }
         }
         for (auto const &[addr, acct_storage] : merged_.storage_) {
             for (auto const &[key, value] : acct_storage) {
                 assert(value.updated != bytes32_t{});
-                db_[addr].insert_or_assign(key, value.updated);
+                if (value.orig == bytes32_t{}) {
+                    db_.create(addr, key, value.updated);
+                }
+                else {
+                    db_.update(addr, key, value.updated);
+                }
             }
         }
         merged_.clear();
+        db_.commit_storage();
     }
 
     bool can_merge(WorkingCopy const &diffs) const noexcept
@@ -178,7 +176,7 @@ struct ValueStore
                 if (remove_merged_key_if_present(a, key.key)) {
                     if (db_contains_key(a, key.key)) {
                         merged_.deleted_storage_[a].insert(
-                            {key, {db_.at(a).at(key.key), key.key}});
+                            {key, {db_.at(a, key.key), key.key}});
                     }
                 }
                 else if (db_contains_key(a, key.key)) {
@@ -242,7 +240,7 @@ struct ValueStore<TValueDB>::WorkingCopy : public ValueStore<TValueDB>
                 else {
                     remove_touched_key(a, key);
                     touched_.deleted_storage_[a].insert(
-                        deleted_key{db_.at(a).at(key), key});
+                        deleted_key{db_.at(a, key), key});
                     return EVMC_STORAGE_MODIFIED_DELETED;
                 }
             }

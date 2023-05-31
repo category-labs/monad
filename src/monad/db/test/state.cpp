@@ -3,8 +3,9 @@
 
 #include <monad/db/account_store.hpp>
 #include <monad/db/code_store.hpp>
-#include <monad/db/value_store.hpp>
 #include <monad/db/state.hpp>
+#include <monad/db/trie_db.hpp>
+#include <monad/db/value_store.hpp>
 
 #include <gtest/gtest.h>
 
@@ -29,22 +30,25 @@ static constexpr auto null =
 static constexpr auto c1 =
     byte_string{0x65, 0x74, 0x68, 0x65, 0x72, 0x6d, 0x69};
 
-using account_db_t = std::unordered_map<address_t, Account>;
-using key_value_db_t = std::unordered_map<bytes32_t, bytes32_t>;
-using value_db_t =
-    std::unordered_map<address_t, key_value_db_t>;
+template <typename TDB>
+struct StateTest : public testing::Test
+{
+};
+using DBTypes = ::testing::Types<InMemoryDB, InMemoryTrieDB>;
+TYPED_TEST_SUITE(StateTest, DBTypes);
+
 using code_db_t = std::unordered_map<address_t, byte_string>;
 
-TEST(State, get_working_copy)
+TYPED_TEST(StateTest, get_working_copy)
 {
-    account_db_t account_db{};
-    AccountStore accounts{account_db};
-    value_db_t value_db{};
-    ValueStore values{value_db};
+    TypeParam db;
+    AccountStore accounts{db};
+    ValueStore values{db};
     code_db_t code_db{};
     CodeStore code{code_db};
     State as{accounts, values, code};
-    account_db[a] = {.balance = 10'000};
+    db.create(a, {.balance = 10'000});
+    db.commit();
 
     [[maybe_unused]] auto bs = as.get_working_copy(0);
     [[maybe_unused]] auto cs = as.get_working_copy(1);
@@ -63,22 +67,22 @@ TEST(State, get_working_copy)
     EXPECT_EQ(cs.get_balance(a), bytes32_t{30'000});
 }
 
-TEST(State, can_merge_fresh)
+TYPED_TEST(StateTest, can_merge_fresh)
 {
-    account_db_t account_db{};
-    AccountStore accounts{account_db};
-    value_db_t value_db{};
-    ValueStore values{value_db};
+    TypeParam db;
+    AccountStore accounts{db};
+    ValueStore values{db};
     code_db_t code_db{};
     CodeStore code{code_db};
     State t{accounts, values, code};
 
-    account_db[b] = {.balance = 40'000u};
-    account_db[c] = {.balance = 50'000u};
-    value_db[b].emplace(key1, value1);
-    value_db[b].emplace(key2, value2);
-    value_db[c].emplace(key1, value1);
-    value_db[c].emplace(key2, value2);
+    db.create(b, {.balance = 40'000u});
+    db.create(c, {.balance = 50'000u});
+    db.create(b, key1, value1);
+    db.create(b, key2, value2);
+    db.create(c, key1, value1);
+    db.create(c, key2, value2);
+    db.commit();
 
     auto s = t.get_working_copy(0);
 
@@ -106,22 +110,22 @@ TEST(State, can_merge_fresh)
     EXPECT_EQ(t.can_merge_changes(s), decltype(t)::MergeStatus::WILL_SUCCEED);
 }
 
-TEST(State, can_merge_same_account_different_storage)
+TYPED_TEST(StateTest, can_merge_same_account_different_storage)
 {
-    account_db_t account_db{};
-    AccountStore accounts{account_db};
-    value_db_t value_db{};
-    ValueStore values{value_db};
+    TypeParam db;
+    AccountStore accounts{db};
+    ValueStore values{db};
     code_db_t code_db{};
     CodeStore code{code_db};
     State t{accounts, values, code};
 
-    account_db[b] = {.balance = 40'000u};
-    account_db[c] = {.balance = 50'000u};
-    value_db[b].emplace(key1, value1);
-    value_db[b].emplace(key2, value2);
-    value_db[c].emplace(key1, value1);
-    value_db[c].emplace(key2, value2);
+    db.create(b, {.balance = 40'000u});
+    db.create(c, {.balance = 50'000u});
+    db.create(b, key1, value1);
+    db.create(b, key2, value2);
+    db.create(c, key1, value1);
+    db.create(c, key2, value2);
+    db.commit();
 
     auto bs = t.get_working_copy(0);
     auto cs = t.get_working_copy(1);
@@ -139,18 +143,18 @@ TEST(State, can_merge_same_account_different_storage)
     t.merge_changes(cs);
 }
 
-TEST(State, cant_merge_colliding_storage)
+TYPED_TEST(StateTest, cant_merge_colliding_storage)
 {
-    account_db_t account_db{};
-    AccountStore accounts{account_db};
-    value_db_t value_db{};
-    ValueStore values{value_db};
+    TypeParam db;
+    AccountStore accounts{db};
+    ValueStore values{db};
     code_db_t code_db{};
     CodeStore code{code_db};
     State t{accounts, values, code};
 
-    account_db[b] = {.balance = 40'000u};
-    value_db[b].emplace(key1, value1);
+    db.create(b, {.balance = 40'000u});
+    db.create(b, key1, value1);
+    db.commit();
 
     auto bs = t.get_working_copy(0);
     auto cs = t.get_working_copy(1);
@@ -182,23 +186,23 @@ TEST(State, cant_merge_colliding_storage)
     t.merge_changes(ds);
 }
 
-TEST(State, merge_txn0_and_txn1)
+TYPED_TEST(StateTest, merge_txn0_and_txn1)
 {
-    account_db_t account_db{};
-    AccountStore accounts{account_db};
-    value_db_t value_db{};
-    ValueStore values{value_db};
+    TypeParam db;
+    AccountStore accounts{db};
+    ValueStore values{db};
     code_db_t code_db{};
     CodeStore code{code_db};
     State t{accounts, values, code};
 
-    account_db[a] = {.balance = 30'000u};
-    account_db[b] = {.balance = 40'000u};
-    account_db[c] = {.balance = 50'000u};
-    value_db[b].emplace(key1, value1);
-    value_db[b].emplace(key2, value2);
-    value_db[c].emplace(key1, value1);
-    value_db[c].emplace(key2, value2);
+    db.create(a, {.balance = 30'000u});
+    db.create(b, {.balance = 40'000u});
+    db.create(c, {.balance = 50'000u});
+    db.create(b, key1, value1);
+    db.create(b, key2, value2);
+    db.create(c, key1, value1);
+    db.create(c, key2, value2);
+    db.commit();
 
     auto bs = t.get_working_copy(0);
     auto cs = t.get_working_copy(1);
@@ -224,22 +228,22 @@ TEST(State, merge_txn0_and_txn1)
     t.merge_changes(cs);
 }
 
-TEST(State, cant_merge_txn1_collision_need_to_rerun)
+TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
 {
-    account_db_t account_db{};
-    AccountStore accounts{account_db};
-    value_db_t value_db{};
-    ValueStore values{value_db};
+    TypeParam db;
+    AccountStore accounts{db};
+    ValueStore values{db};
     code_db_t code_db{};
     CodeStore code{code_db};
     State t{accounts, values, code};
 
-    account_db[b] = {.balance = 40'000u};
-    account_db[c] = {.balance = 50'000u};
-    value_db[b].emplace(key1, value1);
-    value_db[b].emplace(key2, value2);
-    value_db[c].emplace(key1, value1);
-    value_db[c].emplace(key2, value2);
+    db.create(b, {.balance = 40'000u});
+    db.create(c, {.balance = 50'000u});
+    db.create(b, key1, value1);
+    db.create(b, key2, value2);
+    db.create(c, key1, value1);
+    db.create(c, key2, value2);
+    db.commit();
 
     auto bs = t.get_working_copy(0);
     auto cs = t.get_working_copy(1);
@@ -278,23 +282,23 @@ TEST(State, cant_merge_txn1_collision_need_to_rerun)
     t.merge_changes(ds);
 }
 
-TEST(State, merge_txn1_try_again_merge_txn0_then_txn1)
+TYPED_TEST(StateTest, merge_txn1_try_again_merge_txn0_then_txn1)
 {
-    account_db_t account_db{};
-    AccountStore accounts{account_db};
-    value_db_t value_db{};
-    ValueStore values{value_db};
+    TypeParam db;
+    AccountStore accounts{db};
+    ValueStore values{db};
     code_db_t code_db{};
     CodeStore code{code_db};
     State t{accounts, values, code};
 
-    account_db[a] = {.balance = 30'000u};
-    account_db[b] = {.balance = 40'000u};
-    account_db[c] = {.balance = 50'000u};
-    value_db[b].emplace(key1, value1);
-    value_db[b].emplace(key2, value2);
-    value_db[c].emplace(key1, value1);
-    value_db[c].emplace(key2, value2);
+    db.create(a, {.balance = 30'000u});
+    db.create(b, {.balance = 40'000u});
+    db.create(c, {.balance = 50'000u});
+    db.create(b, key1, value1);
+    db.create(b, key2, value2);
+    db.create(c, key1, value1);
+    db.create(c, key2, value2);
+    db.commit();
 
     auto bs = t.get_working_copy(0);
     auto cs = t.get_working_copy(1);
@@ -325,23 +329,23 @@ TEST(State, merge_txn1_try_again_merge_txn0_then_txn1)
     t.merge_changes(cs);
 }
 
-TEST(State, can_commit)
+TYPED_TEST(StateTest, can_commit)
 {
-    account_db_t account_db{};
-    AccountStore accounts{account_db};
-    value_db_t value_db{};
-    ValueStore values{value_db};
+    TypeParam db;
+    AccountStore accounts{db};
+    ValueStore values{db};
     code_db_t code_db{};
     CodeStore code{code_db};
     State t{accounts, values, code};
 
-    account_db[a] = {.balance = 30'000u};
-    account_db[b] = {.balance = 40'000u};
-    account_db[c] = {.balance = 50'000u};
-    value_db[b].emplace(key1, value1);
-    value_db[b].emplace(key2, value2);
-    value_db[c].emplace(key1, value1);
-    value_db[c].emplace(key2, value2);
+    db.create(a, {.balance = 30'000u});
+    db.create(b, {.balance = 40'000u});
+    db.create(c, {.balance = 50'000u});
+    db.create(b, key1, value1);
+    db.create(b, key2, value2);
+    db.create(c, key1, value1);
+    db.create(c, key2, value2);
+    db.commit();
 
     auto bs = t.get_working_copy(0);
     auto cs = t.get_working_copy(1);
@@ -355,7 +359,8 @@ TEST(State, can_commit)
         EXPECT_EQ(bs.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
         EXPECT_EQ(
             bs.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
-        EXPECT_EQ(t.can_merge_changes(bs), decltype(t)::MergeStatus::WILL_SUCCEED);
+        EXPECT_EQ(
+            t.can_merge_changes(bs), decltype(t)::MergeStatus::WILL_SUCCEED);
         t.merge_changes(bs);
     }
     {
@@ -366,29 +371,30 @@ TEST(State, can_commit)
         EXPECT_EQ(cs.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
         cs.selfdestruct(c, a);
         cs.destruct_suicides();
-        EXPECT_EQ(t.can_merge_changes(cs), decltype(t)::MergeStatus::WILL_SUCCEED);
+        EXPECT_EQ(
+            t.can_merge_changes(cs), decltype(t)::MergeStatus::WILL_SUCCEED);
         t.merge_changes(cs);
     }
     EXPECT_TRUE(t.can_commit());
 }
 
-TEST(State, commit_twice)
+TYPED_TEST(StateTest, commit_twice)
 {
-    account_db_t account_db{};
-    AccountStore accounts{account_db};
-    value_db_t value_db{};
-    ValueStore values{value_db};
+    TypeParam db;
+    AccountStore accounts{db};
+    ValueStore values{db};
     code_db_t code_db{};
     CodeStore code{code_db};
     State t{accounts, values, code};
 
-    account_db[a] = {.balance = 30'000u};
-    account_db[b] = {.balance = 40'000u};
-    account_db[c] = {.balance = 50'000u};
-    value_db[b].emplace(key1, value1);
-    value_db[b].emplace(key2, value2);
-    value_db[c].emplace(key1, value1);
-    value_db[c].emplace(key2, value2);
+    db.create(a, {.balance = 30'000u});
+    db.create(b, {.balance = 40'000u});
+    db.create(c, {.balance = 50'000u});
+    db.create(b, key1, value1);
+    db.create(b, key2, value2);
+    db.create(c, key1, value1);
+    db.create(c, key2, value2);
+    db.commit();
 
     {
         // Block 0, Txn 0
@@ -400,7 +406,8 @@ TEST(State, commit_twice)
         EXPECT_EQ(bs.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
         EXPECT_EQ(
             bs.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
-        EXPECT_EQ(t.can_merge_changes(bs), decltype(t)::MergeStatus::WILL_SUCCEED);
+        EXPECT_EQ(
+            t.can_merge_changes(bs), decltype(t)::MergeStatus::WILL_SUCCEED);
         t.merge_changes(bs);
         EXPECT_TRUE(t.can_commit());
         t.commit();
@@ -414,7 +421,8 @@ TEST(State, commit_twice)
         EXPECT_EQ(cs.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
         cs.selfdestruct(c, a);
         cs.destruct_suicides();
-        EXPECT_EQ(t.can_merge_changes(cs), decltype(t)::MergeStatus::WILL_SUCCEED);
+        EXPECT_EQ(
+            t.can_merge_changes(cs), decltype(t)::MergeStatus::WILL_SUCCEED);
         t.merge_changes(cs);
         EXPECT_TRUE(t.can_commit());
         t.commit();

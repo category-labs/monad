@@ -2,6 +2,7 @@
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/db/trie_db.hpp>
 
 #include <monad/db/value_store.hpp>
 
@@ -28,16 +29,19 @@ static constexpr auto value3 =
 static constexpr auto null =
     0x0000000000000000000000000000000000000000000000000000000000000000_bytes32;
 
-using key_value_db_t = std::unordered_map<bytes32_t, bytes32_t>;
-using db_t = std::unordered_map<address_t, key_value_db_t>;
-using diff_t = ValueStore<db_t>::diff_t;
-
-TEST(ValueStore, access_storage)
+template <typename TDB>
+struct ValueStoreTest : public testing::Test
 {
-    db_t db{};
+};
+using DBTypes = ::testing::Types<InMemoryDB, InMemoryTrieDB>;
+TYPED_TEST_SUITE(ValueStoreTest, DBTypes);
+
+TYPED_TEST(ValueStoreTest, access_storage)
+{
+    TypeParam db{};
     ValueStore t{db};
 
-    auto s = decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::WorkingCopy{t};
 
     EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_COLD);
     EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_WARM);
@@ -49,17 +53,20 @@ TEST(ValueStore, access_storage)
     EXPECT_EQ(s.access_storage(b, key2), EVMC_ACCESS_WARM);
 }
 
-TEST(ValueStore, copy)
+TYPED_TEST(ValueStoreTest, copy)
 {
-    db_t db{};
-    db[a].emplace(key1, value1);
-    db[a].emplace(key2, value2);
-    db[c].emplace(key1, value1);
-    db[c].emplace(key2, value2);
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key1, value1);
+    db.create(a, key2, value2);
+    db.create(c, {});
+    db.create(c, key1, value1);
+    db.create(c, key2, value2);
+    db.commit();
     ValueStore s{db};
 
-    auto t = decltype(s)::WorkingCopy{s};
-    auto r = decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::WorkingCopy{s};
+    auto r = typename decltype(s)::WorkingCopy{s};
 
     EXPECT_EQ(r.access_storage(a, key1), EVMC_ACCESS_COLD);
     EXPECT_EQ(r.access_storage(b, key1), EVMC_ACCESS_COLD);
@@ -72,19 +79,23 @@ TEST(ValueStore, copy)
     EXPECT_EQ(t.set_storage(b, key1, value2), EVMC_STORAGE_ADDED);
 }
 
-
-TEST(ValueStore, get_storage)
+TYPED_TEST(ValueStoreTest, get_storage)
 {
-    db_t db{};
-    db[a].emplace(key1, value1);
-    db[a].emplace(key2, value2);
-    db[b].emplace(key1, value1);
+    using diff_t = typename ValueStore<TypeParam>::diff_t;
+
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key1, value1);
+    db.create(a, key2, value2);
+    db.create(b, {});
+    db.create(b, key1, value1);
+    db.commit();
 
     ValueStore t{db};
     t.merged_.storage_[a].emplace(key2, diff_t{value2, value3});
     t.merged_.deleted_storage_[b].emplace(value1, key1);
 
-    auto s = decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::WorkingCopy{t};
 
     EXPECT_EQ(s.get_storage(a, key1), value1);
     EXPECT_EQ(s.get_storage(a, key2), value3);
@@ -92,12 +103,12 @@ TEST(ValueStore, get_storage)
     EXPECT_EQ(s.get_storage(b, key1), null);
 }
 
-TEST(ValueStore, set_add_delete_touched)
+TYPED_TEST(ValueStoreTest, set_add_delete_touched)
 {
-    db_t db{};
+    TypeParam db{};
     ValueStore t{db};
 
-    auto s = decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::WorkingCopy{t};
 
     EXPECT_EQ(s.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
     EXPECT_EQ(s.get_storage(a, key1), value1);
@@ -106,14 +117,16 @@ TEST(ValueStore, set_add_delete_touched)
     EXPECT_EQ(s.set_storage(a, key1, value2), EVMC_STORAGE_ADDED);
 }
 
-TEST(ValueStore, set_modify_delete_storage)
+TYPED_TEST(ValueStoreTest, set_modify_delete_storage)
 {
-    db_t db{};
+    TypeParam db{};
     ValueStore t{db};
-    db[a].emplace(key1, value1);
-    db[a].emplace(key2, value2);
+    db.create(a, {});
+    db.create(a, key1, value1);
+    db.create(a, key2, value2);
+    db.commit();
 
-    auto s = decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::WorkingCopy{t};
 
     EXPECT_EQ(s.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(s.set_storage(a, key1, null), EVMC_STORAGE_MODIFIED_DELETED);
@@ -129,17 +142,21 @@ TEST(ValueStore, set_modify_delete_storage)
     EXPECT_EQ(s.get_storage(a, key2), value1);
 }
 
-TEST(ValueStore, set_modify_delete_merged)
+TYPED_TEST(ValueStoreTest, set_modify_delete_merged)
 {
-    db_t db{};
-    db[a].emplace(key1, value1);
-    db[a].emplace(key2, value2);
+    using diff_t = typename ValueStore<TypeParam>::diff_t;
+
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key1, value1);
+    db.create(a, key2, value2);
+    db.commit();
 
     ValueStore t{db};
     t.merged_.storage_[a].emplace(key1, diff_t{value1, value2});
     t.merged_.storage_[a].emplace(key2, diff_t{value2, value1});
 
-    auto s = decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::WorkingCopy{t};
 
     EXPECT_EQ(s.set_storage(a, key1, value1), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(s.set_storage(a, key1, null), EVMC_STORAGE_MODIFIED_DELETED);
@@ -155,18 +172,22 @@ TEST(ValueStore, set_modify_delete_merged)
     EXPECT_EQ(s.get_storage(a, key2), value2);
 }
 
-TEST(ValueStore, multiple_get_and_set_from_storage)
+TYPED_TEST(ValueStoreTest, multiple_get_and_set_from_storage)
 {
-    db_t db{};
+    TypeParam db{};
     ValueStore t{db};
-    db[a].emplace(key1, value1);
-    db[a].emplace(key2, value2);
-    db[b].emplace(key1, value1);
-    db[b].emplace(key2, value2);
-    db[c].emplace(key1, value1);
-    db[c].emplace(key2, value2);
+    db.create(a, {});
+    db.create(a, key1, value1);
+    db.create(a, key2, value2);
+    db.create(b, {});
+    db.create(b, key1, value1);
+    db.create(b, key2, value2);
+    db.create(c, {});
+    db.create(c, key1, value1);
+    db.create(c, key2, value2);
+    db.commit();
 
-    auto s = decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::WorkingCopy{t};
 
     EXPECT_EQ(s.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(s.set_storage(a, key1, null), EVMC_STORAGE_MODIFIED_DELETED);
@@ -195,19 +216,24 @@ TEST(ValueStore, multiple_get_and_set_from_storage)
     EXPECT_EQ(s.get_storage(c, key2), null);
 }
 
-TEST(ValueStore, multiple_get_and_set_from_merged)
+TYPED_TEST(ValueStoreTest, multiple_get_and_set_from_merged)
 {
-    db_t db{};
-    db[a].emplace(key1, value1);
-    db[a].emplace(key2, value2);
-    db[c].emplace(key1, value1);
-    db[c].emplace(key2, value2);
+    using diff_t = typename ValueStore<TypeParam>::diff_t;
+
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key1, value1);
+    db.create(a, key2, value2);
+    db.create(c, {});
+    db.create(c, key1, value1);
+    db.create(c, key2, value2);
+    db.commit();
 
     ValueStore t{db};
     t.merged_.storage_[a].emplace(key1, diff_t{value1, value2});
     t.merged_.storage_[c].emplace(key1, diff_t{value1, value2});
 
-    auto s = decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::WorkingCopy{t};
 
     EXPECT_EQ(s.set_storage(a, key1, value1), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(s.set_storage(a, key1, null), EVMC_STORAGE_MODIFIED_DELETED);
@@ -237,12 +263,12 @@ TEST(ValueStore, multiple_get_and_set_from_merged)
     EXPECT_EQ(s.get_storage(c, key2), null);
 }
 
-TEST(ValueStore, revert)
+TYPED_TEST(ValueStoreTest, revert)
 {
-    db_t db{};
+    TypeParam db{};
     ValueStore t{db};
 
-    auto s = decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::WorkingCopy{t};
 
     EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_COLD);
     EXPECT_EQ(s.access_storage(b, key1), EVMC_ACCESS_COLD);
@@ -259,16 +285,19 @@ TEST(ValueStore, revert)
     EXPECT_EQ(s.set_storage(c, key1, value1), EVMC_STORAGE_ADDED);
 }
 
-TEST(ValueStore, can_merge)
+TYPED_TEST(ValueStoreTest, can_merge)
 {
-    db_t db{};
-    db[a].emplace(key1, value1);
-    db[a].emplace(key2, value2);
-    db[b].emplace(key1, value1);
-    db[b].emplace(key2, value2);
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key1, value1);
+    db.create(a, key2, value2);
+    db.create(b, {});
+    db.create(b, key1, value1);
+    db.create(b, key2, value2);
+    db.commit();
     ValueStore s{db};
 
-    auto t = decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::WorkingCopy{s};
 
     EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(t.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
@@ -283,131 +312,143 @@ TEST(ValueStore, can_merge)
     EXPECT_TRUE(s.can_merge(t));
 }
 
-TEST(ValueStore, can_merge_added)
+TYPED_TEST(ValueStoreTest, can_merge_added)
 {
-    db_t db{};
+    TypeParam db{};
     ValueStore s{db};
 
-    auto t = decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::WorkingCopy{s};
 
     EXPECT_EQ(t.set_storage(c, key2, value1), EVMC_STORAGE_ADDED);
     EXPECT_TRUE(s.can_merge(t));
 }
 
-TEST(ValueStore, can_merge_deleted)
+TYPED_TEST(ValueStoreTest, can_merge_deleted)
 {
-    db_t db{};
-    db[a].emplace(key2, value2);
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key2, value2);
+    db.commit();
     ValueStore s{db};
 
-    auto t = decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::WorkingCopy{s};
 
     EXPECT_EQ(t.set_storage(a, key2, null), EVMC_STORAGE_DELETED);
     EXPECT_TRUE(s.can_merge(t));
 }
 
-TEST(ValueStore, can_merge_modified)
+TYPED_TEST(ValueStoreTest, can_merge_modified)
 {
-    db_t db{};
-    db[a].emplace(key1, value1);
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key1, value1);
+    db.commit();
     ValueStore s{db};
 
-    auto t = decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::WorkingCopy{s};
 
     EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
     EXPECT_TRUE(s.can_merge(t));
 }
 
-TEST(ValueStore, can_merge_modify_merged_added)
+TYPED_TEST(ValueStoreTest, can_merge_modify_merged_added)
 {
-    db_t db{};
+    TypeParam db{};
     ValueStore s{db};
 
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::WorkingCopy{s};
 
         EXPECT_EQ(t.set_storage(c, key2, value1), EVMC_STORAGE_ADDED);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_touched(t);
     }
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::WorkingCopy{s};
         EXPECT_EQ(t.set_storage(c, key2, value2), EVMC_STORAGE_MODIFIED);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_touched(t);
     }
 }
 
-TEST(ValueStore, can_merge_delete_merged_added)
+TYPED_TEST(ValueStoreTest, can_merge_delete_merged_added)
 {
-    db_t db{};
+    TypeParam db{};
     ValueStore s{db};
 
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::WorkingCopy{s};
         EXPECT_EQ(t.set_storage(c, key2, value1), EVMC_STORAGE_ADDED);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_touched(t);
     }
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::WorkingCopy{s};
         EXPECT_EQ(t.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_touched(t);
     }
 }
 
-TEST(ValueStore, can_merge_add_on_merged_deleted)
+TYPED_TEST(ValueStoreTest, can_merge_add_on_merged_deleted)
 {
-    db_t db{};
-    db[a].emplace(key2, value2);
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key2, value2);
+    db.commit();
     ValueStore s{db};
 
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::WorkingCopy{s};
         EXPECT_EQ(t.set_storage(a, key2, null), EVMC_STORAGE_DELETED);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_touched(t);
     }
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::WorkingCopy{s};
         EXPECT_EQ(t.set_storage(a, key2, value1), EVMC_STORAGE_ADDED);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_touched(t);
     }
 }
 
-TEST(ValueStore, can_merge_delete_merged_modified)
+TYPED_TEST(ValueStoreTest, can_merge_delete_merged_modified)
 {
-    db_t db{};
-    db[a].emplace(key1, value1);
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key1, value1);
+    db.commit();
     ValueStore s{db};
 
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::WorkingCopy{s};
         EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_touched(t);
     }
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::WorkingCopy{s};
         EXPECT_EQ(t.set_storage(a, key1, null), EVMC_STORAGE_DELETED);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_touched(t);
         {
-            auto r = decltype(s)::WorkingCopy{s};
+            auto r = typename decltype(s)::WorkingCopy{s};
             EXPECT_EQ(r.get_storage(a, key1), null);
         }
     }
 }
 
-TEST(ValueStore, cant_merge_colliding_merge)
+TYPED_TEST(ValueStoreTest, cant_merge_colliding_merge)
 {
-    db_t db{};
-    db[a].emplace(key1, value1);
+    using diff_t = typename ValueStore<TypeParam>::diff_t;
+
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key1, value1);
+    db.commit();
     ValueStore s{db};
 
-    auto t = decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::WorkingCopy{s};
 
     EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
 
@@ -416,13 +457,15 @@ TEST(ValueStore, cant_merge_colliding_merge)
     EXPECT_FALSE(s.can_merge(t));
 }
 
-TEST(ValueStore, cant_merge_deleted_merge)
+TYPED_TEST(ValueStoreTest, cant_merge_deleted_merge)
 {
-    db_t db{};
-    db[a].emplace(key1, value1);
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key1, value1);
+    db.commit();
     ValueStore s{db};
 
-    auto t = decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::WorkingCopy{s};
 
     EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
 
@@ -431,12 +474,14 @@ TEST(ValueStore, cant_merge_deleted_merge)
     EXPECT_FALSE(s.can_merge(t));
 }
 
-TEST(ValueStore, cant_merge_conflicting_adds)
+TYPED_TEST(ValueStoreTest, cant_merge_conflicting_adds)
 {
-    db_t db{};
+    using diff_t = typename ValueStore<TypeParam>::diff_t;
+
+    TypeParam db{};
     ValueStore s{db};
 
-    auto t = decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::WorkingCopy{s};
 
     EXPECT_EQ(t.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
 
@@ -445,13 +490,17 @@ TEST(ValueStore, cant_merge_conflicting_adds)
     EXPECT_FALSE(s.can_merge(t));
 }
 
-TEST(ValueStore, cant_merge_conflicting_modifies)
+TYPED_TEST(ValueStoreTest, cant_merge_conflicting_modifies)
 {
-    db_t db{};
-    db[a].emplace(key1, value3);
+    using diff_t = typename ValueStore<TypeParam>::diff_t;
+
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key1, value3);
+    db.commit();
     ValueStore s{db};
 
-    auto t = decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::WorkingCopy{s};
 
     EXPECT_EQ(t.set_storage(a, key1, value1), EVMC_STORAGE_MODIFIED);
 
@@ -460,13 +509,15 @@ TEST(ValueStore, cant_merge_conflicting_modifies)
     EXPECT_FALSE(s.can_merge(t));
 }
 
-TEST(ValueStore, cant_merge_conflicting_deleted)
+TYPED_TEST(ValueStoreTest, cant_merge_conflicting_deleted)
 {
-    db_t db{};
-    db[a].emplace(key1, value1);
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key1, value1);
+    db.commit();
     ValueStore s{db};
 
-    auto t = decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::WorkingCopy{s};
 
     EXPECT_EQ(t.set_storage(a, key1, null), EVMC_STORAGE_DELETED);
 
@@ -475,13 +526,17 @@ TEST(ValueStore, cant_merge_conflicting_deleted)
     EXPECT_FALSE(s.can_merge(t));
 }
 
-TEST(ValueStore, cant_merge_delete_conflicts_with_modify)
+TYPED_TEST(ValueStoreTest, cant_merge_delete_conflicts_with_modify)
 {
-    db_t db{};
-    db[a].emplace(key1, value1);
+    using diff_t = typename ValueStore<TypeParam>::diff_t;
+
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key1, value1);
+    db.commit();
     ValueStore s{db};
 
-    auto t = decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::WorkingCopy{s};
 
     EXPECT_EQ(t.set_storage(a, key1, null), EVMC_STORAGE_DELETED);
 
@@ -490,15 +545,18 @@ TEST(ValueStore, cant_merge_delete_conflicts_with_modify)
     EXPECT_FALSE(s.can_merge(t));
 }
 
-TEST(ValueStore, merge_touched_multiple)
+TYPED_TEST(ValueStoreTest, merge_touched_multiple)
 {
-    db_t db{};
-    db[a].emplace(key1, value1);
-    db[b].emplace(key1, value1);
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key1, value1);
+    db.create(b, {});
+    db.create(b, key1, value1);
+    db.commit();
     ValueStore s{db};
 
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::WorkingCopy{s};
 
         EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
         EXPECT_EQ(t.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
@@ -509,7 +567,7 @@ TEST(ValueStore, merge_touched_multiple)
     }
 
     {
-        auto u = decltype(s)::WorkingCopy{s};
+        auto u = typename decltype(s)::WorkingCopy{s};
 
         EXPECT_EQ(u.set_storage(a, key1, value3), EVMC_STORAGE_MODIFIED);
         EXPECT_EQ(u.set_storage(b, key1, value1), EVMC_STORAGE_ADDED);
@@ -520,15 +578,18 @@ TEST(ValueStore, merge_touched_multiple)
     }
 }
 
-TEST(ValueStore, can_commit)
+TYPED_TEST(ValueStoreTest, can_commit)
 {
-    db_t db{};
-    db[a].emplace(key1, value1);
-    db[b].emplace(key1, value1);
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key1, value1);
+    db.create(b, {});
+    db.create(b, key1, value1);
+    db.commit();
     ValueStore s{db};
 
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::WorkingCopy{s};
 
         EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
         EXPECT_EQ(t.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
@@ -540,7 +601,7 @@ TEST(ValueStore, can_commit)
     }
 
     {
-        auto u = decltype(s)::WorkingCopy{s};
+        auto u = typename decltype(s)::WorkingCopy{s};
 
         EXPECT_EQ(u.set_storage(a, key1, value3), EVMC_STORAGE_MODIFIED);
         EXPECT_EQ(u.set_storage(b, key1, value1), EVMC_STORAGE_ADDED);
@@ -552,15 +613,18 @@ TEST(ValueStore, can_commit)
     }
 }
 
-TEST(ValueStore, can_commit_restored)
+TYPED_TEST(ValueStoreTest, can_commit_restored)
 {
-    db_t db{};
-    db[a].emplace(key1, value1);
-    db[b].emplace(key1, value1);
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key1, value1);
+    db.create(b, {});
+    db.create(b, key1, value1);
+    db.commit();
     ValueStore s{db};
 
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::WorkingCopy{s};
         EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
         EXPECT_EQ(
             t.set_storage(a, key1, value1), EVMC_STORAGE_MODIFIED_RESTORED);
@@ -576,7 +640,7 @@ TEST(ValueStore, can_commit_restored)
     }
 
     {
-        auto u = decltype(s)::WorkingCopy{s};
+        auto u = typename decltype(s)::WorkingCopy{s};
         EXPECT_EQ(u.set_storage(a, key1, null), EVMC_STORAGE_DELETED);
         EXPECT_EQ(
             u.set_storage(a, key1, value1), EVMC_STORAGE_DELETED_RESTORED);
@@ -592,15 +656,18 @@ TEST(ValueStore, can_commit_restored)
     }
 }
 
-TEST(ValueStore, commit_all_merged)
+TYPED_TEST(ValueStoreTest, commit_all_merged)
 {
-    db_t db{};
-    db[a].emplace(key1, value1);
-    db[b].emplace(key1, value1);
+    TypeParam db{};
+    db.create(a, {});
+    db.create(a, key1, value1);
+    db.create(b, {});
+    db.create(b, key1, value1);
+    db.commit();
     ValueStore s{db};
 
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::WorkingCopy{s};
         EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
         EXPECT_EQ(
             t.set_storage(a, key1, value1), EVMC_STORAGE_MODIFIED_RESTORED);
@@ -616,7 +683,7 @@ TEST(ValueStore, commit_all_merged)
     }
 
     {
-        auto u = decltype(s)::WorkingCopy{s};
+        auto u = typename decltype(s)::WorkingCopy{s};
         EXPECT_EQ(u.set_storage(a, key1, null), EVMC_STORAGE_DELETED);
         EXPECT_EQ(
             u.set_storage(a, key1, value1), EVMC_STORAGE_DELETED_RESTORED);

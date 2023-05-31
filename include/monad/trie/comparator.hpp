@@ -19,13 +19,6 @@ concept comparator = requires(T t, byte_string_view e, byte_string_view v) {
     } -> std::same_as<bool>;
 };
 
-struct poison_comparator
-{
-};
-
-template <typename...>
-inline auto injected_comparator = poison_comparator{};
-
 // compare number of nibbles first. if equal, compare lexicographically
 [[nodiscard]] inline int path_compare(byte_string_view s1, byte_string_view s2)
 {

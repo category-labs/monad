@@ -13,8 +13,7 @@ using namespace monad;
 using namespace monad::trie;
 using namespace evmc::literals;
 
-template <>
-inline auto monad::trie::injected_comparator<> = InMemoryPathComparator{};
+using in_memory_fixture_t = in_memory_fixture<InMemoryPathComparator>;
 
 namespace
 {
@@ -48,7 +47,7 @@ namespace
     }
 }
 
-class GenerateTransformationListFixture : public in_memory_fixture
+class GenerateTransformationListFixture : public in_memory_fixture_t
 {
 public:
     GenerateTransformationListFixture()
@@ -62,7 +61,7 @@ public:
     }
 };
 
-class TrieUpdateFixture : public in_memory_fixture
+class TrieUpdateFixture : public in_memory_fixture_t
 {
 public:
     TrieUpdateFixture()
@@ -87,14 +86,14 @@ public:
     }
 };
 
-TEST_F(in_memory_fixture, EmptyTrie)
+TEST_F(in_memory_fixture_t, EmptyTrie)
 {
     EXPECT_EQ(
         trie_.root_hash(),
         0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
 }
 
-TEST_F(in_memory_fixture, OneElement)
+TEST_F(in_memory_fixture_t, OneElement)
 {
     std::vector updates = {make_upsert(
         0x1234567812345678123456781234567812345678123456781234567812345678_bytes32,
@@ -116,7 +115,7 @@ TEST_F(in_memory_fixture, OneElement)
         0x3622cef16d065ca02d848a6548f6dc4c2181d1bb1b9ad21eec3da906780ca709_bytes32);
 }
 
-TEST_F(in_memory_fixture, Simple)
+TEST_F(in_memory_fixture_t, Simple)
 {
     std::vector updates = {
         make_upsert(
@@ -139,7 +138,7 @@ TEST_F(in_memory_fixture, Simple)
         0x3b71638660a388410706ca8b52d1008e979b47b1e938558004881b56a42c61c0_bytes32);
 }
 
-TEST_F(in_memory_fixture, UnrelatedLeaves)
+TEST_F(in_memory_fixture_t, UnrelatedLeaves)
 {
     std::vector updates = {
         make_upsert(
@@ -354,7 +353,7 @@ TEST_F(GenerateTransformationListFixture, MultipleUpdates)
         validate_list(trie_.generate_transformation_list(updates), expected));
 }
 
-TEST_F(in_memory_fixture, HardOnlyUpserts)
+TEST_F(in_memory_fixture_t, HardOnlyUpserts)
 {
     auto const hard_updates = make_hard_updates();
     auto it = hard_updates.begin();
@@ -383,7 +382,7 @@ TEST_F(in_memory_fixture, HardOnlyUpserts)
         0xcbb6d81afdc76fec144f6a1a283205d42c03c102a94fc210b3a1bcfdcb625884_bytes32);
 }
 
-TEST_F(in_memory_fixture, HardWithRemoval)
+TEST_F(in_memory_fixture_t, HardWithRemoval)
 {
     process_updates(make_hard_updates());
     EXPECT_EQ(
@@ -444,7 +443,7 @@ TEST_F(in_memory_fixture, HardWithRemoval)
         0x0835cc0ded52cfc5c950bf8f9f7daece213b5a679118f921578e8b164ab5f757_bytes32);
 }
 
-TEST_F(in_memory_fixture, StateCleanup)
+TEST_F(in_memory_fixture_t, StateCleanup)
 {
     auto const verify = [&](auto const &e) {
         trie_cursor_.lower_bound({});

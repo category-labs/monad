@@ -30,6 +30,7 @@ TEST(StaticPrecompiles, execution_echo)
         0x0000000000000000000000000000000000000001_address};
     auto exec_func =
         alpha_static_precompiles_t::static_precompile_exec_func(code_address);
+    alpha_traits_t::_echo_gas_cost = 10;
 
     const auto data = "hello world";
     const auto data_size = 11u;
@@ -55,6 +56,7 @@ TEST(StaticPrecompiles, beta_traits_execution_echo)
         0x0000000000000000000000000000000000000001_address};
     auto exec_func =
         beta_static_precompiles_t::static_precompile_exec_func(code_address);
+    beta_traits_t::_echo_gas_cost = 15;
 
     const auto data = "hello world";
     const auto data_size = 11u;

@@ -51,7 +51,7 @@ namespace fork_traits
         static_assert(boost::mp11::mp_size<static_precompiles_t>() == 4);
 
         // YP, Eqn. 60, first summation
-        [[nodiscard]] static constexpr inline uint64_t
+        [[nodiscard]] static constexpr uint64_t
         g_data(Transaction const &t) noexcept
         {
             const auto zeros = std::count_if(
@@ -63,37 +63,36 @@ namespace fork_traits
         }
 
         // YP, section 6.2, Eqn. 60
-        [[nodiscard]] static constexpr inline uint64_t
+        [[nodiscard]] static constexpr uint64_t
         intrinsic_gas(Transaction const &t) noexcept
         {
             return 21'000 + g_data(t);
         }
 
-        [[nodiscard]] static constexpr inline auto starting_nonce() noexcept
+        [[nodiscard]] static constexpr auto starting_nonce() noexcept
         {
             return 0u;
         }
 
         template <class TState>
-        [[nodiscard]] static constexpr inline uint64_t
+        [[nodiscard]] static constexpr uint64_t
         get_selfdestruct_refund(TState const &s) noexcept
         {
             return s.total_selfdestructs() * 24'000;
         }
 
-        [[nodiscard]] static constexpr inline uint64_t
-        max_refund_quotient() noexcept
+        [[nodiscard]] static constexpr uint64_t max_refund_quotient() noexcept
         {
             return 2u;
         }
 
         template <class TState>
-        static constexpr inline void destruct_touched_dead(TState &) noexcept
+        static constexpr void destruct_touched_dead(TState &) noexcept
         {
         }
 
         template <class TState>
-        static constexpr inline bool enough_gas_to_store_code(
+        static constexpr bool enough_gas_to_store_code(
             TState &s, address_t const &a, evmc_result &r) noexcept
         {
             auto const deploy_cost = r.output_size * 200u;
@@ -106,7 +105,7 @@ namespace fork_traits
             return false;
         }
         template <class TState>
-        [[nodiscard]] static constexpr inline bool store_contract_code(
+        [[nodiscard]] static constexpr bool store_contract_code(
             TState &s, address_t const &a, evmc_result &r) noexcept
         {
             if (r.status_code == EVMC_SUCCESS) {
@@ -126,7 +125,7 @@ namespace fork_traits
         // https://eips.ethereum.org/EIPS/eip-2
         static constexpr auto last_block_number = 2'674'999u;
 
-        [[nodiscard]] static constexpr inline auto
+        [[nodiscard]] static constexpr auto
         g_txcreate(Transaction const &t) noexcept
         {
             if (!t.to.has_value()) {
@@ -135,14 +134,14 @@ namespace fork_traits
             return 0u;
         }
 
-        [[nodiscard]] static constexpr inline auto
+        [[nodiscard]] static constexpr auto
         intrinsic_gas(Transaction const &t) noexcept
         {
             return g_txcreate(t) + 21'000u + g_data(t);
         }
 
         template <class TState>
-        [[nodiscard]] static constexpr inline bool store_contract_code(
+        [[nodiscard]] static constexpr bool store_contract_code(
             TState &s, address_t const &a, evmc_result &r) noexcept
         {
             if (r.status_code == EVMC_SUCCESS) {
@@ -170,18 +169,18 @@ namespace fork_traits
         static constexpr auto last_block_number = 4'369'999u;
 
         // https://eips.ethereum.org/EIPS/eip-161
-        [[nodiscard]] static constexpr inline auto starting_nonce() noexcept
+        [[nodiscard]] static constexpr auto starting_nonce() noexcept
         {
             return 1u;
         }
 
         template <class TState>
-        static constexpr inline void destruct_touched_dead(TState &s) noexcept
+        static constexpr void destruct_touched_dead(TState &s) noexcept
         {
             s.destruct_touched_dead();
         }
 
-        static constexpr inline bool contract_too_big(evmc_result &r) noexcept
+        static constexpr bool contract_too_big(evmc_result &r) noexcept
         {
             // EIP-170
             if (r.output_size > 0x6000) {
@@ -194,7 +193,7 @@ namespace fork_traits
         }
 
         template <class TState>
-        [[nodiscard]] static constexpr inline bool store_contract_code(
+        [[nodiscard]] static constexpr bool store_contract_code(
             TState &s, address_t const &a, evmc_result &r) noexcept
         {
             if (contract_too_big(r)) {
@@ -218,7 +217,7 @@ namespace fork_traits
         static_assert(boost::mp11::mp_size<static_precompiles_t>() == 8);
 
         template <class TState>
-        [[nodiscard]] static constexpr inline bool store_contract_code(
+        [[nodiscard]] static constexpr bool store_contract_code(
             TState &s, address_t const &a, evmc_result &r) noexcept
         {
             if (contract_too_big(r)) {
@@ -257,7 +256,7 @@ namespace fork_traits
         static_assert(boost::mp11::mp_size<static_precompiles_t>() == 9);
 
         // https://eips.ethereum.org/EIPS/eip-2028
-        [[nodiscard]] static constexpr inline uint64_t
+        [[nodiscard]] static constexpr uint64_t
         g_data(Transaction const &t) noexcept
         {
             const auto zeros = std::count_if(
@@ -268,7 +267,7 @@ namespace fork_traits
             return static_cast<uint64_t>(zeros) * 4u + nonzeros * 16u;
         }
 
-        [[nodiscard]] static constexpr inline auto
+        [[nodiscard]] static constexpr auto
         intrinsic_gas(Transaction const &t) noexcept
         {
             return g_txcreate(t) + 21'000u + g_data(t);
@@ -292,7 +291,7 @@ namespace fork_traits
         static_assert(boost::mp11::mp_size<static_precompiles_t>() == 9);
 
         // https://eips.ethereum.org/EIPS/eip-2930
-        [[nodiscard]] static constexpr inline auto
+        [[nodiscard]] static constexpr auto
         g_access_and_storage(Transaction const &t) noexcept
         {
             uint64_t g = t.access_list.size() * 2'400u;
@@ -302,7 +301,7 @@ namespace fork_traits
             return g;
         }
 
-        [[nodiscard]] static constexpr inline auto
+        [[nodiscard]] static constexpr auto
         intrinsic_gas(Transaction const &t) noexcept
         {
             return g_txcreate(t) + 21'000u + g_data(t) +
@@ -319,21 +318,20 @@ namespace fork_traits
 
         // https://eips.ethereum.org/EIPS/eip-3529
         template <class TState>
-        [[nodiscard]] static constexpr inline uint64_t
+        [[nodiscard]] static constexpr uint64_t
         get_selfdestruct_refund(TState const &) noexcept
         {
             return 0u;
         }
 
-        [[nodiscard]] static constexpr inline uint64_t
-        max_refund_quotient() noexcept
+        [[nodiscard]] static constexpr uint64_t max_refund_quotient() noexcept
         {
             return 5u;
         }
 
         // https://eips.ethereum.org/EIPS/eip-3541
         template <class TState>
-        [[nodiscard]] static constexpr inline bool store_contract_code(
+        [[nodiscard]] static constexpr bool store_contract_code(
             TState &s, address_t const &a, evmc_result &r) noexcept
         {
             if (r.output_size > 0 && r.output_data[0] == 0xef) {

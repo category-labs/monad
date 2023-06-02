@@ -22,12 +22,6 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 
 namespace fake
 {
-    inline evmc_vm *get_fake_evmc()
-    {
-        return NULL;
-    }
-
-    // Simple fake State
     struct State
     {
         std::unordered_map<address_t, Account> _map{};

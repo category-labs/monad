@@ -1,0 +1,22 @@
+#pragma once
+
+#include <monad/config.hpp>
+
+#include <filesystem>
+
+MONAD_NAMESPACE_BEGIN
+
+namespace test_resource
+{
+
+    std::filesystem::__cxx11::path const test_data_dir = "@TEST_DATA_DIR@";
+
+    auto const correct_block_data_dir =
+        test_data_dir / "common" / "blocks" / "compressed_blocks";
+    auto const bad_decompress_block_data_dir =
+        test_data_dir / "common" / "blocks" / "bad_decompress_blocks";
+    auto const bad_decode_block_data_dir =
+        test_data_dir / "common" / "blocks" / "bad_decode_blocks";
+}
+
+MONAD_NAMESPACE_END

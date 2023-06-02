@@ -149,8 +149,14 @@ add_library(monad STATIC
 
 target_include_directories(monad
     PUBLIC ${PROJECT_SOURCE_DIR}/include
+    PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/test
     PRIVATE ${Boost_INCLUDE_DIRS}
 )
+
+set(TEST_DATA_DIR "${PROJECT_SOURCE_DIR}/test")
+
+configure_file(cmake/test_resource_data.h.in test/test_resource_data.h @ONLY)
+
 target_link_libraries(monad
     PRIVATE Boost::fiber
     PRIVATE Boost::log

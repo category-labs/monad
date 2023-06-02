@@ -97,7 +97,9 @@ struct fakeEmptyTP
     }
 };
 
-template <class TState, concepts::fork_traits<TState> TTraits, class TStaticPrecompiles>
+template <
+    class TState, concepts::fork_traits<TState> TTraits,
+    class TStaticPrecompiles>
 struct fakeEmptyEvm
 {
 };
@@ -188,7 +190,7 @@ TEST(ReplayFromBlockDb, invalid_end_block_number)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fake::static_precompiles::Echo>(
+        boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
         state, state_trie, block_db, receipt_collector, output, 100u, 100u);
 
     EXPECT_EQ(result.status, replay_t::Status::INVALID_END_BLOCK_NUMBER);
@@ -213,7 +215,7 @@ TEST(ReplayFromBlockDb, invalid_end_block_number_zero)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fake::static_precompiles::Echo>(
+        boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
         state, state_trie, block_db, receipt_collector, output, 0u, 0u);
 
     EXPECT_EQ(result.status, replay_t::Status::INVALID_END_BLOCK_NUMBER);
@@ -238,7 +240,7 @@ TEST(ReplayFromBlockDb, start_block_number_outside_db)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fake::static_precompiles::Echo>(
+        boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
         state, state_trie, block_db, receipt_collector, output, 1u);
 
     EXPECT_EQ(result.status, replay_t::Status::START_BLOCK_NUMBER_OUTSIDE_DB);
@@ -261,7 +263,7 @@ TEST(ReplayFromBlockDb, decompress_block_error)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fake::static_precompiles::Echo>(
+        boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
         state, state_trie, block_db, receipt_collector, output, 1u);
 
     EXPECT_EQ(
@@ -286,7 +288,7 @@ TEST(ReplayFromBlockDb, decode_block_error)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fake::static_precompiles::Echo>(
+        boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
         state, state_trie, block_db, receipt_collector, output, 1u);
 
     EXPECT_EQ(result.status, replay_error_decode_t::Status::DECODE_BLOCK_ERROR);
@@ -311,7 +313,7 @@ TEST(ReplayFromBlockDb, one_block)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fake::static_precompiles::Echo>(
+        boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
         state, state_trie, block_db, receipt_collector, output, 100u, 101u);
 
     EXPECT_EQ(result.status, replay_t::Status::SUCCESS);
@@ -337,7 +339,7 @@ TEST(ReplayFromBlockDb, run_from_zero)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fake::static_precompiles::Echo>(
+        boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
         state, state_trie, block_db, receipt_collector, output, 0u);
 
     EXPECT_EQ(result.status, replay_t::Status::SUCCESS_END_OF_DB);

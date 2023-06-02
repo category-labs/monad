@@ -16,8 +16,7 @@ using traits_t = fake::traits::alpha<fake::State>;
 
 template <concepts::fork_traits<fake::State> TTraits>
 using traits_templated_static_precompiles_t = StaticPrecompiles<
-    fake::State, TTraits, fake::static_precompiles::Echo<fake::State, TTraits>,
-    fake::static_precompiles::OneHundredGas<fake::State, TTraits>>;
+    fake::State, TTraits, typename TTraits::static_precompiles>;
 
 template <concepts::fork_traits<fake::State> TTraits>
 using traits_templated_evm_t =
@@ -433,17 +432,16 @@ namespace revert_test
     template <class TState>
     struct gamma : public fake::traits::beta<TState>
     {
-        static inline uint64_t static_precompiles{3};
+        using static_precompiles = boost::mp11::mp_push_back<
+            typename fake::traits::beta<TState>::static_precompiles,
+            AlwaysRevertForAThousand>;
     };
 
     using gamma_traits_t = gamma<fake::State>;
 
     template <concepts::fork_traits<fake::State> TTraits>
     using gamma_precompiles_t = StaticPrecompiles<
-        fake::State, TTraits,
-        fake::static_precompiles::Echo<fake::State, TTraits>,
-        fake::static_precompiles::OneHundredGas<fake::State, TTraits>,
-        AlwaysRevertForAThousand>;
+        fake::State, TTraits, gamma_traits_t::static_precompiles>;
 
     template <concepts::fork_traits<fake::State> TTraits>
     using templated_evm_t =

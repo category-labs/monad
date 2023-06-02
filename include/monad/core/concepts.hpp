@@ -16,7 +16,6 @@ namespace concepts
         typename T::next_fork_t;
         { T::intrinsic_gas(t) } -> std::convertible_to<uint64_t>;
         { T::starting_nonce() } -> std::convertible_to<uint64_t>;
-        { T::static_precompiles } -> std::convertible_to<uint64_t>;
         { T::last_block_number } -> std::convertible_to<uint64_t>;
         { T::get_selfdestruct_refund(s) } -> std::convertible_to<uint64_t>;
         { T::max_refund_quotient() } -> std::convertible_to<int>;

@@ -9,16 +9,25 @@
 
 #include <tl/optional.hpp>
 
+#include <boost/mp11/mpl_list.hpp>
+
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
 template <
-    class TState, concepts::fork_traits<TState> TTraits, class... TPrecompiles>
+    class TState, concepts::fork_traits<TState> TTraits, class TPrecompiles>
 struct StaticPrecompiles
 {
     using exec_func_t = evmc_result (*)(const evmc_message &) noexcept;
 
-    static constexpr exec_func_t precompile_execs[] = {
-        TPrecompiles::execute...};
+    template <typename... Types>
+    static constexpr auto
+    construct_precompile_array(boost::mp11::mp_list<Types...>)
+    {
+        return std::array<exec_func_t, sizeof...(Types)>{Types::execute...};
+    }
+
+    static constexpr auto precompile_execs =
+        construct_precompile_array(TPrecompiles{});
 
     [[nodiscard]] static inline tl::optional<exec_func_t>
     static_precompile_exec_func(address_t const &addr) noexcept
@@ -33,7 +42,7 @@ struct StaticPrecompiles
                 }
             }
             const auto &b = addr.bytes[last_address_i];
-            if (!b || b > TTraits::static_precompiles) {
+            if (!b || b > boost::mp11::mp_size<TPrecompiles>()) {
                 return tl::nullopt;
             }
             return b - 1;

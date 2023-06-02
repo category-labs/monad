@@ -55,11 +55,11 @@ public:
         concepts::fork_traits<TState> TTraits,
         template <typename, typename> class TTxnProcessor,
         template <typename, typename, typename> class TEvm,
-        template <typename, typename, typename...> class TStaticPrecompiles,
+        template <typename, typename, typename> class TStaticPrecompiles,
         template <typename, typename, typename> class TEvmHost,
         template <typename, typename, typename, typename, typename>
         class TFiberData,
-        template <typename, typename> class... TPrecompiles>
+        class TPrecompiles>
     [[nodiscard]] Result run_fork(
         TState &state, TStateTrie<TState> &state_trie, TBlockDb const &block_db,
         TReceiptCollector &receipt_collector, std::ostream &output,
@@ -92,11 +92,12 @@ public:
                         TEvmHost<
                             TState,
                             TTraits,
-                            Evm<TState, TTraits,
-                            TStaticPrecompiles<
-                                TState,
+                            Evm<TState,
                                 TTraits,
-                                TPrecompiles<TState, TTraits>...>>>,
+                                TStaticPrecompiles<
+                                    TState,
+                                    TTraits,
+                                    TPrecompiles>>>,
                         TExecution>>(state, block);
 
                 TTransactionTrie transaction_trie(block.transactions);
@@ -131,7 +132,7 @@ public:
                 TStaticPrecompiles,
                 TEvmHost,
                 TFiberData,
-                TPrecompiles...>(
+                TPrecompiles>(
                 state,
                 state_trie,
                 block_db,
@@ -146,11 +147,11 @@ public:
         concepts::fork_traits<TState> TTraits,
         template <typename, typename> class TTxnProcessor,
         template <typename, typename, typename> class TEvm,
-        template <typename, typename, typename...> class TStaticPrecompiles,
+        template <typename, typename, typename> class TStaticPrecompiles,
         template <typename, typename, typename> class TEvmHost,
         template <typename, typename, typename, typename, typename>
         class TFiberData,
-        template <typename, typename> class... TPrecompiles>
+        class TPrecompiles>
     [[nodiscard]] inline Result
     run(TState &state, TStateTrie<TState> &state_trie, TBlockDb const &block_db,
         TReceiptCollector &receipt_collector, std::ostream &output,
@@ -177,7 +178,7 @@ public:
             TStaticPrecompiles,
             TEvmHost,
             TFiberData,
-            TPrecompiles...>(
+            TPrecompiles>(
             state,
             state_trie,
             block_db,

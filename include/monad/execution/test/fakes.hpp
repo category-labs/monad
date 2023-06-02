@@ -189,6 +189,13 @@ namespace fake
         }
     };
 
+    namespace static_precompiles
+    {
+        template <typename>
+        struct Echo;
+        struct OneHundredGas;
+    }
+
     namespace traits
     {
         template <class TState>
@@ -198,7 +205,8 @@ namespace fake
             static inline uint64_t _sd_refund{};
             static inline uint64_t last_block_number{
                 std::numeric_limits<uint64_t>::max()};
-            static inline uint64_t static_precompiles{1};
+            using static_precompiles =
+                boost::mp11::mp_list<static_precompiles::Echo<alpha>>;
             static inline uint64_t _intrinsic_gas{21'000u};
             static inline uint64_t _max_refund_quotient{2u};
             static inline bool _success_store_contract{};
@@ -214,7 +222,7 @@ namespace fake
             {
                 return _max_refund_quotient;
             }
-            static inline auto echo_gas_cost() { return _echo_gas_cost; }
+            static constexpr uint64_t echo_gas_cost() { return _echo_gas_cost; }
             static inline auto get_selfdestruct_refund(TState const &)
             {
                 return _sd_refund;
@@ -240,24 +248,24 @@ namespace fake
             using next_fork_t = beta;
             static inline uint64_t last_block_number{
                 std::numeric_limits<uint64_t>::max()};
-            static inline uint64_t static_precompiles{2};
-            static inline uint64_t _echo_gas_cost{15};
-            static inline auto echo_gas_cost() { return _echo_gas_cost; }
-        };
+            using static_precompiles = boost::mp11::mp_list<
+                static_precompiles::Echo<beta>,
+                static_precompiles::OneHundredGas>;
 
-        static_assert(concepts::fork_traits<alpha<State>, State>);
-        static_assert(concepts::fork_traits<beta<State>, State>);
+            static inline uint64_t _echo_gas_cost{15};
+            static constexpr uint64_t echo_gas_cost() { return _echo_gas_cost; }
+        };
     }
 
     namespace static_precompiles
     {
-        template <class TState, concepts::fork_traits<TState> TTraits>
+        template <typename T>
         struct Echo
         {
             static evmc_result execute(const evmc_message &m) noexcept
             {
                 const int64_t gas =
-                    (const int64_t)(m.input_size * TTraits::echo_gas_cost());
+                    (const int64_t)(m.input_size * T::echo_gas_cost());
                 if (m.gas < gas) {
                     return {.status_code = EVMC_OUT_OF_GAS};
                 }
@@ -275,7 +283,6 @@ namespace fake
             }
         };
 
-        template <class TState, concepts::fork_traits<TState> TTraits>
         struct OneHundredGas
         {
             static evmc_result execute(const evmc_message &m) noexcept

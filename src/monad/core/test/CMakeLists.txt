@@ -4,5 +4,6 @@ add_unit_test(
   SOURCES
   receipt.cpp
   signature.cpp
+  sha256.cpp
   LIBRARIES
   monad)

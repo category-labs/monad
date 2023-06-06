@@ -87,12 +87,14 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/core/int.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/likely.h
     ${PROJECT_SOURCE_DIR}/include/monad/core/size_of.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/core/sha256.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/variant.hpp
     ${PROJECT_SOURCE_DIR}/src/monad/core/assert.c
     ${PROJECT_SOURCE_DIR}/src/monad/core/huge_mem.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/core/int.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/core/receipt.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/core/signature.cpp
+    ${PROJECT_SOURCE_DIR}/src/monad/core/sha256.cpp
 
     # db
     ${PROJECT_SOURCE_DIR}/include/monad/db/block_db.hpp

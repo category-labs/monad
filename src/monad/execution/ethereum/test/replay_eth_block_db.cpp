@@ -6,6 +6,8 @@
 
 #include <monad/execution/test/fakes.hpp>
 
+using empty_list_t = boost::mp11::mp_list<>;
+
 using namespace monad;
 using namespace execution;
 
@@ -223,7 +225,7 @@ TEST(ReplayFromBlockDb_Eth, invalid_end_block_number_zero)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        boost::mp11::mp_list<>>(
+        empty_list_t>(
         state, state_trie, block_db, receipt_collector, output, 0u, 0u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::INVALID_END_BLOCK_NUMBER);
@@ -248,7 +250,7 @@ TEST(ReplayFromBlockDb_Eth, start_block_number_outside_db)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        boost::mp11::mp_list<>>(
+        empty_list_t>(
         state, state_trie, block_db, receipt_collector, output, 1u);
 
     EXPECT_EQ(
@@ -272,7 +274,7 @@ TEST(ReplayFromBlockDb_Eth, decompress_block_error)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        boost::mp11::mp_list<>>(
+        empty_list_t>(
         state, state_trie, block_db, receipt_collector, output, 1u);
 
     EXPECT_EQ(
@@ -297,7 +299,7 @@ TEST(ReplayFromBlockDb_Eth, decode_block_error)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        boost::mp11::mp_list<>>(
+        empty_list_t>(
         state, state_trie, block_db, receipt_collector, output, 1u);
 
     EXPECT_EQ(
@@ -323,7 +325,7 @@ TEST(ReplayFromBlockDb_Eth, one_block)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        boost::mp11::mp_list<>>(
+        empty_list_t>(
         state, state_trie, block_db, receipt_collector, output, 100u, 101u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::SUCCESS);
@@ -349,7 +351,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_run_from_zero)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        boost::mp11::mp_list<>>(
+        empty_list_t>(
         state, state_trie, block_db, receipt_collector, output, 0u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::SUCCESS_END_OF_DB);
@@ -381,7 +383,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_homestead)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        boost::mp11::mp_list<>>(
+        empty_list_t>(
         state,
         state_trie,
         block_db,
@@ -424,7 +426,7 @@ TEST(ReplayFromBlockDb_Eth, berlin_to_london)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        boost::mp11::mp_list<>>(
+        empty_list_t>(
         state,
         state_trie,
         block_db,
@@ -467,7 +469,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_spurious_dragon)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        boost::mp11::mp_list<>>(
+        empty_list_t>(
         state,
         state_trie,
         block_db,

@@ -1,13 +1,13 @@
 #pragma once
 
-#include <monad/execution/ethereum/config.hpp>
 #include <monad/core/concepts.hpp>
+#include <monad/execution/ethereum/config.hpp>
 
 MONAD_EXECUTION_ETHEREUM_NAMESPACE_BEGIN
 
 namespace static_precompiles
 {
-    template <class TState>
+    template <class TFork>
     struct ModularExponentiation
     {
         static evmc_result execute(const evmc_message &m) noexcept;

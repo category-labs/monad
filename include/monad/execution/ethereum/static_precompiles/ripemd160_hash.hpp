@@ -7,7 +7,7 @@ MONAD_EXECUTION_ETHEREUM_NAMESPACE_BEGIN
 
 namespace static_precompiles
 {
-    template <class TState>
+    template <class TFork>
     struct Ripemd160Hash
     {
         static evmc_result execute(const evmc_message &m) noexcept;

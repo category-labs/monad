@@ -36,8 +36,8 @@ namespace fork_traits
 
     using no_next_fork_t = london;
 
-    template <typename... Types>
-    using type_list_t = boost::mp11::mp_list<Types...>;
+    template <typename TFork, template <typename> typename... TPrecompiles>
+    using type_list_t = boost::mp11::mp_list<TPrecompiles<TFork>...>;
 
     namespace contracts = execution::ethereum::static_precompiles;
 
@@ -46,9 +46,8 @@ namespace fork_traits
         using next_fork_t = homestead;
         static constexpr auto last_block_number = 1'149'999u;
         using static_precompiles_t = type_list_t<
-            contracts::EllipticCurveRecover<frontier>,
-            contracts::Sha256Hash<frontier>, contracts::Ripemd160Hash<frontier>,
-            contracts::Identity<frontier>>;
+            frontier, contracts::EllipticCurveRecover, contracts::Sha256Hash,
+            contracts::Ripemd160Hash, contracts::Identity>;
         static_assert(boost::mp11::mp_size<static_precompiles_t>() == 4);
 
         // YP, Eqn. 60, first summation
@@ -212,13 +211,10 @@ namespace fork_traits
         static constexpr auto last_block_number = 9'068'999u;
 
         using static_precompiles_t = type_list_t<
-            contracts::EllipticCurveRecover<byzantium>,
-            contracts::Sha256Hash<byzantium>,
-            contracts::Ripemd160Hash<byzantium>, contracts::Identity<byzantium>,
-            contracts::ModularExponentiation<byzantium>,
-            contracts::BigNumberAdd<byzantium>,
-            contracts::BigNumberMultiply<byzantium>,
-            contracts::BigNumberPairing<byzantium>>;
+            byzantium, contracts::EllipticCurveRecover, contracts::Sha256Hash,
+            contracts::Ripemd160Hash, contracts::Identity,
+            contracts::ModularExponentiation, contracts::BigNumberAdd,
+            contracts::BigNumberMultiply, contracts::BigNumberPairing>;
         static_assert(boost::mp11::mp_size<static_precompiles_t>() == 8);
 
         template <class TState>
@@ -253,14 +249,11 @@ namespace fork_traits
         static constexpr auto last_block_number = 12'243'999u;
 
         using static_precompiles_t = type_list_t<
-            contracts::EllipticCurveRecover<istanbul>,
-            contracts::Sha256Hash<istanbul>, contracts::Ripemd160Hash<istanbul>,
-            contracts::Identity<istanbul>,
-            contracts::ModularExponentiation<istanbul>,
-            contracts::BigNumberAdd<istanbul>,
-            contracts::BigNumberMultiply<istanbul>,
-            contracts::BigNumberPairing<istanbul>,
-            contracts::Blake2F<istanbul>>;
+            istanbul, contracts::EllipticCurveRecover, contracts::Sha256Hash,
+            contracts::Ripemd160Hash, contracts::Identity,
+            contracts::ModularExponentiation, contracts::BigNumberAdd,
+            contracts::BigNumberMultiply, contracts::BigNumberPairing,
+            contracts::Blake2F>;
         static_assert(boost::mp11::mp_size<static_precompiles_t>() == 9);
 
         // https://eips.ethereum.org/EIPS/eip-2028
@@ -291,13 +284,11 @@ namespace fork_traits
         static constexpr auto last_block_number = 12'964'999u;
 
         using static_precompiles_t = type_list_t<
-            contracts::EllipticCurveRecover<berlin>,
-            contracts::Sha256Hash<berlin>, contracts::Ripemd160Hash<berlin>,
-            contracts::Identity<berlin>,
-            contracts::ModularExponentiation<berlin>,
-            contracts::BigNumberAdd<berlin>,
-            contracts::BigNumberMultiply<berlin>,
-            contracts::BigNumberPairing<berlin>, contracts::Blake2F<berlin>>;
+            berlin, contracts::EllipticCurveRecover, contracts::Sha256Hash,
+            contracts::Ripemd160Hash, contracts::Identity,
+            contracts::ModularExponentiation, contracts::BigNumberAdd,
+            contracts::BigNumberMultiply, contracts::BigNumberPairing,
+            contracts::Blake2F>;
         static_assert(boost::mp11::mp_size<static_precompiles_t>() == 9);
 
         // https://eips.ethereum.org/EIPS/eip-2930

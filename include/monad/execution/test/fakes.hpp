@@ -212,7 +212,7 @@ namespace fake
             static inline bool _success_store_contract{};
             static inline uint64_t _gas_creation_cost{};
             static inline uint64_t _create_address{};
-            static inline uint64_t _echo_gas_cost{10};
+            static inline constexpr uint64_t _echo_gas_cost{10};
             static inline auto intrinsic_gas(Transaction const &)
             {
                 return _intrinsic_gas;
@@ -222,7 +222,7 @@ namespace fake
             {
                 return _max_refund_quotient;
             }
-            static constexpr uint64_t echo_gas_cost() { return _echo_gas_cost; }
+            static consteval uint64_t echo_gas_cost() { return _echo_gas_cost; }
             static inline auto get_selfdestruct_refund(TState const &)
             {
                 return _sd_refund;
@@ -252,8 +252,8 @@ namespace fake
                 static_precompiles::Echo<beta>,
                 static_precompiles::OneHundredGas>;
 
-            static inline uint64_t _echo_gas_cost{15};
-            static constexpr uint64_t echo_gas_cost() { return _echo_gas_cost; }
+            static constexpr uint64_t _echo_gas_cost{15};
+            static consteval uint64_t echo_gas_cost() { return _echo_gas_cost; }
         };
     }
 

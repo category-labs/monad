@@ -392,7 +392,6 @@ TEST(Evm, out_of_gas_static_precompile_execution)
     fake::EvmHost h{};
     s._map.emplace(from, Account{.balance = 15'000});
     s._map.emplace(code_address, Account{.nonce = 6});
-    traits_t::_echo_gas_cost = 10;
 
     constexpr static char data[] = "hello world";
     constexpr static auto data_size = sizeof(data);

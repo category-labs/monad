@@ -205,7 +205,7 @@ namespace fake
             static inline uint64_t _sd_refund{};
             static inline uint64_t last_block_number{
                 std::numeric_limits<uint64_t>::max()};
-            using static_precompiles =
+            using static_precompiles_t =
                 boost::mp11::mp_list<static_precompiles::Echo<alpha>>;
             static inline uint64_t _intrinsic_gas{21'000u};
             static inline uint64_t _max_refund_quotient{2u};
@@ -248,7 +248,7 @@ namespace fake
             using next_fork_t = beta;
             static inline uint64_t last_block_number{
                 std::numeric_limits<uint64_t>::max()};
-            using static_precompiles = boost::mp11::mp_list<
+            using static_precompiles_t = boost::mp11::mp_list<
                 static_precompiles::Echo<beta>,
                 static_precompiles::OneHundredGas>;
 

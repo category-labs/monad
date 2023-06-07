@@ -14,6 +14,7 @@ namespace concepts
                                    address_t const &a, evmc_result &r)
     {
         typename T::next_fork_t;
+        typename T::static_precompiles_t;
         { T::intrinsic_gas(t) } -> std::convertible_to<uint64_t>;
         { T::starting_nonce() } -> std::convertible_to<uint64_t>;
         { T::last_block_number } -> std::convertible_to<uint64_t>;

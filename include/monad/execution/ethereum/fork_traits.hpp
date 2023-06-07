@@ -45,11 +45,11 @@ namespace fork_traits
     {
         using next_fork_t = homestead;
         static constexpr auto last_block_number = 1'149'999u;
-        using static_precompiles = type_list_t<
+        using static_precompiles_t = type_list_t<
             contracts::EllipticCurveRecover<frontier>,
             contracts::Sha256Hash<frontier>, contracts::Ripemd160Hash<frontier>,
             contracts::Identity<frontier>>;
-        static_assert(boost::mp11::mp_size<static_precompiles>() == 4);
+        static_assert(boost::mp11::mp_size<static_precompiles_t>() == 4);
 
         // YP, Eqn. 60, first summation
         [[nodiscard]] static constexpr inline uint64_t
@@ -127,9 +127,6 @@ namespace fork_traits
         // https://eips.ethereum.org/EIPS/eip-2
         static constexpr auto last_block_number = 2'674'999u;
 
-        using static_precompiles = frontier::static_precompiles;
-        static_assert(boost::mp11::mp_size<static_precompiles>() == 4);
-
         [[nodiscard]] static constexpr inline auto
         g_txcreate(Transaction const &t) noexcept
         {
@@ -173,9 +170,6 @@ namespace fork_traits
 
         static constexpr auto last_block_number = 4'369'999u;
 
-        using static_precompiles = homestead::static_precompiles;
-        static_assert(boost::mp11::mp_size<static_precompiles>() == 4);
-
         // https://eips.ethereum.org/EIPS/eip-161
         [[nodiscard]] static constexpr inline auto starting_nonce() noexcept
         {
@@ -217,7 +211,7 @@ namespace fork_traits
         using next_fork_t = istanbul;
         static constexpr auto last_block_number = 9'068'999u;
 
-        using static_precompiles = type_list_t<
+        using static_precompiles_t = type_list_t<
             contracts::EllipticCurveRecover<byzantium>,
             contracts::Sha256Hash<byzantium>,
             contracts::Ripemd160Hash<byzantium>, contracts::Identity<byzantium>,
@@ -225,7 +219,7 @@ namespace fork_traits
             contracts::BigNumberAdd<byzantium>,
             contracts::BigNumberMultiply<byzantium>,
             contracts::BigNumberPairing<byzantium>>;
-        static_assert(boost::mp11::mp_size<static_precompiles>() == 8);
+        static_assert(boost::mp11::mp_size<static_precompiles_t>() == 8);
 
         template <class TState>
         [[nodiscard]] static constexpr inline bool store_contract_code(
@@ -258,7 +252,7 @@ namespace fork_traits
         using next_fork_t = berlin;
         static constexpr auto last_block_number = 12'243'999u;
 
-        using static_precompiles = type_list_t<
+        using static_precompiles_t = type_list_t<
             contracts::EllipticCurveRecover<istanbul>,
             contracts::Sha256Hash<istanbul>, contracts::Ripemd160Hash<istanbul>,
             contracts::Identity<istanbul>,
@@ -267,7 +261,7 @@ namespace fork_traits
             contracts::BigNumberMultiply<istanbul>,
             contracts::BigNumberPairing<istanbul>,
             contracts::Blake2F<istanbul>>;
-        static_assert(boost::mp11::mp_size<static_precompiles>() == 9);
+        static_assert(boost::mp11::mp_size<static_precompiles_t>() == 9);
 
         // https://eips.ethereum.org/EIPS/eip-2028
         [[nodiscard]] static constexpr inline uint64_t
@@ -296,7 +290,7 @@ namespace fork_traits
 
         static constexpr auto last_block_number = 12'964'999u;
 
-        using static_precompiles = type_list_t<
+        using static_precompiles_t = type_list_t<
             contracts::EllipticCurveRecover<berlin>,
             contracts::Sha256Hash<berlin>, contracts::Ripemd160Hash<berlin>,
             contracts::Identity<berlin>,
@@ -304,7 +298,7 @@ namespace fork_traits
             contracts::BigNumberAdd<berlin>,
             contracts::BigNumberMultiply<berlin>,
             contracts::BigNumberPairing<berlin>, contracts::Blake2F<berlin>>;
-        static_assert(boost::mp11::mp_size<static_precompiles>() == 9);
+        static_assert(boost::mp11::mp_size<static_precompiles_t>() == 9);
 
         // https://eips.ethereum.org/EIPS/eip-2930
         [[nodiscard]] static constexpr inline auto
@@ -331,9 +325,6 @@ namespace fork_traits
 
         static constexpr auto last_block_number =
             std::numeric_limits<uint64_t>::max();
-
-        using static_precompiles = berlin::static_precompiles;
-        static_assert(boost::mp11::mp_size<static_precompiles>() == 9);
 
         // https://eips.ethereum.org/EIPS/eip-3529
         template <class TState>

@@ -16,7 +16,7 @@ using beta_traits_t = fake::traits::beta<fake::State>;
 
 template <concepts::fork_traits<fake::State> TTraits>
 using traits_templated_static_precompiles_t = StaticPrecompiles<
-    fake::State, TTraits, typename TTraits::static_precompiles>;
+    fake::State, TTraits, typename TTraits::static_precompiles_t>;
 
 using alpha_static_precompiles_t =
     traits_templated_static_precompiles_t<alpha_traits_t>;

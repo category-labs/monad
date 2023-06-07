@@ -198,7 +198,7 @@ TEST(ReplayFromBlockDb_Eth, invalid_end_block_number)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        boost::mp11::mp_list<>>(
+        eth_start_fork::static_precompiles_t>(
         state, state_trie, block_db, receipt_collector, output, 100u, 100u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::INVALID_END_BLOCK_NUMBER);

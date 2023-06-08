@@ -1,0 +1,4 @@
+#include <monad/config.hpp>
+
+#define MONAD_LOG_NAMESPACE_BEGIN MONAD_NAMESPACE_BEGIN namespace log {
+#define MONAD_LOG_NAMESPACE_END } MONAD_NAMESPACE_END

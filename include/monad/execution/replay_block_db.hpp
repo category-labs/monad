@@ -2,14 +2,16 @@
 
 #include <monad/db/block_db.hpp>
 #include <monad/db/state_db.hpp>
+
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/execution_model.hpp>
 #include <monad/execution/transaction_processor_data.hpp>
 
+#include <monad/logging/monad_log.hpp>
+
 #include <optional>
-#include <ostream>
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
@@ -17,7 +19,7 @@ template <
     class TState, class TBlockDb, class TExecution,
     template <typename> class TAllTxnBlockProcessor,
     template <typename> class TStateTrie, class TTransactionTrie,
-    class TReceiptTrie, class TReceiptCollector>
+    class TReceiptTrie, class TReceiptCollector, class TLogger>
 class ReplayFromBlockDb
 {
 public:
@@ -62,8 +64,7 @@ public:
         class TPrecompiles>
     [[nodiscard]] Result run_fork(
         TState &state, TStateTrie<TState> &state_trie, TBlockDb const &block_db,
-        TReceiptCollector &receipt_collector, std::ostream &output,
-        block_num_t current_block_number,
+        TReceiptCollector &receipt_collector, block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
         for (; current_block_number <= loop_until<TTraits>(until_block_number);
@@ -103,14 +104,33 @@ public:
                 TTransactionTrie transaction_trie(block.transactions);
                 TReceiptTrie receipt_trie(receipts);
 
-                auto const transaction_root = transaction_trie.root_hash();
-                auto const receipt_root = receipt_trie.root_hash();
-                auto const state_root = state_trie.incremental_update(state);
+                auto *block_logger = TLogger::get_logger("block_logger");
 
-                output << "Transaction Root: " << transaction_root.bytes
-                       << "\n";
-                output << "Receipt Root: " << receipt_root.bytes << "\n";
-                output << "State Root: " << state_root.bytes << "\n";
+                [[maybe_unused]] auto const transaction_root =
+                    transaction_trie.root_hash();
+                [[maybe_unused]] auto const receipt_root =
+                    receipt_trie.root_hash();
+                [[maybe_unused]] auto const state_root =
+                    state_trie.incremental_update(state);
+
+                MONAD_LOG_INFO(block_logger, "Block {}", current_block_number);
+
+                MONAD_LOG_INFO(
+                    block_logger,
+                    "Computed Transaction Root: {}, Expected Transaction Root: "
+                    "{}",
+                    transaction_root,
+                    block.header.transactions_root);
+                MONAD_LOG_INFO(
+                    block_logger,
+                    "Computed Receipt Root: {}, Expected Receipt Root: {}",
+                    receipt_root,
+                    block.header.receipts_root);
+                MONAD_LOG_INFO(
+                    block_logger,
+                    "Computed State Root: {}, Expected State Root: {}",
+                    state_root,
+                    block.header.state_root);
 
                 receipt_collector.emplace_back(receipts);
             }
@@ -137,7 +157,6 @@ public:
                 state_trie,
                 block_db,
                 receipt_collector,
-                output,
                 current_block_number,
                 until_block_number);
         }
@@ -154,8 +173,7 @@ public:
         class TPrecompiles>
     [[nodiscard]] inline Result
     run(TState &state, TStateTrie<TState> &state_trie, TBlockDb const &block_db,
-        TReceiptCollector &receipt_collector, std::ostream &output,
-        block_num_t start_block_number,
+        TReceiptCollector &receipt_collector, block_num_t start_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
         Block block{};
@@ -183,7 +201,6 @@ public:
             state_trie,
             block_db,
             receipt_collector,
-            output,
             start_block_number,
             until_block_number);
     }

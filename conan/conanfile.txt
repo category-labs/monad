@@ -2,6 +2,7 @@
 tl-expected/1.0.0
 tl-optional/1.0.0
 quill/2.9.0
+cli11/2.3.2
 
 [generators]
 cmake_find_package

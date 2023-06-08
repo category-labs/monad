@@ -9,6 +9,8 @@ function(add_unit_test)
 
     add_executable(${ADD_UNIT_TEST_TARGET} ${ADD_UNIT_TEST_SOURCES})
     monad_compile_options(${ADD_UNIT_TEST_TARGET})
+    target_compile_definitions(${ADD_UNIT_TEST_TARGET} PUBLIC DISABLE_LOGGING)
+
     target_link_libraries(${ADD_UNIT_TEST_TARGET}
         GTest::GTest
         GTest::Main

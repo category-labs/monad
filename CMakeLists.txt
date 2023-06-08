@@ -137,6 +137,7 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/logging/config.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/logging/fake_logger.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/logging/fake_log_macros.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/logging/formatter.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/logging/monad_log.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/logging/quill_logger.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/logging/quill_log_macros.hpp

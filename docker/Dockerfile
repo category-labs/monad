@@ -23,6 +23,7 @@ RUN yum -y install \
   boost-fiber \
   boost-log \
   brotli \
+  gmp \
   gtest \
   rocksdb
 
@@ -30,6 +31,7 @@ RUN yum -y install \
   abseil-cpp-devel \
   boost-devel \
   brotli-devel \
+  gmp-devel \
   gtest-devel \
   rocksdb-devel
 

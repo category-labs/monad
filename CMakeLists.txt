@@ -44,6 +44,7 @@ set(ETHASH_BUILD_TESTS OFF)
 add_subdirectory(third_party/ethash)
 add_subdirectory(third_party/evmone)
 add_subdirectory(third_party/intx)
+add_subdirectory(third_party/silkpre)
 
 include(cmake/test.cmake)
 
@@ -175,6 +176,7 @@ target_include_directories(monad
     PUBLIC ${PROJECT_SOURCE_DIR}/include
     PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/test
     PRIVATE ${Boost_INCLUDE_DIRS}
+    PUBLIC ${silkpre_SOURCE_DIR}/lib
 )
 
 set(TEST_DATA_DIR "${PROJECT_SOURCE_DIR}/test")
@@ -193,6 +195,7 @@ target_link_libraries(monad
     PUBLIC tl::expected
     PUBLIC tl::optional
     PUBLIC quill::quill
+    PUBLIC silkpre
 )
 monad_compile_options(monad)
 

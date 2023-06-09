@@ -11,3 +11,6 @@
 [submodule "conan/cmake-conan"]
 	path = conan/cmake-conan
 	url = https://github.com/conan-io/cmake-conan.git
+[submodule "third_party/silkpre"]
+	path = third_party/silkpre
+	url = https://github.com/monad-crypto/monad-silkpre.git

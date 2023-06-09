@@ -41,10 +41,49 @@ namespace fork_traits
 
     namespace contracts = execution::ethereum::static_precompiles;
 
+    /**
+     * Gas cost for many precompiles is computed as Base + PerWord * N
+     * where N is the number of 32-bit words used by the input
+     * @tparam Base
+     * @tparam PerWord
+     * NOTE: Base and PerWord are signed integers to be more compatible with
+     * evmc types
+     */
+    template <int64_t BaseCost, int64_t PerWordCost>
+    struct gas_required
+    {
+        static_assert(BaseCost >= 0);
+        static_assert(PerWordCost >= 0);
+        using integer_type = int64_t;
+        using base = std::integral_constant<int64_t, BaseCost>;
+        using per_word = std::integral_constant<int64_t, PerWordCost>;
+
+        /**
+         * Implements the generic form of YP Appendix E Eq 221
+         * @param size of input message in bytes
+         * @return the total gas cost
+         */
+        static constexpr int64_t compute(size_t size)
+        {
+            auto constexpr word_size = sizeof(monad::bytes32_t);
+            return (size + word_size - 1) / word_size * per_word() + base();
+        }
+    };
+
     struct frontier
     {
         using next_fork_t = homestead;
         static constexpr auto last_block_number = 1'149'999u;
+
+        // YP Appendix E Eq 209
+        using elliptic_curve_recover_gas_t = gas_required<3000, 0>;
+        // YP Appendix E Eq 221
+        using sha256_gas_t = gas_required<60, 12>;
+        // YP Appendix E Eq 224
+        using ripemd160_gas_t = gas_required<600, 120>;
+        // YP Appendix E Eq 230
+        using identity_gas_t = gas_required<15, 3>;
+
         using static_precompiles_t = type_list_t<
             frontier, contracts::EllipticCurveRecover, contracts::Sha256Hash,
             contracts::Ripemd160Hash, contracts::Identity>;

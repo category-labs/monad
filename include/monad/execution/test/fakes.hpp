@@ -5,6 +5,7 @@
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/byte_string.hpp>
 #include <monad/core/concepts.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/receipt.hpp>
@@ -26,6 +27,7 @@ namespace fake
     struct State
     {
         std::unordered_map<address_t, Account> _map{};
+        std::unordered_map<address_t, byte_string> _code{};
         uint64_t _selfdestructs{};
         uint64_t _touched_dead{};
         uint64_t _suicides{};
@@ -75,8 +77,7 @@ namespace fake
             return _map.at(address).code_hash;
         }
 
-        [[nodiscard]] byte_string_view
-        code_at(address_t const &a) const noexcept
+        [[nodiscard]] byte_string_view code_at(address_t const &a) const noexcept
         {
             return {_code.at(a)};
         }

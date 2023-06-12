@@ -7,6 +7,7 @@ add_unit_test(
   ethereum_traits.cpp
   evm.cpp
   evmc_host.cpp
+  evmone_baseline_interpreter.cpp
   static_precompiles.cpp
   replay_block_db.cpp
   transaction_processor.cpp
@@ -15,4 +16,4 @@ add_unit_test(
   transaction_processor_data_fail_apply_state.cpp
   validation.cpp
   LIBRARIES
-  monad)
+  monad evmone)

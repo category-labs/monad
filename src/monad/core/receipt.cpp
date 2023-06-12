@@ -8,8 +8,9 @@ MONAD_NAMESPACE_BEGIN
 
 void set_3_bits(Receipt::Bloom &bloom, byte_string_view const bytes)
 {
+    // YP Eqn 29
     auto const h{ethash::keccak256(bytes.cbegin(), bytes.size())};
-    for (auto i = 0; i < 3; ++i) {
+    for (auto i = 0u; i < 3u; ++i) {
         // Poorly named intx function, this really is taking from our hash,
         // which is returned as big endian, to host order so we can do calcs on
         // `bit`
@@ -17,13 +18,14 @@ void set_3_bits(Receipt::Bloom &bloom, byte_string_view const bytes)
             intx::to_big_endian(
                 reinterpret_cast<uint16_t const *>(h.bytes)[i]) &
             2047u;
-        const auto byte = 255u - bit / 8u;
-        bloom[byte] |= 1u << (bit & 7u);
+        const unsigned int byte = 255u - bit / 8u;
+        bloom[byte] |= static_cast<unsigned char>(1u << (bit & 7u));
     }
 }
 
 void populate_bloom(Receipt::Bloom &b, Receipt::Log const &l)
 {
+    // YP Eqn 28
     set_3_bits(b, to_byte_string_view(l.address.bytes));
     for (auto const &i : l.topics) {
         set_3_bits(b, to_byte_string_view(i.bytes));

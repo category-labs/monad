@@ -132,7 +132,7 @@ TEST(CodeStore, merge_changes)
         EXPECT_TRUE(s.can_merge(t));
         s.merge_changes(t);
     }
-    EXPECT_EQ(0, std::memcmp(s.code_at(b).c_str(), c2.c_str(), c2.size()));
+    EXPECT_EQ(s.code_at(b), c2);
 }
 
 TEST(CodeStore, revert)
@@ -197,8 +197,8 @@ TEST(CodeStore, merge_multiple_changes)
         EXPECT_TRUE(s.can_merge(t));
         s.merge_changes(t);
     }
-    EXPECT_EQ(0, std::memcmp(s.code_at(a).c_str(), c1.c_str(), c1.size()));
-    EXPECT_EQ(0, std::memcmp(s.code_at(b).c_str(), c2.c_str(), c2.size()));
+    EXPECT_EQ(s.code_at(a), c1);
+    EXPECT_EQ(s.code_at(b), c2);
 }
 
 TEST(CodeStore, can_commit)
@@ -240,7 +240,7 @@ TEST(CodeStore, can_commit_multiple)
     EXPECT_TRUE(s.can_commit());
     s.commit_all_merged();
 
-    EXPECT_EQ(0, std::memcmp(s.code_at(a).c_str(), c1.c_str(), c1.size()));
-    EXPECT_EQ(0, std::memcmp(s.code_at(b).c_str(), c2.c_str(), c2.size()));
-    EXPECT_EQ(0, std::memcmp(s.code_at(c).c_str(), c3.c_str(), c3.size()));
+    EXPECT_EQ(s.code_at(a), c1);
+    EXPECT_EQ(s.code_at(b), c2);
+    EXPECT_EQ(s.code_at(c), c3);
 }

@@ -32,15 +32,15 @@ struct CodeStore
     {
     }
 
-    [[nodiscard]] byte_string const &code_at(address_t const &a) const
+    [[nodiscard]] byte_string_view code_at(address_t const &a) const
     {
         if (merged_.contains(a)) {
-            return merged_.at(a);
+            return {merged_.at(a)};
         }
         if (db_.contains(a)) {
-            return db_.at(a);
+            return {db_.at(a)};
         }
-        return empty;
+        return {empty};
     }
 
     [[nodiscard]] bool can_merge(WorkingCopy const &w) const
@@ -88,10 +88,10 @@ struct CodeStore<TCodeDB>::WorkingCopy : public CodeStore<TCodeDB>
     {
     }
 
-    [[nodiscard]] byte_string const &code_at(address_t const &a) const noexcept
+    [[nodiscard]] byte_string_view const code_at(address_t const &a) const noexcept
     {
         if (code_.contains(a))
-            return code_.at(a);
+            return {code_.at(a)};
         return CodeStore::code_at(a);
     }
 
@@ -114,10 +114,10 @@ struct CodeStore<TCodeDB>::WorkingCopy : public CodeStore<TCodeDB>
     [[nodiscard]] size_t copy_code(
         address_t const &a, size_t offset, uint8_t *buffer, size_t buffer_size)
     {
-        auto const &code = code_at(a);
+        auto const code = code_at(a);
         assert(code.size() > offset);
         auto const bytes_to_copy = std::min(code.size() - offset, buffer_size);
-        std::memcpy(buffer, code.c_str() + offset, bytes_to_copy);
+        std::memcpy(buffer, code.begin() + offset, bytes_to_copy);
         return bytes_to_copy;
     }
 

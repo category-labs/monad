@@ -5,10 +5,10 @@
 #include <monad/core/concepts.hpp>
 #include <monad/core/transaction.hpp>
 
-#include <monad/execution/ethereum/static_precompiles/big_number_add.hpp>
-#include <monad/execution/ethereum/static_precompiles/big_number_multiply.hpp>
-#include <monad/execution/ethereum/static_precompiles/big_number_pairing.hpp>
 #include <monad/execution/ethereum/static_precompiles/blake2f.hpp>
+#include <monad/execution/ethereum/static_precompiles/bn_add.hpp>
+#include <monad/execution/ethereum/static_precompiles/bn_multiply.hpp>
+#include <monad/execution/ethereum/static_precompiles/bn_pairing.hpp>
 #include <monad/execution/ethereum/static_precompiles/elliptic_curve_recover.hpp>
 #include <monad/execution/ethereum/static_precompiles/identity.hpp>
 #include <monad/execution/ethereum/static_precompiles/modular_exponentiation.hpp>
@@ -259,8 +259,8 @@ namespace fork_traits
         using static_precompiles_t = type_list_t<
             byzantium, contracts::EllipticCurveRecover, contracts::Sha256Hash,
             contracts::Ripemd160Hash, contracts::Identity,
-            contracts::ModularExponentiation, contracts::BigNumberAdd,
-            contracts::BigNumberMultiply, contracts::BigNumberPairing>;
+            contracts::ModularExponentiation, contracts::BNAdd,
+            contracts::BNMultiply, contracts::BNPairing>;
         static_assert(boost::mp11::mp_size<static_precompiles_t>() == 8);
 
         template <class TState>
@@ -299,9 +299,8 @@ namespace fork_traits
         using static_precompiles_t = type_list_t<
             istanbul, contracts::EllipticCurveRecover, contracts::Sha256Hash,
             contracts::Ripemd160Hash, contracts::Identity,
-            contracts::ModularExponentiation, contracts::BigNumberAdd,
-            contracts::BigNumberMultiply, contracts::BigNumberPairing,
-            contracts::Blake2F>;
+            contracts::ModularExponentiation, contracts::BNAdd,
+            contracts::BNMultiply, contracts::BNPairing, contracts::Blake2F>;
         static_assert(boost::mp11::mp_size<static_precompiles_t>() == 9);
 
         // https://eips.ethereum.org/EIPS/eip-2028
@@ -335,9 +334,8 @@ namespace fork_traits
         using static_precompiles_t = type_list_t<
             berlin, contracts::EllipticCurveRecover, contracts::Sha256Hash,
             contracts::Ripemd160Hash, contracts::Identity,
-            contracts::ModularExponentiation, contracts::BigNumberAdd,
-            contracts::BigNumberMultiply, contracts::BigNumberPairing,
-            contracts::Blake2F>;
+            contracts::ModularExponentiation, contracts::BNAdd,
+            contracts::BNMultiply, contracts::BNPairing, contracts::Blake2F>;
         static_assert(boost::mp11::mp_size<static_precompiles_t>() == 9);
 
         // https://eips.ethereum.org/EIPS/eip-2930

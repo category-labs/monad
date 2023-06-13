@@ -166,6 +166,7 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/trie/comparator.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/trie/rocks_comparator.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/trie/process_transformation_list.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/trie/update.hpp
     ${PROJECT_SOURCE_DIR}/src/monad/trie/rocks_cursor.cpp
 )
 

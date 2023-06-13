@@ -10,15 +10,15 @@ MONAD_LOG_NAMESPACE_BEGIN
 
 enum class FakeLogLevel : uint8_t
 {
-    FakeTraceL3,
-    FakeTraceL2,
-    FakeTraceL1,
-    FakeDebug,
-    FakeInfo,
-    FakeWarning,
-    FakeError,
-    FakeCritical,
-    FakeBacktrace,
+    TraceL3,
+    TraceL2,
+    TraceL1,
+    Debug,
+    Info,
+    Warning,
+    Error,
+    Critical,
+    Backtrace,
     None
 };
 
@@ -37,7 +37,7 @@ struct FakeEmptyLogger
     }
 
     static constexpr void set_log_level(
-        char const * = nullptr, FakeLogLevel = FakeLogLevel::FakeInfo) noexcept
+        char const * = nullptr, FakeLogLevel = FakeLogLevel::Info) noexcept
     {
         return;
     }

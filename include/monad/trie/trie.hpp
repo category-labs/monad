@@ -1,36 +1,23 @@
 #pragma once
 
-#include <algorithm>
-#include <bit>
-#include <iterator>
-#include <variant>
-#include <vector>
-
 #include <monad/trie/key_buffer.hpp>
 #include <monad/trie/nibbles.hpp>
 #include <monad/trie/node.hpp>
 #include <monad/trie/process_transformation_list.hpp>
-
+#include <monad/trie/update.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/likely.h>
 #include <monad/core/variant.hpp>
 
 #include <tl/optional.hpp>
 
+#include <algorithm>
+#include <bit>
+#include <iterator>
+#include <variant>
+#include <vector>
+
 MONAD_TRIE_NAMESPACE_BEGIN
-
-struct Upsert
-{
-    Nibbles key;
-    byte_string value;
-};
-
-struct Delete
-{
-    Nibbles key;
-};
-
-using Update = std::variant<Upsert, Delete>;
 
 [[nodiscard]] constexpr Nibbles const &get_update_key(Update const &u)
 {

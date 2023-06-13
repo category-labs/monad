@@ -4,6 +4,7 @@
 #include <monad/core/assert.h>
 #include <monad/db/config.hpp>
 #include <monad/execution/execution_model.hpp>
+#include <monad/logging/monad_log.hpp>
 #include <monad/rlp/decode_helpers.hpp>
 #include <monad/trie/in_memory_comparator.hpp>
 #include <monad/trie/in_memory_cursor.hpp>
@@ -276,6 +277,10 @@ namespace impl
         std::vector<trie::Update> account_trie_updates{};
         std::vector<trie::Update> storage_trie_updates{};
 
+        decltype(monad::log::logger_t::get_logger()) logger =
+            monad::log::logger_t::get_logger("trie_db_logger");
+        static_assert(std::is_pointer_v<decltype(logger)>);
+
         [[nodiscard]] constexpr bytes32_t root_hash() const
         {
             return accounts.trie.root_hash();
@@ -469,6 +474,13 @@ namespace impl
 
                 std::ranges::sort(
                     storage_trie_updates, std::less<>{}, trie::get_update_key);
+
+                MONAD_LOG_INFO(
+                    logger,
+                    "{} storage updates for {}: {}",
+                    storage_trie_updates.size(),
+                    u.first,
+                    storage_trie_updates);
                 storage.trie.process_updates(storage_trie_updates);
             }
             storage.leaves_writer.write();
@@ -503,6 +515,11 @@ namespace impl
 
             std::ranges::sort(
                 account_trie_updates, std::less<>{}, trie::get_update_key);
+            MONAD_LOG_INFO(
+                logger,
+                "{} account updates: {}",
+                account_trie_updates.size(),
+                account_trie_updates);
             accounts.trie.process_updates(account_trie_updates);
 
             accounts.leaves_writer.write();

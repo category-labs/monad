@@ -1,13 +1,13 @@
 #pragma once
 
-#include <evmc/evmc.hpp>
-#include <monad/core/byte_string.hpp>
-#include <monad/trie/config.hpp>
-#include <monad/trie/nibbles.hpp>
-#include <monad/trie/trie.hpp>
-#include <vector>
+#include <monad/test/config.hpp>
 
-MONAD_TRIE_NAMESPACE_BEGIN
+#include <evmc/evmc.hpp>
+
+#include <array>
+#include <utility>
+
+MONAD_TEST_NAMESPACE_BEGIN
 
 using namespace evmc::literals;
 
@@ -314,44 +314,4 @@ constexpr std::array hard_updates = {
         0x0b1f54273e2159bdb379c23cff2eb452c31f7e9e781b6c08138ae0af796b1132_bytes32),
 };
 
-[[nodiscard]] constexpr Update
-make_upsert(Nibbles const &key, byte_string const &value)
-{
-    return Upsert{
-        .key = key,
-        .value = value,
-    };
-}
-
-[[nodiscard]] constexpr Update
-make_upsert(evmc::bytes32 key, byte_string const &value)
-{
-    return make_upsert(Nibbles(key), value);
-}
-
-[[nodiscard]] constexpr Update make_del(Nibbles const &key)
-{
-    return Delete{
-        .key = key,
-    };
-}
-
-[[nodiscard]] constexpr Update make_del(evmc::bytes32 key)
-{
-    return make_del(Nibbles(key));
-}
-
-[[nodiscard]] constexpr std::vector<Update> make_hard_updates()
-{
-    std::vector<Update> ret;
-    for (auto const &[key, value] : hard_updates) {
-        ret.push_back(make_upsert(
-            key,
-            byte_string(
-                reinterpret_cast<byte_string::value_type const *>(&value.bytes),
-                sizeof(value.bytes))));
-    }
-    return ret;
-}
-
-MONAD_TRIE_NAMESPACE_END
+MONAD_TEST_NAMESPACE_END

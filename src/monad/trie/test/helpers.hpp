@@ -1,7 +1,5 @@
 #pragma once
 
-#include "hard_updates.hpp"
-
 #include <monad/trie/comparator.hpp>
 #include <monad/trie/in_memory_cursor.hpp>
 #include <monad/trie/in_memory_writer.hpp>
@@ -9,6 +7,8 @@
 #include <monad/trie/rocks_cursor.hpp>
 #include <monad/trie/rocks_writer.hpp>
 #include <monad/trie/trie.hpp>
+
+#include "hard_updates.hpp"
 
 #include <gtest/gtest.h>
 #include <rocksdb/db.h>
@@ -258,5 +258,45 @@ struct in_memory_fixture : public ::testing::Test
         }
     }
 };
+
+[[nodiscard]] constexpr Update
+make_upsert(Nibbles const &key, byte_string const &value)
+{
+    return Upsert{
+        .key = key,
+        .value = value,
+    };
+}
+
+[[nodiscard]] constexpr Update
+make_upsert(evmc::bytes32 key, byte_string const &value)
+{
+    return make_upsert(Nibbles(key), value);
+}
+
+[[nodiscard]] constexpr Update make_del(Nibbles const &key)
+{
+    return Delete{
+        .key = key,
+    };
+}
+
+[[nodiscard]] constexpr Update make_del(evmc::bytes32 key)
+{
+    return make_del(Nibbles(key));
+}
+
+[[nodiscard]] constexpr std::vector<Update> make_hard_updates()
+{
+    std::vector<Update> ret;
+    for (auto const &[key, value] : test::hard_updates) {
+        ret.push_back(make_upsert(
+            key,
+            byte_string(
+                reinterpret_cast<byte_string::value_type const *>(&value.bytes),
+                sizeof(value.bytes))));
+    }
+    return ret;
+}
 
 MONAD_TRIE_NAMESPACE_END

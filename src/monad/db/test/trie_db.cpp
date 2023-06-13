@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <monad/db/trie_db.hpp>
+#include <monad/logging/monad_log.hpp>
 
 using namespace monad;
 using namespace monad::db;
@@ -104,6 +105,13 @@ TEST(InMemoryTrieDB, erase)
     db.create(a, key2, value2);
     db.commit();
 
+    EXPECT_EQ(
+        db.root_hash(a),
+        0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
+    EXPECT_EQ(
+        db.root_hash(),
+        0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+
     db.erase(a);
     db.update(a, key1, value2);
     db.update(a, key2, value1);
@@ -117,4 +125,7 @@ TEST(InMemoryTrieDB, erase)
     EXPECT_TRUE(db.accounts.trie_storage.empty());
     EXPECT_TRUE(db.storage.leaves_storage.empty());
     EXPECT_TRUE(db.storage.trie_storage.empty());
+
+    EXPECT_EQ(db.root_hash(), NULL_ROOT);
+    EXPECT_EQ(db.root_hash(a), NULL_ROOT);
 }

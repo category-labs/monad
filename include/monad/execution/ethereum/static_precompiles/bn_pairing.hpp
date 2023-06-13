@@ -1,14 +1,14 @@
 #pragma once
 
-#include <monad/execution/ethereum/config.hpp>
 #include <monad/core/concepts.hpp>
+#include <monad/execution/ethereum/config.hpp>
 
 MONAD_EXECUTION_ETHEREUM_NAMESPACE_BEGIN
 
 namespace static_precompiles
 {
     template <class TFork>
-    struct BigNumberPairing
+    struct BNPairing
     {
         static evmc::Result execute(const evmc_message &m) noexcept;
     };

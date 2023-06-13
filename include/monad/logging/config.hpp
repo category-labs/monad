@@ -1,3 +1,5 @@
+#pragma once
+
 #include <monad/config.hpp>
 
 #define MONAD_LOG_NAMESPACE_BEGIN MONAD_NAMESPACE_BEGIN namespace log {

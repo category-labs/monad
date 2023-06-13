@@ -234,19 +234,19 @@ namespace impl
 
     template <
         typename TAccountsCursor, typename TStorageCursor,
-        typename TAccountsWriter, typename TStorageWriter, typename TExecutor>
+        typename TAccountsWriter, typename TStorageWriter, typename TExecution>
     struct TrieDBImpl
         : public DBInterface<
               TrieDBImpl<
                   TAccountsCursor, TStorageCursor, TAccountsWriter,
-                  TStorageWriter, TExecutor>,
-              TExecutor>
+                  TStorageWriter, TExecution>,
+              TExecution>
     {
         using DBInterface<
             TrieDBImpl<
                 TAccountsCursor, TStorageCursor, TAccountsWriter,
-                TStorageWriter, TExecutor>,
-            TExecutor>::updates;
+                TStorageWriter, TExecution>,
+            TExecution>::updates;
 
         template <typename TCursor, typename TWriter>
         struct Trie

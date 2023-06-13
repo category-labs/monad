@@ -27,7 +27,8 @@ namespace static_precompiles
                 .status_code = evmc_status_code::EVMC_SUCCESS,
                 .gas_left = message.gas - cost,
                 .output_data = result.data,
-                .output_size = result.size};
+                .output_size = result.size,
+                .release = evmc_free_result_memory};
         }
     };
 }

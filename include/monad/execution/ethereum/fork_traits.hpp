@@ -17,6 +17,8 @@
 
 #include <monad/db/block_db.hpp>
 
+#include <evmc/evmc.h>
+
 #include <algorithm>
 
 #include <boost/mp11/mpl_list.hpp>
@@ -44,7 +46,10 @@ namespace fork_traits
     struct frontier
     {
         using next_fork_t = homestead;
+
+        static constexpr evmc_revision rev = EVMC_FRONTIER;
         static constexpr auto last_block_number = 1'149'999u;
+
         using static_precompiles_t = type_list_t<
             frontier, contracts::EllipticCurveRecover, contracts::Sha256Hash,
             contracts::Ripemd160Hash, contracts::Identity>;
@@ -123,6 +128,7 @@ namespace fork_traits
         using next_fork_t = spurious_dragon;
 
         // https://eips.ethereum.org/EIPS/eip-2
+        static constexpr evmc_revision rev = EVMC_HOMESTEAD;
         static constexpr auto last_block_number = 2'674'999u;
 
         [[nodiscard]] static constexpr auto
@@ -166,6 +172,7 @@ namespace fork_traits
     {
         using next_fork_t = byzantium;
 
+        static constexpr evmc_revision rev = EVMC_SPURIOUS_DRAGON;
         static constexpr auto last_block_number = 4'369'999u;
 
         // https://eips.ethereum.org/EIPS/eip-161
@@ -207,6 +214,8 @@ namespace fork_traits
     struct byzantium : spurious_dragon
     {
         using next_fork_t = istanbul;
+
+        static constexpr evmc_revision rev = EVMC_BYZANTIUM;
         static constexpr auto last_block_number = 9'068'999u;
 
         using static_precompiles_t = type_list_t<
@@ -245,6 +254,8 @@ namespace fork_traits
     struct istanbul : public byzantium // constantinople
     {
         using next_fork_t = berlin;
+
+        static constexpr evmc_revision rev = EVMC_ISTANBUL;
         static constexpr auto last_block_number = 12'243'999u;
 
         using static_precompiles_t = type_list_t<
@@ -280,6 +291,7 @@ namespace fork_traits
     {
         using next_fork_t = london;
 
+        static constexpr evmc_revision rev = EVMC_BERLIN;
         static constexpr auto last_block_number = 12'964'999u;
 
         using static_precompiles_t = type_list_t<
@@ -313,6 +325,7 @@ namespace fork_traits
     {
         using next_fork_t = no_next_fork_t;
 
+        static constexpr evmc_revision rev = EVMC_LONDON;
         static constexpr auto last_block_number =
             std::numeric_limits<uint64_t>::max();
 

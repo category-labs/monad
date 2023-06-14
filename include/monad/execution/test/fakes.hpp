@@ -189,6 +189,17 @@ namespace fake
         struct Echo;
         struct OneHundredGas;
     }
+    
+    struct Interpreter
+    {
+        static inline evmc_result _result{};
+
+        template <class TEvmHost>
+        constexpr evmc_result execute(TEvmHost *, evmc_message const &)
+        {
+            return _result;
+        }
+    };
 
     namespace traits
     {
@@ -196,6 +207,8 @@ namespace fake
         struct alpha
         {
             using next_fork_t = alpha;
+
+            static constexpr evmc_revision rev = EVMC_FRONTIER;
             static inline uint64_t _sd_refund{};
             static inline uint64_t last_block_number{
                 std::numeric_limits<uint64_t>::max()};
@@ -240,6 +253,8 @@ namespace fake
         struct beta : public alpha<TState>
         {
             using next_fork_t = beta;
+
+            static constexpr evmc_revision rev = EVMC_HOMESTEAD;
             static inline uint64_t last_block_number{
                 std::numeric_limits<uint64_t>::max()};
             using static_precompiles_t = boost::mp11::mp_list<

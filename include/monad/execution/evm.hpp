@@ -14,7 +14,7 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 
 template <
     class TState, concepts::fork_traits<TState> TTraits,
-    class TStaticPrecompiles>
+    class TStaticPrecompiles, class TInterpreter>
 struct Evm
 {
     using result_t = tl::expected<evmc_message, evmc_result>;
@@ -23,26 +23,27 @@ struct Evm
 
     template <class TEvmHost>
     [[nodiscard]] static evmc::Result create_contract_account(
-        TEvmHost *, TState &state, evmc_message const &m) noexcept
+        TEvmHost *host, TState &state, evmc_message const &m) noexcept
     {
         auto const contract_address = make_account_address(state, m);
         if (!contract_address) {
             return evmc::Result{contract_address.error()};
         }
-        // evmone execute, just this for now
-        evmc_result res = {.status_code = EVMC_SUCCESS, .gas_left = 12'000};
+
+        auto interpreter = TInterpreter{};
+        auto result = interpreter.execute(host, m);
 
         if (!TTraits::store_contract_code(
-                state, contract_address.value(), res)) {
+                state, contract_address.value(), result)) {
             state.revert();
         }
 
-        return evmc::Result{res};
+        return evmc::Result{result};
     }
 
     template <class TEvmHost>
     [[nodiscard]] static evmc::Result
-    call_evm(TEvmHost *, TState &state, evmc_message const &m) noexcept
+    call_evm(TEvmHost *host, TState &state, evmc_message const &m) noexcept
     {
         if (auto const result = transfer_call_balances(state, m);
             result.status_code != EVMC_SUCCESS) {
@@ -53,9 +54,10 @@ struct Evm
                 .transform([&](auto static_precompile_execute) {
                     return static_precompile_execute(m);
                 })
-                // execute on backend, just this for now
-                .value_or(evmc_result{
-                    .status_code = EVMC_SUCCESS, .gas_left = m.gas});
+                .or_else([&] {
+                    auto interpreter = TInterpreter{};
+                    return interpreter.execute(host, m);
+                }).value();
 
         if (result.status_code == EVMC_REVERT) {
             state.revert();

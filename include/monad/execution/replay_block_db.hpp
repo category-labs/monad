@@ -56,11 +56,12 @@ public:
     template <
         concepts::fork_traits<TState> TTraits,
         template <typename, typename> class TTxnProcessor,
-        template <typename, typename, typename> class TEvm,
+        template <typename, typename, typename, typename> class TEvm,
         template <typename, typename, typename> class TStaticPrecompiles,
         template <typename, typename, typename> class TEvmHost,
         template <typename, typename, typename, typename, typename>
         class TFiberData,
+        class TInterpreter,
         class TPrecompiles>
     [[nodiscard]] Result run_fork(
         TState &state, TStateTrie<TState> &state_trie, TBlockDb const &block_db,
@@ -98,7 +99,8 @@ public:
                                 TStaticPrecompiles<
                                     TState,
                                     TTraits,
-                                    TPrecompiles>>>,
+                                    TPrecompiles>,
+                                TInterpreter>>,
                         TExecution>>(state, block);
 
                 TTransactionTrie transaction_trie(block.transactions);
@@ -152,6 +154,7 @@ public:
                 TStaticPrecompiles,
                 TEvmHost,
                 TFiberData,
+                TInterpreter,
                 TPrecompiles>(
                 state,
                 state_trie,
@@ -165,11 +168,12 @@ public:
     template <
         concepts::fork_traits<TState> TTraits,
         template <typename, typename> class TTxnProcessor,
-        template <typename, typename, typename> class TEvm,
+        template <typename, typename, typename, typename> class TEvm,
         template <typename, typename, typename> class TStaticPrecompiles,
         template <typename, typename, typename> class TEvmHost,
         template <typename, typename, typename, typename, typename>
         class TFiberData,
+        class TInterpreter,
         class TPrecompiles>
     [[nodiscard]] inline Result
     run(TState &state, TStateTrie<TState> &state_trie, TBlockDb const &block_db,
@@ -196,6 +200,7 @@ public:
             TStaticPrecompiles,
             TEvmHost,
             TFiberData,
+            TInterpreter,
             TPrecompiles>(
             state,
             state_trie,

@@ -1,8 +1,9 @@
 #pragma once
 
 #include <monad/config.hpp>
-
 #include <monad/core/transaction.hpp>
+
+#include <evmc/evmc.h>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -15,6 +16,7 @@ namespace concepts
     {
         typename T::next_fork_t;
         typename T::static_precompiles_t;
+        { T::rev } -> std::convertible_to<evmc_revision>;
         { T::intrinsic_gas(t) } -> std::convertible_to<uint64_t>;
         { T::starting_nonce() } -> std::convertible_to<uint64_t>;
         { T::last_block_number } -> std::convertible_to<uint64_t>;

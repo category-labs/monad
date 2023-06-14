@@ -101,10 +101,12 @@ struct fakeEmptyTP
 
 template <
     class TState, concepts::fork_traits<TState> TTraits,
-    class TStaticPrecompiles>
+    class TStaticPrecompiles, class TInterpreter>
 struct fakeEmptyEvm
 {
 };
+
+struct fakeInterpreter {};
 
 template <class TTraits, class TState, class TEvm>
 struct fakeEmptyEvmHost
@@ -192,6 +194,7 @@ TEST(ReplayFromBlockDb, invalid_end_block_number)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
+        fakeInterpreter,
         boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
         state, state_trie, block_db, receipt_collector, 100u, 100u);
 
@@ -216,6 +219,7 @@ TEST(ReplayFromBlockDb, invalid_end_block_number_zero)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
+        fakeInterpreter,
         boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
         state, state_trie, block_db, receipt_collector, 0u, 0u);
 
@@ -240,6 +244,7 @@ TEST(ReplayFromBlockDb, start_block_number_outside_db)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
+        fakeInterpreter,
         boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
         state, state_trie, block_db, receipt_collector, 1u);
 
@@ -262,6 +267,7 @@ TEST(ReplayFromBlockDb, decompress_block_error)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
+        fakeInterpreter,
         boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
         state, state_trie, block_db, receipt_collector, 1u);
 
@@ -286,6 +292,7 @@ TEST(ReplayFromBlockDb, decode_block_error)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
+        fakeInterpreter,
         boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
         state, state_trie, block_db, receipt_collector, 1u);
 
@@ -310,6 +317,7 @@ TEST(ReplayFromBlockDb, one_block)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
+        fakeInterpreter,
         boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
         state, state_trie, block_db, receipt_collector, 100u, 101u);
 
@@ -335,6 +343,7 @@ TEST(ReplayFromBlockDb, run_from_zero)
         StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
+        fakeInterpreter,
         boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
         state, state_trie, block_db, receipt_collector, 0u);
 

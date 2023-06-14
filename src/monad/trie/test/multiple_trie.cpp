@@ -1,23 +1,31 @@
+#include "hard_updates.hpp"
 #include "helpers.hpp"
-
-#include <gtest/gtest.h>
-
 #include <monad/trie/in_memory_comparator.hpp>
 #include <monad/trie/trie.hpp>
+
+#include <gtest/gtest.h>
 
 using namespace monad;
 using namespace monad::trie;
 using namespace evmc::literals;
 
+template <typename TFixture>
+struct BasicTrieTest : public TFixture
+{
+};
+using rocks_fixture_t = rocks_fixture<PrefixPathComparator>;
 using in_memory_fixture_t = in_memory_fixture<InMemoryPrefixPathComparator>;
+using BasicTrieTypes = ::testing::Types<rocks_fixture_t, in_memory_fixture_t>;
+TYPED_TEST_SUITE(BasicTrieTest, BasicTrieTypes);
 
-TEST_F(in_memory_fixture_t, MultipleTrie)
+TYPED_TEST(BasicTrieTest, MultipleTrie)
 {
     using namespace evmc::literals;
 
     // Add first trie
-    trie_.set_trie_prefix(0xc9ea7ed000000000000000000000000000000001_address);
-    process_updates({
+    this->trie_.set_trie_prefix(
+        0xc9ea7ed000000000000000000000000000000001_address);
+    this->process_updates({
         make_upsert(
             0x1234567812345678123456781234567812345678123456781234567812345678_bytes32,
             byte_string({0xde, 0xad, 0xbe, 0xef})),
@@ -36,25 +44,28 @@ TEST_F(in_memory_fixture_t, MultipleTrie)
     });
 
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0x3b71638660a388410706ca8b52d1008e979b47b1e938558004881b56a42c61c0_bytes32);
 
     // Add a second trie
-    trie_.set_trie_prefix(0xc9ea7ed000000000000000000000000000000002_address);
-    process_updates(make_hard_updates());
+    this->trie_.set_trie_prefix(
+        0xc9ea7ed000000000000000000000000000000002_address);
+    this->process_updates(make_hard_updates());
 
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0xcbb6d81afdc76fec144f6a1a283205d42c03c102a94fc210b3a1bcfdcb625884_bytes32);
 
     // switch back to other and check that old root remains the same
-    trie_.set_trie_prefix(0xc9ea7ed000000000000000000000000000000001_address);
+    this->trie_.set_trie_prefix(
+        0xc9ea7ed000000000000000000000000000000001_address);
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0x3b71638660a388410706ca8b52d1008e979b47b1e938558004881b56a42c61c0_bytes32);
 
     // Remove from second trie
-    trie_.set_trie_prefix(0xc9ea7ed000000000000000000000000000000002_address);
+    this->trie_.set_trie_prefix(
+        0xc9ea7ed000000000000000000000000000000002_address);
     std::vector updates = {
         make_del(
             0x011b4d03dd8c01f1049143cf9c4c817e4b167f1d1b83e5c6f0f10d89ba1e7bce_bytes32),
@@ -102,16 +113,17 @@ TEST_F(in_memory_fixture_t, MultipleTrie)
             0x74723bc3efaf59d897623890ae3912b9be3c4c67ccee3ffcf10b36406c722c1b_bytes32),
     };
 
-    process_updates(updates);
+    this->process_updates(updates);
 
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0x0835cc0ded52cfc5c950bf8f9f7daece213b5a679118f921578e8b164ab5f757_bytes32);
 
     // Remove first trie completely
-    trie_.set_trie_prefix(0xc9ea7ed000000000000000000000000000000001_address);
+    this->trie_.set_trie_prefix(
+        0xc9ea7ed000000000000000000000000000000001_address);
 
-    process_updates({
+    this->process_updates({
         make_del(
             0x1234567812345678123456781234567812345678123456781234567812345678_bytes32),
         make_del(
@@ -122,23 +134,25 @@ TEST_F(in_memory_fixture_t, MultipleTrie)
             0x1234567832345678123456781234567812345678123456781234567812345678_bytes32),
     });
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
 
     // Check that second remains the same
-    trie_.set_trie_prefix(0xc9ea7ed000000000000000000000000000000002_address);
+    this->trie_.set_trie_prefix(
+        0xc9ea7ed000000000000000000000000000000002_address);
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0x0835cc0ded52cfc5c950bf8f9f7daece213b5a679118f921578e8b164ab5f757_bytes32);
 }
 
-TEST_F(in_memory_fixture_t, MultipleTrieClear)
+TYPED_TEST(BasicTrieTest, MultipleTrieClear)
 {
     using namespace evmc::literals;
 
     // Add first trie
-    trie_.set_trie_prefix(0xc9ea7ed000000000000000000000000000000001_address);
-    process_updates({
+    this->trie_.set_trie_prefix(
+        0xc9ea7ed000000000000000000000000000000001_address);
+    this->process_updates({
         make_upsert(
             0x1234567812345678123456781234567812345678123456781234567812345678_bytes32,
             byte_string({0xde, 0xad, 0xbe, 0xef})),
@@ -157,30 +171,33 @@ TEST_F(in_memory_fixture_t, MultipleTrieClear)
     });
 
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0x3b71638660a388410706ca8b52d1008e979b47b1e938558004881b56a42c61c0_bytes32);
 
     // Add a second trie
-    trie_.set_trie_prefix(0xc9ea7ed000000000000000000000000000000002_address);
-    process_updates(make_hard_updates());
+    this->trie_.set_trie_prefix(
+        0xc9ea7ed000000000000000000000000000000002_address);
+    this->process_updates(make_hard_updates());
 
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0xcbb6d81afdc76fec144f6a1a283205d42c03c102a94fc210b3a1bcfdcb625884_bytes32);
 
-    trie_.set_trie_prefix(0xc9ea7ed000000000000000000000000000000001_address);
-    clear();
+    this->trie_.set_trie_prefix(
+        0xc9ea7ed000000000000000000000000000000001_address);
+    this->clear();
 
-    EXPECT_EQ(trie_.root_hash(), NULL_ROOT);
+    EXPECT_EQ(this->trie_.root_hash(), NULL_ROOT);
 
     // Check that second remains the same
-    trie_.set_trie_prefix(0xc9ea7ed000000000000000000000000000000002_address);
+    this->trie_.set_trie_prefix(
+        0xc9ea7ed000000000000000000000000000000002_address);
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0xcbb6d81afdc76fec144f6a1a283205d42c03c102a94fc210b3a1bcfdcb625884_bytes32);
 
-    clear();
-    EXPECT_EQ(trie_.root_hash(), NULL_ROOT);
+    this->clear();
+    EXPECT_EQ(this->trie_.root_hash(), NULL_ROOT);
 
-    EXPECT_TRUE(storage_empty());
+    EXPECT_TRUE(this->storage_empty());
 }

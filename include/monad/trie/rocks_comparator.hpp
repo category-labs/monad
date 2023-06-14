@@ -37,8 +37,6 @@ public:
     // Update this whenever the logic of this compartor is changed
     virtual const char *Name() const override { return "PathComparator 0.0.1"; }
 
-    // TODO: implement these for potential optimizations? Figure out what they
-    // do
     void FindShortestSeparator(
         std::string *, rocksdb::Slice const &) const override final
     {

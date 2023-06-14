@@ -4,7 +4,6 @@
 
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
-#include <monad/trie/comparator.hpp>
 #include <monad/trie/config.hpp>
 #include <monad/trie/key_buffer.hpp>
 
@@ -17,7 +16,7 @@
 MONAD_TRIE_NAMESPACE_BEGIN
 
 // Per-snapshot and prefix
-template <comparator TComparator>
+template <typename TComparator>
 struct InMemoryCursor
 {
     using element_t = std::pair<byte_string, byte_string>;

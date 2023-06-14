@@ -29,11 +29,17 @@ struct KeyBuffer
         return {&raw[0], buf_size};
     }
 
-    constexpr void set_prefix(address_t const &address)
+    constexpr void set_prefix(byte_string_view prefix) noexcept
     {
+        MONAD_DEBUG_ASSERT(prefix.size() == sizeof(address_t));
         prefix_size = sizeof(address_t);
         buf_size = sizeof(address_t);
-        std::copy_n(&address.bytes[0], sizeof(address_t), &raw[0]);
+        std::copy_n(prefix.data(), sizeof(address_t), &raw[0]);
+    }
+
+    constexpr void set_prefix(address_t const &address)
+    {
+        set_prefix({&address.bytes[0], sizeof(address_t)});
     }
 
     constexpr void set_path(NibblesView const &nibbles)

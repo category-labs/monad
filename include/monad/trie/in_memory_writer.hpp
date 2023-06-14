@@ -4,7 +4,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <monad/trie/comparator.hpp>
 #include <monad/trie/config.hpp>
 #include <monad/trie/key_buffer.hpp>
 
@@ -16,7 +15,7 @@
 
 MONAD_TRIE_NAMESPACE_BEGIN
 
-template <comparator TComparator>
+template <typename TComparator>
 struct InMemoryWriter
 {
     using element_t = std::pair<byte_string, byte_string>;

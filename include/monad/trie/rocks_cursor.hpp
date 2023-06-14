@@ -1,33 +1,21 @@
 #pragma once
 
-#include "evmc/evmc.hpp"
-#include <bits/iterator_concepts.h>
-#include <cstring>
-#include <iterator>
-
 #include <monad/core/assert.h>
-#include <monad/core/variant.hpp>
-
-#include <monad/trie/assert.h>
+#include <monad/db/util.hpp>
 #include <monad/trie/key_buffer.hpp>
 #include <monad/trie/nibbles.hpp>
 #include <monad/trie/util.hpp>
 
-#include <rocksdb/comparator.h>
 #include <rocksdb/db.h>
 #include <rocksdb/options.h>
 
 #include <tl/optional.hpp>
 
-#include <filesystem>
-#include <type_traits>
-
 MONAD_TRIE_NAMESPACE_BEGIN
 
 // Per-snapshot and prefix
-class RocksCursor
+struct RocksCursor
 {
-private:
     std::shared_ptr<rocksdb::DB> const db_;
 
     byte_string lower_;
@@ -39,7 +27,6 @@ private:
     rocksdb::ReadOptions read_opts_;
     mutable KeyBuffer buf_;
 
-public:
     struct Key
     {
         bool has_prefix;
@@ -49,7 +36,7 @@ public:
 
         [[nodiscard]] constexpr Nibbles path() const
         {
-            assert(!has_prefix || raw.size() > sizeof(address_t));
+            MONAD_DEBUG_ASSERT(!has_prefix || raw.size() > sizeof(address_t));
             return deserialize_nibbles(
                        has_prefix ? raw.substr(sizeof(address_t)) : raw)
                 .first;
@@ -57,29 +44,151 @@ public:
 
         [[nodiscard]] constexpr bool path_empty() const
         {
-            assert(!has_prefix || raw.size() > sizeof(address_t));
+            MONAD_DEBUG_ASSERT(!has_prefix || raw.size() > sizeof(address_t));
             return (has_prefix ? raw[sizeof(address_t)] : raw[0]) == 0;
         }
     };
 
-    RocksCursor(std::shared_ptr<rocksdb::DB>, rocksdb::ColumnFamilyHandle *);
+    RocksCursor(
+        std::shared_ptr<rocksdb::DB> db, rocksdb::ColumnFamilyHandle *cf,
+        rocksdb::Snapshot const *snapshot)
+        : db_(db)
+        , cf_(cf)
+    {
+        read_opts_.snapshot = snapshot;
 
-    tl::optional<Key> key() const;
-    tl::optional<byte_string> value() const;
+        MONAD_DEBUG_ASSERT(cf);
+        MONAD_DEBUG_ASSERT(read_opts_.snapshot);
+    }
 
-    void prev();
-    void next();
+    [[nodiscard]] tl::optional<RocksCursor::Key> key() const
+    {
+        return valid() ? tl::make_optional(Key{
+                             .has_prefix = (buf_.prefix_size > 0),
+                             .raw = byte_string{db::from_slice(it_->key())}})
+                       : tl::nullopt;
+    }
+
+    [[nodiscard]] tl::optional<byte_string> value() const
+    {
+        return valid() ? tl::make_optional(
+                             byte_string{db::from_slice(it_->value())})
+                       : tl::nullopt;
+    }
+
+    void prev()
+    {
+        if (it_->Valid()) {
+            it_->Prev();
+        }
+        else {
+            // Note: weird quirk here where we just seek to last if the
+            // iterator is not valid. This means that if we prev() from
+            // the very first node, and then prev() again, that will bring
+            // us to the very last element in the database. This is why we
+            // valid() to avoid running into this by accident
+            it_->SeekToLast();
+            MONAD_ASSERT(valid());
+        }
+
+        MONAD_ASSERT(it_->Valid() || it_->status().ok());
+    }
+
+    void next()
+    {
+        if (it_->Valid()) {
+            it_->Next();
+        }
+        else {
+            // Note: similar quirky behavior to prev()
+            it_->SeekToFirst();
+            MONAD_ASSERT(valid());
+        }
+
+        MONAD_ASSERT(it_->Valid() || it_->status().ok());
+    }
+
     void lower_bound(
         Nibbles const &key, tl::optional<Key> const &first = tl::nullopt,
-        tl::optional<Key> const &last = tl::nullopt);
+        tl::optional<Key> const &last = tl::nullopt)
+    {
+        MONAD_DEBUG_ASSERT(read_opts_.snapshot);
 
-    [[nodiscard]] bool valid() const;
-    [[nodiscard]] bool empty();
-    void take_snapshot();
-    void set_prefix(address_t const &);
-    void release_snapshots();
+        bool new_iterator = !it_;
+
+        // set up the read options
+        if (first) {
+            if (read_opts_.iterate_lower_bound == nullptr ||
+                *read_opts_.iterate_lower_bound != db::to_slice(first->raw)) {
+                new_iterator = true;
+                lower_ = first->raw;
+                lower_slice_ =
+                    rocksdb::Slice{(const char *)lower_.data(), lower_.size()};
+                read_opts_.iterate_lower_bound = &lower_slice_;
+            }
+        }
+        else if (read_opts_.iterate_lower_bound != nullptr) {
+            new_iterator = true;
+            read_opts_.iterate_lower_bound = nullptr;
+        }
+
+        if (last) {
+            if (read_opts_.iterate_upper_bound == nullptr ||
+                *read_opts_.iterate_upper_bound != db::to_slice(last->raw)) {
+                new_iterator = true;
+                upper_ = last->raw;
+                upper_slice_ =
+                    rocksdb::Slice{(const char *)upper_.data(), upper_.size()};
+                read_opts_.iterate_upper_bound = &upper_slice_;
+            }
+        }
+        else if (read_opts_.iterate_upper_bound != nullptr) {
+            new_iterator = true;
+            read_opts_.iterate_upper_bound = nullptr;
+        }
+
+        // only create the new iterator if needed
+        if (new_iterator) {
+            it_.reset(db_->NewIterator(read_opts_, cf_));
+        }
+
+        serialize_nibbles(buf_, key);
+        it_->Seek(db::to_slice(buf_.view()));
+        MONAD_ASSERT(it_->Valid() || it_->status().ok());
+    }
+
+    [[nodiscard]] bool valid() const
+    {
+        return it_ && it_->Valid() &&
+               it_->key().starts_with(db::to_slice(buf_.prefix()));
+    }
+
+    [[nodiscard]] bool empty()
+    {
+        lower_bound({});
+        return !valid();
+    }
+
+    void set_snapshot(rocksdb::Snapshot const *snapshot) noexcept
+    {
+        reset();
+        read_opts_.snapshot = snapshot;
+    }
+
+    constexpr void set_prefix(address_t const &address) noexcept
+    {
+        buf_.set_prefix(address);
+    }
+
+    void reset() noexcept { it_.reset(); };
 };
 
-Nibbles deserialize_nibbles(rocksdb::Slice);
+[[nodiscard]] inline Nibbles deserialize_nibbles(rocksdb::Slice slice)
+{
+    auto const [nibbles, size] = deserialize_nibbles(
+        {(byte_string_view::value_type *)slice.data(), slice.size()});
+    MONAD_ASSERT(size == slice.size());
+    return nibbles;
+}
 
 MONAD_TRIE_NAMESPACE_END

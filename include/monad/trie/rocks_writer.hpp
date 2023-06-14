@@ -1,8 +1,6 @@
 #pragma once
 
-#include "evmc/evmc.hpp"
 #include <monad/core/byte_string.hpp>
-
 #include <monad/trie/assert.h>
 #include <monad/trie/config.hpp>
 #include <monad/trie/key_buffer.hpp>
@@ -13,44 +11,56 @@
 
 MONAD_TRIE_NAMESPACE_BEGIN
 
-// struct RocksWriter
-// {
-//     std::shared_ptr<rocksdb::DB> const db;
-//     rocksdb::WriteBatch batch;
-//     std::array<rocksdb::ColumnFamilyHandle *, 4> const cfs;
-//
-//     void put(WriterColumn col, KeyBuffer const &key, byte_string_view value)
-//     {
-//         assert(
-//             (col == WriterColumn::ACCOUNT_TRIE ||
-//              col == WriterColumn::ACCOUNT_LEAVES) ||
-//             key.view().size() > sizeof(address_t));
-//
-//         auto *cf = cfs[static_cast<uint8_t>(col)];
-//         assert(cf);
-//         auto const res = batch.Put(cf, to_slice(key.view()),
-//         to_slice(value)); MONAD_ROCKS_ASSERT(res);
-//     }
-//
-//     void del(WriterColumn col, KeyBuffer const &key)
-//     {
-//         assert(
-//             (col == WriterColumn::ACCOUNT_TRIE ||
-//              col == WriterColumn::ACCOUNT_LEAVES) ||
-//             key.view().size() > sizeof(address_t));
-//
-//         auto *cf = cfs[static_cast<uint8_t>(col)];
-//         assert(cf);
-//         auto res = batch.Delete(cf, to_slice(key.view()));
-//         MONAD_ROCKS_ASSERT(res);
-//     }
-//
-//     void write()
-//     {
-//         auto const res = db->Write(rocksdb::WriteOptions{}, &batch);
-//         MONAD_ROCKS_ASSERT(res);
-//         batch.Clear();
-//     }
-// };
+struct RocksWriter
+{
+    std::shared_ptr<rocksdb::DB> db;
+    rocksdb::WriteBatch batch;
+    rocksdb::ColumnFamilyHandle *cf;
+
+    void put(KeyBuffer const &key, byte_string_view value)
+    {
+        MONAD_DEBUG_ASSERT(cf != nullptr);
+        auto const res = batch.Put(cf, to_slice(key.view()), to_slice(value));
+        MONAD_ROCKS_ASSERT(res);
+    }
+
+    void del(KeyBuffer const &key)
+    {
+        MONAD_DEBUG_ASSERT(cf != nullptr);
+        auto res = batch.Delete(cf, to_slice(key.view()));
+        MONAD_ROCKS_ASSERT(res);
+    }
+
+    void del_prefix(byte_string_view prefix)
+    {
+        MONAD_DEBUG_ASSERT(prefix.size() == sizeof(address_t));
+
+        static constexpr std::array<byte_string::value_type, 34> SENTINEL = {
+            65,   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00};
+
+        KeyBuffer buf;
+        buf.set_prefix(prefix);
+        serialize_nibbles(buf, Nibbles{});
+
+        auto end = byte_string{buf.prefix()};
+        end += byte_string_view(
+            reinterpret_cast<byte_string::value_type const *>(SENTINEL.data()),
+            SENTINEL.size());
+
+        auto const res =
+            batch.DeleteRange(cf, to_slice(buf.view()), to_slice(end));
+        MONAD_ROCKS_ASSERT(res);
+    }
+
+    void write()
+    {
+        auto const res = db->Write(rocksdb::WriteOptions{}, &batch);
+        MONAD_ROCKS_ASSERT(res);
+        batch.Clear();
+    }
+};
 
 MONAD_TRIE_NAMESPACE_END

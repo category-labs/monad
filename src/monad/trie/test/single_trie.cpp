@@ -1,8 +1,10 @@
+#include "hard_updates.hpp"
 #include "helpers.hpp"
 
 #include <gtest/gtest.h>
 
 #include <monad/trie/in_memory_comparator.hpp>
+#include <monad/trie/rocks_comparator.hpp>
 #include <monad/trie/trie.hpp>
 
 #include <tl/optional.hpp>
@@ -12,8 +14,6 @@
 using namespace monad;
 using namespace monad::trie;
 using namespace evmc::literals;
-
-using in_memory_fixture_t = in_memory_fixture<InMemoryPathComparator>;
 
 namespace
 {
@@ -47,9 +47,12 @@ namespace
     }
 }
 
-class GenerateTransformationListFixture : public in_memory_fixture_t
+template <typename TBase>
+class GenerateTransformationListFixture : public TBase
 {
 public:
+    using TBase::process_updates;
+
     GenerateTransformationListFixture()
     {
         process_updates({
@@ -61,9 +64,12 @@ public:
     }
 };
 
-class TrieUpdateFixture : public in_memory_fixture_t
+template <typename TBase>
+class TrieUpdateFixture : public TBase
 {
 public:
+    using TBase::process_updates;
+
     TrieUpdateFixture()
     {
         process_updates({
@@ -86,36 +92,64 @@ public:
     }
 };
 
-TEST_F(in_memory_fixture_t, EmptyTrie)
+using rocks_fixture_t = rocks_fixture<PathComparator>;
+using in_memory_fixture_t = in_memory_fixture<InMemoryPathComparator>;
+
+template <typename TFixture>
+struct GenerateTransformationListTest : public TFixture
+{
+};
+using GenerateTransformationListTypes = ::testing::Types<
+    GenerateTransformationListFixture<rocks_fixture_t>,
+    GenerateTransformationListFixture<in_memory_fixture_t>>;
+TYPED_TEST_SUITE(
+    GenerateTransformationListTest, GenerateTransformationListTypes);
+
+template <typename TFixture>
+struct TrieUpdateTest : public TFixture
+{
+};
+using TrieUpdateTypes = ::testing::Types<
+    TrieUpdateFixture<rocks_fixture_t>, TrieUpdateFixture<in_memory_fixture_t>>;
+TYPED_TEST_SUITE(TrieUpdateTest, TrieUpdateTypes);
+
+template <typename TFixture>
+struct BasicTrieTest : public TFixture
+{
+};
+using BasicTrieTypes = ::testing::Types<rocks_fixture_t, in_memory_fixture_t>;
+TYPED_TEST_SUITE(BasicTrieTest, BasicTrieTypes);
+
+TYPED_TEST(BasicTrieTest, EmptyTrie)
 {
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
 }
 
-TEST_F(in_memory_fixture_t, OneElement)
+TYPED_TEST(BasicTrieTest, OneElement)
 {
     std::vector updates = {make_upsert(
         0x1234567812345678123456781234567812345678123456781234567812345678_bytes32,
         byte_string({0xde, 0xad, 0xbe, 0xef}))};
-    process_updates(updates);
+    this->process_updates(updates);
 
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0x9e586b00a955a1e3d24961ff0311d9cba844136213759880c08f77ecb1b70b7e_bytes32);
 
     // update it again
     updates = {make_upsert(
         0x1234567812345678123456781234567812345678123456781234567812345678_bytes32,
         byte_string({0xde, 0xad}))};
-    process_updates(updates);
+    this->process_updates(updates);
 
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0x3622cef16d065ca02d848a6548f6dc4c2181d1bb1b9ad21eec3da906780ca709_bytes32);
 }
 
-TEST_F(in_memory_fixture_t, Simple)
+TYPED_TEST(BasicTrieTest, Simple)
 {
     std::vector updates = {
         make_upsert(
@@ -131,14 +165,14 @@ TEST_F(in_memory_fixture_t, Simple)
             0x1234567832345678123456781234567812345678123456781234567812345678_bytes32,
             byte_string({0xde, 0xad, 0xba, 0xbe})),
     };
-    process_updates(updates);
+    this->process_updates(updates);
 
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0x3b71638660a388410706ca8b52d1008e979b47b1e938558004881b56a42c61c0_bytes32);
 }
 
-TEST_F(in_memory_fixture_t, UnrelatedLeaves)
+TYPED_TEST(BasicTrieTest, UnrelatedLeaves)
 {
     std::vector updates = {
         make_upsert(
@@ -154,23 +188,23 @@ TEST_F(in_memory_fixture_t, UnrelatedLeaves)
             0x3234567812345678123456781234567812345678123456781234567812345678_bytes32,
             byte_string({0xde, 0xad, 0xbe, 0xef})),
     };
-    process_updates(updates);
+    this->process_updates(updates);
 
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0xa17471d2db79edac8d01de8737cbf7d03ea962bafe3d759f61040fc0ded5fad9_bytes32);
 }
 
-TEST_F(TrieUpdateFixture, None)
+TYPED_TEST(TrieUpdateTest, None)
 {
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0x3b71638660a388410706ca8b52d1008e979b47b1e938558004881b56a42c61c0_bytes32);
 }
 
-TEST_F(TrieUpdateFixture, RemoveEverything)
+TYPED_TEST(TrieUpdateTest, RemoveEverything)
 {
-    process_updates({
+    this->process_updates({
         make_del(
             0x1234567812345678123456781234567812345678123456781234567812345678_bytes32),
         make_del(
@@ -182,13 +216,13 @@ TEST_F(TrieUpdateFixture, RemoveEverything)
     });
 
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
 }
 
-TEST_F(TrieUpdateFixture, DeleteSingleBranch)
+TYPED_TEST(TrieUpdateTest, DeleteSingleBranch)
 {
-    process_updates({
+    this->process_updates({
         make_del(
             0x1234567832345678123456781234567812345678123456781234567812345671_bytes32),
         make_del(
@@ -196,13 +230,13 @@ TEST_F(TrieUpdateFixture, DeleteSingleBranch)
     });
 
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0x3d32d5e1b401520d20cde4cc7db33b8a23f18d0c783bb9dd1462fa6dc753a48a_bytes32);
 }
 
-TEST_F(TrieUpdateFixture, Simple)
+TYPED_TEST(TrieUpdateTest, Simple)
 {
-    process_updates({
+    this->process_updates({
         make_upsert(
             0x0234567812345678123456781234567812345678123456781234567812345678_bytes32,
             byte_string({0xde, 0xad, 0xbe, 0xef})),
@@ -219,11 +253,11 @@ TEST_F(TrieUpdateFixture, Simple)
     });
 
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0x44227d20c84dd2c72431ecaef175e78b9a5539f55ddfe3bc9bae5331172d605c_bytes32);
 }
 
-TEST_F(GenerateTransformationListFixture, OneUpdate)
+TYPED_TEST(GenerateTransformationListTest, OneUpdate)
 {
     // ----------------------------------------------------------------
 
@@ -234,8 +268,8 @@ TEST_F(GenerateTransformationListFixture, OneUpdate)
         basic_node<Branch>(0, {0x04}),
         basic_node<Leaf>(tl::nullopt, {0x05, 0x05, 0x05, 0x05})};
 
-    EXPECT_TRUE(
-        validate_list(trie_.generate_transformation_list(updates), expected));
+    EXPECT_TRUE(validate_list(
+        this->trie_.generate_transformation_list(updates), expected));
 
     // ----------------------------------------------------------------
 
@@ -246,8 +280,8 @@ TEST_F(GenerateTransformationListFixture, OneUpdate)
         basic_node<Branch>(0, {0x04}),
     });
 
-    EXPECT_TRUE(
-        validate_list(trie_.generate_transformation_list(updates), expected));
+    EXPECT_TRUE(validate_list(
+        this->trie_.generate_transformation_list(updates), expected));
 
     // ----------------------------------------------------------------
 
@@ -257,8 +291,8 @@ TEST_F(GenerateTransformationListFixture, OneUpdate)
         {basic_node<Branch>(0, {0x04}),
          basic_node<Leaf>(tl::nullopt, {0x04, 0x06, 0x02, 0x01})});
 
-    EXPECT_TRUE(
-        validate_list(trie_.generate_transformation_list(updates), expected));
+    EXPECT_TRUE(validate_list(
+        this->trie_.generate_transformation_list(updates), expected));
 
     // ----------------------------------------------------------------
 
@@ -269,8 +303,8 @@ TEST_F(GenerateTransformationListFixture, OneUpdate)
          basic_node<Leaf>(2, {0x04, 0x05, 0x02, 0x01}),
          basic_node<Leaf>(tl::nullopt, {0x04, 0x05, 0x02, 0x02})});
 
-    EXPECT_TRUE(
-        validate_list(trie_.generate_transformation_list(updates), expected));
+    EXPECT_TRUE(validate_list(
+        this->trie_.generate_transformation_list(updates), expected));
 
     // ----------------------------------------------------------------
 
@@ -284,11 +318,11 @@ TEST_F(GenerateTransformationListFixture, OneUpdate)
         basic_node<Leaf>(2, {0x04, 0x05, 0x02, 0x01}),
     });
 
-    EXPECT_TRUE(
-        validate_list(trie_.generate_transformation_list(updates), expected));
+    EXPECT_TRUE(validate_list(
+        this->trie_.generate_transformation_list(updates), expected));
 }
 
-TEST_F(GenerateTransformationListFixture, MultipleUpdates)
+TYPED_TEST(GenerateTransformationListTest, MultipleUpdates)
 {
     // ----------------------------------------------------------------
 
@@ -301,8 +335,8 @@ TEST_F(GenerateTransformationListFixture, MultipleUpdates)
         basic_node<Leaf>(4, {0x04, 0x02, 0x03, 0x02}),
         basic_node<Leaf>(2, {0x04, 0x05, 0x02, 0x01})};
 
-    EXPECT_TRUE(
-        validate_list(trie_.generate_transformation_list(updates), expected));
+    EXPECT_TRUE(validate_list(
+        this->trie_.generate_transformation_list(updates), expected));
 
     // ----------------------------------------------------------------
 
@@ -317,8 +351,8 @@ TEST_F(GenerateTransformationListFixture, MultipleUpdates)
          basic_node<Leaf>(4, {0x04, 0x02, 0x03, 0x06}),
          basic_node<Leaf>(2, {0x04, 0x05, 0x02, 0x01})});
 
-    EXPECT_TRUE(
-        validate_list(trie_.generate_transformation_list(updates), expected));
+    EXPECT_TRUE(validate_list(
+        this->trie_.generate_transformation_list(updates), expected));
 
     // ----------------------------------------------------------------
 
@@ -331,8 +365,8 @@ TEST_F(GenerateTransformationListFixture, MultipleUpdates)
 
     expected.clear();
 
-    EXPECT_TRUE(
-        validate_list(trie_.generate_transformation_list(updates), expected));
+    EXPECT_TRUE(validate_list(
+        this->trie_.generate_transformation_list(updates), expected));
 
     // ----------------------------------------------------------------
 
@@ -349,11 +383,11 @@ TEST_F(GenerateTransformationListFixture, MultipleUpdates)
         basic_node<Leaf>(tl::nullopt, {0x04, 0x02, 0x03, 0x07}),
     });
 
-    EXPECT_TRUE(
-        validate_list(trie_.generate_transformation_list(updates), expected));
+    EXPECT_TRUE(validate_list(
+        this->trie_.generate_transformation_list(updates), expected));
 }
 
-TEST_F(in_memory_fixture_t, HardOnlyUpserts)
+TYPED_TEST(BasicTrieTest, HardOnlyUpserts)
 {
     auto const hard_updates = make_hard_updates();
     auto it = hard_updates.begin();
@@ -374,19 +408,19 @@ TEST_F(in_memory_fixture_t, HardOnlyUpserts)
     std::shuffle(updates.begin(), updates.end(), rng);
 
     for (auto const &update : updates) {
-        process_updates(update);
+        this->process_updates(update);
     }
 
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0xcbb6d81afdc76fec144f6a1a283205d42c03c102a94fc210b3a1bcfdcb625884_bytes32);
 }
 
-TEST_F(in_memory_fixture_t, HardWithRemoval)
+TYPED_TEST(BasicTrieTest, HardWithRemoval)
 {
-    process_updates(make_hard_updates());
+    this->process_updates(make_hard_updates());
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0xcbb6d81afdc76fec144f6a1a283205d42c03c102a94fc210b3a1bcfdcb625884_bytes32);
 
     std::vector updates = {
@@ -436,28 +470,28 @@ TEST_F(in_memory_fixture_t, HardWithRemoval)
             0x74723bc3efaf59d897623890ae3912b9be3c4c67ccee3ffcf10b36406c722c1b_bytes32),
     };
 
-    process_updates(updates);
+    this->process_updates(updates);
 
     EXPECT_EQ(
-        trie_.root_hash(),
+        this->trie_.root_hash(),
         0x0835cc0ded52cfc5c950bf8f9f7daece213b5a679118f921578e8b164ab5f757_bytes32);
 }
 
-TEST_F(in_memory_fixture_t, StateCleanup)
+TYPED_TEST(BasicTrieTest, StateCleanup)
 {
     auto const verify = [&](auto const &e) {
-        trie_cursor_.lower_bound({});
+        this->trie_cursor_.lower_bound({});
         for (auto const &expected : e) {
-            EXPECT_TRUE(trie_cursor_.valid());
-            EXPECT_EQ(trie_cursor_.key()->path(), expected);
-            trie_cursor_.next();
+            EXPECT_TRUE(this->trie_cursor_.valid());
+            EXPECT_EQ(this->trie_cursor_.key()->path(), expected);
+            this->trie_cursor_.next();
         }
 
         // should be at the end now
-        EXPECT_FALSE(trie_cursor_.valid());
+        EXPECT_FALSE(this->trie_cursor_.valid());
     };
 
-    process_updates({
+    this->process_updates({
         make_upsert(Nibbles(byte_string({0x01, 0x02, 0x0, 0x0})), {}),
         make_upsert(Nibbles(byte_string({0x01, 0x02, 0x3, 0x4})), {}),
         make_upsert(Nibbles(byte_string({0x01, 0x02, 0x3, 0x5})), {}),
@@ -473,7 +507,7 @@ TEST_F(in_memory_fixture_t, StateCleanup)
 
     verify(expected_storage);
 
-    process_updates({
+    this->process_updates({
         make_del(Nibbles(byte_string{0x01, 0x02, 0x03, 0x04})),
     });
 

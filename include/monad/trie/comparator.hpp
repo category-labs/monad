@@ -12,13 +12,6 @@
 
 MONAD_TRIE_NAMESPACE_BEGIN
 
-template <typename T>
-concept comparator = requires(T t, byte_string_view e, byte_string_view v) {
-    {
-        t(e, v)
-    } -> std::same_as<bool>;
-};
-
 // compare number of nibbles first. if equal, compare lexicographically
 [[nodiscard]] inline int path_compare(byte_string_view s1, byte_string_view s2)
 {

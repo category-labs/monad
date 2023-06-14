@@ -12,12 +12,13 @@ namespace static_precompiles
     struct Sha256Hash
     {
         using gas_cost = typename TFork::sha256_gas_t;
-        static evmc_result execute(const evmc_message &message) noexcept
+        static evmc::Result execute(const evmc_message &message) noexcept
         {
             auto const cost = gas_cost::compute(message.input_size);
 
             if (message.gas < cost) {
-                return {.status_code = evmc_status_code::EVMC_OUT_OF_GAS};
+                return evmc::Result{evmc_result{
+                    .status_code = evmc_status_code::EVMC_OUT_OF_GAS}};
             }
 
             bytes32_t output{};
@@ -27,12 +28,12 @@ namespace static_precompiles
                 message.input_size,
                 /* use_cpu_extensions */ true);
 
-            return evmc_make_result(
+            return evmc::Result{
                 evmc_status_code::EVMC_SUCCESS,
                 /* gas_left= */ message.gas - cost,
                 /* gas_refund= */ 0,
                 output.bytes,
-                sizeof(bytes32_t));
+                sizeof(bytes32_t)};
         }
     };
 }

@@ -415,16 +415,17 @@ namespace revert_test
 {
     struct AlwaysRevertForAThousand
     {
-        static evmc_result execute(const evmc_message &m) noexcept
+        static evmc::Result execute(const evmc_message &m) noexcept
         {
             const int64_t gas = 1000;
             if (m.gas < gas) {
-                return {.status_code = EVMC_OUT_OF_GAS};
+                return evmc::Result{
+                    evmc_result{.status_code = EVMC_OUT_OF_GAS}};
             }
-            return {
+            return evmc::Result{evmc_result{
                 .status_code = EVMC_REVERT,
                 .gas_left = m.gas - gas,
-                .output_size = 0u};
+                .output_size = 0u}};
         }
     };
 

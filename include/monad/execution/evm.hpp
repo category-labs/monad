@@ -48,20 +48,21 @@ struct Evm
             result.status_code != EVMC_SUCCESS) {
             return evmc::Result{result};
         }
-        evmc_result const result =
+        evmc::Result result =
             TStaticPrecompiles::static_precompile_exec_func(m.code_address)
                 .transform([&](auto static_precompile_execute) {
                     return static_precompile_execute(m);
                 })
                 // execute on backend, just this for now
-                .value_or(evmc_result{
-                    .status_code = EVMC_SUCCESS, .gas_left = m.gas});
+                .disjunction(evmc::Result{evmc_result{
+                    .status_code = EVMC_SUCCESS, .gas_left = m.gas}})
+                .value();
 
         if (result.status_code == EVMC_REVERT) {
             state.revert();
         }
 
-        return evmc::Result{result};
+        return result;
     }
 
     [[nodiscard]] static result_t

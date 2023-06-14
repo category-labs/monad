@@ -262,39 +262,41 @@ namespace fake
         template <typename T>
         struct Echo
         {
-            static evmc_result execute(const evmc_message &m) noexcept
+            static evmc::Result execute(const evmc_message &m) noexcept
             {
                 const int64_t gas =
                     (const int64_t)(m.input_size * T::echo_gas_cost());
                 if (m.gas < gas) {
-                    return {.status_code = EVMC_OUT_OF_GAS};
+                    return evmc::Result{
+                        evmc_result{.status_code = EVMC_OUT_OF_GAS}};
                 }
                 unsigned char *output_data =
                     (unsigned char *)std::malloc(m.input_size);
                 std::memcpy(output_data, m.input_data, m.input_size);
-                return {
+                return evmc::Result{evmc_result{
                     .status_code = EVMC_SUCCESS,
                     .gas_left = m.gas - gas,
                     .output_data = output_data,
                     .output_size = m.input_size,
                     .release = [](const evmc_result *result) {
                         std::free((unsigned char *)result->output_data);
-                    }};
+                    }}};
             }
         };
 
         struct OneHundredGas
         {
-            static evmc_result execute(const evmc_message &m) noexcept
+            static evmc::Result execute(const evmc_message &m) noexcept
             {
                 const int64_t gas = 100;
                 if (m.gas < gas) {
-                    return {.status_code = EVMC_OUT_OF_GAS};
+                    return evmc::Result{
+                        evmc_result{.status_code = EVMC_OUT_OF_GAS}};
                 }
-                return {
+                return evmc::Result{evmc_result{
                     .status_code = EVMC_SUCCESS,
                     .gas_left = m.gas - gas,
-                    .output_size = 0u};
+                    .output_size = 0u}};
             }
         };
     }

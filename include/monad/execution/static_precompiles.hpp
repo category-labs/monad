@@ -17,7 +17,7 @@ template <
     class TState, concepts::fork_traits<TState> TTraits, class TPrecompiles>
 struct StaticPrecompiles
 {
-    using exec_func_t = evmc_result (*)(const evmc_message &) noexcept;
+    using exec_func_t = evmc::Result (*)(const evmc_message &) noexcept;
 
     template <typename... Types>
     static constexpr auto

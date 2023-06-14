@@ -10,7 +10,7 @@ namespace static_precompiles
     template <class TFork>
     struct Blake2F
     {
-        static evmc_result execute(const evmc_message &m) noexcept;
+        static evmc::Result execute(const evmc_message &m) noexcept;
     };
 }
 

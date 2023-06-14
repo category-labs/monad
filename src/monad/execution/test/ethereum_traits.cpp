@@ -37,12 +37,7 @@ TEST(fork_traits, frontier)
     uint8_t const ptr[5]{0x00};
     auto const a{0xbebebebebebebebebebebebebebebebebebebebe_address};
     auto const null{0x0000000000000000000000000000000000000000_address};
-    evmc_result r{
-        .status_code = EVMC_SUCCESS,
-        .gas_left = 11'000,
-        .output_data = ptr,
-        .output_size = 5,
-        .create_address = null};
+    evmc::Result r{EVMC_SUCCESS, 11'000, 0, ptr, 5};
 
     EXPECT_EQ(f.store_contract_code(s, a, r), true);
     EXPECT_EQ(r.gas_left, 10'000);
@@ -77,12 +72,7 @@ TEST(fork_traits, homestead)
     uint8_t const ptr[5]{0x00};
     auto const a{0xbebebebebebebebebebebebebebebebebebebebe_address};
     auto const null{0x0000000000000000000000000000000000000000_address};
-    evmc_result r{
-        .status_code = EVMC_SUCCESS,
-        .gas_left = 11'000,
-        .output_data = ptr,
-        .output_size = 5,
-        .create_address = null};
+    evmc::Result r{EVMC_SUCCESS, 11'000, 0, ptr, 5};
 
     EXPECT_EQ(h.store_contract_code(s, a, r), true);
     EXPECT_EQ(r.gas_left, 10'000);
@@ -122,12 +112,7 @@ TEST(fork_traits, spurious_dragon)
     uint8_t const ptr[25000]{0x00};
     auto const a{0xbebebebebebebebebebebebebebebebebebebebe_address};
     auto const null{0x0000000000000000000000000000000000000000_address};
-    evmc_result r{
-        .status_code = EVMC_SUCCESS,
-        .gas_left = 11'000,
-        .output_data = ptr,
-        .output_size = 25000,
-        .create_address = null};
+    evmc::Result r{EVMC_SUCCESS, 11'000, 0, ptr, 25'000};
 
     EXPECT_EQ(sd.store_contract_code(s, a, r), false);
     EXPECT_EQ(r.status_code, EVMC_OUT_OF_GAS);
@@ -154,12 +139,7 @@ TEST(fork_traits, byzantium)
     uint8_t const ptr[25]{0x00};
     auto const a{0xbebebebebebebebebebebebebebebebebebebebe_address};
     auto const null{0x0000000000000000000000000000000000000000_address};
-    evmc_result r{
-        .status_code = EVMC_SUCCESS,
-        .gas_left = 11'000,
-        .output_data = ptr,
-        .output_size = 25,
-        .create_address = null};
+    evmc::Result r{EVMC_SUCCESS, 11'000, 0, ptr, 25};
     EXPECT_EQ(b.store_contract_code(s, a, r), true);
     EXPECT_EQ(r.status_code, EVMC_SUCCESS);
     EXPECT_EQ(r.gas_left, 6'000);
@@ -236,12 +216,7 @@ TEST(fork_traits, london)
     uint8_t const ptr[25]{0xef};
     auto const a{0xbebebebebebebebebebebebebebebebebebebebe_address};
     auto const null{0x0000000000000000000000000000000000000000_address};
-    evmc_result r{
-        .status_code = EVMC_UNDEFINED_INSTRUCTION,
-        .gas_left = 11'000,
-        .output_data = ptr,
-        .output_size = 25,
-        .create_address = null};
+    evmc::Result r{EVMC_UNDEFINED_INSTRUCTION, 11'000, 0, ptr, 25};
 
     EXPECT_EQ(l.store_contract_code(s, a, r), false);
     EXPECT_EQ(r.status_code, EVMC_CONTRACT_VALIDATION_FAILURE);

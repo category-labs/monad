@@ -75,13 +75,17 @@ struct fakeEmptyTP
 
 template <
     class TState, concepts::fork_traits<TState> TTraits,
-    class TStaticPrecompiles>
+    class TStaticPrecompiles, class TInterpreter>
 struct fakeEmptyEvm
 {
 };
 
 template <class TTraits, class TState, class TEvm>
 struct fakeEmptyEvmHost
+{
+};
+
+struct fakeInterpreter
 {
 };
 
@@ -212,6 +216,7 @@ int main(int argc, char *argv[])
         monad::execution::StaticPrecompiles,
         monad::fakeEmptyEvmHost,
         monad::fakeEmptyFiberData,
+        monad::fakeInterpreter,
         monad::eth_start_fork::static_precompiles_t>(
         state,
         state_trie,

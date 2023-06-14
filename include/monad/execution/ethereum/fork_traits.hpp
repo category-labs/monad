@@ -17,6 +17,8 @@
 
 #include <monad/db/block_db.hpp>
 
+#include <evmc/evmc.h>
+
 #include <algorithm>
 
 #include <boost/mp11/mpl_list.hpp>
@@ -73,6 +75,8 @@ namespace fork_traits
     struct frontier
     {
         using next_fork_t = homestead;
+
+        static constexpr evmc_revision rev = EVMC_FRONTIER;
         static constexpr auto last_block_number = 1'149'999u;
 
         // YP Appendix E Eq 209
@@ -132,7 +136,7 @@ namespace fork_traits
 
         template <class TState>
         static constexpr bool enough_gas_to_store_code(
-            TState &s, address_t const &a, evmc_result &r) noexcept
+            TState &s, address_t const &a, evmc::Result &r) noexcept
         {
             auto const deploy_cost = r.output_size * 200u;
             if (static_cast<uint64_t>(r.gas_left) >= deploy_cost) {
@@ -145,7 +149,7 @@ namespace fork_traits
         }
         template <class TState>
         [[nodiscard]] static constexpr bool store_contract_code(
-            TState &s, address_t const &a, evmc_result &r) noexcept
+            TState &s, address_t const &a, evmc::Result &r) noexcept
         {
             if (r.status_code == EVMC_SUCCESS) {
                 enough_gas_to_store_code(s, a, r);
@@ -162,6 +166,7 @@ namespace fork_traits
         using next_fork_t = spurious_dragon;
 
         // https://eips.ethereum.org/EIPS/eip-2
+        static constexpr evmc_revision rev = EVMC_HOMESTEAD;
         static constexpr auto last_block_number = 2'674'999u;
 
         [[nodiscard]] static constexpr auto
@@ -181,7 +186,7 @@ namespace fork_traits
 
         template <class TState>
         [[nodiscard]] static constexpr bool store_contract_code(
-            TState &s, address_t const &a, evmc_result &r) noexcept
+            TState &s, address_t const &a, evmc::Result &r) noexcept
         {
             if (r.status_code == EVMC_SUCCESS) {
                 if (!enough_gas_to_store_code(s, a, r)) {
@@ -205,6 +210,7 @@ namespace fork_traits
     {
         using next_fork_t = byzantium;
 
+        static constexpr evmc_revision rev = EVMC_SPURIOUS_DRAGON;
         static constexpr auto last_block_number = 4'369'999u;
 
         // https://eips.ethereum.org/EIPS/eip-161
@@ -219,7 +225,7 @@ namespace fork_traits
             s.destruct_touched_dead();
         }
 
-        static constexpr bool contract_too_big(evmc_result &r) noexcept
+        static constexpr bool contract_too_big(evmc::Result &r) noexcept
         {
             // EIP-170
             if (r.output_size > 0x6000) {
@@ -233,7 +239,7 @@ namespace fork_traits
 
         template <class TState>
         [[nodiscard]] static constexpr bool store_contract_code(
-            TState &s, address_t const &a, evmc_result &r) noexcept
+            TState &s, address_t const &a, evmc::Result &r) noexcept
         {
             if (contract_too_big(r)) {
                 return false;
@@ -246,6 +252,8 @@ namespace fork_traits
     struct byzantium : spurious_dragon
     {
         using next_fork_t = istanbul;
+
+        static constexpr evmc_revision rev = EVMC_BYZANTIUM;
         static constexpr auto last_block_number = 9'068'999u;
 
         using static_precompiles_t = type_list_t<
@@ -257,7 +265,7 @@ namespace fork_traits
 
         template <class TState>
         [[nodiscard]] static constexpr bool store_contract_code(
-            TState &s, address_t const &a, evmc_result &r) noexcept
+            TState &s, address_t const &a, evmc::Result &r) noexcept
         {
             if (contract_too_big(r)) {
                 return false;
@@ -284,6 +292,8 @@ namespace fork_traits
     struct istanbul : public byzantium // constantinople
     {
         using next_fork_t = berlin;
+
+        static constexpr evmc_revision rev = EVMC_ISTANBUL;
         static constexpr auto last_block_number = 12'243'999u;
 
         using static_precompiles_t = type_list_t<
@@ -319,6 +329,7 @@ namespace fork_traits
     {
         using next_fork_t = london;
 
+        static constexpr evmc_revision rev = EVMC_BERLIN;
         static constexpr auto last_block_number = 12'964'999u;
 
         using static_precompiles_t = type_list_t<
@@ -352,6 +363,7 @@ namespace fork_traits
     {
         using next_fork_t = no_next_fork_t;
 
+        static constexpr evmc_revision rev = EVMC_LONDON;
         static constexpr auto last_block_number =
             std::numeric_limits<uint64_t>::max();
 
@@ -371,7 +383,7 @@ namespace fork_traits
         // https://eips.ethereum.org/EIPS/eip-3541
         template <class TState>
         [[nodiscard]] static constexpr bool store_contract_code(
-            TState &s, address_t const &a, evmc_result &r) noexcept
+            TState &s, address_t const &a, evmc::Result &r) noexcept
         {
             if (r.output_size > 0 && r.output_data[0] == 0xef) {
                 r.status_code = EVMC_CONTRACT_VALIDATION_FAILURE;

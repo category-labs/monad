@@ -21,7 +21,7 @@ using traits_templated_static_precompiles_t = StaticPrecompiles<
 template <concepts::fork_traits<fake::State> TTraits>
 using traits_templated_evm_t =
     Evm<fake::State, fake::traits::alpha<fake::State>,
-        traits_templated_static_precompiles_t<TTraits>>;
+        traits_templated_static_precompiles_t<TTraits>, fake::Interpreter>;
 
 using evm_t = traits_templated_evm_t<traits_t>;
 
@@ -277,20 +277,22 @@ TEST(Evm, create_contract_account)
     s._map.emplace(from, Account{.balance = 50'000u});
     traits_t::_gas_creation_cost = 5'000;
     traits_t::_success_store_contract = true;
+    fake::Interpreter::_result = evmc::Result{
+        evmc_result{.status_code = EVMC_SUCCESS, .gas_left = 8'000}};
 
     evmc_message m{.kind = EVMC_CREATE, .gas = 12'000, .sender = from};
 
     auto const result = evm_t::create_contract_account(&h, s, m);
 
     EXPECT_EQ(result.create_address, new_addr);
-    EXPECT_EQ(result.gas_left, 7'000);
+    EXPECT_EQ(result.gas_left, 3'000);
 
     m.kind = EVMC_CREATE2;
 
     auto const result2 = evm_t::create_contract_account(&h, s, m);
 
     EXPECT_EQ(result2.create_address, new_addr2);
-    EXPECT_EQ(result2.gas_left, 7'000);
+    EXPECT_EQ(result2.gas_left, 3'000);
 }
 
 TEST(Evm, revert_create_account)
@@ -304,6 +306,8 @@ TEST(Evm, revert_create_account)
     s._map.emplace(from, Account{.balance = 10'000});
     traits_t::_gas_creation_cost = 10'000;
     traits_t::_success_store_contract = false;
+    fake::Interpreter::_result = evmc::Result{
+        evmc_result{.status_code = EVMC_REVERT, .gas_left = 11'000}};
 
     evmc_message m{.kind = EVMC_CREATE, .gas = 12'000, .sender = from};
 
@@ -311,7 +315,7 @@ TEST(Evm, revert_create_account)
 
     EXPECT_TRUE(s._map.empty()); // revert was called on the fake
     EXPECT_EQ(result.create_address, null);
-    EXPECT_EQ(result.gas_left, 2'000);
+    EXPECT_EQ(result.gas_left, 1'000);
 }
 
 TEST(Evm, call_evm)
@@ -324,6 +328,8 @@ TEST(Evm, call_evm)
     fake::EvmHost h{};
     s._map.emplace(from, Account{.balance = 50'000u});
     s._map.emplace(to, Account{.balance = 50'000u});
+    fake::Interpreter::_result = evmc::Result{
+        evmc_result{.status_code = EVMC_SUCCESS, .gas_left = 7'000}};
 
     evmc_message m{
         .kind = EVMC_CALL, .gas = 12'000, .recipient = to, .sender = from};
@@ -334,7 +340,7 @@ TEST(Evm, call_evm)
 
     EXPECT_EQ(s._map[from].balance, 44'000);
     EXPECT_EQ(s._map[to].balance, 56'000);
-    EXPECT_EQ(result.gas_left, 12'000);
+    EXPECT_EQ(result.gas_left, 7'000);
 }
 
 TEST(Evm, static_precompile_execution)
@@ -411,45 +417,6 @@ TEST(Evm, out_of_gas_static_precompile_execution)
     EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
 }
 
-namespace revert_test
-{
-    struct AlwaysRevertForAThousand
-    {
-        static evmc::Result execute(const evmc_message &m) noexcept
-        {
-            const int64_t gas = 1000;
-            if (m.gas < gas) {
-                return evmc::Result{
-                    evmc_result{.status_code = EVMC_OUT_OF_GAS}};
-            }
-            return evmc::Result{evmc_result{
-                .status_code = EVMC_REVERT,
-                .gas_left = m.gas - gas,
-                .output_size = 0u}};
-        }
-    };
-
-    template <class TState>
-    struct gamma : public fake::traits::beta<TState>
-    {
-        using static_precompiles = boost::mp11::mp_push_back<
-            typename fake::traits::beta<TState>::static_precompiles_t,
-            AlwaysRevertForAThousand>;
-    };
-
-    using gamma_traits_t = gamma<fake::State>;
-
-    template <concepts::fork_traits<fake::State> TTraits>
-    using gamma_precompiles_t = StaticPrecompiles<
-        fake::State, TTraits, gamma_traits_t::static_precompiles>;
-
-    template <concepts::fork_traits<fake::State> TTraits>
-    using templated_evm_t =
-        Evm<fake::State, traits_t, gamma_precompiles_t<TTraits>>;
-
-    using gamma_evm_t = templated_evm_t<gamma_traits_t>;
-}
-
 TEST(Evm, revert_call_evm)
 {
     constexpr static auto from{
@@ -460,6 +427,8 @@ TEST(Evm, revert_call_evm)
     fake::EvmHost h{};
     s._map.emplace(from, Account{.balance = 15'000});
     s._map.emplace(code_address, Account{.nonce = 10});
+    fake::Interpreter::_result = evmc::Result{
+        evmc_result{.status_code = EVMC_REVERT, .gas_left = 6'000}};
 
     evmc_message m{
         .kind = EVMC_CALL,
@@ -468,9 +437,9 @@ TEST(Evm, revert_call_evm)
         .sender = from,
         .code_address = code_address};
 
-    auto const result = revert_test::gamma_evm_t::call_evm(&h, s, m);
+    auto const result = evm_t::call_evm(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_REVERT);
     EXPECT_TRUE(s._map.empty()); // revert was called on the fake
-    EXPECT_EQ(result.gas_left, 11'000);
+    EXPECT_EQ(result.gas_left, 6'000);
 }

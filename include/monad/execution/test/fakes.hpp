@@ -3,6 +3,7 @@
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/block.hpp>
+#include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/concepts.hpp>
 #include <monad/core/int.hpp>
@@ -72,6 +73,12 @@ namespace fake
         get_code_hash(address_t const &address) const noexcept
         {
             return _map.at(address).code_hash;
+        }
+
+        [[nodiscard]] byte_string_view
+        code_at(address_t const &a) const noexcept
+        {
+            return {_code.at(a)};
         }
 
         bool selfdestruct(address_t const &, address_t const &) noexcept
@@ -190,12 +197,26 @@ namespace fake
         struct OneHundredGas;
     }
 
+    struct Interpreter
+    {
+        static inline evmc::Result _result{};
+
+        template <class TEvmHost>
+        static constexpr evmc::Result &&
+        execute(TEvmHost *, evmc_message const &)
+        {
+            return std::move(_result);
+        }
+    };
+
     namespace traits
     {
         template <class TState>
         struct alpha
         {
             using next_fork_t = alpha;
+
+            static constexpr evmc_revision rev = EVMC_FRONTIER;
             static inline uint64_t _sd_refund{};
             static inline uint64_t last_block_number{
                 std::numeric_limits<uint64_t>::max()};
@@ -225,8 +246,8 @@ namespace fake
             {
                 s.destruct_touched_dead();
             }
-            static constexpr inline bool
-            store_contract_code(TState &, address_t const &a, evmc_result &r)
+            static constexpr bool
+            store_contract_code(TState &, address_t const &a, evmc::Result &r)
             {
                 r.gas_left -= _gas_creation_cost;
                 if (_success_store_contract) {
@@ -240,6 +261,8 @@ namespace fake
         struct beta : public alpha<TState>
         {
             using next_fork_t = beta;
+
+            static constexpr evmc_revision rev = EVMC_HOMESTEAD;
             static inline uint64_t last_block_number{
                 std::numeric_limits<uint64_t>::max()};
             using static_precompiles_t = boost::mp11::mp_list<

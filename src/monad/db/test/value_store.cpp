@@ -34,7 +34,7 @@ struct ValueStoreTest : public testing::Test
 {
 };
 using DBTypes =
-    ::testing::Types<InMemoryDB, InMemoryTrieDB, RocksTrieDB>;
+    ::testing::Types<InMemoryDB, RocksDB, InMemoryTrieDB, RocksTrieDB>;
 TYPED_TEST_SUITE(ValueStoreTest, DBTypes);
 
 TYPED_TEST(ValueStoreTest, access_storage)

@@ -28,15 +28,15 @@ TEST(Rlp_Account, Encode)
         0xfb, 0x3c, 0x89, 0xe8, 0x28, 0x46, 0x22, 0x83};
     auto const encoded_account = encode_account(a, storage_root);
     Account decoded_account{};
-    bytes32_t decoded_code_root{};
+    bytes32_t decoded_storage_root{};
     EXPECT_EQ(
-        decode_account(decoded_account, decoded_code_root, encoded_account)
+        decode_account(decoded_account, decoded_storage_root, encoded_account)
             .size(),
         0);
 
     EXPECT_EQ(encoded_account, rlp_account);
 
-    EXPECT_EQ(storage_root, decoded_code_root);
+    EXPECT_EQ(storage_root, decoded_storage_root);
     EXPECT_EQ(a.balance, decoded_account.balance);
     EXPECT_EQ(a.code_hash, decoded_account.code_hash);
 }

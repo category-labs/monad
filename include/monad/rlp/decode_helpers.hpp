@@ -67,8 +67,8 @@ decode_access_entry(Transaction::AccessEntry &ae, byte_string_view const enc);
 byte_string_view
 decode_access_list(Transaction::AccessList &al, byte_string_view const enc);
 
-byte_string_view
-decode_account(Account &acc, bytes32_t &code_root, byte_string_view const enc);
+byte_string_view decode_account(
+    Account &acc, bytes32_t &storage_root, byte_string_view const enc);
 byte_string_view
 decode_transaction(Transaction &txn, byte_string_view const enc);
 byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc);

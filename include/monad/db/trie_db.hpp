@@ -3,6 +3,7 @@
 #include <monad/core/account.hpp>
 #include <monad/core/assert.h>
 #include <monad/db/config.hpp>
+#include <monad/db/util.hpp>
 #include <monad/execution/execution_model.hpp>
 #include <monad/logging/monad_log.hpp>
 #include <monad/rlp/decode_helpers.hpp>
@@ -17,7 +18,10 @@
 #include <monad/trie/rocks_writer.hpp>
 #include <monad/trie/trie.hpp>
 
+#include <boost/endian/conversion.hpp>
 #include <ethash/keccak.hpp>
+#include <fmt/chrono.h>
+#include <fmt/format.h>
 #include <rocksdb/db.h>
 
 #include <bits/ranges_algo.h>
@@ -48,28 +52,28 @@ namespace impl
             return static_cast<TDBImpl const &>(*this);
         }
 
-        [[nodiscard]] std::optional<Account> try_find(address_t const &a) const
+        [[nodiscard]] std::optional<Account> try_find(address_t const &a)
         {
             return self().try_find(a);
         }
 
-        [[nodiscard]] std::optional<Account> query(address_t const &a) const
+        [[nodiscard]] std::optional<Account> query(address_t const &a)
         {
             return executor([=, this]() { return try_find(a); });
         }
 
-        [[nodiscard]] constexpr bool contains(address_t const &a) const
+        [[nodiscard]] constexpr bool contains(address_t const &a)
         {
             return self().contains(a);
         }
 
         [[nodiscard]] constexpr bool
-        contains(address_t const &a, bytes32_t const &k) const
+        contains(address_t const &a, bytes32_t const &k)
         {
             return self().contains(a, k);
         }
 
-        [[nodiscard]] Account at(address_t const &a) const
+        [[nodiscard]] Account at(address_t const &a)
         {
             auto const ret = try_find(a);
             MONAD_ASSERT(ret);
@@ -77,18 +81,18 @@ namespace impl
         }
 
         [[nodiscard]] std::optional<bytes32_t>
-        query(address_t const &a, bytes32_t const &k) const
+        query(address_t const &a, bytes32_t const &k)
         {
             return executor([=, this]() { return try_find(a, k); });
         }
 
         [[nodiscard]] std::optional<bytes32_t>
-        try_find(address_t const &a, bytes32_t const &k) const
+        try_find(address_t const &a, bytes32_t const &k)
         {
             return self().try_find(a, k);
         }
 
-        [[nodiscard]] bytes32_t at(address_t const &a, bytes32_t const &k) const
+        [[nodiscard]] bytes32_t at(address_t const &a, bytes32_t const &k)
         {
             auto const ret = try_find(a, k);
             MONAD_ASSERT(ret);
@@ -236,6 +240,198 @@ namespace impl
         }
     };
 
+    constexpr auto
+    make_basic_storage_key(address_t const &a, bytes32_t const &k)
+    {
+        byte_string_fixed<sizeof(address_t) + sizeof(bytes32_t)> key;
+        std::copy_n(a.bytes, sizeof(address_t), key.data());
+        std::copy_n(k.bytes, sizeof(bytes32_t), &key[sizeof(address_t)]);
+        return key;
+    }
+
+    template <typename TExecution>
+    struct RocksDBImpl : public DBInterface<RocksDBImpl<TExecution>, TExecution>
+    {
+        using DBInterface<RocksDBImpl<TExecution>, TExecution>::updates;
+
+        std::filesystem::path const name;
+        rocksdb::Options options;
+        std::vector<rocksdb::ColumnFamilyDescriptor> cfds;
+        std::vector<rocksdb::ColumnFamilyHandle *> cfs;
+        std::shared_ptr<rocksdb::DB> db;
+        rocksdb::WriteBatch batch;
+
+        RocksDBImpl(
+            std::filesystem::path name = std::filesystem::absolute("db"))
+            : name(name)
+            , options([]() {
+                rocksdb::Options ret;
+                ret.IncreaseParallelism(2);
+                ret.OptimizeLevelStyleCompaction();
+                ret.create_if_missing = true;
+                ret.create_missing_column_families = true;
+                return ret;
+            }())
+            , cfds([&]() -> decltype(cfds) {
+                return {
+                    {rocksdb::kDefaultColumnFamilyName, {}},
+                    {"PlainAccounts", {}},
+                    {"PlainStorage", {}}};
+            }())
+            , cfs()
+            , db([&]() {
+                if (std::filesystem::exists(name)) {
+                    MONAD_ASSERT(std::filesystem::is_directory(name));
+                }
+                else {
+                    std::filesystem::create_directory(name);
+                }
+
+                rocksdb::DB *db = nullptr;
+
+                rocksdb::Status const s = rocksdb::DB::Open(
+                    options,
+                    name / fmt::format("{}", std::chrono::system_clock::now()),
+                    cfds,
+                    &cfs,
+                    &db);
+
+                MONAD_ROCKS_ASSERT(s);
+                MONAD_ASSERT(cfds.size() == cfs.size());
+
+                return db;
+            }())
+            , batch()
+        {
+        }
+
+        ~RocksDBImpl()
+        {
+            rocksdb::Status res;
+            for (auto *const cf : cfs) {
+                res = db->DestroyColumnFamilyHandle(cf);
+                MONAD_ASSERT(res.ok());
+            }
+
+            res = db->Close();
+            MONAD_ROCKS_ASSERT(res);
+        }
+
+        [[nodiscard]] constexpr rocksdb::ColumnFamilyHandle *accounts()
+        {
+            return cfs[1];
+        }
+
+        [[nodiscard]] constexpr rocksdb::ColumnFamilyHandle *storage()
+        {
+            return cfs[2];
+        }
+
+        [[nodiscard]] bool contains(address_t const &a)
+        {
+            rocksdb::PinnableSlice value;
+            auto const res = db->Get(
+                rocksdb::ReadOptions{}, accounts(), to_slice(a), &value);
+            MONAD_ASSERT(res.ok() || res.IsNotFound());
+            return res.ok();
+        }
+
+        [[nodiscard]] bool contains(address_t const &a, bytes32_t const &k)
+        {
+            auto const key = make_basic_storage_key(a, k);
+            rocksdb::PinnableSlice value;
+            auto const res = db->Get(
+                rocksdb::ReadOptions{}, storage(), to_slice(key), &value);
+            MONAD_ASSERT(res.ok() || res.IsNotFound());
+            return res.ok();
+        }
+
+        [[nodiscard]] std::optional<Account> try_find(address_t const &a)
+        {
+            rocksdb::PinnableSlice value;
+            auto const res = db->Get(
+                rocksdb::ReadOptions{}, accounts(), to_slice(a), &value);
+            if (res.IsNotFound()) {
+                return std::nullopt;
+            }
+            MONAD_ASSERT(res.ok());
+
+            Account ret;
+            bytes32_t _;
+            auto const rest = rlp::decode_account(
+                ret,
+                _,
+                {reinterpret_cast<byte_string_view::value_type const *>(
+                     value.data()),
+                 value.size()});
+            MONAD_ASSERT(rest.empty());
+            return ret;
+        }
+
+        [[nodiscard]] std::optional<bytes32_t>
+        try_find(address_t const &a, bytes32_t const &k)
+        {
+            auto const key = make_basic_storage_key(a, k);
+            rocksdb::PinnableSlice value;
+            auto const res = db->Get(
+                rocksdb::ReadOptions{}, storage(), to_slice(key), &value);
+            if (res.IsNotFound()) {
+                return std::nullopt;
+            }
+            MONAD_ROCKS_ASSERT(res);
+            MONAD_ASSERT(value.size() == sizeof(bytes32_t));
+            bytes32_t result;
+            std::copy_n(value.data(), sizeof(bytes32_t), result.bytes);
+            return result;
+        }
+
+        void commit_db()
+        {
+            rocksdb::WriteOptions options;
+            options.disableWAL = true;
+            db->Write(options, &batch);
+            batch.Clear();
+        }
+
+        void commit_storage_impl()
+        {
+            for (auto const &[a, updates] : updates.storage) {
+                for (auto const &[k, v] : updates) {
+                    auto const key = make_basic_storage_key(a, k);
+                    if (v != bytes32_t{}) {
+                        auto const res =
+                            batch.Put(storage(), to_slice(key), to_slice(v));
+                        MONAD_ROCKS_ASSERT(res);
+                    }
+                    else {
+                        auto const res = batch.Delete(storage(), to_slice(key));
+                        MONAD_ROCKS_ASSERT(res);
+                    }
+                }
+            }
+            commit_db();
+        }
+
+        void commit_accounts_impl()
+        {
+            for (auto const &[a, acct] : updates.accounts) {
+                if (acct.has_value()) {
+                    // Note: no storage root calculations in this mode
+                    auto const res = batch.Put(
+                        accounts(),
+                        to_slice(a),
+                        to_slice(rlp::encode_account(acct.value(), NULL_ROOT)));
+                    MONAD_ROCKS_ASSERT(res);
+                }
+                else {
+                    auto const res = batch.Delete(accounts(), to_slice(a));
+                    MONAD_ROCKS_ASSERT(res);
+                }
+            }
+            commit_db();
+        }
+    };
+
     struct InMemoryTrieSetup
     {
         template <typename TComparator>
@@ -279,7 +475,6 @@ namespace impl
 
     struct RocksDBTrieSetup
     {
-
         struct Trie
         {
             trie::RocksCursor leaves_cursor;
@@ -348,17 +543,28 @@ namespace impl
 
                 return {
                     {rocksdb::kDefaultColumnFamilyName, {}},
-                    {"AccountTrieLeaves", {}},
+                    {"AccountTrieLeaves", accounts_opts},
                     {"AccountTrieAll", accounts_opts},
-                    {"StorageTrieLeaves", {}},
+                    {"StorageTrieLeaves", storage_opts},
                     {"StorageTrieAll", storage_opts}};
             }())
             , cfs()
             , db([&]() {
+                if (std::filesystem::exists(name)) {
+                    MONAD_ASSERT(std::filesystem::is_directory(name));
+                }
+                else {
+                    std::filesystem::create_directory(name);
+                }
+
                 rocksdb::DB *db = nullptr;
 
-                rocksdb::Status const s =
-                    rocksdb::DB::Open(options, name, cfds, &cfs, &db);
+                rocksdb::Status const s = rocksdb::DB::Open(
+                    options,
+                    name / fmt::format("{}", std::chrono::system_clock::now()),
+                    cfds,
+                    &cfs,
+                    &db);
 
                 MONAD_ROCKS_ASSERT(s);
                 MONAD_ASSERT(cfds.size() == cfs.size());
@@ -398,9 +604,6 @@ namespace impl
             }
 
             res = db->Close();
-            MONAD_ROCKS_ASSERT(res);
-
-            res = rocksdb::DestroyDB(name, options, cfds);
             MONAD_ROCKS_ASSERT(res);
         }
     };
@@ -446,7 +649,8 @@ namespace impl
         std::vector<trie::Update> account_trie_updates;
         std::vector<trie::Update> storage_trie_updates;
 
-        TrieDBImpl(std::filesystem::path name = "trie_db")
+        TrieDBImpl(
+            std::filesystem::path name = std::filesystem::absolute("trie_db"))
             : setup{name}
             , accounts{setup.accounts}
             , storage{setup.storage}
@@ -481,8 +685,6 @@ namespace impl
             }
 
             lc.prev();
-
-            using namespace std::placeholders;
 
             auto const left =
                 lc.key()
@@ -722,5 +924,8 @@ using RocksTrieDB = impl::TrieDBImpl<
 
 // Database impl without trie root generating logic, backed by stl
 using InMemoryDB = impl::InMemoryDBImpl<monad::execution::BoostFiberExecution>;
+
+// Database impl without trie root generating logic, backed by rocksdb
+using RocksDB = impl::RocksDBImpl<monad::execution::BoostFiberExecution>;
 
 MONAD_DB_NAMESPACE_END

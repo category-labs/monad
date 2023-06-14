@@ -106,6 +106,7 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/src/monad/db/file_db.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/db/state_db.cpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/trie_db.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/db/util.hpp
 
     # execution
     ${PROJECT_SOURCE_DIR}/include/monad/execution/config.hpp

@@ -23,7 +23,7 @@ struct DBTest : public testing::Test
 {
 };
 using DBTypes =
-    ::testing::Types<InMemoryDB, InMemoryTrieDB, RocksTrieDB>;
+    ::testing::Types<InMemoryDB, RocksDB, InMemoryTrieDB, RocksTrieDB>;
 TYPED_TEST_SUITE(DBTest, DBTypes);
 
 TYPED_TEST(DBTest, storage_creation)

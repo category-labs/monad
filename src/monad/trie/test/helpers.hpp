@@ -35,7 +35,7 @@ struct rocks_fixture : public ::testing::Test
     Trie<RocksCursor, RocksWriter> trie_;
 
     rocks_fixture()
-        : name_(std::filesystem::absolute("rocksdb"))
+        : name_(std::filesystem::absolute("trie"))
         , options_([]() {
             rocksdb::Options ret;
             ret.IncreaseParallelism(2);
@@ -56,10 +56,21 @@ struct rocks_fixture : public ::testing::Test
         }())
         , cfs_()
         , db_([&]() {
+            if (std::filesystem::exists(name_)) {
+                MONAD_ASSERT(std::filesystem::is_directory(name_));
+            }
+            else {
+                std::filesystem::create_directory(name_);
+            }
+
             rocksdb::DB *db = nullptr;
 
-            rocksdb::Status const s =
-                rocksdb::DB::Open(options_, name_, cfds_, &cfs_, &db);
+            rocksdb::Status const s = rocksdb::DB::Open(
+                options_,
+                name_ / fmt::format("{}", std::chrono::system_clock::now()),
+                cfds_,
+                &cfs_,
+                &db);
 
             if (!s.ok()) {
                 std::cerr << s.ToString() << std::endl;
@@ -95,9 +106,6 @@ struct rocks_fixture : public ::testing::Test
         }
 
         res = db_->Close();
-        MONAD_ASSERT(res.ok());
-
-        res = rocksdb::DestroyDB(name_, options_, cfds_);
         MONAD_ASSERT(res.ok());
     }
 

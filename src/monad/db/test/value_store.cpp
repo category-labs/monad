@@ -33,7 +33,8 @@ template <typename TDB>
 struct ValueStoreTest : public testing::Test
 {
 };
-using DBTypes = ::testing::Types<InMemoryDB, InMemoryTrieDB>;
+using DBTypes =
+    ::testing::Types<InMemoryDB, InMemoryTrieDB, RocksTrieDB>;
 TYPED_TEST_SUITE(ValueStoreTest, DBTypes);
 
 TYPED_TEST(ValueStoreTest, access_storage)

@@ -26,7 +26,8 @@ template <typename TDB>
 struct AccountStoreTest : public testing::Test
 {
 };
-using DBTypes = ::testing::Types<InMemoryDB, InMemoryTrieDB>;
+using DBTypes =
+    ::testing::Types<InMemoryDB, InMemoryTrieDB, RocksTrieDB>;
 TYPED_TEST_SUITE(AccountStoreTest, DBTypes);
 
 using diff_t = AccountStore<std::unordered_map<address_t, Account>>::diff_t;

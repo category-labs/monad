@@ -13,11 +13,15 @@
 #include <monad/trie/nibbles.hpp>
 #include <monad/trie/node.hpp>
 #include <monad/trie/rocks_comparator.hpp>
+#include <monad/trie/rocks_cursor.hpp>
+#include <monad/trie/rocks_writer.hpp>
 #include <monad/trie/trie.hpp>
 
 #include <ethash/keccak.hpp>
+#include <rocksdb/db.h>
 
 #include <bits/ranges_algo.h>
+#include <filesystem>
 #include <unordered_map>
 
 MONAD_DB_NAMESPACE_BEGIN
@@ -232,33 +236,21 @@ namespace impl
         }
     };
 
-    template <
-        typename TAccountsCursor, typename TStorageCursor,
-        typename TAccountsWriter, typename TStorageWriter, typename TExecution>
-    struct TrieDBImpl
-        : public DBInterface<
-              TrieDBImpl<
-                  TAccountsCursor, TStorageCursor, TAccountsWriter,
-                  TStorageWriter, TExecution>,
-              TExecution>
+    struct InMemoryTrieSetup
     {
-        using DBInterface<
-            TrieDBImpl<
-                TAccountsCursor, TStorageCursor, TAccountsWriter,
-                TStorageWriter, TExecution>,
-            TExecution>::updates;
-
-        template <typename TCursor, typename TWriter>
+        template <typename TComparator>
         struct Trie
         {
-            using storage_t = typename TCursor::storage_t;
+            using cursor_t = trie::InMemoryCursor<TComparator>;
+            using writer_t = trie::InMemoryWriter<TComparator>;
+            using storage_t = typename cursor_t::storage_t;
             storage_t leaves_storage;
-            TCursor leaves_cursor;
-            TWriter leaves_writer;
+            cursor_t leaves_cursor;
+            writer_t leaves_writer;
             storage_t trie_storage;
-            TCursor trie_cursor;
-            TWriter trie_writer;
-            trie::Trie<TCursor, TWriter> trie;
+            cursor_t trie_cursor;
+            writer_t trie_writer;
+            trie::Trie<cursor_t, writer_t> trie;
 
             Trie()
                 : leaves_storage{}
@@ -272,10 +264,196 @@ namespace impl
             }
         };
 
-        Trie<TAccountsCursor, TAccountsWriter> accounts{};
-        Trie<TStorageCursor, TStorageWriter> storage{};
-        std::vector<trie::Update> account_trie_updates{};
-        std::vector<trie::Update> storage_trie_updates{};
+        Trie<trie::InMemoryPathComparator> accounts;
+        Trie<trie::InMemoryPrefixPathComparator> storage;
+
+        InMemoryTrieSetup(std::filesystem::path)
+            : accounts{}
+            , storage{}
+        {
+        }
+
+        void take_snapshot() {}
+        void release_snapshot() {}
+    };
+
+    struct RocksDBTrieSetup
+    {
+
+        struct Trie
+        {
+            trie::RocksCursor leaves_cursor;
+            trie::RocksCursor trie_cursor;
+            trie::RocksWriter leaves_writer;
+            trie::RocksWriter trie_writer;
+
+            trie::Trie<trie::RocksCursor, trie::RocksWriter> trie;
+
+            Trie(
+                std::shared_ptr<rocksdb::DB> db,
+                rocksdb::ColumnFamilyHandle *lc,
+                rocksdb::ColumnFamilyHandle *tc,
+                rocksdb::Snapshot const *snapshot)
+                : leaves_cursor(db, lc, snapshot)
+                , trie_cursor(db, tc, snapshot)
+                , leaves_writer(trie::RocksWriter{
+                      .db = db, .batch = rocksdb::WriteBatch{}, .cf = lc})
+                , trie_writer(trie::RocksWriter{
+                      .db = db, .batch = rocksdb::WriteBatch{}, .cf = tc})
+                , trie(leaves_cursor, trie_cursor, leaves_writer, trie_writer)
+            {
+            }
+
+            void set_snapshot(rocksdb::Snapshot const *snapshot)
+            {
+                leaves_cursor.set_snapshot(snapshot);
+                trie_cursor.set_snapshot(snapshot);
+            }
+
+            void reset_cursor()
+            {
+                leaves_cursor.reset();
+                trie_cursor.reset();
+            }
+        };
+
+        std::filesystem::path const name;
+        rocksdb::Options options;
+        trie::PathComparator accounts_comparator;
+        trie::PrefixPathComparator storage_comparator;
+        std::vector<rocksdb::ColumnFamilyDescriptor> cfds;
+        std::vector<rocksdb::ColumnFamilyHandle *> cfs;
+        std::shared_ptr<rocksdb::DB> db;
+        rocksdb::Snapshot const *snapshot;
+        Trie accounts;
+        Trie storage;
+
+        RocksDBTrieSetup(std::filesystem::path name)
+            : name(name)
+            , options([]() {
+                rocksdb::Options ret;
+                ret.IncreaseParallelism(2);
+                ret.OptimizeLevelStyleCompaction();
+                ret.create_if_missing = true;
+                ret.create_missing_column_families = true;
+                return ret;
+            }())
+            , accounts_comparator()
+            , storage_comparator()
+            , cfds([&]() -> decltype(cfds) {
+                rocksdb::ColumnFamilyOptions accounts_opts;
+                rocksdb::ColumnFamilyOptions storage_opts;
+                accounts_opts.comparator = &accounts_comparator;
+                storage_opts.comparator = &storage_comparator;
+
+                return {
+                    {rocksdb::kDefaultColumnFamilyName, {}},
+                    {"AccountTrieLeaves", {}},
+                    {"AccountTrieAll", accounts_opts},
+                    {"StorageTrieLeaves", {}},
+                    {"StorageTrieAll", storage_opts}};
+            }())
+            , cfs()
+            , db([&]() {
+                rocksdb::DB *db = nullptr;
+
+                rocksdb::Status const s =
+                    rocksdb::DB::Open(options, name, cfds, &cfs, &db);
+
+                MONAD_ROCKS_ASSERT(s);
+                MONAD_ASSERT(cfds.size() == cfs.size());
+
+                return db;
+            }())
+            , snapshot(db->GetSnapshot())
+            , accounts(db, cfs[1], cfs[2], snapshot)
+            , storage(db, cfs[3], cfs[4], snapshot)
+        {
+        }
+
+        void take_snapshot()
+        {
+            release_snapshot();
+            snapshot = db->GetSnapshot();
+            accounts.set_snapshot(snapshot);
+            storage.set_snapshot(snapshot);
+        }
+
+        void release_snapshot()
+        {
+            MONAD_DEBUG_ASSERT(snapshot);
+            db->ReleaseSnapshot(snapshot);
+        }
+
+        ~RocksDBTrieSetup()
+        {
+            accounts.reset_cursor();
+            storage.reset_cursor();
+            release_snapshot();
+
+            rocksdb::Status res;
+            for (auto *const cf : cfs) {
+                res = db->DestroyColumnFamilyHandle(cf);
+                MONAD_ASSERT(res.ok());
+            }
+
+            res = db->Close();
+            MONAD_ROCKS_ASSERT(res);
+
+            res = rocksdb::DestroyDB(name, options, cfds);
+            MONAD_ROCKS_ASSERT(res);
+        }
+    };
+
+    template <typename TTrie>
+    [[nodiscard]] constexpr auto make_leaf_cursor(TTrie const &trie)
+    {
+        if constexpr (std::same_as<TTrie, RocksDBTrieSetup::Trie>) {
+            return trie::RocksCursor{
+                trie.leaves_cursor.db_,
+                trie.leaves_cursor.cf_,
+                trie.leaves_cursor.read_opts_.snapshot};
+        }
+        else {
+            return decltype(trie.leaves_cursor){trie.leaves_storage};
+        }
+    };
+
+    template <typename TTrie>
+    [[nodiscard]] constexpr auto make_trie_cursor(TTrie const &trie)
+    {
+        if constexpr (std::same_as<TTrie, RocksDBTrieSetup::Trie>) {
+            return trie::RocksCursor{
+                trie.trie_cursor.db_,
+                trie.trie_cursor.cf_,
+                trie.trie_cursor.read_opts_.snapshot};
+        }
+        else {
+            return decltype(trie.trie_cursor){trie.trie_storage};
+        }
+    };
+
+    template <typename TTrieSetup, typename TExecutor>
+    struct TrieDBImpl
+        : public DBInterface<TrieDBImpl<TTrieSetup, TExecutor>, TExecutor>
+    {
+        using DBInterface<
+            TrieDBImpl<TTrieSetup, TExecutor>, TExecutor>::updates;
+
+        TTrieSetup setup;
+        decltype(TTrieSetup::accounts) &accounts;
+        decltype(TTrieSetup::storage) &storage;
+        std::vector<trie::Update> account_trie_updates;
+        std::vector<trie::Update> storage_trie_updates;
+
+        TrieDBImpl(std::filesystem::path name = "trie_db")
+            : setup{name}
+            , accounts{setup.accounts}
+            , storage{setup.storage}
+            , account_trie_updates{}
+            , storage_trie_updates{}
+        {
+        }
 
         decltype(monad::log::logger_t::get_logger()) logger =
             monad::log::logger_t::get_logger("trie_db_logger");
@@ -336,11 +514,12 @@ namespace impl
 
         // TODO: make this return the keccak so that it can be just passed in
         // to avoid double keccaking?
-        [[nodiscard]] constexpr tl::optional<TAccountsCursor>
+        [[nodiscard]] constexpr tl::optional<
+            decltype(make_trie_cursor(accounts))>
         find(address_t const &a) const
         {
-            auto lc = TAccountsCursor{accounts.leaves_storage};
-            auto tc = TAccountsCursor{accounts.trie_storage};
+            auto lc = make_leaf_cursor(accounts);
+            auto tc = make_trie_cursor(accounts);
             auto const found = move(
                 trie::Nibbles{std::bit_cast<bytes32_t>(
                     ethash::keccak256(a.bytes, sizeof(a.bytes)))},
@@ -353,11 +532,12 @@ namespace impl
             return tl::nullopt;
         }
 
-        [[nodiscard]] constexpr tl::optional<TStorageCursor>
+        [[nodiscard]] constexpr tl::optional<
+            decltype(make_trie_cursor(storage))>
         find(address_t const &a, bytes32_t const &k) const
         {
-            auto lc = TStorageCursor{storage.leaves_storage};
-            auto tc = TStorageCursor{storage.trie_storage};
+            auto lc = make_leaf_cursor(storage);
+            auto tc = make_trie_cursor(storage);
 
             lc.set_prefix(a);
             tc.set_prefix(a);
@@ -485,7 +665,7 @@ namespace impl
             }
             storage.leaves_writer.write();
             storage.trie_writer.write();
-            storage.trie.take_snapshot();
+            setup.take_snapshot();
         }
 
         void commit_accounts_impl()
@@ -526,8 +706,7 @@ namespace impl
             accounts.trie_writer.write();
             storage.leaves_writer.write();
             storage.trie_writer.write();
-            accounts.trie.take_snapshot();
-            storage.trie.take_snapshot();
+            setup.take_snapshot();
             account_trie_updates.clear();
         }
     };
@@ -535,11 +714,11 @@ namespace impl
 
 // Database impl with trie root generating logic, backed by stl
 using InMemoryTrieDB = impl::TrieDBImpl<
-    trie::InMemoryCursor<trie::InMemoryPathComparator>,
-    trie::InMemoryCursor<trie::InMemoryPrefixPathComparator>,
-    trie::InMemoryWriter<trie::InMemoryPathComparator>,
-    trie::InMemoryWriter<trie::InMemoryPrefixPathComparator>,
-    monad::execution::BoostFiberExecution>;
+    impl::InMemoryTrieSetup, monad::execution::BoostFiberExecution>;
+
+// Database impl with trie root generating logic, backed by rocksdb
+using RocksTrieDB = impl::TrieDBImpl<
+    impl::RocksDBTrieSetup, monad::execution::BoostFiberExecution>;
 
 // Database impl without trie root generating logic, backed by stl
 using InMemoryDB = impl::InMemoryDBImpl<monad::execution::BoostFiberExecution>;

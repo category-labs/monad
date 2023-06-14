@@ -78,12 +78,6 @@ struct Trie
         trie_writer_.del_prefix(buf_.prefix());
     }
 
-    constexpr void take_snapshot()
-    {
-        leaves_cursor_.take_snapshot();
-        trie_cursor_.take_snapshot();
-    }
-
     constexpr void set_trie_prefix(address_t const &prefix)
     {
         buf_.set_prefix(prefix);

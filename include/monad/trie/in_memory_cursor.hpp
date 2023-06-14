@@ -113,13 +113,12 @@ struct InMemoryCursor
         buf_.set_prefix(address);
     }
 
-    constexpr void take_snapshot() const noexcept {};
-    constexpr void release_snapshots() const noexcept {};
-
     [[nodiscard]] constexpr bool is_it_valid(iterator_t it) const
     {
         return it < storage_.end() && it->first.starts_with(buf_.prefix());
     }
+
+    void reset(){};
 };
 
 MONAD_TRIE_NAMESPACE_END

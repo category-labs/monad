@@ -25,6 +25,7 @@ struct rocks_fixture : public ::testing::Test
     std::vector<rocksdb::ColumnFamilyDescriptor> cfds_;
     std::vector<rocksdb::ColumnFamilyHandle *> cfs_;
     std::shared_ptr<rocksdb::DB> db_;
+    rocksdb::Snapshot const *snapshot_;
 
     RocksCursor leaves_cursor_;
     RocksCursor trie_cursor_;
@@ -68,8 +69,9 @@ struct rocks_fixture : public ::testing::Test
 
             return db;
         }())
-        , leaves_cursor_(db_, cfs_[1])
-        , trie_cursor_(db_, cfs_[2])
+        , snapshot_(db_->GetSnapshot())
+        , leaves_cursor_(db_, cfs_[1], snapshot_)
+        , trie_cursor_(db_, cfs_[2], snapshot_)
         , leaves_writer_(RocksWriter{
               .db = db_, .batch = rocksdb::WriteBatch{}, .cf = cfs_[1]})
         , trie_writer_(RocksWriter{
@@ -82,8 +84,9 @@ struct rocks_fixture : public ::testing::Test
 
     ~rocks_fixture()
     {
-        leaves_cursor_.release_snapshots();
-        trie_cursor_.release_snapshots();
+        leaves_cursor_.reset();
+        trie_cursor_.reset();
+        release_snapshot();
 
         rocksdb::Status res;
         for (auto *const cf : cfs_) {
@@ -98,22 +101,32 @@ struct rocks_fixture : public ::testing::Test
         MONAD_ASSERT(res.ok());
     }
 
+    void take_snapshot()
+    {
+        release_snapshot();
+        snapshot_ = db_->GetSnapshot();
+        leaves_cursor_.set_snapshot(snapshot_);
+        trie_cursor_.set_snapshot(snapshot_);
+    }
+
+    void release_snapshot()
+    {
+        MONAD_DEBUG_ASSERT(snapshot_);
+        db_->ReleaseSnapshot(snapshot_);
+    }
+
     void process_updates(std::vector<Update> const &updates)
     {
         trie_.process_updates(updates);
 
-        leaves_writer_.write();
-        trie_writer_.write();
-        leaves_cursor_.take_snapshot();
-        trie_cursor_.take_snapshot();
+        flush();
     }
 
     void flush()
     {
         leaves_writer_.write();
         trie_writer_.write();
-        leaves_cursor_.take_snapshot();
-        trie_cursor_.take_snapshot();
+        take_snapshot();
     }
 
     void clear()
@@ -161,8 +174,6 @@ struct in_memory_fixture : public ::testing::Test
     {
         leaves_writer_.write();
         trie_writer_.write();
-        leaves_cursor_.take_snapshot();
-        trie_cursor_.take_snapshot();
     }
 
     void process_updates(std::vector<Update> const &updates)

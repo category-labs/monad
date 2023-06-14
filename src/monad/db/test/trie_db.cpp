@@ -22,7 +22,8 @@ template <typename TDB>
 struct DBTest : public testing::Test
 {
 };
-using DBTypes = ::testing::Types<InMemoryDB, InMemoryTrieDB>;
+using DBTypes =
+    ::testing::Types<InMemoryDB, InMemoryTrieDB, RocksTrieDB>;
 TYPED_TEST_SUITE(DBTest, DBTypes);
 
 TYPED_TEST(DBTest, storage_creation)

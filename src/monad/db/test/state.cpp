@@ -34,7 +34,8 @@ template <typename TDB>
 struct StateTest : public testing::Test
 {
 };
-using DBTypes = ::testing::Types<InMemoryDB, InMemoryTrieDB>;
+using DBTypes =
+    ::testing::Types<InMemoryDB, InMemoryTrieDB, RocksTrieDB>;
 TYPED_TEST_SUITE(StateTest, DBTypes);
 
 using code_db_t = std::unordered_map<address_t, byte_string>;

@@ -256,6 +256,8 @@ namespace fork_traits
         static constexpr evmc_revision rev = EVMC_BYZANTIUM;
         static constexpr auto last_block_number = 9'068'999u;
 
+        // YP Appendix E Eq 279
+        using bn_add_gas_t = gas_required<500, 0>;
         template <typename TList>
         using switch_fork_t = boost::mp11::mp_replace_front<TList, byzantium>;
 

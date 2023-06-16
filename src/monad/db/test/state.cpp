@@ -67,6 +67,27 @@ TYPED_TEST(StateTest, get_working_copy)
     EXPECT_EQ(cs.get_balance(a), bytes32_t{30'000});
 }
 
+TYPED_TEST(StateTest, get_code)
+{
+    TypeParam db;
+    AccountStore accounts{db};
+    ValueStore values{db};
+    code_db_t code_db{};
+    CodeStore code{code_db};
+    State as{accounts, values, code};
+    byte_string const contract{0x60, 0x34, 0x00};
+    db.create(a, {.balance = 10'000});
+    code_db.emplace(a, contract);
+    db.commit();
+
+    [[maybe_unused]] auto bs = as.get_working_copy(0);
+
+    bs.access_account(a);
+    auto const c = bs.get_code(a);
+
+    EXPECT_EQ(c, contract);
+}
+
 TYPED_TEST(StateTest, can_merge_fresh)
 {
     TypeParam db;

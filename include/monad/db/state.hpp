@@ -133,6 +133,11 @@ struct State
             return code_.copy_code(a, offset, buffer, size);
         }
 
+        [[nodiscard]] byte_string_view get_code(address_t const &a) const noexcept
+        {
+            return code_.code_at(a);
+        }
+
         void revert() noexcept
         {
             accounts_.revert();

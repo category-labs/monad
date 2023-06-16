@@ -1,11 +1,20 @@
 #pragma once
 
-#include <monad/execution/replay_block_db.hpp>
+#include <monad/core/address.hpp>
+#include <monad/core/block.hpp>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/core/int.hpp>
+#include <monad/core/receipt.hpp>
+
+#include <monad/logging/config.hpp>
+
 #include <monad/trie/nibbles.hpp>
 #include <monad/trie/update.hpp>
 
 #include <quill/Quill.h>
 
+#include <optional>
 #include <type_traits>
 
 MONAD_LOG_NAMESPACE_BEGIN

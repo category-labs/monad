@@ -4,21 +4,17 @@ import subprocess
 from behave import given, when, then
 
 
-@given('I run replay_ethereum_block_db with BlockDb path = "{block_db_path}"')
+@given('I run with BlockDb path = "{block_db_path}"')
 def given_block_db_path(context, block_db_path):
     context.block_db_path = block_db_path
 
 
-@given(
-    'I run replay_ethereum_block_db with start block number = "{start_block_number}"'
-)
+@given('I run with start block number = "{start_block_number}"')
 def given_start_block_number(context, start_block_number):
     context.start_block_number = start_block_number
 
 
-@given(
-    'I run replay_ethereum_block_db with finish block number = "{finish_block_number}"'
-)
+@given('I run with finish block number = "{finish_block_number}"')
 def given_finish_block_number(context, finish_block_number):
     context.finish_block_number = finish_block_number
 
@@ -51,13 +47,22 @@ def when_start(context, program):
 
 
 @then('the output should contain "{number}" "{value}"')
-def then_output_contain(context, number, value):
+def then_output_contain_with_number(context, number, value):
     assert context.output.count(value) == int(number)
 
+@then('the output should contain "{value}"')
+def then_output_contain(context, value):
+    print(context.output)
+    assert value in context.output
 
-@then("the output should not contain any block level information")
+@then('the output should not contain "{value}"')
+def then_output_no_contain(context, value):
+    assert value not in context.output
+
+
+@then("the output should be empty")
 def then_output_empty(context):
-    assert "block_logger" not in context.output
+    assert context.output == ""
 
 
 @then('the "{root_type}" should match')
@@ -66,5 +71,7 @@ def then_root_match(context, root_type):
 
     for line in lines:
         if root_type in line:
-            hashes = re.findall(r"\[([^\]]*)\]", line)
-            assert hashes[1] == hashes[2]
+            match = re.search(
+                r"Computed (\w+) Root: (\w+), Expected (\w+) Root: (\w+)", line
+            )
+            assert match.group(2) == match.group(4)

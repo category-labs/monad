@@ -12,7 +12,6 @@
 #include <monad/logging/monad_log.hpp>
 
 #include <CLI/CLI.hpp>
-#include <quill/Quill.h>
 
 #include <filesystem>
 
@@ -143,18 +142,36 @@ int main(int argc, char *argv[])
     std::filesystem::path block_db_path{};
     monad::block_num_t start_block_number;
     std::optional<monad::block_num_t> finish_block_number = std::nullopt;
-    quill::LogLevel log_level = quill::LogLevel::Info;
 
-    cli.add_option("-b, --block-db", block_db_path, "block_db directory")
+    monad::log::logger_t::start();
+
+    // create all the loggers needed for the program
+    auto *main_logger = monad::log::logger_t::create_logger("main_logger");
+    [[maybe_unused]] auto *block_logger =
+        monad::log::logger_t::create_logger("block_logger");
+    [[maybe_unused]] auto *txn_logger =
+        monad::log::logger_t::create_logger("txn_logger");
+    [[maybe_unused]] auto *state_logger =
+        monad::log::logger_t::create_logger("state_logger");
+
+    auto main_log_level = monad::log::level_t::Info;
+    auto block_log_level = monad::log::level_t::Info;
+    auto txn_log_level = monad::log::level_t::Info;
+    auto state_log_level = monad::log::level_t::Info;
+
+    cli.add_option("-b, --block_db", block_db_path, "block_db directory")
         ->required();
     cli.add_option("-s, --start", start_block_number, "start block numer")
         ->required();
     cli.add_option(
         "-f, --finish", finish_block_number, "1 pass the last executed block");
 
-    // Should support different log-level for different part of program later
-    // on; for simplicity, now only supports 1 log level throughout the program
-    cli.add_option("-l, --log-level", log_level, "level of logging");
+    auto *log_levels = cli.add_subcommand("log_levels", "level of logging");
+    log_levels->add_option("--main", main_log_level, "Log level for main");
+    log_levels->add_option("--block", block_log_level, "Log level for block");
+    log_levels->add_option("--txn", txn_log_level, "Log level for transaction");
+    log_levels->add_option("--state", state_log_level, "Log level for state");
+
     cli.parse(argc, argv);
 
     using block_db_t = monad::db::BlockDb;
@@ -165,24 +182,10 @@ int main(int argc, char *argv[])
     using transaction_trie_t = monad::fakeEmptyTransactionTrie;
     using receipt_trie_t = monad::fakeEmptyReceiptTrie;
 
-    monad::log::logger_t::start();
-
-    // create all the loggers needed for the program
-    [[maybe_unused]] auto *main_logger =
-        monad::log::logger_t::create_logger("main_logger");
-    [[maybe_unused]] auto *block_logger =
-        monad::log::logger_t::create_logger("block_logger");
-    [[maybe_unused]] auto *txn_logger =
-        monad::log::logger_t::create_logger("txn_logger");
-    [[maybe_unused]] auto *state_logger =
-        monad::log::logger_t::create_logger("state_logger");
-
-    // set loggers logging level, there is only 1 log level for now
-    // TODO: flexible log levels for different logger
-    monad::log::logger_t::set_log_level("main_logger", log_level);
-    monad::log::logger_t::set_log_level("block_logger", log_level);
-    monad::log::logger_t::set_log_level("txn_logger", log_level);
-    monad::log::logger_t::set_log_level("state_logger", log_level);
+    monad::log::logger_t::set_log_level("main_logger", main_log_level);
+    monad::log::logger_t::set_log_level("block_logger", block_log_level);
+    monad::log::logger_t::set_log_level("txn_logger", txn_log_level);
+    monad::log::logger_t::set_log_level("state_logger", state_log_level);
 
     MONAD_LOG_INFO(
         main_logger,
@@ -197,16 +200,18 @@ int main(int argc, char *argv[])
     state_t state;
     state_trie_t state_trie;
 
+    // In order to finish execution, this must be set to true
+    state._applied_state = true;
+
     monad::execution::ReplayFromBlockDb<
         state_t,
         block_db_t,
         execution_t,
-        monad::fakeEmptyBP,
+        monad::execution::AllTxnBlockProcessor,
         monad::fakeEmptyStateTrie,
         transaction_trie_t,
         receipt_trie_t,
-        receipt_collector_t,
-        monad::log::logger_t>
+        receipt_collector_t>
         replay_eth;
 
     [[maybe_unused]] auto result = replay_eth.run<
@@ -215,7 +220,7 @@ int main(int argc, char *argv[])
         monad::fakeEmptyEvm,
         monad::execution::StaticPrecompiles,
         monad::fakeEmptyEvmHost,
-        monad::fakeEmptyFiberData,
+        monad::execution::TransactionProcessorFiberData,
         monad::fakeInterpreter,
         monad::eth_start_fork::static_precompiles_t>(
         state,
@@ -227,9 +232,11 @@ int main(int argc, char *argv[])
 
     MONAD_LOG_INFO(
         main_logger,
-        "Finished running, status = {},  block number = {}",
+        "Finish running, status = {},  block number = {}, number of blocks run "
+        "= {}",
         static_cast<int>(result.status),
-        result.block_number);
+        result.block_number,
+        result.block_number - start_block_number + 1);
 
     return 0;
 }

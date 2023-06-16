@@ -8,6 +8,10 @@
 #include <monad/execution/config.hpp>
 #include <monad/execution/transaction_processor.hpp>
 
+#include <monad/logging/monad_log.hpp>
+
+#include <chrono>
+
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
 enum class TxnReadyStatus
@@ -59,6 +63,10 @@ struct alignas(64) TransactionProcessorFiberData
     void validate_execute_and_apply_state_diff()
     {
         TTxnProcessor p{};
+        auto *txn_logger = log::logger_t::get_logger("txn_logger");
+        auto const start_time = std::chrono::steady_clock::now();
+
+        MONAD_LOG_INFO(txn_logger, "Start executing Transaction {}", id_);
 
         while (true) { // retry until apply state cleanly
             while (true) { // spin until *could be* successful
@@ -71,6 +79,8 @@ struct alignas(64) TransactionProcessorFiberData
                     (s_.current_txn() == id_ &&
                      status != TxnReadyStatus::WILL_SUCCEED) ||
                     status == TxnReadyStatus::ERROR) {
+
+                    MONAD_LOG_INFO(txn_logger, "Transaction {} failed!", id_);
                     // TODO: Charge for validation failure? #54
                     return;
                 }
@@ -87,8 +97,18 @@ struct alignas(64) TransactionProcessorFiberData
                 // Can merge needs to be in yield while loop while receiving
                 // TRY_AGAIN When WILL_SUCCEED is returned, merge, and return;
                 // if ERROR is received, then error out
+                auto const finished_time = std::chrono::steady_clock::now();
+                auto const elapsed_ms =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        finished_time - start_time);
+                MONAD_LOG_INFO(
+                    txn_logger,
+                    "Finish executing Transaction {}, time elapsed = {}",
+                    id_,
+                    elapsed_ms);
                 return;
             }
+            MONAD_LOG_INFO(txn_logger, "Transaction {} rescheduled", id_);
             TExecution::yield();
         }
     }

@@ -7,7 +7,6 @@
 #include <monad/execution/test/fakes.hpp>
 
 using empty_list_t = boost::mp11::mp_list<>;
-#include <monad/logging/monad_log.hpp>
 
 using namespace monad;
 using namespace execution;
@@ -176,17 +175,17 @@ using receipt_collector_t = std::vector<std::vector<Receipt>>;
 using replay_eth_t = ReplayFromBlockDb<
     state_t, fakeBlockDb, BoostFiberExecution, fakeReceiptBP,
     fakeEmptyStateTrie, fakeEmptyTransactionTrie, fakeEmptyReceiptTrie,
-    receipt_collector_t, log::logger_t>;
+    receipt_collector_t>;
 
 using replay_eth_error_decompress_t = ReplayFromBlockDb<
     state_t, fakeErrorDecompressBlockDb, BoostFiberExecution, fakeReceiptBP,
     fakeEmptyStateTrie, fakeEmptyTransactionTrie, fakeEmptyReceiptTrie,
-    receipt_collector_t, log::logger_t>;
+    receipt_collector_t>;
 
 using replay_eth_error_decode_t = ReplayFromBlockDb<
     state_t, fakeErrorDecodeBlockDb, BoostFiberExecution, fakeReceiptBP,
     fakeEmptyStateTrie, fakeEmptyTransactionTrie, fakeEmptyReceiptTrie,
-    receipt_collector_t, log::logger_t>;
+    receipt_collector_t>;
 
 TEST(ReplayFromBlockDb_Eth, invalid_end_block_number)
 {

@@ -6,8 +6,6 @@
 
 #include <monad/execution/test/fakes.hpp>
 
-#include <monad/logging/monad_log.hpp>
-
 using namespace monad;
 using namespace execution;
 
@@ -164,18 +162,17 @@ using receipt_collector_t = std::vector<std::vector<Receipt>>;
 
 using replay_t = ReplayFromBlockDb<
     state_t, fakeBlockDb, BoostFiberExecution, fakeEmptyBP, fakeEmptyStateTrie,
-    fakeEmptyTransactionTrie, fakeEmptyReceiptTrie, receipt_collector_t,
-    log::logger_t>;
+    fakeEmptyTransactionTrie, fakeEmptyReceiptTrie, receipt_collector_t>;
 
 using replay_error_decompress_t = ReplayFromBlockDb<
     state_t, fakeErrorDecompressBlockDb, BoostFiberExecution, fakeEmptyBP,
     fakeEmptyStateTrie, fakeEmptyTransactionTrie, fakeEmptyReceiptTrie,
-    receipt_collector_t, log::logger_t>;
+    receipt_collector_t>;
 
 using replay_error_decode_t = ReplayFromBlockDb<
     state_t, fakeErrorDecodeBlockDb, BoostFiberExecution, fakeEmptyBP,
     fakeEmptyStateTrie, fakeEmptyTransactionTrie, fakeEmptyReceiptTrie,
-    receipt_collector_t, log::logger_t>;
+    receipt_collector_t>;
 
 TEST(ReplayFromBlockDb, invalid_end_block_number)
 {

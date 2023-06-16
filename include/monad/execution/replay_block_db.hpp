@@ -19,7 +19,7 @@ template <
     class TState, class TBlockDb, class TExecution,
     template <typename> class TAllTxnBlockProcessor,
     template <typename> class TStateTrie, class TTransactionTrie,
-    class TReceiptTrie, class TReceiptCollector, class TLogger>
+    class TReceiptTrie, class TReceiptCollector>
 class ReplayFromBlockDb
 {
 public:
@@ -106,7 +106,7 @@ public:
                 TTransactionTrie transaction_trie(block.transactions);
                 TReceiptTrie receipt_trie(receipts);
 
-                auto *block_logger = TLogger::get_logger("block_logger");
+                auto *block_logger = log::logger_t::get_logger("block_logger");
 
                 [[maybe_unused]] auto const transaction_root =
                     transaction_trie.root_hash();

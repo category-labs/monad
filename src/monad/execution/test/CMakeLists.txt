@@ -4,7 +4,6 @@ add_unit_test(
   SOURCES
   block_processor.cpp
   create_contract_address.cpp
-  ethereum_traits.cpp
   evm.cpp
   evmc_host.cpp
   evmone_baseline_interpreter.cpp

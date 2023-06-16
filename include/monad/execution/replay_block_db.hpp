@@ -175,7 +175,7 @@ public:
         class TFiberData,
         class TInterpreter,
         class TPrecompiles>
-    [[nodiscard]] inline Result
+    [[nodiscard]] Result
     run(TState &state, TStateTrie<TState> &state_trie, TBlockDb const &block_db,
         TReceiptCollector &receipt_collector, block_num_t start_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)

@@ -42,7 +42,7 @@ struct alignas(64) TransactionProcessorFiberData
     }
 
     // this is an injectable policy?
-    static constexpr inline TxnReadyStatus
+    static constexpr TxnReadyStatus
     is_valid(txn_processor_status_t status) noexcept
     {
         if (status == txn_processor_status_t::SUCCESS) {
@@ -54,9 +54,9 @@ struct alignas(64) TransactionProcessorFiberData
         return TxnReadyStatus::ERROR;
     }
 
-    inline Receipt get_receipt() const noexcept { return result_; }
+    Receipt get_receipt() const noexcept { return result_; }
 
-    inline void validate_execute_and_apply_state_diff()
+    void validate_execute_and_apply_state_diff()
     {
         TTxnProcessor p{};
 
@@ -93,7 +93,7 @@ struct alignas(64) TransactionProcessorFiberData
         }
     }
 
-    inline void operator()() // required signature for boost::fibers
+    void operator()() // required signature for boost::fibers
     {
         validate_execute_and_apply_state_diff();
     }

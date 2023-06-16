@@ -29,7 +29,7 @@ struct StaticPrecompiles
     static constexpr auto precompile_execs =
         construct_precompile_array(TPrecompiles{});
 
-    [[nodiscard]] static inline tl::optional<exec_func_t>
+    [[nodiscard]] static tl::optional<exec_func_t>
     static_precompile_exec_func(address_t const &addr) noexcept
     {
         const auto static_precompile_idx =

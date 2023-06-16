@@ -3,6 +3,8 @@ import re
 import subprocess
 from behave import given, when, then
 
+from util.util import log_mapping
+
 
 @given('I run with BlockDb path = "{block_db_path}"')
 def given_block_db_path(context, block_db_path):
@@ -19,9 +21,15 @@ def given_finish_block_number(context, finish_block_number):
     context.finish_block_number = finish_block_number
 
 
-@given('I run replay_ethereum_block_db with log level = "{log_level}"')
-def given_log_level(context, log_level):
-    context.log_level = log_level
+@given('I run with "{logger_name}" log level = "{log_level}"')
+def given_log_level(context, logger_name, log_level):
+    setattr(context, f"{logger_name}_level", str(log_mapping[log_level]))
+
+
+@given("I run with default log level")
+def step_impl(context):
+    # Default log level = 4, so we don't need to do anything
+    pass
 
 
 @when('I start "{program}"')
@@ -33,15 +41,22 @@ def when_start(context, program):
         raise ValueError("Start block number is required")
     args = [
         executable_path,
-        "--block-db",
+        "--block_db",
         os.getcwd() + "/../../" + context.block_db_path,
         "--start",
         context.start_block_number,
     ]
     if hasattr(context, "finish_block_number"):
         args += ["--finish", context.finish_block_number]
-    if hasattr(context, "log_level"):
-        args += ["--log-level", context.log_level]
+    args += ["log_levels"]
+    if hasattr(context, "main_logger_level"):
+        args += ["--main", context.main_logger_level]
+    if hasattr(context, "block_logger_level"):
+        args += ["--block", context.block_logger_level]
+    if hasattr(context, "txn_logger_level"):
+        args += ["--txn", context.txn_logger_level]
+    if hasattr(context, "state_logger_level"):
+        args += ["--state", context.state_logger_level]
     result = subprocess.run(args, capture_output=True, text=True)
     context.output = result.stdout
 
@@ -50,10 +65,12 @@ def when_start(context, program):
 def then_output_contain_with_number(context, number, value):
     assert context.output.count(value) == int(number)
 
+
 @then('the output should contain "{value}"')
 def then_output_contain(context, value):
     print(context.output)
     assert value in context.output
+
 
 @then('the output should not contain "{value}"')
 def then_output_no_contain(context, value):

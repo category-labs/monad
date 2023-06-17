@@ -14,3 +14,6 @@
 [submodule "third_party/silkpre"]
 	path = third_party/silkpre
 	url = https://github.com/monad-crypto/monad-silkpre.git
+[submodule "monad-core"]
+	path = monad-core
+	url = git@github.com:monad-crypto/monad-core.git

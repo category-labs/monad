@@ -10,8 +10,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - id: generate_token
+        uses: tibdex/github-app-token@v1
+        with:
+          app_id: ${{ secrets.REPO_READONLY_GITHUB_APP_ID }}
+          private_key: ${{ secrets.REPO_READONLY_GITHUB_APP_KEY }}
+          permissions: >-
+            {"contents": "read"}
+
       - uses: actions/checkout@v3
         with:
           submodules: recursive
+          token: ${{ steps.generate_token.outputs.token }}
 
       - run: docker build --file docker/Dockerfile .

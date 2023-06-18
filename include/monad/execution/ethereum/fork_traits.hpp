@@ -258,6 +258,8 @@ namespace fork_traits
 
         // YP Appendix E Eq 279
         using bn_add_gas_t = gas_required<500, 0>;
+        // YP Appendix E Eq 285
+        using bn_mul_gas_t = gas_required<40'000, 0>;
         template <typename TList>
         using switch_fork_t = boost::mp11::mp_replace_front<TList, byzantium>;
 

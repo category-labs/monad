@@ -83,224 +83,187 @@ using ripemd160_frontier_through_homestead =
 using identity_frontier_through_homestead =
     mp_at_c<homestead::static_precompiles_t, 3>;
 
-TEST(FrontierThroughHomestead, ecrecover_unrecoverable_key_enough_gas)
+struct basic_test_case
 {
-    evmc_message input = {
-        .gas = 6'000,
-        .input_data = ECRECOVER_UNRECOVERABLE_KEY_INPUT.data(),
-        .input_size = ECRECOVER_UNRECOVERABLE_KEY_INPUT.size()};
+    const char *name;
+    evmc_message input;
+    evmc_result expected_output;
+};
 
-    auto const result = ecrecover_frontier_through_homestead::execute(input);
+static const basic_test_case ECRECOVER_TEST_CASES[] = {
+    {.name = "ecrecover_unrecoverable_key_enough_gas",
+     .input =
+         {.gas = 6'000,
+          .input_data = ECRECOVER_UNRECOVERABLE_KEY_INPUT.data(),
+          .input_size = ECRECOVER_UNRECOVERABLE_KEY_INPUT.size()},
+     .expected_output =
+         {.status_code = evmc_status_code::EVMC_SUCCESS,
+          .gas_left = 3'000,
+          .output_size = 0}},
+    {.name = "ecrecover_unrecoverable_key_insufficient_gas",
+     .input =
+         {.gas = 2'999,
+          .input_data = ECRECOVER_UNRECOVERABLE_KEY_INPUT.data(),
+          .input_size = ECRECOVER_UNRECOVERABLE_KEY_INPUT.size()},
+     .expected_output = {.status_code = evmc_status_code::EVMC_OUT_OF_GAS}},
+    {.name = "ecrecover_valid_key_enough_gas",
+     .input =
+         {.gas = 6'000,
+          .input_data = ECRECOVER_VALID_KEY_INPUT.data(),
+          .input_size = ECRECOVER_VALID_KEY_INPUT.size()},
+     .expected_output =
+         {.status_code = evmc_status_code::EVMC_SUCCESS,
+          .gas_left = 3'000,
+          .output_data = ECRECOVER_VALID_KEY_OUTPUT.data(),
+          .output_size = ECRECOVER_VALID_KEY_OUTPUT.size()}},
+    {.name = "ecrecover_valid_key_insufficient_gas",
+     .input =
+         {.gas = 2'999,
+          .input_data = ECRECOVER_VALID_KEY_INPUT.data(),
+          .input_size = ECRECOVER_VALID_KEY_INPUT.size()},
+     .expected_output = {.status_code = evmc_status_code::EVMC_OUT_OF_GAS}}};
 
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 3'000);
-    EXPECT_EQ(result.output_size, 0);
-}
+static const basic_test_case SHA256_TEST_CASES[] = {
+    {.name = "sha256_empty_enough_gas",
+     .input = {.gas = 100},
+     .expected_output =
+         {.status_code = evmc_status_code::EVMC_SUCCESS,
+          .gas_left = 40,
+          .output_data = SHA256_NULL_HASH.data(),
+          .output_size = 32}},
+    {.name = "sha256_empty_insufficient_gas",
+     .input = {.gas = 59},
+     .expected_output = {.status_code = evmc_status_code::EVMC_OUT_OF_GAS}},
+    {.name = "sha256_message_enough_gas",
+     .input =
+         {.gas = 73,
+          .input_data = reinterpret_cast<const uint8_t *>("lol"),
+          .input_size = 3},
+     .expected_output =
+         {.status_code = evmc_status_code::EVMC_SUCCESS,
+          .gas_left = 1,
+          .output_data = SHA256_LOL_HASH.data(),
+          .output_size = 32}},
+    {.name = "sha256_message_insufficient_gas",
+     .input =
+         {.gas = 71,
+          .input_data = reinterpret_cast<const uint8_t *>("lol"),
+          .input_size = 3},
+     .expected_output = {.status_code = evmc_status_code::EVMC_SUCCESS}}};
 
-TEST(FrontierThroughHomestead, ecrecover_unrecoverable_key_insufficient_gas)
+static const basic_test_case RIPEMD160_TEST_CASES[] = {
+    {.name = "ripemd160_empty_enough_gas",
+     .input = {.gas = 601},
+     .expected_output =
+         {.status_code = evmc_status_code::EVMC_SUCCESS,
+          .gas_left = 1,
+          .output_data = RIPEMD160_NULL_HASH.data(),
+          .output_size = 32}},
+    {.name = "ripemd160_empty_insufficient_gas",
+     .input = {.gas = 599},
+     .expected_output = {.status_code = evmc_status_code::EVMC_OUT_OF_GAS}},
+    {.name = "ripemd160_message_enough_gas",
+     .input =
+         {.gas = 721,
+          .input_data = reinterpret_cast<const uint8_t *>("lol"),
+          .input_size = 3},
+     .expected_output =
+         {.status_code = evmc_status_code::EVMC_SUCCESS,
+          .gas_left = 1,
+          .output_data = RIPEMD160_LOL_HASH.data(),
+          .output_size = 32}},
+    {.name = "ripemd160_message_insufficient_gas",
+     .input =
+         {.gas = 619,
+          .input_data = reinterpret_cast<const uint8_t *>("lol"),
+          .input_size = 3},
+     .expected_output = {.status_code = evmc_status_code::EVMC_OUT_OF_GAS}}};
+
+static const basic_test_case IDENTITY_TEST_CASES[] = {
+    {.name = "identity_empty_enough_gas",
+     .input = {.gas = 16},
+     .expected_output =
+         {.status_code = evmc_status_code::EVMC_SUCCESS,
+          .gas_left = 1,
+          .output_size = 0}},
+    {.name = "identity_empty_insufficient_gas",
+     .input = {.gas = 14},
+     .expected_output = {.status_code = evmc_status_code::EVMC_OUT_OF_GAS}},
+    {.name = "identity_nonempty_enough_gas",
+     .input =
+         {.gas = 19,
+          .input_data = reinterpret_cast<const uint8_t *>("dead"),
+          .input_size = 4},
+     .expected_output =
+         {.status_code = evmc_status_code::EVMC_SUCCESS,
+          .gas_left = 1,
+          .output_data = reinterpret_cast<const uint8_t *>("dead"),
+          .output_size = 4}},
+    {.name = "identity_nonempty_insufficient_gas",
+     .input =
+         {.gas = 17,
+          .input_data = reinterpret_cast<const uint8_t *>("dead"),
+          .input_size = 4},
+     .expected_output = {.status_code = evmc_status_code::EVMC_OUT_OF_GAS}}};
+
+template <typename Precompile>
+void do_basic_tests(
+    const char *suite_name, const basic_test_case *basic_test_cases,
+    size_t num_basic_test_cases)
 {
-    evmc_message input = {
-        .gas = 2'999,
-        .input_data = ECRECOVER_UNRECOVERABLE_KEY_INPUT.data(),
-        .input_size = ECRECOVER_UNRECOVERABLE_KEY_INPUT.size()};
+    for (size_t i = 0; i < num_basic_test_cases; i++) {
+        auto const &basic_test_case = basic_test_cases[i];
 
-    auto const result = ecrecover_frontier_through_homestead::execute(input);
+        evmc::Result const result = Precompile::execute(basic_test_case.input);
 
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
+        if (result.status_code == evmc_status_code::EVMC_SUCCESS) {
+            EXPECT_EQ(result.gas_left, basic_test_case.expected_output.gas_left)
+                << suite_name << " test case " << basic_test_case.name
+                << " gas check failed.";
+        }
+        else {
+            EXPECT_EQ(result.gas_left, 0)
+                << suite_name << " test case " << basic_test_case.name
+                << " gas check failed. It should have cleared gas_left.";
+        }
 
-TEST(FrontierThroughHomestead, ecrecover_valid_key_enough_gas)
-{
-    evmc_message input = {
-        .gas = 6'000,
-        .input_data = ECRECOVER_VALID_KEY_INPUT.data(),
-        .input_size = ECRECOVER_VALID_KEY_INPUT.size()};
+        ASSERT_EQ(
+            result.output_size, basic_test_case.expected_output.output_size)
+            << suite_name << " test case " << basic_test_case.name
+            << " output buffer size check failed.";
 
-    auto const result = ecrecover_frontier_through_homestead::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 3'000);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], ECRECOVER_VALID_KEY_OUTPUT[i]);
+        for (size_t idx = 0; idx < result.output_size; idx++) {
+            EXPECT_EQ(
+                basic_test_case.expected_output.output_data[idx],
+                result.output_data[idx])
+                << suite_name << " test case " << basic_test_case.name
+                << " output buffer equality check failed.";
+        }
     }
 }
 
-TEST(FrontierThroughHomestead, ecrecover_valid_key_insufficient_gas)
+TEST(FrontierThroughHomestead, ecrecover)
 {
-    evmc_message input = {
-        .gas = 2'999,
-        .input_data = ECRECOVER_VALID_KEY_INPUT.data(),
-        .input_size = ECRECOVER_VALID_KEY_INPUT.size()};
-
-    auto const result = ecrecover_frontier_through_homestead::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
+    do_basic_tests<ecrecover_frontier_through_homestead>(
+        "ecrecover", ECRECOVER_TEST_CASES, std::size(ECRECOVER_TEST_CASES));
 }
 
-TEST(FrontierThroughHomestead, sha256_empty_enough_gas)
+TEST(FrontierThroughHomestead, sha256)
 {
-    evmc_message input = {.gas = 100};
-    auto const result = sha256_frontier_through_homestead::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 40);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], SHA256_NULL_HASH[i]);
-    }
+    do_basic_tests<sha256_frontier_through_homestead>(
+        "sha256", SHA256_TEST_CASES, std::size(SHA256_TEST_CASES));
 }
 
-TEST(FrontierThroughHomestead, sha256_empty_insufficient_gas)
+TEST(FrontierThroughHomestead, ripemd160)
 {
-    evmc_message input = {.gas = 59};
-    auto const result = sha256_frontier_through_homestead::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
+    do_basic_tests<ripemd160_frontier_through_homestead>(
+        "ripemd160", RIPEMD160_TEST_CASES, std::size(RIPEMD160_TEST_CASES));
 }
 
-TEST(FrontierThroughHomestead, sha256_message_enough_gas)
+TEST(FrontierThroughHomestead, identity)
 {
-    monad::byte_string_fixed<3> message = {'l', 'o', 'l'};
-    evmc_message input = {
-        .gas = 73, .input_data = message.data(), .input_size = message.size()};
-
-    auto const result = sha256_frontier_through_homestead::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], SHA256_LOL_HASH[i]);
-    }
-}
-
-TEST(FrontierThroughHomestead, sha256_message_insufficient_gas)
-{
-    monad::byte_string_fixed<3> message = {'l', 'o', 'l'};
-    evmc_message input = {
-        .gas = 71, .input_data = message.data(), .input_size = message.size()};
-
-    auto const result = sha256_frontier_through_homestead::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(FrontierThroughHomestead, ripemd160_empty_enough_gas)
-{
-    evmc_message input = {.gas = 601};
-
-    auto const result = ripemd160_frontier_through_homestead::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], RIPEMD160_NULL_HASH[i]);
-    }
-}
-
-TEST(FrontierThroughHomestead, ripemd160_empty_insufficient_gas)
-{
-    evmc_message input = {.gas = 599};
-
-    auto const result = ripemd160_frontier_through_homestead::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], RIPEMD160_NULL_HASH[i]);
-    }
-}
-
-TEST(FrontierThroughHomestead, ripemd160_message_enough_gas)
-{
-    monad::byte_string_fixed<3> message = {'l', 'o', 'l'};
-    evmc_message input = {
-        .gas = 721, .input_data = message.data(), .input_size = message.size()};
-
-    auto const result = ripemd160_frontier_through_homestead::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], RIPEMD160_LOL_HASH[i]);
-    }
-}
-
-TEST(FrontierThroughHomestead, ripemd160_message_insufficient_gas)
-{
-    monad::byte_string_fixed<3> message = {'l', 'o', 'l'};
-    evmc_message input = {
-        .gas = 619, .input_data = message.data(), .input_size = message.size()};
-
-    auto const result = ripemd160_frontier_through_homestead::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(FrontierThroughHomestead, identity_empty_enough_gas)
-{
-    evmc_message input = {.gas = 16};
-    auto const result = identity_frontier_through_homestead::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(FrontierThroughHomestead, identity_empty_insufficient_gas)
-{
-    evmc_message input = {.gas = 14};
-    auto const result = identity_frontier_through_homestead::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(FrontierThroughHomestead, identity_nonempty_enough_gas)
-{
-    monad::bytes32_t data = 0xdeadbeef_bytes32;
-    evmc_message input = {
-        .gas = 19,
-        .input_data = data.bytes,
-        .input_size = sizeof(monad::bytes32_t)};
-    auto const result = identity_frontier_through_homestead::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], data.bytes[i]);
-    }
-}
-
-TEST(FrontierThroughHomestead, identity_nonempty_insufficient_gas)
-{
-    monad::bytes32_t data = 0xdeadbeef_bytes32;
-    evmc_message input = {
-        .gas = 17,
-        .input_data = data.bytes,
-        .input_size = sizeof(monad::bytes32_t)};
-    auto const result = identity_frontier_through_homestead::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
+    do_basic_tests<identity_frontier_through_homestead>(
+        "identity", IDENTITY_TEST_CASES, std::size(IDENTITY_TEST_CASES));
 }
 
 using ecrecover_spurious_dragon_through_byzantium =
@@ -321,242 +284,28 @@ using bn_mul_spurious_dragon_through_byzantium =
 using bn_pairing_spurious_dragon_through_byzantium =
     mp_at_c<byzantium::static_precompiles_t, 7>;
 
-TEST(SpuriousDragonThroughByzantium, ecrecover_unrecoverable_key_enough_gas)
+TEST(SpuriousDragonThroughByzantium, ecrecover)
 {
-    evmc_message input = {
-        .gas = 6'000,
-        .input_data = ECRECOVER_UNRECOVERABLE_KEY_INPUT.data(),
-        .input_size = ECRECOVER_UNRECOVERABLE_KEY_INPUT.size()};
-
-    auto const result =
-        ecrecover_spurious_dragon_through_byzantium::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 3'000);
-    EXPECT_EQ(result.output_size, 0);
+    do_basic_tests<ecrecover_spurious_dragon_through_byzantium>(
+        "ecrecover", ECRECOVER_TEST_CASES, std::size(ECRECOVER_TEST_CASES));
 }
 
-TEST(
-    SpuriousDragonThroughByzantium,
-    ecrecover_unrecoverable_key_insufficient_gas)
+TEST(SpuriousDragonThroughByzantium, sha256)
 {
-    evmc_message input = {
-        .gas = 2'999,
-        .input_data = ECRECOVER_UNRECOVERABLE_KEY_INPUT.data(),
-        .input_size = ECRECOVER_UNRECOVERABLE_KEY_INPUT.size()};
-
-    auto const result =
-        ecrecover_spurious_dragon_through_byzantium::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(SpuriousDragonThroughByzantium, ecrecover_valid_key_enough_gas)
-{
-    evmc_message input = {
-        .gas = 6'000,
-        .input_data = ECRECOVER_VALID_KEY_INPUT.data(),
-        .input_size = ECRECOVER_VALID_KEY_INPUT.size()};
-
-    auto const result =
-        ecrecover_spurious_dragon_through_byzantium::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 3'000);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], ECRECOVER_VALID_KEY_OUTPUT[i]);
-    }
-}
-
-TEST(SpuriousDragonThroughByzantium, ecrecover_valid_key_insufficient_gas)
-{
-    evmc_message input = {
-        .gas = 2'999,
-        .input_data = ECRECOVER_VALID_KEY_INPUT.data(),
-        .input_size = ECRECOVER_VALID_KEY_INPUT.size()};
-
-    auto const result =
-        ecrecover_spurious_dragon_through_byzantium::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(SpuriousDragonThroughByzantium, sha256_empty_enough_gas)
-{
-    evmc_message input = {.gas = 100};
-    auto const result =
-        sha256_spurious_dragon_through_byzantium::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 40);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], SHA256_NULL_HASH[i]);
-    }
-}
-
-TEST(SpuriousDragonThroughByzantium, sha256_empty_insufficient_gas)
-{
-    evmc_message input = {.gas = 59};
-    auto const result =
-        sha256_spurious_dragon_through_byzantium::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(SpuriousDragonThroughByzantium, sha256_message_enough_gas)
-{
-    monad::byte_string_fixed<3> message = {'l', 'o', 'l'};
-    evmc_message input = {
-        .gas = 73, .input_data = message.data(), .input_size = message.size()};
-
-    auto const result =
-        sha256_spurious_dragon_through_byzantium::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], SHA256_LOL_HASH[i]);
-    }
-}
-
-TEST(SpuriousDragonThroughByzantium, sha256_message_insufficient_gas)
-{
-    monad::byte_string_fixed<3> message = {'l', 'o', 'l'};
-    evmc_message input = {
-        .gas = 71, .input_data = message.data(), .input_size = message.size()};
-
-    auto const result =
-        sha256_spurious_dragon_through_byzantium::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
+    do_basic_tests<sha256_spurious_dragon_through_byzantium>(
+        "sha256", SHA256_TEST_CASES, std::size(SHA256_TEST_CASES));
 }
 
 TEST(SpuriousDragonThroughByzantium, ripemd160_empty_enough_gas)
 {
-    evmc_message input = {.gas = 601};
-
-    auto const result =
-        ripemd160_spurious_dragon_through_byzantium::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], RIPEMD160_NULL_HASH[i]);
-    }
-}
-
-TEST(SpuriousDragonThroughByzantium, ripemd160_empty_insufficient_gas)
-{
-    evmc_message input = {.gas = 599};
-
-    auto const result =
-        ripemd160_spurious_dragon_through_byzantium::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], RIPEMD160_NULL_HASH[i]);
-    }
-}
-
-TEST(SpuriousDragonThroughByzantium, ripemd160_message_enough_gas)
-{
-    monad::byte_string_fixed<3> message = {'l', 'o', 'l'};
-    evmc_message input = {
-        .gas = 721, .input_data = message.data(), .input_size = message.size()};
-
-    auto const result =
-        ripemd160_spurious_dragon_through_byzantium::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], RIPEMD160_LOL_HASH[i]);
-    }
-}
-
-TEST(SpuriousDragonThroughByzantium, ripemd160_message_insufficient_gas)
-{
-    monad::byte_string_fixed<3> message = {'l', 'o', 'l'};
-    evmc_message input = {
-        .gas = 619, .input_data = message.data(), .input_size = message.size()};
-
-    auto const result =
-        ripemd160_spurious_dragon_through_byzantium::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
+    do_basic_tests<ripemd160_spurious_dragon_through_byzantium>(
+        "ripemd160", RIPEMD160_TEST_CASES, std::size(RIPEMD160_TEST_CASES));
 }
 
 TEST(SpuriousDragonThroughByzantium, identity_empty_enough_gas)
 {
-    evmc_message input = {.gas = 16};
-    auto const result =
-        identity_spurious_dragon_through_byzantium::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(SpuriousDragonThroughByzantium, identity_empty_insufficient_gas)
-{
-    evmc_message input = {.gas = 14};
-    auto const result =
-        identity_spurious_dragon_through_byzantium::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(SpuriousDragonThroughByzantium, identity_nonempty_enough_gas)
-{
-    monad::bytes32_t data = 0xdeadbeef_bytes32;
-    evmc_message input = {
-        .gas = 19,
-        .input_data = data.bytes,
-        .input_size = sizeof(monad::bytes32_t)};
-    auto const result =
-        identity_spurious_dragon_through_byzantium::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], data.bytes[i]);
-    }
-}
-
-TEST(SpuriousDragonThroughByzantium, identity_nonempty_insufficient_gas)
-{
-    monad::bytes32_t data = 0xdeadbeef_bytes32;
-    evmc_message input = {
-        .gas = 17,
-        .input_data = data.bytes,
-        .input_size = sizeof(monad::bytes32_t)};
-    auto const result =
-        identity_spurious_dragon_through_byzantium::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
+    do_basic_tests<identity_spurious_dragon_through_byzantium>(
+        "identity", IDENTITY_TEST_CASES, std::size(IDENTITY_TEST_CASES));
 }
 
 struct test_case
@@ -1096,224 +845,28 @@ static_assert(
             contracts::ModularExponentiation, contracts::BNAdd,
             contracts::BNMultiply, contracts::BNPairing, contracts::Blake2F>>);
 
-TEST(Istanbul, ecrecover_unrecoverable_key_enough_gas)
+TEST(Istanbul, ecrecover)
 {
-    evmc_message input = {
-        .gas = 6'000,
-        .input_data = ECRECOVER_UNRECOVERABLE_KEY_INPUT.data(),
-        .input_size = ECRECOVER_UNRECOVERABLE_KEY_INPUT.size()};
-
-    auto const result = ecrecover_istanbul::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 3'000);
-    EXPECT_EQ(result.output_size, 0);
+    do_basic_tests<ecrecover_istanbul>(
+        "ecrecover", ECRECOVER_TEST_CASES, std::size(ECRECOVER_TEST_CASES));
 }
 
-TEST(Istanbul, ecrecover_unrecoverable_key_insufficient_gas)
+TEST(Istanbul, sha256)
 {
-    evmc_message input = {
-        .gas = 2'999,
-        .input_data = ECRECOVER_UNRECOVERABLE_KEY_INPUT.data(),
-        .input_size = ECRECOVER_UNRECOVERABLE_KEY_INPUT.size()};
-
-    auto const result = ecrecover_istanbul::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
+    do_basic_tests<sha256_istanbul>(
+        "sha256", SHA256_TEST_CASES, std::size(SHA256_TEST_CASES));
 }
 
-TEST(Istanbul, ecrecover_valid_key_enough_gas)
+TEST(Istanbul, ripemd160)
 {
-    evmc_message input = {
-        .gas = 6'000,
-        .input_data = ECRECOVER_VALID_KEY_INPUT.data(),
-        .input_size = ECRECOVER_VALID_KEY_INPUT.size()};
-
-    auto const result = ecrecover_istanbul::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 3'000);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], ECRECOVER_VALID_KEY_OUTPUT[i]);
-    }
+    do_basic_tests<ripemd160_istanbul>(
+        "ripemd160", RIPEMD160_TEST_CASES, std::size(RIPEMD160_TEST_CASES));
 }
 
-TEST(Istanbul, ecrecover_valid_key_insufficient_gas)
+TEST(Istanbul, identity)
 {
-    evmc_message input = {
-        .gas = 2'999,
-        .input_data = ECRECOVER_VALID_KEY_INPUT.data(),
-        .input_size = ECRECOVER_VALID_KEY_INPUT.size()};
-
-    auto const result = ecrecover_istanbul::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(Istanbul, sha256_empty_enough_gas)
-{
-    evmc_message input = {.gas = 100};
-    auto const result = sha256_istanbul::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 40);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], SHA256_NULL_HASH[i]);
-    }
-}
-
-TEST(Istanbul, sha256_empty_insufficient_gas)
-{
-    evmc_message input = {.gas = 59};
-    auto const result = sha256_istanbul::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(Istanbul, sha256_message_enough_gas)
-{
-    monad::byte_string_fixed<3> message = {'l', 'o', 'l'};
-    evmc_message input = {
-        .gas = 73, .input_data = message.data(), .input_size = message.size()};
-
-    auto const result = sha256_istanbul::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], SHA256_LOL_HASH[i]);
-    }
-}
-
-TEST(Istanbul, sha256_message_insufficient_gas)
-{
-    monad::byte_string_fixed<3> message = {'l', 'o', 'l'};
-    evmc_message input = {
-        .gas = 71, .input_data = message.data(), .input_size = message.size()};
-
-    auto const result = sha256_istanbul::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(Istanbul, ripemd160_empty_enough_gas)
-{
-    evmc_message input = {.gas = 601};
-
-    auto const result = ripemd160_istanbul::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], RIPEMD160_NULL_HASH[i]);
-    }
-}
-
-TEST(Istanbul, ripemd160_empty_insufficient_gas)
-{
-    evmc_message input = {.gas = 599};
-
-    auto const result = ripemd160_istanbul::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], RIPEMD160_NULL_HASH[i]);
-    }
-}
-
-TEST(Istanbul, ripemd160_message_enough_gas)
-{
-    monad::byte_string_fixed<3> message = {'l', 'o', 'l'};
-    evmc_message input = {
-        .gas = 721, .input_data = message.data(), .input_size = message.size()};
-
-    auto const result = ripemd160_istanbul::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], RIPEMD160_LOL_HASH[i]);
-    }
-}
-
-TEST(Istanbul, ripemd160_message_insufficient_gas)
-{
-    monad::byte_string_fixed<3> message = {'l', 'o', 'l'};
-    evmc_message input = {
-        .gas = 619, .input_data = message.data(), .input_size = message.size()};
-
-    auto const result = ripemd160_istanbul::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(Istanbul, identity_empty_enough_gas)
-{
-    evmc_message input = {.gas = 16};
-    auto const result = identity_istanbul::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(Istanbul, identity_empty_insufficient_gas)
-{
-    evmc_message input = {.gas = 14};
-    auto const result = identity_istanbul::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(Istanbul, identity_nonempty_enough_gas)
-{
-    monad::bytes32_t data = 0xdeadbeef_bytes32;
-    evmc_message input = {
-        .gas = 19,
-        .input_data = data.bytes,
-        .input_size = sizeof(monad::bytes32_t)};
-    auto const result = identity_istanbul::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], data.bytes[i]);
-    }
-}
-
-TEST(Istanbul, identity_nonempty_insufficient_gas)
-{
-    monad::bytes32_t data = 0xdeadbeef_bytes32;
-    evmc_message input = {
-        .gas = 17,
-        .input_data = data.bytes,
-        .input_size = sizeof(monad::bytes32_t)};
-    auto const result = identity_istanbul::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
+    do_basic_tests<identity_istanbul>(
+        "identity", IDENTITY_TEST_CASES, std::size(IDENTITY_TEST_CASES));
 }
 
 TEST(Istanbul, modular_exponentiation)
@@ -1758,224 +1311,28 @@ using bn_pairing_berlin = mp_at_c<berlin::static_precompiles_t, 7>;
 
 using blake2f_berlin = mp_at_c<berlin::static_precompiles_t, 8>;
 
-TEST(Berlin, ecrecover_unrecoverable_key_enough_gas)
+TEST(Berlin, ecrecover)
 {
-    evmc_message input = {
-        .gas = 6'000,
-        .input_data = ECRECOVER_UNRECOVERABLE_KEY_INPUT.data(),
-        .input_size = ECRECOVER_UNRECOVERABLE_KEY_INPUT.size()};
-
-    auto const result = ecrecover_berlin::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 3'000);
-    EXPECT_EQ(result.output_size, 0);
+    do_basic_tests<ecrecover_berlin>(
+        "ecrecover", ECRECOVER_TEST_CASES, std::size(ECRECOVER_TEST_CASES));
 }
 
-TEST(Berlin, ecrecover_unrecoverable_key_insufficient_gas)
+TEST(Berlin, sha256)
 {
-    evmc_message input = {
-        .gas = 2'999,
-        .input_data = ECRECOVER_UNRECOVERABLE_KEY_INPUT.data(),
-        .input_size = ECRECOVER_UNRECOVERABLE_KEY_INPUT.size()};
-
-    auto const result = ecrecover_berlin::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
+    do_basic_tests<sha256_berlin>(
+        "sha256", SHA256_TEST_CASES, std::size(SHA256_TEST_CASES));
 }
 
-TEST(Berlin, ecrecover_valid_key_enough_gas)
+TEST(Berlin, ripemd160)
 {
-    evmc_message input = {
-        .gas = 6'000,
-        .input_data = ECRECOVER_VALID_KEY_INPUT.data(),
-        .input_size = ECRECOVER_VALID_KEY_INPUT.size()};
-
-    auto const result = ecrecover_berlin::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 3'000);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], ECRECOVER_VALID_KEY_OUTPUT[i]);
-    }
+    do_basic_tests<ripemd160_berlin>(
+        "ripemd160", RIPEMD160_TEST_CASES, std::size(RIPEMD160_TEST_CASES));
 }
 
-TEST(Berlin, ecrecover_valid_key_insufficient_gas)
+TEST(Berlin, identity)
 {
-    evmc_message input = {
-        .gas = 2'999,
-        .input_data = ECRECOVER_VALID_KEY_INPUT.data(),
-        .input_size = ECRECOVER_VALID_KEY_INPUT.size()};
-
-    auto const result = ecrecover_berlin::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(Berlin, sha256_empty_enough_gas)
-{
-    evmc_message input = {.gas = 100};
-    auto const result = sha256_berlin::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 40);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], SHA256_NULL_HASH[i]);
-    }
-}
-
-TEST(Berlin, sha256_empty_insufficient_gas)
-{
-    evmc_message input = {.gas = 59};
-    auto const result = sha256_berlin::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(Berlin, sha256_message_enough_gas)
-{
-    monad::byte_string_fixed<3> message = {'l', 'o', 'l'};
-    evmc_message input = {
-        .gas = 73, .input_data = message.data(), .input_size = message.size()};
-
-    auto const result = sha256_berlin::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], SHA256_LOL_HASH[i]);
-    }
-}
-
-TEST(Berlin, sha256_message_insufficient_gas)
-{
-    monad::byte_string_fixed<3> message = {'l', 'o', 'l'};
-    evmc_message input = {
-        .gas = 71, .input_data = message.data(), .input_size = message.size()};
-
-    auto const result = sha256_berlin::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(Berlin, ripemd160_empty_enough_gas)
-{
-    evmc_message input = {.gas = 601};
-
-    auto const result = ripemd160_berlin::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], RIPEMD160_NULL_HASH[i]);
-    }
-}
-
-TEST(Berlin, ripemd160_empty_insufficient_gas)
-{
-    evmc_message input = {.gas = 599};
-
-    auto const result = ripemd160_berlin::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], RIPEMD160_NULL_HASH[i]);
-    }
-}
-
-TEST(Berlin, ripemd160_message_enough_gas)
-{
-    monad::byte_string_fixed<3> message = {'l', 'o', 'l'};
-    evmc_message input = {
-        .gas = 721, .input_data = message.data(), .input_size = message.size()};
-
-    auto const result = ripemd160_berlin::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], RIPEMD160_LOL_HASH[i]);
-    }
-}
-
-TEST(Berlin, ripemd160_message_insufficient_gas)
-{
-    monad::byte_string_fixed<3> message = {'l', 'o', 'l'};
-    evmc_message input = {
-        .gas = 619, .input_data = message.data(), .input_size = message.size()};
-
-    auto const result = ripemd160_berlin::execute(input);
-
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(Berlin, identity_empty_enough_gas)
-{
-    evmc_message input = {.gas = 16};
-    auto const result = identity_berlin::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(Berlin, identity_empty_insufficient_gas)
-{
-    evmc_message input = {.gas = 14};
-    auto const result = identity_berlin::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
-}
-
-TEST(Berlin, identity_nonempty_enough_gas)
-{
-    monad::bytes32_t data = 0xdeadbeef_bytes32;
-    evmc_message input = {
-        .gas = 19,
-        .input_data = data.bytes,
-        .input_size = sizeof(monad::bytes32_t)};
-    auto const result = identity_berlin::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 1);
-    EXPECT_EQ(result.output_size, 32);
-
-    for (size_t i = 0; i < result.output_size; i++) {
-        EXPECT_EQ(result.output_data[i], data.bytes[i]);
-    }
-}
-
-TEST(Berlin, identity_nonempty_insufficient_gas)
-{
-    monad::bytes32_t data = 0xdeadbeef_bytes32;
-    evmc_message input = {
-        .gas = 17,
-        .input_data = data.bytes,
-        .input_size = sizeof(monad::bytes32_t)};
-    auto const result = identity_berlin::execute(input);
-    EXPECT_EQ(result.status_code, evmc_status_code::EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.output_size, 0);
+    do_basic_tests<identity_berlin>(
+        "identity", IDENTITY_TEST_CASES, std::size(IDENTITY_TEST_CASES));
 }
 
 // clang-format off

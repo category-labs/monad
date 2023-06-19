@@ -310,6 +310,15 @@ namespace fork_traits
         static constexpr evmc_revision rev = EVMC_ISTANBUL;
         static constexpr auto last_block_number = 12'243'999u;
 
+        // YP Appendix E Eq 279
+        using bn_add_gas_t = gas_required<150, 0>;
+        // YP Appendix E Eq 285
+        using bn_mul_gas_t = gas_required<6'000, 0>;
+
+        // YP Appendix E Eq 270
+        static constexpr int64_t bn_pairing_base_gas = 45'000;
+        static constexpr int64_t bn_pairing_per_point_gas = 34'000;
+
         template <typename TList>
         using switch_fork_t = boost::mp11::mp_replace_front<TList, istanbul>;
 

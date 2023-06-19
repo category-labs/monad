@@ -9,11 +9,8 @@ jobs:
   build:
     strategy:
       matrix:
-        include:
-          - CC: clang
-            CXX: clang++
-          - CC: gcc
-            CXX: g++
+        CMAKE_BUILD_TYPE: [RelWithDebInfo, Debug]
+        compiler: [ {CXX: g++, CC: gcc}, {CXX: clang++, CC: clang} ]
 
     runs-on: ubuntu-latest
 
@@ -31,4 +28,4 @@ jobs:
           submodules: recursive
           token: ${{ steps.generate_token.outputs.token }}
 
-      - run: docker build --build-arg CC=${{ matrix.CC }} --build-arg CXX=${{ matrix.CXX }} --file docker/Dockerfile .
+      - run: docker build --build-arg CC=${{ matrix.compiler.CC }} --build-arg CXX=${{ matrix.compiler.CXX }} --build-arg CMAKE_BUILD_TYPE=${{ matrix.CMAKE_BUILD_TYPE }} --file docker/Dockerfile .

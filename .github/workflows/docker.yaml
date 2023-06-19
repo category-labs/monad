@@ -7,6 +7,14 @@ on:
 
 jobs:
   build:
+    strategy:
+      matrix:
+        include:
+          - CC: clang
+            CXX: clang++
+          - CC: gcc
+            CXX: g++
+
     runs-on: ubuntu-latest
 
     steps:
@@ -23,4 +31,4 @@ jobs:
           submodules: recursive
           token: ${{ steps.generate_token.outputs.token }}
 
-      - run: docker build --file docker/Dockerfile .
+      - run: docker build --build-arg CC=${{ matrix.CC }} --build-arg CXX=${{ matrix.CXX }} --file docker/Dockerfile .

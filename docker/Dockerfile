@@ -39,6 +39,9 @@ RUN pip install -U conan==1.*
 
 COPY . monad
 
-RUN cd monad && ls -al && ./scripts/configure.sh
+ARG CC
+ARG CXX
 
-RUN cd monad && ./scripts/build.sh
+RUN cd monad && CC=${CC} CXX=${CXX} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ./monad-core/scripts/configure.sh
+
+RUN cd monad && ./monad-core/scripts/build.sh

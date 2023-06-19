@@ -69,17 +69,11 @@ struct ValueStore
         return false;
     }
 
-    bool
-    db_contains_key(address_t const &a, bytes32_t const &key) const noexcept
-    {
-        return db_.contains(a, key);
-    }
-
     bool db_or_merged_contains_key(
         address_t const &a, bytes32_t const &key) const noexcept
     {
         return (!merged_.deleted_contains_key(a, key)) &&
-               (merged_.contains_key(a, key) || db_contains_key(a, key));
+               (merged_.contains_key(a, key) || db_.contains(a, key));
     }
 
     [[nodiscard]] bytes32_t
@@ -91,22 +85,15 @@ struct ValueStore
         if (merged_.contains_key(a, key)) {
             return merged_.storage_.at(a).at(key).updated;
         }
-        if (db_contains_key(a, key)) {
-            return db_.at(a, key);
-        }
-        return {};
+        return db_.query(a, key).value_or(bytes32_t{});
     }
 
+    // Note: just for debug testing
     bool can_commit() const noexcept
     {
         for (auto const &[a, key_set] : merged_.deleted_storage_) {
             for (auto const &[orig, key] : key_set) {
-                if (db_contains_key(a, key)) {
-                    if (db_.at(a, key) != orig) {
-                        return false;
-                    }
-                }
-                else if (orig != bytes32_t{}) {
+                if (db_.query(a, key).value_or(bytes32_t{}) != orig) {
                     return false;
                 }
             }
@@ -171,15 +158,17 @@ struct ValueStore
 
     void merge_touched(WorkingCopy &diffs)
     {
+        MONAD_DEBUG_ASSERT(can_merge(diffs));
+
         for (auto &[a, key_set] : diffs.touched_.deleted_storage_) {
             for (auto const &key : key_set) {
                 if (remove_merged_key_if_present(a, key.key)) {
-                    if (db_contains_key(a, key.key)) {
+                    if (db_.contains(a, key.key)) {
                         merged_.deleted_storage_[a].insert(
                             {key, {db_.at(a, key.key), key.key}});
                     }
                 }
-                else if (db_contains_key(a, key.key)) {
+                else if (db_.contains(a, key.key)) {
                     merged_.deleted_storage_[a].insert(key);
                 }
             }
@@ -229,11 +218,11 @@ struct ValueStore<TValueDB>::WorkingCopy : public ValueStore<TValueDB>
     [[nodiscard]] evmc_storage_status
     zero_out_key(address_t const &a, bytes32_t const &key) noexcept
     {
+        auto const merged_value = get_merged_value(a, key);
         // Assume empty (zero) storage is not stored in storage_
-        if (db_or_merged_contains_key(a, key)) {
+        if (merged_value != bytes32_t{}) {
             if (touched_.contains_key(a, key)) {
-                if (get_merged_value(a, key) ==
-                    touched_.storage_.at(a).at(key)) {
+                if (merged_value == touched_.storage_.at(a).at(key)) {
                     remove_touched_key(a, key);
                     return EVMC_STORAGE_DELETED;
                 }
@@ -246,7 +235,7 @@ struct ValueStore<TValueDB>::WorkingCopy : public ValueStore<TValueDB>
             }
             else {
                 touched_.deleted_storage_[a].insert(
-                    deleted_key{get_merged_value(a, key), key});
+                    deleted_key{merged_value, key});
                 return EVMC_STORAGE_DELETED;
             }
         }
@@ -262,13 +251,14 @@ struct ValueStore<TValueDB>::WorkingCopy : public ValueStore<TValueDB>
         address_t const &a, bytes32_t const &key,
         bytes32_t const &value) noexcept
     {
-        if (db_or_merged_contains_key(a, key)) {
+        auto const merged_value = get_merged_value(a, key);
+        if (merged_value != bytes32_t{}) {
             if (touched_.contains_key(a, key)) {
                 if (touched_.storage_[a][key].updated == value) {
                     return EVMC_STORAGE_ASSIGNED;
                 }
 
-                if (get_merged_value(a, key) == value) {
+                if (merged_value == value) {
                     remove_touched_key(a, key);
                     return EVMC_STORAGE_MODIFIED_RESTORED;
                 }
@@ -277,19 +267,18 @@ struct ValueStore<TValueDB>::WorkingCopy : public ValueStore<TValueDB>
                 return EVMC_STORAGE_MODIFIED;
             }
 
-            touched_.storage_[a].emplace(
-                key, diff_t{get_merged_value(a, key), value});
+            touched_.storage_[a].emplace(key, diff_t{merged_value, value});
 
             if (touched_.deleted_contains_key(a, key)) {
                 touched_.deleted_storage_.at(a).erase(deleted_key{key});
 
-                if (get_merged_value(a, key) == value) {
+                if (merged_value == value) {
                     return EVMC_STORAGE_DELETED_RESTORED;
                 }
                 return EVMC_STORAGE_DELETED_ADDED;
             }
 
-            if (get_merged_value(a, key) == value) {
+            if (merged_value == value) {
                 return EVMC_STORAGE_ASSIGNED;
             }
             return EVMC_STORAGE_MODIFIED;

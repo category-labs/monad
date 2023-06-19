@@ -31,31 +31,13 @@ struct AccountStore
     {
     }
 
-    [[nodiscard]] bool
-    committed_storage_contains(address_t const &a) const noexcept
-    {
-        if (merged_.contains(a)) {
-            if (merged_.at(a).updated.has_value()) {
-                return true;
-            }
-            return false;
-        }
-        if (db_.contains(a)) {
-            return true;
-        }
-        return false;
-    }
-
     [[nodiscard]] std::optional<Account>
     get_committed_storage(address_t const &a) const
     {
         if (merged_.contains(a)) {
             return merged_.at(a).updated;
         }
-        if (db_.contains(a)) {
-            return {db_.at(a)};
-        }
-        return std::nullopt;
+        return db_.query(a);
     }
 
     // EVMC Host Interface

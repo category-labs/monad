@@ -1736,3 +1736,12 @@ TEST(Istanbul, blake2f_invalid)
         BLAKE2F_INVALID_ISTANBUL_TEST_CASES,
         std::size(BLAKE2F_INVALID_ISTANBUL_TEST_CASES));
 }
+
+static_assert(
+    std::is_same_v<
+        berlin::static_precompiles_t,
+        type_list_t<
+            berlin, contracts::EllipticCurveRecover, contracts::Sha256Hash,
+            contracts::Ripemd160Hash, contracts::Identity,
+            contracts::ModularExponentiation, contracts::BNAdd,
+            contracts::BNMultiply, contracts::BNPairing, contracts::Blake2F>>);

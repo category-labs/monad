@@ -310,11 +310,13 @@ namespace fork_traits
         static constexpr evmc_revision rev = EVMC_ISTANBUL;
         static constexpr auto last_block_number = 12'243'999u;
 
-        using static_precompiles_t = type_list_t<
-            istanbul, contracts::EllipticCurveRecover, contracts::Sha256Hash,
-            contracts::Ripemd160Hash, contracts::Identity,
-            contracts::ModularExponentiation, contracts::BNAdd,
-            contracts::BNMultiply, contracts::BNPairing, contracts::Blake2F>;
+        template <typename TList>
+        using switch_fork_t = boost::mp11::mp_replace_front<TList, istanbul>;
+
+        using static_precompiles_t = boost::mp11::mp_append<
+            boost::mp11::mp_transform<
+                switch_fork_t, byzantium::static_precompiles_t>,
+            type_list_t<istanbul, contracts::Blake2F>>;
         static_assert(boost::mp11::mp_size<static_precompiles_t>() == 9);
 
         // https://eips.ethereum.org/EIPS/eip-2028

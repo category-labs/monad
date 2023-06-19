@@ -1066,3 +1066,25 @@ static_assert(
             contracts::Ripemd160Hash, contracts::Identity,
             contracts::ModularExponentiation, contracts::BNAdd,
             contracts::BNMultiply, contracts::BNPairing>>);
+
+using ecrecover_istanbul = mp_at_c<istanbul::static_precompiles_t, 0>;
+using sha256_istanbul = mp_at_c<istanbul::static_precompiles_t, 1>;
+using ripemd160_istanbul = mp_at_c<istanbul::static_precompiles_t, 2>;
+using identity_istanbul = mp_at_c<istanbul::static_precompiles_t, 3>;
+
+using modular_exponentiation_istanbul =
+    mp_at_c<istanbul::static_precompiles_t, 4>;
+using bn_add_istanbul = mp_at_c<istanbul::static_precompiles_t, 5>;
+using bn_mul_istanbul = mp_at_c<istanbul::static_precompiles_t, 6>;
+using bn_pairing_istanbul = mp_at_c<istanbul::static_precompiles_t, 7>;
+
+using blake2f_istanbul = mp_at_c<istanbul::static_precompiles_t, 8>;
+
+static_assert(
+    std::is_same_v<
+        istanbul::static_precompiles_t,
+        type_list_t<
+            istanbul, contracts::EllipticCurveRecover, contracts::Sha256Hash,
+            contracts::Ripemd160Hash, contracts::Identity,
+            contracts::ModularExponentiation, contracts::BNAdd,
+            contracts::BNMultiply, contracts::BNPairing, contracts::Blake2F>>);

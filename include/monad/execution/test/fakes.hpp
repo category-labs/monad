@@ -82,7 +82,8 @@ namespace fake
             return {_code.at(a)};
         }
 
-        [[nodiscard]] bool selfdestruct(address_t const &, address_t const &) noexcept
+        [[nodiscard]] bool
+        selfdestruct(address_t const &, address_t const &) noexcept
         {
             return true;
         }
@@ -176,16 +177,16 @@ namespace fake
             return _e_result;
         }
 
-        template <class TEvmHost>
+        template <class TState, class TEvmHost>
         [[nodiscard]] evmc::Result
-        call_evm(TEvmHost *, evmc_message const &) noexcept
+        call_evm(TEvmHost *, TState &, evmc_message const &) noexcept
         {
             return evmc::Result{_e_result};
         }
 
-        template <class TEvmHost>
-        [[nodiscard]] evmc::Result
-        create_contract_account(TEvmHost *, evmc_message const &) noexcept
+        template <class TState, class TEvmHost>
+        [[nodiscard]] evmc::Result create_contract_account(
+            TEvmHost *, TState &, evmc_message const &) noexcept
         {
             return evmc::Result{_e_result};
         }
@@ -203,8 +204,7 @@ namespace fake
         static inline evmc::Result _result{};
 
         template <class TEvmHost, class TState>
-        static evmc::Result
-        execute(TEvmHost *, TState &, evmc_message const &)
+        static evmc::Result execute(TEvmHost *, TState &, evmc_message const &)
         {
             return std::move(_result);
         }

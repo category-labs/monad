@@ -121,10 +121,10 @@ struct EvmcHost : public evmc::HostInterface
     call(evmc_message const &m) noexcept override
     {
         if (m.kind == EVMC_CREATE || m.kind == EVMC_CREATE2) {
-            return evm_.create_contract_account(this, m);
+            return evm_.create_contract_account(this, state_, m);
         }
 
-        return evm_.call_evm(this, m);
+        return evm_.call_evm(this, state_, m);
     }
 
     virtual evmc_tx_context get_tx_context() const noexcept override

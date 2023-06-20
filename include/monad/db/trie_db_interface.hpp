@@ -177,7 +177,7 @@ struct TrieDBInterface
 
             MONAD_LOG_INFO(
                 logger,
-                "{} storage updates for {}: {}",
+                "STORAGE_UPDATES({}) account={} {}",
                 storage_trie_updates.size(),
                 u.first,
                 storage_trie_updates);
@@ -227,7 +227,7 @@ struct TrieDBInterface
                 account_trie_updates, std::less<>{}, trie::get_update_key);
             MONAD_LOG_INFO(
                 logger,
-                "{} account updates: {}",
+                "ACCOUNT_UPDATES({}) {}",
                 account_trie_updates.size(),
                 account_trie_updates);
 

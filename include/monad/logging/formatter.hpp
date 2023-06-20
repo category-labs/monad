@@ -236,12 +236,11 @@ namespace fmt
         template <typename FormatContext>
         auto format(monad::trie::Nibbles const &n, FormatContext &ctx) const
         {
-            fmt::format_to(ctx.out(), "Nibbles{{0x");
+            fmt::format_to(ctx.out(), "0x");
             for (uint8_t i = 0; i < n.size(); ++i) {
                 MONAD_DEBUG_ASSERT(n[i] <= 0xf);
                 fmt::format_to(ctx.out(), "{:01x}", n[i]);
             }
-            fmt::format_to(ctx.out(), "}}");
             return ctx.out();
         }
     };
@@ -254,7 +253,7 @@ namespace fmt
         {
             fmt::format_to(
                 ctx.out(),
-                "Upsert{{{} 0x{:02x}}}",
+                "UPSERT{{key={} value=0x{:02x}}}",
                 u.key,
                 fmt::join(std::as_bytes(std::span{u.value}), ""));
             return ctx.out();
@@ -267,7 +266,7 @@ namespace fmt
         template <typename FormatContext>
         auto format(monad::trie::Delete const &d, FormatContext &ctx) const
         {
-            fmt::format_to(ctx.out(), "Delete{{{}}}", d.key);
+            fmt::format_to(ctx.out(), "DELETE{{key={}}}", d.key);
             return ctx.out();
         }
     };

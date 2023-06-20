@@ -1,0 +1,1 @@
+add_subdirectory(evm_state_host)

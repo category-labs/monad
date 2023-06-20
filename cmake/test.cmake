@@ -26,8 +26,21 @@ function(add_unit_test)
     endif()
 
     target_link_libraries(
-        ${ADD_UNIT_TEST_TARGET} GTest::GTest monad_unit_test_common
-        ${ADD_UNIT_TEST_LIBRARIES}
+        ${ADD_UNIT_TEST_TARGET} PUBLIC GTest::GTest monad_unit_test_common
+                                       ${ADD_UNIT_TEST_LIBRARIES}
     )
     gtest_discover_tests(${ADD_UNIT_TEST_TARGET})
+endfunction()
+
+function(add_integration_test)
+    set(ONE_VALUE_ARGS TARGET)
+    cmake_parse_arguments(ADD_INT_TEST "" "${ONE_VALUE_ARGS}" "" ${ARGN})
+
+    add_unit_test(${ADD_INT_TEST_TARGET} ${ARGN})
+    target_link_libraries(${ADD_INT_TEST_TARGET} PUBLIC monad)
+
+    if(NOT TARGET integration_tests)
+        add_custom_target(integration_tests)
+    endif()
+    add_dependencies(integration_tests ${ADD_INT_TEST_TARGET})
 endfunction()

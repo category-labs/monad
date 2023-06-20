@@ -85,6 +85,8 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/trie/test)
 
+add_subdirectory(${PROJECT_SOURCE_DIR}/test/integration)
+
 # ##############################################################################
 # fuzz tests
 # ##############################################################################

@@ -46,7 +46,7 @@ struct CodeStore
     [[nodiscard]] bool can_merge(WorkingCopy const &w) const
     {
         return std::ranges::none_of(w.code_, [&](auto const &a) {
-           return merged_.contains(a.first) || db_.contains(a.first);
+            return merged_.contains(a.first) || db_.contains(a.first);
         });
     }
 
@@ -88,7 +88,8 @@ struct CodeStore<TCodeDB>::WorkingCopy : public CodeStore<TCodeDB>
     {
     }
 
-    [[nodiscard]] byte_string_view const code_at(address_t const &a) const noexcept
+    [[nodiscard]] byte_string_view const
+    code_at(address_t const &a) const noexcept
     {
         if (code_.contains(a))
             return {code_.at(a)};
@@ -112,7 +113,8 @@ struct CodeStore<TCodeDB>::WorkingCopy : public CodeStore<TCodeDB>
 
     // EVMC Host Interface
     [[nodiscard]] size_t copy_code(
-        address_t const &a, size_t offset, uint8_t *buffer, size_t buffer_size)
+        address_t const &a, size_t offset, uint8_t *buffer,
+        size_t buffer_size) const
     {
         auto const code = code_at(a);
         assert(code.size() > offset);

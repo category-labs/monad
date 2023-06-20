@@ -17,7 +17,10 @@ template <class TState>
 struct EmptyFiberData
 {
     Receipt _result{};
-    EmptyFiberData(TState &, Transaction const &, BlockHeader const &, int) {}
+    EmptyFiberData(
+        TState &, Transaction const &, BlockHeader const &, unsigned int)
+    {
+    }
     Receipt get_receipt() { return _result; }
     inline void operator()() {}
 };
@@ -26,7 +29,10 @@ template <class TState>
 struct FailedFiberData
 {
     Receipt _result{.status = 1u};
-    FailedFiberData(TState &, Transaction const &, BlockHeader const &, int) {}
+    FailedFiberData(
+        TState &, Transaction const &, BlockHeader const &, unsigned int)
+    {
+    }
     Receipt get_receipt() { return _result; }
     inline void operator()() { boost::this_fiber::yield(); }
 };

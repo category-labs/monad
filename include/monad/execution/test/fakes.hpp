@@ -25,13 +25,20 @@ namespace fake
 {
     struct State
     {
+        enum class MergeStatus
+        {
+            WILL_SUCCEED,
+            TRY_LATER,
+            COLLISION_DETECTED,
+        };
+
         std::unordered_map<address_t, Account> _map{};
         std::unordered_map<address_t, byte_string> _code{};
         uint64_t _selfdestructs{};
         uint64_t _touched_dead{};
         uint64_t _suicides{};
-        int _current_txn{};
-        bool _applied_state{};
+        unsigned int _current_txn{};
+        MergeStatus _merge_status{MergeStatus::TRY_LATER};
         std::vector<Receipt::Log> _logs{};
 
         [[nodiscard]] bool account_exists(address_t const &a)
@@ -128,11 +135,13 @@ namespace fake
 
         std::vector<Receipt::Log> &logs() { return _logs; }
 
-        inline bool apply_state(State const &) { return _applied_state; }
+        MergeStatus can_merge_changes(State const &) { return _merge_status; }
 
-        inline int current_txn() { return _current_txn; }
+        void merge_changes(State &) { return; }
 
-        inline State get_copy() { return State(*this); }
+        unsigned int current_txn() { return _current_txn; }
+
+        State get_working_copy(unsigned int) { return State(*this); }
     };
 
     struct EvmHost

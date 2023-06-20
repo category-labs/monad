@@ -68,7 +68,9 @@ TEST(
     TransactionProcessorFiberData,
     validation_insufficient_balance_current_txn_id)
 {
-    fake::State s{._current_txn = 10, ._applied_state = true};
+    fake::State s{
+        ._current_txn = 10,
+        ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
     static Transaction const t{.gas_limit = 15'000};
     fake_status = TestStatus::INSUFFICIENT_BALANCE;
@@ -84,7 +86,9 @@ TEST(
 
 TEST(TransactionProcessorFiberData, validation_insufficient_balance_optimistic)
 {
-    fake::State s{._current_txn = 1, ._applied_state = true};
+    fake::State s{
+        ._current_txn = 1,
+        ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
     static Transaction const t{.gas_limit = 15'000};
     fake_status = TestStatus::INSUFFICIENT_BALANCE;
@@ -100,7 +104,9 @@ TEST(TransactionProcessorFiberData, validation_insufficient_balance_optimistic)
 
 TEST(TransactionProcessorFiberData, validation_later_nonce_current_txn_id)
 {
-    fake::State s{._current_txn = 10, ._applied_state = true};
+    fake::State s{
+        ._current_txn = 10,
+        ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
     static Transaction const t{};
     fake_status = TestStatus::LATER_NONCE;
@@ -116,7 +122,9 @@ TEST(TransactionProcessorFiberData, validation_later_nonce_current_txn_id)
 
 TEST(TransactionProcessorFiberData, validation_later_nonce_optimistic)
 {
-    fake::State s{._current_txn = 1, ._applied_state = true};
+    fake::State s{
+        ._current_txn = 1,
+        ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
     static Transaction const t{};
     fake_status = TestStatus::LATER_NONCE;
@@ -131,7 +139,9 @@ TEST(TransactionProcessorFiberData, validation_later_nonce_optimistic)
 
 TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_current_txn_id)
 {
-    fake::State s{._current_txn = 10, ._applied_state = true};
+    fake::State s{
+        ._current_txn = 10,
+        ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
     static Transaction const t{.gas_limit = 15'000};
     fake_status = TestStatus::INVALID_GAS_LIMIT;
@@ -147,7 +157,9 @@ TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_current_txn_id)
 
 TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_optimistic)
 {
-    fake::State s{._current_txn = 1, ._applied_state = true};
+    fake::State s{
+        ._current_txn = 1,
+        ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
     static Transaction const t{.gas_limit = 15'000};
     fake_status = TestStatus::INVALID_GAS_LIMIT;
@@ -163,7 +175,9 @@ TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_optimistic)
 
 TEST(TransactionProcessorFiberData, validation_bad_nonce_current_txn_id)
 {
-    fake::State s{._current_txn = 10, ._applied_state = true};
+    fake::State s{
+        ._current_txn = 10,
+        ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
     static Transaction const t{.gas_limit = 15'000};
     fake_status = TestStatus::BAD_NONCE;
@@ -179,7 +193,9 @@ TEST(TransactionProcessorFiberData, validation_bad_nonce_current_txn_id)
 
 TEST(TransactionProcessorFiberData, validation_bad_nonce_optimistic)
 {
-    fake::State s{._current_txn = 1, ._applied_state = true};
+    fake::State s{
+        ._current_txn = 1,
+        ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
     static Transaction const t{.gas_limit = 15'000};
     fake_status = TestStatus::BAD_NONCE;
@@ -195,7 +211,9 @@ TEST(TransactionProcessorFiberData, validation_bad_nonce_optimistic)
 
 TEST(TransactionProcessorFiberData, validation_deployed_code_current_txn_id)
 {
-    fake::State s{._current_txn = 10, ._applied_state = true};
+    fake::State s{
+        ._current_txn = 10,
+        ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
     static Transaction const t{.gas_limit = 15'000};
     fake_status = TestStatus::DEPLOYED_CODE;
@@ -211,7 +229,9 @@ TEST(TransactionProcessorFiberData, validation_deployed_code_current_txn_id)
 
 TEST(TransactionProcessorFiberData, validation_deployed_code_optimistic)
 {
-    fake::State s{._current_txn = 1, ._applied_state = true};
+    fake::State s{
+        ._current_txn = 1,
+        ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
     static Transaction const t{.gas_limit = 15'000};
     fake_status = TestStatus::DEPLOYED_CODE;

@@ -34,7 +34,7 @@ struct AllTxnBlockProcessor
         data.reserve(b.transactions.size());
         fibers.reserve(b.transactions.size());
 
-        int i = 0;
+        unsigned int i = 0;
         for (auto const &txn : b.transactions) {
             data.push_back({s, txn, b.header, i});
             fibers.emplace_back(data.back());

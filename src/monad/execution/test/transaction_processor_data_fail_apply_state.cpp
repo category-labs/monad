@@ -49,7 +49,7 @@ struct fakeApplyStateAfterYieldEM
     using fiber_t = boost::fibers::fiber;
     static inline void yield()
     {
-        global_state._applied_state = true;
+        global_state._merge_status = fake::State::MergeStatus::WILL_SUCCEED;
         boost::this_fiber::yield();
     }
 };
@@ -58,7 +58,7 @@ TEST(TransactionProcessorFiberData, fail_apply_state_first_time)
 {
     static BlockHeader const b{};
     static Transaction const t{};
-    global_state._applied_state = false;
+    global_state._merge_status = fake::State::MergeStatus::COLLISION_DETECTED;
 
     data_t<fakeEmptyTP<state_t, traits_t>, fakeApplyStateAfterYieldEM> d{
         global_state, t, b, 0};

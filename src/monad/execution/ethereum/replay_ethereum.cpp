@@ -7,6 +7,9 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/replay_block_db.hpp>
 #include <monad/execution/static_precompiles.hpp>
+#include <monad/execution/transaction_processor.hpp>
+#include <monad/execution/transaction_processor_data.hpp>
+
 #include <monad/execution/test/fakes.hpp>
 
 #include <monad/logging/monad_log.hpp>
@@ -21,7 +24,7 @@ using fakeState = execution::fake::State;
 using receiptCollector = std::vector<std::vector<Receipt>>;
 using eth_start_fork = fork_traits::frontier;
 
-template <class TTraits, class TState, class TEvm, class TStaticPrecompiles>
+template <class TState, class TTraits, class TEvm>
 struct fakeEvmHost
 {
     evmc_result _result{};
@@ -34,7 +37,7 @@ struct fakeEvmHost
     }
 
     [[nodiscard]] constexpr inline Receipt make_receipt_from_result(
-        evmc::Result const &, Transaction const &, uint64_t const) noexcept
+        evmc_status_code, Transaction const &, uint64_t const) noexcept
     {
         return _receipt;
     }
@@ -45,33 +48,6 @@ struct fakeEvmHost
     }
 };
 
-template <class TState, concepts::fork_traits<TState> TTraits>
-struct fakeEmptyTP
-{
-    enum class Status
-    {
-        SUCCESS,
-        LATER_NONCE,
-        INSUFFICIENT_BALANCE,
-        INVALID_GAS_LIMIT,
-        BAD_NONCE,
-        DEPLOYED_CODE,
-    };
-
-    template <class TEvmHost>
-    Receipt execute(
-        TState &, TEvmHost &, BlockHeader const &,
-        Transaction const &) const noexcept
-    {
-        return {};
-    }
-
-    Status validate(TState const &, Transaction const &, uint64_t) noexcept
-    {
-        return Status::SUCCESS;
-    }
-};
-
 template <
     class TState, concepts::fork_traits<TState> TTraits,
     class TStaticPrecompiles, class TInterpreter>
@@ -79,37 +55,8 @@ struct fakeEmptyEvm
 {
 };
 
-template <class TTraits, class TState, class TEvm>
-struct fakeEmptyEvmHost
-{
-};
-
 struct fakeInterpreter
 {
-};
-
-template <
-    class TState, concepts::fork_traits<TState> TTraits, class TTxnProcessor,
-    class TEvm, class TExecution>
-struct fakeEmptyFiberData
-{
-    Receipt _result{};
-    fakeEmptyFiberData(TState &, Transaction const &, BlockHeader const &, int)
-    {
-    }
-    Receipt get_receipt() noexcept { return _result; }
-    inline void operator()() {}
-};
-
-template <class TExecution>
-class fakeEmptyBP
-{
-public:
-    template <class TState, class TFiberData>
-    std::vector<Receipt> execute(TState &, Block &)
-    {
-        return {};
-    }
 };
 
 template <class TState>
@@ -201,7 +148,7 @@ int main(int argc, char *argv[])
     state_trie_t state_trie;
 
     // In order to finish execution, this must be set to true
-    state._applied_state = true;
+    state._merge_status = monad::fakeState::MergeStatus::WILL_SUCCEED;
 
     monad::execution::ReplayFromBlockDb<
         state_t,
@@ -216,10 +163,10 @@ int main(int argc, char *argv[])
 
     [[maybe_unused]] auto result = replay_eth.run<
         monad::eth_start_fork,
-        monad::fakeEmptyTP,
+        monad::execution::TransactionProcessor,
         monad::fakeEmptyEvm,
         monad::execution::StaticPrecompiles,
-        monad::fakeEmptyEvmHost,
+        monad::fakeEvmHost,
         monad::execution::TransactionProcessorFiberData,
         monad::fakeInterpreter,
         monad::eth_start_fork::static_precompiles_t>(

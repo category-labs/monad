@@ -31,11 +31,11 @@ struct alignas(64) TransactionProcessorFiberData
     TState &s_;
     Transaction const &txn_;
     BlockHeader const &bh_;
-    int id_;
+    unsigned int id_;
     Receipt result_{};
 
     TransactionProcessorFiberData(
-        TState &s, Transaction const &t, BlockHeader const &b, int id)
+        TState &s, Transaction const &t, BlockHeader const &b, unsigned int id)
         : s_{s}
         , txn_{t}
         , bh_{b}
@@ -87,12 +87,13 @@ struct alignas(64) TransactionProcessorFiberData
                 TExecution::yield();
             }
 
-            auto txn_state = s_.get_copy();
+            auto working_copy = s_.get_working_copy(id_);
             TEvm
                 e{}; // e needs to be constructed with the working copy of state
-            result_ = p.execute(txn_state, e, bh_, txn_);
+            result_ = p.execute(working_copy, e, bh_, txn_);
 
-            if (auto const applied = s_.apply_state(txn_state); applied) {
+            if (s_.can_merge_changes(working_copy) ==
+                TState::MergeStatus::WILL_SUCCEED) {
                 // apply_state -> can_merge_changes
                 // Can merge needs to be in yield while loop while receiving
                 // TRY_AGAIN When WILL_SUCCEED is returned, merge, and return;
@@ -106,6 +107,8 @@ struct alignas(64) TransactionProcessorFiberData
                     "Finish executing Transaction {}, time elapsed = {}",
                     id_,
                     elapsed_ms);
+
+                s_.merge_changes(working_copy);
                 return;
             }
             MONAD_LOG_INFO(txn_logger, "Transaction {} rescheduled", id_);

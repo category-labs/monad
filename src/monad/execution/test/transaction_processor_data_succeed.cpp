@@ -47,7 +47,7 @@ struct fakeSuccessfulTP
 
 TEST(TransactionProcessorFiberData, invoke_successfully_first_time)
 {
-    fake::State s{._applied_state = true};
+    fake::State s{._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
     static Transaction const t{};
 

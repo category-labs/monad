@@ -5,7 +5,6 @@
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/core/byte_string.hpp>
 #include <monad/core/concepts.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/receipt.hpp>
@@ -77,7 +76,8 @@ namespace fake
             return _map.at(address).code_hash;
         }
 
-        [[nodiscard]] byte_string_view code_at(address_t const &a) const noexcept
+        [[nodiscard]] byte_string_view
+        code_at(address_t const &a) const noexcept
         {
             return {_code.at(a)};
         }
@@ -202,9 +202,9 @@ namespace fake
     {
         static inline evmc::Result _result{};
 
-        template <class TEvmHost>
-        static constexpr evmc::Result &&
-        execute(TEvmHost *, evmc_message const &)
+        template <class TEvmHost, class TState>
+        static evmc::Result
+        execute(TEvmHost *, TState &, evmc_message const &)
         {
             return std::move(_result);
         }

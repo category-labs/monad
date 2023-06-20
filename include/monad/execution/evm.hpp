@@ -30,7 +30,7 @@ struct Evm
             return evmc::Result{contract_address.error()};
         }
 
-        auto result = TInterpreter::execute(host, m);
+        auto result = TInterpreter::execute(host, state, m);
 
         if (!TTraits::store_contract_code(
                 state, contract_address.value(), result)) {
@@ -53,7 +53,7 @@ struct Evm
                 .transform([&](auto static_precompile_execute) {
                     return static_precompile_execute(m);
                 })
-                .or_else([&] { return TInterpreter::execute(host, m); })
+                .or_else([&] { return TInterpreter::execute(host, state, m); })
                 .value();
 
         if (result.status_code == EVMC_REVERT) {

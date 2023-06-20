@@ -24,13 +24,13 @@ template <class TState, concepts::fork_traits<TState> TTraits>
 struct EVMOneBaselineInterpreter
 {
     template <class TEvmHost>
-    static evmc_result
-    execute(TState const &s, TEvmHost *h, evmc_message const &m)
+    static evmc::Result
+    execute(TEvmHost *h, TState const &s, evmc_message const &m)
     {
-        auto const code =
-            s.code_at(m.code_address);
+        evmc::Result result{evmc_result{.status_code = EVMC_SUCCESS, .gas_left = m.gas}};
+        auto const code = s.code_at(m.code_address);
         if (code.empty()) {
-            return {.status_code = EVMC_SUCCESS, .gas_left = m.gas};
+            return result;
         }
 
         evmone::VM v{};
@@ -43,7 +43,8 @@ struct EVMOneBaselineInterpreter
             {}};
         evmone::baseline::CodeAnalysis ca{
             evmone::baseline::analyze(TTraits::rev, code)};
-        return evmone::baseline::execute(v, m.gas, es, ca);
+        result = evmc::Result{evmone::baseline::execute(v, m.gas, es, ca)};
+        return result;
     }
 };
 

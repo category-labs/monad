@@ -22,7 +22,7 @@ TEST(Evm1BaselineInterpreter, execute_empty)
 
     evmc_message m{.kind = EVMC_CALL, .gas = 10'000, .code_address = a};
 
-    auto const r = interpreter_t::execute(s, &h, m);
+    auto const r = interpreter_t::execute(&h, s, m);
 
     EXPECT_EQ(r.gas_left, m.gas);
     EXPECT_EQ(r.status_code, EVMC_SUCCESS);
@@ -45,7 +45,7 @@ TEST(Evm1BaselineInterpreter, execute_simple)
 
     evmc_message m{.kind = EVMC_CALL, .gas = 10'000, .code_address = a};
 
-    auto const r = interpreter_t::execute(s, &h, m);
+    auto const r = interpreter_t::execute(&h, s, m);
 
     EXPECT_EQ(r.status_code, EVMC_SUCCESS);
     EXPECT_EQ(r.gas_left, m.gas - 9);
@@ -64,7 +64,7 @@ TEST(Evm1BaselineInterpreter, execute_invalid)
 
     evmc_message m{.kind = EVMC_CALL, .gas = 10'000, .code_address = a};
 
-    auto const r = interpreter_t::execute(s, &h, m);
+    auto const r = interpreter_t::execute(&h, s, m);
 
     EXPECT_EQ(r.status_code, EVMC_INVALID_INSTRUCTION);
     EXPECT_EQ(r.gas_left, 0);

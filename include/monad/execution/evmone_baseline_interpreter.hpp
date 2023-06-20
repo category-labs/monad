@@ -28,7 +28,7 @@ struct EVMOneBaselineInterpreter
     execute(TEvmHost *h, TState const &s, evmc_message const &m)
     {
         evmc::Result result{evmc_result{.status_code = EVMC_SUCCESS, .gas_left = m.gas}};
-        auto const code = s.code_at(m.code_address);
+        auto const code = s.get_code(m.code_address);
         if (code.empty()) {
             return result;
         }

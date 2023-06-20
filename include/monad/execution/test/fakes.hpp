@@ -77,7 +77,7 @@ namespace fake
         }
 
         [[nodiscard]] byte_string_view
-        code_at(address_t const &a) const noexcept
+        get_code(address_t const &a) const noexcept
         {
             return {_code.at(a)};
         }

@@ -1,8 +1,9 @@
 add_unit_test(
-  TARGET
-  monad-coretests
-  SOURCES
-  receipt.cpp
-  signature.cpp
-  LIBRARIES
-  monad)
+    TARGET
+    monad-coretests
+    SOURCES
+    receipt.cpp
+    signature.cpp
+    LIBRARIES
+    monad
+)

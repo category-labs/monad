@@ -1,9 +1,10 @@
 add_unit_test(
-  TARGET
-  monad-executionethtests
-  SOURCES
-  fork_traits.cpp
-  replay_eth_block_db.cpp
-  static_precompiles.cpp
-  LIBRARIES
-  monad)
+    TARGET
+    monad-executionethtests
+    SOURCES
+    fork_traits.cpp
+    replay_eth_block_db.cpp
+    static_precompiles.cpp
+    LIBRARIES
+    monad
+)

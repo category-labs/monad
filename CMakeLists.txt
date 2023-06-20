@@ -5,12 +5,12 @@ include(CableBuildInfo)
 
 project(monad)
 
-option(ASAN  "Turn on Address Sanitizer")
+option(ASAN "Turn on Address Sanitizer")
 option(UBSAN "Turn on Undefined Behavior Sanitizer")
 
-############
-### conan
-############
+# ##############################################################################
+# conan
+# ##############################################################################
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 list(APPEND CMAKE_PREFIX_PATH ${CMAKE_BINARY_DIR})
@@ -20,15 +20,20 @@ include(${PROJECT_SOURCE_DIR}/conan/cmake-conan/conan.cmake)
 conan_cmake_autodetect(settings)
 
 conan_cmake_install(
-    PATH_OR_REFERENCE ${PROJECT_SOURCE_DIR}/conan/conanfile.txt
-    BUILD missing
-    ENV CC=${CMAKE_C_COMPILER} CXX=${CMAKE_CXX_COMPILER}
-    SETTINGS ${settings}
+    PATH_OR_REFERENCE
+    ${PROJECT_SOURCE_DIR}/conan/conanfile.txt
+    BUILD
+    missing
+    ENV
+    CC=${CMAKE_C_COMPILER}
+    CXX=${CMAKE_CXX_COMPILER}
+    SETTINGS
+    ${settings}
 )
 
-############
-### deps
-############
+# ##############################################################################
+# deps
+# ##############################################################################
 
 find_package(Boost REQUIRED COMPONENTS fiber log)
 find_package(PkgConfig REQUIRED)
@@ -53,14 +58,23 @@ function(monad_compile_options target)
     set_property(TARGET ${target} PROPERTY C_STANDARD_REQUIRED ON)
     set_property(TARGET ${target} PROPERTY CXX_STANDARD 20)
     set_property(TARGET ${target} PROPERTY CXX_STANDARD_REQUIRED ON)
-    target_compile_options(${target} PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic)
-    target_compile_options(${target} PUBLIC $<$<CXX_COMPILER_ID:Clang>:-Wno-gnu-zero-variadic-macro-arguments>)
-    target_compile_options(${target} PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-missing-field-initializers>)
+    target_compile_options(
+        ${target} PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic
+    )
+    target_compile_options(
+        ${target}
+        PUBLIC
+            $<$<CXX_COMPILER_ID:Clang>:-Wno-gnu-zero-variadic-macro-arguments>
+    )
+    target_compile_options(
+        ${target}
+        PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-missing-field-initializers>
+    )
 endfunction()
 
-############
-### unit tests
-############
+# ##############################################################################
+# unit tests
+# ##############################################################################
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/core/test)
@@ -71,16 +85,15 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/trie/test)
 
-############
-### libs
-############
+# ##############################################################################
+# libs
+# ##############################################################################
 
 # monad
 
-add_library(monad STATIC
-
+add_library(
+    monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/config.hpp
-
     # core
     ${PROJECT_SOURCE_DIR}/include/monad/core/address.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/assert.h
@@ -97,7 +110,6 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/src/monad/core/int.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/core/receipt.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/core/signature.cpp
-
     # db
     ${PROJECT_SOURCE_DIR}/include/monad/db/block_db.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/config.hpp
@@ -108,7 +120,6 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/src/monad/db/state_db.cpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/trie_db.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/util.hpp
-
     # execution
     ${PROJECT_SOURCE_DIR}/include/monad/execution/config.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/create_contract_address.hpp
@@ -131,12 +142,10 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/execution/transaction_processor.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/transaction_processor_data.hpp
     ${PROJECT_SOURCE_DIR}/src/monad/execution/create_contract_address.cpp
-
     # fiber
     ${PROJECT_SOURCE_DIR}/include/monad/fiber/algorithm.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/fiber/properties.hpp
     ${PROJECT_SOURCE_DIR}/src/monad/fiber/algorithm.cpp
-
     # logging
     ${PROJECT_SOURCE_DIR}/include/monad/logging/config.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/logging/fake_logger.hpp
@@ -145,7 +154,6 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/logging/monad_log.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/logging/quill_logger.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/logging/quill_log_macros.hpp
-
     # rlp
     ${PROJECT_SOURCE_DIR}/include/monad/rlp/decode.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/rlp/decode_helpers.hpp
@@ -154,7 +162,6 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/rlp/util.hpp
     ${PROJECT_SOURCE_DIR}/src/monad/rlp/decode_helpers.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/rlp/encode_helpers.cpp
-
     # trie
     ${PROJECT_SOURCE_DIR}/include/monad/trie/compact_encode.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/trie/nibbles.hpp
@@ -172,7 +179,8 @@ add_library(monad STATIC
     ${PROJECT_SOURCE_DIR}/include/monad/trie/update.hpp
 )
 
-target_include_directories(monad
+target_include_directories(
+    monad
     PUBLIC ${PROJECT_SOURCE_DIR}/include
     PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/test
     PRIVATE ${Boost_INCLUDE_DIRS}
@@ -183,12 +191,12 @@ set(TEST_DATA_DIR "${PROJECT_SOURCE_DIR}/test")
 
 configure_file(cmake/test_resource_data.h.in test/test_resource_data.h @ONLY)
 
-target_link_libraries(monad
+target_link_libraries(
+    monad
     PRIVATE Boost::fiber
     PRIVATE Boost::log
     PRIVATE PkgConfig::brotli
     PRIVATE PkgConfig::rocksdb
-
     PUBLIC ethash::keccak
     PUBLIC evmc
     PUBLIC intx::intx
@@ -200,13 +208,17 @@ target_link_libraries(monad
 monad_compile_options(monad)
 
 if(ASAN)
-  message("Address Sanitizer: On")
-  target_compile_options(monad PUBLIC "-fsanitize=address" "-fno-omit-frame-pointer")
-  target_link_options(monad PUBLIC "-fsanitize=address")
+    message("Address Sanitizer: On")
+    target_compile_options(
+        monad PUBLIC "-fsanitize=address" "-fno-omit-frame-pointer"
+    )
+    target_link_options(monad PUBLIC "-fsanitize=address")
 elseif(UBSAN)
-  message("Undefined Behavior Sanitizer: On")
-  target_compile_options(monad PUBLIC "-fsanitize=undefined" "-fno-omit-frame-pointer")
-  target_link_options(monad PUBLIC "-fsanitize=undefined")
+    message("Undefined Behavior Sanitizer: On")
+    target_compile_options(
+        monad PUBLIC "-fsanitize=undefined" "-fno-omit-frame-pointer"
+    )
+    target_link_options(monad PUBLIC "-fsanitize=undefined")
 else()
-  target_link_options(monad PRIVATE LINKER:-z,defs)
+    target_link_options(monad PRIVATE LINKER:-z,defs)
 endif()

@@ -28,7 +28,7 @@ struct EVMOneBaselineInterpreter
     execute(TState const &s, TEvmHost *h, evmc_message const &m)
     {
         auto const code =
-            s.code_at(m.sender); // call needs to be plumbed through state...
+            s.code_at(m.code_address);
         if (code.empty()) {
             return {.status_code = EVMC_SUCCESS, .gas_left = m.gas};
         }

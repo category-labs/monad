@@ -20,7 +20,7 @@ TEST(Evm1BaselineInterpreter, execute_empty)
     fake::EvmHost h{};
     s._code.emplace(a, byte_string{});
 
-    evmc_message m{.kind = EVMC_CALL, .gas = 10'000, .sender = a};
+    evmc_message m{.kind = EVMC_CALL, .gas = 10'000, .code_address = a};
 
     auto const r = interpreter_t::execute(s, &h, m);
 
@@ -43,7 +43,7 @@ TEST(Evm1BaselineInterpreter, execute_simple)
         0x00}; // STOP
     s._code.emplace(a, code);
 
-    evmc_message m{.kind = EVMC_CALL, .gas = 10'000, .sender = a};
+    evmc_message m{.kind = EVMC_CALL, .gas = 10'000, .code_address = a};
 
     auto const r = interpreter_t::execute(s, &h, m);
 
@@ -62,7 +62,7 @@ TEST(Evm1BaselineInterpreter, execute_invalid)
         0xfe}; // INVALID
     s._code.emplace(a, code);
 
-    evmc_message m{.kind = EVMC_CALL, .gas = 10'000, .sender = a};
+    evmc_message m{.kind = EVMC_CALL, .gas = 10'000, .code_address = a};
 
     auto const r = interpreter_t::execute(s, &h, m);
 

@@ -188,12 +188,17 @@ struct AccountStore<TAccountDB>::WorkingCopy : public AccountStore<TAccountDB>
         return changed_.at(address).updated.value_or(Account{}).code_hash;
     }
 
-    void selfdestruct(address_t const &a, address_t const &beneficiary) noexcept
+    [[nodiscard]] bool
+    selfdestruct(address_t const &a, address_t const &beneficiary) noexcept
     {
-        changed_.at(beneficiary).updated.value().balance +=
-            changed_.at(a).updated.value().balance;
-        changed_.at(a).updated.reset();
-        ++total_selfdestructs_;
+        if (changed_.at(a).updated) {
+            changed_.at(beneficiary).updated.value().balance +=
+                changed_.at(a).updated.value().balance;
+            changed_.at(a).updated.reset();
+            ++total_selfdestructs_;
+            return true;
+        }
+        return false;
     }
 
     void destruct_suicides() const noexcept {}

@@ -126,7 +126,7 @@ TYPED_TEST(StateTest, can_merge_fresh)
     s.access_account(c);
     EXPECT_EQ(s.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
     EXPECT_EQ(s.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
-    s.selfdestruct(c, b);
+    EXPECT_TRUE(s.selfdestruct(c, b));
     s.destruct_suicides();
 
     EXPECT_EQ(t.can_merge_changes(s), decltype(t)::MergeStatus::WILL_SUCCEED);
@@ -243,7 +243,7 @@ TYPED_TEST(StateTest, merge_txn0_and_txn1)
     cs.access_account(c);
     EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
     EXPECT_EQ(cs.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
-    cs.selfdestruct(c, a);
+    EXPECT_TRUE(cs.selfdestruct(c, a));
     cs.destruct_suicides();
 
     EXPECT_EQ(t.can_merge_changes(cs), decltype(t)::MergeStatus::WILL_SUCCEED);
@@ -284,7 +284,7 @@ TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
     cs.access_account(c);
     EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
     EXPECT_EQ(cs.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
-    cs.selfdestruct(c, b);
+    EXPECT_TRUE(cs.selfdestruct(c, b));
     cs.destruct_suicides();
 
     EXPECT_EQ(
@@ -297,7 +297,7 @@ TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
     ds.access_account(c);
     EXPECT_EQ(ds.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
     EXPECT_EQ(ds.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
-    ds.selfdestruct(c, b);
+    EXPECT_TRUE(ds.selfdestruct(c, b));
     ds.destruct_suicides();
 
     EXPECT_EQ(t.can_merge_changes(ds), decltype(t)::MergeStatus::WILL_SUCCEED);
@@ -341,7 +341,7 @@ TYPED_TEST(StateTest, merge_txn1_try_again_merge_txn0_then_txn1)
         cs.access_account(c);
         EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
         EXPECT_EQ(cs.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
-        cs.selfdestruct(c, a);
+        EXPECT_TRUE(cs.selfdestruct(c, a));
         cs.destruct_suicides();
     }
     EXPECT_EQ(t.can_merge_changes(cs), decltype(t)::MergeStatus::TRY_LATER);
@@ -391,7 +391,7 @@ TYPED_TEST(StateTest, can_commit)
         cs.access_account(c);
         EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
         EXPECT_EQ(cs.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
-        cs.selfdestruct(c, a);
+        EXPECT_TRUE(cs.selfdestruct(c, a));
         cs.destruct_suicides();
         EXPECT_EQ(
             t.can_merge_changes(cs), decltype(t)::MergeStatus::WILL_SUCCEED);
@@ -441,7 +441,7 @@ TYPED_TEST(StateTest, commit_twice)
         cs.access_account(c);
         EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
         EXPECT_EQ(cs.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
-        cs.selfdestruct(c, a);
+        EXPECT_TRUE(cs.selfdestruct(c, a));
         cs.destruct_suicides();
         EXPECT_EQ(
             t.can_merge_changes(cs), decltype(t)::MergeStatus::WILL_SUCCEED);

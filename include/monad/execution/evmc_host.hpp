@@ -76,7 +76,7 @@ struct EvmcHost : public evmc::HostInterface
         return state_.copy_code(a, offset, data, size);
     }
 
-    virtual bool selfdestruct(
+    [[nodiscard]] virtual bool selfdestruct(
         address_t const &a, address_t const &beneficiary) noexcept override
     {
         return state_.selfdestruct(a, beneficiary);

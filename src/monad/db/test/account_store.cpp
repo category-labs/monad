@@ -228,15 +228,17 @@ TYPED_TEST(AccountStoreTest, selfdestruct_working_copy)
     bs.access_account(b);
     bs.access_account(c);
 
-    bs.selfdestruct(a, c);
+    EXPECT_TRUE(bs.selfdestruct(a, c));
     EXPECT_EQ(bs.total_selfdestructs(), 1u);
     EXPECT_EQ(bs.get_balance(a), bytes32_t{});
     EXPECT_EQ(bs.get_balance(c), bytes32_t{56'000});
+    EXPECT_FALSE(bs.selfdestruct(a, c));
 
-    bs.selfdestruct(b, c);
+    EXPECT_TRUE(bs.selfdestruct(b, c));
     EXPECT_EQ(bs.total_selfdestructs(), 2u);
     EXPECT_EQ(bs.get_balance(b), bytes32_t{});
     EXPECT_EQ(bs.get_balance(c), bytes32_t{84'000});
+    EXPECT_FALSE(bs.selfdestruct(b, c));
 
     bs.destruct_suicides();
     EXPECT_FALSE(bs.account_exists(a));
@@ -310,7 +312,7 @@ TYPED_TEST(AccountStoreTest, can_merge_fresh)
     s.set_balance(a, 38'000);
     s.set_balance(b, 42'000);
     s.set_nonce(b, 3);
-    s.selfdestruct(c, b);
+    (void)s.selfdestruct(c, b);
     s.destruct_suicides();
 
     EXPECT_TRUE(t.can_merge(s));
@@ -339,7 +341,7 @@ TYPED_TEST(AccountStoreTest, can_merge_onto_merged)
     s.set_balance(c, 38'000);
     s.set_balance(b, 42'000);
     s.set_nonce(b, 3);
-    s.selfdestruct(a, b);
+    (void)s.selfdestruct(a, b);
     s.destruct_suicides();
 
     EXPECT_TRUE(t.can_merge(s));
@@ -437,7 +439,7 @@ TYPED_TEST(AccountStoreTest, cant_merge_conflicting_deleted)
 
     s.access_account(b);
     s.access_account(c);
-    s.selfdestruct(c, b);
+    (void)s.selfdestruct(c, b);
     s.destruct_suicides();
 
     t.merged_.emplace(c, r);
@@ -464,7 +466,7 @@ TYPED_TEST(AccountStoreTest, merge_multiple_changes)
         s.set_balance(a, 38'000);
         s.set_balance(b, 42'000);
         s.set_nonce(b, 3);
-        s.selfdestruct(c, b);
+        (void)s.selfdestruct(c, b);
         s.destruct_suicides();
 
         EXPECT_TRUE(t.can_merge(s));
@@ -589,7 +591,7 @@ TYPED_TEST(AccountStoreTest, can_commit_multiple)
         s.set_balance(a, 38'000);
         s.set_balance(b, 42'000);
         s.set_nonce(b, 3);
-        s.selfdestruct(c, b);
+        (void)s.selfdestruct(c, b);
         s.destruct_suicides();
 
         EXPECT_TRUE(t.can_merge(s));
@@ -606,7 +608,7 @@ TYPED_TEST(AccountStoreTest, can_commit_multiple)
         s.set_nonce(c, 1);
         s.set_balance(b, 48'000);
         s.set_nonce(b, 4);
-        s.selfdestruct(d, a);
+        (void)s.selfdestruct(d, a);
         s.destruct_suicides();
 
         EXPECT_TRUE(t.can_merge(s));

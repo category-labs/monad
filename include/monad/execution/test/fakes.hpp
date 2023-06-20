@@ -82,7 +82,7 @@ namespace fake
             return {_code.at(a)};
         }
 
-        bool selfdestruct(address_t const &, address_t const &) noexcept
+        [[nodiscard]] bool selfdestruct(address_t const &, address_t const &) noexcept
         {
             return true;
         }

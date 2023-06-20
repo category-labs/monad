@@ -78,9 +78,9 @@ struct State
             return accounts_.get_code_hash(a);
         }
 
-        void selfdestruct(address_t const &a, address_t const &b)
+        [[nodiscard]] bool selfdestruct(address_t const &a, address_t const &b)
         {
-            accounts_.selfdestruct(a, b);
+            return accounts_.selfdestruct(a, b);
         }
 
         void destruct_suicides() { accounts_.destruct_suicides(); }
@@ -133,7 +133,8 @@ struct State
             return code_.copy_code(a, offset, buffer, size);
         }
 
-        [[nodiscard]] byte_string_view get_code(address_t const &a) const noexcept
+        [[nodiscard]] byte_string_view
+        get_code(address_t const &a) const noexcept
         {
             return code_.code_at(a);
         }

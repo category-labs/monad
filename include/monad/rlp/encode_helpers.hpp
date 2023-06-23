@@ -54,6 +54,7 @@ inline byte_string encode_address(std::optional<address_t> const &a)
 
 byte_string encode_account(Account const &, bytes32_t const &storage_root);
 byte_string encode_transaction(Transaction const &);
+byte_string encode_transaction_for_signing(Transaction const &);
 byte_string encode_access_list(Transaction::AccessList const &list);
 byte_string encode_topics(std::vector<bytes32_t> const &topics);
 byte_string encode_log(Receipt::Log const &log);

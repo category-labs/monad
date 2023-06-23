@@ -72,7 +72,7 @@ TEST(
         ._current_txn = 10,
         ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
-    static Transaction const t{.gas_limit = 15'000};
+    static Transaction t{.gas_limit = 15'000};
     fake_status = TestStatus::INSUFFICIENT_BALANCE;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, BoostFiberExecution> d{
@@ -90,7 +90,7 @@ TEST(TransactionProcessorFiberData, validation_insufficient_balance_optimistic)
         ._current_txn = 1,
         ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
-    static Transaction const t{.gas_limit = 15'000};
+    static Transaction t{.gas_limit = 15'000};
     fake_status = TestStatus::INSUFFICIENT_BALANCE;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, fakeSuccessAfterYieldEM> d{
@@ -108,7 +108,7 @@ TEST(TransactionProcessorFiberData, validation_later_nonce_current_txn_id)
         ._current_txn = 10,
         ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
-    static Transaction const t{};
+    static Transaction t{};
     fake_status = TestStatus::LATER_NONCE;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, BoostFiberExecution> d{
@@ -126,7 +126,7 @@ TEST(TransactionProcessorFiberData, validation_later_nonce_optimistic)
         ._current_txn = 1,
         ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
-    static Transaction const t{};
+    static Transaction t{};
     fake_status = TestStatus::LATER_NONCE;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, fakeSuccessAfterYieldEM> d{
@@ -143,7 +143,7 @@ TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_current_txn_id)
         ._current_txn = 10,
         ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
-    static Transaction const t{.gas_limit = 15'000};
+    static Transaction t{.gas_limit = 15'000};
     fake_status = TestStatus::INVALID_GAS_LIMIT;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, BoostFiberExecution> d{
@@ -161,7 +161,7 @@ TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_optimistic)
         ._current_txn = 1,
         ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
-    static Transaction const t{.gas_limit = 15'000};
+    static Transaction t{.gas_limit = 15'000};
     fake_status = TestStatus::INVALID_GAS_LIMIT;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, fakeSuccessAfterYieldEM> d{
@@ -179,7 +179,7 @@ TEST(TransactionProcessorFiberData, validation_bad_nonce_current_txn_id)
         ._current_txn = 10,
         ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
-    static Transaction const t{.gas_limit = 15'000};
+    static Transaction t{.gas_limit = 15'000};
     fake_status = TestStatus::BAD_NONCE;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, BoostFiberExecution> d{
@@ -197,7 +197,7 @@ TEST(TransactionProcessorFiberData, validation_bad_nonce_optimistic)
         ._current_txn = 1,
         ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
-    static Transaction const t{.gas_limit = 15'000};
+    static Transaction t{.gas_limit = 15'000};
     fake_status = TestStatus::BAD_NONCE;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, fakeSuccessAfterYieldEM> d{
@@ -215,7 +215,7 @@ TEST(TransactionProcessorFiberData, validation_deployed_code_current_txn_id)
         ._current_txn = 10,
         ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
-    static Transaction const t{.gas_limit = 15'000};
+    static Transaction t{.gas_limit = 15'000};
     fake_status = TestStatus::DEPLOYED_CODE;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, BoostFiberExecution> d{
@@ -233,7 +233,7 @@ TEST(TransactionProcessorFiberData, validation_deployed_code_optimistic)
         ._current_txn = 1,
         ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
-    static Transaction const t{.gas_limit = 15'000};
+    static Transaction t{.gas_limit = 15'000};
     fake_status = TestStatus::DEPLOYED_CODE;
 
     data_t<fakeGlobalStatusTP<state_t, traits_t>, fakeSuccessAfterYieldEM> d{

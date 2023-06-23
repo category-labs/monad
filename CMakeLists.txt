@@ -110,6 +110,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/src/monad/core/int.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/core/receipt.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/core/signature.cpp
+    ${PROJECT_SOURCE_DIR}/src/monad/core/transaction.cpp
     # db
     ${PROJECT_SOURCE_DIR}/include/monad/db/block_db.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/config.hpp

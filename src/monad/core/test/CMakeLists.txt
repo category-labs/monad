@@ -4,6 +4,7 @@ add_unit_test(
     SOURCES
     receipt.cpp
     signature.cpp
+    transaction.cpp
     LIBRARIES
     monad
 )

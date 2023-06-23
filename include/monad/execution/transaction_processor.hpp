@@ -9,6 +9,8 @@
 
 #include <monad/execution/config.hpp>
 
+#include <monad/rlp/encode_helpers.hpp>
+
 #include <intx/intx.hpp>
 
 #include <algorithm>

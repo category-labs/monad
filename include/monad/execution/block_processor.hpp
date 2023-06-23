@@ -17,7 +17,7 @@ template <class TExecution>
 struct AllTxnBlockProcessor
 {
     template <class TState, class TFiberData>
-    [[nodiscard]] std::vector<Receipt> execute(TState &s, Block const &b)
+    [[nodiscard]] std::vector<Receipt> execute(TState &s, Block &b)
     {
         auto *block_logger = log::logger_t::get_logger("block_logger");
         auto const start_time = std::chrono::steady_clock::now();
@@ -35,7 +35,7 @@ struct AllTxnBlockProcessor
         fibers.reserve(b.transactions.size());
 
         unsigned int i = 0;
-        for (auto const &txn : b.transactions) {
+        for (auto &txn : b.transactions) {
             data.push_back({s, txn, b.header, i});
             fibers.emplace_back(data.back());
             ++i;

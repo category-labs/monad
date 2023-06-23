@@ -49,7 +49,7 @@ TEST(TransactionProcessorFiberData, invoke_successfully_first_time)
 {
     fake::State s{._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
     static BlockHeader const b{};
-    static Transaction const t{};
+    static Transaction t{};
 
     data_t<fakeSuccessfulTP<state_t, traits_t>, BoostFiberExecution> d{
         s, t, b, 0};

@@ -57,7 +57,7 @@ struct fakeApplyStateAfterYieldEM
 TEST(TransactionProcessorFiberData, fail_apply_state_first_time)
 {
     static BlockHeader const b{};
-    static Transaction const t{};
+    static Transaction t{};
     global_state._merge_status = fake::State::MergeStatus::COLLISION_DETECTED;
 
     data_t<fakeEmptyTP<state_t, traits_t>, fakeApplyStateAfterYieldEM> d{

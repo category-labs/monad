@@ -94,6 +94,64 @@ byte_string encode_transaction(Transaction const &txn)
     return {};
 }
 
+byte_string encode_transaction_for_signing(Transaction const &txn)
+{
+    if (txn.type == Transaction::Type::eip155) {
+        if (txn.sc.chain_id.has_value()) {
+            return encode_list(
+                encode_unsigned(txn.nonce),
+                encode_unsigned(txn.gas_price),
+                encode_unsigned(txn.gas_limit),
+                encode_address(txn.to),
+                encode_unsigned(txn.amount),
+                encode_string(txn.data),
+                encode_unsigned(txn.sc.chain_id.value_or(0)),
+                encode_unsigned(0u),
+                encode_unsigned(0u));
+        }
+        else {
+            return encode_list(
+                encode_unsigned(txn.nonce),
+                encode_unsigned(txn.gas_price),
+                encode_unsigned(txn.gas_limit),
+                encode_address(txn.to),
+                encode_unsigned(txn.amount),
+                encode_string(txn.data));
+        }
+    }
+
+    MONAD_ASSERT(txn.sc.chain_id != std::nullopt);
+
+    if (txn.type == Transaction::Type::eip1559) {
+        return byte_string{0x02} +
+               encode_list(
+                   encode_unsigned(txn.sc.chain_id.value_or(0)),
+                   encode_unsigned(txn.nonce),
+                   encode_unsigned(txn.priority_fee),
+                   encode_unsigned(txn.gas_price),
+                   encode_unsigned(txn.gas_limit),
+                   encode_address(txn.to),
+                   encode_unsigned(txn.amount),
+                   encode_string(txn.data),
+                   encode_access_list(txn.access_list));
+    }
+    else if (txn.type == Transaction::Type::eip2930) {
+        return byte_string{0x01} +
+               encode_list(
+                   encode_unsigned(txn.sc.chain_id.value_or(0)),
+                   encode_unsigned(txn.nonce),
+                   encode_unsigned(txn.gas_price),
+                   encode_unsigned(txn.gas_limit),
+                   encode_address(txn.to),
+                   encode_unsigned(txn.amount),
+                   encode_string(txn.data),
+                   encode_access_list(txn.access_list));
+    }
+
+    assert(false);
+    return {};
+}
+
 byte_string encode_topics(std::vector<bytes32_t> const &t)
 {
     byte_string result{};

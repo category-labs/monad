@@ -29,13 +29,13 @@ struct alignas(64) TransactionProcessorFiberData
     using txn_processor_status_t = typename TTxnProcessor::Status;
 
     TState &s_;
-    Transaction const &txn_;
+    Transaction &txn_;
     BlockHeader const &bh_;
     unsigned int id_;
     Receipt result_{};
 
     TransactionProcessorFiberData(
-        TState &s, Transaction const &t, BlockHeader const &b, unsigned int id)
+        TState &s, Transaction &t, BlockHeader const &b, unsigned int id)
         : s_{s}
         , txn_{t}
         , bh_{b}
@@ -66,7 +66,14 @@ struct alignas(64) TransactionProcessorFiberData
         auto *txn_logger = log::logger_t::get_logger("txn_logger");
         auto const start_time = std::chrono::steady_clock::now();
 
-        MONAD_LOG_INFO(txn_logger, "Start executing Transaction {}", id_);
+        txn_.from = recover_sender(txn_);
+
+        MONAD_LOG_INFO(
+            txn_logger,
+            "Start executing Transaction {}, from = {}, to = {}",
+            id_,
+            txn_.from,
+            txn_.to);
 
         while (true) { // retry until apply state cleanly
             while (true) { // spin until *could be* successful

@@ -43,7 +43,7 @@ TEST(AllTxnBlockProcessor, execute_empty)
     using fiber_data_t = EmptyFiberData<state_t>;
 
     fake::State s{};
-    static Block const b{
+    static Block b{
         .header = {},
     };
 
@@ -58,7 +58,7 @@ TEST(AllTxnBlockProcessor, execute_some)
     using fiber_data_t = EmptyFiberData<state_t>;
 
     fake::State s{};
-    static Block const b{
+    static Block b{
         .header = {},
         .transactions = {{}, {}, {}},
     };
@@ -77,7 +77,7 @@ TEST(AllTxnBlockProcessor, execute_some_failed)
     using fiber_data_t = FailedFiberData<state_t>;
 
     fake::State s{};
-    static Block const b{
+    static Block b{
         .header = {},
         .transactions = {{}, {}, {}, {}, {}},
     };

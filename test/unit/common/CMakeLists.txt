@@ -2,7 +2,8 @@ add_library(
     monad_unit_test_common STATIC
     ${PROJECT_SOURCE_DIR}/test/unit/common/include/monad/test/config.hpp
     ${PROJECT_SOURCE_DIR}/test/unit/common/include/monad/test/environment.hpp
-    ${PROJECT_SOURCE_DIR}/test/unit/common/src/test/main.cpp
+    ${PROJECT_SOURCE_DIR}/test/unit/common/include/monad/test/trie_fixture.hpp
+    ${PROJECT_SOURCE_DIR}/test/unit/common/include/monad/test/one_hundred_updates.hpp
 )
 
 target_include_directories(

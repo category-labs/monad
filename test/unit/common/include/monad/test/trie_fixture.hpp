@@ -1,5 +1,6 @@
 #pragma once
 
+#include <monad/test/one_hundred_updates.hpp>
 #include <monad/trie/comparator.hpp>
 #include <monad/trie/in_memory_cursor.hpp>
 #include <monad/trie/in_memory_writer.hpp>
@@ -14,7 +15,7 @@
 #include <gtest/gtest.h>
 #include <rocksdb/db.h>
 
-MONAD_TRIE_NAMESPACE_BEGIN
+MONAD_TEST_NAMESPACE_BEGIN
 
 template <typename TComparator>
 struct rocks_fixture : public ::testing::Test
@@ -27,12 +28,12 @@ struct rocks_fixture : public ::testing::Test
     std::shared_ptr<rocksdb::DB> db_;
     rocksdb::Snapshot const *snapshot_;
 
-    RocksCursor leaves_cursor_;
-    RocksCursor trie_cursor_;
-    RocksWriter leaves_writer_;
-    RocksWriter trie_writer_;
+    monad::trie::RocksCursor leaves_cursor_;
+    monad::trie::RocksCursor trie_cursor_;
+    monad::trie::RocksWriter leaves_writer_;
+    monad::trie::RocksWriter trie_writer_;
 
-    Trie<RocksCursor, RocksWriter> trie_;
+    monad::trie::Trie<monad::trie::RocksCursor, monad::trie::RocksWriter> trie_;
 
     rocks_fixture()
         : name_(std::filesystem::absolute("trie"))
@@ -51,8 +52,8 @@ struct rocks_fixture : public ::testing::Test
 
             return {
                 {rocksdb::kDefaultColumnFamilyName, col_opts},
-                {"TrieLeaves", {}},
-                {"TrieAll", col_opts}};
+                {"monad::trie::TrieLeaves", {}},
+                {"monad::trie::TrieAll", col_opts}};
         }())
         , cfs_()
         , db_([&]() {
@@ -83,9 +84,9 @@ struct rocks_fixture : public ::testing::Test
         , snapshot_(db_->GetSnapshot())
         , leaves_cursor_(db_, cfs_[1], snapshot_)
         , trie_cursor_(db_, cfs_[2], snapshot_)
-        , leaves_writer_(RocksWriter{
+        , leaves_writer_(monad::trie::RocksWriter{
               .db = db_, .batch = rocksdb::WriteBatch{}, .cf = cfs_[1]})
-        , trie_writer_(RocksWriter{
+        , trie_writer_(monad::trie::RocksWriter{
               .db = db_, .batch = rocksdb::WriteBatch{}, .cf = cfs_[2]})
         , trie_(leaves_cursor_, trie_cursor_, leaves_writer_, trie_writer_)
     {
@@ -123,7 +124,7 @@ struct rocks_fixture : public ::testing::Test
         db_->ReleaseSnapshot(snapshot_);
     }
 
-    void process_updates(std::vector<Update> const &updates)
+    void process_updates(std::vector<monad::trie::Update> const &updates)
     {
         trie_.process_updates(updates);
 
@@ -157,9 +158,9 @@ struct rocks_fixture : public ::testing::Test
 template <typename TComparator>
 struct in_memory_fixture : public ::testing::Test
 {
-    using cursor_t = InMemoryCursor<TComparator>;
-    using writer_t = InMemoryWriter<TComparator>;
-    using trie_t = Trie<cursor_t, writer_t>;
+    using cursor_t = monad::trie::InMemoryCursor<TComparator>;
+    using writer_t = monad::trie::InMemoryWriter<TComparator>;
+    using trie_t = monad::trie::Trie<cursor_t, writer_t>;
 
     std::vector<std::pair<byte_string, byte_string>> leaves_storage_;
     std::vector<std::pair<byte_string, byte_string>> trie_storage_;
@@ -184,7 +185,7 @@ struct in_memory_fixture : public ::testing::Test
         trie_writer_.write();
     }
 
-    void process_updates(std::vector<Update> const &updates)
+    void process_updates(std::vector<monad::trie::Update> const &updates)
     {
         trie_.process_updates(updates);
         flush();
@@ -202,44 +203,52 @@ struct in_memory_fixture : public ::testing::Test
     }
 };
 
-[[nodiscard]] constexpr Update
-make_upsert(Nibbles const &key, byte_string const &value)
+[[nodiscard]] constexpr monad::trie::Update
+make_upsert(monad::trie::Nibbles const &key, byte_string const &value)
 {
-    return Upsert{
+    return monad::trie::Upsert{
         .key = key,
         .value = value,
     };
 }
 
-[[nodiscard]] constexpr Update
-make_upsert(evmc::bytes32 key, byte_string const &value)
+[[nodiscard]] constexpr monad::trie::Update
+make_upsert(bytes32_t key, byte_string const &value)
 {
-    return make_upsert(Nibbles(key), value);
+    return make_upsert(monad::trie::Nibbles(key), value);
 }
 
-[[nodiscard]] constexpr Update make_del(Nibbles const &key)
+[[nodiscard]] inline monad::trie::Update
+make_upsert(bytes32_t const &key, bytes32_t const &value)
 {
-    return Delete{
+    return make_upsert(
+        monad::trie::Nibbles(key),
+        byte_string(
+            reinterpret_cast<byte_string::value_type const *>(&value.bytes),
+            sizeof(value.bytes)));
+}
+
+[[nodiscard]] constexpr monad::trie::Update
+make_del(monad::trie::Nibbles const &key)
+{
+    return monad::trie::Delete{
         .key = key,
     };
 }
 
-[[nodiscard]] constexpr Update make_del(evmc::bytes32 key)
+[[nodiscard]] constexpr monad::trie::Update make_del(evmc::bytes32 key)
 {
-    return make_del(Nibbles(key));
+    return make_del(monad::trie::Nibbles(key));
 }
 
-[[nodiscard]] constexpr std::vector<Update> make_hard_updates()
+[[nodiscard]] constexpr std::vector<monad::trie::Update>
+make_updates(std::ranges::range auto const &updates)
 {
-    std::vector<Update> ret;
-    for (auto const &[key, value] : test::hard_updates) {
-        ret.push_back(make_upsert(
-            key,
-            byte_string(
-                reinterpret_cast<byte_string::value_type const *>(&value.bytes),
-                sizeof(value.bytes))));
+    std::vector<monad::trie::Update> ret;
+    for (auto const &[key, value] : updates) {
+        ret.emplace_back(make_upsert(key, value));
     }
     return ret;
 }
 
-MONAD_TRIE_NAMESPACE_END
+MONAD_TEST_NAMESPACE_END

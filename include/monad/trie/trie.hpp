@@ -108,6 +108,13 @@ struct Trie
             },
             [](auto const &u) { return get_update_key(u).size(); }));
 
+        // all upserts should have non-zero value size. the ethereum
+        // hexary trie implicitly converts upserts to deletes in this case, but
+        // we'll just disallow that explicitly
+        assert(std::ranges::all_of(updates, [](auto const &s) {
+            return is_deletion(s) || !std::get<Upsert>(s).value.empty();
+        }));
+
         auto list = [&]() -> std::list<Node> {
             if (leaves_cursor_.empty()) {
                 std::list<Node> ret;

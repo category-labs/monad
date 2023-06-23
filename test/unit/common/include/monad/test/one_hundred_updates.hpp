@@ -11,7 +11,7 @@ MONAD_TEST_NAMESPACE_BEGIN
 
 using namespace evmc::literals;
 
-constexpr std::array hard_updates = {
+constexpr std::array const one_hundred_updates = {
     std::make_pair(
         0x009d9ee6ae2a8d2d33a6152cbd20b53e8e846228d6f5c3ba6df1c81f16d3f127_bytes32,
         0x41bc7c43173291670eb10f71ab33b6a34f3d6e579db35659d6f1feb95f74ed46_bytes32),
@@ -313,5 +313,7 @@ constexpr std::array hard_updates = {
         0xf548e71c32522ed78c2588df2cfdc3acd5c04cf930953ecabcc86ee3532f317c_bytes32,
         0x0b1f54273e2159bdb379c23cff2eb452c31f7e9e781b6c08138ae0af796b1132_bytes32),
 };
+
+static_assert(one_hundred_updates.size() == 100);
 
 MONAD_TEST_NAMESPACE_END

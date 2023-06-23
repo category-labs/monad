@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <monad/core/assert.h>
 #include <monad/logging/monad_log.hpp>
 #include <monad/test/config.hpp>
 
@@ -14,8 +15,7 @@ public:
     {
         monad::log::logger_t::start();
 
-        auto *logger = monad::log::logger_t::create_logger("trie_db_logger");
-        MONAD_ASSERT(logger);
+        (void)monad::log::logger_t::create_logger("trie_db_logger");
 
         monad::log::logger_t::set_log_level(
             "trie_db_logger", monad::log::level_t::Info);

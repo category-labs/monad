@@ -86,6 +86,20 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/trie/test)
 
 # ##############################################################################
+# fuzz tests
+# ##############################################################################
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # only include if fuzzing mode is turned on
+    if(FUZZTEST_FUZZING_MODE)
+        add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/fuzztest)
+        add_subdirectory(${PROJECT_SOURCE_DIR}/test/fuzz)
+    endif()
+elseif(FUZZTEST_FUZZING_MODE)
+    message(FATAL_ERROR "FATAL: FUZZTEST_FUZZING_MODE only valid with Clang")
+endif()
+
+# ##############################################################################
 # libs
 # ##############################################################################
 

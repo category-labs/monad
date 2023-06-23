@@ -17,3 +17,6 @@
 [submodule "monad-core"]
 	path = monad-core
 	url = git@github.com:monad-crypto/monad-core.git
+[submodule "third_party/fuzztest"]
+	path = third_party/fuzztest
+	url = https://github.com/google/fuzztest.git

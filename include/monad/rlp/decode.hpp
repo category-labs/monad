@@ -10,13 +10,6 @@
 MONAD_RLP_NAMESPACE_BEGIN
 
 inline constexpr byte_string_view
-decode_bool(bool &target, byte_string_view const enc)
-{
-    target = enc[0];
-    return enc.substr(1);
-}
-
-inline constexpr byte_string_view
 decode_string(byte_string &str, byte_string_view const enc)
 {
     byte_string_view payload{};

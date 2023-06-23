@@ -15,6 +15,8 @@
 
 #include <monad/trie/config.hpp>
 
+#include <optional>
+
 MONAD_NAMESPACE_BEGIN
 
 struct Account;
@@ -42,9 +44,12 @@ inline byte_string encode_bytes32(bytes32_t const &b)
     return encode_string(to_byte_string_view(b.bytes));
 }
 
-inline byte_string encode_address(address_t const &a)
+inline byte_string encode_address(std::optional<address_t> const &a)
 {
-    return encode_string(to_byte_string_view(a.bytes));
+    if (!a.has_value()) {
+        return byte_string({0x80});
+    }
+    return encode_string(to_byte_string_view(a->bytes));
 }
 
 byte_string encode_account(Account const &, bytes32_t const &storage_root);
@@ -55,8 +60,8 @@ byte_string encode_log(Receipt::Log const &log);
 byte_string encode_bloom(Receipt::Bloom const &b);
 byte_string encode_receipt(Receipt const &receipt);
 
-byte_string encode_leaf(trie::Leaf const&);
-byte_string encode_branch(trie::Branch const&);
+byte_string encode_leaf(trie::Leaf const &);
+byte_string encode_branch(trie::Branch const &);
 byte_string to_node_reference(byte_string_view rlp);
 
 MONAD_RLP_NAMESPACE_END

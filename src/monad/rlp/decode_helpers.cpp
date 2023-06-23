@@ -175,7 +175,7 @@ decode_transaction_legacy(Transaction &txn, byte_string_view const enc)
     payload = decode_unsigned<uint64_t>(txn.nonce, payload);
     payload = decode_unsigned<uint64_t>(txn.gas_price, payload);
     payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
-    payload = decode_address_optional(txn.to, payload);
+    payload = decode_address(txn.to, payload);
     payload = decode_unsigned<uint128_t>(txn.amount, payload);
     payload = decode_string(txn.data, payload);
     payload = decode_sc(txn.sc, payload);
@@ -195,11 +195,12 @@ decode_transaction_eip2930(Transaction &txn, byte_string_view const enc)
     const auto rest_of_enc = parse_list_metadata(payload, enc);
 
     txn.type = Transaction::Type::eip2930;
+    txn.sc.chain_id = uint64_t{};
     payload = decode_unsigned<uint64_t>(*txn.sc.chain_id, payload);
     payload = decode_unsigned<uint64_t>(txn.nonce, payload);
     payload = decode_unsigned<uint64_t>(txn.gas_price, payload);
     payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
-    payload = decode_address_optional(txn.to, payload);
+    payload = decode_address(txn.to, payload);
     payload = decode_unsigned<uint128_t>(txn.amount, payload);
     payload = decode_string(txn.data, payload);
     payload = decode_access_list(txn.access_list, payload);
@@ -220,12 +221,13 @@ decode_transaction_eip1559(Transaction &txn, byte_string_view const enc)
     const auto rest_of_enc = parse_list_metadata(payload, enc);
 
     txn.type = Transaction::Type::eip1559;
+    txn.sc.chain_id = uint64_t{};
     payload = decode_unsigned<uint64_t>(*txn.sc.chain_id, payload);
     payload = decode_unsigned<uint64_t>(txn.nonce, payload);
     payload = decode_unsigned<uint64_t>(txn.priority_fee, payload);
     payload = decode_unsigned<uint64_t>(txn.gas_price, payload);
     payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
-    payload = decode_address_optional(txn.to, payload);
+    payload = decode_address(txn.to, payload);
     payload = decode_unsigned<uint128_t>(txn.amount, payload);
     payload = decode_string(txn.data, payload);
     payload = decode_access_list(txn.access_list, payload);

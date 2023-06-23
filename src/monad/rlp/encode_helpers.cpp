@@ -44,14 +44,12 @@ encode_account(Account const &account, bytes32_t const &storage_root)
 
 byte_string encode_transaction(Transaction const &txn)
 {
-    MONAD_ASSERT(txn.to != std::nullopt);
-
     if (txn.type == Transaction::Type::eip155) {
         return encode_list(
             encode_unsigned(txn.nonce),
             encode_unsigned(txn.gas_price),
             encode_unsigned(txn.gas_limit),
-            encode_address(*(txn.to)),
+            encode_address(txn.to),
             encode_unsigned(txn.amount),
             encode_string(txn.data),
             encode_unsigned(get_v(txn.sc)),
@@ -64,12 +62,12 @@ byte_string encode_transaction(Transaction const &txn)
     if (txn.type == Transaction::Type::eip1559) {
         return encode_string(
             byte_string{0x02} += encode_list(
-                encode_unsigned(*txn.sc.chain_id),
+                encode_unsigned(txn.sc.chain_id.value_or(0)),
                 encode_unsigned(txn.nonce),
                 encode_unsigned(txn.priority_fee),
                 encode_unsigned(txn.gas_price),
                 encode_unsigned(txn.gas_limit),
-                encode_address(*(txn.to)),
+                encode_address(txn.to),
                 encode_unsigned(txn.amount),
                 encode_string(txn.data),
                 encode_access_list(txn.access_list),
@@ -80,11 +78,11 @@ byte_string encode_transaction(Transaction const &txn)
     else if (txn.type == Transaction::Type::eip2930) {
         return encode_string(
             byte_string{0x01} += encode_list(
-                encode_unsigned(*txn.sc.chain_id),
+                encode_unsigned(txn.sc.chain_id.value_or(0)),
                 encode_unsigned(txn.nonce),
                 encode_unsigned(txn.gas_price),
                 encode_unsigned(txn.gas_limit),
-                encode_address(*(txn.to)),
+                encode_address(txn.to),
                 encode_unsigned(txn.amount),
                 encode_string(txn.data),
                 encode_access_list(txn.access_list),

@@ -54,6 +54,40 @@ TEST(Rlp_Transaction, DecodeEncodeLegacy)
     EXPECT_EQ(decoding.gas_limit, t.gas_limit);
     EXPECT_EQ(decoding.amount, t.amount);
     EXPECT_EQ(*decoding.to, *t.to);
+    EXPECT_EQ(decoding.to.value(), t.to.value());
+    EXPECT_EQ(decoding.sc.r, t.sc.r);
+    EXPECT_EQ(decoding.sc.s, t.sc.s);
+}
+
+TEST(Rlp_Transaction, DecodeEncodeLegacyNoTo)
+{
+    using namespace intx;
+    using namespace evmc::literals;
+
+    static constexpr auto price{20'000'000'000};
+    static constexpr auto amount{0xde0b6b3a7640000_u128};
+    static constexpr auto r{
+        0x28ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276_u256};
+    static constexpr auto s{
+        0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83_u256};
+
+    const monad::Transaction t{
+        .sc = {.r = r, .s = s}, // no chain_id in legacy transactions
+        .nonce = 9,
+        .gas_price = price,
+        .gas_limit = 21'000,
+        .amount = amount};
+
+    auto const legacy_rlp_transaction = encode_transaction(t);
+
+    monad::Transaction decoding{};
+    EXPECT_EQ(decode_transaction(decoding, legacy_rlp_transaction).size(), 0);
+
+    EXPECT_EQ(decoding.nonce, t.nonce);
+    EXPECT_EQ(decoding.gas_price, t.gas_price);
+    EXPECT_EQ(decoding.gas_limit, t.gas_limit);
+    EXPECT_EQ(decoding.amount, t.amount);
+    EXPECT_EQ(decoding.to.has_value(), false);
     EXPECT_EQ(decoding.sc.r, t.sc.r);
     EXPECT_EQ(decoding.sc.s, t.sc.s);
 }
@@ -100,9 +134,11 @@ TEST(Rlp_Transaction, EncodeEip155)
     EXPECT_EQ(decoding.gas_limit, t.gas_limit);
     EXPECT_EQ(decoding.amount, t.amount);
     EXPECT_EQ(*decoding.to, *t.to);
+    EXPECT_EQ(decoding.to.value(), t.to.value());
     EXPECT_EQ(decoding.sc.r, t.sc.r);
     EXPECT_EQ(decoding.sc.s, t.sc.s);
     EXPECT_EQ(*decoding.sc.chain_id, *t.sc.chain_id);
+    EXPECT_EQ(decoding.sc.chain_id.value(), t.sc.chain_id.value());
 }
 
 TEST(Rlp_Transaction, EncodeEip2930)
@@ -168,9 +204,11 @@ TEST(Rlp_Transaction, EncodeEip2930)
     EXPECT_EQ(decoding.gas_limit, t.gas_limit);
     EXPECT_EQ(decoding.amount, t.amount);
     EXPECT_EQ(*decoding.to, *t.to);
+    EXPECT_EQ(decoding.to.value(), t.to.value());
     EXPECT_EQ(decoding.sc.r, t.sc.r);
     EXPECT_EQ(decoding.sc.s, t.sc.s);
     EXPECT_EQ(*decoding.sc.chain_id, *t.sc.chain_id);
+    EXPECT_EQ(decoding.sc.chain_id.value(), t.sc.chain_id.value());
     EXPECT_EQ(decoding.type, t.type);
 
     EXPECT_EQ(decoding.access_list.size(), t.access_list.size());
@@ -183,7 +221,7 @@ TEST(Rlp_Transaction, EncodeEip2930)
     }
 }
 
-TEST(Rlp_Transaction, EncodeEip1559)
+TEST(Rlp_Transaction, EncodeEip1559TrueParity)
 {
     using namespace intx;
     using namespace evmc::literals;
@@ -234,9 +272,79 @@ TEST(Rlp_Transaction, EncodeEip1559)
     EXPECT_EQ(decoding.gas_limit, t.gas_limit);
     EXPECT_EQ(decoding.amount, t.amount);
     EXPECT_EQ(*decoding.to, *t.to);
+    EXPECT_EQ(decoding.to.value(), t.to.value());
     EXPECT_EQ(decoding.sc.r, t.sc.r);
     EXPECT_EQ(decoding.sc.s, t.sc.s);
     EXPECT_EQ(*decoding.sc.chain_id, *t.sc.chain_id);
+    EXPECT_EQ(decoding.sc.chain_id.value(), t.sc.chain_id.value());
+    EXPECT_EQ(decoding.type, t.type);
+    EXPECT_EQ(decoding.priority_fee, t.priority_fee);
+
+    EXPECT_EQ(decoding.access_list.size(), t.access_list.size());
+    for (size_t i = 0u; i < t.access_list.size(); ++i) {
+        EXPECT_EQ(decoding.access_list[i].a, t.access_list[i].a);
+        EXPECT_EQ(
+            decoding.access_list[i].keys.size(), t.access_list[i].keys.size());
+        EXPECT_EQ(decoding.access_list[i].keys, t.access_list[i].keys);
+    }
+}
+
+TEST(Rlp_Transaction, EncodeEip1559FalseParity)
+{
+    using namespace intx;
+    using namespace evmc::literals;
+
+    static constexpr auto price{20'000'000'000};
+    static constexpr auto amount{0xde0b6b3a7640000_u128};
+    static constexpr auto tip{4'000'000'000};
+    static constexpr auto to_addr{
+        0x3535353535353535353535353535353535353535_address};
+    static constexpr auto r{
+        0x28ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276_u256};
+    static constexpr auto s{
+        0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83_u256};
+    static const monad::Transaction::AccessList a{};
+
+    const monad::Transaction t{
+        .sc =
+            {.r = r, .s = s, .chain_id = 137, .odd_y_parity = false}, // Polygon
+        .nonce = 9,
+        .gas_price = price,
+        .gas_limit = 21'000,
+        .amount = amount,
+        .to = to_addr,
+        .type = monad::Transaction::Type::eip1559,
+        .access_list = a,
+        .priority_fee = tip};
+    const monad::byte_string eip1559_transaction{
+        0xb8, 0x77, 0x02, 0xf8, 0x74, 0x81, 0x89, 0x09, 0x84, 0xee, 0x6b, 0x28,
+        0x00, 0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00, 0x82, 0x52, 0x08, 0x94, 0x35,
+        0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35,
+        0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x88, 0x0d, 0xe0, 0xb6, 0xb3,
+        0xa7, 0x64, 0x00, 0x00, 0x80, 0xc0,
+
+        0x80, 0xa0, 0x28, 0xef, 0x61, 0x34, 0x0b, 0xd9, 0x39, 0xbc, 0x21, 0x95,
+        0xfe, 0x53, 0x75, 0x67, 0x86, 0x60, 0x03, 0xe1, 0xa1, 0x5d, 0x3c, 0x71,
+        0xff, 0x63, 0xe1, 0x59, 0x06, 0x20, 0xaa, 0x63, 0x62, 0x76, 0xa0, 0x67,
+        0xcb, 0xe9, 0xd8, 0x99, 0x7f, 0x76, 0x1a, 0xec, 0xb7, 0x03, 0x30, 0x4b,
+        0x38, 0x00, 0xcc, 0xf5, 0x55, 0xc9, 0xf3, 0xdc, 0x64, 0x21, 0x4b, 0x29,
+        0x7f, 0xb1, 0x96, 0x6a, 0x3b, 0x6d, 0x83};
+    auto const eip1559_rlp_transaction = monad::rlp::encode_transaction(t);
+    monad::Transaction decoding{};
+    EXPECT_EQ(decode_transaction(decoding, eip1559_rlp_transaction).size(), 0);
+
+    EXPECT_EQ(eip1559_rlp_transaction, eip1559_transaction);
+
+    EXPECT_EQ(decoding.nonce, t.nonce);
+    EXPECT_EQ(decoding.gas_price, t.gas_price);
+    EXPECT_EQ(decoding.gas_limit, t.gas_limit);
+    EXPECT_EQ(decoding.amount, t.amount);
+    EXPECT_EQ(*decoding.to, *t.to);
+    EXPECT_EQ(decoding.to.value(), t.to.value());
+    EXPECT_EQ(decoding.sc.r, t.sc.r);
+    EXPECT_EQ(decoding.sc.s, t.sc.s);
+    EXPECT_EQ(*decoding.sc.chain_id, *t.sc.chain_id);
+    EXPECT_EQ(decoding.sc.chain_id.value(), t.sc.chain_id.value());
     EXPECT_EQ(decoding.type, t.type);
     EXPECT_EQ(decoding.priority_fee, t.priority_fee);
 

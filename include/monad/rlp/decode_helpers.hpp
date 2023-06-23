@@ -15,13 +15,21 @@
 MONAD_RLP_NAMESPACE_BEGIN
 
 template <unsigned_integral T>
-inline constexpr byte_string_view
-decode_unsigned(T &u_num, byte_string_view const enc)
+constexpr byte_string_view decode_unsigned(T &u_num, byte_string_view const enc)
 {
     byte_string_view payload{};
     auto const rest_of_enc = parse_string_metadata(payload, enc);
     u_num = decode_raw_num<T>(payload);
     return rest_of_enc;
+}
+
+constexpr byte_string_view decode_bool(bool &target, byte_string_view const enc)
+{
+    uint64_t i{0};
+    auto ret = decode_unsigned<uint64_t>(i, enc);
+    MONAD_DEBUG_ASSERT(i <= 1);
+    target = i;
+    return ret;
 }
 
 inline byte_string_view
@@ -37,13 +45,15 @@ decode_address(address_t &address, byte_string_view const enc)
 }
 
 inline byte_string_view
-decode_address_optional(std::optional<address_t> &address, byte_string_view const enc)
+decode_address(std::optional<address_t> &address, byte_string_view const enc)
 {
     byte_string_view payload{};
     auto const rest_of_enc = parse_string_metadata(payload, enc);
     if (payload.size() == sizeof(address_t)) {
+        address = address_t{};
         std::memcpy(address->bytes, payload.data(), sizeof(address_t));
-    } else {
+    }
+    else {
         MONAD_ASSERT(payload.size() == 0);
         address.reset();
     }

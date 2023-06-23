@@ -4,37 +4,17 @@
 
 #include <filesystem>
 
+#include <test_resource_data.h>
+
 using namespace monad;
 using namespace db;
-
-// DATA_DIR needs to be the full path (/space/ssd....)
-std::filesystem::__cxx11::path get_dir_path()
-{
-    auto env_path = std::getenv("DATA_DIR");
-    if (env_path) {
-        return std::filesystem::__cxx11::path(env_path);
-    }
-    else {
-        auto monad_path = std::filesystem::current_path()
-                              .parent_path()
-                              .parent_path()
-                              .parent_path()
-                              .parent_path()
-                              .parent_path();
-
-        auto dir_path =
-            monad_path / "test" / "common" / "blocks" / "compressed_blocks";
-
-        return dir_path;
-    }
-}
+using namespace intx;
 
 TEST(Rlp_Block, DecodeBlock46402)
 {
-    using namespace intx;
 
     Block block{};
-    BlockDb block_db(get_dir_path());
+    BlockDb block_db(test_resource::correct_block_data_dir);
     auto res = block_db.get(46'402, block);
     EXPECT_EQ(res, BlockDb::Status::SUCCESS);
 
@@ -120,10 +100,9 @@ TEST(Rlp_Block, DecodeBlock46402)
 
 TEST(Rlp_Block, DecodeBlock2730000)
 {
-    using namespace intx;
 
     Block block{};
-    BlockDb block_db(get_dir_path());
+    BlockDb block_db(test_resource::correct_block_data_dir);
     auto res = block_db.get(2'730'000, block);
     EXPECT_EQ(res, BlockDb::Status::SUCCESS);
 
@@ -272,10 +251,9 @@ TEST(Rlp_Block, DecodeBlock2730000)
 
 TEST(Rlp_Block, DecodeBlock2730001)
 {
-    using namespace intx;
 
     Block block{};
-    BlockDb block_db(get_dir_path());
+    BlockDb block_db(test_resource::correct_block_data_dir);
     auto res = block_db.get(2'730'001, block);
     EXPECT_EQ(res, BlockDb::Status::SUCCESS);
 
@@ -454,7 +432,7 @@ TEST(Rlp_Block, DecodeBlock2730002)
     using namespace intx;
 
     Block block{};
-    BlockDb block_db(get_dir_path());
+    BlockDb block_db(test_resource::correct_block_data_dir);
     auto res = block_db.get(2'730'002, block);
     EXPECT_EQ(res, BlockDb::Status::SUCCESS);
 
@@ -515,10 +493,9 @@ TEST(Rlp_Block, DecodeBlock2730002)
 
 TEST(Rlp_Block, ReadBlock2730009)
 {
-    using namespace intx;
 
     Block block{};
-    BlockDb block_db(get_dir_path());
+    BlockDb block_db(test_resource::correct_block_data_dir);
     auto res = block_db.get(2730009, block);
     EXPECT_EQ(res, BlockDb::Status::SUCCESS);
 
@@ -564,10 +541,9 @@ TEST(Rlp_Block, ReadBlock2730009)
 
 TEST(Rlp_Block, DecodeBlock14000000)
 {
-    using namespace intx;
 
     Block block{};
-    BlockDb block_db(get_dir_path());
+    BlockDb block_db(test_resource::correct_block_data_dir);
     auto res = block_db.get(14'000'000, block);
     EXPECT_EQ(res, BlockDb::Status::SUCCESS);
 

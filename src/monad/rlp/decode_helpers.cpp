@@ -393,6 +393,15 @@ byte_string_view decode_block_header_vector(
     return rest_of_enc;
 }
 
+byte_string_view get_rlp_header_from_block(byte_string_view const block_encoding)
+{
+    byte_string_view rlp_block{};
+    (void)parse_list_metadata(rlp_block, block_encoding);
+    byte_string_view rlp_block_header{};
+    (void)parse_list_metadata(rlp_block_header, rlp_block);
+    return {rlp_block.data(), rlp_block_header.end()};
+}
+
 byte_string_view decode_block(Block &block, byte_string_view const enc)
 {
     byte_string_view payload{};

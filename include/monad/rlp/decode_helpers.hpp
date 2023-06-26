@@ -83,5 +83,6 @@ byte_string_view
 decode_transaction(Transaction &txn, byte_string_view const enc);
 byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc);
 byte_string_view decode_block(Block &block, byte_string_view const enc);
+byte_string_view get_rlp_header_from_block(byte_string_view const block_enc);
 
 MONAD_RLP_NAMESPACE_END

@@ -64,7 +64,7 @@ public:
         class TInterpreter,
         class TPrecompiles>
     [[nodiscard]] Result run_fork(
-        TState &state, TStateTrie<TState> &state_trie, TBlockDb const &block_db,
+        TState &state, TStateTrie<TState> &state_trie, TBlockDb &block_db,
         TReceiptCollector &receipt_collector, block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
@@ -176,7 +176,7 @@ public:
         class TInterpreter,
         class TPrecompiles>
     [[nodiscard]] Result
-    run(TState &state, TStateTrie<TState> &state_trie, TBlockDb const &block_db,
+    run(TState &state, TStateTrie<TState> &state_trie, TBlockDb &block_db,
         TReceiptCollector &receipt_collector, block_num_t start_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {

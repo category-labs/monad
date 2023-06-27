@@ -17,3 +17,6 @@
 [submodule "third_party/vcpkg"]
 	path = third_party/vcpkg
 	url = https://github.com/monad-crypto/vcpkg.git
+[submodule "third_party/ethereum-tests"]
+	path = third_party/ethereum-tests
+	url = https://github.com/ethereum/tests

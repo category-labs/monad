@@ -18,8 +18,6 @@
 #include <optional>
 #include <type_traits>
 
-#include <iostream>
-
 MONAD_LOG_NAMESPACE_BEGIN
 struct basic_formatter
 {
@@ -27,22 +25,6 @@ struct basic_formatter
     constexpr auto parse(ParseContext &ctx)
     {
         return ctx.begin();
-    }
-};
-
-// https://github.com/fmtlib/fmt/issues/1621
-struct fmt_byte_string_wrapper
-{
-    byte_string bs;
-};
-
-template <size_t N>
-struct fmt_byte_string_fixed_wrapper
-{
-    byte_string_fixed<N> bsf;
-    explicit fmt_byte_string_fixed_wrapper(byte_string_fixed<N> const &arg)
-        : bsf(arg)
-    {
     }
 };
 
@@ -62,17 +44,6 @@ namespace quill
 
     template <>
     struct copy_loggable<monad::bytes32_t> : std::true_type
-    {
-    };
-
-    template <>
-    struct copy_loggable<monad::log::fmt_byte_string_wrapper> : std::true_type
-    {
-    };
-
-    template <size_t N>
-    struct copy_loggable<monad::log::fmt_byte_string_fixed_wrapper<N>>
-        : std::true_type
     {
     };
 
@@ -127,10 +98,24 @@ namespace fmt
         template <typename FormatContext>
         auto format(monad::address_t const &value, FormatContext &ctx) const
         {
-            fmt::format_to(ctx.out(), "0x");
-            for (auto const &v : value.bytes) {
-                fmt::format_to(ctx.out(), "{:02x}", v);
-            }
+            fmt::format_to(
+                ctx.out(),
+                "0x{:02x}",
+                fmt::join(std::as_bytes(std::span(value.bytes)), ""));
+            return ctx.out();
+        }
+    };
+
+    template <>
+    struct formatter<monad::bytes32_t> : public monad::log::basic_formatter
+    {
+        template <typename FormatContext>
+        auto format(monad::bytes32_t const &value, FormatContext &ctx) const
+        {
+            fmt::format_to(
+                ctx.out(),
+                "0x{:02x}",
+                fmt::join(std::as_bytes(std::span(value.bytes)), ""));
             return ctx.out();
         }
     };
@@ -150,13 +135,13 @@ namespace fmt
                 "State Root={} "
                 "Transaction Root={} "
                 "Receipt Root={} "
-                "Logs Bloom={} "
+                "Logs Bloom=0x{:02x} "
                 "Difficulty={} "
                 "Block Number={} "
                 "Gas Limit={} "
                 "Gas Used={} "
                 "Timestamp={} "
-                "Extra Data={}"
+                "Extra Data=0x{:02x}"
                 "}}",
                 bh.parent_hash,
                 bh.ommers_hash,
@@ -164,61 +149,13 @@ namespace fmt
                 bh.state_root,
                 bh.transactions_root,
                 bh.receipts_root,
-                monad::log::fmt_byte_string_fixed_wrapper(bh.logs_bloom),
+                fmt::join(std::as_bytes(std::span(bh.logs_bloom)), ""),
                 bh.difficulty,
                 bh.number,
                 bh.gas_limit,
                 bh.gas_used,
                 bh.timestamp,
-                monad::log::fmt_byte_string_wrapper{.bs = bh.extra_data});
-            return ctx.out();
-        }
-    };
-
-    template <>
-    struct formatter<monad::bytes32_t> : public monad::log::basic_formatter
-    {
-        template <typename FormatContext>
-        auto format(monad::bytes32_t const &value, FormatContext &ctx) const
-        {
-            fmt::format_to(ctx.out(), "0x");
-            for (auto const &v : value.bytes) {
-                fmt::format_to(ctx.out(), "{:02x}", v);
-            }
-            return ctx.out();
-        }
-    };
-
-    template <>
-    struct formatter<monad::log::fmt_byte_string_wrapper>
-        : public monad::log::basic_formatter
-    {
-        template <typename FormatContext>
-        auto format(
-            monad::log::fmt_byte_string_wrapper const &b,
-            FormatContext &ctx) const
-        {
-            fmt::format_to(ctx.out(), "0x");
-            for (auto const &v : b.bs) {
-                fmt::format_to(ctx.out(), "{:02x}", v);
-            }
-            return ctx.out();
-        }
-    };
-
-    template <size_t N>
-    struct formatter<monad::log::fmt_byte_string_fixed_wrapper<N>>
-        : public monad::log::basic_formatter
-    {
-        template <typename FormatContext>
-        auto format(
-            monad::log::fmt_byte_string_fixed_wrapper<N> const &value,
-            FormatContext &ctx) const
-        {
-            fmt::format_to(ctx.out(), "0x");
-            for (auto const &v : value.bsf) {
-                fmt::format_to(ctx.out(), "{:02x}", v);
-            }
+                fmt::join(std::as_bytes(std::span(bh.extra_data)), ""));
             return ctx.out();
         }
     };
@@ -232,13 +169,13 @@ namespace fmt
             fmt::format_to(
                 ctx.out(),
                 "Receipt{{"
-                "Bloom={} "
+                "Bloom=0x{:02x} "
                 "Status={} "
                 "Gas Used={} "
                 "Transaction Type={} "
                 "Logs={}"
                 "}}",
-                monad::log::fmt_byte_string_fixed_wrapper(r.bloom),
+                fmt::join(std::as_bytes(std::span(r.bloom)), ""),
                 r.status,
                 r.gas_used,
                 r.type,
@@ -256,11 +193,11 @@ namespace fmt
             fmt::format_to(
                 ctx.out(),
                 "Log{{"
-                "Data={} "
+                "Data=0x{:02x} "
                 "Topics={} "
                 "Address={}"
                 "}}",
-                monad::log::fmt_byte_string_wrapper{.bs = l.data},
+                fmt::join(std::as_bytes(std::span(l.data)), ""),
                 l.topics,
                 l.address);
             return ctx.out();
@@ -314,9 +251,9 @@ namespace fmt
         {
             fmt::format_to(
                 ctx.out(),
-                "Upsert{{{} {}}}",
+                "Upsert{{{} 0x{:02x}}}",
                 u.key,
-                monad::log::fmt_byte_string_wrapper{.bs = u.value});
+                fmt::join(std::as_bytes(std::span{u.value}), ""));
             return ctx.out();
         }
     };

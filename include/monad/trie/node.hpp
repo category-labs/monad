@@ -10,8 +10,6 @@
 
 #include <monad/rlp/encode_helpers.hpp>
 
-#include <tl/optional.hpp>
-
 #include <cassert>
 #include <cstring>
 #include <type_traits>
@@ -31,7 +29,7 @@ struct BaseNode
     };
 
     // parent + branch
-    tl::optional<uint8_t> key_size;
+    std::optional<uint8_t> key_size;
     Nibbles path_to_node;
     byte_string reference;
 

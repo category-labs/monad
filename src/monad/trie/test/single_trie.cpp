@@ -7,8 +7,6 @@
 #include <monad/trie/rocks_comparator.hpp>
 #include <monad/trie/trie.hpp>
 
-#include <tl/optional.hpp>
-
 #include <random>
 
 using namespace monad;
@@ -18,7 +16,7 @@ using namespace evmc::literals;
 namespace
 {
     template <typename T>
-    T basic_node(tl::optional<size_t> key_size, byte_string path_to_node)
+    T basic_node(std::optional<size_t> key_size, byte_string path_to_node)
     {
         T node;
         node.key_size = key_size;
@@ -270,7 +268,7 @@ TYPED_TEST(GenerateTransformationListTest, OneUpdate)
 
     std::list<Node> expected = {
         basic_node<Branch>(0, {0x04}),
-        basic_node<Leaf>(tl::nullopt, {0x05, 0x05, 0x05, 0x05})};
+        basic_node<Leaf>(std::nullopt, {0x05, 0x05, 0x05, 0x05})};
 
     EXPECT_TRUE(validate_list(
         this->trie_.generate_transformation_list(updates), expected));
@@ -281,7 +279,7 @@ TYPED_TEST(GenerateTransformationListTest, OneUpdate)
         Nibbles(byte_string({0x03, 0x03, 0x03, 0x03})), {0xff})};
 
     expected = std::list<Node>({
-        basic_node<Leaf>(tl::nullopt, {0x03, 0x03, 0x03, 0x03}),
+        basic_node<Leaf>(std::nullopt, {0x03, 0x03, 0x03, 0x03}),
         basic_node<Branch>(0, {0x04}),
     });
 
@@ -295,7 +293,7 @@ TYPED_TEST(GenerateTransformationListTest, OneUpdate)
 
     expected = std::list<Node>(
         {basic_node<Branch>(0, {0x04}),
-         basic_node<Leaf>(tl::nullopt, {0x04, 0x06, 0x02, 0x01})});
+         basic_node<Leaf>(std::nullopt, {0x04, 0x06, 0x02, 0x01})});
 
     EXPECT_TRUE(validate_list(
         this->trie_.generate_transformation_list(updates), expected));
@@ -308,7 +306,7 @@ TYPED_TEST(GenerateTransformationListTest, OneUpdate)
     expected = std::list<Node>(
         {basic_node<Branch>(2, {0x04, 0x02}),
          basic_node<Leaf>(2, {0x04, 0x05, 0x02, 0x01}),
-         basic_node<Leaf>(tl::nullopt, {0x04, 0x05, 0x02, 0x02})});
+         basic_node<Leaf>(std::nullopt, {0x04, 0x05, 0x02, 0x02})});
 
     EXPECT_TRUE(validate_list(
         this->trie_.generate_transformation_list(updates), expected));
@@ -321,7 +319,7 @@ TYPED_TEST(GenerateTransformationListTest, OneUpdate)
     expected = std::list<Node>({
         basic_node<Leaf>(3, {0x04, 0x02, 0x02, 0x01}),
         basic_node<Leaf>(4, {0x04, 0x02, 0x03, 0x02}),
-        basic_node<Leaf>(tl::nullopt, {0x04, 0x02, 0x03, 0x04}),
+        basic_node<Leaf>(std::nullopt, {0x04, 0x02, 0x03, 0x04}),
         basic_node<Leaf>(4, {0x04, 0x02, 0x03, 0x06}),
         basic_node<Leaf>(2, {0x04, 0x05, 0x02, 0x01}),
     });
@@ -340,7 +338,7 @@ TYPED_TEST(GenerateTransformationListTest, MultipleUpdates)
         test::make_del(Nibbles(byte_string({0x04, 0x02, 0x03, 0x06})))};
 
     std::vector<Node> expected = {
-        basic_node<Leaf>(tl::nullopt, {0x04, 0x02, 0x02, 0x01}),
+        basic_node<Leaf>(std::nullopt, {0x04, 0x02, 0x02, 0x01}),
         basic_node<Leaf>(4, {0x04, 0x02, 0x03, 0x02}),
         basic_node<Leaf>(2, {0x04, 0x05, 0x02, 0x01})};
 
@@ -357,7 +355,7 @@ TYPED_TEST(GenerateTransformationListTest, MultipleUpdates)
 
     expected = std::vector<Node>(
         {basic_node<Leaf>(3, {0x04, 0x02, 0x02, 0x01}),
-         basic_node<Leaf>(tl::nullopt, {0x04, 0x02, 0x03, 0x03}),
+         basic_node<Leaf>(std::nullopt, {0x04, 0x02, 0x03, 0x03}),
          basic_node<Leaf>(4, {0x04, 0x02, 0x03, 0x06}),
          basic_node<Leaf>(2, {0x04, 0x05, 0x02, 0x01})});
 
@@ -389,10 +387,10 @@ TYPED_TEST(GenerateTransformationListTest, MultipleUpdates)
     };
 
     expected = std::vector<Node>({
-        basic_node<Leaf>(tl::nullopt, {0x04, 0x02, 0x02, 0x00}),
+        basic_node<Leaf>(std::nullopt, {0x04, 0x02, 0x02, 0x00}),
         basic_node<Leaf>(3, {0x04, 0x02, 0x02, 0x01}),
         basic_node<Branch>(3, {0x04, 0x02, 0x03}),
-        basic_node<Leaf>(tl::nullopt, {0x04, 0x02, 0x03, 0x07}),
+        basic_node<Leaf>(std::nullopt, {0x04, 0x02, 0x03, 0x07}),
     });
 
     EXPECT_TRUE(validate_list(

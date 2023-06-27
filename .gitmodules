@@ -1,6 +1,9 @@
 [submodule "monad-core"]
 	path = monad-core
 	url = git@github.com:monad-crypto/monad-core.git
+[submodule "third_party/ethereum-tests"]
+	path = third_party/ethereum-tests
+	url = https://github.com/ethereum/tests
 [submodule "third_party/evmone"]
 	path = third_party/evmone
 	url = https://github.com/monad-crypto/evmone.git

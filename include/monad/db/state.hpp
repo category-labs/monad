@@ -11,7 +11,8 @@
 
 MONAD_DB_NAMESPACE_BEGIN
 
-template <class TAccountStore, class TValueStore, class TCodeStore, class TBlockCache>
+template <
+    class TAccountStore, class TValueStore, class TCodeStore, class TBlockCache>
 struct State
 {
     struct WorkingCopy
@@ -26,8 +27,7 @@ struct State
         WorkingCopy(
             unsigned int i, typename TAccountStore::WorkingCopy &&a,
             typename TValueStore::WorkingCopy &&s,
-            typename TCodeStore::WorkingCopy &&c,
-            TBlockCache &b)
+            typename TCodeStore::WorkingCopy &&c, TBlockCache &b)
             : accounts_{std::move(a)}
             , storage_{std::move(s)}
             , code_{std::move(c)}
@@ -149,6 +149,13 @@ struct State
             code_.revert();
         }
 
+        [[nodiscard]] bytes32_t get_block_hash(int64_t number) const noexcept
+        {
+            MONAD_DEBUG_ASSERT(number > 0);
+            return block_cache_.get_block_hash(
+                static_cast<uint64_t>(number));
+        }
+
         // Logs
         void store_log(Receipt::Log &&l) { logs_.emplace_back(l); }
 
@@ -174,11 +181,6 @@ struct State
         , code_{c}
         , block_cache_{bc}
     {
-    }
-
-    [[nodiscard]] bytes32_t get_block_hash(int64_t number) const noexcept
-    {
-        return block_cache_.get_block_hash(number);
     }
 
     unsigned int current_txn() const { return current_txn_; }

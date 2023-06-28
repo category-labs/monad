@@ -8,32 +8,30 @@ project(monad)
 option(ASAN "Turn on Address Sanitizer")
 option(UBSAN "Turn on Undefined Behavior Sanitizer")
 
-# ##############################################################################
-# conan
-# ##############################################################################
-
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
-list(APPEND CMAKE_PREFIX_PATH ${CMAKE_BINARY_DIR})
-
-include(${PROJECT_SOURCE_DIR}/conan/cmake-conan/conan.cmake)
-
-conan_cmake_autodetect(settings)
-
-conan_cmake_install(
-    PATH_OR_REFERENCE
-    ${PROJECT_SOURCE_DIR}/conan/conanfile.txt
-    BUILD
-    missing
-    ENV
-    CC=${CMAKE_C_COMPILER}
-    CXX=${CMAKE_CXX_COMPILER}
-    SETTINGS
-    ${settings}
-)
+include(cmake/test.cmake)
 
 # ##############################################################################
 # deps
 # ##############################################################################
+
+set(VCPKG_ROOT_DIR "${PROJECT_SOURCE_DIR}/third_party/vcpkg")
+
+if(NOT CMAKE_TOOLCHAIN_FILE STREQUAL
+   "${VCPKG_ROOT_DIR}/scripts/buildsystems/vcpkg.cmake"
+)
+    # This must be forced so dependency builds pick it up
+    if(CMAKE_TOOLCHAIN_FILE)
+        set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE
+            "${CMAKE_TOOLCHAIN_FILE}"
+            CACHE INTERNAL "vcpkg chained toolchain file"
+        )
+    endif()
+    set(CMAKE_TOOLCHAIN_FILE
+        "${VCPKG_ROOT_DIR}/scripts/buildsystems/vcpkg.cmake"
+        CACHE INTERNAL "vcpkg toolchain file" FORCE
+    )
+endif()
+include(${VCPKG_ROOT_DIR}/scripts/buildsystems/vcpkg.cmake)
 
 find_package(Boost REQUIRED COMPONENTS fiber log)
 find_package(PkgConfig REQUIRED)
@@ -50,8 +48,6 @@ add_subdirectory(third_party/ethash)
 add_subdirectory(third_party/evmone)
 add_subdirectory(third_party/intx)
 add_subdirectory(third_party/silkpre)
-
-include(cmake/test.cmake)
 
 function(monad_compile_options target)
     set_property(TARGET ${target} PROPERTY C_STANDARD 11)
@@ -92,6 +88,16 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/trie/test)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # only include if fuzzing mode is turned on
     if(FUZZTEST_FUZZING_MODE)
+        # TODO: figure out why vcpkg is interferring with target names. Prior to
+        # introducing vcpkg, there were no conflicts in target names. Post
+        # vcpkg, we need the below workaround so that cmake is not adding
+        # multiple GTest::gtest targets. Our workaround is to ask all
+        # dependencies of fuzztest not to pull in and build their own gtest
+        set(FUZZTEST_USE_GTEST OFF)
+        set(FUZZTEST_TESTING OFF)
+        set(ABSL_USE_EXTERNAL_GOOGLETEST ON)
+        set(ANTLR_BUILD_CPP_TESTS OFF)
+
         add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/fuzztest)
         add_subdirectory(${PROJECT_SOURCE_DIR}/test/fuzz)
     endif()

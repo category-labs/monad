@@ -15,8 +15,10 @@ RUN yum -y update
 RUN yum -y install \
   clang \
   cmake \
+  git \
   ninja-build \
-  python3-pip
+  python3-pip \
+  zip
 
 RUN yum -y install \
   abseil-cpp \

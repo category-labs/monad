@@ -40,6 +40,7 @@ pkg_check_modules(rocksdb REQUIRED IMPORTED_TARGET rocksdb)
 find_package(tl-expected REQUIRED)
 find_package(tl-optional REQUIRED)
 find_package(quill REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 set(BUILD_SHARED_LIBS OFF)
 set(ETHASH_BUILD_TESTS OFF)
@@ -227,6 +228,7 @@ target_link_libraries(
     PUBLIC tl::optional
     PUBLIC quill::quill
     PUBLIC silkpre
+    PUBLIC nlohmann_json::nlohmann_json
 )
 monad_compile_options(monad)
 

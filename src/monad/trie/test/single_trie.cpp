@@ -528,3 +528,27 @@ TYPED_TEST(BasicTrieTest, StateCleanup)
 
     verify(expected_storage);
 }
+
+TYPED_TEST(BasicTrieTest, KeyOfUpdatedNodeChanges)
+{
+    this->process_updates({
+        test::make_upsert(
+            0x0000000000000000000000000000000000000000000000000000000000000000_bytes32,
+            byte_string({0xde, 0xad, 0xbe, 0xef})),
+        test::make_upsert(
+            0x0000000000000000000000000000000000000000000000000000000000000001_bytes32,
+            byte_string({0xde, 0xad, 0xbe, 0xef})),
+    });
+
+    this->process_updates({
+        test::make_del(
+            0x0000000000000000000000000000000000000000000000000000000000000000_bytes32),
+        test::make_upsert(
+            0x0000000000000000000000000000000000000000000000000000000000000001_bytes32,
+            byte_string({0xde, 0xad, 0xbe, 0xef})),
+    });
+
+    this->process_updates({test::make_upsert(
+        0x0000000000000000000000000000000000000000000000000000000000000000_bytes32,
+        byte_string({0xde, 0xad, 0xbe, 0xef}))});
+}

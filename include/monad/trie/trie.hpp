@@ -1,13 +1,13 @@
 #pragma once
 
+#include <monad/core/assert.h>
+#include <monad/core/likely.h>
+#include <monad/core/variant.hpp>
 #include <monad/trie/key_buffer.hpp>
 #include <monad/trie/nibbles.hpp>
 #include <monad/trie/node.hpp>
 #include <monad/trie/process_transformation_list.hpp>
 #include <monad/trie/update.hpp>
-#include <monad/core/assert.h>
-#include <monad/core/likely.h>
-#include <monad/core/variant.hpp>
 
 #include <tl/optional.hpp>
 
@@ -184,6 +184,13 @@ struct Trie
                 }
 
                 // and make sure to delete the root too
+                trie_writer_.del(buf_);
+            }
+            else {
+                // indiscriminately delete the update key in case the
+                // corresponding leaf nodes path changes as a result of this
+                // batch of updates
+                serialize_nibbles(buf_, trie_keys.back());
                 trie_writer_.del(buf_);
             }
         }

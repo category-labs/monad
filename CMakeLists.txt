@@ -87,6 +87,7 @@ endfunction()
 # unit tests
 # ##############################################################################
 
+add_subdirectory(${PROJECT_SOURCE_DIR}/test/compatibility)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/core/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/db/test)

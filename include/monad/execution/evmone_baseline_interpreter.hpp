@@ -37,8 +37,8 @@ struct EVMOneBaselineInterpreter
         evmone::ExecutionState es{
             m,
             TTraits::rev,
-            *reinterpret_cast<evmc_host_interface *>(h),
-            nullptr,
+            h->get_interface(),
+            h->to_context(),
             code,
             {}};
         evmone::baseline::CodeAnalysis ca{

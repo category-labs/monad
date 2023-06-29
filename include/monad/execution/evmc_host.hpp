@@ -17,7 +17,7 @@
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
 template <class TState, concepts::fork_traits<TState> TTraits, class TEvm>
-struct EvmcHost : public evmc::HostInterface
+struct EvmcHost : public evmc::Host
 {
     BlockHeader const &block_header_;
     Transaction const &transaction_;

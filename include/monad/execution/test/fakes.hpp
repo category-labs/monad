@@ -165,6 +165,12 @@ namespace fake
         {
             return evmc::Result{_result};
         }
+
+        evmc_host_context *to_context() { return nullptr; }
+        evmc_host_interface &get_interface()
+        {
+            return *reinterpret_cast<evmc_host_interface *>(this);
+        }
     };
 
     struct Evm

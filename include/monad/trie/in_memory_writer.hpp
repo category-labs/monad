@@ -71,9 +71,9 @@ struct InMemoryWriter
             if (change.second.has_value()) {
                 storage.emplace_back(change.first, change.second.value());
             }
-
-            std::ranges::sort(storage, TComparator{}, &element_t::first);
         }
+
+        std::ranges::sort(storage, TComparator{}, &element_t::first);
 
         changes.clear();
         deleted_prefixes.clear();

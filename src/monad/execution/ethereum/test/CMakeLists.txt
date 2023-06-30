@@ -3,6 +3,7 @@ add_unit_test(
     monad-executionethtests
     SOURCES
     fork_traits.cpp
+    genesis.cpp
     replay_eth_block_db.cpp
     static_precompiles.cpp
     LIBRARIES

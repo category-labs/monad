@@ -151,6 +151,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/include/monad/execution/evm.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/evmc_host.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/config.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/genesis.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/static_precompiles/elliptic_curve_recover.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/static_precompiles/sha256_hash.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/execution/ethereum/static_precompiles/ripemd160_hash.hpp

@@ -165,32 +165,21 @@ struct Trie
         std::vector<Nibbles> trie_keys;
         trie_keys.reserve(updates.size());
 
+        // delete the root
+        serialize_nibbles(buf_, Nibbles{});
+        MONAD_DEBUG_ASSERT(buf_.path_empty());
+        trie_writer_.del(buf_);
+
         for (auto it = updates.begin(); it < updates.end(); ++it) {
             trie_keys.push_back(get_key(it));
             if (is_deletion(*it)) {
-                // TODO: to optimize this, only delete nodes that we know
-                // exist and need to be deleted. Look at perf to see if we
-                // bottleneck here
-                // if this becomes a bottle neck, search for the
-                // key first and then delete starting from there.
-                // This will initiate less delete calls
-
                 serialize_nibbles(buf_, get_update_key(*it));
                 leaves_writer_.del(buf_);
-
-                while (!buf_.path_empty()) {
-                    trie_writer_.del(buf_);
-                    buf_.path_pop_back();
-                }
-
-                // and make sure to delete the root too
-                trie_writer_.del(buf_);
             }
-            else {
-                // indiscriminately delete the update key in case the
-                // corresponding leaf nodes path changes as a result of this
-                // batch of updates
-                serialize_nibbles(buf_, trie_keys.back());
+
+            // delete the potentially (they could not exist) dirtied nodes
+            serialize_nibbles(buf_, trie_keys.back());
+            for (; !buf_.path_empty(); buf_.path_pop_back()) {
                 trie_writer_.del(buf_);
             }
         }

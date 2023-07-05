@@ -100,6 +100,7 @@ struct EvmcHost : public evmc::Host
             .sender = *t.from,
             .input_data = t.data.data(),
             .input_size = t.data.size(),
+            .code_address = to_address.second,
         };
         uint256_t v{t.amount};
         intx::be::store(m.value.bytes, v);

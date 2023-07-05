@@ -110,8 +110,74 @@ TEST(EvmInterpStateHost, return_existing_storage)
     EXPECT_EQ(status.gas_left, 9'782);
 }
 
+TEST(EvmInterpStateHost, store_then_return_storage)
+{
+    db::BlockDb blocks{test_resource::correct_block_data_dir};
+    account_store_db_t db{};
+    db::AccountStore accounts{db};
+    db::ValueStore values{db};
+    code_db_t code_db{};
+    db::CodeStore codes{code_db};
+    db::State s{accounts, values, codes, blocks};
+
+    // Setup db - gas costs referenced here
+    // https://www.evm.codes/?fork=byzantium
+    byte_string code = {
+        0x60, // PUSH1, 3 gas
+        0x4d,
+        0x60, // PUSH1, 3 gas
+        0x00,
+        0x55, // SSTORE, 20'000
+        0x60, // PUSH1, 3 gas
+        0x00, // key
+        0x54, // SLOAD, 200 gas (byzantium)
+        0x60, // PUSH1, 3 gas
+        0x00, // offset
+        0x52, // MSTORE, 6 gas
+        0x60, // PUSH1, 3 gas
+        0x01, // length
+        0x60, // PUSH1, 3 gas
+        0x1f, // offset
+        0xf3}; // RETURN
+    code_db.emplace(a, code);
+    Account A{};
+    db.create(a, A);
+    db.create(to, Account{});
+    db.create(from, Account{.balance = 10'000'000});
+    db.commit();
+
+    BlockHeader const b{}; // Required for the host interface, but not used
+    Transaction const t{};
+    evmc_message m{
+        .kind = EVMC_CALL,
+        .gas = 20'225,
+        .recipient = to,
+        .sender = from,
+        .code_address = a};
+
+    // Get working copy
+    auto working_state = s.get_working_copy(0u);
+
+    using fork_t = monad::fork_traits::byzantium;
+    using state_t = decltype(working_state);
+
+    // Prep per transaction processor
+    working_state.access_account(to);
+    working_state.access_account(from);
+
+    evm_t<state_t, fork_t> e{};
+    evm_host_t<state_t, fork_t> h{b, t, working_state, e};
+
+    auto status = e.call_evm(&h, working_state, m);
+
+    EXPECT_EQ(status.status_code, EVMC_SUCCESS);
+    EXPECT_EQ(status.output_size, 1u);
+    EXPECT_EQ(*(status.output_data), 0x4d);
+    EXPECT_EQ(status.gas_left, 1);
+
+}
+
 // TODO
-// TEST(EvmInterpStateHost, store_then_return_storage)
 // TEST(EvmInterpStateHost, delegate_call)
 // TEST(EvmInterpStateHost, create_new_contract)
 // TEST(EvmInterpStateHost, keep_irrevocable_change)

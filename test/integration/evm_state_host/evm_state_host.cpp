@@ -40,6 +40,14 @@ template <class TState, concepts::fork_traits<TState> TTraits>
 using traits_templated_static_precompiles_t = execution::StaticPrecompiles<
     TState, TTraits, typename TTraits::static_precompiles_t>;
 
+template <class TState, concepts::fork_traits<TState> TTraits>
+using evm_t = execution::Evm<
+    TState, TTraits, traits_templated_static_precompiles_t<TState, TTraits>,
+    execution::EVMOneBaselineInterpreter<TState, TTraits>>;
+
+template <class TState, concepts::fork_traits<TState> TTraits>
+using evm_host_t = execution::EvmcHost<TState, TTraits, evm_t<TState, TTraits>>;
+
 TEST(EvmInterpStateHost, return_existing_storage)
 {
     db::BlockDb blocks{test_resource::correct_block_data_dir};
@@ -50,7 +58,8 @@ TEST(EvmInterpStateHost, return_existing_storage)
     db::CodeStore codes{code_db};
     db::State s{accounts, values, codes, blocks};
 
-    // Setup db - gas costs referenced here https://www.evm.codes/?fork=byzantium
+    // Setup db - gas costs referenced here
+    // https://www.evm.codes/?fork=byzantium
     byte_string code = {
         0x60, // PUSH1, 3 gas
         0x00, // key
@@ -85,19 +94,13 @@ TEST(EvmInterpStateHost, return_existing_storage)
 
     using fork_t = monad::fork_traits::byzantium;
     using state_t = decltype(working_state);
-    using static_precompiles_t =
-        traits_templated_static_precompiles_t<state_t, fork_t>;
-    using interpreter_t = execution::EVMOneBaselineInterpreter<state_t, fork_t>;
-    using evm_t =
-        execution::Evm<state_t, fork_t, static_precompiles_t, interpreter_t>;
-    using evm_host_t = execution::EvmcHost<state_t, fork_t, evm_t>;
 
     // Prep per transaction processor
     working_state.access_account(to);
     working_state.access_account(from);
 
-    evm_t e{};
-    evm_host_t h{b, t, working_state, e};
+    evm_t<state_t, fork_t> e{};
+    evm_host_t<state_t, fork_t> h{b, t, working_state, e};
 
     auto status = e.call_evm(&h, working_state, m);
 

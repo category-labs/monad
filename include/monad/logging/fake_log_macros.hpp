@@ -1,6 +1,8 @@
 #pragma once
 
-#define MONAD_LOG_HELPER(...) (void)(sizeof(__VA_ARGS__))
+// clang-format off
+#define MONAD_LOG_HELPER(...) (void)(sizeof(__VA_ARGS__)) /* NOLINT: suppressing bugprone-sizeof-expression*/
+// clang-format on
 
 #define MONAD_LOG_TRACE_L3(logger, fmt, ...)                                   \
     do {                                                                       \

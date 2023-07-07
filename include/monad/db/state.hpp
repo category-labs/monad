@@ -2,6 +2,7 @@
 
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
+#include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
 
@@ -11,7 +12,8 @@
 
 MONAD_DB_NAMESPACE_BEGIN
 
-template <class TAccountStore, class TValueStore, class TCodeStore, class TBlockCache>
+template <
+    class TAccountStore, class TValueStore, class TCodeStore, class TBlockCache>
 struct State
 {
     struct WorkingCopy
@@ -26,8 +28,7 @@ struct State
         WorkingCopy(
             unsigned int i, typename TAccountStore::WorkingCopy &&a,
             typename TValueStore::WorkingCopy &&s,
-            typename TCodeStore::WorkingCopy &&c,
-            TBlockCache &b)
+            typename TCodeStore::WorkingCopy &&c, TBlockCache &b)
             : accounts_{std::move(a)}
             , storage_{std::move(s)}
             , code_{std::move(c)}
@@ -74,6 +75,17 @@ struct State
         {
             accounts_.set_nonce(a, nonce);
         }
+
+        [[nodiscard]] bytes32_t
+        get_block_hash(int64_t block_number) const noexcept
+        {
+            // avoid improper cast
+            if (block_number < 0) {
+                return {};
+            }
+            return block_cache_.get_block_hash(
+                static_cast<block_num_t>(block_number));
+        };
 
         // EVMC Host Interface
         [[nodiscard]] bytes32_t get_code_hash(address_t const &a) const noexcept

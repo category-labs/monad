@@ -580,3 +580,23 @@ TYPED_TEST(BasicTrieTest, BranchDeletedAfterSiblingGetsDeleted)
             byte_string({0xde, 0xad, 0xbe, 0xef})),
     });
 }
+
+TYPED_TEST(BasicTrieTest, InsertingOtherNodesAndDeletingRoot)
+{
+    this->process_updates({
+        test::make_upsert(
+            0x0000000000000000000000000000000000000000000000000000000000000120_bytes32,
+            byte_string({0xde, 0xad, 0xbe, 0xef})),
+    });
+
+    this->process_updates({
+        test::make_upsert(
+            0x0000000000000000000000000000000000000000000000000000000000000110_bytes32,
+            byte_string({0xde, 0xad, 0xbe, 0xef})),
+        test::make_upsert(
+            0x0000000000000000000000000000000000000000000000000000000000000111_bytes32,
+            byte_string({0xde, 0xad, 0xbe, 0xef})),
+        test::make_del(
+            0x0000000000000000000000000000000000000000000000000000000000000120_bytes32),
+    });
+}

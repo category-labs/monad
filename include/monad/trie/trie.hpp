@@ -483,6 +483,17 @@ struct Trie
         // Update is to the root
         if (update_key.empty()) {
             MONAD_ASSERT(trie_cursor_.key()->path().empty());
+
+            // Deleting the root
+            if (is_deletion(*next_update)) {
+                return next(
+                    FromUpdate{
+                        .it = next_update,
+                        .next_update = std::next(next_update)},
+                    updates,
+                    trie_keys);
+            }
+
             return FromUpdate{
                 .it = next_update, .next_update = std::next(next_update)};
         }

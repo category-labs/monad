@@ -90,14 +90,6 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/test/integration)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # only include if fuzzing mode is turned on
     if(FUZZTEST_FUZZING_MODE)
-        # TODO: figure out why vcpkg is interferring with target names. Prior to
-        # introducing vcpkg, there were no conflicts in target names. Post
-        # vcpkg, we need the below workaround so that cmake is not adding
-        # multiple GTest::gtest targets. Our workaround is to ask all
-        # dependencies of fuzztest not to pull in and build their own gtest
-        set(FUZZTEST_USE_GTEST OFF)
-        set(FUZZTEST_TESTING OFF)
-        set(ABSL_USE_EXTERNAL_GOOGLETEST ON)
         set(ANTLR_BUILD_CPP_TESTS OFF)
 
         add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/fuzztest)

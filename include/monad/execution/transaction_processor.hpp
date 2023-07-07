@@ -56,19 +56,14 @@ struct TransactionProcessor
         return gas_remaining + std::min(refund_allowance, refund);
     }
 
-    [[nodiscard]] auto award_fee_and_refund(
-        TState &s, BlockHeader const &b, Transaction const &t,
+    [[nodiscard]] auto refund_gas(
+        TState &s, Transaction const &t, uint64_t base_fee_per_gas,
         uint64_t const gas_leftover, uint64_t refund) const
     {
         // refund and priority, Eqn. 73-76
         auto const gas_remaining = g_star(s, t, gas_leftover, refund);
-        auto const gas_cost = per_gas_cost(t, b.base_fee_per_gas.value_or(0));
-        auto const bene_balance =
-            intx::be::load<uint256_t>(s.get_balance(b.beneficiary));
+        auto const gas_cost = per_gas_cost(t, base_fee_per_gas);
 
-        s.set_balance(
-            b.beneficiary,
-            bene_balance + (gas_cost * (t.gas_limit - gas_remaining)));
         const auto sender_balance =
             intx::be::load<uint256_t>(s.get_balance(*t.from));
 
@@ -78,8 +73,8 @@ struct TransactionProcessor
 
     template <class TEvmHost>
     Receipt execute(
-        TState &s, TEvmHost &h, BlockHeader const &b,
-        Transaction const &t) const
+        TState &s, TEvmHost &h, Transaction const &t,
+        uint64_t base_fee_per_gas) const
     {
         irrevocable_change(s, t);
 
@@ -101,10 +96,10 @@ struct TransactionProcessor
         assert(result.gas_refund >= 0);
         assert(result.gas_left >= 0);
         assert(t.gas_limit >= static_cast<uint64_t>(result.gas_left));
-        auto const gas_remaining = award_fee_and_refund(
+        auto const gas_remaining = refund_gas(
             s,
-            b,
             t,
+            base_fee_per_gas,
             static_cast<uint64_t>(result.gas_left),
             static_cast<uint64_t>(result.gas_refund));
 

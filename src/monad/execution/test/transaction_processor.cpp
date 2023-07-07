@@ -39,17 +39,13 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 {
     constexpr static auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-    constexpr static auto bene{
-        0x5353535353535353535353535353535353535353_address};
     fake::State::WorkingCopy s{};
     evm_host_t h{};
     s._accounts[from] = {.balance = 56'000'000'000'000'000, .nonce = 25};
-    s._accounts[bene] = {.balance = 0, .nonce = 0};
     h._result = {.status_code = EVMC_SUCCESS, .gas_left = 15'000};
     h._receipt = {.status = 1u};
     traits_t::_sd_refund = 24'000;
 
-    static BlockHeader const b{.beneficiary = bene};
     static Transaction const t{
         .nonce = 25,
         .gas_price = 53'500,
@@ -60,14 +56,12 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 
     processor_t p{};
 
-    auto status = p.validate(s, t, b.base_fee_per_gas.value_or(0));
+    auto status = p.validate(s, t, 0);
     EXPECT_EQ(status, processor_t::Status::SUCCESS);
-    auto result = p.execute(s, h, b, t);
+    auto result = p.execute(s, h, t, 0u);
     EXPECT_EQ(result.status, 1u);
     EXPECT_EQ(s._accounts[from].balance, uint256_t{55'999'999'807'500'000});
     EXPECT_EQ(s._accounts[from].nonce, 25); // EVMC will inc for creation
-    EXPECT_EQ(s._accounts[bene].balance, 192'500'000);
-    EXPECT_EQ(s._accounts[bene].nonce, 0);
 }
 
 TEST(
@@ -75,20 +69,15 @@ TEST(
 {
     constexpr static auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-    constexpr static auto bene{
-        0x5353535353535353535353535353535353535353_address};
     fake::State::WorkingCopy s{};
     evm_host_t h{};
 
     s._accounts[from] = {.balance = 56'000'000'000'000'000, .nonce = 25};
-    s._accounts[bene] = {.balance = 0, .nonce = 0};
     h._result = {
         .status_code = EVMC_SUCCESS, .gas_left = 15'000, .gas_refund = 1'000};
     h._receipt = {.status = 1u};
     traits_t::_sd_refund = 24'000;
 
-    static BlockHeader const b{
-        .beneficiary = bene, .base_fee_per_gas = 38'000'000'000};
     static Transaction const t{
         .nonce = 25,
         .gas_price = 75'000'000'000,
@@ -99,12 +88,10 @@ TEST(
 
     processor_t p{};
 
-    auto status = p.validate(s, t, b.base_fee_per_gas.value());
+    auto status = p.validate(s, t, 38'000'000'000);
     EXPECT_EQ(status, processor_t::Status::SUCCESS);
-    auto result = p.execute(s, h, b, t);
+    auto result = p.execute(s, h, t, 38'000'000'000);
     EXPECT_EQ(result.status, 1u);
     EXPECT_EQ(s._accounts[from].balance, uint256_t{54'095'000'000'000'000});
     EXPECT_EQ(s._accounts[from].nonce, 25); // EVMC will inc for creation
-    EXPECT_EQ(s._accounts[bene].balance, 1'905'000'000'000'000);
-    EXPECT_EQ(s._accounts[bene].nonce, 0);
 }

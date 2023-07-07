@@ -95,7 +95,7 @@ struct alignas(64) TransactionProcessorFiberData
             }
 
             TEvmHost host{bh_, txn_, working_copy};
-            result_ = p.execute(working_copy, host, bh_, txn_);
+            result_ = p.execute(working_copy, host, txn_, bh_.base_fee_per_gas.value_or(0));
 
             if (s_.can_merge_changes(working_copy) ==
                 TState::MergeStatus::WILL_SUCCEED) {

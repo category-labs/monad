@@ -40,7 +40,7 @@ struct fakeEmptyTP
 
     template <class TEvmHost>
     Receipt execute(
-        TState &, TEvmHost &, BlockHeader const &, Transaction const &) const
+        TState &, TEvmHost &, Transaction const &, uint64_t) const
     {
         return {};
     }

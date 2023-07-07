@@ -1,15 +1,16 @@
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
 
-#include <monad/db/account_store.hpp>
 #include <monad/db/trie_db.hpp>
+
+#include <monad/state/account_state.hpp>
 
 #include <gtest/gtest.h>
 
 #include <unordered_map>
 
 using namespace monad;
-using namespace monad::db;
+using namespace monad::state;
 
 static constexpr auto a = 0x5353535353535353535353535353535353535353_address;
 static constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
@@ -23,20 +24,20 @@ static constexpr auto hash2 =
     0x5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b_bytes32;
 
 template <typename TDB>
-struct AccountStoreTest : public testing::Test
+struct AccountStateTest : public testing::Test
 {
 };
 using DBTypes =
-    ::testing::Types<InMemoryDB, RocksDB, InMemoryTrieDB, RocksTrieDB>;
-TYPED_TEST_SUITE(AccountStoreTest, DBTypes);
+    ::testing::Types<db::InMemoryDB, db::RocksDB, db::InMemoryTrieDB, db::RocksTrieDB>;
+TYPED_TEST_SUITE(AccountStateTest, DBTypes);
 
-using diff_t = AccountStore<std::unordered_map<address_t, Account>>::diff_t;
+using diff_t = AccountState<std::unordered_map<address_t, Account>>::diff_t;
 
-// AccountStore
-TYPED_TEST(AccountStoreTest, account_exists)
+// AccountState
+TYPED_TEST(AccountStateTest, account_exists)
 {
     TypeParam db{};
-    AccountStore s{db};
+    AccountState s{db};
     db.create(a, {});
     db.create(d, {});
     db.commit();
@@ -51,12 +52,12 @@ TYPED_TEST(AccountStoreTest, account_exists)
     EXPECT_FALSE(s.account_exists(d));
 }
 
-TYPED_TEST(AccountStoreTest, get_balance)
+TYPED_TEST(AccountStateTest, get_balance)
 {
     TypeParam db{};
     db.create(a, {.balance = 20'000});
     db.commit();
-    AccountStore s{db};
+    AccountState s{db};
     s.merged_.emplace(
         b, diff_t{std::nullopt, Account{.balance = 10'000}});
 
@@ -64,12 +65,12 @@ TYPED_TEST(AccountStoreTest, get_balance)
     EXPECT_EQ(s.get_balance(b), bytes32_t{10'000});
 }
 
-TYPED_TEST(AccountStoreTest, get_code_hash)
+TYPED_TEST(AccountStateTest, get_code_hash)
 {
     TypeParam db{};
     db.create(a, {.code_hash = hash1});
     db.commit();
-    AccountStore s{db};
+    AccountState s{db};
     s.merged_.emplace(
         b, diff_t{std::nullopt, Account{.code_hash = hash2}});
 
@@ -77,12 +78,12 @@ TYPED_TEST(AccountStoreTest, get_code_hash)
     EXPECT_EQ(s.get_code_hash(b), hash2);
 }
 
-TYPED_TEST(AccountStoreTest, working_copy)
+TYPED_TEST(AccountStateTest, working_copy)
 {
     TypeParam db{};
     db.create(a, {.balance = 10'000});
     db.commit();
-    AccountStore as{db};
+    AccountState as{db};
 
     auto bs = typename decltype(as)::WorkingCopy{as};
     auto cs = typename decltype(as)::WorkingCopy{as};
@@ -98,11 +99,11 @@ TYPED_TEST(AccountStoreTest, working_copy)
     EXPECT_EQ(cs.get_balance(a), bytes32_t{30'000});
 }
 
-// AccountStoreWorkingCopy
-TYPED_TEST(AccountStoreTest, account_exists_working_copy)
+// AccountStateWorkingCopy
+TYPED_TEST(AccountStateTest, account_exists_working_copy)
 {
     TypeParam db{};
-    AccountStore s{db};
+    AccountState s{db};
     db.create(a, {});
     db.create(d, {});
     db.commit();
@@ -124,10 +125,10 @@ TYPED_TEST(AccountStoreTest, account_exists_working_copy)
     EXPECT_FALSE(bs.account_exists(f));
 }
 
-TYPED_TEST(AccountStoreTest, access_account_working_copy)
+TYPED_TEST(AccountStateTest, access_account_working_copy)
 {
     TypeParam db{};
-    AccountStore s{db};
+    AccountState s{db};
     db.create(a, {});
     db.create(b, {});
     db.commit();
@@ -140,13 +141,13 @@ TYPED_TEST(AccountStoreTest, access_account_working_copy)
     EXPECT_EQ(bs.access_account(b), EVMC_ACCESS_WARM);
 }
 
-TYPED_TEST(AccountStoreTest, get_balance_working_copy)
+TYPED_TEST(AccountStateTest, get_balance_working_copy)
 {
     TypeParam db{};
     db.create(a, {.balance = 20'000});
     db.commit();
 
-    AccountStore s{db};
+    AccountState s{db};
     s.merged_.emplace(
         b, diff_t{std::nullopt, Account{.balance = 10'000}});
 
@@ -159,13 +160,13 @@ TYPED_TEST(AccountStoreTest, get_balance_working_copy)
     EXPECT_EQ(bs.get_balance(b), bytes32_t{10'000});
 }
 
-TYPED_TEST(AccountStoreTest, get_nonce_working_copy)
+TYPED_TEST(AccountStateTest, get_nonce_working_copy)
 {
     TypeParam db{};
     db.create(a, {.nonce = 2});
     db.commit();
 
-    AccountStore s{db};
+    AccountState s{db};
     s.merged_.emplace(b, diff_t{std::nullopt, Account{.nonce = 1}});
 
     auto bs = typename decltype(s)::WorkingCopy{s};
@@ -177,13 +178,13 @@ TYPED_TEST(AccountStoreTest, get_nonce_working_copy)
     EXPECT_EQ(bs.get_nonce(b), 1);
 }
 
-TYPED_TEST(AccountStoreTest, get_code_hash_working_copy)
+TYPED_TEST(AccountStateTest, get_code_hash_working_copy)
 {
     TypeParam db{};
     db.create(a, {.code_hash = hash1});
     db.commit();
 
-    AccountStore s{db};
+    AccountState s{db};
     s.merged_.emplace(
         b, diff_t{std::nullopt, Account{.code_hash = hash2}});
 
@@ -196,10 +197,10 @@ TYPED_TEST(AccountStoreTest, get_code_hash_working_copy)
     EXPECT_EQ(bs.get_code_hash(b), hash2);
 }
 
-TYPED_TEST(AccountStoreTest, create_account_working_copy)
+TYPED_TEST(AccountStateTest, create_account_working_copy)
 {
     TypeParam db{};
-    AccountStore s{db};
+    AccountState s{db};
 
     auto bs = typename decltype(s)::WorkingCopy{s};
 
@@ -211,14 +212,14 @@ TYPED_TEST(AccountStoreTest, create_account_working_copy)
     EXPECT_EQ(bs.get_nonce(a), 2);
 }
 
-TYPED_TEST(AccountStoreTest, selfdestruct_working_copy)
+TYPED_TEST(AccountStateTest, selfdestruct_working_copy)
 {
     TypeParam db{};
     db.create(a, {.balance = 18'000});
     db.create(c, {.balance = 38'000});
     db.commit();
 
-    AccountStore s{db};
+    AccountState s{db};
     s.merged_.emplace(
         b, diff_t{std::nullopt, Account{.balance = 28'000}});
 
@@ -245,14 +246,14 @@ TYPED_TEST(AccountStoreTest, selfdestruct_working_copy)
     EXPECT_FALSE(bs.account_exists(b));
 }
 
-TYPED_TEST(AccountStoreTest, destruct_touched_dead_working_copy)
+TYPED_TEST(AccountStateTest, destruct_touched_dead_working_copy)
 {
     TypeParam db{};
     db.create(a, {.balance = 10'000});
     db.create(b, {});
     db.commit();
 
-    AccountStore s{db};
+    AccountState s{db};
 
     auto bs = typename decltype(s)::WorkingCopy{s};
 
@@ -273,13 +274,13 @@ TYPED_TEST(AccountStoreTest, destruct_touched_dead_working_copy)
     EXPECT_FALSE(bs.account_exists(b));
 }
 
-TYPED_TEST(AccountStoreTest, revert_touched_working_copy)
+TYPED_TEST(AccountStateTest, revert_touched_working_copy)
 {
     TypeParam db{};
     db.create(a, {.balance = 10'000, .nonce = 2});
     db.commit();
 
-    AccountStore s{db};
+    AccountState s{db};
 
     auto bs = typename decltype(s)::WorkingCopy{s};
 
@@ -294,14 +295,14 @@ TYPED_TEST(AccountStoreTest, revert_touched_working_copy)
     EXPECT_FALSE(bs.account_exists(b));
 }
 
-TYPED_TEST(AccountStoreTest, can_merge_fresh)
+TYPED_TEST(AccountStateTest, can_merge_fresh)
 {
     TypeParam db{};
     db.create(b, {.balance = 40'000u});
     db.create(c, {.balance = 50'000u});
     db.commit();
 
-    AccountStore t{db};
+    AccountState t{db};
 
     auto s = typename decltype(t)::WorkingCopy{t};
 
@@ -318,14 +319,14 @@ TYPED_TEST(AccountStoreTest, can_merge_fresh)
     EXPECT_TRUE(t.can_merge(s));
 }
 
-TYPED_TEST(AccountStoreTest, can_merge_onto_merged)
+TYPED_TEST(AccountStateTest, can_merge_onto_merged)
 {
     TypeParam db{};
     db.create(b, {.balance = 40'000u});
     db.create(c, {.balance = 50'000u});
     db.commit();
 
-    AccountStore t{db};
+    AccountState t{db};
     t.merged_.emplace(a, diff_t{Account{.balance = 30'000}});
     t.merged_.emplace(b, diff_t{db.at(b), db.at(b)});
     t.merged_.emplace(
@@ -347,13 +348,13 @@ TYPED_TEST(AccountStoreTest, can_merge_onto_merged)
     EXPECT_TRUE(t.can_merge(s));
 }
 
-TYPED_TEST(AccountStoreTest, cant_merge_colliding_merge)
+TYPED_TEST(AccountStateTest, cant_merge_colliding_merge)
 {
     TypeParam db{};
     db.create(a, {.balance = 40'000u});
     db.commit();
 
-    AccountStore t{db};
+    AccountState t{db};
     diff_t r{db.at(a), db.at(a)};
     r.updated.value().balance = 80'000;
 
@@ -367,13 +368,13 @@ TYPED_TEST(AccountStoreTest, cant_merge_colliding_merge)
     EXPECT_FALSE(t.can_merge(s));
 }
 
-TYPED_TEST(AccountStoreTest, cant_merge_deleted_merge)
+TYPED_TEST(AccountStateTest, cant_merge_deleted_merge)
 {
     TypeParam db{};
     db.create(a, {.balance = 40'000u});
     db.commit();
 
-    AccountStore t{db};
+    AccountState t{db};
     diff_t r{db.at(a), db.at(a)};
     r.updated.value().balance = 60'000;
 
@@ -388,10 +389,10 @@ TYPED_TEST(AccountStoreTest, cant_merge_deleted_merge)
     EXPECT_FALSE(t.can_merge(s));
 }
 
-TYPED_TEST(AccountStoreTest, cant_merge_conflicting_adds)
+TYPED_TEST(AccountStateTest, cant_merge_conflicting_adds)
 {
     TypeParam db{};
-    AccountStore t{db};
+    AccountState t{db};
     diff_t r{std::nullopt, Account{.balance = 10'000, .nonce = 1}};
 
     auto s = typename decltype(t)::WorkingCopy{t};
@@ -405,13 +406,13 @@ TYPED_TEST(AccountStoreTest, cant_merge_conflicting_adds)
     EXPECT_FALSE(t.can_merge(s));
 }
 
-TYPED_TEST(AccountStoreTest, cant_merge_conflicting_modifies)
+TYPED_TEST(AccountStateTest, cant_merge_conflicting_modifies)
 {
     TypeParam db{};
     db.create(a, {.balance = 40'000u});
     db.commit();
 
-    AccountStore t{db};
+    AccountState t{db};
     diff_t r{db.at(a), db.at(a)};
     r.updated.value().balance = 80'000;
 
@@ -425,14 +426,14 @@ TYPED_TEST(AccountStoreTest, cant_merge_conflicting_modifies)
     EXPECT_FALSE(t.can_merge(s));
 }
 
-TYPED_TEST(AccountStoreTest, cant_merge_conflicting_deleted)
+TYPED_TEST(AccountStateTest, cant_merge_conflicting_deleted)
 {
     TypeParam db{};
     db.create(b, {.balance = 10'000u, .nonce = 1});
     db.create(c, {.balance = 40'000u, .nonce = 2});
     db.commit();
 
-    AccountStore t{db};
+    AccountState t{db};
     diff_t r{db.at(c), db.at(c)};
     r.updated.reset();
     auto s = typename decltype(t)::WorkingCopy{t};
@@ -447,14 +448,14 @@ TYPED_TEST(AccountStoreTest, cant_merge_conflicting_deleted)
     EXPECT_FALSE(t.can_merge(s));
 }
 
-TYPED_TEST(AccountStoreTest, merge_multiple_changes)
+TYPED_TEST(AccountStateTest, merge_multiple_changes)
 {
     TypeParam db{};
     db.create(b, {.balance = 40'000u});
     db.create(c, {.balance = 50'000u});
     db.commit();
 
-    AccountStore t{db};
+    AccountState t{db};
 
     {
         auto s = typename decltype(t)::WorkingCopy{t};
@@ -493,13 +494,13 @@ TYPED_TEST(AccountStoreTest, merge_multiple_changes)
     }
 }
 
-TYPED_TEST(AccountStoreTest, can_commit)
+TYPED_TEST(AccountStateTest, can_commit)
 {
     TypeParam db{};
     db.create(b, {.balance = 40'000u});
     db.create(c, {.balance = 50'000u});
     db.commit();
-    AccountStore t{db};
+    AccountState t{db};
     diff_t r{db.at(c), db.at(c)};
     r.updated.reset();
 
@@ -510,35 +511,35 @@ TYPED_TEST(AccountStoreTest, can_commit)
     EXPECT_TRUE(t.can_commit());
 }
 
-TYPED_TEST(AccountStoreTest, cant_commit_merged_new_different_than_stored)
+TYPED_TEST(AccountStateTest, cant_commit_merged_new_different_than_stored)
 {
     TypeParam db{};
     db.create(a, {.balance = 40'000u});
     db.commit();
-    AccountStore t{db};
+    AccountState t{db};
     t.merged_.emplace(a, diff_t{Account{.balance = 30'000}});
 
     EXPECT_FALSE(t.can_commit());
 }
 
-TYPED_TEST(AccountStoreTest, cant_commit_merged_different_than_stored_balance)
+TYPED_TEST(AccountStateTest, cant_commit_merged_different_than_stored_balance)
 {
     TypeParam db{};
     db.create(a, {.balance = 40'000u});
     db.commit();
-    AccountStore t{db};
+    AccountState t{db};
     t.merged_.emplace(
         a, diff_t{Account{.balance = 30'000}, Account{.balance = 30'000}});
 
     EXPECT_FALSE(t.can_commit());
 }
 
-TYPED_TEST(AccountStoreTest, cant_commit_merged_different_than_stored_nonce)
+TYPED_TEST(AccountStateTest, cant_commit_merged_different_than_stored_nonce)
 {
     TypeParam db{};
     db.create(a, {.balance = 40'000u});
     db.commit();
-    AccountStore t{db};
+    AccountState t{db};
     t.merged_.emplace(
         a,
         diff_t{
@@ -548,23 +549,23 @@ TYPED_TEST(AccountStoreTest, cant_commit_merged_different_than_stored_nonce)
     EXPECT_FALSE(t.can_commit());
 }
 
-TYPED_TEST(AccountStoreTest, cant_commit_merged_different_than_stored_code_hash)
+TYPED_TEST(AccountStateTest, cant_commit_merged_different_than_stored_code_hash)
 {
     TypeParam db{};
     db.create(a, {.code_hash = hash1});
     db.commit();
-    AccountStore t{db};
+    AccountState t{db};
     t.merged_.emplace(a, diff_t{Account{.code_hash = hash2}, Account{}});
 
     EXPECT_FALSE(t.can_commit());
 }
 
-TYPED_TEST(AccountStoreTest, cant_commit_deleted_isnt_stored)
+TYPED_TEST(AccountStateTest, cant_commit_deleted_isnt_stored)
 {
     TypeParam db{};
     db.create(a, {});
     db.commit();
-    AccountStore t{db};
+    AccountState t{db};
     diff_t r{Account{.balance = 10'000}, std::nullopt};
     r.updated.reset();
 
@@ -572,14 +573,14 @@ TYPED_TEST(AccountStoreTest, cant_commit_deleted_isnt_stored)
     EXPECT_FALSE(t.can_commit());
 }
 
-TYPED_TEST(AccountStoreTest, can_commit_multiple)
+TYPED_TEST(AccountStateTest, can_commit_multiple)
 {
     TypeParam db{};
     db.create(b, {.balance = 40'000u});
     db.create(c, {.balance = 50'000u});
     db.create(d, {.balance = 60'000u});
     db.commit();
-    AccountStore t{db};
+    AccountState t{db};
 
     {
         auto s = typename decltype(t)::WorkingCopy{t};

@@ -5,29 +5,29 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
 
-#include <monad/db/config.hpp>
+#include <monad/state/config.hpp>
 
 #include <vector>
 
-MONAD_DB_NAMESPACE_BEGIN
+MONAD_STATE_NAMESPACE_BEGIN
 
 template <
-    class TAccountStore, class TValueStore, class TCodeStore, class TBlockCache>
+    class TAccountState, class TValueState, class TCodeState, class TBlockCache>
 struct State
 {
     struct WorkingCopy
     {
-        typename TAccountStore::WorkingCopy accounts_;
-        typename TValueStore::WorkingCopy storage_;
-        typename TCodeStore::WorkingCopy code_;
+        typename TAccountState::WorkingCopy accounts_;
+        typename TValueState::WorkingCopy storage_;
+        typename TCodeState::WorkingCopy code_;
         std::vector<Receipt::Log> logs_{};
         TBlockCache &block_cache_{};
         unsigned int txn_id_{};
 
         WorkingCopy(
-            unsigned int i, typename TAccountStore::WorkingCopy &&a,
-            typename TValueStore::WorkingCopy &&s,
-            typename TCodeStore::WorkingCopy &&c, TBlockCache &b)
+            unsigned int i, typename TAccountState::WorkingCopy &&a,
+            typename TValueState::WorkingCopy &&s,
+            typename TCodeState::WorkingCopy &&c, TBlockCache &b)
             : accounts_{std::move(a)}
             , storage_{std::move(s)}
             , code_{std::move(c)}
@@ -169,13 +169,13 @@ struct State
         COLLISION_DETECTED,
     };
 
-    TAccountStore &accounts_;
-    TValueStore &storage_;
-    TCodeStore &code_;
+    TAccountState &accounts_;
+    TValueState &storage_;
+    TCodeState &code_;
     TBlockCache &block_cache_{};
     unsigned int current_txn_{};
 
-    State(TAccountStore &a, TValueStore &s, TCodeStore &c, TBlockCache &bc)
+    State(TAccountState &a, TValueState &s, TCodeState &c, TBlockCache &bc)
         : accounts_{a}
         , storage_{s}
         , code_{c}
@@ -189,9 +189,9 @@ struct State
     {
         return WorkingCopy(
             id,
-            typename TAccountStore::WorkingCopy{accounts_},
-            typename TValueStore::WorkingCopy{storage_},
-            typename TCodeStore::WorkingCopy{code_},
+            typename TAccountState::WorkingCopy{accounts_},
+            typename TValueState::WorkingCopy{storage_},
+            typename TCodeState::WorkingCopy{code_},
             block_cache_);
     }
 
@@ -234,4 +234,4 @@ struct State
     }
 };
 
-MONAD_DB_NAMESPACE_END
+MONAD_STATE_NAMESPACE_END

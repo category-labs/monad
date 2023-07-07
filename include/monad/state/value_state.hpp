@@ -4,16 +4,16 @@
 #include <monad/core/assert.h>
 #include <monad/core/bytes.hpp>
 
-#include <monad/db/config.hpp>
-#include <monad/db/datum.hpp>
+#include <monad/state/config.hpp>
+#include <monad/state/datum.hpp>
 
 #include <unordered_map>
 #include <unordered_set>
 
-MONAD_DB_NAMESPACE_BEGIN
+MONAD_STATE_NAMESPACE_BEGIN
 
 template <class TValueDB>
-struct ValueStore
+struct ValueState
 {
     using diff_t = diff<bytes32_t>;
     using key_value_map_t = std::unordered_map<bytes32_t, diff_t>;
@@ -49,7 +49,7 @@ struct ValueStore
 
     struct WorkingCopy;
 
-    ValueStore(TValueDB &store)
+    ValueState(TValueDB &store)
         : db_{store}
     {
     }
@@ -189,7 +189,7 @@ struct ValueStore
 };
 
 template <typename TValueDB>
-struct ValueStore<TValueDB>::WorkingCopy : public ValueStore<TValueDB>
+struct ValueState<TValueDB>::WorkingCopy : public ValueState<TValueDB>
 {
     InnerStorage touched_{};
     std::unordered_map<address_t, std::unordered_set<bytes32_t>>
@@ -323,4 +323,4 @@ struct ValueStore<TValueDB>::WorkingCopy : public ValueStore<TValueDB>
     }
 };
 
-MONAD_DB_NAMESPACE_END
+MONAD_STATE_NAMESPACE_END

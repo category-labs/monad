@@ -80,6 +80,7 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/state/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/trie/test)
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/integration)
@@ -179,6 +180,11 @@ add_library(
     ${PROJECT_SOURCE_DIR}/include/monad/rlp/util.hpp
     ${PROJECT_SOURCE_DIR}/src/monad/rlp/decode_helpers.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/rlp/encode_helpers.cpp
+    # state
+    ${PROJECT_SOURCE_DIR}/include/monad/state/account_state.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/state/code_state.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/state/state.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/state/value_state.hpp
     # trie
     ${PROJECT_SOURCE_DIR}/include/monad/trie/compact_encode.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/trie/nibbles.hpp

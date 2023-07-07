@@ -2,11 +2,11 @@
 
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/db/config.hpp>
+#include <monad/state/config.hpp>
 
 #include <optional>
 
-MONAD_DB_NAMESPACE_BEGIN
+MONAD_STATE_NAMESPACE_BEGIN
 
 namespace fnv1a
 {
@@ -114,4 +114,4 @@ inline bool operator==(deleted_key const &a, bytes32_t const &b) noexcept
     return a.key == b;
 }
 
-MONAD_DB_NAMESPACE_END
+MONAD_STATE_NAMESPACE_END

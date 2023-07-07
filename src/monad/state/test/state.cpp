@@ -1,18 +1,19 @@
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
 
-#include <monad/db/account_store.hpp>
-#include <monad/db/code_store.hpp>
-#include <monad/db/state.hpp>
 #include <monad/db/trie_db.hpp>
-#include <monad/db/value_store.hpp>
+
+#include <monad/state/account_state.hpp>
+#include <monad/state/code_state.hpp>
+#include <monad/state/state.hpp>
+#include <monad/state/value_state.hpp>
 
 #include <gtest/gtest.h>
 
 #include <unordered_map>
 
 using namespace monad;
-using namespace monad::db;
+using namespace monad::state;
 
 static constexpr auto a = 0x5353535353535353535353535353535353535353_address;
 static constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
@@ -35,7 +36,7 @@ struct StateTest : public testing::Test
 {
 };
 using DBTypes =
-    ::testing::Types<InMemoryDB, RocksDB, InMemoryTrieDB, RocksTrieDB>;
+    ::testing::Types<db::InMemoryDB, db::RocksDB, db::InMemoryTrieDB, db::RocksTrieDB>;
 TYPED_TEST_SUITE(StateTest, DBTypes);
 
 using code_db_t = std::unordered_map<address_t, byte_string>;
@@ -50,10 +51,10 @@ struct fakeBlockCache {
 TYPED_TEST(StateTest, get_working_copy)
 {
     TypeParam db;
-    AccountStore accounts{db};
-    ValueStore values{db};
+    AccountState accounts{db};
+    ValueState values{db};
     code_db_t code_db{};
-    CodeStore code{code_db};
+    CodeState code{code_db};
     State as{accounts, values, code, block_cache};
     db.create(a, {.balance = 10'000});
     db.commit();
@@ -78,10 +79,10 @@ TYPED_TEST(StateTest, get_working_copy)
 TYPED_TEST(StateTest, get_code)
 {
     TypeParam db;
-    AccountStore accounts{db};
-    ValueStore values{db};
+    AccountState accounts{db};
+    ValueState values{db};
     code_db_t code_db{};
-    CodeStore code{code_db};
+    CodeState code{code_db};
     State as{accounts, values, code, block_cache};
     byte_string const contract{0x60, 0x34, 0x00};
     db.create(a, {.balance = 10'000});
@@ -99,10 +100,10 @@ TYPED_TEST(StateTest, get_code)
 TYPED_TEST(StateTest, can_merge_fresh)
 {
     TypeParam db;
-    AccountStore accounts{db};
-    ValueStore values{db};
+    AccountState accounts{db};
+    ValueState values{db};
     code_db_t code_db{};
-    CodeStore code{code_db};
+    CodeState code{code_db};
     State t{accounts, values, code, block_cache};
 
     db.create(b, {.balance = 40'000u});
@@ -142,10 +143,10 @@ TYPED_TEST(StateTest, can_merge_fresh)
 TYPED_TEST(StateTest, can_merge_same_account_different_storage)
 {
     TypeParam db;
-    AccountStore accounts{db};
-    ValueStore values{db};
+    AccountState accounts{db};
+    ValueState values{db};
     code_db_t code_db{};
-    CodeStore code{code_db};
+    CodeState code{code_db};
     State t{accounts, values, code, block_cache};
 
     db.create(b, {.balance = 40'000u});
@@ -175,10 +176,10 @@ TYPED_TEST(StateTest, can_merge_same_account_different_storage)
 TYPED_TEST(StateTest, cant_merge_colliding_storage)
 {
     TypeParam db;
-    AccountStore accounts{db};
-    ValueStore values{db};
+    AccountState accounts{db};
+    ValueState values{db};
     code_db_t code_db{};
-    CodeStore code{code_db};
+    CodeState code{code_db};
     State t{accounts, values, code, block_cache};
 
     db.create(b, {.balance = 40'000u});
@@ -218,10 +219,10 @@ TYPED_TEST(StateTest, cant_merge_colliding_storage)
 TYPED_TEST(StateTest, merge_txn0_and_txn1)
 {
     TypeParam db;
-    AccountStore accounts{db};
-    ValueStore values{db};
+    AccountState accounts{db};
+    ValueState values{db};
     code_db_t code_db{};
-    CodeStore code{code_db};
+    CodeState code{code_db};
     State t{accounts, values, code, block_cache};
 
     db.create(a, {.balance = 30'000u});
@@ -260,10 +261,10 @@ TYPED_TEST(StateTest, merge_txn0_and_txn1)
 TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
 {
     TypeParam db;
-    AccountStore accounts{db};
-    ValueStore values{db};
+    AccountState accounts{db};
+    ValueState values{db};
     code_db_t code_db{};
-    CodeStore code{code_db};
+    CodeState code{code_db};
     State t{accounts, values, code, block_cache};
 
     db.create(b, {.balance = 40'000u});
@@ -314,10 +315,10 @@ TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
 TYPED_TEST(StateTest, merge_txn1_try_again_merge_txn0_then_txn1)
 {
     TypeParam db;
-    AccountStore accounts{db};
-    ValueStore values{db};
+    AccountState accounts{db};
+    ValueState values{db};
     code_db_t code_db{};
-    CodeStore code{code_db};
+    CodeState code{code_db};
     State t{accounts, values, code, block_cache};
 
     db.create(a, {.balance = 30'000u});
@@ -361,10 +362,10 @@ TYPED_TEST(StateTest, merge_txn1_try_again_merge_txn0_then_txn1)
 TYPED_TEST(StateTest, can_commit)
 {
     TypeParam db;
-    AccountStore accounts{db};
-    ValueStore values{db};
+    AccountState accounts{db};
+    ValueState values{db};
     code_db_t code_db{};
-    CodeStore code{code_db};
+    CodeState code{code_db};
     State t{accounts, values, code, block_cache};
 
     db.create(a, {.balance = 30'000u});
@@ -410,10 +411,10 @@ TYPED_TEST(StateTest, can_commit)
 TYPED_TEST(StateTest, commit_twice)
 {
     TypeParam db;
-    AccountStore accounts{db};
-    ValueStore values{db};
+    AccountState accounts{db};
+    ValueState values{db};
     code_db_t code_db{};
-    CodeStore code{code_db};
+    CodeState code{code_db};
     State t{accounts, values, code, block_cache};
 
     db.create(a, {.balance = 30'000u});

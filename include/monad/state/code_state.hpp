@@ -5,19 +5,19 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 
-#include <monad/db/config.hpp>
-#include <monad/db/datum.hpp>
+#include <monad/state/config.hpp>
+#include <monad/state/datum.hpp>
 
 #include <algorithm>
 #include <unordered_map>
 
-MONAD_DB_NAMESPACE_BEGIN
+MONAD_STATE_NAMESPACE_BEGIN
 
 template <typename TError>
 class error;
 
 template <class TCodeDB>
-struct CodeStore
+struct CodeState
 {
     using map_t = std::unordered_map<address_t, byte_string>;
 
@@ -27,7 +27,7 @@ struct CodeStore
     map_t merged_{};
     static inline byte_string const empty{};
 
-    CodeStore(TCodeDB &s)
+    CodeState(TCodeDB &s)
         : db_{s}
     {
     }
@@ -79,12 +79,12 @@ struct CodeStore
 };
 
 template <typename TCodeDB>
-struct CodeStore<TCodeDB>::WorkingCopy : public CodeStore<TCodeDB>
+struct CodeState<TCodeDB>::WorkingCopy : public CodeState<TCodeDB>
 {
     map_t code_{};
 
-    explicit WorkingCopy(CodeStore const &c)
-        : CodeStore(c)
+    explicit WorkingCopy(CodeState const &c)
+        : CodeState(c)
     {
     }
 
@@ -93,7 +93,7 @@ struct CodeStore<TCodeDB>::WorkingCopy : public CodeStore<TCodeDB>
     {
         if (code_.contains(a))
             return {code_.at(a)};
-        return CodeStore::code_at(a);
+        return CodeState::code_at(a);
     }
 
     void set_code(address_t const &a, byte_string const &code)
@@ -126,4 +126,4 @@ struct CodeStore<TCodeDB>::WorkingCopy : public CodeStore<TCodeDB>
     void revert() { code_.clear(); }
 };
 
-MONAD_DB_NAMESPACE_END
+MONAD_STATE_NAMESPACE_END

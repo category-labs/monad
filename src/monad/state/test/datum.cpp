@@ -2,7 +2,7 @@
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
 
-#include <monad/db/datum.hpp>
+#include <monad/state/datum.hpp>
 
 #include <gtest/gtest.h>
 
@@ -10,7 +10,7 @@
 #include <unordered_set>
 
 using namespace monad;
-using namespace monad::db;
+using namespace monad::state;
 
 TEST(diff, bytes32_unordered_map)
 {

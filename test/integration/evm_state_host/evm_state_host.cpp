@@ -1,11 +1,7 @@
 #include <monad/core/concepts.hpp>
 
-#include <monad/db/account_store.hpp>
 #include <monad/db/block_db.hpp>
-#include <monad/db/code_store.hpp>
-#include <monad/db/state.hpp>
 #include <monad/db/trie_db.hpp>
-#include <monad/db/value_store.hpp>
 
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
@@ -14,6 +10,11 @@
 #include <monad/execution/evmone_baseline_interpreter.hpp>
 
 #include <monad/execution/test/fakes.hpp>
+
+#include <monad/state/account_state.hpp>
+#include <monad/state/code_state.hpp>
+#include <monad/state/state.hpp>
+#include <monad/state/value_state.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -52,11 +53,11 @@ TEST(EvmInterpStateHost, return_existing_storage)
 {
     db::BlockDb blocks{test_resource::correct_block_data_dir};
     account_store_db_t db{};
-    db::AccountStore accounts{db};
-    db::ValueStore values{db};
+    state::AccountState accounts{db};
+    state::ValueState values{db};
     code_db_t code_db{};
-    db::CodeStore codes{code_db};
-    db::State s{accounts, values, codes, blocks};
+    state::CodeState codes{code_db};
+    state::State s{accounts, values, codes, blocks};
 
     // Setup db - gas costs referenced here
     // https://www.evm.codes/?fork=byzantium
@@ -114,11 +115,11 @@ TEST(EvmInterpStateHost, store_then_return_storage)
 {
     db::BlockDb blocks{test_resource::correct_block_data_dir};
     account_store_db_t db{};
-    db::AccountStore accounts{db};
-    db::ValueStore values{db};
+    state::AccountState accounts{db};
+    state::ValueState values{db};
     code_db_t code_db{};
-    db::CodeStore codes{code_db};
-    db::State s{accounts, values, codes, blocks};
+    state::CodeState codes{code_db};
+    state::State s{accounts, values, codes, blocks};
 
     // Setup db - gas costs referenced here
     // https://www.evm.codes/?fork=byzantium

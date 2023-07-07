@@ -1,14 +1,14 @@
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 
-#include <monad/db/code_store.hpp>
+#include <monad/state/code_state.hpp>
 
 #include <gtest/gtest.h>
 
 #include <unordered_map>
 
 using namespace monad;
-using namespace monad::db;
+using namespace monad::state;
 
 static constexpr auto a = 0x5353535353535353535353535353535353535353_address;
 static constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
@@ -22,32 +22,32 @@ static constexpr auto c3 =
 
 using db_t = std::unordered_map<address_t, byte_string>;
 
-TEST(CodeStore, code_at)
+TEST(CodeState, code_at)
 {
     db_t db{};
     db.insert({a, c1});
-    CodeStore s{db};
+    CodeState s{db};
 
     auto const code = s.code_at(a);
     EXPECT_EQ(code, c1);
 }
 
-TEST(CodeStore, working_copy)
+TEST(CodeState, working_copy)
 {
     db_t db{};
     db.insert({a, c1});
-    CodeStore s{db};
+    CodeState s{db};
 
     auto t = decltype(s)::WorkingCopy{s};
     auto const code_1 = t.code_at(a);
     EXPECT_EQ(code_1, c1);
 }
 
-TEST(CodeStoreWorkingCopy, set_code)
+TEST(CodeStateWorkingCopy, set_code)
 {
     db_t db{};
     db.insert({a, c1});
-    CodeStore s{db};
+    CodeState s{db};
 
     auto t = decltype(s)::WorkingCopy{s};
     t.set_code(b, c2);
@@ -61,11 +61,11 @@ TEST(CodeStoreWorkingCopy, set_code)
     EXPECT_EQ(code_3, byte_string{});
 }
 
-TEST(CodeStoreWorkingCopy, get_code_size)
+TEST(CodeStateWorkingCopy, get_code_size)
 {
     db_t db{};
     db.insert({a, c1});
-    CodeStore s{db};
+    CodeState s{db};
 
     auto t = decltype(s)::WorkingCopy{s};
     auto const size = t.get_code_size(a);
@@ -73,12 +73,12 @@ TEST(CodeStoreWorkingCopy, get_code_size)
     EXPECT_EQ(size, c1.size());
 }
 
-TEST(CodeStoreWorkingCopy, copy_code)
+TEST(CodeStateWorkingCopy, copy_code)
 {
     db_t db{};
     db.insert({a, c1});
     db.insert({b, c2});
-    CodeStore s{db};
+    CodeState s{db};
     static constexpr unsigned size{8};
     uint8_t buffer[size];
 
@@ -109,22 +109,22 @@ TEST(CodeStoreWorkingCopy, copy_code)
     }
 }
 
-TEST(CodeStore, can_merge)
+TEST(CodeState, can_merge)
 {
     db_t db{};
     db.insert({a, c1});
-    CodeStore s{db};
+    CodeState s{db};
 
     auto t = decltype(s)::WorkingCopy{s};
     t.set_code(b, c2);
     EXPECT_TRUE(s.can_merge(t));
 }
 
-TEST(CodeStore, merge_changes)
+TEST(CodeState, merge_changes)
 {
     db_t db{};
     db.insert({a, c1});
-    CodeStore s{db};
+    CodeState s{db};
 
     {
         auto t = decltype(s)::WorkingCopy{s};
@@ -135,11 +135,11 @@ TEST(CodeStore, merge_changes)
     EXPECT_EQ(s.code_at(b), c2);
 }
 
-TEST(CodeStore, revert)
+TEST(CodeState, revert)
 {
     db_t db{};
     db.insert({a, c1});
-    CodeStore s{db};
+    CodeState s{db};
 
     {
         auto t = decltype(s)::WorkingCopy{s};
@@ -151,10 +151,10 @@ TEST(CodeStore, revert)
     EXPECT_EQ(0, s.code_at(b).size());
 }
 
-TEST(CodeStore, cant_merge_colliding_merge)
+TEST(CodeState, cant_merge_colliding_merge)
 {
     db_t db{};
-    CodeStore s{db};
+    CodeState s{db};
 
     {
         auto t = decltype(s)::WorkingCopy{s};
@@ -169,21 +169,21 @@ TEST(CodeStore, cant_merge_colliding_merge)
     }
 }
 
-TEST(CodeStore, cant_merge_colliding_store)
+TEST(CodeState, cant_merge_colliding_store)
 {
     db_t db{};
     db.insert({a, c1});
-    CodeStore s{db};
+    CodeState s{db};
 
     auto t = decltype(s)::WorkingCopy{s};
     t.set_code(a, c2);
     EXPECT_FALSE(s.can_merge(t));
 }
 
-TEST(CodeStore, merge_multiple_changes)
+TEST(CodeState, merge_multiple_changes)
 {
     db_t db{};
-    CodeStore s{db};
+    CodeState s{db};
 
     {
         auto t = decltype(s)::WorkingCopy{s};
@@ -201,11 +201,11 @@ TEST(CodeStore, merge_multiple_changes)
     EXPECT_EQ(s.code_at(b), c2);
 }
 
-TEST(CodeStore, can_commit)
+TEST(CodeState, can_commit)
 {
     db_t db{};
     db.insert({c, c3});
-    CodeStore s{db};
+    CodeState s{db};
 
     {
         auto t = decltype(s)::WorkingCopy{s};
@@ -217,10 +217,10 @@ TEST(CodeStore, can_commit)
     EXPECT_TRUE(s.can_commit());
 }
 
-TEST(CodeStore, can_commit_multiple)
+TEST(CodeState, can_commit_multiple)
 {
     db_t db{};
-    CodeStore s{db};
+    CodeState s{db};
 
     {
         auto t = decltype(s)::WorkingCopy{s};

@@ -5,17 +5,17 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
 
-#include <monad/db/config.hpp>
-#include <monad/db/datum.hpp>
+#include <monad/state/config.hpp>
+#include <monad/state/datum.hpp>
 
 #include <algorithm>
 #include <cassert>
 #include <unordered_map>
 
-MONAD_DB_NAMESPACE_BEGIN
+MONAD_STATE_NAMESPACE_BEGIN
 
 template <class TAccountDB>
-struct AccountStore
+struct AccountState
 {
     using diff_t = diff<std::optional<Account>>;
     using change_set_t = std::unordered_map<address_t, diff_t>;
@@ -26,7 +26,7 @@ struct AccountStore
     TAccountDB &db_;
     change_set_t merged_{};
 
-    AccountStore(TAccountDB &a)
+    AccountState(TAccountDB &a)
         : db_{a}
     {
     }
@@ -124,7 +124,7 @@ struct AccountStore
 };
 
 template <typename TAccountDB>
-struct AccountStore<TAccountDB>::WorkingCopy : public AccountStore<TAccountDB>
+struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
 {
     change_set_t changed_{};
     uint64_t total_selfdestructs_{};
@@ -138,7 +138,7 @@ struct AccountStore<TAccountDB>::WorkingCopy : public AccountStore<TAccountDB>
             }
             return false;
         }
-        return AccountStore::account_exists(a);
+        return AccountState::account_exists(a);
     }
 
     void create_contract(address_t const &a)
@@ -220,4 +220,4 @@ struct AccountStore<TAccountDB>::WorkingCopy : public AccountStore<TAccountDB>
     void revert() noexcept { changed_.clear(); }
 };
 
-MONAD_DB_NAMESPACE_END
+MONAD_STATE_NAMESPACE_END

@@ -1,10 +1,20 @@
 #include <monad/config.hpp>
 
+#include <monad/core/address.hpp>
 #include <monad/core/block.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
 
+#include <monad/db/in_memory_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/rocks_db.hpp>
+#include <monad/db/rocks_trie_db.hpp>
+
 #include <monad/execution/block_processor.hpp>
+#include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
+#include <monad/execution/evmone_baseline_interpreter.hpp>
+
 #include <monad/execution/replay_block_db.hpp>
 #include <monad/execution/static_precompiles.hpp>
 #include <monad/execution/test/fakes.hpp>
@@ -15,32 +25,32 @@
 
 #include <monad/logging/monad_log.hpp>
 
+#include <monad/state/account_state.hpp>
+#include <monad/state/code_state.hpp>
+#include <monad/state/state.hpp>
+#include <monad/state/value_state.hpp>
+
 #include <CLI/CLI.hpp>
 
 #include <filesystem>
 
 MONAD_NAMESPACE_BEGIN
 
-using fakeState = execution::fake::State;
 using receiptCollector = std::vector<std::vector<Receipt>>;
 using eth_start_fork = fork_traits::frontier;
-
-struct fakeInterpreter
-{
-};
 
 class fakeEmptyTransactionTrie
 {
 public:
     fakeEmptyTransactionTrie(std::vector<Transaction> const &) {}
-    bytes32_t root_hash() const { return bytes32_t{}; }
+    bytes32_t root_hash() const { return NULL_ROOT; }
 };
 
 class fakeEmptyReceiptTrie
 {
 public:
     fakeEmptyReceiptTrie(std::vector<Receipt> const &) {}
-    bytes32_t root_hash() const { return bytes32_t{}; }
+    bytes32_t root_hash() const { return NULL_ROOT; }
 };
 
 MONAD_NAMESPACE_END
@@ -84,10 +94,19 @@ int main(int argc, char *argv[])
 
     cli.parse(argc, argv);
 
+    // Real Objects
+    using code_db_t = std::unordered_map<monad::address_t, monad::byte_string>;
+    using db_t = monad::db::InMemoryTrieDB;
     using block_db_t = monad::db::BlockDb;
     using receipt_collector_t = monad::receiptCollector;
-    using state_t = monad::fakeState;
+    using state_t = monad::state::State<
+        monad::state::AccountState<db_t>,
+        monad::state::ValueState<db_t>,
+        monad::state::CodeState<code_db_t>,
+        monad::db::BlockDb>;
     using execution_t = monad::execution::BoostFiberExecution;
+
+    // Fakes
     using transaction_trie_t = monad::fakeEmptyTransactionTrie;
     using receipt_trie_t = monad::fakeEmptyReceiptTrie;
 
@@ -105,11 +124,14 @@ int main(int argc, char *argv[])
         finish_block_number);
 
     block_db_t block_db(block_db_path);
-    receipt_collector_t receipt_collector;
-    state_t state;
+    db_t db{};
+    code_db_t code_db{};
+    monad::state::AccountState accounts{db};
+    monad::state::ValueState values{db};
+    monad::state::CodeState code{code_db};
+    state_t state{accounts, values, code, block_db};
 
-    // In order to finish execution, this must be set to true
-    state._merge_status = monad::fakeState::MergeStatus::WILL_SUCCEED;
+    receipt_collector_t receipt_collector;
 
     monad::execution::ReplayFromBlockDb<
         state_t,
@@ -124,11 +146,13 @@ int main(int argc, char *argv[])
     [[maybe_unused]] auto result = replay_eth.run<
         monad::eth_start_fork,
         monad::execution::TransactionProcessor,
-        monad::execution::fake::Evm,
+        monad::execution::Evm,
         monad::execution::StaticPrecompiles,
-        monad::execution::fake::EvmHost,
+        monad::execution::EvmcHost,
         monad::execution::TransactionProcessorFiberData,
-        monad::fakeInterpreter,
+        monad::execution::EVMOneBaselineInterpreter<
+            state_t::WorkingCopy,
+            monad::eth_start_fork>,
         monad::eth_start_fork::static_precompiles_t>(
         state,
         block_db,

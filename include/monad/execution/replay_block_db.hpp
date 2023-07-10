@@ -1,5 +1,7 @@
 #pragma once
 
+#include <monad/core/block.hpp>
+
 #include <monad/db/block_db.hpp>
 #include <monad/db/state_db.hpp>
 
@@ -128,7 +130,7 @@ public:
                                     TPrecompiles>,
                                 TInterpreter>>,
                         TExecution>>(state, block);
-                
+
                 // TODO: How exactly do we calculate transaction root and
                 // receipt root
                 TTransactionTrie transaction_trie(block.transactions);

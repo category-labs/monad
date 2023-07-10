@@ -104,7 +104,9 @@ struct fakeEmptyEvm
 {
 };
 
-struct fakeInterpreter {};
+struct fakeInterpreter
+{
+};
 
 template <class TTraits, class TState, class TEvm>
 struct fakeEmptyEvmHost
@@ -120,13 +122,6 @@ public:
     {
         return {};
     }
-};
-
-template <class TState>
-class fakeEmptyStateTrie
-{
-public:
-    bytes32_t incremental_update(TState &) { return bytes32_t{}; }
 };
 
 class fakeEmptyTransactionTrie
@@ -159,23 +154,20 @@ using traits_t = execution::fake::traits::alpha<state_t::WorkingCopy>;
 using receipt_collector_t = std::vector<std::vector<Receipt>>;
 
 using replay_t = ReplayFromBlockDb<
-    state_t, fakeBlockDb, BoostFiberExecution, fakeEmptyBP, fakeEmptyStateTrie,
+    state_t, fakeBlockDb, BoostFiberExecution, fakeEmptyBP,
     fakeEmptyTransactionTrie, fakeEmptyReceiptTrie, receipt_collector_t>;
 
 using replay_error_decompress_t = ReplayFromBlockDb<
     state_t, fakeErrorDecompressBlockDb, BoostFiberExecution, fakeEmptyBP,
-    fakeEmptyStateTrie, fakeEmptyTransactionTrie, fakeEmptyReceiptTrie,
-    receipt_collector_t>;
+    fakeEmptyTransactionTrie, fakeEmptyReceiptTrie, receipt_collector_t>;
 
 using replay_error_decode_t = ReplayFromBlockDb<
     state_t, fakeErrorDecodeBlockDb, BoostFiberExecution, fakeEmptyBP,
-    fakeEmptyStateTrie, fakeEmptyTransactionTrie, fakeEmptyReceiptTrie,
-    receipt_collector_t>;
+    fakeEmptyTransactionTrie, fakeEmptyReceiptTrie, receipt_collector_t>;
 
 TEST(ReplayFromBlockDb, invalid_end_block_number)
 {
     state_t state;
-    fakeEmptyStateTrie<state_t> state_trie;
     fakeBlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_t replay;
@@ -191,7 +183,7 @@ TEST(ReplayFromBlockDb, invalid_end_block_number)
         fakeEmptyFiberData,
         fakeInterpreter,
         boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
-        state, state_trie, block_db, receipt_collector, 100u, 100u);
+        state, block_db, receipt_collector, 100u, 100u);
 
     EXPECT_EQ(result.status, replay_t::Status::INVALID_END_BLOCK_NUMBER);
     EXPECT_EQ(result.block_number, 100u);
@@ -200,7 +192,6 @@ TEST(ReplayFromBlockDb, invalid_end_block_number)
 TEST(ReplayFromBlockDb, invalid_end_block_number_zero)
 {
     state_t state;
-    fakeEmptyStateTrie<state_t> state_trie;
     fakeBlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_t replay;
@@ -216,7 +207,7 @@ TEST(ReplayFromBlockDb, invalid_end_block_number_zero)
         fakeEmptyFiberData,
         fakeInterpreter,
         boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
-        state, state_trie, block_db, receipt_collector, 0u, 0u);
+        state, block_db, receipt_collector, 0u, 0u);
 
     EXPECT_EQ(result.status, replay_t::Status::INVALID_END_BLOCK_NUMBER);
     EXPECT_EQ(result.block_number, 0u);
@@ -225,7 +216,6 @@ TEST(ReplayFromBlockDb, invalid_end_block_number_zero)
 TEST(ReplayFromBlockDb, start_block_number_outside_db)
 {
     state_t state;
-    fakeEmptyStateTrie<state_t> state_trie;
     fakeBlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_t replay;
@@ -241,7 +231,7 @@ TEST(ReplayFromBlockDb, start_block_number_outside_db)
         fakeEmptyFiberData,
         fakeInterpreter,
         boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
-        state, state_trie, block_db, receipt_collector, 1u);
+        state, block_db, receipt_collector, 1u);
 
     EXPECT_EQ(result.status, replay_t::Status::START_BLOCK_NUMBER_OUTSIDE_DB);
     EXPECT_EQ(result.block_number, 1u);
@@ -250,7 +240,6 @@ TEST(ReplayFromBlockDb, start_block_number_outside_db)
 TEST(ReplayFromBlockDb, decompress_block_error)
 {
     state_t state;
-    fakeEmptyStateTrie<state_t> state_trie;
     fakeErrorDecompressBlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_error_decompress_t replay;
@@ -264,7 +253,7 @@ TEST(ReplayFromBlockDb, decompress_block_error)
         fakeEmptyFiberData,
         fakeInterpreter,
         boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
-        state, state_trie, block_db, receipt_collector, 1u);
+        state, block_db, receipt_collector, 1u);
 
     EXPECT_EQ(
         result.status,
@@ -275,7 +264,6 @@ TEST(ReplayFromBlockDb, decompress_block_error)
 TEST(ReplayFromBlockDb, decode_block_error)
 {
     state_t state;
-    fakeEmptyStateTrie<state_t> state_trie;
     fakeErrorDecodeBlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_error_decode_t replay;
@@ -289,7 +277,7 @@ TEST(ReplayFromBlockDb, decode_block_error)
         fakeEmptyFiberData,
         fakeInterpreter,
         boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
-        state, state_trie, block_db, receipt_collector, 1u);
+        state, block_db, receipt_collector, 1u);
 
     EXPECT_EQ(result.status, replay_error_decode_t::Status::DECODE_BLOCK_ERROR);
     EXPECT_EQ(result.block_number, 1u);
@@ -298,7 +286,6 @@ TEST(ReplayFromBlockDb, decode_block_error)
 TEST(ReplayFromBlockDb, one_block)
 {
     state_t state;
-    fakeEmptyStateTrie<state_t> state_trie;
     fakeBlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_t replay;
@@ -314,7 +301,7 @@ TEST(ReplayFromBlockDb, one_block)
         fakeEmptyFiberData,
         fakeInterpreter,
         boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
-        state, state_trie, block_db, receipt_collector, 100u, 101u);
+        state, block_db, receipt_collector, 100u, 101u);
 
     EXPECT_EQ(result.status, replay_t::Status::SUCCESS);
     EXPECT_EQ(result.block_number, 100u);
@@ -324,7 +311,6 @@ TEST(ReplayFromBlockDb, one_block)
 TEST(ReplayFromBlockDb, run_from_zero)
 {
     state_t state;
-    fakeEmptyStateTrie<state_t> state_trie;
     fakeBlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_t replay;
@@ -340,7 +326,7 @@ TEST(ReplayFromBlockDb, run_from_zero)
         fakeEmptyFiberData,
         fakeInterpreter,
         boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
-        state, state_trie, block_db, receipt_collector, 0u);
+        state, block_db, receipt_collector, 0u);
 
     EXPECT_EQ(result.status, replay_t::Status::SUCCESS_END_OF_DB);
     EXPECT_EQ(result.block_number, 1'234u);

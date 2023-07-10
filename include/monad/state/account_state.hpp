@@ -121,6 +121,8 @@ struct AccountState
         merged_.clear();
         db_.commit_accounts();
     }
+
+    [[nodiscard]] bytes32_t get_state_hash() const { return db_.root_hash(); }
 };
 
 template <typename TAccountDB>

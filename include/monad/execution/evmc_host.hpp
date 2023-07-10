@@ -22,16 +22,13 @@ struct EvmcHost : public evmc::Host
     BlockHeader const &block_header_;
     Transaction const &transaction_;
     TState &state_;
-    TEvm &evm_;
 
     using uint256be = evmc::uint256be;
 
-    EvmcHost(
-        BlockHeader const &b, Transaction const &t, TState &s, TEvm &e) noexcept
+    EvmcHost(BlockHeader const &b, Transaction const &t, TState &s) noexcept
         : block_header_{b}
         , transaction_{t}
         , state_{s}
-        , evm_{e}
     {
     }
     virtual ~EvmcHost() noexcept = default;
@@ -122,10 +119,10 @@ struct EvmcHost : public evmc::Host
     call(evmc_message const &m) noexcept override
     {
         if (m.kind == EVMC_CREATE || m.kind == EVMC_CREATE2) {
-            return evm_.create_contract_account(this, state_, m);
+            return TEvm::create_contract_account(this, state_, m);
         }
 
-        return evm_.call_evm(this, state_, m);
+        return TEvm::call_evm(this, state_, m);
     }
 
     virtual evmc_tx_context get_tx_context() const noexcept override

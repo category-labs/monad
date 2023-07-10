@@ -14,7 +14,13 @@ using traits_t = fake::traits::alpha<state_t>;
 
 template <class TTxnProc, class TExecution>
 using data_t = TransactionProcessorFiberData<
-    state_t, traits_t, TTxnProc, fake::Evm, TExecution>;
+    state_t, traits_t, TTxnProc,
+    fake::EvmHost<
+        fake::State, traits_t,
+        fake::Evm<
+            fake::State, traits_t, fake::static_precompiles::OneHundredGas,
+            fake::Interpreter>>,
+    TExecution>;
 
 template <class TState, concepts::fork_traits<TState> TTraits>
 struct fakeSuccessfulTP

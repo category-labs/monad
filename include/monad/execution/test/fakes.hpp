@@ -144,10 +144,15 @@ namespace fake
         State get_working_copy(unsigned int) { return State(*this); }
     };
 
+    template <class TState, concepts::fork_traits<TState> TTraits, class TEvm>
     struct EvmHost
     {
         evmc_result _result{};
         Receipt _receipt{};
+
+        EvmHost() = default;
+
+        EvmHost(BlockHeader const &, Transaction const &, TState &) noexcept {}
 
         [[nodiscard]] static constexpr inline evmc_message
         make_msg_from_txn(Transaction const &)
@@ -173,37 +178,38 @@ namespace fake
         }
     };
 
+    template <
+        class TState, concepts::fork_traits<TState> TTraits,
+        class TStaticPrecompiles, class TInterpreter>
     struct Evm
     {
         using new_address_t = tl::expected<address_t, evmc_result>;
         using unexpected_t = tl::unexpected<evmc_result>;
 
-        new_address_t _result{};
-        evmc_result _e_result{};
-
-        [[nodiscard]] tl::expected<address_t, evmc_result>
+        [[nodiscard]] static tl::expected<address_t, evmc_result>
         make_account_address(evmc_message const &) noexcept
         {
-            return _result;
+            return new_address_t{};
         }
 
-        [[nodiscard]] evmc_result transfer_call_balances(evmc_message const &)
+        [[nodiscard]] static evmc_result
+        transfer_call_balances(evmc_message const &)
         {
-            return _e_result;
+            return evmc_result{};
         }
 
-        template <class TState, class TEvmHost>
-        [[nodiscard]] evmc::Result
+        template <class TEvmHost>
+        [[nodiscard]] static evmc::Result
         call_evm(TEvmHost *, TState &, evmc_message const &) noexcept
         {
-            return evmc::Result{_e_result};
+            return evmc::Result{};
         }
 
-        template <class TState, class TEvmHost>
-        [[nodiscard]] evmc::Result create_contract_account(
+        template <class TEvmHost>
+        [[nodiscard]] static evmc::Result create_contract_account(
             TEvmHost *, TState &, evmc_message const &) noexcept
         {
-            return evmc::Result{_e_result};
+            return evmc::Result{};
         }
     };
 

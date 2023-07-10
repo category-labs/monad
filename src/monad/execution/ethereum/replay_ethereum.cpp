@@ -7,6 +7,7 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/replay_block_db.hpp>
 #include <monad/execution/static_precompiles.hpp>
+#include <monad/execution/test/fakes.hpp>
 #include <monad/execution/transaction_processor.hpp>
 #include <monad/execution/transaction_processor_data.hpp>
 
@@ -23,37 +24,6 @@ MONAD_NAMESPACE_BEGIN
 using fakeState = execution::fake::State;
 using receiptCollector = std::vector<std::vector<Receipt>>;
 using eth_start_fork = fork_traits::frontier;
-
-template <class TState, class TTraits, class TEvm>
-struct fakeEvmHost
-{
-    evmc_result _result{};
-    Receipt _receipt{};
-
-    [[nodiscard]] static constexpr inline evmc_message
-    make_msg_from_txn(Transaction const &) noexcept
-    {
-        return {.kind = EVMC_CALL};
-    }
-
-    [[nodiscard]] constexpr inline Receipt make_receipt_from_result(
-        evmc_status_code, Transaction const &, uint64_t const) noexcept
-    {
-        return _receipt;
-    }
-
-    [[nodiscard]] inline evmc::Result call(evmc_message const &) noexcept
-    {
-        return evmc::Result{_result};
-    }
-};
-
-template <
-    class TState, concepts::fork_traits<TState> TTraits,
-    class TStaticPrecompiles, class TInterpreter>
-struct fakeEmptyEvm
-{
-};
 
 struct fakeInterpreter
 {
@@ -164,9 +134,9 @@ int main(int argc, char *argv[])
     [[maybe_unused]] auto result = replay_eth.run<
         monad::eth_start_fork,
         monad::execution::TransactionProcessor,
-        monad::fakeEmptyEvm,
+        monad::execution::fake::Evm,
         monad::execution::StaticPrecompiles,
-        monad::fakeEvmHost,
+        monad::execution::fake::EvmHost,
         monad::execution::TransactionProcessorFiberData,
         monad::fakeInterpreter,
         monad::eth_start_fork::static_precompiles_t>(

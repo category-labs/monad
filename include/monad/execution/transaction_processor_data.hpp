@@ -23,7 +23,7 @@ enum class TxnReadyStatus
 
 template <
     class TState, concepts::fork_traits<TState> TTraits, class TTxnProcessor,
-    class TEvm, class TExecution>
+    class TEvmHost, class TExecution>
 struct alignas(64) TransactionProcessorFiberData
 {
     using txn_processor_status_t = typename TTxnProcessor::Status;
@@ -95,9 +95,8 @@ struct alignas(64) TransactionProcessorFiberData
             }
 
             auto working_copy = s_.get_working_copy(id_);
-            TEvm
-                e{}; // e needs to be constructed with the working copy of state
-            result_ = p.execute(working_copy, e, bh_, txn_);
+            TEvmHost host{bh_, txn_, working_copy};
+            result_ = p.execute(working_copy, host, bh_, txn_);
 
             if (s_.can_merge_changes(working_copy) ==
                 TState::MergeStatus::WILL_SUCCEED) {

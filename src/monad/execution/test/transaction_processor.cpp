@@ -11,6 +11,12 @@ using namespace monad::execution;
 using traits_t = fake::traits::alpha<fake::State>;
 using processor_t = TransactionProcessor<fake::State, traits_t>;
 
+using evm_host_t = fake::EvmHost<
+    fake::State, traits_t,
+    fake::Evm<
+        fake::State, traits_t, fake::static_precompiles::OneHundredGas,
+        fake::Interpreter>>;
+
 TEST(TransactionProcessor, g_star)
 {
     fake::State s{};
@@ -36,11 +42,12 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     constexpr static auto bene{
         0x5353535353535353535353535353535353535353_address};
     fake::State s{};
-    fake::EvmHost e{};
+
     s._map[from] = {.balance = 56'000'000'000'000'000, .nonce = 25};
     s._map[bene] = {.balance = 0, .nonce = 0};
-    e._result = {.status_code = EVMC_SUCCESS, .gas_left = 15'000};
-    e._receipt = {.status = 1u};
+    evm_host_t h{};
+    h._result = {.status_code = EVMC_SUCCESS, .gas_left = 15'000};
+    h._receipt = {.status = 1u};
     traits_t::_sd_refund = 24'000;
 
     static BlockHeader const b{.beneficiary = bene};
@@ -56,7 +63,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 
     auto status = p.validate(s, t, b.base_fee_per_gas.value_or(0));
     EXPECT_EQ(status, processor_t::Status::SUCCESS);
-    auto result = p.execute(s, e, b, t);
+    auto result = p.execute(s, h, b, t);
     EXPECT_EQ(result.status, 1u);
     EXPECT_EQ(s._map[from].balance, uint256_t{55'999'999'807'500'000});
     EXPECT_EQ(s._map[from].nonce, 25); // EVMC will inc for creation
@@ -72,12 +79,12 @@ TEST(
     constexpr static auto bene{
         0x5353535353535353535353535353535353535353_address};
     fake::State s{};
-    fake::EvmHost e{};
     s._map[from] = {.balance = 56'000'000'000'000'000, .nonce = 25};
     s._map[bene] = {.balance = 0, .nonce = 0};
-    e._result = {
+    evm_host_t h{};
+    h._result = {
         .status_code = EVMC_SUCCESS, .gas_left = 15'000, .gas_refund = 1'000};
-    e._receipt = {.status = 1u};
+    h._receipt = {.status = 1u};
     traits_t::_sd_refund = 24'000;
 
     static BlockHeader const b{
@@ -94,7 +101,7 @@ TEST(
 
     auto status = p.validate(s, t, b.base_fee_per_gas.value());
     EXPECT_EQ(status, processor_t::Status::SUCCESS);
-    auto result = p.execute(s, e, b, t);
+    auto result = p.execute(s, h, b, t);
     EXPECT_EQ(result.status, 1u);
     EXPECT_EQ(s._map[from].balance, uint256_t{54'095'000'000'000'000});
     EXPECT_EQ(s._map[from].nonce, 25); // EVMC will inc for creation

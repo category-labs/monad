@@ -13,11 +13,21 @@ using namespace monad::execution;
 using interpreter_t =
     EVMOneBaselineInterpreter<fake::State, fake::traits::alpha<fake::State>>;
 
+using traits_t = fake::traits::alpha<fake::State>;
+
 TEST(Evm1BaselineInterpreter, execute_empty)
 {
     constexpr address_t a{0x5353535353535353535353535353535353535353_address};
     fake::State s{};
-    fake::EvmHost h{};
+    fake::EvmHost<
+        fake::State,
+        traits_t,
+        fake::Evm<
+            fake::State,
+            traits_t,
+            fake::static_precompiles::OneHundredGas,
+            fake::Interpreter>>
+        h{};
     s._code.emplace(a, byte_string{});
 
     evmc_message m{.kind = EVMC_CALL, .gas = 10'000, .code_address = a};
@@ -32,7 +42,15 @@ TEST(Evm1BaselineInterpreter, execute_simple)
 {
     constexpr address_t a{0x5353535353535353535353535353535353535353_address};
     fake::State s{};
-    fake::EvmHost h{};
+    fake::EvmHost<
+        fake::State,
+        traits_t,
+        fake::Evm<
+            fake::State,
+            traits_t,
+            fake::static_precompiles::OneHundredGas,
+            fake::Interpreter>>
+        h{};
     byte_string code = {
         0x60, // PUSH1, 3 gas
         0x64, // 'd'
@@ -55,7 +73,15 @@ TEST(Evm1BaselineInterpreter, execute_invalid)
 {
     constexpr address_t a{0x5353535353535353535353535353535353535353_address};
     fake::State s{};
-    fake::EvmHost h{};
+    fake::EvmHost<
+        fake::State,
+        traits_t,
+        fake::Evm<
+            fake::State,
+            traits_t,
+            fake::static_precompiles::OneHundredGas,
+            fake::Interpreter>>
+        h{};
     byte_string code = {
         0x60, // PUSH1, 3 gas
         0x68, // 'h'

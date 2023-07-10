@@ -14,7 +14,11 @@ using namespace execution;
 using traits_t = fake::traits::alpha<fake::State>;
 
 template <concepts::fork_traits<fake::State> TTraits>
-using traits_templated_evmc_host_t = EvmcHost<fake::State, TTraits, fake::Evm>;
+using traits_templated_evmc_host_t = EvmcHost<
+    fake::State, TTraits,
+    fake::Evm<
+        fake::State, TTraits, fake::static_precompiles::OneHundredGas,
+        fake::Interpreter>>;
 
 using evmc_host_t = traits_templated_evmc_host_t<traits_t>;
 
@@ -65,13 +69,12 @@ TEST(EvmcHost, get_tx_context)
     };
     Transaction const t{.sc = {.chain_id = 1}, .from = from};
     fake::State s{};
-    fake::Evm e{};
 
     const static uint256_t gas_cost = per_gas_cost(t, 37'000'000'000);
     const static uint256_t chain_id{1};
     const static uint256_t base_fee_per_gas{37'000'000'000};
 
-    evmc_host_t host{b, t, s, e};
+    evmc_host_t host{b, t, s};
 
     const auto result = host.get_tx_context();
     evmc_tx_context ctx{
@@ -107,9 +110,8 @@ TEST(EvmcHost, emit_log)
     BlockHeader const b{};
     Transaction const t{};
     fake::State s{};
-    fake::Evm e{};
 
-    evmc_host_t host{b, t, s, e};
+    evmc_host_t host{b, t, s};
 
     host.emit_log(
         from,

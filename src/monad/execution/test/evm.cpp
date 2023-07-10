@@ -24,6 +24,11 @@ using traits_templated_evm_t =
         traits_templated_static_precompiles_t<TTraits>, fake::Interpreter>;
 
 using evm_t = traits_templated_evm_t<traits_t>;
+using evm_host_t = fake::EvmHost<
+    fake::State, traits_t,
+    fake::Evm<
+        fake::State, traits_t, fake::static_precompiles::OneHundredGas,
+        fake::Interpreter>>;
 
 TEST(Evm, make_account_address)
 {
@@ -273,7 +278,7 @@ TEST(Evm, create_contract_account)
     constexpr static auto new_addr2{
         0x312c420ec31bc2760e2556911ccf7e5c7162909f_address};
     fake::State s{};
-    fake::EvmHost h{};
+    evm_host_t h{};
     s._map.emplace(from, Account{.balance = 50'000u});
     traits_t::_gas_creation_cost = 5'000;
     traits_t::_success_store_contract = true;
@@ -302,7 +307,7 @@ TEST(Evm, revert_create_account)
     constexpr static auto null{
         0x0000000000000000000000000000000000000000_address};
     fake::State s{};
-    fake::EvmHost h{};
+    evm_host_t h{};
     s._map.emplace(from, Account{.balance = 10'000});
     traits_t::_gas_creation_cost = 10'000;
     traits_t::_success_store_contract = false;
@@ -325,7 +330,7 @@ TEST(Evm, call_evm)
     constexpr static auto to{
         0xf8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8_address};
     fake::State s{};
-    fake::EvmHost h{};
+    evm_host_t h{};
     s._map.emplace(from, Account{.balance = 50'000u});
     s._map.emplace(to, Account{.balance = 50'000u});
     fake::Interpreter::_result = evmc::Result{
@@ -354,7 +359,7 @@ TEST(Evm, static_precompile_execution)
     constexpr static auto code_address{
         0x0000000000000000000000000000000000000001_address};
     fake::State s{};
-    fake::EvmHost h{};
+    evm_host_t h{};
     s._map.emplace(from, Account{.balance = 15'000});
     s._map.emplace(code_address, Account{.nonce = 4});
 
@@ -395,7 +400,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
     constexpr static auto code_address{
         0x0000000000000000000000000000000000000001_address};
     fake::State s{};
-    fake::EvmHost h{};
+    evm_host_t h{};
     s._map.emplace(from, Account{.balance = 15'000});
     s._map.emplace(code_address, Account{.nonce = 6});
 
@@ -424,7 +429,7 @@ TEST(Evm, revert_call_evm)
     constexpr static auto code_address{
         0x0000000000000000000000000000000000000003_address};
     fake::State s{};
-    fake::EvmHost h{};
+    evm_host_t h{};
     s._map.emplace(from, Account{.balance = 15'000});
     s._map.emplace(code_address, Account{.nonce = 10});
     fake::Interpreter::_result = evmc::Result{

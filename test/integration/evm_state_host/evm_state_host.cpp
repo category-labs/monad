@@ -101,7 +101,7 @@ TEST(EvmInterpStateHost, return_existing_storage)
     working_state.access_account(from);
 
     evm_t<state_t, fork_t> e{};
-    evm_host_t<state_t, fork_t> h{b, t, working_state, e};
+    evm_host_t<state_t, fork_t> h{b, t, working_state};
 
     auto status = e.call_evm(&h, working_state, m);
 
@@ -167,7 +167,7 @@ TEST(EvmInterpStateHost, store_then_return_storage)
     working_state.access_account(from);
 
     evm_t<state_t, fork_t> e{};
-    evm_host_t<state_t, fork_t> h{b, t, working_state, e};
+    evm_host_t<state_t, fork_t> h{b, t, working_state};
 
     auto status = e.call_evm(&h, working_state, m);
 
@@ -175,7 +175,6 @@ TEST(EvmInterpStateHost, store_then_return_storage)
     EXPECT_EQ(status.output_size, 1u);
     EXPECT_EQ(*(status.output_data), 0x4d);
     EXPECT_EQ(status.gas_left, 1);
-
 }
 
 // TODO

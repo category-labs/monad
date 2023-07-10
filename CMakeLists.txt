@@ -7,6 +7,7 @@ project(monad)
 
 option(ASAN "Turn on Address Sanitizer")
 option(UBSAN "Turn on Undefined Behavior Sanitizer")
+option(FUZZING "Enable fuzzing for clang" ON)
 
 include(cmake/test.cmake)
 
@@ -105,15 +106,18 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/test/integration)
 # ##############################################################################
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    # only include if fuzzing mode is turned on
-    if(FUZZTEST_FUZZING_MODE)
-        set(ANTLR_BUILD_CPP_TESTS OFF)
-
+    if(FUZZING)
+        set(ANTLR_BUILD_CPP_TESTS
+            OFF
+            CACHE INTERNAL "do not build ANTLR tests" FORCE
+        )
+        set(FUZZTEST_FUZZING_MODE
+            ON
+            CACHE INTERNAL "enable fuzzing" FORCE
+        )
         add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/fuzztest)
         add_subdirectory(${PROJECT_SOURCE_DIR}/test/fuzz)
     endif()
-elseif(FUZZTEST_FUZZING_MODE)
-    message(FATAL_ERROR "FATAL: FUZZTEST_FUZZING_MODE only valid with Clang")
 endif()
 
 # ##############################################################################

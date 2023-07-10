@@ -40,7 +40,22 @@ pkg_check_modules(rocksdb REQUIRED IMPORTED_TARGET rocksdb)
 find_package(tl-expected REQUIRED)
 find_package(tl-optional REQUIRED)
 find_package(quill REQUIRED)
+
+# nlohmann_json is first required to be found by find_package. then the target
+# is made available via FetchContent using find_package (see FIND_PACKAGE_ARGS)
+# so that subdependencies pull details from vcpkg instead of trying to clone the
+# repository itself. Note: it is important that this sequence of events happens
+# prior to including any of the subdependencies.
+#
+# TODO: remove this workaround once we move fuzztest over to vcpkg
 find_package(nlohmann_json REQUIRED)
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.11.2
+    FIND_PACKAGE_ARGS
+)
+FetchContent_MakeAvailable(nlohmann_json)
 
 set(BUILD_SHARED_LIBS OFF)
 set(ETHASH_BUILD_TESTS OFF)

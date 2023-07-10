@@ -167,6 +167,13 @@ namespace fake
             COLLISION_DETECTED,
         };
 
+        std::unordered_map<address_t, uint256_t> _reward{};
+
+        void apply_reward(address_t const &a, uint256_t const &r)
+        {
+            _reward.insert({a, r});
+        }
+
         unsigned int _current_txn{};
 
         MergeStatus _merge_status{MergeStatus::TRY_LATER};

@@ -10,6 +10,11 @@ using namespace monad;
 
 using state_t = execution::fake::State::WorkingCopy;
 
+auto constexpr a{0xbebebebebebebebebebebebebebebebebebebebe_address};
+auto constexpr b{0x5353535353535353535353535353535353535353_address};
+auto constexpr c{0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address};
+auto constexpr null{0x0000000000000000000000000000000000000000_address};
+
 static_assert(concepts::fork_traits<fork_traits::frontier, state_t>);
 TEST(fork_traits, frontier)
 {
@@ -35,8 +40,6 @@ TEST(fork_traits, frontier)
     EXPECT_EQ(s._touched_dead, 10);
 
     uint8_t const ptr[5]{0x00};
-    auto const a{0xbebebebebebebebebebebebebebebebebebebebe_address};
-    auto const null{0x0000000000000000000000000000000000000000_address};
     evmc::Result r{EVMC_SUCCESS, 11'000, 0, ptr, 5};
 
     EXPECT_EQ(f.store_contract_code(s, a, r), true);
@@ -55,6 +58,19 @@ TEST(fork_traits, frontier)
     EXPECT_EQ(f.store_contract_code(s, a, r), true);
     EXPECT_EQ(r.gas_left, 0);
     EXPECT_EQ(r.create_address, null);
+
+    // award
+    execution::fake::State state{};
+    Block block{
+        .header = {.number = 10, .beneficiary = a},
+        .transactions = {},
+        .ommers = {
+            BlockHeader{.number = 9, .beneficiary = b},
+            BlockHeader{.number = 8, .beneficiary = c}}};
+    fork_traits::frontier::award(state, block);
+    EXPECT_EQ(state._reward[a], 5'312'500'000'000'000'000);
+    EXPECT_EQ(state._reward[b], 4'375'000'000'000'000'000);
+    EXPECT_EQ(state._reward[c], 3'750'000'000'000'000'000);
 }
 
 static_assert(concepts::fork_traits<fork_traits::homestead, state_t>);
@@ -70,8 +86,6 @@ TEST(fork_traits, homestead)
 
     execution::fake::State::WorkingCopy s{};
     uint8_t const ptr[5]{0x00};
-    auto const a{0xbebebebebebebebebebebebebebebebebebebebe_address};
-    auto const null{0x0000000000000000000000000000000000000000_address};
     evmc::Result r{EVMC_SUCCESS, 11'000, 0, ptr, 5};
 
     EXPECT_EQ(h.store_contract_code(s, a, r), true);
@@ -110,8 +124,6 @@ TEST(fork_traits, spurious_dragon)
     EXPECT_EQ(s._touched_dead, 0);
 
     uint8_t const ptr[25000]{0x00};
-    auto const a{0xbebebebebebebebebebebebebebebebebebebebe_address};
-    auto const null{0x0000000000000000000000000000000000000000_address};
     evmc::Result r{EVMC_SUCCESS, 11'000, 0, ptr, 25'000};
 
     EXPECT_EQ(sd.store_contract_code(s, a, r), false);
@@ -123,51 +135,79 @@ TEST(fork_traits, spurious_dragon)
 static_assert(concepts::fork_traits<fork_traits::byzantium, state_t>);
 TEST(fork_traits, byzantium)
 {
-    fork_traits::byzantium b{};
+    fork_traits::byzantium byz{};
     Transaction t{};
-    EXPECT_EQ(b.intrinsic_gas(t), 53'000);
+    EXPECT_EQ(byz.intrinsic_gas(t), 53'000);
 
     t.to = 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
-    EXPECT_EQ(b.intrinsic_gas(t), 21'000);
-    EXPECT_EQ(b.starting_nonce(), 1);
+    EXPECT_EQ(byz.intrinsic_gas(t), 21'000);
+    EXPECT_EQ(byz.starting_nonce(), 1);
 
     execution::fake::State::WorkingCopy s{};
     s._touched_dead = 10;
-    b.destruct_touched_dead(s);
+    byz.destruct_touched_dead(s);
     EXPECT_EQ(s._touched_dead, 0);
 
     uint8_t const ptr[25]{0x00};
-    auto const a{0xbebebebebebebebebebebebebebebebebebebebe_address};
-    auto const null{0x0000000000000000000000000000000000000000_address};
     evmc::Result r{EVMC_SUCCESS, 11'000, 0, ptr, 25};
-    EXPECT_EQ(b.store_contract_code(s, a, r), true);
+    EXPECT_EQ(byz.store_contract_code(s, a, r), true);
     EXPECT_EQ(r.status_code, EVMC_SUCCESS);
     EXPECT_EQ(r.gas_left, 6'000);
     EXPECT_EQ(r.create_address, a);
 
     r.gas_left = 999;
     r.create_address = null;
-    EXPECT_EQ(b.store_contract_code(s, a, r), false);
+    EXPECT_EQ(byz.store_contract_code(s, a, r), false);
     EXPECT_EQ(r.status_code, EVMC_OUT_OF_GAS);
     EXPECT_EQ(r.gas_left, 0);
     EXPECT_EQ(r.create_address, null);
 
     r.status_code = EVMC_INVALID_MEMORY_ACCESS;
     r.gas_left = 11'000;
-    EXPECT_EQ(b.store_contract_code(s, a, r), false);
+    EXPECT_EQ(byz.store_contract_code(s, a, r), false);
     EXPECT_EQ(r.gas_left, 0);
     EXPECT_EQ(r.create_address, null);
 
     r.status_code = EVMC_REVERT;
     r.gas_left = 11'000;
-    EXPECT_EQ(b.store_contract_code(s, a, r), false);
+    EXPECT_EQ(byz.store_contract_code(s, a, r), false);
     EXPECT_EQ(r.status_code, EVMC_REVERT);
     EXPECT_EQ(r.gas_left, 11'000);
     EXPECT_EQ(r.create_address, null);
+
+    // award
+    execution::fake::State state{};
+    Block block{
+        .header = {.number = 10, .beneficiary = a},
+        .transactions = {},
+        .ommers = {
+            BlockHeader{.number = 9, .beneficiary = b},
+            BlockHeader{.number = 8, .beneficiary = c}}};
+    fork_traits::byzantium::award(state, block);
+    EXPECT_EQ(state._reward[a], 3'187'500'000'000'000'000);
+    EXPECT_EQ(state._reward[b], 2'625'000'000'000'000'000);
+    EXPECT_EQ(state._reward[c], 2'250'000'000'000'000'000);
+}
+
+static_assert(concepts::fork_traits<fork_traits::constantinople, state_t>);
+TEST(fork_traits, constantinople)
+{
+    // award
+    execution::fake::State state{};
+    Block block{
+        .header = {.number = 10, .beneficiary = a},
+        .transactions = {},
+        .ommers = {
+            BlockHeader{.number = 9, .beneficiary = b},
+            BlockHeader{.number = 8, .beneficiary = c}}};
+    fork_traits::constantinople::award(state, block);
+    EXPECT_EQ(state._reward[a], 2'125'000'000'000'000'000);
+    EXPECT_EQ(state._reward[b], 1'750'000'000'000'000'000);
+    EXPECT_EQ(state._reward[c], 1'500'000'000'000'000'000);
 }
 
 static_assert(concepts::fork_traits<fork_traits::istanbul, state_t>);
-TEST(fork_traits, intanbul)
+TEST(fork_traits, istanbul)
 {
     fork_traits::istanbul i{};
     Transaction t{};
@@ -214,8 +254,6 @@ TEST(fork_traits, london)
     EXPECT_EQ(l.max_refund_quotient(), 5);
 
     uint8_t const ptr[25]{0xef};
-    auto const a{0xbebebebebebebebebebebebebebebebebebebebe_address};
-    auto const null{0x0000000000000000000000000000000000000000_address};
     evmc::Result r{EVMC_UNDEFINED_INSTRUCTION, 11'000, 0, ptr, 25};
 
     EXPECT_EQ(l.store_contract_code(s, a, r), false);

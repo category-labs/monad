@@ -32,6 +32,7 @@ namespace fork_traits
     struct homestead;
     struct spurious_dragon;
     struct byzantium;
+    struct constantinople;
     struct istanbul;
     struct berlin;
     struct london;
@@ -72,20 +73,40 @@ namespace fork_traits
         }
     };
 
+    template <class TState>
+    static constexpr void apply_mining_award(
+        TState &s, Block const &b, uint256_t const &reward,
+        uint256_t const &ommer_reward)
+    {
+        // reward block beneficiary, YP Eqn. 172
+        uint256_t const miner_reward = reward + ommer_reward * b.ommers.size();
+        s.apply_reward(b.header.beneficiary, miner_reward);
+
+        // reward ommers, YP Eqn. 175
+        for (auto &i : b.ommers) {
+            auto const subtrahend = ((b.header.number - i.number) * reward) / 8;
+            s.apply_reward(i.beneficiary, reward - subtrahend);
+        }
+    }
+
     struct frontier
     {
         using next_fork_t = homestead;
 
         static constexpr evmc_revision rev = EVMC_FRONTIER;
         static constexpr auto last_block_number = 1'149'999u;
+        static constexpr uint256_t block_reward =
+            5'000'000'000'000'000'000; // YP Eqn. 176
+        static constexpr uint256_t additional_ommer_reward =
+            block_reward >> 5; // YP Eqn. 172, block reward / 32
 
-        // YP Appendix E Eq 209
+        // YP Appendix E Eqn. 209
         using elliptic_curve_recover_gas_t = gas_required<3000, 0>;
-        // YP Appendix E Eq 221
+        // YP Appendix E Eqn. 221
         using sha256_gas_t = gas_required<60, 12>;
-        // YP Appendix E Eq 224
+        // YP Appendix E Eqn. 224
         using ripemd160_gas_t = gas_required<600, 120>;
-        // YP Appendix E Eq 230
+        // YP Appendix E Eqn. 230
         using identity_gas_t = gas_required<15, 3>;
 
         using static_precompiles_t = type_list_t<
@@ -159,6 +180,12 @@ namespace fork_traits
             }
             return true;
         }
+
+        template <class TState>
+        static constexpr void award(TState &s, Block const &b)
+        {
+            apply_mining_award(s, b, block_reward, additional_ommer_reward);
+        }
     };
 
     struct homestead : public frontier
@@ -206,7 +233,7 @@ namespace fork_traits
     // dao - 1'920'000
     // tangerine_whistle - 2'463'000
 
-    struct spurious_dragon : homestead
+    struct spurious_dragon : public homestead
     {
         using next_fork_t = byzantium;
 
@@ -249,12 +276,16 @@ namespace fork_traits
         }
     };
 
-    struct byzantium : spurious_dragon
+    struct byzantium : public spurious_dragon
     {
-        using next_fork_t = istanbul;
+        using next_fork_t = constantinople;
 
         static constexpr evmc_revision rev = EVMC_BYZANTIUM;
         static constexpr auto last_block_number = 9'068'999u;
+        static constexpr uint256_t block_reward =
+            3'000'000'000'000'000'000; // YP Eqn. 176, EIP-649
+        static constexpr uint256_t additional_ommer_reward =
+            block_reward >> 5; // YP Eqn. 172, block reward / 32
 
         // YP Appendix E Eq 279
         using bn_add_gas_t = gas_required<500, 0>;
@@ -300,10 +331,34 @@ namespace fork_traits
 
             return false;
         }
-    };
-    // constantinople - 7'280'000
 
-    struct istanbul : public byzantium // constantinople
+        template <class TState>
+        static constexpr void award(TState &s, Block const &b)
+        {
+            apply_mining_award(s, b, block_reward, additional_ommer_reward);
+        }
+    };
+
+    struct constantinople : public byzantium
+    {
+        using next_fork_t = istanbul;
+
+        static constexpr evmc_revision rev = EVMC_CONSTANTINOPLE;
+        static constexpr auto last_block_number = 9'068'999;
+        static constexpr uint256_t block_reward =
+            2'000'000'000'000'000'000; // YP Eqn. 176, EIP-1234
+        static constexpr uint256_t additional_ommer_reward =
+            block_reward >> 5; // YP Eqn. 172, block reward / 32
+
+        template <class TState>
+        static constexpr void award(TState &s, Block const &b)
+        {
+            apply_mining_award(s, b, block_reward, additional_ommer_reward);
+        }
+    };
+    // petersburg - 7'280'000
+
+    struct istanbul : public constantinople
     {
         using next_fork_t = berlin;
 
@@ -324,7 +379,7 @@ namespace fork_traits
 
         using static_precompiles_t = boost::mp11::mp_append<
             boost::mp11::mp_transform<
-                switch_fork_t, byzantium::static_precompiles_t>,
+                switch_fork_t, constantinople::static_precompiles_t>,
             type_list_t<istanbul, contracts::Blake2F>>;
         static_assert(boost::mp11::mp_size<static_precompiles_t>() == 9);
 

@@ -25,6 +25,141 @@ namespace fake
 {
     struct State
     {
+        struct WorkingCopy
+        {
+            std::unordered_map<address_t, Account> _accounts{};
+            std::unordered_map<address_t, byte_string> _code{};
+
+            std::vector<Receipt::Log> _logs{};
+            unsigned int _txn_id{};
+            uint64_t _selfdestructs{};
+            uint64_t _touched_dead{};
+            uint64_t _suicides{};
+
+            WorkingCopy() = default;
+
+            WorkingCopy(unsigned int id)
+                : _txn_id{id}
+            {
+            }
+
+            unsigned int txn_id() const noexcept { return _txn_id; }
+
+            void create_contract(address_t const &) noexcept {}
+
+            // EVMC Host Interface
+            [[nodiscard]] bool account_exists(address_t const &a)
+            {
+                return _accounts.contains(a);
+            }
+
+            // EVMC Host Interface
+            evmc_access_status access_account(address_t const &) noexcept
+            {
+                return {};
+            }
+
+            // EVMC Host Interface
+            [[nodiscard]] bytes32_t
+            get_balance(address_t const &address) const noexcept
+            {
+                return intx::be::store<bytes32_t>(
+                    _accounts.at(address).balance);
+            }
+
+            void set_balance(address_t const &address, uint256_t new_balance)
+            {
+                _accounts[address].balance = new_balance;
+            }
+
+            [[nodiscard]] auto
+            get_nonce(address_t const &address) const noexcept
+            {
+                return _accounts.at(address).nonce;
+            }
+
+            void set_nonce(address_t const &address, uint64_t nonce) noexcept
+            {
+                _accounts[address].nonce = nonce;
+            }
+
+            // EVMV Host Interface
+            [[nodiscard]] bytes32_t
+            get_code_hash(address_t const &address) const noexcept
+            {
+                return _accounts.at(address).code_hash;
+            }
+
+            [[nodiscard]] bool
+            selfdestruct(address_t const &, address_t const &) noexcept
+            {
+                return true;
+            }
+
+            void destruct_suicides() { _suicides = 0; }
+
+            void destruct_touched_dead() { _touched_dead = 0; }
+
+            uint64_t total_selfdestructs() const noexcept
+            {
+                return _selfdestructs;
+            }
+
+            // EVMC Host Interface
+            evmc_access_status
+            access_storage(address_t const &, bytes32_t const &) noexcept
+            {
+                return {};
+            }
+
+            // EVMC Host Interface
+            [[nodiscard]] bytes32_t
+            get_storage(address_t const &, bytes32_t const &) const noexcept
+            {
+                return {};
+            }
+
+            // EVMC Host Interface
+            [[nodiscard]] evmc_storage_status set_storage(
+                address_t const &, bytes32_t const &,
+                bytes32_t const &) noexcept
+            {
+                return {};
+            }
+
+            void set_code(address_t const &, byte_string const &) {}
+
+            // EVMC Host Interface
+            [[nodiscard]] size_t get_code_size(address_t const &) const noexcept
+            {
+                return 0u;
+            }
+
+            // EVMC Host Interface
+            [[nodiscard]] size_t copy_code(
+                address_t const &, size_t, uint8_t *, size_t) const noexcept
+            {
+                return 0u;
+            }
+
+            [[nodiscard]] byte_string_view
+            get_code(address_t const &a) const noexcept
+            {
+                return {_code.at(a)};
+            }
+
+            void revert() noexcept { _accounts.clear(); }
+
+            [[nodiscard]] bytes32_t get_block_hash(int64_t) const noexcept
+            {
+                return {};
+            }
+
+            void store_log(Receipt::Log &&l) { _logs.emplace_back(l); }
+
+            std::vector<Receipt::Log> &logs() { return _logs; }
+        };
+
         enum class MergeStatus
         {
             WILL_SUCCEED,
@@ -32,116 +167,27 @@ namespace fake
             COLLISION_DETECTED,
         };
 
-        std::unordered_map<address_t, Account> _map{};
-        std::unordered_map<address_t, byte_string> _code{};
-        uint64_t _selfdestructs{};
-        uint64_t _touched_dead{};
-        uint64_t _suicides{};
         unsigned int _current_txn{};
+
         MergeStatus _merge_status{MergeStatus::TRY_LATER};
-        std::vector<Receipt::Log> _logs{};
-
-        [[nodiscard]] bool account_exists(address_t const &a)
-        {
-            return _map.contains(a);
-        }
-
-        [[nodiscard]] bytes32_t
-        get_storage(address_t const &, bytes32_t const &) const noexcept
-        {
-            return {};
-        }
-
-        [[nodiscard]] evmc_storage_status set_storage(
-            address_t const &, bytes32_t const &, bytes32_t const &) noexcept
-        {
-            return {};
-        }
-
-        void create_contract(address_t const &) noexcept {}
-
-        [[nodiscard]] bytes32_t
-        get_balance(address_t const &address) const noexcept
-        {
-            return intx::be::store<bytes32_t>(_map.at(address).balance);
-        }
-
-        [[nodiscard]] size_t get_code_size(address_t const &) const noexcept
-        {
-            return 0u;
-        }
-
-        [[nodiscard]] size_t
-        copy_code(address_t const &, size_t, uint8_t *, size_t) const noexcept
-        {
-            return 0u;
-        }
-
-        [[nodiscard]] bytes32_t
-        get_code_hash(address_t const &address) const noexcept
-        {
-            return _map.at(address).code_hash;
-        }
-
-        [[nodiscard]] byte_string_view
-        get_code(address_t const &a) const noexcept
-        {
-            return {_code.at(a)};
-        }
-
-        [[nodiscard]] bool
-        selfdestruct(address_t const &, address_t const &) noexcept
-        {
-            return true;
-        }
-
-        evmc_access_status access_account(address_t const &) noexcept
-        {
-            return {};
-        }
-        evmc_access_status
-        access_storage(address_t const &, bytes32_t const &) noexcept
-        {
-            return {};
-        }
-
-        [[nodiscard]] bytes32_t get_block_hash(int64_t) { return {}; }
-
-        // non-evmc interface
-        void set_balance(address_t const &address, uint256_t new_balance)
-        {
-            _map[address].balance = new_balance;
-        }
-        [[nodiscard]] auto get_nonce(address_t const &address) const noexcept
-        {
-            return _map.at(address).nonce;
-        }
-        void set_nonce(address_t const &address, uint64_t nonce) noexcept
-        {
-            _map[address].nonce = nonce;
-        }
-
-        void set_code(address_t const &, byte_string const &) {}
-
-        uint64_t total_selfdestructs() const noexcept { return _selfdestructs; }
-
-        void destruct_touched_dead() { _touched_dead = 0; }
-
-        void destruct_suicides() { _suicides = 0; }
-
-        void revert() { _map.clear(); };
-
-        void store_log(Receipt::Log &&l) { _logs.emplace_back(l); }
-
-        std::vector<Receipt::Log> &logs() { return _logs; }
-
-        MergeStatus can_merge_changes(State const &) { return _merge_status; }
-
-        void merge_changes(State &) { return; }
 
         unsigned int current_txn() { return _current_txn; }
 
-        State get_working_copy(unsigned int) { return State(*this); }
+        WorkingCopy get_working_copy(unsigned int id)
+        {
+            return WorkingCopy(id);
+        }
+
+        MergeStatus can_merge_changes(WorkingCopy const &)
+        {
+            return _merge_status;
+        }
+
+        void merge_changes(WorkingCopy &) { return; }
+
+        void commit() const noexcept { return; }
+
+        [[nodiscard]] bytes32_t get_state_hash() const { return {}; }
     };
 
     template <class TState, concepts::fork_traits<TState> TTraits, class TEvm>

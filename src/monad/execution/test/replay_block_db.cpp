@@ -143,9 +143,7 @@ public:
     bytes32_t root_hash() const { return bytes32_t{}; }
 };
 
-template <
-    class TState, concepts::fork_traits<TState> TTraits, class TTxnProcessor,
-    class TEvm, class TExecution>
+template <class TState, class TTxnProcessor, class TEvm, class TExecution>
 struct fakeEmptyFiberData
 {
     Receipt _result{};
@@ -157,7 +155,7 @@ struct fakeEmptyFiberData
 };
 
 using state_t = execution::fake::State;
-using traits_t = execution::fake::traits::alpha<state_t>;
+using traits_t = execution::fake::traits::alpha<state_t::WorkingCopy>;
 using receipt_collector_t = std::vector<std::vector<Receipt>>;
 
 using replay_t = ReplayFromBlockDb<

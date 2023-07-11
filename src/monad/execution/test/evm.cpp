@@ -12,23 +12,23 @@
 using namespace monad;
 using namespace monad::execution;
 
-using traits_t = fake::traits::alpha<fake::State>;
+using traits_t = fake::traits::alpha<fake::State::WorkingCopy>;
 
-template <concepts::fork_traits<fake::State> TTraits>
+template <concepts::fork_traits<fake::State::WorkingCopy> TTraits>
 using traits_templated_static_precompiles_t = StaticPrecompiles<
-    fake::State, TTraits, typename TTraits::static_precompiles_t>;
+    fake::State::WorkingCopy, TTraits, typename TTraits::static_precompiles_t>;
 
-template <concepts::fork_traits<fake::State> TTraits>
+template <concepts::fork_traits<fake::State::WorkingCopy> TTraits>
 using traits_templated_evm_t =
-    Evm<fake::State, fake::traits::alpha<fake::State>,
+    Evm<fake::State::WorkingCopy, fake::traits::alpha<fake::State::WorkingCopy>,
         traits_templated_static_precompiles_t<TTraits>, fake::Interpreter>;
 
 using evm_t = traits_templated_evm_t<traits_t>;
 using evm_host_t = fake::EvmHost<
-    fake::State, traits_t,
+    fake::State::WorkingCopy, traits_t,
     fake::Evm<
-        fake::State, traits_t, fake::static_precompiles::OneHundredGas,
-        fake::Interpreter>>;
+        fake::State::WorkingCopy, traits_t,
+        fake::static_precompiles::OneHundredGas, fake::Interpreter>>;
 
 TEST(Evm, make_account_address)
 {
@@ -36,9 +36,9 @@ TEST(Evm, make_account_address)
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     constexpr static auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    static fake::State s{};
-    s._map[from].balance = 10'000'000'000;
-    s._map[from].nonce = 5;
+    static fake::State::WorkingCopy s{};
+    s._accounts[from].balance = 10'000'000'000;
+    s._accounts[from].nonce = 5;
 
     evmc_message m{
         .kind = EVMC_CREATE,
@@ -52,10 +52,10 @@ TEST(Evm, make_account_address)
 
     EXPECT_TRUE(result.has_value());
     EXPECT_EQ(*result, to);
-    EXPECT_EQ(s._map[from].balance, 9'930'000'000);
-    EXPECT_EQ(s._map[from].nonce, 6);
-    EXPECT_EQ(s._map[to].balance, 70'000'000);
-    EXPECT_EQ(s._map[to].nonce, 1);
+    EXPECT_EQ(s._accounts[from].balance, 9'930'000'000);
+    EXPECT_EQ(s._accounts[from].nonce, 6);
+    EXPECT_EQ(s._accounts[to].balance, 70'000'000);
+    EXPECT_EQ(s._accounts[to].nonce, 1);
 }
 
 TEST(Evm, make_account_address_create2)
@@ -67,9 +67,9 @@ TEST(Evm, make_account_address_create2)
     static constexpr auto cafebabe_salt{
         0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32};
     static const uint8_t deadbeef[4]{0xde, 0xad, 0xbe, 0xef};
-    static fake::State s{};
-    s._map[from].balance = 10'000'000'000;
-    s._map[from].nonce = 5;
+    static fake::State::WorkingCopy s{};
+    s._accounts[from].balance = 10'000'000'000;
+    s._accounts[from].nonce = 5;
 
     evmc_message m{
         .kind = EVMC_CREATE2,
@@ -86,18 +86,18 @@ TEST(Evm, make_account_address_create2)
 
     EXPECT_TRUE(result.has_value());
     EXPECT_EQ(*result, new_address);
-    EXPECT_EQ(s._map[from].balance, 9'930'000'000);
-    EXPECT_EQ(s._map[from].nonce, 6);
-    EXPECT_EQ(s._map[new_address].balance, 70'000'000);
-    EXPECT_EQ(s._map[new_address].nonce, 1);
+    EXPECT_EQ(s._accounts[from].balance, 9'930'000'000);
+    EXPECT_EQ(s._accounts[from].nonce, 6);
+    EXPECT_EQ(s._accounts[new_address].balance, 70'000'000);
+    EXPECT_EQ(s._accounts[new_address].nonce, 1);
 }
 
 TEST(Evm, create_with_insufficient)
 {
     constexpr static auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-    static fake::State s{};
-    s._map[from].balance = 10'000'000'000;
+    static fake::State::WorkingCopy s{};
+    s._accounts[from].balance = 10'000'000'000;
 
     evmc_message m{
         .kind = EVMC_CREATE,
@@ -117,9 +117,9 @@ TEST(Evm, create_nonce_out_of_range)
 {
     constexpr static auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-    static fake::State s{};
-    s._map[from].balance = 10'000'000'000;
-    s._map[from].nonce = std::numeric_limits<uint64_t>::max();
+    static fake::State::WorkingCopy s{};
+    s._accounts[from].balance = 10'000'000'000;
+    s._accounts[from].nonce = std::numeric_limits<uint64_t>::max();
 
     evmc_message m{
         .kind = EVMC_CREATE,
@@ -141,10 +141,10 @@ TEST(Evm, eip684_existing_nonce)
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     constexpr static auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    static fake::State s{};
-    s._map[from].balance = 10'000'000'000;
-    s._map[from].nonce = 5;
-    s._map[to].nonce = 5; // existing
+    static fake::State::WorkingCopy s{};
+    s._accounts[from].balance = 10'000'000'000;
+    s._accounts[from].nonce = 5;
+    s._accounts[to].nonce = 5; // existing
 
     evmc_message m{
         .kind = EVMC_CREATE,
@@ -168,10 +168,10 @@ TEST(Evm, eip684_existing_code)
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
     constexpr static auto code_hash{
         0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
-    static fake::State s{};
-    s._map[from].balance = 10'000'000'000;
-    s._map[from].nonce = 5;
-    s._map[to].code_hash = code_hash; // existing
+    static fake::State::WorkingCopy s{};
+    s._accounts[from].balance = 10'000'000'000;
+    s._accounts[from].nonce = 5;
+    s._accounts[to].code_hash = code_hash; // existing
 
     evmc_message m{
         .kind = EVMC_CREATE,
@@ -193,10 +193,10 @@ TEST(Evm, transfer_call_balances)
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     constexpr static auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    static fake::State s{};
-    s._map[from].balance = 10'000'000'000;
-    s._map[from].nonce = 5;
-    s._map[to].balance = 0;
+    static fake::State::WorkingCopy s{};
+    s._accounts[from].balance = 10'000'000'000;
+    s._accounts[from].nonce = 5;
+    s._accounts[to].balance = 0;
 
     evmc_message m{
         .kind = EVMC_CALL,
@@ -210,8 +210,8 @@ TEST(Evm, transfer_call_balances)
     auto const result = evm_t::transfer_call_balances(s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
-    EXPECT_EQ(s._map[from].balance, 3'000'000'000);
-    EXPECT_EQ(s._map[to].balance, 7'000'000'000);
+    EXPECT_EQ(s._accounts[from].balance, 3'000'000'000);
+    EXPECT_EQ(s._accounts[to].balance, 7'000'000'000);
 }
 
 TEST(Evm, dont_transfer_on_delegatecall)
@@ -220,10 +220,10 @@ TEST(Evm, dont_transfer_on_delegatecall)
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     constexpr static auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    static fake::State s{};
-    s._map[from].balance = 10'000'000'000;
-    s._map[from].nonce = 5;
-    s._map[to].balance = 0;
+    static fake::State::WorkingCopy s{};
+    s._accounts[from].balance = 10'000'000'000;
+    s._accounts[from].nonce = 5;
+    s._accounts[to].balance = 0;
 
     evmc_message m{
         .kind = EVMC_DELEGATECALL,
@@ -237,8 +237,8 @@ TEST(Evm, dont_transfer_on_delegatecall)
     auto const result = evm_t::transfer_call_balances(s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
-    EXPECT_EQ(s._map[from].balance, 10'000'000'000);
-    EXPECT_EQ(s._map[to].balance, 0);
+    EXPECT_EQ(s._accounts[from].balance, 10'000'000'000);
+    EXPECT_EQ(s._accounts[to].balance, 0);
 }
 
 TEST(Evm, dont_transfer_on_staticcall)
@@ -247,10 +247,10 @@ TEST(Evm, dont_transfer_on_staticcall)
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     constexpr static auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    static fake::State s{};
-    s._map[from].balance = 10'000'000'000;
-    s._map[from].nonce = 5;
-    s._map[to].balance = 0;
+    static fake::State::WorkingCopy s{};
+    s._accounts[from].balance = 10'000'000'000;
+    s._accounts[from].nonce = 5;
+    s._accounts[to].balance = 0;
 
     evmc_message m{
         .kind = EVMC_CALL,
@@ -265,8 +265,8 @@ TEST(Evm, dont_transfer_on_staticcall)
     auto const result = evm_t::transfer_call_balances(s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
-    EXPECT_EQ(s._map[from].balance, 10'000'000'000);
-    EXPECT_EQ(s._map[to].balance, 0);
+    EXPECT_EQ(s._accounts[from].balance, 10'000'000'000);
+    EXPECT_EQ(s._accounts[to].balance, 0);
 }
 
 TEST(Evm, create_contract_account)
@@ -277,9 +277,10 @@ TEST(Evm, create_contract_account)
         0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
     constexpr static auto new_addr2{
         0x312c420ec31bc2760e2556911ccf7e5c7162909f_address};
-    fake::State s{};
+    fake::State::WorkingCopy s{};
+
     evm_host_t h{};
-    s._map.emplace(from, Account{.balance = 50'000u});
+    s._accounts.emplace(from, Account{.balance = 50'000u});
     traits_t::_gas_creation_cost = 5'000;
     traits_t::_success_store_contract = true;
     fake::Interpreter::_result = evmc::Result{
@@ -306,9 +307,9 @@ TEST(Evm, revert_create_account)
         0x5353535353535353535353535353535353535353_address};
     constexpr static auto null{
         0x0000000000000000000000000000000000000000_address};
-    fake::State s{};
+    fake::State::WorkingCopy s{};
     evm_host_t h{};
-    s._map.emplace(from, Account{.balance = 10'000});
+    s._accounts.emplace(from, Account{.balance = 10'000});
     traits_t::_gas_creation_cost = 10'000;
     traits_t::_success_store_contract = false;
     fake::Interpreter::_result = evmc::Result{
@@ -318,7 +319,7 @@ TEST(Evm, revert_create_account)
 
     auto const result = evm_t::create_contract_account(&h, s, m);
 
-    EXPECT_TRUE(s._map.empty()); // revert was called on the fake
+    EXPECT_TRUE(s._accounts.empty()); // revert was called on the fake
     EXPECT_EQ(result.create_address, null);
     EXPECT_EQ(result.gas_left, 1'000);
 }
@@ -329,10 +330,10 @@ TEST(Evm, call_evm)
         0x5353535353535353535353535353535353535353_address};
     constexpr static auto to{
         0xf8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8_address};
-    fake::State s{};
+    fake::State::WorkingCopy s{};
     evm_host_t h{};
-    s._map.emplace(from, Account{.balance = 50'000u});
-    s._map.emplace(to, Account{.balance = 50'000u});
+    s._accounts.emplace(from, Account{.balance = 50'000u});
+    s._accounts.emplace(to, Account{.balance = 50'000u});
     fake::Interpreter::_result = evmc::Result{
         evmc_result{.status_code = EVMC_SUCCESS, .gas_left = 7'000}};
 
@@ -343,14 +344,14 @@ TEST(Evm, call_evm)
 
     auto const result = evm_t::call_evm(&h, s, m);
 
-    EXPECT_EQ(s._map[from].balance, 44'000);
-    EXPECT_EQ(s._map[to].balance, 56'000);
+    EXPECT_EQ(s._accounts[from].balance, 44'000);
+    EXPECT_EQ(s._accounts[to].balance, 56'000);
     EXPECT_EQ(result.gas_left, 7'000);
 }
 
 TEST(Evm, static_precompile_execution)
 {
-    using beta_traits_t = fake::traits::beta<fake::State>;
+    using beta_traits_t = fake::traits::beta<fake::State::WorkingCopy>;
     using alpha_evm_t = evm_t;
     using beta_evm_t = traits_templated_evm_t<beta_traits_t>;
 
@@ -358,10 +359,10 @@ TEST(Evm, static_precompile_execution)
         0x5353535353535353535353535353535353535353_address};
     constexpr static auto code_address{
         0x0000000000000000000000000000000000000001_address};
-    fake::State s{};
+    fake::State::WorkingCopy s{};
     evm_host_t h{};
-    s._map.emplace(from, Account{.balance = 15'000});
-    s._map.emplace(code_address, Account{.nonce = 4});
+    s._accounts.emplace(from, Account{.balance = 15'000});
+    s._accounts.emplace(code_address, Account{.nonce = 4});
 
     constexpr static char data[] = "hello world";
     constexpr static auto data_size = sizeof(data);
@@ -399,10 +400,10 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         0x5353535353535353535353535353535353535353_address};
     constexpr static auto code_address{
         0x0000000000000000000000000000000000000001_address};
-    fake::State s{};
+    fake::State::WorkingCopy s{};
     evm_host_t h{};
-    s._map.emplace(from, Account{.balance = 15'000});
-    s._map.emplace(code_address, Account{.nonce = 6});
+    s._accounts.emplace(from, Account{.balance = 15'000});
+    s._accounts.emplace(code_address, Account{.nonce = 6});
 
     constexpr static char data[] = "hello world";
     constexpr static auto data_size = sizeof(data);
@@ -428,10 +429,10 @@ TEST(Evm, revert_call_evm)
         0x5353535353535353535353535353535353535353_address};
     constexpr static auto code_address{
         0x0000000000000000000000000000000000000003_address};
-    fake::State s{};
+    fake::State::WorkingCopy s{};
     evm_host_t h{};
-    s._map.emplace(from, Account{.balance = 15'000});
-    s._map.emplace(code_address, Account{.nonce = 10});
+    s._accounts.emplace(from, Account{.balance = 15'000});
+    s._accounts.emplace(code_address, Account{.nonce = 10});
     fake::Interpreter::_result = evmc::Result{
         evmc_result{.status_code = EVMC_REVERT, .gas_left = 6'000}};
 
@@ -445,6 +446,6 @@ TEST(Evm, revert_call_evm)
     auto const result = evm_t::call_evm(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_REVERT);
-    EXPECT_TRUE(s._map.empty()); // revert was called on the fake
+    EXPECT_TRUE(s._accounts.empty()); // revert was called on the fake
     EXPECT_EQ(result.gas_left, 6'000);
 }

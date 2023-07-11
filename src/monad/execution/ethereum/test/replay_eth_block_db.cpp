@@ -2,6 +2,9 @@
 
 #include <monad/config.hpp>
 
+#include <monad/core/block.hpp>
+#include <monad/core/transaction.hpp>
+
 #include <monad/execution/replay_block_db.hpp>
 
 #include <monad/execution/test/fakes.hpp>
@@ -90,7 +93,7 @@ struct fakeEmptyEvmHost
 };
 
 template <class TState, concepts::fork_traits<TState> TTraits>
-struct fakeEmptyTP
+struct fakeReceiptTP
 {
     enum class Status
     {
@@ -106,7 +109,7 @@ struct fakeEmptyTP
     Receipt execute(
         TState &, TEvmHost &, BlockHeader const &, Transaction const &) const
     {
-        return {};
+        return Receipt{.status = TTraits::last_block_number};
     }
 
     Status validate(TState const &, Transaction const &, uint64_t)
@@ -115,19 +118,25 @@ struct fakeEmptyTP
     }
 };
 
-template <
-    class TState, concepts::fork_traits<TState> TTraits, class TTxnProcessor,
-    class TEvm, class TExecution>
+template <class TState, class TTxnProcessor, class TEvmHost, class TExecution>
 struct fakeReceiptFiberData
 {
-    Receipt _result{.status = TTraits::last_block_number};
+    Receipt _result{};
     fakeReceiptFiberData() {}
     fakeReceiptFiberData(
         TState &, Transaction const &, BlockHeader const &, int)
     {
     }
     Receipt get_receipt() { return _result; }
-    inline void operator()() {}
+    inline void operator()()
+    {
+        TTxnProcessor p{};
+        typename TState::WorkingCopy s{};
+        TEvmHost h{};
+        BlockHeader bh{};
+        Transaction t{};
+        _result = p.execute(s, h, bh, t);
+    }
 };
 
 template <class TExecution>
@@ -137,11 +146,14 @@ public:
     template <class TState, class TFiberData>
     std::vector<Receipt> execute(TState &, Block &)
     {
-        std::vector<TFiberData> data{{}};
-        std::vector<Receipt> r;
-        for (auto &d : data) {
-            r.push_back(d.get_receipt());
-        }
+        TFiberData data{};
+        typename TExecution::fiber_t fiber(std::ref(data));
+        TExecution::yield();
+
+        fiber.join();
+        std::vector<Receipt> r{};
+        r.push_back(data.get_receipt());
+
         return r;
     }
 };
@@ -199,7 +211,7 @@ TEST(ReplayFromBlockDb_Eth, invalid_end_block_number)
 
     auto result = replay_eth.run<
         eth_start_fork,
-        fakeEmptyTP,
+        fakeReceiptTP,
         fakeEmptyEvm,
         StaticPrecompiles,
         fakeEmptyEvmHost,
@@ -224,7 +236,7 @@ TEST(ReplayFromBlockDb_Eth, invalid_end_block_number_zero)
 
     auto result = replay_eth.run<
         eth_start_fork,
-        fakeEmptyTP,
+        fakeReceiptTP,
         fakeEmptyEvm,
         StaticPrecompiles,
         fakeEmptyEvmHost,
@@ -248,7 +260,7 @@ TEST(ReplayFromBlockDb_Eth, start_block_number_outside_db)
 
     auto result = replay_eth.run<
         eth_start_fork,
-        fakeEmptyTP,
+        fakeReceiptTP,
         fakeEmptyEvm,
         StaticPrecompiles,
         fakeEmptyEvmHost,
@@ -271,7 +283,7 @@ TEST(ReplayFromBlockDb_Eth, decompress_block_error)
 
     auto result = replay_eth.run<
         eth_start_fork,
-        fakeEmptyTP,
+        fakeReceiptTP,
         fakeEmptyEvm,
         StaticPrecompiles,
         fakeEmptyEvmHost,
@@ -295,7 +307,7 @@ TEST(ReplayFromBlockDb_Eth, decode_block_error)
 
     auto result = replay_eth.run<
         eth_start_fork,
-        fakeEmptyTP,
+        fakeReceiptTP,
         fakeEmptyEvm,
         StaticPrecompiles,
         fakeEmptyEvmHost,
@@ -320,7 +332,7 @@ TEST(ReplayFromBlockDb_Eth, one_block)
 
     auto result = replay_eth.run<
         eth_start_fork,
-        fakeEmptyTP,
+        fakeReceiptTP,
         fakeEmptyEvm,
         StaticPrecompiles,
         fakeEmptyEvmHost,
@@ -346,7 +358,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_run_from_zero)
 
     auto result = replay_eth.run<
         eth_start_fork,
-        fakeEmptyTP,
+        fakeReceiptTP,
         fakeEmptyEvm,
         StaticPrecompiles,
         fakeEmptyEvmHost,
@@ -377,7 +389,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_homestead)
 
     auto result = replay_eth.run<
         eth_start_fork,
-        fakeEmptyTP,
+        fakeReceiptTP,
         fakeEmptyEvm,
         StaticPrecompiles,
         fakeEmptyEvmHost,
@@ -419,7 +431,7 @@ TEST(ReplayFromBlockDb_Eth, berlin_to_london)
 
     auto result = replay_eth.run<
         eth_start_fork,
-        fakeEmptyTP,
+        fakeReceiptTP,
         fakeEmptyEvm,
         StaticPrecompiles,
         fakeEmptyEvmHost,
@@ -461,7 +473,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_spurious_dragon)
 
     auto result = replay_eth.run<
         eth_start_fork,
-        fakeEmptyTP,
+        fakeReceiptTP,
         fakeEmptyEvm,
         StaticPrecompiles,
         fakeEmptyEvmHost,

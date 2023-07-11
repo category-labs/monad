@@ -14,12 +14,13 @@ using traits_t = fake::traits::alpha<state_t>;
 
 template <class TTxnProc, class TExecution>
 using data_t = TransactionProcessorFiberData<
-    state_t, traits_t, TTxnProc,
+    state_t, TTxnProc,
     fake::EvmHost<
-        fake::State, traits_t,
+        fake::State::WorkingCopy, fake::traits::alpha<fake::State::WorkingCopy>,
         fake::Evm<
-            fake::State, traits_t, fake::static_precompiles::OneHundredGas,
-            fake::Interpreter>>,
+            fake::State::WorkingCopy,
+            fake::traits::alpha<fake::State::WorkingCopy>,
+            fake::static_precompiles::OneHundredGas, fake::Interpreter>>,
     TExecution>;
 
 state_t global_state{};
@@ -66,8 +67,12 @@ TEST(TransactionProcessorFiberData, fail_apply_state_first_time)
     static Transaction t{};
     global_state._merge_status = fake::State::MergeStatus::COLLISION_DETECTED;
 
-    data_t<fakeEmptyTP<state_t, traits_t>, fakeApplyStateAfterYieldEM> d{
-        global_state, t, b, 0};
+    data_t<
+        fakeEmptyTP<
+            fake::State::WorkingCopy,
+            fake::traits::alpha<fake::State::WorkingCopy>>,
+        fakeApplyStateAfterYieldEM>
+        d{global_state, t, b, 0};
     d();
     auto const r = d.get_receipt();
 

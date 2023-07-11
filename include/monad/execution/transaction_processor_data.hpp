@@ -21,9 +21,7 @@ enum class TxnReadyStatus
     ERROR,
 };
 
-template <
-    class TState, concepts::fork_traits<TState> TTraits, class TTxnProcessor,
-    class TEvmHost, class TExecution>
+template <class TState, class TTxnProcessor, class TEvmHost, class TExecution>
 struct alignas(64) TransactionProcessorFiberData
 {
     using txn_processor_status_t = typename TTxnProcessor::Status;
@@ -76,9 +74,11 @@ struct alignas(64) TransactionProcessorFiberData
             txn_.to);
 
         while (true) { // retry until apply state cleanly
+            // TODO: Issue #164
+            auto working_copy = s_.get_working_copy(id_);
             while (true) { // spin until *could be* successful
-                auto const status = is_valid(
-                    p.validate(s_, txn_, bh_.base_fee_per_gas.value_or(0)));
+                auto const status = is_valid(p.validate(
+                    working_copy, txn_, bh_.base_fee_per_gas.value_or(0)));
                 if (status == TxnReadyStatus::WILL_SUCCEED) {
                     break;
                 }
@@ -94,7 +94,6 @@ struct alignas(64) TransactionProcessorFiberData
                 TExecution::yield();
             }
 
-            auto working_copy = s_.get_working_copy(id_);
             TEvmHost host{bh_, txn_, working_copy};
             result_ = p.execute(working_copy, host, bh_, txn_);
 

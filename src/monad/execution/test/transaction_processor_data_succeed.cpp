@@ -14,12 +14,13 @@ using traits_t = fake::traits::alpha<state_t>;
 
 template <class TTxnProc, class TExecution>
 using data_t = TransactionProcessorFiberData<
-    state_t, traits_t, TTxnProc,
+    state_t, TTxnProc,
     fake::EvmHost<
-        fake::State, traits_t,
+        fake::State::WorkingCopy, fake::traits::alpha<fake::State::WorkingCopy>,
         fake::Evm<
-            fake::State, traits_t, fake::static_precompiles::OneHundredGas,
-            fake::Interpreter>>,
+            fake::State::WorkingCopy,
+            fake::traits::alpha<fake::State::WorkingCopy>,
+            fake::static_precompiles::OneHundredGas, fake::Interpreter>>,
     TExecution>;
 
 template <class TState, concepts::fork_traits<TState> TTraits>
@@ -57,8 +58,12 @@ TEST(TransactionProcessorFiberData, invoke_successfully_first_time)
     static BlockHeader const b{};
     static Transaction t{};
 
-    data_t<fakeSuccessfulTP<state_t, traits_t>, BoostFiberExecution> d{
-        s, t, b, 0};
+    data_t<
+        fakeSuccessfulTP<
+            fake::State::WorkingCopy,
+            fake::traits::alpha<fake::State::WorkingCopy>>,
+        BoostFiberExecution>
+        d{s, t, b, 0};
     d();
     auto const r = d.get_receipt();
 

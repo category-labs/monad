@@ -39,7 +39,7 @@ public:
         block_num_t block_number;
     };
 
-    template <concepts::fork_traits<TState> TTraits>
+    template <concepts::fork_traits<typename TState::WorkingCopy> TTraits>
     [[nodiscard]] constexpr block_num_t
     loop_until(std::optional<block_num_t> until_block_number)
     {
@@ -54,15 +54,13 @@ public:
     }
 
     template <
-        concepts::fork_traits<TState> TTraits,
+        concepts::fork_traits<typename TState::WorkingCopy> TTraits,
         template <typename, typename> class TTxnProcessor,
         template <typename, typename, typename, typename> class TEvm,
         template <typename, typename, typename> class TStaticPrecompiles,
         template <typename, typename, typename> class TEvmHost,
-        template <typename, typename, typename, typename, typename>
-        class TFiberData,
-        class TInterpreter,
-        class TPrecompiles>
+        template <typename, typename, typename, typename> class TFiberData,
+        class TInterpreter, class TPrecompiles>
     [[nodiscard]] Result run_fork(
         TState &state, TStateTrie<TState> &state_trie, TBlockDb &block_db,
         TReceiptCollector &receipt_collector, block_num_t current_block_number,
@@ -89,15 +87,15 @@ public:
                     TState,
                     TFiberData<
                         TState,
-                        TTraits,
-                        TTxnProcessor<TState, TTraits>,
+                        TTxnProcessor<typename TState::WorkingCopy, TTraits>,
                         TEvmHost<
-                            TState,
+                            typename TState::WorkingCopy,
                             TTraits,
-                            Evm<TState,
+                            TEvm<
+                                typename TState::WorkingCopy,
                                 TTraits,
                                 TStaticPrecompiles<
-                                    TState,
+                                    typename TState::WorkingCopy,
                                     TTraits,
                                     TPrecompiles>,
                                 TInterpreter>>,
@@ -166,15 +164,13 @@ public:
     }
 
     template <
-        concepts::fork_traits<TState> TTraits,
+        concepts::fork_traits<typename TState::WorkingCopy> TTraits,
         template <typename, typename> class TTxnProcessor,
         template <typename, typename, typename, typename> class TEvm,
         template <typename, typename, typename> class TStaticPrecompiles,
         template <typename, typename, typename> class TEvmHost,
-        template <typename, typename, typename, typename, typename>
-        class TFiberData,
-        class TInterpreter,
-        class TPrecompiles>
+        template <typename, typename, typename, typename> class TFiberData,
+        class TInterpreter, class TPrecompiles>
     [[nodiscard]] Result
     run(TState &state, TStateTrie<TState> &state_trie, TBlockDb &block_db,
         TReceiptCollector &receipt_collector, block_num_t start_block_number,

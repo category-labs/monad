@@ -8,18 +8,18 @@
 using namespace monad;
 using namespace monad::execution;
 
-using traits_t = fake::traits::alpha<fake::State>;
-using processor_t = TransactionProcessor<fake::State, traits_t>;
+using traits_t = fake::traits::alpha<fake::State::WorkingCopy>;
+using processor_t = TransactionProcessor<fake::State::WorkingCopy, traits_t>;
 
 using evm_host_t = fake::EvmHost<
-    fake::State, traits_t,
+    fake::State::WorkingCopy, traits_t,
     fake::Evm<
-        fake::State, traits_t, fake::static_precompiles::OneHundredGas,
-        fake::Interpreter>>;
+        fake::State::WorkingCopy, traits_t,
+        fake::static_precompiles::OneHundredGas, fake::Interpreter>>;
 
 TEST(TransactionProcessor, g_star)
 {
-    fake::State s{};
+    fake::State::WorkingCopy s{};
     traits_t::_sd_refund = 10'000;
     traits_t::_max_refund_quotient = 2;
 
@@ -41,11 +41,10 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     constexpr static auto bene{
         0x5353535353535353535353535353535353535353_address};
-    fake::State s{};
-
-    s._map[from] = {.balance = 56'000'000'000'000'000, .nonce = 25};
-    s._map[bene] = {.balance = 0, .nonce = 0};
+    fake::State::WorkingCopy s{};
     evm_host_t h{};
+    s._accounts[from] = {.balance = 56'000'000'000'000'000, .nonce = 25};
+    s._accounts[bene] = {.balance = 0, .nonce = 0};
     h._result = {.status_code = EVMC_SUCCESS, .gas_left = 15'000};
     h._receipt = {.status = 1u};
     traits_t::_sd_refund = 24'000;
@@ -65,10 +64,10 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     EXPECT_EQ(status, processor_t::Status::SUCCESS);
     auto result = p.execute(s, h, b, t);
     EXPECT_EQ(result.status, 1u);
-    EXPECT_EQ(s._map[from].balance, uint256_t{55'999'999'807'500'000});
-    EXPECT_EQ(s._map[from].nonce, 25); // EVMC will inc for creation
-    EXPECT_EQ(s._map[bene].balance, 192'500'000);
-    EXPECT_EQ(s._map[bene].nonce, 0);
+    EXPECT_EQ(s._accounts[from].balance, uint256_t{55'999'999'807'500'000});
+    EXPECT_EQ(s._accounts[from].nonce, 25); // EVMC will inc for creation
+    EXPECT_EQ(s._accounts[bene].balance, 192'500'000);
+    EXPECT_EQ(s._accounts[bene].nonce, 0);
 }
 
 TEST(
@@ -78,10 +77,11 @@ TEST(
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     constexpr static auto bene{
         0x5353535353535353535353535353535353535353_address};
-    fake::State s{};
-    s._map[from] = {.balance = 56'000'000'000'000'000, .nonce = 25};
-    s._map[bene] = {.balance = 0, .nonce = 0};
+    fake::State::WorkingCopy s{};
     evm_host_t h{};
+
+    s._accounts[from] = {.balance = 56'000'000'000'000'000, .nonce = 25};
+    s._accounts[bene] = {.balance = 0, .nonce = 0};
     h._result = {
         .status_code = EVMC_SUCCESS, .gas_left = 15'000, .gas_refund = 1'000};
     h._receipt = {.status = 1u};
@@ -103,8 +103,8 @@ TEST(
     EXPECT_EQ(status, processor_t::Status::SUCCESS);
     auto result = p.execute(s, h, b, t);
     EXPECT_EQ(result.status, 1u);
-    EXPECT_EQ(s._map[from].balance, uint256_t{54'095'000'000'000'000});
-    EXPECT_EQ(s._map[from].nonce, 25); // EVMC will inc for creation
-    EXPECT_EQ(s._map[bene].balance, 1'905'000'000'000'000);
-    EXPECT_EQ(s._map[bene].nonce, 0);
+    EXPECT_EQ(s._accounts[from].balance, uint256_t{54'095'000'000'000'000});
+    EXPECT_EQ(s._accounts[from].nonce, 25); // EVMC will inc for creation
+    EXPECT_EQ(s._accounts[bene].balance, 1'905'000'000'000'000);
+    EXPECT_EQ(s._accounts[bene].nonce, 0);
 }

@@ -11,13 +11,13 @@
 using namespace monad;
 using namespace execution;
 
-using traits_t = fake::traits::alpha<fake::State>;
+using traits_t = fake::traits::alpha<fake::State::WorkingCopy>;
 
-template <concepts::fork_traits<fake::State> TTraits>
+template <concepts::fork_traits<fake::State::WorkingCopy> TTraits>
 using traits_templated_evmc_host_t = EvmcHost<
-    fake::State, TTraits,
+    fake::State::WorkingCopy, TTraits,
     fake::Evm<
-        fake::State, TTraits, fake::static_precompiles::OneHundredGas,
+        fake::State::WorkingCopy, TTraits, fake::static_precompiles::OneHundredGas,
         fake::Interpreter>>;
 
 using evmc_host_t = traits_templated_evmc_host_t<traits_t>;
@@ -68,7 +68,7 @@ TEST(EvmcHost, get_tx_context)
         .base_fee_per_gas = 37'000'000'000,
     };
     Transaction const t{.sc = {.chain_id = 1}, .from = from};
-    fake::State s{};
+    fake::State::WorkingCopy s{};
 
     const static uint256_t gas_cost = per_gas_cost(t, 37'000'000'000);
     const static uint256_t chain_id{1};
@@ -109,7 +109,7 @@ TEST(EvmcHost, emit_log)
     static const byte_string data = {0x00, 0x01, 0x02, 0x03, 0x04};
     BlockHeader const b{};
     Transaction const t{};
-    fake::State s{};
+    fake::State::WorkingCopy s{};
 
     evmc_host_t host{b, t, s};
 

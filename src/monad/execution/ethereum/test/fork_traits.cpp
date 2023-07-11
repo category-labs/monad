@@ -8,7 +8,7 @@
 
 using namespace monad;
 
-using state_t = execution::fake::State;
+using state_t = execution::fake::State::WorkingCopy;
 
 static_assert(concepts::fork_traits<fork_traits::frontier, state_t>);
 TEST(fork_traits, frontier)
@@ -24,7 +24,7 @@ TEST(fork_traits, frontier)
     EXPECT_EQ(f.intrinsic_gas(t), 21'072);
     EXPECT_EQ(f.starting_nonce(), 0);
 
-    execution::fake::State s{};
+    execution::fake::State::WorkingCopy s{};
     s._selfdestructs = 10;
 
     EXPECT_EQ(f.get_selfdestruct_refund(s), 240'000);
@@ -68,7 +68,7 @@ TEST(fork_traits, homestead)
     EXPECT_EQ(h.intrinsic_gas(t), 21'000);
     EXPECT_EQ(h.starting_nonce(), 0);
 
-    execution::fake::State s{};
+    execution::fake::State::WorkingCopy s{};
     uint8_t const ptr[5]{0x00};
     auto const a{0xbebebebebebebebebebebebebebebebebebebebe_address};
     auto const null{0x0000000000000000000000000000000000000000_address};
@@ -104,7 +104,7 @@ TEST(fork_traits, spurious_dragon)
     EXPECT_EQ(sd.intrinsic_gas(t), 21'000);
     EXPECT_EQ(sd.starting_nonce(), 1);
 
-    execution::fake::State s{};
+    execution::fake::State::WorkingCopy s{};
     s._touched_dead = 10;
     sd.destruct_touched_dead(s);
     EXPECT_EQ(s._touched_dead, 0);
@@ -131,7 +131,7 @@ TEST(fork_traits, byzantium)
     EXPECT_EQ(b.intrinsic_gas(t), 21'000);
     EXPECT_EQ(b.starting_nonce(), 1);
 
-    execution::fake::State s{};
+    execution::fake::State::WorkingCopy s{};
     s._touched_dead = 10;
     b.destruct_touched_dead(s);
     EXPECT_EQ(s._touched_dead, 0);
@@ -207,7 +207,7 @@ static_assert(concepts::fork_traits<fork_traits::london, state_t>);
 TEST(fork_traits, london)
 {
     fork_traits::london l{};
-    execution::fake::State s{};
+    execution::fake::State::WorkingCopy s{};
     s._selfdestructs = 10;
 
     EXPECT_EQ(l.get_selfdestruct_refund(s), 0);

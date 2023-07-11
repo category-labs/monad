@@ -29,6 +29,11 @@ using namespace monad;
 static constexpr auto from = 0x5353535353535353535353535353535353535353_address;
 static constexpr auto to = 0xbebebebebebebebebebebebebebebebebebebebe_address;
 static constexpr auto a = 0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address;
+
+auto const from_addr = construct_address(from);
+auto const to_addr = construct_address(to);
+auto const a_addr = construct_address(a);
+
 static constexpr auto location =
     0x0000000000000000000000000000000000000000000000000000000000000000_bytes32;
 static constexpr auto value1 =
@@ -75,10 +80,10 @@ TEST(EvmInterpStateHost, return_existing_storage)
         0xf3}; // RETURN
     code_db.emplace(a, code);
     Account A{};
-    db.create(a, A);
-    db.create(to, Account{});
-    db.create(from, Account{.balance = 10'000'000});
-    db.create(to, location, value1);
+    db.create(a_addr, A);
+    db.create(to_addr, Account{});
+    db.create(from_addr, Account{.balance = 10'000'000});
+    db.create(to_addr, location, value1);
     db.commit();
 
     BlockHeader const b{}; // Required for the host interface, but not used
@@ -97,8 +102,8 @@ TEST(EvmInterpStateHost, return_existing_storage)
     using state_t = decltype(working_state);
 
     // Prep per transaction processor
-    working_state.access_account(to);
-    working_state.access_account(from);
+    working_state.access_account(to_addr);
+    working_state.access_account(from_addr);
 
     evm_t<state_t, fork_t> e{};
     evm_host_t<state_t, fork_t> h{b, t, working_state, e};
@@ -142,9 +147,9 @@ TEST(EvmInterpStateHost, store_then_return_storage)
         0xf3}; // RETURN
     code_db.emplace(a, code);
     Account A{};
-    db.create(a, A);
-    db.create(to, Account{});
-    db.create(from, Account{.balance = 10'000'000});
+    db.create(a_addr, A);
+    db.create(to_addr, Account{});
+    db.create(from_addr, Account{.balance = 10'000'000});
     db.commit();
 
     BlockHeader const b{}; // Required for the host interface, but not used
@@ -163,8 +168,8 @@ TEST(EvmInterpStateHost, store_then_return_storage)
     using state_t = decltype(working_state);
 
     // Prep per transaction processor
-    working_state.access_account(to);
-    working_state.access_account(from);
+    working_state.access_account(to_addr);
+    working_state.access_account(from_addr);
 
     evm_t<state_t, fork_t> e{};
     evm_host_t<state_t, fork_t> h{b, t, working_state, e};
@@ -175,7 +180,6 @@ TEST(EvmInterpStateHost, store_then_return_storage)
     EXPECT_EQ(status.output_size, 1u);
     EXPECT_EQ(*(status.output_data), 0x4d);
     EXPECT_EQ(status.gas_left, 1);
-
 }
 
 // TODO

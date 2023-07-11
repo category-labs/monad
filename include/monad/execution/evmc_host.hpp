@@ -38,25 +38,25 @@ struct EvmcHost : public evmc::Host
 
     virtual bool account_exists(address_t const &a) const noexcept override
     {
-        return state_.account_exists(a);
+        return state_.account_exists(construct_address(a));
     }
 
     virtual bytes32_t get_storage(
         const address_t &a, const bytes32_t &key) const noexcept override
     {
-        return state_.get_storage(a, key);
+        return state_.get_storage(construct_address(a), key);
     }
 
     virtual evmc_storage_status set_storage(
         address_t const &a, bytes32_t const &key,
         bytes32_t const &value) noexcept override
     {
-        return state_.set_storage(a, key, value);
+        return state_.set_storage(construct_address(a), key, value);
     }
 
     virtual uint256be get_balance(address_t const &a) const noexcept override
     {
-        return state_.get_balance(a);
+        return state_.get_balance(construct_address(a));
     }
 
     virtual size_t get_code_size(address_t const &a) const noexcept override
@@ -66,7 +66,7 @@ struct EvmcHost : public evmc::Host
 
     virtual bytes32_t get_code_hash(address_t const &a) const noexcept override
     {
-        return state_.get_code_hash(a);
+        return state_.get_code_hash(construct_address(a));
     }
 
     virtual size_t copy_code(
@@ -79,7 +79,8 @@ struct EvmcHost : public evmc::Host
     [[nodiscard]] virtual bool selfdestruct(
         address_t const &a, address_t const &beneficiary) noexcept override
     {
-        return state_.selfdestruct(a, beneficiary);
+        return state_.selfdestruct(
+            construct_address(a), construct_address(beneficiary));
     }
 
     [[nodiscard]] static constexpr evmc_message
@@ -183,13 +184,13 @@ struct EvmcHost : public evmc::Host
     virtual evmc_access_status
     access_account(address_t const &a) noexcept override
     {
-        return state_.access_account(a);
+        return state_.access_account(construct_address(a));
     }
 
     virtual evmc_access_status
     access_storage(address_t const &a, bytes32_t const &key) noexcept override
     {
-        return state_.access_storage(a, key);
+        return state_.access_storage(construct_address(a), key);
     }
 };
 

@@ -7,17 +7,26 @@
 
 #include <gtest/gtest.h>
 
+#include <ethash/keccak.h>
+
+#include <bit>
 #include <unordered_map>
 
 using namespace monad;
 using namespace monad::state;
 
-static constexpr auto a = 0x5353535353535353535353535353535353535353_address;
-static constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
-static constexpr auto c = 0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address;
-static constexpr auto d = 0xb5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5_address;
-static constexpr auto e = 0xc5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5_address;
-static constexpr auto f = 0xd5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5_address;
+static auto const a =
+    construct_address(0x5353535353535353535353535353535353535353_address);
+static auto const b =
+    construct_address(0xbebebebebebebebebebebebebebebebebebebebe_address);
+static auto const c =
+    construct_address(0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address);
+static auto const d =
+    construct_address(0xb5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5_address);
+static auto const e =
+    construct_address(0xc5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5_address);
+static auto const f =
+    construct_address(0xd5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5_address);
 static constexpr auto hash1 =
     0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
 static constexpr auto hash2 =
@@ -27,8 +36,8 @@ template <typename TDB>
 struct AccountStateTest : public testing::Test
 {
 };
-using DBTypes =
-    ::testing::Types<db::InMemoryDB, db::RocksDB, db::InMemoryTrieDB, db::RocksTrieDB>;
+using DBTypes = ::testing::Types<
+    db::InMemoryDB, db::RocksDB, db::InMemoryTrieDB, db::RocksTrieDB>;
 TYPED_TEST_SUITE(AccountStateTest, DBTypes);
 
 using diff_t = AccountState<std::unordered_map<address_t, Account>>::diff_t;
@@ -58,8 +67,7 @@ TYPED_TEST(AccountStateTest, get_balance)
     db.create(a, {.balance = 20'000});
     db.commit();
     AccountState s{db};
-    s.merged_.emplace(
-        b, diff_t{std::nullopt, Account{.balance = 10'000}});
+    s.merged_.emplace(b, diff_t{std::nullopt, Account{.balance = 10'000}});
 
     EXPECT_EQ(s.get_balance(a), bytes32_t{20'000});
     EXPECT_EQ(s.get_balance(b), bytes32_t{10'000});
@@ -71,8 +79,7 @@ TYPED_TEST(AccountStateTest, get_code_hash)
     db.create(a, {.code_hash = hash1});
     db.commit();
     AccountState s{db};
-    s.merged_.emplace(
-        b, diff_t{std::nullopt, Account{.code_hash = hash2}});
+    s.merged_.emplace(b, diff_t{std::nullopt, Account{.code_hash = hash2}});
 
     EXPECT_EQ(s.get_code_hash(a), hash1);
     EXPECT_EQ(s.get_code_hash(b), hash2);
@@ -148,8 +155,7 @@ TYPED_TEST(AccountStateTest, get_balance_working_copy)
     db.commit();
 
     AccountState s{db};
-    s.merged_.emplace(
-        b, diff_t{std::nullopt, Account{.balance = 10'000}});
+    s.merged_.emplace(b, diff_t{std::nullopt, Account{.balance = 10'000}});
 
     auto bs = typename decltype(s)::WorkingCopy{s};
 
@@ -185,8 +191,7 @@ TYPED_TEST(AccountStateTest, get_code_hash_working_copy)
     db.commit();
 
     AccountState s{db};
-    s.merged_.emplace(
-        b, diff_t{std::nullopt, Account{.code_hash = hash2}});
+    s.merged_.emplace(b, diff_t{std::nullopt, Account{.code_hash = hash2}});
 
     auto bs = typename decltype(s)::WorkingCopy{s};
 
@@ -220,8 +225,7 @@ TYPED_TEST(AccountStateTest, selfdestruct_working_copy)
     db.commit();
 
     AccountState s{db};
-    s.merged_.emplace(
-        b, diff_t{std::nullopt, Account{.balance = 28'000}});
+    s.merged_.emplace(b, diff_t{std::nullopt, Account{.balance = 28'000}});
 
     auto bs = typename decltype(s)::WorkingCopy{s};
 
@@ -329,8 +333,7 @@ TYPED_TEST(AccountStateTest, can_merge_onto_merged)
     AccountState t{db};
     t.merged_.emplace(a, diff_t{Account{.balance = 30'000}});
     t.merged_.emplace(b, diff_t{db.at(b), db.at(b)});
-    t.merged_.emplace(
-        c, diff_t{Account{.balance = 50'000}, std::nullopt});
+    t.merged_.emplace(c, diff_t{Account{.balance = 50'000}, std::nullopt});
     t.merged_[c].updated.reset();
 
     auto s = typename decltype(t)::WorkingCopy{t};

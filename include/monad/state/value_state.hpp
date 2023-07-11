@@ -3,6 +3,7 @@
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/bytes.hpp>
+#include <monad/core/hash_fn.hpp>
 
 #include <monad/state/config.hpp>
 #include <monad/state/datum.hpp>
@@ -20,21 +21,21 @@ struct ValueState
 
     struct InnerStorage
     {
-        std::unordered_map<address_t, key_value_map_t> storage_{};
+        std::unordered_map<Address, key_value_map_t, HashFn> storage_{};
         std::unordered_map<
-            address_t,
+            Address,
             std::unordered_set<
-                deleted_key, deleted_key::hash, deleted_key::equality>>
+                deleted_key, deleted_key::hash, deleted_key::equality>,
+            HashFn>
             deleted_storage_{};
 
-        bool
-        contains_key(address_t const &a, bytes32_t const &key) const noexcept
+        bool contains_key(Address const &a, bytes32_t const &key) const noexcept
         {
             return storage_.contains(a) && storage_.at(a).contains(key);
         }
 
         bool deleted_contains_key(
-            address_t const &a, bytes32_t const &key) const noexcept
+            Address const &a, bytes32_t const &key) const noexcept
         {
             return deleted_storage_.contains(a) &&
                    deleted_storage_.at(a).contains(deleted_key{key});
@@ -57,7 +58,7 @@ struct ValueState
     TValueDB &db_;
     InnerStorage merged_{};
 
-    bool remove_merged_key_if_present(address_t const &a, bytes32_t const &key)
+    bool remove_merged_key_if_present(Address const &a, bytes32_t const &key)
     {
         if (merged_.contains_key(a, key)) {
             merged_.storage_.at(a).erase(key);
@@ -70,14 +71,14 @@ struct ValueState
     }
 
     bool db_or_merged_contains_key(
-        address_t const &a, bytes32_t const &key) const noexcept
+        Address const &a, bytes32_t const &key) const noexcept
     {
         return (!merged_.deleted_contains_key(a, key)) &&
                (merged_.contains_key(a, key) || db_.contains(a, key));
     }
 
     [[nodiscard]] bytes32_t
-    get_merged_value(address_t const &a, bytes32_t const &key) const noexcept
+    get_merged_value(Address const &a, bytes32_t const &key) const noexcept
     {
         if (merged_.deleted_contains_key(a, key)) {
             return {};
@@ -192,9 +193,9 @@ template <typename TValueDB>
 struct ValueState<TValueDB>::WorkingCopy : public ValueState<TValueDB>
 {
     InnerStorage touched_{};
-    std::unordered_map<address_t, std::unordered_set<bytes32_t>>
+    std::unordered_map<Address, std::unordered_set<bytes32_t>, HashFn>
         accessed_storage_{};
-    void remove_touched_key(address_t const &a, bytes32_t const &key)
+    void remove_touched_key(Address const &a, bytes32_t const &key)
     {
         touched_.storage_.at(a).erase(key);
         if (touched_.storage_.at(a).empty()) {
@@ -204,7 +205,7 @@ struct ValueState<TValueDB>::WorkingCopy : public ValueState<TValueDB>
 
     // EVMC Host Interface
     [[nodiscard]] bytes32_t
-    get_storage(address_t const &a, bytes32_t const &key) const noexcept
+    get_storage(Address const &a, bytes32_t const &key) const noexcept
     {
         if (touched_.deleted_contains_key(a, key)) {
             return {};
@@ -216,7 +217,7 @@ struct ValueState<TValueDB>::WorkingCopy : public ValueState<TValueDB>
     }
 
     [[nodiscard]] evmc_storage_status
-    zero_out_key(address_t const &a, bytes32_t const &key) noexcept
+    zero_out_key(Address const &a, bytes32_t const &key) noexcept
     {
         auto const merged_value = get_merged_value(a, key);
         // Assume empty (zero) storage is not stored in storage_
@@ -248,8 +249,7 @@ struct ValueState<TValueDB>::WorkingCopy : public ValueState<TValueDB>
     }
 
     [[nodiscard]] evmc_storage_status set_current_value(
-        address_t const &a, bytes32_t const &key,
-        bytes32_t const &value) noexcept
+        Address const &a, bytes32_t const &key, bytes32_t const &value) noexcept
     {
         auto const merged_value = get_merged_value(a, key);
         if (merged_value != bytes32_t{}) {
@@ -296,8 +296,7 @@ struct ValueState<TValueDB>::WorkingCopy : public ValueState<TValueDB>
 
     // EVMC Host Interface
     [[nodiscard]] evmc_storage_status set_storage(
-        address_t const &a, bytes32_t const &key,
-        bytes32_t const &value) noexcept
+        Address const &a, bytes32_t const &key, bytes32_t const &value) noexcept
     {
         if (value == bytes32_t{}) {
             return zero_out_key(a, key);
@@ -307,7 +306,7 @@ struct ValueState<TValueDB>::WorkingCopy : public ValueState<TValueDB>
 
     // EVMC Host Interface
     evmc_access_status
-    access_storage(address_t const &a, bytes32_t const &key) noexcept
+    access_storage(Address const &a, bytes32_t const &key) noexcept
     {
         auto const &[_, inserted] = accessed_storage_[a].insert(key);
         if (inserted) {

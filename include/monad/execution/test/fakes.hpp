@@ -41,29 +41,29 @@ namespace fake
         MergeStatus _merge_status{MergeStatus::TRY_LATER};
         std::vector<Receipt::Log> _logs{};
 
-        [[nodiscard]] bool account_exists(address_t const &a)
+        [[nodiscard]] bool account_exists(Address const &a)
         {
-            return _map.contains(a);
+            return _map.contains(a.address);
         }
 
         [[nodiscard]] bytes32_t
-        get_storage(address_t const &, bytes32_t const &) const noexcept
+        get_storage(Address const &, bytes32_t const &) const noexcept
         {
             return {};
         }
 
         [[nodiscard]] evmc_storage_status set_storage(
-            address_t const &, bytes32_t const &, bytes32_t const &) noexcept
+            Address const &, bytes32_t const &, bytes32_t const &) noexcept
         {
             return {};
         }
 
-        void create_contract(address_t const &) noexcept {}
+        void create_contract(Address const &) noexcept {}
 
         [[nodiscard]] bytes32_t
-        get_balance(address_t const &address) const noexcept
+        get_balance(Address const &address) const noexcept
         {
-            return intx::be::store<bytes32_t>(_map.at(address).balance);
+            return intx::be::store<bytes32_t>(_map.at(address.address).balance);
         }
 
         [[nodiscard]] size_t get_code_size(address_t const &) const noexcept
@@ -78,9 +78,9 @@ namespace fake
         }
 
         [[nodiscard]] bytes32_t
-        get_code_hash(address_t const &address) const noexcept
+        get_code_hash(Address const &address) const noexcept
         {
-            return _map.at(address).code_hash;
+            return _map.at(address.address).code_hash;
         }
 
         [[nodiscard]] byte_string_view
@@ -90,17 +90,17 @@ namespace fake
         }
 
         [[nodiscard]] bool
-        selfdestruct(address_t const &, address_t const &) noexcept
+        selfdestruct(Address const &, Address const &) noexcept
         {
             return true;
         }
 
-        evmc_access_status access_account(address_t const &) noexcept
+        evmc_access_status access_account(Address const &) noexcept
         {
             return {};
         }
         evmc_access_status
-        access_storage(address_t const &, bytes32_t const &) noexcept
+        access_storage(Address const &, bytes32_t const &) noexcept
         {
             return {};
         }
@@ -108,17 +108,17 @@ namespace fake
         [[nodiscard]] bytes32_t get_block_hash(int64_t) { return {}; }
 
         // non-evmc interface
-        void set_balance(address_t const &address, uint256_t new_balance)
+        void set_balance(Address const &address, uint256_t new_balance)
         {
-            _map[address].balance = new_balance;
+            _map[address.address].balance = new_balance;
         }
-        [[nodiscard]] auto get_nonce(address_t const &address) const noexcept
+        [[nodiscard]] auto get_nonce(Address const &address) const noexcept
         {
-            return _map.at(address).nonce;
+            return _map.at(address.address).nonce;
         }
-        void set_nonce(address_t const &address, uint64_t nonce) noexcept
+        void set_nonce(Address const &address, uint64_t nonce) noexcept
         {
-            _map[address].nonce = nonce;
+            _map[address.address].nonce = nonce;
         }
 
         void set_code(address_t const &, byte_string const &) {}

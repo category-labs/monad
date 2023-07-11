@@ -3,6 +3,7 @@
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/hash_fn.hpp>
 #include <monad/core/receipt.hpp>
 
 #include <monad/state/config.hpp>
@@ -18,7 +19,7 @@ template <class TAccountDB>
 struct AccountState
 {
     using diff_t = diff<std::optional<Account>>;
-    using change_set_t = std::unordered_map<address_t, diff_t>;
+    using change_set_t = std::unordered_map<Address, diff_t, HashFn>;
 
     struct WorkingCopy;
 
@@ -32,7 +33,7 @@ struct AccountState
     }
 
     [[nodiscard]] std::optional<Account>
-    get_committed_storage(address_t const &a) const
+    get_committed_storage(Address const &a) const
     {
         if (merged_.contains(a)) {
             return merged_.at(a).updated;
@@ -41,7 +42,7 @@ struct AccountState
     }
 
     // EVMC Host Interface
-    [[nodiscard]] bool account_exists(address_t const &a) const noexcept
+    [[nodiscard]] bool account_exists(Address const &a) const noexcept
     {
         if (merged_.contains(a)) {
             return merged_.at(a).updated.has_value();
@@ -50,20 +51,20 @@ struct AccountState
     }
 
     // EVMC Host Interface
-    [[nodiscard]] evmc_access_status access_account(address_t const &) noexcept
+    [[nodiscard]] evmc_access_status access_account(Address const &) noexcept
     {
         return EVMC_ACCESS_COLD;
     }
 
     // EVMC Host Interface
-    [[nodiscard]] bytes32_t get_balance(address_t const &a) const noexcept
+    [[nodiscard]] bytes32_t get_balance(Address const &a) const noexcept
     {
         return intx::be::store<bytes32_t>(
             get_committed_storage(a).value_or(Account{}).balance);
     }
 
     // EVMC Host Interface
-    [[nodiscard]] bytes32_t get_code_hash(address_t const &a) const noexcept
+    [[nodiscard]] bytes32_t get_code_hash(Address const &a) const noexcept
     {
         return get_committed_storage(a).value_or(Account{}).code_hash;
     }
@@ -130,7 +131,7 @@ struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
     uint64_t total_selfdestructs_{};
 
     // EVMC Host Interface
-    [[nodiscard]] bool account_exists(address_t const &a) const noexcept
+    [[nodiscard]] bool account_exists(Address const &a) const noexcept
     {
         if (changed_.contains(a)) {
             if (changed_.at(a).updated.has_value()) {
@@ -141,7 +142,7 @@ struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
         return AccountState::account_exists(a);
     }
 
-    void create_contract(address_t const &a)
+    void create_contract(Address const &a)
     {
         auto const [_, inserted] =
             changed_.emplace(a, diff_t{get_committed_storage(a), Account{}});
@@ -149,7 +150,7 @@ struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
     }
 
     // EVMC Host Interface
-    evmc_access_status access_account(address_t const &a)
+    evmc_access_status access_account(Address const &a)
     {
         if (changed_.contains(a)) {
             return EVMC_ACCESS_WARM;
@@ -160,36 +161,35 @@ struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
     }
 
     // EVMC Host Interface
-    [[nodiscard]] bytes32_t get_balance(address_t const &a) const noexcept
+    [[nodiscard]] bytes32_t get_balance(Address const &a) const noexcept
     {
         return intx::be::store<bytes32_t>(
             changed_.at(a).updated.value_or(Account{}).balance);
     }
 
-    void set_balance(address_t const &address, uint256_t new_balance) noexcept
+    void set_balance(Address const &address, uint256_t new_balance) noexcept
     {
         changed_.at(address).updated.value().balance = new_balance;
     }
 
-    [[nodiscard]] uint64_t get_nonce(address_t const &address) const noexcept
+    [[nodiscard]] uint64_t get_nonce(Address const &address) const noexcept
     {
         return changed_.at(address).updated.value_or(Account{}).nonce;
     }
 
-    void set_nonce(address_t const &address, uint64_t nonce) noexcept
+    void set_nonce(Address const &address, uint64_t nonce) noexcept
     {
         changed_.at(address).updated.value().nonce = nonce;
     }
 
     // EVMC Host Interface
-    [[nodiscard]] bytes32_t
-    get_code_hash(address_t const &address) const noexcept
+    [[nodiscard]] bytes32_t get_code_hash(Address const &address) const noexcept
     {
         return changed_.at(address).updated.value_or(Account{}).code_hash;
     }
 
     [[nodiscard]] bool
-    selfdestruct(address_t const &a, address_t const &beneficiary) noexcept
+    selfdestruct(Address const &a, Address const &beneficiary) noexcept
     {
         if (changed_.at(a).updated) {
             changed_.at(beneficiary).updated.value().balance +=

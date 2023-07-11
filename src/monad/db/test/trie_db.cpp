@@ -5,8 +5,11 @@
 using namespace monad;
 using namespace monad::db;
 
-static constexpr auto a = 0x5353535353535353535353535353535353535353_address;
-static constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
+static constexpr auto a_ = 0x5353535353535353535353535353535353535353_address;
+static constexpr auto b_ = 0xbebebebebebebebebebebebebebebebebebebebe_address;
+static auto a = construct_address(a_);
+static auto b = construct_address(b_);
+
 static constexpr auto hash1 =
     0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
 static constexpr auto key1 =

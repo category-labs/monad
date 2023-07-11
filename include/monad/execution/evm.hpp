@@ -67,7 +67,8 @@ struct Evm
     check_sender_balance(TState &s, evmc_message const &m) noexcept
     {
         auto const value = intx::be::load<uint256_t>(m.value);
-        auto const balance = intx::be::load<uint256_t>(s.get_balance(m.sender));
+        auto const balance = intx::be::load<uint256_t>(
+            s.get_balance(construct_address(m.sender)));
         if (balance < value) {
             return unexpected_t(
                 {.status_code = EVMC_INSUFFICIENT_BALANCE, .gas_left = m.gas});
@@ -78,25 +79,29 @@ struct Evm
     static void transfer_balances(
         TState &s, evmc_message const &m, address_t const &to) noexcept
     {
+        auto const sender_addr = construct_address(m.sender);
+        auto const to_addr = construct_address(to);
         auto const value = intx::be::load<uint256_t>(m.value);
         auto const from_balance =
-            intx::be::load<uint256_t>(s.get_balance(m.sender));
-        auto const to_balance = intx::be::load<uint256_t>(s.get_balance(to));
-        s.set_balance(m.sender, from_balance - value);
-        s.set_balance(to, to_balance + value);
+            intx::be::load<uint256_t>(s.get_balance(sender_addr));
+        auto const to_balance =
+            intx::be::load<uint256_t>(s.get_balance(to_addr));
+        s.set_balance(sender_addr, from_balance - value);
+        s.set_balance(to_addr, to_balance + value);
     }
 
     [[nodiscard]] static auto increment_sender_nonce(TState &s) noexcept
     {
         return [&](evmc_message const &m) {
-            auto const n = s.get_nonce(m.sender) + 1;
-            if (s.get_nonce(m.sender) > n) {
+            auto const sender_addr = construct_address(m.sender);
+            auto const n = s.get_nonce(sender_addr) + 1;
+            if (s.get_nonce(sender_addr) > n) {
                 // Match geth behavior - don't overflow nonce
                 return result_t(unexpected_t(
                     {.status_code = EVMC_ARGUMENT_OUT_OF_RANGE,
                      .gas_left = m.gas}));
             }
-            s.set_nonce(m.sender, n);
+            s.set_nonce(sender_addr, n);
             return result_t({m});
         };
     }
@@ -108,7 +113,7 @@ struct Evm
             new_address = [&] {
                 if (m.kind == EVMC_CREATE) {
                     return create_contract_address(
-                        m.sender, s.get_nonce(m.sender));
+                        m.sender, s.get_nonce(construct_address(m.sender)));
                 }
                 else if (m.kind == EVMC_CREATE2) {
                     auto const code_hash =
@@ -121,12 +126,13 @@ struct Evm
             }();
 
             // Prevent overwriting contracts - EIP-684
-            if (s.account_exists(new_address)) {
+            auto const new_addr = construct_address(new_address);
+            if (s.account_exists(new_addr)) {
                 return result_t(
                     unexpected_t({.status_code = EVMC_INVALID_INSTRUCTION}));
             }
 
-            s.create_contract(new_address);
+            s.create_contract(new_addr);
 
             return result_t({m});
         };
@@ -136,6 +142,8 @@ struct Evm
     make_account_address(TState &s, evmc_message const &m) noexcept
     {
         address_t new_address{};
+        // TODO: avoid duplicate hash of m.sender in check_sender_balance(),
+        // increment_sender_nonce() and create_new_contract()
         auto const result = check_sender_balance(s, m)
                                 .and_then(increment_sender_nonce(s))
                                 .and_then(create_new_contract(s, new_address));
@@ -143,7 +151,7 @@ struct Evm
             return unexpected_t{result.error()};
         }
 
-        s.set_nonce(new_address, TTraits::starting_nonce());
+        s.set_nonce(construct_address(new_address), TTraits::starting_nonce());
         transfer_balances(s, m, new_address);
         return {new_address};
     }

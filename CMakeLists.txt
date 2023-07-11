@@ -56,7 +56,7 @@ function(monad_compile_options target)
     set_property(TARGET ${target} PROPERTY CXX_STANDARD 20)
     set_property(TARGET ${target} PROPERTY CXX_STANDARD_REQUIRED ON)
     target_compile_options(
-        ${target} PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic
+        ${target} PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic 
     )
     target_compile_options(
         ${target}
@@ -116,6 +116,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/include/monad/core/byte_string.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/bytes.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/concepts.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/core/hash_fn.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/huge_mem.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/int.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/core/likely.h

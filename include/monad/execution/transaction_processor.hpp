@@ -35,12 +35,13 @@ struct TransactionProcessor
     // YP Sec 6.2 "irrevocable_change"
     void irrevocable_change(TState &s, Transaction const &t) const
     {
+        auto const from = construct_address(*t.from);
         if (t.to) { // EVM will increment if new contract
-            auto const nonce = s.get_nonce(*t.from);
-            s.set_nonce(*t.from, nonce + 1);
+            auto const nonce = s.get_nonce(from);
+            s.set_nonce(from, nonce + 1);
         }
-        auto const balance = intx::be::load<uint256_t>(s.get_balance(*t.from));
-        s.set_balance(*t.from, balance - upfront_cost_);
+        auto const balance = intx::be::load<uint256_t>(s.get_balance(from));
+        s.set_balance(from, balance - upfront_cost_);
     }
 
     // YP Eqn 72
@@ -60,19 +61,22 @@ struct TransactionProcessor
         TState &s, BlockHeader const &b, Transaction const &t,
         uint64_t const gas_leftover, uint64_t refund) const
     {
+        auto const beneficiary = construct_address(b.beneficiary);
+        auto const from = construct_address(*t.from);
+
         // refund and priority, Eqn. 73-76
         auto const gas_remaining = g_star(s, t, gas_leftover, refund);
         auto const gas_cost = per_gas_cost(t, b.base_fee_per_gas.value_or(0));
-        auto const bene_balance =
-            intx::be::load<uint256_t>(s.get_balance(b.beneficiary));
+        auto const bene_balance = intx::be::load<uint256_t>(
+            s.get_balance(construct_address(b.beneficiary)));
 
         s.set_balance(
-            b.beneficiary,
+            beneficiary,
             bene_balance + (gas_cost * (t.gas_limit - gas_remaining)));
         const auto sender_balance =
-            intx::be::load<uint256_t>(s.get_balance(*t.from));
+            intx::be::load<uint256_t>(s.get_balance(from));
 
-        s.set_balance(*t.from, sender_balance + (gas_cost * gas_remaining));
+        s.set_balance(from, sender_balance + (gas_cost * gas_remaining));
         return gas_remaining;
     }
 
@@ -83,15 +87,16 @@ struct TransactionProcessor
     {
         irrevocable_change(s, t);
 
-        s.access_account(*t.from);
+        s.access_account(construct_address(*t.from));
         for (const auto &ae : t.access_list) {
-            s.access_account(ae.a);
+            auto const ae_addr = construct_address(ae.a);
+            s.access_account(ae_addr);
             for (auto const &keys : ae.keys) {
-                s.access_storage(ae.a, keys);
+                s.access_storage(ae_addr, keys);
             }
         }
         if (t.to) {
-            s.access_account(*t.to);
+            s.access_account(construct_address(*t.to));
         }
 
         auto m = TEvmHost::make_msg_from_txn(t);
@@ -120,6 +125,8 @@ struct TransactionProcessor
     Status validate(
         TState const &state, Transaction const &t, uint64_t base_fee_per_gas)
     {
+        auto const from_addr = construct_address(*t.from);
+
         upfront_cost_ =
             intx::umul(t.gas_limit, per_gas_cost(t, base_fee_per_gas));
 
@@ -130,21 +137,21 @@ struct TransactionProcessor
         }
 
         // σ[S(T)]c = KEC(()), EIP-3607
-        if (state.get_code_hash(*t.from) != NULL_HASH) {
+        if (state.get_code_hash(from_addr) != NULL_HASH) {
             return Status::DEPLOYED_CODE;
         }
         // Tn = σ[S(T)]n
-        else if (state.get_nonce(*t.from) > t.nonce) {
+        else if (state.get_nonce(from_addr) > t.nonce) {
             return Status::BAD_NONCE;
         }
         // Tn = σ[S(T)]n
-        else if (state.get_nonce(*t.from) < t.nonce) {
+        else if (state.get_nonce(from_addr) < t.nonce) {
             return Status::LATER_NONCE;
         }
 
         // v0 <= σ[S(T)]b
         else if (uint256_t i =
-                     intx::be::load<uint256_t>(state.get_balance(*t.from));
+                     intx::be::load<uint256_t>(state.get_balance(from_addr));
                  i < (t.amount + upfront_cost_)) {
             return Status::INSUFFICIENT_BALANCE;
         }

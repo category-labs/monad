@@ -2,6 +2,7 @@
 
 #include <monad/core/account.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/hash_fn.hpp>
 #include <monad/db/config.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/execution_model.hpp>
@@ -37,9 +38,10 @@ namespace impl
     {
         struct Updates
         {
-            std::unordered_map<address_t, std::optional<Account>> accounts;
+            std::unordered_map<Address, std::optional<Account>, HashFn>
+                accounts;
             std::unordered_map<
-                address_t, std::unordered_map<bytes32_t, bytes32_t>>
+                Address, std::unordered_map<bytes32_t, bytes32_t>, HashFn>
                 storage;
         } updates{};
 
@@ -52,28 +54,28 @@ namespace impl
             return static_cast<TDBImpl const &>(*this);
         }
 
-        [[nodiscard]] std::optional<Account> try_find(address_t const &a)
+        [[nodiscard]] std::optional<Account> try_find(Address const &a)
         {
             return self().try_find(a);
         }
 
-        [[nodiscard]] std::optional<Account> query(address_t const &a)
+        [[nodiscard]] std::optional<Account> query(Address const &a)
         {
             return executor([=, this]() { return try_find(a); });
         }
 
-        [[nodiscard]] constexpr bool contains(address_t const &a)
+        [[nodiscard]] constexpr bool contains(Address const &a)
         {
             return self().contains(a);
         }
 
         [[nodiscard]] constexpr bool
-        contains(address_t const &a, bytes32_t const &k)
+        contains(Address const &a, bytes32_t const &k)
         {
             return self().contains(a, k);
         }
 
-        [[nodiscard]] Account at(address_t const &a)
+        [[nodiscard]] Account at(Address const &a)
         {
             auto const ret = try_find(a);
             MONAD_ASSERT(ret);
@@ -81,32 +83,32 @@ namespace impl
         }
 
         [[nodiscard]] std::optional<bytes32_t>
-        query(address_t const &a, bytes32_t const &k)
+        query(Address const &a, bytes32_t const &k)
         {
             return executor([=, this]() { return try_find(a, k); });
         }
 
         [[nodiscard]] std::optional<bytes32_t>
-        try_find(address_t const &a, bytes32_t const &k)
+        try_find(Address const &a, bytes32_t const &k)
         {
             return self().try_find(a, k);
         }
 
-        [[nodiscard]] bytes32_t at(address_t const &a, bytes32_t const &k)
+        [[nodiscard]] bytes32_t at(Address const &a, bytes32_t const &k)
         {
             auto const ret = try_find(a, k);
             MONAD_ASSERT(ret);
             return ret.value();
         }
 
-        void create(address_t const &a, Account const &acct)
+        void create(Address const &a, Account const &acct)
         {
             MONAD_DEBUG_ASSERT(!contains(a));
             auto const [_, inserted] = updates.accounts.try_emplace(a, acct);
             MONAD_DEBUG_ASSERT(inserted);
         }
 
-        void create(address_t const &a, bytes32_t const &k, bytes32_t const &v)
+        void create(Address const &a, bytes32_t const &k, bytes32_t const &v)
         {
             MONAD_DEBUG_ASSERT(v != bytes32_t{});
             MONAD_DEBUG_ASSERT(!contains(a, k));
@@ -114,14 +116,14 @@ namespace impl
             MONAD_DEBUG_ASSERT(inserted);
         }
 
-        void update(address_t const &a, Account const &acct)
+        void update(Address const &a, Account const &acct)
         {
             MONAD_DEBUG_ASSERT(contains(a));
             auto const [_, inserted] = updates.accounts.try_emplace(a, acct);
             MONAD_DEBUG_ASSERT(inserted);
         }
 
-        void update(address_t const &a, bytes32_t const &k, bytes32_t const &v)
+        void update(Address const &a, bytes32_t const &k, bytes32_t const &v)
         {
             MONAD_DEBUG_ASSERT(v != bytes32_t{});
             MONAD_DEBUG_ASSERT(contains(a));
@@ -130,7 +132,7 @@ namespace impl
             MONAD_DEBUG_ASSERT(inserted);
         }
 
-        void erase(address_t const &a)
+        void erase(Address const &a)
         {
             MONAD_DEBUG_ASSERT(contains(a));
             auto const [_, inserted] =
@@ -138,7 +140,7 @@ namespace impl
             MONAD_DEBUG_ASSERT(inserted);
         }
 
-        void erase(address_t const &a, bytes32_t const &k)
+        void erase(Address const &a, bytes32_t const &k)
         {
             MONAD_DEBUG_ASSERT(contains(a));
             MONAD_DEBUG_ASSERT(contains(a, k));
@@ -176,22 +178,22 @@ namespace impl
     {
         using DBInterface<InMemoryDBImpl<TExecution>, TExecution>::updates;
 
-        std::unordered_map<address_t, Account> accounts;
-        std::unordered_map<address_t, std::unordered_map<bytes32_t, bytes32_t>>
+        std::unordered_map<Address, Account, HashFn> accounts;
+        std::unordered_map<
+            Address, std::unordered_map<bytes32_t, bytes32_t>, HashFn>
             storage;
 
-        [[nodiscard]] bool contains(address_t const &a) const
+        [[nodiscard]] bool contains(Address const &a) const
         {
             return accounts.contains(a);
         }
 
-        [[nodiscard]] bool
-        contains(address_t const &a, bytes32_t const &k) const
+        [[nodiscard]] bool contains(Address const &a, bytes32_t const &k) const
         {
             return storage.contains(a) && storage.at(a).contains(k);
         }
 
-        [[nodiscard]] std::optional<Account> try_find(address_t const &a) const
+        [[nodiscard]] std::optional<Account> try_find(Address const &a) const
         {
             if (accounts.contains(a)) {
                 return accounts.at(a);
@@ -200,7 +202,7 @@ namespace impl
         }
 
         [[nodiscard]] std::optional<bytes32_t>
-        try_find(address_t const &a, bytes32_t const &k) const
+        try_find(Address const &a, bytes32_t const &k) const
         {
             if (!contains(a, k)) {
                 return std::nullopt;
@@ -240,12 +242,11 @@ namespace impl
         }
     };
 
-    constexpr auto
-    make_basic_storage_key(address_t const &a, bytes32_t const &k)
+    constexpr auto make_basic_storage_key(Address const &a, bytes32_t const &k)
     {
-        byte_string_fixed<sizeof(address_t) + sizeof(bytes32_t)> key;
-        std::copy_n(a.bytes, sizeof(address_t), key.data());
-        std::copy_n(k.bytes, sizeof(bytes32_t), &key[sizeof(address_t)]);
+        byte_string_fixed<sizeof(Address::hash_t) + sizeof(bytes32_t)> key;
+        std::copy_n(a.hash.bytes, sizeof(Address::hash_t), key.data());
+        std::copy_n(k.bytes, sizeof(bytes32_t), &key[sizeof(Address::hash_t)]);
         return key;
     }
 
@@ -327,16 +328,16 @@ namespace impl
             return cfs[2];
         }
 
-        [[nodiscard]] bool contains(address_t const &a)
+        [[nodiscard]] bool contains(Address const &a)
         {
             rocksdb::PinnableSlice value;
             auto const res = db->Get(
-                rocksdb::ReadOptions{}, accounts(), to_slice(a), &value);
+                rocksdb::ReadOptions{}, accounts(), to_slice(a.hash), &value);
             MONAD_ASSERT(res.ok() || res.IsNotFound());
             return res.ok();
         }
 
-        [[nodiscard]] bool contains(address_t const &a, bytes32_t const &k)
+        [[nodiscard]] bool contains(Address const &a, bytes32_t const &k)
         {
             auto const key = make_basic_storage_key(a, k);
             rocksdb::PinnableSlice value;
@@ -346,11 +347,11 @@ namespace impl
             return res.ok();
         }
 
-        [[nodiscard]] std::optional<Account> try_find(address_t const &a)
+        [[nodiscard]] std::optional<Account> try_find(Address const &a)
         {
             rocksdb::PinnableSlice value;
             auto const res = db->Get(
-                rocksdb::ReadOptions{}, accounts(), to_slice(a), &value);
+                rocksdb::ReadOptions{}, accounts(), to_slice(a.hash), &value);
             if (res.IsNotFound()) {
                 return std::nullopt;
             }
@@ -369,7 +370,7 @@ namespace impl
         }
 
         [[nodiscard]] std::optional<bytes32_t>
-        try_find(address_t const &a, bytes32_t const &k)
+        try_find(Address const &a, bytes32_t const &k)
         {
             auto const key = make_basic_storage_key(a, k);
             rocksdb::PinnableSlice value;
@@ -419,12 +420,12 @@ namespace impl
                     // Note: no storage root calculations in this mode
                     auto const res = batch.Put(
                         accounts(),
-                        to_slice(a),
+                        to_slice(a.hash),
                         to_slice(rlp::encode_account(acct.value(), NULL_ROOT)));
                     MONAD_ROCKS_ASSERT(res);
                 }
                 else {
-                    auto const res = batch.Delete(accounts(), to_slice(a));
+                    auto const res = batch.Delete(accounts(), to_slice(a.hash));
                     MONAD_ROCKS_ASSERT(res);
                 }
             }
@@ -668,9 +669,9 @@ namespace impl
             return accounts.trie.root_hash();
         }
 
-        [[nodiscard]] constexpr bytes32_t root_hash(address_t a)
+        [[nodiscard]] constexpr bytes32_t root_hash(Address a)
         {
-            storage.trie.set_trie_prefix(a);
+            storage.trie.set_trie_prefix(a.address); // TODO: use hash
             return storage.trie.root_hash();
         }
 
@@ -718,15 +719,11 @@ namespace impl
         // to avoid double keccaking?
         [[nodiscard]] constexpr tl::optional<
             decltype(make_trie_cursor(accounts))>
-        find(address_t const &a) const
+        find(Address const &a) const
         {
             auto lc = make_leaf_cursor(accounts);
             auto tc = make_trie_cursor(accounts);
-            auto const found = move(
-                trie::Nibbles{std::bit_cast<bytes32_t>(
-                    ethash::keccak256(a.bytes, sizeof(a.bytes)))},
-                lc,
-                tc);
+            auto const found = move(trie::Nibbles{a.hash}, lc, tc);
 
             if (found) {
                 return tc;
@@ -736,14 +733,15 @@ namespace impl
 
         [[nodiscard]] constexpr tl::optional<
             decltype(make_trie_cursor(storage))>
-        find(address_t const &a, bytes32_t const &k) const
+        find(Address const &a, bytes32_t const &k) const
         {
             auto lc = make_leaf_cursor(storage);
             auto tc = make_trie_cursor(storage);
 
-            lc.set_prefix(a);
-            tc.set_prefix(a);
+            lc.set_prefix(a.address);
+            tc.set_prefix(a.address);
 
+            // TODO: also put key and hash together for storage
             auto const found = move(
                 trie::Nibbles{std::bit_cast<bytes32_t>(
                     ethash::keccak256(k.bytes, sizeof(k.bytes)))},
@@ -756,18 +754,18 @@ namespace impl
             return tl::nullopt;
         }
 
-        [[nodiscard]] constexpr bool contains(address_t const &a) const
+        [[nodiscard]] constexpr bool contains(Address const &a) const
         {
             return find(a).has_value();
         }
 
         [[nodiscard]] constexpr bool
-        contains(address_t const &a, bytes32_t const &k) const
+        contains(Address const &a, bytes32_t const &k) const
         {
             return find(a, k).has_value();
         }
 
-        [[nodiscard]] std::optional<Account> try_find(address_t const &a) const
+        [[nodiscard]] std::optional<Account> try_find(Address const &a) const
         {
             auto const c = find(a);
             if (!c.has_value()) {
@@ -793,7 +791,7 @@ namespace impl
         }
 
         [[nodiscard]] std::optional<bytes32_t>
-        try_find(address_t const &a, bytes32_t const &k) const
+        try_find(Address const &a, bytes32_t const &k) const
         {
             auto const c = find(a, k);
             if (!c.has_value()) {
@@ -836,7 +834,7 @@ namespace impl
             for (auto const &u : updates.storage) {
                 MONAD_DEBUG_ASSERT(!u.second.empty());
 
-                storage.trie.set_trie_prefix(u.first);
+                storage.trie.set_trie_prefix(u.first.address);
 
                 storage_trie_updates.clear();
                 std::ranges::transform(
@@ -880,9 +878,8 @@ namespace impl
 
             for (auto const &u : updates.accounts) {
                 auto const &[a, acct] = u;
-                storage.trie.set_trie_prefix(a);
-                auto const ak = trie::Nibbles{std::bit_cast<bytes32_t>(
-                    ethash::keccak256(a.bytes, sizeof(a.bytes)))};
+                storage.trie.set_trie_prefix(a.address);
+                auto const ak = trie::Nibbles{a.hash};
                 if (acct.has_value()) {
                     account_trie_updates.emplace_back(trie::Upsert{
                         .key = ak,

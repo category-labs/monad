@@ -74,10 +74,12 @@ TYPED_TEST(GenesisStateTest, read_ethereum_mainnet_genesis_state)
     auto const genesis_json = nlohmann::json::parse(ifile);
     read_genesis_state(genesis_json, db);
 
-    address_t a1 = 0x3282791d6fd713f1e94f4bfd565eaa78b3a0599d_address;
+    Address a1 =
+        construct_address(0x3282791d6fd713f1e94f4bfd565eaa78b3a0599d_address);
     Account acct1{.balance = 0x487A9A304539440000_u256, .nonce = 0u};
 
-    address_t a2 = 0x08411652c871713609af0062a8a1281bf1bbcfd9_address;
+    Address a2 =
+        construct_address(0x08411652c871713609af0062a8a1281bf1bbcfd9_address);
     Account acct2{.balance = 0x4BE4E7267B6AE00000_u256, .nonce = 0u};
 
     EXPECT_TRUE(db.contains(a1));

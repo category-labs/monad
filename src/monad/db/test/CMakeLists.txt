@@ -4,7 +4,7 @@ add_unit_test(
     monad-dbtests
     SOURCES
     block_db.cpp
-    trie_db.cpp
+    db.cpp
     LIBRARIES
     monad
 )

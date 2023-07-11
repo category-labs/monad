@@ -3,6 +3,7 @@
 #include <monad/core/assert.h>
 #include <monad/core/likely.h>
 #include <monad/core/variant.hpp>
+#include <monad/trie/get_trie_key_of_leaf.hpp>
 #include <monad/trie/key_buffer.hpp>
 #include <monad/trie/nibbles.hpp>
 #include <monad/trie/node.hpp>
@@ -18,22 +19,6 @@
 #include <vector>
 
 MONAD_TRIE_NAMESPACE_BEGIN
-
-[[nodiscard]] constexpr Nibbles const &get_update_key(Update const &u)
-{
-    return std::visit(
-        [](auto const &ud) -> Nibbles const & { return ud.key; }, u);
-}
-
-[[nodiscard]] constexpr bool is_deletion(Update const &u)
-{
-    return std::holds_alternative<Delete>(u);
-}
-
-[[nodiscard]] constexpr byte_string const &get_upsert_value(Update const &u)
-{
-    return std::get<Upsert>(u).value;
-}
 
 [[nodiscard]] constexpr bool
 are_parents_same(Nibbles const &k1, Nibbles const &k2)
@@ -171,7 +156,9 @@ struct Trie
         trie_writer_.del(buf_);
 
         for (auto it = updates.begin(); it < updates.end(); ++it) {
-            trie_keys.push_back(get_key(it));
+            auto const [key, _] =
+                get_trie_key_of_leaf(get_update_key(*it), leaves_cursor_);
+            trie_keys.emplace_back(key);
             if (is_deletion(*it)) {
                 serialize_nibbles(buf_, get_update_key(*it));
                 leaves_writer_.del(buf_);
@@ -295,53 +282,6 @@ struct Trie
 
         assert(std::holds_alternative<Branch>(parent));
         assert(parent_path == curr_path.prefix(curr_path.size() - 1));
-    }
-
-    // return the key that the update would have if inserted into storage
-    // in isolation
-    [[nodiscard]] constexpr Nibbles get_key(update_iterator_t update)
-    {
-        assert(!leaves_cursor_.empty());
-
-        leaves_cursor_.lower_bound(get_update_key(*update));
-        auto const lb = leaves_cursor_.key();
-
-        leaves_cursor_.prev();
-        auto const prev = leaves_cursor_.key();
-
-        auto const left = leaves_cursor_.key().and_then(
-            [&](auto const &prev) -> tl::optional<uint8_t> {
-                return longest_common_prefix_size(
-                    prev.path(), get_update_key(*update));
-            });
-
-        auto const right =
-            lb.and_then([&](auto const &lb) -> tl::optional<uint8_t> {
-                if (lb.path() == get_update_key(*update)) {
-                    leaves_cursor_.next();
-                    MONAD_ASSERT(leaves_cursor_.key() == lb);
-
-                    leaves_cursor_.next();
-
-                    return leaves_cursor_.key().and_then(
-                        [&](auto const &next) -> tl::optional<uint8_t> {
-                            return longest_common_prefix_size(
-                                next.path(), get_update_key(*update));
-                        });
-                }
-                return longest_common_prefix_size(
-                    lb.path(), get_update_key(*update));
-            });
-
-        // Nothing to the left or right, we are updating the only
-        // leaf in the trie
-        if (!left && !right) {
-            return Nibbles{};
-        }
-
-        // key is parent path + branch (prefix of trie is invisible here)
-        return Nibbles{get_update_key(*update).prefix(
-            std::max(left.value_or(0), right.value_or(0)) + 1)};
     }
 
     // returns whether or not there is a previous

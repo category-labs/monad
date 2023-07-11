@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
-#include <monad/db/trie_db.hpp>
-#include <monad/logging/monad_log.hpp>
+#include <monad/db/in_memory_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/rocks_db.hpp>
+#include <monad/db/rocks_trie_db.hpp>
 
 using namespace monad;
 using namespace monad::db;
@@ -75,8 +77,8 @@ TEST(InMemoryTrieDB, account_creation)
     db.create(a, acct);
     db.commit();
 
-    EXPECT_EQ(db.accounts.leaves_storage.size(), 1);
-    EXPECT_EQ(db.accounts.trie_storage.size(), 1);
+    EXPECT_EQ(db.accounts().leaves_storage.size(), 1);
+    EXPECT_EQ(db.accounts().trie_storage.size(), 1);
 
     EXPECT_TRUE(db.contains(a));
     EXPECT_EQ(db.at(a), acct);
@@ -122,10 +124,10 @@ TEST(InMemoryTrieDB, erase)
     EXPECT_FALSE(db.contains(a));
     EXPECT_FALSE(db.contains(a, key1));
     EXPECT_FALSE(db.contains(a, key2));
-    EXPECT_TRUE(db.accounts.leaves_storage.empty());
-    EXPECT_TRUE(db.accounts.trie_storage.empty());
-    EXPECT_TRUE(db.storage.leaves_storage.empty());
-    EXPECT_TRUE(db.storage.trie_storage.empty());
+    EXPECT_TRUE(db.accounts().leaves_storage.empty());
+    EXPECT_TRUE(db.accounts().trie_storage.empty());
+    EXPECT_TRUE(db.storage().leaves_storage.empty());
+    EXPECT_TRUE(db.storage().trie_storage.empty());
 
     EXPECT_EQ(db.root_hash(), NULL_ROOT);
     EXPECT_EQ(db.root_hash(a), NULL_ROOT);

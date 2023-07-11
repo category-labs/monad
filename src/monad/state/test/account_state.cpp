@@ -1,7 +1,10 @@
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
 
-#include <monad/db/trie_db.hpp>
+#include <monad/db/in_memory_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/rocks_db.hpp>
+#include <monad/db/rocks_trie_db.hpp>
 
 #include <monad/state/account_state.hpp>
 

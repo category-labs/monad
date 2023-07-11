@@ -3,9 +3,12 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
 
-#include <monad/db/trie_db.hpp>
-
 #include <monad/state/value_state.hpp>
+
+#include <monad/db/in_memory_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/rocks_db.hpp>
+#include <monad/db/rocks_trie_db.hpp>
 
 #include <gtest/gtest.h>
 

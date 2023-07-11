@@ -1,7 +1,7 @@
 #include <monad/core/concepts.hpp>
 
 #include <monad/db/block_db.hpp>
-#include <monad/db/trie_db.hpp>
+#include <monad/db/in_memory_db.hpp>
 
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>

@@ -1,6 +1,9 @@
 #include <monad/core/block.hpp>
 
-#include <monad/db/trie_db.hpp>
+#include <monad/db/in_memory_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/rocks_db.hpp>
+#include <monad/db/rocks_trie_db.hpp>
 
 #include <monad/execution/ethereum/genesis.hpp>
 

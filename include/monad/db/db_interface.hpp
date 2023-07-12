@@ -5,6 +5,7 @@
 #include <monad/core/assert.h>
 #include <monad/core/bytes.hpp>
 #include <monad/db/config.hpp>
+#include <monad/state/concepts.hpp>
 
 MONAD_DB_NAMESPACE_BEGIN
 
@@ -78,75 +79,7 @@ struct DBInterface
     // modifiers
     ////////////////////////////////////////////////////////////////////
 
-    void create(address_t const &a, Account const &acct)
-    {
-        MONAD_DEBUG_ASSERT(!contains(a));
-        auto const [_, inserted] = updates.accounts.try_emplace(a, acct);
-        MONAD_DEBUG_ASSERT(inserted);
-    }
-
-    void create(address_t const &a, bytes32_t const &k, bytes32_t const &v)
-    {
-        MONAD_DEBUG_ASSERT(v != bytes32_t{});
-        MONAD_DEBUG_ASSERT(!contains(a, k));
-        auto const [_, inserted] = updates.storage[a].try_emplace(k, v);
-        MONAD_DEBUG_ASSERT(inserted);
-    }
-
-    void update(address_t const &a, Account const &acct)
-    {
-        MONAD_DEBUG_ASSERT(contains(a));
-        auto const [_, inserted] = updates.accounts.try_emplace(a, acct);
-        MONAD_DEBUG_ASSERT(inserted);
-    }
-
-    void update(address_t const &a, bytes32_t const &k, bytes32_t const &v)
-    {
-        MONAD_DEBUG_ASSERT(v != bytes32_t{});
-        MONAD_DEBUG_ASSERT(contains(a));
-        MONAD_DEBUG_ASSERT(contains(a, k));
-        auto const [_, inserted] = updates.storage[a].try_emplace(k, v);
-        MONAD_DEBUG_ASSERT(inserted);
-    }
-
-    void erase(address_t const &a)
-    {
-        MONAD_DEBUG_ASSERT(contains(a));
-        auto const [_, inserted] =
-            updates.accounts.try_emplace(a, std::nullopt);
-        MONAD_DEBUG_ASSERT(inserted);
-    }
-
-    void erase(address_t const &a, bytes32_t const &k)
-    {
-        MONAD_DEBUG_ASSERT(contains(a));
-        MONAD_DEBUG_ASSERT(contains(a, k));
-        auto const [_, inserted] =
-            updates.storage[a].try_emplace(k, bytes32_t{});
-        MONAD_DEBUG_ASSERT(inserted);
-    }
-
-    void commit_storage_impl() { self().commit_storage_impl(); }
-
-    void commit_accounts_impl() { self().commit_accounts_impl(); }
-
-    void commit_storage()
-    {
-        commit_storage_impl();
-        updates.storage.clear();
-    }
-
-    void commit_accounts()
-    {
-        commit_accounts_impl();
-        updates.accounts.clear();
-    }
-
-    void commit()
-    {
-        commit_storage();
-        commit_accounts();
-    }
+    void commit(state::changeset auto const &obj) { self().commit(obj); }
 };
 
 MONAD_DB_NAMESPACE_END

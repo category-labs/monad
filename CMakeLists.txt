@@ -209,6 +209,8 @@ add_library(
     ${PROJECT_SOURCE_DIR}/include/monad/state/code_state.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/state/state.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/state/value_state.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/state/state_changes.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/state/concepts.hpp
     # trie
     ${PROJECT_SOURCE_DIR}/include/monad/trie/compact_encode.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/trie/nibbles.hpp

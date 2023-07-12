@@ -25,6 +25,9 @@ struct TrieDBInterface
     using DBInterface<
         TrieDBInterface<TTrieDBImpl>,
         monad::execution::BoostFiberExecution>::updates;
+    using DBInterface<
+        TrieDBInterface<TTrieDBImpl>,
+        monad::execution::BoostFiberExecution>::query;
 
     std::vector<trie::Update> account_trie_updates;
     std::vector<trie::Update> storage_trie_updates;
@@ -143,13 +146,12 @@ struct TrieDBInterface
     // DBInterface modifiers
     ////////////////////////////////////////////////////////////////////
 
-    void commit_storage_impl()
+    void commit(state::changeset auto const &obj)
     {
-        if (updates.storage.empty()) {
-            return;
-        }
+        std::unordered_map<address_t, bytes32_t> updated_storage_roots;
+        account_trie_updates.clear();
 
-        for (auto const &u : updates.storage) {
+        for (auto const &u : obj.storage_changes) {
             MONAD_DEBUG_ASSERT(!u.second.empty());
 
             storage().trie.set_trie_prefix(u.first);
@@ -179,53 +181,72 @@ struct TrieDBInterface
                 storage_trie_updates.size(),
                 u.first,
                 storage_trie_updates);
-            storage().trie.process_updates(storage_trie_updates);
-        }
-        storage().leaves_writer.write();
-        storage().trie_writer.write();
-        take_snapshot();
-    }
 
-    void commit_accounts_impl()
-    {
-        MONAD_DEBUG_ASSERT(updates.storage.empty());
-
-        if (updates.accounts.empty()) {
-            return;
+            auto const [_, success] = updated_storage_roots.try_emplace(
+                u.first, storage().trie.process_updates(storage_trie_updates));
+            MONAD_DEBUG_ASSERT(success);
         }
 
-        for (auto const &u : updates.accounts) {
+        for (auto const &u : obj.account_changes) {
             auto const &[a, acct] = u;
             storage().trie.set_trie_prefix(a);
             auto const ak = trie::Nibbles{std::bit_cast<bytes32_t>(
                 ethash::keccak256(a.bytes, sizeof(a.bytes)))};
             if (acct.has_value()) {
+                auto const it = updated_storage_roots.find(a);
+                auto const root_hash = it != updated_storage_roots.end()
+                                           ? it->second
+                                           : storage().trie.root_hash();
+                if (it != updated_storage_roots.end()) {
+                    updated_storage_roots.erase(it);
+                }
                 account_trie_updates.emplace_back(trie::Upsert{
                     .key = ak,
-                    .value = rlp::encode_account(
-                        acct.value(), storage().trie.root_hash())});
+                    .value = rlp::encode_account(acct.value(), root_hash)});
             }
             else {
                 storage().trie.clear();
+                updated_storage_roots.erase(a);
                 account_trie_updates.emplace_back(trie::Delete{.key = ak});
             }
         }
 
-        std::ranges::sort(
-            account_trie_updates, std::less<>{}, trie::get_update_key);
-        MONAD_LOG_INFO(
-            logger,
-            "{} account updates: {}",
-            account_trie_updates.size(),
-            account_trie_updates);
-        accounts().trie.process_updates(account_trie_updates);
+        for (auto const &[addr, storage_root] : updated_storage_roots) {
+            auto const account = query(addr);
+            MONAD_DEBUG_ASSERT(account.has_value());
 
-        accounts().leaves_writer.write();
-        accounts().trie_writer.write();
-        storage().leaves_writer.write();
-        storage().trie_writer.write();
-        take_snapshot();
-        account_trie_updates.clear();
+            auto const ak = trie::Nibbles{std::bit_cast<bytes32_t>(
+                ethash::keccak256(addr.bytes, sizeof(addr.bytes)))};
+            account_trie_updates.emplace_back(trie::Upsert{
+                .key = ak,
+                .value = rlp::encode_account(account.value(), storage_root)});
+        }
+
+        if (!account_trie_updates.empty()) {
+            std::ranges::sort(
+                account_trie_updates, std::less<>{}, trie::get_update_key);
+            MONAD_LOG_INFO(
+                logger,
+                "{} account updates: {}",
+                account_trie_updates.size(),
+                account_trie_updates);
+
+            accounts().trie.process_updates(account_trie_updates);
+            accounts().leaves_writer.write();
+            accounts().trie_writer.write();
+
+            // Note: there should never be an instance where we have storage
+            // updates but no account updates. The assertions in the else
+            // statement enforce this
+            storage().leaves_writer.write();
+            storage().trie_writer.write();
+
+            take_snapshot();
+        }
+        else {
+            MONAD_DEBUG_ASSERT(obj.storage_changes.empty());
+            MONAD_DEBUG_ASSERT(obj.account_changes.empty());
+        }
     }
 
     ////////////////////////////////////////////////////////////////////

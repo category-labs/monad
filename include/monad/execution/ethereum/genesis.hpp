@@ -8,6 +8,7 @@
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/state/state_changes.hpp>
 
 #include <evmc/hex.hpp>
 
@@ -69,6 +70,7 @@ read_genesis_blockheader(nlohmann::json const &genesis_json)
 template <typename TStateDB>
 inline void read_genesis_state(nlohmann::json const &genesis_json, TStateDB &db)
 {
+    state::StateChanges sc;
     for (auto const &account_info : genesis_json["alloc"].items()) {
         address_t address{};
         auto const address_byte_string =
@@ -84,10 +86,10 @@ inline void read_genesis_state(nlohmann::json const &genesis_json, TStateDB &db)
             account_info.value()["wei_balance"].get<std::string>();
         account.balance = intx::from_string<uint256_t>(balance_byte_string);
         account.nonce = 0u;
-
-        db.create(address, account);
+        
+        sc.account_changes.emplace_back(address, account);
     }
-    db.commit();
+    db.commit(sc);
 }
 
 template <typename TStateDB>

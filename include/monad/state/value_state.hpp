@@ -1,11 +1,13 @@
 #pragma once
 
+#include "monad/state/state.hpp"
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/bytes.hpp>
 
 #include <monad/state/config.hpp>
 #include <monad/state/datum.hpp>
+#include <monad/state/state_changes.hpp>
 
 #include <unordered_map>
 #include <unordered_set>
@@ -116,24 +118,21 @@ struct ValueState
     {
         assert(can_commit());
 
+        StateChanges sc;
+
         for (auto const &[addr, key_set] : merged_.deleted_storage_) {
             for (auto const &key : key_set) {
-                db_.erase(addr, key.key);
+                sc.storage_changes[addr].emplace_back(key.key, bytes32_t{});
             }
         }
         for (auto const &[addr, acct_storage] : merged_.storage_) {
             for (auto const &[key, value] : acct_storage) {
                 assert(value.updated != bytes32_t{});
-                if (value.orig == bytes32_t{}) {
-                    db_.create(addr, key, value.updated);
-                }
-                else {
-                    db_.update(addr, key, value.updated);
-                }
+                sc.storage_changes[addr].emplace_back(key, value.updated);
             }
         }
         merged_.clear();
-        db_.commit_storage();
+        db_.commit(sc);
     }
 
     bool can_merge(WorkingCopy const &diffs) const noexcept

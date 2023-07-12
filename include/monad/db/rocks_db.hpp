@@ -175,9 +175,9 @@ struct RocksDB
         return result;
     }
 
-    void commit_storage_impl()
+    void commit(state::changeset auto const &obj)
     {
-        for (auto const &[a, updates] : updates.storage) {
+        for (auto const &[a, updates] : obj.storage_changes) {
             for (auto const &[k, v] : updates) {
                 auto const key = detail::make_basic_storage_key(a, k);
                 if (v != bytes32_t{}) {
@@ -191,12 +191,8 @@ struct RocksDB
                 }
             }
         }
-        commit_db();
-    }
 
-    void commit_accounts_impl()
-    {
-        for (auto const &[a, acct] : updates.accounts) {
+        for (auto const &[a, acct] : obj.account_changes) {
             if (acct.has_value()) {
                 // Note: no storage root calculations in this mode
                 auto const res = batch.Put(
@@ -210,6 +206,7 @@ struct RocksDB
                 MONAD_ROCKS_ASSERT(res);
             }
         }
+
         commit_db();
     }
 };

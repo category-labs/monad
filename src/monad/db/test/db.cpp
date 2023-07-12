@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
+
 #include <monad/db/in_memory_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/rocks_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
+#include <monad/logging/formatter.hpp>
+#include <monad/state/state_changes.hpp>
 
 using namespace monad;
 using namespace monad::db;
@@ -28,54 +31,40 @@ using DBTypes =
     ::testing::Types<InMemoryDB, RocksDB, InMemoryTrieDB, RocksTrieDB>;
 TYPED_TEST_SUITE(DBTest, DBTypes);
 
+template <typename TDB>
+struct TrieDBTest : public testing::Test
+{
+};
+using TrieDBTypes = ::testing::Types<InMemoryTrieDB, RocksTrieDB>;
+TYPED_TEST_SUITE(TrieDBTest, TrieDBTypes);
+
 TYPED_TEST(DBTest, storage_creation)
 {
     TypeParam db;
     Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
-    db.create(a, acct);
-    db.create(a, key1, value1);
-    db.commit();
+    db.commit(state::StateChanges{
+        .account_changes = {{a, acct}},
+        .storage_changes = {{a, {{key1, value1}}}}});
 
     EXPECT_TRUE(db.contains(a, key1));
     EXPECT_EQ(db.at(a, key1), value1);
 
-    db.create(b, acct);
-    db.commit();
+    db.commit(state::StateChanges{
+        .account_changes = {{b, acct}}, .storage_changes = {}});
     EXPECT_TRUE(db.contains(b));
 
-    db.create(b, key1, value1);
-    db.commit();
+    db.commit(state::StateChanges{
+        .account_changes = {}, .storage_changes = {{b, {{key1, value1}}}}});
     EXPECT_TRUE(db.contains(b, key1));
     EXPECT_EQ(db.at(b, key1), value1);
-}
-
-TYPED_TEST(DBTest, storage_update)
-{
-    TypeParam db;
-    Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
-    db.create(a, acct);
-    db.create(a, key1, value1);
-    db.commit();
-
-    EXPECT_TRUE(db.contains(a, key1));
-    EXPECT_EQ(db.at(a, key1), value1);
-
-    db.update(a, key1, value2);
-
-    // key1 should not change until commit
-    EXPECT_EQ(db.at(a, key1), value1);
-
-    db.commit();
-
-    EXPECT_EQ(db.at(a, key1), value2);
 }
 
 TEST(InMemoryTrieDB, account_creation)
 {
     InMemoryTrieDB db;
     Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
-    db.create(a, acct);
-    db.commit();
+    db.commit(state::StateChanges{
+        .account_changes = {{a, acct}}, .storage_changes = {}});
 
     EXPECT_EQ(db.accounts().leaves_storage.size(), 1);
     EXPECT_EQ(db.accounts().trie_storage.size(), 1);
@@ -88,10 +77,9 @@ TYPED_TEST(DBTest, query)
 {
     TypeParam db;
     Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
-    db.create(a, acct);
-    db.create(a, key1, value1);
-    db.create(a, key2, value2);
-    db.commit();
+    db.commit(state::StateChanges{
+        .account_changes = {{a, acct}},
+        .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
 
     EXPECT_EQ(db.query(a), acct);
     EXPECT_FALSE(db.query(b).has_value());
@@ -103,10 +91,9 @@ TEST(InMemoryTrieDB, erase)
 {
     InMemoryTrieDB db;
     Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
-    db.create(a, acct);
-    db.create(a, key1, value1);
-    db.create(a, key2, value2);
-    db.commit();
+    db.commit(state::StateChanges{
+        .account_changes = {{a, acct}},
+        .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
 
     EXPECT_EQ(
         db.root_hash(a),
@@ -115,11 +102,9 @@ TEST(InMemoryTrieDB, erase)
         db.root_hash(),
         0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
 
-    db.erase(a);
-    db.update(a, key1, value2);
-    db.update(a, key2, value1);
-
-    db.commit();
+    db.commit(state::StateChanges{
+        .account_changes = {{a, std::nullopt}},
+        .storage_changes = {{a, {{key1, value2}, {key2, value1}}}}});
 
     EXPECT_FALSE(db.contains(a));
     EXPECT_FALSE(db.contains(a, key1));
@@ -131,4 +116,20 @@ TEST(InMemoryTrieDB, erase)
 
     EXPECT_EQ(db.root_hash(), NULL_ROOT);
     EXPECT_EQ(db.root_hash(a), NULL_ROOT);
+}
+
+TYPED_TEST(TrieDBTest, ModifyStorageOfAccount)
+{
+    TypeParam db;
+    Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
+    db.commit(state::StateChanges{
+        .account_changes = {{a, acct}},
+        .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
+
+    db.commit(state::StateChanges{
+        .account_changes = {}, .storage_changes = {{a, {{key2, value1}}}}});
+
+    EXPECT_EQ(
+        db.root_hash(),
+        0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
 }

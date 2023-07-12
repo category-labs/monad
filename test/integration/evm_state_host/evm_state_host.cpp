@@ -14,6 +14,7 @@
 #include <monad/state/account_state.hpp>
 #include <monad/state/code_state.hpp>
 #include <monad/state/state.hpp>
+#include <monad/state/state_changes.hpp>
 #include <monad/state/value_state.hpp>
 
 #include <evmc/evmc.hpp>
@@ -75,11 +76,11 @@ TEST(EvmInterpStateHost, return_existing_storage)
         0xf3}; // RETURN
     code_db.emplace(a, code);
     Account A{};
-    db.create(a, A);
-    db.create(to, Account{});
-    db.create(from, Account{.balance = 10'000'000});
-    db.create(to, location, value1);
-    db.commit();
+
+    db.commit(state::StateChanges{
+        .account_changes =
+            {{a, A}, {to, Account{}}, {from, Account{.balance = 10'000'000}}},
+        .storage_changes = {{to, {{location, value1}}}}});
 
     BlockHeader const b{}; // Required for the host interface, but not used
     Transaction const t{};
@@ -142,10 +143,11 @@ TEST(EvmInterpStateHost, store_then_return_storage)
         0xf3}; // RETURN
     code_db.emplace(a, code);
     Account A{};
-    db.create(a, A);
-    db.create(to, Account{});
-    db.create(from, Account{.balance = 10'000'000});
-    db.commit();
+
+    db.commit(state::StateChanges{
+        .account_changes =
+            {{a, A}, {to, Account{}}, {from, Account{.balance = 10'000'000}}},
+        .storage_changes = {}});
 
     BlockHeader const b{}; // Required for the host interface, but not used
     Transaction const t{};

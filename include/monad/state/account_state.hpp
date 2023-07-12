@@ -1,5 +1,6 @@
 #pragma once
 
+#include "monad/state/state.hpp"
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
@@ -7,6 +8,7 @@
 
 #include <monad/state/config.hpp>
 #include <monad/state/datum.hpp>
+#include <monad/state/state_changes.hpp>
 
 #include <algorithm>
 #include <cassert>
@@ -104,22 +106,13 @@ struct AccountState
     {
         assert(can_commit());
 
-        for (auto const &[a, A] : merged_) {
-            if (A.orig.has_value()) {
-                if (A.updated.has_value()) {
-                    db_.update(a, A.updated.value());
-                }
-                else {
-                    db_.erase(a);
-                }
-            }
-            else {
-                assert(A.updated.has_value());
-                db_.create(a, A.updated.value());
-            }
+        StateChanges sc;
+        for (auto const &[addr, diff] : merged_) {
+            sc.account_changes.emplace_back(addr, diff.updated);
         }
+
+        db_.commit(sc);
         merged_.clear();
-        db_.commit_accounts();
     }
 };
 

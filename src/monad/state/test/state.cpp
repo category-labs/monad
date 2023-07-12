@@ -1,14 +1,15 @@
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
 
-#include <monad/state/account_state.hpp>
-#include <monad/state/code_state.hpp>
-#include <monad/state/state.hpp>
-#include <monad/state/value_state.hpp>
 #include <monad/db/in_memory_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/rocks_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
+#include <monad/state/account_state.hpp>
+#include <monad/state/code_state.hpp>
+#include <monad/state/state.hpp>
+#include <monad/state/state_changes.hpp>
+#include <monad/state/value_state.hpp>
 
 #include <gtest/gtest.h>
 
@@ -58,8 +59,9 @@ TYPED_TEST(StateTest, get_working_copy)
     code_db_t code_db{};
     CodeState code{code_db};
     State as{accounts, values, code, block_cache};
-    db.create(a, {.balance = 10'000});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.balance = 10'000}}},
+        .storage_changes = {}});
 
     [[maybe_unused]] auto bs = as.get_working_copy(0);
     [[maybe_unused]] auto cs = as.get_working_copy(1);
@@ -87,9 +89,10 @@ TYPED_TEST(StateTest, get_code)
     CodeState code{code_db};
     State as{accounts, values, code, block_cache};
     byte_string const contract{0x60, 0x34, 0x00};
-    db.create(a, {.balance = 10'000});
     code_db.emplace(a, contract);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.balance = 10'000}}},
+        .storage_changes = {}});
 
     [[maybe_unused]] auto bs = as.get_working_copy(0);
 
@@ -108,13 +111,13 @@ TYPED_TEST(StateTest, can_merge_fresh)
     CodeState code{code_db};
     State t{accounts, values, code, block_cache};
 
-    db.create(b, {.balance = 40'000u});
-    db.create(c, {.balance = 50'000u});
-    db.create(b, key1, value1);
-    db.create(b, key2, value2);
-    db.create(c, key1, value1);
-    db.create(c, key2, value2);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes =
+            {{b, Account{.balance = 40'000u}},
+             {c, Account{.balance = 50'000u}}},
+        .storage_changes = {
+            {b, {{key1, value1}, {key2, value2}}},
+            {c, {{key1, value1}, {key2, value2}}}}});
 
     auto s = t.get_working_copy(0);
 
@@ -151,13 +154,13 @@ TYPED_TEST(StateTest, can_merge_same_account_different_storage)
     CodeState code{code_db};
     State t{accounts, values, code, block_cache};
 
-    db.create(b, {.balance = 40'000u});
-    db.create(c, {.balance = 50'000u});
-    db.create(b, key1, value1);
-    db.create(b, key2, value2);
-    db.create(c, key1, value1);
-    db.create(c, key2, value2);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes =
+            {{b, Account{.balance = 40'000u}},
+             {c, Account{.balance = 50'000u}}},
+        .storage_changes = {
+            {b, {{key1, value1}, {key2, value2}}},
+            {c, {{key1, value1}, {key2, value2}}}}});
 
     auto bs = t.get_working_copy(0);
     auto cs = t.get_working_copy(1);
@@ -184,9 +187,9 @@ TYPED_TEST(StateTest, cant_merge_colliding_storage)
     CodeState code{code_db};
     State t{accounts, values, code, block_cache};
 
-    db.create(b, {.balance = 40'000u});
-    db.create(b, key1, value1);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{b, Account{.balance = 40'000u}}},
+        .storage_changes = {{b, {{key1, value1}}}}});
 
     auto bs = t.get_working_copy(0);
     auto cs = t.get_working_copy(1);
@@ -227,14 +230,14 @@ TYPED_TEST(StateTest, merge_txn0_and_txn1)
     CodeState code{code_db};
     State t{accounts, values, code, block_cache};
 
-    db.create(a, {.balance = 30'000u});
-    db.create(b, {.balance = 40'000u});
-    db.create(c, {.balance = 50'000u});
-    db.create(b, key1, value1);
-    db.create(b, key2, value2);
-    db.create(c, key1, value1);
-    db.create(c, key2, value2);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes =
+            {{a, Account{.balance = 30'000u}},
+             {b, Account{.balance = 40'000u}},
+             {c, Account{.balance = 50'000u}}},
+        .storage_changes = {
+            {b, {{key1, value1}, {key2, value2}}},
+            {c, {{key1, value1}, {key2, value2}}}}});
 
     auto bs = t.get_working_copy(0);
     auto cs = t.get_working_copy(1);
@@ -269,13 +272,13 @@ TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
     CodeState code{code_db};
     State t{accounts, values, code, block_cache};
 
-    db.create(b, {.balance = 40'000u});
-    db.create(c, {.balance = 50'000u});
-    db.create(b, key1, value1);
-    db.create(b, key2, value2);
-    db.create(c, key1, value1);
-    db.create(c, key2, value2);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes =
+            {{b, Account{.balance = 40'000u}},
+             {c, Account{.balance = 50'000u}}},
+        .storage_changes = {
+            {b, {{key1, value1}, {key2, value2}}},
+            {c, {{key1, value1}, {key2, value2}}}}});
 
     auto bs = t.get_working_copy(0);
     auto cs = t.get_working_copy(1);
@@ -323,14 +326,14 @@ TYPED_TEST(StateTest, merge_txn1_try_again_merge_txn0_then_txn1)
     CodeState code{code_db};
     State t{accounts, values, code, block_cache};
 
-    db.create(a, {.balance = 30'000u});
-    db.create(b, {.balance = 40'000u});
-    db.create(c, {.balance = 50'000u});
-    db.create(b, key1, value1);
-    db.create(b, key2, value2);
-    db.create(c, key1, value1);
-    db.create(c, key2, value2);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes =
+            {{a, Account{.balance = 30'000u}},
+             {b, Account{.balance = 40'000u}},
+             {c, Account{.balance = 50'000u}}},
+        .storage_changes = {
+            {b, {{key1, value1}, {key2, value2}}},
+            {c, {{key1, value1}, {key2, value2}}}}});
 
     auto bs = t.get_working_copy(0);
     auto cs = t.get_working_copy(1);
@@ -370,14 +373,14 @@ TYPED_TEST(StateTest, can_commit)
     CodeState code{code_db};
     State t{accounts, values, code, block_cache};
 
-    db.create(a, {.balance = 30'000u});
-    db.create(b, {.balance = 40'000u});
-    db.create(c, {.balance = 50'000u});
-    db.create(b, key1, value1);
-    db.create(b, key2, value2);
-    db.create(c, key1, value1);
-    db.create(c, key2, value2);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes =
+            {{a, Account{.balance = 30'000u}},
+             {b, Account{.balance = 40'000u}},
+             {c, Account{.balance = 50'000u}}},
+        .storage_changes = {
+            {b, {{key1, value1}, {key2, value2}}},
+            {c, {{key1, value1}, {key2, value2}}}}});
 
     auto bs = t.get_working_copy(0);
     auto cs = t.get_working_copy(1);
@@ -419,14 +422,14 @@ TYPED_TEST(StateTest, commit_twice)
     CodeState code{code_db};
     State t{accounts, values, code, block_cache};
 
-    db.create(a, {.balance = 30'000u});
-    db.create(b, {.balance = 40'000u});
-    db.create(c, {.balance = 50'000u});
-    db.create(b, key1, value1);
-    db.create(b, key2, value2);
-    db.create(c, key1, value1);
-    db.create(c, key2, value2);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes =
+            {{a, Account{.balance = 30'000u}},
+             {b, Account{.balance = 40'000u}},
+             {c, Account{.balance = 50'000u}}},
+        .storage_changes = {
+            {b, {{key1, value1}, {key2, value2}}},
+            {c, {{key1, value1}, {key2, value2}}}}});
 
     {
         // Block 0, Txn 0

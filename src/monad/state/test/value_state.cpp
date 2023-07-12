@@ -9,6 +9,7 @@
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/rocks_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
+#include <monad/state/state_changes.hpp>
 
 #include <gtest/gtest.h>
 
@@ -61,13 +62,11 @@ TYPED_TEST(ValueStateTest, access_storage)
 TYPED_TEST(ValueStateTest, copy)
 {
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key1, value1);
-    db.create(a, key2, value2);
-    db.create(c, {});
-    db.create(c, key1, value1);
-    db.create(c, key2, value2);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}, {c, Account{}}},
+        .storage_changes = {
+            {a, {{key1, value1}, {key2, value2}}},
+            {c, {{key1, value1}, {key2, value2}}}}});
     ValueState s{db};
 
     auto t = typename decltype(s)::WorkingCopy{s};
@@ -89,12 +88,10 @@ TYPED_TEST(ValueStateTest, get_storage)
     using diff_t = typename ValueState<TypeParam>::diff_t;
 
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key1, value1);
-    db.create(a, key2, value2);
-    db.create(b, {});
-    db.create(b, key1, value1);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}, {b, Account{}}},
+        .storage_changes = {
+            {a, {{key1, value1}, {key2, value2}}}, {b, {{key1, value1}}}}});
 
     ValueState t{db};
     t.merged_.storage_[a].emplace(key2, diff_t{value2, value3});
@@ -126,10 +123,9 @@ TYPED_TEST(ValueStateTest, set_modify_delete_storage)
 {
     TypeParam db{};
     ValueState t{db};
-    db.create(a, {});
-    db.create(a, key1, value1);
-    db.create(a, key2, value2);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}},
+        .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
 
     auto s = typename decltype(t)::WorkingCopy{t};
 
@@ -152,10 +148,9 @@ TYPED_TEST(ValueStateTest, set_modify_delete_merged)
     using diff_t = typename ValueState<TypeParam>::diff_t;
 
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key1, value1);
-    db.create(a, key2, value2);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}},
+        .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
 
     ValueState t{db};
     t.merged_.storage_[a].emplace(key1, diff_t{value1, value2});
@@ -181,16 +176,12 @@ TYPED_TEST(ValueStateTest, multiple_get_and_set_from_storage)
 {
     TypeParam db{};
     ValueState t{db};
-    db.create(a, {});
-    db.create(a, key1, value1);
-    db.create(a, key2, value2);
-    db.create(b, {});
-    db.create(b, key1, value1);
-    db.create(b, key2, value2);
-    db.create(c, {});
-    db.create(c, key1, value1);
-    db.create(c, key2, value2);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}, {b, Account{}}, {c, Account{}}},
+        .storage_changes = {
+            {a, {{key1, value1}, {key2, value2}}},
+            {b, {{key1, value1}, {key2, value2}}},
+            {c, {{key1, value1}, {key2, value2}}}}});
 
     auto s = typename decltype(t)::WorkingCopy{t};
 
@@ -226,13 +217,11 @@ TYPED_TEST(ValueStateTest, multiple_get_and_set_from_merged)
     using diff_t = typename ValueState<TypeParam>::diff_t;
 
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key1, value1);
-    db.create(a, key2, value2);
-    db.create(c, {});
-    db.create(c, key1, value1);
-    db.create(c, key2, value2);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}, {c, Account{}}},
+        .storage_changes = {
+            {a, {{key1, value1}, {key2, value2}}},
+            {c, {{key1, value1}, {key2, value2}}}}});
 
     ValueState t{db};
     t.merged_.storage_[a].emplace(key1, diff_t{value1, value2});
@@ -293,13 +282,11 @@ TYPED_TEST(ValueStateTest, revert)
 TYPED_TEST(ValueStateTest, can_merge)
 {
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key1, value1);
-    db.create(a, key2, value2);
-    db.create(b, {});
-    db.create(b, key1, value1);
-    db.create(b, key2, value2);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}, {b, Account{}}},
+        .storage_changes = {
+            {a, {{key1, value1}, {key2, value2}}},
+            {b, {{key1, value1}, {key2, value2}}}}});
     ValueState s{db};
 
     auto t = typename decltype(s)::WorkingCopy{s};
@@ -331,9 +318,9 @@ TYPED_TEST(ValueStateTest, can_merge_added)
 TYPED_TEST(ValueStateTest, can_merge_deleted)
 {
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key2, value2);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}},
+        .storage_changes = {{a, {{key2, value2}}}}});
     ValueState s{db};
 
     auto t = typename decltype(s)::WorkingCopy{s};
@@ -345,9 +332,9 @@ TYPED_TEST(ValueStateTest, can_merge_deleted)
 TYPED_TEST(ValueStateTest, can_merge_modified)
 {
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key1, value1);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}},
+        .storage_changes = {{a, {{key1, value1}}}}});
     ValueState s{db};
 
     auto t = typename decltype(s)::WorkingCopy{s};
@@ -398,9 +385,9 @@ TYPED_TEST(ValueStateTest, can_merge_delete_merged_added)
 TYPED_TEST(ValueStateTest, can_merge_add_on_merged_deleted)
 {
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key2, value2);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}},
+        .storage_changes = {{a, {{key2, value2}}}}});
     ValueState s{db};
 
     {
@@ -420,9 +407,9 @@ TYPED_TEST(ValueStateTest, can_merge_add_on_merged_deleted)
 TYPED_TEST(ValueStateTest, can_merge_delete_merged_modified)
 {
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key1, value1);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}},
+        .storage_changes = {{a, {{key1, value1}}}}});
     ValueState s{db};
 
     {
@@ -448,9 +435,9 @@ TYPED_TEST(ValueStateTest, cant_merge_colliding_merge)
     using diff_t = typename ValueState<TypeParam>::diff_t;
 
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key1, value1);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}},
+        .storage_changes = {{a, {{key1, value1}}}}});
     ValueState s{db};
 
     auto t = typename decltype(s)::WorkingCopy{s};
@@ -465,9 +452,9 @@ TYPED_TEST(ValueStateTest, cant_merge_colliding_merge)
 TYPED_TEST(ValueStateTest, cant_merge_deleted_merge)
 {
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key1, value1);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}},
+        .storage_changes = {{a, {{key1, value1}}}}});
     ValueState s{db};
 
     auto t = typename decltype(s)::WorkingCopy{s};
@@ -500,9 +487,9 @@ TYPED_TEST(ValueStateTest, cant_merge_conflicting_modifies)
     using diff_t = typename ValueState<TypeParam>::diff_t;
 
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key1, value3);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}},
+        .storage_changes = {{a, {{key1, value3}}}}});
     ValueState s{db};
 
     auto t = typename decltype(s)::WorkingCopy{s};
@@ -517,9 +504,9 @@ TYPED_TEST(ValueStateTest, cant_merge_conflicting_modifies)
 TYPED_TEST(ValueStateTest, cant_merge_conflicting_deleted)
 {
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key1, value1);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}},
+        .storage_changes = {{a, {{key1, value1}}}}});
     ValueState s{db};
 
     auto t = typename decltype(s)::WorkingCopy{s};
@@ -536,9 +523,9 @@ TYPED_TEST(ValueStateTest, cant_merge_delete_conflicts_with_modify)
     using diff_t = typename ValueState<TypeParam>::diff_t;
 
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key1, value1);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}},
+        .storage_changes = {{a, {{key1, value1}}}}});
     ValueState s{db};
 
     auto t = typename decltype(s)::WorkingCopy{s};
@@ -553,11 +540,9 @@ TYPED_TEST(ValueStateTest, cant_merge_delete_conflicts_with_modify)
 TYPED_TEST(ValueStateTest, merge_touched_multiple)
 {
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key1, value1);
-    db.create(b, {});
-    db.create(b, key1, value1);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}, {b, Account{}}},
+        .storage_changes = {{a, {{key1, value1}}}, {b, {{key1, value1}}}}});
     ValueState s{db};
 
     {
@@ -586,11 +571,9 @@ TYPED_TEST(ValueStateTest, merge_touched_multiple)
 TYPED_TEST(ValueStateTest, can_commit)
 {
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key1, value1);
-    db.create(b, {});
-    db.create(b, key1, value1);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}, {b, Account{}}},
+        .storage_changes = {{a, {{key1, value1}}}, {b, {{key1, value1}}}}});
     ValueState s{db};
 
     {
@@ -621,11 +604,9 @@ TYPED_TEST(ValueStateTest, can_commit)
 TYPED_TEST(ValueStateTest, can_commit_restored)
 {
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key1, value1);
-    db.create(b, {});
-    db.create(b, key1, value1);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}, {b, Account{}}},
+        .storage_changes = {{a, {{key1, value1}}}, {b, {{key1, value1}}}}});
     ValueState s{db};
 
     {
@@ -664,11 +645,9 @@ TYPED_TEST(ValueStateTest, can_commit_restored)
 TYPED_TEST(ValueStateTest, commit_all_merged)
 {
     TypeParam db{};
-    db.create(a, {});
-    db.create(a, key1, value1);
-    db.create(b, {});
-    db.create(b, key1, value1);
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}, {b, Account{}}},
+        .storage_changes = {{a, {{key1, value1}}}, {b, {{key1, value1}}}}});
     ValueState s{db};
 
     {

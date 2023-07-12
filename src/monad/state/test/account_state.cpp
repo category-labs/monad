@@ -7,6 +7,7 @@
 #include <monad/db/rocks_trie_db.hpp>
 
 #include <monad/state/account_state.hpp>
+#include <monad/state/state_changes.hpp>
 
 #include <gtest/gtest.h>
 
@@ -41,9 +42,9 @@ TYPED_TEST(AccountStateTest, account_exists)
 {
     TypeParam db{};
     AccountState s{db};
-    db.create(a, {});
-    db.create(d, {});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}, {d, Account{}}},
+        .storage_changes = {}});
 
     s.merged_.emplace(b, Account{});
     s.merged_.emplace(d, diff_t{Account{}, std::nullopt});
@@ -58,8 +59,9 @@ TYPED_TEST(AccountStateTest, account_exists)
 TYPED_TEST(AccountStateTest, get_balance)
 {
     TypeParam db{};
-    db.create(a, {.balance = 20'000});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.balance = 20'000}}},
+        .storage_changes = {}});
     AccountState s{db};
     s.merged_.emplace(
         b, diff_t{std::nullopt, Account{.balance = 10'000}});
@@ -71,8 +73,9 @@ TYPED_TEST(AccountStateTest, get_balance)
 TYPED_TEST(AccountStateTest, get_code_hash)
 {
     TypeParam db{};
-    db.create(a, {.code_hash = hash1});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.code_hash = hash1}}},
+        .storage_changes = {}});
     AccountState s{db};
     s.merged_.emplace(
         b, diff_t{std::nullopt, Account{.code_hash = hash2}});
@@ -84,8 +87,9 @@ TYPED_TEST(AccountStateTest, get_code_hash)
 TYPED_TEST(AccountStateTest, working_copy)
 {
     TypeParam db{};
-    db.create(a, {.balance = 10'000});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.balance = 10'000}}},
+        .storage_changes = {}});
     AccountState as{db};
 
     auto bs = typename decltype(as)::WorkingCopy{as};
@@ -107,9 +111,9 @@ TYPED_TEST(AccountStateTest, account_exists_working_copy)
 {
     TypeParam db{};
     AccountState s{db};
-    db.create(a, {});
-    db.create(d, {});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}, {d, Account{}}},
+        .storage_changes = {}});
 
     auto bs = typename decltype(s)::WorkingCopy{s};
 
@@ -132,9 +136,9 @@ TYPED_TEST(AccountStateTest, access_account_working_copy)
 {
     TypeParam db{};
     AccountState s{db};
-    db.create(a, {});
-    db.create(b, {});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}, {b, Account{}}},
+        .storage_changes = {}});
 
     auto bs = typename decltype(s)::WorkingCopy{s};
 
@@ -147,8 +151,9 @@ TYPED_TEST(AccountStateTest, access_account_working_copy)
 TYPED_TEST(AccountStateTest, get_balance_working_copy)
 {
     TypeParam db{};
-    db.create(a, {.balance = 20'000});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.balance = 20'000}}},
+        .storage_changes = {}});
 
     AccountState s{db};
     s.merged_.emplace(
@@ -166,8 +171,8 @@ TYPED_TEST(AccountStateTest, get_balance_working_copy)
 TYPED_TEST(AccountStateTest, get_nonce_working_copy)
 {
     TypeParam db{};
-    db.create(a, {.nonce = 2});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.nonce = 2}}}, .storage_changes = {}});
 
     AccountState s{db};
     s.merged_.emplace(b, diff_t{std::nullopt, Account{.nonce = 1}});
@@ -184,8 +189,9 @@ TYPED_TEST(AccountStateTest, get_nonce_working_copy)
 TYPED_TEST(AccountStateTest, get_code_hash_working_copy)
 {
     TypeParam db{};
-    db.create(a, {.code_hash = hash1});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.code_hash = hash1}}},
+        .storage_changes = {}});
 
     AccountState s{db};
     s.merged_.emplace(
@@ -218,9 +224,10 @@ TYPED_TEST(AccountStateTest, create_account_working_copy)
 TYPED_TEST(AccountStateTest, selfdestruct_working_copy)
 {
     TypeParam db{};
-    db.create(a, {.balance = 18'000});
-    db.create(c, {.balance = 38'000});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes =
+            {{a, Account{.balance = 18'000}}, {c, Account{.balance = 38'000}}},
+        .storage_changes = {}});
 
     AccountState s{db};
     s.merged_.emplace(
@@ -252,9 +259,9 @@ TYPED_TEST(AccountStateTest, selfdestruct_working_copy)
 TYPED_TEST(AccountStateTest, destruct_touched_dead_working_copy)
 {
     TypeParam db{};
-    db.create(a, {.balance = 10'000});
-    db.create(b, {});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.balance = 10'000}}, {b, Account{}}},
+        .storage_changes = {}});
 
     AccountState s{db};
 
@@ -280,8 +287,9 @@ TYPED_TEST(AccountStateTest, destruct_touched_dead_working_copy)
 TYPED_TEST(AccountStateTest, revert_touched_working_copy)
 {
     TypeParam db{};
-    db.create(a, {.balance = 10'000, .nonce = 2});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.balance = 10'000, .nonce = 2}}},
+        .storage_changes = {}});
 
     AccountState s{db};
 
@@ -301,9 +309,11 @@ TYPED_TEST(AccountStateTest, revert_touched_working_copy)
 TYPED_TEST(AccountStateTest, can_merge_fresh)
 {
     TypeParam db{};
-    db.create(b, {.balance = 40'000u});
-    db.create(c, {.balance = 50'000u});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes =
+            {{b, Account{.balance = 40'000u}},
+             {c, Account{.balance = 50'000u}}},
+        .storage_changes = {}});
 
     AccountState t{db};
 
@@ -325,9 +335,11 @@ TYPED_TEST(AccountStateTest, can_merge_fresh)
 TYPED_TEST(AccountStateTest, can_merge_onto_merged)
 {
     TypeParam db{};
-    db.create(b, {.balance = 40'000u});
-    db.create(c, {.balance = 50'000u});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes =
+            {{b, Account{.balance = 40'000u}},
+             {c, Account{.balance = 50'000u}}},
+        .storage_changes = {}});
 
     AccountState t{db};
     t.merged_.emplace(a, diff_t{Account{.balance = 30'000}});
@@ -354,8 +366,9 @@ TYPED_TEST(AccountStateTest, can_merge_onto_merged)
 TYPED_TEST(AccountStateTest, cant_merge_colliding_merge)
 {
     TypeParam db{};
-    db.create(a, {.balance = 40'000u});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.balance = 40'000u}}},
+        .storage_changes = {}});
 
     AccountState t{db};
     diff_t r{db.at(a), db.at(a)};
@@ -374,8 +387,9 @@ TYPED_TEST(AccountStateTest, cant_merge_colliding_merge)
 TYPED_TEST(AccountStateTest, cant_merge_deleted_merge)
 {
     TypeParam db{};
-    db.create(a, {.balance = 40'000u});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.balance = 40'000u}}},
+        .storage_changes{}});
 
     AccountState t{db};
     diff_t r{db.at(a), db.at(a)};
@@ -412,8 +426,9 @@ TYPED_TEST(AccountStateTest, cant_merge_conflicting_adds)
 TYPED_TEST(AccountStateTest, cant_merge_conflicting_modifies)
 {
     TypeParam db{};
-    db.create(a, {.balance = 40'000u});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.balance = 40'000u}}},
+        .storage_changes{}});
 
     AccountState t{db};
     diff_t r{db.at(a), db.at(a)};
@@ -432,9 +447,11 @@ TYPED_TEST(AccountStateTest, cant_merge_conflicting_modifies)
 TYPED_TEST(AccountStateTest, cant_merge_conflicting_deleted)
 {
     TypeParam db{};
-    db.create(b, {.balance = 10'000u, .nonce = 1});
-    db.create(c, {.balance = 40'000u, .nonce = 2});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes =
+            {{b, Account{.balance = 10'000u, .nonce = 1}},
+             {c, Account{.balance = 40'000u, .nonce = 2}}},
+        .storage_changes = {}});
 
     AccountState t{db};
     diff_t r{db.at(c), db.at(c)};
@@ -454,9 +471,11 @@ TYPED_TEST(AccountStateTest, cant_merge_conflicting_deleted)
 TYPED_TEST(AccountStateTest, merge_multiple_changes)
 {
     TypeParam db{};
-    db.create(b, {.balance = 40'000u});
-    db.create(c, {.balance = 50'000u});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes =
+            {{b, Account{.balance = 40'000u}},
+             {c, Account{.balance = 50'000u}}},
+        .storage_changes = {}});
 
     AccountState t{db};
 
@@ -500,9 +519,11 @@ TYPED_TEST(AccountStateTest, merge_multiple_changes)
 TYPED_TEST(AccountStateTest, can_commit)
 {
     TypeParam db{};
-    db.create(b, {.balance = 40'000u});
-    db.create(c, {.balance = 50'000u});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes =
+            {{b, Account{.balance = 40'000u}},
+             {c, Account{.balance = 50'000u}}},
+        .storage_changes = {}});
     AccountState t{db};
     diff_t r{db.at(c), db.at(c)};
     r.updated.reset();
@@ -517,8 +538,9 @@ TYPED_TEST(AccountStateTest, can_commit)
 TYPED_TEST(AccountStateTest, cant_commit_merged_new_different_than_stored)
 {
     TypeParam db{};
-    db.create(a, {.balance = 40'000u});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.balance = 40'000u}}},
+        .storage_changes = {}});
     AccountState t{db};
     t.merged_.emplace(a, diff_t{Account{.balance = 30'000}});
 
@@ -528,8 +550,9 @@ TYPED_TEST(AccountStateTest, cant_commit_merged_new_different_than_stored)
 TYPED_TEST(AccountStateTest, cant_commit_merged_different_than_stored_balance)
 {
     TypeParam db{};
-    db.create(a, {.balance = 40'000u});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.balance = 40'000u}}},
+        .storage_changes = {}});
     AccountState t{db};
     t.merged_.emplace(
         a, diff_t{Account{.balance = 30'000}, Account{.balance = 30'000}});
@@ -540,8 +563,9 @@ TYPED_TEST(AccountStateTest, cant_commit_merged_different_than_stored_balance)
 TYPED_TEST(AccountStateTest, cant_commit_merged_different_than_stored_nonce)
 {
     TypeParam db{};
-    db.create(a, {.balance = 40'000u});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.balance = 40'000u}}},
+        .storage_changes = {}});
     AccountState t{db};
     t.merged_.emplace(
         a,
@@ -555,8 +579,9 @@ TYPED_TEST(AccountStateTest, cant_commit_merged_different_than_stored_nonce)
 TYPED_TEST(AccountStateTest, cant_commit_merged_different_than_stored_code_hash)
 {
     TypeParam db{};
-    db.create(a, {.code_hash = hash1});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.code_hash = hash1}}},
+        .storage_changes = {}});
     AccountState t{db};
     t.merged_.emplace(a, diff_t{Account{.code_hash = hash2}, Account{}});
 
@@ -566,8 +591,8 @@ TYPED_TEST(AccountStateTest, cant_commit_merged_different_than_stored_code_hash)
 TYPED_TEST(AccountStateTest, cant_commit_deleted_isnt_stored)
 {
     TypeParam db{};
-    db.create(a, {});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}}, .storage_changes = {}});
     AccountState t{db};
     diff_t r{Account{.balance = 10'000}, std::nullopt};
     r.updated.reset();
@@ -579,10 +604,12 @@ TYPED_TEST(AccountStateTest, cant_commit_deleted_isnt_stored)
 TYPED_TEST(AccountStateTest, can_commit_multiple)
 {
     TypeParam db{};
-    db.create(b, {.balance = 40'000u});
-    db.create(c, {.balance = 50'000u});
-    db.create(d, {.balance = 60'000u});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes =
+            {{b, Account{.balance = 40'000u}},
+             {c, Account{.balance = 50'000u}},
+             {d, Account{.balance = 60'000u}}},
+        .storage_changes = {}});
     AccountState t{db};
 
     {

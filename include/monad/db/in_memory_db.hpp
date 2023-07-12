@@ -48,9 +48,9 @@ struct InMemoryDB
         return storage.at(a).at(k);
     }
 
-    void commit_storage_impl()
+    void commit(state::changeset auto const &obj)
     {
-        for (auto const &[a, updates] : updates.storage) {
+        for (auto const &[a, updates] : obj.storage_changes) {
             for (auto const &[k, v] : updates) {
                 if (v != bytes32_t{}) {
                     storage[a][k] = v;
@@ -64,11 +64,8 @@ struct InMemoryDB
                 storage.erase(a);
             }
         }
-    }
 
-    void commit_accounts_impl()
-    {
-        for (auto const &[a, acct] : updates.accounts) {
+        for (auto const &[a, acct] : obj.account_changes) {
             if (acct.has_value()) {
                 accounts[a] = acct.value();
             }

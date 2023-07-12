@@ -244,9 +244,9 @@ namespace impl
 
     constexpr auto make_basic_storage_key(Address const &a, bytes32_t const &k)
     {
-        byte_string_fixed<sizeof(Address::hash_t) + sizeof(bytes32_t)> key;
-        std::copy_n(a.hash.bytes, sizeof(Address::hash_t), key.data());
-        std::copy_n(k.bytes, sizeof(bytes32_t), &key[sizeof(Address::hash_t)]);
+        byte_string_fixed<sizeof(Address::hash) + sizeof(bytes32_t)> key;
+        std::copy_n(a.hash.bytes, sizeof(Address::hash), key.data());
+        std::copy_n(k.bytes, sizeof(bytes32_t), &key[sizeof(Address::hash)]);
         return key;
     }
 
@@ -669,7 +669,7 @@ namespace impl
             return accounts.trie.root_hash();
         }
 
-        [[nodiscard]] constexpr bytes32_t root_hash(Address a)
+        [[nodiscard]] bytes32_t root_hash(Address a)
         {
             storage.trie.set_trie_prefix(a.address); // TODO: use hash
             return storage.trie.root_hash();

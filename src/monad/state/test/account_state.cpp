@@ -16,17 +16,17 @@ using namespace monad;
 using namespace monad::state;
 
 static auto const a =
-    construct_address(0x5353535353535353535353535353535353535353_address);
+    Address(0x5353535353535353535353535353535353535353_address);
 static auto const b =
-    construct_address(0xbebebebebebebebebebebebebebebebebebebebe_address);
+    Address(0xbebebebebebebebebebebebebebebebebebebebe_address);
 static auto const c =
-    construct_address(0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address);
+    Address(0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address);
 static auto const d =
-    construct_address(0xb5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5_address);
+    Address(0xb5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5_address);
 static auto const e =
-    construct_address(0xc5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5_address);
+    Address(0xc5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5_address);
 static auto const f =
-    construct_address(0xd5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5_address);
+    Address(0xd5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5_address);
 static constexpr auto hash1 =
     0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
 static constexpr auto hash2 =

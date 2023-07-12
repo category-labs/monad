@@ -35,7 +35,7 @@ struct TransactionProcessor
     // YP Sec 6.2 "irrevocable_change"
     void irrevocable_change(TState &s, Transaction const &t) const
     {
-        auto const from = construct_address(*t.from);
+        auto const from = Address(*t.from);
         if (t.to) { // EVM will increment if new contract
             auto const nonce = s.get_nonce(from);
             s.set_nonce(from, nonce + 1);
@@ -61,14 +61,14 @@ struct TransactionProcessor
         TState &s, BlockHeader const &b, Transaction const &t,
         uint64_t const gas_leftover, uint64_t refund) const
     {
-        auto const beneficiary = construct_address(b.beneficiary);
-        auto const from = construct_address(*t.from);
+        auto const beneficiary = Address(b.beneficiary);
+        auto const from = Address(*t.from);
 
         // refund and priority, Eqn. 73-76
         auto const gas_remaining = g_star(s, t, gas_leftover, refund);
         auto const gas_cost = per_gas_cost(t, b.base_fee_per_gas.value_or(0));
-        auto const bene_balance = intx::be::load<uint256_t>(
-            s.get_balance(construct_address(b.beneficiary)));
+        auto const bene_balance =
+            intx::be::load<uint256_t>(s.get_balance(Address(b.beneficiary)));
 
         s.set_balance(
             beneficiary,
@@ -87,16 +87,16 @@ struct TransactionProcessor
     {
         irrevocable_change(s, t);
 
-        s.access_account(construct_address(*t.from));
+        s.access_account(Address(*t.from));
         for (const auto &ae : t.access_list) {
-            auto const ae_addr = construct_address(ae.a);
+            auto const ae_addr = Address(ae.a);
             s.access_account(ae_addr);
             for (auto const &keys : ae.keys) {
                 s.access_storage(ae_addr, keys);
             }
         }
         if (t.to) {
-            s.access_account(construct_address(*t.to));
+            s.access_account(Address(*t.to));
         }
 
         auto m = TEvmHost::make_msg_from_txn(t);
@@ -125,7 +125,7 @@ struct TransactionProcessor
     Status validate(
         TState const &state, Transaction const &t, uint64_t base_fee_per_gas)
     {
-        auto const from_addr = construct_address(*t.from);
+        auto const from_addr = Address(*t.from);
 
         upfront_cost_ =
             intx::umul(t.gas_limit, per_gas_cost(t, base_fee_per_gas));

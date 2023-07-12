@@ -67,8 +67,8 @@ struct Evm
     check_sender_balance(TState &s, evmc_message const &m) noexcept
     {
         auto const value = intx::be::load<uint256_t>(m.value);
-        auto const balance = intx::be::load<uint256_t>(
-            s.get_balance(construct_address(m.sender)));
+        auto const balance =
+            intx::be::load<uint256_t>(s.get_balance(Address(m.sender)));
         if (balance < value) {
             return unexpected_t(
                 {.status_code = EVMC_INSUFFICIENT_BALANCE, .gas_left = m.gas});
@@ -79,8 +79,8 @@ struct Evm
     static void transfer_balances(
         TState &s, evmc_message const &m, address_t const &to) noexcept
     {
-        auto const sender_addr = construct_address(m.sender);
-        auto const to_addr = construct_address(to);
+        auto const sender_addr = Address(m.sender);
+        auto const to_addr = Address(to);
         auto const value = intx::be::load<uint256_t>(m.value);
         auto const from_balance =
             intx::be::load<uint256_t>(s.get_balance(sender_addr));
@@ -93,7 +93,7 @@ struct Evm
     [[nodiscard]] static auto increment_sender_nonce(TState &s) noexcept
     {
         return [&](evmc_message const &m) {
-            auto const sender_addr = construct_address(m.sender);
+            auto const sender_addr = Address(m.sender);
             auto const n = s.get_nonce(sender_addr) + 1;
             if (s.get_nonce(sender_addr) > n) {
                 // Match geth behavior - don't overflow nonce
@@ -113,7 +113,7 @@ struct Evm
             new_address = [&] {
                 if (m.kind == EVMC_CREATE) {
                     return create_contract_address(
-                        m.sender, s.get_nonce(construct_address(m.sender)));
+                        m.sender, s.get_nonce(Address(m.sender)));
                 }
                 else if (m.kind == EVMC_CREATE2) {
                     auto const code_hash =
@@ -126,7 +126,7 @@ struct Evm
             }();
 
             // Prevent overwriting contracts - EIP-684
-            auto const new_addr = construct_address(new_address);
+            auto const new_addr = Address(new_address);
             if (s.account_exists(new_addr)) {
                 return result_t(
                     unexpected_t({.status_code = EVMC_INVALID_INSTRUCTION}));
@@ -151,7 +151,7 @@ struct Evm
             return unexpected_t{result.error()};
         }
 
-        s.set_nonce(construct_address(new_address), TTraits::starting_nonce());
+        s.set_nonce(Address(new_address), TTraits::starting_nonce());
         transfer_balances(s, m, new_address);
         return {new_address};
     }

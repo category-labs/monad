@@ -84,7 +84,7 @@ inline void read_genesis_state(nlohmann::json const &genesis_json, TStateDB &db)
         account.balance = intx::from_string<uint256_t>(balance_byte_string);
         account.nonce = 0u;
 
-        db.create(construct_address(address), account);
+        db.create(Address(address), account);
     }
     db.commit();
 }

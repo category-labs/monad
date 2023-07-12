@@ -30,9 +30,9 @@ static constexpr auto from = 0x5353535353535353535353535353535353535353_address;
 static constexpr auto to = 0xbebebebebebebebebebebebebebebebebebebebe_address;
 static constexpr auto a = 0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address;
 
-auto const from_addr = construct_address(from);
-auto const to_addr = construct_address(to);
-auto const a_addr = construct_address(a);
+auto const from_addr = Address(from);
+auto const to_addr = Address(to);
+auto const a_addr = Address(a);
 
 static constexpr auto location =
     0x0000000000000000000000000000000000000000000000000000000000000000_bytes32;

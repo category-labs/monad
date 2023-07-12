@@ -17,25 +17,20 @@ static_assert(alignof(address_t) == 1);
 
 struct Address
 {
-    using hash_t = bytes32_t;
-    hash_t hash;
+    bytes32_t hash;
     address_t address;
+
+    constexpr bool operator==(Address const &) const = default;
+
+    explicit inline Address(const address_t &a)
+        : hash(std::bit_cast<bytes32_t>(
+              ethash::keccak256(a.bytes, sizeof(address_t::bytes))))
+        , address(a)
+    {
+    }
 };
 
 static_assert(sizeof(Address) == 52);
 static_assert(alignof(Address) == 1);
-
-inline constexpr bool operator==(const Address &a, const Address &b) noexcept
-{
-    return a.hash == b.hash && a.address == b.address;
-}
-
-inline Address construct_address(const address_t &a)
-{
-    return Address{
-        .hash = std::bit_cast<Address::hash_t>(
-            ethash::keccak256(a.bytes, sizeof(a.bytes))),
-        .address = a};
-}
 
 MONAD_NAMESPACE_END

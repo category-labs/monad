@@ -151,6 +151,7 @@ struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
     // EVMC Host Interface
     evmc_access_status access_account(address_t const &a)
     {
+        MONAD_DEBUG_ASSERT(account_exists(a));
         if (changed_.contains(a)) {
             return EVMC_ACCESS_WARM;
         }

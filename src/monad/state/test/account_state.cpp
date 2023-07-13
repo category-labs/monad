@@ -212,6 +212,25 @@ TYPED_TEST(AccountStateTest, create_account_working_copy)
     EXPECT_EQ(bs.get_nonce(a), 2);
 }
 
+TYPED_TEST(AccountStateTest, set_code_hash_working_copy)
+{
+    TypeParam db{};
+    AccountState s{db};
+    db.create(b, {});
+    db.commit();
+
+    auto bs = typename decltype(s)::WorkingCopy{s};
+
+    bs.access_account(b);
+    bs.create_contract(a);
+    bs.set_balance(a, 38'000);
+    bs.set_nonce(a, 2);
+    bs.set_code_hash(a, hash1);
+
+    EXPECT_EQ(bs.get_code_hash(a), hash1);
+    EXPECT_EQ(bs.get_code_hash(b), NULL_HASH);
+}
+
 TYPED_TEST(AccountStateTest, selfdestruct_working_copy)
 {
     TypeParam db{};

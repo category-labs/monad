@@ -7,6 +7,9 @@
 
 #include <monad/state/config.hpp>
 
+#include <ethash/keccak.hpp>
+
+#include <bit>
 #include <vector>
 
 MONAD_STATE_NAMESPACE_BEGIN
@@ -119,7 +122,11 @@ struct State
         // Account contract accesses
         void set_code(address_t const &a, byte_string const &c)
         {
+            auto const code_hash = std::bit_cast<const monad::bytes32_t>(
+                ethash::keccak256(c.data(), c.size()));
+
             code_.set_code(a, c);
+            accounts_.set_code_hash(a, code_hash);
         }
 
         // EVMC Host Interface
@@ -152,8 +159,7 @@ struct State
         [[nodiscard]] bytes32_t get_block_hash(int64_t number) const noexcept
         {
             MONAD_DEBUG_ASSERT(number > 0);
-            return block_cache_.get_block_hash(
-                static_cast<uint64_t>(number));
+            return block_cache_.get_block_hash(static_cast<uint64_t>(number));
         }
 
         // Logs

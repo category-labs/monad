@@ -189,6 +189,12 @@ struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
         return changed_.at(address).updated.value_or(Account{}).code_hash;
     }
 
+    void set_code_hash(address_t const &address, bytes32_t const &b) noexcept
+    {
+        MONAD_DEBUG_ASSERT(changed_.at(address).updated.has_value());
+        changed_.at(address).updated.value().code_hash = b;
+    }
+
     [[nodiscard]] bool
     selfdestruct(address_t const &a, address_t const &beneficiary) noexcept
     {

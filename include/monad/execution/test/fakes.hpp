@@ -45,7 +45,7 @@ namespace fake
 
             unsigned int txn_id() const noexcept { return _txn_id; }
 
-            void create_contract(address_t const &) noexcept {}
+            void create_account(address_t const &) noexcept {}
 
             // EVMC Host Interface
             [[nodiscard]] bool account_exists(address_t const &a)

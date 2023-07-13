@@ -118,7 +118,7 @@ TYPED_TEST(StateTest, can_merge_fresh)
 
     auto s = t.get_working_copy(0);
 
-    s.create_contract(a);
+    s.create_account(a);
     s.set_nonce(a, 1);
     s.set_balance(a, 38'000);
     s.set_code(a, c1);

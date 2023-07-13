@@ -37,9 +37,9 @@ struct State
         }
 
         unsigned int txn_id() const noexcept { return txn_id_; }
-        void create_contract(address_t const &a) noexcept
+        void create_account(address_t const &a) noexcept
         {
-            accounts_.create_contract(a);
+            accounts_.create_account(a);
         }
 
         // EVMC Host Interface

@@ -126,7 +126,7 @@ struct Evm
                     unexpected_t({.status_code = EVMC_INVALID_INSTRUCTION}));
             }
 
-            s.create_contract(new_address);
+            s.create_account(new_address);
 
             return result_t({m});
         };

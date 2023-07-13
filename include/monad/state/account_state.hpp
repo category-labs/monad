@@ -141,7 +141,7 @@ struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
         return AccountState::account_exists(a);
     }
 
-    void create_contract(address_t const &a)
+    void create_account(address_t const &a)
     {
         auto const [_, inserted] =
             changed_.emplace(a, diff_t{get_committed_storage(a), Account{}});

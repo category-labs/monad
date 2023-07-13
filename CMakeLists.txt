@@ -262,12 +262,14 @@ if(ASAN)
         monad PUBLIC "-fsanitize=address" "-fno-omit-frame-pointer"
     )
     target_link_options(monad PUBLIC "-fsanitize=address")
-elseif(UBSAN)
+endif()
+if(UBSAN)
     message("Undefined Behavior Sanitizer: On")
     target_compile_options(
-        monad PUBLIC "-fsanitize=undefined" "-fno-omit-frame-pointer"
+        monad PUBLIC "-fsanitize=undefined" "-fno-omit-frame-pointer" "-fPIC"
     )
     target_link_options(monad PUBLIC "-fsanitize=undefined")
-else()
+endif()
+if(NOT UBSAN AND NOT ASAN)
     target_link_options(monad PRIVATE LINKER:-z,defs)
 endif()

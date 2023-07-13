@@ -213,7 +213,8 @@ struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
     void destruct_touched_dead() noexcept
     {
         for (auto &i : changed_) {
-            if (i.second.updated.value() == Account{}) {
+            if (i.second.updated.has_value() &&
+                i.second.updated.value() == Account{}) {
                 i.second.updated.reset();
             }
         }

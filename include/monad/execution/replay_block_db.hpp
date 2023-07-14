@@ -65,7 +65,7 @@ public:
     void verify_root_hash(
         BlockHeader const &block_header, bytes32_t transactions_root,
         bytes32_t receipts_root, bytes32_t const state_root,
-        block_num_t current_block_number) const
+        block_num_t const current_block_number) const
     {
         auto *block_logger = log::logger_t::get_logger("block_logger");
 
@@ -149,6 +149,57 @@ public:
                                     TPrecompiles>,
                                 TInterpreter>>,
                         TExecution>>(state, block);
+
+                // TODO: Temp Code (Need Shea's real beneficiary code, this only
+                // works for frontier blocks with no ommers)
+                if (current_block_number != 0u) {
+                    auto working_copy = state.get_working_copy(0u);
+                    working_copy.access_account(block.header.beneficiary);
+
+                    auto miner_balance = intx::be::load<uint256_t>(
+                        working_copy.get_balance(block.header.beneficiary));
+                    auto *block_logger =
+                        log::logger_t::get_logger("block_logger");
+
+                    uint256_t block_reward = 5'000'000'000'000'000'000;
+                    uint256_t additional_ommer_reward = block_reward >> 5;
+
+                    uint256_t miner_reward =
+                        block_reward +
+                        additional_ommer_reward * block.ommers.size();
+                    working_copy.set_balance(
+                        block.header.beneficiary, miner_balance + miner_reward);
+                    MONAD_LOG_INFO(
+                        block_logger,
+                        "Miner Address: {}, Miner Balance: {}",
+                        block.header.beneficiary,
+                        miner_balance);
+
+                    for (auto &i : block.ommers) {
+                        working_copy.access_account(i.beneficiary);
+                        auto ommer_balance = intx::be::load<uint256_t>(
+                            working_copy.get_balance(i.beneficiary));
+
+                        auto const subtrahend =
+                            ((block.header.number - i.number) * block_reward) /
+                            8;
+                        ommer_balance += (block_reward - subtrahend);
+                        MONAD_LOG_INFO(
+                            block_logger,
+                            "Ommer Address: {}, Ommer Balance: {}",
+                            i.beneficiary,
+                            ommer_balance);
+                        working_copy.set_balance(i.beneficiary, ommer_balance);
+                    }
+
+                    // TODO: I don't expect this to ever fail, but worth
+                    // checking to make sure
+                    if (state.can_merge_changes(working_copy) ==
+                        TState::MergeStatus::WILL_SUCCEED) {
+                        state.merge_changes(working_copy);
+                    }
+                }
+                state.commit();
 
                 // TODO: How exactly do we calculate transaction root and
                 // receipt root

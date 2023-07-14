@@ -63,7 +63,7 @@ namespace fake
             void create_account(address_t const &) noexcept {}
 
             // EVMC Host Interface
-            [[nodiscard]] bool account_exists(address_t const &a)
+            [[nodiscard]] bool account_exists(address_t const &a) const
             {
                 return _accounts.contains(a);
             }
@@ -78,6 +78,9 @@ namespace fake
             [[nodiscard]] bytes32_t
             get_balance(address_t const &address) const noexcept
             {
+                if (!account_exists(address)) {
+                    return {};
+                }
                 return intx::be::store<bytes32_t>(
                     _accounts.at(address).balance);
             }

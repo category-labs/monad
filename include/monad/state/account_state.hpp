@@ -153,7 +153,9 @@ struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
     // EVMC Host Interface
     evmc_access_status access_account(address_t const &a)
     {
-        MONAD_DEBUG_ASSERT(account_exists(a));
+        if (!account_exists(a)) {
+            return EVMC_ACCESS_COLD;
+        }
         if (changed_.contains(a)) {
             return EVMC_ACCESS_WARM;
         }
@@ -165,12 +167,20 @@ struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
     // EVMC Host Interface
     [[nodiscard]] bytes32_t get_balance(address_t const &a) const noexcept
     {
+        // TODO: Temporary Hack
+        if (!account_exists(a)) {
+            return intx::be::store<bytes32_t>(Account{}.balance);
+        }
         return intx::be::store<bytes32_t>(
             changed_.at(a).updated.value_or(Account{}).balance);
     }
 
     void set_balance(address_t const &address, uint256_t new_balance) noexcept
     {
+        // TODO: Temporary Hack
+        if (!account_exists(address)) {
+            create_account(address);
+        }
         changed_.at(address).updated.value().balance = new_balance;
     }
 

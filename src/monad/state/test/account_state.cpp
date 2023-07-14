@@ -225,8 +225,8 @@ TYPED_TEST(AccountStateTest, set_code_hash_working_copy)
 {
     TypeParam db{};
     AccountState s{db};
-    db.create(b, {});
-    db.commit();
+    db.commit(StateChanges{
+        .account_changes = {{b, Account{}}}, .storage_changes = {}});
 
     auto bs = typename decltype(s)::WorkingCopy{s};
 

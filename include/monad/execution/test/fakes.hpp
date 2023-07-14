@@ -23,6 +23,21 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 
 namespace fake
 {
+    struct Db
+    {
+        void create(address_t const &, Account const &) const noexcept
+        {
+            return;
+        }
+        void commit() const noexcept { return; }
+        bytes32_t root_hash() const noexcept { return {}; }
+    };
+
+    struct AccountState
+    {
+        Db db_;
+    };
+
     struct State
     {
         struct WorkingCopy
@@ -166,6 +181,9 @@ namespace fake
             TRY_LATER,
             COLLISION_DETECTED,
         };
+
+        // Had to name this variable using post_ because we access it directly
+        AccountState accounts_{};
 
         unsigned int _current_txn{};
 

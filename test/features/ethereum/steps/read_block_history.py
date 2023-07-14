@@ -57,34 +57,42 @@ def when_start(context, program):
         args += ["--txn", context.txn_logger_level]
     if hasattr(context, "state_logger_level"):
         args += ["--state", context.state_logger_level]
+    if hasattr(context, "trie_db_logger_level"):
+        args += ["--trie_db", context.trie_db_logger_level]
     result = subprocess.run(args, capture_output=True, text=True)
     context.output = result.stdout
+    context.returncode = result.returncode
 
 
 @then('the output should contain "{number}" "{value}"')
 def then_output_contain_with_number(context, number, value):
+    assert context.returncode == 0
     assert context.output.count(value) == int(number)
 
 
 @then('the output should contain "{value}"')
 def then_output_contain(context, value):
-    print(context.output)
+    assert context.returncode == 0
     assert value in context.output
 
 
 @then('the output should not contain "{value}"')
 def then_output_no_contain(context, value):
+    assert context.returncode == 0
     assert value not in context.output
 
 
 @then("the output should be empty")
 def then_output_empty(context):
+    assert context.returncode == 0
     assert context.output == ""
 
 
 @then('the "{root_type}" should match')
 def then_root_match(context, root_type):
     lines = context.output.splitlines()
+
+    assert context.returncode == 0
 
     for line in lines:
         if root_type in line:

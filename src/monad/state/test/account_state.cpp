@@ -225,7 +225,7 @@ TYPED_TEST(AccountStateTest, set_code_hash_working_copy)
     auto bs = typename decltype(s)::WorkingCopy{s};
 
     bs.access_account(b);
-    bs.create_contract(a);
+    bs.create_account(a);
     bs.set_balance(a, 38'000);
     bs.set_nonce(a, 2);
     bs.set_code_hash(a, hash1);

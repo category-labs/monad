@@ -302,22 +302,23 @@ namespace fake
             static inline bool _success_store_contract{};
             static inline uint64_t _gas_creation_cost{};
             static inline uint64_t _create_address{};
-            static inline constexpr uint64_t _echo_gas_cost{10};
-            static inline auto intrinsic_gas(Transaction const &)
+            static constexpr uint64_t _echo_gas_cost{10};
+            static constexpr void award(TState &, Block const &) {}
+            static auto intrinsic_gas(Transaction const &)
             {
                 return _intrinsic_gas;
             }
-            static inline auto starting_nonce() { return 1u; }
-            static inline auto max_refund_quotient()
+            static auto starting_nonce() { return 1u; }
+            static auto max_refund_quotient()
             {
                 return _max_refund_quotient;
             }
             static consteval uint64_t echo_gas_cost() { return _echo_gas_cost; }
-            static inline auto get_selfdestruct_refund(TState const &)
+            static auto get_selfdestruct_refund(TState const &)
             {
                 return _sd_refund;
             }
-            static inline void destruct_touched_dead(TState &s)
+            static void destruct_touched_dead(TState &s)
             {
                 s.destruct_touched_dead();
             }

@@ -115,7 +115,7 @@ template <class TExecution>
 class fakeEmptyBP
 {
 public:
-    template <class TState, class TFiberData>
+    template <class TState, class TTraits, class TFiberData>
     std::vector<Receipt> execute(TState &, Block &)
     {
         return {};

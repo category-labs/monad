@@ -85,6 +85,7 @@ public:
                 TAllTxnBlockProcessor<TExecution> block_processor{};
                 auto const receipts = block_processor.template execute<
                     TState,
+                    TTraits,
                     TFiberData<
                         TState,
                         TTxnProcessor<typename TState::WorkingCopy, TTraits>,

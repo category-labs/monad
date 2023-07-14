@@ -12,6 +12,7 @@ using namespace monad;
 using namespace monad::execution;
 
 using state_t = fake::State;
+using fork_t = fake::traits::alpha<state_t>;
 
 template <class TState>
 struct EmptyFiberData
@@ -48,7 +49,7 @@ TEST(AllTxnBlockProcessor, execute_empty)
     };
 
     block_processor_t p{};
-    auto const r = p.execute<state_t, fiber_data_t>(s, b);
+    auto const r = p.execute<state_t, fork_t, fiber_data_t>(s, b);
     EXPECT_EQ(r.size(), 0);
 }
 
@@ -64,7 +65,7 @@ TEST(AllTxnBlockProcessor, execute_some)
     };
 
     block_processor_t p{};
-    auto const r = p.execute<state_t, fiber_data_t>(s, b);
+    auto const r = p.execute<state_t, fork_t, fiber_data_t>(s, b);
     EXPECT_EQ(r.size(), 3);
     EXPECT_EQ(r[0].status, 0u);
     EXPECT_EQ(r[1].status, 0u);
@@ -83,7 +84,7 @@ TEST(AllTxnBlockProcessor, execute_some_failed)
     };
 
     block_processor_t p{};
-    auto const r = p.execute<state_t, fiber_data_t>(s, b);
+    auto const r = p.execute<state_t, fork_t, fiber_data_t>(s, b);
     EXPECT_EQ(r.size(), 5);
     EXPECT_EQ(r[0].status, 1u);
     EXPECT_EQ(r[1].status, 1u);

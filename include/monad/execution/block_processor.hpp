@@ -16,7 +16,7 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 template <class TExecution>
 struct AllTxnBlockProcessor
 {
-    template <class TState, class TFiberData>
+    template <class TState, class TTraits, class TFiberData>
     [[nodiscard]] std::vector<Receipt> execute(TState &s, Block &b)
     {
         auto *block_logger = log::logger_t::get_logger("block_logger");
@@ -50,6 +50,8 @@ struct AllTxnBlockProcessor
         for (auto &d : data) {
             r.push_back(d.get_receipt());
         }
+
+        TTraits::award(s, b);
 
         auto const finished_time = std::chrono::steady_clock::now();
         auto const elapsed_ms =

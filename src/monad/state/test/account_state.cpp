@@ -70,6 +70,28 @@ TYPED_TEST(AccountStateTest, get_balance)
     EXPECT_EQ(s.get_balance(b), bytes32_t{10'000});
 }
 
+TYPED_TEST(AccountStateTest, apply_reward)
+{
+    TypeParam db{};
+    AccountState s{db};
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}},
+        .storage_changes = {}});
+
+    s.merged_.emplace(b, Account{});
+    s.merged_.emplace(c, diff_t{Account{}, Account{.balance = 10}});
+
+    s.apply_reward(a, 1);
+    s.apply_reward(b, 2);
+    s.apply_reward(c, 3);
+    s.apply_reward(d, 4);
+
+    EXPECT_EQ(s.get_balance(a), bytes32_t{1});
+    EXPECT_EQ(s.get_balance(b), bytes32_t{2});
+    EXPECT_EQ(s.get_balance(c), bytes32_t{13});
+    EXPECT_EQ(s.get_balance(d), bytes32_t{4});
+}
+
 TYPED_TEST(AccountStateTest, get_code_hash)
 {
     TypeParam db{};

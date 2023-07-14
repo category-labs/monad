@@ -189,6 +189,11 @@ struct State
     {
     }
 
+    void apply_reward(address_t const &a, uint256_t const &reward)
+    {
+        accounts_.apply_reward(a, reward);
+    }
+
     unsigned int current_txn() const { return current_txn_; }
 
     WorkingCopy get_working_copy(unsigned int id) const

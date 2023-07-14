@@ -33,6 +33,27 @@ struct AccountState
     {
     }
 
+    /**
+     * Apply a reward to an account, and create that account if new
+     *
+     * NOTE: There are different rules for mining rewards - accounts can spring
+     * into existance without first being created. This specialized function
+     * works on the parent state object and inserts the rewards directly into
+     * the merge set.
+     */
+    void apply_reward(address_t const &a, uint256_t const &r)
+    {
+        auto account_before = get_committed_storage(a);
+
+        if (!account_before.has_value()) {
+            merged_.emplace(a, diff_t{account_before, Account{}});
+        } else if (!merged_.contains(a)) {
+            merged_.emplace(a, diff_t{account_before, account_before});
+        }
+
+        merged_.at(a).updated.value().balance += r;
+    }
+
     [[nodiscard]] std::optional<Account>
     get_committed_storage(address_t const &a) const
     {

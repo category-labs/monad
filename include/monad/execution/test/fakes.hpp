@@ -13,6 +13,9 @@
 #include <monad/execution/config.hpp>
 #include <monad/execution/static_precompiles.hpp>
 
+#include <monad/state/concepts.hpp>
+#include <monad/state/state_changes.hpp>
+
 #include <evmc/evmc.hpp>
 
 #include <tl/expected.hpp>
@@ -23,6 +26,21 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 
 namespace fake
 {
+    struct Db
+    {
+        void create(address_t const &, Account const &) const noexcept
+        {
+            return;
+        }
+        void commit(state::changeset auto const &) const noexcept { return; }
+        bytes32_t root_hash() const noexcept { return {}; }
+    };
+
+    struct AccountState
+    {
+        Db db_;
+    };
+
     struct State
     {
         struct WorkingCopy
@@ -174,6 +192,9 @@ namespace fake
             _reward.insert({a, r});
         }
 
+        // Had to name this variable using post_ because we access it directly
+        AccountState accounts_{};
+
         unsigned int _current_txn{};
 
         MergeStatus _merge_status{MergeStatus::TRY_LATER};
@@ -309,10 +330,7 @@ namespace fake
                 return _intrinsic_gas;
             }
             static auto starting_nonce() { return 1u; }
-            static auto max_refund_quotient()
-            {
-                return _max_refund_quotient;
-            }
+            static auto max_refund_quotient() { return _max_refund_quotient; }
             static consteval uint64_t echo_gas_cost() { return _echo_gas_cost; }
             static auto get_selfdestruct_refund(TState const &)
             {

@@ -7,12 +7,18 @@
 
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
+#include <monad/execution/ethereum/genesis.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/execution_model.hpp>
 #include <monad/execution/transaction_processor_data.hpp>
 
 #include <monad/logging/monad_log.hpp>
 
+#include <nlohmann/json.hpp>
+
+#include <test_resource_data.h>
+
+#include <fstream>
 #include <optional>
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
@@ -112,6 +118,19 @@ public:
             case TBlockDb::Status::DECODE_ERROR:
                 return Result{Status::DECODE_BLOCK_ERROR, current_block_number};
             case TBlockDb::Status::SUCCESS: {
+
+                // TODO: Do we need to support functionality to specify genesis
+                // file location?
+                if (current_block_number == 0u &&
+                    TTraits::last_block_number == 1'149'999u) { // genesis block
+                    auto const genesis_file_path =
+                        test_resource::ethereum_genesis_dir / "mainnet.json";
+
+                    [[maybe_unused]] auto const block_header =
+                        ethereum::read_genesis(
+                            genesis_file_path, state.accounts_.db_);
+                }
+
                 TAllTxnBlockProcessor<TExecution> block_processor{};
                 auto const receipts = block_processor.template execute<
                     TState,
@@ -131,6 +150,8 @@ public:
                                     TPrecompiles>,
                                 TInterpreter>>,
                         TExecution>>(state, block);
+
+                state.commit();
 
                 // TODO: How exactly do we calculate transaction root and
                 // receipt root?

@@ -51,7 +51,9 @@ struct AllTxnBlockProcessor
             r.push_back(d.get_receipt());
         }
 
-        TTraits::award(s, b);
+        if (b.header.number != 0u) {
+            TTraits::award(s, b);
+        }
 
         auto const finished_time = std::chrono::steady_clock::now();
         auto const elapsed_ms =

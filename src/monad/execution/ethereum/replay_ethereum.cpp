@@ -73,11 +73,14 @@ int main(int argc, char *argv[])
         monad::log::logger_t::create_logger("txn_logger");
     [[maybe_unused]] auto *state_logger =
         monad::log::logger_t::create_logger("state_logger");
+    [[maybe_unused]] auto *trie_db_logger =
+        monad::log::logger_t::create_logger("trie_db_logger");
 
     auto main_log_level = monad::log::level_t::Info;
     auto block_log_level = monad::log::level_t::Info;
     auto txn_log_level = monad::log::level_t::Info;
     auto state_log_level = monad::log::level_t::Info;
+    auto trie_db_log_level = monad::log::level_t::Info;
 
     cli.add_option("-b, --block_db", block_db_path, "block_db directory")
         ->required();
@@ -91,6 +94,8 @@ int main(int argc, char *argv[])
     log_levels->add_option("--block", block_log_level, "Log level for block");
     log_levels->add_option("--txn", txn_log_level, "Log level for transaction");
     log_levels->add_option("--state", state_log_level, "Log level for state");
+    log_levels->add_option(
+        "--trie_db", trie_db_log_level, "Log level for trie_db");
 
     cli.parse(argc, argv);
 
@@ -114,6 +119,7 @@ int main(int argc, char *argv[])
     monad::log::logger_t::set_log_level("block_logger", block_log_level);
     monad::log::logger_t::set_log_level("txn_logger", txn_log_level);
     monad::log::logger_t::set_log_level("state_logger", state_log_level);
+    monad::log::logger_t::set_log_level("trie_db_logger", trie_db_log_level);
 
     MONAD_LOG_INFO(
         main_logger,
@@ -162,7 +168,8 @@ int main(int argc, char *argv[])
 
     MONAD_LOG_INFO(
         main_logger,
-        "Finish running, status = {},  block number = {}, number of blocks run "
+        "Finish running, status = {}, finish(stopped) block number = {}, "
+        "number of blocks run "
         "= {}",
         static_cast<int>(result.status),
         result.block_number,

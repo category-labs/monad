@@ -4,6 +4,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/test/unit/common/include/monad/test/environment.hpp
     ${PROJECT_SOURCE_DIR}/test/unit/common/include/monad/test/trie_fixture.hpp
     ${PROJECT_SOURCE_DIR}/test/unit/common/include/monad/test/one_hundred_updates.hpp
+    ${PROJECT_SOURCE_DIR}/test/unit/common/include/monad/test/make_db.hpp
 )
 
 target_include_directories(

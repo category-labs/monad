@@ -66,7 +66,6 @@ struct RocksTrieDB : TrieDBInterface<RocksTrieDB>
         }
     };
 
-    std::filesystem::path const name;
     rocksdb::Options options;
     trie::PathComparator accounts_comparator;
     trie::PrefixPathComparator storage_comparator;
@@ -77,10 +76,8 @@ struct RocksTrieDB : TrieDBInterface<RocksTrieDB>
     Trie accounts_trie;
     Trie storage_trie;
 
-    RocksTrieDB(
-        std::filesystem::path name = std::filesystem::absolute("rocks_trie_db"))
-        : name(name)
-        , options([]() {
+    explicit RocksTrieDB(std::filesystem::path name)
+        : options([]() {
             rocksdb::Options ret;
             ret.IncreaseParallelism(2);
             ret.OptimizeLevelStyleCompaction();
@@ -105,21 +102,10 @@ struct RocksTrieDB : TrieDBInterface<RocksTrieDB>
         }())
         , cfs()
         , db([&]() {
-            if (std::filesystem::exists(name)) {
-                MONAD_ASSERT(std::filesystem::is_directory(name));
-            }
-            else {
-                std::filesystem::create_directory(name);
-            }
-
             rocksdb::DB *db = nullptr;
 
-            rocksdb::Status const s = rocksdb::DB::Open(
-                options,
-                name / fmt::format("{}", std::chrono::system_clock::now()),
-                cfds,
-                &cfs,
-                &db);
+            rocksdb::Status const s =
+                rocksdb::DB::Open(options, name, cfds, &cfs, &db);
 
             MONAD_ROCKS_ASSERT(s);
             MONAD_ASSERT(cfds.size() == cfs.size());

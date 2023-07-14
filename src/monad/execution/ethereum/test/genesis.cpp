@@ -5,6 +5,8 @@
 #include <monad/db/rocks_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
 
+#include <monad/test/make_db.hpp>
+
 #include <monad/execution/ethereum/genesis.hpp>
 
 #include <gtest/gtest.h>
@@ -71,7 +73,7 @@ TYPED_TEST(GenesisStateTest, read_ethereum_mainnet_genesis_state)
 
     auto const genesis_file_path =
         test_resource::ethereum_genesis_dir / "mainnet.json";
-    TypeParam db;
+    auto db = test::make_db<TypeParam>();
 
     std::ifstream ifile(genesis_file_path.c_str());
     auto const genesis_json = nlohmann::json::parse(ifile);
@@ -94,7 +96,7 @@ TYPED_TEST(GenesisStateRootTest, ethereum_mainnet_genesis_state_root)
 {
     auto const genesis_file_path =
         test_resource::ethereum_genesis_dir / "mainnet.json";
-    TypeParam db;
+    auto db = test::make_db<TypeParam>();
 
     auto const block_header = read_genesis(genesis_file_path, db);
 

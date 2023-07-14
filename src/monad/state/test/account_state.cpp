@@ -9,6 +9,8 @@
 #include <monad/state/account_state.hpp>
 #include <monad/state/state_changes.hpp>
 
+#include <monad/test/make_db.hpp>
+
 #include <gtest/gtest.h>
 
 #include <unordered_map>
@@ -40,7 +42,7 @@ using diff_t = AccountState<std::unordered_map<address_t, Account>>::diff_t;
 // AccountState
 TYPED_TEST(AccountStateTest, account_exists)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     AccountState s{db};
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}, {d, Account{}}},
@@ -58,7 +60,7 @@ TYPED_TEST(AccountStateTest, account_exists)
 
 TYPED_TEST(AccountStateTest, get_balance)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{.balance = 20'000}}},
         .storage_changes = {}});
@@ -72,7 +74,7 @@ TYPED_TEST(AccountStateTest, get_balance)
 
 TYPED_TEST(AccountStateTest, apply_reward)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     AccountState s{db};
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}},
@@ -94,7 +96,7 @@ TYPED_TEST(AccountStateTest, apply_reward)
 
 TYPED_TEST(AccountStateTest, get_code_hash)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{.code_hash = hash1}}},
         .storage_changes = {}});
@@ -108,7 +110,7 @@ TYPED_TEST(AccountStateTest, get_code_hash)
 
 TYPED_TEST(AccountStateTest, working_copy)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{.balance = 10'000}}},
         .storage_changes = {}});
@@ -131,7 +133,7 @@ TYPED_TEST(AccountStateTest, working_copy)
 // AccountStateWorkingCopy
 TYPED_TEST(AccountStateTest, account_exists_working_copy)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     AccountState s{db};
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}, {d, Account{}}},
@@ -156,7 +158,7 @@ TYPED_TEST(AccountStateTest, account_exists_working_copy)
 
 TYPED_TEST(AccountStateTest, access_account_working_copy)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     AccountState s{db};
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}, {b, Account{}}},
@@ -172,7 +174,7 @@ TYPED_TEST(AccountStateTest, access_account_working_copy)
 
 TYPED_TEST(AccountStateTest, get_balance_working_copy)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{.balance = 20'000}}},
         .storage_changes = {}});
@@ -192,7 +194,7 @@ TYPED_TEST(AccountStateTest, get_balance_working_copy)
 
 TYPED_TEST(AccountStateTest, get_nonce_working_copy)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{.nonce = 2}}}, .storage_changes = {}});
 
@@ -210,7 +212,7 @@ TYPED_TEST(AccountStateTest, get_nonce_working_copy)
 
 TYPED_TEST(AccountStateTest, get_code_hash_working_copy)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{.code_hash = hash1}}},
         .storage_changes = {}});
@@ -230,7 +232,7 @@ TYPED_TEST(AccountStateTest, get_code_hash_working_copy)
 
 TYPED_TEST(AccountStateTest, create_account_working_copy)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     AccountState s{db};
 
     auto bs = typename decltype(s)::WorkingCopy{s};
@@ -245,7 +247,7 @@ TYPED_TEST(AccountStateTest, create_account_working_copy)
 
 TYPED_TEST(AccountStateTest, set_code_hash_working_copy)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     AccountState s{db};
     db.commit(StateChanges{
         .account_changes = {{b, Account{}}}, .storage_changes = {}});
@@ -264,7 +266,7 @@ TYPED_TEST(AccountStateTest, set_code_hash_working_copy)
 
 TYPED_TEST(AccountStateTest, selfdestruct_working_copy)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes =
             {{a, Account{.balance = 18'000}}, {c, Account{.balance = 38'000}}},
@@ -299,7 +301,7 @@ TYPED_TEST(AccountStateTest, selfdestruct_working_copy)
 
 TYPED_TEST(AccountStateTest, destruct_touched_dead_working_copy)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{.balance = 10'000}}, {b, Account{}}},
         .storage_changes = {}});
@@ -327,7 +329,7 @@ TYPED_TEST(AccountStateTest, destruct_touched_dead_working_copy)
 
 TYPED_TEST(AccountStateTest, revert_touched_working_copy)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{.balance = 10'000, .nonce = 2}}},
         .storage_changes = {}});
@@ -349,7 +351,7 @@ TYPED_TEST(AccountStateTest, revert_touched_working_copy)
 
 TYPED_TEST(AccountStateTest, can_merge_fresh)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes =
             {{b, Account{.balance = 40'000u}},
@@ -375,7 +377,7 @@ TYPED_TEST(AccountStateTest, can_merge_fresh)
 
 TYPED_TEST(AccountStateTest, can_merge_onto_merged)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes =
             {{b, Account{.balance = 40'000u}},
@@ -406,7 +408,7 @@ TYPED_TEST(AccountStateTest, can_merge_onto_merged)
 
 TYPED_TEST(AccountStateTest, cant_merge_colliding_merge)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{.balance = 40'000u}}},
         .storage_changes = {}});
@@ -427,7 +429,7 @@ TYPED_TEST(AccountStateTest, cant_merge_colliding_merge)
 
 TYPED_TEST(AccountStateTest, cant_merge_deleted_merge)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{.balance = 40'000u}}},
         .storage_changes{}});
@@ -449,7 +451,7 @@ TYPED_TEST(AccountStateTest, cant_merge_deleted_merge)
 
 TYPED_TEST(AccountStateTest, cant_merge_conflicting_adds)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     AccountState t{db};
     diff_t r{std::nullopt, Account{.balance = 10'000, .nonce = 1}};
 
@@ -466,7 +468,7 @@ TYPED_TEST(AccountStateTest, cant_merge_conflicting_adds)
 
 TYPED_TEST(AccountStateTest, cant_merge_conflicting_modifies)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{.balance = 40'000u}}},
         .storage_changes{}});
@@ -487,7 +489,7 @@ TYPED_TEST(AccountStateTest, cant_merge_conflicting_modifies)
 
 TYPED_TEST(AccountStateTest, cant_merge_conflicting_deleted)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes =
             {{b, Account{.balance = 10'000u, .nonce = 1}},
@@ -511,7 +513,7 @@ TYPED_TEST(AccountStateTest, cant_merge_conflicting_deleted)
 
 TYPED_TEST(AccountStateTest, merge_multiple_changes)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes =
             {{b, Account{.balance = 40'000u}},
@@ -559,7 +561,7 @@ TYPED_TEST(AccountStateTest, merge_multiple_changes)
 
 TYPED_TEST(AccountStateTest, can_commit)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes =
             {{b, Account{.balance = 40'000u}},
@@ -578,7 +580,7 @@ TYPED_TEST(AccountStateTest, can_commit)
 
 TYPED_TEST(AccountStateTest, cant_commit_merged_new_different_than_stored)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{.balance = 40'000u}}},
         .storage_changes = {}});
@@ -590,7 +592,7 @@ TYPED_TEST(AccountStateTest, cant_commit_merged_new_different_than_stored)
 
 TYPED_TEST(AccountStateTest, cant_commit_merged_different_than_stored_balance)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{.balance = 40'000u}}},
         .storage_changes = {}});
@@ -603,7 +605,7 @@ TYPED_TEST(AccountStateTest, cant_commit_merged_different_than_stored_balance)
 
 TYPED_TEST(AccountStateTest, cant_commit_merged_different_than_stored_nonce)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{.balance = 40'000u}}},
         .storage_changes = {}});
@@ -619,7 +621,7 @@ TYPED_TEST(AccountStateTest, cant_commit_merged_different_than_stored_nonce)
 
 TYPED_TEST(AccountStateTest, cant_commit_merged_different_than_stored_code_hash)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{.code_hash = hash1}}},
         .storage_changes = {}});
@@ -631,7 +633,7 @@ TYPED_TEST(AccountStateTest, cant_commit_merged_different_than_stored_code_hash)
 
 TYPED_TEST(AccountStateTest, cant_commit_deleted_isnt_stored)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}}, .storage_changes = {}});
     AccountState t{db};
@@ -644,7 +646,7 @@ TYPED_TEST(AccountStateTest, cant_commit_deleted_isnt_stored)
 
 TYPED_TEST(AccountStateTest, can_commit_multiple)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes =
             {{b, Account{.balance = 40'000u}},

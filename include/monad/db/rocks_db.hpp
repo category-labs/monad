@@ -36,16 +36,14 @@ struct RocksDB
 {
     using DBInterface<RocksDB, monad::execution::BoostFiberExecution>::updates;
 
-    std::filesystem::path const name;
     rocksdb::Options options;
     std::vector<rocksdb::ColumnFamilyDescriptor> cfds;
     std::vector<rocksdb::ColumnFamilyHandle *> cfs;
     std::shared_ptr<rocksdb::DB> db;
     rocksdb::WriteBatch batch;
 
-    RocksDB(std::filesystem::path name = std::filesystem::absolute("db"))
-        : name(name)
-        , options([]() {
+    explicit RocksDB(std::filesystem::path name)
+        : options([]() {
             rocksdb::Options ret;
             ret.IncreaseParallelism(2);
             ret.OptimizeLevelStyleCompaction();
@@ -61,21 +59,10 @@ struct RocksDB
         }())
         , cfs()
         , db([&]() {
-            if (std::filesystem::exists(name)) {
-                MONAD_ASSERT(std::filesystem::is_directory(name));
-            }
-            else {
-                std::filesystem::create_directory(name);
-            }
-
             rocksdb::DB *db = nullptr;
 
-            rocksdb::Status const s = rocksdb::DB::Open(
-                options,
-                name / fmt::format("{}", std::chrono::system_clock::now()),
-                cfds,
-                &cfs,
-                &db);
+            rocksdb::Status const s =
+                rocksdb::DB::Open(options, name, cfds, &cfs, &db);
 
             MONAD_ROCKS_ASSERT(s);
             MONAD_ASSERT(cfds.size() == cfs.size());

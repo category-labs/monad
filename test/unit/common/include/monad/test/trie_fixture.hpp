@@ -1,5 +1,6 @@
 #pragma once
 
+#include <monad/test/make_db.hpp>
 #include <monad/test/one_hundred_updates.hpp>
 #include <monad/trie/comparator.hpp>
 #include <monad/trie/in_memory_cursor.hpp>
@@ -20,7 +21,6 @@ MONAD_TEST_NAMESPACE_BEGIN
 template <typename TComparator>
 struct rocks_fixture : public ::testing::Test
 {
-    std::filesystem::path const name_;
     rocksdb::Options options_;
     TComparator comparator_;
     std::vector<rocksdb::ColumnFamilyDescriptor> cfds_;
@@ -36,8 +36,7 @@ struct rocks_fixture : public ::testing::Test
     monad::trie::Trie<monad::trie::RocksCursor, monad::trie::RocksWriter> trie_;
 
     rocks_fixture()
-        : name_(std::filesystem::absolute("trie"))
-        , options_([]() {
+        : options_([]() {
             rocksdb::Options ret;
             ret.IncreaseParallelism(2);
             ret.OptimizeLevelStyleCompaction();
@@ -57,21 +56,14 @@ struct rocks_fixture : public ::testing::Test
         }())
         , cfs_()
         , db_([&]() {
-            if (std::filesystem::exists(name_)) {
-                MONAD_ASSERT(std::filesystem::is_directory(name_));
-            }
-            else {
-                std::filesystem::create_directory(name_);
-            }
-
             rocksdb::DB *db = nullptr;
 
+            auto const *info =
+                testing::UnitTest::GetInstance()->current_test_info();
+            MONAD_ASSERT(info);
+
             rocksdb::Status const s = rocksdb::DB::Open(
-                options_,
-                name_ / fmt::format("{}", std::chrono::system_clock::now()),
-                cfds_,
-                &cfs_,
-                &db);
+                options_, test::make_db_name(*info), cfds_, &cfs_, &db);
 
             if (!s.ok()) {
                 std::cerr << s.ToString() << std::endl;

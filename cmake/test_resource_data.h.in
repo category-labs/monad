@@ -11,6 +11,8 @@ namespace test_resource
 
     inline std::filesystem::__cxx11::path const test_data_dir =
         "@TEST_DATA_DIR@";
+    inline std::filesystem::__cxx11::path const build_dir =
+        "@CMAKE_BINARY_DIR@";
 
     // blocks
     inline auto const correct_block_data_dir =

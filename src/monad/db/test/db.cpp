@@ -6,6 +6,7 @@
 #include <monad/db/rocks_trie_db.hpp>
 #include <monad/logging/formatter.hpp>
 #include <monad/state/state_changes.hpp>
+#include <monad/test/make_db.hpp>
 
 using namespace monad;
 using namespace monad::db;
@@ -40,7 +41,7 @@ TYPED_TEST_SUITE(TrieDBTest, TrieDBTypes);
 
 TYPED_TEST(DBTest, storage_creation)
 {
-    TypeParam db;
+    auto db = test::make_db<TypeParam>();
     Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
     db.commit(state::StateChanges{
         .account_changes = {{a, acct}},
@@ -61,7 +62,7 @@ TYPED_TEST(DBTest, storage_creation)
 
 TEST(InMemoryTrieDB, account_creation)
 {
-    InMemoryTrieDB db;
+    auto db = test::make_db<InMemoryTrieDB>();
     Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
     db.commit(state::StateChanges{
         .account_changes = {{a, acct}}, .storage_changes = {}});
@@ -75,7 +76,7 @@ TEST(InMemoryTrieDB, account_creation)
 
 TYPED_TEST(DBTest, query)
 {
-    TypeParam db;
+    auto db = test::make_db<TypeParam>();
     Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
     db.commit(state::StateChanges{
         .account_changes = {{a, acct}},
@@ -89,7 +90,7 @@ TYPED_TEST(DBTest, query)
 
 TEST(InMemoryTrieDB, erase)
 {
-    InMemoryTrieDB db;
+    auto db = test::make_db<InMemoryTrieDB>();
     Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
     db.commit(state::StateChanges{
         .account_changes = {{a, acct}},
@@ -120,7 +121,7 @@ TEST(InMemoryTrieDB, erase)
 
 TYPED_TEST(TrieDBTest, ModifyStorageOfAccount)
 {
-    TypeParam db;
+    auto db = test::make_db<TypeParam>();
     Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
     db.commit(state::StateChanges{
         .account_changes = {{a, acct}},

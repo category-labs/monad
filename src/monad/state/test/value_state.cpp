@@ -5,11 +5,14 @@
 
 #include <monad/state/value_state.hpp>
 
+#include <monad/state/state_changes.hpp>
+
 #include <monad/db/in_memory_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/rocks_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
-#include <monad/state/state_changes.hpp>
+
+#include <monad/test/make_db.hpp>
 
 #include <gtest/gtest.h>
 
@@ -44,7 +47,7 @@ TYPED_TEST_SUITE(ValueStateTest, DBTypes);
 
 TYPED_TEST(ValueStateTest, access_storage)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     ValueState t{db};
 
     auto s = typename decltype(t)::WorkingCopy{t};
@@ -61,7 +64,7 @@ TYPED_TEST(ValueStateTest, access_storage)
 
 TYPED_TEST(ValueStateTest, copy)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}, {c, Account{}}},
         .storage_changes = {
@@ -87,7 +90,7 @@ TYPED_TEST(ValueStateTest, get_storage)
 {
     using diff_t = typename ValueState<TypeParam>::diff_t;
 
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}, {b, Account{}}},
         .storage_changes = {
@@ -107,7 +110,7 @@ TYPED_TEST(ValueStateTest, get_storage)
 
 TYPED_TEST(ValueStateTest, set_add_delete_touched)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     ValueState t{db};
 
     auto s = typename decltype(t)::WorkingCopy{t};
@@ -121,7 +124,7 @@ TYPED_TEST(ValueStateTest, set_add_delete_touched)
 
 TYPED_TEST(ValueStateTest, set_modify_delete_storage)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     ValueState t{db};
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}},
@@ -147,7 +150,7 @@ TYPED_TEST(ValueStateTest, set_modify_delete_merged)
 {
     using diff_t = typename ValueState<TypeParam>::diff_t;
 
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}},
         .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
@@ -174,7 +177,7 @@ TYPED_TEST(ValueStateTest, set_modify_delete_merged)
 
 TYPED_TEST(ValueStateTest, multiple_get_and_set_from_storage)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     ValueState t{db};
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}, {b, Account{}}, {c, Account{}}},
@@ -216,7 +219,7 @@ TYPED_TEST(ValueStateTest, multiple_get_and_set_from_merged)
 {
     using diff_t = typename ValueState<TypeParam>::diff_t;
 
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}, {c, Account{}}},
         .storage_changes = {
@@ -259,7 +262,7 @@ TYPED_TEST(ValueStateTest, multiple_get_and_set_from_merged)
 
 TYPED_TEST(ValueStateTest, revert)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     ValueState t{db};
 
     auto s = typename decltype(t)::WorkingCopy{t};
@@ -281,7 +284,7 @@ TYPED_TEST(ValueStateTest, revert)
 
 TYPED_TEST(ValueStateTest, can_merge)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}, {b, Account{}}},
         .storage_changes = {
@@ -306,7 +309,7 @@ TYPED_TEST(ValueStateTest, can_merge)
 
 TYPED_TEST(ValueStateTest, can_merge_added)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     ValueState s{db};
 
     auto t = typename decltype(s)::WorkingCopy{s};
@@ -317,7 +320,7 @@ TYPED_TEST(ValueStateTest, can_merge_added)
 
 TYPED_TEST(ValueStateTest, can_merge_deleted)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}},
         .storage_changes = {{a, {{key2, value2}}}}});
@@ -331,7 +334,7 @@ TYPED_TEST(ValueStateTest, can_merge_deleted)
 
 TYPED_TEST(ValueStateTest, can_merge_modified)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}},
         .storage_changes = {{a, {{key1, value1}}}}});
@@ -345,7 +348,7 @@ TYPED_TEST(ValueStateTest, can_merge_modified)
 
 TYPED_TEST(ValueStateTest, can_merge_modify_merged_added)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     ValueState s{db};
 
     {
@@ -365,7 +368,7 @@ TYPED_TEST(ValueStateTest, can_merge_modify_merged_added)
 
 TYPED_TEST(ValueStateTest, can_merge_delete_merged_added)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     ValueState s{db};
 
     {
@@ -384,7 +387,7 @@ TYPED_TEST(ValueStateTest, can_merge_delete_merged_added)
 
 TYPED_TEST(ValueStateTest, can_merge_add_on_merged_deleted)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}},
         .storage_changes = {{a, {{key2, value2}}}}});
@@ -406,7 +409,7 @@ TYPED_TEST(ValueStateTest, can_merge_add_on_merged_deleted)
 
 TYPED_TEST(ValueStateTest, can_merge_delete_merged_modified)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}},
         .storage_changes = {{a, {{key1, value1}}}}});
@@ -434,7 +437,7 @@ TYPED_TEST(ValueStateTest, cant_merge_colliding_merge)
 {
     using diff_t = typename ValueState<TypeParam>::diff_t;
 
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}},
         .storage_changes = {{a, {{key1, value1}}}}});
@@ -451,7 +454,7 @@ TYPED_TEST(ValueStateTest, cant_merge_colliding_merge)
 
 TYPED_TEST(ValueStateTest, cant_merge_deleted_merge)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}},
         .storage_changes = {{a, {{key1, value1}}}}});
@@ -470,7 +473,7 @@ TYPED_TEST(ValueStateTest, cant_merge_conflicting_adds)
 {
     using diff_t = typename ValueState<TypeParam>::diff_t;
 
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     ValueState s{db};
 
     auto t = typename decltype(s)::WorkingCopy{s};
@@ -486,7 +489,7 @@ TYPED_TEST(ValueStateTest, cant_merge_conflicting_modifies)
 {
     using diff_t = typename ValueState<TypeParam>::diff_t;
 
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}},
         .storage_changes = {{a, {{key1, value3}}}}});
@@ -503,7 +506,7 @@ TYPED_TEST(ValueStateTest, cant_merge_conflicting_modifies)
 
 TYPED_TEST(ValueStateTest, cant_merge_conflicting_deleted)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}},
         .storage_changes = {{a, {{key1, value1}}}}});
@@ -522,7 +525,7 @@ TYPED_TEST(ValueStateTest, cant_merge_delete_conflicts_with_modify)
 {
     using diff_t = typename ValueState<TypeParam>::diff_t;
 
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}},
         .storage_changes = {{a, {{key1, value1}}}}});
@@ -539,7 +542,7 @@ TYPED_TEST(ValueStateTest, cant_merge_delete_conflicts_with_modify)
 
 TYPED_TEST(ValueStateTest, merge_touched_multiple)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}, {b, Account{}}},
         .storage_changes = {{a, {{key1, value1}}}, {b, {{key1, value1}}}}});
@@ -570,7 +573,7 @@ TYPED_TEST(ValueStateTest, merge_touched_multiple)
 
 TYPED_TEST(ValueStateTest, can_commit)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}, {b, Account{}}},
         .storage_changes = {{a, {{key1, value1}}}, {b, {{key1, value1}}}}});
@@ -603,7 +606,7 @@ TYPED_TEST(ValueStateTest, can_commit)
 
 TYPED_TEST(ValueStateTest, can_commit_restored)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}, {b, Account{}}},
         .storage_changes = {{a, {{key1, value1}}}, {b, {{key1, value1}}}}});
@@ -644,7 +647,7 @@ TYPED_TEST(ValueStateTest, can_commit_restored)
 
 TYPED_TEST(ValueStateTest, commit_all_merged)
 {
-    TypeParam db{};
+    auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}, {b, Account{}}},
         .storage_changes = {{a, {{key1, value1}}}, {b, {{key1, value1}}}}});

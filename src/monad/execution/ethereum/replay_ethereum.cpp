@@ -29,13 +29,6 @@ struct fakeInterpreter
 {
 };
 
-template <class TState>
-class fakeEmptyStateTrie
-{
-public:
-    bytes32_t incremental_update(TState &) { return bytes32_t{}; }
-};
-
 class fakeEmptyTransactionTrie
 {
 public:
@@ -94,7 +87,6 @@ int main(int argc, char *argv[])
     using block_db_t = monad::db::BlockDb;
     using receipt_collector_t = monad::receiptCollector;
     using state_t = monad::fakeState;
-    using state_trie_t = monad::fakeEmptyStateTrie<state_t>;
     using execution_t = monad::execution::BoostFiberExecution;
     using transaction_trie_t = monad::fakeEmptyTransactionTrie;
     using receipt_trie_t = monad::fakeEmptyReceiptTrie;
@@ -115,7 +107,6 @@ int main(int argc, char *argv[])
     block_db_t block_db(block_db_path);
     receipt_collector_t receipt_collector;
     state_t state;
-    state_trie_t state_trie;
 
     // In order to finish execution, this must be set to true
     state._merge_status = monad::fakeState::MergeStatus::WILL_SUCCEED;
@@ -125,7 +116,6 @@ int main(int argc, char *argv[])
         block_db_t,
         execution_t,
         monad::execution::AllTxnBlockProcessor,
-        monad::fakeEmptyStateTrie,
         transaction_trie_t,
         receipt_trie_t,
         receipt_collector_t>
@@ -141,7 +131,6 @@ int main(int argc, char *argv[])
         monad::fakeInterpreter,
         monad::eth_start_fork::static_precompiles_t>(
         state,
-        state_trie,
         block_db,
         receipt_collector,
         start_block_number,

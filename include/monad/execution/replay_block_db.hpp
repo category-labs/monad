@@ -17,8 +17,7 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 
 template <
     class TState, class TBlockDb, class TExecution,
-    template <typename> class TAllTxnBlockProcessor,
-    template <typename> class TStateTrie, class TTransactionTrie,
+    template <typename> class TAllTxnBlockProcessor, class TTransactionTrie,
     class TReceiptTrie, class TReceiptCollector>
 class ReplayFromBlockDb
 {
@@ -53,6 +52,35 @@ public:
         }
     }
 
+    // TODO: should we make this a boolean function? If so,
+    // what to do if it fails?
+    void verify_root_hash(
+        BlockHeader const &block_header, bytes32_t transactions_root,
+        bytes32_t receipts_root, bytes32_t const state_root,
+        block_num_t current_block_number) const
+    {
+        auto *block_logger = log::logger_t::get_logger("block_logger");
+
+        MONAD_LOG_INFO(block_logger, "Block {}", current_block_number);
+
+        MONAD_LOG_INFO(
+            block_logger,
+            "Computed Transaction Root: {}, Expected Transaction Root: "
+            "{}",
+            transactions_root,
+            block_header.transactions_root);
+        MONAD_LOG_INFO(
+            block_logger,
+            "Computed Receipt Root: {}, Expected Receipt Root: {}",
+            receipts_root,
+            block_header.receipts_root);
+        MONAD_LOG_INFO(
+            block_logger,
+            "Computed State Root: {}, Expected State Root: {}",
+            state_root,
+            block_header.state_root);
+    }
+
     template <
         concepts::fork_traits<typename TState::WorkingCopy> TTraits,
         template <typename, typename> class TTxnProcessor,
@@ -62,8 +90,8 @@ public:
         template <typename, typename, typename, typename> class TFiberData,
         class TInterpreter, class TPrecompiles>
     [[nodiscard]] Result run_fork(
-        TState &state, TStateTrie<TState> &state_trie, TBlockDb &block_db,
-        TReceiptCollector &receipt_collector, block_num_t current_block_number,
+        TState &state, TBlockDb &block_db, TReceiptCollector &receipt_collector,
+        block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
         for (; current_block_number <= loop_until<TTraits>(until_block_number);
@@ -102,36 +130,20 @@ public:
                                 TInterpreter>>,
                         TExecution>>(state, block);
 
+                // TODO: How exactly do we calculate transaction root and
+                // receipt root?
                 TTransactionTrie transaction_trie(block.transactions);
                 TReceiptTrie receipt_trie(receipts);
 
-                auto *block_logger = log::logger_t::get_logger("block_logger");
+                auto const transactions_root = transaction_trie.root_hash();
+                auto const receipts_root = receipt_trie.root_hash();
 
-                [[maybe_unused]] auto const transaction_root =
-                    transaction_trie.root_hash();
-                [[maybe_unused]] auto const receipt_root =
-                    receipt_trie.root_hash();
-                [[maybe_unused]] auto const state_root =
-                    state_trie.incremental_update(state);
-
-                MONAD_LOG_INFO(block_logger, "Block {}", current_block_number);
-
-                MONAD_LOG_INFO(
-                    block_logger,
-                    "Computed Transaction Root: {}, Expected Transaction Root: "
-                    "{}",
-                    transaction_root,
-                    block.header.transactions_root);
-                MONAD_LOG_INFO(
-                    block_logger,
-                    "Computed Receipt Root: {}, Expected Receipt Root: {}",
-                    receipt_root,
-                    block.header.receipts_root);
-                MONAD_LOG_INFO(
-                    block_logger,
-                    "Computed State Root: {}, Expected State Root: {}",
-                    state_root,
-                    block.header.state_root);
+                verify_root_hash(
+                    block.header,
+                    transactions_root,
+                    receipts_root,
+                    state.get_state_hash(),
+                    current_block_number);
 
                 receipt_collector.emplace_back(receipts);
             }
@@ -156,7 +168,6 @@ public:
                 TInterpreter,
                 TPrecompiles>(
                 state,
-                state_trie,
                 block_db,
                 receipt_collector,
                 current_block_number,
@@ -173,8 +184,8 @@ public:
         template <typename, typename, typename, typename> class TFiberData,
         class TInterpreter, class TPrecompiles>
     [[nodiscard]] Result
-    run(TState &state, TStateTrie<TState> &state_trie, TBlockDb &block_db,
-        TReceiptCollector &receipt_collector, block_num_t start_block_number,
+    run(TState &state, TBlockDb &block_db, TReceiptCollector &receipt_collector,
+        block_num_t start_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
         Block block{};
@@ -200,7 +211,6 @@ public:
             TInterpreter,
             TPrecompiles>(
             state,
-            state_trie,
             block_db,
             receipt_collector,
             start_block_number,

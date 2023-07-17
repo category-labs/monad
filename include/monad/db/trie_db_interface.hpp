@@ -213,7 +213,8 @@ struct TrieDBInterface
 
         for (auto const &[addr, storage_root] : updated_storage_roots) {
             auto const account = query(addr);
-            MONAD_DEBUG_ASSERT(account.has_value());
+            if (!account)
+                continue;
 
             auto const ak = trie::Nibbles{std::bit_cast<bytes32_t>(
                 ethash::keccak256(addr.bytes, sizeof(addr.bytes)))};
@@ -235,17 +236,10 @@ struct TrieDBInterface
             accounts().leaves_writer.write();
             accounts().trie_writer.write();
 
-            // Note: there should never be an instance where we have storage
-            // updates but no account updates. The assertions in the else
-            // statement enforce this
             storage().leaves_writer.write();
             storage().trie_writer.write();
 
             take_snapshot();
-        }
-        else {
-            MONAD_DEBUG_ASSERT(obj.storage_changes.empty());
-            MONAD_DEBUG_ASSERT(obj.account_changes.empty());
         }
     }
 

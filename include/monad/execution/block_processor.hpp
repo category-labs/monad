@@ -52,7 +52,7 @@ struct AllTxnBlockProcessor
         }
 
         if (b.header.number != 0u) {
-            TTraits::award(s, b);
+            TTraits::apply_block_award(s, b);
         }
 
         auto const finished_time = std::chrono::steady_clock::now();

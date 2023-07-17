@@ -59,7 +59,7 @@ TEST(fork_traits, frontier)
     EXPECT_EQ(r.gas_left, 0);
     EXPECT_EQ(r.create_address, null);
 
-    // award
+    // block award
     execution::fake::State state{};
     Block block{
         .header = {.number = 10, .beneficiary = a},
@@ -67,10 +67,10 @@ TEST(fork_traits, frontier)
         .ommers = {
             BlockHeader{.number = 9, .beneficiary = b},
             BlockHeader{.number = 8, .beneficiary = c}}};
-    fork_traits::frontier::award(state, block);
-    EXPECT_EQ(state._reward[a], 5'312'500'000'000'000'000);
-    EXPECT_EQ(state._reward[b], 4'375'000'000'000'000'000);
-    EXPECT_EQ(state._reward[c], 3'750'000'000'000'000'000);
+    fork_traits::frontier::apply_block_award(state, block);
+    EXPECT_EQ(state._block_reward[a], 5'312'500'000'000'000'000);
+    EXPECT_EQ(state._block_reward[b], 4'375'000'000'000'000'000);
+    EXPECT_EQ(state._block_reward[c], 3'750'000'000'000'000'000);
 }
 
 static_assert(concepts::fork_traits<fork_traits::homestead, state_t>);
@@ -175,7 +175,7 @@ TEST(fork_traits, byzantium)
     EXPECT_EQ(r.gas_left, 11'000);
     EXPECT_EQ(r.create_address, null);
 
-    // award
+    // block award
     execution::fake::State state{};
     Block block{
         .header = {.number = 10, .beneficiary = a},
@@ -183,16 +183,16 @@ TEST(fork_traits, byzantium)
         .ommers = {
             BlockHeader{.number = 9, .beneficiary = b},
             BlockHeader{.number = 8, .beneficiary = c}}};
-    fork_traits::byzantium::award(state, block);
-    EXPECT_EQ(state._reward[a], 3'187'500'000'000'000'000);
-    EXPECT_EQ(state._reward[b], 2'625'000'000'000'000'000);
-    EXPECT_EQ(state._reward[c], 2'250'000'000'000'000'000);
+    fork_traits::byzantium::apply_block_award(state, block);
+    EXPECT_EQ(state._block_reward[a], 3'187'500'000'000'000'000);
+    EXPECT_EQ(state._block_reward[b], 2'625'000'000'000'000'000);
+    EXPECT_EQ(state._block_reward[c], 2'250'000'000'000'000'000);
 }
 
 static_assert(concepts::fork_traits<fork_traits::constantinople, state_t>);
 TEST(fork_traits, constantinople)
 {
-    // award
+    // block award
     execution::fake::State state{};
     Block block{
         .header = {.number = 10, .beneficiary = a},
@@ -200,10 +200,10 @@ TEST(fork_traits, constantinople)
         .ommers = {
             BlockHeader{.number = 9, .beneficiary = b},
             BlockHeader{.number = 8, .beneficiary = c}}};
-    fork_traits::constantinople::award(state, block);
-    EXPECT_EQ(state._reward[a], 2'125'000'000'000'000'000);
-    EXPECT_EQ(state._reward[b], 1'750'000'000'000'000'000);
-    EXPECT_EQ(state._reward[c], 1'500'000'000'000'000'000);
+    fork_traits::constantinople::apply_block_award(state, block);
+    EXPECT_EQ(state._block_reward[a], 2'125'000'000'000'000'000);
+    EXPECT_EQ(state._block_reward[b], 1'750'000'000'000'000'000);
+    EXPECT_EQ(state._block_reward[c], 1'500'000'000'000'000'000);
 }
 
 static_assert(concepts::fork_traits<fork_traits::istanbul, state_t>);

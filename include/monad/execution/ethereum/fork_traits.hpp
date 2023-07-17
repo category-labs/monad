@@ -182,7 +182,7 @@ namespace fork_traits
         }
 
         template <class TState>
-        static constexpr void award(TState &s, Block const &b)
+        static constexpr void apply_block_award(TState &s, Block const &b)
         {
             apply_mining_award(s, b, block_reward, additional_ommer_reward);
         }
@@ -333,7 +333,7 @@ namespace fork_traits
         }
 
         template <class TState>
-        static constexpr void award(TState &s, Block const &b)
+        static constexpr void apply_block_award(TState &s, Block const &b)
         {
             apply_mining_award(s, b, block_reward, additional_ommer_reward);
         }
@@ -351,7 +351,7 @@ namespace fork_traits
             block_reward >> 5; // YP Eqn. 172, block reward / 32
 
         template <class TState>
-        static constexpr void award(TState &s, Block const &b)
+        static constexpr void apply_block_award(TState &s, Block const &b)
         {
             apply_mining_award(s, b, block_reward, additional_ommer_reward);
         }

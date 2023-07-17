@@ -185,11 +185,11 @@ namespace fake
             COLLISION_DETECTED,
         };
 
-        std::unordered_map<address_t, uint256_t> _reward{};
+        std::unordered_map<address_t, uint256_t> _block_reward{};
 
         void apply_reward(address_t const &a, uint256_t const &r)
         {
-            _reward.insert({a, r});
+            _block_reward.insert({a, r});
         }
 
         // Had to name this variable using post_ because we access it directly
@@ -324,7 +324,7 @@ namespace fake
             static inline uint64_t _gas_creation_cost{};
             static inline uint64_t _create_address{};
             static constexpr uint64_t _echo_gas_cost{10};
-            static constexpr void award(TState &, Block const &) {}
+            static constexpr void apply_block_award(TState &, Block const &) {}
             static auto intrinsic_gas(Transaction const &)
             {
                 return _intrinsic_gas;

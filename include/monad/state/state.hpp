@@ -243,6 +243,11 @@ struct State
         code_.commit_all_merged();
         current_txn_ = 0;
     }
+
+    [[nodiscard]] bytes32_t get_state_hash() const
+    {
+        return accounts_.get_state_hash();
+    }
 };
 
 MONAD_STATE_NAMESPACE_END

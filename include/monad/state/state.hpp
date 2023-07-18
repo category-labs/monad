@@ -3,6 +3,7 @@
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/int.hpp>
 #include <monad/core/receipt.hpp>
 
 #include <monad/state/config.hpp>
@@ -20,6 +21,7 @@ struct State
 {
     struct WorkingCopy
     {
+        uint256_t gas_award_{};
         typename TAccountState::WorkingCopy accounts_;
         typename TValueState::WorkingCopy storage_;
         typename TCodeState::WorkingCopy code_;
@@ -38,6 +40,8 @@ struct State
             , txn_id_{i}
         {
         }
+
+        void add_txn_award(uint256_t const &a) { gas_award_ += a; }
 
         unsigned int txn_id() const noexcept { return txn_id_; }
         void create_account(address_t const &a) noexcept
@@ -175,6 +179,7 @@ struct State
         COLLISION_DETECTED,
     };
 
+    uint256_t gas_award_{};
     TAccountState &accounts_;
     TValueState &storage_;
     TCodeState &code_;
@@ -191,7 +196,7 @@ struct State
 
     void apply_reward(address_t const &a, uint256_t const &reward)
     {
-        accounts_.apply_reward(a, reward);
+        accounts_.apply_reward(a, reward + gas_award_);
     }
 
     unsigned int current_txn() const { return current_txn_; }
@@ -224,6 +229,7 @@ struct State
         accounts_.merge_changes(c.accounts_);
         storage_.merge_touched(c.storage_);
         code_.merge_changes(c.code_);
+        gas_award_ += c.gas_award_;
         ++current_txn_;
     }
 

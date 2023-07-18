@@ -80,6 +80,31 @@ TYPED_TEST(StateTest, get_working_copy)
     EXPECT_EQ(cs.get_balance(a), bytes32_t{30'000});
 }
 
+TYPED_TEST(StateTest, apply_award)
+{
+    TypeParam db;
+    AccountState accounts{db};
+    ValueState values{db};
+    code_db_t code_db{};
+    CodeState code{code_db};
+    State as{accounts, values, code, block_cache};
+
+    auto bs = as.get_working_copy(0);
+    auto cs = as.get_working_copy(1);
+
+    bs.add_txn_award(10'000);
+    cs.add_txn_award(20'000);
+
+    as.merge_changes(bs);
+    as.merge_changes(cs);
+    as.apply_reward(a, 100);
+    as.commit();
+
+    auto ds = as.get_working_copy(2);
+    ds.access_account(a);
+    EXPECT_EQ(ds.get_balance(a), bytes32_t{30'100});
+}
+
 TYPED_TEST(StateTest, get_code)
 {
     TypeParam db;

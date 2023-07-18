@@ -41,8 +41,8 @@ template <typename TDB>
 struct ValueStateTest : public testing::Test
 {
 };
-using DBTypes =
-    ::testing::Types<db::InMemoryDB, db::RocksDB, db::InMemoryTrieDB, db::RocksTrieDB>;
+using DBTypes = ::testing::Types<
+    db::InMemoryDB, db::RocksDB, db::InMemoryTrieDB, db::RocksTrieDB>;
 TYPED_TEST_SUITE(ValueStateTest, DBTypes);
 
 TYPED_TEST(ValueStateTest, access_storage)
@@ -685,5 +685,5 @@ TYPED_TEST(ValueStateTest, commit_all_merged)
         EXPECT_TRUE(s.can_commit());
     }
 
-    s.commit_all_merged();
+    auto _ = s.gather_changes();
 }

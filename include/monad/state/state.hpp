@@ -7,6 +7,7 @@
 #include <monad/core/receipt.hpp>
 
 #include <monad/state/config.hpp>
+#include <monad/state/state_changes.hpp>
 
 #include <ethash/keccak.hpp>
 
@@ -16,7 +17,8 @@
 MONAD_STATE_NAMESPACE_BEGIN
 
 template <
-    class TAccountState, class TValueState, class TCodeState, class TBlockCache>
+    class TAccountState, class TValueState, class TCodeState, class TBlockCache,
+    class TDatabase>
 struct State
 {
     struct WorkingCopy
@@ -184,13 +186,17 @@ struct State
     TValueState &storage_;
     TCodeState &code_;
     TBlockCache &block_cache_{};
+    TDatabase &db_{};
     unsigned int current_txn_{};
 
-    State(TAccountState &a, TValueState &s, TCodeState &c, TBlockCache &bc)
+    State(
+        TAccountState &a, TValueState &s, TCodeState &c, TBlockCache &bc,
+        TDatabase &db)
         : accounts_{a}
         , storage_{s}
         , code_{c}
         , block_cache_{bc}
+        , db_{db}
     {
     }
 
@@ -246,12 +252,13 @@ struct State
 
     void commit()
     {
-        // Note: storage updates must be committed prior to the account
-        // updates, since each account needs the most up-to-date storage
-        // root
-        storage_.commit_all_merged();
-        accounts_.commit_all_merged();
         code_.commit_all_merged();
+        db_.commit(StateChanges{
+            .account_changes = accounts_.gather_changes(),
+            .storage_changes = storage_.gather_changes(),
+        });
+        accounts_.clear_changes();
+        storage_.clear_changes();
         current_txn_ = 0;
         gas_award_ = 0;
     }

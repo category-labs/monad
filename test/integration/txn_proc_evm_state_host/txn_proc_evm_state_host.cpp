@@ -56,12 +56,11 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     state::ValueState values{db};
     code_db_t code_db{};
     state::CodeState codes{code_db};
-    state::State s{accounts, values, codes, blocks};
+    state::State s{accounts, values, codes, blocks, db};
 
     db.commit(state::StateChanges{
         .account_changes =
-            {{a, Account{}},
-             {from, Account{.balance = 10'000'000}}},
+            {{a, Account{}}, {from, Account{.balance = 10'000'000}}},
         .storage_changes = {}});
 
     BlockHeader const bh{.number = 2, .beneficiary = a};

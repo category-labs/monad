@@ -33,8 +33,8 @@ template <typename TDB>
 struct AccountStateTest : public testing::Test
 {
 };
-using DBTypes =
-    ::testing::Types<db::InMemoryDB, db::RocksDB, db::InMemoryTrieDB, db::RocksTrieDB>;
+using DBTypes = ::testing::Types<
+    db::InMemoryDB, db::RocksDB, db::InMemoryTrieDB, db::RocksTrieDB>;
 TYPED_TEST_SUITE(AccountStateTest, DBTypes);
 
 using diff_t = AccountState<std::unordered_map<address_t, Account>>::diff_t;
@@ -65,8 +65,7 @@ TYPED_TEST(AccountStateTest, get_balance)
         .account_changes = {{a, Account{.balance = 20'000}}},
         .storage_changes = {}});
     AccountState s{db};
-    s.merged_.emplace(
-        b, diff_t{std::nullopt, Account{.balance = 10'000}});
+    s.merged_.emplace(b, diff_t{std::nullopt, Account{.balance = 10'000}});
 
     EXPECT_EQ(s.get_balance(a), bytes32_t{20'000});
     EXPECT_EQ(s.get_balance(b), bytes32_t{10'000});
@@ -77,8 +76,7 @@ TYPED_TEST(AccountStateTest, apply_reward)
     auto db = test::make_db<TypeParam>();
     AccountState s{db};
     db.commit(StateChanges{
-        .account_changes = {{a, Account{}}},
-        .storage_changes = {}});
+        .account_changes = {{a, Account{}}}, .storage_changes = {}});
 
     s.merged_.emplace(b, Account{});
     s.merged_.emplace(c, diff_t{Account{}, Account{.balance = 10}});
@@ -101,8 +99,7 @@ TYPED_TEST(AccountStateTest, get_code_hash)
         .account_changes = {{a, Account{.code_hash = hash1}}},
         .storage_changes = {}});
     AccountState s{db};
-    s.merged_.emplace(
-        b, diff_t{std::nullopt, Account{.code_hash = hash2}});
+    s.merged_.emplace(b, diff_t{std::nullopt, Account{.code_hash = hash2}});
 
     EXPECT_EQ(s.get_code_hash(a), hash1);
     EXPECT_EQ(s.get_code_hash(b), hash2);
@@ -180,8 +177,7 @@ TYPED_TEST(AccountStateTest, get_balance_working_copy)
         .storage_changes = {}});
 
     AccountState s{db};
-    s.merged_.emplace(
-        b, diff_t{std::nullopt, Account{.balance = 10'000}});
+    s.merged_.emplace(b, diff_t{std::nullopt, Account{.balance = 10'000}});
 
     auto bs = typename decltype(s)::WorkingCopy{s};
 
@@ -218,8 +214,7 @@ TYPED_TEST(AccountStateTest, get_code_hash_working_copy)
         .storage_changes = {}});
 
     AccountState s{db};
-    s.merged_.emplace(
-        b, diff_t{std::nullopt, Account{.code_hash = hash2}});
+    s.merged_.emplace(b, diff_t{std::nullopt, Account{.code_hash = hash2}});
 
     auto bs = typename decltype(s)::WorkingCopy{s};
 
@@ -273,8 +268,7 @@ TYPED_TEST(AccountStateTest, selfdestruct_working_copy)
         .storage_changes = {}});
 
     AccountState s{db};
-    s.merged_.emplace(
-        b, diff_t{std::nullopt, Account{.balance = 28'000}});
+    s.merged_.emplace(b, diff_t{std::nullopt, Account{.balance = 28'000}});
 
     auto bs = typename decltype(s)::WorkingCopy{s};
 
@@ -387,8 +381,7 @@ TYPED_TEST(AccountStateTest, can_merge_onto_merged)
     AccountState t{db};
     t.merged_.emplace(a, diff_t{Account{.balance = 30'000}});
     t.merged_.emplace(b, diff_t{db.at(b), db.at(b)});
-    t.merged_.emplace(
-        c, diff_t{Account{.balance = 50'000}, std::nullopt});
+    t.merged_.emplace(c, diff_t{Account{.balance = 50'000}, std::nullopt});
     t.merged_[c].updated.reset();
 
     auto s = typename decltype(t)::WorkingCopy{t};
@@ -690,7 +683,8 @@ TYPED_TEST(AccountStateTest, can_commit_multiple)
     }
 
     EXPECT_TRUE(t.can_commit());
-    t.commit_all_merged();
+    StateChanges sc{.account_changes = t.gather_changes()};
+    db.commit(sc);
 
     EXPECT_TRUE(db.contains(a));
     EXPECT_EQ(db.at(a).balance, 98'000);

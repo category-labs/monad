@@ -124,18 +124,18 @@ struct AccountState
         });
     }
 
-    void commit_all_merged()
+    [[nodiscard]] StateChanges::AccountChanges gather_changes() const
     {
         assert(can_commit());
 
-        StateChanges sc;
+        StateChanges::AccountChanges account_changes;
         for (auto const &[addr, diff] : merged_) {
-            sc.account_changes.emplace_back(addr, diff.updated);
+            account_changes.emplace_back(addr, diff.updated);
         }
-
-        db_.commit(sc);
-        merged_.clear();
+        return account_changes;
     }
+
+    void clear_changes() { merged_.clear(); }
 
     [[nodiscard]] bytes32_t get_state_hash() const { return db_.root_hash(); }
 };
@@ -174,8 +174,7 @@ struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
         auto const account = get_committed_storage(a).has_value()
                                  ? get_committed_storage(a)
                                  : Account{};
-        changed_.emplace(
-            a, diff_t{get_committed_storage(a), account});
+        changed_.emplace(a, diff_t{get_committed_storage(a), account});
         return EVMC_ACCESS_COLD;
     }
 

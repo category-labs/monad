@@ -12,9 +12,12 @@ MONAD_STATE_NAMESPACE_BEGIN
 
 struct StateChanges
 {
-    std::vector<std::pair<address_t, std::optional<Account>>> account_changes;
-    std::unordered_map<address_t, std::vector<std::pair<bytes32_t, bytes32_t>>>
-        storage_changes;
+    using AccountChanges =
+        std::vector<std::pair<address_t, std::optional<Account>>>;
+    using StorageChanges = std::unordered_map<
+        address_t, std::vector<std::pair<bytes32_t, bytes32_t>>>;
+    AccountChanges account_changes;
+    StorageChanges storage_changes;
 };
 
 MONAD_STATE_NAMESPACE_END

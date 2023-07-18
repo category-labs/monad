@@ -114,26 +114,26 @@ struct ValueState
         return true;
     }
 
-    void commit_all_merged()
+    StateChanges::StorageChanges gather_changes() const
     {
         assert(can_commit());
-
-        StateChanges sc;
+        StateChanges::StorageChanges storage_changes;
 
         for (auto const &[addr, key_set] : merged_.deleted_storage_) {
             for (auto const &key : key_set) {
-                sc.storage_changes[addr].emplace_back(key.key, bytes32_t{});
+                storage_changes[addr].emplace_back(key.key, bytes32_t{});
             }
         }
         for (auto const &[addr, acct_storage] : merged_.storage_) {
             for (auto const &[key, value] : acct_storage) {
                 assert(value.updated != bytes32_t{});
-                sc.storage_changes[addr].emplace_back(key, value.updated);
+                storage_changes[addr].emplace_back(key, value.updated);
             }
         }
-        merged_.clear();
-        db_.commit(sc);
+        return storage_changes;
     }
+
+    void clear_changes() { merged_.clear(); }
 
     bool can_merge(WorkingCopy const &diffs) const noexcept
     {

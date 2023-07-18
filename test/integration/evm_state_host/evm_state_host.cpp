@@ -58,7 +58,7 @@ TEST(EvmInterpStateHost, return_existing_storage)
     state::ValueState values{db};
     code_db_t code_db{};
     state::CodeState codes{code_db};
-    state::State s{accounts, values, codes, blocks};
+    state::State s{accounts, values, codes, blocks, db};
 
     // Setup db - gas costs referenced here
     // https://www.evm.codes/?fork=byzantium
@@ -120,7 +120,7 @@ TEST(EvmInterpStateHost, store_then_return_storage)
     state::ValueState values{db};
     code_db_t code_db{};
     state::CodeState codes{code_db};
-    state::State s{accounts, values, codes, blocks};
+    state::State s{accounts, values, codes, blocks, db};
 
     // Setup db - gas costs referenced here
     // https://www.evm.codes/?fork=byzantium

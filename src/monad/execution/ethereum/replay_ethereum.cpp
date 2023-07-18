@@ -108,7 +108,8 @@ int main(int argc, char *argv[])
         monad::state::AccountState<db_t>,
         monad::state::ValueState<db_t>,
         monad::state::CodeState<code_db_t>,
-        monad::db::BlockDb>;
+        monad::db::BlockDb,
+        db_t>;
     using execution_t = monad::execution::BoostFiberExecution;
 
     // Fakes
@@ -135,7 +136,7 @@ int main(int argc, char *argv[])
     monad::state::AccountState accounts{db};
     monad::state::ValueState values{db};
     monad::state::CodeState code{code_db};
-    state_t state{accounts, values, code, block_db};
+    state_t state{accounts, values, code, block_db, db};
 
     receipt_collector_t receipt_collector;
 

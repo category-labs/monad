@@ -53,6 +53,7 @@ namespace fake
             uint64_t _selfdestructs{};
             uint64_t _touched_dead{};
             uint64_t _suicides{};
+            uint256_t _reward{};
 
             WorkingCopy() = default;
 
@@ -176,6 +177,8 @@ namespace fake
             void store_log(Receipt::Log &&l) { _logs.emplace_back(l); }
 
             std::vector<Receipt::Log> &logs() { return _logs; }
+
+            void add_txn_award(uint256_t const &amount) { _reward += amount; }
         };
 
         enum class MergeStatus
@@ -325,6 +328,12 @@ namespace fake
             static inline uint64_t _create_address{};
             static constexpr uint64_t _echo_gas_cost{10};
             static constexpr void apply_block_award(TState &, Block const &) {}
+            static constexpr void apply_txn_award(
+                TState &s, Transaction const &, uint64_t gas_cost,
+                uint64_t gas_used)
+            {
+                s.add_txn_award(uint256_t{gas_cost} * uint256_t{gas_used});
+            }
             static auto intrinsic_gas(Transaction const &)
             {
                 return _intrinsic_gas;

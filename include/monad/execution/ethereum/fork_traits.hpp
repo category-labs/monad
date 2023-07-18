@@ -186,6 +186,14 @@ namespace fork_traits
         {
             apply_mining_award(s, b, block_reward, additional_ommer_reward);
         }
+
+        template <class TState>
+        static constexpr void apply_txn_award(
+            TState &s, Transaction const &, uint64_t base_fee_per_gas,
+            uint64_t gas_used)
+        {
+            s.add_txn_award(uint256_t{gas_used} * uint256_t{base_fee_per_gas});
+        }
     };
 
     struct homestead : public frontier

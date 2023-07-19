@@ -62,7 +62,7 @@ struct TransactionProcessor
     {
         // refund and priority, Eqn. 73-76
         auto const gas_remaining = g_star(s, t, gas_leftover, refund);
-        auto const gas_cost = per_gas_cost(t, base_fee_per_gas);
+        auto const gas_cost = TTraits::gas_price(t, base_fee_per_gas);
 
         const auto sender_balance =
             intx::be::load<uint256_t>(s.get_balance(*t.from));
@@ -122,7 +122,7 @@ struct TransactionProcessor
         TState const &state, Transaction const &t, uint64_t base_fee_per_gas)
     {
         upfront_cost_ =
-            intx::umul(t.gas_limit, per_gas_cost(t, base_fee_per_gas));
+            intx::umul(t.gas_limit, TTraits::gas_price(t, base_fee_per_gas));
 
         // Yellow paper, Eq. 62
         // g0 <= Tg

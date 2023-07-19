@@ -358,6 +358,10 @@ namespace fake
                 }
                 return _success_store_contract;
             }
+            static constexpr uint64_t gas_price(Transaction const &, uint64_t c)
+            {
+                return c;
+            }
         };
 
         template <class TState>

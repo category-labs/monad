@@ -53,19 +53,6 @@ static_assert(alignof(Transaction::AccessList) == 8);
 static_assert(sizeof(Transaction) == 248);
 static_assert(alignof(Transaction) == 8);
 
-// EIP-1559
-constexpr uint64_t
-per_gas_priority_fee(Transaction const &t, uint64_t const base_fee_per_gas)
-{
-    return std::min(t.priority_fee, t.gas_price - base_fee_per_gas);
-}
-
-constexpr uint64_t
-per_gas_cost(Transaction const &t, uint64_t const base_fee_per_gas)
-{
-    return per_gas_priority_fee(t, base_fee_per_gas) + base_fee_per_gas;
-}
-
 [[nodiscard]] std::optional<address_t> recover_sender(Transaction const &t);
 
 MONAD_NAMESPACE_END

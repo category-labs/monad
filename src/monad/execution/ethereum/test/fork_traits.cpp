@@ -59,10 +59,17 @@ TEST(fork_traits, frontier)
     EXPECT_EQ(r.gas_left, 0);
     EXPECT_EQ(r.create_address, null);
 
+    // gas price
+    EXPECT_EQ(
+        fork_traits::frontier::gas_price(Transaction{.gas_price = 1'000}, 0u),
+        1'000);
+
     // txn award
-    fork_traits::frontier::apply_txn_award(s, {}, 100'000'000'000, 90'000'000);
+    fork_traits::frontier::apply_txn_award(
+        s, {.gas_price = 100'000'000'000}, 0, 90'000'000);
     EXPECT_EQ(s._reward, uint256_t{9'000'000'000'000'000'000});
-    fork_traits::frontier::apply_txn_award(s, {}, 100'000'000'000, 90'000'000);
+    fork_traits::frontier::apply_txn_award(
+        s, {.gas_price = 100'000'000'000}, 0, 90'000'000);
     EXPECT_EQ(s._reward, 2 * uint256_t{9'000'000'000'000'000'000});
 
     // block award

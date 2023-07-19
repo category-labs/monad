@@ -70,7 +70,7 @@ TEST(EvmcHost, get_tx_context)
     Transaction const t{.sc = {.chain_id = 1}, .from = from};
     fake::State::WorkingCopy s{};
 
-    const static uint256_t gas_cost = per_gas_cost(t, 37'000'000'000);
+    const static uint256_t gas_cost = 37'000'000'000;
     const static uint256_t chain_id{1};
     const static uint256_t base_fee_per_gas{37'000'000'000};
 

@@ -110,8 +110,10 @@ TEST(Execution, validate_enough_balance)
     state._accounts[a] = {.balance = 55'939'568'773'815'811};
     traits_t::_intrinsic_gas = 21'000;
 
-    auto status = p.validate(state, t, 0);
-    EXPECT_EQ(status, processor_t::Status::INSUFFICIENT_BALANCE);
+    auto status1 = p.validate(state, t, 10u);
+    EXPECT_EQ(status1, processor_t::Status::INSUFFICIENT_BALANCE);
+    auto status2 = p.validate(state, t, 0u); // free gas
+    EXPECT_EQ(status2, processor_t::Status::SUCCESS);
 }
 
 TEST(Execution, successful_validation)

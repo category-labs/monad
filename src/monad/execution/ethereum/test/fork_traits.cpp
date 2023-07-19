@@ -273,4 +273,22 @@ TEST(fork_traits, london)
     EXPECT_EQ(r.status_code, EVMC_CONTRACT_VALIDATION_FAILURE);
     EXPECT_EQ(r.gas_left, 0);
     EXPECT_EQ(r.create_address, null);
+
+    // gas price
+    Transaction t1{.gas_price = 3'000, .type = Transaction::Type::eip155, .priority_fee = 1'000};
+    Transaction t2{.gas_price = 3'000, .type = Transaction::Type::eip155};
+    Transaction t3{.gas_price = 5'000, .type = Transaction::Type::eip1559, .priority_fee = 1'000};
+    Transaction t4{.gas_price = 5'000, .type = Transaction::Type::eip1559};
+    EXPECT_EQ(fork_traits::london::gas_price(t1, 2'000u), 3'000);
+    EXPECT_EQ(fork_traits::london::gas_price(t2, 2'000u), 3'000);
+    EXPECT_EQ(fork_traits::london::gas_price(t3, 2'000u), 3'000);
+    EXPECT_EQ(fork_traits::london::gas_price(t4, 2'000u), 2'000);
+
+    // txn award
+    fork_traits::london::apply_txn_award(
+        s, {.gas_price = 100'000'000'000}, 0, 90'000'000);
+    EXPECT_EQ(s._reward, uint256_t{9'000'000'000'000'000'000});
+    fork_traits::london::apply_txn_award(
+        s, {.gas_price = 100'000'000'000}, 0, 90'000'000);
+    EXPECT_EQ(s._reward, 2 * uint256_t{9'000'000'000'000'000'000});
 }

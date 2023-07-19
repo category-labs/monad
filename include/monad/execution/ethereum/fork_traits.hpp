@@ -485,6 +485,38 @@ namespace fork_traits
             }
             return berlin::store_contract_code(s, a, r);
         }
+
+        // https://eips.ethereum.org/EIPS/eip-1559
+        static constexpr uint64_t
+        gas_price(Transaction const &t, uint64_t const base_gas_price)
+        {
+            if (t.type == Transaction::Type::eip1559) {
+                MONAD_DEBUG_ASSERT(
+                    (base_gas_price + t.priority_fee) <= t.gas_price);
+                return base_gas_price + t.priority_fee;
+            }
+            MONAD_DEBUG_ASSERT(t.gas_price >= base_gas_price);
+            return t.gas_price;
+        }
+
+        // https://eips.ethereum.org/EIPS/eip-1559
+        static constexpr uint64_t
+        miner_priority_gas_cost(Transaction const &t, uint64_t base_gas_price)
+        {
+            if (t.type == Transaction::Type::eip1559) {
+                return t.priority_fee;
+            }
+            return t.gas_price - base_gas_price;
+        }
+
+        template <class TState>
+        static constexpr void apply_txn_award(
+            TState &s, Transaction const &t, uint64_t base_gas_cost,
+            uint64_t gas_used)
+        {
+            s.add_txn_award(uint256_t{
+                gas_used * miner_priority_gas_cost(t, base_gas_cost)});
+        }
     };
 
     // paris - 15'537'394

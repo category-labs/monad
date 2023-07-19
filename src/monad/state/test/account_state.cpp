@@ -699,3 +699,18 @@ TYPED_TEST(AccountStateTest, can_commit_multiple)
     EXPECT_EQ(db.at(c).nonce, 1);
     EXPECT_FALSE(db.contains(d));
 }
+
+TYPED_TEST(AccountStateTest, burn_address)
+{
+    TypeParam db{};
+    AccountState t{db};
+
+    auto s = typename decltype(t)::WorkingCopy{t};
+
+    EXPECT_TRUE(s.account_exists(decltype(s)::BURN_ADDRESS));
+    s.create_account(decltype(s)::BURN_ADDRESS);
+    EXPECT_EQ(s.get_balance(decltype(s)::BURN_ADDRESS), bytes32_t{0});
+    s.set_balance(decltype(s)::BURN_ADDRESS, uint256_t{1'000});
+    EXPECT_EQ(s.get_code_hash(decltype(s)::BURN_ADDRESS), NULL_HASH);
+    EXPECT_EQ(s.access_account(decltype(s)::BURN_ADDRESS), EVMC_ACCESS_COLD);
+}

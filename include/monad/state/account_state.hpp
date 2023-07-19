@@ -22,6 +22,9 @@ struct AccountState
     using diff_t = diff<std::optional<Account>>;
     using change_set_t = std::unordered_map<address_t, diff_t>;
 
+    static constexpr auto BURN_ADDRESS{
+        0x0000000000000000000000000000000000000000_address};
+
     struct WorkingCopy;
 
     // TODO Irrevocable change separated out to avoid reversion
@@ -43,11 +46,13 @@ struct AccountState
      */
     void apply_reward(address_t const &a, uint256_t const &r)
     {
+        if (a == BURN_ADDRESS) { return; }
         auto account_before = get_committed_storage(a);
 
         if (!account_before.has_value()) {
             merged_.emplace(a, diff_t{account_before, Account{}});
-        } else if (!merged_.contains(a)) {
+        }
+        else if (!merged_.contains(a)) {
             merged_.emplace(a, diff_t{account_before, account_before});
         }
 
@@ -148,6 +153,10 @@ struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
     // EVMC Host Interface
     [[nodiscard]] bool account_exists(address_t const &a) const noexcept
     {
+        if (a == BURN_ADDRESS) {
+            return true;
+        }
+
         if (changed_.contains(a)) {
             if (changed_.at(a).updated.has_value()) {
                 return true;
@@ -159,6 +168,10 @@ struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
 
     void create_account(address_t const &a)
     {
+        if (a == BURN_ADDRESS) {
+            return;
+        }
+
         auto const [_, inserted] =
             changed_.emplace(a, diff_t{get_committed_storage(a), Account{}});
         MONAD_DEBUG_ASSERT(inserted);
@@ -167,6 +180,10 @@ struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
     // EVMC Host Interface
     evmc_access_status access_account(address_t const &a)
     {
+        if (a == BURN_ADDRESS) {
+            return EVMC_ACCESS_COLD;
+        }
+
         MONAD_DEBUG_ASSERT(account_exists(a));
         if (changed_.contains(a)) {
             return EVMC_ACCESS_WARM;
@@ -179,12 +196,17 @@ struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
     // EVMC Host Interface
     [[nodiscard]] bytes32_t get_balance(address_t const &a) const noexcept
     {
+        if (a == BURN_ADDRESS) {
+            return 0x00_bytes32;
+        }
+
         return intx::be::store<bytes32_t>(
             changed_.at(a).updated.value_or(Account{}).balance);
     }
 
     void set_balance(address_t const &address, uint256_t new_balance) noexcept
     {
+        if (address == BURN_ADDRESS) { return; }
         changed_.at(address).updated.value().balance = new_balance;
     }
 
@@ -202,6 +224,7 @@ struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
     [[nodiscard]] bytes32_t
     get_code_hash(address_t const &address) const noexcept
     {
+        if (address == BURN_ADDRESS) { return NULL_HASH; }
         return changed_.at(address).updated.value_or(Account{}).code_hash;
     }
 

@@ -27,7 +27,7 @@ struct alignas(64) TransactionProcessorFiberData
     using txn_processor_status_t = typename TTxnProcessor::Status;
 
     TState &s_;
-    Transaction &txn_;
+    Transaction const &txn_;
     BlockHeader const &bh_;
     unsigned int id_;
     Receipt result_{};
@@ -64,8 +64,6 @@ struct alignas(64) TransactionProcessorFiberData
         auto *txn_logger = log::logger_t::get_logger("txn_logger");
         auto const start_time = std::chrono::steady_clock::now();
 
-        txn_.from = recover_sender(txn_);
-
         MONAD_LOG_INFO(
             txn_logger,
             "Start executing Transaction {}, from = {}, to = {}",
@@ -95,7 +93,8 @@ struct alignas(64) TransactionProcessorFiberData
             }
 
             TEvmHost host{bh_, txn_, working_copy};
-            result_ = p.execute(working_copy, host, txn_, bh_.base_fee_per_gas.value_or(0));
+            result_ = p.execute(
+                working_copy, host, txn_, bh_.base_fee_per_gas.value_or(0));
 
             if (s_.can_merge_changes(working_copy) ==
                 TState::MergeStatus::WILL_SUCCEED) {

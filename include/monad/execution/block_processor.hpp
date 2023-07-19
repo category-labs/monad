@@ -36,6 +36,7 @@ struct AllTxnBlockProcessor
 
         unsigned int i = 0;
         for (auto &txn : b.transactions) {
+            txn.from = recover_sender(txn);
             data.push_back({s, txn, b.header, i});
             fibers.emplace_back(data.back());
             ++i;

@@ -25,10 +25,11 @@ std::optional<address_t> recover_sender(Transaction const &t)
     intx::be::unsafe::store(signature + sizeof(t.sc.r), t.sc.s);
 
     std::optional<address_t> res = evmc::address{};
-    std::unique_ptr<secp256k1_context, decltype(&secp256k1_context_destroy)>
-        context(
-            secp256k1_context_create(SILKPRE_SECP256K1_CONTEXT_FLAGS),
-            &secp256k1_context_destroy);
+    static std::
+        unique_ptr<secp256k1_context, decltype(&secp256k1_context_destroy)>
+            context(
+                secp256k1_context_create(SILKPRE_SECP256K1_CONTEXT_FLAGS),
+                &secp256k1_context_destroy);
     if (!silkpre_recover_address(
             res->bytes,
             txn_encoding_hash.bytes,

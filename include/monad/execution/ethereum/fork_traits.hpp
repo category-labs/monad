@@ -168,6 +168,7 @@ namespace fork_traits
             }
             return false;
         }
+
         template <class TState>
         [[nodiscard]] static constexpr bool store_contract_code(
             TState &s, address_t const &a, evmc::Result &r) noexcept
@@ -181,6 +182,12 @@ namespace fork_traits
             return true;
         }
 
+        static constexpr uint64_t
+        gas_price(Transaction const &t, uint64_t const /*base_gas_price*/)
+        {
+            return t.gas_price;
+        }
+
         template <class TState>
         static constexpr void apply_block_award(TState &s, Block const &b)
         {
@@ -189,10 +196,10 @@ namespace fork_traits
 
         template <class TState>
         static constexpr void apply_txn_award(
-            TState &s, Transaction const &, uint64_t base_fee_per_gas,
+            TState &s, Transaction const &t, uint64_t base_gas_cost,
             uint64_t gas_used)
         {
-            s.add_txn_award(uint256_t{gas_used} * uint256_t{base_fee_per_gas});
+            s.add_txn_award(uint256_t{gas_used} * gas_price(t, base_gas_cost));
         }
     };
 

@@ -20,3 +20,6 @@
 [submodule "third_party/vcpkg"]
 	path = third_party/vcpkg
 	url = https://github.com/monad-crypto/vcpkg.git
+[submodule "third_party/evmc"]
+	path = third_party/evmc
+	url = https://github.com/ethereum/evmc

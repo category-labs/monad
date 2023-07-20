@@ -6,6 +6,12 @@ option(ASAN "Turn on Address Sanitizer")
 option(UBSAN "Turn on Undefined Behavior Sanitizer")
 option(FUZZING "Enable fuzzing for clang" ON)
 
+
+set(MONAD_THIRD_PARTY ${CMAKE_SOURCE_DIR}/third_party)
+include(cmake/intx.cmake)
+include(cmake/evmc.cmake)
+include(cmake/ethash.cmake)
+include(cmake/evmone.cmake)
 include(cmake/test.cmake)
 
 # ##############################################################################
@@ -56,11 +62,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(nlohmann_json)
 
 set(BUILD_SHARED_LIBS OFF)
-set(ETHASH_BUILD_TESTS OFF)
 
-add_subdirectory(third_party/ethash)
-add_subdirectory(third_party/evmone)
-add_subdirectory(third_party/intx)
 add_subdirectory(third_party/silkpre)
 
 function(monad_compile_options target)

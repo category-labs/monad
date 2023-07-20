@@ -1,1 +1,2 @@
 add_subdirectory(evm_state_host)
+add_subdirectory(txn_proc_evm_state_host)

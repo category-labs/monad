@@ -118,8 +118,8 @@ struct TransactionProcessor
         return receipt;
     }
 
-    Status validate(
-        TState const &state, Transaction const &t, uint64_t base_fee_per_gas)
+    Status
+    validate(TState &state, Transaction const &t, uint64_t base_fee_per_gas)
     {
         upfront_cost_ =
             intx::umul(t.gas_limit, TTraits::gas_price(t, base_fee_per_gas));
@@ -129,6 +129,8 @@ struct TransactionProcessor
         if (TTraits::intrinsic_gas(t) > t.gas_limit) {
             return Status::INVALID_GAS_LIMIT;
         }
+
+        state.access_account(*t.from);
 
         // σ[S(T)]c = KEC(()), EIP-3607
         if (state.get_code_hash(*t.from) != NULL_HASH) {

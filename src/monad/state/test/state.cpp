@@ -487,3 +487,38 @@ TYPED_TEST(StateTest, commit_twice)
         t.commit();
     }
 }
+
+TYPED_TEST(StateTest, commit_twice_apply_block_award)
+{
+    auto db = test::make_db<TypeParam>();
+    AccountState accounts{db};
+    ValueState values{db};
+    code_db_t code_db{};
+    CodeState code{code_db};
+    State t{accounts, values, code, block_cache};
+
+    {
+        // Block 0, Txn 0
+        auto bs = t.get_working_copy(0);
+        bs.add_txn_award(10);
+        EXPECT_EQ(
+            t.can_merge_changes(bs), decltype(t)::MergeStatus::WILL_SUCCEED);
+        t.merge_changes(bs);
+        t.apply_reward(a, 100);
+        t.commit();
+    }
+    {
+        // Block 1, Txn 0
+        auto bs = t.get_working_copy(0);
+        bs.add_txn_award(10);
+        EXPECT_EQ(
+            t.can_merge_changes(bs), decltype(t)::MergeStatus::WILL_SUCCEED);
+        t.merge_changes(bs);
+        t.apply_reward(a, 100);
+        t.commit();
+    }
+
+    auto ds = t.get_working_copy(0);
+    ds.access_account(a);
+    EXPECT_EQ(ds.get_balance(a), bytes32_t{220});
+}

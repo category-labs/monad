@@ -248,6 +248,7 @@ struct State
         accounts_.commit_all_merged();
         code_.commit_all_merged();
         current_txn_ = 0;
+        gas_award_ = 0;
     }
 
     [[nodiscard]] bytes32_t get_state_hash() const

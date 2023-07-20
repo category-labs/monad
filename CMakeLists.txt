@@ -1,8 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
 
-include(third_party/evmone/cmake/cable/bootstrap.cmake)
-include(CableBuildInfo)
-
 project(monad)
 
 option(ASAN "Turn on Address Sanitizer")

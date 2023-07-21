@@ -30,9 +30,14 @@
 #include <monad/state/state.hpp>
 #include <monad/state/value_state.hpp>
 
+#include <fmt/format.h>
+
 #include <CLI/CLI.hpp>
 
+#include <cerrno>
+#include <cstdlib>
 #include <filesystem>
+#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -53,13 +58,46 @@ public:
     bytes32_t root_hash() const { return NULL_ROOT; }
 };
 
+inline std::optional<std::filesystem::path> get_db_path(
+    block_num_t const start_block_number, block_num_t const finish_block_number,
+    std::filesystem::path state_db_dir, bool cleanup)
+{
+    if (!std::filesystem::exists(state_db_dir)) {
+        return std::nullopt;
+    }
+    state_db_dir = state_db_dir / "replay_ethereum_state_db";
+    auto const from_dir =
+        state_db_dir / fmt::format("{}", (start_block_number - 1u));
+    if (start_block_number != 0u && !std::filesystem::exists(from_dir)) {
+        return std::nullopt;
+    }
+
+    auto const to_dir =
+        state_db_dir / fmt::format("{}", finish_block_number - 1u);
+    if (std::filesystem::exists(to_dir)) {
+        std::filesystem::remove_all(to_dir);
+    }
+    std::filesystem::create_directories(to_dir);
+    if (start_block_number != 0u) {
+        std::filesystem::copy(
+            from_dir, to_dir, std::filesystem::copy_options::recursive);
+        if(cleanup){
+            std::filesystem::remove_all(from_dir);
+        }
+    }
+
+    return to_dir;
+}
+
 MONAD_NAMESPACE_END
 
 int main(int argc, char *argv[])
 {
-    CLI::App cli{"replay_ethereum_block_db"};
+    CLI::App cli{"replay_ethereum"};
 
     std::filesystem::path block_db_path{};
+    std::filesystem::path state_db_path{};
+    bool cleanup = false;
     monad::block_num_t start_block_number;
     std::optional<monad::block_num_t> finish_block_number = std::nullopt;
 
@@ -88,6 +126,9 @@ int main(int argc, char *argv[])
         ->required();
     cli.add_option(
         "-f, --finish", finish_block_number, "1 pass the last executed block");
+    cli.add_option(
+        "--state_db", state_db_path, "restart state_db directory (absolute or relative)")->required();
+    cli.add_flag("--cleanup", cleanup, "Clean up the original state_db");
 
     auto *log_levels = cli.add_subcommand("log_levels", "level of logging");
     log_levels->add_option("--main", main_log_level, "Log level for main");
@@ -101,7 +142,7 @@ int main(int argc, char *argv[])
 
     // Real Objects
     using code_db_t = std::unordered_map<monad::address_t, monad::byte_string>;
-    using db_t = monad::db::InMemoryTrieDB;
+    using db_t = monad::db::RocksTrieDB;
     using block_db_t = monad::db::BlockDb;
     using receipt_collector_t = monad::receiptCollector;
     using state_t = monad::state::State<
@@ -130,7 +171,18 @@ int main(int argc, char *argv[])
         finish_block_number);
 
     block_db_t block_db(block_db_path);
-    db_t db{};
+
+    auto const to_dir = monad::get_db_path(
+        start_block_number, finish_block_number.value(), state_db_path, cleanup);
+    if (!to_dir.has_value()) {
+        MONAD_LOG_ERROR(
+            main_logger,
+            "Can't create or read from rocks_db with start_block_number = {}",
+            start_block_number);
+        return EINVAL;
+    }
+    db_t db{to_dir.value()};
+
     code_db_t code_db{};
     monad::state::AccountState accounts{db};
     monad::state::ValueState values{db};

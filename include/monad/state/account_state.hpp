@@ -47,7 +47,8 @@ struct AccountState
 
         if (!account_before.has_value()) {
             merged_.emplace(a, diff_t{account_before, Account{}});
-        } else if (!merged_.contains(a)) {
+        }
+        else if (!merged_.contains(a)) {
             merged_.emplace(a, diff_t{account_before, account_before});
         }
 
@@ -167,12 +168,14 @@ struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
     // EVMC Host Interface
     evmc_access_status access_account(address_t const &a)
     {
-        MONAD_DEBUG_ASSERT(account_exists(a));
         if (changed_.contains(a)) {
             return EVMC_ACCESS_WARM;
         }
+        auto const account = get_committed_storage(a).has_value()
+                                 ? get_committed_storage(a)
+                                 : Account{};
         changed_.emplace(
-            a, diff_t{get_committed_storage(a), *get_committed_storage(a)});
+            a, diff_t{get_committed_storage(a), account});
         return EVMC_ACCESS_COLD;
     }
 

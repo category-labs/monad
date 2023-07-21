@@ -10,6 +10,12 @@ MONAD_NAMESPACE_BEGIN
 
 struct Receipt
 {
+    enum Status
+    {
+        FAILED,
+        SUCCESS,
+    };
+
     using Bloom = byte_string_fixed<256>;
 
     struct Log

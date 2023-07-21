@@ -80,12 +80,12 @@ namespace fork_traits
     {
         // reward block beneficiary, YP Eqn. 172
         uint256_t const miner_reward = reward + ommer_reward * b.ommers.size();
-        s.apply_reward(b.header.beneficiary, miner_reward);
+        s.apply_block_reward(b.header.beneficiary, miner_reward);
 
         // reward ommers, YP Eqn. 175
         for (auto &i : b.ommers) {
             auto const subtrahend = ((b.header.number - i.number) * reward) / 8;
-            s.apply_reward(i.beneficiary, reward - subtrahend);
+            s.apply_ommer_reward(i.beneficiary, reward - subtrahend);
         }
     }
 

@@ -190,7 +190,12 @@ namespace fake
 
         std::unordered_map<address_t, uint256_t> _block_reward{};
 
-        void apply_reward(address_t const &a, uint256_t const &r)
+        void apply_block_reward(address_t const &a, uint256_t const &r)
+        {
+            _block_reward.insert({a, r});
+        }
+
+        void apply_ommer_reward(address_t const &a, uint256_t const &r)
         {
             _block_reward.insert({a, r});
         }

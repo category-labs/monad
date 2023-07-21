@@ -194,9 +194,14 @@ struct State
     {
     }
 
-    void apply_reward(address_t const &a, uint256_t const &reward)
+    void apply_block_reward(address_t const &a, uint256_t const &reward)
     {
         accounts_.apply_reward(a, reward + gas_award_);
+    }
+
+    void apply_ommer_reward(address_t const &a, uint256_t const &reward)
+    {
+        accounts_.apply_reward(a, reward);
     }
 
     unsigned int current_txn() const { return current_txn_; }

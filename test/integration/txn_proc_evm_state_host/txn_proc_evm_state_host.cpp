@@ -60,7 +60,8 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 
     db.commit(state::StateChanges{
         .account_changes =
-            {{a, Account{}}, {from, Account{.balance = 10'000'000}}},
+            {{a, Account{}}, // 'to' doesn't previously exist
+             {from, Account{.balance = 10'000'000}}},
         .storage_changes = {}});
 
     BlockHeader const bh{.number = 2, .beneficiary = a};

@@ -64,7 +64,10 @@ namespace fake
 
             unsigned int txn_id() const noexcept { return _txn_id; }
 
-            void create_account(address_t const &) noexcept {}
+            void create_account(address_t const &a) noexcept
+            {
+                _accounts.insert({a, Account{}});
+            }
 
             // EVMC Host Interface
             [[nodiscard]] bool account_exists(address_t const &a)
@@ -146,12 +149,15 @@ namespace fake
                 return {};
             }
 
-            void set_code(address_t const &, byte_string const &) {}
+            void set_code(address_t const &a, byte_string const &c)
+            {
+                _code.insert({a, c});
+            }
 
             // EVMC Host Interface
-            [[nodiscard]] size_t get_code_size(address_t const &) const noexcept
+            [[nodiscard]] size_t get_code_size(address_t const &a) const noexcept
             {
-                return 0u;
+                return _code.at(a).size();
             }
 
             // EVMC Host Interface
@@ -328,8 +334,7 @@ namespace fake
                 boost::mp11::mp_list<static_precompiles::Echo<alpha>>;
             static inline uint64_t _intrinsic_gas{21'000u};
             static inline uint64_t _max_refund_quotient{2u};
-            static inline bool _success_store_contract{};
-            static inline uint64_t _gas_creation_cost{};
+            static inline evmc_result _store_contract_result{};
             static inline uint64_t _create_address{};
             static constexpr uint64_t _echo_gas_cost{10};
             static constexpr void apply_block_award(TState &, Block const &) {}
@@ -354,15 +359,26 @@ namespace fake
             {
                 s.destruct_touched_dead();
             }
-            static constexpr bool
-            store_contract_code(TState &, address_t const &a, evmc::Result &r)
+
+            [[nodiscard]] static evmc_result store_contract_code(
+                TState &s, address_t const &a, byte_string code,
+                int64_t) noexcept
             {
-                r.gas_left -= _gas_creation_cost;
-                if (_success_store_contract) {
-                    r.create_address = a;
+                if (_store_contract_result.status_code == EVMC_SUCCESS) {
+                    s.set_code(a, code);
                 }
-                return _success_store_contract;
+                return _store_contract_result;
             }
+
+            static evmc::Result finalize_contract_storage(
+                TState &, address_t const &a, evmc::Result r) noexcept
+            {
+                if (r.status_code == EVMC_SUCCESS) {
+                    r.create_address= a;
+                }
+                return r;
+            }
+
             static constexpr uint64_t gas_price(Transaction const &, uint64_t c)
             {
                 return c;

@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 using namespace monad;
+using namespace monad::fork_traits;
 
 using state_t = execution::fake::State::WorkingCopy;
 
@@ -39,25 +40,48 @@ TEST(fork_traits, frontier)
     f.destruct_touched_dead(s);
     EXPECT_EQ(s._touched_dead, 10);
 
-    uint8_t const ptr[5]{0x00};
-    evmc::Result r{EVMC_SUCCESS, 11'000, 0, ptr, 5};
+    byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
+    { // Successfully deploy code
+        int64_t gas = 10'000;
+        evmc::Result r{EVMC_SUCCESS, gas};
 
-    EXPECT_EQ(f.store_contract_code(s, a, r), true);
-    EXPECT_EQ(r.gas_left, 10'000);
-    EXPECT_EQ(r.create_address, a);
+        auto const r_success = frontier::store_contract_code(s, a, code, gas);
+        EXPECT_EQ(r_success.status_code, EVMC_SUCCESS);
+        EXPECT_EQ(r_success.gas_left, gas);
 
-    r.gas_left = 999;
-    r.create_address = null;
-    EXPECT_EQ(f.store_contract_code(s, a, r), true);
-    EXPECT_EQ(r.gas_left, 999);
-    EXPECT_EQ(r.create_address, null);
+        auto const r2 = frontier::finalize_contract_storage(s, a, std::move(r));
+        EXPECT_EQ(r2.gas_left, gas - 1'000); // G_codedeposit * size(code)
+        EXPECT_EQ(r2.create_address, a);
+    }
 
-    r.status_code = EVMC_INVALID_MEMORY_ACCESS;
-    r.create_address = null;
-    r.gas_left = 11'000;
-    EXPECT_EQ(f.store_contract_code(s, a, r), true);
-    EXPECT_EQ(r.gas_left, 0);
-    EXPECT_EQ(r.create_address, null);
+    { // Deploy code, but not have enough to pay to store it - frontier only
+      // test case
+        int64_t gas = 900;
+        evmc::Result r{EVMC_SUCCESS, gas};
+
+        auto const r1 = frontier::store_contract_code(s, a, code, gas);
+        EXPECT_EQ(r1.status_code, EVMC_SUCCESS);
+        EXPECT_EQ(r1.gas_left, gas);
+
+        auto const r2 = f.finalize_contract_storage(s, a, std::move(r));
+        EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
+        EXPECT_EQ(r2.gas_left, 0); // G_codedeposit * size(code)
+        EXPECT_EQ(r2.create_address, a);
+    }
+
+    { // Fail to deploy code - out of gas
+        int64_t gas = 10'000;
+        evmc::Result r{EVMC_OUT_OF_GAS, 0};
+
+        auto const r1 = frontier::store_contract_code(s, a, code, gas);
+        EXPECT_EQ(r1.status_code, EVMC_SUCCESS);
+        EXPECT_EQ(r1.gas_left, gas);
+
+        auto const r2 = frontier::finalize_contract_storage(s, a, std::move(r));
+        EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
+        EXPECT_EQ(r2.gas_left, 0); // G_codedeposit * size(code)
+        EXPECT_EQ(r2.create_address, null);
+    }
 
     // gas price
     EXPECT_EQ(
@@ -98,26 +122,35 @@ TEST(fork_traits, homestead)
     EXPECT_EQ(h.starting_nonce(), 0);
 
     execution::fake::State::WorkingCopy s{};
-    uint8_t const ptr[5]{0x00};
-    evmc::Result r{EVMC_SUCCESS, 11'000, 0, ptr, 5};
+    byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
+    { // Successfully deploy code
+        int64_t gas = 10'000;
 
-    EXPECT_EQ(h.store_contract_code(s, a, r), true);
-    EXPECT_EQ(r.gas_left, 10'000);
-    EXPECT_EQ(r.create_address, a);
+        auto const r_success = homestead::store_contract_code(s, a, code, gas);
+        EXPECT_EQ(r_success.status_code, EVMC_SUCCESS);
+        EXPECT_EQ(
+            r_success.gas_left, gas - 1'000); // G_codedeposit * size(code)
 
-    r.gas_left = 999;
-    r.create_address = null;
-    EXPECT_EQ(h.store_contract_code(s, a, r), false);
-    EXPECT_EQ(r.status_code, EVMC_OUT_OF_GAS);
-    EXPECT_EQ(r.gas_left, 0);
-    EXPECT_EQ(r.create_address, null);
+        evmc::Result r{EVMC_SUCCESS, 5'000};
+        auto const r2 =
+            homestead::finalize_contract_storage(s, a, std::move(r));
+        EXPECT_EQ(r2.create_address, a);
+    }
 
-    r.status_code = EVMC_INVALID_MEMORY_ACCESS;
-    r.create_address = null;
-    r.gas_left = 11'000;
-    EXPECT_EQ(h.store_contract_code(s, a, r), false);
-    EXPECT_EQ(r.gas_left, 0);
-    EXPECT_EQ(r.create_address, null);
+    { // Fail to deploy code - out of gas
+        int64_t gas = 900;
+
+        auto const r1 = homestead::store_contract_code(s, a, code, gas);
+        EXPECT_EQ(r1.status_code, EVMC_OUT_OF_GAS);
+        EXPECT_EQ(r1.gas_left, 0);
+
+        evmc::Result r{EVMC_OUT_OF_GAS, 0};
+        auto const r2 =
+            homestead::finalize_contract_storage(s, a, std::move(r));
+        EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
+        EXPECT_EQ(r2.gas_left, 0);
+        EXPECT_EQ(r2.create_address, null);
+    }
 }
 
 static_assert(concepts::fork_traits<fork_traits::spurious_dragon, state_t>);
@@ -137,12 +170,22 @@ TEST(fork_traits, spurious_dragon)
     EXPECT_EQ(s._touched_dead, 0);
 
     uint8_t const ptr[25000]{0x00};
-    evmc::Result r{EVMC_SUCCESS, 11'000, 0, ptr, 25'000};
+    byte_string code{ptr, 25000};
+    { // EIP-170 Code too big to deploy
+        int64_t gas = std::numeric_limits<int64_t>::max();
 
-    EXPECT_EQ(sd.store_contract_code(s, a, r), false);
-    EXPECT_EQ(r.status_code, EVMC_OUT_OF_GAS);
-    EXPECT_EQ(r.gas_left, 0);
-    EXPECT_EQ(r.create_address, null);
+        auto const r_success =
+            spurious_dragon::store_contract_code(s, a, code, gas);
+        EXPECT_EQ(r_success.status_code, EVMC_OUT_OF_GAS);
+        EXPECT_EQ(r_success.gas_left, 0);
+
+        evmc::Result r{EVMC_OUT_OF_GAS, 0};
+        auto const r2 =
+            spurious_dragon::finalize_contract_storage(s, a, std::move(r));
+        EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
+        EXPECT_EQ(r2.gas_left, 0);
+        EXPECT_EQ(r2.create_address, null);
+    }
 }
 
 static_assert(concepts::fork_traits<fork_traits::byzantium, state_t>);
@@ -160,33 +203,6 @@ TEST(fork_traits, byzantium)
     s._touched_dead = 10;
     byz.destruct_touched_dead(s);
     EXPECT_EQ(s._touched_dead, 0);
-
-    uint8_t const ptr[25]{0x00};
-    evmc::Result r{EVMC_SUCCESS, 11'000, 0, ptr, 25};
-    EXPECT_EQ(byz.store_contract_code(s, a, r), true);
-    EXPECT_EQ(r.status_code, EVMC_SUCCESS);
-    EXPECT_EQ(r.gas_left, 6'000);
-    EXPECT_EQ(r.create_address, a);
-
-    r.gas_left = 999;
-    r.create_address = null;
-    EXPECT_EQ(byz.store_contract_code(s, a, r), false);
-    EXPECT_EQ(r.status_code, EVMC_OUT_OF_GAS);
-    EXPECT_EQ(r.gas_left, 0);
-    EXPECT_EQ(r.create_address, null);
-
-    r.status_code = EVMC_INVALID_MEMORY_ACCESS;
-    r.gas_left = 11'000;
-    EXPECT_EQ(byz.store_contract_code(s, a, r), false);
-    EXPECT_EQ(r.gas_left, 0);
-    EXPECT_EQ(r.create_address, null);
-
-    r.status_code = EVMC_REVERT;
-    r.gas_left = 11'000;
-    EXPECT_EQ(byz.store_contract_code(s, a, r), false);
-    EXPECT_EQ(r.status_code, EVMC_REVERT);
-    EXPECT_EQ(r.gas_left, 11'000);
-    EXPECT_EQ(r.create_address, null);
 
     // block award
     execution::fake::State state{};
@@ -266,18 +282,45 @@ TEST(fork_traits, london)
     EXPECT_EQ(l.get_selfdestruct_refund(s), 0);
     EXPECT_EQ(l.max_refund_quotient(), 5);
 
-    uint8_t const ptr[25]{0xef};
-    evmc::Result r{EVMC_UNDEFINED_INSTRUCTION, 11'000, 0, ptr, 25};
+    byte_string const illegal_code{0xef, 0x60};
+    byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
+    { // Successfully deploy code
+        int64_t gas = 10'000;
 
-    EXPECT_EQ(l.store_contract_code(s, a, r), false);
-    EXPECT_EQ(r.status_code, EVMC_CONTRACT_VALIDATION_FAILURE);
-    EXPECT_EQ(r.gas_left, 0);
-    EXPECT_EQ(r.create_address, null);
+        auto const r_success = london::store_contract_code(s, a, code, gas);
+        EXPECT_EQ(r_success.status_code, EVMC_SUCCESS);
+        EXPECT_EQ(
+            r_success.gas_left, gas - 1'000); // G_codedeposit * size(code)
+
+        evmc::Result r{EVMC_SUCCESS, 5'000};
+        auto const r2 = london::finalize_contract_storage(s, a, std::move(r));
+        EXPECT_EQ(r2.create_address, a);
+    }
+
+    { // Fail to deploy illegal code
+        int64_t gas = 1'000;
+
+        auto const r1 = london::store_contract_code(s, a, illegal_code, gas);
+        EXPECT_EQ(r1.status_code, EVMC_CONTRACT_VALIDATION_FAILURE);
+        EXPECT_EQ(r1.gas_left, 0);
+
+        evmc::Result r{EVMC_CONTRACT_VALIDATION_FAILURE, 0};
+        auto const r2 = london::finalize_contract_storage(s, a, std::move(r));
+        EXPECT_EQ(r2.status_code, EVMC_CONTRACT_VALIDATION_FAILURE);
+        EXPECT_EQ(r2.gas_left, 0);
+        EXPECT_EQ(r2.create_address, null);
+    }
 
     // gas price
-    Transaction t1{.gas_price = 3'000, .type = Transaction::Type::eip155, .priority_fee = 1'000};
+    Transaction t1{
+        .gas_price = 3'000,
+        .type = Transaction::Type::eip155,
+        .priority_fee = 1'000};
     Transaction t2{.gas_price = 3'000, .type = Transaction::Type::eip155};
-    Transaction t3{.gas_price = 5'000, .type = Transaction::Type::eip1559, .priority_fee = 1'000};
+    Transaction t3{
+        .gas_price = 5'000,
+        .type = Transaction::Type::eip1559,
+        .priority_fee = 1'000};
     Transaction t4{.gas_price = 5'000, .type = Transaction::Type::eip1559};
     EXPECT_EQ(fork_traits::london::gas_price(t1, 2'000u), 3'000);
     EXPECT_EQ(fork_traits::london::gas_price(t2, 2'000u), 3'000);

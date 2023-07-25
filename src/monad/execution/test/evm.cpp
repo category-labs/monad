@@ -12,6 +12,8 @@
 using namespace monad;
 using namespace monad::execution;
 
+constexpr static auto null{0x0000000000000000000000000000000000000000_address};
+
 using traits_t = fake::traits::alpha<fake::State::WorkingCopy>;
 
 template <concepts::fork_traits<fake::State::WorkingCopy> TTraits>
@@ -52,9 +54,7 @@ TEST(Evm, make_account_address)
 
     EXPECT_TRUE(result.has_value());
     EXPECT_EQ(*result, to);
-    EXPECT_EQ(s._accounts[from].balance, 9'930'000'000);
     EXPECT_EQ(s._accounts[from].nonce, 7);
-    EXPECT_EQ(s._accounts[to].balance, 70'000'000);
     EXPECT_EQ(s._accounts[to].nonce, 1);
 }
 
@@ -86,9 +86,7 @@ TEST(Evm, make_account_address_create2)
 
     EXPECT_TRUE(result.has_value());
     EXPECT_EQ(*result, new_address);
-    EXPECT_EQ(s._accounts[from].balance, 9'930'000'000);
     EXPECT_EQ(s._accounts[from].nonce, 6);
-    EXPECT_EQ(s._accounts[new_address].balance, 70'000'000);
     EXPECT_EQ(s._accounts[new_address].nonce, 1);
 }
 
@@ -279,8 +277,9 @@ TEST(Evm, create_contract_account)
 
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 50'000u, .nonce = 1});
-    traits_t::_success_store_contract = true;
-    traits_t::_intrinsic_gas = 21'000;
+    traits_t::_store_contract_result.status_code = EVMC_SUCCESS;
+    traits_t::_store_contract_result.gas_left = 10'000;
+    traits_t::_store_contract_result.create_address = null;
     byte_string code{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
     fake::Interpreter::_result = evmc::Result{
         evmc_result{.status_code = EVMC_SUCCESS, .gas_left = 8'000}};
@@ -311,19 +310,20 @@ TEST(Evm, create2_contract_account)
 
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 50'000u, .nonce = 1});
-    traits_t::_gas_creation_cost = 5'000;
-    traits_t::_success_store_contract = true;
-    traits_t::_intrinsic_gas = 21'000;
+    traits_t::_store_contract_result.status_code = EVMC_SUCCESS;
+    traits_t::_store_contract_result.gas_left = 10'000;
+    traits_t::_store_contract_result.create_address = null;
     byte_string code{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
     fake::Interpreter::_result = evmc::Result{
         evmc_result{.status_code = EVMC_SUCCESS, .gas_left = 8'000}};
 
     evmc_message m{
         .kind = EVMC_CREATE2,
-        .gas = 12'000,
+        .gas = 18'000,
         .sender = from,
         .input_data = code.data(),
-        .input_size = code.size(), .create2_salt = {}};
+        .input_size = code.size(),
+        .create2_salt = {}};
     uint256_t v{6'000};
     intx::be::store(m.value.bytes, v);
 
@@ -332,6 +332,27 @@ TEST(Evm, create2_contract_account)
     EXPECT_EQ(result.create_address, new_addr2);
     EXPECT_EQ(s.get_balance(from), bytes32_t{44'000});
     EXPECT_EQ(s.get_balance(new_addr2), bytes32_t{6'000});
+}
+
+TEST(Evm, oog_create_account)
+{
+    constexpr static auto from{
+        0x5353535353535353535353535353535353535353_address};
+    fake::State::WorkingCopy s{};
+    evm_host_t h{};
+    s._accounts.emplace(from, Account{.balance = 10'000, .nonce = 1});
+    traits_t::_store_contract_result.status_code = EVMC_OUT_OF_GAS;
+    traits_t::_store_contract_result.gas_left = 0;
+    traits_t::_store_contract_result.create_address = null;
+
+    evmc_message m{.kind = EVMC_CREATE, .gas = 12'000, .sender = from};
+
+    auto const result = evm_t::create_contract_account(&h, s, m);
+
+    EXPECT_TRUE(s._accounts.empty()); // revert was called on the fake
+    EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
+    EXPECT_EQ(result.create_address, null);
+    EXPECT_EQ(result.gas_left, 0);
 }
 
 TEST(Evm, revert_create_account)
@@ -343,8 +364,9 @@ TEST(Evm, revert_create_account)
     fake::State::WorkingCopy s{};
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 10'000});
-    traits_t::_gas_creation_cost = 10'000;
-    traits_t::_success_store_contract = false;
+    traits_t::_store_contract_result.status_code = EVMC_SUCCESS;
+    traits_t::_store_contract_result.gas_left = 10'000;
+    traits_t::_store_contract_result.create_address = null;
     fake::Interpreter::_result = evmc::Result{
         evmc_result{.status_code = EVMC_REVERT, .gas_left = 11'000}};
 
@@ -353,8 +375,9 @@ TEST(Evm, revert_create_account)
     auto const result = evm_t::create_contract_account(&h, s, m);
 
     EXPECT_TRUE(s._accounts.empty()); // revert was called on the fake
+    EXPECT_EQ(result.status_code, EVMC_REVERT);
     EXPECT_EQ(result.create_address, null);
-    EXPECT_EQ(result.gas_left, 1'000);
+    EXPECT_EQ(result.gas_left, 11'000);
 }
 
 TEST(Evm, call_evm)

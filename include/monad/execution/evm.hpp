@@ -30,14 +30,35 @@ struct Evm
             return evmc::Result{contract_address.error()};
         }
 
-        auto result = TInterpreter::execute(host, state, m);
+        byte_string code{m.input_data, m.input_size};
 
-        if (!TTraits::store_contract_code(
-                state, contract_address.value(), result)) {
+        auto const r = TTraits::store_contract_code(
+            state, contract_address.value(), code, m.gas);
+        if (r.status_code != EVMC_SUCCESS) {
             state.revert();
+            return evmc::Result(r);
         }
 
-        return result;
+        auto execute = [&](auto result) {
+            evmc_message m_call{
+                .kind = EVMC_CALL,
+                .depth = m.depth,
+                .gas = result.gas_left,
+                .recipient = contract_address.value(),
+                .sender = m.sender,
+                .value = m.value,
+                .code_address = contract_address.value(),
+            };
+            return call_evm(host, state, m_call);
+        };
+
+        auto finalize = [&](auto &&result) {
+            return TTraits::finalize_contract_storage(
+                state, contract_address.value(), std::move(result));
+        };
+
+        // if bad result, then revert
+        return finalize(execute(r));
     }
 
     template <class TEvmHost>
@@ -144,7 +165,6 @@ struct Evm
         }
 
         s.set_nonce(new_address, TTraits::starting_nonce());
-        transfer_balances(s, m, new_address);
         return {new_address};
     }
 

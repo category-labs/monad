@@ -8,9 +8,8 @@
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/evmone_baseline_interpreter.hpp>
+#include <monad/execution/static_precompiles.hpp>
 #include <monad/execution/transaction_processor.hpp>
-
-#include <monad/execution/test/fakes.hpp>
 
 #include <monad/state/account_state.hpp>
 #include <monad/state/code_state.hpp>
@@ -106,4 +105,70 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     ws.access_account(o);
     EXPECT_EQ(ws.get_balance(a), bytes32_t{3'093'750'000'000'210'000});
     EXPECT_EQ(ws.get_balance(o), bytes32_t{2'625'000'000'000'000'000});
+}
+
+TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
+{
+    // Block 46'402, txn 0
+    static constexpr auto creator = 0xA1E4380A3B1f749673E270229993eE55F35663b4_address;
+    static constexpr auto created = 0x9a049f5d18c239efaa258af9f3e7002949a977a0_address;
+    db::BlockDb blocks{test_resource::correct_block_data_dir};
+    account_store_db_t db{};
+    state::AccountState accounts{db};
+    state::ValueState values{db};
+    code_db_t code_db{};
+    state::CodeState codes{code_db};
+    state::State s{accounts, values, codes, blocks, db};
+
+    db.commit(state::StateChanges{
+        .account_changes =
+            {{a, Account{}},
+             {creator, Account{.balance = 9'000'000'000'000'000'000, .nonce = 3}}},
+        .storage_changes = {}});
+
+    byte_string code = {0x60, 0x60, 0x60, 0x40, 0x52, 0x60, 0x00, 0x80, 0x54,
+                        0x60, 0x01, 0x60, 0xa0, 0x60, 0x02, 0x0a, 0x03, 0x19,
+                        0x16, 0x33, 0x17, 0x90, 0x55, 0x60, 0x06, 0x80, 0x60,
+                        0x23, 0x60, 0x00, 0x39, 0x60, 0x00, 0xf3, 0x00, 0x60,
+                        0x60, 0x60, 0x40, 0x52, 0x00};
+    BlockHeader const bh{.number = 2, .beneficiary = a};
+    Transaction const t{
+        .nonce = 3,
+        .gas_price = 10'000'000'000'000, // 10'000 GWei
+        .gas_limit = 24'000,
+        .amount = 0,
+        .from = creator,
+        .data = code,
+        .type = Transaction::Type::eip155};
+    Block const b{.header = bh, .transactions = {t}};
+
+    auto working_state = s.get_working_copy(0u);
+
+    using state_t = decltype(working_state);
+    using fork_t = monad::fork_traits::frontier;
+    using tp_t = execution::TransactionProcessor<state_t, fork_t>;
+
+    tp_t tp{};
+    evm_host_t<state_t, fork_t> h{bh, t, working_state};
+
+    EXPECT_EQ(tp.validate(working_state, t, 0), tp_t::Status::SUCCESS);
+
+    auto r = tp.execute(working_state, h, t, 0);
+    EXPECT_EQ(r.status, Receipt::Status::FAILED);
+    EXPECT_EQ(r.gas_used, 24'000);
+    EXPECT_EQ(t.type, Transaction::Type::eip155);
+    EXPECT_EQ(working_state.get_balance(creator), bytes32_t{8'760'000'000'000'000'000});
+    EXPECT_EQ(working_state.get_balance(created), bytes32_t{0});
+
+    EXPECT_EQ(
+        s.can_merge_changes(working_state),
+        decltype(s)::MergeStatus::WILL_SUCCEED);
+    s.merge_changes(working_state);
+
+    fork_t::apply_block_award(s, b);
+
+    auto ws = s.get_working_copy(1u);
+    ws.access_account(a);
+    ws.access_account(o);
+    EXPECT_EQ(ws.get_balance(a), bytes32_t{5'240'000'000'000'000'000});
 }

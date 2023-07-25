@@ -11,7 +11,7 @@
 
 #include <algorithm>
 #include <cassert>
-#include <unordered_map>
+#include <map>
 
 MONAD_TRIE_NAMESPACE_BEGIN
 
@@ -19,9 +19,8 @@ MONAD_TRIE_NAMESPACE_BEGIN
 template <typename TComparator>
 struct InMemoryCursor
 {
-    using element_t = std::pair<byte_string, byte_string>;
-    using storage_t = std::vector<element_t>;
-    using iterator_t = std::vector<element_t>::const_iterator;
+    using storage_t = std::map<byte_string, byte_string, TComparator>;
+    using iterator_t = typename storage_t::const_iterator;
 
     storage_t const &storage_;
     iterator_t it_;
@@ -50,7 +49,7 @@ struct InMemoryCursor
         }
     };
 
-    constexpr explicit InMemoryCursor(std::vector<element_t> const &storage)
+    constexpr explicit InMemoryCursor(storage_t const &storage)
         : storage_(storage)
         , it_(storage_.end())
     {
@@ -71,7 +70,7 @@ struct InMemoryCursor
 
     constexpr void prev()
     {
-        if (it_ > storage_.begin()) {
+        if (it_ != storage_.begin()) {
             std::advance(it_, -1);
         }
         else {
@@ -81,7 +80,7 @@ struct InMemoryCursor
 
     constexpr void next()
     {
-        if (it_ < storage_.end()) {
+        if (it_ != storage_.end()) {
             std::advance(it_, 1);
         }
         else {
@@ -96,7 +95,10 @@ struct InMemoryCursor
     {
         serialize_nibbles(buf_, key);
         it_ = std::ranges::lower_bound(
-            storage_, buf_.view(), TComparator{}, &element_t::first);
+            storage_,
+            buf_.view(),
+            TComparator{},
+            &storage_t::value_type::first);
     }
 
     [[nodiscard]] constexpr bool valid() const { return is_it_valid(it_); }
@@ -105,7 +107,10 @@ struct InMemoryCursor
     {
         serialize_nibbles(buf_, Nibbles{});
         return !is_it_valid(std::ranges::lower_bound(
-            storage_, buf_.view(), TComparator{}, &element_t::first));
+            storage_,
+            buf_.view(),
+            TComparator{},
+            &storage_t::value_type::first));
     }
 
     constexpr void set_prefix(address_t const &address)
@@ -115,7 +120,7 @@ struct InMemoryCursor
 
     [[nodiscard]] constexpr bool is_it_valid(iterator_t it) const
     {
-        return it < storage_.end() && it->first.starts_with(buf_.prefix());
+        return it != storage_.end() && it->first.starts_with(buf_.prefix());
     }
 
     void reset(){};

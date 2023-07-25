@@ -1,31 +1,26 @@
 #pragma once
 
-#include <algorithm>
-#include <unordered_map>
-#include <vector>
-
+#include <monad/core/byte_string.hpp>
 #include <monad/trie/config.hpp>
 #include <monad/trie/key_buffer.hpp>
 
-#include <monad/core/byte_string.hpp>
-#include <tl/optional.hpp>
-
+#include <algorithm>
 #include <iomanip>
-#include <ostream>
+#include <map>
+#include <unordered_set>
 
 MONAD_TRIE_NAMESPACE_BEGIN
 
 template <typename TComparator>
 struct InMemoryWriter
 {
-    using element_t = std::pair<byte_string, byte_string>;
-    using storage_t = std::vector<element_t>;
-    using changes_t = std::unordered_map<
-        byte_string, tl::optional<byte_string>, byte_string_hasher>;
+    using storage_t = std::map<byte_string, byte_string, TComparator>;
+    using set_t = std::unordered_set<byte_string, byte_string_hasher>;
 
     storage_t &storage;
-    changes_t changes;
-    std::vector<byte_string> deleted_prefixes;
+    storage_t upserts;
+    set_t prefix_deletions;
+    set_t deletions;
 
     explicit constexpr InMemoryWriter(storage_t &s)
         : storage(s)
@@ -34,49 +29,43 @@ struct InMemoryWriter
 
     void put(KeyBuffer const &key, byte_string_view value)
     {
-        changes[byte_string{key.view()}] = value;
+        // puts should override any previous actions
+        auto const bs = byte_string{key.view()};
+        upserts[bs] = value;
+        deletions.erase(bs);
+
+        MONAD_DEBUG_ASSERT(
+            std::ranges::none_of(prefix_deletions, [&](auto const &prefix) {
+                return bs.starts_with(prefix);
+            }));
     }
 
-    void del(KeyBuffer const &key)
-    {
-        changes[byte_string{key.view()}] = tl::nullopt;
-    }
+    void del(KeyBuffer const &key) { deletions.emplace(key.view()); }
 
     void del_prefix(byte_string_view prefix)
     {
-        deleted_prefixes.emplace_back(prefix);
-
-        std::erase_if(changes, [&](auto const &key) {
-            return key.first.starts_with(prefix);
-        });
+        prefix_deletions.emplace(prefix);
     }
 
     void write()
     {
-        // Delete the prefixes first
-        for (auto const &prefix : deleted_prefixes) {
-            std::erase_if(storage, [&](auto const &key) {
+        upserts.merge(storage);
+
+        for (auto const &prefix : prefix_deletions) {
+            std::erase_if(upserts, [&](auto const &key) {
                 return key.first.starts_with(prefix);
             });
         }
 
-        // Apply changes second
-        for (auto const &change : changes) {
-            auto const num = std::erase_if(storage, [&](auto const &p) {
-                return p.first == change.first;
-            });
-
-            MONAD_DEBUG_ASSERT(num <= 1);
-
-            if (change.second.has_value()) {
-                storage.emplace_back(change.first, change.second.value());
-            }
+        for (auto const &key : deletions) {
+            upserts.erase(key);
         }
 
-        std::ranges::sort(storage, TComparator{}, &element_t::first);
+        storage.swap(upserts);
 
-        changes.clear();
-        deleted_prefixes.clear();
+        upserts.clear();
+        prefix_deletions.clear();
+        deletions.clear();
     }
 };
 

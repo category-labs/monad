@@ -153,9 +153,10 @@ struct in_memory_fixture : public ::testing::Test
     using cursor_t = monad::trie::InMemoryCursor<TComparator>;
     using writer_t = monad::trie::InMemoryWriter<TComparator>;
     using trie_t = monad::trie::Trie<cursor_t, writer_t>;
+    using storage_t = std::map<byte_string, byte_string, TComparator>;
 
-    std::vector<std::pair<byte_string, byte_string>> leaves_storage_;
-    std::vector<std::pair<byte_string, byte_string>> trie_storage_;
+    storage_t leaves_storage_;
+    storage_t trie_storage_;
     cursor_t leaves_cursor_;
     cursor_t trie_cursor_;
     writer_t leaves_writer_;

@@ -275,30 +275,63 @@ TEST(Evm, create_contract_account)
         0x5353535353535353535353535353535353535353_address};
     constexpr static auto new_addr{
         0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
+    fake::State::WorkingCopy s{};
+
+    evm_host_t h{};
+    s._accounts.emplace(from, Account{.balance = 50'000u, .nonce = 1});
+    traits_t::_success_store_contract = true;
+    traits_t::_intrinsic_gas = 21'000;
+    byte_string code{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
+    fake::Interpreter::_result = evmc::Result{
+        evmc_result{.status_code = EVMC_SUCCESS, .gas_left = 8'000}};
+
+    evmc_message m{
+        .kind = EVMC_CREATE,
+        .gas = 12'000,
+        .sender = from,
+        .input_data = code.data(),
+        .input_size = code.size()};
+    uint256_t v{6'000};
+    intx::be::store(m.value.bytes, v);
+
+    auto const result = evm_t::create_contract_account(&h, s, m);
+
+    EXPECT_EQ(result.create_address, new_addr);
+    EXPECT_EQ(s.get_balance(from), bytes32_t{44'000});
+    EXPECT_EQ(s.get_balance(new_addr), bytes32_t{6'000});
+}
+
+TEST(Evm, create2_contract_account)
+{
+    constexpr static auto from{
+        0x5353535353535353535353535353535353535353_address};
     constexpr static auto new_addr2{
-        0x312c420ec31bc2760e2556911ccf7e5c7162909f_address};
+        0xe0e05f8f41129e2087ec0a3759810fdced46edd4_address};
     fake::State::WorkingCopy s{};
 
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 50'000u, .nonce = 1});
     traits_t::_gas_creation_cost = 5'000;
     traits_t::_success_store_contract = true;
+    traits_t::_intrinsic_gas = 21'000;
+    byte_string code{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
     fake::Interpreter::_result = evmc::Result{
         evmc_result{.status_code = EVMC_SUCCESS, .gas_left = 8'000}};
 
-    evmc_message m{.kind = EVMC_CREATE, .gas = 12'000, .sender = from};
+    evmc_message m{
+        .kind = EVMC_CREATE2,
+        .gas = 12'000,
+        .sender = from,
+        .input_data = code.data(),
+        .input_size = code.size(), .create2_salt = {}};
+    uint256_t v{6'000};
+    intx::be::store(m.value.bytes, v);
 
     auto const result = evm_t::create_contract_account(&h, s, m);
 
-    EXPECT_EQ(result.create_address, new_addr);
-    EXPECT_EQ(result.gas_left, 3'000);
-
-    m.kind = EVMC_CREATE2;
-
-    auto const result2 = evm_t::create_contract_account(&h, s, m);
-
-    EXPECT_EQ(result2.create_address, new_addr2);
-    EXPECT_EQ(result2.gas_left, 3'000);
+    EXPECT_EQ(result.create_address, new_addr2);
+    EXPECT_EQ(s.get_balance(from), bytes32_t{44'000});
+    EXPECT_EQ(s.get_balance(new_addr2), bytes32_t{6'000});
 }
 
 TEST(Evm, revert_create_account)

@@ -87,7 +87,7 @@ struct ValueState
         if (merged_.contains_key(a, key)) {
             return merged_.storage_.at(a).at(key).updated;
         }
-        return db_.query(a, key).value_or(bytes32_t{});
+        return db_.try_find(a, key).value_or(bytes32_t{});
     }
 
     // Note: just for debug testing
@@ -95,7 +95,7 @@ struct ValueState
     {
         for (auto const &[a, key_set] : merged_.deleted_storage_) {
             for (auto const &[orig, key] : key_set) {
-                if (db_.query(a, key).value_or(bytes32_t{}) != orig) {
+                if (db_.try_find(a, key).value_or(bytes32_t{}) != orig) {
                     return false;
                 }
             }

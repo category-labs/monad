@@ -9,7 +9,7 @@
 
 MONAD_DB_NAMESPACE_BEGIN
 
-template <typename TDBImpl, typename TExecution>
+template <typename TDBImpl, typename TExecutor>
 struct DBInterface
 {
     struct Updates
@@ -18,8 +18,6 @@ struct DBInterface
         std::unordered_map<address_t, std::unordered_map<bytes32_t, bytes32_t>>
             storage;
     } updates{};
-
-    decltype(TExecution::get_executor()) executor{TExecution::get_executor()};
 
     [[nodiscard]] constexpr TDBImpl &self() noexcept
     {
@@ -36,23 +34,12 @@ struct DBInterface
 
     [[nodiscard]] constexpr std::optional<Account> try_find(address_t const &a)
     {
-        return self().try_find(a);
-    }
-
-    [[nodiscard]] constexpr std::optional<Account> query(address_t const &a)
-    {
-        return executor([=, this]() { return try_find(a); });
+        return TExecutor::execute([=, this]() { return self().try_find(a); });
     }
 
     [[nodiscard]] constexpr bool contains(address_t const &a)
     {
-        return self().contains(a);
-    }
-
-    [[nodiscard]] constexpr bool
-    contains(address_t const &a, bytes32_t const &k)
-    {
-        return self().contains(a, k);
+        return TExecutor::execute([=, this]() { return self().contains(a); });
     }
 
     [[nodiscard]] constexpr Account at(address_t const &a)
@@ -63,15 +50,17 @@ struct DBInterface
     }
 
     [[nodiscard]] constexpr std::optional<bytes32_t>
-    query(address_t const &a, bytes32_t const &k)
-    {
-        return executor([=, this]() { return try_find(a, k); });
-    }
-
-    [[nodiscard]] constexpr std::optional<bytes32_t>
     try_find(address_t const &a, bytes32_t const &k)
     {
-        return self().try_find(a, k);
+        return TExecutor::execute(
+            [=, this]() { return self().try_find(a, k); });
+    }
+
+    [[nodiscard]] constexpr bool
+    contains(address_t const &a, bytes32_t const &k)
+    {
+        return TExecutor::execute(
+            [=, this]() { return self().contains(a, k); });
     }
 
     [[nodiscard]] constexpr bytes32_t at(address_t const &a, bytes32_t const &k)

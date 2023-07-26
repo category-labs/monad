@@ -75,20 +75,6 @@ TEST(InMemoryTrieDB, account_creation)
     EXPECT_EQ(db.at(a), acct);
 }
 
-TYPED_TEST(DBTest, query)
-{
-    auto db = test::make_db<TypeParam>();
-    Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
-    db.commit(state::StateChanges{
-        .account_changes = {{a, acct}},
-        .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
-
-    EXPECT_EQ(db.query(a), acct);
-    EXPECT_FALSE(db.query(b).has_value());
-    EXPECT_EQ(db.query(a, key1), value1);
-    EXPECT_EQ(db.query(a, key2), value2);
-}
-
 TEST(InMemoryTrieDB, erase)
 {
     auto db = test::make_db<InMemoryTrieDB>();

@@ -2,7 +2,10 @@
 
 #include "config.hpp"
 #include <monad/core/assert.h>
-#include <monad/db/config.hpp>
+#include <monad/db/in_memory_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/rocks_db.hpp>
+#include <monad/db/rocks_trie_db.hpp>
 #include <test_resource_data.h>
 
 #include <algorithm>
@@ -12,15 +15,6 @@
 #include <fmt/chrono.h>
 #include <fmt/format.h>
 #include <gtest/gtest.h>
-
-MONAD_DB_NAMESPACE_BEGIN
-
-struct InMemoryDB;
-struct InMemoryTrieDB;
-struct RocksDB;
-struct RocksTrieDB;
-
-MONAD_DB_NAMESPACE_END
 
 MONAD_TEST_NAMESPACE_BEGIN
 

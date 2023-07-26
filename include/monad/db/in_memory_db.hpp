@@ -8,10 +8,9 @@ MONAD_DB_NAMESPACE_BEGIN
 
 // Database impl without trie root generating logic, backed by stl
 struct InMemoryDB
-    : public DBInterface<InMemoryDB, monad::execution::BoostFiberExecution>
+    : public DBInterface<InMemoryDB, monad::execution::SerialExecution>
 {
-    using DBInterface<
-        InMemoryDB, monad::execution::BoostFiberExecution>::updates;
+    using DBInterface<InMemoryDB, monad::execution::SerialExecution>::updates;
 
     std::unordered_map<address_t, Account> accounts;
     std::unordered_map<address_t, std::unordered_map<bytes32_t, bytes32_t>>

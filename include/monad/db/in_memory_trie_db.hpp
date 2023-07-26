@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/db/trie_db_interface.hpp>
+#include <monad/execution/execution_model.hpp>
 #include <monad/trie/in_memory_comparator.hpp>
 #include <monad/trie/in_memory_cursor.hpp>
 #include <monad/trie/in_memory_writer.hpp>
@@ -9,7 +10,8 @@
 MONAD_DB_NAMESPACE_BEGIN
 
 // Database impl with trie root generating logic, backed by stl
-struct InMemoryTrieDB : public TrieDBInterface<InMemoryTrieDB>
+struct InMemoryTrieDB
+    : public TrieDBInterface<InMemoryTrieDB, monad::execution::SerialExecution>
 {
     template <typename TComparator>
     struct Trie

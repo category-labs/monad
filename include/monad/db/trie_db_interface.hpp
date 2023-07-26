@@ -3,7 +3,6 @@
 #include <monad/core/likely.h>
 #include <monad/db/config.hpp>
 #include <monad/db/db_interface.hpp>
-#include <monad/execution/execution_model.hpp>
 #include <monad/logging/monad_log.hpp>
 #include <monad/rlp/decode_helpers.hpp>
 #include <monad/rlp/encode_helpers.hpp>
@@ -17,17 +16,12 @@
 
 MONAD_DB_NAMESPACE_BEGIN
 
-template <typename TTrieDBImpl>
+template <typename TTrieDBImpl, typename TExecutor>
 struct TrieDBInterface
-    : public DBInterface<
-          TrieDBInterface<TTrieDBImpl>, monad::execution::BoostFiberExecution>
+    : public DBInterface<TrieDBInterface<TTrieDBImpl, TExecutor>, TExecutor>
 {
-    using DBInterface<
-        TrieDBInterface<TTrieDBImpl>,
-        monad::execution::BoostFiberExecution>::updates;
-    using DBInterface<
-        TrieDBInterface<TTrieDBImpl>,
-        monad::execution::BoostFiberExecution>::query;
+    using base_t =
+        DBInterface<TrieDBInterface<TTrieDBImpl, TExecutor>, TExecutor>;
 
     std::vector<trie::Update> account_trie_updates;
     std::vector<trie::Update> storage_trie_updates;
@@ -220,7 +214,7 @@ struct TrieDBInterface
         }
 
         for (auto const &[addr, storage_root] : updated_storage_roots) {
-            auto const account = query(addr);
+            auto const account = base_t::try_find(addr);
             MONAD_DEBUG_ASSERT(account.has_value());
 
             auto const ak = trie::Nibbles{std::bit_cast<bytes32_t>(

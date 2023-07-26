@@ -61,7 +61,7 @@ struct AccountState
         if (merged_.contains(a)) {
             return merged_.at(a).updated;
         }
-        return db_.query(a);
+        return db_.try_find(a);
     }
 
     // EVMC Host Interface

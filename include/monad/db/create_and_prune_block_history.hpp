@@ -2,6 +2,7 @@
 
 #include <monad/db/config.hpp>
 #include <monad/db/util.hpp>
+#include <monad/execution/config.hpp>
 
 #include <fmt/format.h>
 #include <fmt/std.h>
@@ -13,9 +14,18 @@
 #include <iostream>
 #include <memory>
 
+MONAD_EXECUTION_NAMESPACE_BEGIN
+struct BoostFiberExecution;
+MONAD_EXECUTION_NAMESPACE_END
+
 MONAD_DB_NAMESPACE_BEGIN
 
-struct RocksTrieDB;
+namespace detail
+{
+    template <typename TExecution>
+    struct RocksTrieDB;
+};
+using RocksTrieDB = detail::RocksTrieDB<monad::execution::BoostFiberExecution>;
 
 template <typename TDB>
     requires std::same_as<TDB, db::RocksTrieDB>

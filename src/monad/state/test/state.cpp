@@ -437,6 +437,32 @@ TYPED_TEST(StateTest, can_commit)
     EXPECT_TRUE(t.can_commit());
 }
 
+template <typename TDB>
+struct TrieDBTest : public testing::Test
+{
+};
+using TrieDBTypes = ::testing::Types<db::InMemoryTrieDB, db::RocksTrieDB>;
+TYPED_TEST_SUITE(TrieDBTest, TrieDBTypes);
+
+TYPED_TEST(TrieDBTest, commit_storage_and_account_together_regression)
+{
+    auto db = test::make_db<TypeParam>();
+    AccountState accounts{db};
+    ValueState values{db};
+    code_db_t code_db{};
+    CodeState code{code_db};
+    State t{accounts, values, code, block_cache};
+
+    auto working_copy = t.get_working_copy(0u);
+
+    working_copy.create_account(a);
+    working_copy.set_balance(a, 1);
+    (void)working_copy.set_storage(a, key1, key2);
+
+    t.merge_changes(working_copy);
+    t.commit();
+}
+
 TYPED_TEST(StateTest, commit_twice)
 {
     auto db = test::make_db<TypeParam>();

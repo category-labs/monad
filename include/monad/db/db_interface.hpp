@@ -21,19 +21,25 @@ struct DBInterface
 
     decltype(TExecution::get_executor()) executor{TExecution::get_executor()};
 
-    TDBImpl &self() { return static_cast<TDBImpl &>(*this); }
-    TDBImpl const &self() const { return static_cast<TDBImpl const &>(*this); }
+    [[nodiscard]] constexpr TDBImpl &self() noexcept
+    {
+        return static_cast<TDBImpl &>(*this);
+    }
+    [[nodiscard]] constexpr TDBImpl const &self() const noexcept
+    {
+        return static_cast<TDBImpl const &>(*this);
+    }
 
     ////////////////////////////////////////////////////////////////////
     // Accessors
     ////////////////////////////////////////////////////////////////////
 
-    [[nodiscard]] std::optional<Account> try_find(address_t const &a)
+    [[nodiscard]] constexpr std::optional<Account> try_find(address_t const &a)
     {
         return self().try_find(a);
     }
 
-    [[nodiscard]] std::optional<Account> query(address_t const &a)
+    [[nodiscard]] constexpr std::optional<Account> query(address_t const &a)
     {
         return executor([=, this]() { return try_find(a); });
     }
@@ -49,26 +55,26 @@ struct DBInterface
         return self().contains(a, k);
     }
 
-    [[nodiscard]] Account at(address_t const &a)
+    [[nodiscard]] constexpr Account at(address_t const &a)
     {
         auto const ret = try_find(a);
         MONAD_ASSERT(ret);
         return ret.value();
     }
 
-    [[nodiscard]] std::optional<bytes32_t>
+    [[nodiscard]] constexpr std::optional<bytes32_t>
     query(address_t const &a, bytes32_t const &k)
     {
         return executor([=, this]() { return try_find(a, k); });
     }
 
-    [[nodiscard]] std::optional<bytes32_t>
+    [[nodiscard]] constexpr std::optional<bytes32_t>
     try_find(address_t const &a, bytes32_t const &k)
     {
         return self().try_find(a, k);
     }
 
-    [[nodiscard]] bytes32_t at(address_t const &a, bytes32_t const &k)
+    [[nodiscard]] constexpr bytes32_t at(address_t const &a, bytes32_t const &k)
     {
         auto const ret = try_find(a, k);
         MONAD_ASSERT(ret);
@@ -79,7 +85,10 @@ struct DBInterface
     // modifiers
     ////////////////////////////////////////////////////////////////////
 
-    void commit(state::changeset auto const &obj) { self().commit(obj); }
+    constexpr void commit(state::changeset auto const &obj)
+    {
+        self().commit(obj);
+    }
 };
 
 MONAD_DB_NAMESPACE_END

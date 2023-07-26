@@ -40,16 +40,25 @@ struct TrieDBInterface
     // Interface functions
     ////////////////////////////////////////////////////////////////////
 
-    TTrieDBImpl &self() { return static_cast<TTrieDBImpl &>(*this); }
-    TTrieDBImpl const &self() const
+    [[nodiscard]] constexpr TTrieDBImpl &self()
+    {
+        return static_cast<TTrieDBImpl &>(*this);
+    }
+    [[nodiscard]] constexpr TTrieDBImpl const &self() const
     {
         return static_cast<TTrieDBImpl const &>(*this);
     }
 
-    auto &accounts() { return self().accounts(); }
-    auto &storage() { return self().storage(); }
-    auto const &accounts() const { return self().accounts(); }
-    auto const &storage() const { return self().storage(); }
+    [[nodiscard]] constexpr auto &accounts() { return self().accounts(); }
+    [[nodiscard]] constexpr auto &storage() { return self().storage(); }
+    [[nodiscard]] constexpr auto const &accounts() const
+    {
+        return self().accounts();
+    }
+    [[nodiscard]] constexpr auto const &storage() const
+    {
+        return self().storage();
+    }
     void take_snapshot() { return self().take_snapshot(); }
 
     ////////////////////////////////////////////////////////////////////

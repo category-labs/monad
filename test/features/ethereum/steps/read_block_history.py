@@ -3,7 +3,7 @@ import re
 import subprocess
 from behave import given, when, then
 
-from util.util import log_mapping
+from util.util import log_mapping, logger_and_level_to_output
 
 
 @given('I run with BlockDb path = "{block_db_path}"')
@@ -70,15 +70,19 @@ def then_output_contain_with_number(context, number, value):
     assert context.output.count(value) == int(number)
 
 
-@then('the output should contain "{value}"')
-def then_output_contain(context, value):
+@then('the output should contain "{logger_name}" "{log_level}" log')
+def then_output_contain(context, logger_name, log_level):
     assert context.returncode == 0
+    assert (logger_name, log_level) in logger_and_level_to_output
+    value = logger_and_level_to_output[(logger_name, log_level)]
     assert value in context.output
 
 
-@then('the output should not contain "{value}"')
-def then_output_no_contain(context, value):
+@then('the output should not contain "{logger_name}" "{log_level}" log')
+def then_output_no_contain(context, logger_name, log_level):
     assert context.returncode == 0
+    assert (logger_name, log_level) in logger_and_level_to_output
+    value = logger_and_level_to_output[(logger_name, log_level)]
     assert value not in context.output
 
 

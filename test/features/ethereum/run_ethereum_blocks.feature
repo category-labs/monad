@@ -3,7 +3,7 @@ Feature: Run Ethereum Block History
     Background: BlockDb path setup
         Given I run with BlockDb path = "erigon/block_db"
 
-    Scenario: Run ethereum block history from Block 0, 46147 Blocks, with hash validation
+    Scenario: Run ethereum block history for all initial blocks with no transaction
         Given I run with start block number = "0"
         And I run with finish block number = "46147"
         And I run with "trie_db_logger" log level = "Critical"

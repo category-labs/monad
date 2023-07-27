@@ -145,12 +145,14 @@ add_library(
     ${PROJECT_SOURCE_DIR}/src/monad/core/transaction.cpp
     # db
     ${PROJECT_SOURCE_DIR}/include/monad/db/assert.h
-    ${PROJECT_SOURCE_DIR}/include/monad/db/block_db.hpp
-    ${PROJECT_SOURCE_DIR}/include/monad/db/config.hpp
-    ${PROJECT_SOURCE_DIR}/include/monad/db/file_db.hpp
-    ${PROJECT_SOURCE_DIR}/src/monad/db/block_db.cpp
-    ${PROJECT_SOURCE_DIR}/src/monad/db/file_db.cpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/db_interface.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/db/block_db.hpp
+    ${PROJECT_SOURCE_DIR}/src/monad/db/block_db.cpp
+    ${PROJECT_SOURCE_DIR}/include/monad/db/config.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/db/create_and_prune_block_history.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/db/file_db.hpp
+    ${PROJECT_SOURCE_DIR}/src/monad/db/file_db.cpp
+    ${PROJECT_SOURCE_DIR}/include/monad/db/prepare_state.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/trie_db_interface.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/rocks_db.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/rocks_trie_db.hpp

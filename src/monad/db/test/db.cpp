@@ -1,3 +1,4 @@
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <monad/db/in_memory_db.hpp>
@@ -133,4 +134,120 @@ TYPED_TEST(TrieDBTest, ModifyStorageOfAccount)
     EXPECT_EQ(
         db.root_hash(),
         0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
+}
+
+TEST(RocksTrieDB, block_history)
+{
+    constexpr auto BLOCK_HISTORY = 100ull;
+    auto block_number = 0ull;
+    auto const root = test::make_db_root(
+        *testing::UnitTest::GetInstance()->current_test_info());
+
+    {
+        auto db = RocksTrieDB{root, block_number, BLOCK_HISTORY};
+
+        Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
+        db.commit(state::StateChanges{
+            .account_changes = {{a, acct}},
+            .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
+        db.create_and_prune_block_history(block_number++);
+
+        EXPECT_EQ(
+            db.root_hash(a),
+            0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
+        EXPECT_EQ(
+            db.root_hash(),
+            0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+    }
+
+    {
+        auto db = RocksTrieDB{root, block_number, BLOCK_HISTORY};
+
+        EXPECT_EQ(
+            db.root_hash(a),
+            0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
+        EXPECT_EQ(
+            db.root_hash(),
+            0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+
+        db.commit(state::StateChanges{
+            .account_changes = {}, .storage_changes = {{a, {{key2, value1}}}}});
+        db.create_and_prune_block_history(block_number++);
+
+        EXPECT_EQ(
+            db.root_hash(),
+            0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
+    }
+
+    {
+        auto db = RocksTrieDB{root, block_number, BLOCK_HISTORY};
+        EXPECT_EQ(
+            db.root_hash(),
+            0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
+    }
+
+    {
+        auto db = RocksTrieDB{root, block_number - 1, BLOCK_HISTORY};
+
+        EXPECT_EQ(
+            db.root_hash(a),
+            0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
+        EXPECT_EQ(
+            db.root_hash(),
+            0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+    }
+}
+
+TEST(RocksTrieDB, block_history_pruning)
+{
+    constexpr auto BLOCK_HISTORY = 1ull;
+    auto block_number = 0ull;
+    auto const root = test::make_db_root(
+        *testing::UnitTest::GetInstance()->current_test_info());
+
+    {
+        auto db = RocksTrieDB{root, block_number, BLOCK_HISTORY};
+        Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
+        db.commit(state::StateChanges{
+            .account_changes = {{a, acct}},
+            .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
+        db.create_and_prune_block_history(block_number++);
+
+        db.create_and_prune_block_history(block_number++);
+        db.create_and_prune_block_history(block_number++);
+
+        EXPECT_EQ(
+            db.root_hash(a),
+            0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
+        EXPECT_EQ(
+            db.root_hash(),
+            0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+    }
+
+    {
+        auto db = RocksTrieDB{root, block_number, BLOCK_HISTORY};
+        EXPECT_EQ(
+            db.root_hash(a),
+            0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
+        EXPECT_EQ(
+            db.root_hash(),
+            0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+    }
+
+    EXPECT_THROW(
+        [&]() {
+            auto const b = block_number - 1;
+            try {
+                auto const db = RocksTrieDB(root, b, BLOCK_HISTORY);
+            }
+            catch (std::runtime_error const &e) {
+                EXPECT_THAT(
+                    e.what(),
+                    ::testing::MatchesRegex(fmt::format(
+                        ".*starting block directory is missing {}",
+                        root / std::to_string(b - 1))));
+                throw;
+            }
+        }(),
+        std::runtime_error);
 }

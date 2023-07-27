@@ -75,6 +75,11 @@ struct InMemoryDB
             }
         }
     }
+
+    constexpr void
+    create_and_prune_block_history(uint64_t /* block_number */) const
+    {
+    }
 };
 
 MONAD_DB_NAMESPACE_END

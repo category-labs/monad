@@ -7,6 +7,18 @@
 
 MONAD_DB_NAMESPACE_BEGIN
 
+struct RocksTrieDB;
+
+template <typename TDB>
+    requires std::same_as<TDB, db::RocksTrieDB>
+[[nodiscard]] constexpr std::string_view as_string() noexcept
+{
+    using namespace std::literals::string_view_literals;
+    if constexpr (std::same_as<TDB, db::RocksTrieDB>) {
+        return "rockstriedb"sv;
+    }
+}
+
 [[nodiscard]] inline rocksdb::Slice to_slice(byte_string_view view)
 {
     return {reinterpret_cast<const char *>(view.data()), view.size()};

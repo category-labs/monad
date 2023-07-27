@@ -89,6 +89,11 @@ struct DBInterface
     {
         self().commit(obj);
     }
+
+    constexpr void create_and_prune_block_history(uint64_t block_number) const
+    {
+        self().create_and_prune_block_history(block_number);
+    }
 };
 
 MONAD_DB_NAMESPACE_END

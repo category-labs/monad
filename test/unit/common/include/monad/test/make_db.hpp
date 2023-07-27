@@ -24,7 +24,7 @@ MONAD_DB_NAMESPACE_END
 
 MONAD_TEST_NAMESPACE_BEGIN
 
-inline std::filesystem::path make_db_name(testing::TestInfo const &info)
+inline std::filesystem::path make_db_root(testing::TestInfo const &info)
 {
     auto const test_suite_name = [&]() {
         std::string name = info.test_suite_name();
@@ -53,8 +53,11 @@ inline TDatabase make_db()
         std::same_as<TDatabase, db::InMemoryTrieDB>) {
         return TDatabase{};
     }
+    else if constexpr (std::same_as<TDatabase, db::RocksDB>) {
+        return TDatabase{make_db_root(*info)};
+    }
     else {
-        return TDatabase{make_db_name(*info)};
+        return TDatabase{make_db_root(*info), 0, 0};
     }
 }
 

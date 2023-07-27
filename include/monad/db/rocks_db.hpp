@@ -196,6 +196,12 @@ struct RocksDB
 
         commit_db();
     }
+
+    constexpr void
+    create_and_prune_block_history(uint64_t /* block_number */) const
+    {
+        // implement this if support for block history is needed here
+    }
 };
 
 MONAD_DB_NAMESPACE_END

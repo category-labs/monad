@@ -63,7 +63,7 @@ struct rocks_fixture : public ::testing::Test
             MONAD_ASSERT(info);
 
             rocksdb::Status const s = rocksdb::DB::Open(
-                options_, test::make_db_name(*info), cfds_, &cfs_, &db);
+                options_, test::make_db_root(*info), cfds_, &cfs_, &db);
 
             if (!s.ok()) {
                 std::cerr << s.ToString() << std::endl;

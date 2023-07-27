@@ -1,6 +1,8 @@
 #pragma once
 
 #include <monad/db/config.hpp>
+#include <monad/db/create_and_prune_block_history.hpp>
+#include <monad/db/prepare_state.hpp>
 #include <monad/db/trie_db_interface.hpp>
 #include <monad/trie/rocks_comparator.hpp>
 #include <monad/trie/rocks_cursor.hpp>
@@ -10,11 +12,15 @@
 #include <fmt/chrono.h>
 #include <fmt/format.h>
 
+#include <filesystem>
+
 MONAD_DB_NAMESPACE_BEGIN
 
 // Database impl with trie root generating logic, backed by rocksdb
-struct RocksTrieDB : TrieDBInterface<RocksTrieDB>
+struct RocksTrieDB : public TrieDBInterface<RocksTrieDB>
 {
+    using base_t = TrieDBInterface<RocksTrieDB>;
+
     struct Trie
     {
         trie::RocksCursor leaves_cursor;
@@ -66,6 +72,8 @@ struct RocksTrieDB : TrieDBInterface<RocksTrieDB>
         }
     };
 
+    std::filesystem::path const root;
+    uint64_t const block_history_size;
     rocksdb::Options options;
     trie::PathComparator accounts_comparator;
     trie::PrefixPathComparator storage_comparator;
@@ -76,8 +84,12 @@ struct RocksTrieDB : TrieDBInterface<RocksTrieDB>
     Trie accounts_trie;
     Trie storage_trie;
 
-    explicit RocksTrieDB(std::filesystem::path name)
-        : options([]() {
+    RocksTrieDB(
+        std::filesystem::path root, uint64_t block_number,
+        uint64_t block_history_size)
+        : root(root)
+        , block_history_size(block_history_size)
+        , options([]() {
             rocksdb::Options ret;
             ret.IncreaseParallelism(2);
             ret.OptimizeLevelStyleCompaction();
@@ -104,8 +116,12 @@ struct RocksTrieDB : TrieDBInterface<RocksTrieDB>
         , db([&]() {
             rocksdb::DB *db = nullptr;
 
+            auto const path = prepare_state(*this, block_number);
+            if (!path.has_value()) {
+                throw std::runtime_error(path.error());
+            }
             rocksdb::Status const s =
-                rocksdb::DB::Open(options, name, cfds, &cfs, &db);
+                rocksdb::DB::Open(options, path.value(), cfds, &cfs, &db);
 
             MONAD_ROCKS_ASSERT(s);
             MONAD_ASSERT(cfds.size() == cfs.size());
@@ -132,6 +148,29 @@ struct RocksTrieDB : TrieDBInterface<RocksTrieDB>
 
         res = db->Close();
         MONAD_ROCKS_ASSERT(res);
+    }
+
+    ////////////////////////////////////////////////////////////////////
+    // DBInterface implementations
+    ////////////////////////////////////////////////////////////////////
+
+    void create_and_prune_block_history(uint64_t block_number)
+    {
+        auto const s =
+            ::monad::db::create_and_prune_block_history(*this, block_number);
+        if (!s.has_value()) {
+            // this is not a critical error in production, we can continue
+            // executing with the current database while someone investigates
+            MONAD_LOG_ERROR(
+                base_t::logger,
+                "Unable to save block_number {} for {} error={}",
+                block_number,
+                as_string<RocksTrieDB>(),
+                s.error());
+        }
+
+        // kill in debug
+        MONAD_DEBUG_ASSERT(s.has_value());
     }
 
     ////////////////////////////////////////////////////////////////////

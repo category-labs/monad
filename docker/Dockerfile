@@ -27,6 +27,7 @@ RUN yum -y install \
   brotli \
   gmp \
   gtest \
+  gmock \
   rocksdb
 
 RUN yum -y install \
@@ -35,6 +36,7 @@ RUN yum -y install \
   brotli-devel \
   gmp-devel \
   gtest-devel \
+  gmock-devel \
   rocksdb-devel
 
 RUN pip install -U conan==1.*

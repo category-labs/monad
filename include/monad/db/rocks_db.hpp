@@ -2,13 +2,13 @@
 
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
+#include <monad/db/assert.h>
 #include <monad/db/config.hpp>
 #include <monad/db/db_interface.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/execution_model.hpp>
 #include <monad/rlp/decode_helpers.hpp>
 #include <monad/rlp/encode_helpers.hpp>
-#include <monad/trie/assert.h>
 
 #include <fmt/chrono.h>
 #include <fmt/format.h>

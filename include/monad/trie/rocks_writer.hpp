@@ -1,8 +1,8 @@
 #pragma once
 
 #include <monad/core/byte_string.hpp>
+#include <monad/db/assert.h>
 #include <monad/db/util.hpp>
-#include <monad/trie/assert.h>
 #include <monad/trie/config.hpp>
 #include <monad/trie/key_buffer.hpp>
 #include <monad/trie/util.hpp>

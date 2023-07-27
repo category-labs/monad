@@ -144,6 +144,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/src/monad/core/signature.cpp
     ${PROJECT_SOURCE_DIR}/src/monad/core/transaction.cpp
     # db
+    ${PROJECT_SOURCE_DIR}/include/monad/db/assert.h
     ${PROJECT_SOURCE_DIR}/include/monad/db/block_db.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/config.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/file_db.hpp
@@ -216,7 +217,6 @@ add_library(
     ${PROJECT_SOURCE_DIR}/include/monad/trie/rocks_cursor.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/trie/rocks_writer.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/trie/util.hpp
-    ${PROJECT_SOURCE_DIR}/include/monad/trie/assert.h
     ${PROJECT_SOURCE_DIR}/include/monad/trie/key_buffer.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/trie/comparator.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/trie/rocks_comparator.hpp

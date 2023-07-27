@@ -38,7 +38,7 @@ TEST(Evm, make_account_address)
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
     static fake::State::WorkingCopy s{};
     s._accounts[from].balance = 10'000'000'000;
-    s._accounts[from].nonce = 5;
+    s._accounts[from].nonce = 6;
 
     evmc_message m{
         .kind = EVMC_CREATE,
@@ -53,7 +53,7 @@ TEST(Evm, make_account_address)
     EXPECT_TRUE(result.has_value());
     EXPECT_EQ(*result, to);
     EXPECT_EQ(s._accounts[from].balance, 9'930'000'000);
-    EXPECT_EQ(s._accounts[from].nonce, 6);
+    EXPECT_EQ(s._accounts[from].nonce, 7);
     EXPECT_EQ(s._accounts[to].balance, 70'000'000);
     EXPECT_EQ(s._accounts[to].nonce, 1);
 }
@@ -143,7 +143,7 @@ TEST(Evm, eip684_existing_nonce)
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
     static fake::State::WorkingCopy s{};
     s._accounts[from].balance = 10'000'000'000;
-    s._accounts[from].nonce = 5;
+    s._accounts[from].nonce = 6;
     s._accounts[to].nonce = 5; // existing
 
     evmc_message m{
@@ -170,7 +170,7 @@ TEST(Evm, eip684_existing_code)
         0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
     static fake::State::WorkingCopy s{};
     s._accounts[from].balance = 10'000'000'000;
-    s._accounts[from].nonce = 5;
+    s._accounts[from].nonce = 6;
     s._accounts[to].code_hash = code_hash; // existing
 
     evmc_message m{
@@ -195,7 +195,7 @@ TEST(Evm, transfer_call_balances)
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
     static fake::State::WorkingCopy s{};
     s._accounts[from].balance = 10'000'000'000;
-    s._accounts[from].nonce = 5;
+    s._accounts[from].nonce = 6;
     s._accounts[to].balance = 0;
 
     evmc_message m{
@@ -280,7 +280,7 @@ TEST(Evm, create_contract_account)
     fake::State::WorkingCopy s{};
 
     evm_host_t h{};
-    s._accounts.emplace(from, Account{.balance = 50'000u});
+    s._accounts.emplace(from, Account{.balance = 50'000u, .nonce = 1});
     traits_t::_gas_creation_cost = 5'000;
     traits_t::_success_store_contract = true;
     fake::Interpreter::_result = evmc::Result{

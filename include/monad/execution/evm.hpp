@@ -108,7 +108,7 @@ struct Evm
             new_address = [&] {
                 if (m.kind == EVMC_CREATE) {
                     return create_contract_address(
-                        m.sender, s.get_nonce(m.sender));
+                        m.sender, s.get_nonce(m.sender) - 1); // YP Eqn. 85
                 }
                 else if (m.kind == EVMC_CREATE2) {
                     auto const code_hash =

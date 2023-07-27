@@ -13,7 +13,6 @@
 
 MONAD_TRIE_NAMESPACE_BEGIN
 
-// Per-snapshot and prefix
 struct RocksCursor
 {
     std::shared_ptr<rocksdb::DB> const db_;
@@ -50,15 +49,11 @@ struct RocksCursor
     };
 
     RocksCursor(
-        std::shared_ptr<rocksdb::DB> db, rocksdb::ColumnFamilyHandle *cf,
-        rocksdb::Snapshot const *snapshot)
+        std::shared_ptr<rocksdb::DB> db, rocksdb::ColumnFamilyHandle *cf)
         : db_(db)
         , cf_(cf)
     {
-        read_opts_.snapshot = snapshot;
-
         MONAD_DEBUG_ASSERT(cf);
-        MONAD_DEBUG_ASSERT(read_opts_.snapshot);
     }
 
     [[nodiscard]] tl::optional<RocksCursor::Key> key() const
@@ -112,8 +107,6 @@ struct RocksCursor
         Nibbles const &key, tl::optional<Key> const &first = tl::nullopt,
         tl::optional<Key> const &last = tl::nullopt)
     {
-        MONAD_DEBUG_ASSERT(read_opts_.snapshot);
-
         bool new_iterator = !it_;
 
         // set up the read options
@@ -167,12 +160,6 @@ struct RocksCursor
     {
         lower_bound({});
         return !valid();
-    }
-
-    void set_snapshot(rocksdb::Snapshot const *snapshot) noexcept
-    {
-        reset();
-        read_opts_.snapshot = snapshot;
     }
 
     constexpr void set_prefix(address_t const &address) noexcept

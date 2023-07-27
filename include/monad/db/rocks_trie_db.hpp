@@ -32,21 +32,15 @@ struct RocksTrieDB : public TrieDBInterface<RocksTrieDB>
 
         Trie(
             std::shared_ptr<rocksdb::DB> db, rocksdb::ColumnFamilyHandle *lc,
-            rocksdb::ColumnFamilyHandle *tc, rocksdb::Snapshot const *snapshot)
-            : leaves_cursor(db, lc, snapshot)
-            , trie_cursor(db, tc, snapshot)
+            rocksdb::ColumnFamilyHandle *tc)
+            : leaves_cursor(db, lc)
+            , trie_cursor(db, tc)
             , leaves_writer(trie::RocksWriter{
                   .db = db, .batch = rocksdb::WriteBatch{}, .cf = lc})
             , trie_writer(trie::RocksWriter{
                   .db = db, .batch = rocksdb::WriteBatch{}, .cf = tc})
             , trie(leaves_cursor, trie_cursor, leaves_writer, trie_writer)
         {
-        }
-
-        void set_snapshot(rocksdb::Snapshot const *snapshot)
-        {
-            leaves_cursor.set_snapshot(snapshot);
-            trie_cursor.set_snapshot(snapshot);
         }
 
         void reset_cursor()
@@ -57,18 +51,12 @@ struct RocksTrieDB : public TrieDBInterface<RocksTrieDB>
 
         [[nodiscard]] trie::RocksCursor make_leaf_cursor() const
         {
-            return trie::RocksCursor{
-                leaves_cursor.db_,
-                leaves_cursor.cf_,
-                leaves_cursor.read_opts_.snapshot};
+            return trie::RocksCursor{leaves_cursor.db_, leaves_cursor.cf_};
         }
 
         [[nodiscard]] trie::RocksCursor make_trie_cursor() const
         {
-            return trie::RocksCursor{
-                trie_cursor.db_,
-                trie_cursor.cf_,
-                trie_cursor.read_opts_.snapshot};
+            return trie::RocksCursor{trie_cursor.db_, trie_cursor.cf_};
         }
     };
 
@@ -80,7 +68,6 @@ struct RocksTrieDB : public TrieDBInterface<RocksTrieDB>
     std::vector<rocksdb::ColumnFamilyDescriptor> cfds;
     std::vector<rocksdb::ColumnFamilyHandle *> cfs;
     std::shared_ptr<rocksdb::DB> db;
-    rocksdb::Snapshot const *snapshot;
     Trie accounts_trie;
     Trie storage_trie;
 
@@ -128,9 +115,8 @@ struct RocksTrieDB : public TrieDBInterface<RocksTrieDB>
 
             return db;
         }())
-        , snapshot(db->GetSnapshot())
-        , accounts_trie(db, cfs[1], cfs[2], snapshot)
-        , storage_trie(db, cfs[3], cfs[4], snapshot)
+        , accounts_trie(db, cfs[1], cfs[2])
+        , storage_trie(db, cfs[3], cfs[4])
     {
     }
 
@@ -138,7 +124,6 @@ struct RocksTrieDB : public TrieDBInterface<RocksTrieDB>
     {
         accounts_trie.reset_cursor();
         storage_trie.reset_cursor();
-        release_snapshot();
 
         rocksdb::Status res;
         for (auto *const cf : cfs) {
@@ -173,6 +158,13 @@ struct RocksTrieDB : public TrieDBInterface<RocksTrieDB>
         MONAD_DEBUG_ASSERT(s.has_value());
     }
 
+    void commit(state::changeset auto const &obj)
+    {
+        base_t::commit(obj);
+        accounts_trie.reset_cursor();
+        storage_trie.reset_cursor();
+    }
+
     ////////////////////////////////////////////////////////////////////
     // TrieDBInterface implementations
     ////////////////////////////////////////////////////////////////////
@@ -181,20 +173,6 @@ struct RocksTrieDB : public TrieDBInterface<RocksTrieDB>
     auto &storage() { return storage_trie; }
     auto const &accounts() const { return accounts_trie; }
     auto const &storage() const { return storage_trie; }
-
-    void take_snapshot()
-    {
-        release_snapshot();
-        snapshot = db->GetSnapshot();
-        accounts_trie.set_snapshot(snapshot);
-        storage_trie.set_snapshot(snapshot);
-    }
-
-    void release_snapshot()
-    {
-        MONAD_DEBUG_ASSERT(snapshot);
-        db->ReleaseSnapshot(snapshot);
-    }
 };
 
 MONAD_DB_NAMESPACE_END

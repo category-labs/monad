@@ -15,7 +15,6 @@
 
 MONAD_TRIE_NAMESPACE_BEGIN
 
-// Per-snapshot and prefix
 template <typename TComparator>
 struct InMemoryCursor
 {

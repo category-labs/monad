@@ -26,7 +26,6 @@ struct rocks_fixture : public ::testing::Test
     std::vector<rocksdb::ColumnFamilyDescriptor> cfds_;
     std::vector<rocksdb::ColumnFamilyHandle *> cfs_;
     std::shared_ptr<rocksdb::DB> db_;
-    rocksdb::Snapshot const *snapshot_;
 
     monad::trie::RocksCursor leaves_cursor_;
     monad::trie::RocksCursor trie_cursor_;
@@ -73,9 +72,8 @@ struct rocks_fixture : public ::testing::Test
 
             return db;
         }())
-        , snapshot_(db_->GetSnapshot())
-        , leaves_cursor_(db_, cfs_[1], snapshot_)
-        , trie_cursor_(db_, cfs_[2], snapshot_)
+        , leaves_cursor_(db_, cfs_[1])
+        , trie_cursor_(db_, cfs_[2])
         , leaves_writer_(monad::trie::RocksWriter{
               .db = db_, .batch = rocksdb::WriteBatch{}, .cf = cfs_[1]})
         , trie_writer_(monad::trie::RocksWriter{
@@ -90,7 +88,6 @@ struct rocks_fixture : public ::testing::Test
     {
         leaves_cursor_.reset();
         trie_cursor_.reset();
-        release_snapshot();
 
         rocksdb::Status res;
         for (auto *const cf : cfs_) {
@@ -100,20 +97,6 @@ struct rocks_fixture : public ::testing::Test
 
         res = db_->Close();
         MONAD_ASSERT(res.ok());
-    }
-
-    void take_snapshot()
-    {
-        release_snapshot();
-        snapshot_ = db_->GetSnapshot();
-        leaves_cursor_.set_snapshot(snapshot_);
-        trie_cursor_.set_snapshot(snapshot_);
-    }
-
-    void release_snapshot()
-    {
-        MONAD_DEBUG_ASSERT(snapshot_);
-        db_->ReleaseSnapshot(snapshot_);
     }
 
     void process_updates(std::vector<monad::trie::Update> const &updates)
@@ -127,7 +110,8 @@ struct rocks_fixture : public ::testing::Test
     {
         leaves_writer_.write();
         trie_writer_.write();
-        take_snapshot();
+        trie_cursor_.reset();
+        leaves_cursor_.reset();
     }
 
     void clear()

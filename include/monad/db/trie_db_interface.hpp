@@ -59,7 +59,6 @@ struct TrieDBInterface
     {
         return self().storage();
     }
-    void take_snapshot() { return self().take_snapshot(); }
 
     ////////////////////////////////////////////////////////////////////
     // DBInterface accessor implementations
@@ -249,8 +248,6 @@ struct TrieDBInterface
             // statement enforce this
             storage().leaves_writer.write();
             storage().trie_writer.write();
-
-            take_snapshot();
         }
         else {
             MONAD_DEBUG_ASSERT(obj.storage_changes.empty());

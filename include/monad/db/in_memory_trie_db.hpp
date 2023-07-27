@@ -66,8 +66,6 @@ struct InMemoryTrieDB : public TrieDBInterface<InMemoryTrieDB>
     auto &storage() { return storage_trie; }
     auto const &accounts() const { return accounts_trie; }
     auto const &storage() const { return storage_trie; }
-    void take_snapshot() {}
-    void release_snapshot() {}
 };
 
 MONAD_DB_NAMESPACE_END

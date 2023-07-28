@@ -91,20 +91,20 @@ TEST(EvmInterpStateHost, return_existing_storage)
         .sender = from,
         .code_address = a};
 
-    // Get working copy
-    auto working_state = s.get_working_copy(0u);
+    // Get new changeset
+    auto changeset = s.get_new_changeset(0u);
 
     using fork_t = monad::fork_traits::byzantium;
-    using state_t = decltype(working_state);
+    using state_t = decltype(changeset);
 
     // Prep per transaction processor
-    working_state.access_account(to);
-    working_state.access_account(from);
+    changeset.access_account(to);
+    changeset.access_account(from);
 
     evm_t<state_t, fork_t> e{};
-    evm_host_t<state_t, fork_t> h{b, t, working_state};
+    evm_host_t<state_t, fork_t> h{b, t, changeset};
 
-    auto status = e.call_evm(&h, working_state, m);
+    auto status = e.call_evm(&h, changeset, m);
 
     EXPECT_EQ(status.status_code, EVMC_SUCCESS);
     EXPECT_EQ(status.output_size, 1u);
@@ -158,20 +158,20 @@ TEST(EvmInterpStateHost, store_then_return_storage)
         .sender = from,
         .code_address = a};
 
-    // Get working copy
-    auto working_state = s.get_working_copy(0u);
+    // Get new changeset
+    auto changeset = s.get_new_changeset(0u);
 
     using fork_t = monad::fork_traits::byzantium;
-    using state_t = decltype(working_state);
+    using state_t = decltype(changeset);
 
     // Prep per transaction processor
-    working_state.access_account(to);
-    working_state.access_account(from);
+    changeset.access_account(to);
+    changeset.access_account(from);
 
     evm_t<state_t, fork_t> e{};
-    evm_host_t<state_t, fork_t> h{b, t, working_state};
+    evm_host_t<state_t, fork_t> h{b, t, changeset};
 
-    auto status = e.call_evm(&h, working_state, m);
+    auto status = e.call_evm(&h, changeset, m);
 
     EXPECT_EQ(status.status_code, EVMC_SUCCESS);
     EXPECT_EQ(status.output_size, 1u);

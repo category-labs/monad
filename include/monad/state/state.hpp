@@ -21,20 +21,20 @@ template <
     class TDatabase>
 struct State
 {
-    struct WorkingCopy
+    struct ChangeSet
     {
         uint256_t gas_award_{};
-        typename TAccountState::WorkingCopy accounts_;
-        typename TValueState::WorkingCopy storage_;
-        typename TCodeState::WorkingCopy code_;
+        typename TAccountState::ChangeSet accounts_;
+        typename TValueState::ChangeSet storage_;
+        typename TCodeState::ChangeSet code_;
         std::vector<Receipt::Log> logs_{};
         TBlockCache &block_cache_{};
         unsigned int txn_id_{};
 
-        WorkingCopy(
-            unsigned int i, typename TAccountState::WorkingCopy &&a,
-            typename TValueState::WorkingCopy &&s,
-            typename TCodeState::WorkingCopy &&c, TBlockCache &b)
+        ChangeSet(
+            unsigned int i, typename TAccountState::ChangeSet &&a,
+            typename TValueState::ChangeSet &&s,
+            typename TCodeState::ChangeSet &&c, TBlockCache &b)
             : accounts_{std::move(a)}
             , storage_{std::move(s)}
             , code_{std::move(c)}
@@ -212,17 +212,17 @@ struct State
 
     unsigned int current_txn() const { return current_txn_; }
 
-    WorkingCopy get_working_copy(unsigned int id) const
+    ChangeSet get_new_changeset(unsigned int id) const
     {
-        return WorkingCopy(
+        return ChangeSet(
             id,
-            typename TAccountState::WorkingCopy{accounts_},
-            typename TValueState::WorkingCopy{storage_},
-            typename TCodeState::WorkingCopy{code_},
+            typename TAccountState::ChangeSet{accounts_},
+            typename TValueState::ChangeSet{storage_},
+            typename TCodeState::ChangeSet{code_},
             block_cache_);
     }
 
-    MergeStatus can_merge_changes(WorkingCopy const &c) const
+    MergeStatus can_merge_changes(ChangeSet const &c) const
     {
         if (current_txn() != c.txn_id()) {
             return MergeStatus::TRY_LATER;
@@ -235,7 +235,7 @@ struct State
         return MergeStatus::COLLISION_DETECTED;
     }
 
-    void merge_changes(WorkingCopy &c)
+    void merge_changes(ChangeSet &c)
     {
         accounts_.merge_changes(c.accounts_);
         storage_.merge_touched(c.storage_);

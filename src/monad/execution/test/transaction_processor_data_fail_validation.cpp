@@ -16,10 +16,10 @@ template <class TTxnProc, class TExecution>
 using data_t = TransactionProcessorFiberData<
     state_t, TTxnProc,
     fake::EvmHost<
-        fake::State::WorkingCopy, fake::traits::alpha<fake::State::WorkingCopy>,
+        fake::State::ChangeSet, fake::traits::alpha<fake::State::ChangeSet>,
         fake::Evm<
-            fake::State::WorkingCopy,
-            fake::traits::alpha<fake::State::WorkingCopy>,
+            fake::State::ChangeSet,
+            fake::traits::alpha<fake::State::ChangeSet>,
             fake::static_precompiles::OneHundredGas, fake::Interpreter>>,
     TExecution>;
 
@@ -84,8 +84,8 @@ TEST(
 
     data_t<
         fakeGlobalStatusTP<
-            fake::State::WorkingCopy,
-            fake::traits::alpha<fake::State::WorkingCopy>>,
+            fake::State::ChangeSet,
+            fake::traits::alpha<fake::State::ChangeSet>>,
         BoostFiberExecution>
         d{s, t, b, 10};
     d();
@@ -106,8 +106,8 @@ TEST(TransactionProcessorFiberData, validation_insufficient_balance_optimistic)
 
     data_t<
         fakeGlobalStatusTP<
-            fake::State::WorkingCopy,
-            fake::traits::alpha<fake::State::WorkingCopy>>,
+            fake::State::ChangeSet,
+            fake::traits::alpha<fake::State::ChangeSet>>,
         fakeSuccessAfterYieldEM>
         d{s, t, b, 10};
     d();
@@ -128,8 +128,8 @@ TEST(TransactionProcessorFiberData, validation_later_nonce_current_txn_id)
 
     data_t<
         fakeGlobalStatusTP<
-            fake::State::WorkingCopy,
-            fake::traits::alpha<fake::State::WorkingCopy>>,
+            fake::State::ChangeSet,
+            fake::traits::alpha<fake::State::ChangeSet>>,
         BoostFiberExecution>
         d{s, t, b, 10};
     d();
@@ -150,8 +150,8 @@ TEST(TransactionProcessorFiberData, validation_later_nonce_optimistic)
 
     data_t<
         fakeGlobalStatusTP<
-            fake::State::WorkingCopy,
-            fake::traits::alpha<fake::State::WorkingCopy>>,
+            fake::State::ChangeSet,
+            fake::traits::alpha<fake::State::ChangeSet>>,
         fakeSuccessAfterYieldEM>
         d{s, t, b, 10};
     d();
@@ -171,8 +171,8 @@ TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_current_txn_id)
 
     data_t<
         fakeGlobalStatusTP<
-            fake::State::WorkingCopy,
-            fake::traits::alpha<fake::State::WorkingCopy>>,
+            fake::State::ChangeSet,
+            fake::traits::alpha<fake::State::ChangeSet>>,
         BoostFiberExecution>
         d{s, t, b, 10};
     d();
@@ -193,8 +193,8 @@ TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_optimistic)
 
     data_t<
         fakeGlobalStatusTP<
-            fake::State::WorkingCopy,
-            fake::traits::alpha<fake::State::WorkingCopy>>,
+            fake::State::ChangeSet,
+            fake::traits::alpha<fake::State::ChangeSet>>,
         fakeSuccessAfterYieldEM>
         d{s, t, b, 10};
     d();
@@ -215,8 +215,8 @@ TEST(TransactionProcessorFiberData, validation_bad_nonce_current_txn_id)
 
     data_t<
         fakeGlobalStatusTP<
-            fake::State::WorkingCopy,
-            fake::traits::alpha<fake::State::WorkingCopy>>,
+            fake::State::ChangeSet,
+            fake::traits::alpha<fake::State::ChangeSet>>,
         BoostFiberExecution>
         d{s, t, b, 10};
     d();
@@ -237,8 +237,8 @@ TEST(TransactionProcessorFiberData, validation_bad_nonce_optimistic)
 
     data_t<
         fakeGlobalStatusTP<
-            fake::State::WorkingCopy,
-            fake::traits::alpha<fake::State::WorkingCopy>>,
+            fake::State::ChangeSet,
+            fake::traits::alpha<fake::State::ChangeSet>>,
         fakeSuccessAfterYieldEM>
         d{s, t, b, 10};
     d();
@@ -259,8 +259,8 @@ TEST(TransactionProcessorFiberData, validation_deployed_code_current_txn_id)
 
     data_t<
         fakeGlobalStatusTP<
-            fake::State::WorkingCopy,
-            fake::traits::alpha<fake::State::WorkingCopy>>,
+            fake::State::ChangeSet,
+            fake::traits::alpha<fake::State::ChangeSet>>,
         BoostFiberExecution>
         d{s, t, b, 10};
     d();
@@ -281,8 +281,8 @@ TEST(TransactionProcessorFiberData, validation_deployed_code_optimistic)
 
     data_t<
         fakeGlobalStatusTP<
-            fake::State::WorkingCopy,
-            fake::traits::alpha<fake::State::WorkingCopy>>,
+            fake::State::ChangeSet,
+            fake::traits::alpha<fake::State::ChangeSet>>,
         fakeSuccessAfterYieldEM>
         d{s, t, b, 10};
     d();

@@ -75,32 +75,32 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
         .type = Transaction::Type::eip155};
     Block const b{.header = bh, .transactions = {t}, .ommers = {ommer}};
 
-    auto working_state = s.get_working_copy(0u);
+    auto changeset = s.get_new_changeset(0u);
 
-    using state_t = decltype(working_state);
+    using state_t = decltype(changeset);
     using fork_t = monad::fork_traits::byzantium;
     using tp_t = execution::TransactionProcessor<state_t, fork_t>;
 
     tp_t tp{};
-    evm_host_t<state_t, fork_t> h{bh, t, working_state};
+    evm_host_t<state_t, fork_t> h{bh, t, changeset};
 
-    EXPECT_EQ(tp.validate(working_state, t, 0), tp_t::Status::SUCCESS);
+    EXPECT_EQ(tp.validate(changeset, t, 0), tp_t::Status::SUCCESS);
 
-    auto r = tp.execute(working_state, h, t, 0);
+    auto r = tp.execute(changeset, h, t, 0);
     EXPECT_EQ(r.status, Receipt::Status::SUCCESS);
     EXPECT_EQ(r.gas_used, 21'000);
     EXPECT_EQ(t.type, Transaction::Type::eip155);
-    EXPECT_EQ(working_state.get_balance(from), bytes32_t{8'790'000});
-    EXPECT_EQ(working_state.get_balance(to), bytes32_t{1'000'000});
+    EXPECT_EQ(changeset.get_balance(from), bytes32_t{8'790'000});
+    EXPECT_EQ(changeset.get_balance(to), bytes32_t{1'000'000});
 
     EXPECT_EQ(
-        s.can_merge_changes(working_state),
+        s.can_merge_changes(changeset),
         decltype(s)::MergeStatus::WILL_SUCCEED);
-    s.merge_changes(working_state);
+    s.merge_changes(changeset);
 
     fork_t::apply_block_award(s, b);
 
-    auto ws = s.get_working_copy(1u);
+    auto ws = s.get_new_changeset(1u);
     ws.access_account(a);
     ws.access_account(o);
     EXPECT_EQ(ws.get_balance(a), bytes32_t{3'093'750'000'000'210'000});
@@ -142,32 +142,32 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
         .type = Transaction::Type::eip155};
     Block const b{.header = bh, .transactions = {t}};
 
-    auto working_state = s.get_working_copy(0u);
+    auto changeset = s.get_new_changeset(0u);
 
-    using state_t = decltype(working_state);
+    using state_t = decltype(changeset);
     using fork_t = monad::fork_traits::frontier;
     using tp_t = execution::TransactionProcessor<state_t, fork_t>;
 
     tp_t tp{};
-    evm_host_t<state_t, fork_t> h{bh, t, working_state};
+    evm_host_t<state_t, fork_t> h{bh, t, changeset};
 
-    EXPECT_EQ(tp.validate(working_state, t, 0), tp_t::Status::SUCCESS);
+    EXPECT_EQ(tp.validate(changeset, t, 0), tp_t::Status::SUCCESS);
 
-    auto r = tp.execute(working_state, h, t, 0);
+    auto r = tp.execute(changeset, h, t, 0);
     EXPECT_EQ(r.status, Receipt::Status::FAILED);
     EXPECT_EQ(r.gas_used, 24'000);
     EXPECT_EQ(t.type, Transaction::Type::eip155);
-    EXPECT_EQ(working_state.get_balance(creator), bytes32_t{8'760'000'000'000'000'000});
-    EXPECT_EQ(working_state.get_balance(created), bytes32_t{0});
+    EXPECT_EQ(changeset.get_balance(creator), bytes32_t{8'760'000'000'000'000'000});
+    EXPECT_EQ(changeset.get_balance(created), bytes32_t{0});
 
     EXPECT_EQ(
-        s.can_merge_changes(working_state),
+        s.can_merge_changes(changeset),
         decltype(s)::MergeStatus::WILL_SUCCEED);
-    s.merge_changes(working_state);
+    s.merge_changes(changeset);
 
     fork_t::apply_block_award(s, b);
 
-    auto ws = s.get_working_copy(1u);
+    auto ws = s.get_new_changeset(1u);
     ws.access_account(a);
     ws.access_account(o);
     EXPECT_EQ(ws.get_balance(a), bytes32_t{5'240'000'000'000'000'000});

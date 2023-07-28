@@ -105,7 +105,7 @@ TYPED_TEST(AccountStateTest, get_code_hash)
     EXPECT_EQ(s.get_code_hash(b), hash2);
 }
 
-TYPED_TEST(AccountStateTest, working_copy)
+TYPED_TEST(AccountStateTest, changeset)
 {
     auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
@@ -113,8 +113,8 @@ TYPED_TEST(AccountStateTest, working_copy)
         .storage_changes = {}});
     AccountState as{db};
 
-    auto bs = typename decltype(as)::WorkingCopy{as};
-    auto cs = typename decltype(as)::WorkingCopy{as};
+    auto bs = typename decltype(as)::ChangeSet{as};
+    auto cs = typename decltype(as)::ChangeSet{as};
 
     bs.access_account(a);
     bs.set_balance(a, 20'000);
@@ -127,8 +127,8 @@ TYPED_TEST(AccountStateTest, working_copy)
     EXPECT_EQ(cs.get_balance(a), bytes32_t{30'000});
 }
 
-// AccountStateWorkingCopy
-TYPED_TEST(AccountStateTest, account_exists_working_copy)
+// AccountStateChangeSet
+TYPED_TEST(AccountStateTest, account_exists_changeset)
 {
     auto db = test::make_db<TypeParam>();
     AccountState s{db};
@@ -136,7 +136,7 @@ TYPED_TEST(AccountStateTest, account_exists_working_copy)
         .account_changes = {{a, Account{}}, {d, Account{}}},
         .storage_changes = {}});
 
-    auto bs = typename decltype(s)::WorkingCopy{s};
+    auto bs = typename decltype(s)::ChangeSet{s};
 
     bs.merged_.emplace(b, Account{});
     bs.merged_.emplace(d, diff_t{Account{}, std::nullopt});
@@ -153,7 +153,7 @@ TYPED_TEST(AccountStateTest, account_exists_working_copy)
     EXPECT_FALSE(bs.account_exists(f));
 }
 
-TYPED_TEST(AccountStateTest, access_account_working_copy)
+TYPED_TEST(AccountStateTest, access_account_changeset)
 {
     auto db = test::make_db<TypeParam>();
     AccountState s{db};
@@ -161,7 +161,7 @@ TYPED_TEST(AccountStateTest, access_account_working_copy)
         .account_changes = {{a, Account{}}, {b, Account{}}},
         .storage_changes = {}});
 
-    auto bs = typename decltype(s)::WorkingCopy{s};
+    auto bs = typename decltype(s)::ChangeSet{s};
 
     EXPECT_EQ(bs.access_account(a), EVMC_ACCESS_COLD);
     EXPECT_EQ(bs.access_account(a), EVMC_ACCESS_WARM);
@@ -169,7 +169,7 @@ TYPED_TEST(AccountStateTest, access_account_working_copy)
     EXPECT_EQ(bs.access_account(b), EVMC_ACCESS_WARM);
 }
 
-TYPED_TEST(AccountStateTest, get_balance_working_copy)
+TYPED_TEST(AccountStateTest, get_balance_changeset)
 {
     auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
@@ -179,7 +179,7 @@ TYPED_TEST(AccountStateTest, get_balance_working_copy)
     AccountState s{db};
     s.merged_.emplace(b, diff_t{std::nullopt, Account{.balance = 10'000}});
 
-    auto bs = typename decltype(s)::WorkingCopy{s};
+    auto bs = typename decltype(s)::ChangeSet{s};
 
     bs.access_account(a);
     bs.access_account(b);
@@ -188,7 +188,7 @@ TYPED_TEST(AccountStateTest, get_balance_working_copy)
     EXPECT_EQ(bs.get_balance(b), bytes32_t{10'000});
 }
 
-TYPED_TEST(AccountStateTest, get_nonce_working_copy)
+TYPED_TEST(AccountStateTest, get_nonce_changeset)
 {
     auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
@@ -197,7 +197,7 @@ TYPED_TEST(AccountStateTest, get_nonce_working_copy)
     AccountState s{db};
     s.merged_.emplace(b, diff_t{std::nullopt, Account{.nonce = 1}});
 
-    auto bs = typename decltype(s)::WorkingCopy{s};
+    auto bs = typename decltype(s)::ChangeSet{s};
 
     bs.access_account(a);
     bs.access_account(b);
@@ -206,7 +206,7 @@ TYPED_TEST(AccountStateTest, get_nonce_working_copy)
     EXPECT_EQ(bs.get_nonce(b), 1);
 }
 
-TYPED_TEST(AccountStateTest, get_code_hash_working_copy)
+TYPED_TEST(AccountStateTest, get_code_hash_changeset)
 {
     auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
@@ -216,7 +216,7 @@ TYPED_TEST(AccountStateTest, get_code_hash_working_copy)
     AccountState s{db};
     s.merged_.emplace(b, diff_t{std::nullopt, Account{.code_hash = hash2}});
 
-    auto bs = typename decltype(s)::WorkingCopy{s};
+    auto bs = typename decltype(s)::ChangeSet{s};
 
     bs.access_account(a);
     bs.access_account(b);
@@ -225,12 +225,12 @@ TYPED_TEST(AccountStateTest, get_code_hash_working_copy)
     EXPECT_EQ(bs.get_code_hash(b), hash2);
 }
 
-TYPED_TEST(AccountStateTest, create_account_working_copy)
+TYPED_TEST(AccountStateTest, create_account_changeset)
 {
     auto db = test::make_db<TypeParam>();
     AccountState s{db};
 
-    auto bs = typename decltype(s)::WorkingCopy{s};
+    auto bs = typename decltype(s)::ChangeSet{s};
 
     bs.create_account(a);
     bs.set_balance(a, 38'000);
@@ -240,14 +240,14 @@ TYPED_TEST(AccountStateTest, create_account_working_copy)
     EXPECT_EQ(bs.get_nonce(a), 2);
 }
 
-TYPED_TEST(AccountStateTest, set_code_hash_working_copy)
+TYPED_TEST(AccountStateTest, set_code_hash_changeset)
 {
     auto db = test::make_db<TypeParam>();
     AccountState s{db};
     db.commit(StateChanges{
         .account_changes = {{b, Account{}}}, .storage_changes = {}});
 
-    auto bs = typename decltype(s)::WorkingCopy{s};
+    auto bs = typename decltype(s)::ChangeSet{s};
 
     bs.access_account(b);
     bs.create_account(a);
@@ -259,7 +259,7 @@ TYPED_TEST(AccountStateTest, set_code_hash_working_copy)
     EXPECT_EQ(bs.get_code_hash(b), NULL_HASH);
 }
 
-TYPED_TEST(AccountStateTest, selfdestruct_working_copy)
+TYPED_TEST(AccountStateTest, selfdestruct_changeset)
 {
     auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
@@ -270,7 +270,7 @@ TYPED_TEST(AccountStateTest, selfdestruct_working_copy)
     AccountState s{db};
     s.merged_.emplace(b, diff_t{std::nullopt, Account{.balance = 28'000}});
 
-    auto bs = typename decltype(s)::WorkingCopy{s};
+    auto bs = typename decltype(s)::ChangeSet{s};
 
     bs.access_account(a);
     bs.access_account(b);
@@ -293,7 +293,7 @@ TYPED_TEST(AccountStateTest, selfdestruct_working_copy)
     EXPECT_FALSE(bs.account_exists(b));
 }
 
-TYPED_TEST(AccountStateTest, destruct_touched_dead_working_copy)
+TYPED_TEST(AccountStateTest, destruct_touched_dead_changeset)
 {
     auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
@@ -302,7 +302,7 @@ TYPED_TEST(AccountStateTest, destruct_touched_dead_working_copy)
 
     AccountState s{db};
 
-    auto bs = typename decltype(s)::WorkingCopy{s};
+    auto bs = typename decltype(s)::ChangeSet{s};
 
     bs.create_account(a);
     bs.set_balance(a, 38'000);
@@ -321,7 +321,7 @@ TYPED_TEST(AccountStateTest, destruct_touched_dead_working_copy)
     EXPECT_FALSE(bs.account_exists(b));
 }
 
-TYPED_TEST(AccountStateTest, revert_touched_working_copy)
+TYPED_TEST(AccountStateTest, revert_touched_changeset)
 {
     auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
@@ -330,7 +330,7 @@ TYPED_TEST(AccountStateTest, revert_touched_working_copy)
 
     AccountState s{db};
 
-    auto bs = typename decltype(s)::WorkingCopy{s};
+    auto bs = typename decltype(s)::ChangeSet{s};
 
     bs.access_account(a);
     bs.set_balance(a, 15'000);
@@ -354,7 +354,7 @@ TYPED_TEST(AccountStateTest, can_merge_fresh)
 
     AccountState t{db};
 
-    auto s = typename decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::ChangeSet{t};
 
     s.access_account(b);
     s.access_account(c);
@@ -384,7 +384,7 @@ TYPED_TEST(AccountStateTest, can_merge_onto_merged)
     t.merged_.emplace(c, diff_t{Account{.balance = 50'000}, std::nullopt});
     t.merged_[c].updated.reset();
 
-    auto s = typename decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::ChangeSet{t};
 
     s.access_account(a);
     s.access_account(b);
@@ -410,7 +410,7 @@ TYPED_TEST(AccountStateTest, cant_merge_colliding_merge)
     diff_t r{db.at(a), db.at(a)};
     r.updated.value().balance = 80'000;
 
-    auto s = typename decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::ChangeSet{t};
 
     s.access_account(a);
     s.set_balance(a, 80'000);
@@ -431,7 +431,7 @@ TYPED_TEST(AccountStateTest, cant_merge_deleted_merge)
     diff_t r{db.at(a), db.at(a)};
     r.updated.value().balance = 60'000;
 
-    auto s = typename decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::ChangeSet{t};
 
     s.access_account(a);
     s.set_balance(a, 80'000);
@@ -448,7 +448,7 @@ TYPED_TEST(AccountStateTest, cant_merge_conflicting_adds)
     AccountState t{db};
     diff_t r{std::nullopt, Account{.balance = 10'000, .nonce = 1}};
 
-    auto s = typename decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::ChangeSet{t};
 
     s.create_account(a);
     s.set_nonce(a, 1);
@@ -470,7 +470,7 @@ TYPED_TEST(AccountStateTest, cant_merge_conflicting_modifies)
     diff_t r{db.at(a), db.at(a)};
     r.updated.value().balance = 80'000;
 
-    auto s = typename decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::ChangeSet{t};
 
     s.access_account(a);
     s.set_balance(a, 60'000);
@@ -492,7 +492,7 @@ TYPED_TEST(AccountStateTest, cant_merge_conflicting_deleted)
     AccountState t{db};
     diff_t r{db.at(c), db.at(c)};
     r.updated.reset();
-    auto s = typename decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::ChangeSet{t};
 
     s.access_account(b);
     s.access_account(c);
@@ -516,7 +516,7 @@ TYPED_TEST(AccountStateTest, merge_multiple_changes)
     AccountState t{db};
 
     {
-        auto s = typename decltype(t)::WorkingCopy{t};
+        auto s = typename decltype(t)::ChangeSet{t};
 
         s.access_account(b);
         s.access_account(c);
@@ -535,7 +535,7 @@ TYPED_TEST(AccountStateTest, merge_multiple_changes)
         EXPECT_FALSE(t.account_exists(c));
     }
     {
-        auto s = typename decltype(t)::WorkingCopy{t};
+        auto s = typename decltype(t)::ChangeSet{t};
 
         s.access_account(b);
         s.create_account(c);
@@ -649,7 +649,7 @@ TYPED_TEST(AccountStateTest, can_commit_multiple)
     AccountState t{db};
 
     {
-        auto s = typename decltype(t)::WorkingCopy{t};
+        auto s = typename decltype(t)::ChangeSet{t};
 
         s.access_account(b);
         s.access_account(c);
@@ -665,7 +665,7 @@ TYPED_TEST(AccountStateTest, can_commit_multiple)
         t.merge_changes(s);
     }
     {
-        auto s = typename decltype(t)::WorkingCopy{t};
+        auto s = typename decltype(t)::ChangeSet{t};
 
         s.access_account(a);
         s.access_account(b);

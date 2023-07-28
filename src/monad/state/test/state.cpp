@@ -53,7 +53,7 @@ struct fakeBlockCache
     }
 } block_cache;
 
-TYPED_TEST(StateTest, get_working_copy)
+TYPED_TEST(StateTest, get_new_changeset)
 {
     auto db = test::make_db<TypeParam>();
     AccountState accounts{db};
@@ -65,8 +65,8 @@ TYPED_TEST(StateTest, get_working_copy)
         .account_changes = {{a, Account{.balance = 10'000}}},
         .storage_changes = {}});
 
-    [[maybe_unused]] auto bs = as.get_working_copy(0);
-    [[maybe_unused]] auto cs = as.get_working_copy(1);
+    [[maybe_unused]] auto bs = as.get_new_changeset(0);
+    [[maybe_unused]] auto cs = as.get_new_changeset(1);
 
     bs.access_account(a);
     bs.set_balance(a, 20'000);
@@ -91,8 +91,8 @@ TYPED_TEST(StateTest, apply_award)
     CodeState code{code_db};
     State as{accounts, values, code, block_cache, db};
 
-    auto bs = as.get_working_copy(0);
-    auto cs = as.get_working_copy(1);
+    auto bs = as.get_new_changeset(0);
+    auto cs = as.get_new_changeset(1);
 
     bs.add_txn_award(10'000);
     cs.add_txn_award(20'000);
@@ -102,7 +102,7 @@ TYPED_TEST(StateTest, apply_award)
     as.apply_block_reward(a, 100);
     as.commit();
 
-    auto ds = as.get_working_copy(2);
+    auto ds = as.get_new_changeset(2);
     ds.access_account(a);
     EXPECT_EQ(ds.get_balance(a), bytes32_t{30'100});
 }
@@ -121,7 +121,7 @@ TYPED_TEST(StateTest, get_code)
         .account_changes = {{a, Account{.balance = 10'000}}},
         .storage_changes = {}});
 
-    [[maybe_unused]] auto bs = as.get_working_copy(0);
+    [[maybe_unused]] auto bs = as.get_new_changeset(0);
 
     bs.access_account(a);
     auto const c = bs.get_code(a);
@@ -146,7 +146,7 @@ TYPED_TEST(StateTest, can_merge_fresh)
             {b, {{key1, value1}, {key2, value2}}},
             {c, {{key1, value1}, {key2, value2}}}}});
 
-    auto s = t.get_working_copy(0);
+    auto s = t.get_new_changeset(0);
 
     s.create_account(a);
     s.set_nonce(a, 1);
@@ -189,8 +189,8 @@ TYPED_TEST(StateTest, can_merge_same_account_different_storage)
             {b, {{key1, value1}, {key2, value2}}},
             {c, {{key1, value1}, {key2, value2}}}}});
 
-    auto bs = t.get_working_copy(0);
-    auto cs = t.get_working_copy(1);
+    auto bs = t.get_new_changeset(0);
+    auto cs = t.get_new_changeset(1);
 
     bs.access_account(b);
     EXPECT_EQ(bs.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
@@ -218,8 +218,8 @@ TYPED_TEST(StateTest, cant_merge_colliding_storage)
         .account_changes = {{b, Account{.balance = 40'000u}}},
         .storage_changes = {{b, {{key1, value1}}}}});
 
-    auto bs = t.get_working_copy(0);
-    auto cs = t.get_working_copy(1);
+    auto bs = t.get_new_changeset(0);
+    auto cs = t.get_new_changeset(1);
 
     {
         bs.access_account(b);
@@ -238,8 +238,8 @@ TYPED_TEST(StateTest, cant_merge_colliding_storage)
             decltype(t)::MergeStatus::COLLISION_DETECTED);
     }
 
-    // Need to rerun txn 1 - get new working copy
-    auto ds = t.get_working_copy(1);
+    // Need to rerun txn 1 - get new changset
+    auto ds = t.get_new_changeset(1);
 
     ds.access_account(b);
     EXPECT_EQ(ds.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
@@ -266,8 +266,8 @@ TYPED_TEST(StateTest, merge_txn0_and_txn1)
             {b, {{key1, value1}, {key2, value2}}},
             {c, {{key1, value1}, {key2, value2}}}}});
 
-    auto bs = t.get_working_copy(0);
-    auto cs = t.get_working_copy(1);
+    auto bs = t.get_new_changeset(0);
+    auto cs = t.get_new_changeset(1);
 
     bs.access_account(b);
     bs.set_balance(b, 42'000);
@@ -307,8 +307,8 @@ TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
             {b, {{key1, value1}, {key2, value2}}},
             {c, {{key1, value1}, {key2, value2}}}}});
 
-    auto bs = t.get_working_copy(0);
-    auto cs = t.get_working_copy(1);
+    auto bs = t.get_new_changeset(0);
+    auto cs = t.get_new_changeset(1);
 
     bs.access_account(b);
     bs.set_balance(b, 42'000);
@@ -330,8 +330,8 @@ TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
     EXPECT_EQ(
         t.can_merge_changes(cs), decltype(t)::MergeStatus::COLLISION_DETECTED);
 
-    // Need to rerun txn 1 - get new working copy
-    auto ds = t.get_working_copy(1);
+    // Need to rerun txn 1 - get new changeset
+    auto ds = t.get_new_changeset(1);
 
     ds.access_account(b);
     ds.access_account(c);
@@ -362,8 +362,8 @@ TYPED_TEST(StateTest, merge_txn1_try_again_merge_txn0_then_txn1)
             {b, {{key1, value1}, {key2, value2}}},
             {c, {{key1, value1}, {key2, value2}}}}});
 
-    auto bs = t.get_working_copy(0);
-    auto cs = t.get_working_copy(1);
+    auto bs = t.get_new_changeset(0);
+    auto cs = t.get_new_changeset(1);
 
     {
         // Txn 0
@@ -409,8 +409,8 @@ TYPED_TEST(StateTest, can_commit)
             {b, {{key1, value1}, {key2, value2}}},
             {c, {{key1, value1}, {key2, value2}}}}});
 
-    auto bs = t.get_working_copy(0);
-    auto cs = t.get_working_copy(1);
+    auto bs = t.get_new_changeset(0);
+    auto cs = t.get_new_changeset(1);
 
     {
         // Txn 0
@@ -456,13 +456,13 @@ TYPED_TEST(TrieDBTest, commit_storage_and_account_together_regression)
     CodeState code{code_db};
     State t{accounts, values, code, block_cache, db};
 
-    auto working_copy = t.get_working_copy(0u);
+    auto changeset = t.get_new_changeset(0u);
 
-    working_copy.create_account(a);
-    working_copy.set_balance(a, 1);
-    (void)working_copy.set_storage(a, key1, key2);
+    changeset.create_account(a);
+    changeset.set_balance(a, 1);
+    (void)changeset.set_storage(a, key1, key2);
 
-    t.merge_changes(working_copy);
+    t.merge_changes(changeset);
     t.commit();
 }
 
@@ -486,7 +486,7 @@ TYPED_TEST(StateTest, commit_twice)
 
     {
         // Block 0, Txn 0
-        auto bs = t.get_working_copy(0);
+        auto bs = t.get_new_changeset(0);
         bs.access_account(b);
         bs.set_balance(b, 42'000);
         bs.set_nonce(b, 3);
@@ -502,7 +502,7 @@ TYPED_TEST(StateTest, commit_twice)
     }
     {
         // Block 1, Txn 0
-        auto cs = t.get_working_copy(0);
+        auto cs = t.get_new_changeset(0);
         cs.access_account(a);
         cs.access_account(c);
         EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
@@ -528,7 +528,7 @@ TYPED_TEST(StateTest, commit_twice_apply_block_reward)
 
     {
         // Block 0, Txn 0
-        auto bs = t.get_working_copy(0);
+        auto bs = t.get_new_changeset(0);
         bs.add_txn_award(10);
         EXPECT_EQ(
             t.can_merge_changes(bs), decltype(t)::MergeStatus::WILL_SUCCEED);
@@ -538,7 +538,7 @@ TYPED_TEST(StateTest, commit_twice_apply_block_reward)
     }
     {
         // Block 1, Txn 0
-        auto bs = t.get_working_copy(0);
+        auto bs = t.get_new_changeset(0);
         bs.add_txn_award(10);
         EXPECT_EQ(
             t.can_merge_changes(bs), decltype(t)::MergeStatus::WILL_SUCCEED);
@@ -548,7 +548,7 @@ TYPED_TEST(StateTest, commit_twice_apply_block_reward)
         t.commit();
     }
 
-    auto ds = t.get_working_copy(0);
+    auto ds = t.get_new_changeset(0);
     ds.access_account(a);
     ds.access_account(b);
     EXPECT_EQ(ds.get_balance(a), bytes32_t{220});

@@ -21,7 +21,7 @@ struct CodeState
 {
     using map_t = std::unordered_map<address_t, byte_string>;
 
-    struct WorkingCopy;
+    struct ChangeSet;
 
     TCodeDB &db_;
     map_t merged_{};
@@ -43,14 +43,14 @@ struct CodeState
         return {empty};
     }
 
-    [[nodiscard]] bool can_merge(WorkingCopy const &w) const
+    [[nodiscard]] bool can_merge(ChangeSet const &w) const
     {
         return std::ranges::none_of(w.code_, [&](auto const &a) {
             return merged_.contains(a.first) || db_.contains(a.first);
         });
     }
 
-    void merge_changes(WorkingCopy &w)
+    void merge_changes(ChangeSet &w)
     {
         assert(can_merge(w));
 
@@ -79,11 +79,11 @@ struct CodeState
 };
 
 template <typename TCodeDB>
-struct CodeState<TCodeDB>::WorkingCopy : public CodeState<TCodeDB>
+struct CodeState<TCodeDB>::ChangeSet : public CodeState<TCodeDB>
 {
     map_t code_{};
 
-    explicit WorkingCopy(CodeState const &c)
+    explicit ChangeSet(CodeState const &c)
         : CodeState(c)
     {
     }

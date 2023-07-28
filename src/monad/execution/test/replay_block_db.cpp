@@ -150,7 +150,7 @@ struct fakeEmptyFiberData
 };
 
 using state_t = execution::fake::State;
-using traits_t = execution::fake::traits::alpha<state_t::WorkingCopy>;
+using traits_t = execution::fake::traits::alpha<state_t::ChangeSet>;
 using receipt_collector_t = std::vector<std::vector<Receipt>>;
 
 using replay_t = ReplayFromBlockDb<

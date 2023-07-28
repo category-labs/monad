@@ -46,7 +46,7 @@ public:
         block_num_t block_number;
     };
 
-    template <concepts::fork_traits<typename TState::WorkingCopy> TTraits>
+    template <concepts::fork_traits<typename TState::ChangeSet> TTraits>
     [[nodiscard]] constexpr block_num_t
     loop_until(std::optional<block_num_t> until_block_number)
     {
@@ -90,7 +90,7 @@ public:
     }
 
     template <
-        concepts::fork_traits<typename TState::WorkingCopy> TTraits,
+        concepts::fork_traits<typename TState::ChangeSet> TTraits,
         template <typename, typename> class TTxnProcessor,
         template <typename, typename, typename, typename> class TEvm,
         template <typename, typename, typename> class TStaticPrecompiles,
@@ -137,15 +137,15 @@ public:
                     TTraits,
                     TFiberData<
                         TState,
-                        TTxnProcessor<typename TState::WorkingCopy, TTraits>,
+                        TTxnProcessor<typename TState::ChangeSet, TTraits>,
                         TEvmHost<
-                            typename TState::WorkingCopy,
+                            typename TState::ChangeSet,
                             TTraits,
                             TEvm<
-                                typename TState::WorkingCopy,
+                                typename TState::ChangeSet,
                                 TTraits,
                                 TStaticPrecompiles<
-                                    typename TState::WorkingCopy,
+                                    typename TState::ChangeSet,
                                     TTraits,
                                     TPrecompiles>,
                                 TInterpreter>>,
@@ -199,7 +199,7 @@ public:
     }
 
     template <
-        concepts::fork_traits<typename TState::WorkingCopy> TTraits,
+        concepts::fork_traits<typename TState::ChangeSet> TTraits,
         template <typename, typename> class TTxnProcessor,
         template <typename, typename, typename, typename> class TEvm,
         template <typename, typename, typename> class TStaticPrecompiles,

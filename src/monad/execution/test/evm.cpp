@@ -14,22 +14,22 @@ using namespace monad::execution;
 
 constexpr static auto null{0x0000000000000000000000000000000000000000_address};
 
-using traits_t = fake::traits::alpha<fake::State::WorkingCopy>;
+using traits_t = fake::traits::alpha<fake::State::ChangeSet>;
 
-template <concepts::fork_traits<fake::State::WorkingCopy> TTraits>
+template <concepts::fork_traits<fake::State::ChangeSet> TTraits>
 using traits_templated_static_precompiles_t = StaticPrecompiles<
-    fake::State::WorkingCopy, TTraits, typename TTraits::static_precompiles_t>;
+    fake::State::ChangeSet, TTraits, typename TTraits::static_precompiles_t>;
 
-template <concepts::fork_traits<fake::State::WorkingCopy> TTraits>
+template <concepts::fork_traits<fake::State::ChangeSet> TTraits>
 using traits_templated_evm_t =
-    Evm<fake::State::WorkingCopy, fake::traits::alpha<fake::State::WorkingCopy>,
+    Evm<fake::State::ChangeSet, fake::traits::alpha<fake::State::ChangeSet>,
         traits_templated_static_precompiles_t<TTraits>, fake::Interpreter>;
 
 using evm_t = traits_templated_evm_t<traits_t>;
 using evm_host_t = fake::EvmHost<
-    fake::State::WorkingCopy, traits_t,
+    fake::State::ChangeSet, traits_t,
     fake::Evm<
-        fake::State::WorkingCopy, traits_t,
+        fake::State::ChangeSet, traits_t,
         fake::static_precompiles::OneHundredGas, fake::Interpreter>>;
 
 TEST(Evm, make_account_address)
@@ -38,7 +38,7 @@ TEST(Evm, make_account_address)
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     constexpr static auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    static fake::State::WorkingCopy s{};
+    static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
     s._accounts[from].nonce = 6;
 
@@ -67,7 +67,7 @@ TEST(Evm, make_account_address_create2)
     static constexpr auto cafebabe_salt{
         0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32};
     static const uint8_t deadbeef[4]{0xde, 0xad, 0xbe, 0xef};
-    static fake::State::WorkingCopy s{};
+    static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
     s._accounts[from].nonce = 5;
 
@@ -94,7 +94,7 @@ TEST(Evm, create_with_insufficient)
 {
     constexpr static auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-    static fake::State::WorkingCopy s{};
+    static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
 
     evmc_message m{
@@ -115,7 +115,7 @@ TEST(Evm, create_nonce_out_of_range)
 {
     constexpr static auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-    static fake::State::WorkingCopy s{};
+    static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
     s._accounts[from].nonce = std::numeric_limits<uint64_t>::max();
 
@@ -139,7 +139,7 @@ TEST(Evm, eip684_existing_nonce)
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     constexpr static auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    static fake::State::WorkingCopy s{};
+    static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
     s._accounts[from].nonce = 6;
     s._accounts[to].nonce = 5; // existing
@@ -166,7 +166,7 @@ TEST(Evm, eip684_existing_code)
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
     constexpr static auto code_hash{
         0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
-    static fake::State::WorkingCopy s{};
+    static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
     s._accounts[from].nonce = 6;
     s._accounts[to].code_hash = code_hash; // existing
@@ -191,7 +191,7 @@ TEST(Evm, transfer_call_balances)
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     constexpr static auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    static fake::State::WorkingCopy s{};
+    static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
     s._accounts[from].nonce = 6;
     s._accounts[to].balance = 0;
@@ -217,7 +217,7 @@ TEST(Evm, transfer_call_balances_to_self)
     constexpr static auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     constexpr static auto to = from;
-    static fake::State::WorkingCopy s{};
+    static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
     s._accounts[from].nonce = 6;
 
@@ -242,7 +242,7 @@ TEST(Evm, dont_transfer_on_delegatecall)
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     constexpr static auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    static fake::State::WorkingCopy s{};
+    static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
     s._accounts[from].nonce = 5;
     s._accounts[to].balance = 0;
@@ -269,7 +269,7 @@ TEST(Evm, dont_transfer_on_staticcall)
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     constexpr static auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    static fake::State::WorkingCopy s{};
+    static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
     s._accounts[from].nonce = 5;
     s._accounts[to].balance = 0;
@@ -297,7 +297,7 @@ TEST(Evm, create_contract_account)
         0x5353535353535353535353535353535353535353_address};
     constexpr static auto new_addr{
         0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
-    fake::State::WorkingCopy s{};
+    fake::State::ChangeSet s{};
 
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 50'000u, .nonce = 1});
@@ -330,7 +330,7 @@ TEST(Evm, create2_contract_account)
         0x5353535353535353535353535353535353535353_address};
     constexpr static auto new_addr2{
         0xe0e05f8f41129e2087ec0a3759810fdced46edd4_address};
-    fake::State::WorkingCopy s{};
+    fake::State::ChangeSet s{};
 
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 50'000u, .nonce = 1});
@@ -362,7 +362,7 @@ TEST(Evm, oog_create_account)
 {
     constexpr static auto from{
         0x5353535353535353535353535353535353535353_address};
-    fake::State::WorkingCopy s{};
+    fake::State::ChangeSet s{};
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 10'000, .nonce = 1});
     traits_t::_store_contract_result.status_code = EVMC_OUT_OF_GAS;
@@ -385,7 +385,7 @@ TEST(Evm, revert_create_account)
         0x5353535353535353535353535353535353535353_address};
     constexpr static auto null{
         0x0000000000000000000000000000000000000000_address};
-    fake::State::WorkingCopy s{};
+    fake::State::ChangeSet s{};
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 10'000});
     traits_t::_store_contract_result.status_code = EVMC_SUCCESS;
@@ -410,7 +410,7 @@ TEST(Evm, call_evm)
         0x5353535353535353535353535353535353535353_address};
     constexpr static auto to{
         0xf8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8_address};
-    fake::State::WorkingCopy s{};
+    fake::State::ChangeSet s{};
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 50'000u});
     s._accounts.emplace(to, Account{.balance = 50'000u});
@@ -431,7 +431,7 @@ TEST(Evm, call_evm)
 
 TEST(Evm, static_precompile_execution)
 {
-    using beta_traits_t = fake::traits::beta<fake::State::WorkingCopy>;
+    using beta_traits_t = fake::traits::beta<fake::State::ChangeSet>;
     using alpha_evm_t = evm_t;
     using beta_evm_t = traits_templated_evm_t<beta_traits_t>;
 
@@ -439,7 +439,7 @@ TEST(Evm, static_precompile_execution)
         0x5353535353535353535353535353535353535353_address};
     constexpr static auto code_address{
         0x0000000000000000000000000000000000000001_address};
-    fake::State::WorkingCopy s{};
+    fake::State::ChangeSet s{};
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 15'000});
     s._accounts.emplace(code_address, Account{.nonce = 4});
@@ -480,7 +480,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         0x5353535353535353535353535353535353535353_address};
     constexpr static auto code_address{
         0x0000000000000000000000000000000000000001_address};
-    fake::State::WorkingCopy s{};
+    fake::State::ChangeSet s{};
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 15'000});
     s._accounts.emplace(code_address, Account{.nonce = 6});
@@ -509,7 +509,7 @@ TEST(Evm, revert_call_evm)
         0x5353535353535353535353535353535353535353_address};
     constexpr static auto code_address{
         0x0000000000000000000000000000000000000003_address};
-    fake::State::WorkingCopy s{};
+    fake::State::ChangeSet s{};
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 15'000});
     s._accounts.emplace(code_address, Account{.nonce = 10});

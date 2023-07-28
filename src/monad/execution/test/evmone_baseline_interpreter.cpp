@@ -11,20 +11,20 @@ using namespace monad;
 using namespace monad::execution;
 
 using interpreter_t = EVMOneBaselineInterpreter<
-    fake::State::WorkingCopy, fake::traits::alpha<fake::State::WorkingCopy>>;
+    fake::State::ChangeSet, fake::traits::alpha<fake::State::ChangeSet>>;
 
-using traits_t = fake::traits::alpha<fake::State::WorkingCopy>;
+using traits_t = fake::traits::alpha<fake::State::ChangeSet>;
 
 using evm_host_t = fake::EvmHost<
-    fake::State::WorkingCopy, traits_t,
+    fake::State::ChangeSet, traits_t,
     fake::Evm<
-        fake::State::WorkingCopy, traits_t,
+        fake::State::ChangeSet, traits_t,
         fake::static_precompiles::OneHundredGas, fake::Interpreter>>;
 
 TEST(Evm1BaselineInterpreter, execute_empty)
 {
     constexpr address_t a{0x5353535353535353535353535353535353535353_address};
-    fake::State::WorkingCopy s{};
+    fake::State::ChangeSet s{};
 
     evm_host_t h{};
     s._code.emplace(a, byte_string{});
@@ -40,7 +40,7 @@ TEST(Evm1BaselineInterpreter, execute_empty)
 TEST(Evm1BaselineInterpreter, execute_simple)
 {
     constexpr address_t a{0x5353535353535353535353535353535353535353_address};
-    fake::State::WorkingCopy s{};
+    fake::State::ChangeSet s{};
     evm_host_t h{};
     byte_string code = {
         0x60, // PUSH1, 3 gas
@@ -63,7 +63,7 @@ TEST(Evm1BaselineInterpreter, execute_simple)
 TEST(Evm1BaselineInterpreter, execute_invalid)
 {
     constexpr address_t a{0x5353535353535353535353535353535353535353_address};
-    fake::State::WorkingCopy s{};
+    fake::State::ChangeSet s{};
     evm_host_t h{};
     byte_string code = {
         0x60, // PUSH1, 3 gas

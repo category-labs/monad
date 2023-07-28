@@ -50,7 +50,7 @@ TYPED_TEST(ValueStateTest, access_storage)
     auto db = test::make_db<TypeParam>();
     ValueState t{db};
 
-    auto s = typename decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::ChangeSet{t};
 
     EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_COLD);
     EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_WARM);
@@ -72,8 +72,8 @@ TYPED_TEST(ValueStateTest, copy)
             {c, {{key1, value1}, {key2, value2}}}}});
     ValueState s{db};
 
-    auto t = typename decltype(s)::WorkingCopy{s};
-    auto r = typename decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::ChangeSet{s};
+    auto r = typename decltype(s)::ChangeSet{s};
 
     EXPECT_EQ(r.access_storage(a, key1), EVMC_ACCESS_COLD);
     EXPECT_EQ(r.access_storage(b, key1), EVMC_ACCESS_COLD);
@@ -100,7 +100,7 @@ TYPED_TEST(ValueStateTest, get_storage)
     t.merged_.storage_[a].emplace(key2, diff_t{value2, value3});
     t.merged_.storage_[b][key1] = bytes32_t{};
 
-    auto s = typename decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::ChangeSet{t};
 
     EXPECT_EQ(s.get_storage(a, key1), value1);
     EXPECT_EQ(s.get_storage(a, key2), value3);
@@ -113,7 +113,7 @@ TYPED_TEST(ValueStateTest, set_add_delete_touched)
     auto db = test::make_db<TypeParam>();
     ValueState t{db};
 
-    auto s = typename decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::ChangeSet{t};
 
     EXPECT_EQ(s.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
     EXPECT_EQ(s.get_storage(a, key1), value1);
@@ -130,7 +130,7 @@ TYPED_TEST(ValueStateTest, set_modify_delete_storage)
         .account_changes = {{a, Account{}}},
         .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
 
-    auto s = typename decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::ChangeSet{t};
 
     EXPECT_EQ(s.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(s.set_storage(a, key1, null), EVMC_STORAGE_MODIFIED_DELETED);
@@ -159,7 +159,7 @@ TYPED_TEST(ValueStateTest, set_modify_delete_merged)
     t.merged_.storage_[a].emplace(key1, diff_t{value1, value2});
     t.merged_.storage_[a].emplace(key2, diff_t{value2, value1});
 
-    auto s = typename decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::ChangeSet{t};
 
     EXPECT_EQ(s.set_storage(a, key1, value1), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(s.set_storage(a, key1, null), EVMC_STORAGE_MODIFIED_DELETED);
@@ -186,7 +186,7 @@ TYPED_TEST(ValueStateTest, multiple_get_and_set_from_storage)
             {b, {{key1, value1}, {key2, value2}}},
             {c, {{key1, value1}, {key2, value2}}}}});
 
-    auto s = typename decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::ChangeSet{t};
 
     EXPECT_EQ(s.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(s.set_storage(a, key1, null), EVMC_STORAGE_MODIFIED_DELETED);
@@ -230,7 +230,7 @@ TYPED_TEST(ValueStateTest, multiple_get_and_set_from_merged)
     t.merged_.storage_[a].emplace(key1, diff_t{value1, value2});
     t.merged_.storage_[c].emplace(key1, diff_t{value1, value2});
 
-    auto s = typename decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::ChangeSet{t};
 
     EXPECT_EQ(s.set_storage(a, key1, value1), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(s.set_storage(a, key1, null), EVMC_STORAGE_MODIFIED_DELETED);
@@ -265,7 +265,7 @@ TYPED_TEST(ValueStateTest, revert)
     auto db = test::make_db<TypeParam>();
     ValueState t{db};
 
-    auto s = typename decltype(t)::WorkingCopy{t};
+    auto s = typename decltype(t)::ChangeSet{t};
 
     EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_COLD);
     EXPECT_EQ(s.access_storage(b, key1), EVMC_ACCESS_COLD);
@@ -292,7 +292,7 @@ TYPED_TEST(ValueStateTest, can_merge)
             {b, {{key1, value1}, {key2, value2}}}}});
     ValueState s{db};
 
-    auto t = typename decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::ChangeSet{s};
 
     EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(t.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
@@ -312,7 +312,7 @@ TYPED_TEST(ValueStateTest, can_merge_added)
     auto db = test::make_db<TypeParam>();
     ValueState s{db};
 
-    auto t = typename decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::ChangeSet{s};
 
     EXPECT_EQ(t.set_storage(c, key2, value1), EVMC_STORAGE_ADDED);
     EXPECT_TRUE(s.can_merge(t));
@@ -326,7 +326,7 @@ TYPED_TEST(ValueStateTest, can_merge_deleted)
         .storage_changes = {{a, {{key2, value2}}}}});
     ValueState s{db};
 
-    auto t = typename decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::ChangeSet{s};
 
     EXPECT_EQ(t.set_storage(a, key2, null), EVMC_STORAGE_DELETED);
     EXPECT_TRUE(s.can_merge(t));
@@ -340,7 +340,7 @@ TYPED_TEST(ValueStateTest, can_merge_modified)
         .storage_changes = {{a, {{key1, value1}}}}});
     ValueState s{db};
 
-    auto t = typename decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::ChangeSet{s};
 
     EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
     EXPECT_TRUE(s.can_merge(t));
@@ -352,14 +352,14 @@ TYPED_TEST(ValueStateTest, can_merge_modify_merged_added)
     ValueState s{db};
 
     {
-        auto t = typename decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::ChangeSet{s};
 
         EXPECT_EQ(t.set_storage(c, key2, value1), EVMC_STORAGE_ADDED);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_touched(t);
     }
     {
-        auto t = typename decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::ChangeSet{s};
         EXPECT_EQ(t.set_storage(c, key2, value2), EVMC_STORAGE_MODIFIED);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_touched(t);
@@ -372,13 +372,13 @@ TYPED_TEST(ValueStateTest, can_merge_delete_merged_added)
     ValueState s{db};
 
     {
-        auto t = typename decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::ChangeSet{s};
         EXPECT_EQ(t.set_storage(c, key2, value1), EVMC_STORAGE_ADDED);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_touched(t);
     }
     {
-        auto t = typename decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::ChangeSet{s};
         EXPECT_EQ(t.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_touched(t);
@@ -394,13 +394,13 @@ TYPED_TEST(ValueStateTest, can_merge_add_on_merged_deleted)
     ValueState s{db};
 
     {
-        auto t = typename decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::ChangeSet{s};
         EXPECT_EQ(t.set_storage(a, key2, null), EVMC_STORAGE_DELETED);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_touched(t);
     }
     {
-        auto t = typename decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::ChangeSet{s};
         EXPECT_EQ(t.set_storage(a, key2, value1), EVMC_STORAGE_ADDED);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_touched(t);
@@ -416,18 +416,18 @@ TYPED_TEST(ValueStateTest, can_merge_delete_merged_modified)
     ValueState s{db};
 
     {
-        auto t = typename decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::ChangeSet{s};
         EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_touched(t);
     }
     {
-        auto t = typename decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::ChangeSet{s};
         EXPECT_EQ(t.set_storage(a, key1, null), EVMC_STORAGE_DELETED);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_touched(t);
         {
-            auto r = typename decltype(s)::WorkingCopy{s};
+            auto r = typename decltype(s)::ChangeSet{s};
             EXPECT_EQ(r.get_storage(a, key1), null);
         }
     }
@@ -443,7 +443,7 @@ TYPED_TEST(ValueStateTest, cant_merge_colliding_merge)
         .storage_changes = {{a, {{key1, value1}}}}});
     ValueState s{db};
 
-    auto t = typename decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::ChangeSet{s};
 
     EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
 
@@ -460,7 +460,7 @@ TYPED_TEST(ValueStateTest, cant_merge_deleted_merge)
         .storage_changes = {{a, {{key1, value1}}}}});
     ValueState s{db};
 
-    auto t = typename decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::ChangeSet{s};
 
     EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
 
@@ -476,7 +476,7 @@ TYPED_TEST(ValueStateTest, cant_merge_conflicting_adds)
     auto db = test::make_db<TypeParam>();
     ValueState s{db};
 
-    auto t = typename decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::ChangeSet{s};
 
     EXPECT_EQ(t.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
 
@@ -495,7 +495,7 @@ TYPED_TEST(ValueStateTest, cant_merge_conflicting_modifies)
         .storage_changes = {{a, {{key1, value3}}}}});
     ValueState s{db};
 
-    auto t = typename decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::ChangeSet{s};
 
     EXPECT_EQ(t.set_storage(a, key1, value1), EVMC_STORAGE_MODIFIED);
 
@@ -512,7 +512,7 @@ TYPED_TEST(ValueStateTest, cant_merge_conflicting_deleted)
         .storage_changes = {{a, {{key1, value1}}}}});
     ValueState s{db};
 
-    auto t = typename decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::ChangeSet{s};
 
     EXPECT_EQ(t.set_storage(a, key1, null), EVMC_STORAGE_DELETED);
 
@@ -531,7 +531,7 @@ TYPED_TEST(ValueStateTest, cant_merge_delete_conflicts_with_modify)
         .storage_changes = {{a, {{key1, value1}}}}});
     ValueState s{db};
 
-    auto t = typename decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::ChangeSet{s};
 
     EXPECT_EQ(t.set_storage(a, key1, null), EVMC_STORAGE_DELETED);
 
@@ -549,7 +549,7 @@ TYPED_TEST(ValueStateTest, merge_touched_multiple)
     ValueState s{db};
 
     {
-        auto t = typename decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::ChangeSet{s};
 
         EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
         EXPECT_EQ(t.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
@@ -560,7 +560,7 @@ TYPED_TEST(ValueStateTest, merge_touched_multiple)
     }
 
     {
-        auto u = typename decltype(s)::WorkingCopy{s};
+        auto u = typename decltype(s)::ChangeSet{s};
 
         EXPECT_EQ(u.set_storage(a, key1, value3), EVMC_STORAGE_MODIFIED);
         EXPECT_EQ(u.set_storage(b, key1, value1), EVMC_STORAGE_ADDED);
@@ -580,7 +580,7 @@ TYPED_TEST(ValueStateTest, can_commit)
     ValueState s{db};
 
     {
-        auto t = typename decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::ChangeSet{s};
 
         EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
         EXPECT_EQ(t.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
@@ -592,7 +592,7 @@ TYPED_TEST(ValueStateTest, can_commit)
     }
 
     {
-        auto u = typename decltype(s)::WorkingCopy{s};
+        auto u = typename decltype(s)::ChangeSet{s};
 
         EXPECT_EQ(u.set_storage(a, key1, value3), EVMC_STORAGE_MODIFIED);
         EXPECT_EQ(u.set_storage(b, key1, value1), EVMC_STORAGE_ADDED);
@@ -613,7 +613,7 @@ TYPED_TEST(ValueStateTest, can_commit_restored)
     ValueState s{db};
 
     {
-        auto t = typename decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::ChangeSet{s};
         EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
         EXPECT_EQ(
             t.set_storage(a, key1, value1), EVMC_STORAGE_MODIFIED_RESTORED);
@@ -629,7 +629,7 @@ TYPED_TEST(ValueStateTest, can_commit_restored)
     }
 
     {
-        auto u = typename decltype(s)::WorkingCopy{s};
+        auto u = typename decltype(s)::ChangeSet{s};
         EXPECT_EQ(u.set_storage(a, key1, null), EVMC_STORAGE_DELETED);
         EXPECT_EQ(
             u.set_storage(a, key1, value1), EVMC_STORAGE_DELETED_RESTORED);
@@ -654,7 +654,7 @@ TYPED_TEST(ValueStateTest, commit_all_merged)
     ValueState s{db};
 
     {
-        auto t = typename decltype(s)::WorkingCopy{s};
+        auto t = typename decltype(s)::ChangeSet{s};
         EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
         EXPECT_EQ(
             t.set_storage(a, key1, value1), EVMC_STORAGE_MODIFIED_RESTORED);
@@ -670,7 +670,7 @@ TYPED_TEST(ValueStateTest, commit_all_merged)
     }
 
     {
-        auto u = typename decltype(s)::WorkingCopy{s};
+        auto u = typename decltype(s)::ChangeSet{s};
         EXPECT_EQ(u.set_storage(a, key1, null), EVMC_STORAGE_DELETED);
         EXPECT_EQ(
             u.set_storage(a, key1, value1), EVMC_STORAGE_DELETED_RESTORED);
@@ -696,7 +696,7 @@ TYPED_TEST(ValueStateTest, get_after_set)
         .storage_changes = {{a, {{key1, value1}}}}});
     ValueState s{db};
 
-    auto t = typename decltype(s)::WorkingCopy{s};
+    auto t = typename decltype(s)::ChangeSet{s};
     EXPECT_EQ(t.set_storage(a, key1, value1), EVMC_STORAGE_ASSIGNED);
     EXPECT_EQ(t.set_storage(a, key1, null), EVMC_STORAGE_DELETED);
     EXPECT_EQ(t.get_storage(a, key1), null);

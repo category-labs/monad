@@ -131,7 +131,7 @@ struct fakeReceiptFiberData
     inline void operator()()
     {
         TTxnProcessor p{};
-        typename TState::WorkingCopy s{};
+        typename TState::ChangeSet s{};
         TEvmHost h{};
         BlockHeader bh{};
         Transaction t{};

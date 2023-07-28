@@ -73,10 +73,10 @@ struct alignas(64) TransactionProcessorFiberData
 
         while (true) { // retry until apply state cleanly
             // TODO: Issue #164
-            auto working_copy = s_.get_working_copy(id_);
+            auto changeset = s_.get_new_changeset(id_);
             while (true) { // spin until *could be* successful
                 auto const status = is_valid(p.validate(
-                    working_copy, txn_, bh_.base_fee_per_gas.value_or(0)));
+                    changeset, txn_, bh_.base_fee_per_gas.value_or(0)));
                 if (status == TxnReadyStatus::WILL_SUCCEED) {
                     break;
                 }
@@ -92,11 +92,11 @@ struct alignas(64) TransactionProcessorFiberData
                 TExecution::yield();
             }
 
-            TEvmHost host{bh_, txn_, working_copy};
+            TEvmHost host{bh_, txn_, changeset};
             result_ = p.execute(
-                working_copy, host, txn_, bh_.base_fee_per_gas.value_or(0));
+                changeset, host, txn_, bh_.base_fee_per_gas.value_or(0));
 
-            if (s_.can_merge_changes(working_copy) ==
+            if (s_.can_merge_changes(changeset) ==
                 TState::MergeStatus::WILL_SUCCEED) {
                 // apply_state -> can_merge_changes
                 // Can merge needs to be in yield while loop while receiving
@@ -112,7 +112,7 @@ struct alignas(64) TransactionProcessorFiberData
                     id_,
                     elapsed_ms);
 
-                s_.merge_changes(working_copy);
+                s_.merge_changes(changeset);
                 return;
             }
             MONAD_LOG_INFO(txn_logger, "Transaction {} rescheduled", id_);

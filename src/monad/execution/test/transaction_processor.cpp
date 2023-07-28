@@ -8,18 +8,18 @@
 using namespace monad;
 using namespace monad::execution;
 
-using traits_t = fake::traits::alpha<fake::State::WorkingCopy>;
-using processor_t = TransactionProcessor<fake::State::WorkingCopy, traits_t>;
+using traits_t = fake::traits::alpha<fake::State::ChangeSet>;
+using processor_t = TransactionProcessor<fake::State::ChangeSet, traits_t>;
 
 using evm_host_t = fake::EvmHost<
-    fake::State::WorkingCopy, traits_t,
+    fake::State::ChangeSet, traits_t,
     fake::Evm<
-        fake::State::WorkingCopy, traits_t,
+        fake::State::ChangeSet, traits_t,
         fake::static_precompiles::OneHundredGas, fake::Interpreter>>;
 
 TEST(TransactionProcessor, g_star)
 {
-    fake::State::WorkingCopy s{};
+    fake::State::ChangeSet s{};
     traits_t::_sd_refund = 10'000;
     traits_t::_max_refund_quotient = 2;
 
@@ -39,7 +39,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 {
     constexpr static auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-    fake::State::WorkingCopy s{};
+    fake::State::ChangeSet s{};
     evm_host_t h{};
     s._accounts[from] = {.balance = 56'000'000'000'000'000, .nonce = 25};
     h._result = {.status_code = EVMC_SUCCESS, .gas_left = 15'000};

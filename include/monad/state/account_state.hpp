@@ -22,7 +22,7 @@ struct AccountState
     using diff_t = diff<std::optional<Account>>;
     using change_set_t = std::unordered_map<address_t, diff_t>;
 
-    struct WorkingCopy;
+    struct ChangeSet;
 
     // TODO Irrevocable change separated out to avoid reversion
     TAccountDB &db_;
@@ -92,14 +92,14 @@ struct AccountState
         return get_committed_storage(a).value_or(Account{}).code_hash;
     }
 
-    [[nodiscard]] bool can_merge(WorkingCopy const &diffs) const noexcept
+    [[nodiscard]] bool can_merge(ChangeSet const &diffs) const noexcept
     {
         return std::ranges::all_of(diffs.changed_, [&](auto const &p) {
             return get_committed_storage(p.first) == p.second.orig;
         });
     }
 
-    void merge_changes(WorkingCopy &diffs)
+    void merge_changes(ChangeSet &diffs)
     {
         assert(can_merge(diffs));
 
@@ -141,7 +141,7 @@ struct AccountState
 };
 
 template <typename TAccountDB>
-struct AccountState<TAccountDB>::WorkingCopy : public AccountState<TAccountDB>
+struct AccountState<TAccountDB>::ChangeSet : public AccountState<TAccountDB>
 {
     change_set_t changed_{};
     uint64_t total_selfdestructs_{};

@@ -43,7 +43,7 @@ namespace fake
 
     struct State
     {
-        struct WorkingCopy
+        struct ChangeSet
         {
             std::unordered_map<address_t, Account> _accounts{};
             std::unordered_map<address_t, byte_string> _code{};
@@ -55,9 +55,9 @@ namespace fake
             uint64_t _suicides{};
             uint256_t _reward{};
 
-            WorkingCopy() = default;
+            ChangeSet() = default;
 
-            WorkingCopy(unsigned int id)
+            ChangeSet(unsigned int id)
                 : _txn_id{id}
             {
             }
@@ -215,17 +215,17 @@ namespace fake
 
         unsigned int current_txn() { return _current_txn; }
 
-        WorkingCopy get_working_copy(unsigned int id)
+        ChangeSet get_new_changeset(unsigned int id)
         {
-            return WorkingCopy(id);
+            return ChangeSet(id);
         }
 
-        MergeStatus can_merge_changes(WorkingCopy const &)
+        MergeStatus can_merge_changes(ChangeSet const &)
         {
             return _merge_status;
         }
 
-        void merge_changes(WorkingCopy &) { return; }
+        void merge_changes(ChangeSet &) { return; }
 
         void commit() const noexcept { return; }
 

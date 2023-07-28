@@ -9,7 +9,7 @@
 using namespace monad;
 using namespace monad::fork_traits;
 
-using state_t = execution::fake::State::WorkingCopy;
+using state_t = execution::fake::State::ChangeSet;
 
 auto constexpr a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 auto constexpr b{0x5353535353535353535353535353535353535353_address};
@@ -30,7 +30,7 @@ TEST(fork_traits, frontier)
     EXPECT_EQ(f.intrinsic_gas(t), 21'072);
     EXPECT_EQ(f.starting_nonce(), 0);
 
-    execution::fake::State::WorkingCopy s{};
+    execution::fake::State::ChangeSet s{};
     s._selfdestructs = 10;
 
     EXPECT_EQ(f.get_selfdestruct_refund(s), 240'000);
@@ -121,7 +121,7 @@ TEST(fork_traits, homestead)
     EXPECT_EQ(h.intrinsic_gas(t), 21'000);
     EXPECT_EQ(h.starting_nonce(), 0);
 
-    execution::fake::State::WorkingCopy s{};
+    execution::fake::State::ChangeSet s{};
     byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
     { // Successfully deploy code
         int64_t gas = 10'000;
@@ -164,7 +164,7 @@ TEST(fork_traits, spurious_dragon)
     EXPECT_EQ(sd.intrinsic_gas(t), 21'000);
     EXPECT_EQ(sd.starting_nonce(), 1);
 
-    execution::fake::State::WorkingCopy s{};
+    execution::fake::State::ChangeSet s{};
     s._touched_dead = 10;
     sd.destruct_touched_dead(s);
     EXPECT_EQ(s._touched_dead, 0);
@@ -199,7 +199,7 @@ TEST(fork_traits, byzantium)
     EXPECT_EQ(byz.intrinsic_gas(t), 21'000);
     EXPECT_EQ(byz.starting_nonce(), 1);
 
-    execution::fake::State::WorkingCopy s{};
+    execution::fake::State::ChangeSet s{};
     s._touched_dead = 10;
     byz.destruct_touched_dead(s);
     EXPECT_EQ(s._touched_dead, 0);
@@ -276,7 +276,7 @@ static_assert(concepts::fork_traits<fork_traits::london, state_t>);
 TEST(fork_traits, london)
 {
     fork_traits::london l{};
-    execution::fake::State::WorkingCopy s{};
+    execution::fake::State::ChangeSet s{};
     s._selfdestructs = 10;
 
     EXPECT_EQ(l.get_selfdestruct_refund(s), 0);

@@ -33,7 +33,7 @@ struct ValueState
         void clear() { storage_.clear(); }
     };
 
-    struct WorkingCopy;
+    struct ChangeSet;
 
     ValueState(TValueDB &store)
         : db_{store}
@@ -84,7 +84,7 @@ struct ValueState
 
     void clear_changes() { merged_.clear(); }
 
-    bool can_merge(WorkingCopy const &diffs) const noexcept
+    bool can_merge(ChangeSet const &diffs) const noexcept
     {
         for (auto const &[a, keys] : diffs.touched_.storage_) {
             for (auto const &[k, v] : keys) {
@@ -96,7 +96,7 @@ struct ValueState
         return true;
     }
 
-    void merge_touched(WorkingCopy &diffs)
+    void merge_touched(ChangeSet &diffs)
     {
         MONAD_DEBUG_ASSERT(can_merge(diffs));
 
@@ -114,7 +114,7 @@ struct ValueState
 };
 
 template <typename TValueDB>
-struct ValueState<TValueDB>::WorkingCopy : public ValueState<TValueDB>
+struct ValueState<TValueDB>::ChangeSet : public ValueState<TValueDB>
 {
     InnerStorage touched_{};
     std::unordered_map<address_t, std::unordered_set<bytes32_t>>

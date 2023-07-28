@@ -16,10 +16,10 @@ template <class TTxnProc, class TExecution>
 using data_t = TransactionProcessorFiberData<
     state_t, TTxnProc,
     fake::EvmHost<
-        fake::State::WorkingCopy, fake::traits::alpha<fake::State::WorkingCopy>,
+        fake::State::ChangeSet, fake::traits::alpha<fake::State::ChangeSet>,
         fake::Evm<
-            fake::State::WorkingCopy,
-            fake::traits::alpha<fake::State::WorkingCopy>,
+            fake::State::ChangeSet,
+            fake::traits::alpha<fake::State::ChangeSet>,
             fake::static_precompiles::OneHundredGas, fake::Interpreter>>,
     TExecution>;
 
@@ -60,8 +60,8 @@ TEST(TransactionProcessorFiberData, invoke_successfully_first_time)
 
     data_t<
         fakeSuccessfulTP<
-            fake::State::WorkingCopy,
-            fake::traits::alpha<fake::State::WorkingCopy>>,
+            fake::State::ChangeSet,
+            fake::traits::alpha<fake::State::ChangeSet>>,
         BoostFiberExecution>
         d{s, t, b, 0};
     d();

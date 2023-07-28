@@ -32,24 +32,24 @@ TEST(CodeState, code_at)
     EXPECT_EQ(code, c1);
 }
 
-TEST(CodeState, working_copy)
+TEST(CodeState, changeset)
 {
     db_t db{};
     db.insert({a, c1});
     CodeState s{db};
 
-    auto t = decltype(s)::WorkingCopy{s};
+    auto t = decltype(s)::ChangeSet{s};
     auto const code_1 = t.code_at(a);
     EXPECT_EQ(code_1, c1);
 }
 
-TEST(CodeStateWorkingCopy, set_code)
+TEST(CodeStateChangeSet, set_code)
 {
     db_t db{};
     db.insert({a, c1});
     CodeState s{db};
 
-    auto t = decltype(s)::WorkingCopy{s};
+    auto t = decltype(s)::ChangeSet{s};
     t.set_code(b, c2);
     t.set_code(c, byte_string{});
 
@@ -61,19 +61,19 @@ TEST(CodeStateWorkingCopy, set_code)
     EXPECT_EQ(code_3, byte_string{});
 }
 
-TEST(CodeStateWorkingCopy, get_code_size)
+TEST(CodeStateChangeSet, get_code_size)
 {
     db_t db{};
     db.insert({a, c1});
     CodeState s{db};
 
-    auto t = decltype(s)::WorkingCopy{s};
+    auto t = decltype(s)::ChangeSet{s};
     auto const size = t.get_code_size(a);
 
     EXPECT_EQ(size, c1.size());
 }
 
-TEST(CodeStateWorkingCopy, copy_code)
+TEST(CodeStateChangeSet, copy_code)
 {
     db_t db{};
     db.insert({a, c1});
@@ -82,7 +82,7 @@ TEST(CodeStateWorkingCopy, copy_code)
     static constexpr unsigned size{8};
     uint8_t buffer[size];
 
-    auto t = decltype(s)::WorkingCopy{s};
+    auto t = decltype(s)::ChangeSet{s};
 
     { // underflow
         auto const total = t.copy_code(a, 0u, buffer, size);
@@ -115,7 +115,7 @@ TEST(CodeState, can_merge)
     db.insert({a, c1});
     CodeState s{db};
 
-    auto t = decltype(s)::WorkingCopy{s};
+    auto t = decltype(s)::ChangeSet{s};
     t.set_code(b, c2);
     EXPECT_TRUE(s.can_merge(t));
 }
@@ -127,7 +127,7 @@ TEST(CodeState, merge_changes)
     CodeState s{db};
 
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = decltype(s)::ChangeSet{s};
         t.set_code(b, c2);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_changes(t);
@@ -142,7 +142,7 @@ TEST(CodeState, revert)
     CodeState s{db};
 
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = decltype(s)::ChangeSet{s};
         t.set_code(b, c2);
         EXPECT_TRUE(s.can_merge(t));
         t.revert();
@@ -157,13 +157,13 @@ TEST(CodeState, cant_merge_colliding_merge)
     CodeState s{db};
 
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = decltype(s)::ChangeSet{s};
         t.set_code(a, c1);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_changes(t);
     }
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = decltype(s)::ChangeSet{s};
         t.set_code(a, c2);
         EXPECT_FALSE(s.can_merge(t));
     }
@@ -175,7 +175,7 @@ TEST(CodeState, cant_merge_colliding_store)
     db.insert({a, c1});
     CodeState s{db};
 
-    auto t = decltype(s)::WorkingCopy{s};
+    auto t = decltype(s)::ChangeSet{s};
     t.set_code(a, c2);
     EXPECT_FALSE(s.can_merge(t));
 }
@@ -186,13 +186,13 @@ TEST(CodeState, merge_multiple_changes)
     CodeState s{db};
 
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = decltype(s)::ChangeSet{s};
         t.set_code(a, c1);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_changes(t);
     }
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = decltype(s)::ChangeSet{s};
         t.set_code(b, c2);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_changes(t);
@@ -208,7 +208,7 @@ TEST(CodeState, can_commit)
     CodeState s{db};
 
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = decltype(s)::ChangeSet{s};
         t.set_code(a, c1);
         t.set_code(b, c2);
         EXPECT_TRUE(s.can_merge(t));
@@ -223,7 +223,7 @@ TEST(CodeState, can_commit_multiple)
     CodeState s{db};
 
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = decltype(s)::ChangeSet{s};
         t.set_code(a, c1);
         t.set_code(b, c2);
         EXPECT_TRUE(s.can_merge(t));
@@ -232,7 +232,7 @@ TEST(CodeState, can_commit_multiple)
     EXPECT_TRUE(s.can_commit());
     s.commit_all_merged();
     {
-        auto t = decltype(s)::WorkingCopy{s};
+        auto t = decltype(s)::ChangeSet{s};
         t.set_code(c, c3);
         EXPECT_TRUE(s.can_merge(t));
         s.merge_changes(t);

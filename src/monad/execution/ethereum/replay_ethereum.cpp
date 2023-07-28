@@ -158,7 +158,7 @@ int main(int argc, char *argv[])
         monad::execution::EvmcHost,
         monad::execution::TransactionProcessorFiberData,
         monad::execution::EVMOneBaselineInterpreter<
-            state_t::WorkingCopy,
+            state_t::ChangeSet,
             monad::eth_start_fork>,
         monad::eth_start_fork::static_precompiles_t>(
         state,

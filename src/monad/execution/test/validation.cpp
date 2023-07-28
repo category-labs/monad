@@ -8,8 +8,8 @@
 using namespace monad;
 using namespace monad::execution;
 
-using traits_t = fake::traits::alpha<fake::State::WorkingCopy>;
-using processor_t = TransactionProcessor<fake::State::WorkingCopy, traits_t>;
+using traits_t = fake::traits::alpha<fake::State::ChangeSet>;
+using processor_t = TransactionProcessor<fake::State::ChangeSet, traits_t>;
 
 TEST(Execution, static_validate_no_sender)
 {
@@ -30,7 +30,7 @@ TEST(Execution, validate_enough_gas)
         .amount = 1,
         .from = a};
 
-    fake::State::WorkingCopy state{0};
+    fake::State::ChangeSet state{0};
     
     state._accounts[a] = {.balance = 55'939'568'773'815'811};
     traits_t::_intrinsic_gas = 53'000;
@@ -45,7 +45,7 @@ TEST(Execution, validate_deployed_code)
     constexpr static auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     constexpr static auto some_non_null_hash{
         0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
-    fake::State::WorkingCopy state{};
+    fake::State::ChangeSet state{};
     state._accounts[a] = {56'939'568'773'815'811, some_non_null_hash, 24};
     traits_t::_intrinsic_gas = 27'500;
 
@@ -67,7 +67,7 @@ TEST(Execution, validate_nonce)
         .amount = 55'939'568'773'815'811,
         .from = a};
 
-    fake::State::WorkingCopy state{};
+    fake::State::ChangeSet state{};
     state._accounts[a] = {.balance = 56'939'568'773'815'811, .nonce = 24};
     auto status = p.validate(state, t, 0);
     EXPECT_EQ(status, processor_t::Status::BAD_NONCE);
@@ -85,7 +85,7 @@ TEST(Execution, validate_nonce_optimistically)
         .amount = 55'939'568'773'815'811,
         .from = a};
 
-    fake::State::WorkingCopy state{};
+    fake::State::ChangeSet state{};
     state._accounts[a] = {.balance = 56'939'568'773'815'811, .nonce = 24};
     auto status = p.validate(state, t, 0);
     EXPECT_EQ(status, processor_t::Status::LATER_NONCE);
@@ -106,7 +106,7 @@ TEST(Execution, validate_enough_balance)
         .priority_fee = 100'000'000,
     };
 
-    fake::State::WorkingCopy state{};
+    fake::State::ChangeSet state{};
     state._accounts[a] = {.balance = 55'939'568'773'815'811};
     traits_t::_intrinsic_gas = 21'000;
 
@@ -120,7 +120,7 @@ TEST(Execution, successful_validation)
 {
     constexpr static auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     constexpr static auto b{0x5353535353535353535353535353535353535353_address};
-    fake::State::WorkingCopy state{};
+    fake::State::ChangeSet state{};
     state._accounts[a] = {.balance = 56'939'568'773'815'811, .nonce = 25};
     traits_t::_intrinsic_gas = 21'000;
 
@@ -142,7 +142,7 @@ TEST(Execution, insufficient_balance_higher_base_fee)
 {
     constexpr static auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     constexpr static auto b{0x5353535353535353535353535353535353535353_address};
-    fake::State::WorkingCopy state{};
+    fake::State::ChangeSet state{};
     state._accounts[a] = {.balance = 56'939'568'773'815'811, .nonce = 25};
     traits_t::_intrinsic_gas = 21'000;
 
@@ -165,7 +165,7 @@ TEST(Execution, successful_validation_higher_base_fee)
 {
     constexpr static auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     constexpr static auto b{0x5353535353535353535353535353535353535353_address};
-    fake::State::WorkingCopy state{};
+    fake::State::ChangeSet state{};
     state._accounts[a] = {.balance = 50'000'000'000'000'000, .nonce = 25};
     traits_t::_intrinsic_gas = 21'000;
 

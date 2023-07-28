@@ -214,6 +214,30 @@ TEST(Evm, transfer_call_balances)
     EXPECT_EQ(s._accounts[to].balance, 7'000'000'000);
 }
 
+TEST(Evm, transfer_call_balances_to_self)
+{
+    constexpr static auto from{
+        0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
+    constexpr static auto to = from;
+    static fake::State::WorkingCopy s{};
+    s._accounts[from].balance = 10'000'000'000;
+    s._accounts[from].nonce = 6;
+
+    evmc_message m{
+        .kind = EVMC_CALL,
+        .gas = 20'000,
+        .recipient = to,
+        .sender = from,
+    };
+    uint256_t v{7'000'000'000};
+    intx::be::store(m.value.bytes, v);
+
+    auto const result = evm_t::transfer_call_balances(s, m);
+
+    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+    EXPECT_EQ(s._accounts[from].balance, 10'000'000'000);
+}
+
 TEST(Evm, dont_transfer_on_delegatecall)
 {
     constexpr static auto from{

@@ -81,8 +81,8 @@ struct Evm
         auto const value = intx::be::load<uint256_t>(m.value);
         auto const from_balance =
             intx::be::load<uint256_t>(s.get_balance(m.sender));
-        auto const to_balance = intx::be::load<uint256_t>(s.get_balance(to));
         s.set_balance(m.sender, from_balance - value);
+        auto const to_balance = intx::be::load<uint256_t>(s.get_balance(to));
         s.set_balance(to, to_balance + value);
     }
 

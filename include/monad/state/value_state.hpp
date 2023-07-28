@@ -23,11 +23,6 @@ struct ValueState
     struct InnerStorage
     {
         std::unordered_map<address_t, key_value_map_t> storage_{};
-        std::unordered_map<
-            address_t,
-            std::unordered_set<
-                deleted_key, deleted_key::hash, deleted_key::equality>>
-            deleted_storage_{};
 
         bool
         contains_key(address_t const &a, bytes32_t const &key) const noexcept
@@ -35,18 +30,7 @@ struct ValueState
             return storage_.contains(a) && storage_.at(a).contains(key);
         }
 
-        bool deleted_contains_key(
-            address_t const &a, bytes32_t const &key) const noexcept
-        {
-            return deleted_storage_.contains(a) &&
-                   deleted_storage_.at(a).contains(deleted_key{key});
-        }
-
-        void clear()
-        {
-            storage_.clear();
-            deleted_storage_.clear();
-        }
+        void clear() { storage_.clear(); }
     };
 
     struct WorkingCopy;
@@ -59,31 +43,9 @@ struct ValueState
     TValueDB &db_;
     InnerStorage merged_{};
 
-    bool remove_merged_key_if_present(address_t const &a, bytes32_t const &key)
-    {
-        if (merged_.contains_key(a, key)) {
-            merged_.storage_.at(a).erase(key);
-            if (merged_.storage_.at(a).empty()) {
-                merged_.storage_.erase(a);
-            }
-            return true;
-        }
-        return false;
-    }
-
-    bool db_or_merged_contains_key(
-        address_t const &a, bytes32_t const &key) const noexcept
-    {
-        return (!merged_.deleted_contains_key(a, key)) &&
-               (merged_.contains_key(a, key) || db_.contains(a, key));
-    }
-
     [[nodiscard]] bytes32_t
     get_merged_value(address_t const &a, bytes32_t const &key) const noexcept
     {
-        if (merged_.deleted_contains_key(a, key)) {
-            return {};
-        }
         if (merged_.contains_key(a, key)) {
             return merged_.storage_.at(a).at(key).updated;
         }
@@ -93,20 +55,13 @@ struct ValueState
     // Note: just for debug testing
     bool can_commit() const noexcept
     {
-        for (auto const &[a, key_set] : merged_.deleted_storage_) {
-            for (auto const &[orig, key] : key_set) {
-                if (db_.try_find(a, key).value_or(bytes32_t{}) != orig) {
-                    return false;
-                }
-            }
-        }
         for (auto const &[a, keys] : merged_.storage_) {
             for (auto const &[k, dv] : keys) {
                 if (dv.orig == bytes32_t{}) {
                     continue;
                 }
 
-                if (db_.at(a, k) != dv.orig) {
+                if (db_.try_find(a, k).value_or(bytes32_t{}) != dv.orig) {
                     return false;
                 }
             }
@@ -119,14 +74,8 @@ struct ValueState
         assert(can_commit());
         StateChanges::StorageChanges storage_changes;
 
-        for (auto const &[addr, key_set] : merged_.deleted_storage_) {
-            for (auto const &key : key_set) {
-                storage_changes[addr].emplace_back(key.key, bytes32_t{});
-            }
-        }
         for (auto const &[addr, acct_storage] : merged_.storage_) {
             for (auto const &[key, value] : acct_storage) {
-                assert(value.updated != bytes32_t{});
                 storage_changes[addr].emplace_back(key, value.updated);
             }
         }
@@ -137,14 +86,6 @@ struct ValueState
 
     bool can_merge(WorkingCopy const &diffs) const noexcept
     {
-        for (auto const &[a, key_set] : diffs.touched_.deleted_storage_) {
-            for (auto const &k : key_set) {
-                if (k.orig_value != get_merged_value(a, k.key)) {
-                    return false;
-                }
-            }
-        }
-
         for (auto const &[a, keys] : diffs.touched_.storage_) {
             for (auto const &[k, v] : keys) {
                 if (v.orig != get_merged_value(a, k)) {
@@ -159,20 +100,6 @@ struct ValueState
     {
         MONAD_DEBUG_ASSERT(can_merge(diffs));
 
-        for (auto &[a, key_set] : diffs.touched_.deleted_storage_) {
-            for (auto const &key : key_set) {
-                if (remove_merged_key_if_present(a, key.key)) {
-                    if (db_.contains(a, key.key)) {
-                        merged_.deleted_storage_[a].insert(
-                            {key, {db_.at(a, key.key), key.key}});
-                    }
-                }
-                else if (db_.contains(a, key.key)) {
-                    merged_.deleted_storage_[a].insert(key);
-                }
-            }
-        }
-
         for (auto &[addr, acct_storage] : diffs.touched_.storage_) {
             if (!merged_.storage_.contains(addr)) {
                 merged_.storage_.emplace(addr, std::move(acct_storage));
@@ -180,8 +107,7 @@ struct ValueState
             }
 
             for (auto const &[key, value] : acct_storage) {
-                assert(value != bytes32_t{});
-                merged_.storage_.at(addr).at(key).updated = value.updated;
+                merged_.storage_[addr][key] = value.updated;
             }
         }
     }
@@ -205,9 +131,6 @@ struct ValueState<TValueDB>::WorkingCopy : public ValueState<TValueDB>
     [[nodiscard]] bytes32_t
     get_storage(address_t const &a, bytes32_t const &key) const noexcept
     {
-        if (touched_.deleted_contains_key(a, key)) {
-            return {};
-        }
         if (touched_.contains_key(a, key)) {
             return touched_.storage_.at(a).at(key).updated;
         }
@@ -218,32 +141,34 @@ struct ValueState<TValueDB>::WorkingCopy : public ValueState<TValueDB>
     zero_out_key(address_t const &a, bytes32_t const &key) noexcept
     {
         auto const merged_value = get_merged_value(a, key);
-        // Assume empty (zero) storage is not stored in storage_
+
         if (merged_value != bytes32_t{}) {
             if (touched_.contains_key(a, key)) {
-                if (merged_value == touched_.storage_.at(a).at(key)) {
-                    remove_touched_key(a, key);
-                    touched_.deleted_storage_[a].insert(
-                        deleted_key{db_.at(a, key), key});
+                if (merged_value == touched_.storage_.at(a).at(key).updated) {
+                    touched_.storage_.at(a).at(key).updated = bytes32_t{};
                     return EVMC_STORAGE_DELETED;
                 }
-                else {
-                    remove_touched_key(a, key);
-                    touched_.deleted_storage_[a].insert(
-                        deleted_key{db_.at(a, key), key});
+                else if (touched_.storage_.at(a).at(key).updated != bytes32_t{}) {
+                    touched_.storage_.at(a).at(key).updated = bytes32_t{};
                     return EVMC_STORAGE_MODIFIED_DELETED;
+                }
+                else {
+                    return EVMC_STORAGE_ASSIGNED;
                 }
             }
             else {
-                touched_.deleted_storage_[a].insert(
-                    deleted_key{merged_value, key});
+                touched_.storage_[a].emplace(
+                    key, diff_t{merged_value, bytes32_t{}});
                 return EVMC_STORAGE_DELETED;
             }
         }
 
         if (touched_.contains_key(a, key)) {
-            remove_touched_key(a, key);
-            return EVMC_STORAGE_ADDED_DELETED;
+            if (touched_.storage_.at(a).at(key).updated != bytes32_t{}) {
+                touched_.storage_.at(a).at(key).updated = bytes32_t{};
+                return EVMC_STORAGE_ADDED_DELETED;
+            }
+            return EVMC_STORAGE_ASSIGNED;
         }
         return EVMC_STORAGE_ASSIGNED;
     }
@@ -255,34 +180,37 @@ struct ValueState<TValueDB>::WorkingCopy : public ValueState<TValueDB>
         auto const merged_value = get_merged_value(a, key);
         if (merged_value != bytes32_t{}) {
             if (touched_.contains_key(a, key)) {
-                if (touched_.storage_[a][key].updated == value) {
+                if (touched_.storage_.at(a).at(key).updated == value) {
                     return EVMC_STORAGE_ASSIGNED;
                 }
 
                 if (merged_value == value) {
-                    remove_touched_key(a, key);
-                    return EVMC_STORAGE_MODIFIED_RESTORED;
+                    if (touched_.storage_.at(a).at(key).updated !=
+                        bytes32_t{}) {
+                        remove_touched_key(a, key);
+                        return EVMC_STORAGE_MODIFIED_RESTORED;
+                    }
+                    else {
+                        remove_touched_key(a, key);
+                        return EVMC_STORAGE_DELETED_RESTORED;
+                    }
                 }
 
-                if (touched_.storage_[a][key].updated == merged_value) {
-                    touched_.storage_[a][key].updated = value;
+                if (touched_.storage_.at(a).at(key).updated == bytes32_t{}) {
+                    touched_.storage_.at(a).at(key).updated = value;
+                    return EVMC_STORAGE_DELETED_ADDED;
+                }
+
+                if (touched_.storage_.at(a).at(key).updated == merged_value) {
+                    touched_.storage_.at(a).at(key).updated = value;
                     return EVMC_STORAGE_MODIFIED;
                 }
 
-                touched_.storage_[a][key].updated = value;
+                touched_.storage_.at(a).at(key).updated = value;
                 return EVMC_STORAGE_ASSIGNED;
             }
 
             touched_.storage_[a].emplace(key, diff_t{merged_value, value});
-
-            if (touched_.deleted_contains_key(a, key)) {
-                touched_.deleted_storage_.at(a).erase(deleted_key{key});
-
-                if (merged_value == value) {
-                    return EVMC_STORAGE_DELETED_RESTORED;
-                }
-                return EVMC_STORAGE_DELETED_ADDED;
-            }
 
             if (merged_value == value) {
                 return EVMC_STORAGE_ASSIGNED;
@@ -291,7 +219,8 @@ struct ValueState<TValueDB>::WorkingCopy : public ValueState<TValueDB>
         }
 
         if (!touched_.storage_.contains(a) ||
-            !touched_.storage_.at(a).contains(key)) {
+            !touched_.storage_.at(a).contains(key) ||
+            touched_.storage_.at(a).at(key) == bytes32_t{}) {
             touched_.storage_[a].emplace(key, diff_t{value});
             return EVMC_STORAGE_ADDED;
         }

@@ -98,7 +98,7 @@ TYPED_TEST(ValueStateTest, get_storage)
 
     ValueState t{db};
     t.merged_.storage_[a].emplace(key2, diff_t{value2, value3});
-    t.merged_.deleted_storage_[b].emplace(value1, key1);
+    t.merged_.storage_[b][key1] = bytes32_t{};
 
     auto s = typename decltype(t)::WorkingCopy{t};
 
@@ -464,7 +464,7 @@ TYPED_TEST(ValueStateTest, cant_merge_deleted_merge)
 
     EXPECT_EQ(t.set_storage(a, key1, value2), EVMC_STORAGE_MODIFIED);
 
-    s.merged_.deleted_storage_[a].insert(deleted_key{value1, key1});
+    s.merged_.storage_[a][key1] = bytes32_t{};
 
     EXPECT_FALSE(s.can_merge(t));
 }
@@ -516,7 +516,7 @@ TYPED_TEST(ValueStateTest, cant_merge_conflicting_deleted)
 
     EXPECT_EQ(t.set_storage(a, key1, null), EVMC_STORAGE_DELETED);
 
-    s.merged_.deleted_storage_[a].insert({value1, key1});
+    s.merged_.storage_[a][key1] = bytes32_t{};
 
     EXPECT_FALSE(s.can_merge(t));
 }

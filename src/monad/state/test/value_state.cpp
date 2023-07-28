@@ -687,3 +687,17 @@ TYPED_TEST(ValueStateTest, commit_all_merged)
 
     auto _ = s.gather_changes();
 }
+
+TYPED_TEST(ValueStateTest, get_after_set)
+{
+    auto db = test::make_db<TypeParam>();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{}}},
+        .storage_changes = {{a, {{key1, value1}}}}});
+    ValueState s{db};
+
+    auto t = typename decltype(s)::WorkingCopy{s};
+    EXPECT_EQ(t.set_storage(a, key1, value1), EVMC_STORAGE_ASSIGNED);
+    EXPECT_EQ(t.set_storage(a, key1, null), EVMC_STORAGE_DELETED);
+    EXPECT_EQ(t.get_storage(a, key1), null);
+}

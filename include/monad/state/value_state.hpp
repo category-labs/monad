@@ -223,6 +223,8 @@ struct ValueState<TValueDB>::WorkingCopy : public ValueState<TValueDB>
             if (touched_.contains_key(a, key)) {
                 if (merged_value == touched_.storage_.at(a).at(key)) {
                     remove_touched_key(a, key);
+                    touched_.deleted_storage_[a].insert(
+                        deleted_key{db_.at(a, key), key});
                     return EVMC_STORAGE_DELETED;
                 }
                 else {

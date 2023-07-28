@@ -241,7 +241,7 @@ TYPED_TEST(ValueStateTest, multiple_get_and_set_from_merged)
     EXPECT_EQ(s.set_storage(a, key2, null), EVMC_STORAGE_DELETED);
     EXPECT_EQ(s.set_storage(a, key2, value1), EVMC_STORAGE_DELETED_ADDED);
     EXPECT_EQ(s.set_storage(a, key2, value1), EVMC_STORAGE_ASSIGNED);
-    EXPECT_EQ(s.set_storage(a, key2, value3), EVMC_STORAGE_MODIFIED);
+    EXPECT_EQ(s.set_storage(a, key2, value3), EVMC_STORAGE_ASSIGNED);
 
     EXPECT_EQ(s.set_storage(b, key1, value1), EVMC_STORAGE_ADDED);
     EXPECT_EQ(s.set_storage(b, key1, value2), EVMC_STORAGE_ASSIGNED);

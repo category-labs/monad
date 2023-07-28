@@ -262,8 +262,13 @@ struct ValueState<TValueDB>::WorkingCopy : public ValueState<TValueDB>
                     return EVMC_STORAGE_MODIFIED_RESTORED;
                 }
 
+                if (touched_.storage_[a][key].updated == merged_value) {
+                    touched_.storage_[a][key].updated = value;
+                    return EVMC_STORAGE_MODIFIED;
+                }
+
                 touched_.storage_[a][key].updated = value;
-                return EVMC_STORAGE_MODIFIED;
+                return EVMC_STORAGE_ASSIGNED;
             }
 
             touched_.storage_[a].emplace(key, diff_t{merged_value, value});

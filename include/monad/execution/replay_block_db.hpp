@@ -37,7 +37,10 @@ public:
         INVALID_END_BLOCK_NUMBER,
         START_BLOCK_NUMBER_OUTSIDE_DB,
         DECOMPRESS_BLOCK_ERROR,
-        DECODE_BLOCK_ERROR
+        DECODE_BLOCK_ERROR,
+        WRONG_STATE_ROOT,
+        WRONG_TRANSACTIONS_ROOT,
+        WRONG_RECEIPTS_ROOT
     };
 
     struct Result
@@ -60,9 +63,7 @@ public:
         }
     }
 
-    // TODO: should we make this a boolean function? If so,
-    // what to do if it fails?
-    void verify_root_hash(
+    [[nodiscard]] bool verify_root_hash(
         BlockHeader const &block_header, bytes32_t transactions_root,
         bytes32_t receipts_root, bytes32_t const state_root,
         block_num_t current_block_number) const
@@ -87,6 +88,10 @@ public:
             "Computed State Root: {}, Expected State Root: {}",
             state_root,
             block_header.state_root);
+
+        // TODO: only check for state root hash for now (we don't have receipt
+        // and transaction trie building algo yet)
+        return state_root == block_header.state_root;
     }
 
     template <
@@ -161,12 +166,18 @@ public:
                 auto const transactions_root = transaction_trie.root_hash();
                 auto const receipts_root = receipt_trie.root_hash();
 
-                verify_root_hash(
-                    block.header,
-                    transactions_root,
-                    receipts_root,
-                    state.get_state_hash(),
-                    current_block_number);
+                if (!verify_root_hash(
+                        block.header,
+                        transactions_root,
+                        receipts_root,
+                        state.get_state_hash(),
+                        current_block_number)) {
+                    return Result{
+                        Status::WRONG_STATE_ROOT, current_block_number - 1u};
+                }
+                else {
+                    state.create_and_prune_block_history(current_block_number);
+                }
 
                 receipt_collector.emplace_back(receipts);
             }

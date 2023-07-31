@@ -117,6 +117,8 @@ int main(int argc, char *argv[])
 
     cli.parse(argc, argv);
 
+    auto const start_time = std::chrono::steady_clock::now();
+
     // Real Objects
     using code_db_t = std::unordered_map<monad::address_t, monad::byte_string>;
     using db_t = monad::db::RocksTrieDB;
@@ -194,14 +196,19 @@ int main(int argc, char *argv[])
         start_block_number,
         finish_block_number);
 
+    auto const finished_time = std::chrono::steady_clock::now();
+    auto const elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            finished_time - start_time);
+
     MONAD_LOG_INFO(
         main_logger,
         "Finish running, status = {}, finish(stopped) block number = {}, "
-        "number of blocks run "
-        "= {}",
+        "number of blocks run = {}, time_elapsed = {}",
         static_cast<int>(result.status),
         result.block_number,
-        result.block_number - start_block_number + 1);
+        result.block_number - start_block_number + 1,
+        elapsed_ms);
 
     return 0;
 }

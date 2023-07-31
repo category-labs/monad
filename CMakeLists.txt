@@ -63,6 +63,8 @@ add_subdirectory(third_party/evmone)
 add_subdirectory(third_party/intx)
 add_subdirectory(third_party/silkpre)
 
+add_subdirectory(state_history)
+
 function(monad_compile_options target)
     set_property(TARGET ${target} PROPERTY C_STANDARD 11)
     set_property(TARGET ${target} PROPERTY C_STANDARD_REQUIRED ON)

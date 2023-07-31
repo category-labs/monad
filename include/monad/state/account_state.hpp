@@ -92,6 +92,12 @@ struct AccountState
         return get_committed_storage(a).value_or(Account{}).code_hash;
     }
 
+    void set_code_hash(address_t const &a, bytes32_t const &b) noexcept
+    {
+        MONAD_DEBUG_ASSERT(get_committed_storage(a).has_value());
+        get_committed_storage(a).value().code_hash = b;
+    }
+
     [[nodiscard]] bool can_merge(ChangeSet const &diffs) const noexcept
     {
         return std::ranges::all_of(diffs.changed_, [&](auto const &p) {

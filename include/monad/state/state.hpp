@@ -6,6 +6,7 @@
 #include <monad/core/int.hpp>
 #include <monad/core/receipt.hpp>
 
+#include <monad/logging/monad_log.hpp>
 #include <monad/state/config.hpp>
 #include <monad/state/state_changes.hpp>
 
@@ -31,6 +32,9 @@ struct State
         TBlockCache &block_cache_{};
         unsigned int txn_id_{};
 
+        decltype(monad::log::logger_t::get_logger()) logger =
+            monad::log::logger_t::get_logger("change_set_logger");
+
         ChangeSet(
             unsigned int i, typename TAccountState::ChangeSet &&a,
             typename TValueState::ChangeSet &&s,
@@ -43,23 +47,30 @@ struct State
         {
         }
 
-        void add_txn_award(uint256_t const &a) { gas_award_ += a; }
+        void add_txn_award(uint256_t const &a)
+        {
+            MONAD_LOG_DEBUG(logger, "add_txn_award: {}", a);
+            gas_award_ += a;
+        }
 
         unsigned int txn_id() const noexcept { return txn_id_; }
         void create_account(address_t const &a) noexcept
         {
+            MONAD_LOG_DEBUG(logger, "create_account: {}", a);
             accounts_.create_account(a);
         }
 
         // EVMC Host Interface
         [[nodiscard]] bool account_exists(address_t const &a) const
         {
+            MONAD_LOG_DEBUG(logger, "account_exists: {}", a);
             return accounts_.account_exists(a);
         }
 
         // EVMC Host Interface
         evmc_access_status access_account(address_t const &a) noexcept
         {
+            MONAD_LOG_DEBUG(logger, "access_account: {}", a);
             return accounts_.access_account(a);
         }
 
@@ -69,29 +80,45 @@ struct State
             return accounts_.get_balance(a);
         }
 
-        void set_balance(address_t const &a, uint256_t const &b)
+        void set_balance(address_t const &a, uint256_t const &new_balance)
         {
-            accounts_.set_balance(a, b);
+            auto const previous_balance =
+                intx::be::load<monad::uint256_t>(get_balance(a));
+
+            MONAD_LOG_DEBUG(
+                logger,
+                "set_balance: {} = {}, ({}{})",
+                a,
+                intx::to_string(new_balance, 16),
+                new_balance >= previous_balance ? "+" : "-",
+                new_balance >= previous_balance
+                    ? intx::to_string(new_balance - previous_balance, 16)
+                    : intx::to_string(previous_balance - new_balance, 16));
+            accounts_.set_balance(a, new_balance);
         }
 
         [[nodiscard]] auto get_nonce(address_t const &a) const noexcept
         {
+            MONAD_LOG_DEBUG(logger, "get_nonce: {}", a);
             return accounts_.get_nonce(a);
         }
 
         void set_nonce(address_t const &a, uint64_t nonce) noexcept
         {
+            MONAD_LOG_DEBUG(logger, "set_nonce: {} = {}", a, nonce);
             accounts_.set_nonce(a, nonce);
         }
 
         // EVMC Host Interface
         [[nodiscard]] bytes32_t get_code_hash(address_t const &a) const noexcept
         {
+            MONAD_LOG_DEBUG(logger, "get_code_hash: {}", a);
             return accounts_.get_code_hash(a);
         }
 
         [[nodiscard]] bool selfdestruct(address_t const &a, address_t const &b)
         {
+            MONAD_LOG_DEBUG(logger, "selfdestruct: {}, {}", a, b);
             return accounts_.selfdestruct(a, b);
         }
 
@@ -108,6 +135,7 @@ struct State
         evmc_access_status
         access_storage(address_t const &a, bytes32_t const &key)
         {
+            MONAD_LOG_DEBUG(logger, "access_storage: {}, {}", a, key);
             return storage_.access_storage(a, key);
         }
 
@@ -115,6 +143,7 @@ struct State
         [[nodiscard]] bytes32_t
         get_storage(address_t const &a, bytes32_t const &key) const noexcept
         {
+            MONAD_LOG_DEBUG(logger, "get_storage: {}, {}", a, key);
             return storage_.get_storage(a, key);
         }
 
@@ -122,12 +151,14 @@ struct State
         [[nodiscard]] evmc_storage_status set_storage(
             address_t const &a, bytes32_t const &key, bytes32_t const &value)
         {
+            MONAD_LOG_DEBUG(logger, "set_storage: {}, {} = {}", a, key, value);
             return storage_.set_storage(a, key, value);
         }
 
         // Account contract accesses
         void set_code(address_t const &a, byte_string const &c)
         {
+            MONAD_LOG_DEBUG(logger, "set_code: {} = {}", a, evmc::hex(c));
             auto const code_hash = std::bit_cast<const monad::bytes32_t>(
                 ethash::keccak256(c.data(), c.size()));
 

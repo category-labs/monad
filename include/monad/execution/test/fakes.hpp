@@ -155,7 +155,8 @@ namespace fake
             }
 
             // EVMC Host Interface
-            [[nodiscard]] size_t get_code_size(address_t const &a) const noexcept
+            [[nodiscard]] size_t
+            get_code_size(address_t const &a) const noexcept
             {
                 return _code.at(a).size();
             }
@@ -230,6 +231,11 @@ namespace fake
         void commit() const noexcept { return; }
 
         [[nodiscard]] bytes32_t get_state_hash() const { return {}; }
+
+        constexpr void create_and_prune_block_history(uint64_t) const
+        {
+            return;
+        }
     };
 
     template <class TState, concepts::fork_traits<TState> TTraits, class TEvm>
@@ -374,7 +380,7 @@ namespace fake
                 TState &, address_t const &a, evmc::Result r) noexcept
             {
                 if (r.status_code == EVMC_SUCCESS) {
-                    r.create_address= a;
+                    r.create_address = a;
                 }
                 return r;
             }

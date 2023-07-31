@@ -298,6 +298,11 @@ struct State
     {
         return accounts_.get_state_hash();
     }
+
+    constexpr void create_and_prune_block_history(uint64_t block_number) const
+    {
+        db_.create_and_prune_block_history(block_number);
+    }
 };
 
 MONAD_STATE_NAMESPACE_END

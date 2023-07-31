@@ -1,5 +1,6 @@
 #pragma once
 
+#include <monad/db/auto_detect_start_block_number.hpp>
 #include <monad/db/config.hpp>
 #include <monad/db/create_and_prune_block_history.hpp>
 #include <monad/db/prepare_state.hpp>
@@ -68,6 +69,7 @@ namespace detail
 
         std::filesystem::path const root;
         uint64_t const block_history_size;
+        uint64_t start_block_number;
         rocksdb::Options options;
         trie::PathComparator accounts_comparator;
         trie::PrefixPathComparator storage_comparator;
@@ -82,6 +84,7 @@ namespace detail
             uint64_t block_history_size)
             : root(root)
             , block_history_size(block_history_size)
+            , start_block_number(block_number)
             , options([]() {
                 rocksdb::Options ret;
                 ret.IncreaseParallelism(2);
@@ -126,6 +129,13 @@ namespace detail
         {
         }
 
+        RocksTrieDB(std::filesystem::path root, uint64_t block_history_size)
+            : RocksTrieDB(
+                  root, auto_detect_start_block_number(root),
+                  block_history_size)
+        {
+        }
+
         ~RocksTrieDB()
         {
             accounts_trie.reset_cursor();
@@ -139,6 +149,13 @@ namespace detail
 
             res = db->Close();
             MONAD_ROCKS_ASSERT(res);
+        }
+
+        // TODO: Temporary function to get start_block_number, need to be fixed
+        // once we integrate block number into database
+        [[nodiscard]] constexpr uint64_t block_number() const noexcept
+        {
+            return start_block_number;
         }
 
         ////////////////////////////////////////////////////////////////////

@@ -149,6 +149,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/src/monad/core/transaction.cpp
     # db
     ${PROJECT_SOURCE_DIR}/include/monad/db/assert.h
+    ${PROJECT_SOURCE_DIR}/include/monad/db/auto_detect_start_block_number.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/db_interface.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/block_db.hpp
     ${PROJECT_SOURCE_DIR}/src/monad/db/block_db.cpp

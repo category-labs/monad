@@ -57,10 +57,11 @@ MONAD_NAMESPACE_END
 
 int main(int argc, char *argv[])
 {
-    CLI::App cli{"replay_ethereum_block_db"};
+    CLI::App cli{"replay_ethereum"};
 
     std::filesystem::path block_db_path{};
-    monad::block_num_t start_block_number;
+    std::filesystem::path state_db_path{};
+    uint64_t block_history_size = 1u;
     std::optional<monad::block_num_t> finish_block_number = std::nullopt;
 
     monad::log::logger_t::start();
@@ -91,8 +92,12 @@ int main(int argc, char *argv[])
 
     cli.add_option("-b, --block_db", block_db_path, "block_db directory")
         ->required();
-    cli.add_option("-s, --start", start_block_number, "start block numer")
+    cli.add_option("--state_db", state_db_path, "state_db directory")
         ->required();
+    cli.add_option(
+        "--block_history_size",
+        block_history_size,
+        "size of state_db block history");
     cli.add_option(
         "-f, --finish", finish_block_number, "1 pass the last executed block");
 
@@ -114,7 +119,7 @@ int main(int argc, char *argv[])
 
     // Real Objects
     using code_db_t = std::unordered_map<monad::address_t, monad::byte_string>;
-    using db_t = monad::db::InMemoryTrieDB;
+    using db_t = monad::db::RocksTrieDB;
     using block_db_t = monad::db::BlockDb;
     using receipt_collector_t = monad::receiptCollector;
     using state_t = monad::state::State<
@@ -140,21 +145,25 @@ int main(int argc, char *argv[])
         evmone_baseline_interpreter_log_level);
     monad::log::logger_t::set_log_level("trie_db_logger", trie_db_log_level);
 
-    MONAD_LOG_INFO(
-        main_logger,
-        "Running with block_db = {}, start block number = {}, finish block "
-        "number = {}",
-        block_db_path,
-        start_block_number,
-        finish_block_number);
-
     block_db_t block_db(block_db_path);
-    db_t db{};
+    db_t db{state_db_path, block_history_size};
     code_db_t code_db{};
     monad::state::AccountState accounts{db};
     monad::state::ValueState values{db};
     monad::state::CodeState code{code_db};
     state_t state{accounts, values, code, block_db, db};
+
+    monad::block_num_t start_block_number = db.block_number();
+
+    MONAD_LOG_INFO(
+        main_logger,
+        "Running with block_db = {}, state_db = {}, block_history_size = {}, "
+        "(inferred) start_block_number = {}, finish block number = {}",
+        block_db_path,
+        state_db_path,
+        block_history_size,
+        start_block_number,
+        finish_block_number);
 
     receipt_collector_t receipt_collector;
 

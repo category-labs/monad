@@ -32,7 +32,7 @@ prepare_state(TDB const &db, uint64_t block_number)
 {
     namespace fs = std::filesystem;
 
-    auto const current_dir = db.root / "CURRENT";
+    auto const current_dir = db.root / detail::CURRENT_DATABASE;
 
     // overwrite CURRENT if exists
     if (fs::exists(current_dir)) {

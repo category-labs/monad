@@ -5,6 +5,7 @@ project(monad)
 option(ASAN "Turn on Address Sanitizer")
 option(UBSAN "Turn on Undefined Behavior Sanitizer")
 option(FUZZING "Enable fuzzing for clang" ON)
+option(EVMONE_TRACING "Enable instruction-level tracing for the evmone interpreter" OFF)
 
 include(cmake/test.cmake)
 
@@ -80,6 +81,9 @@ function(monad_compile_options target)
         ${target}
         PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-missing-field-initializers>
     )
+    if (EVMONE_TRACING)
+        target_compile_definitions(${target} PRIVATE EVMONE_TRACING=1)
+    endif()
 endfunction()
 
 # ##############################################################################

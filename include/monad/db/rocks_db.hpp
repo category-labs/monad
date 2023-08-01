@@ -103,7 +103,7 @@ namespace detail
         // DBInterface implementations
         ////////////////////////////////////////////////////////////////////
 
-        [[nodiscard]] bool contains(address_t const &a)
+        [[nodiscard]] bool contains_impl(address_t const &a)
         {
             rocksdb::PinnableSlice value;
             auto const res = db->Get(
@@ -112,7 +112,7 @@ namespace detail
             return res.ok();
         }
 
-        [[nodiscard]] bool contains(address_t const &a, bytes32_t const &k)
+        [[nodiscard]] bool contains_impl(address_t const &a, bytes32_t const &k)
         {
             auto const key = detail::make_basic_storage_key(a, k);
             rocksdb::PinnableSlice value;
@@ -122,7 +122,7 @@ namespace detail
             return res.ok();
         }
 
-        [[nodiscard]] std::optional<Account> try_find(address_t const &a)
+        [[nodiscard]] std::optional<Account> try_find_impl(address_t const &a)
         {
             rocksdb::PinnableSlice value;
             auto const res = db->Get(
@@ -145,7 +145,7 @@ namespace detail
         }
 
         [[nodiscard]] std::optional<bytes32_t>
-        try_find(address_t const &a, bytes32_t const &k)
+        try_find_impl(address_t const &a, bytes32_t const &k)
         {
             auto const key = detail::make_basic_storage_key(a, k);
             rocksdb::PinnableSlice value;

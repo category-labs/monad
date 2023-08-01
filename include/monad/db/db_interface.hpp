@@ -34,12 +34,14 @@ struct DBInterface
 
     [[nodiscard]] constexpr std::optional<Account> try_find(address_t const &a)
     {
-        return TExecutor::execute([=, this]() { return self().try_find(a); });
+        return TExecutor::execute(
+            [=, this]() { return self().try_find_impl(a); });
     }
 
     [[nodiscard]] constexpr bool contains(address_t const &a)
     {
-        return TExecutor::execute([=, this]() { return self().contains(a); });
+        return TExecutor::execute(
+            [=, this]() { return self().contains_impl(a); });
     }
 
     [[nodiscard]] constexpr Account at(address_t const &a)
@@ -53,14 +55,14 @@ struct DBInterface
     try_find(address_t const &a, bytes32_t const &k)
     {
         return TExecutor::execute(
-            [=, this]() { return self().try_find(a, k); });
+            [=, this]() { return self().try_find_impl(a, k); });
     }
 
     [[nodiscard]] constexpr bool
     contains(address_t const &a, bytes32_t const &k)
     {
         return TExecutor::execute(
-            [=, this]() { return self().contains(a, k); });
+            [=, this]() { return self().contains_impl(a, k); });
     }
 
     [[nodiscard]] constexpr bytes32_t at(address_t const &a, bytes32_t const &k)

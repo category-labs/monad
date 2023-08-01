@@ -7,6 +7,7 @@
 #include <monad/db/rocks_trie_db.hpp>
 #include <monad/logging/formatter.hpp>
 #include <monad/state/state_changes.hpp>
+#include <monad/test/hijacked_db.hpp>
 #include <monad/test/make_db.hpp>
 
 using namespace monad;
@@ -39,6 +40,51 @@ struct TrieDBTest : public testing::Test
 };
 using TrieDBTypes = ::testing::Types<InMemoryTrieDB, RocksTrieDB>;
 TYPED_TEST_SUITE(TrieDBTest, TrieDBTypes);
+
+template <typename TDB>
+struct HijackedExecutionDBTest : public testing::Test
+{
+};
+using HijackedExecutionDBTypes = ::testing::Types<
+    monad::test::hijacked::InMemoryDB, monad::test::hijacked::InMemoryTrieDB,
+    monad::test::hijacked::RocksDB, monad::test::hijacked::RocksTrieDB>;
+TYPED_TEST_SUITE(HijackedExecutionDBTest, HijackedExecutionDBTypes);
+
+TYPED_TEST(HijackedExecutionDBTest, executor)
+{
+    test::hijacked::Executor::EXECUTED = false;
+    auto db = test::make_db<TypeParam>();
+    EXPECT_FALSE(test::hijacked::Executor::EXECUTED);
+
+    Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
+    db.commit(state::StateChanges{
+        .account_changes = {{a, acct}},
+        .storage_changes = {{a, {{key1, value1}}}}});
+
+    test::hijacked::Executor::EXECUTED = false;
+    (void)db.try_find(a);
+    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
+
+    test::hijacked::Executor::EXECUTED = false;
+    (void)db.at(a);
+    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
+
+    test::hijacked::Executor::EXECUTED = false;
+    (void)db.contains(a);
+    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
+
+    test::hijacked::Executor::EXECUTED = false;
+    (void)db.try_find(a, key1);
+    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
+
+    test::hijacked::Executor::EXECUTED = false;
+    (void)db.at(a, key1);
+    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
+
+    test::hijacked::Executor::EXECUTED = false;
+    (void)db.contains(a, key1);
+    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
+}
 
 TYPED_TEST(DBTest, storage_creation)
 {

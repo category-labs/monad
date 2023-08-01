@@ -58,18 +58,19 @@ struct TrieDBInterface
     // DBInterface accessor implementations
     ////////////////////////////////////////////////////////////////////
 
-    [[nodiscard]] constexpr bool contains(address_t const &a) const
+    [[nodiscard]] constexpr bool contains_impl(address_t const &a)
     {
         return find(a).has_value();
     }
 
     [[nodiscard]] constexpr bool
-    contains(address_t const &a, bytes32_t const &k) const
+    contains_impl(address_t const &a, bytes32_t const &k)
     {
         return find(a, k).has_value();
+        ;
     }
 
-    [[nodiscard]] std::optional<Account> try_find(address_t const &a) const
+    [[nodiscard]] std::optional<Account> try_find_impl(address_t const &a)
     {
         auto const c = find(a);
         if (!c.has_value()) {
@@ -95,7 +96,7 @@ struct TrieDBInterface
     }
 
     [[nodiscard]] std::optional<bytes32_t>
-    try_find(address_t const &a, bytes32_t const &k) const
+    try_find_impl(address_t const &a, bytes32_t const &k)
     {
         auto const c = find(a, k);
         if (!c.has_value()) {

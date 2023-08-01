@@ -1,11 +1,12 @@
 #pragma once
 
-#include "config.hpp"
 #include <monad/core/assert.h>
 #include <monad/db/in_memory_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/rocks_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
+#include <monad/test/config.hpp>
+#include <monad/test/hijacked_db.hpp>
 #include <test_resource_data.h>
 
 #include <algorithm>
@@ -35,19 +36,27 @@ inline std::filesystem::path make_db_root(testing::TestInfo const &info)
 
 template <typename TDatabase>
     requires std::same_as<TDatabase, db::InMemoryDB> ||
+             std::same_as<TDatabase, hijacked::InMemoryDB> ||
              std::same_as<TDatabase, db::InMemoryTrieDB> ||
+             std::same_as<TDatabase, hijacked::InMemoryTrieDB> ||
              std::same_as<TDatabase, db::RocksDB> ||
-             std::same_as<TDatabase, db::RocksTrieDB>
+             std::same_as<TDatabase, hijacked::RocksDB> ||
+             std::same_as<TDatabase, db::RocksTrieDB> ||
+             std::same_as<TDatabase, hijacked::RocksTrieDB>
 inline TDatabase make_db()
 {
     auto const *info = testing::UnitTest::GetInstance()->current_test_info();
     MONAD_ASSERT(info);
     if constexpr (
         std::same_as<TDatabase, db::InMemoryDB> ||
-        std::same_as<TDatabase, db::InMemoryTrieDB>) {
+        std::same_as<TDatabase, hijacked::InMemoryDB> ||
+        std::same_as<TDatabase, db::InMemoryTrieDB> ||
+        std::same_as<TDatabase, hijacked::InMemoryTrieDB>) {
         return TDatabase{};
     }
-    else if constexpr (std::same_as<TDatabase, db::RocksDB>) {
+    else if constexpr (
+        std::same_as<TDatabase, db::RocksDB> ||
+        std::same_as<TDatabase, hijacked::RocksDB>) {
         return TDatabase{make_db_root(*info)};
     }
     else {

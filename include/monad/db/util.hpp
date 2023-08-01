@@ -20,7 +20,6 @@ namespace detail
 using RocksTrieDB = detail::RocksTrieDB<monad::execution::BoostFiberExecution>;
 
 template <typename TDB>
-    requires std::same_as<TDB, db::RocksTrieDB>
 [[nodiscard]] constexpr std::string_view as_string() noexcept
 {
     using namespace std::literals::string_view_literals;

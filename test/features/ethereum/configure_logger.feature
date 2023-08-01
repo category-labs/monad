@@ -1,8 +1,9 @@
 Feature: Configure Logger
 
-    Background: BlockDb path setup
+    Background: Db path setup
         Given I run with BlockDb path = "erigon/block_db"
-        And I run with start block number = "46147"
+        And I run with StateDb path = "RocksTrieDB"
+        And I run with inferred start block number = "46147"
         And I run with finish block number = "46148"
 
     Scenario: Using default log level

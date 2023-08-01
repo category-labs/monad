@@ -11,9 +11,27 @@ def given_block_db_path(context, block_db_path):
     context.block_db_path = block_db_path
 
 
-@given('I run with start block number = "{start_block_number}"')
+@given('I run with StateDb path = "{state_db_path}"')
+def given_block_db_path(context, state_db_path):
+    context.state_db_path = state_db_path
+    dir_path = os.getcwd() + "/test/features/ethereum/" + state_db_path
+    if os.path.exists(dir_path):
+        subprocess.run(["rm", "-rf", dir_path])
+    subprocess.run(["mkdir", dir_path])
+
+
+@given('I run with inferred start block number = "{start_block_number}"')
 def given_start_block_number(context, start_block_number):
-    context.start_block_number = start_block_number
+    if start_block_number == 0:
+        pass
+    state_db_path = os.getcwd() + "/test/features/ethereum/" + context.state_db_path
+    result = subprocess.run(
+        [
+            "mkdir",
+            "-p",
+            state_db_path + "/" + str(int(start_block_number) - 1) + "/rockstriedb",
+        ]
+    )
 
 
 @given('I run with finish block number = "{finish_block_number}"')
@@ -37,14 +55,14 @@ def when_start(context, program):
     executable_path = os.getcwd() + "/build/src/monad/execution/ethereum/" + program
     if not hasattr(context, "block_db_path"):
         raise ValueError("Block Db path is required")
-    if not hasattr(context, "start_block_number"):
-        raise ValueError("Start block number is required")
+    if not hasattr(context, "state_db_path"):
+        raise ValueError("State Db path is required")
     args = [
         executable_path,
         "--block_db",
         os.getcwd() + "/../../" + context.block_db_path,
-        "--start",
-        context.start_block_number,
+        "--state_db",
+        os.getcwd() + "/test/features/ethereum/" + context.state_db_path,
     ]
     if hasattr(context, "finish_block_number"):
         args += ["--finish", context.finish_block_number]
@@ -68,6 +86,11 @@ def when_start(context, program):
 def then_output_contain_with_number(context, number, value):
     assert context.returncode == 0
     assert context.output.count(value) == int(number)
+
+
+@then('the output should not contain "{value}"')
+def then_output_contain_with_number(context, value):
+    assert value not in context.output
 
 
 @then('the output should contain "{logger_name}" "{log_level}" log')

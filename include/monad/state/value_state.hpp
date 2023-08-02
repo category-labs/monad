@@ -49,7 +49,7 @@ struct ValueState
         if (merged_.contains_key(a, key)) {
             return merged_.storage_.at(a).at(key).updated;
         }
-        return db_.try_find(a, key).value_or(bytes32_t{});
+        return db_.try_find(a, key);
     }
 
     // Note: just for debug testing
@@ -61,7 +61,7 @@ struct ValueState
                     continue;
                 }
 
-                if (db_.try_find(a, k).value_or(bytes32_t{}) != dv.orig) {
+                if (db_.try_find(a, k) != dv.orig) {
                     return false;
                 }
             }
@@ -148,7 +148,8 @@ struct ValueState<TValueDB>::ChangeSet : public ValueState<TValueDB>
                     touched_.storage_.at(a).at(key).updated = bytes32_t{};
                     return EVMC_STORAGE_DELETED;
                 }
-                else if (touched_.storage_.at(a).at(key).updated != bytes32_t{}) {
+                else if (
+                    touched_.storage_.at(a).at(key).updated != bytes32_t{}) {
                     touched_.storage_.at(a).at(key).updated = bytes32_t{};
                     return EVMC_STORAGE_MODIFIED_DELETED;
                 }

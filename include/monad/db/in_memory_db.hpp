@@ -40,11 +40,11 @@ namespace detail
             return std::nullopt;
         }
 
-        [[nodiscard]] std::optional<bytes32_t>
+        [[nodiscard]] bytes32_t
         try_find_impl(address_t const &a, bytes32_t const &k)
         {
             if (!base_t::contains(a, k)) {
-                return std::nullopt;
+                return bytes32_t{};
             }
             return storage.at(a).at(k);
         }

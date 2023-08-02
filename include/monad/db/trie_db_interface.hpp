@@ -95,12 +95,12 @@ struct TrieDBInterface
         return ret;
     }
 
-    [[nodiscard]] std::optional<bytes32_t>
+    [[nodiscard]] bytes32_t
     try_find_impl(address_t const &a, bytes32_t const &k)
     {
         auto const c = find(a, k);
         if (!c.has_value()) {
-            return std::nullopt;
+            return bytes32_t{};
         }
 
         auto const key =

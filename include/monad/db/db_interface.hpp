@@ -51,7 +51,7 @@ struct DBInterface
         return ret.value();
     }
 
-    [[nodiscard]] constexpr std::optional<bytes32_t>
+    [[nodiscard]] constexpr bytes32_t
     try_find(address_t const &a, bytes32_t const &k)
     {
         return TExecutor::execute(
@@ -68,8 +68,8 @@ struct DBInterface
     [[nodiscard]] constexpr bytes32_t at(address_t const &a, bytes32_t const &k)
     {
         auto const ret = try_find(a, k);
-        MONAD_ASSERT(ret);
-        return ret.value();
+        MONAD_ASSERT(ret != bytes32_t{});
+        return ret;
     }
 
     ////////////////////////////////////////////////////////////////////

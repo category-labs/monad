@@ -144,7 +144,7 @@ namespace detail
             return ret;
         }
 
-        [[nodiscard]] std::optional<bytes32_t>
+        [[nodiscard]] bytes32_t
         try_find_impl(address_t const &a, bytes32_t const &k)
         {
             auto const key = detail::make_basic_storage_key(a, k);
@@ -152,7 +152,7 @@ namespace detail
             auto const res = db->Get(
                 rocksdb::ReadOptions{}, storage_cf(), to_slice(key), &value);
             if (res.IsNotFound()) {
-                return std::nullopt;
+                return bytes32_t{};
             }
             MONAD_ROCKS_ASSERT(res);
             MONAD_ASSERT(value.size() == sizeof(bytes32_t));

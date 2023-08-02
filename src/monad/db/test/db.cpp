@@ -107,6 +107,27 @@ TYPED_TEST(DBTest, storage_creation)
     EXPECT_EQ(db.at(b, key1), value1);
 }
 
+TYPED_TEST(DBTest, try_find)
+{
+    auto db = test::make_db<TypeParam>();
+    Account acct{.nonce = 1};
+    db.commit(state::StateChanges{
+        .account_changes = {{a, acct}},
+        .storage_changes = {{a, {{key1, value1}}}}});
+
+    // Existing key
+    EXPECT_TRUE(db.contains(a, key1));
+    EXPECT_EQ(db.try_find(a, key1), value1);
+
+    // Non-existing key
+    EXPECT_FALSE(db.contains(a, key2));
+    EXPECT_EQ(db.try_find(a, key2), bytes32_t{});
+
+    // Non-existing account
+    EXPECT_FALSE(db.contains(b));
+    EXPECT_EQ(db.try_find(b, key1), bytes32_t{});
+}
+
 TEST(InMemoryTrieDB, account_creation)
 {
     auto db = test::make_db<InMemoryTrieDB>();

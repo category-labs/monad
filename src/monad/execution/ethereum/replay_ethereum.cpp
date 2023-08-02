@@ -78,7 +78,7 @@ int main(int argc, char *argv[])
         monad::log::logger_t::create_logger("change_set_logger");
     [[maybe_unused]] auto *evmone_baseline_interperter_logger =
         monad::log::logger_t::create_logger(
-            "evmone_baseline_interperter_logger");
+            "evmone_baseline_interpreter_logger");
     [[maybe_unused]] auto *trie_db_logger =
         monad::log::logger_t::create_logger("trie_db_logger");
 
@@ -111,7 +111,7 @@ int main(int argc, char *argv[])
     log_levels->add_option(
         "--evmone",
         evmone_baseline_interpreter_log_level,
-        "Log level for change_set");
+        "Log level for evmone interpreter");
     log_levels->add_option(
         "--trie_db", trie_db_log_level, "Log level for trie_db");
 
@@ -143,7 +143,7 @@ int main(int argc, char *argv[])
     monad::log::logger_t::set_log_level(
         "change_set_logger", change_set_log_level);
     monad::log::logger_t::set_log_level(
-        "evmone_baseline_interperter_logger",
+        "evmone_baseline_interpreter_logger",
         evmone_baseline_interpreter_log_level);
     monad::log::logger_t::set_log_level("trie_db_logger", trie_db_log_level);
 

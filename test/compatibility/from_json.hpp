@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ethash/keccak.hpp>
+#include <intx/intx.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/transaction.hpp>
@@ -67,11 +68,26 @@ namespace test
             state.set_nonce(account_address, nonce);
 
             // TODO: parse the storage field
-            if (json.contains("storage") && json["storage"].is_object() &&
-                !json["storage"].empty()) {
-                throw std::runtime_error(
-                    "you forgot to parse the storage field on an object that "
-                    "has non-zero storage");
+            if (account_json.contains("storage") &&
+                account_json["storage"].is_object()) {
+                for (auto const &[key, value] :
+                     account_json["storage"].items()) {
+
+                    auto const key_int =
+                        intx::bswap(intx::from_string<monad::uint256_t>(key));
+                    auto const value_int =
+                        intx::bswap(intx::from_string<monad::uint256_t>(
+                            value.get<std::string>()));
+
+                    monad::bytes32_t key_bytes32 =
+                        *reinterpret_cast<const monad::bytes32_t *>(
+                            as_words(key_int));
+                    monad::bytes32_t value_bytes32 =
+                        *reinterpret_cast<const monad::bytes32_t *>(
+                            as_words(value_int));
+                    (void)state.set_storage(
+                        account_address, key_bytes32, value_bytes32);
+                }
             }
         }
     }

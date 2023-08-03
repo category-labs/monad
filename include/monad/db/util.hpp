@@ -16,6 +16,8 @@ namespace detail
 {
     template <typename TExecution>
     struct RocksTrieDB;
+
+    constexpr std::string_view CURRENT_DATABASE = "CURRENT";
 };
 using RocksTrieDB = detail::RocksTrieDB<monad::execution::BoostFiberExecution>;
 

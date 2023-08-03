@@ -9,12 +9,6 @@
 
 MONAD_DB_NAMESPACE_BEGIN
 
-namespace detail
-{
-    using namespace std::literals::string_view_literals;
-    constexpr auto CURRENT_DATABASE = "CURRENT"sv;
-}
-
 [[nodiscard]] inline uint64_t
 auto_detect_start_block_number(std::filesystem::path const &root)
 {

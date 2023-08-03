@@ -69,7 +69,7 @@ namespace detail
 
         std::filesystem::path const root;
         uint64_t const block_history_size;
-        uint64_t start_block_number;
+        uint64_t const starting_block_number;
         rocksdb::Options options;
         trie::PathComparator accounts_comparator;
         trie::PrefixPathComparator storage_comparator;
@@ -80,11 +80,11 @@ namespace detail
         Trie storage_trie;
 
         RocksTrieDB(
-            std::filesystem::path root, uint64_t block_number,
+            std::filesystem::path root, uint64_t const starting_block_number,
             uint64_t block_history_size)
             : root(root)
             , block_history_size(block_history_size)
-            , start_block_number(block_number)
+            , starting_block_number(starting_block_number)
             , options([]() {
                 rocksdb::Options ret;
                 ret.IncreaseParallelism(2);

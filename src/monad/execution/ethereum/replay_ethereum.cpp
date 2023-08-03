@@ -155,7 +155,7 @@ int main(int argc, char *argv[])
     monad::state::CodeState code{code_db};
     state_t state{accounts, values, code, block_db, db};
 
-    monad::block_num_t start_block_number = db.block_number();
+    monad::block_num_t start_block_number = db.starting_block_number;
 
     MONAD_LOG_INFO(
         main_logger,

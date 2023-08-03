@@ -37,6 +37,8 @@ static constexpr auto value3 =
 static constexpr auto null =
     0x0000000000000000000000000000000000000000000000000000000000000000_bytes32;
 
+using diff_t = InnerStorage::diff_t;
+
 template <typename TDB>
 struct ValueStateTest : public testing::Test
 {
@@ -88,8 +90,6 @@ TYPED_TEST(ValueStateTest, copy)
 
 TYPED_TEST(ValueStateTest, get_storage)
 {
-    using diff_t = typename ValueState<TypeParam>::diff_t;
-
     auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}, {b, Account{}}},
@@ -148,8 +148,6 @@ TYPED_TEST(ValueStateTest, set_modify_delete_storage)
 
 TYPED_TEST(ValueStateTest, set_modify_delete_merged)
 {
-    using diff_t = typename ValueState<TypeParam>::diff_t;
-
     auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}},
@@ -217,8 +215,6 @@ TYPED_TEST(ValueStateTest, multiple_get_and_set_from_storage)
 
 TYPED_TEST(ValueStateTest, multiple_get_and_set_from_merged)
 {
-    using diff_t = typename ValueState<TypeParam>::diff_t;
-
     auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}, {c, Account{}}},
@@ -435,8 +431,6 @@ TYPED_TEST(ValueStateTest, can_merge_delete_merged_modified)
 
 TYPED_TEST(ValueStateTest, cant_merge_colliding_merge)
 {
-    using diff_t = typename ValueState<TypeParam>::diff_t;
-
     auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}},
@@ -471,8 +465,6 @@ TYPED_TEST(ValueStateTest, cant_merge_deleted_merge)
 
 TYPED_TEST(ValueStateTest, cant_merge_conflicting_adds)
 {
-    using diff_t = typename ValueState<TypeParam>::diff_t;
-
     auto db = test::make_db<TypeParam>();
     ValueState s{db};
 
@@ -487,8 +479,6 @@ TYPED_TEST(ValueStateTest, cant_merge_conflicting_adds)
 
 TYPED_TEST(ValueStateTest, cant_merge_conflicting_modifies)
 {
-    using diff_t = typename ValueState<TypeParam>::diff_t;
-
     auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}},
@@ -523,8 +513,6 @@ TYPED_TEST(ValueStateTest, cant_merge_conflicting_deleted)
 
 TYPED_TEST(ValueStateTest, cant_merge_delete_conflicts_with_modify)
 {
-    using diff_t = typename ValueState<TypeParam>::diff_t;
-
     auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
         .account_changes = {{a, Account{}}},

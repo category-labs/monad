@@ -14,24 +14,27 @@
 
 MONAD_STATE_NAMESPACE_BEGIN
 
-template <class TValueDB>
-struct ValueState
+struct InnerStorage
 {
     using diff_t = diff<bytes32_t>;
     using key_value_map_t = std::unordered_map<bytes32_t, diff_t>;
 
-    struct InnerStorage
+    std::unordered_map<address_t, key_value_map_t> storage_{};
+
+    bool
+    contains_key(address_t const &a, bytes32_t const &key) const noexcept
     {
-        std::unordered_map<address_t, key_value_map_t> storage_{};
+        return storage_.contains(a) && storage_.at(a).contains(key);
+    }
 
-        bool
-        contains_key(address_t const &a, bytes32_t const &key) const noexcept
-        {
-            return storage_.contains(a) && storage_.at(a).contains(key);
-        }
+    void clear() { storage_.clear(); }
+};
 
-        void clear() { storage_.clear(); }
-    };
+
+template <class TValueDB>
+struct ValueState
+{
+    using diff_t = InnerStorage::diff_t;
 
     struct ChangeSet;
 

@@ -1,5 +1,5 @@
-#include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
 
 #include <monad/state/code_state.hpp>
 
@@ -10,9 +10,12 @@
 using namespace monad;
 using namespace monad::state;
 
-static constexpr auto a = 0x5353535353535353535353535353535353535353_address;
-static constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
-static constexpr auto c = 0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address;
+static constexpr auto a =
+    0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
+static constexpr auto b =
+    0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
+static constexpr auto c =
+    0x5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b_bytes32;
 static constexpr auto c1 =
     byte_string{0x65, 0x74, 0x68, 0x65, 0x72, 0x6d, 0x69};
 static constexpr auto c2 =
@@ -20,7 +23,7 @@ static constexpr auto c2 =
 static constexpr auto c3 =
     byte_string{0x6e, 0x63, 0x40, 0x2d, 0x20, 0x45, 0x55, 0x31, 0x33};
 
-using db_t = std::unordered_map<address_t, byte_string>;
+using db_t = std::unordered_map<bytes32_t, byte_string>;
 
 TEST(CodeState, code_at)
 {

@@ -25,6 +25,8 @@
 
 #include <unordered_map>
 
+#include <iostream>
+
 using namespace monad;
 
 static constexpr auto from = 0x5353535353535353535353535353535353535353_address;
@@ -34,8 +36,10 @@ static constexpr auto location =
     0x0000000000000000000000000000000000000000000000000000000000000000_bytes32;
 static constexpr auto value1 =
     0x000000000000000000000000000000000000000000000000000000000000004c_bytes32;
+static constexpr auto code_hash =
+    0x00000000000000000000000000000000000000000000000000000000cccccccc_bytes32;
 
-using code_db_t = std::unordered_map<address_t, byte_string>;
+using code_db_t = std::unordered_map<bytes32_t, byte_string>;
 using account_store_db_t = db::InMemoryDB;
 
 template <class TState, concepts::fork_traits<TState> TTraits>
@@ -74,8 +78,7 @@ TEST(EvmInterpStateHost, return_existing_storage)
         0x60, // PUSH1, 3 gas
         0x1f, // offset
         0xf3}; // RETURN
-    code_db.emplace(a, code);
-    Account A{};
+    Account A{.code_hash = code_hash};
 
     db.commit(state::StateChanges{
         .account_changes =
@@ -91,6 +94,8 @@ TEST(EvmInterpStateHost, return_existing_storage)
         .sender = from,
         .code_address = a};
 
+    code_db.emplace(code_hash, code);
+
     // Get new changeset
     auto changeset = s.get_new_changeset(0u);
 
@@ -100,6 +105,7 @@ TEST(EvmInterpStateHost, return_existing_storage)
     // Prep per transaction processor
     changeset.access_account(to);
     changeset.access_account(from);
+    changeset.access_account(a);
 
     evm_t<state_t, fork_t> e{};
     evm_host_t<state_t, fork_t> h{b, t, changeset};
@@ -141,8 +147,7 @@ TEST(EvmInterpStateHost, store_then_return_storage)
         0x60, // PUSH1, 3 gas
         0x1f, // offset
         0xf3}; // RETURN
-    code_db.emplace(a, code);
-    Account A{};
+    Account A{.code_hash = code_hash};
 
     db.commit(state::StateChanges{
         .account_changes =
@@ -158,6 +163,8 @@ TEST(EvmInterpStateHost, store_then_return_storage)
         .sender = from,
         .code_address = a};
 
+    code_db.emplace(code_hash, code);
+
     // Get new changeset
     auto changeset = s.get_new_changeset(0u);
 
@@ -167,6 +174,7 @@ TEST(EvmInterpStateHost, store_then_return_storage)
     // Prep per transaction processor
     changeset.access_account(to);
     changeset.access_account(from);
+    changeset.access_account(a);
 
     evm_t<state_t, fork_t> e{};
     evm_host_t<state_t, fork_t> h{b, t, changeset};

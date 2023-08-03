@@ -120,7 +120,7 @@ int main(int argc, char *argv[])
     auto const start_time = std::chrono::steady_clock::now();
 
     // Real Objects
-    using code_db_t = std::unordered_map<monad::address_t, monad::byte_string>;
+    using code_db_t = std::unordered_map<monad::bytes32_t, monad::byte_string>;
     using db_t = monad::db::RocksTrieDB;
     using block_db_t = monad::db::BlockDb;
     using receipt_collector_t = monad::receiptCollector;

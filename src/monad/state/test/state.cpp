@@ -32,6 +32,8 @@ static constexpr auto value2 =
     0x0000000000000000000000000000000000000000000000000000000000000007_bytes32;
 static constexpr auto null =
     0x0000000000000000000000000000000000000000000000000000000000000000_bytes32;
+static constexpr auto code_hash =
+    0x00000000000000000000000000000000000000000000000000000000cccccccc_bytes32;
 static constexpr auto c1 =
     byte_string{0x65, 0x74, 0x68, 0x65, 0x72, 0x6d, 0x69};
 
@@ -43,7 +45,7 @@ using DBTypes = ::testing::Types<
     db::InMemoryDB, db::RocksDB, db::InMemoryTrieDB, db::RocksTrieDB>;
 TYPED_TEST_SUITE(StateTest, DBTypes);
 
-using code_db_t = std::unordered_map<address_t, byte_string>;
+using code_db_t = std::unordered_map<bytes32_t, byte_string>;
 
 struct fakeBlockCache
 {
@@ -116,16 +118,18 @@ TYPED_TEST(StateTest, get_code)
     CodeState code{code_db};
     State as{accounts, values, code, block_cache, db};
     byte_string const contract{0x60, 0x34, 0x00};
-    code_db.emplace(a, contract);
+
+    code_db.emplace(code_hash, contract);
+
     db.commit(StateChanges{
-        .account_changes = {{a, Account{.balance = 10'000}}},
+        .account_changes =
+            {{a, Account{.balance = 10'000, .code_hash = code_hash}}},
         .storage_changes = {}});
 
-    [[maybe_unused]] auto bs = as.get_new_changeset(0);
-
+    auto bs = as.get_new_changeset(0);
     bs.access_account(a);
-    auto const c = bs.get_code(a);
 
+    auto const c = bs.get_code(code_hash);
     EXPECT_EQ(c, contract);
 }
 

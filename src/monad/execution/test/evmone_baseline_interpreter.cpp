@@ -27,7 +27,7 @@ TEST(Evm1BaselineInterpreter, execute_empty)
     fake::State::ChangeSet s{};
 
     evm_host_t h{};
-    s._code.emplace(a, byte_string{});
+    s.set_code(a, byte_string{});
 
     evmc_message m{.kind = EVMC_CALL, .gas = 10'000, .code_address = a};
 
@@ -50,7 +50,7 @@ TEST(Evm1BaselineInterpreter, execute_simple)
         0x60, // PUSH1, 3 gas
         0x0b, // length
         0x00}; // STOP
-    s._code.emplace(a, code);
+    s.set_code(a, code);
 
     evmc_message m{.kind = EVMC_CALL, .gas = 10'000, .code_address = a};
 
@@ -69,7 +69,7 @@ TEST(Evm1BaselineInterpreter, execute_invalid)
         0x60, // PUSH1, 3 gas
         0x68, // 'h'
         0xfe}; // INVALID
-    s._code.emplace(a, code);
+    s.set_code(a, code);
 
     evmc_message m{.kind = EVMC_CALL, .gas = 10'000, .code_address = a};
 

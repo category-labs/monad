@@ -20,6 +20,9 @@
 
 #include <tl/expected.hpp>
 
+#include <ethash/keccak.hpp>
+
+#include <bit>
 #include <unordered_map>
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
@@ -46,7 +49,7 @@ namespace fake
         struct ChangeSet
         {
             std::unordered_map<address_t, Account> _accounts{};
-            std::unordered_map<address_t, byte_string> _code{};
+            std::unordered_map<bytes32_t, byte_string> _code{};
 
             std::vector<Receipt::Log> _logs{};
             unsigned int _txn_id{};
@@ -151,14 +154,23 @@ namespace fake
 
             void set_code(address_t const &a, byte_string const &c)
             {
-                _code.insert({a, c});
+                auto const code_hash = std::bit_cast<const monad::bytes32_t>(
+                    ethash::keccak256(c.data(), c.size()));
+
+                _code.insert({code_hash, c});
+                if (!account_exists(a)) {
+                    _accounts.emplace(a, Account{.code_hash = code_hash});
+                }
+                else {
+                    _accounts.at(a).code_hash = code_hash;
+                }
             }
 
             // EVMC Host Interface
             [[nodiscard]] size_t
             get_code_size(address_t const &a) const noexcept
             {
-                return _code.at(a).size();
+                return _code.at(get_code_hash(a)).size();
             }
 
             // EVMC Host Interface
@@ -169,9 +181,9 @@ namespace fake
             }
 
             [[nodiscard]] byte_string_view
-            get_code(address_t const &a) const noexcept
+            get_code(bytes32_t const &b) const noexcept
             {
-                return {_code.at(a)};
+                return {_code.at(b)};
             }
 
             void revert() noexcept { _accounts.clear(); }
@@ -216,10 +228,7 @@ namespace fake
 
         unsigned int current_txn() { return _current_txn; }
 
-        ChangeSet get_new_changeset(unsigned int id)
-        {
-            return ChangeSet(id);
-        }
+        ChangeSet get_new_changeset(unsigned int id) { return ChangeSet(id); }
 
         MergeStatus can_merge_changes(ChangeSet const &)
         {

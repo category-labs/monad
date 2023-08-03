@@ -162,14 +162,14 @@ struct State
             auto const code_hash = std::bit_cast<const monad::bytes32_t>(
                 ethash::keccak256(c.data(), c.size()));
 
-            code_.set_code(a, c);
+            code_.set_code(code_hash, c);
             accounts_.set_code_hash(a, code_hash);
         }
 
         // EVMC Host Interface
         [[nodiscard]] size_t get_code_size(address_t const &a) const noexcept
         {
-            return code_.get_code_size(a);
+            return code_.get_code_size(get_code_hash(a));
         }
 
         // EVMC Host Interface
@@ -177,13 +177,13 @@ struct State
             address_t const &a, size_t offset, uint8_t *buffer,
             size_t size) const noexcept
         {
-            return code_.copy_code(a, offset, buffer, size);
+            return code_.copy_code(get_code_hash(a), offset, buffer, size);
         }
 
         [[nodiscard]] byte_string_view
-        get_code(address_t const &a) const noexcept
+        get_code(bytes32_t const &b) const noexcept
         {
-            return code_.code_at(a);
+            return code_.code_at(b);
         }
 
         void revert() noexcept

@@ -1,9 +1,9 @@
 #pragma once
 
 #include <monad/core/account.hpp>
-#include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
 
 #include <monad/state/config.hpp>
 #include <monad/state/datum.hpp>
@@ -19,7 +19,7 @@ class error;
 template <class TCodeDB>
 struct CodeState
 {
-    using map_t = std::unordered_map<address_t, byte_string>;
+    using map_t = std::unordered_map<bytes32_t, byte_string>;
 
     struct ChangeSet;
 
@@ -32,13 +32,13 @@ struct CodeState
     {
     }
 
-    [[nodiscard]] byte_string_view code_at(address_t const &a) const
+    [[nodiscard]] byte_string_view code_at(bytes32_t const &b) const
     {
-        if (merged_.contains(a)) {
-            return {merged_.at(a)};
+        if (merged_.contains(b)) {
+            return {merged_.at(b)};
         }
-        if (db_.contains(a)) {
-            return {db_.at(a)};
+        if (db_.contains(b)) {
+            return {db_.at(b)};
         }
         return {empty};
     }
@@ -89,34 +89,32 @@ struct CodeState<TCodeDB>::ChangeSet : public CodeState<TCodeDB>
     }
 
     [[nodiscard]] byte_string_view const
-    code_at(address_t const &a) const noexcept
+    code_at(bytes32_t const &b) const noexcept
     {
-        if (code_.contains(a))
-            return {code_.at(a)};
-        return CodeState::code_at(a);
+        if (code_.contains(b))
+            return {code_.at(b)};
+        return CodeState::code_at(b);
     }
 
-    void set_code(address_t const &a, byte_string const &code)
+    void set_code(bytes32_t const &b, byte_string const &code)
     {
         if (code.empty()) {
             return;
         }
-        auto const &[_, inserted] = code_.emplace(a, code);
+        auto const &[_, inserted] = code_.emplace(b, code);
         MONAD_DEBUG_ASSERT(inserted);
     }
 
-    // EVMC Host Interface
-    [[nodiscard]] size_t get_code_size(address_t const &a) const noexcept
+    [[nodiscard]] size_t get_code_size(bytes32_t const &b) const noexcept
     {
-        return code_at(a).size();
+        return code_at(b).size();
     }
 
-    // EVMC Host Interface
     [[nodiscard]] size_t copy_code(
-        address_t const &a, size_t offset, uint8_t *buffer,
+        bytes32_t const &b, size_t offset, uint8_t *buffer,
         size_t buffer_size) const
     {
-        auto const code = code_at(a);
+        auto const code = code_at(b);
         assert(code.size() > offset);
         auto const bytes_to_copy = std::min(code.size() - offset, buffer_size);
         std::memcpy(buffer, code.begin() + offset, bytes_to_copy);

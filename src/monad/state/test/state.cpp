@@ -1,5 +1,6 @@
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/int.hpp>
 
 #include <monad/db/in_memory_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
@@ -468,6 +469,27 @@ TYPED_TEST(TrieDBTest, commit_storage_and_account_together_regression)
 
     t.merge_changes(changeset);
     t.commit();
+}
+
+TYPED_TEST(TrieDBTest, set_and_then_clear_storage_in_same_commit)
+{
+    using namespace intx;
+    auto db = test::make_db<TypeParam>();
+    AccountState accounts{db};
+    ValueState values{db};
+    code_db_t code_db{};
+    CodeState code{code_db};
+    State t{accounts, values, code, block_cache, db};
+
+    auto changeset = t.get_new_changeset(0u);
+    using namespace intx;
+    changeset.create_account(a);
+    (void)changeset.set_storage(a, key1, value1);
+    (void)changeset.set_storage(a, key1, null);
+    t.merge_changes(changeset);
+    t.commit();
+
+    EXPECT_EQ(db.try_find(a, key1), monad::bytes32_t{});
 }
 
 TYPED_TEST(StateTest, commit_twice)

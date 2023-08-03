@@ -168,11 +168,12 @@ struct ValueState<TValueDB>::ChangeSet : public ValueState<TValueDB>
         }
 
         if (touched_.contains_key(a, key)) {
-            if (touched_.storage_.at(a).at(key).updated != bytes32_t{}) {
-                touched_.storage_.at(a).at(key).updated = bytes32_t{};
-                return EVMC_STORAGE_ADDED_DELETED;
-            }
-            return EVMC_STORAGE_ASSIGNED;
+            MONAD_DEBUG_ASSERT(
+                touched_.storage_.at(a).at(key).orig == bytes32_t{});
+            MONAD_DEBUG_ASSERT(
+                touched_.storage_.at(a).at(key).updated != bytes32_t{});
+            remove_touched_key(a, key);
+            return EVMC_STORAGE_ADDED_DELETED;
         }
         return EVMC_STORAGE_ASSIGNED;
     }

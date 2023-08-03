@@ -24,7 +24,7 @@ struct Receipt
         std::vector<bytes32_t> topics{};
         address_t address{};
 
-        friend bool operator==(const Log &, const Log &) = default;
+        friend bool operator==(Log const &, Log const &) = default;
     };
 
     Bloom bloom{};

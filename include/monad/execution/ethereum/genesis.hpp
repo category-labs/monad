@@ -25,8 +25,7 @@ MONAD_EXECUTION_ETHEREUM_NAMESPACE_BEGIN
 // TODO: Different chain_id has different genesis json file (with some of them
 // not having certain field)
 // Issue #131
-inline BlockHeader
-read_genesis_blockheader(nlohmann::json const &genesis_json)
+inline BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
 {
     BlockHeader block_header{};
 
@@ -86,7 +85,7 @@ inline void read_genesis_state(nlohmann::json const &genesis_json, TStateDB &db)
             account_info.value()["wei_balance"].get<std::string>();
         account.balance = intx::from_string<uint256_t>(balance_byte_string);
         account.nonce = 0u;
-        
+
         sc.account_changes.emplace_back(address, account);
     }
     db.commit(sc);

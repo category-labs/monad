@@ -9,8 +9,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-class fiber_properties final
-    : public boost::fibers::fiber_properties
+class fiber_properties final : public boost::fibers::fiber_properties
 {
     uint64_t priority_ = 0;
 
@@ -20,14 +19,12 @@ public:
     {
     }
 
-    [[gnu::always_inline]]
-    uint64_t getPriority() const noexcept
+    [[gnu::always_inline]] uint64_t getPriority() const noexcept
     {
         return priority_;
     }
 
-    [[gnu::always_inline]]
-    void setPriority(uint64_t const priority) noexcept
+    [[gnu::always_inline]] void setPriority(uint64_t const priority) noexcept
     {
         priority_ = priority;
 

@@ -12,7 +12,7 @@
 using namespace monad;
 using namespace monad::execution;
 
-constexpr static auto null{0x0000000000000000000000000000000000000000_address};
+static constexpr auto null{0x0000000000000000000000000000000000000000_address};
 
 using traits_t = fake::traits::alpha<fake::State::ChangeSet>;
 
@@ -34,9 +34,9 @@ using evm_host_t = fake::EvmHost<
 
 TEST(Evm, make_account_address)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
-    constexpr static auto to{
+    static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
     static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
@@ -60,9 +60,9 @@ TEST(Evm, make_account_address)
 
 TEST(Evm, make_account_address_create2)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0x00000000000000000000000000000000deadbeef_address};
-    constexpr static auto new_address{
+    static constexpr auto new_address{
         0x60f3f640a8508fC6a86d45DF051962668E1e8AC7_address};
     static constexpr auto cafebabe_salt{
         0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32};
@@ -92,7 +92,7 @@ TEST(Evm, make_account_address_create2)
 
 TEST(Evm, create_with_insufficient)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
@@ -113,7 +113,7 @@ TEST(Evm, create_with_insufficient)
 
 TEST(Evm, create_nonce_out_of_range)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
@@ -135,9 +135,9 @@ TEST(Evm, create_nonce_out_of_range)
 
 TEST(Evm, eip684_existing_nonce)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
-    constexpr static auto to{
+    static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
     static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
@@ -160,11 +160,11 @@ TEST(Evm, eip684_existing_nonce)
 
 TEST(Evm, eip684_existing_code)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
-    constexpr static auto to{
+    static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    constexpr static auto code_hash{
+    static constexpr auto code_hash{
         0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
     static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
@@ -187,9 +187,9 @@ TEST(Evm, eip684_existing_code)
 
 TEST(Evm, transfer_call_balances)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
-    constexpr static auto to{
+    static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
     static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
@@ -214,9 +214,9 @@ TEST(Evm, transfer_call_balances)
 
 TEST(Evm, transfer_call_balances_to_self)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
-    constexpr static auto to = from;
+    static constexpr auto to = from;
     static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
     s._accounts[from].nonce = 6;
@@ -238,9 +238,9 @@ TEST(Evm, transfer_call_balances_to_self)
 
 TEST(Evm, dont_transfer_on_delegatecall)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
-    constexpr static auto to{
+    static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
     static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
@@ -265,9 +265,9 @@ TEST(Evm, dont_transfer_on_delegatecall)
 
 TEST(Evm, dont_transfer_on_staticcall)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
-    constexpr static auto to{
+    static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
     static fake::State::ChangeSet s{};
     s._accounts[from].balance = 10'000'000'000;
@@ -293,9 +293,9 @@ TEST(Evm, dont_transfer_on_staticcall)
 
 TEST(Evm, create_contract_account)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
-    constexpr static auto new_addr{
+    static constexpr auto new_addr{
         0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
     fake::State::ChangeSet s{};
 
@@ -326,9 +326,9 @@ TEST(Evm, create_contract_account)
 
 TEST(Evm, create2_contract_account)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
-    constexpr static auto new_addr2{
+    static constexpr auto new_addr2{
         0xe0e05f8f41129e2087ec0a3759810fdced46edd4_address};
     fake::State::ChangeSet s{};
 
@@ -360,7 +360,7 @@ TEST(Evm, create2_contract_account)
 
 TEST(Evm, oog_create_account)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
     fake::State::ChangeSet s{};
     evm_host_t h{};
@@ -381,9 +381,9 @@ TEST(Evm, oog_create_account)
 
 TEST(Evm, revert_create_account)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
-    constexpr static auto null{
+    static constexpr auto null{
         0x0000000000000000000000000000000000000000_address};
     fake::State::ChangeSet s{};
     evm_host_t h{};
@@ -406,9 +406,9 @@ TEST(Evm, revert_create_account)
 
 TEST(Evm, call_evm)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
-    constexpr static auto to{
+    static constexpr auto to{
         0xf8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8_address};
     fake::State::ChangeSet s{};
     evm_host_t h{};
@@ -435,24 +435,24 @@ TEST(Evm, static_precompile_execution)
     using alpha_evm_t = evm_t;
     using beta_evm_t = traits_templated_evm_t<beta_traits_t>;
 
-    constexpr static auto from{
+    static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
-    constexpr static auto code_address{
+    static constexpr auto code_address{
         0x0000000000000000000000000000000000000001_address};
     fake::State::ChangeSet s{};
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 15'000});
     s._accounts.emplace(code_address, Account{.nonce = 4});
 
-    constexpr static char data[] = "hello world";
-    constexpr static auto data_size = sizeof(data);
+    static constexpr char data[] = "hello world";
+    static constexpr auto data_size = sizeof(data);
 
     evmc_message m{
         .kind = EVMC_CALL,
         .gas = 400,
         .recipient = code_address,
         .sender = from,
-        .input_data = reinterpret_cast<const unsigned char *>(data),
+        .input_data = reinterpret_cast<unsigned char const *>(data),
         .input_size = data_size,
         .value = {0},
         .code_address = code_address};
@@ -476,24 +476,24 @@ TEST(Evm, static_precompile_execution)
 
 TEST(Evm, out_of_gas_static_precompile_execution)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
-    constexpr static auto code_address{
+    static constexpr auto code_address{
         0x0000000000000000000000000000000000000001_address};
     fake::State::ChangeSet s{};
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 15'000});
     s._accounts.emplace(code_address, Account{.nonce = 6});
 
-    constexpr static char data[] = "hello world";
-    constexpr static auto data_size = sizeof(data);
+    static constexpr char data[] = "hello world";
+    static constexpr auto data_size = sizeof(data);
 
     evmc_message m{
         .kind = EVMC_CALL,
         .gas = 100,
         .recipient = code_address,
         .sender = from,
-        .input_data = reinterpret_cast<const unsigned char *>(data),
+        .input_data = reinterpret_cast<unsigned char const *>(data),
         .input_size = data_size,
         .value = {0},
         .code_address = code_address};
@@ -505,9 +505,9 @@ TEST(Evm, out_of_gas_static_precompile_execution)
 
 TEST(Evm, revert_call_evm)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
-    constexpr static auto code_address{
+    static constexpr auto code_address{
         0x0000000000000000000000000000000000000003_address};
     fake::State::ChangeSet s{};
     evm_host_t h{};

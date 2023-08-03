@@ -18,7 +18,7 @@ inline byte_string encode_string(byte_string_view const str)
     }
     else if (size > 55) {
         auto const size_str = to_big_compact(size);
-		MONAD_ASSERT(size_str.size() <= 8u);
+        MONAD_ASSERT(size_str.size() <= 8u);
         result.push_back(0xb7 + static_cast<unsigned char>(size_str.size()));
         result += size_str;
         result += str;
@@ -38,7 +38,7 @@ inline byte_string encode_list(Args const &...args)
     byte_string result;
     if (size > 55) {
         auto const size_str = to_big_compact(size);
-		MONAD_ASSERT(size_str.size() <= 8u);
+        MONAD_ASSERT(size_str.size() <= 8u);
         result += (0xf7 + static_cast<unsigned char>(size_str.size()));
         result += size_str;
     }

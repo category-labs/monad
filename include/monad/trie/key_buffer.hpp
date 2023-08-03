@@ -13,8 +13,8 @@ MONAD_TRIE_NAMESPACE_BEGIN
 // manipulation of a key.
 struct KeyBuffer
 {
-    constexpr static size_t MAX_PATH_SIZE = 1 + Nibbles::MAX_SIZE / 2;
-    constexpr static size_t MAX_SIZE = sizeof(address_t) + MAX_PATH_SIZE;
+    static constexpr size_t MAX_PATH_SIZE = 1 + Nibbles::MAX_SIZE / 2;
+    static constexpr size_t MAX_SIZE = sizeof(address_t) + MAX_PATH_SIZE;
 
     byte_string_fixed<MAX_SIZE> raw;
     size_t buf_size = 0;

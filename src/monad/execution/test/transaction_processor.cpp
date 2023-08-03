@@ -37,7 +37,7 @@ TEST(TransactionProcessor, g_star)
 
 TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     fake::State::ChangeSet s{};
     evm_host_t h{};

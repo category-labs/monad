@@ -13,7 +13,7 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 // YP Sec 7: Eq 85 and 86
 address_t hash_and_clip(byte_string const &b)
 {
-    const auto h = ethash::keccak256(b.data(), b.size());
+    auto const h = ethash::keccak256(b.data(), b.size());
     address_t result{};
     std::memcpy(result.bytes, &(h.bytes[12]), sizeof(address_t));
     return result;

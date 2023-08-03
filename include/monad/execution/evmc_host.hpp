@@ -39,7 +39,7 @@ struct EvmcHost : public evmc::Host
     }
 
     virtual bytes32_t get_storage(
-        const address_t &a, const bytes32_t &key) const noexcept override
+        address_t const &a, bytes32_t const &key) const noexcept override
     {
         return state_.get_storage(a, key);
     }
@@ -82,7 +82,7 @@ struct EvmcHost : public evmc::Host
     [[nodiscard]] static constexpr evmc_message
     make_msg_from_txn(Transaction const &t)
     {
-        const auto to_address = [&] {
+        auto const to_address = [&] {
             if (t.to) {
                 return std::pair{EVMC_CALL, *t.to};
             }
@@ -167,7 +167,7 @@ struct EvmcHost : public evmc::Host
     };
 
     virtual void emit_log(
-        address_t const &addr, const uint8_t *data, size_t data_size,
+        address_t const &addr, uint8_t const *data, size_t data_size,
         bytes32_t const topics[], size_t num_topics) noexcept override
     {
         Receipt::Log l{.data = {data, data_size}, .address = addr};

@@ -216,10 +216,7 @@ namespace fake
 
         unsigned int current_txn() { return _current_txn; }
 
-        ChangeSet get_new_changeset(unsigned int id)
-        {
-            return ChangeSet(id);
-        }
+        ChangeSet get_new_changeset(unsigned int id) { return ChangeSet(id); }
 
         MergeStatus can_merge_changes(ChangeSet const &)
         {
@@ -248,13 +245,13 @@ namespace fake
 
         EvmHost(BlockHeader const &, Transaction const &, TState &) noexcept {}
 
-        [[nodiscard]] static constexpr inline evmc_message
+        [[nodiscard]] static inline constexpr evmc_message
         make_msg_from_txn(Transaction const &)
         {
             return {.kind = EVMC_CALL};
         };
 
-        [[nodiscard]] constexpr inline Receipt make_receipt_from_result(
+        [[nodiscard]] inline constexpr Receipt make_receipt_from_result(
             evmc_status_code, Transaction const &, uint64_t const)
         {
             return _receipt;
@@ -413,7 +410,7 @@ namespace fake
         template <typename T>
         struct Echo
         {
-            static evmc::Result execute(const evmc_message &m) noexcept
+            static evmc::Result execute(evmc_message const &m) noexcept
             {
                 const int64_t gas =
                     (const int64_t)(m.input_size * T::echo_gas_cost());
@@ -429,7 +426,7 @@ namespace fake
                     .gas_left = m.gas - gas,
                     .output_data = output_data,
                     .output_size = m.input_size,
-                    .release = [](const evmc_result *result) {
+                    .release = [](evmc_result const *result) {
                         std::free((unsigned char *)result->output_data);
                     }}};
             }
@@ -437,7 +434,7 @@ namespace fake
 
         struct OneHundredGas
         {
-            static evmc::Result execute(const evmc_message &m) noexcept
+            static evmc::Result execute(evmc_message const &m) noexcept
             {
                 const int64_t gas = 100;
                 if (m.gas < gas) {

@@ -10,7 +10,7 @@ namespace static_precompiles
     template <class TFork>
     struct BNPairing
     {
-        static evmc::Result execute(const evmc_message &message) noexcept
+        static evmc::Result execute(evmc_message const &message) noexcept
         {
             // YP Appendix E.1 Eq 269
             auto const k = message.input_size / 192;

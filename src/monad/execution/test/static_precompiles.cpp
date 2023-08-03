@@ -25,17 +25,17 @@ using beta_static_precompiles_t =
 
 TEST(StaticPrecompiles, execution_echo)
 {
-    constexpr static auto code_address{
+    static constexpr auto code_address{
         0x0000000000000000000000000000000000000001_address};
     auto exec_func =
         alpha_static_precompiles_t::static_precompile_exec_func(code_address);
 
-    const auto data = "hello world";
-    const auto data_size = 11u;
+    auto const data = "hello world";
+    auto const data_size = 11u;
 
     evmc_message m{
         .gas = 400,
-        .input_data = reinterpret_cast<const unsigned char *>(data),
+        .input_data = reinterpret_cast<unsigned char const *>(data),
         .input_size = data_size};
     auto const result = exec_func.transform(
         [&m](auto exec_func) { return evmc::Result{exec_func(m)}; });
@@ -50,17 +50,17 @@ TEST(StaticPrecompiles, execution_echo)
 
 TEST(StaticPrecompiles, beta_traits_execution_echo)
 {
-    constexpr static auto code_address{
+    static constexpr auto code_address{
         0x0000000000000000000000000000000000000001_address};
     auto exec_func =
         beta_static_precompiles_t::static_precompile_exec_func(code_address);
 
-    const auto data = "hello world";
-    const auto data_size = 11u;
+    auto const data = "hello world";
+    auto const data_size = 11u;
 
     evmc_message m{
         .gas = 400,
-        .input_data = reinterpret_cast<const unsigned char *>(data),
+        .input_data = reinterpret_cast<unsigned char const *>(data),
         .input_size = data_size};
     auto const result = exec_func.transform(
         [&m](auto exec_func) { return evmc::Result{exec_func(m)}; });
@@ -75,17 +75,17 @@ TEST(StaticPrecompiles, beta_traits_execution_echo)
 
 TEST(StaticPrecompiles, out_of_gas_execution_echo)
 {
-    constexpr static auto code_address{
+    static constexpr auto code_address{
         0x0000000000000000000000000000000000000001_address};
     auto exec_func =
         beta_static_precompiles_t::static_precompile_exec_func(code_address);
 
-    const auto data = "hello world";
-    const auto data_size = 11u;
+    auto const data = "hello world";
+    auto const data_size = 11u;
 
     evmc_message m{
         .gas = 100,
-        .input_data = reinterpret_cast<const unsigned char *>(data),
+        .input_data = reinterpret_cast<unsigned char const *>(data),
         .input_size = data_size};
     auto const result =
         exec_func.transform([&m](auto exec_func) { return exec_func(m); });
@@ -96,7 +96,7 @@ TEST(StaticPrecompiles, out_of_gas_execution_echo)
 
 TEST(StaticPrecompiles, execution_one_hundred_gas)
 {
-    constexpr static auto code_address{
+    static constexpr auto code_address{
         0x0000000000000000000000000000000000000002_address};
     auto exec_func =
         beta_static_precompiles_t::static_precompile_exec_func(code_address);
@@ -112,17 +112,17 @@ TEST(StaticPrecompiles, execution_one_hundred_gas)
 
 TEST(StaticPrecompiles, out_of_gas_execution_one_hundred_gas)
 {
-    constexpr static auto code_address{
+    static constexpr auto code_address{
         0x0000000000000000000000000000000000000002_address};
     auto exec_func =
         beta_static_precompiles_t::static_precompile_exec_func(code_address);
 
-    const auto data = "hello world";
-    const auto data_size = 11u;
+    auto const data = "hello world";
+    auto const data_size = 11u;
 
     evmc_message m{
         .gas = 99,
-        .input_data = reinterpret_cast<const unsigned char *>(data),
+        .input_data = reinterpret_cast<unsigned char const *>(data),
         .input_size = data_size};
     auto const result =
         exec_func.transform([&m](auto exec_func) { return exec_func(m); });
@@ -133,7 +133,7 @@ TEST(StaticPrecompiles, out_of_gas_execution_one_hundred_gas)
 
 TEST(StaticPrecompiles, zero_address)
 {
-    constexpr static auto code_address{
+    static constexpr auto code_address{
         0x0000000000000000000000000000000000000000_address};
     auto exec_func =
         beta_static_precompiles_t::static_precompile_exec_func(code_address);
@@ -143,7 +143,7 @@ TEST(StaticPrecompiles, zero_address)
 
 TEST(StaticPrecompiles, non_static_precompile_min)
 {
-    constexpr static auto code_address{
+    static constexpr auto code_address{
         0x0000000000000000000000000000000000000003_address};
     auto exec_func =
         beta_static_precompiles_t::static_precompile_exec_func(code_address);
@@ -153,7 +153,7 @@ TEST(StaticPrecompiles, non_static_precompile_min)
 
 TEST(StaticPrecompiles, non_static_precompile_random_bit)
 {
-    constexpr static auto code_address{
+    static constexpr auto code_address{
         0x1000000000000000000000000000000000000001_address};
     auto exec_func =
         beta_static_precompiles_t::static_precompile_exec_func(code_address);
@@ -163,7 +163,7 @@ TEST(StaticPrecompiles, non_static_precompile_random_bit)
 
 TEST(StaticPrecompiles, non_static_precompile_expansion)
 {
-    constexpr static auto code_address{
+    static constexpr auto code_address{
         0x0000000000000000000000000000000000000002_address};
     auto exec_func =
         alpha_static_precompiles_t::static_precompile_exec_func(code_address);

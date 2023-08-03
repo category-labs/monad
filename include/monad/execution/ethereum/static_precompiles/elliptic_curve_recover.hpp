@@ -12,7 +12,7 @@ namespace static_precompiles
     struct EllipticCurveRecover
     {
         using gas_cost = typename TFork::elliptic_curve_recover_gas_t;
-        static evmc::Result execute(const evmc_message &message) noexcept
+        static evmc::Result execute(evmc_message const &message) noexcept
         {
             constexpr auto cost = gas_cost::base::value;
 

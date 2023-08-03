@@ -18,7 +18,7 @@ void set_3_bits(Receipt::Bloom &bloom, byte_string_view const bytes)
             intx::to_big_endian(
                 reinterpret_cast<uint16_t const *>(h.bytes)[i]) &
             2047u;
-        const unsigned int byte = 255u - bit / 8u;
+        unsigned int const byte = 255u - bit / 8u;
         bloom[byte] |= static_cast<unsigned char>(1u << (bit & 7u));
     }
 }

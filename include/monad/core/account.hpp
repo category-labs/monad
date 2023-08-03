@@ -18,5 +18,4 @@ struct Account
 static_assert(sizeof(Account) == 72);
 static_assert(alignof(Account) == 8);
 
-
 MONAD_NAMESPACE_END

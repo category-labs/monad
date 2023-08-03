@@ -30,7 +30,7 @@ template <typename TDB>
 
 [[nodiscard]] inline rocksdb::Slice to_slice(byte_string_view view)
 {
-    return {reinterpret_cast<const char *>(view.data()), view.size()};
+    return {reinterpret_cast<char const *>(view.data()), view.size()};
 }
 
 [[nodiscard]] inline byte_string_view from_slice(rocksdb::Slice slice)

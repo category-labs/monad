@@ -32,7 +32,7 @@ parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
     byte_string_loc i = 0;
     byte_string_loc end{};
 
-    const uint8_t &first = enc[i];
+    uint8_t const &first = enc[i];
     MONAD_ASSERT(first < 0xc0);
     if (first < 0x80) // [0x00, 0x7f]
     {
@@ -65,7 +65,7 @@ parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
 
     byte_string_loc i = 0;
     byte_string_loc length{};
-    const uint8_t &first = enc[i];
+    uint8_t const &first = enc[i];
     ++i;
     MONAD_ASSERT(first >= 0xc0);
     if (first < 0xf8) {

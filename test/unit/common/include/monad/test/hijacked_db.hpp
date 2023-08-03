@@ -13,8 +13,8 @@ namespace hijacked
 {
     struct Executor
     {
-        inline static bool EXECUTED = false;
-        [[nodiscard]] constexpr static auto execute(std::invocable auto &&f)
+        static inline bool EXECUTED = false;
+        [[nodiscard]] static constexpr auto execute(std::invocable auto &&f)
         {
             EXECUTED = true;
             return std::invoke(std::forward<decltype(f)>(f));

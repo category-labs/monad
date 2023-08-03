@@ -17,7 +17,7 @@ template <
     class TState, concepts::fork_traits<TState> TTraits, class TPrecompiles>
 struct StaticPrecompiles
 {
-    using exec_func_t = evmc::Result (*)(const evmc_message &) noexcept;
+    using exec_func_t = evmc::Result (*)(evmc_message const &) noexcept;
 
     template <typename... Types>
     static constexpr auto
@@ -32,8 +32,8 @@ struct StaticPrecompiles
     [[nodiscard]] static tl::optional<exec_func_t>
     static_precompile_exec_func(address_t const &addr) noexcept
     {
-        const auto static_precompile_idx =
-            [&]() -> tl::optional<const unsigned> {
+        auto const static_precompile_idx =
+            [&]() -> tl::optional<unsigned const> {
             const auto last_address_i = sizeof(address_t) - 1u;
             for (auto i = 0u; i < last_address_i; ++i) {
                 const auto &b = addr.bytes[i];
@@ -49,7 +49,7 @@ struct StaticPrecompiles
         }();
 
         return static_precompile_idx.transform(
-            [](const unsigned idx) { return precompile_execs[idx]; });
+            [](unsigned const idx) { return precompile_execs[idx]; });
     }
 };
 

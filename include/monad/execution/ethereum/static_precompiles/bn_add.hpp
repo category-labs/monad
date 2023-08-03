@@ -11,7 +11,7 @@ namespace static_precompiles
     struct BNAdd
     {
         using gas_cost = typename TFork::bn_add_gas_t;
-        static evmc::Result execute(const evmc_message &message) noexcept
+        static evmc::Result execute(evmc_message const &message) noexcept
         {
             auto const cost = gas_cost::compute(message.input_size);
             if (message.gas < cost) {

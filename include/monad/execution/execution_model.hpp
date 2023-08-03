@@ -28,7 +28,7 @@ struct BoostFiberExecution
 
 struct SerialExecution
 {
-    [[nodiscard]] constexpr static auto execute(std::invocable auto &&f)
+    [[nodiscard]] static constexpr auto execute(std::invocable auto &&f)
     {
         return std::invoke(std::forward<decltype(f)>(f));
     }

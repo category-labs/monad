@@ -18,8 +18,7 @@ using data_t = TransactionProcessorFiberData<
     fake::EvmHost<
         fake::State::ChangeSet, fake::traits::alpha<fake::State::ChangeSet>,
         fake::Evm<
-            fake::State::ChangeSet,
-            fake::traits::alpha<fake::State::ChangeSet>,
+            fake::State::ChangeSet, fake::traits::alpha<fake::State::ChangeSet>,
             fake::static_precompiles::OneHundredGas, fake::Interpreter>>,
     TExecution>;
 
@@ -40,8 +39,7 @@ struct fakeSuccessfulTP
     Status _status{Status::SUCCESS};
 
     template <class TEvmHost>
-    Receipt execute(
-        TState &, TEvmHost &, Transaction const &, uint64_t) const
+    Receipt execute(TState &, TEvmHost &, Transaction const &, uint64_t) const
     {
         return _receipt;
     }

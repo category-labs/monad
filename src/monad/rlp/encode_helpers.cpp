@@ -182,7 +182,7 @@ byte_string encode_receipt(Receipt const &r)
         log_result += encode_log(i);
     }
 
-    const auto receipt_bytes = encode_list(
+    auto const receipt_bytes = encode_list(
         encode_unsigned(r.status),
         encode_unsigned(r.gas_used),
         encode_bloom(r.bloom),

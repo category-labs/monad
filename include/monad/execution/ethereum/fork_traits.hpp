@@ -68,7 +68,7 @@ namespace fork_traits
          */
         static constexpr int64_t compute(size_t size)
         {
-            auto constexpr word_size = sizeof(monad::bytes32_t);
+            constexpr auto word_size = sizeof(monad::bytes32_t);
             return (size + word_size - 1) / word_size * per_word() + base();
         }
     };
@@ -118,11 +118,11 @@ namespace fork_traits
         [[nodiscard]] static constexpr uint64_t
         g_data(Transaction const &t) noexcept
         {
-            const auto zeros = std::count_if(
+            auto const zeros = std::count_if(
                 std::cbegin(t.data), std::cend(t.data), [](unsigned char c) {
                     return c == 0x00;
                 });
-            const auto nonzeros = t.data.size() - static_cast<uint64_t>(zeros);
+            auto const nonzeros = t.data.size() - static_cast<uint64_t>(zeros);
             return static_cast<uint64_t>(zeros) * 4u + nonzeros * 68u;
         }
 
@@ -376,11 +376,11 @@ namespace fork_traits
         [[nodiscard]] static constexpr uint64_t
         g_data(Transaction const &t) noexcept
         {
-            const auto zeros = std::count_if(
+            auto const zeros = std::count_if(
                 std::cbegin(t.data), std::cend(t.data), [](unsigned char c) {
                     return c == 0x00;
                 });
-            const auto nonzeros = t.data.size() - static_cast<uint64_t>(zeros);
+            auto const nonzeros = t.data.size() - static_cast<uint64_t>(zeros);
             return static_cast<uint64_t>(zeros) * 4u + nonzeros * 16u;
         }
 

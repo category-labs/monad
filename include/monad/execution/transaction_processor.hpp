@@ -50,7 +50,7 @@ struct TransactionProcessor
     {
         refund += TTraits::get_selfdestruct_refund(s);
 
-        const auto refund_allowance =
+        auto const refund_allowance =
             (t.gas_limit - gas_remaining) / TTraits::max_refund_quotient();
 
         return gas_remaining + std::min(refund_allowance, refund);
@@ -64,7 +64,7 @@ struct TransactionProcessor
         auto const gas_remaining = g_star(s, t, gas_leftover, refund);
         auto const gas_cost = TTraits::gas_price(t, base_fee_per_gas);
 
-        const auto sender_balance =
+        auto const sender_balance =
             intx::be::load<uint256_t>(s.get_balance(*t.from));
 
         s.set_balance(*t.from, sender_balance + (gas_cost * gas_remaining));
@@ -79,7 +79,7 @@ struct TransactionProcessor
         irrevocable_change(s, t);
 
         s.access_account(*t.from);
-        for (const auto &ae : t.access_list) {
+        for (auto const &ae : t.access_list) {
             s.access_account(ae.a);
             for (auto const &keys : ae.keys) {
                 s.access_storage(ae.a, keys);

@@ -10,7 +10,7 @@ namespace static_precompiles
     template <class TFork>
     struct Blake2F
     {
-        static evmc::Result execute(const evmc_message &message) noexcept
+        static evmc::Result execute(evmc_message const &message) noexcept
         {
             auto const unsigned_cost = silkpre_blake2_f_gas(
                 message.input_data, message.input_size, TFork::rev);

@@ -35,7 +35,7 @@ public:
     }
 
     // Update this whenever the logic of this compartor is changed
-    virtual const char *Name() const override { return "PathComparator 0.0.1"; }
+    virtual char const *Name() const override { return "PathComparator 0.0.1"; }
 
     void FindShortestSeparator(
         std::string *, rocksdb::Slice const &) const override final
@@ -70,7 +70,7 @@ class PrefixPathComparator : public rocksdb::Comparator
     }
 
     // Update this whenever the logic of this compartor is changed
-    const char *Name() const override final
+    char const *Name() const override final
     {
         return "PrefixPathComparator 0.0.1";
     }

@@ -15,7 +15,7 @@ namespace fnv1a
 
     template <class T>
         requires requires(T const &b) { b.bytes; }
-    static constexpr inline auto hash(T const &b) noexcept
+    static inline constexpr auto hash(T const &b) noexcept
     {
         uint64_t h = offset_basis;
         for (auto i = 0u; i < sizeof(b.bytes); ++i) {
@@ -50,8 +50,8 @@ struct diff
 
     struct equality
     {
-        inline bool operator()(
-            diff const &first, diff const &second) const noexcept
+        inline bool
+        operator()(diff const &first, diff const &second) const noexcept
         {
             return first.value == second.value;
         }
@@ -59,7 +59,7 @@ struct diff
 
     struct hash
     {
-        constexpr inline std::size_t operator()(T const &a) const
+        inline constexpr std::size_t operator()(T const &a) const
         {
             return fnv1a::hash(a);
         }
@@ -102,7 +102,7 @@ struct deleted_key
 
     struct hash
     {
-        constexpr inline std::size_t operator()(deleted_key const &d) const
+        inline constexpr std::size_t operator()(deleted_key const &d) const
         {
             return fnv1a::hash(d.key);
         }

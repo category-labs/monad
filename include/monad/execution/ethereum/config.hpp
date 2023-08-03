@@ -2,6 +2,10 @@
 
 #include <monad/execution/config.hpp>
 
-#define MONAD_EXECUTION_ETHEREUM_NAMESPACE_BEGIN MONAD_EXECUTION_NAMESPACE_BEGIN namespace ethereum {
+#define MONAD_EXECUTION_ETHEREUM_NAMESPACE_BEGIN                               \
+    MONAD_EXECUTION_NAMESPACE_BEGIN namespace ethereum                         \
+    {
 
-#define MONAD_EXECUTION_ETHEREUM_NAMESPACE_END } MONAD_EXECUTION_NAMESPACE_END
+#define MONAD_EXECUTION_ETHEREUM_NAMESPACE_END                                 \
+    }                                                                          \
+    MONAD_EXECUTION_NAMESPACE_END

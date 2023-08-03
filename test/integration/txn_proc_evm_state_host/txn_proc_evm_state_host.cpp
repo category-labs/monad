@@ -94,8 +94,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     EXPECT_EQ(changeset.get_balance(to), bytes32_t{1'000'000});
 
     EXPECT_EQ(
-        s.can_merge_changes(changeset),
-        decltype(s)::MergeStatus::WILL_SUCCEED);
+        s.can_merge_changes(changeset), decltype(s)::MergeStatus::WILL_SUCCEED);
     s.merge_changes(changeset);
 
     fork_t::apply_block_award(s, b);
@@ -110,8 +109,10 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
 {
     // Block 46'402, txn 0
-    static constexpr auto creator = 0xA1E4380A3B1f749673E270229993eE55F35663b4_address;
-    static constexpr auto created = 0x9a049f5d18c239efaa258af9f3e7002949a977a0_address;
+    static constexpr auto creator =
+        0xA1E4380A3B1f749673E270229993eE55F35663b4_address;
+    static constexpr auto created =
+        0x9a049f5d18c239efaa258af9f3e7002949a977a0_address;
     db::BlockDb blocks{test_resource::correct_block_data_dir};
     account_store_db_t db{};
     state::AccountState accounts{db};
@@ -123,7 +124,8 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     db.commit(state::StateChanges{
         .account_changes =
             {{a, Account{}},
-             {creator, Account{.balance = 9'000'000'000'000'000'000, .nonce = 3}}},
+             {creator,
+              Account{.balance = 9'000'000'000'000'000'000, .nonce = 3}}},
         .storage_changes = {}});
 
     byte_string code = {0x60, 0x60, 0x60, 0x40, 0x52, 0x60, 0x00, 0x80, 0x54,
@@ -157,12 +159,12 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     EXPECT_EQ(r.status, Receipt::Status::FAILED);
     EXPECT_EQ(r.gas_used, 24'000);
     EXPECT_EQ(t.type, Transaction::Type::eip155);
-    EXPECT_EQ(changeset.get_balance(creator), bytes32_t{8'760'000'000'000'000'000});
+    EXPECT_EQ(
+        changeset.get_balance(creator), bytes32_t{8'760'000'000'000'000'000});
     EXPECT_EQ(changeset.get_balance(created), bytes32_t{0});
 
     EXPECT_EQ(
-        s.can_merge_changes(changeset),
-        decltype(s)::MergeStatus::WILL_SUCCEED);
+        s.can_merge_changes(changeset), decltype(s)::MergeStatus::WILL_SUCCEED);
     s.merge_changes(changeset);
 
     fork_t::apply_block_award(s, b);

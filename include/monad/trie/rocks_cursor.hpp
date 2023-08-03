@@ -116,7 +116,7 @@ struct RocksCursor
                 new_iterator = true;
                 lower_ = first->raw;
                 lower_slice_ =
-                    rocksdb::Slice{(const char *)lower_.data(), lower_.size()};
+                    rocksdb::Slice{(char const *)lower_.data(), lower_.size()};
                 read_opts_.iterate_lower_bound = &lower_slice_;
             }
         }
@@ -131,7 +131,7 @@ struct RocksCursor
                 new_iterator = true;
                 upper_ = last->raw;
                 upper_slice_ =
-                    rocksdb::Slice{(const char *)upper_.data(), upper_.size()};
+                    rocksdb::Slice{(char const *)upper_.data(), upper_.size()};
                 read_opts_.iterate_upper_bound = &upper_slice_;
             }
         }

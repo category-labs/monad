@@ -11,10 +11,10 @@ using namespace monad::fork_traits;
 
 using state_t = execution::fake::State::ChangeSet;
 
-auto constexpr a{0xbebebebebebebebebebebebebebebebebebebebe_address};
-auto constexpr b{0x5353535353535353535353535353535353535353_address};
-auto constexpr c{0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address};
-auto constexpr null{0x0000000000000000000000000000000000000000_address};
+constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
+constexpr auto b{0x5353535353535353535353535353535353535353_address};
+constexpr auto c{0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address};
+constexpr auto null{0x0000000000000000000000000000000000000000_address};
 
 static_assert(concepts::fork_traits<fork_traits::frontier, state_t>);
 TEST(fork_traits, frontier)

@@ -16,7 +16,7 @@ decode_byte_string_fixed(byte_string_fixed<N> &data, byte_string_view const enc)
 byte_string_view decode_sc(SignatureAndChain &sc, byte_string_view const enc)
 {
     uint64_t v{};
-    const auto rest_of_enc = decode_unsigned<uint64_t>(v, enc);
+    auto const rest_of_enc = decode_unsigned<uint64_t>(v, enc);
 
     sc.from_v(v);
     return rest_of_enc;
@@ -26,7 +26,7 @@ byte_string_view decode_access_entry_keys(
     std::vector<bytes32_t> &keys, byte_string_view const enc)
 {
     byte_string_view payload{};
-    const auto rest_of_enc = parse_list_metadata(payload, enc);
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
     const byte_string_loc key_size =
         33; // 1 byte for header, 32 bytes for byte32_t
     const byte_string_loc list_space = payload.size();
@@ -47,7 +47,7 @@ byte_string_view
 decode_access_entry(Transaction::AccessEntry &ae, byte_string_view const enc)
 {
     byte_string_view payload{};
-    const auto rest_of_enc = parse_list_metadata(payload, enc);
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
 
     payload = decode_address(ae.a, payload);
     payload = decode_access_entry_keys(ae.keys, payload);
@@ -60,7 +60,7 @@ byte_string_view
 decode_access_list(Transaction::AccessList &al, byte_string_view const enc)
 {
     byte_string_view payload{};
-    const auto rest_of_enc = parse_list_metadata(payload, enc);
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
     const byte_string_loc approx_num_keys = 10;
     // 20 bytes for address, 33 bytes per key
     const byte_string_loc access_entry_size_approx = 20 + 33 * approx_num_keys;
@@ -169,7 +169,7 @@ decode_transaction_legacy(Transaction &txn, byte_string_view const enc)
 {
     MONAD_ASSERT(enc.size() > 0);
     byte_string_view payload{};
-    const auto rest_of_enc = parse_list_metadata(payload, enc);
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
 
     txn.type = Transaction::Type::eip155;
     payload = decode_unsigned<uint64_t>(txn.nonce, payload);
@@ -192,7 +192,7 @@ decode_transaction_eip2930(Transaction &txn, byte_string_view const enc)
 {
     MONAD_ASSERT(enc.size() > 0);
     byte_string_view payload{};
-    const auto rest_of_enc = parse_list_metadata(payload, enc);
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
 
     txn.type = Transaction::Type::eip2930;
     txn.sc.chain_id = uint64_t{};
@@ -218,7 +218,7 @@ decode_transaction_eip1559(Transaction &txn, byte_string_view const enc)
 {
     MONAD_ASSERT(enc.size() > 0);
     byte_string_view payload{};
-    const auto rest_of_enc = parse_list_metadata(payload, enc);
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
 
     txn.type = Transaction::Type::eip1559;
     txn.sc.chain_id = uint64_t{};
@@ -245,15 +245,15 @@ decode_transaction(Transaction &txn, byte_string_view const enc)
 {
     MONAD_ASSERT(enc.size() > 0);
 
-    const uint8_t &first = enc[0];
+    uint8_t const &first = enc[0];
     if (first < 0xc0) // eip 2718 - typed transaction envelope
     {
         byte_string_view payload{};
-        const auto rest_of_enc = parse_string_metadata(payload, enc);
+        auto const rest_of_enc = parse_string_metadata(payload, enc);
         MONAD_ASSERT(payload.size() > 0);
 
-        const uint8_t &type = payload[0];
-        const auto txn_enc = payload.substr(1, payload.size() - 1);
+        uint8_t const &type = payload[0];
+        auto const txn_enc = payload.substr(1, payload.size() - 1);
 
         byte_string_view (*decoder)(Transaction &, byte_string_view const);
         switch (type) {
@@ -267,7 +267,7 @@ decode_transaction(Transaction &txn, byte_string_view const enc)
             MONAD_ASSERT(false); // invalid transaction type
             return {};
         }
-        const auto rest_of_txn_enc = decoder(txn, txn_enc);
+        auto const rest_of_txn_enc = decoder(txn, txn_enc);
         MONAD_ASSERT(rest_of_txn_enc.size() == 0);
         return rest_of_enc;
     }
@@ -278,7 +278,7 @@ byte_string_view
 decode_untyped_receipt(Receipt &receipt, byte_string_view const enc)
 {
     byte_string_view payload{};
-    const auto rest_of_enc = parse_list_metadata(payload, enc);
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
     payload = decode_unsigned<uint64_t>(receipt.status, payload);
     payload = decode_unsigned<uint64_t>(receipt.gas_used, payload);
     payload = decode_bloom(receipt.bloom, payload);
@@ -292,16 +292,16 @@ byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
 {
     MONAD_ASSERT(enc.size() > 0);
 
-    const uint8_t &first = enc[0];
+    uint8_t const &first = enc[0];
     receipt.type = Transaction::Type::eip155;
     if (first < 0xc0) // eip 2718 - typed transaction envelope
     {
         byte_string_view payload{};
-        const auto rest_of_enc = parse_string_metadata(payload, enc);
+        auto const rest_of_enc = parse_string_metadata(payload, enc);
         MONAD_ASSERT(payload.size() > 0);
 
-        const uint8_t &type = payload[0];
-        const auto receipt_enc = payload.substr(1, payload.size() - 1);
+        uint8_t const &type = payload[0];
+        auto const receipt_enc = payload.substr(1, payload.size() - 1);
         switch (type) {
         case 0x1:
             receipt.type = Transaction::Type::eip2930;
@@ -313,7 +313,7 @@ byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
             MONAD_ASSERT(false); // invalid transaction type
             return {};
         }
-        const auto rest_of_receipt_enc =
+        auto const rest_of_receipt_enc =
             decode_untyped_receipt(receipt, receipt_enc);
         MONAD_ASSERT(rest_of_receipt_enc.size() == 0);
         return rest_of_enc;
@@ -325,7 +325,7 @@ byte_string_view
 decode_block_header(BlockHeader &bh, byte_string_view const enc)
 {
     byte_string_view payload{};
-    const auto rest_of_enc = parse_list_metadata(payload, enc);
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
 
     payload = decode_bytes32(bh.parent_hash, payload);
     payload = decode_bytes32(bh.ommers_hash, payload);
@@ -359,7 +359,7 @@ byte_string_view decode_transaction_vector(
     std::vector<Transaction> &txns, byte_string_view const enc)
 {
     byte_string_view payload{};
-    const auto rest_of_enc = parse_list_metadata(payload, enc);
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
     // glee: based on etherscan.io... eventually in CONFIG file
     const byte_string_loc approx_num_transactions = 300;
     MONAD_ASSERT(txns.size() == 0);
@@ -379,7 +379,7 @@ byte_string_view decode_block_header_vector(
     std::vector<BlockHeader> &ommers, byte_string_view const enc)
 {
     byte_string_view payload{};
-    const auto rest_of_enc = parse_list_metadata(payload, enc);
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
     // glee: upper bound is 2... no reserve
     MONAD_ASSERT(ommers.size() == 0);
 
@@ -393,7 +393,8 @@ byte_string_view decode_block_header_vector(
     return rest_of_enc;
 }
 
-byte_string_view get_rlp_header_from_block(byte_string_view const block_encoding)
+byte_string_view
+get_rlp_header_from_block(byte_string_view const block_encoding)
 {
     byte_string_view rlp_block{};
     (void)parse_list_metadata(rlp_block, block_encoding);
@@ -405,7 +406,7 @@ byte_string_view get_rlp_header_from_block(byte_string_view const block_encoding
 byte_string_view decode_block(Block &block, byte_string_view const enc)
 {
     byte_string_view payload{};
-    const auto rest_of_enc = parse_list_metadata(payload, enc);
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
 
     payload = decode_block_header(block.header, payload);
     payload = decode_transaction_vector(block.transactions, payload);

@@ -22,7 +22,7 @@ TEST(Execution, static_validate_no_sender)
 TEST(Execution, validate_enough_gas)
 {
     processor_t p{};
-    constexpr static auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
 
     static Transaction const t{
         .gas_price = 29'443'849'433,
@@ -31,7 +31,7 @@ TEST(Execution, validate_enough_gas)
         .from = a};
 
     fake::State::ChangeSet state{0};
-    
+
     state._accounts[a] = {.balance = 55'939'568'773'815'811};
     traits_t::_intrinsic_gas = 53'000;
 
@@ -42,8 +42,8 @@ TEST(Execution, validate_enough_gas)
 TEST(Execution, validate_deployed_code)
 {
     processor_t p{};
-    constexpr static auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-    constexpr static auto some_non_null_hash{
+    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto some_non_null_hash{
         0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
     fake::State::ChangeSet state{};
     state._accounts[a] = {56'939'568'773'815'811, some_non_null_hash, 24};
@@ -58,7 +58,7 @@ TEST(Execution, validate_deployed_code)
 TEST(Execution, validate_nonce)
 {
     processor_t p{};
-    constexpr static auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
 
     static Transaction const t{
         .nonce = 23,
@@ -76,7 +76,7 @@ TEST(Execution, validate_nonce)
 TEST(Execution, validate_nonce_optimistically)
 {
     processor_t p{};
-    constexpr static auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
 
     static Transaction const t{
         .nonce = 25,
@@ -94,8 +94,8 @@ TEST(Execution, validate_nonce_optimistically)
 TEST(Execution, validate_enough_balance)
 {
     processor_t p{};
-    constexpr static auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-    constexpr static auto b{0x5353535353535353535353535353535353535353_address};
+    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto b{0x5353535353535353535353535353535353535353_address};
 
     static Transaction const t{
         .gas_price = 29'443'849'433,
@@ -118,8 +118,8 @@ TEST(Execution, validate_enough_balance)
 
 TEST(Execution, successful_validation)
 {
-    constexpr static auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-    constexpr static auto b{0x5353535353535353535353535353535353535353_address};
+    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto b{0x5353535353535353535353535353535353535353_address};
     fake::State::ChangeSet state{};
     state._accounts[a] = {.balance = 56'939'568'773'815'811, .nonce = 25};
     traits_t::_intrinsic_gas = 21'000;
@@ -140,8 +140,8 @@ TEST(Execution, successful_validation)
 
 TEST(Execution, insufficient_balance_higher_base_fee)
 {
-    constexpr static auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-    constexpr static auto b{0x5353535353535353535353535353535353535353_address};
+    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto b{0x5353535353535353535353535353535353535353_address};
     fake::State::ChangeSet state{};
     state._accounts[a] = {.balance = 56'939'568'773'815'811, .nonce = 25};
     traits_t::_intrinsic_gas = 21'000;
@@ -163,8 +163,8 @@ TEST(Execution, insufficient_balance_higher_base_fee)
 
 TEST(Execution, successful_validation_higher_base_fee)
 {
-    constexpr static auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-    constexpr static auto b{0x5353535353535353535353535353535353535353_address};
+    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto b{0x5353535353535353535353535353535353535353_address};
     fake::State::ChangeSet state{};
     state._accounts[a] = {.balance = 50'000'000'000'000'000, .nonce = 25};
     traits_t::_intrinsic_gas = 21'000;

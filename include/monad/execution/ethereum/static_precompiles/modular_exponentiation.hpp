@@ -11,7 +11,7 @@ namespace static_precompiles
     template <class TFork>
     struct ModularExponentiation
     {
-        static evmc::Result execute(const evmc_message &message) noexcept
+        static evmc::Result execute(evmc_message const &message) noexcept
         {
             // TODO: In the future, we can template parameterize the call to
             // `silkpre_expmod_gas` over the revision instead of passing it in

@@ -85,7 +85,7 @@ using identity_frontier_through_homestead =
 
 struct basic_test_case
 {
-    const char *name;
+    char const *name;
     evmc_message input;
     evmc_result expected_output;
 };
@@ -137,7 +137,7 @@ static const basic_test_case SHA256_TEST_CASES[] = {
     {.name = "sha256_message_enough_gas",
      .input =
          {.gas = 73,
-          .input_data = reinterpret_cast<const uint8_t *>("lol"),
+          .input_data = reinterpret_cast<uint8_t const *>("lol"),
           .input_size = 3},
      .expected_output =
          {.status_code = evmc_status_code::EVMC_SUCCESS,
@@ -147,7 +147,7 @@ static const basic_test_case SHA256_TEST_CASES[] = {
     {.name = "sha256_message_insufficient_gas",
      .input =
          {.gas = 71,
-          .input_data = reinterpret_cast<const uint8_t *>("lol"),
+          .input_data = reinterpret_cast<uint8_t const *>("lol"),
           .input_size = 3},
      .expected_output = {.status_code = evmc_status_code::EVMC_SUCCESS}}};
 
@@ -165,7 +165,7 @@ static const basic_test_case RIPEMD160_TEST_CASES[] = {
     {.name = "ripemd160_message_enough_gas",
      .input =
          {.gas = 721,
-          .input_data = reinterpret_cast<const uint8_t *>("lol"),
+          .input_data = reinterpret_cast<uint8_t const *>("lol"),
           .input_size = 3},
      .expected_output =
          {.status_code = evmc_status_code::EVMC_SUCCESS,
@@ -175,7 +175,7 @@ static const basic_test_case RIPEMD160_TEST_CASES[] = {
     {.name = "ripemd160_message_insufficient_gas",
      .input =
          {.gas = 619,
-          .input_data = reinterpret_cast<const uint8_t *>("lol"),
+          .input_data = reinterpret_cast<uint8_t const *>("lol"),
           .input_size = 3},
      .expected_output = {.status_code = evmc_status_code::EVMC_OUT_OF_GAS}}};
 
@@ -192,23 +192,23 @@ static const basic_test_case IDENTITY_TEST_CASES[] = {
     {.name = "identity_nonempty_enough_gas",
      .input =
          {.gas = 19,
-          .input_data = reinterpret_cast<const uint8_t *>("dead"),
+          .input_data = reinterpret_cast<uint8_t const *>("dead"),
           .input_size = 4},
      .expected_output =
          {.status_code = evmc_status_code::EVMC_SUCCESS,
           .gas_left = 1,
-          .output_data = reinterpret_cast<const uint8_t *>("dead"),
+          .output_data = reinterpret_cast<uint8_t const *>("dead"),
           .output_size = 4}},
     {.name = "identity_nonempty_insufficient_gas",
      .input =
          {.gas = 17,
-          .input_data = reinterpret_cast<const uint8_t *>("dead"),
+          .input_data = reinterpret_cast<uint8_t const *>("dead"),
           .input_size = 4},
      .expected_output = {.status_code = evmc_status_code::EVMC_OUT_OF_GAS}}};
 
 template <typename Precompile>
 void do_basic_tests(
-    const char *suite_name, const basic_test_case *basic_test_cases,
+    char const *suite_name, basic_test_case const *basic_test_cases,
     size_t num_basic_test_cases)
 {
     for (size_t i = 0; i < num_basic_test_cases; i++) {
@@ -310,16 +310,16 @@ TEST(SpuriousDragonThroughByzantium, identity_empty_enough_gas)
 
 struct test_case
 {
-    const char *input;
-    const char *expected;
-    const char *name;
+    char const *input;
+    char const *expected;
+    char const *name;
     int64_t gas;
 };
 
 // it was annoying to deduce the size of the array  :(
 template <typename Precompile>
 void do_geth_tests(
-    const char *suite_name, const std::vector<test_case> &test_cases)
+    char const *suite_name, std::vector<test_case> const &test_cases)
 {
     for (auto const test_case : test_cases) {
         auto const input_bytes =
@@ -869,7 +869,7 @@ TEST(Istanbul, modular_exponentiation)
 }
 
 template <typename Callable>
-auto transform_test_cases(const std::vector<test_case> &source, Callable &&f)
+auto transform_test_cases(std::vector<test_case> const &source, Callable &&f)
 {
     auto res = source;
     for (auto &test_case : res) {

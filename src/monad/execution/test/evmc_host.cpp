@@ -17,8 +17,8 @@ template <concepts::fork_traits<fake::State::ChangeSet> TTraits>
 using traits_templated_evmc_host_t = EvmcHost<
     fake::State::ChangeSet, TTraits,
     fake::Evm<
-        fake::State::ChangeSet, TTraits, fake::static_precompiles::OneHundredGas,
-        fake::Interpreter>>;
+        fake::State::ChangeSet, TTraits,
+        fake::static_precompiles::OneHundredGas, fake::Interpreter>>;
 
 using evmc_host_t = traits_templated_evmc_host_t<traits_t>;
 
@@ -53,9 +53,9 @@ bool operator==(evmc_tx_context const &lhs, evmc_tx_context const &rhs)
 
 TEST(EvmcHost, get_tx_context)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
-    constexpr static auto bene{
+    static constexpr auto bene{
         0xbebebebebebebebebebebebebebebebebebebebe_address};
     BlockHeader b{
         .mix_hash =
@@ -70,13 +70,13 @@ TEST(EvmcHost, get_tx_context)
     Transaction const t{.sc = {.chain_id = 1}, .from = from};
     fake::State::ChangeSet s{};
 
-    const static uint256_t gas_cost = 37'000'000'000;
-    const static uint256_t chain_id{1};
-    const static uint256_t base_fee_per_gas{37'000'000'000};
+    static const uint256_t gas_cost = 37'000'000'000;
+    static const uint256_t chain_id{1};
+    static const uint256_t base_fee_per_gas{37'000'000'000};
 
     evmc_host_t host{b, t, s};
 
-    const auto result = host.get_tx_context();
+    auto const result = host.get_tx_context();
     evmc_tx_context ctx{
         .tx_origin = *t.from,
         .block_coinbase = bene,
@@ -91,7 +91,7 @@ TEST(EvmcHost, get_tx_context)
     EXPECT_EQ(result, ctx);
 
     b.difficulty = 0;
-    const auto pos_result = host.get_tx_context();
+    auto const pos_result = host.get_tx_context();
     std::memcpy(
         ctx.block_prev_randao.bytes, b.mix_hash.bytes, sizeof(b.mix_hash));
     EXPECT_EQ(pos_result, ctx);
@@ -99,13 +99,13 @@ TEST(EvmcHost, get_tx_context)
 
 TEST(EvmcHost, emit_log)
 {
-    constexpr static auto from{
+    static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
-    constexpr static auto topic0{
+    static constexpr auto topic0{
         0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32};
-    constexpr static auto topic1{
+    static constexpr auto topic1{
         0x0000000000000000000000000000000000000000000000000000000000000007_bytes32};
-    constexpr static bytes32_t topics[] = {topic0, topic1};
+    static constexpr bytes32_t topics[] = {topic0, topic1};
     static const byte_string data = {0x00, 0x01, 0x02, 0x03, 0x04};
     BlockHeader const b{};
     Transaction const t{};
@@ -120,7 +120,7 @@ TEST(EvmcHost, emit_log)
         topics,
         sizeof(topics) / sizeof(bytes32_t));
 
-    const auto logs = s.logs();
+    auto const logs = s.logs();
     EXPECT_EQ(logs.size(), 1);
     EXPECT_EQ(logs[0].address, from);
     EXPECT_EQ(logs[0].data, data);

@@ -21,15 +21,13 @@ struct InnerStorage
 
     std::unordered_map<address_t, key_value_map_t> storage_{};
 
-    bool
-    contains_key(address_t const &a, bytes32_t const &key) const noexcept
+    bool contains_key(address_t const &a, bytes32_t const &key) const noexcept
     {
         return storage_.contains(a) && storage_.at(a).contains(key);
     }
 
     void clear() { storage_.clear(); }
 };
-
 
 template <class TValueDB>
 struct ValueState
@@ -168,11 +166,12 @@ struct ValueState<TValueDB>::ChangeSet : public ValueState<TValueDB>
         }
 
         if (touched_.contains_key(a, key)) {
-            if (touched_.storage_.at(a).at(key).updated != bytes32_t{}) {
-                touched_.storage_.at(a).at(key).updated = bytes32_t{};
-                return EVMC_STORAGE_ADDED_DELETED;
-            }
-            return EVMC_STORAGE_ASSIGNED;
+            MONAD_DEBUG_ASSERT(
+                touched_.storage_.at(a).at(key).orig == bytes32_t{});
+            MONAD_DEBUG_ASSERT(
+                touched_.storage_.at(a).at(key).updated != bytes32_t{});
+            remove_touched_key(a, key);
+            return EVMC_STORAGE_ADDED_DELETED;
         }
         return EVMC_STORAGE_ASSIGNED;
     }

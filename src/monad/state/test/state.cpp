@@ -470,6 +470,27 @@ TYPED_TEST(TrieDBTest, commit_storage_and_account_together_regression)
     t.commit();
 }
 
+TYPED_TEST(TrieDBTest, set_and_then_clear_storage_in_same_commit)
+{
+    using namespace intx;
+    auto db = test::make_db<TypeParam>();
+    AccountState accounts{db};
+    ValueState values{db};
+    code_db_t code_db{};
+    CodeState code{code_db};
+    State t{accounts, values, code, block_cache, db};
+
+    auto changeset = t.get_new_changeset(0u);
+    using namespace intx;
+    changeset.create_account(a);
+    EXPECT_EQ(changeset.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
+    EXPECT_EQ(changeset.set_storage(a, key1, null), EVMC_STORAGE_ADDED_DELETED);
+    t.merge_changes(changeset);
+    t.commit();
+
+    EXPECT_EQ(db.try_find(a, key1), monad::bytes32_t{});
+}
+
 TYPED_TEST(StateTest, commit_twice)
 {
     auto db = test::make_db<TypeParam>();

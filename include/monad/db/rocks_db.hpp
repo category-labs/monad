@@ -15,6 +15,7 @@
 #include <rocksdb/db.h>
 
 #include <filesystem>
+#include <type_traits>
 
 MONAD_DB_NAMESPACE_BEGIN
 
@@ -30,16 +31,23 @@ namespace detail
     }
 
     // Database impl without trie root generating logic, backed by rocksdb
-    template <typename TExecutor>
-    struct RocksDB : public DBInterface<RocksDB<TExecutor>, TExecutor>
+    template <typename TExecutor, Permission TPermission>
+    struct RocksDB
+        : public DBInterface<
+              RocksDB<TExecutor, TPermission>, TExecutor, TPermission>
     {
-        using DBInterface<RocksDB<TExecutor>, TExecutor>::updates;
-
         rocksdb::Options options;
         std::vector<rocksdb::ColumnFamilyDescriptor> cfds;
         std::vector<rocksdb::ColumnFamilyHandle *> cfs;
         std::shared_ptr<rocksdb::DB> db;
-        rocksdb::WriteBatch batch;
+
+        // batch occupies no space if we are in read only
+        struct Empty
+        {
+        };
+        [[no_unique_address]] std::conditional_t<
+            Writable<TPermission>, rocksdb::WriteBatch, Empty>
+            batch;
 
         explicit RocksDB(std::filesystem::path name)
             : options([]() {
@@ -60,10 +68,18 @@ namespace detail
             , db([&]() {
                 rocksdb::DB *db = nullptr;
 
-                rocksdb::Status const s =
-                    rocksdb::DB::Open(options, name, cfds, &cfs, &db);
+                auto const status = [&]() {
+                    if constexpr (Writable<TPermission>) {
+                        return rocksdb::DB::Open(
+                            options, name, cfds, &cfs, &db);
+                    }
+                    else {
+                        return rocksdb::DB::OpenForReadOnly(
+                            options, name, cfds, &cfs, &db);
+                    }
+                }();
 
-                MONAD_ROCKS_ASSERT(s);
+                MONAD_ROCKS_ASSERT(status);
                 MONAD_ASSERT(cfds.size() == cfs.size());
 
                 return db;
@@ -91,19 +107,12 @@ namespace detail
         [[nodiscard]] constexpr auto *accounts_cf() { return cfs[1]; }
         [[nodiscard]] constexpr auto *storage_cf() { return cfs[2]; }
 
-        void commit_db()
-        {
-            rocksdb::WriteOptions options;
-            options.disableWAL = true;
-            db->Write(options, &batch);
-            batch.Clear();
-        }
-
         ////////////////////////////////////////////////////////////////////
         // DBInterface implementations
         ////////////////////////////////////////////////////////////////////
 
         [[nodiscard]] bool contains_impl(address_t const &a)
+            requires Readable<TPermission>
         {
             rocksdb::PinnableSlice value;
             auto const res = db->Get(
@@ -113,6 +122,7 @@ namespace detail
         }
 
         [[nodiscard]] bool contains_impl(address_t const &a, bytes32_t const &k)
+            requires Readable<TPermission>
         {
             auto const key = detail::make_basic_storage_key(a, k);
             rocksdb::PinnableSlice value;
@@ -123,6 +133,7 @@ namespace detail
         }
 
         [[nodiscard]] std::optional<Account> try_find_impl(address_t const &a)
+            requires Readable<TPermission>
         {
             rocksdb::PinnableSlice value;
             auto const res = db->Get(
@@ -146,6 +157,7 @@ namespace detail
 
         [[nodiscard]] std::optional<bytes32_t>
         try_find_impl(address_t const &a, bytes32_t const &k)
+            requires Readable<TPermission>
         {
             auto const key = detail::make_basic_storage_key(a, k);
             rocksdb::PinnableSlice value;
@@ -162,6 +174,7 @@ namespace detail
         }
 
         void commit(state::changeset auto const &obj)
+            requires Writable<TPermission>
         {
             for (auto const &[a, updates] : obj.storage_changes) {
                 for (auto const &[k, v] : updates) {
@@ -194,17 +207,24 @@ namespace detail
                 }
             }
 
-            commit_db();
+            rocksdb::WriteOptions options;
+            options.disableWAL = true;
+            db->Write(options, &batch);
+            batch.Clear();
         }
 
         constexpr void
         create_and_prune_block_history(uint64_t /* block_number */) const
+            requires Writable<TPermission>
         {
             // implement this if support for block history is needed here
         }
     };
 }
 
-using RocksDB = detail::RocksDB<monad::execution::BoostFiberExecution>;
+using RocksDB =
+    detail::RocksDB<monad::execution::BoostFiberExecution, ReadWrite>;
+using ReadOnlyRocksDB =
+    detail::RocksDB<monad::execution::BoostFiberExecution, ReadOnly>;
 
 MONAD_DB_NAMESPACE_END

@@ -16,15 +16,23 @@
 
 MONAD_DB_NAMESPACE_BEGIN
 
-template <typename TTrieDBImpl, typename TExecutor>
+template <typename TTrieDBImpl, typename TExecutor, Permission TPermission>
 struct TrieDBInterface
-    : public DBInterface<TrieDBInterface<TTrieDBImpl, TExecutor>, TExecutor>
+    : public DBInterface<
+          TrieDBInterface<TTrieDBImpl, TExecutor, TPermission>, TExecutor,
+          TPermission>
 {
-    using base_t =
-        DBInterface<TrieDBInterface<TTrieDBImpl, TExecutor>, TExecutor>;
+    using base_t = DBInterface<
+        TrieDBInterface<TTrieDBImpl, TExecutor, TPermission>, TExecutor,
+        TPermission>;
 
-    std::vector<trie::Update> account_trie_updates;
-    std::vector<trie::Update> storage_trie_updates;
+    struct Empty
+    {
+    };
+    using updates_t = std::conditional_t<
+        Writable<TPermission>, std::vector<trie::Update>, Empty>;
+    [[no_unique_address]] updates_t account_trie_updates;
+    [[no_unique_address]] updates_t storage_trie_updates;
 
     decltype(monad::log::logger_t::get_logger()) logger =
         monad::log::logger_t::get_logger("trie_db_logger");
@@ -59,18 +67,20 @@ struct TrieDBInterface
     ////////////////////////////////////////////////////////////////////
 
     [[nodiscard]] constexpr bool contains_impl(address_t const &a)
+        requires Readable<TPermission>
     {
         return find(a).has_value();
     }
 
     [[nodiscard]] constexpr bool
     contains_impl(address_t const &a, bytes32_t const &k)
+        requires Readable<TPermission>
     {
         return find(a, k).has_value();
-        ;
     }
 
     [[nodiscard]] std::optional<Account> try_find_impl(address_t const &a)
+        requires Readable<TPermission>
     {
         auto const c = find(a);
         if (!c.has_value()) {
@@ -97,6 +107,7 @@ struct TrieDBInterface
 
     [[nodiscard]] std::optional<bytes32_t>
     try_find_impl(address_t const &a, bytes32_t const &k)
+        requires Readable<TPermission>
     {
         auto const c = find(a, k);
         if (!c.has_value()) {
@@ -135,11 +146,13 @@ struct TrieDBInterface
     ////////////////////////////////////////////////////////////////////
 
     [[nodiscard]] constexpr bytes32_t root_hash() const
+        requires Readable<TPermission>
     {
         return accounts().trie.root_hash();
     }
 
     [[nodiscard]] constexpr bytes32_t root_hash(address_t a)
+        requires Readable<TPermission>
     {
         storage().trie.set_trie_prefix(a);
         return storage().trie.root_hash();
@@ -150,6 +163,7 @@ struct TrieDBInterface
     ////////////////////////////////////////////////////////////////////
 
     void commit(state::changeset auto const &obj)
+        requires Writable<TPermission>
     {
         std::unordered_map<address_t, bytes32_t> updated_storage_roots;
         account_trie_updates.clear();
@@ -255,6 +269,7 @@ struct TrieDBInterface
     ////////////////////////////////////////////////////////////////////
 
     [[nodiscard]] constexpr auto find(address_t const &a) const
+        requires Readable<TPermission>
     {
         // TODO: make this return the keccak so that it can be just passed in
         // to avoid double keccaking?
@@ -281,6 +296,7 @@ struct TrieDBInterface
 
     [[nodiscard]] constexpr auto
     find(address_t const &a, bytes32_t const &k) const
+        requires Readable<TPermission>
     {
         auto lc = storage().make_leaf_cursor();
 

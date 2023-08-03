@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/core/byte_string.hpp>
+#include <monad/db/concepts.hpp>
 #include <monad/db/config.hpp>
 #include <monad/execution/config.hpp>
 
@@ -14,18 +15,23 @@ MONAD_DB_NAMESPACE_BEGIN
 
 namespace detail
 {
-    template <typename TExecution>
+    template <typename TExecution, Permission TPermission>
     struct RocksTrieDB;
 
     constexpr std::string_view CURRENT_DATABASE = "CURRENT";
 };
-using RocksTrieDB = detail::RocksTrieDB<monad::execution::BoostFiberExecution>;
+using RocksTrieDB =
+    detail::RocksTrieDB<monad::execution::BoostFiberExecution, ReadWrite>;
+using ReadOnlyRocksTrieDB =
+    detail::RocksTrieDB<monad::execution::BoostFiberExecution, ReadOnly>;
 
 template <typename TDB>
 [[nodiscard]] constexpr std::string_view as_string() noexcept
 {
     using namespace std::literals::string_view_literals;
-    if constexpr (std::same_as<TDB, db::RocksTrieDB>) {
+    if constexpr (
+        std::same_as<TDB, db::RocksTrieDB> ||
+        std::same_as<TDB, db::ReadOnlyRocksTrieDB>) {
         return "rockstriedb"sv;
     }
 }

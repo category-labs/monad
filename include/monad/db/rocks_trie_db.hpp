@@ -21,11 +21,13 @@ MONAD_DB_NAMESPACE_BEGIN
 namespace detail
 {
     // Database impl with trie root generating logic, backed by rocksdb
-    template <typename TExecutor>
+    template <typename TExecutor, Permission TPermission>
     struct RocksTrieDB
-        : public TrieDBInterface<RocksTrieDB<TExecutor>, TExecutor>
+        : public TrieDBInterface<
+              RocksTrieDB<TExecutor, TPermission>, TExecutor, TPermission>
     {
-        using base_t = TrieDBInterface<RocksTrieDB<TExecutor>, TExecutor>;
+        using this_t = RocksTrieDB<TExecutor, TPermission>;
+        using base_t = TrieDBInterface<this_t, TExecutor, TPermission>;
 
         struct Trie
         {
@@ -68,7 +70,7 @@ namespace detail
         };
 
         std::filesystem::path const root;
-        uint64_t const block_history_size;
+
         uint64_t const starting_block_number;
         rocksdb::Options options;
         trie::PathComparator accounts_comparator;
@@ -79,11 +81,25 @@ namespace detail
         Trie accounts_trie;
         Trie storage_trie;
 
+        struct Empty
+        {
+        };
+        using block_history_size_t =
+            std::conditional_t<Writable<TPermission>, uint64_t, Empty>;
+        [[no_unique_address]] block_history_size_t const block_history_size;
+
+        // Read-only constructor
+        RocksTrieDB(
+            std::filesystem::path root, uint64_t const starting_block_number)
+            requires(!Writable<TPermission>)
+            : RocksTrieDB(root, starting_block_number, Empty{})
+        {
+        }
+
         RocksTrieDB(
             std::filesystem::path root, uint64_t const starting_block_number,
-            uint64_t block_history_size)
+            block_history_size_t block_history_size)
             : root(root)
-            , block_history_size(block_history_size)
             , starting_block_number(starting_block_number)
             , options([]() {
                 rocksdb::Options ret;
@@ -112,24 +128,49 @@ namespace detail
             , db([&]() {
                 rocksdb::DB *db = nullptr;
 
-                auto const path = prepare_state(*this, block_number);
+                auto const path = [&]() {
+                    if constexpr (Writable<TPermission>) {
+                        return prepare_state<
+                            RocksTrieDB,
+                            TExecutor,
+                            TPermission>(root, starting_block_number);
+                    }
+                    else {
+                        // in read only mode, starting_block_number needs to be
+                        // greater than 0 such that we read a valid checkpoint
+                        MONAD_ASSERT(starting_block_number);
+                        return find_starting_checkpoint<this_t>(
+                            root, starting_block_number);
+                    }
+                }();
                 if (!path.has_value()) {
                     throw std::runtime_error(path.error());
                 }
-                rocksdb::Status const s =
-                    rocksdb::DB::Open(options, path.value(), cfds, &cfs, &db);
 
-                MONAD_ROCKS_ASSERT(s);
+                auto const status = [&]() {
+                    if constexpr (Writable<TPermission>) {
+                        return rocksdb::DB::Open(
+                            options, path.value(), cfds, &cfs, &db);
+                    }
+                    else {
+                        return rocksdb::DB::OpenForReadOnly(
+                            options, path.value(), cfds, &cfs, &db);
+                    }
+                }();
+
+                MONAD_ROCKS_ASSERT(status);
                 MONAD_ASSERT(cfds.size() == cfs.size());
 
                 return db;
             }())
             , accounts_trie(db, cfs[1], cfs[2])
             , storage_trie(db, cfs[3], cfs[4])
+            , block_history_size(block_history_size)
         {
         }
 
         RocksTrieDB(std::filesystem::path root, uint64_t block_history_size)
+            requires Writable<TPermission>
             : RocksTrieDB(
                   root, auto_detect_start_block_number(root),
                   block_history_size)
@@ -151,18 +192,12 @@ namespace detail
             MONAD_ROCKS_ASSERT(res);
         }
 
-        // TODO: Temporary function to get start_block_number, need to be fixed
-        // once we integrate block number into database
-        [[nodiscard]] constexpr uint64_t block_number() const noexcept
-        {
-            return start_block_number;
-        }
-
         ////////////////////////////////////////////////////////////////////
         // DBInterface implementations
         ////////////////////////////////////////////////////////////////////
 
         void create_and_prune_block_history(uint64_t block_number)
+            requires Writable<TPermission>
         {
             auto const s = ::monad::db::create_and_prune_block_history(
                 *this, block_number);
@@ -183,6 +218,7 @@ namespace detail
         }
 
         void commit(state::changeset auto const &obj)
+            requires Writable<TPermission>
         {
             base_t::commit(obj);
             accounts_trie.reset_cursor();
@@ -200,6 +236,9 @@ namespace detail
     };
 };
 
-using RocksTrieDB = detail::RocksTrieDB<monad::execution::BoostFiberExecution>;
+using RocksTrieDB =
+    detail::RocksTrieDB<monad::execution::BoostFiberExecution, ReadWrite>;
+using ReadOnlyRocksTrieDB =
+    detail::RocksTrieDB<monad::execution::BoostFiberExecution, ReadOnly>;
 
 MONAD_DB_NAMESPACE_END

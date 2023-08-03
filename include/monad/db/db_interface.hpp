@@ -4,21 +4,15 @@
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/bytes.hpp>
+#include <monad/db/concepts.hpp>
 #include <monad/db/config.hpp>
 #include <monad/state/concepts.hpp>
 
 MONAD_DB_NAMESPACE_BEGIN
 
-template <typename TDBImpl, typename TExecutor>
+template <typename TDBImpl, typename TExecutor, Permission TPermission>
 struct DBInterface
 {
-    struct Updates
-    {
-        std::unordered_map<address_t, std::optional<Account>> accounts;
-        std::unordered_map<address_t, std::unordered_map<bytes32_t, bytes32_t>>
-            storage;
-    } updates{};
-
     [[nodiscard]] constexpr TDBImpl &self() noexcept
     {
         return static_cast<TDBImpl &>(*this);
@@ -33,18 +27,21 @@ struct DBInterface
     ////////////////////////////////////////////////////////////////////
 
     [[nodiscard]] constexpr std::optional<Account> try_find(address_t const &a)
+        requires Readable<TPermission>
     {
         return TExecutor::execute(
             [=, this]() { return self().try_find_impl(a); });
     }
 
     [[nodiscard]] constexpr bool contains(address_t const &a)
+        requires Readable<TPermission>
     {
         return TExecutor::execute(
             [=, this]() { return self().contains_impl(a); });
     }
 
     [[nodiscard]] constexpr Account at(address_t const &a)
+        requires Readable<TPermission>
     {
         auto const ret = try_find(a);
         MONAD_ASSERT(ret);
@@ -53,6 +50,7 @@ struct DBInterface
 
     [[nodiscard]] constexpr std::optional<bytes32_t>
     try_find(address_t const &a, bytes32_t const &k)
+        requires Readable<TPermission>
     {
         return TExecutor::execute(
             [=, this]() { return self().try_find_impl(a, k); });
@@ -60,12 +58,14 @@ struct DBInterface
 
     [[nodiscard]] constexpr bool
     contains(address_t const &a, bytes32_t const &k)
+        requires Readable<TPermission>
     {
         return TExecutor::execute(
             [=, this]() { return self().contains_impl(a, k); });
     }
 
     [[nodiscard]] constexpr bytes32_t at(address_t const &a, bytes32_t const &k)
+        requires Readable<TPermission>
     {
         auto const ret = try_find(a, k);
         MONAD_ASSERT(ret);
@@ -77,11 +77,13 @@ struct DBInterface
     ////////////////////////////////////////////////////////////////////
 
     constexpr void commit(state::changeset auto const &obj)
+        requires Writable<TPermission>
     {
         self().commit(obj);
     }
 
     constexpr void create_and_prune_block_history(uint64_t block_number) const
+        requires Writable<TPermission>
     {
         self().create_and_prune_block_history(block_number);
     }

@@ -341,3 +341,71 @@ TEST(RocksTrieDB, block_history_pruning)
         }(),
         std::runtime_error);
 }
+
+// TODO: merge this with the RocksTrieDB if we ever add block history support to
+// RocksDB
+TEST(RocksDB, ReadOnly)
+{
+    auto const root = test::make_db_root(
+        *testing::UnitTest::GetInstance()->current_test_info());
+    Account const acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
+
+    {
+        auto db = RocksDB{root};
+        db.commit(state::StateChanges{
+            .account_changes = {{a, acct}},
+            .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
+    }
+
+    {
+        auto db = ReadOnlyRocksDB{root};
+        EXPECT_TRUE(db.contains(a));
+        EXPECT_EQ(db.try_find(a), acct);
+        EXPECT_EQ(db.at(a), acct);
+
+        EXPECT_TRUE(db.contains(a, key1));
+        EXPECT_EQ(db.try_find(a, key1), value1);
+        EXPECT_EQ(db.at(a, key1), value1);
+
+        EXPECT_TRUE(db.contains(a, key2));
+        EXPECT_EQ(db.try_find(a, key2), value2);
+        EXPECT_EQ(db.at(a, key2), value2);
+    }
+};
+
+TEST(RocksTrieDB, ReadOnly)
+{
+    auto const root = test::make_db_root(
+        *testing::UnitTest::GetInstance()->current_test_info());
+    Account const acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
+
+    {
+        auto db = RocksTrieDB{root, 1};
+        db.commit(state::StateChanges{
+            .account_changes = {{a, acct}},
+            .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
+        db.create_and_prune_block_history(0);
+    }
+
+    {
+        auto db = ReadOnlyRocksTrieDB{root, 1};
+        EXPECT_TRUE(db.contains(a));
+        EXPECT_EQ(db.try_find(a), acct);
+        EXPECT_EQ(db.at(a), acct);
+
+        EXPECT_TRUE(db.contains(a, key1));
+        EXPECT_EQ(db.try_find(a, key1), value1);
+        EXPECT_EQ(db.at(a, key1), value1);
+
+        EXPECT_TRUE(db.contains(a, key2));
+        EXPECT_EQ(db.try_find(a, key2), value2);
+        EXPECT_EQ(db.at(a, key2), value2);
+
+        EXPECT_EQ(
+            db.root_hash(a),
+            0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
+        EXPECT_EQ(
+            db.root_hash(),
+            0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+    }
+};

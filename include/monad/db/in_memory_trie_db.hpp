@@ -12,9 +12,10 @@ MONAD_DB_NAMESPACE_BEGIN
 namespace detail
 {
     // Database impl with trie root generating logic, backed by stl
-    template <typename TExecutor>
+    template <typename TExecutor, Permission TPermission>
     struct InMemoryTrieDB
-        : public TrieDBInterface<InMemoryTrieDB<TExecutor>, TExecutor>
+        : public TrieDBInterface<
+              InMemoryTrieDB<TExecutor, TPermission>, TExecutor, TPermission>
     {
         template <typename TComparator>
         struct Trie
@@ -60,6 +61,7 @@ namespace detail
         ////////////////////////////////////////////////////////////////////
         constexpr void
         create_and_prune_block_history(uint64_t /* block_number */) const
+            requires Writable<TPermission>
         {
         }
 
@@ -75,6 +77,6 @@ namespace detail
 }
 
 using InMemoryTrieDB =
-    detail::InMemoryTrieDB<monad::execution::SerialExecution>;
+    detail::InMemoryTrieDB<monad::execution::SerialExecution, ReadWrite>;
 
 MONAD_DB_NAMESPACE_END

@@ -9,10 +9,13 @@ MONAD_DB_NAMESPACE_BEGIN
 namespace detail
 {
     // Database impl without trie root generating logic, backed by stl
-    template <typename TExecutor>
-    struct InMemoryDB : public DBInterface<InMemoryDB<TExecutor>, TExecutor>
+    template <typename TExecutor, Permission TPermission>
+    struct InMemoryDB
+        : public DBInterface<
+              InMemoryDB<TExecutor, TPermission>, TExecutor, TPermission>
     {
-        using base_t = DBInterface<InMemoryDB<TExecutor>, TExecutor>;
+        using base_t = DBInterface<
+            InMemoryDB<TExecutor, TPermission>, TExecutor, TPermission>;
 
         std::unordered_map<address_t, Account> accounts;
         std::unordered_map<address_t, std::unordered_map<bytes32_t, bytes32_t>>
@@ -23,16 +26,19 @@ namespace detail
         ////////////////////////////////////////////////////////////////////
 
         [[nodiscard]] bool contains_impl(address_t const &a)
+            requires Readable<TPermission>
         {
             return accounts.contains(a);
         }
 
         [[nodiscard]] bool contains_impl(address_t const &a, bytes32_t const &k)
+            requires Readable<TPermission>
         {
             return storage.contains(a) && storage.at(a).contains(k);
         }
 
         [[nodiscard]] std::optional<Account> try_find_impl(address_t const &a)
+            requires Readable<TPermission>
         {
             if (accounts.contains(a)) {
                 return accounts.at(a);
@@ -42,6 +48,7 @@ namespace detail
 
         [[nodiscard]] std::optional<bytes32_t>
         try_find_impl(address_t const &a, bytes32_t const &k)
+            requires Readable<TPermission>
         {
             if (!base_t::contains(a, k)) {
                 return std::nullopt;
@@ -50,6 +57,7 @@ namespace detail
         }
 
         void commit(state::changeset auto const &obj)
+            requires Writable<TPermission>
         {
             for (auto const &[a, updates] : obj.storage_changes) {
                 for (auto const &[k, v] : updates) {
@@ -79,11 +87,13 @@ namespace detail
 
         constexpr void
         create_and_prune_block_history(uint64_t /* block_number */) const
+            requires Writable<TPermission>
         {
         }
     };
 }
 
-using InMemoryDB = detail::InMemoryDB<monad::execution::SerialExecution>;
+using InMemoryDB =
+    detail::InMemoryDB<monad::execution::SerialExecution, ReadWrite>;
 
 MONAD_DB_NAMESPACE_END

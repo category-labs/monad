@@ -1,5 +1,6 @@
 #pragma once
 
+#include <monad/db/concepts.hpp>
 #include <monad/db/config.hpp>
 #include <monad/db/in_memory_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
@@ -21,10 +22,10 @@ namespace hijacked
         }
     };
 
-    using InMemoryDB = monad::db::detail::InMemoryDB<Executor>;
-    using RocksDB = monad::db::detail::RocksDB<Executor>;
-    using InMemoryTrieDB = monad::db::detail::InMemoryTrieDB<Executor>;
-    using RocksTrieDB = monad::db::detail::RocksTrieDB<Executor>;
+    using InMemoryDB = db::detail::InMemoryDB<Executor, db::ReadWrite>;
+    using RocksDB = db::detail::RocksDB<Executor, db::ReadWrite>;
+    using InMemoryTrieDB = db::detail::InMemoryTrieDB<Executor, db::ReadWrite>;
+    using RocksTrieDB = db::detail::RocksTrieDB<Executor, db::ReadWrite>;
 }
 
 MONAD_TEST_NAMESPACE_END

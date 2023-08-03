@@ -13,7 +13,7 @@ MONAD_LOG_NAMESPACE_BEGIN
 
 struct QuillLogger
 {
-    static void start() { quill::start(); }
+    static void start() { quill::start(true); }
 
     [[nodiscard]] static quill::Logger *
     get_logger(char const *logger_name = nullptr)

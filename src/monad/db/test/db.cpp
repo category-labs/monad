@@ -24,8 +24,6 @@ concept Trie = requires(T a)
 
 static constexpr auto a = 0x5353535353535353535353535353535353535353_address;
 static constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
-static constexpr auto hash1 =
-    0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
 static constexpr auto key1 =
     0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
 static constexpr auto key2 =
@@ -34,6 +32,12 @@ static constexpr auto value1 =
     0x0000000000000013370000000000000000000000000000000000000000000003_bytes32;
 static constexpr auto value2 =
     0x0000000000000000000000000000000000000000000000000000000000000007_bytes32;
+static constexpr auto code1 = byte_string{0xab, 0xcd, 0xef};
+static constexpr auto code2 = byte_string{0xbb, 0xbb, 0xbb};
+static constexpr auto code_hash1 =
+    0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
+static constexpr auto code_hash2 =
+    0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1bbbbbbbbb_bytes32;
 
 template <typename TDB>
 struct DBTest : public testing::Test
@@ -81,10 +85,11 @@ TYPED_TEST(HijackedExecutionDBTest, executor)
     auto db = test::make_db<TypeParam>();
     EXPECT_FALSE(test::hijacked::Executor::EXECUTED);
 
-    Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
+    Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
     db.commit(state::StateChanges{
         .account_changes = {{a, acct}},
-        .storage_changes = {{a, {{key1, value1}}}}});
+        .storage_changes = {{a, {{key1, value1}}}},
+        .code_changes = {{code_hash1, code1}}});
 
     test::hijacked::Executor::EXECUTED = false;
     (void)db.try_find(a);
@@ -109,12 +114,24 @@ TYPED_TEST(HijackedExecutionDBTest, executor)
     test::hijacked::Executor::EXECUTED = false;
     (void)db.contains(a, key1);
     EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
+
+    test::hijacked::Executor::EXECUTED = false;
+    (void)db.try_find(code_hash1);
+    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
+
+    test::hijacked::Executor::EXECUTED = false;
+    (void)db.at(code_hash1);
+    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
+
+    test::hijacked::Executor::EXECUTED = false;
+    (void)db.contains(code_hash1);
+    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
 }
 
 TYPED_TEST(DBTest, storage_creation)
 {
     auto db = test::make_db<TypeParam>();
-    Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
+    Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
     db.commit(state::StateChanges{
         .account_changes = {{a, acct}},
         .storage_changes = {{a, {{key1, value1}}}}});
@@ -132,13 +149,14 @@ TYPED_TEST(DBTest, storage_creation)
     EXPECT_EQ(db.at(b, key1), value1);
 }
 
-TYPED_TEST(DBTest, try_find)
+TYPED_TEST(DBTest, storage_try_find)
 {
     auto db = test::make_db<TypeParam>();
     Account acct{.nonce = 1};
     db.commit(state::StateChanges{
         .account_changes = {{a, acct}},
-        .storage_changes = {{a, {{key1, value1}}}}});
+        .storage_changes = {{a, {{key1, value1}}}},
+    });
 
     // Existing key
     EXPECT_TRUE(db.contains(a, key1));
@@ -153,10 +171,47 @@ TYPED_TEST(DBTest, try_find)
     EXPECT_EQ(db.try_find(b, key1), bytes32_t{});
 }
 
+TYPED_TEST(DBTest, code_creation)
+{
+    auto db = test::make_db<TypeParam>();
+    Account acct_a{.balance = 1, .code_hash = code_hash1, .nonce = 1};
+    db.commit(state::StateChanges{
+        .account_changes = {{a, acct_a}},
+        .storage_changes = {},
+        .code_changes = {{code_hash1, code1}},
+    });
+
+    EXPECT_TRUE(db.contains(code_hash1));
+    EXPECT_EQ(db.at(code_hash1), code1);
+
+    Account acct_b{.balance = 0, .code_hash = code_hash2, .nonce = 1};
+    db.commit(state::StateChanges{
+        .account_changes = {{b, acct_b}},
+        .storage_changes = {},
+        .code_changes = {{code_hash2, code2}}});
+
+    EXPECT_TRUE(db.contains(code_hash2));
+    EXPECT_EQ(db.at(code_hash2), code2);
+}
+
+TYPED_TEST(DBTest, code_try_find)
+{
+    auto db = test::make_db<TypeParam>();
+    Account acct_a{.balance = 1, .code_hash = code_hash1, .nonce = 1};
+    db.commit(state::StateChanges{
+        .account_changes = {{a, acct_a}},
+        .storage_changes = {},
+        .code_changes = {{code_hash1, code1}},
+    });
+
+    EXPECT_TRUE(db.contains(code_hash1));
+    EXPECT_EQ(db.try_find(code_hash1), code1);
+}
+
 TEST(InMemoryTrieDB, account_creation)
 {
     auto db = test::make_db<InMemoryTrieDB>();
-    Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
+    Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
     db.commit(state::StateChanges{
         .account_changes = {{a, acct}}, .storage_changes = {}});
 
@@ -170,7 +225,7 @@ TEST(InMemoryTrieDB, account_creation)
 TEST(InMemoryTrieDB, erase)
 {
     auto db = test::make_db<InMemoryTrieDB>();
-    Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
+    Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
     db.commit(state::StateChanges{
         .account_changes = {{a, acct}},
         .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
@@ -201,7 +256,7 @@ TEST(InMemoryTrieDB, erase)
 TYPED_TEST(TrieDBTest, ModifyStorageOfAccount)
 {
     auto db = test::make_db<TypeParam>();
-    Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
+    Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
     db.commit(state::StateChanges{
         .account_changes = {{a, acct}},
         .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
@@ -220,11 +275,14 @@ TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)
     auto block_number = 0ull;
     auto const root = test::make_db_root(
         *testing::UnitTest::GetInstance()->current_test_info());
-    Account const acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
+    Account const acct{
+        .balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
 
     {
         auto db = TypeParam{root, block_number, BLOCK_HISTORY};
 
+        Account acct{
+            .balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
         db.commit(state::StateChanges{
             .account_changes = {{a, acct}},
             .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
@@ -319,11 +377,14 @@ TYPED_TEST(
     auto block_number = 0ull;
     auto const root = test::make_db_root(
         *testing::UnitTest::GetInstance()->current_test_info());
-    Account const acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
+    Account const acct{
+        .balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
 
     {
         auto db = TypeParam{root, BLOCK_HISTORY};
 
+        Account acct{
+            .balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
         db.commit(state::StateChanges{
             .account_changes = {{a, acct}},
             .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
@@ -399,10 +460,13 @@ TYPED_TEST(RocksDBTest, block_history_pruning)
     auto block_number = 0ull;
     auto const root = test::make_db_root(
         *testing::UnitTest::GetInstance()->current_test_info());
-    Account const acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
+    Account const acct{
+        .balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
 
     {
         auto db = TypeParam{root, block_number, BLOCK_HISTORY};
+        Account acct{
+            .balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
         db.commit(state::StateChanges{
             .account_changes = {{a, acct}},
             .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
@@ -467,7 +531,8 @@ TYPED_TEST(ReadWriteTest, read_only)
 
     auto const root = test::make_db_root(
         *testing::UnitTest::GetInstance()->current_test_info());
-    Account const acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
+    Account const acct{
+        .balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
 
     {
         auto db = ReadWrite{root, 1};

@@ -168,6 +168,8 @@ add_library(
     ${PROJECT_SOURCE_DIR}/src/monad/db/file_db.cpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/prepare_state.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/trie_db_interface.hpp
+    ${PROJECT_SOURCE_DIR}/include/monad/db/rocks_db_helper.hpp
+    ${PROJECT_SOURCE_DIR}/src/monad/db/rocks_db_helper.cpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/rocks_db.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/rocks_trie_db.hpp
     ${PROJECT_SOURCE_DIR}/include/monad/db/in_memory_db.hpp

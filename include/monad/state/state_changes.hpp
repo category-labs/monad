@@ -2,6 +2,7 @@
 
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
+#include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/state/config.hpp>
 
@@ -16,8 +17,10 @@ struct StateChanges
         std::vector<std::pair<address_t, std::optional<Account>>>;
     using StorageChanges = std::unordered_map<
         address_t, std::vector<std::pair<bytes32_t, bytes32_t>>>;
+    using CodeChanges = std::vector<std::pair<bytes32_t, byte_string>>;
     AccountChanges account_changes;
     StorageChanges storage_changes;
+    CodeChanges code_changes;
 };
 
 MONAD_STATE_NAMESPACE_END

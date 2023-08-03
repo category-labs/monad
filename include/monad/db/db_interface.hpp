@@ -3,6 +3,7 @@
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/db/concepts.hpp>
 #include <monad/db/config.hpp>
@@ -26,6 +27,7 @@ struct DBInterface
     // Accessors
     ////////////////////////////////////////////////////////////////////
 
+    // Account
     [[nodiscard]] constexpr std::optional<Account> try_find(address_t const &a)
         requires Readable<TPermission>
     {
@@ -48,6 +50,7 @@ struct DBInterface
         return ret.value();
     }
 
+    // Storage
     [[nodiscard]] constexpr bytes32_t
     try_find(address_t const &a, bytes32_t const &k)
         requires Readable<TPermission>
@@ -69,6 +72,29 @@ struct DBInterface
     {
         auto const ret = try_find(a, k);
         MONAD_ASSERT(ret != bytes32_t{});
+        return ret;
+    }
+
+    // Code
+    [[nodiscard]] constexpr byte_string try_find(bytes32_t const &ch)
+        requires Readable<TPermission>
+    {
+        return TExecutor::execute(
+            [=, this]() { return self().try_find_impl(ch); });
+    }
+
+    [[nodiscard]] constexpr bool contains(bytes32_t const &ch)
+        requires Readable<TPermission>
+    {
+        return TExecutor::execute(
+            [=, this]() { return self().contains_impl(ch); });
+    }
+
+    [[nodiscard]] constexpr byte_string at(bytes32_t const &ch)
+        requires Readable<TPermission>
+    {
+        auto const ret = try_find(ch);
+        MONAD_ASSERT(ret != byte_string{});
         return ret;
     }
 

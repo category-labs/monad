@@ -180,8 +180,7 @@ struct State
             return code_.copy_code(get_code_hash(a), offset, buffer, size);
         }
 
-        [[nodiscard]] byte_string_view
-        get_code(bytes32_t const &b) const noexcept
+        [[nodiscard]] byte_string get_code(bytes32_t const &b) const noexcept
         {
             return code_.code_at(b);
         }
@@ -283,13 +282,13 @@ struct State
 
     void commit()
     {
-        code_.commit_all_merged();
         db_.commit(StateChanges{
             .account_changes = accounts_.gather_changes(),
             .storage_changes = storage_.gather_changes(),
-        });
+            .code_changes = code_.gather_changes()});
         accounts_.clear_changes();
         storage_.clear_changes();
+        code_.clear_changes();
         current_txn_ = 0;
         gas_award_ = 0;
     }

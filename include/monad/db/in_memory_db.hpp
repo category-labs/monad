@@ -1,5 +1,10 @@
 #pragma once
 
+#include <monad/core/account.hpp>
+#include <monad/core/address.hpp>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
+
 #include <monad/db/config.hpp>
 #include <monad/db/db_interface.hpp>
 #include <monad/execution/execution_model.hpp>
@@ -20,6 +25,7 @@ namespace detail
         std::unordered_map<address_t, Account> accounts;
         std::unordered_map<address_t, std::unordered_map<bytes32_t, bytes32_t>>
             storage;
+        std::unordered_map<bytes32_t, byte_string> code;
 
         ////////////////////////////////////////////////////////////////////
         // DBInterface implementations
@@ -35,6 +41,12 @@ namespace detail
             requires Readable<TPermission>
         {
             return storage.contains(a) && storage.at(a).contains(k);
+        }
+
+        [[nodiscard]] bool contains_impl(bytes32_t const &ch)
+            requires Readable<TPermission>
+        {
+            return code.contains(ch);
         }
 
         [[nodiscard]] std::optional<Account> try_find_impl(address_t const &a)
@@ -56,6 +68,15 @@ namespace detail
             return storage.at(a).at(k);
         }
 
+        [[nodiscard]] byte_string try_find_impl(bytes32_t const &ch)
+            requires Readable<TPermission>
+        {
+            if (code.contains(ch)) {
+                return code.at(ch);
+            }
+            return byte_string{};
+        }
+
         void commit(state::changeset auto const &obj)
             requires Writable<TPermission>
         {
@@ -72,6 +93,10 @@ namespace detail
                 if (storage[a].empty()) {
                     storage.erase(a);
                 }
+            }
+
+            for (auto const &[ch, c] : obj.code_changes) {
+                code[ch] = c;
             }
 
             for (auto const &[a, acct] : obj.account_changes) {

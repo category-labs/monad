@@ -1,5 +1,7 @@
 #pragma once
 
+#include <monad/core/address.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/likely.h>
 #include <monad/db/config.hpp>
 #include <monad/db/db_interface.hpp>
@@ -79,6 +81,11 @@ struct TrieDBInterface
         return find(a, k).has_value();
     }
 
+    [[nodiscard]] constexpr bool contains_impl(bytes32_t const &b)
+    {
+        return self().contains_impl(b);
+    }
+
     [[nodiscard]] std::optional<Account> try_find_impl(address_t const &a)
         requires Readable<TPermission>
     {
@@ -139,6 +146,11 @@ struct TrieDBInterface
                 static_cast<uint8_t>(sizeof(bytes32_t) - zeroless.size())));
         MONAD_ASSERT(ret != bytes32_t{});
         return ret;
+    }
+
+    [[nodiscard]] byte_string try_find_impl(bytes32_t const &b)
+    {
+        return self().try_find_impl(b);
     }
 
     ////////////////////////////////////////////////////////////////////

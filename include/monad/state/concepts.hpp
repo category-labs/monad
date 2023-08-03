@@ -2,6 +2,9 @@
 
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
+
 #include <monad/state/config.hpp>
 
 #include <concepts>
@@ -29,7 +32,14 @@ concept storage_changes = requires(T obj) {
 };
 
 template <typename T>
-concept changeset = account_changes<T> && storage_changes<T>;
+concept code_changes = requires(T obj) {
+    { obj.code_changes } -> std::ranges::range;
+    { *obj.code_changes.begin() } -> std::convertible_to<std::pair<bytes32_t, byte_string>>;
+    { obj.code_changes.empty() } -> std::same_as<bool>;
+};
+
+template <typename T>
+concept changeset = account_changes<T> && storage_changes<T> && code_changes<T>;
 
 // clang-format on
 

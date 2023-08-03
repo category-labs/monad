@@ -672,8 +672,6 @@ TYPED_TEST(ValueStateTest, commit_all_merged)
         s.merge_touched(u);
         EXPECT_TRUE(s.can_commit());
     }
-
-    auto _ = s.gather_changes();
 }
 
 TYPED_TEST(ValueStateTest, get_after_set)

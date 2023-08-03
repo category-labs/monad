@@ -2,12 +2,14 @@
 
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/db/assert.h>
 #include <monad/db/auto_detect_start_block_number.hpp>
 #include <monad/db/config.hpp>
 #include <monad/db/create_and_prune_block_history.hpp>
 #include <monad/db/db_interface.hpp>
 #include <monad/db/prepare_state.hpp>
+#include <monad/db/rocks_db_helper.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/execution_model.hpp>
 #include <monad/logging/monad_log.hpp>
@@ -102,7 +104,8 @@ namespace detail
                 return {
                     {rocksdb::kDefaultColumnFamilyName, {}},
                     {"PlainAccounts", {}},
-                    {"PlainStorage", {}}};
+                    {"PlainStorage", {}},
+                    {"Code", {}}};
             }())
             , cfs()
             , db([&]() {
@@ -165,6 +168,7 @@ namespace detail
 
         [[nodiscard]] constexpr auto *accounts_cf() { return cfs[1]; }
         [[nodiscard]] constexpr auto *storage_cf() { return cfs[2]; }
+        [[nodiscard]] constexpr auto *code_cf() { return cfs[3]; }
 
         ////////////////////////////////////////////////////////////////////
         // DBInterface implementations
@@ -189,6 +193,12 @@ namespace detail
                 rocksdb::ReadOptions{}, storage_cf(), to_slice(key), &value);
             MONAD_ASSERT(res.ok() || res.IsNotFound());
             return res.ok();
+        }
+
+        [[nodiscard]] bool contains_impl(bytes32_t const &b)
+            requires Readable<TPermission>
+        {
+            return rocks_db_contains_impl(b, db, code_cf());
         }
 
         [[nodiscard]] std::optional<Account> try_find_impl(address_t const &a)
@@ -232,6 +242,12 @@ namespace detail
             return result;
         }
 
+        [[nodiscard]] byte_string try_find_impl(bytes32_t const &b)
+            requires Readable<TPermission>
+        {
+            return rocks_db_try_find_impl(b, db, code_cf());
+        }
+
         void commit(state::changeset auto const &obj)
             requires Writable<TPermission>
         {
@@ -265,6 +281,8 @@ namespace detail
                     MONAD_ROCKS_ASSERT(res);
                 }
             }
+
+            commit_code_to_rocks_db_batch(batch, obj, code_cf());
 
             rocksdb::WriteOptions options;
             options.disableWAL = true;

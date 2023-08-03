@@ -7,6 +7,9 @@
 #include <monad/trie/in_memory_writer.hpp>
 #include <monad/trie/trie.hpp>
 
+#include <monad/state/concepts.hpp>
+#include <monad/state/state_changes.hpp>
+
 MONAD_DB_NAMESPACE_BEGIN
 
 namespace detail
@@ -17,6 +20,9 @@ namespace detail
         : public TrieDBInterface<
               InMemoryTrieDB<TExecutor, TPermission>, TExecutor, TPermission>
     {
+        using this_t = InMemoryTrieDB<TExecutor, TPermission>;
+        using base_t = TrieDBInterface<this_t, TExecutor, TPermission>;
+
         template <typename TComparator>
         struct Trie
         {
@@ -55,10 +61,27 @@ namespace detail
 
         Trie<trie::InMemoryPathComparator> accounts_trie;
         Trie<trie::InMemoryPrefixPathComparator> storage_trie;
+        std::unordered_map<bytes32_t, byte_string> code;
 
         ////////////////////////////////////////////////////////////////////
         // DBInterface implementations
         ////////////////////////////////////////////////////////////////////
+
+        [[nodiscard]] bool contains_impl(bytes32_t const &ch)
+            requires Readable<TPermission>
+        {
+            return code.contains(ch);
+        }
+
+        [[nodiscard]] byte_string try_find_impl(bytes32_t const &ch)
+            requires Readable<TPermission>
+        {
+            if (code.contains(ch)) {
+                return code.at(ch);
+            }
+            return byte_string{};
+        }
+
         constexpr void
         create_and_prune_block_history(uint64_t /* block_number */) const
             requires Writable<TPermission>
@@ -73,6 +96,14 @@ namespace detail
         auto &storage() { return storage_trie; }
         auto const &accounts() const { return accounts_trie; }
         auto const &storage() const { return storage_trie; }
+
+        void commit(state::changeset auto const &obj)
+        {
+            for (auto const &[ch, c] : obj.code_changes) {
+                code[ch] = c;
+            }
+            base_t::commit(obj);
+        }
     };
 }
 

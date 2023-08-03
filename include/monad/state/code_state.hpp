@@ -5,8 +5,10 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 
+#include <monad/state/concepts.hpp>
 #include <monad/state/config.hpp>
 #include <monad/state/datum.hpp>
+#include <monad/state/state_changes.hpp>
 
 #include <algorithm>
 #include <unordered_map>
@@ -32,15 +34,15 @@ struct CodeState
     {
     }
 
-    [[nodiscard]] byte_string_view code_at(bytes32_t const &b) const
+    [[nodiscard]] byte_string code_at(bytes32_t const &b) const
     {
         if (merged_.contains(b)) {
-            return {merged_.at(b)};
+            return merged_.at(b);
         }
         if (db_.contains(b)) {
-            return {db_.at(b)};
+            return db_.at(b);
         }
-        return {empty};
+        return empty;
     }
 
     [[nodiscard]] bool can_merge(ChangeSet const &w) const
@@ -66,16 +68,19 @@ struct CodeState
             merged_, [&](auto const &a) { return db_.contains(a.first); });
     }
 
-    void commit_all_merged()
+    [[nodiscard]] StateChanges::CodeChanges gather_changes() const
     {
         assert(can_commit());
+        StateChanges::CodeChanges code_changes;
 
-        for (auto &[a, code] : merged_) {
-            auto const &[_, inserted] = db_.emplace(a, std::move(code));
-            MONAD_DEBUG_ASSERT(inserted);
+        for (auto &[code_hash, code] : merged_) {
+            code_changes.emplace_back(code_hash, std::move(code));
         }
-        merged_.clear();
+
+        return code_changes;
     }
+
+    void clear_changes() { merged_.clear(); }
 };
 
 template <typename TCodeDB>
@@ -88,8 +93,7 @@ struct CodeState<TCodeDB>::ChangeSet : public CodeState<TCodeDB>
     {
     }
 
-    [[nodiscard]] byte_string_view const
-    code_at(bytes32_t const &b) const noexcept
+    [[nodiscard]] byte_string const code_at(bytes32_t const &b) const noexcept
     {
         if (code_.contains(b))
             return {code_.at(b)};
@@ -117,7 +121,10 @@ struct CodeState<TCodeDB>::ChangeSet : public CodeState<TCodeDB>
         auto const code = code_at(b);
         assert(code.size() > offset);
         auto const bytes_to_copy = std::min(code.size() - offset, buffer_size);
-        std::memcpy(buffer, code.begin() + offset, bytes_to_copy);
+        std::copy_n(
+            std::next(code.begin(), static_cast<long>(offset)),
+            bytes_to_copy,
+            buffer);
         return bytes_to_copy;
     }
 

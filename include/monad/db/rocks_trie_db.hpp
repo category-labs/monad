@@ -4,6 +4,7 @@
 #include <monad/db/config.hpp>
 #include <monad/db/create_and_prune_block_history.hpp>
 #include <monad/db/prepare_state.hpp>
+#include <monad/db/rocks_db_helper.hpp>
 #include <monad/db/trie_db_interface.hpp>
 #include <monad/execution/execution_model.hpp>
 #include <monad/trie/rocks_comparator.hpp>
@@ -86,7 +87,11 @@ namespace detail
         };
         using block_history_size_t =
             std::conditional_t<Writable<TPermission>, uint64_t, Empty>;
+        using batch_t = std::conditional_t<
+            Writable<TPermission>, rocksdb::WriteBatch, Empty>;
+
         [[no_unique_address]] block_history_size_t const block_history_size;
+        [[no_unique_address]] batch_t batch;
 
         ////////////////////////////////////////////////////////////////////
         // Constructor & Destructor
@@ -134,7 +139,8 @@ namespace detail
                     {"AccountTrieLeaves", accounts_opts},
                     {"AccountTrieAll", accounts_opts},
                     {"StorageTrieLeaves", storage_opts},
-                    {"StorageTrieAll", storage_opts}};
+                    {"StorageTrieAll", storage_opts},
+                    {"Code", {}}};
             }())
             , cfs()
             , db([&]() {
@@ -178,6 +184,8 @@ namespace detail
             , accounts_trie(db, cfs[1], cfs[2])
             , storage_trie(db, cfs[3], cfs[4])
             , block_history_size(block_history_size)
+            , batch()
+
         {
         }
 
@@ -195,6 +203,12 @@ namespace detail
             res = db->Close();
             MONAD_ROCKS_ASSERT(res);
         }
+
+        ////////////////////////////////////////////////////////////////////
+        // Helper functions
+        ////////////////////////////////////////////////////////////////////
+
+        [[nodiscard]] constexpr auto *code_cf() { return cfs[5]; }
 
         ////////////////////////////////////////////////////////////////////
         // DBInterface implementations
@@ -221,9 +235,25 @@ namespace detail
             MONAD_DEBUG_ASSERT(s.has_value());
         }
 
+        [[nodiscard]] bool contains_impl(bytes32_t const &ch)
+        {
+            return rocks_db_contains_impl(ch, db, code_cf());
+        }
+
+        [[nodiscard]] byte_string try_find_impl(bytes32_t const &ch)
+        {
+            return rocks_db_try_find_impl(ch, db, code_cf());
+        }
+
         void commit(state::changeset auto const &obj)
             requires Writable<TPermission>
         {
+            commit_code_to_rocks_db_batch(batch, obj, code_cf());
+            rocksdb::WriteOptions options;
+            options.disableWAL = true;
+            db->Write(options, &batch);
+            batch.Clear();
+
             base_t::commit(obj);
             accounts_trie.reset_cursor();
             storage_trie.reset_cursor();

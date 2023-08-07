@@ -3,7 +3,6 @@
 #include <monad/core/block.hpp>
 
 #include <monad/db/block_db.hpp>
-#include <monad/db/state_db.hpp>
 
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>

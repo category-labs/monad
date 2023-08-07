@@ -23,7 +23,6 @@ RUN yum -y install \
   zip
 
 RUN yum -y install \
-  abseil-cpp \
   boost-fiber \
   boost-log \
   brotli \
@@ -33,7 +32,6 @@ RUN yum -y install \
   rocksdb
 
 RUN yum -y install \
-  abseil-cpp-devel \
   boost-devel \
   brotli-devel \
   gmp-devel \

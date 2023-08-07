@@ -41,8 +41,6 @@ RUN yum -y install \
   gmock-devel \
   rocksdb-devel
 
-RUN pip install -U conan==1.*
-
 COPY . monad
 
 ARG CC

@@ -14,6 +14,9 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(gmock REQUIRED IMPORTED_TARGET gmock)
+
 include(GoogleTest)
 
 function(add_unit_test)
@@ -39,8 +42,9 @@ function(add_unit_test)
     endif()
 
     target_link_libraries(
-        ${ADD_UNIT_TEST_TARGET} PUBLIC GTest::gtest monad_unit_test_common
-                                       ${ADD_UNIT_TEST_LIBRARIES}
+        ${ADD_UNIT_TEST_TARGET}
+        PUBLIC GTest::gtest GTest::gmock monad_unit_test_common
+               ${ADD_UNIT_TEST_LIBRARIES}
     )
     gtest_discover_tests(${ADD_UNIT_TEST_TARGET})
 endfunction()

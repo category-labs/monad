@@ -151,6 +151,3 @@ dmypy.json
 
 # vcpkg
 vcpkg_installed/
-
-# rust
-Cargo.lock

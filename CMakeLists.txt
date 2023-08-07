@@ -5,7 +5,9 @@ project(monad)
 option(ASAN "Turn on Address Sanitizer")
 option(UBSAN "Turn on Undefined Behavior Sanitizer")
 option(FUZZING "Enable fuzzing for clang" ON)
-option(EVMONE_TRACING "Enable instruction-level tracing for the evmone interpreter" OFF)
+option(EVMONE_TRACING
+       "Enable instruction-level tracing for the evmone interpreter" OFF
+)
 
 include(cmake/test.cmake)
 
@@ -64,8 +66,6 @@ add_subdirectory(third_party/evmone)
 add_subdirectory(third_party/intx)
 add_subdirectory(third_party/silkpre)
 
-add_subdirectory(state_history)
-
 function(monad_compile_options target)
     set_property(TARGET ${target} PROPERTY C_STANDARD 11)
     set_property(TARGET ${target} PROPERTY C_STANDARD_REQUIRED ON)
@@ -83,7 +83,7 @@ function(monad_compile_options target)
         ${target}
         PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-missing-field-initializers>
     )
-    if (EVMONE_TRACING)
+    if(EVMONE_TRACING)
         target_compile_definitions(${target} PRIVATE EVMONE_TRACING=1)
     endif()
 endfunction()

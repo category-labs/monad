@@ -80,10 +80,10 @@ namespace test
                             value.get<std::string>()));
 
                     monad::bytes32_t key_bytes32 =
-                        *reinterpret_cast<const monad::bytes32_t *>(
+                        *reinterpret_cast<monad::bytes32_t const *>(
                             as_words(key_int));
                     monad::bytes32_t value_bytes32 =
-                        *reinterpret_cast<const monad::bytes32_t *>(
+                        *reinterpret_cast<monad::bytes32_t const *>(
                             as_words(value_int));
                     (void)state.set_storage(
                         account_address, key_bytes32, value_bytes32);
@@ -92,17 +92,17 @@ namespace test
         }
     }
 
-    std::string hex0x(const monad::address_t &a)
+    std::string hex0x(monad::address_t const &a)
     {
         return "0x" + evmc::hex(a);
     }
 
-    std::string hex0x(const monad::uint256_t &n)
+    std::string hex0x(monad::uint256_t const &n)
     {
         return "0x" + intx::hex(n);
     }
 
-    std::string hex0x(const monad::byte_string_view &n)
+    std::string hex0x(monad::byte_string_view const &n)
     {
         return "0x" + evmc::hex(n);
     }
@@ -125,8 +125,8 @@ namespace test
 
             res[account_address_hex] = nlohmann::json::object();
 
-            auto const code_string =
-                hex0x(state.code_.code_at(account_address));
+            auto const code_string = hex0x(state.code_.code_at(
+                state.accounts_.get_code_hash(account_address)));
             if (code_string != "0x") {
                 res[account_address_hex]["code"] = code_string;
             }
@@ -143,7 +143,7 @@ namespace test
     }
 
     template <>
-    std::vector<monad::Transaction> from_json(nlohmann::json const &json)
+    monad::Transaction from_json(nlohmann::json const &json)
     {
         [[maybe_unused]] auto const sender =
             from_json<monad::address_t>(json["sender"].get<std::string>());
@@ -152,27 +152,19 @@ namespace test
         auto const nonce =
             static_cast<uint64_t>(from_json<monad::uint256_t>(json["nonce"]));
 
-        // TODO: kicking the transaction_type can down the road
-
         [[maybe_unused]] monad::Transaction::Type transaction_type;
 
-        std::vector<monad::Transaction> res;
-
-        size_t index = 0;
-        for (auto const &data : json["data"]) {
-            auto const transaction_data = from_json<monad::byte_string>(data);
-            res.emplace_back(monad::Transaction{
-                .nonce = nonce,
-                .gas_price = static_cast<uint64_t>(
-                    from_json<monad::uint256_t>(json["gasPrice"])),
-                .gas_limit = static_cast<uint64_t>(
-                    from_json<monad::uint256_t>(json["gasLimit"][0])),
-                .amount = from_json<monad::uint128_t>(json["value"][index++]),
-                .to = to,
-                .from = sender,
-                .data = transaction_data,
-            });
-        }
+        monad::Transaction res = {
+            .nonce = nonce,
+            .gas_price = static_cast<uint64_t>(
+                from_json<monad::uint256_t>(json["gasPrice"])),
+            .gas_limit =
+                static_cast<uint64_t>(from_json<monad::uint256_t>(json["gas"])),
+            .amount = from_json<monad::uint128_t>(json["value"]),
+            .to = to,
+            .from = sender,
+            .data = from_json<monad::byte_string>(json["input"]),
+        };
 
         return res;
     }

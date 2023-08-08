@@ -3,10 +3,14 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/db/assert.h>
+#include <monad/db/auto_detect_start_block_number.hpp>
 #include <monad/db/config.hpp>
+#include <monad/db/create_and_prune_block_history.hpp>
 #include <monad/db/db_interface.hpp>
+#include <monad/db/prepare_state.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/execution_model.hpp>
+#include <monad/logging/monad_log.hpp>
 #include <monad/rlp/decode_helpers.hpp>
 #include <monad/rlp/encode_helpers.hpp>
 
@@ -36,6 +40,9 @@ namespace detail
         : public DBInterface<
               RocksDB<TExecutor, TPermission>, TExecutor, TPermission>
     {
+        using this_t = RocksDB<TExecutor, TPermission>;
+
+        std::filesystem::path const root;
         rocksdb::Options options;
         std::vector<rocksdb::ColumnFamilyDescriptor> cfds;
         std::vector<rocksdb::ColumnFamilyHandle *> cfs;
@@ -49,8 +56,41 @@ namespace detail
             Writable<TPermission>, rocksdb::WriteBatch, Empty>
             batch;
 
-        explicit RocksDB(std::filesystem::path name)
-            : options([]() {
+        uint64_t const starting_block_number;
+
+        using block_history_size_t =
+            std::conditional_t<Writable<TPermission>, uint64_t, Empty>;
+        [[no_unique_address]] block_history_size_t const block_history_size;
+
+        decltype(monad::log::logger_t::get_logger()) logger =
+            monad::log::logger_t::get_logger("rocks_db_logger");
+        static_assert(std::is_pointer_v<decltype(logger)>);
+
+        ////////////////////////////////////////////////////////////////////
+        // Constructor & Destructor
+        ////////////////////////////////////////////////////////////////////
+
+        RocksDB(std::filesystem::path root, uint64_t block_history_size)
+            requires Writable<TPermission>
+            : RocksDB(
+                  root, auto_detect_start_block_number(root),
+                  block_history_size)
+        {
+        }
+
+        RocksDB(
+            std::filesystem::path root, uint64_t const starting_block_number)
+            requires(!Writable<TPermission>)
+            : RocksDB(root, starting_block_number, Empty{})
+        {
+        }
+
+        RocksDB(
+            std::filesystem::path root, uint64_t starting_block_number,
+            block_history_size_t block_history_size)
+            requires Readable<TPermission>
+            : root(root)
+            , options([]() {
                 rocksdb::Options ret;
                 ret.IncreaseParallelism(2);
                 ret.OptimizeLevelStyleCompaction();
@@ -68,14 +108,31 @@ namespace detail
             , db([&]() {
                 rocksdb::DB *db = nullptr;
 
+                auto const path = [&]() {
+                    if constexpr (Writable<TPermission>) {
+                        return prepare_state<RocksDB, TExecutor, TPermission>(
+                            root, starting_block_number);
+                    }
+                    else {
+                        // in read only mode, starting_block_number needs to be
+                        // greater than 0 such that we read a valid checkpoint
+                        MONAD_ASSERT(starting_block_number);
+                        return find_starting_checkpoint<this_t>(
+                            root, starting_block_number);
+                    }
+                }();
+                if (!path.has_value()) {
+                    throw std::runtime_error(path.error());
+                }
+
                 auto const status = [&]() {
                     if constexpr (Writable<TPermission>) {
                         return rocksdb::DB::Open(
-                            options, name, cfds, &cfs, &db);
+                            options, path.value(), cfds, &cfs, &db);
                     }
                     else {
                         return rocksdb::DB::OpenForReadOnly(
-                            options, name, cfds, &cfs, &db);
+                            options, path.value(), cfds, &cfs, &db);
                     }
                 }();
 
@@ -85,6 +142,8 @@ namespace detail
                 return db;
             }())
             , batch()
+            , starting_block_number(starting_block_number)
+            , block_history_size(block_history_size)
         {
         }
 
@@ -213,11 +272,25 @@ namespace detail
             batch.Clear();
         }
 
-        constexpr void
-        create_and_prune_block_history(uint64_t /* block_number */) const
+        void create_and_prune_block_history(uint64_t block_number) const
             requires Writable<TPermission>
         {
-            // implement this if support for block history is needed here
+            auto const s = ::monad::db::create_and_prune_block_history(
+                *this, block_number);
+            if (!s.has_value()) {
+                // this is not a critical error in production, we can continue
+                // executing with the current database while someone
+                // investigates
+                MONAD_LOG_ERROR(
+                    logger,
+                    "Unable to save block_number {} for {} error={}",
+                    block_number,
+                    as_string<RocksDB>(),
+                    s.error());
+            }
+
+            // kill in debug
+            MONAD_DEBUG_ASSERT(s.has_value());
         }
     };
 }

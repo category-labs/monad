@@ -13,6 +13,15 @@
 using namespace monad;
 using namespace monad::db;
 
+// clang-format off
+template<typename T>
+concept Trie = requires(T a)
+{
+    { a.root_hash() } -> std::convertible_to<bytes32_t>;
+    { a.root_hash(address_t{}) } -> std::convertible_to<bytes32_t>;
+};
+// clang-format on
+
 static constexpr auto a = 0x5353535353535353535353535353535353535353_address;
 static constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
 static constexpr auto hash1 =
@@ -49,6 +58,22 @@ using HijackedExecutionDBTypes = ::testing::Types<
     monad::test::hijacked::InMemoryDB, monad::test::hijacked::InMemoryTrieDB,
     monad::test::hijacked::RocksDB, monad::test::hijacked::RocksTrieDB>;
 TYPED_TEST_SUITE(HijackedExecutionDBTest, HijackedExecutionDBTypes);
+
+template <typename TDB>
+struct RocksDBTest : public testing::Test
+{
+};
+using RocksDBTypes = ::testing::Types<RocksDB, RocksTrieDB>;
+TYPED_TEST_SUITE(RocksDBTest, RocksDBTypes);
+
+template <typename TDB>
+struct ReadWriteTest : public testing::Test
+{
+};
+using ReadWriteTypes = ::testing::Types<
+    std::pair<ReadOnlyRocksDB, RocksDB>,
+    std::pair<ReadOnlyRocksTrieDB, RocksTrieDB>>;
+TYPED_TEST_SUITE(ReadWriteTest, ReadWriteTypes);
 
 TYPED_TEST(HijackedExecutionDBTest, executor)
 {
@@ -189,136 +214,195 @@ TYPED_TEST(TrieDBTest, ModifyStorageOfAccount)
         0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
 }
 
-TEST(RocksTrieDB, block_history_for_constructor_with_start_block_number)
+TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)
 {
     constexpr auto BLOCK_HISTORY = 100ull;
     auto block_number = 0ull;
     auto const root = test::make_db_root(
         *testing::UnitTest::GetInstance()->current_test_info());
+    Account const acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
 
     {
-        auto db = RocksTrieDB{root, block_number, BLOCK_HISTORY};
+        auto db = TypeParam{root, block_number, BLOCK_HISTORY};
 
-        Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
         db.commit(state::StateChanges{
             .account_changes = {{a, acct}},
             .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
         db.create_and_prune_block_history(block_number++);
 
-        EXPECT_EQ(
-            db.root_hash(a),
-            0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
-        EXPECT_EQ(
-            db.root_hash(),
-            0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+        EXPECT_EQ(db.try_find(a), acct);
+        EXPECT_EQ(db.try_find(a, key1), value1);
+        EXPECT_EQ(db.try_find(a, key2), value2);
+
+        if constexpr (Trie<TypeParam>) {
+            EXPECT_EQ(
+                db.root_hash(a),
+                0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
+            EXPECT_EQ(
+                db.root_hash(),
+                0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+        }
+
         EXPECT_EQ(db.starting_block_number, block_number - 1u);
     }
 
     {
-        auto db = RocksTrieDB{root, block_number, BLOCK_HISTORY};
+        auto db = TypeParam{root, block_number, BLOCK_HISTORY};
 
-        EXPECT_EQ(
-            db.root_hash(a),
-            0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
-        EXPECT_EQ(
-            db.root_hash(),
-            0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+        EXPECT_EQ(db.try_find(a), acct);
+        EXPECT_EQ(db.try_find(a, key1), value1);
+        EXPECT_EQ(db.try_find(a, key2), value2);
+
+        if constexpr (Trie<TypeParam>) {
+            EXPECT_EQ(
+                db.root_hash(a),
+                0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
+            EXPECT_EQ(
+                db.root_hash(),
+                0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+        }
 
         db.commit(state::StateChanges{
             .account_changes = {}, .storage_changes = {{a, {{key2, value1}}}}});
         db.create_and_prune_block_history(block_number++);
 
-        EXPECT_EQ(
-            db.root_hash(),
-            0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
+        EXPECT_EQ(db.try_find(a), acct);
+        EXPECT_EQ(db.try_find(a, key1), value1);
+        EXPECT_EQ(db.try_find(a, key2), value1);
+
+        if constexpr (Trie<TypeParam>) {
+            EXPECT_EQ(
+                db.root_hash(),
+                0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
+        }
         EXPECT_EQ(db.starting_block_number, block_number - 1u);
     }
 
     {
-        auto db = RocksTrieDB{root, block_number, BLOCK_HISTORY};
-        EXPECT_EQ(
-            db.root_hash(),
-            0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
+        auto db = TypeParam{root, block_number, BLOCK_HISTORY};
+        EXPECT_EQ(db.try_find(a), acct);
+        EXPECT_EQ(db.try_find(a, key1), value1);
+        EXPECT_EQ(db.try_find(a, key2), value1);
+
+        if constexpr (Trie<TypeParam>) {
+            EXPECT_EQ(
+                db.root_hash(),
+                0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
+        }
         EXPECT_EQ(db.starting_block_number, block_number);
     }
 
     {
-        auto db = RocksTrieDB{root, block_number - 1, BLOCK_HISTORY};
+        auto db = TypeParam{root, block_number - 1, BLOCK_HISTORY};
 
-        EXPECT_EQ(
-            db.root_hash(a),
-            0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
-        EXPECT_EQ(
-            db.root_hash(),
-            0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+        EXPECT_EQ(db.try_find(a), acct);
+        EXPECT_EQ(db.try_find(a, key1), value1);
+        EXPECT_EQ(db.try_find(a, key2), value2);
+
+        if constexpr (Trie<TypeParam>) {
+            EXPECT_EQ(
+                db.root_hash(a),
+                0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
+            EXPECT_EQ(
+                db.root_hash(),
+                0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+        }
+
         EXPECT_EQ(db.starting_block_number, block_number - 1u);
     }
 }
 
-TEST(RocksTrieDB, block_history_for_constructor_without_start_block_number)
+TYPED_TEST(
+    RocksDBTest, block_history_for_constructor_without_start_block_number)
 {
     constexpr auto BLOCK_HISTORY = 100ull;
     auto block_number = 0ull;
     auto const root = test::make_db_root(
         *testing::UnitTest::GetInstance()->current_test_info());
+    Account const acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
 
     {
-        auto db = RocksTrieDB{root, BLOCK_HISTORY};
+        auto db = TypeParam{root, BLOCK_HISTORY};
 
-        Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
         db.commit(state::StateChanges{
             .account_changes = {{a, acct}},
             .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
         db.create_and_prune_block_history(block_number++);
 
-        EXPECT_EQ(
-            db.root_hash(a),
-            0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
-        EXPECT_EQ(
-            db.root_hash(),
-            0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+        EXPECT_EQ(db.try_find(a), acct);
+        EXPECT_EQ(db.try_find(a, key1), value1);
+        EXPECT_EQ(db.try_find(a, key2), value2);
+
+        if constexpr (Trie<TypeParam>) {
+            EXPECT_EQ(
+                db.root_hash(a),
+                0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
+            EXPECT_EQ(
+                db.root_hash(),
+                0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+        }
         EXPECT_EQ(db.starting_block_number, block_number - 1u);
     }
 
     {
-        auto db = RocksTrieDB{root, BLOCK_HISTORY};
+        auto db = TypeParam{root, BLOCK_HISTORY};
 
-        EXPECT_EQ(
-            db.root_hash(a),
-            0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
-        EXPECT_EQ(
-            db.root_hash(),
-            0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+        EXPECT_EQ(db.try_find(a), acct);
+        EXPECT_EQ(db.try_find(a, key1), value1);
+        EXPECT_EQ(db.try_find(a, key2), value2);
+
+        if constexpr (Trie<TypeParam>) {
+            EXPECT_EQ(
+                db.root_hash(a),
+                0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
+            EXPECT_EQ(
+                db.root_hash(),
+                0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+        }
 
         db.commit(state::StateChanges{
             .account_changes = {}, .storage_changes = {{a, {{key2, value1}}}}});
         db.create_and_prune_block_history(block_number++);
 
-        EXPECT_EQ(
-            db.root_hash(),
-            0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
+        EXPECT_EQ(db.try_find(a), acct);
+        EXPECT_EQ(db.try_find(a, key1), value1);
+        EXPECT_EQ(db.try_find(a, key2), value1);
+
+        if constexpr (Trie<TypeParam>) {
+            EXPECT_EQ(
+                db.root_hash(),
+                0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
+        }
+
         EXPECT_EQ(db.starting_block_number, block_number - 1u);
     }
 
     {
-        auto db = RocksTrieDB{root, BLOCK_HISTORY};
-        EXPECT_EQ(
-            db.root_hash(),
-            0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
+        auto db = TypeParam{root, BLOCK_HISTORY};
+
+        EXPECT_EQ(db.try_find(a), acct);
+        EXPECT_EQ(db.try_find(a, key1), value1);
+        EXPECT_EQ(db.try_find(a, key2), value1);
+
+        if constexpr (Trie<TypeParam>) {
+            EXPECT_EQ(
+                db.root_hash(),
+                0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
+        }
         EXPECT_EQ(db.starting_block_number, block_number);
     }
 }
 
-TEST(RocksTrieDB, block_history_pruning)
+TYPED_TEST(RocksDBTest, block_history_pruning)
 {
     constexpr auto BLOCK_HISTORY = 1ull;
     auto block_number = 0ull;
     auto const root = test::make_db_root(
         *testing::UnitTest::GetInstance()->current_test_info());
+    Account const acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
 
     {
-        auto db = RocksTrieDB{root, block_number, BLOCK_HISTORY};
-        Account acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
+        auto db = TypeParam{root, block_number, BLOCK_HISTORY};
         db.commit(state::StateChanges{
             .account_changes = {{a, acct}},
             .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
@@ -327,29 +411,42 @@ TEST(RocksTrieDB, block_history_pruning)
         db.create_and_prune_block_history(block_number++);
         db.create_and_prune_block_history(block_number++);
 
-        EXPECT_EQ(
-            db.root_hash(a),
-            0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
-        EXPECT_EQ(
-            db.root_hash(),
-            0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+        EXPECT_EQ(db.try_find(a), acct);
+        EXPECT_EQ(db.try_find(a, key1), value1);
+        EXPECT_EQ(db.try_find(a, key2), value2);
+
+        if constexpr (Trie<TypeParam>) {
+            EXPECT_EQ(
+                db.root_hash(a),
+                0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
+            EXPECT_EQ(
+                db.root_hash(),
+                0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+        }
     }
 
     {
-        auto db = RocksTrieDB{root, block_number, BLOCK_HISTORY};
-        EXPECT_EQ(
-            db.root_hash(a),
-            0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
-        EXPECT_EQ(
-            db.root_hash(),
-            0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+        auto db = TypeParam{root, block_number, BLOCK_HISTORY};
+
+        EXPECT_EQ(db.try_find(a), acct);
+        EXPECT_EQ(db.try_find(a, key1), value1);
+        EXPECT_EQ(db.try_find(a, key2), value2);
+
+        if constexpr (Trie<TypeParam>) {
+            EXPECT_EQ(
+                db.root_hash(a),
+                0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
+            EXPECT_EQ(
+                db.root_hash(),
+                0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+        }
     }
 
     EXPECT_THROW(
         [&]() {
             auto const b = block_number - 1;
             try {
-                auto const db = RocksTrieDB(root, b, BLOCK_HISTORY);
+                auto const db = TypeParam(root, b, BLOCK_HISTORY);
             }
             catch (std::runtime_error const &e) {
                 EXPECT_THAT(
@@ -363,45 +460,17 @@ TEST(RocksTrieDB, block_history_pruning)
         std::runtime_error);
 }
 
-// TODO: merge this with the RocksTrieDB if we ever add block history support to
-// RocksDB
-TEST(RocksDB, ReadOnly)
+TYPED_TEST(ReadWriteTest, read_only)
 {
+    using ReadOnly = typename TypeParam::first_type;
+    using ReadWrite = typename TypeParam::second_type;
+
     auto const root = test::make_db_root(
         *testing::UnitTest::GetInstance()->current_test_info());
     Account const acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
 
     {
-        auto db = RocksDB{root};
-        db.commit(state::StateChanges{
-            .account_changes = {{a, acct}},
-            .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
-    }
-
-    {
-        auto db = ReadOnlyRocksDB{root};
-        EXPECT_TRUE(db.contains(a));
-        EXPECT_EQ(db.try_find(a), acct);
-        EXPECT_EQ(db.at(a), acct);
-
-        EXPECT_TRUE(db.contains(a, key1));
-        EXPECT_EQ(db.try_find(a, key1), value1);
-        EXPECT_EQ(db.at(a, key1), value1);
-
-        EXPECT_TRUE(db.contains(a, key2));
-        EXPECT_EQ(db.try_find(a, key2), value2);
-        EXPECT_EQ(db.at(a, key2), value2);
-    }
-};
-
-TEST(RocksTrieDB, ReadOnly)
-{
-    auto const root = test::make_db_root(
-        *testing::UnitTest::GetInstance()->current_test_info());
-    Account const acct{.balance = 1'000'000, .code_hash = hash1, .nonce = 1337};
-
-    {
-        auto db = RocksTrieDB{root, 1};
+        auto db = ReadWrite{root, 1};
         db.commit(state::StateChanges{
             .account_changes = {{a, acct}},
             .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
@@ -409,7 +478,7 @@ TEST(RocksTrieDB, ReadOnly)
     }
 
     {
-        auto db = ReadOnlyRocksTrieDB{root, 1};
+        auto db = ReadOnly{root, 1};
         EXPECT_TRUE(db.contains(a));
         EXPECT_EQ(db.try_find(a), acct);
         EXPECT_EQ(db.at(a), acct);
@@ -422,11 +491,13 @@ TEST(RocksTrieDB, ReadOnly)
         EXPECT_EQ(db.try_find(a, key2), value2);
         EXPECT_EQ(db.at(a, key2), value2);
 
-        EXPECT_EQ(
-            db.root_hash(a),
-            0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
-        EXPECT_EQ(
-            db.root_hash(),
-            0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+        if constexpr (Trie<ReadOnly>) {
+            EXPECT_EQ(
+                db.root_hash(a),
+                0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
+            EXPECT_EQ(
+                db.root_hash(),
+                0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
+        }
     }
-};
+}

@@ -88,7 +88,18 @@ namespace detail
             std::conditional_t<Writable<TPermission>, uint64_t, Empty>;
         [[no_unique_address]] block_history_size_t const block_history_size;
 
-        // Read-only constructor
+        ////////////////////////////////////////////////////////////////////
+        // Constructor & Destructor
+        ////////////////////////////////////////////////////////////////////
+
+        RocksTrieDB(std::filesystem::path root, uint64_t block_history_size)
+            requires Writable<TPermission>
+            : RocksTrieDB(
+                  root, auto_detect_start_block_number(root),
+                  block_history_size)
+        {
+        }
+
         RocksTrieDB(
             std::filesystem::path root, uint64_t const starting_block_number)
             requires(!Writable<TPermission>)
@@ -99,6 +110,7 @@ namespace detail
         RocksTrieDB(
             std::filesystem::path root, uint64_t const starting_block_number,
             block_history_size_t block_history_size)
+            requires Readable<TPermission>
             : root(root)
             , starting_block_number(starting_block_number)
             , options([]() {
@@ -166,14 +178,6 @@ namespace detail
             , accounts_trie(db, cfs[1], cfs[2])
             , storage_trie(db, cfs[3], cfs[4])
             , block_history_size(block_history_size)
-        {
-        }
-
-        RocksTrieDB(std::filesystem::path root, uint64_t block_history_size)
-            requires Writable<TPermission>
-            : RocksTrieDB(
-                  root, auto_detect_start_block_number(root),
-                  block_history_size)
         {
         }
 

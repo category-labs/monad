@@ -18,12 +18,19 @@ namespace detail
     template <typename TExecution, Permission TPermission>
     struct RocksTrieDB;
 
+    template <typename TExecution, Permission TPermission>
+    struct RocksDB;
+
     constexpr std::string_view CURRENT_DATABASE = "CURRENT";
 };
 using RocksTrieDB =
     detail::RocksTrieDB<monad::execution::BoostFiberExecution, ReadWrite>;
 using ReadOnlyRocksTrieDB =
     detail::RocksTrieDB<monad::execution::BoostFiberExecution, ReadOnly>;
+using RocksDB =
+    detail::RocksDB<monad::execution::BoostFiberExecution, ReadWrite>;
+using ReadOnlyRocksDB =
+    detail::RocksDB<monad::execution::BoostFiberExecution, ReadOnly>;
 
 template <typename TDB>
 [[nodiscard]] constexpr std::string_view as_string() noexcept
@@ -33,6 +40,11 @@ template <typename TDB>
         std::same_as<TDB, db::RocksTrieDB> ||
         std::same_as<TDB, db::ReadOnlyRocksTrieDB>) {
         return "rockstriedb"sv;
+    }
+    else if constexpr (
+        std::same_as<TDB, db::RocksDB> ||
+        std::same_as<TDB, db::ReadOnlyRocksDB>) {
+        return "rocksdb"sv;
     }
 }
 

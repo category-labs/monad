@@ -39,4 +39,11 @@ as_string<test::hijacked::RocksTrieDB>() noexcept
     return "hijackedrockstriedb";
 }
 
+template <>
+[[nodiscard]] constexpr std::string_view
+as_string<test::hijacked::RocksDB>() noexcept
+{
+    return "hijackedrocksdb";
+}
+
 MONAD_DB_NAMESPACE_END

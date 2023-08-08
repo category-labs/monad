@@ -16,9 +16,12 @@ public:
         monad::log::logger_t::start();
 
         (void)monad::log::logger_t::create_logger("trie_db_logger");
+        (void)monad::log::logger_t::create_logger("rocks_db_logger");
 
         monad::log::logger_t::set_log_level(
             "trie_db_logger", monad::log::level_t::Info);
+        monad::log::logger_t::set_log_level(
+            "rocks_db_logger", monad::log::level_t::Info);
     }
 };
 

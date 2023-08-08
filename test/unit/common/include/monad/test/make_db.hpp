@@ -54,11 +54,6 @@ inline TDatabase make_db()
         std::same_as<TDatabase, hijacked::InMemoryTrieDB>) {
         return TDatabase{};
     }
-    else if constexpr (
-        std::same_as<TDatabase, db::RocksDB> ||
-        std::same_as<TDatabase, hijacked::RocksDB>) {
-        return TDatabase{make_db_root(*info)};
-    }
     else {
         return TDatabase{make_db_root(*info), 0, 0};
     }

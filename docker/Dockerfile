@@ -22,7 +22,6 @@ RUN yum -y install \
 
 RUN yum -y install \
   boost-fiber \
-  boost-log \
   brotli \
   gmp \
   gtest \

@@ -2,7 +2,7 @@
     "builtin-baseline": "f6a5d4e8eb7476b8d7fc12a56dff300c1c986131",
     "name": "monad",
     "version": "0.0.1",
-    "dependencies": ["cli11", "nlohmann-json","quill", "tl-optional", "tl-expected"],
+    "dependencies": ["cli11", "nlohmann-json","quill", "tl-optional"],
     "overrides": [
         {
             "name": "cli11",
@@ -19,10 +19,6 @@
         {
             "name": "tl-optional",
             "version": "2021-05-02"
-        },
-        {
-            "name": "tl-expected",
-            "version": "1.1.0"
         }
     ]
 }

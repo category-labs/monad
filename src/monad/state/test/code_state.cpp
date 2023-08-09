@@ -289,3 +289,15 @@ TYPED_TEST(CodeStateTest, can_commit_multiple)
     }
     EXPECT_TRUE(s.can_commit());
 }
+
+TYPED_TEST(CodeStateTest, distinct_account_identical_code)
+{
+    auto db = test::make_db<TypeParam>();
+    CodeState s{db};
+
+    typename decltype(s)::ChangeSet changeset{s};
+    changeset.set_code(code_hash1, code1);
+    changeset.set_code(code_hash1, code1);
+    EXPECT_TRUE(s.can_merge(changeset));
+    s.merge_changes(changeset);
+}

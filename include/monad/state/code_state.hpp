@@ -100,13 +100,15 @@ struct CodeState<TCodeDB>::ChangeSet : public CodeState<TCodeDB>
         return CodeState::code_at(b);
     }
 
-    void set_code(bytes32_t const &b, byte_string const &code)
+    void set_code(bytes32_t const &code_hash, byte_string const &code)
     {
         if (code.empty()) {
             return;
         }
-        auto const &[_, inserted] = code_.emplace(b, code);
-        MONAD_DEBUG_ASSERT(inserted);
+        auto const &[_, inserted] = code_.emplace(code_hash, code);
+        if (!inserted) {
+            MONAD_DEBUG_ASSERT(code_.at(code_hash) == code);
+        }
     }
 
     [[nodiscard]] size_t get_code_size(bytes32_t const &b) const noexcept

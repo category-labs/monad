@@ -67,9 +67,9 @@ add_subdirectory(third_party/intx)
 add_subdirectory(third_party/silkpre)
 
 function(monad_compile_options target)
-    set_property(TARGET ${target} PROPERTY C_STANDARD 11)
+    set_property(TARGET ${target} PROPERTY C_STANDARD 23)
     set_property(TARGET ${target} PROPERTY C_STANDARD_REQUIRED ON)
-    set_property(TARGET ${target} PROPERTY CXX_STANDARD 20)
+    set_property(TARGET ${target} PROPERTY CXX_STANDARD 23)
     set_property(TARGET ${target} PROPERTY CXX_STANDARD_REQUIRED ON)
     target_compile_options(
         ${target} PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic
@@ -86,6 +86,12 @@ function(monad_compile_options target)
     if(EVMONE_TRACING)
         target_compile_definitions(${target} PRIVATE EVMONE_TRACING=1)
     endif()
+
+    # this is needed to turn off ranges support in nlohmann_json, because the
+    # ranges standard header triggers a clang bug which is fixed in trunk but
+    # not currently available to us
+    # https://gcc.gnu.org/bugzilla//show_bug.cgi?id=109647
+    target_compile_definitions(${target} PUBLIC "JSON_HAS_RANGES=0")
 endfunction()
 
 # ##############################################################################

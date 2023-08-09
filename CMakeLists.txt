@@ -34,7 +34,7 @@ if(NOT CMAKE_TOOLCHAIN_FILE STREQUAL
 endif()
 include(${VCPKG_ROOT_DIR}/scripts/buildsystems/vcpkg.cmake)
 
-find_package(Boost REQUIRED COMPONENTS fiber log)
+find_package(Boost REQUIRED COMPONENTS fiber)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 pkg_check_modules(rocksdb REQUIRED IMPORTED_TARGET rocksdb)
@@ -250,7 +250,6 @@ configure_file(cmake/test_resource_data.h.in test/test_resource_data.h @ONLY)
 target_link_libraries(
     monad
     PRIVATE Boost::fiber
-    PRIVATE Boost::log
     PRIVATE PkgConfig::brotli
     PRIVATE PkgConfig::rocksdb
     PUBLIC ethash::keccak

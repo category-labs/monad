@@ -218,7 +218,7 @@ namespace detail
             requires Writable<TPermission>
         {
             auto const s = ::monad::db::create_and_prune_block_history(
-                *this, block_number);
+                root, db, block_number, block_history_size);
             if (!s.has_value()) {
                 // this is not a critical error in production, we can continue
                 // executing with the current database while someone

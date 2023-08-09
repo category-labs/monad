@@ -15,23 +15,25 @@
 
 MONAD_DB_NAMESPACE_BEGIN
 
-template <typename TDB>
 [[nodiscard]] inline tl::expected<void, std::string>
-create_and_prune_block_history(TDB const &db, uint64_t block_number)
+create_and_prune_block_history(
+    std::filesystem::path root, std::shared_ptr<rocksdb::DB> db,
+    uint64_t block_number, uint64_t block_history_size)
 {
     namespace fs = std::filesystem;
 
-    auto const block_dir = db.root / std::to_string(block_number);
+    auto const block_dir = root / std::to_string(block_number);
     fs::create_directories(block_dir);
 
-    auto const checkpoint_dir = block_dir / monad::db::as_string<TDB>();
+    auto const stem = std::filesystem::path(db->GetName()).stem();
+    auto const checkpoint_dir = block_dir / stem;
 
     if (fs::exists(checkpoint_dir)) {
         fs::remove_all(checkpoint_dir);
     }
 
     rocksdb::Checkpoint *checkpoint;
-    auto status = rocksdb::Checkpoint::Create(db.db.get(), &checkpoint);
+    auto status = rocksdb::Checkpoint::Create(db.get(), &checkpoint);
     if (!status.ok()) {
         return tl::make_unexpected(status.ToString());
     }
@@ -43,9 +45,9 @@ create_and_prune_block_history(TDB const &db, uint64_t block_number)
     }
 
     // Remove the checkpoint that fell just outside of the historical range
-    if (block_number > db.block_history_size) {
+    if (block_number > block_history_size) {
         fs::remove_all(
-            db.root / std::to_string(block_number - db.block_history_size));
+            root / std::to_string(block_number - block_history_size));
     }
 
     return {};

@@ -15,6 +15,8 @@ include(cmake/test.cmake)
 # deps
 # ##############################################################################
 
+add_subdirectory("monad-core")
+
 set(VCPKG_ROOT_DIR "${PROJECT_SOURCE_DIR}/third_party/vcpkg")
 
 if(NOT CMAKE_TOOLCHAIN_FILE STREQUAL
@@ -61,7 +63,6 @@ FetchContent_MakeAvailable(nlohmann_json)
 set(BUILD_SHARED_LIBS OFF)
 set(ETHASH_BUILD_TESTS OFF)
 
-add_subdirectory(third_party/ethash)
 add_subdirectory(third_party/evmone)
 add_subdirectory(third_party/intx)
 add_subdirectory(third_party/silkpre)

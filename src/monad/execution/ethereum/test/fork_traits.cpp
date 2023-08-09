@@ -1,15 +1,37 @@
 #include <monad/config.hpp>
+#include <monad/core/account.hpp>
+#include <monad/core/address.hpp>
 #include <monad/core/concepts.hpp>
 
+#include <monad/db/block_db.hpp>
+#include <monad/db/in_memory_db.hpp>
+
+#include <monad/execution/config.hpp>
+#include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/test/fakes.hpp>
+
+#include <monad/state/account_state.hpp>
+#include <monad/state/code_state.hpp>
+#include <monad/state/state.hpp>
+#include <monad/state/value_state.hpp>
+
+#include <test_resource_data.h>
 
 #include <gtest/gtest.h>
 
 using namespace monad;
 using namespace monad::fork_traits;
+using namespace monad::execution;
 
+using db_t = db::InMemoryDB;
 using state_t = execution::fake::State::ChangeSet;
+
+namespace
+{
+    constexpr auto individual = 100u;
+    constexpr auto total = individual * 116u;
+}
 
 constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 constexpr auto b{0x5353535353535353535353535353535353535353_address};
@@ -330,4 +352,35 @@ TEST(fork_traits, london)
     fork_traits::london::apply_txn_award(
         s, {.gas_price = 100'000'000'000}, 0, 90'000'000);
     EXPECT_EQ(s._reward, 2 * uint256_t{9'000'000'000'000'000'000});
+}
+
+TEST(fork_traits, dao_transfer)
+{
+    db::BlockDb blocks{test_resource::correct_block_data_dir};
+    db_t db{};
+
+    std::vector<std::pair<address_t, std::optional<Account>>> v{};
+    for (auto const addr : ethereum::dao::child_accounts) {
+        Account a{.balance = individual};
+        v.emplace_back(std::make_pair(addr, a));
+    }
+    db.commit(state::StateChanges{.account_changes = v});
+    state::AccountState accounts{db};
+    state::ValueState values{db};
+    state::CodeState codes{db};
+    state::State s{accounts, values, codes, blocks, db};
+
+    fork_traits::dao::transfer_balance_dao(s, ethereum::dao::dao_block_number);
+
+    auto change_set = s.get_new_changeset(0u);
+
+    for (auto const &addr : ethereum::dao::child_accounts) {
+        change_set.access_account(addr);
+        EXPECT_EQ(intx::be::load<uint256_t>(change_set.get_balance(addr)), 0u);
+    }
+    change_set.access_account(ethereum::dao::withdraw_account);
+    EXPECT_EQ(
+        intx::be::load<uint256_t>(
+            change_set.get_balance(ethereum::dao::withdraw_account)),
+        total);
 }

@@ -3,8 +3,10 @@
 #include <monad/config.hpp>
 
 #include <monad/core/concepts.hpp>
+#include <monad/core/likely.h>
 #include <monad/core/transaction.hpp>
 
+#include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/static_precompiles/blake2f.hpp>
 #include <monad/execution/ethereum/static_precompiles/bn_add.hpp>
 #include <monad/execution/ethereum/static_precompiles/bn_multiply.hpp>
@@ -30,6 +32,7 @@ namespace fork_traits
 {
     struct frontier;
     struct homestead;
+    struct dao;
     struct spurious_dragon;
     struct byzantium;
     struct constantinople;
@@ -207,15 +210,20 @@ namespace fork_traits
         {
             s.add_txn_award(uint256_t{gas_used} * gas_price(t, base_gas_cost));
         }
+
+        template <typename TState>
+        static constexpr void transfer_balance_dao(TState &, block_num_t const)
+        {
+        }
     };
 
     struct homestead : public frontier
     {
-        using next_fork_t = spurious_dragon;
+        using next_fork_t = dao;
 
         // https://eips.ethereum.org/EIPS/eip-2
         static constexpr evmc_revision rev = EVMC_HOMESTEAD;
-        static constexpr auto last_block_number = 2'674'999u;
+        static constexpr auto last_block_number = 1'919'999u;
 
         [[nodiscard]] static constexpr auto
         g_txcreate(Transaction const &t) noexcept
@@ -261,7 +269,45 @@ namespace fork_traits
         }
     };
 
-    // dao - 1'920'000
+    struct dao : public homestead
+    {
+        using next_fork_t = spurious_dragon;
+        static constexpr auto last_block_number = 2'674'999u;
+        // EVMC revision for DAO should just be EVMC_HOMESTEAD
+
+        template <typename TState>
+        static constexpr void
+        transfer_balance_dao(TState &s, block_num_t const block_number)
+        {
+            if (MONAD_UNLIKELY(
+                    block_number ==
+                    execution::ethereum::dao::dao_block_number)) {
+                auto change_set = s.get_new_changeset(0u);
+                change_set.access_account(
+                    execution::ethereum::dao::withdraw_account);
+                for (auto const &addr :
+                     execution::ethereum::dao::child_accounts) {
+                    change_set.access_account(addr);
+                    change_set.set_balance(
+                        execution::ethereum::dao::withdraw_account,
+                        intx::be::load<uint256_t>(change_set.get_balance(
+                            execution::ethereum::dao::withdraw_account)) +
+                            intx::be::load<uint256_t>(
+                                change_set.get_balance(addr)));
+                    change_set.set_balance(addr, 0u);
+                }
+
+                // TODO: Workaround to get txn_id right for now. Ideally we want
+                // to commit block changes all at once
+                MONAD_DEBUG_ASSERT(
+                    s.can_merge_changes(change_set) ==
+                    TState::MergeStatus::WILL_SUCCEED);
+                s.merge_changes(change_set);
+                s.commit();
+            }
+        }
+    };
+
     // tangerine_whistle - 2'463'000
 
     struct spurious_dragon : public homestead
@@ -294,6 +340,11 @@ namespace fork_traits
             }
 
             return homestead::store_contract_code(s, a, code, gas);
+        }
+
+        template <typename TState>
+        static constexpr void transfer_balance_dao(TState &, block_num_t)
+        {
         }
     };
 

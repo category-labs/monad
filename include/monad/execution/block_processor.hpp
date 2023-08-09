@@ -5,6 +5,8 @@
 #include <monad/core/transaction.hpp>
 
 #include <monad/execution/config.hpp>
+#include <monad/execution/ethereum/dao.hpp>
+#include <monad/execution/ethereum/fork_traits.hpp>
 
 #include <monad/logging/monad_log.hpp>
 
@@ -27,6 +29,8 @@ struct AllTxnBlockProcessor
             b.header.number,
             b.transactions.size());
         MONAD_LOG_DEBUG(block_logger, "BlockHeader Fields: {}", b.header);
+
+        TTraits::transfer_balance_dao(s, b.header.number);
 
         std::vector<TFiberData> data{};
         std::vector<typename TExecution::fiber_t> fibers{};

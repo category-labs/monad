@@ -446,6 +446,11 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_spurious_dragon)
     replay_eth_t replay_eth;
 
     block_db._last_block_number = std::numeric_limits<uint64_t>::max();
+    constexpr auto offset = 10u;
+    constexpr auto start_block_number =
+        fork_traits::frontier::last_block_number - offset;
+    constexpr auto finish_block_number =
+        fork_traits::dao::last_block_number + offset;
 
     auto result = replay_eth.run<
         eth_start_fork,
@@ -459,24 +464,36 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_spurious_dragon)
         state,
         block_db,
         receipt_collector,
-        fork_traits::frontier::last_block_number - 10u,
-        fork_traits::homestead::last_block_number + 10u);
+        start_block_number,
+        finish_block_number);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::SUCCESS);
     EXPECT_EQ(result.block_number, 2'675'008u);
     EXPECT_EQ(receipt_collector.size(), 1'525'020u);
 
-    for (auto i = 0u; i < 11u; ++i) {
+    for (auto i = 0u; i < offset + 1u; ++i) {
         EXPECT_EQ(
             receipt_collector[i][0].status,
             fork_traits::frontier::last_block_number);
     }
-    for (auto i = 11u; i < receipt_collector.size() - 9u; ++i) {
+    for (auto i = offset + 1u;
+         i < fork_traits::homestead::last_block_number -
+                 fork_traits::frontier::last_block_number + 11u;
+         ++i) {
         EXPECT_EQ(
             receipt_collector[i][0].status,
             fork_traits::homestead::last_block_number);
     }
-    for (auto i = receipt_collector.size() - 9u; i < receipt_collector.size();
+    for (auto i = fork_traits::homestead::last_block_number -
+                  fork_traits::frontier::last_block_number + offset + 1u;
+         i < receipt_collector.size() - offset + 1u;
+         ++i) {
+        EXPECT_EQ(
+            receipt_collector[i][0].status,
+            fork_traits::dao::last_block_number);
+    }
+    for (auto i = receipt_collector.size() - offset + 1u;
+         i < receipt_collector.size();
          ++i) {
         EXPECT_EQ(
             receipt_collector[i][0].status,

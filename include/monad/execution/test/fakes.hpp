@@ -398,6 +398,11 @@ namespace fake
             {
                 return c;
             }
+
+            static constexpr void
+            transfer_balance_dao(TState &, block_num_t const)
+            {
+            }
         };
 
         template <class TState>

@@ -36,7 +36,6 @@ find_package(Boost REQUIRED COMPONENTS fiber)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 pkg_check_modules(rocksdb REQUIRED IMPORTED_TARGET rocksdb)
-find_package(tl-optional REQUIRED)
 find_package(quill REQUIRED)
 
 # nlohmann_json is first required to be found by find_package. then the target

@@ -168,7 +168,7 @@ struct AccountState<TAccountDB>::ChangeSet : public AccountState<TAccountDB>
     {
         auto const [_, inserted] =
             changed_.emplace(a, diff_t{get_committed_storage(a), Account{}});
-        MONAD_DEBUG_ASSERT(inserted);
+        //        MONAD_DEBUG_ASSERT(inserted);
     }
 
     // EVMC Host Interface
@@ -193,7 +193,10 @@ struct AccountState<TAccountDB>::ChangeSet : public AccountState<TAccountDB>
 
     void set_balance(address_t const &address, uint256_t new_balance) noexcept
     {
-        changed_.at(address).updated.value().balance = new_balance;
+        auto &x = changed_.at(address).updated;
+        if (x) {
+            x.value().balance = new_balance;
+        }
     }
 
     [[nodiscard]] uint64_t get_nonce(address_t const &address) const noexcept

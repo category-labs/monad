@@ -20,8 +20,7 @@
 #include <evmone/vm.hpp>
 
 #ifdef EVMONE_TRACING
-    #include <evmone/tracing.hpp>
-    #include <sstream>
+    #include <monad/execution/instruction_tracer.hpp>
 #endif
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
@@ -33,9 +32,6 @@ struct EVMOneBaselineInterpreter
     static evmc::Result
     execute(TEvmHost *h, evmc_message const &m, byte_string_view code)
     {
-        [[maybe_unused]] decltype(monad::log::logger_t::get_logger()) logger =
-            monad::log::logger_t::get_logger(
-                "evmone_baseline_interpreter_logger");
         evmc::Result result{
             evmc_result{.status_code = EVMC_SUCCESS, .gas_left = m.gas}};
         if (code.empty()) {
@@ -44,9 +40,7 @@ struct EVMOneBaselineInterpreter
 
         evmone::VM v{};
 #ifdef EVMONE_TRACING
-        std::ostringstream instruction_trace_string_stream;
-        v.add_tracer(
-            evmone::create_instruction_tracer(instruction_trace_string_stream));
+        v.add_tracer(std::make_unique<monad::execution::InstructionTracer>());
 #endif
 
         evmone::ExecutionState es{
@@ -55,9 +49,6 @@ struct EVMOneBaselineInterpreter
             evmone::baseline::analyze(TTraits::rev, code)};
         result = evmc::Result{evmone::baseline::execute(v, m.gas, es, ca)};
 
-#ifdef EVMONE_TRACING
-        MONAD_LOG_DEBUG(logger, "{}", instruction_trace_string_stream.str());
-#endif
         return result;
     }
 };

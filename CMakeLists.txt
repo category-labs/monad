@@ -132,6 +132,7 @@ add_library(
   "include/monad/execution/evmc_host.hpp"
   "include/monad/execution/evmone_baseline_interpreter.hpp"
   "include/monad/execution/ethereum/dao.hpp"
+  "include/monad/execution/instruction_tracer.hpp"
   "include/monad/execution/ethereum/genesis.hpp"
   "include/monad/execution/ethereum/static_precompiles/elliptic_curve_recover.hpp"
   "include/monad/execution/ethereum/static_precompiles/sha256_hash.hpp"
@@ -148,6 +149,7 @@ add_library(
   "include/monad/execution/transaction_processor.hpp"
   "include/monad/execution/transaction_processor_data.hpp"
   "src/monad/execution/create_contract_address.cpp"
+  "src/monad/execution/instruction_tracer.cpp"
   # fiber
   "include/monad/fiber/algorithm.hpp"
   "include/monad/fiber/properties.hpp"

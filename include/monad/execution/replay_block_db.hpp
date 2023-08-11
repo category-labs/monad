@@ -174,7 +174,9 @@ public:
                         Status::WRONG_STATE_ROOT, current_block_number - 1u};
                 }
                 else {
-                    state.create_and_prune_block_history(current_block_number);
+                    if(current_block_number % 1 == 0){
+                        state.create_and_prune_block_history(current_block_number);
+                    }
                 }
 
                 receipt_collector.emplace_back(receipts);

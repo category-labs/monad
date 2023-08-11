@@ -120,14 +120,13 @@ int main(int argc, char *argv[])
     auto const start_time = std::chrono::steady_clock::now();
 
     // Real Objects
-    using code_db_t = std::unordered_map<monad::bytes32_t, monad::byte_string>;
     using db_t = monad::db::RocksTrieDB;
     using block_db_t = monad::db::BlockDb;
     using receipt_collector_t = monad::receiptCollector;
     using state_t = monad::state::State<
         monad::state::AccountState<db_t>,
         monad::state::ValueState<db_t>,
-        monad::state::CodeState<code_db_t>,
+        monad::state::CodeState<db_t>,
         monad::db::BlockDb,
         db_t>;
     using execution_t = monad::execution::BoostFiberExecution;
@@ -149,10 +148,9 @@ int main(int argc, char *argv[])
 
     block_db_t block_db(block_db_path);
     db_t db{state_db_path, block_history_size};
-    code_db_t code_db{};
     monad::state::AccountState accounts{db};
     monad::state::ValueState values{db};
-    monad::state::CodeState code{code_db};
+    monad::state::CodeState code{db};
     state_t state{accounts, values, code, block_db, db};
 
     monad::block_num_t start_block_number = db.starting_block_number;

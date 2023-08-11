@@ -41,17 +41,21 @@ TEST(fork_traits, frontier)
     EXPECT_EQ(s._touched_dead, 10);
 
     byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
+    uint8_t const output_data[] = {0xde, 0xad, 0xbe, 0xef};
     { // Successfully deploy code
         int64_t gas = 10'000;
-        evmc::Result r{EVMC_SUCCESS, gas};
 
         auto const r_success = frontier::store_contract_code(s, a, code, gas);
         EXPECT_EQ(r_success.status_code, EVMC_SUCCESS);
         EXPECT_EQ(r_success.gas_left, gas);
 
+        evmc::Result r{EVMC_SUCCESS, gas, 0, output_data, sizeof(output_data)};
         auto const r2 = frontier::finalize_contract_storage(s, a, std::move(r));
-        EXPECT_EQ(r2.gas_left, gas - 1'000); // G_codedeposit * size(code)
+        EXPECT_EQ(r2.gas_left, gas - 800); // G_codedeposit * size(code)
         EXPECT_EQ(r2.create_address, a);
+        EXPECT_EQ(
+            s.get_code(s.get_code_hash(a)),
+            byte_string(output_data, sizeof(output_data)));
     }
 
     { // Initilization code succeeds, but deployment of code failed
@@ -61,7 +65,7 @@ TEST(fork_traits, frontier)
         EXPECT_EQ(r1.status_code, EVMC_SUCCESS);
         EXPECT_EQ(r1.gas_left, gas);
 
-        evmc::Result r{EVMC_SUCCESS, 900};
+        evmc::Result r{EVMC_SUCCESS, 700, 0, output_data, sizeof(output_data)};
         auto const r2 = frontier::finalize_contract_storage(s, a, std::move(r));
         EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
         EXPECT_EQ(r2.gas_left, r.gas_left);
@@ -108,6 +112,7 @@ TEST(fork_traits, homestead)
 
     execution::fake::State::ChangeSet s{};
     byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
+    uint8_t const output_data[] = {0xde, 0xad, 0xbe, 0xef};
     { // Successfully deploy code
         int64_t gas = 10'000;
 
@@ -115,23 +120,25 @@ TEST(fork_traits, homestead)
         EXPECT_EQ(r_success.status_code, EVMC_SUCCESS);
         EXPECT_EQ(r_success.gas_left, gas);
 
-        evmc::Result r{EVMC_SUCCESS, gas};
+        evmc::Result r{EVMC_SUCCESS, gas, 0, output_data, sizeof(output_data)};
         auto const r2 =
             homestead::finalize_contract_storage(s, a, std::move(r));
         EXPECT_EQ(r2.create_address, a);
+        EXPECT_EQ(r2.gas_left,
+                  r.gas_left - 800); // G_codedeposit * size(code)
         EXPECT_EQ(
-            r2.gas_left,
-            r.gas_left - 1'000); // G_codedeposit * size(code)
+            s.get_code(s.get_code_hash(a)),
+            byte_string(output_data, sizeof(output_data)));
     }
 
     { // Fail to deploy code - out of gas
-        int64_t gas = 900;
+        int64_t gas = 700;
 
         auto const r_success = homestead::store_contract_code(s, a, code, gas);
         EXPECT_EQ(r_success.status_code, EVMC_SUCCESS);
         EXPECT_EQ(r_success.gas_left, gas);
 
-        evmc::Result r{EVMC_SUCCESS, gas};
+        evmc::Result r{EVMC_SUCCESS, gas, 0, output_data, sizeof(output_data)};
         auto const r2 =
             homestead::finalize_contract_storage(s, a, std::move(r));
         EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
@@ -271,6 +278,7 @@ TEST(fork_traits, london)
 
     byte_string const illegal_code{0xef, 0x60};
     byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
+    uint8_t const output_data[] = {0xde, 0xad, 0xbe, 0xef};
     { // Successfully deploy code
         int64_t gas = 10'000;
 
@@ -278,11 +286,11 @@ TEST(fork_traits, london)
         EXPECT_EQ(r_success.status_code, EVMC_SUCCESS);
         EXPECT_EQ(r_success.gas_left, gas);
 
-        evmc::Result r{EVMC_SUCCESS, 5'000};
+        evmc::Result r{
+            EVMC_SUCCESS, 5'000, 0, output_data, sizeof(output_data)};
         auto const r2 = london::finalize_contract_storage(s, a, std::move(r));
         EXPECT_EQ(r2.create_address, a);
-        EXPECT_EQ(
-            r2.gas_left, r.gas_left - 1'000); // G_codedeposit * size(code)
+        EXPECT_EQ(r2.gas_left, r.gas_left - 800); // G_codedeposit * size(code)
     }
 
     { // Fail to deploy illegal code

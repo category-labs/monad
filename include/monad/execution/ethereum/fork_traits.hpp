@@ -170,7 +170,7 @@ namespace fork_traits
         {
             if (result.status_code == EVMC_SUCCESS) {
                 auto const deploy_cost =
-                    static_cast<int64_t>(s.get_code_size(a)) * 200;
+                    static_cast<int64_t>(result.output_size) * 200;
                 result.create_address = a;
 
                 if (result.gas_left < deploy_cost) {
@@ -238,13 +238,16 @@ namespace fork_traits
         {
             if (result.status_code == EVMC_SUCCESS) {
                 auto const deploy_cost =
-                    static_cast<int64_t>(s.get_code_size(a)) * 200;
+                    static_cast<int64_t>(result.output_size) * 200;
 
                 if (result.gas_left < deploy_cost) {
                     // EIP-2: If contract creation does not have enough gas to
                     // pay for the final gas fee for adding the contract code to
                     // the state, the contract creation fails (ie. goes
                     // out-of-gas) rather than leaving an empty contract.
+                    //
+                    // TODO: make sure old initialization code does not get
+                    // committed to the database
                     result.status_code = EVMC_OUT_OF_GAS;
                     result.gas_left = 0;
                 }

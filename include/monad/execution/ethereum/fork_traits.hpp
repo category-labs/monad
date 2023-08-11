@@ -229,25 +229,25 @@ namespace fork_traits
         }
 
         template <class TState>
-        [[nodiscard]] static evmc_result store_contract_code(
-            TState &s, address_t const &a, byte_string code,
-            int64_t gas) noexcept
-        {
-            auto const deploy_cost = static_cast<int64_t>(code.size()) * 200;
-            if (deploy_cost > gas) {
-                return {.status_code = EVMC_OUT_OF_GAS, .gas_left = 0};
-            }
-
-            s.set_code(a, code);
-            return {.status_code = EVMC_SUCCESS, .gas_left = gas - deploy_cost};
-        }
-
-        template <class TState>
         static evmc::Result finalize_contract_storage(
-            TState &, address_t const &a, evmc::Result result) noexcept
+            TState &s, address_t const &a, evmc::Result result) noexcept
         {
             if (result.status_code == EVMC_SUCCESS) {
-                result.create_address = a;
+                auto const deploy_cost =
+                    static_cast<int64_t>(s.get_code_size(a)) * 200;
+
+                if (result.gas_left < deploy_cost) {
+                    // EIP-2: If contract creation does not have enough gas to
+                    // pay for the final gas fee for adding the contract code to
+                    // the state, the contract creation fails (ie. goes
+                    // out-of-gas) rather than leaving an empty contract.
+                    result.status_code = EVMC_OUT_OF_GAS;
+                    result.gas_left = 0;
+                }
+                else {
+                    result.create_address = a;
+                    result.gas_left -= deploy_cost;
+                }
             }
             return result;
         }

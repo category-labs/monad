@@ -128,23 +128,25 @@ TEST(fork_traits, homestead)
 
         auto const r_success = homestead::store_contract_code(s, a, code, gas);
         EXPECT_EQ(r_success.status_code, EVMC_SUCCESS);
-        EXPECT_EQ(
-            r_success.gas_left, gas - 1'000); // G_codedeposit * size(code)
+        EXPECT_EQ(r_success.gas_left, gas);
 
-        evmc::Result r{EVMC_SUCCESS, 5'000};
+        evmc::Result r{EVMC_SUCCESS, gas};
         auto const r2 =
             homestead::finalize_contract_storage(s, a, std::move(r));
         EXPECT_EQ(r2.create_address, a);
+        EXPECT_EQ(
+            r2.gas_left,
+            r.gas_left - 1'000); // G_codedeposit * size(code)
     }
 
     { // Fail to deploy code - out of gas
         int64_t gas = 900;
 
-        auto const r1 = homestead::store_contract_code(s, a, code, gas);
-        EXPECT_EQ(r1.status_code, EVMC_OUT_OF_GAS);
-        EXPECT_EQ(r1.gas_left, 0);
+        auto const r_success = homestead::store_contract_code(s, a, code, gas);
+        EXPECT_EQ(r_success.status_code, EVMC_SUCCESS);
+        EXPECT_EQ(r_success.gas_left, gas);
 
-        evmc::Result r{EVMC_OUT_OF_GAS, 0};
+        evmc::Result r{EVMC_SUCCESS, gas};
         auto const r2 =
             homestead::finalize_contract_storage(s, a, std::move(r));
         EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
@@ -289,12 +291,13 @@ TEST(fork_traits, london)
 
         auto const r_success = london::store_contract_code(s, a, code, gas);
         EXPECT_EQ(r_success.status_code, EVMC_SUCCESS);
-        EXPECT_EQ(
-            r_success.gas_left, gas - 1'000); // G_codedeposit * size(code)
+        EXPECT_EQ(r_success.gas_left, gas);
 
         evmc::Result r{EVMC_SUCCESS, 5'000};
         auto const r2 = london::finalize_contract_storage(s, a, std::move(r));
         EXPECT_EQ(r2.create_address, a);
+        EXPECT_EQ(
+            r2.gas_left, r.gas_left - 1'000); // G_codedeposit * size(code)
     }
 
     { // Fail to deploy illegal code

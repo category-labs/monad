@@ -54,33 +54,18 @@ TEST(fork_traits, frontier)
         EXPECT_EQ(r2.create_address, a);
     }
 
-    { // Deploy code, but not have enough to pay to store it - frontier only
-      // test case
-        int64_t gas = 900;
-        evmc::Result r{EVMC_SUCCESS, gas};
-
-        auto const r1 = frontier::store_contract_code(s, a, code, gas);
-        EXPECT_EQ(r1.status_code, EVMC_SUCCESS);
-        EXPECT_EQ(r1.gas_left, gas);
-
-        auto const r2 = f.finalize_contract_storage(s, a, std::move(r));
-        EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
-        EXPECT_EQ(r2.gas_left, 0); // G_codedeposit * size(code)
-        EXPECT_EQ(r2.create_address, a);
-    }
-
-    { // Fail to deploy code - out of gas
+    { // Initilization code succeeds, but deployment of code failed
         int64_t gas = 10'000;
-        evmc::Result r{EVMC_OUT_OF_GAS, 0};
 
         auto const r1 = frontier::store_contract_code(s, a, code, gas);
         EXPECT_EQ(r1.status_code, EVMC_SUCCESS);
         EXPECT_EQ(r1.gas_left, gas);
 
+        evmc::Result r{EVMC_SUCCESS, 900};
         auto const r2 = frontier::finalize_contract_storage(s, a, std::move(r));
-        EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
-        EXPECT_EQ(r2.gas_left, 0); // G_codedeposit * size(code)
-        EXPECT_EQ(r2.create_address, null);
+        EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
+        EXPECT_EQ(r2.gas_left, r.gas_left);
+        EXPECT_EQ(r2.create_address, a);
     }
 
     // gas price

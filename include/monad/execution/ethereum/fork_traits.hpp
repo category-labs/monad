@@ -174,10 +174,14 @@ namespace fork_traits
                 result.create_address = a;
 
                 if (result.gas_left < deploy_cost) {
+                    // From YP: "No code is deposited in the state if the gas
+                    // does not cover the additional per-byte contract deposit
+                    // fee, however, the value is still transferred and the
+                    // execution side- effects take place."
                     s.set_code(a, {});
-                    result.gas_left = 0;
                 }
                 else {
+                    s.set_code(a, {result.output_data, result.output_size});
                     result.gas_left -= deploy_cost;
                 }
             }
@@ -247,6 +251,7 @@ namespace fork_traits
                 else {
                     result.create_address = a;
                     result.gas_left -= deploy_cost;
+                    s.set_code(a, {result.output_data, result.output_size});
                 }
             }
             return result;

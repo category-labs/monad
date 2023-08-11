@@ -71,52 +71,44 @@ struct alignas(64) TransactionProcessorFiberData
             txn_.from,
             txn_.to);
 
-        while (true) { // retry until apply state cleanly
-            // TODO: Issue #164
-            auto changeset = s_.get_new_changeset(id_);
-            while (true) { // spin until *could be* successful
-                auto const status = is_valid(p.validate(
-                    changeset, txn_, bh_.base_fee_per_gas.value_or(0)));
-                if (status == TxnReadyStatus::WILL_SUCCEED) {
-                    break;
-                }
-                else if (
-                    (s_.current_txn() == id_ &&
-                     status != TxnReadyStatus::WILL_SUCCEED) ||
-                    status == TxnReadyStatus::ERROR) {
-
-                    MONAD_LOG_INFO(txn_logger, "Transaction {} failed!", id_);
-                    // TODO: Charge for validation failure? #54
-                    return;
-                }
+        // Hack: From optimistic execution to sequential execution
+        while (true) {
+            if (s_.current_txn() != id_) {
                 TExecution::yield();
             }
+            else {
+                auto changeset = s_.get_new_changeset(id_);
+                auto const status = is_valid(p.validate(
+                    changeset, txn_, bh_.base_fee_per_gas.value_or(0)));
+                if (status != TxnReadyStatus::WILL_SUCCEED) {
+                    MONAD_LOG_INFO(txn_logger, "Transaction {} failed!", id_);
+                    return;
+                }
 
-            TEvmHost host{bh_, txn_, changeset};
-            result_ = p.execute(
-                changeset, host, txn_, bh_.base_fee_per_gas.value_or(0));
+                TEvmHost host{bh_, txn_, changeset};
+                result_ = p.execute(
+                    changeset, host, txn_, bh_.base_fee_per_gas.value_or(0));
 
-            if (s_.can_merge_changes(changeset) ==
-                TState::MergeStatus::WILL_SUCCEED) {
-                // apply_state -> can_merge_changes
-                // Can merge needs to be in yield while loop while receiving
-                // TRY_AGAIN When WILL_SUCCEED is returned, merge, and return;
-                // if ERROR is received, then error out
-                auto const finished_time = std::chrono::steady_clock::now();
-                auto const elapsed_ms =
-                    std::chrono::duration_cast<std::chrono::milliseconds>(
-                        finished_time - start_time);
-                MONAD_LOG_INFO(
-                    txn_logger,
-                    "Finish executing Transaction {}, time elapsed = {}",
-                    id_,
-                    elapsed_ms);
-    
-                s_.merge_changes(changeset);
-                return;
+                if (s_.can_merge_changes(changeset) ==
+                    TState::MergeStatus::WILL_SUCCEED) {
+                    // apply_state -> can_merge_changes
+                    // Can merge needs to be in yield while loop while receiving
+                    // TRY_AGAIN When WILL_SUCCEED is returned, merge, and
+                    // return; if ERROR is received, then error out
+                    auto const finished_time = std::chrono::steady_clock::now();
+                    auto const elapsed_ms =
+                        std::chrono::duration_cast<std::chrono::milliseconds>(
+                            finished_time - start_time);
+                    MONAD_LOG_INFO(
+                        txn_logger,
+                        "Finish executing Transaction {}, time elapsed = {}",
+                        id_,
+                        elapsed_ms);
+
+                    s_.merge_changes(changeset);
+                    return;
+                }
             }
-            MONAD_LOG_INFO(txn_logger, "Transaction {} rescheduled", id_);
-            TExecution::yield();
         }
     }
 

@@ -15,6 +15,9 @@
 
 #include <algorithm>
 
+// To be deleted
+#include <monad/logging/monad_log.hpp>
+
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
 template <class TState, concepts::fork_traits<TState> TTraits>
@@ -76,6 +79,13 @@ struct TransactionProcessor
         TState &s, TEvmHost &h, Transaction const &t,
         uint64_t base_fee_per_gas) const
     {
+        auto *txn_logger = log::logger_t::get_logger("txn_logger");
+        MONAD_LOG_INFO(
+            txn_logger,
+            "Sender Account {} Balance before txn: {}",
+            *t.from,
+            s.get_balance(*t.from));
+
         irrevocable_change(s, t);
 
         s.access_account(*t.from);
@@ -109,6 +119,12 @@ struct TransactionProcessor
 
         TTraits::apply_txn_award(
             s, t, base_fee_per_gas, t.gas_limit - gas_remaining);
+
+        MONAD_LOG_INFO(
+            txn_logger,
+            "Sender Account {} Balance after txn: {}",
+            *t.from,
+            s.get_balance(*t.from));
 
         auto receipt =
             h.make_receipt_from_result(result.status_code, t, gas_remaining);

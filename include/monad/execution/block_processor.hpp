@@ -64,12 +64,23 @@ struct AllTxnBlockProcessor
         auto const elapsed_ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 finished_time - start_time);
+
         MONAD_LOG_INFO(
             block_logger,
             "Finish executing Block {}, time elapsed = {}",
             b.header.number,
             elapsed_ms);
         MONAD_LOG_DEBUG(block_logger, "Receipts: {}", r);
+
+        // additional logging
+        auto temp_changeset = s.get_new_changeset(0u);
+        temp_changeset.access_account(b.header.beneficiary);
+
+        MONAD_LOG_INFO(
+            block_logger,
+            "Miner Account {} Balance after txn: {}",
+            b.header.beneficiary,
+            temp_changeset.get_balance(b.header.beneficiary));
 
         return r;
     }

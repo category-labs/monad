@@ -4,11 +4,16 @@
 #include <monad/execution/config.hpp>
 #include <monad/execution/create_contract_address.hpp>
 
+#include <monad/logging/monad_log.hpp>
+
 #include <ethash/keccak.hpp>
 
 #include <intx/intx.hpp>
 
 #include <tl/expected.hpp>
+
+#include <iomanip>
+#include <iostream>
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
@@ -93,6 +98,21 @@ struct Evm
         if (result.status_code == EVMC_REVERT) {
             state.revert();
         }
+
+        std::cerr << "Recipient Address: ";
+        for (auto i = 0u; i < 20u; ++i) {
+            std::cerr << std::setfill('0') << std::setw(2) << std::hex
+                      << static_cast<int>(m.recipient.bytes[i]);
+        }
+        std::cerr << std::endl;
+
+        auto code = state.get_code(state.get_code_hash(m.recipient));
+        std::cerr << "Code: ";
+        for (auto i = 0u; i < code.length(); ++i) {
+            std::cerr << std::setfill('0') << std::setw(2) << std::hex
+                      << static_cast<int>(code[i]);
+        }
+        std::cerr << std::endl;
 
         return result;
     }

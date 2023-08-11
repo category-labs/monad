@@ -36,9 +36,9 @@ struct TransactionProcessor
     };
 
     // YP Sec 6.2 "irrevocable_change"
-    void irrevocable_change(TState &s, Transaction const &t) const
+    void irrevocable_change(TState &s, Transaction const &t, bool second_time = false) const
     {
-        if (t.to) { // EVM will increment if new contract
+        if (t.to || second_time) { // EVM will increment if new contract
             auto const nonce = s.get_nonce(*t.from);
             s.set_nonce(*t.from, nonce + 1);
         }
@@ -112,6 +112,12 @@ struct TransactionProcessor
             base_fee_per_gas,
             static_cast<uint64_t>(result.gas_left),
             static_cast<uint64_t>(result.gas_refund));
+        
+        if(result.status_code != EVMC_SUCCESS){
+            s.revert();
+            s.access_account(*t.from);
+            irrevocable_change(s, t, true);
+        }
 
         // finalize state, Eqn. 77-79
         s.destruct_suicides();

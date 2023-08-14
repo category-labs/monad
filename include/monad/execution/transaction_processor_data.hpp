@@ -111,7 +111,7 @@ struct alignas(64) TransactionProcessorFiberData
                     "Finish executing Transaction {}, time elapsed = {}",
                     id_,
                     elapsed_ms);
-
+    
                 s_.merge_changes(changeset);
                 return;
             }

@@ -219,6 +219,9 @@ struct State
     TDatabase &db_{};
     unsigned int current_txn_{};
 
+    decltype(monad::log::logger_t::get_logger()) logger =
+        monad::log::logger_t::get_logger("state_logger");
+
     State(
         TAccountState &a, TValueState &s, TCodeState &c, TBlockCache &bc,
         TDatabase &db)
@@ -267,6 +270,13 @@ struct State
 
     void merge_changes(ChangeSet &c)
     {
+        MONAD_LOG_DEBUG(logger, "Account Changeset: {}", c.accounts_.changed_);
+
+        MONAD_LOG_DEBUG(
+            logger, "Storage Changeset: {}", c.storage_.touched_.storage_);
+
+        MONAD_LOG_DEBUG(logger, "Code Changeset: {}", c.code_.code_);
+
         accounts_.merge_changes(c.accounts_);
         storage_.merge_touched(c.storage_);
         code_.merge_changes(c.code_);

@@ -23,12 +23,18 @@
 #include <ethash/keccak.hpp>
 
 #include <bit>
+#include <string>
 #include <unordered_map>
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
 namespace fake
 {
+    struct InnerStorage
+    {
+        std::string storage_;
+    };
+
     struct Db
     {
         void create(address_t const &, Account const &) const noexcept
@@ -48,6 +54,25 @@ namespace fake
     {
         struct ChangeSet
         {
+            struct AccountChangeSet
+            {
+                std::string changed_{};
+            };
+
+            struct StorageChangeSet
+            {
+                InnerStorage touched_;
+            };
+
+            struct CodeChangeSet
+            {
+                std::string code_{};
+            };
+
+            AccountChangeSet accounts_;
+            StorageChangeSet storage_;
+            CodeChangeSet code_;
+
             std::unordered_map<address_t, Account> _accounts{};
             std::unordered_map<bytes32_t, byte_string> _code{};
 

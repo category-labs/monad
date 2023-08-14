@@ -42,6 +42,7 @@ RUN yum -y install \
 RUN yum -y install \
   boost-devel \
   brotli-devel \
+  cli11-devel \
   gmock-devel \
   gmp-devel \
   gtest-devel \

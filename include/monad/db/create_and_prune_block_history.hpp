@@ -3,15 +3,19 @@
 #include <monad/db/config.hpp>
 #include <monad/db/util.hpp>
 
-#include <fmt/format.h>
-#include <fmt/std.h>
+#include <quill/bundled/fmt/format.h>
+#include <quill/bundled/fmt/std.h>
+
 #include <rocksdb/db.h>
 #include <rocksdb/utilities/checkpoint.h>
+
 #include <tl/expected.hpp>
 
 #include <filesystem>
 #include <iostream>
 #include <memory>
+
+namespace fmt = fmtquill::v10;
 
 MONAD_DB_NAMESPACE_BEGIN
 

@@ -12,10 +12,12 @@
 #include <monad/trie/rocks_writer.hpp>
 #include <monad/trie/trie.hpp>
 
-#include <fmt/chrono.h>
-#include <fmt/format.h>
+#include <quill/bundled/fmt/chrono.h>
+#include <quill/bundled/fmt/format.h>
 
 #include <filesystem>
+
+namespace fmt = fmtquill::v10;
 
 MONAD_DB_NAMESPACE_BEGIN
 

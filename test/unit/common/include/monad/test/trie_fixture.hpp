@@ -10,11 +10,16 @@
 #include <monad/trie/rocks_writer.hpp>
 #include <monad/trie/trie.hpp>
 
-#include <filesystem>
-#include <fmt/chrono.h>
-#include <fmt/format.h>
-#include <gtest/gtest.h>
+#include <quill/bundled/fmt/chrono.h>
+#include <quill/bundled/fmt/format.h>
+
 #include <rocksdb/db.h>
+
+#include <gtest/gtest.h>
+
+#include <filesystem>
+
+namespace fmt = fmtquill::v10;
 
 MONAD_TEST_NAMESPACE_BEGIN
 

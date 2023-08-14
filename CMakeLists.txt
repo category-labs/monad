@@ -4,7 +4,6 @@ project(monad)
 
 option(ASAN "Turn on Address Sanitizer")
 option(UBSAN "Turn on Undefined Behavior Sanitizer")
-option(FUZZING "Enable fuzzing for clang" ON)
 option(EVMONE_TRACING
        "Enable instruction-level tracing for the evmone interpreter" OFF)
 
@@ -16,49 +15,17 @@ include(cmake/test.cmake)
 
 add_subdirectory("monad-core")
 
-set(VCPKG_ROOT_DIR "${PROJECT_SOURCE_DIR}/third_party/vcpkg")
-
-if(NOT CMAKE_TOOLCHAIN_FILE STREQUAL
-   "${VCPKG_ROOT_DIR}/scripts/buildsystems/vcpkg.cmake")
-  # This must be forced so dependency builds pick it up
-  if(CMAKE_TOOLCHAIN_FILE)
-    set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE
-        "${CMAKE_TOOLCHAIN_FILE}"
-        CACHE INTERNAL "vcpkg chained toolchain file")
-  endif()
-  set(CMAKE_TOOLCHAIN_FILE
-      "${VCPKG_ROOT_DIR}/scripts/buildsystems/vcpkg.cmake"
-      CACHE INTERNAL "vcpkg toolchain file" FORCE)
-endif()
-include(${VCPKG_ROOT_DIR}/scripts/buildsystems/vcpkg.cmake)
-
 find_package(Boost REQUIRED COMPONENTS fiber)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 pkg_check_modules(rocksdb REQUIRED IMPORTED_TARGET rocksdb)
-find_package(quill REQUIRED)
-
-# nlohmann_json is first required to be found by find_package. then the target
-# is made available via FetchContent using find_package (see FIND_PACKAGE_ARGS)
-# so that subdependencies pull details from vcpkg instead of trying to clone the
-# repository itself. Note: it is important that this sequence of events happens
-# prior to including any of the subdependencies.
-#
-# TODO: remove this workaround once we move fuzztest over to vcpkg
-find_package(nlohmann_json REQUIRED)
-FetchContent_Declare(
-  nlohmann_json
-  GIT_REPOSITORY https://github.com/nlohmann/json.git
-  GIT_TAG v3.11.2
-  FIND_PACKAGE_ARGS)
-FetchContent_MakeAvailable(nlohmann_json)
 
 set(BUILD_SHARED_LIBS OFF)
-set(ETHASH_BUILD_TESTS OFF)
 
 add_subdirectory(third_party/evmone)
 add_subdirectory(third_party/intx)
 add_subdirectory(third_party/silkpre)
+add_subdirectory(third_party/quill SYSTEM)
 
 function(monad_compile_options target)
   set_property(TARGET ${target} PROPERTY C_STANDARD 23)
@@ -104,14 +71,10 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/test/integration)
 # ##############################################################################
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-  if(FUZZING)
-    set(ANTLR_BUILD_CPP_TESTS
-        OFF
-        CACHE INTERNAL "do not build ANTLR tests" FORCE)
+  if(MONAD_FUZZING)
     set(FUZZTEST_FUZZING_MODE
         ON
         CACHE INTERNAL "enable fuzzing" FORCE)
-    add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/fuzztest)
     add_subdirectory(${PROJECT_SOURCE_DIR}/test/fuzz)
   endif()
 endif()

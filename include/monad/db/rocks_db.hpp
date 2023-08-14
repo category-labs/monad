@@ -16,12 +16,15 @@
 #include <monad/rlp/decode_helpers.hpp>
 #include <monad/rlp/encode_helpers.hpp>
 
-#include <fmt/chrono.h>
-#include <fmt/format.h>
+#include <quill/bundled/fmt/chrono.h>
+#include <quill/bundled/fmt/format.h>
+
 #include <rocksdb/db.h>
 
 #include <filesystem>
 #include <type_traits>
+
+namespace fmt = fmtquill::v10;
 
 MONAD_DB_NAMESPACE_BEGIN
 

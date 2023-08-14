@@ -14,12 +14,14 @@
 #include <monad/trie/node.hpp>
 #include <monad/trie/update.hpp>
 
-#include <fmt/format.h>
-#include <fmt/ranges.h>
+#include <quill/bundled/fmt/format.h>
+#include <quill/bundled/fmt/ranges.h>
 #include <quill/Quill.h>
 
 #include <optional>
 #include <type_traits>
+
+namespace fmt = fmtquill::v10;
 
 MONAD_LOG_NAMESPACE_BEGIN
 struct basic_formatter
@@ -93,8 +95,8 @@ namespace quill
 
 }
 
-namespace fmt
-{
+FMTQUILL_BEGIN_NAMESPACE
+
     template <>
     struct formatter<monad::address_t> : public monad::log::basic_formatter
     {
@@ -371,4 +373,5 @@ namespace fmt
             return ctx.out();
         }
     };
-}
+
+FMTQUILL_END_NAMESPACE

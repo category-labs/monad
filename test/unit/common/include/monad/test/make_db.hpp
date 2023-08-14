@@ -13,9 +13,12 @@
 #include <chrono>
 #include <filesystem>
 
-#include <fmt/chrono.h>
-#include <fmt/format.h>
+#include <quill/bundled/fmt/chrono.h>
+#include <quill/bundled/fmt/format.h>
+
 #include <gtest/gtest.h>
+
+namespace fmt = fmtquill::v10;
 
 MONAD_TEST_NAMESPACE_BEGIN
 

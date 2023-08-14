@@ -5,11 +5,14 @@
 #include <monad/db/config.hpp>
 #include <monad/db/util.hpp>
 
-#include <fmt/format.h>
+#include <quill/bundled/fmt/format.h>
+
 #include <tl/expected.hpp>
 
 #include <concepts>
 #include <filesystem>
+
+namespace fmt = fmtquill::v10;
 
 MONAD_DB_NAMESPACE_BEGIN
 

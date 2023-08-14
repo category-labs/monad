@@ -78,7 +78,6 @@ class InstructionTracer : public evmone::Tracer
         InstructionTracer::out << "{";
         InstructionTracer::out << R"("pc":)" << std::dec << pc;
         InstructionTracer::out << R"(,"op":)" << std::dec << int{opcode};
-        InstructionTracer::out << R"(,"opName":")" << get_name(opcode) << '"';
         InstructionTracer::out << R"(,"gas":"0x)" << std::hex << gas << "\"";
         output_stack(stack_top, stack_height);
 
@@ -89,6 +88,7 @@ class InstructionTracer : public evmone::Tracer
                                << state.memory.size();
         InstructionTracer::out << R"("depth":)" << std::dec
                                << (state.msg->depth + 1);
+        InstructionTracer::out << R"(,"opName":")" << get_name(opcode) << '"';
 
         InstructionTracer::out << "}\n";
     }

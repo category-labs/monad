@@ -61,18 +61,10 @@ class InstructionTracer : public evmone::Tracer
     }
 
     void on_execution_start(
-        evmc_revision rev, evmc_message const &msg,
+        [[maybe_unused]] evmc_revision rev, evmc_message const &msg,
         monad::byte_string_view code) noexcept override
     {
         m_contexts.emplace(code.data(), msg.gas);
-
-        InstructionTracer::out << "{";
-        InstructionTracer::out << R"("depth":)" << msg.depth;
-        InstructionTracer::out << R"(,"rev":")" << rev << '"';
-        InstructionTracer::out
-            << R"(,"static":)"
-            << (((msg.flags & EVMC_STATIC) != 0) ? "true" : "false");
-        InstructionTracer::out << "}\n";
     }
 
     void on_instruction_start(
@@ -95,6 +87,8 @@ class InstructionTracer : public evmone::Tracer
         // --tracing=+memory option would be nice.
         InstructionTracer::out << R"(,"memorySize":)" << std::dec
                                << state.memory.size();
+        InstructionTracer::out << R"("depth":)" << std::dec
+                               << (state.msg->depth + 1);
 
         InstructionTracer::out << "}\n";
     }

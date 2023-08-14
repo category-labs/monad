@@ -54,6 +54,7 @@ endfunction()
 # unit tests
 # ##############################################################################
 
+add_subdirectory(${PROJECT_SOURCE_DIR}/test/ethereum_test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/core/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/db/test)
@@ -201,6 +202,7 @@ target_include_directories(
   PUBLIC ${silkpre_SOURCE_DIR}/lib)
 
 set(TEST_DATA_DIR "${PROJECT_SOURCE_DIR}/test")
+set(THIRD_PARTY_DIR "${PROJECT_SOURCE_DIR}/third_party")
 
 configure_file(cmake/test_resource_data.h.in test/test_resource_data.h @ONLY)
 

@@ -34,6 +34,32 @@ namespace fake
         std::string storage_;
     };
 
+    class BlockDb
+    {
+    public:
+        enum class Status
+        {
+            SUCCESS,
+            NO_BLOCK_FOUND,
+            DECOMPRESS_ERROR,
+            DECODE_ERROR
+        };
+
+        block_num_t _last_block_number{};
+
+        Status get(block_num_t const block_number, Block &) const
+        {
+            if (block_number <= _last_block_number) {
+                return Status::SUCCESS;
+            }
+            else {
+                return Status::NO_BLOCK_FOUND;
+            }
+        }
+
+        [[nodiscard]] bytes32_t get_block_hash(block_num_t) { return {}; }
+    };
+
     struct Db
     {
         void create(address_t const &, Account const &) const noexcept
@@ -181,7 +207,7 @@ namespace fake
 
             void set_code(address_t const &a, byte_string const &c)
             {
-                auto const code_hash = std::bit_cast<const monad::bytes32_t>(
+                auto const code_hash = std::bit_cast<monad::bytes32_t const>(
                     ethash::keccak256(c.data(), c.size()));
 
                 _code.insert({code_hash, c});
@@ -449,8 +475,8 @@ namespace fake
         {
             static evmc::Result execute(evmc_message const &m) noexcept
             {
-                const int64_t gas =
-                    (const int64_t)(m.input_size * T::echo_gas_cost());
+                int64_t const gas =
+                    (int64_t const)(m.input_size * T::echo_gas_cost());
                 if (m.gas < gas) {
                     return evmc::Result{
                         evmc_result{.status_code = EVMC_OUT_OF_GAS}};
@@ -473,7 +499,7 @@ namespace fake
         {
             static evmc::Result execute(evmc_message const &m) noexcept
             {
-                const int64_t gas = 100;
+                int64_t const gas = 100;
                 if (m.gas < gas) {
                     return evmc::Result{
                         evmc_result{.status_code = EVMC_OUT_OF_GAS}};

@@ -122,9 +122,17 @@ struct State
             return accounts_.selfdestruct(a, b);
         }
 
-        void destruct_suicides() { accounts_.destruct_suicides(); }
+        void destruct_suicides()
+        {
+            MONAD_LOG_DEBUG(logger, "{}", "destruct_suicides");
+            accounts_.destruct_suicides();
+        }
 
-        void destruct_touched_dead() { accounts_.destruct_touched_dead(); }
+        void destruct_touched_dead()
+        {
+            MONAD_LOG_DEBUG(logger, "{}", "destruct_touched_dead");
+            accounts_.destruct_touched_dead();
+        }
 
         uint64_t total_selfdestructs() const noexcept
         {
@@ -159,7 +167,7 @@ struct State
         void set_code(address_t const &a, byte_string const &c)
         {
             MONAD_LOG_DEBUG(logger, "set_code: {} = {}", a, evmc::hex(c));
-            auto const code_hash = std::bit_cast<const monad::bytes32_t>(
+            auto const code_hash = std::bit_cast<monad::bytes32_t const>(
                 ethash::keccak256(c.data(), c.size()));
 
             code_.set_code(code_hash, c);
@@ -187,6 +195,7 @@ struct State
 
         void revert() noexcept
         {
+            MONAD_LOG_DEBUG(logger, "{}", "revert");
             accounts_.revert();
             storage_.revert();
             code_.revert();

@@ -14,30 +14,6 @@ using empty_list_t = boost::mp11::mp_list<>;
 using namespace monad;
 using namespace monad::execution;
 
-class fakeBlockDb
-{
-public:
-    enum class Status
-    {
-        SUCCESS,
-        NO_BLOCK_FOUND,
-        DECOMPRESS_ERROR,
-        DECODE_ERROR
-    };
-
-    block_num_t _last_block_number;
-
-    Status get(block_num_t const block_number, Block &) const
-    {
-        if (block_number <= _last_block_number) {
-            return Status::SUCCESS;
-        }
-        else {
-            return Status::NO_BLOCK_FOUND;
-        }
-    }
-};
-
 class fakeErrorDecompressBlockDb
 {
 public:
@@ -178,7 +154,7 @@ using state_t = execution::fake::State;
 using receipt_collector_t = std::vector<std::vector<Receipt>>;
 
 using replay_eth_t = ReplayFromBlockDb<
-    state_t, fakeBlockDb, BoostFiberExecution, fakeReceiptBP,
+    state_t, fake::BlockDb, BoostFiberExecution, fakeReceiptBP,
     fakeEmptyTransactionTrie, fakeEmptyReceiptTrie, receipt_collector_t>;
 
 using replay_eth_error_decompress_t = ReplayFromBlockDb<
@@ -192,7 +168,7 @@ using replay_eth_error_decode_t = ReplayFromBlockDb<
 TEST(ReplayFromBlockDb_Eth, invalid_end_block_number)
 {
     state_t state;
-    fakeBlockDb block_db;
+    fake::BlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_eth_t replay_eth;
 
@@ -215,7 +191,7 @@ TEST(ReplayFromBlockDb_Eth, invalid_end_block_number)
 TEST(ReplayFromBlockDb_Eth, invalid_end_block_number_zero)
 {
     state_t state;
-    fakeBlockDb block_db;
+    fake::BlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_eth_t replay_eth;
 
@@ -238,7 +214,7 @@ TEST(ReplayFromBlockDb_Eth, invalid_end_block_number_zero)
 TEST(ReplayFromBlockDb_Eth, start_block_number_outside_db)
 {
     state_t state;
-    fakeBlockDb block_db;
+    fake::BlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_eth_t replay_eth;
 
@@ -307,7 +283,7 @@ TEST(ReplayFromBlockDb_Eth, decode_block_error)
 TEST(ReplayFromBlockDb_Eth, one_block)
 {
     state_t state;
-    fakeBlockDb block_db;
+    fake::BlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_eth_t replay_eth;
 
@@ -331,7 +307,7 @@ TEST(ReplayFromBlockDb_Eth, one_block)
 TEST(ReplayFromBlockDb_Eth, frontier_run_from_zero)
 {
     state_t state;
-    fakeBlockDb block_db;
+    fake::BlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_eth_t replay_eth;
 
@@ -359,7 +335,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_run_from_zero)
 TEST(ReplayFromBlockDb_Eth, frontier_to_homestead)
 {
     state_t state;
-    fakeBlockDb block_db;
+    fake::BlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_eth_t replay_eth;
 
@@ -395,7 +371,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_homestead)
 TEST(ReplayFromBlockDb_Eth, berlin_to_london)
 {
     state_t state;
-    fakeBlockDb block_db;
+    fake::BlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_eth_t replay_eth;
 
@@ -431,7 +407,7 @@ TEST(ReplayFromBlockDb_Eth, berlin_to_london)
 TEST(ReplayFromBlockDb_Eth, frontier_to_spurious_dragon)
 {
     state_t state;
-    fakeBlockDb block_db;
+    fake::BlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_eth_t replay_eth;
 
@@ -488,7 +464,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_spurious_dragon)
 TEST(ReplayFromBlockDb_Eth, byzantium_to_constantinople_and_petersburg)
 {
     state_t state;
-    fakeBlockDb block_db;
+    fake::BlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_eth_t replay_eth;
 

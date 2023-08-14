@@ -1,5 +1,7 @@
 #pragma once
 
+#include <monad/db/config.hpp>
+#include <monad/db/db.hpp>
 #include <monad/db/trie_db_commit.hpp>
 #include <monad/db/trie_db_read_account.hpp>
 #include <monad/db/trie_db_read_storage.hpp>

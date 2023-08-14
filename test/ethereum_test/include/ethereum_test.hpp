@@ -1,0 +1,102 @@
+#pragma once
+
+#include <ethash/hash_types.hpp>
+
+#include <filesystem>
+#include <vector>
+
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
+#include <nlohmann/json.hpp>
+
+#include <from_json.hpp>
+
+#include <monad/test/config.hpp>
+
+MONAD_TEST_NAMESPACE_BEGIN
+
+class EthereumTests : public testing::Test
+{
+    std::filesystem::path json_test_file_;
+    std::string suite_name_;
+    std::string test_name_;
+    std::string file_name_;
+
+public:
+    EthereumTests(
+        std::filesystem::path json_test_file, std::string suite_name,
+        std::string test_name, std::string file_name) noexcept
+        : json_test_file_{json_test_file}
+        , suite_name_{suite_name}
+        , test_name_{test_name}
+        , file_name_{file_name}
+    {
+    }
+
+    static void register_test(
+        std::string const &suite_name, std::filesystem::path const &file);
+
+    static void register_test_files(std::filesystem::path const &root);
+
+    void TestBody() override;
+
+    [[nodiscard]] static StateTransitionTest load_state_test(
+        nlohmann::json json, std::string suite_name, std::string test_name,
+        std::string file_name);
+
+    static void
+    run_state_test(StateTransitionTest const &test, nlohmann::json const &json);
+};
+
+/**
+ * @param fork_name
+ * @return the index that corresponds to the fork_name in the `all_forks_t`
+ * type
+ */
+[[nodiscard]] std::optional<size_t> to_fork_index(std::string_view fork_name);
+
+template <typename TState>
+void load_state_from_json(nlohmann::json const &j, TState &state)
+{
+    auto change_set = state.get_new_changeset(0u);
+    for (auto const &[j_addr, j_acc] : j.items()) {
+        auto const account_address =
+            evmc::from_hex<monad::address_t>(j_addr).value();
+        change_set.create_account(account_address);
+        if (j_acc.contains("code")) {
+            change_set.set_code(
+                account_address, j_acc.at("code").get<monad::byte_string>());
+        }
+
+        change_set.set_balance(
+            account_address, j_acc.at("balance").get<intx::uint256>());
+        // we cannot use the nlohmann::json from_json<uint64_t> because
+        // it does not use the strtoull implementation, whereas we need
+        // it so we can turn a hex string into a uint64_t
+        change_set.set_nonce(
+            account_address, integer_from_json<uint64_t>(j_acc.at("nonce")));
+
+        if (j_acc.contains("storage") && j_acc["storage"].is_object()) {
+            for (auto const &[key, value] : j_acc["storage"].items()) {
+                nlohmann::json key_json = key;
+                monad::bytes32_t key_bytes32 = key_json.get<monad::bytes32_t>();
+                monad::bytes32_t value_bytes32 = value;
+                if (value_bytes32 == monad::bytes32_t{}) {
+                    // skip setting starting storage to zero to avoid pointless
+                    // deletion
+                    continue;
+                }
+                EXPECT_EQ(
+                    change_set.set_storage(
+                        account_address, key_bytes32, value_bytes32),
+                    EVMC_STORAGE_ADDED);
+            }
+        }
+    }
+
+    state.merge_changes(change_set);
+    state.commit();
+}
+
+MONAD_TEST_NAMESPACE_END

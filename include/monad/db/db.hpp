@@ -1,10 +1,10 @@
 #pragma once
 
-#include <monad/config.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/db/config.hpp>
 #include <monad/state/state_changes.hpp>
 
 #include <cstdint>

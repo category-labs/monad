@@ -43,6 +43,6 @@ BreakConstructorInitializers: BeforeComma
 BreakInheritanceList: BeforeComma
 IndentExternBlock: NoIndent
 IndentPPDirectives: BeforeHash
+InsertNewlineAtEOF: true
 QualifierAlignment: Custom
 QualifierOrder: ['friend', 'static', 'inline', 'constexpr', 'type', 'const', 'volatile' ]
-InsertNewlineAtEOF: true

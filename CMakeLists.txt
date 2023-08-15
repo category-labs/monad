@@ -102,10 +102,10 @@ add_library(
   # db
   "include/monad/db/assert.h"
   "include/monad/db/auto_detect_start_block_number.hpp"
-  "include/monad/db/db.hpp"
   "include/monad/db/block_db.hpp"
   "include/monad/db/config.hpp"
   "include/monad/db/create_and_prune_block_history.hpp"
+  "include/monad/db/db.hpp"
   "include/monad/db/file_db.hpp"
   "include/monad/db/in_memory_db.hpp"
   "include/monad/db/in_memory_trie_db.hpp"
@@ -168,6 +168,10 @@ add_library(
   "src/monad/rlp/decode_helpers.cpp"
   "src/monad/rlp/encode_helpers.cpp"
   # state
+  "include/monad/state2/state.hpp"
+  "include/monad/state2/state_ops.hpp"
+  "src/monad/state2/state.cpp"
+  "src/monad/state2/state_ops.cpp"
   "include/monad/state/account_state.hpp"
   "include/monad/state/code_state.hpp"
   "include/monad/state/state.hpp"
@@ -208,13 +212,14 @@ target_link_libraries(
   PRIVATE PkgConfig::rocksdb
   PUBLIC ethash::keccak
   PUBLIC evmc
+  PUBLIC evmone
   PUBLIC intx::intx
-  PUBLIC tl::expected
-  PUBLIC tl::optional
+  PUBLIC nlohmann_json::nlohmann_json
   PUBLIC quill::quill
   PUBLIC silkpre
-  PUBLIC nlohmann_json::nlohmann_json
-  PUBLIC evmone)
+  PUBLIC tl::expected
+  PUBLIC tl::optional
+  PUBLIC unordered_dense)
 monad_compile_options(monad)
 
 if(ASAN)

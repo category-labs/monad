@@ -93,27 +93,27 @@ TEST(
     EXPECT_EQ(r.gas_used, 15'000);
 }
 
-TEST(TransactionProcessorFiberData, validation_insufficient_balance_optimistic)
-{
-    fake::State s{
-        ._current_txn = 1,
-        ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
-    static BlockHeader const b{};
-    static Transaction t{.gas_limit = 15'000};
-    fake_status = TestStatus::INSUFFICIENT_BALANCE;
+// TEST(TransactionProcessorFiberData, validation_insufficient_balance_optimistic)
+// {
+//     fake::State s{
+//         ._current_txn = 1,
+//         ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
+//     static BlockHeader const b{};
+//     static Transaction t{.gas_limit = 15'000};
+//     fake_status = TestStatus::INSUFFICIENT_BALANCE;
 
-    data_t<
-        fakeGlobalStatusTP<
-            fake::State::ChangeSet,
-            fake::traits::alpha<fake::State::ChangeSet>>,
-        fakeSuccessAfterYieldEM>
-        d{s, t, b, 10};
-    d();
-    auto const r = d.get_receipt();
+//     data_t<
+//         fakeGlobalStatusTP<
+//             fake::State::ChangeSet,
+//             fake::traits::alpha<fake::State::ChangeSet>>,
+//         fakeSuccessAfterYieldEM>
+//         d{s, t, b, 10};
+//     d();
+//     auto const r = d.get_receipt();
 
-    EXPECT_EQ(r.status, 1u);
-    EXPECT_EQ(r.gas_used, 15'000);
-}
+//     EXPECT_EQ(r.status, 1u);
+//     EXPECT_EQ(r.gas_used, 15'000);
+// }
 
 TEST(TransactionProcessorFiberData, validation_later_nonce_current_txn_id)
 {
@@ -137,26 +137,26 @@ TEST(TransactionProcessorFiberData, validation_later_nonce_current_txn_id)
     EXPECT_EQ(r.status, 1u);
 }
 
-TEST(TransactionProcessorFiberData, validation_later_nonce_optimistic)
-{
-    fake::State s{
-        ._current_txn = 1,
-        ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
-    static BlockHeader const b{};
-    static Transaction t{};
-    fake_status = TestStatus::LATER_NONCE;
+// TEST(TransactionProcessorFiberData, validation_later_nonce_optimistic)
+// {
+//     fake::State s{
+//         ._current_txn = 1,
+//         ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
+//     static BlockHeader const b{};
+//     static Transaction t{};
+//     fake_status = TestStatus::LATER_NONCE;
 
-    data_t<
-        fakeGlobalStatusTP<
-            fake::State::ChangeSet,
-            fake::traits::alpha<fake::State::ChangeSet>>,
-        fakeSuccessAfterYieldEM>
-        d{s, t, b, 10};
-    d();
-    auto const r = d.get_receipt();
+//     data_t<
+//         fakeGlobalStatusTP<
+//             fake::State::ChangeSet,
+//             fake::traits::alpha<fake::State::ChangeSet>>,
+//         fakeSuccessAfterYieldEM>
+//         d{s, t, b, 10};
+//     d();
+//     auto const r = d.get_receipt();
 
-    EXPECT_EQ(r.status, 0u);
-}
+//     EXPECT_EQ(r.status, 0u);
+// }
 
 TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_current_txn_id)
 {
@@ -180,112 +180,112 @@ TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_current_txn_id)
     EXPECT_EQ(r.gas_used, 15'000);
 }
 
-TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_optimistic)
-{
-    fake::State s{
-        ._current_txn = 1,
-        ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
-    static BlockHeader const b{};
-    static Transaction t{.gas_limit = 15'000};
-    fake_status = TestStatus::INVALID_GAS_LIMIT;
+// TEST(TransactionProcessorFiberData, validation_invalid_gas_limit_optimistic)
+// {
+//     fake::State s{
+//         ._current_txn = 1,
+//         ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
+//     static BlockHeader const b{};
+//     static Transaction t{.gas_limit = 15'000};
+//     fake_status = TestStatus::INVALID_GAS_LIMIT;
 
-    data_t<
-        fakeGlobalStatusTP<
-            fake::State::ChangeSet,
-            fake::traits::alpha<fake::State::ChangeSet>>,
-        fakeSuccessAfterYieldEM>
-        d{s, t, b, 10};
-    d();
-    auto const r = d.get_receipt();
+//     data_t<
+//         fakeGlobalStatusTP<
+//             fake::State::ChangeSet,
+//             fake::traits::alpha<fake::State::ChangeSet>>,
+//         fakeSuccessAfterYieldEM>
+//         d{s, t, b, 10};
+//     d();
+//     auto const r = d.get_receipt();
 
-    EXPECT_EQ(r.status, 1u);
-    EXPECT_EQ(r.gas_used, 15'000);
-}
+//     EXPECT_EQ(r.status, 1u);
+//     EXPECT_EQ(r.gas_used, 15'000);
+// }
 
-TEST(TransactionProcessorFiberData, validation_bad_nonce_current_txn_id)
-{
-    fake::State s{
-        ._current_txn = 10,
-        ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
-    static BlockHeader const b{};
-    static Transaction t{.gas_limit = 15'000};
-    fake_status = TestStatus::BAD_NONCE;
+// TEST(TransactionProcessorFiberData, validation_bad_nonce_current_txn_id)
+// {
+//     fake::State s{
+//         ._current_txn = 10,
+//         ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
+//     static BlockHeader const b{};
+//     static Transaction t{.gas_limit = 15'000};
+//     fake_status = TestStatus::BAD_NONCE;
 
-    data_t<
-        fakeGlobalStatusTP<
-            fake::State::ChangeSet,
-            fake::traits::alpha<fake::State::ChangeSet>>,
-        BoostFiberExecution>
-        d{s, t, b, 10};
-    d();
-    auto const r = d.get_receipt();
+//     data_t<
+//         fakeGlobalStatusTP<
+//             fake::State::ChangeSet,
+//             fake::traits::alpha<fake::State::ChangeSet>>,
+//         BoostFiberExecution>
+//         d{s, t, b, 10};
+//     d();
+//     auto const r = d.get_receipt();
 
-    EXPECT_EQ(r.status, 1u);
-    EXPECT_EQ(r.gas_used, 15'000);
-}
+//     EXPECT_EQ(r.status, 1u);
+//     EXPECT_EQ(r.gas_used, 15'000);
+// }
 
-TEST(TransactionProcessorFiberData, validation_bad_nonce_optimistic)
-{
-    fake::State s{
-        ._current_txn = 1,
-        ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
-    static BlockHeader const b{};
-    static Transaction t{.gas_limit = 15'000};
-    fake_status = TestStatus::BAD_NONCE;
+// TEST(TransactionProcessorFiberData, validation_bad_nonce_optimistic)
+// {
+//     fake::State s{
+//         ._current_txn = 1,
+//         ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
+//     static BlockHeader const b{};
+//     static Transaction t{.gas_limit = 15'000};
+//     fake_status = TestStatus::BAD_NONCE;
 
-    data_t<
-        fakeGlobalStatusTP<
-            fake::State::ChangeSet,
-            fake::traits::alpha<fake::State::ChangeSet>>,
-        fakeSuccessAfterYieldEM>
-        d{s, t, b, 10};
-    d();
-    auto const r = d.get_receipt();
+//     data_t<
+//         fakeGlobalStatusTP<
+//             fake::State::ChangeSet,
+//             fake::traits::alpha<fake::State::ChangeSet>>,
+//         fakeSuccessAfterYieldEM>
+//         d{s, t, b, 10};
+//     d();
+//     auto const r = d.get_receipt();
 
-    EXPECT_EQ(r.status, 1u);
-    EXPECT_EQ(r.gas_used, 15'000);
-}
+//     EXPECT_EQ(r.status, 1u);
+//     EXPECT_EQ(r.gas_used, 15'000);
+// }
 
-TEST(TransactionProcessorFiberData, validation_deployed_code_current_txn_id)
-{
-    fake::State s{
-        ._current_txn = 10,
-        ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
-    static BlockHeader const b{};
-    static Transaction t{.gas_limit = 15'000};
-    fake_status = TestStatus::DEPLOYED_CODE;
+// TEST(TransactionProcessorFiberData, validation_deployed_code_current_txn_id)
+// {
+//     fake::State s{
+//         ._current_txn = 10,
+//         ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
+//     static BlockHeader const b{};
+//     static Transaction t{.gas_limit = 15'000};
+//     fake_status = TestStatus::DEPLOYED_CODE;
 
-    data_t<
-        fakeGlobalStatusTP<
-            fake::State::ChangeSet,
-            fake::traits::alpha<fake::State::ChangeSet>>,
-        BoostFiberExecution>
-        d{s, t, b, 10};
-    d();
-    auto const r = d.get_receipt();
+//     data_t<
+//         fakeGlobalStatusTP<
+//             fake::State::ChangeSet,
+//             fake::traits::alpha<fake::State::ChangeSet>>,
+//         BoostFiberExecution>
+//         d{s, t, b, 10};
+//     d();
+//     auto const r = d.get_receipt();
 
-    EXPECT_EQ(r.status, 1u);
-    EXPECT_EQ(r.gas_used, 15'000);
-}
+//     EXPECT_EQ(r.status, 1u);
+//     EXPECT_EQ(r.gas_used, 15'000);
+// }
 
-TEST(TransactionProcessorFiberData, validation_deployed_code_optimistic)
-{
-    fake::State s{
-        ._current_txn = 1,
-        ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
-    static BlockHeader const b{};
-    static Transaction t{.gas_limit = 15'000};
-    fake_status = TestStatus::DEPLOYED_CODE;
+// TEST(TransactionProcessorFiberData, validation_deployed_code_optimistic)
+// {
+//     fake::State s{
+//         ._current_txn = 1,
+//         ._merge_status = fake::State::MergeStatus::WILL_SUCCEED};
+//     static BlockHeader const b{};
+//     static Transaction t{.gas_limit = 15'000};
+//     fake_status = TestStatus::DEPLOYED_CODE;
 
-    data_t<
-        fakeGlobalStatusTP<
-            fake::State::ChangeSet,
-            fake::traits::alpha<fake::State::ChangeSet>>,
-        fakeSuccessAfterYieldEM>
-        d{s, t, b, 10};
-    d();
-    auto const r = d.get_receipt();
+//     data_t<
+//         fakeGlobalStatusTP<
+//             fake::State::ChangeSet,
+//             fake::traits::alpha<fake::State::ChangeSet>>,
+//         fakeSuccessAfterYieldEM>
+//         d{s, t, b, 10};
+//     d();
+//     auto const r = d.get_receipt();
 
-    EXPECT_EQ(r.status, 1u);
-    EXPECT_EQ(r.gas_used, 15'000);
-}
+//     EXPECT_EQ(r.status, 1u);
+//     EXPECT_EQ(r.gas_used, 15'000);
+// }

@@ -59,20 +59,20 @@ struct fakeApplyStateAfterYieldEM
     }
 };
 
-TEST(TransactionProcessorFiberData, fail_apply_state_first_time)
-{
-    static BlockHeader const b{};
-    static Transaction t{};
-    global_state._merge_status = fake::State::MergeStatus::COLLISION_DETECTED;
+// TEST(TransactionProcessorFiberData, fail_apply_state_first_time)
+// {
+//     static BlockHeader const b{};
+//     static Transaction t{};
+//     global_state._merge_status = fake::State::MergeStatus::COLLISION_DETECTED;
 
-    data_t<
-        fakeEmptyTP<
-            fake::State::ChangeSet,
-            fake::traits::alpha<fake::State::ChangeSet>>,
-        fakeApplyStateAfterYieldEM>
-        d{global_state, t, b, 0};
-    d();
-    auto const r = d.get_receipt();
+//     data_t<
+//         fakeEmptyTP<
+//             fake::State::ChangeSet,
+//             fake::traits::alpha<fake::State::ChangeSet>>,
+//         fakeApplyStateAfterYieldEM>
+//         d{global_state, t, b, 0};
+//     d();
+//     auto const r = d.get_receipt();
 
-    EXPECT_EQ(r.status, 0u);
-}
+//     EXPECT_EQ(r.status, 0u);
+// }

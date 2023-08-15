@@ -27,7 +27,7 @@ struct InMemoryWriter
     {
     }
 
-    void put(KeyBuffer const &key, byte_string const &value)
+    void put(KeyBuffer const &key, byte_string_view value)
     {
         // puts should override any previous actions
         auto const bs = byte_string{key.view()};

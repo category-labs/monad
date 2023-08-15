@@ -181,13 +181,7 @@ namespace fork_traits
                     s.set_code(a, {});
                 }
                 else {
-                    if (result.output_size) {
-                        MONAD_DEBUG_ASSERT(result.output_data);
-                        s.set_code(
-                            a,
-                            byte_string{
-                                result.output_data, result.output_size});
-                    }
+                    s.set_code(a, {result.output_data, result.output_size});
                     result.gas_left -= deploy_cost;
                 }
             }
@@ -260,13 +254,7 @@ namespace fork_traits
                 else {
                     result.create_address = a;
                     result.gas_left -= deploy_cost;
-                    if (result.output_size) {
-                        MONAD_DEBUG_ASSERT(result.output_data);
-                        s.set_code(
-                            a,
-                            byte_string{
-                                result.output_data, result.output_size});
-                    }
+                    s.set_code(a, {result.output_data, result.output_size});
                 }
             }
             return result;

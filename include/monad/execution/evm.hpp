@@ -32,33 +32,42 @@ struct Evm
 
         byte_string code{m.input_data, m.input_size};
 
-        auto const r = TTraits::store_contract_code(
-            state, contract_address.value(), code, m.gas);
-        if (r.status_code != EVMC_SUCCESS) {
-            state.revert();
-            return evmc::Result(r);
-        }
-
-        auto execute = [&](auto result) {
+        auto execute_init_code = [&]() {
             evmc_message m_call{
                 .kind = EVMC_CALL,
                 .depth = m.depth,
-                .gas = result.gas_left,
+                .gas = m.gas,
                 .recipient = contract_address.value(),
                 .sender = m.sender,
                 .value = m.value,
                 .code_address = contract_address.value(),
             };
-            return call_evm(host, state, m_call);
+
+            if (auto const transfer_result =
+                    transfer_call_balances(state, m_call);
+                transfer_result.status_code != EVMC_SUCCESS) {
+                return evmc::Result{transfer_result};
+            }
+
+            return TInterpreter::execute(
+                host, m_call, byte_string_view(m.input_data, m.input_size));
         };
 
-        auto finalize = [&](auto &&result) {
-            return TTraits::finalize_contract_storage(
-                state, contract_address.value(), std::move(result));
+        auto deploy_code = [&](auto &&result) {
+            if (result.status_code == EVMC_SUCCESS) {
+                return TTraits::deploy_contract_code(
+                    state, contract_address.value(), std::move(result));
+            }
+            return std::forward<decltype(result)>(result);
         };
 
-        // if bad result, then revert
-        return finalize(execute(r));
+        auto deploy_result = deploy_code(execute_init_code());
+
+        if (deploy_result.status_code != EVMC_SUCCESS) {
+            state.revert();
+        }
+
+        return deploy_result;
     }
 
     template <class TEvmHost>
@@ -74,7 +83,11 @@ struct Evm
                 .transform([&](auto static_precompile_execute) {
                     return static_precompile_execute(m);
                 })
-                .or_else([&] { return TInterpreter::execute(host, state, m); })
+                .or_else([&] {
+                    auto const code =
+                        state.get_code(state.get_code_hash(m.code_address));
+                    return TInterpreter::execute(host, m, code);
+                })
                 .value();
 
         if (result.status_code == EVMC_REVERT) {

@@ -159,34 +159,24 @@ namespace fork_traits
         }
 
         template <class TState>
-        [[nodiscard]] static evmc_result store_contract_code(
-            TState &s, address_t const &a, byte_string code,
-            int64_t gas) noexcept
-        {
-            s.set_code(a, code);
-            return {.status_code = EVMC_SUCCESS, .gas_left = gas};
-        }
-
-        template <class TState>
-        static evmc::Result finalize_contract_storage(
+        static evmc::Result deploy_contract_code(
             TState &s, address_t const &a, evmc::Result result) noexcept
         {
-            if (result.status_code == EVMC_SUCCESS) {
-                auto const deploy_cost =
-                    static_cast<int64_t>(result.output_size) * 200;
-                result.create_address = a;
+            MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
+            auto const deploy_cost =
+                static_cast<int64_t>(result.output_size) * 200;
+            result.create_address = a;
 
-                if (result.gas_left < deploy_cost) {
-                    // From YP: "No code is deposited in the state if the gas
-                    // does not cover the additional per-byte contract deposit
-                    // fee, however, the value is still transferred and the
-                    // execution side- effects take place."
-                    s.set_code(a, {});
-                }
-                else {
-                    s.set_code(a, {result.output_data, result.output_size});
-                    result.gas_left -= deploy_cost;
-                }
+            if (result.gas_left < deploy_cost) {
+                // From YP: "No code is deposited in the state if the gas
+                // does not cover the additional per-byte contract deposit
+                // fee, however, the value is still transferred and the
+                // execution side- effects take place."
+                s.set_code(a, {});
+            }
+            else {
+                s.set_code(a, {result.output_data, result.output_size});
+                result.gas_left -= deploy_cost;
             }
             return result;
         }
@@ -241,29 +231,28 @@ namespace fork_traits
         }
 
         template <class TState>
-        static evmc::Result finalize_contract_storage(
+        static evmc::Result deploy_contract_code(
             TState &s, address_t const &a, evmc::Result result) noexcept
         {
-            if (result.status_code == EVMC_SUCCESS) {
-                auto const deploy_cost =
-                    static_cast<int64_t>(result.output_size) * 200;
+            MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
+            auto const deploy_cost =
+                static_cast<int64_t>(result.output_size) * 200;
 
-                if (result.gas_left < deploy_cost) {
-                    // EIP-2: If contract creation does not have enough gas to
-                    // pay for the final gas fee for adding the contract code to
-                    // the state, the contract creation fails (ie. goes
-                    // out-of-gas) rather than leaving an empty contract.
-                    //
-                    // TODO: make sure old initialization code does not get
-                    // committed to the database
-                    result.status_code = EVMC_OUT_OF_GAS;
-                    result.gas_left = 0;
-                }
-                else {
-                    result.create_address = a;
-                    result.gas_left -= deploy_cost;
-                    s.set_code(a, {result.output_data, result.output_size});
-                }
+            if (result.gas_left < deploy_cost) {
+                // EIP-2: If contract creation does not have enough gas to
+                // pay for the final gas fee for adding the contract code to
+                // the state, the contract creation fails (ie. goes
+                // out-of-gas) rather than leaving an empty contract.
+                //
+                // TODO: make sure old initialization code does not get
+                // committed to the database
+                result.status_code = EVMC_OUT_OF_GAS;
+                result.gas_left = 0;
+            }
+            else {
+                result.create_address = a;
+                result.gas_left -= deploy_cost;
+                s.set_code(a, {result.output_data, result.output_size});
             }
             return result;
         }
@@ -330,16 +319,15 @@ namespace fork_traits
         }
 
         template <class TState>
-        [[nodiscard]] static evmc_result store_contract_code(
-            TState &s, address_t const &a, byte_string code,
-            int64_t gas) noexcept
+        [[nodiscard]] static evmc::Result deploy_contract_code(
+            TState &s, address_t const &a, evmc::Result result) noexcept
         {
+            MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
             // EIP-170
-            if (code.size() > 0x6000) {
-                return {.status_code = EVMC_OUT_OF_GAS, .gas_left = 0};
+            if (result.output_size > 0x6000) {
+                return evmc::Result{EVMC_OUT_OF_GAS};
             }
-
-            return homestead::store_contract_code(s, a, code, gas);
+            return homestead::deploy_contract_code(s, a, std::move(result));
         }
 
         template <typename TState>
@@ -508,16 +496,14 @@ namespace fork_traits
 
         // https://eips.ethereum.org/EIPS/eip-3541
         template <class TState>
-        [[nodiscard]] static evmc_result store_contract_code(
-            TState &s, address_t const &a, byte_string code,
-            int64_t gas) noexcept
+        [[nodiscard]] static evmc::Result deploy_contract_code(
+            TState &s, address_t const &a, evmc::Result result) noexcept
         {
-            if (code.size() > 0 && code[0] == 0xef) {
-                return {
-                    .status_code = EVMC_CONTRACT_VALIDATION_FAILURE,
-                    .gas_left = 0};
+            MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
+            if (result.output_size > 0 && result.output_data[0] == 0xef) {
+                return evmc::Result{EVMC_CONTRACT_VALIDATION_FAILURE};
             }
-            return berlin::store_contract_code(s, a, code, gas);
+            return berlin::deploy_contract_code(s, a, std::move(result));
         }
 
         // https://eips.ethereum.org/EIPS/eip-1559

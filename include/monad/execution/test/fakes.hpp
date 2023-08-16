@@ -211,6 +211,9 @@ namespace fake
             [[nodiscard]] byte_string_view
             get_code(bytes32_t const &b) const noexcept
             {
+                if (b == NULL_HASH) {
+                    return {};
+                }
                 return {_code.at(b)};
             }
 
@@ -355,8 +358,9 @@ namespace fake
     {
         static inline evmc::Result _result{};
 
-        template <class TEvmHost, class TState>
-        static evmc::Result execute(TEvmHost *, TState &, evmc_message const &)
+        template <class TEvmHost>
+        static evmc::Result
+        execute(TEvmHost *, evmc_message const &, byte_string_view)
         {
             return std::move(_result);
         }
@@ -377,7 +381,6 @@ namespace fake
                 boost::mp11::mp_list<static_precompiles::Echo<alpha>>;
             static inline uint64_t _intrinsic_gas{21'000u};
             static inline uint64_t _max_refund_quotient{2u};
-            static inline evmc_result _store_contract_result{};
             static inline uint64_t _create_address{};
             static constexpr uint64_t _echo_gas_cost{10};
             static constexpr void apply_block_award(TState &, Block const &) {}
@@ -403,17 +406,7 @@ namespace fake
                 s.destruct_touched_dead();
             }
 
-            [[nodiscard]] static evmc_result store_contract_code(
-                TState &s, address_t const &a, byte_string code,
-                int64_t) noexcept
-            {
-                if (_store_contract_result.status_code == EVMC_SUCCESS) {
-                    s.set_code(a, code);
-                }
-                return _store_contract_result;
-            }
-
-            static evmc::Result finalize_contract_storage(
+            static evmc::Result deploy_contract_code(
                 TState &, address_t const &a, evmc::Result r) noexcept
             {
                 if (r.status_code == EVMC_SUCCESS) {

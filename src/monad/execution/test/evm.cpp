@@ -301,9 +301,6 @@ TEST(Evm, create_contract_account)
 
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 50'000u, .nonce = 1});
-    traits_t::_store_contract_result.status_code = EVMC_SUCCESS;
-    traits_t::_store_contract_result.gas_left = 10'000;
-    traits_t::_store_contract_result.create_address = null;
     byte_string code{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
     fake::Interpreter::_result = evmc::Result{
         evmc_result{.status_code = EVMC_SUCCESS, .gas_left = 8'000}};
@@ -334,9 +331,6 @@ TEST(Evm, create2_contract_account)
 
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 50'000u, .nonce = 1});
-    traits_t::_store_contract_result.status_code = EVMC_SUCCESS;
-    traits_t::_store_contract_result.gas_left = 10'000;
-    traits_t::_store_contract_result.create_address = null;
     byte_string code{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
     fake::Interpreter::_result = evmc::Result{
         evmc_result{.status_code = EVMC_SUCCESS, .gas_left = 8'000}};
@@ -365,9 +359,8 @@ TEST(Evm, oog_create_account)
     fake::State::ChangeSet s{};
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 10'000, .nonce = 1});
-    traits_t::_store_contract_result.status_code = EVMC_OUT_OF_GAS;
-    traits_t::_store_contract_result.gas_left = 0;
-    traits_t::_store_contract_result.create_address = null;
+    fake::Interpreter::_result = evmc::Result{
+        evmc_result{.status_code = EVMC_OUT_OF_GAS, .gas_left = 0}};
 
     evmc_message m{.kind = EVMC_CREATE, .gas = 12'000, .sender = from};
 
@@ -388,9 +381,6 @@ TEST(Evm, revert_create_account)
     fake::State::ChangeSet s{};
     evm_host_t h{};
     s._accounts.emplace(from, Account{.balance = 10'000});
-    traits_t::_store_contract_result.status_code = EVMC_SUCCESS;
-    traits_t::_store_contract_result.gas_left = 10'000;
-    traits_t::_store_contract_result.create_address = null;
     fake::Interpreter::_result = evmc::Result{
         evmc_result{.status_code = EVMC_REVERT, .gas_left = 11'000}};
 
@@ -418,7 +408,11 @@ TEST(Evm, call_evm)
         evmc_result{.status_code = EVMC_SUCCESS, .gas_left = 7'000}};
 
     evmc_message m{
-        .kind = EVMC_CALL, .gas = 12'000, .recipient = to, .sender = from};
+        .kind = EVMC_CALL,
+        .gas = 12'000,
+        .recipient = to,
+        .sender = from,
+        .code_address = to};
     uint256_t v{6'000};
     intx::be::store(m.value.bytes, v);
 

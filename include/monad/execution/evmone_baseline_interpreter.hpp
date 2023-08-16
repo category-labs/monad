@@ -31,14 +31,13 @@ struct EVMOneBaselineInterpreter
 {
     template <class TEvmHost>
     static evmc::Result
-    execute(TEvmHost *h, TState const &s, evmc_message const &m)
+    execute(TEvmHost *h, evmc_message const &m, byte_string_view code)
     {
         [[maybe_unused]] decltype(monad::log::logger_t::get_logger()) logger =
             monad::log::logger_t::get_logger(
                 "evmone_baseline_interpreter_logger");
         evmc::Result result{
             evmc_result{.status_code = EVMC_SUCCESS, .gas_left = m.gas}};
-        auto const code = s.get_code(s.get_code_hash(m.code_address));
         if (code.empty()) {
             return result;
         }

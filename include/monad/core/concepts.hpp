@@ -24,8 +24,7 @@ namespace concepts
         { T::get_selfdestruct_refund(s) } -> std::convertible_to<uint64_t>;
         { T::max_refund_quotient() } -> std::convertible_to<int>;
         { T::destruct_touched_dead(s) } -> std::convertible_to<void>;
-        { T::store_contract_code(s, a, code, gas) } -> std::convertible_to<evmc_result>;
-        { T::finalize_contract_storage(s, a, std::move(r)) }
+        { T::deploy_contract_code(s, a, std::move(r)) }
             -> std::convertible_to<evmc::Result>;
     };
     // clang-format on

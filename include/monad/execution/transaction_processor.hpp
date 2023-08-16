@@ -111,7 +111,7 @@ struct TransactionProcessor
             s,
             t,
             base_fee_per_gas,
-            t.gas_limit - static_cast<uint64_t>(result.gas_left));
+            t.gas_limit - gas_remaining);
 
         auto receipt =
             h.make_receipt_from_result(result.status_code, t, gas_remaining);

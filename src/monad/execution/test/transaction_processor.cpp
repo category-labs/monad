@@ -61,4 +61,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     EXPECT_EQ(result.status, 1u);
     EXPECT_EQ(s._accounts[from].balance, uint256_t{55'999'999'999'800'000});
     EXPECT_EQ(s._accounts[from].nonce, 25); // EVMC will inc for creation
+
+    // check if miner gets the right reward
+    EXPECT_EQ(s._reward, uint256_t{200'000});
 }

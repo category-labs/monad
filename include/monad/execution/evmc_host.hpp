@@ -122,6 +122,8 @@ struct EvmcHost : public evmc::Host
             return TEvm::create_contract_account(this, state_, m);
         }
 
+        access_account(m.code_address);
+        access_account(m.recipient);
         return TEvm::call_evm(this, state_, m);
     }
 

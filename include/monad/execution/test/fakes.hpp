@@ -104,8 +104,11 @@ namespace fake
             }
 
             // EVMC Host Interface
-            evmc_access_status access_account(address_t const &) noexcept
+            evmc_access_status access_account(address_t const &a) noexcept
             {
+                if (!_accounts.contains(a)) {
+                    _accounts.emplace(a, Account{});
+                }
                 return {};
             }
 

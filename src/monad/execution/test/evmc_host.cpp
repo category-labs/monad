@@ -128,3 +128,33 @@ TEST(EvmcHost, emit_log)
     EXPECT_EQ(logs[0].topics[0], topic0);
     EXPECT_EQ(logs[0].topics[1], topic1);
 }
+
+TEST(EvmcHost, internal_txn)
+{
+    static constexpr auto from{
+        0x5353535353535353535353535353535353535353_address};
+    static constexpr auto to{
+        0xdac17f958d2ee523a2206206994597c13d831ec7_address};
+    static constexpr auto code_address{
+        0x0000000000000000000000000000000000000003_address};
+    evmc_message m{
+        .kind = EVMC_CALL,
+        .gas = int64_t{10'000},
+        .recipient = to,
+        .sender = from,
+        .input_data = {},
+        .input_size = 0,
+        .code_address = code_address};
+
+    BlockHeader const b{};
+    Transaction const t{};
+    fake::State::ChangeSet s{};
+    s.access_account(from);
+
+    evmc_host_t host{b, t, s};
+    [[maybe_unused]] auto const result = host.call(m);
+
+    EXPECT_TRUE(s.account_exists(from));
+    EXPECT_TRUE(s.account_exists(to));
+    EXPECT_TRUE(s.account_exists(code_address));
+}

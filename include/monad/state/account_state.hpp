@@ -204,7 +204,11 @@ struct AccountState<TAccountDB>::ChangeSet : public AccountState<TAccountDB>
     [[nodiscard]] bytes32_t
     get_code_hash(address_t const &address) const noexcept
     {
-        return changed_.at(address).updated.value_or(Account{}).code_hash;
+        if (changed_.contains(address)) {
+            return changed_.at(address).updated.value_or(Account{}).code_hash;
+        }
+
+        return AccountState::get_code_hash(address);
     }
 
     void set_code_hash(address_t const &address, bytes32_t const &b) noexcept

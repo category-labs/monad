@@ -225,6 +225,41 @@ TYPED_TEST(AccountStateTest, get_code_hash_changeset)
     EXPECT_EQ(bs.get_code_hash(b), hash2);
 }
 
+TYPED_TEST(AccountStateTest, get_code_hash_non_existing_account)
+{
+    auto db = test::make_db<TypeParam>();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.code_hash = hash1}}},
+        .storage_changes = {}});
+
+    AccountState s{db};
+
+    auto bs = typename decltype(s)::ChangeSet{s};
+
+    bs.access_account(a);
+
+    EXPECT_EQ(bs.get_code_hash(a), hash1);
+    EXPECT_EQ(bs.get_code_hash(b), NULL_HASH);
+}
+
+TYPED_TEST(AccountStateTest, get_code_hash_account_not_in_changeset)
+{
+    auto db = test::make_db<TypeParam>();
+    db.commit(StateChanges{
+        .account_changes = {{a, Account{.code_hash = hash1}}, {b, Account{.code_hash = hash2}}},
+        .storage_changes = {}});
+
+    AccountState s{db};
+
+    auto bs = typename decltype(s)::ChangeSet{s};
+
+    // this only puts a in changeset, not b
+    bs.access_account(a);
+
+    EXPECT_EQ(bs.get_code_hash(a), hash1);
+    EXPECT_EQ(bs.get_code_hash(b), hash2);
+}
+
 TYPED_TEST(AccountStateTest, create_account_changeset)
 {
     auto db = test::make_db<TypeParam>();

@@ -33,6 +33,7 @@ namespace fork_traits
     struct frontier;
     struct homestead;
     struct dao;
+    struct tangerine_whistle;
     struct spurious_dragon;
     struct byzantium;
     struct constantinople;
@@ -260,8 +261,8 @@ namespace fork_traits
 
     struct dao : public homestead
     {
-        using next_fork_t = spurious_dragon;
-        static constexpr auto last_block_number = 2'674'999u;
+        using next_fork_t = tangerine_whistle;
+        static constexpr auto last_block_number = 2'462'999u;
         // EVMC revision for DAO should just be EVMC_HOMESTEAD
 
         template <typename TState>
@@ -297,9 +298,21 @@ namespace fork_traits
         }
     };
 
-    // tangerine_whistle - 2'463'000
+    struct tangerine_whistle : public dao
+    {
+        using next_fork_t = spurious_dragon;
 
-    struct spurious_dragon : public homestead
+        static constexpr auto last_block_number = 2'674'999u;
+        static constexpr evmc_revision rev = EVMC_TANGERINE_WHISTLE;
+
+        template <typename TState>
+        static constexpr void transfer_balance_dao(TState &, block_num_t block)
+        {
+            MONAD_DEBUG_ASSERT(block > dao::last_block_number);
+        }
+    };
+
+    struct spurious_dragon : public tangerine_whistle
     {
         using next_fork_t = byzantium;
 
@@ -328,11 +341,6 @@ namespace fork_traits
                 return evmc::Result{EVMC_OUT_OF_GAS};
             }
             return homestead::deploy_contract_code(s, a, std::move(result));
-        }
-
-        template <typename TState>
-        static constexpr void transfer_balance_dao(TState &, block_num_t)
-        {
         }
     };
 

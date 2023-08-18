@@ -450,7 +450,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_spurious_dragon)
     constexpr auto start_block_number =
         fork_traits::frontier::last_block_number - offset;
     constexpr auto finish_block_number =
-        fork_traits::dao::last_block_number + offset;
+        fork_traits::tangerine_whistle::last_block_number + offset;
 
     auto result = replay_eth.run<
         eth_start_fork,
@@ -471,30 +471,34 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_spurious_dragon)
     EXPECT_EQ(result.block_number, 2'675'008u);
     EXPECT_EQ(receipt_collector.size(), 1'525'020u);
 
-    for (auto i = 0u; i < offset + 1u; ++i) {
+    auto const start_homestead = offset + 1u;
+    for (auto i = 0u; i < start_homestead; ++i) {
         EXPECT_EQ(
             receipt_collector[i][0].status,
             fork_traits::frontier::last_block_number);
     }
-    for (auto i = offset + 1u;
-         i < fork_traits::homestead::last_block_number -
-                 fork_traits::frontier::last_block_number + 11u;
-         ++i) {
+    auto const start_dao = fork_traits::homestead::last_block_number -
+                           fork_traits::frontier::last_block_number + 11u;
+    for (auto i = start_homestead; i < start_dao; ++i) {
         EXPECT_EQ(
             receipt_collector[i][0].status,
             fork_traits::homestead::last_block_number);
     }
-    for (auto i = fork_traits::homestead::last_block_number -
-                  fork_traits::frontier::last_block_number + offset + 1u;
-         i < receipt_collector.size() - offset + 1u;
-         ++i) {
+    auto const start_tangerine_whistle =
+        fork_traits::dao::last_block_number -
+        fork_traits::frontier::last_block_number + offset + 1u;
+    for (auto i = start_dao; i < start_tangerine_whistle; ++i) {
         EXPECT_EQ(
             receipt_collector[i][0].status,
             fork_traits::dao::last_block_number);
     }
-    for (auto i = receipt_collector.size() - offset + 1u;
-         i < receipt_collector.size();
-         ++i) {
+    auto const start_spurious_dragon = receipt_collector.size() - offset + 1u;
+    for (auto i = start_tangerine_whistle; i < start_spurious_dragon; ++i) {
+        EXPECT_EQ(
+            receipt_collector[i][0].status,
+            fork_traits::tangerine_whistle::last_block_number);
+    }
+    for (auto i = start_spurious_dragon; i < receipt_collector.size(); ++i) {
         EXPECT_EQ(
             receipt_collector[i][0].status,
             fork_traits::spurious_dragon::last_block_number);

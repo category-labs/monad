@@ -148,6 +148,50 @@ TEST(fork_traits, homestead)
     }
 }
 
+static_assert(concepts::fork_traits<fork_traits::tangerine_whistle, state_t>);
+static_assert(
+    std::derived_from<fork_traits::tangerine_whistle, fork_traits::dao>);
+static_assert(std::same_as<
+              fork_traits::tangerine_whistle::next_fork_t,
+              fork_traits::spurious_dragon>);
+TEST(fork_traits, tangerine_whistle)
+{
+    EXPECT_EQ(fork_traits::tangerine_whistle::rev, EVMC_TANGERINE_WHISTLE);
+
+    // Check that the tranfer does not do anything
+    db::BlockDb blocks{test_resource::correct_block_data_dir};
+    db_t db{};
+
+    std::vector<std::pair<address_t, std::optional<Account>>> v{};
+    for (auto const addr : ethereum::dao::child_accounts) {
+        Account a{.balance = individual};
+        v.emplace_back(std::make_pair(addr, a));
+    }
+    db.commit(state::StateChanges{.account_changes = v});
+
+    state::AccountState accounts{db};
+    state::ValueState values{db};
+    state::CodeState codes{db};
+    state::State s{accounts, values, codes, blocks, db};
+
+    fork_traits::tangerine_whistle::transfer_balance_dao(
+        s, fork_traits::tangerine_whistle::last_block_number);
+
+    auto change_set = s.get_new_changeset(0u);
+
+    for (auto const &addr : ethereum::dao::child_accounts) {
+        change_set.access_account(addr);
+        EXPECT_EQ(
+            intx::be::load<uint256_t>(change_set.get_balance(addr)),
+            individual);
+    }
+    change_set.access_account(ethereum::dao::withdraw_account);
+    EXPECT_EQ(
+        intx::be::load<uint256_t>(
+            change_set.get_balance(ethereum::dao::withdraw_account)),
+        0u);
+}
+
 static_assert(concepts::fork_traits<fork_traits::spurious_dragon, state_t>);
 TEST(fork_traits, spurious_dragon)
 {

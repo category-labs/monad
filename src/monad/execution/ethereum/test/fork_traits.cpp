@@ -148,6 +148,41 @@ TEST(fork_traits, homestead)
     }
 }
 
+static_assert(concepts::fork_traits<fork_traits::dao, state_t>);
+static_assert(std::derived_from<fork_traits::dao, fork_traits::homestead>);
+static_assert(std::same_as<
+              fork_traits::dao::next_fork_t, fork_traits::tangerine_whistle>);
+TEST(fork_traits, dao)
+{
+    db::BlockDb blocks{test_resource::correct_block_data_dir};
+    db_t db{};
+
+    std::vector<std::pair<address_t, std::optional<Account>>> v{};
+    for (auto const addr : ethereum::dao::child_accounts) {
+        Account a{.balance = individual};
+        v.emplace_back(std::make_pair(addr, a));
+    }
+    db.commit(state::StateChanges{.account_changes = v});
+    state::AccountState accounts{db};
+    state::ValueState values{db};
+    state::CodeState codes{db};
+    state::State s{accounts, values, codes, blocks, db};
+
+    fork_traits::dao::transfer_balance_dao(s, ethereum::dao::dao_block_number);
+
+    auto change_set = s.get_new_changeset(0u);
+
+    for (auto const &addr : ethereum::dao::child_accounts) {
+        change_set.access_account(addr);
+        EXPECT_EQ(intx::be::load<uint256_t>(change_set.get_balance(addr)), 0u);
+    }
+    change_set.access_account(ethereum::dao::withdraw_account);
+    EXPECT_EQ(
+        intx::be::load<uint256_t>(
+            change_set.get_balance(ethereum::dao::withdraw_account)),
+        total);
+}
+
 static_assert(concepts::fork_traits<fork_traits::tangerine_whistle, state_t>);
 static_assert(
     std::derived_from<fork_traits::tangerine_whistle, fork_traits::dao>);
@@ -362,35 +397,4 @@ TEST(fork_traits, london)
     fork_traits::london::apply_txn_award(
         s, {.gas_price = 100'000'000'000}, 0, 90'000'000);
     EXPECT_EQ(s._reward, 2 * uint256_t{9'000'000'000'000'000'000});
-}
-
-TEST(fork_traits, dao_transfer)
-{
-    db::BlockDb blocks{test_resource::correct_block_data_dir};
-    db_t db{};
-
-    std::vector<std::pair<address_t, std::optional<Account>>> v{};
-    for (auto const addr : ethereum::dao::child_accounts) {
-        Account a{.balance = individual};
-        v.emplace_back(std::make_pair(addr, a));
-    }
-    db.commit(state::StateChanges{.account_changes = v});
-    state::AccountState accounts{db};
-    state::ValueState values{db};
-    state::CodeState codes{db};
-    state::State s{accounts, values, codes, blocks, db};
-
-    fork_traits::dao::transfer_balance_dao(s, ethereum::dao::dao_block_number);
-
-    auto change_set = s.get_new_changeset(0u);
-
-    for (auto const &addr : ethereum::dao::child_accounts) {
-        change_set.access_account(addr);
-        EXPECT_EQ(intx::be::load<uint256_t>(change_set.get_balance(addr)), 0u);
-    }
-    change_set.access_account(ethereum::dao::withdraw_account);
-    EXPECT_EQ(
-        intx::be::load<uint256_t>(
-            change_set.get_balance(ethereum::dao::withdraw_account)),
-        total);
 }

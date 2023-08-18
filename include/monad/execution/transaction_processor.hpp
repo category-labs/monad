@@ -104,14 +104,11 @@ struct TransactionProcessor
             static_cast<uint64_t>(result.gas_refund));
 
         // finalize state, Eqn. 77-79
-        TTraits::destruct_touched_dead(s);
         s.destruct_suicides();
+        TTraits::destruct_touched_dead(s);
 
         TTraits::apply_txn_award(
-            s,
-            t,
-            base_fee_per_gas,
-            t.gas_limit - gas_remaining);
+            s, t, base_fee_per_gas, t.gas_limit - gas_remaining);
 
         auto receipt =
             h.make_receipt_from_result(result.status_code, t, gas_remaining);

@@ -349,7 +349,7 @@ namespace fork_traits
         using next_fork_t = constantinople;
 
         static constexpr evmc_revision rev = EVMC_BYZANTIUM;
-        static constexpr auto last_block_number = 9'068'999u;
+        static constexpr auto last_block_number = 7'279'999u;
         static constexpr uint256_t block_reward =
             3'000'000'000'000'000'000; // YP Eqn. 176, EIP-649
         static constexpr uint256_t additional_ommer_reward =

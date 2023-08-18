@@ -109,7 +109,7 @@ struct fakeReceiptTP
     Receipt execute(
         TState &, TEvmHost &, BlockHeader const &, Transaction const &) const
     {
-        return Receipt{.status = TTraits::last_block_number};
+        return Receipt{.status = TTraits::rev};
     }
 
     Status validate(TState const &, Transaction const &, uint64_t)
@@ -352,9 +352,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_run_from_zero)
     EXPECT_EQ(receipt_collector.size(), 1'235u);
 
     for (auto i = 0u; i < 1'235u; ++i) {
-        EXPECT_EQ(
-            receipt_collector[i][0].status,
-            fork_traits::frontier::last_block_number);
+        EXPECT_EQ(receipt_collector[i][0].status, EVMC_FRONTIER);
     }
 }
 
@@ -387,14 +385,10 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_homestead)
     EXPECT_EQ(receipt_collector.size(), 20u);
 
     for (auto i = 0u; i < 11u; ++i) {
-        EXPECT_EQ(
-            receipt_collector[i][0].status,
-            fork_traits::frontier::last_block_number);
+        EXPECT_EQ(receipt_collector[i][0].status, EVMC_FRONTIER);
     }
     for (auto i = 11u; i < receipt_collector.size(); ++i) {
-        EXPECT_EQ(
-            receipt_collector[i][0].status,
-            fork_traits::homestead::last_block_number);
+        EXPECT_EQ(receipt_collector[i][0].status, EVMC_HOMESTEAD);
     }
 }
 
@@ -427,14 +421,10 @@ TEST(ReplayFromBlockDb_Eth, berlin_to_london)
     EXPECT_EQ(receipt_collector.size(), 20u);
 
     for (auto i = 0u; i < 11u; ++i) {
-        EXPECT_EQ(
-            receipt_collector[i][0].status,
-            fork_traits::berlin::last_block_number);
+        EXPECT_EQ(receipt_collector[i][0].status, EVMC_BERLIN);
     }
     for (auto i = 11u; i < receipt_collector.size(); ++i) {
-        EXPECT_EQ(
-            receipt_collector[i][0].status,
-            fork_traits::london::last_block_number);
+        EXPECT_EQ(receipt_collector[i][0].status, EVMC_LONDON);
     }
 }
 
@@ -473,34 +463,57 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_spurious_dragon)
 
     auto const start_homestead = offset + 1u;
     for (auto i = 0u; i < start_homestead; ++i) {
-        EXPECT_EQ(
-            receipt_collector[i][0].status,
-            fork_traits::frontier::last_block_number);
+        EXPECT_EQ(receipt_collector[i][0].status, EVMC_FRONTIER);
     }
     auto const start_dao = fork_traits::homestead::last_block_number -
                            fork_traits::frontier::last_block_number + 11u;
     for (auto i = start_homestead; i < start_dao; ++i) {
-        EXPECT_EQ(
-            receipt_collector[i][0].status,
-            fork_traits::homestead::last_block_number);
+        EXPECT_EQ(receipt_collector[i][0].status, EVMC_HOMESTEAD);
     }
     auto const start_tangerine_whistle =
         fork_traits::dao::last_block_number -
         fork_traits::frontier::last_block_number + offset + 1u;
     for (auto i = start_dao; i < start_tangerine_whistle; ++i) {
-        EXPECT_EQ(
-            receipt_collector[i][0].status,
-            fork_traits::dao::last_block_number);
+        EXPECT_EQ(receipt_collector[i][0].status, EVMC_HOMESTEAD);
     }
     auto const start_spurious_dragon = receipt_collector.size() - offset + 1u;
     for (auto i = start_tangerine_whistle; i < start_spurious_dragon; ++i) {
-        EXPECT_EQ(
-            receipt_collector[i][0].status,
-            fork_traits::tangerine_whistle::last_block_number);
+        EXPECT_EQ(receipt_collector[i][0].status, EVMC_TANGERINE_WHISTLE);
     }
     for (auto i = start_spurious_dragon; i < receipt_collector.size(); ++i) {
-        EXPECT_EQ(
-            receipt_collector[i][0].status,
-            fork_traits::spurious_dragon::last_block_number);
+        EXPECT_EQ(receipt_collector[i][0].status, EVMC_SPURIOUS_DRAGON);
     }
+}
+
+TEST(ReplayFromBlockDb_Eth, byzantium_to_constantinople)
+{
+    state_t state;
+    fakeBlockDb block_db;
+    receipt_collector_t receipt_collector;
+    replay_eth_t replay_eth;
+
+    block_db._last_block_number = std::numeric_limits<uint64_t>::max();
+    constexpr auto start_block_number = 7'279'999u;
+    constexpr auto finish_block_number = 7'280'001u;
+
+    auto result = replay_eth.run<
+        eth_start_fork,
+        fakeReceiptTP,
+        fakeEmptyEvm,
+        StaticPrecompiles,
+        fakeEmptyEvmHost,
+        fakeReceiptFiberData,
+        fakeInterpreter,
+        empty_list_t>(
+        state,
+        block_db,
+        receipt_collector,
+        start_block_number,
+        finish_block_number);
+
+    EXPECT_EQ(result.status, replay_eth_t::Status::SUCCESS);
+    EXPECT_EQ(result.block_number, finish_block_number - 1);
+    EXPECT_EQ(receipt_collector.size(), 2);
+    EXPECT_EQ(receipt_collector[0][0].status, EVMC_BYZANTIUM);
+    EXPECT_EQ(receipt_collector[1][0].status, EVMC_CONSTANTINOPLE);
 }

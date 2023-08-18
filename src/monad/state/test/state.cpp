@@ -491,6 +491,34 @@ TYPED_TEST(TrieDBTest, set_and_then_clear_storage_in_same_commit)
     EXPECT_EQ(db.try_find(a, key1), monad::bytes32_t{});
 }
 
+TYPED_TEST(TrieDBTest, transfer_to_zero)
+{
+    auto db = test::make_db<TypeParam>();
+    AccountState accounts{db};
+    ValueState values{db};
+    code_db_t code_db{};
+    CodeState code{code_db};
+    State t{accounts, values, code, block_cache, db};
+
+    {
+        auto change_set = t.get_new_changeset(0u);
+        change_set.create_account(a);
+        change_set.set_balance(a, 0x5f5e100);
+        t.merge_changes(change_set);
+        t.commit();
+    }
+
+    {
+        auto change_set = t.get_new_changeset(0u);
+        change_set.access_account(a);
+        change_set.access_account(b);
+        change_set.set_balance(b, 0x1);
+        change_set.set_balance(a, 0x5f2acaf);
+        t.merge_changes(change_set);
+        t.commit();
+    }
+}
+
 TYPED_TEST(StateTest, commit_twice)
 {
     auto db = test::make_db<TypeParam>();

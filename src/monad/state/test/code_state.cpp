@@ -172,6 +172,22 @@ TYPED_TEST(CodeStateTest, merge_changes)
     }
 }
 
+TYPED_TEST(CodeStateTest, can_merge_after_set_same_code)
+{
+    auto db = test::make_db<TypeParam>();
+    Account acct{.code_hash = code_hash1};
+    db.commit(state::StateChanges{
+        .account_changes = {{a, acct}},
+        .storage_changes = {},
+        .code_changes = {{code_hash1, code1}}});
+    CodeState s{db};
+
+    typename decltype(s)::ChangeSet changeset{s};
+    changeset.set_code(code_hash1, code1);
+    EXPECT_TRUE(s.can_merge(changeset));
+    s.merge_changes(changeset);
+}
+
 TYPED_TEST(CodeStateTest, revert)
 {
     auto db = test::make_db<TypeParam>();

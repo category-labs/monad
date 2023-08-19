@@ -47,8 +47,9 @@ struct CodeState
 
     [[nodiscard]] bool can_merge(ChangeSet const &w) const
     {
-        return std::ranges::none_of(w.code_, [&](auto const &a) {
-            return merged_.contains(a.first) || db_.contains(a.first);
+        return std::ranges::all_of(w.code_, [&](auto const &a) {
+            auto const &existing_value = code_at(a.first);
+            return existing_value == empty || a.second == existing_value;
         });
     }
 
@@ -56,9 +57,8 @@ struct CodeState
     {
         assert(can_merge(w));
 
-        for (auto &[a, code] : w.code_) {
-            auto const &[_, inserted] = merged_.emplace(a, std::move(code));
-            MONAD_DEBUG_ASSERT(inserted);
+        for (auto &[code_hash, code] : w.code_) {
+            merged_.emplace(code_hash, std::move(code));
         }
     }
 

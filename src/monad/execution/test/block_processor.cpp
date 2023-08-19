@@ -120,7 +120,7 @@ TEST(AllTxnBlockProcessor, execute_some_failed)
     EXPECT_EQ(r[4].status, 1u);
 }
 
-TEST(AllTxnBlockProcessor, complete_transfer_and_verify_still_merge)
+TEST(AllTxnBlockProcessor, complete_transfer_and_verify_still_merge_dao)
 {
     db::BlockDb blocks{test_resource::correct_block_data_dir};
     db_t db{};
@@ -132,6 +132,8 @@ TEST(AllTxnBlockProcessor, complete_transfer_and_verify_still_merge)
         Account a{.balance = individual};
         v.emplace_back(std::make_pair(addr, a));
     }
+    v.emplace_back(
+        std::make_pair(dao::withdraw_account, Account{}.balance = 0u));
     db.commit(state::StateChanges{.account_changes = v});
     state::AccountState accounts{db};
     state::ValueState values{db};
@@ -148,10 +150,8 @@ TEST(AllTxnBlockProcessor, complete_transfer_and_verify_still_merge)
     auto change_set = s.get_new_changeset(0u);
 
     for (auto const &addr : dao::child_accounts) {
-        change_set.access_account(addr);
         EXPECT_EQ(intx::be::load<uint256_t>(change_set.get_balance(addr)), 0u);
     }
-    change_set.access_account(dao::withdraw_account);
     EXPECT_EQ(
         intx::be::load<uint256_t>(
             change_set.get_balance(dao::withdraw_account)),

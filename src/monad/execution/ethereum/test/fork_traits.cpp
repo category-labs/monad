@@ -163,6 +163,8 @@ TEST(fork_traits, dao)
         Account a{.balance = individual};
         v.emplace_back(std::make_pair(addr, a));
     }
+    v.emplace_back(
+        std::make_pair(dao::withdraw_account, Account{}.balance = 0u));
     db.commit(state::StateChanges{.account_changes = v});
     state::AccountState accounts{db};
     state::ValueState values{db};
@@ -174,10 +176,8 @@ TEST(fork_traits, dao)
     auto change_set = s.get_new_changeset(0u);
 
     for (auto const &addr : dao::child_accounts) {
-        change_set.access_account(addr);
         EXPECT_EQ(intx::be::load<uint256_t>(change_set.get_balance(addr)), 0u);
     }
-    change_set.access_account(dao::withdraw_account);
     EXPECT_EQ(
         intx::be::load<uint256_t>(
             change_set.get_balance(dao::withdraw_account)),
@@ -203,6 +203,8 @@ TEST(fork_traits, tangerine_whistle)
         Account a{.balance = individual};
         v.emplace_back(std::make_pair(addr, a));
     }
+    v.emplace_back(
+        std::make_pair(dao::withdraw_account, Account{}.balance = 0u));
     db.commit(state::StateChanges{.account_changes = v});
 
     state::AccountState accounts{db};
@@ -216,12 +218,10 @@ TEST(fork_traits, tangerine_whistle)
     auto change_set = s.get_new_changeset(0u);
 
     for (auto const &addr : dao::child_accounts) {
-        change_set.access_account(addr);
         EXPECT_EQ(
             intx::be::load<uint256_t>(change_set.get_balance(addr)),
             individual);
     }
-    change_set.access_account(dao::withdraw_account);
     EXPECT_EQ(
         intx::be::load<uint256_t>(
             change_set.get_balance(dao::withdraw_account)),

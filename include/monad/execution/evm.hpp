@@ -190,6 +190,9 @@ struct Evm
                 return result.error();
             }
             else if (m.flags != EVMC_STATIC) {
+                if (!s.account_exists(m.recipient)) {
+                    s.create_account(m.recipient);
+                }
                 transfer_balances(s, m, m.recipient);
             }
         }

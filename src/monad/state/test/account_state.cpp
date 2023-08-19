@@ -116,11 +116,9 @@ TYPED_TEST(AccountStateTest, changeset)
     auto bs = typename decltype(as)::ChangeSet{as};
     auto cs = typename decltype(as)::ChangeSet{as};
 
-    bs.access_account(a);
-    bs.set_balance(a, 20'000);
+    bs.set_balance(a, intx::be::load<uint256_t>(bs.get_balance(a)) + 10'000);
 
-    cs.access_account(a);
-    cs.set_balance(a, 30'000);
+    cs.set_balance(a, intx::be::load<uint256_t>(cs.get_balance(a)) + 20'000);
 
     EXPECT_EQ(as.get_balance(a), bytes32_t{10'000});
     EXPECT_EQ(bs.get_balance(a), bytes32_t{20'000});
@@ -181,9 +179,6 @@ TYPED_TEST(AccountStateTest, get_balance_changeset)
 
     auto bs = typename decltype(s)::ChangeSet{s};
 
-    bs.access_account(a);
-    bs.access_account(b);
-
     EXPECT_EQ(bs.get_balance(a), bytes32_t{20'000});
     EXPECT_EQ(bs.get_balance(b), bytes32_t{10'000});
 }
@@ -198,9 +193,6 @@ TYPED_TEST(AccountStateTest, get_nonce_changeset)
     s.merged_.emplace(b, diff_t{std::nullopt, Account{.nonce = 1}});
 
     auto bs = typename decltype(s)::ChangeSet{s};
-
-    bs.access_account(a);
-    bs.access_account(b);
 
     EXPECT_EQ(bs.get_nonce(a), 2);
     EXPECT_EQ(bs.get_nonce(b), 1);
@@ -218,9 +210,6 @@ TYPED_TEST(AccountStateTest, get_code_hash_changeset)
 
     auto bs = typename decltype(s)::ChangeSet{s};
 
-    bs.access_account(a);
-    bs.access_account(b);
-
     EXPECT_EQ(bs.get_code_hash(a), hash1);
     EXPECT_EQ(bs.get_code_hash(b), hash2);
 }
@@ -236,30 +225,8 @@ TYPED_TEST(AccountStateTest, get_code_hash_non_existing_account)
 
     auto bs = typename decltype(s)::ChangeSet{s};
 
-    bs.access_account(a);
-
     EXPECT_EQ(bs.get_code_hash(a), hash1);
     EXPECT_EQ(bs.get_code_hash(b), NULL_HASH);
-}
-
-TYPED_TEST(AccountStateTest, get_code_hash_account_not_in_changeset)
-{
-    auto db = test::make_db<TypeParam>();
-    db.commit(StateChanges{
-        .account_changes =
-            {{a, Account{.code_hash = hash1}},
-             {b, Account{.code_hash = hash2}}},
-        .storage_changes = {}});
-
-    AccountState s{db};
-
-    auto bs = typename decltype(s)::ChangeSet{s};
-
-    // this only puts a in changeset, not b
-    bs.access_account(a);
-
-    EXPECT_EQ(bs.get_code_hash(a), hash1);
-    EXPECT_EQ(bs.get_code_hash(b), hash2);
 }
 
 TYPED_TEST(AccountStateTest, create_account_changeset)
@@ -286,7 +253,6 @@ TYPED_TEST(AccountStateTest, set_code_hash_changeset)
 
     auto bs = typename decltype(s)::ChangeSet{s};
 
-    bs.access_account(b);
     bs.create_account(a);
     bs.set_balance(a, 38'000);
     bs.set_nonce(a, 2);
@@ -308,10 +274,6 @@ TYPED_TEST(AccountStateTest, selfdestruct_changeset)
     s.merged_.emplace(b, diff_t{std::nullopt, Account{.balance = 28'000}});
 
     auto bs = typename decltype(s)::ChangeSet{s};
-
-    bs.access_account(a);
-    bs.access_account(b);
-    bs.access_account(c);
 
     EXPECT_TRUE(bs.selfdestruct(a, c));
     EXPECT_EQ(bs.total_selfdestructs(), 1u);
@@ -348,7 +310,7 @@ TYPED_TEST(AccountStateTest, destruct_touched_dead_changeset)
     EXPECT_TRUE(bs.account_exists(a));
     EXPECT_TRUE(bs.account_exists(b));
 
-    bs.access_account(b);
+    bs.set_balance(b, intx::be::load<uint256_t>(bs.get_balance(b)));
     bs.set_balance(a, 0);
     bs.set_nonce(a, 0);
     bs.destruct_touched_dead();
@@ -369,13 +331,11 @@ TYPED_TEST(AccountStateTest, revert_touched_changeset)
 
     auto bs = typename decltype(s)::ChangeSet{s};
 
-    bs.access_account(a);
-    bs.set_balance(a, 15'000);
+    bs.set_balance(a, intx::be::load<uint256_t>(bs.get_balance(a)) + 5'000);
     bs.create_account(b);
     bs.revert();
     EXPECT_FALSE(s.account_exists(b));
 
-    bs.access_account(a);
     EXPECT_EQ(bs.get_balance(a), bytes32_t{10'000});
     EXPECT_FALSE(bs.account_exists(b));
 }
@@ -393,12 +353,10 @@ TYPED_TEST(AccountStateTest, can_merge_fresh)
 
     auto s = typename decltype(t)::ChangeSet{t};
 
-    s.access_account(b);
-    s.access_account(c);
     s.create_account(a);
     s.set_nonce(a, 1);
     s.set_balance(a, 38'000);
-    s.set_balance(b, 42'000);
+    s.set_balance(b, intx::be::load<uint256_t>(s.get_balance(b)) + 2'000);
     s.set_nonce(b, 3);
     (void)s.selfdestruct(c, b);
     s.destruct_suicides();
@@ -424,12 +382,11 @@ TYPED_TEST(AccountStateTest, can_merge_onto_merged)
 
     auto s = typename decltype(t)::ChangeSet{t};
 
-    s.access_account(a);
-    s.access_account(b);
     s.create_account(c);
-    s.set_nonce(c, 1);
     s.set_balance(c, 38'000);
-    s.set_balance(b, 42'000);
+    s.set_nonce(c, 1);
+
+    s.set_balance(b, intx::be::load<uint256_t>(s.get_balance(b)) + 2'000);
     s.set_nonce(b, 3);
     (void)s.selfdestruct(a, b);
     s.destruct_suicides();
@@ -450,8 +407,7 @@ TYPED_TEST(AccountStateTest, cant_merge_colliding_merge)
 
     auto s = typename decltype(t)::ChangeSet{t};
 
-    s.access_account(a);
-    s.set_balance(a, 80'000);
+    s.set_balance(a, intx::be::load<uint256_t>(s.get_balance(a)) + 40'000);
 
     t.merged_.emplace(a, r);
 
@@ -471,8 +427,7 @@ TYPED_TEST(AccountStateTest, cant_merge_deleted_merge)
 
     auto s = typename decltype(t)::ChangeSet{t};
 
-    s.access_account(a);
-    s.set_balance(a, 80'000);
+    s.set_balance(a, intx::be::load<uint256_t>(s.get_balance(a)) + 40'000);
 
     t.merged_.emplace(a, r);
     t.merged_[a].updated.reset();
@@ -510,8 +465,7 @@ TYPED_TEST(AccountStateTest, cant_merge_conflicting_modifies)
 
     auto s = typename decltype(t)::ChangeSet{t};
 
-    s.access_account(a);
-    s.set_balance(a, 60'000);
+    s.set_balance(a, intx::be::load<uint256_t>(s.get_balance(a)) + 60'000);
 
     t.merged_.emplace(a, r);
 
@@ -532,8 +486,6 @@ TYPED_TEST(AccountStateTest, cant_merge_conflicting_deleted)
     r.updated.reset();
     auto s = typename decltype(t)::ChangeSet{t};
 
-    s.access_account(b);
-    s.access_account(c);
     (void)s.selfdestruct(c, b);
     s.destruct_suicides();
 
@@ -556,13 +508,11 @@ TYPED_TEST(AccountStateTest, merge_multiple_changes)
     {
         auto s = typename decltype(t)::ChangeSet{t};
 
-        s.access_account(b);
-        s.access_account(c);
         s.create_account(a);
         s.set_nonce(a, 1);
-        s.set_balance(a, 38'000);
-        s.set_balance(b, 42'000);
-        s.set_nonce(b, 3);
+        s.set_balance(a, intx::be::load<uint256_t>(s.get_balance(a)) + 38'000);
+        s.set_balance(b, intx::be::load<uint256_t>(s.get_balance(b)) + 2'000);
+        s.set_nonce(b, s.get_nonce(b) + 3);
         (void)s.selfdestruct(c, b);
         s.destruct_suicides();
 
@@ -575,10 +525,10 @@ TYPED_TEST(AccountStateTest, merge_multiple_changes)
     {
         auto s = typename decltype(t)::ChangeSet{t};
 
-        s.access_account(b);
         s.create_account(c);
-        s.set_balance(c, 22'000);
+        s.set_balance(c, intx::be::load<uint256_t>(s.get_balance(c)) + 22'000);
         s.set_nonce(c, 1);
+        (void)s.get_balance(b);
         s.set_balance(b, 48'000);
         s.set_nonce(b, 4);
 
@@ -690,13 +640,12 @@ TYPED_TEST(AccountStateTest, can_commit_multiple)
     {
         auto s = typename decltype(t)::ChangeSet{t};
 
-        s.access_account(b);
-        s.access_account(c);
         s.create_account(a);
         s.set_nonce(a, 1);
         s.set_balance(a, 38'000);
-        s.set_balance(b, 42'000);
-        s.set_nonce(b, 3);
+
+        s.set_balance(b, intx::be::load<uint256_t>(s.get_balance(b)) + 2'000);
+        s.set_nonce(b, s.get_nonce(b) + 3);
         (void)s.selfdestruct(c, b);
         s.destruct_suicides();
 
@@ -706,14 +655,12 @@ TYPED_TEST(AccountStateTest, can_commit_multiple)
     {
         auto s = typename decltype(t)::ChangeSet{t};
 
-        s.access_account(a);
-        s.access_account(b);
-        s.access_account(d);
         s.create_account(c);
         s.set_balance(c, 22'000);
         s.set_nonce(c, 1);
-        s.set_balance(b, 48'000);
-        s.set_nonce(b, 4);
+
+        s.set_balance(b, intx::be::load<uint256_t>(s.get_balance(b)) + 6000);
+        s.set_nonce(b, s.get_nonce(b) + 1);
         (void)s.selfdestruct(d, a);
         s.destruct_suicides();
 
@@ -728,7 +675,7 @@ TYPED_TEST(AccountStateTest, can_commit_multiple)
     EXPECT_TRUE(db.read_account(a).has_value());
     EXPECT_EQ(db.read_account(a).value().balance, 98'000);
     EXPECT_EQ(db.read_account(a).value().nonce, 1);
-    EXPECT_EQ(db.read_account(b).value().balance, 48'000);
+    EXPECT_EQ(db.read_account(b).value().balance, 98'000);
     EXPECT_EQ(db.read_account(b).value().nonce, 4);
     EXPECT_EQ(db.read_account(c).value().balance, 22'000);
     EXPECT_EQ(db.read_account(c).value().nonce, 1);

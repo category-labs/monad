@@ -4,6 +4,7 @@
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
 
 #include <monad/state/config.hpp>
@@ -13,6 +14,7 @@
 #include <algorithm>
 #include <cassert>
 #include <unordered_map>
+#include <unordered_set>
 
 MONAD_STATE_NAMESPACE_BEGIN
 
@@ -142,8 +144,9 @@ struct AccountState
 template <typename TAccountDB>
 struct AccountState<TAccountDB>::ChangeSet : public AccountState<TAccountDB>
 {
-    change_set_t changed_{};
+    mutable change_set_t changed_{};
     uint64_t total_selfdestructs_{};
+    std::unordered_set<address_t> accessed_{};
 
     // EVMC Host Interface
     [[nodiscard]] bool account_exists(address_t const &a) const noexcept
@@ -167,35 +170,53 @@ struct AccountState<TAccountDB>::ChangeSet : public AccountState<TAccountDB>
     // EVMC Host Interface
     evmc_access_status access_account(address_t const &a)
     {
-        if (changed_.contains(a)) {
-            return EVMC_ACCESS_WARM;
+        auto const [_, inserted] = accessed_.insert(a);
+        if (inserted) {
+            return EVMC_ACCESS_COLD;
         }
-        auto const account = get_committed_storage(a).has_value()
-                                 ? get_committed_storage(a)
-                                 : Account{};
-        changed_.emplace(a, diff_t{get_committed_storage(a), account});
-        return EVMC_ACCESS_COLD;
+        return EVMC_ACCESS_WARM;
+    }
+
+    [[nodiscard]] std::optional<Account>
+    get_account(address_t const &address) const noexcept
+    {
+        if (changed_.contains(address)) {
+            return changed_.at(address).updated;
+        }
+        if (AccountState::account_exists(address)) {
+            auto const original = get_committed_storage(address);
+            changed_.emplace(address, diff_t{original, original});
+            return original;
+        }
+        changed_.emplace(address, diff_t{std::nullopt, std::nullopt});
+        return std::nullopt;
     }
 
     // EVMC Host Interface
-    [[nodiscard]] bytes32_t get_balance(address_t const &a) const noexcept
+    [[nodiscard]] bytes32_t get_balance(address_t const &address) const noexcept
     {
         return intx::be::store<bytes32_t>(
-            changed_.at(a).updated.value_or(Account{}).balance);
+            get_account(address).value_or(Account{}).balance);
     }
 
     void set_balance(address_t const &address, uint256_t new_balance) noexcept
     {
+        MONAD_DEBUG_ASSERT(
+            changed_.contains(address) &&
+            changed_.at(address).updated.has_value());
         changed_.at(address).updated.value().balance = new_balance;
     }
 
     [[nodiscard]] uint64_t get_nonce(address_t const &address) const noexcept
     {
-        return changed_.at(address).updated.value_or(Account{}).nonce;
+        return get_account(address).value_or(Account{}).nonce;
     }
 
     void set_nonce(address_t const &address, uint64_t nonce) noexcept
     {
+        MONAD_DEBUG_ASSERT(
+            changed_.contains(address) &&
+            changed_.at(address).updated.has_value());
         changed_.at(address).updated.value().nonce = nonce;
     }
 
@@ -203,25 +224,25 @@ struct AccountState<TAccountDB>::ChangeSet : public AccountState<TAccountDB>
     [[nodiscard]] bytes32_t
     get_code_hash(address_t const &address) const noexcept
     {
-        if (changed_.contains(address)) {
-            return changed_.at(address).updated.value_or(Account{}).code_hash;
-        }
-
-        return AccountState::get_code_hash(address);
+        return get_account(address).value_or(Account{}).code_hash;
     }
 
     void set_code_hash(address_t const &address, bytes32_t const &b) noexcept
     {
-        MONAD_DEBUG_ASSERT(changed_.at(address).updated.has_value());
+        MONAD_DEBUG_ASSERT(
+            changed_.contains(address) &&
+            changed_.at(address).updated.has_value());
         changed_.at(address).updated.value().code_hash = b;
     }
 
     [[nodiscard]] bool
     selfdestruct(address_t const &a, address_t const &beneficiary) noexcept
     {
-        if (changed_.at(a).updated) {
-            changed_.at(beneficiary).updated.value().balance +=
-                changed_.at(a).updated.value().balance;
+        if (get_account(a).has_value()) {
+            set_balance(
+                beneficiary,
+                intx::be::load<uint256_t>(get_balance(beneficiary)) +
+                    intx::be::load<uint256_t>(get_balance(a)));
             changed_.at(a).updated.reset();
             ++total_selfdestructs_;
             return true;

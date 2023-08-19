@@ -75,12 +75,14 @@ struct AccountState
         return db_.read_account(a).has_value();
     }
 
+    // TODO: We no longer need this function; refactor in a separate PR
     // EVMC Host Interface
     [[nodiscard]] evmc_access_status access_account(address_t const &) noexcept
     {
         return EVMC_ACCESS_COLD;
     }
 
+    // TODO: Ditto as above
     // EVMC Host Interface
     [[nodiscard]] bytes32_t get_balance(address_t const &a) const noexcept
     {
@@ -88,6 +90,7 @@ struct AccountState
             get_committed_storage(a).value_or(Account{}).balance);
     }
 
+    // TODO: Ditto as above
     // EVMC Host Interface
     [[nodiscard]] bytes32_t get_code_hash(address_t const &a) const noexcept
     {

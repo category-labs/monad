@@ -179,8 +179,15 @@ bytes32_t StateDb::read_storage_history(
     return result;
 }
 
+byte_string StateDb::read_code(bytes32_t const &)
+{
+    // TODO
+    return {};
+}
+
 void StateDb::write_accounts(Accounts const &accounts)
 {
+    // TODO
     (void)accounts;
 }
 

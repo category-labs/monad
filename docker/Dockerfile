@@ -21,6 +21,8 @@ RUN yum -y install \
   zip
 
 RUN yum -y install \
+  abseil-cpp \
+  abseil-cpp-debuginfo \
   boost-fiber \
   boost-fiber-debuginfo \
   brotli \
@@ -40,6 +42,7 @@ RUN yum -y install \
   valgrind
 
 RUN yum -y install \
+  abseil-cpp-devel \
   boost-devel \
   brotli-devel \
   cli11-devel \

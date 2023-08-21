@@ -6,6 +6,7 @@
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/db/db.hpp>
 
 #include <absl/container/btree_map.h>
 
@@ -24,7 +25,7 @@ namespace rocksdb
 
 MONAD_NAMESPACE_BEGIN
 
-class StateDb final
+class StateDb final : public Db
 {
     std::filesystem::path const path_;
     std::vector<rocksdb::ColumnFamilyHandle *> cfs_;
@@ -35,17 +36,20 @@ public:
     StateDb(std::filesystem::path const &);
     ~StateDb();
 
-    std::optional<Account> read_account(address_t const &);
+    virtual std::optional<Account> read_account(address_t const &) override;
 
     std::optional<Account>
     read_account_history(address_t const &, uint64_t block_number);
 
-    bytes32_t read_storage(
-        address_t const &, uint64_t incarnation, bytes32_t const &location);
+    virtual bytes32_t read_storage(
+        address_t const &, uint64_t incarnation,
+        bytes32_t const &location) override;
 
     bytes32_t read_storage_history(
         address_t const &, uint64_t incarnation, bytes32_t const &location,
         uint64_t block_number);
+
+    virtual byte_string read_code(bytes32_t const &) override;
 
     using Accounts =
         typename absl::btree_map<address_t, std::optional<Account>>;

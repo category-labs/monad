@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/execution/ethereum/config.hpp>
+#include <monad/execution/config.hpp>
 
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
@@ -20,7 +20,7 @@
 #include <fstream>
 #include <string>
 
-MONAD_EXECUTION_ETHEREUM_NAMESPACE_BEGIN
+MONAD_EXECUTION_NAMESPACE_BEGIN
 
 // TODO: Different chain_id has different genesis json file (with some of them
 // not having certain field)
@@ -110,4 +110,4 @@ read_genesis(std::filesystem::path const &genesis_file, TStateDB &db)
     return block_header;
 }
 
-MONAD_EXECUTION_ETHEREUM_NAMESPACE_END
+MONAD_EXECUTION_NAMESPACE_END

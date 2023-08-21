@@ -3,11 +3,11 @@
 #include <monad/core/address.hpp>
 #include <monad/core/block.hpp>
 
-#include <monad/execution/ethereum/config.hpp>
+#include <monad/execution/config.hpp>
 
 #include <intx/intx.hpp>
 
-MONAD_EXECUTION_ETHEREUM_NAMESPACE_BEGIN
+MONAD_EXECUTION_NAMESPACE_BEGIN
 
 namespace dao
 {
@@ -136,4 +136,4 @@ namespace dao
         0x807640a13483f8ac783c557fcdf27be11ea4ac7a_address};
 }
 
-MONAD_EXECUTION_ETHEREUM_NAMESPACE_END
+MONAD_EXECUTION_NAMESPACE_END

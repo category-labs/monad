@@ -131,8 +131,7 @@ public:
                         test_resource::ethereum_genesis_dir / "mainnet.json";
 
                     [[maybe_unused]] auto const block_header =
-                        ethereum::read_genesis(
-                            genesis_file_path, state.accounts_.db_);
+                        read_genesis(genesis_file_path, state.accounts_.db_);
                 }
 
                 TAllTxnBlockProcessor<TExecution> block_processor{};

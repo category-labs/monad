@@ -32,7 +32,7 @@ namespace fork_traits
 {
     struct frontier;
     struct homestead;
-    struct dao;
+    struct dao_fork;
     struct tangerine_whistle;
     struct spurious_dragon;
     struct byzantium;
@@ -46,7 +46,7 @@ namespace fork_traits
     template <typename TFork, template <typename> typename... TPrecompiles>
     using type_list_t = boost::mp11::mp_list<TPrecompiles<TFork>...>;
 
-    namespace contracts = execution::ethereum::static_precompiles;
+    namespace contracts = execution::static_precompiles;
 
     /**
      * Gas cost for many precompiles is computed as Base + PerWord * N
@@ -210,7 +210,7 @@ namespace fork_traits
 
     struct homestead : public frontier
     {
-        using next_fork_t = dao;
+        using next_fork_t = dao_fork;
 
         // https://eips.ethereum.org/EIPS/eip-2
         static constexpr evmc_revision rev = EVMC_HOMESTEAD;
@@ -259,7 +259,7 @@ namespace fork_traits
         }
     };
 
-    struct dao : public homestead
+    struct dao_fork : public homestead
     {
         using next_fork_t = tangerine_whistle;
         static constexpr auto last_block_number = 2'462'999u;
@@ -270,18 +270,15 @@ namespace fork_traits
         transfer_balance_dao(TState &s, block_num_t const block_number)
         {
             if (MONAD_UNLIKELY(
-                    block_number ==
-                    execution::ethereum::dao::dao_block_number)) {
+                    block_number == execution::dao::dao_block_number)) {
                 auto change_set = s.get_new_changeset(0u);
-                change_set.access_account(
-                    execution::ethereum::dao::withdraw_account);
-                for (auto const &addr :
-                     execution::ethereum::dao::child_accounts) {
+                change_set.access_account(execution::dao::withdraw_account);
+                for (auto const &addr : execution::dao::child_accounts) {
                     change_set.access_account(addr);
                     change_set.set_balance(
-                        execution::ethereum::dao::withdraw_account,
+                        execution::dao::withdraw_account,
                         intx::be::load<uint256_t>(change_set.get_balance(
-                            execution::ethereum::dao::withdraw_account)) +
+                            execution::dao::withdraw_account)) +
                             intx::be::load<uint256_t>(
                                 change_set.get_balance(addr)));
                     change_set.set_balance(addr, 0u);
@@ -298,7 +295,7 @@ namespace fork_traits
         }
     };
 
-    struct tangerine_whistle : public dao
+    struct tangerine_whistle : public dao_fork
     {
         using next_fork_t = spurious_dragon;
 
@@ -308,7 +305,7 @@ namespace fork_traits
         template <typename TState>
         static constexpr void transfer_balance_dao(TState &, block_num_t block)
         {
-            MONAD_DEBUG_ASSERT(block > dao::last_block_number);
+            MONAD_DEBUG_ASSERT(block > dao_fork::last_block_number);
         }
     };
 

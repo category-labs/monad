@@ -128,7 +128,7 @@ TEST(AllTxnBlockProcessor, complete_transfer_and_verify_still_merge)
     using fiber_data_t = EmptyFiberData<real_state_t>;
 
     std::vector<std::pair<address_t, std::optional<Account>>> v{};
-    for (auto const addr : ethereum::dao::child_accounts) {
+    for (auto const addr : dao::child_accounts) {
         Account a{.balance = individual};
         v.emplace_back(std::make_pair(addr, a));
     }
@@ -139,26 +139,26 @@ TEST(AllTxnBlockProcessor, complete_transfer_and_verify_still_merge)
     real_state_t s{accounts, values, codes, blocks, db};
 
     Block b{};
-    b.header.number = ethereum::dao::dao_block_number;
+    b.header.number = dao::dao_block_number;
 
     AllTxnBlockProcessor<BoostFiberExecution> bp{};
     [[maybe_unused]] auto const r =
-        bp.execute<real_state_t, fork_traits::dao, fiber_data_t>(s, b);
+        bp.execute<real_state_t, fork_traits::dao_fork, fiber_data_t>(s, b);
 
     auto change_set = s.get_new_changeset(0u);
 
-    for (auto const &addr : ethereum::dao::child_accounts) {
+    for (auto const &addr : dao::child_accounts) {
         change_set.access_account(addr);
         EXPECT_EQ(intx::be::load<uint256_t>(change_set.get_balance(addr)), 0u);
     }
-    change_set.access_account(ethereum::dao::withdraw_account);
+    change_set.access_account(dao::withdraw_account);
     EXPECT_EQ(
         intx::be::load<uint256_t>(
-            change_set.get_balance(ethereum::dao::withdraw_account)),
+            change_set.get_balance(dao::withdraw_account)),
         total);
 
     // Verify we can still merge changeset
-    change_set.set_balance(ethereum::dao::withdraw_account, 1);
+    change_set.set_balance(dao::withdraw_account, 1);
     EXPECT_EQ(
         s.can_merge_changes(change_set),
         real_state_t::MergeStatus::WILL_SUCCEED);

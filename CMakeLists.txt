@@ -126,7 +126,6 @@ add_library(
   "include/monad/execution/evm.hpp"
   "include/monad/execution/evmc_host.hpp"
   "include/monad/execution/evmone_baseline_interpreter.hpp"
-  "include/monad/execution/ethereum/config.hpp"
   "include/monad/execution/ethereum/dao.hpp"
   "include/monad/execution/ethereum/genesis.hpp"
   "include/monad/execution/ethereum/static_precompiles/elliptic_curve_recover.hpp"

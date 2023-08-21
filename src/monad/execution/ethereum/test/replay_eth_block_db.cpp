@@ -12,7 +12,7 @@
 using empty_list_t = boost::mp11::mp_list<>;
 
 using namespace monad;
-using namespace execution;
+using namespace monad::execution;
 
 class fakeBlockDb
 {
@@ -471,7 +471,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_spurious_dragon)
         EXPECT_EQ(receipt_collector[i][0].status, EVMC_HOMESTEAD);
     }
     auto const start_tangerine_whistle =
-        fork_traits::dao::last_block_number -
+        fork_traits::dao_fork::last_block_number -
         fork_traits::frontier::last_block_number + offset + 1u;
     for (auto i = start_dao; i < start_tangerine_whistle; ++i) {
         EXPECT_EQ(receipt_collector[i][0].status, EVMC_HOMESTEAD);

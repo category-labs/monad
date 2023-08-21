@@ -1,9 +1,9 @@
 #pragma once
 
 #include <monad/core/concepts.hpp>
-#include <monad/execution/ethereum/config.hpp>
+#include <monad/execution/config.hpp>
 
-MONAD_EXECUTION_ETHEREUM_NAMESPACE_BEGIN
+MONAD_EXECUTION_NAMESPACE_BEGIN
 
 namespace static_precompiles
 {
@@ -30,4 +30,4 @@ namespace static_precompiles
     };
 }
 
-MONAD_EXECUTION_ETHEREUM_NAMESPACE_END
+MONAD_EXECUTION_NAMESPACE_END

@@ -19,7 +19,6 @@
 
 using namespace monad;
 using namespace monad::execution;
-using namespace monad::execution::ethereum;
 
 template <typename TDB>
 struct GenesisStateTest : public testing::Test

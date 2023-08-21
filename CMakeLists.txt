@@ -102,6 +102,7 @@ add_library(
   # db
   "include/monad/db/assert.h"
   "include/monad/db/auto_detect_start_block_number.hpp"
+  "include/monad/db/db.hpp"
   "include/monad/db/db_interface.hpp"
   "include/monad/db/block_db.hpp"
   "src/monad/db/block_db.cpp"

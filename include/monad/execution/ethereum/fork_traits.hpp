@@ -36,7 +36,7 @@ namespace fork_traits
     struct tangerine_whistle;
     struct spurious_dragon;
     struct byzantium;
-    struct constantinople;
+    struct constantinople_and_petersburg;
     struct istanbul;
     struct berlin;
     struct london;
@@ -343,7 +343,7 @@ namespace fork_traits
 
     struct byzantium : public spurious_dragon
     {
-        using next_fork_t = constantinople;
+        using next_fork_t = constantinople_and_petersburg;
 
         static constexpr evmc_revision rev = EVMC_BYZANTIUM;
         static constexpr auto last_block_number = 7'279'999u;
@@ -380,11 +380,13 @@ namespace fork_traits
         }
     };
 
-    struct constantinople : public byzantium
+    // EIP-1716 petersburg and constantinople forks are activated at the same
+    // block on mainnet
+    struct constantinople_and_petersburg : public byzantium
     {
         using next_fork_t = istanbul;
 
-        static constexpr evmc_revision rev = EVMC_CONSTANTINOPLE;
+        static constexpr evmc_revision rev = EVMC_PETERSBURG;
         static constexpr auto last_block_number = 9'068'999;
         static constexpr uint256_t block_reward =
             2'000'000'000'000'000'000; // YP Eqn. 176, EIP-1234
@@ -397,9 +399,8 @@ namespace fork_traits
             apply_mining_award(s, b, block_reward, additional_ommer_reward);
         }
     };
-    // petersburg - 7'280'000
 
-    struct istanbul : public constantinople
+    struct istanbul : public constantinople_and_petersburg
     {
         using next_fork_t = berlin;
 
@@ -420,7 +421,8 @@ namespace fork_traits
 
         using static_precompiles_t = boost::mp11::mp_append<
             boost::mp11::mp_transform<
-                switch_fork_t, constantinople::static_precompiles_t>,
+                switch_fork_t,
+                constantinople_and_petersburg::static_precompiles_t>,
             type_list_t<istanbul, contracts::Blake2F>>;
         static_assert(boost::mp11::mp_size<static_precompiles_t>() == 9);
 

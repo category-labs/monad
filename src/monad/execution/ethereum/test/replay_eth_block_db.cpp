@@ -485,7 +485,7 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_spurious_dragon)
     }
 }
 
-TEST(ReplayFromBlockDb_Eth, byzantium_to_constantinople)
+TEST(ReplayFromBlockDb_Eth, byzantium_to_constantinople_and_petersburg)
 {
     state_t state;
     fakeBlockDb block_db;
@@ -515,5 +515,5 @@ TEST(ReplayFromBlockDb_Eth, byzantium_to_constantinople)
     EXPECT_EQ(result.block_number, finish_block_number - 1);
     EXPECT_EQ(receipt_collector.size(), 2);
     EXPECT_EQ(receipt_collector[0][0].status, EVMC_BYZANTIUM);
-    EXPECT_EQ(receipt_collector[1][0].status, EVMC_CONSTANTINOPLE);
+    EXPECT_EQ(receipt_collector[1][0].status, EVMC_PETERSBURG);
 }

@@ -16,18 +16,7 @@ MONAD_DB_NAMESPACE_BEGIN
 
 namespace detail
 {
-    [[nodiscard]] bool rocks_db_contains_impl(
-        bytes32_t const &ch, std::shared_ptr<rocksdb::DB> db,
-        rocksdb::ColumnFamilyHandle *cf)
-    {
-        rocksdb::PinnableSlice value;
-        auto const res =
-            db->Get(rocksdb::ReadOptions{}, cf, to_slice(ch), &value);
-        MONAD_ASSERT(res.ok() || res.IsNotFound());
-        return res.ok();
-    }
-
-    [[nodiscard]] byte_string rocks_db_try_find_impl(
+    [[nodiscard]] byte_string rocks_db_read_code(
         bytes32_t const &ch, std::shared_ptr<rocksdb::DB> db,
         rocksdb::ColumnFamilyHandle *cf)
     {

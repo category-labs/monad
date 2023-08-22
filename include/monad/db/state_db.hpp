@@ -4,6 +4,7 @@
 
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
+#include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/db/db.hpp>
@@ -75,6 +76,18 @@ public:
 
     void revert();
     void commit();
+
+    void commit(state::StateChanges const &) override
+    {
+        // TODO
+        MONAD_ASSERT(false);
+    }
+
+    void create_and_prune_block_history(uint64_t) const override
+    {
+        // TODO
+        MONAD_ASSERT(false);
+    }
 
     auto *db() const { return db_.get(); } // TODO remove
 };

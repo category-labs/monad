@@ -7,20 +7,10 @@
 #include <monad/db/rocks_trie_db.hpp>
 #include <monad/logging/formatter.hpp>
 #include <monad/state/state_changes.hpp>
-#include <monad/test/hijacked_db.hpp>
 #include <monad/test/make_db.hpp>
 
 using namespace monad;
 using namespace monad::db;
-
-// clang-format off
-template<typename T>
-concept Trie = requires(T a)
-{
-    { a.root_hash() } -> std::convertible_to<bytes32_t>;
-    { a.root_hash(address_t{}) } -> std::convertible_to<bytes32_t>;
-};
-// clang-format on
 
 static constexpr auto a = 0x5353535353535353535353535353535353535353_address;
 static constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
@@ -38,6 +28,7 @@ static constexpr auto code_hash1 =
     0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
 static constexpr auto code_hash2 =
     0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1bbbbbbbbb_bytes32;
+static constexpr auto incarnation = 0u;
 
 template <typename TDB>
 struct DBTest : public testing::Test
@@ -55,80 +46,13 @@ using TrieDBTypes = ::testing::Types<InMemoryTrieDB, RocksTrieDB>;
 TYPED_TEST_SUITE(TrieDBTest, TrieDBTypes);
 
 template <typename TDB>
-struct HijackedExecutionDBTest : public testing::Test
-{
-};
-using HijackedExecutionDBTypes = ::testing::Types<
-    monad::test::hijacked::InMemoryDB, monad::test::hijacked::InMemoryTrieDB,
-    monad::test::hijacked::RocksDB, monad::test::hijacked::RocksTrieDB>;
-TYPED_TEST_SUITE(HijackedExecutionDBTest, HijackedExecutionDBTypes);
-
-template <typename TDB>
 struct RocksDBTest : public testing::Test
 {
 };
 using RocksDBTypes = ::testing::Types<RocksDB, RocksTrieDB>;
 TYPED_TEST_SUITE(RocksDBTest, RocksDBTypes);
 
-template <typename TDB>
-struct ReadWriteTest : public testing::Test
-{
-};
-using ReadWriteTypes = ::testing::Types<
-    std::pair<ReadOnlyRocksDB, RocksDB>,
-    std::pair<ReadOnlyRocksTrieDB, RocksTrieDB>>;
-TYPED_TEST_SUITE(ReadWriteTest, ReadWriteTypes);
-
-TYPED_TEST(HijackedExecutionDBTest, executor)
-{
-    test::hijacked::Executor::EXECUTED = false;
-    auto db = test::make_db<TypeParam>();
-    EXPECT_FALSE(test::hijacked::Executor::EXECUTED);
-
-    Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
-    db.commit(state::StateChanges{
-        .account_changes = {{a, acct}},
-        .storage_changes = {{a, {{key1, value1}}}},
-        .code_changes = {{code_hash1, code1}}});
-
-    test::hijacked::Executor::EXECUTED = false;
-    (void)db.try_find(a);
-    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
-
-    test::hijacked::Executor::EXECUTED = false;
-    (void)db.at(a);
-    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
-
-    test::hijacked::Executor::EXECUTED = false;
-    (void)db.contains(a);
-    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
-
-    test::hijacked::Executor::EXECUTED = false;
-    (void)db.try_find(a, key1);
-    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
-
-    test::hijacked::Executor::EXECUTED = false;
-    (void)db.at(a, key1);
-    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
-
-    test::hijacked::Executor::EXECUTED = false;
-    (void)db.contains(a, key1);
-    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
-
-    test::hijacked::Executor::EXECUTED = false;
-    (void)db.try_find(code_hash1);
-    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
-
-    test::hijacked::Executor::EXECUTED = false;
-    (void)db.at(code_hash1);
-    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
-
-    test::hijacked::Executor::EXECUTED = false;
-    (void)db.contains(code_hash1);
-    EXPECT_TRUE(test::hijacked::Executor::EXECUTED);
-}
-
-TYPED_TEST(DBTest, storage_creation)
+TYPED_TEST(DBTest, read_storage)
 {
     auto db = test::make_db<TypeParam>();
     Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
@@ -136,20 +60,18 @@ TYPED_TEST(DBTest, storage_creation)
         .account_changes = {{a, acct}},
         .storage_changes = {{a, {{key1, value1}}}}});
 
-    EXPECT_TRUE(db.contains(a, key1));
-    EXPECT_EQ(db.at(a, key1), value1);
+    EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
 
     db.commit(state::StateChanges{
         .account_changes = {{b, acct}}, .storage_changes = {}});
-    EXPECT_TRUE(db.contains(b));
+    EXPECT_EQ(db.read_account(b), acct);
 
     db.commit(state::StateChanges{
         .account_changes = {}, .storage_changes = {{b, {{key1, value1}}}}});
-    EXPECT_TRUE(db.contains(b, key1));
-    EXPECT_EQ(db.at(b, key1), value1);
+    EXPECT_EQ(db.read_storage(b, incarnation, key1), value1);
 }
 
-TYPED_TEST(DBTest, storage_try_find)
+TYPED_TEST(DBTest, read_nonexistent_storage)
 {
     auto db = test::make_db<TypeParam>();
     Account acct{.nonce = 1};
@@ -158,20 +80,15 @@ TYPED_TEST(DBTest, storage_try_find)
         .storage_changes = {{a, {{key1, value1}}}},
     });
 
-    // Existing key
-    EXPECT_TRUE(db.contains(a, key1));
-    EXPECT_EQ(db.try_find(a, key1), value1);
-
     // Non-existing key
-    EXPECT_FALSE(db.contains(a, key2));
-    EXPECT_EQ(db.try_find(a, key2), bytes32_t{});
+    EXPECT_EQ(db.read_storage(a, incarnation, key2), bytes32_t{});
 
     // Non-existing account
-    EXPECT_FALSE(db.contains(b));
-    EXPECT_EQ(db.try_find(b, key1), bytes32_t{});
+    EXPECT_FALSE(db.read_account(b).has_value());
+    EXPECT_EQ(db.read_storage(b, incarnation, key1), bytes32_t{});
 }
 
-TYPED_TEST(DBTest, code_creation)
+TYPED_TEST(DBTest, read_code)
 {
     auto db = test::make_db<TypeParam>();
     Account acct_a{.balance = 1, .code_hash = code_hash1, .nonce = 1};
@@ -181,8 +98,7 @@ TYPED_TEST(DBTest, code_creation)
         .code_changes = {{code_hash1, code1}},
     });
 
-    EXPECT_TRUE(db.contains(code_hash1));
-    EXPECT_EQ(db.at(code_hash1), code1);
+    EXPECT_EQ(db.read_code(code_hash1), code1);
 
     Account acct_b{.balance = 0, .code_hash = code_hash2, .nonce = 1};
     db.commit(state::StateChanges{
@@ -190,22 +106,7 @@ TYPED_TEST(DBTest, code_creation)
         .storage_changes = {},
         .code_changes = {{code_hash2, code2}}});
 
-    EXPECT_TRUE(db.contains(code_hash2));
-    EXPECT_EQ(db.at(code_hash2), code2);
-}
-
-TYPED_TEST(DBTest, code_try_find)
-{
-    auto db = test::make_db<TypeParam>();
-    Account acct_a{.balance = 1, .code_hash = code_hash1, .nonce = 1};
-    db.commit(state::StateChanges{
-        .account_changes = {{a, acct_a}},
-        .storage_changes = {},
-        .code_changes = {{code_hash1, code1}},
-    });
-
-    EXPECT_TRUE(db.contains(code_hash1));
-    EXPECT_EQ(db.try_find(code_hash1), code1);
+    EXPECT_EQ(db.read_code(code_hash2), code2);
 }
 
 TEST(InMemoryTrieDB, account_creation)
@@ -215,11 +116,9 @@ TEST(InMemoryTrieDB, account_creation)
     db.commit(state::StateChanges{
         .account_changes = {{a, acct}}, .storage_changes = {}});
 
-    EXPECT_EQ(db.accounts().leaves_storage.size(), 1);
-    EXPECT_EQ(db.accounts().trie_storage.size(), 1);
-
-    EXPECT_TRUE(db.contains(a));
-    EXPECT_EQ(db.at(a), acct);
+    EXPECT_EQ(db.accounts_trie.leaves_storage.size(), 1);
+    EXPECT_EQ(db.accounts_trie.trie_storage.size(), 1);
+    EXPECT_EQ(db.read_account(a), acct);
 }
 
 TEST(InMemoryTrieDB, erase)
@@ -231,26 +130,25 @@ TEST(InMemoryTrieDB, erase)
         .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
 
     EXPECT_EQ(
-        db.root_hash(a),
+        db.storage_root(a),
         0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
     EXPECT_EQ(
-        db.root_hash(),
+        db.state_root(),
         0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
 
     db.commit(state::StateChanges{
         .account_changes = {{a, std::nullopt}},
         .storage_changes = {{a, {{key1, value2}, {key2, value1}}}}});
 
-    EXPECT_FALSE(db.contains(a));
-    EXPECT_FALSE(db.contains(a, key1));
-    EXPECT_FALSE(db.contains(a, key2));
-    EXPECT_TRUE(db.accounts().leaves_storage.empty());
-    EXPECT_TRUE(db.accounts().trie_storage.empty());
-    EXPECT_TRUE(db.storage().leaves_storage.empty());
-    EXPECT_TRUE(db.storage().trie_storage.empty());
+    EXPECT_EQ(db.read_storage(a, incarnation, key1), bytes32_t{});
+    EXPECT_EQ(db.read_storage(a, incarnation, key2), bytes32_t{});
+    EXPECT_TRUE(db.accounts_trie.leaves_storage.empty());
+    EXPECT_TRUE(db.accounts_trie.trie_storage.empty());
+    EXPECT_TRUE(db.storage_trie.leaves_storage.empty());
+    EXPECT_TRUE(db.storage_trie.trie_storage.empty());
 
-    EXPECT_EQ(db.root_hash(), NULL_ROOT);
-    EXPECT_EQ(db.root_hash(a), NULL_ROOT);
+    EXPECT_EQ(db.state_root(), NULL_ROOT);
+    EXPECT_EQ(db.storage_root(a), NULL_ROOT);
 }
 
 TYPED_TEST(TrieDBTest, ModifyStorageOfAccount)
@@ -265,7 +163,7 @@ TYPED_TEST(TrieDBTest, ModifyStorageOfAccount)
         .account_changes = {}, .storage_changes = {{a, {{key2, value1}}}}});
 
     EXPECT_EQ(
-        db.root_hash(),
+        db.state_root(),
         0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
 }
 
@@ -279,7 +177,7 @@ TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)
         .balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
 
     {
-        auto db = TypeParam{root, block_number, BLOCK_HISTORY};
+        auto db = TypeParam{db::Writable{}, root, block_number, BLOCK_HISTORY};
 
         Account acct{
             .balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
@@ -288,16 +186,16 @@ TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)
             .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
         db.create_and_prune_block_history(block_number++);
 
-        EXPECT_EQ(db.try_find(a), acct);
-        EXPECT_EQ(db.try_find(a, key1), value1);
-        EXPECT_EQ(db.try_find(a, key2), value2);
+        EXPECT_EQ(db.read_account(a), acct);
+        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
+        EXPECT_EQ(db.read_storage(a, incarnation, key2), value2);
 
-        if constexpr (Trie<TypeParam>) {
+        if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
-                db.root_hash(a),
+                db.storage_root(a),
                 0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
             EXPECT_EQ(
-                db.root_hash(),
+                db.state_root(),
                 0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
         }
 
@@ -305,18 +203,18 @@ TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)
     }
 
     {
-        auto db = TypeParam{root, block_number, BLOCK_HISTORY};
+        auto db = TypeParam{Writable{}, root, block_number, BLOCK_HISTORY};
 
-        EXPECT_EQ(db.try_find(a), acct);
-        EXPECT_EQ(db.try_find(a, key1), value1);
-        EXPECT_EQ(db.try_find(a, key2), value2);
+        EXPECT_EQ(db.read_account(a), acct);
+        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
+        EXPECT_EQ(db.read_storage(a, incarnation, key2), value2);
 
-        if constexpr (Trie<TypeParam>) {
+        if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
-                db.root_hash(a),
+                db.storage_root(a),
                 0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
             EXPECT_EQ(
-                db.root_hash(),
+                db.state_root(),
                 0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
         }
 
@@ -324,45 +222,45 @@ TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)
             .account_changes = {}, .storage_changes = {{a, {{key2, value1}}}}});
         db.create_and_prune_block_history(block_number++);
 
-        EXPECT_EQ(db.try_find(a), acct);
-        EXPECT_EQ(db.try_find(a, key1), value1);
-        EXPECT_EQ(db.try_find(a, key2), value1);
+        EXPECT_EQ(db.read_account(a), acct);
+        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
+        EXPECT_EQ(db.read_storage(a, incarnation, key2), value1);
 
-        if constexpr (Trie<TypeParam>) {
+        if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
-                db.root_hash(),
+                db.state_root(),
                 0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
         }
         EXPECT_EQ(db.starting_block_number, block_number - 1u);
     }
 
     {
-        auto db = TypeParam{root, block_number, BLOCK_HISTORY};
-        EXPECT_EQ(db.try_find(a), acct);
-        EXPECT_EQ(db.try_find(a, key1), value1);
-        EXPECT_EQ(db.try_find(a, key2), value1);
+        auto db = TypeParam{Writable{}, root, block_number, BLOCK_HISTORY};
+        EXPECT_EQ(db.read_account(a), acct);
+        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
+        EXPECT_EQ(db.read_storage(a, incarnation, key2), value1);
 
-        if constexpr (Trie<TypeParam>) {
+        if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
-                db.root_hash(),
+                db.state_root(),
                 0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
         }
         EXPECT_EQ(db.starting_block_number, block_number);
     }
 
     {
-        auto db = TypeParam{root, block_number - 1, BLOCK_HISTORY};
+        auto db = TypeParam{Writable{}, root, block_number - 1, BLOCK_HISTORY};
 
-        EXPECT_EQ(db.try_find(a), acct);
-        EXPECT_EQ(db.try_find(a, key1), value1);
-        EXPECT_EQ(db.try_find(a, key2), value2);
+        EXPECT_EQ(db.read_account(a), acct);
+        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
+        EXPECT_EQ(db.read_storage(a, incarnation, key2), value2);
 
-        if constexpr (Trie<TypeParam>) {
+        if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
-                db.root_hash(a),
+                db.storage_root(a),
                 0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
             EXPECT_EQ(
-                db.root_hash(),
+                db.state_root(),
                 0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
         }
 
@@ -381,7 +279,7 @@ TYPED_TEST(
         .balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
 
     {
-        auto db = TypeParam{root, BLOCK_HISTORY};
+        auto db = TypeParam{Writable{}, root, std::nullopt, BLOCK_HISTORY};
 
         Account acct{
             .balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
@@ -390,34 +288,34 @@ TYPED_TEST(
             .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
         db.create_and_prune_block_history(block_number++);
 
-        EXPECT_EQ(db.try_find(a), acct);
-        EXPECT_EQ(db.try_find(a, key1), value1);
-        EXPECT_EQ(db.try_find(a, key2), value2);
+        EXPECT_EQ(db.read_account(a), acct);
+        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
+        EXPECT_EQ(db.read_storage(a, incarnation, key2), value2);
 
-        if constexpr (Trie<TypeParam>) {
+        if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
-                db.root_hash(a),
+                db.storage_root(a),
                 0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
             EXPECT_EQ(
-                db.root_hash(),
+                db.state_root(),
                 0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
         }
         EXPECT_EQ(db.starting_block_number, block_number - 1u);
     }
 
     {
-        auto db = TypeParam{root, BLOCK_HISTORY};
+        auto db = TypeParam{Writable{}, root, std::nullopt, BLOCK_HISTORY};
 
-        EXPECT_EQ(db.try_find(a), acct);
-        EXPECT_EQ(db.try_find(a, key1), value1);
-        EXPECT_EQ(db.try_find(a, key2), value2);
+        EXPECT_EQ(db.read_account(a), acct);
+        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
+        EXPECT_EQ(db.read_storage(a, incarnation, key2), value2);
 
-        if constexpr (Trie<TypeParam>) {
+        if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
-                db.root_hash(a),
+                db.storage_root(a),
                 0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
             EXPECT_EQ(
-                db.root_hash(),
+                db.state_root(),
                 0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
         }
 
@@ -425,13 +323,13 @@ TYPED_TEST(
             .account_changes = {}, .storage_changes = {{a, {{key2, value1}}}}});
         db.create_and_prune_block_history(block_number++);
 
-        EXPECT_EQ(db.try_find(a), acct);
-        EXPECT_EQ(db.try_find(a, key1), value1);
-        EXPECT_EQ(db.try_find(a, key2), value1);
+        EXPECT_EQ(db.read_account(a), acct);
+        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
+        EXPECT_EQ(db.read_storage(a, incarnation, key2), value1);
 
-        if constexpr (Trie<TypeParam>) {
+        if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
-                db.root_hash(),
+                db.state_root(),
                 0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
         }
 
@@ -439,15 +337,15 @@ TYPED_TEST(
     }
 
     {
-        auto db = TypeParam{root, BLOCK_HISTORY};
+        auto db = TypeParam{Writable{}, root, std::nullopt, BLOCK_HISTORY};
 
-        EXPECT_EQ(db.try_find(a), acct);
-        EXPECT_EQ(db.try_find(a, key1), value1);
-        EXPECT_EQ(db.try_find(a, key2), value1);
+        EXPECT_EQ(db.read_account(a), acct);
+        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
+        EXPECT_EQ(db.read_storage(a, incarnation, key2), value1);
 
-        if constexpr (Trie<TypeParam>) {
+        if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
-                db.root_hash(),
+                db.state_root(),
                 0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
         }
         EXPECT_EQ(db.starting_block_number, block_number);
@@ -464,7 +362,7 @@ TYPED_TEST(RocksDBTest, block_history_pruning)
         .balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
 
     {
-        auto db = TypeParam{root, block_number, BLOCK_HISTORY};
+        auto db = TypeParam{Writable{}, root, block_number, BLOCK_HISTORY};
         Account acct{
             .balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
         db.commit(state::StateChanges{
@@ -475,33 +373,33 @@ TYPED_TEST(RocksDBTest, block_history_pruning)
         db.create_and_prune_block_history(block_number++);
         db.create_and_prune_block_history(block_number++);
 
-        EXPECT_EQ(db.try_find(a), acct);
-        EXPECT_EQ(db.try_find(a, key1), value1);
-        EXPECT_EQ(db.try_find(a, key2), value2);
+        EXPECT_EQ(db.read_account(a), acct);
+        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
+        EXPECT_EQ(db.read_storage(a, incarnation, key2), value2);
 
-        if constexpr (Trie<TypeParam>) {
+        if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
-                db.root_hash(a),
+                db.storage_root(a),
                 0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
             EXPECT_EQ(
-                db.root_hash(),
+                db.state_root(),
                 0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
         }
     }
 
     {
-        auto db = TypeParam{root, block_number, BLOCK_HISTORY};
+        auto db = TypeParam{Writable{}, root, block_number, BLOCK_HISTORY};
 
-        EXPECT_EQ(db.try_find(a), acct);
-        EXPECT_EQ(db.try_find(a, key1), value1);
-        EXPECT_EQ(db.try_find(a, key2), value2);
+        EXPECT_EQ(db.read_account(a), acct);
+        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
+        EXPECT_EQ(db.read_storage(a, incarnation, key2), value2);
 
-        if constexpr (Trie<TypeParam>) {
+        if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
-                db.root_hash(a),
+                db.storage_root(a),
                 0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
             EXPECT_EQ(
-                db.root_hash(),
+                db.state_root(),
                 0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
         }
     }
@@ -510,7 +408,7 @@ TYPED_TEST(RocksDBTest, block_history_pruning)
         [&]() {
             auto const b = block_number - 1;
             try {
-                auto const db = TypeParam(root, b, BLOCK_HISTORY);
+                auto const db = TypeParam(ReadOnly{}, root, b);
             }
             catch (std::runtime_error const &e) {
                 EXPECT_THAT(
@@ -524,18 +422,15 @@ TYPED_TEST(RocksDBTest, block_history_pruning)
         std::runtime_error);
 }
 
-TYPED_TEST(ReadWriteTest, read_only)
+TYPED_TEST(RocksDBTest, read_only)
 {
-    using ReadOnly = typename TypeParam::first_type;
-    using ReadWrite = typename TypeParam::second_type;
-
     auto const root = test::make_db_root(
         *testing::UnitTest::GetInstance()->current_test_info());
     Account const acct{
         .balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
 
     {
-        auto db = ReadWrite{root, 1};
+        auto db = TypeParam{Writable{}, root, std::nullopt, 1};
         db.commit(state::StateChanges{
             .account_changes = {{a, acct}},
             .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
@@ -543,25 +438,17 @@ TYPED_TEST(ReadWriteTest, read_only)
     }
 
     {
-        auto db = ReadOnly{root, 1};
-        EXPECT_TRUE(db.contains(a));
-        EXPECT_EQ(db.try_find(a), acct);
-        EXPECT_EQ(db.at(a), acct);
+        auto db = TypeParam{ReadOnly{}, root, 1};
+        EXPECT_EQ(db.read_account(a), acct);
+        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
+        EXPECT_EQ(db.read_storage(a, incarnation, key2), value2);
 
-        EXPECT_TRUE(db.contains(a, key1));
-        EXPECT_EQ(db.try_find(a, key1), value1);
-        EXPECT_EQ(db.at(a, key1), value1);
-
-        EXPECT_TRUE(db.contains(a, key2));
-        EXPECT_EQ(db.try_find(a, key2), value2);
-        EXPECT_EQ(db.at(a, key2), value2);
-
-        if constexpr (Trie<ReadOnly>) {
+        if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
-                db.root_hash(a),
+                db.storage_root(a),
                 0x3f9802e4f21fce3d2b07d21c8f2b60b22f7c745c455e752728030580177f8e11_bytes32);
             EXPECT_EQ(
-                db.root_hash(),
+                db.state_root(),
                 0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
         }
     }

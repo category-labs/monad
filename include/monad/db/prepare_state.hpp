@@ -1,7 +1,6 @@
 #pragma once
 
 #include <monad/core/assert.h>
-#include <monad/db/concepts.hpp>
 #include <monad/db/config.hpp>
 #include <monad/db/util.hpp>
 
@@ -50,15 +49,11 @@ find_starting_checkpoint(
 
 // Preparing initial db state and return the path for opening. If preparation
 // fails, return a string explanation
-template <
-    template <typename TExecutor, Permission TPermission> typename TDB,
-    typename TExecutor, Permission TPermission>
-    requires Writable<TPermission>
+template <typename TDB>
 [[nodiscard]] inline tl::expected<std::filesystem::path, std::string>
 prepare_state(std::filesystem::path root, uint64_t starting_block_number)
 {
     namespace fs = std::filesystem;
-    using db_t = TDB<TExecutor, TPermission>;
 
     auto const current_dir = root / detail::CURRENT_DATABASE;
 
@@ -69,9 +64,9 @@ prepare_state(std::filesystem::path root, uint64_t starting_block_number)
 
     fs::create_directories(current_dir);
 
-    auto const path = current_dir / monad::db::as_string<db_t>();
+    auto const path = current_dir / monad::db::as_string<TDB>();
     if (starting_block_number) {
-        return find_starting_checkpoint<db_t>(root, starting_block_number)
+        return find_starting_checkpoint<TDB>(root, starting_block_number)
             .map([&](auto const &starting_checkpoint) {
                 fs::copy(starting_checkpoint, path);
                 return path;

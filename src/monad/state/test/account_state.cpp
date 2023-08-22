@@ -246,7 +246,9 @@ TYPED_TEST(AccountStateTest, get_code_hash_account_not_in_changeset)
 {
     auto db = test::make_db<TypeParam>();
     db.commit(StateChanges{
-        .account_changes = {{a, Account{.code_hash = hash1}}, {b, Account{.code_hash = hash2}}},
+        .account_changes =
+            {{a, Account{.code_hash = hash1}},
+             {b, Account{.code_hash = hash2}}},
         .storage_changes = {}});
 
     AccountState s{db};
@@ -415,7 +417,8 @@ TYPED_TEST(AccountStateTest, can_merge_onto_merged)
 
     AccountState t{db};
     t.merged_.emplace(a, diff_t{Account{.balance = 30'000}});
-    t.merged_.emplace(b, diff_t{db.at(b), db.at(b)});
+    t.merged_.emplace(
+        b, diff_t{db.read_account(b).value(), db.read_account(b).value()});
     t.merged_.emplace(c, diff_t{Account{.balance = 50'000}, std::nullopt});
     t.merged_[c].updated.reset();
 
@@ -442,7 +445,7 @@ TYPED_TEST(AccountStateTest, cant_merge_colliding_merge)
         .storage_changes = {}});
 
     AccountState t{db};
-    diff_t r{db.at(a), db.at(a)};
+    diff_t r{db.read_account(a).value(), db.read_account(a).value()};
     r.updated.value().balance = 80'000;
 
     auto s = typename decltype(t)::ChangeSet{t};
@@ -463,7 +466,7 @@ TYPED_TEST(AccountStateTest, cant_merge_deleted_merge)
         .storage_changes{}});
 
     AccountState t{db};
-    diff_t r{db.at(a), db.at(a)};
+    diff_t r{db.read_account(a).value(), db.read_account(a).value()};
     r.updated.value().balance = 60'000;
 
     auto s = typename decltype(t)::ChangeSet{t};
@@ -502,7 +505,7 @@ TYPED_TEST(AccountStateTest, cant_merge_conflicting_modifies)
         .storage_changes{}});
 
     AccountState t{db};
-    diff_t r{db.at(a), db.at(a)};
+    diff_t r{db.read_account(a).value(), db.read_account(a).value()};
     r.updated.value().balance = 80'000;
 
     auto s = typename decltype(t)::ChangeSet{t};
@@ -525,7 +528,7 @@ TYPED_TEST(AccountStateTest, cant_merge_conflicting_deleted)
         .storage_changes = {}});
 
     AccountState t{db};
-    diff_t r{db.at(c), db.at(c)};
+    diff_t r{db.read_account(c).value(), db.read_account(c).value()};
     r.updated.reset();
     auto s = typename decltype(t)::ChangeSet{t};
 
@@ -596,11 +599,12 @@ TYPED_TEST(AccountStateTest, can_commit)
              {c, Account{.balance = 50'000u}}},
         .storage_changes = {}});
     AccountState t{db};
-    diff_t r{db.at(c), db.at(c)};
+    diff_t r{db.read_account(c).value(), db.read_account(c).value()};
     r.updated.reset();
 
     t.merged_.emplace(a, Account{.balance = 30'000});
-    t.merged_.emplace(b, diff_t{db.at(b), db.at(b)});
+    t.merged_.emplace(
+        b, diff_t{db.read_account(b).value(), db.read_account(b).value()});
     t.merged_.emplace(c, r);
 
     EXPECT_TRUE(t.can_commit());
@@ -721,12 +725,12 @@ TYPED_TEST(AccountStateTest, can_commit_multiple)
     StateChanges sc{.account_changes = t.gather_changes()};
     db.commit(sc);
 
-    EXPECT_TRUE(db.contains(a));
-    EXPECT_EQ(db.at(a).balance, 98'000);
-    EXPECT_EQ(db.at(a).nonce, 1);
-    EXPECT_EQ(db.at(b).balance, 48'000);
-    EXPECT_EQ(db.at(b).nonce, 4);
-    EXPECT_EQ(db.at(c).balance, 22'000);
-    EXPECT_EQ(db.at(c).nonce, 1);
-    EXPECT_FALSE(db.contains(d));
+    EXPECT_TRUE(db.read_account(a).has_value());
+    EXPECT_EQ(db.read_account(a).value().balance, 98'000);
+    EXPECT_EQ(db.read_account(a).value().nonce, 1);
+    EXPECT_EQ(db.read_account(b).value().balance, 48'000);
+    EXPECT_EQ(db.read_account(b).value().nonce, 4);
+    EXPECT_EQ(db.read_account(c).value().balance, 22'000);
+    EXPECT_EQ(db.read_account(c).value().nonce, 1);
+    EXPECT_FALSE(db.read_account(d).has_value());
 }

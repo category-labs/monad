@@ -14,6 +14,11 @@
 
 MONAD_STATE_NAMESPACE_BEGIN
 
+namespace detail
+{
+    constexpr auto incarnation = 0ull;
+}
+
 struct InnerStorage
 {
     using diff_t = diff<bytes32_t>;
@@ -50,7 +55,7 @@ struct ValueState
         if (merged_.contains_key(a, key)) {
             return merged_.storage_.at(a).at(key).updated;
         }
-        return db_.try_find(a, key);
+        return db_.read_storage(a, detail::incarnation, key);
     }
 
     // Note: just for debug testing
@@ -62,7 +67,7 @@ struct ValueState
                     continue;
                 }
 
-                if (db_.try_find(a, k) != dv.orig) {
+                if (db_.read_storage(a, detail::incarnation, k) != dv.orig) {
                     return false;
                 }
             }

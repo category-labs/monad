@@ -5,7 +5,6 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 
-#include <monad/state/concepts.hpp>
 #include <monad/state/config.hpp>
 #include <monad/state/datum.hpp>
 #include <monad/state/state_changes.hpp>
@@ -27,7 +26,6 @@ struct CodeState
 
     TCodeDB &db_;
     map_t merged_{};
-    static inline byte_string const empty{};
 
     CodeState(TCodeDB &s)
         : db_{s}
@@ -39,17 +37,14 @@ struct CodeState
         if (merged_.contains(b)) {
             return merged_.at(b);
         }
-        if (db_.contains(b)) {
-            return db_.at(b);
-        }
-        return empty;
+        return db_.read_code(b);
     }
 
     [[nodiscard]] bool can_merge(ChangeSet const &w) const
     {
         return std::ranges::all_of(w.code_, [&](auto const &a) {
             auto const &existing_value = code_at(a.first);
-            return existing_value == empty || a.second == existing_value;
+            return existing_value.empty() || a.second == existing_value;
         });
     }
 
@@ -64,8 +59,9 @@ struct CodeState
 
     [[nodiscard]] bool can_commit() const
     {
-        return std::ranges::none_of(
-            merged_, [&](auto const &a) { return db_.contains(a.first); });
+        return std::ranges::none_of(merged_, [&](auto const &a) {
+            return !db_.read_code(a.first).empty();
+        });
     }
 
     [[nodiscard]] StateChanges::CodeChanges gather_changes() const

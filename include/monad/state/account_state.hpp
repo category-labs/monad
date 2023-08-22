@@ -61,7 +61,7 @@ struct AccountState
         if (merged_.contains(a)) {
             return merged_.at(a).updated;
         }
-        return db_.try_find(a);
+        return db_.read_account(a);
     }
 
     // EVMC Host Interface
@@ -70,7 +70,7 @@ struct AccountState
         if (merged_.contains(a)) {
             return merged_.at(a).updated.has_value();
         }
-        return db_.contains(a);
+        return db_.read_account(a).has_value();
     }
 
     // EVMC Host Interface
@@ -117,10 +117,9 @@ struct AccountState
     {
         return std::ranges::all_of(merged_, [&](auto const &p) {
             if (p.second.orig.has_value()) {
-                return db_.contains(p.first) &&
-                       p.second.orig == db_.at(p.first);
+                return p.second.orig == db_.read_account(p.first);
             }
-            return not db_.contains(p.first);
+            return not db_.read_account(p.first).has_value();
         });
     }
 
@@ -137,7 +136,7 @@ struct AccountState
 
     void clear_changes() { merged_.clear(); }
 
-    [[nodiscard]] bytes32_t get_state_hash() const { return db_.root_hash(); }
+    [[nodiscard]] bytes32_t get_state_hash() const { return db_.state_root(); }
 };
 
 template <typename TAccountDB>

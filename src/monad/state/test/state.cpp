@@ -36,6 +36,7 @@ static constexpr auto code_hash =
     0x00000000000000000000000000000000000000000000000000000000cccccccc_bytes32;
 static constexpr auto c1 =
     byte_string{0x65, 0x74, 0x68, 0x65, 0x72, 0x6d, 0x69};
+static constexpr auto incarnation = 0ull;
 
 template <typename TDB>
 struct StateTest : public testing::Test
@@ -44,8 +45,6 @@ struct StateTest : public testing::Test
 using DBTypes = ::testing::Types<
     db::InMemoryDB, db::RocksDB, db::InMemoryTrieDB, db::RocksTrieDB>;
 TYPED_TEST_SUITE(StateTest, DBTypes);
-
-using code_db_t = std::unordered_map<bytes32_t, byte_string>;
 
 struct fakeBlockCache
 {
@@ -60,8 +59,7 @@ TYPED_TEST(StateTest, get_new_changeset)
     auto db = test::make_db<TypeParam>();
     AccountState accounts{db};
     ValueState values{db};
-    code_db_t code_db{};
-    CodeState code{code_db};
+    CodeState code{db};
     State as{accounts, values, code, block_cache, db};
     db.commit(StateChanges{
         .account_changes = {{a, Account{.balance = 10'000}}},
@@ -89,8 +87,7 @@ TYPED_TEST(StateTest, apply_award)
     auto db = test::make_db<TypeParam>();
     AccountState accounts{db};
     ValueState values{db};
-    code_db_t code_db{};
-    CodeState code{code_db};
+    CodeState code{db};
     State as{accounts, values, code, block_cache, db};
 
     auto bs = as.get_new_changeset(0);
@@ -114,17 +111,15 @@ TYPED_TEST(StateTest, get_code)
     auto db = test::make_db<TypeParam>();
     AccountState accounts{db};
     ValueState values{db};
-    code_db_t code_db{};
-    CodeState code{code_db};
+    CodeState code{db};
     State as{accounts, values, code, block_cache, db};
     byte_string const contract{0x60, 0x34, 0x00};
-
-    code_db.emplace(code_hash, contract);
 
     db.commit(StateChanges{
         .account_changes =
             {{a, Account{.balance = 10'000, .code_hash = code_hash}}},
-        .storage_changes = {}});
+        .storage_changes = {},
+        .code_changes = {{code_hash, contract}}});
 
     auto bs = as.get_new_changeset(0);
     bs.access_account(a);
@@ -138,8 +133,7 @@ TYPED_TEST(StateTest, can_merge_fresh)
     auto db = test::make_db<TypeParam>();
     AccountState accounts{db};
     ValueState values{db};
-    code_db_t code_db{};
-    CodeState code{code_db};
+    CodeState code{db};
     State t{accounts, values, code, block_cache, db};
 
     db.commit(StateChanges{
@@ -181,8 +175,7 @@ TYPED_TEST(StateTest, can_merge_same_account_different_storage)
     auto db = test::make_db<TypeParam>();
     AccountState accounts{db};
     ValueState values{db};
-    code_db_t code_db{};
-    CodeState code{code_db};
+    CodeState code{db};
     State t{accounts, values, code, block_cache, db};
 
     db.commit(StateChanges{
@@ -214,8 +207,7 @@ TYPED_TEST(StateTest, cant_merge_colliding_storage)
     auto db = test::make_db<TypeParam>();
     AccountState accounts{db};
     ValueState values{db};
-    code_db_t code_db{};
-    CodeState code{code_db};
+    CodeState code{db};
     State t{accounts, values, code, block_cache, db};
 
     db.commit(StateChanges{
@@ -257,8 +249,7 @@ TYPED_TEST(StateTest, merge_txn0_and_txn1)
     auto db = test::make_db<TypeParam>();
     AccountState accounts{db};
     ValueState values{db};
-    code_db_t code_db{};
-    CodeState code{code_db};
+    CodeState code{db};
     State t{accounts, values, code, block_cache, db};
 
     db.commit(StateChanges{
@@ -299,8 +290,7 @@ TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
     auto db = test::make_db<TypeParam>();
     AccountState accounts{db};
     ValueState values{db};
-    code_db_t code_db{};
-    CodeState code{code_db};
+    CodeState code{db};
     State t{accounts, values, code, block_cache, db};
 
     db.commit(StateChanges{
@@ -353,8 +343,7 @@ TYPED_TEST(StateTest, merge_txn1_try_again_merge_txn0_then_txn1)
     auto db = test::make_db<TypeParam>();
     AccountState accounts{db};
     ValueState values{db};
-    code_db_t code_db{};
-    CodeState code{code_db};
+    CodeState code{db};
     State t{accounts, values, code, block_cache, db};
 
     db.commit(StateChanges{
@@ -400,8 +389,7 @@ TYPED_TEST(StateTest, can_commit)
     auto db = test::make_db<TypeParam>();
     AccountState accounts{db};
     ValueState values{db};
-    code_db_t code_db{};
-    CodeState code{code_db};
+    CodeState code{db};
     State t{accounts, values, code, block_cache, db};
 
     db.commit(StateChanges{
@@ -456,8 +444,7 @@ TYPED_TEST(TrieDBTest, commit_storage_and_account_together_regression)
     auto db = test::make_db<TypeParam>();
     AccountState accounts{db};
     ValueState values{db};
-    code_db_t code_db{};
-    CodeState code{code_db};
+    CodeState code{db};
     State t{accounts, values, code, block_cache, db};
 
     auto changeset = t.get_new_changeset(0u);
@@ -476,8 +463,7 @@ TYPED_TEST(TrieDBTest, set_and_then_clear_storage_in_same_commit)
     auto db = test::make_db<TypeParam>();
     AccountState accounts{db};
     ValueState values{db};
-    code_db_t code_db{};
-    CodeState code{code_db};
+    CodeState code{db};
     State t{accounts, values, code, block_cache, db};
 
     auto changeset = t.get_new_changeset(0u);
@@ -488,7 +474,7 @@ TYPED_TEST(TrieDBTest, set_and_then_clear_storage_in_same_commit)
     t.merge_changes(changeset);
     t.commit();
 
-    EXPECT_EQ(db.try_find(a, key1), monad::bytes32_t{});
+    EXPECT_EQ(db.read_storage(a, incarnation, key1), monad::bytes32_t{});
 }
 
 TYPED_TEST(StateTest, commit_twice)
@@ -496,8 +482,7 @@ TYPED_TEST(StateTest, commit_twice)
     auto db = test::make_db<TypeParam>();
     AccountState accounts{db};
     ValueState values{db};
-    code_db_t code_db{};
-    CodeState code{code_db};
+    CodeState code{db};
     State t{accounts, values, code, block_cache, db};
 
     db.commit(StateChanges{
@@ -547,8 +532,7 @@ TYPED_TEST(StateTest, commit_twice_apply_block_reward)
     auto db = test::make_db<TypeParam>();
     AccountState accounts{db};
     ValueState values{db};
-    code_db_t code_db{};
-    CodeState code{code_db};
+    CodeState code{db};
     State t{accounts, values, code, block_cache, db};
 
     {

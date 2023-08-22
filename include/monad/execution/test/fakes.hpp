@@ -13,7 +13,6 @@
 #include <monad/execution/config.hpp>
 #include <monad/execution/static_precompiles.hpp>
 
-#include <monad/state/concepts.hpp>
 #include <monad/state/state_changes.hpp>
 
 #include <evmc/evmc.hpp>
@@ -41,7 +40,7 @@ namespace fake
         {
             return;
         }
-        void commit(state::changeset auto const &) const noexcept { return; }
+        void commit(state::StateChanges const &) const noexcept { return; }
         bytes32_t root_hash() const noexcept { return {}; }
     };
 
@@ -214,7 +213,7 @@ namespace fake
                 if (b == NULL_HASH) {
                     return {};
                 }
-                return {_code.at(b)};
+                return byte_string_view{_code.at(b)};
             }
 
             void revert() noexcept { _accounts.clear(); }

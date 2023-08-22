@@ -32,7 +32,6 @@ static constexpr auto to = 0xbebebebebebebebebebebebebebebebebebebebe_address;
 static constexpr auto a = 0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address;
 static constexpr auto o = 0xb5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5_address;
 
-using code_db_t = std::unordered_map<bytes32_t, byte_string>;
 using account_store_db_t = db::InMemoryDB;
 
 template <class TState, concepts::fork_traits<TState> TTraits>
@@ -53,8 +52,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     account_store_db_t db{};
     state::AccountState accounts{db};
     state::ValueState values{db};
-    code_db_t code_db{};
-    state::CodeState codes{code_db};
+    state::CodeState codes{db};
     state::State s{accounts, values, codes, blocks, db};
 
     db.commit(state::StateChanges{

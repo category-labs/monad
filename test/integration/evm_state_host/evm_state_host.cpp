@@ -39,7 +39,6 @@ static constexpr auto value1 =
 static constexpr auto code_hash =
     0x00000000000000000000000000000000000000000000000000000000cccccccc_bytes32;
 
-using code_db_t = std::unordered_map<bytes32_t, byte_string>;
 using account_store_db_t = db::InMemoryDB;
 
 template <class TState, concepts::fork_traits<TState> TTraits>
@@ -60,8 +59,7 @@ TEST(EvmInterpStateHost, return_existing_storage)
     account_store_db_t db{};
     state::AccountState accounts{db};
     state::ValueState values{db};
-    code_db_t code_db{};
-    state::CodeState codes{code_db};
+    state::CodeState codes{db};
     state::State s{accounts, values, codes, blocks, db};
 
     // Setup db - gas costs referenced here
@@ -83,7 +81,8 @@ TEST(EvmInterpStateHost, return_existing_storage)
     db.commit(state::StateChanges{
         .account_changes =
             {{a, A}, {to, Account{}}, {from, Account{.balance = 10'000'000}}},
-        .storage_changes = {{to, {{location, value1}}}}});
+        .storage_changes = {{to, {{location, value1}}}},
+        .code_changes = {{code_hash, code}}});
 
     BlockHeader const b{}; // Required for the host interface, but not used
     Transaction const t{};
@@ -93,8 +92,6 @@ TEST(EvmInterpStateHost, return_existing_storage)
         .recipient = to,
         .sender = from,
         .code_address = a};
-
-    code_db.emplace(code_hash, code);
 
     // Get new changeset
     auto changeset = s.get_new_changeset(0u);
@@ -124,8 +121,7 @@ TEST(EvmInterpStateHost, store_then_return_storage)
     account_store_db_t db{};
     state::AccountState accounts{db};
     state::ValueState values{db};
-    code_db_t code_db{};
-    state::CodeState codes{code_db};
+    state::CodeState codes{db};
     state::State s{accounts, values, codes, blocks, db};
 
     // Setup db - gas costs referenced here
@@ -152,7 +148,8 @@ TEST(EvmInterpStateHost, store_then_return_storage)
     db.commit(state::StateChanges{
         .account_changes =
             {{a, A}, {to, Account{}}, {from, Account{.balance = 10'000'000}}},
-        .storage_changes = {}});
+        .storage_changes = {},
+        .code_changes = {{code_hash, code}}});
 
     BlockHeader const b{}; // Required for the host interface, but not used
     Transaction const t{};
@@ -162,8 +159,6 @@ TEST(EvmInterpStateHost, store_then_return_storage)
         .recipient = to,
         .sender = from,
         .code_address = a};
-
-    code_db.emplace(code_hash, code);
 
     // Get new changeset
     auto changeset = s.get_new_changeset(0u);

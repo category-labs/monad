@@ -147,7 +147,8 @@ int main(int argc, char *argv[])
     monad::log::logger_t::set_log_level("trie_db_logger", trie_db_log_level);
 
     block_db_t block_db(block_db_path);
-    db_t db{state_db_path, block_history_size};
+    db_t db{
+        monad::db::Writable{}, state_db_path, std::nullopt, block_history_size};
     monad::state::AccountState accounts{db};
     monad::state::ValueState values{db};
     monad::state::CodeState code{db};

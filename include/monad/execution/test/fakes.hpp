@@ -41,7 +41,7 @@ namespace fake
             return;
         }
         void commit(state::StateChanges const &) const noexcept { return; }
-        bytes32_t root_hash() const noexcept { return {}; }
+        bytes32_t state_root() const noexcept { return {}; }
     };
 
     struct AccountState

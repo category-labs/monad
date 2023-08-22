@@ -84,11 +84,8 @@ TYPED_TEST(GenesisStateTest, read_ethereum_mainnet_genesis_state)
     address_t a2 = 0x08411652c871713609af0062a8a1281bf1bbcfd9_address;
     Account acct2{.balance = 0x4BE4E7267B6AE00000_u256, .nonce = 0u};
 
-    EXPECT_TRUE(db.contains(a1));
-    EXPECT_EQ(db.at(a1), acct1);
-
-    EXPECT_TRUE(db.contains(a2));
-    EXPECT_EQ(db.at(a2), acct2);
+    EXPECT_EQ(db.read_account(a1), acct1);
+    EXPECT_EQ(db.read_account(a2), acct2);
 }
 
 TYPED_TEST(GenesisStateRootTest, ethereum_mainnet_genesis_state_root)

@@ -105,7 +105,7 @@ read_genesis(std::filesystem::path const &genesis_file, TStateDB &db)
 
     read_genesis_state(genesis_json, db);
 
-    block_header.state_root = db.root_hash();
+    block_header.state_root = db.state_root();
 
     return block_header;
 }

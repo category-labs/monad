@@ -45,3 +45,4 @@ IndentExternBlock: NoIndent
 IndentPPDirectives: BeforeHash
 QualifierAlignment: Custom
 QualifierOrder: ['friend', 'static', 'inline', 'constexpr', 'type', 'const', 'volatile' ]
+InsertNewlineAtEOF: true

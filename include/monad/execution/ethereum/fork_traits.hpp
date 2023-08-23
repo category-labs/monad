@@ -272,9 +272,7 @@ namespace fork_traits
             if (MONAD_UNLIKELY(
                     block_number == execution::dao::dao_block_number)) {
                 auto change_set = s.get_new_changeset(0u);
-                change_set.access_account(execution::dao::withdraw_account);
                 for (auto const &addr : execution::dao::child_accounts) {
-                    change_set.access_account(addr);
                     change_set.set_balance(
                         execution::dao::withdraw_account,
                         intx::be::load<uint256_t>(change_set.get_balance(

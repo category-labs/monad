@@ -27,7 +27,9 @@ std::optional<Account> read_account(
         auto const it = block_state.state.find(address);
         if (MONAD_LIKELY(it != block_state.state.end())) {
             auto const &result = it->second.account.second;
-            state[address] = {.account = {result, result}, .storage = {}};
+            state.try_emplace(
+                address,
+                AccountState{.account = {result, result}, .storage = {}});
             return result;
         }
     }
@@ -41,7 +43,8 @@ std::optional<Account> read_account(
             result = it->second.account.second;
         }
     }
-    state[address] = {.account = {result, result}, .storage = {}};
+    state.try_emplace(
+        address, AccountState{.account = {result, result}, .storage = {}});
     return result;
 }
 
@@ -72,7 +75,7 @@ bytes32_t read_storage(
             auto const it = block_storage.find(location);
             if (MONAD_LIKELY(it != block_storage.end())) {
                 auto const &result = it->second.second;
-                storage[location] = {result, result};
+                storage.try_emplace(location, result, result);
                 return result;
             }
         }
@@ -92,7 +95,7 @@ bytes32_t read_storage(
             }
         }
     }
-    storage[location] = {result, result};
+    storage.try_emplace(location, result, result);
     return result;
 }
 

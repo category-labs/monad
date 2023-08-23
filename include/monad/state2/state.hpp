@@ -13,7 +13,7 @@
 MONAD_NAMESPACE_BEGIN
 
 template <class T>
-using delta_t = std::pair<T, T>;
+using delta_t = std::pair<T const, T>;
 
 using AccountDelta = delta_t<std::optional<Account>>;
 

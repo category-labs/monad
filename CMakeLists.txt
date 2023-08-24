@@ -96,6 +96,7 @@ add_library(
   "include/monad/core/concepts.hpp"
   "include/monad/core/int.hpp"
   "include/monad/core/variant.hpp"
+  "include/monad/core/withdrawal.hpp"
   "src/monad/core/int.cpp"
   "src/monad/core/receipt.cpp"
   "src/monad/core/signature.cpp"

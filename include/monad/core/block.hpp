@@ -7,6 +7,10 @@
 #include <monad/core/int.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
+#include <monad/core/withdrawal.hpp>
+
+#include <optional>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -34,6 +38,7 @@ struct BlockHeader
     address_t beneficiary{};
 
     std::optional<uint64_t> base_fee_per_gas{std::nullopt}; // EIP-1559
+    std::optional<bytes32_t> withdrawals_root{std::nullopt}; // EIP-4895
 };
 
 struct Block
@@ -41,12 +46,13 @@ struct Block
     BlockHeader header;
     std::vector<Transaction> transactions{};
     std::vector<BlockHeader> ommers{};
+    std::optional<std::vector<Withdrawal>> withdrawals{std::nullopt};
 };
 
-static_assert(sizeof(BlockHeader) == 592);
+static_assert(sizeof(BlockHeader) == 632);
 static_assert(alignof(BlockHeader) == 8);
 
-static_assert(sizeof(Block) == 640);
+static_assert(sizeof(Block) == 712);
 static_assert(alignof(Block) == 8);
 
 MONAD_NAMESPACE_END

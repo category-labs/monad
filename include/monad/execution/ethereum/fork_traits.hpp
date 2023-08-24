@@ -40,8 +40,9 @@ namespace fork_traits
     struct istanbul;
     struct berlin;
     struct london;
+    struct shanghai;
 
-    using no_next_fork_t = london;
+    using no_next_fork_t = shanghai;
 
     template <typename TFork, template <typename> typename... TPrecompiles>
     using type_list_t = boost::mp11::mp_list<TPrecompiles<TFork>...>;
@@ -480,11 +481,10 @@ namespace fork_traits
 
     struct london : public berlin
     {
-        using next_fork_t = no_next_fork_t;
+        using next_fork_t = shanghai;
 
         static constexpr evmc_revision rev = EVMC_LONDON;
-        static constexpr auto last_block_number =
-            std::numeric_limits<uint64_t>::max();
+        static constexpr auto last_block_number = 15'537'393u;
 
         // https://eips.ethereum.org/EIPS/eip-3529
         template <class TState>
@@ -544,7 +544,13 @@ namespace fork_traits
         }
     };
 
-    // paris - 15'537'394
+    struct shanghai : public london
+    {
+        using next_fork_t = no_next_fork_t;
+        static constexpr evmc_revision rev = EVMC_SHANGHAI;
+        static constexpr auto last_block_number =
+            std::numeric_limits<uint64_t>::max();
+    };
 
     namespace detail
     {
@@ -570,7 +576,7 @@ namespace fork_traits
 
     using all_forks_t =
         decltype(detail::Traverse<monad::fork_traits::frontier>());
-    static_assert(boost::mp11::mp_size<all_forks_t>::value == 10);
+    static_assert(boost::mp11::mp_size<all_forks_t>::value == 11);
 }
 
 MONAD_NAMESPACE_END

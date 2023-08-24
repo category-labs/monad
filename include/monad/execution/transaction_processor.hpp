@@ -127,8 +127,6 @@ struct TransactionProcessor
             return Status::INVALID_GAS_LIMIT;
         }
 
-        state.access_account(*t.from);
-
         // σ[S(T)]c = KEC(()), EIP-3607
         if (state.get_code_hash(*t.from) != NULL_HASH) {
             return Status::DEPLOYED_CODE;

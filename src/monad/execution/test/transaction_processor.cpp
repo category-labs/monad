@@ -39,6 +39,9 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 {
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto bene{
+        0x5353535353535353535353535353535353535353_address};
+
     fake::State::ChangeSet s{};
     evm_host_t h{};
     s._accounts[from] = {.balance = 56'000'000'000'000'000, .nonce = 25};
@@ -57,7 +60,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 
     auto status = p.validate(s, t, 10u);
     EXPECT_EQ(status, processor_t::Status::SUCCESS);
-    auto result = p.execute(s, h, t, 10u);
+    auto result = p.execute(s, h, t, 10u, bene);
     EXPECT_EQ(result.status, 1u);
     EXPECT_EQ(s._accounts[from].balance, uint256_t{55'999'999'999'800'000});
     EXPECT_EQ(s._accounts[from].nonce, 25); // EVMC will inc for creation

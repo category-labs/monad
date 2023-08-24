@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -271,6 +272,8 @@ struct AccountState<TAccountDB>::ChangeSet : public AccountState<TAccountDB>
     }
 
     void revert() noexcept { changed_.clear(); }
+
+    void warm_coinbase(address_t const &a) noexcept { accessed_.insert(a); }
 };
 
 MONAD_STATE_NAMESPACE_END

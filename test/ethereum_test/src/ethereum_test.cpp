@@ -65,7 +65,8 @@ struct Execution
             state,
             host,
             transaction,
-            host.block_header_.base_fee_per_gas.value_or(0));
+            host.block_header_.base_fee_per_gas.value_or(0),
+            host.block_header_.beneficiary);
     }
 };
 

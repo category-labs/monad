@@ -301,6 +301,8 @@ namespace fake
         {
             return;
         }
+
+        void warm_coinbase(address_t const &) { return; }
     };
 
     template <class TState, concepts::fork_traits<TState> TTraits, class TEvm>
@@ -449,6 +451,8 @@ namespace fake
             transfer_balance_dao(TState &, block_num_t const)
             {
             }
+
+            static constexpr void warm_coinbase(TState &, address_t const &) {}
         };
 
         template <class TState>

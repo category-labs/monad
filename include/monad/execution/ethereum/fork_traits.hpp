@@ -207,6 +207,11 @@ namespace fork_traits
         static constexpr void transfer_balance_dao(TState &, block_num_t const)
         {
         }
+
+        template <typename TState>
+        static constexpr void warm_coinbase(TState &, address_t const &)
+        {
+        }
     };
 
     struct homestead : public frontier
@@ -550,6 +555,14 @@ namespace fork_traits
         static constexpr evmc_revision rev = EVMC_SHANGHAI;
         static constexpr auto last_block_number =
             std::numeric_limits<uint64_t>::max();
+
+        // EIP-3651
+        template <class TState>
+        static constexpr void
+        warm_coinbase(TState &s, address_t const &beneficiary)
+        {
+            s.warm_coinbase(beneficiary);
+        }
     };
 
     namespace detail

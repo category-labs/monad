@@ -94,7 +94,11 @@ struct alignas(64) TransactionProcessorFiberData
 
             TEvmHost host{bh_, txn_, changeset};
             result_ = p.execute(
-                changeset, host, txn_, bh_.base_fee_per_gas.value_or(0));
+                changeset,
+                host,
+                txn_,
+                bh_.base_fee_per_gas.value_or(0),
+                bh_.beneficiary);
 
             if (s_.can_merge_changes(changeset) ==
                 TState::MergeStatus::WILL_SUCCEED) {
@@ -111,7 +115,7 @@ struct alignas(64) TransactionProcessorFiberData
                     "Finish executing Transaction {}, time elapsed = {}",
                     id_,
                     elapsed_ms);
-    
+
                 s_.merge_changes(changeset);
                 return;
             }

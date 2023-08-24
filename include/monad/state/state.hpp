@@ -211,6 +211,11 @@ struct State
         void store_log(Receipt::Log &&l) { logs_.emplace_back(l); }
 
         std::vector<Receipt::Log> &logs() { return logs_; }
+
+        void warm_coinbase(address_t const &beneficiary)
+        {
+            accounts_.warm_coinbase(beneficiary);
+        }
     };
 
     enum class MergeStatus

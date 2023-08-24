@@ -48,7 +48,9 @@ struct fakeGlobalStatusTP
     };
 
     template <class TEvmHost>
-    Receipt execute(TState &, TEvmHost &, Transaction const &, uint64_t) const
+    Receipt execute(
+        TState &, TEvmHost &, Transaction const &, uint64_t,
+        address_t const &) const
     {
         return {};
     }

@@ -84,7 +84,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 
     EXPECT_EQ(tp.validate(changeset, t, 0), tp_t::Status::SUCCESS);
 
-    auto r = tp.execute(changeset, h, t, 0);
+    auto r = tp.execute(changeset, h, t, 0, bh.beneficiary);
     EXPECT_EQ(r.status, Receipt::Status::SUCCESS);
     EXPECT_EQ(r.gas_used, 21'000);
     EXPECT_EQ(t.type, Transaction::Type::eip155);

@@ -411,3 +411,36 @@ TEST(fork_traits, london)
         s, {.gas_price = 100'000'000'000}, 0, 90'000'000);
     EXPECT_EQ(s._reward, 2 * uint256_t{9'000'000'000'000'000'000});
 }
+
+// EIP-3651
+static_assert(concepts::fork_traits<fork_traits::shanghai, state_t>);
+TEST(fork_traits, shanghai_warm_coinbase)
+{
+    db::BlockDb blocks{test_resource::correct_block_data_dir};
+    db_t db{};
+
+    {
+        state::AccountState accounts{db};
+        state::ValueState values{db};
+        state::CodeState codes{db};
+        state::State s{accounts, values, codes, blocks, db};
+
+        auto change_set = s.get_new_changeset(0u);
+
+        fork_traits::shanghai::warm_coinbase(change_set, a);
+
+        EXPECT_EQ(change_set.access_account(a), EVMC_ACCESS_WARM);
+    }
+    {
+        state::AccountState accounts{db};
+        state::ValueState values{db};
+        state::CodeState codes{db};
+        state::State s{accounts, values, codes, blocks, db};
+
+        auto change_set = s.get_new_changeset(0u);
+
+        fork_traits::london::warm_coinbase(change_set, a);
+
+        EXPECT_EQ(change_set.access_account(a), EVMC_ACCESS_COLD);
+    }
+}

@@ -73,11 +73,12 @@ struct TransactionProcessor
 
     template <class TEvmHost>
     Receipt execute(
-        TState &s, TEvmHost &h, Transaction const &t,
-        uint64_t base_fee_per_gas) const
+        TState &s, TEvmHost &h, Transaction const &t, uint64_t base_fee_per_gas,
+        address_t const &beneficiary) const
     {
         irrevocable_change(s, t);
 
+        TTraits::warm_coinbase(s, beneficiary);
         s.access_account(*t.from);
         for (auto const &ae : t.access_list) {
             s.access_account(ae.a);

@@ -40,6 +40,8 @@ namespace fork_traits
     struct istanbul;
     struct berlin;
     struct london;
+    struct paris;
+    struct shanghai;
 
     using no_next_fork_t = london;
 
@@ -480,11 +482,10 @@ namespace fork_traits
 
     struct london : public berlin
     {
-        using next_fork_t = no_next_fork_t;
+        using next_fork_t = paris;
 
         static constexpr evmc_revision rev = EVMC_LONDON;
-        static constexpr auto last_block_number =
-            std::numeric_limits<uint64_t>::max();
+        static constexpr auto last_block_number = 15'537'393u;
 
         // https://eips.ethereum.org/EIPS/eip-3529
         template <class TState>
@@ -544,7 +545,21 @@ namespace fork_traits
         }
     };
 
-    // paris - 15'537'394
+    // TODO: placeholder
+    struct paris : public london
+    {
+        using next_fork_t = shanghai;
+        static constexpr evmc_revision rev = EVMC_PARIS;
+        static constexpr auto last_block_number = 17'034'869u;
+    };
+
+    struct shanghai : public paris
+    {
+        using next_fork_t = no_next_fork_t;
+        static constexpr evmc_revision rev = EVMC_SHANGHAI;
+        static constexpr auto last_block_number =
+            std::numeric_limits<uint64_t>::max();
+    };
 
     namespace detail
     {

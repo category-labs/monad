@@ -444,3 +444,35 @@ TEST(fork_traits, shanghai_warm_coinbase)
         EXPECT_EQ(change_set.access_account(a), EVMC_ACCESS_COLD);
     }
 }
+
+// EIP-3860
+static_assert(concepts::fork_traits<fork_traits::shanghai, state_t>);
+TEST(fork_traits, shanghai_contract_creation_cost_exceed_limit)
+{
+    byte_string long_data;
+    for (auto i = 0u; i < uint64_t{0xc002}; ++i) {
+        long_data += {0xc0};
+    }
+    // exceed EIP-3860 limit
+    Transaction t{.data = long_data};
+
+    EXPECT_EQ(
+        fork_traits::shanghai::intrinsic_gas(t),
+        std::numeric_limits<uint64_t>::max());
+}
+
+// EIP-3860
+static_assert(concepts::fork_traits<fork_traits::shanghai, state_t>);
+TEST(fork_traits, shanghai_contract_creation_cost)
+{
+    byte_string data;
+    for (auto i = 0u; i < uint64_t{0x80}; ++i) {
+        data += {0xc0};
+    }
+
+    Transaction t{.data = data};
+
+    EXPECT_EQ(
+        fork_traits::shanghai::intrinsic_gas(t),
+        32'000u + 21'000u + 16u * 128u + 0u + 4u * 2u);
+}

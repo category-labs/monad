@@ -563,6 +563,29 @@ namespace fork_traits
         {
             s.warm_coinbase(beneficiary);
         }
+
+        // EIP-3860
+        [[nodiscard]] static constexpr uint64_t
+        g_extra_cost_init(Transaction const &t) noexcept
+        {
+            if (!t.to.has_value()) {
+                return ((t.data.length() + 31u) / 32u) * 2u;
+            }
+            return 0u;
+        }
+
+        // EIP-3860
+        [[nodiscard]] static constexpr auto
+        intrinsic_gas(Transaction const &t) noexcept
+        {
+            if (!t.to.has_value()) {
+                if (t.data.length() > 0xc000) {
+                    return std::numeric_limits<uint64_t>::max();
+                }
+            }
+            return g_txcreate(t) + 21'000u + g_data(t) +
+                   g_access_and_storage(t) + g_extra_cost_init(t);
+        }
     };
 
     namespace detail

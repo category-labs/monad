@@ -321,6 +321,11 @@ struct State
     {
         db_.create_and_prune_block_history(block_number);
     }
+
+    void warm_coinbase(address_t const &beneficiary)
+    {
+        accounts_.warm_coinbase(beneficiary);
+    }
 };
 
 MONAD_STATE_NAMESPACE_END

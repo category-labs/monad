@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -29,6 +30,7 @@ struct AccountState
     // TODO Irrevocable change separated out to avoid reversion
     TAccountDB &db_;
     change_set_t merged_{};
+    std::optional<address_t> beneficiary{std::nullopt};
 
     AccountState(TAccountDB &a)
         : db_{a}
@@ -142,6 +144,8 @@ struct AccountState
     void clear_changes() { merged_.clear(); }
 
     [[nodiscard]] bytes32_t get_state_hash() const { return db_.state_root(); }
+
+    void warm_coinbase(address_t const &a) noexcept { beneficiary = a; }
 };
 
 template <typename TAccountDB>
@@ -173,6 +177,10 @@ struct AccountState<TAccountDB>::ChangeSet : public AccountState<TAccountDB>
     // EVMC Host Interface
     evmc_access_status access_account(address_t const &a)
     {
+        if (AccountState::beneficiary.has_value() &&
+            AccountState::beneficiary.value() == a) {
+            return EVMC_ACCESS_WARM;
+        }
         auto const [_, inserted] = accessed_.insert(a);
         if (inserted) {
             return EVMC_ACCESS_COLD;

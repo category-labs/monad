@@ -453,6 +453,11 @@ namespace fake
             }
 
             static constexpr void warm_coinbase(TState &, address_t const &) {}
+
+            static constexpr void
+            process_withdrawal(TState &, Block const &) noexcept
+            {
+            }
         };
 
         template <class TState>

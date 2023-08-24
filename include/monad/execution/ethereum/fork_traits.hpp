@@ -213,6 +213,11 @@ namespace fork_traits
         static constexpr void warm_coinbase(TState &, address_t const &)
         {
         }
+
+        template <typename TState>
+        static constexpr void process_withdrawal(TState &, Block const &)
+        {
+        }
     };
 
     struct homestead : public frontier
@@ -595,6 +600,32 @@ namespace fork_traits
             }
             return g_txcreate(t) + 21'000u + g_data(t) +
                    g_access_and_storage(t) + g_extra_cost_init(t);
+        }
+
+        // EIP-4895
+        template <typename TState>
+        static constexpr void
+        process_withdrawal(TState &s, Block const &b) noexcept
+        {
+            MONAD_DEBUG_ASSERT(b.header.number > paris::last_block_number);
+
+            if (b.withdrawals.has_value()) {
+                auto change_set = s.get_new_changeset(0u);
+
+                for (auto const &withdrawal : b.withdrawals.value()) {
+                    change_set.set_balance(
+                        withdrawal.recipient,
+                        intx::be::load<uint256_t>(
+                            change_set.get_balance(withdrawal.recipient)) +
+                            uint256_t{withdrawal.amount} *
+                                uint256_t{1'000'000'000u});
+                }
+
+                MONAD_DEBUG_ASSERT(
+                    s.can_merge_changes(change_set) ==
+                    TState::MergeStatus::WILL_SUCCEED);
+                s.merge_changes(change_set);
+            }
         }
     };
 

@@ -55,6 +55,9 @@ struct AllTxnBlockProcessor
         for (auto &d : data) {
             r.push_back(d.get_receipt());
         }
+        // TODO: According to silkworm's implementation, destruct_touched_dead()
+        // should be after this & on a block level
+        TTraits::process_withdrawal(s, b);
 
         if (b.header.number != 0u) {
             TTraits::apply_block_award(s, b);

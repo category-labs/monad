@@ -322,6 +322,42 @@ byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
 }
 
 byte_string_view
+decode_withdrawal(Withdrawal &withdrawal, byte_string_view const enc)
+{
+    if (enc.size() == 0)
+        return {};
+    byte_string_view payload{};
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
+
+    payload = decode_unsigned<uint64_t>(withdrawal.index, payload);
+    payload = decode_unsigned<uint64_t>(withdrawal.validator_index, payload);
+    payload = decode_address(withdrawal.recipient, payload);
+    payload = decode_unsigned<uint64_t>(withdrawal.amount, payload);
+
+    MONAD_DEBUG_ASSERT(withdrawal.amount > 0);
+    MONAD_DEBUG_ASSERT(payload.size() == 0);
+    return rest_of_enc;
+}
+
+byte_string_view decode_withdrawal_list(
+    std::vector<Withdrawal> &withdrawal_list, byte_string_view const enc)
+{
+    byte_string_view payload{};
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
+
+    withdrawal_list.reserve(payload.size() / sizeof(Withdrawal));
+
+    while (payload.size() > 0) {
+        Withdrawal withdrawal{};
+        payload = decode_withdrawal(withdrawal, payload);
+        withdrawal_list.emplace_back(withdrawal);
+    }
+
+    MONAD_DEBUG_ASSERT(payload.size() == 0);
+    return rest_of_enc;
+}
+
+byte_string_view
 decode_block_header(BlockHeader &bh, byte_string_view const enc)
 {
     byte_string_view payload{};
@@ -346,12 +382,20 @@ decode_block_header(BlockHeader &bh, byte_string_view const enc)
         uint64_t base_fee_per_gas{};
         payload = decode_unsigned<uint64_t>(base_fee_per_gas, payload);
         bh.base_fee_per_gas.emplace(base_fee_per_gas);
+        if (payload.size() > 0) {
+            bytes32_t withdrawal_root{};
+            payload = decode_bytes32(withdrawal_root, payload);
+            bh.withdrawals_root.emplace(withdrawal_root);
+        }
+        else {
+            bh.withdrawals_root = std::nullopt;
+        }
     }
     else {
         bh.base_fee_per_gas = std::nullopt;
     }
 
-    MONAD_ASSERT(payload.size() == 0);
+    MONAD_DEBUG_ASSERT(payload.size() == 0);
     return rest_of_enc;
 }
 
@@ -411,6 +455,12 @@ byte_string_view decode_block(Block &block, byte_string_view const enc)
     payload = decode_block_header(block.header, payload);
     payload = decode_transaction_vector(block.transactions, payload);
     payload = decode_block_header_vector(block.ommers, payload);
+
+    if (payload.size() > 0) {
+        std::vector<Withdrawal> withdrawals{};
+        payload = decode_withdrawal_list(withdrawals, payload);
+        block.withdrawals = withdrawals;
+    }
 
     MONAD_ASSERT(payload.size() == 0);
     return rest_of_enc;

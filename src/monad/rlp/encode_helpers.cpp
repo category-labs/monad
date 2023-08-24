@@ -196,6 +196,15 @@ byte_string encode_receipt(Receipt const &r)
     return receipt_bytes;
 }
 
+byte_string encode_withdrawal(Withdrawal const &withdrawal)
+{
+    return encode_list(
+        encode_unsigned(withdrawal.index),
+        encode_unsigned(withdrawal.validator_index),
+        encode_address(withdrawal.recipient),
+        encode_unsigned(withdrawal.amount));
+}
+
 byte_string encode_leaf(trie::Leaf const &leaf)
 {
     return encode_list(

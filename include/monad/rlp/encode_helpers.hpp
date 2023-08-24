@@ -12,6 +12,7 @@
 #include <monad/core/int.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
+#include <monad/core/withdrawal.hpp>
 
 #include <monad/trie/config.hpp>
 
@@ -60,6 +61,7 @@ byte_string encode_topics(std::vector<bytes32_t> const &topics);
 byte_string encode_log(Receipt::Log const &log);
 byte_string encode_bloom(Receipt::Bloom const &b);
 byte_string encode_receipt(Receipt const &receipt);
+byte_string encode_withdrawal(Withdrawal const &withdrawal);
 
 byte_string encode_leaf(trie::Leaf const &);
 byte_string encode_branch(trie::Branch const &);

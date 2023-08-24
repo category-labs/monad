@@ -8,6 +8,7 @@ add_unit_test(
     decode_encode_helpers.cpp
     decode_encode_receipt.cpp
     decode_encode_transaction.cpp
+    decode_encode_withdrawal.cpp
     encode.cpp
     LIBRARIES
     monad

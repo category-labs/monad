@@ -13,7 +13,8 @@ using state_t = monad::state::State<
     monad::state::AccountState<in_memory_trie_db_t>,
     monad::state::ValueState<in_memory_trie_db_t>,
     monad::state::CodeState<in_memory_trie_db_t>,
-    monad::execution::fake::BlockDb, in_memory_trie_db_t>;
+    monad::execution::fake::BlockDb, in_memory_trie_db_t,
+    /*EnableChangeSetTracing=*/true>;
 using working_state_t = decltype(std::declval<state_t>().get_new_changeset(0u));
 
 template <typename TFork>
@@ -240,6 +241,48 @@ StateTransitionTest EthereumTests::load_state_test(
         .cases = std::move(test_cases)};
 }
 
+nlohmann::json
+serialize_state_changes(monad::state::StateChanges const &state_changes)
+{
+    using namespace nlohmann;
+    nlohmann::json state = json::object();
+
+    for (auto const &[address, maybe_account] : state_changes.account_changes) {
+        if (!maybe_account) {
+            continue;
+        }
+        auto const &account = maybe_account.value();
+        auto const address_string = fmt::format("{}", address);
+        state[address_string]["balance"] = "0x" + intx::hex(account.balance);
+        if (account.nonce) {
+            state[address_string]["nonce"] =
+                "0x" + intx::hex(monad::uint256_t{account.nonce});
+        }
+
+        if (account.code_hash == monad::NULL_HASH) {
+            continue;
+        }
+        for (auto const &[code_hash, code] : state_changes.code_changes) {
+            if (code_hash != account.code_hash) {
+                continue;
+            }
+            state[address_string]["code"] = "0x" + evmc::hex(code);
+            break;
+        }
+    }
+
+    for (auto const &[address, storage_changes] :
+         state_changes.storage_changes) {
+        auto const address_string = fmt::format("{}", address);
+        for (auto const &[key, value] : storage_changes) {
+            auto const formatted_key = fmt::format("{}", key);
+            auto const formatted_value = fmt::format("{}", value);
+            state[address_string]["storage"][formatted_key] = formatted_value;
+        }
+    }
+    return state;
+}
+
 void EthereumTests::run_state_test(
     StateTransitionTest const &test, nlohmann::json const &json)
 {
@@ -278,16 +321,22 @@ void EthereumTests::run_state_test(
             monad::state::AccountState accounts{db};
             monad::state::ValueState values{db};
             monad::state::CodeState codes{db};
-            monad::state::State state{
-                accounts, values, codes, fake_block_db, db};
+            state_t state{accounts, values, codes, fake_block_db, db};
 
             // every test json file is initially keyed with the test
             // name
             MONAD_ASSERT(json.is_object() && !json.empty());
             auto const &j_t = *json.begin();
 
-            load_state_from_json(j_t.at("pre"), state);
+            std::vector<nlohmann::json> serialized_mutations;
+            auto const state_changes_callback =
+                [&serialized_mutations](
+                    monad::state::StateChanges const &state_changes) {
+                    serialized_mutations.emplace_back(
+                        serialize_state_changes(state_changes));
+                };
 
+            load_state_from_json(j_t.at("pre"), state, state_changes_callback);
             auto block_header = j_t.at("env").get<monad::BlockHeader>();
 
             auto change_set = state.get_new_changeset(0u);
@@ -296,7 +345,12 @@ void EthereumTests::run_state_test(
                 execute(fork_index, block_header, change_set, transaction);
             state.merge_changes(change_set);
             state.apply_block_reward(block_header.beneficiary, 0);
-            state.commit();
+            state.commit_with_callback(state_changes_callback);
+            nlohmann::json post_state;
+            for (auto const &mutation : serialized_mutations) {
+                post_state.update(mutation, true);
+            }
+            MONAD_LOG_INFO(logger, "post_state: {}", post_state.dump());
 
             MONAD_LOG_INFO(
                 logger,

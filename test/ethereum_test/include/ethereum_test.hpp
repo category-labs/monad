@@ -56,8 +56,10 @@ public:
  */
 [[nodiscard]] std::optional<size_t> to_fork_index(std::string_view fork_name);
 
-template <typename TState>
-void load_state_from_json(nlohmann::json const &j, TState &state)
+template <typename TState, typename TCallback>
+void load_state_from_json(
+    nlohmann::json const &j, TState &state, TCallback &&callback)
+    requires std::invocable<TCallback, monad::state::StateChanges const &>
 {
     auto change_set = state.get_new_changeset(0u);
     for (auto const &[j_addr, j_acc] : j.items()) {
@@ -96,7 +98,7 @@ void load_state_from_json(nlohmann::json const &j, TState &state)
     }
 
     state.merge_changes(change_set);
-    state.commit();
+    state.commit_with_callback(std::forward<TCallback>(callback));
 }
 
 MONAD_TEST_NAMESPACE_END

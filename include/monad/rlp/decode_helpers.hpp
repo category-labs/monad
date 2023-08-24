@@ -11,6 +11,9 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/signature.hpp>
 #include <monad/core/transaction.hpp>
+#include <monad/core/withdrawal.hpp>
+
+#include <vector>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
@@ -82,6 +85,11 @@ byte_string_view decode_account(
 byte_string_view
 decode_transaction(Transaction &txn, byte_string_view const enc);
 byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc);
+byte_string_view
+decode_withdrawal(Withdrawal &withdrawal, byte_string_view const enc);
+byte_string_view decode_withdrawal_list(
+    std::vector<Withdrawal> &withdrawal_list, byte_string_view const enc);
+
 byte_string_view decode_block(Block &block, byte_string_view const enc);
 byte_string_view get_rlp_header_from_block(byte_string_view const block_enc);
 

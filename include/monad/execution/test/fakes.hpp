@@ -9,6 +9,7 @@
 #include <monad/core/int.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
+#include <monad/core/withdrawal.hpp>
 
 #include <monad/execution/config.hpp>
 #include <monad/execution/static_precompiles.hpp>
@@ -22,8 +23,10 @@
 #include <ethash/keccak.hpp>
 
 #include <bit>
+#include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
@@ -453,6 +456,12 @@ namespace fake
             }
 
             static constexpr void warm_coinbase(TState &, address_t const &) {}
+
+            static constexpr void process_withdrawal(
+                TState &,
+                std::optional<std::vector<Withdrawal>> const &) noexcept
+            {
+            }
         };
 
         template <class TState>

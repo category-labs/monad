@@ -476,3 +476,38 @@ TEST(fork_traits, shanghai_contract_creation_cost)
         fork_traits::shanghai::intrinsic_gas(t),
         32'000u + 21'000u + 16u * 128u + 0u + 4u * 2u);
 }
+
+// EIP-4895
+static_assert(concepts::fork_traits<fork_traits::shanghai, state_t>);
+TEST(fork_traits, shanghai_withdrawal)
+{
+    std::optional<std::vector<Withdrawal>> withdrawals{};
+    Withdrawal w1 = {
+        .index = 0, .validator_index = 0, .amount = 100u, .recipient = a};
+    Withdrawal w2 = {
+        .index = 1, .validator_index = 0, .amount = 300u, .recipient = a};
+    Withdrawal w3 = {
+        .index = 2, .validator_index = 0, .amount = 200u, .recipient = b};
+    withdrawals = {w1, w2, w3};
+
+    db::BlockDb blocks{test_resource::correct_block_data_dir};
+    db_t db{};
+    db.commit(state::StateChanges{
+        .account_changes = {
+            {a, Account{.balance = 0}}, {b, Account{.balance = 0}}}});
+
+    state::AccountState accounts{db};
+    state::ValueState values{db};
+    state::CodeState codes{db};
+    state::State s{accounts, values, codes, blocks, db};
+
+    fork_traits::shanghai::process_withdrawal(s, withdrawals);
+
+    auto change_set = s.get_new_changeset(0u);
+    EXPECT_EQ(
+        intx::be::load<uint256_t>(change_set.get_balance(a)),
+        uint256_t{400u} * uint256_t{1'000'000'000u});
+    EXPECT_EQ(
+        intx::be::load<uint256_t>(change_set.get_balance(b)),
+        uint256_t{200u} * uint256_t{1'000'000'000u});
+}

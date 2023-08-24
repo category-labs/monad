@@ -56,6 +56,8 @@ struct AllTxnBlockProcessor
             r.push_back(d.get_receipt());
         }
 
+        TTraits::process_withdrawal(s, b.withdrawals);
+
         if (b.header.number != 0u) {
             TTraits::apply_block_award(s, b);
         }

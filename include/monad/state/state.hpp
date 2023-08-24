@@ -19,7 +19,7 @@ MONAD_STATE_NAMESPACE_BEGIN
 
 template <
     class TAccountState, class TValueState, class TCodeState, class TBlockCache,
-    class TDatabase>
+    class TDatabase, bool EnableChangeSetTracing = false>
 struct State
 {
     struct ChangeSet
@@ -299,17 +299,32 @@ struct State
                code_.can_commit();
     }
 
-    void commit()
+    template <typename TCallback>
+    void commit_with_callback(TCallback &&callback)
+        requires std::invocable<TCallback, StateChanges const &>
     {
-        db_.commit(StateChanges{
+        auto const state_changes = StateChanges{
             .account_changes = accounts_.gather_changes(),
             .storage_changes = storage_.gather_changes(),
-            .code_changes = code_.gather_changes()});
+            .code_changes = code_.gather_changes()};
+        if constexpr (EnableChangeSetTracing) {
+            db_.commit_with_callback(
+                state_changes, std::forward<TCallback>(callback));
+        }
+        else {
+            db_.commit(state_changes);
+        }
+
         accounts_.clear_changes();
         storage_.clear_changes();
         code_.clear_changes();
         current_txn_ = 0;
         gas_award_ = 0;
+    }
+
+    void commit()
+    {
+        return commit_with_callback([](StateChanges const &) {});
     }
 
     [[nodiscard]] bytes32_t get_state_hash() const

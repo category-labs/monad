@@ -23,6 +23,15 @@ struct Db
 
     virtual void commit(state::StateChanges const &) = 0;
 
+    template <typename TCallback>
+    void commit_with_callback(
+        state::StateChanges const &state_changes, TCallback &&callback)
+        requires std::invocable<TCallback, state::StateChanges const &>
+    {
+        std::forward<TCallback>(callback)(state_changes);
+        return commit(state_changes);
+    }
+
     virtual void
     create_and_prune_block_history(uint64_t block_number) const = 0;
 };

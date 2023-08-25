@@ -76,20 +76,17 @@ void InstructionTracer::on_execution_end(evmc_result const &result) noexcept
 {
     auto const &ctx = m_contexts.top();
 
-    if (ctx.depth == 1) {
+    if (ctx.depth == 0) {
         InstructionTracer::out << "{";
-        InstructionTracer::out << R"("error":)";
-        if (result.status_code == EVMC_SUCCESS)
-            InstructionTracer::out << "null";
-        else
-            InstructionTracer::out << '"' << result.status_code << '"';
-        InstructionTracer::out << R"(,"gas":)" << std::hex << "\"0x"
-                               << result.gas_left << "\"";
+        if (result.status_code != EVMC_SUCCESS) {
+            InstructionTracer::out << R"("error":)";
+            InstructionTracer::out << '"' << result.status_code << "\",";
+        }
+        InstructionTracer::out
+            << R"("output":")"
+            << evmc::hex({result.output_data, result.output_size}) << '"';
         InstructionTracer::out << R"(,"gasUsed":)" << std::hex << "\"0x"
                                << (ctx.start_gas - result.gas_left) << "\"";
-        InstructionTracer::out
-            << R"(,"output":")"
-            << evmc::hex({result.output_data, result.output_size}) << '"';
         InstructionTracer::out << "}\n";
     }
 

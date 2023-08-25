@@ -16,34 +16,49 @@
 
 MONAD_TEST_NAMESPACE_BEGIN
 
-class EthereumTests : public testing::Test
-{
-    std::filesystem::path json_test_file_;
-    std::string suite_name_;
-    std::string test_name_;
-    std::string file_name_;
+inline std::unordered_map<std::string, size_t> const fork_index_map = {
+    {"Frontier", 0},
+    {"Homestead", 1},
+    // DAO and Tangerine Whistle not covered by Ethereum Tests
+    {"EIP158", 4},
+    {"Byzantium", 5},
+    {"Constantinople", 6},
+    {"Istanbul", 7},
+    {"Berlin", 8},
+    {"London", 9}};
 
-public:
+struct EthereumTests : public testing::Test
+{
+    std::filesystem::path json_test_file;
+    std::string suite_name;
+    std::string test_name;
+    std::string file_name;
+    std::optional<size_t> fork_index;
+
     EthereumTests(
         std::filesystem::path json_test_file, std::string suite_name,
-        std::string test_name, std::string file_name) noexcept
-        : json_test_file_{json_test_file}
-        , suite_name_{suite_name}
-        , test_name_{test_name}
-        , file_name_{file_name}
+        std::string test_name, std::string file_name,
+        std::optional<size_t> fork_index) noexcept
+        : json_test_file{json_test_file}
+        , suite_name{suite_name}
+        , test_name{test_name}
+        , file_name{file_name}
+        , fork_index{fork_index}
     {
     }
 
     static void register_test(
-        std::string const &suite_name, std::filesystem::path const &file);
+        std::string const &suite_name, std::filesystem::path const &file,
+        std::optional<size_t> fork_index);
 
-    static void register_test_files(std::filesystem::path const &root);
+    static void register_test_files(
+        std::filesystem::path const &root, std::optional<size_t> fork_index);
 
     void TestBody() override;
 
     [[nodiscard]] static StateTransitionTest load_state_test(
         nlohmann::json json, std::string suite_name, std::string test_name,
-        std::string file_name);
+        std::string file_name, std::optional<size_t> fork_index);
 
     static void
     run_state_test(StateTransitionTest const &test, nlohmann::json const &json);

@@ -119,7 +119,8 @@ using execution_variant =
 }
 
 void EthereumTests::register_test(
-    std::string const &suite_name, std::filesystem::path const &file)
+    std::string const &suite_name, std::filesystem::path const &file,
+    std::optional<size_t> fork_index)
 {
     testing::RegisterTest(
         suite_name.c_str(),
@@ -128,13 +129,18 @@ void EthereumTests::register_test(
         nullptr,
         file.string().c_str(),
         0,
-        [file, suite_name]() -> testing::Test * {
+        [file, suite_name, fork_index]() -> testing::Test * {
             return new EthereumTests(
-                file, suite_name, file.stem().string(), file.string());
+                file,
+                suite_name,
+                file.stem().string(),
+                file.string(),
+                fork_index);
         });
 }
 
-void EthereumTests::register_test_files(std::filesystem::path const &root)
+void EthereumTests::register_test_files(
+    std::filesystem::path const &root, std::optional<size_t> fork_index)
 {
     for (auto const &directory_entry :
          std::filesystem::recursive_directory_iterator{root}) {
@@ -144,48 +150,28 @@ void EthereumTests::register_test_files(std::filesystem::path const &root)
                 std::filesystem::relative(directory_entry.path(), root)
                     .parent_path()
                     .string(),
-                directory_entry.path());
+                directory_entry.path(),
+                fork_index);
         }
     }
 }
 
-[[nodiscard]] std::optional<size_t> to_fork_index(std::string_view fork_name)
+[[nodiscard]] std::optional<size_t> to_fork_index(std::string const &fork_name)
 {
     // static assert here to remind anyone who adds a fork to update this
     // function
     static_assert(
         boost::mp11::mp_size<monad::fork_traits::all_forks_t>::value == 10);
-    if (fork_name == "Frontier") {
-        return 0;
-    }
-    if (fork_name == "Homestead") {
-        return 1;
-    }
-    // dao and tangerine_whistle are not covered by ethereum tests
-    if (fork_name == "EIP158") {
-        return 4;
-    }
-    if (fork_name == "Byzantium") {
-        return 5;
-    }
-    if (fork_name == "Constantinople") {
-        return 6;
-    }
-    if (fork_name == "Istanbul") {
-        return 7;
-    }
-    if (fork_name == "Berlin") {
-        return 8;
-    }
-    if (fork_name == "London") {
-        return 9;
+
+    if (fork_index_map.contains(fork_name)) {
+        return fork_index_map.at(fork_name);
     }
     return std::nullopt;
 }
 
 StateTransitionTest EthereumTests::load_state_test(
     nlohmann::json json, std::string suite_name, std::string test_name,
-    std::string file_name)
+    std::string file_name, std::optional<size_t> fork_index)
 {
     if (!json.is_object()) {
         throw std::invalid_argument{fmt::format(
@@ -218,7 +204,7 @@ StateTransitionTest EthereumTests::load_state_test(
     for (auto const &[revision_name, expectations] :
          json_test.at("post").items()) {
         auto maybe_fork_index = to_fork_index(revision_name);
-        if (!maybe_fork_index) {
+        if (!maybe_fork_index.has_value()) {
             MONAD_LOG_ERROR(
                 quill::get_logger("ethereum_test_logger"),
                 "skipping post state in {}:{}:{} due to invalid "
@@ -227,6 +213,9 @@ StateTransitionTest EthereumTests::load_state_test(
                 test_name,
                 file_name,
                 revision_name);
+            continue;
+        }
+        else if (fork_index.has_value() && maybe_fork_index != fork_index) {
             continue;
         }
         test_cases.push_back(
@@ -316,22 +305,24 @@ void EthereumTests::run_state_test(
 
 void EthereumTests::TestBody()
 {
-    std::ifstream f{json_test_file_};
+    std::ifstream f{json_test_file};
 
     auto const json = nlohmann::json::parse(f);
     auto const state_transition_test = EthereumTests::load_state_test(
-        json, suite_name_, test_name_, file_name_);
+        json, suite_name, test_name, file_name, fork_index);
 
-    ASSERT_TRUE(!state_transition_test.cases.empty())
-        << "If test cases is empty, either we have a bug in parsing, or "
-           "the test case only tested forks that we do not yet implement.";
-    // These following assertions tripping definitely mean there was an
-    // error during parsing.
-    ASSERT_TRUE(!state_transition_test.shared_transaction_data.inputs.empty());
-    ASSERT_TRUE(
-        !state_transition_test.shared_transaction_data.gas_limits.empty());
-    ASSERT_TRUE(!state_transition_test.shared_transaction_data.values.empty());
-
+    if (state_transition_test.cases.empty()) {
+        // we should only have empty test cases if a fork index was specified
+        // and the json file does not have an associated test
+        MONAD_ASSERT(fork_index.has_value());
+        GTEST_SKIP() << fmt::format(
+            "No test cases found for fork {}",
+            std::ranges::find(
+                fork_index_map,
+                fork_index.value(),
+                &decltype(fork_index_map)::value_type::second)
+                ->first);
+    }
     EthereumTests::run_state_test(state_transition_test, json);
 }
 

@@ -47,6 +47,19 @@ using evm_t = monad::execution::Evm<
 template <typename TFork>
 using host_t = monad::execution::EvmcHost<working_state_t, TFork, evm_t<TFork>>;
 
+std::vector<std::string> split_string_by_newline(std::string const &input)
+{
+    std::istringstream iss(input);
+    std::vector<std::string> lines;
+
+    std::string line;
+    while (std::getline(iss, line)) {
+        lines.push_back(line);
+    }
+
+    return lines;
+}
+
 // taken from the add.json in the ethereum test suite
 TEST(TransactionTrace, transaction_add)
 {
@@ -171,7 +184,7 @@ TEST(TransactionTrace, transaction_add)
         transaction,
         evm_host.block_header_.base_fee_per_gas.value_or(0));
 
-    auto const geth_trace =
+    auto const geth_trace_lines = split_string_by_newline(
         R"({"pc":0,"op":96,"gas":"0x4c46138","gasCost":"0x3","memSize":0,"stack":[],"depth":1,"refund":0,"opName":"PUSH1"}
 {"pc":2,"op":96,"gas":"0x4c46135","gasCost":"0x3","memSize":0,"stack":["0x0"],"depth":1,"refund":0,"opName":"PUSH1"}
 {"pc":4,"op":96,"gas":"0x4c46132","gasCost":"0x3","memSize":0,"stack":["0x0","0x0"],"depth":1,"refund":0,"opName":"PUSH1"}
@@ -190,6 +203,15 @@ TEST(TransactionTrace, transaction_add)
 {"pc":69,"op":85,"gas":"0xfffff3","gasCost":"0x5654","memSize":0,"stack":["0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe","0x0"],"depth":2,"refund":0,"opName":"SSTORE"}
 {"pc":70,"op":0,"gas":"0xffa99f","gasCost":"0x0","memSize":0,"stack":[],"depth":2,"refund":0,"opName":"STOP"}
 {"pc":22,"op":0,"gas":"0x4c40092","gasCost":"0x0","memSize":0,"stack":["0x1"],"depth":1,"refund":0,"opName":"STOP"}
-{"output":"","gasUsed":"0x60a6"})";
-    EXPECT_EQ(InstructionTracer::get_trace(), geth_trace);
+{"output":"","gasUsed":"0x60a6"})");
+
+    auto const monad_trace_lines =
+        split_string_by_newline(InstructionTracer::get_trace());
+
+    ASSERT_EQ(geth_trace_lines.size(), monad_trace_lines.size());
+
+    for (size_t i = 0; i < geth_trace_lines.size(); i++) {
+        EXPECT_EQ(geth_trace_lines[i], monad_trace_lines[i])
+            << "at index " << i;
+    }
 }

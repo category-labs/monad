@@ -15,8 +15,9 @@ include(cmake/test.cmake)
 
 add_subdirectory("monad-core")
 
-find_package(Boost REQUIRED COMPONENTS fiber)
+find_package(Boost REQUIRED COMPONENTS fiber log)
 find_package(PkgConfig REQUIRED)
+pkg_check_modules(absl_btree REQUIRED IMPORTED_TARGET absl_btree)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 pkg_check_modules(rocksdb REQUIRED IMPORTED_TARGET rocksdb)
 
@@ -211,6 +212,8 @@ target_link_libraries(
   monad
   PUBLIC monad_core
   PRIVATE Boost::fiber
+  PRIVATE Boost::log
+  PRIVATE PkgConfig::absl_btree
   PRIVATE PkgConfig::brotli
   PRIVATE PkgConfig::rocksdb
   PUBLIC ethash::keccak

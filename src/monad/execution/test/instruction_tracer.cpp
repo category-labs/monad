@@ -21,12 +21,11 @@
 using namespace monad;
 using namespace monad::execution;
 
-using account_store_db_t = monad::db::InMemoryTrieDB;
-using code_db_t = std::unordered_map<monad::bytes32_t, monad::byte_string>;
+using in_memory_db_t = monad::db::InMemoryTrieDB;
 using state_t = monad::state::State<
-    monad::state::AccountState<account_store_db_t>,
-    monad::state::ValueState<account_store_db_t>,
-    monad::state::CodeState<code_db_t>, fake::BlockDb, account_store_db_t>;
+    monad::state::AccountState<in_memory_db_t>,
+    monad::state::ValueState<in_memory_db_t>,
+    monad::state::CodeState<in_memory_db_t>, fake::BlockDb, in_memory_db_t>;
 using working_state_t = decltype(std::declval<state_t>().get_new_changeset(0u));
 
 template <typename TFork>
@@ -53,11 +52,10 @@ TEST(TransactionTrace, transaction_add)
 {
     using namespace evmc::literals;
     fake::BlockDb blocks;
-    account_store_db_t db{};
+    in_memory_db_t db{};
     monad::state::AccountState accounts{db};
     monad::state::ValueState values{db};
-    code_db_t code_db{};
-    monad::state::CodeState codes{code_db};
+    monad::state::CodeState codes{db};
     monad::state::State s{accounts, values, codes, blocks, db};
 
     auto change_set = s.get_new_changeset(0u);

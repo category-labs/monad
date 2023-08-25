@@ -412,6 +412,43 @@ TEST(fork_traits, london)
     EXPECT_EQ(s._reward, 2 * uint256_t{9'000'000'000'000'000'000});
 }
 
+// EIP-3675
+static_assert(concepts::fork_traits<fork_traits::paris, state_t>);
+TEST(fork_traits, paris_apply_block_reward)
+{
+    Block block{};
+    block.header.beneficiary = a;
+    db::BlockDb blocks{test_resource::correct_block_data_dir};
+    db_t db{};
+    db.commit(
+        state::StateChanges{.account_changes = {{a, Account{.balance = 0}}}});
+
+    {
+        state::AccountState accounts{db};
+        state::ValueState values{db};
+        state::CodeState codes{db};
+        state::State s{accounts, values, codes, blocks, db};
+
+        fork_traits::paris::apply_block_award(s, block);
+
+        auto change_set = s.get_new_changeset(0u);
+        EXPECT_EQ(intx::be::load<uint256_t>(change_set.get_balance(a)), 0u);
+    }
+    {
+        state::AccountState accounts{db};
+        state::ValueState values{db};
+        state::CodeState codes{db};
+        state::State s{accounts, values, codes, blocks, db};
+
+        fork_traits::london::apply_block_award(s, block);
+
+        auto change_set = s.get_new_changeset(0u);
+        EXPECT_EQ(
+            intx::be::load<uint256_t>(change_set.get_balance(a)),
+            fork_traits::constantinople_and_petersburg::block_reward);
+    }
+}
+
 // EIP-3651
 static_assert(concepts::fork_traits<fork_traits::shanghai, state_t>);
 TEST(fork_traits, shanghai_warm_coinbase)

@@ -134,6 +134,8 @@ public:
                         read_genesis(genesis_file_path, state.accounts_.db_);
                 }
 
+                TTraits::validate_block(block);
+
                 TAllTxnBlockProcessor<TExecution> block_processor{};
                 auto const receipts = block_processor.template execute<
                     TState,

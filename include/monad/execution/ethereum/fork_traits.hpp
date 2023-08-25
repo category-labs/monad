@@ -2,6 +2,9 @@
 
 #include <monad/config.hpp>
 
+#include <monad/core/assert.h>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/concepts.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/transaction.hpp>
@@ -40,6 +43,7 @@ namespace fork_traits
     struct istanbul;
     struct berlin;
     struct london;
+    struct paris;
     struct shanghai;
 
     using no_next_fork_t = shanghai;
@@ -207,6 +211,8 @@ namespace fork_traits
         static constexpr void transfer_balance_dao(TState &, block_num_t const)
         {
         }
+
+        static constexpr void validate_block(Block const &) {}
 
         template <typename TState>
         static constexpr void warm_coinbase(TState &, address_t const &)
@@ -492,7 +498,7 @@ namespace fork_traits
 
     struct london : public berlin
     {
-        using next_fork_t = shanghai;
+        using next_fork_t = paris;
 
         static constexpr evmc_revision rev = EVMC_LONDON;
         static constexpr auto last_block_number = 15'537'393u;
@@ -555,7 +561,35 @@ namespace fork_traits
         }
     };
 
-    struct shanghai : public london
+    struct paris : public london
+    {
+        using next_fork_t = shanghai;
+        static constexpr evmc_revision rev = EVMC_PARIS;
+        static constexpr auto last_block_number = 17'034'869u;
+
+        // EIP-3675
+        static constexpr uint256_t block_reward = 0;
+        static constexpr uint256_t additional_ommer_reward = 0;
+
+        template <class TState>
+        static constexpr void apply_block_award(TState &s, Block const &b)
+        {
+            apply_mining_award(s, b, block_reward, additional_ommer_reward);
+        }
+
+        static constexpr void validate_block(Block const &b)
+        {
+            MONAD_DEBUG_ASSERT(b.header.ommers_hash == NULL_LIST_HASH);
+            MONAD_DEBUG_ASSERT(b.header.difficulty == 0u);
+            byte_string_fixed<8> empty{
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+            MONAD_DEBUG_ASSERT(b.header.nonce == empty);
+            MONAD_DEBUG_ASSERT(b.ommers.size() == 0u);
+            MONAD_DEBUG_ASSERT(b.header.extra_data.length() <= 32u);
+        }
+    };
+
+    struct shanghai : public paris
     {
         using next_fork_t = no_next_fork_t;
         static constexpr evmc_revision rev = EVMC_SHANGHAI;
@@ -643,7 +677,7 @@ namespace fork_traits
 
     using all_forks_t =
         decltype(detail::Traverse<monad::fork_traits::frontier>());
-    static_assert(boost::mp11::mp_size<all_forks_t>::value == 11);
+    static_assert(boost::mp11::mp_size<all_forks_t>::value == 12);
 }
 
 MONAD_NAMESPACE_END

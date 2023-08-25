@@ -455,6 +455,8 @@ namespace fake
             {
             }
 
+            static constexpr void validate_block(Block const &) {}
+
             static constexpr void warm_coinbase(TState &, address_t const &) {}
 
             static constexpr void process_withdrawal(

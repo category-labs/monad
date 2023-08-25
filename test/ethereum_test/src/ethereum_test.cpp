@@ -161,7 +161,7 @@ void EthereumTests::register_test_files(
     // static assert here to remind anyone who adds a fork to update this
     // function
     static_assert(
-        boost::mp11::mp_size<monad::fork_traits::all_forks_t>::value == 11);
+        boost::mp11::mp_size<monad::fork_traits::all_forks_t>::value == 12);
 
     if (fork_index_map.contains(fork_name)) {
         return fork_index_map.at(fork_name);

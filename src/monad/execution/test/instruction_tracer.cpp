@@ -10,6 +10,7 @@
 #include <monad/execution/evmone_baseline_interpreter.hpp>
 #include <monad/execution/instruction_tracer.hpp>
 #include <monad/execution/static_precompiles.hpp>
+#include <monad/execution/test/fakes.hpp>
 #include <monad/execution/transaction_processor.hpp>
 #include <monad/state/account_state.hpp>
 #include <monad/state/code_state.hpp>
@@ -20,20 +21,12 @@
 using namespace monad;
 using namespace monad::execution;
 
-struct fakeBlockCache
-{
-    [[nodiscard]] bytes32_t get_block_hash(int64_t) const noexcept
-    {
-        return bytes32_t{};
-    }
-} block_cache;
-
 using account_store_db_t = monad::db::InMemoryTrieDB;
 using code_db_t = std::unordered_map<monad::bytes32_t, monad::byte_string>;
 using state_t = monad::state::State<
     monad::state::AccountState<account_store_db_t>,
     monad::state::ValueState<account_store_db_t>,
-    monad::state::CodeState<code_db_t>, fakeBlockCache, account_store_db_t>;
+    monad::state::CodeState<code_db_t>, fake::BlockDb, account_store_db_t>;
 using working_state_t = decltype(std::declval<state_t>().get_new_changeset(0u));
 
 template <typename TFork>
@@ -59,7 +52,7 @@ using host_t = monad::execution::EvmcHost<working_state_t, TFork, evm_t<TFork>>;
 TEST(TransactionTrace, transaction_add)
 {
     using namespace evmc::literals;
-    fakeBlockCache blocks;
+    fake::BlockDb blocks;
     account_store_db_t db{};
     monad::state::AccountState accounts{db};
     monad::state::ValueState values{db};

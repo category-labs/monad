@@ -60,8 +60,9 @@ struct EthereumTests : public testing::Test
         nlohmann::json json, std::string suite_name, std::string test_name,
         std::string file_name, std::optional<size_t> fork_index);
 
-    static void
-    run_state_test(StateTransitionTest const &test, nlohmann::json const &json);
+    static void run_state_test(
+        StateTransitionTest const &test, nlohmann::json const &json,
+        std::string const &suite_name, std::string const &test_name);
 };
 
 /**

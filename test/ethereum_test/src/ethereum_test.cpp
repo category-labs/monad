@@ -1,19 +1,18 @@
 #include <ethereum_test.hpp>
+#include <monad/db/rocks_trie_db.hpp>
+#include <monad/logging/monad_log.hpp>
+#include <test_resource_data.h>
 
 #include <gtest/gtest.h>
 
 #include <iostream>
 
-#include <monad/logging/monad_log.hpp>
-
 MONAD_TEST_NAMESPACE_BEGIN
 
-using in_memory_trie_db_t = monad::db::InMemoryTrieDB;
+using db_t = monad::db::RocksTrieDB;
 using state_t = monad::state::State<
-    monad::state::AccountState<in_memory_trie_db_t>,
-    monad::state::ValueState<in_memory_trie_db_t>,
-    monad::state::CodeState<in_memory_trie_db_t>,
-    monad::execution::fake::BlockDb, in_memory_trie_db_t>;
+    monad::state::AccountState<db_t>, monad::state::ValueState<db_t>,
+    monad::state::CodeState<db_t>, monad::execution::fake::BlockDb, db_t>;
 using working_state_t = decltype(std::declval<state_t>().get_new_changeset(0u));
 
 template <typename TFork>
@@ -230,14 +229,15 @@ StateTransitionTest EthereumTests::load_state_test(
 }
 
 void EthereumTests::run_state_test(
-    StateTransitionTest const &test, nlohmann::json const &json)
+    StateTransitionTest const &test, nlohmann::json const &json,
+    std::string const &suite_name, std::string const &test_name)
 {
     auto *logger = quill::get_logger("ethereum_test_logger");
     for (auto const &[fork_index, fork_name, expectations] : test.cases) {
         for (size_t case_index = 0; case_index != expectations.size();
              ++case_index) {
             auto const &expected = expectations[case_index];
-            monad::Transaction transaction = [&] {
+            monad::Transaction const transaction = [&] {
                 auto const &shared_transaction_data =
                     test.shared_transaction_data;
                 monad::Transaction::AccessList access_list;
@@ -262,7 +262,12 @@ void EthereumTests::run_state_test(
             }();
 
             monad::execution::fake::BlockDb fake_block_db;
-            in_memory_trie_db_t db{};
+            db_t db{
+                db::Writable{},
+                monad::test_resource::build_dir / "rocksdb" / suite_name /
+                    test_name / fork_name,
+                std::nullopt,
+                0};
 
             monad::state::AccountState accounts{db};
             monad::state::ValueState values{db};
@@ -323,7 +328,8 @@ void EthereumTests::TestBody()
                 &decltype(fork_index_map)::value_type::second)
                 ->first);
     }
-    EthereumTests::run_state_test(state_transition_test, json);
+    EthereumTests::run_state_test(
+        state_transition_test, json, suite_name, test_name);
 }
 
 MONAD_TEST_NAMESPACE_END

@@ -26,6 +26,7 @@ namespace concepts
         { T::destruct_touched_dead(s) } -> std::convertible_to<void>;
         { T::deploy_contract_code(s, a, std::move(r)) }
             -> std::convertible_to<evmc::Result>;
+        { T::access_list_valid(t.access_list) } -> std::convertible_to<bool>;
     };
     // clang-format on
 }

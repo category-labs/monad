@@ -464,6 +464,12 @@ namespace fake
                 std::optional<std::vector<Withdrawal>> const &) noexcept
             {
             }
+
+            [[nodiscard]] static constexpr bool
+            access_list_valid(Transaction::AccessList const &)
+            {
+                return true;
+            }
         };
 
         template <class TState>

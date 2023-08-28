@@ -224,6 +224,12 @@ namespace fork_traits
             TState &, std::optional<std::vector<Withdrawal>> const &)
         {
         }
+
+        [[nodiscard]] static constexpr bool
+        access_list_valid(Transaction::AccessList const &list)
+        {
+            return list.empty();
+        }
     };
 
     struct homestead : public frontier
@@ -493,6 +499,13 @@ namespace fork_traits
         {
             return g_txcreate(t) + 21'000u + g_data(t) +
                    g_access_and_storage(t);
+        }
+
+        // https://eips.ethereum.org/EIPS/eip-2930
+        [[nodiscard]] static constexpr bool
+        access_list_valid(Transaction::AccessList const &)
+        {
+            return true;
         }
     };
 

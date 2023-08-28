@@ -30,6 +30,7 @@ struct TransactionProcessor
         INVALID_GAS_LIMIT,
         BAD_NONCE,
         DEPLOYED_CODE,
+        TYPE_NOT_SUPPORTED,
     };
 
     // YP Sec 6.2 "irrevocable_change"
@@ -121,6 +122,10 @@ struct TransactionProcessor
     {
         upfront_cost_ =
             intx::umul(t.gas_limit, TTraits::gas_price(t, base_fee_per_gas));
+
+        if (!TTraits::access_list_valid(t.access_list)) {
+            return Status::TYPE_NOT_SUPPORTED;
+        }
 
         // Yellow paper, Eq. 62
         // g0 <= Tg

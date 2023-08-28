@@ -45,6 +45,7 @@ struct Case
     {
         SharedTransactionData::Indices indices;
         monad::bytes32_t state_hash;
+        bool exception;
     };
 
     std::size_t fork_index;

@@ -302,6 +302,7 @@ namespace nlohmann
             o.indices = j.at("indexes")
                             .get<monad::test::SharedTransactionData::Indices>();
             o.state_hash = j.at("hash").get<monad::bytes32_t>();
+            o.exception = j.contains("expectException");
         }
     };
 

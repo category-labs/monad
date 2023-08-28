@@ -48,18 +48,15 @@ struct Execution
     {
     }
 
-    [[nodiscard]] monad::Receipt
+    [[nodiscard]] std::optional<monad::Receipt>
     execute(working_state_t &state, monad::Transaction const &transaction)
     {
-        using Status = typename transaction_processor_t<TFork>::Status;
         auto const status = transaction_processor.validate(
             state,
             transaction,
             host.block_header_.base_fee_per_gas.value_or(0));
-        if (status != Status::SUCCESS) {
-            // TODO: figure out something to do when validate transaction
-            // fails
-            // https://github.com/monad-crypto/monad/issues/266
+        if (status != transaction_processor_t<TFork>::Status::SUCCESS) {
+            return std::nullopt;
         }
         return transaction_processor.execute(
             state,
@@ -85,37 +82,37 @@ using execution_variant =
  * @param transaction
  * @return a receipt of the transaction
  */
-[[nodiscard]] monad::Receipt execute(
+[[nodiscard]] std::optional<monad::Receipt> execute(
     size_t fork_index, monad::BlockHeader const &block_header,
     working_state_t &state, monad::Transaction const &transaction)
 {
     using namespace boost::mp11;
+    using namespace monad;
+
     // create a table of fork types
     auto execution_array = []<typename... Ts>(
                                mp_list<Ts...>,
-                               monad::BlockHeader const &block_header,
+                               BlockHeader const &block_header,
                                working_state_t &state,
-                               monad::Transaction const &transaction) {
+                               Transaction const &transaction) {
         return std::array<execution_variant, sizeof...(Ts)>{
             Execution<Ts>{block_header, transaction, state}...};
-    }(monad::fork_traits::all_forks_t{}, block_header, state, transaction);
+    }(fork_traits::all_forks_t{}, block_header, state, transaction);
 
     // we then dispatch into the appropriate fork at runtime using std::get
     auto &variant = execution_array.at(fork_index);
 
     std::optional<monad::Receipt> maybe_receipt;
-    mp_for_each<mp_iota_c<mp_size<monad::fork_traits::all_forks_t>::value>>(
+    mp_for_each<mp_iota_c<mp_size<fork_traits::all_forks_t>::value>>(
         [&](auto I) {
             if (I == fork_index) {
                 maybe_receipt =
-                    std::get<
-                        Execution<mp_at_c<monad::fork_traits::all_forks_t, I>>>(
+                    std::get<Execution<mp_at_c<fork_traits::all_forks_t, I>>>(
                         variant)
                         .execute(state, transaction);
             }
         });
-    MONAD_ASSERT(maybe_receipt.has_value());
-    return maybe_receipt.value();
+    return maybe_receipt;
 }
 
 void EthereumTests::register_test(
@@ -287,7 +284,7 @@ void EthereumTests::run_state_test(
 
             auto change_set = state.get_new_changeset(0u);
 
-            auto receipt =
+            auto maybe_receipt =
                 execute(fork_index, block_header, change_set, transaction);
             state.merge_changes(change_set);
             state.apply_block_reward(block_header.beneficiary, 0);
@@ -299,11 +296,12 @@ void EthereumTests::run_state_test(
                 case_index,
                 fork_name,
                 state.db_.state_root());
-            EXPECT_EQ(state.db_.state_root(), expected.state_hash)
-                << fmt::format(
-                       "fork_name: {}, transaction_index: {}",
-                       fork_name,
-                       case_index);
+
+            auto const msg = fmt::format(
+                "fork_name: {}, transaction_index: {}", fork_name, case_index);
+
+            EXPECT_EQ(state.db_.state_root(), expected.state_hash) << msg;
+            EXPECT_EQ(maybe_receipt.has_value(), !expected.exception) << msg;
             // TODO: assert something about receipt status?
         }
     }

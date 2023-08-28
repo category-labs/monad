@@ -260,12 +260,14 @@ void EthereumTests::run_state_test(
             }();
 
             monad::execution::fake::BlockDb fake_block_db;
-            db_t db{
-                db::Writable{},
-                monad::test_resource::build_dir / "rocksdb" / suite_name /
-                    test_name / fork_name,
-                std::nullopt,
-                0};
+
+            static auto const time = fmt::format(
+                "{}", std::chrono::system_clock::now().time_since_epoch());
+            auto const dir = monad::test_resource::build_dir / "rocksdb" /
+                             time / suite_name / test_name / fork_name /
+                             std::to_string(case_index);
+            MONAD_ASSERT(!std::filesystem::exists(dir));
+            db_t db{db::Writable{}, dir, std::nullopt, 0};
 
             monad::state::AccountState accounts{db};
             monad::state::ValueState values{db};

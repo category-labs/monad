@@ -65,6 +65,7 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/state/test)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/state2/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/trie/test)
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/integration)
@@ -166,6 +167,7 @@ add_library(
   "include/monad/state2/block_state.hpp"
   "include/monad/state2/block_state_ops.hpp"
   "include/monad/state2/state_deltas.hpp"
+  "include/monad/state2/state.hpp"
   "src/monad/state2/block_state.cpp"
   "src/monad/state2/block_state_ops.cpp"
   "include/monad/state/account_state.hpp"

@@ -277,3 +277,46 @@ TEST(Nibbles, PushAndPopBack)
     EXPECT_EQ(nibbles, Nibbles());
     EXPECT_TRUE(nibbles.empty());
 }
+
+TEST(Nibbles, BytesEmpty)
+{
+    auto const nibbles = Nibbles{Nibbles::FromBytes{}, byte_string{}};
+    EXPECT_EQ(nibbles, Nibbles{});
+    EXPECT_EQ(nibbles, nibbles.prefix(0));
+    EXPECT_TRUE(nibbles.empty());
+    EXPECT_EQ(nibbles.size(), 0);
+}
+
+TEST(Nibbles, BytesThatLookLikeNibbles)
+{
+    auto const nibbles =
+        Nibbles{Nibbles::FromBytes{}, byte_string{0x01, 0x02, 0x03, 0x04}};
+    EXPECT_FALSE(nibbles.empty());
+    EXPECT_EQ(nibbles.size(), 8);
+    EXPECT_EQ(nibbles, nibbles.prefix(8));
+    EXPECT_EQ(nibbles[0], 0x00);
+    EXPECT_EQ(nibbles[1], 0x01);
+    EXPECT_EQ(nibbles[2], 0x00);
+    EXPECT_EQ(nibbles[3], 0x02);
+    EXPECT_EQ(nibbles[4], 0x00);
+    EXPECT_EQ(nibbles[5], 0x03);
+    EXPECT_EQ(nibbles[6], 0x00);
+    EXPECT_EQ(nibbles[7], 0x04);
+}
+
+TEST(Nibbles, Bytes)
+{
+    auto const nibbles =
+        Nibbles{Nibbles::FromBytes{}, byte_string{0x12, 0x34, 0x56, 0x78}};
+    EXPECT_FALSE(nibbles.empty());
+    EXPECT_EQ(nibbles.size(), 8);
+    EXPECT_EQ(nibbles, nibbles.prefix(8));
+    EXPECT_EQ(nibbles[0], 0x01);
+    EXPECT_EQ(nibbles[1], 0x02);
+    EXPECT_EQ(nibbles[2], 0x03);
+    EXPECT_EQ(nibbles[3], 0x04);
+    EXPECT_EQ(nibbles[4], 0x05);
+    EXPECT_EQ(nibbles[5], 0x06);
+    EXPECT_EQ(nibbles[6], 0x07);
+    EXPECT_EQ(nibbles[7], 0x08);
+}

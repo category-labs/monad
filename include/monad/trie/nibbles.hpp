@@ -48,6 +48,19 @@ struct Nibbles
     constexpr Nibbles(Nibbles &&) = default;
     constexpr Nibbles &operator=(Nibbles const &) = default;
 
+    struct FromBytes
+    {
+    };
+
+    constexpr explicit Nibbles(FromBytes, byte_string_view bytes)
+    {
+        MONAD_DEBUG_ASSERT(
+            (bytes.size() * 2) <=
+            std::numeric_limits<byte_string::value_type>::max());
+        rep.push_back(static_cast<byte_string::value_type>(bytes.size() * 2));
+        rep.append(bytes);
+    }
+
     constexpr explicit Nibbles(byte_string_view nibbles)
     {
         assert(nibbles.size() <= MAX_SIZE);
@@ -58,10 +71,9 @@ struct Nibbles
     }
 
     constexpr explicit Nibbles(bytes32_t const &b32)
+        : Nibbles{FromBytes{}, byte_string_view{b32.bytes, sizeof(bytes32_t)}}
     {
         static_assert(sizeof(bytes32_t) * 2 == MAX_SIZE);
-        rep.push_back(MAX_SIZE);
-        rep.append(b32.bytes, sizeof(bytes32_t));
     }
 
     constexpr explicit Nibbles(NibblesView const &nibbles)

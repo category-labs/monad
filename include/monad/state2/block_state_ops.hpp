@@ -4,7 +4,7 @@
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/db/db.hpp>
-#include <monad/state2/state.hpp>
+#include <monad/state2/block_state.hpp>
 
 #include <optional>
 

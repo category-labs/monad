@@ -34,31 +34,36 @@ struct EthereumTests : public testing::Test
     std::string test_name;
     std::string file_name;
     std::optional<size_t> fork_index;
+    std::optional<size_t> txn_index;
 
     EthereumTests(
         std::filesystem::path json_test_file, std::string suite_name,
         std::string test_name, std::string file_name,
-        std::optional<size_t> fork_index) noexcept
+        std::optional<size_t> fork_index,
+        std::optional<size_t> txn_index) noexcept
         : json_test_file{json_test_file}
         , suite_name{suite_name}
         , test_name{test_name}
         , file_name{file_name}
         , fork_index{fork_index}
+        , txn_index(txn_index)
     {
     }
 
     static void register_test(
         std::string const &suite_name, std::filesystem::path const &file,
-        std::optional<size_t> fork_index);
+        std::optional<size_t> fork_index, std::optional<size_t> txn_index);
 
     static void register_test_files(
-        std::filesystem::path const &root, std::optional<size_t> fork_index);
+        std::filesystem::path const &root, std::optional<size_t> fork_index,
+        std::optional<size_t> txn_index);
 
     void TestBody() override;
 
     [[nodiscard]] static StateTransitionTest load_state_test(
         nlohmann::json json, std::string suite_name, std::string test_name,
-        std::string file_name, std::optional<size_t> fork_index);
+        std::string file_name, std::optional<size_t> fork_index,
+        std::optional<size_t> txn_index);
 
     static void run_state_test(
         StateTransitionTest const &test, nlohmann::json const &json,

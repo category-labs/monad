@@ -117,7 +117,7 @@ using execution_variant =
 
 void EthereumTests::register_test(
     std::string const &suite_name, std::filesystem::path const &file,
-    std::optional<size_t> fork_index)
+    std::optional<size_t> fork_index, std::optional<size_t> txn_index)
 {
     testing::RegisterTest(
         suite_name.c_str(),
@@ -126,18 +126,20 @@ void EthereumTests::register_test(
         nullptr,
         file.string().c_str(),
         0,
-        [file, suite_name, fork_index]() -> testing::Test * {
+        [file, suite_name, fork_index, txn_index]() -> testing::Test * {
             return new EthereumTests(
                 file,
                 suite_name,
                 file.stem().string(),
                 file.string(),
-                fork_index);
+                fork_index,
+                txn_index);
         });
 }
 
 void EthereumTests::register_test_files(
-    std::filesystem::path const &root, std::optional<size_t> fork_index)
+    std::filesystem::path const &root, std::optional<size_t> fork_index,
+    std::optional<size_t> txn_index)
 {
     for (auto const &directory_entry :
          std::filesystem::recursive_directory_iterator{root}) {
@@ -148,7 +150,8 @@ void EthereumTests::register_test_files(
                     .parent_path()
                     .string(),
                 directory_entry.path(),
-                fork_index);
+                fork_index,
+                txn_index);
         }
     }
 }
@@ -168,7 +171,8 @@ void EthereumTests::register_test_files(
 
 StateTransitionTest EthereumTests::load_state_test(
     nlohmann::json json, std::string suite_name, std::string test_name,
-    std::string file_name, std::optional<size_t> fork_index)
+    std::string file_name, std::optional<size_t> fork_index,
+    std::optional<size_t> txn_index)
 {
     if (!json.is_object()) {
         throw std::invalid_argument{fmt::format(
@@ -215,11 +219,25 @@ StateTransitionTest EthereumTests::load_state_test(
         else if (fork_index.has_value() && maybe_fork_index != fork_index) {
             continue;
         }
-        test_cases.push_back(
-            {maybe_fork_index.value(),
-             revision_name,
-             expectations.get<std::vector<Case::Expectation>>()});
+
+        if (txn_index.has_value()) {
+            if (txn_index.value() < expectations.size()) {
+                test_cases.emplace_back(Case{
+                    .fork_index = maybe_fork_index.value(),
+                    .fork_name = revision_name,
+                    .expectations = {expectations.at(txn_index.value())
+                                         .get<Case::Expectation>()}});
+            }
+            continue;
+        }
+
+        test_cases.emplace_back(Case{
+            .fork_index = maybe_fork_index.value(),
+            .fork_name = revision_name,
+            .expectations =
+                expectations.get<std::vector<Case::Expectation>>()});
     }
+
     return {
         .shared_transaction_data =
             json_test.at("transaction").get<SharedTransactionData>(),
@@ -315,19 +333,20 @@ void EthereumTests::TestBody()
 
     auto const json = nlohmann::json::parse(f);
     auto const state_transition_test = EthereumTests::load_state_test(
-        json, suite_name, test_name, file_name, fork_index);
+        json, suite_name, test_name, file_name, fork_index, txn_index);
 
     if (state_transition_test.cases.empty()) {
-        // we should only have empty test cases if a fork index was specified
-        // and the json file does not have an associated test
-        MONAD_ASSERT(fork_index.has_value());
+        MONAD_ASSERT(fork_index.has_value() || txn_index.has_value());
         GTEST_SKIP() << fmt::format(
-            "No test cases found for fork {}",
-            std::ranges::find(
-                fork_index_map,
-                fork_index.value(),
-                &decltype(fork_index_map)::value_type::second)
-                ->first);
+            "No test cases found for fork={} txn={}",
+            fork_index.transform([&](auto const index) {
+                return std::ranges::find(
+                           fork_index_map,
+                           index,
+                           &decltype(fork_index_map)::value_type::second)
+                    ->first;
+            }),
+            txn_index);
     }
     EthereumTests::run_state_test(
         state_transition_test, json, suite_name, test_name);

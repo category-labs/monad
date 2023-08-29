@@ -44,6 +44,7 @@ int main(int argc, char *argv[])
         quill::LogLevel::None;
     monad::log::level_t state_log_level = quill::LogLevel::None;
     std::optional<size_t> fork_index = std::nullopt;
+    std::optional<size_t> txn_index = std::nullopt;
 
     // The default test filter. To enable all tests use `--gtest_filter=*`.
     testing::FLAGS_gtest_filter =
@@ -91,6 +92,8 @@ int main(int argc, char *argv[])
         ->transform(CLI::CheckedTransformer(
             monad::test::fork_index_map, CLI::ignore_case));
 
+    app.add_option("--txn", txn_index, "Index of transaction to run");
+
     CLI11_PARSE(app, argc, argv);
 
     monad::log::logger_t::set_log_level(
@@ -107,7 +110,8 @@ int main(int argc, char *argv[])
     // only worrying about GeneralStateTests folder for now
     monad::test::EthereumTests::register_test_files(
         monad::test_resource::ethereum_tests_dir / "GeneralStateTests",
-        fork_index);
+        fork_index,
+        txn_index);
 
     int return_code = RUN_ALL_TESTS();
 

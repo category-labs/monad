@@ -1,5 +1,6 @@
 #include <monad/state2/block_state_ops.hpp>
 
+#include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/likely.h>
 
@@ -10,8 +11,8 @@ MONAD_NAMESPACE_BEGIN
 
 template <class Mutex>
 std::optional<Account> &read_account(
-    address_t const &address, State &state, BlockState<Mutex> &block_state,
-    Db &db)
+    address_t const &address, StateDeltas &state,
+    BlockState<Mutex> &block_state, Db &db)
 {
     // state
     {
@@ -29,7 +30,7 @@ std::optional<Account> &read_account(
             auto const &result = it->second.account.second;
             auto const [it, _] = state.try_emplace(
                 address,
-                AccountState{.account = {result, result}, .storage = {}});
+                AccountDeltas{.account = {result, result}, .storage = {}});
             return it->second.account.second;
         }
     }
@@ -38,21 +39,21 @@ std::optional<Account> &read_account(
     {
         std::lock_guard<Mutex> const lock{block_state.mutex};
         auto const [it, inserted] = block_state.state.try_emplace(
-            address, AccountState{.account = {result, result}, .storage = {}});
+            address, AccountDeltas{.account = {result, result}, .storage = {}});
         if (MONAD_UNLIKELY(!inserted)) {
             result = it->second.account.second;
         }
     }
     auto const [it, _] = state.try_emplace(
-        address, AccountState{.account = {result, result}, .storage = {}});
+        address, AccountDeltas{.account = {result, result}, .storage = {}});
     return it->second.account.second;
 }
 
 template <class Mutex>
 delta_t<bytes32_t> &read_storage(
     address_t const &address, uint64_t const incarnation,
-    bytes32_t const &location, State &state, BlockState<Mutex> &block_state,
-    Db &db)
+    bytes32_t const &location, StateDeltas &state,
+    BlockState<Mutex> &block_state, Db &db)
 {
     // state
     auto const it = state.find(address);
@@ -136,11 +137,11 @@ byte_string &read_code(
     return it->second;
 }
 
-template std::optional<Account> &
-read_account(address_t const &, State &, BlockState<std::shared_mutex> &, Db &);
+template std::optional<Account> &read_account(
+    address_t const &, StateDeltas &, BlockState<std::shared_mutex> &, Db &);
 
 template delta_t<bytes32_t> &read_storage(
-    address_t const &, uint64_t, bytes32_t const &, State &,
+    address_t const &, uint64_t, bytes32_t const &, StateDeltas &,
     BlockState<std::shared_mutex> &, Db &);
 
 template byte_string &read_code(

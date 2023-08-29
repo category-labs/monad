@@ -1,3 +1,5 @@
+#include <monad/config.hpp>
+
 #include <monad/state2/block_state.hpp>
 
 #include <monad/core/assert.h>
@@ -38,7 +40,7 @@ void merge_f(auto &m1, auto const &m2, auto &&f)
     }
 }
 
-bool can_merge(State const &s1, State const &s2)
+bool can_merge(StateDeltas const &s1, StateDeltas const &s2)
 {
     return subset_f(s1, s2, [](auto const &d1, auto const &d2) {
         if (MONAD_UNLIKELY(d2.account.first != d1.account.second)) {
@@ -51,7 +53,7 @@ bool can_merge(State const &s1, State const &s2)
     });
 }
 
-void merge(State &s1, State const &s2)
+void merge(StateDeltas &s1, StateDeltas const &s2)
 {
     merge_f(s1, s2, [](auto &d1, auto const &d2) {
         d1.account.second = d2.account.second;

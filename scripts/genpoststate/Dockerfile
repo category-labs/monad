@@ -1,14 +1,22 @@
 FROM --platform=linux/amd64 fedora:38
 
+RUN dnf -y install jq \
+    && dnf -y clean all \
+    && rm -rf /var/cache/yum
+
+ARG USER_ID
+ARG GROUP_ID
+
 ENV TESTDIR=ethtest
 ARG GAT_VERSION="1.12.0-e501b3b0"
 
 RUN mkdir $TESTDIR
 WORKDIR $TESTDIR
+RUN chown -R $USER_ID:$GROUP_ID .
 
-RUN dnf -y install jq \
-    && dnf -y clean all \
-    && rm -rf /var/cache/yum
+RUN groupadd -g $GROUP_ID user
+RUN useradd -m -s /bin/bash -u $USER_ID -g $GROUP_ID user
+USER user
 
 RUN curl -O https://gethstore.blob.core.windows.net/builds/geth-alltools-linux-amd64-${GAT_VERSION}.tar.gz
 RUN curl -O https://gethstore.blob.core.windows.net/builds/geth-alltools-linux-amd64-${GAT_VERSION}.tar.gz.asc

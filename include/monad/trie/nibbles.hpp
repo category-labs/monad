@@ -17,8 +17,7 @@ MONAD_TRIE_NAMESPACE_BEGIN
 
 namespace impl
 {
-    template <typename TNibbles>
-    constexpr void copy_from_nibbles(byte_string &dest, TNibbles const &nibbles)
+    constexpr void copy_from_nibbles(byte_string &dest, NibblesView nibbles)
     {
         for (size_t i = 0; i < nibbles.size(); i += 2) {
             assert(nibbles[i] <= 0xF);
@@ -48,11 +47,7 @@ struct Nibbles
     constexpr Nibbles(Nibbles &&) = default;
     constexpr Nibbles &operator=(Nibbles const &) = default;
 
-    struct FromBytes
-    {
-    };
-
-    constexpr explicit Nibbles(FromBytes, byte_string_view bytes)
+    constexpr explicit Nibbles(byte_string_view bytes)
     {
         MONAD_DEBUG_ASSERT(
             (bytes.size() * 2) <=
@@ -61,17 +56,8 @@ struct Nibbles
         rep.append(bytes);
     }
 
-    constexpr explicit Nibbles(byte_string_view nibbles)
-    {
-        assert(nibbles.size() <= MAX_SIZE);
-
-        rep.push_back(static_cast<byte_string::value_type>(nibbles.size()));
-
-        impl::copy_from_nibbles(rep, nibbles);
-    }
-
     constexpr explicit Nibbles(bytes32_t const &b32)
-        : Nibbles{FromBytes{}, byte_string_view{b32.bytes, sizeof(bytes32_t)}}
+        : Nibbles{byte_string_view{b32.bytes, sizeof(bytes32_t)}}
     {
         static_assert(sizeof(bytes32_t) * 2 == MAX_SIZE);
     }

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <monad/test/make_nibbles.hpp>
 #include <monad/trie/key_buffer.hpp>
 #include <monad/trie/nibbles.hpp>
 
@@ -8,32 +9,31 @@ using namespace monad::trie;
 
 TEST(Nibbles, SanityOdd)
 {
-    byte_string const nibble_array = {0x01, 0x02, 0x03, 0x04, 0x05};
-    auto const nibbles = Nibbles(nibble_array);
+    auto const nibbles = test::make_nibbles({0x12, 0x34, 0x56, 0x78}, 5);
     EXPECT_EQ(nibbles.rep, byte_string({5, 0x12, 0x34, 0x50}));
     EXPECT_EQ(nibbles.size(), 5);
-
-    for (uint8_t i = 0; i < nibble_array.size(); ++i) {
-        EXPECT_EQ(nibbles[i], nibble_array[i]);
-    }
+    EXPECT_EQ(nibbles[0], 0x01);
+    EXPECT_EQ(nibbles[1], 0x02);
+    EXPECT_EQ(nibbles[2], 0x03);
+    EXPECT_EQ(nibbles[3], 0x04);
+    EXPECT_EQ(nibbles[4], 0x05);
 }
 
 TEST(Nibbles, SanityEven)
 {
-    byte_string const nibble_array = {0x01, 0x02, 0x03, 0x04};
-    auto const nibbles = Nibbles(nibble_array);
+    auto const nibbles = test::make_nibbles({0x12, 0x34});
     EXPECT_EQ(nibbles.rep, byte_string({4, 0x12, 0x34}));
     EXPECT_EQ(nibbles.size(), 4);
-
-    for (uint8_t i = 0; i < nibble_array.size(); ++i) {
-        EXPECT_EQ(nibbles[i], nibble_array[i]);
-    }
+    EXPECT_EQ(nibbles[0], 0x01);
+    EXPECT_EQ(nibbles[1], 0x02);
+    EXPECT_EQ(nibbles[2], 0x03);
+    EXPECT_EQ(nibbles[3], 0x04);
 }
 
 TEST(Nibbles, Comparison)
 {
-    auto const first = Nibbles(byte_string({0x01, 0x02, 0x03, 0x04}));
-    auto const second = Nibbles(byte_string({0x01, 0x02, 0x03, 0x04, 0x05}));
+    auto const first = test::make_nibbles({0x12, 0x34});
+    auto const second = test::make_nibbles({0x12, 0x34, 0x56}, 5);
 
     EXPECT_EQ(first, first);
     EXPECT_NE(first, second);
@@ -46,7 +46,7 @@ TEST(Nibbles, Comparison)
     EXPECT_TRUE(first >= first);
     EXPECT_TRUE(second >= first);
 
-    auto const third = Nibbles(byte_string({0x01, 0x02, 0x03, 0x01}));
+    auto const third = test::make_nibbles({0x12, 0x31});
     EXPECT_TRUE(third < second);
     EXPECT_TRUE(third < first);
     EXPECT_TRUE(third <= second);
@@ -63,13 +63,12 @@ TEST(Nibbles, Comparison)
     view = third.substr(3);
     EXPECT_NE(view, third);
 
-    auto const fourth = Nibbles();
+    auto const fourth = test::make_nibbles({});
     EXPECT_TRUE(fourth < third);
     EXPECT_FALSE(fourth == third);
     EXPECT_FALSE(fourth > third);
 
-    auto const fifth =
-        Nibbles(byte_string({0x00, 0x01, 0x01, 0x02, 0x03, 0x01}));
+    auto const fifth = test::make_nibbles({0x01, 0x12, 0x31});
     view = fifth.substr(2);
     EXPECT_NE(view, first);
     EXPECT_NE(view, second);
@@ -81,16 +80,16 @@ TEST(Nibbles, Comparison)
 
 TEST(Nibbles, OneNibble)
 {
-    auto const first = Nibbles(byte_string({0x01}));
+    auto const first = test::make_nibbles({0x10}, 1);
     EXPECT_EQ(first.rep, byte_string({1, 0x10}));
 
-    auto const second = Nibbles(byte_string({0x02}));
+    auto const second = test::make_nibbles({0x20}, 1);
     EXPECT_EQ(second.rep, byte_string({1, 0x20}));
 
     EXPECT_NE(first, second);
     EXPECT_TRUE(first < second);
 
-    auto const third = Nibbles(byte_string({0x01, 0x02}));
+    auto const third = test::make_nibbles({0x12});
     EXPECT_EQ(third.rep, byte_string({2, 0x12}));
 
     EXPECT_NE(first, third);
@@ -102,8 +101,8 @@ TEST(Nibbles, OneNibble)
 
 TEST(Nibbles, Addition)
 {
-    Nibbles const odd(byte_string({0x01, 0x02, 0x03}));
-    Nibbles const even(byte_string({0x01, 0x02}));
+    auto const odd = test::make_nibbles({0x12, 0x30}, 3);
+    auto const even = test::make_nibbles({0x12});
 
     auto add = odd + even;
     Nibbles expected;
@@ -118,13 +117,11 @@ TEST(Nibbles, Addition)
     expected.rep = byte_string({4, 0x12, 0x12});
     EXPECT_EQ(add, expected);
 
-    Nibbles const first(
-        byte_string{0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x3});
-    Nibbles const second(byte_string{
-        0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7,
-        0x8, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x1, 0x2, 0x3, 0x4, 0x5,
-        0x6, 0x7, 0x8, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x1, 0x2, 0x3,
-        0x4, 0x5, 0x6, 0x7, 0x8, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7});
+    auto const first = test::make_nibbles({0x12, 0x34, 0x56, 0x78, 0x30}, 9);
+    auto const second = test::make_nibbles(
+        {0x23, 0x45, 0x67, 0x81, 0x23, 0x45, 0x67, 0x81, 0x23,
+         0x45, 0x67, 0x81, 0x23, 0x45, 0x67, 0x81, 0x23, 0x45,
+         0x67, 0x81, 0x23, 0x45, 0x67, 0x81, 0x23, 0x45, 0x67});
 
     EXPECT_EQ(
         second.rep,
@@ -132,49 +129,48 @@ TEST(Nibbles, Addition)
                      0x45, 0x67, 0x81, 0x23, 0x45, 0x67, 0x81, 0x23, 0x45, 0x67,
                      0x81, 0x23, 0x45, 0x67, 0x81, 0x23, 0x45, 0x67}));
 
-    expected = Nibbles(byte_string{
-        0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x3, 0x2, 0x3, 0x4, 0x5,
-        0x6, 0x7, 0x8, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x1, 0x2,
-        0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7,
-        0x8, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x1, 0x2, 0x3, 0x4,
-        0x5, 0x6, 0x7, 0x8, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7});
+    expected = test::make_nibbles(
+        {0x12, 0x34, 0x56, 0x78, 0x32, 0x34, 0x56, 0x78, 0x12, 0x34, 0x56,
+         0x78, 0x12, 0x34, 0x56, 0x78, 0x12, 0x34, 0x56, 0x78, 0x12, 0x34,
+         0x56, 0x78, 0x12, 0x34, 0x56, 0x78, 0x12, 0x34, 0x56, 0x70},
+        63);
     add = first + second;
     EXPECT_EQ(add, expected);
 }
 
 TEST(Nibbles, EmptyNibbles)
 {
-    Nibbles empty;
+    auto const empty = test::make_nibbles({});
     EXPECT_EQ(empty.size(), 0);
     EXPECT_TRUE(empty.empty());
 
-    auto const one = Nibbles(byte_string({0x01}));
+    auto const one = test::make_nibbles({0x10}, 1);
     EXPECT_TRUE(empty < one);
 
     auto add = empty + empty;
     EXPECT_EQ(add, empty);
 
-    Nibbles non_empty(byte_string({0x01, 0x02}));
+    auto const non_empty = test::make_nibbles({0x12});
     add = empty + non_empty;
     EXPECT_EQ(add, non_empty);
 }
 
 TEST(Nibbles, LongestCommonPrefix)
 {
-    auto const first = Nibbles(byte_string({0x01, 0x02, 0x03, 0x04}));
-    auto const second = Nibbles(byte_string({0x01, 0x02, 0x03}));
+    auto const first = test::make_nibbles({0x12, 0x34});
+    auto const second = test::make_nibbles({0x12, 0x34}, 3);
 
     EXPECT_EQ(longest_common_prefix_size(first, first), 4);
     EXPECT_EQ(longest_common_prefix_size(first, second), 3);
 
-    auto const third = Nibbles(byte_string({0x02, 0x03, 0x04}));
+    auto const third = test::make_nibbles({0x23, 0x40}, 3);
 
     EXPECT_EQ(longest_common_prefix_size(first, third), 0);
 }
 
 TEST(Nibbles, View)
 {
-    auto const nibbles = Nibbles(byte_string{0x01, 0x02, 0x03, 0x04, 0x05});
+    auto const nibbles = test::make_nibbles({0x12, 0x34, 0x50}, 5);
     auto view = NibblesView{nibbles};
     EXPECT_EQ(view.size(), 5);
     EXPECT_EQ(view.start, 0);
@@ -191,7 +187,7 @@ TEST(Nibbles, View)
 
 TEST(Nibbles, Serialize)
 {
-    auto const nibbles = Nibbles(byte_string{0x01, 0x02, 0x03, 0x04, 0x05});
+    auto const nibbles = test::make_nibbles({0x12, 0x34, 0x50}, 5);
     KeyBuffer buf;
     serialize_nibbles(buf, nibbles);
     EXPECT_EQ(buf.view(), byte_string({5, 0x12, 0x34, 0x50}));
@@ -211,7 +207,7 @@ TEST(Nibbles, Serialize)
 
 TEST(Nibbles, DeserializeOdd)
 {
-    auto const nibbles = Nibbles(byte_string{0x01, 0x02, 0x03, 0x04, 0x05});
+    auto const nibbles = test::make_nibbles({0x12, 0x34, 0x50}, 5);
     KeyBuffer buf;
     serialize_nibbles(buf, nibbles);
 
@@ -222,7 +218,7 @@ TEST(Nibbles, DeserializeOdd)
 
 TEST(Nibbles, DeserializeEven)
 {
-    auto const nibbles = Nibbles(byte_string{0x01, 0x02, 0x03, 0x04});
+    auto const nibbles = test::make_nibbles({0x12, 0x34});
     KeyBuffer buf;
     serialize_nibbles(buf, nibbles);
 
@@ -233,26 +229,26 @@ TEST(Nibbles, DeserializeEven)
 
 TEST(Nibbles, StartsWith)
 {
-    auto const nibbles = Nibbles(byte_string{0x01, 0x02, 0x03, 0x04, 0x05});
+    auto const nibbles = test::make_nibbles({0x12, 0x34, 0x50}, 5);
+    auto prefix = nibbles;
 
-    auto prefix = Nibbles(byte_string{0x01, 0x02, 0x03, 0x04, 0x05});
     EXPECT_TRUE(nibbles.startswith(prefix));
 
-    prefix = Nibbles();
+    prefix = test::make_nibbles({});
     EXPECT_TRUE(nibbles.startswith(prefix));
 
-    prefix = Nibbles(byte_string{0x01});
+    prefix = test::make_nibbles({0x10}, 1);
     EXPECT_TRUE(nibbles.startswith(prefix));
 
-    prefix = Nibbles(byte_string{0x01, 0x02, 0x03});
+    prefix = test::make_nibbles({0x12, 0x30}, 3);
     EXPECT_TRUE(nibbles.startswith(prefix));
 
-    prefix = Nibbles(byte_string{0x01, 0x02, 0x02});
+    prefix = test::make_nibbles({0x12, 0x20}, 3);
     EXPECT_FALSE(nibbles.startswith(prefix));
-    prefix = Nibbles(byte_string{0x01, 0x02, 0x03, 0x04, 0x05, 0x06});
+    prefix = test::make_nibbles({0x12, 0x34, 0x56});
     EXPECT_FALSE(nibbles.startswith(prefix));
 
-    prefix = Nibbles(byte_string{0x01, 0x02});
+    prefix = test::make_nibbles({0x12});
     EXPECT_TRUE(nibbles.startswith(prefix));
 }
 
@@ -260,16 +256,16 @@ TEST(Nibbles, PushAndPopBack)
 {
     Nibbles nibbles;
     nibbles.push_back(0x2);
-    EXPECT_EQ(nibbles, Nibbles(byte_string{0x2}));
+    EXPECT_EQ(nibbles, test::make_nibbles({0x20}, 1));
 
     nibbles.push_back(0x3);
-    EXPECT_EQ(nibbles, Nibbles(byte_string{0x2, 0x3}));
+    EXPECT_EQ(nibbles, test::make_nibbles({0x23}));
 
     nibbles.push_back(0x4);
-    EXPECT_EQ(nibbles, Nibbles(byte_string{0x2, 0x3, 0x4}));
+    EXPECT_EQ(nibbles, test::make_nibbles({0x23, 0x40}, 3));
 
     nibbles.pop_back();
-    EXPECT_EQ(nibbles, Nibbles(byte_string{0x2, 0x3}));
+    EXPECT_EQ(nibbles, test::make_nibbles({0x23}));
 
     nibbles.pop_back();
     nibbles.pop_back();
@@ -278,19 +274,9 @@ TEST(Nibbles, PushAndPopBack)
     EXPECT_TRUE(nibbles.empty());
 }
 
-TEST(Nibbles, BytesEmpty)
-{
-    auto const nibbles = Nibbles{Nibbles::FromBytes{}, byte_string{}};
-    EXPECT_EQ(nibbles, Nibbles{});
-    EXPECT_EQ(nibbles, nibbles.prefix(0));
-    EXPECT_TRUE(nibbles.empty());
-    EXPECT_EQ(nibbles.size(), 0);
-}
-
 TEST(Nibbles, BytesThatLookLikeNibbles)
 {
-    auto const nibbles =
-        Nibbles{Nibbles::FromBytes{}, byte_string{0x01, 0x02, 0x03, 0x04}};
+    auto const nibbles = test::make_nibbles({0x01, 0x02, 0x03, 0x04});
     EXPECT_FALSE(nibbles.empty());
     EXPECT_EQ(nibbles.size(), 8);
     EXPECT_EQ(nibbles, nibbles.prefix(8));
@@ -302,21 +288,4 @@ TEST(Nibbles, BytesThatLookLikeNibbles)
     EXPECT_EQ(nibbles[5], 0x03);
     EXPECT_EQ(nibbles[6], 0x00);
     EXPECT_EQ(nibbles[7], 0x04);
-}
-
-TEST(Nibbles, Bytes)
-{
-    auto const nibbles =
-        Nibbles{Nibbles::FromBytes{}, byte_string{0x12, 0x34, 0x56, 0x78}};
-    EXPECT_FALSE(nibbles.empty());
-    EXPECT_EQ(nibbles.size(), 8);
-    EXPECT_EQ(nibbles, nibbles.prefix(8));
-    EXPECT_EQ(nibbles[0], 0x01);
-    EXPECT_EQ(nibbles[1], 0x02);
-    EXPECT_EQ(nibbles[2], 0x03);
-    EXPECT_EQ(nibbles[3], 0x04);
-    EXPECT_EQ(nibbles[4], 0x05);
-    EXPECT_EQ(nibbles[5], 0x06);
-    EXPECT_EQ(nibbles[6], 0x07);
-    EXPECT_EQ(nibbles[7], 0x08);
 }

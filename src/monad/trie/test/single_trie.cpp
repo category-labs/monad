@@ -1,3 +1,4 @@
+#include <monad/test/make_nibbles.hpp>
 #include <monad/test/one_hundred_updates.hpp>
 #include <monad/test/trie_fixture.hpp>
 
@@ -16,11 +17,11 @@ using namespace evmc::literals;
 namespace
 {
     template <typename T>
-    T basic_node(std::optional<size_t> key_size, byte_string path_to_node)
+    T basic_node(std::optional<size_t> key_size, Nibbles path_to_node)
     {
         T node;
         node.key_size = key_size;
-        node.path_to_node = Nibbles(path_to_node);
+        node.path_to_node = path_to_node;
         return node;
     }
 
@@ -55,13 +56,13 @@ public:
     {
         process_updates({
             test::make_upsert(
-                Nibbles(byte_string{0x04, 0x02, 0x02, 0x01}), {0xff}),
+                test::make_nibbles(byte_string{0x42, 0x21}), {0xff}),
             test::make_upsert(
-                Nibbles(byte_string{0x04, 0x02, 0x03, 0x02}), {0xff}),
+                test::make_nibbles(byte_string{0x42, 0x32}), {0xff}),
             test::make_upsert(
-                Nibbles(byte_string{0x04, 0x02, 0x03, 0x06}), {0xff}),
+                test::make_nibbles(byte_string{0x42, 0x36}), {0xff}),
             test::make_upsert(
-                Nibbles(byte_string{0x04, 0x05, 0x02, 0x01}), {0xff}),
+                test::make_nibbles(byte_string{0x45, 0x21}), {0xff}),
         });
     }
 };
@@ -264,11 +265,11 @@ TYPED_TEST(GenerateTransformationListTest, OneUpdate)
     // ----------------------------------------------------------------
 
     std::vector updates = {test::make_upsert(
-        Nibbles(byte_string({0x05, 0x05, 0x05, 0x05})), {0xff})};
+        test::make_nibbles(byte_string({0x55, 0x55})), {0xff})};
 
     std::list<Node> expected = {
-        basic_node<Branch>(0, {0x04}),
-        basic_node<Leaf>(std::nullopt, {0x05, 0x05, 0x05, 0x05})};
+        basic_node<Branch>(0, test::make_nibbles({0x40}, 1)),
+        basic_node<Leaf>(std::nullopt, test::make_nibbles({0x55, 0x55}))};
 
     EXPECT_TRUE(validate_list(
         this->trie_.generate_transformation_list(updates), expected));
@@ -276,11 +277,11 @@ TYPED_TEST(GenerateTransformationListTest, OneUpdate)
     // ----------------------------------------------------------------
 
     updates = {test::make_upsert(
-        Nibbles(byte_string({0x03, 0x03, 0x03, 0x03})), {0xff})};
+        test::make_nibbles(byte_string({0x33, 0x33})), {0xff})};
 
     expected = std::list<Node>({
-        basic_node<Leaf>(std::nullopt, {0x03, 0x03, 0x03, 0x03}),
-        basic_node<Branch>(0, {0x04}),
+        basic_node<Leaf>(std::nullopt, test::make_nibbles({0x33, 0x33})),
+        basic_node<Branch>(0, test::make_nibbles({0x40}, 1)),
     });
 
     EXPECT_TRUE(validate_list(
@@ -289,11 +290,11 @@ TYPED_TEST(GenerateTransformationListTest, OneUpdate)
     // ----------------------------------------------------------------
 
     updates = {test::make_upsert(
-        Nibbles(byte_string({0x04, 0x06, 0x02, 0x01})), {0xff})};
+        test::make_nibbles(byte_string({0x46, 0x21})), {0xff})};
 
     expected = std::list<Node>(
-        {basic_node<Branch>(0, {0x04}),
-         basic_node<Leaf>(std::nullopt, {0x04, 0x06, 0x02, 0x01})});
+        {basic_node<Branch>(0, test::make_nibbles({0x40}, 1)),
+         basic_node<Leaf>(std::nullopt, test::make_nibbles({0x46, 0x21}))});
 
     EXPECT_TRUE(validate_list(
         this->trie_.generate_transformation_list(updates), expected));
@@ -301,12 +302,12 @@ TYPED_TEST(GenerateTransformationListTest, OneUpdate)
     // ----------------------------------------------------------------
 
     updates = {test::make_upsert(
-        Nibbles(byte_string({0x04, 0x05, 0x02, 0x02})), {0xff})};
+        test::make_nibbles(byte_string({0x45, 0x22})), {0xff})};
 
     expected = std::list<Node>(
-        {basic_node<Branch>(2, {0x04, 0x02}),
-         basic_node<Leaf>(2, {0x04, 0x05, 0x02, 0x01}),
-         basic_node<Leaf>(std::nullopt, {0x04, 0x05, 0x02, 0x02})});
+        {basic_node<Branch>(2, test::make_nibbles({0x42})),
+         basic_node<Leaf>(2, test::make_nibbles({0x45, 0x21})),
+         basic_node<Leaf>(std::nullopt, test::make_nibbles({0x45, 0x22}))});
 
     EXPECT_TRUE(validate_list(
         this->trie_.generate_transformation_list(updates), expected));
@@ -314,14 +315,14 @@ TYPED_TEST(GenerateTransformationListTest, OneUpdate)
     // ----------------------------------------------------------------
 
     updates = {test::make_upsert(
-        Nibbles(byte_string({0x04, 0x02, 0x03, 0x04})), {0xff})};
+        test::make_nibbles(byte_string({0x42, 0x34})), {0xff})};
 
     expected = std::list<Node>({
-        basic_node<Leaf>(3, {0x04, 0x02, 0x02, 0x01}),
-        basic_node<Leaf>(4, {0x04, 0x02, 0x03, 0x02}),
-        basic_node<Leaf>(std::nullopt, {0x04, 0x02, 0x03, 0x04}),
-        basic_node<Leaf>(4, {0x04, 0x02, 0x03, 0x06}),
-        basic_node<Leaf>(2, {0x04, 0x05, 0x02, 0x01}),
+        basic_node<Leaf>(3, test::make_nibbles({0x42, 0x21})),
+        basic_node<Leaf>(4, test::make_nibbles({0x42, 0x32})),
+        basic_node<Leaf>(std::nullopt, test::make_nibbles({0x42, 0x34})),
+        basic_node<Leaf>(4, test::make_nibbles({0x42, 0x36})),
+        basic_node<Leaf>(2, test::make_nibbles({0x45, 0x21})),
     });
 
     EXPECT_TRUE(validate_list(
@@ -334,13 +335,13 @@ TYPED_TEST(GenerateTransformationListTest, MultipleUpdates)
 
     std::vector updates = {
         test::make_upsert(
-            Nibbles(byte_string({0x04, 0x02, 0x02, 0x01})), {0xff}),
-        test::make_del(Nibbles(byte_string({0x04, 0x02, 0x03, 0x06})))};
+            test::make_nibbles(byte_string({0x42, 0x21})), {0xff}),
+        test::make_del(test::make_nibbles(byte_string({0x42, 0x36})))};
 
     std::vector<Node> expected = {
-        basic_node<Leaf>(std::nullopt, {0x04, 0x02, 0x02, 0x01}),
-        basic_node<Leaf>(4, {0x04, 0x02, 0x03, 0x02}),
-        basic_node<Leaf>(2, {0x04, 0x05, 0x02, 0x01})};
+        basic_node<Leaf>(std::nullopt, test::make_nibbles({0x42, 0x21})),
+        basic_node<Leaf>(4, test::make_nibbles({0x42, 0x32})),
+        basic_node<Leaf>(2, test::make_nibbles({0x45, 0x21}))};
 
     EXPECT_TRUE(validate_list(
         this->trie_.generate_transformation_list(updates), expected));
@@ -348,16 +349,16 @@ TYPED_TEST(GenerateTransformationListTest, MultipleUpdates)
     // ----------------------------------------------------------------
 
     updates = {
-        test::make_del(Nibbles(byte_string({0x04, 0x02, 0x03, 0x02}))),
+        test::make_del(test::make_nibbles(byte_string({0x42, 0x32}))),
         test::make_upsert(
-            Nibbles(byte_string({0x04, 0x02, 0x03, 0x03})), {0xff}),
+            test::make_nibbles(byte_string({0x42, 0x33})), {0xff}),
     };
 
     expected = std::vector<Node>(
-        {basic_node<Leaf>(3, {0x04, 0x02, 0x02, 0x01}),
-         basic_node<Leaf>(std::nullopt, {0x04, 0x02, 0x03, 0x03}),
-         basic_node<Leaf>(4, {0x04, 0x02, 0x03, 0x06}),
-         basic_node<Leaf>(2, {0x04, 0x05, 0x02, 0x01})});
+        {basic_node<Leaf>(3, test::make_nibbles({0x42, 0x21})),
+         basic_node<Leaf>(std::nullopt, test::make_nibbles({0x42, 0x33})),
+         basic_node<Leaf>(4, test::make_nibbles({0x42, 0x36})),
+         basic_node<Leaf>(2, test::make_nibbles({0x45, 0x21}))});
 
     EXPECT_TRUE(validate_list(
         this->trie_.generate_transformation_list(updates), expected));
@@ -365,10 +366,10 @@ TYPED_TEST(GenerateTransformationListTest, MultipleUpdates)
     // ----------------------------------------------------------------
 
     updates = {
-        test::make_del(Nibbles(byte_string({0x04, 0x02, 0x02, 0x01}))),
-        test::make_del(Nibbles(byte_string({0x04, 0x02, 0x03, 0x02}))),
-        test::make_del(Nibbles(byte_string({0x04, 0x02, 0x03, 0x06}))),
-        test::make_del(Nibbles(byte_string({0x04, 0x05, 0x02, 0x01}))),
+        test::make_del(test::make_nibbles(byte_string({0x42, 0x21}))),
+        test::make_del(test::make_nibbles(byte_string({0x42, 0x32}))),
+        test::make_del(test::make_nibbles(byte_string({0x42, 0x36}))),
+        test::make_del(test::make_nibbles(byte_string({0x45, 0x21}))),
     };
 
     expected.clear();
@@ -380,17 +381,17 @@ TYPED_TEST(GenerateTransformationListTest, MultipleUpdates)
 
     updates = {
         test::make_upsert(
-            Nibbles(byte_string({0x04, 0x02, 0x02, 0x00})), {0xff}),
+            test::make_nibbles(byte_string({0x42, 0x20})), {0xff}),
         test::make_upsert(
-            Nibbles(byte_string({0x04, 0x02, 0x03, 0x07})), {0xff}),
-        test::make_del(Nibbles(byte_string({0x04, 0x05, 0x02, 0x01}))),
+            test::make_nibbles(byte_string({0x42, 0x37})), {0xff}),
+        test::make_del(test::make_nibbles(byte_string({0x45, 0x21}))),
     };
 
     expected = std::vector<Node>({
-        basic_node<Leaf>(std::nullopt, {0x04, 0x02, 0x02, 0x00}),
-        basic_node<Leaf>(3, {0x04, 0x02, 0x02, 0x01}),
-        basic_node<Branch>(3, {0x04, 0x02, 0x03}),
-        basic_node<Leaf>(std::nullopt, {0x04, 0x02, 0x03, 0x07}),
+        basic_node<Leaf>(std::nullopt, test::make_nibbles({0x42, 0x20})),
+        basic_node<Leaf>(3, test::make_nibbles({0x42, 0x21})),
+        basic_node<Branch>(3, test::make_nibbles({0x42, 0x30}, 3)),
+        basic_node<Leaf>(std::nullopt, test::make_nibbles({0x42, 0x37})),
     });
 
     EXPECT_TRUE(validate_list(

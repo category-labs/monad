@@ -3,6 +3,8 @@
 #include <monad/config.hpp>
 #include <monad/db/trie_db_read_account.hpp>
 #include <monad/logging/monad_log.hpp>
+#include <monad/rlp/encode.hpp>
+#include <monad/rlp/encode_helpers.hpp>
 #include <monad/state/state_changes.hpp>
 #include <monad/trie/update.hpp>
 
@@ -10,14 +12,18 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <typename TAccountTrie, typename TStorageTrie>
+template <typename TAccountTrie, typename TStorageTrie, typename TReceiptTrie>
 void trie_db_process_changes(
     state::StateChanges const &obj, TAccountTrie &account_trie,
-    TStorageTrie &storage_trie)
+    TStorageTrie &storage_trie, TReceiptTrie &receipt_trie)
 {
+    // TODO: Not sure if this is the best place to put this assertion
+    MONAD_DEBUG_ASSERT(receipt_trie.trie.leaves_cursor_.empty());
     std::unordered_map<address_t, bytes32_t> updated_storage_roots;
     std::vector<trie::Update> storage_trie_updates;
     std::vector<trie::Update> account_trie_updates;
+
+    std::vector<trie::Update> receipt_trie_updates;
 
     for (auto const &u : obj.storage_changes) {
         MONAD_DEBUG_ASSERT(!u.second.empty());
@@ -109,6 +115,19 @@ void trie_db_process_changes(
         // updates but no account updates.
         MONAD_DEBUG_ASSERT(obj.storage_changes.empty());
         MONAD_DEBUG_ASSERT(obj.account_changes.empty());
+    }
+
+    // Receipts Trie Building
+    if (!obj.receipts.empty()) {
+        for (auto i = 0u; i < obj.receipts.size(); ++i) {
+            receipt_trie_updates.emplace_back(trie::Upsert{
+                .key = trie::Nibbles{rlp::encode_unsigned(i)},
+                .value = rlp::encode_receipt(obj.receipts[i])});
+        }
+        std::ranges::sort(
+            receipt_trie_updates, std::less<>{}, trie::get_update_key);
+
+        receipt_trie.trie.process_updates(receipt_trie_updates);
     }
 }
 

@@ -1,6 +1,12 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <monad/core/block.hpp>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/core/receipt.hpp>
+
+#include <monad/db/block_db.hpp>
 #include <monad/db/in_memory_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/rocks_db.hpp>
@@ -8,6 +14,8 @@
 #include <monad/logging/formatter.hpp>
 #include <monad/state/state_changes.hpp>
 #include <monad/test/make_db.hpp>
+
+#include <test_resource_data.h>
 
 using namespace monad;
 using namespace monad::db;
@@ -149,6 +157,51 @@ TEST(InMemoryTrieDB, erase)
 
     EXPECT_EQ(db.state_root(), NULL_ROOT);
     EXPECT_EQ(db.storage_root(a), NULL_ROOT);
+}
+
+TYPED_TEST(TrieDBTest, empty_receipts_root)
+{
+    std::vector<Receipt> receipts{};
+
+    auto db = test::make_db<TypeParam>();
+
+    db.commit(state::StateChanges{.receipts = receipts});
+
+    EXPECT_EQ(db.receipts_root(), NULL_ROOT);
+}
+
+TYPED_TEST(TrieDBTest, single_receipts_root)
+{
+    Block block{};
+    BlockDb block_db(test_resource::correct_block_data_dir);
+    auto const res = block_db.get(4'400'010u, block);
+    EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+
+    Receipt::Log l{
+        .data = byte_string{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                            0x00, 0x00, 0x00, 0x01, 0x41, 0xdd, 0x76, 0x00},
+        .topics =
+            {0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32,
+             0x000000000000000000000000dc078f1bb7919f051989e5b47e0d252021a3bece_bytes32,
+             0x000000000000000000000000757982856b7364128d60b85ce08545dcc73e92f5_bytes32},
+        .address = 0xf433089366899d83a9f26a773d59ec7ecf30355e_address,
+    };
+
+    Receipt r{};
+    r.status = 1;
+    r.gas_used = 0x8e92;
+    r.type = Transaction::Type::eip155;
+    r.add_log(l);
+
+    std::vector<Receipt> receipt{r};
+
+    auto db = test::make_db<TypeParam>();
+
+    db.commit(state::StateChanges{.receipts = receipt});
+
+    EXPECT_EQ(db.receipts_root(), block.header.receipts_root);
 }
 
 TYPED_TEST(TrieDBTest, ModifyStorageOfAccount)

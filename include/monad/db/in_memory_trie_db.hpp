@@ -56,6 +56,8 @@ struct InMemoryTrieDB : public Db
     Trie<trie::InMemoryPrefixPathComparator> storage_trie;
     std::unordered_map<bytes32_t, byte_string> code;
 
+    Trie<trie::InMemoryPathComparator> receipts_trie;
+
     ////////////////////////////////////////////////////////////////////
     // Db implementations
     ////////////////////////////////////////////////////////////////////
@@ -94,12 +96,15 @@ struct InMemoryTrieDB : public Db
         for (auto const &[ch, c] : obj.code_changes) {
             code[ch] = c;
         }
-        trie_db_process_changes(obj, accounts_trie, storage_trie);
+        trie_db_process_changes(
+            obj, accounts_trie, storage_trie, receipts_trie);
 
         accounts_trie.leaves_writer.write();
         accounts_trie.trie_writer.write();
         storage_trie.leaves_writer.write();
         storage_trie.trie_writer.write();
+        receipts_trie.leaves_writer.write();
+        receipts_trie.trie_writer.write();
     }
 
     constexpr void
@@ -116,6 +121,11 @@ struct InMemoryTrieDB : public Db
     {
         storage_trie.trie.set_trie_prefix(a);
         return storage_trie.trie.root_hash();
+    }
+
+    [[nodiscard]] bytes32_t receipts_root()
+    {
+        return receipts_trie.trie.root_hash();
     }
 };
 

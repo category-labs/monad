@@ -26,6 +26,7 @@ namespace detail
         std::filesystem::path root, uint64_t starting_block_number,
         trie::PathComparator &accounts_comparator,
         trie::PrefixPathComparator &storage_comparator,
+        trie::PathComparator &receipts_comparator,
         std::vector<rocksdb::ColumnFamilyHandle *> &cfs,
         std::variant<ReadOnly, Writable> permission)
     {
@@ -37,8 +38,10 @@ namespace detail
 
         rocksdb::ColumnFamilyOptions accounts_opts;
         rocksdb::ColumnFamilyOptions storage_opts;
+        rocksdb::ColumnFamilyOptions receipt_opts;
         accounts_opts.comparator = &accounts_comparator;
         storage_opts.comparator = &storage_comparator;
+        receipt_opts.comparator = &receipts_comparator;
 
         std::vector<rocksdb::ColumnFamilyDescriptor> const cfds = {
             {rocksdb::kDefaultColumnFamilyName, {}},
@@ -46,7 +49,9 @@ namespace detail
             {"AccountTrieAll", accounts_opts},
             {"StorageTrieLeaves", storage_opts},
             {"StorageTrieAll", storage_opts},
-            {"Code", {}}};
+            {"Code", {}},
+            {"ReceiptTrieLeaves", receipt_opts},
+            {"ReceiptTrieAll", receipt_opts}};
 
         auto const path = [&]() {
             if (std::holds_alternative<ReadOnly>(permission)) {
@@ -129,10 +134,12 @@ struct RocksTrieDB : public Db
     uint64_t const starting_block_number;
     trie::PathComparator accounts_comparator;
     trie::PrefixPathComparator storage_comparator;
+    trie::PathComparator receipts_comparator;
     std::vector<rocksdb::ColumnFamilyHandle *> cfs;
     std::shared_ptr<rocksdb::DB> db;
     Trie accounts_trie;
     Trie storage_trie;
+    Trie receipts_trie;
     uint64_t const block_history_size;
     rocksdb::WriteBatch batch;
 
@@ -159,9 +166,10 @@ struct RocksTrieDB : public Db
               auto_detect_start_block_number(root)))
         , db(detail::open_rocks_trie_db(
               root, starting_block_number, accounts_comparator,
-              storage_comparator, cfs, permission))
+              storage_comparator, receipts_comparator, cfs, permission))
         , accounts_trie(db, batch, cfs[1], cfs[2])
         , storage_trie(db, batch, cfs[3], cfs[4])
+        , receipts_trie(db, batch, cfs[6], cfs[7])
         , block_history_size(block_history_size)
     {
         MONAD_DEBUG_ASSERT(
@@ -173,6 +181,7 @@ struct RocksTrieDB : public Db
     {
         accounts_trie.reset_cursor();
         storage_trie.reset_cursor();
+        receipts_trie.reset_cursor();
 
         rocksdb::Status res;
         for (auto *const cf : cfs) {
@@ -224,7 +233,8 @@ struct RocksTrieDB : public Db
     {
         detail::rocks_db_commit_code_to_batch(batch, obj, code_cf());
 
-        trie_db_process_changes(obj, accounts_trie, storage_trie);
+        trie_db_process_changes(
+            obj, accounts_trie, storage_trie, receipts_trie);
 
         rocksdb::WriteOptions options;
         options.disableWAL = true;
@@ -233,6 +243,7 @@ struct RocksTrieDB : public Db
 
         accounts_trie.reset_cursor();
         storage_trie.reset_cursor();
+        receipts_trie.reset_cursor();
     }
 
     void create_and_prune_block_history(uint64_t block_number) const override
@@ -264,6 +275,11 @@ struct RocksTrieDB : public Db
     {
         storage_trie.trie.set_trie_prefix(a);
         return storage_trie.trie.root_hash();
+    }
+
+    [[nodiscard]] bytes32_t receipts_root()
+    {
+        return receipts_trie.trie.root_hash();
     }
 };
 

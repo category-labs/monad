@@ -9,7 +9,7 @@
 MONAD_NAMESPACE_BEGIN
 
 template <class Mutex>
-std::optional<Account> read_account(
+std::optional<Account>& read_account(
     address_t const &address, State &state, BlockState<Mutex> &block_state,
     Db &db)
 {
@@ -17,7 +17,7 @@ std::optional<Account> read_account(
     {
         auto const it = state.find(address);
         if (MONAD_LIKELY(it != state.end())) {
-            auto const &result = it->second.account.second;
+            auto &result = it->second.account.second;
             return result;
         }
     }
@@ -27,10 +27,10 @@ std::optional<Account> read_account(
         auto const it = block_state.state.find(address);
         if (MONAD_LIKELY(it != block_state.state.end())) {
             auto const &result = it->second.account.second;
-            state.try_emplace(
+            auto const [it, _] = state.try_emplace(
                 address,
                 AccountState{.account = {result, result}, .storage = {}});
-            return result;
+            return it->second.account.second;
         }
     }
     // database
@@ -43,9 +43,9 @@ std::optional<Account> read_account(
             result = it->second.account.second;
         }
     }
-    state.try_emplace(
+    auto const [it, _] = state.try_emplace(
         address, AccountState{.account = {result, result}, .storage = {}});
-    return result;
+    return it->second.account.second;
 }
 
 template <class Mutex>
@@ -99,7 +99,7 @@ bytes32_t read_storage(
     return result;
 }
 
-template std::optional<Account>
+template std::optional<Account>&
 read_account(address_t const &, State &, BlockState<std::shared_mutex> &, Db &);
 
 template bytes32_t read_storage(

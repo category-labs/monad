@@ -11,11 +11,11 @@
 MONAD_NAMESPACE_BEGIN
 
 template <class Mutex>
-std::optional<Account>&
+std::optional<Account> &
 read_account(address_t const &, State &, BlockState<Mutex> &, Db &);
 
 template <class Mutex>
-bytes32_t read_storage(
+delta_t<bytes32_t> &read_storage(
     address_t const &, uint64_t incarnation, bytes32_t const &location, State &,
     BlockState<Mutex> &, Db &);
 

@@ -9,7 +9,7 @@
 MONAD_NAMESPACE_BEGIN
 
 template <class Mutex>
-std::optional<Account>& read_account(
+std::optional<Account> &read_account(
     address_t const &address, State &state, BlockState<Mutex> &block_state,
     Db &db)
 {
@@ -49,7 +49,7 @@ std::optional<Account>& read_account(
 }
 
 template <class Mutex>
-bytes32_t read_storage(
+delta_t<bytes32_t> &read_storage(
     address_t const &address, uint64_t const incarnation,
     bytes32_t const &location, State &state, BlockState<Mutex> &block_state,
     Db &db)
@@ -61,7 +61,7 @@ bytes32_t read_storage(
     {
         auto const it = storage.find(location);
         if (MONAD_LIKELY(it != storage.end())) {
-            auto const &result = it->second.second;
+            auto &result = it->second;
             return result;
         }
     }
@@ -75,8 +75,9 @@ bytes32_t read_storage(
             auto const it = block_storage.find(location);
             if (MONAD_LIKELY(it != block_storage.end())) {
                 auto const &result = it->second.second;
-                storage.try_emplace(location, result, result);
-                return result;
+                auto const [it2, _] =
+                    storage.try_emplace(location, result, result);
+                return it2->second;
             }
         }
     }
@@ -95,14 +96,14 @@ bytes32_t read_storage(
             }
         }
     }
-    storage.try_emplace(location, result, result);
-    return result;
+    auto const [it2, _] = storage.try_emplace(location, result, result);
+    return it2->second;
 }
 
-template std::optional<Account>&
+template std::optional<Account> &
 read_account(address_t const &, State &, BlockState<std::shared_mutex> &, Db &);
 
-template bytes32_t read_storage(
+template delta_t<bytes32_t> &read_storage(
     address_t const &, uint64_t, bytes32_t const &, State &,
     BlockState<std::shared_mutex> &, Db &);
 

@@ -66,7 +66,6 @@ decode_address(std::optional<address_t> &address, byte_string_view const enc)
 byte_string_view decode_sc(SignatureAndChain &sc, byte_string_view const enc);
 byte_string_view
 decode_bloom(Receipt::Bloom &bloom, byte_string_view const enc);
-byte_string_view decode_log_data(byte_string &data, byte_string_view enc);
 byte_string_view
 decode_topics(std::vector<bytes32_t> &topics, byte_string_view enc);
 byte_string_view decode_log(Receipt::Log &log, byte_string_view enc);

@@ -166,7 +166,7 @@ byte_string encode_log(Receipt::Log const &l)
     return encode_list(
         encode_address(l.address),
         encode_topics(l.topics),
-        encode_list(l.data));
+        encode_string(l.data));
 }
 
 byte_string encode_bloom(Receipt::Bloom const &b)

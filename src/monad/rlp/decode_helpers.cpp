@@ -105,21 +105,13 @@ decode_topics(std::vector<bytes32_t> &topics, byte_string_view enc)
     return rest_of_enc;
 }
 
-byte_string_view decode_log_data(byte_string &data, byte_string_view enc)
-{
-    byte_string_view payload{};
-    auto const rest_of_enc = parse_list_metadata(payload, enc);
-    data = payload;
-    return rest_of_enc;
-}
-
 byte_string_view decode_log(Receipt::Log &log, byte_string_view enc)
 {
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
     payload = decode_address(log.address, payload);
     payload = decode_topics(log.topics, payload);
-    payload = decode_log_data(log.data, payload);
+    payload = decode_string(log.data, payload);
 
     MONAD_ASSERT(payload.size() == 0);
     return rest_of_enc;

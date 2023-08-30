@@ -11,7 +11,7 @@
 MONAD_NAMESPACE_BEGIN
 
 template <typename TAccountTrie, typename TStorageTrie>
-void trie_db_commit(
+void trie_db_process_changes(
     state::StateChanges const &obj, TAccountTrie &account_trie,
     TStorageTrie &storage_trie)
 {
@@ -103,16 +103,10 @@ void trie_db_commit(
             account_trie_updates);
 
         account_trie.trie.process_updates(account_trie_updates);
-        account_trie.leaves_writer.write();
-        account_trie.trie_writer.write();
-
-        // Note: there should never be an instance where we have storage
-        // updates but no account updates. The assertions in the else
-        // statement enforce this
-        storage_trie.leaves_writer.write();
-        storage_trie.trie_writer.write();
     }
     else {
+        // there should never be an instance where we have storage
+        // updates but no account updates.
         MONAD_DEBUG_ASSERT(obj.storage_changes.empty());
         MONAD_DEBUG_ASSERT(obj.account_changes.empty());
     }

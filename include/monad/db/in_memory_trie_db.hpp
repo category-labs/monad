@@ -2,7 +2,7 @@
 
 #include <monad/db/config.hpp>
 #include <monad/db/db.hpp>
-#include <monad/db/trie_db_commit.hpp>
+#include <monad/db/trie_db_process_changes.hpp>
 #include <monad/db/trie_db_read_account.hpp>
 #include <monad/db/trie_db_read_storage.hpp>
 #include <monad/state/state_changes.hpp>
@@ -93,7 +93,12 @@ struct InMemoryTrieDB : public Db
         for (auto const &[ch, c] : obj.code_changes) {
             code[ch] = c;
         }
-        trie_db_commit(obj, accounts_trie, storage_trie);
+        trie_db_process_changes(obj, accounts_trie, storage_trie);
+
+        accounts_trie.leaves_writer.write();
+        accounts_trie.trie_writer.write();
+        storage_trie.leaves_writer.write();
+        storage_trie.trie_writer.write();
     }
 
     constexpr void

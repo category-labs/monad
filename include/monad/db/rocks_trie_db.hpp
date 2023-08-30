@@ -7,7 +7,7 @@
 #include <monad/db/permission.hpp>
 #include <monad/db/prepare_state.hpp>
 #include <monad/db/rocks_db_helper.hpp>
-#include <monad/db/trie_db_commit.hpp>
+#include <monad/db/trie_db_process_changes.hpp>
 #include <monad/db/trie_db_read_account.hpp>
 #include <monad/db/trie_db_read_storage.hpp>
 #include <monad/logging/monad_log.hpp>
@@ -98,14 +98,12 @@ struct RocksTrieDB : public Db
         trie::Trie<trie::RocksCursor, trie::RocksWriter> trie;
 
         Trie(
-            std::shared_ptr<rocksdb::DB> db, rocksdb::ColumnFamilyHandle *lc,
-            rocksdb::ColumnFamilyHandle *tc)
+            std::shared_ptr<rocksdb::DB> db, rocksdb::WriteBatch &batch,
+            rocksdb::ColumnFamilyHandle *lc, rocksdb::ColumnFamilyHandle *tc)
             : leaves_cursor(db, lc)
             , trie_cursor(db, tc)
-            , leaves_writer(trie::RocksWriter{
-                  .db = db, .batch = rocksdb::WriteBatch{}, .cf = lc})
-            , trie_writer(trie::RocksWriter{
-                  .db = db, .batch = rocksdb::WriteBatch{}, .cf = tc})
+            , leaves_writer(trie::RocksWriter{.batch = batch, .cf = lc})
+            , trie_writer(trie::RocksWriter{.batch = batch, .cf = tc})
             , trie(leaves_cursor, trie_cursor, leaves_writer, trie_writer)
         {
         }
@@ -162,8 +160,8 @@ struct RocksTrieDB : public Db
         , db(detail::open_rocks_trie_db(
               root, starting_block_number, accounts_comparator,
               storage_comparator, cfs, permission))
-        , accounts_trie(db, cfs[1], cfs[2])
-        , storage_trie(db, cfs[3], cfs[4])
+        , accounts_trie(db, batch, cfs[1], cfs[2])
+        , storage_trie(db, batch, cfs[3], cfs[4])
         , block_history_size(block_history_size)
     {
         MONAD_DEBUG_ASSERT(
@@ -224,12 +222,14 @@ struct RocksTrieDB : public Db
     void commit(state::StateChanges const &obj) override
     {
         detail::rocks_db_commit_code_to_batch(batch, obj, code_cf());
+
+        trie_db_process_changes(obj, accounts_trie, storage_trie);
+
         rocksdb::WriteOptions options;
         options.disableWAL = true;
         db->Write(options, &batch);
         batch.Clear();
 
-        trie_db_commit(obj, accounts_trie, storage_trie);
         accounts_trie.reset_cursor();
         storage_trie.reset_cursor();
     }

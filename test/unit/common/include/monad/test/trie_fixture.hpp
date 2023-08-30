@@ -32,6 +32,7 @@ struct rocks_fixture : public ::testing::Test
     std::vector<rocksdb::ColumnFamilyHandle *> cfs_;
     std::shared_ptr<rocksdb::DB> db_;
 
+    rocksdb::WriteBatch batch_;
     monad::trie::RocksCursor leaves_cursor_;
     monad::trie::RocksCursor trie_cursor_;
     monad::trie::RocksWriter leaves_writer_;
@@ -79,10 +80,9 @@ struct rocks_fixture : public ::testing::Test
         }())
         , leaves_cursor_(db_, cfs_[1])
         , trie_cursor_(db_, cfs_[2])
-        , leaves_writer_(monad::trie::RocksWriter{
-              .db = db_, .batch = rocksdb::WriteBatch{}, .cf = cfs_[1]})
-        , trie_writer_(monad::trie::RocksWriter{
-              .db = db_, .batch = rocksdb::WriteBatch{}, .cf = cfs_[2]})
+        , leaves_writer_(
+              monad::trie::RocksWriter{.batch = batch_, .cf = cfs_[1]})
+        , trie_writer_(monad::trie::RocksWriter{.batch = batch_, .cf = cfs_[2]})
         , trie_(leaves_cursor_, trie_cursor_, leaves_writer_, trie_writer_)
     {
         EXPECT_TRUE(leaves_cursor_.empty());
@@ -113,8 +113,10 @@ struct rocks_fixture : public ::testing::Test
 
     void flush()
     {
-        leaves_writer_.write();
-        trie_writer_.write();
+        rocksdb::WriteOptions options;
+        options.disableWAL = true;
+        db_->Write(options, &batch_);
+        batch_.Clear();
         trie_cursor_.reset();
         leaves_cursor_.reset();
     }

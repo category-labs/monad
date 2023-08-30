@@ -14,8 +14,7 @@ MONAD_TRIE_NAMESPACE_BEGIN
 
 struct RocksWriter
 {
-    std::shared_ptr<rocksdb::DB> db;
-    rocksdb::WriteBatch batch;
+    rocksdb::WriteBatch &batch;
     rocksdb::ColumnFamilyHandle *cf;
 
     void put(KeyBuffer const &key, byte_string_view value)
@@ -55,13 +54,6 @@ struct RocksWriter
         auto const res = batch.DeleteRange(
             cf, monad::db::to_slice(buf.view()), monad::db::to_slice(end));
         MONAD_ROCKS_ASSERT(res);
-    }
-
-    void write()
-    {
-        auto const res = db->Write(rocksdb::WriteOptions{}, &batch);
-        MONAD_ROCKS_ASSERT(res);
-        batch.Clear();
     }
 };
 

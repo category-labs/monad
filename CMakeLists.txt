@@ -118,7 +118,7 @@ add_library(
   "include/monad/db/rocks_db.hpp"
   "include/monad/db/rocks_trie_db.hpp"
   "include/monad/db/state_db.hpp"
-  "include/monad/db/trie_db_commit.hpp"
+  "include/monad/db/trie_db_process_changes.hpp"
   "include/monad/db/trie_db_read_account.hpp"
   "include/monad/db/trie_db_read_storage.hpp"
   "include/monad/db/util.hpp"

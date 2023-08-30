@@ -8,9 +8,9 @@
 MONAD_NAMESPACE_BEGIN
 
 template <typename TCursor>
-[[nodiscard]] bytes32_t trie_db_read_storage(
-    address_t const &a, uint64_t, bytes32_t const &k, TCursor &&leaves_cursor,
-    TCursor &&trie_cursor)
+[[nodiscard]] bytes32_t trie_db_read_storage_with_hashed_key(
+    address_t const &a, uint64_t, trie::Nibbles const &k,
+    TCursor &&leaves_cursor, TCursor &&trie_cursor)
 {
     leaves_cursor.set_prefix(a);
 
@@ -18,10 +18,7 @@ template <typename TCursor>
         return bytes32_t{};
     }
 
-    auto const [key, exists] = get_trie_key_of_leaf(
-        trie::Nibbles{std::bit_cast<bytes32_t>(
-            ethash::keccak256(k.bytes, sizeof(k.bytes)))},
-        leaves_cursor);
+    auto const [key, exists] = get_trie_key_of_leaf(k, leaves_cursor);
 
     if (!exists) {
         return bytes32_t{};
@@ -55,6 +52,21 @@ template <typename TCursor>
             static_cast<uint8_t>(sizeof(bytes32_t) - zeroless.size())));
     MONAD_ASSERT(ret != bytes32_t{});
     return ret;
+}
+
+template <typename TCursor>
+[[nodiscard]] bytes32_t trie_db_read_storage(
+    address_t const &a, uint64_t incarnation, bytes32_t const &k,
+    TCursor &&leaves_cursor, TCursor &&trie_cursor)
+{
+    auto const hashed_storage_key = trie::Nibbles{
+        std::bit_cast<bytes32_t>(ethash::keccak256(k.bytes, sizeof(k.bytes)))};
+    return trie_db_read_storage_with_hashed_key(
+        a,
+        incarnation,
+        hashed_storage_key,
+        std::forward<TCursor>(leaves_cursor),
+        std::forward<TCursor>(trie_cursor));
 }
 
 MONAD_NAMESPACE_END

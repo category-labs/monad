@@ -13,16 +13,15 @@ MONAD_NAMESPACE_BEGIN
 
 template <typename TCursor>
 [[nodiscard]] std::optional<Account> trie_db_read_account(
-    address_t const &a, TCursor &&leaves_cursor, TCursor &&trie_cursor)
+    trie::Nibbles const &hashed_account_address, TCursor &&leaves_cursor,
+    TCursor &&trie_cursor)
 {
     if (MONAD_UNLIKELY(leaves_cursor.empty())) {
         return std::nullopt;
     }
 
-    auto const [key, exists] = get_trie_key_of_leaf(
-        trie::Nibbles{std::bit_cast<bytes32_t>(
-            ethash::keccak256(a.bytes, sizeof(a.bytes)))},
-        leaves_cursor);
+    auto const [key, exists] =
+        get_trie_key_of_leaf(hashed_account_address, leaves_cursor);
 
     if (!exists) {
         return std::nullopt;
@@ -45,6 +44,18 @@ template <typename TCursor>
         rlp::decode_account(ret, _, std::get<trie::Leaf>(node).value);
     MONAD_ASSERT(rest.empty());
     return ret;
+}
+
+template <typename TCursor>
+[[nodiscard]] std::optional<Account> trie_db_read_account(
+    address_t const &a, TCursor &&leaves_cursor, TCursor &&trie_cursor)
+{
+    auto const hashed_account_address = trie::Nibbles{
+        std::bit_cast<bytes32_t>(ethash::keccak256(a.bytes, sizeof(a.bytes)))};
+    return trie_db_read_account(
+        hashed_account_address,
+        std::forward<TCursor>(leaves_cursor),
+        std::forward<TCursor>(trie_cursor));
 }
 
 MONAD_NAMESPACE_END

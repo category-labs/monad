@@ -90,7 +90,7 @@ struct Evm
                 })
                 .value();
 
-        if (result.status_code == EVMC_REVERT) {
+        if (result.status_code != EVMC_SUCCESS) {
             state.revert();
         }
 

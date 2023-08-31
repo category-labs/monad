@@ -19,7 +19,7 @@ struct InMemoryDB : public Db
     std::unordered_map<bytes32_t, byte_string> code;
 
     [[nodiscard]] std::optional<Account>
-    read_account(address_t const &a) override
+    read_account(address_t const &a) const override
     {
         if (accounts.contains(a)) {
             return accounts.at(a);
@@ -27,8 +27,8 @@ struct InMemoryDB : public Db
         return std::nullopt;
     }
 
-    [[nodiscard]] bytes32_t
-    read_storage(address_t const &a, uint64_t, bytes32_t const &k) override
+    [[nodiscard]] bytes32_t read_storage(
+        address_t const &a, uint64_t, bytes32_t const &k) const override
     {
         if (storage.contains(a) && storage.at(a).contains(k)) {
             return storage.at(a).at(k);
@@ -36,7 +36,7 @@ struct InMemoryDB : public Db
         return bytes32_t{};
     }
 
-    [[nodiscard]] byte_string read_code(bytes32_t const &hash) override
+    [[nodiscard]] byte_string read_code(bytes32_t const &hash) const override
     {
         if (code.contains(hash)) {
             return code.at(hash);

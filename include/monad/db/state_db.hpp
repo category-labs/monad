@@ -37,20 +37,20 @@ public:
     StateDb(std::filesystem::path const &);
     ~StateDb();
 
-    virtual std::optional<Account> read_account(address_t const &) override;
+    virtual std::optional<Account> read_account(address_t const &) const override;
 
     std::optional<Account>
     read_account_history(address_t const &, uint64_t block_number);
 
     virtual bytes32_t read_storage(
         address_t const &, uint64_t incarnation,
-        bytes32_t const &location) override;
+        bytes32_t const &location) const override;
 
     bytes32_t read_storage_history(
         address_t const &, uint64_t incarnation, bytes32_t const &location,
         uint64_t block_number);
 
-    virtual byte_string read_code(bytes32_t const &) override;
+    virtual byte_string read_code(bytes32_t const &) const override;
 
     using Accounts =
         typename absl::btree_map<address_t, std::optional<Account>>;

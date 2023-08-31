@@ -145,16 +145,16 @@ struct RocksDB : public Db
     // Helper functions
     ////////////////////////////////////////////////////////////////////
 
-    [[nodiscard]] constexpr auto *accounts_cf() { return cfs[1]; }
-    [[nodiscard]] constexpr auto *storage_cf() { return cfs[2]; }
-    [[nodiscard]] constexpr auto *code_cf() { return cfs[3]; }
+    [[nodiscard]] constexpr auto *accounts_cf() const { return cfs[1]; }
+    [[nodiscard]] constexpr auto *storage_cf() const { return cfs[2]; }
+    [[nodiscard]] constexpr auto *code_cf() const { return cfs[3]; }
 
     ////////////////////////////////////////////////////////////////////
     // Db implementations
     ////////////////////////////////////////////////////////////////////
 
     [[nodiscard]] std::optional<Account>
-    read_account(address_t const &a) override
+    read_account(address_t const &a) const override
     {
         rocksdb::PinnableSlice value;
         auto const res =
@@ -177,7 +177,7 @@ struct RocksDB : public Db
     }
 
     [[nodiscard]] bytes32_t
-    read_storage(address_t const &a, uint64_t, bytes32_t const &k) override
+    read_storage(address_t const &a, uint64_t, bytes32_t const &k) const override
     {
         auto const key = detail::make_basic_storage_key(a, k);
         rocksdb::PinnableSlice value;
@@ -193,7 +193,7 @@ struct RocksDB : public Db
         return result;
     }
 
-    [[nodiscard]] byte_string read_code(bytes32_t const &b) override
+    [[nodiscard]] byte_string read_code(bytes32_t const &b) const override
     {
         return detail::rocks_db_read_code(b, db, code_cf());
     }

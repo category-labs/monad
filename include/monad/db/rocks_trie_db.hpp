@@ -188,14 +188,14 @@ struct RocksTrieDB : public Db
     // Helper functions
     ////////////////////////////////////////////////////////////////////
 
-    [[nodiscard]] constexpr auto *code_cf() { return cfs[5]; }
+    [[nodiscard]] constexpr auto *code_cf() const { return cfs[5]; }
 
     ////////////////////////////////////////////////////////////////////
     // Db implementations
     ////////////////////////////////////////////////////////////////////
 
     [[nodiscard]] std::optional<Account>
-    read_account(address_t const &a) override
+    read_account(address_t const &a) const override
     {
         return trie_db_read_account(
             a,
@@ -204,7 +204,8 @@ struct RocksTrieDB : public Db
     }
 
     [[nodiscard]] bytes32_t read_storage(
-        address_t const &a, uint64_t incarnation, bytes32_t const &key) override
+        address_t const &a, uint64_t incarnation,
+        bytes32_t const &key) const override
     {
         return trie_db_read_storage(
             a,
@@ -214,7 +215,7 @@ struct RocksTrieDB : public Db
             storage_trie.make_trie_cursor());
     }
 
-    [[nodiscard]] byte_string read_code(bytes32_t const &ch) override
+    [[nodiscard]] byte_string read_code(bytes32_t const &ch) const override
     {
         return detail::rocks_db_read_code(ch, db, code_cf());
     }

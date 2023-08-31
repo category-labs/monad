@@ -112,7 +112,7 @@ StateDb::~StateDb()
     cfs_.clear();
 }
 
-std::optional<Account> StateDb::read_account(address_t const &address)
+std::optional<Account> StateDb::read_account(address_t const &address) const
 {
     (void)address;
     (void)to_view;
@@ -131,7 +131,7 @@ std::optional<Account> StateDb::read_account_history(
 
 bytes32_t StateDb::read_storage(
     address_t const &address, uint64_t const incarnation,
-    bytes32_t const &location)
+    bytes32_t const &location) const
 {
     byte_string_fixed<60> key;
     std::memcpy(&key[0], address.bytes, 20);
@@ -179,7 +179,7 @@ bytes32_t StateDb::read_storage_history(
     return result;
 }
 
-byte_string StateDb::read_code(bytes32_t const &)
+byte_string StateDb::read_code(bytes32_t const &) const
 {
     // TODO
     return {};

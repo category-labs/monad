@@ -298,11 +298,16 @@ void EthereumTests::run_state_test(
             MONAD_ASSERT(json.is_object() && !json.empty());
             auto const &j_t = *json.begin();
 
+            MONAD_LOG_INFO(logger, "Starting to load state from json");
+
             load_state_from_json(j_t.at("pre"), state);
 
             auto block_header = j_t.at("env").get<monad::BlockHeader>();
 
             auto change_set = state.get_new_changeset(0u);
+
+            MONAD_LOG_INFO(
+                logger, "Starting to execute transaction {}", case_index);
 
             auto maybe_receipt =
                 execute(fork_index, block_header, change_set, transaction);

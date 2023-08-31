@@ -100,11 +100,50 @@ delta_t<bytes32_t> &read_storage(
     return it2->second;
 }
 
+template <class Mutex>
+byte_string &read_code(
+    bytes32_t const &hash, Code &code, BlockState<Mutex> &block_state,
+    Db &db)
+{
+    // code
+    {
+        auto const it = code.find(hash);
+        if (MONAD_LIKELY(it != code.end())) {
+            auto &result = it->second;
+            return result;
+        }
+    }
+    // block state
+    {
+        std::shared_lock<Mutex> const lock{block_state.mutex};
+        auto const it = block_state.code.find(hash);
+        if (MONAD_LIKELY(it != block_state.code.end())) {
+            auto const &result = it->second;
+            auto const [it, _] = code.try_emplace(hash, result);
+            return it->second;
+        }
+    }
+    // database
+    auto result = db.read_code(hash);
+    {
+        std::lock_guard<Mutex> const lock{block_state.mutex};
+        auto const [it, inserted] = block_state.code.try_emplace(hash, result);
+        if (MONAD_UNLIKELY(!inserted)) {
+            result = it->second;
+        }
+    }
+    auto const [it, _] = code.try_emplace(hash, result);
+    return it->second;
+}
+
 template std::optional<Account> &
 read_account(address_t const &, State &, BlockState<std::shared_mutex> &, Db &);
 
 template delta_t<bytes32_t> &read_storage(
     address_t const &, uint64_t, bytes32_t const &, State &,
     BlockState<std::shared_mutex> &, Db &);
+
+template byte_string &read_code(
+    bytes32_t const &, Code &, BlockState<std::shared_mutex> &, Db &);
 
 MONAD_NAMESPACE_END

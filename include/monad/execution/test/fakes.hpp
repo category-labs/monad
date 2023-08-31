@@ -299,6 +299,7 @@ namespace fake
         void commit() const noexcept { return; }
 
         [[nodiscard]] bytes32_t get_state_hash() const { return {}; }
+        [[nodiscard]] bytes32_t get_receipt_hash() const { return {}; }
 
         constexpr void create_and_prune_block_history(uint64_t) const
         {

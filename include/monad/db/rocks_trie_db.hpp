@@ -107,8 +107,9 @@ struct RocksTrieDB : public Db
             rocksdb::ColumnFamilyHandle *lc, rocksdb::ColumnFamilyHandle *tc)
             : leaves_cursor(db, lc)
             , trie_cursor(db, tc)
-            , leaves_writer(trie::RocksWriter{.batch = batch, .cf = lc})
-            , trie_writer(trie::RocksWriter{.batch = batch, .cf = tc})
+            , leaves_writer(
+                  trie::RocksWriter{.db = db, .batch = batch, .cf = lc})
+            , trie_writer(trie::RocksWriter{.db = db, .batch = batch, .cf = tc})
             , trie(leaves_cursor, trie_cursor, leaves_writer, trie_writer)
         {
         }
@@ -117,6 +118,12 @@ struct RocksTrieDB : public Db
         {
             leaves_cursor.reset();
             trie_cursor.reset();
+        }
+
+        void reset_writer()
+        {
+            leaves_writer.del_prefix({});
+            trie_writer.del_prefix({});
         }
 
         [[nodiscard]] trie::RocksCursor make_leaf_cursor() const
@@ -232,6 +239,9 @@ struct RocksTrieDB : public Db
     void commit(state::StateChanges const &obj) override
     {
         detail::rocks_db_commit_code_to_batch(batch, obj, code_cf());
+
+        receipts_trie.reset_cursor();
+        receipts_trie.reset_writer();
 
         trie_db_process_changes(
             obj, accounts_trie, storage_trie, receipts_trie);

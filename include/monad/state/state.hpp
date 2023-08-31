@@ -229,6 +229,7 @@ struct State
     TAccountState &accounts_;
     TValueState &storage_;
     TCodeState &code_;
+    std::vector<Receipt> receipts_;
     TBlockCache &block_cache_{};
     TDatabase &db_{};
     unsigned int current_txn_{};
@@ -306,15 +307,22 @@ struct State
                code_.can_commit();
     }
 
+    void add_receipts(std::vector<Receipt> &&receipts)
+    {
+        receipts_ = std::move(receipts);
+    }
+
     void commit()
     {
         db_.commit(StateChanges{
             .account_changes = accounts_.gather_changes(),
             .storage_changes = storage_.gather_changes(),
-            .code_changes = code_.gather_changes()});
+            .code_changes = code_.gather_changes(),
+            .receipts = receipts_});
         accounts_.clear_changes();
         storage_.clear_changes();
         code_.clear_changes();
+        receipts_.clear();
         current_txn_ = 0;
         gas_award_ = 0;
     }
@@ -322,6 +330,11 @@ struct State
     [[nodiscard]] bytes32_t get_state_hash() const
     {
         return accounts_.get_state_hash();
+    }
+
+    [[nodiscard]] bytes32_t get_receipt_hash() const
+    {
+        return db_.receipts_root();
     }
 
     constexpr void create_and_prune_block_history(uint64_t block_number) const

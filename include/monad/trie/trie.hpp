@@ -70,23 +70,21 @@ struct Trie
         trie_cursor_.set_prefix(prefix);
     }
 
-    // Process updates and queue up writes to disk. returns root hash
-    // of trie after updates are processed
-    bytes32_t process_updates(std::vector<Update> const &updates)
+    void process_updates_pre_checks(std::vector<Update> const &updates)
     {
         // updates should come in sorted order
-        assert(std::ranges::is_sorted(
+        MONAD_DEBUG_ASSERT(std::ranges::is_sorted(
             updates, std::ranges::less{}, get_update_key));
 
-        assert(!updates.empty());
+        MONAD_DEBUG_ASSERT(!updates.empty());
 
         // there should be no duplicate updates
-        assert(
+        MONAD_DEBUG_ASSERT(
             std::ranges::adjacent_find(
                 updates, std::equal_to<>{}, get_update_key) == updates.end());
 
         // all updates should be to leaves (approximate this by checking size)
-        assert(std::ranges::all_of(
+        MONAD_DEBUG_ASSERT(std::ranges::all_of(
             updates,
             [&updates](auto const &s) {
                 return s == get_update_key(updates.front()).size();
@@ -96,10 +94,57 @@ struct Trie
         // all upserts should have non-zero value size. the ethereum
         // hexary trie implicitly converts upserts to deletes in this case, but
         // we'll just disallow that explicitly
-        assert(std::ranges::all_of(updates, [](auto const &s) {
+        MONAD_DEBUG_ASSERT(std::ranges::all_of(updates, [](auto const &s) {
             return is_deletion(s) || !std::get<Upsert>(s).value.empty();
         }));
+    }
 
+    void finalize_and_emit(LeafOrBranch auto &node, uint8_t key_size)
+    {
+        using DecayedNode = std::decay_t<decltype(node)>;
+
+        // if the key is changing, delete the old one
+        if (node.key_size && node.key_size != key_size) {
+            serialize_nibbles(buf_, node.path_to_node.prefix(*node.key_size));
+            trie_writer_.del(buf_);
+        }
+
+        node.finalize(key_size);
+
+        auto const value = serialize_node(node);
+
+        serialize_nibbles(buf_, node.path_to_node.prefix(*node.key_size));
+        trie_writer_.put(buf_, value);
+        if constexpr (std::same_as<DecayedNode, Leaf>) {
+            serialize_nibbles(buf_, node.path_to_node);
+            leaves_writer_.put(buf_, {});
+        }
+    }
+
+    bytes32_t process_updates_from_scratch(std::vector<Update> const &updates)
+    {
+        process_updates_pre_checks(updates);
+        auto list = [&]() -> std::list<Node> {
+            std::list<Node> ret;
+            std::ranges::transform(
+                updates, std::back_inserter(ret), [](auto const &update) {
+                    assert(!is_deletion(update));
+                    return Leaf{
+                        get_update_key(update), get_upsert_value(update)};
+                });
+            return ret;
+        }();
+        return process_transformation_list_dead_simple(
+            std::move(list), [&](auto &node, uint8_t key_size) {
+                finalize_and_emit(node, key_size);
+            });
+    }
+
+    // Process updates and queue up writes to disk. returns root hash
+    // of trie after updates are processed
+    bytes32_t process_updates(std::vector<Update> const &updates)
+    {
+        process_updates_pre_checks(updates);
         auto list = [&]() -> std::list<Node> {
             if (leaves_cursor_.empty()) {
                 std::list<Node> ret;
@@ -114,31 +159,10 @@ struct Trie
             return generate_transformation_list(updates);
         }();
 
-        auto const finalize_and_emit = [&](LeafOrBranch auto &node,
-                                           uint8_t key_size) {
-            using DecayedNode = std::decay_t<decltype(node)>;
-
-            // if the key is changing, delete the old one
-            if (node.key_size && node.key_size != key_size) {
-                serialize_nibbles(
-                    buf_, node.path_to_node.prefix(*node.key_size));
-                trie_writer_.del(buf_);
-            }
-
-            node.finalize(key_size);
-
-            auto const value = serialize_node(node);
-
-            serialize_nibbles(buf_, node.path_to_node.prefix(*node.key_size));
-            trie_writer_.put(buf_, value);
-            if constexpr (std::same_as<DecayedNode, Leaf>) {
-                serialize_nibbles(buf_, node.path_to_node);
-                leaves_writer_.put(buf_, {});
-            }
-        };
-
         return process_transformation_list_dead_simple(
-            std::move(list), finalize_and_emit);
+            std::move(list), [&](auto &node, uint8_t key_size) {
+                finalize_and_emit(node, key_size);
+            });
     }
 
     [[nodiscard]] std::list<Node>

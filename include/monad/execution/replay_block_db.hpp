@@ -24,8 +24,7 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 
 template <
     class TState, class TBlockDb, class TExecution,
-    template <typename> class TAllTxnBlockProcessor, class TTransactionTrie,
-    class TReceiptTrie, class TReceiptCollector>
+    template <typename> class TAllTxnBlockProcessor, class TReceiptCollector>
 class ReplayFromBlockDb
 {
 public:
@@ -158,18 +157,10 @@ public:
 
                 state.commit();
 
-                // TODO: How exactly do we calculate transaction root and
-                // receipt root?
-                TTransactionTrie transaction_trie(block.transactions);
-                TReceiptTrie receipt_trie(receipts);
-
-                auto const transactions_root = transaction_trie.root_hash();
-                auto const receipts_root = receipt_trie.root_hash();
-
                 if (!verify_root_hash(
                         block.header,
-                        transactions_root,
-                        receipts_root,
+                        NULL_ROOT, // txn root
+                        state.get_receipt_hash(),
                         state.get_state_hash(),
                         current_block_number)) {
                     return Result{

@@ -1,6 +1,7 @@
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
 
+#include <monad/db/block_db.hpp>
 #include <monad/db/in_memory_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/rocks_db.hpp>
@@ -11,6 +12,8 @@
 #include <monad/state/state_changes.hpp>
 #include <monad/state/value_state.hpp>
 #include <monad/test/make_db.hpp>
+
+#include <test_resource_data.h>
 
 #include <gtest/gtest.h>
 
@@ -45,6 +48,13 @@ struct StateTest : public testing::Test
 using DBTypes = ::testing::Types<
     db::InMemoryDB, db::RocksDB, db::InMemoryTrieDB, db::RocksTrieDB>;
 TYPED_TEST_SUITE(StateTest, DBTypes);
+
+template <typename TDB>
+struct StateTrieTest : public testing::Test
+{
+};
+using TrieDBTypes = ::testing::Types<db::InMemoryTrieDB, db::RocksTrieDB>;
+TYPED_TEST_SUITE(StateTrieTest, TrieDBTypes);
 
 struct fakeBlockCache
 {
@@ -562,4 +572,55 @@ TYPED_TEST(StateTest, commit_twice_apply_block_reward)
     ds.access_account(b);
     EXPECT_EQ(ds.get_balance(a), bytes32_t{220});
     EXPECT_EQ(ds.get_balance(b), bytes32_t{300});
+}
+
+TYPED_TEST(StateTrieTest, receipts_root_multiple_commits)
+{
+    auto db = test::make_db<TypeParam>();
+    AccountState accounts{db};
+    ValueState values{db};
+    CodeState code{db};
+    State t{accounts, values, code, block_cache, db};
+
+    {
+        Receipt r{
+            .status = 1, .gas_used = 20'000, .type = Transaction::Type::eip155};
+
+        std::vector<Receipt> receipts{{}, r};
+
+        t.add_receipts(std::move(receipts));
+        t.commit();
+    }
+
+    {
+        Block block{};
+        db::BlockDb block_db(test_resource::correct_block_data_dir);
+        auto const res = block_db.get(4'400'010u, block);
+        EXPECT_EQ(res, db::BlockDb::Status::SUCCESS);
+
+        Receipt::Log l{
+            .data = byte_string{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                0x00, 0x00, 0x00, 0x01, 0x41, 0xdd, 0x76, 0x00},
+            .topics =
+                {0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32,
+                 0x000000000000000000000000dc078f1bb7919f051989e5b47e0d252021a3bece_bytes32,
+                 0x000000000000000000000000757982856b7364128d60b85ce08545dcc73e92f5_bytes32},
+            .address = 0xf433089366899d83a9f26a773d59ec7ecf30355e_address,
+        };
+
+        Receipt r{};
+        r.status = 1;
+        r.gas_used = 0x8e92;
+        r.type = Transaction::Type::eip155;
+        r.add_log(l);
+
+        std::vector<Receipt> receipts{r};
+
+        t.add_receipts(std::move(receipts));
+        t.commit();
+
+        EXPECT_EQ(t.get_receipt_hash(), block.header.receipts_root);
+    }
 }

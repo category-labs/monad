@@ -96,6 +96,7 @@ struct InMemoryTrieDB : public Db
         for (auto const &[ch, c] : obj.code_changes) {
             code[ch] = c;
         }
+
         trie_db_process_changes(
             obj, accounts_trie, storage_trie, receipts_trie);
 

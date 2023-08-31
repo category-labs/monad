@@ -131,10 +131,6 @@ int main(int argc, char *argv[])
         db_t>;
     using execution_t = monad::execution::BoostFiberExecution;
 
-    // Fakes
-    using transaction_trie_t = monad::fakeEmptyTransactionTrie;
-    using receipt_trie_t = monad::fakeEmptyReceiptTrie;
-
     monad::log::logger_t::set_log_level("main_logger", main_log_level);
     monad::log::logger_t::set_log_level("block_logger", block_log_level);
     monad::log::logger_t::set_log_level("txn_logger", txn_log_level);
@@ -173,8 +169,6 @@ int main(int argc, char *argv[])
         block_db_t,
         execution_t,
         monad::execution::AllTxnBlockProcessor,
-        transaction_trie_t,
-        receipt_trie_t,
         receipt_collector_t>
         replay_eth;
 

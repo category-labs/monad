@@ -17,8 +17,6 @@ void trie_db_process_changes(
     state::StateChanges const &obj, TAccountTrie &account_trie,
     TStorageTrie &storage_trie, TReceiptTrie &receipt_trie)
 {
-    // TODO: Not sure if this is the best place to put this assertion
-    MONAD_DEBUG_ASSERT(receipt_trie.trie.leaves_cursor_.empty());
     std::unordered_map<address_t, bytes32_t> updated_storage_roots;
     std::vector<trie::Update> storage_trie_updates;
     std::vector<trie::Update> account_trie_updates;
@@ -127,7 +125,7 @@ void trie_db_process_changes(
         std::ranges::sort(
             receipt_trie_updates, std::less<>{}, trie::get_update_key);
 
-        receipt_trie.trie.process_updates(receipt_trie_updates);
+        receipt_trie.trie.process_updates_from_scratch(receipt_trie_updates);
     }
 }
 

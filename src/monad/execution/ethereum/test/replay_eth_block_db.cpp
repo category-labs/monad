@@ -134,20 +134,6 @@ public:
     }
 };
 
-class fakeEmptyTransactionTrie
-{
-public:
-    fakeEmptyTransactionTrie(std::vector<Transaction> const &) {}
-    bytes32_t root_hash() const { return bytes32_t{}; }
-};
-
-class fakeEmptyReceiptTrie
-{
-public:
-    fakeEmptyReceiptTrie(std::vector<Receipt> const &) {}
-    bytes32_t root_hash() const { return bytes32_t{}; }
-};
-
 using eth_start_fork = fork_traits::frontier;
 
 using state_t = execution::fake::State;
@@ -155,15 +141,15 @@ using receipt_collector_t = std::vector<std::vector<Receipt>>;
 
 using replay_eth_t = ReplayFromBlockDb<
     state_t, fake::BlockDb, BoostFiberExecution, fakeReceiptBP,
-    fakeEmptyTransactionTrie, fakeEmptyReceiptTrie, receipt_collector_t>;
+    receipt_collector_t>;
 
 using replay_eth_error_decompress_t = ReplayFromBlockDb<
     state_t, fakeErrorDecompressBlockDb, BoostFiberExecution, fakeReceiptBP,
-    fakeEmptyTransactionTrie, fakeEmptyReceiptTrie, receipt_collector_t>;
+    receipt_collector_t>;
 
 using replay_eth_error_decode_t = ReplayFromBlockDb<
     state_t, fakeErrorDecodeBlockDb, BoostFiberExecution, fakeReceiptBP,
-    fakeEmptyTransactionTrie, fakeEmptyReceiptTrie, receipt_collector_t>;
+    receipt_collector_t>;
 
 TEST(ReplayFromBlockDb_Eth, invalid_end_block_number)
 {

@@ -124,20 +124,6 @@ public:
     }
 };
 
-class fakeEmptyTransactionTrie
-{
-public:
-    fakeEmptyTransactionTrie(std::vector<Transaction> const &) {}
-    bytes32_t root_hash() const { return bytes32_t{}; }
-};
-
-class fakeEmptyReceiptTrie
-{
-public:
-    fakeEmptyReceiptTrie(std::vector<Receipt> const &) {}
-    bytes32_t root_hash() const { return bytes32_t{}; }
-};
-
 template <class TState, class TTxnProcessor, class TEvm, class TExecution>
 struct fakeEmptyFiberData
 {
@@ -155,15 +141,15 @@ using receipt_collector_t = std::vector<std::vector<Receipt>>;
 
 using replay_t = ReplayFromBlockDb<
     state_t, fakeBlockDb, BoostFiberExecution, fakeEmptyBP,
-    fakeEmptyTransactionTrie, fakeEmptyReceiptTrie, receipt_collector_t>;
+    receipt_collector_t>;
 
 using replay_error_decompress_t = ReplayFromBlockDb<
     state_t, fakeErrorDecompressBlockDb, BoostFiberExecution, fakeEmptyBP,
-    fakeEmptyTransactionTrie, fakeEmptyReceiptTrie, receipt_collector_t>;
+    receipt_collector_t>;
 
 using replay_error_decode_t = ReplayFromBlockDb<
     state_t, fakeErrorDecodeBlockDb, BoostFiberExecution, fakeEmptyBP,
-    fakeEmptyTransactionTrie, fakeEmptyReceiptTrie, receipt_collector_t>;
+    receipt_collector_t>;
 
 TEST(ReplayFromBlockDb, invalid_end_block_number)
 {

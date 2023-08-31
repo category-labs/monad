@@ -17,6 +17,8 @@
 
 #include <test_resource_data.h>
 
+#include <evmc/evmc.h>
+
 using namespace monad;
 using namespace monad::db;
 
@@ -202,6 +204,78 @@ TYPED_TEST(TrieDBTest, single_receipts_root)
     db.commit(state::StateChanges{.receipts = receipt});
 
     EXPECT_EQ(db.receipts_root(), block.header.receipts_root);
+}
+
+TYPED_TEST(TrieDBTest, mutiple_receipts_root)
+{
+    Receipt::Log l;
+    l.address = 0x8d12a197cb00d4747a1fe03395095ce2a5cc6819_address;
+    l.topics = {
+        0xf341246adaac6f497bc2a656f546ab9e182111d630394f0c57c710a59a2cb567_bytes32};
+    l.data = *evmc::from_hex(
+        "0x00000000000000000000000000000000000000000000000000000000000000000000"
+        "0000000000000000000043b2126e7a22e0c288dfb469e3de4d2c097f3ca00000000000"
+        "00000000000000000000000000000000000001195387bce41fd4990000000000000000"
+        "000000000000000000000000000000000000000000000000");
+    std::vector<Receipt> receipts{
+        {{}, 1, 21'000, Transaction::Type::eip155, {}},
+        {{}, 1, 42'000, Transaction::Type::eip155, {}},
+        {{}, 1, 65'092, Transaction::Type::eip155, {}},
+    };
+    receipts[2].add_log(l);
+
+    auto db = test::make_db<TypeParam>();
+
+    db.commit(state::StateChanges{.receipts = receipts});
+
+    EXPECT_EQ(
+        db.receipts_root(),
+        0x7ea023138ee7d80db04eeec9cf436dc35806b00cc5fe8e5f611fb7cf1b35b177_bytes32);
+}
+
+TYPED_TEST(TrieDBTest, receipts_root_multiple_commits)
+{
+    auto db = test::make_db<TypeParam>();
+
+    {
+        Receipt r{
+            .status = 1, .gas_used = 20'000, .type = Transaction::Type::eip155};
+
+        std::vector<Receipt> receipts{{}, r};
+
+        db.commit(state::StateChanges{.receipts = receipts});
+    }
+
+    {
+        Block block{};
+        BlockDb block_db(test_resource::correct_block_data_dir);
+        auto const res = block_db.get(4'400'010u, block);
+        EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+
+        Receipt::Log l{
+            .data = byte_string{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                0x00, 0x00, 0x00, 0x01, 0x41, 0xdd, 0x76, 0x00},
+            .topics =
+                {0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32,
+                 0x000000000000000000000000dc078f1bb7919f051989e5b47e0d252021a3bece_bytes32,
+                 0x000000000000000000000000757982856b7364128d60b85ce08545dcc73e92f5_bytes32},
+            .address = 0xf433089366899d83a9f26a773d59ec7ecf30355e_address,
+        };
+
+        Receipt r{};
+        r.status = 1;
+        r.gas_used = 0x8e92;
+        r.type = Transaction::Type::eip155;
+        r.add_log(l);
+
+        std::vector<Receipt> receipts{r};
+
+        db.commit(state::StateChanges{.receipts = receipts});
+
+        EXPECT_EQ(db.receipts_root(), block.header.receipts_root);
+    }
 }
 
 TYPED_TEST(TrieDBTest, ModifyStorageOfAccount)

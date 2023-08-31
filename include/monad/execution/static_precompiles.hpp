@@ -11,6 +11,8 @@
 
 #include <boost/mp11/mpl_list.hpp>
 
+#include <cstring>
+
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
 template <
@@ -29,18 +31,19 @@ struct StaticPrecompiles
     static constexpr auto precompile_execs =
         construct_precompile_array(TPrecompiles{});
 
+    static constexpr auto null{0x00_address};
+
     [[nodiscard]] static tl::optional<exec_func_t>
     static_precompile_exec_func(address_t const &addr) noexcept
     {
         auto const static_precompile_idx =
             [&]() -> tl::optional<unsigned const> {
             const auto last_address_i = sizeof(address_t) - 1u;
-            for (auto i = 0u; i < last_address_i; ++i) {
-                const auto &b = addr.bytes[i];
-                if (b) {
-                    return tl::nullopt;
-                }
+
+            if (std::memcmp(addr.bytes, &null, last_address_i)) {
+                return tl::nullopt;
             }
+
             const auto &b = addr.bytes[last_address_i];
             if (!b || b > boost::mp11::mp_size<TPrecompiles>()) {
                 return tl::nullopt;

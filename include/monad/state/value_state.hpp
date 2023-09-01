@@ -82,7 +82,9 @@ struct ValueState
 
         for (auto const &[addr, acct_storage] : merged_.storage_) {
             for (auto const &[key, value] : acct_storage) {
-                storage_changes[addr].emplace_back(key, value.updated);
+                if (value.orig != value.updated) {
+                    storage_changes[addr].emplace_back(key, value.updated);
+                }
             }
         }
         return storage_changes;

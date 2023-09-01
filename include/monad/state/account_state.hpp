@@ -135,7 +135,9 @@ struct AccountState
 
         StateChanges::AccountChanges account_changes;
         for (auto const &[addr, diff] : merged_) {
-            account_changes.emplace_back(addr, diff.updated);
+            if (diff.orig != diff.updated) {
+                account_changes.emplace_back(addr, diff.updated);
+            }
         }
         return account_changes;
     }

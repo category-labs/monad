@@ -1,6 +1,7 @@
 #include <ethereum_test.hpp>
 #include <monad/db/rocks_trie_db.hpp>
 #include <monad/logging/monad_log.hpp>
+#include <monad/test/dump_state_from_db.hpp>
 #include <test_resource_data.h>
 
 #include <gtest/gtest.h>
@@ -315,6 +316,10 @@ void EthereumTests::run_state_test(
             state.apply_block_reward(block_header.beneficiary, 0);
             state.commit();
 
+            MONAD_LOG_INFO(
+                logger,
+                "post_state: {}",
+                monad::test::dump_state_from_db(state.db_).dump());
             MONAD_LOG_INFO(
                 logger,
                 "finished transaction index: {} revision: {}, state_root: {}",

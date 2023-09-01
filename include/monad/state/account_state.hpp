@@ -135,8 +135,6 @@ struct AccountState
 
         StateChanges::AccountChanges account_changes;
         for (auto const &[addr, diff] : merged_) {
-            MONAD_DEBUG_ASSERT(
-                diff.orig.has_value() || diff.updated.has_value());
             account_changes.emplace_back(addr, diff.updated);
         }
         return account_changes;
@@ -194,6 +192,7 @@ struct AccountState<TAccountDB>::ChangeSet : public AccountState<TAccountDB>
             changed_.emplace(address, diff_t{original, original});
             return original;
         }
+        changed_.emplace(address, diff_t{std::nullopt, std::nullopt});
         return std::nullopt;
     }
 

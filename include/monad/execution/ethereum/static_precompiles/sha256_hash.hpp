@@ -1,8 +1,13 @@
 #pragma once
 
-#include <monad/core/concepts.hpp>
 #include <monad/execution/config.hpp>
+
+#include <monad/core/likely.h>
+
+#include <silkpre/precompile.h>
 #include <silkpre/sha256.h>
+
+#include <utility>
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
@@ -11,12 +16,12 @@ namespace static_precompiles
     template <class TFork>
     struct Sha256Hash
     {
-        using gas_cost = typename TFork::sha256_gas_t;
         static evmc::Result execute(evmc_message const &message) noexcept
         {
-            auto const cost = gas_cost::compute(message.input_size);
+            auto const cost = silkpre_sha256_gas(
+                message.input_data, message.input_size, TFork::rev);
 
-            if (message.gas < cost) {
+            if (MONAD_UNLIKELY(std::cmp_less(message.gas, cost))) {
                 return evmc::Result{evmc_result{
                     .status_code = evmc_status_code::EVMC_OUT_OF_GAS}};
             }
@@ -30,7 +35,7 @@ namespace static_precompiles
 
             return evmc::Result{
                 evmc_status_code::EVMC_SUCCESS,
-                /* gas_left= */ message.gas - cost,
+                /* gas_left= */ message.gas - static_cast<int64_t>(cost),
                 /* gas_refund= */ 0,
                 output.bytes,
                 sizeof(bytes32_t)};

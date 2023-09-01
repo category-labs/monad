@@ -1,7 +1,10 @@
 #pragma once
 
 #include <monad/execution/config.hpp>
+
 #include <silkpre/precompile.h>
+
+#include <utility>
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
@@ -12,17 +15,10 @@ namespace static_precompiles
     {
         static evmc::Result execute(evmc_message const &message) noexcept
         {
-            auto const unsigned_cost = silkpre_blake2_f_gas(
+            auto const cost = silkpre_blake2_f_gas(
                 message.input_data, message.input_size, TFork::rev);
 
-            if (unsigned_cost > std::numeric_limits<int64_t>::max()) {
-                return evmc::Result{evmc_result{
-                    .status_code = evmc_status_code::EVMC_PRECOMPILE_FAILURE}};
-            }
-
-            auto const signed_cost = static_cast<int64_t>(unsigned_cost);
-
-            if (message.gas < signed_cost) {
+            if (MONAD_UNLIKELY(std::cmp_less(message.gas, cost))) {
                 return evmc::Result{evmc_result{
                     .status_code = evmc_status_code::EVMC_OUT_OF_GAS}};
             }
@@ -30,14 +26,14 @@ namespace static_precompiles
             auto const result =
                 silkpre_blake2_f_run(message.input_data, message.input_size);
 
-            if (!result.data) {
+            if (MONAD_UNLIKELY(!result.data)) {
                 return evmc::Result{evmc_result{
                     .status_code = evmc_status_code::EVMC_PRECOMPILE_FAILURE}};
             }
 
             return evmc::Result{evmc_result{
                 .status_code = evmc_status_code::EVMC_SUCCESS,
-                .gas_left = message.gas - signed_cost,
+                .gas_left = message.gas - static_cast<int64_t>(cost),
                 .output_data = result.data,
                 .output_size = result.size,
                 // In the success case, `silkpre_blake2_f_run` allocates a

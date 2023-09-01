@@ -53,35 +53,6 @@ namespace fork_traits
 
     namespace contracts = execution::static_precompiles;
 
-    /**
-     * Gas cost for many precompiles is computed as Base + PerWord * N
-     * where N is the number of 32-bit words used by the input
-     * @tparam Base
-     * @tparam PerWord
-     * NOTE: Base and PerWord are signed integers to be more compatible with
-     * evmc types
-     */
-    template <int64_t BaseCost, int64_t PerWordCost>
-    struct gas_required
-    {
-        static_assert(BaseCost >= 0);
-        static_assert(PerWordCost >= 0);
-        using integer_type = int64_t;
-        using base = std::integral_constant<int64_t, BaseCost>;
-        using per_word = std::integral_constant<int64_t, PerWordCost>;
-
-        /**
-         * Implements the generic form of YP Appendix E Eq 221
-         * @param size of input message in bytes
-         * @return the total gas cost
-         */
-        static constexpr int64_t compute(size_t size)
-        {
-            constexpr auto word_size = sizeof(monad::bytes32_t);
-            return (size + word_size - 1) / word_size * per_word() + base();
-        }
-    };
-
     template <class TState>
     static constexpr void apply_mining_award(
         TState &s, Block const &b, uint256_t const &reward,
@@ -108,15 +79,6 @@ namespace fork_traits
             5'000'000'000'000'000'000; // YP Eqn. 176
         static constexpr uint256_t additional_ommer_reward =
             block_reward >> 5; // YP Eqn. 172, block reward / 32
-
-        // YP Appendix E Eqn. 209
-        using elliptic_curve_recover_gas_t = gas_required<3000, 0>;
-        // YP Appendix E Eqn. 221
-        using sha256_gas_t = gas_required<60, 12>;
-        // YP Appendix E Eqn. 224
-        using ripemd160_gas_t = gas_required<600, 120>;
-        // YP Appendix E Eqn. 230
-        using identity_gas_t = gas_required<15, 3>;
 
         using static_precompiles_t = type_list_t<
             frontier, contracts::EllipticCurveRecover, contracts::Sha256Hash,
@@ -374,15 +336,6 @@ namespace fork_traits
         static constexpr uint256_t additional_ommer_reward =
             block_reward >> 5; // YP Eqn. 172, block reward / 32
 
-        // YP Appendix E Eq 279
-        using bn_add_gas_t = gas_required<500, 0>;
-        // YP Appendix E Eq 285
-        using bn_mul_gas_t = gas_required<40'000, 0>;
-
-        // YP Appendix E Eq 270
-        static constexpr int64_t bn_pairing_base_gas = 100'000;
-        static constexpr int64_t bn_pairing_per_point_gas = 80'000;
-
         template <typename TList>
         using switch_fork_t = boost::mp11::mp_replace_front<TList, byzantium>;
 
@@ -428,15 +381,6 @@ namespace fork_traits
 
         static constexpr evmc_revision rev = EVMC_ISTANBUL;
         static constexpr auto last_block_number = 12'243'999u;
-
-        // YP Appendix E Eq 279
-        using bn_add_gas_t = gas_required<150, 0>;
-        // YP Appendix E Eq 285
-        using bn_mul_gas_t = gas_required<6'000, 0>;
-
-        // YP Appendix E Eq 270
-        static constexpr int64_t bn_pairing_base_gas = 45'000;
-        static constexpr int64_t bn_pairing_per_point_gas = 34'000;
 
         template <typename TList>
         using switch_fork_t = boost::mp11::mp_replace_front<TList, istanbul>;

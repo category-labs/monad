@@ -1,6 +1,6 @@
 #include <monad/execution/config.hpp>
 #include <monad/execution/evmc_host.hpp>
-#include <monad/execution/static_precompiles.hpp>
+#include <monad/execution/precompiles.hpp>
 
 #include <monad/execution/test/fakes.hpp>
 

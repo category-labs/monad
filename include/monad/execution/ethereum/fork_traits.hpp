@@ -10,15 +10,15 @@
 #include <monad/core/transaction.hpp>
 
 #include <monad/execution/ethereum/dao.hpp>
-#include <monad/execution/ethereum/static_precompiles/blake2f.hpp>
-#include <monad/execution/ethereum/static_precompiles/bn_add.hpp>
-#include <monad/execution/ethereum/static_precompiles/bn_multiply.hpp>
-#include <monad/execution/ethereum/static_precompiles/bn_pairing.hpp>
-#include <monad/execution/ethereum/static_precompiles/elliptic_curve_recover.hpp>
-#include <monad/execution/ethereum/static_precompiles/identity.hpp>
-#include <monad/execution/ethereum/static_precompiles/modular_exponentiation.hpp>
-#include <monad/execution/ethereum/static_precompiles/ripemd160_hash.hpp>
-#include <monad/execution/ethereum/static_precompiles/sha256_hash.hpp>
+#include <monad/execution/precompiles/blake2f.hpp>
+#include <monad/execution/precompiles/bn_add.hpp>
+#include <monad/execution/precompiles/bn_multiply.hpp>
+#include <monad/execution/precompiles/bn_pairing.hpp>
+#include <monad/execution/precompiles/elliptic_curve_recover.hpp>
+#include <monad/execution/precompiles/identity.hpp>
+#include <monad/execution/precompiles/modular_exponentiation.hpp>
+#include <monad/execution/precompiles/ripemd160_hash.hpp>
+#include <monad/execution/precompiles/sha256_hash.hpp>
 
 #include <monad/db/block_db.hpp>
 

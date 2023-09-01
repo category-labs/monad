@@ -7,7 +7,7 @@ add_unit_test(
     evm.cpp
     evmc_host.cpp
     evmone_baseline_interpreter.cpp
-    static_precompiles.cpp
+    precompiles.cpp
     replay_block_db.cpp
     transaction_processor.cpp
     transaction_processor_data_succeed.cpp

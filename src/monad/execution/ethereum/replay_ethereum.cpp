@@ -15,8 +15,8 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/evmone_baseline_interpreter.hpp>
 
+#include <monad/execution/precompiles.hpp>
 #include <monad/execution/replay_block_db.hpp>
-#include <monad/execution/static_precompiles.hpp>
 #include <monad/execution/test/fakes.hpp>
 #include <monad/execution/transaction_processor.hpp>
 #include <monad/execution/transaction_processor_data.hpp>

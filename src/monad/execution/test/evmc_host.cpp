@@ -1,6 +1,6 @@
 #include <monad/execution/config.hpp>
 #include <monad/execution/evmc_host.hpp>
-#include <monad/execution/static_precompiles.hpp>
+#include <monad/execution/precompiles.hpp>
 
 #include <monad/execution/test/fakes.hpp>
 
@@ -70,9 +70,9 @@ TEST(EvmcHost, get_tx_context)
     Transaction const t{.sc = {.chain_id = 1}, .from = from};
     fake::State::ChangeSet s{};
 
-    static const uint256_t gas_cost = 37'000'000'000;
-    static const uint256_t chain_id{1};
-    static const uint256_t base_fee_per_gas{37'000'000'000};
+    static uint256_t const gas_cost = 37'000'000'000;
+    static uint256_t const chain_id{1};
+    static uint256_t const base_fee_per_gas{37'000'000'000};
 
     evmc_host_t host{b, t, s};
 
@@ -106,7 +106,7 @@ TEST(EvmcHost, emit_log)
     static constexpr auto topic1{
         0x0000000000000000000000000000000000000000000000000000000000000007_bytes32};
     static constexpr bytes32_t topics[] = {topic0, topic1};
-    static const byte_string data = {0x00, 0x01, 0x02, 0x03, 0x04};
+    static byte_string const data = {0x00, 0x01, 0x02, 0x03, 0x04};
     BlockHeader const b{};
     Transaction const t{};
     fake::State::ChangeSet s{};

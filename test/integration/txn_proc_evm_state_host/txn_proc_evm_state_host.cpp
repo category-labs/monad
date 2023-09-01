@@ -8,7 +8,7 @@
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/evmone_baseline_interpreter.hpp>
-#include <monad/execution/static_precompiles.hpp>
+#include <monad/execution/precompiles.hpp>
 #include <monad/execution/transaction_processor.hpp>
 
 #include <monad/state/account_state.hpp>

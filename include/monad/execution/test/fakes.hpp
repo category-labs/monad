@@ -12,7 +12,7 @@
 #include <monad/core/withdrawal.hpp>
 
 #include <monad/execution/config.hpp>
-#include <monad/execution/static_precompiles.hpp>
+#include <monad/execution/precompiles.hpp>
 
 #include <monad/state/state_changes.hpp>
 

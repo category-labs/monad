@@ -16,9 +16,7 @@ using traits_t = fake::traits::alpha<fake::State::ChangeSet>;
 template <concepts::fork_traits<fake::State::ChangeSet> TTraits>
 using traits_templated_evmc_host_t = EvmcHost<
     fake::State::ChangeSet, TTraits,
-    fake::Evm<
-        fake::State::ChangeSet, TTraits,
-        fake::static_precompiles::OneHundredGas, fake::Interpreter>>;
+    fake::Evm<fake::State::ChangeSet, TTraits, fake::Interpreter>>;
 
 using evmc_host_t = traits_templated_evmc_host_t<traits_t>;
 

@@ -17,9 +17,7 @@ using traits_t = fake::traits::alpha<fake::State::ChangeSet>;
 
 using evm_host_t = fake::EvmHost<
     fake::State::ChangeSet, traits_t,
-    fake::Evm<
-        fake::State::ChangeSet, traits_t,
-        fake::static_precompiles::OneHundredGas, fake::Interpreter>>;
+    fake::Evm<fake::State::ChangeSet, traits_t, fake::Interpreter>>;
 
 TEST(Evm1BaselineInterpreter, execute_empty)
 {

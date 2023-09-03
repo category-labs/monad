@@ -9,8 +9,6 @@
 
 #include <monad/execution/test/fakes.hpp>
 
-using empty_list_t = boost::mp11::mp_list<>;
-
 using namespace monad;
 using namespace monad::execution;
 
@@ -53,8 +51,7 @@ public:
 };
 
 template <
-    class TState, concepts::fork_traits<TState> TTraits,
-    class TStaticPrecompiles, class TInterpreter>
+    class TState, concepts::fork_traits<TState> TTraits, class TInterpreter>
 struct fakeEmptyEvm
 {
 };
@@ -178,11 +175,9 @@ TEST(ReplayFromBlockDb_Eth, invalid_end_block_number)
         eth_start_fork,
         fakeReceiptTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        fakeInterpreter,
-        empty_list_t>(state, block_db, receipt_collector, 100u, 100u);
+        fakeInterpreter>(state, block_db, receipt_collector, 100u, 100u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::INVALID_END_BLOCK_NUMBER);
     EXPECT_EQ(result.block_number, 100u);
@@ -201,11 +196,9 @@ TEST(ReplayFromBlockDb_Eth, invalid_end_block_number_zero)
         eth_start_fork,
         fakeReceiptTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        fakeInterpreter,
-        empty_list_t>(state, block_db, receipt_collector, 0u, 0u);
+        fakeInterpreter>(state, block_db, receipt_collector, 0u, 0u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::INVALID_END_BLOCK_NUMBER);
     EXPECT_EQ(result.block_number, 0u);
@@ -224,11 +217,9 @@ TEST(ReplayFromBlockDb_Eth, start_block_number_outside_db)
         eth_start_fork,
         fakeReceiptTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        fakeInterpreter,
-        empty_list_t>(state, block_db, receipt_collector, 1u);
+        fakeInterpreter>(state, block_db, receipt_collector, 1u);
 
     EXPECT_EQ(
         result.status, replay_eth_t::Status::START_BLOCK_NUMBER_OUTSIDE_DB);
@@ -246,11 +237,9 @@ TEST(ReplayFromBlockDb_Eth, decompress_block_error)
         eth_start_fork,
         fakeReceiptTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        fakeInterpreter,
-        empty_list_t>(state, block_db, receipt_collector, 1u);
+        fakeInterpreter>(state, block_db, receipt_collector, 1u);
 
     EXPECT_EQ(
         result.status,
@@ -269,11 +258,9 @@ TEST(ReplayFromBlockDb_Eth, decode_block_error)
         eth_start_fork,
         fakeReceiptTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        fakeInterpreter,
-        empty_list_t>(state, block_db, receipt_collector, 1u);
+        fakeInterpreter>(state, block_db, receipt_collector, 1u);
 
     EXPECT_EQ(
         result.status, replay_eth_error_decode_t::Status::DECODE_BLOCK_ERROR);
@@ -293,11 +280,9 @@ TEST(ReplayFromBlockDb_Eth, one_block)
         eth_start_fork,
         fakeReceiptTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        fakeInterpreter,
-        empty_list_t>(state, block_db, receipt_collector, 100u, 101u);
+        fakeInterpreter>(state, block_db, receipt_collector, 100u, 101u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::SUCCESS);
     EXPECT_EQ(result.block_number, 100u);
@@ -317,11 +302,9 @@ TEST(ReplayFromBlockDb_Eth, frontier_run_from_zero)
         eth_start_fork,
         fakeReceiptTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        fakeInterpreter,
-        empty_list_t>(state, block_db, receipt_collector, 0u);
+        fakeInterpreter>(state, block_db, receipt_collector, 0u);
 
     EXPECT_EQ(result.status, replay_eth_t::Status::SUCCESS_END_OF_DB);
     EXPECT_EQ(result.block_number, 1'234u);
@@ -345,11 +328,9 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_homestead)
         eth_start_fork,
         fakeReceiptTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        fakeInterpreter,
-        empty_list_t>(
+        fakeInterpreter>(
         state,
         block_db,
         receipt_collector,
@@ -381,11 +362,9 @@ TEST(ReplayFromBlockDb_Eth, berlin_to_london)
         eth_start_fork,
         fakeReceiptTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        fakeInterpreter,
-        empty_list_t>(
+        fakeInterpreter>(
         state,
         block_db,
         receipt_collector,
@@ -422,11 +401,9 @@ TEST(ReplayFromBlockDb_Eth, frontier_to_spurious_dragon)
         eth_start_fork,
         fakeReceiptTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        fakeInterpreter,
-        empty_list_t>(
+        fakeInterpreter>(
         state,
         block_db,
         receipt_collector,
@@ -476,11 +453,9 @@ TEST(ReplayFromBlockDb_Eth, byzantium_to_constantinople_and_petersburg)
         eth_start_fork,
         fakeReceiptTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeReceiptFiberData,
-        fakeInterpreter,
-        empty_list_t>(
+        fakeInterpreter>(
         state,
         block_db,
         receipt_collector,

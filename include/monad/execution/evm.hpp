@@ -3,6 +3,7 @@
 #include <monad/core/concepts.hpp>
 #include <monad/execution/config.hpp>
 #include <monad/execution/create_contract_address.hpp>
+#include <monad/execution/precompiles.hpp>
 
 #include <ethash/keccak.hpp>
 
@@ -13,8 +14,7 @@
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
 template <
-    class TState, concepts::fork_traits<TState> TTraits,
-    class TStaticPrecompiles, class TInterpreter>
+    class TState, concepts::fork_traits<TState> TTraits, class TInterpreter>
 struct Evm
 {
     using result_t = tl::expected<evmc_message, evmc_result>;
@@ -78,17 +78,14 @@ struct Evm
             result.status_code != EVMC_SUCCESS) {
             return evmc::Result{result};
         }
-        evmc::Result result =
-            TStaticPrecompiles::static_precompile_exec_func(m.code_address)
-                .transform([&](auto static_precompile_execute) {
-                    return static_precompile_execute(m);
-                })
-                .or_else([&] {
-                    auto const code =
-                        state.get_code(state.get_code_hash(m.code_address));
-                    return TInterpreter::execute(host, m, code);
-                })
-                .value();
+        evmc::Result result = check_call_precompile<TTraits>(m)
+                                  .or_else([&] {
+                                      auto const code = state.get_code(
+                                          state.get_code_hash(m.code_address));
+                                      return std::optional<evmc::Result>(
+                                          TInterpreter::execute(host, m, code));
+                                  })
+                                  .value();
 
         if (result.status_code != EVMC_SUCCESS) {
             state.revert();

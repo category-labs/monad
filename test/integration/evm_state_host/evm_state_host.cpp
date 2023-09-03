@@ -42,13 +42,8 @@ static constexpr auto code_hash =
 using account_store_db_t = db::InMemoryDB;
 
 template <class TState, concepts::fork_traits<TState> TTraits>
-using traits_templated_static_precompiles_t = execution::StaticPrecompiles<
-    TState, TTraits, typename TTraits::static_precompiles_t>;
-
-template <class TState, concepts::fork_traits<TState> TTraits>
 using evm_t = execution::Evm<
-    TState, TTraits, traits_templated_static_precompiles_t<TState, TTraits>,
-    execution::EVMOneBaselineInterpreter<TState, TTraits>>;
+    TState, TTraits, execution::EVMOneBaselineInterpreter<TState, TTraits>>;
 
 template <class TState, concepts::fork_traits<TState> TTraits>
 using evm_host_t = execution::EvmcHost<TState, TTraits, evm_t<TState, TTraits>>;

@@ -12,7 +12,6 @@
 #include <monad/core/withdrawal.hpp>
 
 #include <monad/execution/config.hpp>
-#include <monad/execution/precompiles.hpp>
 
 #include <monad/state/state_changes.hpp>
 
@@ -340,8 +339,7 @@ namespace fake
     };
 
     template <
-        class TState, concepts::fork_traits<TState> TTraits,
-        class TStaticPrecompiles, class TInterpreter>
+        class TState, concepts::fork_traits<TState> TTraits, class TInterpreter>
     struct Evm
     {
         using new_address_t = tl::expected<address_t, evmc_result>;
@@ -374,13 +372,6 @@ namespace fake
         }
     };
 
-    namespace static_precompiles
-    {
-        template <typename>
-        struct Echo;
-        struct OneHundredGas;
-    }
-
     struct Interpreter
     {
         static inline evmc::Result _result{};
@@ -404,12 +395,10 @@ namespace fake
             static inline uint64_t _sd_refund{};
             static inline uint64_t last_block_number{
                 std::numeric_limits<uint64_t>::max()};
-            using static_precompiles_t =
-                boost::mp11::mp_list<static_precompiles::Echo<alpha>>;
+            static constexpr uint64_t n_precompiles = 4;
             static inline uint64_t _intrinsic_gas{21'000u};
             static inline uint64_t _max_refund_quotient{2u};
             static inline uint64_t _create_address{};
-            static constexpr uint64_t _echo_gas_cost{10};
             static constexpr void apply_block_award(TState &, Block const &) {}
             static constexpr void apply_txn_award(
                 TState &s, Transaction const &, uint64_t gas_cost,
@@ -423,7 +412,6 @@ namespace fake
             }
             static auto starting_nonce() { return 1u; }
             static auto max_refund_quotient() { return _max_refund_quotient; }
-            static consteval uint64_t echo_gas_cost() { return _echo_gas_cost; }
             static auto get_selfdestruct_refund(TState const &)
             {
                 return _sd_refund;
@@ -477,56 +465,6 @@ namespace fake
             static constexpr evmc_revision rev = EVMC_HOMESTEAD;
             static inline uint64_t last_block_number{
                 std::numeric_limits<uint64_t>::max()};
-            using static_precompiles_t = boost::mp11::mp_list<
-                static_precompiles::Echo<beta>,
-                static_precompiles::OneHundredGas>;
-
-            static constexpr uint64_t _echo_gas_cost{15};
-            static consteval uint64_t echo_gas_cost() { return _echo_gas_cost; }
-        };
-    }
-
-    namespace static_precompiles
-    {
-        template <typename T>
-        struct Echo
-        {
-            static evmc::Result execute(evmc_message const &m) noexcept
-            {
-                int64_t const gas =
-                    (int64_t const)(m.input_size * T::echo_gas_cost());
-                if (m.gas < gas) {
-                    return evmc::Result{
-                        evmc_result{.status_code = EVMC_OUT_OF_GAS}};
-                }
-                unsigned char *output_data =
-                    (unsigned char *)std::malloc(m.input_size);
-                std::memcpy(output_data, m.input_data, m.input_size);
-                return evmc::Result{evmc_result{
-                    .status_code = EVMC_SUCCESS,
-                    .gas_left = m.gas - gas,
-                    .output_data = output_data,
-                    .output_size = m.input_size,
-                    .release = [](evmc_result const *result) {
-                        std::free((unsigned char *)result->output_data);
-                    }}};
-            }
-        };
-
-        struct OneHundredGas
-        {
-            static evmc::Result execute(evmc_message const &m) noexcept
-            {
-                int64_t const gas = 100;
-                if (m.gas < gas) {
-                    return evmc::Result{
-                        evmc_result{.status_code = EVMC_OUT_OF_GAS}};
-                }
-                return evmc::Result{evmc_result{
-                    .status_code = EVMC_SUCCESS,
-                    .gas_left = m.gas - gas,
-                    .output_size = 0u}};
-            }
         };
     }
 }

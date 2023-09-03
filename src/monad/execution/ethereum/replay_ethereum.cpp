@@ -182,13 +182,11 @@ int main(int argc, char *argv[])
         monad::eth_start_fork,
         monad::execution::TransactionProcessor,
         monad::execution::Evm,
-        monad::execution::StaticPrecompiles,
         monad::execution::EvmcHost,
         monad::execution::TransactionProcessorFiberData,
         monad::execution::EVMOneBaselineInterpreter<
             state_t::ChangeSet,
-            monad::eth_start_fork>,
-        monad::eth_start_fork::static_precompiles_t>(
+            monad::eth_start_fork>>(
         state,
         block_db,
         receipt_collector,

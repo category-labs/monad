@@ -2,20 +2,17 @@
 
 #include <ethash/keccak.hpp>
 #include <evmc/hex.hpp>
-#include <intx/intx.hpp>
 #include <iomanip>
 #include <monad/execution/ethereum/fork_traits.hpp>
+#include <monad/execution/precompiles.hpp>
 #include <monad/execution/test/fakes.hpp>
-
-using empty_list_t = boost::mp11::mp_list<>;
 
 #undef DISABLE_LOGGING
 #include <monad/logging/monad_log.hpp>
 
-using state_t = monad::execution::fake::State;
+#include <monad/core/address.hpp>
+
 using namespace evmc::literals;
-using namespace monad::fork_traits;
-using namespace boost::mp11;
 
 // the following elliptic curve input data was directly copied from
 // https://github.com/ethereum/go-ethereum/tree/master/core/vm/testdata/precompiles
@@ -64,24 +61,15 @@ static auto const SHA256_LOL_HASH =
 static auto const RIPEMD160_NULL_HASH =
     evmc::from_hex(
         std::string_view{
-            "9c1185a5c5e9fc54612808977ee8f548b2258d31000000000000000000000000"})
+            "0000000000000000000000009c1185a5c5e9fc54612808977ee8f548b2258d31"})
         .value();
 
 // hash of the string "lol" padded to 32 bytes
 static auto const RIPEMD160_LOL_HASH =
     evmc::from_hex(
         std::string_view{
-            "14d61d472ae2e974453fb7a0ef239510f36bee24000000000000000000000000"})
+            "00000000000000000000000014d61d472ae2e974453fb7a0ef239510f36bee24"})
         .value();
-
-using ecrecover_frontier_through_homestead =
-    mp_at_c<homestead::static_precompiles_t, 0>;
-using sha256_frontier_through_homestead =
-    mp_at_c<homestead::static_precompiles_t, 1>;
-using ripemd160_frontier_through_homestead =
-    mp_at_c<homestead::static_precompiles_t, 2>;
-using identity_frontier_through_homestead =
-    mp_at_c<homestead::static_precompiles_t, 3>;
 
 struct basic_test_case
 {
@@ -90,12 +78,13 @@ struct basic_test_case
     evmc_result expected_output;
 };
 
-static const basic_test_case ECRECOVER_TEST_CASES[] = {
+static basic_test_case const ECRECOVER_TEST_CASES[] = {
     {.name = "ecrecover_unrecoverable_key_enough_gas",
      .input =
          {.gas = 6'000,
           .input_data = ECRECOVER_UNRECOVERABLE_KEY_INPUT.data(),
-          .input_size = ECRECOVER_UNRECOVERABLE_KEY_INPUT.size()},
+          .input_size = ECRECOVER_UNRECOVERABLE_KEY_INPUT.size(),
+          .code_address = 0x01_address},
      .expected_output =
          {.status_code = evmc_status_code::EVMC_SUCCESS,
           .gas_left = 3'000,
@@ -104,13 +93,15 @@ static const basic_test_case ECRECOVER_TEST_CASES[] = {
      .input =
          {.gas = 2'999,
           .input_data = ECRECOVER_UNRECOVERABLE_KEY_INPUT.data(),
-          .input_size = ECRECOVER_UNRECOVERABLE_KEY_INPUT.size()},
+          .input_size = ECRECOVER_UNRECOVERABLE_KEY_INPUT.size(),
+          .code_address = 0x01_address},
      .expected_output = {.status_code = evmc_status_code::EVMC_OUT_OF_GAS}},
     {.name = "ecrecover_valid_key_enough_gas",
      .input =
          {.gas = 6'000,
           .input_data = ECRECOVER_VALID_KEY_INPUT.data(),
-          .input_size = ECRECOVER_VALID_KEY_INPUT.size()},
+          .input_size = ECRECOVER_VALID_KEY_INPUT.size(),
+          .code_address = 0x01_address},
      .expected_output =
          {.status_code = evmc_status_code::EVMC_SUCCESS,
           .gas_left = 3'000,
@@ -120,25 +111,27 @@ static const basic_test_case ECRECOVER_TEST_CASES[] = {
      .input =
          {.gas = 2'999,
           .input_data = ECRECOVER_VALID_KEY_INPUT.data(),
-          .input_size = ECRECOVER_VALID_KEY_INPUT.size()},
+          .input_size = ECRECOVER_VALID_KEY_INPUT.size(),
+          .code_address = 0x01_address},
      .expected_output = {.status_code = evmc_status_code::EVMC_OUT_OF_GAS}}};
 
-static const basic_test_case SHA256_TEST_CASES[] = {
+static basic_test_case const SHA256_TEST_CASES[] = {
     {.name = "sha256_empty_enough_gas",
-     .input = {.gas = 100},
+     .input = {.gas = 100, .code_address = 0x02_address},
      .expected_output =
          {.status_code = evmc_status_code::EVMC_SUCCESS,
           .gas_left = 40,
           .output_data = SHA256_NULL_HASH.data(),
           .output_size = 32}},
     {.name = "sha256_empty_insufficient_gas",
-     .input = {.gas = 59},
+     .input = {.gas = 59, .code_address = 0x02_address},
      .expected_output = {.status_code = evmc_status_code::EVMC_OUT_OF_GAS}},
     {.name = "sha256_message_enough_gas",
      .input =
          {.gas = 73,
           .input_data = reinterpret_cast<uint8_t const *>("lol"),
-          .input_size = 3},
+          .input_size = 3,
+          .code_address = 0x02_address},
      .expected_output =
          {.status_code = evmc_status_code::EVMC_SUCCESS,
           .gas_left = 1,
@@ -148,25 +141,27 @@ static const basic_test_case SHA256_TEST_CASES[] = {
      .input =
          {.gas = 71,
           .input_data = reinterpret_cast<uint8_t const *>("lol"),
-          .input_size = 3},
-     .expected_output = {.status_code = evmc_status_code::EVMC_SUCCESS}}};
+          .input_size = 3,
+          .code_address = 0x02_address},
+     .expected_output = {.status_code = evmc_status_code::EVMC_OUT_OF_GAS}}};
 
-static const basic_test_case RIPEMD160_TEST_CASES[] = {
+static basic_test_case const RIPEMD160_TEST_CASES[] = {
     {.name = "ripemd160_empty_enough_gas",
-     .input = {.gas = 601},
+     .input = {.gas = 601, .code_address = 0x03_address},
      .expected_output =
          {.status_code = evmc_status_code::EVMC_SUCCESS,
           .gas_left = 1,
           .output_data = RIPEMD160_NULL_HASH.data(),
           .output_size = 32}},
     {.name = "ripemd160_empty_insufficient_gas",
-     .input = {.gas = 599},
+     .input = {.gas = 599, .code_address = 0x03_address},
      .expected_output = {.status_code = evmc_status_code::EVMC_OUT_OF_GAS}},
     {.name = "ripemd160_message_enough_gas",
      .input =
          {.gas = 721,
           .input_data = reinterpret_cast<uint8_t const *>("lol"),
-          .input_size = 3},
+          .input_size = 3,
+          .code_address = 0x03_address},
      .expected_output =
          {.status_code = evmc_status_code::EVMC_SUCCESS,
           .gas_left = 1,
@@ -176,24 +171,26 @@ static const basic_test_case RIPEMD160_TEST_CASES[] = {
      .input =
          {.gas = 619,
           .input_data = reinterpret_cast<uint8_t const *>("lol"),
-          .input_size = 3},
+          .input_size = 3,
+          .code_address = 0x03_address},
      .expected_output = {.status_code = evmc_status_code::EVMC_OUT_OF_GAS}}};
 
-static const basic_test_case IDENTITY_TEST_CASES[] = {
+static basic_test_case const IDENTITY_TEST_CASES[] = {
     {.name = "identity_empty_enough_gas",
-     .input = {.gas = 16},
+     .input = {.gas = 16, .code_address = 0x04_address},
      .expected_output =
          {.status_code = evmc_status_code::EVMC_SUCCESS,
           .gas_left = 1,
           .output_size = 0}},
     {.name = "identity_empty_insufficient_gas",
-     .input = {.gas = 14},
+     .input = {.gas = 14, .code_address = 0x04_address},
      .expected_output = {.status_code = evmc_status_code::EVMC_OUT_OF_GAS}},
     {.name = "identity_nonempty_enough_gas",
      .input =
          {.gas = 19,
           .input_data = reinterpret_cast<uint8_t const *>("dead"),
-          .input_size = 4},
+          .input_size = 4,
+          .code_address = 0x04_address},
      .expected_output =
          {.status_code = evmc_status_code::EVMC_SUCCESS,
           .gas_left = 1,
@@ -203,10 +200,10 @@ static const basic_test_case IDENTITY_TEST_CASES[] = {
      .input =
          {.gas = 17,
           .input_data = reinterpret_cast<uint8_t const *>("dead"),
-          .input_size = 4},
+          .input_size = 4,
+          .code_address = 0x04_address},
      .expected_output = {.status_code = evmc_status_code::EVMC_OUT_OF_GAS}}};
 
-template <typename Precompile>
 void do_basic_tests(
     char const *suite_name, basic_test_case const *basic_test_cases,
     size_t num_basic_test_cases)
@@ -214,7 +211,14 @@ void do_basic_tests(
     for (size_t i = 0; i < num_basic_test_cases; i++) {
         auto const &basic_test_case = basic_test_cases[i];
 
-        evmc::Result const result = Precompile::execute(basic_test_case.input);
+        evmc::Result const result =
+            monad::execution::check_call_precompile<monad::fork_traits::berlin>(
+                basic_test_case.input)
+                .value();
+
+        EXPECT_EQ(
+            result.status_code, basic_test_case.expected_output.status_code)
+            << suite_name << " test case " << basic_test_case.name;
 
         if (result.status_code == evmc_status_code::EVMC_SUCCESS) {
             EXPECT_EQ(result.gas_left, basic_test_case.expected_output.gas_left)
@@ -244,67 +248,47 @@ void do_basic_tests(
 
 TEST(FrontierThroughHomestead, ecrecover)
 {
-    do_basic_tests<ecrecover_frontier_through_homestead>(
+    do_basic_tests(
         "ecrecover", ECRECOVER_TEST_CASES, std::size(ECRECOVER_TEST_CASES));
 }
 
 TEST(FrontierThroughHomestead, sha256)
 {
-    do_basic_tests<sha256_frontier_through_homestead>(
-        "sha256", SHA256_TEST_CASES, std::size(SHA256_TEST_CASES));
+    do_basic_tests("sha256", SHA256_TEST_CASES, std::size(SHA256_TEST_CASES));
 }
 
 TEST(FrontierThroughHomestead, ripemd160)
 {
-    do_basic_tests<ripemd160_frontier_through_homestead>(
+    do_basic_tests(
         "ripemd160", RIPEMD160_TEST_CASES, std::size(RIPEMD160_TEST_CASES));
 }
 
 TEST(FrontierThroughHomestead, identity)
 {
-    do_basic_tests<identity_frontier_through_homestead>(
+    do_basic_tests(
         "identity", IDENTITY_TEST_CASES, std::size(IDENTITY_TEST_CASES));
 }
 
-using ecrecover_spurious_dragon_through_byzantium =
-    mp_at_c<byzantium::static_precompiles_t, 0>;
-using sha256_spurious_dragon_through_byzantium =
-    mp_at_c<byzantium::static_precompiles_t, 1>;
-using ripemd160_spurious_dragon_through_byzantium =
-    mp_at_c<byzantium::static_precompiles_t, 2>;
-using identity_spurious_dragon_through_byzantium =
-    mp_at_c<byzantium::static_precompiles_t, 3>;
-
-using modular_exponentiation_spurious_dragon_through_byzantium =
-    mp_at_c<byzantium::static_precompiles_t, 4>;
-using bn_add_spurious_dragon_through_byzantium =
-    mp_at_c<byzantium::static_precompiles_t, 5>;
-using bn_mul_spurious_dragon_through_byzantium =
-    mp_at_c<byzantium::static_precompiles_t, 6>;
-using bn_pairing_spurious_dragon_through_byzantium =
-    mp_at_c<byzantium::static_precompiles_t, 7>;
-
 TEST(SpuriousDragonThroughByzantium, ecrecover)
 {
-    do_basic_tests<ecrecover_spurious_dragon_through_byzantium>(
+    do_basic_tests(
         "ecrecover", ECRECOVER_TEST_CASES, std::size(ECRECOVER_TEST_CASES));
 }
 
 TEST(SpuriousDragonThroughByzantium, sha256)
 {
-    do_basic_tests<sha256_spurious_dragon_through_byzantium>(
-        "sha256", SHA256_TEST_CASES, std::size(SHA256_TEST_CASES));
+    do_basic_tests("sha256", SHA256_TEST_CASES, std::size(SHA256_TEST_CASES));
 }
 
 TEST(SpuriousDragonThroughByzantium, ripemd160_empty_enough_gas)
 {
-    do_basic_tests<ripemd160_spurious_dragon_through_byzantium>(
+    do_basic_tests(
         "ripemd160", RIPEMD160_TEST_CASES, std::size(RIPEMD160_TEST_CASES));
 }
 
 TEST(SpuriousDragonThroughByzantium, identity_empty_enough_gas)
 {
-    do_basic_tests<identity_spurious_dragon_through_byzantium>(
+    do_basic_tests(
         "identity", IDENTITY_TEST_CASES, std::size(IDENTITY_TEST_CASES));
 }
 
@@ -317,9 +301,10 @@ struct test_case
 };
 
 // it was annoying to deduce the size of the array  :(
-template <typename Precompile>
+template <class fork = monad::fork_traits::berlin>
 void do_geth_tests(
-    char const *suite_name, std::vector<test_case> const &test_cases)
+    char const *suite_name, std::vector<test_case> const &test_cases,
+    monad::address_t const &code_address)
 {
     for (auto const test_case : test_cases) {
         auto const input_bytes =
@@ -331,9 +316,11 @@ void do_geth_tests(
             evmc_message input = {
                 .gas = test_case.gas + gas_offset,
                 .input_data = input_bytes.data(),
-                .input_size = input_bytes.size()};
+                .input_size = input_bytes.size(),
+                .code_address = code_address};
 
-            evmc::Result const result = Precompile::execute(input);
+            evmc::Result const result =
+                monad::execution::check_call_precompile<fork>(input).value();
 
             if (result.status_code == evmc_status_code::EVMC_SUCCESS) {
                 EXPECT_EQ(result.gas_left, gas_offset)
@@ -472,8 +459,8 @@ static const std::vector<test_case> MODEXP_BYZANTIUM_TEST_CASES =
 
 TEST(SpuriousDragonThroughByzantium, modular_exponentiation)
 {
-    do_geth_tests<modular_exponentiation_spurious_dragon_through_byzantium>(
-        "Modular Exponentiation", MODEXP_BYZANTIUM_TEST_CASES);
+    do_geth_tests<monad::fork_traits::byzantium>(
+        "Modular Exponentiation", MODEXP_BYZANTIUM_TEST_CASES, 0x05_address);
 }
 
 // clang-format off
@@ -580,8 +567,8 @@ static const std::vector<test_case> BNADD_BYZANTIUM_TEST_CASES =
 
 TEST(SpuriousDragonThroughByzantium, bn_add)
 {
-    do_geth_tests<bn_add_spurious_dragon_through_byzantium>(
-        "bn_add", BNADD_BYZANTIUM_TEST_CASES);
+    do_geth_tests<monad::fork_traits::byzantium>(
+        "bn_add", BNADD_BYZANTIUM_TEST_CASES, 0x06_address);
 }
 
 // clang-format off
@@ -706,8 +693,8 @@ static const std::vector<test_case> BNMUL_BYZANTIUM_TEST_CASES =
 
 TEST(SpuriousDragonThroughByzantium, bn_mul)
 {
-    do_geth_tests<bn_mul_spurious_dragon_through_byzantium>(
-        "bn_mul", BNMUL_BYZANTIUM_TEST_CASES);
+    do_geth_tests<monad::fork_traits::byzantium>(
+        "bn_mul", BNMUL_BYZANTIUM_TEST_CASES, 0x07_address);
 }
 
 // clang-format off
@@ -802,70 +789,38 @@ static const std::vector<test_case> BNPAIRING_BYZANTIUM_TEST_CASES =
 
 TEST(SpuriousDragonThroughByzantium, bn_pairing)
 {
-    do_geth_tests<bn_pairing_spurious_dragon_through_byzantium>(
-        "bn_pairing", BNPAIRING_BYZANTIUM_TEST_CASES);
+    do_geth_tests<monad::fork_traits::byzantium>(
+        "bn_pairing", BNPAIRING_BYZANTIUM_TEST_CASES, 0x08_address);
 }
-
-static_assert(
-    std::is_same_v<
-        byzantium::static_precompiles_t,
-        type_list_t<
-            byzantium, contracts::EllipticCurveRecover, contracts::Sha256Hash,
-            contracts::Ripemd160Hash, contracts::Identity,
-            contracts::ModularExponentiation, contracts::BNAdd,
-            contracts::BNMultiply, contracts::BNPairing>>);
-
-using ecrecover_istanbul = mp_at_c<istanbul::static_precompiles_t, 0>;
-using sha256_istanbul = mp_at_c<istanbul::static_precompiles_t, 1>;
-using ripemd160_istanbul = mp_at_c<istanbul::static_precompiles_t, 2>;
-using identity_istanbul = mp_at_c<istanbul::static_precompiles_t, 3>;
-
-using modular_exponentiation_istanbul =
-    mp_at_c<istanbul::static_precompiles_t, 4>;
-using bn_add_istanbul = mp_at_c<istanbul::static_precompiles_t, 5>;
-using bn_mul_istanbul = mp_at_c<istanbul::static_precompiles_t, 6>;
-using bn_pairing_istanbul = mp_at_c<istanbul::static_precompiles_t, 7>;
-
-using blake2f_istanbul = mp_at_c<istanbul::static_precompiles_t, 8>;
-
-static_assert(
-    std::is_same_v<
-        istanbul::static_precompiles_t,
-        type_list_t<
-            istanbul, contracts::EllipticCurveRecover, contracts::Sha256Hash,
-            contracts::Ripemd160Hash, contracts::Identity,
-            contracts::ModularExponentiation, contracts::BNAdd,
-            contracts::BNMultiply, contracts::BNPairing, contracts::Blake2F>>);
 
 TEST(Istanbul, ecrecover)
 {
-    do_basic_tests<ecrecover_istanbul>(
+    do_basic_tests(
         "ecrecover", ECRECOVER_TEST_CASES, std::size(ECRECOVER_TEST_CASES));
 }
 
 TEST(Istanbul, sha256)
 {
-    do_basic_tests<sha256_istanbul>(
-        "sha256", SHA256_TEST_CASES, std::size(SHA256_TEST_CASES));
+    do_basic_tests("sha256", SHA256_TEST_CASES, std::size(SHA256_TEST_CASES));
 }
 
 TEST(Istanbul, ripemd160)
 {
-    do_basic_tests<ripemd160_istanbul>(
+    do_basic_tests(
         "ripemd160", RIPEMD160_TEST_CASES, std::size(RIPEMD160_TEST_CASES));
 }
 
 TEST(Istanbul, identity)
 {
-    do_basic_tests<identity_istanbul>(
+    do_basic_tests(
         "identity", IDENTITY_TEST_CASES, std::size(IDENTITY_TEST_CASES));
 }
 
 TEST(Istanbul, modular_exponentiation)
 {
     // the modular exponentiation behavior did not change from the previous fork
-    do_geth_tests<modular_exponentiation_istanbul>(
-        "Modular Exponentiation", MODEXP_BYZANTIUM_TEST_CASES);
+    do_geth_tests<monad::fork_traits::istanbul>(
+        "Modular Exponentiation", MODEXP_BYZANTIUM_TEST_CASES, 0x05_address);
 }
 
 template <typename Callable>
@@ -880,20 +835,22 @@ auto transform_test_cases(std::vector<test_case> const &source, Callable &&f)
 
 TEST(Istanbul, bn_add)
 {
-    do_geth_tests<bn_add_istanbul>(
+    do_geth_tests(
         "bn_add",
-        transform_test_cases(BNADD_BYZANTIUM_TEST_CASES, [](test_case &test) {
-            test.gas = 150;
-        }));
+        transform_test_cases(
+            BNADD_BYZANTIUM_TEST_CASES,
+            [](test_case &test) { test.gas = 150; }),
+        0x06_address);
 }
 
 TEST(Istanbul, bn_mul)
 {
-    do_geth_tests<bn_mul_istanbul>(
+    do_geth_tests(
         "bn_mul",
-        transform_test_cases(BNMUL_BYZANTIUM_TEST_CASES, [](test_case &test) {
-            test.gas = 6'000;
-        }));
+        transform_test_cases(
+            BNMUL_BYZANTIUM_TEST_CASES,
+            [](test_case &test) { test.gas = 6'000; }),
+        0x07_address);
 }
 
 auto make_bn_pairing_post_istanbul_tests()
@@ -918,8 +875,8 @@ auto make_bn_pairing_post_istanbul_tests()
 
 TEST(Istanbul, bn_pairing)
 {
-    do_geth_tests<bn_pairing_istanbul>(
-        "bn_pairing", make_bn_pairing_post_istanbul_tests());
+    do_geth_tests(
+        "bn_pairing", make_bn_pairing_post_istanbul_tests(), 0x08_address);
 }
 
 // clang-format off
@@ -984,58 +941,36 @@ static const std::vector<test_case> BLAKE2F_INVALID_ISTANBUL_TEST_CASES =
 
 TEST(Istanbul, blake2f_valid)
 {
-    do_geth_tests<blake2f_istanbul>(
-        "blake_2f_valid", BLAKE2F_VALID_ISTANBUL_TEST_CASES);
+    do_geth_tests(
+        "blake_2f_valid", BLAKE2F_VALID_ISTANBUL_TEST_CASES, 0x09_address);
 }
 
 TEST(Istanbul, blake2f_invalid)
 {
-    do_geth_tests<blake2f_istanbul>(
-        "blake_2f_invalid", BLAKE2F_INVALID_ISTANBUL_TEST_CASES);
+    do_geth_tests(
+        "blake_2f_invalid", BLAKE2F_INVALID_ISTANBUL_TEST_CASES, 0x09_address);
 }
-
-static_assert(
-    std::is_same_v<
-        berlin::static_precompiles_t,
-        type_list_t<
-            berlin, contracts::EllipticCurveRecover, contracts::Sha256Hash,
-            contracts::Ripemd160Hash, contracts::Identity,
-            contracts::ModularExponentiation, contracts::BNAdd,
-            contracts::BNMultiply, contracts::BNPairing, contracts::Blake2F>>);
-
-using ecrecover_berlin = mp_at_c<berlin::static_precompiles_t, 0>;
-using sha256_berlin = mp_at_c<berlin::static_precompiles_t, 1>;
-using ripemd160_berlin = mp_at_c<berlin::static_precompiles_t, 2>;
-using identity_berlin = mp_at_c<berlin::static_precompiles_t, 3>;
-
-using modular_exponentiation_berlin = mp_at_c<berlin::static_precompiles_t, 4>;
-using bn_add_berlin = mp_at_c<berlin::static_precompiles_t, 5>;
-using bn_mul_berlin = mp_at_c<berlin::static_precompiles_t, 6>;
-using bn_pairing_berlin = mp_at_c<berlin::static_precompiles_t, 7>;
-
-using blake2f_berlin = mp_at_c<berlin::static_precompiles_t, 8>;
 
 TEST(Berlin, ecrecover)
 {
-    do_basic_tests<ecrecover_berlin>(
+    do_basic_tests(
         "ecrecover", ECRECOVER_TEST_CASES, std::size(ECRECOVER_TEST_CASES));
 }
 
 TEST(Berlin, sha256)
 {
-    do_basic_tests<sha256_berlin>(
-        "sha256", SHA256_TEST_CASES, std::size(SHA256_TEST_CASES));
+    do_basic_tests("sha256", SHA256_TEST_CASES, std::size(SHA256_TEST_CASES));
 }
 
 TEST(Berlin, ripemd160)
 {
-    do_basic_tests<ripemd160_berlin>(
+    do_basic_tests(
         "ripemd160", RIPEMD160_TEST_CASES, std::size(RIPEMD160_TEST_CASES));
 }
 
 TEST(Berlin, identity)
 {
-    do_basic_tests<identity_berlin>(
+    do_basic_tests(
         "identity", IDENTITY_TEST_CASES, std::size(IDENTITY_TEST_CASES));
 }
 
@@ -1064,44 +999,48 @@ auto make_modexp_berlin_test_cases()
 
 TEST(Berlin, modular_exponentiation)
 {
-    do_geth_tests<modular_exponentiation_berlin>(
-        "Modular Exponentiation", make_modexp_berlin_test_cases());
+    do_geth_tests(
+        "Modular Exponentiation",
+        make_modexp_berlin_test_cases(),
+        0x05_address);
 }
 
 TEST(Berlin, bn_add)
 {
-    do_geth_tests<bn_add_berlin>(
+    do_geth_tests(
         "bn_add",
-        transform_test_cases(BNADD_BYZANTIUM_TEST_CASES, [](test_case &test) {
-            test.gas = 150;
-        }));
+        transform_test_cases(
+            BNADD_BYZANTIUM_TEST_CASES,
+            [](test_case &test) { test.gas = 150; }),
+        0x06_address);
 }
 
 TEST(Berlin, bn_mul)
 {
-    do_geth_tests<bn_mul_berlin>(
+    do_geth_tests(
         "bn_mul",
-        transform_test_cases(BNMUL_BYZANTIUM_TEST_CASES, [](test_case &test) {
-            test.gas = 6'000;
-        }));
+        transform_test_cases(
+            BNMUL_BYZANTIUM_TEST_CASES,
+            [](test_case &test) { test.gas = 6'000; }),
+        0x07_address);
 }
 
 TEST(Berlin, bn_pairing)
 {
-    do_geth_tests<bn_pairing_berlin>(
-        "bn_pairing", make_bn_pairing_post_istanbul_tests());
+    do_geth_tests(
+        "bn_pairing", make_bn_pairing_post_istanbul_tests(), 0x08_address);
 }
 
 TEST(Berlin, blake2f_valid)
 {
     // the test cases did not change from the previous fork
-    do_geth_tests<blake2f_berlin>(
-        "blake_2f_valid", BLAKE2F_VALID_ISTANBUL_TEST_CASES);
+    do_geth_tests(
+        "blake_2f_valid", BLAKE2F_VALID_ISTANBUL_TEST_CASES, 0x09_address);
 }
 
 TEST(Berlin, blake2f_invalid)
 {
     // the test cases did not change from the previous fork
-    do_geth_tests<blake2f_berlin>(
-        "blake_2f_invalid", BLAKE2F_INVALID_ISTANBUL_TEST_CASES);
+    do_geth_tests(
+        "blake_2f_invalid", BLAKE2F_INVALID_ISTANBUL_TEST_CASES, 0x09_address);
 }

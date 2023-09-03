@@ -10,15 +10,6 @@
 #include <monad/core/transaction.hpp>
 
 #include <monad/execution/ethereum/dao.hpp>
-#include <monad/execution/precompiles/blake2f.hpp>
-#include <monad/execution/precompiles/bn_add.hpp>
-#include <monad/execution/precompiles/bn_multiply.hpp>
-#include <monad/execution/precompiles/bn_pairing.hpp>
-#include <monad/execution/precompiles/elliptic_curve_recover.hpp>
-#include <monad/execution/precompiles/identity.hpp>
-#include <monad/execution/precompiles/modular_exponentiation.hpp>
-#include <monad/execution/precompiles/ripemd160_hash.hpp>
-#include <monad/execution/precompiles/sha256_hash.hpp>
 
 #include <monad/db/block_db.hpp>
 
@@ -48,11 +39,6 @@ namespace fork_traits
 
     using no_next_fork_t = shanghai;
 
-    template <typename TFork, template <typename> typename... TPrecompiles>
-    using type_list_t = boost::mp11::mp_list<TPrecompiles<TFork>...>;
-
-    namespace contracts = execution::static_precompiles;
-
     template <class TState>
     static constexpr uint256_t calculate_block_award(
         TState const &s, Block const &b, uint256_t const &reward,
@@ -79,10 +65,7 @@ namespace fork_traits
         static constexpr uint256_t additional_ommer_reward =
             block_reward >> 5; // YP Eqn. 172, block reward / 32
 
-        using static_precompiles_t = type_list_t<
-            frontier, contracts::EllipticCurveRecover, contracts::Sha256Hash,
-            contracts::Ripemd160Hash, contracts::Identity>;
-        static_assert(boost::mp11::mp_size<static_precompiles_t>() == 4);
+        static constexpr uint64_t n_precompiles = 4;
 
         // YP, Eqn. 60, first summation
         [[nodiscard]] static constexpr uint64_t
@@ -383,17 +366,7 @@ namespace fork_traits
         static constexpr uint256_t additional_ommer_reward =
             block_reward >> 5; // YP Eqn. 172, block reward / 32
 
-        template <typename TList>
-        using switch_fork_t = boost::mp11::mp_replace_front<TList, byzantium>;
-
-        using static_precompiles_t = boost::mp11::mp_append<
-            boost::mp11::mp_transform<
-                switch_fork_t, homestead::static_precompiles_t>,
-            type_list_t<
-                byzantium, contracts::ModularExponentiation, contracts::BNAdd,
-                contracts::BNMultiply, contracts::BNPairing>>;
-
-        static_assert(boost::mp11::mp_size<static_precompiles_t>() == 8);
+        static constexpr uint64_t n_precompiles = 8;
 
         template <class TState>
         static constexpr void apply_block_award(TState &s, Block const &b)
@@ -429,15 +402,7 @@ namespace fork_traits
         static constexpr evmc_revision rev = EVMC_ISTANBUL;
         static constexpr auto last_block_number = 12'243'999u;
 
-        template <typename TList>
-        using switch_fork_t = boost::mp11::mp_replace_front<TList, istanbul>;
-
-        using static_precompiles_t = boost::mp11::mp_append<
-            boost::mp11::mp_transform<
-                switch_fork_t,
-                constantinople_and_petersburg::static_precompiles_t>,
-            type_list_t<istanbul, contracts::Blake2F>>;
-        static_assert(boost::mp11::mp_size<static_precompiles_t>() == 9);
+        static constexpr uint64_t n_precompiles = 9;
 
         // https://eips.ethereum.org/EIPS/eip-2028
         [[nodiscard]] static constexpr uint64_t
@@ -466,13 +431,6 @@ namespace fork_traits
 
         static constexpr evmc_revision rev = EVMC_BERLIN;
         static constexpr auto last_block_number = 12'964'999u;
-
-        template <typename TList>
-        using switch_fork_t = boost::mp11::mp_replace_front<TList, berlin>;
-
-        using static_precompiles_t = boost::mp11::mp_transform<
-            switch_fork_t, istanbul::static_precompiles_t>;
-        static_assert(boost::mp11::mp_size<static_precompiles_t>() == 9);
 
         // https://eips.ethereum.org/EIPS/eip-2930
         [[nodiscard]] static constexpr auto

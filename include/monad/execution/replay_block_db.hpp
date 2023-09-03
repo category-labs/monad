@@ -96,11 +96,10 @@ public:
     template <
         concepts::fork_traits<typename TState::ChangeSet> TTraits,
         template <typename, typename> class TTxnProcessor,
-        template <typename, typename, typename, typename> class TEvm,
-        template <typename, typename, typename> class TStaticPrecompiles,
+        template <typename, typename, typename> class TEvm,
         template <typename, typename, typename> class TEvmHost,
         template <typename, typename, typename, typename> class TFiberData,
-        class TInterpreter, class TPrecompiles>
+        class TInterpreter>
     [[nodiscard]] Result run_fork(
         TState &state, TBlockDb &block_db, TReceiptCollector &receipt_collector,
         block_num_t current_block_number,
@@ -149,10 +148,6 @@ public:
                             TEvm<
                                 typename TState::ChangeSet,
                                 TTraits,
-                                TStaticPrecompiles<
-                                    typename TState::ChangeSet,
-                                    TTraits,
-                                    TPrecompiles>,
                                 TInterpreter>>,
                         TExecution>>(state, block);
 
@@ -196,11 +191,9 @@ public:
                 typename TTraits::next_fork_t,
                 TTxnProcessor,
                 TEvm,
-                TStaticPrecompiles,
                 TEvmHost,
                 TFiberData,
-                TInterpreter,
-                TPrecompiles>(
+                TInterpreter>(
                 state,
                 block_db,
                 receipt_collector,
@@ -212,11 +205,10 @@ public:
     template <
         concepts::fork_traits<typename TState::ChangeSet> TTraits,
         template <typename, typename> class TTxnProcessor,
-        template <typename, typename, typename, typename> class TEvm,
-        template <typename, typename, typename> class TStaticPrecompiles,
+        template <typename, typename, typename> class TEvm,
         template <typename, typename, typename> class TEvmHost,
         template <typename, typename, typename, typename> class TFiberData,
-        class TInterpreter, class TPrecompiles>
+        class TInterpreter>
     [[nodiscard]] Result
     run(TState &state, TBlockDb &block_db, TReceiptCollector &receipt_collector,
         block_num_t start_block_number,
@@ -239,11 +231,9 @@ public:
             TTraits,
             TTxnProcessor,
             TEvm,
-            TStaticPrecompiles,
             TEvmHost,
             TFiberData,
-            TInterpreter,
-            TPrecompiles>(
+            TInterpreter>(
             state,
             block_db,
             receipt_collector,

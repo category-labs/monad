@@ -98,8 +98,7 @@ struct fakeEmptyTP
 };
 
 template <
-    class TState, concepts::fork_traits<TState> TTraits,
-    class TStaticPrecompiles, class TInterpreter>
+    class TState, concepts::fork_traits<TState> TTraits, class TInterpreter>
 struct fakeEmptyEvm
 {
 };
@@ -178,12 +177,9 @@ TEST(ReplayFromBlockDb, invalid_end_block_number)
         traits_t,
         fakeEmptyTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fakeInterpreter,
-        boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
-        state, block_db, receipt_collector, 100u, 100u);
+        fakeInterpreter>(state, block_db, receipt_collector, 100u, 100u);
 
     EXPECT_EQ(result.status, replay_t::Status::INVALID_END_BLOCK_NUMBER);
     EXPECT_EQ(result.block_number, 100u);
@@ -202,12 +198,9 @@ TEST(ReplayFromBlockDb, invalid_end_block_number_zero)
         traits_t,
         fakeEmptyTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fakeInterpreter,
-        boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
-        state, block_db, receipt_collector, 0u, 0u);
+        fakeInterpreter>(state, block_db, receipt_collector, 0u, 0u);
 
     EXPECT_EQ(result.status, replay_t::Status::INVALID_END_BLOCK_NUMBER);
     EXPECT_EQ(result.block_number, 0u);
@@ -226,12 +219,9 @@ TEST(ReplayFromBlockDb, start_block_number_outside_db)
         traits_t,
         fakeEmptyTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fakeInterpreter,
-        boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
-        state, block_db, receipt_collector, 1u);
+        fakeInterpreter>(state, block_db, receipt_collector, 1u);
 
     EXPECT_EQ(result.status, replay_t::Status::START_BLOCK_NUMBER_OUTSIDE_DB);
     EXPECT_EQ(result.block_number, 1u);
@@ -248,12 +238,9 @@ TEST(ReplayFromBlockDb, decompress_block_error)
         traits_t,
         fakeEmptyTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fakeInterpreter,
-        boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
-        state, block_db, receipt_collector, 1u);
+        fakeInterpreter>(state, block_db, receipt_collector, 1u);
 
     EXPECT_EQ(
         result.status,
@@ -272,12 +259,9 @@ TEST(ReplayFromBlockDb, decode_block_error)
         traits_t,
         fakeEmptyTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fakeInterpreter,
-        boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
-        state, block_db, receipt_collector, 1u);
+        fakeInterpreter>(state, block_db, receipt_collector, 1u);
 
     EXPECT_EQ(result.status, replay_error_decode_t::Status::DECODE_BLOCK_ERROR);
     EXPECT_EQ(result.block_number, 1u);
@@ -296,12 +280,9 @@ TEST(ReplayFromBlockDb, one_block)
         traits_t,
         fakeEmptyTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fakeInterpreter,
-        boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
-        state, block_db, receipt_collector, 100u, 101u);
+        fakeInterpreter>(state, block_db, receipt_collector, 100u, 101u);
 
     EXPECT_EQ(result.status, replay_t::Status::SUCCESS);
     EXPECT_EQ(result.block_number, 100u);
@@ -321,12 +302,9 @@ TEST(ReplayFromBlockDb, run_from_zero)
         traits_t,
         fakeEmptyTP,
         fakeEmptyEvm,
-        StaticPrecompiles,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fakeInterpreter,
-        boost::mp11::mp_list<fake::static_precompiles::Echo<traits_t>>>(
-        state, block_db, receipt_collector, 0u);
+        fakeInterpreter>(state, block_db, receipt_collector, 0u);
 
     EXPECT_EQ(result.status, replay_t::Status::SUCCESS_END_OF_DB);
     EXPECT_EQ(result.block_number, 1'234u);

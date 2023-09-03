@@ -13,9 +13,7 @@ using processor_t = TransactionProcessor<fake::State::ChangeSet, traits_t>;
 
 using evm_host_t = fake::EvmHost<
     fake::State::ChangeSet, traits_t,
-    fake::Evm<
-        fake::State::ChangeSet, traits_t,
-        fake::static_precompiles::OneHundredGas, fake::Interpreter>>;
+    fake::Evm<fake::State::ChangeSet, traits_t, fake::Interpreter>>;
 
 TEST(TransactionProcessor, g_star)
 {

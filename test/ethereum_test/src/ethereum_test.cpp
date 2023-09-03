@@ -26,12 +26,8 @@ using transaction_processor_t =
     monad::execution::TransactionProcessor<working_state_t, TFork>;
 
 template <typename TFork>
-using static_precompiles_t = monad::execution::StaticPrecompiles<
-    working_state_t, TFork, typename TFork::static_precompiles_t>;
-
-template <typename TFork>
-using evm_t = monad::execution::Evm<
-    working_state_t, TFork, static_precompiles_t<TFork>, interpreter_t<TFork>>;
+using evm_t =
+    monad::execution::Evm<working_state_t, TFork, interpreter_t<TFork>>;
 
 template <typename TFork>
 using host_t = monad::execution::EvmcHost<working_state_t, TFork, evm_t<TFork>>;

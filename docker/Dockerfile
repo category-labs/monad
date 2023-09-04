@@ -66,3 +66,6 @@ RUN cd monad && CC=${CC} CXX=${CXX} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} CFLAGS=
 RUN cd monad && ./monad-core/scripts/build.sh
 
 RUN cd monad && [ "$DISABLE_TESTS" = 1 ] || ./monad-core/scripts/test.sh
+
+# directory for gtest-parallel when running ethereum tests
+RUN mkdir test_results

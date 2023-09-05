@@ -1,36 +1,40 @@
 #include <ethereum_test.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
+
 #include <monad/logging/monad_log.hpp>
+
+#include <monad/state2/block_state.hpp>
+#include <monad/state2/state.hpp>
 #include <monad/test/dump_state_from_db.hpp>
+
 #include <test_resource_data.h>
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <iostream>
+#include <shared_mutex>
 
 MONAD_TEST_NAMESPACE_BEGIN
 
+using mutex_t = std::shared_mutex;
+
 using db_t = monad::db::InMemoryTrieDB;
-using state_t = monad::state::State<
-    monad::state::AccountState<db_t>, monad::state::ValueState<db_t>,
-    monad::state::CodeState<db_t>, monad::execution::fake::BlockDb, db_t>;
-using working_state_t = decltype(std::declval<state_t>().get_new_changeset(0u));
+using state_t = monad::state::State<mutex_t, monad::execution::fake::BlockDb>;
 
 template <typename TFork>
 using interpreter_t =
-    monad::execution::EVMOneBaselineInterpreter<working_state_t, TFork>;
+    monad::execution::EVMOneBaselineInterpreter<state_t, TFork>;
 
 template <typename TFork>
 using transaction_processor_t =
-    monad::execution::TransactionProcessor<working_state_t, TFork>;
+    monad::execution::TransactionProcessor<state_t, TFork>;
 
 template <typename TFork>
-using evm_t =
-    monad::execution::Evm<working_state_t, TFork, interpreter_t<TFork>>;
+using evm_t = monad::execution::Evm<state_t, TFork, interpreter_t<TFork>>;
 
 template <typename TFork>
-using host_t = monad::execution::EvmcHost<working_state_t, TFork, evm_t<TFork>>;
+using host_t = monad::execution::EvmcHost<state_t, TFork, evm_t<TFork>>;
 
 template <typename TFork>
 struct Execution
@@ -40,14 +44,14 @@ struct Execution
 
     Execution(
         monad::BlockHeader const &block_header,
-        monad::Transaction const &transaction, working_state_t &state)
+        monad::Transaction const &transaction, state_t &state)
         : host{block_header, transaction, state}
         , transaction_processor{}
     {
     }
 
     [[nodiscard]] std::optional<monad::Receipt>
-    execute(working_state_t &state, monad::Transaction const &transaction)
+    execute(state_t &state, monad::Transaction const &transaction)
     {
         auto const status = transaction_processor.validate(
             state,
@@ -86,18 +90,16 @@ using execution_variant =
 {
     using namespace boost::mp11;
 
-    auto change_set = state.get_new_changeset(0u);
-
     using namespace monad;
     // create a table of fork types
     auto execution_array = []<typename... Ts>(
                                mp_list<Ts...>,
                                BlockHeader const &block_header,
-                               working_state_t &change_set,
+                               state_t &s,
                                Transaction const &transaction) {
         return std::array<execution_variant, sizeof...(Ts)>{
-            Execution<Ts>{block_header, transaction, change_set}...};
-    }(fork_traits::all_forks_t{}, block_header, change_set, transaction);
+            Execution<Ts>{block_header, transaction, s}...};
+    }(fork_traits::all_forks_t{}, block_header, state, transaction);
 
     // we then dispatch into the appropriate fork at runtime using std::get
     auto &variant = execution_array.at(fork_index);
@@ -108,15 +110,13 @@ using execution_variant =
             if (I == fork_index) {
                 using TTraits = mp_at_c<fork_traits::all_forks_t, I>;
                 maybe_receipt = std::get<Execution<TTraits>>(variant).execute(
-                    change_set, transaction);
-                state.merge_changes(change_set);
+                    state, transaction);
 
                 TTraits::apply_block_award_impl(
                     state, monad::Block{.header = block_header}, 0, 0);
             }
         });
 
-    state.commit();
     return maybe_receipt;
 }
 
@@ -292,44 +292,51 @@ void EthereumTests::run_state_test(
 
             db_t db{};
 
-            monad::state::AccountState accounts{db};
-            monad::state::ValueState values{db};
-            monad::state::CodeState codes{db};
-            monad::state::State state{
-                accounts, values, codes, fake_block_db, db};
+            monad::BlockState<mutex_t> bs;
 
             // every test json file is initially keyed with the test
             // name
             MONAD_ASSERT(json.is_object() && !json.empty());
+
             auto const &j_t = *json.begin();
+            {
+                monad::state::State state{bs, db, fake_block_db};
 
-            MONAD_LOG_INFO(logger, "Starting to load state from json");
+                MONAD_LOG_INFO(logger, "Starting to load state from json");
 
-            load_state_from_json(j_t.at("pre"), state);
+                load_state_from_json(j_t.at("pre"), state);
+                merge(bs.state, state.state_);
+                merge(bs.code, state.code_);
+            }
 
             auto block_header = j_t.at("env").get<monad::BlockHeader>();
 
             MONAD_LOG_INFO(
                 logger, "Starting to execute transaction {}", case_index);
 
+            monad::state::State state{bs, db, fake_block_db};
             auto maybe_receipt =
                 execute(fork_index, block_header, state, transaction);
+
+            merge(bs.state, state.state_);
+            merge(bs.code, state.code_);
+            db.commit(bs.state, bs.code);
 
             MONAD_LOG_INFO(
                 logger,
                 "post_state: {}",
-                monad::test::dump_state_from_db(state.db_).dump());
+                monad::test::dump_state_from_db(db).dump());
             MONAD_LOG_INFO(
                 logger,
                 "finished transaction index: {} revision: {}, state_root: {}",
                 case_index,
                 fork_name,
-                state.db_.state_root());
+                db.state_root());
 
             auto const msg = fmt::format(
                 "fork_name: {}, case_index: {}", fork_name, case_index);
 
-            EXPECT_EQ(state.db_.state_root(), expected.state_hash) << msg;
+            EXPECT_EQ(db.state_root(), expected.state_hash) << msg;
             EXPECT_EQ(maybe_receipt.has_value(), !expected.exception) << msg;
             // TODO: assert something about receipt status?
         }

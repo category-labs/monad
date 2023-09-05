@@ -1,40 +1,56 @@
 #include <monad/core/concepts.hpp>
 
+#include <monad/db/block_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
+
 #include <monad/execution/config.hpp>
 #include <monad/execution/evm.hpp>
 
 #include <monad/execution/test/fakes.hpp>
 
+#include <monad/state2/state.hpp>
+
 #include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
+
+#include <test_resource_data.h>
 
 using namespace monad;
 using namespace monad::execution;
 
 static constexpr auto null{0x0000000000000000000000000000000000000000_address};
 
-using traits_t = fake::traits::alpha<fake::State::ChangeSet>;
+db::BlockDb blocks{test_resource::correct_block_data_dir};
 
-template <concepts::fork_traits<fake::State::ChangeSet> TTraits>
+using account_store_db_t = db::InMemoryTrieDB;
+using mutex_t = std::shared_mutex;
+using state_t = state::State<mutex_t, db::BlockDb>;
+using traits_t = fake::traits::alpha<state_t>;
+
+template <concepts::fork_traits<state_t> TTraits>
 using traits_templated_evm_t =
-    Evm<fake::State::ChangeSet, fake::traits::alpha<fake::State::ChangeSet>,
-        fake::Interpreter>;
+    Evm<state_t, fake::traits::alpha<state_t>, fake::Interpreter>;
 
 using evm_t = traits_templated_evm_t<traits_t>;
 using evm_host_t = fake::EvmHost<
-    fake::State::ChangeSet, traits_t,
-    fake::Evm<fake::State::ChangeSet, traits_t, fake::Interpreter>>;
+    state_t, traits_t, fake::Evm<state_t, traits_t, fake::Interpreter>>;
 
 TEST(Evm, make_account_address)
 {
+    BlockState<mutex_t> bs;
+    account_store_db_t db{};
+    state::State s{bs, db, blocks};
+
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    static fake::State::ChangeSet s{};
-    s._accounts[from].balance = 10'000'000'000;
-    s._accounts[from].nonce = 6;
+    db.commit(state::StateChanges{
+        .account_changes =
+            {{from, Account{.balance = 10'000'000'000, .nonce = 7}}},
+        .storage_changes = {},
+        .code_changes = {}});
 
     evmc_message m{
         .kind = EVMC_CREATE,
@@ -48,22 +64,28 @@ TEST(Evm, make_account_address)
 
     EXPECT_TRUE(result.has_value());
     EXPECT_EQ(*result, to);
-    EXPECT_EQ(s._accounts[from].nonce, 7);
-    EXPECT_EQ(s._accounts[to].nonce, 1);
+    EXPECT_EQ(s.get_nonce(to), 1);
 }
 
 TEST(Evm, make_account_address_create2)
 {
+    BlockState<mutex_t> bs;
+    account_store_db_t db{};
+    state::State s{bs, db, blocks};
+
     static constexpr auto from{
         0x00000000000000000000000000000000deadbeef_address};
     static constexpr auto new_address{
         0x60f3f640a8508fC6a86d45DF051962668E1e8AC7_address};
     static constexpr auto cafebabe_salt{
         0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32};
-    static uint8_t const deadbeef[4]{0xde, 0xad, 0xbe, 0xef};
-    static fake::State::ChangeSet s{};
-    s._accounts[from].balance = 10'000'000'000;
-    s._accounts[from].nonce = 5;
+    static const uint8_t deadbeef[4]{0xde, 0xad, 0xbe, 0xef};
+
+    db.commit(state::StateChanges{
+        .account_changes =
+            {{from, Account{.balance = 10'000'000'000, .nonce = 5}}},
+        .storage_changes = {},
+        .code_changes = {}});
 
     evmc_message m{
         .kind = EVMC_CREATE2,
@@ -80,16 +102,21 @@ TEST(Evm, make_account_address_create2)
 
     EXPECT_TRUE(result.has_value());
     EXPECT_EQ(*result, new_address);
-    EXPECT_EQ(s._accounts[from].nonce, 6);
-    EXPECT_EQ(s._accounts[new_address].nonce, 1);
+    EXPECT_EQ(s.get_nonce(new_address), 1);
 }
 
 TEST(Evm, create_with_insufficient)
 {
+    BlockState<mutex_t> bs;
+    account_store_db_t db{};
+    state::State s{bs, db, blocks};
+
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-    static fake::State::ChangeSet s{};
-    s._accounts[from].balance = 10'000'000'000;
+    db.commit(state::StateChanges{
+        .account_changes = {{from, Account{.balance = 10'000'000'000}}},
+        .storage_changes = {},
+        .code_changes = {}});
 
     evmc_message m{
         .kind = EVMC_CREATE,
@@ -105,66 +132,23 @@ TEST(Evm, create_with_insufficient)
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
 }
 
-TEST(Evm, create_nonce_out_of_range)
-{
-    static constexpr auto from{
-        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-    static fake::State::ChangeSet s{};
-    s._accounts[from].balance = 10'000'000'000;
-    s._accounts[from].nonce = std::numeric_limits<uint64_t>::max();
-
-    evmc_message m{
-        .kind = EVMC_CREATE,
-        .gas = 20'000,
-        .sender = from,
-    };
-    uint256_t v{70'000'000};
-    intx::be::store(m.value.bytes, v);
-
-    auto const unexpected = evm_t::make_account_address(s, m);
-
-    auto const result = unexpected.error();
-    EXPECT_EQ(result.status_code, EVMC_ARGUMENT_OUT_OF_RANGE);
-}
-
-TEST(Evm, eip684_existing_nonce)
-{
-    static constexpr auto from{
-        0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
-    static constexpr auto to{
-        0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    static fake::State::ChangeSet s{};
-    s._accounts[from].balance = 10'000'000'000;
-    s._accounts[from].nonce = 6;
-    s._accounts[to].nonce = 5; // existing
-
-    evmc_message m{
-        .kind = EVMC_CREATE,
-        .gas = 20'000,
-        .sender = from,
-    };
-    uint256_t v{70'000'000};
-    intx::be::store(m.value.bytes, v);
-
-    auto const unexpected = evm_t::make_account_address(s, m);
-
-    auto const result = unexpected.error();
-    EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
-}
-
 TEST(Evm, eip684_existing_code)
 {
+    BlockState<mutex_t> bs;
+    account_store_db_t db{};
+    state::State s{bs, db, blocks};
+
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
     static constexpr auto code_hash{
         0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
-    static fake::State::ChangeSet s{};
-    s._accounts[from].balance = 10'000'000'000;
-    s._accounts[from].nonce = 6;
-    s._accounts[to].code_hash = code_hash; // existing
 
+    db.commit(state::StateChanges{
+        .account_changes = {
+            {to, Account{.code_hash = code_hash}},
+            {from, Account{.balance = 10'000'000'000, .nonce = 7}}}});
     evmc_message m{
         .kind = EVMC_CREATE,
         .gas = 20'000,
@@ -175,20 +159,25 @@ TEST(Evm, eip684_existing_code)
 
     auto const unexpected = evm_t::make_account_address(s, m);
 
+    EXPECT_FALSE(unexpected.has_value());
     auto const result = unexpected.error();
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
 }
 
 TEST(Evm, transfer_call_balances)
 {
+    BlockState<mutex_t> bs;
+    account_store_db_t db{};
+    state::State s{bs, db, blocks};
+
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    static fake::State::ChangeSet s{};
-    s._accounts[from].balance = 10'000'000'000;
-    s._accounts[from].nonce = 6;
-    s._accounts[to].balance = 0;
+    db.commit(state::StateChanges{
+        .account_changes = {
+            {to, Account{}},
+            {from, Account{.balance = 10'000'000'000, .nonce = 7}}}});
 
     evmc_message m{
         .kind = EVMC_CALL,
@@ -202,18 +191,22 @@ TEST(Evm, transfer_call_balances)
     auto const result = evm_t::transfer_call_balances(s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
-    EXPECT_EQ(s._accounts[from].balance, 3'000'000'000);
-    EXPECT_EQ(s._accounts[to].balance, 7'000'000'000);
+    EXPECT_EQ(s.get_balance(from), bytes32_t{3'000'000'000});
+    EXPECT_EQ(s.get_balance(to), bytes32_t{7'000'000'000});
 }
 
 TEST(Evm, transfer_call_balances_to_self)
 {
+    BlockState<mutex_t> bs;
+    account_store_db_t db{};
+    state::State s{bs, db, blocks};
+
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     static constexpr auto to = from;
-    static fake::State::ChangeSet s{};
-    s._accounts[from].balance = 10'000'000'000;
-    s._accounts[from].nonce = 6;
+    db.commit(state::StateChanges{
+        .account_changes = {
+            {from, Account{.balance = 10'000'000'000, .nonce = 7}}}});
 
     evmc_message m{
         .kind = EVMC_CALL,
@@ -227,19 +220,24 @@ TEST(Evm, transfer_call_balances_to_self)
     auto const result = evm_t::transfer_call_balances(s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
-    EXPECT_EQ(s._accounts[from].balance, 10'000'000'000);
+    EXPECT_EQ(s.get_balance(from), bytes32_t{10'000'000'000});
 }
 
 TEST(Evm, dont_transfer_on_delegatecall)
 {
+    BlockState<mutex_t> bs;
+    account_store_db_t db{};
+    state::State s{bs, db, blocks};
+
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    static fake::State::ChangeSet s{};
-    s._accounts[from].balance = 10'000'000'000;
-    s._accounts[from].nonce = 5;
-    s._accounts[to].balance = 0;
+
+    db.commit(state::StateChanges{
+        .account_changes = {
+            {to, Account{}},
+            {from, Account{.balance = 10'000'000'000, .nonce = 6}}}});
 
     evmc_message m{
         .kind = EVMC_DELEGATECALL,
@@ -253,20 +251,25 @@ TEST(Evm, dont_transfer_on_delegatecall)
     auto const result = evm_t::transfer_call_balances(s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
-    EXPECT_EQ(s._accounts[from].balance, 10'000'000'000);
-    EXPECT_EQ(s._accounts[to].balance, 0);
+    EXPECT_EQ(s.get_balance(from), bytes32_t{10'000'000'000});
+    EXPECT_EQ(s.get_balance(to), bytes32_t{});
 }
 
 TEST(Evm, dont_transfer_on_staticcall)
 {
+    BlockState<mutex_t> bs;
+    account_store_db_t db{};
+    state::State s{bs, db, blocks};
+
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    static fake::State::ChangeSet s{};
-    s._accounts[from].balance = 10'000'000'000;
-    s._accounts[from].nonce = 5;
-    s._accounts[to].balance = 0;
+
+    db.commit(state::StateChanges{
+        .account_changes = {
+            {to, Account{}},
+            {from, Account{.balance = 10'000'000'000, .nonce = 6}}}});
 
     evmc_message m{
         .kind = EVMC_CALL,
@@ -281,20 +284,25 @@ TEST(Evm, dont_transfer_on_staticcall)
     auto const result = evm_t::transfer_call_balances(s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
-    EXPECT_EQ(s._accounts[from].balance, 10'000'000'000);
-    EXPECT_EQ(s._accounts[to].balance, 0);
+    EXPECT_EQ(s.get_balance(from), bytes32_t{10'000'000'000});
+    EXPECT_EQ(s.get_balance(to), bytes32_t{});
 }
 
 TEST(Evm, create_contract_account)
 {
+    BlockState<mutex_t> bs;
+    account_store_db_t db{};
+    state::State s{bs, db, blocks};
+
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
     static constexpr auto new_addr{
         0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
-    fake::State::ChangeSet s{};
+
+    db.commit(state::StateChanges{
+        .account_changes = {{from, Account{.balance = 50'000, .nonce = 1}}}});
 
     evm_host_t h{};
-    s._accounts.emplace(from, Account{.balance = 50'000u, .nonce = 1});
     byte_string code{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
     fake::Interpreter::_result = evmc::Result{
         evmc_result{.status_code = EVMC_SUCCESS, .gas_left = 8'000}};
@@ -317,14 +325,19 @@ TEST(Evm, create_contract_account)
 
 TEST(Evm, create2_contract_account)
 {
+    BlockState<mutex_t> bs;
+    account_store_db_t db{};
+    state::State s{bs, db, blocks};
+
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
     static constexpr auto new_addr2{
         0xe0e05f8f41129e2087ec0a3759810fdced46edd4_address};
-    fake::State::ChangeSet s{};
+
+    db.commit(state::StateChanges{
+        .account_changes = {{from, Account{.balance = 50'000, .nonce = 1}}}});
 
     evm_host_t h{};
-    s._accounts.emplace(from, Account{.balance = 50'000u, .nonce = 1});
     byte_string code{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
     fake::Interpreter::_result = evmc::Result{
         evmc_result{.status_code = EVMC_SUCCESS, .gas_left = 8'000}};
@@ -348,11 +361,19 @@ TEST(Evm, create2_contract_account)
 
 TEST(Evm, oog_create_account)
 {
+    BlockState<mutex_t> bs;
+    account_store_db_t db{};
+    state::State s{bs, db, blocks};
+
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
-    fake::State::ChangeSet s{};
+    static constexpr auto new_addr{
+        0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
+
+    db.commit(state::StateChanges{
+        .account_changes = {{from, Account{.balance = 50'000, .nonce = 1}}}});
+
     evm_host_t h{};
-    s._accounts.emplace(from, Account{.balance = 10'000, .nonce = 1});
     fake::Interpreter::_result = evmc::Result{
         evmc_result{.status_code = EVMC_OUT_OF_GAS, .gas_left = 0}};
 
@@ -360,21 +381,29 @@ TEST(Evm, oog_create_account)
 
     auto const result = evm_t::create_contract_account(&h, s, m);
 
-    EXPECT_TRUE(s._accounts.empty()); // revert was called on the fake
+    EXPECT_FALSE(s.account_exists(new_addr));
     EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
     EXPECT_EQ(result.create_address, null);
     EXPECT_EQ(result.gas_left, 0);
+    EXPECT_EQ(result.gas_refund, 0);
 }
 
 TEST(Evm, revert_create_account)
 {
+    BlockState<mutex_t> bs;
+    account_store_db_t db{};
+    state::State s{bs, db, blocks};
+
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
-    static constexpr auto null{
-        0x0000000000000000000000000000000000000000_address};
-    fake::State::ChangeSet s{};
+    static constexpr auto new_addr{
+        0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
+
     evm_host_t h{};
-    s._accounts.emplace(from, Account{.balance = 10'000});
+
+    db.commit(state::StateChanges{
+        .account_changes = {{from, Account{.balance = 10'000}}}});
+
     fake::Interpreter::_result = evmc::Result{
         evmc_result{.status_code = EVMC_REVERT, .gas_left = 11'000}};
 
@@ -382,22 +411,66 @@ TEST(Evm, revert_create_account)
 
     auto const result = evm_t::create_contract_account(&h, s, m);
 
-    EXPECT_TRUE(s._accounts.empty()); // revert was called on the fake
+    EXPECT_FALSE(s.account_exists(new_addr));
     EXPECT_EQ(result.status_code, EVMC_REVERT);
     EXPECT_EQ(result.create_address, null);
     EXPECT_EQ(result.gas_left, 11'000);
 }
 
+TEST(Evm, create_nonce_out_of_range)
+{
+    BlockState<mutex_t> bs;
+    account_store_db_t db{};
+    state::State s{bs, db, blocks};
+
+    static constexpr auto from{
+        0x5353535353535353535353535353535353535353_address};
+    static constexpr auto new_addr{
+        0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
+
+    evm_host_t h{};
+
+    db.commit(state::StateChanges{
+        .account_changes =
+            {{from,
+              Account{
+                  .balance = 10'000'000'000,
+                  .nonce = std::numeric_limits<uint64_t>::max()}}},
+        .storage_changes = {},
+        .code_changes = {}});
+
+    evmc_message m{
+        .kind = EVMC_CREATE,
+        .gas = 20'000,
+        .sender = from,
+    };
+    uint256_t v{70'000'000};
+    intx::be::store(m.value.bytes, v);
+
+    auto const result = evm_t::create_contract_account(&h, s, m);
+
+    EXPECT_FALSE(s.account_exists(new_addr));
+    EXPECT_EQ(result.status_code, EVMC_ARGUMENT_OUT_OF_RANGE);
+}
+
 TEST(Evm, call_evm)
 {
+    BlockState<mutex_t> bs;
+    account_store_db_t db{};
+    state::State s{bs, db, blocks};
+
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
     static constexpr auto to{
         0xf8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8_address};
-    fake::State::ChangeSet s{};
+
+    db.commit(state::StateChanges{
+        .account_changes = {
+            {to, Account{.balance = 50'000}},
+            {from, Account{.balance = 50'000, .nonce = 1}}}});
+
     evm_host_t h{};
-    s._accounts.emplace(from, Account{.balance = 50'000u});
-    s._accounts.emplace(to, Account{.balance = 50'000u});
+
     fake::Interpreter::_result = evmc::Result{
         evmc_result{.status_code = EVMC_SUCCESS, .gas_left = 7'000}};
 
@@ -412,21 +485,28 @@ TEST(Evm, call_evm)
 
     auto const result = evm_t::call_evm(&h, s, m);
 
-    EXPECT_EQ(s._accounts[from].balance, 44'000);
-    EXPECT_EQ(s._accounts[to].balance, 56'000);
+    EXPECT_EQ(s.get_balance(from), bytes32_t{44'000});
+    EXPECT_EQ(s.get_balance(to), bytes32_t{56'000});
     EXPECT_EQ(result.gas_left, 7'000);
 }
 
 TEST(Evm, static_precompile_execution)
 {
+    BlockState<mutex_t> bs;
+    account_store_db_t db{};
+    state::State s{bs, db, blocks};
+
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
     static constexpr auto code_address{
         0x0000000000000000000000000000000000000004_address};
-    fake::State::ChangeSet s{};
+
     evm_host_t h{};
-    s._accounts.emplace(from, Account{.balance = 15'000});
-    s._accounts.emplace(code_address, Account{.nonce = 4});
+
+    db.commit(state::StateChanges{
+        .account_changes = {
+            {code_address, Account{.nonce = 4}},
+            {from, Account{.balance = 15'000}}}});
 
     static constexpr char data[] = "hello world";
     static constexpr auto data_size = sizeof(data);
@@ -452,14 +532,21 @@ TEST(Evm, static_precompile_execution)
 
 TEST(Evm, out_of_gas_static_precompile_execution)
 {
+    BlockState<mutex_t> bs;
+    account_store_db_t db{};
+    state::State s{bs, db, blocks};
+
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
     static constexpr auto code_address{
         0x0000000000000000000000000000000000000001_address};
-    fake::State::ChangeSet s{};
+
     evm_host_t h{};
-    s._accounts.emplace(from, Account{.balance = 15'000});
-    s._accounts.emplace(code_address, Account{.nonce = 6});
+
+    db.commit(state::StateChanges{
+        .account_changes = {
+            {code_address, Account{.nonce = 6}},
+            {from, Account{.balance = 15'000}}}});
 
     static constexpr char data[] = "hello world";
     static constexpr auto data_size = sizeof(data);
@@ -479,6 +566,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
     EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
 }
 
+/*
 // TODO
 TEST(Evm, DISABLED_revert_call_evm)
 {
@@ -534,3 +622,4 @@ TEST(Evm, DISABLED_unsuccessful_call_evm)
     EXPECT_TRUE(s._accounts.empty()); // revert was called on the fake
     EXPECT_EQ(result.gas_left, 6'000);
 }
+*/

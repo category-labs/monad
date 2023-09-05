@@ -8,10 +8,6 @@
 #include <monad/execution/evmone_baseline_interpreter.hpp>
 #include <monad/execution/test/fakes.hpp>
 #include <monad/execution/transaction_processor.hpp>
-#include <monad/state/account_state.hpp>
-#include <monad/state/code_state.hpp>
-#include <monad/state/state.hpp>
-#include <monad/state/value_state.hpp>
 #include <monad/test/config.hpp>
 
 #include <optional>

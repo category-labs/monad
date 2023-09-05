@@ -10,11 +10,9 @@
 #include <monad/execution/evmone_baseline_interpreter.hpp>
 #include <monad/execution/transaction_processor.hpp>
 
-#include <monad/state/account_state.hpp>
-#include <monad/state/code_state.hpp>
-#include <monad/state/state.hpp>
 #include <monad/state/state_changes.hpp>
-#include <monad/state/value_state.hpp>
+#include <monad/state2/block_state_ops.hpp>
+#include <monad/state2/state.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -40,14 +38,14 @@ using evm_t = execution::Evm<
 template <class TState, concepts::fork_traits<TState> TTraits>
 using evm_host_t = execution::EvmcHost<TState, TTraits, evm_t<TState, TTraits>>;
 
+using mutex_t = std::shared_mutex;
+
 TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 {
     db::BlockDb blocks{test_resource::correct_block_data_dir};
     account_store_db_t db{};
-    state::AccountState accounts{db};
-    state::ValueState values{db};
-    state::CodeState codes{db};
-    state::State s{accounts, values, codes, blocks, db};
+    BlockState<mutex_t> bs;
+    state::State s{bs, db, blocks};
 
     db.commit(state::StateChanges{
         .account_changes =
@@ -67,35 +65,29 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
         .type = Transaction::Type::eip155};
     Block const b{.header = bh, .transactions = {t}, .ommers = {ommer}};
 
-    auto changeset = s.get_new_changeset(0u);
-
-    using state_t = decltype(changeset);
+    using state_t = decltype(s);
     using fork_t = monad::fork_traits::byzantium;
     using tp_t = execution::TransactionProcessor<state_t, fork_t>;
 
     tp_t tp{};
-    evm_host_t<state_t, fork_t> h{bh, t, changeset};
+    evm_host_t<state_t, fork_t> h{bh, t, s};
 
-    EXPECT_EQ(tp.validate(changeset, t, 0), tp_t::Status::SUCCESS);
+    EXPECT_EQ(tp.validate(s, t, 0), tp_t::Status::SUCCESS);
 
-    auto r = tp.execute(changeset, h, t, 0, bh.beneficiary);
+    auto r = tp.execute(s, h, t, 0, bh.beneficiary);
     EXPECT_EQ(r.status, Receipt::Status::SUCCESS);
     EXPECT_EQ(r.gas_used, 21'000);
     EXPECT_EQ(t.type, Transaction::Type::eip155);
-    EXPECT_EQ(changeset.get_balance(from), bytes32_t{8'790'000});
-    EXPECT_EQ(changeset.get_balance(to), bytes32_t{1'000'000});
-
-    EXPECT_EQ(
-        s.can_merge_changes(changeset), decltype(s)::MergeStatus::WILL_SUCCEED);
-    s.merge_changes(changeset);
+    EXPECT_EQ(s.get_balance(from), bytes32_t{8'790'000});
+    EXPECT_EQ(s.get_balance(to), bytes32_t{1'000'000});
 
     fork_t::apply_block_award(s, b);
 
-    auto ws = s.get_new_changeset(1u);
-    ws.access_account(a);
-    ws.access_account(o);
-    EXPECT_EQ(ws.get_balance(a), bytes32_t{3'093'750'000'000'210'000});
-    EXPECT_EQ(ws.get_balance(o), bytes32_t{2'625'000'000'000'000'000});
+    EXPECT_TRUE(can_merge(bs.state, s.state_));
+    merge(bs.state, s.state_);
+
+    EXPECT_EQ(s.get_balance(a), bytes32_t{3'093'750'000'000'210'000});
+    EXPECT_EQ(s.get_balance(o), bytes32_t{2'625'000'000'000'000'000});
 }
 
 // TODO: Fix this test. This test is commented out because state reversion

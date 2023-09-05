@@ -25,6 +25,13 @@ struct EvmcHost : public evmc::Host
 
     using uint256be = evmc::uint256be;
 
+    EvmcHost(EvmcHost const &e, TState &s)
+        : block_header_{e.block_header_}
+        , transaction_{e.transaction_}
+        , state_{s}
+    {
+    }
+
     EvmcHost(BlockHeader const &b, Transaction const &t, TState &s) noexcept
         : block_header_{b}
         , transaction_{t}

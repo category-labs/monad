@@ -1,5 +1,9 @@
 #pragma once
 
+#include <monad/test/config.hpp>
+
+#include <monad/state2/state.hpp>
+
 #include <ethash/hash_types.hpp>
 
 #include <filesystem>
@@ -11,8 +15,6 @@
 #include <nlohmann/json.hpp>
 
 #include <from_json.hpp>
-
-#include <monad/test/config.hpp>
 
 MONAD_TEST_NAMESPACE_BEGIN
 
@@ -82,22 +84,21 @@ public:
 template <typename TState>
 void load_state_from_json(nlohmann::json const &j, TState &state)
 {
-    auto change_set = state.get_new_changeset(0u);
     for (auto const &[j_addr, j_acc] : j.items()) {
         auto const account_address =
             evmc::from_hex<monad::address_t>(j_addr).value();
-        change_set.create_account(account_address);
+        state.create_account(account_address);
         if (j_acc.contains("code")) {
-            change_set.set_code(
+            state.set_code(
                 account_address, j_acc.at("code").get<monad::byte_string>());
         }
 
-        change_set.set_balance(
+        state.set_balance(
             account_address, j_acc.at("balance").get<intx::uint256>());
         // we cannot use the nlohmann::json from_json<uint64_t> because
         // it does not use the strtoull implementation, whereas we need
         // it so we can turn a hex string into a uint64_t
-        change_set.set_nonce(
+        state.set_nonce(
             account_address, integer_from_json<uint64_t>(j_acc.at("nonce")));
 
         if (j_acc.contains("storage") && j_acc["storage"].is_object()) {
@@ -111,15 +112,12 @@ void load_state_from_json(nlohmann::json const &j, TState &state)
                     continue;
                 }
                 EXPECT_EQ(
-                    change_set.set_storage(
+                    state.set_storage(
                         account_address, key_bytes32, value_bytes32),
                     EVMC_STORAGE_ADDED);
             }
         }
     }
-
-    state.merge_changes(change_set);
-    state.commit();
 }
 
 MONAD_TEST_NAMESPACE_END

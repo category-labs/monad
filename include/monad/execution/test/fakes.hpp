@@ -307,10 +307,12 @@ namespace fake
     template <class TState, concepts::fork_traits<TState> TTraits, class TEvm>
     struct EvmHost
     {
-        evmc_result _result{};
-        Receipt _receipt{};
+        static inline evmc_result _result{.status_code = EVMC_SUCCESS};
+        static inline Receipt _receipt{};
 
         EvmHost() = default;
+
+        EvmHost(EvmHost const &, TState &) {}
 
         EvmHost(BlockHeader const &, Transaction const &, TState &) noexcept {}
 

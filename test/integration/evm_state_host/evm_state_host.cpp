@@ -11,11 +11,9 @@
 
 #include <monad/execution/test/fakes.hpp>
 
-#include <monad/state/account_state.hpp>
-#include <monad/state/code_state.hpp>
-#include <monad/state/state.hpp>
 #include <monad/state/state_changes.hpp>
-#include <monad/state/value_state.hpp>
+#include <monad/state2/block_state_ops.hpp>
+#include <monad/state2/state.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -48,14 +46,13 @@ using evm_t = execution::Evm<
 template <class TState, concepts::fork_traits<TState> TTraits>
 using evm_host_t = execution::EvmcHost<TState, TTraits, evm_t<TState, TTraits>>;
 
+using mutex_t = std::shared_mutex;
+
 TEST(EvmInterpStateHost, return_existing_storage)
 {
     db::BlockDb blocks{test_resource::correct_block_data_dir};
     account_store_db_t db{};
-    state::AccountState accounts{db};
-    state::ValueState values{db};
-    state::CodeState codes{db};
-    state::State s{accounts, values, codes, blocks, db};
+    BlockState<mutex_t> bs;
 
     // Setup db - gas costs referenced here
     // https://www.evm.codes/?fork=byzantium
@@ -88,21 +85,19 @@ TEST(EvmInterpStateHost, return_existing_storage)
         .sender = from,
         .code_address = a};
 
-    // Get new changeset
-    auto changeset = s.get_new_changeset(0u);
+    state::State s{bs, db, blocks};
 
     using fork_t = monad::fork_traits::byzantium;
-    using state_t = decltype(changeset);
+    using state_t = decltype(s);
 
     // Prep per transaction processor
-    changeset.access_account(to);
-    changeset.access_account(from);
-    changeset.access_account(a);
+    s.access_account(to);
+    s.access_account(from);
 
     evm_t<state_t, fork_t> e{};
-    evm_host_t<state_t, fork_t> h{b, t, changeset};
+    evm_host_t<state_t, fork_t> h{b, t, s};
 
-    auto status = e.call_evm(&h, changeset, m);
+    auto status = e.call_evm(&h, s, m);
 
     EXPECT_EQ(status.status_code, EVMC_SUCCESS);
     EXPECT_EQ(status.output_size, 1u);
@@ -114,10 +109,7 @@ TEST(EvmInterpStateHost, store_then_return_storage)
 {
     db::BlockDb blocks{test_resource::correct_block_data_dir};
     account_store_db_t db{};
-    state::AccountState accounts{db};
-    state::ValueState values{db};
-    state::CodeState codes{db};
-    state::State s{accounts, values, codes, blocks, db};
+    BlockState<mutex_t> bs;
 
     // Setup db - gas costs referenced here
     // https://www.evm.codes/?fork=byzantium
@@ -155,21 +147,19 @@ TEST(EvmInterpStateHost, store_then_return_storage)
         .sender = from,
         .code_address = a};
 
-    // Get new changeset
-    auto changeset = s.get_new_changeset(0u);
+    state::State s{bs, db, blocks};
 
     using fork_t = monad::fork_traits::byzantium;
-    using state_t = decltype(changeset);
+    using state_t = decltype(s);
 
     // Prep per transaction processor
-    changeset.access_account(to);
-    changeset.access_account(from);
-    changeset.access_account(a);
+    s.access_account(to);
+    s.access_account(from);
 
     evm_t<state_t, fork_t> e{};
-    evm_host_t<state_t, fork_t> h{b, t, changeset};
+    evm_host_t<state_t, fork_t> h{b, t, s};
 
-    auto status = e.call_evm(&h, changeset, m);
+    auto status = e.call_evm(&h, s, m);
 
     EXPECT_EQ(status.status_code, EVMC_SUCCESS);
     EXPECT_EQ(status.output_size, 1u);

@@ -25,7 +25,10 @@ struct Evm
     [[nodiscard]] static evmc::Result create_contract_account(
         TEvmHost *host, TState &state, evmc_message const &m) noexcept
     {
-        auto const contract_address = make_account_address(state, m);
+        TState new_state{state};
+        TEvmHost new_host{*host, new_state};
+
+        auto const contract_address = make_account_address(new_state, m);
         if (!contract_address) {
             return evmc::Result{contract_address.error()};
         }
@@ -44,27 +47,29 @@ struct Evm
             };
 
             if (auto const transfer_result =
-                    transfer_call_balances(state, m_call);
+                    transfer_call_balances(new_state, m_call);
                 transfer_result.status_code != EVMC_SUCCESS) {
                 return evmc::Result{transfer_result};
             }
 
             return TInterpreter::execute(
-                host, m_call, byte_string_view(m.input_data, m.input_size));
+                &new_host,
+                m_call,
+                byte_string_view(m.input_data, m.input_size));
         };
 
         auto deploy_code = [&](auto &&result) {
             if (result.status_code == EVMC_SUCCESS) {
                 return TTraits::deploy_contract_code(
-                    state, contract_address.value(), std::move(result));
+                    new_state, contract_address.value(), std::move(result));
             }
             return std::forward<decltype(result)>(result);
         };
 
         auto deploy_result = deploy_code(execute_init_code());
 
-        if (deploy_result.status_code != EVMC_SUCCESS) {
-            state.revert();
+        if (deploy_result.status_code == EVMC_SUCCESS) {
+            state.merge(new_state);
         }
 
         return deploy_result;
@@ -74,21 +79,24 @@ struct Evm
     [[nodiscard]] static evmc::Result
     call_evm(TEvmHost *host, TState &state, evmc_message const &m) noexcept
     {
-        if (auto const result = transfer_call_balances(state, m);
+        TState new_state{state};
+        TEvmHost new_host{*host, new_state};
+
+        if (auto const result = transfer_call_balances(new_state, m);
             result.status_code != EVMC_SUCCESS) {
             return evmc::Result{result};
         }
         evmc::Result result = check_call_precompile<TTraits>(m)
                                   .or_else([&] {
-                                      auto const code = state.get_code(
-                                          state.get_code_hash(m.code_address));
+                                      auto const code =
+                                          state.get_code(m.code_address);
                                       return std::optional<evmc::Result>(
-                                          TInterpreter::execute(host, m, code));
+                                          TInterpreter::execute(&new_host, m, code));
                                   })
                                   .value();
 
-        if (result.status_code != EVMC_SUCCESS) {
-            state.revert();
+        if (result.status_code == EVMC_SUCCESS) {
+            state.merge(new_state);
         }
 
         return result;

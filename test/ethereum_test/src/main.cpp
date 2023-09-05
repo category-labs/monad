@@ -46,10 +46,11 @@ int main(int argc, char *argv[])
     std::optional<size_t> fork_index = std::nullopt;
     std::optional<size_t> txn_index = std::nullopt;
 
+    testing::InitGoogleTest(&argc, argv); // Process GoogleTest flags.
+
     // The default test filter. To enable all tests use `--gtest_filter=*`.
-    testing::FLAGS_gtest_filter =
-        "-"
-        "stCreateTest.CreateOOGafterMaxCodesize:" // slow test
+    testing::FLAGS_gtest_filter +=
+        ":-stCreateTest.CreateOOGafterMaxCodesize:" // slow test
         "stQuadraticComplexityTest.Call50000_sha256:" // slow test
         "stTimeConsuming.static_Call50000_sha256:" // slow test
         "stTimeConsuming.CALLBlake2f_MaxRounds:" // slow test
@@ -61,8 +62,6 @@ int main(int argc, char *argv[])
         // which causes stoull to throw an std::out_of_range exception
         "stTransactionTest.HighGasPrice:"
         "stTransactionTest.ValueOverflow";
-
-    testing::InitGoogleTest(&argc, argv); // Process GoogleTest flags.
 
     CLI::App app{"monad ethereum tests runner"};
 

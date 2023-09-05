@@ -84,21 +84,23 @@ using execution_variant =
  * @return a receipt of the transaction
  */
 [[nodiscard]] std::optional<monad::Receipt> execute(
-    size_t fork_index, monad::BlockHeader const &block_header,
-    working_state_t &state, monad::Transaction const &transaction)
+    size_t fork_index, monad::BlockHeader const &block_header, state_t &state,
+    monad::Transaction const &transaction)
 {
     using namespace boost::mp11;
-    using namespace monad;
 
+    auto change_set = state.get_new_changeset(0u);
+
+    using namespace monad;
     // create a table of fork types
     auto execution_array = []<typename... Ts>(
                                mp_list<Ts...>,
                                BlockHeader const &block_header,
-                               working_state_t &state,
+                               working_state_t &change_set,
                                Transaction const &transaction) {
         return std::array<execution_variant, sizeof...(Ts)>{
-            Execution<Ts>{block_header, transaction, state}...};
-    }(fork_traits::all_forks_t{}, block_header, state, transaction);
+            Execution<Ts>{block_header, transaction, change_set}...};
+    }(fork_traits::all_forks_t{}, block_header, change_set, transaction);
 
     // we then dispatch into the appropriate fork at runtime using std::get
     auto &variant = execution_array.at(fork_index);
@@ -107,12 +109,17 @@ using execution_variant =
     mp_for_each<mp_iota_c<mp_size<fork_traits::all_forks_t>::value>>(
         [&](auto I) {
             if (I == fork_index) {
-                maybe_receipt =
-                    std::get<Execution<mp_at_c<fork_traits::all_forks_t, I>>>(
-                        variant)
-                        .execute(state, transaction);
+                using TTraits = mp_at_c<fork_traits::all_forks_t, I>;
+                maybe_receipt = std::get<Execution<TTraits>>(variant).execute(
+                    change_set, transaction);
+                state.merge_changes(change_set);
+
+                TTraits::apply_block_award_impl(
+                    state, monad::Block{.header = block_header}, 0, 0);
             }
         });
+
+    state.commit();
     return maybe_receipt;
 }
 
@@ -305,16 +312,11 @@ void EthereumTests::run_state_test(
 
             auto block_header = j_t.at("env").get<monad::BlockHeader>();
 
-            auto change_set = state.get_new_changeset(0u);
-
             MONAD_LOG_INFO(
                 logger, "Starting to execute transaction {}", case_index);
 
             auto maybe_receipt =
-                execute(fork_index, block_header, change_set, transaction);
-            state.merge_changes(change_set);
-            state.apply_block_reward(block_header.beneficiary, 0);
-            state.commit();
+                execute(fork_index, block_header, state, transaction);
 
             MONAD_LOG_INFO(
                 logger,

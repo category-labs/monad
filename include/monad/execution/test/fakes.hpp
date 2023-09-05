@@ -268,12 +268,7 @@ namespace fake
 
         std::unordered_map<address_t, uint256_t> _block_reward{};
 
-        void apply_block_reward(address_t const &a, uint256_t const &r)
-        {
-            _block_reward.insert({a, r});
-        }
-
-        void apply_ommer_reward(address_t const &a, uint256_t const &r)
+        void apply_reward(address_t const &a, uint256_t const &r)
         {
             _block_reward.insert({a, r});
         }
@@ -284,6 +279,8 @@ namespace fake
         unsigned int _current_txn{};
 
         MergeStatus _merge_status{MergeStatus::TRY_LATER};
+
+        [[nodiscard]] constexpr uint256_t gas_award() const { return 0; }
 
         unsigned int current_txn() { return _current_txn; }
 

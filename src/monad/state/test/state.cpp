@@ -98,7 +98,7 @@ TYPED_TEST(StateTest, apply_award)
 
     as.merge_changes(bs);
     as.merge_changes(cs);
-    as.apply_block_reward(a, 100);
+    as.apply_reward(a, 100 + as.gas_award());
     as.commit();
 
     auto ds = as.get_new_changeset(2);
@@ -527,7 +527,7 @@ TYPED_TEST(StateTest, commit_twice)
     }
 }
 
-TYPED_TEST(StateTest, commit_twice_apply_block_reward)
+TYPED_TEST(StateTest, commit_twice_apply_reward)
 {
     auto db = test::make_db<TypeParam>();
     AccountState accounts{db};
@@ -542,7 +542,7 @@ TYPED_TEST(StateTest, commit_twice_apply_block_reward)
         EXPECT_EQ(
             t.can_merge_changes(bs), decltype(t)::MergeStatus::WILL_SUCCEED);
         t.merge_changes(bs);
-        t.apply_block_reward(a, 100);
+        t.apply_reward(a, 100 + t.gas_award());
         t.commit();
     }
     {
@@ -552,8 +552,8 @@ TYPED_TEST(StateTest, commit_twice_apply_block_reward)
         EXPECT_EQ(
             t.can_merge_changes(bs), decltype(t)::MergeStatus::WILL_SUCCEED);
         t.merge_changes(bs);
-        t.apply_ommer_reward(b, 300);
-        t.apply_block_reward(a, 100);
+        t.apply_reward(b, 300);
+        t.apply_reward(a, 100 + t.gas_award());
         t.commit();
     }
 

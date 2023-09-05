@@ -247,16 +247,15 @@ struct State
     {
     }
 
-    void apply_block_reward(address_t const &a, uint256_t const &reward)
+    void apply_reward(address_t const &a, uint256_t const &reward)
     {
-        MONAD_LOG_DEBUG(logger, "apply_block_reward {}", a);
-        accounts_.apply_reward(a, reward + gas_award_);
+        MONAD_LOG_DEBUG(logger, "apply_reward {} {}", a, reward);
+        accounts_.apply_reward(a, reward);
     }
 
-    void apply_ommer_reward(address_t const &a, uint256_t const &reward)
+    [[nodiscard]] constexpr uint256_t const &gas_award() const
     {
-        MONAD_LOG_DEBUG(logger, "apply_ommer_reward {}", a);
-        accounts_.apply_reward(a, reward);
+        return gas_award_;
     }
 
     unsigned int current_txn() const { return current_txn_; }

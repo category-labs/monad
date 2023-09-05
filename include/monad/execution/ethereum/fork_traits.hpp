@@ -54,19 +54,18 @@ namespace fork_traits
     namespace contracts = execution::static_precompiles;
 
     template <class TState>
-    static constexpr void apply_mining_award(
-        TState &s, Block const &b, uint256_t const &reward,
+    static constexpr uint256_t calculate_block_award(
+        TState const &s, Block const &b, uint256_t const &reward,
         uint256_t const &ommer_reward)
     {
-        // reward block beneficiary, YP Eqn. 172
-        uint256_t const miner_reward = reward + ommer_reward * b.ommers.size();
-        s.apply_block_reward(b.header.beneficiary, miner_reward);
+        return reward + ommer_reward * b.ommers.size() + s.gas_award();
+    }
 
-        // reward ommers, YP Eqn. 175
-        for (auto &i : b.ommers) {
-            auto const subtrahend = ((b.header.number - i.number) * reward) / 8;
-            s.apply_ommer_reward(i.beneficiary, reward - subtrahend);
-        }
+    static constexpr uint256_t calculate_ommer_award(
+        Block const &b, uint256_t const &reward, uint64_t ommer_number)
+    {
+        auto const subtrahend = ((b.header.number - ommer_number) * reward) / 8;
+        return reward - subtrahend;
     }
 
     struct frontier
@@ -156,9 +155,28 @@ namespace fork_traits
         }
 
         template <class TState>
+        static constexpr void apply_block_award_impl(
+            TState &s, Block const &b, uint256_t const &reward,
+            uint256_t const &ommer_reward)
+        {
+            auto const miner_award =
+                calculate_block_award(s, b, reward, ommer_reward);
+
+            // reward block beneficiary, YP Eqn. 172
+            s.apply_reward(b.header.beneficiary, miner_award);
+
+            // reward ommers, YP Eqn. 175
+            for (auto const &header : b.ommers) {
+                s.apply_reward(
+                    header.beneficiary,
+                    calculate_ommer_award(b, reward, header.number));
+            }
+        }
+
+        template <class TState>
         static constexpr void apply_block_award(TState &s, Block const &b)
         {
-            apply_mining_award(s, b, block_reward, additional_ommer_reward);
+            apply_block_award_impl(s, b, block_reward, additional_ommer_reward);
         }
 
         template <class TState>
@@ -323,6 +341,35 @@ namespace fork_traits
             }
             return homestead::deploy_contract_code(s, a, std::move(result));
         }
+
+        template <class TState>
+        static constexpr void apply_block_award_impl(
+            TState &s, Block const &b, uint256_t const &reward,
+            uint256_t const &ommer_reward)
+        {
+            auto const miner_reward =
+                calculate_block_award(s, b, reward, ommer_reward);
+
+            // reward block beneficiary, YP Eqn. 172
+            if (miner_reward) {
+                s.apply_reward(b.header.beneficiary, miner_reward);
+            }
+
+            // reward ommers, YP Eqn. 175
+            for (auto const &header : b.ommers) {
+                auto const ommer_reward =
+                    calculate_ommer_award(b, reward, header.number);
+                if (ommer_reward) {
+                    s.apply_reward(header.beneficiary, ommer_reward);
+                }
+            }
+        }
+
+        template <class TState>
+        static constexpr void apply_block_award(TState &s, Block const &b)
+        {
+            apply_block_award_impl(s, b, block_reward, additional_ommer_reward);
+        }
     };
 
     struct byzantium : public spurious_dragon
@@ -351,7 +398,7 @@ namespace fork_traits
         template <class TState>
         static constexpr void apply_block_award(TState &s, Block const &b)
         {
-            apply_mining_award(s, b, block_reward, additional_ommer_reward);
+            apply_block_award_impl(s, b, block_reward, additional_ommer_reward);
         }
     };
 
@@ -371,7 +418,7 @@ namespace fork_traits
         template <class TState>
         static constexpr void apply_block_award(TState &s, Block const &b)
         {
-            apply_mining_award(s, b, block_reward, additional_ommer_reward);
+            apply_block_award_impl(s, b, block_reward, additional_ommer_reward);
         }
     };
 
@@ -531,7 +578,7 @@ namespace fork_traits
         template <class TState>
         static constexpr void apply_block_award(TState &s, Block const &b)
         {
-            apply_mining_award(s, b, block_reward, additional_ommer_reward);
+            apply_block_award_impl(s, b, block_reward, additional_ommer_reward);
         }
 
         static constexpr void validate_block(Block const &b)

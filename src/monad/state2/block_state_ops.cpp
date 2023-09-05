@@ -30,7 +30,7 @@ std::optional<Account> &read_account(
             auto const &result = it->second.account.second;
             auto const [it, _] = state.try_emplace(
                 address,
-                AccountDeltas{.account = {result, result}, .storage = {}});
+                StateDelta{.account = {result, result}, .storage = {}});
             return it->second.account.second;
         }
     }
@@ -39,13 +39,13 @@ std::optional<Account> &read_account(
     {
         std::lock_guard<Mutex> const lock{block_state.mutex};
         auto const [it, inserted] = block_state.state.try_emplace(
-            address, AccountDeltas{.account = {result, result}, .storage = {}});
+            address, StateDelta{.account = {result, result}, .storage = {}});
         if (MONAD_UNLIKELY(!inserted)) {
             result = it->second.account.second;
         }
     }
     auto const [it, _] = state.try_emplace(
-        address, AccountDeltas{.account = {result, result}, .storage = {}});
+        address, StateDelta{.account = {result, result}, .storage = {}});
     return it->second.account.second;
 }
 

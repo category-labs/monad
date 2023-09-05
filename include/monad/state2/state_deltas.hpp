@@ -26,17 +26,17 @@ using StorageDelta = delta_t<bytes32_t>;
 static_assert(sizeof(StorageDelta) == 64);
 static_assert(alignof(StorageDelta) == 1);
 
-struct AccountDeltas
+struct StateDelta
 {
     AccountDelta account;
     ankerl::unordered_dense::segmented_map<bytes32_t, StorageDelta> storage;
 };
 
-static_assert(sizeof(AccountDeltas) == 224);
-static_assert(alignof(AccountDeltas) == 8);
+static_assert(sizeof(StateDelta) == 224);
+static_assert(alignof(StateDelta) == 8);
 
 using StateDeltas =
-    ankerl::unordered_dense::segmented_map<address_t, AccountDeltas>;
+    ankerl::unordered_dense::segmented_map<address_t, StateDelta>;
 
 static_assert(sizeof(StateDeltas) == 64);
 static_assert(alignof(StateDeltas) == 8);

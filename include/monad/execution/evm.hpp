@@ -11,6 +11,8 @@
 
 #include <tl/expected.hpp>
 
+#include <optional>
+
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
 template <
@@ -25,6 +27,11 @@ struct Evm
     [[nodiscard]] static evmc::Result create_contract_account(
         TEvmHost *host, TState &state, evmc_message const &m) noexcept
     {
+        auto const result = increment_sender_nonce(state, m);
+        if (result.has_value()) {
+            return evmc::Result{result.value()};
+        }
+
         TState new_state{state};
         TEvmHost new_host{*host, new_state};
 
@@ -125,19 +132,17 @@ struct Evm
         s.set_balance(to, to_balance + value);
     }
 
-    [[nodiscard]] static auto increment_sender_nonce(TState &s) noexcept
+    [[nodiscard]] static std::optional<evmc_result>
+    increment_sender_nonce(TState &s, evmc_message const &m) noexcept
     {
-        return [&](evmc_message const &m) {
-            auto const n = s.get_nonce(m.sender) + 1;
-            if (s.get_nonce(m.sender) > n) {
-                // Match geth behavior - don't overflow nonce
-                return result_t(unexpected_t(
-                    {.status_code = EVMC_ARGUMENT_OUT_OF_RANGE,
-                     .gas_left = m.gas}));
-            }
-            s.set_nonce(m.sender, n);
-            return result_t({m});
-        };
+        auto const n = s.get_nonce(m.sender) + 1;
+        if (s.get_nonce(m.sender) > n) {
+            // Match geth behavior - don't overflow nonce
+            return evmc_result{
+                .status_code = EVMC_ARGUMENT_OUT_OF_RANGE, .gas_left = m.gas};
+        }
+        s.set_nonce(m.sender, n);
+        return std::nullopt;
     }
 
     [[nodiscard]] static auto
@@ -175,9 +180,8 @@ struct Evm
     make_account_address(TState &s, evmc_message const &m) noexcept
     {
         address_t new_address{};
-        auto const result = check_sender_balance(s, m)
-                                .and_then(increment_sender_nonce(s))
-                                .and_then(create_new_contract(s, new_address));
+        auto const result = check_sender_balance(s, m).and_then(
+            create_new_contract(s, new_address));
         if (!result) {
             return unexpected_t{result.error()};
         }

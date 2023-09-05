@@ -44,7 +44,7 @@ def main():
     sender_email = gmail_user
     recipients = [
         # TODO: add more recipients
-        "rene@monad.xyz",
+        "monad-ethereum-tests@monad.xyz",
     ]
 
     # TODO: display skipped tests

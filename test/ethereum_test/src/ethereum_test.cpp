@@ -334,7 +334,7 @@ void EthereumTests::run_state_test(
                 state.db_.state_root());
 
             auto const msg = fmt::format(
-                "fork_name: {}, transaction_index: {}", fork_name, case_index);
+                "fork_name: {}, case_index: {}", fork_name, case_index);
 
             EXPECT_EQ(state.db_.state_root(), expected.state_hash) << msg;
             EXPECT_EQ(maybe_receipt.has_value(), !expected.exception) << msg;

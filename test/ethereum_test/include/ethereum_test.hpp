@@ -22,7 +22,7 @@ inline std::unordered_map<std::string, size_t> const fork_index_map = {
     // DAO and Tangerine Whistle not covered by Ethereum Tests
     {"EIP158", 4},
     {"Byzantium", 5},
-    {"Constantinople", 6},
+    {"ConstantinopleFix", 6},
     {"Istanbul", 7},
     {"Berlin", 8},
     {"London", 9},

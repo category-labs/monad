@@ -25,7 +25,9 @@ inline std::unordered_map<std::string, size_t> const fork_index_map = {
     {"Constantinople", 6},
     {"Istanbul", 7},
     {"Berlin", 8},
-    {"London", 9}};
+    {"London", 9},
+    {"Merge", 10},
+    {"Shanghai", 11}};
 
 struct EthereumTests : public testing::Test
 {

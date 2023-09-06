@@ -53,7 +53,7 @@ struct EthereumTests : public testing::Test
     }
 
     static void register_test(
-        std::string const &suite_name, std::filesystem::path const &file,
+        std::string suite_name, std::filesystem::path const &file,
         std::optional<size_t> fork_index, std::optional<size_t> txn_index);
 
     static void register_test_files(

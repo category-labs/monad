@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <iostream>
 
 MONAD_TEST_NAMESPACE_BEGIN
@@ -124,12 +125,19 @@ using execution_variant =
 }
 
 void EthereumTests::register_test(
-    std::string const &suite_name, std::filesystem::path const &file,
+    std::string suite_name, std::filesystem::path const &file,
     std::optional<size_t> fork_index, std::optional<size_t> txn_index)
 {
+    // Normalize the test name so that gtest_filter can recognize it. ie.
+    // --gtest_filter=stZeroKnowledge2.ecmul_0-3_5616_21000_128 will not work
+    // because gtest interprets the minus sign as exclusion
+    std::ranges::replace(suite_name, '-', '_');
+    auto test_name = file.stem().string();
+    std::ranges::replace(test_name, '-', '_');
+
     testing::RegisterTest(
         suite_name.c_str(),
-        file.stem().string().c_str(),
+        test_name.c_str(),
         nullptr,
         nullptr,
         file.string().c_str(),

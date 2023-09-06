@@ -114,6 +114,11 @@ int main(int argc, char *argv[])
 
     int return_code = RUN_ALL_TESTS();
 
+    if (::testing::UnitTest::GetInstance()->test_to_run_count() == 0) {
+        MONAD_LOG_ERROR(quill::get_logger(), "No tests were run.");
+        return_code = -1;
+    }
+
     quill::flush();
     quill::remove_logger(ethereum_test_logger);
     quill::remove_logger(trie_db_logger);

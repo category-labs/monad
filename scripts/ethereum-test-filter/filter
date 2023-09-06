@@ -1,2 +1,3 @@
 frontier -stRefundTest.refundResetFrontier
 homestead -VMTests/vmIOandFlowOperations.jumpToPush
+eip158 -VMTests/vmIOandFlowOperations.jumpToPush

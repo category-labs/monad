@@ -562,3 +562,18 @@ TYPED_TEST(StateTest, commit_twice_apply_reward)
     EXPECT_EQ(ds.get_balance(a), bytes32_t{220});
     EXPECT_EQ(ds.get_balance(b), bytes32_t{300});
 }
+
+TYPED_TEST(StateTest, selfdestruct_nonexisting_beneficiary)
+{
+    auto db = test::make_db<TypeParam>();
+    AccountState accounts{db};
+    ValueState values{db};
+    CodeState code{db};
+    State t{accounts, values, code, block_cache, db};
+    auto change_set = t.get_new_changeset(0u);
+    change_set.create_account(a);
+    change_set.set_balance(a, 0x10000000);
+    EXPECT_TRUE(change_set.selfdestruct(a, b));
+    t.merge_changes(change_set);
+    t.commit();
+}

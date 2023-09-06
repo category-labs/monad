@@ -245,6 +245,9 @@ struct AccountState<TAccountDB>::ChangeSet : public AccountState<TAccountDB>
     selfdestruct(address_t const &a, address_t const &beneficiary) noexcept
     {
         if (get_account(a).has_value()) {
+            if (!account_exists(beneficiary)) {
+                create_account(beneficiary);
+            }
             set_balance(
                 beneficiary,
                 intx::be::load<uint256_t>(get_balance(beneficiary)) +

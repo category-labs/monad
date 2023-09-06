@@ -117,7 +117,11 @@ struct CodeState<TCodeDB>::ChangeSet : public CodeState<TCodeDB>
         size_t buffer_size) const
     {
         auto const code = code_at(b);
-        assert(code.size() > offset);
+
+        if (offset >= code.size()) {
+            return 0;
+        }
+
         auto const bytes_to_copy = std::min(code.size() - offset, buffer_size);
         std::copy_n(
             std::next(code.begin(), static_cast<long>(offset)),

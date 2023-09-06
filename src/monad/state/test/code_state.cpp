@@ -145,6 +145,10 @@ TYPED_TEST(CodeStateTest, copy_code)
         EXPECT_EQ(total, size);
         EXPECT_EQ(0, std::memcmp(buffer, code2.c_str(), total));
     }
+    { // null hash
+        auto const total = changeset.copy_code(NULL_HASH, 1u, buffer, size);
+        EXPECT_EQ(total, 0);
+    }
 }
 
 TYPED_TEST(CodeStateTest, merge_changes)

@@ -119,6 +119,7 @@ add_library(
   "include/monad/db/rocks_db_helper.hpp"
   "include/monad/db/rocks_db.hpp"
   "include/monad/db/rocks_trie_db.hpp"
+  "include/monad/db/state_commit.hpp"
   "include/monad/db/state_db.hpp"
   "include/monad/db/trie_db_process_changes.hpp"
   "include/monad/db/trie_db_read_account.hpp"
@@ -127,6 +128,7 @@ add_library(
   "src/monad/db/block_db.cpp"
   "src/monad/db/file_db.cpp"
   "src/monad/db/rocks_db_helper.cpp"
+  "src/monad/db/state_commit.cpp"
   "src/monad/db/state_db.cpp"
   # execution
   "include/monad/execution/config.hpp"

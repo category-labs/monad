@@ -15,6 +15,7 @@
 #include <monad/logging/monad_log.hpp>
 #include <monad/rlp/decode_helpers.hpp>
 #include <monad/rlp/encode_helpers.hpp>
+#include <monad/state2/state_deltas.hpp>
 
 #include <rocksdb/db.h>
 
@@ -176,8 +177,8 @@ struct RocksDB : public Db
         return ret;
     }
 
-    [[nodiscard]] bytes32_t
-    read_storage(address_t const &a, uint64_t, bytes32_t const &k) const override
+    [[nodiscard]] bytes32_t read_storage(
+        address_t const &a, uint64_t, bytes32_t const &k) const override
     {
         auto const key = detail::make_basic_storage_key(a, k);
         rocksdb::PinnableSlice value;
@@ -231,6 +232,72 @@ struct RocksDB : public Db
         }
 
         detail::rocks_db_commit_code_to_batch(batch, obj, code_cf());
+
+        rocksdb::WriteOptions options;
+        options.disableWAL = true;
+        db->Write(options, &batch);
+        batch.Clear();
+    }
+
+    void
+    commit(StateDeltas const &state_deltas, Code const &code_delta) override
+    {
+        for (auto const &[addr, state_delta] : state_deltas) {
+
+            auto const &account_delta = state_delta.account;
+            auto const &storage_deltas = state_delta.storage;
+            // storage
+            if (account_delta.second.has_value()) {
+                for (auto const &[k, v] : storage_deltas) {
+                    if (v.first != v.second) {
+                        auto const key =
+                            detail::make_basic_storage_key(addr, k);
+                        if (v.second != bytes32_t{}) {
+                            auto const res = batch.Put(
+                                storage_cf(),
+                                to_slice(key),
+                                to_slice(v.second));
+                            MONAD_ROCKS_ASSERT(res);
+                        }
+                        else {
+                            auto const res =
+                                batch.Delete(storage_cf(), to_slice(key));
+                            MONAD_ROCKS_ASSERT(res);
+                        }
+                    }
+                }
+            }
+
+            // account
+            if (account_delta.first != account_delta.second) {
+                if (account_delta.second.has_value()) {
+                    // Note: no storage root calculations in this mode
+                    auto const res = batch.Put(
+                        accounts_cf(),
+                        to_slice(addr),
+                        to_slice(rlp::encode_account(
+                            account_delta.second.value(), NULL_ROOT)));
+                    MONAD_ROCKS_ASSERT(res);
+                }
+                else {
+                    auto const delete_res =
+                        batch.Delete(accounts_cf(), to_slice(addr));
+                    MONAD_ROCKS_ASSERT(delete_res);
+                    bytes32_t const begin_key{};
+                    bytes32_t const end_key{
+                        0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff_bytes32};
+                    auto const delete_range_res = batch.DeleteRange(
+                        storage_cf(),
+                        to_slice(
+                            detail::make_basic_storage_key(addr, begin_key)),
+                        to_slice(
+                            detail::make_basic_storage_key(addr, end_key)));
+                    MONAD_ROCKS_ASSERT(delete_range_res);
+                }
+            }
+        }
+
+        detail::rocks_db_commit_code_to_batch(batch, code_delta, code_cf());
 
         rocksdb::WriteOptions options;
         options.disableWAL = true;

@@ -8,6 +8,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/db/db.hpp>
+#include <monad/state2/state_deltas.hpp>
 
 #include <absl/container/btree_map.h>
 
@@ -78,6 +79,12 @@ public:
     void commit();
 
     void commit(state::StateChanges const &) override
+    {
+        // TODO
+        MONAD_ASSERT(false);
+    }
+
+    void commit(StateDeltas const &, Code const &) override
     {
         // TODO
         MONAD_ASSERT(false);

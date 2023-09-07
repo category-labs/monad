@@ -6,6 +6,7 @@
 #include <monad/db/trie_db_read_account.hpp>
 #include <monad/db/trie_db_read_storage.hpp>
 #include <monad/state/state_changes.hpp>
+#include <monad/state2/state_deltas.hpp>
 #include <monad/trie/in_memory_comparator.hpp>
 #include <monad/trie/in_memory_cursor.hpp>
 #include <monad/trie/in_memory_writer.hpp>
@@ -95,6 +96,20 @@ struct InMemoryTrieDB : public Db
             code[ch] = c;
         }
         trie_db_process_changes(obj, accounts_trie, storage_trie);
+
+        accounts_trie.leaves_writer.write();
+        accounts_trie.trie_writer.write();
+        storage_trie.leaves_writer.write();
+        storage_trie.trie_writer.write();
+    }
+
+    void
+    commit(StateDeltas const &state_deltas, Code const &code_delta) override
+    {
+        for (auto const &[ch, c] : code_delta) {
+            code[ch] = c;
+        }
+        trie_db_process_changes(state_deltas, accounts_trie, storage_trie);
 
         accounts_trie.leaves_writer.write();
         accounts_trie.trie_writer.write();

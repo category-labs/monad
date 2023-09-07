@@ -8,6 +8,8 @@
 
 #include <monad/state/state_changes.hpp>
 
+#include <monad/state2/state_deltas.hpp>
+
 #include <rocksdb/db.h>
 
 #include <memory>
@@ -21,6 +23,16 @@ namespace detail
         rocksdb::ColumnFamilyHandle *cf)
     {
         for (auto const &[ch, c] : obj.code_changes) {
+            auto const res = batch.Put(cf, to_slice(ch), to_slice(c));
+            MONAD_ROCKS_ASSERT(res);
+        }
+    }
+
+    inline void rocks_db_commit_code_to_batch(
+        rocksdb::WriteBatch &batch, Code const &code_delta,
+        rocksdb::ColumnFamilyHandle *cf)
+    {
+        for (auto const &[ch, c] : code_delta) {
             auto const res = batch.Put(cf, to_slice(ch), to_slice(c));
             MONAD_ROCKS_ASSERT(res);
         }

@@ -6,6 +6,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/db/config.hpp>
 #include <monad/state/state_changes.hpp>
+#include <monad/state2/state_deltas.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -23,6 +24,8 @@ struct Db
     virtual byte_string read_code(bytes32_t const &) const = 0;
 
     virtual void commit(state::StateChanges const &) = 0;
+
+    virtual void commit(StateDeltas const &, Code const &) = 0;
 
     virtual void
     create_and_prune_block_history(uint64_t block_number) const = 0;

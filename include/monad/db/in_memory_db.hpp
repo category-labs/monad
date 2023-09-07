@@ -7,6 +7,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/db/config.hpp>
 #include <monad/db/db.hpp>
+#include <monad/state2/state_deltas.hpp>
 
 MONAD_DB_NAMESPACE_BEGIN
 
@@ -73,6 +74,52 @@ struct InMemoryDB : public Db
                 auto const n = accounts.erase(a);
                 MONAD_DEBUG_ASSERT(n == 1);
             }
+        }
+    }
+
+    void
+    commit(StateDeltas const &state_deltas, Code const &code_delta) override
+    {
+        for (auto const &[addr, state_delta] : state_deltas) {
+
+            auto const &account_delta = state_delta.account;
+            auto const &storage_deltas = state_delta.storage;
+            auto &account_storage = storage[addr];
+
+            // storage
+            if (account_delta.second.has_value()) {
+                for (auto const &[key, value] : storage_deltas) {
+                    auto const it = account_storage.find(key);
+                    MONAD_DEBUG_ASSERT(
+                        (it == account_storage.end() && is_zero(value.first)) ||
+                        (it->second == value.first));
+                    if (value.first != value.second) {
+                        if (value.second != bytes32_t{}) {
+                            account_storage[key] = value.second;
+                        }
+                        else {
+                            auto const n = account_storage.erase(key);
+                            MONAD_DEBUG_ASSERT(n == 1);
+                        }
+                    }
+                }
+            }
+
+            // account
+            if (account_delta.first != account_delta.second) {
+                if (account_delta.second.has_value()) {
+                    accounts[addr] = account_delta.second.value();
+                }
+                else {
+                    auto const n = accounts.erase(addr);
+                    MONAD_DEBUG_ASSERT(n == 1);
+                    account_storage.clear();
+                }
+            }
+        }
+
+        for (auto const &[ch, c] : code_delta) {
+            code[ch] = c;
         }
     }
 

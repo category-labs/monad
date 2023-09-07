@@ -11,6 +11,7 @@
 #include <monad/db/trie_db_read_account.hpp>
 #include <monad/db/trie_db_read_storage.hpp>
 #include <monad/logging/monad_log.hpp>
+#include <monad/state2/state_deltas.hpp>
 #include <monad/trie/rocks_comparator.hpp>
 #include <monad/trie/rocks_cursor.hpp>
 #include <monad/trie/rocks_writer.hpp>
@@ -225,6 +226,22 @@ struct RocksTrieDB : public Db
         detail::rocks_db_commit_code_to_batch(batch, obj, code_cf());
 
         trie_db_process_changes(obj, accounts_trie, storage_trie);
+
+        rocksdb::WriteOptions options;
+        options.disableWAL = true;
+        db->Write(options, &batch);
+        batch.Clear();
+
+        accounts_trie.reset_cursor();
+        storage_trie.reset_cursor();
+    }
+
+    void
+    commit(StateDeltas const &state_deltas, Code const &code_delta) override
+    {
+        detail::rocks_db_commit_code_to_batch(batch, code_delta, code_cf());
+
+        trie_db_process_changes(state_deltas, accounts_trie, storage_trie);
 
         rocksdb::WriteOptions options;
         options.disableWAL = true;

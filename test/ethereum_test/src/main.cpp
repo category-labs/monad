@@ -50,7 +50,7 @@ int main(int argc, char *argv[])
 
     // The default test filter. To enable all tests use `--gtest_filter=*`.
     testing::FLAGS_gtest_filter +=
-        ":-stCreateTest.CreateOOGafterMaxCodesize:" // slow test
+        ":-:stCreateTest.CreateOOGafterMaxCodesize:" // slow test
         "stQuadraticComplexityTest.Call50000_sha256:" // slow test
         "stTimeConsuming.static_Call50000_sha256:" // slow test
         "stTimeConsuming.CALLBlake2f_MaxRounds:" // slow test

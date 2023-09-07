@@ -531,7 +531,7 @@ struct formatter<intx::uint<N>> : public monad::log::basic_formatter
     template <typename FormatContext>
     auto format(intx::uint<N> const &value, FormatContext &ctx) const
     {
-        fmt::format_to(ctx.out(), "{}", intx::to_string(value));
+        fmt::format_to(ctx.out(), "{}", intx::to_string(value, 16));
         return ctx.out();
     }
 };

@@ -91,13 +91,6 @@ namespace fork_traits
             return 0u;
         }
 
-        template <class TState>
-        [[nodiscard]] static constexpr uint64_t
-        get_selfdestruct_refund(TState const &s) noexcept
-        {
-            return s.total_selfdestructs() * 24'000;
-        }
-
         [[nodiscard]] static constexpr uint64_t max_refund_quotient() noexcept
         {
             return 2u;
@@ -466,13 +459,6 @@ namespace fork_traits
         static constexpr auto last_block_number = 15'537'393u;
 
         // https://eips.ethereum.org/EIPS/eip-3529
-        template <class TState>
-        [[nodiscard]] static constexpr uint64_t
-        get_selfdestruct_refund(TState const &) noexcept
-        {
-            return 0u;
-        }
-
         [[nodiscard]] static constexpr uint64_t max_refund_quotient() noexcept
         {
             return 5u;

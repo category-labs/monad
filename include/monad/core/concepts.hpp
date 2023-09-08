@@ -31,7 +31,6 @@ namespace concepts
         { T::starting_nonce() } -> std::convertible_to<uint64_t>;
         { T::last_block_number } -> std::convertible_to<uint64_t>;
         { T::n_precompiles } -> std::convertible_to<uint64_t>;
-        { T::get_selfdestruct_refund(s) } -> std::convertible_to<uint64_t>;
         { T::max_refund_quotient() } -> std::convertible_to<int>;
         { T::destruct_touched_dead(s) } -> std::convertible_to<void>;
         { T::deploy_contract_code(s, a, std::move(r)) }

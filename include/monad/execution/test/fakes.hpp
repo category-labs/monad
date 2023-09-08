@@ -392,7 +392,6 @@ namespace fake
             using next_fork_t = alpha;
 
             static constexpr evmc_revision rev = EVMC_FRONTIER;
-            static inline uint64_t _sd_refund{};
             static inline uint64_t last_block_number{
                 std::numeric_limits<uint64_t>::max()};
             static constexpr uint64_t n_precompiles = 4;
@@ -412,10 +411,6 @@ namespace fake
             }
             static auto starting_nonce() { return 1u; }
             static auto max_refund_quotient() { return _max_refund_quotient; }
-            static auto get_selfdestruct_refund(TState const &)
-            {
-                return _sd_refund;
-            }
             static void destruct_touched_dead(TState &s)
             {
                 s.destruct_touched_dead();

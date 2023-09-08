@@ -45,12 +45,9 @@ struct TransactionProcessor
     }
 
     // YP Eqn 72
-    [[nodiscard]] uint64_t g_star(
-        TState &s, Transaction const &t, uint64_t gas_remaining,
-        uint64_t refund) const
+    [[nodiscard]] uint64_t
+    g_star(Transaction const &t, uint64_t gas_remaining, uint64_t refund) const
     {
-        refund += TTraits::get_selfdestruct_refund(s);
-
         auto const refund_allowance =
             (t.gas_limit - gas_remaining) / TTraits::max_refund_quotient();
 
@@ -62,7 +59,7 @@ struct TransactionProcessor
         uint64_t const gas_leftover, uint64_t refund) const
     {
         // refund and priority, Eqn. 73-76
-        auto const gas_remaining = g_star(s, t, gas_leftover, refund);
+        auto const gas_remaining = g_star(t, gas_leftover, refund);
         auto const gas_cost = TTraits::gas_price(t, base_fee_per_gas);
 
         auto const sender_balance =

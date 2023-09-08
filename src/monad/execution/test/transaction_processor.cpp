@@ -17,8 +17,6 @@ using evm_host_t = fake::EvmHost<
 
 TEST(TransactionProcessor, g_star)
 {
-    fake::State::ChangeSet s{};
-    traits_t::_sd_refund = 10'000;
     traits_t::_max_refund_quotient = 2;
 
     static Transaction const t{
@@ -27,10 +25,10 @@ TEST(TransactionProcessor, g_star)
 
     processor_t p{};
 
-    EXPECT_EQ(p.g_star(s, t, 1'002, 15'000), 26'001);
-    EXPECT_EQ(p.g_star(s, t, 1'001, 15'000), 26'000);
-    EXPECT_EQ(p.g_star(s, t, 1'000, 15'000), 26'000);
-    EXPECT_EQ(p.g_star(s, t, 999, 15'000), 25'999);
+    EXPECT_EQ(p.g_star(t, 1'002, 15'000), 16'002);
+    EXPECT_EQ(p.g_star(t, 1'001, 15'000), 16'001);
+    EXPECT_EQ(p.g_star(t, 1'000, 15'000), 16'000);
+    EXPECT_EQ(p.g_star(t, 999, 15'000), 15'999);
 }
 
 TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
@@ -45,7 +43,6 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     s._accounts[from] = {.balance = 56'000'000'000'000'000, .nonce = 25};
     h._result = {.status_code = EVMC_SUCCESS, .gas_left = 15'000};
     h._receipt = {.status = 1u};
-    traits_t::_sd_refund = 24'000;
 
     static Transaction const t{
         .nonce = 25,
@@ -60,9 +57,9 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     EXPECT_EQ(status, processor_t::Status::SUCCESS);
     auto result = p.execute(s, h, t, 10u, bene);
     EXPECT_EQ(result.status, 1u);
-    EXPECT_EQ(s._accounts[from].balance, uint256_t{55'999'999'999'800'000});
+    EXPECT_EQ(s._accounts[from].balance, uint256_t{55'999'999'999'600'000});
     EXPECT_EQ(s._accounts[from].nonce, 25); // EVMC will inc for creation
 
     // check if miner gets the right reward
-    EXPECT_EQ(s._reward, uint256_t{200'000});
+    EXPECT_EQ(s._reward, uint256_t{400'000});
 }

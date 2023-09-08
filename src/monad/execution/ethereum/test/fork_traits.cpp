@@ -55,7 +55,6 @@ TEST(fork_traits, frontier)
     execution::fake::State::ChangeSet s{};
     s._selfdestructs = 10;
 
-    EXPECT_EQ(f.get_selfdestruct_refund(s), 240'000);
     EXPECT_EQ(f.max_refund_quotient(), 2);
 
     s._touched_dead = 10;
@@ -364,7 +363,6 @@ TEST(fork_traits, london)
     execution::fake::State::ChangeSet s{};
     s._selfdestructs = 10;
 
-    EXPECT_EQ(l.get_selfdestruct_refund(s), 0);
     EXPECT_EQ(l.max_refund_quotient(), 5);
 
     byte_string const illegal_code{0xef, 0x60};

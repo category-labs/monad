@@ -18,7 +18,7 @@ using delta_t = std::pair<T const, T>;
 
 using AccountDelta = delta_t<std::optional<Account>>;
 
-static_assert(sizeof(AccountDelta) == 160);
+static_assert(sizeof(AccountDelta) == 176);
 static_assert(alignof(AccountDelta) == 8);
 
 using StorageDelta = delta_t<bytes32_t>;
@@ -32,7 +32,7 @@ struct StateDelta
     ankerl::unordered_dense::segmented_map<bytes32_t, StorageDelta> storage;
 };
 
-static_assert(sizeof(StateDelta) == 224);
+static_assert(sizeof(StateDelta) == 240);
 static_assert(alignof(StateDelta) == 8);
 
 using StateDeltas =

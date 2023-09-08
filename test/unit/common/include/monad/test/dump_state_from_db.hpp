@@ -94,11 +94,11 @@ dump_accounts_from_db(monad::db::RocksTrieDB &db)
 {
     nlohmann::json state = nlohmann::json::object();
 
-    auto leaf_cursor = db.accounts_trie.make_leaf_cursor();
-    auto trie_cursor = db.accounts_trie.make_trie_cursor();
+    auto leaf_cursor = db.get_accounts_trie().make_leaf_cursor();
+    auto trie_cursor = db.get_accounts_trie().make_trie_cursor();
 
     std::unique_ptr<rocksdb::Iterator> it{
-        db.db->NewIterator({}, db.accounts_trie.leaves_cursor.cf_)};
+        db.get_db()->NewIterator({}, db.get_accounts_trie().leaves_cursor.cf_)};
 
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         auto const hashed_account_address =
@@ -114,11 +114,11 @@ dump_accounts_from_db(monad::db::RocksTrieDB &db)
 dump_storage_from_db(monad::db::RocksTrieDB &db)
 {
     nlohmann::json state = nlohmann::json::object();
-    auto leaf_cursor = db.storage_trie.make_leaf_cursor();
-    auto trie_cursor = db.storage_trie.make_trie_cursor();
+    auto leaf_cursor = db.get_storage_trie().make_leaf_cursor();
+    auto trie_cursor = db.get_storage_trie().make_trie_cursor();
 
     std::unique_ptr<rocksdb::Iterator> it{
-        db.db->NewIterator({}, db.storage_trie.leaves_cursor.cf_)};
+        db.get_db()->NewIterator({}, db.get_storage_trie().leaves_cursor.cf_)};
 
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         auto key_slice = monad::db::from_slice(it->key());
@@ -133,10 +133,10 @@ dump_accounts_from_db(monad::db::InMemoryTrieDB &db)
 {
     nlohmann::json state = nlohmann::json::object();
 
-    auto leaf_cursor = db.accounts_trie.make_leaf_cursor();
-    auto trie_cursor = db.accounts_trie.make_trie_cursor();
+    auto leaf_cursor = db.get_accounts_trie().make_leaf_cursor();
+    auto trie_cursor = db.get_accounts_trie().make_trie_cursor();
 
-    for (auto const &[address, _] : db.accounts_trie.leaves_storage) {
+    for (auto const &[address, _] : db.get_accounts_trie().leaves_storage) {
         auto const [hashed_account_address, size] =
             monad::trie::deserialize_nibbles(address);
         detail::dump_accounts_from_trie(
@@ -150,10 +150,10 @@ dump_accounts_from_db(monad::db::InMemoryTrieDB &db)
 dump_storage_from_db(monad::db::InMemoryTrieDB &db)
 {
     nlohmann::json state = nlohmann::json::object();
-    auto leaf_cursor = db.storage_trie.make_leaf_cursor();
-    auto trie_cursor = db.storage_trie.make_trie_cursor();
+    auto leaf_cursor = db.get_storage_trie().make_leaf_cursor();
+    auto trie_cursor = db.get_storage_trie().make_trie_cursor();
 
-    for (auto const &[key, value] : db.storage_trie.leaves_storage) {
+    for (auto const &[key, value] : db.get_storage_trie().leaves_storage) {
         monad::byte_string_view key_slice{key};
         detail::dump_storage_from_trie(
             state, key_slice, leaf_cursor, trie_cursor);

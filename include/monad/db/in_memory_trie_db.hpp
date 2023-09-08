@@ -53,10 +53,11 @@ struct InMemoryTrieDB : public Db
         }
     };
 
-    Trie<trie::InMemoryPathComparator> accounts_trie;
-    Trie<trie::InMemoryPrefixPathComparator> storage_trie;
-    std::unordered_map<bytes32_t, byte_string> code;
+    Trie<trie::InMemoryPathComparator> accounts_trie_;
+    Trie<trie::InMemoryPrefixPathComparator> storage_trie_;
+    std::unordered_map<bytes32_t, byte_string> code_;
 
+public:
     ////////////////////////////////////////////////////////////////////
     // Db implementations
     ////////////////////////////////////////////////////////////////////
@@ -66,8 +67,8 @@ struct InMemoryTrieDB : public Db
     {
         return trie_db_read_account(
             a,
-            accounts_trie.make_leaf_cursor(),
-            accounts_trie.make_trie_cursor());
+            accounts_trie_.make_leaf_cursor(),
+            accounts_trie_.make_trie_cursor());
     }
 
     [[nodiscard]] bytes32_t read_storage(
@@ -78,14 +79,14 @@ struct InMemoryTrieDB : public Db
             a,
             incarnation,
             key,
-            storage_trie.make_leaf_cursor(),
-            storage_trie.make_trie_cursor());
+            storage_trie_.make_leaf_cursor(),
+            storage_trie_.make_trie_cursor());
     }
 
     [[nodiscard]] byte_string read_code(bytes32_t const &ch) const override
     {
-        if (code.contains(ch)) {
-            return code.at(ch);
+        if (code_.contains(ch)) {
+            return code_.at(ch);
         }
         return byte_string{};
     }
@@ -93,28 +94,28 @@ struct InMemoryTrieDB : public Db
     void commit(state::StateChanges const &obj) override
     {
         for (auto const &[ch, c] : obj.code_changes) {
-            code[ch] = c;
+            code_[ch] = c;
         }
-        trie_db_process_changes(obj, accounts_trie, storage_trie);
+        trie_db_process_changes(obj, accounts_trie_, storage_trie_);
 
-        accounts_trie.leaves_writer.write();
-        accounts_trie.trie_writer.write();
-        storage_trie.leaves_writer.write();
-        storage_trie.trie_writer.write();
+        accounts_trie_.leaves_writer.write();
+        accounts_trie_.trie_writer.write();
+        storage_trie_.leaves_writer.write();
+        storage_trie_.trie_writer.write();
     }
 
     void
     commit(StateDeltas const &state_deltas, Code const &code_delta) override
     {
         for (auto const &[ch, c] : code_delta) {
-            code[ch] = c;
+            code_[ch] = c;
         }
-        trie_db_process_changes(state_deltas, accounts_trie, storage_trie);
+        trie_db_process_changes(state_deltas, accounts_trie_, storage_trie_);
 
-        accounts_trie.leaves_writer.write();
-        accounts_trie.trie_writer.write();
-        storage_trie.leaves_writer.write();
-        storage_trie.trie_writer.write();
+        accounts_trie_.leaves_writer.write();
+        accounts_trie_.trie_writer.write();
+        storage_trie_.leaves_writer.write();
+        storage_trie_.trie_writer.write();
     }
 
     constexpr void
@@ -124,14 +125,30 @@ struct InMemoryTrieDB : public Db
 
     [[nodiscard]] bytes32_t state_root()
     {
-        return accounts_trie.trie.root_hash();
+        return accounts_trie_.trie.root_hash();
     }
 
     [[nodiscard]] bytes32_t storage_root(address_t const &a)
     {
-        storage_trie.trie.set_trie_prefix(a);
-        return storage_trie.trie.root_hash();
+        storage_trie_.trie.set_trie_prefix(a);
+        return storage_trie_.trie.root_hash();
     }
+
+    [[nodiscard]] auto get_accounts_trie() const noexcept
+    {
+        return accounts_trie_;
+    }
+
+    [[nodiscard]] auto &get_accounts_trie() noexcept { return accounts_trie_; }
+
+    [[nodiscard]] auto get_storage_trie() const noexcept
+    {
+        return storage_trie_;
+    }
+
+    [[nodiscard]] auto &get_storage_trie() noexcept { return storage_trie_; }
+
+    [[nodiscard]] auto get_code() const noexcept { return code_; }
 };
 
 MONAD_DB_NAMESPACE_END

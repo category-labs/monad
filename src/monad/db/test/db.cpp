@@ -114,8 +114,8 @@ TEST(InMemoryTrieDB, account_creation)
     db.commit(
         StateDeltas{{a, StateDelta{.account = {std::nullopt, acct}}}}, Code{});
 
-    EXPECT_EQ(db.accounts_trie.leaves_storage.size(), 1);
-    EXPECT_EQ(db.accounts_trie.trie_storage.size(), 1);
+    EXPECT_EQ(db.get_accounts_trie().leaves_storage.size(), 1);
+    EXPECT_EQ(db.get_accounts_trie().trie_storage.size(), 1);
     EXPECT_EQ(db.read_account(a), acct);
 }
 
@@ -151,10 +151,12 @@ TEST(InMemoryTrieDB, erase)
 
     EXPECT_EQ(db.read_storage(a, incarnation, key1), bytes32_t{});
     EXPECT_EQ(db.read_storage(a, incarnation, key2), bytes32_t{});
-    EXPECT_TRUE(db.accounts_trie.leaves_storage.empty());
-    EXPECT_TRUE(db.accounts_trie.trie_storage.empty());
-    EXPECT_TRUE(db.storage_trie.leaves_storage.empty());
-    EXPECT_TRUE(db.storage_trie.trie_storage.empty());
+    auto const &accounts_trie = db.get_accounts_trie();
+    auto const &storage_trie = db.get_storage_trie();
+    EXPECT_TRUE(accounts_trie.leaves_storage.empty());
+    EXPECT_TRUE(accounts_trie.trie_storage.empty());
+    EXPECT_TRUE(storage_trie.leaves_storage.empty());
+    EXPECT_TRUE(storage_trie.trie_storage.empty());
 
     EXPECT_EQ(db.state_root(), NULL_ROOT);
     EXPECT_EQ(db.storage_root(a), NULL_ROOT);
@@ -263,7 +265,7 @@ TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)
                 0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
         }
 
-        EXPECT_EQ(db.starting_block_number, block_number - 1u);
+        EXPECT_EQ(db.get_starting_block_number(), block_number - 1u);
     }
 
     {
@@ -301,7 +303,7 @@ TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)
                 db.state_root(),
                 0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
         }
-        EXPECT_EQ(db.starting_block_number, block_number - 1u);
+        EXPECT_EQ(db.get_starting_block_number(), block_number - 1u);
     }
 
     {
@@ -315,7 +317,7 @@ TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)
                 db.state_root(),
                 0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
         }
-        EXPECT_EQ(db.starting_block_number, block_number);
+        EXPECT_EQ(db.get_starting_block_number(), block_number);
     }
 
     {
@@ -334,7 +336,7 @@ TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)
                 0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
         }
 
-        EXPECT_EQ(db.starting_block_number, block_number - 1u);
+        EXPECT_EQ(db.get_starting_block_number(), block_number - 1u);
     }
 }
 
@@ -377,7 +379,7 @@ TYPED_TEST(
                 db.state_root(),
                 0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
         }
-        EXPECT_EQ(db.starting_block_number, block_number - 1u);
+        EXPECT_EQ(db.get_starting_block_number(), block_number - 1u);
     }
 
     {
@@ -415,7 +417,7 @@ TYPED_TEST(
                 0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
         }
 
-        EXPECT_EQ(db.starting_block_number, block_number - 1u);
+        EXPECT_EQ(db.get_starting_block_number(), block_number - 1u);
     }
 
     {
@@ -430,7 +432,7 @@ TYPED_TEST(
                 db.state_root(),
                 0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
         }
-        EXPECT_EQ(db.starting_block_number, block_number);
+        EXPECT_EQ(db.get_starting_block_number(), block_number);
     }
 }
 

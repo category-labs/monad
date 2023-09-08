@@ -22,7 +22,7 @@
 
 MONAD_DB_NAMESPACE_BEGIN
 
-struct RocksTrieDB;
+class RocksTrieDB;
 
 namespace detail
 {
@@ -90,7 +90,7 @@ namespace detail
 }
 
 // Database impl with trie root generating logic, backed by rocksdb
-struct RocksTrieDB : public Db
+class RocksTrieDB : public Db
 {
     struct Trie
     {
@@ -129,20 +129,21 @@ struct RocksTrieDB : public Db
         }
     };
 
-    std::filesystem::path const root;
-    uint64_t const starting_block_number;
-    trie::PathComparator accounts_comparator;
-    trie::PrefixPathComparator storage_comparator;
-    std::vector<rocksdb::ColumnFamilyHandle *> cfs;
-    std::shared_ptr<rocksdb::DB> db;
-    Trie accounts_trie;
-    Trie storage_trie;
-    uint64_t const block_history_size;
-    rocksdb::WriteBatch batch;
+    std::filesystem::path const root_;
+    uint64_t const starting_block_number_;
+    trie::PathComparator accounts_comparator_;
+    trie::PrefixPathComparator storage_comparator_;
+    std::vector<rocksdb::ColumnFamilyHandle *> cfs_;
+    std::shared_ptr<rocksdb::DB> db_;
+    Trie accounts_trie_;
+    Trie storage_trie_;
+    uint64_t const block_history_size_;
+    rocksdb::WriteBatch batch_;
 
     decltype(monad::log::logger_t::get_logger()) logger =
         monad::log::logger_t::get_logger("trie_db_logger");
 
+public:
     ////////////////////////////////////////////////////////////////////
     // Constructor & Destructor
     ////////////////////////////////////////////////////////////////////
@@ -158,15 +159,15 @@ struct RocksTrieDB : public Db
         std::variant<ReadOnly, Writable> permission, std::filesystem::path root,
         std::optional<uint64_t> opt_starting_block_number,
         uint64_t block_history_size)
-        : root(root)
-        , starting_block_number(opt_starting_block_number.value_or(
+        : root_(root)
+        , starting_block_number_(opt_starting_block_number.value_or(
               auto_detect_start_block_number(root)))
-        , db(detail::open_rocks_trie_db(
-              root, starting_block_number, accounts_comparator,
-              storage_comparator, cfs, permission))
-        , accounts_trie(db, batch, cfs[1], cfs[2])
-        , storage_trie(db, batch, cfs[3], cfs[4])
-        , block_history_size(block_history_size)
+        , db_(detail::open_rocks_trie_db(
+              root, starting_block_number_, accounts_comparator_,
+              storage_comparator_, cfs_, permission))
+        , accounts_trie_(db_, batch_, cfs_[1], cfs_[2])
+        , storage_trie_(db_, batch_, cfs_[3], cfs_[4])
+        , block_history_size_(block_history_size)
     {
         MONAD_DEBUG_ASSERT(
             std::holds_alternative<Writable>(permission) ||
@@ -175,16 +176,16 @@ struct RocksTrieDB : public Db
 
     ~RocksTrieDB()
     {
-        accounts_trie.reset_cursor();
-        storage_trie.reset_cursor();
+        accounts_trie_.reset_cursor();
+        storage_trie_.reset_cursor();
 
         rocksdb::Status res;
-        for (auto *const cf : cfs) {
-            res = db->DestroyColumnFamilyHandle(cf);
+        for (auto *const cf : cfs_) {
+            res = db_->DestroyColumnFamilyHandle(cf);
             MONAD_ASSERT(res.ok());
         }
 
-        res = db->Close();
+        res = db_->Close();
         MONAD_ROCKS_ASSERT(res);
     }
 
@@ -192,7 +193,7 @@ struct RocksTrieDB : public Db
     // Helper functions
     ////////////////////////////////////////////////////////////////////
 
-    [[nodiscard]] constexpr auto *code_cf() const { return cfs[5]; }
+    [[nodiscard]] constexpr auto *code_cf() const { return cfs_[5]; }
 
     ////////////////////////////////////////////////////////////////////
     // Db implementations
@@ -208,8 +209,8 @@ struct RocksTrieDB : public Db
     {
         return trie_db_read_account(
             a,
-            accounts_trie.make_leaf_cursor(),
-            accounts_trie.make_trie_cursor());
+            accounts_trie_.make_leaf_cursor(),
+            accounts_trie_.make_trie_cursor());
     }
 
     [[nodiscard]] bytes32_t read_storage(
@@ -220,50 +221,50 @@ struct RocksTrieDB : public Db
             a,
             incarnation,
             key,
-            storage_trie.make_leaf_cursor(),
-            storage_trie.make_trie_cursor());
+            storage_trie_.make_leaf_cursor(),
+            storage_trie_.make_trie_cursor());
     }
 
     [[nodiscard]] byte_string read_code(bytes32_t const &ch) const override
     {
-        return detail::rocks_db_read_code(ch, db, code_cf());
+        return detail::rocks_db_read_code(ch, db_, code_cf());
     }
 
     void commit(state::StateChanges const &obj) override
     {
-        detail::rocks_db_commit_code_to_batch(batch, obj, code_cf());
+        detail::rocks_db_commit_code_to_batch(batch_, obj, code_cf());
 
-        trie_db_process_changes(obj, accounts_trie, storage_trie);
+        trie_db_process_changes(obj, accounts_trie_, storage_trie_);
 
         rocksdb::WriteOptions options;
         options.disableWAL = true;
-        db->Write(options, &batch);
-        batch.Clear();
+        db_->Write(options, &batch_);
+        batch_.Clear();
 
-        accounts_trie.reset_cursor();
-        storage_trie.reset_cursor();
+        accounts_trie_.reset_cursor();
+        storage_trie_.reset_cursor();
     }
 
     void
     commit(StateDeltas const &state_deltas, Code const &code_delta) override
     {
-        detail::rocks_db_commit_code_to_batch(batch, code_delta, code_cf());
+        detail::rocks_db_commit_code_to_batch(batch_, code_delta, code_cf());
 
-        trie_db_process_changes(state_deltas, accounts_trie, storage_trie);
+        trie_db_process_changes(state_deltas, accounts_trie_, storage_trie_);
 
         rocksdb::WriteOptions options;
         options.disableWAL = true;
-        db->Write(options, &batch);
-        batch.Clear();
+        db_->Write(options, &batch_);
+        batch_.Clear();
 
-        accounts_trie.reset_cursor();
-        storage_trie.reset_cursor();
+        accounts_trie_.reset_cursor();
+        storage_trie_.reset_cursor();
     }
 
     void create_and_prune_block_history(uint64_t block_number) const override
     {
         auto const s = ::monad::db::create_and_prune_block_history(
-            root, db, block_number, block_history_size);
+            root_, db_, block_number, block_history_size_);
         if (!s.has_value()) {
             // this is not a critical error in production, we can continue
             // executing with the current database while someone
@@ -282,14 +283,25 @@ struct RocksTrieDB : public Db
 
     [[nodiscard]] bytes32_t state_root()
     {
-        return accounts_trie.trie.root_hash();
+        return accounts_trie_.trie.root_hash();
     }
 
     [[nodiscard]] bytes32_t storage_root(address_t const &a)
     {
-        storage_trie.trie.set_trie_prefix(a);
-        return storage_trie.trie.root_hash();
+        storage_trie_.trie.set_trie_prefix(a);
+        return storage_trie_.trie.root_hash();
     }
+
+    [[nodiscard]] auto get_starting_block_number() const noexcept
+    {
+        return starting_block_number_;
+    }
+
+    [[nodiscard]] auto get_db() const noexcept { return db_; }
+
+    [[nodiscard]] auto &get_accounts_trie() noexcept { return accounts_trie_; }
+
+    [[nodiscard]] auto &get_storage_trie() noexcept { return storage_trie_; }
 };
 
 MONAD_DB_NAMESPACE_END

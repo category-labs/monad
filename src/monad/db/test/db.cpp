@@ -6,7 +6,7 @@
 #include <monad/db/rocks_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
 #include <monad/logging/formatter.hpp>
-#include <monad/state/state_changes.hpp>
+#include <monad/state2/state_deltas.hpp>
 #include <monad/test/make_db.hpp>
 
 using namespace monad;
@@ -56,18 +56,25 @@ TYPED_TEST(DBTest, read_storage)
 {
     auto db = test::make_db<TypeParam>();
     Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
-    db.commit(state::StateChanges{
-        .account_changes = {{a, acct}},
-        .storage_changes = {{a, {{key1, value1}}}}});
+
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, acct},
+                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        Code{});
 
     EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
 
-    db.commit(state::StateChanges{
-        .account_changes = {{b, acct}}, .storage_changes = {}});
+    db.commit(
+        StateDeltas{
+            {b,
+             StateDelta{
+                 .account = {std::nullopt, acct},
+                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        Code{});
     EXPECT_EQ(db.read_account(b), acct);
-
-    db.commit(state::StateChanges{
-        .account_changes = {}, .storage_changes = {{b, {{key1, value1}}}}});
     EXPECT_EQ(db.read_storage(b, incarnation, key1), value1);
 }
 
@@ -75,10 +82,13 @@ TYPED_TEST(DBTest, read_nonexistent_storage)
 {
     auto db = test::make_db<TypeParam>();
     Account acct{.nonce = 1};
-    db.commit(state::StateChanges{
-        .account_changes = {{a, acct}},
-        .storage_changes = {{a, {{key1, value1}}}},
-    });
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, acct},
+                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        Code{});
 
     // Non-existing key
     EXPECT_EQ(db.read_storage(a, incarnation, key2), bytes32_t{});
@@ -92,19 +102,16 @@ TYPED_TEST(DBTest, read_code)
 {
     auto db = test::make_db<TypeParam>();
     Account acct_a{.balance = 1, .code_hash = code_hash1, .nonce = 1};
-    db.commit(state::StateChanges{
-        .account_changes = {{a, acct_a}},
-        .storage_changes = {},
-        .code_changes = {{code_hash1, code1}},
-    });
+    db.commit(
+        StateDeltas{{a, StateDelta{.account = {std::nullopt, acct_a}}}},
+        Code{{code_hash1, code1}});
 
     EXPECT_EQ(db.read_code(code_hash1), code1);
 
     Account acct_b{.balance = 0, .code_hash = code_hash2, .nonce = 1};
-    db.commit(state::StateChanges{
-        .account_changes = {{b, acct_b}},
-        .storage_changes = {},
-        .code_changes = {{code_hash2, code2}}});
+    db.commit(
+        StateDeltas{{b, StateDelta{.account = {std::nullopt, acct_b}}}},
+        Code{{code_hash2, code2}});
 
     EXPECT_EQ(db.read_code(code_hash2), code2);
 }
@@ -113,8 +120,8 @@ TEST(InMemoryTrieDB, account_creation)
 {
     auto db = test::make_db<InMemoryTrieDB>();
     Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
-    db.commit(state::StateChanges{
-        .account_changes = {{a, acct}}, .storage_changes = {}});
+    db.commit(
+        StateDeltas{{a, StateDelta{.account = {std::nullopt, acct}}}}, Code{});
 
     EXPECT_EQ(db.accounts_trie.leaves_storage.size(), 1);
     EXPECT_EQ(db.accounts_trie.trie_storage.size(), 1);
@@ -125,9 +132,15 @@ TEST(InMemoryTrieDB, erase)
 {
     auto db = test::make_db<InMemoryTrieDB>();
     Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
-    db.commit(state::StateChanges{
-        .account_changes = {{a, acct}},
-        .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, acct},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key2, {bytes32_t{}, value2}}}}}},
+        Code{});
 
     EXPECT_EQ(
         db.storage_root(a),
@@ -136,9 +149,14 @@ TEST(InMemoryTrieDB, erase)
         db.state_root(),
         0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
 
-    db.commit(state::StateChanges{
-        .account_changes = {{a, std::nullopt}},
-        .storage_changes = {{a, {{key1, value2}, {key2, value1}}}}});
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {acct, std::nullopt},
+                 .storage =
+                     {{key1, {value1, value2}}, {key2, {value2, value1}}}}}},
+        Code{});
 
     EXPECT_EQ(db.read_storage(a, incarnation, key1), bytes32_t{});
     EXPECT_EQ(db.read_storage(a, incarnation, key2), bytes32_t{});
@@ -155,12 +173,22 @@ TYPED_TEST(TrieDBTest, ModifyStorageOfAccount)
 {
     auto db = test::make_db<TypeParam>();
     Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
-    db.commit(state::StateChanges{
-        .account_changes = {{a, acct}},
-        .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
-
-    db.commit(state::StateChanges{
-        .account_changes = {}, .storage_changes = {{a, {{key2, value1}}}}});
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, acct},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key2, {bytes32_t{}, value2}}}}}},
+        Code{});
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {acct, acct},
+                 .storage = {{key2, {value2, value1}}}}}},
+        Code{});
 
     EXPECT_EQ(
         db.state_root(),
@@ -181,9 +209,15 @@ TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)
 
         Account acct{
             .balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
-        db.commit(state::StateChanges{
-            .account_changes = {{a, acct}},
-            .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
+        db.commit(
+            StateDeltas{
+                {a,
+                 StateDelta{
+                     .account = {std::nullopt, acct},
+                     .storage =
+                         {{key1, {bytes32_t{}, value1}},
+                          {key2, {bytes32_t{}, value2}}}}}},
+            Code{});
         db.create_and_prune_block_history(block_number++);
 
         EXPECT_EQ(db.read_account(a), acct);
@@ -218,8 +252,14 @@ TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)
                 0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
         }
 
-        db.commit(state::StateChanges{
-            .account_changes = {}, .storage_changes = {{a, {{key2, value1}}}}});
+        db.commit(
+            StateDeltas{
+                {a,
+                 StateDelta{
+                     .account = {acct, acct},
+                     .storage = {{key2, {value2, value1}}}}}},
+            Code{});
+
         db.create_and_prune_block_history(block_number++);
 
         EXPECT_EQ(db.read_account(a), acct);
@@ -283,9 +323,16 @@ TYPED_TEST(
 
         Account acct{
             .balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
-        db.commit(state::StateChanges{
-            .account_changes = {{a, acct}},
-            .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
+        db.commit(
+            StateDeltas{
+                {a,
+                 StateDelta{
+                     .account = {std::nullopt, acct},
+                     .storage =
+                         {{key1, {bytes32_t{}, value1}},
+                          {key2, {bytes32_t{}, value2}}}}}},
+            Code{});
+
         db.create_and_prune_block_history(block_number++);
 
         EXPECT_EQ(db.read_account(a), acct);
@@ -319,8 +366,13 @@ TYPED_TEST(
                 0x3f7578fb3acc297f8847c7885717733b268cb52dc6b8e5a68aff31c254b6b5b3_bytes32);
         }
 
-        db.commit(state::StateChanges{
-            .account_changes = {}, .storage_changes = {{a, {{key2, value1}}}}});
+        db.commit(
+            StateDeltas{
+                {a,
+                 StateDelta{
+                     .account = {acct, acct},
+                     .storage = {{key2, {value2, value1}}}}}},
+            Code{});
         db.create_and_prune_block_history(block_number++);
 
         EXPECT_EQ(db.read_account(a), acct);
@@ -365,9 +417,17 @@ TYPED_TEST(RocksDBTest, block_history_pruning)
         auto db = TypeParam{Writable{}, root, block_number, BLOCK_HISTORY};
         Account acct{
             .balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
-        db.commit(state::StateChanges{
-            .account_changes = {{a, acct}},
-            .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
+
+        db.commit(
+            StateDeltas{
+                {a,
+                 StateDelta{
+                     .account = {std::nullopt, acct},
+                     .storage =
+                         {{key1, {bytes32_t{}, value1}},
+                          {key2, {bytes32_t{}, value2}}}}}},
+            Code{});
+
         db.create_and_prune_block_history(block_number++);
 
         db.create_and_prune_block_history(block_number++);
@@ -431,9 +491,15 @@ TYPED_TEST(RocksDBTest, read_only)
 
     {
         auto db = TypeParam{Writable{}, root, std::nullopt, 1};
-        db.commit(state::StateChanges{
-            .account_changes = {{a, acct}},
-            .storage_changes = {{a, {{key1, value1}, {key2, value2}}}}});
+        db.commit(
+            StateDeltas{
+                {a,
+                 StateDelta{
+                     .account = {std::nullopt, acct},
+                     .storage =
+                         {{key1, {bytes32_t{}, value1}},
+                          {key2, {bytes32_t{}, value2}}}}}},
+            Code{});
         db.create_and_prune_block_history(0);
     }
 

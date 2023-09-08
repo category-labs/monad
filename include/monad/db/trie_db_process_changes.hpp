@@ -125,62 +125,71 @@ void trie_db_process_changes(
 
         storage_trie.trie.set_trie_prefix(addr);
 
+        auto const &account_delta = state_delta.account;
+        auto const &storage_delta = state_delta.storage;
+
         // process storage updates first
         storage_trie_updates.clear();
-        for (auto const &[k, v] : state_delta.storage) {
-            if (v.first != v.second) {
-                auto const key = trie::Nibbles{std::bit_cast<bytes32_t>(
-                    ethash::keccak256(k.bytes, sizeof(k.bytes)))};
-                auto const value = rlp::encode_string(
-                    zeroless_view(to_byte_string_view(v.second.bytes)));
-                if (v.second != bytes32_t{}) {
-                    storage_trie_updates.emplace_back(
-                        trie::Upsert{.key = key, .value = value});
-                }
-                else {
-                    storage_trie_updates.emplace_back(trie::Delete{.key = key});
+        if (account_delta.second.has_value()) {
+            for (auto const &[k, v] : storage_delta) {
+                if (v.first != v.second) {
+                    auto const key = trie::Nibbles{std::bit_cast<bytes32_t>(
+                        ethash::keccak256(k.bytes, sizeof(k.bytes)))};
+                    auto const value = rlp::encode_string(
+                        zeroless_view(to_byte_string_view(v.second.bytes)));
+                    if (v.second != bytes32_t{}) {
+                        storage_trie_updates.emplace_back(
+                            trie::Upsert{.key = key, .value = value});
+                    }
+                    else {
+                        storage_trie_updates.emplace_back(
+                            trie::Delete{.key = key});
+                    }
                 }
             }
-        }
 
-        if (!storage_trie_updates.empty()) {
-            std::ranges::sort(
-                storage_trie_updates, std::less<>{}, trie::get_update_key);
+            if (!storage_trie_updates.empty()) {
+                std::ranges::sort(
+                    storage_trie_updates, std::less<>{}, trie::get_update_key);
 
-            MONAD_LOG_INFO(
-                monad::log::logger_t::get_logger("trie_db_logger"),
-                "STORAGE_UPDATES({}) account={} {}",
-                storage_trie_updates.size(),
-                addr,
-                storage_trie_updates);
+                MONAD_LOG_INFO(
+                    monad::log::logger_t::get_logger("trie_db_logger"),
+                    "STORAGE_UPDATES({}) account={} {}",
+                    storage_trie_updates.size(),
+                    addr,
+                    storage_trie_updates);
 
-            auto const [_, success] = updated_storage_roots.try_emplace(
-                addr, storage_trie.trie.process_updates(storage_trie_updates));
-            MONAD_DEBUG_ASSERT(success);
+                auto const [_, success] = updated_storage_roots.try_emplace(
+                    addr,
+                    storage_trie.trie.process_updates(storage_trie_updates));
+                MONAD_DEBUG_ASSERT(success);
+            }
         }
 
         // process account updates after
         auto const account_key = trie::Nibbles{std::bit_cast<bytes32_t>(
             ethash::keccak256(addr.bytes, sizeof(addr.bytes)))};
-        auto const &account_delta = state_delta.account;
 
-        if (account_delta.second.has_value()) {
-            auto const it = updated_storage_roots.find(addr);
-            auto const root_hash = it != updated_storage_roots.end()
-                                       ? it->second
-                                       : storage_trie.trie.root_hash();
-            if (it != updated_storage_roots.end()) {
-                updated_storage_roots.erase(it);
+        if (account_delta.first != account_delta.second) {
+            if (account_delta.second.has_value()) {
+                auto const it = updated_storage_roots.find(addr);
+                auto const root_hash = it != updated_storage_roots.end()
+                                           ? it->second
+                                           : storage_trie.trie.root_hash();
+                if (it != updated_storage_roots.end()) {
+                    updated_storage_roots.erase(it);
+                }
+                account_trie_updates.emplace_back(trie::Upsert{
+                    .key = account_key,
+                    .value = rlp::encode_account(
+                        account_delta.second.value(), root_hash)});
             }
-            account_trie_updates.emplace_back(trie::Upsert{
-                .key = account_key,
-                .value = rlp::encode_account(
-                    account_delta.second.value(), root_hash)});
-        }
-        else {
-            storage_trie.trie.clear();
-            updated_storage_roots.erase(addr);
-            account_trie_updates.emplace_back(trie::Delete{.key = account_key});
+            else {
+                storage_trie.trie.clear();
+                updated_storage_roots.erase(addr);
+                account_trie_updates.emplace_back(
+                    trie::Delete{.key = account_key});
+            }
         }
     }
 

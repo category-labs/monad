@@ -1,6 +1,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <monad/core/bytes.hpp>
 #include <monad/db/in_memory_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/rocks_db.hpp>
@@ -193,6 +194,45 @@ TYPED_TEST(TrieDBTest, ModifyStorageOfAccount)
     EXPECT_EQ(
         db.state_root(),
         0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
+}
+
+TYPED_TEST(TrieDBTest, touch_without_modify_regression)
+{
+    auto db = test::make_db<TypeParam>();
+    db.commit(
+        StateDeltas{{a, StateDelta{.account = {std::nullopt, std::nullopt}}}},
+        Code{});
+
+    EXPECT_EQ(db.read_account(a), std::nullopt);
+    EXPECT_EQ(db.state_root(), NULL_ROOT);
+}
+
+TYPED_TEST(TrieDBTest, delete_account_modify_storage_regression)
+{
+    auto db = test::make_db<TypeParam>();
+    Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, acct},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key2, {bytes32_t{}, value2}}}}}},
+        Code{});
+
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {acct, std::nullopt},
+                 .storage =
+                     {{key1, {value1, value2}}, {key2, {value2, value1}}}}}},
+        Code{});
+
+    EXPECT_EQ(db.read_account(a), std::nullopt);
+    EXPECT_EQ(db.read_storage(a, 0u, key1), bytes32_t{});
+    EXPECT_EQ(db.state_root(), NULL_ROOT);
 }
 
 TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)

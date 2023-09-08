@@ -46,4 +46,9 @@ using Code = ankerl::unordered_dense::segmented_map<bytes32_t, byte_string>;
 static_assert(sizeof(Code) == 64);
 static_assert(alignof(Code) == 8);
 
+bool can_merge(StateDeltas const &to, StateDeltas const &from);
+void merge(StateDeltas &to, StateDeltas const &from);
+
+void merge(Code &to, Code &from);
+
 MONAD_NAMESPACE_END

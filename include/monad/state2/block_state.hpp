@@ -14,9 +14,4 @@ struct BlockState
     Code code;
 };
 
-bool can_merge(StateDeltas const &to, StateDeltas const &from);
-void merge(StateDeltas &to, StateDeltas const &from);
-
-void merge(Code &to, Code &from);
-
 MONAD_NAMESPACE_END

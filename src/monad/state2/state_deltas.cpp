@@ -1,6 +1,6 @@
 #include <monad/config.hpp>
 
-#include <monad/state2/block_state.hpp>
+#include <monad/state2/state_deltas.hpp>
 
 #include <monad/core/assert.h>
 #include <monad/core/likely.h>
@@ -68,7 +68,7 @@ void merge(Code &c1, Code &c2)
     merge_f(c1, c2, [](auto &d1, auto &d2) {
         if (d1.empty())
             d1 = std::move(d2);
-        });
+    });
 }
 
 MONAD_NAMESPACE_END

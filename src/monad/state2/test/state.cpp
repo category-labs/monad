@@ -784,47 +784,6 @@ TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
     merge(bs.state, ds.state_);
 }
 
-/*
-
-TYPED_TEST(StateTest, can_commit)
-{
-    auto db = test::make_db<TypeParam>();
-
-    BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes =
-            {{a, Account{.balance = 30'000u}},
-             {b, Account{.balance = 40'000u}},
-             {c, Account{.balance = 50'000u}}},
-        .storage_changes = {
-            {b, {{key1, value1}, {key2, value2}}},
-            {c, {{key1, value1}, {key2, value2}}}}});
-
-    State as{bs, db, block_cache};
-    State cs{bs, db, block_cache};
-
-    {
-        EXPECT_TRUE(as.account_exists(b));
-        EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
-        EXPECT_EQ(as.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
-        EXPECT_EQ(
-            as.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
-        EXPECT_TRUE(can_merge(bs.state, as.s));
-        merge(bs.state, as.s);
-    }
-    {
-        EXPECT_TRUE(cs.account_exists(a));
-        EXPECT_TRUE(cs.account_exists(c));
-        EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
-        EXPECT_EQ(cs.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
-        EXPECT_TRUE(cs.selfdestruct(c, a));
-        cs.destruct_suicides();
-        EXPECT_TRUE(can_merge(bs.state, cs.s));
-        merge(bs.state, cs.s);
-    }
-    EXPECT_TRUE(can_commit(bs, db));
-}
-
 template <typename TDB>
 struct TrieDBTest : public testing::Test
 {
@@ -836,28 +795,32 @@ TYPED_TEST(TrieDBTest, commit_storage_and_account_together_regression)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    State t{bs, db, block_cache};
+    State as{bs, db, block_cache};
 
-    t.create_account(a);
-    t.set_balance(a, 1);
-    (void)t.set_storage(a, key1, key2);
+    as.create_account(a);
+    as.set_balance(a, 1);
+    (void)as.set_storage(a, key1, value1);
 
-    merge(bs.state, t.s);
-    commit(bs, db);
+    merge(bs.state, as.state_);
+    db.commit(bs.state, bs.code);
+
+    EXPECT_TRUE(db.read_account(a).has_value());
+    EXPECT_EQ(db.read_account(a).value().balance, 1u);
+    EXPECT_EQ(db.read_storage(a, 0u, key1), value1);
 }
 
 TYPED_TEST(TrieDBTest, set_and_then_clear_storage_in_same_commit)
 {
     using namespace intx;
-    auto db = test::make_db<TypeParam>();
+    auto db = test::make_db<db::InMemoryTrieDB>();
     BlockState<mutex_t> bs;
-    State t{bs, db, block_cache};
+    State as{bs, db, block_cache};
 
-    t.create_account(a);
-    EXPECT_EQ(t.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
-    EXPECT_EQ(t.set_storage(a, key1, null), EVMC_STORAGE_ADDED_DELETED);
-    merge(bs.state, t.s);
-    commit(bs, db);
+    as.create_account(a);
+    EXPECT_EQ(as.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
+    EXPECT_EQ(as.set_storage(a, key1, null), EVMC_STORAGE_ADDED_DELETED);
+    merge(bs.state, as.state_);
+    db.commit(bs.state, bs.code);
 
     EXPECT_EQ(db.read_storage(a, 0u, key1), monad::bytes32_t{});
 }
@@ -865,7 +828,7 @@ TYPED_TEST(TrieDBTest, set_and_then_clear_storage_in_same_commit)
 TYPED_TEST(StateTest, commit_twice)
 {
     auto db = test::make_db<TypeParam>();
-    BlockState<mutex_t> bs;
+
     db.commit(StateChanges{
         .account_changes =
             {{a, Account{.balance = 30'000u}},
@@ -877,6 +840,7 @@ TYPED_TEST(StateTest, commit_twice)
 
     {
         // Block 0, Txn 0
+        BlockState<mutex_t> bs;
         State as{bs, db, block_cache};
         EXPECT_TRUE(as.account_exists(b));
         as.set_balance(b, 42'000);
@@ -885,57 +849,63 @@ TYPED_TEST(StateTest, commit_twice)
         EXPECT_EQ(as.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
         EXPECT_EQ(
             as.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
-        EXPECT_TRUE(can_merge(bs.state, as.s));
-        merge(bs.state, as.s);
-        EXPECT_TRUE(can_commit(bs, db));
-        commit(bs, db);
+        EXPECT_TRUE(can_merge(bs.state, as.state_));
+        merge(bs.state, as.state_);
+        db.commit(bs.state, bs.code);
+
+        EXPECT_EQ(db.read_storage(b, 0u, key1), value2);
+        EXPECT_EQ(db.read_storage(b, 0u, key2), value2);
     }
     {
         // Block 1, Txn 0
+        BlockState<mutex_t> bs;
         State cs{bs, db, block_cache};
         EXPECT_TRUE(cs.account_exists(a));
         EXPECT_TRUE(cs.account_exists(c));
         EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
-        EXPECT_EQ(cs.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
+        EXPECT_EQ(cs.set_storage(c, key2, value1), EVMC_STORAGE_MODIFIED);
         EXPECT_TRUE(cs.selfdestruct(c, a));
         cs.destruct_suicides();
-        EXPECT_TRUE(can_merge(bs.state, cs.s));
-        merge(bs.state, cs.s);
-        EXPECT_TRUE(can_commit(bs, db));
-        commit(bs, db);
+        EXPECT_TRUE(can_merge(bs.state, cs.state_));
+        merge(bs.state, cs.state_);
+        db.commit(bs.state, bs.code);
+
+        EXPECT_EQ(db.read_storage(c, 0u, key1), monad::bytes32_t{});
+        EXPECT_EQ(db.read_storage(c, 0u, key2), monad::bytes32_t{});
     }
 }
 
 TYPED_TEST(StateTest, commit_twice_apply_reward)
 {
     auto db = test::make_db<TypeParam>();
-    BlockState<mutex_t> bs;
 
     {
         // Block 0, Txn 0
+        BlockState<mutex_t> bs;
         State as{bs, db, block_cache};
         as.add_txn_award(10);
         as.apply_reward(a, 100u + as.gas_award());
-        EXPECT_TRUE(can_merge(bs.state, as.s));
-        merge(bs.state, as.s);
-        commit(bs, db);
+        EXPECT_TRUE(can_merge(bs.state, as.state_));
+        merge(bs.state, as.state_);
+        db.commit(bs.state, bs.code);
     }
     {
         // Block 1, Txn 0
+        BlockState<mutex_t> bs;
         State cs{bs, db, block_cache};
         cs.add_txn_award(10);
         cs.apply_reward(b, 300);
         cs.apply_reward(a, 100 + cs.gas_award());
-        EXPECT_TRUE(can_merge(bs.state, cs.s));
-        merge(bs.state, cs.s);
-        commit(bs, db);
+        EXPECT_TRUE(can_merge(bs.state, cs.state_));
+        merge(bs.state, cs.state_);
+        db.commit(bs.state, bs.code);
     }
-
-    State ds{bs, db, block_cache};
-    EXPECT_TRUE(ds.account_exists(a));
-    EXPECT_TRUE(ds.account_exists(b));
-    EXPECT_EQ(ds.get_balance(a), bytes32_t{220});
-    EXPECT_EQ(ds.get_balance(b), bytes32_t{300});
+    {
+        BlockState<mutex_t> bs;
+        State ds{bs, db, block_cache};
+        EXPECT_TRUE(ds.account_exists(a));
+        EXPECT_TRUE(ds.account_exists(b));
+        EXPECT_EQ(ds.get_balance(a), bytes32_t{220});
+        EXPECT_EQ(ds.get_balance(b), bytes32_t{300});
+    }
 }
-
-*/

@@ -29,26 +29,27 @@ inline std::unordered_map<std::string, size_t> const fork_index_map = {
     {"Merge", 10},
     {"Shanghai", 11}};
 
-struct EthereumTests : public testing::Test
+class EthereumTests : public testing::Test
 {
-    std::filesystem::path json_test_file;
-    std::string suite_name;
-    std::string test_name;
-    std::string file_name;
-    std::optional<size_t> fork_index;
-    std::optional<size_t> txn_index;
+    std::filesystem::path const json_test_file_;
+    std::string const suite_name_;
+    std::string const test_name_;
+    std::string const file_name_;
+    std::optional<size_t> const fork_index_;
+    std::optional<size_t> const txn_index_;
 
+public:
     EthereumTests(
         std::filesystem::path json_test_file, std::string suite_name,
         std::string test_name, std::string file_name,
         std::optional<size_t> fork_index,
         std::optional<size_t> txn_index) noexcept
-        : json_test_file{json_test_file}
-        , suite_name{suite_name}
-        , test_name{test_name}
-        , file_name{file_name}
-        , fork_index{fork_index}
-        , txn_index(txn_index)
+        : json_test_file_{json_test_file}
+        , suite_name_{suite_name}
+        , test_name_{test_name}
+        , file_name_{file_name}
+        , fork_index_{fork_index}
+        , txn_index_(txn_index)
     {
     }
 
@@ -67,9 +68,8 @@ struct EthereumTests : public testing::Test
         std::string file_name, std::optional<size_t> fork_index,
         std::optional<size_t> txn_index);
 
-    static void run_state_test(
-        StateTransitionTest const &test, nlohmann::json const &json,
-        std::string const &suite_name, std::string const &test_name);
+    static void
+    run_state_test(StateTransitionTest const &test, nlohmann::json const &json);
 };
 
 /**

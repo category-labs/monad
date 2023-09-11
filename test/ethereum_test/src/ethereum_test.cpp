@@ -1,5 +1,5 @@
 #include <ethereum_test.hpp>
-#include <monad/db/rocks_trie_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
 #include <monad/logging/monad_log.hpp>
 #include <monad/test/dump_state_from_db.hpp>
 #include <test_resource_data.h>
@@ -11,7 +11,7 @@
 
 MONAD_TEST_NAMESPACE_BEGIN
 
-using db_t = monad::db::RocksTrieDB;
+using db_t = monad::db::InMemoryTrieDB;
 using state_t = monad::state::State<
     monad::state::AccountState<db_t>, monad::state::ValueState<db_t>,
     monad::state::CodeState<db_t>, monad::execution::fake::BlockDb, db_t>;
@@ -257,8 +257,7 @@ StateTransitionTest EthereumTests::load_state_test(
 }
 
 void EthereumTests::run_state_test(
-    StateTransitionTest const &test, nlohmann::json const &json,
-    std::string const &suite_name, std::string const &test_name)
+    StateTransitionTest const &test, nlohmann::json const &json)
 {
     auto *logger = quill::get_logger("ethereum_test_logger");
     for (auto const &[fork_index, fork_name, expectations] : test.cases) {
@@ -291,13 +290,7 @@ void EthereumTests::run_state_test(
 
             monad::execution::fake::BlockDb fake_block_db;
 
-            static auto const time = fmt::format(
-                "{}", std::chrono::system_clock::now().time_since_epoch());
-            auto const dir = monad::test_resource::build_dir / "rocksdb" /
-                             time / suite_name / test_name / fork_name /
-                             std::to_string(case_index);
-            MONAD_ASSERT(!std::filesystem::exists(dir));
-            db_t db{db::Writable{}, dir, std::nullopt, 0};
+            db_t db{};
 
             monad::state::AccountState accounts{db};
             monad::state::ValueState values{db};
@@ -345,27 +338,26 @@ void EthereumTests::run_state_test(
 
 void EthereumTests::TestBody()
 {
-    std::ifstream f{json_test_file};
+    std::ifstream f{json_test_file_};
 
     auto const json = nlohmann::json::parse(f);
     auto const state_transition_test = EthereumTests::load_state_test(
-        json, suite_name, test_name, file_name, fork_index, txn_index);
+        json, suite_name_, test_name_, file_name_, fork_index_, txn_index_);
 
     if (state_transition_test.cases.empty()) {
-        MONAD_ASSERT(fork_index.has_value() || txn_index.has_value());
+        MONAD_ASSERT(fork_index_.has_value() || txn_index_.has_value());
         GTEST_SKIP() << fmt::format(
             "No test cases found for fork={} txn={}",
-            fork_index.transform([&](auto const index) {
+            fork_index_.transform([&](auto const index) {
                 return std::ranges::find(
                            fork_index_map,
                            index,
                            &decltype(fork_index_map)::value_type::second)
                     ->first;
             }),
-            txn_index);
+            txn_index_);
     }
-    EthereumTests::run_state_test(
-        state_transition_test, json, suite_name, test_name);
+    EthereumTests::run_state_test(state_transition_test, json);
 }
 
 MONAD_TEST_NAMESPACE_END

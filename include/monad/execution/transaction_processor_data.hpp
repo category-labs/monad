@@ -19,27 +19,38 @@
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
 template <class TMutex, class TTxnProcessor, class TEvmHost, class TBlockCache>
-struct alignas(64) TransactionProcessorFiberData
+struct TransactionProcessorFiberData
 {
     using txn_processor_status_t = typename TTxnProcessor::Status;
     using state_t = state::State<TMutex, TBlockCache>;
+    using result_t = std::pair<Receipt, state::State<TMutex, TBlockCache>>;
 
-    state_t state_;
+    Db &db_;
+    BlockState<TMutex> &bs_;
     Transaction const &txn_;
     BlockHeader const &bh_;
-    unsigned int id_;
-    Receipt result_;
+    TBlockCache &block_cache_;
+    unsigned id_;
+    result_t result_;
 
     TransactionProcessorFiberData(
-        Db &db, BlockState<TMutex> &bs, Transaction &t, BlockHeader const &b,
+        Db &db, BlockState<TMutex> &bs, Transaction &t, BlockHeader const &bh,
         TBlockCache &block_cache, unsigned int id)
-        : state_{bs, db, block_cache}
+        : db_{db}
+        , bs_{bs}
         , txn_{t}
-        , bh_{b}
+        , bh_{bh}
+        , block_cache_{block_cache}
         , id_{id}
-        , result_{.status = Receipt::Status::FAILED, .gas_used = txn_.gas_limit}
+        , result_{
+              Receipt{
+                  .status = Receipt::Status::FAILED,
+                  .gas_used = txn_.gas_limit},
+              state::State{bs_, db_, block_cache_}}
     {
     }
+
+    result_t &&get_result() noexcept { return std::move(result_); }
 
     static constexpr bool is_valid(txn_processor_status_t status) noexcept
     {
@@ -49,11 +60,9 @@ struct alignas(64) TransactionProcessorFiberData
         return false;
     }
 
-    Receipt get_receipt() const noexcept { return result_; }
-    state_t &get_state() noexcept { return state_; }
-
     void validate_and_execute()
     {
+        auto &state = result_.second;
         TTxnProcessor p{};
 
         auto *txn_logger = log::logger_t::get_logger("txn_logger");
@@ -66,16 +75,17 @@ struct alignas(64) TransactionProcessorFiberData
             txn_.to);
 
         auto const validity =
-            p.validate(state_, txn_, bh_.base_fee_per_gas.value_or(0));
+            p.validate(state, txn_, bh_.base_fee_per_gas.value_or(0));
         if (!is_valid(validity)) {
-            MONAD_LOG_INFO(txn_logger, "Transaction {} invalid: {}", id_, validity);
+            MONAD_LOG_INFO(
+                txn_logger, "Transaction {} invalid: {}", id_, validity);
             // TODO: Issue #164, Issue #54
             return;
         }
 
-        TEvmHost host{bh_, txn_, state_};
-        result_ = p.execute(
-            state_,
+        TEvmHost host{bh_, txn_, state};
+        result_.first = p.execute(
+            state,
             host,
             txn_,
             bh_.base_fee_per_gas.value_or(0),
@@ -92,10 +102,8 @@ struct alignas(64) TransactionProcessorFiberData
             elapsed_ms);
     }
 
-    void operator()() // required signature for boost::fibers
-    {
-        validate_and_execute();
-    }
+    // required signature for boost::fibers
+    void operator()() { validate_and_execute(); }
 };
 
 MONAD_EXECUTION_NAMESPACE_END

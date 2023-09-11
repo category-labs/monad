@@ -1,19 +1,14 @@
-#include <monad/db/block_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/block_processor.hpp>
-#include <monad/execution/config.hpp>
-#include <monad/execution/execution_model.hpp>
+#include <monad/execution/test/fakes.hpp>
+#include <monad/execution/transaction_processor_data.hpp>
 
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 
-#include <monad/execution/test/fakes.hpp>
-
-#include <monad/state/account_state.hpp>
-#include <monad/state/code_state.hpp>
-#include <monad/state/state.hpp>
-#include <monad/state/value_state.hpp>
+#include <monad/state2/state.hpp>
+#include <monad/test/make_db.hpp>
 
 #include <test_resource_data.h>
 
@@ -24,117 +19,124 @@
 using namespace monad;
 using namespace monad::execution;
 
-using state_t = fake::State;
-using fork_t = fake::traits::alpha<state_t>;
-
-using block_db_t = db::BlockDb;
-using db_t = db::InMemoryTrieDB;
-using account_state_t = state::AccountState<db_t>;
-using value_state_t = state::ValueState<db_t>;
-using code_state_t = state::CodeState<db_t>;
-using real_state_t = state::State<
-    account_state_t, value_state_t, code_state_t, block_db_t, db_t>;
-
-/*
-// TODO: Comment back when both BlockProcessor refactor & transfer_balance_dao
-refactor are done
-
 namespace
 {
+    using block_cache_t = fake::BlockDb;
+    using mutex_t = std::shared_mutex;
+    using db_t = db::InMemoryTrieDB;
+    using state_t = state::State<mutex_t, block_cache_t>;
+    using fork_t = fake::traits::alpha<state_t>;
+    using evm_t = fake::EvmHost<
+        state_t, fake::traits::alpha<state_t>,
+        fake::Evm<state_t, fork_t, fake::Interpreter>>;
+
+    block_cache_t block_cache;
     constexpr auto individual = 100u;
     constexpr auto total = individual * 116u;
+
+    enum class ValStatus
+    {
+        SUCCESS,
+        LATER_NONCE,
+        INSUFFICIENT_BALANCE,
+        INVALID_GAS_LIMIT,
+        BAD_NONCE,
+        DEPLOYED_CODE,
+    };
+
+    static ValStatus fake_validation{};
+
+    template <class TState, concepts::fork_traits<TState> TTraits>
+    struct fakeTP
+    {
+        enum class Status
+        {
+            SUCCESS,
+            LATER_NONCE,
+            INSUFFICIENT_BALANCE,
+            INVALID_GAS_LIMIT,
+            BAD_NONCE,
+            DEPLOYED_CODE,
+        };
+
+        Receipt r_{.status = Receipt::SUCCESS};
+
+        template <class TEvmHost>
+        Receipt execute(
+            TState &, TEvmHost &, Transaction const &, uint64_t,
+            address_t const &) const
+        {
+            return r_;
+        }
+
+        Status validate(TState const &, Transaction const &, uint64_t)
+        {
+            return static_cast<Status>(fake_validation);
+        }
+    };
+
+    using tp_t = fakeTP<state_t, fork_t>;
+    using fiber_data_t =
+        TransactionProcessorFiberData<mutex_t, tp_t, evm_t, block_cache_t>;
+    using block_processor_t = AllTxnBlockProcessor;
 }
-*/
 
-template <class TState>
-struct EmptyFiberData
+TEST(AllTxnBlockProcessor, execute_empty_block)
 {
-    Receipt _result{};
-    EmptyFiberData(
-        TState &, Transaction const &, BlockHeader const &, unsigned int)
-    {
-    }
-    Receipt get_receipt() { return _result; }
-    inline void operator()() {}
-};
+    auto db = test::make_db<db_t>();
 
-template <class TState>
-struct FailedFiberData
-{
-    Receipt _result{.status = 1u};
-    FailedFiberData(
-        TState &, Transaction const &, BlockHeader const &, unsigned int)
-    {
-    }
-    Receipt get_receipt() { return _result; }
-    inline void operator()() { boost::this_fiber::yield(); }
-};
-
-TEST(AllTxnBlockProcessor, execute_empty)
-{
-    using block_processor_t = AllTxnBlockProcessor<BoostFiberExecution>;
-    using fiber_data_t = EmptyFiberData<state_t>;
-
-    fake::State s{};
     static Block b{
         .header = {},
     };
 
     block_processor_t p{};
-    auto const r = p.execute<state_t, fork_t, fiber_data_t>(s, b);
+    auto const r = p.execute<mutex_t, fork_t, fiber_data_t, block_cache_t>(
+        b, db, block_cache);
     EXPECT_EQ(r.size(), 0);
 }
 
 TEST(AllTxnBlockProcessor, execute_some)
 {
-    using block_processor_t = AllTxnBlockProcessor<BoostFiberExecution>;
-    using fiber_data_t = EmptyFiberData<state_t>;
+    auto db = test::make_db<db_t>();
+    fake_validation = ValStatus::SUCCESS;
 
-    fake::State s{};
     static Block b{
         .header = {},
-        .transactions = {{}, {}, {}},
+        .transactions = {{}},
     };
 
     block_processor_t p{};
-    auto const r = p.execute<state_t, fork_t, fiber_data_t>(s, b);
-    EXPECT_EQ(r.size(), 3);
-    EXPECT_EQ(r[0].status, 0u);
-    EXPECT_EQ(r[1].status, 0u);
-    EXPECT_EQ(r[2].status, 0u);
+    auto const r = p.execute<mutex_t, fork_t, fiber_data_t, block_cache_t>(
+        b, db, block_cache);
+
+    EXPECT_EQ(r.size(), 1);
+    EXPECT_EQ(r[0].status, Receipt::Status::SUCCESS);
 }
 
 TEST(AllTxnBlockProcessor, execute_some_failed)
 {
-    using block_processor_t = AllTxnBlockProcessor<BoostFiberExecution>;
-    using fiber_data_t = FailedFiberData<state_t>;
+    auto db = test::make_db<db_t>();
+    fake_validation = ValStatus::BAD_NONCE;
 
-    fake::State s{};
     static Block b{
         .header = {},
         .transactions = {{}, {}, {}, {}, {}},
     };
 
     block_processor_t p{};
-    auto const r = p.execute<state_t, fork_t, fiber_data_t>(s, b);
+    auto const r = p.execute<mutex_t, fork_t, fiber_data_t, block_cache_t>(
+        b, db, block_cache);
     EXPECT_EQ(r.size(), 5);
-    EXPECT_EQ(r[0].status, 1u);
-    EXPECT_EQ(r[1].status, 1u);
-    EXPECT_EQ(r[2].status, 1u);
-    EXPECT_EQ(r[3].status, 1u);
-    EXPECT_EQ(r[4].status, 1u);
+    EXPECT_EQ(r[0].status, Receipt::Status::FAILED);
+    EXPECT_EQ(r[1].status, Receipt::Status::FAILED);
+    EXPECT_EQ(r[2].status, Receipt::Status::FAILED);
+    EXPECT_EQ(r[3].status, Receipt::Status::FAILED);
+    EXPECT_EQ(r[4].status, Receipt::Status::FAILED);
 }
 
-/*
-// TODO: Comment back when both BlockProcessor refactor & transfer_balance_dao
-refactor are done
-
-TEST(AllTxnBlockProcessor, complete_transfer_and_verify_still_merge_dao)
+TEST(AllTxnBlockProcessor, dao_reversal)
 {
-    db::BlockDb blocks{test_resource::correct_block_data_dir};
-    db_t db{};
-
-    using fiber_data_t = EmptyFiberData<real_state_t>;
+    auto db = test::make_db<db_t>();
 
     std::vector<std::pair<address_t, std::optional<Account>>> v{};
     for (auto const addr : dao::child_accounts) {
@@ -144,33 +146,22 @@ TEST(AllTxnBlockProcessor, complete_transfer_and_verify_still_merge_dao)
     v.emplace_back(
         std::make_pair(dao::withdraw_account, Account{}.balance = 0u));
     db.commit(state::StateChanges{.account_changes = v});
-    state::AccountState accounts{db};
-    state::ValueState values{db};
-    state::CodeState codes{db};
-    real_state_t s{accounts, values, codes, blocks, db};
 
     Block b{};
     b.header.number = dao::dao_block_number;
 
-    AllTxnBlockProcessor<BoostFiberExecution> bp{};
-    [[maybe_unused]] auto const r =
-        bp.execute<real_state_t, fork_traits::dao_fork, fiber_data_t>(s, b);
-
-    auto change_set = s.get_new_changeset(0u);
+    block_processor_t bp{};
+    auto const r =
+        bp.execute<mutex_t, fork_traits::dao_fork, fiber_data_t, block_cache_t>(
+            b, db, block_cache);
 
     for (auto const &addr : dao::child_accounts) {
-        EXPECT_EQ(intx::be::load<uint256_t>(change_set.get_balance(addr)), 0u);
+        auto account = db.read_account(addr);
+        ASSERT_TRUE(account);
+        EXPECT_EQ(account->balance, 0u);
     }
-    EXPECT_EQ(
-        intx::be::load<uint256_t>(
-            change_set.get_balance(dao::withdraw_account)),
-        total);
 
-    // Verify we can still merge changeset
-    change_set.set_balance(dao::withdraw_account, 1);
-    EXPECT_EQ(
-        s.can_merge_changes(change_set),
-        real_state_t::MergeStatus::WILL_SUCCEED);
+    auto dao_account = db.read_account(dao::withdraw_account);
+    ASSERT_TRUE(dao_account);
+    EXPECT_EQ(dao_account->balance, total);
 }
-
-*/

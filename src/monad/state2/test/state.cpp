@@ -64,9 +64,12 @@ TYPED_TEST(StateTest, access_account)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{a, Account{.balance = 10'000}}},
-        .storage_changes = {}});
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 10'000}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
 
@@ -80,9 +83,12 @@ TYPED_TEST(StateTest, account_exists)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{a, Account{.balance = 10'000}}},
-        .storage_changes = {}});
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 10'000}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
 
@@ -109,9 +115,12 @@ TYPED_TEST(StateTest, get_balance)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{a, Account{.balance = 10'000}}},
-        .storage_changes = {}});
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 10'000}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     s.create_account(b);
@@ -125,9 +134,10 @@ TYPED_TEST(StateTest, set_balance)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{a, Account{.balance = 1}}},
-        .storage_changes = {}});
+    db.commit(
+        StateDeltas{
+            {a, StateDelta{.account = {std::nullopt, Account{.balance = 1}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     s.create_account(b);
@@ -142,8 +152,10 @@ TYPED_TEST(StateTest, get_nonce)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{a, Account{.nonce = 2}}}, .storage_changes = {}});
+    db.commit(
+        StateDeltas{
+            {a, StateDelta{.account = {std::nullopt, Account{.nonce = 2}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     s.create_account(b);
@@ -169,9 +181,12 @@ TYPED_TEST(StateTest, get_code_hash)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{a, Account{.code_hash = hash1}}},
-        .storage_changes = {}});
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, Account{.code_hash = hash1}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     s.create_account(b);
@@ -197,10 +212,14 @@ TYPED_TEST(StateTest, selfdestruct)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes =
-            {{a, Account{.balance = 18'000}}, {c, Account{.balance = 38'000}}},
-        .storage_changes = {}});
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{.account = {std::nullopt, Account{.balance = 18'000}}}},
+            {c,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 38'000}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     s.create_account(b);
@@ -228,7 +247,11 @@ TYPED_TEST(StateTest, selfdestruct_self)
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
     db.commit(
-        StateChanges{.account_changes = {{a, Account{.balance = 18'000}}}});
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 18'000}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
 
@@ -244,9 +267,12 @@ TYPED_TEST(StateTest, destruct_touched_dead)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{a, Account{.balance = 10'000}}, {b, Account{}}},
-        .storage_changes = {}});
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{.account = {std::nullopt, Account{.balance = 10'000}}}},
+            {b, StateDelta{.account = {std::nullopt, Account{}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     EXPECT_TRUE(s.account_exists(a));
@@ -267,9 +293,11 @@ TYPED_TEST(StateTest, apply_award)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{a, Account{.balance = 100}}, {b, Account{}}},
-        .storage_changes = {}});
+    db.commit(
+        StateDeltas{
+            {a, StateDelta{.account = {std::nullopt, Account{.balance = 100}}}},
+            {b, StateDelta{.account = {std::nullopt, Account{}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     s.add_txn_award(150);
@@ -302,10 +330,19 @@ TYPED_TEST(StateTest, get_storage)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{a, Account{}}, {b, Account{}}},
-        .storage_changes = {
-            {a, {{key1, value1}, {key2, value2}}}, {b, {{key1, value1}}}}});
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, Account{}},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key2, {bytes32_t{}, value2}}}}},
+            {b,
+             StateDelta{
+                 .account = {std::nullopt, Account{}},
+                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     EXPECT_TRUE(s.account_exists(a));
@@ -322,9 +359,14 @@ TYPED_TEST(StateTest, set_storage_modified)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{a, Account{}}, {b, Account{}}},
-        .storage_changes = {{a, {{key2, value2}}}}});
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, Account{}},
+                 .storage = {{key2, {bytes32_t{}, value2}}}}},
+            {b, StateDelta{.account = {std::nullopt, Account{}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     EXPECT_TRUE(s.account_exists(a));
@@ -336,9 +378,14 @@ TYPED_TEST(StateTest, set_storage_deleted)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{b, Account{}}},
-        .storage_changes = {{b, {{key1, value1}}}}});
+
+    db.commit(
+        StateDeltas{
+            {b,
+             StateDelta{
+                 .account = {std::nullopt, Account{}},
+                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     EXPECT_TRUE(s.account_exists(b));
@@ -354,8 +401,9 @@ TYPED_TEST(StateTest, set_storage_added)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{b, Account{}}}, .storage_changes = {}});
+    db.commit(
+        StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     EXPECT_TRUE(s.account_exists(b));
@@ -371,9 +419,14 @@ TYPED_TEST(StateTest, set_storage_different_assigned)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{a, Account{}}, {b, Account{}}},
-        .storage_changes = {{a, {{key2, value2}}}}});
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, Account{}},
+                 .storage = {{key2, {bytes32_t{}, value2}}}}},
+            {b, StateDelta{.account = {std::nullopt, Account{}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     EXPECT_TRUE(s.account_exists(a));
@@ -387,9 +440,14 @@ TYPED_TEST(StateTest, set_storage_unchanged_assigned)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{a, Account{}}, {b, Account{}}},
-        .storage_changes = {{a, {{key2, value2}}}}});
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, Account{}},
+                 .storage = {{key2, {bytes32_t{}, value2}}}}},
+            {b, StateDelta{.account = {std::nullopt, Account{}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     EXPECT_TRUE(s.account_exists(a));
@@ -401,8 +459,9 @@ TYPED_TEST(StateTest, set_storage_added_deleted)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{b, Account{}}}, .storage_changes = {}});
+    db.commit(
+        StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     EXPECT_TRUE(s.account_exists(b));
@@ -416,8 +475,9 @@ TYPED_TEST(StateTest, set_storage_added_deleted_null)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{b, Account{}}}, .storage_changes = {}});
+    db.commit(
+        StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     EXPECT_TRUE(s.account_exists(b));
@@ -431,9 +491,13 @@ TYPED_TEST(StateTest, set_storage_modify_delete)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{b, Account{}}},
-        .storage_changes = {{b, {{key2, value2}}}}});
+    db.commit(
+        StateDeltas{
+            {b,
+             StateDelta{
+                 .account = {std::nullopt, Account{}},
+                 .storage = {{key2, {bytes32_t{}, value2}}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     EXPECT_TRUE(s.account_exists(b));
@@ -447,9 +511,13 @@ TYPED_TEST(StateTest, set_storage_delete_restored)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{b, Account{}}},
-        .storage_changes = {{b, {{key2, value2}}}}});
+    db.commit(
+        StateDeltas{
+            {b,
+             StateDelta{
+                 .account = {std::nullopt, Account{}},
+                 .storage = {{key2, {bytes32_t{}, value2}}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     EXPECT_TRUE(s.account_exists(b));
@@ -463,9 +531,13 @@ TYPED_TEST(StateTest, set_storage_modified_restored)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{b, Account{}}},
-        .storage_changes = {{b, {{key2, value2}}}}});
+    db.commit(
+        StateDeltas{
+            {b,
+             StateDelta{
+                 .account = {std::nullopt, Account{}},
+                 .storage = {{key2, {bytes32_t{}, value2}}}}}},
+        Code{});
 
     State s{bs, db, block_cache};
     EXPECT_TRUE(s.account_exists(b));
@@ -481,10 +553,9 @@ TYPED_TEST(StateTest, get_code_size)
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
     Account acct{.code_hash = code_hash1};
-    db.commit(state::StateChanges{
-        .account_changes = {{a, acct}},
-        .storage_changes = {},
-        .code_changes = {{code_hash1, code1}}});
+    db.commit(
+        StateDeltas{{a, StateDelta{.account = {std::nullopt, acct}}}},
+        Code{{code_hash1, code1}});
 
     State s{bs, db, block_cache};
     EXPECT_EQ(s.get_code_size(a), code1.size());
@@ -496,10 +567,12 @@ TYPED_TEST(StateTest, copy_code)
     BlockState<mutex_t> bs;
     Account acct_a{.code_hash = code_hash1};
     Account acct_b{.code_hash = code_hash2};
-    db.commit(state::StateChanges{
-        .account_changes = {{a, acct_a}, {b, acct_b}},
-        .storage_changes = {},
-        .code_changes = {{code_hash1, code1}, {code_hash2, code2}}});
+
+    db.commit(
+        StateDeltas{
+            {a, StateDelta{.account = {std::nullopt, acct_a}}},
+            {b, StateDelta{.account = {std::nullopt, acct_b}}}},
+        Code{{code_hash1, code1}, {code_hash2, code2}});
 
     static constexpr unsigned size{8};
     uint8_t buffer[size];
@@ -545,10 +618,13 @@ TYPED_TEST(StateTest, get_code)
 
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes = {{a, Account{.code_hash = code_hash1}}},
-        .storage_changes = {},
-        .code_changes = {{code_hash1, contract}}});
+
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, Account{.code_hash = code_hash1}}}}},
+        Code{{code_hash1, contract}});
 
     State s{bs, db, block_cache};
 
@@ -582,13 +658,22 @@ TYPED_TEST(StateTest, can_merge_new_account)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes =
-            {{b, Account{.balance = 40'000u}},
-             {c, Account{.balance = 50'000u}}},
-        .storage_changes = {
-            {b, {{key1, value1}, {key2, value2}}},
-            {c, {{key1, value1}, {key2, value2}}}}});
+
+    db.commit(
+        StateDeltas{
+            {b,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 40'000}},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key2, {bytes32_t{}, value2}}}}},
+            {c,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 50'000}},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key2, {bytes32_t{}, value2}}}}}},
+        Code{});
 
     State t{bs, db, block_cache};
     {
@@ -609,13 +694,22 @@ TYPED_TEST(StateTest, can_merge_update)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    db.commit(StateChanges{
-        .account_changes =
-            {{b, Account{.balance = 40'000u}},
-             {c, Account{.balance = 50'000u}}},
-        .storage_changes = {
-            {b, {{key1, value1}, {key2, value2}}},
-            {c, {{key1, value1}, {key2, value2}}}}});
+
+    db.commit(
+        StateDeltas{
+            {b,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 40'000}},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key2, {bytes32_t{}, value2}}}}},
+            {c,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 50'000}},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key2, {bytes32_t{}, value2}}}}}},
+        Code{});
 
     State t{bs, db, block_cache};
     {
@@ -644,13 +738,21 @@ TYPED_TEST(StateTest, can_merge_same_account_different_storage)
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
 
-    db.commit(StateChanges{
-        .account_changes =
-            {{b, Account{.balance = 40'000u}},
-             {c, Account{.balance = 50'000u}}},
-        .storage_changes = {
-            {b, {{key1, value1}, {key2, value2}}},
-            {c, {{key1, value1}, {key2, value2}}}}});
+    db.commit(
+        StateDeltas{
+            {b,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 40'000}},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key2, {bytes32_t{}, value2}}}}},
+            {c,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 50'000}},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key2, {bytes32_t{}, value2}}}}}},
+        Code{});
 
     State as{bs, db, block_cache};
     State cs{bs, db, block_cache};
@@ -673,9 +775,13 @@ TYPED_TEST(StateTest, cant_merge_colliding_storage)
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
 
-    db.commit(StateChanges{
-        .account_changes = {{b, Account{.balance = 40'000u}}},
-        .storage_changes = {{b, {{key1, value1}}}}});
+    db.commit(
+        StateDeltas{
+            {b,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 40'000}},
+                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        Code{});
 
     State as{bs, db, block_cache};
     State cs{bs, db, block_cache};
@@ -707,14 +813,23 @@ TYPED_TEST(StateTest, merge_txn0_and_txn1)
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
 
-    db.commit(StateChanges{
-        .account_changes =
-            {{a, Account{.balance = 30'000u}},
-             {b, Account{.balance = 40'000u}},
-             {c, Account{.balance = 50'000u}}},
-        .storage_changes = {
-            {b, {{key1, value1}, {key2, value2}}},
-            {c, {{key1, value1}, {key2, value2}}}}});
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{.account = {std::nullopt, Account{.balance = 30'000}}}},
+            {b,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 40'000}},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key2, {bytes32_t{}, value2}}}}},
+            {c,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 50'000}},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key2, {bytes32_t{}, value2}}}}}},
+        Code{});
 
     State as{bs, db, block_cache};
     State cs{bs, db, block_cache};
@@ -742,13 +857,21 @@ TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
 
-    db.commit(StateChanges{
-        .account_changes =
-            {{b, Account{.balance = 40'000u}},
-             {c, Account{.balance = 50'000u}}},
-        .storage_changes = {
-            {b, {{key1, value1}, {key2, value2}}},
-            {c, {{key1, value1}, {key2, value2}}}}});
+    db.commit(
+        StateDeltas{
+            {b,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 40'000}},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key2, {bytes32_t{}, value2}}}}},
+            {c,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 50'000}},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key2, {bytes32_t{}, value2}}}}}},
+        Code{});
 
     State as{bs, db, block_cache};
     State cs{bs, db, block_cache};
@@ -828,14 +951,23 @@ TYPED_TEST(StateTest, commit_twice)
 {
     auto db = test::make_db<TypeParam>();
 
-    db.commit(StateChanges{
-        .account_changes =
-            {{a, Account{.balance = 30'000u}},
-             {b, Account{.balance = 40'000u}},
-             {c, Account{.balance = 50'000u}}},
-        .storage_changes = {
-            {b, {{key1, value1}, {key2, value2}}},
-            {c, {{key1, value1}, {key2, value2}}}}});
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{.account = {std::nullopt, Account{.balance = 30'000}}}},
+            {b,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 40'000}},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key2, {bytes32_t{}, value2}}}}},
+            {c,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 50'000}},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key2, {bytes32_t{}, value2}}}}}},
+        Code{});
 
     {
         // Block 0, Txn 0

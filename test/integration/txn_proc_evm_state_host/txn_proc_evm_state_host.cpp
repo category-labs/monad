@@ -47,11 +47,13 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     BlockState<mutex_t> bs;
     state::State s{bs, db, blocks};
 
-    db.commit(state::StateChanges{
-        .account_changes =
-            {{a, Account{}}, // 'to' doesn't previously exist
-             {from, Account{.balance = 10'000'000}}},
-        .storage_changes = {}});
+    db.commit(
+        StateDeltas{
+            {a, StateDelta{.account = {std::nullopt, Account{}}}},
+            {from,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 10'000'000}}}}},
+        Code{});
 
     BlockHeader const bh{.number = 2, .beneficiary = a};
     BlockHeader const ommer{.number = 1, .beneficiary = o};
@@ -102,12 +104,16 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     BlockState<mutex_t> bs;
     state::State s{bs, db, blocks};
 
-    db.commit(state::StateChanges{
-        .account_changes =
-            {{a, Account{}},
-             {creator,
-              Account{.balance = 9'000'000'000'000'000'000, .nonce = 3}}},
-        .storage_changes = {}});
+    db.commit(
+        StateDeltas{
+            {a, StateDelta{.account = {std::nullopt, Account{}}}},
+            {creator,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 9'000'000'000'000'000'000, .nonce = 3}}}}},
+        Code{});
 
     byte_string code = {0x60, 0x60, 0x60, 0x40, 0x52, 0x60, 0x00, 0x80, 0x54,
                         0x60, 0x01, 0x60, 0xa0, 0x60, 0x02, 0x0a, 0x03, 0x19,
@@ -161,12 +167,16 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     BlockState<mutex_t> bs;
     state::State s{bs, db, blocks};
 
-    db.commit(state::StateChanges{
-        .account_changes =
-            {{a, Account{}},
-             {creator,
-              Account{.balance = 4'942'119'596'324'559'240, .nonce = 2}}},
-        .storage_changes = {}});
+    db.commit(
+        StateDeltas{
+            {a, StateDelta{.account = {std::nullopt, Account{}}}},
+            {creator,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 4'942'119'596'324'559'240, .nonce = 2}}}}},
+        Code{});
 
     byte_string code = {0xde, 0xad, 0xbe, 0xef};
     BlockHeader const bh{.number = 48'512, .beneficiary = a};

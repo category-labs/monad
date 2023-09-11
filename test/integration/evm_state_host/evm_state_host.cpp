@@ -70,11 +70,17 @@ TEST(EvmInterpStateHost, return_existing_storage)
         0xf3}; // RETURN
     Account A{.code_hash = code_hash};
 
-    db.commit(state::StateChanges{
-        .account_changes =
-            {{a, A}, {to, Account{}}, {from, Account{.balance = 10'000'000}}},
-        .storage_changes = {{to, {{location, value1}}}},
-        .code_changes = {{code_hash, code}}});
+    db.commit(
+        StateDeltas{
+            {a, StateDelta{.account = {std::nullopt, A}}},
+            {to,
+             StateDelta{
+                 .account = {std::nullopt, Account{}},
+                 .storage = {{location, {bytes32_t{}, value1}}}}},
+            {from,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 10'000'000}}}}},
+        Code{{code_hash, code}});
 
     BlockHeader const b{}; // Required for the host interface, but not used
     Transaction const t{};
@@ -132,11 +138,14 @@ TEST(EvmInterpStateHost, store_then_return_storage)
         0xf3}; // RETURN
     Account A{.code_hash = code_hash};
 
-    db.commit(state::StateChanges{
-        .account_changes =
-            {{a, A}, {to, Account{}}, {from, Account{.balance = 10'000'000}}},
-        .storage_changes = {},
-        .code_changes = {{code_hash, code}}});
+    db.commit(
+        StateDeltas{
+            {a, StateDelta{.account = {std::nullopt, A}}},
+            {to, StateDelta{.account = {std::nullopt, Account{}}}},
+            {from,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 10'000'000}}}}},
+        Code{{code_hash, code}});
 
     BlockHeader const b{}; // Required for the host interface, but not used
     Transaction const t{};

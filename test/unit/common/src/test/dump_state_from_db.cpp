@@ -14,6 +14,8 @@
 #include <monad/core/transaction.hpp>
 #include <monad/execution/test/fakes.hpp>
 #include <monad/state/code_state.hpp>
+#include <monad/state2/state_deltas.hpp>
+
 using namespace monad;
 
 template <typename>
@@ -131,39 +133,69 @@ TYPED_TEST(StateSerialization, serialize_add)
     auto const h_code_hash = std::bit_cast<bytes32_t>(
         ethash::keccak256(h_code.data(), h_code.size()));
 
-    db.commit(monad::state::StateChanges{
-        .account_changes =
-            {{a,
-              monad::Account{
-                  .balance = 0xba1a9ce0ba1a9ce, .code_hash = a_code_hash}},
-             {b,
-              monad::Account{
-                  .balance = 0xba1a9ce0ba1a9ce, .code_hash = b_code_hash}},
-             {c,
-              monad::Account{
-                  .balance = 0xba1a9ce0ba1a9ce, .code_hash = c_code_hash}},
-             {d,
-              monad::Account{
-                  .balance = 0xba1a9ce0ba1a9ce, .code_hash = d_code_hash}},
-             {e,
-              monad::Account{
-                  .balance = 0xba1a9ce0ba1a9ce, .code_hash = e_code_hash}},
-             {f, monad::Account{.balance = 0x7024c}},
-             {g, monad::Account{.balance = 0xba1a9ce0b9aa781, .nonce = 1}},
-             {h,
-              monad::Account{
-                  .balance = 0xba1a9ce0ba1a9cf, .code_hash = h_code_hash}}},
-        .storage_changes =
-            {{a,
-              {{0x0000000000000000000000000000000000000000000000000000000000000000_bytes32,
-                0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe_bytes32}}}},
-        .code_changes = {
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0xba1a9ce0ba1a9ce,
+                          .code_hash = a_code_hash}},
+                 .storage =
+                     {{bytes32_t{},
+                       {bytes32_t{},
+                        0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe_bytes32}}}}},
+            {b,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0xba1a9ce0ba1a9ce,
+                          .code_hash = b_code_hash}}}},
+            {c,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0xba1a9ce0ba1a9ce,
+                          .code_hash = c_code_hash}}}},
+            {d,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0xba1a9ce0ba1a9ce,
+                          .code_hash = d_code_hash}}}},
+            {e,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0xba1a9ce0ba1a9ce,
+                          .code_hash = e_code_hash}}}},
+            {f,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 0x7024c}}}},
+            {g,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0xba1a9ce0b9aa781, .nonce = 1}}}},
+            {h,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0xba1a9ce0ba1a9cf,
+                          .code_hash = h_code_hash}}}}},
+        Code{
             {a_code_hash, a_code},
             {b_code_hash, b_code},
             {c_code_hash, c_code},
             {d_code_hash, d_code},
             {e_code_hash, e_code},
-            {h_code_hash, h_code}}});
+            {h_code_hash, h_code}});
 
     auto const actual_payload = monad::test::dump_state_from_db(db);
     // performs a deep comparison:

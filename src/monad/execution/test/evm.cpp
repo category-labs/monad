@@ -46,11 +46,15 @@ TEST(Evm, make_account_address)
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    db.commit(state::StateChanges{
-        .account_changes =
-            {{from, Account{.balance = 10'000'000'000, .nonce = 7}}},
-        .storage_changes = {},
-        .code_changes = {}});
+
+    db.commit(
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 10'000'000'000, .nonce = 7}}}}},
+        Code{});
 
     evmc_message m{
         .kind = EVMC_CREATE,
@@ -81,11 +85,14 @@ TEST(Evm, make_account_address_create2)
         0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32};
     static const uint8_t deadbeef[4]{0xde, 0xad, 0xbe, 0xef};
 
-    db.commit(state::StateChanges{
-        .account_changes =
-            {{from, Account{.balance = 10'000'000'000, .nonce = 5}}},
-        .storage_changes = {},
-        .code_changes = {}});
+    db.commit(
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 10'000'000'000, .nonce = 5}}}}},
+        Code{});
 
     evmc_message m{
         .kind = EVMC_CREATE2,
@@ -113,10 +120,14 @@ TEST(Evm, create_with_insufficient)
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-    db.commit(state::StateChanges{
-        .account_changes = {{from, Account{.balance = 10'000'000'000}}},
-        .storage_changes = {},
-        .code_changes = {}});
+
+    db.commit(
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.balance = 10'000'000'000}}}}},
+        Code{});
 
     evmc_message m{
         .kind = EVMC_CREATE,
@@ -174,10 +185,15 @@ TEST(Evm, transfer_call_balances)
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    db.commit(state::StateChanges{
-        .account_changes = {
-            {to, Account{}},
-            {from, Account{.balance = 10'000'000'000, .nonce = 7}}}});
+    db.commit(
+        StateDeltas{
+            {to, StateDelta{.account = {std::nullopt, Account{}}}},
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 10'000'000'000, .nonce = 7}}}}},
+        Code{});
 
     evmc_message m{
         .kind = EVMC_CALL,
@@ -204,9 +220,14 @@ TEST(Evm, transfer_call_balances_to_self)
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     static constexpr auto to = from;
-    db.commit(state::StateChanges{
-        .account_changes = {
-            {from, Account{.balance = 10'000'000'000, .nonce = 7}}}});
+    db.commit(
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 10'000'000'000, .nonce = 7}}}}},
+        Code{});
 
     evmc_message m{
         .kind = EVMC_CALL,
@@ -234,10 +255,15 @@ TEST(Evm, dont_transfer_on_delegatecall)
     static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
 
-    db.commit(state::StateChanges{
-        .account_changes = {
-            {to, Account{}},
-            {from, Account{.balance = 10'000'000'000, .nonce = 6}}}});
+    db.commit(
+        StateDeltas{
+            {to, StateDelta{.account = {std::nullopt, Account{}}}},
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 10'000'000'000, .nonce = 6}}}}},
+        Code{});
 
     evmc_message m{
         .kind = EVMC_DELEGATECALL,
@@ -266,10 +292,15 @@ TEST(Evm, dont_transfer_on_staticcall)
     static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
 
-    db.commit(state::StateChanges{
-        .account_changes = {
-            {to, Account{}},
-            {from, Account{.balance = 10'000'000'000, .nonce = 6}}}});
+    db.commit(
+        StateDeltas{
+            {to, StateDelta{.account = {std::nullopt, Account{}}}},
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 10'000'000'000, .nonce = 6}}}}},
+        Code{});
 
     evmc_message m{
         .kind = EVMC_CALL,
@@ -299,8 +330,13 @@ TEST(Evm, create_contract_account)
     static constexpr auto new_addr{
         0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
 
-    db.commit(state::StateChanges{
-        .account_changes = {{from, Account{.balance = 50'000, .nonce = 1}}}});
+    db.commit(
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.balance = 50'000, .nonce = 1}}}}},
+        Code{});
 
     evm_host_t h{};
     byte_string code{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
@@ -334,8 +370,13 @@ TEST(Evm, create2_contract_account)
     static constexpr auto new_addr2{
         0xe0e05f8f41129e2087ec0a3759810fdced46edd4_address};
 
-    db.commit(state::StateChanges{
-        .account_changes = {{from, Account{.balance = 50'000, .nonce = 1}}}});
+    db.commit(
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.balance = 50'000, .nonce = 1}}}}},
+        Code{});
 
     evm_host_t h{};
     byte_string code{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
@@ -370,8 +411,13 @@ TEST(Evm, oog_create_account)
     static constexpr auto new_addr{
         0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
 
-    db.commit(state::StateChanges{
-        .account_changes = {{from, Account{.balance = 50'000, .nonce = 1}}}});
+    db.commit(
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.balance = 50'000, .nonce = 1}}}}},
+        Code{});
 
     evm_host_t h{};
     fake::Interpreter::_result = evmc::Result{
@@ -401,8 +447,12 @@ TEST(Evm, revert_create_account)
 
     evm_host_t h{};
 
-    db.commit(state::StateChanges{
-        .account_changes = {{from, Account{.balance = 10'000}}}});
+    db.commit(
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 10'000}}}}},
+        Code{});
 
     fake::Interpreter::_result = evmc::Result{
         evmc_result{.status_code = EVMC_REVERT, .gas_left = 11'000}};
@@ -430,14 +480,16 @@ TEST(Evm, create_nonce_out_of_range)
 
     evm_host_t h{};
 
-    db.commit(state::StateChanges{
-        .account_changes =
-            {{from,
-              Account{
-                  .balance = 10'000'000'000,
-                  .nonce = std::numeric_limits<uint64_t>::max()}}},
-        .storage_changes = {},
-        .code_changes = {}});
+    db.commit(
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                          .nonce = std::numeric_limits<uint64_t>::max()}}}}},
+        Code{});
 
     evmc_message m{
         .kind = EVMC_CREATE,
@@ -464,10 +516,15 @@ TEST(Evm, call_evm)
     static constexpr auto to{
         0xf8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8_address};
 
-    db.commit(state::StateChanges{
-        .account_changes = {
-            {to, Account{.balance = 50'000}},
-            {from, Account{.balance = 50'000, .nonce = 1}}}});
+    db.commit(
+        StateDeltas{
+            {to,
+             StateDelta{.account = {std::nullopt, Account{.balance = 50'000}}}},
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.balance = 50'000, .nonce = 1}}}}},
+        Code{});
 
     evm_host_t h{};
 
@@ -503,10 +560,14 @@ TEST(Evm, static_precompile_execution)
 
     evm_host_t h{};
 
-    db.commit(state::StateChanges{
-        .account_changes = {
-            {code_address, Account{.nonce = 4}},
-            {from, Account{.balance = 15'000}}}});
+    db.commit(
+        StateDeltas{
+            {code_address,
+             StateDelta{.account = {std::nullopt, Account{.nonce = 4}}}},
+            {from,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 15'000}}}}},
+        Code{});
 
     static constexpr char data[] = "hello world";
     static constexpr auto data_size = sizeof(data);
@@ -543,10 +604,14 @@ TEST(Evm, out_of_gas_static_precompile_execution)
 
     evm_host_t h{};
 
-    db.commit(state::StateChanges{
-        .account_changes = {
-            {code_address, Account{.nonce = 6}},
-            {from, Account{.balance = 15'000}}}});
+    db.commit(
+        StateDeltas{
+            {code_address,
+             StateDelta{.account = {std::nullopt, Account{.nonce = 6}}}},
+            {from,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 15'000}}}}},
+        Code{});
 
     static constexpr char data[] = "hello world";
     static constexpr auto data_size = sizeof(data);

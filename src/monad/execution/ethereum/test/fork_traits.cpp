@@ -16,6 +16,8 @@
 #include <monad/state/state.hpp>
 #include <monad/state/value_state.hpp>
 
+#include <monad/state2/state_deltas.hpp>
+
 #include <test_resource_data.h>
 
 #include <gtest/gtest.h>
@@ -157,14 +159,17 @@ TEST(fork_traits, dao)
     db::BlockDb blocks{test_resource::correct_block_data_dir};
     db_t db{};
 
-    std::vector<std::pair<address_t, std::optional<Account>>> v{};
+    StateDeltas state_deltas{};
+
     for (auto const addr : dao::child_accounts) {
         Account a{.balance = individual};
-        v.emplace_back(std::make_pair(addr, a));
+        state_deltas.emplace(addr, StateDelta{.account = {std::nullopt, a}});
     }
-    v.emplace_back(
-        std::make_pair(dao::withdraw_account, Account{}.balance = 0u));
-    db.commit(state::StateChanges{.account_changes = v});
+    state_deltas.emplace(
+        dao::withdraw_account,
+        StateDelta{.account = {std::nullopt, Account{.balance = 0}}});
+
+    db.commit(state_deltas, Code{});
     state::AccountState accounts{db};
     state::ValueState values{db};
     state::CodeState codes{db};
@@ -197,14 +202,16 @@ TEST(fork_traits, tangerine_whistle)
     db::BlockDb blocks{test_resource::correct_block_data_dir};
     db_t db{};
 
-    std::vector<std::pair<address_t, std::optional<Account>>> v{};
+    StateDeltas state_deltas{};
     for (auto const addr : dao::child_accounts) {
         Account a{.balance = individual};
-        v.emplace_back(std::make_pair(addr, a));
+        state_deltas.emplace(addr, StateDelta{.account = {std::nullopt, a}});
     }
-    v.emplace_back(
-        std::make_pair(dao::withdraw_account, Account{}.balance = 0u));
-    db.commit(state::StateChanges{.account_changes = v});
+    state_deltas.emplace(
+        dao::withdraw_account,
+        StateDelta{.account = {std::nullopt, Account{.balance = 0}}});
+
+    db.commit(state_deltas, Code{});
 
     state::AccountState accounts{db};
     state::ValueState values{db};
@@ -419,7 +426,9 @@ TEST(fork_traits, paris_apply_block_reward)
     db::BlockDb blocks{test_resource::correct_block_data_dir};
     db_t db{};
     db.commit(
-        state::StateChanges{.account_changes = {{a, Account{.balance = 0}}}});
+        StateDeltas{
+            {a, StateDelta{.account = {std::nullopt, Account{.balance = 0}}}}},
+        Code{});
 
     {
         state::AccountState accounts{db};
@@ -527,9 +536,11 @@ TEST(fork_traits, shanghai_withdrawal)
 
     db::BlockDb blocks{test_resource::correct_block_data_dir};
     db_t db{};
-    db.commit(state::StateChanges{
-        .account_changes = {
-            {a, Account{.balance = 0}}, {b, Account{.balance = 0}}}});
+    db.commit(
+        StateDeltas{
+            {a, StateDelta{.account = {std::nullopt, Account{.balance = 0}}}},
+            {b, StateDelta{.account = {std::nullopt, Account{.balance = 0}}}}},
+        Code{});
 
     state::AccountState accounts{db};
     state::ValueState values{db};

@@ -116,7 +116,6 @@ add_library(
   "include/monad/db/permission.hpp"
   "include/monad/db/prepare_state.hpp"
   "include/monad/db/rocks_db_helper.hpp"
-  "include/monad/db/rocks_db.hpp"
   "include/monad/db/rocks_trie_db.hpp"
   "include/monad/db/state_db.hpp"
   "include/monad/db/trie_db_process_changes.hpp"

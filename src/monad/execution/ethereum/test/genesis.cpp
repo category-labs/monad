@@ -1,7 +1,6 @@
 #include <monad/core/block.hpp>
 
 #include <monad/db/in_memory_trie_db.hpp>
-#include <monad/db/rocks_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
 
 #include <monad/test/make_db.hpp>
@@ -20,19 +19,12 @@ using namespace monad;
 using namespace monad::execution;
 
 template <typename TDB>
-struct GenesisStateTest : public testing::Test
-{
-};
-
-template <typename TDB>
 struct GenesisStateRootTest : public testing::Test
 {
 };
 
-using NoTrieDBTypes = ::testing::Types<db::RocksDB>;
 using TrieDBTypes = ::testing::Types<db::InMemoryTrieDB, db::RocksTrieDB>;
 
-TYPED_TEST_SUITE(GenesisStateTest, NoTrieDBTypes);
 TYPED_TEST_SUITE(GenesisStateRootTest, TrieDBTypes);
 
 TEST(Genesis, read_ethereum_mainnet_genesis_header)
@@ -63,28 +55,6 @@ TEST(Genesis, read_ethereum_mainnet_genesis_header)
         block_header.parent_hash,
         0x0000000000000000000000000000000000000000000000000000000000000000_bytes32);
     EXPECT_EQ(block_header.timestamp, 0);
-}
-
-TYPED_TEST(GenesisStateTest, read_ethereum_mainnet_genesis_state)
-{
-    using namespace intx;
-
-    auto const genesis_file_path =
-        test_resource::ethereum_genesis_dir / "mainnet.json";
-    auto db = test::make_db<TypeParam>();
-
-    std::ifstream ifile(genesis_file_path.c_str());
-    auto const genesis_json = nlohmann::json::parse(ifile);
-    read_genesis_state(genesis_json, db);
-
-    address_t a1 = 0x3282791d6fd713f1e94f4bfd565eaa78b3a0599d_address;
-    Account acct1{.balance = 0x487A9A304539440000_u256, .nonce = 0u};
-
-    address_t a2 = 0x08411652c871713609af0062a8a1281bf1bbcfd9_address;
-    Account acct2{.balance = 0x4BE4E7267B6AE00000_u256, .nonce = 0u};
-
-    EXPECT_EQ(db.read_account(a1), acct1);
-    EXPECT_EQ(db.read_account(a2), acct2);
 }
 
 TYPED_TEST(GenesisStateRootTest, ethereum_mainnet_genesis_state_root)

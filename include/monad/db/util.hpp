@@ -12,21 +12,6 @@ namespace detail
     constexpr std::string_view CURRENT_DATABASE = "CURRENT";
 };
 
-struct RocksTrieDB;
-struct RocksDB;
-
-template <typename TDB>
-[[nodiscard]] constexpr std::string_view as_string() noexcept
-{
-    using namespace std::literals::string_view_literals;
-    if constexpr (std::same_as<TDB, db::RocksTrieDB>) {
-        return "rockstriedb"sv;
-    }
-    else if constexpr (std::same_as<TDB, db::RocksDB>) {
-        return "rocksdb"sv;
-    }
-}
-
 [[nodiscard]] inline rocksdb::Slice to_slice(byte_string_view view)
 {
     return {reinterpret_cast<char const *>(view.data()), view.size()};

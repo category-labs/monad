@@ -34,8 +34,7 @@ find_starting_checkpoint(
             starting_block));
     }
 
-    auto const starting_checkpoint =
-        starting_block / monad::db::as_string<TDB>();
+    auto const starting_checkpoint = starting_block / TDB::db_type();
 
     if (!fs::exists(starting_checkpoint)) {
         return tl::make_unexpected(fmt::format(
@@ -64,7 +63,7 @@ prepare_state(std::filesystem::path root, uint64_t starting_block_number)
 
     fs::create_directories(current_dir);
 
-    auto const path = current_dir / monad::db::as_string<TDB>();
+    auto const path = current_dir / TDB::db_type();
     if (starting_block_number) {
         return find_starting_checkpoint<TDB>(root, starting_block_number)
             .map([&](auto const &starting_checkpoint) {

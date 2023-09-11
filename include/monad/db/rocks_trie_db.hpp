@@ -18,8 +18,11 @@
 #include <monad/trie/trie.hpp>
 
 #include <filesystem>
+#include <string_view>
 
 MONAD_DB_NAMESPACE_BEGIN
+
+struct RocksTrieDB;
 
 namespace detail
 {
@@ -195,6 +198,11 @@ struct RocksTrieDB : public Db
     // Db implementations
     ////////////////////////////////////////////////////////////////////
 
+    static constexpr std::string_view db_type() noexcept
+    {
+        return "rockstriedb";
+    }
+
     [[nodiscard]] std::optional<Account>
     read_account(address_t const &a) const override
     {
@@ -264,7 +272,7 @@ struct RocksTrieDB : public Db
                 logger,
                 "Unable to save block_number {} for {} error={}",
                 block_number,
-                as_string<RocksTrieDB>(),
+                db_type(),
                 s.error());
         }
 

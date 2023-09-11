@@ -2,7 +2,6 @@
 
 #include <monad/core/assert.h>
 #include <monad/db/in_memory_trie_db.hpp>
-#include <monad/db/rocks_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
 #include <monad/test/config.hpp>
 #include <test_resource_data.h>
@@ -41,9 +40,7 @@ inline TDatabase make_db()
     auto const *info = testing::UnitTest::GetInstance()->current_test_info();
     MONAD_ASSERT(info);
 
-    if constexpr (
-        std::same_as<TDatabase, db::RocksDB> ||
-        std::same_as<TDatabase, db::RocksTrieDB>) {
+    if constexpr (std::same_as<TDatabase, db::RocksTrieDB>) {
         return TDatabase{db::Writable{}, make_db_root(*info), 0, 0};
     }
     else if constexpr (std::same_as<TDatabase, db::InMemoryTrieDB>) {

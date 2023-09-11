@@ -1,5 +1,4 @@
 #include <monad/db/in_memory_trie_db.hpp>
-#include <monad/db/rocks_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
 #include <monad/logging/formatter.hpp>
 #include <monad/test/config.hpp>
@@ -126,65 +125,6 @@ dump_storage_from_db(monad::db::RocksTrieDB &db)
         detail::dump_storage_from_trie(
             state, key_slice, leaf_cursor, trie_cursor);
     }
-    return state;
-}
-
-[[nodiscard]] inline nlohmann::json
-dump_accounts_from_db(monad::db::RocksDB &db)
-{
-    nlohmann::json state = nlohmann::json::object();
-    std::unique_ptr<rocksdb::Iterator> it{
-        db.db->NewIterator({}, db.accounts_cf())};
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        auto const key_view = monad::db::from_slice(it->key());
-
-        address_t address;
-        std::memcpy(&address, key_view.data(), sizeof(address_t));
-
-        auto const value = monad::db::from_slice(it->value());
-
-        Account account;
-        bytes32_t storage_root;
-        rlp::decode_account(account, storage_root, value);
-
-        detail::dump_accounts_from_db(db, state, address, account);
-    }
-    return state;
-}
-[[nodiscard]] inline nlohmann::json dump_storage_from_db(monad::db::RocksDB &db)
-{
-    nlohmann::json state = nlohmann::json::object();
-    std::unique_ptr<rocksdb::Iterator> it{
-        db.db->NewIterator({}, db.storage_cf())};
-
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        auto const key_slice = db::from_slice(it->key());
-        byte_string_view key_view{key_slice};
-        MONAD_ASSERT(key_view.size() == sizeof(address_t) + sizeof(bytes32_t));
-
-        monad::address_t address;
-        std::copy_n(key_view.data(), sizeof(address_t), address.bytes);
-        auto const keccaked_account_hex =
-            fmt::format("{}", detail::hash(address));
-        key_view.remove_prefix(sizeof(address_t));
-
-        bytes32_t storage_address;
-        std::copy_n(key_view.data(), sizeof(bytes32_t), storage_address.bytes);
-
-        bytes32_t keccaked_storage_key = detail::hash(storage_address);
-
-        auto const value_slice = db::from_slice(it->value());
-
-        bytes32_t storage_value;
-        std::copy_n(value_slice.data(), sizeof(bytes32_t), storage_value.bytes);
-
-        state[keccaked_account_hex]["storage"]["original_account_address"] =
-            fmt::format("{}", address);
-        state[keccaked_account_hex]["storage"]
-             [fmt::format("{}", keccaked_storage_key)] =
-                 fmt::format("{}", storage_value);
-    }
-
     return state;
 }
 

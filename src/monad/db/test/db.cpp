@@ -3,7 +3,6 @@
 
 #include <monad/core/bytes.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
-#include <monad/db/rocks_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
 #include <monad/logging/formatter.hpp>
 #include <monad/state2/state_deltas.hpp>
@@ -34,21 +33,14 @@ template <typename TDB>
 struct DBTest : public testing::Test
 {
 };
-using DBTypes = ::testing::Types<RocksDB, InMemoryTrieDB, RocksTrieDB>;
+using DBTypes = ::testing::Types<InMemoryTrieDB, RocksTrieDB>;
 TYPED_TEST_SUITE(DBTest, DBTypes);
-
-template <typename TDB>
-struct TrieDBTest : public testing::Test
-{
-};
-using TrieDBTypes = ::testing::Types<InMemoryTrieDB, RocksTrieDB>;
-TYPED_TEST_SUITE(TrieDBTest, TrieDBTypes);
 
 template <typename TDB>
 struct RocksDBTest : public testing::Test
 {
 };
-using RocksDBTypes = ::testing::Types<RocksDB, RocksTrieDB>;
+using RocksDBTypes = ::testing::Types<RocksTrieDB>;
 TYPED_TEST_SUITE(RocksDBTest, RocksDBTypes);
 
 TYPED_TEST(DBTest, read_storage)
@@ -168,7 +160,7 @@ TEST(InMemoryTrieDB, erase)
     EXPECT_EQ(db.storage_root(a), NULL_ROOT);
 }
 
-TYPED_TEST(TrieDBTest, ModifyStorageOfAccount)
+TYPED_TEST(DBTest, ModifyStorageOfAccount)
 {
     auto db = test::make_db<TypeParam>();
     Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
@@ -194,7 +186,7 @@ TYPED_TEST(TrieDBTest, ModifyStorageOfAccount)
         0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
 }
 
-TYPED_TEST(TrieDBTest, touch_without_modify_regression)
+TYPED_TEST(DBTest, touch_without_modify_regression)
 {
     auto db = test::make_db<TypeParam>();
     db.commit(
@@ -205,7 +197,7 @@ TYPED_TEST(TrieDBTest, touch_without_modify_regression)
     EXPECT_EQ(db.state_root(), NULL_ROOT);
 }
 
-TYPED_TEST(TrieDBTest, delete_account_modify_storage_regression)
+TYPED_TEST(DBTest, delete_account_modify_storage_regression)
 {
     auto db = test::make_db<TypeParam>();
     Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};

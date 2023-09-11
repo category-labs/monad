@@ -11,6 +11,8 @@
 #include <monad/core/transaction.hpp>
 #include <monad/core/withdrawal.hpp>
 
+#include <monad/db/db.hpp>
+
 #include <monad/execution/config.hpp>
 
 #include <monad/state/state_changes.hpp>
@@ -437,8 +439,9 @@ namespace fake
                 return c;
             }
 
-            static constexpr void
-            transfer_balance_dao(TState &, block_num_t const)
+            template <class TBlockState, class TBlockCache>
+            static constexpr void transfer_balance_dao(
+                TBlockState &, monad::Db &, TBlockCache const &, block_num_t const)
             {
             }
 
@@ -446,9 +449,10 @@ namespace fake
 
             static constexpr void warm_coinbase(TState &, address_t const &) {}
 
+            template <class TBlockState, class TBlockCache>
             static constexpr void process_withdrawal(
-                TState &,
-                std::optional<std::vector<Withdrawal>> const &) noexcept
+                TBlockState &, monad::Db &, TBlockCache const &,
+                std::optional<std::vector<Withdrawal>> const &)
             {
             }
 

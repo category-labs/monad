@@ -5,65 +5,59 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 
+#include <monad/db/db.hpp>
+
 #include <monad/execution/config.hpp>
 #include <monad/execution/transaction_processor.hpp>
 
 #include <monad/logging/monad_log.hpp>
 
+#include <monad/state2/state.hpp>
+
 #include <chrono>
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
-enum class TxnReadyStatus
-{
-    WILL_SUCCEED,
-    POSSIBLY_SUCCEED,
-    ERROR,
-};
-
-template <class TState, class TTxnProcessor, class TEvmHost, class TExecution>
+template <class TMutex, class TTxnProcessor, class TEvmHost, class TBlockCache>
 struct alignas(64) TransactionProcessorFiberData
 {
     using txn_processor_status_t = typename TTxnProcessor::Status;
+    using state_t = state::State<TMutex, TBlockCache>;
 
-    TState &s_;
+    state_t state_;
     Transaction const &txn_;
     BlockHeader const &bh_;
     unsigned int id_;
-    Receipt result_{};
+    Receipt result_;
 
     TransactionProcessorFiberData(
-        TState &s, Transaction &t, BlockHeader const &b, unsigned int id)
-        : s_{s}
+        Db &db, BlockState<TMutex> &bs, Transaction &t, BlockHeader const &b,
+        TBlockCache &block_cache, unsigned int id)
+        : state_{bs, db, block_cache}
         , txn_{t}
         , bh_{b}
         , id_{id}
-        , result_{.status = 1u, .gas_used = txn_.gas_limit}
-    // TODO: should we charge for gas on validation failure? #54
+        , result_{.status = Receipt::Status::FAILED, .gas_used = txn_.gas_limit}
     {
     }
 
-    // this is an injectable policy?
-    static constexpr TxnReadyStatus
-    is_valid(txn_processor_status_t status) noexcept
+    static constexpr bool is_valid(txn_processor_status_t status) noexcept
     {
         if (status == txn_processor_status_t::SUCCESS) {
-            return TxnReadyStatus::WILL_SUCCEED;
+            return true;
         }
-        else if (status == txn_processor_status_t::LATER_NONCE) {
-            return TxnReadyStatus::POSSIBLY_SUCCEED;
-        }
-        return TxnReadyStatus::ERROR;
+        return false;
     }
 
     Receipt get_receipt() const noexcept { return result_; }
+    state_t &get_state() noexcept { return state_; }
 
-    void validate_execute_and_apply_state_diff()
+    void validate_and_execute()
     {
         TTxnProcessor p{};
+
         auto *txn_logger = log::logger_t::get_logger("txn_logger");
         auto const start_time = std::chrono::steady_clock::now();
-
         MONAD_LOG_INFO(
             txn_logger,
             "Start executing Transaction {}, from = {}, to = {}",
@@ -71,62 +65,36 @@ struct alignas(64) TransactionProcessorFiberData
             txn_.from,
             txn_.to);
 
-        while (true) { // retry until apply state cleanly
-            // TODO: Issue #164
-            auto changeset = s_.get_new_changeset(id_);
-            while (true) { // spin until *could be* successful
-                auto const status = is_valid(p.validate(
-                    changeset, txn_, bh_.base_fee_per_gas.value_or(0)));
-                if (status == TxnReadyStatus::WILL_SUCCEED) {
-                    break;
-                }
-                else if (
-                    (s_.current_txn() == id_ &&
-                     status != TxnReadyStatus::WILL_SUCCEED) ||
-                    status == TxnReadyStatus::ERROR) {
-
-                    MONAD_LOG_INFO(txn_logger, "Transaction {} failed!", id_);
-                    // TODO: Charge for validation failure? #54
-                    return;
-                }
-                TExecution::yield();
-            }
-
-            TEvmHost host{bh_, txn_, changeset};
-            result_ = p.execute(
-                changeset,
-                host,
-                txn_,
-                bh_.base_fee_per_gas.value_or(0),
-                bh_.beneficiary);
-
-            if (s_.can_merge_changes(changeset) ==
-                TState::MergeStatus::WILL_SUCCEED) {
-                // apply_state -> can_merge_changes
-                // Can merge needs to be in yield while loop while receiving
-                // TRY_AGAIN When WILL_SUCCEED is returned, merge, and return;
-                // if ERROR is received, then error out
-                auto const finished_time = std::chrono::steady_clock::now();
-                auto const elapsed_ms =
-                    std::chrono::duration_cast<std::chrono::milliseconds>(
-                        finished_time - start_time);
-                MONAD_LOG_INFO(
-                    txn_logger,
-                    "Finish executing Transaction {}, time elapsed = {}",
-                    id_,
-                    elapsed_ms);
-
-                s_.merge_changes(changeset);
-                return;
-            }
-            MONAD_LOG_INFO(txn_logger, "Transaction {} rescheduled", id_);
-            TExecution::yield();
+        auto const validity =
+            p.validate(state_, txn_, bh_.base_fee_per_gas.value_or(0));
+        if (!is_valid(validity)) {
+            MONAD_LOG_INFO(txn_logger, "Transaction {} invalid: {}", id_, validity);
+            // TODO: Issue #164, Issue #54
+            return;
         }
+
+        TEvmHost host{bh_, txn_, state_};
+        result_ = p.execute(
+            state_,
+            host,
+            txn_,
+            bh_.base_fee_per_gas.value_or(0),
+            bh_.beneficiary);
+
+        auto const finished_time = std::chrono::steady_clock::now();
+        auto const elapsed_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                finished_time - start_time);
+        MONAD_LOG_INFO(
+            txn_logger,
+            "Finish executing Transaction {}, time elapsed = {}",
+            id_,
+            elapsed_ms);
     }
 
     void operator()() // required signature for boost::fibers
     {
-        validate_execute_and_apply_state_diff();
+        validate_and_execute();
     }
 };
 

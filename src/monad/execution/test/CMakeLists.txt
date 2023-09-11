@@ -9,9 +9,7 @@ add_unit_test(
     evmone_baseline_interpreter.cpp
     replay_block_db.cpp
     transaction_processor.cpp
-    transaction_processor_data_succeed.cpp
-    transaction_processor_data_fail_validation.cpp
-    transaction_processor_data_fail_apply_state.cpp
+    transaction_processor_data.cpp
     validation.cpp
     LIBRARIES
     monad

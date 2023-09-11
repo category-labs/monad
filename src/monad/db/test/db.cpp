@@ -2,7 +2,6 @@
 #include <gtest/gtest.h>
 
 #include <monad/core/bytes.hpp>
-#include <monad/db/in_memory_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/rocks_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
@@ -35,8 +34,7 @@ template <typename TDB>
 struct DBTest : public testing::Test
 {
 };
-using DBTypes =
-    ::testing::Types<InMemoryDB, RocksDB, InMemoryTrieDB, RocksTrieDB>;
+using DBTypes = ::testing::Types<RocksDB, InMemoryTrieDB, RocksTrieDB>;
 TYPED_TEST_SUITE(DBTest, DBTypes);
 
 template <typename TDB>

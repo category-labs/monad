@@ -1,4 +1,3 @@
-#include <monad/db/in_memory_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/rocks_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
@@ -126,34 +125,6 @@ dump_storage_from_db(monad::db::RocksTrieDB &db)
         auto key_slice = monad::db::from_slice(it->key());
         detail::dump_storage_from_trie(
             state, key_slice, leaf_cursor, trie_cursor);
-    }
-    return state;
-}
-
-[[nodiscard]] inline nlohmann::json
-dump_accounts_from_db(monad::db::InMemoryDB &db)
-{
-    nlohmann::json state = nlohmann::json::object();
-    for (auto const &[address, account] : db.accounts) {
-        detail::dump_accounts_from_db(db, state, address, account);
-    }
-    return state;
-}
-[[nodiscard]] inline nlohmann::json
-dump_storage_from_db(monad::db::InMemoryDB &db)
-{
-    nlohmann::json state = nlohmann::json::object();
-    for (auto const &[address, storage] : db.storage) {
-        auto const keccaked_address_hex =
-            fmt::format("{}", detail::hash(address));
-        state[keccaked_address_hex]["storage"]["original_account_address"] =
-            fmt::format("{}", address);
-        for (auto const &[key, value] : storage) {
-            auto const keccaked_storage_address =
-                fmt::format("{}", detail::hash(key));
-            state[keccaked_address_hex]["storage"][keccaked_storage_address] =
-                fmt::format("{}", value);
-        }
     }
     return state;
 }

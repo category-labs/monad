@@ -1,6 +1,5 @@
 #include <monad/core/block.hpp>
 
-#include <monad/db/in_memory_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/rocks_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
@@ -30,7 +29,7 @@ struct GenesisStateRootTest : public testing::Test
 {
 };
 
-using NoTrieDBTypes = ::testing::Types<db::InMemoryDB, db::RocksDB>;
+using NoTrieDBTypes = ::testing::Types<db::RocksDB>;
 using TrieDBTypes = ::testing::Types<db::InMemoryTrieDB, db::RocksTrieDB>;
 
 TYPED_TEST_SUITE(GenesisStateTest, NoTrieDBTypes);

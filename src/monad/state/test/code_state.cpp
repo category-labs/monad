@@ -1,7 +1,6 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 
-#include <monad/db/in_memory_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/rocks_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
@@ -37,8 +36,8 @@ template <typename TDB>
 struct CodeStateTest : public testing::Test
 {
 };
-using DBTypes = ::testing::Types<
-    db::InMemoryDB, db::RocksDB, db::InMemoryTrieDB, db::RocksTrieDB>;
+using DBTypes =
+    ::testing::Types<db::RocksDB, db::InMemoryTrieDB, db::RocksTrieDB>;
 TYPED_TEST_SUITE(CodeStateTest, DBTypes);
 
 TYPED_TEST(CodeStateTest, code_at)

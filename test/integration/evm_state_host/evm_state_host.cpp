@@ -1,7 +1,7 @@
 #include <monad/core/concepts.hpp>
 
 #include <monad/db/block_db.hpp>
-#include <monad/db/in_memory_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
@@ -39,7 +39,7 @@ static constexpr auto value1 =
 static constexpr auto code_hash =
     0x00000000000000000000000000000000000000000000000000000000cccccccc_bytes32;
 
-using account_store_db_t = db::InMemoryDB;
+using account_store_db_t = db::InMemoryTrieDB;
 
 template <class TState, concepts::fork_traits<TState> TTraits>
 using evm_t = execution::Evm<

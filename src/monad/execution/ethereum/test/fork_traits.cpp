@@ -4,7 +4,7 @@
 #include <monad/core/concepts.hpp>
 
 #include <monad/db/block_db.hpp>
-#include <monad/db/in_memory_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/dao.hpp>
@@ -24,7 +24,7 @@ using namespace monad;
 using namespace monad::fork_traits;
 using namespace monad::execution;
 
-using db_t = db::InMemoryDB;
+using db_t = db::InMemoryTrieDB;
 using state_t = execution::fake::State::ChangeSet;
 
 namespace

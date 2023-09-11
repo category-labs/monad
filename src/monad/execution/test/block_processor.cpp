@@ -1,5 +1,5 @@
 #include <monad/db/block_db.hpp>
-#include <monad/db/in_memory_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/block_processor.hpp>
 #include <monad/execution/config.hpp>
@@ -28,7 +28,7 @@ using state_t = fake::State;
 using fork_t = fake::traits::alpha<state_t>;
 
 using block_db_t = db::BlockDb;
-using db_t = db::InMemoryDB;
+using db_t = db::InMemoryTrieDB;
 using account_state_t = state::AccountState<db_t>;
 using value_state_t = state::ValueState<db_t>;
 using code_state_t = state::CodeState<db_t>;

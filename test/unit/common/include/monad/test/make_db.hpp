@@ -1,7 +1,6 @@
 #pragma once
 
 #include <monad/core/assert.h>
-#include <monad/db/in_memory_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/rocks_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
@@ -47,9 +46,7 @@ inline TDatabase make_db()
         std::same_as<TDatabase, db::RocksTrieDB>) {
         return TDatabase{db::Writable{}, make_db_root(*info), 0, 0};
     }
-    else if constexpr (
-        std::same_as<TDatabase, db::InMemoryDB> ||
-        std::same_as<TDatabase, db::InMemoryTrieDB>) {
+    else if constexpr (std::same_as<TDatabase, db::InMemoryTrieDB>) {
         return TDatabase{};
     }
 }

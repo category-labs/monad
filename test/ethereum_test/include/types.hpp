@@ -14,6 +14,8 @@
 #include <monad/state/value_state.hpp>
 #include <monad/test/config.hpp>
 
+#include <optional>
+
 MONAD_TEST_NAMESPACE_BEGIN
 
 struct SharedTransactionData
@@ -33,7 +35,7 @@ struct SharedTransactionData
     // the following fields are shared among all transactions in a test file
     uint64_t nonce;
     monad::address_t sender;
-    monad::address_t to;
+    std::optional<monad::address_t> to;
     monad::Transaction::Type transaction_type;
     uint64_t gas_price;
     uint64_t priority_fee;

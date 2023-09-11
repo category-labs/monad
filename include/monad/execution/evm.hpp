@@ -11,6 +11,7 @@
 
 #include <tl/expected.hpp>
 
+#include <limits>
 #include <optional>
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
@@ -135,13 +136,13 @@ struct Evm
     [[nodiscard]] static std::optional<evmc_result>
     increment_sender_nonce(TState &s, evmc_message const &m) noexcept
     {
-        auto const n = s.get_nonce(m.sender) + 1;
-        if (s.get_nonce(m.sender) > n) {
+        auto const n = s.get_nonce(m.sender);
+        if (n == std::numeric_limits<decltype(n)>::max()) {
             // Match geth behavior - don't overflow nonce
             return evmc_result{
                 .status_code = EVMC_ARGUMENT_OUT_OF_RANGE, .gas_left = m.gas};
         }
-        s.set_nonce(m.sender, n);
+        s.set_nonce(m.sender, n + 1);
         return std::nullopt;
     }
 

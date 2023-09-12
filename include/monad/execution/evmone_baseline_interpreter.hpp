@@ -24,6 +24,8 @@
     #include <sstream>
 #endif
 
+#include <memory>
+
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
 template <class TState, concepts::fork_traits<TState> TTraits>
@@ -49,11 +51,16 @@ struct EVMOneBaselineInterpreter
             evmone::create_instruction_tracer(instruction_trace_string_stream));
 #endif
 
-        evmone::ExecutionState es{
-            m, TTraits::rev, h->get_interface(), h->to_context(), code, {}};
+        auto es = std::make_unique<evmone::ExecutionState>(
+            m,
+            TTraits::rev,
+            h->get_interface(),
+            h->to_context(),
+            code,
+            byte_string_view{});
         evmone::baseline::CodeAnalysis ca{
             evmone::baseline::analyze(TTraits::rev, code)};
-        result = evmc::Result{evmone::baseline::execute(v, m.gas, es, ca)};
+        result = evmc::Result{evmone::baseline::execute(v, m.gas, *es, ca)};
 
 #ifdef EVMONE_TRACING
         MONAD_LOG_DEBUG(logger, "{}", instruction_trace_string_stream.str());

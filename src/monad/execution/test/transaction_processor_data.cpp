@@ -6,6 +6,7 @@
 #include <monad/execution/test/fakes.hpp>
 
 #include <monad/state2/state.hpp>
+
 #include <monad/test/make_db.hpp>
 
 #include <gtest/gtest.h>
@@ -15,18 +16,11 @@
 using namespace monad;
 using namespace monad::execution;
 
-static struct fakeBlockCache
-{
-    [[nodiscard]] bytes32_t get_block_hash(uint64_t) const noexcept
-    {
-        return bytes32_t{};
-    }
-} block_cache;
-
 using mutex_t = std::shared_mutex;
+using block_cache_t = fake::BlockDb;
 
-using db_t = monad::db::InMemoryTrieDB;
-using state_t = monad::state::State<mutex_t, fakeBlockCache>;
+using db_t = db::InMemoryTrieDB;
+using state_t = state::State<mutex_t, block_cache_t>;
 using traits_t = fake::traits::alpha<state_t>;
 
 template <class TTxnProc>
@@ -35,7 +29,12 @@ using data_t = TransactionProcessorFiberData<
     fake::EvmHost<
         state_t, fake::traits::alpha<state_t>,
         fake::Evm<state_t, traits_t, fake::Interpreter>>,
-    fakeBlockCache>;
+    block_cache_t>;
+
+namespace
+{
+    block_cache_t block_cache;
+}
 
 enum class TestStatus
 {

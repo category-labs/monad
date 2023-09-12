@@ -1,23 +1,34 @@
 #include <monad/core/address.hpp>
 
+#include <monad/db/db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
+
 #include <monad/execution/config.hpp>
 #include <monad/execution/evmone_baseline_interpreter.hpp>
 
 #include <monad/execution/test/fakes.hpp>
+
+#include <monad/state2/block_state.hpp>
+#include <monad/state2/state.hpp>
 
 #include <gtest/gtest.h>
 
 using namespace monad;
 using namespace monad::execution;
 
-using interpreter_t = EVMOneBaselineInterpreter<
-    fake::State::ChangeSet, fake::traits::alpha<fake::State::ChangeSet>>;
+using db_t = db::InMemoryTrieDB;
+using mutex_t = std::shared_mutex;
+using block_cache_t = execution::fake::BlockDb;
 
-using traits_t = fake::traits::alpha<fake::State::ChangeSet>;
+using state_t = state::State<mutex_t, block_cache_t>;
+
+using interpreter_t =
+    EVMOneBaselineInterpreter<state_t, fake::traits::alpha<state_t>>;
+
+using traits_t = fake::traits::alpha<state_t>;
 
 using evm_host_t = fake::EvmHost<
-    fake::State::ChangeSet, traits_t,
-    fake::Evm<fake::State::ChangeSet, traits_t, fake::Interpreter>>;
+    state_t, traits_t, fake::Evm<state_t, traits_t, fake::Interpreter>>;
 
 TEST(Evm1BaselineInterpreter, execute_empty)
 {

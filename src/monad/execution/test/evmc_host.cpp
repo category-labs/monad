@@ -1,8 +1,14 @@
+#include <monad/db/db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
+
 #include <monad/execution/config.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/precompiles.hpp>
 
 #include <monad/execution/test/fakes.hpp>
+
+#include <monad/state2/block_state.hpp>
+#include <monad/state2/state.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -11,14 +17,22 @@
 using namespace monad;
 using namespace execution;
 
-using traits_t = fake::traits::alpha<fake::State::ChangeSet>;
+using db_t = db::InMemoryTrieDB;
+using mutex_t = std::shared_mutex;
+using block_cache_t = execution::fake::BlockDb;
+using state_t = state::State<mutex_t, block_cache_t>;
+using traits_t = fake::traits::alpha<state_t>;
 
-template <concepts::fork_traits<fake::State::ChangeSet> TTraits>
-using traits_templated_evmc_host_t = EvmcHost<
-    fake::State::ChangeSet, TTraits,
-    fake::Evm<fake::State::ChangeSet, TTraits, fake::Interpreter>>;
+template <concepts::fork_traits<state_t> TTraits>
+using traits_templated_evmc_host_t =
+    EvmcHost<state_t, TTraits, fake::Evm<state_t, TTraits, fake::Interpreter>>;
 
 using evmc_host_t = traits_templated_evmc_host_t<traits_t>;
+
+namespace
+{
+    block_cache_t block_cache;
+}
 
 bool operator==(evmc_tx_context const &lhs, evmc_tx_context const &rhs)
 {
@@ -66,7 +80,10 @@ TEST(EvmcHost, get_tx_context)
         .base_fee_per_gas = 37'000'000'000,
     };
     Transaction const t{.sc = {.chain_id = 1}, .from = from};
-    fake::State::ChangeSet s{};
+
+    db_t db;
+    BlockState<mutex_t> bs;
+    state_t s{bs, db, block_cache};
 
     static uint256_t const gas_cost = 37'000'000'000;
     static uint256_t const chain_id{1};
@@ -107,7 +124,10 @@ TEST(EvmcHost, emit_log)
     static byte_string const data = {0x00, 0x01, 0x02, 0x03, 0x04};
     BlockHeader const b{};
     Transaction const t{};
-    fake::State::ChangeSet s{};
+
+    db_t db;
+    BlockState<mutex_t> bs;
+    state_t s{bs, db, block_cache};
 
     evmc_host_t host{b, t, s};
 

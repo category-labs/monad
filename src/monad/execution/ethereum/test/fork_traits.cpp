@@ -9,13 +9,11 @@
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
+
 #include <monad/execution/test/fakes.hpp>
 
-#include <monad/state/account_state.hpp>
-#include <monad/state/code_state.hpp>
-#include <monad/state/state.hpp>
-#include <monad/state/value_state.hpp>
-
+#include <monad/state2/block_state.hpp>
+#include <monad/state2/state.hpp>
 #include <monad/state2/state_deltas.hpp>
 
 #include <test_resource_data.h>
@@ -27,12 +25,16 @@ using namespace monad::fork_traits;
 using namespace monad::execution;
 
 using db_t = db::InMemoryTrieDB;
-using state_t = execution::fake::State::ChangeSet;
+using mutex_t = std::shared_mutex;
+using block_cache_t = execution::fake::BlockDb;
+
+using state_t = state::State<mutex_t, block_cache_t>;
 
 namespace
 {
     constexpr auto individual = 100u;
     constexpr auto total = individual * 116u;
+    block_cache_t block_cache;
 }
 
 constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
@@ -54,63 +56,79 @@ TEST(fork_traits, frontier)
     EXPECT_EQ(f.intrinsic_gas(t), 21'072);
     EXPECT_EQ(f.starting_nonce(), 0);
 
-    execution::fake::State::ChangeSet s{};
-    s._selfdestructs = 10;
+    db_t db;
+    db.commit(
+        StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
+        Code{});
+    {
+        BlockState<mutex_t> bs;
+        state_t s{bs, db, block_cache};
 
-    EXPECT_EQ(f.max_refund_quotient(), 2);
+        EXPECT_EQ(f.max_refund_quotient(), 2);
 
-    s._touched_dead = 10;
-    f.destruct_touched_dead(s);
-    EXPECT_EQ(s._touched_dead, 10);
+        f.destruct_touched_dead(s);
+        EXPECT_TRUE(s.account_exists(a));
 
-    byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
-    uint8_t const output_data[] = {0xde, 0xad, 0xbe, 0xef};
-    { // Successfully deploy code
-        int64_t gas = 10'000;
+        byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
+        uint8_t const output_data[] = {0xde, 0xad, 0xbe, 0xef};
+        { // Successfully deploy code
+            int64_t gas = 10'000;
 
-        evmc::Result r{EVMC_SUCCESS, gas, 0, output_data, sizeof(output_data)};
-        auto const r2 = frontier::deploy_contract_code(s, a, std::move(r));
-        EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
-        EXPECT_EQ(r2.gas_left, gas - 800); // G_codedeposit * size(code)
-        EXPECT_EQ(r2.create_address, a);
+            evmc::Result r{
+                EVMC_SUCCESS, gas, 0, output_data, sizeof(output_data)};
+            auto const r2 = frontier::deploy_contract_code(s, a, std::move(r));
+            EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
+            EXPECT_EQ(r2.gas_left, gas - 800); // G_codedeposit * size(code)
+            EXPECT_EQ(r2.create_address, a);
+            EXPECT_EQ(
+                s.get_code(a), byte_string(output_data, sizeof(output_data)));
+        }
+
+        { // Initilization code succeeds, but deployment of code failed
+            evmc::Result r{
+                EVMC_SUCCESS, 700, 0, output_data, sizeof(output_data)};
+            auto const r2 = frontier::deploy_contract_code(s, a, std::move(r));
+            EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
+            EXPECT_EQ(r2.gas_left, r.gas_left);
+            EXPECT_EQ(r2.create_address, a);
+        }
+
+        // gas price
         EXPECT_EQ(
-            s.get_code(s.get_code_hash(a)),
-            byte_string(output_data, sizeof(output_data)));
+            fork_traits::frontier::gas_price(
+                Transaction{.gas_price = 1'000}, 0u),
+            1'000);
+
+        // txn award
+        fork_traits::frontier::apply_txn_award(
+            s, {.gas_price = 100'000'000'000}, 0, 90'000'000);
+        EXPECT_EQ(s.gas_award(), uint256_t{9'000'000'000'000'000'000});
+        fork_traits::frontier::apply_txn_award(
+            s, {.gas_price = 100'000'000'000}, 0, 90'000'000);
+        EXPECT_EQ(s.gas_award(), 2 * uint256_t{9'000'000'000'000'000'000});
     }
-
-    { // Initilization code succeeds, but deployment of code failed
-        evmc::Result r{EVMC_SUCCESS, 700, 0, output_data, sizeof(output_data)};
-        auto const r2 = frontier::deploy_contract_code(s, a, std::move(r));
-        EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
-        EXPECT_EQ(r2.gas_left, r.gas_left);
-        EXPECT_EQ(r2.create_address, a);
+    {
+        // block award
+        BlockState<mutex_t> bs;
+        state_t s{bs, db, block_cache};
+        Block block{
+            .header = {.number = 10, .beneficiary = a},
+            .transactions = {},
+            .ommers = {
+                BlockHeader{.number = 9, .beneficiary = b},
+                BlockHeader{.number = 8, .beneficiary = c}}};
+        fork_traits::frontier::apply_block_award(s, block);
+        db.commit(s.bs_.state, s.bs_.code);
+        EXPECT_EQ(
+            intx::be::load<uint256_t>(s.get_balance(a)),
+            5'312'500'000'000'000'000);
+        EXPECT_EQ(
+            intx::be::load<uint256_t>(s.get_balance(b)),
+            4'375'000'000'000'000'000);
+        EXPECT_EQ(
+            intx::be::load<uint256_t>(s.get_balance(c)),
+            3'750'000'000'000'000'000);
     }
-
-    // gas price
-    EXPECT_EQ(
-        fork_traits::frontier::gas_price(Transaction{.gas_price = 1'000}, 0u),
-        1'000);
-
-    // txn award
-    fork_traits::frontier::apply_txn_award(
-        s, {.gas_price = 100'000'000'000}, 0, 90'000'000);
-    EXPECT_EQ(s._reward, uint256_t{9'000'000'000'000'000'000});
-    fork_traits::frontier::apply_txn_award(
-        s, {.gas_price = 100'000'000'000}, 0, 90'000'000);
-    EXPECT_EQ(s._reward, 2 * uint256_t{9'000'000'000'000'000'000});
-
-    // block award
-    execution::fake::State state{};
-    Block block{
-        .header = {.number = 10, .beneficiary = a},
-        .transactions = {},
-        .ommers = {
-            BlockHeader{.number = 9, .beneficiary = b},
-            BlockHeader{.number = 8, .beneficiary = c}}};
-    fork_traits::frontier::apply_block_award(state, block);
-    EXPECT_EQ(state._block_reward[a], 5'312'500'000'000'000'000);
-    EXPECT_EQ(state._block_reward[b], 4'375'000'000'000'000'000);
-    EXPECT_EQ(state._block_reward[c], 3'750'000'000'000'000'000);
 }
 
 static_assert(concepts::fork_traits<fork_traits::homestead, state_t>);
@@ -124,23 +142,32 @@ TEST(fork_traits, homestead)
     EXPECT_EQ(h.intrinsic_gas(t), 21'000);
     EXPECT_EQ(h.starting_nonce(), 0);
 
-    execution::fake::State::ChangeSet s{};
+    db_t db;
+    db.commit(
+        StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
+        Code{});
+    BlockState<mutex_t> bs;
+
     byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
     uint8_t const output_data[] = {0xde, 0xad, 0xbe, 0xef};
-    { // Successfully deploy code
+
+    {
+        // Successfully deploy code
+        state_t s{bs, db, block_cache};
         int64_t gas = 10'000;
 
         evmc::Result r{EVMC_SUCCESS, gas, 0, output_data, sizeof(output_data)};
         auto const r2 = homestead::deploy_contract_code(s, a, std::move(r));
+        EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
         EXPECT_EQ(r2.create_address, a);
         EXPECT_EQ(r2.gas_left,
                   r.gas_left - 800); // G_codedeposit * size(code)
-        EXPECT_EQ(
-            s.get_code(s.get_code_hash(a)),
-            byte_string(output_data, sizeof(output_data)));
+        EXPECT_EQ(s.get_code(a), byte_string(output_data, sizeof(output_data)));
     }
 
-    { // Fail to deploy code - out of gas
+    {
+        // Fail to deploy code - out of gas
+        state_t s{bs, db, block_cache};
         evmc::Result r{EVMC_SUCCESS, 700, 0, output_data, sizeof(output_data)};
         auto const r2 = homestead::deploy_contract_code(s, a, std::move(r));
         EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
@@ -170,22 +197,17 @@ TEST(fork_traits, dao)
         StateDelta{.account = {std::nullopt, Account{.balance = 0}}});
 
     db.commit(state_deltas, Code{});
-    state::AccountState accounts{db};
-    state::ValueState values{db};
-    state::CodeState codes{db};
-    state::State s{accounts, values, codes, blocks, db};
+
+    BlockState<mutex_t> bs;
+    state::State s{bs, db, block_cache};
 
     fork_traits::dao_fork::transfer_balance_dao(s, dao::dao_block_number);
 
-    auto change_set = s.get_new_changeset(0u);
-
     for (auto const &addr : dao::child_accounts) {
-        EXPECT_EQ(intx::be::load<uint256_t>(change_set.get_balance(addr)), 0u);
+        EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(addr)), 0u);
     }
     EXPECT_EQ(
-        intx::be::load<uint256_t>(
-            change_set.get_balance(dao::withdraw_account)),
-        total);
+        intx::be::load<uint256_t>(s.get_balance(dao::withdraw_account)), total);
 }
 
 static_assert(concepts::fork_traits<fork_traits::tangerine_whistle, state_t>);
@@ -213,25 +235,17 @@ TEST(fork_traits, tangerine_whistle)
 
     db.commit(state_deltas, Code{});
 
-    state::AccountState accounts{db};
-    state::ValueState values{db};
-    state::CodeState codes{db};
-    state::State s{accounts, values, codes, blocks, db};
+    BlockState<mutex_t> bs;
+    state_t s{bs, db, block_cache};
 
     fork_traits::tangerine_whistle::transfer_balance_dao(
         s, fork_traits::tangerine_whistle::last_block_number);
 
-    auto change_set = s.get_new_changeset(0u);
-
     for (auto const &addr : dao::child_accounts) {
-        EXPECT_EQ(
-            intx::be::load<uint256_t>(change_set.get_balance(addr)),
-            individual);
+        EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(addr)), individual);
     }
     EXPECT_EQ(
-        intx::be::load<uint256_t>(
-            change_set.get_balance(dao::withdraw_account)),
-        0u);
+        intx::be::load<uint256_t>(s.get_balance(dao::withdraw_account)), 0u);
 }
 
 static_assert(concepts::fork_traits<fork_traits::spurious_dragon, state_t>);
@@ -245,10 +259,17 @@ TEST(fork_traits, spurious_dragon)
     EXPECT_EQ(sd.intrinsic_gas(t), 21'000);
     EXPECT_EQ(sd.starting_nonce(), 1);
 
-    execution::fake::State::ChangeSet s{};
-    s._touched_dead = 10;
+    db_t db;
+    db.commit(
+        StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
+        Code{});
+
+    BlockState<mutex_t> bs;
+    state_t s{bs, db, block_cache};
+    (void)s.get_balance(a);
     sd.destruct_touched_dead(s);
-    EXPECT_EQ(s._touched_dead, 0);
+
+    EXPECT_FALSE(s.account_exists(a));
 
     uint8_t const ptr[25000]{0x00};
     byte_string code{ptr, 25000};
@@ -278,23 +299,28 @@ TEST(fork_traits, byzantium)
     EXPECT_EQ(byz.intrinsic_gas(t), 21'000);
     EXPECT_EQ(byz.starting_nonce(), 1);
 
-    execution::fake::State::ChangeSet s{};
-    s._touched_dead = 10;
+    db_t db;
+    BlockState<mutex_t> bs;
+    state_t s{bs, db, block_cache};
+    (void)s.get_balance(a);
     byz.destruct_touched_dead(s);
-    EXPECT_EQ(s._touched_dead, 0);
+
+    EXPECT_FALSE(s.account_exists(a));
 
     // block award
-    execution::fake::State state{};
     Block block{
         .header = {.number = 10, .beneficiary = a},
         .transactions = {},
         .ommers = {
             BlockHeader{.number = 9, .beneficiary = b},
             BlockHeader{.number = 8, .beneficiary = c}}};
-    fork_traits::byzantium::apply_block_award(state, block);
-    EXPECT_EQ(state._block_reward[a], 3'187'500'000'000'000'000);
-    EXPECT_EQ(state._block_reward[b], 2'625'000'000'000'000'000);
-    EXPECT_EQ(state._block_reward[c], 2'250'000'000'000'000'000);
+    fork_traits::byzantium::apply_block_award(s, block);
+    EXPECT_EQ(
+        intx::be::load<uint256_t>(s.get_balance(a)), 3'187'500'000'000'000'000);
+    EXPECT_EQ(
+        intx::be::load<uint256_t>(s.get_balance(b)), 2'625'000'000'000'000'000);
+    EXPECT_EQ(
+        intx::be::load<uint256_t>(s.get_balance(c)), 2'250'000'000'000'000'000);
 }
 
 static_assert(
@@ -308,17 +334,24 @@ static_assert(std::same_as<
 TEST(fork_traits, constantinople_and_petersburg)
 {
     // block award
-    execution::fake::State state{};
+    db_t db;
+    BlockState<mutex_t> bs;
+    state_t s{bs, db, block_cache};
+
     Block block{
         .header = {.number = 10, .beneficiary = a},
         .transactions = {},
         .ommers = {
             BlockHeader{.number = 9, .beneficiary = b},
             BlockHeader{.number = 8, .beneficiary = c}}};
-    fork_traits::constantinople_and_petersburg::apply_block_award(state, block);
-    EXPECT_EQ(state._block_reward[a], 2'125'000'000'000'000'000);
-    EXPECT_EQ(state._block_reward[b], 1'750'000'000'000'000'000);
-    EXPECT_EQ(state._block_reward[c], 1'500'000'000'000'000'000);
+    fork_traits::constantinople_and_petersburg::apply_block_award(s, block);
+
+    EXPECT_EQ(
+        intx::be::load<uint256_t>(s.get_balance(a)), 2'125'000'000'000'000'000);
+    EXPECT_EQ(
+        intx::be::load<uint256_t>(s.get_balance(b)), 1'750'000'000'000'000'000);
+    EXPECT_EQ(
+        intx::be::load<uint256_t>(s.get_balance(c)), 1'500'000'000'000'000'000);
 }
 
 static_assert(concepts::fork_traits<fork_traits::istanbul, state_t>);
@@ -367,8 +400,11 @@ static_assert(concepts::fork_traits<fork_traits::london, state_t>);
 TEST(fork_traits, london)
 {
     fork_traits::london l{};
-    execution::fake::State::ChangeSet s{};
-    s._selfdestructs = 10;
+    db_t db;
+    BlockState<mutex_t> bs;
+    state_t s{bs, db, block_cache};
+
+    s.total_selfdestructs_ = 10;
 
     EXPECT_EQ(l.max_refund_quotient(), 5);
 
@@ -411,10 +447,10 @@ TEST(fork_traits, london)
     // txn award
     fork_traits::london::apply_txn_award(
         s, {.gas_price = 100'000'000'000}, 0, 90'000'000);
-    EXPECT_EQ(s._reward, uint256_t{9'000'000'000'000'000'000});
+    EXPECT_EQ(s.gas_award(), uint256_t{9'000'000'000'000'000'000});
     fork_traits::london::apply_txn_award(
         s, {.gas_price = 100'000'000'000}, 0, 90'000'000);
-    EXPECT_EQ(s._reward, 2 * uint256_t{9'000'000'000'000'000'000});
+    EXPECT_EQ(s.gas_award(), 2 * uint256_t{9'000'000'000'000'000'000});
 }
 
 // EIP-3675
@@ -431,27 +467,23 @@ TEST(fork_traits, paris_apply_block_reward)
         Code{});
 
     {
-        state::AccountState accounts{db};
-        state::ValueState values{db};
-        state::CodeState codes{db};
-        state::State s{accounts, values, codes, blocks, db};
+        db_t db;
+        BlockState<mutex_t> bs;
+        state_t s{bs, db, block_cache};
 
         fork_traits::paris::apply_block_award(s, block);
 
-        auto change_set = s.get_new_changeset(0u);
-        EXPECT_EQ(intx::be::load<uint256_t>(change_set.get_balance(a)), 0u);
+        EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(a)), 0u);
     }
     {
-        state::AccountState accounts{db};
-        state::ValueState values{db};
-        state::CodeState codes{db};
-        state::State s{accounts, values, codes, blocks, db};
+        db_t db;
+        BlockState<mutex_t> bs;
+        state_t s{bs, db, block_cache};
 
         fork_traits::london::apply_block_award(s, block);
 
-        auto change_set = s.get_new_changeset(0u);
         EXPECT_EQ(
-            intx::be::load<uint256_t>(change_set.get_balance(a)),
+            intx::be::load<uint256_t>(s.get_balance(a)),
             fork_traits::constantinople_and_petersburg::block_reward);
     }
 }
@@ -464,28 +496,22 @@ TEST(fork_traits, shanghai_warm_coinbase)
     db_t db{};
 
     {
-        state::AccountState accounts{db};
-        state::ValueState values{db};
-        state::CodeState codes{db};
-        state::State s{accounts, values, codes, blocks, db};
+        db_t db;
+        BlockState<mutex_t> bs;
+        state_t s{bs, db, block_cache};
 
-        auto change_set = s.get_new_changeset(0u);
+        fork_traits::shanghai::warm_coinbase(s, a);
 
-        fork_traits::shanghai::warm_coinbase(change_set, a);
-
-        EXPECT_EQ(change_set.access_account(a), EVMC_ACCESS_WARM);
+        EXPECT_EQ(s.access_account(a), EVMC_ACCESS_WARM);
     }
     {
-        state::AccountState accounts{db};
-        state::ValueState values{db};
-        state::CodeState codes{db};
-        state::State s{accounts, values, codes, blocks, db};
+        db_t db;
+        BlockState<mutex_t> bs;
+        state_t s{bs, db, block_cache};
 
-        auto change_set = s.get_new_changeset(0u);
+        fork_traits::london::warm_coinbase(s, a);
 
-        fork_traits::london::warm_coinbase(change_set, a);
-
-        EXPECT_EQ(change_set.access_account(a), EVMC_ACCESS_COLD);
+        EXPECT_EQ(s.access_account(a), EVMC_ACCESS_COLD);
     }
 }
 
@@ -542,18 +568,15 @@ TEST(fork_traits, shanghai_withdrawal)
             {b, StateDelta{.account = {std::nullopt, Account{.balance = 0}}}}},
         Code{});
 
-    state::AccountState accounts{db};
-    state::ValueState values{db};
-    state::CodeState codes{db};
-    state::State s{accounts, values, codes, blocks, db};
+    BlockState<mutex_t> bs;
+    state_t s{bs, db, block_cache};
 
     fork_traits::shanghai::process_withdrawal(s, withdrawals);
 
-    auto change_set = s.get_new_changeset(0u);
     EXPECT_EQ(
-        intx::be::load<uint256_t>(change_set.get_balance(a)),
+        intx::be::load<uint256_t>(s.get_balance(a)),
         uint256_t{400u} * uint256_t{1'000'000'000u});
     EXPECT_EQ(
-        intx::be::load<uint256_t>(change_set.get_balance(b)),
+        intx::be::load<uint256_t>(s.get_balance(b)),
         uint256_t{200u} * uint256_t{1'000'000'000u});
 }

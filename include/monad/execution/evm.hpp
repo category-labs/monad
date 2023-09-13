@@ -94,14 +94,16 @@ struct Evm
             result.status_code != EVMC_SUCCESS) {
             return evmc::Result{result};
         }
-        evmc::Result result =
-            check_call_precompile<TTraits>(m)
-                .or_else([&] {
-                    auto const code = state.get_code(m.code_address);
-                    return std::optional<evmc::Result>(
-                        TInterpreter::execute(&new_host, m, code));
-                })
-                .value();
+
+        evmc::Result result;
+        if (auto maybe_result = check_call_precompile<TTraits>(m);
+            maybe_result.has_value()) {
+            result = std::move(maybe_result.value());
+        }
+        else {
+            auto const code = new_state.get_code(m.code_address);
+            result = TInterpreter::execute(&new_host, m, code);
+        }
 
         if (result.status_code == EVMC_SUCCESS) {
             state.merge(new_state);

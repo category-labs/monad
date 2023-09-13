@@ -12,6 +12,9 @@
 #include <monad/execution/ethereum/dao.hpp>
 
 #include <monad/db/block_db.hpp>
+#include <monad/db/db.hpp>
+
+#include <monad/state2/state.hpp>
 
 #include <evmc/evmc.h>
 
@@ -163,8 +166,9 @@ namespace fork_traits
             s.add_txn_award(uint256_t{gas_used} * gas_price(t, base_gas_cost));
         }
 
-        template <typename TState>
-        static constexpr void transfer_balance_dao(TState &, block_num_t const)
+        template <class TBlockState, class TBlockCache>
+        static constexpr void transfer_balance_dao(
+            TBlockState &, Db &, TBlockCache const &, block_num_t const)
         {
         }
 
@@ -245,13 +249,14 @@ namespace fork_traits
         static constexpr auto last_block_number = 2'462'999u;
         // EVMC revision for DAO should just be EVMC_HOMESTEAD
 
-        template <typename TState>
-        static constexpr void
-        transfer_balance_dao(TState &s, block_num_t const block_number)
+        template <class TBlockState, class TBlockCache>
+        static constexpr void transfer_balance_dao(
+            TBlockState &bs, Db &db, TBlockCache const &block_cache,
+            block_num_t const block_number)
         {
+            state::State s{bs, db, block_cache};
             if (MONAD_UNLIKELY(
                     block_number == execution::dao::dao_block_number)) {
-
                 for (auto const &addr : execution::dao::child_accounts) {
                     s.set_balance(
                         execution::dao::withdraw_account,
@@ -260,6 +265,9 @@ namespace fork_traits
                             intx::be::load<uint256_t>(s.get_balance(addr)));
                     s.set_balance(addr, 0u);
                 }
+
+                MONAD_DEBUG_ASSERT(can_merge(bs.state, s.state_));
+                merge(bs.state, s.state_);
             }
         }
     };
@@ -271,8 +279,9 @@ namespace fork_traits
         static constexpr auto last_block_number = 2'674'999u;
         static constexpr evmc_revision rev = EVMC_TANGERINE_WHISTLE;
 
-        template <typename TState>
-        static constexpr void transfer_balance_dao(TState &, block_num_t block)
+        template <class TBlockState, class TBlockCache>
+        static constexpr void transfer_balance_dao(
+            TBlockState &, Db &, TBlockCache const &, block_num_t const block)
         {
             MONAD_DEBUG_ASSERT(block > dao_fork::last_block_number);
         }

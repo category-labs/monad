@@ -38,10 +38,11 @@ namespace concepts
         { T::gas_price(t, base_gas_price) } -> std::convertible_to<uint64_t>;
         { T::apply_block_award(s, b) } -> std::convertible_to<void>;
         { T::apply_txn_award(s, t, base_gas_price, gas_used) } -> std::convertible_to<void>;
-        { T::transfer_balance_dao(s, block_number) } -> std::convertible_to<void>;
         { T::warm_coinbase(s, a) } -> std::convertible_to<void>;
         { T::process_withdrawal(s, w) } -> std::convertible_to<void>;
         { T::access_list_valid(t.access_list) } -> std::convertible_to<bool>;
+
+        // { T::transfer_balance_dao(s, block_number) } -> std::convertible_to<void>;
     };
     // clang-format on
 }

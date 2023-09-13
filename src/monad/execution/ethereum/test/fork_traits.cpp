@@ -199,10 +199,11 @@ TEST(fork_traits, dao)
     db.commit(state_deltas, Code{});
 
     BlockState<mutex_t> bs;
-    state::State s{bs, db, block_cache};
 
-    fork_traits::dao_fork::transfer_balance_dao(s, dao::dao_block_number);
+    fork_traits::dao_fork::transfer_balance_dao(
+        bs, db, block_cache, dao::dao_block_number);
 
+    state_t s{bs, db, block_cache};
     for (auto const &addr : dao::child_accounts) {
         EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(addr)), 0u);
     }
@@ -236,10 +237,11 @@ TEST(fork_traits, tangerine_whistle)
     db.commit(state_deltas, Code{});
 
     BlockState<mutex_t> bs;
-    state_t s{bs, db, block_cache};
 
     fork_traits::tangerine_whistle::transfer_balance_dao(
-        s, fork_traits::tangerine_whistle::last_block_number);
+        bs, db, block_cache, fork_traits::tangerine_whistle::last_block_number);
+
+    state_t s{bs, db, block_cache};
 
     for (auto const &addr : dao::child_accounts) {
         EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(addr)), individual);

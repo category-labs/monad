@@ -348,7 +348,7 @@ struct State
     // EVMC Host Interface
     [[nodiscard]] bytes32_t get_block_hash(int64_t const number) const noexcept
     {
-        MONAD_DEBUG_ASSERT(number > 0);
+        MONAD_DEBUG_ASSERT(number >= 0);
         return block_cache_.get_block_hash(static_cast<uint64_t>(number));
     }
 

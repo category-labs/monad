@@ -1,14 +1,17 @@
 #pragma once
 
-#include <monad/execution/config.hpp>
-
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/state/state_changes.hpp>
+
+#include <monad/db/db.hpp>
+
+#include <monad/execution/config.hpp>
+
+#include <monad/state2/state_deltas.hpp>
 
 #include <evmc/hex.hpp>
 
@@ -66,10 +69,10 @@ inline BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
     return block_header;
 }
 
-template <typename TStateDB>
-inline void read_genesis_state(nlohmann::json const &genesis_json, TStateDB &db)
+template <class TStateDb>
+inline void read_genesis_state(nlohmann::json const &genesis_json, TStateDb &db)
 {
-    state::StateChanges sc;
+    StateDeltas state_deltas;
     for (auto const &account_info : genesis_json["alloc"].items()) {
         address_t address{};
         auto const address_byte_string =
@@ -86,14 +89,15 @@ inline void read_genesis_state(nlohmann::json const &genesis_json, TStateDB &db)
         account.balance = intx::from_string<uint256_t>(balance_byte_string);
         account.nonce = 0u;
 
-        sc.account_changes.emplace_back(address, account);
+        state_deltas.emplace(
+            address, StateDelta{.account = {std::nullopt, account}});
     }
-    db.commit(sc);
+    db.commit(state_deltas, Code{});
 }
 
-template <typename TStateDB>
+template <class TStateDb>
 inline BlockHeader
-read_genesis(std::filesystem::path const &genesis_file, TStateDB &db)
+read_genesis(std::filesystem::path const &genesis_file, TStateDb &db)
 {
     std::ifstream ifile(genesis_file.c_str());
     auto const genesis_json = nlohmann::json::parse(ifile);
@@ -108,6 +112,27 @@ read_genesis(std::filesystem::path const &genesis_file, TStateDB &db)
     block_header.state_root = db.state_root();
 
     return block_header;
+}
+
+template <class TBlockDb>
+inline void verify_genesis(TBlockDb &block_db, BlockHeader const &block_header)
+{
+    Block block{};
+    auto const status = block_db.get(0u, block);
+
+    MONAD_DEBUG_ASSERT(status == TBlockDb::Status::SUCCESS);
+    // There should be no txn/receipt for the genesis block, so just asserting
+    // on state root for now
+    MONAD_DEBUG_ASSERT(block_header.state_root == block.header.state_root);
+}
+
+template <class TBlockDb, class TStateDb>
+inline void read_and_verify_genesis(
+    TBlockDb &block_db, TStateDb &db,
+    std::filesystem::path const &genesis_file_path)
+{
+    auto const block_header = read_genesis(genesis_file_path, db);
+    verify_genesis(block_db, block_header);
 }
 
 MONAD_EXECUTION_NAMESPACE_END

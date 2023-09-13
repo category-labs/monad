@@ -38,7 +38,8 @@ public:
     StateDb(std::filesystem::path const &);
     ~StateDb();
 
-    virtual std::optional<Account> read_account(address_t const &) const override;
+    virtual std::optional<Account>
+    read_account(address_t const &) const override;
 
     std::optional<Account>
     read_account_history(address_t const &, uint64_t block_number);

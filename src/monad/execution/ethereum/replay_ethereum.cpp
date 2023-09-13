@@ -59,6 +59,7 @@ int main(int argc, char *argv[])
 
     std::filesystem::path block_db_path{};
     std::filesystem::path state_db_path{};
+    std::filesystem::path genesis_file_path{};
     uint64_t block_history_size = 1u;
     std::optional<monad::block_num_t> finish_block_number = std::nullopt;
 
@@ -92,6 +93,8 @@ int main(int argc, char *argv[])
         ->required();
     cli.add_option("--state_db", state_db_path, "state_db directory")
         ->required();
+    auto *has_genesis_file = cli.add_option(
+        "--genesis_file", genesis_file_path, "genesis file directory");
     cli.add_option(
         "--block_history_size",
         block_history_size,
@@ -163,6 +166,12 @@ int main(int argc, char *argv[])
         block_history_size,
         start_block_number,
         finish_block_number);
+
+    if (start_block_number == 0) {
+        MONAD_DEBUG_ASSERT(*has_genesis_file);
+        read_and_verify_genesis(block_db, db, genesis_file_path);
+        start_block_number = 1u;
+    }
 
     receipt_collector_t receipt_collector;
 

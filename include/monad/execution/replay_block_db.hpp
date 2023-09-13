@@ -122,17 +122,6 @@ public:
                 return Result{Status::DECODE_BLOCK_ERROR, current_block_number};
             case TBlockDb::Status::SUCCESS: {
 
-                // TODO: Do we need to support functionality to specify genesis
-                // file location?
-                if (current_block_number == 0u &&
-                    TTraits::last_block_number == 1'149'999u) { // genesis block
-                    auto const genesis_file_path =
-                        test_resource::ethereum_genesis_dir / "mainnet.json";
-
-                    [[maybe_unused]] auto const block_header =
-                        read_genesis(genesis_file_path, state.accounts_.db_);
-                }
-
                 TTraits::validate_block(block);
 
                 TAllTxnBlockProcessor<TExecution> block_processor{};

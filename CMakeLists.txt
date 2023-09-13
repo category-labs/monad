@@ -24,6 +24,10 @@ pkg_check_modules(rocksdb REQUIRED IMPORTED_TARGET rocksdb)
 set(BUILD_SHARED_LIBS OFF)
 
 add_subdirectory(third_party/evmone)
+# always compile baseline with optimization due to stack size of dispatch_cgoto
+set_source_files_properties(
+  third_party/evmone/lib/evmone/baseline.cpp TARGET_DIRECTORY evmone
+  PROPERTIES COMPILE_OPTIONS -O2)
 add_subdirectory(third_party/intx)
 add_subdirectory(third_party/silkpre)
 add_subdirectory(third_party/quill SYSTEM)

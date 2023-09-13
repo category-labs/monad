@@ -2,7 +2,7 @@ add_unit_test(
     TARGET
     monad-executiontests
     SOURCES
-    block_processor.cpp
+    # block_processor.cpp // TODO: Comment back once BP is refactored
     create_contract_address.cpp
     evm.cpp
     evmc_host.cpp

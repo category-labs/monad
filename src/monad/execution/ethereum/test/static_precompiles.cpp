@@ -7,7 +7,6 @@
 #include <monad/execution/precompiles.hpp>
 #include <monad/execution/test/fakes.hpp>
 
-#undef DISABLE_LOGGING
 #include <monad/logging/monad_log.hpp>
 
 #include <monad/core/address.hpp>

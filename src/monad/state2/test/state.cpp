@@ -283,7 +283,24 @@ TYPED_TEST(StateTest, destruct_touched_dead)
     s.destruct_suicides();
 
     EXPECT_FALSE(s.account_exists(a));
+    EXPECT_TRUE(s.account_exists(b));
+
+    s.touch(b);
+    s.destruct_touched_dead();
+    s.destruct_suicides();
     EXPECT_FALSE(s.account_exists(b));
+
+    s.add_to_balance(a, 0);
+    EXPECT_TRUE(s.account_exists(a));
+    s.destruct_touched_dead();
+    s.destruct_suicides();
+    EXPECT_FALSE(s.account_exists(a));
+
+    s.subtract_from_balance(a, 0);
+    EXPECT_TRUE(s.account_exists(a));
+    s.destruct_touched_dead();
+    s.destruct_suicides();
+    EXPECT_FALSE(s.account_exists(a));
 }
 
 TYPED_TEST(StateTest, add_txn_award)

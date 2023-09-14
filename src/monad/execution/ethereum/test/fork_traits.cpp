@@ -268,7 +268,7 @@ TEST(fork_traits, spurious_dragon)
 
     BlockState<mutex_t> bs;
     state_t s{bs, db, block_cache};
-    (void)s.get_balance(a);
+    s.add_to_balance(a, 0);
     sd.destruct_touched_dead(s);
 
     EXPECT_FALSE(s.account_exists(a));

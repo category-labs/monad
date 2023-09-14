@@ -31,6 +31,7 @@ struct State
     TBlockCache &block_cache_;
     StateDeltas state_;
     Code code_;
+    ankerl::unordered_dense::set<address_t> touched_;
     ankerl::unordered_dense::set<address_t> accessed_;
     ankerl::unordered_dense::map<
         address_t, ankerl::unordered_dense::set<bytes32_t>>
@@ -48,6 +49,7 @@ struct State
         , block_cache_{cache}
         , state_{}
         , code_{}
+        , touched_{}
         , accessed_{}
         , accessed_storage_{}
         , total_selfdestructs_{}
@@ -113,6 +115,7 @@ struct State
             delta);
 
         account.value().balance += delta;
+        touch(address);
     }
 
     void subtract_from_balance(
@@ -132,6 +135,7 @@ struct State
             delta);
 
         account.value().balance -= delta;
+        touch(address);
     }
 
     [[nodiscard]] uint64_t get_nonce(address_t const &address) noexcept
@@ -201,10 +205,11 @@ struct State
     {
         MONAD_LOG_DEBUG(logger_, "{}", "destruct_touched_dead");
 
-        for (auto &it : state_) {
-            if (it.second.account.second.has_value() &&
-                it.second.account.second.value() == Account{})
-                it.second.account.second.reset();
+        for (auto const &touched : touched_) {
+            auto &account = read_account<Mutex>(touched, state_, bs_, db_);
+            if (account.has_value() && account.value() == Account{}) {
+                account.reset();
+            }
         }
     }
 
@@ -381,10 +386,16 @@ struct State
         return gas_award_;
     }
 
+    void touch(address_t const &a)
+    {
+        MONAD_LOG_DEBUG(logger_, "touched {}", a);
+        touched_.insert(a);
+    }
     void merge(State &new_state)
     {
         state_ = std::move(new_state.state_);
         code_ = std::move(new_state.code_);
+        touched_ = std::move(new_state.touched_);
         accessed_ = std::move(new_state.accessed_);
         accessed_storage_ = std::move(new_state.accessed_storage_);
         total_selfdestructs_ = new_state.total_selfdestructs_;

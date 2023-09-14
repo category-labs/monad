@@ -29,7 +29,6 @@ using namespace monad;
 
 static constexpr auto from = 0x5353535353535353535353535353535353535353_address;
 static constexpr auto to = 0xbebebebebebebebebebebebebebebebebebebebe_address;
-static constexpr auto a = 0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address;
 static constexpr auto location =
     0x0000000000000000000000000000000000000000000000000000000000000000_bytes32;
 static constexpr auto value1 =
@@ -72,10 +71,9 @@ TEST(EvmInterpStateHost, return_existing_storage)
 
     db.commit(
         StateDeltas{
-            {a, StateDelta{.account = {std::nullopt, A}}},
             {to,
              StateDelta{
-                 .account = {std::nullopt, Account{}},
+                 .account = {std::nullopt, A},
                  .storage = {{location, {bytes32_t{}, value1}}}}},
             {from,
              StateDelta{
@@ -89,7 +87,7 @@ TEST(EvmInterpStateHost, return_existing_storage)
         .gas = 10'000,
         .recipient = to,
         .sender = from,
-        .code_address = a};
+        .code_address = to};
 
     state::State s{bs, db, blocks};
 
@@ -140,8 +138,7 @@ TEST(EvmInterpStateHost, store_then_return_storage)
 
     db.commit(
         StateDeltas{
-            {a, StateDelta{.account = {std::nullopt, A}}},
-            {to, StateDelta{.account = {std::nullopt, Account{}}}},
+            {to, StateDelta{.account = {std::nullopt, A}}},
             {from,
              StateDelta{
                  .account = {std::nullopt, Account{.balance = 10'000'000}}}}},
@@ -154,7 +151,7 @@ TEST(EvmInterpStateHost, store_then_return_storage)
         .gas = 20'225,
         .recipient = to,
         .sender = from,
-        .code_address = a};
+        .code_address = to};
 
     state::State s{bs, db, blocks};
 

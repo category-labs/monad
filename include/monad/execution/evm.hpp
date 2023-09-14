@@ -95,6 +95,14 @@ struct Evm
             return evmc::Result{result};
         }
 
+        MONAD_DEBUG_ASSERT(
+            m.kind != EVMC_CALL ||
+            address_t{m.recipient} == address_t{m.code_address});
+        if (m.kind == EVMC_CALL && m.flags & EVMC_STATIC) {
+            // eip-161
+            new_state.touch(m.recipient);
+        }
+
         evmc::Result result;
         if (auto maybe_result = check_call_precompile<TTraits>(m);
             maybe_result.has_value()) {

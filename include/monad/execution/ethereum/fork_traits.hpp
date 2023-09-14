@@ -142,11 +142,11 @@ namespace fork_traits
                 calculate_block_award(s, b, reward, ommer_reward);
 
             // reward block beneficiary, YP Eqn. 172
-            s.apply_reward(b.header.beneficiary, miner_award);
+            s.add_to_balance(b.header.beneficiary, miner_award);
 
             // reward ommers, YP Eqn. 175
             for (auto const &header : b.ommers) {
-                s.apply_reward(
+                s.add_to_balance(
                     header.beneficiary,
                     calculate_ommer_award(b, reward, header.number));
             }
@@ -259,12 +259,10 @@ namespace fork_traits
             if (MONAD_UNLIKELY(
                     block_number == execution::dao::dao_block_number)) {
                 for (auto const &addr : execution::dao::child_accounts) {
-                    s.set_balance(
-                        execution::dao::withdraw_account,
-                        intx::be::load<uint256_t>(
-                            s.get_balance(execution::dao::withdraw_account)) +
-                            intx::be::load<uint256_t>(s.get_balance(addr)));
-                    s.set_balance(addr, 0u);
+                    auto const balance =
+                        intx::be::load<uint256_t>(s.get_balance(addr));
+                    s.add_to_balance(execution::dao::withdraw_account, balance);
+                    s.subtract_from_balance(addr, balance);
                 }
 
                 MONAD_DEBUG_ASSERT(can_merge(bs.state, s.state_));
@@ -329,7 +327,7 @@ namespace fork_traits
 
             // reward block beneficiary, YP Eqn. 172
             if (miner_reward) {
-                s.apply_reward(b.header.beneficiary, miner_reward);
+                s.add_to_balance(b.header.beneficiary, miner_reward);
             }
 
             // reward ommers, YP Eqn. 175
@@ -337,7 +335,7 @@ namespace fork_traits
                 auto const ommer_reward =
                     calculate_ommer_award(b, reward, header.number);
                 if (ommer_reward) {
-                    s.apply_reward(header.beneficiary, ommer_reward);
+                    s.add_to_balance(header.beneficiary, ommer_reward);
                 }
             }
         }
@@ -585,12 +583,10 @@ namespace fork_traits
             if (withdrawals.has_value()) {
                 state::State s{bs, db, block_cache};
                 for (auto const &withdrawal : withdrawals.value()) {
-                    s.set_balance(
+                    s.add_to_balance(
                         withdrawal.recipient,
-                        intx::be::load<uint256_t>(
-                            s.get_balance(withdrawal.recipient)) +
-                            uint256_t{withdrawal.amount} *
-                                uint256_t{1'000'000'000u});
+                        uint256_t{withdrawal.amount} *
+                            uint256_t{1'000'000'000u});
                 }
 
                 MONAD_DEBUG_ASSERT(can_merge(bs.state, s.state_));

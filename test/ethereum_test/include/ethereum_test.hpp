@@ -93,7 +93,7 @@ void load_state_from_json(nlohmann::json const &j, TState &state)
                 account_address, j_acc.at("code").get<monad::byte_string>());
         }
 
-        state.set_balance(
+        state.add_to_balance(
             account_address, j_acc.at("balance").get<intx::uint256>());
         // we cannot use the nlohmann::json from_json<uint64_t> because
         // it does not use the strtoull implementation, whereas we need

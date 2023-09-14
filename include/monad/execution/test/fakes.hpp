@@ -147,9 +147,16 @@ namespace fake
                     _accounts.at(address).balance);
             }
 
-            void set_balance(address_t const &address, uint256_t new_balance)
+            void
+            add_to_balance(address_t const &address, uint256_t const &delta)
             {
-                _accounts[address].balance = new_balance;
+                _accounts[address].balance += delta;
+            }
+
+            void subtract_from_balance(
+                address_t const &address, uint256_t const &delta)
+            {
+                _accounts[address].balance -= delta;
             }
 
             [[nodiscard]] auto
@@ -264,13 +271,6 @@ namespace fake
             TRY_LATER,
             COLLISION_DETECTED,
         };
-
-        std::unordered_map<address_t, uint256_t> _block_reward{};
-
-        void apply_reward(address_t const &a, uint256_t const &r)
-        {
-            _block_reward.insert({a, r});
-        }
 
         // Had to name this variable using post_ because we access it directly
         AccountState accounts_{};

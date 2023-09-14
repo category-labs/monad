@@ -127,7 +127,7 @@ TYPED_TEST(StateTest, get_balance)
     EXPECT_EQ(s.get_balance(c), bytes32_t{0});
 }
 
-TYPED_TEST(StateTest, set_balance)
+TYPED_TEST(StateTest, add_to_balance)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
@@ -138,10 +138,10 @@ TYPED_TEST(StateTest, set_balance)
 
     state_t s{bs, db, block_cache};
     s.create_account(b);
-    s.set_balance(a, 10'000);
-    s.set_balance(b, 20'000);
+    s.add_to_balance(a, 10'000);
+    s.add_to_balance(b, 20'000);
 
-    EXPECT_EQ(s.get_balance(a), bytes32_t{10'000});
+    EXPECT_EQ(s.get_balance(a), bytes32_t{10'001});
     EXPECT_EQ(s.get_balance(b), bytes32_t{20'000});
 }
 
@@ -220,7 +220,7 @@ TYPED_TEST(StateTest, selfdestruct)
 
     state_t s{bs, db, block_cache};
     s.create_account(b);
-    s.set_balance(b, 28'000);
+    s.add_to_balance(b, 28'000);
 
     EXPECT_TRUE(s.selfdestruct(a, c));
     EXPECT_EQ(s.total_selfdestructs(), 1u);
@@ -278,7 +278,7 @@ TYPED_TEST(StateTest, destruct_touched_dead)
     EXPECT_TRUE(s.account_exists(a));
     EXPECT_TRUE(s.account_exists(b));
 
-    s.set_balance(a, 0);
+    s.subtract_from_balance(a, 10'000);
     s.destruct_touched_dead();
     s.destruct_suicides();
 
@@ -286,7 +286,7 @@ TYPED_TEST(StateTest, destruct_touched_dead)
     EXPECT_FALSE(s.account_exists(b));
 }
 
-TYPED_TEST(StateTest, apply_award)
+TYPED_TEST(StateTest, add_txn_award)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
@@ -299,8 +299,8 @@ TYPED_TEST(StateTest, apply_award)
     state_t s{bs, db, block_cache};
     s.add_txn_award(150);
     s.add_txn_award(225);
-    s.apply_reward(a, 20'000 + s.gas_award());
-    s.apply_reward(b, 10'000);
+    s.add_to_balance(a, 20'000 + s.gas_award());
+    s.add_to_balance(b, 10'000);
 
     EXPECT_EQ(s.get_balance(a), bytes32_t{20'475});
     EXPECT_EQ(s.get_balance(b), bytes32_t{10'000});
@@ -678,7 +678,7 @@ TYPED_TEST(StateTest, can_merge_new_account)
 
         s.create_account(a);
         s.set_nonce(a, 1);
-        s.set_balance(a, 38'000);
+        s.add_to_balance(a, 38'000);
         s.set_code(a, code1);
         EXPECT_EQ(s.set_storage(a, key2, value1), EVMC_STORAGE_ADDED);
         EXPECT_EQ(s.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
@@ -712,7 +712,7 @@ TYPED_TEST(StateTest, can_merge_update)
     {
         state_t s{t};
 
-        s.set_balance(b, 42'000);
+        s.add_to_balance(b, 42'000);
         s.set_nonce(b, 3);
         EXPECT_EQ(s.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
         EXPECT_EQ(s.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
@@ -917,7 +917,7 @@ TYPED_TEST(TrieDBTest, commit_storage_and_account_together_regression)
     state_t as{bs, db, block_cache};
 
     as.create_account(a);
-    as.set_balance(a, 1);
+    as.add_to_balance(a, 1);
     (void)as.set_storage(a, key1, value1);
 
     merge(bs.state, as.state_);
@@ -971,7 +971,7 @@ TYPED_TEST(StateTest, commit_twice)
         BlockState<mutex_t> bs;
         state_t as{bs, db, block_cache};
         EXPECT_TRUE(as.account_exists(b));
-        as.set_balance(b, 42'000);
+        as.add_to_balance(b, 42'000);
         as.set_nonce(b, 3);
         EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
         EXPECT_EQ(as.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
@@ -1003,7 +1003,7 @@ TYPED_TEST(StateTest, commit_twice)
     }
 }
 
-TYPED_TEST(StateTest, commit_twice_apply_reward)
+TYPED_TEST(StateTest, commit_twice_add_to_balance)
 {
     auto db = test::make_db<TypeParam>();
 
@@ -1012,7 +1012,7 @@ TYPED_TEST(StateTest, commit_twice_apply_reward)
         BlockState<mutex_t> bs;
         state_t as{bs, db, block_cache};
         as.add_txn_award(10);
-        as.apply_reward(a, 100u + as.gas_award());
+        as.add_to_balance(a, 100u + as.gas_award());
         EXPECT_TRUE(can_merge(bs.state, as.state_));
         merge(bs.state, as.state_);
         db.commit(bs.state, bs.code);
@@ -1022,8 +1022,8 @@ TYPED_TEST(StateTest, commit_twice_apply_reward)
         BlockState<mutex_t> bs;
         state_t cs{bs, db, block_cache};
         cs.add_txn_award(10);
-        cs.apply_reward(b, 300);
-        cs.apply_reward(a, 100 + cs.gas_award());
+        cs.add_to_balance(b, 300);
+        cs.add_to_balance(a, 100 + cs.gas_award());
         EXPECT_TRUE(can_merge(bs.state, cs.state_));
         merge(bs.state, cs.state_);
         db.commit(bs.state, bs.code);

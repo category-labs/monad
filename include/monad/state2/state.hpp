@@ -98,22 +98,40 @@ struct State
     }
 
     void
-    set_balance(address_t const &address, uint256_t const &new_balance) noexcept
+    add_to_balance(address_t const &address, uint256_t const &delta) noexcept
     {
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
-        MONAD_DEBUG_ASSERT(account.has_value());
+        if (!account.has_value()) {
+            account = Account{};
+        }
 
-        auto const previous_balance = account.value().balance;
         MONAD_LOG_DEBUG(
             logger_,
-            "set_balance: {} = {}, ({}{})",
+            "add_to_balance {} = {} + {}",
             address,
-            intx::to_string(new_balance, 16),
-            new_balance >= previous_balance ? "+" : "-",
-            new_balance >= previous_balance ? (new_balance - previous_balance)
-                                            : (previous_balance - new_balance));
+            account.value().balance,
+            delta);
 
-        account.value().balance = new_balance;
+        account.value().balance += delta;
+    }
+
+    void subtract_from_balance(
+        address_t const &address, uint256_t const &delta) noexcept
+    {
+        auto &account = read_account<Mutex>(address, state_, bs_, db_);
+        if (!account.has_value()) {
+            MONAD_DEBUG_ASSERT(delta == 0);
+            account = Account{};
+        }
+
+        MONAD_LOG_DEBUG(
+            logger_,
+            "subtract_from_balance {} = {} - {}",
+            address,
+            account.value().balance,
+            delta);
+
+        account.value().balance -= delta;
     }
 
     [[nodiscard]] uint64_t get_nonce(address_t const &address) noexcept
@@ -162,15 +180,9 @@ struct State
         MONAD_LOG_DEBUG(logger_, "selfdestruct: {}, {}", address, b);
 
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
-        auto &beneficiary = read_account<Mutex>(b, state_, bs_, db_);
 
         if (account.has_value()) {
-            if (!beneficiary.has_value()) {
-                create_account(b);
-            }
-
-            auto total = account.value().balance + beneficiary.value().balance;
-            set_balance(b, total);
+            add_to_balance(b, account.value().balance);
             account.reset();
             ++total_selfdestructs_;
             return true;
@@ -367,19 +379,6 @@ struct State
     [[nodiscard]] constexpr uint256_t const &gas_award() const
     {
         return gas_award_;
-    }
-
-    void apply_reward(address_t const &a, uint256_t const &r)
-    {
-        MONAD_LOG_DEBUG(logger_, "apply_award: {}", r);
-
-        auto &account = read_account(a, state_, bs_, db_);
-
-        if (!account.has_value()) {
-            create_account(a);
-        }
-
-        account.value().balance += r;
     }
 
     void merge(State &new_state)

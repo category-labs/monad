@@ -126,11 +126,8 @@ struct Evm
         TState &s, evmc_message const &m, address_t const &to) noexcept
     {
         auto const value = intx::be::load<uint256_t>(m.value);
-        auto const from_balance =
-            intx::be::load<uint256_t>(s.get_balance(m.sender));
-        s.set_balance(m.sender, from_balance - value);
-        auto const to_balance = intx::be::load<uint256_t>(s.get_balance(to));
-        s.set_balance(to, to_balance + value);
+        s.subtract_from_balance(m.sender, value);
+        s.add_to_balance(to, value);
     }
 
     [[nodiscard]] static std::optional<evmc_result>
@@ -200,13 +197,6 @@ struct Evm
                 return result.error();
             }
             else if (m.flags != EVMC_STATIC) {
-                if (!s.account_exists(m.sender)) {
-                    s.create_account(m.sender);
-                }
-
-                if (!s.account_exists(m.recipient)) {
-                    s.create_account(m.recipient);
-                }
                 transfer_balances(s, m, m.recipient);
             }
         }

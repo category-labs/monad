@@ -40,8 +40,8 @@ struct TransactionProcessor
             auto const nonce = s.get_nonce(*t.from);
             s.set_nonce(*t.from, nonce + 1);
         }
-        auto const balance = intx::be::load<uint256_t>(s.get_balance(*t.from));
-        s.set_balance(*t.from, balance - upfront_cost_);
+        MONAD_DEBUG_ASSERT(t.from.has_value());
+        s.subtract_from_balance(t.from.value(), upfront_cost_);
     }
 
     // YP Eqn 72
@@ -62,10 +62,9 @@ struct TransactionProcessor
         auto const gas_remaining = g_star(t, gas_leftover, refund);
         auto const gas_cost = TTraits::gas_price(t, base_fee_per_gas);
 
-        auto const sender_balance =
-            intx::be::load<uint256_t>(s.get_balance(*t.from));
+        MONAD_DEBUG_ASSERT(t.from.has_value());
+        s.add_to_balance(t.from.value(), gas_cost * gas_remaining);
 
-        s.set_balance(*t.from, sender_balance + (gas_cost * gas_remaining));
         return gas_remaining;
     }
 

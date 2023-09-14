@@ -426,6 +426,11 @@ namespace fake
                 }
                 return r;
             }
+            static constexpr TransactionValidationResult
+            validate_transaction(Transaction const &, uint64_t)
+            {
+                return TransactionValidationResult::Ok;
+            }
 
             static constexpr uint64_t gas_price(Transaction const &, uint64_t c)
             {

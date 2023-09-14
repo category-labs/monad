@@ -126,6 +126,11 @@ namespace fork_traits
             }
             return result;
         }
+        static constexpr TransactionValidationResult validate_transaction(
+            Transaction const &, uint64_t const /*base_gas_price*/)
+        {
+            return TransactionValidationResult::Ok;
+        }
 
         static constexpr uint64_t
         gas_price(Transaction const &t, uint64_t const /*base_gas_price*/)
@@ -473,6 +478,19 @@ namespace fork_traits
                 return evmc::Result{EVMC_CONTRACT_VALIDATION_FAILURE};
             }
             return berlin::deploy_contract_code(s, a, std::move(result));
+        }
+
+        static constexpr TransactionValidationResult validate_transaction(
+            Transaction const &t, uint64_t const base_gas_price)
+        {
+            if (t.type == Transaction::Type::eip1559 &&
+                (t.gas_price < t.priority_fee)) {
+                return TransactionValidationResult::MaxPriorityFeeAboveMax;
+            }
+            if (t.gas_price < base_gas_price) {
+                return TransactionValidationResult::MaxFeeBelowBase;
+            }
+            return TransactionValidationResult::Ok;
         }
 
         // https://eips.ethereum.org/EIPS/eip-1559

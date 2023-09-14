@@ -116,6 +116,15 @@ struct TransactionProcessor
     Status
     validate(TState &state, Transaction const &t, uint64_t base_fee_per_gas)
     {
+        switch (TTraits::validate_transaction(t, base_fee_per_gas)) {
+        case TransactionValidationResult::Ok:
+            break;
+        case TransactionValidationResult::MaxFeeBelowBase:
+        case TransactionValidationResult::MaxPriorityFeeAboveMax:
+            return Status::INVALID_GAS_LIMIT;
+        default:
+            MONAD_ASSERT(false && "unhandled TransactionValidationResult");
+        }
         upfront_cost_ =
             intx::umul(t.gas_limit, TTraits::gas_price(t, base_fee_per_gas));
 

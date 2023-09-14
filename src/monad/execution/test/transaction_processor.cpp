@@ -1,19 +1,33 @@
+#include <monad/db/in_memory_trie_db.hpp>
+
 #include <monad/execution/config.hpp>
 #include <monad/execution/transaction_processor.hpp>
 
 #include <monad/execution/test/fakes.hpp>
+
+#include <monad/state2/block_state.hpp>
+#include <monad/state2/state.hpp>
 
 #include <gtest/gtest.h>
 
 using namespace monad;
 using namespace monad::execution;
 
-using traits_t = fake::traits::alpha<fake::State::ChangeSet>;
-using processor_t = TransactionProcessor<fake::State::ChangeSet, traits_t>;
+using mutex_t = std::shared_mutex;
+using block_cache_t = fake::BlockDb;
+
+using db_t = db::InMemoryTrieDB;
+using state_t = state::State<mutex_t, block_cache_t>;
+using traits_t = fake::traits::alpha<state_t>;
+using processor_t = TransactionProcessor<state_t, traits_t>;
 
 using evm_host_t = fake::EvmHost<
-    fake::State::ChangeSet, traits_t,
-    fake::Evm<fake::State::ChangeSet, traits_t, fake::Interpreter>>;
+    state_t, traits_t, fake::Evm<state_t, traits_t, fake::Interpreter>>;
+
+namespace
+{
+    block_cache_t block_cache;
+}
 
 TEST(TransactionProcessor, g_star)
 {
@@ -38,9 +52,13 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     static constexpr auto bene{
         0x5353535353535353535353535353535353535353_address};
 
-    fake::State::ChangeSet s{};
+    db_t db;
+    BlockState<mutex_t> bs;
+    state_t s{bs, db, block_cache};
     evm_host_t h{};
-    s._accounts[from] = {.balance = 56'000'000'000'000'000, .nonce = 25};
+    s.create_account(from);
+    s.set_balance(from, 56'000'000'000'000'000);
+    s.set_nonce(from, 25);
     h._result = {.status_code = EVMC_SUCCESS, .gas_left = 15'000};
     h._receipt = {.status = 1u};
 
@@ -57,9 +75,11 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     EXPECT_EQ(status, processor_t::Status::SUCCESS);
     auto result = p.execute(s, h, t, 10u, bene);
     EXPECT_EQ(result.status, 1u);
-    EXPECT_EQ(s._accounts[from].balance, uint256_t{55'999'999'999'600'000});
-    EXPECT_EQ(s._accounts[from].nonce, 25); // EVMC will inc for creation
+    EXPECT_EQ(
+        intx::be::load<uint256_t>(s.get_balance(from)),
+        uint256_t{55'999'999'999'600'000});
+    EXPECT_EQ(s.get_nonce(from), 25); // EVMC will inc for creation
 
     // check if miner gets the right reward
-    EXPECT_EQ(s._reward, uint256_t{400'000});
+    EXPECT_EQ(s.gas_award(), uint256_t{400'000});
 }

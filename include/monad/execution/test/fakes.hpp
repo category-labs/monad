@@ -323,8 +323,10 @@ namespace fake
         };
 
         [[nodiscard]] inline constexpr Receipt make_receipt_from_result(
-            evmc_status_code, Transaction const &, uint64_t const)
+            evmc_status_code, Transaction const &t,
+            uint64_t const gas_remaining)
         {
+            _receipt.gas_used = t.gas_limit - gas_remaining;
             return _receipt;
         }
 
@@ -401,11 +403,10 @@ namespace fake
             static inline uint64_t _max_refund_quotient{2u};
             static inline uint64_t _create_address{};
             static constexpr void apply_block_award(TState &, Block const &) {}
-            static constexpr void apply_txn_award(
-                TState &s, Transaction const &, uint64_t gas_cost,
-                uint64_t gas_used)
+            static constexpr uint256_t calculate_txn_award(
+                Transaction const &, uint64_t gas_cost, uint64_t gas_used)
             {
-                s.add_txn_award(uint256_t{gas_cost} * uint256_t{gas_used});
+                return uint256_t{gas_cost} * uint256_t{gas_used};
             }
             static auto intrinsic_gas(Transaction const &)
             {

@@ -105,9 +105,6 @@ struct TransactionProcessor
         s.destruct_suicides();
         TTraits::destruct_touched_dead(s);
 
-        TTraits::apply_txn_award(
-            s, t, base_fee_per_gas, t.gas_limit - gas_remaining);
-
         auto receipt =
             h.make_receipt_from_result(result.status_code, t, gas_remaining);
         return receipt;

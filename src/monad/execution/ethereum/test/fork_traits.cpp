@@ -100,12 +100,10 @@ TEST(fork_traits, frontier)
             1'000);
 
         // txn award
-        fork_traits::frontier::apply_txn_award(
-            s, {.gas_price = 100'000'000'000}, 0, 90'000'000);
-        EXPECT_EQ(s.gas_award(), uint256_t{9'000'000'000'000'000'000});
-        fork_traits::frontier::apply_txn_award(
-            s, {.gas_price = 100'000'000'000}, 0, 90'000'000);
-        EXPECT_EQ(s.gas_award(), 2 * uint256_t{9'000'000'000'000'000'000});
+        EXPECT_EQ(
+            fork_traits::frontier::calculate_txn_award(
+                Transaction{.gas_price = 100'000'000'000}, 0, 90'000'000),
+            uint256_t{9'000'000'000'000'000'000});
     }
     {
         // block award
@@ -117,7 +115,8 @@ TEST(fork_traits, frontier)
             .ommers = {
                 BlockHeader{.number = 9, .beneficiary = b},
                 BlockHeader{.number = 8, .beneficiary = c}}};
-        fork_traits::frontier::apply_block_award(s, block);
+        fork_traits::frontier::apply_block_award(
+            bs, db, block_cache, block, 0u);
         db.commit(s.bs_.state, s.bs_.code);
         EXPECT_EQ(
             intx::be::load<uint256_t>(s.get_balance(a)),
@@ -303,11 +302,11 @@ TEST(fork_traits, byzantium)
 
     db_t db;
     BlockState<mutex_t> bs;
-    state_t s{bs, db, block_cache};
-    (void)s.get_balance(a);
-    byz.destruct_touched_dead(s);
+    state_t as{bs, db, block_cache};
+    (void)as.get_balance(a);
+    byz.destruct_touched_dead(as);
 
-    EXPECT_FALSE(s.account_exists(a));
+    EXPECT_FALSE(as.account_exists(a));
 
     // block award
     Block block{
@@ -316,13 +315,17 @@ TEST(fork_traits, byzantium)
         .ommers = {
             BlockHeader{.number = 9, .beneficiary = b},
             BlockHeader{.number = 8, .beneficiary = c}}};
-    fork_traits::byzantium::apply_block_award(s, block);
+    fork_traits::byzantium::apply_block_award(bs, db, block_cache, block, 0);
+    state_t cs{bs, db, block_cache};
     EXPECT_EQ(
-        intx::be::load<uint256_t>(s.get_balance(a)), 3'187'500'000'000'000'000);
+        intx::be::load<uint256_t>(cs.get_balance(a)),
+        3'187'500'000'000'000'000);
     EXPECT_EQ(
-        intx::be::load<uint256_t>(s.get_balance(b)), 2'625'000'000'000'000'000);
+        intx::be::load<uint256_t>(cs.get_balance(b)),
+        2'625'000'000'000'000'000);
     EXPECT_EQ(
-        intx::be::load<uint256_t>(s.get_balance(c)), 2'250'000'000'000'000'000);
+        intx::be::load<uint256_t>(cs.get_balance(c)),
+        2'250'000'000'000'000'000);
 }
 
 static_assert(
@@ -346,7 +349,8 @@ TEST(fork_traits, constantinople_and_petersburg)
         .ommers = {
             BlockHeader{.number = 9, .beneficiary = b},
             BlockHeader{.number = 8, .beneficiary = c}}};
-    fork_traits::constantinople_and_petersburg::apply_block_award(s, block);
+    fork_traits::constantinople_and_petersburg::apply_block_award(
+        bs, db, block_cache, block, 0);
 
     EXPECT_EQ(
         intx::be::load<uint256_t>(s.get_balance(a)), 2'125'000'000'000'000'000);
@@ -447,12 +451,10 @@ TEST(fork_traits, london)
     EXPECT_EQ(fork_traits::london::gas_price(t4, 2'000u), 2'000);
 
     // txn award
-    fork_traits::london::apply_txn_award(
-        s, {.gas_price = 100'000'000'000}, 0, 90'000'000);
-    EXPECT_EQ(s.gas_award(), uint256_t{9'000'000'000'000'000'000});
-    fork_traits::london::apply_txn_award(
-        s, {.gas_price = 100'000'000'000}, 0, 90'000'000);
-    EXPECT_EQ(s.gas_award(), 2 * uint256_t{9'000'000'000'000'000'000});
+    EXPECT_EQ(
+        fork_traits::london::calculate_txn_award(
+            Transaction{.gas_price = 100'000'000'000}, 0, 90'000'000),
+        uint256_t{9'000'000'000'000'000'000});
 }
 
 // EIP-3675
@@ -473,7 +475,7 @@ TEST(fork_traits, paris_apply_block_reward)
         BlockState<mutex_t> bs;
         state_t s{bs, db, block_cache};
 
-        fork_traits::paris::apply_block_award(s, block);
+        fork_traits::paris::apply_block_award(bs, db, block_cache, block, 0);
 
         EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(a)), 0u);
     }
@@ -482,7 +484,7 @@ TEST(fork_traits, paris_apply_block_reward)
         BlockState<mutex_t> bs;
         state_t s{bs, db, block_cache};
 
-        fork_traits::london::apply_block_award(s, block);
+        fork_traits::london::apply_block_award(bs, db, block_cache, block, 0);
 
         EXPECT_EQ(
             intx::be::load<uint256_t>(s.get_balance(a)),

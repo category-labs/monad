@@ -112,8 +112,17 @@ using execution_variant =
                 maybe_receipt = std::get<Execution<TTraits>>(variant).execute(
                     state, transaction);
 
-                TTraits::apply_block_award_impl(
-                    state, monad::Block{.header = block_header}, 0, 0);
+                auto const gas_used = maybe_receipt.has_value()
+                                          ? maybe_receipt.value().gas_used
+                                          : 0;
+                auto const gas_award = TTraits::calculate_txn_award(
+                    transaction,
+                    block_header.base_fee_per_gas.value_or(0),
+                    gas_used);
+                if (fork_index < fork_index_map.at("EIP158") ||
+                    gas_award != 0) {
+                    state.add_to_balance(block_header.beneficiary, gas_award);
+                }
             }
         });
 

@@ -56,8 +56,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     BlockState<mutex_t> bs;
     state_t s{bs, db, block_cache};
     evm_host_t h{};
-    s.create_account(from);
-    s.set_balance(from, 56'000'000'000'000'000);
+    s.add_to_balance(from, 56'000'000'000'000'000);
     s.set_nonce(from, 25);
     h._result = {.status_code = EVMC_SUCCESS, .gas_left = 15'000};
     h._receipt = {.status = 1u};
@@ -81,5 +80,5 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     EXPECT_EQ(s.get_nonce(from), 25); // EVMC will inc for creation
 
     // check if miner gets the right reward
-    EXPECT_EQ(s.gas_award(), uint256_t{400'000});
+    EXPECT_EQ(result.gas_used * 10u, uint256_t{400'000});
 }

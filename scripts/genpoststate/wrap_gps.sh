@@ -25,9 +25,7 @@ transaction_index="$3"
 #		--build-arg USER_ID="$(id -u)" \
 #		--build-arg GROUP_ID="$(id -g)" .) 2>&1 >/dev/null
 
-
 #cat "$json_file" | docker run -i gps $fork_name $transaction_index
-
 
 filtered_file=$(echo "$json_file" | tr '/' '_' | tr '.' '_')
 log_dir='output/'"$filtered_file"'_'"$fork_name"'_'"$transaction_index"
@@ -39,4 +37,3 @@ SCRIPT=$(readlink -f ./scripts/genpoststate/gps.sh)
 ABSOLUTE_LOG_FILE=$(readlink -f "$log_file")
 
 cd "$log_dir" && "$SCRIPT" "$JSON" "$fork_name" "$transaction_index" 2>&1 | tee -a "$ABSOLUTE_LOG_FILE"
-

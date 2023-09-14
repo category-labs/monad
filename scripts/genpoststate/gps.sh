@@ -8,7 +8,6 @@ TESTFILE=$(mktemp)
 file_name="$1"
 cp "$file_name" "${TESTFILE}"
 
-
 dump_output() {
 	cat env.json
 	cat post.json
@@ -43,24 +42,19 @@ transaction_fields=$(jq -c -S '[.[]][0].transaction | keys' "$TESTFILE")
 
 type=''
 
-if [ "$transaction_fields" == "$legacy_transaction_fields" ]
-then
-    echo "Transaction fields type: Legacy"
-    type='0x0'
-elif [ "$transaction_fields" == "$access_list_transaction_fields" ]
-then
-    echo "Transaction fields type: Access List"
-    type='0x1'
-elif [ "$transaction_fields" == "$dynamic_fee_transaction_fields" ]
-then
-    type='0x2'
-    echo "Transaction fields type: Dynamic Fee"
+if [ "$transaction_fields" == "$legacy_transaction_fields" ]; then
+	echo "Transaction fields type: Legacy"
+	type='0x0'
+elif [ "$transaction_fields" == "$access_list_transaction_fields" ]; then
+	echo "Transaction fields type: Access List"
+	type='0x1'
+elif [ "$transaction_fields" == "$dynamic_fee_transaction_fields" ]; then
+	type='0x2'
+	echo "Transaction fields type: Dynamic Fee"
 else
-    echo "Transaction fields type: Unknown"
-    exit "1"
+	echo "Transaction fields type: Unknown"
+	exit "1"
 fi
-
-
 
 t8n_input=$(jq -c '{alloc: ([.[]][0].pre), env: ([.[]][0].env), txs: ([[.[]][0].transaction |
          def hex(x): x | sub("^0x0*"; "0x") | sub("^0x$"; "0x0");

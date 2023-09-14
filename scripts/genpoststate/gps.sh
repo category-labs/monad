@@ -28,12 +28,47 @@ readarray -t lines <<<"$output"
 transaction_data_index="${lines[0]}"
 transaction_gas_index="${lines[1]}"
 transaction_value_index="${lines[2]}"
+# const (
+# 	LegacyTxType     = 0x00
+# 	AccessListTxType = 0x01
+# 	DynamicFeeTxType = 0x02
+# 	BlobTxType       = 0x03
+# )
+
+legacy_transaction_fields='["data","gasLimit","gasPrice","nonce","secretKey","sender","to","value"]'
+access_list_transaction_fields='["accessLists","data","gasLimit","gasPrice","nonce","secretKey","sender","to","value"]'
+dynamic_fee_transaction_fields='["accessLists","data","gasLimit","maxFeePerGas","maxPriorityFeePerGas","nonce","secretKey","sender","to","value"]'
+
+transaction_fields=$(jq -c -S '[.[]][0].transaction | keys' "$TESTFILE")
+
+type=''
+
+if [ "$transaction_fields" == "$legacy_transaction_fields" ]
+then
+    echo "Transaction fields type: Legacy"
+    type='0x0'
+elif [ "$transaction_fields" == "$access_list_transaction_fields" ]
+then
+    echo "Transaction fields type: Access List"
+    type='0x1'
+elif [ "$transaction_fields" == "$dynamic_fee_transaction_fields" ]
+then
+    type='0x2'
+    echo "Transaction fields type: Dynamic Fee"
+else
+    echo "Transaction fields type: Unknown"
+    exit "1"
+fi
+
+
 
 t8n_input=$(jq -c '{alloc: ([.[]][0].pre), env: ([.[]][0].env), txs: ([[.[]][0].transaction |
          def hex(x): x | sub("^0x0*"; "0x") | sub("^0x$"; "0x0");
          def hex_to_num(x): x[2:] | tonumber;
          [
              {
+               chainId: "0x1",
+               type: "'"$type"'",
                input: .data['"$transaction_data_index"'],
                gas: hex(.gasLimit['"$transaction_gas_index"']),
                gasPrice: (if has("gasPrice") then  hex(.gasPrice) else null end),

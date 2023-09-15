@@ -78,7 +78,7 @@ struct TransactionProcessorFiberData
             p.validate(state, txn_, bh_.base_fee_per_gas.value_or(0));
         if (!is_valid(validity)) {
             MONAD_LOG_INFO(
-                txn_logger, "Transaction {} invalid: {}", id_, validity);
+                txn_logger, "Transaction {} invalid: {}", id_, static_cast<int>(validity));
             // TODO: Issue #164, Issue #54
             return;
         }

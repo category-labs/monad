@@ -165,7 +165,7 @@ struct AllTxnBlockProcessor
     {
         auto *block_logger = log::logger_t::get_logger("block_logger");
         auto const start_time = std::chrono::steady_clock::now();
-        MONAD_LOG_INFO(block_logger, {}, "Committing to DB...");
+        MONAD_LOG_INFO(block_logger, "{}", "Committing to DB...");
 
         db.commit(block_state.state, block_state.code);
 

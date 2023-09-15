@@ -3,10 +3,8 @@
 set -x
 set -e
 
-# add a new line so parsing does not
-# get confused if the filter file does not
-# end in a new line
-sed -i '$a\' "$2"
+TMP=$(mktemp)
+sed '$a\' "$2" > "$TMP"
 
 # Read input line by line
 while IFS= read -r line; do
@@ -17,4 +15,6 @@ while IFS= read -r line; do
 	# Split the line by space
 	read -r fork filter <<<"$line"
 	$1 --gtest_filter=$filter --fork $fork
-done <"$2"
+done < "$TMP"
+
+rm "$TMP"

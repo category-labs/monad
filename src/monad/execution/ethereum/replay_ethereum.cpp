@@ -143,10 +143,6 @@ int main(int argc, char *argv[])
     block_db_t block_db(block_db_path);
     db_t db{
         monad::db::Writable{}, state_db_path, std::nullopt, block_history_size};
-    monad::state::AccountState accounts{db};
-    monad::state::ValueState values{db};
-    monad::state::CodeState code{db};
-    state_t state{accounts, values, code, block_db, db};
 
     monad::block_num_t start_block_number = db.starting_block_number;
 
@@ -162,16 +158,16 @@ int main(int argc, char *argv[])
 
     if (start_block_number == 0) {
         MONAD_DEBUG_ASSERT(*has_genesis_file);
-        read_and_verify_genesis(block_db, db, genesis_file_path);
+        monad::execution::read_and_verify_genesis(block_db, db, genesis_file_path);
         start_block_number = 1u;
     }
 
     receipt_collector_t receipt_collector;
 
     monad::execution::ReplayFromBlockDb<
-        state_t,
+        db_t,
+        mutex_t,
         block_db_t,
-        execution_t,
         monad::execution::AllTxnBlockProcessor,
         transaction_trie_t,
         receipt_trie_t,
@@ -185,9 +181,9 @@ int main(int argc, char *argv[])
         monad::execution::EvmcHost,
         monad::execution::TransactionProcessorFiberData,
         monad::execution::EVMOneBaselineInterpreter<
-            state_t::ChangeSet,
+            state_t,
             monad::eth_start_fork>>(
-        state,
+        db,
         block_db,
         receipt_collector,
         start_block_number,

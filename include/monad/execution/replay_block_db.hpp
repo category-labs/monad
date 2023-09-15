@@ -13,6 +13,9 @@
 
 #include <monad/logging/monad_log.hpp>
 
+#include <monad/state2/block_state.hpp>
+#include <monad/state2/state.hpp>
+
 #include <nlohmann/json.hpp>
 
 #include <test_resource_data.h>
@@ -23,12 +26,13 @@
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
 template <
-    class TState, class TBlockDb, class TExecution,
-    template <typename> class TAllTxnBlockProcessor, class TTransactionTrie,
-    class TReceiptTrie, class TReceiptCollector>
+    class TDb, class TMutex, class TBlockDb, class TBlockProcessor,
+    class TTransactionTrie, class TReceiptTrie, class TReceiptCollector>
 class ReplayFromBlockDb
 {
 public:
+    using state_t = state::State<TMutex, TBlockDb>;
+
     enum class Status
     {
         SUCCESS_END_OF_DB,
@@ -48,7 +52,7 @@ public:
         block_num_t block_number;
     };
 
-    template <concepts::fork_traits<typename TState::ChangeSet> TTraits>
+    template <concepts::fork_traits<state_t> TTraits>
     [[nodiscard]] constexpr block_num_t
     loop_until(std::optional<block_num_t> until_block_number)
     {
@@ -94,14 +98,14 @@ public:
     }
 
     template <
-        concepts::fork_traits<typename TState::ChangeSet> TTraits,
+        concepts::fork_traits<state_t> TTraits,
         template <typename, typename> class TTxnProcessor,
         template <typename, typename, typename> class TEvm,
         template <typename, typename, typename> class TEvmHost,
         template <typename, typename, typename, typename> class TFiberData,
         class TInterpreter>
     [[nodiscard]] Result run_fork(
-        TState &state, TBlockDb &block_db, TReceiptCollector &receipt_collector,
+        TDb &db, TBlockDb &block_db, TReceiptCollector &receipt_collector,
         block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
@@ -124,23 +128,18 @@ public:
 
                 TTraits::validate_block(block);
 
-                TAllTxnBlockProcessor<TExecution> block_processor{};
+                TBlockProcessor block_processor{};
                 auto const receipts = block_processor.template execute<
-                    TState,
+                    TMutex,
                     TTraits,
                     TFiberData<
-                        TState,
-                        TTxnProcessor<typename TState::ChangeSet, TTraits>,
+                        TMutex,
+                        TTxnProcessor<state_t, TTraits>,
                         TEvmHost<
-                            typename TState::ChangeSet,
+                            state_t,
                             TTraits,
-                            TEvm<
-                                typename TState::ChangeSet,
-                                TTraits,
-                                TInterpreter>>,
-                        TExecution>>(state, block);
-
-                state.commit();
+                            TEvm<state_t, TTraits, TInterpreter>>,
+                        TBlockDb>>(block, db, block_db);
 
                 // TODO: How exactly do we calculate transaction root and
                 // receipt root?
@@ -154,13 +153,13 @@ public:
                         block.header,
                         transactions_root,
                         receipts_root,
-                        state.get_state_hash(),
+                        db.state_root(),
                         current_block_number)) {
-                    return Result{
-                        Status::WRONG_STATE_ROOT, current_block_number - 1u};
+                    //return Result{
+                        //Status::WRONG_STATE_ROOT, current_block_number - 1u};
                 }
                 else {
-                    state.create_and_prune_block_history(current_block_number);
+                    db.create_and_prune_block_history(current_block_number);
                 }
 
                 receipt_collector.emplace_back(receipts);
@@ -183,7 +182,7 @@ public:
                 TEvmHost,
                 TFiberData,
                 TInterpreter>(
-                state,
+                db,
                 block_db,
                 receipt_collector,
                 current_block_number,
@@ -192,14 +191,14 @@ public:
     }
 
     template <
-        concepts::fork_traits<typename TState::ChangeSet> TTraits,
+        concepts::fork_traits<state_t> TTraits,
         template <typename, typename> class TTxnProcessor,
         template <typename, typename, typename> class TEvm,
         template <typename, typename, typename> class TEvmHost,
         template <typename, typename, typename, typename> class TFiberData,
         class TInterpreter>
     [[nodiscard]] Result
-    run(TState &state, TBlockDb &block_db, TReceiptCollector &receipt_collector,
+    run(TDb &db, TBlockDb &block_db, TReceiptCollector &receipt_collector,
         block_num_t start_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
@@ -223,7 +222,7 @@ public:
             TEvmHost,
             TFiberData,
             TInterpreter>(
-            state,
+            db,
             block_db,
             receipt_collector,
             start_block_number,

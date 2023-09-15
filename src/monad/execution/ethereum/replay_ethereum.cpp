@@ -23,14 +23,12 @@
 
 #include <monad/logging/monad_log.hpp>
 
-#include <monad/state/account_state.hpp>
-#include <monad/state/code_state.hpp>
-#include <monad/state/state.hpp>
-#include <monad/state/value_state.hpp>
+#include <monad/state2/state.hpp>
 
 #include <CLI/CLI.hpp>
 
 #include <filesystem>
+#include <shared_mutex>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -124,13 +122,8 @@ int main(int argc, char *argv[])
     using db_t = monad::db::RocksTrieDB;
     using block_db_t = monad::db::BlockDb;
     using receipt_collector_t = monad::receiptCollector;
-    using state_t = monad::state::State<
-        monad::state::AccountState<db_t>,
-        monad::state::ValueState<db_t>,
-        monad::state::CodeState<db_t>,
-        monad::db::BlockDb,
-        db_t>;
-    using execution_t = monad::execution::BoostFiberExecution;
+    using mutex_t = std::shared_mutex;
+    using state_t = monad::state::State<mutex_t, monad::db::BlockDb>;
 
     // Fakes
     using transaction_trie_t = monad::fakeEmptyTransactionTrie;

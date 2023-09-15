@@ -16,6 +16,7 @@
 #include <monad/execution/config.hpp>
 
 #include <monad/state/state_changes.hpp>
+#include <monad/state2/state_deltas.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -71,6 +72,8 @@ namespace fake
             return;
         }
         void commit(state::StateChanges const &) const noexcept { return; }
+        void commit(StateDeltas const &, Code const &) { return; }
+        void create_and_prune_block_history(uint64_t) {return;}
         bytes32_t state_root() const noexcept { return {}; }
     };
 

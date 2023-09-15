@@ -2,172 +2,174 @@
 
 #include <monad/config.hpp>
 
-#include <monad/execution/replay_block_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
 
+#include <monad/execution/replay_block_db.hpp>
 #include <monad/execution/test/fakes.hpp>
+
+#include <monad/test/make_db.hpp>
 
 using namespace monad;
 using namespace execution;
 
-class fakeBlockDb
+namespace
 {
-public:
-    enum class Status
+    class fakeErrorDecompressBlockDb
     {
-        SUCCESS,
-        NO_BLOCK_FOUND,
-        DECOMPRESS_ERROR,
-        DECODE_ERROR
-    };
+    public:
+        enum class Status
+        {
+            SUCCESS,
+            NO_BLOCK_FOUND,
+            DECOMPRESS_ERROR,
+            DECODE_ERROR
+        };
 
-    block_num_t _last_block_number;
+        block_num_t _last_block_number;
 
-    Status get(block_num_t const block_number, Block &) const
-    {
-        if (block_number <= _last_block_number) {
-            return Status::SUCCESS;
+        Status get(block_num_t const, Block &) const
+        {
+            return Status::DECOMPRESS_ERROR;
         }
-        else {
-            return Status::NO_BLOCK_FOUND;
+    };
+
+    class fakeErrorDecodeBlockDb
+    {
+    public:
+        enum class Status
+        {
+            SUCCESS,
+            NO_BLOCK_FOUND,
+            DECOMPRESS_ERROR,
+            DECODE_ERROR
+        };
+
+        block_num_t _last_block_number;
+
+        Status get(block_num_t const, Block &) const
+        {
+            return Status::DECODE_ERROR;
         }
-    }
-};
-
-class fakeErrorDecompressBlockDb
-{
-public:
-    enum class Status
-    {
-        SUCCESS,
-        NO_BLOCK_FOUND,
-        DECOMPRESS_ERROR,
-        DECODE_ERROR
     };
 
-    block_num_t _last_block_number;
-
-    Status get(block_num_t const, Block &) const
+    template <class TState, concepts::fork_traits<TState> TTraits>
+    struct fakeEmptyTP
     {
-        return Status::DECOMPRESS_ERROR;
-    }
-};
+        enum class Status
+        {
+            SUCCESS,
+            LATER_NONCE,
+            INSUFFICIENT_BALANCE,
+            INVALID_GAS_LIMIT,
+            BAD_NONCE,
+            DEPLOYED_CODE,
+        };
 
-class fakeErrorDecodeBlockDb
-{
-public:
-    enum class Status
-    {
-        SUCCESS,
-        NO_BLOCK_FOUND,
-        DECOMPRESS_ERROR,
-        DECODE_ERROR
+        template <class TEvmHost>
+        Receipt execute(
+            TState &, TEvmHost &, BlockHeader const &,
+            Transaction const &) const
+        {
+            return {};
+        }
+
+        Status validate(TState const &, Transaction const &, uint64_t)
+        {
+            return {};
+        }
     };
 
-    block_num_t _last_block_number;
-
-    Status get(block_num_t const, Block &) const
+    template <
+        class TState, concepts::fork_traits<TState> TTraits, class TInterpreter>
+    struct fakeEmptyEvm
     {
-        return Status::DECODE_ERROR;
-    }
-};
-
-template <class TState, concepts::fork_traits<TState> TTraits>
-struct fakeEmptyTP
-{
-    enum class Status
-    {
-        SUCCESS,
-        LATER_NONCE,
-        INSUFFICIENT_BALANCE,
-        INVALID_GAS_LIMIT,
-        BAD_NONCE,
-        DEPLOYED_CODE,
     };
 
-    template <class TEvmHost>
-    Receipt execute(
-        TState &, TEvmHost &, BlockHeader const &, Transaction const &) const
+    struct fakeInterpreter
     {
-        return {};
-    }
+    };
 
-    Status validate(TState const &, Transaction const &, uint64_t)
+    template <class TTraits, class TState, class TEvm>
+    struct fakeEmptyEvmHost
     {
-        return {};
-    }
-};
+    };
 
-template <
-    class TState, concepts::fork_traits<TState> TTraits, class TInterpreter>
-struct fakeEmptyEvm
-{
-};
-
-struct fakeInterpreter
-{
-};
-
-template <class TTraits, class TState, class TEvm>
-struct fakeEmptyEvmHost
-{
-};
-
-template <class TExecution>
-class fakeEmptyBP
-{
-public:
-    template <class TState, class TTraits, class TFiberData>
-    std::vector<Receipt> execute(TState &, Block &)
+    class fakeEmptyBP
     {
-        return {};
-    }
-};
+    public:
+        template <
+            class TMutex, class TTraits, class TxnProcData, class TBlockCache>
+        std::vector<Receipt> execute(Block &, Db &, TBlockCache &)
+        {
+            return {};
+        }
+    };
 
-class fakeEmptyTransactionTrie
-{
-public:
-    fakeEmptyTransactionTrie(std::vector<Transaction> const &) {}
-    bytes32_t root_hash() const { return bytes32_t{}; }
-};
-
-class fakeEmptyReceiptTrie
-{
-public:
-    fakeEmptyReceiptTrie(std::vector<Receipt> const &) {}
-    bytes32_t root_hash() const { return bytes32_t{}; }
-};
-
-template <class TState, class TTxnProcessor, class TEvm, class TExecution>
-struct fakeEmptyFiberData
-{
-    Receipt _result{};
-    fakeEmptyFiberData(TState &, Transaction const &, BlockHeader const &, int)
+    template <class TDb> // Use until Db has state_root call
+    class fakeEmptyBPfakeDb
     {
-    }
-    Receipt get_receipt() { return _result; }
-    inline void operator()() {}
-};
+    public:
+        template <
+            class TMutex, class TTraits, class TxnProcData, class TBlockCache>
+        std::vector<Receipt> execute(Block &, TDb &, TBlockCache &)
+        {
+            return {};
+        }
+    };
 
-using state_t = execution::fake::State;
-using traits_t = execution::fake::traits::alpha<state_t::ChangeSet>;
-using receipt_collector_t = std::vector<std::vector<Receipt>>;
+    class fakeEmptyTransactionTrie
+    {
+    public:
+        fakeEmptyTransactionTrie(std::vector<Transaction> const &) {}
+        bytes32_t root_hash() const { return bytes32_t{}; }
+    };
 
-using replay_t = ReplayFromBlockDb<
-    state_t, fakeBlockDb, BoostFiberExecution, fakeEmptyBP,
-    fakeEmptyTransactionTrie, fakeEmptyReceiptTrie, receipt_collector_t>;
+    class fakeEmptyReceiptTrie
+    {
+    public:
+        fakeEmptyReceiptTrie(std::vector<Receipt> const &) {}
+        bytes32_t root_hash() const { return bytes32_t{}; }
+    };
 
-using replay_error_decompress_t = ReplayFromBlockDb<
-    state_t, fakeErrorDecompressBlockDb, BoostFiberExecution, fakeEmptyBP,
-    fakeEmptyTransactionTrie, fakeEmptyReceiptTrie, receipt_collector_t>;
+    template <
+        class TMutex, class TTxnProcessor, class TEvmHost, class TBlockCache>
+    struct fakeEmptyFiberData
+    {
+        Receipt _result{};
+        fakeEmptyFiberData(
+            Db &, BlockState<TMutex> &, Transaction &, BlockHeader const &,
+            TBlockCache &, unsigned int)
+        {
+        }
+        Receipt get_receipt() { return _result; }
+        inline void operator()() {}
+    };
 
-using replay_error_decode_t = ReplayFromBlockDb<
-    state_t, fakeErrorDecodeBlockDb, BoostFiberExecution, fakeEmptyBP,
-    fakeEmptyTransactionTrie, fakeEmptyReceiptTrie, receipt_collector_t>;
+    using mutex_t = std::shared_mutex;
+    using db_t = db::InMemoryTrieDB;
+    using state_t = state::State<mutex_t, fake::BlockDb>;
+    using traits_t = execution::fake::traits::alpha<state_t>;
+    using receipt_collector_t = std::vector<std::vector<Receipt>>;
+    using mutex_t = std::shared_mutex;
+
+    using replay_t = ReplayFromBlockDb<db_t,
+        mutex_t, fake::BlockDb, fakeEmptyBP, fakeEmptyTransactionTrie,
+        fakeEmptyReceiptTrie, receipt_collector_t>;
+
+    using replay_error_decompress_t = ReplayFromBlockDb<db_t,
+        mutex_t, fakeErrorDecompressBlockDb, fakeEmptyBP,
+        fakeEmptyTransactionTrie, fakeEmptyReceiptTrie, receipt_collector_t>;
+
+    using replay_error_decode_t = ReplayFromBlockDb<db_t,
+        mutex_t, fakeErrorDecodeBlockDb, fakeEmptyBP, fakeEmptyTransactionTrie,
+        fakeEmptyReceiptTrie, receipt_collector_t>;
+}
 
 TEST(ReplayFromBlockDb, invalid_end_block_number)
 {
-    state_t state;
-    fakeBlockDb block_db;
+    auto db = test::make_db<db_t>();
+
+    fake::BlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_t replay;
 
@@ -179,7 +181,7 @@ TEST(ReplayFromBlockDb, invalid_end_block_number)
         fakeEmptyEvm,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fakeInterpreter>(state, block_db, receipt_collector, 100u, 100u);
+        fakeInterpreter>(db, block_db, receipt_collector, 100u, 100u);
 
     EXPECT_EQ(result.status, replay_t::Status::INVALID_END_BLOCK_NUMBER);
     EXPECT_EQ(result.block_number, 100u);
@@ -187,8 +189,9 @@ TEST(ReplayFromBlockDb, invalid_end_block_number)
 
 TEST(ReplayFromBlockDb, invalid_end_block_number_zero)
 {
-    state_t state;
-    fakeBlockDb block_db;
+    auto db = test::make_db<db_t>();
+
+    fake::BlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_t replay;
 
@@ -200,7 +203,7 @@ TEST(ReplayFromBlockDb, invalid_end_block_number_zero)
         fakeEmptyEvm,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fakeInterpreter>(state, block_db, receipt_collector, 0u, 0u);
+        fakeInterpreter>(db, block_db, receipt_collector, 0u, 0u);
 
     EXPECT_EQ(result.status, replay_t::Status::INVALID_END_BLOCK_NUMBER);
     EXPECT_EQ(result.block_number, 0u);
@@ -208,8 +211,9 @@ TEST(ReplayFromBlockDb, invalid_end_block_number_zero)
 
 TEST(ReplayFromBlockDb, start_block_number_outside_db)
 {
-    state_t state;
-    fakeBlockDb block_db;
+    auto db = test::make_db<db_t>();
+
+    fake::BlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_t replay;
 
@@ -221,7 +225,7 @@ TEST(ReplayFromBlockDb, start_block_number_outside_db)
         fakeEmptyEvm,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fakeInterpreter>(state, block_db, receipt_collector, 1u);
+        fakeInterpreter>(db, block_db, receipt_collector, 1u);
 
     EXPECT_EQ(result.status, replay_t::Status::START_BLOCK_NUMBER_OUTSIDE_DB);
     EXPECT_EQ(result.block_number, 1u);
@@ -229,7 +233,11 @@ TEST(ReplayFromBlockDb, start_block_number_outside_db)
 
 TEST(ReplayFromBlockDb, decompress_block_error)
 {
-    state_t state;
+    using state_t = state::State<mutex_t, fakeErrorDecompressBlockDb>;
+    using traits_t = execution::fake::traits::alpha<state_t>;
+
+    auto db = test::make_db<db_t>();
+
     fakeErrorDecompressBlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_error_decompress_t replay;
@@ -240,7 +248,7 @@ TEST(ReplayFromBlockDb, decompress_block_error)
         fakeEmptyEvm,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fakeInterpreter>(state, block_db, receipt_collector, 1u);
+        fakeInterpreter>(db, block_db, receipt_collector, 1u);
 
     EXPECT_EQ(
         result.status,
@@ -250,7 +258,11 @@ TEST(ReplayFromBlockDb, decompress_block_error)
 
 TEST(ReplayFromBlockDb, decode_block_error)
 {
-    state_t state;
+    using state_t = state::State<mutex_t, fakeErrorDecodeBlockDb>;
+    using traits_t = execution::fake::traits::alpha<state_t>;
+
+    auto db = test::make_db<db_t>();
+
     fakeErrorDecodeBlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_error_decode_t replay;
@@ -261,16 +273,24 @@ TEST(ReplayFromBlockDb, decode_block_error)
         fakeEmptyEvm,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fakeInterpreter>(state, block_db, receipt_collector, 1u);
+        fakeInterpreter>(db, block_db, receipt_collector, 1u);
 
     EXPECT_EQ(result.status, replay_error_decode_t::Status::DECODE_BLOCK_ERROR);
     EXPECT_EQ(result.block_number, 1u);
 }
 
+
 TEST(ReplayFromBlockDb, one_block)
 {
-    state_t state;
-    fakeBlockDb block_db;
+    using db_t = fake::Db;
+    using bp_t = fakeEmptyBPfakeDb<db_t>;
+    db_t db;
+
+    using replay_t = ReplayFromBlockDb<db_t,
+        mutex_t, fake::BlockDb, bp_t, fakeEmptyTransactionTrie,
+        fakeEmptyReceiptTrie, receipt_collector_t>;
+
+    fake::BlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_t replay;
 
@@ -282,17 +302,18 @@ TEST(ReplayFromBlockDb, one_block)
         fakeEmptyEvm,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fakeInterpreter>(state, block_db, receipt_collector, 100u, 101u);
+        fakeInterpreter>(db, block_db, receipt_collector, 100u, 101u);
 
     EXPECT_EQ(result.status, replay_t::Status::SUCCESS);
     EXPECT_EQ(result.block_number, 100u);
     EXPECT_EQ(receipt_collector.size(), 1u);
 }
 
-TEST(ReplayFromBlockDb, run_from_zero)
+TEST(ReplayFromBlockDb, run_from_one)
 {
-    state_t state;
-    fakeBlockDb block_db;
+    auto db = test::make_db<db_t>();
+
+    fake::BlockDb block_db;
     receipt_collector_t receipt_collector;
     replay_t replay;
 
@@ -304,9 +325,9 @@ TEST(ReplayFromBlockDb, run_from_zero)
         fakeEmptyEvm,
         fakeEmptyEvmHost,
         fakeEmptyFiberData,
-        fakeInterpreter>(state, block_db, receipt_collector, 0u);
+        fakeInterpreter>(db, block_db, receipt_collector, 1u);
 
     EXPECT_EQ(result.status, replay_t::Status::SUCCESS_END_OF_DB);
     EXPECT_EQ(result.block_number, 1'234u);
-    EXPECT_EQ(receipt_collector.size(), 1'235u);
+    EXPECT_EQ(receipt_collector.size(), 1'234u);
 }

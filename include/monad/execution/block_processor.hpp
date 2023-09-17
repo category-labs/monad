@@ -61,9 +61,11 @@ struct AllTxnBlockProcessor
         MONAD_LOG_DEBUG(block_logger, "BlockHeader Fields: {}", b.header);
 
         BlockState<TMutex> block_state{};
+        uint256_t all_txn_gas_reward = 0;
 
         // Apply DAO hack reversal
-        TTraits::transfer_balance_dao(block_state, db, block_cache, b.header.number);
+        TTraits::transfer_balance_dao(
+            block_state, db, block_cache, b.header.number);
 
         std::vector<boost::fibers::future<result_t>> futures{};
         std::vector<boost::fibers::fiber> fibers{};
@@ -104,6 +106,10 @@ struct AllTxnBlockProcessor
         get_receipt:
             MONAD_LOG_INFO(block_logger, "Merged {}", index);
             fibers[index].join();
+            all_txn_gas_reward += TTraits::calculate_txn_award(
+                b.transactions[index],
+                b.header.base_fee_per_gas.value_or(0),
+                result.gas_used);
             r.push_back(result);
             ++index;
             continue;
@@ -126,23 +132,22 @@ struct AllTxnBlockProcessor
                 merge(block_state.state, new_result.second.state_);
                 merge(block_state.code, new_result.second.code_);
             }
+            fibers[index].join();
+            all_txn_gas_reward += TTraits::calculate_txn_award(
+                b.transactions[index],
+                b.header.base_fee_per_gas.value_or(0),
+                new_result.first.gas_used);
             r.push_back(new_result.first);
             ++index;
-            fibers[index].join();
         }
 
         // Process withdrawls
-        TTraits::process_withdrawal(block_state, db, block_cache, b.withdrawals);
+        TTraits::process_withdrawal(
+            block_state, db, block_cache, b.withdrawals);
 
-        { // Apply block reward to beneficiary
-            state::State state{block_state, db, block_cache};
-
-            if (b.header.number != 0u) {
-                TTraits::apply_block_award(state, b);
-            }
-            MONAD_DEBUG_ASSERT(can_merge(block_state.state, state.state_));
-            merge(block_state.state, state.state_);
-        }
+        // Apply block reward to beneficiary
+        TTraits::apply_block_award(
+            block_state, db, block_cache, b, all_txn_gas_reward);
 
         auto const finished_time = std::chrono::steady_clock::now();
         auto const elapsed_ms =

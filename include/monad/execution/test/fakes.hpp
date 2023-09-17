@@ -404,7 +404,12 @@ namespace fake
             static inline uint64_t _intrinsic_gas{21'000u};
             static inline uint64_t _max_refund_quotient{2u};
             static inline uint64_t _create_address{};
-            static constexpr void apply_block_award(TState &, Block const &) {}
+            template <class TBlockState, class TBlockCache, class TDb>
+            static constexpr void apply_block_award(
+                TBlockState &, TDb &, TBlockCache const &, Block const &,
+                uint256_t)
+            {
+            }
             static constexpr uint256_t calculate_txn_award(
                 Transaction const &, uint64_t gas_cost, uint64_t gas_used)
             {
@@ -442,7 +447,8 @@ namespace fake
 
             template <class TBlockState, class TBlockCache>
             static constexpr void transfer_balance_dao(
-                TBlockState &, monad::Db &, TBlockCache const &, block_num_t const)
+                TBlockState &, monad::Db &, TBlockCache const &,
+                block_num_t const)
             {
             }
 

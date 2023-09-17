@@ -19,6 +19,8 @@
 using namespace monad;
 using namespace monad::execution;
 
+constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
+
 namespace
 {
     using block_cache_t = fake::BlockDb;
@@ -59,7 +61,7 @@ namespace
             DEPLOYED_CODE,
         };
 
-        Receipt r_{.status = Receipt::SUCCESS};
+        Receipt r_{.status = Receipt::SUCCESS, .gas_used = 1000u};
 
         template <class TEvmHost>
         Receipt execute(
@@ -164,4 +166,45 @@ TEST(AllTxnBlockProcessor, dao_reversal)
     auto dao_account = db.read_account(dao::withdraw_account);
     ASSERT_TRUE(dao_account);
     EXPECT_EQ(dao_account->balance, total);
+}
+
+TEST(AllTxnBlockProcessor, apply_block_award_no_txn)
+{
+    auto db = test::make_db<db_t>();
+    fake_validation = ValStatus::SUCCESS;
+
+    static Block b{
+        .header = {.beneficiary = a},
+        .transactions = {},
+    };
+
+    block_processor_t p{};
+    auto const r =
+        p.execute<mutex_t, fork_traits::frontier, fiber_data_t, block_cache_t>(
+            b, db, block_cache);
+
+    EXPECT_TRUE(db.read_account(a).has_value());
+    EXPECT_EQ(db.read_account(a).value().balance, 5'000'000'000'000'000'000);
+}
+
+TEST(AllTxnBlockProcessor, apply_block_award_2_txns)
+{
+    auto db = test::make_db<db_t>();
+    fake_validation = ValStatus::SUCCESS;
+
+    static Block b{
+        .header = {.beneficiary = a},
+        .transactions =
+            {Transaction{.gas_price = 10}, Transaction{.gas_price = 10}},
+    };
+
+    block_processor_t p{};
+    auto const r =
+        p.execute<mutex_t, fork_traits::frontier, fiber_data_t, block_cache_t>(
+            b, db, block_cache);
+
+    EXPECT_TRUE(db.read_account(a).has_value());
+    EXPECT_EQ(
+        db.read_account(a).value().balance,
+        5'000'000'000'000'000'000 + 2 * 1'000 * 10);
 }

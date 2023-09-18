@@ -57,9 +57,8 @@ struct AllTxnBlockProcessor
             merge(block_state.state, result.second.state_);
             merge(block_state.code, result.second.code_);
 
-            // TODO: Comment back once rebased on top of logging PR
-            // LOG_DEBUG("State Deltas: {}", result.second.state_);
-            // LOG_DEBUG("Code Deltas: {}", result.second.code_);
+            LOG_DEBUG("State Deltas: {}", result.second.state_);
+            LOG_DEBUG("Code Deltas: {}", result.second.code_);
 
             all_txn_gas_reward += TTraits::calculate_txn_award(
                 b.transactions[i],

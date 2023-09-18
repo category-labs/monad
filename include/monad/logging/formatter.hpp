@@ -13,6 +13,9 @@
 
 #include <monad/state/datum.hpp>
 
+#include <monad/state2/block_state.hpp>
+#include <monad/state2/state_deltas.hpp>
+
 #include <monad/trie/nibbles.hpp>
 #include <monad/trie/node.hpp>
 #include <monad/trie/update.hpp>
@@ -38,6 +41,8 @@ struct basic_formatter
 };
 
 MONAD_LOG_NAMESPACE_END
+
+// TODO: Remove State1 stuff
 
 namespace
 {
@@ -88,6 +93,29 @@ namespace quill
 
     template <>
     struct copy_loggable<monad::Transaction::Type> : std::true_type
+    {
+    };
+
+    // for both AccountDelta & StorageDelta
+    template <typename T>
+    struct copy_loggable<monad::delta_t<T>>
+        : std::integral_constant<bool, detail::is_registered_copyable_v<T>>
+    {
+    };
+
+    template <>
+    struct copy_loggable<monad::StateDelta> : std::true_type
+    {
+    };
+
+    template <>
+    struct copy_loggable<monad::StateDeltas> : std::true_type
+    {
+    };
+
+    // Code
+    template <>
+    struct copy_loggable<monad::Code> : std::true_type
     {
     };
 
@@ -297,6 +325,82 @@ struct formatter<monad::Transaction::Type> : public monad::log::basic_formatter
         else {
             fmt::format_to(ctx.out(), "Unknown Transaction Type");
         }
+        return ctx.out();
+    }
+};
+
+template <typename T>
+struct formatter<monad::delta_t<T>> : public monad::log::basic_formatter
+{
+    template <typename FormatContext>
+    auto format(monad::delta_t<T> const &delta, FormatContext &ctx) const
+    {
+        fmt::format_to(ctx.out(), "{{");
+        fmt::format_to(
+            ctx.out(), "Original: {}, Updated: {}", delta.orig, delta.updated);
+        fmt::format_to(ctx.out(), "}}");
+
+        return ctx.out();
+    }
+};
+
+template <>
+struct fmt::formatter<monad::StateDelta> : public monad::log::basic_formatter
+{
+    template <typename FormatContext>
+    auto format(monad::StateDelta const &state_delta, FormatContext &ctx) const
+    {
+        fmt::format_to(ctx.out(), "{{");
+        fmt::format_to(ctx.out(), "Account Delta: {}", state_delta.account);
+        for (auto const &[key, storage_delta] : state_delta.storage) {
+            fmt::format_to(
+                ctx.out(), "Key: {}, Storage Delta: {} ", key, storage_delta);
+        }
+        fmt::format_to(ctx.out(), "}}");
+
+        return ctx.out();
+    }
+};
+
+template <>
+struct fmt::formatter<monad::StateDeltas> : public monad::log::basic_formatter
+{
+    template <typename FormatContext>
+    auto
+    format(monad::StateDeltas const &state_deltas, FormatContext &ctx) const
+    {
+        fmt::format_to(ctx.out(), "{{");
+
+        for (auto const &[address, state_delta] : state_deltas) {
+            fmt::format_to(
+                ctx.out(),
+                "Address: {}, State Delta: {} ",
+                address,
+                state_delta);
+        }
+        fmt::format_to(ctx.out(), "}}");
+
+        return ctx.out();
+    }
+};
+
+template <>
+struct fmt::formatter<monad::Code> : public monad::log::basic_formatter
+{
+    template <typename FormatContext>
+    auto format(monad::Code const &code, FormatContext &ctx) const
+    {
+        fmt::format_to(ctx.out(), "{{");
+
+        for (auto const &[code_hash, code_value] : code) {
+            fmt::format_to(
+                ctx.out(),
+                "Code Hash: {}, Code Value: {} ",
+                code_hash,
+                code_value);
+        }
+        fmt::format_to(ctx.out(), "}}");
+
         return ctx.out();
     }
 };

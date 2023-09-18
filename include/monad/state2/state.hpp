@@ -41,9 +41,9 @@ struct State
     uint256_t gas_award_;
     std::vector<Receipt::Log> logs_;
 
-    explicit State(BlockState<Mutex> &b, Db &d, TBlockCache &cache)
-        : bs_{b}
-        , db_{d}
+    explicit State(BlockState<Mutex> &bs, Db &db, TBlockCache &cache)
+        : bs_{bs}
+        , db_{db}
         , block_cache_{cache}
         , state_{}
         , code_{}
@@ -257,9 +257,9 @@ struct State
     }
 
     [[nodiscard]] evmc_storage_status
-    zero_out_key(address_t const &a, bytes32_t const &key) noexcept
+    zero_out_key(address_t const &address, bytes32_t const &key) noexcept
     {
-        auto &delta = read_storage<Mutex>(a, 0u, key, state_, bs_, db_);
+        auto &delta = read_storage<Mutex>(address, 0u, key, state_, bs_, db_);
         auto &status_value = delta.first;
         auto &current_value = delta.second;
 
@@ -281,10 +281,10 @@ struct State
     }
 
     [[nodiscard]] evmc_storage_status set_current_value(
-        address_t const &a, bytes32_t const &key,
+        address_t const &address, bytes32_t const &key,
         bytes32_t const &value) noexcept
     {
-        auto &delta = read_storage<Mutex>(a, 0u, key, state_, bs_, db_);
+        auto &delta = read_storage<Mutex>(address, 0u, key, state_, bs_, db_);
         auto &status_value = delta.first;
         auto &current_value = delta.second;
 
@@ -393,10 +393,10 @@ struct State
         return gas_award_;
     }
 
-    void touch(address_t const &a)
+    void touch(address_t const &address)
     {
-        LOG_DEBUG("touched {}", a);
-        touched_.insert(a);
+        LOG_DEBUG("touched {}", address);
+        touched_.insert(address);
     }
 
     void merge(State &new_state)

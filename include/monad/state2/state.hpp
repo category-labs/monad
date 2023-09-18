@@ -73,7 +73,7 @@ struct State
     {
         LOG_DEBUG("account_exists: {}", address);
 
-        auto const account = read_account<Mutex>(address, state_, bs_, db_);
+        auto const &account = read_account<Mutex>(address, state_, bs_, db_);
 
         return account.has_value();
     };
@@ -97,7 +97,7 @@ struct State
     // EVMC Host Interface
     [[nodiscard]] bytes32_t get_balance(address_t const &address)
     {
-        auto const account = read_account<Mutex>(address, state_, bs_, db_);
+        auto const &account = read_account<Mutex>(address, state_, bs_, db_);
         if (MONAD_LIKELY(account.has_value())) {
             return intx::be::store<bytes32_t>(account.value().balance);
         }
@@ -150,7 +150,7 @@ struct State
     {
         LOG_DEBUG("get_nonce: {}", address);
 
-        auto const account = read_account<Mutex>(address, state_, bs_, db_);
+        auto const &account = read_account<Mutex>(address, state_, bs_, db_);
         if (MONAD_LIKELY(account.has_value())) {
             return account.value().nonce;
         }
@@ -171,7 +171,7 @@ struct State
     {
         LOG_DEBUG("get_code_hash: {}", address);
 
-        auto const account = read_account<Mutex>(address, state_, bs_, db_);
+        auto const &account = read_account<Mutex>(address, state_, bs_, db_);
         if (MONAD_LIKELY(account.has_value())) {
             return account.value().code_hash;
         }
@@ -323,8 +323,8 @@ struct State
 
     // EVMC Host Interface
     [[nodiscard]] size_t copy_code(
-        address_t const &address, size_t offset, uint8_t *buffer,
-        size_t buffer_size) noexcept
+        address_t const &address, size_t const offset, uint8_t *const buffer,
+        size_t const buffer_size) noexcept
     {
         auto const &account = read_account<Mutex>(address, state_, bs_, db_);
         if (MONAD_LIKELY(account.has_value())) {
@@ -344,9 +344,9 @@ struct State
         return 0z;
     }
 
-    [[nodiscard]] byte_string get_code(address_t const address) noexcept
+    [[nodiscard]] byte_string get_code(address_t const &address) noexcept
     {
-        auto const account = read_account<Mutex>(address, state_, bs_, db_);
+        auto const &account = read_account<Mutex>(address, state_, bs_, db_);
         if (MONAD_LIKELY(account.has_value())) {
             return read_code<Mutex>(account->code_hash, code_, bs_, db_);
         }
@@ -398,6 +398,7 @@ struct State
         LOG_DEBUG("touched {}", a);
         touched_.insert(a);
     }
+
     void merge(State &new_state)
     {
         state_ = std::move(new_state.state_);

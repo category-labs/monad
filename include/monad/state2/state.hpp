@@ -107,6 +107,10 @@ struct State
             account = Account{};
         }
 
+        MONAD_DEBUG_ASSERT(
+            std::numeric_limits<uint256_t>::max() - delta >=
+            account.value().balance);
+
         MONAD_LOG_DEBUG(
             logger_,
             "add_to_balance {} = {} + {}",
@@ -123,9 +127,10 @@ struct State
     {
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
         if (!account.has_value()) {
-            MONAD_DEBUG_ASSERT(delta == 0);
             account = Account{};
         }
+
+        MONAD_DEBUG_ASSERT(delta <= account.value().balance);
 
         MONAD_LOG_DEBUG(
             logger_,

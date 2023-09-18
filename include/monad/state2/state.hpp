@@ -9,16 +9,17 @@
 
 #include <monad/db/db.hpp>
 
-#include <monad/logging/monad_log.hpp>
-
 #include <monad/state/config.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/block_state_ops.hpp>
 #include <monad/state2/state.hpp>
 
+#include <monad/logging/formatter.hpp>
+
 #include <ankerl/unordered_dense.h>
 
 #include <ethash/keccak.hpp>
+#include <quill/Quill.h>
 
 MONAD_STATE_NAMESPACE_BEGIN
 
@@ -40,8 +41,7 @@ struct State
     uint256_t gas_award_;
     std::vector<Receipt::Log> logs_;
 
-    decltype(monad::log::logger_t::get_logger()) logger_ =
-        monad::log::logger_t::get_logger("state_logger");
+    quill::Logger *logger_;
 
     explicit State(BlockState<Mutex> &b, Db &d, TBlockCache &cache)
         : bs_{b}
@@ -55,13 +55,14 @@ struct State
         , total_selfdestructs_{}
         , gas_award_{}
         , logs_{}
+        , logger_(quill::get_logger("state_logger"))
     {
     }
 
     // EVMC Host Interface
     evmc_access_status access_account(address_t const &address)
     {
-        MONAD_LOG_DEBUG(logger_, "access_account: {}", address);
+        QUILL_LOG_DEBUG(logger_, "access_account: {}", address);
 
         auto const [_, inserted] = accessed_.insert(address);
         if (inserted) {
@@ -73,7 +74,7 @@ struct State
     // EVMC Host Interface
     [[nodiscard]] bool account_exists(address_t const &address)
     {
-        MONAD_LOG_DEBUG(logger_, "account_exists: {}", address);
+        QUILL_LOG_DEBUG(logger_, "account_exists: {}", address);
 
         auto const account = read_account<Mutex>(address, state_, bs_, db_);
 
@@ -82,7 +83,7 @@ struct State
 
     void create_account(address_t const &address)
     {
-        MONAD_LOG_DEBUG(logger_, "create_account: {}", address);
+        QUILL_LOG_DEBUG(logger_, "create_account: {}", address);
 
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
         MONAD_DEBUG_ASSERT(!account.has_value());
@@ -111,7 +112,7 @@ struct State
             std::numeric_limits<uint256_t>::max() - delta >=
             account.value().balance);
 
-        MONAD_LOG_DEBUG(
+        QUILL_LOG_DEBUG(
             logger_,
             "add_to_balance {} = {} + {}",
             address,
@@ -132,7 +133,7 @@ struct State
 
         MONAD_DEBUG_ASSERT(delta <= account.value().balance);
 
-        MONAD_LOG_DEBUG(
+        QUILL_LOG_DEBUG(
             logger_,
             "subtract_from_balance {} = {} - {}",
             address,
@@ -145,7 +146,7 @@ struct State
 
     [[nodiscard]] uint64_t get_nonce(address_t const &address) noexcept
     {
-        MONAD_LOG_DEBUG(logger_, "get_nonce: {}", address);
+        QUILL_LOG_DEBUG(logger_, "get_nonce: {}", address);
 
         auto const account = read_account<Mutex>(address, state_, bs_, db_);
         if (MONAD_LIKELY(account.has_value())) {
@@ -156,7 +157,7 @@ struct State
 
     void set_nonce(address_t const &address, uint64_t const nonce)
     {
-        MONAD_LOG_DEBUG(logger_, "set_nonce: {} = {}", address, nonce);
+        QUILL_LOG_DEBUG(logger_, "set_nonce: {} = {}", address, nonce);
 
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
         MONAD_DEBUG_ASSERT(account.has_value());
@@ -166,7 +167,7 @@ struct State
     // EVMC Host Interface
     [[nodiscard]] bytes32_t get_code_hash(address_t const &address)
     {
-        MONAD_LOG_DEBUG(logger_, "get_code_hash: {}", address);
+        QUILL_LOG_DEBUG(logger_, "get_code_hash: {}", address);
 
         auto const account = read_account<Mutex>(address, state_, bs_, db_);
         if (MONAD_LIKELY(account.has_value())) {
@@ -186,7 +187,7 @@ struct State
     [[nodiscard]] bool
     selfdestruct(address_t const &address, address_t const &b) noexcept
     {
-        MONAD_LOG_DEBUG(logger_, "selfdestruct: {}, {}", address, b);
+        QUILL_LOG_DEBUG(logger_, "selfdestruct: {}, {}", address, b);
 
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
 
@@ -208,7 +209,7 @@ struct State
 
     void destruct_touched_dead() noexcept
     {
-        MONAD_LOG_DEBUG(logger_, "{}", "destruct_touched_dead");
+        QUILL_LOG_DEBUG(logger_, "{}", "destruct_touched_dead");
 
         for (auto const &touched : touched_) {
             auto &account = read_account<Mutex>(touched, state_, bs_, db_);
@@ -222,7 +223,7 @@ struct State
     evmc_access_status
     access_storage(address_t const &address, bytes32_t const &key) noexcept
     {
-        MONAD_LOG_DEBUG(logger_, "access_storage: {}, {}", address, key);
+        QUILL_LOG_DEBUG(logger_, "access_storage: {}, {}", address, key);
 
         auto const &[_, inserted] = accessed_storage_[address].insert(key);
         if (inserted) {
@@ -235,7 +236,7 @@ struct State
     [[nodiscard]] bytes32_t
     get_storage(address_t const &address, bytes32_t const &key) noexcept
     {
-        MONAD_LOG_DEBUG(logger_, "get_storage: {}, {}", address, key);
+        QUILL_LOG_DEBUG(logger_, "get_storage: {}, {}", address, key);
 
         return read_storage<Mutex>(address, 0u, key, state_, bs_, db_).second;
     }
@@ -245,7 +246,7 @@ struct State
         address_t const &address, bytes32_t const &key,
         bytes32_t const &value) noexcept
     {
-        MONAD_LOG_DEBUG(
+        QUILL_LOG_DEBUG(
             logger_, "set_storage: {}, {} = {}", address, key, value);
 
         if (value == bytes32_t{}) {
@@ -353,7 +354,7 @@ struct State
 
     void set_code(address_t const &address, byte_string const &code)
     {
-        MONAD_LOG_DEBUG(logger_, "set_code: {} = {}", address, evmc::hex(code));
+        QUILL_LOG_DEBUG(logger_, "set_code: {} = {}", address, evmc::hex(code));
 
         auto const code_hash = std::bit_cast<monad::bytes32_t const>(
             ethash::keccak256(code.data(), code.size()));
@@ -382,7 +383,7 @@ struct State
 
     void add_txn_award(uint256_t const &reward)
     {
-        MONAD_LOG_DEBUG(logger_, "add_txn_award: {}", reward);
+        QUILL_LOG_DEBUG(logger_, "add_txn_award: {}", reward);
         gas_award_ += reward;
     }
 
@@ -393,7 +394,7 @@ struct State
 
     void touch(address_t const &a)
     {
-        MONAD_LOG_DEBUG(logger_, "touched {}", a);
+        QUILL_LOG_DEBUG(logger_, "touched {}", a);
         touched_.insert(a);
     }
     void merge(State &new_state)

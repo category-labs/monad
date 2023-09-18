@@ -8,7 +8,9 @@
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 
-#include <monad/logging/monad_log.hpp>
+#include <monad/logging/formatter.hpp>
+
+#include <quill/Quill.h>
 
 #include <chrono>
 #include <vector>
@@ -23,12 +25,12 @@ struct AllTxnBlockProcessor
     {
         auto *block_logger = log::logger_t::get_logger("block_logger");
         auto const start_time = std::chrono::steady_clock::now();
-        MONAD_LOG_INFO(
+        QUILL_LOG_INFO(
             block_logger,
             "Start executing Block {}, with {} transactions",
             b.header.number,
             b.transactions.size());
-        MONAD_LOG_DEBUG(block_logger, "BlockHeader Fields: {}", b.header);
+        QUILL_LOG_DEBUG(block_logger, "BlockHeader Fields: {}", b.header);
 
         TTraits::transfer_balance_dao(s, b.header.number);
 
@@ -66,12 +68,12 @@ struct AllTxnBlockProcessor
         auto const elapsed_ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 finished_time - start_time);
-        MONAD_LOG_INFO(
+        QUILL_LOG_INFO(
             block_logger,
             "Finish executing Block {}, time elapsed = {}",
             b.header.number,
             elapsed_ms);
-        MONAD_LOG_DEBUG(block_logger, "Receipts: {}", r);
+        QUILL_LOG_DEBUG(block_logger, "Receipts: {}", r);
 
         return r;
     }

@@ -10,9 +10,11 @@
 #include <monad/execution/config.hpp>
 #include <monad/execution/transaction_processor.hpp>
 
-#include <monad/logging/monad_log.hpp>
+#include <monad/logging/formatter.hpp>
 
 #include <monad/state2/state.hpp>
+
+#include <quill/Quill.h>
 
 #include <chrono>
 
@@ -56,10 +58,10 @@ struct alignas(64) TransactionProcessorFiberData
     {
         TTxnProcessor p{};
 
-        auto *txn_logger = log::logger_t::get_logger("txn_logger");
-        auto const start_time = std::chrono::steady_clock::now();
-        MONAD_LOG_INFO(
-            txn_logger,
+        [[maybe_unused]] auto const start_time =
+            std::chrono::steady_clock::now();
+        QUILL_LOG_INFO(
+            quill::get_logger("txn_logger"),
             "Start executing Transaction {}, from = {}, to = {}",
             id_,
             txn_.from,
@@ -68,7 +70,11 @@ struct alignas(64) TransactionProcessorFiberData
         auto const validity =
             p.validate(state_, txn_, bh_.base_fee_per_gas.value_or(0));
         if (!is_valid(validity)) {
-            MONAD_LOG_INFO(txn_logger, "Transaction {} invalid: {}", id_, validity);
+            QUILL_LOG_INFO(
+                quill::get_logger("txn_logger"),
+                "Transaction {} invalid: {}",
+                id_,
+                std::to_underlying(validity));
             // TODO: Issue #164, Issue #54
             return;
         }
@@ -81,15 +87,12 @@ struct alignas(64) TransactionProcessorFiberData
             bh_.base_fee_per_gas.value_or(0),
             bh_.beneficiary);
 
-        auto const finished_time = std::chrono::steady_clock::now();
-        auto const elapsed_ms =
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                finished_time - start_time);
-        MONAD_LOG_INFO(
-            txn_logger,
+        QUILL_LOG_INFO(
+            quill::get_logger("txn_logger"),
             "Finish executing Transaction {}, time elapsed = {}",
             id_,
-            elapsed_ms);
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - start_time));
     }
 
     void operator()() // required signature for boost::fibers

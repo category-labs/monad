@@ -10,12 +10,14 @@
 #include <monad/db/trie_db_process_changes.hpp>
 #include <monad/db/trie_db_read_account.hpp>
 #include <monad/db/trie_db_read_storage.hpp>
-#include <monad/logging/monad_log.hpp>
+#include <monad/logging/formatter.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/trie/rocks_comparator.hpp>
 #include <monad/trie/rocks_cursor.hpp>
 #include <monad/trie/rocks_writer.hpp>
 #include <monad/trie/trie.hpp>
+
+#include <quill/Quill.h>
 
 #include <filesystem>
 #include <string_view>
@@ -140,8 +142,7 @@ struct RocksTrieDB : public Db
     uint64_t const block_history_size;
     rocksdb::WriteBatch batch;
 
-    decltype(monad::log::logger_t::get_logger()) logger =
-        monad::log::logger_t::get_logger("trie_db_logger");
+    quill::Logger *logger;
 
     ////////////////////////////////////////////////////////////////////
     // Constructor & Destructor
@@ -167,6 +168,7 @@ struct RocksTrieDB : public Db
         , accounts_trie(db, batch, cfs[1], cfs[2])
         , storage_trie(db, batch, cfs[3], cfs[4])
         , block_history_size(block_history_size)
+        , logger(quill::get_logger("trie_db_logger"))
     {
         MONAD_DEBUG_ASSERT(
             std::holds_alternative<Writable>(permission) ||
@@ -268,7 +270,7 @@ struct RocksTrieDB : public Db
             // this is not a critical error in production, we can continue
             // executing with the current database while someone
             // investigates
-            MONAD_LOG_ERROR(
+            QUILL_LOG_ERROR(
                 logger,
                 "Unable to save block_number {} for {} error={}",
                 block_number,

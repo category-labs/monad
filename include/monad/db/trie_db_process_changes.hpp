@@ -2,11 +2,11 @@
 
 #include <monad/config.hpp>
 #include <monad/db/trie_db_read_account.hpp>
-#include <monad/logging/monad_log.hpp>
 #include <monad/state/state_changes.hpp>
 #include <monad/trie/update.hpp>
 
 #include <ethash/keccak.hpp>
+#include <quill/Quill.h>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -43,8 +43,8 @@ void trie_db_process_changes(
         std::ranges::sort(
             storage_trie_updates, std::less<>{}, trie::get_update_key);
 
-        MONAD_LOG_INFO(
-            monad::log::logger_t::get_logger("trie_db_logger"),
+        QUILL_LOG_INFO(
+            quill::get_logger("trie_db_logger"),
             "STORAGE_UPDATES({}) account={} {}",
             storage_trie_updates.size(),
             u.first,
@@ -96,8 +96,8 @@ void trie_db_process_changes(
     if (!account_trie_updates.empty()) {
         std::ranges::sort(
             account_trie_updates, std::less<>{}, trie::get_update_key);
-        MONAD_LOG_INFO(
-            monad::log::logger_t::get_logger("trie_db_logger"),
+        QUILL_LOG_INFO(
+            quill::get_logger("trie_db_logger"),
             "ACCOUNT_UPDATES({}) {}",
             account_trie_updates.size(),
             account_trie_updates);
@@ -152,8 +152,8 @@ void trie_db_process_changes(
                 std::ranges::sort(
                     storage_trie_updates, std::less<>{}, trie::get_update_key);
 
-                MONAD_LOG_INFO(
-                    monad::log::logger_t::get_logger("trie_db_logger"),
+                QUILL_LOG_INFO(
+                    quill::get_logger("trie_db_logger"),
                     "STORAGE_UPDATES({}) account={} {}",
                     storage_trie_updates.size(),
                     addr,
@@ -210,8 +210,8 @@ void trie_db_process_changes(
     if (!account_trie_updates.empty()) {
         std::ranges::sort(
             account_trie_updates, std::less<>{}, trie::get_update_key);
-        MONAD_LOG_INFO(
-            monad::log::logger_t::get_logger("trie_db_logger"),
+        QUILL_LOG_INFO(
+            quill::get_logger("trie_db_logger"),
             "ACCOUNT_UPDATES({}) {}",
             account_trie_updates.size(),
             account_trie_updates);

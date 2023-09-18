@@ -151,12 +151,7 @@ add_library(
   "src/monad/fiber/algorithm.cpp"
   # logging
   "include/monad/logging/config.hpp"
-  "include/monad/logging/fake_logger.hpp"
-  "include/monad/logging/fake_log_macros.hpp"
   "include/monad/logging/formatter.hpp"
-  "include/monad/logging/monad_log.hpp"
-  "include/monad/logging/quill_logger.hpp"
-  "include/monad/logging/quill_log_macros.hpp"
   # rlp
   "include/monad/rlp/decode.hpp"
   "include/monad/rlp/decode_helpers.hpp"

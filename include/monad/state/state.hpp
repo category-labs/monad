@@ -6,11 +6,13 @@
 #include <monad/core/int.hpp>
 #include <monad/core/receipt.hpp>
 
-#include <monad/logging/monad_log.hpp>
 #include <monad/state/config.hpp>
 #include <monad/state/state_changes.hpp>
 
+#include <monad/logging/formatter.hpp>
+
 #include <ethash/keccak.hpp>
+#include <quill/Quill.h>
 
 #include <bit>
 #include <vector>
@@ -32,8 +34,7 @@ struct State
         TBlockCache &block_cache_{};
         unsigned int txn_id_{};
 
-        decltype(monad::log::logger_t::get_logger()) logger =
-            monad::log::logger_t::get_logger("change_set_logger");
+        quill::Logger *logger_;
 
         ChangeSet(
             unsigned int i, typename TAccountState::ChangeSet &&a,
@@ -44,33 +45,34 @@ struct State
             , code_{std::move(c)}
             , block_cache_{b}
             , txn_id_{i}
+            , logger_{quill::get_logger("change_set_logger")}
         {
         }
 
         void add_txn_award(uint256_t const &a)
         {
-            MONAD_LOG_DEBUG(logger, "add_txn_award: {}", a);
+            QUILL_LOG_DEBUG(logger_, "add_txn_award: {}", a);
             gas_award_ += a;
         }
 
         unsigned int txn_id() const noexcept { return txn_id_; }
         void create_account(address_t const &a) noexcept
         {
-            MONAD_LOG_DEBUG(logger, "create_account: {}", a);
+            QUILL_LOG_DEBUG(logger_, "create_account: {}", a);
             accounts_.create_account(a);
         }
 
         // EVMC Host Interface
         [[nodiscard]] bool account_exists(address_t const &a) const
         {
-            MONAD_LOG_DEBUG(logger, "account_exists: {}", a);
+            QUILL_LOG_DEBUG(logger_, "account_exists: {}", a);
             return accounts_.account_exists(a);
         }
 
         // EVMC Host Interface
         evmc_access_status access_account(address_t const &a) noexcept
         {
-            MONAD_LOG_DEBUG(logger, "access_account: {}", a);
+            QUILL_LOG_DEBUG(logger_, "access_account: {}", a);
             return accounts_.access_account(a);
         }
 
@@ -82,11 +84,11 @@ struct State
 
         void set_balance(address_t const &a, uint256_t const &new_balance)
         {
-            auto const previous_balance =
+            [[maybe_unused]] auto const previous_balance =
                 intx::be::load<monad::uint256_t>(get_balance(a));
 
-            MONAD_LOG_DEBUG(
-                logger,
+            QUILL_LOG_DEBUG(
+                logger_,
                 "set_balance: {} = {}, ({}{})",
                 a,
                 intx::to_string(new_balance, 16),
@@ -99,38 +101,38 @@ struct State
 
         [[nodiscard]] auto get_nonce(address_t const &a) const noexcept
         {
-            MONAD_LOG_DEBUG(logger, "get_nonce: {}", a);
+            QUILL_LOG_DEBUG(logger_, "get_nonce: {}", a);
             return accounts_.get_nonce(a);
         }
 
         void set_nonce(address_t const &a, uint64_t nonce) noexcept
         {
-            MONAD_LOG_DEBUG(logger, "set_nonce: {} = {}", a, nonce);
+            QUILL_LOG_DEBUG(logger_, "set_nonce: {} = {}", a, nonce);
             accounts_.set_nonce(a, nonce);
         }
 
         // EVMC Host Interface
         [[nodiscard]] bytes32_t get_code_hash(address_t const &a) const noexcept
         {
-            MONAD_LOG_DEBUG(logger, "get_code_hash: {}", a);
+            QUILL_LOG_DEBUG(logger_, "get_code_hash: {}", a);
             return accounts_.get_code_hash(a);
         }
 
         [[nodiscard]] bool selfdestruct(address_t const &a, address_t const &b)
         {
-            MONAD_LOG_DEBUG(logger, "selfdestruct: {}, {}", a, b);
+            QUILL_LOG_DEBUG(logger_, "selfdestruct: {}, {}", a, b);
             return accounts_.selfdestruct(a, b);
         }
 
         void destruct_suicides()
         {
-            MONAD_LOG_DEBUG(logger, "{}", "destruct_suicides");
+            QUILL_LOG_DEBUG(logger_, "{}", "destruct_suicides");
             accounts_.destruct_suicides();
         }
 
         void destruct_touched_dead()
         {
-            MONAD_LOG_DEBUG(logger, "{}", "destruct_touched_dead");
+            QUILL_LOG_DEBUG(logger_, "{}", "destruct_touched_dead");
             accounts_.destruct_touched_dead();
         }
 
@@ -143,7 +145,7 @@ struct State
         evmc_access_status
         access_storage(address_t const &a, bytes32_t const &key)
         {
-            MONAD_LOG_DEBUG(logger, "access_storage: {}, {}", a, key);
+            QUILL_LOG_DEBUG(logger_, "access_storage: {}, {}", a, key);
             return storage_.access_storage(a, key);
         }
 
@@ -151,7 +153,7 @@ struct State
         [[nodiscard]] bytes32_t
         get_storage(address_t const &a, bytes32_t const &key) const noexcept
         {
-            MONAD_LOG_DEBUG(logger, "get_storage: {}, {}", a, key);
+            QUILL_LOG_DEBUG(logger_, "get_storage: {}, {}", a, key);
             return storage_.get_storage(a, key);
         }
 
@@ -159,14 +161,14 @@ struct State
         [[nodiscard]] evmc_storage_status set_storage(
             address_t const &a, bytes32_t const &key, bytes32_t const &value)
         {
-            MONAD_LOG_DEBUG(logger, "set_storage: {}, {} = {}", a, key, value);
+            QUILL_LOG_DEBUG(logger_, "set_storage: {}, {} = {}", a, key, value);
             return storage_.set_storage(a, key, value);
         }
 
         // Account contract accesses
         void set_code(address_t const &a, byte_string const &c)
         {
-            MONAD_LOG_DEBUG(logger, "set_code: {} = {}", a, evmc::hex(c));
+            QUILL_LOG_DEBUG(logger_, "set_code: {} = {}", a, evmc::hex(c));
             auto const code_hash = std::bit_cast<monad::bytes32_t const>(
                 ethash::keccak256(c.data(), c.size()));
 
@@ -195,7 +197,7 @@ struct State
 
         void revert() noexcept
         {
-            MONAD_LOG_DEBUG(logger, "{}", "revert");
+            QUILL_LOG_DEBUG(logger_, "{}", "revert");
             accounts_.revert();
             storage_.revert();
             code_.revert();
@@ -233,8 +235,7 @@ struct State
     TDatabase &db_{};
     unsigned int current_txn_{};
 
-    decltype(monad::log::logger_t::get_logger()) logger =
-        monad::log::logger_t::get_logger("state_logger");
+    quill::Logger *logger_;
 
     State(
         TAccountState &a, TValueState &s, TCodeState &c, TBlockCache &bc,
@@ -244,12 +245,13 @@ struct State
         , code_{c}
         , block_cache_{bc}
         , db_{db}
+        , logger_{quill::get_logger("state_logger")}
     {
     }
 
     void apply_reward(address_t const &a, uint256_t const &reward)
     {
-        MONAD_LOG_DEBUG(logger, "apply_reward {} {}", a, reward);
+        QUILL_LOG_DEBUG(logger_, "apply_reward {} {}", a, reward);
         accounts_.apply_reward(a, reward);
     }
 
@@ -285,12 +287,12 @@ struct State
 
     void merge_changes(ChangeSet &c)
     {
-        MONAD_LOG_DEBUG(logger, "Account Changeset: {}", c.accounts_.changed_);
+        QUILL_LOG_DEBUG(logger_, "Account Changeset: {}", c.accounts_.changed_);
 
-        MONAD_LOG_DEBUG(
-            logger, "Storage Changeset: {}", c.storage_.touched_.storage_);
+        QUILL_LOG_DEBUG(
+            logger_, "Storage Changeset: {}", c.storage_.touched_.storage_);
 
-        MONAD_LOG_DEBUG(logger, "Code Changeset: {}", c.code_.code_);
+        QUILL_LOG_DEBUG(logger_, "Code Changeset: {}", c.code_.code_);
 
         accounts_.merge_changes(c.accounts_);
         storage_.merge_touched(c.storage_);

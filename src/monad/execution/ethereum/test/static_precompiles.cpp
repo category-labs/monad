@@ -7,8 +7,6 @@
 #include <monad/execution/precompiles.hpp>
 #include <monad/execution/test/fakes.hpp>
 
-#include <monad/logging/monad_log.hpp>
-
 #include <monad/core/address.hpp>
 
 using namespace evmc::literals;

@@ -3,8 +3,9 @@
 #include <gtest/gtest.h>
 
 #include <monad/core/assert.h>
-#include <monad/logging/monad_log.hpp>
 #include <monad/test/config.hpp>
+
+#include <quill/Quill.h>
 
 MONAD_TEST_NAMESPACE_BEGIN
 
@@ -13,15 +14,24 @@ class Environment : public ::testing::Environment
 public:
     void SetUp() override
     {
-        monad::log::logger_t::start();
+        quill::start();
 
-        (void)monad::log::logger_t::create_logger("trie_db_logger");
-        (void)monad::log::logger_t::create_logger("rocks_db_logger");
+        auto *trie_db_logger = quill::create_logger("trie_db_logger");
+        auto *rocks_db_logger = quill::create_logger("rocks_db_logger");
+        auto *block_logger = quill::create_logger("block_logger");
+        auto *evmone_baseline_interpreter_logger =
+            quill::create_logger("evmone_baseline_interpreter_logger");
+        auto *state_logger = quill::create_logger("state_logger");
+        auto *change_set_logger = quill::create_logger("change_set_logger");
+        auto *txn_logger = quill::create_logger("txn_logger");
 
-        monad::log::logger_t::set_log_level(
-            "trie_db_logger", monad::log::level_t::Info);
-        monad::log::logger_t::set_log_level(
-            "rocks_db_logger", monad::log::level_t::Info);
+        MONAD_DEBUG_ASSERT(trie_db_logger);
+        MONAD_DEBUG_ASSERT(rocks_db_logger);
+        MONAD_DEBUG_ASSERT(block_logger);
+        MONAD_DEBUG_ASSERT(evmone_baseline_interpreter_logger);
+        MONAD_DEBUG_ASSERT(state_logger);
+        MONAD_DEBUG_ASSERT(change_set_logger);
+        MONAD_DEBUG_ASSERT(txn_logger);
     }
 };
 

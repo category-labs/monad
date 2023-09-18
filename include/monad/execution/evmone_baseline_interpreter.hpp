@@ -4,7 +4,6 @@
 #include <monad/core/concepts.hpp>
 
 #include <monad/execution/config.hpp>
-#include <monad/logging/monad_log.hpp>
 
 #include <evmone/baseline.hpp>
 
@@ -21,6 +20,7 @@
 
 #ifdef EVMONE_TRACING
     #include <evmone/tracing.hpp>
+    #include <quill/Quill.h>
     #include <sstream>
 #endif
 
@@ -35,9 +35,6 @@ struct EVMOneBaselineInterpreter
     static evmc::Result
     execute(TEvmHost *h, evmc_message const &m, byte_string_view code)
     {
-        [[maybe_unused]] decltype(monad::log::logger_t::get_logger()) logger =
-            monad::log::logger_t::get_logger(
-                "evmone_baseline_interpreter_logger");
         evmc::Result result{
             evmc_result{.status_code = EVMC_SUCCESS, .gas_left = m.gas}};
         if (code.empty()) {
@@ -63,7 +60,10 @@ struct EVMOneBaselineInterpreter
         result = evmc::Result{evmone::baseline::execute(v, m.gas, *es, ca)};
 
 #ifdef EVMONE_TRACING
-        MONAD_LOG_DEBUG(logger, "{}", instruction_trace_string_stream.str());
+        QUILL_LOG_DEBUG(
+            quill::get_logger("evmone_baseline_interpreter_logger"),
+            "{}",
+            instruction_trace_string_stream.str());
 #endif
         return result;
     }

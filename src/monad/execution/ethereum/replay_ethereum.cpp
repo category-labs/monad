@@ -21,14 +21,15 @@
 
 #include <monad/execution/test/fakes.hpp>
 
-#include <monad/logging/monad_log.hpp>
-
 #include <monad/state/account_state.hpp>
 #include <monad/state/code_state.hpp>
 #include <monad/state/state.hpp>
 #include <monad/state/value_state.hpp>
 
+#include <monad/logging/formatter.hpp>
+
 #include <CLI/CLI.hpp>
+#include <quill/Quill.h>
 
 #include <filesystem>
 
@@ -157,7 +158,7 @@ int main(int argc, char *argv[])
 
     monad::block_num_t start_block_number = db.starting_block_number;
 
-    MONAD_LOG_INFO(
+    QUILL_LOG_INFO(
         main_logger,
         "Running with block_db = {}, state_db = {}, block_history_size = {}, "
         "(inferred) start_block_number = {}, finish block number = {}",
@@ -205,7 +206,7 @@ int main(int argc, char *argv[])
         std::chrono::duration_cast<std::chrono::milliseconds>(
             finished_time - start_time);
 
-    MONAD_LOG_INFO(
+    QUILL_LOG_INFO(
         main_logger,
         "Finish running, status = {}, finish(stopped) block number = {}, "
         "number of blocks run = {}, time_elapsed = {}",

@@ -11,9 +11,10 @@
 #include <monad/execution/execution_model.hpp>
 #include <monad/execution/transaction_processor_data.hpp>
 
-#include <monad/logging/monad_log.hpp>
+#include <monad/logging/formatter.hpp>
 
 #include <nlohmann/json.hpp>
+#include <quill/Quill.h>
 
 #include <test_resource_data.h>
 
@@ -63,33 +64,17 @@ public:
     }
 
     [[nodiscard]] bool verify_root_hash(
-        BlockHeader const &block_header, bytes32_t transactions_root,
-        bytes32_t receipts_root, bytes32_t const state_root,
-        block_num_t current_block_number) const
+        BlockHeader const &block_header, bytes32_t /*transactions_root*/,
+        bytes32_t /*receipts_root*/, bytes32_t const state_root) const
     {
-        auto *block_logger = log::logger_t::get_logger("block_logger");
-
-        MONAD_LOG_INFO(block_logger, "Block {}", current_block_number);
-
-        MONAD_LOG_INFO(
-            block_logger,
-            "Computed Transaction Root: {}, Expected Transaction Root: "
-            "{}",
-            transactions_root,
-            block_header.transactions_root);
-        MONAD_LOG_INFO(
-            block_logger,
-            "Computed Receipt Root: {}, Expected Receipt Root: {}",
-            receipts_root,
-            block_header.receipts_root);
-        MONAD_LOG_INFO(
-            block_logger,
+        // TODO: only check for state root hash for now (we don't have receipt
+        // and transaction trie building algo yet)
+        QUILL_LOG_INFO(
+            quill ::get_logger("block_logger"),
             "Computed State Root: {}, Expected State Root: {}",
             state_root,
             block_header.state_root);
 
-        // TODO: only check for state root hash for now (we don't have receipt
-        // and transaction trie building algo yet)
         return state_root == block_header.state_root;
     }
 
@@ -154,8 +139,7 @@ public:
                         block.header,
                         transactions_root,
                         receipts_root,
-                        state.get_state_hash(),
-                        current_block_number)) {
+                        state.get_state_hash())) {
                     return Result{
                         Status::WRONG_STATE_ROOT, current_block_number - 1u};
                 }

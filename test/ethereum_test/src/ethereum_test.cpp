@@ -1,8 +1,6 @@
 #include <ethereum_test.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 
-#include <monad/logging/monad_log.hpp>
-
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/test/dump_state_from_db.hpp>
@@ -10,6 +8,7 @@
 #include <test_resource_data.h>
 
 #include <gtest/gtest.h>
+#include <quill/Quill.h>
 
 #include <algorithm>
 #include <iostream>
@@ -227,7 +226,7 @@ StateTransitionTest EthereumTests::load_state_test(
          json_test.at("post").items()) {
         auto maybe_fork_index = to_fork_index(revision_name);
         if (!maybe_fork_index.has_value()) {
-            MONAD_LOG_ERROR(
+            QUILL_LOG_ERROR(
                 quill::get_logger("ethereum_test_logger"),
                 "skipping post state in {}:{}:{} due to invalid "
                 "fork index {}",
@@ -268,7 +267,6 @@ StateTransitionTest EthereumTests::load_state_test(
 void EthereumTests::run_state_test(
     StateTransitionTest const &test, nlohmann::json const &json)
 {
-    auto *logger = quill::get_logger("ethereum_test_logger");
     for (auto const &[fork_index, fork_name, expectations] : test.cases) {
         for (size_t case_index = 0; case_index != expectations.size();
              ++case_index) {
@@ -311,7 +309,9 @@ void EthereumTests::run_state_test(
             {
                 monad::state::State state{bs, db, fake_block_db};
 
-                MONAD_LOG_INFO(logger, "Starting to load state from json");
+                QUILL_LOG_INFO(
+                    quill::get_logger("ethereum_test_logger"),
+                    "Starting to load state from json");
 
                 load_state_from_json(j_t.at("pre"), state);
                 merge(bs.state, state.state_);
@@ -320,8 +320,10 @@ void EthereumTests::run_state_test(
 
             auto block_header = j_t.at("env").get<monad::BlockHeader>();
 
-            MONAD_LOG_INFO(
-                logger, "Starting to execute transaction {}", case_index);
+            QUILL_LOG_INFO(
+                quill::get_logger("ethereum_test_logger"),
+                "Starting to execute transaction {}",
+                case_index);
 
             monad::state::State state{bs, db, fake_block_db};
             auto maybe_receipt =
@@ -331,12 +333,12 @@ void EthereumTests::run_state_test(
             merge(bs.code, state.code_);
             db.commit(bs.state, bs.code);
 
-            MONAD_LOG_INFO(
-                logger,
+            QUILL_LOG_INFO(
+                quill::get_logger("ethereum_test_logger"),
                 "post_state: {}",
                 monad::test::dump_state_from_db(db).dump());
-            MONAD_LOG_INFO(
-                logger,
+            QUILL_LOG_INFO(
+                quill::get_logger("ethereum_test_logger"),
                 "finished transaction index: {} revision: {}, state_root: {}",
                 case_index,
                 fork_name,

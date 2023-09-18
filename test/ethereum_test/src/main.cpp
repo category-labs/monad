@@ -26,23 +26,18 @@ namespace
 int main(int argc, char *argv[])
 {
 
-    auto *ethereum_test_logger =
-        monad::log::logger_t::create_logger("ethereum_test_logger");
-    auto *trie_db_logger =
-        monad::log::logger_t::create_logger("trie_db_logger");
-    auto *change_set_logger =
-        monad::log::logger_t::create_logger("change_set_logger");
+    auto *ethereum_test_logger = quill::create_logger("ethereum_test_logger");
+    auto *trie_db_logger = quill::create_logger("trie_db_logger");
+    auto *change_set_logger = quill::create_logger("change_set_logger");
     auto *evmone_baseline_interpreter_logger =
-        monad::log::logger_t::create_logger(
-            "evmone_baseline_interpreter_logger");
-    auto *state_logger = monad::log::logger_t::create_logger("state_logger");
+        quill::create_logger("evmone_baseline_interpreter_logger");
+    auto *state_logger = quill::create_logger("state_logger");
 
-    monad::log::level_t ethereum_test_log_level = quill::LogLevel::None;
-    monad::log::level_t trie_db_log_level = quill::LogLevel::None;
-    monad::log::level_t change_set_log_level = quill::LogLevel::None;
-    monad::log::level_t evmone_baseline_interpreter_log_level =
-        quill::LogLevel::None;
-    monad::log::level_t state_log_level = quill::LogLevel::None;
+    auto ethereum_test_log_level = quill::LogLevel::None;
+    auto trie_db_log_level = quill::LogLevel::None;
+    auto change_set_log_level = quill::LogLevel::None;
+    auto evmone_baseline_interpreter_log_level = quill::LogLevel::None;
+    auto state_log_level = quill::LogLevel::None;
     std::optional<size_t> fork_index = std::nullopt;
     std::optional<size_t> txn_index = std::nullopt;
 
@@ -95,16 +90,13 @@ int main(int argc, char *argv[])
 
     CLI11_PARSE(app, argc, argv);
 
-    monad::log::logger_t::set_log_level(
-        "ethereum_test_logger", ethereum_test_log_level);
-    monad::log::logger_t::set_log_level(
-        "change_set_logger", change_set_log_level);
-    monad::log::logger_t::set_log_level(
-        "evmone_baseline_interpreter_logger",
+    ethereum_test_logger->set_log_level(ethereum_test_log_level);
+    change_set_logger->set_log_level(change_set_log_level);
+    evmone_baseline_interpreter_logger->set_log_level(
         evmone_baseline_interpreter_log_level);
-    monad::log::logger_t::set_log_level("trie_db_logger", trie_db_log_level);
-    monad::log::logger_t::set_log_level("state_logger", state_log_level);
-    monad::log::logger_t::start();
+    trie_db_logger->set_log_level(trie_db_log_level);
+    state_logger->set_log_level(state_log_level);
+    quill::start(true);
 
     // only worrying about GeneralStateTests folder for now
     monad::test::EthereumTests::register_test_files(
@@ -115,7 +107,7 @@ int main(int argc, char *argv[])
     int return_code = RUN_ALL_TESTS();
 
     if (::testing::UnitTest::GetInstance()->test_to_run_count() == 0) {
-        MONAD_LOG_ERROR(quill::get_logger(), "No tests were run.");
+        QUILL_LOG_ERROR(quill::get_logger(), "No tests were run.");
         return_code = -1;
     }
 

@@ -41,8 +41,6 @@ struct State
     uint256_t gas_award_;
     std::vector<Receipt::Log> logs_;
 
-    quill::Logger *logger_;
-
     explicit State(BlockState<Mutex> &b, Db &d, TBlockCache &cache)
         : bs_{b}
         , db_{d}
@@ -55,14 +53,13 @@ struct State
         , total_selfdestructs_{}
         , gas_award_{}
         , logs_{}
-        , logger_(quill::get_logger("state_logger"))
     {
     }
 
     // EVMC Host Interface
     evmc_access_status access_account(address_t const &address)
     {
-        QUILL_LOG_DEBUG(logger_, "access_account: {}", address);
+        LOG_DEBUG("access_account: {}", address);
 
         auto const [_, inserted] = accessed_.insert(address);
         if (inserted) {
@@ -74,7 +71,7 @@ struct State
     // EVMC Host Interface
     [[nodiscard]] bool account_exists(address_t const &address)
     {
-        QUILL_LOG_DEBUG(logger_, "account_exists: {}", address);
+        LOG_DEBUG("account_exists: {}", address);
 
         auto const account = read_account<Mutex>(address, state_, bs_, db_);
 
@@ -83,7 +80,7 @@ struct State
 
     void create_account(address_t const &address)
     {
-        QUILL_LOG_DEBUG(logger_, "create_account: {}", address);
+        LOG_DEBUG("create_account: {}", address);
 
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
         MONAD_DEBUG_ASSERT(!account.has_value());
@@ -112,8 +109,7 @@ struct State
             std::numeric_limits<uint256_t>::max() - delta >=
             account.value().balance);
 
-        QUILL_LOG_DEBUG(
-            logger_,
+        LOG_DEBUG(
             "add_to_balance {} = {} + {}",
             address,
             account.value().balance,
@@ -133,8 +129,7 @@ struct State
 
         MONAD_DEBUG_ASSERT(delta <= account.value().balance);
 
-        QUILL_LOG_DEBUG(
-            logger_,
+        LOG_DEBUG(
             "subtract_from_balance {} = {} - {}",
             address,
             account.value().balance,
@@ -146,7 +141,7 @@ struct State
 
     [[nodiscard]] uint64_t get_nonce(address_t const &address) noexcept
     {
-        QUILL_LOG_DEBUG(logger_, "get_nonce: {}", address);
+        LOG_DEBUG("get_nonce: {}", address);
 
         auto const account = read_account<Mutex>(address, state_, bs_, db_);
         if (MONAD_LIKELY(account.has_value())) {
@@ -157,7 +152,7 @@ struct State
 
     void set_nonce(address_t const &address, uint64_t const nonce)
     {
-        QUILL_LOG_DEBUG(logger_, "set_nonce: {} = {}", address, nonce);
+        LOG_DEBUG("set_nonce: {} = {}", address, nonce);
 
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
         MONAD_DEBUG_ASSERT(account.has_value());
@@ -167,7 +162,7 @@ struct State
     // EVMC Host Interface
     [[nodiscard]] bytes32_t get_code_hash(address_t const &address)
     {
-        QUILL_LOG_DEBUG(logger_, "get_code_hash: {}", address);
+        LOG_DEBUG("get_code_hash: {}", address);
 
         auto const account = read_account<Mutex>(address, state_, bs_, db_);
         if (MONAD_LIKELY(account.has_value())) {
@@ -187,7 +182,7 @@ struct State
     [[nodiscard]] bool
     selfdestruct(address_t const &address, address_t const &b) noexcept
     {
-        QUILL_LOG_DEBUG(logger_, "selfdestruct: {}, {}", address, b);
+        LOG_DEBUG("selfdestruct: {}, {}", address, b);
 
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
 
@@ -209,7 +204,7 @@ struct State
 
     void destruct_touched_dead() noexcept
     {
-        QUILL_LOG_DEBUG(logger_, "{}", "destruct_touched_dead");
+        LOG_DEBUG("{}", "destruct_touched_dead");
 
         for (auto const &touched : touched_) {
             auto &account = read_account<Mutex>(touched, state_, bs_, db_);
@@ -223,7 +218,7 @@ struct State
     evmc_access_status
     access_storage(address_t const &address, bytes32_t const &key) noexcept
     {
-        QUILL_LOG_DEBUG(logger_, "access_storage: {}, {}", address, key);
+        LOG_DEBUG("access_storage: {}, {}", address, key);
 
         auto const &[_, inserted] = accessed_storage_[address].insert(key);
         if (inserted) {
@@ -236,7 +231,7 @@ struct State
     [[nodiscard]] bytes32_t
     get_storage(address_t const &address, bytes32_t const &key) noexcept
     {
-        QUILL_LOG_DEBUG(logger_, "get_storage: {}, {}", address, key);
+        LOG_DEBUG("get_storage: {}, {}", address, key);
 
         return read_storage<Mutex>(address, 0u, key, state_, bs_, db_).second;
     }
@@ -246,8 +241,7 @@ struct State
         address_t const &address, bytes32_t const &key,
         bytes32_t const &value) noexcept
     {
-        QUILL_LOG_DEBUG(
-            logger_, "set_storage: {}, {} = {}", address, key, value);
+        LOG_DEBUG("set_storage: {}, {} = {}", address, key, value);
 
         if (value == bytes32_t{}) {
             return zero_out_key(address, key);
@@ -354,7 +348,7 @@ struct State
 
     void set_code(address_t const &address, byte_string const &code)
     {
-        QUILL_LOG_DEBUG(logger_, "set_code: {} = {}", address, evmc::hex(code));
+        LOG_DEBUG("set_code: {} = {}", address, evmc::hex(code));
 
         auto const code_hash = std::bit_cast<monad::bytes32_t const>(
             ethash::keccak256(code.data(), code.size()));
@@ -383,7 +377,7 @@ struct State
 
     void add_txn_award(uint256_t const &reward)
     {
-        QUILL_LOG_DEBUG(logger_, "add_txn_award: {}", reward);
+        LOG_DEBUG("add_txn_award: {}", reward);
         gas_award_ += reward;
     }
 
@@ -394,7 +388,7 @@ struct State
 
     void touch(address_t const &a)
     {
-        QUILL_LOG_DEBUG(logger_, "touched {}", a);
+        LOG_DEBUG("touched {}", a);
         touched_.insert(a);
     }
     void merge(State &new_state)

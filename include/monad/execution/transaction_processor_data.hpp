@@ -60,8 +60,7 @@ struct alignas(64) TransactionProcessorFiberData
 
         [[maybe_unused]] auto const start_time =
             std::chrono::steady_clock::now();
-        QUILL_LOG_INFO(
-            quill::get_logger("txn_logger"),
+        LOG_INFO(
             "Start executing Transaction {}, from = {}, to = {}",
             id_,
             txn_.from,
@@ -70,8 +69,7 @@ struct alignas(64) TransactionProcessorFiberData
         auto const validity =
             p.validate(state_, txn_, bh_.base_fee_per_gas.value_or(0));
         if (!is_valid(validity)) {
-            QUILL_LOG_INFO(
-                quill::get_logger("txn_logger"),
+            LOG_INFO(
                 "Transaction {} invalid: {}",
                 id_,
                 std::to_underlying(validity));
@@ -87,8 +85,7 @@ struct alignas(64) TransactionProcessorFiberData
             bh_.base_fee_per_gas.value_or(0),
             bh_.beneficiary);
 
-        QUILL_LOG_INFO(
-            quill::get_logger("txn_logger"),
+        LOG_INFO(
             "Finish executing Transaction {}, time elapsed = {}",
             id_,
             std::chrono::duration_cast<std::chrono::milliseconds>(

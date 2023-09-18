@@ -38,7 +38,7 @@ function(monad_compile_options target)
   set_property(TARGET ${target} PROPERTY CXX_STANDARD 23)
   set_property(TARGET ${target} PROPERTY CXX_STANDARD_REQUIRED ON)
   target_compile_options(${target} PRIVATE -Wall -Wextra -Werror -Wconversion
-                                           -Wpedantic)
+                                           -Wpedantic -DQUILL_ROOT_LOGGER_ONLY)
   target_compile_options(
     ${target}
     PUBLIC $<$<CXX_COMPILER_ID:Clang>:-Wno-gnu-zero-variadic-macro-arguments>)

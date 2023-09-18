@@ -23,14 +23,12 @@ struct AllTxnBlockProcessor
     template <class TState, class TTraits, class TFiberData>
     [[nodiscard]] std::vector<Receipt> execute(TState &s, Block &b)
     {
-        auto *block_logger = log::logger_t::get_logger("block_logger");
         auto const start_time = std::chrono::steady_clock::now();
-        QUILL_LOG_INFO(
-            block_logger,
+        LOG_INFO(
             "Start executing Block {}, with {} transactions",
             b.header.number,
             b.transactions.size());
-        QUILL_LOG_DEBUG(block_logger, "BlockHeader Fields: {}", b.header);
+        LOG_DEBUG("BlockHeader Fields: {}", b.header);
 
         TTraits::transfer_balance_dao(s, b.header.number);
 
@@ -68,12 +66,11 @@ struct AllTxnBlockProcessor
         auto const elapsed_ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 finished_time - start_time);
-        QUILL_LOG_INFO(
-            block_logger,
+        LOG_INFO(
             "Finish executing Block {}, time elapsed = {}",
             b.header.number,
             elapsed_ms);
-        QUILL_LOG_DEBUG(block_logger, "Receipts: {}", r);
+        LOG_DEBUG("Receipts: {}", r);
 
         return r;
     }

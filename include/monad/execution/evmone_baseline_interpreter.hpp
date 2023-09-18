@@ -60,10 +60,7 @@ struct EVMOneBaselineInterpreter
         result = evmc::Result{evmone::baseline::execute(v, m.gas, *es, ca)};
 
 #ifdef EVMONE_TRACING
-        QUILL_LOG_DEBUG(
-            quill::get_logger("evmone_baseline_interpreter_logger"),
-            "{}",
-            instruction_trace_string_stream.str());
+        LOG_DEBUG("{}", instruction_trace_string_stream.str());
 #endif
         return result;
     }

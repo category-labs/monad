@@ -142,8 +142,6 @@ struct RocksTrieDB : public Db
     uint64_t const block_history_size;
     rocksdb::WriteBatch batch;
 
-    quill::Logger *logger;
-
     ////////////////////////////////////////////////////////////////////
     // Constructor & Destructor
     ////////////////////////////////////////////////////////////////////
@@ -168,7 +166,6 @@ struct RocksTrieDB : public Db
         , accounts_trie(db, batch, cfs[1], cfs[2])
         , storage_trie(db, batch, cfs[3], cfs[4])
         , block_history_size(block_history_size)
-        , logger(quill::get_logger("trie_db_logger"))
     {
         MONAD_DEBUG_ASSERT(
             std::holds_alternative<Writable>(permission) ||
@@ -270,8 +267,7 @@ struct RocksTrieDB : public Db
             // this is not a critical error in production, we can continue
             // executing with the current database while someone
             // investigates
-            QUILL_LOG_ERROR(
-                logger,
+            LOG_ERROR(
                 "Unable to save block_number {} for {} error={}",
                 block_number,
                 db_type(),

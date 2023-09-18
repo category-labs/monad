@@ -64,31 +64,9 @@ int main(int argc, char *argv[])
     uint64_t block_history_size = 1u;
     std::optional<monad::block_num_t> finish_block_number = std::nullopt;
 
-    monad::log::logger_t::start();
+    quill::start(true);
 
-    // create all the loggers needed for the program
-    auto *main_logger = monad::log::logger_t::create_logger("main_logger");
-    [[maybe_unused]] auto *block_logger =
-        monad::log::logger_t::create_logger("block_logger");
-    [[maybe_unused]] auto *txn_logger =
-        monad::log::logger_t::create_logger("txn_logger");
-    [[maybe_unused]] auto *state_logger =
-        monad::log::logger_t::create_logger("state_logger");
-    [[maybe_unused]] auto *change_set_logger =
-        monad::log::logger_t::create_logger("change_set_logger");
-    [[maybe_unused]] auto *evmone_baseline_interperter_logger =
-        monad::log::logger_t::create_logger(
-            "evmone_baseline_interpreter_logger");
-    [[maybe_unused]] auto *trie_db_logger =
-        monad::log::logger_t::create_logger("trie_db_logger");
-
-    auto main_log_level = monad::log::level_t::Info;
-    auto block_log_level = monad::log::level_t::Info;
-    auto txn_log_level = monad::log::level_t::Info;
-    auto state_log_level = monad::log::level_t::Info;
-    auto change_set_log_level = monad::log::level_t::Info;
-    auto evmone_baseline_interpreter_log_level = monad::log::level_t::Info;
-    auto trie_db_log_level = monad::log::level_t::Info;
+    auto log_level = quill::LogLevel::Info;
 
     cli.add_option("-b, --block_db", block_db_path, "block_db directory")
         ->required();
@@ -102,20 +80,7 @@ int main(int argc, char *argv[])
         "size of state_db block history");
     cli.add_option(
         "-f, --finish", finish_block_number, "1 pass the last executed block");
-
-    auto *log_levels = cli.add_subcommand("log_levels", "level of logging");
-    log_levels->add_option("--main", main_log_level, "Log level for main");
-    log_levels->add_option("--block", block_log_level, "Log level for block");
-    log_levels->add_option("--txn", txn_log_level, "Log level for transaction");
-    log_levels->add_option("--state", state_log_level, "Log level for state");
-    log_levels->add_option(
-        "--change_set", change_set_log_level, "Log level for change_set");
-    log_levels->add_option(
-        "--evmone",
-        evmone_baseline_interpreter_log_level,
-        "Log level for evmone interpreter");
-    log_levels->add_option(
-        "--trie_db", trie_db_log_level, "Log level for trie_db");
+    cli.add_option("--log_level", log_level, "level of logging");
 
     cli.parse(argc, argv);
 
@@ -137,16 +102,7 @@ int main(int argc, char *argv[])
     using transaction_trie_t = monad::fakeEmptyTransactionTrie;
     using receipt_trie_t = monad::fakeEmptyReceiptTrie;
 
-    monad::log::logger_t::set_log_level("main_logger", main_log_level);
-    monad::log::logger_t::set_log_level("block_logger", block_log_level);
-    monad::log::logger_t::set_log_level("txn_logger", txn_log_level);
-    monad::log::logger_t::set_log_level("state_logger", state_log_level);
-    monad::log::logger_t::set_log_level(
-        "change_set_logger", change_set_log_level);
-    monad::log::logger_t::set_log_level(
-        "evmone_baseline_interpreter_logger",
-        evmone_baseline_interpreter_log_level);
-    monad::log::logger_t::set_log_level("trie_db_logger", trie_db_log_level);
+    quill::get_root_logger()->set_log_level(log_level);
 
     block_db_t block_db(block_db_path);
     db_t db{
@@ -158,8 +114,7 @@ int main(int argc, char *argv[])
 
     monad::block_num_t start_block_number = db.starting_block_number;
 
-    QUILL_LOG_INFO(
-        main_logger,
+    LOG_INFO(
         "Running with block_db = {}, state_db = {}, block_history_size = {}, "
         "(inferred) start_block_number = {}, finish block number = {}",
         block_db_path,
@@ -206,8 +161,7 @@ int main(int argc, char *argv[])
         std::chrono::duration_cast<std::chrono::milliseconds>(
             finished_time - start_time);
 
-    QUILL_LOG_INFO(
-        main_logger,
+    LOG_INFO(
         "Finish running, status = {}, finish(stopped) block number = {}, "
         "number of blocks run = {}, time_elapsed = {}",
         static_cast<int>(result.status),

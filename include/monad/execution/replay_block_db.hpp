@@ -69,8 +69,7 @@ public:
     {
         // TODO: only check for state root hash for now (we don't have receipt
         // and transaction trie building algo yet)
-        QUILL_LOG_INFO(
-            quill ::get_logger("block_logger"),
+        LOG_INFO(
             "Computed State Root: {}, Expected State Root: {}",
             state_root,
             block_header.state_root);

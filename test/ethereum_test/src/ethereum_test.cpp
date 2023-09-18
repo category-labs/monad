@@ -226,8 +226,7 @@ StateTransitionTest EthereumTests::load_state_test(
          json_test.at("post").items()) {
         auto maybe_fork_index = to_fork_index(revision_name);
         if (!maybe_fork_index.has_value()) {
-            QUILL_LOG_ERROR(
-                quill::get_logger("ethereum_test_logger"),
+            LOG_ERROR(
                 "skipping post state in {}:{}:{} due to invalid "
                 "fork index {}",
                 suite_name,
@@ -309,9 +308,7 @@ void EthereumTests::run_state_test(
             {
                 monad::state::State state{bs, db, fake_block_db};
 
-                QUILL_LOG_INFO(
-                    quill::get_logger("ethereum_test_logger"),
-                    "Starting to load state from json");
+                LOG_INFO("Starting to load state from json");
 
                 load_state_from_json(j_t.at("pre"), state);
                 merge(bs.state, state.state_);
@@ -320,10 +317,7 @@ void EthereumTests::run_state_test(
 
             auto block_header = j_t.at("env").get<monad::BlockHeader>();
 
-            QUILL_LOG_INFO(
-                quill::get_logger("ethereum_test_logger"),
-                "Starting to execute transaction {}",
-                case_index);
+            LOG_INFO("Starting to execute transaction {}", case_index);
 
             monad::state::State state{bs, db, fake_block_db};
             auto maybe_receipt =
@@ -333,12 +327,9 @@ void EthereumTests::run_state_test(
             merge(bs.code, state.code_);
             db.commit(bs.state, bs.code);
 
-            QUILL_LOG_INFO(
-                quill::get_logger("ethereum_test_logger"),
-                "post_state: {}",
-                monad::test::dump_state_from_db(db).dump());
-            QUILL_LOG_INFO(
-                quill::get_logger("ethereum_test_logger"),
+            LOG_INFO(
+                "post_state: {}", monad::test::dump_state_from_db(db).dump());
+            LOG_INFO(
                 "finished transaction index: {} revision: {}, state_root: {}",
                 case_index,
                 fork_name,

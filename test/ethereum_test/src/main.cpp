@@ -26,18 +26,7 @@ namespace
 int main(int argc, char *argv[])
 {
 
-    auto *ethereum_test_logger = quill::create_logger("ethereum_test_logger");
-    auto *trie_db_logger = quill::create_logger("trie_db_logger");
-    auto *change_set_logger = quill::create_logger("change_set_logger");
-    auto *evmone_baseline_interpreter_logger =
-        quill::create_logger("evmone_baseline_interpreter_logger");
-    auto *state_logger = quill::create_logger("state_logger");
-
-    auto ethereum_test_log_level = quill::LogLevel::None;
-    auto trie_db_log_level = quill::LogLevel::None;
-    auto change_set_log_level = quill::LogLevel::None;
-    auto evmone_baseline_interpreter_log_level = quill::LogLevel::None;
-    auto state_log_level = quill::LogLevel::None;
+    auto log_level = quill::LogLevel::None;
     std::optional<size_t> fork_index = std::nullopt;
     std::optional<size_t> txn_index = std::nullopt;
 
@@ -60,26 +49,7 @@ int main(int argc, char *argv[])
 
     CLI::App app{"monad ethereum tests runner"};
 
-    auto *log_levels = app.add_subcommand("log_levels", "level of logging");
-    log_levels
-        ->add_option(
-            "--ethereum_test", ethereum_test_log_level, "Log level for block")
-        ->transform(CLI::CheckedTransformer(log_levels_map, CLI::ignore_case));
-    log_levels
-        ->add_option(
-            "--change_set", change_set_log_level, "Log level for change_set")
-        ->transform(CLI::CheckedTransformer(log_levels_map, CLI::ignore_case));
-    log_levels
-        ->add_option(
-            "--evmone",
-            evmone_baseline_interpreter_log_level,
-            "Log level for evmone interpreter")
-        ->transform(CLI::CheckedTransformer(log_levels_map, CLI::ignore_case));
-    log_levels
-        ->add_option("--trie_db", trie_db_log_level, "Log level for trie_db")
-
-        ->transform(CLI::CheckedTransformer(log_levels_map, CLI::ignore_case));
-    log_levels->add_option("--state", state_log_level, "Log level for state")
+    app.add_option("--log_level", log_level, "Logging level")
         ->transform(CLI::CheckedTransformer(log_levels_map, CLI::ignore_case));
 
     app.add_option("--fork", fork_index, "Fork to run unit tests for")
@@ -90,13 +60,9 @@ int main(int argc, char *argv[])
 
     CLI11_PARSE(app, argc, argv);
 
-    ethereum_test_logger->set_log_level(ethereum_test_log_level);
-    change_set_logger->set_log_level(change_set_log_level);
-    evmone_baseline_interpreter_logger->set_log_level(
-        evmone_baseline_interpreter_log_level);
-    trie_db_logger->set_log_level(trie_db_log_level);
-    state_logger->set_log_level(state_log_level);
     quill::start(true);
+
+    quill::get_root_logger()->set_log_level(log_level);
 
     // only worrying about GeneralStateTests folder for now
     monad::test::EthereumTests::register_test_files(
@@ -107,16 +73,11 @@ int main(int argc, char *argv[])
     int return_code = RUN_ALL_TESTS();
 
     if (::testing::UnitTest::GetInstance()->test_to_run_count() == 0) {
-        QUILL_LOG_ERROR(quill::get_logger(), "No tests were run.");
+        LOG_ERROR("No tests were run.");
         return_code = -1;
     }
 
     quill::flush();
-    quill::remove_logger(ethereum_test_logger);
-    quill::remove_logger(trie_db_logger);
-    quill::remove_logger(change_set_logger);
-    quill::remove_logger(evmone_baseline_interpreter_logger);
-    quill::remove_logger(state_logger);
 
     return return_code;
 }

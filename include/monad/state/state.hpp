@@ -34,8 +34,6 @@ struct State
         TBlockCache &block_cache_{};
         unsigned int txn_id_{};
 
-        quill::Logger *logger_;
-
         ChangeSet(
             unsigned int i, typename TAccountState::ChangeSet &&a,
             typename TValueState::ChangeSet &&s,
@@ -45,34 +43,33 @@ struct State
             , code_{std::move(c)}
             , block_cache_{b}
             , txn_id_{i}
-            , logger_{quill::get_logger("change_set_logger")}
         {
         }
 
         void add_txn_award(uint256_t const &a)
         {
-            QUILL_LOG_DEBUG(logger_, "add_txn_award: {}", a);
+            LOG_DEBUG("add_txn_award: {}", a);
             gas_award_ += a;
         }
 
         unsigned int txn_id() const noexcept { return txn_id_; }
         void create_account(address_t const &a) noexcept
         {
-            QUILL_LOG_DEBUG(logger_, "create_account: {}", a);
+            LOG_DEBUG("create_account: {}", a);
             accounts_.create_account(a);
         }
 
         // EVMC Host Interface
         [[nodiscard]] bool account_exists(address_t const &a) const
         {
-            QUILL_LOG_DEBUG(logger_, "account_exists: {}", a);
+            LOG_DEBUG("account_exists: {}", a);
             return accounts_.account_exists(a);
         }
 
         // EVMC Host Interface
         evmc_access_status access_account(address_t const &a) noexcept
         {
-            QUILL_LOG_DEBUG(logger_, "access_account: {}", a);
+            LOG_DEBUG("access_account: {}", a);
             return accounts_.access_account(a);
         }
 
@@ -87,8 +84,7 @@ struct State
             [[maybe_unused]] auto const previous_balance =
                 intx::be::load<monad::uint256_t>(get_balance(a));
 
-            QUILL_LOG_DEBUG(
-                logger_,
+            LOG_DEBUG(
                 "set_balance: {} = {}, ({}{})",
                 a,
                 intx::to_string(new_balance, 16),
@@ -101,38 +97,38 @@ struct State
 
         [[nodiscard]] auto get_nonce(address_t const &a) const noexcept
         {
-            QUILL_LOG_DEBUG(logger_, "get_nonce: {}", a);
+            LOG_DEBUG("get_nonce: {}", a);
             return accounts_.get_nonce(a);
         }
 
         void set_nonce(address_t const &a, uint64_t nonce) noexcept
         {
-            QUILL_LOG_DEBUG(logger_, "set_nonce: {} = {}", a, nonce);
+            LOG_DEBUG("set_nonce: {} = {}", a, nonce);
             accounts_.set_nonce(a, nonce);
         }
 
         // EVMC Host Interface
         [[nodiscard]] bytes32_t get_code_hash(address_t const &a) const noexcept
         {
-            QUILL_LOG_DEBUG(logger_, "get_code_hash: {}", a);
+            LOG_DEBUG("get_code_hash: {}", a);
             return accounts_.get_code_hash(a);
         }
 
         [[nodiscard]] bool selfdestruct(address_t const &a, address_t const &b)
         {
-            QUILL_LOG_DEBUG(logger_, "selfdestruct: {}, {}", a, b);
+            LOG_DEBUG("selfdestruct: {}, {}", a, b);
             return accounts_.selfdestruct(a, b);
         }
 
         void destruct_suicides()
         {
-            QUILL_LOG_DEBUG(logger_, "{}", "destruct_suicides");
+            LOG_DEBUG("{}", "destruct_suicides");
             accounts_.destruct_suicides();
         }
 
         void destruct_touched_dead()
         {
-            QUILL_LOG_DEBUG(logger_, "{}", "destruct_touched_dead");
+            LOG_DEBUG("{}", "destruct_touched_dead");
             accounts_.destruct_touched_dead();
         }
 
@@ -145,7 +141,7 @@ struct State
         evmc_access_status
         access_storage(address_t const &a, bytes32_t const &key)
         {
-            QUILL_LOG_DEBUG(logger_, "access_storage: {}, {}", a, key);
+            LOG_DEBUG("access_storage: {}, {}", a, key);
             return storage_.access_storage(a, key);
         }
 
@@ -153,7 +149,7 @@ struct State
         [[nodiscard]] bytes32_t
         get_storage(address_t const &a, bytes32_t const &key) const noexcept
         {
-            QUILL_LOG_DEBUG(logger_, "get_storage: {}, {}", a, key);
+            LOG_DEBUG("get_storage: {}, {}", a, key);
             return storage_.get_storage(a, key);
         }
 
@@ -161,14 +157,14 @@ struct State
         [[nodiscard]] evmc_storage_status set_storage(
             address_t const &a, bytes32_t const &key, bytes32_t const &value)
         {
-            QUILL_LOG_DEBUG(logger_, "set_storage: {}, {} = {}", a, key, value);
+            LOG_DEBUG("set_storage: {}, {} = {}", a, key, value);
             return storage_.set_storage(a, key, value);
         }
 
         // Account contract accesses
         void set_code(address_t const &a, byte_string const &c)
         {
-            QUILL_LOG_DEBUG(logger_, "set_code: {} = {}", a, evmc::hex(c));
+            LOG_DEBUG("set_code: {} = {}", a, evmc::hex(c));
             auto const code_hash = std::bit_cast<monad::bytes32_t const>(
                 ethash::keccak256(c.data(), c.size()));
 
@@ -197,7 +193,7 @@ struct State
 
         void revert() noexcept
         {
-            QUILL_LOG_DEBUG(logger_, "{}", "revert");
+            LOG_DEBUG("{}", "revert");
             accounts_.revert();
             storage_.revert();
             code_.revert();
@@ -235,8 +231,6 @@ struct State
     TDatabase &db_{};
     unsigned int current_txn_{};
 
-    quill::Logger *logger_;
-
     State(
         TAccountState &a, TValueState &s, TCodeState &c, TBlockCache &bc,
         TDatabase &db)
@@ -245,13 +239,12 @@ struct State
         , code_{c}
         , block_cache_{bc}
         , db_{db}
-        , logger_{quill::get_logger("state_logger")}
     {
     }
 
     void apply_reward(address_t const &a, uint256_t const &reward)
     {
-        QUILL_LOG_DEBUG(logger_, "apply_reward {} {}", a, reward);
+        LOG_DEBUG("apply_reward {} {}", a, reward);
         accounts_.apply_reward(a, reward);
     }
 
@@ -287,12 +280,11 @@ struct State
 
     void merge_changes(ChangeSet &c)
     {
-        QUILL_LOG_DEBUG(logger_, "Account Changeset: {}", c.accounts_.changed_);
+        LOG_DEBUG("Account Changeset: {}", c.accounts_.changed_);
 
-        QUILL_LOG_DEBUG(
-            logger_, "Storage Changeset: {}", c.storage_.touched_.storage_);
+        LOG_DEBUG("Storage Changeset: {}", c.storage_.touched_.storage_);
 
-        QUILL_LOG_DEBUG(logger_, "Code Changeset: {}", c.code_.code_);
+        LOG_DEBUG("Code Changeset: {}", c.code_.code_);
 
         accounts_.merge_changes(c.accounts_);
         storage_.merge_touched(c.storage_);

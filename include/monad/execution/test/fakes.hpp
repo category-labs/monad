@@ -404,9 +404,10 @@ namespace fake
             static inline uint64_t _create_address{};
             static constexpr void apply_block_award(TState &, Block const &) {}
             static constexpr uint256_t calculate_txn_award(
-                Transaction const &, uint64_t gas_cost, uint64_t gas_used)
+                Transaction const &, uint256_t const &gas_cost,
+                uint64_t gas_used)
             {
-                return uint256_t{gas_cost} * uint256_t{gas_used};
+                return gas_cost * uint256_t{gas_used};
             }
             static auto intrinsic_gas(Transaction const &)
             {
@@ -428,12 +429,13 @@ namespace fake
                 return r;
             }
             static constexpr TransactionValidationResult
-            validate_transaction(Transaction const &, uint64_t)
+            validate_transaction(Transaction const &, uint256_t const &)
             {
                 return TransactionValidationResult::Ok;
             }
 
-            static constexpr uint64_t gas_price(Transaction const &, uint64_t c)
+            static constexpr uint256_t
+            gas_price(Transaction const &, uint256_t const &c)
             {
                 return c;
             }

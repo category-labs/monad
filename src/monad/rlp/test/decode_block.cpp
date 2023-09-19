@@ -86,7 +86,7 @@ TEST(Rlp_Block, DecodeBlock46402)
 
     EXPECT_EQ(block.transactions[0].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[0].nonce, 3);
-    EXPECT_EQ(block.transactions[0].gas_price, 10000000000000);
+    EXPECT_EQ(block.transactions[0].max_fee_per_gas, 10000000000000);
     EXPECT_EQ(block.transactions[0].gas_limit, 24000);
     EXPECT_EQ(block.transactions[0].to, std::nullopt);
     EXPECT_EQ(block.transactions[0].amount, 0_u128);
@@ -187,7 +187,7 @@ TEST(Rlp_Block, DecodeBlock2730000)
 
     EXPECT_EQ(block.transactions[0].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[0].nonce, 1639528);
-    EXPECT_EQ(block.transactions[0].gas_price, 25000000000);
+    EXPECT_EQ(block.transactions[0].max_fee_per_gas, 25000000000);
     EXPECT_EQ(block.transactions[0].gas_limit, 90000);
     EXPECT_EQ(
         *block.transactions[0].to,
@@ -203,7 +203,7 @@ TEST(Rlp_Block, DecodeBlock2730000)
 
     EXPECT_EQ(block.transactions[1].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[1].nonce, 886728);
-    EXPECT_EQ(block.transactions[1].gas_price, 20000000000);
+    EXPECT_EQ(block.transactions[1].max_fee_per_gas, 20000000000);
     EXPECT_EQ(block.transactions[1].gas_limit, 90000);
     EXPECT_EQ(
         *block.transactions[1].to,
@@ -219,7 +219,7 @@ TEST(Rlp_Block, DecodeBlock2730000)
 
     EXPECT_EQ(block.transactions[2].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[2].nonce, 1639529);
-    EXPECT_EQ(block.transactions[2].gas_price, 25000000000);
+    EXPECT_EQ(block.transactions[2].max_fee_per_gas, 25000000000);
     EXPECT_EQ(block.transactions[2].gas_limit, 90000);
     EXPECT_EQ(
         *block.transactions[2].to,
@@ -235,7 +235,7 @@ TEST(Rlp_Block, DecodeBlock2730000)
 
     EXPECT_EQ(block.transactions[3].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[3].nonce, 886729);
-    EXPECT_EQ(block.transactions[3].gas_price, 20000000000);
+    EXPECT_EQ(block.transactions[3].max_fee_per_gas, 20000000000);
     EXPECT_EQ(block.transactions[3].gas_limit, 90000);
     EXPECT_EQ(
         *block.transactions[3].to,
@@ -314,7 +314,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
 
     EXPECT_EQ(block.transactions[0].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[0].nonce, 1639530);
-    EXPECT_EQ(block.transactions[0].gas_price, 25000000000);
+    EXPECT_EQ(block.transactions[0].max_fee_per_gas, 25000000000);
     EXPECT_EQ(block.transactions[0].gas_limit, 90000);
     EXPECT_EQ(
         *block.transactions[0].to,
@@ -330,7 +330,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
 
     EXPECT_EQ(block.transactions[1].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[1].nonce, 21);
-    EXPECT_EQ(block.transactions[1].gas_price, 20000000000);
+    EXPECT_EQ(block.transactions[1].max_fee_per_gas, 20000000000);
     EXPECT_EQ(block.transactions[1].gas_limit, 300000);
     EXPECT_EQ(
         *block.transactions[1].to,
@@ -349,7 +349,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
 
     EXPECT_EQ(block.transactions[2].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[2].nonce, 92940);
-    EXPECT_EQ(block.transactions[2].gas_price, 20000000000);
+    EXPECT_EQ(block.transactions[2].max_fee_per_gas, 20000000000);
     EXPECT_EQ(block.transactions[2].gas_limit, 39000);
     EXPECT_EQ(
         *block.transactions[2].to,
@@ -365,7 +365,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
 
     EXPECT_EQ(block.transactions[3].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[3].nonce, 886730);
-    EXPECT_EQ(block.transactions[3].gas_price, 20000000000);
+    EXPECT_EQ(block.transactions[3].max_fee_per_gas, 20000000000);
     EXPECT_EQ(block.transactions[3].gas_limit, 90000);
     EXPECT_EQ(
         *block.transactions[3].to,
@@ -381,7 +381,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
 
     EXPECT_EQ(block.transactions[4].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[4].nonce, 1639531);
-    EXPECT_EQ(block.transactions[4].gas_price, 25000000000);
+    EXPECT_EQ(block.transactions[4].max_fee_per_gas, 25000000000);
     EXPECT_EQ(block.transactions[4].gas_limit, 90000);
     EXPECT_EQ(
         *block.transactions[4].to,
@@ -397,7 +397,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
 
     EXPECT_EQ(block.transactions[5].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[5].nonce, 1639532);
-    EXPECT_EQ(block.transactions[5].gas_price, 25000000000);
+    EXPECT_EQ(block.transactions[5].max_fee_per_gas, 25000000000);
     EXPECT_EQ(block.transactions[5].gas_limit, 90000);
     EXPECT_EQ(
         *block.transactions[5].to,
@@ -413,7 +413,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
 
     EXPECT_EQ(block.transactions[6].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[6].nonce, 1639533);
-    EXPECT_EQ(block.transactions[6].gas_price, 25000000000);
+    EXPECT_EQ(block.transactions[6].max_fee_per_gas, 25000000000);
     EXPECT_EQ(block.transactions[6].gas_limit, 90000);
     EXPECT_EQ(
         *block.transactions[6].to,
@@ -617,8 +617,8 @@ TEST(Rlp_Block, DecodeBlock14000000)
 
     EXPECT_EQ(block.transactions[0].type, Transaction::Type::eip1559);
     EXPECT_EQ(block.transactions[0].nonce, 2760);
-    EXPECT_EQ(block.transactions[0].priority_fee, 8540000000);
-    EXPECT_EQ(block.transactions[0].gas_price, 291900000000);
+    EXPECT_EQ(block.transactions[0].max_priority_fee_per_gas, 8540000000);
+    EXPECT_EQ(block.transactions[0].max_fee_per_gas, 291900000000);
     EXPECT_EQ(block.transactions[0].gas_limit, 1395940);
     EXPECT_EQ(
         *block.transactions[0].to,
@@ -636,7 +636,7 @@ TEST(Rlp_Block, DecodeBlock14000000)
 
     EXPECT_EQ(block.transactions[1].type, Transaction::Type::eip155);
     EXPECT_EQ(block.transactions[1].nonce, 947217);
-    EXPECT_EQ(block.transactions[1].gas_price, 230000000000);
+    EXPECT_EQ(block.transactions[1].max_fee_per_gas, 230000000000);
     EXPECT_EQ(block.transactions[1].gas_limit, 207128);
     EXPECT_EQ(
         *block.transactions[1].to,

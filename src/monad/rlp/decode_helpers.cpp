@@ -165,7 +165,7 @@ decode_transaction_legacy(Transaction &txn, byte_string_view const enc)
 
     txn.type = Transaction::Type::eip155;
     payload = decode_unsigned<uint64_t>(txn.nonce, payload);
-    payload = decode_unsigned<uint64_t>(txn.gas_price, payload);
+    payload = decode_unsigned<uint256_t>(txn.max_fee_per_gas, payload);
     payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
     payload = decode_address(txn.to, payload);
     payload = decode_unsigned<uint128_t>(txn.amount, payload);
@@ -190,7 +190,7 @@ decode_transaction_eip2930(Transaction &txn, byte_string_view const enc)
     txn.sc.chain_id = uint64_t{};
     payload = decode_unsigned<uint64_t>(*txn.sc.chain_id, payload);
     payload = decode_unsigned<uint64_t>(txn.nonce, payload);
-    payload = decode_unsigned<uint64_t>(txn.gas_price, payload);
+    payload = decode_unsigned<uint256_t>(txn.max_fee_per_gas, payload);
     payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
     payload = decode_address(txn.to, payload);
     payload = decode_unsigned<uint128_t>(txn.amount, payload);
@@ -216,8 +216,8 @@ decode_transaction_eip1559(Transaction &txn, byte_string_view const enc)
     txn.sc.chain_id = uint64_t{};
     payload = decode_unsigned<uint64_t>(*txn.sc.chain_id, payload);
     payload = decode_unsigned<uint64_t>(txn.nonce, payload);
-    payload = decode_unsigned<uint64_t>(txn.priority_fee, payload);
-    payload = decode_unsigned<uint64_t>(txn.gas_price, payload);
+    payload = decode_unsigned<uint256_t>(txn.max_priority_fee_per_gas, payload);
+    payload = decode_unsigned<uint256_t>(txn.max_fee_per_gas, payload);
     payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
     payload = decode_address(txn.to, payload);
     payload = decode_unsigned<uint128_t>(txn.amount, payload);

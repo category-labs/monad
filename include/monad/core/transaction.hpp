@@ -40,7 +40,7 @@ struct Transaction
 
     SignatureAndChain sc{};
     uint64_t nonce{};
-    uint64_t gas_price{}; // max per gas fee
+    uint256_t max_fee_per_gas{}; // gas_price
     uint64_t gas_limit{};
     uint128_t amount{};
     std::optional<address_t> to{};
@@ -48,7 +48,7 @@ struct Transaction
     byte_string data{};
     Type type{};
     AccessList access_list{};
-    uint64_t priority_fee{};
+    uint256_t max_priority_fee_per_gas{};
 };
 
 static_assert(sizeof(Transaction::AccessEntry) == 48);
@@ -57,7 +57,7 @@ static_assert(alignof(Transaction::AccessEntry) == 8);
 static_assert(sizeof(Transaction::AccessList) == 24);
 static_assert(alignof(Transaction::AccessList) == 8);
 
-static_assert(sizeof(Transaction) == 248);
+static_assert(sizeof(Transaction) == 296);
 static_assert(alignof(Transaction) == 8);
 
 [[nodiscard]] std::optional<address_t> recover_sender(Transaction const &t);

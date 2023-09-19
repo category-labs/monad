@@ -33,8 +33,8 @@ struct SharedTransactionData
     monad::address_t sender;
     std::optional<monad::address_t> to;
     monad::Transaction::Type transaction_type;
-    uint64_t gas_price;
-    uint64_t priority_fee;
+    uint256_t max_fee_per_gas;
+    uint256_t max_priority_fee_per_gas;
 };
 
 struct Case

@@ -63,7 +63,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 
     static Transaction const t{
         .nonce = 25,
-        .gas_price = 10,
+        .max_fee_per_gas = 10,
         .gas_limit = 55'000,
         .from = from,
     };

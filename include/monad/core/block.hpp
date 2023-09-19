@@ -37,7 +37,7 @@ struct BlockHeader
 
     address_t beneficiary{};
 
-    std::optional<uint64_t> base_fee_per_gas{std::nullopt}; // EIP-1559
+    std::optional<uint256_t> base_fee_per_gas{std::nullopt}; // EIP-1559
     std::optional<bytes32_t> withdrawals_root{std::nullopt}; // EIP-4895
 };
 
@@ -49,10 +49,10 @@ struct Block
     std::optional<std::vector<Withdrawal>> withdrawals{std::nullopt};
 };
 
-static_assert(sizeof(BlockHeader) == 632);
+static_assert(sizeof(BlockHeader) == 656);
 static_assert(alignof(BlockHeader) == 8);
 
-static_assert(sizeof(Block) == 712);
+static_assert(sizeof(Block) == 736);
 static_assert(alignof(Block) == 8);
 
 MONAD_NAMESPACE_END

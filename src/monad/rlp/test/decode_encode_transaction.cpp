@@ -27,7 +27,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacy)
     const monad::Transaction t{
         .sc = {.r = r, .s = s}, // no chain_id in legacy transactions
         .nonce = 9,
-        .gas_price = price,
+        .max_fee_per_gas = price,
         .gas_limit = 21'000,
         .amount = amount,
         .to = to_addr};
@@ -50,7 +50,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacy)
     // Encode
     EXPECT_EQ(legacy_rlp_transaction, legacy_transaction);
     EXPECT_EQ(decoding.nonce, t.nonce);
-    EXPECT_EQ(decoding.gas_price, t.gas_price);
+    EXPECT_EQ(decoding.max_fee_per_gas, t.max_fee_per_gas);
     EXPECT_EQ(decoding.gas_limit, t.gas_limit);
     EXPECT_EQ(decoding.amount, t.amount);
     EXPECT_EQ(*decoding.to, *t.to);
@@ -74,7 +74,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacyNoTo)
     const monad::Transaction t{
         .sc = {.r = r, .s = s}, // no chain_id in legacy transactions
         .nonce = 9,
-        .gas_price = price,
+        .max_fee_per_gas = price,
         .gas_limit = 21'000,
         .amount = amount};
 
@@ -84,7 +84,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacyNoTo)
     EXPECT_EQ(decode_transaction(decoding, legacy_rlp_transaction).size(), 0);
 
     EXPECT_EQ(decoding.nonce, t.nonce);
-    EXPECT_EQ(decoding.gas_price, t.gas_price);
+    EXPECT_EQ(decoding.max_fee_per_gas, t.max_fee_per_gas);
     EXPECT_EQ(decoding.gas_limit, t.gas_limit);
     EXPECT_EQ(decoding.amount, t.amount);
     EXPECT_EQ(decoding.to.has_value(), false);
@@ -109,7 +109,7 @@ TEST(Rlp_Transaction, EncodeEip155)
     const monad::Transaction t{
         .sc = {.r = r, .s = s, .chain_id = 5}, // Goerli
         .nonce = 9,
-        .gas_price = price,
+        .max_fee_per_gas = price,
         .gas_limit = 21'000,
         .amount = amount,
         .to = to_addr};
@@ -130,7 +130,7 @@ TEST(Rlp_Transaction, EncodeEip155)
 
     EXPECT_EQ(eip155_rlp_transaction, eip155_transaction);
     EXPECT_EQ(decoding.nonce, t.nonce);
-    EXPECT_EQ(decoding.gas_price, t.gas_price);
+    EXPECT_EQ(decoding.max_fee_per_gas, t.max_fee_per_gas);
     EXPECT_EQ(decoding.gas_limit, t.gas_limit);
     EXPECT_EQ(decoding.amount, t.amount);
     EXPECT_EQ(*decoding.to, *t.to);
@@ -166,7 +166,7 @@ TEST(Rlp_Transaction, EncodeEip2930)
     const monad::Transaction t{
         .sc = {.r = r, .s = s, .chain_id = 3}, // Ropsten
         .nonce = 9,
-        .gas_price = price,
+        .max_fee_per_gas = price,
         .gas_limit = 21'000,
         .amount = amount,
         .to = to_addr,
@@ -200,7 +200,7 @@ TEST(Rlp_Transaction, EncodeEip2930)
     EXPECT_EQ(eip2930_rlp_transaction, eip2930_transaction);
 
     EXPECT_EQ(decoding.nonce, t.nonce);
-    EXPECT_EQ(decoding.gas_price, t.gas_price);
+    EXPECT_EQ(decoding.max_fee_per_gas, t.max_fee_per_gas);
     EXPECT_EQ(decoding.gas_limit, t.gas_limit);
     EXPECT_EQ(decoding.amount, t.amount);
     EXPECT_EQ(*decoding.to, *t.to);
@@ -241,13 +241,13 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
         .sc =
             {.r = r, .s = s, .chain_id = 137, .odd_y_parity = true}, // Polygon
         .nonce = 9,
-        .gas_price = price,
+        .max_fee_per_gas = price,
         .gas_limit = 21'000,
         .amount = amount,
         .to = to_addr,
         .type = monad::Transaction::Type::eip1559,
         .access_list = a,
-        .priority_fee = tip};
+        .max_priority_fee_per_gas = tip};
     const monad::byte_string eip1559_transaction{
         0xb8, 0x77, 0x02, 0xf8, 0x74, 0x81, 0x89, 0x09, 0x84, 0xee, 0x6b, 0x28,
         0x00, 0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00, 0x82, 0x52, 0x08, 0x94, 0x35,
@@ -268,7 +268,7 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
     EXPECT_EQ(eip1559_rlp_transaction, eip1559_transaction);
 
     EXPECT_EQ(decoding.nonce, t.nonce);
-    EXPECT_EQ(decoding.gas_price, t.gas_price);
+    EXPECT_EQ(decoding.max_fee_per_gas, t.max_fee_per_gas);
     EXPECT_EQ(decoding.gas_limit, t.gas_limit);
     EXPECT_EQ(decoding.amount, t.amount);
     EXPECT_EQ(*decoding.to, *t.to);
@@ -278,7 +278,7 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
     EXPECT_EQ(*decoding.sc.chain_id, *t.sc.chain_id);
     EXPECT_EQ(decoding.sc.chain_id.value(), t.sc.chain_id.value());
     EXPECT_EQ(decoding.type, t.type);
-    EXPECT_EQ(decoding.priority_fee, t.priority_fee);
+    EXPECT_EQ(decoding.max_priority_fee_per_gas, t.max_priority_fee_per_gas);
 
     EXPECT_EQ(decoding.access_list.size(), t.access_list.size());
     for (size_t i = 0u; i < t.access_list.size(); ++i) {
@@ -309,13 +309,13 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
         .sc =
             {.r = r, .s = s, .chain_id = 137, .odd_y_parity = false}, // Polygon
         .nonce = 9,
-        .gas_price = price,
+        .max_fee_per_gas = price,
         .gas_limit = 21'000,
         .amount = amount,
         .to = to_addr,
         .type = monad::Transaction::Type::eip1559,
         .access_list = a,
-        .priority_fee = tip};
+        .max_priority_fee_per_gas = tip};
     const monad::byte_string eip1559_transaction{
         0xb8, 0x77, 0x02, 0xf8, 0x74, 0x81, 0x89, 0x09, 0x84, 0xee, 0x6b, 0x28,
         0x00, 0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00, 0x82, 0x52, 0x08, 0x94, 0x35,
@@ -336,7 +336,7 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
     EXPECT_EQ(eip1559_rlp_transaction, eip1559_transaction);
 
     EXPECT_EQ(decoding.nonce, t.nonce);
-    EXPECT_EQ(decoding.gas_price, t.gas_price);
+    EXPECT_EQ(decoding.max_fee_per_gas, t.max_fee_per_gas);
     EXPECT_EQ(decoding.gas_limit, t.gas_limit);
     EXPECT_EQ(decoding.amount, t.amount);
     EXPECT_EQ(*decoding.to, *t.to);
@@ -346,7 +346,7 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
     EXPECT_EQ(*decoding.sc.chain_id, *t.sc.chain_id);
     EXPECT_EQ(decoding.sc.chain_id.value(), t.sc.chain_id.value());
     EXPECT_EQ(decoding.type, t.type);
-    EXPECT_EQ(decoding.priority_fee, t.priority_fee);
+    EXPECT_EQ(decoding.max_priority_fee_per_gas, t.max_priority_fee_per_gas);
 
     EXPECT_EQ(decoding.access_list.size(), t.access_list.size());
     for (size_t i = 0u; i < t.access_list.size(); ++i) {

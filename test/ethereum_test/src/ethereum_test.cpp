@@ -280,7 +280,7 @@ void EthereumTests::run_state_test(
                 }
                 return monad::Transaction{
                     .nonce = shared_transaction_data.nonce,
-                    .gas_price = shared_transaction_data.gas_price,
+                    .max_fee_per_gas = shared_transaction_data.max_fee_per_gas,
                     .gas_limit = shared_transaction_data.gas_limits.at(
                         expected.indices.gas_limit),
                     .amount = shared_transaction_data.values.at(
@@ -291,7 +291,8 @@ void EthereumTests::run_state_test(
                         expected.indices.input),
                     .type = shared_transaction_data.transaction_type,
                     .access_list = std::move(access_list),
-                    .priority_fee = shared_transaction_data.priority_fee};
+                    .max_priority_fee_per_gas =
+                        shared_transaction_data.max_priority_fee_per_gas};
             }();
 
             monad::execution::fake::BlockDb fake_block_db;

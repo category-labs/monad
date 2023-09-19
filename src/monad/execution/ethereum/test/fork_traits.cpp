@@ -96,13 +96,13 @@ TEST(fork_traits, frontier)
         // gas price
         EXPECT_EQ(
             fork_traits::frontier::gas_price(
-                Transaction{.gas_price = 1'000}, 0u),
+                Transaction{.max_fee_per_gas = 1'000}, 0u),
             1'000);
 
         // txn award
         EXPECT_EQ(
             fork_traits::frontier::calculate_txn_award(
-                Transaction{.gas_price = 100'000'000'000}, 0, 90'000'000),
+                Transaction{.max_fee_per_gas = 100'000'000'000}, 0, 90'000'000),
             uint256_t{9'000'000'000'000'000'000});
     }
     {
@@ -436,15 +436,16 @@ TEST(fork_traits, london)
 
     // gas price
     Transaction t1{
-        .gas_price = 3'000,
+        .max_fee_per_gas = 3'000,
         .type = Transaction::Type::eip155,
-        .priority_fee = 1'000};
-    Transaction t2{.gas_price = 3'000, .type = Transaction::Type::eip155};
+        .max_priority_fee_per_gas = 1'000};
+    Transaction t2{.max_fee_per_gas = 3'000, .type = Transaction::Type::eip155};
     Transaction t3{
-        .gas_price = 5'000,
+        .max_fee_per_gas = 5'000,
         .type = Transaction::Type::eip1559,
-        .priority_fee = 1'000};
-    Transaction t4{.gas_price = 5'000, .type = Transaction::Type::eip1559};
+        .max_priority_fee_per_gas = 1'000};
+    Transaction t4{
+        .max_fee_per_gas = 5'000, .type = Transaction::Type::eip1559};
     EXPECT_EQ(fork_traits::london::gas_price(t1, 2'000u), 3'000);
     EXPECT_EQ(fork_traits::london::gas_price(t2, 2'000u), 3'000);
     EXPECT_EQ(fork_traits::london::gas_price(t3, 2'000u), 3'000);
@@ -453,7 +454,7 @@ TEST(fork_traits, london)
     // txn award
     EXPECT_EQ(
         fork_traits::london::calculate_txn_award(
-            Transaction{.gas_price = 100'000'000'000}, 0, 90'000'000),
+            Transaction{.max_fee_per_gas = 100'000'000'000}, 0, 90'000'000),
         uint256_t{9'000'000'000'000'000'000});
 }
 

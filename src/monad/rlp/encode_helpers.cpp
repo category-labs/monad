@@ -47,7 +47,7 @@ byte_string encode_transaction(Transaction const &txn)
     if (txn.type == Transaction::Type::eip155) {
         return encode_list(
             encode_unsigned(txn.nonce),
-            encode_unsigned(txn.gas_price),
+            encode_unsigned(txn.max_fee_per_gas),
             encode_unsigned(txn.gas_limit),
             encode_address(txn.to),
             encode_unsigned(txn.amount),
@@ -64,8 +64,8 @@ byte_string encode_transaction(Transaction const &txn)
             byte_string{0x02} += encode_list(
                 encode_unsigned(txn.sc.chain_id.value_or(0)),
                 encode_unsigned(txn.nonce),
-                encode_unsigned(txn.priority_fee),
-                encode_unsigned(txn.gas_price),
+                encode_unsigned(txn.max_priority_fee_per_gas),
+                encode_unsigned(txn.max_fee_per_gas),
                 encode_unsigned(txn.gas_limit),
                 encode_address(txn.to),
                 encode_unsigned(txn.amount),
@@ -80,7 +80,7 @@ byte_string encode_transaction(Transaction const &txn)
             byte_string{0x01} += encode_list(
                 encode_unsigned(txn.sc.chain_id.value_or(0)),
                 encode_unsigned(txn.nonce),
-                encode_unsigned(txn.gas_price),
+                encode_unsigned(txn.max_fee_per_gas),
                 encode_unsigned(txn.gas_limit),
                 encode_address(txn.to),
                 encode_unsigned(txn.amount),
@@ -100,7 +100,7 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
         if (txn.sc.chain_id.has_value()) {
             return encode_list(
                 encode_unsigned(txn.nonce),
-                encode_unsigned(txn.gas_price),
+                encode_unsigned(txn.max_fee_per_gas),
                 encode_unsigned(txn.gas_limit),
                 encode_address(txn.to),
                 encode_unsigned(txn.amount),
@@ -112,7 +112,7 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
         else {
             return encode_list(
                 encode_unsigned(txn.nonce),
-                encode_unsigned(txn.gas_price),
+                encode_unsigned(txn.max_fee_per_gas),
                 encode_unsigned(txn.gas_limit),
                 encode_address(txn.to),
                 encode_unsigned(txn.amount),
@@ -127,8 +127,8 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
                encode_list(
                    encode_unsigned(txn.sc.chain_id.value_or(0)),
                    encode_unsigned(txn.nonce),
-                   encode_unsigned(txn.priority_fee),
-                   encode_unsigned(txn.gas_price),
+                   encode_unsigned(txn.max_priority_fee_per_gas),
+                   encode_unsigned(txn.max_fee_per_gas),
                    encode_unsigned(txn.gas_limit),
                    encode_address(txn.to),
                    encode_unsigned(txn.amount),
@@ -140,7 +140,7 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
                encode_list(
                    encode_unsigned(txn.sc.chain_id.value_or(0)),
                    encode_unsigned(txn.nonce),
-                   encode_unsigned(txn.gas_price),
+                   encode_unsigned(txn.max_fee_per_gas),
                    encode_unsigned(txn.gas_limit),
                    encode_address(txn.to),
                    encode_unsigned(txn.amount),

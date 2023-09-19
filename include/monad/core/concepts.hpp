@@ -21,7 +21,7 @@ namespace concepts
     template <class T, class TState>
     concept fork_traits = requires(TState &s, Transaction const &t,
                                    address_t const &a, byte_string const & code,
-                                   uint64_t gas_used, evmc::Result r, uint64_t const base_gas_price, 
+                                   uint64_t gas_used, evmc::Result r, uint256_t const& base_fee_per_gas, 
                                    Block const& b, block_num_t const block_number, 
                                    std::optional<std::vector<Withdrawal>> const& w)
     {
@@ -35,11 +35,11 @@ namespace concepts
         { T::destruct_touched_dead(s) } -> std::convertible_to<void>;
         { T::deploy_contract_code(s, a, std::move(r)) }
             -> std::convertible_to<evmc::Result>;
-        { T::validate_transaction(t, base_gas_price
+        { T::validate_transaction(t, base_fee_per_gas
             /*, TODO: add chain_id #131 */
         ) } -> std::convertible_to<TransactionValidationResult>;
-        { T::calculate_txn_award(t, base_gas_price, gas_used) } -> std::convertible_to<uint256_t>;
-        { T::gas_price(t, base_gas_price) } -> std::convertible_to<uint64_t>;
+        { T::calculate_txn_award(t, base_fee_per_gas, gas_used) } -> std::convertible_to<uint256_t>;
+        { T::gas_price(t, base_fee_per_gas) } -> std::convertible_to<uint256_t>;
         { T::warm_coinbase(s, a) } -> std::convertible_to<void>;
         { T::access_list_valid(t.access_list) } -> std::convertible_to<bool>;
 

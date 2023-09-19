@@ -59,7 +59,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     BlockHeader const ommer{.number = 1, .beneficiary = o};
     Transaction const t{
         .nonce = 0,
-        .gas_price = 10,
+        .max_fee_per_gas = 10,
         .gas_limit = 25'000,
         .amount = 1'000'000,
         .to = to,
@@ -129,7 +129,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     BlockHeader const bh{.number = 2, .beneficiary = a};
     Transaction const t{
         .nonce = 3,
-        .gas_price = 10'000'000'000'000, // 10'000 GWei
+        .max_fee_per_gas = 10'000'000'000'000, // 10'000 GWei
         .gas_limit = 24'000,
         .amount = 0,
         .from = creator,
@@ -194,7 +194,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     BlockHeader const bh{.number = 48'512, .beneficiary = a};
     Transaction const t{
         .nonce = 2,
-        .gas_price = 57'935'965'411,
+        .max_fee_per_gas = 57'935'965'411,
         .gas_limit = 90'000,
         .amount = 10'000'000'000'000'000, // 0.01 Eth
         .from = creator,

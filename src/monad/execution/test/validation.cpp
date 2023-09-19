@@ -36,7 +36,7 @@ TEST(Execution, validate_enough_gas)
     static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
 
     static Transaction const t{
-        .gas_price = 29'443'849'433,
+        .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500, // no .to, under the creation amount
         .amount = 1,
         .from = a};
@@ -81,7 +81,7 @@ TEST(Execution, validate_nonce)
 
     static Transaction const t{
         .nonce = 23,
-        .gas_price = 29'443'849'433,
+        .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
         .amount = 55'939'568'773'815'811,
         .from = a};
@@ -102,7 +102,7 @@ TEST(Execution, validate_nonce_optimistically)
 
     static Transaction const t{
         .nonce = 25,
-        .gas_price = 29'443'849'433,
+        .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
         .amount = 55'939'568'773'815'811,
         .from = a};
@@ -124,12 +124,12 @@ TEST(Execution, validate_enough_balance)
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
 
     static Transaction const t{
-        .gas_price = 29'443'849'433,
+        .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
         .amount = 55'939'568'773'815'811,
         .to = b,
         .from = a,
-        .priority_fee = 100'000'000,
+        .max_priority_fee_per_gas = 100'000'000,
     };
 
     db_t db;
@@ -159,7 +159,7 @@ TEST(Execution, successful_validation)
 
     static Transaction const t{
         .nonce = 25,
-        .gas_price = 29'443'849'433,
+        .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
         .amount = 55'939'568'773'815'811,
         .to = b,
@@ -185,12 +185,12 @@ TEST(Execution, insufficient_balance_higher_base_fee)
 
     static Transaction const t{
         .nonce = 25,
-        .gas_price = 29'443'849'433,
+        .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
         .amount = 55'939'568'773'815'811,
         .to = b,
         .from = a,
-        .priority_fee = 100'000'000};
+        .max_priority_fee_per_gas = 100'000'000};
 
     processor_t p{};
 
@@ -213,12 +213,12 @@ TEST(Execution, successful_validation_higher_base_fee)
 
     static Transaction const t{
         .nonce = 25,
-        .gas_price = 29'443'849'433,
+        .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
         .amount = 48'979'750'000'000'000,
         .to = b,
         .from = a,
-        .priority_fee = 100'000'000};
+        .max_priority_fee_per_gas = 100'000'000};
 
     processor_t p{};
 

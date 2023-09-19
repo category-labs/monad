@@ -20,7 +20,7 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 template <class TState, concepts::fork_traits<TState> TTraits>
 struct TransactionProcessor
 {
-    uint128_t upfront_cost_{};
+    uint256_t upfront_cost_{};
 
     enum class Status
     {
@@ -55,7 +55,7 @@ struct TransactionProcessor
     }
 
     [[nodiscard]] auto refund_gas(
-        TState &s, Transaction const &t, uint64_t base_fee_per_gas,
+        TState &s, Transaction const &t, uint256_t const &base_fee_per_gas,
         uint64_t const gas_leftover, uint64_t refund) const
     {
         // refund and priority, Eqn. 73-76
@@ -70,8 +70,8 @@ struct TransactionProcessor
 
     template <class TEvmHost>
     Receipt execute(
-        TState &s, TEvmHost &h, Transaction const &t, uint64_t base_fee_per_gas,
-        address_t const &beneficiary) const
+        TState &s, TEvmHost &h, Transaction const &t,
+        uint256_t const &base_fee_per_gas, address_t const &beneficiary) const
     {
         irrevocable_change(s, t);
 
@@ -110,8 +110,8 @@ struct TransactionProcessor
         return receipt;
     }
 
-    Status
-    validate(TState &state, Transaction const &t, uint64_t base_fee_per_gas)
+    Status validate(
+        TState &state, Transaction const &t, uint256_t const &base_fee_per_gas)
     {
         switch (TTraits::validate_transaction(t, base_fee_per_gas)) {
         case TransactionValidationResult::Ok:
@@ -122,8 +122,7 @@ struct TransactionProcessor
         default:
             MONAD_ASSERT(false && "unhandled TransactionValidationResult");
         }
-        upfront_cost_ =
-            intx::umul(t.gas_limit, TTraits::gas_price(t, base_fee_per_gas));
+        upfront_cost_ = t.gas_limit * TTraits::gas_price(t, base_fee_per_gas);
 
         if (!TTraits::access_list_valid(t.access_list)) {
             return Status::TYPE_NOT_SUPPORTED;

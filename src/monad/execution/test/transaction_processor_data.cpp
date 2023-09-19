@@ -65,13 +65,13 @@ struct fakeTP
 
     template <class TEvmHost>
     Receipt execute(
-        TState &, TEvmHost &, Transaction const &, uint64_t,
+        TState &, TEvmHost &, Transaction const &, uint256_t const &,
         address_t const &) const
     {
         return r_;
     }
 
-    Status validate(TState const &, Transaction const &, uint64_t)
+    Status validate(TState const &, Transaction const &, uint256_t const &)
     {
         return static_cast<Status>(fake_status);
     }

@@ -233,8 +233,8 @@ namespace nlohmann
             if (auto const gas_price_it = j.find("gasPrice");
                 gas_price_it != j.end()) {
                 o.transaction_type = monad::Transaction::Type::eip155;
-                o.gas_price = integer_from_json<uint64_t>(*gas_price_it);
-                o.priority_fee = o.gas_price;
+                o.max_fee_per_gas = integer_from_json<uint64_t>(*gas_price_it);
+                o.max_priority_fee_per_gas = o.max_fee_per_gas;
                 if (j.contains("maxFeePerGas") ||
                     j.contains("maxPriorityFeePerGas")) {
                     throw std::invalid_argument(
@@ -244,8 +244,9 @@ namespace nlohmann
             }
             else {
                 o.transaction_type = monad::Transaction::Type::eip1559;
-                o.gas_price = integer_from_json<uint64_t>(j.at("maxFeePerGas"));
-                o.priority_fee =
+                o.max_fee_per_gas =
+                    integer_from_json<uint64_t>(j.at("maxFeePerGas"));
+                o.max_priority_fee_per_gas =
                     integer_from_json<uint64_t>(j.at("maxPriorityFeePerGas"));
             }
 

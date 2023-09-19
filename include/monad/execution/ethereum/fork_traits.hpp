@@ -126,15 +126,15 @@ namespace fork_traits
             return result;
         }
         static constexpr TransactionValidationResult validate_transaction(
-            Transaction const &, uint64_t const /*base_gas_price*/)
+            Transaction const &, uint256_t const & /*base_fee_per_gas*/)
         {
             return TransactionValidationResult::Ok;
         }
 
-        static constexpr uint64_t
-        gas_price(Transaction const &t, uint64_t const /*base_gas_price*/)
+        static constexpr uint256_t
+        gas_price(Transaction const &t, uint256_t const & /*base_fee_per_gas*/)
         {
-            return t.gas_price;
+            return t.max_fee_per_gas;
         }
 
         template <class TBlockState, class TBlockCache>
@@ -177,9 +177,10 @@ namespace fork_traits
         }
 
         static constexpr uint256_t calculate_txn_award(
-            Transaction const &t, uint64_t base_gas_cost, uint64_t gas_used)
+            Transaction const &t, uint256_t const &base_fee_per_gas,
+            uint64_t gas_used)
         {
-            return uint256_t{gas_used} * gas_price(t, base_gas_cost);
+            return uint256_t{gas_used} * gas_price(t, base_fee_per_gas);
         }
 
         template <class TBlockState, class TBlockCache>
@@ -524,46 +525,48 @@ namespace fork_traits
         }
 
         static constexpr TransactionValidationResult validate_transaction(
-            Transaction const &t, uint64_t const base_gas_price)
+            Transaction const &t, uint256_t const &base_fee_per_gas)
         {
             if (t.type == Transaction::Type::eip1559 &&
-                (t.gas_price < t.priority_fee)) {
+                (t.max_fee_per_gas < t.max_priority_fee_per_gas)) {
                 return TransactionValidationResult::MaxPriorityFeeAboveMax;
             }
-            if (t.gas_price < base_gas_price) {
+            if (t.max_fee_per_gas < base_fee_per_gas) {
                 return TransactionValidationResult::MaxFeeBelowBase;
             }
             return TransactionValidationResult::Ok;
         }
 
         // https://eips.ethereum.org/EIPS/eip-1559
-        static constexpr uint64_t
-        gas_price(Transaction const &t, uint64_t const base_gas_price)
+        static constexpr uint256_t
+        gas_price(Transaction const &t, uint256_t const &base_fee_per_gas)
         {
             if (t.type == Transaction::Type::eip1559) {
                 MONAD_DEBUG_ASSERT(
-                    (base_gas_price + t.priority_fee) <= t.gas_price);
-                return base_gas_price + t.priority_fee;
+                    (base_fee_per_gas + t.max_priority_fee_per_gas) <=
+                    t.max_fee_per_gas);
+                return base_fee_per_gas + t.max_priority_fee_per_gas;
             }
-            MONAD_DEBUG_ASSERT(t.gas_price >= base_gas_price);
-            return t.gas_price;
+            MONAD_DEBUG_ASSERT(t.max_fee_per_gas >= base_fee_per_gas);
+            return t.max_fee_per_gas;
         }
 
         // https://eips.ethereum.org/EIPS/eip-1559
-        static constexpr uint64_t
-        miner_priority_gas_cost(Transaction const &t, uint64_t base_gas_price)
+        static constexpr uint256_t miner_priority_gas_cost(
+            Transaction const &t, uint256_t const &base_fee_per_gas)
         {
             if (t.type == Transaction::Type::eip1559) {
-                return t.priority_fee;
+                return t.max_priority_fee_per_gas;
             }
-            return t.gas_price - base_gas_price;
+            return t.max_fee_per_gas - base_fee_per_gas;
         }
 
         static constexpr uint256_t calculate_txn_award(
-            Transaction const &t, uint64_t base_gas_cost, uint64_t gas_used)
+            Transaction const &t, uint256_t const &base_fee_per_gas,
+            uint64_t gas_used)
         {
             return uint256_t{
-                gas_used * miner_priority_gas_cost(t, base_gas_cost)};
+                gas_used * miner_priority_gas_cost(t, base_fee_per_gas)};
         }
     };
 

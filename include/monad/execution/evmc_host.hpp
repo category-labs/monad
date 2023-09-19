@@ -142,7 +142,7 @@ struct EvmcHost : public evmc::Host
             .block_gas_limit = static_cast<int64_t>(block_header_.gas_limit)};
 
         uint256_t const gas_cost = TTraits::gas_price(
-            transaction_, block_header_.base_fee_per_gas.value_or(0u));
+            transaction_, block_header_.base_fee_per_gas.value_or(0));
         intx::be::store(result.tx_gas_price.bytes, gas_cost);
 
         // Note: is there a better place for us to get the chain_id?

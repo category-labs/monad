@@ -59,12 +59,23 @@ struct Execution
         if (status != transaction_processor_t<TFork>::Status::SUCCESS) {
             return std::nullopt;
         }
-        return transaction_processor.execute(
+        auto const receipt = transaction_processor.execute(
             state,
             host,
             transaction,
             host.block_header_.base_fee_per_gas.value_or(0),
             host.block_header_.beneficiary);
+
+        // TODO: make use of common function when that gets added along
+        // with the block processor work
+        auto const gas_award = TFork::calculate_txn_award(
+            transaction,
+            host.block_header_.base_fee_per_gas.value_or(0),
+            receipt.gas_used);
+        if (TFork::rev < EVMC_SPURIOUS_DRAGON || gas_award) {
+            state.add_to_balance(host.block_header_.beneficiary, gas_award);
+        }
+        return receipt;
     }
 };
 
@@ -108,19 +119,13 @@ using execution_variant =
         [&](auto I) {
             if (I == fork_index) {
                 using TTraits = mp_at_c<fork_traits::all_forks_t, I>;
+                MONAD_DEBUG_ASSERT(!maybe_receipt.has_value());
                 maybe_receipt = std::get<Execution<TTraits>>(variant).execute(
                     state, transaction);
 
-                auto const gas_used = maybe_receipt.has_value()
-                                          ? maybe_receipt.value().gas_used
-                                          : 0;
-                auto const gas_award = TTraits::calculate_txn_award(
-                    transaction,
-                    block_header.base_fee_per_gas.value_or(0),
-                    gas_used);
-                if (fork_index < fork_index_map.at("EIP158") ||
-                    gas_award != 0) {
-                    state.add_to_balance(block_header.beneficiary, gas_award);
+                // Apply 0 block reward
+                if (TTraits::rev < EVMC_SPURIOUS_DRAGON) {
+                    state.add_to_balance(block_header.beneficiary, 0);
                 }
             }
         });

@@ -69,7 +69,7 @@ public:
     {
         // TODO: only check for state root hash for now (we don't have receipt
         // and transaction trie building algo yet)
-        LOG_INFO(
+        LOG_DEBUG(
             "Computed State Root: {}, Expected State Root: {}",
             state_root,
             block_header.state_root);

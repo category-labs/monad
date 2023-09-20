@@ -43,7 +43,7 @@ void trie_db_process_changes(
         std::ranges::sort(
             storage_trie_updates, std::less<>{}, trie::get_update_key);
 
-        LOG_INFO(
+        LOG_DEBUG(
             "STORAGE_UPDATES({}) account={} {}",
             storage_trie_updates.size(),
             u.first,
@@ -95,7 +95,7 @@ void trie_db_process_changes(
     if (!account_trie_updates.empty()) {
         std::ranges::sort(
             account_trie_updates, std::less<>{}, trie::get_update_key);
-        LOG_INFO(
+        LOG_DEBUG(
             "ACCOUNT_UPDATES({}) {}",
             account_trie_updates.size(),
             account_trie_updates);
@@ -150,7 +150,7 @@ void trie_db_process_changes(
                 std::ranges::sort(
                     storage_trie_updates, std::less<>{}, trie::get_update_key);
 
-                LOG_INFO(
+                LOG_DEBUG(
                     "STORAGE_UPDATES({}) account={} {}",
                     storage_trie_updates.size(),
                     addr,
@@ -207,7 +207,7 @@ void trie_db_process_changes(
     if (!account_trie_updates.empty()) {
         std::ranges::sort(
             account_trie_updates, std::less<>{}, trie::get_update_key);
-        LOG_INFO(
+        LOG_DEBUG(
             "ACCOUNT_UPDATES({}) {}",
             account_trie_updates.size(),
             account_trie_updates);

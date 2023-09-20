@@ -446,10 +446,15 @@ TEST(fork_traits, london)
         .max_priority_fee_per_gas = 1'000};
     Transaction t4{
         .max_fee_per_gas = 5'000, .type = Transaction::Type::eip1559};
+    Transaction t5{
+        .max_fee_per_gas = 5'000,
+        .type = Transaction::Type::eip1559,
+        .max_priority_fee_per_gas = 4'000};
     EXPECT_EQ(fork_traits::london::gas_price(t1, 2'000u), 3'000);
     EXPECT_EQ(fork_traits::london::gas_price(t2, 2'000u), 3'000);
     EXPECT_EQ(fork_traits::london::gas_price(t3, 2'000u), 3'000);
     EXPECT_EQ(fork_traits::london::gas_price(t4, 2'000u), 2'000);
+    EXPECT_EQ(fork_traits::london::gas_price(t5, 2'000u), 5'000);
 
     // txn award
     EXPECT_EQ(

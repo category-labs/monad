@@ -541,23 +541,24 @@ namespace fork_traits
         static constexpr uint256_t
         gas_price(Transaction const &t, uint256_t const &base_fee_per_gas)
         {
-            if (t.type == Transaction::Type::eip1559) {
-                MONAD_DEBUG_ASSERT(
-                    (base_fee_per_gas + t.max_priority_fee_per_gas) <=
-                    t.max_fee_per_gas);
-                return base_fee_per_gas + t.max_priority_fee_per_gas;
-            }
-            MONAD_DEBUG_ASSERT(t.max_fee_per_gas >= base_fee_per_gas);
-            return t.max_fee_per_gas;
+            return priority_fee_per_gas(t, base_fee_per_gas) + base_fee_per_gas;
         }
 
-        // https://eips.ethereum.org/EIPS/eip-1559
-        static constexpr uint256_t miner_priority_gas_cost(
+        static constexpr uint256_t priority_fee_per_gas(
             Transaction const &t, uint256_t const &base_fee_per_gas)
         {
+            MONAD_DEBUG_ASSERT(t.max_fee_per_gas >= base_fee_per_gas);
             if (t.type == Transaction::Type::eip1559) {
-                return t.max_priority_fee_per_gas;
+                return std::min(
+                    t.max_priority_fee_per_gas,
+                    t.max_fee_per_gas - base_fee_per_gas);
             }
+            // per eip-1559: "Legacy Ethereum transactions will still work and
+            // be included in blocks, but they will not benefit directly from
+            // the new pricing system. This is due to the fact that upgrading
+            // from legacy transactions to new transactions results in the
+            // legacy transaction’s gas_price entirely being consumed either by
+            // the base_fee_per_gas and the priority_fee_per_gas."
             return t.max_fee_per_gas - base_fee_per_gas;
         }
 
@@ -565,8 +566,7 @@ namespace fork_traits
             Transaction const &t, uint256_t const &base_fee_per_gas,
             uint64_t gas_used)
         {
-            return uint256_t{
-                gas_used * miner_priority_gas_cost(t, base_fee_per_gas)};
+            return gas_used * priority_fee_per_gas(t, base_fee_per_gas);
         }
     };
 

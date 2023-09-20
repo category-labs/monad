@@ -25,7 +25,7 @@ struct Transaction
 {
     enum class Type
     {
-        eip155,
+        eip155, // legacy
         eip2930,
         eip1559,
     };

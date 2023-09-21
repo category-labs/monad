@@ -14,19 +14,29 @@
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
 template <class TTraits>
-std::optional<evmc::Result> check_call_precompile(evmc_message const &msg)
+[[nodiscard]] constexpr bool is_precompile(address_t const &address) noexcept
 {
     static_assert(TTraits::n_precompiles < UINT8_MAX);
 
     static constexpr auto max_address = address_t{TTraits::n_precompiles};
 
-    auto const &address = msg.code_address;
-
     if (MONAD_LIKELY(address > max_address)) {
-        return std::nullopt;
+        return false;
     }
 
     if (MONAD_UNLIKELY(evmc::is_zero(address))) {
+        return false;
+    }
+
+    return true;
+}
+
+template <class TTraits>
+std::optional<evmc::Result> check_call_precompile(evmc_message const &msg)
+{
+    auto const &address = msg.code_address;
+
+    if (!is_precompile<TTraits>(address)) {
         return std::nullopt;
     }
 

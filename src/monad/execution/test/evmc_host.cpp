@@ -146,3 +146,19 @@ TEST(EvmcHost, emit_log)
     EXPECT_EQ(logs[0].topics[0], topic0);
     EXPECT_EQ(logs[0].topics[1], topic1);
 }
+
+TEST(EvmcHost, access_precompile)
+{
+    BlockHeader const b{};
+    Transaction const t{};
+    db_t db;
+    BlockState<mutex_t> bs;
+    state_t s{bs, db, block_cache};
+    evmc_host_t host{b, t, s};
+    EXPECT_EQ(
+        host.access_account(0x0000000000000000000000000000000000000001_address),
+        EVMC_ACCESS_WARM);
+    EXPECT_EQ(
+        host.access_account(0x5353535353535353535353535353535353535353_address),
+        EVMC_ACCESS_COLD);
+}

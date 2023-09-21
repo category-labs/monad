@@ -7,6 +7,7 @@
 #include <monad/core/transaction.hpp>
 
 #include <monad/execution/config.hpp>
+#include <monad/execution/precompiles.hpp>
 
 #include <intx/intx.hpp>
 
@@ -187,6 +188,9 @@ struct EvmcHost : public evmc::Host
     virtual evmc_access_status
     access_account(address_t const &a) noexcept override
     {
+        if (is_precompile<TTraits>(a)) {
+            return EVMC_ACCESS_WARM;
+        }
         return state_.access_account(a);
     }
 

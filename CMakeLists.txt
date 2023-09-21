@@ -67,6 +67,7 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/db/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/test)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/fiber)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/state/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/state2/test)
@@ -146,6 +147,7 @@ add_library(
   "include/monad/execution/transaction_processor_data.hpp"
   "src/monad/execution/create_contract_address.cpp"
   # fiber
+  "include/monad/fiber/shared_mutex.hpp"
   "include/monad/fiber/algorithm.hpp"
   "include/monad/fiber/properties.hpp"
   "src/monad/fiber/algorithm.cpp"

@@ -41,6 +41,8 @@ struct Evm
             return evmc::Result{contract_address.error()};
         }
 
+        new_state.access_account(contract_address.value());
+
         byte_string code{m.input_data, m.input_size};
 
         auto execute_init_code = [&]() {

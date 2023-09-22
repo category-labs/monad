@@ -127,7 +127,16 @@ struct EvmcHost : public evmc::Host
     call(evmc_message const &m) noexcept override
     {
         if (m.kind == EVMC_CREATE || m.kind == EVMC_CREATE2) {
-            return TEvm::create_contract_account(this, state_, m);
+            auto res = TEvm::create_contract_account(this, state_, m);
+            // eip-211, eip-140
+            if (res.status_code != EVMC_REVERT) {
+                return evmc::Result{
+                    res.status_code,
+                    res.gas_left,
+                    res.gas_refund,
+                    res.create_address};
+            }
+            return res;
         }
 
         return TEvm::call_evm(this, state_, m);

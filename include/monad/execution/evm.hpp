@@ -28,8 +28,8 @@ struct Evm
     [[nodiscard]] static evmc::Result create_contract_account(
         TEvmHost *host, TState &state, evmc_message const &m) noexcept
     {
-        auto const result = increment_sender_nonce(state, m);
-        if (result.has_value()) {
+        if (auto const result = increment_sender_nonce(state, m);
+            result.has_value()) {
             return evmc::Result{result.value()};
         }
 
@@ -43,46 +43,35 @@ struct Evm
 
         new_state.access_account(contract_address.value());
 
-        byte_string code{m.input_data, m.input_size};
+        evmc_message const m_call{
+            .kind = EVMC_CALL,
+            .depth = m.depth,
+            .gas = m.gas,
+            .recipient = contract_address.value(),
+            .sender = m.sender,
+            .value = m.value,
+            .code_address = contract_address.value(),
+        };
 
-        auto execute_init_code = [&]() {
-            evmc_message m_call{
-                .kind = EVMC_CALL,
-                .depth = m.depth,
-                .gas = m.gas,
-                .recipient = contract_address.value(),
-                .sender = m.sender,
-                .value = m.value,
-                .code_address = contract_address.value(),
-            };
+        evmc::Result result{transfer_call_balances(new_state, m_call)};
 
-            if (auto const transfer_result =
-                    transfer_call_balances(new_state, m_call);
-                transfer_result.status_code != EVMC_SUCCESS) {
-                return evmc::Result{transfer_result};
-            }
-
-            return TInterpreter::execute(
+        if (result.status_code == EVMC_SUCCESS) {
+            result = TInterpreter::execute(
                 &new_host,
                 m_call,
                 byte_string_view(m.input_data, m.input_size));
-        };
+        }
 
-        auto deploy_code = [&](auto &&result) {
-            if (result.status_code == EVMC_SUCCESS) {
-                return TTraits::deploy_contract_code(
-                    new_state, contract_address.value(), std::move(result));
-            }
-            return std::forward<decltype(result)>(result);
-        };
+        if (result.status_code == EVMC_SUCCESS) {
+            result = TTraits::deploy_contract_code(
+                new_state, contract_address.value(), std::move(result));
+        }
 
-        auto deploy_result = deploy_code(execute_init_code());
-
-        if (deploy_result.status_code == EVMC_SUCCESS) {
+        if (result.status_code == EVMC_SUCCESS) {
             state.merge(new_state);
         }
 
-        return deploy_result;
+        return result;
     }
 
     template <class TEvmHost>

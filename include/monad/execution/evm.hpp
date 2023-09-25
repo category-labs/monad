@@ -64,6 +64,7 @@ struct Evm
 
         new_state.create_account(contract_address);
         new_state.set_nonce(contract_address, TTraits::starting_nonce());
+        transfer_balances(new_state, m, contract_address);
 
         evmc_message const m_call{
             .kind = EVMC_CALL,
@@ -75,14 +76,8 @@ struct Evm
             .code_address = contract_address,
         };
 
-        evmc::Result result{transfer_call_balances(new_state, m_call)};
-
-        if (result.status_code == EVMC_SUCCESS) {
-            result = TInterpreter::execute(
-                &new_host,
-                m_call,
-                byte_string_view(m.input_data, m.input_size));
-        }
+        auto result = TInterpreter::execute(
+            &new_host, m_call, byte_string_view(m.input_data, m.input_size));
 
         if (result.status_code == EVMC_SUCCESS) {
             result = TTraits::deploy_contract_code(

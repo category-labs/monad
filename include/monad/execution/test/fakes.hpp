@@ -346,14 +346,7 @@ namespace fake
         class TState, concepts::fork_traits<TState> TTraits, class TInterpreter>
     struct Evm
     {
-        using new_address_t = tl::expected<address_t, evmc_result>;
         using unexpected_t = tl::unexpected<evmc_result>;
-
-        [[nodiscard]] static tl::expected<address_t, evmc_result>
-        make_account_address(evmc_message const &) noexcept
-        {
-            return new_address_t{};
-        }
 
         [[nodiscard]] static evmc_result
         transfer_call_balances(evmc_message const &)

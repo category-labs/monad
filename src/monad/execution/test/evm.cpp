@@ -36,82 +36,6 @@ using evm_t = traits_templated_evm_t<traits_t>;
 using evm_host_t = fake::EvmHost<
     state_t, traits_t, fake::Evm<state_t, traits_t, fake::Interpreter>>;
 
-TEST(Evm, make_account_address)
-{
-    BlockState<mutex_t> bs;
-    account_store_db_t db{};
-    state::State s{bs, db, blocks};
-
-    static constexpr auto from{
-        0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
-    static constexpr auto to{
-        0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-
-    db.commit(
-        StateDeltas{
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 10'000'000'000, .nonce = 7}}}}},
-        Code{});
-
-    evmc_message m{
-        .kind = EVMC_CREATE,
-        .gas = 20'000,
-        .sender = from,
-    };
-    uint256_t v{70'000'000};
-    intx::be::store(m.value.bytes, v);
-
-    auto const result = evm_t::make_account_address(s, m);
-
-    EXPECT_TRUE(result.has_value());
-    EXPECT_EQ(*result, to);
-    EXPECT_EQ(s.get_nonce(to), 1);
-}
-
-TEST(Evm, make_account_address_create2)
-{
-    BlockState<mutex_t> bs;
-    account_store_db_t db{};
-    state::State s{bs, db, blocks};
-
-    static constexpr auto from{
-        0x00000000000000000000000000000000deadbeef_address};
-    static constexpr auto new_address{
-        0x60f3f640a8508fC6a86d45DF051962668E1e8AC7_address};
-    static constexpr auto cafebabe_salt{
-        0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32};
-    static const uint8_t deadbeef[4]{0xde, 0xad, 0xbe, 0xef};
-
-    db.commit(
-        StateDeltas{
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 10'000'000'000, .nonce = 5}}}}},
-        Code{});
-
-    evmc_message m{
-        .kind = EVMC_CREATE2,
-        .gas = 20'000,
-        .sender = from,
-        .input_data = &deadbeef[0],
-        .input_size = 4,
-        .create2_salt = cafebabe_salt,
-    };
-    uint256_t v{70'000'000};
-    intx::be::store(m.value.bytes, v);
-
-    auto const result = evm_t::make_account_address(s, m);
-
-    EXPECT_TRUE(result.has_value());
-    EXPECT_EQ(*result, new_address);
-    EXPECT_EQ(s.get_nonce(new_address), 1);
-}
-
 TEST(Evm, create_with_insufficient)
 {
     BlockState<mutex_t> bs;
@@ -137,9 +61,9 @@ TEST(Evm, create_with_insufficient)
     uint256_t v{70'000'000'000'000'000}; // too much
     intx::be::store(m.value.bytes, v);
 
-    auto const unexpected = evm_t::make_account_address(s, m);
+    evm_host_t h{};
+    auto const result = evm_t::create_contract_account(&h, s, m);
 
-    auto const result = unexpected.error();
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
 }
 
@@ -152,7 +76,7 @@ TEST(Evm, eip684_existing_code)
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     static constexpr auto to{
-        0xdac17f958d2ee523a2206206994597c13d831ec7_address};
+        0xd0e9eb6589febcdb3e681ba6954e881e73b3eef4_address};
     static constexpr auto code_hash{
         0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
 
@@ -168,10 +92,8 @@ TEST(Evm, eip684_existing_code)
     uint256_t v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
-    auto const unexpected = evm_t::make_account_address(s, m);
-
-    EXPECT_FALSE(unexpected.has_value());
-    auto const result = unexpected.error();
+    evm_host_t h{};
+    auto const result = evm_t::create_contract_account(&h, s, m);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
 }
 

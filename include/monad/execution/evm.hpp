@@ -20,37 +20,59 @@ template <
     class TState, concepts::fork_traits<TState> TTraits, class TInterpreter>
 struct Evm
 {
-    using result_t = tl::expected<evmc_message, evmc_result>;
-    using new_address_t = tl::expected<address_t, evmc_result>;
+    using result_t = tl::expected<void, evmc_result>;
     using unexpected_t = tl::unexpected<evmc_result>;
 
     template <class TEvmHost>
     [[nodiscard]] static evmc::Result create_contract_account(
         TEvmHost *host, TState &state, evmc_message const &m) noexcept
     {
-        if (auto const result = increment_sender_nonce(state, m);
-            result.has_value()) {
-            return evmc::Result{result.value()};
+        if (auto const result = check_sender_balance(state, m);
+            !result.has_value()) {
+            return evmc::Result{result.error()};
+        }
+
+        auto const nonce = state.get_nonce(m.sender);
+        if (nonce == std::numeric_limits<decltype(nonce)>::max()) {
+            // Match geth behavior - don't overflow nonce
+            return evmc::Result{EVMC_ARGUMENT_OUT_OF_RANGE, m.gas};
+        }
+        state.set_nonce(m.sender, nonce + 1);
+
+        auto const contract_address = [&] {
+            if (m.kind == EVMC_CREATE) {
+                return create_contract_address(m.sender, nonce); // YP Eqn. 85
+            }
+            else if (m.kind == EVMC_CREATE2) {
+                auto const code_hash =
+                    ethash::keccak256(m.input_data, m.input_size);
+                return create2_contract_address(
+                    m.sender, m.create2_salt, code_hash);
+            }
+            std::unreachable();
+        }();
+
+        state.access_account(contract_address);
+
+        // Prevent overwriting contracts - EIP-684
+        if (state.account_exists(contract_address)) {
+            return evmc::Result{EVMC_INVALID_INSTRUCTION};
         }
 
         TState new_state{state};
         TEvmHost new_host{*host, new_state};
 
-        auto const contract_address = make_account_address(new_state, m);
-        if (!contract_address) {
-            return evmc::Result{contract_address.error()};
-        }
-
-        new_state.access_account(contract_address.value());
+        new_state.create_account(contract_address);
+        new_state.set_nonce(contract_address, TTraits::starting_nonce());
 
         evmc_message const m_call{
             .kind = EVMC_CALL,
             .depth = m.depth,
             .gas = m.gas,
-            .recipient = contract_address.value(),
+            .recipient = contract_address,
             .sender = m.sender,
             .value = m.value,
-            .code_address = contract_address.value(),
+            .code_address = contract_address,
         };
 
         evmc::Result result{transfer_call_balances(new_state, m_call)};
@@ -64,7 +86,7 @@ struct Evm
 
         if (result.status_code == EVMC_SUCCESS) {
             result = TTraits::deploy_contract_code(
-                new_state, contract_address.value(), std::move(result));
+                new_state, contract_address, std::move(result));
         }
 
         if (result.status_code == EVMC_SUCCESS) {
@@ -120,7 +142,7 @@ struct Evm
             return unexpected_t(
                 {.status_code = EVMC_INSUFFICIENT_BALANCE, .gas_left = m.gas});
         }
-        return {m};
+        return {};
     }
 
     static void transfer_balances(
@@ -129,64 +151,6 @@ struct Evm
         auto const value = intx::be::load<uint256_t>(m.value);
         s.subtract_from_balance(m.sender, value);
         s.add_to_balance(to, value);
-    }
-
-    [[nodiscard]] static std::optional<evmc_result>
-    increment_sender_nonce(TState &s, evmc_message const &m) noexcept
-    {
-        auto const n = s.get_nonce(m.sender);
-        if (n == std::numeric_limits<decltype(n)>::max()) {
-            // Match geth behavior - don't overflow nonce
-            return evmc_result{
-                .status_code = EVMC_ARGUMENT_OUT_OF_RANGE, .gas_left = m.gas};
-        }
-        s.set_nonce(m.sender, n + 1);
-        return std::nullopt;
-    }
-
-    [[nodiscard]] static auto
-    create_new_contract(TState &s, address_t &new_address) noexcept
-    {
-        return [&](evmc_message const &m) {
-            new_address = [&] {
-                if (m.kind == EVMC_CREATE) {
-                    return create_contract_address(
-                        m.sender, s.get_nonce(m.sender) - 1); // YP Eqn. 85
-                }
-                else if (m.kind == EVMC_CREATE2) {
-                    auto const code_hash =
-                        ethash::keccak256(m.input_data, m.input_size);
-                    return create2_contract_address(
-                        m.sender, m.create2_salt, code_hash);
-                }
-                MONAD_ASSERT(false);
-                return address_t{};
-            }();
-
-            // Prevent overwriting contracts - EIP-684
-            if (s.account_exists(new_address)) {
-                return result_t(
-                    unexpected_t({.status_code = EVMC_INVALID_INSTRUCTION}));
-            }
-
-            s.create_account(new_address);
-
-            return result_t({m});
-        };
-    }
-
-    [[nodiscard]] static new_address_t
-    make_account_address(TState &s, evmc_message const &m) noexcept
-    {
-        address_t new_address{};
-        auto const result = check_sender_balance(s, m).and_then(
-            create_new_contract(s, new_address));
-        if (!result) {
-            return unexpected_t{result.error()};
-        }
-
-        s.set_nonce(new_address, TTraits::starting_nonce());
-        return {new_address};
     }
 
     [[nodiscard]] static evmc_result

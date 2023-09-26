@@ -35,8 +35,18 @@ class Counter
 public:
     [[nodiscard]] uint64_t get() const
     {
-        std::shared_lock<TMutex> lock{mutex_};
-        return counter_;
+        if constexpr (requires(TMutex m) {
+                          {
+                              m.lock_shared()
+                          } -> std::convertible_to<void>;
+                      }) {
+            std::shared_lock<TMutex> lock{mutex_};
+            return counter_;
+        }
+        else {
+            std::unique_lock<TMutex> lock{mutex_};
+            return counter_;
+        }
     }
 
     [[nodiscard]] uint64_t increment()
@@ -65,8 +75,9 @@ struct SharedMutex : public testing::Test
 {
 };
 
-using MutexTypes =
-    ::testing::Types<NoLockingMutex, monad::shared_mutex, std::shared_mutex>;
+using MutexTypes = ::testing::Types<
+    NoLockingMutex, monad::shared_mutex, boost::fibers::mutex,
+    std::shared_mutex, std::mutex, std::timed_mutex, std::shared_timed_mutex>;
 
 TYPED_TEST_SUITE(SharedMutex, MutexTypes);
 

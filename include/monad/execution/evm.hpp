@@ -55,7 +55,8 @@ struct Evm
         state.access_account(contract_address);
 
         // Prevent overwriting contracts - EIP-684
-        if (state.account_exists(contract_address)) {
+        if (state.get_nonce(contract_address) != 0 ||
+            state.get_code_hash(contract_address) != NULL_HASH) {
             return evmc::Result{EVMC_INVALID_INSTRUCTION};
         }
 

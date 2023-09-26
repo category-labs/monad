@@ -5,4 +5,5 @@ add_unit_test(
     test_shared_mutex.cpp
     LIBRARIES
     monad
+    nanobench
 )

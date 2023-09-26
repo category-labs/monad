@@ -29,6 +29,7 @@ set_source_files_properties(
   third_party/evmone/lib/evmone/baseline.cpp TARGET_DIRECTORY evmone
   PROPERTIES COMPILE_OPTIONS -O2)
 add_subdirectory(third_party/intx)
+add_subdirectory(third_party/nanobench)
 add_subdirectory(third_party/silkpre)
 add_subdirectory(third_party/quill SYSTEM)
 

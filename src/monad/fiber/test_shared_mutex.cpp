@@ -6,8 +6,15 @@
 
 #include <nlohmann/json.hpp>
 
+#include <boost/core/demangle.hpp>
+
+#include <monad/logging/formatter.hpp>
+
+#define ANKERL_NANOBENCH_IMPLEMENT
+#include <nanobench.h>
+
 // an empty mutex implementation should optimize away
-struct DumbMutex
+struct NoLockingMutex
 {
     void lock() {}
 
@@ -45,43 +52,33 @@ private:
     mutable TMutex mutex_;
 };
 
+ankerl::nanobench::Bench SHARED_MUTEX_BENCH = [] {
+    ankerl::nanobench::Bench bench;
+    bench.title("read counter lock_shared() call");
+    bench.relative(true);
+    bench.performanceCounters(true);
+    return bench;
+}();
+
 template <typename>
 struct SharedMutex : public testing::Test
 {
 };
 
 using MutexTypes =
-    ::testing::Types<DumbMutex, monad::shared_mutex, std::shared_mutex>;
+    ::testing::Types<NoLockingMutex, monad::shared_mutex, std::shared_mutex>;
 
 TYPED_TEST_SUITE(SharedMutex, MutexTypes);
 
-TYPED_TEST(SharedMutex, DISABLED_simple_bench)
+TYPED_TEST(SharedMutex, simple_bench)
 {
     Counter<TypeParam> counter;
-    uint64_t volatile NUM_READS = 10'000'000;
-    auto min_time = std::numeric_limits<int64_t>::max();
-
     uint64_t accum = 0;
-
-    for (size_t iter = 0; iter < 5; iter++) {
-        auto before = std::chrono::steady_clock::now();
-        for (size_t i = 0; i < NUM_READS; i++) {
-            accum += counter.get();
-        }
-        auto after = std::chrono::steady_clock::now();
-        min_time = std::min(
-            min_time,
-            std::chrono::duration_cast<std::chrono::nanoseconds>(after - before)
-                .count());
-    }
-
-    nlohmann::json res = nlohmann::json::object();
-    res["num_threads"] = 1;
-    res["num_fibers"] = 1;
-    res["num_reads"] = NUM_READS;
-    res["time"] = min_time;
-    res["accum"] = accum;
-    std::cout << res.dump() << std::endl;
+    SHARED_MUTEX_BENCH
+        .run(
+            fmt::format("{}", boost::core::demangle(typeid(TypeParam).name())),
+            [&] { accum += counter.get(); })
+        .doNotOptimizeAway(accum);
 }
 
 TEST(MutexCorrectness, many_readers)

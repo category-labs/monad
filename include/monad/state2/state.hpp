@@ -83,8 +83,15 @@ struct State
         LOG_DEBUG("create_account: {}", address);
 
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
-        MONAD_DEBUG_ASSERT(!account.has_value());
-        account = Account{};
+        if (MONAD_UNLIKELY(account.has_value())) {
+            // eip-684: nonce should be zero and code should be empty
+            MONAD_DEBUG_ASSERT(account->nonce == 0);
+            MONAD_DEBUG_ASSERT(account->code_hash == NULL_HASH);
+            // Keep the balance, per chapter 7 of the YP
+        }
+        else {
+            account = Account{};
+        }
     }
 
     // EVMC Host Interface

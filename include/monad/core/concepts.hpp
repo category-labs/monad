@@ -42,6 +42,7 @@ namespace concepts
         { T::gas_price(t, base_fee_per_gas) } -> std::convertible_to<uint256_t>;
         { T::warm_coinbase(s, a) } -> std::convertible_to<void>;
         { T::access_list_valid(t.access_list) } -> std::convertible_to<bool>;
+        { T::account_exists(s, a) } -> std::convertible_to<bool>;
 
         // TODO: These 3 functions would require more template params for the TTraits concept
         //       Comment back once decided what the new concept should be like

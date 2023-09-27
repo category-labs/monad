@@ -453,6 +453,12 @@ namespace fake
             {
                 return true;
             }
+
+            [[nodiscard]] static constexpr bool
+            account_exists(TState &state, address_t const &address)
+            {
+                return state.account_exists(address);
+            }
         };
 
         template <class TState>

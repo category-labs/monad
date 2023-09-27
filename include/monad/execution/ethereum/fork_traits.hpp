@@ -208,6 +208,13 @@ namespace fork_traits
         {
             return list.empty();
         }
+
+        template <class TState>
+        [[nodiscard]] static constexpr bool
+        account_exists(TState &state, address_t const &address)
+        {
+            return state.account_exists(address);
+        }
     };
 
     struct homestead : public frontier
@@ -375,6 +382,13 @@ namespace fork_traits
                 block_reward,
                 additional_ommer_reward,
                 gas_award);
+        }
+
+        template <class TState>
+        [[nodiscard]] static constexpr bool
+        account_exists(TState &state, address_t const &address)
+        {
+            return !state.account_is_dead(address);
         }
     };
 

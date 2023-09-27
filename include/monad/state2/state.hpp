@@ -37,6 +37,7 @@ struct State
     ankerl::unordered_dense::map<
         address_t, ankerl::unordered_dense::set<bytes32_t>>
         accessed_storage_;
+    ankerl::unordered_dense::set<address_t> destructed_;
     unsigned total_selfdestructs_;
     uint256_t gas_award_;
     std::vector<Receipt::Log> logs_;
@@ -186,20 +187,17 @@ struct State
     }
 
     // EVMC Host Interface
-    [[nodiscard]] bool
-    selfdestruct(address_t const &address, address_t const &b) noexcept
+    [[nodiscard]] bool selfdestruct(
+        address_t const &address, address_t const &beneficiary) noexcept
     {
-        LOG_DEBUG("selfdestruct: {}, {}", address, b);
+        LOG_DEBUG("selfdestruct: {}, {}", address, beneficiary);
 
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
+        MONAD_DEBUG_ASSERT(account.has_value());
 
-        if (account.has_value()) {
-            add_to_balance(b, account.value().balance);
-            account.reset();
-            ++total_selfdestructs_;
-            return true;
-        }
-        return false;
+        add_to_balance(beneficiary, account->balance);
+        account->balance = 0;
+        return destructed_.insert(address).second;
     }
 
     [[nodiscard]] unsigned total_selfdestructs() const noexcept
@@ -207,7 +205,16 @@ struct State
         return total_selfdestructs_;
     }
 
-    void destruct_suicides() const noexcept {}
+    void destruct_suicides() noexcept
+    {
+        LOG_DEBUG("destruct_suicides");
+
+        for (auto const &address : destructed_) {
+            auto &account = read_account<Mutex>(address, state_, bs_, db_);
+            MONAD_DEBUG_ASSERT(account.has_value());
+            account.reset();
+        }
+    }
 
     void destruct_touched_dead() noexcept
     {
@@ -219,6 +226,14 @@ struct State
                 account.reset();
             }
         }
+    }
+
+    [[nodiscard]] bool account_is_dead(address_t const &address) noexcept
+    {
+        auto const &account = read_account<Mutex>(address, state_, bs_, db_);
+        return !account.has_value() ||
+               (account->balance == 0 && account->code_hash == NULL_HASH &&
+                account->nonce == 0);
     }
 
     // EVMC Host Interface
@@ -406,6 +421,7 @@ struct State
         touched_ = std::move(new_state.touched_);
         accessed_ = std::move(new_state.accessed_);
         accessed_storage_ = std::move(new_state.accessed_storage_);
+        destructed_ = std::move(new_state.destructed_);
         total_selfdestructs_ = new_state.total_selfdestructs_;
         gas_award_ = new_state.gas_award_;
         logs_ = std::move(new_state.logs_);

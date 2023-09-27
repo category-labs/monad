@@ -43,7 +43,7 @@ struct EvmcHost : public evmc::Host
 
     virtual bool account_exists(address_t const &a) const noexcept override
     {
-        return state_.account_exists(a);
+        return TTraits::account_exists(state_, a);
     }
 
     virtual bytes32_t get_storage(

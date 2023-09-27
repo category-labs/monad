@@ -410,8 +410,6 @@ TEST(fork_traits, london)
     BlockState<mutex_t> bs;
     state_t s{bs, db, block_cache};
 
-    s.total_selfdestructs_ = 10;
-
     EXPECT_EQ(l.max_refund_quotient(), 5);
 
     byte_string const illegal_code{0xef, 0x60};

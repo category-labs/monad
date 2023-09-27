@@ -38,7 +38,6 @@ struct State
         address_t, ankerl::unordered_dense::set<bytes32_t>>
         accessed_storage_;
     ankerl::unordered_dense::set<address_t> destructed_;
-    unsigned total_selfdestructs_;
     uint256_t gas_award_;
     std::vector<Receipt::Log> logs_;
 
@@ -51,7 +50,6 @@ struct State
         , touched_{}
         , accessed_{}
         , accessed_storage_{}
-        , total_selfdestructs_{}
         , gas_award_{}
         , logs_{}
     {
@@ -198,11 +196,6 @@ struct State
         add_to_balance(beneficiary, account->balance);
         account->balance = 0;
         return destructed_.insert(address).second;
-    }
-
-    [[nodiscard]] unsigned total_selfdestructs() const noexcept
-    {
-        return total_selfdestructs_;
     }
 
     void destruct_suicides() noexcept
@@ -422,7 +415,6 @@ struct State
         accessed_ = std::move(new_state.accessed_);
         accessed_storage_ = std::move(new_state.accessed_storage_);
         destructed_ = std::move(new_state.destructed_);
-        total_selfdestructs_ = new_state.total_selfdestructs_;
         gas_award_ = new_state.gas_award_;
         logs_ = std::move(new_state.logs_);
     }

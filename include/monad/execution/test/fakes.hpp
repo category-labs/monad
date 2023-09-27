@@ -105,7 +105,6 @@ namespace fake
 
             std::vector<Receipt::Log> _logs{};
             unsigned int _txn_id{};
-            uint64_t _selfdestructs{};
             uint64_t _touched_dead{};
             uint64_t _suicides{};
             uint256_t _reward{};
@@ -186,11 +185,6 @@ namespace fake
             void destruct_suicides() { _suicides = 0; }
 
             void destruct_touched_dead() { _touched_dead = 0; }
-
-            uint64_t total_selfdestructs() const noexcept
-            {
-                return _selfdestructs;
-            }
 
             // EVMC Host Interface
             evmc_access_status

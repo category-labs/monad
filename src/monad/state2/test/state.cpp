@@ -223,13 +223,13 @@ TYPED_TEST(StateTest, selfdestruct)
     s.add_to_balance(b, 28'000);
 
     EXPECT_TRUE(s.selfdestruct(a, c));
-    EXPECT_EQ(s.total_selfdestructs(), 1u);
+    EXPECT_EQ(s.destructed_.size(), 1);
     EXPECT_EQ(s.get_balance(a), bytes32_t{});
     EXPECT_EQ(s.get_balance(c), bytes32_t{56'000});
     EXPECT_FALSE(s.selfdestruct(a, c));
 
     EXPECT_TRUE(s.selfdestruct(b, c));
-    EXPECT_EQ(s.total_selfdestructs(), 2u);
+    EXPECT_EQ(s.destructed_.size(), 2);
     EXPECT_EQ(s.get_balance(b), bytes32_t{});
     EXPECT_EQ(s.get_balance(c), bytes32_t{84'000});
     EXPECT_FALSE(s.selfdestruct(b, c));
@@ -253,7 +253,7 @@ TYPED_TEST(StateTest, selfdestruct_self)
     state_t s{bs, db, block_cache};
 
     EXPECT_TRUE(s.selfdestruct(a, a));
-    EXPECT_EQ(s.total_selfdestructs(), 1u);
+    EXPECT_EQ(s.destructed_.size(), 1);
     EXPECT_EQ(s.get_balance(a), bytes32_t{});
 
     s.destruct_suicides();

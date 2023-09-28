@@ -5,7 +5,6 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
 
-#include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
 
 #include <monad/execution/block_processor.hpp>
@@ -21,36 +20,19 @@
 
 #include <monad/execution/test/fakes.hpp>
 
-#include <monad/state/account_state.hpp>
-#include <monad/state/code_state.hpp>
-#include <monad/state/state.hpp>
-#include <monad/state/value_state.hpp>
-
 #include <monad/logging/formatter.hpp>
 
+#include <monad/state2/state.hpp>
+
 #include <CLI/CLI.hpp>
-#include <quill/Quill.h>
 
 #include <filesystem>
+#include <shared_mutex>
 
 MONAD_NAMESPACE_BEGIN
 
 using receiptCollector = std::vector<std::vector<Receipt>>;
 using eth_start_fork = fork_traits::frontier;
-
-class fakeEmptyTransactionTrie
-{
-public:
-    fakeEmptyTransactionTrie(std::vector<Transaction> const &) {}
-    bytes32_t root_hash() const { return NULL_ROOT; }
-};
-
-class fakeEmptyReceiptTrie
-{
-public:
-    fakeEmptyReceiptTrie(std::vector<Receipt> const &) {}
-    bytes32_t root_hash() const { return NULL_ROOT; }
-};
 
 MONAD_NAMESPACE_END
 
@@ -62,13 +44,13 @@ int main(int argc, char *argv[])
     std::filesystem::path state_db_path{};
     std::filesystem::path genesis_file_path{};
     uint64_t block_history_size = 1u;
+    uint64_t checkpoint_frequency = 1000u;
     std::optional<monad::block_num_t> finish_block_number = std::nullopt;
 
     quill::start(true);
 
     auto log_level = quill::LogLevel::Info;
-
-    cli.add_option("-b, --block_db", block_db_path, "block_db directory")
+    cli.add_option("--block_db", block_db_path, "block_db directory")
         ->required();
     cli.add_option("--state_db", state_db_path, "state_db directory")
         ->required();
@@ -79,40 +61,34 @@ int main(int argc, char *argv[])
         block_history_size,
         "size of state_db block history");
     cli.add_option(
-        "-f, --finish", finish_block_number, "1 pass the last executed block");
+        "--checkpoint_frequency",
+        checkpoint_frequency,
+        "state db checkpointing frequency");
+    cli.add_option(
+        "--finish", finish_block_number, "1 pass the last executed block");
     cli.add_option("--log_level", log_level, "level of logging");
 
-    cli.parse(argc, argv);
+    try {
+        cli.parse(argc, argv);
+    }
+    catch (const CLI::CallForHelp &e) {
+        std::cout << cli.help() << std::flush;
+        return cli.exit(e);
+    }
 
     auto const start_time = std::chrono::steady_clock::now();
 
-    // Real Objects
     using db_t = monad::db::RocksTrieDB;
     using block_db_t = monad::db::BlockDb;
-    using receipt_collector_t = monad::receiptCollector;
-    using state_t = monad::state::State<
-        monad::state::AccountState<db_t>,
-        monad::state::ValueState<db_t>,
-        monad::state::CodeState<db_t>,
-        monad::db::BlockDb,
-        db_t>;
-    using execution_t = monad::execution::BoostFiberExecution;
-
-    // Fakes
-    using transaction_trie_t = monad::fakeEmptyTransactionTrie;
-    using receipt_trie_t = monad::fakeEmptyReceiptTrie;
-
-    quill::get_root_logger()->set_log_level(log_level);
+    using mutex_t = std::shared_mutex;
 
     block_db_t block_db(block_db_path);
     db_t db{
         monad::db::Writable{}, state_db_path, std::nullopt, block_history_size};
-    monad::state::AccountState accounts{db};
-    monad::state::ValueState values{db};
-    monad::state::CodeState code{db};
-    state_t state{accounts, values, code, block_db, db};
 
     monad::block_num_t start_block_number = db.starting_block_number;
+
+    quill::get_root_logger()->set_log_level(log_level);
 
     LOG_INFO(
         "Running with block_db = {}, state_db = {}, block_history_size = {}, "
@@ -125,20 +101,16 @@ int main(int argc, char *argv[])
 
     if (start_block_number == 0) {
         MONAD_DEBUG_ASSERT(*has_genesis_file);
-        read_and_verify_genesis(block_db, db, genesis_file_path);
+        monad::execution::read_and_verify_genesis(
+            block_db, db, genesis_file_path);
         start_block_number = 1u;
     }
 
-    receipt_collector_t receipt_collector;
-
     monad::execution::ReplayFromBlockDb<
-        state_t,
+        db_t,
+        mutex_t,
         block_db_t,
-        execution_t,
-        monad::execution::AllTxnBlockProcessor,
-        transaction_trie_t,
-        receipt_trie_t,
-        receipt_collector_t>
+        monad::execution::AllTxnBlockProcessor>
         replay_eth;
 
     [[maybe_unused]] auto result = replay_eth.run<
@@ -146,13 +118,10 @@ int main(int argc, char *argv[])
         monad::execution::TransactionProcessor,
         monad::execution::Evm,
         monad::execution::EvmcHost,
-        monad::execution::TransactionProcessorFiberData,
-        monad::execution::EVMOneBaselineInterpreter<
-            state_t::ChangeSet,
-            monad::eth_start_fork>>(
-        state,
+        monad::execution::TransactionProcessorFiberData>(
+        db,
+        checkpoint_frequency,
         block_db,
-        receipt_collector,
         start_block_number,
         finish_block_number);
 

@@ -13,8 +13,10 @@
 
 #include <monad/logging/formatter.hpp>
 
+#include <monad/state2/block_state.hpp>
+#include <monad/state2/state.hpp>
+
 #include <nlohmann/json.hpp>
-#include <quill/Quill.h>
 
 #include <test_resource_data.h>
 
@@ -23,13 +25,12 @@
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
-template <
-    class TState, class TBlockDb, class TExecution,
-    template <typename> class TAllTxnBlockProcessor, class TTransactionTrie,
-    class TReceiptTrie, class TReceiptCollector>
+template <class TDb, class TMutex, class TBlockDb, class TBlockProcessor>
 class ReplayFromBlockDb
 {
 public:
+    using state_t = state::State<TMutex, TBlockDb>;
+
     enum class Status
     {
         SUCCESS_END_OF_DB,
@@ -64,27 +65,27 @@ public:
     }
 
     [[nodiscard]] bool verify_root_hash(
-        BlockHeader const &block_header, bytes32_t /*transactions_root*/,
-        bytes32_t /*receipts_root*/, bytes32_t const state_root) const
+        BlockHeader const &block_header, bytes32_t /* transactions_root */,
+        bytes32_t /* receipts_root */, bytes32_t const state_root,
+        block_num_t /*current_block_number */) const
     {
-        // TODO: only check for state root hash for now (we don't have receipt
-        // and transaction trie building algo yet)
-        LOG_DEBUG(
+        LOG_INFO(
             "Computed State Root: {}, Expected State Root: {}",
             state_root,
             block_header.state_root);
 
+        // TODO: only check for state root hash for now (we don't have receipt
+        // and transaction trie building algo yet)
         return state_root == block_header.state_root;
     }
 
     template <
         class TTraits, template <typename, typename> class TTxnProcessor,
-        template <typename, typename, typename> class TEvm,
+        template <typename, typename> class TEvm,
         template <typename, typename, typename> class TEvmHost,
-        template <typename, typename, typename, typename> class TFiberData,
-        class TInterpreter>
+        template <typename, typename, typename, typename> class TFiberData>
     [[nodiscard]] Result run_fork(
-        TState &state, TBlockDb &block_db, TReceiptCollector &receipt_collector,
+        TDb &db, uint64_t const checkpoint_frequency, TBlockDb &block_db,
         block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
@@ -107,45 +108,30 @@ public:
 
                 TTraits::validate_block(block);
 
-                TAllTxnBlockProcessor<TExecution> block_processor{};
+                TBlockProcessor block_processor{};
                 auto const receipts = block_processor.template execute<
-                    TState,
+                    TMutex,
                     TTraits,
                     TFiberData<
-                        TState,
-                        TTxnProcessor<typename TState::ChangeSet, TTraits>,
-                        TEvmHost<
-                            typename TState::ChangeSet,
-                            TTraits,
-                            TEvm<
-                                typename TState::ChangeSet,
-                                TTraits,
-                                TInterpreter>>,
-                        TExecution>>(state, block);
-
-                state.commit();
-
-                // TODO: How exactly do we calculate transaction root and
-                // receipt root?
-                TTransactionTrie transaction_trie(block.transactions);
-                TReceiptTrie receipt_trie(receipts);
-
-                auto const transactions_root = transaction_trie.root_hash();
-                auto const receipts_root = receipt_trie.root_hash();
+                        TMutex,
+                        TTxnProcessor<state_t, TTraits>,
+                        TEvmHost<state_t, TTraits, TEvm<state_t, TTraits>>,
+                        TBlockDb>>(block, db, block_db);
 
                 if (!verify_root_hash(
                         block.header,
-                        transactions_root,
-                        receipts_root,
-                        state.get_state_hash())) {
+                        NULL_ROOT,
+                        NULL_ROOT,
+                        db.state_root(),
+                        current_block_number)) {
                     return Result{
                         Status::WRONG_STATE_ROOT, current_block_number - 1u};
                 }
                 else {
-                    state.create_and_prune_block_history(current_block_number);
+                    if (current_block_number % checkpoint_frequency == 0) {
+                        db.create_and_prune_block_history(current_block_number);
+                    }
                 }
-
-                receipt_collector.emplace_back(receipts);
             }
             default:
                 break;
@@ -163,11 +149,10 @@ public:
                 TTxnProcessor,
                 TEvm,
                 TEvmHost,
-                TFiberData,
-                TInterpreter>(
-                state,
+                TFiberData>(
+                db,
+                checkpoint_frequency,
                 block_db,
-                receipt_collector,
                 current_block_number,
                 until_block_number);
         }
@@ -175,12 +160,11 @@ public:
 
     template <
         class TTraits, template <typename, typename> class TTxnProcessor,
-        template <typename, typename, typename> class TEvm,
+        template <typename, typename> class TEvm,
         template <typename, typename, typename> class TEvmHost,
-        template <typename, typename, typename, typename> class TFiberData,
-        class TInterpreter>
+        template <typename, typename, typename, typename> class TFiberData>
     [[nodiscard]] Result
-    run(TState &state, TBlockDb &block_db, TReceiptCollector &receipt_collector,
+    run(TDb &db, uint64_t const checkpoint_frequency, TBlockDb &block_db,
         block_num_t start_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
@@ -197,16 +181,10 @@ public:
                 Status::START_BLOCK_NUMBER_OUTSIDE_DB, start_block_number};
         }
 
-        return run_fork<
-            TTraits,
-            TTxnProcessor,
-            TEvm,
-            TEvmHost,
-            TFiberData,
-            TInterpreter>(
-            state,
+        return run_fork<TTraits, TTxnProcessor, TEvm, TEvmHost, TFiberData>(
+            db,
+            checkpoint_frequency,
             block_db,
-            receipt_collector,
             start_block_number,
             until_block_number);
     }

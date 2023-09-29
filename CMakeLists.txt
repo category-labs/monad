@@ -15,7 +15,7 @@ include(cmake/test.cmake)
 
 add_subdirectory("monad-core")
 
-find_package(Boost REQUIRED COMPONENTS fiber log)
+find_package(Boost REQUIRED COMPONENTS fiber graph log)
 find_package(PkgConfig REQUIRED)
 find_package(absl REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
@@ -41,6 +41,12 @@ function(monad_compile_options target)
     ${target}
     PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-attributes=clang::no_sanitize>)
 
+  # needed to resolve some potential false positives when compiling with
+  # Boost.Graph
+  target_compile_options(
+    ${target}
+    PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>)
+
   # this is needed to turn off ranges support in nlohmann_json, because the
   # ranges standard header triggers a clang bug which is fixed in trunk but not
   # currently available to us
@@ -59,6 +65,7 @@ endfunction()
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/ethereum_test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common/src/test)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/analysis)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/core/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/db/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum)
@@ -92,6 +99,9 @@ endif()
 add_library(
   monad STATIC
   "include/monad/config.hpp"
+  # analysis
+  "include/monad/analysis/analysis.hpp"
+  "src/monad/analysis/analysis.cpp"
   # core
   "include/monad/core/account.hpp"
   "include/monad/core/address.hpp"
@@ -201,6 +211,7 @@ target_link_libraries(
   monad
   PUBLIC monad_core
   PRIVATE Boost::fiber
+  PRIVATE Boost::graph
   PRIVATE Boost::log
   PRIVATE PkgConfig::brotli
   PRIVATE PkgConfig::rocksdb

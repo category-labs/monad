@@ -59,6 +59,13 @@ struct Execution
         if (status != transaction_processor_t<TFork>::Status::SUCCESS) {
             return std::nullopt;
         }
+
+        // sum of transaction gas limit and gas utilized in block prior (0 in
+        // this case) must be no greater than the blocks gas limit
+        if (host.block_header_.gas_limit < transaction.gas_limit) {
+            return std::nullopt;
+        }
+
         auto const receipt = transaction_processor.execute(
             state,
             host,

@@ -3,6 +3,7 @@ add_unit_test(
     monad-executiontests
     SOURCES
     # block_processor.cpp // TODO: Comment back once BP is refactored
+    analysis.cpp
     create_contract_address.cpp
     evm.cpp
     evmc_host.cpp

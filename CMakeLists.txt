@@ -129,6 +129,7 @@ add_library(
   "src/monad/db/rocks_db_helper.cpp"
   "src/monad/db/state_db.cpp"
   # execution
+  "include/monad/execution/analysis.hpp"
   "include/monad/execution/config.hpp"
   "include/monad/execution/create_contract_address.hpp"
   "include/monad/execution/ethereum/fork_traits.hpp"

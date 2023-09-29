@@ -26,8 +26,8 @@ class State : public Substate
 {
     std::optional<Account> &read_account(Address const &);
 
-    Delta<bytes32_t> &
-    read_storage_delta(Address const &, bytes32_t const &location);
+    Delta<bytes32_t> &read_storage_delta(
+        Address const &, uint64_t const incarnation, bytes32_t const &location);
 
     byte_string &read_code(bytes32_t const &hash);
 
@@ -140,9 +140,10 @@ public:
             MONAD_DEBUG_ASSERT(account->nonce == 0);
             MONAD_DEBUG_ASSERT(account->code_hash == NULL_HASH);
             // Keep the balance, per chapter 7 of the YP
+            account->incarnation = 1;
         }
         else {
-            account = Account{};
+            account = Account{.incarnation = 1};
         }
     }
 
@@ -162,7 +163,7 @@ public:
     {
         auto &account = read_account(address);
         if (MONAD_UNLIKELY(!account.has_value())) {
-            account = Account{};
+            account = Account{.incarnation = 1};
         }
 
         MONAD_DEBUG_ASSERT(
@@ -184,7 +185,7 @@ public:
     {
         auto &account = read_account(address);
         if (MONAD_UNLIKELY(!account.has_value())) {
-            account = Account{};
+            account = Account{.incarnation = 1};
         }
 
         MONAD_DEBUG_ASSERT(delta <= account.value().balance);
@@ -272,9 +273,9 @@ public:
     {
         LOG_TRACE_L1("destruct_touched_dead");
 
-        for (auto const &address : touched()) {
-            auto &account = read_account(address);
-            if (account.has_value() && account.value() == Account{}) {
+        for (auto const &touched : touched()) {
+            if (account_is_dead(touched)) {
+                auto &account = read_account(touched);
                 account.reset();
             }
         }
@@ -288,12 +289,21 @@ public:
                 account->nonce == 0);
     }
 
+    uint64_t get_incarnation(Address const &address)
+    {
+        auto const it = state_.find(address);
+        MONAD_DEBUG_ASSERT(it != state_.end());
+        auto const &account = it->second.account.second;
+        return account.has_value() ? account.value().incarnation : 0;
+    }
+
     // EVMC Host Interface
     bytes32_t get_storage(Address const &address, bytes32_t const &key) noexcept
     {
         LOG_TRACE_L1("get_storage: {}, {}", address, key);
 
-        return read_storage_delta(address, key).second;
+        auto const incarnation = get_incarnation(address);
+        return read_storage_delta(address, incarnation, key).second;
     }
 
     // EVMC Host Interface
@@ -303,7 +313,8 @@ public:
     {
         LOG_TRACE_L1("set_storage: {}, {} = {}", address, key, value);
 
-        auto &delta = read_storage_delta(address, key);
+        auto const incarnation = get_incarnation(address);
+        auto &delta = read_storage_delta(address, incarnation, key);
         if (value == bytes32_t{}) {
             return zero_out_key(delta);
         }

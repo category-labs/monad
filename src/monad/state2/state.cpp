@@ -29,8 +29,9 @@ std::optional<Account> &State::read_account(Address const &address)
     return it->second.account.second;
 }
 
-Delta<bytes32_t> &
-State::read_storage_delta(Address const &address, bytes32_t const &location)
+Delta<bytes32_t> &State::read_storage_delta(
+    Address const &address, uint64_t const incarnation,
+    bytes32_t const &location)
 {
     // state
     auto const it = state_.find(address);
@@ -42,7 +43,8 @@ State::read_storage_delta(Address const &address, bytes32_t const &location)
             return it2->second;
         }
     }
-    auto const result = block_state_.read_storage(address, 0, location);
+    auto const result =
+        block_state_.read_storage(address, incarnation, location);
     auto const [it2, _] = storage.try_emplace(location, result, result);
     return it2->second;
 }

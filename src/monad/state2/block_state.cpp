@@ -46,7 +46,7 @@ std::optional<Account> BlockState::read_account(Address const &address)
 }
 
 bytes32_t BlockState::read_storage(
-    Address const &address, uint64_t /*const incarnation*/,
+    Address const &address, uint64_t const incarnation,
     bytes32_t const &location)
 {
     // block state
@@ -56,24 +56,25 @@ bytes32_t BlockState::read_storage(
         MONAD_ASSERT(it != state_.end());
         auto const &storage = it->second.storage;
         {
-            auto const it = storage.find(location);
-            if (MONAD_LIKELY(it != storage.end())) {
-                return it->second.second;
+            auto const it2 = storage.find(location);
+            if (MONAD_LIKELY(it2 != storage.end())) {
+                return it2->second.second;
             }
         }
     }
     // database
-    auto result = db_.read_storage(address, location);
+    auto result =
+        incarnation == 0 ? db_.read_storage(address, location) : bytes32_t{};
     {
         WriteLock const lock{mutex_};
         auto const it = state_.find(address);
         MONAD_ASSERT(it != state_.end());
         auto &storage = it->second.storage;
         {
-            auto const [it, inserted] =
+            auto const [it2, inserted] =
                 storage.try_emplace(location, result, result);
             if (MONAD_UNLIKELY(!inserted)) {
-                result = it->second.second;
+                result = it2->second.second;
             }
         }
     }

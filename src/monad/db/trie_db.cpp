@@ -206,7 +206,7 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     if (!value.has_value()) {
         return std::nullopt;
     }
-    Account acct;
+    Account acct{.incarnation = 0};
     auto const decode_result = rlp::decode_account(acct, value.value());
     MONAD_DEBUG_ASSERT(decode_result.has_value());
     MONAD_DEBUG_ASSERT(decode_result.assume_value().empty());

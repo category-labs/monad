@@ -156,32 +156,6 @@ TYPED_TEST_SUITE(DBTest, DBTypes);
 
 TYPED_TEST(DBTest, read_storage)
 {
-    Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
-
-    auto db = this->make_db();
-    db.commit(
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {std::nullopt, acct},
-                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
-        Code{});
-
-    EXPECT_EQ(db.read_storage(a, key1), value1);
-
-    db.commit(
-        StateDeltas{
-            {b,
-             StateDelta{
-                 .account = {std::nullopt, acct},
-                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
-        Code{});
-    EXPECT_EQ(db.read_account(b), acct);
-    EXPECT_EQ(db.read_storage(b, key1), value1);
-}
-
-TYPED_TEST(DBTest, read_nonexistent_storage)
-{
     Account acct{.nonce = 1};
     auto db = this->make_db();
     db.commit(
@@ -191,6 +165,9 @@ TYPED_TEST(DBTest, read_nonexistent_storage)
                  .account = {std::nullopt, acct},
                  .storage = {{key1, {bytes32_t{}, value1}}}}}},
         Code{});
+
+    // Existing storage
+    EXPECT_EQ(db.read_storage(a, key1), value1);
 
     // Non-existing key
     EXPECT_EQ(db.read_storage(a, key2), bytes32_t{});
@@ -231,6 +208,8 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
                      {{key1, {bytes32_t{}, value1}},
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{});
+
+    acct = db.read_account(a).value();
     db.commit(
         StateDeltas{
             {a,
@@ -298,6 +277,7 @@ TYPED_TEST(DBTest, storage_deletion)
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
+    acct = db.read_account(a).value();
     db.commit(
         StateDeltas{
             {a,

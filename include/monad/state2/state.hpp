@@ -136,10 +136,14 @@ public:
 
         auto &account = read_account(address);
         if (MONAD_UNLIKELY(account.has_value())) {
-            // eip-684: nonce should be zero and code should be empty
-            MONAD_DEBUG_ASSERT(account->nonce == 0);
-            MONAD_DEBUG_ASSERT(account->code_hash == NULL_HASH);
-            // Keep the balance, per chapter 7 of the YP
+            // EIP-684
+            MONAD_ASSERT(account->nonce == 0);
+            MONAD_ASSERT(account->code_hash == NULL_HASH);
+            // TODO there should be no storage deltas - can this ever occur?
+            auto const it = state_.find(address);
+            MONAD_ASSERT(it->second.storage.empty());
+            // keep the balance, per chapter 7 of the YP
+            account->incarnation = 1;
         }
         else {
             account = Account{};
@@ -274,7 +278,8 @@ public:
 
         for (auto const &address : touched()) {
             auto &account = read_account(address);
-            if (account.has_value() && account.value() == Account{}) {
+            if (MONAD_UNLIKELY(
+                    account.has_value() && is_dead(account.value()))) {
                 account.reset();
             }
         }
@@ -283,9 +288,7 @@ public:
     bool account_is_dead(Address const &address) noexcept
     {
         auto const &account = read_account(address);
-        return !account.has_value() ||
-               (account->balance == 0 && account->code_hash == NULL_HASH &&
-                account->nonce == 0);
+        return !account.has_value() || is_dead(account.value());
     }
 
     // EVMC Host Interface

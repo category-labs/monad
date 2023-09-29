@@ -251,6 +251,196 @@ TYPED_TEST(StateTest, selfdestruct_self)
     EXPECT_FALSE(s.account_exists(a));
 }
 
+TYPED_TEST(StateTest, selfdestruct_merge_incarnation)
+{
+    BlockState bs{this->db};
+    this->db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 18'000}},
+                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        Code{});
+    {
+        State s1{bs};
+
+        s1.selfdestruct(a, a);
+        s1.destruct_suicides();
+
+        EXPECT_TRUE(bs.can_merge(s1.state_));
+        bs.merge(s1.state_);
+    }
+    {
+        State s2{bs};
+        EXPECT_FALSE(s2.account_exists(a));
+        s2.create_contract(a);
+        EXPECT_EQ(s2.get_storage(a, key1), bytes32_t{});
+    }
+}
+
+TYPED_TEST(StateTest, selfdestruct_merge_create_incarnation)
+{
+    BlockState bs{this->db};
+    this->db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 18'000}},
+                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        Code{});
+    {
+        State s1{bs};
+
+        s1.selfdestruct(a, b);
+        s1.destruct_suicides();
+
+        EXPECT_TRUE(bs.can_merge(s1.state_));
+        bs.merge(s1.state_);
+    }
+    {
+        State s2{bs};
+        EXPECT_FALSE(s2.account_exists(a));
+        s2.create_contract(a);
+        EXPECT_EQ(s2.get_storage(a, key1), bytes32_t{});
+
+        s2.set_storage(a, key1, value2);
+        s2.set_storage(a, key2, value1);
+
+        EXPECT_EQ(s2.get_storage(a, key1), value2);
+        EXPECT_EQ(s2.get_storage(a, key2), value1);
+
+        EXPECT_TRUE(bs.can_merge(s2.state_));
+        bs.merge(s2.state_);
+    }
+    {
+        State s3{bs};
+        EXPECT_TRUE(s3.account_exists(a));
+        EXPECT_EQ(s3.get_storage(a, key1), value2);
+        EXPECT_EQ(s3.get_storage(a, key2), value1);
+    }
+}
+
+TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
+{
+    BlockState bs{this->db};
+    this->db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 18'000}},
+                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        Code{});
+    {
+        State s1{bs};
+
+        s1.selfdestruct(a, a);
+        s1.destruct_suicides();
+
+        EXPECT_TRUE(bs.can_merge(s1.state_));
+        bs.merge(s1.state_);
+    }
+    {
+        State s2{bs};
+        s2.create_contract(a);
+        bs.merge(s2.state_);
+    }
+    {
+        bs.commit();
+        EXPECT_EQ(this->db.read_storage(a, key1), bytes32_t{});
+    }
+}
+
+TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
+{
+    BlockState bs{this->db};
+    this->db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, Account{}},
+                 .storage =
+                     {{key1, {bytes32_t{}, value2}},
+                      {key3, {bytes32_t{}, value3}}}}}},
+        Code{});
+    {
+        State s1{bs};
+
+        s1.selfdestruct(a, a);
+        s1.destruct_suicides();
+
+        EXPECT_TRUE(bs.can_merge(s1.state_));
+        bs.merge(s1.state_);
+    }
+    {
+        State s2{bs};
+        s2.add_to_balance(a, 1000);
+
+        s2.set_storage(a, key1, value1);
+        s2.set_storage(a, key2, value2);
+
+        EXPECT_TRUE(bs.can_merge(s2.state_));
+        bs.merge(s2.state_);
+    }
+    {
+        bs.commit();
+        EXPECT_EQ(this->db.read_storage(a, key1), value1);
+        EXPECT_EQ(this->db.read_storage(a, key2), value2);
+        EXPECT_EQ(
+            this->db.state_root(),
+            0x5B853ED6066181BF0E0D405DA0926FD7707446BCBE670DE13C9EDA7A84F6A401_bytes32);
+    }
+}
+
+TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
+{
+    BlockState bs{this->db};
+    {
+        State s1{bs};
+
+        s1.create_contract(a);
+        s1.set_storage(a, key1, value1);
+        s1.selfdestruct(a, b);
+        s1.destruct_suicides();
+
+        EXPECT_TRUE(bs.can_merge(s1.state_));
+        bs.merge(s1.state_);
+    }
+    {
+        State s2{bs};
+        s2.create_contract(a);
+
+        s2.set_storage(a, key2, value3);
+
+        EXPECT_TRUE(bs.can_merge(s2.state_));
+        bs.merge(s2.state_);
+    }
+    {
+        bs.commit();
+        EXPECT_EQ(this->db.read_storage(a, key1), bytes32_t{});
+        EXPECT_EQ(this->db.read_storage(a, key2), value3);
+    }
+}
+
+TYPED_TEST(StateTest, create_conflict_address_incarnation)
+{
+    BlockState bs{this->db};
+    this->db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 18'000}},
+                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        Code{});
+
+    State s1{bs};
+
+    s1.create_contract(a);
+    s1.set_storage(a, key2, value2);
+
+    EXPECT_EQ(s1.get_storage(a, key1), bytes32_t{});
+    EXPECT_EQ(s1.get_storage(a, key2), value2);
+}
+
 TYPED_TEST(StateTest, destruct_touched_dead)
 {
     BlockState bs{this->db};

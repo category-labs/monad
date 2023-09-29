@@ -42,7 +42,11 @@ State::read_storage_delta(Address const &address, bytes32_t const &location)
             return it2->second;
         }
     }
-    auto const result = block_state_.read_storage(address, 0, location);
+    auto const &account = it->second.account.second;
+    uint64_t const incarnation =
+        account.has_value() ? account.value().incarnation : 0;
+    auto const result =
+        block_state_.read_storage(address, incarnation, location);
     auto const [it2, _] = storage.try_emplace(location, result, result);
     return it2->second;
 }

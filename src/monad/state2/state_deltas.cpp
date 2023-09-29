@@ -57,9 +57,14 @@ void merge(StateDeltas &to, StateDeltas const &from)
 {
     merge_f(to, from, [](auto &d1, auto const &d2) {
         d1.account.second = d2.account.second;
-        merge_f(d1.storage, d2.storage, [](auto &st1, auto const &st2) {
-            st1.second = st2.second;
-        });
+        if (d2.account.second.has_value()) {
+            merge_f(d1.storage, d2.storage, [](auto &st1, auto const &st2) {
+                st1.second = st2.second;
+            });
+        }
+        else {
+            d1.storage.clear();
+        }
     });
 }
 

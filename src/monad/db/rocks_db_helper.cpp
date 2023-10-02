@@ -6,8 +6,6 @@
 #include <monad/db/rocks_db_helper.hpp>
 #include <monad/db/util.hpp>
 
-#include <monad/state/state_changes.hpp>
-
 #include <rocksdb/db.h>
 
 #include <memory>

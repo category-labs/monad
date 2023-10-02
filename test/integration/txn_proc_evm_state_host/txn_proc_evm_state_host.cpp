@@ -9,7 +9,7 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_processor.hpp>
 
-#include <monad/state/state_changes.hpp>
+#include <monad/state2/block_state.hpp>
 #include <monad/state2/block_state_ops.hpp>
 #include <monad/state2/state.hpp>
 

@@ -12,7 +12,6 @@
 
 #include <monad/core/transaction.hpp>
 #include <monad/execution/test/fakes.hpp>
-#include <monad/state/code_state.hpp>
 #include <monad/state2/state_deltas.hpp>
 
 using namespace monad;

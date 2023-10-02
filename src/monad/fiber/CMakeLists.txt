@@ -1,9 +1,0 @@
-add_unit_test(
-    TARGET
-    monad-fibertests
-    SOURCES
-    test_shared_mutex.cpp
-    LIBRARIES
-    monad
-    nanobench
-)

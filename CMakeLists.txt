@@ -29,7 +29,6 @@ set_source_files_properties(
   third_party/evmone/lib/evmone/baseline.cpp TARGET_DIRECTORY evmone
   PROPERTIES COMPILE_OPTIONS -O2)
 add_subdirectory(third_party/intx)
-add_subdirectory(third_party/nanobench)
 add_subdirectory(third_party/silkpre)
 add_subdirectory(third_party/quill SYSTEM)
 
@@ -68,7 +67,6 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/db/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/test)
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/fiber)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/state/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/state2/test)
@@ -147,11 +145,6 @@ add_library(
   "include/monad/execution/transaction_processor.hpp"
   "include/monad/execution/transaction_processor_data.hpp"
   "src/monad/execution/create_contract_address.cpp"
-  # fiber
-  "include/monad/fiber/shared_mutex.hpp"
-  "include/monad/fiber/algorithm.hpp"
-  "include/monad/fiber/properties.hpp"
-  "src/monad/fiber/algorithm.cpp"
   # logging
   "include/monad/logging/config.hpp"
   "include/monad/logging/formatter.hpp"

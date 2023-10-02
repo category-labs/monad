@@ -56,7 +56,6 @@ namespace detail
         bytes32_t const storage_value =
             monad::trie_db_read_storage_with_hashed_key(
                 account_address,
-                0u,
                 keccaked_storage_key_nibbles,
                 leaf_cursor,
                 trie_cursor);

@@ -942,7 +942,7 @@ TYPED_TEST(TrieDBTest, commit_storage_and_account_together_regression)
 
     EXPECT_TRUE(db.read_account(a).has_value());
     EXPECT_EQ(db.read_account(a).value().balance, 1u);
-    EXPECT_EQ(db.read_storage(a, 0u, key1), value1);
+    EXPECT_EQ(db.read_storage(a, key1), value1);
 }
 
 TYPED_TEST(TrieDBTest, set_and_then_clear_storage_in_same_commit)
@@ -958,7 +958,7 @@ TYPED_TEST(TrieDBTest, set_and_then_clear_storage_in_same_commit)
     merge(bs.state, as.state_);
     db.commit(bs.state, bs.code);
 
-    EXPECT_EQ(db.read_storage(a, 0u, key1), monad::bytes32_t{});
+    EXPECT_EQ(db.read_storage(a, key1), monad::bytes32_t{});
 }
 
 TYPED_TEST(StateTest, commit_twice)
@@ -998,8 +998,8 @@ TYPED_TEST(StateTest, commit_twice)
         merge(bs.state, as.state_);
         db.commit(bs.state, bs.code);
 
-        EXPECT_EQ(db.read_storage(b, 0u, key1), value2);
-        EXPECT_EQ(db.read_storage(b, 0u, key2), value2);
+        EXPECT_EQ(db.read_storage(b, key1), value2);
+        EXPECT_EQ(db.read_storage(b, key2), value2);
     }
     {
         // Block 1, Txn 0
@@ -1015,8 +1015,8 @@ TYPED_TEST(StateTest, commit_twice)
         merge(bs.state, cs.state_);
         db.commit(bs.state, bs.code);
 
-        EXPECT_EQ(db.read_storage(c, 0u, key1), monad::bytes32_t{});
-        EXPECT_EQ(db.read_storage(c, 0u, key2), monad::bytes32_t{});
+        EXPECT_EQ(db.read_storage(c, key1), monad::bytes32_t{});
+        EXPECT_EQ(db.read_storage(c, key2), monad::bytes32_t{});
     }
 }
 

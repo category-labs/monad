@@ -44,13 +44,11 @@ public:
     std::optional<Account>
     read_account_history(address_t const &, uint64_t block_number);
 
-    virtual bytes32_t read_storage(
-        address_t const &, uint64_t incarnation,
-        bytes32_t const &location) const override;
+    virtual bytes32_t
+    read_storage(address_t const &, bytes32_t const &location) const override;
 
     bytes32_t read_storage_history(
-        address_t const &, uint64_t incarnation, bytes32_t const &location,
-        uint64_t block_number);
+        address_t const &, bytes32_t const &location, uint64_t block_number);
 
     virtual byte_string read_code(bytes32_t const &) const override;
 

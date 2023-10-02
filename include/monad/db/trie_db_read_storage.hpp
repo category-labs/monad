@@ -9,8 +9,8 @@ MONAD_NAMESPACE_BEGIN
 
 template <typename TCursor>
 [[nodiscard]] bytes32_t trie_db_read_storage_with_hashed_key(
-    address_t const &a, uint64_t, trie::Nibbles const &k,
-    TCursor &&leaves_cursor, TCursor &&trie_cursor)
+    address_t const &a, trie::Nibbles const &k, TCursor &&leaves_cursor,
+    TCursor &&trie_cursor)
 {
     leaves_cursor.set_prefix(a);
 
@@ -56,14 +56,13 @@ template <typename TCursor>
 
 template <typename TCursor>
 [[nodiscard]] bytes32_t trie_db_read_storage(
-    address_t const &a, uint64_t incarnation, bytes32_t const &k,
-    TCursor &&leaves_cursor, TCursor &&trie_cursor)
+    address_t const &a, bytes32_t const &k, TCursor &&leaves_cursor,
+    TCursor &&trie_cursor)
 {
     auto const hashed_storage_key = trie::Nibbles{
         std::bit_cast<bytes32_t>(ethash::keccak256(k.bytes, sizeof(k.bytes)))};
     return trie_db_read_storage_with_hashed_key(
         a,
-        incarnation,
         hashed_storage_key,
         std::forward<TCursor>(leaves_cursor),
         std::forward<TCursor>(trie_cursor));

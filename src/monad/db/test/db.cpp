@@ -27,7 +27,6 @@ static constexpr auto code_hash1 =
     0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
 static constexpr auto code_hash2 =
     0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1bbbbbbbbb_bytes32;
-static constexpr auto incarnation = 0u;
 
 template <typename TDB>
 struct DBTest : public testing::Test
@@ -56,7 +55,7 @@ TYPED_TEST(DBTest, read_storage)
                  .storage = {{key1, {bytes32_t{}, value1}}}}}},
         Code{});
 
-    EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
+    EXPECT_EQ(db.read_storage(a, key1), value1);
 
     db.commit(
         StateDeltas{
@@ -66,7 +65,7 @@ TYPED_TEST(DBTest, read_storage)
                  .storage = {{key1, {bytes32_t{}, value1}}}}}},
         Code{});
     EXPECT_EQ(db.read_account(b), acct);
-    EXPECT_EQ(db.read_storage(b, incarnation, key1), value1);
+    EXPECT_EQ(db.read_storage(b, key1), value1);
 }
 
 TYPED_TEST(DBTest, read_nonexistent_storage)
@@ -82,11 +81,11 @@ TYPED_TEST(DBTest, read_nonexistent_storage)
         Code{});
 
     // Non-existing key
-    EXPECT_EQ(db.read_storage(a, incarnation, key2), bytes32_t{});
+    EXPECT_EQ(db.read_storage(a, key2), bytes32_t{});
 
     // Non-existing account
     EXPECT_FALSE(db.read_account(b).has_value());
-    EXPECT_EQ(db.read_storage(b, incarnation, key1), bytes32_t{});
+    EXPECT_EQ(db.read_storage(b, key1), bytes32_t{});
 }
 
 TYPED_TEST(DBTest, read_code)
@@ -149,8 +148,8 @@ TEST(InMemoryTrieDB, erase)
                      {{key1, {value1, value2}}, {key2, {value2, value1}}}}}},
         Code{});
 
-    EXPECT_EQ(db.read_storage(a, incarnation, key1), bytes32_t{});
-    EXPECT_EQ(db.read_storage(a, incarnation, key2), bytes32_t{});
+    EXPECT_EQ(db.read_storage(a, key1), bytes32_t{});
+    EXPECT_EQ(db.read_storage(a, key2), bytes32_t{});
     EXPECT_TRUE(db.accounts_trie.leaves_storage.empty());
     EXPECT_TRUE(db.accounts_trie.trie_storage.empty());
     EXPECT_TRUE(db.storage_trie.leaves_storage.empty());
@@ -221,7 +220,7 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
         Code{});
 
     EXPECT_EQ(db.read_account(a), std::nullopt);
-    EXPECT_EQ(db.read_storage(a, 0u, key1), bytes32_t{});
+    EXPECT_EQ(db.read_storage(a, key1), bytes32_t{});
     EXPECT_EQ(db.state_root(), NULL_ROOT);
 }
 
@@ -251,8 +250,8 @@ TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)
         db.create_and_prune_block_history(block_number++);
 
         EXPECT_EQ(db.read_account(a), acct);
-        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
-        EXPECT_EQ(db.read_storage(a, incarnation, key2), value2);
+        EXPECT_EQ(db.read_storage(a, key1), value1);
+        EXPECT_EQ(db.read_storage(a, key2), value2);
 
         if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
@@ -270,8 +269,8 @@ TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)
         auto db = TypeParam{Writable{}, root, block_number, BLOCK_HISTORY};
 
         EXPECT_EQ(db.read_account(a), acct);
-        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
-        EXPECT_EQ(db.read_storage(a, incarnation, key2), value2);
+        EXPECT_EQ(db.read_storage(a, key1), value1);
+        EXPECT_EQ(db.read_storage(a, key2), value2);
 
         if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
@@ -293,8 +292,8 @@ TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)
         db.create_and_prune_block_history(block_number++);
 
         EXPECT_EQ(db.read_account(a), acct);
-        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
-        EXPECT_EQ(db.read_storage(a, incarnation, key2), value1);
+        EXPECT_EQ(db.read_storage(a, key1), value1);
+        EXPECT_EQ(db.read_storage(a, key2), value1);
 
         if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
@@ -307,8 +306,8 @@ TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)
     {
         auto db = TypeParam{Writable{}, root, block_number, BLOCK_HISTORY};
         EXPECT_EQ(db.read_account(a), acct);
-        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
-        EXPECT_EQ(db.read_storage(a, incarnation, key2), value1);
+        EXPECT_EQ(db.read_storage(a, key1), value1);
+        EXPECT_EQ(db.read_storage(a, key2), value1);
 
         if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
@@ -322,8 +321,8 @@ TYPED_TEST(RocksDBTest, block_history_for_constructor_with_start_block_number)
         auto db = TypeParam{Writable{}, root, block_number - 1, BLOCK_HISTORY};
 
         EXPECT_EQ(db.read_account(a), acct);
-        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
-        EXPECT_EQ(db.read_storage(a, incarnation, key2), value2);
+        EXPECT_EQ(db.read_storage(a, key1), value1);
+        EXPECT_EQ(db.read_storage(a, key2), value2);
 
         if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
@@ -366,8 +365,8 @@ TYPED_TEST(
         db.create_and_prune_block_history(block_number++);
 
         EXPECT_EQ(db.read_account(a), acct);
-        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
-        EXPECT_EQ(db.read_storage(a, incarnation, key2), value2);
+        EXPECT_EQ(db.read_storage(a, key1), value1);
+        EXPECT_EQ(db.read_storage(a, key2), value2);
 
         if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
@@ -384,8 +383,8 @@ TYPED_TEST(
         auto db = TypeParam{Writable{}, root, std::nullopt, BLOCK_HISTORY};
 
         EXPECT_EQ(db.read_account(a), acct);
-        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
-        EXPECT_EQ(db.read_storage(a, incarnation, key2), value2);
+        EXPECT_EQ(db.read_storage(a, key1), value1);
+        EXPECT_EQ(db.read_storage(a, key2), value2);
 
         if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
@@ -406,8 +405,8 @@ TYPED_TEST(
         db.create_and_prune_block_history(block_number++);
 
         EXPECT_EQ(db.read_account(a), acct);
-        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
-        EXPECT_EQ(db.read_storage(a, incarnation, key2), value1);
+        EXPECT_EQ(db.read_storage(a, key1), value1);
+        EXPECT_EQ(db.read_storage(a, key2), value1);
 
         if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
@@ -422,8 +421,8 @@ TYPED_TEST(
         auto db = TypeParam{Writable{}, root, std::nullopt, BLOCK_HISTORY};
 
         EXPECT_EQ(db.read_account(a), acct);
-        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
-        EXPECT_EQ(db.read_storage(a, incarnation, key2), value1);
+        EXPECT_EQ(db.read_storage(a, key1), value1);
+        EXPECT_EQ(db.read_storage(a, key2), value1);
 
         if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
@@ -464,8 +463,8 @@ TYPED_TEST(RocksDBTest, block_history_pruning)
         db.create_and_prune_block_history(block_number++);
 
         EXPECT_EQ(db.read_account(a), acct);
-        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
-        EXPECT_EQ(db.read_storage(a, incarnation, key2), value2);
+        EXPECT_EQ(db.read_storage(a, key1), value1);
+        EXPECT_EQ(db.read_storage(a, key2), value2);
 
         if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
@@ -481,8 +480,8 @@ TYPED_TEST(RocksDBTest, block_history_pruning)
         auto db = TypeParam{Writable{}, root, block_number, BLOCK_HISTORY};
 
         EXPECT_EQ(db.read_account(a), acct);
-        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
-        EXPECT_EQ(db.read_storage(a, incarnation, key2), value2);
+        EXPECT_EQ(db.read_storage(a, key1), value1);
+        EXPECT_EQ(db.read_storage(a, key2), value2);
 
         if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(
@@ -536,8 +535,8 @@ TYPED_TEST(RocksDBTest, read_only)
     {
         auto db = TypeParam{ReadOnly{}, root, 1};
         EXPECT_EQ(db.read_account(a), acct);
-        EXPECT_EQ(db.read_storage(a, incarnation, key1), value1);
-        EXPECT_EQ(db.read_storage(a, incarnation, key2), value2);
+        EXPECT_EQ(db.read_storage(a, key1), value1);
+        EXPECT_EQ(db.read_storage(a, key2), value2);
 
         if constexpr (std::same_as<TypeParam, RocksTrieDB>) {
             EXPECT_EQ(

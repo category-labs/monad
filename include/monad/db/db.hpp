@@ -17,9 +17,8 @@ struct Db
 {
     virtual std::optional<Account> read_account(address_t const &) const = 0;
 
-    virtual bytes32_t read_storage(
-        address_t const &, uint64_t incarnation,
-        bytes32_t const &key) const = 0;
+    virtual bytes32_t
+    read_storage(address_t const &, bytes32_t const &key) const = 0;
 
     virtual byte_string read_code(bytes32_t const &) const = 0;
 

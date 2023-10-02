@@ -129,14 +129,12 @@ std::optional<Account> StateDb::read_account_history(
     return {};
 }
 
-bytes32_t StateDb::read_storage(
-    address_t const &address, uint64_t const incarnation,
-    bytes32_t const &location) const
+bytes32_t
+StateDb::read_storage(address_t const &address, bytes32_t const &location) const
 {
-    byte_string_fixed<60> key;
+    byte_string_fixed<52> key;
     std::memcpy(&key[0], address.bytes, 20);
-    boost::endian::store_big_u64(&key[20], incarnation);
-    std::memcpy(&key[28], location.bytes, 32);
+    std::memcpy(&key[20], location.bytes, 32);
 
     rocksdb::PinnableSlice value;
     auto const status =
@@ -152,14 +150,13 @@ bytes32_t StateDb::read_storage(
 }
 
 bytes32_t StateDb::read_storage_history(
-    address_t const &address, uint64_t const incarnation,
-    bytes32_t const &location, uint64_t const block_number)
+    address_t const &address, bytes32_t const &location,
+    uint64_t const block_number)
 {
-    byte_string_fixed<68> key;
+    byte_string_fixed<60> key;
     std::memcpy(&key[0], address.bytes, 20);
-    boost::endian::store_big_u64(&key[20], incarnation);
-    std::memcpy(&key[28], location.bytes, 32);
-    boost::endian::store_big_u64(&key[60], block_number);
+    std::memcpy(&key[20], location.bytes, 32);
+    boost::endian::store_big_u64(&key[52], block_number);
 
     std::unique_ptr<rocksdb::Iterator> const it{
         db_->NewIterator(rocksdb::ReadOptions{}, cfs_[6])};

@@ -70,13 +70,11 @@ struct InMemoryTrieDB : public Db
             accounts_trie.make_trie_cursor());
     }
 
-    [[nodiscard]] bytes32_t read_storage(
-        address_t const &a, uint64_t incarnation,
-        bytes32_t const &key) const override
+    [[nodiscard]] bytes32_t
+    read_storage(address_t const &a, bytes32_t const &key) const override
     {
         return trie_db_read_storage(
             a,
-            incarnation,
             key,
             storage_trie.make_leaf_cursor(),
             storage_trie.make_trie_cursor());

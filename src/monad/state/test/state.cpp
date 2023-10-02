@@ -34,7 +34,6 @@ static constexpr auto code_hash =
     0x00000000000000000000000000000000000000000000000000000000cccccccc_bytes32;
 static constexpr auto c1 =
     byte_string{0x65, 0x74, 0x68, 0x65, 0x72, 0x6d, 0x69};
-static constexpr auto incarnation = 0ull;
 
 template <typename TDB>
 struct StateTest : public testing::Test
@@ -471,7 +470,7 @@ TYPED_TEST(TrieDBTest, set_and_then_clear_storage_in_same_commit)
     t.merge_changes(changeset);
     t.commit();
 
-    EXPECT_EQ(db.read_storage(a, incarnation, key1), monad::bytes32_t{});
+    EXPECT_EQ(db.read_storage(a, key1), monad::bytes32_t{});
 }
 
 TYPED_TEST(StateTest, commit_twice)

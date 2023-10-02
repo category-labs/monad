@@ -51,7 +51,7 @@ std::optional<Account> &read_account(
 
 template <class Mutex>
 delta_t<bytes32_t> &read_storage(
-    address_t const &address, uint64_t const incarnation,
+    address_t const &address, uint64_t const /*incarnation*/,
     bytes32_t const &location, StateDeltas &state,
     BlockState<Mutex> &block_state, Db &db)
 {
@@ -83,7 +83,7 @@ delta_t<bytes32_t> &read_storage(
         }
     }
     // database
-    auto result = db.read_storage(address, incarnation, location);
+    auto result = db.read_storage(address, location);
     {
         std::lock_guard<Mutex> const lock{block_state.mutex};
         auto const it = block_state.state.find(address);
@@ -103,8 +103,7 @@ delta_t<bytes32_t> &read_storage(
 
 template <class Mutex>
 byte_string &read_code(
-    bytes32_t const &hash, Code &code, BlockState<Mutex> &block_state,
-    Db &db)
+    bytes32_t const &hash, Code &code, BlockState<Mutex> &block_state, Db &db)
 {
     // code
     {
@@ -144,7 +143,7 @@ template delta_t<bytes32_t> &read_storage(
     address_t const &, uint64_t, bytes32_t const &, StateDeltas &,
     BlockState<std::shared_mutex> &, Db &);
 
-template byte_string &read_code(
-    bytes32_t const &, Code &, BlockState<std::shared_mutex> &, Db &);
+template byte_string &
+read_code(bytes32_t const &, Code &, BlockState<std::shared_mutex> &, Db &);
 
 MONAD_NAMESPACE_END

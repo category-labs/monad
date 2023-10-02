@@ -5,6 +5,7 @@
 
 #include <monad/execution/config.hpp>
 #include <monad/execution/evm.hpp>
+#include <monad/execution/evmone_baseline_interpreter.hpp>
 
 #include <monad/execution/test/fakes.hpp>
 
@@ -19,8 +20,6 @@
 using namespace monad;
 using namespace monad::execution;
 
-static constexpr auto null{0x0000000000000000000000000000000000000000_address};
-
 db::BlockDb blocks{test_resource::correct_block_data_dir};
 
 using account_store_db_t = db::InMemoryTrieDB;
@@ -28,13 +27,15 @@ using mutex_t = std::shared_mutex;
 using state_t = state::State<mutex_t, db::BlockDb>;
 using traits_t = fake::traits::alpha<state_t>;
 
+using interpreter_t = EVMOneBaselineInterpreter<state_t, traits_t>;
+
 template <concepts::fork_traits<state_t> TTraits>
 using traits_templated_evm_t =
-    Evm<state_t, fake::traits::alpha<state_t>, fake::Interpreter>;
+    Evm<state_t, fake::traits::alpha<state_t>, interpreter_t>;
 
 using evm_t = traits_templated_evm_t<traits_t>;
 using evm_host_t = fake::EvmHost<
-    state_t, traits_t, fake::Evm<state_t, traits_t, fake::Interpreter>>;
+    state_t, traits_t, fake::Evm<state_t, traits_t, interpreter_t>>;
 
 TEST(Evm, create_with_insufficient)
 {
@@ -241,154 +242,6 @@ TEST(Evm, dont_transfer_on_staticcall)
     EXPECT_EQ(s.get_balance(to), bytes32_t{});
 }
 
-TEST(Evm, create_contract_account)
-{
-    BlockState<mutex_t> bs;
-    account_store_db_t db{};
-    state::State s{bs, db, blocks};
-
-    static constexpr auto from{
-        0x5353535353535353535353535353535353535353_address};
-    static constexpr auto new_addr{
-        0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
-
-    db.commit(
-        StateDeltas{
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt, Account{.balance = 50'000, .nonce = 1}}}}},
-        Code{});
-
-    evm_host_t h{};
-    byte_string code{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
-    fake::Interpreter::_result = evmc::Result{
-        evmc_result{.status_code = EVMC_SUCCESS, .gas_left = 8'000}};
-
-    evmc_message m{
-        .kind = EVMC_CREATE,
-        .gas = 12'000,
-        .sender = from,
-        .input_data = code.data(),
-        .input_size = code.size()};
-    uint256_t v{6'000};
-    intx::be::store(m.value.bytes, v);
-
-    auto const result = evm_t::create_contract_account(&h, s, m);
-
-    EXPECT_EQ(result.create_address, new_addr);
-    EXPECT_EQ(s.get_balance(from), bytes32_t{44'000});
-    EXPECT_EQ(s.get_balance(new_addr), bytes32_t{6'000});
-}
-
-TEST(Evm, create2_contract_account)
-{
-    BlockState<mutex_t> bs;
-    account_store_db_t db{};
-    state::State s{bs, db, blocks};
-
-    static constexpr auto from{
-        0x5353535353535353535353535353535353535353_address};
-    static constexpr auto new_addr2{
-        0xe0e05f8f41129e2087ec0a3759810fdced46edd4_address};
-
-    db.commit(
-        StateDeltas{
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt, Account{.balance = 50'000, .nonce = 1}}}}},
-        Code{});
-
-    evm_host_t h{};
-    byte_string code{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
-    fake::Interpreter::_result = evmc::Result{
-        evmc_result{.status_code = EVMC_SUCCESS, .gas_left = 8'000}};
-
-    evmc_message m{
-        .kind = EVMC_CREATE2,
-        .gas = 18'000,
-        .sender = from,
-        .input_data = code.data(),
-        .input_size = code.size(),
-        .create2_salt = {}};
-    uint256_t v{6'000};
-    intx::be::store(m.value.bytes, v);
-
-    auto const result = evm_t::create_contract_account(&h, s, m);
-
-    EXPECT_EQ(result.create_address, new_addr2);
-    EXPECT_EQ(s.get_balance(from), bytes32_t{44'000});
-    EXPECT_EQ(s.get_balance(new_addr2), bytes32_t{6'000});
-}
-
-TEST(Evm, oog_create_account)
-{
-    BlockState<mutex_t> bs;
-    account_store_db_t db{};
-    state::State s{bs, db, blocks};
-
-    static constexpr auto from{
-        0x5353535353535353535353535353535353535353_address};
-    static constexpr auto new_addr{
-        0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
-
-    db.commit(
-        StateDeltas{
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt, Account{.balance = 50'000, .nonce = 1}}}}},
-        Code{});
-
-    evm_host_t h{};
-    fake::Interpreter::_result = evmc::Result{
-        evmc_result{.status_code = EVMC_OUT_OF_GAS, .gas_left = 0}};
-
-    evmc_message m{.kind = EVMC_CREATE, .gas = 12'000, .sender = from};
-
-    auto const result = evm_t::create_contract_account(&h, s, m);
-
-    EXPECT_FALSE(s.account_exists(new_addr));
-    EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
-    EXPECT_EQ(result.create_address, null);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.gas_refund, 0);
-}
-
-TEST(Evm, revert_create_account)
-{
-    BlockState<mutex_t> bs;
-    account_store_db_t db{};
-    state::State s{bs, db, blocks};
-
-    static constexpr auto from{
-        0x5353535353535353535353535353535353535353_address};
-    static constexpr auto new_addr{
-        0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
-
-    evm_host_t h{};
-
-    db.commit(
-        StateDeltas{
-            {from,
-             StateDelta{
-                 .account = {std::nullopt, Account{.balance = 10'000}}}}},
-        Code{});
-
-    fake::Interpreter::_result = evmc::Result{
-        evmc_result{.status_code = EVMC_REVERT, .gas_left = 11'000}};
-
-    evmc_message m{.kind = EVMC_CREATE, .gas = 12'000, .sender = from};
-
-    auto const result = evm_t::create_contract_account(&h, s, m);
-
-    EXPECT_FALSE(s.account_exists(new_addr));
-    EXPECT_EQ(result.status_code, EVMC_REVERT);
-    EXPECT_EQ(result.create_address, null);
-    EXPECT_EQ(result.gas_left, 11'000);
-}
-
 TEST(Evm, create_nonce_out_of_range)
 {
     BlockState<mutex_t> bs;
@@ -425,48 +278,6 @@ TEST(Evm, create_nonce_out_of_range)
 
     EXPECT_FALSE(s.account_exists(new_addr));
     EXPECT_EQ(result.status_code, EVMC_ARGUMENT_OUT_OF_RANGE);
-}
-
-TEST(Evm, call_evm)
-{
-    BlockState<mutex_t> bs;
-    account_store_db_t db{};
-    state::State s{bs, db, blocks};
-
-    static constexpr auto from{
-        0x5353535353535353535353535353535353535353_address};
-    static constexpr auto to{
-        0xf8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8_address};
-
-    db.commit(
-        StateDeltas{
-            {to,
-             StateDelta{.account = {std::nullopt, Account{.balance = 50'000}}}},
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt, Account{.balance = 50'000, .nonce = 1}}}}},
-        Code{});
-
-    evm_host_t h{};
-
-    fake::Interpreter::_result = evmc::Result{
-        evmc_result{.status_code = EVMC_SUCCESS, .gas_left = 7'000}};
-
-    evmc_message m{
-        .kind = EVMC_CALL,
-        .gas = 12'000,
-        .recipient = to,
-        .sender = from,
-        .code_address = to};
-    uint256_t v{6'000};
-    intx::be::store(m.value.bytes, v);
-
-    auto const result = evm_t::call_evm(&h, s, m);
-
-    EXPECT_EQ(s.get_balance(from), bytes32_t{44'000});
-    EXPECT_EQ(s.get_balance(to), bytes32_t{56'000});
-    EXPECT_EQ(result.gas_left, 7'000);
 }
 
 TEST(Evm, static_precompile_execution)

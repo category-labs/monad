@@ -363,18 +363,6 @@ namespace fake
         }
     };
 
-    struct Interpreter
-    {
-        static inline evmc::Result _result{};
-
-        template <class TEvmHost>
-        static evmc::Result
-        execute(TEvmHost *, evmc_message const &, byte_string_view)
-        {
-            return std::move(_result);
-        }
-    };
-
     namespace traits
     {
         template <class TState>

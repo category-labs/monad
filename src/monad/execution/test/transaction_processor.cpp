@@ -1,7 +1,6 @@
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/config.hpp>
-#include <monad/execution/evmone_baseline_interpreter.hpp>
 #include <monad/execution/transaction_processor.hpp>
 
 #include <monad/execution/test/fakes.hpp>
@@ -22,10 +21,8 @@ using state_t = state::State<mutex_t, block_cache_t>;
 using traits_t = fake::traits::alpha<state_t>;
 using processor_t = TransactionProcessor<state_t, traits_t>;
 
-using interpreter_t = EVMOneBaselineInterpreter<state_t, traits_t>;
-
-using evm_host_t = fake::EvmHost<
-    state_t, traits_t, fake::Evm<state_t, traits_t, interpreter_t>>;
+using evm_host_t =
+    fake::EvmHost<state_t, traits_t, fake::Evm<state_t, traits_t>>;
 
 namespace
 {

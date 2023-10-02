@@ -1,7 +1,6 @@
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/config.hpp>
-#include <monad/execution/evmone_baseline_interpreter.hpp>
 #include <monad/execution/transaction_processor_data.hpp>
 
 #include <monad/execution/test/fakes.hpp>
@@ -24,14 +23,11 @@ using db_t = db::InMemoryTrieDB;
 using state_t = state::State<mutex_t, block_cache_t>;
 using traits_t = fake::traits::alpha<state_t>;
 
-using interpreter_t = EVMOneBaselineInterpreter<state_t, traits_t>;
-
 template <class TTxnProc>
 using data_t = TransactionProcessorFiberData<
     mutex_t, TTxnProc,
     fake::EvmHost<
-        state_t, fake::traits::alpha<state_t>,
-        fake::Evm<state_t, traits_t, interpreter_t>>,
+        state_t, fake::traits::alpha<state_t>, fake::Evm<state_t, traits_t>>,
     block_cache_t>;
 
 namespace

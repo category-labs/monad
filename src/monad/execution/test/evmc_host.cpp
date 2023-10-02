@@ -3,7 +3,6 @@
 
 #include <monad/execution/config.hpp>
 #include <monad/execution/evmc_host.hpp>
-#include <monad/execution/evmone_baseline_interpreter.hpp>
 #include <monad/execution/precompiles.hpp>
 
 #include <monad/execution/test/fakes.hpp>
@@ -24,11 +23,9 @@ using block_cache_t = execution::fake::BlockDb;
 using state_t = state::State<mutex_t, block_cache_t>;
 using traits_t = fake::traits::alpha<state_t>;
 
-using interpreter_t = EVMOneBaselineInterpreter<state_t, traits_t>;
-
 template <concepts::fork_traits<state_t> TTraits>
 using traits_templated_evmc_host_t =
-    EvmcHost<state_t, TTraits, fake::Evm<state_t, TTraits, interpreter_t>>;
+    EvmcHost<state_t, TTraits, fake::Evm<state_t, TTraits>>;
 
 using evmc_host_t = traits_templated_evmc_host_t<traits_t>;
 

@@ -7,7 +7,6 @@
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
-#include <monad/execution/evmone_baseline_interpreter.hpp>
 #include <monad/execution/transaction_processor.hpp>
 
 #include <monad/state/state_changes.hpp>
@@ -32,8 +31,7 @@ static constexpr auto o = 0xb5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5_address;
 using account_store_db_t = db::InMemoryTrieDB;
 
 template <class TState, concepts::fork_traits<TState> TTraits>
-using evm_t = execution::Evm<
-    TState, TTraits, execution::EVMOneBaselineInterpreter<TState, TTraits>>;
+using evm_t = execution::Evm<TState, TTraits>;
 
 template <class TState, concepts::fork_traits<TState> TTraits>
 using evm_host_t = execution::EvmcHost<TState, TTraits, evm_t<TState, TTraits>>;

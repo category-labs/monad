@@ -26,8 +26,8 @@ using traits_t = fake::traits::alpha<state_t>;
 
 using interpreter_t = EVMOneBaselineInterpreter<state_t, traits_t>;
 
-using evm_host_t = fake::EvmHost<
-    state_t, traits_t, fake::Evm<state_t, traits_t, interpreter_t>>;
+using evm_host_t =
+    fake::EvmHost<state_t, traits_t, fake::Evm<state_t, traits_t>>;
 
 TEST(Evm1BaselineInterpreter, execute_empty)
 {

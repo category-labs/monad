@@ -3,6 +3,7 @@
 #include <monad/core/concepts.hpp>
 #include <monad/execution/config.hpp>
 #include <monad/execution/create_contract_address.hpp>
+#include <monad/execution/evmone_baseline_interpreter.hpp>
 #include <monad/execution/precompiles.hpp>
 
 #include <ethash/keccak.hpp>
@@ -16,10 +17,11 @@
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
-template <
-    class TState, concepts::fork_traits<TState> TTraits, class TInterpreter>
+template <class TState, concepts::fork_traits<TState> TTraits>
 struct Evm
 {
+    using interpreter_t = EVMOneBaselineInterpreter<TState, TTraits>;
+
     using result_t = tl::expected<void, evmc_result>;
     using unexpected_t = tl::unexpected<evmc_result>;
 
@@ -77,7 +79,7 @@ struct Evm
             .code_address = contract_address,
         };
 
-        auto result = TInterpreter::execute(
+        auto result = interpreter_t::execute(
             &new_host, m_call, byte_string_view(m.input_data, m.input_size));
 
         if (result.status_code == EVMC_SUCCESS) {
@@ -119,7 +121,7 @@ struct Evm
         }
         else {
             auto const code = new_state.get_code(m.code_address);
-            result = TInterpreter::execute(&new_host, m, code);
+            result = interpreter_t::execute(&new_host, m, code);
         }
 
         if (result.status_code == EVMC_SUCCESS) {

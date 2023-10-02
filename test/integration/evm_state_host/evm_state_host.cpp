@@ -7,7 +7,6 @@
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
-#include <monad/execution/evmone_baseline_interpreter.hpp>
 
 #include <monad/execution/test/fakes.hpp>
 
@@ -39,8 +38,7 @@ static constexpr auto code_hash =
 using account_store_db_t = db::InMemoryTrieDB;
 
 template <class TState, concepts::fork_traits<TState> TTraits>
-using evm_t = execution::Evm<
-    TState, TTraits, execution::EVMOneBaselineInterpreter<TState, TTraits>>;
+using evm_t = execution::Evm<TState, TTraits>;
 
 template <class TState, concepts::fork_traits<TState> TTraits>
 using evm_host_t = execution::EvmcHost<TState, TTraits, evm_t<TState, TTraits>>;

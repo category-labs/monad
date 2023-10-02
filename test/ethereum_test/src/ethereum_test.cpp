@@ -22,15 +22,11 @@ using db_t = monad::db::InMemoryTrieDB;
 using state_t = monad::state::State<mutex_t, monad::execution::fake::BlockDb>;
 
 template <typename TFork>
-using interpreter_t =
-    monad::execution::EVMOneBaselineInterpreter<state_t, TFork>;
-
-template <typename TFork>
 using transaction_processor_t =
     monad::execution::TransactionProcessor<state_t, TFork>;
 
 template <typename TFork>
-using evm_t = monad::execution::Evm<state_t, TFork, interpreter_t<TFork>>;
+using evm_t = monad::execution::Evm<state_t, TFork>;
 
 template <typename TFork>
 using host_t = monad::execution::EvmcHost<state_t, TFork, evm_t<TFork>>;

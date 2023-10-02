@@ -5,7 +5,6 @@
 
 #include <monad/execution/config.hpp>
 #include <monad/execution/evm.hpp>
-#include <monad/execution/evmone_baseline_interpreter.hpp>
 
 #include <monad/execution/test/fakes.hpp>
 
@@ -27,15 +26,12 @@ using mutex_t = std::shared_mutex;
 using state_t = state::State<mutex_t, db::BlockDb>;
 using traits_t = fake::traits::alpha<state_t>;
 
-using interpreter_t = EVMOneBaselineInterpreter<state_t, traits_t>;
-
 template <concepts::fork_traits<state_t> TTraits>
-using traits_templated_evm_t =
-    Evm<state_t, fake::traits::alpha<state_t>, interpreter_t>;
+using traits_templated_evm_t = Evm<state_t, fake::traits::alpha<state_t>>;
 
 using evm_t = traits_templated_evm_t<traits_t>;
-using evm_host_t = fake::EvmHost<
-    state_t, traits_t, fake::Evm<state_t, traits_t, interpreter_t>>;
+using evm_host_t =
+    fake::EvmHost<state_t, traits_t, fake::Evm<state_t, traits_t>>;
 
 TEST(Evm, create_with_insufficient)
 {

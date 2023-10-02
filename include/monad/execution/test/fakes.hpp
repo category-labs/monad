@@ -336,8 +336,7 @@ namespace fake
         }
     };
 
-    template <
-        class TState, concepts::fork_traits<TState> TTraits, class TInterpreter>
+    template <class TState, concepts::fork_traits<TState> TTraits>
     struct Evm
     {
         using unexpected_t = tl::unexpected<evmc_result>;

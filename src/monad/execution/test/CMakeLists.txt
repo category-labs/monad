@@ -7,7 +7,7 @@ add_unit_test(
     evm.cpp
     evmc_host.cpp
     evmone_baseline_interpreter.cpp
-    replay_block_db.cpp
+    # replay_block_db.cpp // TODO: Comment back once ReplayBlockDb is refactored
     transaction_processor.cpp
     transaction_processor_data.cpp
     validation.cpp

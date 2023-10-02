@@ -226,21 +226,6 @@ struct RocksTrieDB : public Db
         return detail::rocks_db_read_code(ch, db, code_cf());
     }
 
-    void commit(state::StateChanges const &obj) override
-    {
-        detail::rocks_db_commit_code_to_batch(batch, obj, code_cf());
-
-        trie_db_process_changes(obj, accounts_trie, storage_trie);
-
-        rocksdb::WriteOptions options;
-        options.disableWAL = true;
-        db->Write(options, &batch);
-        batch.Clear();
-
-        accounts_trie.reset_cursor();
-        storage_trie.reset_cursor();
-    }
-
     void
     commit(StateDeltas const &state_deltas, Code const &code_delta) override
     {

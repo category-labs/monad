@@ -77,12 +77,6 @@ public:
     void revert();
     void commit();
 
-    void commit(state::StateChanges const &) override
-    {
-        // TODO
-        MONAD_ASSERT(false);
-    }
-
     void commit(StateDeltas const &, Code const &) override
     {
         // TODO

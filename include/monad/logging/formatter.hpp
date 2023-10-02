@@ -11,8 +11,6 @@
 
 #include <monad/logging/config.hpp>
 
-#include <monad/state/datum.hpp>
-
 #include <monad/trie/nibbles.hpp>
 #include <monad/trie/node.hpp>
 #include <monad/trie/update.hpp>
@@ -41,15 +39,6 @@ MONAD_LOG_NAMESPACE_END
 
 namespace
 {
-    using account_diff_t = monad::state::diff<std::optional<monad::Account>>;
-    using account_change_set_t =
-        std::unordered_map<monad::address_t, account_diff_t>;
-
-    using value_diff_t = monad::state::diff<monad::bytes32_t>;
-    using key_value_map_t = std::unordered_map<monad::bytes32_t, value_diff_t>;
-    using storage_change_set_t =
-        std::unordered_map<monad::address_t, key_value_map_t>;
-
     using code_change_set_t =
         std::unordered_map<monad::bytes32_t, monad::byte_string>;
 }
@@ -88,27 +77,6 @@ namespace quill
 
     template <>
     struct copy_loggable<monad::Transaction::Type> : std::true_type
-    {
-    };
-
-    template <typename T>
-    struct copy_loggable<monad::state::diff<T>>
-        : std::integral_constant<bool, detail::is_registered_copyable_v<T>>
-    {
-    };
-
-    template <>
-    struct copy_loggable<account_change_set_t> : std::true_type
-    {
-    };
-
-    template <>
-    struct copy_loggable<key_value_map_t> : std::true_type
-    {
-    };
-
-    template <>
-    struct copy_loggable<storage_change_set_t> : std::true_type
     {
     };
 
@@ -297,79 +265,6 @@ struct formatter<monad::Transaction::Type> : public monad::log::basic_formatter
         else {
             fmt::format_to(ctx.out(), "Unknown Transaction Type");
         }
-        return ctx.out();
-    }
-};
-
-template <typename T>
-struct formatter<monad::state::diff<T>> : public monad::log::basic_formatter
-{
-    template <typename FormatContext>
-    auto format(monad::state::diff<T> const &diff, FormatContext &ctx) const
-    {
-        fmt::format_to(ctx.out(), "{{");
-        fmt::format_to(
-            ctx.out(), "Original: {}, Updated: {}", diff.orig, diff.updated);
-        fmt::format_to(ctx.out(), "}}");
-
-        return ctx.out();
-    }
-};
-
-template <>
-struct fmt::formatter<account_change_set_t> : public monad::log::basic_formatter
-{
-    template <typename FormatContext>
-    auto format(
-        account_change_set_t const &account_change_set,
-        FormatContext &ctx) const
-    {
-        fmt::format_to(ctx.out(), "{{");
-        for (auto const &[address, diff_value] : account_change_set) {
-            fmt::format_to(
-                ctx.out(), "\n Address: {}, Diff: {} ", address, diff_value);
-        }
-        fmt::format_to(ctx.out(), "}}");
-
-        return ctx.out();
-    }
-};
-
-template <>
-struct fmt::formatter<key_value_map_t> : public monad::log::basic_formatter
-{
-    template <typename FormatContext>
-    auto format(key_value_map_t const &changed_value, FormatContext &ctx) const
-    {
-        fmt::format_to(ctx.out(), "{{");
-        for (auto const &[key, value_diff] : changed_value) {
-            fmt::format_to(ctx.out(), "Key: {}, Diff: {} ", key, value_diff);
-        }
-        fmt::format_to(ctx.out(), "}}");
-
-        return ctx.out();
-    }
-};
-
-template <>
-struct fmt::formatter<storage_change_set_t> : public monad::log::basic_formatter
-{
-    template <typename FormatContext>
-    auto format(
-        storage_change_set_t const &all_accounts_changed_value,
-        FormatContext &ctx) const
-    {
-        fmt::format_to(ctx.out(), "{{");
-        for (auto const &[address, single_account_changed_value] :
-             all_accounts_changed_value) {
-            fmt::format_to(
-                ctx.out(),
-                "\n Address: {}, Value Changes: {} ",
-                address,
-                single_account_changed_value);
-        }
-        fmt::format_to(ctx.out(), "}}");
-
         return ctx.out();
     }
 };

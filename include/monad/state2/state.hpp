@@ -9,10 +9,9 @@
 
 #include <monad/db/db.hpp>
 
-#include <monad/state/config.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/block_state_ops.hpp>
-#include <monad/state2/state.hpp>
+#include <monad/state2/config.hpp>
 
 #include <monad/logging/formatter.hpp>
 

@@ -5,7 +5,6 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/db/config.hpp>
-#include <monad/state/state_changes.hpp>
 #include <monad/state2/state_deltas.hpp>
 
 #include <cstdint>
@@ -21,8 +20,6 @@ struct Db
     read_storage(address_t const &, bytes32_t const &key) const = 0;
 
     virtual byte_string read_code(bytes32_t const &) const = 0;
-
-    virtual void commit(state::StateChanges const &) = 0;
 
     virtual void commit(StateDeltas const &, Code const &) = 0;
 

@@ -68,7 +68,6 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/state/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/state2/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/trie/test)
 
@@ -159,15 +158,11 @@ add_library(
   # state
   "include/monad/state2/block_state.hpp"
   "include/monad/state2/block_state_ops.hpp"
+  "include/monad/state2/config.hpp"
   "include/monad/state2/state_deltas.hpp"
   "include/monad/state2/state.hpp"
   "src/monad/state2/block_state_ops.cpp"
   "src/monad/state2/state_deltas.cpp"
-  "include/monad/state/account_state.hpp"
-  "include/monad/state/code_state.hpp"
-  "include/monad/state/state.hpp"
-  "include/monad/state/value_state.hpp"
-  "include/monad/state/state_changes.hpp"
   # trie
   "include/monad/trie/compact_encode.hpp"
   "include/monad/trie/nibbles.hpp"

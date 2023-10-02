@@ -77,10 +77,18 @@ TEST(Evm, eip684_existing_code)
     static constexpr auto code_hash{
         0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
 
-    db.commit(state::StateChanges{
-        .account_changes = {
-            {to, Account{.code_hash = code_hash}},
-            {from, Account{.balance = 10'000'000'000, .nonce = 7}}}});
+    db.commit(
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 10'000'000'000, .nonce = 7}}}},
+            {to,
+             StateDelta{
+                 .account = {std::nullopt, Account{.code_hash = code_hash}}}}},
+        Code{});
+
     evmc_message m{
         .kind = EVMC_CREATE,
         .gas = 20'000,

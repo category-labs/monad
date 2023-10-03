@@ -1,7 +1,6 @@
 #!/bin/bash
 
-set -x
-set -e
+set -eux
 
 TMP=$(mktemp)
 sed '$a\' "$2" > "$TMP"

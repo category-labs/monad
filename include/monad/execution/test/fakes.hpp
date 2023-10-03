@@ -206,6 +206,12 @@ namespace fake
             {
                 return state.account_exists(address);
             }
+
+            static constexpr void
+            populate_chain_id(evmc_tx_context &context) noexcept
+            {
+                intx::be::store(context.chain_id.bytes, intx::uint256{1});
+            }
         };
 
         template <class TState>

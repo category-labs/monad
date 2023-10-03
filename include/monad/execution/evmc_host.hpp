@@ -158,9 +158,10 @@ struct EvmcHost : public evmc::Host
             transaction_, block_header_.base_fee_per_gas.value_or(0));
         intx::be::store(result.tx_gas_price.bytes, gas_cost);
 
-        // Note: is there a better place for us to get the chain_id?
-        uint256_t const chain_id = transaction_.sc.chain_id.value_or(0);
-        intx::be::store(result.chain_id.bytes, chain_id);
+        TTraits::populate_chain_id(result);
+        MONAD_ASSERT(
+            transaction_.sc.chain_id.value_or(0) ==
+            intx::be::load<uint256_t>(result.chain_id.bytes));
 
         uint256_t const block_base_fee{
             block_header_.base_fee_per_gas.value_or(0)};

@@ -23,7 +23,7 @@ namespace concepts
                                    address_t const &a, byte_string const & code,
                                    uint64_t gas_used, evmc::Result r, uint256_t const& base_fee_per_gas, 
                                    Block const& b, block_num_t const block_number, 
-                                   std::optional<std::vector<Withdrawal>> const& w)
+                                   std::optional<std::vector<Withdrawal>> const& w, evmc_tx_context& context)
     {
         typename T::next_fork_t;
         { T::rev } -> std::convertible_to<evmc_revision>;
@@ -50,6 +50,7 @@ namespace concepts
         // { T::process_withdrawal(s, w) } -> std::convertible_to<void>;
         // { T::apply_block_award(s, b) } -> std::convertible_to<void>;
 
+        { T::populate_chain_id(context) } -> std::convertible_to<void>;
     };
     // clang-format on
 }

@@ -287,6 +287,15 @@ void EthereumTests::run_state_test(
                         expected.indices.input);
                 }
                 return monad::Transaction{
+                    .sc =
+                        SignatureAndChain{
+                            .r = {},
+                            .s = {},
+                            // Only supporting mainnet for now
+                            .chain_id =
+                                fork_index >= to_fork_index("EIP158").value()
+                                    ? 1
+                                    : 0},
                     .nonce = shared_transaction_data.nonce,
                     .max_fee_per_gas = shared_transaction_data.max_fee_per_gas,
                     .gas_limit = shared_transaction_data.gas_limits.at(

@@ -100,8 +100,8 @@ TEST(EvmcHost, get_tx_context)
         .block_gas_limit = 50'000,
         .block_prev_randao = evmc::uint256be{10'000'000u},
     };
-    intx::be::store(ctx.tx_gas_price.bytes, gas_cost);
     intx::be::store(ctx.chain_id.bytes, chain_id);
+    intx::be::store(ctx.tx_gas_price.bytes, gas_cost);
     intx::be::store(ctx.block_base_fee.bytes, base_fee_per_gas);
     EXPECT_EQ(result, ctx);
 

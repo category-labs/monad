@@ -79,7 +79,7 @@ public:
  * @return the index that corresponds to the fork_name in the `all_forks_t`
  * type
  */
-[[nodiscard]] std::optional<size_t> to_fork_index(std::string_view fork_name);
+[[nodiscard]] std::optional<size_t> to_fork_index(std::string const &fork_name);
 
 template <typename TState>
 void load_state_from_json(nlohmann::json const &j, TState &state)

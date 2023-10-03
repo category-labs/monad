@@ -215,6 +215,8 @@ namespace fork_traits
         {
             return state.account_exists(address);
         }
+
+        static constexpr void populate_chain_id(evmc_tx_context &) noexcept {}
     };
 
     struct homestead : public frontier
@@ -389,6 +391,14 @@ namespace fork_traits
         account_exists(TState &state, address_t const &address)
         {
             return !state.account_is_dead(address);
+        }
+
+        // EIP-155
+        static constexpr void
+        populate_chain_id(evmc_tx_context &context) noexcept
+        {
+            // For now, only support mainnet (chain_id = 1)
+            intx::be::store(context.chain_id.bytes, intx::uint256{1});
         }
     };
 

@@ -76,9 +76,9 @@ struct State
         return account.has_value();
     };
 
-    void create_account(address_t const &address)
+    void create_contract(address_t const &address)
     {
-        LOG_DEBUG("create_account: {}", address);
+        LOG_DEBUG("create_contract: {}", address);
 
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
         if (MONAD_UNLIKELY(account.has_value())) {

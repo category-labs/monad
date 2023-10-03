@@ -65,7 +65,7 @@ struct Evm
         TState new_state{state};
         TEvmHost new_host{*host, new_state};
 
-        new_state.create_account(contract_address);
+        new_state.create_contract(contract_address);
         new_state.set_nonce(contract_address, TTraits::starting_nonce());
         transfer_balances(new_state, m, contract_address);
 

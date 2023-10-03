@@ -87,7 +87,12 @@ void load_state_from_json(nlohmann::json const &j, TState &state)
     for (auto const &[j_addr, j_acc] : j.items()) {
         auto const account_address =
             evmc::from_hex<monad::address_t>(j_addr).value();
-        state.create_account(account_address);
+
+        if (j_acc.contains("code") || j_acc.contains("storage")) {
+            ASSERT_TRUE(j_acc.contains("code") && j_acc.contains("storage"));
+            state.create_contract(account_address);
+        }
+
         if (j_acc.contains("code")) {
             state.set_code(
                 account_address, j_acc.at("code").get<monad::byte_string>());
@@ -101,7 +106,8 @@ void load_state_from_json(nlohmann::json const &j, TState &state)
         state.set_nonce(
             account_address, integer_from_json<uint64_t>(j_acc.at("nonce")));
 
-        if (j_acc.contains("storage") && j_acc["storage"].is_object()) {
+        if (j_acc.contains("storage")) {
+            ASSERT_TRUE(j_acc["storage"].is_object());
             for (auto const &[key, value] : j_acc["storage"].items()) {
                 nlohmann::json key_json = key;
                 monad::bytes32_t key_bytes32 = key_json.get<monad::bytes32_t>();

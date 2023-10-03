@@ -93,18 +93,18 @@ TYPED_TEST(StateTest, account_exists)
     EXPECT_FALSE(s.account_exists(b));
 }
 
-TYPED_TEST(StateTest, create_account)
+TYPED_TEST(StateTest, create_contract)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
 
     State s{bs, db, block_cache};
-    s.create_account(a);
+    s.create_contract(a);
     EXPECT_TRUE(s.account_exists(a));
 
     // allow pre-existing empty account
     EXPECT_FALSE(s.account_exists(b));
-    s.create_account(b);
+    s.create_contract(b);
     EXPECT_TRUE(s.account_exists(b));
 }
 
@@ -120,7 +120,6 @@ TYPED_TEST(StateTest, get_balance)
         Code{});
 
     state_t s{bs, db, block_cache};
-    s.create_account(b);
 
     EXPECT_EQ(s.get_balance(a), bytes32_t{10'000});
     EXPECT_EQ(s.get_balance(b), bytes32_t{0});
@@ -137,7 +136,6 @@ TYPED_TEST(StateTest, add_to_balance)
         Code{});
 
     state_t s{bs, db, block_cache};
-    s.create_account(b);
     s.add_to_balance(a, 10'000);
     s.add_to_balance(b, 20'000);
 
@@ -155,7 +153,6 @@ TYPED_TEST(StateTest, get_nonce)
         Code{});
 
     state_t s{bs, db, block_cache};
-    s.create_account(b);
 
     EXPECT_EQ(s.get_nonce(a), 2);
     EXPECT_EQ(s.get_nonce(b), 0);
@@ -168,7 +165,6 @@ TYPED_TEST(StateTest, set_nonce)
     BlockState<mutex_t> bs;
 
     state_t s{bs, db, block_cache};
-    s.create_account(b);
     s.set_nonce(b, 1);
 
     EXPECT_EQ(s.get_nonce(b), 1);
@@ -186,7 +182,6 @@ TYPED_TEST(StateTest, get_code_hash)
         Code{});
 
     state_t s{bs, db, block_cache};
-    s.create_account(b);
 
     EXPECT_EQ(s.get_code_hash(a), hash1);
     EXPECT_EQ(s.get_code_hash(b), NULL_HASH);
@@ -199,7 +194,7 @@ TYPED_TEST(StateTest, set_code_hash)
     BlockState<mutex_t> bs;
 
     state_t s{bs, db, block_cache};
-    s.create_account(b);
+    s.create_contract(b);
     s.set_code_hash(b, hash1);
 
     EXPECT_EQ(s.get_code_hash(b), hash1);
@@ -219,7 +214,7 @@ TYPED_TEST(StateTest, selfdestruct)
         Code{});
 
     state_t s{bs, db, block_cache};
-    s.create_account(b);
+    s.create_contract(b);
     s.add_to_balance(b, 28'000);
 
     EXPECT_TRUE(s.selfdestruct(a, c));
@@ -659,8 +654,8 @@ TYPED_TEST(StateTest, set_code)
     BlockState<mutex_t> bs;
 
     state_t s{bs, db, block_cache};
-    s.create_account(a);
-    s.create_account(b);
+    s.create_contract(a);
+    s.create_contract(b);
     s.set_code(a, code2);
     s.set_code(b, byte_string{});
 
@@ -693,7 +688,7 @@ TYPED_TEST(StateTest, can_merge_new_account)
     {
         state_t s{t};
 
-        s.create_account(a);
+        s.create_contract(a);
         s.set_nonce(a, 1);
         s.add_to_balance(a, 38'000);
         s.set_code(a, code1);
@@ -933,7 +928,7 @@ TYPED_TEST(TrieDBTest, commit_storage_and_account_together_regression)
     BlockState<mutex_t> bs;
     state_t as{bs, db, block_cache};
 
-    as.create_account(a);
+    as.create_contract(a);
     as.add_to_balance(a, 1);
     (void)as.set_storage(a, key1, value1);
 
@@ -952,7 +947,7 @@ TYPED_TEST(TrieDBTest, set_and_then_clear_storage_in_same_commit)
     BlockState<mutex_t> bs;
     state_t as{bs, db, block_cache};
 
-    as.create_account(a);
+    as.create_contract(a);
     EXPECT_EQ(as.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
     EXPECT_EQ(as.set_storage(a, key1, null), EVMC_STORAGE_ADDED_DELETED);
     merge(bs.state, as.state_);

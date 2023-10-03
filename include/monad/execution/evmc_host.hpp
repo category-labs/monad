@@ -71,6 +71,9 @@ struct EvmcHost : public evmc::Host
 
     virtual bytes32_t get_code_hash(address_t const &a) const noexcept override
     {
+        if (state_.account_is_dead(a)) {
+            return bytes32_t{};
+        }
         return state_.get_code_hash(a);
     }
 

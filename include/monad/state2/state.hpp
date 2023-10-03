@@ -106,7 +106,7 @@ struct State
     add_to_balance(address_t const &address, uint256_t const &delta) noexcept
     {
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
-        if (!account.has_value()) {
+        if (MONAD_UNLIKELY(!account.has_value())) {
             account = Account{};
         }
 
@@ -128,7 +128,7 @@ struct State
         address_t const &address, uint256_t const &delta) noexcept
     {
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
-        if (!account.has_value()) {
+        if (MONAD_UNLIKELY(!account.has_value())) {
             account = Account{};
         }
 
@@ -160,7 +160,9 @@ struct State
         LOG_DEBUG("set_nonce: {} = {}", address, nonce);
 
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
-        MONAD_DEBUG_ASSERT(account.has_value());
+        if (MONAD_UNLIKELY(!account.has_value())) {
+            account = Account{};
+        }
         account.value().nonce = nonce;
     }
 
@@ -322,7 +324,7 @@ struct State
     [[nodiscard]] size_t get_code_size(address_t const &address) noexcept
     {
         auto const &account = read_account<Mutex>(address, state_, bs_, db_);
-        if (account.has_value()) {
+        if (MONAD_LIKELY(account.has_value())) {
             return read_code<Mutex>(account->code_hash, code_, bs_, db_).size();
         }
         return 0u;

@@ -13,6 +13,8 @@
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
+constexpr address_t ripemd_address = 0x03_address;
+
 template <class TTraits>
 [[nodiscard]] constexpr bool is_precompile(address_t const &address) noexcept
 {

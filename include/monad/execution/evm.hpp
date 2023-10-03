@@ -90,6 +90,10 @@ struct Evm
         if (result.status_code == EVMC_SUCCESS) {
             state.merge(new_state);
         }
+        else if (MONAD_UNLIKELY(new_state.is_touched(ripemd_address))) {
+            // YP K.1. Deletion of an Account Despite Out-of-gas.
+            state.touch(ripemd_address);
+        }
 
         return result;
     }
@@ -126,6 +130,10 @@ struct Evm
 
         if (result.status_code == EVMC_SUCCESS) {
             state.merge(new_state);
+        }
+        else if (MONAD_UNLIKELY(new_state.is_touched(ripemd_address))) {
+            // YP K.1. Deletion of an Account Despite Out-of-gas.
+            state.touch(ripemd_address);
         }
 
         return result;

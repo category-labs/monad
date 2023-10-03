@@ -407,6 +407,11 @@ struct State
         touched_.insert(address);
     }
 
+    [[nodiscard]] constexpr bool is_touched(address_t const &address)
+    {
+        return touched_.contains(address);
+    }
+
     void merge(State &new_state)
     {
         state_ = std::move(new_state.state_);

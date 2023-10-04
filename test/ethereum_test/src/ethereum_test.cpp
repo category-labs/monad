@@ -52,7 +52,7 @@ struct Execution
             state,
             transaction,
             host.block_header_.base_fee_per_gas.value_or(0));
-        if (status != transaction_processor_t<TFork>::Status::SUCCESS) {
+        if (status != monad::execution::TransactionStatus::SUCCESS) {
             return std::nullopt;
         }
 

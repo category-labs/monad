@@ -17,21 +17,21 @@
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
+enum class TransactionStatus
+{
+    SUCCESS,
+    LATER_NONCE,
+    INSUFFICIENT_BALANCE,
+    INVALID_GAS_LIMIT,
+    BAD_NONCE,
+    DEPLOYED_CODE,
+    TYPE_NOT_SUPPORTED,
+};
+
 template <class TState, concepts::fork_traits<TState> TTraits>
 struct TransactionProcessor
 {
     uint256_t upfront_cost_{};
-
-    enum class Status
-    {
-        SUCCESS,
-        LATER_NONCE,
-        INSUFFICIENT_BALANCE,
-        INVALID_GAS_LIMIT,
-        BAD_NONCE,
-        DEPLOYED_CODE,
-        TYPE_NOT_SUPPORTED,
-    };
 
     // YP Sec 6.2 "irrevocable_change"
     void irrevocable_change(TState &s, Transaction const &t) const
@@ -110,7 +110,7 @@ struct TransactionProcessor
         return receipt;
     }
 
-    Status validate(
+    TransactionStatus validate(
         TState &state, Transaction const &t, uint256_t const &base_fee_per_gas)
     {
         switch (TTraits::validate_transaction(t, base_fee_per_gas)) {
@@ -118,44 +118,44 @@ struct TransactionProcessor
             break;
         case TransactionValidationResult::MaxFeeBelowBase:
         case TransactionValidationResult::MaxPriorityFeeAboveMax:
-            return Status::INVALID_GAS_LIMIT;
+            return TransactionStatus::INVALID_GAS_LIMIT;
         default:
             MONAD_ASSERT(false && "unhandled TransactionValidationResult");
         }
         upfront_cost_ = t.gas_limit * TTraits::gas_price(t, base_fee_per_gas);
 
         if (!TTraits::access_list_valid(t.access_list)) {
-            return Status::TYPE_NOT_SUPPORTED;
+            return TransactionStatus::TYPE_NOT_SUPPORTED;
         }
 
         // Yellow paper, Eq. 62
         // g0 <= Tg
         if (TTraits::intrinsic_gas(t) > t.gas_limit) {
-            return Status::INVALID_GAS_LIMIT;
+            return TransactionStatus::INVALID_GAS_LIMIT;
         }
 
         // σ[S(T)]c = KEC(()), EIP-3607
         if (state.get_code_hash(*t.from) != NULL_HASH) {
-            return Status::DEPLOYED_CODE;
+            return TransactionStatus::DEPLOYED_CODE;
         }
         // Tn = σ[S(T)]n
         else if (state.get_nonce(*t.from) > t.nonce) {
-            return Status::BAD_NONCE;
+            return TransactionStatus::BAD_NONCE;
         }
         // Tn = σ[S(T)]n
         else if (state.get_nonce(*t.from) < t.nonce) {
-            return Status::LATER_NONCE;
+            return TransactionStatus::LATER_NONCE;
         }
 
         // v0 <= σ[S(T)]b
         else if (uint256_t i =
                      intx::be::load<uint256_t>(state.get_balance(*t.from));
                  i < (t.amount + upfront_cost_)) {
-            return Status::INSUFFICIENT_BALANCE;
+            return TransactionStatus::INSUFFICIENT_BALANCE;
         }
         // Note: Tg <= B_Hl - l(B_R)u can only be checked before retirement
 
-        return Status::SUCCESS;
+        return TransactionStatus::SUCCESS;
     }
 
     void static_validate(Transaction const &t)

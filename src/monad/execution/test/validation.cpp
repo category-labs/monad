@@ -50,7 +50,7 @@ TEST(Execution, validate_enough_gas)
     traits_t::_intrinsic_gas = 53'000;
 
     auto status = p.validate(s, t, 0);
-    EXPECT_EQ(status, processor_t::Status::INVALID_GAS_LIMIT);
+    EXPECT_EQ(status, TransactionStatus::INVALID_GAS_LIMIT);
 }
 
 TEST(Execution, validate_deployed_code)
@@ -71,7 +71,7 @@ TEST(Execution, validate_deployed_code)
     static Transaction const t{.gas_limit = 27'500, .from = a};
 
     auto status = p.validate(s, t, 0);
-    EXPECT_EQ(status, processor_t::Status::DEPLOYED_CODE);
+    EXPECT_EQ(status, TransactionStatus::DEPLOYED_CODE);
 }
 
 TEST(Execution, validate_nonce)
@@ -92,7 +92,7 @@ TEST(Execution, validate_nonce)
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 24);
     auto status = p.validate(s, t, 0);
-    EXPECT_EQ(status, processor_t::Status::BAD_NONCE);
+    EXPECT_EQ(status, TransactionStatus::BAD_NONCE);
 }
 
 TEST(Execution, validate_nonce_optimistically)
@@ -114,7 +114,7 @@ TEST(Execution, validate_nonce_optimistically)
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 24);
     auto status = p.validate(s, t, 0);
-    EXPECT_EQ(status, processor_t::Status::LATER_NONCE);
+    EXPECT_EQ(status, TransactionStatus::LATER_NONCE);
 }
 
 TEST(Execution, validate_enough_balance)
@@ -140,9 +140,9 @@ TEST(Execution, validate_enough_balance)
     traits_t::_intrinsic_gas = 21'000;
 
     auto status1 = p.validate(s, t, 10u);
-    EXPECT_EQ(status1, processor_t::Status::INSUFFICIENT_BALANCE);
+    EXPECT_EQ(status1, TransactionStatus::INSUFFICIENT_BALANCE);
     auto status2 = p.validate(s, t, 0u); // free gas
-    EXPECT_EQ(status2, processor_t::Status::SUCCESS);
+    EXPECT_EQ(status2, TransactionStatus::SUCCESS);
 }
 
 TEST(Execution, successful_validation)
@@ -168,7 +168,7 @@ TEST(Execution, successful_validation)
     processor_t p{};
 
     auto status = p.validate(s, t, 0);
-    EXPECT_EQ(status, processor_t::Status::SUCCESS);
+    EXPECT_EQ(status, TransactionStatus::SUCCESS);
 }
 
 TEST(Execution, insufficient_balance_higher_base_fee)
@@ -195,7 +195,7 @@ TEST(Execution, insufficient_balance_higher_base_fee)
     processor_t p{};
 
     auto status = p.validate(s, t, 37'000'000'000);
-    EXPECT_EQ(status, processor_t::Status::INSUFFICIENT_BALANCE);
+    EXPECT_EQ(status, TransactionStatus::INSUFFICIENT_BALANCE);
 }
 
 TEST(Execution, successful_validation_higher_base_fee)
@@ -223,5 +223,5 @@ TEST(Execution, successful_validation_higher_base_fee)
     processor_t p{};
 
     auto status = p.validate(s, t, 37'000'000'000);
-    EXPECT_EQ(status, processor_t::Status::SUCCESS);
+    EXPECT_EQ(status, TransactionStatus::SUCCESS);
 }

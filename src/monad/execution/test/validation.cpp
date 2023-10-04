@@ -139,10 +139,8 @@ TEST(Execution, validate_enough_balance)
     s.add_to_balance(a, 55'939'568'773'815'811);
     traits_t::_intrinsic_gas = 21'000;
 
-    auto status1 = p.validate(s, t, 10u);
-    EXPECT_EQ(status1, TransactionStatus::INSUFFICIENT_BALANCE);
-    auto status2 = p.validate(s, t, 0u); // free gas
-    EXPECT_EQ(status2, TransactionStatus::SUCCESS);
+    auto status = p.validate(s, t, 10u);
+    EXPECT_EQ(status, TransactionStatus::INSUFFICIENT_BALANCE);
 }
 
 TEST(Execution, successful_validation)

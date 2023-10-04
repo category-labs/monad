@@ -33,17 +33,20 @@ enum class TransactionStatus
 template <class TState, concepts::fork_traits<TState> TTraits>
 struct TransactionProcessor
 {
-    uint256_t upfront_cost_{};
-
     // YP Sec 6.2 "irrevocable_change"
-    void irrevocable_change(TState &s, Transaction const &t) const
+    void irrevocable_change(
+        TState &s, Transaction const &t,
+        uint256_t const &base_fee_per_gas) const
     {
         if (t.to) { // EVM will increment if new contract
             auto const nonce = s.get_nonce(*t.from);
             s.set_nonce(*t.from, nonce + 1);
         }
         MONAD_DEBUG_ASSERT(t.from.has_value());
-        s.subtract_from_balance(t.from.value(), upfront_cost_);
+
+        auto const upfront_cost =
+            t.gas_limit * TTraits::gas_price(t, base_fee_per_gas);
+        s.subtract_from_balance(t.from.value(), upfront_cost);
     }
 
     // YP Eqn 72
@@ -75,7 +78,7 @@ struct TransactionProcessor
         TState &s, TEvmHost &h, Transaction const &t,
         uint256_t const &base_fee_per_gas, address_t const &beneficiary) const
     {
-        irrevocable_change(s, t);
+        irrevocable_change(s, t, base_fee_per_gas);
 
         TTraits::warm_coinbase(s, beneficiary);
         s.access_account(*t.from);
@@ -135,9 +138,6 @@ struct TransactionProcessor
             return TransactionStatus::INVALID_GAS_LIMIT;
         }
 
-        upfront_cost_ =
-            t.gas_limit * TTraits::gas_price(t, base_fee_per_gas.value_or(0));
-
         // σ[S(T)]c = KEC(()), EIP-3607
         if (state.get_code_hash(*t.from) != NULL_HASH) {
             return TransactionStatus::DEPLOYED_CODE;
@@ -154,7 +154,7 @@ struct TransactionProcessor
         // v0 <= σ[S(T)]b
         else if (uint256_t i =
                      intx::be::load<uint256_t>(state.get_balance(*t.from));
-                 i < (t.amount + upfront_cost_)) {
+                 i < (t.amount + t.gas_limit * t.max_fee_per_gas)) {
             return TransactionStatus::INSUFFICIENT_BALANCE;
         }
         // Note: Tg <= B_Hl - l(B_R)u can only be checked before retirement

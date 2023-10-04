@@ -37,12 +37,6 @@ struct basic_formatter
 
 MONAD_LOG_NAMESPACE_END
 
-namespace
-{
-    using code_change_set_t =
-        std::unordered_map<monad::bytes32_t, monad::byte_string>;
-}
-
 namespace quill
 {
     template <>
@@ -77,11 +71,6 @@ namespace quill
 
     template <>
     struct copy_loggable<monad::Transaction::Type> : std::true_type
-    {
-    };
-
-    template <>
-    struct copy_loggable<code_change_set_t> : std::true_type
     {
     };
 
@@ -265,27 +254,6 @@ struct formatter<monad::Transaction::Type> : public monad::log::basic_formatter
         else {
             fmt::format_to(ctx.out(), "Unknown Transaction Type");
         }
-        return ctx.out();
-    }
-};
-
-template <>
-struct fmt::formatter<code_change_set_t> : public monad::log::basic_formatter
-{
-    template <typename FormatContext>
-    auto
-    format(code_change_set_t const &changed_value, FormatContext &ctx) const
-    {
-        fmt::format_to(ctx.out(), "{{");
-        for (auto const &[key, value] : changed_value) {
-            fmt::format_to(
-                ctx.out(),
-                "Key: {}, Value: {}",
-                key,
-                fmt::join(std::as_bytes(std::span{value}), ""));
-        }
-        fmt::format_to(ctx.out(), "}}");
-
         return ctx.out();
     }
 };

@@ -57,7 +57,7 @@ struct State
     // EVMC Host Interface
     evmc_access_status access_account(address_t const &address)
     {
-        LOG_DEBUG("access_account: {}", address);
+        LOG_TRACE_L1("access_account: {}", address);
 
         auto const [_, inserted] = accessed_.insert(address);
         if (inserted) {
@@ -69,7 +69,7 @@ struct State
     // EVMC Host Interface
     [[nodiscard]] bool account_exists(address_t const &address)
     {
-        LOG_DEBUG("account_exists: {}", address);
+        LOG_TRACE_L1("account_exists: {}", address);
 
         auto const &account = read_account<Mutex>(address, state_, bs_, db_);
 
@@ -78,7 +78,7 @@ struct State
 
     void create_contract(address_t const &address)
     {
-        LOG_DEBUG("create_contract: {}", address);
+        LOG_TRACE_L1("create_contract: {}", address);
 
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
         if (MONAD_UNLIKELY(account.has_value())) {
@@ -95,6 +95,8 @@ struct State
     // EVMC Host Interface
     [[nodiscard]] bytes32_t get_balance(address_t const &address)
     {
+        LOG_TRACE_L1("get_balance: {}", address);
+
         auto const &account = read_account<Mutex>(address, state_, bs_, db_);
         if (MONAD_LIKELY(account.has_value())) {
             return intx::be::store<bytes32_t>(account.value().balance);
@@ -114,7 +116,7 @@ struct State
             std::numeric_limits<uint256_t>::max() - delta >=
             account.value().balance);
 
-        LOG_DEBUG(
+        LOG_TRACE_L1(
             "add_to_balance {} = {} + {}",
             address,
             account.value().balance,
@@ -134,7 +136,7 @@ struct State
 
         MONAD_DEBUG_ASSERT(delta <= account.value().balance);
 
-        LOG_DEBUG(
+        LOG_TRACE_L1(
             "subtract_from_balance {} = {} - {}",
             address,
             account.value().balance,
@@ -146,7 +148,7 @@ struct State
 
     [[nodiscard]] uint64_t get_nonce(address_t const &address) noexcept
     {
-        LOG_DEBUG("get_nonce: {}", address);
+        LOG_TRACE_L1("get_nonce: {}", address);
 
         auto const &account = read_account<Mutex>(address, state_, bs_, db_);
         if (MONAD_LIKELY(account.has_value())) {
@@ -157,7 +159,7 @@ struct State
 
     void set_nonce(address_t const &address, uint64_t const nonce)
     {
-        LOG_DEBUG("set_nonce: {} = {}", address, nonce);
+        LOG_TRACE_L1("set_nonce: {} = {}", address, nonce);
 
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
         if (MONAD_UNLIKELY(!account.has_value())) {
@@ -169,7 +171,7 @@ struct State
     // EVMC Host Interface
     [[nodiscard]] bytes32_t get_code_hash(address_t const &address)
     {
-        LOG_DEBUG("get_code_hash: {}", address);
+        LOG_TRACE_L1("get_code_hash: {}", address);
 
         auto const &account = read_account<Mutex>(address, state_, bs_, db_);
         if (MONAD_LIKELY(account.has_value())) {
@@ -180,6 +182,8 @@ struct State
 
     void set_code_hash(address_t const &address, bytes32_t const &hash)
     {
+        LOG_TRACE_L1("set_code_hash: {} = {}", address, hash);
+
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
         MONAD_DEBUG_ASSERT(account.has_value());
         account.value().code_hash = hash;
@@ -189,7 +193,7 @@ struct State
     [[nodiscard]] bool selfdestruct(
         address_t const &address, address_t const &beneficiary) noexcept
     {
-        LOG_DEBUG("selfdestruct: {}, {}", address, beneficiary);
+        LOG_TRACE_L1("selfdestruct: {}, {}", address, beneficiary);
 
         auto &account = read_account<Mutex>(address, state_, bs_, db_);
         MONAD_DEBUG_ASSERT(account.has_value());
@@ -201,7 +205,7 @@ struct State
 
     void destruct_suicides() noexcept
     {
-        LOG_DEBUG("destruct_suicides");
+        LOG_TRACE_L1("destruct_suicides");
 
         for (auto const &address : destructed_) {
             auto &account = read_account<Mutex>(address, state_, bs_, db_);
@@ -212,7 +216,7 @@ struct State
 
     void destruct_touched_dead() noexcept
     {
-        LOG_DEBUG("{}", "destruct_touched_dead");
+        LOG_TRACE_L1("destruct_touched_dead");
 
         for (auto const &touched : touched_) {
             auto &account = read_account<Mutex>(touched, state_, bs_, db_);
@@ -234,7 +238,7 @@ struct State
     evmc_access_status
     access_storage(address_t const &address, bytes32_t const &key) noexcept
     {
-        LOG_DEBUG("access_storage: {}, {}", address, key);
+        LOG_TRACE_L1("access_storage: {}, {}", address, key);
 
         auto const &[_, inserted] = accessed_storage_[address].insert(key);
         if (inserted) {
@@ -247,7 +251,7 @@ struct State
     [[nodiscard]] bytes32_t
     get_storage(address_t const &address, bytes32_t const &key) noexcept
     {
-        LOG_DEBUG("get_storage: {}, {}", address, key);
+        LOG_TRACE_L1("get_storage: {}, {}", address, key);
 
         return read_storage<Mutex>(address, 0u, key, state_, bs_, db_).second;
     }
@@ -257,7 +261,7 @@ struct State
         address_t const &address, bytes32_t const &key,
         bytes32_t const &value) noexcept
     {
-        LOG_DEBUG("set_storage: {}, {} = {}", address, key, value);
+        LOG_TRACE_L1("set_storage: {}, {} = {}", address, key, value);
 
         if (value == bytes32_t{}) {
             return zero_out_key(address, key);
@@ -323,6 +327,8 @@ struct State
     // EVMC Host Interface
     [[nodiscard]] size_t get_code_size(address_t const &address) noexcept
     {
+        LOG_TRACE_L1("get_code_size: {}", address);
+
         auto const &account = read_account<Mutex>(address, state_, bs_, db_);
         if (MONAD_LIKELY(account.has_value())) {
             return read_code<Mutex>(account->code_hash, code_, bs_, db_).size();
@@ -355,6 +361,8 @@ struct State
 
     [[nodiscard]] byte_string get_code(address_t const &address) noexcept
     {
+        LOG_TRACE_L1("get_code: {}", address);
+
         auto const &account = read_account<Mutex>(address, state_, bs_, db_);
         if (MONAD_LIKELY(account.has_value())) {
             return read_code<Mutex>(account->code_hash, code_, bs_, db_);
@@ -364,7 +372,7 @@ struct State
 
     void set_code(address_t const &address, byte_string const &code)
     {
-        LOG_DEBUG("set_code: {} = {}", address, evmc::hex(code));
+        LOG_TRACE_L1("set_code: {} = {}", address, evmc::hex(code));
 
         auto const code_hash = std::bit_cast<monad::bytes32_t const>(
             ethash::keccak256(code.data(), code.size()));
@@ -381,6 +389,8 @@ struct State
     // EVMC Host Interface
     [[nodiscard]] bytes32_t get_block_hash(int64_t const number) const noexcept
     {
+        LOG_TRACE_L1("get_block_hash: {}", number);
+
         MONAD_DEBUG_ASSERT(number >= 0);
         return block_cache_.get_block_hash(static_cast<uint64_t>(number));
     }
@@ -389,11 +399,15 @@ struct State
 
     std::vector<Receipt::Log> &logs() { return logs_; }
 
-    void warm_coinbase(address_t const &a) noexcept { accessed_.insert(a); }
+    void warm_coinbase(address_t const &address) noexcept
+    {
+        accessed_.insert(address);
+    }
 
     void add_txn_award(uint256_t const &reward)
     {
-        LOG_DEBUG("add_txn_award: {}", reward);
+        LOG_TRACE_L1("add_txn_award: {}", reward);
+
         gas_award_ += reward;
     }
 
@@ -404,7 +418,8 @@ struct State
 
     void touch(address_t const &address)
     {
-        LOG_DEBUG("touched {}", address);
+        LOG_TRACE_L1("touched: {}", address);
+
         touched_.insert(address);
     }
 

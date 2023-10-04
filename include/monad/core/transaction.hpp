@@ -14,13 +14,6 @@
 
 MONAD_NAMESPACE_BEGIN
 
-enum class TransactionValidationResult
-{
-    Ok,
-    MaxFeeBelowBase,
-    MaxPriorityFeeAboveMax,
-};
-
 struct Transaction
 {
     enum class Type

@@ -49,9 +49,7 @@ struct Execution
     execute(state_t &state, monad::Transaction const &transaction)
     {
         auto const status = transaction_processor.validate(
-            state,
-            transaction,
-            host.block_header_.base_fee_per_gas.value_or(0));
+            state, transaction, host.block_header_.base_fee_per_gas);
         if (status != monad::execution::TransactionStatus::SUCCESS) {
             return std::nullopt;
         }
@@ -278,14 +276,8 @@ void EthereumTests::run_state_test(
         for (size_t case_index = 0; case_index != expectations.size();
              ++case_index) {
             auto const &expected = expectations[case_index];
-            monad::Transaction const transaction = [&] {
-                auto const &shared_transaction_data =
-                    test.shared_transaction_data;
-                monad::Transaction::AccessList access_list;
-                if (!shared_transaction_data.access_lists.empty()) {
-                    access_list = shared_transaction_data.access_lists.at(
-                        expected.indices.input);
-                }
+            auto const transaction = [&] {
+                auto const &data = test.shared_transaction_data;
                 return monad::Transaction{
                     .sc =
                         SignatureAndChain{
@@ -296,20 +288,22 @@ void EthereumTests::run_state_test(
                                 fork_index >= to_fork_index("EIP158").value()
                                     ? 1
                                     : 0},
-                    .nonce = shared_transaction_data.nonce,
-                    .max_fee_per_gas = shared_transaction_data.max_fee_per_gas,
-                    .gas_limit = shared_transaction_data.gas_limits.at(
-                        expected.indices.gas_limit),
-                    .amount = shared_transaction_data.values.at(
-                        expected.indices.value),
-                    .to = shared_transaction_data.to,
-                    .from = shared_transaction_data.sender,
-                    .data = shared_transaction_data.inputs.at(
-                        expected.indices.input),
-                    .type = shared_transaction_data.transaction_type,
-                    .access_list = std::move(access_list),
+                    .nonce = data.nonce,
+                    .max_fee_per_gas = data.max_fee_per_gas,
+                    .gas_limit = data.gas_limits.at(expected.indices.gas_limit),
+                    .amount = data.values.at(expected.indices.value),
+                    .to = data.to,
+                    .from = data.sender,
+                    .data = data.inputs.at(expected.indices.input),
+                    .type = data.transaction_type,
+                    .access_list =
+                        data.access_lists.empty()
+                            ? monad::Transaction::AccessList{}
+                            : data.access_lists.at(expected.indices.input),
                     .max_priority_fee_per_gas =
-                        shared_transaction_data.max_priority_fee_per_gas};
+                        fork_index < to_fork_index("London").value()
+                            ? 0
+                            : data.max_priority_fee_per_gas /*eip-1559*/};
             }();
 
             monad::execution::fake::BlockDb fake_block_db;
@@ -333,7 +327,15 @@ void EthereumTests::run_state_test(
                 merge(bs.code, state.code_);
             }
 
-            auto block_header = j_t.at("env").get<monad::BlockHeader>();
+            auto const block_header = [&] {
+                auto ret = j_t.at("env").get<monad::BlockHeader>();
+
+                // eip-1559, base fee only introduced in london
+                if (fork_index < to_fork_index("London").value()) {
+                    ret.base_fee_per_gas.reset();
+                }
+                return ret;
+            }();
 
             LOG_INFO("Starting to execute transaction {}", case_index);
 
@@ -348,7 +350,8 @@ void EthereumTests::run_state_test(
             LOG_INFO(
                 "post_state: {}", monad::test::dump_state_from_db(db).dump());
             LOG_INFO(
-                "finished transaction index: {} revision: {}, state_root: {}",
+                "finished transaction index: {} revision: {}, state_root: "
+                "{}",
                 case_index,
                 fork_name,
                 db.state_root());

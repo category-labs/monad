@@ -168,11 +168,6 @@ namespace fake
                 }
                 return r;
             }
-            static constexpr TransactionValidationResult
-            validate_transaction(Transaction const &, uint256_t const &)
-            {
-                return TransactionValidationResult::Ok;
-            }
 
             static constexpr uint256_t
             gas_price(Transaction const &, uint256_t const &c)

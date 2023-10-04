@@ -72,7 +72,8 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     tp_t tp{};
     evm_host_t<state_t, fork_t> h{bh, t, s};
 
-    EXPECT_EQ(tp.validate(s, t, 0), execution::TransactionStatus::SUCCESS);
+    EXPECT_EQ(
+        tp.validate(s, t, std::nullopt), execution::TransactionStatus::SUCCESS);
 
     auto r = tp.execute(s, h, t, 0, bh.beneficiary);
     EXPECT_EQ(r.status, Receipt::Status::SUCCESS);
@@ -142,7 +143,8 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     tp_t tp{};
     evm_host_t<state_t, fork_t> h{bh, t, s};
 
-    EXPECT_EQ(tp.validate(s, t, 0), execution::TransactionStatus::SUCCESS);
+    EXPECT_EQ(
+        tp.validate(s, t, std::nullopt), execution::TransactionStatus::SUCCESS);
 
     auto r = tp.execute(s, h, t, 0, bh.beneficiary);
     EXPECT_EQ(r.status, Receipt::Status::FAILED);
@@ -207,7 +209,8 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     tp_t tp{};
     evm_host_t<state_t, fork_t> h{bh, t, s};
 
-    EXPECT_EQ(tp.validate(s, t, 0), execution::TransactionStatus::SUCCESS);
+    EXPECT_EQ(
+        tp.validate(s, t, std::nullopt), execution::TransactionStatus::SUCCESS);
 
     auto r = tp.execute(s, h, t, 0, bh.beneficiary);
     EXPECT_EQ(r.status, Receipt::Status::FAILED);

@@ -171,7 +171,7 @@ TEST(Execution, successful_validation)
     EXPECT_EQ(status, TransactionStatus::SUCCESS);
 }
 
-TEST(Execution, insufficient_balance_higher_base_fee)
+TEST(Execution, max_fee_less_than_base)
 {
     static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
@@ -195,10 +195,10 @@ TEST(Execution, insufficient_balance_higher_base_fee)
     processor_t p{};
 
     auto status = p.validate(s, t, 37'000'000'000);
-    EXPECT_EQ(status, TransactionStatus::INSUFFICIENT_BALANCE);
+    EXPECT_EQ(status, TransactionStatus::MAX_FEE_LESS_THAN_BASE);
 }
 
-TEST(Execution, successful_validation_higher_base_fee)
+TEST(Execution, priority_fee_greater_than_max)
 {
     static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
@@ -218,10 +218,10 @@ TEST(Execution, successful_validation_higher_base_fee)
         .amount = 48'979'750'000'000'000,
         .to = b,
         .from = a,
-        .max_priority_fee_per_gas = 100'000'000};
+        .max_priority_fee_per_gas = 100'000'000'000};
 
     processor_t p{};
 
-    auto status = p.validate(s, t, 37'000'000'000);
-    EXPECT_EQ(status, TransactionStatus::SUCCESS);
+    auto status = p.validate(s, t, 29'000'000'000);
+    EXPECT_EQ(status, TransactionStatus::PRIORITY_FEE_GREATER_THAN_MAX);
 }

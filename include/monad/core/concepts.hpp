@@ -35,9 +35,6 @@ namespace concepts
         { T::destruct_touched_dead(s) } -> std::convertible_to<void>;
         { T::deploy_contract_code(s, a, std::move(r)) }
             -> std::convertible_to<evmc::Result>;
-        { T::validate_transaction(t, base_fee_per_gas
-            /*, TODO: add chain_id #131 */
-        ) } -> std::convertible_to<TransactionValidationResult>;
         { T::calculate_txn_award(t, base_fee_per_gas, gas_used) } -> std::convertible_to<uint256_t>;
         { T::gas_price(t, base_fee_per_gas) } -> std::convertible_to<uint256_t>;
         { T::warm_coinbase(s, a) } -> std::convertible_to<void>;

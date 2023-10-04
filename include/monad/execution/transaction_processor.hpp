@@ -26,6 +26,8 @@ enum class TransactionStatus
     BAD_NONCE,
     DEPLOYED_CODE,
     TYPE_NOT_SUPPORTED,
+    MAX_FEE_LESS_THAN_BASE,
+    PRIORITY_FEE_GREATER_THAN_MAX
 };
 
 template <class TState, concepts::fork_traits<TState> TTraits>
@@ -111,21 +113,20 @@ struct TransactionProcessor
     }
 
     TransactionStatus validate(
-        TState &state, Transaction const &t, uint256_t const &base_fee_per_gas)
+        TState &state, Transaction const &t,
+        std::optional<uint256_t> const &base_fee_per_gas)
     {
-        switch (TTraits::validate_transaction(t, base_fee_per_gas)) {
-        case TransactionValidationResult::Ok:
-            break;
-        case TransactionValidationResult::MaxFeeBelowBase:
-        case TransactionValidationResult::MaxPriorityFeeAboveMax:
-            return TransactionStatus::INVALID_GAS_LIMIT;
-        default:
-            MONAD_ASSERT(false && "unhandled TransactionValidationResult");
-        }
-        upfront_cost_ = t.gas_limit * TTraits::gas_price(t, base_fee_per_gas);
-
         if (!TTraits::access_list_valid(t.access_list)) {
             return TransactionStatus::TYPE_NOT_SUPPORTED;
+        }
+
+        if (base_fee_per_gas.has_value() &&
+            t.max_fee_per_gas < base_fee_per_gas.value()) {
+            return TransactionStatus::MAX_FEE_LESS_THAN_BASE;
+        }
+
+        if (t.max_priority_fee_per_gas > t.max_fee_per_gas) {
+            return TransactionStatus::PRIORITY_FEE_GREATER_THAN_MAX;
         }
 
         // Yellow paper, Eq. 62
@@ -133,6 +134,9 @@ struct TransactionProcessor
         if (TTraits::intrinsic_gas(t) > t.gas_limit) {
             return TransactionStatus::INVALID_GAS_LIMIT;
         }
+
+        upfront_cost_ =
+            t.gas_limit * TTraits::gas_price(t, base_fee_per_gas.value_or(0));
 
         // σ[S(T)]c = KEC(()), EIP-3607
         if (state.get_code_hash(*t.from) != NULL_HASH) {

@@ -19,14 +19,14 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 enum class TransactionStatus
 {
     SUCCESS,
-    LATER_NONCE,
     INSUFFICIENT_BALANCE,
     INVALID_GAS_LIMIT,
     BAD_NONCE,
     DEPLOYED_CODE,
     TYPE_NOT_SUPPORTED,
     MAX_FEE_LESS_THAN_BASE,
-    PRIORITY_FEE_GREATER_THAN_MAX
+    PRIORITY_FEE_GREATER_THAN_MAX,
+    NONCE_EXCEEDS_MAX,
 };
 
 template <class TState, class TTraits>
@@ -141,13 +141,17 @@ struct TransactionProcessor
         if (state.get_code_hash(*t.from) != NULL_HASH) {
             return TransactionStatus::DEPLOYED_CODE;
         }
-        // Tn = σ[S(T)]n
-        else if (state.get_nonce(*t.from) > t.nonce) {
-            return TransactionStatus::BAD_NONCE;
+
+        MONAD_DEBUG_ASSERT(t.from.has_value());
+
+        // eip-2681
+        if (t.nonce >= std::numeric_limits<uint64_t>::max()) {
+            return TransactionStatus::NONCE_EXCEEDS_MAX;
         }
+
         // Tn = σ[S(T)]n
-        else if (state.get_nonce(*t.from) < t.nonce) {
-            return TransactionStatus::LATER_NONCE;
+        if (state.get_nonce(t.from.value()) != t.nonce) {
+            return TransactionStatus::BAD_NONCE;
         }
 
         // v0 <= σ[S(T)]b

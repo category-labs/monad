@@ -114,7 +114,7 @@ TEST(Execution, validate_nonce_optimistically)
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 24);
     auto status = p.validate(s, t, 0);
-    EXPECT_EQ(status, TransactionStatus::LATER_NONCE);
+    EXPECT_EQ(status, TransactionStatus::BAD_NONCE);
 }
 
 TEST(Execution, validate_enough_balance)

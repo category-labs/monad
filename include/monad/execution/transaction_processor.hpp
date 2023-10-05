@@ -119,7 +119,7 @@ struct TransactionProcessor
         TState &state, Transaction const &t,
         std::optional<uint256_t> const &base_fee_per_gas)
     {
-        if (!TTraits::access_list_valid(t.access_list)) {
+        if (!TTraits::transaction_type_valid(t.type)) {
             return TransactionStatus::TYPE_NOT_SUPPORTED;
         }
 

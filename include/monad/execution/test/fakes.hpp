@@ -191,7 +191,7 @@ namespace fake
             }
 
             [[nodiscard]] static constexpr bool
-            access_list_valid(Transaction::AccessList const &)
+            transaction_type_valid(Transaction::Type const)
             {
                 return true;
             }

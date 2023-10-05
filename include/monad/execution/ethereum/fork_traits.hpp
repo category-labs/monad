@@ -198,12 +198,6 @@ namespace fork_traits
         {
         }
 
-        [[nodiscard]] static constexpr bool
-        access_list_valid(Transaction::AccessList const &list)
-        {
-            return list.empty();
-        }
-
         template <class TState>
         [[nodiscard]] static constexpr bool
         account_exists(TState &state, address_t const &address)
@@ -212,6 +206,12 @@ namespace fork_traits
         }
 
         static constexpr void populate_chain_id(evmc_tx_context &) noexcept {}
+
+        [[nodiscard]] static constexpr bool
+        transaction_type_valid(Transaction::Type const type)
+        {
+            return type == Transaction::Type::eip155;
+        }
     };
 
     struct homestead : public frontier
@@ -510,11 +510,11 @@ namespace fork_traits
                    g_access_and_storage(t);
         }
 
-        // https://eips.ethereum.org/EIPS/eip-2930
         [[nodiscard]] static constexpr bool
-        access_list_valid(Transaction::AccessList const &)
+        transaction_type_valid(Transaction::Type const type)
         {
-            return true;
+            return type == Transaction::Type::eip155 ||
+                   type == Transaction::Type::eip2930;
         }
     };
 
@@ -573,6 +573,14 @@ namespace fork_traits
             uint64_t gas_used)
         {
             return gas_used * priority_fee_per_gas(t, base_fee_per_gas);
+        }
+
+        [[nodiscard]] static constexpr bool
+        transaction_type_valid(Transaction::Type const type)
+        {
+            return type == Transaction::Type::eip155 ||
+                   type == Transaction::Type::eip2930 ||
+                   type == Transaction::Type::eip1559;
         }
     };
 

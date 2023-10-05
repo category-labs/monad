@@ -47,7 +47,7 @@ enum class TestStatus
 
 static TestStatus fake_status{};
 
-template <class TState, concepts::fork_traits<TState> TTraits>
+template <class TState, class TTraits>
 struct fakeTP
 {
     enum class Status

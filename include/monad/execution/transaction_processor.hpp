@@ -3,7 +3,6 @@
 #include <monad/core/account.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
-#include <monad/core/concepts.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 
@@ -30,7 +29,7 @@ enum class TransactionStatus
     PRIORITY_FEE_GREATER_THAN_MAX
 };
 
-template <class TState, concepts::fork_traits<TState> TTraits>
+template <class TState, class TTraits>
 struct TransactionProcessor
 {
     // YP Sec 6.2 "irrevocable_change"

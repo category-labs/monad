@@ -5,7 +5,6 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/core/concepts.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/transaction.hpp>
 

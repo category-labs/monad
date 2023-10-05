@@ -3,7 +3,6 @@
 #include <monad/core/address.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/core/concepts.hpp>
 #include <monad/core/transaction.hpp>
 
 #include <monad/execution/config.hpp>
@@ -17,7 +16,7 @@
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
-template <class TState, concepts::fork_traits<TState> TTraits, class TEvm>
+template <class TState, class TTraits, class TEvm>
 struct EvmcHost : public evmc::Host
 {
     BlockHeader const &block_header_;

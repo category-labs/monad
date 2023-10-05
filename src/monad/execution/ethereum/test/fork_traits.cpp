@@ -1,7 +1,6 @@
 #include <monad/config.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
-#include <monad/core/concepts.hpp>
 
 #include <monad/db/block_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
@@ -42,7 +41,6 @@ constexpr auto b{0x5353535353535353535353535353535353535353_address};
 constexpr auto c{0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address};
 constexpr auto null{0x0000000000000000000000000000000000000000_address};
 
-static_assert(concepts::fork_traits<fork_traits::frontier, state_t>);
 TEST(fork_traits, frontier)
 {
     fork_traits::frontier f{};
@@ -130,7 +128,6 @@ TEST(fork_traits, frontier)
     }
 }
 
-static_assert(concepts::fork_traits<fork_traits::homestead, state_t>);
 TEST(fork_traits, homestead)
 {
     fork_traits::homestead h{};
@@ -175,7 +172,6 @@ TEST(fork_traits, homestead)
     }
 }
 
-static_assert(concepts::fork_traits<fork_traits::dao_fork, state_t>);
 static_assert(std::derived_from<fork_traits::dao_fork, fork_traits::homestead>);
 static_assert(
     std::same_as<
@@ -210,7 +206,6 @@ TEST(fork_traits, dao)
         intx::be::load<uint256_t>(s.get_balance(dao::withdraw_account)), total);
 }
 
-static_assert(concepts::fork_traits<fork_traits::tangerine_whistle, state_t>);
 static_assert(
     std::derived_from<fork_traits::tangerine_whistle, fork_traits::dao_fork>);
 static_assert(std::same_as<
@@ -249,7 +244,6 @@ TEST(fork_traits, tangerine_whistle)
         intx::be::load<uint256_t>(s.get_balance(dao::withdraw_account)), 0u);
 }
 
-static_assert(concepts::fork_traits<fork_traits::spurious_dragon, state_t>);
 TEST(fork_traits, spurious_dragon)
 {
     fork_traits::spurious_dragon sd{};
@@ -289,7 +283,6 @@ TEST(fork_traits, spurious_dragon)
     }
 }
 
-static_assert(concepts::fork_traits<fork_traits::byzantium, state_t>);
 TEST(fork_traits, byzantium)
 {
     fork_traits::byzantium byz{};
@@ -329,8 +322,6 @@ TEST(fork_traits, byzantium)
 }
 
 static_assert(
-    concepts::fork_traits<fork_traits::constantinople_and_petersburg, state_t>);
-static_assert(
     std::derived_from<
         fork_traits::constantinople_and_petersburg, fork_traits::byzantium>);
 static_assert(std::same_as<
@@ -360,7 +351,6 @@ TEST(fork_traits, constantinople_and_petersburg)
         intx::be::load<uint256_t>(s.get_balance(c)), 1'500'000'000'000'000'000);
 }
 
-static_assert(concepts::fork_traits<fork_traits::istanbul, state_t>);
 static_assert(
     std::derived_from<
         fork_traits::istanbul, fork_traits::constantinople_and_petersburg>);
@@ -380,7 +370,6 @@ TEST(fork_traits, istanbul)
     EXPECT_EQ(i.intrinsic_gas(t), 21'020);
 }
 
-static_assert(concepts::fork_traits<fork_traits::berlin, state_t>);
 TEST(fork_traits, berlin)
 {
     fork_traits::berlin b{};
@@ -402,7 +391,6 @@ TEST(fork_traits, berlin)
     EXPECT_EQ(b.intrinsic_gas(t), 27'220);
 }
 
-static_assert(concepts::fork_traits<fork_traits::london, state_t>);
 TEST(fork_traits, london)
 {
     fork_traits::london l{};
@@ -462,7 +450,6 @@ TEST(fork_traits, london)
 }
 
 // EIP-3675
-static_assert(concepts::fork_traits<fork_traits::paris, state_t>);
 TEST(fork_traits, paris_apply_block_reward)
 {
     Block block{};
@@ -497,7 +484,6 @@ TEST(fork_traits, paris_apply_block_reward)
 }
 
 // EIP-3651
-static_assert(concepts::fork_traits<fork_traits::shanghai, state_t>);
 TEST(fork_traits, shanghai_warm_coinbase)
 {
     db::BlockDb blocks{test_resource::correct_block_data_dir};
@@ -524,7 +510,6 @@ TEST(fork_traits, shanghai_warm_coinbase)
 }
 
 // EIP-3860
-static_assert(concepts::fork_traits<fork_traits::shanghai, state_t>);
 TEST(fork_traits, shanghai_contract_creation_cost_exceed_limit)
 {
     byte_string long_data;
@@ -540,7 +525,6 @@ TEST(fork_traits, shanghai_contract_creation_cost_exceed_limit)
 }
 
 // EIP-3860
-static_assert(concepts::fork_traits<fork_traits::shanghai, state_t>);
 TEST(fork_traits, shanghai_contract_creation_cost)
 {
     byte_string data;
@@ -556,7 +540,6 @@ TEST(fork_traits, shanghai_contract_creation_cost)
 }
 
 // EIP-4895
-static_assert(concepts::fork_traits<fork_traits::shanghai, state_t>);
 TEST(fork_traits, shanghai_withdrawal)
 {
     std::optional<std::vector<Withdrawal>> withdrawals{};

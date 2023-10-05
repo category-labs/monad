@@ -1,5 +1,3 @@
-#include <monad/core/concepts.hpp>
-
 #include <monad/db/block_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 
@@ -37,10 +35,10 @@ static constexpr auto code_hash =
 
 using account_store_db_t = db::InMemoryTrieDB;
 
-template <class TState, concepts::fork_traits<TState> TTraits>
+template <class TState, class TTraits>
 using evm_t = execution::Evm<TState, TTraits>;
 
-template <class TState, concepts::fork_traits<TState> TTraits>
+template <class TState, class TTraits>
 using evm_host_t = execution::EvmcHost<TState, TTraits, evm_t<TState, TTraits>>;
 
 using mutex_t = std::shared_mutex;

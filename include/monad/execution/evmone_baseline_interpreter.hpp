@@ -1,7 +1,6 @@
 #pragma once
 
 #include <monad/core/byte_string.hpp>
-#include <monad/core/concepts.hpp>
 
 #include <monad/execution/config.hpp>
 
@@ -28,7 +27,7 @@
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
-template <class TState, concepts::fork_traits<TState> TTraits>
+template <class TState, class TTraits>
 struct EVMOneBaselineInterpreter
 {
     template <class TEvmHost>

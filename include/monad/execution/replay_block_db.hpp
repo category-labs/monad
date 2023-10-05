@@ -49,7 +49,7 @@ public:
         block_num_t block_number;
     };
 
-    template <concepts::fork_traits<typename TState::ChangeSet> TTraits>
+    template <class TTraits>
     [[nodiscard]] constexpr block_num_t
     loop_until(std::optional<block_num_t> until_block_number)
     {
@@ -78,8 +78,7 @@ public:
     }
 
     template <
-        concepts::fork_traits<typename TState::ChangeSet> TTraits,
-        template <typename, typename> class TTxnProcessor,
+        class TTraits, template <typename, typename> class TTxnProcessor,
         template <typename, typename, typename> class TEvm,
         template <typename, typename, typename> class TEvmHost,
         template <typename, typename, typename, typename> class TFiberData,
@@ -175,8 +174,7 @@ public:
     }
 
     template <
-        concepts::fork_traits<typename TState::ChangeSet> TTraits,
-        template <typename, typename> class TTxnProcessor,
+        class TTraits, template <typename, typename> class TTxnProcessor,
         template <typename, typename, typename> class TEvm,
         template <typename, typename, typename> class TEvmHost,
         template <typename, typename, typename, typename> class TFiberData,

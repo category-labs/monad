@@ -5,7 +5,6 @@
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/core/concepts.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
@@ -64,7 +63,7 @@ namespace fake
         bytes32_t state_root() const noexcept { return {}; }
     };
 
-    template <class TState, concepts::fork_traits<TState> TTraits, class TEvm>
+    template <class TState, class TTraits, class TEvm>
     struct EvmHost
     {
         static inline evmc_result _result{.status_code = EVMC_SUCCESS};
@@ -102,7 +101,7 @@ namespace fake
         }
     };
 
-    template <class TState, concepts::fork_traits<TState> TTraits>
+    template <class TState, class TTraits>
     struct Evm
     {
         using unexpected_t = tl::unexpected<evmc_result>;

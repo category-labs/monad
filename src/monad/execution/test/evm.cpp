@@ -1,5 +1,3 @@
-#include <monad/core/concepts.hpp>
-
 #include <monad/db/block_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 
@@ -26,7 +24,7 @@ using mutex_t = std::shared_mutex;
 using state_t = state::State<mutex_t, db::BlockDb>;
 using traits_t = fake::traits::alpha<state_t>;
 
-template <concepts::fork_traits<state_t> TTraits>
+template <class TTraits>
 using traits_templated_evm_t = Evm<state_t, fake::traits::alpha<state_t>>;
 
 using evm_t = traits_templated_evm_t<traits_t>;

@@ -71,7 +71,7 @@ public:
     }
 };
 
-template <class TState, concepts::fork_traits<TState> TTraits>
+template <class TState, class TTraits>
 struct fakeEmptyTP
 {
     enum class Status
@@ -97,8 +97,7 @@ struct fakeEmptyTP
     }
 };
 
-template <
-    class TState, concepts::fork_traits<TState> TTraits, class TInterpreter>
+template <class TState, class TTraits, class TInterpreter>
 struct fakeEmptyEvm
 {
 };

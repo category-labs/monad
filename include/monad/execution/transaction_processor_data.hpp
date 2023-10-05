@@ -1,7 +1,6 @@
 #pragma once
 
 #include <monad/core/block.hpp>
-#include <monad/core/concepts.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <monad/core/concepts.hpp>
 #include <monad/execution/config.hpp>
 #include <monad/execution/create_contract_address.hpp>
 #include <monad/execution/evmone_baseline_interpreter.hpp>
@@ -17,7 +16,7 @@
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
-template <class TState, concepts::fork_traits<TState> TTraits>
+template <class TState, class TTraits>
 struct Evm
 {
     using interpreter_t = EVMOneBaselineInterpreter<TState, TTraits>;

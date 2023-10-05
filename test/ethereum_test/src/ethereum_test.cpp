@@ -69,13 +69,17 @@ struct Execution
 
         // TODO: make use of common function when that gets added along
         // with the block processor work
+        //
+        // Note: this needs to be done outside of the transaction processor,
+        // because otherwise every transaction will touch the beneficiary,
+        // which makes all but the first txn unmergeable in optimistic execution
         auto const gas_award = TFork::calculate_txn_award(
             transaction,
             host.block_header_.base_fee_per_gas.value_or(0),
             receipt.gas_used);
-        if (TFork::rev < EVMC_SPURIOUS_DRAGON || gas_award) {
-            state.add_to_balance(host.block_header_.beneficiary, gas_award);
-        }
+        state.add_to_balance(host.block_header_.beneficiary, gas_award);
+        TFork::destruct_touched_dead(state);
+
         return receipt;
     }
 };

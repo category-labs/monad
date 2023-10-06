@@ -75,7 +75,7 @@ TEST(Rlp_Block, DecodeBlock46402)
                      0x2e, 0x30, 0x2f, 0x77, 0x69, 0x6e, 0x64, 0x6f, 0x77,
                      0x73, 0x2f, 0x67, 0x6f, 0x31, 0x2e, 0x34, 0x2e, 0x32}));
     EXPECT_EQ(
-        block.header.mix_hash,
+        block.header.prev_randao,
         0xf8808df56cbe52ae9c97985e824da926fd05505266960c37a516219f85c131d4_bytes32);
     EXPECT_EQ(
         block.header.nonce,
@@ -176,7 +176,7 @@ TEST(Rlp_Block, DecodeBlock2730000)
              0x55,
              0x31}));
     EXPECT_EQ(
-        block.header.mix_hash,
+        block.header.prev_randao,
         0xddaee79223f62970af2d96b378c6069639af5c93f34cc933948ae9af3896d7e5_bytes32);
     EXPECT_EQ(
         block.header.nonce,
@@ -303,7 +303,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
              0x53,
              0x31}));
     EXPECT_EQ(
-        block.header.mix_hash,
+        block.header.prev_randao,
         0xd8f930ce60f06c311b18771b71eed46d1a62b371b9577ac2136259accf0b3033_bytes32);
     EXPECT_EQ(
         block.header.nonce,
@@ -482,7 +482,7 @@ TEST(Rlp_Block, DecodeBlock2730002)
              0xb1,
              0xbc}));
     EXPECT_EQ(
-        block.header.mix_hash,
+        block.header.prev_randao,
         0x51a858ec8d71f4ccc5a270916046928bcc5b738e418048c32a26ebb5b6614b76_bytes32);
     EXPECT_EQ(
         block.header.nonce,
@@ -530,7 +530,7 @@ TEST(Rlp_Block, ReadBlock2730009)
         block.header.extra_data,
         byte_string({0x44, 0x77, 0x61, 0x72, 0x66, 0x50, 0x6f, 0x6f, 0x6c}));
     EXPECT_EQ(
-        block.header.mix_hash,
+        block.header.prev_randao,
         0x5ae4c715f311145efa42db41eacf339f996e247a94573692ce8f85d1e363819c_bytes32);
     EXPECT_EQ(
         block.header.nonce,
@@ -606,7 +606,7 @@ TEST(Rlp_Block, DecodeBlock14000000)
                      0x61, 0x2d, 0x73, 0x6f, 0x75, 0x74, 0x68, 0x65,
                      0x61, 0x73, 0x74, 0x31, 0x2d, 0x31}));
     EXPECT_EQ(
-        block.header.mix_hash,
+        block.header.prev_randao,
         0xa832679fcf3e71f0b29bd5913955151be5bf1fc59e135e3c7eb6e30f8442a5df_bytes32);
     EXPECT_EQ(
         block.header.nonce,
@@ -770,7 +770,7 @@ TEST(Rlp_Block, DecodeShanghai)
     EXPECT_EQ(decoded_block.header.extra_data, byte_string({0x42}));
 
     EXPECT_EQ(
-        decoded_block.header.mix_hash,
+        decoded_block.header.prev_randao,
         0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
     EXPECT_EQ(
         decoded_block.header.nonce,

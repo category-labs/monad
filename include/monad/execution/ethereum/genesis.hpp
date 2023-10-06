@@ -49,7 +49,7 @@ inline BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
     std::copy_n(
         mix_hash_byte_string.value().begin(),
         mix_hash_byte_string.value().length(),
-        block_header.mix_hash.bytes);
+        block_header.prev_randao.bytes);
 
     uint64_t const nonce{
         std::stoull(genesis_json["nonce"].get<std::string>(), nullptr, 0)};

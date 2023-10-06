@@ -169,8 +169,8 @@ struct EvmcHost : public evmc::Host
         if (block_header_.difficulty == 0) { // EIP-4399
             std::memcpy(
                 result.block_prev_randao.bytes,
-                block_header_.mix_hash.bytes,
-                sizeof(block_header_.mix_hash.bytes));
+                block_header_.prev_randao.bytes,
+                sizeof(block_header_.prev_randao.bytes));
         }
         else {
             intx::be::store(

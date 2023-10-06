@@ -330,7 +330,7 @@ namespace nlohmann
                           integer_from_json<uint64_t>(json["currentBaseFee"]))
                     : std::nullopt;
 
-            o.mix_hash = json["currentRandom"].get<monad::bytes32_t>();
+            o.prev_randao = json["currentRandom"].get<monad::bytes32_t>();
         }
     };
 }

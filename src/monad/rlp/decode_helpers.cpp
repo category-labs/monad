@@ -368,7 +368,7 @@ decode_block_header(BlockHeader &bh, byte_string_view const enc)
     payload = decode_unsigned<uint64_t>(bh.gas_used, payload);
     payload = decode_unsigned<uint64_t>(bh.timestamp, payload);
     payload = decode_string(bh.extra_data, payload);
-    payload = decode_bytes32(bh.mix_hash, payload);
+    payload = decode_bytes32(bh.prev_randao, payload);
     payload = decode_byte_string_fixed<8>(bh.nonce, payload);
     if (payload.size() > 0) {
         uint64_t base_fee_per_gas{};

@@ -24,7 +24,7 @@ struct BlockHeader
     bytes32_t state_root{};
     bytes32_t transactions_root{};
     bytes32_t receipts_root{};
-    bytes32_t mix_hash{};
+    bytes32_t prev_randao{}; // aka mix_hash
     uint256_t difficulty{};
 
     uint64_t number{0};

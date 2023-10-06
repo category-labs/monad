@@ -46,7 +46,7 @@ TEST(Genesis, read_ethereum_mainnet_genesis_header)
     EXPECT_EQ(block_header.extra_data, extra_data);
     EXPECT_EQ(block_header.gas_limit, 5000);
     EXPECT_EQ(
-        block_header.mix_hash,
+        block_header.prev_randao,
         0x0000000000000000000000000000000000000000000000000000000000000000_bytes32);
     EXPECT_EQ(
         block_header.nonce,

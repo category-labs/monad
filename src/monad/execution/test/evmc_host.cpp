@@ -70,7 +70,7 @@ TEST(EvmcHost, get_tx_context)
     static constexpr auto bene{
         0xbebebebebebebebebebebebebebebebebebebebe_address};
     BlockHeader b{
-        .mix_hash =
+        .prev_randao =
             0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32,
         .difficulty = 10'000'000u,
         .number = 15'000'000,
@@ -108,7 +108,9 @@ TEST(EvmcHost, get_tx_context)
     b.difficulty = 0;
     auto const pos_result = host.get_tx_context();
     std::memcpy(
-        ctx.block_prev_randao.bytes, b.mix_hash.bytes, sizeof(b.mix_hash));
+        ctx.block_prev_randao.bytes,
+        b.prev_randao.bytes,
+        sizeof(b.prev_randao));
     EXPECT_EQ(pos_result, ctx);
 }
 

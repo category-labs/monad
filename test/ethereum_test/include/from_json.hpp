@@ -311,36 +311,26 @@ namespace nlohmann
     {
         static void from_json(nlohmann::json const &json, monad::BlockHeader &o)
         {
-            auto const current_coinbase =
-                json["currentCoinbase"].get<monad::address_t>();
-            auto const parent_hash =
-                json["previousHash"].get<monad::bytes32_t>();
-            auto const difficulty =
-                json["currentDifficulty"].get<monad::uint256_t>();
-
-            auto const number = static_cast<uint64_t>(
+            o.parent_hash = json["previousHash"].get<monad::bytes32_t>();
+            o.difficulty = json["currentDifficulty"].get<monad::uint256_t>();
+            o.number = static_cast<uint64_t>(
                 json["currentNumber"].get<monad::uint256_t>());
-
-            auto const gas_limit = static_cast<uint64_t>(
+            o.gas_limit = static_cast<uint64_t>(
                 json["currentGasLimit"].get<monad::uint256_t>());
-            auto const timestamp = static_cast<uint64_t>(
+            o.timestamp = static_cast<uint64_t>(
                 json["currentTimestamp"].get<monad::uint256_t>());
+            o.beneficiary = json["currentCoinbase"].get<monad::address_t>();
 
-            uint64_t base_fee_per_gas{};
-            if (json.contains("currentBaseFee")) {
-                // we cannot use the nlohmann::json from_json<uint64_t> because
-                // it does not use the strtoull implementation, whereas we need
-                // it so we can turn a hex string into a uint64_t
-                base_fee_per_gas =
-                    integer_from_json<uint64_t>(json["currentBaseFee"]);
-            }
-            o.parent_hash = parent_hash;
-            o.difficulty = difficulty;
-            o.number = number;
-            o.gas_limit = gas_limit;
-            o.timestamp = timestamp;
-            o.beneficiary = current_coinbase;
-            o.base_fee_per_gas = base_fee_per_gas;
+            // we cannot use the nlohmann::json from_json<uint64_t> because
+            // it does not use the strtoull implementation, whereas we need
+            // it so we can turn a hex string into a uint64_t
+            o.base_fee_per_gas =
+                json.contains("currentBaseFee")
+                    ? std::make_optional<uint64_t>(
+                          integer_from_json<uint64_t>(json["currentBaseFee"]))
+                    : std::nullopt;
+
+            o.mix_hash = json["currentRandom"].get<monad::bytes32_t>();
         }
     };
 }

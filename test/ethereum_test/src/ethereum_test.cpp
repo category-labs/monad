@@ -338,6 +338,12 @@ void EthereumTests::run_state_test(
                 if (fork_index < to_fork_index("London").value()) {
                     ret.base_fee_per_gas.reset();
                 }
+
+                // eip-4399, difficulty set to 0 in PoS
+                if (fork_index >= to_fork_index("Merge").value()) {
+                    ret.difficulty = 0;
+                }
+
                 return ret;
             }();
 

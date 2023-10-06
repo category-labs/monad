@@ -60,7 +60,6 @@ namespace fork_traits
         using next_fork_t = homestead;
 
         static constexpr evmc_revision rev = EVMC_FRONTIER;
-        static constexpr auto last_block_number = 1'149'999u;
         static constexpr uint256_t block_reward =
             5'000'000'000'000'000'000; // YP Eqn. 176
         static constexpr uint256_t additional_ommer_reward =
@@ -219,7 +218,6 @@ namespace fork_traits
 
         // https://eips.ethereum.org/EIPS/eip-2
         static constexpr evmc_revision rev = EVMC_HOMESTEAD;
-        static constexpr auto last_block_number = 1'919'999u;
 
         [[nodiscard]] static constexpr auto
         g_txcreate(Transaction const &t) noexcept
@@ -267,17 +265,16 @@ namespace fork_traits
     struct dao_fork : public homestead
     {
         using next_fork_t = tangerine_whistle;
-        static constexpr auto last_block_number = 2'462'999u;
         // EVMC revision for DAO should just be EVMC_HOMESTEAD
 
         template <class TBlockState, class TBlockCache>
         static constexpr void transfer_balance_dao(
             TBlockState &bs, Db &db, TBlockCache const &block_cache,
-            block_num_t const block_number)
+            block_num_t const block_number,
+            block_num_t const target_block_number)
         {
             state::State s{bs, db, block_cache};
-            if (MONAD_UNLIKELY(
-                    block_number == execution::dao::dao_block_number)) {
+            if (MONAD_UNLIKELY(block_number == target_block_number)) {
                 for (auto const &addr : execution::dao::child_accounts) {
                     auto const balance =
                         intx::be::load<uint256_t>(s.get_balance(addr));
@@ -295,14 +292,13 @@ namespace fork_traits
     {
         using next_fork_t = spurious_dragon;
 
-        static constexpr auto last_block_number = 2'674'999u;
         static constexpr evmc_revision rev = EVMC_TANGERINE_WHISTLE;
 
         template <class TBlockState, class TBlockCache>
         static constexpr void transfer_balance_dao(
-            TBlockState &, Db &, TBlockCache const &, block_num_t const block)
+            TBlockState &, Db &, TBlockCache const &, block_num_t const,
+            block_num_t const)
         {
-            MONAD_DEBUG_ASSERT(block > dao_fork::last_block_number);
         }
     };
 
@@ -311,7 +307,6 @@ namespace fork_traits
         using next_fork_t = byzantium;
 
         static constexpr evmc_revision rev = EVMC_SPURIOUS_DRAGON;
-        static constexpr auto last_block_number = 4'369'999u;
 
         // https://eips.ethereum.org/EIPS/eip-161
         [[nodiscard]] static constexpr auto starting_nonce() noexcept
@@ -401,7 +396,6 @@ namespace fork_traits
         using next_fork_t = constantinople_and_petersburg;
 
         static constexpr evmc_revision rev = EVMC_BYZANTIUM;
-        static constexpr auto last_block_number = 7'279'999u;
         static constexpr uint256_t block_reward =
             3'000'000'000'000'000'000; // YP Eqn. 176, EIP-649
         static constexpr uint256_t additional_ommer_reward =
@@ -432,7 +426,6 @@ namespace fork_traits
         using next_fork_t = istanbul;
 
         static constexpr evmc_revision rev = EVMC_PETERSBURG;
-        static constexpr auto last_block_number = 9'068'999;
         static constexpr uint256_t block_reward =
             2'000'000'000'000'000'000; // YP Eqn. 176, EIP-1234
         static constexpr uint256_t additional_ommer_reward =
@@ -459,7 +452,6 @@ namespace fork_traits
         using next_fork_t = berlin;
 
         static constexpr evmc_revision rev = EVMC_ISTANBUL;
-        static constexpr auto last_block_number = 12'243'999u;
 
         static constexpr uint64_t n_precompiles = 9;
 
@@ -489,7 +481,6 @@ namespace fork_traits
         using next_fork_t = london;
 
         static constexpr evmc_revision rev = EVMC_BERLIN;
-        static constexpr auto last_block_number = 12'964'999u;
 
         // https://eips.ethereum.org/EIPS/eip-2930
         [[nodiscard]] static constexpr auto
@@ -522,7 +513,6 @@ namespace fork_traits
         using next_fork_t = paris;
 
         static constexpr evmc_revision rev = EVMC_LONDON;
-        static constexpr auto last_block_number = 15'537'393u;
 
         // https://eips.ethereum.org/EIPS/eip-3529
         [[nodiscard]] static constexpr uint64_t max_refund_quotient() noexcept
@@ -587,7 +577,6 @@ namespace fork_traits
     {
         using next_fork_t = shanghai;
         static constexpr evmc_revision rev = EVMC_PARIS;
-        static constexpr auto last_block_number = 17'034'869u;
 
         // EIP-3675
         static constexpr uint256_t block_reward = 0;
@@ -624,8 +613,6 @@ namespace fork_traits
     {
         using next_fork_t = no_next_fork_t;
         static constexpr evmc_revision rev = EVMC_SHANGHAI;
-        static constexpr auto last_block_number =
-            std::numeric_limits<uint64_t>::max();
 
         // EIP-3651
         template <class TState>

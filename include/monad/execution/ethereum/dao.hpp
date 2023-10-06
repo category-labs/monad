@@ -12,8 +12,6 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 namespace dao
 {
 
-    constexpr auto dao_block_number = 1'920'000u;
-
     constexpr auto withdraw_account{
         0xbf4ed7b27f1d666546e30d74d50d173d20bca754_address};
 

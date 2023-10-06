@@ -1,6 +1,7 @@
 #include <monad/config.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
+#include <monad/core/configuration.hpp>
 
 #include <monad/db/block_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
@@ -196,7 +197,11 @@ TEST(fork_traits, dao)
     BlockState<mutex_t> bs;
 
     fork_traits::dao_fork::transfer_balance_dao(
-        bs, db, block_cache, dao::dao_block_number);
+        bs,
+        db,
+        block_cache,
+        ethereum_mainnet_config.dao_block.value(),
+        ethereum_mainnet_config.dao_block.value());
 
     state_t s{bs, db, block_cache};
     for (auto const &addr : dao::child_accounts) {
@@ -233,7 +238,11 @@ TEST(fork_traits, tangerine_whistle)
     BlockState<mutex_t> bs;
 
     fork_traits::tangerine_whistle::transfer_balance_dao(
-        bs, db, block_cache, fork_traits::tangerine_whistle::last_block_number);
+        bs,
+        db,
+        block_cache,
+        ethereum_mainnet_config.tangerine_whistle_block.value(),
+        ethereum_mainnet_config.dao_block.value());
 
     state_t s{bs, db, block_cache};
 

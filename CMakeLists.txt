@@ -99,6 +99,7 @@ add_library(
   "include/monad/core/address.hpp"
   "include/monad/core/byte_string.hpp"
   "include/monad/core/bytes.hpp"
+  "include/monad/core/configuration.hpp"
   "include/monad/core/int.hpp"
   "include/monad/core/variant.hpp"
   "include/monad/core/withdrawal.hpp"

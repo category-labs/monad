@@ -32,7 +32,7 @@ struct SharedTransactionData
     uint64_t nonce;
     monad::address_t sender;
     std::optional<monad::address_t> to;
-    monad::Transaction::Type transaction_type;
+    monad::TransactionType transaction_type;
     uint256_t max_fee_per_gas;
     uint256_t max_priority_fee_per_gas;
 };

@@ -207,9 +207,9 @@ namespace fork_traits
         static constexpr void populate_chain_id(evmc_tx_context &) noexcept {}
 
         [[nodiscard]] static constexpr bool
-        transaction_type_valid(Transaction::Type const type)
+        transaction_type_valid(TransactionType const type)
         {
-            return type == Transaction::Type::eip155;
+            return type == TransactionType::eip155;
         }
     };
 
@@ -510,10 +510,10 @@ namespace fork_traits
         }
 
         [[nodiscard]] static constexpr bool
-        transaction_type_valid(Transaction::Type const type)
+        transaction_type_valid(TransactionType const type)
         {
-            return type == Transaction::Type::eip155 ||
-                   type == Transaction::Type::eip2930;
+            return type == TransactionType::eip155 ||
+                   type == TransactionType::eip2930;
         }
     };
 
@@ -553,7 +553,7 @@ namespace fork_traits
             Transaction const &t, uint256_t const &base_fee_per_gas)
         {
             MONAD_DEBUG_ASSERT(t.max_fee_per_gas >= base_fee_per_gas);
-            if (t.type == Transaction::Type::eip1559) {
+            if (t.type == TransactionType::eip1559) {
                 return std::min(
                     t.max_priority_fee_per_gas,
                     t.max_fee_per_gas - base_fee_per_gas);
@@ -575,11 +575,11 @@ namespace fork_traits
         }
 
         [[nodiscard]] static constexpr bool
-        transaction_type_valid(Transaction::Type const type)
+        transaction_type_valid(TransactionType const type)
         {
-            return type == Transaction::Type::eip155 ||
-                   type == Transaction::Type::eip2930 ||
-                   type == Transaction::Type::eip1559;
+            return type == TransactionType::eip155 ||
+                   type == TransactionType::eip2930 ||
+                   type == TransactionType::eip1559;
         }
     };
 

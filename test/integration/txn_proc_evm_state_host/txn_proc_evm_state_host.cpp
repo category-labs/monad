@@ -60,7 +60,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
         .amount = 1'000'000,
         .to = to,
         .from = from,
-        .type = Transaction::Type::eip155};
+        .type = TransactionType::eip155};
     Block const b{.header = bh, .transactions = {t}, .ommers = {ommer}};
 
     using state_t = decltype(s);
@@ -76,7 +76,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     auto r = tp.execute(s, h, t, 0, bh.beneficiary);
     EXPECT_EQ(r.status, Receipt::Status::SUCCESS);
     EXPECT_EQ(r.gas_used, 21'000);
-    EXPECT_EQ(t.type, Transaction::Type::eip155);
+    EXPECT_EQ(t.type, TransactionType::eip155);
     EXPECT_EQ(s.get_balance(from), bytes32_t{8'790'000});
     EXPECT_EQ(s.get_balance(to), bytes32_t{1'000'000});
 
@@ -131,7 +131,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
         .amount = 0,
         .from = creator,
         .data = code,
-        .type = Transaction::Type::eip155};
+        .type = TransactionType::eip155};
     Block const b{.header = bh, .transactions = {t}};
 
     using state_t = decltype(s);
@@ -147,7 +147,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     auto r = tp.execute(s, h, t, 0, bh.beneficiary);
     EXPECT_EQ(r.status, Receipt::Status::FAILED);
     EXPECT_EQ(r.gas_used, 24'000);
-    EXPECT_EQ(t.type, Transaction::Type::eip155);
+    EXPECT_EQ(t.type, TransactionType::eip155);
     EXPECT_EQ(s.get_balance(creator), bytes32_t{8'760'000'000'000'000'000});
     EXPECT_EQ(s.get_balance(created), bytes32_t{0});
 
@@ -197,7 +197,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
         .amount = 10'000'000'000'000'000, // 0.01 Eth
         .from = creator,
         .data = code,
-        .type = Transaction::Type::eip155};
+        .type = TransactionType::eip155};
     Block const b{.header = bh, .transactions = {t}};
 
     using state_t = decltype(s);
@@ -213,7 +213,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     auto r = tp.execute(s, h, t, 0, bh.beneficiary);
     EXPECT_EQ(r.status, Receipt::Status::FAILED);
     EXPECT_EQ(r.gas_used, 90'000);
-    EXPECT_EQ(t.type, Transaction::Type::eip155);
+    EXPECT_EQ(t.type, TransactionType::eip155);
     EXPECT_EQ(s.get_balance(creator), bytes32_t{4'936'905'359'437'569'240});
     EXPECT_EQ(s.get_nonce(creator), 3);
     EXPECT_FALSE(s.account_exists(created));

@@ -170,7 +170,7 @@ TEST(Rlp_Transaction, EncodeEip2930)
         .gas_limit = 21'000,
         .amount = amount,
         .to = to_addr,
-        .type = monad::Transaction::Type::eip2930,
+        .type = monad::TransactionType::eip2930,
         .access_list = a};
     const monad::byte_string eip2930_transaction{
         0xb8, 0xcd, 0x01, 0xf8, 0xca, 0x03, 0x09, 0x85, 0x04, 0xa8, 0x17, 0xc8,
@@ -245,7 +245,7 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
         .gas_limit = 21'000,
         .amount = amount,
         .to = to_addr,
-        .type = monad::Transaction::Type::eip1559,
+        .type = monad::TransactionType::eip1559,
         .access_list = a,
         .max_priority_fee_per_gas = tip};
     const monad::byte_string eip1559_transaction{
@@ -313,7 +313,7 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
         .gas_limit = 21'000,
         .amount = amount,
         .to = to_addr,
-        .type = monad::Transaction::Type::eip1559,
+        .type = monad::TransactionType::eip1559,
         .access_list = a,
         .max_priority_fee_per_gas = tip};
     const monad::byte_string eip1559_transaction{

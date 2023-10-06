@@ -190,7 +190,7 @@ namespace fake
             }
 
             [[nodiscard]] static constexpr bool
-            transaction_type_valid(Transaction::Type const)
+            transaction_type_valid(TransactionType const)
             {
                 return true;
             }

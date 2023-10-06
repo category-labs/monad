@@ -118,7 +118,7 @@ TEST(Rlp_Receipt, DecodeEncodeEip155Receipt)
     Receipt const r{
         .bloom = bloom,
         .gas_used = gas,
-        .type = Transaction::Type::eip155,
+        .type = TransactionType::eip155,
         .logs = {log}};
     const byte_string rlp_receipt{
         0xf9, 0x01, 0x6a, 0x80, 0x83, 0x2b, 0x7c, 0xda, // status and gas
@@ -199,7 +199,7 @@ TEST(Rlp_Receipt, EncodeEip1559Receipt)
     Receipt const r{
         .bloom = bloom,
         .gas_used = gas,
-        .type = Transaction::Type::eip1559,
+        .type = TransactionType::eip1559,
         .logs = {log}};
     const byte_string rlp_receipt{
         0xb9, 0x01, 0x6e, 0x02, // type envelope
@@ -282,7 +282,7 @@ TEST(Rlp_Receipt, EncodeEip2930Receipt)
     Receipt const r{
         .bloom = bloom,
         .gas_used = gas,
-        .type = Transaction::Type::eip2930,
+        .type = TransactionType::eip2930,
         .logs = {log}};
     const byte_string rlp_receipt{
         0xb9, 0x01, 0x6e, 0x01, // type envelope

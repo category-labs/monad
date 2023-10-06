@@ -423,18 +423,17 @@ TEST(fork_traits, london)
     // gas price
     Transaction t1{
         .max_fee_per_gas = 3'000,
-        .type = Transaction::Type::eip155,
+        .type = TransactionType::eip155,
         .max_priority_fee_per_gas = 1'000};
-    Transaction t2{.max_fee_per_gas = 3'000, .type = Transaction::Type::eip155};
+    Transaction t2{.max_fee_per_gas = 3'000, .type = TransactionType::eip155};
     Transaction t3{
         .max_fee_per_gas = 5'000,
-        .type = Transaction::Type::eip1559,
+        .type = TransactionType::eip1559,
         .max_priority_fee_per_gas = 1'000};
-    Transaction t4{
-        .max_fee_per_gas = 5'000, .type = Transaction::Type::eip1559};
+    Transaction t4{.max_fee_per_gas = 5'000, .type = TransactionType::eip1559};
     Transaction t5{
         .max_fee_per_gas = 5'000,
-        .type = Transaction::Type::eip1559,
+        .type = TransactionType::eip1559,
         .max_priority_fee_per_gas = 4'000};
     EXPECT_EQ(fork_traits::london::gas_price(t1, 2'000u), 3'000);
     EXPECT_EQ(fork_traits::london::gas_price(t2, 2'000u), 3'000);

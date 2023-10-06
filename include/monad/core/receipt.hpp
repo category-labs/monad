@@ -30,7 +30,7 @@ struct Receipt
     Bloom bloom{};
     uint64_t status{};
     uint64_t gas_used{};
-    Transaction::Type type{};
+    TransactionType type{};
     std::vector<Log> logs{};
 
     void add_log(Receipt::Log const &l);

@@ -14,15 +14,15 @@
 
 MONAD_NAMESPACE_BEGIN
 
+enum class TransactionType
+{
+    eip155, // legacy
+    eip2930,
+    eip1559,
+};
+
 struct Transaction
 {
-    enum class Type
-    {
-        eip155, // legacy
-        eip2930,
-        eip1559,
-    };
-
     struct AccessEntry
     {
         address_t a{};
@@ -39,7 +39,7 @@ struct Transaction
     std::optional<address_t> to{};
     std::optional<address_t> from{};
     byte_string data{};
-    Type type{};
+    TransactionType type{};
     AccessList access_list{};
     uint256_t max_priority_fee_per_gas{};
 };

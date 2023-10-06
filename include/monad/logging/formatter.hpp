@@ -70,7 +70,7 @@ namespace quill
     };
 
     template <>
-    struct copy_loggable<monad::Transaction::Type> : std::true_type
+    struct copy_loggable<monad::TransactionType> : std::true_type
     {
     };
 
@@ -237,18 +237,18 @@ struct formatter<monad::Receipt::Log> : public monad::log::basic_formatter
 };
 
 template <>
-struct formatter<monad::Transaction::Type> : public monad::log::basic_formatter
+struct formatter<monad::TransactionType> : public monad::log::basic_formatter
 {
     template <typename FormatContext>
-    auto format(monad::Transaction::Type const &t, FormatContext &ctx) const
+    auto format(monad::TransactionType const &t, FormatContext &ctx) const
     {
-        if (t == monad::Transaction::Type::eip155) {
+        if (t == monad::TransactionType::eip155) {
             fmt::format_to(ctx.out(), "eip155");
         }
-        else if (t == monad::Transaction::Type::eip2930) {
+        else if (t == monad::TransactionType::eip2930) {
             fmt::format_to(ctx.out(), "eip2930");
         }
-        else if (t == monad::Transaction::Type::eip1559) {
+        else if (t == monad::TransactionType::eip1559) {
             fmt::format_to(ctx.out(), "eip1559");
         }
         else {

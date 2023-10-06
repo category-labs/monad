@@ -232,7 +232,7 @@ namespace nlohmann
 
             if (auto const gas_price_it = j.find("gasPrice");
                 gas_price_it != j.end()) {
-                o.transaction_type = monad::Transaction::Type::eip155;
+                o.transaction_type = monad::TransactionType::eip155;
                 o.max_fee_per_gas = integer_from_json<uint64_t>(*gas_price_it);
                 if (j.contains("maxFeePerGas") ||
                     j.contains("maxPriorityFeePerGas")) {
@@ -242,7 +242,7 @@ namespace nlohmann
                 }
             }
             else {
-                o.transaction_type = monad::Transaction::Type::eip1559;
+                o.transaction_type = monad::TransactionType::eip1559;
                 o.max_fee_per_gas =
                     integer_from_json<uint64_t>(j.at("maxFeePerGas"));
                 o.max_priority_fee_per_gas =
@@ -257,10 +257,10 @@ namespace nlohmann
                 for (auto const &j_access_list : *ac_it)
                     o.access_lists.emplace_back(
                         j_access_list.get<monad::Transaction::AccessList>());
-                if (o.transaction_type == monad::Transaction::Type::eip155) {
+                if (o.transaction_type == monad::TransactionType::eip155) {
                     // Upgrade tx type if tx has
                     // access lists
-                    o.transaction_type = monad::Transaction::Type::eip2930;
+                    o.transaction_type = monad::TransactionType::eip2930;
                 }
             }
             if (!o.access_lists.empty()) {

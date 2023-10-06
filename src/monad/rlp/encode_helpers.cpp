@@ -44,7 +44,7 @@ encode_account(Account const &account, bytes32_t const &storage_root)
 
 byte_string encode_transaction(Transaction const &txn)
 {
-    if (txn.type == Transaction::Type::eip155) {
+    if (txn.type == TransactionType::eip155) {
         return encode_list(
             encode_unsigned(txn.nonce),
             encode_unsigned(txn.max_fee_per_gas),
@@ -59,7 +59,7 @@ byte_string encode_transaction(Transaction const &txn)
 
     MONAD_ASSERT(txn.sc.chain_id != std::nullopt);
 
-    if (txn.type == Transaction::Type::eip1559) {
+    if (txn.type == TransactionType::eip1559) {
         return encode_string(
             byte_string{0x02} += encode_list(
                 encode_unsigned(txn.sc.chain_id.value_or(0)),
@@ -75,7 +75,7 @@ byte_string encode_transaction(Transaction const &txn)
                 encode_unsigned(txn.sc.r),
                 encode_unsigned(txn.sc.s)));
     }
-    else if (txn.type == Transaction::Type::eip2930) {
+    else if (txn.type == TransactionType::eip2930) {
         return encode_string(
             byte_string{0x01} += encode_list(
                 encode_unsigned(txn.sc.chain_id.value_or(0)),
@@ -96,7 +96,7 @@ byte_string encode_transaction(Transaction const &txn)
 
 byte_string encode_transaction_for_signing(Transaction const &txn)
 {
-    if (txn.type == Transaction::Type::eip155) {
+    if (txn.type == TransactionType::eip155) {
         if (txn.sc.chain_id.has_value()) {
             return encode_list(
                 encode_unsigned(txn.nonce),
@@ -122,7 +122,7 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
 
     MONAD_ASSERT(txn.sc.chain_id != std::nullopt);
 
-    if (txn.type == Transaction::Type::eip1559) {
+    if (txn.type == TransactionType::eip1559) {
         return byte_string{0x02} +
                encode_list(
                    encode_unsigned(txn.sc.chain_id.value_or(0)),
@@ -135,7 +135,7 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
                    encode_string(txn.data),
                    encode_access_list(txn.access_list));
     }
-    else if (txn.type == Transaction::Type::eip2930) {
+    else if (txn.type == TransactionType::eip2930) {
         return byte_string{0x01} +
                encode_list(
                    encode_unsigned(txn.sc.chain_id.value_or(0)),
@@ -188,8 +188,8 @@ byte_string encode_receipt(Receipt const &r)
         encode_bloom(r.bloom),
         encode_list(log_result));
 
-    if (r.type == Transaction::Type::eip1559 ||
-        r.type == Transaction::Type::eip2930) {
+    if (r.type == TransactionType::eip1559 ||
+        r.type == TransactionType::eip2930) {
         return encode_string(
             static_cast<unsigned char>(r.type) + receipt_bytes);
     }

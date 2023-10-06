@@ -163,7 +163,7 @@ decode_transaction_legacy(Transaction &txn, byte_string_view const enc)
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
 
-    txn.type = Transaction::Type::eip155;
+    txn.type = TransactionType::eip155;
     payload = decode_unsigned<uint64_t>(txn.nonce, payload);
     payload = decode_unsigned<uint256_t>(txn.max_fee_per_gas, payload);
     payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
@@ -186,7 +186,7 @@ decode_transaction_eip2930(Transaction &txn, byte_string_view const enc)
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
 
-    txn.type = Transaction::Type::eip2930;
+    txn.type = TransactionType::eip2930;
     txn.sc.chain_id = uint64_t{};
     payload = decode_unsigned<uint64_t>(*txn.sc.chain_id, payload);
     payload = decode_unsigned<uint64_t>(txn.nonce, payload);
@@ -212,7 +212,7 @@ decode_transaction_eip1559(Transaction &txn, byte_string_view const enc)
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
 
-    txn.type = Transaction::Type::eip1559;
+    txn.type = TransactionType::eip1559;
     txn.sc.chain_id = uint64_t{};
     payload = decode_unsigned<uint64_t>(*txn.sc.chain_id, payload);
     payload = decode_unsigned<uint64_t>(txn.nonce, payload);
@@ -285,7 +285,7 @@ byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
     MONAD_ASSERT(enc.size() > 0);
 
     uint8_t const &first = enc[0];
-    receipt.type = Transaction::Type::eip155;
+    receipt.type = TransactionType::eip155;
     if (first < 0xc0) // eip 2718 - typed transaction envelope
     {
         byte_string_view payload{};
@@ -296,10 +296,10 @@ byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
         auto const receipt_enc = payload.substr(1, payload.size() - 1);
         switch (type) {
         case 0x1:
-            receipt.type = Transaction::Type::eip2930;
+            receipt.type = TransactionType::eip2930;
             break;
         case 0x2:
-            receipt.type = Transaction::Type::eip1559;
+            receipt.type = TransactionType::eip1559;
             break;
         default:
             MONAD_ASSERT(false); // invalid transaction type

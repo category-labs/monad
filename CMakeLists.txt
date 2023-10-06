@@ -13,7 +13,7 @@ include(cmake/test.cmake)
 # deps
 # ##############################################################################
 
-add_subdirectory("monad-core")
+add_subdirectory("monad-trie")
 
 find_package(Boost REQUIRED COMPONENTS fiber log)
 find_package(PkgConfig REQUIRED)

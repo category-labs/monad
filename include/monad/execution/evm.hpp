@@ -89,9 +89,15 @@ struct Evm
         if (result.status_code == EVMC_SUCCESS) {
             state.merge(new_state);
         }
-        else if (MONAD_UNLIKELY(new_state.is_touched(ripemd_address))) {
-            // YP K.1. Deletion of an Account Despite Out-of-gas.
-            state.touch(ripemd_address);
+        else {
+            result.gas_refund = 0;
+            if (result.status_code != EVMC_REVERT) {
+                result.gas_left = 0;
+            }
+            if (MONAD_UNLIKELY(new_state.is_touched(ripemd_address))) {
+                // YP K.1. Deletion of an Account Despite Out-of-gas.
+                state.touch(ripemd_address);
+            }
         }
 
         return result;
@@ -126,6 +132,12 @@ struct Evm
             auto const code = new_state.get_code(m.code_address);
             result = interpreter_t::execute(&new_host, m, code);
         }
+
+        MONAD_DEBUG_ASSERT(
+            result.status_code == EVMC_SUCCESS || result.gas_refund == 0);
+        MONAD_DEBUG_ASSERT(
+            result.status_code == EVMC_SUCCESS ||
+            result.status_code == EVMC_REVERT || result.gas_left == 0);
 
         if (result.status_code == EVMC_SUCCESS) {
             state.merge(new_state);

@@ -249,11 +249,7 @@ namespace fork_traits
                 // pay for the final gas fee for adding the contract code to
                 // the state, the contract creation fails (ie. goes
                 // out-of-gas) rather than leaving an empty contract.
-                //
-                // TODO: make sure old initialization code does not get
-                // committed to the database
                 result.status_code = EVMC_OUT_OF_GAS;
-                result.gas_left = 0;
             }
             else {
                 result.create_address = a;

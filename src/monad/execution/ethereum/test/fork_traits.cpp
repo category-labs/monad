@@ -167,7 +167,7 @@ TEST(fork_traits, homestead)
         evmc::Result r{EVMC_SUCCESS, 700, 0, output_data, sizeof(output_data)};
         auto const r2 = homestead::deploy_contract_code(s, a, std::move(r));
         EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
-        EXPECT_EQ(r2.gas_left, 0);
+        EXPECT_EQ(r2.gas_left, 700);
         EXPECT_EQ(r2.create_address, null);
     }
 }

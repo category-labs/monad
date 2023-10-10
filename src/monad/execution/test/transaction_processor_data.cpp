@@ -32,31 +32,11 @@ namespace
     block_cache_t block_cache;
 }
 
-enum class TestStatus
-{
-    SUCCESS,
-    LATER_NONCE,
-    INSUFFICIENT_BALANCE,
-    INVALID_GAS_LIMIT,
-    BAD_NONCE,
-    DEPLOYED_CODE,
-};
-
-static TestStatus fake_status{};
+static TransactionStatus fake_status{};
 
 template <class TState, class TTraits>
 struct fakeTP
 {
-    enum class Status
-    {
-        SUCCESS,
-        LATER_NONCE,
-        INSUFFICIENT_BALANCE,
-        INVALID_GAS_LIMIT,
-        BAD_NONCE,
-        DEPLOYED_CODE,
-    };
-
     Receipt r_{.status = Receipt::SUCCESS};
 
     template <class TEvmHost>
@@ -67,9 +47,14 @@ struct fakeTP
         return r_;
     }
 
-    Status validate(TState const &, Transaction const &, uint256_t const &)
+    TransactionStatus static_validate(Transaction const &, uint256_t const &)
     {
-        return static_cast<Status>(fake_status);
+        return fake_status;
+    }
+
+    TransactionStatus validate(TState const &, Transaction const &)
+    {
+        return fake_status;
     }
 };
 
@@ -82,7 +67,7 @@ TEST(TransactionProcessorFiberData, successful)
     state_t s{bs, db, block_cache};
     static BlockHeader const b{};
     static Transaction t{.gas_limit = 15'000};
-    fake_status = TestStatus::SUCCESS;
+    fake_status = TransactionStatus::SUCCESS;
 
     data_t<tp_t> d{db, bs, t, b, block_cache, 0};
     d();
@@ -101,7 +86,7 @@ TEST(TransactionProcessorFiberData, failed_validation)
     static Transaction t{.gas_limit = 15'000};
 
     {
-        fake_status = TestStatus::INSUFFICIENT_BALANCE;
+        fake_status = TransactionStatus::INSUFFICIENT_BALANCE;
         data_t<tp_t> d{db, bs, t, b, block_cache, 0};
         d();
         auto const r = d.get_receipt();
@@ -110,25 +95,7 @@ TEST(TransactionProcessorFiberData, failed_validation)
         EXPECT_EQ(r.gas_used, 15'000);
     }
     {
-        fake_status = TestStatus::BAD_NONCE;
-        data_t<tp_t> d{db, bs, t, b, block_cache, 0};
-        d();
-        auto const r = d.get_receipt();
-
-        EXPECT_EQ(r.status, Receipt::FAILED);
-        EXPECT_EQ(r.gas_used, 15'000);
-    }
-    {
-        fake_status = TestStatus::INVALID_GAS_LIMIT;
-        data_t<tp_t> d{db, bs, t, b, block_cache, 0};
-        d();
-        auto const r = d.get_receipt();
-
-        EXPECT_EQ(r.status, Receipt::FAILED);
-        EXPECT_EQ(r.gas_used, 15'000);
-    }
-    {
-        fake_status = TestStatus::DEPLOYED_CODE;
+        fake_status = TransactionStatus::BAD_NONCE;
         data_t<tp_t> d{db, bs, t, b, block_cache, 0};
         d();
         auto const r = d.get_receipt();

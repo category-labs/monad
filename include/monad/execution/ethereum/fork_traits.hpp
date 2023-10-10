@@ -204,7 +204,11 @@ namespace fork_traits
             return state.account_exists(address);
         }
 
-        static constexpr void populate_chain_id(evmc_tx_context &) noexcept {}
+        static constexpr void
+        populate_chain_id(evmc_tx_context &context) noexcept
+        {
+            intx::be::store(context.chain_id.bytes, uint256_t{1});
+        }
 
         [[nodiscard]] static constexpr bool
         transaction_type_valid(TransactionType const type)
@@ -216,6 +220,12 @@ namespace fork_traits
         init_code_valid(Transaction const &) noexcept
         {
             return true;
+        }
+
+        [[nodiscard]] static constexpr bool
+        validate_chain_id(Transaction const &txn)
+        {
+            return !txn.sc.chain_id.has_value();
         }
     };
 
@@ -390,12 +400,10 @@ namespace fork_traits
             return !state.account_is_dead(address);
         }
 
-        // EIP-155
-        static constexpr void
-        populate_chain_id(evmc_tx_context &context) noexcept
+        [[nodiscard]] static constexpr bool
+        validate_chain_id(Transaction const &txn)
         {
-            // For now, only support mainnet (chain_id = 1)
-            intx::be::store(context.chain_id.bytes, intx::uint256{1});
+            return !txn.sc.chain_id.has_value() || txn.sc.chain_id.value() == 1;
         }
     };
 

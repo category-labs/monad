@@ -22,14 +22,6 @@ using state_t = state::State<mutex_t, block_cache_t>;
 using traits_t = fork_traits::shanghai;
 using processor_t = TransactionProcessor<state_t, traits_t>;
 
-TEST(Execution, static_validate_no_sender)
-{
-    processor_t p{};
-    Transaction const t{};
-
-    EXPECT_DEATH(p.static_validate(t), "from.has_value");
-}
-
 TEST(Execution, validate_enough_gas)
 {
     processor_t p{};
@@ -41,13 +33,7 @@ TEST(Execution, validate_enough_gas)
         .amount = 1,
         .from = a};
 
-    db_t db;
-    block_cache_t block_cache;
-    BlockState<mutex_t> bs;
-    state_t s{bs, db, block_cache};
-    s.add_to_balance(a, 55'939'568'773'815'811);
-
-    auto status = p.validate(s, t, 0);
+    auto status = p.static_validate(t, 0);
     EXPECT_EQ(status, TransactionStatus::INTRINSIC_GAS_GREATER_THAN_LIMIT);
 }
 
@@ -67,7 +53,7 @@ TEST(Execution, validate_deployed_code)
 
     static Transaction const t{.gas_limit = 60'500, .from = a};
 
-    auto status = p.validate(s, t, 0);
+    auto status = p.validate(s, t);
     EXPECT_EQ(status, TransactionStatus::SENDER_NOT_EOA);
 }
 
@@ -88,7 +74,8 @@ TEST(Execution, validate_nonce)
     state_t s{bs, db, block_cache};
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 24);
-    auto status = p.validate(s, t, 0);
+
+    auto status = p.validate(s, t);
     EXPECT_EQ(status, TransactionStatus::BAD_NONCE);
 }
 
@@ -110,7 +97,7 @@ TEST(Execution, validate_nonce_optimistically)
     state_t s{bs, db, block_cache};
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 24);
-    auto status = p.validate(s, t, 0);
+    auto status = p.validate(s, t);
     EXPECT_EQ(status, TransactionStatus::BAD_NONCE);
 }
 
@@ -135,7 +122,7 @@ TEST(Execution, validate_enough_balance)
     state_t s{bs, db, block_cache};
     s.add_to_balance(a, 55'939'568'773'815'811);
 
-    auto status = p.validate(s, t, 10u);
+    auto status = p.validate(s, t);
     EXPECT_EQ(status, TransactionStatus::INSUFFICIENT_BALANCE);
 }
 
@@ -160,20 +147,14 @@ TEST(Execution, successful_validation)
 
     processor_t p{};
 
-    auto status = p.validate(s, t, 0);
-    EXPECT_EQ(status, TransactionStatus::SUCCESS);
+    EXPECT_EQ(p.static_validate(t, 0), TransactionStatus::SUCCESS);
+    EXPECT_EQ(p.validate(s, t), TransactionStatus::SUCCESS);
 }
 
 TEST(Execution, max_fee_less_than_base)
 {
     static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
-    db_t db;
-    block_cache_t block_cache;
-    BlockState<mutex_t> bs;
-    state_t s{bs, db, block_cache};
-    s.add_to_balance(a, 56'939'568'773'815'811);
-    s.set_nonce(a, 25);
 
     static Transaction const t{
         .nonce = 25,
@@ -186,7 +167,7 @@ TEST(Execution, max_fee_less_than_base)
 
     processor_t p{};
 
-    auto status = p.validate(s, t, 37'000'000'000);
+    auto status = p.static_validate(t, 37'000'000'000);
     EXPECT_EQ(status, TransactionStatus::MAX_FEE_LESS_THAN_BASE);
 }
 
@@ -194,12 +175,6 @@ TEST(Execution, priority_fee_greater_than_max)
 {
     static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
-    db_t db;
-    block_cache_t block_cache;
-    BlockState<mutex_t> bs;
-    state_t s{bs, db, block_cache};
-    s.add_to_balance(a, 56'939'568'773'815'811);
-    s.set_nonce(a, 25);
 
     static Transaction const t{
         .nonce = 25,
@@ -212,6 +187,6 @@ TEST(Execution, priority_fee_greater_than_max)
 
     processor_t p{};
 
-    auto status = p.validate(s, t, 29'000'000'000);
+    auto status = p.static_validate(t, 29'000'000'000);
     EXPECT_EQ(status, TransactionStatus::PRIORITY_FEE_GREATER_THAN_MAX);
 }

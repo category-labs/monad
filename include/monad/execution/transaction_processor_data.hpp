@@ -48,8 +48,6 @@ struct TransactionProcessorFiberData
     {
     }
 
-    result_t &&get_result() noexcept { return std::move(result_); }
-
     static constexpr bool is_valid(TransactionStatus status) noexcept
     {
         if (status == TransactionStatus::SUCCESS) {
@@ -70,8 +68,11 @@ struct TransactionProcessorFiberData
             txn_.from,
             txn_.to);
 
-        auto const validity =
-            p.validate(state, txn_, bh_.base_fee_per_gas.value_or(0));
+        auto validity =
+            p.static_validate(txn_, bh_.base_fee_per_gas.value_or(0));
+        if (validity == TransactionStatus::SUCCESS) {
+            validity = p.validate(state, txn_);
+        }
         if (!is_valid(validity)) {
             LOG_INFO(
                 "Transaction {} invalid: {}", id_, static_cast<int>(validity));

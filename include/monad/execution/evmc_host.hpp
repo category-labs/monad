@@ -161,9 +161,6 @@ struct EvmcHost : public evmc::Host
         intx::be::store(result.tx_gas_price.bytes, gas_cost);
 
         TTraits::populate_chain_id(result);
-        MONAD_ASSERT(
-            transaction_.sc.chain_id.value_or(0) ==
-            intx::be::load<uint256_t>(result.chain_id.bytes));
 
         uint256_t const block_base_fee{
             block_header_.base_fee_per_gas.value_or(0)};

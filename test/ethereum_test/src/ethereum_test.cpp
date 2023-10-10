@@ -47,8 +47,11 @@ struct Execution
         monad::Receipt, monad::execution::TransactionStatus>
     execute(state_t &state, monad::Transaction const &transaction)
     {
-        auto const status = transaction_processor.validate(
-            state, transaction, host.block_header_.base_fee_per_gas);
+        auto status = transaction_processor.static_validate(
+            transaction, host.block_header_.base_fee_per_gas);
+        if (status == monad::execution::TransactionStatus::SUCCESS) {
+            status = transaction_processor.validate(state, transaction);
+        }
         if (status != monad::execution::TransactionStatus::SUCCESS) {
             return tl::unexpected{status};
         }
@@ -282,16 +285,17 @@ void EthereumTests::run_state_test(
             auto const &expected = expectations[case_index];
             auto const transaction = [&] {
                 auto const &data = test.shared_transaction_data;
+                std::optional<uint256_t> chain_id = std::nullopt;
+                if (fork_index >= to_fork_index("EIP158").value()) {
+                    chain_id = 1;
+                }
                 return monad::Transaction{
                     .sc =
                         SignatureAndChain{
                             .r = {},
                             .s = {},
                             // Only supporting mainnet for now
-                            .chain_id =
-                                fork_index >= to_fork_index("EIP158").value()
-                                    ? 1
-                                    : 0},
+                            .chain_id = chain_id},
                     .nonce = data.nonce,
                     .max_fee_per_gas = data.max_fee_per_gas,
                     .gas_limit = data.gas_limits.at(expected.indices.gas_limit),

@@ -518,9 +518,7 @@ TEST(fork_traits, shanghai_contract_creation_cost_exceed_limit)
     // exceed EIP-3860 limit
     Transaction t{.data = long_data};
 
-    EXPECT_EQ(
-        fork_traits::shanghai::intrinsic_gas(t),
-        std::numeric_limits<uint64_t>::max());
+    EXPECT_FALSE(fork_traits::shanghai::init_code_valid(t));
 }
 
 // EIP-3860
@@ -533,6 +531,7 @@ TEST(fork_traits, shanghai_contract_creation_cost)
 
     Transaction t{.data = data};
 
+    EXPECT_TRUE(fork_traits::shanghai::init_code_valid(t));
     EXPECT_EQ(
         fork_traits::shanghai::intrinsic_gas(t),
         32'000u + 21'000u + 16u * 128u + 0u + 4u * 2u);

@@ -211,6 +211,12 @@ namespace fork_traits
         {
             return type == TransactionType::eip155;
         }
+
+        [[nodiscard]] static constexpr bool
+        init_code_valid(Transaction const &) noexcept
+        {
+            return true;
+        }
     };
 
     struct homestead : public frontier
@@ -308,6 +314,7 @@ namespace fork_traits
 
         static constexpr evmc_revision rev = EVMC_SPURIOUS_DRAGON;
         static constexpr auto last_block_number = 4'369'999u;
+        static constexpr size_t max_code_size = 0x6000; // EIP-170
 
         // https://eips.ethereum.org/EIPS/eip-161
         [[nodiscard]] static constexpr auto starting_nonce() noexcept
@@ -327,7 +334,7 @@ namespace fork_traits
         {
             MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
             // EIP-170
-            if (result.output_size > 0x6000) {
+            if (result.output_size > max_code_size) {
                 return evmc::Result{EVMC_OUT_OF_GAS};
             }
             return homestead::deploy_contract_code(s, a, std::move(result));
@@ -622,6 +629,8 @@ namespace fork_traits
         static constexpr evmc_revision rev = EVMC_SHANGHAI;
         static constexpr auto last_block_number =
             std::numeric_limits<uint64_t>::max();
+        static constexpr size_t max_init_code_size =
+            2 * max_code_size; // EIP-3860
 
         // EIP-3651
         template <class TState>
@@ -645,11 +654,6 @@ namespace fork_traits
         [[nodiscard]] static constexpr auto
         intrinsic_gas(Transaction const &t) noexcept
         {
-            if (!t.to.has_value()) {
-                if (t.data.length() > 0xc000) {
-                    return std::numeric_limits<uint64_t>::max();
-                }
-            }
             return g_txcreate(t) + 21'000u + g_data(t) +
                    g_access_and_storage(t) + g_extra_cost_init(t);
         }
@@ -672,6 +676,17 @@ namespace fork_traits
                 MONAD_DEBUG_ASSERT(can_merge(bs.state, s.state_));
                 merge(bs.state, s.state_);
             }
+        }
+
+        // EIP-3860
+        [[nodiscard]] static constexpr bool
+        init_code_valid(Transaction const &txn) noexcept
+        {
+            if (!txn.to.has_value()) {
+                return txn.data.size() <= max_init_code_size;
+            }
+            // this is not contract creation
+            return true;
         }
     };
 

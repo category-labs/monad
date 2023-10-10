@@ -133,6 +133,10 @@ struct TransactionProcessor
             return TransactionStatus::PRIORITY_FEE_GREATER_THAN_MAX;
         }
 
+        if (!TTraits::init_code_valid(t)) {
+            return TransactionStatus::INIT_CODE_LIMIT_EXCEEDED;
+        }
+
         // Yellow paper, Eq. 62
         // g0 <= Tg
         if (TTraits::intrinsic_gas(t) > t.gas_limit) {

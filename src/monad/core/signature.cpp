@@ -2,7 +2,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-void SignatureAndChain::from_v(uint64_t const &v)
+void SignatureAndChain::from_v(uint256_t const &v)
 {
     if (v == 28u) {
         odd_y_parity = true;
@@ -21,7 +21,7 @@ void SignatureAndChain::from_v(uint64_t const &v)
     }
 }
 
-uint64_t get_v(SignatureAndChain const &sc) noexcept
+uint256_t get_v(SignatureAndChain const &sc) noexcept
 {
     if (sc.chain_id.has_value()) {
         return (*sc.chain_id * 2u) + 35u + sc.odd_y_parity;

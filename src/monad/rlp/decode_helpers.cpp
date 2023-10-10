@@ -187,8 +187,8 @@ decode_transaction_eip2930(Transaction &txn, byte_string_view const enc)
     auto const rest_of_enc = parse_list_metadata(payload, enc);
 
     txn.type = TransactionType::eip2930;
-    txn.sc.chain_id = uint64_t{};
-    payload = decode_unsigned<uint64_t>(*txn.sc.chain_id, payload);
+    txn.sc.chain_id = uint256_t{};
+    payload = decode_unsigned<uint256_t>(*txn.sc.chain_id, payload);
     payload = decode_unsigned<uint64_t>(txn.nonce, payload);
     payload = decode_unsigned<uint256_t>(txn.max_fee_per_gas, payload);
     payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
@@ -213,8 +213,8 @@ decode_transaction_eip1559(Transaction &txn, byte_string_view const enc)
     auto const rest_of_enc = parse_list_metadata(payload, enc);
 
     txn.type = TransactionType::eip1559;
-    txn.sc.chain_id = uint64_t{};
-    payload = decode_unsigned<uint64_t>(*txn.sc.chain_id, payload);
+    txn.sc.chain_id = uint256_t{};
+    payload = decode_unsigned<uint256_t>(*txn.sc.chain_id, payload);
     payload = decode_unsigned<uint64_t>(txn.nonce, payload);
     payload = decode_unsigned<uint256_t>(txn.max_priority_fee_per_gas, payload);
     payload = decode_unsigned<uint256_t>(txn.max_fee_per_gas, payload);

@@ -20,13 +20,15 @@ enum class TransactionStatus
 {
     SUCCESS,
     INSUFFICIENT_BALANCE,
-    INVALID_GAS_LIMIT,
+    INTRINSIC_GAS_GREATER_THAN_LIMIT,
     BAD_NONCE,
-    DEPLOYED_CODE,
+    SENDER_NOT_EOA,
     TYPE_NOT_SUPPORTED,
     MAX_FEE_LESS_THAN_BASE,
     PRIORITY_FEE_GREATER_THAN_MAX,
     NONCE_EXCEEDS_MAX,
+    INIT_CODE_LIMIT_EXCEEDED,
+    GAS_LIMIT_REACHED,
 };
 
 template <class TState, class TTraits>
@@ -134,12 +136,12 @@ struct TransactionProcessor
         // Yellow paper, Eq. 62
         // g0 <= Tg
         if (TTraits::intrinsic_gas(t) > t.gas_limit) {
-            return TransactionStatus::INVALID_GAS_LIMIT;
+            return TransactionStatus::INTRINSIC_GAS_GREATER_THAN_LIMIT;
         }
 
         // σ[S(T)]c = KEC(()), EIP-3607
         if (state.get_code_hash(*t.from) != NULL_HASH) {
-            return TransactionStatus::DEPLOYED_CODE;
+            return TransactionStatus::SENDER_NOT_EOA;
         }
 
         MONAD_DEBUG_ASSERT(t.from.has_value());

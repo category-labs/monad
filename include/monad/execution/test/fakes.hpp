@@ -206,6 +206,12 @@ namespace fake
             {
                 intx::be::store(context.chain_id.bytes, intx::uint256{1});
             }
+
+            [[nodiscard]] static constexpr bool
+            init_code_valid(Transaction const &) noexcept
+            {
+                return true;
+            }
         };
 
         template <class TState>

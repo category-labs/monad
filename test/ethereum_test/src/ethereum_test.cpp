@@ -9,6 +9,7 @@
 
 #include <gtest/gtest.h>
 #include <quill/Quill.h>
+#include <tl/expected.hpp>
 
 #include <algorithm>
 #include <iostream>
@@ -45,19 +46,21 @@ struct Execution
     {
     }
 
-    [[nodiscard]] std::optional<monad::Receipt>
+    [[nodiscard]] tl::expected<
+        monad::Receipt, monad::execution::TransactionStatus>
     execute(state_t &state, monad::Transaction const &transaction)
     {
         auto const status = transaction_processor.validate(
             state, transaction, host.block_header_.base_fee_per_gas);
         if (status != monad::execution::TransactionStatus::SUCCESS) {
-            return std::nullopt;
+            return tl::unexpected{status};
         }
 
         // sum of transaction gas limit and gas utilized in block prior (0 in
         // this case) must be no greater than the blocks gas limit
         if (host.block_header_.gas_limit < transaction.gas_limit) {
-            return std::nullopt;
+            return tl::unexpected{
+                monad::execution::TransactionStatus::GAS_LIMIT_REACHED};
         }
 
         auto const receipt = transaction_processor.execute(
@@ -99,7 +102,8 @@ using execution_variant =
  * @param transaction
  * @return a receipt of the transaction
  */
-[[nodiscard]] std::optional<monad::Receipt> execute(
+[[nodiscard]] tl::expected<monad::Receipt, monad::execution::TransactionStatus>
+execute(
     size_t fork_index, monad::BlockHeader const &block_header, state_t &state,
     monad::Transaction const &transaction)
 {
@@ -119,13 +123,12 @@ using execution_variant =
     // we then dispatch into the appropriate fork at runtime using std::get
     auto &variant = execution_array.at(fork_index);
 
-    std::optional<monad::Receipt> maybe_receipt;
+    tl::expected<monad::Receipt, monad::execution::TransactionStatus> result;
     mp_for_each<mp_iota_c<mp_size<fork_traits::all_forks_t>::value>>(
         [&](auto I) {
             if (I == fork_index) {
                 using TTraits = mp_at_c<fork_traits::all_forks_t, I>;
-                MONAD_DEBUG_ASSERT(!maybe_receipt.has_value());
-                maybe_receipt = std::get<Execution<TTraits>>(variant).execute(
+                result = std::get<Execution<TTraits>>(variant).execute(
                     state, transaction);
 
                 // Apply 0 block reward
@@ -135,7 +138,7 @@ using execution_variant =
             }
         });
 
-    return maybe_receipt;
+    return result;
 }
 
 void EthereumTests::register_test(
@@ -350,7 +353,7 @@ void EthereumTests::run_state_test(
             LOG_INFO("Starting to execute transaction {}", case_index);
 
             monad::state::State state{bs, db, fake_block_db};
-            auto maybe_receipt =
+            auto const result =
                 execute(fork_index, block_header, state, transaction);
 
             merge(bs.state, state.state_);
@@ -370,7 +373,11 @@ void EthereumTests::run_state_test(
                 "fork_name: {}, case_index: {}", fork_name, case_index);
 
             EXPECT_EQ(db.state_root(), expected.state_hash) << msg;
-            EXPECT_EQ(maybe_receipt.has_value(), !expected.exception) << msg;
+            EXPECT_EQ(
+                result.has_value()
+                    ? monad::execution::TransactionStatus::SUCCESS
+                    : result.error(),
+                expected.exception);
             // TODO: assert something about receipt status?
         }
     }

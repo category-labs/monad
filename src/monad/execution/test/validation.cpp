@@ -50,7 +50,7 @@ TEST(Execution, validate_enough_gas)
     traits_t::_intrinsic_gas = 53'000;
 
     auto status = p.validate(s, t, 0);
-    EXPECT_EQ(status, TransactionStatus::INVALID_GAS_LIMIT);
+    EXPECT_EQ(status, TransactionStatus::INTRINSIC_GAS_GREATER_THAN_LIMIT);
 }
 
 TEST(Execution, validate_deployed_code)
@@ -71,7 +71,7 @@ TEST(Execution, validate_deployed_code)
     static Transaction const t{.gas_limit = 27'500, .from = a};
 
     auto status = p.validate(s, t, 0);
-    EXPECT_EQ(status, TransactionStatus::DEPLOYED_CODE);
+    EXPECT_EQ(status, TransactionStatus::SENDER_NOT_EOA);
 }
 
 TEST(Execution, validate_nonce)

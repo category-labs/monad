@@ -1,20 +1,21 @@
 #pragma once
 
-#include <boost/core/demangle.hpp>
-
-#include <nlohmann/adl_serializer.hpp>
-#include <nlohmann/json.hpp>
+#include "types.hpp"
 
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
+#include <monad/execution/transaction_processor.hpp>
 #include <monad/logging/formatter.hpp>
+
+#include <boost/core/demangle.hpp>
+
+#include <nlohmann/adl_serializer.hpp>
+#include <nlohmann/json.hpp>
 
 #include <charconv>
 #include <format>
-
-#include "types.hpp"
 
 /**
  * Parses an integer from a hex string. This is needed for the primitives
@@ -294,6 +295,49 @@ namespace nlohmann
     };
 
     template <>
+    struct adl_serializer<monad::execution::TransactionStatus>
+    {
+        static void from_json(
+            nlohmann::json const &j,
+            monad::execution::TransactionStatus &status)
+        {
+            using namespace monad::execution;
+            auto const str = j.get<std::string>();
+            if (str == "TR_InitCodeLimitExceeded") {
+                status = TransactionStatus::INIT_CODE_LIMIT_EXCEEDED;
+            }
+            else if (str == "TR_NonceHasMaxValue") {
+                status = TransactionStatus::NONCE_EXCEEDS_MAX;
+            }
+            else if (str == "TR_IntrinsicGas") {
+                status = TransactionStatus::INTRINSIC_GAS_GREATER_THAN_LIMIT;
+            }
+            else if (str == "TR_FeeCapLessThanBlocks") {
+                status = TransactionStatus::MAX_FEE_LESS_THAN_BASE;
+            }
+            else if (str == "TR_GasLimitReached") {
+                status = TransactionStatus::GAS_LIMIT_REACHED;
+            }
+            else if (str == "TR_NoFunds") {
+                status = TransactionStatus::INSUFFICIENT_BALANCE;
+            }
+            else if (str == "TR_TipGtFeeCap") {
+                status = TransactionStatus::PRIORITY_FEE_GREATER_THAN_MAX;
+            }
+            else if (str == "TR_TypeNotSupported") {
+                status = TransactionStatus::TYPE_NOT_SUPPORTED;
+            }
+            else if (str == "SenderNotEOA") {
+                status = TransactionStatus::SENDER_NOT_EOA;
+            }
+            else {
+                // unhandled exception type
+                MONAD_ASSERT(false);
+            }
+        }
+    };
+
+    template <>
     struct adl_serializer<monad::test::Case::Expectation>
     {
         static void
@@ -302,7 +346,10 @@ namespace nlohmann
             o.indices = j.at("indexes")
                             .get<monad::test::SharedTransactionData::Indices>();
             o.state_hash = j.at("hash").get<monad::bytes32_t>();
-            o.exception = j.contains("expectException");
+            o.exception = j.contains("expectException")
+                              ? j.at("expectException")
+                                    .get<monad::execution::TransactionStatus>()
+                              : monad::execution::TransactionStatus::SUCCESS;
         }
     };
 

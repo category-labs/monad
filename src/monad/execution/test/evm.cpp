@@ -24,12 +24,9 @@ using mutex_t = std::shared_mutex;
 using state_t = state::State<mutex_t, db::BlockDb>;
 using traits_t = fake::traits::alpha<state_t>;
 
-template <class TTraits>
-using traits_templated_evm_t = Evm<state_t, fake::traits::alpha<state_t>>;
+using evm_t = Evm<state_t, fake::traits::alpha<state_t>>;
 
-using evm_t = traits_templated_evm_t<traits_t>;
-using evm_host_t =
-    fake::EvmHost<state_t, traits_t, execution::Evm<state_t, traits_t>>;
+using evm_host_t = fake::EvmHost<state_t, traits_t>;
 
 TEST(Evm, create_with_insufficient)
 {

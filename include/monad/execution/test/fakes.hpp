@@ -63,7 +63,7 @@ namespace fake
         bytes32_t state_root() const noexcept { return {}; }
     };
 
-    template <class TState, class TTraits, class TEvm>
+    template <class TState, class TTraits>
     struct EvmHost
     {
         static inline evmc_result _result{.status_code = EVMC_SUCCESS};

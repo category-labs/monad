@@ -6,6 +6,7 @@
 #include <monad/core/transaction.hpp>
 
 #include <monad/execution/config.hpp>
+#include <monad/execution/evm.hpp>
 #include <monad/execution/precompiles.hpp>
 
 #include <intx/intx.hpp>
@@ -16,9 +17,11 @@
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
-template <class TState, class TTraits, class TEvm>
+template <class TState, class TTraits>
 struct EvmcHost : public evmc::Host
 {
+    using evm_t = Evm<TState, TTraits>;
+
     BlockHeader const &block_header_;
     Transaction const &transaction_;
     TState &state_;
@@ -129,7 +132,7 @@ struct EvmcHost : public evmc::Host
     call(evmc_message const &m) noexcept override
     {
         if (m.kind == EVMC_CREATE || m.kind == EVMC_CREATE2) {
-            auto res = TEvm::create_contract_account(this, state_, m);
+            auto res = evm_t::create_contract_account(this, state_, m);
             // eip-211, eip-140
             if (res.status_code != EVMC_REVERT) {
                 return evmc::Result{
@@ -141,7 +144,7 @@ struct EvmcHost : public evmc::Host
             return res;
         }
 
-        return TEvm::call_evm(this, state_, m);
+        return evm_t::call_evm(this, state_, m);
     }
 
     virtual evmc_tx_context get_tx_context() const noexcept override

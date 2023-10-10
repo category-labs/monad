@@ -39,7 +39,7 @@ template <class TState, class TTraits>
 using evm_t = execution::Evm<TState, TTraits>;
 
 template <class TState, class TTraits>
-using evm_host_t = execution::EvmcHost<TState, TTraits, evm_t<TState, TTraits>>;
+using evm_host_t = execution::EvmcHost<TState, TTraits>;
 
 using mutex_t = std::shared_mutex;
 

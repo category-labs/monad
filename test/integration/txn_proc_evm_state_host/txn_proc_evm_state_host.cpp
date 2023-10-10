@@ -3,7 +3,6 @@
 
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
-#include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_processor.hpp>
 
@@ -29,10 +28,7 @@ static constexpr auto o = 0xb5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5_address;
 using account_store_db_t = db::InMemoryTrieDB;
 
 template <class TState, class TTraits>
-using evm_t = execution::Evm<TState, TTraits>;
-
-template <class TState, class TTraits>
-using evm_host_t = execution::EvmcHost<TState, TTraits, evm_t<TState, TTraits>>;
+using evm_host_t = execution::EvmcHost<TState, TTraits>;
 
 using mutex_t = std::shared_mutex;
 

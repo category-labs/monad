@@ -82,7 +82,7 @@ public:
     template <
         class TTraits, template <typename, typename> class TTxnProcessor,
         template <typename, typename> class TEvm,
-        template <typename, typename, typename> class TEvmHost,
+        template <typename, typename> class TEvmHost,
         template <typename, typename, typename, typename> class TFiberData>
     [[nodiscard]] Result run_fork(
         TDb &db, uint64_t const checkpoint_frequency, TBlockDb &block_db,
@@ -115,7 +115,7 @@ public:
                     TFiberData<
                         TMutex,
                         TTxnProcessor<state_t, TTraits>,
-                        TEvmHost<state_t, TTraits, TEvm<state_t, TTraits>>,
+                        TEvmHost<state_t, TTraits>,
                         TBlockDb>>(block, db, block_db);
 
                 if (!verify_root_hash(
@@ -161,7 +161,7 @@ public:
     template <
         class TTraits, template <typename, typename> class TTxnProcessor,
         template <typename, typename> class TEvm,
-        template <typename, typename, typename> class TEvmHost,
+        template <typename, typename> class TEvmHost,
         template <typename, typename, typename, typename> class TFiberData>
     [[nodiscard]] Result
     run(TDb &db, uint64_t const checkpoint_frequency, TBlockDb &block_db,

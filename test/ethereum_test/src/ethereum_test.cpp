@@ -27,10 +27,7 @@ using transaction_processor_t =
     monad::execution::TransactionProcessor<state_t, TFork>;
 
 template <typename TFork>
-using evm_t = monad::execution::Evm<state_t, TFork>;
-
-template <typename TFork>
-using host_t = monad::execution::EvmcHost<state_t, TFork, evm_t<TFork>>;
+using host_t = monad::execution::EvmcHost<state_t, TFork>;
 
 template <typename TFork>
 struct Execution

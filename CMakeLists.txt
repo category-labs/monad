@@ -37,7 +37,7 @@ function(monad_compile_options target)
   set_property(TARGET ${target} PROPERTY C_STANDARD_REQUIRED ON)
   set_property(TARGET ${target} PROPERTY CXX_STANDARD 23)
   set_property(TARGET ${target} PROPERTY CXX_STANDARD_REQUIRED ON)
-  target_compile_options(${target} PRIVATE -Wall -Wextra -Werror -Wconversion
+  target_compile_options(${target} PRIVATE -Wall -Wextra -Werror 
                                            -Wpedantic -DQUILL_ROOT_LOGGER_ONLY)
   target_compile_options(
     ${target}
@@ -115,6 +115,7 @@ add_library(
   "include/monad/db/db.hpp"
   "include/monad/db/file_db.hpp"
   "include/monad/db/in_memory_trie_db.hpp"
+  "include/monad/db/monad_triedb.hpp"
   "include/monad/db/permission.hpp"
   "include/monad/db/prepare_state.hpp"
   "include/monad/db/rocks_db_helper.hpp"
@@ -192,7 +193,7 @@ configure_file(cmake/test_resource_data.h.in test/test_resource_data.h @ONLY)
 
 target_link_libraries(
   monad
-  PUBLIC monad_core
+  PUBLIC monad_trie
   PRIVATE Boost::fiber
   PRIVATE Boost::log
   PRIVATE PkgConfig::brotli

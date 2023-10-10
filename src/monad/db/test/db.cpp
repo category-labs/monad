@@ -3,6 +3,7 @@
 
 #include <monad/core/bytes.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/monad_triedb.hpp>
 #include <monad/db/rocks_trie_db.hpp>
 #include <monad/logging/formatter.hpp>
 #include <monad/state2/state_deltas.hpp>
@@ -32,7 +33,7 @@ template <typename TDB>
 struct DBTest : public testing::Test
 {
 };
-using DBTypes = ::testing::Types<InMemoryTrieDB, RocksTrieDB>;
+using DBTypes = ::testing::Types<InMemoryTrieDB, RocksTrieDB, MonadTrieDB>;
 TYPED_TEST_SUITE(DBTest, DBTypes);
 
 template <typename TDB>

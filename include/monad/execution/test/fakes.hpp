@@ -101,32 +101,6 @@ namespace fake
         }
     };
 
-    template <class TState, class TTraits>
-    struct Evm
-    {
-        using unexpected_t = tl::unexpected<evmc_result>;
-
-        [[nodiscard]] static evmc_result
-        transfer_call_balances(evmc_message const &)
-        {
-            return evmc_result{};
-        }
-
-        template <class TEvmHost>
-        [[nodiscard]] static evmc::Result
-        call_evm(TEvmHost *, TState &, evmc_message const &) noexcept
-        {
-            return evmc::Result{};
-        }
-
-        template <class TEvmHost>
-        [[nodiscard]] static evmc::Result create_contract_account(
-            TEvmHost *, TState &, evmc_message const &) noexcept
-        {
-            return evmc::Result{};
-        }
-    };
-
     namespace traits
     {
         template <class TState>

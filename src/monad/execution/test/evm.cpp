@@ -29,7 +29,7 @@ using traits_templated_evm_t = Evm<state_t, fake::traits::alpha<state_t>>;
 
 using evm_t = traits_templated_evm_t<traits_t>;
 using evm_host_t =
-    fake::EvmHost<state_t, traits_t, fake::Evm<state_t, traits_t>>;
+    fake::EvmHost<state_t, traits_t, execution::Evm<state_t, traits_t>>;
 
 TEST(Evm, create_with_insufficient)
 {

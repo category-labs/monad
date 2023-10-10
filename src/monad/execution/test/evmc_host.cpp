@@ -2,6 +2,7 @@
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/config.hpp>
+#include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/precompiles.hpp>
 
@@ -25,7 +26,7 @@ using traits_t = fake::traits::alpha<state_t>;
 
 template <class TTraits>
 using traits_templated_evmc_host_t =
-    EvmcHost<state_t, TTraits, fake::Evm<state_t, TTraits>>;
+    EvmcHost<state_t, TTraits, execution::Evm<state_t, TTraits>>;
 
 using evmc_host_t = traits_templated_evmc_host_t<traits_t>;
 

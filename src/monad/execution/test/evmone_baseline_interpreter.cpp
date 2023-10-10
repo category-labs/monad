@@ -4,6 +4,7 @@
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/config.hpp>
+#include <monad/execution/evm.hpp>
 #include <monad/execution/evmone_baseline_interpreter.hpp>
 
 #include <monad/execution/test/fakes.hpp>
@@ -27,7 +28,7 @@ using traits_t = fake::traits::alpha<state_t>;
 using interpreter_t = EVMOneBaselineInterpreter<state_t, traits_t>;
 
 using evm_host_t =
-    fake::EvmHost<state_t, traits_t, fake::Evm<state_t, traits_t>>;
+    fake::EvmHost<state_t, traits_t, execution::Evm<state_t, traits_t>>;
 
 TEST(Evm1BaselineInterpreter, execute_empty)
 {

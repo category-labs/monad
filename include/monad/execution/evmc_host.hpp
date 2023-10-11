@@ -112,8 +112,7 @@ struct EvmcHost : public evmc::Host
             .input_size = t.data.size(),
             .code_address = to_address.second,
         };
-        uint256_t v{t.amount};
-        intx::be::store(m.value.bytes, v);
+        intx::be::store(m.value.bytes, t.value);
         return m;
     }
 

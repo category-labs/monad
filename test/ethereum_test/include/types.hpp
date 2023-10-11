@@ -26,7 +26,7 @@ struct SharedTransactionData
     std::vector<monad::Transaction::AccessList> access_lists;
     std::vector<monad::byte_string> inputs;
     std::vector<uint64_t> gas_limits;
-    std::vector<intx::uint128> values;
+    std::vector<uint256_t> values;
 
     // the following fields are shared among all transactions in a test file
     uint64_t nonce;

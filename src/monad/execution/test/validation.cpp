@@ -30,7 +30,7 @@ TEST(Execution, validate_enough_gas)
     static Transaction const t{
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500, // no .to, under the creation amount
-        .amount = 1,
+        .value = 1,
         .from = a};
 
     auto status = p.static_validate(t, 0);
@@ -66,7 +66,7 @@ TEST(Execution, validate_nonce)
         .nonce = 23,
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 60'500,
-        .amount = 55'939'568'773'815'811,
+        .value = 55'939'568'773'815'811,
         .from = a};
     db_t db;
     block_cache_t block_cache;
@@ -88,7 +88,7 @@ TEST(Execution, validate_nonce_optimistically)
         .nonce = 25,
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 60'500,
-        .amount = 55'939'568'773'815'811,
+        .value = 55'939'568'773'815'811,
         .from = a};
 
     db_t db;
@@ -110,7 +110,7 @@ TEST(Execution, validate_enough_balance)
     static Transaction const t{
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
-        .amount = 55'939'568'773'815'811,
+        .value = 55'939'568'773'815'811,
         .to = b,
         .from = a,
         .max_priority_fee_per_gas = 100'000'000,
@@ -141,7 +141,7 @@ TEST(Execution, successful_validation)
         .nonce = 25,
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
-        .amount = 55'939'568'773'815'811,
+        .value = 55'939'568'773'815'811,
         .to = b,
         .from = a};
 
@@ -160,7 +160,7 @@ TEST(Execution, max_fee_less_than_base)
         .nonce = 25,
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
-        .amount = 55'939'568'773'815'811,
+        .value = 55'939'568'773'815'811,
         .to = b,
         .from = a,
         .max_priority_fee_per_gas = 100'000'000};
@@ -180,7 +180,7 @@ TEST(Execution, priority_fee_greater_than_max)
         .nonce = 25,
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
-        .amount = 48'979'750'000'000'000,
+        .value = 48'979'750'000'000'000,
         .to = b,
         .from = a,
         .max_priority_fee_per_gas = 100'000'000'000};

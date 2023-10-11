@@ -140,7 +140,7 @@ struct TransactionProcessor
         // v0 <= σ[S(T)]b
         else if (MONAD_UNLIKELY(
                      intx::be::load<uint256_t>(state.get_balance(*t.from)) <
-                     (t.amount + t.gas_limit * t.max_fee_per_gas))) {
+                     (t.value + t.gas_limit * t.max_fee_per_gas))) {
             return TransactionStatus::INSUFFICIENT_BALANCE;
         }
         // Note: Tg <= B_Hl - l(B_R)u can only be checked before retirement

@@ -16,7 +16,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacy)
     using namespace evmc::literals;
 
     static constexpr auto price{20'000'000'000};
-    static constexpr auto amount{0xde0b6b3a7640000_u128};
+    static constexpr auto value{0xde0b6b3a7640000_u256};
     static constexpr auto to_addr{
         0x3535353535353535353535353535353535353535_address};
     static constexpr auto r{
@@ -29,7 +29,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacy)
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
-        .amount = amount,
+        .value = value,
         .to = to_addr};
     const monad::byte_string legacy_transaction{
         0xf8, 0x6c, 0x09, 0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00, 0x82, 0x52,
@@ -52,7 +52,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacy)
     EXPECT_EQ(decoding.nonce, t.nonce);
     EXPECT_EQ(decoding.max_fee_per_gas, t.max_fee_per_gas);
     EXPECT_EQ(decoding.gas_limit, t.gas_limit);
-    EXPECT_EQ(decoding.amount, t.amount);
+    EXPECT_EQ(decoding.value, t.value);
     EXPECT_EQ(*decoding.to, *t.to);
     EXPECT_EQ(decoding.to.value(), t.to.value());
     EXPECT_EQ(decoding.sc.r, t.sc.r);
@@ -65,7 +65,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacyNoTo)
     using namespace evmc::literals;
 
     static constexpr auto price{20'000'000'000};
-    static constexpr auto amount{0xde0b6b3a7640000_u128};
+    static constexpr auto value{0xde0b6b3a7640000_u256};
     static constexpr auto r{
         0x28ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276_u256};
     static constexpr auto s{
@@ -76,7 +76,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacyNoTo)
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
-        .amount = amount};
+        .value = value};
 
     auto const legacy_rlp_transaction = encode_transaction(t);
 
@@ -86,7 +86,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacyNoTo)
     EXPECT_EQ(decoding.nonce, t.nonce);
     EXPECT_EQ(decoding.max_fee_per_gas, t.max_fee_per_gas);
     EXPECT_EQ(decoding.gas_limit, t.gas_limit);
-    EXPECT_EQ(decoding.amount, t.amount);
+    EXPECT_EQ(decoding.value, t.value);
     EXPECT_EQ(decoding.to.has_value(), false);
     EXPECT_EQ(decoding.sc.r, t.sc.r);
     EXPECT_EQ(decoding.sc.s, t.sc.s);
@@ -98,7 +98,7 @@ TEST(Rlp_Transaction, EncodeEip155)
     using namespace evmc::literals;
 
     static constexpr auto price{20'000'000'000};
-    static constexpr auto amount{0xde0b6b3a7640000_u128};
+    static constexpr auto value{0xde0b6b3a7640000_u256};
     static constexpr auto to_addr{
         0x3535353535353535353535353535353535353535_address};
     static constexpr auto r{
@@ -111,7 +111,7 @@ TEST(Rlp_Transaction, EncodeEip155)
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
-        .amount = amount,
+        .value = value,
         .to = to_addr};
     const monad::byte_string eip155_transaction{
         0xf8, 0x6c, 0x09, 0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00, 0x82, 0x52,
@@ -132,7 +132,7 @@ TEST(Rlp_Transaction, EncodeEip155)
     EXPECT_EQ(decoding.nonce, t.nonce);
     EXPECT_EQ(decoding.max_fee_per_gas, t.max_fee_per_gas);
     EXPECT_EQ(decoding.gas_limit, t.gas_limit);
-    EXPECT_EQ(decoding.amount, t.amount);
+    EXPECT_EQ(decoding.value, t.value);
     EXPECT_EQ(*decoding.to, *t.to);
     EXPECT_EQ(decoding.to.value(), t.to.value());
     EXPECT_EQ(decoding.sc.r, t.sc.r);
@@ -147,7 +147,7 @@ TEST(Rlp_Transaction, EncodeEip2930)
     using namespace evmc::literals;
 
     static constexpr auto price{20'000'000'000};
-    static constexpr auto amount{0xde0b6b3a7640000_u128};
+    static constexpr auto value{0xde0b6b3a7640000_u256};
     static constexpr auto to_addr{
         0x3535353535353535353535353535353535353535_address};
     static constexpr auto access_addr{
@@ -168,7 +168,7 @@ TEST(Rlp_Transaction, EncodeEip2930)
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
-        .amount = amount,
+        .value = value,
         .to = to_addr,
         .type = monad::TransactionType::eip2930,
         .access_list = a};
@@ -202,7 +202,7 @@ TEST(Rlp_Transaction, EncodeEip2930)
     EXPECT_EQ(decoding.nonce, t.nonce);
     EXPECT_EQ(decoding.max_fee_per_gas, t.max_fee_per_gas);
     EXPECT_EQ(decoding.gas_limit, t.gas_limit);
-    EXPECT_EQ(decoding.amount, t.amount);
+    EXPECT_EQ(decoding.value, t.value);
     EXPECT_EQ(*decoding.to, *t.to);
     EXPECT_EQ(decoding.to.value(), t.to.value());
     EXPECT_EQ(decoding.sc.r, t.sc.r);
@@ -227,7 +227,7 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
     using namespace evmc::literals;
 
     static constexpr auto price{20'000'000'000};
-    static constexpr auto amount{0xde0b6b3a7640000_u128};
+    static constexpr auto value{0xde0b6b3a7640000_u256};
     static constexpr auto tip{4'000'000'000};
     static constexpr auto to_addr{
         0x3535353535353535353535353535353535353535_address};
@@ -243,7 +243,7 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
-        .amount = amount,
+        .value = value,
         .to = to_addr,
         .type = monad::TransactionType::eip1559,
         .access_list = a,
@@ -270,7 +270,7 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
     EXPECT_EQ(decoding.nonce, t.nonce);
     EXPECT_EQ(decoding.max_fee_per_gas, t.max_fee_per_gas);
     EXPECT_EQ(decoding.gas_limit, t.gas_limit);
-    EXPECT_EQ(decoding.amount, t.amount);
+    EXPECT_EQ(decoding.value, t.value);
     EXPECT_EQ(*decoding.to, *t.to);
     EXPECT_EQ(decoding.to.value(), t.to.value());
     EXPECT_EQ(decoding.sc.r, t.sc.r);
@@ -295,7 +295,7 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
     using namespace evmc::literals;
 
     static constexpr auto price{20'000'000'000};
-    static constexpr auto amount{0xde0b6b3a7640000_u128};
+    static constexpr auto value{0xde0b6b3a7640000_u256};
     static constexpr auto tip{4'000'000'000};
     static constexpr auto to_addr{
         0x3535353535353535353535353535353535353535_address};
@@ -311,7 +311,7 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
-        .amount = amount,
+        .value = value,
         .to = to_addr,
         .type = monad::TransactionType::eip1559,
         .access_list = a,
@@ -338,7 +338,7 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
     EXPECT_EQ(decoding.nonce, t.nonce);
     EXPECT_EQ(decoding.max_fee_per_gas, t.max_fee_per_gas);
     EXPECT_EQ(decoding.gas_limit, t.gas_limit);
-    EXPECT_EQ(decoding.amount, t.amount);
+    EXPECT_EQ(decoding.value, t.value);
     EXPECT_EQ(*decoding.to, *t.to);
     EXPECT_EQ(decoding.to.value(), t.to.value());
     EXPECT_EQ(decoding.sc.r, t.sc.r);

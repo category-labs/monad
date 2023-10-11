@@ -35,7 +35,7 @@ struct Transaction
     uint64_t nonce{};
     uint256_t max_fee_per_gas{}; // gas_price
     uint64_t gas_limit{};
-    uint128_t amount{};
+    uint256_t value{};
     std::optional<address_t> to{};
     std::optional<address_t> from{};
     byte_string data{};
@@ -50,7 +50,7 @@ static_assert(alignof(Transaction::AccessEntry) == 8);
 static_assert(sizeof(Transaction::AccessList) == 24);
 static_assert(alignof(Transaction::AccessList) == 8);
 
-static_assert(sizeof(Transaction) == 320);
+static_assert(sizeof(Transaction) == 336);
 static_assert(alignof(Transaction) == 8);
 
 [[nodiscard]] std::optional<address_t> recover_sender(Transaction const &t);

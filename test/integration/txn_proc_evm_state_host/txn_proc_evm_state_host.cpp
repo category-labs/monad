@@ -53,7 +53,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
         .nonce = 0,
         .max_fee_per_gas = 10,
         .gas_limit = 25'000,
-        .amount = 1'000'000,
+        .value = 1'000'000,
         .to = to,
         .from = from,
         .type = TransactionType::eip155};
@@ -127,7 +127,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
         .nonce = 3,
         .max_fee_per_gas = 10'000'000'000'000, // 10'000 GWei
         .gas_limit = 24'000,
-        .amount = 0,
+        .value = 0,
         .from = creator,
         .data = code,
         .type = TransactionType::eip155};
@@ -196,7 +196,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
         .nonce = 2,
         .max_fee_per_gas = 57'935'965'411,
         .gas_limit = 90'000,
-        .amount = 10'000'000'000'000'000, // 0.01 Eth
+        .value = 10'000'000'000'000'000, // 0.01 Eth
         .from = creator,
         .data = code,
         .type = TransactionType::eip155};

@@ -299,7 +299,7 @@ void EthereumTests::run_state_test(
                     .nonce = data.nonce,
                     .max_fee_per_gas = data.max_fee_per_gas,
                     .gas_limit = data.gas_limits.at(expected.indices.gas_limit),
-                    .amount = data.values.at(expected.indices.value),
+                    .value = data.values.at(expected.indices.value),
                     .to = data.to,
                     .from = data.sender,
                     .data = data.inputs.at(expected.indices.input),

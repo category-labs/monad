@@ -50,7 +50,7 @@ byte_string encode_transaction(Transaction const &txn)
             encode_unsigned(txn.max_fee_per_gas),
             encode_unsigned(txn.gas_limit),
             encode_address(txn.to),
-            encode_unsigned(txn.amount),
+            encode_unsigned(txn.value),
             encode_string(txn.data),
             encode_unsigned(get_v(txn.sc)),
             encode_unsigned(txn.sc.r),
@@ -68,7 +68,7 @@ byte_string encode_transaction(Transaction const &txn)
                 encode_unsigned(txn.max_fee_per_gas),
                 encode_unsigned(txn.gas_limit),
                 encode_address(txn.to),
-                encode_unsigned(txn.amount),
+                encode_unsigned(txn.value),
                 encode_string(txn.data),
                 encode_access_list(txn.access_list),
                 encode_unsigned(static_cast<unsigned>(txn.sc.odd_y_parity)),
@@ -83,7 +83,7 @@ byte_string encode_transaction(Transaction const &txn)
                 encode_unsigned(txn.max_fee_per_gas),
                 encode_unsigned(txn.gas_limit),
                 encode_address(txn.to),
-                encode_unsigned(txn.amount),
+                encode_unsigned(txn.value),
                 encode_string(txn.data),
                 encode_access_list(txn.access_list),
                 encode_unsigned(static_cast<unsigned>(txn.sc.odd_y_parity)),
@@ -103,7 +103,7 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
                 encode_unsigned(txn.max_fee_per_gas),
                 encode_unsigned(txn.gas_limit),
                 encode_address(txn.to),
-                encode_unsigned(txn.amount),
+                encode_unsigned(txn.value),
                 encode_string(txn.data),
                 encode_unsigned(txn.sc.chain_id.value_or(0)),
                 encode_unsigned(0u),
@@ -115,7 +115,7 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
                 encode_unsigned(txn.max_fee_per_gas),
                 encode_unsigned(txn.gas_limit),
                 encode_address(txn.to),
-                encode_unsigned(txn.amount),
+                encode_unsigned(txn.value),
                 encode_string(txn.data));
         }
     }
@@ -131,7 +131,7 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
                    encode_unsigned(txn.max_fee_per_gas),
                    encode_unsigned(txn.gas_limit),
                    encode_address(txn.to),
-                   encode_unsigned(txn.amount),
+                   encode_unsigned(txn.value),
                    encode_string(txn.data),
                    encode_access_list(txn.access_list));
     }
@@ -143,7 +143,7 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
                    encode_unsigned(txn.max_fee_per_gas),
                    encode_unsigned(txn.gas_limit),
                    encode_address(txn.to),
-                   encode_unsigned(txn.amount),
+                   encode_unsigned(txn.value),
                    encode_string(txn.data),
                    encode_access_list(txn.access_list));
     }

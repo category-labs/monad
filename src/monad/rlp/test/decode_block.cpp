@@ -89,7 +89,7 @@ TEST(Rlp_Block, DecodeBlock46402)
     EXPECT_EQ(block.transactions[0].max_fee_per_gas, 10000000000000);
     EXPECT_EQ(block.transactions[0].gas_limit, 24000);
     EXPECT_EQ(block.transactions[0].to, std::nullopt);
-    EXPECT_EQ(block.transactions[0].amount, 0_u128);
+    EXPECT_EQ(block.transactions[0].value, 0);
     EXPECT_EQ(block.transactions[0].sc.chain_id, std::nullopt);
     EXPECT_EQ(
         block.transactions[0].sc.r,
@@ -192,7 +192,7 @@ TEST(Rlp_Block, DecodeBlock2730000)
     EXPECT_EQ(
         *block.transactions[0].to,
         0xBB474EdbC0C6ecF5c0455F8e6F90b8D46098e016_address);
-    EXPECT_EQ(block.transactions[0].amount, 0x3dd59a7fca63400_u128);
+    EXPECT_EQ(block.transactions[0].value, 0x3dd59a7fca63400_u256);
     EXPECT_EQ(block.transactions[0].sc.chain_id, 0x01);
     EXPECT_EQ(
         block.transactions[0].sc.r,
@@ -208,7 +208,7 @@ TEST(Rlp_Block, DecodeBlock2730000)
     EXPECT_EQ(
         *block.transactions[1].to,
         0x288E49EDb33A4B88860e8ce10A0407eaefd7dfdA_address);
-    EXPECT_EQ(block.transactions[1].amount, 0x6ef6dd445b94970_u128);
+    EXPECT_EQ(block.transactions[1].value, 0x6ef6dd445b94970_u256);
     EXPECT_EQ(block.transactions[1].sc.chain_id, 0x1);
     EXPECT_EQ(
         block.transactions[1].sc.r,
@@ -224,7 +224,7 @@ TEST(Rlp_Block, DecodeBlock2730000)
     EXPECT_EQ(
         *block.transactions[2].to,
         0xA7895d323bFc62E82dE69D208E5d1670708588eB_address);
-    EXPECT_EQ(block.transactions[2].amount, 0x3d3c2fc0caddc00_u128);
+    EXPECT_EQ(block.transactions[2].value, 0x3d3c2fc0caddc00_u256);
     EXPECT_EQ(block.transactions[2].sc.chain_id, 0x01);
     EXPECT_EQ(
         block.transactions[2].sc.r,
@@ -240,7 +240,7 @@ TEST(Rlp_Block, DecodeBlock2730000)
     EXPECT_EQ(
         *block.transactions[3].to,
         0x31Cca7cc41128aeFCD0E35D9bdeBAdC75bF7CA27_address);
-    EXPECT_EQ(block.transactions[3].amount, 0xdee6c72f83b7184_u128);
+    EXPECT_EQ(block.transactions[3].value, 0xdee6c72f83b7184_u256);
     EXPECT_EQ(block.transactions[3].sc.chain_id, 0x01);
     EXPECT_EQ(
         block.transactions[3].sc.r,
@@ -319,7 +319,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
     EXPECT_EQ(
         *block.transactions[0].to,
         0x92A4bc572595ed4851E0AbF8fF72a77bBa9323C0_address);
-    EXPECT_EQ(block.transactions[0].amount, 0x3b7e74a7f3af400_u128);
+    EXPECT_EQ(block.transactions[0].value, 0x3b7e74a7f3af400_u256);
     EXPECT_EQ(block.transactions[0].sc.chain_id, 0x01);
     EXPECT_EQ(
         block.transactions[0].sc.r,
@@ -335,7 +335,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
     EXPECT_EQ(
         *block.transactions[1].to,
         0x65C28345d499b59606cFe3d0ed580a1d2370C7C9_address);
-    EXPECT_EQ(block.transactions[1].amount, 0x0_u128);
+    EXPECT_EQ(block.transactions[1].value, 0);
     EXPECT_EQ(
         block.transactions[1].sc.chain_id,
         std::optional<uint64_t>{}); // This transaction doesn't have a chain_id
@@ -354,7 +354,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
     EXPECT_EQ(
         *block.transactions[2].to,
         0xeDc53fB256c8F5cd6f91AF675BBb89bFC3732c57_address);
-    EXPECT_EQ(block.transactions[2].amount, 0xe7f24b03527b860_u128);
+    EXPECT_EQ(block.transactions[2].value, 0xe7f24b03527b860_u256);
     EXPECT_EQ(block.transactions[2].sc.chain_id, 0x01);
     EXPECT_EQ(
         block.transactions[2].sc.r,
@@ -370,7 +370,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
     EXPECT_EQ(
         *block.transactions[3].to,
         0x33BE3ADC19fD04a21bEd5d55DC1FD1F9Df5439E1_address);
-    EXPECT_EQ(block.transactions[3].amount, 0xe282b737fa1986c_u128);
+    EXPECT_EQ(block.transactions[3].value, 0xe282b737fa1986c_u256);
     EXPECT_EQ(block.transactions[3].sc.chain_id, 0x01);
     EXPECT_EQ(
         block.transactions[3].sc.r,
@@ -386,7 +386,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
     EXPECT_EQ(
         *block.transactions[4].to,
         0x57a5809cb4ED2e40630f5A0F26273dc08A9a92cd_address);
-    EXPECT_EQ(block.transactions[4].amount, 0x39473f637aa0800_u128);
+    EXPECT_EQ(block.transactions[4].value, 0x39473f637aa0800_u256);
     EXPECT_EQ(block.transactions[4].sc.chain_id, 0x01);
     EXPECT_EQ(
         block.transactions[4].sc.r,
@@ -402,7 +402,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
     EXPECT_EQ(
         *block.transactions[5].to,
         0x009fAC3897c8Acbc0AE6e2a92Bc0755AA9E91DCc_address);
-    EXPECT_EQ(block.transactions[5].amount, 0x3907052df885000_u128);
+    EXPECT_EQ(block.transactions[5].value, 0x3907052df885000_u256);
     EXPECT_EQ(block.transactions[5].sc.chain_id, 0x01);
     EXPECT_EQ(
         block.transactions[5].sc.r,
@@ -418,7 +418,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
     EXPECT_EQ(
         *block.transactions[6].to,
         0x54Ee2a8B5C61a45749E89471C75d45d3159D6947_address);
-    EXPECT_EQ(block.transactions[6].amount, 0x38ebe0341834c00_u128);
+    EXPECT_EQ(block.transactions[6].value, 0x38ebe0341834c00_u256);
     EXPECT_EQ(block.transactions[6].sc.chain_id, 0x01);
     EXPECT_EQ(
         block.transactions[6].sc.r,
@@ -623,7 +623,7 @@ TEST(Rlp_Block, DecodeBlock14000000)
     EXPECT_EQ(
         *block.transactions[0].to,
         0x9008d19f58aabd9ed0d60971565aa8510560ab41_address);
-    EXPECT_EQ(block.transactions[0].amount, 0_u128);
+    EXPECT_EQ(block.transactions[0].value, 0);
     EXPECT_EQ(block.transactions[0].access_list.size(), 0);
 
     EXPECT_EQ(*block.transactions[0].sc.chain_id, 0x01);
@@ -641,7 +641,7 @@ TEST(Rlp_Block, DecodeBlock14000000)
     EXPECT_EQ(
         *block.transactions[1].to,
         0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce_address);
-    EXPECT_EQ(block.transactions[1].amount, 0_u128);
+    EXPECT_EQ(block.transactions[1].value, 0);
 
     EXPECT_EQ(*block.transactions[1].sc.chain_id, 0x01);
     EXPECT_EQ(

@@ -697,32 +697,6 @@ namespace fork_traits
             return true;
         }
     };
-
-    namespace detail
-    {
-        template <typename T>
-        constexpr auto Traverse()
-        {
-            if constexpr (requires { typename T::next_fork_t; }) {
-                return boost::mp11::mp_push_front<
-                    decltype(Traverse<typename T::next_fork_t>()),
-                    T>{};
-            }
-            else {
-                return boost::mp11::mp_list<T>{};
-            }
-        }
-
-        template <>
-        constexpr auto Traverse<monad::fork_traits::no_next_fork_t>()
-        {
-            return boost::mp11::mp_list<monad::fork_traits::no_next_fork_t>{};
-        }
-    }
-
-    using all_forks_t =
-        decltype(detail::Traverse<monad::fork_traits::frontier>());
-    static_assert(boost::mp11::mp_size<all_forks_t>::value == 12);
 }
 
 MONAD_NAMESPACE_END

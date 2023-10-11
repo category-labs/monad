@@ -1,7 +1,6 @@
 #pragma once
 
-#include "types.hpp"
-
+#include <general_state_test_types.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
@@ -280,10 +279,9 @@ namespace nlohmann
     };
 
     template <>
-    struct adl_serializer<monad::test::SharedTransactionData::Indices>
+    struct adl_serializer<monad::test::Indices>
     {
-        static void from_json(
-            json const &j, monad::test::SharedTransactionData::Indices &indices)
+        static void from_json(json const &j, monad::test::Indices &indices)
         {
             indices.input =
                 integer_from_json<uint64_t>(j.at("data").get<uint64_t>());
@@ -338,13 +336,12 @@ namespace nlohmann
     };
 
     template <>
-    struct adl_serializer<monad::test::Case::Expectation>
+    struct adl_serializer<monad::test::Expectation>
     {
         static void
-        from_json(nlohmann::json const &j, monad::test::Case::Expectation &o)
+        from_json(nlohmann::json const &j, monad::test::Expectation &o)
         {
-            o.indices = j.at("indexes")
-                            .get<monad::test::SharedTransactionData::Indices>();
+            o.indices = j.at("indexes").get<monad::test::Indices>();
             o.state_hash = j.at("hash").get<monad::bytes32_t>();
             o.exception = j.contains("expectException")
                               ? j.at("expectException")

@@ -1,411 +1,54 @@
 #include <ethereum_test.hpp>
-#include <monad/db/in_memory_trie_db.hpp>
 
-#include <monad/state2/block_state.hpp>
-#include <monad/state2/state.hpp>
-#include <monad/test/dump_state_from_db.hpp>
-
-#include <test_resource_data.h>
+#include <from_json.hpp>
 
 #include <gtest/gtest.h>
-#include <quill/Quill.h>
-#include <tl/expected.hpp>
-
-#include <algorithm>
-#include <iostream>
-#include <shared_mutex>
+#include <nlohmann/json.hpp>
 
 MONAD_TEST_NAMESPACE_BEGIN
 
-using mutex_t = std::shared_mutex;
-
-using db_t = monad::db::InMemoryTrieDB;
-using state_t = monad::state::State<mutex_t, monad::execution::fake::BlockDb>;
-
-template <typename TFork>
-using transaction_processor_t =
-    monad::execution::TransactionProcessor<state_t, TFork>;
-
-template <typename TFork>
-using host_t = monad::execution::EvmcHost<state_t, TFork>;
-
-template <typename TFork>
-struct Execution
+void load_state_from_json(nlohmann::json const &j, state_t &state)
 {
-    host_t<TFork> host;
-    transaction_processor_t<TFork> transaction_processor;
+    for (auto const &[j_addr, j_acc] : j.items()) {
+        auto const account_address =
+            evmc::from_hex<monad::address_t>(j_addr).value();
 
-    Execution(
-        monad::BlockHeader const &block_header,
-        monad::Transaction const &transaction, state_t &state)
-        : host{block_header, transaction, state}
-        , transaction_processor{}
-    {
-    }
-
-    [[nodiscard]] tl::expected<
-        monad::Receipt, monad::execution::TransactionStatus>
-    execute(state_t &state, monad::Transaction const &transaction)
-    {
-        auto status = transaction_processor.static_validate(
-            transaction, host.block_header_.base_fee_per_gas);
-        if (status == monad::execution::TransactionStatus::SUCCESS) {
-            status = transaction_processor.validate(state, transaction);
-        }
-        if (status != monad::execution::TransactionStatus::SUCCESS) {
-            return tl::unexpected{status};
+        if (j_acc.contains("code") || j_acc.contains("storage")) {
+            ASSERT_TRUE(j_acc.contains("code") && j_acc.contains("storage"));
+            state.create_contract(account_address);
         }
 
-        // sum of transaction gas limit and gas utilized in block prior (0 in
-        // this case) must be no greater than the blocks gas limit
-        if (host.block_header_.gas_limit < transaction.gas_limit) {
-            return tl::unexpected{
-                monad::execution::TransactionStatus::GAS_LIMIT_REACHED};
+        if (j_acc.contains("code")) {
+            state.set_code(
+                account_address, j_acc.at("code").get<monad::byte_string>());
         }
 
-        auto const receipt = transaction_processor.execute(
-            state,
-            host,
-            transaction,
-            host.block_header_.base_fee_per_gas.value_or(0),
-            host.block_header_.beneficiary);
+        state.add_to_balance(
+            account_address, j_acc.at("balance").get<intx::uint256>());
+        // we cannot use the nlohmann::json from_json<uint64_t> because
+        // it does not use the strtoull implementation, whereas we need
+        // it so we can turn a hex string into a uint64_t
+        state.set_nonce(
+            account_address, integer_from_json<uint64_t>(j_acc.at("nonce")));
 
-        // TODO: make use of common function when that gets added along
-        // with the block processor work
-        //
-        // Note: this needs to be done outside of the transaction processor,
-        // because otherwise every transaction will touch the beneficiary,
-        // which makes all but the first txn unmergeable in optimistic execution
-        auto const gas_award = TFork::calculate_txn_award(
-            transaction,
-            host.block_header_.base_fee_per_gas.value_or(0),
-            receipt.gas_used);
-        state.add_to_balance(host.block_header_.beneficiary, gas_award);
-        TFork::destruct_touched_dead(state);
-
-        return receipt;
-    }
-};
-
-// creates a sum type over all the forks:
-// variant<std::monostate, Execution<frontier>, Execution<homestead>, ...>
-using execution_variant =
-    decltype([]<typename... Types>(boost::mp11::mp_list<Types...>) {
-        return std::variant<std::monostate, Types...>{};
-    }(boost::mp11::mp_transform<Execution, monad::fork_traits::all_forks_t>{}));
-
-/**
- * execute a transaction with a given state using a fork specified at
- * runtime
- * @param fork_index
- * @param state
- * @param transaction
- * @return a receipt of the transaction
- */
-[[nodiscard]] tl::expected<monad::Receipt, monad::execution::TransactionStatus>
-execute(
-    size_t fork_index, monad::BlockHeader const &block_header, state_t &state,
-    monad::Transaction const &transaction)
-{
-    using namespace boost::mp11;
-
-    using namespace monad;
-    // create a table of fork types
-    auto execution_array = []<typename... Ts>(
-                               mp_list<Ts...>,
-                               BlockHeader const &block_header,
-                               state_t &s,
-                               Transaction const &transaction) {
-        return std::array<execution_variant, sizeof...(Ts)>{
-            Execution<Ts>{block_header, transaction, s}...};
-    }(fork_traits::all_forks_t{}, block_header, state, transaction);
-
-    // we then dispatch into the appropriate fork at runtime using std::get
-    auto &variant = execution_array.at(fork_index);
-
-    tl::expected<monad::Receipt, monad::execution::TransactionStatus> result;
-    mp_for_each<mp_iota_c<mp_size<fork_traits::all_forks_t>::value>>(
-        [&](auto I) {
-            if (I == fork_index) {
-                using TTraits = mp_at_c<fork_traits::all_forks_t, I>;
-                result = std::get<Execution<TTraits>>(variant).execute(
-                    state, transaction);
-
-                // Apply 0 block reward
-                if (TTraits::rev < EVMC_SPURIOUS_DRAGON) {
-                    state.add_to_balance(block_header.beneficiary, 0);
+        if (j_acc.contains("storage")) {
+            ASSERT_TRUE(j_acc["storage"].is_object());
+            for (auto const &[key, value] : j_acc["storage"].items()) {
+                nlohmann::json key_json = key;
+                monad::bytes32_t key_bytes32 = key_json.get<monad::bytes32_t>();
+                monad::bytes32_t value_bytes32 = value;
+                if (value_bytes32 == monad::bytes32_t{}) {
+                    // skip setting starting storage to zero to avoid pointless
+                    // deletion
+                    continue;
                 }
+                EXPECT_EQ(
+                    state.set_storage(
+                        account_address, key_bytes32, value_bytes32),
+                    EVMC_STORAGE_ADDED);
             }
-        });
-
-    return result;
-}
-
-void EthereumTests::register_test(
-    std::string suite_name, std::filesystem::path const &file,
-    std::optional<size_t> fork_index, std::optional<size_t> txn_index)
-{
-    // Normalize the test name so that gtest_filter can recognize it. ie.
-    // --gtest_filter=stZeroKnowledge2.ecmul_0-3_5616_21000_128 will not work
-    // because gtest interprets the minus sign as exclusion
-    std::ranges::replace(suite_name, '-', '_');
-    auto test_name = file.stem().string();
-    std::ranges::replace(test_name, '-', '_');
-
-    testing::RegisterTest(
-        suite_name.c_str(),
-        test_name.c_str(),
-        nullptr,
-        nullptr,
-        file.string().c_str(),
-        0,
-        [file, suite_name, fork_index, txn_index]() -> testing::Test * {
-            return new EthereumTests(
-                file,
-                suite_name,
-                file.stem().string(),
-                file.string(),
-                fork_index,
-                txn_index);
-        });
-}
-
-void EthereumTests::register_test_files(
-    std::filesystem::path const &root, std::optional<size_t> fork_index,
-    std::optional<size_t> txn_index)
-{
-    for (auto const &directory_entry :
-         std::filesystem::recursive_directory_iterator{root}) {
-        if (directory_entry.is_regular_file() &&
-            directory_entry.path().extension() == ".json") {
-            register_test(
-                std::filesystem::relative(directory_entry.path(), root)
-                    .parent_path()
-                    .string(),
-                directory_entry.path(),
-                fork_index,
-                txn_index);
         }
     }
-}
-
-[[nodiscard]] std::optional<size_t> to_fork_index(std::string const &fork_name)
-{
-    // static assert here to remind anyone who adds a fork to update this
-    // function
-    static_assert(
-        boost::mp11::mp_size<monad::fork_traits::all_forks_t>::value == 12);
-
-    if (fork_index_map.contains(fork_name)) {
-        return fork_index_map.at(fork_name);
-    }
-    return std::nullopt;
-}
-
-StateTransitionTest EthereumTests::load_state_test(
-    nlohmann::json json, std::string suite_name, std::string test_name,
-    std::string file_name, std::optional<size_t> fork_index,
-    std::optional<size_t> txn_index)
-{
-    if (!json.is_object()) {
-        throw std::invalid_argument{fmt::format(
-            "Error parsing {} {} {}: expected a JSON object",
-            suite_name,
-            test_name,
-            file_name)};
-    }
-    if (json.empty()) {
-        throw std::invalid_argument{fmt::format(
-            "Error parsing {} {} {}: expected a non-empty JSON object",
-            suite_name,
-            test_name,
-            file_name)};
-    }
-    if (json.items().begin().key() != test_name) {
-        throw std::invalid_argument{fmt::format(
-            "Error parsing {} {} {}: expected root key of JSON object to "
-            "match {}, "
-            "but got {}",
-            suite_name,
-            test_name,
-            file_name,
-            test_name,
-            json.items().begin().key())};
-    }
-    auto const &json_test = *json.begin();
-
-    std::vector<Case> test_cases;
-    for (auto const &[revision_name, expectations] :
-         json_test.at("post").items()) {
-        auto maybe_fork_index = to_fork_index(revision_name);
-        if (!maybe_fork_index.has_value()) {
-            LOG_ERROR(
-                "skipping post state in {}:{}:{} due to invalid "
-                "fork index {}",
-                suite_name,
-                test_name,
-                file_name,
-                revision_name);
-            continue;
-        }
-        else if (fork_index.has_value() && maybe_fork_index != fork_index) {
-            continue;
-        }
-
-        if (txn_index.has_value()) {
-            if (txn_index.value() < expectations.size()) {
-                test_cases.emplace_back(Case{
-                    .fork_index = maybe_fork_index.value(),
-                    .fork_name = revision_name,
-                    .expectations = {expectations.at(txn_index.value())
-                                         .get<Case::Expectation>()}});
-            }
-            continue;
-        }
-
-        test_cases.emplace_back(Case{
-            .fork_index = maybe_fork_index.value(),
-            .fork_name = revision_name,
-            .expectations =
-                expectations.get<std::vector<Case::Expectation>>()});
-    }
-
-    return {
-        .shared_transaction_data =
-            json_test.at("transaction").get<SharedTransactionData>(),
-        .cases = std::move(test_cases)};
-}
-
-void EthereumTests::run_state_test(
-    StateTransitionTest const &test, nlohmann::json const &json)
-{
-    for (auto const &[fork_index, fork_name, expectations] : test.cases) {
-        for (size_t case_index = 0; case_index != expectations.size();
-             ++case_index) {
-            auto const &expected = expectations[case_index];
-            auto const transaction = [&] {
-                auto const &data = test.shared_transaction_data;
-                std::optional<uint256_t> chain_id = std::nullopt;
-                if (fork_index >= to_fork_index("EIP158").value()) {
-                    chain_id = 1;
-                }
-                return monad::Transaction{
-                    .sc =
-                        SignatureAndChain{
-                            .r = {},
-                            .s = {},
-                            // Only supporting mainnet for now
-                            .chain_id = chain_id},
-                    .nonce = data.nonce,
-                    .max_fee_per_gas = data.max_fee_per_gas,
-                    .gas_limit = data.gas_limits.at(expected.indices.gas_limit),
-                    .value = data.values.at(expected.indices.value),
-                    .to = data.to,
-                    .from = data.sender,
-                    .data = data.inputs.at(expected.indices.input),
-                    .type = data.transaction_type,
-                    .access_list =
-                        data.access_lists.empty()
-                            ? monad::Transaction::AccessList{}
-                            : data.access_lists.at(expected.indices.input),
-                    .max_priority_fee_per_gas =
-                        fork_index < to_fork_index("London").value()
-                            ? 0
-                            : data.max_priority_fee_per_gas /*eip-1559*/};
-            }();
-
-            monad::execution::fake::BlockDb fake_block_db;
-
-            db_t db{};
-
-            monad::BlockState<mutex_t> bs;
-
-            // every test json file is initially keyed with the test
-            // name
-            MONAD_ASSERT(json.is_object() && !json.empty());
-
-            auto const &j_t = *json.begin();
-            {
-                monad::state::State state{bs, db, fake_block_db};
-
-                LOG_INFO("Starting to load state from json");
-
-                load_state_from_json(j_t.at("pre"), state);
-                merge(bs.state, state.state_);
-                merge(bs.code, state.code_);
-            }
-
-            auto const block_header = [&] {
-                auto ret = j_t.at("env").get<monad::BlockHeader>();
-
-                // eip-1559, base fee only introduced in london
-                if (fork_index < to_fork_index("London").value()) {
-                    ret.base_fee_per_gas.reset();
-                }
-
-                // eip-4399, difficulty set to 0 in PoS
-                if (fork_index >= to_fork_index("Merge").value()) {
-                    ret.difficulty = 0;
-                }
-
-                return ret;
-            }();
-
-            LOG_INFO("Starting to execute transaction {}", case_index);
-
-            monad::state::State state{bs, db, fake_block_db};
-            auto const result =
-                execute(fork_index, block_header, state, transaction);
-
-            merge(bs.state, state.state_);
-            merge(bs.code, state.code_);
-            db.commit(bs.state, bs.code);
-
-            LOG_INFO(
-                "post_state: {}", monad::test::dump_state_from_db(db).dump());
-            LOG_INFO(
-                "finished transaction index: {} revision: {}, state_root: "
-                "{}",
-                case_index,
-                fork_name,
-                db.state_root());
-
-            auto const msg = fmt::format(
-                "fork_name: {}, case_index: {}", fork_name, case_index);
-
-            EXPECT_EQ(db.state_root(), expected.state_hash) << msg;
-            EXPECT_EQ(
-                result.has_value()
-                    ? monad::execution::TransactionStatus::SUCCESS
-                    : result.error(),
-                expected.exception);
-            // TODO: assert something about receipt status?
-        }
-    }
-}
-
-void EthereumTests::TestBody()
-{
-    std::ifstream f{json_test_file_};
-
-    auto const json = nlohmann::json::parse(f);
-    auto const state_transition_test = EthereumTests::load_state_test(
-        json, suite_name_, test_name_, file_name_, fork_index_, txn_index_);
-
-    if (state_transition_test.cases.empty()) {
-        MONAD_ASSERT(fork_index_.has_value() || txn_index_.has_value());
-        GTEST_SKIP() << fmt::format(
-            "No test cases found for fork={} txn={}",
-            fork_index_.transform([&](auto const index) {
-                return std::ranges::find(
-                           fork_index_map,
-                           index,
-                           &decltype(fork_index_map)::value_type::second)
-                    ->first;
-            }),
-            txn_index_);
-    }
-    EthereumTests::run_state_test(state_transition_test, json);
 }
 
 MONAD_TEST_NAMESPACE_END

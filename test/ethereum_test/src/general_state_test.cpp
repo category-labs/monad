@@ -1,0 +1,277 @@
+#include <from_json.hpp>
+#include <general_state_test.hpp>
+#include <general_state_test_types.hpp>
+#include <monad/logging/formatter.hpp>
+#include <monad/test/config.hpp>
+#include <monad/test/dump_state_from_db.hpp>
+#include <test_resource_data.h>
+
+#include <evmc/evmc.hpp>
+#include <nlohmann/json.hpp>
+#include <tl/expected.hpp>
+
+using namespace monad;
+
+namespace
+{
+    template <typename TTraits>
+    [[nodiscard]] tl::expected<Receipt, execution::TransactionStatus> execute(
+        BlockHeader const &block_header, test::state_t &state,
+        Transaction const &txn)
+    {
+        using namespace monad::test;
+
+        host_t<TTraits> host{block_header, txn, state};
+        transaction_processor_t<TTraits> processor;
+
+        if (auto const status = processor.static_validate(
+                txn, host.block_header_.base_fee_per_gas);
+            status != execution::TransactionStatus::SUCCESS) {
+            return tl::unexpected{status};
+        }
+
+        if (auto const status = processor.validate(state, txn);
+            status != execution::TransactionStatus::SUCCESS) {
+            return tl::unexpected{status};
+        }
+
+        // sum of transaction gas limit and gas utilized in block prior (0 in
+        // this case) must be no greater than the blocks gas limit
+        if (host.block_header_.gas_limit < txn.gas_limit) {
+            return tl::unexpected{
+                execution::TransactionStatus::GAS_LIMIT_REACHED};
+        }
+
+        auto const receipt = processor.execute(
+            state,
+            host,
+            txn,
+            host.block_header_.base_fee_per_gas.value_or(0),
+            host.block_header_.beneficiary);
+
+        // TODO: make use of common function when that gets added along
+        // with the block processor work
+        //
+        // Note: this needs to be done outside of the transaction processor,
+        // because otherwise every transaction will touch the beneficiary,
+        // which makes all but the first txn unmergeable in optimistic execution
+        auto const gas_award = TTraits::calculate_txn_award(
+            txn,
+            host.block_header_.base_fee_per_gas.value_or(0),
+            receipt.gas_used);
+        state.add_to_balance(host.block_header_.beneficiary, gas_award);
+        TTraits::destruct_touched_dead(state);
+
+        return receipt;
+    }
+
+    [[nodiscard]] tl::expected<Receipt, execution::TransactionStatus> execute(
+        evmc_revision const rev, BlockHeader const &block_header,
+        test::state_t &state, Transaction const &txn)
+    {
+        using namespace monad::fork_traits;
+
+        auto const result = [&] {
+            switch (rev) {
+            case EVMC_FRONTIER:
+                return execute<frontier>(block_header, state, txn);
+            case EVMC_HOMESTEAD:
+                return execute<homestead>(block_header, state, txn);
+            case EVMC_SPURIOUS_DRAGON:
+                return execute<spurious_dragon>(block_header, state, txn);
+            case EVMC_BYZANTIUM:
+                return execute<byzantium>(block_header, state, txn);
+            case EVMC_PETERSBURG:
+                return execute<constantinople_and_petersburg>(
+                    block_header, state, txn);
+            case EVMC_ISTANBUL:
+                return execute<istanbul>(block_header, state, txn);
+            case EVMC_BERLIN:
+                return execute<berlin>(block_header, state, txn);
+            case EVMC_LONDON:
+                return execute<london>(block_header, state, txn);
+            case EVMC_PARIS:
+                return execute<paris>(block_header, state, txn);
+            case EVMC_SHANGHAI:
+                return execute<shanghai>(block_header, state, txn);
+            default:
+                std::unreachable();
+            }
+        }();
+
+        // Apply 0 block reward
+        if (rev < EVMC_SPURIOUS_DRAGON) {
+            state.add_to_balance(block_header.beneficiary, 0);
+        }
+
+        return result;
+    }
+}
+
+MONAD_TEST_NAMESPACE_BEGIN
+
+void GeneralStateTest::TestBody()
+{
+    std::ifstream f{json_test_file_};
+
+    auto const json = nlohmann::json::parse(f);
+
+    if (!json.is_object()) {
+        throw std::invalid_argument{fmt::format(
+            "Error parsing {}: expected a JSON object", json_test_file_)};
+    }
+
+    if (json.empty()) {
+        throw std::invalid_argument{fmt::format(
+            "Error parsing {}: expected a non-empty JSON object",
+            json_test_file_)};
+    }
+
+    auto const &test = *json.begin();
+
+    auto const data = test.at("transaction").get<SharedTransactionData>();
+    auto const env = test.at("env").get<BlockHeader>();
+
+    auto const [init_state, init_code] = [&] {
+        BlockState<mutex_t> bs;
+        db_t db;
+        execution::fake::BlockDb fake_block_db;
+        state::State state{bs, db, fake_block_db};
+        load_state_from_json(test.at("pre"), state);
+        return std::make_pair(state.state_, state.code_);
+    }();
+
+    bool executed = false;
+
+    for (auto const &[rev_name, expectations] : test.at("post").items()) {
+        if (!revision_map.contains(rev_name)) {
+            LOG_ERROR("Unsupported fork {} in {}", rev_name, json_test_file_);
+            continue;
+        }
+
+        auto const rev = revision_map.at(rev_name);
+        if (revision_.has_value() && rev != revision_) {
+            continue;
+        }
+
+        auto const block_header = [&] {
+            auto ret = env;
+            // eip-1559, base fee only introduced in london
+            if (rev < EVMC_LONDON) {
+                ret.base_fee_per_gas.reset();
+            }
+
+            // eip-4399, difficulty set to 0 in PoS
+            if (rev >= EVMC_PARIS) {
+                ret.difficulty = 0;
+            }
+
+            return ret;
+        }();
+
+        for (size_t i = 0; i < expectations.size(); ++i) {
+            if (txn_index_.has_value() && txn_index_ != i) {
+                continue;
+            }
+
+            LOG_INFO("Executing txn {} on revision {}", i, rev_name);
+
+            executed = true;
+
+            auto const expected = expectations.at(i).get<Expectation>();
+            auto const transaction = Transaction{
+                .sc =
+                    SignatureAndChain{
+                        .r = {},
+                        .s = {},
+                        // Only supporting mainnet for now
+                        .chain_id = rev >= EVMC_SPURIOUS_DRAGON
+                                        ? std::make_optional(1)
+                                        : std::nullopt},
+                .nonce = data.nonce,
+                .max_fee_per_gas = data.max_fee_per_gas,
+                .gas_limit = data.gas_limits.at(expected.indices.gas_limit),
+                .value = data.values.at(expected.indices.value),
+                .to = data.to,
+                .from = data.sender,
+                .data = data.inputs.at(expected.indices.input),
+                .type = data.transaction_type,
+                .access_list =
+                    data.access_lists.empty()
+                        ? Transaction::AccessList{}
+                        : data.access_lists.at(expected.indices.input),
+                .max_priority_fee_per_gas =
+                    rev < EVMC_LONDON
+                        ? 0
+                        : data.max_priority_fee_per_gas /*eip-1559*/};
+
+            db_t db;
+            db.commit(init_state, init_code);
+            BlockState<mutex_t> bs;
+            execution::fake::BlockDb fake_block_db;
+            state::State state{bs, db, fake_block_db};
+            auto const result = execute(rev, block_header, state, transaction);
+            // Note: no merge because only single transaction in the block
+            db.commit(state.state_, state.code_);
+
+            LOG_DEBUG("post_state: {}", test::dump_state_from_db(db).dump());
+
+            auto const msg = fmt::format("fork: {}, index: {}", rev_name, i);
+
+            EXPECT_EQ(db.state_root(), expected.state_hash) << msg;
+            EXPECT_EQ(
+                result.has_value() ? execution::TransactionStatus::SUCCESS
+                                   : result.error(),
+                expected.exception)
+                << msg;
+            // TODO: assert something about receipt status?
+        }
+    }
+
+    // Be explicit about skipping the test rather than succeeding due to
+    // no-op
+    if (!executed) {
+        MONAD_ASSERT(revision_.has_value() || txn_index_.has_value());
+        GTEST_SKIP() << fmt::format(
+            "No test cases found for fork={} txn={}",
+            revision_.transform(
+                [](auto const &revision) { return evmc::to_string(revision); }),
+            txn_index_);
+    }
+}
+
+void register_general_state_tests(
+    std::optional<evmc_revision> const &revision,
+    std::optional<size_t> const &txn_index)
+{
+    namespace fs = std::filesystem;
+    auto const root = test_resource::ethereum_tests_dir / "GeneralStateTests";
+    for (auto const &dir_entry : fs::recursive_directory_iterator{root}) {
+        auto const dir_path = dir_entry.path();
+        if (dir_entry.is_regular_file() && dir_path.extension() == ".json") {
+            auto suite_name =
+                fs::relative(dir_path, root).parent_path().string();
+            // Normalize the test name so that gtest_filter can recognize
+            // it. ie.
+            // --gtest_filter=stZeroKnowledge2.ecmul_0-3_5616_21000_128 will
+            // not work because gtest interprets the minus sign as exclusion
+            std::ranges::replace(suite_name, '-', '_');
+
+            auto test_name = dir_path.stem().string();
+            std::ranges::replace(test_name, '-', '_');
+
+            testing::RegisterTest(
+                suite_name.c_str(),
+                test_name.c_str(),
+                nullptr,
+                nullptr,
+                dir_path.string().c_str(),
+                0,
+                [=] -> testing::Test * {
+                    return new GeneralStateTest(dir_path, revision, txn_index);
+                });
+        }
+    }
+}
+
+MONAD_TEST_NAMESPACE_END

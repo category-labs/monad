@@ -1,8 +1,12 @@
-#include <ethereum_test.hpp>
+#include <general_state_test.hpp>
+#include <test_resource_data.h>
 
 #include <CLI/CLI.hpp>
+#include <evmc/evmc.hpp>
+#include <gtest/gtest.h>
+#include <quill/Quill.h>
 
-#include <test_resource_data.h>
+#include <unordered_map>
 
 namespace
 {
@@ -25,9 +29,8 @@ namespace
 
 int main(int argc, char *argv[])
 {
-
     auto log_level = quill::LogLevel::None;
-    std::optional<size_t> fork_index = std::nullopt;
+    std::optional<evmc_revision> revision = std::nullopt;
     std::optional<size_t> txn_index = std::nullopt;
 
     testing::InitGoogleTest(&argc, argv); // Process GoogleTest flags.
@@ -52,9 +55,9 @@ int main(int argc, char *argv[])
     app.add_option("--log_level", log_level, "Logging level")
         ->transform(CLI::CheckedTransformer(log_levels_map, CLI::ignore_case));
 
-    app.add_option("--fork", fork_index, "Fork to run unit tests for")
+    app.add_option("--fork", revision, "Fork to run unit tests for")
         ->transform(CLI::CheckedTransformer(
-            monad::test::fork_index_map, CLI::ignore_case));
+            monad::test::revision_map, CLI::ignore_case));
 
     app.add_option("--txn", txn_index, "Index of transaction to run");
 
@@ -65,10 +68,7 @@ int main(int argc, char *argv[])
     quill::get_root_logger()->set_log_level(log_level);
 
     // only worrying about GeneralStateTests folder for now
-    monad::test::EthereumTests::register_test_files(
-        monad::test_resource::ethereum_tests_dir / "GeneralStateTests",
-        fork_index,
-        txn_index);
+    monad::test::register_general_state_tests(revision, txn_index);
 
     int return_code = RUN_ALL_TESTS();
 

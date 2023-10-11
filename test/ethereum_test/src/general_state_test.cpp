@@ -245,30 +245,48 @@ void register_general_state_tests(
     std::optional<size_t> const &txn_index)
 {
     namespace fs = std::filesystem;
-    auto const root = test_resource::ethereum_tests_dir / "GeneralStateTests";
-    for (auto const &dir_entry : fs::recursive_directory_iterator{root}) {
-        auto const dir_path = dir_entry.path();
-        if (dir_entry.is_regular_file() && dir_path.extension() == ".json") {
-            auto suite_name =
-                fs::relative(dir_path, root).parent_path().string();
+
+    // The default test filter. To enable all tests use `--gtest_filter=*`.
+    testing::FLAGS_gtest_filter +=
+        ":-:GeneralStateTests.stCreateTest/CreateOOGafterMaxCodesize.json:" // slow test
+        "GeneralStateTests.stQuadraticComplexityTest/Call50000_sha256.json:" // slow test
+        "GeneralStateTests.stTimeConsuming/static_Call50000_sha256.json:" // slow
+                                                                          // test
+        "GeneralStateTests.stTimeConsuming/CALLBlake2f_MaxRounds.json:" // slow
+                                                                        // test
+        "GeneralStateTests.VMTests/vmPerformance/*:" // slow test
+
+        // this test causes the test harness to crash when
+        // parsing because it tries to parse
+        // "0x031eea408f8e1799cb883da2927b1336521d73c2c14accfebb70d5c5af006c"
+        // which causes stoull to throw an std::out_of_range exception
+        "GeneralStateTests.stTransactionTest/HighGasPrice.json:"
+        "GeneralStateTests.stTransactionTest/ValueOverflow.json";
+
+    constexpr auto suite = "GeneralStateTests";
+    auto const root = test_resource::ethereum_tests_dir / suite;
+    for (auto const &entry : fs::recursive_directory_iterator{root}) {
+        auto const path = entry.path();
+        if (path.extension() == ".json") {
+            MONAD_ASSERT(entry.is_regular_file());
+
             // Normalize the test name so that gtest_filter can recognize
             // it. ie.
-            // --gtest_filter=stZeroKnowledge2.ecmul_0-3_5616_21000_128 will
+            // stZeroKnowledge2.ecmul_0-3_5616_21000_128 will
             // not work because gtest interprets the minus sign as exclusion
-            std::ranges::replace(suite_name, '-', '_');
 
-            auto test_name = dir_path.stem().string();
-            std::ranges::replace(test_name, '-', '_');
+            auto test = fmt::format("{}", fs::relative(path, root).string());
+            std::ranges::replace(test, '-', '_');
 
             testing::RegisterTest(
-                suite_name.c_str(),
-                test_name.c_str(),
+                suite,
+                test.c_str(),
                 nullptr,
                 nullptr,
-                dir_path.string().c_str(),
+                path.string().c_str(),
                 0,
                 [=] -> testing::Test * {
-                    return new GeneralStateTest(dir_path, revision, txn_index);
+                    return new GeneralStateTest(path, revision, txn_index);
                 });
         }
     }

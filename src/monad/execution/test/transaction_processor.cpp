@@ -1,6 +1,7 @@
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/config.hpp>
+#include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/transaction_processor.hpp>
 
 #include <monad/execution/test/fakes.hpp>
@@ -18,7 +19,7 @@ using block_cache_t = fake::BlockDb;
 
 using db_t = db::InMemoryTrieDB;
 using state_t = state::State<mutex_t, block_cache_t>;
-using traits_t = fake::traits::alpha<state_t>;
+using traits_t = fork_traits::shanghai;
 using processor_t = TransactionProcessor<state_t, traits_t>;
 
 using evm_host_t = fake::EvmHost<state_t, traits_t>;
@@ -30,18 +31,16 @@ namespace
 
 TEST(TransactionProcessor, g_star)
 {
-    traits_t::_max_refund_quotient = 2;
-
     static Transaction const t{
         .gas_limit = 51'000,
     };
 
     processor_t p{};
 
-    EXPECT_EQ(p.g_star(t, 1'002, 15'000), 16'002);
-    EXPECT_EQ(p.g_star(t, 1'001, 15'000), 16'001);
-    EXPECT_EQ(p.g_star(t, 1'000, 15'000), 16'000);
-    EXPECT_EQ(p.g_star(t, 999, 15'000), 15'999);
+    EXPECT_EQ(p.g_star(t, 1002, 15000), 11001);
+    EXPECT_EQ(p.g_star(t, 1001, 15000), 11000);
+    EXPECT_EQ(p.g_star(t, 1000, 15000), 11000);
+    EXPECT_EQ(p.g_star(t, 999, 15000), 10999);
 }
 
 TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)

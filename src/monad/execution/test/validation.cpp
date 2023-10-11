@@ -3,9 +3,9 @@
 #include <monad/db/db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 
-#include <monad/execution/transaction_processor.hpp>
-
+#include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/test/fakes.hpp>
+#include <monad/execution/transaction_processor.hpp>
 
 #include <monad/state2/state.hpp>
 
@@ -19,7 +19,7 @@ using mutex_t = std::shared_mutex;
 using block_cache_t = execution::fake::BlockDb;
 using state_t = state::State<mutex_t, block_cache_t>;
 
-using traits_t = fake::traits::alpha<state_t>;
+using traits_t = fork_traits::shanghai;
 using processor_t = TransactionProcessor<state_t, traits_t>;
 
 TEST(Execution, static_validate_no_sender)
@@ -47,8 +47,6 @@ TEST(Execution, validate_enough_gas)
     state_t s{bs, db, block_cache};
     s.add_to_balance(a, 55'939'568'773'815'811);
 
-    traits_t::_intrinsic_gas = 53'000;
-
     auto status = p.validate(s, t, 0);
     EXPECT_EQ(status, TransactionStatus::INTRINSIC_GAS_GREATER_THAN_LIMIT);
 }
@@ -66,9 +64,8 @@ TEST(Execution, validate_deployed_code)
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_code_hash(a, some_non_null_hash);
     s.set_nonce(a, 24);
-    traits_t::_intrinsic_gas = 27'500;
 
-    static Transaction const t{.gas_limit = 27'500, .from = a};
+    static Transaction const t{.gas_limit = 60'500, .from = a};
 
     auto status = p.validate(s, t, 0);
     EXPECT_EQ(status, TransactionStatus::SENDER_NOT_EOA);
@@ -82,7 +79,7 @@ TEST(Execution, validate_nonce)
     static Transaction const t{
         .nonce = 23,
         .max_fee_per_gas = 29'443'849'433,
-        .gas_limit = 27'500,
+        .gas_limit = 60'500,
         .amount = 55'939'568'773'815'811,
         .from = a};
     db_t db;
@@ -103,7 +100,7 @@ TEST(Execution, validate_nonce_optimistically)
     static Transaction const t{
         .nonce = 25,
         .max_fee_per_gas = 29'443'849'433,
-        .gas_limit = 27'500,
+        .gas_limit = 60'500,
         .amount = 55'939'568'773'815'811,
         .from = a};
 
@@ -137,7 +134,6 @@ TEST(Execution, validate_enough_balance)
     BlockState<mutex_t> bs;
     state_t s{bs, db, block_cache};
     s.add_to_balance(a, 55'939'568'773'815'811);
-    traits_t::_intrinsic_gas = 21'000;
 
     auto status = p.validate(s, t, 10u);
     EXPECT_EQ(status, TransactionStatus::INSUFFICIENT_BALANCE);
@@ -153,7 +149,6 @@ TEST(Execution, successful_validation)
     state_t s{bs, db, block_cache};
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 25);
-    traits_t::_intrinsic_gas = 21'000;
 
     static Transaction const t{
         .nonce = 25,
@@ -179,7 +174,6 @@ TEST(Execution, max_fee_less_than_base)
     state_t s{bs, db, block_cache};
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 25);
-    traits_t::_intrinsic_gas = 21'000;
 
     static Transaction const t{
         .nonce = 25,
@@ -206,8 +200,6 @@ TEST(Execution, priority_fee_greater_than_max)
     state_t s{bs, db, block_cache};
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 25);
-
-    traits_t::_intrinsic_gas = 21'000;
 
     static Transaction const t{
         .nonce = 25,

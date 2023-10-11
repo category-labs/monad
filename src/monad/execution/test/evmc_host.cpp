@@ -2,6 +2,7 @@
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/config.hpp>
+#include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/precompiles.hpp>
 
@@ -21,7 +22,7 @@ using db_t = db::InMemoryTrieDB;
 using mutex_t = std::shared_mutex;
 using block_cache_t = execution::fake::BlockDb;
 using state_t = state::State<mutex_t, block_cache_t>;
-using traits_t = fake::traits::alpha<state_t>;
+using traits_t = fork_traits::shanghai;
 
 template <class TTraits>
 using traits_templated_evmc_host_t = EvmcHost<state_t, TTraits>;
@@ -68,6 +69,10 @@ TEST(EvmcHost, get_tx_context)
         0x5353535353535353535353535353535353535353_address};
     static constexpr auto bene{
         0xbebebebebebebebebebebebebebebebebebebebe_address};
+    static uint64_t const chain_id{1};
+    static uint256_t const base_fee_per_gas{37'000'000'000};
+    static uint256_t const gas_cost = 37'000'000'000;
+
     BlockHeader b{
         .prev_randao =
             0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32,
@@ -76,17 +81,16 @@ TEST(EvmcHost, get_tx_context)
         .gas_limit = 50'000,
         .timestamp = 1677616016,
         .beneficiary = bene,
-        .base_fee_per_gas = 37'000'000'000,
+        .base_fee_per_gas = base_fee_per_gas,
     };
-    Transaction const t{.sc = {.chain_id = 1}, .from = from};
+    Transaction const t{
+        .sc = {.chain_id = chain_id},
+        .max_fee_per_gas = base_fee_per_gas,
+        .from = from};
 
     db_t db;
     BlockState<mutex_t> bs;
     state_t s{bs, db, block_cache};
-
-    static uint256_t const gas_cost = 37'000'000'000;
-    static uint256_t const chain_id{1};
-    static uint256_t const base_fee_per_gas{37'000'000'000};
 
     evmc_host_t host{b, t, s};
 
@@ -99,7 +103,7 @@ TEST(EvmcHost, get_tx_context)
         .block_gas_limit = 50'000,
         .block_prev_randao = evmc::uint256be{10'000'000u},
     };
-    intx::be::store(ctx.chain_id.bytes, chain_id);
+    intx::be::store(ctx.chain_id.bytes, uint256_t{chain_id});
     intx::be::store(ctx.tx_gas_price.bytes, gas_cost);
     intx::be::store(ctx.block_base_fee.bytes, base_fee_per_gas);
     EXPECT_EQ(result, ctx);

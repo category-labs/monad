@@ -51,8 +51,9 @@ struct TransactionProcessor
     }
 
     // YP Eqn 72
-    [[nodiscard]] uint64_t
-    g_star(Transaction const &t, uint64_t gas_remaining, uint64_t refund) const
+    [[nodiscard]] uint64_t g_star(
+        Transaction const &t, uint64_t const gas_remaining,
+        uint64_t const refund) const
     {
         auto const refund_allowance =
             (t.gas_limit - gas_remaining) / TTraits::max_refund_quotient();

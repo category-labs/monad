@@ -2,6 +2,7 @@
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/config.hpp>
+#include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evm.hpp>
 
 #include <monad/execution/test/fakes.hpp>
@@ -22,9 +23,9 @@ db::BlockDb blocks{test_resource::correct_block_data_dir};
 using account_store_db_t = db::InMemoryTrieDB;
 using mutex_t = std::shared_mutex;
 using state_t = state::State<mutex_t, db::BlockDb>;
-using traits_t = fake::traits::alpha<state_t>;
+using traits_t = fork_traits::shanghai;
 
-using evm_t = Evm<state_t, fake::traits::alpha<state_t>>;
+using evm_t = Evm<state_t, traits_t>;
 
 using evm_host_t = fake::EvmHost<state_t, traits_t>;
 

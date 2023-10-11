@@ -1,9 +1,9 @@
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/config.hpp>
-#include <monad/execution/transaction_processor_data.hpp>
-
+#include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/test/fakes.hpp>
+#include <monad/execution/transaction_processor_data.hpp>
 
 #include <monad/state2/state.hpp>
 
@@ -21,12 +21,11 @@ using block_cache_t = fake::BlockDb;
 
 using db_t = db::InMemoryTrieDB;
 using state_t = state::State<mutex_t, block_cache_t>;
-using traits_t = fake::traits::alpha<state_t>;
+using traits_t = fork_traits::shanghai;
 
 template <class TTxnProc>
 using data_t = TransactionProcessorFiberData<
-    mutex_t, TTxnProc, fake::EvmHost<state_t, fake::traits::alpha<state_t>>,
-    block_cache_t>;
+    mutex_t, TTxnProc, fake::EvmHost<state_t, traits_t>, block_cache_t>;
 
 namespace
 {

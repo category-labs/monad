@@ -4,6 +4,7 @@
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/config.hpp>
+#include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmone_baseline_interpreter.hpp>
 
 #include <monad/execution/test/fakes.hpp>
@@ -22,7 +23,7 @@ using block_cache_t = execution::fake::BlockDb;
 
 using state_t = state::State<mutex_t, block_cache_t>;
 
-using traits_t = fake::traits::alpha<state_t>;
+using traits_t = fork_traits::shanghai;
 
 using interpreter_t = EVMOneBaselineInterpreter<state_t, traits_t>;
 

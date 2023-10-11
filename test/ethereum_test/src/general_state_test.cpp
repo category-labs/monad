@@ -77,6 +77,8 @@ namespace
                 return execute<frontier>(block_header, state, txn);
             case EVMC_HOMESTEAD:
                 return execute<homestead>(block_header, state, txn);
+            case EVMC_TANGERINE_WHISTLE:
+                return execute<tangerine_whistle>(block_header, state, txn);
             case EVMC_SPURIOUS_DRAGON:
                 return execute<spurious_dragon>(block_header, state, txn);
             case EVMC_BYZANTIUM:

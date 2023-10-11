@@ -1,6 +1,7 @@
 frontier *
 homestead *
 eip158 *
+eip150 *
 byzantium *
 constantinoplefix *
 istanbul -:GeneralStateTests.stSStoreTest/InitCollision.json:GeneralStateTests.stRevertTest/RevertInCreateInInit.json:GeneralStateTests.stExtCodeHash/dynamicAccountOverwriteEmpty.json:GeneralStateTests.stCreate2/create2collisionStorage.json:GeneralStateTests.stCreate2/RevertInCreateInInitCreate2.json

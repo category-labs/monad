@@ -223,7 +223,7 @@ namespace fork_traits
         }
 
         [[nodiscard]] static constexpr bool
-        validate_chain_id(Transaction const &txn)
+        chain_id_valid(Transaction const &txn)
         {
             return !txn.sc.chain_id.has_value();
         }
@@ -401,7 +401,7 @@ namespace fork_traits
         }
 
         [[nodiscard]] static constexpr bool
-        validate_chain_id(Transaction const &txn)
+        chain_id_valid(Transaction const &txn)
         {
             return !txn.sc.chain_id.has_value() || txn.sc.chain_id.value() == 1;
         }

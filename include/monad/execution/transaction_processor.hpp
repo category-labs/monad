@@ -151,7 +151,7 @@ struct TransactionProcessor
     TransactionStatus static_validate(
         Transaction const &t, std::optional<uint256_t> const &base_fee_per_gas)
     {
-        if (MONAD_UNLIKELY(!TTraits::validate_chain_id(t))) {
+        if (MONAD_UNLIKELY(!TTraits::chain_id_valid(t))) {
             return TransactionStatus::WRONG_CHAIN_ID;
         }
 

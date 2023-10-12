@@ -349,32 +349,4 @@ namespace nlohmann
                               : monad::execution::TransactionStatus::SUCCESS;
         }
     };
-
-    template <>
-    struct adl_serializer<monad::BlockHeader>
-    {
-        static void from_json(nlohmann::json const &json, monad::BlockHeader &o)
-        {
-            o.parent_hash = json["previousHash"].get<monad::bytes32_t>();
-            o.difficulty = json["currentDifficulty"].get<monad::uint256_t>();
-            o.number = static_cast<uint64_t>(
-                json["currentNumber"].get<monad::uint256_t>());
-            o.gas_limit = static_cast<uint64_t>(
-                json["currentGasLimit"].get<monad::uint256_t>());
-            o.timestamp = static_cast<uint64_t>(
-                json["currentTimestamp"].get<monad::uint256_t>());
-            o.beneficiary = json["currentCoinbase"].get<monad::address_t>();
-
-            // we cannot use the nlohmann::json from_json<uint64_t> because
-            // it does not use the strtoull implementation, whereas we need
-            // it so we can turn a hex string into a uint64_t
-            o.base_fee_per_gas =
-                json.contains("currentBaseFee")
-                    ? std::make_optional<uint64_t>(
-                          integer_from_json<uint64_t>(json["currentBaseFee"]))
-                    : std::nullopt;
-
-            o.prev_randao = json["currentRandom"].get<monad::bytes32_t>();
-        }
-    };
 }

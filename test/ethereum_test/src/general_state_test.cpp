@@ -14,6 +14,33 @@ using namespace monad;
 
 namespace
 {
+    [[nodiscard]] constexpr BlockHeader
+    block_header_from_env(nlohmann::json const &json)
+    {
+        BlockHeader o;
+        o.parent_hash = json["previousHash"].get<monad::bytes32_t>();
+        o.difficulty = json["currentDifficulty"].get<monad::uint256_t>();
+        o.number = static_cast<uint64_t>(
+            json["currentNumber"].get<monad::uint256_t>());
+        o.gas_limit = static_cast<uint64_t>(
+            json["currentGasLimit"].get<monad::uint256_t>());
+        o.timestamp = static_cast<uint64_t>(
+            json["currentTimestamp"].get<monad::uint256_t>());
+        o.beneficiary = json["currentCoinbase"].get<monad::address_t>();
+
+        // we cannot use the nlohmann::json from_json<uint64_t> because
+        // it does not use the strtoull implementation, whereas we need
+        // it so we can turn a hex string into a uint64_t
+        o.base_fee_per_gas =
+            json.contains("currentBaseFee")
+                ? std::make_optional<uint64_t>(
+                      integer_from_json<uint64_t>(json["currentBaseFee"]))
+                : std::nullopt;
+
+        o.prev_randao = json["currentRandom"].get<monad::bytes32_t>();
+        return o;
+    }
+
     template <typename TTraits>
     [[nodiscard]] tl::expected<Receipt, execution::TransactionStatus> execute(
         BlockHeader const &block_header, test::state_t &state,
@@ -132,7 +159,7 @@ void GeneralStateTest::TestBody()
     auto const &test = *json.begin();
 
     auto const data = test.at("transaction").get<SharedTransactionData>();
-    auto const env = test.at("env").get<BlockHeader>();
+    auto const env = block_header_from_env(test.at("env"));
 
     auto const [init_state, init_code] = [&] {
         BlockState<mutex_t> bs;

@@ -85,56 +85,83 @@ public:
         template <typename, typename> class TEvmHost,
         template <typename, typename, typename, typename> class TFiberData>
     [[nodiscard]] Result run_fork(
-        TDb &db, uint64_t const checkpoint_frequency, TBlockDb &block_db,
-        block_num_t current_block_number,
+        TDb &db, uint64_t const checkpoint_frequency, uint64_t const batch_size,
+        TBlockDb &block_db, block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
-        for (; current_block_number <= loop_until<TTraits>(until_block_number);
-             ++current_block_number) {
+        while (current_block_number <=
+               loop_until<TTraits>(until_block_number)) {
+            BlockState<TMutex> block_state;
+            auto const start_block_number = current_block_number;
             Block block{};
-            auto const block_read_status =
-                block_db.get(current_block_number, block);
 
-            switch (block_read_status) {
-            case TBlockDb::Status::NO_BLOCK_FOUND:
-                return Result{
-                    Status::SUCCESS_END_OF_DB, current_block_number - 1u};
-            case TBlockDb::Status::DECOMPRESS_ERROR:
-                return Result{
-                    Status::DECOMPRESS_BLOCK_ERROR, current_block_number};
-            case TBlockDb::Status::DECODE_ERROR:
-                return Result{Status::DECODE_BLOCK_ERROR, current_block_number};
-            case TBlockDb::Status::SUCCESS: {
+            for (unsigned i = 0;
+                 i < batch_size && current_block_number <=
+                                       loop_until<TTraits>(until_block_number);
+                 ++i, ++current_block_number) {
+                block = Block{};
+                auto const block_read_status =
+                    block_db.get(current_block_number, block);
 
-                TTraits::validate_block(block);
-
-                TBlockProcessor block_processor{};
-                auto const receipts = block_processor.template execute<
-                    TMutex,
-                    TTraits,
-                    TFiberData<
-                        TMutex,
-                        TTxnProcessor<state_t, TTraits>,
-                        TEvmHost<state_t, TTraits>,
-                        TBlockDb>>(block, db, block_db);
-
-                if (!verify_root_hash(
-                        block.header,
-                        NULL_ROOT,
-                        NULL_ROOT,
-                        db.state_root(),
-                        current_block_number)) {
+                switch (block_read_status) {
+                case TBlockDb::Status::NO_BLOCK_FOUND:
                     return Result{
-                        Status::WRONG_STATE_ROOT, current_block_number - 1u};
+                        Status::SUCCESS_END_OF_DB, current_block_number - 1u};
+                case TBlockDb::Status::DECOMPRESS_ERROR:
+                    return Result{
+                        Status::DECOMPRESS_BLOCK_ERROR, current_block_number};
+                case TBlockDb::Status::DECODE_ERROR:
+                    return Result{
+                        Status::DECODE_BLOCK_ERROR, current_block_number};
+                case TBlockDb::Status::SUCCESS: {
+                    TTraits::validate_block(block);
+
+                    TBlockProcessor block_processor{};
+                    [[maybe_unused]] auto const result =
+                        block_processor.template execute<
+                            TMutex,
+                            TTraits,
+                            TFiberData<
+                                TMutex,
+                                TTxnProcessor<state_t, TTraits>,
+                                TEvmHost<state_t, TTraits>,
+                                TBlockDb>>(block, db, block_db, block_state);
                 }
-                else {
-                    if (current_block_number % checkpoint_frequency == 0) {
-                        db.create_and_prune_block_history(current_block_number);
-                    }
+                default:
+                    break;
                 }
             }
-            default:
-                break;
+
+            auto const commit_start_time = std::chrono::steady_clock::now();
+            LOG_INFO("{}", "Committing to DB...");
+
+            db.commit(block_state.state, block_state.code);
+
+            auto const commit_finished_time = std::chrono::steady_clock::now();
+            auto const commit_elapsed_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    commit_finished_time - commit_start_time);
+            LOG_INFO(
+                "Finished committing, time elapsed = {}", commit_elapsed_ms);
+
+            if (!verify_root_hash(
+                    block.header,
+                    NULL_ROOT,
+                    NULL_ROOT,
+                    db.state_root(),
+                    current_block_number)) {
+                return Result{
+                    Status::WRONG_STATE_ROOT, current_block_number - 1u};
+            }
+            else {
+                for (auto i = start_block_number; i < current_block_number;
+                     ++i) {
+                    if (i % checkpoint_frequency == 0) {
+                        db.create_and_prune_block_history(
+                            current_block_number - 1u);
+                        break;
+                    }
+                }
             }
         }
 
@@ -152,6 +179,7 @@ public:
                 TFiberData>(
                 db,
                 checkpoint_frequency,
+                batch_size,
                 block_db,
                 current_block_number,
                 until_block_number);
@@ -164,8 +192,8 @@ public:
         template <typename, typename> class TEvmHost,
         template <typename, typename, typename, typename> class TFiberData>
     [[nodiscard]] Result
-    run(TDb &db, uint64_t const checkpoint_frequency, TBlockDb &block_db,
-        block_num_t start_block_number,
+    run(TDb &db, uint64_t const checkpoint_frequency, uint64_t const batch_size,
+        TBlockDb &block_db, block_num_t start_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
         Block block{};
@@ -184,6 +212,7 @@ public:
         return run_fork<TTraits, TTxnProcessor, TEvm, TEvmHost, TFiberData>(
             db,
             checkpoint_frequency,
+            batch_size,
             block_db,
             start_block_number,
             until_block_number);

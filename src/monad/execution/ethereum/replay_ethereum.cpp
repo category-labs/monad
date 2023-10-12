@@ -45,6 +45,7 @@ int main(int argc, char *argv[])
     std::filesystem::path genesis_file_path{};
     uint64_t block_history_size = 1u;
     uint64_t checkpoint_frequency = 1000u;
+    uint64_t batch_size = 1u;
     std::optional<monad::block_num_t> finish_block_number = std::nullopt;
 
     quill::start(true);
@@ -64,6 +65,8 @@ int main(int argc, char *argv[])
         "--checkpoint_frequency",
         checkpoint_frequency,
         "state db checkpointing frequency");
+    cli.add_option(
+        "--batch_size", batch_size, "number of blocks inside a batch");
     cli.add_option(
         "--finish", finish_block_number, "1 pass the last executed block");
     cli.add_option("--log_level", log_level, "level of logging");
@@ -92,10 +95,13 @@ int main(int argc, char *argv[])
 
     LOG_INFO(
         "Running with block_db = {}, state_db = {}, block_history_size = {}, "
+        "checkpoint_frequency = {}, batch_size = {},"
         "(inferred) start_block_number = {}, finish block number = {}",
         block_db_path,
         state_db_path,
         block_history_size,
+        checkpoint_frequency,
+        batch_size,
         start_block_number,
         finish_block_number);
 
@@ -121,6 +127,7 @@ int main(int argc, char *argv[])
         monad::execution::TransactionProcessorFiberData>(
         db,
         checkpoint_frequency,
+        batch_size,
         block_db,
         start_block_number,
         finish_block_number);

@@ -26,8 +26,9 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 struct AllTxnBlockProcessor
 {
     template <class TMutex, class TTraits, class TxnProcData, class TBlockCache>
-    [[nodiscard]] std::vector<Receipt>
-    execute(Block &b, Db &db, TBlockCache &block_cache)
+    [[nodiscard]] std::vector<Receipt> execute(
+        Block &b, Db &db, TBlockCache &block_cache,
+        BlockState<TMutex> &block_state)
     {
         auto const start_time = std::chrono::steady_clock::now();
         LOG_INFO(
@@ -36,7 +37,6 @@ struct AllTxnBlockProcessor
             b.transactions.size());
         LOG_DEBUG("BlockHeader Fields: {}", b.header);
 
-        BlockState<TMutex> block_state{};
         uint256_t all_txn_gas_reward = 0;
 
         // Apply DAO hack reversal
@@ -85,24 +85,7 @@ struct AllTxnBlockProcessor
             elapsed_ms);
         LOG_DEBUG("Receipts: {}", r);
 
-        commit(block_state, db);
-
         return r;
-    }
-
-    template <class TMutex>
-    void commit(BlockState<TMutex> &block_state, Db &db)
-    {
-        auto const start_time = std::chrono::steady_clock::now();
-        LOG_INFO("{}", "Committing to DB...");
-
-        db.commit(block_state.state, block_state.code);
-
-        auto const finished_time = std::chrono::steady_clock::now();
-        auto const elapsed_ms =
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                finished_time - start_time);
-        LOG_INFO("Finished committing, time elapsed = {}", elapsed_ms);
     }
 };
 

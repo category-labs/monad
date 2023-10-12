@@ -190,3 +190,27 @@ TEST(Execution, priority_fee_greater_than_max)
     auto status = p.static_validate(t, 29'000'000'000);
     EXPECT_EQ(status, TransactionStatus::PRIORITY_FEE_GREATER_THAN_MAX);
 }
+
+TEST(Execution, insufficent_balance_overflow)
+{
+    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto b{0x5353535353535353535353535353535353535353_address};
+
+    db_t db;
+    block_cache_t block_cache;
+    BlockState<mutex_t> bs;
+    state_t s{bs, db, block_cache};
+    s.add_to_balance(a, std::numeric_limits<uint256_t>::max());
+
+    static Transaction const t{
+        .max_fee_per_gas = std::numeric_limits<uint256_t>::max() - 1,
+        .gas_limit = 1000,
+        .value = 0,
+        .to = b,
+        .from = a};
+
+    processor_t p{};
+
+    auto status = p.validate(s, t);
+    EXPECT_EQ(status, TransactionStatus::INSUFFICIENT_BALANCE);
+}

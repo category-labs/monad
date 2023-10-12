@@ -1,3 +1,4 @@
+#include <blockchain_test.hpp>
 #include <general_state_test.hpp>
 #include <test_resource_data.h>
 
@@ -47,8 +48,8 @@ int main(int argc, char *argv[])
     quill::start(true);
     quill::get_root_logger()->set_log_level(log_level);
 
-    // only worrying about GeneralStateTests folder for now
     monad::test::register_general_state_tests(revision, txn_index);
+    monad::test::register_blockchain_tests(revision);
 
     int return_code = RUN_ALL_TESTS();
 

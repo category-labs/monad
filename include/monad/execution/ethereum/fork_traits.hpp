@@ -317,9 +317,8 @@ namespace fork_traits
 
         template <class TBlockState, class TBlockCache>
         static constexpr void transfer_balance_dao(
-            TBlockState &, Db &, TBlockCache const &, block_num_t const block)
+            TBlockState &, Db &, TBlockCache const &, block_num_t const)
         {
-            MONAD_DEBUG_ASSERT(block > dao_fork::last_block_number);
         }
     };
 

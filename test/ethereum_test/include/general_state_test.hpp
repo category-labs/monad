@@ -14,20 +14,6 @@
 
 MONAD_TEST_NAMESPACE_BEGIN
 
-inline std::unordered_map<std::string, evmc_revision> const revision_map = {
-    {"Frontier", EVMC_FRONTIER},
-    {"Homestead", EVMC_HOMESTEAD},
-    // DAO not covered by Ethereum Tests
-    {"EIP150", EVMC_TANGERINE_WHISTLE},
-    {"EIP158", EVMC_SPURIOUS_DRAGON},
-    {"Byzantium", EVMC_BYZANTIUM},
-    {"ConstantinopleFix", EVMC_PETERSBURG},
-    {"Istanbul", EVMC_ISTANBUL},
-    {"Berlin", EVMC_BERLIN},
-    {"London", EVMC_LONDON},
-    {"Merge", EVMC_PARIS},
-    {"Shanghai", EVMC_SHANGHAI}};
-
 class GeneralStateTest : public testing::Test
 {
 private:

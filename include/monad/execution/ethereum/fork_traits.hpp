@@ -5,6 +5,7 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/int.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/transaction.hpp>
 
@@ -45,6 +46,10 @@ namespace fork_traits
         Block const &b, uint256_t const &reward, uint256_t const &ommer_reward,
         uint256_t const &gas_award)
     {
+        MONAD_DEBUG_ASSERT(
+            reward + intx::umul(ommer_reward, uint256_t{b.ommers.size()}) +
+                gas_award <=
+            std::numeric_limits<uint256_t>::max());
         return reward + ommer_reward * b.ommers.size() + gas_award;
     }
 

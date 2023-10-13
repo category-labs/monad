@@ -131,6 +131,7 @@ public:
                     if (current_block_number % checkpoint_frequency == 0) {
                         db.create_and_prune_block_history(current_block_number);
                     }
+                    block_db.store_current_block_hash(current_block_number);
                 }
             }
             default:

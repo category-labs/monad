@@ -389,10 +389,11 @@ struct State
     // EVMC Host Interface
     [[nodiscard]] bytes32_t get_block_hash(int64_t const number) const noexcept
     {
-        LOG_TRACE_L1("get_block_hash: {}", number);
-
         MONAD_DEBUG_ASSERT(number >= 0);
-        return block_cache_.get_block_hash(static_cast<uint64_t>(number));
+        bytes32_t const res =
+            block_cache_.get_block_hash(static_cast<uint64_t>(number));
+        LOG_TRACE_L1("get_block_hash: {} = {}", number, res);
+        return res;
     }
 
     void store_log(Receipt::Log &&l) { logs_.emplace_back(l); }

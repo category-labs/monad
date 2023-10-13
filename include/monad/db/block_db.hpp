@@ -29,14 +29,13 @@ public:
     static constexpr auto null{
         0x0000000000000000000000000000000000000000000000000000000000000000_bytes32};
 
-    [[nodiscard]] Status get(block_num_t const block_num, Block &block);
+    [[nodiscard]] Status get(block_num_t, Block &);
     // Support BLOCKHASH opcode, See YP Sec. 12.2
-    [[nodiscard]] bytes32_t get_block_hash(block_num_t n);
+    [[nodiscard]] bytes32_t get_block_hash(block_num_t);
 
-    void
-    store_current_block_hash(byte_string_view const v, block_num_t n) noexcept;
-    [[nodiscard]] Status get_past_into_block_cache(block_num_t const num);
-    [[nodiscard]] bool should_be_in_cache(block_num_t n) const noexcept;
+    void store_current_block_hash(block_num_t) noexcept;
+    [[nodiscard]] Status get_past_into_block_cache(block_num_t);
+    [[nodiscard]] bool should_be_in_cache(block_num_t) const noexcept;
 
     [[nodiscard]] bool is_next_block(block_num_t n) const noexcept
     {
@@ -63,6 +62,7 @@ private:
     FileDb db_;
     std::array<bytes32_t, number_of_hashes> recent_hashes_{};
     std::optional<block_num_t> current_block_{};
+    byte_string current_block_decoded_;
 };
 
 MONAD_DB_NAMESPACE_END

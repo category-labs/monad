@@ -102,6 +102,7 @@ TEST(BlockDb, get_hash_under_256)
     BlockDb db(test_resource::correct_block_data_dir);
     auto res = db.get(0u, b);
     EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+    db.store_current_block_hash(0u);
     EXPECT_EQ(db.earliest_block_in_cache(), 0);
 
     auto const hash = db.get_block_hash(0u);
@@ -115,6 +116,7 @@ TEST(BlockDb, get_hash_over_256)
     auto res = db.get(14'000'000u, b);
 
     EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+    db.store_current_block_hash(14'000'000u);
 
     auto const hash = db.get_block_hash(14'000'000u);
     EXPECT_EQ(hash, fourteen_million_hash);
@@ -132,6 +134,11 @@ TEST(BlockDb, get_then_get_hash_previous_block)
     EXPECT_EQ(hash, zero_hash);
     hash = db.get_block_hash(1u);
     EXPECT_EQ(hash, one_hash);
+
+    // We should only store current hash after processing all txns of the
+    // current block
+    db.store_current_block_hash(2u);
+
     hash = db.get_block_hash(2u);
     EXPECT_EQ(hash, two_hash);
 }
@@ -151,4 +158,25 @@ TEST(BlockDb, get_then_get_then_get_hash_over_256)
     EXPECT_EQ(hash1, two_mil_0_hash);
     auto const hash2 = db.get_block_hash(2'729'745u);
     EXPECT_EQ(hash2, BlockDb::null);
+}
+
+TEST(BlockDb, get_hash_exactly_256_away)
+{
+    Block b1{};
+    Block b2{};
+    BlockDb db(test_resource::correct_block_data_dir);
+
+    auto const res1 = db.get(256u, b1);
+    EXPECT_EQ(res1, BlockDb::Status::SUCCESS);
+
+    auto const hash1 = db.get_block_hash(0u);
+    EXPECT_EQ(hash1, zero_hash);
+
+    db.store_current_block_hash(256u);
+
+    auto const res2 = db.get(257u, b2);
+    EXPECT_EQ(res2, BlockDb::Status::SUCCESS);
+
+    auto const hash2 = db.get_block_hash(0u);
+    EXPECT_EQ(hash2, bytes32_t{});
 }

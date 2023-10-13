@@ -30,15 +30,19 @@ BlockDb::Status BlockDb::get(block_num_t const num, Block &block)
     if (brotli_result != BROTLI_DECODER_RESULT_SUCCESS) {
         return Status::DECOMPRESS_ERROR;
     }
-    byte_string_view view2{brotli_buffer, brotli_size};
+    current_block_decoded_.assign(brotli_buffer, brotli_size);
 
-    auto const decoding_result = rlp::decode_block(block, view2);
+    auto const decoding_result =
+        rlp::decode_block(block, current_block_decoded_);
     if (decoding_result.size() != 0) {
         return Status::DECODE_ERROR;
     }
 
     if (should_be_in_cache(num)) {
-        store_current_block_hash(view2, num);
+        current_block_ =
+            current_block_
+                ? (num > current_block_.value()) ? num : current_block_.value()
+                : num;
     }
 
     return Status::SUCCESS;
@@ -93,17 +97,12 @@ bool BlockDb::should_be_in_cache(block_num_t n) const noexcept
            ((earliest_block_in_cache() <= n) && (n <= current_block_.value()));
 }
 
-void BlockDb::store_current_block_hash(
-    byte_string_view const v, block_num_t n) noexcept
+void BlockDb::store_current_block_hash(block_num_t n) noexcept
 {
-    auto const h = rlp::get_rlp_header_from_block(v);
+    auto const h = rlp::get_rlp_header_from_block(current_block_decoded_);
 
     recent_hashes_[write_index(n)] =
         std::bit_cast<bytes32_t>(ethash::keccak256(h.data(), h.size()));
-    current_block_ =
-        current_block_
-            ? (n > current_block_.value()) ? n : current_block_.value()
-            : n;
 }
 
 [[nodiscard]] bytes32_t BlockDb::get_block_hash(block_num_t number)

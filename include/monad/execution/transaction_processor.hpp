@@ -8,6 +8,7 @@
 #include <monad/core/transaction.hpp>
 
 #include <monad/execution/config.hpp>
+#include <monad/execution/validation.hpp>
 
 #include <monad/rlp/encode_helpers.hpp>
 
@@ -16,23 +17,6 @@
 #include <algorithm>
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
-
-enum class TransactionStatus
-{
-    SUCCESS,
-    INSUFFICIENT_BALANCE,
-    INTRINSIC_GAS_GREATER_THAN_LIMIT,
-    BAD_NONCE,
-    SENDER_NOT_EOA,
-    TYPE_NOT_SUPPORTED,
-    MAX_FEE_LESS_THAN_BASE,
-    PRIORITY_FEE_GREATER_THAN_MAX,
-    NONCE_EXCEEDS_MAX,
-    INIT_CODE_LIMIT_EXCEEDED,
-    GAS_LIMIT_REACHED,
-    WRONG_CHAIN_ID,
-    MISSING_SENDER,
-};
 
 template <class TState, class TTraits>
 struct TransactionProcessor
@@ -125,78 +109,6 @@ struct TransactionProcessor
             .gas_used = gas_used,
             .type = txn.type,
             .logs = std::move(state.logs())};
-    }
-
-    TransactionStatus validate(TState &state, Transaction const &txn)
-    {
-        // This is only verfiable after recover_sender, so it belongs to
-        // validate
-        if (MONAD_UNLIKELY(!txn.from.has_value())) {
-            return TransactionStatus::MISSING_SENDER;
-        }
-
-        // σ[S(T)]c = KEC(()), EIP-3607
-        if (MONAD_UNLIKELY(state.get_code_hash(*txn.from) != NULL_HASH)) {
-            return TransactionStatus::SENDER_NOT_EOA;
-        }
-
-        // Tn = σ[S(T)]n
-        if (MONAD_UNLIKELY(state.get_nonce(txn.from.value()) != txn.nonce)) {
-            return TransactionStatus::BAD_NONCE;
-        }
-
-        // v0 <= σ[S(T)]b
-        else if (MONAD_UNLIKELY(
-                     intx::be::load<uint256_t>(state.get_balance(*txn.from)) <
-                     (txn.value +
-                      intx::umul(
-                          uint256_t(txn.gas_limit), txn.max_fee_per_gas)))) {
-            return TransactionStatus::INSUFFICIENT_BALANCE;
-        }
-        // Note: Tg <= B_Hl - l(B_R)u can only be checked before retirement
-
-        return TransactionStatus::SUCCESS;
-    }
-
-    TransactionStatus static_validate(
-        Transaction const &txn,
-        std::optional<uint256_t> const &base_fee_per_gas)
-    {
-        if (MONAD_UNLIKELY(!TTraits::chain_id_valid(txn))) {
-            return TransactionStatus::WRONG_CHAIN_ID;
-        }
-
-        if (MONAD_UNLIKELY(!TTraits::transaction_type_valid(txn.type))) {
-            return TransactionStatus::TYPE_NOT_SUPPORTED;
-        }
-
-        if (MONAD_UNLIKELY(
-                base_fee_per_gas.has_value() &&
-                txn.max_fee_per_gas < base_fee_per_gas.value())) {
-            return TransactionStatus::MAX_FEE_LESS_THAN_BASE;
-        }
-
-        if (MONAD_UNLIKELY(
-                txn.max_priority_fee_per_gas > txn.max_fee_per_gas)) {
-            return TransactionStatus::PRIORITY_FEE_GREATER_THAN_MAX;
-        }
-
-        if (MONAD_UNLIKELY(!TTraits::init_code_valid(txn))) {
-            return TransactionStatus::INIT_CODE_LIMIT_EXCEEDED;
-        }
-
-        // Yellow paper, Eq. 62
-        // g0 <= Tg
-        if (MONAD_UNLIKELY(TTraits::intrinsic_gas(txn) > txn.gas_limit)) {
-            return TransactionStatus::INTRINSIC_GAS_GREATER_THAN_LIMIT;
-        }
-
-        // eip-2681
-        if (MONAD_UNLIKELY(txn.nonce >= std::numeric_limits<uint64_t>::max())) {
-            return TransactionStatus::NONCE_EXCEEDS_MAX;
-        }
-
-        return TransactionStatus::SUCCESS;
     }
 };
 

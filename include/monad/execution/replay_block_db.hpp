@@ -4,6 +4,7 @@
 
 #include <monad/db/block_db.hpp>
 
+#include <monad/execution/block_processor.hpp>
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/ethereum/genesis.hpp>
@@ -41,7 +42,8 @@ public:
         DECODE_BLOCK_ERROR,
         WRONG_STATE_ROOT,
         WRONG_TRANSACTIONS_ROOT,
-        WRONG_RECEIPTS_ROOT
+        WRONG_RECEIPTS_ROOT,
+        BLOCK_VALIDATION_FAILED,
     };
 
     struct Result
@@ -97,8 +99,7 @@ public:
 
             switch (block_read_status) {
             case BlockDb::Status::NO_BLOCK_FOUND:
-                return Result{
-                    Status::SUCCESS_END_OF_DB, current_block_number - 1u};
+                return Result{Status::SUCCESS_END_OF_DB, current_block_number};
             case BlockDb::Status::DECOMPRESS_ERROR:
                 return Result{
                     Status::DECOMPRESS_BLOCK_ERROR, current_block_number};
@@ -109,9 +110,13 @@ public:
                 block_hash_buffer.set(
                     current_block_number - 1, block.header.parent_hash);
 
-                TTraits::validate_block(block);
-
                 TBlockProcessor block_processor{};
+                if (auto const status = static_validate_block<TTraits>(block);
+                    status != ValidationStatus::SUCCESS) {
+                    return Result{
+                        Status::BLOCK_VALIDATION_FAILED, current_block_number};
+                }
+
                 auto const receipts = block_processor.template execute<
                     TMutex,
                     TTraits,
@@ -128,7 +133,7 @@ public:
                         db.state_root(),
                         current_block_number)) {
                     return Result{
-                        Status::WRONG_STATE_ROOT, current_block_number - 1u};
+                        Status::WRONG_STATE_ROOT, current_block_number};
                 }
                 else {
                     if (current_block_number % checkpoint_frequency == 0) {

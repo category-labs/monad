@@ -9,6 +9,7 @@
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
+#include <monad/execution/validation_status.hpp>
 
 #include <monad/logging/formatter.hpp>
 
@@ -18,6 +19,7 @@
 
 #include <boost/fiber/all.hpp>
 #include <quill/Quill.h>
+#include <tl/expected.hpp>
 
 #include <chrono>
 #include <vector>
@@ -27,7 +29,7 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 struct AllTxnBlockProcessor
 {
     template <class TMutex, class TTraits, class TxnProcData>
-    [[nodiscard]] std::vector<Receipt>
+    [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus>
     execute(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
     {
         auto const start_time = std::chrono::steady_clock::now();
@@ -54,7 +56,12 @@ struct AllTxnBlockProcessor
                 block.header,
                 block_hash_buffer,
                 i};
-            txn_executor.validate_and_execute();
+
+            if (auto const txn_status =
+                    txn_executor.template validate_and_execute<TTraits>();
+                txn_status != ValidationStatus::SUCCESS) {
+                return tl::unexpected(txn_status);
+            }
             auto &[receipt, state] = txn_executor.result_;
 
             LOG_DEBUG("State Deltas: {}", state.state_);

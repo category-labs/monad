@@ -36,7 +36,7 @@ struct Expectation
 {
     Indices indices;
     bytes32_t state_hash;
-    execution::TransactionStatus exception;
+    execution::ValidationStatus exception;
 };
 
 MONAD_TEST_NAMESPACE_END

@@ -1,15 +1,24 @@
 #include <blockchain_test.hpp>
 #include <ethereum_test.hpp>
 #include <from_json.hpp>
+
 #include <monad/core/assert.h>
+#include <monad/core/block.hpp>
+
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_processor.hpp>
 #include <monad/execution/transaction_processor_data.hpp>
+#include <monad/execution/validation.hpp>
+
 #include <monad/logging/formatter.hpp>
+
 #include <monad/rlp/decode_helpers.hpp>
+
 #include <monad/state2/state.hpp>
+
 #include <monad/test/config.hpp>
 #include <monad/test/dump_state_from_db.hpp>
+
 #include <test_resource_data.h>
 
 #include <ethash/keccak.hpp>
@@ -25,11 +34,20 @@ MONAD_TEST_NAMESPACE_BEGIN
 namespace
 {
     template <typename TTraits>
-    [[nodiscard]] std::vector<Receipt> execute(
+    [[nodiscard]] tl::expected<
+        std::vector<Receipt>, execution::ValidationStatus>
+    execute(
         Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
     {
         using namespace monad::test;
         execution::AllTxnBlockProcessor processor;
+
+        if (auto const status =
+                execution::static_validate_block<TTraits>(block);
+            status != execution::ValidationStatus::SUCCESS) {
+            return tl::unexpected(status);
+        }
+
         return processor.execute<
             mutex_t,
             TTraits,
@@ -39,7 +57,9 @@ namespace
                 host_t<TTraits>>>(block, db, block_hash_buffer);
     }
 
-    [[nodiscard]] std::vector<Receipt> execute(
+    [[nodiscard]] tl::expected<
+        std::vector<Receipt>, execution::ValidationStatus>
+    execute(
         evmc_revision const rev, Block &block, test::db_t &db,
         BlockHashBuffer const &block_hash_buffer)
     {
@@ -169,9 +189,16 @@ void BlockchainTest::TestBody()
             MONAD_ASSERT(block.header.number);
             block_hash_buffer.set(
                 block.header.number - 1, block.header.parent_hash);
-            auto const receipts = execute(rev, block, db, block_hash_buffer);
-            EXPECT_EQ(db.state_root(), block.header.state_root) << name;
-            EXPECT_EQ(receipts.size(), block.transactions.size()) << name;
+
+            auto const result = execute(rev, block, db, block_hash_buffer);
+            if (result) {
+                EXPECT_FALSE(j_block.contains("expectException"));
+                EXPECT_EQ(db.state_root(), block.header.state_root) << name;
+                EXPECT_EQ(result->size(), block.transactions.size()) << name;
+            }
+            else {
+                EXPECT_TRUE(j_block.contains("expectException"));
+            }
         }
 
         bool const has_post_state = j_contents.contains("postState");

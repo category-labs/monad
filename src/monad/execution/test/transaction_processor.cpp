@@ -63,11 +63,11 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 
     processor_t p{};
 
-    auto status = p.static_validate(t, 10u);
-    if (status == TransactionStatus::SUCCESS) {
-        status = p.validate(s, t);
+    auto status = static_validate_txn<traits_t>(t, 10u);
+    if (status == ValidationStatus::SUCCESS) {
+        status = validate_txn(s, t);
     }
-    EXPECT_EQ(status, TransactionStatus::SUCCESS);
+    EXPECT_EQ(status, ValidationStatus::SUCCESS);
     auto result = p.execute(s, h, t, 10u, bene);
     EXPECT_EQ(result.status, 1u);
     EXPECT_EQ(

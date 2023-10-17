@@ -182,8 +182,6 @@ namespace fork_traits
         {
         }
 
-        static constexpr void validate_block(Block const &) {}
-
         template <typename TState>
         static constexpr void warm_coinbase(TState &, address_t const &)
         {
@@ -206,24 +204,6 @@ namespace fork_traits
         populate_chain_id(evmc_tx_context &context) noexcept
         {
             intx::be::store(context.chain_id.bytes, uint256_t{1});
-        }
-
-        [[nodiscard]] static constexpr bool
-        transaction_type_valid(TransactionType const type)
-        {
-            return type == TransactionType::eip155;
-        }
-
-        [[nodiscard]] static constexpr bool
-        init_code_valid(Transaction const &) noexcept
-        {
-            return true;
-        }
-
-        [[nodiscard]] static constexpr bool
-        chain_id_valid(Transaction const &txn)
-        {
-            return !txn.sc.chain_id.has_value();
         }
     };
 
@@ -392,12 +372,6 @@ namespace fork_traits
         {
             return !state.account_is_dead(address);
         }
-
-        [[nodiscard]] static constexpr bool
-        chain_id_valid(Transaction const &txn)
-        {
-            return !txn.sc.chain_id.has_value() || txn.sc.chain_id.value() == 1;
-        }
     };
 
     struct byzantium : public spurious_dragon
@@ -499,13 +473,6 @@ namespace fork_traits
             return g_txcreate(txn) + 21'000u + g_data(txn) +
                    g_access_and_storage(txn);
         }
-
-        [[nodiscard]] static constexpr bool
-        transaction_type_valid(TransactionType const type)
-        {
-            return type == TransactionType::eip155 ||
-                   type == TransactionType::eip2930;
-        }
     };
 
     struct london : public berlin
@@ -567,14 +534,6 @@ namespace fork_traits
         {
             return gas_used * priority_fee_per_gas(txn, base_fee_per_gas);
         }
-
-        [[nodiscard]] static constexpr bool
-        transaction_type_valid(TransactionType const type)
-        {
-            return type == TransactionType::eip155 ||
-                   type == TransactionType::eip2930 ||
-                   type == TransactionType::eip1559;
-        }
     };
 
     struct paris : public london
@@ -593,17 +552,6 @@ namespace fork_traits
         {
             apply_block_award_impl(
                 block_state, db, block, block_reward, additional_ommer_reward);
-        }
-
-        static constexpr void validate_block(Block const &block)
-        {
-            MONAD_DEBUG_ASSERT(block.header.ommers_hash == NULL_LIST_HASH);
-            MONAD_DEBUG_ASSERT(block.header.difficulty == 0u);
-            byte_string_fixed<8> empty{
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-            MONAD_DEBUG_ASSERT(block.header.nonce == empty);
-            MONAD_DEBUG_ASSERT(block.ommers.size() == 0u);
-            MONAD_DEBUG_ASSERT(block.header.extra_data.length() <= 32u);
         }
     };
 
@@ -656,17 +604,6 @@ namespace fork_traits
                             uint256_t{1'000'000'000u});
                 }
             }
-        }
-
-        // EIP-3860
-        [[nodiscard]] static constexpr bool
-        init_code_valid(Transaction const &txn) noexcept
-        {
-            if (!txn.to.has_value()) {
-                return txn.data.size() <= max_init_code_size;
-            }
-            // this is not contract creation
-            return true;
         }
     };
 }

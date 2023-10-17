@@ -43,7 +43,7 @@ namespace
     }
 
     template <typename TTraits>
-    [[nodiscard]] tl::expected<Receipt, execution::TransactionStatus> execute(
+    [[nodiscard]] tl::expected<Receipt, execution::ValidationStatus> execute(
         BlockHeader const &block_header, test::state_t &state,
         Transaction const &txn)
     {
@@ -56,14 +56,14 @@ namespace
         host_t<TTraits> host{block_hash_buffer, block_header, txn, state};
         transaction_processor_t<TTraits> processor;
 
-        if (auto const status =
-                processor.static_validate(txn, host.header_.base_fee_per_gas);
-            status != execution::TransactionStatus::SUCCESS) {
+        if (auto const status = execution::static_validate_txn<TTraits>(
+                txn, host.header_.base_fee_per_gas);
+            status != execution::ValidationStatus::SUCCESS) {
             return tl::unexpected{status};
         }
 
-        if (auto const status = processor.validate(state, txn);
-            status != execution::TransactionStatus::SUCCESS) {
+        if (auto const status = execution::validate_txn(state, txn);
+            status != execution::ValidationStatus::SUCCESS) {
             return tl::unexpected{status};
         }
 
@@ -71,7 +71,7 @@ namespace
         // this case) must be no greater than the blocks gas limit
         if (host.header_.gas_limit < txn.gas_limit) {
             return tl::unexpected{
-                execution::TransactionStatus::GAS_LIMIT_REACHED};
+                execution::ValidationStatus::GAS_LIMIT_REACHED};
         }
 
         return processor.execute(
@@ -82,7 +82,7 @@ namespace
             host.header_.beneficiary);
     }
 
-    [[nodiscard]] tl::expected<Receipt, execution::TransactionStatus> execute(
+    [[nodiscard]] tl::expected<Receipt, execution::ValidationStatus> execute(
         evmc_revision const rev, BlockHeader const &block_header,
         test::state_t &state, Transaction const &txn)
     {
@@ -237,7 +237,7 @@ void GeneralStateTest::TestBody()
 
             EXPECT_EQ(db.state_root(), expected.state_hash) << msg;
             EXPECT_EQ(
-                result.has_value() ? execution::TransactionStatus::SUCCESS
+                result.has_value() ? execution::ValidationStatus::SUCCESS
                                    : result.error(),
                 expected.exception)
                 << msg;

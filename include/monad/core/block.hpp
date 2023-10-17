@@ -39,6 +39,8 @@ struct BlockHeader
 
     std::optional<uint256_t> base_fee_per_gas{std::nullopt}; // EIP-1559
     std::optional<bytes32_t> withdrawals_root{std::nullopt}; // EIP-4895
+
+    friend bool operator==(BlockHeader const &, BlockHeader const &) = default;
 };
 
 struct Block

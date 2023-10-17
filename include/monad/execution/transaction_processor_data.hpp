@@ -9,6 +9,7 @@
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/config.hpp>
 #include <monad/execution/transaction_processor.hpp>
+#include <monad/execution/validation_status.hpp>
 
 #include <monad/state2/state.hpp>
 
@@ -50,16 +51,13 @@ struct TransactionProcessorFiberData
     {
     }
 
-    static constexpr bool is_valid(TransactionStatus status) noexcept
+    template <class TTraits>
+    ValidationStatus validate_and_execute()
     {
-        if (status == TransactionStatus::SUCCESS) {
-            return true;
-        }
-        return false;
-    }
+        MONAD_DEBUG_ASSERT(
+            static_validate_txn<TTraits>(txn_, header_.base_fee_per_gas) ==
+            ValidationStatus::SUCCESS);
 
-    void validate_and_execute()
-    {
         auto &state = result_.second;
         TTxnProcessor processor{};
 
@@ -70,16 +68,12 @@ struct TransactionProcessorFiberData
             txn_.from,
             txn_.to);
 
-        auto validity = processor.static_validate(
-            txn_, header_.base_fee_per_gas.value_or(0));
-        if (validity == TransactionStatus::SUCCESS) {
-            validity = processor.validate(state, txn_);
-        }
-        if (!is_valid(validity)) {
+        if (auto const validity = validate_txn(state, txn_);
+            validity != ValidationStatus::SUCCESS) {
             LOG_INFO(
                 "Transaction {} invalid: {}", id_, static_cast<int>(validity));
             // TODO: Issue #164, Issue #54
-            return;
+            return validity;
         }
 
         TEvmHost host{block_hash_buffer_, header_, txn_, state};
@@ -98,6 +92,8 @@ struct TransactionProcessorFiberData
             "Finish executing Transaction {}, time elapsed = {}",
             id_,
             elapsed_ms);
+
+        return ValidationStatus::SUCCESS;
     }
 };
 

@@ -1,11 +1,16 @@
 #pragma once
 
 #include <general_state_test_types.hpp>
+
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
+#include <monad/core/transaction.hpp>
+
 #include <monad/execution/transaction_processor.hpp>
+#include <monad/execution/validation.hpp>
+
 #include <monad/logging/formatter.hpp>
 
 #include <boost/core/demangle.hpp>
@@ -293,40 +298,39 @@ namespace nlohmann
     };
 
     template <>
-    struct adl_serializer<monad::execution::TransactionStatus>
+    struct adl_serializer<monad::execution::ValidationStatus>
     {
         static void from_json(
-            nlohmann::json const &j,
-            monad::execution::TransactionStatus &status)
+            nlohmann::json const &j, monad::execution::ValidationStatus &status)
         {
             using namespace monad::execution;
             auto const str = j.get<std::string>();
             if (str == "TR_InitCodeLimitExceeded") {
-                status = TransactionStatus::INIT_CODE_LIMIT_EXCEEDED;
+                status = ValidationStatus::INIT_CODE_LIMIT_EXCEEDED;
             }
             else if (str == "TR_NonceHasMaxValue") {
-                status = TransactionStatus::NONCE_EXCEEDS_MAX;
+                status = ValidationStatus::NONCE_EXCEEDS_MAX;
             }
             else if (str == "TR_IntrinsicGas") {
-                status = TransactionStatus::INTRINSIC_GAS_GREATER_THAN_LIMIT;
+                status = ValidationStatus::INTRINSIC_GAS_GREATER_THAN_LIMIT;
             }
             else if (str == "TR_FeeCapLessThanBlocks") {
-                status = TransactionStatus::MAX_FEE_LESS_THAN_BASE;
+                status = ValidationStatus::MAX_FEE_LESS_THAN_BASE;
             }
             else if (str == "TR_GasLimitReached") {
-                status = TransactionStatus::GAS_LIMIT_REACHED;
+                status = ValidationStatus::GAS_LIMIT_REACHED;
             }
             else if (str == "TR_NoFunds") {
-                status = TransactionStatus::INSUFFICIENT_BALANCE;
+                status = ValidationStatus::INSUFFICIENT_BALANCE;
             }
             else if (str == "TR_TipGtFeeCap") {
-                status = TransactionStatus::PRIORITY_FEE_GREATER_THAN_MAX;
+                status = ValidationStatus::PRIORITY_FEE_GREATER_THAN_MAX;
             }
             else if (str == "TR_TypeNotSupported") {
-                status = TransactionStatus::TYPE_NOT_SUPPORTED;
+                status = ValidationStatus::TYPE_NOT_SUPPORTED;
             }
             else if (str == "SenderNotEOA") {
-                status = TransactionStatus::SENDER_NOT_EOA;
+                status = ValidationStatus::SENDER_NOT_EOA;
             }
             else {
                 // unhandled exception type
@@ -345,8 +349,8 @@ namespace nlohmann
             o.state_hash = j.at("hash").get<monad::bytes32_t>();
             o.exception = j.contains("expectException")
                               ? j.at("expectException")
-                                    .get<monad::execution::TransactionStatus>()
-                              : monad::execution::TransactionStatus::SUCCESS;
+                                    .get<monad::execution::ValidationStatus>()
+                              : monad::execution::ValidationStatus::SUCCESS;
         }
     };
 }

@@ -134,6 +134,21 @@ namespace dao
         0x7602b46df5390e432ef1c307d4f2c9ff6d65cc97_address,
         0xbb9bc244d798123fde783fcc1c72d3bb8c189413_address,
         0x807640a13483f8ac783c557fcdf27be11ea4ac7a_address};
+
+    constexpr auto extra_data = byte_string{
+        0x64,
+        0x61,
+        0x6f,
+        0x2d,
+        0x68,
+        0x61,
+        0x72,
+        0x64,
+        0x2d,
+        0x66,
+        0x6f,
+        0x72,
+        0x6b};
 }
 
 MONAD_EXECUTION_NAMESPACE_END

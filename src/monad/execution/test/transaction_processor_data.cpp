@@ -47,7 +47,8 @@ struct fakeTP
         return r_;
     }
 
-    TransactionStatus static_validate(Transaction const &, uint256_t const &)
+    TransactionStatus
+    static_validate_txn(Transaction const &, uint256_t const &)
     {
         return fake_status;
     }

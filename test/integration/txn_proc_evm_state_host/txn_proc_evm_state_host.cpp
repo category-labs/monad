@@ -1,3 +1,5 @@
+#include <monad/core/transaction.hpp>
+
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/block_hash_buffer.hpp>
@@ -19,6 +21,7 @@
 #include <unordered_map>
 
 using namespace monad;
+using namespace monad::execution;
 
 static constexpr auto from = 0x5353535353535353535353535353535353535353_address;
 static constexpr auto to = 0xbebebebebebebebebebebebebebebebebebebebe_address;
@@ -59,18 +62,17 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     Block const b{.header = bh, .transactions = {t}, .ommers = {ommer}};
 
     using state_t = decltype(s);
-    using fork_t = monad::fork_traits::byzantium;
-    using tp_t = execution::TransactionProcessor<state_t, fork_t>;
+    using traits_t = monad::fork_traits::byzantium;
+    using tp_t = execution::TransactionProcessor<state_t, traits_t>;
 
     tp_t tp{};
     BlockHashBuffer block_hash_buffer;
-    evm_host_t<state_t, fork_t> h{block_hash_buffer, bh, t, s};
+    evm_host_t<state_t, traits_t> h{block_hash_buffer, bh, t, s};
 
     EXPECT_EQ(
-        tp.static_validate(t, std::nullopt),
-        execution::TransactionStatus::SUCCESS);
-
-    EXPECT_EQ(tp.validate(s, t), execution::TransactionStatus::SUCCESS);
+        static_validate_txn<traits_t>(t, std::nullopt),
+        ValidationStatus::SUCCESS);
+    EXPECT_EQ(validate_txn(s, t), ValidationStatus::SUCCESS);
 
     auto r = tp.execute(s, h, t, 0, bh.beneficiary);
     EXPECT_EQ(r.status, Receipt::Status::SUCCESS);
@@ -79,13 +81,13 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     EXPECT_EQ(s.get_balance(from), bytes32_t{8'790'000});
     EXPECT_EQ(s.get_balance(to), bytes32_t{1'000'000});
 
-    auto const reward = fork_t::calculate_txn_award(t, 0, r.gas_used);
+    auto const reward = traits_t::calculate_txn_award(t, 0, r.gas_used);
     s.add_to_balance(bh.beneficiary, reward);
 
     EXPECT_TRUE(can_merge(bs.state, s.state_));
     merge(bs.state, s.state_);
 
-    fork_t::apply_block_award(bs, db, b);
+    traits_t::apply_block_award(bs, db, b);
 
     state::State s2{bs, db};
     EXPECT_EQ(s2.get_balance(a), bytes32_t{3'093'750'000'000'420'000});
@@ -131,18 +133,18 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     Block const b{.header = bh, .transactions = {t}};
 
     using state_t = decltype(s);
-    using fork_t = monad::fork_traits::frontier;
-    using tp_t = execution::TransactionProcessor<state_t, fork_t>;
+    using traits_t = monad::fork_traits::frontier;
+    using tp_t = execution::TransactionProcessor<state_t, traits_t>;
 
     tp_t tp{};
     BlockHashBuffer block_hash_buffer;
-    evm_host_t<state_t, fork_t> h{block_hash_buffer, bh, t, s};
+    evm_host_t<state_t, traits_t> h{block_hash_buffer, bh, t, s};
 
     EXPECT_EQ(
-        tp.static_validate(t, std::nullopt),
-        execution::TransactionStatus::SUCCESS);
+        static_validate_txn<traits_t>(t, std::nullopt),
+        ValidationStatus::SUCCESS);
 
-    EXPECT_EQ(tp.validate(s, t), execution::TransactionStatus::SUCCESS);
+    EXPECT_EQ(validate_txn(s, t), ValidationStatus::SUCCESS);
 
     auto r = tp.execute(s, h, t, 0, bh.beneficiary);
     EXPECT_EQ(r.status, Receipt::Status::FAILED);
@@ -151,13 +153,13 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     EXPECT_EQ(s.get_balance(creator), bytes32_t{8'760'000'000'000'000'000});
     EXPECT_EQ(s.get_balance(created), bytes32_t{0});
 
-    auto const reward = fork_t::calculate_txn_award(t, 0, r.gas_used);
+    auto const reward = traits_t::calculate_txn_award(t, 0, r.gas_used);
     s.add_to_balance(b.header.beneficiary, reward);
 
     EXPECT_TRUE(can_merge(bs.state, s.state_));
     merge(bs.state, s.state_);
 
-    fork_t::apply_block_award(bs, db, b);
+    traits_t::apply_block_award(bs, db, b);
 
     state::State s2{bs, db};
     EXPECT_EQ(s2.get_balance(a), bytes32_t{5'480'000'000'000'000'000});
@@ -198,17 +200,17 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     Block const b{.header = bh, .transactions = {t}};
 
     using state_t = decltype(s);
-    using fork_t = monad::fork_traits::frontier;
-    using tp_t = execution::TransactionProcessor<state_t, fork_t>;
+    using traits_t = monad::fork_traits::frontier;
+    using tp_t = execution::TransactionProcessor<state_t, traits_t>;
 
     tp_t tp{};
     BlockHashBuffer block_hash_buffer;
-    evm_host_t<state_t, fork_t> h{block_hash_buffer, bh, t, s};
+    evm_host_t<state_t, traits_t> h{block_hash_buffer, bh, t, s};
 
     EXPECT_EQ(
-        tp.static_validate(t, std::nullopt),
-        execution::TransactionStatus::SUCCESS);
-    EXPECT_EQ(tp.validate(s, t), execution::TransactionStatus::SUCCESS);
+        static_validate_txn<traits_t>(t, std::nullopt),
+        ValidationStatus::SUCCESS);
+    EXPECT_EQ(validate_txn(s, t), ValidationStatus::SUCCESS);
 
     auto r = tp.execute(s, h, t, 0, bh.beneficiary);
     EXPECT_EQ(r.status, Receipt::Status::FAILED);
@@ -218,13 +220,13 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     EXPECT_EQ(s.get_nonce(creator), 3);
     EXPECT_FALSE(s.account_exists(created));
 
-    auto const reward = fork_t::calculate_txn_award(t, 0, r.gas_used);
+    auto const reward = traits_t::calculate_txn_award(t, 0, r.gas_used);
     s.add_to_balance(bh.beneficiary, reward);
 
     EXPECT_TRUE(can_merge(bs.state, s.state_));
     merge(bs.state, s.state_);
 
-    fork_t::apply_block_award(bs, db, b);
+    traits_t::apply_block_award(bs, db, b);
 
     state::State s2{bs, db};
     EXPECT_EQ(s2.get_balance(a), bytes32_t{5'010'428'473'773'980'000});

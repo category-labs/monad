@@ -9,6 +9,7 @@
 #include <monad/rlp/decode_helpers.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/test/config.hpp>
+#include <monad/test/dump_state_from_db.hpp>
 #include <test_resource_data.h>
 
 #include <evmc/evmc.hpp>
@@ -116,10 +117,12 @@ void BlockchainTest::TestBody()
             EXPECT_EQ(db.state_root(), block.header.state_root) << name;
             EXPECT_EQ(receipts.size(), block.transactions.size()) << name;
         }
+        LOG_DEBUG("post_state: {}", test::dump_state_from_db(db).dump());
     }
 
     if (!executed) {
-        GTEST_SKIP() << "no test cases found";
+        MONAD_ASSERT(revision_.has_value());
+        GTEST_SKIP() << "no test cases found revision=" << revision_.value();
     }
 }
 

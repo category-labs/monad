@@ -9,24 +9,20 @@
 #include <monad/trie/compact_encode.hpp>
 #include <monad/trie/node.hpp>
 
-#include <numeric>
 #include <string>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
 byte_string encode_access_list(Transaction::AccessList const &list)
 {
-    byte_string result{};
-    for (auto const &i : list) {
-        result += encode_list(
-            encode_address(i.a) + encode_list(std::accumulate(
-                                      std::cbegin(i.keys),
-                                      std::cend(i.keys),
-                                      result,
-                                      [](auto const i, auto const j) {
-                                          return std::move(i) +
-                                                 encode_bytes32(j);
-                                      })));
+    byte_string result;
+    byte_string temp;
+    for (auto const &[addr, keys] : list) {
+        temp.clear();
+        for (auto const &key : keys) {
+            temp += encode_bytes32(key);
+        }
+        result += encode_list(encode_address(addr) + encode_list(temp));
     };
 
     return encode_list(result);

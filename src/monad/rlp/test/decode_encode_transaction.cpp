@@ -4,7 +4,7 @@
 #include <monad/rlp/decode_helpers.hpp>
 #include <monad/rlp/encode_helpers.hpp>
 
-#include <monad/rlp/test/util.hpp>
+#include <gtest/gtest.h>
 
 using namespace monad;
 using namespace monad::rlp;

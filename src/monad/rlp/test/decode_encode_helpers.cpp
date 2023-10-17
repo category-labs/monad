@@ -1,12 +1,12 @@
 #include <monad/rlp/decode_helpers.hpp>
 #include <monad/rlp/encode_helpers.hpp>
-#include <monad/rlp/test/util.hpp>
 
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/transaction.hpp>
 
+#include <gtest/gtest.h>
 #include <intx/intx.hpp>
 
 using namespace monad;

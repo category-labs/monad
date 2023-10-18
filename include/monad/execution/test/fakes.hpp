@@ -26,32 +26,6 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 
 namespace fake
 {
-    class BlockDb
-    {
-    public:
-        enum class Status
-        {
-            SUCCESS,
-            NO_BLOCK_FOUND,
-            DECOMPRESS_ERROR,
-            DECODE_ERROR
-        };
-
-        block_num_t _last_block_number{};
-
-        Status get(block_num_t const block_number, Block &) const
-        {
-            if (block_number <= _last_block_number) {
-                return Status::SUCCESS;
-            }
-            else {
-                return Status::NO_BLOCK_FOUND;
-            }
-        }
-
-        [[nodiscard]] bytes32_t get_block_hash(block_num_t) { return {}; }
-    };
-
     struct Db
     {
         void create(address_t const &, Account const &) const noexcept

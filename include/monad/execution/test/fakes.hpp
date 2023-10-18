@@ -26,15 +26,6 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 
 namespace fake
 {
-    struct Db
-    {
-        void create(address_t const &, Account const &) const noexcept
-        {
-            return;
-        }
-        bytes32_t state_root() const noexcept { return {}; }
-    };
-
     template <class TState, class TTraits>
     struct EvmHost
     {

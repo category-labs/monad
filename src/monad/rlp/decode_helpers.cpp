@@ -27,9 +27,8 @@ byte_string_view decode_access_entry_keys(
 {
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
-    const byte_string_loc key_size =
-        33; // 1 byte for header, 32 bytes for byte32_t
-    const byte_string_loc list_space = payload.size();
+    constexpr size_t key_size = 33; // 1 byte for header, 32 bytes for byte32_t
+    auto const list_space = payload.size();
     MONAD_ASSERT(keys.size() == 0);
     keys.reserve(list_space / key_size);
 
@@ -61,10 +60,10 @@ decode_access_list(Transaction::AccessList &al, byte_string_view const enc)
 {
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
-    const byte_string_loc approx_num_keys = 10;
+    constexpr size_t approx_num_keys = 10;
     // 20 bytes for address, 33 bytes per key
-    const byte_string_loc access_entry_size_approx = 20 + 33 * approx_num_keys;
-    const byte_string_loc list_space = payload.size();
+    constexpr size_t access_entry_size_approx = 20 + 33 * approx_num_keys;
+    auto const list_space = payload.size();
     MONAD_ASSERT(al.size() == 0);
     al.reserve(list_space / access_entry_size_approx);
 
@@ -88,9 +87,9 @@ decode_topics(std::vector<bytes32_t> &topics, byte_string_view enc)
 {
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
-    const byte_string_loc topic_size =
+    constexpr size_t topic_size =
         33; // 1 byte for header, 32 bytes for byte32_t
-    const byte_string_loc list_space = payload.size();
+    auto const list_space = payload.size();
     MONAD_ASSERT(topics.size() == 0);
     topics.reserve(list_space / topic_size);
 
@@ -122,12 +121,12 @@ decode_logs(std::vector<Receipt::Log> &logs, byte_string_view const enc)
 {
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
-    const byte_string_loc approx_data_size = 32;
-    const byte_string_loc approx_num_topics = 10;
+    constexpr size_t approx_data_size = 32;
+    constexpr size_t approx_num_topics = 10;
     // 20 bytes for address, 33 bytes per topic
-    const byte_string_loc log_size_approx =
+    constexpr auto log_size_approx =
         20 + approx_data_size + 33 * approx_num_topics;
-    const byte_string_loc list_space = payload.size();
+    auto const list_space = payload.size();
     MONAD_ASSERT(logs.size() == 0);
     logs.resize(list_space / log_size_approx);
 
@@ -397,7 +396,7 @@ byte_string_view decode_transaction_vector(
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
     // glee: based on etherscan.io... eventually in CONFIG file
-    const byte_string_loc approx_num_transactions = 300;
+    constexpr size_t approx_num_transactions = 300;
     MONAD_ASSERT(txns.size() == 0);
     txns.reserve(approx_num_transactions);
 

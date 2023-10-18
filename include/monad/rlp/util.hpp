@@ -10,7 +10,7 @@ MONAD_NAMESPACE_BEGIN
 template <unsigned_integral T>
 inline constexpr T decode_raw_num(byte_string_view const enc)
 {
-    MONAD_ASSERT(enc.size() < max_byte_string_loc);
+    MONAD_ASSERT(enc.size() <= sizeof(T));
     T result{};
     std::memcpy(
         &intx::as_bytes(result)[sizeof(T) - enc.size()],
@@ -20,36 +20,35 @@ inline constexpr T decode_raw_num(byte_string_view const enc)
     return result;
 }
 
-inline constexpr byte_string_loc decode_length(byte_string_view const enc)
+inline constexpr size_t decode_length(byte_string_view const enc)
 {
-    return decode_raw_num<byte_string_loc>(enc);
+    return decode_raw_num<size_t>(enc);
 }
 
 inline constexpr byte_string_view
 parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
 {
-    MONAD_ASSERT(enc.size() < max_byte_string_loc);
-    byte_string_loc i = 0;
-    byte_string_loc end{};
+    size_t i = 0;
+    size_t end = 0;
 
-    uint8_t const &first = enc[i];
-    MONAD_ASSERT(first < 0xc0);
-    if (first < 0x80) // [0x00, 0x7f]
+    MONAD_ASSERT(!enc.empty());
+    MONAD_ASSERT(enc[0] < 0xc0);
+    if (enc[0] < 0x80) // [0x00, 0x7f]
     {
         end = i + 1;
     }
-    else if (first < 0xb8) // [0x80, 0xb7]
+    else if (enc[0] < 0xb8) // [0x80, 0xb7]
     {
         ++i;
-        const uint8_t length = first - 0x80;
+        const uint8_t length = enc[0] - 0x80;
         end = i + length;
     }
     else // [0xb8, 0xbf]
     {
         ++i;
-        uint8_t length_of_length = first - 0xb7;
+        uint8_t length_of_length = enc[0] - 0xb7;
         MONAD_ASSERT(i + length_of_length < enc.size());
-        byte_string_loc length = decode_length(enc.substr(i, length_of_length));
+        auto const length = decode_length(enc.substr(i, length_of_length));
         i += length_of_length;
         end = i + length;
     }
@@ -61,24 +60,22 @@ parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
 inline constexpr byte_string_view
 parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
 {
-    MONAD_ASSERT(0 < enc.size() && enc.size() < max_byte_string_loc);
-
-    byte_string_loc i = 0;
-    byte_string_loc length{};
-    uint8_t const &first = enc[i];
+    size_t i = 0;
+    size_t length;
     ++i;
-    MONAD_ASSERT(first >= 0xc0);
-    if (first < 0xf8) {
-        length = first - 0xc0;
+    MONAD_ASSERT(!enc.empty());
+    MONAD_ASSERT(enc[0] >= 0xc0);
+    if (enc[0] < 0xf8) {
+        length = enc[0] - 0xc0;
     }
     else {
-        byte_string_loc length_of_length = first - 0xf7;
+        size_t const length_of_length = enc[0] - 0xf7;
         MONAD_ASSERT(i + length_of_length < enc.size());
 
         length = decode_length(enc.substr(i, length_of_length));
         i += length_of_length;
     }
-    const byte_string_loc end = i + length;
+    auto const end = i + length;
     MONAD_ASSERT(end <= enc.size());
 
     payload = enc.substr(i, end - i);

@@ -148,6 +148,7 @@ add_library(
   "include/monad/logging/formatter.hpp"
   # rlp
   "include/monad/rlp/decode.hpp"
+  "include/monad/rlp/decode_error.hpp"
   "include/monad/rlp/decode_helpers.hpp"
   "include/monad/rlp/encode.hpp"
   "include/monad/rlp/encode_helpers.hpp"

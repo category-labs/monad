@@ -45,7 +45,9 @@ TEST(Rlp_Transaction, DecodeEncodeLegacy)
     auto const legacy_rlp_transaction = encode_transaction(t);
 
     monad::Transaction decoding{};
-    EXPECT_EQ(decode_transaction(decoding, legacy_rlp_transaction).size(), 0);
+    auto const res = decode_transaction(decoding, legacy_rlp_transaction);
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(res.assume_value().size(), 0);
 
     // Encode
     EXPECT_EQ(legacy_rlp_transaction, legacy_transaction);
@@ -81,7 +83,9 @@ TEST(Rlp_Transaction, DecodeEncodeLegacyNoTo)
     auto const legacy_rlp_transaction = encode_transaction(t);
 
     monad::Transaction decoding{};
-    EXPECT_EQ(decode_transaction(decoding, legacy_rlp_transaction).size(), 0);
+    auto const res = decode_transaction(decoding, legacy_rlp_transaction);
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(res.assume_value().size(), 0);
 
     EXPECT_EQ(decoding.nonce, t.nonce);
     EXPECT_EQ(decoding.max_fee_per_gas, t.max_fee_per_gas);
@@ -126,7 +130,9 @@ TEST(Rlp_Transaction, EncodeEip155)
         0x64, 0x21, 0x4b, 0x29, 0x7f, 0xb1, 0x96, 0x6a, 0x3b, 0x6d, 0x83};
     auto const eip155_rlp_transaction = encode_transaction(t);
     monad::Transaction decoding{};
-    EXPECT_EQ(decode_transaction(decoding, eip155_rlp_transaction).size(), 0);
+    auto const res = decode_transaction(decoding, eip155_rlp_transaction);
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(res.assume_value().size(), 0);
 
     EXPECT_EQ(eip155_rlp_transaction, eip155_transaction);
     EXPECT_EQ(decoding.nonce, t.nonce);
@@ -195,7 +201,9 @@ TEST(Rlp_Transaction, EncodeEip2930)
         0x7f, 0xb1, 0x96, 0x6a, 0x3b, 0x6d, 0x83};
     auto const eip2930_rlp_transaction = monad::rlp::encode_transaction(t);
     monad::Transaction decoding{};
-    EXPECT_EQ(decode_transaction(decoding, eip2930_rlp_transaction).size(), 0);
+    auto const res = decode_transaction(decoding, eip2930_rlp_transaction);
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(res.assume_value().size(), 0);
 
     EXPECT_EQ(eip2930_rlp_transaction, eip2930_transaction);
 
@@ -263,7 +271,9 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
         0x7f, 0xb1, 0x96, 0x6a, 0x3b, 0x6d, 0x83};
     auto const eip1559_rlp_transaction = monad::rlp::encode_transaction(t);
     monad::Transaction decoding{};
-    EXPECT_EQ(decode_transaction(decoding, eip1559_rlp_transaction).size(), 0);
+    auto const res = decode_transaction(decoding, eip1559_rlp_transaction);
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(res.assume_value().size(), 0);
 
     EXPECT_EQ(eip1559_rlp_transaction, eip1559_transaction);
 
@@ -331,7 +341,9 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
         0x7f, 0xb1, 0x96, 0x6a, 0x3b, 0x6d, 0x83};
     auto const eip1559_rlp_transaction = monad::rlp::encode_transaction(t);
     monad::Transaction decoding{};
-    EXPECT_EQ(decode_transaction(decoding, eip1559_rlp_transaction).size(), 0);
+    auto const res = decode_transaction(decoding, eip1559_rlp_transaction);
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(res.assume_value().size(), 0);
 
     EXPECT_EQ(eip1559_rlp_transaction, eip1559_transaction);
 

@@ -28,10 +28,11 @@ TEST(Rlp_Withdrawal, encode_decode_withdrawal)
     EXPECT_EQ(encoded_withdrawal, rlp_withdrawal);
 
     Withdrawal decoded_withdrawal{};
-    auto const remaining =
+    auto const result =
         decode_withdrawal(decoded_withdrawal, encoded_withdrawal);
 
-    EXPECT_EQ(remaining.size(), 0);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.assume_value().size(), 0);
     EXPECT_EQ(decoded_withdrawal.index, original_withdrawal.index);
     EXPECT_EQ(
         decoded_withdrawal.validator_index,

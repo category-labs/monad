@@ -29,10 +29,10 @@ TEST(Rlp_Account, Encode)
     auto const encoded_account = encode_account(a, storage_root);
     Account decoded_account{};
     bytes32_t decoded_storage_root{};
-    EXPECT_EQ(
-        decode_account(decoded_account, decoded_storage_root, encoded_account)
-            .size(),
-        0);
+    auto const res =
+        decode_account(decoded_account, decoded_storage_root, encoded_account);
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(res.assume_value().size(), 0);
 
     EXPECT_EQ(encoded_account, rlp_account);
 

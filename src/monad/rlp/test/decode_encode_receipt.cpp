@@ -44,7 +44,9 @@ TEST(Rlp_Receipt, DecodeEncodeLog)
             0x46, 0x22, 0x83, 0x84, 0x00, 0x01, 0x02, 0x03};
         auto encoded = encode_log(log);
         Receipt::Log decoded{};
-        EXPECT_EQ(decode_log(decoded, encoded).size(), 0);
+        auto const res = decode_log(decoded, encoded);
+        ASSERT_TRUE(res.has_value());
+        EXPECT_EQ(res.assume_value().size(), 0);
 
         EXPECT_EQ(encoded, rlp_log);
 
@@ -91,7 +93,9 @@ TEST(Rlp_Receipt, DecodeEncodeBloom)
 
     auto const encoded = encode_bloom(bloom);
     Receipt::Bloom decoded{};
-    EXPECT_EQ(decode_bloom(decoded, encoded).size(), 0);
+    auto const res = decode_bloom(decoded, encoded);
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(res.assume_value().size(), 0);
 
     EXPECT_EQ(encoded, rlp_bloom);
     EXPECT_EQ(decoded, bloom);
@@ -157,7 +161,9 @@ TEST(Rlp_Receipt, DecodeEncodeEip155Receipt)
         0x02, 0x03}; // logs
     auto const encoded = encode_receipt(r);
     Receipt decoded{};
-    EXPECT_EQ(decode_receipt(decoded, encoded).size(), 0);
+    auto const res = decode_receipt(decoded, encoded);
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(res.assume_value().size(), 0);
 
     EXPECT_EQ(encoded, rlp_receipt);
 
@@ -240,7 +246,9 @@ TEST(Rlp_Receipt, EncodeEip1559Receipt)
         0x02, 0x03}; // logs
     auto const encoded = encode_receipt(r);
     Receipt decoded{};
-    EXPECT_EQ(decode_receipt(decoded, encoded).size(), 0);
+    auto const res = decode_receipt(decoded, encoded);
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(res.assume_value().size(), 0);
 
     EXPECT_EQ(encoded, rlp_receipt);
 
@@ -323,7 +331,9 @@ TEST(Rlp_Receipt, EncodeEip2930Receipt)
         0x02, 0x03}; // logs
     auto const encoded = encode_receipt(r);
     Receipt decoded{};
-    EXPECT_EQ(decode_receipt(decoded, encoded).size(), 0);
+    auto const res = decode_receipt(decoded, encoded);
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(res.assume_value().size(), 0);
 
     EXPECT_EQ(encoded, rlp_receipt);
 

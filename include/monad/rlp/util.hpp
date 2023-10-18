@@ -4,6 +4,10 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/int.hpp>
+#include <monad/rlp/decode_error.hpp>
+
+#include <boost/outcome/success_failure.hpp>
+#include <boost/outcome/try.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -25,7 +29,7 @@ inline constexpr size_t decode_length(byte_string_view const enc)
     return decode_raw_num<size_t>(enc);
 }
 
-inline constexpr byte_string_view
+inline constexpr rlp::DecodeResult
 parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
 {
     size_t i = 0;
@@ -54,10 +58,10 @@ parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
     }
     MONAD_ASSERT(end <= enc.size());
     payload = enc.substr(i, end - i);
-    return enc.substr(end);
+    return outcome::success(enc.substr(end));
 }
 
-inline constexpr byte_string_view
+inline constexpr rlp::DecodeResult
 parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
 {
     size_t i = 0;
@@ -79,15 +83,16 @@ parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
     MONAD_ASSERT(end <= enc.size());
 
     payload = enc.substr(i, end - i);
-    return enc.substr(end, enc.size() - end);
+    return outcome::success(enc.substr(end, enc.size() - end));
 }
 
 template <size_t size>
-inline constexpr byte_string_view
+inline constexpr rlp::DecodeResult
 decode_byte_array(uint8_t bytes[size], byte_string_view const enc)
 {
     byte_string_view payload{};
-    auto const rest_of_enc = parse_string_metadata(payload, enc);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_string_metadata(payload, enc));
     MONAD_ASSERT(payload.size() == size);
     std::memcpy(bytes, payload.data(), size);
     return rest_of_enc;

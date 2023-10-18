@@ -718,7 +718,8 @@ TEST(Rlp_Block, DecodeShanghai)
     auto const remaining = rlp::decode_block(decoded_block, encoded_block);
 
     // Header
-    EXPECT_EQ(remaining.size(), 0);
+    ASSERT_TRUE(remaining.has_value());
+    EXPECT_EQ(remaining.assume_value().size(), 0);
     EXPECT_EQ(
         decoded_block.header.parent_hash,
         0x151934ad9b654c50197f37018ee5ee9bb922dec0a1b5e24a6d679cb111cdb107_bytes32);

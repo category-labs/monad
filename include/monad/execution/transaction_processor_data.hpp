@@ -6,6 +6,7 @@
 
 #include <monad/db/db.hpp>
 
+#include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/config.hpp>
 #include <monad/execution/transaction_processor.hpp>
 
@@ -17,34 +18,34 @@
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
-template <class TMutex, class TTxnProcessor, class TEvmHost, class TBlockCache>
+template <class TMutex, class TTxnProcessor, class TEvmHost>
 struct TransactionProcessorFiberData
 {
-    using state_t = state::State<TMutex, TBlockCache>;
-    using result_t = std::pair<Receipt, state::State<TMutex, TBlockCache>>;
+    using state_t = state::State<TMutex>;
+    using result_t = std::pair<Receipt, state_t>;
 
     Db &db_;
     BlockState<TMutex> &bs_;
     Transaction const &txn_;
     BlockHeader const &bh_;
-    TBlockCache &block_cache_;
+    BlockHashBuffer const &block_hash_buffer_;
     unsigned id_;
     result_t result_;
 
     TransactionProcessorFiberData(
         Db &db, BlockState<TMutex> &bs, Transaction &t, BlockHeader const &bh,
-        TBlockCache &block_cache, unsigned int id)
+        BlockHashBuffer const &block_hash_buffer, unsigned int id)
         : db_{db}
         , bs_{bs}
         , txn_{t}
         , bh_{bh}
-        , block_cache_{block_cache}
+        , block_hash_buffer_{block_hash_buffer}
         , id_{id}
         , result_{
               Receipt{
                   .status = Receipt::Status::FAILED,
                   .gas_used = txn_.gas_limit},
-              state::State{bs_, db_, block_cache_}}
+              state::State{bs_, db_}}
     {
     }
 
@@ -80,7 +81,7 @@ struct TransactionProcessorFiberData
             return;
         }
 
-        TEvmHost host{bh_, txn_, state};
+        TEvmHost host{block_hash_buffer_, bh_, txn_, state};
         result_.first = p.execute(
             state,
             host,

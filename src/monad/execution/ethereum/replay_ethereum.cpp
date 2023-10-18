@@ -79,10 +79,9 @@ int main(int argc, char *argv[])
     auto const start_time = std::chrono::steady_clock::now();
 
     using db_t = monad::db::RocksTrieDB;
-    using block_db_t = monad::db::BlockDb;
     using mutex_t = std::shared_mutex;
 
-    block_db_t block_db(block_db_path);
+    monad::BlockDb block_db(block_db_path);
     db_t db{
         monad::db::Writable{}, state_db_path, std::nullopt, block_history_size};
 
@@ -106,12 +105,9 @@ int main(int argc, char *argv[])
         start_block_number = 1u;
     }
 
-    monad::execution::ReplayFromBlockDb<
-        db_t,
-        mutex_t,
-        block_db_t,
-        monad::execution::AllTxnBlockProcessor>
-        replay_eth;
+    monad::execution::
+        ReplayFromBlockDb<db_t, mutex_t, monad::execution::AllTxnBlockProcessor>
+            replay_eth;
 
     [[maybe_unused]] auto result = replay_eth.run<
         monad::eth_start_fork,

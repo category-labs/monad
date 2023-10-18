@@ -5,6 +5,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/transaction.hpp>
 
+#include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/config.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/precompiles.hpp>
@@ -22,6 +23,7 @@ struct EvmcHost : public evmc::Host
 {
     using evm_t = Evm<TState, TTraits>;
 
+    BlockHashBuffer const &block_hash_buffer_;
     BlockHeader const &block_header_;
     Transaction const &transaction_;
     TState &state_;
@@ -29,14 +31,18 @@ struct EvmcHost : public evmc::Host
     using uint256be = evmc::uint256be;
 
     EvmcHost(EvmcHost const &e, TState &s)
-        : block_header_{e.block_header_}
+        : block_hash_buffer_{e.block_hash_buffer_}
+        , block_header_{e.block_header_}
         , transaction_{e.transaction_}
         , state_{s}
     {
     }
 
-    EvmcHost(BlockHeader const &b, Transaction const &t, TState &s) noexcept
-        : block_header_{b}
+    EvmcHost(
+        BlockHashBuffer const &block_hash_buffer, BlockHeader const &b,
+        Transaction const &t, TState &s) noexcept
+        : block_hash_buffer_{block_hash_buffer}
+        , block_header_{b}
         , transaction_{t}
         , state_{s}
     {
@@ -179,10 +185,11 @@ struct EvmcHost : public evmc::Host
         return result;
     }
 
-    virtual bytes32_t get_block_hash(
-        [[maybe_unused]] int64_t block_number) const noexcept override
+    virtual bytes32_t
+    get_block_hash(int64_t const block_number) const noexcept override
     {
-        return state_.get_block_hash(block_number);
+        MONAD_DEBUG_ASSERT(block_number >= 0);
+        return block_hash_buffer_.get(static_cast<uint64_t>(block_number));
     };
 
     virtual void emit_log(

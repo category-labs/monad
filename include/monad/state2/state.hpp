@@ -23,12 +23,11 @@
 MONAD_STATE_NAMESPACE_BEGIN
 
 // EVMC state object
-template <class Mutex, class TBlockCache>
+template <class Mutex>
 struct State
 {
     BlockState<Mutex> &bs_;
     Db &db_;
-    TBlockCache &block_cache_;
     StateDeltas state_;
     Code code_;
     ankerl::unordered_dense::set<address_t> touched_;
@@ -40,10 +39,9 @@ struct State
     uint256_t gas_award_;
     std::vector<Receipt::Log> logs_;
 
-    explicit State(BlockState<Mutex> &bs, Db &db, TBlockCache &cache)
+    explicit State(BlockState<Mutex> &bs, Db &db)
         : bs_{bs}
         , db_{db}
-        , block_cache_{cache}
         , state_{}
         , code_{}
         , touched_{}
@@ -384,16 +382,6 @@ struct State
                 read_code<Mutex>(account->code_hash, code_, bs_, db_) = code;
             }
         }
-    }
-
-    // EVMC Host Interface
-    [[nodiscard]] bytes32_t get_block_hash(int64_t const number) const noexcept
-    {
-        MONAD_DEBUG_ASSERT(number >= 0);
-        bytes32_t const res =
-            block_cache_.get_block_hash(static_cast<uint64_t>(number));
-        LOG_TRACE_L1("get_block_hash: {} = {}", number, res);
-        return res;
     }
 
     void store_log(Receipt::Log &&l) { logs_.emplace_back(l); }

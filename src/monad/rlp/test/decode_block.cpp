@@ -10,7 +10,6 @@
 #include <test_resource_data.h>
 
 using namespace monad;
-using namespace db;
 using namespace intx;
 
 TEST(Rlp_Block, DecodeBlock46402)

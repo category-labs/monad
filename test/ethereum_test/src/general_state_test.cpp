@@ -1,6 +1,7 @@
 #include <from_json.hpp>
 #include <general_state_test.hpp>
 #include <general_state_test_types.hpp>
+#include <monad/execution/block_hash_buffer.hpp>
 #include <monad/logging/formatter.hpp>
 #include <monad/test/config.hpp>
 #include <monad/test/dump_state_from_db.hpp>
@@ -48,7 +49,11 @@ namespace
     {
         using namespace monad::test;
 
-        host_t<TTraits> host{block_header, txn, state};
+        BlockHashBuffer block_hash_buffer;
+        MONAD_ASSERT(block_header.number);
+        block_hash_buffer.set(
+            block_header.number - 1, block_header.parent_hash);
+        host_t<TTraits> host{block_hash_buffer, block_header, txn, state};
         transaction_processor_t<TTraits> processor;
 
         if (auto const status = processor.static_validate(
@@ -164,8 +169,7 @@ void GeneralStateTest::TestBody()
     auto const [init_state, init_code] = [&] {
         BlockState<mutex_t> bs;
         db_t db;
-        execution::fake::BlockDb fake_block_db;
-        state::State state{bs, db, fake_block_db};
+        state::State state{bs, db};
         load_state_from_json(test.at("pre"), state);
         return std::make_pair(state.state_, state.code_);
     }();
@@ -237,8 +241,7 @@ void GeneralStateTest::TestBody()
             db_t db;
             db.commit(init_state, init_code);
             BlockState<mutex_t> bs;
-            execution::fake::BlockDb fake_block_db;
-            state::State state{bs, db, fake_block_db};
+            state::State state{bs, db};
             auto const result = execute(rev, block_header, state, transaction);
             // Note: no merge because only single transaction in the block
             db.commit(state.state_, state.code_);

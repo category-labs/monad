@@ -15,7 +15,7 @@ MONAD_TEST_NAMESPACE_BEGIN
 using mutex_t = std::shared_mutex;
 
 using db_t = monad::db::InMemoryTrieDB;
-using state_t = monad::state::State<mutex_t, monad::execution::fake::BlockDb>;
+using state_t = monad::state::State<mutex_t>;
 
 template <typename TTraits>
 using transaction_processor_t =

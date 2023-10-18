@@ -51,11 +51,8 @@ struct StateTest : public testing::Test
 using DBTypes = ::testing::Types<db::InMemoryTrieDB, db::RocksTrieDB>;
 TYPED_TEST_SUITE(StateTest, DBTypes);
 
-using block_cache_t = execution::fake::BlockDb;
 using mutex_t = std::shared_mutex;
-using state_t = State<mutex_t, block_cache_t>;
-
-block_cache_t block_cache;
+using state_t = State<mutex_t>;
 
 TYPED_TEST(StateTest, access_account)
 {
@@ -68,7 +65,7 @@ TYPED_TEST(StateTest, access_account)
                  .account = {std::nullopt, Account{.balance = 10'000}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
 
     EXPECT_EQ(s.access_account(a), EVMC_ACCESS_COLD);
     EXPECT_EQ(s.access_account(a), EVMC_ACCESS_WARM);
@@ -87,7 +84,7 @@ TYPED_TEST(StateTest, account_exists)
                  .account = {std::nullopt, Account{.balance = 10'000}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
 
     EXPECT_TRUE(s.account_exists(a));
     EXPECT_FALSE(s.account_exists(b));
@@ -98,7 +95,7 @@ TYPED_TEST(StateTest, create_contract)
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
 
-    State s{bs, db, block_cache};
+    State s{bs, db};
     s.create_contract(a);
     EXPECT_TRUE(s.account_exists(a));
 
@@ -119,7 +116,7 @@ TYPED_TEST(StateTest, get_balance)
                  .account = {std::nullopt, Account{.balance = 10'000}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
 
     EXPECT_EQ(s.get_balance(a), bytes32_t{10'000});
     EXPECT_EQ(s.get_balance(b), bytes32_t{0});
@@ -135,7 +132,7 @@ TYPED_TEST(StateTest, add_to_balance)
             {a, StateDelta{.account = {std::nullopt, Account{.balance = 1}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     s.add_to_balance(a, 10'000);
     s.add_to_balance(b, 20'000);
 
@@ -152,7 +149,7 @@ TYPED_TEST(StateTest, get_nonce)
             {a, StateDelta{.account = {std::nullopt, Account{.nonce = 2}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
 
     EXPECT_EQ(s.get_nonce(a), 2);
     EXPECT_EQ(s.get_nonce(b), 0);
@@ -164,7 +161,7 @@ TYPED_TEST(StateTest, set_nonce)
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     s.set_nonce(b, 1);
 
     EXPECT_EQ(s.get_nonce(b), 1);
@@ -181,7 +178,7 @@ TYPED_TEST(StateTest, get_code_hash)
                  .account = {std::nullopt, Account{.code_hash = hash1}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
 
     EXPECT_EQ(s.get_code_hash(a), hash1);
     EXPECT_EQ(s.get_code_hash(b), NULL_HASH);
@@ -193,7 +190,7 @@ TYPED_TEST(StateTest, set_code_hash)
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     s.create_contract(b);
     s.set_code_hash(b, hash1);
 
@@ -213,7 +210,7 @@ TYPED_TEST(StateTest, selfdestruct)
                  .account = {std::nullopt, Account{.balance = 38'000}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     s.create_contract(b);
     s.add_to_balance(b, 28'000);
 
@@ -245,7 +242,7 @@ TYPED_TEST(StateTest, selfdestruct_self)
                  .account = {std::nullopt, Account{.balance = 18'000}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
 
     EXPECT_TRUE(s.selfdestruct(a, a));
     EXPECT_EQ(s.destructed_.size(), 1);
@@ -266,7 +263,7 @@ TYPED_TEST(StateTest, destruct_touched_dead)
             {b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     EXPECT_TRUE(s.account_exists(a));
     s.destruct_touched_dead();
     s.destruct_suicides();
@@ -308,7 +305,7 @@ TYPED_TEST(StateTest, add_txn_award)
             {b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     s.add_txn_award(150);
     s.add_txn_award(225);
     s.add_to_balance(a, 20'000 + s.gas_award());
@@ -324,7 +321,7 @@ TYPED_TEST(StateTest, access_storage)
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_COLD);
     EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_WARM);
     EXPECT_EQ(s.access_storage(b, key1), EVMC_ACCESS_COLD);
@@ -353,7 +350,7 @@ TYPED_TEST(StateTest, get_storage)
                  .storage = {{key1, {bytes32_t{}, value1}}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     EXPECT_TRUE(s.account_exists(a));
     EXPECT_TRUE(s.account_exists(b));
     EXPECT_EQ(s.get_storage(a, key1), value1);
@@ -377,7 +374,7 @@ TYPED_TEST(StateTest, set_storage_modified)
             {b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     EXPECT_TRUE(s.account_exists(a));
     EXPECT_EQ(s.set_storage(a, key2, value3), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(s.get_storage(a, key2), value3);
@@ -396,7 +393,7 @@ TYPED_TEST(StateTest, set_storage_deleted)
                  .storage = {{key1, {bytes32_t{}, value1}}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     EXPECT_TRUE(s.account_exists(b));
     EXPECT_EQ(s.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
     EXPECT_EQ(s.get_storage(b, key1), null);
@@ -414,7 +411,7 @@ TYPED_TEST(StateTest, set_storage_added)
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     EXPECT_TRUE(s.account_exists(b));
     EXPECT_EQ(s.set_storage(b, key1, value1), EVMC_STORAGE_ADDED);
     EXPECT_EQ(s.get_storage(b, key1), value1);
@@ -437,7 +434,7 @@ TYPED_TEST(StateTest, set_storage_different_assigned)
             {b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     EXPECT_TRUE(s.account_exists(a));
     EXPECT_EQ(s.set_storage(a, key2, value3), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(s.get_storage(a, key2), value3);
@@ -458,7 +455,7 @@ TYPED_TEST(StateTest, set_storage_unchanged_assigned)
             {b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     EXPECT_TRUE(s.account_exists(a));
     EXPECT_EQ(s.set_storage(a, key2, value2), EVMC_STORAGE_ASSIGNED);
     EXPECT_EQ(s.get_storage(a, key2), value2);
@@ -472,7 +469,7 @@ TYPED_TEST(StateTest, set_storage_added_deleted)
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     EXPECT_TRUE(s.account_exists(b));
     EXPECT_EQ(s.set_storage(b, key1, value1), EVMC_STORAGE_ADDED);
     EXPECT_EQ(s.get_storage(b, key1), value1);
@@ -488,7 +485,7 @@ TYPED_TEST(StateTest, set_storage_added_deleted_null)
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     EXPECT_TRUE(s.account_exists(b));
     EXPECT_EQ(s.set_storage(b, key1, null), EVMC_STORAGE_ASSIGNED);
     EXPECT_EQ(s.get_storage(b, key1), null);
@@ -508,7 +505,7 @@ TYPED_TEST(StateTest, set_storage_modify_delete)
                  .storage = {{key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     EXPECT_TRUE(s.account_exists(b));
     EXPECT_EQ(s.set_storage(b, key2, value1), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(s.get_storage(b, key2), value1);
@@ -528,7 +525,7 @@ TYPED_TEST(StateTest, set_storage_delete_restored)
                  .storage = {{key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     EXPECT_TRUE(s.account_exists(b));
     EXPECT_EQ(s.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
     EXPECT_EQ(s.get_storage(b, key2), null);
@@ -548,7 +545,7 @@ TYPED_TEST(StateTest, set_storage_modified_restored)
                  .storage = {{key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     EXPECT_TRUE(s.account_exists(b));
     EXPECT_EQ(s.set_storage(b, key2, value1), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(s.get_storage(b, key2), value1);
@@ -566,7 +563,7 @@ TYPED_TEST(StateTest, get_code_size)
         StateDeltas{{a, StateDelta{.account = {std::nullopt, acct}}}},
         Code{{code_hash1, code1}});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     EXPECT_EQ(s.get_code_size(a), code1.size());
 }
 
@@ -586,7 +583,7 @@ TYPED_TEST(StateTest, copy_code)
     static constexpr unsigned size{8};
     uint8_t buffer[size];
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
 
     { // underflow
         auto const total = s.copy_code(a, 0u, buffer, size);
@@ -635,7 +632,7 @@ TYPED_TEST(StateTest, get_code)
                  .account = {std::nullopt, Account{.code_hash = code_hash1}}}}},
         Code{{code_hash1, contract}});
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
 
     {
         s.access_account(a);
@@ -653,7 +650,7 @@ TYPED_TEST(StateTest, set_code)
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     s.create_contract(a);
     s.create_contract(b);
     s.set_code(a, code2);
@@ -684,7 +681,7 @@ TYPED_TEST(StateTest, can_merge_new_account)
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    state_t t{bs, db, block_cache};
+    state_t t{bs, db};
     {
         state_t s{t};
 
@@ -720,7 +717,7 @@ TYPED_TEST(StateTest, can_merge_update)
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    state_t t{bs, db, block_cache};
+    state_t t{bs, db};
     {
         state_t s{t};
 
@@ -763,8 +760,8 @@ TYPED_TEST(StateTest, can_merge_same_account_different_storage)
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    State as{bs, db, block_cache};
-    State cs{bs, db, block_cache};
+    State as{bs, db};
+    State cs{bs, db};
 
     EXPECT_TRUE(as.account_exists(b));
     EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
@@ -792,8 +789,8 @@ TYPED_TEST(StateTest, cant_merge_colliding_storage)
                  .storage = {{key1, {bytes32_t{}, value1}}}}}},
         Code{});
 
-    state_t as{bs, db, block_cache};
-    state_t cs{bs, db, block_cache};
+    state_t as{bs, db};
+    state_t cs{bs, db};
 
     EXPECT_TRUE(as.account_exists(b));
     EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
@@ -808,7 +805,7 @@ TYPED_TEST(StateTest, cant_merge_colliding_storage)
 
     // Need to rerun txn 1 - get new changset
     {
-        State cs{bs, db, block_cache};
+        State cs{bs, db};
         EXPECT_TRUE(cs.account_exists(b));
         EXPECT_EQ(cs.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
 
@@ -840,8 +837,8 @@ TYPED_TEST(StateTest, merge_txn0_and_txn1)
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    state_t as{bs, db, block_cache};
-    state_t cs{bs, db, block_cache};
+    state_t as{bs, db};
+    state_t cs{bs, db};
 
     EXPECT_TRUE(as.account_exists(b));
     EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
@@ -882,8 +879,8 @@ TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    state_t as{bs, db, block_cache};
-    state_t cs{bs, db, block_cache};
+    state_t as{bs, db};
+    state_t cs{bs, db};
 
     EXPECT_TRUE(as.account_exists(b));
     EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
@@ -902,7 +899,7 @@ TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
 
     EXPECT_TRUE(can_merge(bs.state, cs.state_));
 
-    state_t ds{bs, db, block_cache};
+    state_t ds{bs, db};
 
     EXPECT_TRUE(ds.account_exists(c));
     EXPECT_TRUE(ds.account_exists(b));
@@ -926,7 +923,7 @@ TYPED_TEST(TrieDBTest, commit_storage_and_account_together_regression)
 {
     auto db = test::make_db<TypeParam>();
     BlockState<mutex_t> bs;
-    state_t as{bs, db, block_cache};
+    state_t as{bs, db};
 
     as.create_contract(a);
     as.add_to_balance(a, 1);
@@ -945,7 +942,7 @@ TYPED_TEST(TrieDBTest, set_and_then_clear_storage_in_same_commit)
     using namespace intx;
     auto db = test::make_db<db::InMemoryTrieDB>();
     BlockState<mutex_t> bs;
-    state_t as{bs, db, block_cache};
+    state_t as{bs, db};
 
     as.create_contract(a);
     EXPECT_EQ(as.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
@@ -981,7 +978,7 @@ TYPED_TEST(StateTest, commit_twice)
     {
         // Block 0, Txn 0
         BlockState<mutex_t> bs;
-        state_t as{bs, db, block_cache};
+        state_t as{bs, db};
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 42'000);
         as.set_nonce(b, 3);
@@ -999,7 +996,7 @@ TYPED_TEST(StateTest, commit_twice)
     {
         // Block 1, Txn 0
         BlockState<mutex_t> bs;
-        state_t cs{bs, db, block_cache};
+        state_t cs{bs, db};
         EXPECT_TRUE(cs.account_exists(a));
         EXPECT_TRUE(cs.account_exists(c));
         EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
@@ -1022,7 +1019,7 @@ TYPED_TEST(StateTest, commit_twice_add_to_balance)
     {
         // Block 0, Txn 0
         BlockState<mutex_t> bs;
-        state_t as{bs, db, block_cache};
+        state_t as{bs, db};
         as.add_txn_award(10);
         as.add_to_balance(a, 100u + as.gas_award());
         EXPECT_TRUE(can_merge(bs.state, as.state_));
@@ -1032,7 +1029,7 @@ TYPED_TEST(StateTest, commit_twice_add_to_balance)
     {
         // Block 1, Txn 0
         BlockState<mutex_t> bs;
-        state_t cs{bs, db, block_cache};
+        state_t cs{bs, db};
         cs.add_txn_award(10);
         cs.add_to_balance(b, 300);
         cs.add_to_balance(a, 100 + cs.gas_award());
@@ -1042,7 +1039,7 @@ TYPED_TEST(StateTest, commit_twice_add_to_balance)
     }
     {
         BlockState<mutex_t> bs;
-        state_t ds{bs, db, block_cache};
+        state_t ds{bs, db};
         EXPECT_TRUE(ds.account_exists(a));
         EXPECT_TRUE(ds.account_exists(b));
         EXPECT_EQ(ds.get_balance(a), bytes32_t{220});

@@ -14,9 +14,9 @@ using namespace monad;
 TEST(Transaction, recover_sender_block_2730000)
 {
     Block block{};
-    db::BlockDb block_db(test_resource::correct_block_data_dir);
+    BlockDb block_db(test_resource::correct_block_data_dir);
     auto res = block_db.get(2'730'000u, block);
-    EXPECT_EQ(res, db::BlockDb::Status::SUCCESS);
+    EXPECT_EQ(res, BlockDb::Status::SUCCESS);
 
     EXPECT_EQ(block.transactions.size(), 4u);
 
@@ -48,9 +48,9 @@ TEST(Transaction, recover_sender_block_2730000)
 TEST(TransactionProcessor, recover_sender_block_14000000)
 {
     Block block{};
-    db::BlockDb block_db(test_resource::correct_block_data_dir);
+    BlockDb block_db(test_resource::correct_block_data_dir);
     auto res = block_db.get(14'000'000u, block);
-    EXPECT_EQ(res, db::BlockDb::Status::SUCCESS);
+    EXPECT_EQ(res, BlockDb::Status::SUCCESS);
 
     EXPECT_EQ(block.transactions.size(), 112u);
     EXPECT_EQ(

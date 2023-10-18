@@ -16,8 +16,7 @@ using namespace monad::execution;
 
 using db_t = db::InMemoryTrieDB;
 using mutex_t = std::shared_mutex;
-using block_cache_t = execution::fake::BlockDb;
-using state_t = state::State<mutex_t, block_cache_t>;
+using state_t = state::State<mutex_t>;
 
 using traits_t = fork_traits::shanghai;
 using processor_t = TransactionProcessor<state_t, traits_t>;
@@ -44,9 +43,8 @@ TEST(Execution, validate_deployed_code)
     static constexpr auto some_non_null_hash{
         0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
     db_t db;
-    block_cache_t block_cache;
     BlockState<mutex_t> bs;
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_code_hash(a, some_non_null_hash);
     s.set_nonce(a, 24);
@@ -69,9 +67,8 @@ TEST(Execution, validate_nonce)
         .value = 55'939'568'773'815'811,
         .from = a};
     db_t db;
-    block_cache_t block_cache;
     BlockState<mutex_t> bs;
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 24);
 
@@ -92,9 +89,8 @@ TEST(Execution, validate_nonce_optimistically)
         .from = a};
 
     db_t db;
-    block_cache_t block_cache;
     BlockState<mutex_t> bs;
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 24);
     auto status = p.validate(s, t);
@@ -117,9 +113,8 @@ TEST(Execution, validate_enough_balance)
     };
 
     db_t db;
-    block_cache_t block_cache;
     BlockState<mutex_t> bs;
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     s.add_to_balance(a, 55'939'568'773'815'811);
 
     auto status = p.validate(s, t);
@@ -131,9 +126,8 @@ TEST(Execution, successful_validation)
     static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
     db_t db;
-    block_cache_t block_cache;
     BlockState<mutex_t> bs;
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 25);
 
@@ -197,9 +191,8 @@ TEST(Execution, insufficent_balance_overflow)
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
 
     db_t db;
-    block_cache_t block_cache;
     BlockState<mutex_t> bs;
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     s.add_to_balance(a, std::numeric_limits<uint256_t>::max());
 
     static Transaction const t{

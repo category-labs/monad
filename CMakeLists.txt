@@ -129,6 +129,7 @@ add_library(
   "src/monad/db/rocks_db_helper.cpp"
   "src/monad/db/state_db.cpp"
   # execution
+  "include/monad/execution/block_hash_buffer.hpp"
   "include/monad/execution/config.hpp"
   "include/monad/execution/create_contract_address.hpp"
   "include/monad/execution/ethereum/fork_traits.hpp"
@@ -142,6 +143,7 @@ add_library(
   "include/monad/execution/replay_block_db.hpp"
   "include/monad/execution/transaction_processor.hpp"
   "include/monad/execution/transaction_processor_data.hpp"
+  "src/monad/execution/block_hash_buffer.cpp"
   "src/monad/execution/create_contract_address.cpp"
   # logging
   "include/monad/logging/config.hpp"

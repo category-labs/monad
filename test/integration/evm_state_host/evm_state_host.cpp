@@ -1,6 +1,6 @@
-#include <monad/db/block_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 
+#include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evm.hpp>
@@ -45,7 +45,6 @@ using mutex_t = std::shared_mutex;
 
 TEST(EvmInterpStateHost, return_existing_storage)
 {
-    db::BlockDb blocks{test_resource::correct_block_data_dir};
     account_store_db_t db{};
     BlockState<mutex_t> bs;
 
@@ -85,7 +84,7 @@ TEST(EvmInterpStateHost, return_existing_storage)
         .sender = from,
         .code_address = to};
 
-    state::State s{bs, db, blocks};
+    state::State s{bs, db};
 
     using fork_t = monad::fork_traits::byzantium;
     using state_t = decltype(s);
@@ -95,7 +94,8 @@ TEST(EvmInterpStateHost, return_existing_storage)
     s.access_account(from);
 
     evm_t<state_t, fork_t> e{};
-    evm_host_t<state_t, fork_t> h{b, t, s};
+    BlockHashBuffer block_hash_buffer;
+    evm_host_t<state_t, fork_t> h{block_hash_buffer, b, t, s};
 
     auto status = e.call_evm(&h, s, m);
 
@@ -107,7 +107,6 @@ TEST(EvmInterpStateHost, return_existing_storage)
 
 TEST(EvmInterpStateHost, store_then_return_storage)
 {
-    db::BlockDb blocks{test_resource::correct_block_data_dir};
     account_store_db_t db{};
     BlockState<mutex_t> bs;
 
@@ -149,7 +148,7 @@ TEST(EvmInterpStateHost, store_then_return_storage)
         .sender = from,
         .code_address = to};
 
-    state::State s{bs, db, blocks};
+    state::State s{bs, db};
 
     using fork_t = monad::fork_traits::byzantium;
     using state_t = decltype(s);
@@ -159,7 +158,8 @@ TEST(EvmInterpStateHost, store_then_return_storage)
     s.access_account(from);
 
     evm_t<state_t, fork_t> e{};
-    evm_host_t<state_t, fork_t> h{b, t, s};
+    BlockHashBuffer block_hash_buffer;
+    evm_host_t<state_t, fork_t> h{block_hash_buffer, b, t, s};
 
     auto status = e.call_evm(&h, s, m);
 

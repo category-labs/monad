@@ -1,15 +1,15 @@
 #pragma once
 
+#include <monad/config.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
 
-#include <monad/db/config.hpp>
 #include <monad/db/file_db.hpp>
 
 #include <array>
 #include <filesystem>
 
-MONAD_DB_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 class BlockDb
 {
@@ -65,4 +65,4 @@ private:
     byte_string current_block_decoded_;
 };
 
-MONAD_DB_NAMESPACE_END
+MONAD_NAMESPACE_END

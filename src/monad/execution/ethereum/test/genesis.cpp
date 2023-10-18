@@ -76,7 +76,7 @@ TYPED_TEST(GenesisTest, read_and_verify_genesis_block)
 {
     auto const genesis_file_path =
         test_resource::ethereum_genesis_dir / "mainnet.json";
-    db::BlockDb block_db(test_resource::correct_block_data_dir);
+    BlockDb block_db(test_resource::correct_block_data_dir);
     auto state_db = test::make_db<TypeParam>();
     read_and_verify_genesis(block_db, state_db, genesis_file_path);
 }

@@ -11,7 +11,6 @@
 
 #include <monad/execution/ethereum/dao.hpp>
 
-#include <monad/db/block_db.hpp>
 #include <monad/db/db.hpp>
 
 #include <monad/state2/state.hpp>
@@ -136,13 +135,12 @@ namespace fork_traits
             return t.max_fee_per_gas;
         }
 
-        template <class TBlockState, class TBlockCache>
+        template <class TBlockState>
         static constexpr void apply_block_award_impl(
-            TBlockState &bs, Db &db, TBlockCache const &block_cache,
-            Block const &b, uint256_t const &reward,
+            TBlockState &bs, Db &db, Block const &b, uint256_t const &reward,
             uint256_t const &ommer_reward, uint256_t const &gas_award)
         {
-            state::State s{bs, db, block_cache};
+            state::State s{bs, db};
             auto const miner_award =
                 calculate_block_award(b, reward, ommer_reward, gas_award);
 
@@ -160,19 +158,12 @@ namespace fork_traits
             merge(bs.state, s.state_);
         }
 
-        template <class TBlockState, class TBlockCache>
+        template <class TBlockState>
         static constexpr void apply_block_award(
-            TBlockState &bs, Db &db, TBlockCache const &block_cache,
-            Block const &b, uint256_t const &gas_award)
+            TBlockState &bs, Db &db, Block const &b, uint256_t const &gas_award)
         {
             apply_block_award_impl(
-                bs,
-                db,
-                block_cache,
-                b,
-                block_reward,
-                additional_ommer_reward,
-                gas_award);
+                bs, db, b, block_reward, additional_ommer_reward, gas_award);
         }
 
         static constexpr uint256_t calculate_txn_award(
@@ -182,9 +173,9 @@ namespace fork_traits
             return uint256_t{gas_used} * gas_price(t, base_fee_per_gas);
         }
 
-        template <class TBlockState, class TBlockCache>
-        static constexpr void transfer_balance_dao(
-            TBlockState &, Db &, TBlockCache const &, block_num_t const)
+        template <class TBlockState>
+        static constexpr void
+        transfer_balance_dao(TBlockState &, Db &, block_num_t)
         {
         }
 
@@ -195,10 +186,9 @@ namespace fork_traits
         {
         }
 
-        template <class TBlockState, class TBlockCache>
+        template <class TBlockState>
         static constexpr void process_withdrawal(
-            TBlockState &, Db &, TBlockCache const &,
-            std::optional<std::vector<Withdrawal>> const &)
+            TBlockState &, Db &, std::optional<std::vector<Withdrawal>> const &)
         {
         }
 
@@ -287,12 +277,11 @@ namespace fork_traits
         static constexpr auto last_block_number = 2'462'999u;
         // EVMC revision for DAO should just be EVMC_HOMESTEAD
 
-        template <class TBlockState, class TBlockCache>
+        template <class TBlockState>
         static constexpr void transfer_balance_dao(
-            TBlockState &bs, Db &db, TBlockCache const &block_cache,
-            block_num_t const block_number)
+            TBlockState &bs, Db &db, block_num_t const block_number)
         {
-            state::State s{bs, db, block_cache};
+            state::State s{bs, db};
             if (MONAD_UNLIKELY(
                     block_number == execution::dao::dao_block_number)) {
                 for (auto const &addr : execution::dao::child_accounts) {
@@ -315,9 +304,9 @@ namespace fork_traits
         static constexpr auto last_block_number = 2'674'999u;
         static constexpr evmc_revision rev = EVMC_TANGERINE_WHISTLE;
 
-        template <class TBlockState, class TBlockCache>
-        static constexpr void transfer_balance_dao(
-            TBlockState &, Db &, TBlockCache const &, block_num_t const)
+        template <class TBlockState>
+        static constexpr void
+        transfer_balance_dao(TBlockState &, Db &, block_num_t)
         {
         }
     };
@@ -354,13 +343,12 @@ namespace fork_traits
             return homestead::deploy_contract_code(s, a, std::move(result));
         }
 
-        template <class TBlockState, class TBlockCache>
+        template <class TBlockState>
         static constexpr void apply_block_award_impl(
-            TBlockState &bs, Db &db, TBlockCache const &block_cache,
-            Block const &b, uint256_t const &reward,
+            TBlockState &bs, Db &db, Block const &b, uint256_t const &reward,
             uint256_t const &ommer_reward, uint256_t const &gas_award)
         {
-            state::State s{bs, db, block_cache};
+            state::State s{bs, db};
             auto const miner_reward =
                 calculate_block_award(b, reward, ommer_reward, gas_award);
 
@@ -382,19 +370,12 @@ namespace fork_traits
             merge(bs.state, s.state_);
         }
 
-        template <class TBlockState, class TBlockCache>
+        template <class TBlockState>
         static constexpr void apply_block_award(
-            TBlockState &bs, Db &db, TBlockCache const &block_cache,
-            Block const &b, uint256_t const &gas_award)
+            TBlockState &bs, Db &db, Block const &b, uint256_t const &gas_award)
         {
             apply_block_award_impl(
-                bs,
-                db,
-                block_cache,
-                b,
-                block_reward,
-                additional_ommer_reward,
-                gas_award);
+                bs, db, b, block_reward, additional_ommer_reward, gas_award);
         }
 
         template <class TState>
@@ -424,19 +405,12 @@ namespace fork_traits
 
         static constexpr uint64_t n_precompiles = 8;
 
-        template <class TBlockState, class TBlockCache>
+        template <class TBlockState>
         static constexpr void apply_block_award(
-            TBlockState &bs, Db &db, TBlockCache const &block_cache,
-            Block const &b, uint256_t const &gas_award)
+            TBlockState &bs, Db &db, Block const &b, uint256_t const &gas_award)
         {
             apply_block_award_impl(
-                bs,
-                db,
-                block_cache,
-                b,
-                block_reward,
-                additional_ommer_reward,
-                gas_award);
+                bs, db, b, block_reward, additional_ommer_reward, gas_award);
         }
     };
 
@@ -453,19 +427,12 @@ namespace fork_traits
         static constexpr uint256_t additional_ommer_reward =
             block_reward >> 5; // YP Eqn. 172, block reward / 32
 
-        template <class TBlockState, class TBlockCache>
+        template <class TBlockState>
         static constexpr void apply_block_award(
-            TBlockState &bs, Db &db, TBlockCache const &block_cache,
-            Block const &b, uint256_t const &gas_award)
+            TBlockState &bs, Db &db, Block const &b, uint256_t const &gas_award)
         {
             apply_block_award_impl(
-                bs,
-                db,
-                block_cache,
-                b,
-                block_reward,
-                additional_ommer_reward,
-                gas_award);
+                bs, db, b, block_reward, additional_ommer_reward, gas_award);
         }
     };
 
@@ -608,19 +575,12 @@ namespace fork_traits
         static constexpr uint256_t block_reward = 0;
         static constexpr uint256_t additional_ommer_reward = 0;
 
-        template <class TBlockState, class TBlockCache>
+        template <class TBlockState>
         static constexpr void apply_block_award(
-            TBlockState &bs, Db &db, TBlockCache const &block_cache,
-            Block const &b, uint256_t const &gas_award)
+            TBlockState &bs, Db &db, Block const &b, uint256_t const &gas_award)
         {
             apply_block_award_impl(
-                bs,
-                db,
-                block_cache,
-                b,
-                block_reward,
-                additional_ommer_reward,
-                gas_award);
+                bs, db, b, block_reward, additional_ommer_reward, gas_award);
         }
 
         static constexpr void validate_block(Block const &b)
@@ -671,13 +631,13 @@ namespace fork_traits
         }
 
         // EIP-4895
-        template <class TBlockState, class TBlockCache>
+        template <class TBlockState>
         static constexpr void process_withdrawal(
-            TBlockState &bs, Db &db, TBlockCache const &block_cache,
+            TBlockState &bs, Db &db,
             std::optional<std::vector<Withdrawal>> const &withdrawals)
         {
             if (withdrawals.has_value()) {
-                state::State s{bs, db, block_cache};
+                state::State s{bs, db};
                 for (auto const &withdrawal : withdrawals.value()) {
                     s.add_to_balance(
                         withdrawal.recipient,

@@ -8,7 +8,7 @@
 
 #include <ethash/keccak.hpp>
 
-MONAD_DB_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 BlockDb::Status BlockDb::get(block_num_t const num, Block &block)
 {
@@ -118,4 +118,4 @@ void BlockDb::store_current_block_hash(block_num_t n) noexcept
     return bytes32_t{};
 }
 
-MONAD_DB_NAMESPACE_END
+MONAD_NAMESPACE_END

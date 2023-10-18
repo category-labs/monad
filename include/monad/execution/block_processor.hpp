@@ -5,6 +5,7 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 
+#include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
@@ -25,9 +26,9 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 
 struct AllTxnBlockProcessor
 {
-    template <class TMutex, class TTraits, class TxnProcData, class TBlockCache>
+    template <class TMutex, class TTraits, class TxnProcData>
     [[nodiscard]] std::vector<Receipt>
-    execute(Block &b, Db &db, TBlockCache &block_cache)
+    execute(Block &b, Db &db, BlockHashBuffer const &block_hash_buffer)
     {
         auto const start_time = std::chrono::steady_clock::now();
         LOG_INFO(
@@ -40,8 +41,7 @@ struct AllTxnBlockProcessor
         uint256_t all_txn_gas_reward = 0;
 
         // Apply DAO hack reversal
-        TTraits::transfer_balance_dao(
-            block_state, db, block_cache, b.header.number);
+        TTraits::transfer_balance_dao(block_state, db, b.header.number);
 
         std::vector<Receipt> r{};
         r.reserve(b.transactions.size());
@@ -49,7 +49,12 @@ struct AllTxnBlockProcessor
         for (unsigned i = 0; i < b.transactions.size(); ++i) {
             b.transactions[i].from = recover_sender(b.transactions[i]);
             TxnProcData txn_executor{
-                db, block_state, b.transactions[i], b.header, block_cache, i};
+                db,
+                block_state,
+                b.transactions[i],
+                b.header,
+                block_hash_buffer,
+                i};
             txn_executor.validate_and_execute();
             auto &result = txn_executor.result_;
             MONAD_DEBUG_ASSERT(
@@ -68,12 +73,10 @@ struct AllTxnBlockProcessor
         }
 
         // Process withdrawls
-        TTraits::process_withdrawal(
-            block_state, db, block_cache, b.withdrawals);
+        TTraits::process_withdrawal(block_state, db, b.withdrawals);
 
         // Apply block reward to beneficiary
-        TTraits::apply_block_award(
-            block_state, db, block_cache, b, all_txn_gas_reward);
+        TTraits::apply_block_award(block_state, db, b, all_txn_gas_reward);
 
         auto const finished_time = std::chrono::steady_clock::now();
         auto const elapsed_ms =

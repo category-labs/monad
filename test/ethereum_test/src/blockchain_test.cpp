@@ -2,6 +2,7 @@
 #include <ethereum_test.hpp>
 #include <from_json.hpp>
 #include <monad/core/assert.h>
+#include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_processor.hpp>
 #include <monad/execution/test/fakes.hpp>
 #include <monad/execution/transaction_processor_data.hpp>
@@ -25,8 +26,8 @@ MONAD_TEST_NAMESPACE_BEGIN
 namespace
 {
     template <typename TTraits>
-    [[nodiscard]] std::vector<Receipt>
-    execute(Block &block, test::db_t &db, execution::fake::BlockDb &block_cache)
+    [[nodiscard]] std::vector<Receipt> execute(
+        Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
     {
         using namespace monad::test;
         execution::AllTxnBlockProcessor processor;
@@ -36,40 +37,39 @@ namespace
             execution::TransactionProcessorFiberData<
                 mutex_t,
                 transaction_processor_t<TTraits>,
-                host_t<TTraits>,
-                execution::fake::BlockDb>>(block, db, block_cache);
+                host_t<TTraits>>>(block, db, block_hash_buffer);
     }
 
     [[nodiscard]] std::vector<Receipt> execute(
         evmc_revision const rev, Block &block, test::db_t &db,
-        execution::fake::BlockDb &block_cache)
+        BlockHashBuffer const &block_hash_buffer)
     {
         using namespace monad::fork_traits;
 
         switch (rev) {
         case EVMC_FRONTIER:
-            return execute<frontier>(block, db, block_cache);
+            return execute<frontier>(block, db, block_hash_buffer);
         case EVMC_HOMESTEAD:
-            return execute<homestead>(block, db, block_cache);
+            return execute<homestead>(block, db, block_hash_buffer);
         case EVMC_TANGERINE_WHISTLE:
-            return execute<tangerine_whistle>(block, db, block_cache);
+            return execute<tangerine_whistle>(block, db, block_hash_buffer);
         case EVMC_SPURIOUS_DRAGON:
-            return execute<spurious_dragon>(block, db, block_cache);
+            return execute<spurious_dragon>(block, db, block_hash_buffer);
         case EVMC_BYZANTIUM:
-            return execute<byzantium>(block, db, block_cache);
+            return execute<byzantium>(block, db, block_hash_buffer);
         case EVMC_PETERSBURG:
             return execute<constantinople_and_petersburg>(
-                block, db, block_cache);
+                block, db, block_hash_buffer);
         case EVMC_ISTANBUL:
-            return execute<istanbul>(block, db, block_cache);
+            return execute<istanbul>(block, db, block_hash_buffer);
         case EVMC_BERLIN:
-            return execute<berlin>(block, db, block_cache);
+            return execute<berlin>(block, db, block_hash_buffer);
         case EVMC_LONDON:
-            return execute<london>(block, db, block_cache);
+            return execute<london>(block, db, block_hash_buffer);
         case EVMC_PARIS:
-            return execute<paris>(block, db, block_cache);
+            return execute<paris>(block, db, block_hash_buffer);
         case EVMC_SHANGHAI:
-            return execute<shanghai>(block, db, block_cache);
+            return execute<shanghai>(block, db, block_hash_buffer);
         default:
             std::unreachable();
         }
@@ -156,20 +156,21 @@ void BlockchainTest::TestBody()
         db_t db;
         {
             BlockState<mutex_t> bs;
-            execution::fake::BlockDb fake_block_db;
-            state::State state{bs, db, fake_block_db};
+            state::State state{bs, db};
             load_state_from_json(j_contents.at("pre"), state);
             db.commit(state.state_, state.code_);
         }
 
-        execution::fake::BlockDb fake_block_db;
+        BlockHashBuffer block_hash_buffer;
         for (auto const &j_block : j_contents.at("blocks")) {
             Block block;
             auto const rlp = j_block.at("rlp").get<byte_string>();
             auto const rest = rlp::decode_block(block, rlp);
             EXPECT_TRUE(rest.empty()) << name;
-            auto const receipts = execute(rev, block, db, fake_block_db);
-
+            MONAD_ASSERT(block.header.number);
+            block_hash_buffer.set(
+                block.header.number - 1, block.header.parent_hash);
+            auto const receipts = execute(rev, block, db, block_hash_buffer);
             EXPECT_EQ(db.state_root(), block.header.state_root) << name;
             EXPECT_EQ(receipts.size(), block.transactions.size()) << name;
         }

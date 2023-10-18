@@ -19,9 +19,8 @@ using namespace monad::execution;
 
 using db_t = db::InMemoryTrieDB;
 using mutex_t = std::shared_mutex;
-using block_cache_t = execution::fake::BlockDb;
 
-using state_t = state::State<mutex_t, block_cache_t>;
+using state_t = state::State<mutex_t>;
 
 using traits_t = fork_traits::shanghai;
 

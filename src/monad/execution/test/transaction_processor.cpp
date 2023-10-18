@@ -15,19 +15,13 @@ using namespace monad;
 using namespace monad::execution;
 
 using mutex_t = std::shared_mutex;
-using block_cache_t = fake::BlockDb;
 
 using db_t = db::InMemoryTrieDB;
-using state_t = state::State<mutex_t, block_cache_t>;
+using state_t = state::State<mutex_t>;
 using traits_t = fork_traits::shanghai;
 using processor_t = TransactionProcessor<state_t, traits_t>;
 
 using evm_host_t = fake::EvmHost<state_t, traits_t>;
-
-namespace
-{
-    block_cache_t block_cache;
-}
 
 TEST(TransactionProcessor, g_star)
 {
@@ -52,7 +46,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 
     db_t db;
     BlockState<mutex_t> bs;
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     evm_host_t h{};
     s.add_to_balance(from, 56'000'000'000'000'000);
     s.set_nonce(from, 25);

@@ -2,7 +2,6 @@
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 
-#include <monad/db/block_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/config.hpp>
@@ -25,15 +24,13 @@ using namespace monad::execution;
 
 using db_t = db::InMemoryTrieDB;
 using mutex_t = std::shared_mutex;
-using block_cache_t = execution::fake::BlockDb;
 
-using state_t = state::State<mutex_t, block_cache_t>;
+using state_t = state::State<mutex_t>;
 
 namespace
 {
     constexpr auto individual = 100u;
     constexpr auto total = individual * 116u;
-    block_cache_t block_cache;
 }
 
 constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
@@ -60,7 +57,7 @@ TEST(fork_traits, frontier)
         Code{});
     {
         BlockState<mutex_t> bs;
-        state_t s{bs, db, block_cache};
+        state_t s{bs, db};
 
         EXPECT_EQ(f.max_refund_quotient(), 2);
 
@@ -106,15 +103,14 @@ TEST(fork_traits, frontier)
     {
         // block award
         BlockState<mutex_t> bs;
-        state_t s{bs, db, block_cache};
+        state_t s{bs, db};
         Block block{
             .header = {.number = 10, .beneficiary = a},
             .transactions = {},
             .ommers = {
                 BlockHeader{.number = 9, .beneficiary = b},
                 BlockHeader{.number = 8, .beneficiary = c}}};
-        fork_traits::frontier::apply_block_award(
-            bs, db, block_cache, block, 0u);
+        fork_traits::frontier::apply_block_award(bs, db, block, 0u);
         db.commit(s.bs_.state, s.bs_.code);
         EXPECT_EQ(
             intx::be::load<uint256_t>(s.get_balance(a)),
@@ -149,7 +145,7 @@ TEST(fork_traits, homestead)
 
     {
         // Successfully deploy code
-        state_t s{bs, db, block_cache};
+        state_t s{bs, db};
         int64_t gas = 10'000;
 
         evmc::Result r{EVMC_SUCCESS, gas, 0, output_data, sizeof(output_data)};
@@ -163,7 +159,7 @@ TEST(fork_traits, homestead)
 
     {
         // Fail to deploy code - out of gas
-        state_t s{bs, db, block_cache};
+        state_t s{bs, db};
         evmc::Result r{EVMC_SUCCESS, 700, 0, output_data, sizeof(output_data)};
         auto const r2 = homestead::deploy_contract_code(s, a, std::move(r));
         EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
@@ -178,7 +174,6 @@ static_assert(
         fork_traits::dao_fork::next_fork_t, fork_traits::tangerine_whistle>);
 TEST(fork_traits, dao)
 {
-    db::BlockDb blocks{test_resource::correct_block_data_dir};
     db_t db{};
 
     StateDeltas state_deltas{};
@@ -195,10 +190,9 @@ TEST(fork_traits, dao)
 
     BlockState<mutex_t> bs;
 
-    fork_traits::dao_fork::transfer_balance_dao(
-        bs, db, block_cache, dao::dao_block_number);
+    fork_traits::dao_fork::transfer_balance_dao(bs, db, dao::dao_block_number);
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     for (auto const &addr : dao::child_accounts) {
         EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(addr)), 0u);
     }
@@ -216,7 +210,6 @@ TEST(fork_traits, tangerine_whistle)
     EXPECT_EQ(fork_traits::tangerine_whistle::rev, EVMC_TANGERINE_WHISTLE);
 
     // Check that the tranfer does not do anything
-    db::BlockDb blocks{test_resource::correct_block_data_dir};
     db_t db{};
 
     StateDeltas state_deltas{};
@@ -233,9 +226,9 @@ TEST(fork_traits, tangerine_whistle)
     BlockState<mutex_t> bs;
 
     fork_traits::tangerine_whistle::transfer_balance_dao(
-        bs, db, block_cache, fork_traits::tangerine_whistle::last_block_number);
+        bs, db, fork_traits::tangerine_whistle::last_block_number);
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
 
     for (auto const &addr : dao::child_accounts) {
         EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(addr)), individual);
@@ -260,7 +253,7 @@ TEST(fork_traits, spurious_dragon)
         Code{});
 
     BlockState<mutex_t> bs;
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
     s.add_to_balance(a, 0);
     sd.destruct_touched_dead(s);
 
@@ -295,7 +288,7 @@ TEST(fork_traits, byzantium)
 
     db_t db;
     BlockState<mutex_t> bs;
-    state_t as{bs, db, block_cache};
+    state_t as{bs, db};
     (void)as.get_balance(a);
     byz.destruct_touched_dead(as);
 
@@ -308,8 +301,8 @@ TEST(fork_traits, byzantium)
         .ommers = {
             BlockHeader{.number = 9, .beneficiary = b},
             BlockHeader{.number = 8, .beneficiary = c}}};
-    fork_traits::byzantium::apply_block_award(bs, db, block_cache, block, 0);
-    state_t cs{bs, db, block_cache};
+    fork_traits::byzantium::apply_block_award(bs, db, block, 0);
+    state_t cs{bs, db};
     EXPECT_EQ(
         intx::be::load<uint256_t>(cs.get_balance(a)),
         3'187'500'000'000'000'000);
@@ -332,7 +325,7 @@ TEST(fork_traits, constantinople_and_petersburg)
     // block award
     db_t db;
     BlockState<mutex_t> bs;
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
 
     Block block{
         .header = {.number = 10, .beneficiary = a},
@@ -341,7 +334,7 @@ TEST(fork_traits, constantinople_and_petersburg)
             BlockHeader{.number = 9, .beneficiary = b},
             BlockHeader{.number = 8, .beneficiary = c}}};
     fork_traits::constantinople_and_petersburg::apply_block_award(
-        bs, db, block_cache, block, 0);
+        bs, db, block, 0);
 
     EXPECT_EQ(
         intx::be::load<uint256_t>(s.get_balance(a)), 2'125'000'000'000'000'000);
@@ -396,7 +389,7 @@ TEST(fork_traits, london)
     fork_traits::london l{};
     db_t db;
     BlockState<mutex_t> bs;
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
 
     EXPECT_EQ(l.max_refund_quotient(), 5);
 
@@ -453,7 +446,6 @@ TEST(fork_traits, paris_apply_block_reward)
 {
     Block block{};
     block.header.beneficiary = a;
-    db::BlockDb blocks{test_resource::correct_block_data_dir};
     db_t db{};
     db.commit(
         StateDeltas{
@@ -463,18 +455,18 @@ TEST(fork_traits, paris_apply_block_reward)
     {
         db_t db;
         BlockState<mutex_t> bs;
-        state_t s{bs, db, block_cache};
+        state_t s{bs, db};
 
-        fork_traits::paris::apply_block_award(bs, db, block_cache, block, 0);
+        fork_traits::paris::apply_block_award(bs, db, block, 0);
 
         EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(a)), 0u);
     }
     {
         db_t db;
         BlockState<mutex_t> bs;
-        state_t s{bs, db, block_cache};
+        state_t s{bs, db};
 
-        fork_traits::london::apply_block_award(bs, db, block_cache, block, 0);
+        fork_traits::london::apply_block_award(bs, db, block, 0);
 
         EXPECT_EQ(
             intx::be::load<uint256_t>(s.get_balance(a)),
@@ -485,13 +477,12 @@ TEST(fork_traits, paris_apply_block_reward)
 // EIP-3651
 TEST(fork_traits, shanghai_warm_coinbase)
 {
-    db::BlockDb blocks{test_resource::correct_block_data_dir};
     db_t db{};
 
     {
         db_t db;
         BlockState<mutex_t> bs;
-        state_t s{bs, db, block_cache};
+        state_t s{bs, db};
 
         fork_traits::shanghai::warm_coinbase(s, a);
 
@@ -500,7 +491,7 @@ TEST(fork_traits, shanghai_warm_coinbase)
     {
         db_t db;
         BlockState<mutex_t> bs;
-        state_t s{bs, db, block_cache};
+        state_t s{bs, db};
 
         fork_traits::london::warm_coinbase(s, a);
 
@@ -549,7 +540,6 @@ TEST(fork_traits, shanghai_withdrawal)
         .index = 2, .validator_index = 0, .amount = 200u, .recipient = b};
     withdrawals = {w1, w2, w3};
 
-    db::BlockDb blocks{test_resource::correct_block_data_dir};
     db_t db{};
     db.commit(
         StateDeltas{
@@ -559,9 +549,9 @@ TEST(fork_traits, shanghai_withdrawal)
 
     BlockState<mutex_t> bs;
 
-    fork_traits::shanghai::process_withdrawal(bs, db, block_cache, withdrawals);
+    fork_traits::shanghai::process_withdrawal(bs, db, withdrawals);
 
-    state_t s{bs, db, block_cache};
+    state_t s{bs, db};
 
     EXPECT_EQ(
         intx::be::load<uint256_t>(s.get_balance(a)),

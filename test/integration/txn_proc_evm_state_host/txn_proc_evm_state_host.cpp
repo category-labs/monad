@@ -1,6 +1,6 @@
-#include <monad/db/block_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 
+#include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
@@ -34,10 +34,9 @@ using mutex_t = std::shared_mutex;
 
 TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 {
-    db::BlockDb blocks{test_resource::correct_block_data_dir};
     account_store_db_t db{};
     BlockState<mutex_t> bs;
-    state::State s{bs, db, blocks};
+    state::State s{bs, db};
 
     db.commit(
         StateDeltas{
@@ -64,7 +63,8 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     using tp_t = execution::TransactionProcessor<state_t, fork_t>;
 
     tp_t tp{};
-    evm_host_t<state_t, fork_t> h{bh, t, s};
+    BlockHashBuffer block_hash_buffer;
+    evm_host_t<state_t, fork_t> h{block_hash_buffer, bh, t, s};
 
     EXPECT_EQ(
         tp.static_validate(t, std::nullopt),
@@ -82,7 +82,6 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     fork_t::apply_block_award(
         bs,
         db,
-        blocks,
         b,
         fork_t::calculate_txn_award(
             t, b.header.base_fee_per_gas.value_or(0), r.gas_used));
@@ -101,10 +100,9 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
         0xA1E4380A3B1f749673E270229993eE55F35663b4_address;
     static constexpr auto created =
         0x9a049f5d18c239efaa258af9f3e7002949a977a0_address;
-    db::BlockDb blocks{test_resource::correct_block_data_dir};
     account_store_db_t db{};
     BlockState<mutex_t> bs;
-    state::State s{bs, db, blocks};
+    state::State s{bs, db};
 
     db.commit(
         StateDeltas{
@@ -138,7 +136,8 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     using tp_t = execution::TransactionProcessor<state_t, fork_t>;
 
     tp_t tp{};
-    evm_host_t<state_t, fork_t> h{bh, t, s};
+    BlockHashBuffer block_hash_buffer;
+    evm_host_t<state_t, fork_t> h{block_hash_buffer, bh, t, s};
 
     EXPECT_EQ(
         tp.static_validate(t, std::nullopt),
@@ -156,7 +155,6 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     fork_t::apply_block_award(
         bs,
         db,
-        blocks,
         b,
         fork_t::calculate_txn_award(
             t, b.header.base_fee_per_gas.value_or(0), r.gas_used));
@@ -174,10 +172,9 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
         0x3D0768da09CE77d25e2d998E6a7b6eD4b9116c2D_address;
     static constexpr auto created =
         0x4dae54c8645c47dd55782091eca145c7bff974bc_address;
-    db::BlockDb blocks{test_resource::correct_block_data_dir};
     account_store_db_t db{};
     BlockState<mutex_t> bs;
-    state::State s{bs, db, blocks};
+    state::State s{bs, db};
 
     db.commit(
         StateDeltas{
@@ -207,7 +204,8 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     using tp_t = execution::TransactionProcessor<state_t, fork_t>;
 
     tp_t tp{};
-    evm_host_t<state_t, fork_t> h{bh, t, s};
+    BlockHashBuffer block_hash_buffer;
+    evm_host_t<state_t, fork_t> h{block_hash_buffer, bh, t, s};
 
     EXPECT_EQ(
         tp.static_validate(t, std::nullopt),
@@ -225,7 +223,6 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     fork_t::apply_block_award(
         bs,
         db,
-        blocks,
         b,
         fork_t::calculate_txn_award(
             t, b.header.base_fee_per_gas.value_or(0), r.gas_used));

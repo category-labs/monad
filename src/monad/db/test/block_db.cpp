@@ -5,7 +5,6 @@
 #include <test_resource_data.h>
 
 using namespace monad;
-using namespace db;
 
 TEST(BlockDb, ReadNonExistingBlock)
 {

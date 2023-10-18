@@ -25,11 +25,11 @@
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
-template <class TDb, class TMutex, class TBlockDb, class TBlockProcessor>
+template <class TDb, class TMutex, class TBlockProcessor>
 class ReplayFromBlockDb
 {
 public:
-    using state_t = state::State<TMutex, TBlockDb>;
+    using state_t = state::State<TMutex>;
 
     enum class Status
     {
@@ -83,10 +83,10 @@ public:
         class TTraits, template <typename, typename> class TTxnProcessor,
         template <typename, typename> class TEvm,
         template <typename, typename> class TEvmHost,
-        template <typename, typename, typename, typename> class TFiberData>
+        template <typename, typename, typename> class TFiberData>
     [[nodiscard]] Result run_fork(
-        TDb &db, uint64_t const checkpoint_frequency, TBlockDb &block_db,
-        block_num_t current_block_number,
+        TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
+        BlockHashBuffer &block_hash_buffer, block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
         for (; current_block_number <= loop_until<TTraits>(until_block_number);
@@ -96,15 +96,18 @@ public:
                 block_db.get(current_block_number, block);
 
             switch (block_read_status) {
-            case TBlockDb::Status::NO_BLOCK_FOUND:
+            case BlockDb::Status::NO_BLOCK_FOUND:
                 return Result{
                     Status::SUCCESS_END_OF_DB, current_block_number - 1u};
-            case TBlockDb::Status::DECOMPRESS_ERROR:
+            case BlockDb::Status::DECOMPRESS_ERROR:
                 return Result{
                     Status::DECOMPRESS_BLOCK_ERROR, current_block_number};
-            case TBlockDb::Status::DECODE_ERROR:
+            case BlockDb::Status::DECODE_ERROR:
                 return Result{Status::DECODE_BLOCK_ERROR, current_block_number};
-            case TBlockDb::Status::SUCCESS: {
+            case BlockDb::Status::SUCCESS: {
+
+                block_hash_buffer.set(
+                    current_block_number - 1, block.header.parent_hash);
 
                 TTraits::validate_block(block);
 
@@ -115,8 +118,8 @@ public:
                     TFiberData<
                         TMutex,
                         TTxnProcessor<state_t, TTraits>,
-                        TEvmHost<state_t, TTraits>,
-                        TBlockDb>>(block, db, block_db);
+                        TEvmHost<state_t, TTraits>>>(
+                    block, db, block_hash_buffer);
 
                 if (!verify_root_hash(
                         block.header,
@@ -131,7 +134,6 @@ public:
                     if (current_block_number % checkpoint_frequency == 0) {
                         db.create_and_prune_block_history(current_block_number);
                     }
-                    block_db.store_current_block_hash(current_block_number);
                 }
             }
             default:
@@ -154,6 +156,7 @@ public:
                 db,
                 checkpoint_frequency,
                 block_db,
+                block_hash_buffer,
                 current_block_number,
                 until_block_number);
         }
@@ -163,11 +166,11 @@ public:
         class TTraits, template <typename, typename> class TTxnProcessor,
         template <typename, typename> class TEvm,
         template <typename, typename> class TEvmHost,
-        template <typename, typename, typename, typename> class TFiberData>
+        template <typename, typename, typename> class TFiberData>
     [[nodiscard]] Result
-    run(TDb &db, uint64_t const checkpoint_frequency, TBlockDb &block_db,
-        block_num_t start_block_number,
-        std::optional<block_num_t> until_block_number = std::nullopt)
+    run(TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
+        block_num_t const start_block_number,
+        std::optional<block_num_t> const until_block_number = std::nullopt)
     {
         Block block{};
 
@@ -177,15 +180,26 @@ public:
         }
 
         if (block_db.get(start_block_number, block) ==
-            TBlockDb::Status::NO_BLOCK_FOUND) {
+            BlockDb::Status::NO_BLOCK_FOUND) {
             return Result{
                 Status::START_BLOCK_NUMBER_OUTSIDE_DB, start_block_number};
+        }
+
+        BlockHashBuffer block_hash_buffer;
+        block_num_t block_number =
+            start_block_number < 256 ? 1 : start_block_number - 255;
+        while (block_number <= start_block_number) {
+            auto const result = block_db.get(block_number, block);
+            MONAD_ASSERT(result == BlockDb::Status::SUCCESS);
+            block_hash_buffer.set(block_number - 1, block.header.parent_hash);
+            ++block_number;
         }
 
         return run_fork<TTraits, TTxnProcessor, TEvm, TEvmHost, TFiberData>(
             db,
             checkpoint_frequency,
             block_db,
+            block_hash_buffer,
             start_block_number,
             until_block_number);
     }

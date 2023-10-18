@@ -112,7 +112,10 @@ void BlockchainTest::TestBody()
             Block block;
             auto const rlp = j_block.at("rlp").get<byte_string>();
             auto const rest = rlp::decode_block(block, rlp);
-            ASSERT_TRUE(rest.has_value()) << name;
+            if (rest.has_error()) {
+                EXPECT_TRUE(j_block.contains("expectException"));
+                continue;
+            }
             EXPECT_TRUE(rest.assume_value().empty()) << name;
             auto const receipts = execute(rev, block, db, fake_block_db);
             EXPECT_EQ(db.state_root(), block.header.state_root) << name;

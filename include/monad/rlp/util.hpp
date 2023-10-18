@@ -12,8 +12,11 @@
 MONAD_NAMESPACE_BEGIN
 
 template <unsigned_integral T>
-inline constexpr T decode_raw_num(byte_string_view const enc)
+inline constexpr result_t<T> decode_raw_num(byte_string_view const enc)
 {
+    if (enc.size() > sizeof(T)) {
+        return status_code(rlp::DecodeError::OVERFLOW);
+    }
     MONAD_ASSERT(enc.size() <= sizeof(T));
     T result{};
     std::memcpy(
@@ -21,10 +24,10 @@ inline constexpr T decode_raw_num(byte_string_view const enc)
         enc.data(),
         enc.size());
     result = intx::to_big_endian(result);
-    return result;
+    return boost::outcome_v2::success(result);
 }
 
-inline constexpr size_t decode_length(byte_string_view const enc)
+inline constexpr result_t<size_t> decode_length(byte_string_view const enc)
 {
     return decode_raw_num<size_t>(enc);
 }
@@ -52,7 +55,8 @@ parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
         ++i;
         uint8_t length_of_length = enc[0] - 0xb7;
         MONAD_ASSERT(i + length_of_length < enc.size());
-        auto const length = decode_length(enc.substr(i, length_of_length));
+        BOOST_OUTCOME_TRY(
+            auto const length, decode_length(enc.substr(i, length_of_length)));
         i += length_of_length;
         end = i + length;
     }
@@ -76,7 +80,8 @@ parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
         size_t const length_of_length = enc[0] - 0xf7;
         MONAD_ASSERT(i + length_of_length < enc.size());
 
-        length = decode_length(enc.substr(i, length_of_length));
+        BOOST_OUTCOME_TRY(
+            length, decode_length(enc.substr(i, length_of_length)));
         i += length_of_length;
     }
     auto const end = i + length;

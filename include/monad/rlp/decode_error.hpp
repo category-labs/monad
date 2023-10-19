@@ -11,7 +11,8 @@ MONAD_RLP_NAMESPACE_BEGIN
 enum class DecodeError
 {
     SUCCESS = 0,
-    OVERFLOW
+    OVERFLOW,
+    UNEXPECTED_LIST
 };
 using DecodeResult = result_t<byte_string_view>;
 
@@ -31,6 +32,7 @@ struct quick_status_code_from_enum<monad::rlp::DecodeError>
         static const std::initializer_list<mapping> v = {
             {DecodeError::SUCCESS, "Success", {errc::success}},
             {DecodeError::OVERFLOW, "Overflow", {}},
+            {DecodeError::UNEXPECTED_LIST, "Unexpected list", {}},
         };
         return v;
     }

@@ -4,6 +4,7 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/int.hpp>
+#include <monad/core/result.hpp>
 #include <monad/rlp/decode_error.hpp>
 
 #include <boost/outcome/success_failure.hpp>
@@ -39,7 +40,6 @@ parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
     size_t end = 0;
 
     MONAD_ASSERT(!enc.empty());
-    MONAD_ASSERT(enc[0] < 0xc0);
     if (enc[0] < 0x80) // [0x00, 0x7f]
     {
         end = i + 1;
@@ -49,6 +49,9 @@ parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
         ++i;
         const uint8_t length = enc[0] - 0x80;
         end = i + length;
+    }
+    else if (enc[0] > 0xbf) {
+        return status_code(rlp::DecodeError::UNEXPECTED_LIST);
     }
     else // [0xb8, 0xbf]
     {

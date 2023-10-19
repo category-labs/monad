@@ -174,8 +174,18 @@ void BlockchainTest::TestBody()
             EXPECT_EQ(receipts.size(), block.transactions.size()) << name;
         }
 
+        bool const has_post_state = j_contents.contains("postState");
+        bool const has_post_state_hash = j_contents.contains("postStateHash");
+        MONAD_DEBUG_ASSERT(has_post_state || has_post_state_hash);
+
+        if (has_post_state_hash) {
+            EXPECT_EQ(
+                db.state_root(),
+                j_contents.at("postStateHash").get<bytes32_t>());
+        }
+
         auto const dump = test::dump_state_from_db(db);
-        if (j_contents.contains("postState")) {
+        if (has_post_state) {
             validate_post_state(j_contents.at("postState"), dump);
         }
         LOG_DEBUG("post_state: {}", dump.dump());

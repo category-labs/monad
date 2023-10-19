@@ -12,7 +12,9 @@ enum class DecodeError
 {
     SUCCESS = 0,
     OVERFLOW,
-    UNEXPECTED_LIST
+    UNEXPECTED_LIST,
+    UNEXPECTED_LENGTH,
+    INPUT_TOO_SHORT,
 };
 using DecodeResult = result_t<byte_string_view>;
 
@@ -33,6 +35,8 @@ struct quick_status_code_from_enum<monad::rlp::DecodeError>
             {DecodeError::SUCCESS, "Success", {errc::success}},
             {DecodeError::OVERFLOW, "Overflow", {}},
             {DecodeError::UNEXPECTED_LIST, "Unexpected list", {}},
+            {DecodeError::UNEXPECTED_LENGTH, "Unexpected length", {}},
+            {DecodeError::INPUT_TOO_SHORT, "Input too short", {}},
         };
         return v;
     }

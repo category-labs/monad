@@ -186,6 +186,7 @@ void BlockchainTest::TestBody()
         if (j_contents.contains("postState")) {
             validate_post_state(j_contents.at("postState"), dump);
         }
+        LOG_DEBUG("post_state: {}", dump.dump());
     }
 
     if (!executed) {

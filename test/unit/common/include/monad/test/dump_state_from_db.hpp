@@ -30,13 +30,14 @@ namespace detail
             fmt::format("{}", hashed_account_address);
 
         state[keccaked_account_hex]["balance"] =
-            "0x" + intx::to_string(account.balance, 16);
+            fmt::format("{}", account.balance);
 
         state[keccaked_account_hex]["nonce"] =
             fmt::format("0x{:x}", account.nonce);
 
         auto const code = db.read_code(account.code_hash);
-        state[keccaked_account_hex]["code"] = "0x" + evmc::hex(code);
+        state[keccaked_account_hex]["code"] = fmt::format(
+            "0x{:02x}", fmt::join(std::as_bytes(std::span(code)), ""));
     }
 
     template <typename TCursor>
@@ -61,7 +62,7 @@ namespace detail
                 trie_cursor);
         auto const keccaked_account_address =
             fmt::format("{}", hash(account_address));
-        state[keccaked_account_address]["storage"]["original_account_address"] =
+        state[keccaked_account_address]["original_account_address"] =
             fmt::format("{}", account_address);
 
         auto const storage_key =
@@ -78,13 +79,14 @@ namespace detail
         auto const keccaked_address_hex = fmt::format("{}", hash(address));
 
         state[keccaked_address_hex]["balance"] =
-            "0x" + intx::to_string(account.balance, 16);
+            fmt::format("{}", account.balance);
 
         state[keccaked_address_hex]["nonce"] =
             fmt::format("0x{:x}", account.nonce);
 
         auto const code = db.read_code(account.code_hash);
-        state[keccaked_address_hex]["code"] = "0x" + evmc::hex(code);
+        state[keccaked_address_hex]["code"] = fmt::format(
+            "0x{:02x}", fmt::join(std::as_bytes(std::span(code)), ""));
     }
 }
 

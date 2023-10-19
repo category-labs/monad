@@ -12,6 +12,7 @@
 #include <monad/test/dump_state_from_db.hpp>
 #include <test_resource_data.h>
 
+#include <ethash/keccak.hpp>
 #include <evmc/evmc.hpp>
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -73,6 +74,68 @@ namespace
             std::unreachable();
         }
     }
+
+    void
+    validate_post_state(nlohmann::json const &json, nlohmann::json const &db)
+    {
+        EXPECT_EQ(db.size(), json.size());
+
+        for (auto const &[addr, j_account] : json.items()) {
+            nlohmann::json const addr_json = addr;
+            auto const addr_bytes = addr_json.get<address_t>();
+            auto const hashed_account = std::bit_cast<bytes32_t>(
+                ethash::keccak256(addr_bytes.bytes, sizeof(addr_bytes.bytes)));
+            auto const db_addr_key = fmt::format("{}", hashed_account);
+
+            ASSERT_TRUE(db.contains(db_addr_key)) << db_addr_key;
+            auto const &db_account = db.at(db_addr_key);
+
+            auto const expected_balance =
+                fmt::format("{}", j_account.at("balance").get<uint256_t>());
+            auto const expected_nonce = fmt::format(
+                "0x{:x}", integer_from_json<uint64_t>(j_account.at("nonce")));
+            auto const code =
+                j_account.contains("code")
+                    ? j_account.at("code").get<monad::byte_string>()
+                    : monad::byte_string{};
+            auto const expected_code = fmt::format(
+                "0x{:02x}", fmt::join(std::as_bytes(std::span(code)), ""));
+
+            EXPECT_EQ(
+                db_account.at("balance").get<std::string>(), expected_balance)
+                << db_addr_key;
+            EXPECT_EQ(db_account.at("nonce").get<std::string>(), expected_nonce)
+                << db_addr_key;
+            EXPECT_EQ(db_account.at("code").get<std::string>(), expected_code)
+                << db_addr_key;
+
+            if (j_account.contains("storage") &&
+                !j_account.at("storage").empty()) {
+                ASSERT_TRUE(db_account.contains("storage")) << db_addr_key;
+                auto const &db_storage = db_account.at("storage");
+                EXPECT_EQ(db_storage.size(), j_account.at("storage").size())
+                    << db_addr_key;
+                for (auto const &[key, j_value] :
+                     j_account.at("storage").items()) {
+                    nlohmann::json const key_json = key;
+                    auto const key_bytes = key_json.get<bytes32_t>();
+                    auto const db_storage_key = fmt::format(
+                        "{}",
+                        std::bit_cast<bytes32_t>(ethash::keccak256(
+                            key_bytes.bytes, sizeof(key_bytes.bytes))));
+                    ASSERT_TRUE(db_storage.contains(db_storage_key))
+                        << db_storage_key;
+                    auto const expected_value =
+                        fmt::format("{}", j_value.get<bytes32_t>());
+                    EXPECT_EQ(db_storage.at(db_storage_key), expected_value)
+                        << db_storage_key;
+                }
+            }
+            else {
+                EXPECT_FALSE(db_account.contains("storage")) << db_addr_key;
+            }
+        }
+    }
 }
 
 void BlockchainTest::TestBody()
@@ -114,10 +177,15 @@ void BlockchainTest::TestBody()
             auto const rest = rlp::decode_block(block, rlp);
             EXPECT_TRUE(rest.empty()) << name;
             auto const receipts = execute(rev, block, db, fake_block_db);
+
             EXPECT_EQ(db.state_root(), block.header.state_root) << name;
             EXPECT_EQ(receipts.size(), block.transactions.size()) << name;
         }
-        LOG_DEBUG("post_state: {}", test::dump_state_from_db(db).dump());
+
+        auto const dump = test::dump_state_from_db(db);
+        if (j_contents.contains("postState")) {
+            validate_post_state(j_contents.at("postState"), dump);
+        }
     }
 
     if (!executed) {

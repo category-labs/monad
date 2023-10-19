@@ -5,7 +5,6 @@
 #include <iomanip>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/precompiles.hpp>
-#include <monad/execution/test/fakes.hpp>
 
 #include <monad/core/address.hpp>
 

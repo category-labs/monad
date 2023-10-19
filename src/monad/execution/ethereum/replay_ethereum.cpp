@@ -14,11 +14,8 @@
 
 #include <monad/execution/precompiles.hpp>
 #include <monad/execution/replay_block_db.hpp>
-#include <monad/execution/test/fakes.hpp>
 #include <monad/execution/transaction_processor.hpp>
 #include <monad/execution/transaction_processor_data.hpp>
-
-#include <monad/execution/test/fakes.hpp>
 
 #include <monad/logging/formatter.hpp>
 

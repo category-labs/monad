@@ -2,9 +2,8 @@
 
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
+#include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_processor.hpp>
-
-#include <monad/execution/test/fakes.hpp>
 
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
@@ -21,7 +20,7 @@ using state_t = state::State<mutex_t>;
 using traits_t = fork_traits::shanghai;
 using processor_t = TransactionProcessor<state_t, traits_t>;
 
-using evm_host_t = fake::EvmHost<state_t, traits_t>;
+using evm_host_t = EvmcHost<state_t, traits_t>;
 
 TEST(TransactionProcessor, g_star)
 {
@@ -47,11 +46,9 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     db_t db;
     BlockState<mutex_t> bs;
     state_t s{bs, db};
-    evm_host_t h{};
+
     s.add_to_balance(from, 56'000'000'000'000'000);
     s.set_nonce(from, 25);
-    h._result = {.status_code = EVMC_SUCCESS, .gas_left = 15'000};
-    h._receipt = {.status = 1u};
 
     static Transaction const t{
         .nonce = 25,
@@ -59,6 +56,10 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
         .gas_limit = 55'000,
         .from = from,
     };
+
+    BlockHashBuffer block_hash_buffer;
+    BlockHeader block_header;
+    evm_host_t h{block_hash_buffer, block_header, t, s};
 
     processor_t p{};
 
@@ -71,9 +72,9 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     EXPECT_EQ(result.status, 1u);
     EXPECT_EQ(
         intx::be::load<uint256_t>(s.get_balance(from)),
-        uint256_t{55'999'999'999'600'000});
-    EXPECT_EQ(s.get_nonce(from), 25); // EVMC will inc for creation
+        uint256_t{55'999'999'999'470'000});
+    EXPECT_EQ(s.get_nonce(from), 26); // EVMC will inc for creation
 
     // check if miner gets the right reward
-    EXPECT_EQ(result.gas_used * 10u, uint256_t{400'000});
+    EXPECT_EQ(result.gas_used * 10u, uint256_t{530'000});
 }

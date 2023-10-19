@@ -4,8 +4,6 @@
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
 
-#include <monad/execution/test/fakes.hpp>
-
 #include <monad/state2/state.hpp>
 
 #include <monad/test/make_db.hpp>

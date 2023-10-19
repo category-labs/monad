@@ -1,11 +1,9 @@
-#include <monad/db/block_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evm.hpp>
-
-#include <monad/execution/test/fakes.hpp>
+#include <monad/execution/evmc_host.hpp>
 
 #include <monad/state2/state.hpp>
 
@@ -25,7 +23,7 @@ using traits_t = fork_traits::shanghai;
 
 using evm_t = Evm<state_t, traits_t>;
 
-using evm_host_t = fake::EvmHost<state_t, traits_t>;
+using evm_host_t = EvmcHost<state_t, traits_t>;
 
 TEST(Evm, create_with_insufficient)
 {
@@ -52,7 +50,10 @@ TEST(Evm, create_with_insufficient)
     uint256_t v{70'000'000'000'000'000}; // too much
     intx::be::store(m.value.bytes, v);
 
-    evm_host_t h{};
+    BlockHashBuffer block_hash_buffer;
+    BlockHeader block_header;
+    Transaction transaction;
+    evm_host_t h{block_hash_buffer, block_header, transaction, s};
     auto const result = evm_t::create_contract_account(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
@@ -91,7 +92,10 @@ TEST(Evm, eip684_existing_code)
     uint256_t v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
-    evm_host_t h{};
+    BlockHashBuffer block_hash_buffer;
+    BlockHeader block_header;
+    Transaction transaction;
+    evm_host_t h{block_hash_buffer, block_header, transaction, s};
     auto const result = evm_t::create_contract_account(&h, s, m);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
 }
@@ -251,7 +255,10 @@ TEST(Evm, create_nonce_out_of_range)
     static constexpr auto new_addr{
         0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
 
-    evm_host_t h{};
+    BlockHashBuffer block_hash_buffer;
+    BlockHeader block_header;
+    Transaction transaction;
+    evm_host_t h{block_hash_buffer, block_header, transaction, s};
 
     db.commit(
         StateDeltas{
@@ -289,7 +296,10 @@ TEST(Evm, static_precompile_execution)
     static constexpr auto code_address{
         0x0000000000000000000000000000000000000004_address};
 
-    evm_host_t h{};
+    BlockHashBuffer block_hash_buffer;
+    BlockHeader block_header;
+    Transaction transaction;
+    evm_host_t h{block_hash_buffer, block_header, transaction, s};
 
     db.commit(
         StateDeltas{
@@ -333,7 +343,10 @@ TEST(Evm, out_of_gas_static_precompile_execution)
     static constexpr auto code_address{
         0x0000000000000000000000000000000000000001_address};
 
-    evm_host_t h{};
+    BlockHashBuffer block_hash_buffer;
+    BlockHeader block_header;
+    Transaction transaction;
+    evm_host_t h{block_hash_buffer, block_header, transaction, s};
 
     db.commit(
         StateDeltas{

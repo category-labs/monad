@@ -4,7 +4,6 @@
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/ethereum/fork_traits.hpp>
-#include <monad/execution/test/fakes.hpp>
 #include <monad/execution/transaction_processor.hpp>
 
 #include <monad/state2/state.hpp>

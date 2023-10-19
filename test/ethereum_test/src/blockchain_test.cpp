@@ -4,7 +4,6 @@
 #include <monad/core/assert.h>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_processor.hpp>
-#include <monad/execution/test/fakes.hpp>
 #include <monad/execution/transaction_processor_data.hpp>
 #include <monad/logging/formatter.hpp>
 #include <monad/rlp/decode_helpers.hpp>

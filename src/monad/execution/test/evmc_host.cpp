@@ -7,8 +7,6 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/precompiles.hpp>
 
-#include <monad/execution/test/fakes.hpp>
-
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 

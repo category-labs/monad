@@ -46,7 +46,8 @@ TYPED_TEST(StateSerialization, serialize_add)
   "0x03601462093b5945d1676df093446790fd31b20e7b12a2e8e5e09d068109616b": {
     "balance": "838137708090664833",
     "code": "0x",
-    "nonce": "0x1"
+    "nonce": "0x1",
+    "storage": {}
   },
   "0x227a737497210f7cc2f464e3bfffadefa9806193ccdf873203cd91c8d3eab518": {
     "balance": "838137708091124174",
@@ -60,32 +61,38 @@ TYPED_TEST(StateSerialization, serialize_add)
   "0x4599828688a5c37132b6fc04e35760b4753ce68708a7b7d4d97b940047557fdb": {
     "balance": "838137708091124174",
     "code": "0x60047fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
-    "nonce": "0x0"
+    "nonce": "0x0",
+    "storage": {}
   },
   "0x4c933a84259efbd4fb5d1522b5255e6118da186a2c71ec5efaa5c203067690b7": {
     "balance": "838137708091124174",
     "code": "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff60010160005500",
-    "nonce": "0x0"
+    "nonce": "0x0",
+    "storage": {}
   },
   "0x9d860e7bb7e6b09b87ab7406933ef2980c19d7d0192d8939cf6dc6908a03305f": {
     "balance": "459340",
     "code": "0x",
-    "nonce": "0x0"
+    "nonce": "0x0",
+    "storage": {}
   },
   "0xa17eacbc25cda025e81db9c5c62868822c73ce097cee2a63e33a2e41268358a1": {
     "balance": "838137708091124174",
     "code": "0x60017fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
-    "nonce": "0x0"
+    "nonce": "0x0",
+    "storage": {}
   },
   "0xa5cc446814c4e9060f2ecb3be03085683a83230981ca8f19d35a4438f8c2d277": {
     "balance": "838137708091124174",
     "code": "0x600060000160005500",
-    "nonce": "0x0"
+    "nonce": "0x0",
+    "storage": {}
   },
   "0xf057b39b049c7df5dfa86c4b0869abe798cef059571a5a1e5bbf5168cf6c097b": {
     "balance": "838137708091124175",
     "code": "0x600060006000600060006004356101000162fffffff100",
-    "nonce": "0x0"
+    "nonce": "0x0",
+    "storage": {}
   }
 })");
     auto const a = 0x0000000000000000000000000000000000000100_address;

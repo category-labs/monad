@@ -38,6 +38,8 @@ namespace detail
         auto const code = db.read_code(account.code_hash);
         state[keccaked_account_hex]["code"] = fmt::format(
             "0x{:02x}", fmt::join(std::as_bytes(std::span(code)), ""));
+
+        state[keccaked_account_hex]["storage"] = nlohmann::json::object();
     }
 
     template <typename TCursor>

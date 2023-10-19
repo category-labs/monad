@@ -109,30 +109,22 @@ namespace
             EXPECT_EQ(db_account.at("code").get<std::string>(), expected_code)
                 << db_addr_key;
 
-            if (j_account.contains("storage") &&
-                !j_account.at("storage").empty()) {
-                ASSERT_TRUE(db_account.contains("storage")) << db_addr_key;
-                auto const &db_storage = db_account.at("storage");
-                EXPECT_EQ(db_storage.size(), j_account.at("storage").size())
-                    << db_addr_key;
-                for (auto const &[key, j_value] :
-                     j_account.at("storage").items()) {
-                    nlohmann::json const key_json = key;
-                    auto const key_bytes = key_json.get<bytes32_t>();
-                    auto const db_storage_key = fmt::format(
-                        "{}",
-                        std::bit_cast<bytes32_t>(ethash::keccak256(
-                            key_bytes.bytes, sizeof(key_bytes.bytes))));
-                    ASSERT_TRUE(db_storage.contains(db_storage_key))
-                        << db_storage_key;
-                    auto const expected_value =
-                        fmt::format("{}", j_value.get<bytes32_t>());
-                    EXPECT_EQ(db_storage.at(db_storage_key), expected_value)
-                        << db_storage_key;
-                }
-            }
-            else {
-                EXPECT_FALSE(db_account.contains("storage")) << db_addr_key;
+            auto const &db_storage = db_account.at("storage");
+            EXPECT_EQ(db_storage.size(), j_account.at("storage").size())
+                << db_addr_key;
+            for (auto const &[key, j_value] : j_account.at("storage").items()) {
+                nlohmann::json const key_json = key;
+                auto const key_bytes = key_json.get<bytes32_t>();
+                auto const db_storage_key = fmt::format(
+                    "{}",
+                    std::bit_cast<bytes32_t>(ethash::keccak256(
+                        key_bytes.bytes, sizeof(key_bytes.bytes))));
+                ASSERT_TRUE(db_storage.contains(db_storage_key))
+                    << db_storage_key;
+                auto const expected_value =
+                    fmt::format("{}", j_value.get<bytes32_t>());
+                EXPECT_EQ(db_storage.at(db_storage_key), expected_value)
+                    << db_storage_key;
             }
         }
     }

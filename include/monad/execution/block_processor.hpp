@@ -73,10 +73,15 @@ struct AllTxnBlockProcessor
         }
 
         // Process withdrawls
-        TTraits::process_withdrawal(block_state, db, b.withdrawals);
+        state::State state{block_state, db};
+        TTraits::process_withdrawal(state, b.withdrawals);
 
         // Apply block reward to beneficiary
         TTraits::apply_block_award(block_state, db, b, all_txn_gas_reward);
+
+        TTraits::destruct_touched_dead(state);
+        MONAD_DEBUG_ASSERT(can_merge(block_state.state, state.state_));
+        merge(block_state.state, state.state_);
 
         auto const finished_time = std::chrono::steady_clock::now();
         auto const elapsed_ms =

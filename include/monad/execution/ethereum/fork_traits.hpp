@@ -186,9 +186,9 @@ namespace fork_traits
         {
         }
 
-        template <class TBlockState>
+        template <class TState>
         static constexpr void process_withdrawal(
-            TBlockState &, Db &, std::optional<std::vector<Withdrawal>> const &)
+            TState &, std::optional<std::vector<Withdrawal>> const &)
         {
         }
 
@@ -631,22 +631,18 @@ namespace fork_traits
         }
 
         // EIP-4895
-        template <class TBlockState>
+        template <class TState>
         static constexpr void process_withdrawal(
-            TBlockState &bs, Db &db,
+            TState &state,
             std::optional<std::vector<Withdrawal>> const &withdrawals)
         {
             if (withdrawals.has_value()) {
-                state::State s{bs, db};
                 for (auto const &withdrawal : withdrawals.value()) {
-                    s.add_to_balance(
+                    state.add_to_balance(
                         withdrawal.recipient,
                         uint256_t{withdrawal.amount} *
                             uint256_t{1'000'000'000u});
                 }
-
-                MONAD_DEBUG_ASSERT(can_merge(bs.state, s.state_));
-                merge(bs.state, s.state_);
             }
         }
 

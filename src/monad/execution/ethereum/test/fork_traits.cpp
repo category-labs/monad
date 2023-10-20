@@ -547,14 +547,13 @@ TEST(fork_traits, shanghai_withdrawal)
 
     BlockState<mutex_t> bs;
 
-    fork_traits::shanghai::process_withdrawal(bs, db, withdrawals);
-
-    state_t s{bs, db};
+    state_t state{bs, db};
+    fork_traits::shanghai::process_withdrawal(state, withdrawals);
 
     EXPECT_EQ(
-        intx::be::load<uint256_t>(s.get_balance(a)),
+        intx::be::load<uint256_t>(state.get_balance(a)),
         uint256_t{400u} * uint256_t{1'000'000'000u});
     EXPECT_EQ(
-        intx::be::load<uint256_t>(s.get_balance(b)),
+        intx::be::load<uint256_t>(state.get_balance(b)),
         uint256_t{200u} * uint256_t{1'000'000'000u});
 }

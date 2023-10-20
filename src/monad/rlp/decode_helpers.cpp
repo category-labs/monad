@@ -325,7 +325,6 @@ decode_withdrawal(Withdrawal &withdrawal, byte_string_view const enc)
     payload = decode_address(withdrawal.recipient, payload);
     payload = decode_unsigned<uint64_t>(withdrawal.amount, payload);
 
-    MONAD_DEBUG_ASSERT(withdrawal.amount > 0);
     MONAD_DEBUG_ASSERT(payload.size() == 0);
     return rest_of_enc;
 }

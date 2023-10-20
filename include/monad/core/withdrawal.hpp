@@ -10,7 +10,7 @@ struct Withdrawal
 {
     uint64_t index{0};
     uint64_t validator_index{};
-    uint64_t amount{}; // this should never be 0
+    uint64_t amount{};
     address_t recipient{};
 };
 

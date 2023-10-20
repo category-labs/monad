@@ -15,8 +15,8 @@ TEST(Transaction, recover_sender_block_2730000)
 {
     Block block{};
     BlockDb block_db(test_resource::correct_block_data_dir);
-    auto res = block_db.get(2'730'000u, block);
-    EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+    bool const res = block_db.get(2'730'000u, block);
+    ASSERT_TRUE(res);
 
     EXPECT_EQ(block.transactions.size(), 4u);
 
@@ -49,8 +49,8 @@ TEST(TransactionProcessor, recover_sender_block_14000000)
 {
     Block block{};
     BlockDb block_db(test_resource::correct_block_data_dir);
-    auto res = block_db.get(14'000'000u, block);
-    EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+    bool const res = block_db.get(14'000'000u, block);
+    ASSERT_TRUE(res);
 
     EXPECT_EQ(block.transactions.size(), 112u);
     EXPECT_EQ(

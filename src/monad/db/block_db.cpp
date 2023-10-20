@@ -1,43 +1,74 @@
-#include <monad/core/assert.h>
-
 #include <monad/db/block_db.hpp>
 
+#include <monad/core/assert.h>
+#include <monad/core/byte_string.hpp>
 #include <monad/rlp/decode_helpers.hpp>
 
 #include <brotli/decode.h>
+#include <brotli/encode.h>
 
-#include <ethash/keccak.hpp>
+#include <string>
 
 MONAD_NAMESPACE_BEGIN
 
-BlockDb::Status BlockDb::get(block_num_t const num, Block &block)
+BlockDb::BlockDb(std::filesystem::path const &dir)
+    : db_{dir.c_str()}
+{
+}
+
+bool BlockDb::get(uint64_t const num, Block &block) const
 {
     auto const key = std::to_string(num);
     auto const result = db_.get(key.c_str());
     if (!result.has_value()) {
-        return Status::NO_BLOCK_FOUND;
+        return false;
     }
-    byte_string_view view{
-        reinterpret_cast<uint8_t const *>(result->data()), result->length()};
+    auto const view = to_byte_string_view(result.value());
+    size_t brotli_size = result->size() * 100; // TODO
+    byte_string brotli_buffer;
+    brotli_buffer.resize(brotli_size);
+    auto const brotli_result = BrotliDecoderDecompress(
+        view.size(), view.data(), &brotli_size, brotli_buffer.data());
+    brotli_buffer.resize(brotli_size);
+    MONAD_ASSERT(brotli_result == BROTLI_DECODER_RESULT_SUCCESS);
+    byte_string_view const view2{brotli_buffer};
+    auto const decoding_result = rlp::decode_block(block, view2);
+    MONAD_ASSERT(decoding_result.empty());
+    return true;
+}
 
-    size_t brotli_size = 1'048'576u; // 1M
+/*
+void BlockDb::upsert(
+    uint64_t const num, Block const &block) const
+{
+    auto const key = std::to_string(num);
+    byte_string bytes;
+    rlp::encode(bytes, block);
+    size_t brotli_size = BrotliEncoderMaxCompressedSize(bytes.size());
+    MONAD_ASSERT(brotli_size);
+    byte_string brotli_buffer;
+    brotli_buffer.resize(brotli_size);
+    auto const brotli_result = BrotliEncoderCompress(
+        BROTLI_DEFAULT_QUALITY,
+        BROTLI_DEFAULT_WINDOW,
+        BROTLI_MODE_GENERIC,
+        bytes.size(),
+        bytes.data(),
+        &brotli_size,
+        brotli_buffer.data());
+    MONAD_ASSERT(brotli_result == BROTLI_TRUE);
+    brotli_buffer.resize(brotli_size);
+    std::string_view const value{
+        reinterpret_cast<char const *>(brotli_buffer.data()),
+        brotli_buffer.size()};
+    db_.upsert(key.c_str(), value);
+}
+*/
 
-    uint8_t brotli_buffer[1'048'567u];
-
-    auto brotli_result = BrotliDecoderDecompress(
-        view.length(), view.data(), &brotli_size, brotli_buffer);
-
-    if (brotli_result != BROTLI_DECODER_RESULT_SUCCESS) {
-        return Status::DECOMPRESS_ERROR;
-    }
-
-    auto const decoding_result =
-        rlp::decode_block(block, {brotli_buffer, brotli_size});
-    if (decoding_result.size() != 0) {
-        return Status::DECODE_ERROR;
-    }
-
-    return Status::SUCCESS;
+void BlockDb::remove(uint64_t const num) const
+{
+    auto const key = std::to_string(num);
+    db_.remove(key.c_str());
 }
 
 MONAD_NAMESPACE_END

@@ -17,8 +17,8 @@ TEST(Rlp_Block, DecodeBlock46402)
 
     Block block{};
     BlockDb block_db(test_resource::correct_block_data_dir);
-    auto res = block_db.get(46'402, block);
-    EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+    bool const res = block_db.get(46'402, block);
+    ASSERT_TRUE(res);
 
     // Header
     EXPECT_EQ(
@@ -105,8 +105,8 @@ TEST(Rlp_Block, DecodeBlock2730000)
 
     Block block{};
     BlockDb block_db(test_resource::correct_block_data_dir);
-    auto res = block_db.get(2'730'000, block);
-    EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+    bool const res = block_db.get(2'730'000, block);
+    ASSERT_TRUE(res);
 
     // Header
     EXPECT_EQ(
@@ -256,8 +256,8 @@ TEST(Rlp_Block, DecodeBlock2730001)
 
     Block block{};
     BlockDb block_db(test_resource::correct_block_data_dir);
-    auto res = block_db.get(2'730'001, block);
-    EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+    bool const res = block_db.get(2'730'001, block);
+    ASSERT_TRUE(res);
 
     // Header
     EXPECT_EQ(
@@ -435,8 +435,8 @@ TEST(Rlp_Block, DecodeBlock2730002)
 
     Block block{};
     BlockDb block_db(test_resource::correct_block_data_dir);
-    auto res = block_db.get(2'730'002, block);
-    EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+    bool const res = block_db.get(2'730'002, block);
+    ASSERT_TRUE(res);
 
     // Header
     EXPECT_EQ(
@@ -498,8 +498,8 @@ TEST(Rlp_Block, ReadBlock2730009)
 
     Block block{};
     BlockDb block_db(test_resource::correct_block_data_dir);
-    auto res = block_db.get(2730009, block);
-    EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+    bool const res = block_db.get(2730009, block);
+    ASSERT_TRUE(res);
 
     // Header
     EXPECT_EQ(
@@ -546,8 +546,8 @@ TEST(Rlp_Block, DecodeBlock14000000)
 
     Block block{};
     BlockDb block_db(test_resource::correct_block_data_dir);
-    auto res = block_db.get(14'000'000, block);
-    EXPECT_EQ(res, BlockDb::Status::SUCCESS);
+    bool const res = block_db.get(14'000'000, block);
+    ASSERT_TRUE(res);
 
     // Header
     EXPECT_EQ(

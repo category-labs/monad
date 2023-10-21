@@ -22,7 +22,7 @@ public:
     {
         MONAD_DEBUG_ASSERT(!n_ || n == n_);
         b_[n % N] = h;
-        ++n_;
+        n_ = n + 1;
     }
 
     bytes32_t const &get(uint64_t const n) const

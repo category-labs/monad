@@ -189,6 +189,7 @@ public:
         block_num_t block_number =
             start_block_number < 256 ? 1 : start_block_number - 255;
         while (block_number < start_block_number) {
+            block = Block{};
             auto const result = block_db.get(block_number, block);
             MONAD_ASSERT(result == BlockDb::Status::SUCCESS);
             block_hash_buffer.set(block_number - 1, block.header.parent_hash);

@@ -394,11 +394,9 @@ byte_string_view decode_transaction_vector(
 {
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
-    // glee: based on etherscan.io... eventually in CONFIG file
-    constexpr size_t approx_num_transactions = 300;
     MONAD_ASSERT(txns.size() == 0);
-    txns.reserve(approx_num_transactions);
 
+    // TODO: Reserve txn vector size for better perf
     while (payload.size() > 0) {
         Transaction txn{};
         payload = decode_transaction(txn, payload);
@@ -414,7 +412,6 @@ byte_string_view decode_block_header_vector(
 {
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
-    // glee: upper bound is 2... no reserve
     MONAD_ASSERT(ommers.size() == 0);
 
     while (payload.size() > 0) {

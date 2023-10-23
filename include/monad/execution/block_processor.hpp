@@ -38,7 +38,6 @@ struct AllTxnBlockProcessor
         LOG_DEBUG("BlockHeader Fields: {}", b.header);
 
         BlockState<TMutex> block_state{};
-        uint256_t all_txn_gas_reward = 0;
 
         // Apply DAO hack reversal
         TTraits::transfer_balance_dao(block_state, db, b.header.number);
@@ -56,20 +55,23 @@ struct AllTxnBlockProcessor
                 block_hash_buffer,
                 i};
             txn_executor.validate_and_execute();
-            auto &result = txn_executor.result_;
-            MONAD_DEBUG_ASSERT(
-                can_merge(block_state.state, result.second.state_));
-            merge(block_state.state, result.second.state_);
-            merge(block_state.code, result.second.code_);
+            auto &[receipt, state] = txn_executor.result_;
 
-            LOG_DEBUG("State Deltas: {}", result.second.state_);
-            LOG_DEBUG("Code Deltas: {}", result.second.code_);
+            LOG_DEBUG("State Deltas: {}", state.state_);
+            LOG_DEBUG("Code Deltas: {}", state.code_);
 
-            all_txn_gas_reward += TTraits::calculate_txn_award(
+            auto const reward = TTraits::calculate_txn_award(
                 b.transactions[i],
                 b.header.base_fee_per_gas.value_or(0),
-                result.first.gas_used);
-            r.push_back(result.first);
+                receipt.gas_used);
+            state.add_to_balance(b.header.beneficiary, reward);
+            TTraits::destruct_touched_dead(state);
+
+            MONAD_DEBUG_ASSERT(can_merge(block_state.state, state.state_));
+            merge(block_state.state, state.state_);
+            merge(block_state.code, state.code_);
+
+            r.push_back(receipt);
         }
 
         // Process withdrawls
@@ -77,7 +79,7 @@ struct AllTxnBlockProcessor
         TTraits::process_withdrawal(state, b.withdrawals);
 
         // Apply block reward to beneficiary
-        TTraits::apply_block_award(block_state, db, b, all_txn_gas_reward);
+        TTraits::apply_block_award(block_state, db, b);
 
         TTraits::destruct_touched_dead(state);
         MONAD_DEBUG_ASSERT(can_merge(block_state.state, state.state_));

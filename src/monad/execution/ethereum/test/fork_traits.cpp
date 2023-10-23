@@ -108,7 +108,7 @@ TEST(fork_traits, frontier)
             .ommers = {
                 BlockHeader{.number = 9, .beneficiary = b},
                 BlockHeader{.number = 8, .beneficiary = c}}};
-        fork_traits::frontier::apply_block_award(bs, db, block, 0u);
+        fork_traits::frontier::apply_block_award(bs, db, block);
         db.commit(s.bs_.state, s.bs_.code);
         EXPECT_EQ(
             intx::be::load<uint256_t>(s.get_balance(a)),
@@ -299,7 +299,7 @@ TEST(fork_traits, byzantium)
         .ommers = {
             BlockHeader{.number = 9, .beneficiary = b},
             BlockHeader{.number = 8, .beneficiary = c}}};
-    fork_traits::byzantium::apply_block_award(bs, db, block, 0);
+    fork_traits::byzantium::apply_block_award(bs, db, block);
     state_t cs{bs, db};
     EXPECT_EQ(
         intx::be::load<uint256_t>(cs.get_balance(a)),
@@ -332,7 +332,7 @@ TEST(fork_traits, constantinople_and_petersburg)
             BlockHeader{.number = 9, .beneficiary = b},
             BlockHeader{.number = 8, .beneficiary = c}}};
     fork_traits::constantinople_and_petersburg::apply_block_award(
-        bs, db, block, 0);
+        bs, db, block);
 
     EXPECT_EQ(
         intx::be::load<uint256_t>(s.get_balance(a)), 2'125'000'000'000'000'000);
@@ -455,7 +455,7 @@ TEST(fork_traits, paris_apply_block_reward)
         BlockState<mutex_t> bs;
         state_t s{bs, db};
 
-        fork_traits::paris::apply_block_award(bs, db, block, 0);
+        fork_traits::paris::apply_block_award(bs, db, block);
 
         EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(a)), 0u);
     }
@@ -464,7 +464,7 @@ TEST(fork_traits, paris_apply_block_reward)
         BlockState<mutex_t> bs;
         state_t s{bs, db};
 
-        fork_traits::london::apply_block_award(bs, db, block, 0);
+        fork_traits::london::apply_block_award(bs, db, block);
 
         EXPECT_EQ(
             intx::be::load<uint256_t>(s.get_balance(a)),

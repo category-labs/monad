@@ -42,14 +42,12 @@ namespace fork_traits
     using no_next_fork_t = shanghai;
 
     static constexpr uint256_t calculate_block_award(
-        Block const &b, uint256_t const &reward, uint256_t const &ommer_reward,
-        uint256_t const &gas_award)
+        Block const &b, uint256_t const &reward, uint256_t const &ommer_reward)
     {
         MONAD_DEBUG_ASSERT(
-            reward + intx::umul(ommer_reward, uint256_t{b.ommers.size()}) +
-                gas_award <=
+            reward + intx::umul(ommer_reward, uint256_t{b.ommers.size()}) <=
             std::numeric_limits<uint256_t>::max());
-        return reward + ommer_reward * b.ommers.size() + gas_award;
+        return reward + ommer_reward * b.ommers.size();
     }
 
     static constexpr uint256_t calculate_ommer_award(
@@ -138,11 +136,11 @@ namespace fork_traits
         template <class TBlockState>
         static constexpr void apply_block_award_impl(
             TBlockState &bs, Db &db, Block const &b, uint256_t const &reward,
-            uint256_t const &ommer_reward, uint256_t const &gas_award)
+            uint256_t const &ommer_reward)
         {
             state::State s{bs, db};
             auto const miner_award =
-                calculate_block_award(b, reward, ommer_reward, gas_award);
+                calculate_block_award(b, reward, ommer_reward);
 
             // reward block beneficiary, YP Eqn. 172
             s.add_to_balance(b.header.beneficiary, miner_award);
@@ -159,18 +157,18 @@ namespace fork_traits
         }
 
         template <class TBlockState>
-        static constexpr void apply_block_award(
-            TBlockState &bs, Db &db, Block const &b, uint256_t const &gas_award)
+        static constexpr void
+        apply_block_award(TBlockState &bs, Db &db, Block const &b)
         {
             apply_block_award_impl(
-                bs, db, b, block_reward, additional_ommer_reward, gas_award);
+                bs, db, b, block_reward, additional_ommer_reward);
         }
 
         static constexpr uint256_t calculate_txn_award(
-            Transaction const &t, uint256_t const &base_fee_per_gas,
-            uint64_t gas_used)
+            Transaction const &txn, uint256_t const &base_fee_per_gas,
+            uint64_t const gas_used)
         {
-            return uint256_t{gas_used} * gas_price(t, base_fee_per_gas);
+            return uint256_t{gas_used} * gas_price(txn, base_fee_per_gas);
         }
 
         template <class TBlockState>
@@ -346,11 +344,11 @@ namespace fork_traits
         template <class TBlockState>
         static constexpr void apply_block_award_impl(
             TBlockState &bs, Db &db, Block const &b, uint256_t const &reward,
-            uint256_t const &ommer_reward, uint256_t const &gas_award)
+            uint256_t const &ommer_reward)
         {
             state::State s{bs, db};
             auto const miner_reward =
-                calculate_block_award(b, reward, ommer_reward, gas_award);
+                calculate_block_award(b, reward, ommer_reward);
 
             // reward block beneficiary, YP Eqn. 172
             if (miner_reward) {
@@ -371,11 +369,11 @@ namespace fork_traits
         }
 
         template <class TBlockState>
-        static constexpr void apply_block_award(
-            TBlockState &bs, Db &db, Block const &b, uint256_t const &gas_award)
+        static constexpr void
+        apply_block_award(TBlockState &bs, Db &db, Block const &b)
         {
             apply_block_award_impl(
-                bs, db, b, block_reward, additional_ommer_reward, gas_award);
+                bs, db, b, block_reward, additional_ommer_reward);
         }
 
         template <class TState>
@@ -406,11 +404,11 @@ namespace fork_traits
         static constexpr uint64_t n_precompiles = 8;
 
         template <class TBlockState>
-        static constexpr void apply_block_award(
-            TBlockState &bs, Db &db, Block const &b, uint256_t const &gas_award)
+        static constexpr void
+        apply_block_award(TBlockState &bs, Db &db, Block const &b)
         {
             apply_block_award_impl(
-                bs, db, b, block_reward, additional_ommer_reward, gas_award);
+                bs, db, b, block_reward, additional_ommer_reward);
         }
     };
 
@@ -428,11 +426,11 @@ namespace fork_traits
             block_reward >> 5; // YP Eqn. 172, block reward / 32
 
         template <class TBlockState>
-        static constexpr void apply_block_award(
-            TBlockState &bs, Db &db, Block const &b, uint256_t const &gas_award)
+        static constexpr void
+        apply_block_award(TBlockState &bs, Db &db, Block const &b)
         {
             apply_block_award_impl(
-                bs, db, b, block_reward, additional_ommer_reward, gas_award);
+                bs, db, b, block_reward, additional_ommer_reward);
         }
     };
 
@@ -551,7 +549,7 @@ namespace fork_traits
 
         static constexpr uint256_t calculate_txn_award(
             Transaction const &t, uint256_t const &base_fee_per_gas,
-            uint64_t gas_used)
+            uint64_t const gas_used)
         {
             return gas_used * priority_fee_per_gas(t, base_fee_per_gas);
         }
@@ -576,11 +574,11 @@ namespace fork_traits
         static constexpr uint256_t additional_ommer_reward = 0;
 
         template <class TBlockState>
-        static constexpr void apply_block_award(
-            TBlockState &bs, Db &db, Block const &b, uint256_t const &gas_award)
+        static constexpr void
+        apply_block_award(TBlockState &bs, Db &db, Block const &b)
         {
             apply_block_award_impl(
-                bs, db, b, block_reward, additional_ommer_reward, gas_award);
+                bs, db, b, block_reward, additional_ommer_reward);
         }
 
         static constexpr void validate_block(Block const &b)

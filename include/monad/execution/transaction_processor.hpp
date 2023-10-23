@@ -66,7 +66,7 @@ struct TransactionProcessor
 
     [[nodiscard]] auto refund_gas(
         TState &s, Transaction const &t, uint256_t const &base_fee_per_gas,
-        uint64_t const gas_leftover, uint64_t refund) const
+        uint64_t const gas_leftover, uint64_t const refund) const
     {
         // refund and priority, Eqn. 73-76
         auto const gas_remaining = g_star(t, gas_leftover, refund);

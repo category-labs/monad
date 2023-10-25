@@ -28,30 +28,30 @@ struct AllTxnBlockProcessor
 {
     template <class TMutex, class TTraits, class TxnProcData>
     [[nodiscard]] std::vector<Receipt>
-    execute(Block &b, Db &db, BlockHashBuffer const &block_hash_buffer)
+    execute(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
     {
         auto const start_time = std::chrono::steady_clock::now();
         LOG_INFO(
             "Start executing Block {}, with {} transactions",
-            b.header.number,
-            b.transactions.size());
-        LOG_DEBUG("BlockHeader Fields: {}", b.header);
+            block.header.number,
+            block.transactions.size());
+        LOG_DEBUG("BlockHeader Fields: {}", block.header);
 
         BlockState<TMutex> block_state{};
 
         // Apply DAO hack reversal
-        TTraits::transfer_balance_dao(block_state, db, b.header.number);
+        TTraits::transfer_balance_dao(block_state, db, block.header.number);
 
         std::vector<Receipt> r{};
-        r.reserve(b.transactions.size());
+        r.reserve(block.transactions.size());
 
-        for (unsigned i = 0; i < b.transactions.size(); ++i) {
-            b.transactions[i].from = recover_sender(b.transactions[i]);
+        for (unsigned i = 0; i < block.transactions.size(); ++i) {
+            block.transactions[i].from = recover_sender(block.transactions[i]);
             TxnProcData txn_executor{
                 db,
                 block_state,
-                b.transactions[i],
-                b.header,
+                block.transactions[i],
+                block.header,
                 block_hash_buffer,
                 i};
             txn_executor.validate_and_execute();
@@ -69,10 +69,10 @@ struct AllTxnBlockProcessor
 
         // Process withdrawls
         state::State state{block_state, db};
-        TTraits::process_withdrawal(state, b.withdrawals);
+        TTraits::process_withdrawal(state, block.withdrawals);
 
         // Apply block reward to beneficiary
-        TTraits::apply_block_award(block_state, db, b);
+        TTraits::apply_block_award(block_state, db, block);
 
         TTraits::destruct_touched_dead(state);
         MONAD_DEBUG_ASSERT(can_merge(block_state.state, state.state_));
@@ -84,7 +84,7 @@ struct AllTxnBlockProcessor
                 finished_time - start_time);
         LOG_INFO(
             "Finish executing Block {}, time elapsed = {}",
-            b.header.number,
+            block.header.number,
             elapsed_ms);
         LOG_DEBUG("Receipts: {}", r);
 

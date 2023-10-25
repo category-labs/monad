@@ -56,8 +56,8 @@ namespace
         host_t<TTraits> host{block_hash_buffer, block_header, txn, state};
         transaction_processor_t<TTraits> processor;
 
-        if (auto const status = processor.static_validate(
-                txn, host.block_header_.base_fee_per_gas);
+        if (auto const status =
+                processor.static_validate(txn, host.header_.base_fee_per_gas);
             status != execution::TransactionStatus::SUCCESS) {
             return tl::unexpected{status};
         }
@@ -69,7 +69,7 @@ namespace
 
         // sum of transaction gas limit and gas utilized in block prior (0 in
         // this case) must be no greater than the blocks gas limit
-        if (host.block_header_.gas_limit < txn.gas_limit) {
+        if (host.header_.gas_limit < txn.gas_limit) {
             return tl::unexpected{
                 execution::TransactionStatus::GAS_LIMIT_REACHED};
         }
@@ -78,8 +78,8 @@ namespace
             state,
             host,
             txn,
-            host.block_header_.base_fee_per_gas.value_or(0),
-            host.block_header_.beneficiary);
+            host.header_.base_fee_per_gas.value_or(0),
+            host.header_.beneficiary);
     }
 
     [[nodiscard]] tl::expected<Receipt, execution::TransactionStatus> execute(

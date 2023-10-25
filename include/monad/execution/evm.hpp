@@ -26,29 +26,29 @@ struct Evm
 
     template <class TEvmHost>
     [[nodiscard]] static evmc::Result create_contract_account(
-        TEvmHost *host, TState &state, evmc_message const &m) noexcept
+        TEvmHost *host, TState &state, evmc_message const &msg) noexcept
     {
-        if (auto const result = check_sender_balance(state, m);
+        if (auto const result = check_sender_balance(state, msg);
             !result.has_value()) {
             return evmc::Result{result.error()};
         }
 
-        auto const nonce = state.get_nonce(m.sender);
+        auto const nonce = state.get_nonce(msg.sender);
         if (nonce == std::numeric_limits<decltype(nonce)>::max()) {
             // Match geth behavior - don't overflow nonce
-            return evmc::Result{EVMC_ARGUMENT_OUT_OF_RANGE, m.gas};
+            return evmc::Result{EVMC_ARGUMENT_OUT_OF_RANGE, msg.gas};
         }
-        state.set_nonce(m.sender, nonce + 1);
+        state.set_nonce(msg.sender, nonce + 1);
 
         auto const contract_address = [&] {
-            if (m.kind == EVMC_CREATE) {
-                return create_contract_address(m.sender, nonce); // YP Eqn. 85
+            if (msg.kind == EVMC_CREATE) {
+                return create_contract_address(msg.sender, nonce); // YP Eqn. 85
             }
-            else if (m.kind == EVMC_CREATE2) {
+            else if (msg.kind == EVMC_CREATE2) {
                 auto const code_hash =
-                    ethash::keccak256(m.input_data, m.input_size);
+                    ethash::keccak256(msg.input_data, msg.input_size);
                 return create2_contract_address(
-                    m.sender, m.create2_salt, code_hash);
+                    msg.sender, msg.create2_salt, code_hash);
             }
             std::unreachable();
         }();
@@ -66,20 +66,22 @@ struct Evm
 
         new_state.create_contract(contract_address);
         new_state.set_nonce(contract_address, TTraits::starting_nonce());
-        transfer_balances(new_state, m, contract_address);
+        transfer_balances(new_state, msg, contract_address);
 
         evmc_message const m_call{
             .kind = EVMC_CALL,
-            .depth = m.depth,
-            .gas = m.gas,
+            .depth = msg.depth,
+            .gas = msg.gas,
             .recipient = contract_address,
-            .sender = m.sender,
-            .value = m.value,
+            .sender = msg.sender,
+            .value = msg.value,
             .code_address = contract_address,
         };
 
         auto result = interpreter_t::execute(
-            &new_host, m_call, byte_string_view(m.input_data, m.input_size));
+            &new_host,
+            m_call,
+            byte_string_view(msg.input_data, msg.input_size));
 
         if (result.status_code == EVMC_SUCCESS) {
             result = TTraits::deploy_contract_code(
@@ -105,32 +107,32 @@ struct Evm
 
     template <class TEvmHost>
     [[nodiscard]] static evmc::Result
-    call_evm(TEvmHost *host, TState &state, evmc_message const &m) noexcept
+    call_evm(TEvmHost *host, TState &state, evmc_message const &msg) noexcept
     {
         TState new_state{state};
         TEvmHost new_host{*host, new_state};
 
-        if (auto const result = transfer_call_balances(new_state, m);
+        if (auto const result = transfer_call_balances(new_state, msg);
             result.status_code != EVMC_SUCCESS) {
             return evmc::Result{result};
         }
 
         MONAD_DEBUG_ASSERT(
-            m.kind != EVMC_CALL ||
-            address_t{m.recipient} == address_t{m.code_address});
-        if (m.kind == EVMC_CALL && m.flags & EVMC_STATIC) {
+            msg.kind != EVMC_CALL ||
+            address_t{msg.recipient} == address_t{msg.code_address});
+        if (msg.kind == EVMC_CALL && msg.flags & EVMC_STATIC) {
             // eip-161
-            new_state.touch(m.recipient);
+            new_state.touch(msg.recipient);
         }
 
         evmc::Result result;
-        if (auto maybe_result = check_call_precompile<TTraits>(m);
+        if (auto maybe_result = check_call_precompile<TTraits>(msg);
             maybe_result.has_value()) {
             result = std::move(maybe_result.value());
         }
         else {
-            auto const code = new_state.get_code(m.code_address);
-            result = interpreter_t::execute(&new_host, m, code);
+            auto const code = new_state.get_code(msg.code_address);
+            result = interpreter_t::execute(&new_host, msg, code);
         }
 
         MONAD_DEBUG_ASSERT(
@@ -151,35 +153,37 @@ struct Evm
     }
 
     [[nodiscard]] static result_t
-    check_sender_balance(TState &s, evmc_message const &m) noexcept
+    check_sender_balance(TState &state, evmc_message const &msg) noexcept
     {
-        auto const value = intx::be::load<uint256_t>(m.value);
-        auto const balance = intx::be::load<uint256_t>(s.get_balance(m.sender));
+        auto const value = intx::be::load<uint256_t>(msg.value);
+        auto const balance =
+            intx::be::load<uint256_t>(state.get_balance(msg.sender));
         if (balance < value) {
             return unexpected_t(
-                {.status_code = EVMC_INSUFFICIENT_BALANCE, .gas_left = m.gas});
+                {.status_code = EVMC_INSUFFICIENT_BALANCE,
+                 .gas_left = msg.gas});
         }
         return {};
     }
 
     static void transfer_balances(
-        TState &s, evmc_message const &m, address_t const &to) noexcept
+        TState &state, evmc_message const &msg, address_t const &to) noexcept
     {
-        auto const value = intx::be::load<uint256_t>(m.value);
-        s.subtract_from_balance(m.sender, value);
-        s.add_to_balance(to, value);
+        auto const value = intx::be::load<uint256_t>(msg.value);
+        state.subtract_from_balance(msg.sender, value);
+        state.add_to_balance(to, value);
     }
 
     [[nodiscard]] static evmc_result
-    transfer_call_balances(TState &s, evmc_message const &m)
+    transfer_call_balances(TState &state, evmc_message const &msg)
     {
-        if (m.kind != EVMC_DELEGATECALL) {
-            if (auto const result = check_sender_balance(s, m);
+        if (msg.kind != EVMC_DELEGATECALL) {
+            if (auto const result = check_sender_balance(state, msg);
                 !result.has_value()) {
                 return result.error();
             }
-            else if (m.flags != EVMC_STATIC) {
-                transfer_balances(s, m, m.recipient);
+            else if (msg.flags != EVMC_STATIC) {
+                transfer_balances(state, msg, msg.recipient);
             }
         }
         return {.status_code = EVMC_SUCCESS};

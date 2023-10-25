@@ -25,27 +25,28 @@ struct TransactionProcessorFiberData
     using result_t = std::pair<Receipt, state_t>;
 
     Db &db_;
-    BlockState<TMutex> &bs_;
+    BlockState<TMutex> &block_state_;
     Transaction const &txn_;
-    BlockHeader const &bh_;
+    BlockHeader const &header_;
     BlockHashBuffer const &block_hash_buffer_;
     unsigned id_;
     result_t result_;
 
     TransactionProcessorFiberData(
-        Db &db, BlockState<TMutex> &bs, Transaction &t, BlockHeader const &bh,
-        BlockHashBuffer const &block_hash_buffer, unsigned int id)
+        Db &db, BlockState<TMutex> &block_state, Transaction &txn,
+        BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
+        unsigned int id)
         : db_{db}
-        , bs_{bs}
-        , txn_{t}
-        , bh_{bh}
+        , block_state_{block_state}
+        , txn_{txn}
+        , header_{header}
         , block_hash_buffer_{block_hash_buffer}
         , id_{id}
         , result_{
               Receipt{
                   .status = Receipt::Status::FAILED,
                   .gas_used = txn_.gas_limit},
-              state::State{bs_, db_}}
+              state::State{block_state_, db_}}
     {
     }
 
@@ -60,7 +61,7 @@ struct TransactionProcessorFiberData
     void validate_and_execute()
     {
         auto &state = result_.second;
-        TTxnProcessor p{};
+        TTxnProcessor processor{};
 
         auto const start_time = std::chrono::steady_clock::now();
         LOG_INFO(
@@ -69,10 +70,10 @@ struct TransactionProcessorFiberData
             txn_.from,
             txn_.to);
 
-        auto validity =
-            p.static_validate(txn_, bh_.base_fee_per_gas.value_or(0));
+        auto validity = processor.static_validate(
+            txn_, header_.base_fee_per_gas.value_or(0));
         if (validity == TransactionStatus::SUCCESS) {
-            validity = p.validate(state, txn_);
+            validity = processor.validate(state, txn_);
         }
         if (!is_valid(validity)) {
             LOG_INFO(
@@ -81,13 +82,13 @@ struct TransactionProcessorFiberData
             return;
         }
 
-        TEvmHost host{block_hash_buffer_, bh_, txn_, state};
-        result_.first = p.execute(
+        TEvmHost host{block_hash_buffer_, header_, txn_, state};
+        result_.first = processor.execute(
             state,
             host,
             txn_,
-            bh_.base_fee_per_gas.value_or(0),
-            bh_.beneficiary);
+            header_.base_fee_per_gas.value_or(0),
+            header_.beneficiary);
 
         auto const finished_time = std::chrono::steady_clock::now();
         auto const elapsed_ms =

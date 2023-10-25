@@ -42,18 +42,20 @@ namespace fork_traits
     using no_next_fork_t = shanghai;
 
     static constexpr uint256_t calculate_block_award(
-        Block const &b, uint256_t const &reward, uint256_t const &ommer_reward)
+        Block const &block, uint256_t const &reward,
+        uint256_t const &ommer_reward)
     {
         MONAD_DEBUG_ASSERT(
-            reward + intx::umul(ommer_reward, uint256_t{b.ommers.size()}) <=
+            reward + intx::umul(ommer_reward, uint256_t{block.ommers.size()}) <=
             std::numeric_limits<uint256_t>::max());
-        return reward + ommer_reward * b.ommers.size();
+        return reward + ommer_reward * block.ommers.size();
     }
 
     static constexpr uint256_t calculate_ommer_award(
-        Block const &b, uint256_t const &reward, uint64_t ommer_number)
+        Block const &block, uint256_t const &reward, uint64_t ommer_number)
     {
-        auto const subtrahend = ((b.header.number - ommer_number) * reward) / 8;
+        auto const subtrahend =
+            ((block.header.number - ommer_number) * reward) / 8;
         return reward - subtrahend;
     }
 
@@ -72,21 +74,22 @@ namespace fork_traits
 
         // YP, Eqn. 60, first summation
         [[nodiscard]] static constexpr uint64_t
-        g_data(Transaction const &t) noexcept
+        g_data(Transaction const &txn) noexcept
         {
             auto const zeros = std::count_if(
-                std::cbegin(t.data), std::cend(t.data), [](unsigned char c) {
-                    return c == 0x00;
-                });
-            auto const nonzeros = t.data.size() - static_cast<uint64_t>(zeros);
+                std::cbegin(txn.data),
+                std::cend(txn.data),
+                [](unsigned char c) { return c == 0x00; });
+            auto const nonzeros =
+                txn.data.size() - static_cast<uint64_t>(zeros);
             return static_cast<uint64_t>(zeros) * 4u + nonzeros * 68u;
         }
 
         // YP, section 6.2, Eqn. 60
         [[nodiscard]] static constexpr uint64_t
-        intrinsic_gas(Transaction const &t) noexcept
+        intrinsic_gas(Transaction const &txn) noexcept
         {
-            return 21'000 + g_data(t);
+            return 21'000 + g_data(txn);
         }
 
         [[nodiscard]] static constexpr auto starting_nonce() noexcept
@@ -106,62 +109,64 @@ namespace fork_traits
 
         template <class TState>
         static evmc::Result deploy_contract_code(
-            TState &s, address_t const &a, evmc::Result result) noexcept
+            TState &state, address_t const &address,
+            evmc::Result result) noexcept
         {
             MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
             auto const deploy_cost =
                 static_cast<int64_t>(result.output_size) * 200;
-            result.create_address = a;
+            result.create_address = address;
 
             if (result.gas_left < deploy_cost) {
                 // From YP: "No code is deposited in the state if the gas
                 // does not cover the additional per-byte contract deposit
                 // fee, however, the value is still transferred and the
                 // execution side- effects take place."
-                s.set_code(a, {});
+                state.set_code(address, {});
             }
             else {
-                s.set_code(a, {result.output_data, result.output_size});
+                state.set_code(
+                    address, {result.output_data, result.output_size});
                 result.gas_left -= deploy_cost;
             }
             return result;
         }
 
-        static constexpr uint256_t
-        gas_price(Transaction const &t, uint256_t const & /*base_fee_per_gas*/)
+        static constexpr uint256_t gas_price(
+            Transaction const &txn, uint256_t const & /*base_fee_per_gas*/)
         {
-            return t.max_fee_per_gas;
+            return txn.max_fee_per_gas;
         }
 
         template <class TBlockState>
         static constexpr void apply_block_award_impl(
-            TBlockState &bs, Db &db, Block const &b, uint256_t const &reward,
-            uint256_t const &ommer_reward)
+            TBlockState &block_state, Db &db, Block const &block,
+            uint256_t const &reward, uint256_t const &ommer_reward)
         {
-            state::State s{bs, db};
+            state::State state{block_state, db};
             auto const miner_award =
-                calculate_block_award(b, reward, ommer_reward);
+                calculate_block_award(block, reward, ommer_reward);
 
             // reward block beneficiary, YP Eqn. 172
-            s.add_to_balance(b.header.beneficiary, miner_award);
+            state.add_to_balance(block.header.beneficiary, miner_award);
 
             // reward ommers, YP Eqn. 175
-            for (auto const &header : b.ommers) {
-                s.add_to_balance(
+            for (auto const &header : block.ommers) {
+                state.add_to_balance(
                     header.beneficiary,
-                    calculate_ommer_award(b, reward, header.number));
+                    calculate_ommer_award(block, reward, header.number));
             }
 
-            MONAD_DEBUG_ASSERT(can_merge(bs.state, s.state_));
-            merge(bs.state, s.state_);
+            MONAD_DEBUG_ASSERT(can_merge(block_state.state, state.state_));
+            merge(block_state.state, state.state_);
         }
 
         template <class TBlockState>
         static constexpr void
-        apply_block_award(TBlockState &bs, Db &db, Block const &b)
+        apply_block_award(TBlockState &block_state, Db &db, Block const &block)
         {
             apply_block_award_impl(
-                bs, db, b, block_reward, additional_ommer_reward);
+                block_state, db, block, block_reward, additional_ommer_reward);
         }
 
         static constexpr uint256_t calculate_txn_award(
@@ -231,23 +236,24 @@ namespace fork_traits
         static constexpr auto last_block_number = 1'919'999u;
 
         [[nodiscard]] static constexpr auto
-        g_txcreate(Transaction const &t) noexcept
+        g_txcreate(Transaction const &txn) noexcept
         {
-            if (!t.to.has_value()) {
+            if (!txn.to.has_value()) {
                 return 32'000u;
             }
             return 0u;
         }
 
         [[nodiscard]] static constexpr auto
-        intrinsic_gas(Transaction const &t) noexcept
+        intrinsic_gas(Transaction const &txn) noexcept
         {
-            return g_txcreate(t) + 21'000u + g_data(t);
+            return g_txcreate(txn) + 21'000u + g_data(txn);
         }
 
         template <class TState>
         static evmc::Result deploy_contract_code(
-            TState &s, address_t const &a, evmc::Result result) noexcept
+            TState &state, address_t const &address,
+            evmc::Result result) noexcept
         {
             MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
             auto const deploy_cost =
@@ -261,9 +267,10 @@ namespace fork_traits
                 result.status_code = EVMC_OUT_OF_GAS;
             }
             else {
-                result.create_address = a;
+                result.create_address = address;
                 result.gas_left -= deploy_cost;
-                s.set_code(a, {result.output_data, result.output_size});
+                state.set_code(
+                    address, {result.output_data, result.output_size});
             }
             return result;
         }
@@ -277,20 +284,21 @@ namespace fork_traits
 
         template <class TBlockState>
         static constexpr void transfer_balance_dao(
-            TBlockState &bs, Db &db, block_num_t const block_number)
+            TBlockState &block_state, Db &db, block_num_t const block_number)
         {
-            state::State s{bs, db};
+            state::State state{block_state, db};
             if (MONAD_UNLIKELY(
                     block_number == execution::dao::dao_block_number)) {
                 for (auto const &addr : execution::dao::child_accounts) {
                     auto const balance =
-                        intx::be::load<uint256_t>(s.get_balance(addr));
-                    s.add_to_balance(execution::dao::withdraw_account, balance);
-                    s.subtract_from_balance(addr, balance);
+                        intx::be::load<uint256_t>(state.get_balance(addr));
+                    state.add_to_balance(
+                        execution::dao::withdraw_account, balance);
+                    state.subtract_from_balance(addr, balance);
                 }
 
-                MONAD_DEBUG_ASSERT(can_merge(bs.state, s.state_));
-                merge(bs.state, s.state_);
+                MONAD_DEBUG_ASSERT(can_merge(block_state.state, state.state_));
+                merge(block_state.state, state.state_);
             }
         }
     };
@@ -324,56 +332,58 @@ namespace fork_traits
         }
 
         template <class TState>
-        static constexpr void destruct_touched_dead(TState &s) noexcept
+        static constexpr void destruct_touched_dead(TState &state) noexcept
         {
-            s.destruct_touched_dead();
+            state.destruct_touched_dead();
         }
 
         template <class TState>
         [[nodiscard]] static evmc::Result deploy_contract_code(
-            TState &s, address_t const &a, evmc::Result result) noexcept
+            TState &state, address_t const &address,
+            evmc::Result result) noexcept
         {
             MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
             // EIP-170
             if (result.output_size > max_code_size) {
                 return evmc::Result{EVMC_OUT_OF_GAS};
             }
-            return homestead::deploy_contract_code(s, a, std::move(result));
+            return homestead::deploy_contract_code(
+                state, address, std::move(result));
         }
 
         template <class TBlockState>
         static constexpr void apply_block_award_impl(
-            TBlockState &bs, Db &db, Block const &b, uint256_t const &reward,
-            uint256_t const &ommer_reward)
+            TBlockState &block_state, Db &db, Block const &block,
+            uint256_t const &reward, uint256_t const &ommer_reward)
         {
-            state::State s{bs, db};
+            state::State state{block_state, db};
             auto const miner_reward =
-                calculate_block_award(b, reward, ommer_reward);
+                calculate_block_award(block, reward, ommer_reward);
 
             // reward block beneficiary, YP Eqn. 172
             if (miner_reward) {
-                s.add_to_balance(b.header.beneficiary, miner_reward);
+                state.add_to_balance(block.header.beneficiary, miner_reward);
             }
 
             // reward ommers, YP Eqn. 175
-            for (auto const &header : b.ommers) {
+            for (auto const &header : block.ommers) {
                 auto const ommer_reward =
-                    calculate_ommer_award(b, reward, header.number);
+                    calculate_ommer_award(block, reward, header.number);
                 if (ommer_reward) {
-                    s.add_to_balance(header.beneficiary, ommer_reward);
+                    state.add_to_balance(header.beneficiary, ommer_reward);
                 }
             }
 
-            MONAD_DEBUG_ASSERT(can_merge(bs.state, s.state_));
-            merge(bs.state, s.state_);
+            MONAD_DEBUG_ASSERT(can_merge(block_state.state, state.state_));
+            merge(block_state.state, state.state_);
         }
 
         template <class TBlockState>
         static constexpr void
-        apply_block_award(TBlockState &bs, Db &db, Block const &b)
+        apply_block_award(TBlockState &block_state, Db &db, Block const &block)
         {
             apply_block_award_impl(
-                bs, db, b, block_reward, additional_ommer_reward);
+                block_state, db, block, block_reward, additional_ommer_reward);
         }
 
         template <class TState>
@@ -405,10 +415,10 @@ namespace fork_traits
 
         template <class TBlockState>
         static constexpr void
-        apply_block_award(TBlockState &bs, Db &db, Block const &b)
+        apply_block_award(TBlockState &block_state, Db &db, Block const &block)
         {
             apply_block_award_impl(
-                bs, db, b, block_reward, additional_ommer_reward);
+                block_state, db, block, block_reward, additional_ommer_reward);
         }
     };
 
@@ -427,10 +437,10 @@ namespace fork_traits
 
         template <class TBlockState>
         static constexpr void
-        apply_block_award(TBlockState &bs, Db &db, Block const &b)
+        apply_block_award(TBlockState &block_state, Db &db, Block const &block)
         {
             apply_block_award_impl(
-                bs, db, b, block_reward, additional_ommer_reward);
+                block_state, db, block, block_reward, additional_ommer_reward);
         }
     };
 
@@ -445,20 +455,21 @@ namespace fork_traits
 
         // https://eips.ethereum.org/EIPS/eip-2028
         [[nodiscard]] static constexpr uint64_t
-        g_data(Transaction const &t) noexcept
+        g_data(Transaction const &txn) noexcept
         {
             auto const zeros = std::count_if(
-                std::cbegin(t.data), std::cend(t.data), [](unsigned char c) {
-                    return c == 0x00;
-                });
-            auto const nonzeros = t.data.size() - static_cast<uint64_t>(zeros);
+                std::cbegin(txn.data),
+                std::cend(txn.data),
+                [](unsigned char c) { return c == 0x00; });
+            auto const nonzeros =
+                txn.data.size() - static_cast<uint64_t>(zeros);
             return static_cast<uint64_t>(zeros) * 4u + nonzeros * 16u;
         }
 
         [[nodiscard]] static constexpr auto
-        intrinsic_gas(Transaction const &t) noexcept
+        intrinsic_gas(Transaction const &txn) noexcept
         {
-            return g_txcreate(t) + 21'000u + g_data(t);
+            return g_txcreate(txn) + 21'000u + g_data(txn);
         }
     };
 
@@ -473,20 +484,20 @@ namespace fork_traits
 
         // https://eips.ethereum.org/EIPS/eip-2930
         [[nodiscard]] static constexpr auto
-        g_access_and_storage(Transaction const &t) noexcept
+        g_access_and_storage(Transaction const &txn) noexcept
         {
-            uint64_t g = t.access_list.size() * 2'400u;
-            for (auto &i : t.access_list) {
+            uint64_t g = txn.access_list.size() * 2'400u;
+            for (auto &i : txn.access_list) {
                 g += i.keys.size() * 1'900u;
             }
             return g;
         }
 
         [[nodiscard]] static constexpr auto
-        intrinsic_gas(Transaction const &t) noexcept
+        intrinsic_gas(Transaction const &txn) noexcept
         {
-            return g_txcreate(t) + 21'000u + g_data(t) +
-                   g_access_and_storage(t);
+            return g_txcreate(txn) + 21'000u + g_data(txn) +
+                   g_access_and_storage(txn);
         }
 
         [[nodiscard]] static constexpr bool
@@ -513,45 +524,48 @@ namespace fork_traits
         // https://eips.ethereum.org/EIPS/eip-3541
         template <class TState>
         [[nodiscard]] static evmc::Result deploy_contract_code(
-            TState &s, address_t const &a, evmc::Result result) noexcept
+            TState &state, address_t const &address,
+            evmc::Result result) noexcept
         {
             MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
             if (result.output_size > 0 && result.output_data[0] == 0xef) {
                 return evmc::Result{EVMC_CONTRACT_VALIDATION_FAILURE};
             }
-            return berlin::deploy_contract_code(s, a, std::move(result));
+            return berlin::deploy_contract_code(
+                state, address, std::move(result));
         }
 
         // https://eips.ethereum.org/EIPS/eip-1559
         static constexpr uint256_t
-        gas_price(Transaction const &t, uint256_t const &base_fee_per_gas)
+        gas_price(Transaction const &txn, uint256_t const &base_fee_per_gas)
         {
-            return priority_fee_per_gas(t, base_fee_per_gas) + base_fee_per_gas;
+            return priority_fee_per_gas(txn, base_fee_per_gas) +
+                   base_fee_per_gas;
         }
 
         static constexpr uint256_t priority_fee_per_gas(
-            Transaction const &t, uint256_t const &base_fee_per_gas)
+            Transaction const &txn, uint256_t const &base_fee_per_gas)
         {
-            MONAD_DEBUG_ASSERT(t.max_fee_per_gas >= base_fee_per_gas);
-            if (t.type == TransactionType::eip1559) {
+            MONAD_DEBUG_ASSERT(txn.max_fee_per_gas >= base_fee_per_gas);
+            if (txn.type == TransactionType::eip1559) {
                 return std::min(
-                    t.max_priority_fee_per_gas,
-                    t.max_fee_per_gas - base_fee_per_gas);
+                    txn.max_priority_fee_per_gas,
+                    txn.max_fee_per_gas - base_fee_per_gas);
             }
             // per eip-1559: "Legacy Ethereum transactions will still work and
             // be included in blocks, but they will not benefit directly from
             // the new pricing system. This is due to the fact that upgrading
             // from legacy transactions to new transactions results in the
-            // legacy transaction’s gas_price entirely being consumed either by
-            // the base_fee_per_gas and the priority_fee_per_gas."
-            return t.max_fee_per_gas - base_fee_per_gas;
+            // legacy transaction’s gas_price entirely being consumed either
+            // by the base_fee_per_gas and the priority_fee_per_gas."
+            return txn.max_fee_per_gas - base_fee_per_gas;
         }
 
         static constexpr uint256_t calculate_txn_award(
-            Transaction const &t, uint256_t const &base_fee_per_gas,
+            Transaction const &txn, uint256_t const &base_fee_per_gas,
             uint64_t const gas_used)
         {
-            return gas_used * priority_fee_per_gas(t, base_fee_per_gas);
+            return gas_used * priority_fee_per_gas(txn, base_fee_per_gas);
         }
 
         [[nodiscard]] static constexpr bool
@@ -575,21 +589,21 @@ namespace fork_traits
 
         template <class TBlockState>
         static constexpr void
-        apply_block_award(TBlockState &bs, Db &db, Block const &b)
+        apply_block_award(TBlockState &block_state, Db &db, Block const &block)
         {
             apply_block_award_impl(
-                bs, db, b, block_reward, additional_ommer_reward);
+                block_state, db, block, block_reward, additional_ommer_reward);
         }
 
-        static constexpr void validate_block(Block const &b)
+        static constexpr void validate_block(Block const &block)
         {
-            MONAD_DEBUG_ASSERT(b.header.ommers_hash == NULL_LIST_HASH);
-            MONAD_DEBUG_ASSERT(b.header.difficulty == 0u);
+            MONAD_DEBUG_ASSERT(block.header.ommers_hash == NULL_LIST_HASH);
+            MONAD_DEBUG_ASSERT(block.header.difficulty == 0u);
             byte_string_fixed<8> empty{
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-            MONAD_DEBUG_ASSERT(b.header.nonce == empty);
-            MONAD_DEBUG_ASSERT(b.ommers.size() == 0u);
-            MONAD_DEBUG_ASSERT(b.header.extra_data.length() <= 32u);
+            MONAD_DEBUG_ASSERT(block.header.nonce == empty);
+            MONAD_DEBUG_ASSERT(block.ommers.size() == 0u);
+            MONAD_DEBUG_ASSERT(block.header.extra_data.length() <= 32u);
         }
     };
 
@@ -605,27 +619,27 @@ namespace fork_traits
         // EIP-3651
         template <class TState>
         static constexpr void
-        warm_coinbase(TState &s, address_t const &beneficiary)
+        warm_coinbase(TState &state, address_t const &beneficiary)
         {
-            s.warm_coinbase(beneficiary);
+            state.warm_coinbase(beneficiary);
         }
 
         // EIP-3860
         [[nodiscard]] static constexpr uint64_t
-        g_extra_cost_init(Transaction const &t) noexcept
+        g_extra_cost_init(Transaction const &txn) noexcept
         {
-            if (!t.to.has_value()) {
-                return ((t.data.length() + 31u) / 32u) * 2u;
+            if (!txn.to.has_value()) {
+                return ((txn.data.length() + 31u) / 32u) * 2u;
             }
             return 0u;
         }
 
         // EIP-3860
         [[nodiscard]] static constexpr auto
-        intrinsic_gas(Transaction const &t) noexcept
+        intrinsic_gas(Transaction const &txn) noexcept
         {
-            return g_txcreate(t) + 21'000u + g_data(t) +
-                   g_access_and_storage(t) + g_extra_cost_init(t);
+            return g_txcreate(txn) + 21'000u + g_data(txn) +
+                   g_access_and_storage(txn) + g_extra_cost_init(txn);
         }
 
         // EIP-4895

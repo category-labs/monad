@@ -109,7 +109,7 @@ TEST(fork_traits, frontier)
                 BlockHeader{.number = 9, .beneficiary = b},
                 BlockHeader{.number = 8, .beneficiary = c}}};
         fork_traits::frontier::apply_block_award(bs, db, block);
-        db.commit(s.bs_.state, s.bs_.code);
+        db.commit(s.block_state_.state, s.block_state_.code);
         EXPECT_EQ(
             intx::be::load<uint256_t>(s.get_balance(a)),
             5'312'500'000'000'000'000);

@@ -104,20 +104,27 @@ struct TransactionProcessor
         MONAD_DEBUG_ASSERT(result.gas_refund >= 0);
         MONAD_DEBUG_ASSERT(
             t.gas_limit >= static_cast<uint64_t>(result.gas_left));
+
         auto const gas_remaining = refund_gas(
             s,
             t,
             base_fee_per_gas,
             static_cast<uint64_t>(result.gas_left),
             static_cast<uint64_t>(result.gas_refund));
+        auto const gas_used = t.gas_limit - gas_remaining;
+        auto const reward =
+            TTraits::calculate_txn_award(t, base_fee_per_gas, gas_used);
+        s.add_to_balance(beneficiary, reward);
 
         // finalize state, Eqn. 77-79
         s.destruct_suicides();
         TTraits::destruct_touched_dead(s);
 
-        auto receipt =
-            h.make_receipt_from_result(result.status_code, t, gas_remaining);
-        return receipt;
+        return Receipt{
+            .status = result.status_code == EVMC_SUCCESS ? 1u : 0u,
+            .gas_used = gas_used,
+            .type = t.type,
+            .logs = std::move(s.logs())};
     }
 
     TransactionStatus validate(TState &state, Transaction const &t)

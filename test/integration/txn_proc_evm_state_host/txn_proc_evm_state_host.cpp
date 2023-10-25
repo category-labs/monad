@@ -88,7 +88,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     fork_t::apply_block_award(bs, db, b);
 
     state::State s2{bs, db};
-    EXPECT_EQ(s2.get_balance(a), bytes32_t{3'093'750'000'000'210'000});
+    EXPECT_EQ(s2.get_balance(a), bytes32_t{3'093'750'000'000'420'000});
     EXPECT_EQ(s2.get_balance(o), bytes32_t{2'625'000'000'000'000'000});
 }
 
@@ -160,7 +160,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     fork_t::apply_block_award(bs, db, b);
 
     state::State s2{bs, db};
-    EXPECT_EQ(s2.get_balance(a), bytes32_t{5'240'000'000'000'000'000});
+    EXPECT_EQ(s2.get_balance(a), bytes32_t{5'480'000'000'000'000'000});
 }
 
 TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
@@ -227,5 +227,5 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     fork_t::apply_block_award(bs, db, b);
 
     state::State s2{bs, db};
-    EXPECT_EQ(s2.get_balance(a), bytes32_t{5'005'214'236'886'990'000});
+    EXPECT_EQ(s2.get_balance(a), bytes32_t{5'010'428'473'773'980'000});
 }

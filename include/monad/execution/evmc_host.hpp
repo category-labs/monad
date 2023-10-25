@@ -122,17 +122,6 @@ struct EvmcHost : public evmc::Host
         return m;
     }
 
-    [[nodiscard]] constexpr Receipt make_receipt_from_result(
-        evmc_status_code sc, Transaction const &t, uint64_t const gas_remaining)
-    {
-        Receipt receipt{
-            .status = sc == EVMC_SUCCESS ? 1u : 0u,
-            .gas_used = t.gas_limit - gas_remaining,
-            .type = t.type,
-            .logs = std::move(state_.logs())};
-        return receipt;
-    }
-
     [[nodiscard]] virtual evmc::Result
     call(evmc_message const &m) noexcept override
     {

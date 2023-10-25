@@ -60,13 +60,6 @@ struct AllTxnBlockProcessor
             LOG_DEBUG("State Deltas: {}", state.state_);
             LOG_DEBUG("Code Deltas: {}", state.code_);
 
-            auto const reward = TTraits::calculate_txn_award(
-                b.transactions[i],
-                b.header.base_fee_per_gas.value_or(0),
-                receipt.gas_used);
-            state.add_to_balance(b.header.beneficiary, reward);
-            TTraits::destruct_touched_dead(state);
-
             MONAD_DEBUG_ASSERT(can_merge(block_state.state, state.state_));
             merge(block_state.state, state.state_);
             merge(block_state.code, state.code_);

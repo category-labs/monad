@@ -7,6 +7,7 @@
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
+#include <monad/execution/util.hpp>
 
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
@@ -38,16 +39,14 @@ constexpr auto null{0x0000000000000000000000000000000000000000_address};
 
 TEST(fork_traits, frontier)
 {
-    fork_traits::frontier f{};
     Transaction t{};
-    EXPECT_EQ(f.intrinsic_gas(t), 21'000);
+    EXPECT_EQ(intrinsic_gas<fork_traits::frontier>(t), 21'000);
 
     t.data.push_back(0x00);
-    EXPECT_EQ(f.intrinsic_gas(t), 21'004);
+    EXPECT_EQ(intrinsic_gas<fork_traits::frontier>(t), 21'004);
 
     t.data.push_back(0xff);
-    EXPECT_EQ(f.intrinsic_gas(t), 21'072);
-    EXPECT_EQ(f.starting_nonce(), 0);
+    EXPECT_EQ(intrinsic_gas<fork_traits::frontier>(t), 21'072);
 
     db_t db;
     db.commit(
@@ -57,9 +56,6 @@ TEST(fork_traits, frontier)
         BlockState<mutex_t> bs;
         state_t s{bs, db};
 
-        EXPECT_EQ(f.max_refund_quotient(), 2);
-
-        f.destruct_touched_dead(s);
         EXPECT_TRUE(s.account_exists(a));
 
         byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
@@ -88,13 +84,13 @@ TEST(fork_traits, frontier)
 
         // gas price
         EXPECT_EQ(
-            fork_traits::frontier::gas_price(
+            gas_price<fork_traits::frontier>(
                 Transaction{.max_fee_per_gas = 1'000}, 0u),
             1'000);
 
         // txn award
         EXPECT_EQ(
-            fork_traits::frontier::calculate_txn_award(
+            calculate_txn_award<fork_traits::frontier>(
                 Transaction{.max_fee_per_gas = 100'000'000'000}, 0, 90'000'000),
             uint256_t{9'000'000'000'000'000'000});
     }
@@ -124,13 +120,11 @@ TEST(fork_traits, frontier)
 
 TEST(fork_traits, homestead)
 {
-    fork_traits::homestead h{};
     Transaction t{};
-    EXPECT_EQ(h.intrinsic_gas(t), 53'000);
+    EXPECT_EQ(intrinsic_gas<fork_traits::homestead>(t), 53'000);
 
     t.to = 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
-    EXPECT_EQ(h.intrinsic_gas(t), 21'000);
-    EXPECT_EQ(h.starting_nonce(), 0);
+    EXPECT_EQ(intrinsic_gas<fork_traits::homestead>(t), 21'000);
 
     db_t db;
     db.commit(
@@ -237,13 +231,11 @@ TEST(fork_traits, tangerine_whistle)
 
 TEST(fork_traits, spurious_dragon)
 {
-    fork_traits::spurious_dragon sd{};
     Transaction t{};
-    EXPECT_EQ(sd.intrinsic_gas(t), 53'000);
+    EXPECT_EQ(intrinsic_gas<fork_traits::spurious_dragon>(t), 53'000);
 
     t.to = 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
-    EXPECT_EQ(sd.intrinsic_gas(t), 21'000);
-    EXPECT_EQ(sd.starting_nonce(), 1);
+    EXPECT_EQ(intrinsic_gas<fork_traits::spurious_dragon>(t), 21'000);
 
     db_t db;
     db.commit(
@@ -253,7 +245,7 @@ TEST(fork_traits, spurious_dragon)
     BlockState<mutex_t> bs;
     state_t s{bs, db};
     s.add_to_balance(a, 0);
-    sd.destruct_touched_dead(s);
+    s.destruct_touched_dead();
 
     EXPECT_FALSE(s.account_exists(a));
 
@@ -276,19 +268,17 @@ TEST(fork_traits, spurious_dragon)
 
 TEST(fork_traits, byzantium)
 {
-    fork_traits::byzantium byz{};
     Transaction t{};
-    EXPECT_EQ(byz.intrinsic_gas(t), 53'000);
+    EXPECT_EQ(intrinsic_gas<fork_traits::byzantium>(t), 53'000);
 
     t.to = 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
-    EXPECT_EQ(byz.intrinsic_gas(t), 21'000);
-    EXPECT_EQ(byz.starting_nonce(), 1);
+    EXPECT_EQ(intrinsic_gas<fork_traits::byzantium>(t), 21'000);
 
     db_t db;
     BlockState<mutex_t> bs;
     state_t as{bs, db};
     (void)as.get_balance(a);
-    byz.destruct_touched_dead(as);
+    as.destruct_touched_dead();
 
     EXPECT_FALSE(as.account_exists(a));
 
@@ -349,47 +339,43 @@ static_assert(
     std::same_as<fork_traits::istanbul::next_fork_t, fork_traits::berlin>);
 TEST(fork_traits, istanbul)
 {
-    fork_traits::istanbul i{};
     Transaction t{};
-    EXPECT_EQ(i.intrinsic_gas(t), 53'000);
+    EXPECT_EQ(intrinsic_gas<fork_traits::istanbul>(t), 53'000);
 
     t.to = 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
     t.data.push_back(0x00);
-    EXPECT_EQ(i.intrinsic_gas(t), 21'004);
+    EXPECT_EQ(intrinsic_gas<fork_traits::istanbul>(t), 21'004);
 
     t.data.push_back(0xff);
-    EXPECT_EQ(i.intrinsic_gas(t), 21'020);
+    EXPECT_EQ(intrinsic_gas<fork_traits::istanbul>(t), 21'020);
 }
 
 TEST(fork_traits, berlin)
 {
-    fork_traits::berlin b{};
     Transaction t{};
-    EXPECT_EQ(b.intrinsic_gas(t), 53'000);
+    EXPECT_EQ(intrinsic_gas<fork_traits::berlin>(t), 53'000);
 
     t.to = 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
-    EXPECT_EQ(b.intrinsic_gas(t), 21'000);
+    EXPECT_EQ(intrinsic_gas<fork_traits::berlin>(t), 21'000);
 
     static constexpr auto key1{
         0x0000000000000000000000000000000000000000000000000000000000000007_bytes32};
     static constexpr auto key2{
         0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
     t.access_list.push_back({*t.to, {key1, key2}});
-    EXPECT_EQ(b.intrinsic_gas(t), 21'000 + 2400 + 1900 + 1900);
+    EXPECT_EQ(
+        intrinsic_gas<fork_traits::berlin>(t), 21'000 + 2400 + 1900 + 1900);
 
     t.data.push_back(0x00);
     t.data.push_back(0xff);
-    EXPECT_EQ(b.intrinsic_gas(t), 27'220);
+    EXPECT_EQ(intrinsic_gas<fork_traits::berlin>(t), 27'220);
 }
 
 TEST(fork_traits, london)
 {
-    fork_traits::london l{};
     db_t db;
     BlockState<mutex_t> bs;
     state_t s{bs, db};
-
-    EXPECT_EQ(l.max_refund_quotient(), 5);
 
     byte_string const illegal_code{0xef, 0x60};
     byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
@@ -426,15 +412,15 @@ TEST(fork_traits, london)
         .max_fee_per_gas = 5'000,
         .type = TransactionType::eip1559,
         .max_priority_fee_per_gas = 4'000};
-    EXPECT_EQ(fork_traits::london::gas_price(t1, 2'000u), 3'000);
-    EXPECT_EQ(fork_traits::london::gas_price(t2, 2'000u), 3'000);
-    EXPECT_EQ(fork_traits::london::gas_price(t3, 2'000u), 3'000);
-    EXPECT_EQ(fork_traits::london::gas_price(t4, 2'000u), 2'000);
-    EXPECT_EQ(fork_traits::london::gas_price(t5, 2'000u), 5'000);
+    EXPECT_EQ(gas_price<fork_traits::london>(t1, 2'000u), 3'000);
+    EXPECT_EQ(gas_price<fork_traits::london>(t2, 2'000u), 3'000);
+    EXPECT_EQ(gas_price<fork_traits::london>(t3, 2'000u), 3'000);
+    EXPECT_EQ(gas_price<fork_traits::london>(t4, 2'000u), 2'000);
+    EXPECT_EQ(gas_price<fork_traits::london>(t5, 2'000u), 5'000);
 
     // txn award
     EXPECT_EQ(
-        fork_traits::london::calculate_txn_award(
+        calculate_txn_award<fork_traits::london>(
             Transaction{.max_fee_per_gas = 100'000'000'000}, 0, 90'000'000),
         uint256_t{9'000'000'000'000'000'000});
 }
@@ -472,31 +458,6 @@ TEST(fork_traits, paris_apply_block_reward)
     }
 }
 
-// EIP-3651
-TEST(fork_traits, shanghai_warm_coinbase)
-{
-    db_t db{};
-
-    {
-        db_t db;
-        BlockState<mutex_t> bs;
-        state_t s{bs, db};
-
-        fork_traits::shanghai::warm_coinbase(s, a);
-
-        EXPECT_EQ(s.access_account(a), EVMC_ACCESS_WARM);
-    }
-    {
-        db_t db;
-        BlockState<mutex_t> bs;
-        state_t s{bs, db};
-
-        fork_traits::london::warm_coinbase(s, a);
-
-        EXPECT_EQ(s.access_account(a), EVMC_ACCESS_COLD);
-    }
-}
-
 // EIP-3860
 TEST(fork_traits, shanghai_contract_creation_cost)
 {
@@ -508,38 +469,6 @@ TEST(fork_traits, shanghai_contract_creation_cost)
     Transaction t{.data = data};
 
     EXPECT_EQ(
-        fork_traits::shanghai::intrinsic_gas(t),
+        intrinsic_gas<fork_traits::shanghai>(t),
         32'000u + 21'000u + 16u * 128u + 0u + 4u * 2u);
-}
-
-// EIP-4895
-TEST(fork_traits, shanghai_withdrawal)
-{
-    std::optional<std::vector<Withdrawal>> withdrawals{};
-    Withdrawal w1 = {
-        .index = 0, .validator_index = 0, .amount = 100u, .recipient = a};
-    Withdrawal w2 = {
-        .index = 1, .validator_index = 0, .amount = 300u, .recipient = a};
-    Withdrawal w3 = {
-        .index = 2, .validator_index = 0, .amount = 200u, .recipient = b};
-    withdrawals = {w1, w2, w3};
-
-    db_t db{};
-    db.commit(
-        StateDeltas{
-            {a, StateDelta{.account = {std::nullopt, Account{.balance = 0}}}},
-            {b, StateDelta{.account = {std::nullopt, Account{.balance = 0}}}}},
-        Code{});
-
-    BlockState<mutex_t> bs;
-
-    state_t state{bs, db};
-    fork_traits::shanghai::process_withdrawal(state, withdrawals);
-
-    EXPECT_EQ(
-        intx::be::load<uint256_t>(state.get_balance(a)),
-        uint256_t{400u} * uint256_t{1'000'000'000u});
-    EXPECT_EQ(
-        intx::be::load<uint256_t>(state.get_balance(b)),
-        uint256_t{200u} * uint256_t{1'000'000'000u});
 }

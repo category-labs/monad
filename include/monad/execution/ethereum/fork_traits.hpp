@@ -72,41 +72,6 @@ namespace fork_traits
 
         static constexpr uint64_t n_precompiles = 4;
 
-        // YP, Eqn. 60, first summation
-        [[nodiscard]] static constexpr uint64_t
-        g_data(Transaction const &txn) noexcept
-        {
-            auto const zeros = std::count_if(
-                std::cbegin(txn.data),
-                std::cend(txn.data),
-                [](unsigned char c) { return c == 0x00; });
-            auto const nonzeros =
-                txn.data.size() - static_cast<uint64_t>(zeros);
-            return static_cast<uint64_t>(zeros) * 4u + nonzeros * 68u;
-        }
-
-        // YP, section 6.2, Eqn. 60
-        [[nodiscard]] static constexpr uint64_t
-        intrinsic_gas(Transaction const &txn) noexcept
-        {
-            return 21'000 + g_data(txn);
-        }
-
-        [[nodiscard]] static constexpr auto starting_nonce() noexcept
-        {
-            return 0u;
-        }
-
-        [[nodiscard]] static constexpr uint64_t max_refund_quotient() noexcept
-        {
-            return 2u;
-        }
-
-        template <class TState>
-        static constexpr void destruct_touched_dead(TState &) noexcept
-        {
-        }
-
         template <class TState>
         static evmc::Result deploy_contract_code(
             TState &state, address_t const &address,
@@ -130,12 +95,6 @@ namespace fork_traits
                 result.gas_left -= deploy_cost;
             }
             return result;
-        }
-
-        static constexpr uint256_t gas_price(
-            Transaction const &txn, uint256_t const & /*base_fee_per_gas*/)
-        {
-            return txn.max_fee_per_gas;
         }
 
         template <class TBlockState>
@@ -169,35 +128,10 @@ namespace fork_traits
                 block_state, db, block, block_reward, additional_ommer_reward);
         }
 
-        static constexpr uint256_t calculate_txn_award(
-            Transaction const &txn, uint256_t const &base_fee_per_gas,
-            uint64_t const gas_used)
-        {
-            return uint256_t{gas_used} * gas_price(txn, base_fee_per_gas);
-        }
-
         template <class TBlockState>
         static constexpr void
         transfer_balance_dao(TBlockState &, Db &, block_num_t)
         {
-        }
-
-        template <typename TState>
-        static constexpr void warm_coinbase(TState &, address_t const &)
-        {
-        }
-
-        template <class TState>
-        static constexpr void process_withdrawal(
-            TState &, std::optional<std::vector<Withdrawal>> const &)
-        {
-        }
-
-        template <class TState>
-        [[nodiscard]] static constexpr bool
-        account_exists(TState &state, address_t const &address)
-        {
-            return state.account_exists(address);
         }
 
         static constexpr void
@@ -214,21 +148,6 @@ namespace fork_traits
         // https://eips.ethereum.org/EIPS/eip-2
         static constexpr evmc_revision rev = EVMC_HOMESTEAD;
         static constexpr auto last_block_number = 1'919'999u;
-
-        [[nodiscard]] static constexpr auto
-        g_txcreate(Transaction const &txn) noexcept
-        {
-            if (!txn.to.has_value()) {
-                return 32'000u;
-            }
-            return 0u;
-        }
-
-        [[nodiscard]] static constexpr auto
-        intrinsic_gas(Transaction const &txn) noexcept
-        {
-            return g_txcreate(txn) + 21'000u + g_data(txn);
-        }
 
         template <class TState>
         static evmc::Result deploy_contract_code(
@@ -305,18 +224,6 @@ namespace fork_traits
         static constexpr auto last_block_number = 4'369'999u;
         static constexpr size_t max_code_size = 0x6000; // EIP-170
 
-        // https://eips.ethereum.org/EIPS/eip-161
-        [[nodiscard]] static constexpr auto starting_nonce() noexcept
-        {
-            return 1u;
-        }
-
-        template <class TState>
-        static constexpr void destruct_touched_dead(TState &state) noexcept
-        {
-            state.destruct_touched_dead();
-        }
-
         template <class TState>
         [[nodiscard]] static evmc::Result deploy_contract_code(
             TState &state, address_t const &address,
@@ -364,13 +271,6 @@ namespace fork_traits
         {
             apply_block_award_impl(
                 block_state, db, block, block_reward, additional_ommer_reward);
-        }
-
-        template <class TState>
-        [[nodiscard]] static constexpr bool
-        account_exists(TState &state, address_t const &address)
-        {
-            return !state.account_is_dead(address);
         }
     };
 
@@ -426,25 +326,6 @@ namespace fork_traits
         static constexpr auto last_block_number = 12'243'999u;
 
         static constexpr uint64_t n_precompiles = 9;
-
-        // https://eips.ethereum.org/EIPS/eip-2028
-        [[nodiscard]] static constexpr uint64_t
-        g_data(Transaction const &txn) noexcept
-        {
-            auto const zeros = std::count_if(
-                std::cbegin(txn.data),
-                std::cend(txn.data),
-                [](unsigned char c) { return c == 0x00; });
-            auto const nonzeros =
-                txn.data.size() - static_cast<uint64_t>(zeros);
-            return static_cast<uint64_t>(zeros) * 4u + nonzeros * 16u;
-        }
-
-        [[nodiscard]] static constexpr auto
-        intrinsic_gas(Transaction const &txn) noexcept
-        {
-            return g_txcreate(txn) + 21'000u + g_data(txn);
-        }
     };
 
     // muir_glacier - 9'200'000
@@ -455,24 +336,6 @@ namespace fork_traits
 
         static constexpr evmc_revision rev = EVMC_BERLIN;
         static constexpr auto last_block_number = 12'964'999u;
-
-        // https://eips.ethereum.org/EIPS/eip-2930
-        [[nodiscard]] static constexpr auto
-        g_access_and_storage(Transaction const &txn) noexcept
-        {
-            uint64_t g = txn.access_list.size() * 2'400u;
-            for (auto &i : txn.access_list) {
-                g += i.keys.size() * 1'900u;
-            }
-            return g;
-        }
-
-        [[nodiscard]] static constexpr auto
-        intrinsic_gas(Transaction const &txn) noexcept
-        {
-            return g_txcreate(txn) + 21'000u + g_data(txn) +
-                   g_access_and_storage(txn);
-        }
     };
 
     struct london : public berlin
@@ -481,12 +344,6 @@ namespace fork_traits
 
         static constexpr evmc_revision rev = EVMC_LONDON;
         static constexpr auto last_block_number = 15'537'393u;
-
-        // https://eips.ethereum.org/EIPS/eip-3529
-        [[nodiscard]] static constexpr uint64_t max_refund_quotient() noexcept
-        {
-            return 5u;
-        }
 
         // https://eips.ethereum.org/EIPS/eip-3541
         template <class TState>
@@ -500,39 +357,6 @@ namespace fork_traits
             }
             return berlin::deploy_contract_code(
                 state, address, std::move(result));
-        }
-
-        // https://eips.ethereum.org/EIPS/eip-1559
-        static constexpr uint256_t
-        gas_price(Transaction const &txn, uint256_t const &base_fee_per_gas)
-        {
-            return priority_fee_per_gas(txn, base_fee_per_gas) +
-                   base_fee_per_gas;
-        }
-
-        static constexpr uint256_t priority_fee_per_gas(
-            Transaction const &txn, uint256_t const &base_fee_per_gas)
-        {
-            MONAD_DEBUG_ASSERT(txn.max_fee_per_gas >= base_fee_per_gas);
-            if (txn.type == TransactionType::eip1559) {
-                return std::min(
-                    txn.max_priority_fee_per_gas,
-                    txn.max_fee_per_gas - base_fee_per_gas);
-            }
-            // per eip-1559: "Legacy Ethereum transactions will still work and
-            // be included in blocks, but they will not benefit directly from
-            // the new pricing system. This is due to the fact that upgrading
-            // from legacy transactions to new transactions results in the
-            // legacy transaction’s gas_price entirely being consumed either
-            // by the base_fee_per_gas and the priority_fee_per_gas."
-            return txn.max_fee_per_gas - base_fee_per_gas;
-        }
-
-        static constexpr uint256_t calculate_txn_award(
-            Transaction const &txn, uint256_t const &base_fee_per_gas,
-            uint64_t const gas_used)
-        {
-            return gas_used * priority_fee_per_gas(txn, base_fee_per_gas);
         }
     };
 
@@ -563,48 +387,6 @@ namespace fork_traits
             std::numeric_limits<uint64_t>::max();
         static constexpr size_t max_init_code_size =
             2 * max_code_size; // EIP-3860
-
-        // EIP-3651
-        template <class TState>
-        static constexpr void
-        warm_coinbase(TState &state, address_t const &beneficiary)
-        {
-            state.warm_coinbase(beneficiary);
-        }
-
-        // EIP-3860
-        [[nodiscard]] static constexpr uint64_t
-        g_extra_cost_init(Transaction const &txn) noexcept
-        {
-            if (!txn.to.has_value()) {
-                return ((txn.data.length() + 31u) / 32u) * 2u;
-            }
-            return 0u;
-        }
-
-        // EIP-3860
-        [[nodiscard]] static constexpr auto
-        intrinsic_gas(Transaction const &txn) noexcept
-        {
-            return g_txcreate(txn) + 21'000u + g_data(txn) +
-                   g_access_and_storage(txn) + g_extra_cost_init(txn);
-        }
-
-        // EIP-4895
-        template <class TState>
-        static constexpr void process_withdrawal(
-            TState &state,
-            std::optional<std::vector<Withdrawal>> const &withdrawals)
-        {
-            if (withdrawals.has_value()) {
-                for (auto const &withdrawal : withdrawals.value()) {
-                    state.add_to_balance(
-                        withdrawal.recipient,
-                        uint256_t{withdrawal.amount} *
-                            uint256_t{1'000'000'000u});
-                }
-            }
-        }
     };
 }
 

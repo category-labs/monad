@@ -9,6 +9,7 @@
 #include <monad/execution/config.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/precompiles.hpp>
+#include <monad/execution/util.hpp>
 
 #include <intx/intx.hpp>
 
@@ -52,7 +53,10 @@ struct EvmcHost : public evmc::Host
     virtual bool
     account_exists(address_t const &address) const noexcept override
     {
-        return TTraits::account_exists(state_, address);
+        if constexpr (TTraits::rev < EVMC_SPURIOUS_DRAGON) {
+            return state_.account_exists(address);
+        }
+        return !state_.account_is_dead(address);
     }
 
     virtual bytes32_t get_storage(
@@ -116,7 +120,7 @@ struct EvmcHost : public evmc::Host
         evmc_message msg{
             .kind = to_address.first,
             .gas = static_cast<int64_t>(
-                txn.gas_limit - TTraits::intrinsic_gas(txn)),
+                txn.gas_limit - intrinsic_gas<TTraits>(txn)),
             .recipient = to_address.second,
             .sender = *txn.from,
             .input_data = txn.data.data(),
@@ -155,7 +159,7 @@ struct EvmcHost : public evmc::Host
             .block_timestamp = static_cast<int64_t>(header_.timestamp),
             .block_gas_limit = static_cast<int64_t>(header_.gas_limit)};
 
-        uint256_t const gas_cost = TTraits::gas_price(
+        uint256_t const gas_cost = gas_price<TTraits>(
             transaction_, header_.base_fee_per_gas.value_or(0));
         intx::be::store(result.tx_gas_price.bytes, gas_cost);
 

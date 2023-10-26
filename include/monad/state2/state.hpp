@@ -6,6 +6,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
+#include <monad/core/withdrawal.hpp>
 
 #include <monad/db/db.hpp>
 
@@ -438,6 +439,19 @@ struct State
     [[nodiscard]] constexpr bool is_touched(address_t const &address)
     {
         return touched_.contains(address);
+    }
+
+    // EIP-4895
+    void process_withdrawal(
+        std::optional<std::vector<Withdrawal>> const &withdrawals)
+    {
+        if (withdrawals.has_value()) {
+            for (auto const &withdrawal : withdrawals.value()) {
+                add_to_balance(
+                    withdrawal.recipient,
+                    uint256_t{withdrawal.amount} * uint256_t{1'000'000'000u});
+            }
+        }
     }
 
     void merge(State &new_state)

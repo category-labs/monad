@@ -1044,3 +1044,35 @@ TYPED_TEST(StateTest, commit_twice_add_to_balance)
         EXPECT_EQ(ds.get_balance(b), bytes32_t{300});
     }
 }
+
+TYPED_TEST(StateTest, shanghai_withdrawal)
+{
+    std::optional<std::vector<Withdrawal>> withdrawals{};
+    Withdrawal w1 = {
+        .index = 0, .validator_index = 0, .amount = 100u, .recipient = a};
+    Withdrawal w2 = {
+        .index = 1, .validator_index = 0, .amount = 300u, .recipient = a};
+    Withdrawal w3 = {
+        .index = 2, .validator_index = 0, .amount = 200u, .recipient = b};
+    withdrawals = {w1, w2, w3};
+
+    auto db = test::make_db<TypeParam>();
+
+    db.commit(
+        StateDeltas{
+            {a, StateDelta{.account = {std::nullopt, Account{.balance = 0}}}},
+            {b, StateDelta{.account = {std::nullopt, Account{.balance = 0}}}}},
+        Code{});
+
+    BlockState<mutex_t> bs;
+
+    state_t state{bs, db};
+    state.process_withdrawal(withdrawals);
+
+    EXPECT_EQ(
+        intx::be::load<uint256_t>(state.get_balance(a)),
+        uint256_t{400u} * uint256_t{1'000'000'000u});
+    EXPECT_EQ(
+        intx::be::load<uint256_t>(state.get_balance(b)),
+        uint256_t{200u} * uint256_t{1'000'000'000u});
+}

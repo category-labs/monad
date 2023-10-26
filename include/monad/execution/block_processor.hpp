@@ -76,12 +76,18 @@ struct AllTxnBlockProcessor
 
         // Process withdrawls
         state::State state{block_state, db};
-        TTraits::process_withdrawal(state, block.withdrawals);
+
+        if constexpr (TTraits::rev >= EVMC_SHANGHAI) {
+            state.process_withdrawal(block.withdrawals);
+        }
 
         // Apply block reward to beneficiary
         TTraits::apply_block_award(block_state, db, block);
 
-        TTraits::destruct_touched_dead(state);
+        if constexpr (TTraits::rev >= EVMC_SPURIOUS_DRAGON) {
+            state.destruct_touched_dead();
+        }
+
         MONAD_DEBUG_ASSERT(can_merge(block_state.state, state.state_));
         merge(block_state.state, state.state_);
 

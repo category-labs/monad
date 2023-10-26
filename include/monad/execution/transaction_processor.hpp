@@ -33,7 +33,7 @@ struct TransactionProcessor
         MONAD_DEBUG_ASSERT(txn.from.has_value());
 
         auto const upfront_cost =
-            txn.gas_limit * TTraits::gas_price(txn, base_fee_per_gas);
+            txn.gas_limit * gas_price<TTraits>(txn, base_fee_per_gas);
         state.subtract_from_balance(txn.from.value(), upfront_cost);
     }
 
@@ -42,8 +42,11 @@ struct TransactionProcessor
         Transaction const &txn, uint64_t const gas_remaining,
         uint64_t const refund) const
     {
+        // https://eips.ethereum.org/EIPS/eip-3529
+        constexpr auto max_refund_quotient =
+            TTraits::rev >= EVMC_LONDON ? 5 : 2;
         auto const refund_allowance =
-            (txn.gas_limit - gas_remaining) / TTraits::max_refund_quotient();
+            (txn.gas_limit - gas_remaining) / max_refund_quotient;
 
         return gas_remaining + std::min(refund_allowance, refund);
     }
@@ -55,7 +58,7 @@ struct TransactionProcessor
     {
         // refund and priority, Eqn. 73-76
         auto const gas_remaining = g_star(txn, gas_leftover, refund);
-        auto const gas_cost = TTraits::gas_price(txn, base_fee_per_gas);
+        auto const gas_cost = gas_price<TTraits>(txn, base_fee_per_gas);
 
         MONAD_DEBUG_ASSERT(txn.from.has_value());
         state.add_to_balance(txn.from.value(), gas_cost * gas_remaining);
@@ -70,7 +73,11 @@ struct TransactionProcessor
     {
         irrevocable_change(state, txn, base_fee_per_gas);
 
-        TTraits::warm_coinbase(state, beneficiary);
+        // EIP-3651
+        if constexpr (TTraits::rev >= EVMC_SHANGHAI) {
+            state.warm_coinbase(beneficiary);
+        }
+
         state.access_account(*txn.from);
         for (auto const &ae : txn.access_list) {
             state.access_account(ae.a);
@@ -97,12 +104,15 @@ struct TransactionProcessor
             static_cast<uint64_t>(result.gas_refund));
         auto const gas_used = txn.gas_limit - gas_remaining;
         auto const reward =
-            TTraits::calculate_txn_award(txn, base_fee_per_gas, gas_used);
+            calculate_txn_award<TTraits>(txn, base_fee_per_gas, gas_used);
         state.add_to_balance(beneficiary, reward);
 
         // finalize state, Eqn. 77-79
         state.destruct_suicides();
-        TTraits::destruct_touched_dead(state);
+
+        if constexpr (TTraits::rev >= EVMC_SPURIOUS_DRAGON) {
+            state.destruct_touched_dead();
+        }
 
         return Receipt{
             .status = result.status_code == EVMC_SUCCESS ? 1u : 0u,

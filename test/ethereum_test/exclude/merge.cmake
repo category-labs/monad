@@ -1,9 +1,4 @@
 set(merge_excluded_tests
-    "BlockchainTests.GeneralStateTests/stCreate2/RevertInCreateInInitCreate2.json" # Incarnation
-    "BlockchainTests.GeneralStateTests/stCreate2/create2collisionStorage.json" # Incarnation
-    "BlockchainTests.GeneralStateTests/stExtCodeHash/dynamicAccountOverwriteEmpty.json" # Incarnation
-    "BlockchainTests.GeneralStateTests/stRevertTest/RevertInCreateInInit.json" # Incarnation
-    "BlockchainTests.GeneralStateTests/stSStoreTest/InitCollision.json" # Incarnation
     "BlockchainTests.InvalidBlocks/bcEIP1559/badBlocks.json" # BaseFee
     "BlockchainTests.InvalidBlocks/bcEIP1559/badUncles.json" # Mixed
     "BlockchainTests.InvalidBlocks/bcEIP1559/gasLimit20m.json" # ParentHeader
@@ -20,10 +15,6 @@ set(merge_excluded_tests
     "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/wrongTimestamp.json" # ParentHeader
     "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/wrongTransactionsTrie.json" # Trie
     "BlockchainTests.InvalidBlocks/bcMultiChainTest/UncleFromSideChain.json" # Uncle
-    "BlockchainTests.ValidBlocks/bcStateTests/suicideStorageCheck.json" # Incarnation
-    "BlockchainTests.ValidBlocks/bcStateTests/suicideStorageCheckVCreate.json" # Incarnation
-    "BlockchainTests.ValidBlocks/bcStateTests/suicideStorageCheckVCreate2.json" #I ncarnation
-    "BlockchainTests.ValidBlocks/bcStateTests/suicideThenCheckBalance.json" # Incarnation
     "TransactionTests.ttEIP1559/GasLimitPriceProductOverflowtMinusOne.json"
     "TransactionTests.ttEIP2930/accessListStorage32Bytes.json"
     "TransactionTests.ttWrongRLP/RLPIncorrectByteEncoding01.json"

@@ -2,7 +2,6 @@
 #include <general_state_test.hpp>
 #include <general_state_test_types.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/logging/formatter.hpp>
 #include <monad/test/config.hpp>
 #include <monad/test/dump_state_from_db.hpp>
 #include <test_resource_data.h>

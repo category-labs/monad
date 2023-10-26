@@ -96,10 +96,16 @@ add_library(
   monad STATIC
   "include/monad/config.hpp"
   # core
+  "include/monad/core/account.hpp"
   "include/monad/core/address.hpp"
+  "include/monad/core/basic_formatter.hpp"
+  "include/monad/core/block.hpp"
   "include/monad/core/byte_string.hpp"
   "include/monad/core/bytes.hpp"
   "include/monad/core/int.hpp"
+  "include/monad/core/receipt.hpp"
+  "include/monad/core/signature.hpp"
+  "include/monad/core/transaction.hpp"
   "include/monad/core/variant.hpp"
   "include/monad/core/withdrawal.hpp"
   "src/monad/core/int.cpp"
@@ -147,9 +153,6 @@ add_library(
   "include/monad/execution/validation_status.hpp"
   "src/monad/execution/block_hash_buffer.cpp"
   "src/monad/execution/create_contract_address.cpp"
-  # logging
-  "include/monad/logging/config.hpp"
-  "include/monad/logging/formatter.hpp"
   # rlp
   "include/monad/rlp/decode.hpp"
   "include/monad/rlp/decode_helpers.hpp"

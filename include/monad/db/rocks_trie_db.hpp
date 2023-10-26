@@ -10,7 +10,6 @@
 #include <monad/db/trie_db_process_changes.hpp>
 #include <monad/db/trie_db_read_account.hpp>
 #include <monad/db/trie_db_read_storage.hpp>
-#include <monad/logging/formatter.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/trie/rocks_comparator.hpp>
 #include <monad/trie/rocks_cursor.hpp>
@@ -192,7 +191,10 @@ struct RocksTrieDB : public Db
     // Helper functions
     ////////////////////////////////////////////////////////////////////
 
-    [[nodiscard]] constexpr auto *code_cf() const { return cfs[5]; }
+    [[nodiscard]] constexpr auto *code_cf() const
+    {
+        return cfs[5];
+    }
 
     ////////////////////////////////////////////////////////////////////
     // Db implementations

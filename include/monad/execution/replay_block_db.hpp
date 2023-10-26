@@ -12,8 +12,6 @@
 #include <monad/execution/execution_model.hpp>
 #include <monad/execution/transaction_processor_data.hpp>
 
-#include <monad/logging/formatter.hpp>
-
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 

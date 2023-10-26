@@ -11,8 +11,6 @@
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/validation_status.hpp>
 
-#include <monad/logging/formatter.hpp>
-
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/state2/state_deltas.hpp>

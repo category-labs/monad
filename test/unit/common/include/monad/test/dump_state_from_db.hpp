@@ -1,6 +1,5 @@
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
-#include <monad/logging/formatter.hpp>
 #include <monad/test/config.hpp>
 
 MONAD_TEST_NAMESPACE_BEGIN

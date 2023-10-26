@@ -17,8 +17,6 @@
 #include <monad/execution/transaction_processor.hpp>
 #include <monad/execution/transaction_processor_data.hpp>
 
-#include <monad/logging/formatter.hpp>
-
 #include <monad/state2/state.hpp>
 
 #include <CLI/CLI.hpp>

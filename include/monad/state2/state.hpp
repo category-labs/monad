@@ -13,8 +13,6 @@
 #include <monad/state2/block_state_ops.hpp>
 #include <monad/state2/config.hpp>
 
-#include <monad/logging/formatter.hpp>
-
 #include <ankerl/unordered_dense.h>
 
 #include <ethash/keccak.hpp>

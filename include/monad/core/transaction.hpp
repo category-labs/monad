@@ -1,8 +1,10 @@
 #pragma once
 
 #include <monad/config.hpp>
+
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/basic_formatter.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
@@ -56,3 +58,30 @@ static_assert(alignof(Transaction) == 8);
 [[nodiscard]] std::optional<address_t> recover_sender(Transaction const &t);
 
 MONAD_NAMESPACE_END
+
+template <>
+struct quill::copy_loggable<monad::TransactionType> : std::true_type
+{
+};
+
+template <>
+struct fmt::formatter<monad::TransactionType> : public monad::basic_formatter
+{
+    template <typename FormatContext>
+    auto format(monad::TransactionType const &t, FormatContext &ctx) const
+    {
+        if (t == monad::TransactionType::eip155) {
+            fmt::format_to(ctx.out(), "eip155");
+        }
+        else if (t == monad::TransactionType::eip2930) {
+            fmt::format_to(ctx.out(), "eip2930");
+        }
+        else if (t == monad::TransactionType::eip1559) {
+            fmt::format_to(ctx.out(), "eip1559");
+        }
+        else {
+            fmt::format_to(ctx.out(), "Unknown Transaction Type");
+        }
+        return ctx.out();
+    }
+};

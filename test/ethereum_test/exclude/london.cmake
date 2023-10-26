@@ -1,9 +1,4 @@
 set(london_excluded_tests
-    "BlockchainTests.GeneralStateTests/stCreate2/RevertInCreateInInitCreate2.json" # Incarnation
-    "BlockchainTests.GeneralStateTests/stCreate2/create2collisionStorage.json" # Incarnation
-    "BlockchainTests.GeneralStateTests/stExtCodeHash/dynamicAccountOverwriteEmpty.json" # Incarnation
-    "BlockchainTests.GeneralStateTests/stRevertTest/RevertInCreateInInit.json" # Incarnation
-    "BlockchainTests.GeneralStateTests/stSStoreTest/InitCollision.json" # Incarnation
     "BlockchainTests.InvalidBlocks/bcEIP1559/badBlocks.json" # BaseFee
     "BlockchainTests.InvalidBlocks/bcEIP1559/badUncles.json" # Mixed
     "BlockchainTests.InvalidBlocks/bcEIP1559/gasLimit20m.json" # ParentHeader
@@ -59,10 +54,6 @@ set(london_excluded_tests
     "BlockchainTests.ValidBlocks/bcMultiChainTest/ChainAtoChainB_difficultyB.json" # Multichain
     "BlockchainTests.ValidBlocks/bcMultiChainTest/ChainAtoChainBtoChainA.json" # Multichain
     "BlockchainTests.ValidBlocks/bcMultiChainTest/ChainAtoChainBtoChainAtoChainB.json" # Multichain
-    "BlockchainTests.ValidBlocks/bcStateTests/suicideStorageCheck.json" # Incarnation
-    "BlockchainTests.ValidBlocks/bcStateTests/suicideStorageCheckVCreate.json" # Incarnation
-    "BlockchainTests.ValidBlocks/bcStateTests/suicideStorageCheckVCreate2.json" # Incarnation
-    "BlockchainTests.ValidBlocks/bcStateTests/suicideThenCheckBalance.json" # Incarnation
     "BlockchainTests.ValidBlocks/bcTotalDifficultyTest/lotsOfBranchesOverrideAtTheEnd.json" # Difficulty (Pre-merge)
     "BlockchainTests.ValidBlocks/bcTotalDifficultyTest/lotsOfBranchesOverrideAtTheMiddle.json" # Difficulty (Pre-merge)
     "BlockchainTests.ValidBlocks/bcTotalDifficultyTest/lotsOfLeafs.json" # Difficulty (Pre-merge)

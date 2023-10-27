@@ -11,8 +11,6 @@
 #include <monad/execution/transaction_processor.hpp>
 #include <monad/execution/validation.hpp>
 
-#include <monad/logging/formatter.hpp>
-
 #include <boost/core/demangle.hpp>
 
 #include <nlohmann/adl_serializer.hpp>
@@ -259,9 +257,10 @@ namespace nlohmann
             }
 
             if (auto const ac_it = j.find("accessLists"); ac_it != j.end()) {
-                for (auto const &j_access_list : *ac_it)
+                for (auto const &j_access_list : *ac_it) {
                     o.access_lists.emplace_back(
                         j_access_list.get<monad::Transaction::AccessList>());
+                }
                 if (o.transaction_type == monad::TransactionType::eip155) {
                     // Upgrade tx type if tx has
                     // access lists

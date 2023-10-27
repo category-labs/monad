@@ -3,12 +3,13 @@
 #include <bit>
 #include <limits>
 
-#include <monad/trie/config.hpp>
-#include <monad/trie/nibbles.hpp>
-
 #include <monad/core/assert.h>
+#include <monad/core/basic_formatter.hpp>
 
 #include <monad/rlp/encode_helpers.hpp>
+
+#include <monad/trie/config.hpp>
+#include <monad/trie/nibbles.hpp>
 
 #include <cassert>
 #include <cstring>
@@ -299,3 +300,79 @@ deserialize_node(Nibbles const &key, byte_string_view value)
 }
 
 MONAD_TRIE_NAMESPACE_END
+
+template <>
+struct fmt::formatter<monad::trie::Branch> : public monad::basic_formatter
+{
+    template <typename FormatContext>
+    auto format(monad::trie::Branch const &branch, FormatContext &ctx) const
+    {
+        auto const format = [&](size_t i) {
+            return fmt::format(
+                "0x{:02x}",
+                fmt::join(std::as_bytes(std::span(branch.children[i])), ""));
+        };
+        std::array const strings = {
+            format(0),
+            format(1),
+            format(2),
+            format(3),
+            format(4),
+            format(5),
+            format(6),
+            format(7),
+            format(8),
+            format(9),
+            format(10),
+            format(11),
+            format(12),
+            format(13),
+            format(14),
+            format(15),
+        };
+        static_assert(
+            strings.size() == std::tuple_size<decltype(branch.children)>());
+
+        fmt::format_to(
+            ctx.out(),
+            "Branch{{key_size={:d} path_to_node={} reference=0x{:02x} "
+            "branches={::}}}",
+            branch.key_size,
+            branch.path_to_node,
+            fmt::join(std::as_bytes(std::span(branch.reference)), ""),
+            strings);
+
+        return ctx.out();
+    }
+};
+
+template <>
+struct fmt::formatter<monad::trie::Leaf> : public monad::basic_formatter
+{
+    template <typename FormatContext>
+    auto format(monad::trie::Leaf const &leaf, FormatContext &ctx) const
+    {
+        fmt::format_to(
+            ctx.out(),
+            "Leaf{{key_size={:d} path_to_node={} reference=0x{:02x} "
+            "value=0x{:02x}}}",
+            leaf.key_size,
+            leaf.path_to_node,
+            fmt::join(std::as_bytes(std::span(leaf.reference)), ""),
+            fmt::join(std::as_bytes(std::span(leaf.value)), ""));
+        return ctx.out();
+    }
+};
+
+template <>
+struct fmt::formatter<monad::trie::Node> : public monad::basic_formatter
+{
+    template <typename FormatContext>
+    auto format(monad::trie::Node const &update, FormatContext &ctx) const
+    {
+        std::visit(
+            [&ctx](auto const &u) { fmt::format_to(ctx.out(), "{}", u); },
+            update);
+        return ctx.out();
+    }
+};

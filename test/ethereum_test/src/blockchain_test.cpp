@@ -10,8 +10,6 @@
 #include <monad/execution/transaction_processor_data.hpp>
 #include <monad/execution/validation.hpp>
 
-#include <monad/logging/formatter.hpp>
-
 #include <monad/rlp/decode_helpers.hpp>
 
 #include <monad/state2/state.hpp>

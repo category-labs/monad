@@ -49,3 +49,34 @@ TEST(BlockProcessor, shanghai_withdrawal)
         intx::be::load<uint256_t>(state.get_balance(b)),
         uint256_t{200u} * uint256_t{1'000'000'000u});
 }
+
+TEST(BlockProcessor, transfer_balance_dao)
+{
+    static constexpr auto individual = 100u;
+    static constexpr auto total = individual * 116u;
+
+    db_t db{};
+
+    StateDeltas state_deltas{};
+
+    for (auto const addr : dao::child_accounts) {
+        Account a{.balance = individual};
+        state_deltas.emplace(addr, StateDelta{.account = {std::nullopt, a}});
+    }
+    state_deltas.emplace(
+        dao::withdraw_account,
+        StateDelta{.account = {std::nullopt, Account{.balance = 0}}});
+
+    db.commit(state_deltas, Code{});
+
+    BlockState bs;
+
+    BlockProcessor::transfer_balance_dao(bs, db);
+
+    State s{bs, db};
+    for (auto const &addr : dao::child_accounts) {
+        EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(addr)), 0u);
+    }
+    EXPECT_EQ(
+        intx::be::load<uint256_t>(s.get_balance(dao::withdraw_account)), total);
+}

@@ -21,12 +21,6 @@ using namespace monad::fork_traits;
 
 using db_t = db::InMemoryTrieDB;
 
-namespace
-{
-    constexpr auto individual = 100u;
-    constexpr auto total = individual * 116u;
-}
-
 constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 constexpr auto b{0x5353535353535353535353535353535353535353_address};
 constexpr auto c{0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address};
@@ -153,75 +147,6 @@ TEST(fork_traits, homestead)
         EXPECT_EQ(r2.gas_left, 700);
         EXPECT_EQ(r2.create_address, null);
     }
-}
-
-static_assert(std::derived_from<fork_traits::dao_fork, fork_traits::homestead>);
-static_assert(
-    std::same_as<
-        fork_traits::dao_fork::next_fork_t, fork_traits::tangerine_whistle>);
-TEST(fork_traits, dao)
-{
-    db_t db{};
-
-    StateDeltas state_deltas{};
-
-    for (auto const addr : dao::child_accounts) {
-        Account a{.balance = individual};
-        state_deltas.emplace(addr, StateDelta{.account = {std::nullopt, a}});
-    }
-    state_deltas.emplace(
-        dao::withdraw_account,
-        StateDelta{.account = {std::nullopt, Account{.balance = 0}}});
-
-    db.commit(state_deltas, Code{});
-
-    BlockState bs;
-
-    fork_traits::dao_fork::transfer_balance_dao(bs, db, dao::dao_block_number);
-
-    State s{bs, db};
-    for (auto const &addr : dao::child_accounts) {
-        EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(addr)), 0u);
-    }
-    EXPECT_EQ(
-        intx::be::load<uint256_t>(s.get_balance(dao::withdraw_account)), total);
-}
-
-static_assert(
-    std::derived_from<fork_traits::tangerine_whistle, fork_traits::dao_fork>);
-static_assert(std::same_as<
-              fork_traits::tangerine_whistle::next_fork_t,
-              fork_traits::spurious_dragon>);
-TEST(fork_traits, tangerine_whistle)
-{
-    EXPECT_EQ(fork_traits::tangerine_whistle::rev, EVMC_TANGERINE_WHISTLE);
-
-    // Check that the tranfer does not do anything
-    db_t db{};
-
-    StateDeltas state_deltas{};
-    for (auto const addr : dao::child_accounts) {
-        Account a{.balance = individual};
-        state_deltas.emplace(addr, StateDelta{.account = {std::nullopt, a}});
-    }
-    state_deltas.emplace(
-        dao::withdraw_account,
-        StateDelta{.account = {std::nullopt, Account{.balance = 0}}});
-
-    db.commit(state_deltas, Code{});
-
-    BlockState bs;
-
-    fork_traits::tangerine_whistle::transfer_balance_dao(
-        bs, db, fork_traits::tangerine_whistle::last_block_number);
-
-    State s{bs, db};
-
-    for (auto const &addr : dao::child_accounts) {
-        EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(addr)), individual);
-    }
-    EXPECT_EQ(
-        intx::be::load<uint256_t>(s.get_balance(dao::withdraw_account)), 0u);
 }
 
 TEST(fork_traits, spurious_dragon)

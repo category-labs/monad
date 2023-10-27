@@ -39,6 +39,22 @@ struct BlockProcessor
             }
         }
     }
+
+    static void transfer_balance_dao(BlockState &block_state, Db &db)
+    {
+        State state{block_state, db};
+
+        for (auto const &addr : dao::child_accounts) {
+            auto const balance =
+                intx::be::load<uint256_t>(state.get_balance(addr));
+            state.add_to_balance(dao::withdraw_account, balance);
+            state.subtract_from_balance(addr, balance);
+        }
+
+        MONAD_DEBUG_ASSERT(can_merge(block_state.state, state.state_));
+        merge(block_state.state, state.state_);
+    }
+
     template <class TTraits, class TxnProcData>
     [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus>
     execute(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
@@ -52,8 +68,11 @@ struct BlockProcessor
 
         BlockState block_state{};
 
-        // Apply DAO hack reversal
-        TTraits::transfer_balance_dao(block_state, db, block.header.number);
+        if constexpr (TTraits::rev == EVMC_HOMESTEAD) {
+            if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {
+                transfer_balance_dao(block_state, db);
+            }
+        }
 
         std::vector<Receipt> r{};
         r.reserve(block.transactions.size());

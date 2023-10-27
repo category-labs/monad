@@ -127,21 +127,15 @@ namespace fork_traits
             apply_block_award_impl(
                 block_state, db, block, block_reward, additional_ommer_reward);
         }
-
-        template <class TBlockState>
-        static constexpr void
-        transfer_balance_dao(TBlockState &, Db &, block_num_t)
-        {
-        }
     };
 
     struct homestead : public frontier
     {
-        using next_fork_t = dao_fork;
+        using next_fork_t = tangerine_whistle;
 
         // https://eips.ethereum.org/EIPS/eip-2
         static constexpr evmc_revision rev = EVMC_HOMESTEAD;
-        static constexpr auto last_block_number = 1'919'999u;
+        static constexpr auto last_block_number = 2'462'999u;
 
         template <class TState>
         static evmc::Result deploy_contract_code(
@@ -169,43 +163,12 @@ namespace fork_traits
         }
     };
 
-    struct dao_fork : public homestead
-    {
-        using next_fork_t = tangerine_whistle;
-        static constexpr auto last_block_number = 2'462'999u;
-        // EVMC revision for DAO should just be EVMC_HOMESTEAD
-
-        template <class TBlockState>
-        static constexpr void transfer_balance_dao(
-            TBlockState &block_state, Db &db, block_num_t const block_number)
-        {
-            State state{block_state, db};
-            if (MONAD_UNLIKELY(block_number == dao::dao_block_number)) {
-                for (auto const &addr : dao::child_accounts) {
-                    auto const balance =
-                        intx::be::load<uint256_t>(state.get_balance(addr));
-                    state.add_to_balance(dao::withdraw_account, balance);
-                    state.subtract_from_balance(addr, balance);
-                }
-
-                MONAD_DEBUG_ASSERT(can_merge(block_state.state, state.state_));
-                merge(block_state.state, state.state_);
-            }
-        }
-    };
-
-    struct tangerine_whistle : public dao_fork
+    struct tangerine_whistle : public homestead
     {
         using next_fork_t = spurious_dragon;
 
         static constexpr auto last_block_number = 2'674'999u;
         static constexpr evmc_revision rev = EVMC_TANGERINE_WHISTLE;
-
-        template <class TBlockState>
-        static constexpr void
-        transfer_balance_dao(TBlockState &, Db &, block_num_t)
-        {
-        }
     };
 
     struct spurious_dragon : public tangerine_whistle

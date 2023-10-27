@@ -143,6 +143,7 @@ add_library(
   "include/monad/execution/replay_block_db.hpp"
   "include/monad/execution/transaction_processor.hpp"
   "include/monad/execution/transaction_processor_data.hpp"
+  "include/monad/execution/util.hpp"
   "include/monad/execution/validation.hpp"
   "include/monad/execution/validation_status.hpp"
   "src/monad/execution/block_hash_buffer.cpp"

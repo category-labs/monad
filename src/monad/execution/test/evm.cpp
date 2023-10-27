@@ -16,7 +16,7 @@
 
 using namespace monad;
 
-using account_store_db_t = db::InMemoryTrieDB;
+using db_t = db::InMemoryTrieDB;
 using traits_t = fork_traits::shanghai;
 
 using evm_t = Evm<traits_t>;
@@ -26,7 +26,7 @@ using evm_host_t = EvmcHost<traits_t>;
 TEST(Evm, create_with_insufficient)
 {
     BlockState bs;
-    account_store_db_t db{};
+    db_t db{};
     State s{bs, db};
 
     static constexpr auto from{
@@ -60,7 +60,7 @@ TEST(Evm, create_with_insufficient)
 TEST(Evm, eip684_existing_code)
 {
     BlockState bs;
-    account_store_db_t db{};
+    db_t db{};
     State s{bs, db};
 
     static constexpr auto from{
@@ -101,7 +101,7 @@ TEST(Evm, eip684_existing_code)
 TEST(Evm, transfer_call_balances)
 {
     BlockState bs;
-    account_store_db_t db{};
+    db_t db{};
     State s{bs, db};
 
     static constexpr auto from{
@@ -137,7 +137,7 @@ TEST(Evm, transfer_call_balances)
 TEST(Evm, transfer_call_balances_to_self)
 {
     BlockState bs;
-    account_store_db_t db{};
+    db_t db{};
     State s{bs, db};
 
     static constexpr auto from{
@@ -170,7 +170,7 @@ TEST(Evm, transfer_call_balances_to_self)
 TEST(Evm, dont_transfer_on_delegatecall)
 {
     BlockState bs;
-    account_store_db_t db{};
+    db_t db{};
     State s{bs, db};
 
     static constexpr auto from{
@@ -207,7 +207,7 @@ TEST(Evm, dont_transfer_on_delegatecall)
 TEST(Evm, dont_transfer_on_staticcall)
 {
     BlockState bs;
-    account_store_db_t db{};
+    db_t db{};
     State s{bs, db};
 
     static constexpr auto from{
@@ -245,7 +245,7 @@ TEST(Evm, dont_transfer_on_staticcall)
 TEST(Evm, create_nonce_out_of_range)
 {
     BlockState bs;
-    account_store_db_t db{};
+    db_t db{};
     State s{bs, db};
 
     static constexpr auto from{
@@ -286,7 +286,7 @@ TEST(Evm, create_nonce_out_of_range)
 TEST(Evm, static_precompile_execution)
 {
     BlockState bs;
-    account_store_db_t db{};
+    db_t db{};
     State s{bs, db};
 
     static constexpr auto from{
@@ -333,7 +333,7 @@ TEST(Evm, static_precompile_execution)
 TEST(Evm, out_of_gas_static_precompile_execution)
 {
     BlockState bs;
-    account_store_db_t db{};
+    db_t db{};
     State s{bs, db};
 
     static constexpr auto from{
@@ -371,6 +371,111 @@ TEST(Evm, out_of_gas_static_precompile_execution)
     evmc::Result const result = evm_t::call_evm(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
+}
+
+TEST(Evm, deploy_contract_code)
+{
+    static constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
+
+    db_t db;
+    db.commit(
+        StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
+        Code{});
+    BlockState bs;
+
+    // Frontier
+    {
+        uint8_t const code[] = {0xde, 0xad, 0xbe, 0xef};
+        // Successfully deploy code
+        {
+            State s{bs, db};
+            static constexpr int64_t gas = 10'000;
+            evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
+            auto const r2 = Evm<fork_traits::frontier>::deploy_contract_code(
+                s, a, std::move(r));
+            EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
+            EXPECT_EQ(r2.gas_left, gas - 800); // G_codedeposit * size(code)
+            EXPECT_EQ(r2.create_address, a);
+            EXPECT_EQ(s.get_code(a), byte_string(code, sizeof(code)));
+        }
+
+        // Initilization code succeeds, but deployment of code failed
+        {
+            State s{bs, db};
+            evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
+            auto const r2 = Evm<fork_traits::frontier>::deploy_contract_code(
+                s, a, std::move(r));
+            EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
+            EXPECT_EQ(r2.gas_left, r.gas_left);
+            EXPECT_EQ(r2.create_address, a);
+        }
+    }
+
+    // Homestead
+    {
+        uint8_t const code[] = {0xde, 0xad, 0xbe, 0xef};
+        // Successfully deploy code
+        {
+            State s{bs, db};
+            int64_t gas = 10'000;
+
+            evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
+            auto const r2 = Evm<fork_traits::homestead>::deploy_contract_code(
+                s, a, std::move(r));
+            EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
+            EXPECT_EQ(r2.create_address, a);
+            EXPECT_EQ(
+                r2.gas_left,
+                r.gas_left - 800); // G_codedeposit * size(code)
+            EXPECT_EQ(s.get_code(a), byte_string(code, sizeof(code)));
+        }
+
+        // Fail to deploy code - out of gas (EIP-2)
+        {
+            State s{bs, db};
+            evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
+            auto const r2 = Evm<fork_traits::homestead>::deploy_contract_code(
+                s, a, std::move(r));
+            EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
+            EXPECT_EQ(r2.gas_left, 700);
+            EXPECT_EQ(r2.create_address, 0x00_address);
+        }
+    }
+
+    // Spurious Dragon
+    {
+        uint8_t const ptr[25000]{0x00};
+        byte_string code{ptr, 25000};
+
+        State s{bs, db};
+
+        evmc::Result r{
+            EVMC_SUCCESS,
+            std::numeric_limits<int64_t>::max(),
+            0,
+            code.data(),
+            code.size()};
+        auto const r2 = Evm<fork_traits::spurious_dragon>::deploy_contract_code(
+            s, a, std::move(r));
+        EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
+        EXPECT_EQ(r2.gas_left, 0);
+        EXPECT_EQ(r2.create_address, 0x00_address);
+    }
+
+    // London
+    {
+        byte_string const illegal_code{0xef, 0x60};
+
+        State s{bs, db};
+
+        evmc::Result r{
+            EVMC_SUCCESS, 1'000, 0, illegal_code.data(), illegal_code.size()};
+        auto const r2 =
+            Evm<fork_traits::london>::deploy_contract_code(s, a, std::move(r));
+        EXPECT_EQ(r2.status_code, EVMC_CONTRACT_VALIDATION_FAILURE);
+        EXPECT_EQ(r2.gas_left, 0);
+        EXPECT_EQ(r2.create_address, 0x00_address);
+    }
 }
 
 /*

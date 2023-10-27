@@ -24,7 +24,6 @@ using db_t = db::InMemoryTrieDB;
 constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 constexpr auto b{0x5353535353535353535353535353535353535353_address};
 constexpr auto c{0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address};
-constexpr auto null{0x0000000000000000000000000000000000000000_address};
 
 TEST(fork_traits, frontier)
 {
@@ -46,30 +45,6 @@ TEST(fork_traits, frontier)
         State s{bs, db};
 
         EXPECT_TRUE(s.account_exists(a));
-
-        byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
-        uint8_t const output_data[] = {0xde, 0xad, 0xbe, 0xef};
-        { // Successfully deploy code
-            int64_t gas = 10'000;
-
-            evmc::Result r{
-                EVMC_SUCCESS, gas, 0, output_data, sizeof(output_data)};
-            auto const r2 = frontier::deploy_contract_code(s, a, std::move(r));
-            EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
-            EXPECT_EQ(r2.gas_left, gas - 800); // G_codedeposit * size(code)
-            EXPECT_EQ(r2.create_address, a);
-            EXPECT_EQ(
-                s.get_code(a), byte_string(output_data, sizeof(output_data)));
-        }
-
-        { // Initilization code succeeds, but deployment of code failed
-            evmc::Result r{
-                EVMC_SUCCESS, 700, 0, output_data, sizeof(output_data)};
-            auto const r2 = frontier::deploy_contract_code(s, a, std::move(r));
-            EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
-            EXPECT_EQ(r2.gas_left, r.gas_left);
-            EXPECT_EQ(r2.create_address, a);
-        }
 
         // gas price
         EXPECT_EQ(
@@ -114,39 +89,6 @@ TEST(fork_traits, homestead)
 
     t.to = 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
     EXPECT_EQ(intrinsic_gas<fork_traits::homestead>(t), 21'000);
-
-    db_t db;
-    db.commit(
-        StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
-        Code{});
-    BlockState bs;
-
-    byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
-    uint8_t const output_data[] = {0xde, 0xad, 0xbe, 0xef};
-
-    {
-        // Successfully deploy code
-        State s{bs, db};
-        int64_t gas = 10'000;
-
-        evmc::Result r{EVMC_SUCCESS, gas, 0, output_data, sizeof(output_data)};
-        auto const r2 = homestead::deploy_contract_code(s, a, std::move(r));
-        EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
-        EXPECT_EQ(r2.create_address, a);
-        EXPECT_EQ(r2.gas_left,
-                  r.gas_left - 800); // G_codedeposit * size(code)
-        EXPECT_EQ(s.get_code(a), byte_string(output_data, sizeof(output_data)));
-    }
-
-    {
-        // Fail to deploy code - out of gas
-        State s{bs, db};
-        evmc::Result r{EVMC_SUCCESS, 700, 0, output_data, sizeof(output_data)};
-        auto const r2 = homestead::deploy_contract_code(s, a, std::move(r));
-        EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
-        EXPECT_EQ(r2.gas_left, 700);
-        EXPECT_EQ(r2.create_address, null);
-    }
 }
 
 TEST(fork_traits, spurious_dragon)
@@ -168,22 +110,6 @@ TEST(fork_traits, spurious_dragon)
     s.destruct_touched_dead();
 
     EXPECT_FALSE(s.account_exists(a));
-
-    uint8_t const ptr[25000]{0x00};
-    byte_string code{ptr, 25000};
-    { // EIP-170 Code too big to deploy
-        evmc::Result r{
-            EVMC_SUCCESS,
-            std::numeric_limits<int64_t>::max(),
-            0,
-            code.data(),
-            code.size()};
-        auto const r2 =
-            spurious_dragon::deploy_contract_code(s, a, std::move(r));
-        EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
-        EXPECT_EQ(r2.gas_left, 0);
-        EXPECT_EQ(r2.create_address, null);
-    }
 }
 
 TEST(fork_traits, byzantium)
@@ -295,26 +221,6 @@ TEST(fork_traits, london)
     db_t db;
     BlockState bs;
     State s{bs, db};
-
-    byte_string const illegal_code{0xef, 0x60};
-    byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
-    uint8_t const output_data[] = {0xde, 0xad, 0xbe, 0xef};
-    { // Successfully deploy code
-        evmc::Result r{
-            EVMC_SUCCESS, 5'000, 0, output_data, sizeof(output_data)};
-        auto const r2 = london::deploy_contract_code(s, a, std::move(r));
-        EXPECT_EQ(r2.create_address, a);
-        EXPECT_EQ(r2.gas_left, r.gas_left - 800); // G_codedeposit * size(code)
-    }
-
-    { // Fail to deploy illegal code
-        evmc::Result r{
-            EVMC_SUCCESS, 1'000, 0, illegal_code.data(), illegal_code.size()};
-        auto const r2 = london::deploy_contract_code(s, a, std::move(r));
-        EXPECT_EQ(r2.status_code, EVMC_CONTRACT_VALIDATION_FAILURE);
-        EXPECT_EQ(r2.gas_left, 0);
-        EXPECT_EQ(r2.create_address, null);
-    }
 
     // gas price
     Transaction t1{

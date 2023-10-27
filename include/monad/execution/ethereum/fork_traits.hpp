@@ -72,31 +72,6 @@ namespace fork_traits
 
         static constexpr uint64_t n_precompiles = 4;
 
-        template <class TState>
-        static evmc::Result deploy_contract_code(
-            TState &state, address_t const &address,
-            evmc::Result result) noexcept
-        {
-            MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
-            auto const deploy_cost =
-                static_cast<int64_t>(result.output_size) * 200;
-            result.create_address = address;
-
-            if (result.gas_left < deploy_cost) {
-                // From YP: "No code is deposited in the state if the gas
-                // does not cover the additional per-byte contract deposit
-                // fee, however, the value is still transferred and the
-                // execution side- effects take place."
-                state.set_code(address, {});
-            }
-            else {
-                state.set_code(
-                    address, {result.output_data, result.output_size});
-                result.gas_left -= deploy_cost;
-            }
-            return result;
-        }
-
         template <class TBlockState>
         static constexpr void apply_block_award_impl(
             TBlockState &block_state, Db &db, Block const &block,
@@ -136,31 +111,6 @@ namespace fork_traits
         // https://eips.ethereum.org/EIPS/eip-2
         static constexpr evmc_revision rev = EVMC_HOMESTEAD;
         static constexpr auto last_block_number = 2'462'999u;
-
-        template <class TState>
-        static evmc::Result deploy_contract_code(
-            TState &state, address_t const &address,
-            evmc::Result result) noexcept
-        {
-            MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
-            auto const deploy_cost =
-                static_cast<int64_t>(result.output_size) * 200;
-
-            if (result.gas_left < deploy_cost) {
-                // EIP-2: If contract creation does not have enough gas to
-                // pay for the final gas fee for adding the contract code to
-                // the state, the contract creation fails (ie. goes
-                // out-of-gas) rather than leaving an empty contract.
-                result.status_code = EVMC_OUT_OF_GAS;
-            }
-            else {
-                result.create_address = address;
-                result.gas_left -= deploy_cost;
-                state.set_code(
-                    address, {result.output_data, result.output_size});
-            }
-            return result;
-        }
     };
 
     struct tangerine_whistle : public homestead
@@ -178,20 +128,6 @@ namespace fork_traits
         static constexpr evmc_revision rev = EVMC_SPURIOUS_DRAGON;
         static constexpr auto last_block_number = 4'369'999u;
         static constexpr size_t max_code_size = 0x6000; // EIP-170
-
-        template <class TState>
-        [[nodiscard]] static evmc::Result deploy_contract_code(
-            TState &state, address_t const &address,
-            evmc::Result result) noexcept
-        {
-            MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
-            // EIP-170
-            if (result.output_size > max_code_size) {
-                return evmc::Result{EVMC_OUT_OF_GAS};
-            }
-            return homestead::deploy_contract_code(
-                state, address, std::move(result));
-        }
 
         template <class TBlockState>
         static constexpr void apply_block_award_impl(
@@ -299,20 +235,6 @@ namespace fork_traits
 
         static constexpr evmc_revision rev = EVMC_LONDON;
         static constexpr auto last_block_number = 15'537'393u;
-
-        // https://eips.ethereum.org/EIPS/eip-3541
-        template <class TState>
-        [[nodiscard]] static evmc::Result deploy_contract_code(
-            TState &state, address_t const &address,
-            evmc::Result result) noexcept
-        {
-            MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
-            if (result.output_size > 0 && result.output_data[0] == 0xef) {
-                return evmc::Result{EVMC_CONTRACT_VALIDATION_FAILURE};
-            }
-            return berlin::deploy_contract_code(
-                state, address, std::move(result));
-        }
     };
 
     struct paris : public london

@@ -27,6 +27,51 @@ struct Evm
     using result_t = tl::expected<void, evmc_result>;
     using unexpected_t = tl::unexpected<evmc_result>;
 
+    static evmc::Result deploy_contract_code(
+        State &state, address_t const &address, evmc::Result result) noexcept
+    {
+        MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
+
+        // https://eips.ethereum.org/EIPS/eip-3541
+        if constexpr (TTraits::rev >= EVMC_LONDON) {
+            if (result.output_size > 0 && result.output_data[0] == 0xef) {
+                return evmc::Result{EVMC_CONTRACT_VALIDATION_FAILURE};
+            }
+        }
+        // EIP-170
+        if constexpr (TTraits::rev >= EVMC_SPURIOUS_DRAGON) {
+            if (result.output_size > TTraits::max_code_size) {
+                return evmc::Result{EVMC_OUT_OF_GAS};
+            }
+        }
+
+        auto const deploy_cost = static_cast<int64_t>(result.output_size) * 200;
+
+        if (result.gas_left < deploy_cost) {
+            if constexpr (TTraits::rev == EVMC_FRONTIER) {
+                // From YP: "No code is deposited in the state if the gas
+                // does not cover the additional per-byte contract deposit
+                // fee, however, the value is still transferred and the
+                // execution side- effects take place."
+                result.create_address = address;
+                state.set_code(address, {});
+            }
+            else {
+                // EIP-2: If contract creation does not have enough gas to
+                // pay for the final gas fee for adding the contract code to
+                // the state, the contract creation fails (ie. goes
+                // out-of-gas) rather than leaving an empty contract.
+                result.status_code = EVMC_OUT_OF_GAS;
+            }
+        }
+        else {
+            result.create_address = address;
+            result.gas_left -= deploy_cost;
+            state.set_code(address, {result.output_data, result.output_size});
+        }
+        return result;
+    }
+
     template <class TEvmHost>
     [[nodiscard]] static evmc::Result create_contract_account(
         TEvmHost *host, State &state, evmc_message const &msg) noexcept
@@ -91,7 +136,7 @@ struct Evm
             byte_string_view(msg.input_data, msg.input_size));
 
         if (result.status_code == EVMC_SUCCESS) {
-            result = TTraits::deploy_contract_code(
+            result = deploy_contract_code(
                 new_state, contract_address, std::move(result));
         }
 

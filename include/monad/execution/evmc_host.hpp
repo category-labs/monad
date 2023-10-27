@@ -52,7 +52,10 @@ struct EvmcHost : public evmc::Host
     virtual bool
     account_exists(address_t const &address) const noexcept override
     {
-        return TTraits::account_exists(state_, address);
+        if constexpr (TTraits::rev < EVMC_SPURIOUS_DRAGON) {
+            return state_.account_exists(address);
+        }
+        return !state_.account_is_dead(address);
     }
 
     virtual bytes32_t get_storage(

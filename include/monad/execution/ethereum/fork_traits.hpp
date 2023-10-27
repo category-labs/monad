@@ -92,21 +92,6 @@ namespace fork_traits
             return 21'000 + g_data(txn);
         }
 
-        [[nodiscard]] static constexpr auto starting_nonce() noexcept
-        {
-            return 0u;
-        }
-
-        [[nodiscard]] static constexpr uint64_t max_refund_quotient() noexcept
-        {
-            return 2u;
-        }
-
-        template <class TState>
-        static constexpr void destruct_touched_dead(TState &) noexcept
-        {
-        }
-
         template <class TState>
         static evmc::Result deploy_contract_code(
             TState &state, address_t const &address,
@@ -180,24 +165,6 @@ namespace fork_traits
         static constexpr void
         transfer_balance_dao(TBlockState &, Db &, block_num_t)
         {
-        }
-
-        template <typename TState>
-        static constexpr void warm_coinbase(TState &, address_t const &)
-        {
-        }
-
-        template <class TState>
-        static constexpr void process_withdrawal(
-            TState &, std::optional<std::vector<Withdrawal>> const &)
-        {
-        }
-
-        template <class TState>
-        [[nodiscard]] static constexpr bool
-        account_exists(TState &state, address_t const &address)
-        {
-            return state.account_exists(address);
         }
 
         static constexpr void
@@ -305,18 +272,6 @@ namespace fork_traits
         static constexpr auto last_block_number = 4'369'999u;
         static constexpr size_t max_code_size = 0x6000; // EIP-170
 
-        // https://eips.ethereum.org/EIPS/eip-161
-        [[nodiscard]] static constexpr auto starting_nonce() noexcept
-        {
-            return 1u;
-        }
-
-        template <class TState>
-        static constexpr void destruct_touched_dead(TState &state) noexcept
-        {
-            state.destruct_touched_dead();
-        }
-
         template <class TState>
         [[nodiscard]] static evmc::Result deploy_contract_code(
             TState &state, address_t const &address,
@@ -364,13 +319,6 @@ namespace fork_traits
         {
             apply_block_award_impl(
                 block_state, db, block, block_reward, additional_ommer_reward);
-        }
-
-        template <class TState>
-        [[nodiscard]] static constexpr bool
-        account_exists(TState &state, address_t const &address)
-        {
-            return !state.account_is_dead(address);
         }
     };
 
@@ -482,12 +430,6 @@ namespace fork_traits
         static constexpr evmc_revision rev = EVMC_LONDON;
         static constexpr auto last_block_number = 15'537'393u;
 
-        // https://eips.ethereum.org/EIPS/eip-3529
-        [[nodiscard]] static constexpr uint64_t max_refund_quotient() noexcept
-        {
-            return 5u;
-        }
-
         // https://eips.ethereum.org/EIPS/eip-3541
         template <class TState>
         [[nodiscard]] static evmc::Result deploy_contract_code(
@@ -564,14 +506,6 @@ namespace fork_traits
         static constexpr size_t max_init_code_size =
             2 * max_code_size; // EIP-3860
 
-        // EIP-3651
-        template <class TState>
-        static constexpr void
-        warm_coinbase(TState &state, address_t const &beneficiary)
-        {
-            state.warm_coinbase(beneficiary);
-        }
-
         // EIP-3860
         [[nodiscard]] static constexpr uint64_t
         g_extra_cost_init(Transaction const &txn) noexcept
@@ -588,22 +522,6 @@ namespace fork_traits
         {
             return g_txcreate(txn) + 21'000u + g_data(txn) +
                    g_access_and_storage(txn) + g_extra_cost_init(txn);
-        }
-
-        // EIP-4895
-        template <class TState>
-        static constexpr void process_withdrawal(
-            TState &state,
-            std::optional<std::vector<Withdrawal>> const &withdrawals)
-        {
-            if (withdrawals.has_value()) {
-                for (auto const &withdrawal : withdrawals.value()) {
-                    state.add_to_balance(
-                        withdrawal.recipient,
-                        uint256_t{withdrawal.amount} *
-                            uint256_t{1'000'000'000u});
-                }
-            }
         }
     };
 }

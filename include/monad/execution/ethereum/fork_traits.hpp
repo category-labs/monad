@@ -97,12 +97,6 @@ namespace fork_traits
             return result;
         }
 
-        static constexpr uint256_t gas_price(
-            Transaction const &txn, uint256_t const & /*base_fee_per_gas*/)
-        {
-            return txn.max_fee_per_gas;
-        }
-
         template <class TBlockState>
         static constexpr void apply_block_award_impl(
             TBlockState &block_state, Db &db, Block const &block,
@@ -132,13 +126,6 @@ namespace fork_traits
         {
             apply_block_award_impl(
                 block_state, db, block, block_reward, additional_ommer_reward);
-        }
-
-        static constexpr uint256_t calculate_txn_award(
-            Transaction const &txn, uint256_t const &base_fee_per_gas,
-            uint64_t const gas_used)
-        {
-            return uint256_t{gas_used} * gas_price(txn, base_fee_per_gas);
         }
 
         template <class TBlockState>
@@ -370,39 +357,6 @@ namespace fork_traits
             }
             return berlin::deploy_contract_code(
                 state, address, std::move(result));
-        }
-
-        // https://eips.ethereum.org/EIPS/eip-1559
-        static constexpr uint256_t
-        gas_price(Transaction const &txn, uint256_t const &base_fee_per_gas)
-        {
-            return priority_fee_per_gas(txn, base_fee_per_gas) +
-                   base_fee_per_gas;
-        }
-
-        static constexpr uint256_t priority_fee_per_gas(
-            Transaction const &txn, uint256_t const &base_fee_per_gas)
-        {
-            MONAD_DEBUG_ASSERT(txn.max_fee_per_gas >= base_fee_per_gas);
-            if (txn.type == TransactionType::eip1559) {
-                return std::min(
-                    txn.max_priority_fee_per_gas,
-                    txn.max_fee_per_gas - base_fee_per_gas);
-            }
-            // per eip-1559: "Legacy Ethereum transactions will still work and
-            // be included in blocks, but they will not benefit directly from
-            // the new pricing system. This is due to the fact that upgrading
-            // from legacy transactions to new transactions results in the
-            // legacy transaction’s gas_price entirely being consumed either
-            // by the base_fee_per_gas and the priority_fee_per_gas."
-            return txn.max_fee_per_gas - base_fee_per_gas;
-        }
-
-        static constexpr uint256_t calculate_txn_award(
-            Transaction const &txn, uint256_t const &base_fee_per_gas,
-            uint64_t const gas_used)
-        {
-            return gas_used * priority_fee_per_gas(txn, base_fee_per_gas);
         }
     };
 

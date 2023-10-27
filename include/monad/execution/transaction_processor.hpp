@@ -8,6 +8,7 @@
 #include <monad/core/transaction.hpp>
 
 #include <monad/execution/config.hpp>
+#include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/validation.hpp>
 
 #include <monad/rlp/encode_helpers.hpp>
@@ -33,7 +34,7 @@ struct TransactionProcessor
         MONAD_DEBUG_ASSERT(txn.from.has_value());
 
         auto const upfront_cost =
-            txn.gas_limit * TTraits::gas_price(txn, base_fee_per_gas);
+            txn.gas_limit * gas_price<TTraits>(txn, base_fee_per_gas);
         state.subtract_from_balance(txn.from.value(), upfront_cost);
     }
 
@@ -58,7 +59,7 @@ struct TransactionProcessor
     {
         // refund and priority, Eqn. 73-76
         auto const gas_remaining = g_star(txn, gas_leftover, refund);
-        auto const gas_cost = TTraits::gas_price(txn, base_fee_per_gas);
+        auto const gas_cost = gas_price<TTraits>(txn, base_fee_per_gas);
 
         MONAD_DEBUG_ASSERT(txn.from.has_value());
         state.add_to_balance(txn.from.value(), gas_cost * gas_remaining);
@@ -104,7 +105,7 @@ struct TransactionProcessor
             static_cast<uint64_t>(result.gas_refund));
         auto const gas_used = txn.gas_limit - gas_remaining;
         auto const reward =
-            TTraits::calculate_txn_award(txn, base_fee_per_gas, gas_used);
+            calculate_txn_award<TTraits>(txn, base_fee_per_gas, gas_used);
         state.add_to_balance(beneficiary, reward);
 
         // finalize state, Eqn. 77-79

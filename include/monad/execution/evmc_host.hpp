@@ -9,6 +9,7 @@
 #include <monad/execution/config.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/precompiles.hpp>
+#include <monad/execution/transaction_gas.hpp>
 
 #include <intx/intx.hpp>
 
@@ -119,7 +120,7 @@ struct EvmcHost : public evmc::Host
         evmc_message msg{
             .kind = to_address.first,
             .gas = static_cast<int64_t>(
-                txn.gas_limit - TTraits::intrinsic_gas(txn)),
+                txn.gas_limit - intrinsic_gas<TTraits>(txn)),
             .recipient = to_address.second,
             .sender = *txn.from,
             .input_data = txn.data.data(),

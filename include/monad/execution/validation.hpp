@@ -7,6 +7,7 @@
 
 #include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
+#include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/validation_status.hpp>
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
@@ -64,7 +65,7 @@ ValidationStatus static_validate_txn(
 
     // Yellow paper, Eq. 62
     // g0 <= Tg
-    if (MONAD_UNLIKELY(TTraits::intrinsic_gas(txn) > txn.gas_limit)) {
+    if (MONAD_UNLIKELY(intrinsic_gas<TTraits>(txn) > txn.gas_limit)) {
         return ValidationStatus::INTRINSIC_GAS_GREATER_THAN_LIMIT;
     }
 

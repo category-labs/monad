@@ -147,6 +147,7 @@ add_library(
   "include/monad/execution/precompiles.hpp"
   "include/monad/execution/execution_model.hpp"
   "include/monad/execution/replay_block_db.hpp"
+  "include/monad/execution/transaction_gas.hpp"
   "include/monad/execution/transaction_processor.hpp"
   "include/monad/execution/transaction_processor_data.hpp"
   "include/monad/execution/validation.hpp"

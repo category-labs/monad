@@ -65,7 +65,11 @@ struct Evm
         TEvmHost new_host{*host, new_state};
 
         new_state.create_contract(contract_address);
-        new_state.set_nonce(contract_address, TTraits::starting_nonce());
+
+        // https://eips.ethereum.org/EIPS/eip-161
+        constexpr auto starting_nonce =
+            TTraits::rev >= EVMC_SPURIOUS_DRAGON ? 1 : 0;
+        new_state.set_nonce(contract_address, starting_nonce);
         transfer_balances(new_state, msg, contract_address);
 
         evmc_message const m_call{

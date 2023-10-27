@@ -42,8 +42,11 @@ struct TransactionProcessor
         Transaction const &txn, uint64_t const gas_remaining,
         uint64_t const refund) const
     {
+        // https://eips.ethereum.org/EIPS/eip-3529
+        constexpr auto max_refund_quotient =
+            TTraits::rev >= EVMC_LONDON ? 5 : 2;
         auto const refund_allowance =
-            (txn.gas_limit - gas_remaining) / TTraits::max_refund_quotient();
+            (txn.gas_limit - gas_remaining) / max_refund_quotient;
 
         return gas_remaining + std::min(refund_allowance, refund);
     }
@@ -70,7 +73,11 @@ struct TransactionProcessor
     {
         irrevocable_change(state, txn, base_fee_per_gas);
 
-        TTraits::warm_coinbase(state, beneficiary);
+        // EIP-3651
+        if constexpr (TTraits::rev >= EVMC_SHANGHAI) {
+            state.warm_coinbase(beneficiary);
+        }
+
         state.access_account(*txn.from);
         for (auto const &ae : txn.access_list) {
             state.access_account(ae.a);
@@ -102,7 +109,9 @@ struct TransactionProcessor
 
         // finalize state, Eqn. 77-79
         state.destruct_suicides();
-        TTraits::destruct_touched_dead(state);
+        if constexpr (TTraits::rev >= EVMC_SPURIOUS_DRAGON) {
+            state.destruct_touched_dead();
+        }
 
         return Receipt{
             .status = result.status_code == EVMC_SUCCESS ? 1u : 0u,

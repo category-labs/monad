@@ -47,7 +47,6 @@ TEST(fork_traits, frontier)
 
     t.data.push_back(0xff);
     EXPECT_EQ(f.intrinsic_gas(t), 21'072);
-    EXPECT_EQ(f.starting_nonce(), 0);
 
     db_t db;
     db.commit(
@@ -57,9 +56,6 @@ TEST(fork_traits, frontier)
         BlockState<mutex_t> bs;
         state_t s{bs, db};
 
-        EXPECT_EQ(f.max_refund_quotient(), 2);
-
-        f.destruct_touched_dead(s);
         EXPECT_TRUE(s.account_exists(a));
 
         byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
@@ -130,7 +126,6 @@ TEST(fork_traits, homestead)
 
     t.to = 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
     EXPECT_EQ(h.intrinsic_gas(t), 21'000);
-    EXPECT_EQ(h.starting_nonce(), 0);
 
     db_t db;
     db.commit(
@@ -243,7 +238,6 @@ TEST(fork_traits, spurious_dragon)
 
     t.to = 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
     EXPECT_EQ(sd.intrinsic_gas(t), 21'000);
-    EXPECT_EQ(sd.starting_nonce(), 1);
 
     db_t db;
     db.commit(
@@ -253,7 +247,7 @@ TEST(fork_traits, spurious_dragon)
     BlockState<mutex_t> bs;
     state_t s{bs, db};
     s.add_to_balance(a, 0);
-    sd.destruct_touched_dead(s);
+    s.destruct_touched_dead();
 
     EXPECT_FALSE(s.account_exists(a));
 
@@ -282,13 +276,11 @@ TEST(fork_traits, byzantium)
 
     t.to = 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
     EXPECT_EQ(byz.intrinsic_gas(t), 21'000);
-    EXPECT_EQ(byz.starting_nonce(), 1);
 
     db_t db;
     BlockState<mutex_t> bs;
     state_t as{bs, db};
     (void)as.get_balance(a);
-    byz.destruct_touched_dead(as);
 
     EXPECT_FALSE(as.account_exists(a));
 
@@ -384,12 +376,9 @@ TEST(fork_traits, berlin)
 
 TEST(fork_traits, london)
 {
-    fork_traits::london l{};
     db_t db;
     BlockState<mutex_t> bs;
     state_t s{bs, db};
-
-    EXPECT_EQ(l.max_refund_quotient(), 5);
 
     byte_string const illegal_code{0xef, 0x60};
     byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
@@ -472,31 +461,6 @@ TEST(fork_traits, paris_apply_block_reward)
     }
 }
 
-// EIP-3651
-TEST(fork_traits, shanghai_warm_coinbase)
-{
-    db_t db{};
-
-    {
-        db_t db;
-        BlockState<mutex_t> bs;
-        state_t s{bs, db};
-
-        fork_traits::shanghai::warm_coinbase(s, a);
-
-        EXPECT_EQ(s.access_account(a), EVMC_ACCESS_WARM);
-    }
-    {
-        db_t db;
-        BlockState<mutex_t> bs;
-        state_t s{bs, db};
-
-        fork_traits::london::warm_coinbase(s, a);
-
-        EXPECT_EQ(s.access_account(a), EVMC_ACCESS_COLD);
-    }
-}
-
 // EIP-3860
 TEST(fork_traits, shanghai_contract_creation_cost)
 {
@@ -510,36 +474,4 @@ TEST(fork_traits, shanghai_contract_creation_cost)
     EXPECT_EQ(
         fork_traits::shanghai::intrinsic_gas(t),
         32'000u + 21'000u + 16u * 128u + 0u + 4u * 2u);
-}
-
-// EIP-4895
-TEST(fork_traits, shanghai_withdrawal)
-{
-    std::optional<std::vector<Withdrawal>> withdrawals{};
-    Withdrawal w1 = {
-        .index = 0, .validator_index = 0, .amount = 100u, .recipient = a};
-    Withdrawal w2 = {
-        .index = 1, .validator_index = 0, .amount = 300u, .recipient = a};
-    Withdrawal w3 = {
-        .index = 2, .validator_index = 0, .amount = 200u, .recipient = b};
-    withdrawals = {w1, w2, w3};
-
-    db_t db{};
-    db.commit(
-        StateDeltas{
-            {a, StateDelta{.account = {std::nullopt, Account{.balance = 0}}}},
-            {b, StateDelta{.account = {std::nullopt, Account{.balance = 0}}}}},
-        Code{});
-
-    BlockState<mutex_t> bs;
-
-    state_t state{bs, db};
-    fork_traits::shanghai::process_withdrawal(state, withdrawals);
-
-    EXPECT_EQ(
-        intx::be::load<uint256_t>(state.get_balance(a)),
-        uint256_t{400u} * uint256_t{1'000'000'000u});
-    EXPECT_EQ(
-        intx::be::load<uint256_t>(state.get_balance(b)),
-        uint256_t{200u} * uint256_t{1'000'000'000u});
 }

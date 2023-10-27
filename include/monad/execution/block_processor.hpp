@@ -4,6 +4,7 @@
 #include <monad/core/block.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
+#include <monad/core/withdrawal.hpp>
 
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/config.hpp>
@@ -28,6 +29,20 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 
 struct AllTxnBlockProcessor
 {
+    // EIP-4895
+    template <class TState>
+    static void process_withdrawal(
+        TState &state,
+        std::optional<std::vector<Withdrawal>> const &withdrawals)
+    {
+        if (withdrawals.has_value()) {
+            for (auto const &withdrawal : withdrawals.value()) {
+                state.add_to_balance(
+                    withdrawal.recipient,
+                    uint256_t{withdrawal.amount} * uint256_t{1'000'000'000u});
+            }
+        }
+    }
     template <class TMutex, class TTraits, class TxnProcData>
     [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus>
     execute(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
@@ -74,14 +89,16 @@ struct AllTxnBlockProcessor
             r.push_back(receipt);
         }
 
-        // Process withdrawls
         state::State state{block_state, db};
-        TTraits::process_withdrawal(state, block.withdrawals);
+        if constexpr (TTraits::rev >= EVMC_SHANGHAI) {
+            process_withdrawal(state, block.withdrawals);
+        }
 
-        // Apply block reward to beneficiary
         TTraits::apply_block_award(block_state, db, block);
 
-        TTraits::destruct_touched_dead(state);
+        if constexpr (TTraits::rev >= EVMC_SPURIOUS_DRAGON) {
+            state.destruct_touched_dead();
+        }
         MONAD_DEBUG_ASSERT(can_merge(block_state.state, state.state_));
         merge(block_state.state, state.state_);
 

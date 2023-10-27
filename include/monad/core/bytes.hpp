@@ -3,8 +3,11 @@
 #include <monad/config.hpp>
 
 #include <monad/core/basic_formatter.hpp>
+#include <monad/core/int.hpp>
 
 #include <evmc/evmc.hpp>
+
+#include <bit>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -12,6 +15,11 @@ using bytes32_t = ::evmc::bytes32;
 
 static_assert(sizeof(bytes32_t) == 32);
 static_assert(alignof(bytes32_t) == 1);
+
+constexpr bytes32_t to_bytes(uint256_t const n)
+{
+    return std::bit_cast<bytes32_t>(n);
+}
 
 using namespace evmc::literals;
 inline constexpr bytes32_t NULL_HASH{

@@ -10,6 +10,7 @@
 #include <monad/execution/evm.hpp>
 #include <monad/execution/precompiles.hpp>
 #include <monad/execution/transaction_gas.hpp>
+#include <monad/execution/tx_context.hpp>
 
 #include <intx/intx.hpp>
 
@@ -152,33 +153,7 @@ struct EvmcHost : public evmc::Host
 
     virtual evmc_tx_context get_tx_context() const noexcept override
     {
-        evmc_tx_context result{
-            .tx_origin = *transaction_.from,
-            .block_coinbase = header_.beneficiary,
-            .block_number = static_cast<int64_t>(header_.number),
-            .block_timestamp = static_cast<int64_t>(header_.timestamp),
-            .block_gas_limit = static_cast<int64_t>(header_.gas_limit)};
-
-        uint256_t const gas_cost = gas_price<TTraits>(
-            transaction_, header_.base_fee_per_gas.value_or(0));
-        intx::be::store(result.tx_gas_price.bytes, gas_cost);
-
-        TTraits::populate_chain_id(result);
-
-        uint256_t const block_base_fee{header_.base_fee_per_gas.value_or(0)};
-        intx::be::store(result.block_base_fee.bytes, block_base_fee);
-
-        if (header_.difficulty == 0) { // EIP-4399
-            std::memcpy(
-                result.block_prev_randao.bytes,
-                header_.prev_randao.bytes,
-                sizeof(header_.prev_randao.bytes));
-        }
-        else {
-            intx::be::store(result.block_prev_randao.bytes, header_.difficulty);
-        }
-
-        return result;
+        return ::monad::get_tx_context<TTraits>(transaction_, header_);
     }
 
     virtual bytes32_t

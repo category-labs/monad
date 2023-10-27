@@ -25,6 +25,8 @@ concept unsigned_integral =
     std::unsigned_integral<T> || std::same_as<uint256_t, T> ||
     std::same_as<uint128_t, T>;
 
+using ::intx::to_big_endian;
+
 MONAD_NAMESPACE_END
 
 template <unsigned N>

@@ -4,6 +4,7 @@
 
 #include <monad/db/in_memory_trie_db.hpp>
 
+#include <monad/execution/block_reward.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/transaction_gas.hpp>
@@ -68,7 +69,12 @@ TEST(fork_traits, frontier)
             .ommers = {
                 BlockHeader{.number = 9, .beneficiary = b},
                 BlockHeader{.number = 8, .beneficiary = c}}};
-        fork_traits::frontier::apply_block_award(bs, db, block);
+        apply_block_reward(
+            bs,
+            db,
+            block,
+            fork_traits::frontier::block_reward,
+            fork_traits::frontier::additional_ommer_reward);
         db.commit(s.block_state_.state, s.block_state_.code);
         EXPECT_EQ(
             intx::be::load<uint256_t>(s.get_balance(a)),
@@ -134,7 +140,12 @@ TEST(fork_traits, byzantium)
         .ommers = {
             BlockHeader{.number = 9, .beneficiary = b},
             BlockHeader{.number = 8, .beneficiary = c}}};
-    fork_traits::byzantium::apply_block_award(bs, db, block);
+    apply_block_reward(
+        bs,
+        db,
+        block,
+        fork_traits::byzantium::block_reward,
+        fork_traits::byzantium::additional_ommer_reward);
     State cs{bs, db};
     EXPECT_EQ(
         intx::be::load<uint256_t>(cs.get_balance(a)),
@@ -166,8 +177,12 @@ TEST(fork_traits, constantinople_and_petersburg)
         .ommers = {
             BlockHeader{.number = 9, .beneficiary = b},
             BlockHeader{.number = 8, .beneficiary = c}}};
-    fork_traits::constantinople_and_petersburg::apply_block_award(
-        bs, db, block);
+    apply_block_reward(
+        bs,
+        db,
+        block,
+        fork_traits::constantinople_and_petersburg::block_reward,
+        fork_traits::constantinople_and_petersburg::additional_ommer_reward);
 
     EXPECT_EQ(
         intx::be::load<uint256_t>(s.get_balance(a)), 2'125'000'000'000'000'000);
@@ -266,7 +281,12 @@ TEST(fork_traits, paris_apply_block_reward)
         BlockState bs;
         State s{bs, db};
 
-        fork_traits::paris::apply_block_award(bs, db, block);
+        apply_block_reward(
+            bs,
+            db,
+            block,
+            fork_traits::paris::block_reward,
+            fork_traits::paris::additional_ommer_reward);
 
         EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(a)), 0u);
     }
@@ -275,7 +295,12 @@ TEST(fork_traits, paris_apply_block_reward)
         BlockState bs;
         State s{bs, db};
 
-        fork_traits::london::apply_block_award(bs, db, block);
+        apply_block_reward(
+            bs,
+            db,
+            block,
+            fork_traits::london::block_reward,
+            fork_traits::london::additional_ommer_reward);
 
         EXPECT_EQ(
             intx::be::load<uint256_t>(s.get_balance(a)),

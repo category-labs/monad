@@ -7,6 +7,7 @@
 #include <monad/core/block.hpp>
 #include <monad/core/transaction.hpp>
 
+#include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/validation_status.hpp>

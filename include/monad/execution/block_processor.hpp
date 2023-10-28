@@ -9,6 +9,7 @@
 #include <monad/core/withdrawal.hpp>
 
 #include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/block_reward.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/validation_status.hpp>
@@ -109,7 +110,12 @@ struct BlockProcessor
             process_withdrawal(state, block.withdrawals);
         }
 
-        TTraits::apply_block_award(block_state, db, block);
+        apply_block_reward(
+            block_state,
+            db,
+            block,
+            TTraits::block_reward,
+            TTraits::additional_ommer_reward);
 
         if constexpr (TTraits::rev >= EVMC_SPURIOUS_DRAGON) {
             state.destruct_touched_dead();

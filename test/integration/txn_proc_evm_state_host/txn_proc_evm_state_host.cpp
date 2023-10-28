@@ -3,6 +3,7 @@
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/block_reward.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_gas.hpp>
@@ -81,7 +82,8 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     EXPECT_TRUE(can_merge(bs.state, s.state_));
     merge(bs.state, s.state_);
 
-    traits_t::apply_block_award(bs, db, b);
+    apply_block_reward(
+        bs, db, b, traits_t::block_reward, traits_t::additional_ommer_reward);
 
     State s2{bs, db};
     EXPECT_EQ(s2.get_balance(a), bytes32_t{3'093'750'000'000'420'000});
@@ -153,7 +155,8 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     EXPECT_TRUE(can_merge(bs.state, s.state_));
     merge(bs.state, s.state_);
 
-    traits_t::apply_block_award(bs, db, b);
+    apply_block_reward(
+        bs, db, b, traits_t::block_reward, traits_t::additional_ommer_reward);
 
     State s2{bs, db};
     EXPECT_EQ(s2.get_balance(a), bytes32_t{5'480'000'000'000'000'000});
@@ -220,7 +223,8 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     EXPECT_TRUE(can_merge(bs.state, s.state_));
     merge(bs.state, s.state_);
 
-    traits_t::apply_block_award(bs, db, b);
+    apply_block_reward(
+        bs, db, b, traits_t::block_reward, traits_t::additional_ommer_reward);
 
     State s2{bs, db};
     EXPECT_EQ(s2.get_balance(a), bytes32_t{5'010'428'473'773'980'000});

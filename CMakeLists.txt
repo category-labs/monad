@@ -136,6 +136,8 @@ add_library(
   "src/monad/db/state_db.cpp"
   # execution
   "include/monad/execution/block_hash_buffer.hpp"
+  "include/monad/execution/block_processor.hpp"
+  "include/monad/execution/block_reward.hpp"
   "include/monad/execution/create_contract_address.hpp"
   "include/monad/execution/ethereum/fork_traits.hpp"
   "include/monad/execution/evm.hpp"
@@ -153,6 +155,7 @@ add_library(
   "include/monad/execution/validation.hpp"
   "include/monad/execution/validation_status.hpp"
   "src/monad/execution/block_hash_buffer.cpp"
+  "src/monad/execution/block_reward.cpp"
   "src/monad/execution/create_contract_address.cpp"
   # rlp
   "include/monad/rlp/decode.hpp"

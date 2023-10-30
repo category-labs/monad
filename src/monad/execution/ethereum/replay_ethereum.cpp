@@ -14,8 +14,6 @@
 
 #include <monad/execution/precompiles.hpp>
 #include <monad/execution/replay_block_db.hpp>
-#include <monad/execution/transaction_processor.hpp>
-#include <monad/execution/transaction_processor_data.hpp>
 
 #include <monad/state2/state.hpp>
 
@@ -99,14 +97,12 @@ int main(int argc, char *argv[])
 
     monad::ReplayFromBlockDb<db_t> replay_eth;
 
-    [[maybe_unused]] auto result =
-        replay_eth
-            .run<monad::eth_start_fork, monad::TransactionProcessorFiberData>(
-                db,
-                checkpoint_frequency,
-                block_db,
-                start_block_number,
-                finish_block_number);
+    [[maybe_unused]] auto result = replay_eth.run<monad::eth_start_fork>(
+        db,
+        checkpoint_frequency,
+        block_db,
+        start_block_number,
+        finish_block_number);
 
     auto const finished_time = std::chrono::steady_clock::now();
     auto const elapsed_ms =

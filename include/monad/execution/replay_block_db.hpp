@@ -79,7 +79,7 @@ public:
         return state_root == block_header.state_root;
     }
 
-    template <class Traits, template <typename> class TFiberData>
+    template <class Traits>
     [[nodiscard]] Result run_fork(
         TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
         BlockHashBuffer &block_hash_buffer, block_num_t current_block_number,
@@ -113,7 +113,8 @@ public:
 
                 auto const receipts = block_processor.template execute<
                     Traits,
-                    TFiberData<TransactionProcessor<Traits>>>(
+                    TransactionProcessorFiberData<
+                        TransactionProcessor<Traits>>>(
                     block, db, block_hash_buffer);
 
                 if (!verify_root_hash(
@@ -142,7 +143,7 @@ public:
         }
 
         else {
-            return run_fork<typename Traits::next_fork_t, TFiberData>(
+            return run_fork<typename Traits::next_fork_t>(
                 db,
                 checkpoint_frequency,
                 block_db,
@@ -152,7 +153,7 @@ public:
         }
     }
 
-    template <class Traits, template <typename> class TFiberData>
+    template <class Traits>
     [[nodiscard]] Result
     run(TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
         block_num_t const start_block_number,
@@ -182,7 +183,7 @@ public:
             ++block_number;
         }
 
-        return run_fork<Traits, TFiberData>(
+        return run_fork<Traits>(
             db,
             checkpoint_frequency,
             block_db,

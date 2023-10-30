@@ -16,12 +16,12 @@ MONAD_NAMESPACE_BEGIN
 
 constexpr address_t ripemd_address = 0x03_address;
 
-template <class TTraits>
+template <class Traits>
 [[nodiscard]] constexpr bool is_precompile(address_t const &address) noexcept
 {
-    static_assert(TTraits::n_precompiles < UINT8_MAX);
+    static_assert(Traits::n_precompiles < UINT8_MAX);
 
-    static constexpr auto max_address = address_t{TTraits::n_precompiles};
+    static constexpr auto max_address = address_t{Traits::n_precompiles};
 
     if (MONAD_LIKELY(address > max_address)) {
         return false;
@@ -34,12 +34,12 @@ template <class TTraits>
     return true;
 }
 
-template <class TTraits>
+template <class Traits>
 std::optional<evmc::Result> check_call_precompile(evmc_message const &msg)
 {
     auto const &address = msg.code_address;
 
-    if (!is_precompile<TTraits>(address)) {
+    if (!is_precompile<Traits>(address)) {
         return std::nullopt;
     }
 
@@ -47,7 +47,7 @@ std::optional<evmc::Result> check_call_precompile(evmc_message const &msg)
 
     auto const gas_func = kSilkpreContracts[i - 1].gas;
 
-    auto const cost = gas_func(msg.input_data, msg.input_size, TTraits::rev);
+    auto const cost = gas_func(msg.input_data, msg.input_size, Traits::rev);
 
     if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost))) {
         return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};

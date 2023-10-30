@@ -71,7 +71,7 @@ public:
     }
 };
 
-template <class TState, class TTraits>
+template <class TState, class Traits>
 struct fakeEmptyTP
 {
     enum class Status
@@ -97,7 +97,7 @@ struct fakeEmptyTP
     }
 };
 
-template <class TState, class TTraits, class TInterpreter>
+template <class TState, class Traits, class TInterpreter>
 struct fakeEmptyEvm
 {
 };
@@ -106,7 +106,7 @@ struct fakeInterpreter
 {
 };
 
-template <class TTraits, class TState, class TEvm>
+template <class Traits, class TState, class TEvm>
 struct fakeEmptyEvmHost
 {
 };
@@ -115,7 +115,7 @@ template <class TExecution>
 class fakeEmptyBP
 {
 public:
-    template <class TState, class TTraits, class TFiberData>
+    template <class TState, class Traits, class TFiberData>
     std::vector<Receipt> execute(TState &, Block &)
     {
         return {};

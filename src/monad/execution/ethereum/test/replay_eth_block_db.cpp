@@ -50,7 +50,7 @@ public:
     }
 };
 
-template <class TState, class TTraits, class TInterpreter>
+template <class TState, class Traits, class TInterpreter>
 struct fakeEmptyEvm
 {
 };
@@ -59,12 +59,12 @@ struct fakeInterpreter
 {
 };
 
-template <class TTraits, class TState, class TEvm>
+template <class Traits, class TState, class TEvm>
 struct fakeEmptyEvmHost
 {
 };
 
-template <class TState, class TTraits>
+template <class TState, class Traits>
 struct fakeReceiptTP
 {
     enum class Status
@@ -81,7 +81,7 @@ struct fakeReceiptTP
     Receipt execute(
         TState &, TEvmHost &, BlockHeader const &, Transaction const &) const
     {
-        return Receipt{.status = TTraits::rev};
+        return Receipt{.status = Traits::rev};
     }
 
     Status validate(TState const &, Transaction const &, uint64_t)
@@ -118,7 +118,7 @@ template <class TExecution>
 class fakeReceiptBP
 {
 public:
-    template <class TState, class TTraits, class TFiberData>
+    template <class TState, class Traits, class TFiberData>
     std::vector<Receipt> execute(TState &, Block &)
     {
         TFiberData data{};

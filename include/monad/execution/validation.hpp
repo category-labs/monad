@@ -14,12 +14,12 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <class TTraits>
+template <class Traits>
 ValidationStatus static_validate_txn(
     Transaction const &txn, std::optional<uint256_t> const &base_fee_per_gas)
 {
     if (MONAD_LIKELY(txn.sc.chain_id.has_value())) {
-        if constexpr (TTraits::rev < EVMC_SPURIOUS_DRAGON) {
+        if constexpr (Traits::rev < EVMC_SPURIOUS_DRAGON) {
             return ValidationStatus::TYPE_NOT_SUPPORTED;
         }
         if (MONAD_UNLIKELY(txn.sc.chain_id.value() != 1)) {
@@ -27,12 +27,12 @@ ValidationStatus static_validate_txn(
         }
     }
 
-    if constexpr (TTraits::rev < EVMC_BERLIN) {
+    if constexpr (Traits::rev < EVMC_BERLIN) {
         if (MONAD_UNLIKELY(txn.type != TransactionType::eip155)) {
             return ValidationStatus::TYPE_NOT_SUPPORTED;
         }
     }
-    else if constexpr (TTraits::rev < EVMC_LONDON) {
+    else if constexpr (Traits::rev < EVMC_LONDON) {
         if (MONAD_UNLIKELY(
                 txn.type != TransactionType::eip155 &&
                 txn.type != TransactionType::eip2930)) {
@@ -57,7 +57,7 @@ ValidationStatus static_validate_txn(
     }
 
     // EIP-3860
-    if constexpr (TTraits::rev >= EVMC_SHANGHAI) {
+    if constexpr (Traits::rev >= EVMC_SHANGHAI) {
         if (MONAD_UNLIKELY(
                 !txn.to.has_value() &&
                 txn.data.size() > fork_traits::shanghai::max_init_code_size)) {
@@ -67,7 +67,7 @@ ValidationStatus static_validate_txn(
 
     // Yellow paper, Eq. 62
     // g0 <= Tg
-    if (MONAD_UNLIKELY(intrinsic_gas<TTraits>(txn) > txn.gas_limit)) {
+    if (MONAD_UNLIKELY(intrinsic_gas<Traits>(txn) > txn.gas_limit)) {
         return ValidationStatus::INTRINSIC_GAS_GREATER_THAN_LIMIT;
     }
 
@@ -110,7 +110,7 @@ ValidationStatus validate_txn(TState &state, Transaction const &txn)
     return ValidationStatus::SUCCESS;
 }
 
-template <class TTraits>
+template <class Traits>
 ValidationStatus static_validate_header(BlockHeader const &header)
 {
     if (MONAD_UNLIKELY(header.gas_used > header.gas_limit)) {
@@ -127,14 +127,14 @@ ValidationStatus static_validate_header(BlockHeader const &header)
         return ValidationStatus::EXTRA_DATA_TOO_LONG;
     }
 
-    if constexpr (TTraits::rev >= EVMC_PARIS) {
+    if constexpr (Traits::rev >= EVMC_PARIS) {
         if (MONAD_UNLIKELY(header.ommers_hash != NULL_LIST_HASH)) {
             return ValidationStatus::WRONG_OMMERS_HASH;
         }
     }
 
     // TODO: Does DAO necessarily need to be in homestead
-    if constexpr (TTraits::rev == EVMC_HOMESTEAD) {
+    if constexpr (Traits::rev == EVMC_HOMESTEAD) {
         if (MONAD_UNLIKELY(
                 header.number >= dao::dao_block_number &&
                 header.number <= dao::dao_block_number + 9 &&
@@ -144,7 +144,7 @@ ValidationStatus static_validate_header(BlockHeader const &header)
     }
 
     // Validate Field Existence
-    if constexpr (TTraits::rev < EVMC_LONDON) {
+    if constexpr (Traits::rev < EVMC_LONDON) {
         if (MONAD_UNLIKELY(header.base_fee_per_gas.has_value())) {
             return ValidationStatus::FIELD_BEFORE_FORK;
         }
@@ -153,7 +153,7 @@ ValidationStatus static_validate_header(BlockHeader const &header)
         return ValidationStatus::MISSING_FIELD;
     }
 
-    if constexpr (TTraits::rev < EVMC_SHANGHAI) {
+    if constexpr (Traits::rev < EVMC_SHANGHAI) {
         if (MONAD_UNLIKELY(header.withdrawals_root.has_value())) {
             return ValidationStatus::FIELD_BEFORE_FORK;
         }
@@ -162,7 +162,7 @@ ValidationStatus static_validate_header(BlockHeader const &header)
         return ValidationStatus::MISSING_FIELD;
     }
 
-    if constexpr (TTraits::rev >= EVMC_PARIS) {
+    if constexpr (Traits::rev >= EVMC_PARIS) {
         if (MONAD_UNLIKELY(header.difficulty != 0)) {
             return ValidationStatus::POW_BLOCK_AFTER_MERGE;
         }
@@ -177,10 +177,10 @@ ValidationStatus static_validate_header(BlockHeader const &header)
     return ValidationStatus::SUCCESS;
 }
 
-template <class TTraits>
+template <class Traits>
 ValidationStatus static_validate_ommers(Block const &block)
 {
-    if constexpr (TTraits::rev >= EVMC_PARIS) {
+    if constexpr (Traits::rev >= EVMC_PARIS) {
         if (MONAD_UNLIKELY(!block.ommers.empty())) {
             return ValidationStatus::TOO_MANY_OMMERS;
         }
@@ -199,7 +199,7 @@ ValidationStatus static_validate_ommers(Block const &block)
     }
 
     for (auto const &ommer : block.ommers) {
-        if (auto const status = static_validate_header<TTraits>(ommer);
+        if (auto const status = static_validate_header<Traits>(ommer);
             status != ValidationStatus::SUCCESS) {
             return ValidationStatus::INVALID_OMMER_HEADER;
         }
@@ -208,14 +208,14 @@ ValidationStatus static_validate_ommers(Block const &block)
     return ValidationStatus::SUCCESS;
 }
 
-template <class TTraits>
+template <class Traits>
 ValidationStatus static_validate_body(Block const &block)
 {
     // TODO: Should we put computationally heavy validate_root(txn,
     // withdraw) here?
 
     // First Validate Block Field Existence
-    if constexpr (TTraits::rev < EVMC_SHANGHAI) {
+    if constexpr (Traits::rev < EVMC_SHANGHAI) {
         if (MONAD_UNLIKELY(block.withdrawals.has_value())) {
             return ValidationStatus::FIELD_BEFORE_FORK;
         }
@@ -226,14 +226,14 @@ ValidationStatus static_validate_body(Block const &block)
         }
     }
 
-    if (auto const status = static_validate_ommers<TTraits>(block);
+    if (auto const status = static_validate_ommers<Traits>(block);
         status != ValidationStatus::SUCCESS) {
         return status;
     }
 
     for (auto const &txn : block.transactions) {
-        if (auto const status = static_validate_txn<TTraits>(
-                txn, block.header.base_fee_per_gas);
+        if (auto const status =
+                static_validate_txn<Traits>(txn, block.header.base_fee_per_gas);
             status != ValidationStatus::SUCCESS) {
             return status;
         }
@@ -242,16 +242,15 @@ ValidationStatus static_validate_body(Block const &block)
     return ValidationStatus::SUCCESS;
 }
 
-template <class TTraits>
+template <class Traits>
 ValidationStatus static_validate_block(Block const &block)
 {
-    if (auto const header_status =
-            static_validate_header<TTraits>(block.header);
+    if (auto const header_status = static_validate_header<Traits>(block.header);
         header_status != ValidationStatus::SUCCESS) {
         return header_status;
     }
 
-    if (auto const body_status = static_validate_body<TTraits>(block);
+    if (auto const body_status = static_validate_body<Traits>(block);
         body_status != ValidationStatus::SUCCESS) {
         return body_status;
     }

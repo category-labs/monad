@@ -27,7 +27,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <class TState, class TTraits>
+template <class TState, class Traits>
 struct EVMOneBaselineInterpreter
 {
     template <class TEvmHost>
@@ -49,13 +49,13 @@ struct EVMOneBaselineInterpreter
 
         auto execution_state = std::make_unique<evmone::ExecutionState>(
             msg,
-            TTraits::rev,
+            Traits::rev,
             host->get_interface(),
             host->to_context(),
             code,
             byte_string_view{});
         evmone::baseline::CodeAnalysis code_analysis{
-            evmone::baseline::analyze(TTraits::rev, code)};
+            evmone::baseline::analyze(Traits::rev, code)};
         result = evmc::Result{evmone::baseline::execute(
             vm, msg.gas, *execution_state, code_analysis)};
 

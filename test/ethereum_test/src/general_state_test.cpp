@@ -42,7 +42,7 @@ namespace
         return o;
     }
 
-    template <typename TTraits>
+    template <typename Traits>
     [[nodiscard]] tl::expected<Receipt, ValidationStatus> execute(
         BlockHeader const &block_header, State &state, Transaction const &txn)
     {
@@ -52,11 +52,11 @@ namespace
         MONAD_ASSERT(block_header.number);
         block_hash_buffer.set(
             block_header.number - 1, block_header.parent_hash);
-        host_t<TTraits> host{block_hash_buffer, block_header, txn, state};
-        TransactionProcessor<TTraits> processor;
+        host_t<Traits> host{block_hash_buffer, block_header, txn, state};
+        TransactionProcessor<Traits> processor;
 
-        if (auto const status = static_validate_txn<TTraits>(
-                txn, host.header_.base_fee_per_gas);
+        if (auto const status =
+                static_validate_txn<Traits>(txn, host.header_.base_fee_per_gas);
             status != ValidationStatus::SUCCESS) {
             return tl::unexpected{status};
         }

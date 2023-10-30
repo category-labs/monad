@@ -26,7 +26,7 @@ namespace
 
 static TransactionStatus fake_status{};
 
-template <class TState, class TTraits>
+template <class TState, class Traits>
 struct fakeTP
 {
     Receipt r_{.status = Receipt::SUCCESS};

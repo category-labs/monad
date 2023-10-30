@@ -22,7 +22,7 @@ MONAD_NAMESPACE_BEGIN
 template <class Traits>
 struct Evm
 {
-    using interpreter_t = EVMOneBaselineInterpreter<State, Traits>;
+    using interpreter_t = EVMOneBaselineInterpreter<Traits>;
 
     using result_t = tl::expected<void, evmc_result>;
     using unexpected_t = tl::unexpected<evmc_result>;

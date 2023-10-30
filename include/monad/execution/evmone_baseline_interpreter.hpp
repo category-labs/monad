@@ -27,7 +27,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <class TState, class Traits>
+template <class Traits>
 struct EVMOneBaselineInterpreter
 {
     template <class TEvmHost>

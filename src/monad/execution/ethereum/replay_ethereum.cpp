@@ -102,8 +102,6 @@ int main(int argc, char *argv[])
     [[maybe_unused]] auto result = replay_eth.run<
         monad::eth_start_fork,
         monad::TransactionProcessor,
-        monad::Evm,
-        monad::EvmcHost,
         monad::TransactionProcessorFiberData>(
         db,
         checkpoint_frequency,

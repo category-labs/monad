@@ -9,7 +9,7 @@
 #include <monad/execution/block_processor.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/ethereum/genesis.hpp>
-#include <monad/execution/evm.hpp>
+#include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execution_model.hpp>
 #include <monad/execution/transaction_processor_data.hpp>
 
@@ -80,7 +80,6 @@ public:
 
     template <
         class TTraits, template <typename, typename> class TTxnProcessor,
-        template <typename> class TEvm, template <typename> class TEvmHost,
         template <typename, typename> class TFiberData>
     [[nodiscard]] Result run_fork(
         TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
@@ -117,7 +116,7 @@ public:
                     TTraits,
                     TFiberData<
                         TTxnProcessor<State, TTraits>,
-                        TEvmHost<TTraits>>>(block, db, block_hash_buffer);
+                        EvmcHost<TTraits>>>(block, db, block_hash_buffer);
 
                 if (!verify_root_hash(
                         block.header,
@@ -148,8 +147,6 @@ public:
             return run_fork<
                 typename TTraits::next_fork_t,
                 TTxnProcessor,
-                TEvm,
-                TEvmHost,
                 TFiberData>(
                 db,
                 checkpoint_frequency,
@@ -162,7 +159,6 @@ public:
 
     template <
         class TTraits, template <typename, typename> class TTxnProcessor,
-        template <typename> class TEvm, template <typename> class TEvmHost,
         template <typename, typename> class TFiberData>
     [[nodiscard]] Result
     run(TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
@@ -193,7 +189,7 @@ public:
             ++block_number;
         }
 
-        return run_fork<TTraits, TTxnProcessor, TEvm, TEvmHost, TFiberData>(
+        return run_fork<TTraits, TTxnProcessor, TFiberData>(
             db,
             checkpoint_frequency,
             block_db,

@@ -28,10 +28,8 @@ MONAD_NAMESPACE_BEGIN
 struct AllTxnBlockProcessor
 {
     // EIP-4895
-    template <class TState>
     static void process_withdrawal(
-        TState &state,
-        std::optional<std::vector<Withdrawal>> const &withdrawals)
+        State &state, std::optional<std::vector<Withdrawal>> const &withdrawals)
     {
         if (withdrawals.has_value()) {
             for (auto const &withdrawal : withdrawals.value()) {

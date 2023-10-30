@@ -72,9 +72,9 @@ struct Evm
         return result;
     }
 
-    template <class TEvmHost>
+    template <class EvmHost>
     [[nodiscard]] static evmc::Result create_contract_account(
-        TEvmHost *host, State &state, evmc_message const &msg) noexcept
+        EvmHost *host, State &state, evmc_message const &msg) noexcept
     {
         if (auto const result = check_sender_balance(state, msg);
             !result.has_value()) {
@@ -129,7 +129,7 @@ struct Evm
             .code_address = contract_address,
         };
 
-        TEvmHost new_host{*host, new_state};
+        EvmHost new_host{*host, new_state};
         auto result = interpreter_t::execute(
             &new_host,
             m_call,
@@ -157,9 +157,9 @@ struct Evm
         return result;
     }
 
-    template <class TEvmHost>
+    template <class EvmHost>
     [[nodiscard]] static evmc::Result
-    call_evm(TEvmHost *host, State &state, evmc_message const &msg) noexcept
+    call_evm(EvmHost *host, State &state, evmc_message const &msg) noexcept
     {
         State new_state{state};
 
@@ -182,7 +182,7 @@ struct Evm
             result = std::move(maybe_result.value());
         }
         else {
-            TEvmHost new_host{*host, new_state};
+            EvmHost new_host{*host, new_state};
             auto const code = new_state.get_code(msg.code_address);
             result = interpreter_t::execute(&new_host, msg, code);
         }

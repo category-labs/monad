@@ -11,10 +11,10 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <typename TCursor>
+template <typename Cursor>
 [[nodiscard]] std::optional<Account> trie_db_read_account(
-    trie::Nibbles const &hashed_account_address, TCursor &&leaves_cursor,
-    TCursor &&trie_cursor)
+    trie::Nibbles const &hashed_account_address, Cursor &&leaves_cursor,
+    Cursor &&trie_cursor)
 {
     if (MONAD_UNLIKELY(leaves_cursor.empty())) {
         return std::nullopt;
@@ -46,16 +46,16 @@ template <typename TCursor>
     return ret;
 }
 
-template <typename TCursor>
+template <typename Cursor>
 [[nodiscard]] std::optional<Account> trie_db_read_account(
-    address_t const &a, TCursor &&leaves_cursor, TCursor &&trie_cursor)
+    address_t const &a, Cursor &&leaves_cursor, Cursor &&trie_cursor)
 {
     auto const hashed_account_address = trie::Nibbles{
         std::bit_cast<bytes32_t>(ethash::keccak256(a.bytes, sizeof(a.bytes)))};
     return trie_db_read_account(
         hashed_account_address,
-        std::forward<TCursor>(leaves_cursor),
-        std::forward<TCursor>(trie_cursor));
+        std::forward<Cursor>(leaves_cursor),
+        std::forward<Cursor>(trie_cursor));
 }
 
 MONAD_NAMESPACE_END

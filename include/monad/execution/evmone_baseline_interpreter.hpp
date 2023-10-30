@@ -30,9 +30,9 @@ MONAD_NAMESPACE_BEGIN
 template <class Traits>
 struct EVMOneBaselineInterpreter
 {
-    template <class TEvmHost>
+    template <class EvmHost>
     static evmc::Result
-    execute(TEvmHost *host, evmc_message const &msg, byte_string_view code)
+    execute(EvmHost *host, evmc_message const &msg, byte_string_view code)
     {
         evmc::Result result{
             evmc_result{.status_code = EVMC_SUCCESS, .gas_left = msg.gas}};

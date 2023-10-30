@@ -15,7 +15,7 @@ namespace fmt = fmtquill::v10;
 
 MONAD_DB_NAMESPACE_BEGIN
 
-template <typename TDB>
+template <typename DB>
 [[nodiscard]] inline tl::expected<std::filesystem::path, std::string>
 find_starting_checkpoint(
     std::filesystem::path root, uint64_t starting_block_number)
@@ -34,7 +34,7 @@ find_starting_checkpoint(
             starting_block));
     }
 
-    auto const starting_checkpoint = starting_block / TDB::db_type();
+    auto const starting_checkpoint = starting_block / DB::db_type();
 
     if (!fs::exists(starting_checkpoint)) {
         return tl::make_unexpected(fmt::format(
@@ -48,7 +48,7 @@ find_starting_checkpoint(
 
 // Preparing initial db state and return the path for opening. If preparation
 // fails, return a string explanation
-template <typename TDB>
+template <typename DB>
 [[nodiscard]] inline tl::expected<std::filesystem::path, std::string>
 prepare_state(std::filesystem::path root, uint64_t starting_block_number)
 {
@@ -63,9 +63,9 @@ prepare_state(std::filesystem::path root, uint64_t starting_block_number)
 
     fs::create_directories(current_dir);
 
-    auto const path = current_dir / TDB::db_type();
+    auto const path = current_dir / DB::db_type();
     if (starting_block_number) {
-        return find_starting_checkpoint<TDB>(root, starting_block_number)
+        return find_starting_checkpoint<DB>(root, starting_block_number)
             .map([&](auto const &starting_checkpoint) {
                 fs::copy(starting_checkpoint, path);
                 return path;

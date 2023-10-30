@@ -10,8 +10,6 @@
 
 #include <evmc/evmc.hpp>
 
-#include <boost/thread/null_mutex.hpp>
-
 #include <gtest/gtest.h>
 
 #include <test_resource_data.h>
@@ -19,17 +17,15 @@
 using namespace monad;
 
 using account_store_db_t = db::InMemoryTrieDB;
-using mutex_t = boost::null_mutex;
-using state_t = State<mutex_t>;
 using traits_t = fork_traits::shanghai;
 
-using evm_t = Evm<state_t, traits_t>;
+using evm_t = Evm<State, traits_t>;
 
 using evm_host_t = EvmcHost<traits_t>;
 
 TEST(Evm, create_with_insufficient)
 {
-    BlockState<mutex_t> bs;
+    BlockState bs;
     account_store_db_t db{};
     State s{bs, db};
 
@@ -63,7 +59,7 @@ TEST(Evm, create_with_insufficient)
 
 TEST(Evm, eip684_existing_code)
 {
-    BlockState<mutex_t> bs;
+    BlockState bs;
     account_store_db_t db{};
     State s{bs, db};
 
@@ -104,7 +100,7 @@ TEST(Evm, eip684_existing_code)
 
 TEST(Evm, transfer_call_balances)
 {
-    BlockState<mutex_t> bs;
+    BlockState bs;
     account_store_db_t db{};
     State s{bs, db};
 
@@ -140,7 +136,7 @@ TEST(Evm, transfer_call_balances)
 
 TEST(Evm, transfer_call_balances_to_self)
 {
-    BlockState<mutex_t> bs;
+    BlockState bs;
     account_store_db_t db{};
     State s{bs, db};
 
@@ -173,7 +169,7 @@ TEST(Evm, transfer_call_balances_to_self)
 
 TEST(Evm, dont_transfer_on_delegatecall)
 {
-    BlockState<mutex_t> bs;
+    BlockState bs;
     account_store_db_t db{};
     State s{bs, db};
 
@@ -210,7 +206,7 @@ TEST(Evm, dont_transfer_on_delegatecall)
 
 TEST(Evm, dont_transfer_on_staticcall)
 {
-    BlockState<mutex_t> bs;
+    BlockState bs;
     account_store_db_t db{};
     State s{bs, db};
 
@@ -248,7 +244,7 @@ TEST(Evm, dont_transfer_on_staticcall)
 
 TEST(Evm, create_nonce_out_of_range)
 {
-    BlockState<mutex_t> bs;
+    BlockState bs;
     account_store_db_t db{};
     State s{bs, db};
 
@@ -289,7 +285,7 @@ TEST(Evm, create_nonce_out_of_range)
 
 TEST(Evm, static_precompile_execution)
 {
-    BlockState<mutex_t> bs;
+    BlockState bs;
     account_store_db_t db{};
     State s{bs, db};
 
@@ -336,7 +332,7 @@ TEST(Evm, static_precompile_execution)
 
 TEST(Evm, out_of_gas_static_precompile_execution)
 {
-    BlockState<mutex_t> bs;
+    BlockState bs;
     account_store_db_t db{};
     State s{bs, db};
 

@@ -9,17 +9,12 @@
 
 #include <nlohmann/json.hpp>
 
-#include <boost/thread/null_mutex.hpp>
-
 MONAD_TEST_NAMESPACE_BEGIN
 
-using mutex_t = boost::null_mutex;
-
 using db_t = monad::db::InMemoryTrieDB;
-using state_t = State<mutex_t>;
 
 template <typename Traits>
-using transaction_processor_t = TransactionProcessor<state_t, Traits>;
+using transaction_processor_t = TransactionProcessor<State, Traits>;
 
 template <typename Traits>
 using host_t = EvmcHost<Traits>;
@@ -38,6 +33,6 @@ inline std::unordered_map<std::string, evmc_revision> const revision_map = {
     {"Merge", EVMC_PARIS},
     {"Shanghai", EVMC_SHANGHAI}};
 
-void load_state_from_json(nlohmann::json const &, state_t &);
+void load_state_from_json(nlohmann::json const &, State &);
 
 MONAD_TEST_NAMESPACE_END

@@ -7,7 +7,7 @@
 
 MONAD_TEST_NAMESPACE_BEGIN
 
-void load_state_from_json(nlohmann::json const &j, state_t &state)
+void load_state_from_json(nlohmann::json const &j, State &state)
 {
     for (auto const &[j_addr, j_acc] : j.items()) {
         auto const account_address =

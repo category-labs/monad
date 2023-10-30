@@ -20,14 +20,13 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <class TMutex, class TTxnProcessor, class TEvmHost>
+template <class TTxnProcessor, class TEvmHost>
 struct TransactionProcessorFiberData
 {
-    using state_t = State<TMutex>;
-    using result_t = std::pair<Receipt, state_t>;
+    using result_t = std::pair<Receipt, State>;
 
     Db &db_;
-    BlockState<TMutex> &block_state_;
+    BlockState &block_state_;
     Transaction const &txn_;
     BlockHeader const &header_;
     BlockHashBuffer const &block_hash_buffer_;
@@ -35,7 +34,7 @@ struct TransactionProcessorFiberData
     result_t result_;
 
     TransactionProcessorFiberData(
-        Db &db, BlockState<TMutex> &block_state, Transaction &txn,
+        Db &db, BlockState &block_state, Transaction &txn,
         BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
         unsigned int id)
         : db_{db}

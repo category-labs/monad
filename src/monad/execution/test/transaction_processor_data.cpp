@@ -1,6 +1,5 @@
 #include <monad/db/in_memory_trie_db.hpp>
 
-#include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/test/fakes.hpp>
 #include <monad/execution/transaction_processor_data.hpp>
@@ -11,21 +10,14 @@
 
 #include <gtest/gtest.h>
 
-#include <shared_mutex>
-
 using namespace monad;
-using namespace monad::execution;
-
-using mutex_t = std::shared_mutex;
-using block_cache_t = fake::BlockDb;
 
 using db_t = db::InMemoryTrieDB;
-using state_t = State<mutex_t, block_cache_t>;
 using traits_t = fork_traits::shanghai;
 
 template <class TTxnProc>
 using data_t = TransactionProcessorFiberData<
-    mutex_t, TTxnProc, fake::EvmHost<state_t, traits_t>, block_cache_t>;
+    TTxnProc, fake::EvmHost<State, traits_t>, block_cache_t>;
 
 namespace
 {
@@ -59,13 +51,13 @@ struct fakeTP
     }
 };
 
-using tp_t = fakeTP<state_t, traits_t>;
+using tp_t = fakeTP<State, traits_t>;
 
 TEST(TransactionProcessorFiberData, successful)
 {
     auto db = test::make_db<db_t>();
-    BlockState<mutex_t> bs;
-    state_t s{bs, db, block_cache};
+    BlockState bs;
+    State s{bs, db, block_cache};
     static BlockHeader const b{};
     static Transaction t{.gas_limit = 15'000};
     fake_status = TransactionStatus::SUCCESS;
@@ -81,8 +73,8 @@ TEST(TransactionProcessorFiberData, successful)
 TEST(TransactionProcessorFiberData, failed_validation)
 {
     auto db = test::make_db<db_t>();
-    BlockState<mutex_t> bs;
-    state_t s{bs, db, block_cache};
+    BlockState bs;
+    State s{bs, db, block_cache};
     static BlockHeader const b{};
     static Transaction t{.gas_limit = 15'000};
 

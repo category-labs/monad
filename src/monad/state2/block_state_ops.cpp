@@ -4,18 +4,17 @@
 #include <monad/core/assert.h>
 #include <monad/core/likely.h>
 
-#include <boost/thread/null_mutex.hpp>
-
 #include <mutex>
 #include <shared_mutex>
 
 MONAD_NAMESPACE_BEGIN
 
-template <class Mutex>
 std::optional<Account> &read_account(
-    address_t const &address, StateDeltas &state,
-    BlockState<Mutex> &block_state, Db &db)
+    address_t const &address, StateDeltas &state, BlockState &block_state,
+    Db &db)
 {
+    using Mutex = BlockState::Mutex;
+
     // state
     {
         auto const it = state.find(address);
@@ -51,12 +50,13 @@ std::optional<Account> &read_account(
     return it->second.account.second;
 }
 
-template <class Mutex>
 delta_t<bytes32_t> &read_storage(
     address_t const &address, uint64_t const /*incarnation*/,
-    bytes32_t const &location, StateDeltas &state,
-    BlockState<Mutex> &block_state, Db &db)
+    bytes32_t const &location, StateDeltas &state, BlockState &block_state,
+    Db &db)
 {
+    using Mutex = BlockState::Mutex;
+
     // state
     auto const it = state.find(address);
     MONAD_ASSERT(it != state.end());
@@ -103,10 +103,11 @@ delta_t<bytes32_t> &read_storage(
     return it2->second;
 }
 
-template <class Mutex>
-byte_string &read_code(
-    bytes32_t const &hash, Code &code, BlockState<Mutex> &block_state, Db &db)
+byte_string &
+read_code(bytes32_t const &hash, Code &code, BlockState &block_state, Db &db)
 {
+    using Mutex = BlockState::Mutex;
+
     // code
     {
         auto const it = code.find(hash);
@@ -137,22 +138,5 @@ byte_string &read_code(
     auto const [it, _] = code.try_emplace(hash, result);
     return it->second;
 }
-
-template std::optional<Account> &read_account(
-    address_t const &, StateDeltas &, BlockState<std::shared_mutex> &, Db &);
-template std::optional<Account> &read_account(
-    address_t const &, StateDeltas &, BlockState<boost::null_mutex> &, Db &);
-
-template delta_t<bytes32_t> &read_storage(
-    address_t const &, uint64_t, bytes32_t const &, StateDeltas &,
-    BlockState<std::shared_mutex> &, Db &);
-template delta_t<bytes32_t> &read_storage(
-    address_t const &, uint64_t, bytes32_t const &, StateDeltas &,
-    BlockState<boost::null_mutex> &, Db &);
-
-template byte_string &
-read_code(bytes32_t const &, Code &, BlockState<std::shared_mutex> &, Db &);
-template byte_string &
-read_code(bytes32_t const &, Code &, BlockState<boost::null_mutex> &, Db &);
 
 MONAD_NAMESPACE_END

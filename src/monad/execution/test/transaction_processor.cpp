@@ -9,18 +9,13 @@
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 
-#include <boost/thread/null_mutex.hpp>
-
 #include <gtest/gtest.h>
 
 using namespace monad;
 
-using mutex_t = boost::null_mutex;
-
 using db_t = db::InMemoryTrieDB;
-using state_t = State<mutex_t>;
 using traits_t = fork_traits::shanghai;
-using processor_t = TransactionProcessor<state_t, traits_t>;
+using processor_t = TransactionProcessor<State, traits_t>;
 
 using evm_host_t = EvmcHost<traits_t>;
 
@@ -46,8 +41,8 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
         0x5353535353535353535353535353535353535353_address};
 
     db_t db;
-    BlockState<mutex_t> bs;
-    state_t s{bs, db};
+    BlockState bs;
+    State s{bs, db};
 
     s.add_to_balance(from, 56'000'000'000'000'000);
     s.set_nonce(from, 25);

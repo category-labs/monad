@@ -25,12 +25,10 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <class TDb, class TMutex, class TBlockProcessor>
+template <class TDb, class TBlockProcessor>
 class ReplayFromBlockDb
 {
 public:
-    using state_t = State<TMutex>;
-
     enum class Status
     {
         SUCCESS_END_OF_DB,
@@ -83,8 +81,8 @@ public:
     template <
         class TTraits, template <typename, typename> class TTxnProcessor,
         template <typename, typename> class TEvm,
-        template <typename, typename> class TEvmHost,
-        template <typename, typename, typename> class TFiberData>
+        template <typename> class TEvmHost,
+        template <typename, typename> class TFiberData>
     [[nodiscard]] Result run_fork(
         TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
         BlockHashBuffer &block_hash_buffer, block_num_t current_block_number,
@@ -117,13 +115,10 @@ public:
                 }
 
                 auto const receipts = block_processor.template execute<
-                    TMutex,
                     TTraits,
                     TFiberData<
-                        TMutex,
-                        TTxnProcessor<state_t, TTraits>,
-                        TEvmHost<TTraits, TMutex>>>(
-                    block, db, block_hash_buffer);
+                        TTxnProcessor<State, TTraits>,
+                        TEvmHost<TTraits>>>(block, db, block_hash_buffer);
 
                 if (!verify_root_hash(
                         block.header,
@@ -169,8 +164,8 @@ public:
     template <
         class TTraits, template <typename, typename> class TTxnProcessor,
         template <typename, typename> class TEvm,
-        template <typename, typename> class TEvmHost,
-        template <typename, typename, typename> class TFiberData>
+        template <typename> class TEvmHost,
+        template <typename, typename> class TFiberData>
     [[nodiscard]] Result
     run(TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
         block_num_t const start_block_number,

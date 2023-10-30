@@ -11,15 +11,11 @@
 
 #include <evmc/evmc.hpp>
 
-#include <boost/thread/null_mutex.hpp>
-
 #include <gtest/gtest.h>
 
 using namespace monad;
 
 using db_t = db::InMemoryTrieDB;
-using mutex_t = boost::null_mutex;
-using state_t = State<mutex_t>;
 using traits_t = fork_traits::shanghai;
 
 template <class Traits>
@@ -82,8 +78,8 @@ TEST(EvmcHost, get_tx_context)
         .from = from};
 
     db_t db;
-    BlockState<mutex_t> bs;
-    state_t s{bs, db};
+    BlockState bs;
+    State s{bs, db};
     BlockHashBuffer block_hash_buffer;
     evmc_host_t host{block_hash_buffer, b, t, s};
 
@@ -124,8 +120,8 @@ TEST(EvmcHost, emit_log)
     Transaction const t{};
 
     db_t db;
-    BlockState<mutex_t> bs;
-    state_t s{bs, db};
+    BlockState bs;
+    State s{bs, db};
     BlockHashBuffer block_hash_buffer;
     evmc_host_t host{block_hash_buffer, b, t, s};
 
@@ -150,8 +146,8 @@ TEST(EvmcHost, access_precompile)
     BlockHeader const b{};
     Transaction const t{};
     db_t db;
-    BlockState<mutex_t> bs;
-    state_t s{bs, db};
+    BlockState bs;
+    State s{bs, db};
     BlockHashBuffer block_hash_buffer;
     evmc_host_t host{block_hash_buffer, b, t, s};
 

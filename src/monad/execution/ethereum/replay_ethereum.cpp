@@ -22,7 +22,6 @@
 #include <CLI/CLI.hpp>
 
 #include <filesystem>
-#include <shared_mutex>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -74,7 +73,6 @@ int main(int argc, char *argv[])
     auto const start_time = std::chrono::steady_clock::now();
 
     using db_t = monad::db::RocksTrieDB;
-    using mutex_t = std::shared_mutex;
 
     monad::BlockDb block_db(block_db_path);
     db_t db{
@@ -99,8 +97,7 @@ int main(int argc, char *argv[])
         start_block_number = 1u;
     }
 
-    monad::ReplayFromBlockDb<db_t, mutex_t, monad::AllTxnBlockProcessor>
-        replay_eth;
+    monad::ReplayFromBlockDb<db_t, monad::AllTxnBlockProcessor> replay_eth;
 
     [[maybe_unused]] auto result = replay_eth.run<
         monad::eth_start_fork,

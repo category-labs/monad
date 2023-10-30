@@ -17,7 +17,6 @@
 #include <monad/state2/state.hpp>
 #include <monad/state2/state_deltas.hpp>
 
-#include <boost/fiber/all.hpp>
 #include <quill/Quill.h>
 #include <tl/expected.hpp>
 
@@ -42,7 +41,7 @@ struct AllTxnBlockProcessor
             }
         }
     }
-    template <class TMutex, class TTraits, class TxnProcData>
+    template <class TTraits, class TxnProcData>
     [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus>
     execute(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
     {
@@ -53,7 +52,7 @@ struct AllTxnBlockProcessor
             block.transactions.size());
         LOG_DEBUG("BlockHeader Fields: {}", block.header);
 
-        BlockState<TMutex> block_state{};
+        BlockState block_state{};
 
         // Apply DAO hack reversal
         TTraits::transfer_balance_dao(block_state, db, block.header.number);
@@ -116,8 +115,7 @@ struct AllTxnBlockProcessor
         return r;
     }
 
-    template <class TMutex>
-    void commit(BlockState<TMutex> &block_state, Db &db)
+    void commit(BlockState &block_state, Db &db)
     {
         auto const start_time = std::chrono::steady_clock::now();
         LOG_INFO("{}", "Committing to DB...");

@@ -9,13 +9,9 @@
 
 #include <gtest/gtest.h>
 
-#include <shared_mutex>
-
 using namespace monad;
 
-using mutex_t = std::shared_mutex;
 using db_t = db::InMemoryTrieDB;
-using state_t = State<mutex_t>;
 
 TEST(BlockProcessor, shanghai_withdrawal)
 {
@@ -41,9 +37,9 @@ TEST(BlockProcessor, shanghai_withdrawal)
             {b, StateDelta{.account = {std::nullopt, Account{.balance = 0}}}}},
         Code{});
 
-    BlockState<mutex_t> bs;
+    BlockState bs;
 
-    state_t state{bs, db};
+    State state{bs, db};
     AllTxnBlockProcessor::process_withdrawal(state, withdrawals);
 
     EXPECT_EQ(

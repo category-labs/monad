@@ -43,8 +43,7 @@ namespace
 
     template <typename TTraits>
     [[nodiscard]] tl::expected<Receipt, ValidationStatus> execute(
-        BlockHeader const &block_header, test::state_t &state,
-        Transaction const &txn)
+        BlockHeader const &block_header, State &state, Transaction const &txn)
     {
         using namespace monad::test;
 
@@ -81,8 +80,8 @@ namespace
     }
 
     [[nodiscard]] tl::expected<Receipt, ValidationStatus> execute(
-        evmc_revision const rev, BlockHeader const &block_header,
-        test::state_t &state, Transaction const &txn)
+        evmc_revision const rev, BlockHeader const &block_header, State &state,
+        Transaction const &txn)
     {
         using namespace monad::fork_traits;
 
@@ -150,7 +149,7 @@ void GeneralStateTest::TestBody()
     auto const env = block_header_from_env(test.at("env"));
 
     auto const [init_state, init_code] = [&] {
-        BlockState<mutex_t> bs;
+        BlockState bs;
         db_t db;
         State state{bs, db};
         load_state_from_json(test.at("pre"), state);
@@ -223,7 +222,7 @@ void GeneralStateTest::TestBody()
 
             db_t db;
             db.commit(init_state, init_code);
-            BlockState<mutex_t> bs;
+            BlockState bs;
             State state{bs, db};
             auto const result = execute(rev, block_header, state, transaction);
             // Note: no merge because only single transaction in the block

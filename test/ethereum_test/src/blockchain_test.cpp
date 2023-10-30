@@ -44,10 +44,8 @@ namespace
         }
 
         return processor.execute<
-            mutex_t,
             TTraits,
             TransactionProcessorFiberData<
-                mutex_t,
                 transaction_processor_t<TTraits>,
                 host_t<TTraits>>>(block, db, block_hash_buffer);
     }
@@ -167,7 +165,7 @@ void BlockchainTest::TestBody()
 
         db_t db;
         {
-            BlockState<mutex_t> bs;
+            BlockState bs;
             State state{bs, db};
             load_state_from_json(j_contents.at("pre"), state);
             db.commit(state.state_, state.code_);

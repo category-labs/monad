@@ -20,9 +20,6 @@ using namespace monad;
 using namespace monad::fork_traits;
 
 using db_t = db::InMemoryTrieDB;
-using mutex_t = std::shared_mutex;
-
-using state_t = State<mutex_t>;
 
 namespace
 {
@@ -51,8 +48,8 @@ TEST(fork_traits, frontier)
         StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
     {
-        BlockState<mutex_t> bs;
-        state_t s{bs, db};
+        BlockState bs;
+        State s{bs, db};
 
         EXPECT_TRUE(s.account_exists(a));
 
@@ -94,8 +91,8 @@ TEST(fork_traits, frontier)
     }
     {
         // block award
-        BlockState<mutex_t> bs;
-        state_t s{bs, db};
+        BlockState bs;
+        State s{bs, db};
         Block block{
             .header = {.number = 10, .beneficiary = a},
             .transactions = {},
@@ -128,14 +125,14 @@ TEST(fork_traits, homestead)
     db.commit(
         StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
-    BlockState<mutex_t> bs;
+    BlockState bs;
 
     byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
     uint8_t const output_data[] = {0xde, 0xad, 0xbe, 0xef};
 
     {
         // Successfully deploy code
-        state_t s{bs, db};
+        State s{bs, db};
         int64_t gas = 10'000;
 
         evmc::Result r{EVMC_SUCCESS, gas, 0, output_data, sizeof(output_data)};
@@ -149,7 +146,7 @@ TEST(fork_traits, homestead)
 
     {
         // Fail to deploy code - out of gas
-        state_t s{bs, db};
+        State s{bs, db};
         evmc::Result r{EVMC_SUCCESS, 700, 0, output_data, sizeof(output_data)};
         auto const r2 = homestead::deploy_contract_code(s, a, std::move(r));
         EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
@@ -178,11 +175,11 @@ TEST(fork_traits, dao)
 
     db.commit(state_deltas, Code{});
 
-    BlockState<mutex_t> bs;
+    BlockState bs;
 
     fork_traits::dao_fork::transfer_balance_dao(bs, db, dao::dao_block_number);
 
-    state_t s{bs, db};
+    State s{bs, db};
     for (auto const &addr : dao::child_accounts) {
         EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(addr)), 0u);
     }
@@ -213,12 +210,12 @@ TEST(fork_traits, tangerine_whistle)
 
     db.commit(state_deltas, Code{});
 
-    BlockState<mutex_t> bs;
+    BlockState bs;
 
     fork_traits::tangerine_whistle::transfer_balance_dao(
         bs, db, fork_traits::tangerine_whistle::last_block_number);
 
-    state_t s{bs, db};
+    State s{bs, db};
 
     for (auto const &addr : dao::child_accounts) {
         EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(addr)), individual);
@@ -240,8 +237,8 @@ TEST(fork_traits, spurious_dragon)
         StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
-    BlockState<mutex_t> bs;
-    state_t s{bs, db};
+    BlockState bs;
+    State s{bs, db};
     s.add_to_balance(a, 0);
     s.destruct_touched_dead();
 
@@ -273,8 +270,8 @@ TEST(fork_traits, byzantium)
     EXPECT_EQ(intrinsic_gas<fork_traits::byzantium>(t), 21'000);
 
     db_t db;
-    BlockState<mutex_t> bs;
-    state_t as{bs, db};
+    BlockState bs;
+    State as{bs, db};
     (void)as.get_balance(a);
 
     EXPECT_FALSE(as.account_exists(a));
@@ -287,7 +284,7 @@ TEST(fork_traits, byzantium)
             BlockHeader{.number = 9, .beneficiary = b},
             BlockHeader{.number = 8, .beneficiary = c}}};
     fork_traits::byzantium::apply_block_award(bs, db, block);
-    state_t cs{bs, db};
+    State cs{bs, db};
     EXPECT_EQ(
         intx::be::load<uint256_t>(cs.get_balance(a)),
         3'187'500'000'000'000'000);
@@ -309,8 +306,8 @@ TEST(fork_traits, constantinople_and_petersburg)
 {
     // block award
     db_t db;
-    BlockState<mutex_t> bs;
-    state_t s{bs, db};
+    BlockState bs;
+    State s{bs, db};
 
     Block block{
         .header = {.number = 10, .beneficiary = a},
@@ -371,8 +368,8 @@ TEST(fork_traits, berlin)
 TEST(fork_traits, london)
 {
     db_t db;
-    BlockState<mutex_t> bs;
-    state_t s{bs, db};
+    BlockState bs;
+    State s{bs, db};
 
     byte_string const illegal_code{0xef, 0x60};
     byte_string const code{0x00, 0x00, 0x00, 0x00, 0x00};
@@ -435,8 +432,8 @@ TEST(fork_traits, paris_apply_block_reward)
 
     {
         db_t db;
-        BlockState<mutex_t> bs;
-        state_t s{bs, db};
+        BlockState bs;
+        State s{bs, db};
 
         fork_traits::paris::apply_block_award(bs, db, block);
 
@@ -444,8 +441,8 @@ TEST(fork_traits, paris_apply_block_reward)
     }
     {
         db_t db;
-        BlockState<mutex_t> bs;
-        state_t s{bs, db};
+        BlockState bs;
+        State s{bs, db};
 
         fork_traits::london::apply_block_award(bs, db, block);
 

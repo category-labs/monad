@@ -45,9 +45,8 @@ namespace
 
         return processor.execute<
             TTraits,
-            TransactionProcessorFiberData<
-                transaction_processor_t<TTraits>,
-                host_t<TTraits>>>(block, db, block_hash_buffer);
+            TransactionProcessorFiberData<transaction_processor_t<TTraits>>>(
+            block, db, block_hash_buffer);
     }
 
     [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus> execute(

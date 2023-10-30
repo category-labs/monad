@@ -80,7 +80,7 @@ public:
 
     template <
         class TTraits, template <typename, typename> class TTxnProcessor,
-        template <typename, typename> class TFiberData>
+        template <typename> class TFiberData>
     [[nodiscard]] Result run_fork(
         TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
         BlockHashBuffer &block_hash_buffer, block_num_t current_block_number,
@@ -114,9 +114,8 @@ public:
 
                 auto const receipts = block_processor.template execute<
                     TTraits,
-                    TFiberData<
-                        TTxnProcessor<State, TTraits>,
-                        EvmcHost<TTraits>>>(block, db, block_hash_buffer);
+                    TFiberData<TTxnProcessor<State, TTraits>>>(
+                    block, db, block_hash_buffer);
 
                 if (!verify_root_hash(
                         block.header,
@@ -159,7 +158,7 @@ public:
 
     template <
         class TTraits, template <typename, typename> class TTxnProcessor,
-        template <typename, typename> class TFiberData>
+        template <typename> class TFiberData>
     [[nodiscard]] Result
     run(TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
         block_num_t const start_block_number,

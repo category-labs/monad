@@ -9,6 +9,7 @@
 #include <monad/db/db.hpp>
 
 #include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_processor.hpp>
 #include <monad/execution/validation_status.hpp>
 
@@ -20,7 +21,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <class TTxnProcessor, class TEvmHost>
+template <class TTxnProcessor>
 struct TransactionProcessorFiberData
 {
     using result_t = std::pair<Receipt, State>;
@@ -51,11 +52,11 @@ struct TransactionProcessorFiberData
     {
     }
 
-    template <class TTraits>
+    template <class Traits>
     ValidationStatus validate_and_execute()
     {
         MONAD_DEBUG_ASSERT(
-            static_validate_txn<TTraits>(txn_, header_.base_fee_per_gas) ==
+            static_validate_txn<Traits>(txn_, header_.base_fee_per_gas) ==
             ValidationStatus::SUCCESS);
 
         auto &state = result_.second;
@@ -76,7 +77,7 @@ struct TransactionProcessorFiberData
             return validity;
         }
 
-        TEvmHost host{block_hash_buffer_, header_, txn_, state};
+        EvmcHost<Traits> host{block_hash_buffer_, header_, txn_, state};
         result_.first = processor.execute(
             state,
             host,

@@ -2,6 +2,7 @@
 #include <general_state_test.hpp>
 #include <general_state_test_types.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/transaction_processor.hpp>
 #include <monad/test/config.hpp>
 #include <monad/test/dump_state_from_db.hpp>
 #include <test_resource_data.h>
@@ -52,7 +53,7 @@ namespace
         block_hash_buffer.set(
             block_header.number - 1, block_header.parent_hash);
         host_t<TTraits> host{block_hash_buffer, block_header, txn, state};
-        transaction_processor_t<TTraits> processor;
+        TransactionProcessor<TTraits> processor;
 
         if (auto const status = static_validate_txn<TTraits>(
                 txn, host.header_.base_fee_per_gas);

@@ -7,6 +7,7 @@
 
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_processor.hpp>
+#include <monad/execution/transaction_processor.hpp>
 #include <monad/execution/transaction_processor_data.hpp>
 #include <monad/execution/validation.hpp>
 
@@ -45,7 +46,7 @@ namespace
 
         return processor.execute<
             TTraits,
-            TransactionProcessorFiberData<transaction_processor_t<TTraits>>>(
+            TransactionProcessorFiberData<TransactionProcessor<TTraits>>>(
             block, db, block_hash_buffer);
     }
 

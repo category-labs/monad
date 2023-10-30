@@ -14,18 +14,20 @@
 
 #include <monad/rlp/encode_helpers.hpp>
 
+#include <monad/state2/state.hpp>
+
 #include <intx/intx.hpp>
 
 #include <algorithm>
 
 MONAD_NAMESPACE_BEGIN
 
-template <class TState, class TTraits>
+template <class Traits>
 struct TransactionProcessor
 {
     // YP Sec 6.2 "irrevocable_change"
     void irrevocable_change(
-        TState &state, Transaction const &txn,
+        State &state, Transaction const &txn,
         uint256_t const &base_fee_per_gas) const
     {
         if (txn.to) { // EVM will increment if new contract
@@ -35,7 +37,7 @@ struct TransactionProcessor
         MONAD_DEBUG_ASSERT(txn.from.has_value());
 
         auto const upfront_cost =
-            txn.gas_limit * gas_price<TTraits>(txn, base_fee_per_gas);
+            txn.gas_limit * gas_price<Traits>(txn, base_fee_per_gas);
         state.subtract_from_balance(txn.from.value(), upfront_cost);
     }
 
@@ -45,8 +47,7 @@ struct TransactionProcessor
         uint64_t const refund) const
     {
         // https://eips.ethereum.org/EIPS/eip-3529
-        constexpr auto max_refund_quotient =
-            TTraits::rev >= EVMC_LONDON ? 5 : 2;
+        constexpr auto max_refund_quotient = Traits::rev >= EVMC_LONDON ? 5 : 2;
         auto const refund_allowance =
             (txn.gas_limit - gas_remaining) / max_refund_quotient;
 
@@ -54,13 +55,12 @@ struct TransactionProcessor
     }
 
     [[nodiscard]] auto refund_gas(
-        TState &state, Transaction const &txn,
-        uint256_t const &base_fee_per_gas, uint64_t const gas_leftover,
-        uint64_t const refund) const
+        State &state, Transaction const &txn, uint256_t const &base_fee_per_gas,
+        uint64_t const gas_leftover, uint64_t const refund) const
     {
         // refund and priority, Eqn. 73-76
         auto const gas_remaining = g_star(txn, gas_leftover, refund);
-        auto const gas_cost = gas_price<TTraits>(txn, base_fee_per_gas);
+        auto const gas_cost = gas_price<Traits>(txn, base_fee_per_gas);
 
         MONAD_DEBUG_ASSERT(txn.from.has_value());
         state.add_to_balance(txn.from.value(), gas_cost * gas_remaining);
@@ -70,13 +70,13 @@ struct TransactionProcessor
 
     template <class TEvmHost>
     Receipt execute(
-        TState &state, TEvmHost &host, Transaction const &txn,
+        State &state, TEvmHost &host, Transaction const &txn,
         uint256_t const &base_fee_per_gas, address_t const &beneficiary) const
     {
         irrevocable_change(state, txn, base_fee_per_gas);
 
         // EIP-3651
-        if constexpr (TTraits::rev >= EVMC_SHANGHAI) {
+        if constexpr (Traits::rev >= EVMC_SHANGHAI) {
             state.warm_coinbase(beneficiary);
         }
 
@@ -106,12 +106,12 @@ struct TransactionProcessor
             static_cast<uint64_t>(result.gas_refund));
         auto const gas_used = txn.gas_limit - gas_remaining;
         auto const reward =
-            calculate_txn_award<TTraits>(txn, base_fee_per_gas, gas_used);
+            calculate_txn_award<Traits>(txn, base_fee_per_gas, gas_used);
         state.add_to_balance(beneficiary, reward);
 
         // finalize state, Eqn. 77-79
         state.destruct_suicides();
-        if constexpr (TTraits::rev >= EVMC_SPURIOUS_DRAGON) {
+        if constexpr (Traits::rev >= EVMC_SPURIOUS_DRAGON) {
             state.destruct_touched_dead();
         }
 

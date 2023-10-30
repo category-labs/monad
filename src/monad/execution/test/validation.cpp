@@ -15,7 +15,7 @@ using namespace monad;
 using db_t = db::InMemoryTrieDB;
 
 using traits_t = fork_traits::shanghai;
-using processor_t = TransactionProcessor<State, traits_t>;
+using processor_t = TransactionProcessor<traits_t>;
 
 TEST(Validation, validate_enough_gas)
 {

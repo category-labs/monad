@@ -56,9 +56,8 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
         .type = TransactionType::eip155};
     Block const b{.header = bh, .transactions = {t}, .ommers = {ommer}};
 
-    using state_t = decltype(s);
     using traits_t = monad::fork_traits::byzantium;
-    using tp_t = TransactionProcessor<state_t, traits_t>;
+    using tp_t = TransactionProcessor<traits_t>;
 
     tp_t tp{};
     BlockHashBuffer block_hash_buffer;
@@ -128,9 +127,8 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
         .type = TransactionType::eip155};
     Block const b{.header = bh, .transactions = {t}};
 
-    using state_t = decltype(s);
     using traits_t = monad::fork_traits::frontier;
-    using tp_t = TransactionProcessor<state_t, traits_t>;
+    using tp_t = TransactionProcessor<traits_t>;
 
     tp_t tp{};
     BlockHashBuffer block_hash_buffer;
@@ -196,9 +194,8 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
         .type = TransactionType::eip155};
     Block const b{.header = bh, .transactions = {t}};
 
-    using state_t = decltype(s);
     using traits_t = monad::fork_traits::frontier;
-    using tp_t = TransactionProcessor<state_t, traits_t>;
+    using tp_t = TransactionProcessor<traits_t>;
 
     tp_t tp{};
     BlockHashBuffer block_hash_buffer;

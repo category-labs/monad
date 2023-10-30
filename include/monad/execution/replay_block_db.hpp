@@ -79,7 +79,7 @@ public:
     }
 
     template <
-        class Traits, template <typename, typename> class TTxnProcessor,
+        class Traits, template <typename> class TTxnProcessor,
         template <typename> class TFiberData>
     [[nodiscard]] Result run_fork(
         TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
@@ -114,7 +114,7 @@ public:
 
                 auto const receipts = block_processor.template execute<
                     Traits,
-                    TFiberData<TTxnProcessor<State, Traits>>>(
+                    TFiberData<TTxnProcessor<Traits>>>(
                     block, db, block_hash_buffer);
 
                 if (!verify_root_hash(
@@ -157,7 +157,7 @@ public:
     }
 
     template <
-        class Traits, template <typename, typename> class TTxnProcessor,
+        class Traits, template <typename> class TTxnProcessor,
         template <typename> class TFiberData>
     [[nodiscard]] Result
     run(TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,

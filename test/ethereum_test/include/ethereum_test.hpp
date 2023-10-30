@@ -3,7 +3,6 @@
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
-#include <monad/execution/transaction_processor.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/test/config.hpp>
 
@@ -12,9 +11,6 @@
 MONAD_TEST_NAMESPACE_BEGIN
 
 using db_t = monad::db::InMemoryTrieDB;
-
-template <typename Traits>
-using transaction_processor_t = TransactionProcessor<State, Traits>;
 
 template <typename Traits>
 using host_t = EvmcHost<Traits>;

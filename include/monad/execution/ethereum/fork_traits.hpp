@@ -133,12 +133,6 @@ namespace fork_traits
         transfer_balance_dao(TBlockState &, Db &, block_num_t)
         {
         }
-
-        static constexpr void
-        populate_chain_id(evmc_tx_context &context) noexcept
-        {
-            intx::be::store(context.chain_id.bytes, uint256_t{1});
-        }
     };
 
     struct homestead : public frontier

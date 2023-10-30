@@ -7,8 +7,6 @@
 
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_processor.hpp>
-#include <monad/execution/transaction_processor.hpp>
-#include <monad/execution/transaction_processor_data.hpp>
 #include <monad/execution/validation.hpp>
 
 #include <monad/rlp/decode_helpers.hpp>
@@ -32,22 +30,19 @@ MONAD_TEST_NAMESPACE_BEGIN
 
 namespace
 {
-    template <typename TTraits>
+    template <typename Traits>
     [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus> execute(
         Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
     {
         using namespace monad::test;
         BlockProcessor processor;
 
-        if (auto const status = static_validate_block<TTraits>(block);
+        if (auto const status = static_validate_block<Traits>(block);
             status != ValidationStatus::SUCCESS) {
             return tl::unexpected(status);
         }
 
-        return processor.execute<
-            TTraits,
-            TransactionProcessorFiberData<TransactionProcessor<TTraits>>>(
-            block, db, block_hash_buffer);
+        return processor.execute<Traits>(block, db, block_hash_buffer);
     }
 
     [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus> execute(

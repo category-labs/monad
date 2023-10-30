@@ -12,6 +12,8 @@
 #include <monad/execution/block_reward.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
+#include <monad/execution/transaction_processor.hpp>
+#include <monad/execution/transaction_processor_data.hpp>
 #include <monad/execution/validation_status.hpp>
 
 #include <monad/state2/block_state.hpp>
@@ -56,7 +58,7 @@ struct BlockProcessor
         merge(block_state.state, state.state_);
     }
 
-    template <class TTraits, class TxnProcData>
+    template <class Traits>
     [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus>
     execute(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
     {
@@ -69,7 +71,7 @@ struct BlockProcessor
 
         BlockState block_state{};
 
-        if constexpr (TTraits::rev == EVMC_HOMESTEAD) {
+        if constexpr (Traits::rev == EVMC_HOMESTEAD) {
             if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {
                 transfer_balance_dao(block_state, db);
             }
@@ -80,16 +82,17 @@ struct BlockProcessor
 
         for (unsigned i = 0; i < block.transactions.size(); ++i) {
             block.transactions[i].from = recover_sender(block.transactions[i]);
-            TxnProcData txn_executor{
-                db,
-                block_state,
-                block.transactions[i],
-                block.header,
-                block_hash_buffer,
-                i};
+            TransactionProcessorFiberData<TransactionProcessor<Traits>>
+                txn_executor{
+                    db,
+                    block_state,
+                    block.transactions[i],
+                    block.header,
+                    block_hash_buffer,
+                    i};
 
             if (auto const txn_status =
-                    txn_executor.template validate_and_execute<TTraits>();
+                    txn_executor.template validate_and_execute<Traits>();
                 txn_status != ValidationStatus::SUCCESS) {
                 return tl::unexpected(txn_status);
             }
@@ -106,7 +109,7 @@ struct BlockProcessor
         }
 
         State state{block_state, db};
-        if constexpr (TTraits::rev >= EVMC_SHANGHAI) {
+        if constexpr (Traits::rev >= EVMC_SHANGHAI) {
             process_withdrawal(state, block.withdrawals);
         }
 
@@ -114,10 +117,10 @@ struct BlockProcessor
             block_state,
             db,
             block,
-            TTraits::block_reward,
-            TTraits::additional_ommer_reward);
+            Traits::block_reward,
+            Traits::additional_ommer_reward);
 
-        if constexpr (TTraits::rev >= EVMC_SPURIOUS_DRAGON) {
+        if constexpr (Traits::rev >= EVMC_SPURIOUS_DRAGON) {
             state.destruct_touched_dead();
         }
         MONAD_DEBUG_ASSERT(can_merge(block_state.state, state.state_));

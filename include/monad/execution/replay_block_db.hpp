@@ -11,8 +11,6 @@
 #include <monad/execution/ethereum/genesis.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execution_model.hpp>
-#include <monad/execution/transaction_processor.hpp>
-#include <monad/execution/transaction_processor_data.hpp>
 
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
@@ -111,10 +109,7 @@ public:
                         Status::BLOCK_VALIDATION_FAILED, current_block_number};
                 }
 
-                auto const receipts = block_processor.template execute<
-                    Traits,
-                    TransactionProcessorFiberData<
-                        TransactionProcessor<Traits>>>(
+                auto const receipts = block_processor.template execute<Traits>(
                     block, db, block_hash_buffer);
 
                 if (!verify_root_hash(

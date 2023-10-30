@@ -9,10 +9,10 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <typename TAccountTrie, typename TStorageTrie>
+template <typename AccountTrie, typename StorageTrie>
 void trie_db_process_changes(
-    StateDeltas const &state_deltas, TAccountTrie &account_trie,
-    TStorageTrie &storage_trie)
+    StateDeltas const &state_deltas, AccountTrie &account_trie,
+    StorageTrie &storage_trie)
 {
     std::unordered_map<address_t, bytes32_t> updated_storage_roots;
     std::vector<trie::Update> storage_trie_updates;

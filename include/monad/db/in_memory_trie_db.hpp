@@ -16,11 +16,11 @@ MONAD_DB_NAMESPACE_BEGIN
 // Database impl with trie root generating logic, backed by stl
 struct InMemoryTrieDB : public Db
 {
-    template <typename TComparator>
+    template <typename Comparator>
     struct Trie
     {
-        using cursor_t = trie::InMemoryCursor<TComparator>;
-        using writer_t = trie::InMemoryWriter<TComparator>;
+        using cursor_t = trie::InMemoryCursor<Comparator>;
+        using writer_t = trie::InMemoryWriter<Comparator>;
         using storage_t = typename cursor_t::storage_t;
         storage_t leaves_storage;
         cursor_t leaves_cursor;

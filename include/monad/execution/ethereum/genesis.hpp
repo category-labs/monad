@@ -69,8 +69,7 @@ inline BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
     return block_header;
 }
 
-template <class TStateDb>
-inline void read_genesis_state(nlohmann::json const &genesis_json, TStateDb &db)
+inline void read_genesis_state(nlohmann::json const &genesis_json, Db &db)
 {
     StateDeltas state_deltas;
     for (auto const &account_info : genesis_json["alloc"].items()) {

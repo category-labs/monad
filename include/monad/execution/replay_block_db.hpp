@@ -24,7 +24,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <class TDb>
+template <class Db>
 class ReplayFromBlockDb
 {
 public:
@@ -79,7 +79,7 @@ public:
 
     template <class Traits>
     [[nodiscard]] Result run_fork(
-        TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
+        Db &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
         BlockHashBuffer &block_hash_buffer, block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
@@ -150,7 +150,7 @@ public:
 
     template <class Traits>
     [[nodiscard]] Result
-    run(TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
+    run(Db &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
         block_num_t const start_block_number,
         std::optional<block_num_t> const until_block_number = std::nullopt)
     {

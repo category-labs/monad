@@ -8,19 +8,21 @@
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 
+#include <boost/thread/null_mutex.hpp>
+
 #include <gtest/gtest.h>
 
 using namespace monad;
 using namespace monad::execution;
 
-using mutex_t = std::shared_mutex;
+using mutex_t = boost::null_mutex;
 
 using db_t = db::InMemoryTrieDB;
 using state_t = state::State<mutex_t>;
 using traits_t = fork_traits::shanghai;
 using processor_t = TransactionProcessor<state_t, traits_t>;
 
-using evm_host_t = EvmcHost<state_t, traits_t>;
+using evm_host_t = EvmcHost<traits_t>;
 
 TEST(TransactionProcessor, g_star)
 {

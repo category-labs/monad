@@ -12,18 +12,20 @@
 
 #include <evmc/evmc.hpp>
 
+#include <boost/thread/null_mutex.hpp>
+
 #include <gtest/gtest.h>
 
 using namespace monad;
 using namespace execution;
 
 using db_t = db::InMemoryTrieDB;
-using mutex_t = std::shared_mutex;
+using mutex_t = boost::null_mutex;
 using state_t = state::State<mutex_t>;
 using traits_t = fork_traits::shanghai;
 
-template <class TTraits>
-using traits_templated_evmc_host_t = EvmcHost<state_t, TTraits>;
+template <class Traits>
+using traits_templated_evmc_host_t = EvmcHost<Traits>;
 
 using evmc_host_t = traits_templated_evmc_host_t<traits_t>;
 

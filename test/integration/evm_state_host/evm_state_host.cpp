@@ -12,13 +12,14 @@
 
 #include <evmc/evmc.hpp>
 
+#include <boost/thread/null_mutex.hpp>
+
 #include <gtest/gtest.h>
 
 #include <test_resource_data.h>
 
-#include <unordered_map>
-
 #include <iostream>
+#include <unordered_map>
 
 using namespace monad;
 
@@ -36,10 +37,10 @@ using account_store_db_t = db::InMemoryTrieDB;
 template <class TState, class TTraits>
 using evm_t = execution::Evm<TState, TTraits>;
 
-template <class TState, class TTraits>
-using evm_host_t = execution::EvmcHost<TState, TTraits>;
+template <class Traits>
+using evm_host_t = execution::EvmcHost<Traits>;
 
-using mutex_t = std::shared_mutex;
+using mutex_t = boost::null_mutex;
 
 TEST(EvmInterpStateHost, return_existing_storage)
 {
@@ -93,7 +94,7 @@ TEST(EvmInterpStateHost, return_existing_storage)
 
     evm_t<state_t, fork_t> e{};
     BlockHashBuffer block_hash_buffer;
-    evm_host_t<state_t, fork_t> h{block_hash_buffer, b, t, s};
+    evm_host_t<fork_t> h{block_hash_buffer, b, t, s};
 
     auto status = e.call_evm(&h, s, m);
 
@@ -157,7 +158,7 @@ TEST(EvmInterpStateHost, store_then_return_storage)
 
     evm_t<state_t, fork_t> e{};
     BlockHashBuffer block_hash_buffer;
-    evm_host_t<state_t, fork_t> h{block_hash_buffer, b, t, s};
+    evm_host_t<fork_t> h{block_hash_buffer, b, t, s};
 
     auto status = e.call_evm(&h, s, m);
 

@@ -121,7 +121,7 @@ public:
                     TFiberData<
                         TMutex,
                         TTxnProcessor<state_t, TTraits>,
-                        TEvmHost<state_t, TTraits>>>(
+                        TEvmHost<TTraits, TMutex>>>(
                     block, db, block_hash_buffer);
 
                 if (!verify_root_hash(

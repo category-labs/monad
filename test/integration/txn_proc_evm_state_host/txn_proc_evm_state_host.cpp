@@ -15,6 +15,8 @@
 
 #include <evmc/evmc.hpp>
 
+#include <boost/thread/null_mutex.hpp>
+
 #include <gtest/gtest.h>
 
 #include <test_resource_data.h>
@@ -31,10 +33,10 @@ static constexpr auto o = 0xb5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5_address;
 
 using account_store_db_t = db::InMemoryTrieDB;
 
-template <class TState, class TTraits>
-using evm_host_t = execution::EvmcHost<TState, TTraits>;
+template <class Traits>
+using evm_host_t = execution::EvmcHost<Traits>;
 
-using mutex_t = std::shared_mutex;
+using mutex_t = boost::null_mutex;
 
 TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 {
@@ -68,7 +70,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 
     tp_t tp{};
     BlockHashBuffer block_hash_buffer;
-    evm_host_t<state_t, traits_t> h{block_hash_buffer, bh, t, s};
+    evm_host_t<traits_t> h{block_hash_buffer, bh, t, s};
 
     EXPECT_EQ(
         static_validate_txn<traits_t>(t, std::nullopt),
@@ -139,7 +141,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
 
     tp_t tp{};
     BlockHashBuffer block_hash_buffer;
-    evm_host_t<state_t, traits_t> h{block_hash_buffer, bh, t, s};
+    evm_host_t<traits_t> h{block_hash_buffer, bh, t, s};
 
     EXPECT_EQ(
         static_validate_txn<traits_t>(t, std::nullopt),
@@ -206,7 +208,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
 
     tp_t tp{};
     BlockHashBuffer block_hash_buffer;
-    evm_host_t<state_t, traits_t> h{block_hash_buffer, bh, t, s};
+    evm_host_t<traits_t> h{block_hash_buffer, bh, t, s};
 
     EXPECT_EQ(
         static_validate_txn<traits_t>(t, std::nullopt),

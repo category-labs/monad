@@ -9,6 +9,8 @@
 
 #include <evmc/evmc.hpp>
 
+#include <boost/thread/null_mutex.hpp>
+
 #include <gtest/gtest.h>
 
 #include <test_resource_data.h>
@@ -17,13 +19,13 @@ using namespace monad;
 using namespace monad::execution;
 
 using account_store_db_t = db::InMemoryTrieDB;
-using mutex_t = std::shared_mutex;
+using mutex_t = boost::null_mutex;
 using state_t = state::State<mutex_t>;
 using traits_t = fork_traits::shanghai;
 
 using evm_t = Evm<state_t, traits_t>;
 
-using evm_host_t = EvmcHost<state_t, traits_t>;
+using evm_host_t = EvmcHost<traits_t>;
 
 TEST(Evm, create_with_insufficient)
 {

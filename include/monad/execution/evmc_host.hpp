@@ -12,27 +12,31 @@
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/tx_context.hpp>
 
+#include <monad/state2/state.hpp>
+
 #include <intx/intx.hpp>
 
 #include <evmc/evmc.hpp>
+
+#include <boost/thread/null_mutex.hpp>
 
 #include <utility>
 
 MONAD_EXECUTION_NAMESPACE_BEGIN
 
-template <class TState, class TTraits>
+template <class Traits, class Mutex = boost::null_mutex>
 struct EvmcHost : public evmc::Host
 {
-    using evm_t = Evm<TState, TTraits>;
+    using evm_t = Evm<monad::state::State<Mutex>, Traits>;
 
     BlockHashBuffer const &block_hash_buffer_;
     BlockHeader const &header_;
     Transaction const &transaction_;
-    TState &state_;
+    monad::state::State<Mutex> &state_;
 
     using uint256be = evmc::uint256be;
 
-    EvmcHost(EvmcHost const &host, TState &state)
+    EvmcHost(EvmcHost const &host, monad::state::State<Mutex> &state)
         : block_hash_buffer_{host.block_hash_buffer_}
         , header_{host.header_}
         , transaction_{host.transaction_}
@@ -42,7 +46,7 @@ struct EvmcHost : public evmc::Host
 
     EvmcHost(
         BlockHashBuffer const &block_hash_buffer, BlockHeader const &header,
-        Transaction const &txn, TState &state) noexcept
+        Transaction const &txn, monad::state::State<Mutex> &state) noexcept
         : block_hash_buffer_{block_hash_buffer}
         , header_{header}
         , transaction_{txn}
@@ -54,7 +58,7 @@ struct EvmcHost : public evmc::Host
     virtual bool
     account_exists(address_t const &address) const noexcept override
     {
-        if constexpr (TTraits::rev < EVMC_SPURIOUS_DRAGON) {
+        if constexpr (Traits::rev < EVMC_SPURIOUS_DRAGON) {
             return state_.account_exists(address);
         }
         return !state_.account_is_dead(address);
@@ -121,7 +125,7 @@ struct EvmcHost : public evmc::Host
         evmc_message msg{
             .kind = to_address.first,
             .gas = static_cast<int64_t>(
-                txn.gas_limit - intrinsic_gas<TTraits>(txn)),
+                txn.gas_limit - intrinsic_gas<Traits>(txn)),
             .recipient = to_address.second,
             .sender = *txn.from,
             .input_data = txn.data.data(),
@@ -153,7 +157,7 @@ struct EvmcHost : public evmc::Host
 
     virtual evmc_tx_context get_tx_context() const noexcept override
     {
-        return ::monad::get_tx_context<TTraits>(transaction_, header_);
+        return ::monad::get_tx_context<Traits>(transaction_, header_);
     }
 
     virtual bytes32_t
@@ -177,7 +181,7 @@ struct EvmcHost : public evmc::Host
     virtual evmc_access_status
     access_account(address_t const &address) noexcept override
     {
-        if (is_precompile<TTraits>(address)) {
+        if (is_precompile<Traits>(address)) {
             return EVMC_ACCESS_WARM;
         }
         return state_.access_account(address);

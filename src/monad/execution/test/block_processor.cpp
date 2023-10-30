@@ -40,7 +40,7 @@ TEST(BlockProcessor, shanghai_withdrawal)
     BlockState bs;
 
     State state{bs, db};
-    AllTxnBlockProcessor::process_withdrawal(state, withdrawals);
+    BlockProcessor::process_withdrawal(state, withdrawals);
 
     EXPECT_EQ(
         intx::be::load<uint256_t>(state.get_balance(a)),

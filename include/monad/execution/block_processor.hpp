@@ -25,7 +25,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct AllTxnBlockProcessor
+struct BlockProcessor
 {
     // EIP-4895
     static void process_withdrawal(

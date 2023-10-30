@@ -36,7 +36,7 @@ namespace
         Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
     {
         using namespace monad::test;
-        AllTxnBlockProcessor processor;
+        BlockProcessor processor;
 
         if (auto const status = static_validate_block<TTraits>(block);
             status != ValidationStatus::SUCCESS) {

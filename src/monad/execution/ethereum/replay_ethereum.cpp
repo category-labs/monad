@@ -99,15 +99,14 @@ int main(int argc, char *argv[])
 
     monad::ReplayFromBlockDb<db_t> replay_eth;
 
-    [[maybe_unused]] auto result = replay_eth.run<
-        monad::eth_start_fork,
-        monad::TransactionProcessor,
-        monad::TransactionProcessorFiberData>(
-        db,
-        checkpoint_frequency,
-        block_db,
-        start_block_number,
-        finish_block_number);
+    [[maybe_unused]] auto result =
+        replay_eth
+            .run<monad::eth_start_fork, monad::TransactionProcessorFiberData>(
+                db,
+                checkpoint_frequency,
+                block_db,
+                start_block_number,
+                finish_block_number);
 
     auto const finished_time = std::chrono::steady_clock::now();
     auto const elapsed_ms =

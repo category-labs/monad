@@ -11,6 +11,7 @@
 #include <monad/execution/ethereum/genesis.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execution_model.hpp>
+#include <monad/execution/transaction_processor.hpp>
 #include <monad/execution/transaction_processor_data.hpp>
 
 #include <monad/state2/block_state.hpp>
@@ -78,9 +79,7 @@ public:
         return state_root == block_header.state_root;
     }
 
-    template <
-        class Traits, template <typename> class TTxnProcessor,
-        template <typename> class TFiberData>
+    template <class Traits, template <typename> class TFiberData>
     [[nodiscard]] Result run_fork(
         TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
         BlockHashBuffer &block_hash_buffer, block_num_t current_block_number,
@@ -114,7 +113,7 @@ public:
 
                 auto const receipts = block_processor.template execute<
                     Traits,
-                    TFiberData<TTxnProcessor<Traits>>>(
+                    TFiberData<TransactionProcessor<Traits>>>(
                     block, db, block_hash_buffer);
 
                 if (!verify_root_hash(
@@ -143,10 +142,7 @@ public:
         }
 
         else {
-            return run_fork<
-                typename Traits::next_fork_t,
-                TTxnProcessor,
-                TFiberData>(
+            return run_fork<typename Traits::next_fork_t, TFiberData>(
                 db,
                 checkpoint_frequency,
                 block_db,
@@ -156,9 +152,7 @@ public:
         }
     }
 
-    template <
-        class Traits, template <typename> class TTxnProcessor,
-        template <typename> class TFiberData>
+    template <class Traits, template <typename> class TFiberData>
     [[nodiscard]] Result
     run(TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
         block_num_t const start_block_number,
@@ -188,7 +182,7 @@ public:
             ++block_number;
         }
 
-        return run_fork<Traits, TTxnProcessor, TFiberData>(
+        return run_fork<Traits, TFiberData>(
             db,
             checkpoint_frequency,
             block_db,

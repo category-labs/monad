@@ -10,6 +10,9 @@
 
 #include <cstdint>
 
+static_assert(sizeof(evmc_tx_context) == 192);
+static_assert(alignof(evmc_tx_context) == 8);
+
 MONAD_NAMESPACE_BEGIN
 
 template <class Traits>

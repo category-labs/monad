@@ -12,7 +12,6 @@
 #include <monad/execution/block_reward.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
-#include <monad/execution/transaction_processor.hpp>
 #include <monad/execution/transaction_processor_data.hpp>
 #include <monad/execution/validation_status.hpp>
 
@@ -82,14 +81,13 @@ struct BlockProcessor
 
         for (unsigned i = 0; i < block.transactions.size(); ++i) {
             block.transactions[i].from = recover_sender(block.transactions[i]);
-            TransactionProcessorFiberData<TransactionProcessor<Traits>>
-                txn_executor{
-                    db,
-                    block_state,
-                    block.transactions[i],
-                    block.header,
-                    block_hash_buffer,
-                    i};
+            TransactionProcessorFiberData txn_executor{
+                db,
+                block_state,
+                block.transactions[i],
+                block.header,
+                block_hash_buffer,
+                i};
 
             if (auto const txn_status =
                     txn_executor.template validate_and_execute<Traits>();

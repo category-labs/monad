@@ -21,7 +21,6 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <class TTxnProcessor>
 struct TransactionProcessorFiberData
 {
     using result_t = std::pair<Receipt, State>;
@@ -60,7 +59,7 @@ struct TransactionProcessorFiberData
             ValidationStatus::SUCCESS);
 
         auto &state = result_.second;
-        TTxnProcessor processor{};
+        TransactionProcessor<Traits> processor{};
 
         auto const start_time = std::chrono::steady_clock::now();
         LOG_INFO(

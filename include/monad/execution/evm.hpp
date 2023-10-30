@@ -110,7 +110,6 @@ struct Evm
         }
 
         State new_state{state};
-        TEvmHost new_host{*host, new_state};
 
         new_state.create_contract(contract_address);
 
@@ -130,6 +129,7 @@ struct Evm
             .code_address = contract_address,
         };
 
+        TEvmHost new_host{*host, new_state};
         auto result = interpreter_t::execute(
             &new_host,
             m_call,
@@ -162,7 +162,6 @@ struct Evm
     call_evm(TEvmHost *host, State &state, evmc_message const &msg) noexcept
     {
         State new_state{state};
-        TEvmHost new_host{*host, new_state};
 
         if (auto const result = transfer_call_balances(new_state, msg);
             result.status_code != EVMC_SUCCESS) {
@@ -183,6 +182,7 @@ struct Evm
             result = std::move(maybe_result.value());
         }
         else {
+            TEvmHost new_host{*host, new_state};
             auto const code = new_state.get_code(msg.code_address);
             result = interpreter_t::execute(&new_host, msg, code);
         }

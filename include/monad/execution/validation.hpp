@@ -12,10 +12,12 @@
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/validation_status.hpp>
 
+#include <monad/state2/state.hpp>
+
 MONAD_NAMESPACE_BEGIN
 
 template <class Traits>
-ValidationStatus static_validate_txn(
+constexpr ValidationStatus static_validate_txn(
     Transaction const &txn, std::optional<uint256_t> const &base_fee_per_gas)
 {
     if (MONAD_LIKELY(txn.sc.chain_id.has_value())) {
@@ -79,8 +81,7 @@ ValidationStatus static_validate_txn(
     return ValidationStatus::SUCCESS;
 }
 
-template <class TState>
-ValidationStatus validate_txn(TState &state, Transaction const &txn)
+constexpr ValidationStatus validate_txn(State &state, Transaction const &txn)
 {
     // This is only verfiable after recover_sender, so it belongs to
     // validate
@@ -111,7 +112,7 @@ ValidationStatus validate_txn(TState &state, Transaction const &txn)
 }
 
 template <class Traits>
-ValidationStatus static_validate_header(BlockHeader const &header)
+constexpr ValidationStatus static_validate_header(BlockHeader const &header)
 {
     if (MONAD_UNLIKELY(header.gas_used > header.gas_limit)) {
         return ValidationStatus::GAS_ABOVE_LIMIT;
@@ -178,7 +179,7 @@ ValidationStatus static_validate_header(BlockHeader const &header)
 }
 
 template <class Traits>
-ValidationStatus static_validate_ommers(Block const &block)
+constexpr ValidationStatus static_validate_ommers(Block const &block)
 {
     if constexpr (Traits::rev >= EVMC_PARIS) {
         if (MONAD_UNLIKELY(!block.ommers.empty())) {
@@ -209,7 +210,7 @@ ValidationStatus static_validate_ommers(Block const &block)
 }
 
 template <class Traits>
-ValidationStatus static_validate_body(Block const &block)
+constexpr ValidationStatus static_validate_body(Block const &block)
 {
     // TODO: Should we put computationally heavy validate_root(txn,
     // withdraw) here?
@@ -243,7 +244,7 @@ ValidationStatus static_validate_body(Block const &block)
 }
 
 template <class Traits>
-ValidationStatus static_validate_block(Block const &block)
+constexpr ValidationStatus static_validate_block(Block const &block)
 {
     if (auto const header_status = static_validate_header<Traits>(block.header);
         header_status != ValidationStatus::SUCCESS) {

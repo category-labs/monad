@@ -1,7 +1,6 @@
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/block_processor.hpp>
-#include <monad/execution/config.hpp>
 #include <monad/execution/execution_model.hpp>
 
 #include <monad/state2/state.hpp>
@@ -13,7 +12,6 @@
 #include <shared_mutex>
 
 using namespace monad;
-using namespace monad::execution;
 
 using mutex_t = std::shared_mutex;
 using db_t = db::InMemoryTrieDB;

@@ -3,8 +3,6 @@
 #include <monad/db/config.hpp>
 #include <monad/db/util.hpp>
 
-#include <monad/execution/config.hpp>
-
 #include <filesystem>
 
 MONAD_DB_NAMESPACE_BEGIN

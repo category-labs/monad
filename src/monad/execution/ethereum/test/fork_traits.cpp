@@ -4,7 +4,6 @@
 
 #include <monad/db/in_memory_trie_db.hpp>
 
-#include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/transaction_gas.hpp>
@@ -19,7 +18,6 @@
 
 using namespace monad;
 using namespace monad::fork_traits;
-using namespace monad::execution;
 
 using db_t = db::InMemoryTrieDB;
 using mutex_t = std::shared_mutex;

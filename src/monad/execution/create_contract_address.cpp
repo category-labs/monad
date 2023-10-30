@@ -1,14 +1,13 @@
 #include <monad/core/address.hpp>
 
-#include <monad/execution/config.hpp>
-
+#include <monad/config.hpp>
 #include <monad/rlp/encode_helpers.hpp>
 
 #include <ethash/keccak.hpp>
 
 #include <cstring>
 
-MONAD_EXECUTION_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 // YP Sec 7: Eq 85 and 86
 address_t hash_and_clip(byte_string const &b)
@@ -39,4 +38,4 @@ address_t create2_contract_address(
     return hash_and_clip(b);
 }
 
-MONAD_EXECUTION_NAMESPACE_END
+MONAD_NAMESPACE_END

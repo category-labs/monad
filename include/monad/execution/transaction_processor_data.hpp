@@ -1,5 +1,7 @@
 #pragma once
 
+#include <monad/config.hpp>
+
 #include <monad/core/block.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
@@ -7,7 +9,6 @@
 #include <monad/db/db.hpp>
 
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/execution/config.hpp>
 #include <monad/execution/transaction_processor.hpp>
 #include <monad/execution/validation_status.hpp>
 
@@ -17,7 +18,7 @@
 
 #include <chrono>
 
-MONAD_EXECUTION_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 template <class TMutex, class TTxnProcessor, class TEvmHost>
 struct TransactionProcessorFiberData
@@ -97,4 +98,4 @@ struct TransactionProcessorFiberData
     }
 };
 
-MONAD_EXECUTION_NAMESPACE_END
+MONAD_NAMESPACE_END

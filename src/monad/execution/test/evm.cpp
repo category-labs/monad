@@ -1,6 +1,7 @@
+#include <monad/config.hpp>
+
 #include <monad/db/in_memory_trie_db.hpp>
 
-#include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
@@ -16,7 +17,6 @@
 #include <test_resource_data.h>
 
 using namespace monad;
-using namespace monad::execution;
 
 using account_store_db_t = db::InMemoryTrieDB;
 using mutex_t = boost::null_mutex;

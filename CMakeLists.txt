@@ -136,7 +136,6 @@ add_library(
   "src/monad/db/state_db.cpp"
   # execution
   "include/monad/execution/block_hash_buffer.hpp"
-  "include/monad/execution/config.hpp"
   "include/monad/execution/create_contract_address.hpp"
   "include/monad/execution/ethereum/fork_traits.hpp"
   "include/monad/execution/evm.hpp"

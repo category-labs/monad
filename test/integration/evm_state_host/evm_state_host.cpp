@@ -1,7 +1,8 @@
+#include <monad/config.hpp>
+
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
@@ -35,10 +36,10 @@ static constexpr auto code_hash =
 using account_store_db_t = db::InMemoryTrieDB;
 
 template <class TState, class TTraits>
-using evm_t = execution::Evm<TState, TTraits>;
+using evm_t = Evm<TState, TTraits>;
 
 template <class Traits>
-using evm_host_t = execution::EvmcHost<Traits>;
+using evm_host_t = EvmcHost<Traits>;
 
 using mutex_t = boost::null_mutex;
 

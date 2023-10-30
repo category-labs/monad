@@ -95,21 +95,19 @@ int main(int argc, char *argv[])
 
     if (start_block_number == 0) {
         MONAD_DEBUG_ASSERT(*has_genesis_file);
-        monad::execution::read_and_verify_genesis(
-            block_db, db, genesis_file_path);
+        read_and_verify_genesis(block_db, db, genesis_file_path);
         start_block_number = 1u;
     }
 
-    monad::execution::
-        ReplayFromBlockDb<db_t, mutex_t, monad::execution::AllTxnBlockProcessor>
-            replay_eth;
+    monad::ReplayFromBlockDb<db_t, mutex_t, monad::AllTxnBlockProcessor>
+        replay_eth;
 
     [[maybe_unused]] auto result = replay_eth.run<
         monad::eth_start_fork,
-        monad::execution::TransactionProcessor,
-        monad::execution::Evm,
-        monad::execution::EvmcHost,
-        monad::execution::TransactionProcessorFiberData>(
+        monad::TransactionProcessor,
+        monad::Evm,
+        monad::EvmcHost,
+        monad::TransactionProcessorFiberData>(
         db,
         checkpoint_frequency,
         block_db,

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <monad/core/byte_string.hpp>
+#include <monad/config.hpp>
 
-#include <monad/execution/config.hpp>
+#include <monad/core/byte_string.hpp>
 
 #include <evmone/baseline.hpp>
 
@@ -25,7 +25,7 @@
 
 #include <memory>
 
-MONAD_EXECUTION_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 template <class TState, class TTraits>
 struct EVMOneBaselineInterpreter
@@ -66,4 +66,4 @@ struct EVMOneBaselineInterpreter
     }
 };
 
-MONAD_EXECUTION_NAMESPACE_END
+MONAD_NAMESPACE_END

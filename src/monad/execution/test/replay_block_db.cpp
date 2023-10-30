@@ -126,14 +126,20 @@ class fakeEmptyTransactionTrie
 {
 public:
     fakeEmptyTransactionTrie(std::vector<Transaction> const &) {}
-    bytes32_t root_hash() const { return bytes32_t{}; }
+    bytes32_t root_hash() const
+    {
+        return bytes32_t{};
+    }
 };
 
 class fakeEmptyReceiptTrie
 {
 public:
     fakeEmptyReceiptTrie(std::vector<Receipt> const &) {}
-    bytes32_t root_hash() const { return bytes32_t{}; }
+    bytes32_t root_hash() const
+    {
+        return bytes32_t{};
+    }
 };
 
 template <class TState, class TTxnProcessor, class TEvm, class TExecution>
@@ -143,12 +149,15 @@ struct fakeEmptyFiberData
     fakeEmptyFiberData(TState &, Transaction const &, BlockHeader const &, int)
     {
     }
-    Receipt get_receipt() { return _result; }
+    Receipt get_receipt()
+    {
+        return _result;
+    }
     inline void operator()() {}
 };
 
-using state_t = execution::fake::State;
-using traits_t = execution::fake::traits::alpha<state_t::ChangeSet>;
+using state_t = fake::State;
+using traits_t = fake::traits::alpha<state_t::ChangeSet>;
 using receipt_collector_t = std::vector<std::vector<Receipt>>;
 
 using replay_t = ReplayFromBlockDb<

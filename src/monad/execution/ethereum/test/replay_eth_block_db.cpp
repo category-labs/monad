@@ -99,7 +99,10 @@ struct fakeReceiptFiberData
         TState &, Transaction const &, BlockHeader const &, int)
     {
     }
-    Receipt get_receipt() { return _result; }
+    Receipt get_receipt()
+    {
+        return _result;
+    }
     inline void operator()()
     {
         TTxnProcessor p{};
@@ -119,8 +122,8 @@ public:
     std::vector<Receipt> execute(TState &, Block &)
     {
         TFiberData data{};
-        typename TExecution::fiber_t fiber(std::ref(data));
-        TExecution::yield();
+        typename Tfiber_t fiber(std::ref(data));
+        Tyield();
 
         fiber.join();
         std::vector<Receipt> r{};
@@ -134,19 +137,25 @@ class fakeEmptyTransactionTrie
 {
 public:
     fakeEmptyTransactionTrie(std::vector<Transaction> const &) {}
-    bytes32_t root_hash() const { return bytes32_t{}; }
+    bytes32_t root_hash() const
+    {
+        return bytes32_t{};
+    }
 };
 
 class fakeEmptyReceiptTrie
 {
 public:
     fakeEmptyReceiptTrie(std::vector<Receipt> const &) {}
-    bytes32_t root_hash() const { return bytes32_t{}; }
+    bytes32_t root_hash() const
+    {
+        return bytes32_t{};
+    }
 };
 
 using eth_start_fork = fork_traits::frontier;
 
-using state_t = execution::fake::State;
+using state_t = fake::State;
 using receipt_collector_t = std::vector<std::vector<Receipt>>;
 
 using replay_eth_t = ReplayFromBlockDb<

@@ -1,13 +1,13 @@
 #pragma once
 
+#include <monad/config.hpp>
+
 #include <monad/core/address.hpp>
 #include <monad/core/block.hpp>
 
-#include <monad/execution/config.hpp>
-
 #include <intx/intx.hpp>
 
-MONAD_EXECUTION_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 namespace dao
 {
@@ -151,4 +151,4 @@ namespace dao
         0x6b};
 }
 
-MONAD_EXECUTION_NAMESPACE_END
+MONAD_NAMESPACE_END

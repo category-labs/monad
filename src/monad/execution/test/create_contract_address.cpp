@@ -8,7 +8,6 @@
 #include <gtest/gtest.h>
 
 using namespace monad;
-using namespace monad::execution;
 
 TEST(Execution, create_contract_address)
 {
@@ -28,9 +27,9 @@ TEST(Execution, create2_contract_address)
         0x000000000000000000000000feed000000000000000000000000000000000000_bytes32};
     static constexpr auto cafebabe_salt{
         0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32};
-    static const uint8_t zero[1]{0x00};
-    static const uint8_t deadbeef[4]{0xde, 0xad, 0xbe, 0xef};
-    static const byte_string deadcattle{
+    static uint8_t const zero[1]{0x00};
+    static uint8_t const deadbeef[4]{0xde, 0xad, 0xbe, 0xef};
+    static byte_string const deadcattle{
         0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe,
         0xef, 0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef, 0xde, 0xad,
         0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef, 0xde,

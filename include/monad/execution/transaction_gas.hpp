@@ -1,5 +1,7 @@
 #pragma once
 
+#include <monad/config.hpp>
+
 #include <monad/core/account.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
@@ -7,9 +9,7 @@
 #include <monad/core/likely.h>
 #include <monad/core/transaction.hpp>
 
-#include <monad/execution/config.hpp>
-
-MONAD_EXECUTION_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 // Intrinsic gas related functions
 [[nodiscard]] inline constexpr auto
@@ -119,4 +119,4 @@ constexpr uint256_t calculate_txn_award(
     return gas_used * priority_fee_per_gas(txn, base_fee_per_gas);
 }
 
-MONAD_EXECUTION_NAMESPACE_END
+MONAD_NAMESPACE_END

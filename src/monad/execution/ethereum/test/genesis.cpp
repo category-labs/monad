@@ -17,7 +17,6 @@
 #include <fstream>
 
 using namespace monad;
-using namespace monad::execution;
 
 template <typename TDB>
 struct GenesisTest : public testing::Test

@@ -1,12 +1,13 @@
 #pragma once
 
+#include <monad/config.hpp>
+
 #include <monad/core/address.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/transaction.hpp>
 
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/execution/config.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/precompiles.hpp>
 #include <monad/execution/transaction_gas.hpp>
@@ -22,7 +23,7 @@
 
 #include <utility>
 
-MONAD_EXECUTION_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 template <class Traits, class Mutex = boost::null_mutex>
 struct EvmcHost : public evmc::Host
@@ -194,4 +195,4 @@ struct EvmcHost : public evmc::Host
     }
 };
 
-MONAD_EXECUTION_NAMESPACE_END
+MONAD_NAMESPACE_END

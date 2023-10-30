@@ -1,6 +1,7 @@
 #pragma once
 
-#include <monad/execution/config.hpp>
+#include <monad/config.hpp>
+
 #include <monad/execution/create_contract_address.hpp>
 #include <monad/execution/evmone_baseline_interpreter.hpp>
 #include <monad/execution/precompiles.hpp>
@@ -14,7 +15,7 @@
 #include <limits>
 #include <optional>
 
-MONAD_EXECUTION_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 template <class TState, class TTraits>
 struct Evm
@@ -194,4 +195,4 @@ struct Evm
     }
 };
 
-MONAD_EXECUTION_NAMESPACE_END
+MONAD_NAMESPACE_END

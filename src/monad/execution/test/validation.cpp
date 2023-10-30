@@ -13,7 +13,6 @@
 #include <gtest/gtest.h>
 
 using namespace monad;
-using namespace monad::execution;
 
 using db_t = db::InMemoryTrieDB;
 using mutex_t = std::shared_mutex;

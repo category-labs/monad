@@ -1,16 +1,17 @@
 #pragma once
 
+#include <monad/config.hpp>
+
 #include <monad/core/account.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/transaction.hpp>
 
-#include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/validation_status.hpp>
 
-MONAD_EXECUTION_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 template <class TTraits>
 ValidationStatus static_validate_txn(
@@ -257,4 +258,4 @@ ValidationStatus static_validate_block(Block const &block)
     return ValidationStatus::SUCCESS;
 }
 
-MONAD_EXECUTION_NAMESPACE_END
+MONAD_NAMESPACE_END

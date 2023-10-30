@@ -1,8 +1,8 @@
 #pragma once
 
-#include <monad/execution/config.hpp>
+#include <monad/config.hpp>
 
-MONAD_EXECUTION_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 enum class ValidationStatus
 {
@@ -38,4 +38,4 @@ enum class ValidationStatus
 
 };
 
-MONAD_EXECUTION_NAMESPACE_END
+MONAD_NAMESPACE_END

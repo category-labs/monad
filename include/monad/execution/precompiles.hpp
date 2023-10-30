@@ -1,8 +1,9 @@
 #pragma once
 
+#include <monad/config.hpp>
+
 #include <monad/core/address.hpp>
 #include <monad/core/likely.h>
-#include <monad/execution/config.hpp>
 
 #include <silkpre/precompile.h>
 
@@ -11,7 +12,7 @@
 #include <cstdint>
 #include <optional>
 
-MONAD_EXECUTION_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 constexpr address_t ripemd_address = 0x03_address;
 
@@ -69,4 +70,4 @@ std::optional<evmc::Result> check_call_precompile(evmc_message const &msg)
         .release = evmc_free_result_memory}};
 }
 
-MONAD_EXECUTION_NAMESPACE_END
+MONAD_NAMESPACE_END

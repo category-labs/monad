@@ -1,6 +1,7 @@
+#include <monad/config.hpp>
+
 #include <monad/db/in_memory_trie_db.hpp>
 
-#include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_processor.hpp>
@@ -13,7 +14,6 @@
 #include <gtest/gtest.h>
 
 using namespace monad;
-using namespace monad::execution;
 
 using mutex_t = boost::null_mutex;
 

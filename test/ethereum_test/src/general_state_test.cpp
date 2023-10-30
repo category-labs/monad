@@ -42,7 +42,7 @@ namespace
     }
 
     template <typename TTraits>
-    [[nodiscard]] tl::expected<Receipt, execution::ValidationStatus> execute(
+    [[nodiscard]] tl::expected<Receipt, ValidationStatus> execute(
         BlockHeader const &block_header, test::state_t &state,
         Transaction const &txn)
     {
@@ -55,22 +55,21 @@ namespace
         host_t<TTraits> host{block_hash_buffer, block_header, txn, state};
         transaction_processor_t<TTraits> processor;
 
-        if (auto const status = execution::static_validate_txn<TTraits>(
+        if (auto const status = static_validate_txn<TTraits>(
                 txn, host.header_.base_fee_per_gas);
-            status != execution::ValidationStatus::SUCCESS) {
+            status != ValidationStatus::SUCCESS) {
             return tl::unexpected{status};
         }
 
-        if (auto const status = execution::validate_txn(state, txn);
-            status != execution::ValidationStatus::SUCCESS) {
+        if (auto const status = validate_txn(state, txn);
+            status != ValidationStatus::SUCCESS) {
             return tl::unexpected{status};
         }
 
         // sum of transaction gas limit and gas utilized in block prior (0 in
         // this case) must be no greater than the blocks gas limit
         if (host.header_.gas_limit < txn.gas_limit) {
-            return tl::unexpected{
-                execution::ValidationStatus::GAS_LIMIT_REACHED};
+            return tl::unexpected{ValidationStatus::GAS_LIMIT_REACHED};
         }
 
         return processor.execute(
@@ -81,7 +80,7 @@ namespace
             host.header_.beneficiary);
     }
 
-    [[nodiscard]] tl::expected<Receipt, execution::ValidationStatus> execute(
+    [[nodiscard]] tl::expected<Receipt, ValidationStatus> execute(
         evmc_revision const rev, BlockHeader const &block_header,
         test::state_t &state, Transaction const &txn)
     {
@@ -236,8 +235,7 @@ void GeneralStateTest::TestBody()
 
             EXPECT_EQ(db.state_root(), expected.state_hash) << msg;
             EXPECT_EQ(
-                result.has_value() ? execution::ValidationStatus::SUCCESS
-                                   : result.error(),
+                result.has_value() ? ValidationStatus::SUCCESS : result.error(),
                 expected.exception)
                 << msg;
             // TODO: assert something about receipt status?

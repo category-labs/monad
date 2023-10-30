@@ -32,32 +32,27 @@ MONAD_TEST_NAMESPACE_BEGIN
 namespace
 {
     template <typename TTraits>
-    [[nodiscard]] tl::expected<
-        std::vector<Receipt>, execution::ValidationStatus>
-    execute(
+    [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus> execute(
         Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
     {
         using namespace monad::test;
-        execution::AllTxnBlockProcessor processor;
+        AllTxnBlockProcessor processor;
 
-        if (auto const status =
-                execution::static_validate_block<TTraits>(block);
-            status != execution::ValidationStatus::SUCCESS) {
+        if (auto const status = static_validate_block<TTraits>(block);
+            status != ValidationStatus::SUCCESS) {
             return tl::unexpected(status);
         }
 
         return processor.execute<
             mutex_t,
             TTraits,
-            execution::TransactionProcessorFiberData<
+            TransactionProcessorFiberData<
                 mutex_t,
                 transaction_processor_t<TTraits>,
                 host_t<TTraits>>>(block, db, block_hash_buffer);
     }
 
-    [[nodiscard]] tl::expected<
-        std::vector<Receipt>, execution::ValidationStatus>
-    execute(
+    [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus> execute(
         evmc_revision const rev, Block &block, test::db_t &db,
         BlockHashBuffer const &block_hash_buffer)
     {

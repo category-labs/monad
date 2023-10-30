@@ -1,18 +1,21 @@
 #pragma once
 
-#include <monad/execution/config.hpp>
+#include <monad/config.hpp>
 
 #include <boost/fiber/all.hpp>
 
 #include <concepts>
 #include <thread>
 
-MONAD_EXECUTION_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 struct BoostFiberExecution
 {
     using fiber_t = boost::fibers::fiber;
-    static void yield() noexcept { boost::this_fiber::yield(); }
+    static void yield() noexcept
+    {
+        boost::this_fiber::yield();
+    }
 
     [[nodiscard]] static auto execute(std::invocable auto &&f)
     {
@@ -34,4 +37,4 @@ struct SerialExecution
     }
 };
 
-MONAD_EXECUTION_NAMESPACE_END
+MONAD_NAMESPACE_END

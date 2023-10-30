@@ -1,12 +1,17 @@
-#include <gtest/gtest.h>
+#include <monad/core/address.hpp>
 
-#include <ethash/keccak.hpp>
-#include <evmc/hex.hpp>
-#include <iomanip>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/precompiles.hpp>
 
-#include <monad/core/address.hpp>
+#include <evmc/hex.hpp>
+
+#include <ethash/keccak.hpp>
+
+#include <gtest/gtest.h>
+
+#include <iomanip>
+
+using namespace monad;
 
 using namespace evmc::literals;
 
@@ -208,7 +213,7 @@ void do_basic_tests(
         auto const &basic_test_case = basic_test_cases[i];
 
         evmc::Result const result =
-            monad::execution::check_call_precompile<monad::fork_traits::berlin>(
+            check_call_precompile<monad::fork_traits::berlin>(
                 basic_test_case.input)
                 .value();
 
@@ -316,7 +321,7 @@ void do_geth_tests(
                 .code_address = code_address};
 
             evmc::Result const result =
-                monad::execution::check_call_precompile<fork>(input).value();
+                check_call_precompile<fork>(input).value();
 
             if (result.status_code == evmc_status_code::EVMC_SUCCESS) {
                 EXPECT_EQ(result.gas_left, gas_offset)

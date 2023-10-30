@@ -297,12 +297,13 @@ namespace nlohmann
     };
 
     template <>
-    struct adl_serializer<monad::execution::ValidationStatus>
+    struct adl_serializer<monad::ValidationStatus>
     {
-        static void from_json(
-            nlohmann::json const &j, monad::execution::ValidationStatus &status)
+        static void
+        from_json(nlohmann::json const &j, monad::ValidationStatus &status)
         {
-            using namespace monad::execution;
+            using typename monad::ValidationStatus;
+
             auto const str = j.get<std::string>();
             if (str == "TR_InitCodeLimitExceeded") {
                 status = ValidationStatus::INIT_CODE_LIMIT_EXCEEDED;
@@ -344,12 +345,13 @@ namespace nlohmann
         static void
         from_json(nlohmann::json const &j, monad::test::Expectation &o)
         {
+            using monad::ValidationStatus;
+
             o.indices = j.at("indexes").get<monad::test::Indices>();
             o.state_hash = j.at("hash").get<monad::bytes32_t>();
             o.exception = j.contains("expectException")
-                              ? j.at("expectException")
-                                    .get<monad::execution::ValidationStatus>()
-                              : monad::execution::ValidationStatus::SUCCESS;
+                              ? j.at("expectException").get<ValidationStatus>()
+                              : ValidationStatus::SUCCESS;
         }
     };
 }

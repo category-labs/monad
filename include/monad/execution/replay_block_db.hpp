@@ -1,11 +1,12 @@
 #pragma once
 
+#include <monad/config.hpp>
+
 #include <monad/core/block.hpp>
 
 #include <monad/db/block_db.hpp>
 
 #include <monad/execution/block_processor.hpp>
-#include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/ethereum/genesis.hpp>
 #include <monad/execution/evm.hpp>
@@ -22,7 +23,7 @@
 #include <fstream>
 #include <optional>
 
-MONAD_EXECUTION_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 template <class TDb, class TMutex, class TBlockProcessor>
 class ReplayFromBlockDb
@@ -209,4 +210,4 @@ public:
     }
 };
 
-MONAD_EXECUTION_NAMESPACE_END
+MONAD_NAMESPACE_END

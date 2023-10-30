@@ -186,13 +186,11 @@ namespace fork_traits
             TBlockState &block_state, Db &db, block_num_t const block_number)
         {
             State state{block_state, db};
-            if (MONAD_UNLIKELY(
-                    block_number == execution::dao::dao_block_number)) {
-                for (auto const &addr : execution::dao::child_accounts) {
+            if (MONAD_UNLIKELY(block_number == dao::dao_block_number)) {
+                for (auto const &addr : dao::child_accounts) {
                     auto const balance =
                         intx::be::load<uint256_t>(state.get_balance(addr));
-                    state.add_to_balance(
-                        execution::dao::withdraw_account, balance);
+                    state.add_to_balance(dao::withdraw_account, balance);
                     state.subtract_from_balance(addr, balance);
                 }
 

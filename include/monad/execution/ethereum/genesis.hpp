@@ -1,5 +1,7 @@
 #pragma once
 
+#include <monad/config.hpp>
+
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
@@ -8,8 +10,6 @@
 #include <monad/core/bytes.hpp>
 
 #include <monad/db/db.hpp>
-
-#include <monad/execution/config.hpp>
 
 #include <monad/state2/state_deltas.hpp>
 
@@ -23,7 +23,7 @@
 #include <fstream>
 #include <string>
 
-MONAD_EXECUTION_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 // TODO: Different chain_id has different genesis json file (with some of them
 // not having certain field)
@@ -135,4 +135,4 @@ inline void read_and_verify_genesis(
     verify_genesis(block_db, block_header);
 }
 
-MONAD_EXECUTION_NAMESPACE_END
+MONAD_NAMESPACE_END

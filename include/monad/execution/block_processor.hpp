@@ -1,5 +1,7 @@
 #pragma once
 
+#include <monad/config.hpp>
+
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/receipt.hpp>
@@ -7,7 +9,6 @@
 #include <monad/core/withdrawal.hpp>
 
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/validation_status.hpp>
@@ -23,7 +24,7 @@
 #include <chrono>
 #include <vector>
 
-MONAD_EXECUTION_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 struct AllTxnBlockProcessor
 {
@@ -131,4 +132,4 @@ struct AllTxnBlockProcessor
     }
 };
 
-MONAD_EXECUTION_NAMESPACE_END
+MONAD_NAMESPACE_END

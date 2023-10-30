@@ -19,11 +19,10 @@ using db_t = monad::db::InMemoryTrieDB;
 using state_t = State<mutex_t>;
 
 template <typename Traits>
-using transaction_processor_t =
-    monad::execution::TransactionProcessor<state_t, Traits>;
+using transaction_processor_t = TransactionProcessor<state_t, Traits>;
 
 template <typename Traits>
-using host_t = monad::execution::EvmcHost<Traits>;
+using host_t = EvmcHost<Traits>;
 
 inline std::unordered_map<std::string, evmc_revision> const revision_map = {
     {"Frontier", EVMC_FRONTIER},

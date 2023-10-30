@@ -3,7 +3,6 @@
 #include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/execution/config.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_gas.hpp>
@@ -24,7 +23,6 @@
 #include <unordered_map>
 
 using namespace monad;
-using namespace monad::execution;
 
 static constexpr auto from = 0x5353535353535353535353535353535353535353_address;
 static constexpr auto to = 0xbebebebebebebebebebebebebebebebebebebebe_address;
@@ -34,7 +32,7 @@ static constexpr auto o = 0xb5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5_address;
 using account_store_db_t = db::InMemoryTrieDB;
 
 template <class Traits>
-using evm_host_t = execution::EvmcHost<Traits>;
+using evm_host_t = EvmcHost<Traits>;
 
 using mutex_t = boost::null_mutex;
 
@@ -66,7 +64,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 
     using state_t = decltype(s);
     using traits_t = monad::fork_traits::byzantium;
-    using tp_t = execution::TransactionProcessor<state_t, traits_t>;
+    using tp_t = TransactionProcessor<state_t, traits_t>;
 
     tp_t tp{};
     BlockHashBuffer block_hash_buffer;
@@ -137,7 +135,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
 
     using state_t = decltype(s);
     using traits_t = monad::fork_traits::frontier;
-    using tp_t = execution::TransactionProcessor<state_t, traits_t>;
+    using tp_t = TransactionProcessor<state_t, traits_t>;
 
     tp_t tp{};
     BlockHashBuffer block_hash_buffer;
@@ -204,7 +202,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
 
     using state_t = decltype(s);
     using traits_t = monad::fork_traits::frontier;
-    using tp_t = execution::TransactionProcessor<state_t, traits_t>;
+    using tp_t = TransactionProcessor<state_t, traits_t>;
 
     tp_t tp{};
     BlockHashBuffer block_hash_buffer;

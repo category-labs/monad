@@ -19,7 +19,7 @@ using namespace monad;
 using account_store_db_t = db::InMemoryTrieDB;
 using traits_t = fork_traits::shanghai;
 
-using evm_t = Evm<State, traits_t>;
+using evm_t = Evm<traits_t>;
 
 using evm_host_t = EvmcHost<traits_t>;
 

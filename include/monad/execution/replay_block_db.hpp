@@ -80,8 +80,7 @@ public:
 
     template <
         class TTraits, template <typename, typename> class TTxnProcessor,
-        template <typename, typename> class TEvm,
-        template <typename> class TEvmHost,
+        template <typename> class TEvm, template <typename> class TEvmHost,
         template <typename, typename> class TFiberData>
     [[nodiscard]] Result run_fork(
         TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
@@ -163,8 +162,7 @@ public:
 
     template <
         class TTraits, template <typename, typename> class TTxnProcessor,
-        template <typename, typename> class TEvm,
-        template <typename> class TEvmHost,
+        template <typename> class TEvm, template <typename> class TEvmHost,
         template <typename, typename> class TFiberData>
     [[nodiscard]] Result
     run(TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,

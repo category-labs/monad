@@ -33,9 +33,6 @@ static constexpr auto code_hash =
 
 using account_store_db_t = db::InMemoryTrieDB;
 
-template <class TState, class TTraits>
-using evm_t = Evm<TState, TTraits>;
-
 TEST(EvmInterpStateHost, return_existing_storage)
 {
     account_store_db_t db{};
@@ -80,13 +77,12 @@ TEST(EvmInterpStateHost, return_existing_storage)
     State s{bs, db};
 
     using fork_t = monad::fork_traits::byzantium;
-    using state_t = decltype(s);
 
     // Prep per transaction processor
     s.access_account(to);
     s.access_account(from);
 
-    evm_t<state_t, fork_t> e{};
+    Evm<fork_t> e{};
     BlockHashBuffer block_hash_buffer;
     EvmcHost<fork_t> h{block_hash_buffer, b, t, s};
 
@@ -144,13 +140,12 @@ TEST(EvmInterpStateHost, store_then_return_storage)
     State s{bs, db};
 
     using fork_t = monad::fork_traits::byzantium;
-    using state_t = decltype(s);
 
     // Prep per transaction processor
     s.access_account(to);
     s.access_account(from);
 
-    evm_t<state_t, fork_t> e{};
+    Evm<fork_t> e{};
     BlockHashBuffer block_hash_buffer;
     EvmcHost<fork_t> h{block_hash_buffer, b, t, s};
 

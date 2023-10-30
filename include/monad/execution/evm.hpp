@@ -6,6 +6,8 @@
 #include <monad/execution/evmone_baseline_interpreter.hpp>
 #include <monad/execution/precompiles.hpp>
 
+#include <monad/state2/state.hpp>
+
 #include <ethash/keccak.hpp>
 
 #include <intx/intx.hpp>
@@ -17,17 +19,17 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <class TState, class TTraits>
+template <class TTraits>
 struct Evm
 {
-    using interpreter_t = EVMOneBaselineInterpreter<TState, TTraits>;
+    using interpreter_t = EVMOneBaselineInterpreter<State, TTraits>;
 
     using result_t = tl::expected<void, evmc_result>;
     using unexpected_t = tl::unexpected<evmc_result>;
 
     template <class TEvmHost>
     [[nodiscard]] static evmc::Result create_contract_account(
-        TEvmHost *host, TState &state, evmc_message const &msg) noexcept
+        TEvmHost *host, State &state, evmc_message const &msg) noexcept
     {
         if (auto const result = check_sender_balance(state, msg);
             !result.has_value()) {
@@ -62,7 +64,7 @@ struct Evm
             return evmc::Result{EVMC_INVALID_INSTRUCTION};
         }
 
-        TState new_state{state};
+        State new_state{state};
         TEvmHost new_host{*host, new_state};
 
         new_state.create_contract(contract_address);
@@ -112,9 +114,9 @@ struct Evm
 
     template <class TEvmHost>
     [[nodiscard]] static evmc::Result
-    call_evm(TEvmHost *host, TState &state, evmc_message const &msg) noexcept
+    call_evm(TEvmHost *host, State &state, evmc_message const &msg) noexcept
     {
-        TState new_state{state};
+        State new_state{state};
         TEvmHost new_host{*host, new_state};
 
         if (auto const result = transfer_call_balances(new_state, msg);
@@ -158,7 +160,7 @@ struct Evm
     }
 
     [[nodiscard]] static result_t
-    check_sender_balance(TState &state, evmc_message const &msg) noexcept
+    check_sender_balance(State &state, evmc_message const &msg) noexcept
     {
         auto const value = intx::be::load<uint256_t>(msg.value);
         auto const balance =
@@ -172,7 +174,7 @@ struct Evm
     }
 
     static void transfer_balances(
-        TState &state, evmc_message const &msg, address_t const &to) noexcept
+        State &state, evmc_message const &msg, address_t const &to) noexcept
     {
         auto const value = intx::be::load<uint256_t>(msg.value);
         state.subtract_from_balance(msg.sender, value);
@@ -180,7 +182,7 @@ struct Evm
     }
 
     [[nodiscard]] static evmc_result
-    transfer_call_balances(TState &state, evmc_message const &msg)
+    transfer_call_balances(State &state, evmc_message const &msg)
     {
         if (msg.kind != EVMC_DELEGATECALL) {
             if (auto const result = check_sender_balance(state, msg);

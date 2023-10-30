@@ -26,8 +26,6 @@ MONAD_NAMESPACE_BEGIN
 template <class Traits>
 struct EvmcHost : public evmc::Host
 {
-    using evm_t = Evm<State, Traits>;
-
     BlockHashBuffer const &block_hash_buffer_;
     BlockHeader const &header_;
     Transaction const &transaction_;
@@ -138,6 +136,8 @@ struct EvmcHost : public evmc::Host
     [[nodiscard]] virtual evmc::Result
     call(evmc_message const &msg) noexcept override
     {
+        using evm_t = Evm<Traits>;
+
         if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
             auto res = evm_t::create_contract_account(this, state_, msg);
             // eip-211, eip-140

@@ -9,6 +9,7 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 
+#include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/validation.hpp>
 
@@ -68,9 +69,8 @@ struct TransactionProcessor
         return gas_remaining;
     }
 
-    template <class TEvmHost>
     Receipt execute(
-        State &state, TEvmHost &host, Transaction const &txn,
+        State &state, EvmcHost<Traits> &host, Transaction const &txn,
         uint256_t const &base_fee_per_gas, address_t const &beneficiary) const
     {
         irrevocable_change(state, txn, base_fee_per_gas);
@@ -91,7 +91,7 @@ struct TransactionProcessor
             state.access_account(*txn.to);
         }
 
-        auto m = TEvmHost::make_msg_from_txn(txn);
+        auto m = EvmcHost<Traits>::make_msg_from_txn(txn);
         auto result = host.call(m);
 
         MONAD_DEBUG_ASSERT(result.gas_left >= 0);

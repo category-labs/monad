@@ -87,7 +87,7 @@ struct AllTxnBlockProcessor
             r.push_back(receipt);
         }
 
-        state::State state{block_state, db};
+        State state{block_state, db};
         if constexpr (TTraits::rev >= EVMC_SHANGHAI) {
             process_withdrawal(state, block.withdrawals);
         }

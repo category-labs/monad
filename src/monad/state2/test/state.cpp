@@ -12,7 +12,6 @@
 #include <unordered_map>
 
 using namespace monad;
-using namespace monad::state;
 
 static constexpr auto a = 0x5353535353535353535353535353535353535353_address;
 static constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;

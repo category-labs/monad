@@ -22,7 +22,7 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 template <class TMutex, class TTxnProcessor, class TEvmHost>
 struct TransactionProcessorFiberData
 {
-    using state_t = state::State<TMutex>;
+    using state_t = State<TMutex>;
     using result_t = std::pair<Receipt, state_t>;
 
     Db &db_;
@@ -47,7 +47,7 @@ struct TransactionProcessorFiberData
               Receipt{
                   .status = Receipt::Status::FAILED,
                   .gas_used = txn_.gas_limit},
-              state::State{block_state_, db_}}
+              State{block_state_, db_}}
     {
     }
 

@@ -20,7 +20,7 @@ using mutex_t = std::shared_mutex;
 using block_cache_t = fake::BlockDb;
 
 using db_t = db::InMemoryTrieDB;
-using state_t = state::State<mutex_t, block_cache_t>;
+using state_t = State<mutex_t, block_cache_t>;
 using traits_t = fork_traits::shanghai;
 
 template <class TTxnProc>

@@ -102,7 +102,7 @@ namespace fork_traits
             TBlockState &block_state, Db &db, Block const &block,
             uint256_t const &reward, uint256_t const &ommer_reward)
         {
-            state::State state{block_state, db};
+            State state{block_state, db};
             auto const miner_award =
                 calculate_block_award(block, reward, ommer_reward);
 
@@ -185,7 +185,7 @@ namespace fork_traits
         static constexpr void transfer_balance_dao(
             TBlockState &block_state, Db &db, block_num_t const block_number)
         {
-            state::State state{block_state, db};
+            State state{block_state, db};
             if (MONAD_UNLIKELY(
                     block_number == execution::dao::dao_block_number)) {
                 for (auto const &addr : execution::dao::child_accounts) {
@@ -243,7 +243,7 @@ namespace fork_traits
             TBlockState &block_state, Db &db, Block const &block,
             uint256_t const &reward, uint256_t const &ommer_reward)
         {
-            state::State state{block_state, db};
+            State state{block_state, db};
             auto const miner_reward =
                 calculate_block_award(block, reward, ommer_reward);
 

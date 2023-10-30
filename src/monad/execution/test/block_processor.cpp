@@ -17,7 +17,7 @@ using namespace monad::execution;
 
 using mutex_t = std::shared_mutex;
 using db_t = db::InMemoryTrieDB;
-using state_t = state::State<mutex_t>;
+using state_t = State<mutex_t>;
 
 TEST(BlockProcessor, shanghai_withdrawal)
 {

@@ -153,7 +153,7 @@ void GeneralStateTest::TestBody()
     auto const [init_state, init_code] = [&] {
         BlockState<mutex_t> bs;
         db_t db;
-        state::State state{bs, db};
+        State state{bs, db};
         load_state_from_json(test.at("pre"), state);
         return std::make_pair(state.state_, state.code_);
     }();
@@ -225,7 +225,7 @@ void GeneralStateTest::TestBody()
             db_t db;
             db.commit(init_state, init_code);
             BlockState<mutex_t> bs;
-            state::State state{bs, db};
+            State state{bs, db};
             auto const result = execute(rev, block_header, state, transaction);
             // Note: no merge because only single transaction in the block
             db.commit(state.state_, state.code_);

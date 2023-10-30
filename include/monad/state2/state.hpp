@@ -1,5 +1,6 @@
 #pragma once
 
+#include <monad/config.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
@@ -11,14 +12,13 @@
 
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/block_state_ops.hpp>
-#include <monad/state2/config.hpp>
 
 #include <ankerl/unordered_dense.h>
 
 #include <ethash/keccak.hpp>
 #include <quill/Quill.h>
 
-MONAD_STATE_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 // EVMC state object
 template <class Mutex>
@@ -451,4 +451,4 @@ struct State
     }
 };
 
-MONAD_STATE_NAMESPACE_END
+MONAD_NAMESPACE_END

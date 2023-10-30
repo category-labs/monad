@@ -21,7 +21,7 @@ using namespace execution;
 
 using db_t = db::InMemoryTrieDB;
 using mutex_t = boost::null_mutex;
-using state_t = state::State<mutex_t>;
+using state_t = State<mutex_t>;
 using traits_t = fork_traits::shanghai;
 
 template <class Traits>

@@ -42,7 +42,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 {
     account_store_db_t db{};
     BlockState<mutex_t> bs;
-    state::State s{bs, db};
+    State s{bs, db};
 
     db.commit(
         StateDeltas{
@@ -92,7 +92,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 
     traits_t::apply_block_award(bs, db, b);
 
-    state::State s2{bs, db};
+    State s2{bs, db};
     EXPECT_EQ(s2.get_balance(a), bytes32_t{3'093'750'000'000'420'000});
     EXPECT_EQ(s2.get_balance(o), bytes32_t{2'625'000'000'000'000'000});
 }
@@ -106,7 +106,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
         0x9a049f5d18c239efaa258af9f3e7002949a977a0_address;
     account_store_db_t db{};
     BlockState<mutex_t> bs;
-    state::State s{bs, db};
+    State s{bs, db};
 
     db.commit(
         StateDeltas{
@@ -164,7 +164,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
 
     traits_t::apply_block_award(bs, db, b);
 
-    state::State s2{bs, db};
+    State s2{bs, db};
     EXPECT_EQ(s2.get_balance(a), bytes32_t{5'480'000'000'000'000'000});
 }
 
@@ -177,7 +177,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
         0x4dae54c8645c47dd55782091eca145c7bff974bc_address;
     account_store_db_t db{};
     BlockState<mutex_t> bs;
-    state::State s{bs, db};
+    State s{bs, db};
 
     db.commit(
         StateDeltas{
@@ -231,6 +231,6 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
 
     traits_t::apply_block_award(bs, db, b);
 
-    state::State s2{bs, db};
+    State s2{bs, db};
     EXPECT_EQ(s2.get_balance(a), bytes32_t{5'010'428'473'773'980'000});
 }

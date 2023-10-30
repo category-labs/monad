@@ -24,7 +24,7 @@ using namespace monad::execution;
 using db_t = db::InMemoryTrieDB;
 using mutex_t = std::shared_mutex;
 
-using state_t = state::State<mutex_t>;
+using state_t = State<mutex_t>;
 
 namespace
 {

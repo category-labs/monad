@@ -27,16 +27,16 @@ MONAD_EXECUTION_NAMESPACE_BEGIN
 template <class Traits, class Mutex = boost::null_mutex>
 struct EvmcHost : public evmc::Host
 {
-    using evm_t = Evm<monad::state::State<Mutex>, Traits>;
+    using evm_t = Evm<State<Mutex>, Traits>;
 
     BlockHashBuffer const &block_hash_buffer_;
     BlockHeader const &header_;
     Transaction const &transaction_;
-    monad::state::State<Mutex> &state_;
+    State<Mutex> &state_;
 
     using uint256be = evmc::uint256be;
 
-    EvmcHost(EvmcHost const &host, monad::state::State<Mutex> &state)
+    EvmcHost(EvmcHost const &host, State<Mutex> &state)
         : block_hash_buffer_{host.block_hash_buffer_}
         , header_{host.header_}
         , transaction_{host.transaction_}
@@ -46,7 +46,7 @@ struct EvmcHost : public evmc::Host
 
     EvmcHost(
         BlockHashBuffer const &block_hash_buffer, BlockHeader const &header,
-        Transaction const &txn, monad::state::State<Mutex> &state) noexcept
+        Transaction const &txn, State<Mutex> &state) noexcept
         : block_hash_buffer_{block_hash_buffer}
         , header_{header}
         , transaction_{txn}

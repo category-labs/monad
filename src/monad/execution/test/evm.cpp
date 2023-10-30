@@ -20,7 +20,7 @@ using namespace monad::execution;
 
 using account_store_db_t = db::InMemoryTrieDB;
 using mutex_t = boost::null_mutex;
-using state_t = state::State<mutex_t>;
+using state_t = State<mutex_t>;
 using traits_t = fork_traits::shanghai;
 
 using evm_t = Evm<state_t, traits_t>;
@@ -31,7 +31,7 @@ TEST(Evm, create_with_insufficient)
 {
     BlockState<mutex_t> bs;
     account_store_db_t db{};
-    state::State s{bs, db};
+    State s{bs, db};
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
@@ -65,7 +65,7 @@ TEST(Evm, eip684_existing_code)
 {
     BlockState<mutex_t> bs;
     account_store_db_t db{};
-    state::State s{bs, db};
+    State s{bs, db};
 
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
@@ -106,7 +106,7 @@ TEST(Evm, transfer_call_balances)
 {
     BlockState<mutex_t> bs;
     account_store_db_t db{};
-    state::State s{bs, db};
+    State s{bs, db};
 
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
@@ -142,7 +142,7 @@ TEST(Evm, transfer_call_balances_to_self)
 {
     BlockState<mutex_t> bs;
     account_store_db_t db{};
-    state::State s{bs, db};
+    State s{bs, db};
 
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
@@ -175,7 +175,7 @@ TEST(Evm, dont_transfer_on_delegatecall)
 {
     BlockState<mutex_t> bs;
     account_store_db_t db{};
-    state::State s{bs, db};
+    State s{bs, db};
 
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
@@ -212,7 +212,7 @@ TEST(Evm, dont_transfer_on_staticcall)
 {
     BlockState<mutex_t> bs;
     account_store_db_t db{};
-    state::State s{bs, db};
+    State s{bs, db};
 
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
@@ -250,7 +250,7 @@ TEST(Evm, create_nonce_out_of_range)
 {
     BlockState<mutex_t> bs;
     account_store_db_t db{};
-    state::State s{bs, db};
+    State s{bs, db};
 
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
@@ -291,7 +291,7 @@ TEST(Evm, static_precompile_execution)
 {
     BlockState<mutex_t> bs;
     account_store_db_t db{};
-    state::State s{bs, db};
+    State s{bs, db};
 
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
@@ -338,7 +338,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
 {
     BlockState<mutex_t> bs;
     account_store_db_t db{};
-    state::State s{bs, db};
+    State s{bs, db};
 
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};

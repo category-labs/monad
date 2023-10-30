@@ -16,7 +16,7 @@ MONAD_TEST_NAMESPACE_BEGIN
 using mutex_t = boost::null_mutex;
 
 using db_t = monad::db::InMemoryTrieDB;
-using state_t = monad::state::State<mutex_t>;
+using state_t = State<mutex_t>;
 
 template <typename Traits>
 using transaction_processor_t =

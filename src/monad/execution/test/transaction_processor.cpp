@@ -18,7 +18,7 @@ using namespace monad::execution;
 using mutex_t = boost::null_mutex;
 
 using db_t = db::InMemoryTrieDB;
-using state_t = state::State<mutex_t>;
+using state_t = State<mutex_t>;
 using traits_t = fork_traits::shanghai;
 using processor_t = TransactionProcessor<state_t, traits_t>;
 

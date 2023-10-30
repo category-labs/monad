@@ -83,7 +83,7 @@ TEST(EvmInterpStateHost, return_existing_storage)
         .sender = from,
         .code_address = to};
 
-    state::State s{bs, db};
+    State s{bs, db};
 
     using fork_t = monad::fork_traits::byzantium;
     using state_t = decltype(s);
@@ -147,7 +147,7 @@ TEST(EvmInterpStateHost, store_then_return_storage)
         .sender = from,
         .code_address = to};
 
-    state::State s{bs, db};
+    State s{bs, db};
 
     using fork_t = monad::fork_traits::byzantium;
     using state_t = decltype(s);

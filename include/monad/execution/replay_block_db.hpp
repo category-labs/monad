@@ -28,7 +28,7 @@ template <class TDb, class TMutex, class TBlockProcessor>
 class ReplayFromBlockDb
 {
 public:
-    using state_t = state::State<TMutex>;
+    using state_t = State<TMutex>;
 
     enum class Status
     {

@@ -166,7 +166,6 @@ add_library(
   # state
   "include/monad/state2/block_state.hpp"
   "include/monad/state2/block_state_ops.hpp"
-  "include/monad/state2/config.hpp"
   "include/monad/state2/state_deltas.hpp"
   "include/monad/state2/state.hpp"
   "src/monad/state2/block_state_ops.cpp"

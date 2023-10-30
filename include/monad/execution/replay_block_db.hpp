@@ -25,7 +25,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <class TDb, class TBlockProcessor>
+template <class TDb>
 class ReplayFromBlockDb
 {
 public:
@@ -49,17 +49,17 @@ public:
         block_num_t block_number;
     };
 
-    template <class TTraits>
+    template <class Traits>
     [[nodiscard]] constexpr block_num_t
     loop_until(std::optional<block_num_t> until_block_number)
     {
         if (!until_block_number.has_value()) {
-            return TTraits::last_block_number;
+            return Traits::last_block_number;
         }
         else {
             return std::min(
                 until_block_number.value() - 1u,
-                static_cast<uint64_t>(TTraits::last_block_number));
+                static_cast<uint64_t>(Traits::last_block_number));
         }
     }
 
@@ -79,14 +79,14 @@ public:
     }
 
     template <
-        class TTraits, template <typename, typename> class TTxnProcessor,
+        class Traits, template <typename, typename> class TTxnProcessor,
         template <typename> class TFiberData>
     [[nodiscard]] Result run_fork(
         TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
         BlockHashBuffer &block_hash_buffer, block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
-        for (; current_block_number <= loop_until<TTraits>(until_block_number);
+        for (; current_block_number <= loop_until<Traits>(until_block_number);
              ++current_block_number) {
             Block block{};
             auto const block_read_status =
@@ -105,16 +105,16 @@ public:
                 block_hash_buffer.set(
                     current_block_number - 1, block.header.parent_hash);
 
-                TBlockProcessor block_processor{};
-                if (auto const status = static_validate_block<TTraits>(block);
+                BlockProcessor block_processor{};
+                if (auto const status = static_validate_block<Traits>(block);
                     status != ValidationStatus::SUCCESS) {
                     return Result{
                         Status::BLOCK_VALIDATION_FAILED, current_block_number};
                 }
 
                 auto const receipts = block_processor.template execute<
-                    TTraits,
-                    TFiberData<TTxnProcessor<State, TTraits>>>(
+                    Traits,
+                    TFiberData<TTxnProcessor<State, Traits>>>(
                     block, db, block_hash_buffer);
 
                 if (!verify_root_hash(
@@ -144,7 +144,7 @@ public:
 
         else {
             return run_fork<
-                typename TTraits::next_fork_t,
+                typename Traits::next_fork_t,
                 TTxnProcessor,
                 TFiberData>(
                 db,
@@ -157,7 +157,7 @@ public:
     }
 
     template <
-        class TTraits, template <typename, typename> class TTxnProcessor,
+        class Traits, template <typename, typename> class TTxnProcessor,
         template <typename> class TFiberData>
     [[nodiscard]] Result
     run(TDb &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
@@ -188,7 +188,7 @@ public:
             ++block_number;
         }
 
-        return run_fork<TTraits, TTxnProcessor, TFiberData>(
+        return run_fork<Traits, TTxnProcessor, TFiberData>(
             db,
             checkpoint_frequency,
             block_db,

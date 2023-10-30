@@ -97,7 +97,7 @@ int main(int argc, char *argv[])
         start_block_number = 1u;
     }
 
-    monad::ReplayFromBlockDb<db_t, monad::BlockProcessor> replay_eth;
+    monad::ReplayFromBlockDb<db_t> replay_eth;
 
     [[maybe_unused]] auto result = replay_eth.run<
         monad::eth_start_fork,

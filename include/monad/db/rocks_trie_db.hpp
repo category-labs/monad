@@ -39,7 +39,7 @@ namespace detail
         options.OptimizeLevelStyleCompaction();
         options.create_if_missing = true;
         options.create_missing_column_families = true;
-        options.max_open_files = 5000;
+        options.max_open_files = 20000;
 
         rocksdb::ColumnFamilyOptions accounts_opts;
         rocksdb::ColumnFamilyOptions storage_opts;

@@ -39,7 +39,7 @@ function(monad_compile_options target)
 
   target_compile_options(
     ${target}
-    PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-attributes=clang::no_sanitize>)
+    PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-attributes=clang::>)
 
   # needed to resolve some potential false positives when compiling with
   # Boost.Graph

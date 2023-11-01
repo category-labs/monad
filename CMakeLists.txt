@@ -37,6 +37,12 @@ function(monad_compile_options target)
 
   target_compile_options(${target} PUBLIC -DQUILL_ROOT_LOGGER_ONLY)
 
+  if ((NOT ASAN) AND (NOT UBSAN))
+    target_compile_options(
+      ${target}
+      PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-attributes=clang::no_sanitize>)
+  endif()
+
   # needed to resolve some potential false positives when compiling with
   # Boost.Graph
   target_compile_options(
@@ -223,11 +229,6 @@ target_link_libraries(
   PUBLIC tl::optional
   PUBLIC unordered_dense)
 monad_compile_options(monad)
-
-if (DEFINED ENV{SANITIZE})
-  set(ASAN ON)
-  set(UBSAN ON)
-endif()
 
 if(ASAN)
   message("Address Sanitizer: On")

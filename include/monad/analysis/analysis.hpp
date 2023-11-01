@@ -9,7 +9,7 @@
 
 #ifndef __clang__
     #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored_attributes "clang::"
+    #pragma GCC diagnostic ignored_attributes "clang::no_sanitize"
 #endif
 #include <evmone/baseline.hpp>
 #include <evmone/instructions.hpp>

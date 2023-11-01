@@ -16,8 +16,6 @@ RUN yum -y install \
   clang \
   cmake \
   git \
-  libasan \
-  libubsan \
   ninja-build \
   python3-pip \
   zip
@@ -63,7 +61,7 @@ ARG CXX
 ARG CMAKE_BUILD_TYPE
 ARG DISABLE_TESTS
 
-RUN cd monad && CC=${CC} CXX=${CXX} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} SANITIZE=${SANITIZE} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" ./monad-core/scripts/configure.sh
+RUN cd monad && CC=${CC} CXX=${CXX} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" ./monad-core/scripts/configure.sh
 
 RUN cd monad && ./monad-core/scripts/build.sh
 

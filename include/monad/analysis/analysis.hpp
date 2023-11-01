@@ -7,17 +7,17 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/likely.h>
 
-#ifndef __clang__
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored_attributes "clang::no_sanitize"
-#endif
+//#ifndef __clang__
+//    #pragma GCC diagnostic push
+//    #pragma GCC diagnostic ignored_attributes "clang::no_sanitize"
+//#endif
 #include <evmone/baseline.hpp>
 #include <evmone/instructions.hpp>
 #include <evmone/instructions_opcodes.hpp>
 #include <evmone/instructions_traits.hpp>
-#ifndef __clang__
-    #pragma GCC diagnostic pop
-#endif
+//#ifndef __clang__
+//    #pragma GCC diagnostic pop
+//#endif
 
 #include <boost/graph/adjacency_list.hpp>
 

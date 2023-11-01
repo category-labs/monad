@@ -37,10 +37,6 @@ function(monad_compile_options target)
 
   target_compile_options(${target} PUBLIC -DQUILL_ROOT_LOGGER_ONLY)
 
-  target_compile_options(
-    ${target}
-    PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-attributes=clang::no_sanitize>)
-
   # needed to resolve some potential false positives when compiling with
   # Boost.Graph
   target_compile_options(

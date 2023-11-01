@@ -228,6 +228,11 @@ target_link_libraries(
   PUBLIC unordered_dense)
 monad_compile_options(monad)
 
+if (DEFINED ENV{SANITIZE})
+  set(ASAN ON)
+  set(UBSAN ON)
+endif()
+
 if(ASAN)
   message("Address Sanitizer: On")
   target_compile_options(monad PUBLIC "-fsanitize=address"

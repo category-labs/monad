@@ -2,57 +2,29 @@
 
 FROM fedora:38
 
-RUN yum -y install \
-  dnf-plugins-core
-
-RUN dnf config-manager --enable \
-  fedora-debuginfo \
-  fedora-modular-debuginfo \
-  updates-debuginfo
+RUN --mount=target=monad monad/monad-core/scripts/fedora/enable_debug.sh
 
 RUN yum -y update
 
-RUN yum -y install \
-  clang \
-  cmake \
-  git \
-  ninja-build \
-  python3-pip \
-  zip
+RUN --mount=target=monad monad/monad-core/scripts/fedora/install_tools.sh
+
+RUN --mount=target=monad monad/monad-core/scripts/fedora/install_deps.sh
 
 RUN yum -y install \
-  abseil-cpp \
-  abseil-cpp-debuginfo \
-  boost-fiber \
-  boost-fiber-debuginfo \
   brotli \
   brotli-debuginfo \
-  gmock \
-  gmock-debuginfo \
   gmp \
   gmp-debuginfo \
-  gtest \
-  gtest-debuginfo \
-  liburing \
-  liburing-debuginfo \
-  mimalloc \
-  mimalloc-debuginfo \
   rocksdb \
-  rocksdb-debuginfo \
-  valgrind
+  rocksdb-debuginfo
+
+RUN --mount=target=monad monad/monad-core/scripts/fedora/install_devel.sh
 
 RUN yum -y install \
-  abseil-cpp-devel \
-  boost-devel \
   brotli-devel \
   cli11-devel \
-  gmock-devel \
   gmp-devel \
-  gtest-devel \
-  liburing-devel \
-  mimalloc-devel \
-  rocksdb-devel \
-  valgrind-devel
+  rocksdb-devel
 
 COPY . monad
 

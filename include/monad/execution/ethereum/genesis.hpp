@@ -117,9 +117,8 @@ template <class TBlockDb>
 inline void verify_genesis(TBlockDb &block_db, BlockHeader const &block_header)
 {
     Block block{};
-    auto const status = block_db.get(0u, block);
-
-    MONAD_DEBUG_ASSERT(status == TBlockDb::Status::SUCCESS);
+    bool const status = block_db.get(0u, block);
+    MONAD_DEBUG_ASSERT(status);
     // There should be no txn/receipt for the genesis block, so just asserting
     // on state root for now
     MONAD_DEBUG_ASSERT(block_header.state_root == block.header.state_root);

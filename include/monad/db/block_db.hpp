@@ -1,33 +1,27 @@
 #pragma once
 
 #include <monad/config.hpp>
-#include <monad/core/block.hpp>
 
 #include <monad/db/file_db.hpp>
 
+#include <cstdint>
 #include <filesystem>
 
 MONAD_NAMESPACE_BEGIN
 
+struct Block;
+
 class BlockDb
 {
-public:
-    BlockDb(std::filesystem::path const &block_db_path)
-        : db_{block_db_path.c_str()} {};
-    ~BlockDb() = default;
-
-    enum class Status
-    {
-        SUCCESS,
-        NO_BLOCK_FOUND,
-        DECOMPRESS_ERROR,
-        DECODE_ERROR
-    };
-
-    [[nodiscard]] Status get(block_num_t, Block &);
-
-private:
     FileDb db_;
+
+public:
+    BlockDb(std::filesystem::path const &);
+
+    bool get(uint64_t, Block &) const;
+
+    void upsert(uint64_t, Block const &) const;
+    void remove(uint64_t) const;
 };
 
 MONAD_NAMESPACE_END

@@ -86,49 +86,39 @@ public:
         for (; current_block_number <= loop_until<Traits>(until_block_number);
              ++current_block_number) {
             Block block{};
-            auto const block_read_status =
+            bool const block_read_status =
                 block_db.get(current_block_number, block);
 
-            switch (block_read_status) {
-            case BlockDb::Status::NO_BLOCK_FOUND:
-                return Result{Status::SUCCESS_END_OF_DB, current_block_number};
-            case BlockDb::Status::DECOMPRESS_ERROR:
+            if (MONAD_UNLIKELY(block_read_status)) {
                 return Result{
-                    Status::DECOMPRESS_BLOCK_ERROR, current_block_number};
-            case BlockDb::Status::DECODE_ERROR:
-                return Result{Status::DECODE_BLOCK_ERROR, current_block_number};
-            case BlockDb::Status::SUCCESS: {
-
-                block_hash_buffer.set(
-                    current_block_number - 1, block.header.parent_hash);
-
-                BlockProcessor block_processor{};
-                if (auto const status = static_validate_block<Traits>(block);
-                    status != ValidationStatus::SUCCESS) {
-                    return Result{
-                        Status::BLOCK_VALIDATION_FAILED, current_block_number};
-                }
-
-                auto const receipts = block_processor.template execute<Traits>(
-                    block, db, block_hash_buffer);
-
-                if (!verify_root_hash(
-                        block.header,
-                        NULL_ROOT,
-                        NULL_ROOT,
-                        db.state_root(),
-                        current_block_number)) {
-                    return Result{
-                        Status::WRONG_STATE_ROOT, current_block_number};
-                }
-                else {
-                    if (current_block_number % checkpoint_frequency == 0) {
-                        db.create_and_prune_block_history(current_block_number);
-                    }
-                }
+                    Status::SUCCESS_END_OF_DB, current_block_number - 1};
             }
-            default:
-                break;
+
+            block_hash_buffer.set(
+                current_block_number - 1, block.header.parent_hash);
+
+            BlockProcessor block_processor{};
+            if (auto const status = static_validate_block<Traits>(block);
+                status != ValidationStatus::SUCCESS) {
+                return Result{
+                    Status::BLOCK_VALIDATION_FAILED, current_block_number};
+            }
+
+            auto const receipts = block_processor.template execute<Traits>(
+                block, db, block_hash_buffer);
+
+            if (!verify_root_hash(
+                    block.header,
+                    NULL_ROOT,
+                    NULL_ROOT,
+                    db.state_root(),
+                    current_block_number)) {
+                return Result{Status::WRONG_STATE_ROOT, current_block_number};
+            }
+            else {
+                if (current_block_number % checkpoint_frequency == 0) {
+                    db.create_and_prune_block_history(current_block_number);
+                }
             }
         }
 
@@ -136,7 +126,6 @@ public:
             until_block_number.value() <= current_block_number) {
             return Result{Status::SUCCESS, current_block_number - 1u};
         }
-
         else {
             return run_fork<typename Traits::next_fork_t>(
                 db,
@@ -161,8 +150,7 @@ public:
             return Result{Status::INVALID_END_BLOCK_NUMBER, start_block_number};
         }
 
-        if (block_db.get(start_block_number, block) ==
-            BlockDb::Status::NO_BLOCK_FOUND) {
+        if (!block_db.get(start_block_number, block)) {
             return Result{
                 Status::START_BLOCK_NUMBER_OUTSIDE_DB, start_block_number};
         }
@@ -172,8 +160,8 @@ public:
             start_block_number < 256 ? 1 : start_block_number - 255;
         while (block_number < start_block_number) {
             block = Block{};
-            auto const result = block_db.get(block_number, block);
-            MONAD_ASSERT(result == BlockDb::Status::SUCCESS);
+            bool const result = block_db.get(block_number, block);
+            MONAD_ASSERT(result);
             block_hash_buffer.set(block_number - 1, block.header.parent_hash);
             ++block_number;
         }

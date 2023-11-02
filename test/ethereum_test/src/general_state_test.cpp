@@ -2,6 +2,7 @@
 #include <general_state_test.hpp>
 #include <general_state_test_types.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_processor.hpp>
 #include <monad/test/config.hpp>
 #include <monad/test/dump_state_from_db.hpp>
@@ -52,7 +53,7 @@ namespace
         MONAD_ASSERT(block_header.number);
         block_hash_buffer.set(
             block_header.number - 1, block_header.parent_hash);
-        host_t<Traits> host{block_hash_buffer, block_header, txn, state};
+        EvmcHost<Traits> host{block_hash_buffer, block_header, txn, state};
         TransactionProcessor<Traits> processor;
 
         if (auto const status =

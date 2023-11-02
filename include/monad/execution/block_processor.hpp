@@ -57,6 +57,18 @@ struct BlockProcessor
         merge(block_state.state, state.state_);
     }
 
+    static Receipt::Bloom compute_bloom(std::vector<Receipt> const &receipts)
+    {
+        Receipt::Bloom bloom{};
+        for (auto const &receipt : receipts) {
+            for (unsigned i = 0; i < 256; ++i) {
+                bloom[i] |= receipt.bloom[i];
+            }
+        }
+
+        return bloom;
+    }
+
     template <class Traits>
     [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus>
     execute(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
@@ -104,6 +116,10 @@ struct BlockProcessor
             merge(block_state.code, state.code_);
 
             receipts.push_back(receipt);
+        }
+
+        if (compute_bloom(receipts) != block.header.logs_bloom) {
+            return tl::unexpected(ValidationStatus::WRONG_LOGS_BLOOM);
         }
 
         State state{block_state, db};

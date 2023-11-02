@@ -5,6 +5,7 @@
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/precompiles.hpp>
+#include <monad/execution/tx_context.hpp>
 
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
@@ -18,10 +19,7 @@ using namespace monad;
 using db_t = db::InMemoryTrieDB;
 using traits_t = fork_traits::shanghai;
 
-template <class Traits>
-using traits_templated_evmc_host_t = EvmcHost<Traits>;
-
-using evmc_host_t = traits_templated_evmc_host_t<traits_t>;
+using evmc_host_t = EvmcHost<traits_t>;
 
 bool operator==(evmc_tx_context const &lhs, evmc_tx_context const &rhs)
 {
@@ -62,7 +60,7 @@ TEST(EvmcHost, get_tx_context)
     static uint256_t const base_fee_per_gas{37'000'000'000};
     static uint256_t const gas_cost = 37'000'000'000;
 
-    BlockHeader b{
+    BlockHeader hdr{
         .prev_randao =
             0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32,
         .difficulty = 10'000'000u,
@@ -72,20 +70,14 @@ TEST(EvmcHost, get_tx_context)
         .beneficiary = bene,
         .base_fee_per_gas = base_fee_per_gas,
     };
-    Transaction const t{
+    Transaction const tx{
         .sc = {.chain_id = chain_id},
         .max_fee_per_gas = base_fee_per_gas,
         .from = from};
 
-    db_t db;
-    BlockState bs;
-    State s{bs, db};
-    BlockHashBuffer block_hash_buffer;
-    evmc_host_t host{block_hash_buffer, b, t, s};
-
-    auto const result = host.get_tx_context();
+    auto const result = get_tx_context<traits_t>(tx, hdr);
     evmc_tx_context ctx{
-        .tx_origin = *t.from,
+        .tx_origin = *tx.from,
         .block_coinbase = bene,
         .block_number = 15'000'000,
         .block_timestamp = 1677616016,
@@ -97,12 +89,12 @@ TEST(EvmcHost, get_tx_context)
     intx::be::store(ctx.block_base_fee.bytes, base_fee_per_gas);
     EXPECT_EQ(result, ctx);
 
-    b.difficulty = 0;
-    auto const pos_result = host.get_tx_context();
+    hdr.difficulty = 0;
+    auto const pos_result = get_tx_context<traits_t>(tx, hdr);
     std::memcpy(
         ctx.block_prev_randao.bytes,
-        b.prev_randao.bytes,
-        sizeof(b.prev_randao));
+        hdr.prev_randao.bytes,
+        sizeof(hdr.prev_randao));
     EXPECT_EQ(pos_result, ctx);
 }
 
@@ -116,14 +108,12 @@ TEST(EvmcHost, emit_log)
         0x0000000000000000000000000000000000000000000000000000000000000007_bytes32};
     static constexpr bytes32_t topics[] = {topic0, topic1};
     static byte_string const data = {0x00, 0x01, 0x02, 0x03, 0x04};
-    BlockHeader const b{};
-    Transaction const t{};
 
     db_t db;
     BlockState bs;
-    State s{bs, db};
+    State state{bs, db};
     BlockHashBuffer block_hash_buffer;
-    evmc_host_t host{block_hash_buffer, b, t, s};
+    evmc_host_t host{EMPTY_TX_CONTEXT, block_hash_buffer, state};
 
     host.emit_log(
         from,
@@ -132,7 +122,7 @@ TEST(EvmcHost, emit_log)
         topics,
         sizeof(topics) / sizeof(bytes32_t));
 
-    auto const logs = s.logs();
+    auto const logs = state.logs();
     EXPECT_EQ(logs.size(), 1);
     EXPECT_EQ(logs[0].address, from);
     EXPECT_EQ(logs[0].data, data);
@@ -143,13 +133,11 @@ TEST(EvmcHost, emit_log)
 
 TEST(EvmcHost, access_precompile)
 {
-    BlockHeader const b{};
-    Transaction const t{};
     db_t db;
     BlockState bs;
-    State s{bs, db};
+    State state{bs, db};
     BlockHashBuffer block_hash_buffer;
-    evmc_host_t host{block_hash_buffer, b, t, s};
+    evmc_host_t host{EMPTY_TX_CONTEXT, block_hash_buffer, state};
 
     EXPECT_EQ(
         host.access_account(0x0000000000000000000000000000000000000001_address),

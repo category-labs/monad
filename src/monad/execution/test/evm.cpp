@@ -5,6 +5,7 @@
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
+#include <monad/execution/tx_context.hpp>
 
 #include <monad/state2/state.hpp>
 
@@ -49,9 +50,7 @@ TEST(Evm, create_with_insufficient)
     intx::be::store(m.value.bytes, v);
 
     BlockHashBuffer block_hash_buffer;
-    BlockHeader block_header;
-    Transaction transaction;
-    evm_host_t h{block_hash_buffer, block_header, transaction, s};
+    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
     auto const result = evm_t::create_contract_account(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
@@ -91,9 +90,7 @@ TEST(Evm, eip684_existing_code)
     intx::be::store(m.value.bytes, v);
 
     BlockHashBuffer block_hash_buffer;
-    BlockHeader block_header;
-    Transaction transaction;
-    evm_host_t h{block_hash_buffer, block_header, transaction, s};
+    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
     auto const result = evm_t::create_contract_account(&h, s, m);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
 }
@@ -254,9 +251,7 @@ TEST(Evm, create_nonce_out_of_range)
         0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
 
     BlockHashBuffer block_hash_buffer;
-    BlockHeader block_header;
-    Transaction transaction;
-    evm_host_t h{block_hash_buffer, block_header, transaction, s};
+    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     db.commit(
         StateDeltas{
@@ -295,9 +290,7 @@ TEST(Evm, static_precompile_execution)
         0x0000000000000000000000000000000000000004_address};
 
     BlockHashBuffer block_hash_buffer;
-    BlockHeader block_header;
-    Transaction transaction;
-    evm_host_t h{block_hash_buffer, block_header, transaction, s};
+    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     db.commit(
         StateDeltas{
@@ -342,9 +335,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         0x0000000000000000000000000000000000000001_address};
 
     BlockHashBuffer block_hash_buffer;
-    BlockHeader block_header;
-    Transaction transaction;
-    evm_host_t h{block_hash_buffer, block_header, transaction, s};
+    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     db.commit(
         StateDeltas{

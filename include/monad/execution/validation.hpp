@@ -48,9 +48,7 @@ constexpr ValidationStatus static_validate_txn(
         return ValidationStatus::TYPE_NOT_SUPPORTED;
     }
 
-    if (MONAD_UNLIKELY(
-            base_fee_per_gas.has_value() &&
-            txn.max_fee_per_gas < base_fee_per_gas.value())) {
+    if (MONAD_UNLIKELY(txn.max_fee_per_gas < base_fee_per_gas.value_or(0))) {
         return ValidationStatus::MAX_FEE_LESS_THAN_BASE;
     }
 

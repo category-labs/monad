@@ -11,6 +11,7 @@
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_processor.hpp>
+#include <monad/execution/tx_context.hpp>
 #include <monad/execution/validation_status.hpp>
 
 #include <monad/state2/state.hpp>
@@ -76,7 +77,8 @@ struct TransactionProcessorFiberData
             return validity;
         }
 
-        EvmcHost<Traits> host{block_hash_buffer_, header_, txn_, state};
+        auto const tx_context = get_tx_context<Traits>(txn_, header_);
+        EvmcHost<Traits> host{tx_context, block_hash_buffer_, state};
         result_.first = processor.execute(
             state,
             host,

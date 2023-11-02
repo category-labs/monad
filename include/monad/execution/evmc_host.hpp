@@ -3,9 +3,7 @@
 #include <monad/config.hpp>
 
 #include <monad/core/address.hpp>
-#include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/core/transaction.hpp>
 
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/evm.hpp>
@@ -17,6 +15,7 @@
 
 #include <intx/intx.hpp>
 
+#include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <utility>
@@ -26,30 +25,29 @@ MONAD_NAMESPACE_BEGIN
 template <class Traits>
 struct EvmcHost : public evmc::Host
 {
+    evmc_tx_context const &tx_context_;
+
     BlockHashBuffer const &block_hash_buffer_;
-    BlockHeader const &header_;
-    Transaction const &transaction_;
     State &state_;
 
     using uint256be = evmc::uint256be;
 
     EvmcHost(EvmcHost const &host, State &state)
-        : block_hash_buffer_{host.block_hash_buffer_}
-        , header_{host.header_}
-        , transaction_{host.transaction_}
+        : tx_context_{host.tx_context_}
+        , block_hash_buffer_{host.block_hash_buffer_}
         , state_{state}
     {
     }
 
     EvmcHost(
-        BlockHashBuffer const &block_hash_buffer, BlockHeader const &header,
-        Transaction const &txn, State &state) noexcept
-        : block_hash_buffer_{block_hash_buffer}
-        , header_{header}
-        , transaction_{txn}
+        evmc_tx_context const &tx_context,
+        BlockHashBuffer const &block_hash_buffer, State &state) noexcept
+        : tx_context_{tx_context}
+        , block_hash_buffer_{block_hash_buffer}
         , state_{state}
     {
     }
+
     virtual ~EvmcHost() noexcept = default;
 
     virtual bool
@@ -156,7 +154,7 @@ struct EvmcHost : public evmc::Host
 
     virtual evmc_tx_context get_tx_context() const noexcept override
     {
-        return ::monad::get_tx_context<Traits>(transaction_, header_);
+        return tx_context_;
     }
 
     virtual bytes32_t

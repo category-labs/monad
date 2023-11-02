@@ -15,6 +15,17 @@ static_assert(alignof(evmc_tx_context) == 8);
 
 MONAD_NAMESPACE_BEGIN
 
+inline constexpr evmc_tx_context EMPTY_TX_CONTEXT{
+    .tx_gas_price{},
+    .tx_origin{},
+    .block_coinbase{},
+    .block_number = 0,
+    .block_timestamp = 0,
+    .block_gas_limit = 0,
+    .block_prev_randao{},
+    .chain_id{},
+    .block_base_fee{}};
+
 template <class Traits>
 constexpr evmc_tx_context
 get_tx_context(Transaction const &tx, BlockHeader const &hdr)

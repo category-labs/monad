@@ -5,6 +5,7 @@
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_processor.hpp>
+#include <monad/execution/tx_context.hpp>
 
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
@@ -54,9 +55,9 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
         .from = from,
     };
 
+    auto const tx_context = get_tx_context<traits_t>(t, {});
     BlockHashBuffer block_hash_buffer;
-    BlockHeader block_header;
-    evm_host_t h{block_hash_buffer, block_header, t, s};
+    evm_host_t h{tx_context, block_hash_buffer, s};
 
     processor_t p{};
 

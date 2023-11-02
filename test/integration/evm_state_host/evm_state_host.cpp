@@ -6,6 +6,7 @@
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
+#include <monad/execution/tx_context.hpp>
 
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/block_state_ops.hpp>
@@ -65,8 +66,6 @@ TEST(EvmInterpStateHost, return_existing_storage)
                  .account = {std::nullopt, Account{.balance = 10'000'000}}}}},
         Code{{code_hash, code}});
 
-    BlockHeader const b{}; // Required for the host interface, but not used
-    Transaction const t{};
     evmc_message m{
         .kind = EVMC_CALL,
         .gas = 10'000,
@@ -84,7 +83,7 @@ TEST(EvmInterpStateHost, return_existing_storage)
 
     Evm<fork_t> e{};
     BlockHashBuffer block_hash_buffer;
-    EvmcHost<fork_t> h{block_hash_buffer, b, t, s};
+    EvmcHost<fork_t> h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     auto status = e.call_evm(&h, s, m);
 
@@ -128,8 +127,6 @@ TEST(EvmInterpStateHost, store_then_return_storage)
                  .account = {std::nullopt, Account{.balance = 10'000'000}}}}},
         Code{{code_hash, code}});
 
-    BlockHeader const b{}; // Required for the host interface, but not used
-    Transaction const t{};
     evmc_message m{
         .kind = EVMC_CALL,
         .gas = 20'225,
@@ -147,7 +144,7 @@ TEST(EvmInterpStateHost, store_then_return_storage)
 
     Evm<fork_t> e{};
     BlockHashBuffer block_hash_buffer;
-    EvmcHost<fork_t> h{block_hash_buffer, b, t, s};
+    EvmcHost<fork_t> h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     auto status = e.call_evm(&h, s, m);
 

@@ -1,11 +1,14 @@
 #include <from_json.hpp>
 #include <general_state_test.hpp>
 #include <general_state_test_types.hpp>
+
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_processor.hpp>
+#include <monad/execution/tx_context.hpp>
 #include <monad/test/config.hpp>
 #include <monad/test/dump_state_from_db.hpp>
+
 #include <test_resource_data.h>
 
 #include <evmc/evmc.hpp>
@@ -49,15 +52,8 @@ namespace
     {
         using namespace monad::test;
 
-        BlockHashBuffer block_hash_buffer;
-        MONAD_ASSERT(block_header.number);
-        block_hash_buffer.set(
-            block_header.number - 1, block_header.parent_hash);
-        EvmcHost<Traits> host{block_hash_buffer, block_header, txn, state};
-        TransactionProcessor<Traits> processor;
-
         if (auto const status =
-                static_validate_txn<Traits>(txn, host.header_.base_fee_per_gas);
+                static_validate_txn<Traits>(txn, block_header.base_fee_per_gas);
             status != ValidationStatus::SUCCESS) {
             return tl::unexpected{status};
         }
@@ -69,16 +65,24 @@ namespace
 
         // sum of transaction gas limit and gas utilized in block prior (0 in
         // this case) must be no greater than the blocks gas limit
-        if (host.header_.gas_limit < txn.gas_limit) {
+        if (block_header.gas_limit < txn.gas_limit) {
             return tl::unexpected{ValidationStatus::GAS_LIMIT_REACHED};
         }
+
+        auto const tx_context = get_tx_context<Traits>(txn, block_header);
+        BlockHashBuffer block_hash_buffer;
+        MONAD_ASSERT(block_header.number);
+        block_hash_buffer.set(
+            block_header.number - 1, block_header.parent_hash);
+        EvmcHost<Traits> host{tx_context, block_hash_buffer, state};
+        TransactionProcessor<Traits> processor;
 
         return processor.execute(
             state,
             host,
             txn,
-            host.header_.base_fee_per_gas.value_or(0),
-            host.header_.beneficiary);
+            block_header.base_fee_per_gas.value_or(0),
+            block_header.beneficiary);
     }
 
     [[nodiscard]] tl::expected<Receipt, ValidationStatus> execute(

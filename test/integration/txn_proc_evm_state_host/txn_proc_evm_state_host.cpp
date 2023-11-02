@@ -8,6 +8,7 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/transaction_processor.hpp>
+#include <monad/execution/tx_context.hpp>
 
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/block_state_ops.hpp>
@@ -60,8 +61,9 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     using tp_t = TransactionProcessor<traits_t>;
 
     tp_t tp{};
+    auto const tx_context = get_tx_context<traits_t>(t, bh);
     BlockHashBuffer block_hash_buffer;
-    EvmcHost<traits_t> h{block_hash_buffer, bh, t, s};
+    EvmcHost<traits_t> h{tx_context, block_hash_buffer, s};
 
     EXPECT_EQ(
         static_validate_txn<traits_t>(t, std::nullopt),
@@ -131,8 +133,9 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     using tp_t = TransactionProcessor<traits_t>;
 
     tp_t tp{};
+    auto const tx_context = get_tx_context<traits_t>(t, bh);
     BlockHashBuffer block_hash_buffer;
-    EvmcHost<traits_t> h{block_hash_buffer, bh, t, s};
+    EvmcHost<traits_t> h{tx_context, block_hash_buffer, s};
 
     EXPECT_EQ(
         static_validate_txn<traits_t>(t, std::nullopt),
@@ -198,8 +201,9 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     using tp_t = TransactionProcessor<traits_t>;
 
     tp_t tp{};
+    auto const tx_context = get_tx_context<traits_t>(t, bh);
     BlockHashBuffer block_hash_buffer;
-    EvmcHost<traits_t> h{block_hash_buffer, bh, t, s};
+    EvmcHost<traits_t> h{tx_context, block_hash_buffer, s};
 
     EXPECT_EQ(
         static_validate_txn<traits_t>(t, std::nullopt),

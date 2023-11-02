@@ -115,11 +115,15 @@ struct TransactionProcessor
             state.destruct_touched_dead();
         }
 
-        return Receipt{
+        Receipt receipt{
             .status = result.status_code == EVMC_SUCCESS ? 1u : 0u,
             .gas_used = gas_used,
-            .type = txn.type,
-            .logs = std::move(state.logs())};
+            .type = txn.type};
+        for (auto &log : state.logs()) {
+            receipt.add_log(std::move(log));
+        }
+
+        return receipt;
     }
 };
 

@@ -76,8 +76,8 @@ struct BlockProcessor
             }
         }
 
-        std::vector<Receipt> r{};
-        r.reserve(block.transactions.size());
+        std::vector<Receipt> receipts{};
+        receipts.reserve(block.transactions.size());
 
         for (unsigned i = 0; i < block.transactions.size(); ++i) {
             block.transactions[i].from = recover_sender(block.transactions[i]);
@@ -90,7 +90,7 @@ struct BlockProcessor
                 i};
 
             if (auto const txn_status =
-                    txn_executor.template validate_and_execute<Traits>();
+                    txn_executor.validate_and_execute<Traits>();
                 txn_status != ValidationStatus::SUCCESS) {
                 return tl::unexpected(txn_status);
             }
@@ -103,7 +103,7 @@ struct BlockProcessor
             merge(block_state.state, state.state_);
             merge(block_state.code, state.code_);
 
-            r.push_back(receipt);
+            receipts.push_back(receipt);
         }
 
         State state{block_state, db};
@@ -132,11 +132,11 @@ struct BlockProcessor
             "Finish executing Block {}, time elapsed = {}",
             block.header.number,
             elapsed_ms);
-        LOG_DEBUG("Receipts: {}", r);
+        LOG_DEBUG("Receipts: {}", receipts);
 
         commit(block_state, db);
 
-        return r;
+        return receipts;
     }
 
     void commit(BlockState &block_state, Db &db)

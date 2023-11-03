@@ -122,7 +122,11 @@ constexpr ValidationStatus static_validate_header(BlockHeader const &header)
         return ValidationStatus::INVALID_GAS_LIMIT;
     }
 
-    // TODO: EIP-1985 check?
+    // EIP-1985
+    if (MONAD_UNLIKELY(
+            header.gas_limit > std::numeric_limits<int64_t>::max())) {
+        return ValidationStatus::INVALID_GAS_LIMIT;
+    }
 
     if (MONAD_UNLIKELY(header.extra_data.length() > 32)) {
         return ValidationStatus::EXTRA_DATA_TOO_LONG;

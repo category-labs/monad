@@ -22,6 +22,7 @@ enum class ValidationStatus
     INVALID_OMMER_HEADER,
     WRONG_DAO_EXTRA_DATA,
     WRONG_LOGS_BLOOM,
+    INVALID_GAS_USED,
 
     // Transaction Validation Error
     INSUFFICIENT_BALANCE,

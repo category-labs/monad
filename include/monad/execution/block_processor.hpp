@@ -81,6 +81,7 @@ struct BlockProcessor
         LOG_DEBUG("BlockHeader Fields: {}", block.header);
 
         BlockState block_state{};
+        uint64_t cumulative_gas_used = 0;
 
         if constexpr (Traits::rev == EVMC_HOMESTEAD) {
             if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {
@@ -115,11 +116,16 @@ struct BlockProcessor
             merge(block_state.state, state.state_);
             merge(block_state.code, state.code_);
 
+            cumulative_gas_used += receipt.gas_used;
             receipts.push_back(receipt);
         }
 
         if (compute_bloom(receipts) != block.header.logs_bloom) {
             return tl::unexpected(ValidationStatus::WRONG_LOGS_BLOOM);
+        }
+
+        if (cumulative_gas_used != block.header.gas_used) {
+            return tl::unexpected(ValidationStatus::INVALID_GAS_USED);
         }
 
         State state{block_state, db};

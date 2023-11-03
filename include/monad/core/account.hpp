@@ -18,7 +18,7 @@ struct Account
     uint64_t nonce{0};
     uint64_t incarnation{0};
 
-    friend bool operator==(Account const &lhs, Account const &rhs) = default;
+    friend bool operator==(Account const &, Account const &) = default;
 };
 
 static_assert(sizeof(Account) == 80);

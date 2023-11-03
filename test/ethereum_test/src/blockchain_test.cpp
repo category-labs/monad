@@ -172,7 +172,17 @@ void BlockchainTest::TestBody()
             auto const rlp = j_block.at("rlp").get<byte_string>();
             auto const rest = rlp::decode_block(block, rlp);
             EXPECT_TRUE(rest.empty()) << name;
-            MONAD_ASSERT(block.header.number);
+            if (block.header.number == 0) {
+                EXPECT_TRUE(j_block.contains("expectException"));
+                continue;
+            }
+            if (j_block.contains("blocknumber") &&
+                block.header.number !=
+                    std::stoull(j_block.at("blocknumber").get<std::string>())) {
+                EXPECT_TRUE(j_block.contains("expectException"));
+                continue;
+            }
+
             block_hash_buffer.set(
                 block.header.number - 1, block.header.parent_hash);
 

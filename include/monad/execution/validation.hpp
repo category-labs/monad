@@ -132,12 +132,6 @@ constexpr ValidationStatus static_validate_header(BlockHeader const &header)
         return ValidationStatus::EXTRA_DATA_TOO_LONG;
     }
 
-    if constexpr (Traits::rev >= EVMC_PARIS) {
-        if (MONAD_UNLIKELY(header.ommers_hash != NULL_LIST_HASH)) {
-            return ValidationStatus::WRONG_OMMERS_HASH;
-        }
-    }
-
     // TODO: Does DAO necessarily need to be in homestead
     if constexpr (Traits::rev == EVMC_HOMESTEAD) {
         if (MONAD_UNLIKELY(
@@ -185,13 +179,17 @@ constexpr ValidationStatus static_validate_header(BlockHeader const &header)
 template <class Traits>
 constexpr ValidationStatus static_validate_ommers(Block const &block)
 {
+    if (MONAD_UNLIKELY(
+            block.ommers.empty() &&
+            block.header.ommers_hash != NULL_LIST_HASH)) {
+        return ValidationStatus::WRONG_OMMERS_HASH;
+    }
+
     if constexpr (Traits::rev >= EVMC_PARIS) {
         if (MONAD_UNLIKELY(!block.ommers.empty())) {
             return ValidationStatus::TOO_MANY_OMMERS;
         }
-        else {
-            return ValidationStatus::SUCCESS;
-        }
+        return ValidationStatus::SUCCESS;
     }
 
     if (MONAD_UNLIKELY(block.ommers.size() > 2)) {

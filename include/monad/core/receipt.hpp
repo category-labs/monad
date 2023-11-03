@@ -33,10 +33,10 @@ struct Receipt
     TransactionType type{};
     std::vector<Log> logs{};
 
-    void add_log(Receipt::Log const &l);
+    void add_log(Receipt::Log const &);
 };
 
-void populate_bloom(Receipt::Bloom &b, Receipt::Log const &l);
+void populate_bloom(Receipt::Bloom &, Receipt::Log const &);
 
 static_assert(sizeof(Receipt::Log) == 80);
 static_assert(alignof(Receipt::Log) == 8);

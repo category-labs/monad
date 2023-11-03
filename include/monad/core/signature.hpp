@@ -13,12 +13,12 @@ struct SignatureAndChain
     std::optional<uint256_t> chain_id{};
     bool odd_y_parity{};
 
-    void from_v(uint256_t const &v);
+    void from_v(uint256_t const &);
 };
 
 static_assert(sizeof(SignatureAndChain) == 112);
 static_assert(alignof(SignatureAndChain) == 8);
 
-uint256_t get_v(SignatureAndChain const &sc) noexcept;
+uint256_t get_v(SignatureAndChain const &) noexcept;
 
 MONAD_NAMESPACE_END

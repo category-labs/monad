@@ -1,13 +1,19 @@
-#include <monad/rlp/decode_helpers.hpp>
-#include <monad/rlp/encode_helpers.hpp>
-
+#include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/transaction.hpp>
+#include <monad/rlp/decode_helpers.hpp>
+#include <monad/rlp/encode.hpp>
+#include <monad/rlp/encode_helpers.hpp>
+
+#include <evmc/evmc.hpp>
+
+#include <intx/intx.hpp>
 
 #include <gtest/gtest.h>
-#include <intx/intx.hpp>
+
+#include <cstdint>
 
 using namespace monad;
 using namespace monad::rlp;
@@ -167,7 +173,7 @@ TEST(Rlp, DecodeEncodeBigNumers)
 TEST(Rlp, DecodeEncodeAccessList)
 {
     // Empty List
-    monad::Transaction::AccessList a{};
+    monad::Transaction::AccessList const a{};
     auto encoding = encode_access_list(a);
     auto const empty_access_list = monad::byte_string({0xc0});
     EXPECT_EQ(encoding, empty_access_list);
@@ -196,7 +202,7 @@ TEST(Rlp, DecodeEncodeAccessList)
         0x0000000000000000000000000000000000000000000000000000000000000007_bytes32};
     static constexpr auto key2{
         0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
-    static const monad::Transaction::AccessList list{
+    static monad::Transaction::AccessList const list{
         Transaction::AccessEntry{access_addr, {key1, key2}}};
     auto const eip2930_example = monad::byte_string(
         {0xf8, 0x5b, 0xf8, 0x59, 0x94, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0,

@@ -1,20 +1,21 @@
-#include <monad/config.hpp>
-
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/block.hpp>
-#include <monad/core/transaction.hpp>
-
+#include <monad/core/int.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
-
 #include <monad/execution/block_reward.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
-
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/state2/state_deltas.hpp>
 
+#include <evmc/evmc.hpp>
+
+#include <intx/intx.hpp>
+
 #include <gtest/gtest.h>
+
+#include <optional>
 
 using namespace monad;
 
@@ -38,7 +39,7 @@ TEST(BlockReward, apply_block_reward)
 
         EXPECT_TRUE(as.account_exists(a));
 
-        Block block{
+        Block const block{
             .header = {.number = 10, .beneficiary = a},
             .transactions = {},
             .ommers = {
@@ -74,7 +75,7 @@ TEST(BlockReward, apply_block_reward)
         EXPECT_FALSE(as.account_exists(a));
 
         // block award
-        Block block{
+        Block const block{
             .header = {.number = 10, .beneficiary = a},
             .transactions = {},
             .ommers = {
@@ -105,7 +106,7 @@ TEST(BlockReward, apply_block_reward)
         BlockState bs;
         State s{bs, db};
 
-        Block block{
+        Block const block{
             .header = {.number = 10, .beneficiary = a},
             .transactions = {},
             .ommers = {

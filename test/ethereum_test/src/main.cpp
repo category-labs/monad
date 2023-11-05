@@ -1,12 +1,20 @@
 #include <blockchain_test.hpp>
+#include <ethereum_test.hpp>
 #include <general_state_test.hpp>
-#include <test_resource_data.h>
+
+#include <evmc/evmc.h>
 
 #include <CLI/CLI.hpp>
-#include <evmc/evmc.hpp>
-#include <gtest/gtest.h>
-#include <quill/Quill.h>
 
+#include <quill/LogLevel.h>
+#include <quill/Quill.h>
+#include <quill/detail/LogMacros.h>
+
+#include <gtest/gtest.h>
+
+#include <cstddef>
+#include <optional>
+#include <string>
 #include <unordered_map>
 
 namespace

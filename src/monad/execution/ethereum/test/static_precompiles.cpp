@@ -1,15 +1,18 @@
 #include <monad/core/address.hpp>
-
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/precompiles.hpp>
 
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
 #include <evmc/hex.hpp>
-
-#include <ethash/keccak.hpp>
 
 #include <gtest/gtest.h>
 
-#include <iomanip>
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
+#include <string_view>
+#include <vector>
 
 using namespace monad;
 
@@ -314,7 +317,7 @@ void do_geth_tests(
             evmc::from_hex(std::string_view{test_case.expected}).value();
 
         auto test_with_gas_offset = [&](int64_t gas_offset) {
-            evmc_message input = {
+            evmc_message const input = {
                 .gas = test_case.gas + gas_offset,
                 .input_data = input_bytes.data(),
                 .input_size = input_bytes.size(),

@@ -1,25 +1,22 @@
-#include <monad/config.hpp>
-
+#include <monad/core/account.hpp>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
-
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/tx_context.hpp>
-
 #include <monad/state2/block_state.hpp>
-#include <monad/state2/block_state_ops.hpp>
 #include <monad/state2/state.hpp>
+#include <monad/state2/state_deltas.hpp>
 
+#include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
 
-#include <test_resource_data.h>
-
-#include <iostream>
-#include <unordered_map>
+#include <optional>
 
 using namespace monad;
 
@@ -66,7 +63,7 @@ TEST(EvmInterpStateHost, return_existing_storage)
                  .account = {std::nullopt, Account{.balance = 10'000'000}}}}},
         Code{{code_hash, code}});
 
-    evmc_message m{
+    evmc_message const m{
         .kind = EVMC_CALL,
         .gas = 10'000,
         .recipient = to,
@@ -81,8 +78,8 @@ TEST(EvmInterpStateHost, return_existing_storage)
     s.access_account(to);
     s.access_account(from);
 
-    Evm<fork_t> e{};
-    BlockHashBuffer block_hash_buffer;
+    Evm<fork_t> const e{};
+    BlockHashBuffer const block_hash_buffer;
     EvmcHost<fork_t> h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     auto status = e.call_evm(&h, s, m);
@@ -127,7 +124,7 @@ TEST(EvmInterpStateHost, store_then_return_storage)
                  .account = {std::nullopt, Account{.balance = 10'000'000}}}}},
         Code{{code_hash, code}});
 
-    evmc_message m{
+    evmc_message const m{
         .kind = EVMC_CALL,
         .gas = 20'225,
         .recipient = to,
@@ -142,8 +139,8 @@ TEST(EvmInterpStateHost, store_then_return_storage)
     s.access_account(to);
     s.access_account(from);
 
-    Evm<fork_t> e{};
-    BlockHashBuffer block_hash_buffer;
+    Evm<fork_t> const e{};
+    BlockHashBuffer const block_hash_buffer;
     EvmcHost<fork_t> h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     auto status = e.call_evm(&h, s, m);

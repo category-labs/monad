@@ -1,3 +1,5 @@
+#include <monad/config.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 
 MONAD_NAMESPACE_BEGIN

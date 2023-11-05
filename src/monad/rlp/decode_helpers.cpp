@@ -1,8 +1,22 @@
-#include <monad/rlp/decode_helpers.hpp>
-
 #include <monad/core/account.hpp>
-#include <monad/core/address.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/block.hpp>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/core/int.hpp>
+#include <monad/core/receipt.hpp>
+#include <monad/core/signature.hpp>
+#include <monad/core/transaction.hpp>
+#include <monad/core/withdrawal.hpp>
+#include <monad/rlp/config.hpp>
+#include <monad/rlp/decode.hpp>
+#include <monad/rlp/decode_helpers.hpp>
+#include <monad/rlp/util.hpp>
+
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <vector>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
@@ -315,8 +329,9 @@ byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
 byte_string_view
 decode_withdrawal(Withdrawal &withdrawal, byte_string_view const enc)
 {
-    if (enc.size() == 0)
+    if (enc.size() == 0) {
         return {};
+    }
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
 

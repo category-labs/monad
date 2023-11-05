@@ -1,8 +1,10 @@
-#include <gtest/gtest.h>
-
+#include <monad/core/byte_string.hpp>
 #include <monad/test/make_nibbles.hpp>
 #include <monad/trie/key_buffer.hpp>
 #include <monad/trie/nibbles.hpp>
+#include <monad/trie/nibbles_view.hpp>
+
+#include <gtest/gtest.h>
 
 using namespace monad;
 using namespace monad::trie;

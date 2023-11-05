@@ -1,12 +1,15 @@
-#include <monad/db/file_db.hpp>
-
+#include <monad/config.hpp>
 #include <monad/core/assert.h>
+#include <monad/db/file_db.hpp>
 
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <optional>
 #include <sstream>
+#include <string>
+#include <string_view>
 #include <thread>
 
 MONAD_NAMESPACE_BEGIN
@@ -16,7 +19,7 @@ class FileDb::Impl
     std::filesystem::path const dir_;
 
 public:
-    Impl(char const *const dir)
+    explicit Impl(char const *const dir)
         : dir_{dir}
     {
         std::filesystem::create_directories(dir_);
@@ -67,7 +70,7 @@ FileDb::FileDb(char const *const dir)
 {
 }
 
-FileDb::~FileDb() {}
+FileDb::~FileDb() = default;
 
 std::optional<std::string> FileDb::get(char const *const key) const
 {

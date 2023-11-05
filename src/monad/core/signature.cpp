@@ -1,3 +1,5 @@
+#include <monad/config.hpp>
+#include <monad/core/int.hpp>
 #include <monad/core/signature.hpp>
 
 MONAD_NAMESPACE_BEGIN

@@ -1,10 +1,29 @@
 #include <monad/analysis/analysis.hpp>
+#include <monad/analysis/config.hpp>
 #include <monad/core/assert.h>
-
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/core/likely.h>
 #include <monad/core/variant.hpp>
 
+#include <evmone/instructions_opcodes.hpp>
+#include <evmone/instructions_traits.hpp>
+
+#include <boost/graph/detail/adjacency_list.hpp>
+
+#include <algorithm>
+#include <bit>
+#include <cstddef>
+#include <cstdint>
 #include <deque>
+#include <format>
+#include <optional>
+#include <stdexcept>
+#include <type_traits>
 #include <unordered_set>
+#include <utility>
+#include <variant>
+#include <vector>
 
 MONAD_ANALYSIS_NAMESPACE_BEGIN
 

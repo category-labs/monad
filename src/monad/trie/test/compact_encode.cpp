@@ -1,6 +1,6 @@
+#include <monad/core/byte_string.hpp>
 #include <monad/test/make_nibbles.hpp>
 #include <monad/trie/compact_encode.hpp>
-#include <monad/trie/config.hpp>
 #include <monad/trie/nibbles.hpp>
 
 #include <gtest/gtest.h>

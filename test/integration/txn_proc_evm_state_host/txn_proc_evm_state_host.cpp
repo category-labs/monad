@@ -1,7 +1,10 @@
+#include <monad/core/account.hpp>
+#include <monad/core/block.hpp>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
-
 #include <monad/db/in_memory_trie_db.hpp>
-
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_reward.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
@@ -9,18 +12,17 @@
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/transaction_processor.hpp>
 #include <monad/execution/tx_context.hpp>
-
+#include <monad/execution/validation.hpp>
+#include <monad/execution/validation_status.hpp>
 #include <monad/state2/block_state.hpp>
-#include <monad/state2/block_state_ops.hpp>
 #include <monad/state2/state.hpp>
+#include <monad/state2/state_deltas.hpp>
 
 #include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
 
-#include <test_resource_data.h>
-
-#include <unordered_map>
+#include <optional>
 
 using namespace monad;
 
@@ -60,9 +62,9 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     using traits_t = monad::fork_traits::byzantium;
     using tp_t = TransactionProcessor<traits_t>;
 
-    tp_t tp{};
+    tp_t const tp{};
     auto const tx_context = get_tx_context<traits_t>(t, bh);
-    BlockHashBuffer block_hash_buffer;
+    BlockHashBuffer const block_hash_buffer;
     EvmcHost<traits_t> h{tx_context, block_hash_buffer, s};
 
     EXPECT_EQ(
@@ -113,11 +115,11 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
                           .balance = 9'000'000'000'000'000'000, .nonce = 3}}}}},
         Code{});
 
-    byte_string code = {0x60, 0x60, 0x60, 0x40, 0x52, 0x60, 0x00, 0x80, 0x54,
-                        0x60, 0x01, 0x60, 0xa0, 0x60, 0x02, 0x0a, 0x03, 0x19,
-                        0x16, 0x33, 0x17, 0x90, 0x55, 0x60, 0x06, 0x80, 0x60,
-                        0x23, 0x60, 0x00, 0x39, 0x60, 0x00, 0xf3, 0x00, 0x60,
-                        0x60, 0x60, 0x40, 0x52, 0x00};
+    byte_string const code = {
+        0x60, 0x60, 0x60, 0x40, 0x52, 0x60, 0x00, 0x80, 0x54, 0x60, 0x01,
+        0x60, 0xa0, 0x60, 0x02, 0x0a, 0x03, 0x19, 0x16, 0x33, 0x17, 0x90,
+        0x55, 0x60, 0x06, 0x80, 0x60, 0x23, 0x60, 0x00, 0x39, 0x60, 0x00,
+        0xf3, 0x00, 0x60, 0x60, 0x60, 0x40, 0x52, 0x00};
     BlockHeader const bh{.number = 2, .beneficiary = a};
     Transaction const t{
         .nonce = 3,
@@ -132,9 +134,9 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     using traits_t = monad::fork_traits::frontier;
     using tp_t = TransactionProcessor<traits_t>;
 
-    tp_t tp{};
+    tp_t const tp{};
     auto const tx_context = get_tx_context<traits_t>(t, bh);
-    BlockHashBuffer block_hash_buffer;
+    BlockHashBuffer const block_hash_buffer;
     EvmcHost<traits_t> h{tx_context, block_hash_buffer, s};
 
     EXPECT_EQ(
@@ -185,7 +187,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
                           .balance = 4'942'119'596'324'559'240, .nonce = 2}}}}},
         Code{});
 
-    byte_string code = {0xde, 0xad, 0xbe, 0xef};
+    byte_string const code = {0xde, 0xad, 0xbe, 0xef};
     BlockHeader const bh{.number = 48'512, .beneficiary = a};
     Transaction const t{
         .nonce = 2,
@@ -200,9 +202,9 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     using traits_t = monad::fork_traits::frontier;
     using tp_t = TransactionProcessor<traits_t>;
 
-    tp_t tp{};
+    tp_t const tp{};
     auto const tx_context = get_tx_context<traits_t>(t, bh);
-    BlockHashBuffer block_hash_buffer;
+    BlockHashBuffer const block_hash_buffer;
     EvmcHost<traits_t> h{tx_context, block_hash_buffer, s};
 
     EXPECT_EQ(

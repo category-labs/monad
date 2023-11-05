@@ -1,13 +1,18 @@
+#include <monad/core/byte_string.hpp>
+#include <monad/core/transaction.hpp>
 #include <monad/db/block_db.hpp>
-
-#include <monad/rlp/decode.hpp>
 #include <monad/rlp/decode_helpers.hpp>
+
+#include <evmc/evmc.hpp>
+
+#include <intx/intx.hpp>
 
 #include <gtest/gtest.h>
 
-#include <filesystem>
-
 #include <test_resource_data.h>
+
+#include <cstdint>
+#include <optional>
 
 using namespace monad;
 using namespace intx;
@@ -16,7 +21,7 @@ TEST(Rlp_Block, DecodeBlock46402)
 {
 
     Block block{};
-    BlockDb block_db(test_resource::correct_block_data_dir);
+    BlockDb const block_db(test_resource::correct_block_data_dir);
     bool const res = block_db.get(46'402, block);
     ASSERT_TRUE(res);
 
@@ -104,7 +109,7 @@ TEST(Rlp_Block, DecodeBlock2730000)
 {
 
     Block block{};
-    BlockDb block_db(test_resource::correct_block_data_dir);
+    BlockDb const block_db(test_resource::correct_block_data_dir);
     bool const res = block_db.get(2'730'000, block);
     ASSERT_TRUE(res);
 
@@ -255,7 +260,7 @@ TEST(Rlp_Block, DecodeBlock2730001)
 {
 
     Block block{};
-    BlockDb block_db(test_resource::correct_block_data_dir);
+    BlockDb const block_db(test_resource::correct_block_data_dir);
     bool const res = block_db.get(2'730'001, block);
     ASSERT_TRUE(res);
 
@@ -434,7 +439,7 @@ TEST(Rlp_Block, DecodeBlock2730002)
     using namespace intx;
 
     Block block{};
-    BlockDb block_db(test_resource::correct_block_data_dir);
+    BlockDb const block_db(test_resource::correct_block_data_dir);
     bool const res = block_db.get(2'730'002, block);
     ASSERT_TRUE(res);
 
@@ -497,7 +502,7 @@ TEST(Rlp_Block, ReadBlock2730009)
 {
 
     Block block{};
-    BlockDb block_db(test_resource::correct_block_data_dir);
+    BlockDb const block_db(test_resource::correct_block_data_dir);
     bool const res = block_db.get(2730009, block);
     ASSERT_TRUE(res);
 
@@ -545,7 +550,7 @@ TEST(Rlp_Block, DecodeBlock14000000)
 {
 
     Block block{};
-    BlockDb block_db(test_resource::correct_block_data_dir);
+    BlockDb const block_db(test_resource::correct_block_data_dir);
     bool const res = block_db.get(14'000'000, block);
     ASSERT_TRUE(res);
 

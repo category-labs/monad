@@ -1,11 +1,13 @@
-#include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
-
 #include <monad/execution/create_contract_address.hpp>
+
+#include <evmc/evmc.hpp>
 
 #include <ethash/keccak.hpp>
 
 #include <gtest/gtest.h>
+
+#include <cstdint>
 
 using namespace monad;
 

@@ -1,6 +1,6 @@
-#include <gtest/gtest.h>
 #include <monad/core/signature.hpp>
-#include <monad/rlp/encode_helpers.hpp>
+
+#include <gtest/gtest.h>
 
 using namespace monad;
 

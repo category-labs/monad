@@ -1,10 +1,15 @@
-#include <monad/rlp/decode.hpp>
-
+#include <monad/core/byte_string.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/rlp/decode_helpers.hpp>
 #include <monad/rlp/encode_helpers.hpp>
 
+#include <evmc/evmc.hpp>
+
+#include <intx/intx.hpp>
+
 #include <gtest/gtest.h>
+
+#include <cstddef>
 
 using namespace monad;
 using namespace monad::rlp;
@@ -24,14 +29,14 @@ TEST(Rlp_Transaction, DecodeEncodeLegacy)
     static constexpr auto s{
         0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83_u256};
 
-    const monad::Transaction t{
+    monad::Transaction const t{
         .sc = {.r = r, .s = s}, // no chain_id in legacy transactions
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
         .value = value,
         .to = to_addr};
-    const monad::byte_string legacy_transaction{
+    monad::byte_string const legacy_transaction{
         0xf8, 0x6c, 0x09, 0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00, 0x82, 0x52,
         0x08, 0x94, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35,
         0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35,
@@ -71,7 +76,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacyNoTo)
     static constexpr auto s{
         0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83_u256};
 
-    const monad::Transaction t{
+    monad::Transaction const t{
         .sc = {.r = r, .s = s}, // no chain_id in legacy transactions
         .nonce = 9,
         .max_fee_per_gas = price,
@@ -106,14 +111,14 @@ TEST(Rlp_Transaction, EncodeEip155)
     static constexpr auto s{
         0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83_u256};
 
-    const monad::Transaction t{
+    monad::Transaction const t{
         .sc = {.r = r, .s = s, .chain_id = 5}, // Goerli
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
         .value = value,
         .to = to_addr};
-    const monad::byte_string eip155_transaction{
+    monad::byte_string const eip155_transaction{
         0xf8, 0x6c, 0x09, 0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00, 0x82, 0x52,
         0x08, 0x94, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35,
         0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35,
@@ -160,10 +165,10 @@ TEST(Rlp_Transaction, EncodeEip2930)
         0x0000000000000000000000000000000000000000000000000000000000000007_bytes32};
     static constexpr auto key2{
         0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
-    static const monad::Transaction::AccessList a{
+    static monad::Transaction::AccessList const a{
         Transaction::AccessEntry{access_addr, {key1, key2}}};
 
-    const monad::Transaction t{
+    monad::Transaction const t{
         .sc = {.r = r, .s = s, .chain_id = 3}, // Ropsten
         .nonce = 9,
         .max_fee_per_gas = price,
@@ -172,7 +177,7 @@ TEST(Rlp_Transaction, EncodeEip2930)
         .to = to_addr,
         .type = monad::TransactionType::eip2930,
         .access_list = a};
-    const monad::byte_string eip2930_transaction{
+    monad::byte_string const eip2930_transaction{
         0xb8, 0xcd, 0x01, 0xf8, 0xca, 0x03, 0x09, 0x85, 0x04, 0xa8, 0x17, 0xc8,
         0x00, 0x82, 0x52, 0x08, 0x94, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35,
         0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35,
@@ -235,9 +240,9 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
         0x28ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276_u256};
     static constexpr auto s{
         0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83_u256};
-    static const monad::Transaction::AccessList a{};
+    static monad::Transaction::AccessList const a{};
 
-    const monad::Transaction t{
+    monad::Transaction const t{
         .sc =
             {.r = r, .s = s, .chain_id = 137, .odd_y_parity = true}, // Polygon
         .nonce = 9,
@@ -248,7 +253,7 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
         .type = monad::TransactionType::eip1559,
         .access_list = a,
         .max_priority_fee_per_gas = tip};
-    const monad::byte_string eip1559_transaction{
+    monad::byte_string const eip1559_transaction{
         0xb8, 0x77, 0x02, 0xf8, 0x74, 0x81, 0x89, 0x09, 0x84, 0xee, 0x6b, 0x28,
         0x00, 0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00, 0x82, 0x52, 0x08, 0x94, 0x35,
         0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35,
@@ -303,9 +308,9 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
         0x28ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276_u256};
     static constexpr auto s{
         0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83_u256};
-    static const monad::Transaction::AccessList a{};
+    static monad::Transaction::AccessList const a{};
 
-    const monad::Transaction t{
+    monad::Transaction const t{
         .sc =
             {.r = r, .s = s, .chain_id = 137, .odd_y_parity = false}, // Polygon
         .nonce = 9,
@@ -316,7 +321,7 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
         .type = monad::TransactionType::eip1559,
         .access_list = a,
         .max_priority_fee_per_gas = tip};
-    const monad::byte_string eip1559_transaction{
+    monad::byte_string const eip1559_transaction{
         0xb8, 0x77, 0x02, 0xf8, 0x74, 0x81, 0x89, 0x09, 0x84, 0xee, 0x6b, 0x28,
         0x00, 0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00, 0x82, 0x52, 0x08, 0x94, 0x35,
         0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35,

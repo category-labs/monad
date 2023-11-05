@@ -1,9 +1,15 @@
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/test/one_hundred_updates.hpp>
 #include <monad/test/trie_fixture.hpp>
 #include <monad/trie/in_memory_comparator.hpp>
-#include <monad/trie/trie.hpp>
+#include <monad/trie/rocks_comparator.hpp>
+
+#include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
+
+#include <vector>
 
 using namespace monad;
 using namespace monad::trie;
@@ -67,7 +73,7 @@ TYPED_TEST(BasicTrieTest, MultipleTrie)
     // Remove from second trie
     this->trie_.set_trie_prefix(
         0xc9ea7ed000000000000000000000000000000002_address);
-    std::vector updates = {
+    std::vector const updates = {
         test::make_del(
             0x011b4d03dd8c01f1049143cf9c4c817e4b167f1d1b83e5c6f0f10d89ba1e7bce_bytes32),
         test::make_del(

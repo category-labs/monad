@@ -1,12 +1,12 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-
 #include <monad/db/assert.h>
 #include <monad/db/config.hpp>
 #include <monad/db/rocks_db_helper.hpp>
 #include <monad/db/util.hpp>
 
 #include <rocksdb/db.h>
+#include <rocksdb/slice.h>
 
 #include <memory>
 

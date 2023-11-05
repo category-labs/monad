@@ -1,19 +1,49 @@
+#include <ethereum_test.hpp>
 #include <from_json.hpp>
 #include <general_state_test.hpp>
 #include <general_state_test_types.hpp>
 
+#include <monad/core/address.hpp>
+#include <monad/core/assert.h>
+#include <monad/core/block.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/core/int.hpp>
+#include <monad/core/receipt.hpp>
+#include <monad/core/signature.hpp>
+#include <monad/core/transaction.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_processor.hpp>
 #include <monad/execution/tx_context.hpp>
+#include <monad/execution/validation.hpp>
+#include <monad/execution/validation_status.hpp>
+#include <monad/state2/block_state.hpp>
+#include <monad/state2/state.hpp>
 #include <monad/test/config.hpp>
 #include <monad/test/dump_state_from_db.hpp>
 
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+
+#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
+
+#include <quill/bundled/fmt/core.h>
+#include <quill/detail/LogMacros.h>
+
+#include <tl/expected.hpp>
+
 #include <test_resource_data.h>
 
-#include <evmc/evmc.hpp>
-#include <nlohmann/json.hpp>
-#include <tl/expected.hpp>
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <optional>
+#include <stdexcept>
+#include <utility>
 
 using namespace monad;
 
@@ -75,7 +105,7 @@ namespace
         block_hash_buffer.set(
             block_header.number - 1, block_header.parent_hash);
         EvmcHost<Traits> host{tx_context, block_hash_buffer, state};
-        TransactionProcessor<Traits> processor;
+        TransactionProcessor<Traits> const processor;
 
         return processor.execute(
             state,

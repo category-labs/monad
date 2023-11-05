@@ -2,29 +2,52 @@
 #include <ethereum_test.hpp>
 #include <from_json.hpp>
 
+#include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
-
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/core/int.hpp>
+#include <monad/core/receipt.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_processor.hpp>
+#include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/validation.hpp>
-
+#include <monad/execution/validation_status.hpp>
 #include <monad/rlp/decode_helpers.hpp>
-
+#include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
-
 #include <monad/test/config.hpp>
 #include <monad/test/dump_state_from_db.hpp>
 
-#include <test_resource_data.h>
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
 
 #include <ethash/keccak.hpp>
-#include <evmc/evmc.hpp>
-#include <gtest/gtest.h>
+
 #include <nlohmann/json.hpp>
-#include <quill/Quill.h>
+#include <nlohmann/json_fwd.hpp>
+
+#include <tl/expected.hpp>
+
+#include <quill/bundled/fmt/core.h>
+#include <quill/bundled/fmt/format.h>
+#include <quill/detail/LogMacros.h>
+
+#include <gtest/gtest.h>
+
+#include <test_resource_data.h>
 
 #include <algorithm>
+#include <bit>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <optional>
+#include <span>
+#include <string>
+#include <utility>
+#include <vector>
 
 MONAD_TEST_NAMESPACE_BEGIN
 

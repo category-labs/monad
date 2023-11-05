@@ -1,14 +1,25 @@
+#include <monad/core/byte_string.hpp>
+#include <monad/core/variant.hpp>
 #include <monad/test/make_nibbles.hpp>
 #include <monad/test/one_hundred_updates.hpp>
 #include <monad/test/trie_fixture.hpp>
+#include <monad/trie/in_memory_comparator.hpp>
+#include <monad/trie/nibbles.hpp>
+#include <monad/trie/node.hpp>
+#include <monad/trie/rocks_comparator.hpp>
+#include <monad/trie/update.hpp>
+
+#include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
 
-#include <monad/trie/in_memory_comparator.hpp>
-#include <monad/trie/rocks_comparator.hpp>
-#include <monad/trie/trie.hpp>
-
+#include <algorithm>
+#include <cstddef>
+#include <iterator>
+#include <list>
+#include <optional>
 #include <random>
+#include <vector>
 
 using namespace monad;
 using namespace monad::trie;
@@ -154,7 +165,7 @@ TYPED_TEST(BasicTrieTest, OneElement)
 
 TYPED_TEST(BasicTrieTest, Simple)
 {
-    std::vector updates = {
+    std::vector const updates = {
         test::make_upsert(
             0x1234567812345678123456781234567812345678123456781234567812345678_bytes32,
             byte_string({0xde, 0xad, 0xbe, 0xef})),
@@ -177,7 +188,7 @@ TYPED_TEST(BasicTrieTest, Simple)
 
 TYPED_TEST(BasicTrieTest, UnrelatedLeaves)
 {
-    std::vector updates = {
+    std::vector const updates = {
         test::make_upsert(
             0x0234567812345678123456781234567812345678123456781234567812345678_bytes32,
             byte_string({0xde, 0xad, 0xbe, 0xef})),
@@ -410,7 +421,7 @@ TYPED_TEST(BasicTrieTest, HardOnlyUpserts)
         auto end = std::distance(it, hard_updates.end()) < 19
                        ? hard_updates.end()
                        : std::next(it, 19);
-        updates.push_back({it, end});
+        updates.emplace_back(it, end);
         it = end;
     }
 
@@ -434,7 +445,7 @@ TYPED_TEST(BasicTrieTest, HardWithRemoval)
         this->trie_.root_hash(),
         0xcbb6d81afdc76fec144f6a1a283205d42c03c102a94fc210b3a1bcfdcb625884_bytes32);
 
-    std::vector updates = {
+    std::vector const updates = {
         test::make_del(
             0x011b4d03dd8c01f1049143cf9c4c817e4b167f1d1b83e5c6f0f10d89ba1e7bce_bytes32),
         test::make_del(

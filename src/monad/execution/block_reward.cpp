@@ -1,13 +1,13 @@
+#include <monad/config.hpp>
+#include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
-
 #include <monad/db/db.hpp>
-
 #include <monad/execution/block_reward.hpp>
-
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
+#include <monad/state2/state_deltas.hpp>
 
 MONAD_NAMESPACE_BEGIN
 

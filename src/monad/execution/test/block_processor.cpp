@@ -1,13 +1,22 @@
+#include <monad/core/account.hpp>
+#include <monad/core/int.hpp>
+#include <monad/core/withdrawal.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
-
 #include <monad/execution/block_processor.hpp>
-#include <monad/execution/execution_model.hpp>
-
+#include <monad/execution/ethereum/dao.hpp>
+#include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
-
+#include <monad/state2/state_deltas.hpp>
 #include <monad/test/make_db.hpp>
 
+#include <evmc/evmc.hpp>
+
+#include <intx/intx.hpp>
+
 #include <gtest/gtest.h>
+
+#include <optional>
+#include <vector>
 
 using namespace monad;
 
@@ -21,11 +30,11 @@ TEST(BlockProcessor, shanghai_withdrawal)
         0xbebebebebebebebebebebebebebebebebebebebe_address;
 
     std::optional<std::vector<Withdrawal>> withdrawals{};
-    Withdrawal w1 = {
+    Withdrawal const w1 = {
         .index = 0, .validator_index = 0, .amount = 100u, .recipient = a};
-    Withdrawal w2 = {
+    Withdrawal const w2 = {
         .index = 1, .validator_index = 0, .amount = 300u, .recipient = a};
-    Withdrawal w3 = {
+    Withdrawal const w3 = {
         .index = 2, .validator_index = 0, .amount = 200u, .recipient = b};
     withdrawals = {w1, w2, w3};
 

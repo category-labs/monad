@@ -1,12 +1,23 @@
+#include <monad/config.hpp>
+#include <monad/core/address.hpp>
+#include <monad/core/byte_string.hpp>
 #include <monad/core/transaction.hpp>
-
 #include <monad/rlp/encode_helpers.hpp>
-
-#include <ethash/keccak.hpp>
 
 #include <silkpre/ecdsa.h>
 
+#include <evmc/evmc.hpp>
+
+#include <ethash/hash_types.hpp>
+#include <ethash/keccak.hpp>
+
+#include <intx/intx.hpp>
+
+#include <secp256k1.h>
+
+#include <cstdint>
 #include <memory>
+#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -25,11 +36,12 @@ std::optional<address_t> recover_sender(Transaction const &t)
     intx::be::unsafe::store(signature + sizeof(t.sc.r), t.sc.s);
 
     std::optional<address_t> res = evmc::address{};
-    static std::
-        unique_ptr<secp256k1_context, decltype(&secp256k1_context_destroy)>
-            context(
-                secp256k1_context_create(SILKPRE_SECP256K1_CONTEXT_FLAGS),
-                &secp256k1_context_destroy);
+    static std::unique_ptr<
+        secp256k1_context,
+        decltype(&secp256k1_context_destroy)> const
+        context(
+            secp256k1_context_create(SILKPRE_SECP256K1_CONTEXT_FLAGS),
+            &secp256k1_context_destroy);
     if (!silkpre_recover_address(
             res->bytes,
             txn_encoding_hash.bytes,

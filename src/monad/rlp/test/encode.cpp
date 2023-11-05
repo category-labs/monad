@@ -1,12 +1,11 @@
+#include <monad/core/byte_string.hpp>
 #include <monad/rlp/encode.hpp>
 #include <monad/rlp/util.hpp>
 
-#include <monad/core/byte_string.hpp>
-#include <monad/core/bytes.hpp>
-
-#include <intx/intx.hpp>
-
 #include <gtest/gtest.h>
+
+#include <array>
+#include <cstdint>
 
 using namespace monad;
 using namespace monad::rlp;

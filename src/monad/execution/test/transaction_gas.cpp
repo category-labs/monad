@@ -1,13 +1,14 @@
-#include <monad/config.hpp>
-
-#include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/int.hpp>
 #include <monad/core/transaction.hpp>
-
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/transaction_gas.hpp>
 
+#include <evmc/evmc.hpp>
+
 #include <gtest/gtest.h>
+
+#include <cstdint>
 
 using namespace monad;
 
@@ -93,7 +94,7 @@ TEST(TransactionGas, intrinsic_gas)
             data += {0xc0};
         }
 
-        Transaction t{.data = data};
+        Transaction const t{.data = data};
 
         EXPECT_EQ(
             intrinsic_gas<fork_traits::shanghai>(t),
@@ -121,19 +122,19 @@ TEST(TransactionGas, txn_award)
     // London
     {
         // gas price
-        Transaction t1{
+        Transaction const t1{
             .max_fee_per_gas = 3'000,
             .type = TransactionType::eip155,
             .max_priority_fee_per_gas = 1'000};
-        Transaction t2{
+        Transaction const t2{
             .max_fee_per_gas = 3'000, .type = TransactionType::eip155};
-        Transaction t3{
+        Transaction const t3{
             .max_fee_per_gas = 5'000,
             .type = TransactionType::eip1559,
             .max_priority_fee_per_gas = 1'000};
-        Transaction t4{
+        Transaction const t4{
             .max_fee_per_gas = 5'000, .type = TransactionType::eip1559};
-        Transaction t5{
+        Transaction const t5{
             .max_fee_per_gas = 5'000,
             .type = TransactionType::eip1559,
             .max_priority_fee_per_gas = 4'000};

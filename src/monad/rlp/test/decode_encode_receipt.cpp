@@ -1,8 +1,15 @@
+#include <monad/core/byte_string.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/core/transaction.hpp>
 #include <monad/rlp/decode_helpers.hpp>
 #include <monad/rlp/encode_helpers.hpp>
 
+#include <evmc/evmc.hpp>
+
 #include <gtest/gtest.h>
+
+#include <cstddef>
+#include <cstdint>
 
 using namespace monad;
 using namespace monad::rlp;
@@ -11,8 +18,8 @@ TEST(Rlp_Receipt, DecodeEncodeLog)
 {
     // Empty Log
     {
-        Receipt::Log empty_log{};
-        static const byte_string empty_rlp{0xd7, 0x94, 0x00, 0x00, 0x00, 0x00,
+        Receipt::Log const empty_log{};
+        static byte_string const empty_rlp{0xd7, 0x94, 0x00, 0x00, 0x00, 0x00,
                                            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                                            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                                            0x00, 0x00, 0x00, 0x00, 0xc0, 0x80};
@@ -28,11 +35,11 @@ TEST(Rlp_Receipt, DecodeEncodeLog)
             0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32};
         static constexpr auto topic2{
             0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
-        static const byte_string data{0x00, 0x01, 0x02, 0x03};
+        static byte_string const data{0x00, 0x01, 0x02, 0x03};
         Receipt::Log log{
             .data = data, .topics = {topic1, topic2}, .address = addr};
 
-        const byte_string rlp_log{
+        byte_string const rlp_log{
             0xf8, 0x5e, 0x94, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35,
             0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35,
             0x35, 0xf8, 0x42, 0xa0, 0xbe, 0xa3, 0x4d, 0xd0, 0x4b, 0x09, 0xad,
@@ -65,7 +72,7 @@ TEST(Rlp_Receipt, DecodeEncodeBloom)
     bloom[182] = 0x01;
     bloom[232] = 0x01;
     bloom[255] = 0x02;
-    const byte_string rlp_bloom{
+    byte_string const rlp_bloom{
         0xb9, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -109,7 +116,7 @@ TEST(Rlp_Receipt, DecodeEncodeEip155Receipt)
         0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32};
     static constexpr auto topic2{
         0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
-    static const byte_string data{0x00, 0x01, 0x02, 0x03};
+    static byte_string const data{0x00, 0x01, 0x02, 0x03};
     static Receipt::Bloom bloom{};
     bloom[78] = 0x01;
     bloom[182] = 0x01;
@@ -120,7 +127,7 @@ TEST(Rlp_Receipt, DecodeEncodeEip155Receipt)
         .gas_used = gas,
         .type = TransactionType::eip155,
         .logs = {log}};
-    const byte_string rlp_receipt{
+    byte_string const rlp_receipt{
         0xf9, 0x01, 0x6a, 0x80, 0x83, 0x2b, 0x7c, 0xda, // status and gas
 
         0xb9, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -190,7 +197,7 @@ TEST(Rlp_Receipt, EncodeEip1559Receipt)
         0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32};
     static constexpr auto topic2{
         0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
-    static const byte_string data{0x00, 0x01, 0x02, 0x03};
+    static byte_string const data{0x00, 0x01, 0x02, 0x03};
     static Receipt::Bloom bloom{};
     bloom[78] = 0x01;
     bloom[182] = 0x01;
@@ -201,7 +208,7 @@ TEST(Rlp_Receipt, EncodeEip1559Receipt)
         .gas_used = gas,
         .type = TransactionType::eip1559,
         .logs = {log}};
-    const byte_string rlp_receipt{
+    byte_string const rlp_receipt{
         0xb9, 0x01, 0x6e, 0x02, // type envelope
 
         0xf9, 0x01, 0x6a, 0x80, 0x83, 0x2b, 0x7c, 0xda, // status and gas
@@ -273,7 +280,7 @@ TEST(Rlp_Receipt, EncodeEip2930Receipt)
         0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32};
     static constexpr auto topic2{
         0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
-    static const byte_string data{0x00, 0x01, 0x02, 0x03};
+    static byte_string const data{0x00, 0x01, 0x02, 0x03};
     static Receipt::Bloom bloom{};
     bloom[78] = 0x01;
     bloom[182] = 0x01;
@@ -284,7 +291,7 @@ TEST(Rlp_Receipt, EncodeEip2930Receipt)
         .gas_used = gas,
         .type = TransactionType::eip2930,
         .logs = {log}};
-    const byte_string rlp_receipt{
+    byte_string const rlp_receipt{
         0xb9, 0x01, 0x6e, 0x01, // type envelope
 
         0xf9, 0x01, 0x6a, 0x80, 0x83, 0x2b, 0x7c, 0xda, // status and gas

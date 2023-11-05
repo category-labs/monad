@@ -2,6 +2,9 @@
 #include <monad/db/rocks_trie_db.hpp>
 #include <monad/test/config.hpp>
 
+#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
+
 MONAD_TEST_NAMESPACE_BEGIN
 
 namespace detail

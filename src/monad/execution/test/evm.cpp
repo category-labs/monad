@@ -1,19 +1,29 @@
-#include <monad/config.hpp>
-
+#include <monad/core/account.hpp>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/core/int.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
-
+#include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/tx_context.hpp>
-
+#include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
+#include <monad/state2/state_deltas.hpp>
 
+#include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
+
+#include <intx/intx.hpp>
 
 #include <gtest/gtest.h>
 
-#include <test_resource_data.h>
+#include <cstdint>
+#include <cstring>
+#include <limits>
+#include <optional>
+#include <utility>
 
 using namespace monad;
 
@@ -46,10 +56,10 @@ TEST(Evm, create_with_insufficient)
         .gas = 20'000,
         .sender = from,
     };
-    uint256_t v{70'000'000'000'000'000}; // too much
+    uint256_t const v{70'000'000'000'000'000}; // too much
     intx::be::store(m.value.bytes, v);
 
-    BlockHashBuffer block_hash_buffer;
+    BlockHashBuffer const block_hash_buffer;
     evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
     auto const result = evm_t::create_contract_account(&h, s, m);
 
@@ -86,10 +96,10 @@ TEST(Evm, eip684_existing_code)
         .gas = 20'000,
         .sender = from,
     };
-    uint256_t v{70'000'000};
+    uint256_t const v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
-    BlockHashBuffer block_hash_buffer;
+    BlockHashBuffer const block_hash_buffer;
     evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
     auto const result = evm_t::create_contract_account(&h, s, m);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
@@ -121,7 +131,7 @@ TEST(Evm, transfer_call_balances)
         .recipient = to,
         .sender = from,
     };
-    uint256_t v{7'000'000'000};
+    uint256_t const v{7'000'000'000};
     intx::be::store(m.value.bytes, v);
 
     auto const result = evm_t::transfer_call_balances(s, m);
@@ -155,7 +165,7 @@ TEST(Evm, transfer_call_balances_to_self)
         .recipient = to,
         .sender = from,
     };
-    uint256_t v{7'000'000'000};
+    uint256_t const v{7'000'000'000};
     intx::be::store(m.value.bytes, v);
 
     auto const result = evm_t::transfer_call_balances(s, m);
@@ -191,7 +201,7 @@ TEST(Evm, dont_transfer_on_delegatecall)
         .recipient = to,
         .sender = from,
     };
-    uint256_t v{7'000'000'000};
+    uint256_t const v{7'000'000'000};
     intx::be::store(m.value.bytes, v);
 
     auto const result = evm_t::transfer_call_balances(s, m);
@@ -229,7 +239,7 @@ TEST(Evm, dont_transfer_on_staticcall)
         .recipient = to,
         .sender = from,
     };
-    uint256_t v{7'000'000'000};
+    uint256_t const v{7'000'000'000};
     intx::be::store(m.value.bytes, v);
 
     auto const result = evm_t::transfer_call_balances(s, m);
@@ -250,7 +260,7 @@ TEST(Evm, create_nonce_out_of_range)
     static constexpr auto new_addr{
         0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
 
-    BlockHashBuffer block_hash_buffer;
+    BlockHashBuffer const block_hash_buffer;
     evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     db.commit(
@@ -269,7 +279,7 @@ TEST(Evm, create_nonce_out_of_range)
         .gas = 20'000,
         .sender = from,
     };
-    uint256_t v{70'000'000};
+    uint256_t const v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
     auto const result = evm_t::create_contract_account(&h, s, m);
@@ -289,7 +299,7 @@ TEST(Evm, static_precompile_execution)
     static constexpr auto code_address{
         0x0000000000000000000000000000000000000004_address};
 
-    BlockHashBuffer block_hash_buffer;
+    BlockHashBuffer const block_hash_buffer;
     evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     db.commit(
@@ -304,7 +314,7 @@ TEST(Evm, static_precompile_execution)
     static constexpr char data[] = "hello world";
     static constexpr auto data_size = sizeof(data);
 
-    evmc_message m{
+    evmc_message const m{
         .kind = EVMC_CALL,
         .gas = 400,
         .recipient = code_address,
@@ -334,7 +344,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
     static constexpr auto code_address{
         0x0000000000000000000000000000000000000001_address};
 
-    BlockHashBuffer block_hash_buffer;
+    BlockHashBuffer const block_hash_buffer;
     evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     db.commit(
@@ -349,7 +359,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
     static constexpr char data[] = "hello world";
     static constexpr auto data_size = sizeof(data);
 
-    evmc_message m{
+    evmc_message const m{
         .kind = EVMC_CALL,
         .gas = 100,
         .recipient = code_address,
@@ -408,7 +418,7 @@ TEST(Evm, deploy_contract_code)
         // Successfully deploy code
         {
             State s{bs, db};
-            int64_t gas = 10'000;
+            int64_t const gas = 10'000;
 
             evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
             auto const r2 = Evm<fork_traits::homestead>::deploy_contract_code(

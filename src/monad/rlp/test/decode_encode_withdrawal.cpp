@@ -1,9 +1,9 @@
-#include <monad/core/address.hpp>
+#include <monad/core/byte_string.hpp>
 #include <monad/core/withdrawal.hpp>
-
-#include <monad/rlp/decode.hpp>
 #include <monad/rlp/decode_helpers.hpp>
 #include <monad/rlp/encode_helpers.hpp>
+
+#include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
 
@@ -12,7 +12,7 @@ using namespace monad::rlp;
 
 TEST(Rlp_Withdrawal, encode_decode_withdrawal)
 {
-    Withdrawal original_withdrawal{
+    Withdrawal const original_withdrawal{
         .index = 0,
         .validator_index = 0,
         .amount = 10000u,

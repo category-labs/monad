@@ -1,6 +1,11 @@
 #include <monad/core/account.hpp>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/core/int.hpp>
 #include <monad/rlp/decode_helpers.hpp>
 #include <monad/rlp/encode_helpers.hpp>
+
+#include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
 
@@ -18,7 +23,7 @@ TEST(Rlp_Account, Encode)
     static constexpr bytes32_t code_hash{
         0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
     Account const a{.balance = b, .code_hash = code_hash};
-    const byte_string rlp_account{
+    byte_string const rlp_account{
         0xf8, 0x48, 0x80, 0x84, 0x01, 0x6e, 0x36, 0x00, 0xa0, 0xbe, 0xa3,
         0x4d, 0xd0, 0x4b, 0x09, 0xad, 0x3b, 0x60, 0x14, 0x25, 0x1e, 0xe2,
         0x45, 0x78, 0x07, 0x40, 0x87, 0xee, 0x60, 0xfd, 0xa8, 0xc3, 0x91,

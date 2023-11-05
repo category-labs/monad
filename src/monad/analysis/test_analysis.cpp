@@ -1,14 +1,25 @@
 #include <monad/analysis/analysis.hpp>
-#include <monad/core/variant.hpp>
+#include <monad/core/byte_string.hpp>
+
+#include <evmone/instructions_opcodes.hpp>
+
+#include <evmc/evmc.hpp>
+#include <evmc/hex.hpp>
+
+#include <boost/graph/graphviz.hpp>
+
+#include <quill/bundled/fmt/core.h>
 
 #include <gtest/gtest.h>
 
-#include <evmc/hex.hpp>
-
+#include <chrono>
+#include <cstddef>
+#include <iostream>
+#include <ostream>
+#include <stdexcept>
 #include <unordered_set>
+#include <utility>
 #include <vector>
-
-#include <boost/graph/graphviz.hpp>
 
 using enum evmone::Opcode;
 
@@ -19,7 +30,7 @@ template <typename graph>
 class VerticesWriter
 {
 public:
-    VerticesWriter(graph g)
+    explicit VerticesWriter(graph g)
         : graph_{g}
     {
     }
@@ -215,7 +226,7 @@ TEST(Tokenizer, PushOps)
             .value();
 
     auto const opcodes = tokenize_code(byte_code);
-    std::vector<Instruction> expected_opcodes{
+    std::vector<Instruction> const expected_opcodes{
         {OP_PUSH0},
         {OP_PUSH1, 0xe7_bytes32},
         {OP_PUSH2, 0xa68e_bytes32},
@@ -293,7 +304,7 @@ TEST(Tokenizer, StaticallyKnownCall)
             "33")
             .value();
 
-    std::vector<Instruction> expected_opcodes{
+    std::vector<Instruction> const expected_opcodes{
         {OP_PUSH1, 0x80_bytes32},
         {OP_PUSH1, 0x40_bytes32},
         {OP_MSTORE},

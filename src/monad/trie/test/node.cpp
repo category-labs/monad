@@ -1,9 +1,9 @@
-#include "ethash/keccak.hpp"
+#include <monad/core/byte_string.hpp>
+#include <monad/trie/nibbles.hpp>
 #include <monad/trie/node.hpp>
 
 #include <gtest/gtest.h>
 
-#include <ethash/keccak.hpp>
 #include <variant>
 
 using namespace monad;

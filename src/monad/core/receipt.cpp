@@ -1,8 +1,12 @@
+#include <monad/config.hpp>
+#include <monad/core/byte_string.hpp>
 #include <monad/core/receipt.hpp>
 
 #include <ethash/keccak.hpp>
 
 #include <intx/intx.hpp>
+
+#include <cstdint>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -14,7 +18,7 @@ void set_3_bits(Receipt::Bloom &bloom, byte_string_view const bytes)
         // Poorly named intx function, this really is taking from our hash,
         // which is returned as big endian, to host order so we can do calcs on
         // `bit`
-        const uint16_t bit =
+        uint16_t const bit =
             intx::to_big_endian(
                 reinterpret_cast<uint16_t const *>(h.bytes)[i]) &
             2047u;

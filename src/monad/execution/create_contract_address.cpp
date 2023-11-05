@@ -1,10 +1,14 @@
-#include <monad/core/address.hpp>
-
 #include <monad/config.hpp>
+#include <monad/core/address.hpp>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/rlp/encode.hpp>
 #include <monad/rlp/encode_helpers.hpp>
 
+#include <ethash/hash_types.hpp>
 #include <ethash/keccak.hpp>
 
+#include <cstdint>
 #include <cstring>
 
 MONAD_NAMESPACE_BEGIN
@@ -21,7 +25,7 @@ address_t hash_and_clip(byte_string const &b)
 // YP Sec 7: Eq 87, top
 address_t create_contract_address(address_t const &from, uint64_t const nonce)
 {
-    byte_string b = rlp::encode_list(
+    byte_string const b = rlp::encode_list(
         rlp::encode_address(from) + rlp::encode_unsigned(nonce));
     return hash_and_clip(b);
 }
@@ -31,10 +35,10 @@ address_t create2_contract_address(
     address_t const &from, bytes32_t const &zeta,
     ethash::hash256 const &code_hash)
 {
-    byte_string b = byte_string{0xff} +
-                    byte_string{from.bytes, sizeof(address_t)} +
-                    byte_string{zeta.bytes, sizeof(bytes32_t)} +
-                    byte_string{code_hash.bytes, sizeof(ethash::hash256)};
+    byte_string const b = byte_string{0xff} +
+                          byte_string{from.bytes, sizeof(address_t)} +
+                          byte_string{zeta.bytes, sizeof(bytes32_t)} +
+                          byte_string{code_hash.bytes, sizeof(ethash::hash256)};
     return hash_and_clip(b);
 }
 

@@ -1,9 +1,23 @@
 #include <ethereum_test.hpp>
-
 #include <from_json.hpp>
 
-#include <gtest/gtest.h>
+#include <monad/core/address.hpp>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/state2/state.hpp>
+#include <monad/test/config.hpp>
+
+#include <evmc/evmc.h>
+#include <evmc/hex.hpp>
+
+#include <intx/intx.hpp>
+
 #include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
+
+#include <gtest/gtest.h>
+
+#include <cstdint>
 
 MONAD_TEST_NAMESPACE_BEGIN
 
@@ -34,9 +48,10 @@ void load_state_from_json(nlohmann::json const &j, State &state)
         if (j_acc.contains("storage")) {
             ASSERT_TRUE(j_acc["storage"].is_object());
             for (auto const &[key, value] : j_acc["storage"].items()) {
-                nlohmann::json key_json = key;
-                monad::bytes32_t key_bytes32 = key_json.get<monad::bytes32_t>();
-                monad::bytes32_t value_bytes32 = value;
+                nlohmann::json const key_json = key;
+                monad::bytes32_t const key_bytes32 =
+                    key_json.get<monad::bytes32_t>();
+                monad::bytes32_t const value_bytes32 = value;
                 if (value_bytes32 == monad::bytes32_t{}) {
                     // skip setting starting storage to zero to avoid pointless
                     // deletion

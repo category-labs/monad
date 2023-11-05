@@ -29,6 +29,9 @@ struct Transaction
     {
         address_t a{};
         std::vector<bytes32_t> keys{};
+
+        friend bool
+        operator==(AccessEntry const &, AccessEntry const &) = default;
     };
 
     using AccessList = std::vector<AccessEntry>;
@@ -44,6 +47,8 @@ struct Transaction
     TransactionType type{};
     AccessList access_list{};
     uint256_t max_priority_fee_per_gas{};
+
+    friend bool operator==(Transaction const &, Transaction const &) = default;
 };
 
 static_assert(sizeof(Transaction::AccessEntry) == 48);

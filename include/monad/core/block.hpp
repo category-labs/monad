@@ -50,6 +50,8 @@ struct Block
     std::vector<Transaction> transactions{};
     std::vector<BlockHeader> ommers{};
     std::optional<std::vector<Withdrawal>> withdrawals{std::nullopt};
+
+    friend bool operator==(Block const &, Block const &) = default;
 };
 
 static_assert(sizeof(BlockHeader) == 656);

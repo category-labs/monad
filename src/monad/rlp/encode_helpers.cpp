@@ -208,6 +208,71 @@ byte_string encode_withdrawal(Withdrawal const &withdrawal)
         encode_unsigned(withdrawal.amount));
 }
 
+byte_string encode_block_header(BlockHeader const &block_header)
+{
+    byte_string encoded_block_header;
+    encoded_block_header += encode_bytes32(block_header.parent_hash);
+    encoded_block_header += encode_bytes32(block_header.ommers_hash);
+    encoded_block_header += encode_address(block_header.beneficiary);
+    encoded_block_header += encode_bytes32(block_header.state_root);
+    encoded_block_header += encode_bytes32(block_header.transactions_root);
+    encoded_block_header += encode_bytes32(block_header.receipts_root);
+    encoded_block_header += encode_bloom(block_header.logs_bloom);
+    encoded_block_header += encode_unsigned(block_header.difficulty);
+    encoded_block_header += encode_unsigned(block_header.number);
+    encoded_block_header += encode_unsigned(block_header.gas_limit);
+    encoded_block_header += encode_unsigned(block_header.gas_used);
+    encoded_block_header += encode_unsigned(block_header.timestamp);
+    encoded_block_header += encode_string(block_header.extra_data);
+    encoded_block_header += encode_bytes32(block_header.prev_randao);
+    encoded_block_header +=
+        encode_string(to_byte_string_view(block_header.nonce));
+
+    if (block_header.base_fee_per_gas.has_value()) {
+        encoded_block_header +=
+            encode_unsigned(block_header.base_fee_per_gas.value());
+    }
+
+    if (block_header.withdrawals_root.has_value()) {
+        encoded_block_header +=
+            encode_bytes32(block_header.withdrawals_root.value());
+    }
+
+    return encode_list(encoded_block_header);
+}
+
+byte_string encode_block(Block const &block)
+{
+    byte_string const encoded_block_header = encode_block_header(block.header);
+    byte_string encoded_block_transactions;
+    byte_string encoded_block_ommers;
+
+    for (auto const &txn : block.transactions) {
+        encoded_block_transactions += encode_transaction(txn);
+    }
+    encoded_block_transactions = encode_list(encoded_block_transactions);
+
+    for (auto const &ommer : block.ommers) {
+        encoded_block_ommers += encode_block_header(ommer);
+    }
+    encoded_block_ommers = encode_list(encoded_block_ommers);
+
+    byte_string encoded_block;
+    encoded_block += encoded_block_header;
+    encoded_block += encoded_block_transactions;
+    encoded_block += encoded_block_ommers;
+
+    if (block.withdrawals.has_value()) {
+        byte_string encoded_block_withdrawals;
+        for (auto const &withdraw : block.withdrawals.value()) {
+            encoded_block_withdrawals += encode_withdrawal(withdraw);
+        }
+        encoded_block += encode_list(encoded_block_withdrawals);
+    }
+
+    return encode_list(encoded_block);
+}
+
 byte_string encode_leaf(trie::Leaf const &leaf)
 {
     return encode_list(

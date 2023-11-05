@@ -2,6 +2,8 @@
 #include <monad/core/transaction.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/rlp/decode_helpers.hpp>
+#include <monad/rlp/encode.hpp>
+#include <monad/rlp/encode_helpers.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -17,10 +19,9 @@
 using namespace monad;
 using namespace intx;
 
-TEST(Rlp_Block, DecodeBlock46402)
+TEST(Rlp_Block, DecodeEncodeBlock46402)
 {
-
-    Block block{};
+    Block block;
     BlockDb const block_db(test_resource::correct_block_data_dir);
     bool const res = block_db.get(46'402, block);
     ASSERT_TRUE(res);
@@ -103,15 +104,19 @@ TEST(Rlp_Block, DecodeBlock46402)
         0x40b1a3d6e47a04c0cd78506aa7d3aa0aeef734d7942424abdb64c88c2ba5f536_u256);
 
     EXPECT_EQ(block.ommers.size(), 0);
+
+    // check encoding
+    auto const encoded_block = rlp::encode_block(block);
+    Block decoded_block;
+    EXPECT_EQ(rlp::decode_block(decoded_block, encoded_block).size(), 0);
+    EXPECT_EQ(decoded_block, block);
 }
 
-TEST(Rlp_Block, DecodeBlock2730000)
+TEST(Rlp_Block, DecodeEncodeBlock2730000)
 {
-
-    Block block{};
+    Block block;
     BlockDb const block_db(test_resource::correct_block_data_dir);
-    bool const res = block_db.get(2'730'000, block);
-    ASSERT_TRUE(res);
+    EXPECT_TRUE(block_db.get(2'730'000, block));
 
     // Header
     EXPECT_EQ(
@@ -254,15 +259,19 @@ TEST(Rlp_Block, DecodeBlock2730000)
         0x20197a6f1c95fb5a228e83f1605075d007ff1ac35509edb5683cbff30ecf4f2d_u256);
 
     EXPECT_EQ(block.ommers.size(), 0);
+
+    // check encoding
+    auto const encoded_block = rlp::encode_block(block);
+    Block decoded_block;
+    EXPECT_EQ(rlp::decode_block(decoded_block, encoded_block).size(), 0);
+    EXPECT_EQ(decoded_block, block);
 }
 
-TEST(Rlp_Block, DecodeBlock2730001)
+TEST(Rlp_Block, DecodeEncodeBlock2730001)
 {
-
-    Block block{};
+    Block block;
     BlockDb const block_db(test_resource::correct_block_data_dir);
-    bool const res = block_db.get(2'730'001, block);
-    ASSERT_TRUE(res);
+    EXPECT_TRUE(block_db.get(2'730'001, block));
 
     // Header
     EXPECT_EQ(
@@ -432,16 +441,19 @@ TEST(Rlp_Block, DecodeBlock2730001)
         0x3a712aead4cd85c472b6f7996b4adab96e63ac9e7a7d408944e385c39e870c4e_u256);
 
     EXPECT_EQ(block.ommers.size(), 0);
+
+    // check encoding
+    auto const encoded_block = rlp::encode_block(block);
+    Block decoded_block;
+    EXPECT_EQ(rlp::decode_block(decoded_block, encoded_block).size(), 0);
+    EXPECT_EQ(decoded_block, block);
 }
 
-TEST(Rlp_Block, DecodeBlock2730002)
+TEST(Rlp_Block, DecodeEncodeBlock2730002)
 {
-    using namespace intx;
-
-    Block block{};
+    Block block;
     BlockDb const block_db(test_resource::correct_block_data_dir);
-    bool const res = block_db.get(2'730'002, block);
-    ASSERT_TRUE(res);
+    EXPECT_TRUE(block_db.get(2'730'002, block));
 
     // Header
     EXPECT_EQ(
@@ -496,15 +508,19 @@ TEST(Rlp_Block, DecodeBlock2730002)
     EXPECT_EQ(block.transactions.size(), 0);
 
     EXPECT_EQ(block.ommers.size(), 0);
+
+    // check encoding
+    auto const encoded_block = rlp::encode_block(block);
+    Block decoded_block;
+    EXPECT_EQ(rlp::decode_block(decoded_block, encoded_block).size(), 0);
+    EXPECT_EQ(decoded_block, block);
 }
 
-TEST(Rlp_Block, ReadBlock2730009)
+TEST(Rlp_Block, DecodeEncodeBlock2730009)
 {
-
-    Block block{};
+    Block block;
     BlockDb const block_db(test_resource::correct_block_data_dir);
-    bool const res = block_db.get(2730009, block);
-    ASSERT_TRUE(res);
+    EXPECT_TRUE(block_db.get(2730009, block));
 
     // Header
     EXPECT_EQ(
@@ -544,15 +560,19 @@ TEST(Rlp_Block, ReadBlock2730009)
     EXPECT_EQ(block.transactions.size(), 0);
 
     EXPECT_EQ(block.ommers.size(), 0);
+
+    // check encoding
+    auto const encoded_block = rlp::encode_block(block);
+    Block decoded_block;
+    EXPECT_EQ(rlp::decode_block(decoded_block, encoded_block).size(), 0);
+    EXPECT_EQ(decoded_block, block);
 }
 
-TEST(Rlp_Block, DecodeBlock14000000)
+TEST(Rlp_Block, DecodeEncodeBlock14000000)
 {
-
-    Block block{};
+    Block block;
     BlockDb const block_db(test_resource::correct_block_data_dir);
-    bool const res = block_db.get(14'000'000, block);
-    ASSERT_TRUE(res);
+    EXPECT_TRUE(block_db.get(14'000'000, block));
 
     // Header
     EXPECT_EQ(
@@ -656,9 +676,15 @@ TEST(Rlp_Block, DecodeBlock14000000)
         0x09c059fae0f809e1405656d1f42efaa3e3a30b278e4d63602bbc680b33992a5c_u256);
 
     EXPECT_EQ(block.ommers.size(), 0);
+
+    // check encoding
+    auto const encoded_block = rlp::encode_block(block);
+    Block decoded_block;
+    EXPECT_EQ(rlp::decode_block(decoded_block, encoded_block).size(), 0);
+    EXPECT_EQ(decoded_block, block);
 }
 
-TEST(Rlp_Block, DecodeShanghai)
+TEST(Rlp_Block, DecodeEncodeShanghai)
 {
     byte_string const encoded_block = byte_string{
         0xf9, 0x02, 0x8c, 0xf9, 0x02, 0x19, 0xa0, 0x15, 0x19, 0x34, 0xad, 0x9b,
@@ -717,7 +743,7 @@ TEST(Rlp_Block, DecodeShanghai)
         0xfc, 0xe5, 0xed, 0xbc, 0x8e, 0x2a, 0x86, 0x97, 0xc1, 0x53, 0x31, 0x67,
         0x7e, 0x6e, 0xbf, 0x0b, 0x82, 0x27, 0x10};
 
-    Block decoded_block{};
+    Block decoded_block;
 
     auto const remaining = rlp::decode_block(decoded_block, encoded_block);
 
@@ -823,4 +849,8 @@ TEST(Rlp_Block, DecodeShanghai)
         decoded_block.withdrawals.value()[3].recipient,
         0xc94f5374fce5edbc8e2a8697c15331677e6ebf0b_address);
     EXPECT_EQ(decoded_block.withdrawals.value()[3].amount, 0x2710);
+
+    // check encoding
+    auto const encoded_block_from_decoded = rlp::encode_block(decoded_block);
+    EXPECT_EQ(encoded_block_from_decoded, encoded_block);
 }

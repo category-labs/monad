@@ -12,6 +12,8 @@ struct Withdrawal
     uint64_t validator_index{};
     uint64_t amount{};
     address_t recipient{};
+
+    friend bool operator==(Withdrawal const &, Withdrawal const &) = default;
 };
 
 static_assert(sizeof(Withdrawal) == 48);

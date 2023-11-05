@@ -14,6 +14,9 @@ struct SignatureAndChain
     bool odd_y_parity{};
 
     void from_v(uint256_t const &);
+
+    friend bool
+    operator==(SignatureAndChain const &, SignatureAndChain const &) = default;
 };
 
 static_assert(sizeof(SignatureAndChain) == 112);

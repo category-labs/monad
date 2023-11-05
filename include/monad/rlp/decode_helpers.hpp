@@ -90,6 +90,8 @@ byte_string_view decode_withdrawal_list(
     std::vector<Withdrawal> &withdrawal_list, byte_string_view const enc);
 
 byte_string_view decode_block(Block &block, byte_string_view const enc);
+byte_string_view
+decode_block_header(BlockHeader &block_header, byte_string_view const enc);
 byte_string_view get_rlp_header_from_block(byte_string_view const block_enc);
 
 MONAD_RLP_NAMESPACE_END

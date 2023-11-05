@@ -7,6 +7,7 @@
 #include <monad/rlp/util.hpp>
 
 #include <monad/core/address.hpp>
+#include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
@@ -62,6 +63,8 @@ byte_string encode_log(Receipt::Log const &log);
 byte_string encode_bloom(Receipt::Bloom const &b);
 byte_string encode_receipt(Receipt const &receipt);
 byte_string encode_withdrawal(Withdrawal const &withdrawal);
+byte_string encode_block_header(BlockHeader const &);
+byte_string encode_block(Block const &);
 
 byte_string encode_leaf(trie::Leaf const &);
 byte_string encode_branch(trie::Branch const &);

@@ -1,23 +1,23 @@
 #pragma once
 
 #include <monad/config.hpp>
-
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
+#include <monad/core/block_fmt.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/core/receipt_fmt.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/core/withdrawal.hpp>
-
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_reward.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/transaction_processor_data.hpp>
 #include <monad/execution/validation_status.hpp>
-
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/state2/state_deltas.hpp>
+#include <monad/state2/state_deltas_fmt.hpp>
 
 #include <quill/Quill.h>
 #include <tl/expected.hpp>

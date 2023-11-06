@@ -2,9 +2,14 @@
 
 #include <monad/config.hpp>
 #include <monad/core/account.hpp>
+#include <monad/core/account_fmt.hpp>
 #include <monad/core/address.hpp>
+#include <monad/core/address_fmt.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/bytes.hpp>
+#include <monad/core/bytes_fmt.hpp>
+#include <monad/core/int.hpp>
+#include <monad/core/int_fmt.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
 

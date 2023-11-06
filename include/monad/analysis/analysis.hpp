@@ -5,6 +5,7 @@
 #include <monad/core/basic_formatter.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/bytes_fmt.hpp>
 #include <monad/core/likely.h>
 
 #include <evmone/baseline.hpp>

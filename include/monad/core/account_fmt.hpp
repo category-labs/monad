@@ -1,0 +1,31 @@
+#pragma once
+
+#include <monad/core/account.hpp>
+#include <monad/core/basic_formatter.hpp>
+#include <monad/core/bytes_fmt.hpp>
+#include <monad/core/int_fmt.hpp>
+
+template <>
+struct quill::copy_loggable<monad::Account> : std::true_type
+{
+};
+
+template <>
+struct fmt::formatter<monad::Account> : public monad::basic_formatter
+{
+    template <typename FormatContext>
+    auto format(monad::Account const &a, FormatContext &ctx) const
+    {
+        fmt::format_to(
+            ctx.out(),
+            "Account{{"
+            "balance={}, "
+            "code_hash={}, "
+            "nonce={}"
+            "}}",
+            a.balance,
+            a.code_hash,
+            a.nonce);
+        return ctx.out();
+    }
+};

@@ -1,7 +1,7 @@
 #include <monad/core/account.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/in_memory_old_trie_db.hpp>
 #include <monad/db/permission.hpp>
 #include <monad/db/rocks_trie_db.hpp>
 #include <monad/state2/state_deltas.hpp>

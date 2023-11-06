@@ -148,7 +148,7 @@ add_library(
   "include/monad/db/create_and_prune_block_history.hpp"
   "include/monad/db/db.hpp"
   "include/monad/db/file_db.hpp"
-  "include/monad/db/in_memory_trie_db.hpp"
+  "include/monad/db/in_memory_old_trie_db.hpp"
   "include/monad/db/permission.hpp"
   "include/monad/db/prepare_state.hpp"
   "include/monad/db/rocks_db_helper.hpp"

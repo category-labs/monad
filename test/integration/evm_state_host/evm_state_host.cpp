@@ -1,7 +1,7 @@
 #include <monad/core/account.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/in_memory_old_trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evm.hpp>

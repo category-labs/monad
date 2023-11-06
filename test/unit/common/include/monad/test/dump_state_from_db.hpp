@@ -4,7 +4,7 @@
 #include <monad/core/bytes_fmt.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/int_fmt.hpp>
-#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/in_memory_old_trie_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
 #include <monad/test/config.hpp>
 

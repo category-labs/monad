@@ -2,7 +2,7 @@
 #include <monad/core/address.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/int.hpp>
-#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/in_memory_old_trie_db.hpp>
 #include <monad/execution/block_reward.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/state2/block_state.hpp>

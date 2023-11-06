@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/in_memory_old_trie_db.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/test/config.hpp>
 

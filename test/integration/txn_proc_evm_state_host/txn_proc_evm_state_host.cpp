@@ -4,7 +4,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
-#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/in_memory_old_trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_reward.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>

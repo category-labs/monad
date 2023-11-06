@@ -13,7 +13,7 @@
 
 MONAD_TEST_NAMESPACE_BEGIN
 
-using db_t = monad::db::InMemoryTrieDB;
+using db_t = monad::db::InMemoryOldTrieDB;
 
 inline std::unordered_map<std::string, evmc_revision> const revision_map = {
     {"Frontier", EVMC_FRONTIER},

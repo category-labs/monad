@@ -140,7 +140,7 @@ dump_storage_from_db(monad::db::RocksTrieDB &db)
 }
 
 [[nodiscard]] inline nlohmann::json
-dump_accounts_from_db(monad::db::InMemoryTrieDB &db)
+dump_accounts_from_db(monad::db::InMemoryOldTrieDB &db)
 {
     nlohmann::json state = nlohmann::json::object();
 
@@ -158,7 +158,7 @@ dump_accounts_from_db(monad::db::InMemoryTrieDB &db)
 }
 
 [[nodiscard]] inline nlohmann::json
-dump_storage_from_db(monad::db::InMemoryTrieDB &db)
+dump_storage_from_db(monad::db::InMemoryOldTrieDB &db)
 {
     nlohmann::json state = nlohmann::json::object();
     auto leaf_cursor = db.storage_trie.make_leaf_cursor();

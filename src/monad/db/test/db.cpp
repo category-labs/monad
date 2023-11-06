@@ -42,7 +42,7 @@ template <typename TDB>
 struct DBTest : public testing::Test
 {
 };
-using DBTypes = ::testing::Types<InMemoryTrieDB, RocksTrieDB>;
+using DBTypes = ::testing::Types<InMemoryOldTrieDB, RocksTrieDB>;
 TYPED_TEST_SUITE(DBTest, DBTypes);
 
 template <typename TDB>
@@ -116,9 +116,9 @@ TYPED_TEST(DBTest, read_code)
     EXPECT_EQ(db.read_code(code_hash2), code2);
 }
 
-TEST(InMemoryTrieDB, account_creation)
+TEST(InMemoryOldTrieDB, account_creation)
 {
-    auto db = test::make_db<InMemoryTrieDB>();
+    auto db = test::make_db<InMemoryOldTrieDB>();
     Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
     db.commit(
         StateDeltas{{a, StateDelta{.account = {std::nullopt, acct}}}}, Code{});
@@ -128,9 +128,9 @@ TEST(InMemoryTrieDB, account_creation)
     EXPECT_EQ(db.read_account(a), acct);
 }
 
-TEST(InMemoryTrieDB, erase)
+TEST(InMemoryOldTrieDB, erase)
 {
-    auto db = test::make_db<InMemoryTrieDB>();
+    auto db = test::make_db<InMemoryOldTrieDB>();
     Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
     db.commit(
         StateDeltas{

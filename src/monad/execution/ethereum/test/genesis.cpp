@@ -24,7 +24,7 @@ struct GenesisTest : public testing::Test
 {
 };
 
-using TrieDBTypes = ::testing::Types<db::InMemoryTrieDB, db::RocksTrieDB>;
+using TrieDBTypes = ::testing::Types<db::InMemoryOldTrieDB, db::RocksTrieDB>;
 
 TYPED_TEST_SUITE(GenesisTest, TrieDBTypes);
 

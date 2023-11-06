@@ -12,7 +12,7 @@
 
 using namespace monad;
 
-using db_t = db::InMemoryTrieDB;
+using db_t = db::InMemoryOldTrieDB;
 using traits_t = fork_traits::shanghai;
 
 template <class TTxnProc>

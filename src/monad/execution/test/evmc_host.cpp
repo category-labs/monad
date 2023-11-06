@@ -23,7 +23,7 @@
 
 using namespace monad;
 
-using db_t = db::InMemoryTrieDB;
+using db_t = db::InMemoryOldTrieDB;
 using traits_t = fork_traits::shanghai;
 
 using evmc_host_t = EvmcHost<traits_t>;

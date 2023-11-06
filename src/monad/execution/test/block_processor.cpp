@@ -20,7 +20,7 @@
 
 using namespace monad;
 
-using db_t = db::InMemoryTrieDB;
+using db_t = db::InMemoryOldTrieDB;
 
 TEST(BlockProcessor, shanghai_withdrawal)
 {

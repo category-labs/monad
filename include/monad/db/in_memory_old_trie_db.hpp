@@ -14,7 +14,7 @@
 MONAD_DB_NAMESPACE_BEGIN
 
 // Database impl with trie root generating logic, backed by stl
-struct InMemoryTrieDB : public Db
+struct InMemoryOldTrieDB : public Db
 {
     template <typename Comparator>
     struct Trie

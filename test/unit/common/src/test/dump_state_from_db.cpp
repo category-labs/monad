@@ -26,7 +26,7 @@ struct StateSerialization : public testing::Test
 {
 };
 
-using DBTypes = ::testing::Types<db::InMemoryTrieDB, db::RocksTrieDB>;
+using DBTypes = ::testing::Types<db::InMemoryOldTrieDB, db::RocksTrieDB>;
 
 TYPED_TEST_SUITE(StateSerialization, DBTypes);
 

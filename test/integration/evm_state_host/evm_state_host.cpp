@@ -29,7 +29,7 @@ static constexpr auto value1 =
 static constexpr auto code_hash =
     0x00000000000000000000000000000000000000000000000000000000cccccccc_bytes32;
 
-using account_store_db_t = db::InMemoryTrieDB;
+using account_store_db_t = db::InMemoryOldTrieDB;
 
 TEST(EvmInterpStateHost, return_existing_storage)
 {

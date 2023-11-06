@@ -19,7 +19,7 @@
 
 using namespace monad;
 
-using db_t = db::InMemoryTrieDB;
+using db_t = db::InMemoryOldTrieDB;
 using traits_t = fork_traits::shanghai;
 using processor_t = TransactionProcessor<traits_t>;
 

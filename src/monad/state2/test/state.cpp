@@ -51,7 +51,7 @@ template <typename TDB>
 struct StateTest : public testing::Test
 {
 };
-using DBTypes = ::testing::Types<db::InMemoryTrieDB, db::RocksTrieDB>;
+using DBTypes = ::testing::Types<db::InMemoryOldTrieDB, db::RocksTrieDB>;
 TYPED_TEST_SUITE(StateTest, DBTypes);
 
 TYPED_TEST(StateTest, access_account)
@@ -916,7 +916,7 @@ template <typename TDB>
 struct TrieDBTest : public testing::Test
 {
 };
-using TrieDBTypes = ::testing::Types<db::InMemoryTrieDB, db::RocksTrieDB>;
+using TrieDBTypes = ::testing::Types<db::InMemoryOldTrieDB, db::RocksTrieDB>;
 TYPED_TEST_SUITE(TrieDBTest, TrieDBTypes);
 
 TYPED_TEST(TrieDBTest, commit_storage_and_account_together_regression)
@@ -940,7 +940,7 @@ TYPED_TEST(TrieDBTest, commit_storage_and_account_together_regression)
 TYPED_TEST(TrieDBTest, set_and_then_clear_storage_in_same_commit)
 {
     using namespace intx;
-    auto db = test::make_db<db::InMemoryTrieDB>();
+    auto db = test::make_db<db::InMemoryOldTrieDB>();
     BlockState bs;
     State as{bs, db};
 

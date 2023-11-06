@@ -14,6 +14,7 @@ include(cmake/test.cmake)
 # ##############################################################################
 
 add_subdirectory("monad-core")
+add_subdirectory("monad-trie")
 
 find_package(Boost REQUIRED COMPONENTS fiber graph log)
 find_package(PkgConfig REQUIRED)
@@ -44,8 +45,7 @@ function(monad_compile_options target)
   # needed to resolve some potential false positives when compiling with
   # Boost.Graph
   target_compile_options(
-    ${target}
-    PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>)
+    ${target} PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>)
 
   # this is needed to turn off ranges support in nlohmann_json, because the
   # ranges standard header triggers a clang bug which is fixed in trunk but not

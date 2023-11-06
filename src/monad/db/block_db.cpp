@@ -3,8 +3,10 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/rlp/decode_helpers.hpp>
+#include <monad/rlp/encode_helpers.hpp>
 
 #include <brotli/decode.h>
+#include <brotli/encode.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -39,14 +41,11 @@ bool BlockDb::get(uint64_t const num, Block &block) const
     return true;
 }
 
-/*
-void BlockDb::upsert(
-    uint64_t const num, Block const &block) const
+void BlockDb::upsert(uint64_t const num, Block const &block) const
 {
     auto const key = std::to_string(num);
-    byte_string bytes;
-    rlp::encode(bytes, block);
-    size_t brotli_size = BrotliEncoderMaxCompressedSize(bytes.size());
+    auto const encoded_block = rlp::encode_block(block);
+    size_t brotli_size = BrotliEncoderMaxCompressedSize(encoded_block.size());
     MONAD_ASSERT(brotli_size);
     byte_string brotli_buffer;
     brotli_buffer.resize(brotli_size);
@@ -54,8 +53,8 @@ void BlockDb::upsert(
         BROTLI_DEFAULT_QUALITY,
         BROTLI_DEFAULT_WINDOW,
         BROTLI_MODE_GENERIC,
-        bytes.size(),
-        bytes.data(),
+        encoded_block.size(),
+        encoded_block.data(),
         &brotli_size,
         brotli_buffer.data());
     MONAD_ASSERT(brotli_result == BROTLI_TRUE);
@@ -65,12 +64,11 @@ void BlockDb::upsert(
         brotli_buffer.size()};
     db_.upsert(key.c_str(), value);
 }
-*/
 
-void BlockDb::remove(uint64_t const num) const
+bool BlockDb::remove(uint64_t const num) const
 {
     auto const key = std::to_string(num);
-    db_.remove(key.c_str());
+    return db_.remove(key.c_str());
 }
 
 MONAD_NAMESPACE_END

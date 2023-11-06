@@ -21,7 +21,7 @@ public:
     bool get(uint64_t, Block &) const;
 
     void upsert(uint64_t, Block const &) const;
-    void remove(uint64_t) const;
+    bool remove(uint64_t) const;
 };
 
 MONAD_NAMESPACE_END

@@ -22,7 +22,7 @@ public:
     std::optional<std::string> get(char const *key) const;
 
     void upsert(char const *key, std::string_view value) const;
-    void remove(char const *key) const;
+    bool remove(char const *key) const;
 };
 
 MONAD_NAMESPACE_END

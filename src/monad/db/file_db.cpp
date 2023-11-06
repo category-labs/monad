@@ -58,10 +58,10 @@ public:
         std::filesystem::rename(temp_path, path);
     }
 
-    void remove(char const *const key) const
+    bool remove(char const *const key) const
     {
         auto const path = dir_ / key;
-        std::filesystem::remove(path);
+        return std::filesystem::remove(path);
     }
 };
 
@@ -79,10 +79,10 @@ std::optional<std::string> FileDb::get(char const *const key) const
 
 void FileDb::upsert(char const *const key, std::string_view const value) const
 {
-    return impl_->upsert(key, value);
+    impl_->upsert(key, value);
 }
 
-void FileDb::remove(char const *const key) const
+bool FileDb::remove(char const *const key) const
 {
     return impl_->remove(key);
 }

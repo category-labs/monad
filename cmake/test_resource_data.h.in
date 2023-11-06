@@ -23,6 +23,8 @@ namespace test_resource
         test_data_dir / "common" / "blocks" / "bad_decompress_blocks";
     inline auto const bad_decode_block_data_dir =
         test_data_dir / "common" / "blocks" / "bad_decode_blocks";
+    inline auto const self_compressed_block_data_dir =
+        test_data_dir / "common" / "blocks" / "self_compressed_blocks";
 
     // genesis
     inline auto const ethereum_genesis_dir =

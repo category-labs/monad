@@ -10,7 +10,7 @@ jobs:
         CMAKE_BUILD_TYPE: [RelWithDebInfo, Debug]
         compiler: [{CXX: g++, CC: gcc}, {CXX: clang++, CC: clang}]
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-32
 
     steps:
       - id: generate_token
@@ -28,8 +28,8 @@ jobs:
 
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
-      - run: sudo bash -c "echo 64 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages"
-      - run: sudo bash -c "echo 1 > /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages"
+      - run: sudo bash -c "echo 1024 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages"
+      - run: sudo bash -c "echo 16 > /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages"
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
 

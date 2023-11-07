@@ -17,6 +17,14 @@ encode_account(Account const &account, bytes32_t const &storage_root)
         encode_bytes32(account.code_hash));
 }
 
+byte_string encode_account(Account const &account)
+{
+    return encode_list(
+        encode_unsigned(account.nonce),
+        encode_unsigned(account.balance),
+        encode_bytes32(account.code_hash));
+}
+
 byte_string_view decode_account(
     Account &account, bytes32_t &storage_root, byte_string_view const enc)
 {
@@ -26,6 +34,19 @@ byte_string_view decode_account(
     payload = decode_unsigned<uint64_t>(account.nonce, payload);
     payload = decode_unsigned<uint256_t>(account.balance, payload);
     payload = decode_bytes32(storage_root, payload);
+    payload = decode_bytes32(account.code_hash, payload);
+
+    MONAD_ASSERT(payload.size() == 0);
+    return rest_of_enc;
+}
+
+byte_string_view decode_account(Account &account, byte_string_view const enc)
+{
+    byte_string_view payload{};
+    auto const rest_of_enc = parse_list_metadata(payload, enc);
+
+    payload = decode_unsigned<uint64_t>(account.nonce, payload);
+    payload = decode_unsigned<uint256_t>(account.balance, payload);
     payload = decode_bytes32(account.code_hash, payload);
 
     MONAD_ASSERT(payload.size() == 0);

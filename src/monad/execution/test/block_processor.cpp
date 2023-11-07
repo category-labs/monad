@@ -1,7 +1,7 @@
 #include <monad/core/account.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/withdrawal.hpp>
-#include <monad/db/in_memory_old_trie_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
 #include <monad/execution/block_processor.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/state2/block_state.hpp>
@@ -20,7 +20,7 @@
 
 using namespace monad;
 
-using db_t = db::InMemoryOldTrieDB;
+using db_t = db::InMemoryTrieDB;
 
 TEST(BlockProcessor, shanghai_withdrawal)
 {

@@ -149,6 +149,7 @@ add_library(
   "include/monad/db/db.hpp"
   "include/monad/db/file_db.hpp"
   "include/monad/db/in_memory_old_trie_db.hpp"
+  "include/monad/db/in_memory_trie_db.hpp"
   "include/monad/db/permission.hpp"
   "include/monad/db/prepare_state.hpp"
   "include/monad/db/rocks_db_helper.hpp"
@@ -232,6 +233,7 @@ configure_file(cmake/test_resource_data.h.in test/test_resource_data.h @ONLY)
 target_link_libraries(
   monad
   PUBLIC monad_core
+  PUBLIC monad_trie
   PRIVATE Boost::fiber
   PRIVATE Boost::graph
   PRIVATE Boost::log

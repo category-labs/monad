@@ -1,6 +1,6 @@
 #include <monad/core/int.hpp>
 #include <monad/core/transaction.hpp>
-#include <monad/db/in_memory_old_trie_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
@@ -19,7 +19,7 @@
 
 using namespace monad;
 
-using db_t = db::InMemoryOldTrieDB;
+using db_t = db::InMemoryTrieDB;
 using traits_t = fork_traits::shanghai;
 using processor_t = TransactionProcessor<traits_t>;
 

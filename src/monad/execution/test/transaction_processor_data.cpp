@@ -1,4 +1,4 @@
-#include <monad/db/in_memory_old_trie_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
 
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/test/fakes.hpp>
@@ -12,7 +12,7 @@
 
 using namespace monad;
 
-using db_t = db::InMemoryOldTrieDB;
+using db_t = db::InMemoryTrieDB;
 using traits_t = fork_traits::shanghai;
 
 template <class TTxnProc>

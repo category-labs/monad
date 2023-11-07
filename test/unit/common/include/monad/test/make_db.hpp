@@ -2,6 +2,7 @@
 
 #include <monad/core/assert.h>
 #include <monad/db/in_memory_old_trie_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
 #include <monad/test/config.hpp>
 #include <test_resource_data.h>
@@ -43,7 +44,9 @@ inline TDatabase make_db()
     if constexpr (std::same_as<TDatabase, db::RocksTrieDB>) {
         return TDatabase{db::Writable{}, make_db_root(*info), 0, 0};
     }
-    else if constexpr (std::same_as<TDatabase, db::InMemoryOldTrieDB>) {
+    else if constexpr (
+        std::same_as<TDatabase, db::InMemoryOldTrieDB> ||
+        std::same_as<TDatabase, db::InMemoryTrieDB>) {
         return TDatabase{};
     }
 }

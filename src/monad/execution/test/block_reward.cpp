@@ -2,7 +2,7 @@
 #include <monad/core/address.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/int.hpp>
-#include <monad/db/in_memory_old_trie_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
 #include <monad/execution/block_reward.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/state2/block_state.hpp>
@@ -19,7 +19,7 @@
 
 using namespace monad;
 
-using db_t = db::InMemoryOldTrieDB;
+using db_t = db::InMemoryTrieDB;
 
 constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 constexpr auto b{0x5353535353535353535353535353535353535353_address};

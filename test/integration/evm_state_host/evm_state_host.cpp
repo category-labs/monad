@@ -1,7 +1,7 @@
 #include <monad/core/account.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/db/in_memory_old_trie_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evm.hpp>
@@ -29,7 +29,7 @@ static constexpr auto value1 =
 static constexpr auto code_hash =
     0x00000000000000000000000000000000000000000000000000000000cccccccc_bytes32;
 
-using account_store_db_t = db::InMemoryOldTrieDB;
+using account_store_db_t = db::InMemoryTrieDB;
 
 TEST(EvmInterpStateHost, return_existing_storage)
 {

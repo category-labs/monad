@@ -4,7 +4,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
-#include <monad/db/in_memory_old_trie_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_reward.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
@@ -31,7 +31,7 @@ static constexpr auto to = 0xbebebebebebebebebebebebebebebebebebebebe_address;
 static constexpr auto a = 0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address;
 static constexpr auto o = 0xb5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5_address;
 
-using account_store_db_t = db::InMemoryOldTrieDB;
+using account_store_db_t = db::InMemoryTrieDB;
 
 TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 {

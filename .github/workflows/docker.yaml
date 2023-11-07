@@ -8,9 +8,9 @@ jobs:
     strategy:
       matrix:
         CMAKE_BUILD_TYPE: [RelWithDebInfo, Debug]
-        compiler: [ {CXX: g++, CC: gcc}, {CXX: clang++, CC: clang} ]
+        compiler: [{CXX: g++, CC: gcc}, {CXX: clang++, CC: clang}]
 
-    runs-on: ubuntu-latest-32
+    runs-on: ubuntu-latest
 
     steps:
       - id: generate_token
@@ -28,11 +28,9 @@ jobs:
 
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
-      - run: sudo bash -c "echo 2 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages"
+      - run: sudo bash -c "echo 64 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages"
       - run: sudo bash -c "echo 1 > /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages"
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
 
-      - run: docker build -t monad --build-arg CC=${{ matrix.compiler.CC }} --build-arg CXX=${{ matrix.compiler.CXX }} --build-arg CMAKE_BUILD_TYPE=${{ matrix.CMAKE_BUILD_TYPE }} --build-arg DISABLE_TESTS=1 --file docker/Dockerfile .
-      - name: Run ctest
-        run: docker run --ulimit memlock=-1:-1 monad ctest -j $(nproc) --output-on-failure --test-dir ./monad/build/
+      - run: docker build --ulimit memlock=-1:-1 --build-arg CC=${{ matrix.compiler.CC }} --build-arg CXX=${{ matrix.compiler.CXX }} --build-arg CMAKE_BUILD_TYPE=${{ matrix.CMAKE_BUILD_TYPE }} --file docker/Dockerfile .

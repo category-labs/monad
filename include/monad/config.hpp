@@ -5,3 +5,9 @@
     {
 
 #define MONAD_NAMESPACE_END }
+
+#define ANONYMOUS_NAMESPACE_BEGIN                                              \
+    namespace                                                                  \
+    {
+
+#define ANONYMOUS_NAMESPACE_END }

@@ -101,7 +101,12 @@ add_library(
   "include/monad/config.hpp"
   # analysis
   "include/monad/analysis/analysis.hpp"
+  "include/monad/analysis/analysis_fmt.hpp"
+  "include/monad/analysis/branch_resolve_pass.hpp"
+  "include/monad/analysis/write_graphviz.hpp"
   "src/monad/analysis/analysis.cpp"
+  "src/monad/analysis/branch_resolve_pass.cpp"
+  "src/monad/analysis/write_graphviz.cpp"
   # core
   "include/monad/core/account_fmt.hpp"
   "include/monad/core/account.hpp"

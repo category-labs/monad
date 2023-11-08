@@ -2,11 +2,11 @@
 
 #include <monad/analysis/config.hpp>
 
-#include <monad/core/basic_formatter.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/bytes_fmt.hpp>
 #include <monad/core/likely.h>
+#include <monad/core/variant.hpp>
 
 #include <evmone/baseline.hpp>
 #include <evmone/instructions.hpp>
@@ -14,6 +14,8 @@
 #include <evmone/instructions_traits.hpp>
 
 #include <boost/graph/adjacency_list.hpp>
+#include <boost/graph/depth_first_search.hpp>
+#include <boost/graph/dijkstra_shortest_paths_no_color_map.hpp>
 
 #include <format>
 #include <map>
@@ -29,6 +31,7 @@ struct Instruction
     Instruction(evmone::Opcode opcode);
     Instruction(evmone::Opcode opcode, bytes32_t data);
     Instruction(size_t offset, evmone::Opcode opcode, bytes32_t data);
+    Instruction(size_t offset, evmone::Opcode opcode);
 
     bool operator==(Instruction const &rhs) const;
     bool operator!=(Instruction const &rhs) const;
@@ -46,6 +49,8 @@ using InstructionsView = std::span<Instruction const>;
 
 class UnresolvedStatic
 {
+public:
+    bool operator==(UnresolvedStatic const &rhs) const = default;
 };
 
 class ResolvedStatic
@@ -55,6 +60,7 @@ class ResolvedStatic
 public:
     ResolvedStatic(size_t target);
     [[nodiscard]] size_t get_target() const;
+    bool operator==(ResolvedStatic const &rhs) const = default;
 };
 
 class UnresolvedDynamic
@@ -64,6 +70,7 @@ class UnresolvedDynamic
 public:
     UnresolvedDynamic(size_t next_basic_block);
     [[nodiscard]] size_t get_next_basic_block() const;
+    bool operator==(UnresolvedDynamic const &rhs) const = default;
 };
 
 class ResolvedDynamic
@@ -75,10 +82,13 @@ public:
     ResolvedDynamic(size_t taken_target, size_t not_taken_target);
     [[nodiscard]] size_t get_taken_target() const;
     [[nodiscard]] size_t get_not_taken_target() const;
+    bool operator==(ResolvedDynamic const &rhs) const = default;
 };
 
 class Halting
 {
+public:
+    bool operator==(Halting const &rhs) const = default;
 };
 
 class Linear
@@ -88,6 +98,7 @@ class Linear
 public:
     Linear(size_t target_index);
     [[nodiscard]] size_t get_next_basic_block() const;
+    bool operator==(Linear const &rhs) const = default;
 };
 
 using ResolvedControlFlow =
@@ -102,14 +113,20 @@ public:
     BasicBlock(InstructionsView instructions_view, ControlFlow control_flow);
 
     [[nodiscard]] Instructions const &get_instructions() const;
+    void set_control_flow(ControlFlow);
     [[nodiscard]] ControlFlow const &get_control_flow() const;
     [[nodiscard]] std::optional<size_t> get_indirect_branch() const;
     [[nodiscard]] std::optional<size_t> get_next_basic_block() const;
     [[nodiscard]] bool is_control_flow_resolved() const;
 
+    bool operator==(BasicBlock const &rhs) const = default;
+
+    [[nodiscard]] int get_stack_height_change() const;
+
 private:
     Instructions instructions_;
     ControlFlow control_flow_;
+    int const stack_height_change_;
 };
 
 using JumpDestinations = std::map<bytes32_t, size_t>;
@@ -167,7 +184,8 @@ struct BoostGraphVertex
 };
 
 using BoostControlFlowGraph = boost::adjacency_list<
-    boost::vecS, boost::vecS, boost::directedS, BoostGraphVertex>;
+    boost::vecS, boost::vecS, boost::bidirectionalS, BoostGraphVertex,
+    boost::property<boost::edge_weight_t, int>>;
 
 [[nodiscard]] auto construct_boost_graph(ControlFlowGraph const &graph)
     -> BoostControlFlowGraph;
@@ -181,41 +199,3 @@ using BoostControlFlowGraph = boost::adjacency_list<
 [[nodiscard]] auto parse_contract(byte_string_view code) -> ControlFlowGraph;
 
 MONAD_ANALYSIS_NAMESPACE_END
-
-template <>
-struct fmt::formatter<monad::analysis::Instruction>
-    : public monad::basic_formatter
-{
-    template <typename FormatContext>
-    auto format(
-        monad::analysis::Instruction const &instruction,
-        FormatContext &ctx) const
-    {
-        auto const *instruction_name =
-            evmone::instr::traits[instruction.opcode].name;
-        constexpr auto remove_leading_zeros = [](std::string_view input) {
-            size_t first_non_zero = 0;
-            if (input.starts_with("0x")) {
-                input.remove_prefix(2);
-            }
-            while (first_non_zero < input.size() &&
-                   input[first_non_zero] == '0') {
-                first_non_zero++;
-            }
-            auto const trimmed = input.substr(first_non_zero);
-            if (trimmed.empty()) {
-                return fmt::format(" 0x00");
-            }
-            return fmt::format(" 0x{}", trimmed);
-        };
-        return fmt::format_to(
-            ctx.out(),
-            "0x{:02x} {}{}",
-            instruction.offset,
-            instruction_name != nullptr ? instruction_name : "null",
-            (instruction.opcode >= evmone::Opcode::OP_PUSH0 &&
-             instruction.opcode <= evmone::Opcode::OP_PUSH32)
-                ? remove_leading_zeros(fmt::format("{}", instruction.data))
-                : "");
-    }
-};

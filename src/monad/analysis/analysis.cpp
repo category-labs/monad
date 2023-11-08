@@ -1,20 +1,14 @@
 #include <monad/analysis/analysis.hpp>
 #include <monad/analysis/config.hpp>
 #include <monad/core/assert.h>
-#include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/variant.hpp>
-
-#include <evmone/instructions_opcodes.hpp>
-#include <evmone/instructions_traits.hpp>
 
 #include <boost/graph/detail/adjacency_list.hpp>
 
 #include <algorithm>
 #include <bit>
-#include <cstddef>
-#include <cstdint>
 #include <deque>
 #include <format>
 #include <optional>
@@ -45,6 +39,11 @@ Instruction::Instruction(size_t offset, evmone::Opcode opcode, bytes32_t data)
     : offset{offset}
     , opcode{opcode}
     , data{data}
+{
+}
+
+Instruction::Instruction(size_t offset, evmone::Opcode opcode)
+    : Instruction{offset, opcode, 0x00_bytes32}
 {
 }
 
@@ -107,12 +106,27 @@ size_t Linear::get_next_basic_block() const
 BasicBlock::BasicBlock(InstructionsView instructions, ControlFlow control_flow)
     : instructions_{instructions.begin(), instructions.end()}
     , control_flow_{control_flow}
+    , stack_height_change_{[&] {
+        int stack_height_change = 0;
+
+        for (auto const &instruction : instructions) {
+            stack_height_change +=
+                evmone::instr::traits[instruction.opcode].stack_height_change;
+        }
+
+        return stack_height_change;
+    }()}
 {
 }
 
 Instructions const &BasicBlock::get_instructions() const
 {
     return instructions_;
+}
+
+void BasicBlock::set_control_flow(ControlFlow control_flow)
+{
+    control_flow_ = control_flow;
 }
 
 ControlFlow const &BasicBlock::get_control_flow() const
@@ -178,74 +192,89 @@ bool BasicBlock::is_control_flow_resolved() const
     return std::holds_alternative<ResolvedControlFlow>(control_flow_);
 }
 
-namespace
+int BasicBlock::get_stack_height_change() const
 {
-    constexpr bool is_push(evmone::Opcode opcode)
-    {
-        return opcode >= evmone::Opcode::OP_PUSH0 &&
-               opcode <= evmone::Opcode::OP_PUSH32;
+    return stack_height_change_;
+}
+
+ANONYMOUS_NAMESPACE_BEGIN
+
+constexpr bool is_push(evmone::Opcode opcode)
+{
+    return opcode >= evmone::Opcode::OP_PUSH0 &&
+           opcode <= evmone::Opcode::OP_PUSH32;
+}
+
+std::optional<size_t> resolve_jump(
+    InstructionsView const instructions, size_t index,
+    JumpDestinations const &jump_destinations)
+{
+    if (instructions.empty() || index == 0 || index >= instructions.size()) {
+        return std::nullopt;
     }
 
-    std::optional<size_t> resolve_jump(
-        InstructionsView const instructions, size_t index,
-        JumpDestinations const &jump_destinations)
-    {
-        if (instructions.empty() || index == 0 ||
-            index >= instructions.size()) {
-            return std::nullopt;
-        }
+    auto const &previous_instruction = instructions[index - 1];
 
-        auto const &previous_instruction = instructions[index - 1];
-
-        if (!is_push(previous_instruction.opcode)) {
-            return std::nullopt;
-        }
-
-        if (!jump_destinations.contains(previous_instruction.data)) {
-            return std::nullopt;
-        }
-
-        return jump_destinations.at(previous_instruction.data);
+    if (!is_push(previous_instruction.opcode)) {
+        return std::nullopt;
     }
 
-    ControlFlow get_control_flow_for_jump(
-        evmone::Opcode opcode, InstructionsView const &instructions,
-        size_t instruction_index, JumpDestinations const &jump_destinations)
-    {
-        using enum evmone::Opcode;
-        MONAD_DEBUG_ASSERT(opcode == OP_JUMP || opcode == OP_JUMPI);
-        bool const is_last = instruction_index + 1 >= instructions.size();
-        if (auto maybe_jump_index = resolve_jump(
-                instructions, instruction_index, jump_destinations);
-            maybe_jump_index.has_value()) {
-            auto jump_index = maybe_jump_index.value();
-            if (opcode == OP_JUMPI) {
-                if (!is_last) {
-                    return ResolvedControlFlow{
-                        ResolvedDynamic{jump_index, instruction_index + 1}};
-                }
-                return ResolvedControlFlow{ResolvedStatic{jump_index}};
+    if (!jump_destinations.contains(previous_instruction.data)) {
+        return std::nullopt;
+    }
+
+    return jump_destinations.at(previous_instruction.data);
+}
+
+ControlFlow get_control_flow_for_jump(
+    evmone::Opcode opcode, InstructionsView const &instructions,
+    size_t instruction_index, JumpDestinations const &jump_destinations)
+{
+    using enum evmone::Opcode;
+    MONAD_DEBUG_ASSERT(opcode == OP_JUMP || opcode == OP_JUMPI);
+    bool const is_last = instruction_index + 1 >= instructions.size();
+    if (auto maybe_jump_index =
+            resolve_jump(instructions, instruction_index, jump_destinations);
+        maybe_jump_index.has_value()) {
+        auto jump_index = maybe_jump_index.value();
+        if (opcode == OP_JUMPI) {
+            if (!is_last) {
+                return ResolvedControlFlow{
+                    ResolvedDynamic{jump_index, instruction_index + 1}};
             }
-            if (opcode == OP_JUMP) {
-                return ResolvedControlFlow{ResolvedStatic{jump_index}};
-            }
-            std::unreachable();
+            return ResolvedControlFlow{ResolvedStatic{jump_index}};
         }
-        else {
-            if (opcode == OP_JUMPI) {
-                if (!is_last) {
-                    return UnresolvedControlFlow{
-                        UnresolvedDynamic{instruction_index + 1}};
-                }
-                return UnresolvedControlFlow{UnresolvedStatic{}};
-            }
-            if (opcode == OP_JUMP) {
-                return UnresolvedControlFlow{UnresolvedStatic{}};
-            }
-            std::unreachable();
+        if (opcode == OP_JUMP) {
+            return ResolvedControlFlow{ResolvedStatic{jump_index}};
         }
+        std::unreachable();
+    }
+    else {
+        if (opcode == OP_JUMPI) {
+            if (!is_last) {
+                return UnresolvedControlFlow{
+                    UnresolvedDynamic{instruction_index + 1}};
+            }
+            return UnresolvedControlFlow{UnresolvedStatic{}};
+        }
+        if (opcode == OP_JUMP) {
+            return UnresolvedControlFlow{UnresolvedStatic{}};
+        }
+        std::unreachable();
     }
 }
+
+[[maybe_unused]] std::vector<BoostControlFlowGraph::vertex_descriptor>
+get_unresolved_basic_blocks(BoostControlFlowGraph const &graph)
+{
+    std::vector<BoostControlFlowGraph::vertex_descriptor> res;
+    for (auto &&vertex : boost::make_iterator_range(boost::vertices(graph))) {
+        res.push_back(vertex);
+    }
+    return res;
+}
+
+ANONYMOUS_NAMESPACE_END
 
 auto pad_code(byte_string code) -> byte_string
 {
@@ -488,7 +517,7 @@ auto construct_boost_graph(ControlFlowGraph const &control_flow_graph)
                 auto const &next_node = control_flow_graph.at(next_index);
                 auto const vertex2 =
                     find_vertex(next_index, &next_node, graph).value();
-                boost::add_edge(vertex1, vertex2, graph);
+                boost::add_edge(vertex1, vertex2, 1, graph);
             }
         }
     }

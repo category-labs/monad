@@ -120,10 +120,12 @@ struct BlockProcessor
             receipts.push_back(receipt);
         }
 
+        // YP eq. 33
         if (compute_bloom(receipts) != block.header.logs_bloom) {
             return tl::unexpected(ValidationStatus::WRONG_LOGS_BLOOM);
         }
 
+        // YP eq. 170
         if (cumulative_gas_used != block.header.gas_used) {
             return tl::unexpected(ValidationStatus::INVALID_GAS_USED);
         }

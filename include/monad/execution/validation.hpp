@@ -20,6 +20,7 @@ template <class Traits>
 constexpr ValidationStatus static_validate_txn(
     Transaction const &txn, std::optional<uint256_t> const &base_fee_per_gas)
 {
+    // EIP-155
     if (MONAD_LIKELY(txn.sc.chain_id.has_value())) {
         if constexpr (Traits::rev < EVMC_SPURIOUS_DRAGON) {
             return ValidationStatus::TYPE_NOT_SUPPORTED;
@@ -29,11 +30,13 @@ constexpr ValidationStatus static_validate_txn(
         }
     }
 
+    // EIP-2930 & EIP-2718
     if constexpr (Traits::rev < EVMC_BERLIN) {
         if (MONAD_UNLIKELY(txn.type != TransactionType::eip155)) {
             return ValidationStatus::TYPE_NOT_SUPPORTED;
         }
     }
+    // EIP-1559
     else if constexpr (Traits::rev < EVMC_LONDON) {
         if (MONAD_UNLIKELY(
                 txn.type != TransactionType::eip155 &&
@@ -48,10 +51,12 @@ constexpr ValidationStatus static_validate_txn(
         return ValidationStatus::TYPE_NOT_SUPPORTED;
     }
 
+    // EIP-1559
     if (MONAD_UNLIKELY(txn.max_fee_per_gas < base_fee_per_gas.value_or(0))) {
         return ValidationStatus::MAX_FEE_LESS_THAN_BASE;
     }
 
+    // EIP-1559
     if (MONAD_UNLIKELY(txn.max_priority_fee_per_gas > txn.max_fee_per_gas)) {
         return ValidationStatus::PRIORITY_FEE_GREATER_THAN_MAX;
     }
@@ -65,13 +70,12 @@ constexpr ValidationStatus static_validate_txn(
         }
     }
 
-    // Yellow paper, Eq. 62
-    // g0 <= Tg
+    // YP eq. 62
     if (MONAD_UNLIKELY(intrinsic_gas<Traits>(txn) > txn.gas_limit)) {
         return ValidationStatus::INTRINSIC_GAS_GREATER_THAN_LIMIT;
     }
 
-    // eip-2681
+    // EIP-2681
     if (MONAD_UNLIKELY(txn.nonce >= std::numeric_limits<uint64_t>::max())) {
         return ValidationStatus::NONCE_EXCEEDS_MAX;
     }
@@ -83,28 +87,31 @@ constexpr ValidationStatus validate_txn(State &state, Transaction const &txn)
 {
     // This is only verfiable after recover_sender, so it belongs to
     // validate
+    // YP eq. 62
     if (MONAD_UNLIKELY(!txn.from.has_value())) {
         return ValidationStatus::MISSING_SENDER;
     }
 
-    // σ[S(T)]c = KEC(()), EIP-3607
+    // YP eq. 62 & EIP-3607
     if (MONAD_UNLIKELY(state.get_code_hash(*txn.from) != NULL_HASH)) {
         return ValidationStatus::SENDER_NOT_EOA;
     }
 
-    // Tn = σ[S(T)]n
+    // YP eq. 62
     if (MONAD_UNLIKELY(state.get_nonce(txn.from.value()) != txn.nonce)) {
         return ValidationStatus::BAD_NONCE;
     }
 
-    // v0 <= σ[S(T)]b
+    // YP eq. 62
     if (MONAD_UNLIKELY(
             intx::be::load<uint256_t>(state.get_balance(*txn.from)) <
             (txn.value +
              intx::umul(uint256_t(txn.gas_limit), txn.max_fee_per_gas)))) {
         return ValidationStatus::INSUFFICIENT_BALANCE;
     }
+
     // Note: Tg <= B_Hl - l(B_R)u can only be checked before retirement
+    // (It requires knowing the parent block)
 
     return ValidationStatus::SUCCESS;
 }
@@ -112,10 +119,12 @@ constexpr ValidationStatus validate_txn(State &state, Transaction const &txn)
 template <class Traits>
 constexpr ValidationStatus static_validate_header(BlockHeader const &header)
 {
+    // YP eq. 56
     if (MONAD_UNLIKELY(header.gas_used > header.gas_limit)) {
         return ValidationStatus::GAS_ABOVE_LIMIT;
     }
 
+    // YP eq. 56
     if (MONAD_UNLIKELY(header.gas_limit < 5000)) {
         return ValidationStatus::INVALID_GAS_LIMIT;
     }
@@ -126,11 +135,13 @@ constexpr ValidationStatus static_validate_header(BlockHeader const &header)
         return ValidationStatus::INVALID_GAS_LIMIT;
     }
 
+    // YP eq. 56
     if (MONAD_UNLIKELY(header.extra_data.length() > 32)) {
         return ValidationStatus::EXTRA_DATA_TOO_LONG;
     }
 
-    // TODO: Does DAO necessarily need to be in homestead
+    // TODO: Does DAO necessarily need to be in Homestead?
+    // EIP-779
     if constexpr (Traits::rev == EVMC_HOMESTEAD) {
         if (MONAD_UNLIKELY(
                 header.number >= dao::dao_block_number &&
@@ -141,6 +152,7 @@ constexpr ValidationStatus static_validate_header(BlockHeader const &header)
     }
 
     // Validate Field Existence
+    // EIP-1559
     if constexpr (Traits::rev < EVMC_LONDON) {
         if (MONAD_UNLIKELY(header.base_fee_per_gas.has_value())) {
             return ValidationStatus::FIELD_BEFORE_FORK;
@@ -150,6 +162,7 @@ constexpr ValidationStatus static_validate_header(BlockHeader const &header)
         return ValidationStatus::MISSING_FIELD;
     }
 
+    // EIP-4895
     if constexpr (Traits::rev < EVMC_SHANGHAI) {
         if (MONAD_UNLIKELY(header.withdrawals_root.has_value())) {
             return ValidationStatus::FIELD_BEFORE_FORK;
@@ -159,6 +172,7 @@ constexpr ValidationStatus static_validate_header(BlockHeader const &header)
         return ValidationStatus::MISSING_FIELD;
     }
 
+    // EIP-3675
     if constexpr (Traits::rev >= EVMC_PARIS) {
         if (MONAD_UNLIKELY(header.difficulty != 0)) {
             return ValidationStatus::POW_BLOCK_AFTER_MERGE;
@@ -169,6 +183,10 @@ constexpr ValidationStatus static_validate_header(BlockHeader const &header)
         if (MONAD_UNLIKELY(header.nonce != empty_nonce)) {
             return ValidationStatus::INVALID_NONCE;
         }
+
+        if (MONAD_UNLIKELY(header.ommers_hash != NULL_LIST_HASH)) {
+            return ValidationStatus::WRONG_OMMERS_HASH;
+        }
     }
 
     return ValidationStatus::SUCCESS;
@@ -177,12 +195,15 @@ constexpr ValidationStatus static_validate_header(BlockHeader const &header)
 template <class Traits>
 constexpr ValidationStatus static_validate_ommers(Block const &block)
 {
+    // TODO: What we really need is probably a generic ommer hash computation
+    // function Instead of just checking this special case
     if (MONAD_UNLIKELY(
             block.ommers.empty() &&
             block.header.ommers_hash != NULL_LIST_HASH)) {
         return ValidationStatus::WRONG_OMMERS_HASH;
     }
 
+    // EIP-3675
     if constexpr (Traits::rev >= EVMC_PARIS) {
         if (MONAD_UNLIKELY(!block.ommers.empty())) {
             return ValidationStatus::TOO_MANY_OMMERS;
@@ -190,15 +211,18 @@ constexpr ValidationStatus static_validate_ommers(Block const &block)
         return ValidationStatus::SUCCESS;
     }
 
+    // YP eq. 167
     if (MONAD_UNLIKELY(block.ommers.size() > 2)) {
         return ValidationStatus::TOO_MANY_OMMERS;
     }
 
+    // Verified in go-ethereum
     if (MONAD_UNLIKELY(
             block.ommers.size() == 2 && block.ommers[0] == block.ommers[1])) {
         return ValidationStatus::DUPLICATE_OMMERS;
     }
 
+    // YP eq. 167
     for (auto const &ommer : block.ommers) {
         if (auto const status = static_validate_header<Traits>(ommer);
             status != ValidationStatus::SUCCESS) {
@@ -215,7 +239,7 @@ constexpr ValidationStatus static_validate_body(Block const &block)
     // TODO: Should we put computationally heavy validate_root(txn,
     // withdraw) here?
 
-    // First Validate Block Field Existence
+    // EIP-4895
     if constexpr (Traits::rev < EVMC_SHANGHAI) {
         if (MONAD_UNLIKELY(block.withdrawals.has_value())) {
             return ValidationStatus::FIELD_BEFORE_FORK;

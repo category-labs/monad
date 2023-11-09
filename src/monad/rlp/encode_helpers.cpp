@@ -1,5 +1,6 @@
 #include <monad/core/account.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>

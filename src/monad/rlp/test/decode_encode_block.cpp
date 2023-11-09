@@ -2,7 +2,6 @@
 #include <monad/core/transaction.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/rlp/decode_helpers.hpp>
-#include <monad/rlp/encode.hpp>
 #include <monad/rlp/encode_helpers.hpp>
 
 #include <evmc/evmc.hpp>

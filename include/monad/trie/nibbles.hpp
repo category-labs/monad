@@ -3,7 +3,6 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-
 #include <monad/trie/config.hpp>
 #include <monad/trie/nibbles_view.hpp>
 #include <monad/trie/util.hpp>

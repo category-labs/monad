@@ -1,9 +1,9 @@
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/block.hpp>
+#include <monad/core/block_rlp.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/db/block_db.hpp>
-#include <monad/rlp/decode_helpers.hpp>
-#include <monad/rlp/encode_helpers.hpp>
 
 #include <brotli/decode.h>
 #include <brotli/encode.h>

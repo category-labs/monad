@@ -1,11 +1,13 @@
 #pragma once
 
 #include <monad/config.hpp>
+#include <monad/core/account_rlp.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/address_fmt.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/bytes_fmt.hpp>
 #include <monad/db/trie_db_read_account.hpp>
+#include <monad/rlp/encode.hpp>
 #include <monad/trie/update.hpp>
 #include <monad/trie/update_fmt.hpp>
 
@@ -37,8 +39,8 @@ void trie_db_process_changes(
                 if (v.first != v.second) {
                     auto const key = trie::Nibbles{std::bit_cast<bytes32_t>(
                         ethash::keccak256(k.bytes, sizeof(k.bytes)))};
-                    auto const value = rlp::encode_string(
-                        zeroless_view(to_byte_string_view(v.second.bytes)));
+                    auto const value = rlp::encode_string(rlp::zeroless_view(
+                        to_byte_string_view(v.second.bytes)));
                     if (v.second != bytes32_t{}) {
                         storage_trie_updates.emplace_back(
                             trie::Upsert{.key = key, .value = value});

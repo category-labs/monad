@@ -1,9 +1,10 @@
 #pragma once
 
-#include <list>
 #include <monad/trie/config.hpp>
 #include <monad/trie/node.hpp>
 #include <monad/trie/transform.hpp>
+
+#include <list>
 
 MONAD_TRIE_NAMESPACE_BEGIN
 

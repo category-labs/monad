@@ -5,6 +5,7 @@
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
+#include <monad/core/block_rlp.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
@@ -14,7 +15,6 @@
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/validation.hpp>
 #include <monad/execution/validation_status.hpp>
-#include <monad/rlp/decode_helpers.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/test/config.hpp>

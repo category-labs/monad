@@ -1,8 +1,8 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/core/receipt_rlp.hpp>
 #include <monad/core/transaction.hpp>
-#include <monad/rlp/decode_helpers.hpp>
-#include <monad/rlp/encode_helpers.hpp>
+#include <monad/rlp/config.hpp>
 
 #include <evmc/evmc.hpp>
 

@@ -1,14 +1,18 @@
+#include <monad/core/address.hpp>
+#include <monad/core/address_rlp.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/withdrawal.hpp>
-#include <monad/rlp/decode_helpers.hpp>
-#include <monad/rlp/encode_helpers.hpp>
+#include <monad/core/withdrawal_rlp.hpp>
+#include <monad/rlp/config.hpp>
 
 #include <evmc/evmc.hpp>
+#include <intx/intx.hpp>
 
 #include <gtest/gtest.h>
 
 using namespace monad;
 using namespace monad::rlp;
+using namespace intx;
 
 TEST(Rlp_Withdrawal, encode_decode_withdrawal)
 {

@@ -1,6 +1,9 @@
+#include <monad/core/account_rlp.hpp>
+#include <monad/core/address_rlp.hpp>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/bytes_rlp.hpp>
+#include <monad/core/int_rlp.hpp>
 #include <monad/rlp/encode.hpp>
-#include <monad/rlp/util.hpp>
 
 #include <gtest/gtest.h>
 

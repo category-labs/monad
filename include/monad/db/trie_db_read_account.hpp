@@ -2,7 +2,7 @@
 
 #include <monad/config.hpp>
 #include <monad/core/account.hpp>
-#include <monad/rlp/decode_helpers.hpp>
+#include <monad/core/account_rlp.hpp>
 #include <monad/trie/get_trie_key_of_leaf.hpp>
 #include <monad/trie/nibbles.hpp>
 #include <monad/trie/node.hpp>

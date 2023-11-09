@@ -1,7 +1,6 @@
 #pragma once
 
 #include <monad/core/address.hpp>
-
 #include <monad/trie/comparator.hpp>
 #include <monad/trie/config.hpp>
 
@@ -35,7 +34,10 @@ public:
     }
 
     // Update this whenever the logic of this compartor is changed
-    virtual char const *Name() const override { return "PathComparator 0.0.1"; }
+    virtual char const *Name() const override
+    {
+        return "PathComparator 0.0.1";
+    }
 
     void FindShortestSeparator(
         std::string *, rocksdb::Slice const &) const override final

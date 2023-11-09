@@ -1,7 +1,6 @@
 #pragma once
 
 #include <monad/config.hpp>
-
 #include <monad/db/file_db.hpp>
 
 #include <cstdint>

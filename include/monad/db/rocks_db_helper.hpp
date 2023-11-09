@@ -1,11 +1,9 @@
 #pragma once
 
 #include <monad/core/bytes.hpp>
-
 #include <monad/db/assert.h>
 #include <monad/db/config.hpp>
 #include <monad/db/util.hpp>
-
 #include <monad/state2/state_deltas.hpp>
 
 #include <rocksdb/db.h>

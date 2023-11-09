@@ -1,12 +1,11 @@
 #pragma once
 
-#include <cassert>
-
+#include <monad/core/assert.h>
+#include <monad/core/byte_string.hpp>
 #include <monad/trie/config.hpp>
 #include <monad/trie/util.hpp>
 
-#include <monad/core/assert.h>
-#include <monad/core/byte_string.hpp>
+#include <cassert>
 
 MONAD_TRIE_NAMESPACE_BEGIN
 
@@ -23,9 +22,15 @@ struct NibblesView
     {
     }
 
-    [[nodiscard]] constexpr uint8_t size() const { return len; }
+    [[nodiscard]] constexpr uint8_t size() const
+    {
+        return len;
+    }
 
-    [[nodiscard]] constexpr bool empty() const { return size() == 0; }
+    [[nodiscard]] constexpr bool empty() const
+    {
+        return size() == 0;
+    }
 
     [[nodiscard]] constexpr byte_string::value_type operator[](size_t i) const
     {

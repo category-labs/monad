@@ -1,7 +1,6 @@
 #pragma once
 
 #include <monad/config.hpp>
-
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>

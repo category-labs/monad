@@ -2,7 +2,7 @@
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/transaction.hpp>
-#include <monad/rlp/encode_helpers.hpp>
+#include <monad/core/transaction_rlp.hpp>
 
 #include <silkpre/ecdsa.h>
 

@@ -1,13 +1,32 @@
 #pragma once
 
-#include <monad/rlp/config.hpp>
-#include <monad/rlp/util.hpp>
-
+#include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/int.hpp>
+#include <monad/rlp/config.hpp>
 
 #include <concepts>
 
 MONAD_RLP_NAMESPACE_BEGIN
+
+inline byte_string const EMPTY_STRING = {0x80};
+
+inline byte_string_view zeroless_view(byte_string_view const s)
+{
+    auto b = s.begin();
+    auto const e = s.end();
+    while (b < e && *b == 0) {
+        ++b;
+    }
+    return {b, e};
+}
+
+inline byte_string to_big_compact(unsigned_integral auto n)
+{
+    n = intx::to_big_endian(n);
+    return byte_string(
+        zeroless_view({reinterpret_cast<unsigned char *>(&n), sizeof(n)}));
+}
 
 inline byte_string encode_string(byte_string_view const str)
 {
@@ -31,7 +50,7 @@ inline byte_string encode_string(byte_string_view const str)
 }
 
 template <std::convertible_to<byte_string>... Args>
-inline byte_string encode_list(Args const &...args)
+byte_string encode_list(Args const &...args)
 {
     size_t size = 0;
     ([&] { size += args.size(); }(), ...);

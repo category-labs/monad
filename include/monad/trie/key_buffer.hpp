@@ -1,10 +1,9 @@
 #pragma once
 
-#include <monad/trie/config.hpp>
-
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
+#include <monad/trie/config.hpp>
 #include <monad/trie/nibbles.hpp>
 
 MONAD_TRIE_NAMESPACE_BEGIN

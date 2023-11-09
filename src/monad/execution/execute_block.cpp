@@ -83,12 +83,11 @@ inline void commit(BlockState &block_state)
 }
 
 template <evmc_revision rev>
-Result<std::vector<Receipt>> execute_block(
-    Block &block, Db &db, BlockHashBuffer const &block_hash_buffer,
-    fiber::PriorityPool &priority_pool)
+Result<std::vector<Receipt>> execute_block_no_post_validate(
+    Block &block, BlockHashBuffer const &block_hash_buffer,
+    fiber::PriorityPool &priority_pool, BlockState &block_state,
+    uint64_t &cumulative_gas_used)
 {
-    BlockState block_state{db};
-
     if constexpr (rev == EVMC_HOMESTEAD) {
         if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {
             transfer_balance_dao(block_state);
@@ -132,19 +131,8 @@ Result<std::vector<Receipt>> execute_block(
         receipts.push_back(std::move(receipt));
     }
 
-    uint64_t cumulative_gas_used = 0;
     for (auto const &receipt : receipts) {
         cumulative_gas_used += receipt.gas_used;
-    }
-
-    // YP eq. 33
-    if (compute_bloom(receipts) != block.header.logs_bloom) {
-        return BlockError::WrongLogsBloom;
-    }
-
-    // YP eq. 170
-    if (cumulative_gas_used != block.header.gas_used) {
-        return BlockError::InvalidGasUsed;
     }
 
     State state{block_state};
@@ -160,6 +148,36 @@ Result<std::vector<Receipt>> execute_block(
 
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(state);
+
+    return receipts;
+}
+
+template <evmc_revision rev>
+Result<std::vector<Receipt>> execute_block(
+    Block &block, Db &db, BlockHashBuffer const &block_hash_buffer,
+    fiber::PriorityPool &priority_pool)
+{
+    BlockState block_state{db};
+    uint64_t cumulative_gas_used = 0;
+
+    BOOST_OUTCOME_TRY(
+        auto const receipts,
+        execute_block_no_post_validate<rev>(
+            block,
+            block_hash_buffer,
+            priority_pool,
+            block_state,
+            cumulative_gas_used));
+
+    // YP eq. 33
+    if (compute_bloom(receipts) != block.header.logs_bloom) {
+        return BlockError::WrongLogsBloom;
+    }
+
+    // YP eq. 170
+    if (cumulative_gas_used != block.header.gas_used) {
+        return BlockError::InvalidGasUsed;
+    }
 
     commit(block_state);
 

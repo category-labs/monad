@@ -9,6 +9,7 @@
 #include <monad/core/transaction.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_gas.hpp>
+#include <monad/execution/tx_context.hpp>
 #include <monad/execution/validation.hpp>
 #include <monad/state2/state.hpp>
 
@@ -22,9 +23,8 @@ template <class Traits>
 struct TransactionProcessor
 {
     // YP Sec 6.2 "irrevocable_change"
-    void irrevocable_change(
-        State &state, Transaction const &txn,
-        uint256_t const &base_fee_per_gas) const
+    static constexpr void irrevocable_change(
+        State &state, Transaction const &txn, uint256_t const &base_fee_per_gas)
     {
         if (txn.to) { // EVM will increment if new contract
             auto const nonce = state.get_nonce(*txn.from);
@@ -38,9 +38,9 @@ struct TransactionProcessor
     }
 
     // YP Eqn 72
-    [[nodiscard]] uint64_t g_star(
+    [[nodiscard]] static constexpr uint64_t g_star(
         Transaction const &txn, uint64_t const gas_remaining,
-        uint64_t const refund) const
+        uint64_t const refund)
     {
         // https://eips.ethereum.org/EIPS/eip-3529
         constexpr auto max_refund_quotient = Traits::rev >= EVMC_LONDON ? 5 : 2;
@@ -50,9 +50,9 @@ struct TransactionProcessor
         return gas_remaining + std::min(refund_allowance, refund);
     }
 
-    [[nodiscard]] auto refund_gas(
+    [[nodiscard]] static constexpr auto refund_gas(
         State &state, Transaction const &txn, uint256_t const &base_fee_per_gas,
-        uint64_t const gas_leftover, uint64_t const refund) const
+        uint64_t const gas_leftover, uint64_t const refund)
     {
         // refund and priority, Eqn. 73-76
         auto const gas_remaining = g_star(txn, gas_leftover, refund);
@@ -143,6 +143,31 @@ struct TransactionProcessor
         }
 
         return receipt;
+    }
+
+    static constexpr ValidationStatus validate_and_execute(
+        Transaction const &tx, BlockHeader const &hdr,
+        BlockHashBuffer const &block_hash_buffer, State &state,
+        Receipt &receipt)
+    {
+        MONAD_DEBUG_ASSERT(
+            static_validate_txn<Traits>(tx, hdr.base_fee_per_gas) ==
+            ValidationStatus::SUCCESS);
+
+        TransactionProcessor<Traits> processor{};
+
+        if (auto const validity = validate_txn(state, tx);
+            validity != ValidationStatus::SUCCESS) {
+            // TODO: Issue #164, Issue #54
+            return validity;
+        }
+
+        auto const tx_context = get_tx_context<Traits>(tx, hdr);
+        EvmcHost<Traits> host{tx_context, block_hash_buffer, state};
+        receipt = processor.execute(
+            state, host, tx, hdr.base_fee_per_gas.value_or(0), hdr.beneficiary);
+
+        return ValidationStatus::SUCCESS;
     }
 };
 

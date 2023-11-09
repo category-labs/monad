@@ -179,7 +179,6 @@ add_library(
   "include/monad/execution/replay_block_db.hpp"
   "include/monad/execution/transaction_gas.hpp"
   "include/monad/execution/transaction_processor.hpp"
-  "include/monad/execution/transaction_processor_data.hpp"
   "include/monad/execution/tx_context.hpp"
   "include/monad/execution/validation.hpp"
   "include/monad/execution/validation_status.hpp"

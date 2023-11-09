@@ -45,6 +45,7 @@ public:
         WRONG_TRANSACTIONS_ROOT,
         WRONG_RECEIPTS_ROOT,
         BLOCK_VALIDATION_FAILED,
+        BLOCK_EXECUTION_ERROR,
     };
 
     struct Result
@@ -118,6 +119,14 @@ public:
                 block, db, block_hash_buffer, priority_pool);
 
             n_transactions += block.transactions.size();
+
+            if (MONAD_UNLIKELY(receipts.has_error())) {
+                LOG_ERROR(
+                    "Block execution error: {}",
+                    receipts.assume_error().value());
+                return Result{
+                    Status::BLOCK_EXECUTION_ERROR, current_block_number};
+            }
 
             if (!verify_root_hash(
                     block.header,

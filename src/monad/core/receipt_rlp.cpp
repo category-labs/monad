@@ -9,46 +9,46 @@
 MONAD_RLP_NAMESPACE_BEGIN
 
 // Encode
-byte_string encode_topics(std::vector<bytes32_t> const &t)
+byte_string encode_topics(std::vector<bytes32_t> const &topics)
 {
     byte_string result{};
-    for (auto const &i : t) {
+    for (auto const &i : topics) {
         result += encode_bytes32(i);
     }
     return encode_list(result);
 }
 
-byte_string encode_log(Receipt::Log const &l)
+byte_string encode_log(Receipt::Log const &log)
 {
     return encode_list(
-        encode_address(l.address),
-        encode_topics(l.topics),
-        encode_string(l.data));
+        encode_address(log.address),
+        encode_topics(log.topics),
+        encode_string(log.data));
 }
 
-byte_string encode_bloom(Receipt::Bloom const &b)
+byte_string encode_bloom(Receipt::Bloom const &bloom)
 {
-    return encode_string(to_byte_string_view(b));
+    return encode_string(to_byte_string_view(bloom));
 }
 
-byte_string encode_receipt(Receipt const &r)
+byte_string encode_receipt(Receipt const &receipt)
 {
     byte_string log_result{};
 
-    for (auto const &i : r.logs) {
+    for (auto const &i : receipt.logs) {
         log_result += encode_log(i);
     }
 
     auto const receipt_bytes = encode_list(
-        encode_unsigned(r.status),
-        encode_unsigned(r.gas_used),
-        encode_bloom(r.bloom),
+        encode_unsigned(receipt.status),
+        encode_unsigned(receipt.gas_used),
+        encode_bloom(receipt.bloom),
         encode_list(log_result));
 
-    if (r.type == TransactionType::eip1559 ||
-        r.type == TransactionType::eip2930) {
+    if (receipt.type == TransactionType::eip1559 ||
+        receipt.type == TransactionType::eip2930) {
         return encode_string(
-            static_cast<unsigned char>(r.type) + receipt_bytes);
+            static_cast<unsigned char>(receipt.type) + receipt_bytes);
     }
     return receipt_bytes;
 }
@@ -60,7 +60,7 @@ byte_string_view decode_bloom(Receipt::Bloom &bloom, byte_string_view const enc)
 }
 
 byte_string_view
-decode_topics(std::vector<bytes32_t> &topics, byte_string_view enc)
+decode_topics(std::vector<bytes32_t> &topics, byte_string_view const enc)
 {
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
@@ -81,7 +81,7 @@ decode_topics(std::vector<bytes32_t> &topics, byte_string_view enc)
     return rest_of_enc;
 }
 
-byte_string_view decode_log(Receipt::Log &log, byte_string_view enc)
+byte_string_view decode_log(Receipt::Log &log, byte_string_view const enc)
 {
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);

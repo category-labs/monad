@@ -21,19 +21,19 @@
 
 MONAD_NAMESPACE_BEGIN
 
-std::optional<address_t> recover_sender(Transaction const &t)
+std::optional<address_t> recover_sender(Transaction const &txn)
 {
-    if (t.from.has_value()) {
-        return t.from;
+    if (txn.from.has_value()) {
+        return txn.from;
     }
 
-    byte_string const txn_encoding = rlp::encode_transaction_for_signing(t);
+    byte_string const txn_encoding = rlp::encode_transaction_for_signing(txn);
     ethash::hash256 const txn_encoding_hash{
         ethash::keccak256(txn_encoding.data(), txn_encoding.size())};
 
-    uint8_t signature[sizeof(t.sc.r) * 2];
-    intx::be::unsafe::store(signature, t.sc.r);
-    intx::be::unsafe::store(signature + sizeof(t.sc.r), t.sc.s);
+    uint8_t signature[sizeof(txn.sc.r) * 2];
+    intx::be::unsafe::store(signature, txn.sc.r);
+    intx::be::unsafe::store(signature + sizeof(txn.sc.r), txn.sc.s);
 
     std::optional<address_t> res = evmc::address{};
     static std::unique_ptr<
@@ -46,7 +46,7 @@ std::optional<address_t> recover_sender(Transaction const &t)
             res->bytes,
             txn_encoding_hash.bytes,
             signature,
-            t.sc.odd_y_parity,
+            txn.sc.odd_y_parity,
             context.get())) {
         return std::nullopt;
     }

@@ -5,13 +5,14 @@
 #include <monad/core/withdrawal.hpp>
 #include <monad/rlp/config.hpp>
 
+#include <vector>
+
 MONAD_RLP_NAMESPACE_BEGIN
 
-byte_string encode_withdrawal(Withdrawal const &withdrawal);
+byte_string encode_withdrawal(Withdrawal const &);
 
+byte_string_view decode_withdrawal(Withdrawal &, byte_string_view);
 byte_string_view
-decode_withdrawal(Withdrawal &withdrawal, byte_string_view const enc);
-byte_string_view decode_withdrawal_list(
-    std::vector<Withdrawal> &withdrawal_list, byte_string_view const enc);
+decode_withdrawal_list(std::vector<Withdrawal> &, byte_string_view);
 
 MONAD_RLP_NAMESPACE_END

@@ -12,11 +12,11 @@
 MONAD_RLP_NAMESPACE_BEGIN
 
 // Encode
-byte_string encode_access_list(Transaction::AccessList const &list)
+byte_string encode_access_list(Transaction::AccessList const &access_list)
 {
     byte_string result;
     byte_string temp;
-    for (auto const &[addr, keys] : list) {
+    for (auto const &[addr, keys] : access_list) {
         temp.clear();
         for (auto const &key : keys) {
             temp += encode_bytes32(key);
@@ -171,8 +171,8 @@ decode_access_entry(Transaction::AccessEntry &ae, byte_string_view const enc)
     return rest_of_enc;
 }
 
-byte_string_view
-decode_access_list(Transaction::AccessList &al, byte_string_view const enc)
+byte_string_view decode_access_list(
+    Transaction::AccessList &access_list, byte_string_view const enc)
 {
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
@@ -180,13 +180,13 @@ decode_access_list(Transaction::AccessList &al, byte_string_view const enc)
     // 20 bytes for address, 33 bytes per key
     constexpr size_t access_entry_size_approx = 20 + 33 * approx_num_keys;
     auto const list_space = payload.size();
-    MONAD_ASSERT(al.size() == 0);
-    al.reserve(list_space / access_entry_size_approx);
+    MONAD_ASSERT(access_list.size() == 0);
+    access_list.reserve(list_space / access_entry_size_approx);
 
     while (payload.size() > 0) {
         Transaction::AccessEntry ae{};
         payload = decode_access_entry(ae, payload);
-        al.emplace_back(ae);
+        access_list.emplace_back(ae);
     }
 
     MONAD_ASSERT(payload.size() == 0);

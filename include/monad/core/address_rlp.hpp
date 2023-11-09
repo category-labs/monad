@@ -10,12 +10,12 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
-inline byte_string encode_address(std::optional<address_t> const &a)
+inline byte_string encode_address(std::optional<address_t> const &address)
 {
-    if (!a.has_value()) {
+    if (!address.has_value()) {
         return byte_string({0x80});
     }
-    return encode_string(to_byte_string_view(a->bytes));
+    return encode_string(to_byte_string_view(address->bytes));
 }
 
 inline byte_string_view

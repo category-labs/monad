@@ -94,11 +94,11 @@ decode_byte_array(uint8_t bytes[size], byte_string_view const enc)
 }
 
 constexpr byte_string_view
-decode_string(byte_string &str, byte_string_view const enc)
+decode_string(byte_string &byte_str, byte_string_view const enc)
 {
     byte_string_view payload{};
     auto const rest_of_enc = parse_string_metadata(payload, enc);
-    str = byte_string(payload);
+    byte_str = byte_string(payload);
     return rest_of_enc;
 }
 

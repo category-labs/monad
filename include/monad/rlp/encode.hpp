@@ -11,10 +11,10 @@ MONAD_RLP_NAMESPACE_BEGIN
 
 inline byte_string const EMPTY_STRING = {0x80};
 
-inline byte_string_view zeroless_view(byte_string_view const s)
+inline byte_string_view zeroless_view(byte_string_view const string_view)
 {
-    auto b = s.begin();
-    auto const e = s.end();
+    auto b = string_view.begin();
+    auto const e = string_view.end();
     while (b < e && *b == 0) {
         ++b;
     }
@@ -28,23 +28,23 @@ inline byte_string to_big_compact(unsigned_integral auto n)
         zeroless_view({reinterpret_cast<unsigned char *>(&n), sizeof(n)}));
 }
 
-inline byte_string encode_string(byte_string_view const str)
+inline byte_string encode_string(byte_string_view const string_view)
 {
     byte_string result;
-    uint32_t const size = static_cast<uint32_t>(str.size());
-    if (size == 1 && str[0] <= 0x7f) {
-        result = str;
+    uint32_t const size = static_cast<uint32_t>(string_view.size());
+    if (size == 1 && string_view[0] <= 0x7f) {
+        result = string_view;
     }
     else if (size > 55) {
         auto const size_str = to_big_compact(size);
         MONAD_ASSERT(size_str.size() <= 8u);
         result.push_back(0xb7 + static_cast<unsigned char>(size_str.size()));
         result += size_str;
-        result += str;
+        result += string_view;
     }
     else {
         result.push_back(0x80 + static_cast<unsigned char>(size));
-        result += str;
+        result += string_view;
     }
     return result;
 }

@@ -27,19 +27,19 @@ void set_3_bits(Receipt::Bloom &bloom, byte_string_view const bytes)
     }
 }
 
-void populate_bloom(Receipt::Bloom &b, Receipt::Log const &l)
+void populate_bloom(Receipt::Bloom &bloom, Receipt::Log const &log)
 {
     // YP Eqn 28
-    set_3_bits(b, to_byte_string_view(l.address.bytes));
-    for (auto const &i : l.topics) {
-        set_3_bits(b, to_byte_string_view(i.bytes));
+    set_3_bits(bloom, to_byte_string_view(log.address.bytes));
+    for (auto const &i : log.topics) {
+        set_3_bits(bloom, to_byte_string_view(i.bytes));
     }
 }
 
-void Receipt::add_log(Receipt::Log const &l)
+void Receipt::add_log(Receipt::Log const &log)
 {
-    logs.push_back(l);
-    populate_bloom(bloom, l);
+    logs.push_back(log);
+    populate_bloom(bloom, log);
 }
 
 MONAD_NAMESPACE_END

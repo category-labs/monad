@@ -80,41 +80,41 @@ byte_string encode_block(Block const &block)
 
 // Decode
 byte_string_view
-decode_block_header(BlockHeader &bh, byte_string_view const enc)
+decode_block_header(BlockHeader &block_header, byte_string_view const enc)
 {
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
 
-    payload = decode_bytes32(bh.parent_hash, payload);
-    payload = decode_bytes32(bh.ommers_hash, payload);
-    payload = decode_address(bh.beneficiary, payload);
-    payload = decode_bytes32(bh.state_root, payload);
-    payload = decode_bytes32(bh.transactions_root, payload);
-    payload = decode_bytes32(bh.receipts_root, payload);
-    payload = decode_bloom(bh.logs_bloom, payload);
-    payload = decode_unsigned<uint256_t>(bh.difficulty, payload);
-    payload = decode_unsigned<uint64_t>(bh.number, payload);
-    payload = decode_unsigned<uint64_t>(bh.gas_limit, payload);
-    payload = decode_unsigned<uint64_t>(bh.gas_used, payload);
-    payload = decode_unsigned<uint64_t>(bh.timestamp, payload);
-    payload = decode_string(bh.extra_data, payload);
-    payload = decode_bytes32(bh.prev_randao, payload);
-    payload = decode_byte_string_fixed<8>(bh.nonce, payload);
+    payload = decode_bytes32(block_header.parent_hash, payload);
+    payload = decode_bytes32(block_header.ommers_hash, payload);
+    payload = decode_address(block_header.beneficiary, payload);
+    payload = decode_bytes32(block_header.state_root, payload);
+    payload = decode_bytes32(block_header.transactions_root, payload);
+    payload = decode_bytes32(block_header.receipts_root, payload);
+    payload = decode_bloom(block_header.logs_bloom, payload);
+    payload = decode_unsigned<uint256_t>(block_header.difficulty, payload);
+    payload = decode_unsigned<uint64_t>(block_header.number, payload);
+    payload = decode_unsigned<uint64_t>(block_header.gas_limit, payload);
+    payload = decode_unsigned<uint64_t>(block_header.gas_used, payload);
+    payload = decode_unsigned<uint64_t>(block_header.timestamp, payload);
+    payload = decode_string(block_header.extra_data, payload);
+    payload = decode_bytes32(block_header.prev_randao, payload);
+    payload = decode_byte_string_fixed<8>(block_header.nonce, payload);
     if (payload.size() > 0) {
         uint64_t base_fee_per_gas{};
         payload = decode_unsigned<uint64_t>(base_fee_per_gas, payload);
-        bh.base_fee_per_gas.emplace(base_fee_per_gas);
+        block_header.base_fee_per_gas.emplace(base_fee_per_gas);
         if (payload.size() > 0) {
             bytes32_t withdrawal_root{};
             payload = decode_bytes32(withdrawal_root, payload);
-            bh.withdrawals_root.emplace(withdrawal_root);
+            block_header.withdrawals_root.emplace(withdrawal_root);
         }
         else {
-            bh.withdrawals_root = std::nullopt;
+            block_header.withdrawals_root = std::nullopt;
         }
     }
     else {
-        bh.base_fee_per_gas = std::nullopt;
+        block_header.base_fee_per_gas = std::nullopt;
     }
 
     MONAD_DEBUG_ASSERT(payload.size() == 0);

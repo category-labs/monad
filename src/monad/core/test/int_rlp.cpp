@@ -10,7 +10,7 @@
 using namespace monad;
 using namespace monad::rlp;
 
-TEST(Rlp, DecodeUnsigned)
+TEST(Rlp_Number, DecodeUnsigned)
 {
     EXPECT_EQ(0, decode_length(monad::byte_string({0x00})));
     EXPECT_EQ(15, decode_length(monad::byte_string({0x0f})));
@@ -24,7 +24,7 @@ TEST(Rlp, DecodeUnsigned)
     EXPECT_EQ(65535, decode_length(monad::byte_string({0xff, 0xff})));
 }
 
-TEST(Rlp, DecodeEncodeUnsigned)
+TEST(Rlp_Number, DecodeEncodeUnsigned)
 {
     // integer 0
     {
@@ -74,7 +74,7 @@ TEST(Rlp, DecodeEncodeUnsigned)
     }
 }
 
-TEST(Rlp, DecodeEncodeBigNumers)
+TEST(Rlp_Number, DecodeEncodeBigNumers)
 {
     using namespace intx;
 
@@ -154,7 +154,7 @@ TEST(Rlp, DecodeEncodeBigNumers)
     }
 }
 
-TEST(Rlp, EncodeCombinations)
+TEST(Rlp_Number, EncodeCombinations)
 {
     // the integer list of 0 and 9
     auto encoding = encode_list(encode_unsigned(0u), encode_unsigned(9u));

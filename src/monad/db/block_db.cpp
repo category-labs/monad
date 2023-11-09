@@ -7,11 +7,13 @@
 
 #include <brotli/decode.h>
 #include <brotli/encode.h>
+#include <brotli/types.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 MONAD_NAMESPACE_BEGIN
 

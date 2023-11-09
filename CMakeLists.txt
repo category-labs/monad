@@ -122,7 +122,6 @@ add_library(
   "include/monad/core/transaction.hpp"
   "include/monad/core/variant.hpp"
   "include/monad/core/withdrawal.hpp"
-  "src/monad/core/int.cpp"
   "src/monad/core/receipt.cpp"
   "src/monad/core/signature.cpp"
   "src/monad/core/transaction.cpp"

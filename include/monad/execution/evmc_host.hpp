@@ -22,24 +22,23 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <class Traits>
-struct EvmcHost : public evmc::Host
+class EvmcHostBase : public evmc::Host
 {
     evmc_tx_context const &tx_context_;
-
     BlockHashBuffer const &block_hash_buffer_;
+
+protected:
     State &state_;
 
-    using uint256be = evmc::uint256be;
-
-    EvmcHost(EvmcHost const &host, State &state)
+public:
+    EvmcHostBase(EvmcHostBase const &host, State &state)
         : tx_context_{host.tx_context_}
         , block_hash_buffer_{host.block_hash_buffer_}
         , state_{state}
     {
     }
 
-    EvmcHost(
+    EvmcHostBase(
         evmc_tx_context const &tx_context,
         BlockHashBuffer const &block_hash_buffer, State &state) noexcept
         : tx_context_{tx_context}
@@ -48,16 +47,7 @@ struct EvmcHost : public evmc::Host
     {
     }
 
-    virtual ~EvmcHost() noexcept = default;
-
-    virtual bool
-    account_exists(address_t const &address) const noexcept override
-    {
-        if constexpr (Traits::rev < EVMC_SPURIOUS_DRAGON) {
-            return state_.account_exists(address);
-        }
-        return !state_.account_is_dead(address);
-    }
+    virtual ~EvmcHostBase() noexcept = default;
 
     virtual bytes32_t get_storage(
         address_t const &address, bytes32_t const &key) const noexcept override
@@ -72,7 +62,7 @@ struct EvmcHost : public evmc::Host
         return state_.set_storage(address, key, value);
     }
 
-    virtual uint256be
+    virtual evmc::uint256be
     get_balance(address_t const &address) const noexcept override
     {
         return state_.get_balance(address);
@@ -107,51 +97,6 @@ struct EvmcHost : public evmc::Host
         return state_.selfdestruct(address, beneficiary);
     }
 
-    [[nodiscard]] static constexpr evmc_message
-    make_msg_from_txn(Transaction const &txn)
-    {
-        auto const to_address = [&] {
-            if (txn.to) {
-                return std::pair{EVMC_CALL, *txn.to};
-            }
-            return std::pair{EVMC_CREATE, address_t{}};
-        }();
-
-        evmc_message msg{
-            .kind = to_address.first,
-            .gas = static_cast<int64_t>(
-                txn.gas_limit - intrinsic_gas<Traits>(txn)),
-            .recipient = to_address.second,
-            .sender = *txn.from,
-            .input_data = txn.data.data(),
-            .input_size = txn.data.size(),
-            .code_address = to_address.second,
-        };
-        intx::be::store(msg.value.bytes, txn.value);
-        return msg;
-    }
-
-    [[nodiscard]] virtual evmc::Result
-    call(evmc_message const &msg) noexcept override
-    {
-        using evm_t = Evm<Traits>;
-
-        if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
-            auto res = evm_t::create_contract_account(this, state_, msg);
-            // eip-211, eip-140
-            if (res.status_code != EVMC_REVERT) {
-                return evmc::Result{
-                    res.status_code,
-                    res.gas_left,
-                    res.gas_refund,
-                    res.create_address};
-            }
-            return res;
-        }
-
-        return evm_t::call_evm(this, state_, msg);
-    }
-
     virtual evmc_tx_context get_tx_context() const noexcept override
     {
         return tx_context_;
@@ -175,6 +120,49 @@ struct EvmcHost : public evmc::Host
         state_.store_log(std::move(log));
     }
 
+    virtual evmc_access_status access_storage(
+        address_t const &address, bytes32_t const &key) noexcept override
+    {
+        return state_.access_storage(address, key);
+    }
+};
+
+template <class Traits>
+class EvmcHost final : public EvmcHostBase
+{
+public:
+    using EvmcHostBase::EvmcHostBase;
+
+    virtual bool
+    account_exists(address_t const &address) const noexcept override
+    {
+        if constexpr (Traits::rev < EVMC_SPURIOUS_DRAGON) {
+            return state_.account_exists(address);
+        }
+        return !state_.account_is_dead(address);
+    }
+
+    [[nodiscard]] virtual evmc::Result
+    call(evmc_message const &msg) noexcept override
+    {
+        using evm_t = Evm<Traits>;
+
+        if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
+            auto res = evm_t::create_contract_account(this, state_, msg);
+            // eip-211, eip-140
+            if (res.status_code != EVMC_REVERT) {
+                return evmc::Result{
+                    res.status_code,
+                    res.gas_left,
+                    res.gas_refund,
+                    res.create_address};
+            }
+            return res;
+        }
+
+        return evm_t::call_evm(this, state_, msg);
+    }
+
     virtual evmc_access_status
     access_account(address_t const &address) noexcept override
     {
@@ -184,10 +172,28 @@ struct EvmcHost : public evmc::Host
         return state_.access_account(address);
     }
 
-    virtual evmc_access_status access_storage(
-        address_t const &address, bytes32_t const &key) noexcept override
+    [[nodiscard]] static constexpr evmc_message
+    make_msg_from_txn(Transaction const &txn)
     {
-        return state_.access_storage(address, key);
+        auto const to_address = [&] {
+            if (txn.to) {
+                return std::pair{EVMC_CALL, *txn.to};
+            }
+            return std::pair{EVMC_CREATE, address_t{}};
+        }();
+
+        evmc_message msg{
+            .kind = to_address.first,
+            .gas = static_cast<int64_t>(
+                txn.gas_limit - intrinsic_gas<Traits>(txn)),
+            .recipient = to_address.second,
+            .sender = *txn.from,
+            .input_data = txn.data.data(),
+            .input_size = txn.data.size(),
+            .code_address = to_address.second,
+        };
+        intx::be::store(msg.value.bytes, txn.value);
+        return msg;
     }
 };
 

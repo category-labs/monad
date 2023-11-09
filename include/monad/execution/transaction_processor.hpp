@@ -64,6 +64,30 @@ struct TransactionProcessor
         return gas_remaining;
     }
 
+    [[nodiscard]] static constexpr evmc_message
+    to_message(Transaction const &tx)
+    {
+        auto const to_address = [&tx] {
+            if (tx.to) {
+                return std::pair{EVMC_CALL, *tx.to};
+            }
+            return std::pair{EVMC_CREATE, address_t{}};
+        }();
+
+        evmc_message msg{
+            .kind = to_address.first,
+            .gas =
+                static_cast<int64_t>(tx.gas_limit - intrinsic_gas<Traits>(tx)),
+            .recipient = to_address.second,
+            .sender = *tx.from,
+            .input_data = tx.data.data(),
+            .input_size = tx.data.size(),
+            .code_address = to_address.second,
+        };
+        intx::be::store(msg.value.bytes, tx.value);
+        return msg;
+    }
+
     Receipt execute(
         State &state, EvmcHost<Traits> &host, Transaction const &txn,
         uint256_t const &base_fee_per_gas, address_t const &beneficiary) const
@@ -86,8 +110,8 @@ struct TransactionProcessor
             state.access_account(*txn.to);
         }
 
-        auto m = EvmcHost<Traits>::make_msg_from_txn(txn);
-        auto result = host.call(m);
+        auto const msg = to_message(txn);
+        auto const result = host.call(msg);
 
         MONAD_DEBUG_ASSERT(result.gas_left >= 0);
         MONAD_DEBUG_ASSERT(result.gas_refund >= 0);

@@ -70,9 +70,8 @@ public:
 };
 
 template <class Traits>
-class EvmcHost final : public EvmcHostBase
+struct EvmcHost final : public EvmcHostBase
 {
-public:
     using EvmcHostBase::EvmcHostBase;
 
     virtual bool
@@ -112,30 +111,6 @@ public:
             return EVMC_ACCESS_WARM;
         }
         return state_.access_account(address);
-    }
-
-    [[nodiscard]] static constexpr evmc_message
-    make_msg_from_txn(Transaction const &txn)
-    {
-        auto const to_address = [&] {
-            if (txn.to) {
-                return std::pair{EVMC_CALL, *txn.to};
-            }
-            return std::pair{EVMC_CREATE, address_t{}};
-        }();
-
-        evmc_message msg{
-            .kind = to_address.first,
-            .gas = static_cast<int64_t>(
-                txn.gas_limit - intrinsic_gas<Traits>(txn)),
-            .recipient = to_address.second,
-            .sender = *txn.from,
-            .input_data = txn.data.data(),
-            .input_size = txn.data.size(),
-            .code_address = to_address.second,
-        };
-        intx::be::store(msg.value.bytes, txn.value);
-        return msg;
     }
 };
 

@@ -407,7 +407,7 @@ TEST(Evm, deploy_contract_code)
             auto const r2 = Evm<fork_traits::frontier>::deploy_contract_code(
                 s, a, std::move(r));
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
-            EXPECT_EQ(r2.gas_left, r.gas_left);
+            EXPECT_EQ(r2.gas_left, 700);
             EXPECT_EQ(r2.create_address, a);
         }
     }
@@ -425,9 +425,8 @@ TEST(Evm, deploy_contract_code)
                 s, a, std::move(r));
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.create_address, a);
-            EXPECT_EQ(
-                r2.gas_left,
-                r.gas_left - 800); // G_codedeposit * size(code)
+            EXPECT_EQ(r2.gas_left,
+                      gas - 800); // G_codedeposit * size(code)
             EXPECT_EQ(s.get_code(a), byte_string(code, sizeof(code)));
         }
 

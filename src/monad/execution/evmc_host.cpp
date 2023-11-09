@@ -1,0 +1,109 @@
+#include <monad/config.hpp>
+#include <monad/core/address.hpp>
+#include <monad/core/assert.h>
+#include <monad/core/bytes.hpp>
+#include <monad/core/receipt.hpp>
+#include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/evmc_host.hpp>
+#include <monad/state2/state.hpp>
+
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+
+MONAD_NAMESPACE_BEGIN
+
+EvmcHostBase::EvmcHostBase(EvmcHostBase const &host, State &state) noexcept
+    : tx_context_{host.tx_context_}
+    , block_hash_buffer_{host.block_hash_buffer_}
+    , state_{state}
+{
+}
+
+EvmcHostBase::EvmcHostBase(
+    evmc_tx_context const &tx_context, BlockHashBuffer const &block_hash_buffer,
+    State &state) noexcept
+    : tx_context_{tx_context}
+    , block_hash_buffer_{block_hash_buffer}
+    , state_{state}
+{
+}
+
+bytes32_t EvmcHostBase::get_storage(
+    address_t const &address, bytes32_t const &key) const noexcept
+{
+    return state_.get_storage(address, key);
+}
+
+evmc_storage_status EvmcHostBase::set_storage(
+    address_t const &address, bytes32_t const &key,
+    bytes32_t const &value) noexcept
+{
+    return state_.set_storage(address, key, value);
+}
+
+evmc::uint256be
+EvmcHostBase::get_balance(address_t const &address) const noexcept
+{
+    return state_.get_balance(address);
+}
+
+size_t EvmcHostBase::get_code_size(address_t const &address) const noexcept
+{
+    return state_.get_code_size(address);
+}
+
+bytes32_t EvmcHostBase::get_code_hash(address_t const &address) const noexcept
+{
+    if (state_.account_is_dead(address)) {
+        return bytes32_t{};
+    }
+    return state_.get_code_hash(address);
+}
+
+size_t EvmcHostBase::copy_code(
+    address_t const &address, size_t offset, uint8_t *data,
+    size_t size) const noexcept
+{
+    return state_.copy_code(address, offset, data, size);
+}
+
+[[nodiscard]] bool EvmcHostBase::selfdestruct(
+    address_t const &address, address_t const &beneficiary) noexcept
+{
+    return state_.selfdestruct(address, beneficiary);
+}
+
+evmc_tx_context EvmcHostBase::get_tx_context() const noexcept
+{
+    return tx_context_;
+}
+
+bytes32_t
+EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
+{
+    MONAD_DEBUG_ASSERT(block_number >= 0);
+    return block_hash_buffer_.get(static_cast<uint64_t>(block_number));
+};
+
+void EvmcHostBase::emit_log(
+    address_t const &address, uint8_t const *data, size_t data_size,
+    bytes32_t const topics[], size_t num_topics) noexcept
+{
+    Receipt::Log log{.data = {data, data_size}, .address = address};
+    for (auto i = 0u; i < num_topics; ++i) {
+        log.topics.push_back({topics[i]});
+    }
+    state_.store_log(std::move(log));
+}
+
+evmc_access_status EvmcHostBase::access_storage(
+    address_t const &address, bytes32_t const &key) noexcept
+{
+    return state_.access_storage(address, key);
+}
+
+MONAD_NAMESPACE_END

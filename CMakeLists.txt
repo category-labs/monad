@@ -171,6 +171,7 @@ add_library(
   "src/monad/execution/block_hash_buffer.cpp"
   "src/monad/execution/block_reward.cpp"
   "src/monad/execution/create_contract_address.cpp"
+  "src/monad/execution/evmc_host.cpp"
   # rlp
   "include/monad/rlp/decode.hpp"
   "include/monad/rlp/decode_helpers.hpp"

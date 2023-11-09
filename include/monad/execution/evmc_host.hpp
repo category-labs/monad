@@ -1,16 +1,11 @@
 #pragma once
 
 #include <monad/config.hpp>
-
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
-
-#include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/precompiles.hpp>
 #include <monad/execution/transaction_gas.hpp>
-#include <monad/execution/tx_context.hpp>
-
 #include <monad/state2/state.hpp>
 
 #include <intx/intx.hpp>
@@ -22,6 +17,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
+class BlockHashBuffer;
+
 class EvmcHostBase : public evmc::Host
 {
     evmc_tx_context const &tx_context_;
@@ -31,100 +28,45 @@ protected:
     State &state_;
 
 public:
-    EvmcHostBase(EvmcHostBase const &host, State &state)
-        : tx_context_{host.tx_context_}
-        , block_hash_buffer_{host.block_hash_buffer_}
-        , state_{state}
-    {
-    }
+    EvmcHostBase(EvmcHostBase const &, State &) noexcept;
 
     EvmcHostBase(
-        evmc_tx_context const &tx_context,
-        BlockHashBuffer const &block_hash_buffer, State &state) noexcept
-        : tx_context_{tx_context}
-        , block_hash_buffer_{block_hash_buffer}
-        , state_{state}
-    {
-    }
+        evmc_tx_context const &, BlockHashBuffer const &, State &) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
 
     virtual bytes32_t get_storage(
-        address_t const &address, bytes32_t const &key) const noexcept override
-    {
-        return state_.get_storage(address, key);
-    }
+        address_t const &, bytes32_t const &key) const noexcept override;
 
     virtual evmc_storage_status set_storage(
-        address_t const &address, bytes32_t const &key,
-        bytes32_t const &value) noexcept override
-    {
-        return state_.set_storage(address, key, value);
-    }
+        address_t const &, bytes32_t const &key,
+        bytes32_t const &value) noexcept override;
 
     virtual evmc::uint256be
-    get_balance(address_t const &address) const noexcept override
-    {
-        return state_.get_balance(address);
-    }
+    get_balance(address_t const &) const noexcept override;
 
-    virtual size_t
-    get_code_size(address_t const &address) const noexcept override
-    {
-        return state_.get_code_size(address);
-    }
+    virtual size_t get_code_size(address_t const &) const noexcept override;
 
-    virtual bytes32_t
-    get_code_hash(address_t const &address) const noexcept override
-    {
-        if (state_.account_is_dead(address)) {
-            return bytes32_t{};
-        }
-        return state_.get_code_hash(address);
-    }
+    virtual bytes32_t get_code_hash(address_t const &) const noexcept override;
 
     virtual size_t copy_code(
-        address_t const &address, size_t offset, uint8_t *data,
-        size_t size) const noexcept override
-    {
-        return state_.copy_code(address, offset, data, size);
-    }
+        address_t const &, size_t offset, uint8_t *data,
+        size_t size) const noexcept override;
 
     [[nodiscard]] virtual bool selfdestruct(
         address_t const &address,
-        address_t const &beneficiary) noexcept override
-    {
-        return state_.selfdestruct(address, beneficiary);
-    }
+        address_t const &beneficiary) noexcept override;
 
-    virtual evmc_tx_context get_tx_context() const noexcept override
-    {
-        return tx_context_;
-    }
+    virtual evmc_tx_context get_tx_context() const noexcept override;
 
-    virtual bytes32_t
-    get_block_hash(int64_t const block_number) const noexcept override
-    {
-        MONAD_DEBUG_ASSERT(block_number >= 0);
-        return block_hash_buffer_.get(static_cast<uint64_t>(block_number));
-    };
+    virtual bytes32_t get_block_hash(int64_t) const noexcept override;
 
     virtual void emit_log(
-        address_t const &address, uint8_t const *data, size_t data_size,
-        bytes32_t const topics[], size_t num_topics) noexcept override
-    {
-        Receipt::Log log{.data = {data, data_size}, .address = address};
-        for (auto i = 0u; i < num_topics; ++i) {
-            log.topics.push_back({topics[i]});
-        }
-        state_.store_log(std::move(log));
-    }
+        address_t const &, uint8_t const *data, size_t data_size,
+        bytes32_t const topics[], size_t num_topics) noexcept override;
 
-    virtual evmc_access_status access_storage(
-        address_t const &address, bytes32_t const &key) noexcept override
-    {
-        return state_.access_storage(address, key);
-    }
+    virtual evmc_access_status
+    access_storage(address_t const &, bytes32_t const &key) noexcept override;
 };
 
 template <class Traits>

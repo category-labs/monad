@@ -10,7 +10,6 @@
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/ethereum/genesis.hpp>
 #include <monad/execution/evmc_host.hpp>
-#include <monad/execution/execution_model.hpp>
 
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>

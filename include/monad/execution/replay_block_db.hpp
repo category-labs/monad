@@ -119,6 +119,9 @@ public:
                     db.create_and_prune_block_history(current_block_number);
                 }
             }
+
+            buffer.set_parent_header(block.header);
+            buffer.to_next_block();
         }
 
         if (until_block_number.has_value() &&
@@ -163,6 +166,12 @@ public:
             MONAD_ASSERT(result);
             buffer.set_block_hash(block_number - 1, block.header.parent_hash);
             ++block_number;
+        }
+        {
+            block = Block{};
+            bool const result = block_db.get(start_block_number - 1, block);
+            MONAD_ASSERT(result);
+            buffer.set_parent_header(block.header);
         }
 
         return run_fork<Traits>(

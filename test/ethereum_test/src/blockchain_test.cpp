@@ -189,6 +189,7 @@ void BlockchainTest::TestBody()
         }
 
         Buffer buffer;
+        // TODO: Add genesis parsing logic here
         for (auto const &j_block : j_contents.at("blocks")) {
             Block block;
             auto const rlp = j_block.at("rlp").get<byte_string>();
@@ -213,6 +214,8 @@ void BlockchainTest::TestBody()
                 EXPECT_FALSE(j_block.contains("expectException"));
                 EXPECT_EQ(db.state_root(), block.header.state_root) << name;
                 EXPECT_EQ(result->size(), block.transactions.size()) << name;
+                buffer.set_parent_header(block.header);
+                buffer.to_next_block();
             }
             else {
                 EXPECT_TRUE(j_block.contains("expectException"));

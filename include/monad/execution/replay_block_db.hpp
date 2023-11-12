@@ -6,6 +6,8 @@
 
 #include <monad/db/block_db.hpp>
 
+#include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/block_header_buffer.hpp>
 #include <monad/execution/block_processor.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/ethereum/genesis.hpp>
@@ -79,7 +81,9 @@ public:
     template <class Traits>
     [[nodiscard]] Result run_fork(
         Db &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
-        BlockHashBuffer &block_hash_buffer, block_num_t current_block_number,
+        BlockHashBuffer &block_hash_buffer,
+        BlockHeaderBuffer &block_header_buffer,
+        block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
         for (; current_block_number <= loop_until<Traits>(until_block_number);
@@ -97,7 +101,8 @@ public:
                 current_block_number - 1, block.header.parent_hash);
 
             BlockProcessor block_processor{};
-            if (auto const status = static_validate_block<Traits::rev>(block);
+            if (auto const status = static_validate_block<Traits::rev>(
+                    block, block_header_buffer);
                 status != ValidationStatus::SUCCESS) {
                 return Result{
                     Status::BLOCK_VALIDATION_FAILED, current_block_number};
@@ -118,6 +123,7 @@ public:
                 if (current_block_number % checkpoint_frequency == 0) {
                     db.create_and_prune_block_history(current_block_number);
                 }
+                block_header_buffer.set_parent_header(block.header);
             }
         }
 
@@ -131,6 +137,7 @@ public:
                 checkpoint_frequency,
                 block_db,
                 block_hash_buffer,
+                block_header_buffer,
                 current_block_number,
                 until_block_number);
         }
@@ -165,11 +172,21 @@ public:
             ++block_number;
         }
 
+        MONAD_DEBUG_ASSERT(start_block_number >= 1);
+        Block parent_block;
+        bool const get_parent_result =
+            block_db.get(start_block_number - 1, parent_block);
+        MONAD_ASSERT(get_parent_result);
+
+        BlockHeaderBuffer block_header_buffer;
+        block_header_buffer.set_parent_header(parent_block.header);
+
         return run_fork<Traits>(
             db,
             checkpoint_frequency,
             block_db,
             block_hash_buffer,
+            block_header_buffer,
             start_block_number,
             until_block_number);
     }

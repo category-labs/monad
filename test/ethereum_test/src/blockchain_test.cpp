@@ -11,6 +11,7 @@
 #include <monad/core/int.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/block_header_buffer.hpp>
 #include <monad/execution/block_processor.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/validation.hpp>
@@ -55,12 +56,14 @@ namespace
 {
     template <typename Traits>
     [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus> execute(
-        Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
+        Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer,
+        BlockHeaderBuffer const &block_header_buffer)
     {
         using namespace monad::test;
         BlockProcessor processor;
 
-        if (auto const status = static_validate_block<Traits::rev>(block);
+        if (auto const status =
+                static_validate_block<Traits::rev>(block, block_header_buffer);
             status != ValidationStatus::SUCCESS) {
             return tl::unexpected(status);
         }
@@ -70,34 +73,45 @@ namespace
 
     [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus> execute(
         evmc_revision const rev, Block &block, test::db_t &db,
-        BlockHashBuffer const &block_hash_buffer)
+        BlockHashBuffer const &block_hash_buffer,
+        BlockHeaderBuffer const &block_header_buffer)
     {
         using namespace monad::fork_traits;
 
         switch (rev) {
         case EVMC_FRONTIER:
-            return execute<frontier>(block, db, block_hash_buffer);
+            return execute<frontier>(
+                block, db, block_hash_buffer, block_header_buffer);
         case EVMC_HOMESTEAD:
-            return execute<homestead>(block, db, block_hash_buffer);
+            return execute<homestead>(
+                block, db, block_hash_buffer, block_header_buffer);
         case EVMC_TANGERINE_WHISTLE:
-            return execute<tangerine_whistle>(block, db, block_hash_buffer);
+            return execute<tangerine_whistle>(
+                block, db, block_hash_buffer, block_header_buffer);
         case EVMC_SPURIOUS_DRAGON:
-            return execute<spurious_dragon>(block, db, block_hash_buffer);
+            return execute<spurious_dragon>(
+                block, db, block_hash_buffer, block_header_buffer);
         case EVMC_BYZANTIUM:
-            return execute<byzantium>(block, db, block_hash_buffer);
+            return execute<byzantium>(
+                block, db, block_hash_buffer, block_header_buffer);
         case EVMC_PETERSBURG:
             return execute<constantinople_and_petersburg>(
-                block, db, block_hash_buffer);
+                block, db, block_hash_buffer, block_header_buffer);
         case EVMC_ISTANBUL:
-            return execute<istanbul>(block, db, block_hash_buffer);
+            return execute<istanbul>(
+                block, db, block_hash_buffer, block_header_buffer);
         case EVMC_BERLIN:
-            return execute<berlin>(block, db, block_hash_buffer);
+            return execute<berlin>(
+                block, db, block_hash_buffer, block_header_buffer);
         case EVMC_LONDON:
-            return execute<london>(block, db, block_hash_buffer);
+            return execute<london>(
+                block, db, block_hash_buffer, block_header_buffer);
         case EVMC_PARIS:
-            return execute<paris>(block, db, block_hash_buffer);
+            return execute<paris>(
+                block, db, block_hash_buffer, block_header_buffer);
         case EVMC_SHANGHAI:
-            return execute<shanghai>(block, db, block_hash_buffer);
+            return execute<shanghai>(
+                block, db, block_hash_buffer, block_header_buffer);
         default:
             MONAD_ASSERT(false);
         }
@@ -190,6 +204,17 @@ void BlockchainTest::TestBody()
         }
 
         BlockHashBuffer block_hash_buffer;
+        BlockHeaderBuffer block_header_buffer;
+
+        {
+            Block genesis_block;
+            auto const genesis_rlp =
+                j_contents.at("genesisRLP").get<byte_string>();
+            auto const rest = rlp::decode_block(genesis_block, genesis_rlp);
+            EXPECT_TRUE(rest.empty()) << name;
+            block_header_buffer.set_parent_header(genesis_block.header);
+        }
+
         for (auto const &j_block : j_contents.at("blocks")) {
             Block block;
             auto const rlp = j_block.at("rlp").get<byte_string>();
@@ -209,14 +234,17 @@ void BlockchainTest::TestBody()
             block_hash_buffer.set(
                 block.header.number - 1, block.header.parent_hash);
 
-            auto const result = execute(rev, block, db, block_hash_buffer);
+            auto const result =
+                execute(rev, block, db, block_hash_buffer, block_header_buffer);
             if (result) {
                 EXPECT_FALSE(j_block.contains("expectException"));
                 EXPECT_EQ(db.state_root(), block.header.state_root) << name;
                 EXPECT_EQ(result->size(), block.transactions.size()) << name;
+                block_header_buffer.set_parent_header(block.header);
             }
             else {
                 EXPECT_TRUE(j_block.contains("expectException"));
+                block_hash_buffer.to_prev();
             }
         }
 

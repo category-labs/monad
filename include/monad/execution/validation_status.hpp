@@ -23,6 +23,8 @@ enum class ValidationStatus
     WRONG_DAO_EXTRA_DATA,
     WRONG_LOGS_BLOOM,
     INVALID_GAS_USED,
+    UNKNOWN_PARENT,
+    INVALID_TIMESTAMP,
 
     // Transaction Validation Error
     INSUFFICIENT_BALANCE,

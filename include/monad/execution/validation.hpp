@@ -5,6 +5,7 @@
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/transaction.hpp>
+#include <monad/execution/buffer.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/transaction_gas.hpp>
@@ -115,7 +116,9 @@ constexpr ValidationStatus validate_txn(State &state, Transaction const &txn)
 }
 
 template <evmc_revision rev>
-constexpr ValidationStatus static_validate_header(BlockHeader const &header)
+constexpr ValidationStatus static_validate_header(
+    BlockHeader const &header, Buffer const &buffer,
+    bool no_parent_validation = false)
 {
     // YP eq. 56
     if (MONAD_UNLIKELY(header.gas_used > header.gas_limit)) {
@@ -187,11 +190,23 @@ constexpr ValidationStatus static_validate_header(BlockHeader const &header)
         }
     }
 
+    if (!no_parent_validation) {
+        auto const parent = buffer.get_parent_header(header.parent_hash);
+        if (MONAD_UNLIKELY(!parent.has_value())) {
+            return ValidationStatus::UNKNOWN_PARENT;
+        }
+
+        if (MONAD_UNLIKELY(header.timestamp <= parent.value().timestamp)) {
+            return ValidationStatus::INVALID_TIMESTAMP;
+        }
+    }
+
     return ValidationStatus::SUCCESS;
 }
 
 template <evmc_revision rev>
-constexpr ValidationStatus static_validate_ommers(Block const &block)
+constexpr ValidationStatus
+static_validate_ommers(Block const &block, Buffer const &buffer)
 {
     // TODO: What we really need is probably a generic ommer hash computation
     // function Instead of just checking this special case
@@ -222,7 +237,10 @@ constexpr ValidationStatus static_validate_ommers(Block const &block)
 
     // YP eq. 167
     for (auto const &ommer : block.ommers) {
-        if (auto const status = static_validate_header<rev>(ommer);
+        // Note: We are not validating ommer header with its parent, since it
+        // requires more thought
+        if (auto const status = static_validate_header<rev>(
+                ommer, buffer, /*no_parent_validation*/ true);
             status != ValidationStatus::SUCCESS) {
             return ValidationStatus::INVALID_OMMER_HEADER;
         }
@@ -232,7 +250,8 @@ constexpr ValidationStatus static_validate_ommers(Block const &block)
 }
 
 template <evmc_revision rev>
-constexpr ValidationStatus static_validate_body(Block const &block)
+constexpr ValidationStatus
+static_validate_body(Block const &block, Buffer const &buffer)
 {
     // TODO: Should we put computationally heavy validate_root(txn,
     // withdraw) here?
@@ -249,7 +268,7 @@ constexpr ValidationStatus static_validate_body(Block const &block)
         }
     }
 
-    if (auto const status = static_validate_ommers<rev>(block);
+    if (auto const status = static_validate_ommers<rev>(block, buffer);
         status != ValidationStatus::SUCCESS) {
         return status;
     }
@@ -266,14 +285,16 @@ constexpr ValidationStatus static_validate_body(Block const &block)
 }
 
 template <evmc_revision rev>
-constexpr ValidationStatus static_validate_block(Block const &block)
+constexpr ValidationStatus
+static_validate_block(Block const &block, Buffer const &buffer)
 {
-    if (auto const header_status = static_validate_header<rev>(block.header);
+    if (auto const header_status =
+            static_validate_header<rev>(block.header, buffer);
         header_status != ValidationStatus::SUCCESS) {
         return header_status;
     }
 
-    if (auto const body_status = static_validate_body<rev>(block);
+    if (auto const body_status = static_validate_body<rev>(block, buffer);
         body_status != ValidationStatus::SUCCESS) {
         return body_status;
     }

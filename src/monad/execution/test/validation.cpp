@@ -4,6 +4,7 @@
 #include <monad/core/int.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
+#include <monad/execution/buffer.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/transaction_processor.hpp>
 #include <monad/execution/validation.hpp>
@@ -225,8 +226,9 @@ TEST(Validation, invalid_gas_limit)
 {
     static BlockHeader const header{.gas_limit = 1000, .gas_used = 500};
 
+    static Buffer buffer;
     EXPECT_EQ(
-        static_validate_header<EVMC_SHANGHAI>(header),
+        static_validate_header<EVMC_SHANGHAI>(header, buffer),
         ValidationStatus::INVALID_GAS_LIMIT);
 }
 
@@ -237,8 +239,9 @@ TEST(Validation, wrong_dao_extra_data)
         .gas_limit = 10000,
         .extra_data = {0x00, 0x01, 0x02}};
 
+    static Buffer buffer;
     EXPECT_EQ(
-        static_validate_header<EVMC_HOMESTEAD>(header),
+        static_validate_header<EVMC_HOMESTEAD>(header, buffer),
         ValidationStatus::WRONG_DAO_EXTRA_DATA);
 }
 
@@ -250,8 +253,9 @@ TEST(Validation, base_fee_per_gas_existence)
         .gas_used = 5000,
         .base_fee_per_gas = 1000};
 
+    static Buffer buffer;
     EXPECT_EQ(
-        static_validate_header<EVMC_FRONTIER>(header1),
+        static_validate_header<EVMC_FRONTIER>(header1, buffer),
         ValidationStatus::FIELD_BEFORE_FORK);
 
     static BlockHeader const header2{
@@ -261,7 +265,7 @@ TEST(Validation, base_fee_per_gas_existence)
         .base_fee_per_gas = std::nullopt};
 
     EXPECT_EQ(
-        static_validate_header<EVMC_LONDON>(header2),
+        static_validate_header<EVMC_LONDON>(header2, buffer),
         ValidationStatus::MISSING_FIELD);
 }
 
@@ -274,8 +278,9 @@ TEST(Validation, withdrawal_root_existence)
         .base_fee_per_gas = std::nullopt,
         .withdrawals_root = 0x00_bytes32};
 
+    static Buffer buffer;
     EXPECT_EQ(
-        static_validate_header<EVMC_FRONTIER>(header1),
+        static_validate_header<EVMC_FRONTIER>(header1, buffer),
         ValidationStatus::FIELD_BEFORE_FORK);
 
     static BlockHeader const header2{
@@ -285,7 +290,7 @@ TEST(Validation, withdrawal_root_existence)
         .base_fee_per_gas = 1000,
         .withdrawals_root = std::nullopt};
     EXPECT_EQ(
-        static_validate_header<EVMC_SHANGHAI>(header2),
+        static_validate_header<EVMC_SHANGHAI>(header2, buffer),
         ValidationStatus::MISSING_FIELD);
 }
 
@@ -300,7 +305,8 @@ TEST(Validation, invalid_nonce)
         .gas_used = 5000,
         .nonce = nonce,
         .base_fee_per_gas = 1000};
+    static Buffer buffer;
     EXPECT_EQ(
-        static_validate_header<EVMC_PARIS>(header),
+        static_validate_header<EVMC_PARIS>(header, buffer),
         ValidationStatus::INVALID_NONCE);
 }

@@ -60,7 +60,8 @@ namespace
         using namespace monad::test;
         BlockProcessor processor;
 
-        if (auto const status = static_validate_block<Traits::rev>(block);
+        if (auto const status =
+                static_validate_block<Traits::rev>(block, buffer);
             status != ValidationStatus::SUCCESS) {
             return tl::unexpected(status);
         }
@@ -189,7 +190,16 @@ void BlockchainTest::TestBody()
         }
 
         Buffer buffer;
-        // TODO: Add genesis parsing logic here
+
+        {
+            Block genesis_block;
+            auto const genesis_rlp =
+                j_contents.at("genesisRLP").get<byte_string>();
+            auto const rest = rlp::decode_block(genesis_block, genesis_rlp);
+            EXPECT_TRUE(rest.empty()) << name;
+            buffer.set_parent_header(genesis_block.header);
+        }
+
         for (auto const &j_block : j_contents.at("blocks")) {
             Block block;
             auto const rlp = j_block.at("rlp").get<byte_string>();

@@ -63,8 +63,7 @@ constexpr ValidationStatus static_validate_txn(
     // EIP-3860
     if constexpr (rev >= EVMC_SHANGHAI) {
         if (MONAD_UNLIKELY(
-                !txn.to.has_value() &&
-                txn.data.size() > fork_traits::shanghai::max_init_code_size)) {
+                !txn.to.has_value() && txn.data.size() > 2 * 0x6000)) {
             return ValidationStatus::INIT_CODE_LIMIT_EXCEEDED;
         }
     }

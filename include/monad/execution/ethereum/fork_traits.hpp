@@ -59,7 +59,6 @@ namespace fork_traits
 
         static constexpr evmc_revision rev = EVMC_SPURIOUS_DRAGON;
         static constexpr auto last_block_number = 4'369'999u;
-        static constexpr size_t max_code_size = 0x6000; // EIP-170
     };
 
     struct byzantium : public spurious_dragon
@@ -131,8 +130,6 @@ namespace fork_traits
         static constexpr evmc_revision rev = EVMC_SHANGHAI;
         static constexpr auto last_block_number =
             std::numeric_limits<uint64_t>::max();
-        static constexpr size_t max_init_code_size =
-            2 * max_code_size; // EIP-3860
     };
 }
 

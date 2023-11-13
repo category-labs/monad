@@ -79,7 +79,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     EXPECT_EQ(s.get_balance(from), bytes32_t{8'790'000});
     EXPECT_EQ(s.get_balance(to), bytes32_t{1'000'000});
 
-    auto const reward = calculate_txn_award<traits_t>(t, 0, r.gas_used);
+    auto const reward = calculate_txn_award<traits_t::rev>(t, 0, r.gas_used);
     s.add_to_balance(bh.beneficiary, reward);
 
     EXPECT_TRUE(can_merge(bs.state, s.state_));
@@ -152,7 +152,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     EXPECT_EQ(s.get_balance(creator), bytes32_t{8'760'000'000'000'000'000});
     EXPECT_EQ(s.get_balance(created), bytes32_t{0});
 
-    auto const reward = calculate_txn_award<traits_t>(t, 0, r.gas_used);
+    auto const reward = calculate_txn_award<traits_t::rev>(t, 0, r.gas_used);
     s.add_to_balance(b.header.beneficiary, reward);
 
     EXPECT_TRUE(can_merge(bs.state, s.state_));
@@ -220,7 +220,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     EXPECT_EQ(s.get_nonce(creator), 3);
     EXPECT_FALSE(s.account_exists(created));
 
-    auto const reward = calculate_txn_award<traits_t>(t, 0, r.gas_used);
+    auto const reward = calculate_txn_award<traits_t::rev>(t, 0, r.gas_used);
     s.add_to_balance(bh.beneficiary, reward);
 
     EXPECT_TRUE(can_merge(bs.state, s.state_));

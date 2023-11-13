@@ -32,7 +32,7 @@ get_tx_context(Transaction const &tx, BlockHeader const &hdr)
 {
     return {
         .tx_gas_price = to_bytes(to_big_endian(
-            gas_price<Traits>(tx, hdr.base_fee_per_gas.value_or(0)))),
+            gas_price<Traits::rev>(tx, hdr.base_fee_per_gas.value_or(0)))),
         .tx_origin = tx.from.value(),
         .block_coinbase = hdr.beneficiary,
         .block_number = static_cast<int64_t>(hdr.number),

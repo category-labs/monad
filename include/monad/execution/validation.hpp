@@ -71,7 +71,7 @@ constexpr ValidationStatus static_validate_txn(
     }
 
     // YP eq. 62
-    if (MONAD_UNLIKELY(intrinsic_gas<Traits>(txn) > txn.gas_limit)) {
+    if (MONAD_UNLIKELY(intrinsic_gas<Traits::rev>(txn) > txn.gas_limit)) {
         return ValidationStatus::INTRINSIC_GAS_GREATER_THAN_LIMIT;
     }
 

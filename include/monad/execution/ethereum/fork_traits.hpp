@@ -35,8 +35,6 @@ namespace fork_traits
             5'000'000'000'000'000'000; // YP Eqn. 176
         static constexpr uint256_t additional_ommer_reward =
             block_reward >> 5; // YP Eqn. 172, block reward / 32
-
-        static constexpr uint64_t n_precompiles = 4;
     };
 
     struct homestead : public frontier
@@ -75,8 +73,6 @@ namespace fork_traits
             3'000'000'000'000'000'000; // YP Eqn. 176, EIP-649
         static constexpr uint256_t additional_ommer_reward =
             block_reward >> 5; // YP Eqn. 172, block reward / 32
-
-        static constexpr uint64_t n_precompiles = 8;
     };
 
     // EIP-1716 petersburg and constantinople forks are activated at the same
@@ -99,8 +95,6 @@ namespace fork_traits
 
         static constexpr evmc_revision rev = EVMC_ISTANBUL;
         static constexpr auto last_block_number = 12'243'999u;
-
-        static constexpr uint64_t n_precompiles = 9;
     };
 
     // muir_glacier - 9'200'000

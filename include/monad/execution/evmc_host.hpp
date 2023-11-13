@@ -107,7 +107,7 @@ struct EvmcHost final : public EvmcHostBase
     virtual evmc_access_status
     access_account(address_t const &address) noexcept override
     {
-        if (is_precompile<Traits>(address)) {
+        if (is_precompile<Traits::rev>(address)) {
             return EVMC_ACCESS_WARM;
         }
         return state_.access_account(address);

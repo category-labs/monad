@@ -177,7 +177,7 @@ struct Evm
         }
 
         evmc::Result result;
-        if (auto maybe_result = check_call_precompile<Traits>(msg);
+        if (auto maybe_result = check_call_precompile<Traits::rev>(msg);
             maybe_result.has_value()) {
             result = std::move(maybe_result.value());
         }

@@ -1,12 +1,13 @@
 #pragma once
 
 #include <monad/config.hpp>
-
 #include <monad/core/address.hpp>
+#include <monad/core/assert.h>
 #include <monad/core/likely.h>
 
 #include <silkpre/precompile.h>
 
+#include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <cstdint>
@@ -16,12 +17,33 @@ MONAD_NAMESPACE_BEGIN
 
 constexpr address_t ripemd_address = 0x03_address;
 
-template <class Traits>
+consteval unsigned num_precompiles(evmc_revision const rev)
+{
+    switch (rev) {
+    case EVMC_FRONTIER:
+    case EVMC_HOMESTEAD:
+    case EVMC_TANGERINE_WHISTLE:
+    case EVMC_SPURIOUS_DRAGON:
+        return 4;
+    case EVMC_BYZANTIUM:
+    case EVMC_CONSTANTINOPLE:
+    case EVMC_PETERSBURG:
+        return 8;
+    case EVMC_ISTANBUL:
+    case EVMC_BERLIN:
+    case EVMC_LONDON:
+    case EVMC_PARIS:
+    case EVMC_SHANGHAI:
+        return 9;
+    default:
+        MONAD_ASSERT(false);
+    }
+}
+
+template <evmc_revision rev>
 [[nodiscard]] constexpr bool is_precompile(address_t const &address) noexcept
 {
-    static_assert(Traits::n_precompiles < UINT8_MAX);
-
-    static constexpr auto max_address = address_t{Traits::n_precompiles};
+    static constexpr auto max_address = address_t{num_precompiles(rev)};
 
     if (MONAD_LIKELY(address > max_address)) {
         return false;
@@ -34,12 +56,12 @@ template <class Traits>
     return true;
 }
 
-template <class Traits>
+template <evmc_revision rev>
 std::optional<evmc::Result> check_call_precompile(evmc_message const &msg)
 {
     auto const &address = msg.code_address;
 
-    if (!is_precompile<Traits>(address)) {
+    if (!is_precompile<rev>(address)) {
         return std::nullopt;
     }
 
@@ -47,7 +69,7 @@ std::optional<evmc::Result> check_call_precompile(evmc_message const &msg)
 
     auto const gas_func = kSilkpreContracts[i - 1].gas;
 
-    auto const cost = gas_func(msg.input_data, msg.input_size, Traits::rev);
+    auto const cost = gas_func(msg.input_data, msg.input_size, rev);
 
     if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost))) {
         return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};

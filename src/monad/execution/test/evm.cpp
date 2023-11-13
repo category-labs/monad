@@ -4,7 +4,6 @@
 #include <monad/core/int.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/tx_context.hpp>
@@ -28,11 +27,10 @@
 using namespace monad;
 
 using db_t = db::InMemoryTrieDB;
-using traits_t = fork_traits::shanghai;
 
-using evm_t = Evm<traits_t>;
+using evm_t = Evm<EVMC_SHANGHAI>;
 
-using evm_host_t = EvmcHost<traits_t>;
+using evm_host_t = EvmcHost<EVMC_SHANGHAI>;
 
 TEST(Evm, create_with_insufficient)
 {
@@ -392,8 +390,8 @@ TEST(Evm, deploy_contract_code)
             State s{bs, db};
             static constexpr int64_t gas = 10'000;
             evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
-            auto const r2 = Evm<fork_traits::frontier>::deploy_contract_code(
-                s, a, std::move(r));
+            auto const r2 =
+                Evm<EVMC_FRONTIER>::deploy_contract_code(s, a, std::move(r));
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.gas_left, gas - 800); // G_codedeposit * size(code)
             EXPECT_EQ(r2.create_address, a);
@@ -404,8 +402,8 @@ TEST(Evm, deploy_contract_code)
         {
             State s{bs, db};
             evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
-            auto const r2 = Evm<fork_traits::frontier>::deploy_contract_code(
-                s, a, std::move(r));
+            auto const r2 =
+                Evm<EVMC_FRONTIER>::deploy_contract_code(s, a, std::move(r));
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.gas_left, 700);
             EXPECT_EQ(r2.create_address, a);
@@ -421,8 +419,8 @@ TEST(Evm, deploy_contract_code)
             int64_t const gas = 10'000;
 
             evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
-            auto const r2 = Evm<fork_traits::homestead>::deploy_contract_code(
-                s, a, std::move(r));
+            auto const r2 =
+                Evm<EVMC_HOMESTEAD>::deploy_contract_code(s, a, std::move(r));
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.create_address, a);
             EXPECT_EQ(r2.gas_left,
@@ -434,8 +432,8 @@ TEST(Evm, deploy_contract_code)
         {
             State s{bs, db};
             evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
-            auto const r2 = Evm<fork_traits::homestead>::deploy_contract_code(
-                s, a, std::move(r));
+            auto const r2 =
+                Evm<EVMC_HOMESTEAD>::deploy_contract_code(s, a, std::move(r));
             EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
             EXPECT_EQ(r2.gas_left, 700);
             EXPECT_EQ(r2.create_address, 0x00_address);
@@ -455,8 +453,8 @@ TEST(Evm, deploy_contract_code)
             0,
             code.data(),
             code.size()};
-        auto const r2 = Evm<fork_traits::spurious_dragon>::deploy_contract_code(
-            s, a, std::move(r));
+        auto const r2 =
+            Evm<EVMC_SPURIOUS_DRAGON>::deploy_contract_code(s, a, std::move(r));
         EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
         EXPECT_EQ(r2.gas_left, 0);
         EXPECT_EQ(r2.create_address, 0x00_address);
@@ -471,7 +469,7 @@ TEST(Evm, deploy_contract_code)
         evmc::Result r{
             EVMC_SUCCESS, 1'000, 0, illegal_code.data(), illegal_code.size()};
         auto const r2 =
-            Evm<fork_traits::london>::deploy_contract_code(s, a, std::move(r));
+            Evm<EVMC_LONDON>::deploy_contract_code(s, a, std::move(r));
         EXPECT_EQ(r2.status_code, EVMC_CONTRACT_VALIDATION_FAILURE);
         EXPECT_EQ(r2.gas_left, 0);
         EXPECT_EQ(r2.create_address, 0x00_address);

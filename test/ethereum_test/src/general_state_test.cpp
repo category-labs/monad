@@ -104,7 +104,7 @@ namespace
         MONAD_ASSERT(block_header.number);
         block_hash_buffer.set(
             block_header.number - 1, block_header.parent_hash);
-        EvmcHost<Traits> host{tx_context, block_hash_buffer, state};
+        EvmcHost<Traits::rev> host{tx_context, block_hash_buffer, state};
         TransactionProcessor<Traits> const processor;
 
         return processor.execute(

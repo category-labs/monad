@@ -69,7 +69,7 @@ public:
     access_storage(address_t const &, bytes32_t const &key) noexcept override;
 };
 
-template <class Traits>
+template <evmc_revision rev>
 struct EvmcHost final : public EvmcHostBase
 {
     using EvmcHostBase::EvmcHostBase;
@@ -77,7 +77,7 @@ struct EvmcHost final : public EvmcHostBase
     virtual bool
     account_exists(address_t const &address) const noexcept override
     {
-        if constexpr (Traits::rev < EVMC_SPURIOUS_DRAGON) {
+        if constexpr (rev < EVMC_SPURIOUS_DRAGON) {
             return state_.account_exists(address);
         }
         return !state_.account_is_dead(address);
@@ -86,7 +86,7 @@ struct EvmcHost final : public EvmcHostBase
     [[nodiscard]] virtual evmc::Result
     call(evmc_message const &msg) noexcept override
     {
-        using evm_t = Evm<Traits>;
+        using evm_t = Evm<rev>;
 
         if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
             auto res = evm_t::create_contract_account(this, state_, msg);
@@ -107,7 +107,7 @@ struct EvmcHost final : public EvmcHostBase
     virtual evmc_access_status
     access_account(address_t const &address) noexcept override
     {
-        if (is_precompile<Traits::rev>(address)) {
+        if (is_precompile<rev>(address)) {
             return EVMC_ACCESS_WARM;
         }
         return state_.access_account(address);

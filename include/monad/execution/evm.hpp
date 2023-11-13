@@ -10,6 +10,8 @@
 
 #include <ethash/keccak.hpp>
 
+#include <evmc/evmc.h>
+
 #include <intx/intx.hpp>
 
 #include <tl/expected.hpp>
@@ -19,10 +21,10 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <class Traits>
+template <evmc_revision rev>
 struct Evm
 {
-    using interpreter_t = EVMOneBaselineInterpreter<Traits::rev>;
+    using interpreter_t = EVMOneBaselineInterpreter<rev>;
 
     using result_t = tl::expected<void, evmc_result>;
     using unexpected_t = tl::unexpected<evmc_result>;
@@ -33,14 +35,14 @@ struct Evm
         MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
 
         // https://eips.ethereum.org/EIPS/eip-3541
-        if constexpr (Traits::rev >= EVMC_LONDON) {
+        if constexpr (rev >= EVMC_LONDON) {
             if (result.output_size > 0 && result.output_data[0] == 0xef) {
                 return evmc::Result{EVMC_CONTRACT_VALIDATION_FAILURE};
             }
         }
         // EIP-170
-        if constexpr (Traits::rev >= EVMC_SPURIOUS_DRAGON) {
-            if (result.output_size > Traits::max_code_size) {
+        if constexpr (rev >= EVMC_SPURIOUS_DRAGON) {
+            if (result.output_size > 0x6000) {
                 return evmc::Result{EVMC_OUT_OF_GAS};
             }
         }
@@ -48,7 +50,7 @@ struct Evm
         auto const deploy_cost = static_cast<int64_t>(result.output_size) * 200;
 
         if (result.gas_left < deploy_cost) {
-            if constexpr (Traits::rev == EVMC_FRONTIER) {
+            if constexpr (rev == EVMC_FRONTIER) {
                 // From YP: "No code is deposited in the state if the gas
                 // does not cover the additional per-byte contract deposit
                 // fee, however, the value is still transferred and the
@@ -114,8 +116,7 @@ struct Evm
         new_state.create_contract(contract_address);
 
         // https://eips.ethereum.org/EIPS/eip-161
-        constexpr auto starting_nonce =
-            Traits::rev >= EVMC_SPURIOUS_DRAGON ? 1 : 0;
+        constexpr auto starting_nonce = rev >= EVMC_SPURIOUS_DRAGON ? 1 : 0;
         new_state.set_nonce(contract_address, starting_nonce);
         transfer_balances(new_state, msg, contract_address);
 
@@ -177,7 +178,7 @@ struct Evm
         }
 
         evmc::Result result;
-        if (auto maybe_result = check_call_precompile<Traits::rev>(msg);
+        if (auto maybe_result = check_call_precompile<rev>(msg);
             maybe_result.has_value()) {
             result = std::move(maybe_result.value());
         }

@@ -89,7 +89,7 @@ struct TransactionProcessor
     }
 
     Receipt execute(
-        State &state, EvmcHost<Traits> &host, Transaction const &txn,
+        State &state, EvmcHost<Traits::rev> &host, Transaction const &txn,
         uint256_t const &base_fee_per_gas, address_t const &beneficiary) const
     {
         irrevocable_change(state, txn, base_fee_per_gas);
@@ -163,7 +163,7 @@ struct TransactionProcessor
         }
 
         auto const tx_context = get_tx_context<Traits::rev>(tx, hdr);
-        EvmcHost<Traits> host{tx_context, block_hash_buffer, state};
+        EvmcHost<Traits::rev> host{tx_context, block_hash_buffer, state};
         receipt = processor.execute(
             state, host, tx, hdr.base_fee_per_gas.value_or(0), hdr.beneficiary);
 

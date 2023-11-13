@@ -5,7 +5,6 @@
 #include <monad/core/transaction.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/state2/block_state.hpp>
@@ -24,9 +23,8 @@
 using namespace monad;
 
 using db_t = db::InMemoryTrieDB;
-using traits_t = fork_traits::shanghai;
 
-using evmc_host_t = EvmcHost<traits_t>;
+using evmc_host_t = EvmcHost<EVMC_SHANGHAI>;
 
 bool operator==(evmc_tx_context const &lhs, evmc_tx_context const &rhs)
 {
@@ -82,7 +80,7 @@ TEST(EvmcHost, get_tx_context)
         .max_fee_per_gas = base_fee_per_gas,
         .from = from};
 
-    auto const result = get_tx_context<traits_t::rev>(tx, hdr);
+    auto const result = get_tx_context<EVMC_SHANGHAI>(tx, hdr);
     evmc_tx_context ctx{
         .tx_origin = *tx.from,
         .block_coinbase = bene,
@@ -97,7 +95,7 @@ TEST(EvmcHost, get_tx_context)
     EXPECT_EQ(result, ctx);
 
     hdr.difficulty = 0;
-    auto const pos_result = get_tx_context<traits_t::rev>(tx, hdr);
+    auto const pos_result = get_tx_context<EVMC_SHANGHAI>(tx, hdr);
     std::memcpy(
         ctx.block_prev_randao.bytes,
         hdr.prev_randao.bytes,

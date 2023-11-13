@@ -23,7 +23,7 @@ using db_t = db::InMemoryTrieDB;
 using traits_t = fork_traits::shanghai;
 using processor_t = TransactionProcessor<traits_t>;
 
-using evm_host_t = EvmcHost<traits_t>;
+using evm_host_t = EvmcHost<traits_t::rev>;
 
 TEST(TransactionProcessor, g_star)
 {

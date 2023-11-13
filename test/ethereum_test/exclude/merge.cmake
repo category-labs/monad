@@ -1,5 +1,4 @@
 set(merge_excluded_tests
-    "BlockchainTests.GeneralStateTests/stTransactionTest/ValueOverflow.json" # RLP
     "GeneralStateTests.stCreate2/RevertInCreateInInitCreate2.json" # Incarnation
     "GeneralStateTests.stCreate2/create2collisionStorage.json" # Incarnation
     "GeneralStateTests.stExtCodeHash/dynamicAccountOverwriteEmpty.json" # Incarnation

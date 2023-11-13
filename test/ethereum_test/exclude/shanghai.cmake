@@ -1,11 +1,6 @@
 set(shanghai_excluded_tests
-    "BlockchainTests.GeneralStateTests/stTransactionTest/ValueOverflow.json" # RLP
     "BlockchainTests.InvalidBlocks/bc4895_withdrawals/withdrawalsAddressBounds.json" # RLP
-    "BlockchainTests.InvalidBlocks/bc4895_withdrawals/withdrawalsAmountBounds.json" # RLP
-    "BlockchainTests.InvalidBlocks/bc4895_withdrawals/withdrawalsIndexBounds.json"  # RLP
     "BlockchainTests.InvalidBlocks/bc4895_withdrawals/withdrawalsRLPlessElements.json" # RLP
-    "BlockchainTests.InvalidBlocks/bc4895_withdrawals/withdrawalsRLPnotAList.json" # RLP
-    "BlockchainTests.InvalidBlocks/bc4895_withdrawals/withdrawalsValidatorIndexBounds.json" # RLP
     "GeneralStateTests.stCreate2/RevertInCreateInInitCreate2.json" # Incarnation
     "GeneralStateTests.stCreate2/create2collisionStorage.json" # Incarnation
     "GeneralStateTests.stExtCodeHash/dynamicAccountOverwriteEmpty.json" # Incarnation

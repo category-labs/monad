@@ -3,14 +3,18 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/likely.h>
 #include <monad/rlp/config.hpp>
+#include <monad/rlp/exception.hpp>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
 template <unsigned_integral T>
 constexpr T decode_raw_num(byte_string_view const enc)
 {
-    MONAD_ASSERT(enc.size() <= sizeof(T));
+    if (MONAD_UNLIKELY(enc.size() > sizeof(T))) {
+        throw RLPException(RLPDecodeError::OVERFLOW);
+    }
     T result{};
     std::memcpy(
         &intx::as_bytes(result)[sizeof(T) - enc.size()],
@@ -32,7 +36,10 @@ parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
     size_t end = 0;
 
     MONAD_ASSERT(!enc.empty());
-    MONAD_ASSERT(enc[0] < 0xc0);
+    if (MONAD_UNLIKELY(enc[0] >= 0xc0)) {
+        throw RLPException(RLPDecodeError::TYPE_UNEXPECTED);
+    }
+
     if (enc[0] < 0x80) // [0x00, 0x7f]
     {
         end = i + 1;
@@ -64,7 +71,11 @@ parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
     size_t length;
     ++i;
     MONAD_ASSERT(!enc.empty());
-    MONAD_ASSERT(enc[0] >= 0xc0);
+
+    if (MONAD_UNLIKELY(enc[0] < 0xc0)) {
+        throw RLPException(RLPDecodeError::TYPE_UNEXPECTED);
+    }
+
     if (enc[0] < 0xf8) {
         length = enc[0] - 0xc0;
     }

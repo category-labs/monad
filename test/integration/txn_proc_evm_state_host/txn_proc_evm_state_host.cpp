@@ -63,7 +63,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     using tp_t = TransactionProcessor<traits_t>;
 
     tp_t const tp{};
-    auto const tx_context = get_tx_context<traits_t>(t, bh);
+    auto const tx_context = get_tx_context<traits_t::rev>(t, bh);
     BlockHashBuffer const block_hash_buffer;
     EvmcHost<traits_t> h{tx_context, block_hash_buffer, s};
 
@@ -135,7 +135,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     using tp_t = TransactionProcessor<traits_t>;
 
     tp_t const tp{};
-    auto const tx_context = get_tx_context<traits_t>(t, bh);
+    auto const tx_context = get_tx_context<traits_t::rev>(t, bh);
     BlockHashBuffer const block_hash_buffer;
     EvmcHost<traits_t> h{tx_context, block_hash_buffer, s};
 
@@ -203,7 +203,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     using tp_t = TransactionProcessor<traits_t>;
 
     tp_t const tp{};
-    auto const tx_context = get_tx_context<traits_t>(t, bh);
+    auto const tx_context = get_tx_context<traits_t::rev>(t, bh);
     BlockHashBuffer const block_hash_buffer;
     EvmcHost<traits_t> h{tx_context, block_hash_buffer, s};
 

@@ -162,7 +162,7 @@ struct TransactionProcessor
             return validity;
         }
 
-        auto const tx_context = get_tx_context<Traits>(tx, hdr);
+        auto const tx_context = get_tx_context<Traits::rev>(tx, hdr);
         EvmcHost<Traits> host{tx_context, block_hash_buffer, state};
         receipt = processor.execute(
             state, host, tx, hdr.base_fee_per_gas.value_or(0), hdr.beneficiary);

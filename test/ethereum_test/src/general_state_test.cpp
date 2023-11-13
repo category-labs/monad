@@ -99,7 +99,7 @@ namespace
             return tl::unexpected{ValidationStatus::GAS_LIMIT_REACHED};
         }
 
-        auto const tx_context = get_tx_context<Traits>(txn, block_header);
+        auto const tx_context = get_tx_context<Traits::rev>(txn, block_header);
         BlockHashBuffer block_hash_buffer;
         MONAD_ASSERT(block_header.number);
         block_hash_buffer.set(

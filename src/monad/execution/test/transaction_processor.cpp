@@ -60,7 +60,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
         .from = from,
     };
 
-    auto const tx_context = get_tx_context<traits_t>(t, {});
+    auto const tx_context = get_tx_context<traits_t::rev>(t, {});
     BlockHashBuffer const block_hash_buffer;
     evm_host_t h{tx_context, block_hash_buffer, s};
 

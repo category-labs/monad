@@ -82,7 +82,7 @@ TEST(EvmcHost, get_tx_context)
         .max_fee_per_gas = base_fee_per_gas,
         .from = from};
 
-    auto const result = get_tx_context<traits_t>(tx, hdr);
+    auto const result = get_tx_context<traits_t::rev>(tx, hdr);
     evmc_tx_context ctx{
         .tx_origin = *tx.from,
         .block_coinbase = bene,
@@ -97,7 +97,7 @@ TEST(EvmcHost, get_tx_context)
     EXPECT_EQ(result, ctx);
 
     hdr.difficulty = 0;
-    auto const pos_result = get_tx_context<traits_t>(tx, hdr);
+    auto const pos_result = get_tx_context<traits_t::rev>(tx, hdr);
     std::memcpy(
         ctx.block_prev_randao.bytes,
         hdr.prev_randao.bytes,

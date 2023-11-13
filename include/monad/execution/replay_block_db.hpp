@@ -97,7 +97,7 @@ public:
                 current_block_number - 1, block.header.parent_hash);
 
             BlockProcessor block_processor{};
-            if (auto const status = static_validate_block<Traits>(block);
+            if (auto const status = static_validate_block<Traits::rev>(block);
                 status != ValidationStatus::SUCCESS) {
                 return Result{
                     Status::BLOCK_VALIDATION_FAILED, current_block_number};

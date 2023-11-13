@@ -66,7 +66,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 
     processor_t const p{};
 
-    auto status = static_validate_txn<traits_t>(t, 10u);
+    auto status = static_validate_txn<traits_t::rev>(t, 10u);
     if (status == ValidationStatus::SUCCESS) {
         status = validate_txn(s, t);
     }

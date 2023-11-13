@@ -68,7 +68,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     EvmcHost<traits_t> h{tx_context, block_hash_buffer, s};
 
     EXPECT_EQ(
-        static_validate_txn<traits_t>(t, std::nullopt),
+        static_validate_txn<traits_t::rev>(t, std::nullopt),
         ValidationStatus::SUCCESS);
     EXPECT_EQ(validate_txn(s, t), ValidationStatus::SUCCESS);
 
@@ -140,7 +140,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     EvmcHost<traits_t> h{tx_context, block_hash_buffer, s};
 
     EXPECT_EQ(
-        static_validate_txn<traits_t>(t, std::nullopt),
+        static_validate_txn<traits_t::rev>(t, std::nullopt),
         ValidationStatus::SUCCESS);
 
     EXPECT_EQ(validate_txn(s, t), ValidationStatus::SUCCESS);
@@ -208,7 +208,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     EvmcHost<traits_t> h{tx_context, block_hash_buffer, s};
 
     EXPECT_EQ(
-        static_validate_txn<traits_t>(t, std::nullopt),
+        static_validate_txn<traits_t::rev>(t, std::nullopt),
         ValidationStatus::SUCCESS);
     EXPECT_EQ(validate_txn(s, t), ValidationStatus::SUCCESS);
 

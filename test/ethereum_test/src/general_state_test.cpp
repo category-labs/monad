@@ -82,8 +82,8 @@ namespace
     {
         using namespace monad::test;
 
-        if (auto const status =
-                static_validate_txn<Traits>(txn, block_header.base_fee_per_gas);
+        if (auto const status = static_validate_txn<Traits::rev>(
+                txn, block_header.base_fee_per_gas);
             status != ValidationStatus::SUCCESS) {
             return tl::unexpected{status};
         }

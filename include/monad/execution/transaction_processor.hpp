@@ -151,7 +151,7 @@ struct TransactionProcessor
         Receipt &receipt)
     {
         MONAD_DEBUG_ASSERT(
-            static_validate_txn<Traits>(tx, hdr.base_fee_per_gas) ==
+            static_validate_txn<Traits::rev>(tx, hdr.base_fee_per_gas) ==
             ValidationStatus::SUCCESS);
 
         TransactionProcessor<Traits> processor{};

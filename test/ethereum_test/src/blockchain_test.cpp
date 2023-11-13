@@ -60,7 +60,7 @@ namespace
         using namespace monad::test;
         BlockProcessor processor;
 
-        if (auto const status = static_validate_block<Traits>(block);
+        if (auto const status = static_validate_block<Traits::rev>(block);
             status != ValidationStatus::SUCCESS) {
             return tl::unexpected(status);
         }

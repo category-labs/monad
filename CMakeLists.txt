@@ -190,8 +190,10 @@ add_library(
   "src/monad/execution/transaction_gas.cpp"
   "src/monad/execution/tx_context.cpp"
   # rlp
+  "include/monad/rlp/config.hpp"
   "include/monad/rlp/decode.hpp"
   "include/monad/rlp/encode2.hpp"
+  "include/monad/rlp/exception.hpp"
   # state
   "include/monad/state2/block_state.hpp"
   "include/monad/state2/block_state_ops.hpp"

@@ -15,6 +15,7 @@
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/validation.hpp>
 #include <monad/execution/validation_status.hpp>
+#include <monad/rlp/exception.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/test/config.hpp>
@@ -193,8 +194,18 @@ void BlockchainTest::TestBody()
         for (auto const &j_block : j_contents.at("blocks")) {
             Block block;
             auto const rlp = j_block.at("rlp").get<byte_string>();
-            auto const rest = rlp::decode_block(block, rlp);
-            EXPECT_TRUE(rest.empty()) << name;
+            try {
+                auto const rest = rlp::decode_block(block, rlp);
+                if (MONAD_UNLIKELY(!rest.empty())) {
+                    EXPECT_TRUE(j_block.contains("expectException"));
+                    continue;
+                }
+            }
+            catch (rlp::RLPException const &rlp_exception) {
+                EXPECT_TRUE(j_block.contains("expectException"));
+                continue;
+            }
+
             if (block.header.number == 0) {
                 EXPECT_TRUE(j_block.contains("expectException"));
                 continue;

@@ -1,6 +1,6 @@
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
-#include <monad/rlp/encode.hpp>
+#include <monad/rlp/encode2.hpp>
 #include <monad/trie/compact_encode.hpp>
 #include <monad/trie/node.hpp>
 #include <monad/trie/node_rlp.hpp>
@@ -9,14 +9,14 @@ MONAD_RLP_NAMESPACE_BEGIN
 
 byte_string encode_leaf(trie::Leaf const &leaf)
 {
-    return encode_list(
-        encode_string(trie::compact_encode(leaf.partial_path(), true)),
-        encode_string(leaf.value));
+    return encode_list2(
+        encode_string2(trie::compact_encode(leaf.partial_path(), true)),
+        encode_string2(leaf.value));
 }
 
 byte_string encode_branch(trie::Branch const &branch)
 {
-    auto const branch_rlp = encode_list(
+    auto const branch_rlp = encode_list2(
         branch.children[0],
         branch.children[1],
         branch.children[2],
@@ -33,15 +33,15 @@ byte_string encode_branch(trie::Branch const &branch)
         branch.children[13],
         branch.children[14],
         branch.children[15],
-        encode_string(byte_string{}));
+        encode_string2(byte_string{}));
 
     auto const partial_path = branch.partial_path();
     if (partial_path.empty()) {
         return branch_rlp;
     }
 
-    return encode_list(
-        encode_string(trie::compact_encode(partial_path, false)),
+    return encode_list2(
+        encode_string2(trie::compact_encode(partial_path, false)),
         to_node_reference(branch_rlp));
 }
 
@@ -52,7 +52,7 @@ byte_string to_node_reference(byte_string_view rlp)
     }
 
     auto const hash = ethash::keccak256(rlp.data(), rlp.size());
-    return encode_string(to_byte_string_view(hash.bytes));
+    return encode_string2(to_byte_string_view(hash.bytes));
 }
 
 MONAD_RLP_NAMESPACE_END

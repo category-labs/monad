@@ -157,7 +157,7 @@ TEST(Rlp_Number, DecodeEncodeBigNumers)
 TEST(Rlp_Number, EncodeCombinations)
 {
     // the integer list of 0 and 9
-    auto encoding = encode_list(encode_unsigned(0u), encode_unsigned(9u));
+    auto encoding = encode_list2(encode_unsigned(0u), encode_unsigned(9u));
     EXPECT_EQ(encoding, monad::byte_string({0xC2, 0x80, 0x09}));
 
     // encoding list that is larger than 55 bytes
@@ -170,7 +170,7 @@ TEST(Rlp_Number, EncodeCombinations)
          't',  'e',  't', 'u', 'r', ' ', 'a', 'd', 'i', 'p', 'i', 's',
          'i',  'c',  'i', 'n', 'g', ' ', 'e', 'l', 'i', 't'});
     encoding =
-        encode_list(encode_string(to_byte_string_view(fifty_six_char_string)));
+        encode_list2(encode_string2(to_byte_string_view(fifty_six_char_string)));
     auto const expected_list_encoding =
         monad::byte_string({0xf7 + 1, 58}) + fifty_six_char_string_encoding;
     EXPECT_EQ(encoding, expected_list_encoding);

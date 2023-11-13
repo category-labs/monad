@@ -4,13 +4,13 @@
 #include <monad/core/bytes.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
-#include <monad/rlp/encode.hpp>
+#include <monad/rlp/encode2.hpp>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
 inline byte_string encode_bytes32(bytes32_t const &byte)
 {
-    return encode_string(to_byte_string_view(byte.bytes));
+    return encode_string2(to_byte_string_view(byte.bytes));
 }
 
 inline byte_string_view

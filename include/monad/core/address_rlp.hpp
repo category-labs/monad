@@ -4,7 +4,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
-#include <monad/rlp/encode.hpp>
+#include <monad/rlp/encode2.hpp>
 
 #include <optional>
 
@@ -15,7 +15,7 @@ inline byte_string encode_address(std::optional<address_t> const &address)
     if (!address.has_value()) {
         return byte_string({0x80});
     }
-    return encode_string(to_byte_string_view(address->bytes));
+    return encode_string2(to_byte_string_view(address->bytes));
 }
 
 inline byte_string_view

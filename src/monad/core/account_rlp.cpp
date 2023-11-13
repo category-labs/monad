@@ -3,14 +3,14 @@
 #include <monad/core/int_rlp.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
-#include <monad/rlp/encode.hpp>
+#include <monad/rlp/encode2.hpp>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
 byte_string
 encode_account(Account const &account, bytes32_t const &storage_root)
 {
-    return encode_list(
+    return encode_list2(
         encode_unsigned(account.nonce),
         encode_unsigned(account.balance),
         encode_bytes32(storage_root),
@@ -19,7 +19,7 @@ encode_account(Account const &account, bytes32_t const &storage_root)
 
 byte_string encode_account(Account const &account)
 {
-    return encode_list(
+    return encode_list2(
         encode_unsigned(account.nonce),
         encode_unsigned(account.balance),
         encode_bytes32(account.code_hash));

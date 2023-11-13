@@ -189,7 +189,7 @@ add_library(
   "src/monad/execution/evmc_host.cpp"
   # rlp
   "include/monad/rlp/decode.hpp"
-  "include/monad/rlp/encode.hpp"
+  "include/monad/rlp/encode2.hpp"
   # state
   "include/monad/state2/block_state.hpp"
   "include/monad/state2/block_state_ops.hpp"

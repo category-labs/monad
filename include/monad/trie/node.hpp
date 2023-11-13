@@ -2,7 +2,7 @@
 
 #include <monad/core/assert.h>
 #include <monad/core/basic_formatter.hpp>
-#include <monad/rlp/encode.hpp>
+#include <monad/rlp/encode2.hpp>
 #include <monad/trie/config.hpp>
 #include <monad/trie/nibbles.hpp>
 #include <monad/trie/node_rlp.hpp>

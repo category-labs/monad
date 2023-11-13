@@ -8,7 +8,7 @@
 #include <monad/core/withdrawal_rlp.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
-#include <monad/rlp/encode.hpp>
+#include <monad/rlp/encode2.hpp>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
@@ -28,10 +28,10 @@ byte_string encode_block_header(BlockHeader const &block_header)
     encoded_block_header += encode_unsigned(block_header.gas_limit);
     encoded_block_header += encode_unsigned(block_header.gas_used);
     encoded_block_header += encode_unsigned(block_header.timestamp);
-    encoded_block_header += encode_string(block_header.extra_data);
+    encoded_block_header += encode_string2(block_header.extra_data);
     encoded_block_header += encode_bytes32(block_header.prev_randao);
     encoded_block_header +=
-        encode_string(to_byte_string_view(block_header.nonce));
+        encode_string2(to_byte_string_view(block_header.nonce));
 
     if (block_header.base_fee_per_gas.has_value()) {
         encoded_block_header +=
@@ -43,7 +43,7 @@ byte_string encode_block_header(BlockHeader const &block_header)
             encode_bytes32(block_header.withdrawals_root.value());
     }
 
-    return encode_list(encoded_block_header);
+    return encode_list2(encoded_block_header);
 }
 
 byte_string encode_block(Block const &block)
@@ -55,12 +55,12 @@ byte_string encode_block(Block const &block)
     for (auto const &txn : block.transactions) {
         encoded_block_transactions += encode_transaction(txn);
     }
-    encoded_block_transactions = encode_list(encoded_block_transactions);
+    encoded_block_transactions = encode_list2(encoded_block_transactions);
 
     for (auto const &ommer : block.ommers) {
         encoded_block_ommers += encode_block_header(ommer);
     }
-    encoded_block_ommers = encode_list(encoded_block_ommers);
+    encoded_block_ommers = encode_list2(encoded_block_ommers);
 
     byte_string encoded_block;
     encoded_block += encoded_block_header;
@@ -72,10 +72,10 @@ byte_string encode_block(Block const &block)
         for (auto const &withdraw : block.withdrawals.value()) {
             encoded_block_withdrawals += encode_withdrawal(withdraw);
         }
-        encoded_block += encode_list(encoded_block_withdrawals);
+        encoded_block += encode_list2(encoded_block_withdrawals);
     }
 
-    return encode_list(encoded_block);
+    return encode_list2(encoded_block);
 }
 
 // Decode

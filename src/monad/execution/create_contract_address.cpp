@@ -4,7 +4,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int_rlp.hpp>
-#include <monad/rlp/encode.hpp>
+#include <monad/rlp/encode2.hpp>
 
 #include <ethash/hash_types.hpp>
 #include <ethash/keccak.hpp>
@@ -26,7 +26,7 @@ address_t hash_and_clip(byte_string const &b)
 // YP Sec 7: Eq 87, top
 address_t create_contract_address(address_t const &from, uint64_t const nonce)
 {
-    byte_string const b = rlp::encode_list(
+    byte_string const b = rlp::encode_list2(
         rlp::encode_address(from) + rlp::encode_unsigned(nonce));
     return hash_and_clip(b);
 }

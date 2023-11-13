@@ -4,13 +4,13 @@
 #include <monad/core/int.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
-#include <monad/rlp/encode.hpp>
+#include <monad/rlp/encode2.hpp>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
 inline byte_string encode_unsigned(unsigned_integral auto const &n)
 {
-    return encode_string(to_big_compact(n));
+    return encode_string2(to_big_compact(n));
 }
 
 template <unsigned_integral T>

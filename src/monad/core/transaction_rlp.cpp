@@ -7,7 +7,7 @@
 #include <monad/core/transaction_rlp.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
-#include <monad/rlp/encode.hpp>
+#include <monad/rlp/encode2.hpp>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
@@ -21,22 +21,22 @@ byte_string encode_access_list(Transaction::AccessList const &access_list)
         for (auto const &key : keys) {
             temp += encode_bytes32(key);
         }
-        result += encode_list(encode_address(addr) + encode_list(temp));
+        result += encode_list2(encode_address(addr) + encode_list2(temp));
     };
 
-    return encode_list(result);
+    return encode_list2(result);
 }
 
 byte_string encode_transaction(Transaction const &txn)
 {
     if (txn.type == TransactionType::eip155) {
-        return encode_list(
+        return encode_list2(
             encode_unsigned(txn.nonce),
             encode_unsigned(txn.max_fee_per_gas),
             encode_unsigned(txn.gas_limit),
             encode_address(txn.to),
             encode_unsigned(txn.value),
-            encode_string(txn.data),
+            encode_string2(txn.data),
             encode_unsigned(get_v(txn.sc)),
             encode_unsigned(txn.sc.r),
             encode_unsigned(txn.sc.s));
@@ -45,8 +45,8 @@ byte_string encode_transaction(Transaction const &txn)
     MONAD_ASSERT(txn.sc.chain_id != std::nullopt);
 
     if (txn.type == TransactionType::eip1559) {
-        return encode_string(
-            byte_string{0x02} += encode_list(
+        return encode_string2(
+            byte_string{0x02} += encode_list2(
                 encode_unsigned(txn.sc.chain_id.value_or(0)),
                 encode_unsigned(txn.nonce),
                 encode_unsigned(txn.max_priority_fee_per_gas),
@@ -54,22 +54,22 @@ byte_string encode_transaction(Transaction const &txn)
                 encode_unsigned(txn.gas_limit),
                 encode_address(txn.to),
                 encode_unsigned(txn.value),
-                encode_string(txn.data),
+                encode_string2(txn.data),
                 encode_access_list(txn.access_list),
                 encode_unsigned(static_cast<unsigned>(txn.sc.odd_y_parity)),
                 encode_unsigned(txn.sc.r),
                 encode_unsigned(txn.sc.s)));
     }
     else if (txn.type == TransactionType::eip2930) {
-        return encode_string(
-            byte_string{0x01} += encode_list(
+        return encode_string2(
+            byte_string{0x01} += encode_list2(
                 encode_unsigned(txn.sc.chain_id.value_or(0)),
                 encode_unsigned(txn.nonce),
                 encode_unsigned(txn.max_fee_per_gas),
                 encode_unsigned(txn.gas_limit),
                 encode_address(txn.to),
                 encode_unsigned(txn.value),
-                encode_string(txn.data),
+                encode_string2(txn.data),
                 encode_access_list(txn.access_list),
                 encode_unsigned(static_cast<unsigned>(txn.sc.odd_y_parity)),
                 encode_unsigned(txn.sc.r),
@@ -83,25 +83,25 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
 {
     if (txn.type == TransactionType::eip155) {
         if (txn.sc.chain_id.has_value()) {
-            return encode_list(
+            return encode_list2(
                 encode_unsigned(txn.nonce),
                 encode_unsigned(txn.max_fee_per_gas),
                 encode_unsigned(txn.gas_limit),
                 encode_address(txn.to),
                 encode_unsigned(txn.value),
-                encode_string(txn.data),
+                encode_string2(txn.data),
                 encode_unsigned(txn.sc.chain_id.value_or(0)),
                 encode_unsigned(0u),
                 encode_unsigned(0u));
         }
         else {
-            return encode_list(
+            return encode_list2(
                 encode_unsigned(txn.nonce),
                 encode_unsigned(txn.max_fee_per_gas),
                 encode_unsigned(txn.gas_limit),
                 encode_address(txn.to),
                 encode_unsigned(txn.value),
-                encode_string(txn.data));
+                encode_string2(txn.data));
         }
     }
 
@@ -109,7 +109,7 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
 
     if (txn.type == TransactionType::eip1559) {
         return byte_string{0x02} +
-               encode_list(
+               encode_list2(
                    encode_unsigned(txn.sc.chain_id.value_or(0)),
                    encode_unsigned(txn.nonce),
                    encode_unsigned(txn.max_priority_fee_per_gas),
@@ -117,19 +117,19 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
                    encode_unsigned(txn.gas_limit),
                    encode_address(txn.to),
                    encode_unsigned(txn.value),
-                   encode_string(txn.data),
+                   encode_string2(txn.data),
                    encode_access_list(txn.access_list));
     }
     else if (txn.type == TransactionType::eip2930) {
         return byte_string{0x01} +
-               encode_list(
+               encode_list2(
                    encode_unsigned(txn.sc.chain_id.value_or(0)),
                    encode_unsigned(txn.nonce),
                    encode_unsigned(txn.max_fee_per_gas),
                    encode_unsigned(txn.gas_limit),
                    encode_address(txn.to),
                    encode_unsigned(txn.value),
-                   encode_string(txn.data),
+                   encode_string2(txn.data),
                    encode_access_list(txn.access_list));
     }
 

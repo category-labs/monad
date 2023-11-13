@@ -28,7 +28,7 @@ inline byte_string to_big_compact(unsigned_integral auto n)
         zeroless_view({reinterpret_cast<unsigned char *>(&n), sizeof(n)}));
 }
 
-inline byte_string encode_string(byte_string_view const string_view)
+inline byte_string encode_string2(byte_string_view const string_view)
 {
     byte_string result;
     uint32_t const size = static_cast<uint32_t>(string_view.size());
@@ -50,7 +50,7 @@ inline byte_string encode_string(byte_string_view const string_view)
 }
 
 template <std::convertible_to<byte_string>... Args>
-byte_string encode_list(Args const &...args)
+byte_string encode_list2(Args const &...args)
 {
     size_t size = 0;
     ([&] { size += args.size(); }(), ...);

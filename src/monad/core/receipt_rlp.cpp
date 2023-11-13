@@ -4,7 +4,7 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/receipt_rlp.hpp>
 #include <monad/rlp/decode.hpp>
-#include <monad/rlp/encode.hpp>
+#include <monad/rlp/encode2.hpp>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
@@ -15,20 +15,20 @@ byte_string encode_topics(std::vector<bytes32_t> const &topics)
     for (auto const &i : topics) {
         result += encode_bytes32(i);
     }
-    return encode_list(result);
+    return encode_list2(result);
 }
 
 byte_string encode_log(Receipt::Log const &log)
 {
-    return encode_list(
+    return encode_list2(
         encode_address(log.address),
         encode_topics(log.topics),
-        encode_string(log.data));
+        encode_string2(log.data));
 }
 
 byte_string encode_bloom(Receipt::Bloom const &bloom)
 {
-    return encode_string(to_byte_string_view(bloom));
+    return encode_string2(to_byte_string_view(bloom));
 }
 
 byte_string encode_receipt(Receipt const &receipt)
@@ -39,15 +39,15 @@ byte_string encode_receipt(Receipt const &receipt)
         log_result += encode_log(i);
     }
 
-    auto const receipt_bytes = encode_list(
+    auto const receipt_bytes = encode_list2(
         encode_unsigned(receipt.status),
         encode_unsigned(receipt.gas_used),
         encode_bloom(receipt.bloom),
-        encode_list(log_result));
+        encode_list2(log_result));
 
     if (receipt.type == TransactionType::eip1559 ||
         receipt.type == TransactionType::eip2930) {
-        return encode_string(
+        return encode_string2(
             static_cast<unsigned char>(receipt.type) + receipt_bytes);
     }
     return receipt_bytes;

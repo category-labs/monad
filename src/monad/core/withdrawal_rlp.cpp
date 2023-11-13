@@ -4,13 +4,13 @@
 #include <monad/core/withdrawal.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
-#include <monad/rlp/encode.hpp>
+#include <monad/rlp/encode2.hpp>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
 byte_string encode_withdrawal(Withdrawal const &withdrawal)
 {
-    return encode_list(
+    return encode_list2(
         encode_unsigned(withdrawal.index),
         encode_unsigned(withdrawal.validator_index),
         encode_address(withdrawal.recipient),

@@ -66,8 +66,9 @@ void merge(StateDeltas &s1, StateDeltas const &s2)
 void merge(Code &c1, Code &c2)
 {
     merge_f(c1, c2, [](auto &d1, auto &d2) {
-        if (d1.empty())
+        if (d1.empty()) {
             d1 = std::move(d2);
+        }
     });
 }
 

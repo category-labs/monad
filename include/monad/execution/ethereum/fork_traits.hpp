@@ -13,7 +13,6 @@ namespace fork_traits
 {
     struct frontier;
     struct homestead;
-    struct dao_fork;
     struct tangerine_whistle;
     struct spurious_dragon;
     struct byzantium;

@@ -1,18 +1,14 @@
-#include <monad/core/address.hpp>
-#include <monad/core/address_rlp.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/withdrawal.hpp>
 #include <monad/core/withdrawal_rlp.hpp>
-#include <monad/rlp/config.hpp>
 
 #include <evmc/evmc.hpp>
-#include <intx/intx.hpp>
 
 #include <gtest/gtest.h>
 
+using namespace evmc::literals;
 using namespace monad;
 using namespace monad::rlp;
-using namespace intx;
 
 TEST(Rlp_Withdrawal, encode_decode_withdrawal)
 {
@@ -20,7 +16,7 @@ TEST(Rlp_Withdrawal, encode_decode_withdrawal)
         .index = 0,
         .validator_index = 0,
         .amount = 10000u,
-        .recipient = 0x0000000000000000000000000000000000000000_address};
+        .recipient = 0x00_address};
 
     auto const encoded_withdrawal = encode_withdrawal(original_withdrawal);
 

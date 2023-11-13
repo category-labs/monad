@@ -1,3 +1,5 @@
+#include <monad/config.hpp>
+#include <monad/core/transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/transaction_gas.hpp>
 

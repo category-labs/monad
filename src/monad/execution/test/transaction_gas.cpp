@@ -3,6 +3,7 @@
 #include <monad/core/transaction.hpp>
 #include <monad/execution/transaction_gas.hpp>
 
+#include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>

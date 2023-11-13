@@ -1,7 +1,6 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/core/transaction_rlp.hpp>
-#include <monad/rlp/config.hpp>
 
 #include <evmc/evmc.hpp>
 

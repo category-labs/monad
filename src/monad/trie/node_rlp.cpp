@@ -1,9 +1,11 @@
+#include <monad/core/byte_string.hpp>
 #include <monad/rlp/config.hpp>
-#include <monad/rlp/decode.hpp>
 #include <monad/rlp/encode2.hpp>
 #include <monad/trie/compact_encode.hpp>
 #include <monad/trie/node.hpp>
 #include <monad/trie/node_rlp.hpp>
+
+#include <ethash/keccak.hpp>
 
 MONAD_RLP_NAMESPACE_BEGIN
 

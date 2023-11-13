@@ -1,7 +1,10 @@
+#include <monad/core/byte_string.hpp>
 #include <monad/core/int_rlp.hpp>
 #include <monad/core/signature.hpp>
 #include <monad/core/signature_rlp.hpp>
 #include <monad/rlp/config.hpp>
+
+#include <cstdint>
 
 MONAD_RLP_NAMESPACE_BEGIN
 

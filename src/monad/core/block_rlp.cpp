@@ -1,14 +1,24 @@
 #include <monad/core/address_rlp.hpp>
+#include <monad/core/assert.h>
+#include <monad/core/block.hpp>
 #include <monad/core/block_rlp.hpp>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/bytes_rlp.hpp>
+#include <monad/core/int.hpp>
 #include <monad/core/int_rlp.hpp>
 #include <monad/core/receipt_rlp.hpp>
+#include <monad/core/transaction.hpp>
 #include <monad/core/transaction_rlp.hpp>
+#include <monad/core/withdrawal.hpp>
 #include <monad/core/withdrawal_rlp.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
 #include <monad/rlp/encode2.hpp>
+
+#include <cstdint>
+#include <optional>
+#include <vector>
 
 MONAD_RLP_NAMESPACE_BEGIN
 

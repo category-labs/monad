@@ -1,11 +1,20 @@
+#include <monad/core/address.hpp>
 #include <monad/core/address_rlp.hpp>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/bytes_rlp.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/int_rlp.hpp>
-#include <monad/rlp/config.hpp>
+#include <monad/rlp/decode.hpp>
+#include <monad/rlp/encode2.hpp>
+
+#include <evmc/evmc.hpp>
+
+#include <intx/intx.hpp>
 
 #include <gtest/gtest.h>
+
+#include <cstdint>
 
 using namespace monad;
 using namespace monad::rlp;
@@ -169,8 +178,8 @@ TEST(Rlp_Number, EncodeCombinations)
          'a',  'm',  'e', 't', ',', ' ', 'c', 'o', 'n', 's', 'e', 'c',
          't',  'e',  't', 'u', 'r', ' ', 'a', 'd', 'i', 'p', 'i', 's',
          'i',  'c',  'i', 'n', 'g', ' ', 'e', 'l', 'i', 't'});
-    encoding =
-        encode_list2(encode_string2(to_byte_string_view(fifty_six_char_string)));
+    encoding = encode_list2(
+        encode_string2(to_byte_string_view(fifty_six_char_string)));
     auto const expected_list_encoding =
         monad::byte_string({0xf7 + 1, 58}) + fifty_six_char_string_encoding;
     EXPECT_EQ(encoding, expected_list_encoding);

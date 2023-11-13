@@ -3,7 +3,6 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
-#include <monad/rlp/config.hpp>
 
 #include <evmc/evmc.hpp>
 

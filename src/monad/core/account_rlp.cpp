@@ -1,9 +1,16 @@
+#include <monad/core/account.hpp>
 #include <monad/core/account_rlp.hpp>
+#include <monad/core/assert.h>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/bytes_rlp.hpp>
+#include <monad/core/int.hpp>
 #include <monad/core/int_rlp.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
 #include <monad/rlp/encode2.hpp>
+
+#include <cstdint>
 
 MONAD_RLP_NAMESPACE_BEGIN
 

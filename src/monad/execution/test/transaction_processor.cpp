@@ -11,7 +11,6 @@
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 
-#include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <intx/intx.hpp>

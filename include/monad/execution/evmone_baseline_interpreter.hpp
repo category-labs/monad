@@ -1,7 +1,6 @@
 #pragma once
 
 #include <monad/config.hpp>
-
 #include <monad/core/byte_string.hpp>
 
 #include <evmone/baseline.hpp>
@@ -23,11 +22,13 @@
     #include <sstream>
 #endif
 
+#include <evmc/evmc.h>
+
 #include <memory>
 
 MONAD_NAMESPACE_BEGIN
 
-template <class Traits>
+template <evmc_revision rev>
 struct EVMOneBaselineInterpreter
 {
     template <class EvmHost>
@@ -49,13 +50,13 @@ struct EVMOneBaselineInterpreter
 
         auto execution_state = std::make_unique<evmone::ExecutionState>(
             msg,
-            Traits::rev,
+            rev,
             host->get_interface(),
             host->to_context(),
             code,
             byte_string_view{});
         evmone::baseline::CodeAnalysis code_analysis{
-            evmone::baseline::analyze(Traits::rev, code)};
+            evmone::baseline::analyze(rev, code)};
         result = evmc::Result{evmone::baseline::execute(
             vm, msg.gas, *execution_state, code_analysis)};
 

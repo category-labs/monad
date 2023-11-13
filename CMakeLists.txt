@@ -174,6 +174,7 @@ add_library(
   "include/monad/execution/evm.hpp"
   "include/monad/execution/evmc_host.hpp"
   "include/monad/execution/evmone_baseline_interpreter.hpp"
+  "include/monad/execution/explicit_evmc_revision.hpp"
   "include/monad/execution/precompiles.hpp"
   "include/monad/execution/replay_block_db.hpp"
   "include/monad/execution/transaction_gas.hpp"
@@ -185,6 +186,7 @@ add_library(
   "src/monad/execution/block_reward.cpp"
   "src/monad/execution/create_contract_address.cpp"
   "src/monad/execution/evmc_host.cpp"
+  "src/monad/execution/transaction_gas.cpp"
   # rlp
   "include/monad/rlp/decode.hpp"
   "include/monad/rlp/encode2.hpp"

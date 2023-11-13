@@ -10,8 +10,8 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/receipt.hpp>
-#include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_processor.hpp>
+#include <monad/execution/buffer.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/validation.hpp>
 #include <monad/execution/validation_status.hpp>
@@ -54,8 +54,8 @@ MONAD_TEST_NAMESPACE_BEGIN
 namespace
 {
     template <typename Traits>
-    [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus> execute(
-        Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
+    [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus>
+    execute(Block &block, test::db_t &db, Buffer const &buffer)
     {
         using namespace monad::test;
         BlockProcessor processor;
@@ -65,39 +65,38 @@ namespace
             return tl::unexpected(status);
         }
 
-        return processor.execute<Traits>(block, db, block_hash_buffer);
+        return processor.execute<Traits>(block, db, buffer);
     }
 
     [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus> execute(
         evmc_revision const rev, Block &block, test::db_t &db,
-        BlockHashBuffer const &block_hash_buffer)
+        Buffer const &buffer)
     {
         using namespace monad::fork_traits;
 
         switch (rev) {
         case EVMC_FRONTIER:
-            return execute<frontier>(block, db, block_hash_buffer);
+            return execute<frontier>(block, db, buffer);
         case EVMC_HOMESTEAD:
-            return execute<homestead>(block, db, block_hash_buffer);
+            return execute<homestead>(block, db, buffer);
         case EVMC_TANGERINE_WHISTLE:
-            return execute<tangerine_whistle>(block, db, block_hash_buffer);
+            return execute<tangerine_whistle>(block, db, buffer);
         case EVMC_SPURIOUS_DRAGON:
-            return execute<spurious_dragon>(block, db, block_hash_buffer);
+            return execute<spurious_dragon>(block, db, buffer);
         case EVMC_BYZANTIUM:
-            return execute<byzantium>(block, db, block_hash_buffer);
+            return execute<byzantium>(block, db, buffer);
         case EVMC_PETERSBURG:
-            return execute<constantinople_and_petersburg>(
-                block, db, block_hash_buffer);
+            return execute<constantinople_and_petersburg>(block, db, buffer);
         case EVMC_ISTANBUL:
-            return execute<istanbul>(block, db, block_hash_buffer);
+            return execute<istanbul>(block, db, buffer);
         case EVMC_BERLIN:
-            return execute<berlin>(block, db, block_hash_buffer);
+            return execute<berlin>(block, db, buffer);
         case EVMC_LONDON:
-            return execute<london>(block, db, block_hash_buffer);
+            return execute<london>(block, db, buffer);
         case EVMC_PARIS:
-            return execute<paris>(block, db, block_hash_buffer);
+            return execute<paris>(block, db, buffer);
         case EVMC_SHANGHAI:
-            return execute<shanghai>(block, db, block_hash_buffer);
+            return execute<shanghai>(block, db, buffer);
         default:
             std::unreachable();
         }
@@ -189,7 +188,7 @@ void BlockchainTest::TestBody()
             db.commit(state.state_, state.code_);
         }
 
-        BlockHashBuffer block_hash_buffer;
+        Buffer buffer;
         for (auto const &j_block : j_contents.at("blocks")) {
             Block block;
             auto const rlp = j_block.at("rlp").get<byte_string>();
@@ -206,10 +205,10 @@ void BlockchainTest::TestBody()
                 continue;
             }
 
-            block_hash_buffer.set(
+            buffer.set_block_hash(
                 block.header.number - 1, block.header.parent_hash);
 
-            auto const result = execute(rev, block, db, block_hash_buffer);
+            auto const result = execute(rev, block, db, buffer);
             if (result) {
                 EXPECT_FALSE(j_block.contains("expectException"));
                 EXPECT_EQ(db.state_root(), block.header.state_root) << name;

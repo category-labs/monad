@@ -1,7 +1,7 @@
 #include <monad/core/int.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
-#include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/buffer.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_processor.hpp>
@@ -62,8 +62,8 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     };
 
     auto const tx_context = get_tx_context<traits_t::rev>(t, {});
-    BlockHashBuffer const block_hash_buffer;
-    evm_host_t h{tx_context, block_hash_buffer, s};
+    Buffer const buffer;
+    evm_host_t h{tx_context, buffer, s};
 
     processor_t const p{};
 

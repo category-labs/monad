@@ -164,7 +164,7 @@ add_library(
   "src/monad/db/rocks_db_helper.cpp"
   "src/monad/db/state_db.cpp"
   # execution
-  "include/monad/execution/block_hash_buffer.hpp"
+  "include/monad/execution/buffer.hpp"
   "include/monad/execution/block_processor.hpp"
   "include/monad/execution/block_reward.hpp"
   "include/monad/execution/create_contract_address.hpp"
@@ -181,7 +181,7 @@ add_library(
   "include/monad/execution/tx_context.hpp"
   "include/monad/execution/validation.hpp"
   "include/monad/execution/validation_status.hpp"
-  "src/monad/execution/block_hash_buffer.cpp"
+  "src/monad/execution/buffer.cpp"
   "src/monad/execution/block_reward.cpp"
   "src/monad/execution/create_contract_address.cpp"
   "src/monad/execution/evmc_host.cpp"

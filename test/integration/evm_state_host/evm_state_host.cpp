@@ -2,7 +2,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
-#include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/buffer.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
@@ -79,8 +79,8 @@ TEST(EvmInterpStateHost, return_existing_storage)
     s.access_account(from);
 
     Evm<fork_t::rev> const e{};
-    BlockHashBuffer const block_hash_buffer;
-    EvmcHost<fork_t::rev> h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    Buffer const buffer;
+    EvmcHost<fork_t::rev> h{EMPTY_TX_CONTEXT, buffer, s};
 
     auto status = e.call_evm(&h, s, m);
 
@@ -140,8 +140,8 @@ TEST(EvmInterpStateHost, store_then_return_storage)
     s.access_account(from);
 
     Evm<fork_t::rev> const e{};
-    BlockHashBuffer const block_hash_buffer;
-    EvmcHost<fork_t::rev> h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    Buffer const buffer;
+    EvmcHost<fork_t::rev> h{EMPTY_TX_CONTEXT, buffer, s};
 
     auto status = e.call_evm(&h, s, m);
 

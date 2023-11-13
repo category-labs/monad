@@ -5,8 +5,8 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
-#include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_reward.hpp>
+#include <monad/execution/buffer.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_gas.hpp>
@@ -64,8 +64,8 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 
     tp_t const tp{};
     auto const tx_context = get_tx_context<traits_t::rev>(t, bh);
-    BlockHashBuffer const block_hash_buffer;
-    EvmcHost<traits_t::rev> h{tx_context, block_hash_buffer, s};
+    Buffer const buffer;
+    EvmcHost<traits_t::rev> h{tx_context, buffer, s};
 
     EXPECT_EQ(
         static_validate_txn<traits_t::rev>(t, std::nullopt),
@@ -136,8 +136,8 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
 
     tp_t const tp{};
     auto const tx_context = get_tx_context<traits_t::rev>(t, bh);
-    BlockHashBuffer const block_hash_buffer;
-    EvmcHost<traits_t::rev> h{tx_context, block_hash_buffer, s};
+    Buffer const buffer;
+    EvmcHost<traits_t::rev> h{tx_context, buffer, s};
 
     EXPECT_EQ(
         static_validate_txn<traits_t::rev>(t, std::nullopt),
@@ -204,8 +204,8 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
 
     tp_t const tp{};
     auto const tx_context = get_tx_context<traits_t::rev>(t, bh);
-    BlockHashBuffer const block_hash_buffer;
-    EvmcHost<traits_t::rev> h{tx_context, block_hash_buffer, s};
+    Buffer const buffer;
+    EvmcHost<traits_t::rev> h{tx_context, buffer, s};
 
     EXPECT_EQ(
         static_validate_txn<traits_t::rev>(t, std::nullopt),

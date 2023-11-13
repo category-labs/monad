@@ -11,7 +11,7 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/signature.hpp>
 #include <monad/core/transaction.hpp>
-#include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/buffer.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_processor.hpp>
@@ -100,11 +100,11 @@ namespace
         }
 
         auto const tx_context = get_tx_context<Traits::rev>(txn, block_header);
-        BlockHashBuffer block_hash_buffer;
+        Buffer buffer;
         MONAD_ASSERT(block_header.number);
-        block_hash_buffer.set(
+        buffer.set_block_hash(
             block_header.number - 1, block_header.parent_hash);
-        EvmcHost<Traits::rev> host{tx_context, block_hash_buffer, state};
+        EvmcHost<Traits::rev> host{tx_context, buffer, state};
         TransactionProcessor<Traits::rev> const processor;
 
         return processor.execute(

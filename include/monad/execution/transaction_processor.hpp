@@ -147,9 +147,8 @@ struct TransactionProcessor
     }
 
     static constexpr ValidationStatus validate_and_execute(
-        Transaction const &tx, BlockHeader const &hdr,
-        BlockHashBuffer const &block_hash_buffer, State &state,
-        Receipt &receipt)
+        Transaction const &tx, BlockHeader const &hdr, Buffer const &buffer,
+        State &state, Receipt &receipt)
     {
         MONAD_DEBUG_ASSERT(
             static_validate_txn<rev>(tx, hdr.base_fee_per_gas) ==
@@ -164,7 +163,7 @@ struct TransactionProcessor
         }
 
         auto const tx_context = get_tx_context<rev>(tx, hdr);
-        EvmcHost<rev> host{tx_context, block_hash_buffer, state};
+        EvmcHost<rev> host{tx_context, buffer, state};
         receipt = processor.execute(
             state, host, tx, hdr.base_fee_per_gas.value_or(0), hdr.beneficiary);
 

@@ -8,8 +8,8 @@
 #include <monad/core/receipt_fmt.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/core/withdrawal.hpp>
-#include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_reward.hpp>
+#include <monad/execution/buffer.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/transaction_processor.hpp>
@@ -71,7 +71,7 @@ struct BlockProcessor
 
     template <class Traits>
     [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus>
-    execute(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
+    execute(Block &block, Db &db, Buffer const &buffer)
     {
         auto const start_time = std::chrono::steady_clock::now();
         LOG_INFO(
@@ -102,7 +102,7 @@ struct BlockProcessor
                     TransactionProcessor<Traits::rev>::validate_and_execute(
                         block.transactions[i],
                         block.header,
-                        block_hash_buffer,
+                        buffer,
                         state,
                         receipt);
                 txn_status != ValidationStatus::SUCCESS) {

@@ -79,7 +79,7 @@ public:
     template <class Traits>
     [[nodiscard]] Result run_fork(
         Db &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
-        BlockHashBuffer &block_hash_buffer, block_num_t current_block_number,
+        Buffer &buffer, block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
         for (; current_block_number <= loop_until<Traits>(until_block_number);
@@ -93,7 +93,7 @@ public:
                     Status::SUCCESS_END_OF_DB, current_block_number - 1};
             }
 
-            block_hash_buffer.set(
+            buffer.set_block_hash(
                 current_block_number - 1, block.header.parent_hash);
 
             BlockProcessor block_processor{};
@@ -103,8 +103,8 @@ public:
                     Status::BLOCK_VALIDATION_FAILED, current_block_number};
             }
 
-            auto const receipts = block_processor.template execute<Traits>(
-                block, db, block_hash_buffer);
+            auto const receipts =
+                block_processor.template execute<Traits>(block, db, buffer);
 
             if (!verify_root_hash(
                     block.header,
@@ -130,7 +130,7 @@ public:
                 db,
                 checkpoint_frequency,
                 block_db,
-                block_hash_buffer,
+                buffer,
                 current_block_number,
                 until_block_number);
         }
@@ -154,14 +154,14 @@ public:
                 Status::START_BLOCK_NUMBER_OUTSIDE_DB, start_block_number};
         }
 
-        BlockHashBuffer block_hash_buffer;
+        Buffer buffer;
         block_num_t block_number =
             start_block_number < 256 ? 1 : start_block_number - 255;
         while (block_number < start_block_number) {
             block = Block{};
             bool const result = block_db.get(block_number, block);
             MONAD_ASSERT(result);
-            block_hash_buffer.set(block_number - 1, block.header.parent_hash);
+            buffer.set_block_hash(block_number - 1, block.header.parent_hash);
             ++block_number;
         }
 
@@ -169,7 +169,7 @@ public:
             db,
             checkpoint_frequency,
             block_db,
-            block_hash_buffer,
+            buffer,
             start_block_number,
             until_block_number);
     }

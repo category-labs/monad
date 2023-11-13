@@ -92,7 +92,7 @@ TEST(Rlp_Transaction, EncodeAccessListMultipleEntry)
     EXPECT_EQ(encode_access_list(access_list), expected);
 }
 
-// Example data from: https://eips.ethereum.org/EIPS/eip-155
+// Example data from: EIP-155
 TEST(Rlp_Transaction, DecodeEncodeLegacy)
 {
     using namespace intx;

@@ -41,7 +41,6 @@ namespace fork_traits
     {
         using next_fork_t = tangerine_whistle;
 
-        // https://eips.ethereum.org/EIPS/eip-2
         static constexpr evmc_revision rev = EVMC_HOMESTEAD;
         static constexpr auto last_block_number = 2'462'999u;
     };

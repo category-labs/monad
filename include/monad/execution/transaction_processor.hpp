@@ -42,7 +42,7 @@ struct TransactionProcessor
         Transaction const &txn, uint64_t const gas_remaining,
         uint64_t const refund)
     {
-        // https://eips.ethereum.org/EIPS/eip-3529
+        // EIP-3529
         constexpr auto max_refund_quotient = Traits::rev >= EVMC_LONDON ? 5 : 2;
         auto const refund_allowance =
             (txn.gas_limit - gas_remaining) / max_refund_quotient;

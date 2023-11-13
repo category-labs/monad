@@ -34,7 +34,7 @@ struct Evm
     {
         MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
 
-        // https://eips.ethereum.org/EIPS/eip-3541
+        // EIP-3541
         if constexpr (rev >= EVMC_LONDON) {
             if (result.output_size > 0 && result.output_data[0] == 0xef) {
                 return evmc::Result{EVMC_CONTRACT_VALIDATION_FAILURE};
@@ -115,7 +115,7 @@ struct Evm
 
         new_state.create_contract(contract_address);
 
-        // https://eips.ethereum.org/EIPS/eip-161
+        // EIP-161
         constexpr auto starting_nonce = rev >= EVMC_SPURIOUS_DRAGON ? 1 : 0;
         new_state.set_nonce(contract_address, starting_nonce);
         transfer_balances(new_state, msg, contract_address);

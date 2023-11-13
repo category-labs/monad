@@ -22,7 +22,7 @@ g_txn_create(Transaction const &txn) noexcept
     return 0u;
 }
 
-// https://eips.ethereum.org/EIPS/eip-2930
+// EIP-2930
 [[nodiscard]] inline constexpr auto
 g_access_and_storage(Transaction const &txn) noexcept
 {
@@ -52,7 +52,7 @@ template <evmc_revision rev>
         });
     auto const nonzeros = txn.data.size() - static_cast<uint64_t>(zeros);
     if constexpr (rev < EVMC_ISTANBUL) {
-        // https://eips.ethereum.org/EIPS/eip-2028
+        // EIP-2028
         return static_cast<uint64_t>(zeros) * 4u + nonzeros * 68u;
     }
     return static_cast<uint64_t>(zeros) * 4u + nonzeros * 16u;
@@ -89,7 +89,7 @@ priority_fee_per_gas(Transaction const &txn, uint256_t const &base_fee_per_gas)
             txn.max_priority_fee_per_gas,
             txn.max_fee_per_gas - base_fee_per_gas);
     }
-    // per eip-1559: "Legacy Ethereum transactions will still work and
+    // per EIP-1559: "Legacy Ethereum transactions will still work and
     // be included in blocks, but they will not benefit directly from
     // the new pricing system. This is due to the fact that upgrading
     // from legacy transactions to new transactions results in the
@@ -105,7 +105,7 @@ gas_price(Transaction const &txn, uint256_t const &base_fee_per_gas)
     if constexpr (rev < EVMC_LONDON) {
         return txn.max_fee_per_gas;
     }
-    // https://eips.ethereum.org/EIPS/eip-1559
+    // EIP-1559
     return priority_fee_per_gas(txn, base_fee_per_gas) + base_fee_per_gas;
 }
 

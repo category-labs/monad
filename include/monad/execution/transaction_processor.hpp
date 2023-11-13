@@ -13,13 +13,15 @@
 #include <monad/execution/validation.hpp>
 #include <monad/state2/state.hpp>
 
+#include <evmc/evmc.h>
+
 #include <intx/intx.hpp>
 
 #include <algorithm>
 
 MONAD_NAMESPACE_BEGIN
 
-template <class Traits>
+template <evmc_revision rev>
 struct TransactionProcessor
 {
     // YP Sec 6.2 "irrevocable_change"
@@ -33,7 +35,7 @@ struct TransactionProcessor
         MONAD_DEBUG_ASSERT(txn.from.has_value());
 
         auto const upfront_cost =
-            txn.gas_limit * gas_price<Traits::rev>(txn, base_fee_per_gas);
+            txn.gas_limit * gas_price<rev>(txn, base_fee_per_gas);
         state.subtract_from_balance(txn.from.value(), upfront_cost);
     }
 
@@ -43,7 +45,7 @@ struct TransactionProcessor
         uint64_t const refund)
     {
         // EIP-3529
-        constexpr auto max_refund_quotient = Traits::rev >= EVMC_LONDON ? 5 : 2;
+        constexpr auto max_refund_quotient = rev >= EVMC_LONDON ? 5 : 2;
         auto const refund_allowance =
             (txn.gas_limit - gas_remaining) / max_refund_quotient;
 
@@ -56,7 +58,7 @@ struct TransactionProcessor
     {
         // refund and priority, Eqn. 73-76
         auto const gas_remaining = g_star(txn, gas_leftover, refund);
-        auto const gas_cost = gas_price<Traits::rev>(txn, base_fee_per_gas);
+        auto const gas_cost = gas_price<rev>(txn, base_fee_per_gas);
 
         MONAD_DEBUG_ASSERT(txn.from.has_value());
         state.add_to_balance(txn.from.value(), gas_cost * gas_remaining);
@@ -76,8 +78,7 @@ struct TransactionProcessor
 
         evmc_message msg{
             .kind = to_address.first,
-            .gas = static_cast<int64_t>(
-                tx.gas_limit - intrinsic_gas<Traits::rev>(tx)),
+            .gas = static_cast<int64_t>(tx.gas_limit - intrinsic_gas<rev>(tx)),
             .recipient = to_address.second,
             .sender = *tx.from,
             .input_data = tx.data.data(),
@@ -89,13 +90,13 @@ struct TransactionProcessor
     }
 
     Receipt execute(
-        State &state, EvmcHost<Traits::rev> &host, Transaction const &txn,
+        State &state, EvmcHost<rev> &host, Transaction const &txn,
         uint256_t const &base_fee_per_gas, address_t const &beneficiary) const
     {
         irrevocable_change(state, txn, base_fee_per_gas);
 
         // EIP-3651
-        if constexpr (Traits::rev >= EVMC_SHANGHAI) {
+        if constexpr (rev >= EVMC_SHANGHAI) {
             state.warm_coinbase(beneficiary);
         }
 
@@ -125,12 +126,12 @@ struct TransactionProcessor
             static_cast<uint64_t>(result.gas_refund));
         auto const gas_used = txn.gas_limit - gas_remaining;
         auto const reward =
-            calculate_txn_award<Traits::rev>(txn, base_fee_per_gas, gas_used);
+            calculate_txn_award<rev>(txn, base_fee_per_gas, gas_used);
         state.add_to_balance(beneficiary, reward);
 
         // finalize state, Eqn. 77-79
         state.destruct_suicides();
-        if constexpr (Traits::rev >= EVMC_SPURIOUS_DRAGON) {
+        if constexpr (rev >= EVMC_SPURIOUS_DRAGON) {
             state.destruct_touched_dead();
         }
 
@@ -151,10 +152,10 @@ struct TransactionProcessor
         Receipt &receipt)
     {
         MONAD_DEBUG_ASSERT(
-            static_validate_txn<Traits::rev>(tx, hdr.base_fee_per_gas) ==
+            static_validate_txn<rev>(tx, hdr.base_fee_per_gas) ==
             ValidationStatus::SUCCESS);
 
-        TransactionProcessor<Traits> processor{};
+        TransactionProcessor<rev> processor{};
 
         if (auto const validity = validate_txn(state, tx);
             validity != ValidationStatus::SUCCESS) {
@@ -162,8 +163,8 @@ struct TransactionProcessor
             return validity;
         }
 
-        auto const tx_context = get_tx_context<Traits::rev>(tx, hdr);
-        EvmcHost<Traits::rev> host{tx_context, block_hash_buffer, state};
+        auto const tx_context = get_tx_context<rev>(tx, hdr);
+        EvmcHost<rev> host{tx_context, block_hash_buffer, state};
         receipt = processor.execute(
             state, host, tx, hdr.base_fee_per_gas.value_or(0), hdr.beneficiary);
 

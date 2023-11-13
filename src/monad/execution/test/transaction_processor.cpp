@@ -11,6 +11,7 @@
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 
+#include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <intx/intx.hpp>
@@ -21,7 +22,7 @@ using namespace monad;
 
 using db_t = db::InMemoryTrieDB;
 using traits_t = fork_traits::shanghai;
-using processor_t = TransactionProcessor<traits_t>;
+using processor_t = TransactionProcessor<traits_t::rev>;
 
 using evm_host_t = EvmcHost<traits_t::rev>;
 

@@ -99,7 +99,7 @@ struct BlockProcessor
             Receipt receipt;
 
             if (auto const txn_status =
-                    TransactionProcessor<Traits>::validate_and_execute(
+                    TransactionProcessor<Traits::rev>::validate_and_execute(
                         block.transactions[i],
                         block.header,
                         block_hash_buffer,

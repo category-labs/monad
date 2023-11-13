@@ -60,7 +60,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     Block const b{.header = bh, .transactions = {t}, .ommers = {ommer}};
 
     using traits_t = monad::fork_traits::byzantium;
-    using tp_t = TransactionProcessor<traits_t>;
+    using tp_t = TransactionProcessor<traits_t::rev>;
 
     tp_t const tp{};
     auto const tx_context = get_tx_context<traits_t::rev>(t, bh);
@@ -132,7 +132,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     Block const b{.header = bh, .transactions = {t}};
 
     using traits_t = monad::fork_traits::frontier;
-    using tp_t = TransactionProcessor<traits_t>;
+    using tp_t = TransactionProcessor<traits_t::rev>;
 
     tp_t const tp{};
     auto const tx_context = get_tx_context<traits_t::rev>(t, bh);
@@ -200,7 +200,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     Block const b{.header = bh, .transactions = {t}};
 
     using traits_t = monad::fork_traits::frontier;
-    using tp_t = TransactionProcessor<traits_t>;
+    using tp_t = TransactionProcessor<traits_t::rev>;
 
     tp_t const tp{};
     auto const tx_context = get_tx_context<traits_t::rev>(t, bh);

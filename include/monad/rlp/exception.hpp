@@ -14,6 +14,7 @@ enum class RLPDecodeError
     INPUT_TOO_SHORT,
     INPUT_TOO_LONG,
     ARRAY_LENGTH_UNEXPECTED,
+    INVALID_TXN_TYPE,
 };
 
 // TODO: This enum will be populated later
@@ -49,6 +50,8 @@ public:
                 return "Decode: Encoded string is too long";
             case RLPDecodeError::ARRAY_LENGTH_UNEXPECTED:
                 return "Decode: Array size mismatch";
+            case RLPDecodeError::INVALID_TXN_TYPE:
+                return "Decode: Unsupported transaction type";
             default:
                 return "Decode: Unexpected decoding error";
             }

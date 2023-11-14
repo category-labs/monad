@@ -182,8 +182,7 @@ byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
             receipt.type = TransactionType::eip1559;
             break;
         default:
-            MONAD_ASSERT(false); // invalid transaction type
-            return {};
+            throw RLPException(RLPDecodeError::INVALID_TXN_TYPE);
         }
         auto const rest_of_receipt_enc =
             decode_untyped_receipt(receipt, receipt_enc);

@@ -14,7 +14,7 @@
 MONAD_NAMESPACE_BEGIN
 
 // Intrinsic gas related functions
-[[nodiscard]] inline constexpr auto g_txn_create(Transaction const &tx) noexcept
+inline constexpr auto g_txn_create(Transaction const &tx) noexcept
 {
     if (!tx.to.has_value()) {
         return 32'000u;
@@ -23,8 +23,7 @@ MONAD_NAMESPACE_BEGIN
 }
 
 // EIP-2930
-[[nodiscard]] inline constexpr auto
-g_access_and_storage(Transaction const &tx) noexcept
+inline constexpr auto g_access_and_storage(Transaction const &tx) noexcept
 {
     uint64_t g = tx.access_list.size() * 2'400u;
     for (auto &i : tx.access_list) {
@@ -33,8 +32,7 @@ g_access_and_storage(Transaction const &tx) noexcept
     return g;
 }
 
-[[nodiscard]] inline constexpr uint64_t
-g_extra_cost_init(Transaction const &tx) noexcept
+inline constexpr uint64_t g_extra_cost_init(Transaction const &tx) noexcept
 {
     if (!tx.to.has_value()) {
         return ((tx.data.length() + 31u) / 32u) * 2u;
@@ -44,7 +42,7 @@ g_extra_cost_init(Transaction const &tx) noexcept
 
 // YP, Eqn. 60, first summation
 template <evmc_revision rev>
-[[nodiscard]] uint64_t g_data(Transaction const &tx) noexcept
+uint64_t g_data(Transaction const &tx) noexcept
 {
     auto const zeros = std::count_if(
         std::cbegin(tx.data), std::cend(tx.data), [](unsigned char c) {
@@ -61,7 +59,7 @@ template <evmc_revision rev>
 EXPLICIT_EVMC_REVISION(g_data);
 
 template <evmc_revision rev>
-[[nodiscard]] uint64_t intrinsic_gas(Transaction const &tx) noexcept
+uint64_t intrinsic_gas(Transaction const &tx) noexcept
 {
     if constexpr (rev < EVMC_HOMESTEAD) {
         // YP, section 6.2, Eqn. 60
@@ -83,7 +81,7 @@ template <evmc_revision rev>
 
 EXPLICIT_EVMC_REVISION(intrinsic_gas);
 
-[[nodiscard]] inline constexpr uint256_t priority_fee_per_gas(
+inline constexpr uint256_t priority_fee_per_gas(
     Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
 {
     MONAD_DEBUG_ASSERT(tx.max_fee_per_gas >= base_fee_per_gas);
@@ -102,7 +100,7 @@ EXPLICIT_EVMC_REVISION(intrinsic_gas);
 }
 
 template <evmc_revision rev>
-[[nodiscard]] uint256_t
+uint256_t
 gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
 {
     if constexpr (rev < EVMC_LONDON) {
@@ -115,7 +113,7 @@ gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
 EXPLICIT_EVMC_REVISION(gas_price);
 
 template <evmc_revision rev>
-[[nodiscard]] uint256_t calculate_txn_award(
+uint256_t calculate_txn_award(
     Transaction const &tx, uint256_t const &base_fee_per_gas,
     uint64_t const gas_used) noexcept
 {

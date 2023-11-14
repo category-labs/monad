@@ -1,7 +1,4 @@
 set(berlin_excluded_tests
-    "BlockchainTests.InvalidBlocks/bcForgedTest/bcBlockRLPPrefixed0000.json" # RLP
-    "BlockchainTests.InvalidBlocks/bcForgedTest/bcInvalidRLPTest_BLOCK.json" # RLP
-    "BlockchainTests.InvalidBlocks/bcForgedTest/bcInvalidRLPTest_TRANSACT.json" # RLP
     "GeneralStateTests.stCreate2/RevertInCreateInInitCreate2.json" # Incarnation
     "GeneralStateTests.stCreate2/create2collisionStorage.json" # Incarnation
     "GeneralStateTests.stExtCodeHash/dynamicAccountOverwriteEmpty.json" # Incarnation

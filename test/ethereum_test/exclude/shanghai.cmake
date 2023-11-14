@@ -11,7 +11,6 @@ set(shanghai_excluded_tests
     "BlockchainTests.GeneralStateTests/stRevertTest/RevertInCreateInInit.json" # Incarnation
     "BlockchainTests.GeneralStateTests/stSStoreTest/InitCollision.json" # Incarnation
     "BlockchainTests.InvalidBlocks/bc4895_withdrawals/incorrectWithdrawalsRoot.json" # Trie
-    "BlockchainTests.InvalidBlocks/bc4895_withdrawals/withdrawalsRLPmoreElements.json" # RLP
     "BlockchainTests.InvalidBlocks/bcEIP1559/badBlocks.json" # ParentHeader
     "BlockchainTests.InvalidBlocks/bcEIP1559/badUncles.json" # Mixed
     "BlockchainTests.InvalidBlocks/bcEIP1559/gasLimit20m.json" # ParentHeader

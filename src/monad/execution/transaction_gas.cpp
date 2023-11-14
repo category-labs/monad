@@ -61,7 +61,7 @@ template <evmc_revision rev>
 EXPLICIT_EVMC_REVISION(g_data);
 
 template <evmc_revision rev>
-[[nodiscard]] uint64_t intrinsic_gas(Transaction const &tx)
+[[nodiscard]] uint64_t intrinsic_gas(Transaction const &tx) noexcept
 {
     if constexpr (rev < EVMC_HOMESTEAD) {
         // YP, section 6.2, Eqn. 60
@@ -83,27 +83,27 @@ template <evmc_revision rev>
 
 EXPLICIT_EVMC_REVISION(intrinsic_gas);
 
-[[nodiscard]] inline constexpr uint256_t
-priority_fee_per_gas(Transaction const &tx, uint256_t const &base_fee_per_gas)
+[[nodiscard]] inline constexpr uint256_t priority_fee_per_gas(
+    Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
 {
     MONAD_DEBUG_ASSERT(tx.max_fee_per_gas >= base_fee_per_gas);
+    auto const max_priority_fee_per_gas = tx.max_fee_per_gas - base_fee_per_gas;
 
     if (tx.type == TransactionType::eip1559) {
-        return std::min(
-            tx.max_priority_fee_per_gas, tx.max_fee_per_gas - base_fee_per_gas);
+        return std::min(tx.max_priority_fee_per_gas, max_priority_fee_per_gas);
     }
-    // per EIP-1559: "Legacy Ethereum transactions will still work and
+    // EIP-1559: "Legacy Ethereum transactions will still work and
     // be included in blocks, but they will not benefit directly from
     // the new pricing system. This is due to the fact that upgrading
     // from legacy transactions to new transactions results in the
     // legacy transaction’s gas_price entirely being consumed either
     // by the base_fee_per_gas and the priority_fee_per_gas."
-    return tx.max_fee_per_gas - base_fee_per_gas;
+    return max_priority_fee_per_gas;
 }
 
 template <evmc_revision rev>
 [[nodiscard]] uint256_t
-gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas)
+gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
 {
     if constexpr (rev < EVMC_LONDON) {
         return tx.max_fee_per_gas;
@@ -117,7 +117,7 @@ EXPLICIT_EVMC_REVISION(gas_price);
 template <evmc_revision rev>
 [[nodiscard]] uint256_t calculate_txn_award(
     Transaction const &tx, uint256_t const &base_fee_per_gas,
-    uint64_t const gas_used)
+    uint64_t const gas_used) noexcept
 {
     if constexpr (rev < EVMC_LONDON) {
         return gas_used * gas_price<rev>(tx, base_fee_per_gas);

@@ -88,7 +88,7 @@ public:
             bool const block_read_status =
                 block_db.get(current_block_number, block);
 
-            if (MONAD_UNLIKELY(block_read_status)) {
+            if (MONAD_UNLIKELY(!block_read_status)) {
                 return Result{
                     Status::SUCCESS_END_OF_DB, current_block_number - 1};
             }

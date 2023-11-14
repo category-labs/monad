@@ -15,6 +15,7 @@ enum class RLPDecodeError
     INPUT_TOO_LONG,
     ARRAY_LENGTH_UNEXPECTED,
     INVALID_TXN_TYPE,
+    LEADING_ZERO,
 };
 
 // TODO: This enum will be populated later
@@ -52,6 +53,8 @@ public:
                 return "Decode: Array size mismatch";
             case RLPDecodeError::INVALID_TXN_TYPE:
                 return "Decode: Unsupported transaction type";
+            case RLPDecodeError::LEADING_ZERO:
+                return "Decode: Encoded string has leading zeros";
             default:
                 return "Decode: Unexpected decoding error";
             }

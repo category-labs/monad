@@ -15,6 +15,13 @@ constexpr T decode_raw_num(byte_string_view const enc)
     if (MONAD_UNLIKELY(enc.size() > sizeof(T))) {
         throw RLPException(RLPDecodeError::OVERFLOW);
     }
+    if (enc.empty()) {
+        return {0};
+    }
+    if (enc[0] == 0) {
+        throw RLPException(RLPDecodeError::LEADING_ZERO);
+    }
+
     T result{};
     std::memcpy(
         &intx::as_bytes(result)[sizeof(T) - enc.size()],

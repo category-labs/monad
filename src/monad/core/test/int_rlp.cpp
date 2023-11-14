@@ -21,7 +21,7 @@ using namespace monad::rlp;
 
 TEST(Rlp_Number, DecodeUnsigned)
 {
-    EXPECT_EQ(0, decode_length(monad::byte_string({0x00})));
+    EXPECT_EQ(0, decode_length(monad::byte_string({})));
     EXPECT_EQ(15, decode_length(monad::byte_string({0x0f})));
     EXPECT_EQ(122, decode_length(monad::byte_string({0x7a})));
     EXPECT_EQ(1024, decode_length(monad::byte_string({0x04, 0x00})));

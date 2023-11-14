@@ -126,14 +126,18 @@ public:
                 value = byte_string_allocator_.emplace_back(
                     rlp::encode_account(account.value()));
             }
-            account_updates.push_front(
-                update_allocator_.emplace_back(mpt::Update{
-                    .key = mpt::NibblesView{to_byte_string_view(addr.bytes)},
-                    .value = value,
-                    .incarnation = account.has_value()
-                                       ? account.value().incarnation != 0
-                                       : false,
-                    .next = std::move(storage_updates)}));
+
+            if (!storage_updates.empty() || delta.account.first != account) {
+                account_updates.push_front(
+                    update_allocator_.emplace_back(mpt::Update{
+                        .key =
+                            mpt::NibblesView{to_byte_string_view(addr.bytes)},
+                        .value = value,
+                        .incarnation = account.has_value()
+                                           ? account.value().incarnation != 0
+                                           : false,
+                        .next = std::move(storage_updates)}));
+            }
         }
 
         mpt::UpdateList code_updates;

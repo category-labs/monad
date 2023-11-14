@@ -28,6 +28,6 @@ set(merge_excluded_tests
     "BlockchainTests.InvalidBlocks/bcMultiChainTest/UncleFromSideChain.json" # Uncle
     "BlockchainTests.ValidBlocks/bcStateTests/suicideStorageCheck.json" # Incarnation
     "BlockchainTests.ValidBlocks/bcStateTests/suicideStorageCheckVCreate.json" # Incarnation
-    "BlockchainTests.ValidBlocks/bcStateTests/suicideStorageCheckVCreate2.json" #I ncarnation
+    "BlockchainTests.ValidBlocks/bcStateTests/suicideStorageCheckVCreate2.json" # Incarnation
     "BlockchainTests.ValidBlocks/bcStateTests/suicideThenCheckBalance.json" # Incarnation
 )

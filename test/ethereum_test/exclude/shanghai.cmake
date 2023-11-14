@@ -1,6 +1,4 @@
 set(shanghai_excluded_tests
-    "BlockchainTests.InvalidBlocks/bc4895_withdrawals/withdrawalsAddressBounds.json" # RLP
-    "BlockchainTests.InvalidBlocks/bc4895_withdrawals/withdrawalsRLPlessElements.json" # RLP
     "GeneralStateTests.stCreate2/RevertInCreateInInitCreate2.json" # Incarnation
     "GeneralStateTests.stCreate2/create2collisionStorage.json" # Incarnation
     "GeneralStateTests.stExtCodeHash/dynamicAccountOverwriteEmpty.json" # Incarnation

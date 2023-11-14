@@ -5,6 +5,7 @@
 #include <monad/core/bytes_rlp.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/int_rlp.hpp>
+#include <monad/core/likely.h>
 #include <monad/core/signature.hpp>
 #include <monad/core/signature_rlp.hpp>
 #include <monad/core/transaction.hpp>
@@ -12,6 +13,7 @@
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
 #include <monad/rlp/encode2.hpp>
+#include <monad/rlp/exception.hpp>
 
 #include <cassert>
 #include <cstddef>
@@ -165,6 +167,11 @@ byte_string_view decode_access_entry_keys(
     }
 
     MONAD_ASSERT(list_space == keys.size() * key_size);
+
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+    }
+
     return rest_of_enc;
 }
 
@@ -177,7 +184,10 @@ decode_access_entry(Transaction::AccessEntry &ae, byte_string_view const enc)
     payload = decode_address(ae.a, payload);
     payload = decode_access_entry_keys(ae.keys, payload);
 
-    MONAD_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+    }
+
     return rest_of_enc;
 }
 
@@ -199,14 +209,16 @@ byte_string_view decode_access_list(
         access_list.emplace_back(ae);
     }
 
-    MONAD_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+    }
+
     return rest_of_enc;
 }
 
 byte_string_view
 decode_transaction_legacy(Transaction &txn, byte_string_view const enc)
 {
-    MONAD_ASSERT(enc.size() > 0);
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
 
@@ -222,14 +234,16 @@ decode_transaction_legacy(Transaction &txn, byte_string_view const enc)
     payload = decode_unsigned<uint256_t>(txn.sc.s, payload);
     txn.from = std::nullopt;
 
-    MONAD_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+    }
+
     return rest_of_enc;
 }
 
 byte_string_view
 decode_transaction_eip2930(Transaction &txn, byte_string_view const enc)
 {
-    MONAD_ASSERT(enc.size() > 0);
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
 
@@ -248,14 +262,16 @@ decode_transaction_eip2930(Transaction &txn, byte_string_view const enc)
     payload = decode_unsigned<uint256_t>(txn.sc.s, payload);
     txn.from = std::nullopt;
 
-    MONAD_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+    }
+
     return rest_of_enc;
 }
 
 byte_string_view
 decode_transaction_eip1559(Transaction &txn, byte_string_view const enc)
 {
-    MONAD_ASSERT(enc.size() > 0);
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
 
@@ -275,21 +291,29 @@ decode_transaction_eip1559(Transaction &txn, byte_string_view const enc)
     payload = decode_unsigned<uint256_t>(txn.sc.s, payload);
     txn.from = std::nullopt;
 
-    MONAD_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+    }
+
     return rest_of_enc;
 }
 
 byte_string_view
 decode_transaction(Transaction &txn, byte_string_view const enc)
 {
-    MONAD_ASSERT(enc.size() > 0);
+    if (MONAD_UNLIKELY(enc.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_SHORT);
+    }
 
     uint8_t const &first = enc[0];
     if (first < 0xc0) // eip 2718 - typed transaction envelope
     {
         byte_string_view payload{};
         auto const rest_of_enc = parse_string_metadata(payload, enc);
-        MONAD_ASSERT(payload.size() > 0);
+
+        if (MONAD_UNLIKELY(payload.empty())) {
+            throw RLPException(RLPDecodeError::INPUT_TOO_SHORT);
+        }
 
         uint8_t const &type = payload[0];
         auto const txn_enc = payload.substr(1, payload.size() - 1);
@@ -307,7 +331,11 @@ decode_transaction(Transaction &txn, byte_string_view const enc)
             return {};
         }
         auto const rest_of_txn_enc = decoder(txn, txn_enc);
-        MONAD_ASSERT(rest_of_txn_enc.size() == 0);
+
+        if (MONAD_UNLIKELY(rest_of_txn_enc.size() > 0)) {
+            throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+        }
+
         return rest_of_enc;
     }
     return decode_transaction_legacy(txn, enc);

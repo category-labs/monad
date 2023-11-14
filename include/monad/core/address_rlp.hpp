@@ -2,9 +2,11 @@
 
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/likely.h>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
 #include <monad/rlp/encode2.hpp>
+#include <monad/rlp/exception.hpp>
 
 #include <optional>
 
@@ -34,7 +36,9 @@ decode_address(std::optional<address_t> &address, byte_string_view const enc)
         std::memcpy(address->bytes, payload.data(), sizeof(address_t));
     }
     else {
-        MONAD_ASSERT(payload.size() == 0);
+        if (MONAD_UNLIKELY(!payload.empty())) {
+            throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+        }
         address.reset();
     }
     return rest_of_enc;

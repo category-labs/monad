@@ -4,12 +4,14 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/bytes_rlp.hpp>
 #include <monad/core/int_rlp.hpp>
+#include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
 #include <monad/core/receipt_rlp.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
 #include <monad/rlp/encode2.hpp>
+#include <monad/rlp/exception.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -86,7 +88,11 @@ decode_topics(std::vector<bytes32_t> &topics, byte_string_view const enc)
     }
 
     MONAD_ASSERT(list_space == topics.size() * topic_size);
-    MONAD_ASSERT(payload.size() == 0);
+
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+    }
+
     return rest_of_enc;
 }
 
@@ -98,7 +104,10 @@ byte_string_view decode_log(Receipt::Log &log, byte_string_view const enc)
     payload = decode_topics(log.topics, payload);
     payload = decode_string(log.data, payload);
 
-    MONAD_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+    }
+
     return rest_of_enc;
 }
 
@@ -122,7 +131,10 @@ decode_logs(std::vector<Receipt::Log> &logs, byte_string_view const enc)
         logs.emplace_back(log);
     }
 
-    MONAD_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+    }
+
     return rest_of_enc;
 }
 
@@ -136,13 +148,18 @@ decode_untyped_receipt(Receipt &receipt, byte_string_view const enc)
     payload = decode_bloom(receipt.bloom, payload);
     payload = decode_logs(receipt.logs, payload);
 
-    MONAD_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+    }
+
     return rest_of_enc;
 }
 
 byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
 {
-    MONAD_ASSERT(enc.size() > 0);
+    if (MONAD_UNLIKELY(enc.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_SHORT);
+    }
 
     uint8_t const &first = enc[0];
     receipt.type = TransactionType::eip155;
@@ -150,7 +167,10 @@ byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
     {
         byte_string_view payload{};
         auto const rest_of_enc = parse_string_metadata(payload, enc);
-        MONAD_ASSERT(payload.size() > 0);
+
+        if (MONAD_UNLIKELY(payload.empty())) {
+            throw RLPException(RLPDecodeError::INPUT_TOO_SHORT);
+        }
 
         uint8_t const &type = payload[0];
         auto const receipt_enc = payload.substr(1, payload.size() - 1);
@@ -167,7 +187,11 @@ byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
         }
         auto const rest_of_receipt_enc =
             decode_untyped_receipt(receipt, receipt_enc);
-        MONAD_ASSERT(rest_of_receipt_enc.size() == 0);
+
+        if (MONAD_UNLIKELY(rest_of_receipt_enc.size() > 0)) {
+            throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+        }
+
         return rest_of_enc;
     }
     return decode_untyped_receipt(receipt, enc);

@@ -2,9 +2,11 @@
 
 #include <monad/core/byte_string.hpp>
 #include <monad/core/int.hpp>
+#include <monad/core/likely.h>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
 #include <monad/rlp/encode2.hpp>
+#include <monad/rlp/exception.hpp>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
@@ -26,7 +28,11 @@ constexpr byte_string_view decode_bool(bool &target, byte_string_view const enc)
 {
     uint64_t i{0};
     auto ret = decode_unsigned<uint64_t>(i, enc);
-    MONAD_DEBUG_ASSERT(i <= 1);
+
+    if (MONAD_UNLIKELY(i > 1)) {
+        throw RLPException(RLPDecodeError::OVERFLOW);
+    }
+
     target = i;
     return ret;
 }

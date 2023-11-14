@@ -2,10 +2,12 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/int_rlp.hpp>
+#include <monad/core/likely.h>
 #include <monad/core/withdrawal.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
 #include <monad/rlp/encode2.hpp>
+#include <monad/rlp/exception.hpp>
 
 #include <cstdint>
 #include <vector>
@@ -35,7 +37,10 @@ decode_withdrawal(Withdrawal &withdrawal, byte_string_view const enc)
     payload = decode_address(withdrawal.recipient, payload);
     payload = decode_unsigned<uint64_t>(withdrawal.amount, payload);
 
-    MONAD_DEBUG_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+    }
+
     return rest_of_enc;
 }
 
@@ -53,7 +58,10 @@ byte_string_view decode_withdrawal_list(
         withdrawal_list.emplace_back(withdrawal);
     }
 
-    MONAD_DEBUG_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+    }
+
     return rest_of_enc;
 }
 

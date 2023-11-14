@@ -35,7 +35,9 @@ parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
     size_t i = 0;
     size_t end = 0;
 
-    MONAD_ASSERT(!enc.empty());
+    if (MONAD_UNLIKELY(enc.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_SHORT);
+    }
     if (MONAD_UNLIKELY(enc[0] >= 0xc0)) {
         throw RLPException(RLPDecodeError::TYPE_UNEXPECTED);
     }
@@ -47,19 +49,27 @@ parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
     else if (enc[0] < 0xb8) // [0x80, 0xb7]
     {
         ++i;
-        const uint8_t length = enc[0] - 0x80;
+        uint8_t const length = enc[0] - 0x80;
         end = i + length;
     }
     else // [0xb8, 0xbf]
     {
         ++i;
         uint8_t length_of_length = enc[0] - 0xb7;
-        MONAD_ASSERT(i + length_of_length < enc.size());
+
+        if (MONAD_UNLIKELY(i + length_of_length >= enc.size())) {
+            throw RLPException(RLPDecodeError::INPUT_TOO_SHORT);
+        }
+
         auto const length = decode_length(enc.substr(i, length_of_length));
         i += length_of_length;
         end = i + length;
     }
-    MONAD_ASSERT(end <= enc.size());
+
+    if (MONAD_UNLIKELY(end > enc.size())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_SHORT);
+    }
+
     payload = enc.substr(i, end - i);
     return enc.substr(end);
 }
@@ -70,8 +80,10 @@ parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
     size_t i = 0;
     size_t length;
     ++i;
-    MONAD_ASSERT(!enc.empty());
 
+    if (MONAD_UNLIKELY(enc.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_SHORT);
+    }
     if (MONAD_UNLIKELY(enc[0] < 0xc0)) {
         throw RLPException(RLPDecodeError::TYPE_UNEXPECTED);
     }
@@ -81,13 +93,19 @@ parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
     }
     else {
         size_t const length_of_length = enc[0] - 0xf7;
-        MONAD_ASSERT(i + length_of_length < enc.size());
+
+        if (MONAD_UNLIKELY(i + length_of_length >= enc.size())) {
+            throw RLPException(RLPDecodeError::INPUT_TOO_SHORT);
+        }
 
         length = decode_length(enc.substr(i, length_of_length));
         i += length_of_length;
     }
     auto const end = i + length;
-    MONAD_ASSERT(end <= enc.size());
+
+    if (MONAD_UNLIKELY(end > enc.size())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_SHORT);
+    }
 
     payload = enc.substr(i, end - i);
     return enc.substr(end, enc.size() - end);
@@ -99,7 +117,11 @@ decode_byte_array(uint8_t bytes[size], byte_string_view const enc)
 {
     byte_string_view payload{};
     auto const rest_of_enc = parse_string_metadata(payload, enc);
-    MONAD_ASSERT(payload.size() == size);
+
+    if (MONAD_UNLIKELY(payload.size() != size)) {
+        throw RLPException(RLPDecodeError::ARRAY_LENGTH_UNEXPECTED);
+    }
+
     std::memcpy(bytes, payload.data(), size);
     return rest_of_enc;
 }

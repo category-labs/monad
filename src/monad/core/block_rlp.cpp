@@ -127,7 +127,10 @@ decode_block_header(BlockHeader &block_header, byte_string_view const enc)
         block_header.base_fee_per_gas = std::nullopt;
     }
 
-    MONAD_DEBUG_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+    }
+
     return rest_of_enc;
 }
 
@@ -145,7 +148,10 @@ byte_string_view decode_transaction_vector(
         txns.emplace_back(txn);
     }
 
-    MONAD_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+    }
+
     return rest_of_enc;
 }
 
@@ -162,7 +168,10 @@ byte_string_view decode_block_header_vector(
         ommers.emplace_back(ommer);
     }
 
-    MONAD_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+    }
+
     return rest_of_enc;
 }
 
@@ -181,7 +190,10 @@ byte_string_view decode_block(Block &block, byte_string_view const enc)
         block.withdrawals = withdrawals;
     }
 
-    MONAD_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
+    }
+
     return rest_of_enc;
 }
 

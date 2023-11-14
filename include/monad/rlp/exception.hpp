@@ -11,6 +11,9 @@ enum class RLPDecodeError
 {
     OVERFLOW,
     TYPE_UNEXPECTED,
+    INPUT_TOO_SHORT,
+    INPUT_TOO_LONG,
+    ARRAY_LENGTH_UNEXPECTED,
 };
 
 // TODO: This enum will be populated later
@@ -40,6 +43,12 @@ public:
                 return "Decode: Value Overflow";
             case RLPDecodeError::TYPE_UNEXPECTED:
                 return "Decode: String where list is expected (or vice versa)";
+            case RLPDecodeError::INPUT_TOO_SHORT:
+                return "Decode: Encoded string is too short";
+            case RLPDecodeError::INPUT_TOO_LONG:
+                return "Decode: Encoded string is too long";
+            case RLPDecodeError::ARRAY_LENGTH_UNEXPECTED:
+                return "Decode: Array size mismatch";
             default:
                 return "Decode: Unexpected decoding error";
             }

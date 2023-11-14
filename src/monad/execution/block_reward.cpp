@@ -9,7 +9,28 @@
 #include <monad/state2/state.hpp>
 #include <monad/state2/state_deltas.hpp>
 
+#include <intx/intx.hpp>
+
+#include <cstdint>
+#include <limits>
+
 MONAD_NAMESPACE_BEGIN
+
+constexpr uint256_t calculate_block_reward(
+    Block const &block, uint256_t const &reward, uint256_t const &ommer_reward)
+{
+    MONAD_DEBUG_ASSERT(
+        reward + intx::umul(ommer_reward, uint256_t{block.ommers.size()}) <=
+        std::numeric_limits<uint256_t>::max());
+    return reward + ommer_reward * block.ommers.size();
+}
+
+constexpr uint256_t const calculate_ommer_reward(
+    Block const &block, uint256_t const &reward, uint64_t ommer_number)
+{
+    auto const subtrahend = ((block.header.number - ommer_number) * reward) / 8;
+    return reward - subtrahend;
+}
 
 void apply_block_reward(
     BlockState &block_state, Db &db, Block const &block,

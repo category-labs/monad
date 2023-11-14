@@ -187,6 +187,7 @@ add_library(
   "src/monad/execution/create_contract_address.cpp"
   "src/monad/execution/evmc_host.cpp"
   "src/monad/execution/transaction_gas.cpp"
+  "src/monad/execution/tx_context.cpp"
   # rlp
   "include/monad/rlp/decode.hpp"
   "include/monad/rlp/encode2.hpp"

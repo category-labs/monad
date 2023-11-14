@@ -15,7 +15,7 @@ using bytes32_t = ::evmc::bytes32;
 static_assert(sizeof(bytes32_t) == 32);
 static_assert(alignof(bytes32_t) == 1);
 
-constexpr bytes32_t to_bytes(uint256_t const n)
+constexpr bytes32_t to_bytes(uint256_t const n) noexcept
 {
     return std::bit_cast<bytes32_t>(n);
 }

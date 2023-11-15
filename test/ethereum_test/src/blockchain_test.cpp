@@ -252,7 +252,8 @@ void register_blockchain_tests(std::optional<evmc_revision> const &revision)
         ":-:BlockchainTests.GeneralStateTests/stTimeConsuming/*:"
         "BlockchainTests.GeneralStateTests/VMTests/vmPerformance/*:"
         "BlockchainTests.GeneralStateTests/stQuadraticComplexityTest/"
-        "Call50000_sha256.json";
+        "Call50000_sha256.json:"
+        "BlockchainTests.ValidBlocks/bcForkStressTest/ForkStressTest.json";
 
     constexpr auto suite = "BlockchainTests";
     auto const root = test_resource::ethereum_tests_dir / suite;

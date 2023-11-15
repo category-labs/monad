@@ -6,6 +6,8 @@
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/trie.hpp>
 
+#include <ankerl/unordered_dense.h>
+
 #include <list>
 
 MONAD_DB_NAMESPACE_BEGIN
@@ -46,10 +48,10 @@ class InMemoryTrieDB final : public Db
 {
 private:
     static constexpr auto state_prefix = byte_string{0x00};
-    static constexpr auto code_prefix = byte_string{0x01};
     mpt::node_ptr root_;
     std::list<mpt::Update> update_allocator_;
     std::list<byte_string> byte_string_allocator_;
+    ankerl::unordered_dense::segmented_map<bytes32_t, byte_string> code_;
 
 public:
     InMemoryTrieDB()
@@ -94,15 +96,10 @@ public:
     [[nodiscard]] virtual byte_string
     read_code(bytes32_t const &hash) const override
     {
-        auto const [node, result] = mpt::find_blocking(
-            nullptr,
-            root_.get(),
-            code_prefix + byte_string{to_byte_string_view(hash.bytes)});
-        if (result != mpt::find_result::success) {
-            return {};
+        if (code_.contains(hash)) {
+            return code_.at(hash);
         }
-        MONAD_DEBUG_ASSERT(node != nullptr);
-        return monad::byte_string{node->leaf_view()};
+        return byte_string{};
     }
 
     virtual void
@@ -140,13 +137,8 @@ public:
             }
         }
 
-        mpt::UpdateList code_updates;
         for (auto const &[hash, bytes] : code) {
-            code_updates.push_front(update_allocator_.emplace_back(mpt::Update{
-                .key = mpt::NibblesView{to_byte_string_view(hash.bytes)},
-                .value = bytes,
-                .incarnation = false,
-                .next = mpt::UpdateList{}}));
+            code_[hash] = bytes;
         }
 
         auto state_update = mpt::Update{
@@ -154,14 +146,8 @@ public:
             .value = byte_string_view{},
             .incarnation = false,
             .next = std::move(account_updates)};
-        auto code_update = mpt::Update{
-            .key = mpt::NibblesView{code_prefix},
-            .value = byte_string_view{},
-            .incarnation = false,
-            .next = std::move(code_updates)};
         mpt::UpdateList updates;
         updates.push_front(state_update);
-        updates.push_front(code_update);
         mpt::UpdateAux aux;
         EmptyStateMachine state_machine;
         root_ = upsert(aux, state_machine, root_.get(), std::move(updates));

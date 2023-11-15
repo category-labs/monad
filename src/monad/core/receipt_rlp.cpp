@@ -73,12 +73,14 @@ byte_string_view decode_bloom(Receipt::Bloom &bloom, byte_string_view const enc)
 byte_string_view
 decode_topics(std::vector<bytes32_t> &topics, byte_string_view const enc)
 {
+    MONAD_DEBUG_ASSERT(topics.size() == 0);
+
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
     constexpr size_t topic_size =
         33; // 1 byte for header, 32 bytes for byte32_t
     auto const list_space = payload.size();
-    MONAD_ASSERT(topics.size() == 0);
+
     topics.reserve(list_space / topic_size);
 
     while (payload.size() > 0) {
@@ -87,7 +89,7 @@ decode_topics(std::vector<bytes32_t> &topics, byte_string_view const enc)
         topics.emplace_back(topic);
     }
 
-    MONAD_ASSERT(list_space == topics.size() * topic_size);
+    MONAD_DEBUG_ASSERT(list_space == topics.size() * topic_size);
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
@@ -114,6 +116,8 @@ byte_string_view decode_log(Receipt::Log &log, byte_string_view const enc)
 byte_string_view
 decode_logs(std::vector<Receipt::Log> &logs, byte_string_view const enc)
 {
+    MONAD_DEBUG_ASSERT(logs.size() == 0);
+
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
     constexpr size_t approx_data_size = 32;
@@ -122,7 +126,6 @@ decode_logs(std::vector<Receipt::Log> &logs, byte_string_view const enc)
     constexpr auto log_size_approx =
         20 + approx_data_size + 33 * approx_num_topics;
     auto const list_space = payload.size();
-    MONAD_ASSERT(logs.size() == 0);
     logs.resize(list_space / log_size_approx);
 
     while (payload.size() > 0) {

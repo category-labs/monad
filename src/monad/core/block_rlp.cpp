@@ -137,9 +137,10 @@ decode_block_header(BlockHeader &block_header, byte_string_view const enc)
 byte_string_view decode_transaction_vector(
     std::vector<Transaction> &txns, byte_string_view const enc)
 {
+    MONAD_DEBUG_ASSERT(txns.size() == 0);
+
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
-    MONAD_ASSERT(txns.size() == 0);
 
     // TODO: Reserve txn vector size for better perf
     while (payload.size() > 0) {
@@ -158,9 +159,10 @@ byte_string_view decode_transaction_vector(
 byte_string_view decode_block_header_vector(
     std::vector<BlockHeader> &ommers, byte_string_view const enc)
 {
+    MONAD_DEBUG_ASSERT(ommers.size() == 0);
+
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
-    MONAD_ASSERT(ommers.size() == 0);
 
     while (payload.size() > 0) {
         BlockHeader ommer{};

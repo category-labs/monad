@@ -54,7 +54,7 @@ byte_string encode_transaction(Transaction const &txn)
             encode_unsigned(txn.sc.s));
     }
 
-    MONAD_ASSERT(txn.sc.chain_id != std::nullopt);
+    MONAD_DEBUG_ASSERT(txn.sc.chain_id != std::nullopt);
 
     if (txn.type == TransactionType::eip1559) {
         return encode_string2(
@@ -117,7 +117,7 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
         }
     }
 
-    MONAD_ASSERT(txn.sc.chain_id != std::nullopt);
+    MONAD_DEBUG_ASSERT(txn.sc.chain_id != std::nullopt);
 
     if (txn.type == TransactionType::eip1559) {
         return byte_string{0x02} +
@@ -153,11 +153,12 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
 byte_string_view decode_access_entry_keys(
     std::vector<bytes32_t> &keys, byte_string_view const enc)
 {
+    MONAD_DEBUG_ASSERT(keys.size() == 0);
+
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
     constexpr size_t key_size = 33; // 1 byte for header, 32 bytes for byte32_t
     auto const list_space = payload.size();
-    MONAD_ASSERT(keys.size() == 0);
     keys.reserve(list_space / key_size);
 
     while (payload.size() > 0) {
@@ -166,7 +167,7 @@ byte_string_view decode_access_entry_keys(
         keys.emplace_back(key);
     }
 
-    MONAD_ASSERT(list_space == keys.size() * key_size);
+    MONAD_DEBUG_ASSERT(list_space == keys.size() * key_size);
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         throw RLPException(RLPDecodeError::INPUT_TOO_LONG);
@@ -194,13 +195,14 @@ decode_access_entry(Transaction::AccessEntry &ae, byte_string_view const enc)
 byte_string_view decode_access_list(
     Transaction::AccessList &access_list, byte_string_view const enc)
 {
+    MONAD_DEBUG_ASSERT(access_list.size() == 0);
+
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
     constexpr size_t approx_num_keys = 10;
     // 20 bytes for address, 33 bytes per key
     constexpr size_t access_entry_size_approx = 20 + 33 * approx_num_keys;
     auto const list_space = payload.size();
-    MONAD_ASSERT(access_list.size() == 0);
     access_list.reserve(list_space / access_entry_size_approx);
 
     while (payload.size() > 0) {

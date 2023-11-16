@@ -1,19 +1,66 @@
 #pragma once
 
 #include <monad/core/account_rlp.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/db/config.hpp>
 #include <monad/db/db.hpp>
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/trie.hpp>
+#include <monad/rlp/encode2.hpp>
 
 #include <ankerl/unordered_dense.h>
+#include <ethash/keccak.hpp>
 
+#include <algorithm>
 #include <list>
 
 MONAD_DB_NAMESPACE_BEGIN
 
+constexpr auto state_prefix = byte_string{0x00};
+
+template <class T>
+    requires std::same_as<T, bytes32_t> || std::same_as<T, address_t>
+[[nodiscard]] constexpr byte_string to_key(T const &arg)
+{
+    return byte_string{
+        std::bit_cast<bytes32_t>(
+            ethash::keccak256(arg.bytes, sizeof(arg.bytes)))
+            .bytes,
+        sizeof(bytes32_t)};
+}
+
+struct Compute
+{
+    [[nodiscard]] static constexpr byte_string compute(mpt::Node const &node)
+    {
+        MONAD_DEBUG_ASSERT(node.is_leaf());
+
+        // this is a storage leaf
+        if (node.leaf_len == sizeof(bytes32_t)) {
+            return rlp::encode_string2(rlp::zeroless_view(node.leaf_view()));
+        }
+
+        MONAD_DEBUG_ASSERT(node.leaf_len > sizeof(bytes32_t));
+
+        Account acc;
+        rlp::decode_account(acc, node.leaf_view());
+        bytes32_t storage_root = NULL_ROOT;
+        if (node.n()) {
+            MONAD_DEBUG_ASSERT(node.hash_len == sizeof(bytes32_t));
+            std::copy_n(
+                node.hash_data(), sizeof(bytes32_t), storage_root.bytes);
+        }
+        return rlp::encode_account(acc, storage_root);
+    }
+};
+
+using MerkleCompute = mpt::detail::MerkleComputeBase<Compute>;
+
 class EmptyStateMachine final : public mpt::TrieStateMachine
 {
+private:
+    MerkleCompute compute_;
+
 public:
     virtual std::unique_ptr<TrieStateMachine> clone() const override
     {
@@ -26,10 +73,8 @@ public:
 
     virtual void backward() override {}
 
-    virtual mpt::Compute &get_compute() const override
+    virtual mpt::Compute &get_compute() override
     {
-        // TODO: refactor this API so that compute_ is a member func
-        static mpt::EmptyCompute compute_;
         return compute_;
     }
 
@@ -47,7 +92,6 @@ public:
 class InMemoryTrieDB final : public Db
 {
 private:
-    static constexpr auto state_prefix = byte_string{0x00};
     mpt::node_ptr root_;
     std::list<mpt::Update> update_allocator_;
     std::list<byte_string> byte_string_allocator_;
@@ -63,9 +107,7 @@ public:
     read_account(address_t const &addr) const override
     {
         auto const [node, result] = mpt::find_blocking(
-            nullptr,
-            root_.get(),
-            state_prefix + byte_string{to_byte_string_view(addr.bytes)});
+            nullptr, root_.get(), state_prefix + to_key(addr));
         if (result != mpt::find_result::success) {
             return std::nullopt;
         }
@@ -79,10 +121,7 @@ public:
     read_storage(address_t const &addr, bytes32_t const &key) const override
     {
         auto const [node, result] = mpt::find_blocking(
-            nullptr,
-            root_.get(),
-            state_prefix + byte_string{to_byte_string_view(addr.bytes)} +
-                byte_string{to_byte_string_view(key.bytes)});
+            nullptr, root_.get(), state_prefix + to_key(addr) + to_key(key));
         if (result != mpt::find_result::success) {
             return {};
         }
@@ -112,13 +151,21 @@ public:
             auto const &account = delta.account.second;
             if (account.has_value()) {
                 for (auto const &[key, delta] : delta.storage) {
-                    storage_updates.push_front(
-                        update_allocator_.emplace_back(mpt::Update{
-                            .key = mpt::NibblesView{to_byte_string_view(
-                                key.bytes)},
-                            .value = to_byte_string_view(delta.second.bytes),
-                            .incarnation = false,
-                            .next = mpt::UpdateList{}}));
+                    if (delta.first != delta.second) {
+                        storage_updates.push_front(
+                            update_allocator_.emplace_back(mpt::Update{
+                                .key =
+                                    mpt::NibblesView{
+                                        byte_string_allocator_.emplace_back(
+                                            to_key(key))},
+                                .value = delta.second == bytes32_t{}
+                                             ? std::nullopt
+                                             : std::make_optional(
+                                                   to_byte_string_view(
+                                                       delta.second.bytes)),
+                                .incarnation = false,
+                                .next = mpt::UpdateList{}}));
+                    }
                 }
                 value = byte_string_allocator_.emplace_back(
                     rlp::encode_account(account.value()));
@@ -128,7 +175,8 @@ public:
                 account_updates.push_front(
                     update_allocator_.emplace_back(mpt::Update{
                         .key =
-                            mpt::NibblesView{to_byte_string_view(addr.bytes)},
+                            mpt::NibblesView{byte_string_allocator_
+                                                 .emplace_back(to_key(addr))},
                         .value = value,
                         .incarnation = account.has_value()
                                            ? account.value().incarnation != 0
@@ -162,7 +210,12 @@ public:
 
     [[nodiscard]] bytes32_t state_root()
     {
-        return {};
+        bytes32_t root = NULL_ROOT;
+        if (root_ && root_->n()) {
+            MONAD_DEBUG_ASSERT(root_->hash_view().size() == sizeof(bytes32_t));
+            std::copy_n(root_->hash_data(), sizeof(bytes32_t), root.bytes);
+        }
+        return root;
     }
 };
 

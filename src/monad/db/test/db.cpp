@@ -173,10 +173,6 @@ TEST(InMemoryOldTrieDB, erase)
 
 TYPED_TEST(DBTest, ModifyStorageOfAccount)
 {
-    // TODO: remove when state root functionality is implemented
-    if (std::same_as<TypeParam, InMemoryTrieDB>) {
-        GTEST_SKIP();
-    }
     auto db = test::make_db<TypeParam>();
     Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
     db.commit(
@@ -203,10 +199,6 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
 
 TYPED_TEST(DBTest, touch_without_modify_regression)
 {
-    // TODO: remove when state root functionality is implemented
-    if (std::same_as<TypeParam, InMemoryTrieDB>) {
-        GTEST_SKIP();
-    }
     auto db = test::make_db<TypeParam>();
     db.commit(
         StateDeltas{{a, StateDelta{.account = {std::nullopt, std::nullopt}}}},
@@ -218,10 +210,6 @@ TYPED_TEST(DBTest, touch_without_modify_regression)
 
 TYPED_TEST(DBTest, delete_account_modify_storage_regression)
 {
-    // TODO: remove when state root functionality is implemented
-    if (std::same_as<TypeParam, InMemoryTrieDB>) {
-        GTEST_SKIP();
-    }
     auto db = test::make_db<TypeParam>();
     Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
     db.commit(

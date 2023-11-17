@@ -560,3 +560,31 @@ TYPED_TEST(RocksDBTest, read_only)
         }
     }
 }
+
+TYPED_TEST(DBTest, DISABLED_storage_deletion)
+{
+    auto db = test::make_db<TypeParam>();
+    Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
+
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, acct},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key2, {bytes32_t{}, value2}}}}}},
+        Code{});
+
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {acct, acct},
+                 .storage = {{key1, {value1, bytes32_t{}}}}}}},
+        Code{});
+
+    EXPECT_EQ(
+        db.state_root(),
+        0xcc04b7a59a7c5d1f294402a0cbe42b5102db928fb2fad9d0d6f8c2a21a34c195_bytes32);
+}

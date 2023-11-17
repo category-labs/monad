@@ -20,7 +20,7 @@ constexpr auto state_prefix = byte_string{0x00};
 
 template <class T>
     requires std::same_as<T, bytes32_t> || std::same_as<T, address_t>
-[[nodiscard]] constexpr byte_string to_key(T const &arg)
+constexpr byte_string to_key(T const &arg)
 {
     return byte_string{
         std::bit_cast<bytes32_t>(
@@ -31,24 +31,24 @@ template <class T>
 
 struct Compute
 {
-    [[nodiscard]] static constexpr byte_string compute(mpt::Node const &node)
+    static constexpr byte_string compute(mpt::Node const &node)
     {
-        MONAD_DEBUG_ASSERT(node.is_leaf());
+        MONAD_DEBUG_ASSERT(node.has_value());
 
         // this is a storage leaf
-        if (node.leaf_len == sizeof(bytes32_t)) {
-            return rlp::encode_string2(rlp::zeroless_view(node.leaf_view()));
+        if (node.value().size() == sizeof(bytes32_t)) {
+            return rlp::encode_string2(rlp::zeroless_view(node.value()));
         }
 
-        MONAD_DEBUG_ASSERT(node.leaf_len > sizeof(bytes32_t));
+        MONAD_DEBUG_ASSERT(node.value().size() > sizeof(bytes32_t));
 
         Account acc;
-        rlp::decode_account(acc, node.leaf_view());
+        rlp::decode_account(acc, node.value());
         bytes32_t storage_root = NULL_ROOT;
-        if (node.n()) {
-            MONAD_DEBUG_ASSERT(node.hash_len == sizeof(bytes32_t));
+        if (node.number_of_children()) {
+            MONAD_DEBUG_ASSERT(node.data().size() == sizeof(bytes32_t));
             std::copy_n(
-                node.hash_data(), sizeof(bytes32_t), storage_root.bytes);
+                node.data().data(), sizeof(bytes32_t), storage_root.bytes);
         }
         return rlp::encode_account(acc, storage_root);
     }
@@ -103,7 +103,7 @@ public:
     {
     }
 
-    [[nodiscard]] virtual std::optional<Account>
+    virtual std::optional<Account>
     read_account(address_t const &addr) const override
     {
         auto const [node, result] = mpt::find_blocking(
@@ -113,11 +113,11 @@ public:
         }
         MONAD_DEBUG_ASSERT(node != nullptr);
         Account acct;
-        rlp::decode_account(acct, node->leaf_view());
+        rlp::decode_account(acct, node->value());
         return acct;
     }
 
-    [[nodiscard]] virtual bytes32_t
+    virtual bytes32_t
     read_storage(address_t const &addr, bytes32_t const &key) const override
     {
         auto const [node, result] = mpt::find_blocking(
@@ -126,9 +126,9 @@ public:
             return {};
         }
         MONAD_DEBUG_ASSERT(node != nullptr);
-        MONAD_DEBUG_ASSERT(node->leaf_view().size() == sizeof(bytes32_t));
+        MONAD_DEBUG_ASSERT(node->value().size() == sizeof(bytes32_t));
         bytes32_t value;
-        std::copy_n(node->leaf_view().begin(), sizeof(bytes32_t), value.bytes);
+        std::copy_n(node->value().begin(), sizeof(bytes32_t), value.bytes);
         return value;
     };
 
@@ -208,12 +208,12 @@ public:
 
     };
 
-    [[nodiscard]] bytes32_t state_root()
+    bytes32_t state_root()
     {
         bytes32_t root = NULL_ROOT;
-        if (root_ && root_->n()) {
-            MONAD_DEBUG_ASSERT(root_->hash_view().size() == sizeof(bytes32_t));
-            std::copy_n(root_->hash_data(), sizeof(bytes32_t), root.bytes);
+        if (root_ && root_->number_of_children()) {
+            MONAD_DEBUG_ASSERT(root_->data().size() == sizeof(bytes32_t));
+            std::copy_n(root_->data().data(), sizeof(bytes32_t), root.bytes);
         }
         return root;
     }

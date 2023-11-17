@@ -8,10 +8,12 @@ target_sources(
           include/from_json.hpp
           include/general_state_test.hpp
           include/general_state_test_types.hpp
+          include/transaction_test.hpp
           src/blockchain_test.cpp
           src/ethereum_test.cpp
           src/general_state_test.cpp
-          src/main.cpp)
+          src/main.cpp
+          src/transaction_test.cpp)
 
 target_include_directories(
   monad-ethereum-test PUBLIC ${PROJECT_SOURCE_DIR}/test/ethereum_test/include)

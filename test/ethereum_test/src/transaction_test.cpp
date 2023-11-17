@@ -1,0 +1,170 @@
+#include <ethereum_test.hpp>
+#include <from_json.hpp>
+#include <transaction_test.hpp>
+
+#include <monad/core/assert.h>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/core/int.hpp>
+#include <monad/core/transaction.hpp>
+#include <monad/core/transaction_rlp.hpp>
+#include <monad/execution/transaction_gas.hpp>
+#include <monad/execution/validation.hpp>
+#include <monad/execution/validation_status.hpp>
+#include <monad/test/config.hpp>
+
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+
+#include <nlohmann/json.hpp>
+
+#include <quill/bundled/fmt/core.h>
+#include <quill/bundled/fmt/format.h>
+#include <quill/detail/LogMacros.h>
+
+#include <gtest/gtest.h>
+
+#include <test_resource_data.h>
+
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <string>
+
+MONAD_TEST_NAMESPACE_BEGIN
+
+template <evmc_revision rev>
+void process_transaction(Transaction const &txn, nlohmann::json const &expected)
+{
+    if (auto const result = static_validate_txn<rev>(txn, std::nullopt);
+        result != ValidationStatus::SUCCESS) {
+        EXPECT_TRUE(expected.contains("exception"));
+    }
+    else {
+        auto const sender = recover_sender(txn);
+        if (!sender.has_value()) {
+            EXPECT_TRUE(expected.contains("exception"));
+        }
+        else {
+            EXPECT_FALSE(expected.contains("exception"));
+
+            // check sender
+            EXPECT_EQ(
+                sender.value(), expected.at("sender").get<evmc::address>());
+
+            // check gas
+            EXPECT_EQ(
+                intrinsic_gas<rev>(txn),
+                integer_from_json<uint64_t>(expected.at("intrinsicGas")));
+        }
+    }
+}
+
+void process_transaction(
+    evmc_revision const rev, Transaction const &txn,
+    nlohmann::json const &expected)
+{
+    switch (rev) {
+    case EVMC_FRONTIER:
+        return process_transaction<EVMC_FRONTIER>(txn, expected);
+    case EVMC_HOMESTEAD:
+        return process_transaction<EVMC_HOMESTEAD>(txn, expected);
+    case EVMC_TANGERINE_WHISTLE:
+        return process_transaction<EVMC_TANGERINE_WHISTLE>(txn, expected);
+    case EVMC_SPURIOUS_DRAGON:
+        return process_transaction<EVMC_SPURIOUS_DRAGON>(txn, expected);
+    case EVMC_BYZANTIUM:
+        return process_transaction<EVMC_BYZANTIUM>(txn, expected);
+    case EVMC_PETERSBURG:
+        return process_transaction<EVMC_PETERSBURG>(txn, expected);
+    case EVMC_ISTANBUL:
+        return process_transaction<EVMC_ISTANBUL>(txn, expected);
+    case EVMC_BERLIN:
+        return process_transaction<EVMC_BERLIN>(txn, expected);
+    case EVMC_LONDON:
+        return process_transaction<EVMC_LONDON>(txn, expected);
+    case EVMC_PARIS:
+        return process_transaction<EVMC_PARIS>(txn, expected);
+    case EVMC_SHANGHAI:
+        return process_transaction<EVMC_SHANGHAI>(txn, expected);
+    default:
+        MONAD_ASSERT(false);
+    }
+}
+
+void TransactionTest::TestBody()
+{
+    std::ifstream f{file_};
+
+    bool executed = false;
+
+    auto const json = nlohmann::json::parse(f);
+
+    // There should be just 1 test per file
+    auto const j_content = json.begin().value();
+    auto const test_name = json.begin().key();
+    MONAD_ASSERT(!j_content.empty());
+
+    Transaction txn;
+    auto const txn_rlp = j_content.at("txbytes").get<byte_string>();
+    auto const remaining = rlp::decode_transaction(txn, txn_rlp);
+    EXPECT_TRUE(remaining.empty()) << test_name;
+
+    for (auto const &element : j_content.at("result").items()) {
+        auto const &fork_name = element.key();
+        auto const &expected = element.value();
+
+        if (!revision_map.contains(fork_name)) {
+            LOG_ERROR(
+                "Skipping {} due to missing support for fork {}",
+                test_name,
+                fork_name);
+            continue;
+        }
+
+        auto const rev = revision_map.at(fork_name);
+        if (revision_.has_value() && rev != revision_) {
+            continue;
+        }
+        executed = true;
+
+        process_transaction(rev, txn, expected);
+    }
+
+    if (!executed) {
+        MONAD_ASSERT(revision_.has_value());
+        GTEST_SKIP() << "no test cases found for revision="
+                     << revision_.value();
+    }
+}
+
+void register_transaction_tests(std::optional<evmc_revision> const &revision)
+{
+    namespace fs = std::filesystem;
+
+    constexpr auto suite = "TransactionTests";
+    auto const root = test_resource::ethereum_tests_dir / suite;
+
+    for (auto const &entry : fs::recursive_directory_iterator{root}) {
+        auto const path = entry.path();
+        if (path.extension() == ".json") {
+            MONAD_ASSERT(entry.is_regular_file());
+
+            auto test = fmt::format("{}", fs::relative(path, root).string());
+            std::ranges::replace(test, '-', '_');
+
+            testing::RegisterTest(
+                suite,
+                test.c_str(),
+                nullptr,
+                nullptr,
+                path.string().c_str(),
+                0,
+                [=] -> testing::Test * {
+                    return new TransactionTest(path, revision);
+                });
+        }
+    }
+}
+
+MONAD_TEST_NAMESPACE_END

@@ -99,7 +99,7 @@ namespace
         case EVMC_SHANGHAI:
             return execute<shanghai>(block, db, block_hash_buffer);
         default:
-            std::unreachable();
+            MONAD_ASSERT(false);
         }
     }
 

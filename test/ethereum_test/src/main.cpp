@@ -1,6 +1,7 @@
 #include <blockchain_test.hpp>
 #include <ethereum_test.hpp>
 #include <general_state_test.hpp>
+#include <transaction_test.hpp>
 
 #include <evmc/evmc.h>
 
@@ -58,6 +59,7 @@ int main(int argc, char *argv[])
 
     monad::test::register_general_state_tests(revision, txn_index);
     monad::test::register_blockchain_tests(revision);
+    monad::test::register_transaction_tests(revision);
 
     int return_code = RUN_ALL_TESTS();
 

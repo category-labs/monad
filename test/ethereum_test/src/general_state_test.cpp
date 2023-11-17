@@ -147,7 +147,7 @@ namespace
             case EVMC_SHANGHAI:
                 return execute<shanghai>(block_header, state, txn);
             default:
-                std::unreachable();
+                MONAD_ASSERT(false);
             }
         }();
 

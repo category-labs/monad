@@ -34,9 +34,9 @@ using evm_host_t = EvmcHost<EVMC_SHANGHAI>;
 
 TEST(Evm, create_with_insufficient)
 {
-    BlockState bs;
     db_t db{};
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
@@ -66,9 +66,9 @@ TEST(Evm, create_with_insufficient)
 
 TEST(Evm, eip684_existing_code)
 {
-    BlockState bs;
     db_t db{};
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
 
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
@@ -105,9 +105,9 @@ TEST(Evm, eip684_existing_code)
 
 TEST(Evm, transfer_call_balances)
 {
-    BlockState bs;
     db_t db{};
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
 
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
@@ -141,9 +141,9 @@ TEST(Evm, transfer_call_balances)
 
 TEST(Evm, transfer_call_balances_to_self)
 {
-    BlockState bs;
     db_t db{};
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
 
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
@@ -174,9 +174,9 @@ TEST(Evm, transfer_call_balances_to_self)
 
 TEST(Evm, dont_transfer_on_delegatecall)
 {
-    BlockState bs;
     db_t db{};
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
 
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
@@ -211,9 +211,9 @@ TEST(Evm, dont_transfer_on_delegatecall)
 
 TEST(Evm, dont_transfer_on_staticcall)
 {
-    BlockState bs;
     db_t db{};
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
 
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
@@ -249,9 +249,9 @@ TEST(Evm, dont_transfer_on_staticcall)
 
 TEST(Evm, create_nonce_out_of_range)
 {
-    BlockState bs;
     db_t db{};
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
 
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
@@ -288,9 +288,9 @@ TEST(Evm, create_nonce_out_of_range)
 
 TEST(Evm, static_precompile_execution)
 {
-    BlockState bs;
     db_t db{};
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
 
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
@@ -333,9 +333,9 @@ TEST(Evm, static_precompile_execution)
 
 TEST(Evm, out_of_gas_static_precompile_execution)
 {
-    BlockState bs;
     db_t db{};
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
 
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
@@ -380,14 +380,14 @@ TEST(Evm, deploy_contract_code)
     db.commit(
         StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
-    BlockState bs;
+    BlockState bs{db};
 
     // Frontier
     {
         uint8_t const code[] = {0xde, 0xad, 0xbe, 0xef};
         // Successfully deploy code
         {
-            State s{bs, db};
+            State s{bs};
             static constexpr int64_t gas = 10'000;
             evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
             auto const r2 =
@@ -400,7 +400,7 @@ TEST(Evm, deploy_contract_code)
 
         // Initilization code succeeds, but deployment of code failed
         {
-            State s{bs, db};
+            State s{bs};
             evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
             auto const r2 =
                 Evm<EVMC_FRONTIER>::deploy_contract_code(s, a, std::move(r));
@@ -415,7 +415,7 @@ TEST(Evm, deploy_contract_code)
         uint8_t const code[] = {0xde, 0xad, 0xbe, 0xef};
         // Successfully deploy code
         {
-            State s{bs, db};
+            State s{bs};
             int64_t const gas = 10'000;
 
             evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
@@ -430,7 +430,7 @@ TEST(Evm, deploy_contract_code)
 
         // Fail to deploy code - out of gas (EIP-2)
         {
-            State s{bs, db};
+            State s{bs};
             evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
             auto const r2 =
                 Evm<EVMC_HOMESTEAD>::deploy_contract_code(s, a, std::move(r));
@@ -445,7 +445,7 @@ TEST(Evm, deploy_contract_code)
         uint8_t const ptr[25000]{0x00};
         byte_string code{ptr, 25000};
 
-        State s{bs, db};
+        State s{bs};
 
         evmc::Result r{
             EVMC_SUCCESS,
@@ -464,7 +464,7 @@ TEST(Evm, deploy_contract_code)
     {
         byte_string const illegal_code{0xef, 0x60};
 
-        State s{bs, db};
+        State s{bs};
 
         evmc::Result r{
             EVMC_SUCCESS, 1'000, 0, illegal_code.data(), illegal_code.size()};

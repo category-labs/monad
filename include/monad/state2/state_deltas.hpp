@@ -15,14 +15,14 @@
 MONAD_NAMESPACE_BEGIN
 
 template <class T>
-using delta_t = std::pair<T const, T>;
+using Delta = std::pair<T const, T>;
 
-using AccountDelta = delta_t<std::optional<Account>>;
+using AccountDelta = Delta<std::optional<Account>>;
 
 static_assert(sizeof(AccountDelta) == 176);
 static_assert(alignof(AccountDelta) == 8);
 
-using StorageDelta = delta_t<bytes32_t>;
+using StorageDelta = Delta<bytes32_t>;
 
 static_assert(sizeof(StorageDelta) == 64);
 static_assert(alignof(StorageDelta) == 1);
@@ -50,6 +50,6 @@ static_assert(alignof(Code) == 8);
 bool can_merge(StateDeltas const &to, StateDeltas const &from);
 void merge(StateDeltas &to, StateDeltas const &from);
 
-void merge(Code &to, Code &from);
+void merge(Code &to, Code const &from);
 
 MONAD_NAMESPACE_END

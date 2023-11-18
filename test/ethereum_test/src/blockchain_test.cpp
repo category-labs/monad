@@ -183,8 +183,8 @@ void BlockchainTest::TestBody()
 
         db_t db;
         {
-            BlockState bs;
-            State state{bs, db};
+            BlockState bs{db};
+            State state{bs};
             load_state_from_json(j_contents.at("pre"), state);
             db.commit(state.state_, state.code_);
         }

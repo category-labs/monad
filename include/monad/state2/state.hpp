@@ -13,8 +13,6 @@
 #include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
 
-#include <monad/db/db.hpp>
-
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/block_state_ops.hpp>
 
@@ -28,7 +26,6 @@ MONAD_NAMESPACE_BEGIN
 struct State
 {
     BlockState &block_state_;
-    Db &db_;
     StateDeltas state_;
     Code code_;
     ankerl::unordered_dense::set<address_t> touched_;
@@ -40,9 +37,8 @@ struct State
     uint256_t gas_award_;
     std::vector<Receipt::Log> logs_;
 
-    explicit State(BlockState &block_state, Db &db)
+    explicit State(BlockState &block_state)
         : block_state_{block_state}
-        , db_{db}
         , state_{}
         , code_{}
         , touched_{}
@@ -70,7 +66,7 @@ struct State
     {
         LOG_TRACE_L1("account_exists: {}", address);
 
-        auto const &account = read_account(address, state_, block_state_, db_);
+        auto const &account = read_account(address, state_, block_state_);
 
         return account.has_value();
     };
@@ -79,7 +75,7 @@ struct State
     {
         LOG_TRACE_L1("create_contract: {}", address);
 
-        auto &account = read_account(address, state_, block_state_, db_);
+        auto &account = read_account(address, state_, block_state_);
         if (MONAD_UNLIKELY(account.has_value())) {
             // eip-684: nonce should be zero and code should be empty
             MONAD_DEBUG_ASSERT(account->nonce == 0);
@@ -96,7 +92,7 @@ struct State
     {
         LOG_TRACE_L1("get_balance: {}", address);
 
-        auto const &account = read_account(address, state_, block_state_, db_);
+        auto const &account = read_account(address, state_, block_state_);
         if (MONAD_LIKELY(account.has_value())) {
             return intx::be::store<bytes32_t>(account.value().balance);
         }
@@ -106,7 +102,7 @@ struct State
     void
     add_to_balance(address_t const &address, uint256_t const &delta) noexcept
     {
-        auto &account = read_account(address, state_, block_state_, db_);
+        auto &account = read_account(address, state_, block_state_);
         if (MONAD_UNLIKELY(!account.has_value())) {
             account = Account{};
         }
@@ -128,7 +124,7 @@ struct State
     void subtract_from_balance(
         address_t const &address, uint256_t const &delta) noexcept
     {
-        auto &account = read_account(address, state_, block_state_, db_);
+        auto &account = read_account(address, state_, block_state_);
         if (MONAD_UNLIKELY(!account.has_value())) {
             account = Account{};
         }
@@ -149,7 +145,7 @@ struct State
     {
         LOG_TRACE_L1("get_nonce: {}", address);
 
-        auto const &account = read_account(address, state_, block_state_, db_);
+        auto const &account = read_account(address, state_, block_state_);
         if (MONAD_LIKELY(account.has_value())) {
             return account.value().nonce;
         }
@@ -160,7 +156,7 @@ struct State
     {
         LOG_TRACE_L1("set_nonce: {} = {}", address, nonce);
 
-        auto &account = read_account(address, state_, block_state_, db_);
+        auto &account = read_account(address, state_, block_state_);
         if (MONAD_UNLIKELY(!account.has_value())) {
             account = Account{};
         }
@@ -172,7 +168,7 @@ struct State
     {
         LOG_TRACE_L1("get_code_hash: {}", address);
 
-        auto const &account = read_account(address, state_, block_state_, db_);
+        auto const &account = read_account(address, state_, block_state_);
         if (MONAD_LIKELY(account.has_value())) {
             return account.value().code_hash;
         }
@@ -183,7 +179,7 @@ struct State
     {
         LOG_TRACE_L1("set_code_hash: {} = {}", address, hash);
 
-        auto &account = read_account(address, state_, block_state_, db_);
+        auto &account = read_account(address, state_, block_state_);
         MONAD_DEBUG_ASSERT(account.has_value());
         account.value().code_hash = hash;
     }
@@ -194,7 +190,7 @@ struct State
     {
         LOG_TRACE_L1("selfdestruct: {}, {}", address, beneficiary);
 
-        auto &account = read_account(address, state_, block_state_, db_);
+        auto &account = read_account(address, state_, block_state_);
         MONAD_DEBUG_ASSERT(account.has_value());
 
         add_to_balance(beneficiary, account->balance);
@@ -207,7 +203,7 @@ struct State
         LOG_TRACE_L1("destruct_suicides");
 
         for (auto const &address : destructed_) {
-            auto &account = read_account(address, state_, block_state_, db_);
+            auto &account = read_account(address, state_, block_state_);
             MONAD_DEBUG_ASSERT(account.has_value());
             account.reset();
         }
@@ -218,7 +214,7 @@ struct State
         LOG_TRACE_L1("destruct_touched_dead");
 
         for (auto const &touched : touched_) {
-            auto &account = read_account(touched, state_, block_state_, db_);
+            auto &account = read_account(touched, state_, block_state_);
             if (account.has_value() && account.value() == Account{}) {
                 account.reset();
             }
@@ -227,7 +223,7 @@ struct State
 
     [[nodiscard]] bool account_is_dead(address_t const &address) noexcept
     {
-        auto const &account = read_account(address, state_, block_state_, db_);
+        auto const &account = read_account(address, state_, block_state_);
         return !account.has_value() ||
                (account->balance == 0 && account->code_hash == NULL_HASH &&
                 account->nonce == 0);
@@ -252,7 +248,7 @@ struct State
     {
         LOG_TRACE_L1("get_storage: {}, {}", address, key);
 
-        return read_storage(address, 0u, key, state_, block_state_, db_).second;
+        return read_storage(address, 0u, key, state_, block_state_).second;
     }
 
     // EVMC Host Interface
@@ -271,7 +267,7 @@ struct State
     [[nodiscard]] evmc_storage_status
     zero_out_key(address_t const &address, bytes32_t const &key) noexcept
     {
-        auto &delta = read_storage(address, 0u, key, state_, block_state_, db_);
+        auto &delta = read_storage(address, 0u, key, state_, block_state_);
         auto &status_value = delta.first;
         auto &current_value = delta.second;
 
@@ -296,7 +292,7 @@ struct State
         address_t const &address, bytes32_t const &key,
         bytes32_t const &value) noexcept
     {
-        auto &delta = read_storage(address, 0u, key, state_, block_state_, db_);
+        auto &delta = read_storage(address, 0u, key, state_, block_state_);
         auto &status_value = delta.first;
         auto &current_value = delta.second;
 
@@ -328,10 +324,9 @@ struct State
     {
         LOG_TRACE_L1("get_code_size: {}", address);
 
-        auto const &account = read_account(address, state_, block_state_, db_);
+        auto const &account = read_account(address, state_, block_state_);
         if (MONAD_LIKELY(account.has_value())) {
-            return read_code(account->code_hash, code_, block_state_, db_)
-                .size();
+            return read_code(account->code_hash, code_, block_state_).size();
         }
         return 0u;
     }
@@ -341,10 +336,10 @@ struct State
         address_t const &address, size_t const offset, uint8_t *const buffer,
         size_t const buffer_size) noexcept
     {
-        auto const &account = read_account(address, state_, block_state_, db_);
+        auto const &account = read_account(address, state_, block_state_);
         if (MONAD_LIKELY(account.has_value())) {
             auto const &code =
-                read_code(account->code_hash, code_, block_state_, db_);
+                read_code(account->code_hash, code_, block_state_);
             if (offset > code.size()) {
                 return 0z;
             }
@@ -363,9 +358,9 @@ struct State
     {
         LOG_TRACE_L1("get_code: {}", address);
 
-        auto const &account = read_account(address, state_, block_state_, db_);
+        auto const &account = read_account(address, state_, block_state_);
         if (MONAD_LIKELY(account.has_value())) {
-            return read_code(account->code_hash, code_, block_state_, db_);
+            return read_code(account->code_hash, code_, block_state_);
         }
         return {};
     }
@@ -377,11 +372,11 @@ struct State
         auto const code_hash = std::bit_cast<monad::bytes32_t const>(
             ethash::keccak256(code.data(), code.size()));
 
-        auto &account = read_account(address, state_, block_state_, db_);
+        auto &account = read_account(address, state_, block_state_);
         if (MONAD_LIKELY(account.has_value())) {
             account->code_hash = code_hash;
             if (!code.empty()) {
-                read_code(account->code_hash, code_, block_state_, db_) = code;
+                read_code(account->code_hash, code_, block_state_) = code;
             }
         }
     }

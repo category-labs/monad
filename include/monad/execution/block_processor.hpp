@@ -42,9 +42,9 @@ struct BlockProcessor
         }
     }
 
-    static void transfer_balance_dao(BlockState &block_state, Db &db)
+    static void transfer_balance_dao(BlockState &block_state)
     {
-        State state{block_state, db};
+        State state{block_state};
 
         for (auto const &addr : dao::child_accounts) {
             auto const balance =
@@ -53,8 +53,8 @@ struct BlockProcessor
             state.subtract_from_balance(addr, balance);
         }
 
-        MONAD_DEBUG_ASSERT(can_merge(block_state.state, state.state_));
-        merge(block_state.state, state.state_);
+        MONAD_DEBUG_ASSERT(block_state.can_merge(state.state_));
+        block_state.merge(state.state_);
     }
 
     static Receipt::Bloom compute_bloom(std::vector<Receipt> const &receipts)
@@ -80,12 +80,12 @@ struct BlockProcessor
             block.transactions.size());
         LOG_DEBUG("BlockHeader Fields: {}", block.header);
 
-        BlockState block_state{};
+        BlockState block_state{db};
         uint64_t cumulative_gas_used = 0;
 
         if constexpr (Traits::rev == EVMC_HOMESTEAD) {
             if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {
-                transfer_balance_dao(block_state, db);
+                transfer_balance_dao(block_state);
             }
         }
 
@@ -95,7 +95,7 @@ struct BlockProcessor
         for (unsigned i = 0; i < block.transactions.size(); ++i) {
             block.transactions[i].from = recover_sender(block.transactions[i]);
 
-            State state{block_state, db};
+            State state{block_state};
             Receipt receipt;
 
             if (auto const txn_status =
@@ -111,9 +111,9 @@ struct BlockProcessor
             LOG_DEBUG("State Deltas: {}", state.state_);
             LOG_DEBUG("Code Deltas: {}", state.code_);
 
-            MONAD_DEBUG_ASSERT(can_merge(block_state.state, state.state_));
-            merge(block_state.state, state.state_);
-            merge(block_state.code, state.code_);
+            MONAD_DEBUG_ASSERT(block_state.can_merge(state.state_));
+            block_state.merge(state.state_);
+            block_state.merge(state.code_);
 
             cumulative_gas_used += receipt.gas_used;
             receipts.push_back(receipt);
@@ -129,14 +129,13 @@ struct BlockProcessor
             return tl::unexpected(ValidationStatus::INVALID_GAS_USED);
         }
 
-        State state{block_state, db};
+        State state{block_state};
         if constexpr (Traits::rev >= EVMC_SHANGHAI) {
             process_withdrawal(state, block.withdrawals);
         }
 
         apply_block_reward(
             block_state,
-            db,
             block,
             Traits::block_reward,
             Traits::additional_ommer_reward);
@@ -144,8 +143,8 @@ struct BlockProcessor
         if constexpr (Traits::rev >= EVMC_SPURIOUS_DRAGON) {
             state.destruct_touched_dead();
         }
-        MONAD_DEBUG_ASSERT(can_merge(block_state.state, state.state_));
-        merge(block_state.state, state.state_);
+        MONAD_DEBUG_ASSERT(block_state.can_merge(state.state_));
+        block_state.merge(state.state_);
 
         auto const finished_time = std::chrono::steady_clock::now();
         auto const elapsed_ms =
@@ -157,17 +156,17 @@ struct BlockProcessor
             elapsed_ms);
         LOG_DEBUG("Receipts: {}", receipts);
 
-        commit(block_state, db);
+        commit(block_state);
 
         return receipts;
     }
 
-    void commit(BlockState &block_state, Db &db)
+    void commit(BlockState &block_state)
     {
         auto const start_time = std::chrono::steady_clock::now();
         LOG_INFO("{}", "Committing to DB...");
 
-        db.commit(block_state.state, block_state.code);
+        block_state.commit();
 
         auto const finished_time = std::chrono::steady_clock::now();
         auto const elapsed_ms =

@@ -34,7 +34,7 @@ using account_store_db_t = db::InMemoryTrieDB;
 TEST(EvmInterpStateHost, return_existing_storage)
 {
     account_store_db_t db{};
-    BlockState bs;
+    BlockState bs{db};
 
     // Setup db - gas costs referenced here
     // https://www.evm.codes/?fork=byzantium
@@ -70,7 +70,7 @@ TEST(EvmInterpStateHost, return_existing_storage)
         .sender = from,
         .code_address = to};
 
-    State s{bs, db};
+    State s{bs};
 
     using fork_t = monad::fork_traits::byzantium;
 
@@ -93,7 +93,7 @@ TEST(EvmInterpStateHost, return_existing_storage)
 TEST(EvmInterpStateHost, store_then_return_storage)
 {
     account_store_db_t db{};
-    BlockState bs;
+    BlockState bs{db};
 
     // Setup db - gas costs referenced here
     // https://www.evm.codes/?fork=byzantium
@@ -131,7 +131,7 @@ TEST(EvmInterpStateHost, store_then_return_storage)
         .sender = from,
         .code_address = to};
 
-    State s{bs, db};
+    State s{bs};
 
     using fork_t = monad::fork_traits::byzantium;
 

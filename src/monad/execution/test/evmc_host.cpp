@@ -115,8 +115,8 @@ TEST(EvmcHost, emit_log)
     static byte_string const data = {0x00, 0x01, 0x02, 0x03, 0x04};
 
     db_t db;
-    BlockState bs;
-    State state{bs, db};
+    BlockState bs{db};
+    State state{bs};
     BlockHashBuffer const block_hash_buffer;
     evmc_host_t host{EMPTY_TX_CONTEXT, block_hash_buffer, state};
 
@@ -139,8 +139,8 @@ TEST(EvmcHost, emit_log)
 TEST(EvmcHost, access_precompile)
 {
     db_t db;
-    BlockState bs;
-    State state{bs, db};
+    BlockState bs{db};
+    State state{bs};
     BlockHashBuffer const block_hash_buffer;
     evmc_host_t host{EMPTY_TX_CONTEXT, block_hash_buffer, state};
 

@@ -47,8 +47,8 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
         0x5353535353535353535353535353535353535353_address};
 
     db_t db;
-    BlockState bs;
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
 
     s.add_to_balance(from, 56'000'000'000'000'000);
     s.set_nonce(from, 25);

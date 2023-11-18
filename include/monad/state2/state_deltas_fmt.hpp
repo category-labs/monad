@@ -8,7 +8,7 @@
 #include <monad/state2/state_deltas.hpp>
 
 template <typename T>
-struct quill::copy_loggable<monad::delta_t<T>>
+struct quill::copy_loggable<monad::Delta<T>>
     : std::integral_constant<bool, detail::is_registered_copyable_v<T>>
 {
 };

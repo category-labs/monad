@@ -43,8 +43,8 @@ TEST(Validation, validate_deployed_code)
     static constexpr auto some_non_null_hash{
         0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
     db_t db;
-    BlockState bs;
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_code_hash(a, some_non_null_hash);
     s.set_nonce(a, 24);
@@ -66,8 +66,8 @@ TEST(Validation, validate_nonce)
         .value = 55'939'568'773'815'811,
         .from = a};
     db_t db;
-    BlockState bs;
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 24);
 
@@ -87,8 +87,8 @@ TEST(Validation, validate_nonce_optimistically)
         .from = a};
 
     db_t db;
-    BlockState bs;
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 24);
     auto status = validate_txn(s, t);
@@ -110,8 +110,8 @@ TEST(Validation, validate_enough_balance)
     };
 
     db_t db;
-    BlockState bs;
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
     s.add_to_balance(a, 55'939'568'773'815'811);
 
     auto status = validate_txn(s, t);
@@ -123,8 +123,8 @@ TEST(Validation, successful_validation)
     static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
     db_t db;
-    BlockState bs;
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 25);
 
@@ -183,8 +183,8 @@ TEST(Validation, insufficent_balance_overflow)
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
 
     db_t db;
-    BlockState bs;
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
     s.add_to_balance(a, std::numeric_limits<uint256_t>::max());
 
     static Transaction const t{

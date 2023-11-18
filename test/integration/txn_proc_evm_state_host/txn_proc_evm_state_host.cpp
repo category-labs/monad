@@ -36,8 +36,8 @@ using account_store_db_t = db::InMemoryTrieDB;
 TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 {
     account_store_db_t db{};
-    BlockState bs;
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
 
     db.commit(
         StateDeltas{
@@ -82,13 +82,13 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     auto const reward = calculate_txn_award<traits_t::rev>(t, 0, r.gas_used);
     s.add_to_balance(bh.beneficiary, reward);
 
-    EXPECT_TRUE(can_merge(bs.state, s.state_));
-    merge(bs.state, s.state_);
+    EXPECT_TRUE(bs.can_merge(s.state_));
+    bs.merge(s.state_);
 
     apply_block_reward(
-        bs, db, b, traits_t::block_reward, traits_t::additional_ommer_reward);
+        bs, b, traits_t::block_reward, traits_t::additional_ommer_reward);
 
-    State s2{bs, db};
+    State s2{bs};
     EXPECT_EQ(s2.get_balance(a), bytes32_t{3'093'750'000'000'420'000});
     EXPECT_EQ(s2.get_balance(o), bytes32_t{2'625'000'000'000'000'000});
 }
@@ -101,8 +101,8 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     static constexpr auto created =
         0x9a049f5d18c239efaa258af9f3e7002949a977a0_address;
     account_store_db_t db{};
-    BlockState bs;
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
 
     db.commit(
         StateDeltas{
@@ -155,13 +155,13 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     auto const reward = calculate_txn_award<traits_t::rev>(t, 0, r.gas_used);
     s.add_to_balance(b.header.beneficiary, reward);
 
-    EXPECT_TRUE(can_merge(bs.state, s.state_));
-    merge(bs.state, s.state_);
+    EXPECT_TRUE(bs.can_merge(s.state_));
+    bs.merge(s.state_);
 
     apply_block_reward(
-        bs, db, b, traits_t::block_reward, traits_t::additional_ommer_reward);
+        bs, b, traits_t::block_reward, traits_t::additional_ommer_reward);
 
-    State s2{bs, db};
+    State s2{bs};
     EXPECT_EQ(s2.get_balance(a), bytes32_t{5'480'000'000'000'000'000});
 }
 
@@ -173,8 +173,8 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     static constexpr auto created =
         0x4dae54c8645c47dd55782091eca145c7bff974bc_address;
     account_store_db_t db{};
-    BlockState bs;
-    State s{bs, db};
+    BlockState bs{db};
+    State s{bs};
 
     db.commit(
         StateDeltas{
@@ -223,12 +223,12 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     auto const reward = calculate_txn_award<traits_t::rev>(t, 0, r.gas_used);
     s.add_to_balance(bh.beneficiary, reward);
 
-    EXPECT_TRUE(can_merge(bs.state, s.state_));
-    merge(bs.state, s.state_);
+    EXPECT_TRUE(bs.can_merge(s.state_));
+    bs.merge(s.state_);
 
     apply_block_reward(
-        bs, db, b, traits_t::block_reward, traits_t::additional_ommer_reward);
+        bs, b, traits_t::block_reward, traits_t::additional_ommer_reward);
 
-    State s2{bs, db};
+    State s2{bs};
     EXPECT_EQ(s2.get_balance(a), bytes32_t{5'010'428'473'773'980'000});
 }

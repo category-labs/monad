@@ -46,9 +46,9 @@ TEST(BlockProcessor, shanghai_withdrawal)
             {b, StateDelta{.account = {std::nullopt, Account{.balance = 0}}}}},
         Code{});
 
-    BlockState bs;
+    BlockState bs{db};
 
-    State state{bs, db};
+    State state{bs};
     BlockProcessor::process_withdrawal(state, withdrawals);
 
     EXPECT_EQ(
@@ -78,11 +78,11 @@ TEST(BlockProcessor, transfer_balance_dao)
 
     db.commit(state_deltas, Code{});
 
-    BlockState bs;
+    BlockState bs{db};
 
-    BlockProcessor::transfer_balance_dao(bs, db);
+    BlockProcessor::transfer_balance_dao(bs);
 
-    State s{bs, db};
+    State s{bs};
     for (auto const &addr : dao::child_accounts) {
         EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(addr)), 0u);
     }

@@ -34,8 +34,8 @@ TEST(BlockReward, apply_block_reward)
             StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
             Code{});
 
-        BlockState bs;
-        State as{bs, db};
+        BlockState bs{db};
+        State as{bs};
 
         EXPECT_TRUE(as.account_exists(a));
 
@@ -47,12 +47,11 @@ TEST(BlockReward, apply_block_reward)
                 BlockHeader{.number = 8, .beneficiary = c}}};
         apply_block_reward(
             bs,
-            db,
             block,
             fork_traits::frontier::block_reward,
             fork_traits::frontier::additional_ommer_reward);
 
-        State cs{bs, db};
+        State cs{bs};
 
         EXPECT_EQ(
             intx::be::load<uint256_t>(cs.get_balance(a)),
@@ -68,8 +67,8 @@ TEST(BlockReward, apply_block_reward)
     // Byzantium
     {
         db_t db;
-        BlockState bs;
-        State as{bs, db};
+        BlockState bs{db};
+        State as{bs};
         (void)as.get_balance(a);
 
         EXPECT_FALSE(as.account_exists(a));
@@ -83,12 +82,11 @@ TEST(BlockReward, apply_block_reward)
                 BlockHeader{.number = 8, .beneficiary = c}}};
         apply_block_reward(
             bs,
-            db,
             block,
             fork_traits::byzantium::block_reward,
             fork_traits::byzantium::additional_ommer_reward);
 
-        State cs{bs, db};
+        State cs{bs};
         EXPECT_EQ(
             intx::be::load<uint256_t>(cs.get_balance(a)),
             3'187'500'000'000'000'000);
@@ -103,8 +101,8 @@ TEST(BlockReward, apply_block_reward)
     // Constantinople_and_petersburg
     {
         db_t db;
-        BlockState bs;
-        State s{bs, db};
+        BlockState bs{db};
+        State s{bs};
 
         Block const block{
             .header = {.number = 10, .beneficiary = a},
@@ -114,7 +112,6 @@ TEST(BlockReward, apply_block_reward)
                 BlockHeader{.number = 8, .beneficiary = c}}};
         apply_block_reward(
             bs,
-            db,
             block,
             fork_traits::constantinople_and_petersburg::block_reward,
             fork_traits::constantinople_and_petersburg::
@@ -137,12 +134,11 @@ TEST(BlockReward, apply_block_reward)
         block.header.beneficiary = a;
 
         db_t db;
-        BlockState bs;
-        State s{bs, db};
+        BlockState bs{db};
+        State s{bs};
 
         apply_block_reward(
             bs,
-            db,
             block,
             fork_traits::paris::block_reward,
             fork_traits::paris::additional_ommer_reward);

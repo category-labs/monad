@@ -108,7 +108,6 @@ set(berlin_excluded_tests
     "TransactionTests.ttGasLimit/TransactionWithGasLimitOverflow256.json"
     "TransactionTests.ttGasLimit/TransactionWithGasLimitOverflow64.json"
     "TransactionTests.ttGasLimit/TransactionWithGasLimitOverflowZeros64.json"
-    "TransactionTests.ttGasLimit/TransactionWithGasLimitxPriceOverflow.json"
     "TransactionTests.ttGasPrice/TransactionWithGasPriceOverflow.json"
     "TransactionTests.ttGasPrice/TransactionWithLeadingZerosGasPrice.json"
     "TransactionTests.ttNonce/TransactionWithHighNonce256.json"

@@ -29,7 +29,8 @@ enum class TransactionError
     GasLimitReached,
     WrongChainId,
     MissingSender,
-    GasLimitOverflow
+    GasLimitOverflow,
+    InvalidSignature,
 };
 
 class State;

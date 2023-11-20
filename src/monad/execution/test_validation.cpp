@@ -15,6 +15,8 @@
 
 #include <gtest/gtest.h>
 
+#include <intx/intx.hpp>
+
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -115,6 +117,8 @@ TEST(Validation, validate_enough_balance)
 
 TEST(Validation, successful_validation)
 {
+    using intx::operator"" _u256;
+
     static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
     db_t db;
@@ -124,6 +128,11 @@ TEST(Validation, successful_validation)
     s.set_nonce(a, 25);
 
     static Transaction const t{
+        .sc =
+            {.r =
+                 0x5fd883bb01a10915ebc06621b925bd6d624cb6768976b73c0d468b31f657d15b_u256,
+             .s =
+                 0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256},
         .nonce = 25,
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,

@@ -23,6 +23,8 @@ using db_t = db::InMemoryTrieDB;
 
 TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 {
+    using intx::operator"" _u256;
+
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto bene{
@@ -39,6 +41,11 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     }
 
     Transaction tx{
+        .sc =
+            {.r =
+                 0x5fd883bb01a10915ebc06621b925bd6d624cb6768976b73c0d468b31f657d15b_u256,
+             .s =
+                 0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256},
         .nonce = 25,
         .max_fee_per_gas = 10,
         .gas_limit = 55'000,

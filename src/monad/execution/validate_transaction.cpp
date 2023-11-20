@@ -19,6 +19,8 @@
 #include <boost/outcome/experimental/status-code/generic_code.hpp>
 #include <boost/outcome/success_failure.hpp>
 
+#include <silkpre/secp256k1n.hpp>
+
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
@@ -97,6 +99,12 @@ Result<void> static_validate_transaction(
         return TransactionError::GasLimitOverflow;
     }
 
+    // EIP-2
+    if (MONAD_UNLIKELY(!silkpre::is_valid_signature(
+            tx.sc.r, tx.sc.s, rev >= EVMC_HOMESTEAD))) {
+        return TransactionError::InvalidSignature;
+    }
+
     return success();
 }
 
@@ -158,7 +166,8 @@ quick_status_code_from_enum<monad::TransactionError>::value_mappings()
         {TransactionError::GasLimitReached, "gas limit reached", {}},
         {TransactionError::WrongChainId, "wrong chain id", {}},
         {TransactionError::MissingSender, "missing sender", {}},
-        {TransactionError::GasLimitOverflow, "gas limit overflow", {}}};
+        {TransactionError::GasLimitOverflow, "gas limit overflow", {}},
+        {TransactionError::InvalidSignature, "invalid signature", {}}};
 
     return v;
 }

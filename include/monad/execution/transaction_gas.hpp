@@ -26,4 +26,10 @@ uint256_t calculate_txn_award(
     Transaction const &, uint256_t const &base_fee_per_gas,
     uint64_t gas_used) noexcept;
 
+inline intx::uint512
+max_gas_cost(uint64_t const gas_limit, uint256_t max_fee_per_gas) noexcept
+{
+    return intx::umul(uint256_t{gas_limit}, max_fee_per_gas);
+}
+
 MONAD_NAMESPACE_END

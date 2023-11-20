@@ -78,6 +78,13 @@ constexpr ValidationStatus static_validate_txn(
         return ValidationStatus::NONCE_EXCEEDS_MAX;
     }
 
+    // EIP-1559
+    if (MONAD_UNLIKELY(
+            max_gas_cost(txn.gas_limit, txn.max_fee_per_gas) >
+            std::numeric_limits<uint256_t>::max())) {
+        return ValidationStatus::GAS_LIMIT_OVERFLOW;
+    }
+
     return ValidationStatus::SUCCESS;
 }
 
@@ -103,8 +110,7 @@ constexpr ValidationStatus validate_txn(State &state, Transaction const &txn)
     // YP eq. 62
     if (MONAD_UNLIKELY(
             intx::be::load<uint256_t>(state.get_balance(*txn.from)) <
-            (txn.value +
-             intx::umul(uint256_t(txn.gas_limit), txn.max_fee_per_gas)))) {
+            (txn.value + max_gas_cost(txn.gas_limit, txn.max_fee_per_gas)))) {
         return ValidationStatus::INSUFFICIENT_BALANCE;
     }
 

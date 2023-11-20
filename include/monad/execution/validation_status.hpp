@@ -37,6 +37,7 @@ enum class ValidationStatus
     GAS_LIMIT_REACHED,
     WRONG_CHAIN_ID,
     MISSING_SENDER,
+    GAS_LIMIT_OVERFLOW,
 
 };
 

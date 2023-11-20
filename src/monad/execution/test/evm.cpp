@@ -28,8 +28,6 @@ using namespace monad;
 
 using db_t = db::InMemoryTrieDB;
 
-using evm_t = Evm<EVMC_SHANGHAI>;
-
 using evm_host_t = EvmcHost<EVMC_SHANGHAI>;
 
 TEST(Evm, create_with_insufficient)
@@ -59,7 +57,7 @@ TEST(Evm, create_with_insufficient)
 
     BlockHashBuffer const block_hash_buffer;
     evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
-    auto const result = evm_t::create_contract_account(&h, s, m);
+    auto const result = create_contract_account<EVMC_SHANGHAI>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
 }
@@ -99,7 +97,7 @@ TEST(Evm, eip684_existing_code)
 
     BlockHashBuffer const block_hash_buffer;
     evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
-    auto const result = evm_t::create_contract_account(&h, s, m);
+    auto const result = create_contract_account<EVMC_SHANGHAI>(&h, s, m);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
 }
 
@@ -132,7 +130,7 @@ TEST(Evm, transfer_call_balances)
     uint256_t const v{7'000'000'000};
     intx::be::store(m.value.bytes, v);
 
-    auto const result = evm_t::transfer_call_balances(s, m);
+    auto const result = transfer_call_balances(s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     EXPECT_EQ(s.get_balance(from), bytes32_t{3'000'000'000});
@@ -166,7 +164,7 @@ TEST(Evm, transfer_call_balances_to_self)
     uint256_t const v{7'000'000'000};
     intx::be::store(m.value.bytes, v);
 
-    auto const result = evm_t::transfer_call_balances(s, m);
+    auto const result = transfer_call_balances(s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     EXPECT_EQ(s.get_balance(from), bytes32_t{10'000'000'000});
@@ -202,7 +200,7 @@ TEST(Evm, dont_transfer_on_delegatecall)
     uint256_t const v{7'000'000'000};
     intx::be::store(m.value.bytes, v);
 
-    auto const result = evm_t::transfer_call_balances(s, m);
+    auto const result = transfer_call_balances(s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     EXPECT_EQ(s.get_balance(from), bytes32_t{10'000'000'000});
@@ -240,7 +238,7 @@ TEST(Evm, dont_transfer_on_staticcall)
     uint256_t const v{7'000'000'000};
     intx::be::store(m.value.bytes, v);
 
-    auto const result = evm_t::transfer_call_balances(s, m);
+    auto const result = transfer_call_balances(s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     EXPECT_EQ(s.get_balance(from), bytes32_t{10'000'000'000});
@@ -280,7 +278,7 @@ TEST(Evm, create_nonce_out_of_range)
     uint256_t const v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
-    auto const result = evm_t::create_contract_account(&h, s, m);
+    auto const result = create_contract_account<EVMC_SHANGHAI>(&h, s, m);
 
     EXPECT_FALSE(s.account_exists(new_addr));
     EXPECT_EQ(result.status_code, EVMC_ARGUMENT_OUT_OF_RANGE);
@@ -322,7 +320,7 @@ TEST(Evm, static_precompile_execution)
         .value = {0},
         .code_address = code_address};
 
-    auto const result = evm_t::call_evm(&h, s, m);
+    auto const result = call_evm<EVMC_SHANGHAI>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     EXPECT_EQ(result.gas_left, 382);
@@ -367,7 +365,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         .value = {0},
         .code_address = code_address};
 
-    evmc::Result const result = evm_t::call_evm(&h, s, m);
+    evmc::Result const result = call_evm<EVMC_SHANGHAI>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
 }
@@ -391,7 +389,7 @@ TEST(Evm, deploy_contract_code)
             static constexpr int64_t gas = 10'000;
             evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
             auto const r2 =
-                Evm<EVMC_FRONTIER>::deploy_contract_code(s, a, std::move(r));
+                deploy_contract_code<EVMC_FRONTIER>(s, a, std::move(r));
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.gas_left, gas - 800); // G_codedeposit * size(code)
             EXPECT_EQ(r2.create_address, a);
@@ -403,7 +401,7 @@ TEST(Evm, deploy_contract_code)
             State s{bs};
             evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
             auto const r2 =
-                Evm<EVMC_FRONTIER>::deploy_contract_code(s, a, std::move(r));
+                deploy_contract_code<EVMC_FRONTIER>(s, a, std::move(r));
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.gas_left, 700);
             EXPECT_EQ(r2.create_address, a);
@@ -420,7 +418,7 @@ TEST(Evm, deploy_contract_code)
 
             evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
             auto const r2 =
-                Evm<EVMC_HOMESTEAD>::deploy_contract_code(s, a, std::move(r));
+                deploy_contract_code<EVMC_HOMESTEAD>(s, a, std::move(r));
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.create_address, a);
             EXPECT_EQ(r2.gas_left,
@@ -433,7 +431,7 @@ TEST(Evm, deploy_contract_code)
             State s{bs};
             evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
             auto const r2 =
-                Evm<EVMC_HOMESTEAD>::deploy_contract_code(s, a, std::move(r));
+                deploy_contract_code<EVMC_HOMESTEAD>(s, a, std::move(r));
             EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
             EXPECT_EQ(r2.gas_left, 700);
             EXPECT_EQ(r2.create_address, 0x00_address);
@@ -454,7 +452,7 @@ TEST(Evm, deploy_contract_code)
             code.data(),
             code.size()};
         auto const r2 =
-            Evm<EVMC_SPURIOUS_DRAGON>::deploy_contract_code(s, a, std::move(r));
+            deploy_contract_code<EVMC_SPURIOUS_DRAGON>(s, a, std::move(r));
         EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
         EXPECT_EQ(r2.gas_left, 0);
         EXPECT_EQ(r2.create_address, 0x00_address);
@@ -468,8 +466,7 @@ TEST(Evm, deploy_contract_code)
 
         evmc::Result r{
             EVMC_SUCCESS, 1'000, 0, illegal_code.data(), illegal_code.size()};
-        auto const r2 =
-            Evm<EVMC_LONDON>::deploy_contract_code(s, a, std::move(r));
+        auto const r2 = deploy_contract_code<EVMC_LONDON>(s, a, std::move(r));
         EXPECT_EQ(r2.status_code, EVMC_CONTRACT_VALIDATION_FAILURE);
         EXPECT_EQ(r2.gas_left, 0);
         EXPECT_EQ(r2.create_address, 0x00_address);

@@ -86,10 +86,8 @@ struct EvmcHost final : public EvmcHostBase
     [[nodiscard]] virtual evmc::Result
     call(evmc_message const &msg) noexcept override
     {
-        using evm_t = Evm<rev>;
-
         if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
-            auto res = evm_t::create_contract_account(this, state_, msg);
+            auto res = create_contract_account<rev>(this, state_, msg);
             // eip-211, eip-140
             if (res.status_code != EVMC_REVERT) {
                 return evmc::Result{
@@ -101,7 +99,7 @@ struct EvmcHost final : public EvmcHostBase
             return res;
         }
 
-        return evm_t::call_evm(this, state_, msg);
+        return call_evm<rev>(this, state_, msg);
     }
 
     virtual evmc_access_status

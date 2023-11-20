@@ -78,11 +78,10 @@ TEST(EvmInterpStateHost, return_existing_storage)
     s.access_account(to);
     s.access_account(from);
 
-    Evm<fork_t::rev> const e{};
     BlockHashBuffer const block_hash_buffer;
     EvmcHost<fork_t::rev> h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
-    auto status = e.call_evm(&h, s, m);
+    auto status = call_evm<fork_t::rev>(&h, s, m);
 
     EXPECT_EQ(status.status_code, EVMC_SUCCESS);
     EXPECT_EQ(status.output_size, 1u);
@@ -139,11 +138,10 @@ TEST(EvmInterpStateHost, store_then_return_storage)
     s.access_account(to);
     s.access_account(from);
 
-    Evm<fork_t::rev> const e{};
     BlockHashBuffer const block_hash_buffer;
     EvmcHost<fork_t::rev> h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
-    auto status = e.call_evm(&h, s, m);
+    auto status = call_evm<fork_t::rev>(&h, s, m);
 
     EXPECT_EQ(status.status_code, EVMC_SUCCESS);
     EXPECT_EQ(status.output_size, 1u);

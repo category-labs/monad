@@ -60,7 +60,7 @@ struct State
     }
 
     // EVMC Host Interface
-    [[nodiscard]] bool account_exists(address_t const &address)
+    bool account_exists(address_t const &address)
     {
         LOG_TRACE_L1("account_exists: {}", address);
 
@@ -86,7 +86,7 @@ struct State
     }
 
     // EVMC Host Interface
-    [[nodiscard]] bytes32_t get_balance(address_t const &address)
+    bytes32_t get_balance(address_t const &address)
     {
         LOG_TRACE_L1("get_balance: {}", address);
 
@@ -139,7 +139,7 @@ struct State
         touch(address);
     }
 
-    [[nodiscard]] uint64_t get_nonce(address_t const &address) noexcept
+    uint64_t get_nonce(address_t const &address) noexcept
     {
         LOG_TRACE_L1("get_nonce: {}", address);
 
@@ -162,7 +162,7 @@ struct State
     }
 
     // EVMC Host Interface
-    [[nodiscard]] bytes32_t get_code_hash(address_t const &address)
+    bytes32_t get_code_hash(address_t const &address)
     {
         LOG_TRACE_L1("get_code_hash: {}", address);
 
@@ -183,7 +183,7 @@ struct State
     }
 
     // EVMC Host Interface
-    [[nodiscard]] bool selfdestruct(
+    bool selfdestruct(
         address_t const &address, address_t const &beneficiary) noexcept
     {
         LOG_TRACE_L1("selfdestruct: {}, {}", address, beneficiary);
@@ -219,7 +219,7 @@ struct State
         }
     }
 
-    [[nodiscard]] bool account_is_dead(address_t const &address) noexcept
+    bool account_is_dead(address_t const &address) noexcept
     {
         auto const &account = read_account(address, state_, block_state_);
         return !account.has_value() ||
@@ -241,7 +241,7 @@ struct State
     }
 
     // EVMC Host Interface
-    [[nodiscard]] bytes32_t
+    bytes32_t
     get_storage(address_t const &address, bytes32_t const &key) noexcept
     {
         LOG_TRACE_L1("get_storage: {}, {}", address, key);
@@ -250,7 +250,7 @@ struct State
     }
 
     // EVMC Host Interface
-    [[nodiscard]] evmc_storage_status set_storage(
+    evmc_storage_status set_storage(
         address_t const &address, bytes32_t const &key,
         bytes32_t const &value) noexcept
     {
@@ -262,7 +262,7 @@ struct State
         return set_current_value(address, key, value);
     }
 
-    [[nodiscard]] evmc_storage_status
+    evmc_storage_status
     zero_out_key(address_t const &address, bytes32_t const &key) noexcept
     {
         auto &delta = read_storage(address, 0u, key, state_, block_state_);
@@ -286,7 +286,7 @@ struct State
         return status;
     }
 
-    [[nodiscard]] evmc_storage_status set_current_value(
+    evmc_storage_status set_current_value(
         address_t const &address, bytes32_t const &key,
         bytes32_t const &value) noexcept
     {
@@ -318,7 +318,7 @@ struct State
     }
 
     // EVMC Host Interface
-    [[nodiscard]] size_t get_code_size(address_t const &address) noexcept
+    size_t get_code_size(address_t const &address) noexcept
     {
         LOG_TRACE_L1("get_code_size: {}", address);
 
@@ -330,7 +330,7 @@ struct State
     }
 
     // EVMC Host Interface
-    [[nodiscard]] size_t copy_code(
+    size_t copy_code(
         address_t const &address, size_t const offset, uint8_t *const buffer,
         size_t const buffer_size) noexcept
     {
@@ -352,7 +352,7 @@ struct State
         return 0z;
     }
 
-    [[nodiscard]] byte_string get_code(address_t const &address) noexcept
+    byte_string get_code(address_t const &address) noexcept
     {
         LOG_TRACE_L1("get_code: {}", address);
 
@@ -401,7 +401,7 @@ struct State
         touched_.insert(address);
     }
 
-    [[nodiscard]] constexpr bool is_touched(address_t const &address)
+    constexpr bool is_touched(address_t const &address)
     {
         return touched_.contains(address);
     }

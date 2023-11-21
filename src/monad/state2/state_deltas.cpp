@@ -40,9 +40,9 @@ void merge_f(auto &m1, auto const &m2, auto &&f)
     }
 }
 
-bool can_merge(StateDeltas const &s1, StateDeltas const &s2)
+bool can_merge(StateDeltas const &to, StateDeltas const &from)
 {
-    return subset_f(s1, s2, [](auto const &d1, auto const &d2) {
+    return subset_f(to, from, [](auto const &d1, auto const &d2) {
         if (MONAD_UNLIKELY(d2.account.first != d1.account.second)) {
             return false;
         }
@@ -53,9 +53,9 @@ bool can_merge(StateDeltas const &s1, StateDeltas const &s2)
     });
 }
 
-void merge(StateDeltas &s1, StateDeltas const &s2)
+void merge(StateDeltas &to, StateDeltas const &from)
 {
-    merge_f(s1, s2, [](auto &d1, auto const &d2) {
+    merge_f(to, from, [](auto &d1, auto const &d2) {
         d1.account.second = d2.account.second;
         merge_f(d1.storage, d2.storage, [](auto &st1, auto const &st2) {
             st1.second = st2.second;
@@ -63,9 +63,9 @@ void merge(StateDeltas &s1, StateDeltas const &s2)
     });
 }
 
-void merge(Code &c1, Code const &c2)
+void merge(Code &to, Code const &from)
 {
-    merge_f(c1, c2, [](auto &d1, auto &d2) {
+    merge_f(to, from, [](auto &d1, auto &d2) {
         if (d1.empty()) {
             d1 = d2;
         }

@@ -164,6 +164,7 @@ add_library(
   "src/monad/db/rocks_db_helper.cpp"
   "src/monad/db/state_db.cpp"
   # execution
+  "include/monad/execution/baseline_execute.hpp"
   "include/monad/execution/block_hash_buffer.hpp"
   "include/monad/execution/block_processor.hpp"
   "include/monad/execution/block_reward.hpp"
@@ -173,7 +174,6 @@ add_library(
   "include/monad/execution/ethereum/genesis.hpp"
   "include/monad/execution/evm.hpp"
   "include/monad/execution/evmc_host.hpp"
-  "include/monad/execution/evmone_baseline_interpreter.hpp"
   "include/monad/execution/explicit_evmc_revision.hpp"
   "include/monad/execution/precompiles.hpp"
   "include/monad/execution/replay_block_db.hpp"
@@ -182,6 +182,7 @@ add_library(
   "include/monad/execution/tx_context.hpp"
   "include/monad/execution/validation.hpp"
   "include/monad/execution/validation_status.hpp"
+  "src/monad/execution/baseline_execute.cpp"
   "src/monad/execution/block_hash_buffer.cpp"
   "src/monad/execution/block_reward.cpp"
   "src/monad/execution/create_contract_address.cpp"

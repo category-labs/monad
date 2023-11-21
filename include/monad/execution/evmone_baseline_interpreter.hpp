@@ -31,9 +31,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <evmc_revision rev>
 evmc::Result baseline_execute(
-    evmc::Host *const host, evmc_message const &msg,
+    evmc_message const &msg, evmc_revision const rev, evmc::Host *const host,
     byte_string_view const code)
 {
     if (code.empty()) {
@@ -47,7 +46,7 @@ evmc::Result baseline_execute(
     vm.add_tracer(evmone::create_instruction_tracer(trace_ostream));
 #endif
 
-    auto execution_state = std::make_unique<evmone::ExecutionState>(
+    auto const execution_state = std::make_unique<evmone::ExecutionState>(
         msg,
         rev,
         host->get_interface(),
@@ -55,8 +54,7 @@ evmc::Result baseline_execute(
         code,
         byte_string_view{});
 
-    evmone::baseline::CodeAnalysis code_analysis{
-        evmone::baseline::analyze(rev, code)};
+    auto const code_analysis = evmone::baseline::analyze(rev, code);
 
     auto const result =
         evmone::baseline::execute(vm, msg.gas, *execution_state, code_analysis);

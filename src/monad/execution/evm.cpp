@@ -164,8 +164,11 @@ evmc::Result create_contract_account(
     };
 
     EvmcHost<rev> new_host{*host, new_state};
-    auto result = baseline_execute<rev>(
-        &new_host, m_call, byte_string_view(msg.input_data, msg.input_size));
+    auto result = baseline_execute(
+        m_call,
+        rev,
+        &new_host,
+        byte_string_view(msg.input_data, msg.input_size));
 
     if (result.status_code == EVMC_SUCCESS) {
         result = deploy_contract_code<rev>(
@@ -218,7 +221,7 @@ evmc::Result call_evm(
     else {
         EvmcHost<rev> new_host{*host, new_state};
         auto const code = new_state.get_code(msg.code_address);
-        result = baseline_execute<rev>(&new_host, msg, code);
+        result = baseline_execute(msg, rev, &new_host, code);
     }
 
     MONAD_DEBUG_ASSERT(

@@ -30,7 +30,7 @@ std::optional<Account> &read_account(
     return it->second.account.second;
 }
 
-Delta<bytes32_t> &read_storage(
+Delta<bytes32_t> &read_storage_delta(
     address_t const &address, uint64_t const /*incarnation*/,
     bytes32_t const &location, StateDeltas &state, BlockState &block_state)
 {

@@ -14,7 +14,7 @@ MONAD_NAMESPACE_BEGIN
 std::optional<Account> &
 read_account(address_t const &, StateDeltas &, BlockState &);
 
-Delta<bytes32_t> &read_storage(
+Delta<bytes32_t> &read_storage_delta(
     address_t const &, uint64_t incarnation, bytes32_t const &location,
     StateDeltas &, BlockState &);
 

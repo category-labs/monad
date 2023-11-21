@@ -31,7 +31,9 @@ MONAD_NAMESPACE_BEGIN
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
 template <evmc_revision rev>
-Result<void> static_validate_header(BlockHeader const &header)
+Result<void> static_validate_header(
+    BlockHeader const &header, BlockHeader const &parent_header,
+    bool const no_parent_validation)
 {
     // YP eq. 56
     if (MONAD_UNLIKELY(header.gas_used > header.gas_limit)) {
@@ -103,13 +105,24 @@ Result<void> static_validate_header(BlockHeader const &header)
         }
     }
 
+    if (!no_parent_validation) {
+        if (MONAD_UNLIKELY(hash(parent_header) != header.parent_hash)) {
+            return BlockError::UnknownParent;
+        }
+
+        if (MONAD_UNLIKELY(header.timestamp <= parent_header.timestamp)) {
+            return BlockError::InvalidTimestamp;
+        }
+    }
+
     return success();
 }
 
 EXPLICIT_EVMC_REVISION(static_validate_header);
 
 template <evmc_revision rev>
-constexpr Result<void> static_validate_ommers(Block const &block)
+constexpr Result<void>
+static_validate_ommers(Block const &block, BlockHeader const &parent_header)
 {
     // TODO: What we really need is probably a generic ommer hash computation
     // function Instead of just checking this special case
@@ -139,14 +152,18 @@ constexpr Result<void> static_validate_ommers(Block const &block)
 
     // YP eq. 167
     for (auto const &ommer : block.ommers) {
-        BOOST_OUTCOME_TRY(static_validate_header<rev>(ommer));
+        // Note: We are not validating ommer header with its parent, since it
+        // requires more thought
+        BOOST_OUTCOME_TRY(static_validate_header<rev>(
+            ommer, parent_header, /*no_parent_validation*/ true));
     }
 
     return success();
 }
 
 template <evmc_revision rev>
-constexpr Result<void> static_validate_body(Block const &block)
+constexpr Result<void>
+static_validate_body(Block const &block, BlockHeader const &parent_header)
 {
     // TODO: Should we put computationally heavy validate_root(txn,
     // withdraw) here?
@@ -163,17 +180,19 @@ constexpr Result<void> static_validate_body(Block const &block)
         }
     }
 
-    BOOST_OUTCOME_TRY(static_validate_ommers<rev>(block));
+    BOOST_OUTCOME_TRY(static_validate_ommers<rev>(block, parent_header));
 
     return success();
 }
 
 template <evmc_revision rev>
-Result<void> static_validate_block(Block const &block)
+Result<void>
+static_validate_block(Block const &block, BlockHeader const &parent_header)
 {
-    BOOST_OUTCOME_TRY(static_validate_header<rev>(block.header));
+    BOOST_OUTCOME_TRY(static_validate_header<rev>(
+        block.header, parent_header, /*no_parent_validation*/ false));
 
-    BOOST_OUTCOME_TRY(static_validate_body<rev>(block));
+    BOOST_OUTCOME_TRY(static_validate_body<rev>(block, parent_header));
 
     return success();
 }
@@ -205,7 +224,9 @@ quick_status_code_from_enum<monad::BlockError>::value_mappings()
         {BlockError::InvalidOmmerHeader, "invalid ommer header", {}},
         {BlockError::WrongDaoExtraData, "wrong dao extra data", {}},
         {BlockError::WrongLogsBloom, "wrong logs bloom", {}},
-        {BlockError::InvalidGasUsed, "invalid gas used", {}}};
+        {BlockError::InvalidGasUsed, "invalid gas used", {}},
+        {BlockError::UnknownParent, "unknown parent", {}},
+        {BlockError::InvalidTimestamp, "invalid timestamp", {}}};
 
     return v;
 }

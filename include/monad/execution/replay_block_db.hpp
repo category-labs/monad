@@ -80,6 +80,17 @@ public:
         BlockHashBuffer &block_hash_buffer, block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
+
+        BlockHeader parent_header;
+        {
+            MONAD_DEBUG_ASSERT(current_block_number >= 1);
+            Block parent;
+            bool const parent_status =
+                block_db.get(current_block_number - 1, parent);
+            MONAD_ASSERT(parent_status);
+            parent_header = parent.header;
+        }
+
         for (; current_block_number <= loop_until<Traits>(until_block_number);
              ++current_block_number) {
             Block block{};
@@ -94,7 +105,8 @@ public:
             block_hash_buffer.set(
                 current_block_number - 1, block.header.parent_hash);
 
-            if (auto const result = static_validate_block<Traits::rev>(block);
+            if (auto const result =
+                    static_validate_block<Traits::rev>(block, parent_header);
                 result.has_error()) {
                 return Result{
                     Status::BLOCK_VALIDATION_FAILED, current_block_number};
@@ -115,6 +127,7 @@ public:
                 if (current_block_number % checkpoint_frequency == 0) {
                     db.create_and_prune_block_history(current_block_number);
                 }
+                parent_header = block.header;
             }
         }
 

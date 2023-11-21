@@ -100,6 +100,7 @@ add_library(
   "include/monad/core/withdrawal.hpp"
   "src/monad/core/account_rlp.cpp"
   "src/monad/core/block_rlp.cpp"
+  "src/monad/core/block.cpp"
   "src/monad/core/receipt_rlp.cpp"
   "src/monad/core/receipt.cpp"
   "src/monad/core/signature_rlp.cpp"

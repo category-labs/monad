@@ -219,8 +219,10 @@ TEST(Validation, init_code_exceed_limit)
 TEST(Validation, invalid_gas_limit)
 {
     static BlockHeader const header{.gas_limit = 1000, .gas_used = 500};
+    static BlockHeader const parent_header{};
 
-    auto const result = static_validate_header<EVMC_SHANGHAI>(header);
+    auto const result =
+        static_validate_header<EVMC_SHANGHAI>(header, parent_header, true);
     EXPECT_EQ(result.error(), BlockError::InvalidGasLimit);
 }
 
@@ -230,8 +232,10 @@ TEST(Validation, wrong_dao_extra_data)
         .number = dao::dao_block_number + 5,
         .gas_limit = 10000,
         .extra_data = {0x00, 0x01, 0x02}};
+    static BlockHeader const parent_header{};
 
-    auto const result = static_validate_header<EVMC_HOMESTEAD>(header);
+    auto const result =
+        static_validate_header<EVMC_HOMESTEAD>(header, parent_header, true);
     EXPECT_EQ(result.error(), BlockError::WrongDaoExtraData);
 }
 
@@ -242,8 +246,10 @@ TEST(Validation, base_fee_per_gas_existence)
         .gas_limit = 10000,
         .gas_used = 5000,
         .base_fee_per_gas = 1000};
+    static BlockHeader const parent_header{};
 
-    auto const result1 = static_validate_header<EVMC_FRONTIER>(header1);
+    auto const result1 =
+        static_validate_header<EVMC_FRONTIER>(header1, parent_header, true);
     EXPECT_EQ(result1.error(), BlockError::FieldBeforeFork);
 
     static BlockHeader const header2{
@@ -252,7 +258,8 @@ TEST(Validation, base_fee_per_gas_existence)
         .gas_used = 5000,
         .base_fee_per_gas = std::nullopt};
 
-    auto const result2 = static_validate_header<EVMC_LONDON>(header2);
+    auto const result2 =
+        static_validate_header<EVMC_LONDON>(header2, parent_header, true);
     EXPECT_EQ(result2.error(), BlockError::MissingField);
 }
 
@@ -264,8 +271,10 @@ TEST(Validation, withdrawal_root_existence)
         .gas_used = 5000,
         .base_fee_per_gas = std::nullopt,
         .withdrawals_root = 0x00_bytes32};
+    static BlockHeader const parent_header{};
 
-    auto const result1 = static_validate_header<EVMC_FRONTIER>(header1);
+    auto const result1 =
+        static_validate_header<EVMC_FRONTIER>(header1, parent_header, true);
     EXPECT_EQ(result1.error(), BlockError::FieldBeforeFork);
 
     static BlockHeader const header2{
@@ -275,7 +284,8 @@ TEST(Validation, withdrawal_root_existence)
         .base_fee_per_gas = 1000,
         .withdrawals_root = std::nullopt};
 
-    auto const result2 = static_validate_header<EVMC_SHANGHAI>(header2);
+    auto const result2 =
+        static_validate_header<EVMC_SHANGHAI>(header2, parent_header, true);
     EXPECT_EQ(result2.error(), BlockError::MissingField);
 }
 
@@ -291,6 +301,9 @@ TEST(Validation, invalid_nonce)
         .nonce = nonce,
         .base_fee_per_gas = 1000};
 
-    auto const result = static_validate_header<EVMC_PARIS>(header);
+    static BlockHeader const parent_header{};
+
+    auto const result =
+        static_validate_header<EVMC_PARIS>(header, parent_header, true);
     EXPECT_EQ(result.error(), BlockError::InvalidNonce);
 }

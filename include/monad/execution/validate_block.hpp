@@ -34,17 +34,22 @@ enum class BlockError
     InvalidOmmerHeader,
     WrongDaoExtraData,
     WrongLogsBloom,
-    InvalidGasUsed
+    InvalidGasUsed,
+    UnknownParent,
+    InvalidTimestamp,
 };
 
 struct Block;
 struct BlockHeader;
 
 template <evmc_revision rev>
-Result<void> static_validate_header(BlockHeader const &);
+Result<void> static_validate_header(
+    BlockHeader const &, BlockHeader const &parent_header,
+    bool const no_parent_validation);
 
 template <evmc_revision rev>
-Result<void> static_validate_block(Block const &);
+Result<void>
+static_validate_block(Block const &, BlockHeader const &parent_header);
 
 MONAD_NAMESPACE_END
 

@@ -50,43 +50,55 @@ namespace
 {
     template <evmc_revision rev>
     Result<std::vector<Receipt>> execute(
-        Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
+        Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer,
+        BlockHeader const &parent_header)
     {
         using namespace monad::test;
 
-        BOOST_OUTCOME_TRY(static_validate_block<rev>(block));
+        BOOST_OUTCOME_TRY(static_validate_block<rev>(block, parent_header));
 
         return execute_block<rev>(block, db, block_hash_buffer);
     }
 
     Result<std::vector<Receipt>> execute_dispatch(
         evmc_revision const rev, Block &block, test::db_t &db,
-        BlockHashBuffer const &block_hash_buffer)
+        BlockHashBuffer const &block_hash_buffer,
+        BlockHeader const &parent_header)
     {
         switch (rev) {
         case EVMC_FRONTIER:
-            return execute<EVMC_FRONTIER>(block, db, block_hash_buffer);
+            return execute<EVMC_FRONTIER>(
+                block, db, block_hash_buffer, parent_header);
         case EVMC_HOMESTEAD:
-            return execute<EVMC_HOMESTEAD>(block, db, block_hash_buffer);
+            return execute<EVMC_HOMESTEAD>(
+                block, db, block_hash_buffer, parent_header);
         case EVMC_TANGERINE_WHISTLE:
             return execute<EVMC_TANGERINE_WHISTLE>(
-                block, db, block_hash_buffer);
+                block, db, block_hash_buffer, parent_header);
         case EVMC_SPURIOUS_DRAGON:
-            return execute<EVMC_SPURIOUS_DRAGON>(block, db, block_hash_buffer);
+            return execute<EVMC_SPURIOUS_DRAGON>(
+                block, db, block_hash_buffer, parent_header);
         case EVMC_BYZANTIUM:
-            return execute<EVMC_BYZANTIUM>(block, db, block_hash_buffer);
+            return execute<EVMC_BYZANTIUM>(
+                block, db, block_hash_buffer, parent_header);
         case EVMC_PETERSBURG:
-            return execute<EVMC_PETERSBURG>(block, db, block_hash_buffer);
+            return execute<EVMC_PETERSBURG>(
+                block, db, block_hash_buffer, parent_header);
         case EVMC_ISTANBUL:
-            return execute<EVMC_ISTANBUL>(block, db, block_hash_buffer);
+            return execute<EVMC_ISTANBUL>(
+                block, db, block_hash_buffer, parent_header);
         case EVMC_BERLIN:
-            return execute<EVMC_BERLIN>(block, db, block_hash_buffer);
+            return execute<EVMC_BERLIN>(
+                block, db, block_hash_buffer, parent_header);
         case EVMC_LONDON:
-            return execute<EVMC_LONDON>(block, db, block_hash_buffer);
+            return execute<EVMC_LONDON>(
+                block, db, block_hash_buffer, parent_header);
         case EVMC_PARIS:
-            return execute<EVMC_PARIS>(block, db, block_hash_buffer);
+            return execute<EVMC_PARIS>(
+                block, db, block_hash_buffer, parent_header);
         case EVMC_SHANGHAI:
-            return execute<EVMC_SHANGHAI>(block, db, block_hash_buffer);
+            return execute<EVMC_SHANGHAI>(
+                block, db, block_hash_buffer, parent_header);
         default:
             MONAD_ASSERT(false);
         }
@@ -179,6 +191,18 @@ void BlockchainTest::TestBody()
         }
 
         BlockHashBuffer block_hash_buffer;
+        BlockHeader parent_header;
+
+        {
+            Block genesis_block;
+            auto const genesis_rlp =
+                j_contents.at("genesisRLP").get<byte_string>();
+            auto const rest = rlp::decode_block(genesis_block, genesis_rlp);
+            ASSERT_TRUE(!rest.has_error());
+            EXPECT_TRUE(rest.assume_value().empty()) << name;
+            parent_header = genesis_block.header;
+        }
+
         for (auto const &j_block : j_contents.at("blocks")) {
             Block block;
             auto const rlp = j_block.at("rlp").get<byte_string>();
@@ -202,16 +226,18 @@ void BlockchainTest::TestBody()
             block_hash_buffer.set(
                 block.header.number - 1, block.header.parent_hash);
 
-            auto const result =
-                execute_dispatch(rev, block, db, block_hash_buffer);
+            auto const result = execute_dispatch(
+                rev, block, db, block_hash_buffer, parent_header);
             if (!result.has_error()) {
                 EXPECT_FALSE(j_block.contains("expectException"));
                 EXPECT_EQ(db.state_root(), block.header.state_root) << name;
                 EXPECT_EQ(result.value().size(), block.transactions.size())
                     << name;
+                parent_header = block.header;
             }
             else {
                 EXPECT_TRUE(j_block.contains("expectException"));
+                block_hash_buffer.to_prev();
             }
         }
 

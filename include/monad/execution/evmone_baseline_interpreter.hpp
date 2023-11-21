@@ -2,7 +2,6 @@
 
 #include <monad/config.hpp>
 #include <monad/core/byte_string.hpp>
-#include <monad/execution/evmc_host.hpp>
 
 #include <evmone/baseline.hpp>
 
@@ -26,6 +25,7 @@
 #endif
 
 #include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
 
 #include <memory>
 
@@ -33,7 +33,7 @@ MONAD_NAMESPACE_BEGIN
 
 template <evmc_revision rev>
 evmc::Result baseline_execute(
-    EvmcHost<rev> *const host, evmc_message const &msg,
+    evmc::Host *const host, evmc_message const &msg,
     byte_string_view const code)
 {
     if (code.empty()) {

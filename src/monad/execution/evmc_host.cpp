@@ -71,7 +71,7 @@ size_t EvmcHostBase::copy_code(
     return state_.copy_code(address, offset, data, size);
 }
 
-[[nodiscard]] bool EvmcHostBase::selfdestruct(
+bool EvmcHostBase::selfdestruct(
     address_t const &address, address_t const &beneficiary) noexcept
 {
     return state_.selfdestruct(address, beneficiary);

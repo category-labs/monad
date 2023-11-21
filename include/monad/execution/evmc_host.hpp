@@ -53,7 +53,7 @@ public:
         address_t const &, size_t offset, uint8_t *data,
         size_t size) const noexcept override;
 
-    [[nodiscard]] virtual bool selfdestruct(
+    virtual bool selfdestruct(
         address_t const &address,
         address_t const &beneficiary) noexcept override;
 
@@ -83,8 +83,7 @@ struct EvmcHost final : public EvmcHostBase
         return !state_.account_is_dead(address);
     }
 
-    [[nodiscard]] virtual evmc::Result
-    call(evmc_message const &msg) noexcept override
+    virtual evmc::Result call(evmc_message const &msg) noexcept override
     {
         if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
             auto res = create_contract_account<rev>(this, state_, msg);

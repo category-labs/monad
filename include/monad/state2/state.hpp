@@ -34,7 +34,6 @@ struct State
         address_t, ankerl::unordered_dense::set<bytes32_t>>
         accessed_storage_;
     ankerl::unordered_dense::set<address_t> destructed_;
-    uint256_t gas_award_;
     std::vector<Receipt::Log> logs_;
 
     explicit State(BlockState &block_state)
@@ -44,7 +43,6 @@ struct State
         , touched_{}
         , accessed_{}
         , accessed_storage_{}
-        , gas_award_{}
         , logs_{}
     {
     }
@@ -396,18 +394,6 @@ struct State
         accessed_.insert(address);
     }
 
-    void add_txn_award(uint256_t const &reward)
-    {
-        LOG_TRACE_L1("add_txn_award: {}", reward);
-
-        gas_award_ += reward;
-    }
-
-    [[nodiscard]] constexpr uint256_t const &gas_award() const
-    {
-        return gas_award_;
-    }
-
     void touch(address_t const &address)
     {
         LOG_TRACE_L1("touched: {}", address);
@@ -428,7 +414,6 @@ struct State
         accessed_ = std::move(new_state.accessed_);
         accessed_storage_ = std::move(new_state.accessed_storage_);
         destructed_ = std::move(new_state.destructed_);
-        gas_award_ = new_state.gas_award_;
         logs_ = std::move(new_state.logs_);
     }
 };

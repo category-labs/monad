@@ -298,26 +298,6 @@ TYPED_TEST(StateTest, destruct_touched_dead)
     EXPECT_FALSE(s.account_exists(a));
 }
 
-TYPED_TEST(StateTest, add_txn_award)
-{
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
-        StateDeltas{
-            {a, StateDelta{.account = {std::nullopt, Account{.balance = 100}}}},
-            {b, StateDelta{.account = {std::nullopt, Account{}}}}},
-        Code{});
-
-    State s{bs};
-    s.add_txn_award(150);
-    s.add_txn_award(225);
-    s.add_to_balance(a, 20'000 + s.gas_award());
-    s.add_to_balance(b, 10'000);
-
-    EXPECT_EQ(s.get_balance(a), bytes32_t{20'475});
-    EXPECT_EQ(s.get_balance(b), bytes32_t{10'000});
-}
-
 // Storage
 TYPED_TEST(StateTest, access_storage)
 {
@@ -1014,40 +994,5 @@ TYPED_TEST(StateTest, commit_twice)
 
         EXPECT_EQ(db.read_storage(c, key1), monad::bytes32_t{});
         EXPECT_EQ(db.read_storage(c, key2), monad::bytes32_t{});
-    }
-}
-
-TYPED_TEST(StateTest, commit_twice_add_to_balance)
-{
-    auto db = test::make_db<TypeParam>();
-
-    {
-        // Block 0, Txn 0
-        BlockState bs{db};
-        State as{bs};
-        as.add_txn_award(10);
-        as.add_to_balance(a, 100u + as.gas_award());
-        EXPECT_TRUE(bs.can_merge(as.state_));
-        bs.merge(as.state_);
-        bs.commit();
-    }
-    {
-        // Block 1, Txn 0
-        BlockState bs{db};
-        State cs{bs};
-        cs.add_txn_award(10);
-        cs.add_to_balance(b, 300);
-        cs.add_to_balance(a, 100 + cs.gas_award());
-        EXPECT_TRUE(bs.can_merge(cs.state_));
-        bs.merge(cs.state_);
-        bs.commit();
-    }
-    {
-        BlockState bs{db};
-        State ds{bs};
-        EXPECT_TRUE(ds.account_exists(a));
-        EXPECT_TRUE(ds.account_exists(b));
-        EXPECT_EQ(ds.get_balance(a), bytes32_t{220});
-        EXPECT_EQ(ds.get_balance(b), bytes32_t{300});
     }
 }

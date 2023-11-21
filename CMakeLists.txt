@@ -200,6 +200,7 @@ add_library(
   "include/monad/state2/state_deltas_fmt.hpp"
   "include/monad/state2/state_deltas.hpp"
   "include/monad/state2/state.hpp"
+  "include/monad/state2/substate.hpp"
   "src/monad/state2/block_state.cpp"
   "src/monad/state2/block_state_ops.cpp"
   "src/monad/state2/state_deltas.cpp"

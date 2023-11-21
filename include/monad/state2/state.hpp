@@ -12,38 +12,26 @@
 #include <monad/core/int_fmt.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
-
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/block_state_ops.hpp>
-
-#include <ankerl/unordered_dense.h>
+#include <monad/state2/substate.hpp>
 
 #include <ethash/keccak.hpp>
+
 #include <quill/Quill.h>
 
 MONAD_NAMESPACE_BEGIN
 
-struct State
+struct State : Substate
 {
     BlockState &block_state_;
     StateDeltas state_;
     Code code_;
-    ankerl::unordered_dense::set<address_t> touched_;
-    ankerl::unordered_dense::set<address_t> accessed_;
-    ankerl::unordered_dense::map<
-        address_t, ankerl::unordered_dense::set<bytes32_t>>
-        accessed_storage_;
-    ankerl::unordered_dense::set<address_t> destructed_;
-    std::vector<Receipt::Log> logs_;
 
     explicit State(BlockState &block_state)
         : block_state_{block_state}
         , state_{}
         , code_{}
-        , touched_{}
-        , accessed_{}
-        , accessed_storage_{}
-        , logs_{}
     {
     }
 

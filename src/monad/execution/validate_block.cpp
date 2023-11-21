@@ -123,6 +123,16 @@ Result<void> static_validate_header(
                 return BlockError::WrongDifficulty;
             }
         }
+
+        // TODO: Elasticity multiplier (It would require entire Trait / config
+        // instead of just rev) EIP-2
+        auto const parent_gas_limit = parent_header.gas_limit;
+        auto const gas_delta = header.gas_limit > parent_gas_limit
+                                   ? header.gas_limit - parent_gas_limit
+                                   : parent_gas_limit - header.gas_limit;
+        if (MONAD_UNLIKELY(gas_delta >= (parent_gas_limit >> 10))) {
+            return BlockError::InvalidGasLimit;
+        }
     }
 
     return success();

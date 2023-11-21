@@ -166,6 +166,7 @@ add_library(
   # execution
   "include/monad/execution/baseline_execute.hpp"
   "include/monad/execution/block_hash_buffer.hpp"
+  "include/monad/execution/block_header_buffer.hpp"
   "include/monad/execution/block_processor.hpp"
   "include/monad/execution/block_reward.hpp"
   "include/monad/execution/create_contract_address.hpp"
@@ -184,6 +185,7 @@ add_library(
   "include/monad/execution/validation_status.hpp"
   "src/monad/execution/baseline_execute.cpp"
   "src/monad/execution/block_hash_buffer.cpp"
+  "src/monad/execution/block_header_buffer.cpp"
   "src/monad/execution/block_reward.cpp"
   "src/monad/execution/create_contract_address.cpp"
   "src/monad/execution/evm.cpp"

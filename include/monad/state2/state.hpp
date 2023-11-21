@@ -387,11 +387,6 @@ public:
         return logs_;
     }
 
-    void warm_coinbase(address_t const &address) noexcept
-    {
-        accessed_.insert(address);
-    }
-
     void touch(address_t const &address)
     {
         LOG_TRACE_L1("touched: {}", address);

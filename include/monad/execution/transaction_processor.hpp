@@ -97,7 +97,7 @@ struct TransactionProcessor
 
         // EIP-3651
         if constexpr (rev >= EVMC_SHANGHAI) {
-            state.warm_coinbase(beneficiary);
+            host.access_account(beneficiary);
         }
 
         state.access_account(*txn.from);

@@ -8,7 +8,7 @@ include(GoogleTest)
 
 function(add_unit_test)
   set(ONE_VALUE_ARGS TARGET)
-  set(MULTI_VALUE_ARGS SOURCES LIBRARIES)
+  set(MULTI_VALUE_ARGS SOURCES LIBRARIES GTEST_DISCOVER_FLAGS)
   cmake_parse_arguments(ADD_UNIT_TEST "" "${ONE_VALUE_ARGS}"
                         "${MULTI_VALUE_ARGS}" ${ARGN})
 
@@ -22,7 +22,7 @@ function(add_unit_test)
     ${ADD_UNIT_TEST_TARGET}
     PUBLIC GTest::gtest GTest::gmock monad_unit_test_common
            ${ADD_UNIT_TEST_LIBRARIES})
-  gtest_discover_tests(${ADD_UNIT_TEST_TARGET})
+  gtest_discover_tests(${ADD_UNIT_TEST_TARGET} ${GTEST_DISCOVER_FLAGS})
 endfunction()
 
 function(add_integration_test)

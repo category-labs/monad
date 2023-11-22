@@ -6,4 +6,6 @@ add_unit_test(
     LIBRARIES
     monad
     evmone
+    GTEST_DISCOVER_FLAGS
+    NO_PRETTY_VALUES
 )

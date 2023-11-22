@@ -122,6 +122,7 @@ add_library(
   "include/monad/execution/block_hash_buffer.hpp"
   "include/monad/execution/block_reward.hpp"
   "include/monad/execution/create_contract_address.hpp"
+  "include/monad/execution/difficulty.hpp"
   "include/monad/execution/ethereum/dao.hpp"
   "include/monad/execution/ethereum/fork_traits.hpp"
   "include/monad/execution/evm.hpp"

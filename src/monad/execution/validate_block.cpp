@@ -4,6 +4,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/result.hpp>
+#include <monad/execution/difficulty.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/validate_block.hpp>
@@ -112,6 +113,15 @@ Result<void> static_validate_header(
 
         if (MONAD_UNLIKELY(header.timestamp <= parent_header.timestamp)) {
             return BlockError::InvalidTimestamp;
+        }
+
+        // Only applicable to PoW
+        if constexpr (rev < EVMC_PARIS) {
+            if (MONAD_UNLIKELY(
+                    header.difficulty !=
+                    difficulty<rev>(header, parent_header))) {
+                return BlockError::WrongDifficulty;
+            }
         }
     }
 
@@ -226,7 +236,8 @@ quick_status_code_from_enum<monad::BlockError>::value_mappings()
         {BlockError::WrongLogsBloom, "wrong logs bloom", {}},
         {BlockError::InvalidGasUsed, "invalid gas used", {}},
         {BlockError::UnknownParent, "unknown parent", {}},
-        {BlockError::InvalidTimestamp, "invalid timestamp", {}}};
+        {BlockError::InvalidTimestamp, "invalid timestamp", {}},
+        {BlockError::WrongDifficulty, "wrong difficulty", {}}};
 
     return v;
 }

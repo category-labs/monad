@@ -37,6 +37,7 @@ enum class BlockError
     InvalidGasUsed,
     UnknownParent,
     InvalidTimestamp,
+    WrongDifficulty,
 };
 
 struct Block;

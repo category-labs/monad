@@ -120,6 +120,7 @@ add_library(
   "include/monad/core/int_fmt.hpp"
   "include/monad/core/int_rlp.hpp"
   "include/monad/core/int.hpp"
+  "include/monad/core/log_level_map.hpp"
   "include/monad/core/receipt_fmt.hpp"
   "include/monad/core/receipt_rlp.hpp"
   "include/monad/core/receipt.hpp"

@@ -1,6 +1,7 @@
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
+#include <monad/core/log_level_map.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/db/permission.hpp>
@@ -13,7 +14,6 @@
 
 #include <quill/LogLevel.h>
 #include <quill/Quill.h>
-#include <quill/detail/LogMacros.h>
 
 #include <chrono>
 #include <cstdint>
@@ -32,6 +32,8 @@ MONAD_NAMESPACE_END
 
 int main(int argc, char *argv[])
 {
+    using namespace monad;
+
     CLI::App cli{"replay_ethereum"};
 
     std::filesystem::path block_db_path{};
@@ -39,7 +41,7 @@ int main(int argc, char *argv[])
     std::filesystem::path genesis_file_path{};
     uint64_t block_history_size = 1u;
     uint64_t checkpoint_frequency = 1000u;
-    std::optional<monad::block_num_t> finish_block_number = std::nullopt;
+    std::optional<block_num_t> finish_block_number = std::nullopt;
 
     quill::start(true);
 
@@ -60,7 +62,8 @@ int main(int argc, char *argv[])
         "state db checkpointing frequency");
     cli.add_option(
         "--finish", finish_block_number, "1 pass the last executed block");
-    cli.add_option("--log_level", log_level, "level of logging");
+    cli.add_option("--log_level", log_level, "level of logging")
+        ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
 
     try {
         cli.parse(argc, argv);
@@ -72,13 +75,12 @@ int main(int argc, char *argv[])
 
     auto const start_time = std::chrono::steady_clock::now();
 
-    using db_t = monad::db::RocksTrieDB;
+    using db_t = db::RocksTrieDB;
 
-    monad::BlockDb block_db(block_db_path);
-    db_t db{
-        monad::db::Writable{}, state_db_path, std::nullopt, block_history_size};
+    BlockDb block_db(block_db_path);
+    db_t db{db::Writable{}, state_db_path, std::nullopt, block_history_size};
 
-    monad::block_num_t start_block_number = db.starting_block_number;
+    block_num_t start_block_number = db.starting_block_number;
 
     quill::get_root_logger()->set_log_level(log_level);
 
@@ -97,9 +99,9 @@ int main(int argc, char *argv[])
         start_block_number = 1u;
     }
 
-    monad::ReplayFromBlockDb<db_t> replay_eth;
+    ReplayFromBlockDb<db_t> replay_eth;
 
-    [[maybe_unused]] auto result = replay_eth.run<monad::eth_start_fork>(
+    [[maybe_unused]] auto result = replay_eth.run<eth_start_fork>(
         db,
         checkpoint_frequency,
         block_db,

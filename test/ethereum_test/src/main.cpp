@@ -1,3 +1,5 @@
+#include <monad/core/log_level_map.hpp>
+
 #include <blockchain_test.hpp>
 #include <ethereum_test.hpp>
 #include <general_state_test.hpp>
@@ -9,7 +11,6 @@
 
 #include <quill/LogLevel.h>
 #include <quill/Quill.h>
-#include <quill/detail/LogMacros.h>
 
 #include <gtest/gtest.h>
 
@@ -18,27 +19,9 @@
 #include <string>
 #include <unordered_map>
 
-namespace
-{
-    std::unordered_map<std::string, quill::LogLevel> const log_levels_map = {
-        {"tracel3", quill::LogLevel::TraceL3},
-        {"trace_l3", quill::LogLevel::TraceL3},
-        {"tracel2", quill::LogLevel::TraceL2},
-        {"trace_l2", quill::LogLevel::TraceL2},
-        {"tracel1", quill::LogLevel::TraceL1},
-        {"trace_l1", quill::LogLevel::TraceL1},
-        {"debug", quill::LogLevel::Debug},
-        {"info", quill::LogLevel::Info},
-        {"warning", quill::LogLevel::Warning},
-        {"error", quill::LogLevel::Error},
-        {"critical", quill::LogLevel::Critical},
-        {"backtrace", quill::LogLevel::Backtrace},
-        {"none", quill::LogLevel::None},
-        {"dynamic", quill::LogLevel::Dynamic}};
-}
-
 int main(int argc, char *argv[])
 {
+    using namespace monad;
     testing::InitGoogleTest(&argc, argv); // Process GoogleTest flags.
 
     auto log_level = quill::LogLevel::None;
@@ -47,19 +30,19 @@ int main(int argc, char *argv[])
 
     CLI::App app{"monad ethereum tests runner"};
     app.add_option("--log_level", log_level, "Logging level")
-        ->transform(CLI::CheckedTransformer(log_levels_map, CLI::ignore_case));
+        ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
     app.add_option("--fork", revision, "Fork to run unit tests for")
-        ->transform(CLI::CheckedTransformer(
-            monad::test::revision_map, CLI::ignore_case));
+        ->transform(
+            CLI::CheckedTransformer(test::revision_map, CLI::ignore_case));
     app.add_option("--txn", txn_index, "Index of transaction to run");
     CLI11_PARSE(app, argc, argv);
 
     quill::start(true);
     quill::get_root_logger()->set_log_level(log_level);
 
-    monad::test::register_general_state_tests(revision, txn_index);
-    monad::test::register_blockchain_tests(revision);
-    monad::test::register_transaction_tests(revision);
+    test::register_general_state_tests(revision, txn_index);
+    test::register_blockchain_tests(revision);
+    test::register_transaction_tests(revision);
 
     int return_code = RUN_ALL_TESTS();
 

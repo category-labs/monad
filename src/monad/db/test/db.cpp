@@ -561,7 +561,7 @@ TYPED_TEST(RocksDBTest, read_only)
     }
 }
 
-TYPED_TEST(DBTest, DISABLED_storage_deletion)
+TYPED_TEST(DBTest, storage_deletion)
 {
     auto db = test::make_db<TypeParam>();
     Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};

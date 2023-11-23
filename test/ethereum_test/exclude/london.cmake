@@ -1,5 +1,4 @@
 set(london_excluded_tests
-    "BlockchainTests.InvalidBlocks/bcEIP1559/badBlocks.json" # BaseFee
     "BlockchainTests.InvalidBlocks/bcEIP1559/badUncles.json" # Mixed
     "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/wrongCoinbase.json" # StateRoot
     "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/wrongReceiptTrie.json" # Trie

@@ -22,7 +22,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct State : Substate
+class State : public Substate
 {
     std::optional<Account> &read_account(address_t const &address)
     {

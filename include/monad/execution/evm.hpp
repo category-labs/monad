@@ -13,7 +13,7 @@ MONAD_NAMESPACE_BEGIN
 template <evmc_revision rev>
 struct EvmcHost;
 
-struct State;
+class State;
 
 using result_t = tl::expected<void, evmc_result>;
 

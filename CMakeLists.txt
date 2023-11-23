@@ -119,6 +119,7 @@ add_library(
   "src/monad/db/file_db.cpp"
   "src/monad/db/trie_db.cpp"
   # execution
+  "include/monad/execution/base_fee_per_gas.hpp"
   "include/monad/execution/baseline_execute.hpp"
   "include/monad/execution/block_hash_buffer.hpp"
   "include/monad/execution/block_reward.hpp"
@@ -138,6 +139,7 @@ add_library(
   "include/monad/execution/tx_context.hpp"
   "include/monad/execution/validate_block.hpp"
   "include/monad/execution/validate_transaction.hpp"
+  "src/monad/execution/base_fee_per_gas.cpp"
   "src/monad/execution/baseline_execute.cpp"
   "src/monad/execution/block_hash_buffer.cpp"
   "src/monad/execution/block_reward.cpp"

@@ -4,6 +4,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/result.hpp>
+#include <monad/execution/base_fee_per_gas.hpp>
 #include <monad/execution/difficulty.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
@@ -133,6 +134,15 @@ Result<void> static_validate_header(
         if (MONAD_UNLIKELY(gas_delta >= (parent_gas_limit >> 10))) {
             return BlockError::InvalidGasLimit;
         }
+
+        // EIP-1559
+        if constexpr (rev >= EVMC_LONDON) {
+            if (MONAD_UNLIKELY(
+                    header.base_fee_per_gas.value() !=
+                    base_fee_per_gas(parent_header))) {
+                return BlockError::WrongBaseFee;
+            }
+        }
     }
 
     return success();
@@ -247,7 +257,8 @@ quick_status_code_from_enum<monad::BlockError>::value_mappings()
         {BlockError::InvalidGasUsed, "invalid gas used", {}},
         {BlockError::UnknownParent, "unknown parent", {}},
         {BlockError::InvalidTimestamp, "invalid timestamp", {}},
-        {BlockError::WrongDifficulty, "wrong difficulty", {}}};
+        {BlockError::WrongDifficulty, "wrong difficulty", {}},
+        {BlockError::WrongBaseFee, "wrong base fee", {}}};
 
     return v;
 }

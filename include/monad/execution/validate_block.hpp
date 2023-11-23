@@ -38,6 +38,7 @@ enum class BlockError
     UnknownParent,
     InvalidTimestamp,
     WrongDifficulty,
+    WrongBaseFee,
 };
 
 struct Block;

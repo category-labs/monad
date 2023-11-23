@@ -59,38 +59,6 @@ function(monad_compile_options target)
 endfunction()
 
 # ##############################################################################
-# unit tests
-# ##############################################################################
-
-add_subdirectory(${PROJECT_SOURCE_DIR}/test/ethereum_test)
-add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common)
-add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common/src/test)
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/analysis)
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/core/test)
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/db/test)
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum)
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum/test)
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/test)
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/state2/test)
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/trie/test)
-
-add_subdirectory(${PROJECT_SOURCE_DIR}/test/integration)
-
-# ##############################################################################
-# fuzz tests
-# ##############################################################################
-
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-  if(MONAD_FUZZING)
-    set(FUZZTEST_FUZZING_MODE
-        ON
-        CACHE INTERNAL "enable fuzzing" FORCE)
-    add_subdirectory(${PROJECT_SOURCE_DIR}/test/fuzz)
-  endif()
-endif()
-
-# ##############################################################################
 # libs
 # ##############################################################################
 
@@ -273,4 +241,53 @@ if(UBSAN)
 endif()
 if(NOT UBSAN AND NOT ASAN)
   target_link_options(monad PRIVATE LINKER:-z,defs)
+endif()
+
+# ##############################################################################
+# unit tests
+# ##############################################################################
+
+add_subdirectory(${PROJECT_SOURCE_DIR}/test/ethereum_test)
+add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common)
+add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common/src/test)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/analysis)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/core/test)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/db/test)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum/test)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/state2/test)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/trie/test)
+
+add_subdirectory(${PROJECT_SOURCE_DIR}/test/integration)
+
+function(monad_add_test2 target)
+  add_executable(${target} "test/unit/common/src/test/main.cpp" ${ARGN})
+  monad_compile_options(${target})
+  target_include_directories(${target} PRIVATE "test/unit/common/include")
+  target_link_libraries(${target} monad GTest::GTest GTest::Main)
+  gtest_discover_tests(${target} DISCOVERY_MODE PRE_TEST)
+endfunction()
+
+function(monad_add_test_folder target)
+  file(GLOB_RECURSE test_files CONFIGURE_DEPENDS ${target}/test_*.cpp)
+  foreach(test_file ${test_files})
+    get_filename_component(test_name ${test_file} NAME_WLE)
+    monad_add_test2(${test_name} ${test_file})
+  endforeach()
+endfunction()
+
+monad_add_test_folder("src/monad/execution")
+
+# ##############################################################################
+# fuzz tests
+# ##############################################################################
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  if(MONAD_FUZZING)
+    set(FUZZTEST_FUZZING_MODE
+        ON
+        CACHE INTERNAL "enable fuzzing" FORCE)
+    add_subdirectory(${PROJECT_SOURCE_DIR}/test/fuzz)
+  endif()
 endif()

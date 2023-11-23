@@ -7,7 +7,7 @@
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/state2/state_deltas.hpp>
-#include <monad/test/make_db.hpp>
+#include <monad/test/gtest_signal_stacktrace_printer.hpp>  // NOLINT
 
 #include <evmc/evmc.hpp>
 
@@ -38,7 +38,7 @@ TEST(BlockProcessor, shanghai_withdrawal)
         .index = 2, .validator_index = 0, .amount = 200u, .recipient = b};
     withdrawals = {w1, w2, w3};
 
-    auto db = test::make_db<db_t>();
+    db_t db{};
 
     db.commit(
         StateDeltas{

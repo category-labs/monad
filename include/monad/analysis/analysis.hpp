@@ -166,8 +166,12 @@ struct BoostGraphVertex
     BasicBlock const *basic_block;
 };
 
-using BoostControlFlowGraph = boost::adjacency_list<
-    boost::vecS, boost::vecS, boost::directedS, BoostGraphVertex>;
+template <typename Vertex, typename EdgeWeight>
+using BoostGraph = boost::adjacency_list<
+    boost::vecS, boost::vecS, boost::bidirectionalS, Vertex,
+    boost::property<boost::edge_weight_t, EdgeWeight>>;
+
+using BoostControlFlowGraph = BoostGraph<BoostGraphVertex, int>;
 
 [[nodiscard]] auto construct_boost_graph(ControlFlowGraph const &graph)
     -> BoostControlFlowGraph;

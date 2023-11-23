@@ -488,7 +488,7 @@ auto construct_boost_graph(ControlFlowGraph const &control_flow_graph)
                 auto const &next_node = control_flow_graph.at(next_index);
                 auto const vertex2 =
                     find_vertex(next_index, &next_node, graph).value();
-                boost::add_edge(vertex1, vertex2, graph);
+                boost::add_edge(vertex1, vertex2, /* EdgeWeight */ 1, graph);
             }
         }
     }

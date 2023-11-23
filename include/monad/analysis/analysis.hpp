@@ -54,6 +54,7 @@ struct UnresolvedStatic
 struct ResolvedStatic
 {
     size_t target;
+
     friend bool
     operator==(ResolvedStatic const &, ResolvedStatic const &) = default;
 };
@@ -61,6 +62,7 @@ struct ResolvedStatic
 struct UnresolvedDynamic
 {
     size_t next_basic_block;
+
     friend bool
     operator==(UnresolvedDynamic const &, UnresolvedDynamic const &) = default;
 };
@@ -69,6 +71,7 @@ struct ResolvedDynamic
 {
     size_t taken_target;
     size_t not_taken_target;
+
     friend bool
     operator==(ResolvedDynamic const &, ResolvedDynamic const &) = default;
 };
@@ -81,6 +84,7 @@ struct Halting
 struct Linear
 {
     size_t next_basic_block;
+
     friend bool operator==(Linear const &, Linear const &) = default;
 };
 
@@ -156,8 +160,10 @@ struct BoostGraphVertex
     BasicBlock const *basic_block;
 };
 
-using BoostControlFlowGraph = boost::adjacency_list<
-    boost::vecS, boost::vecS, boost::directedS, BoostGraphVertex>;
+template <typename Vertex>
+using BoostGraph = boost::adjacency_list<
+    boost::vecS, boost::vecS, boost::bidirectionalS, Vertex>;
+using BoostControlFlowGraph = BoostGraph<BoostGraphVertex>;
 
 [[nodiscard]] auto construct_boost_graph(ControlFlowGraph const &graph)
     -> BoostControlFlowGraph;

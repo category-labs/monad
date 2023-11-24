@@ -252,7 +252,6 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common/src/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/analysis)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum)
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/trie/test)
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/integration)
 
@@ -277,6 +276,7 @@ monad_add_test_folder("src/monad/db")
 monad_add_test_folder("src/monad/execution")
 monad_add_test_folder("src/monad/rlp")
 monad_add_test_folder("src/monad/state2")
+monad_add_test_folder("src/monad/trie")
 
 # ##############################################################################
 # fuzz tests

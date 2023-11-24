@@ -69,6 +69,7 @@ add_library(
   "include/monad/config.hpp"
   # analysis
   "include/monad/analysis/analysis.hpp"
+  "include/monad/analysis/analysis_fmt.hpp"
   "src/monad/analysis/analysis.cpp"
   # core
   "include/monad/core/account_fmt.hpp"

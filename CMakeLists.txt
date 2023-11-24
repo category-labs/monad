@@ -255,7 +255,6 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/core/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/db/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/state2/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/trie/test)
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/integration)
@@ -277,6 +276,7 @@ function(monad_add_test_folder target)
 endfunction()
 
 monad_add_test_folder("src/monad/execution")
+monad_add_test_folder("src/monad/state2")
 
 # ##############################################################################
 # fuzz tests

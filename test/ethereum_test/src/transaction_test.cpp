@@ -4,12 +4,9 @@
 
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
-#include <monad/core/bytes.hpp>
-#include <monad/core/int.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/core/transaction_rlp.hpp>
 #include <monad/execution/transaction_gas.hpp>
-#include <monad/execution/validation.hpp>
 #include <monad/execution/validation_status.hpp>
 #include <monad/test/config.hpp>
 
@@ -17,18 +14,20 @@
 #include <evmc/evmc.hpp>
 
 #include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <quill/bundled/fmt/core.h>
-#include <quill/bundled/fmt/format.h>
 #include <quill/detail/LogMacros.h>
 
 #include <gtest/gtest.h>
 
 #include <test_resource_data.h>
 
+#include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <sstream>
+#include <optional>
 #include <string>
 
 MONAD_TEST_NAMESPACE_BEGIN
@@ -36,7 +35,7 @@ MONAD_TEST_NAMESPACE_BEGIN
 template <evmc_revision rev>
 void process_transaction(Transaction const &txn, nlohmann::json const &expected)
 {
-    if (auto const result = static_validate_txn<rev>(txn, std::nullopt);
+    if (auto const result = static_validate_transaction<rev>(txn, std::nullopt);
         result != ValidationStatus::SUCCESS) {
         EXPECT_TRUE(expected.contains("exception"));
     }

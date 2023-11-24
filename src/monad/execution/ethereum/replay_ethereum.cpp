@@ -14,6 +14,7 @@
 
 #include <quill/LogLevel.h>
 #include <quill/Quill.h>
+#include <quill/detail/LogMacros.h>
 
 #include <chrono>
 #include <cstdint>

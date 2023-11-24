@@ -10,6 +10,7 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/tx_context.hpp>
+#include <monad/execution/validate_transaction.hpp>
 #include <monad/execution/validation.hpp>
 #include <monad/state2/state.hpp>
 
@@ -152,12 +153,12 @@ struct TransactionProcessor
         Receipt &receipt)
     {
         MONAD_DEBUG_ASSERT(
-            static_validate_txn<rev>(tx, hdr.base_fee_per_gas) ==
+            static_validate_transaction<rev>(tx, hdr.base_fee_per_gas) ==
             ValidationStatus::SUCCESS);
 
         TransactionProcessor<rev> processor{};
 
-        if (auto const validity = validate_txn(state, tx);
+        if (auto const validity = validate_transaction(state, tx);
             validity != ValidationStatus::SUCCESS) {
             // TODO: Issue #164, Issue #54
             return validity;

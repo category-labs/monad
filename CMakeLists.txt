@@ -149,6 +149,7 @@ add_library(
   "include/monad/execution/transaction_gas.hpp"
   "include/monad/execution/transaction_processor.hpp"
   "include/monad/execution/tx_context.hpp"
+  "include/monad/execution/validate_transaction.hpp"
   "include/monad/execution/validation.hpp"
   "include/monad/execution/validation_status.hpp"
   "src/monad/execution/baseline_execute.cpp"
@@ -160,6 +161,7 @@ add_library(
   "src/monad/execution/precompiles.cpp"
   "src/monad/execution/transaction_gas.cpp"
   "src/monad/execution/tx_context.cpp"
+  "src/monad/execution/validate_transaction.cpp"
   # rlp
   "include/monad/rlp/decode.hpp"
   "include/monad/rlp/encode2.hpp"

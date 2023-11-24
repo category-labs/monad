@@ -16,7 +16,7 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_processor.hpp>
 #include <monad/execution/tx_context.hpp>
-#include <monad/execution/validation.hpp>
+#include <monad/execution/validate_transaction.hpp>
 #include <monad/execution/validation_status.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
@@ -82,13 +82,13 @@ namespace
     {
         using namespace monad::test;
 
-        if (auto const status = static_validate_txn<Traits::rev>(
+        if (auto const status = static_validate_transaction<Traits::rev>(
                 txn, block_header.base_fee_per_gas);
             status != ValidationStatus::SUCCESS) {
             return tl::unexpected{status};
         }
 
-        if (auto const status = validate_txn(state, txn);
+        if (auto const status = validate_transaction(state, txn);
             status != ValidationStatus::SUCCESS) {
             return tl::unexpected{status};
         }

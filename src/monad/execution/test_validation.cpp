@@ -5,6 +5,7 @@
 #include <monad/core/transaction.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/execution/ethereum/dao.hpp>
+#include <monad/execution/validate_transaction.hpp>
 #include <monad/execution/validation.hpp>
 #include <monad/execution/validation_status.hpp>
 #include <monad/state2/block_state.hpp>
@@ -33,7 +34,7 @@ TEST(Validation, validate_enough_gas)
         .value = 1,
         .from = a};
 
-    auto status = static_validate_txn<EVMC_SHANGHAI>(t, 0);
+    auto status = static_validate_transaction<EVMC_SHANGHAI>(t, 0);
     EXPECT_EQ(status, ValidationStatus::INTRINSIC_GAS_GREATER_THAN_LIMIT);
 }
 
@@ -51,7 +52,7 @@ TEST(Validation, validate_deployed_code)
 
     static Transaction const t{.gas_limit = 60'500, .from = a};
 
-    auto status = validate_txn(s, t);
+    auto status = validate_transaction(s, t);
     EXPECT_EQ(status, ValidationStatus::SENDER_NOT_EOA);
 }
 
@@ -71,7 +72,7 @@ TEST(Validation, validate_nonce)
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 24);
 
-    auto status = validate_txn(s, t);
+    auto status = validate_transaction(s, t);
     EXPECT_EQ(status, ValidationStatus::BAD_NONCE);
 }
 
@@ -91,7 +92,7 @@ TEST(Validation, validate_nonce_optimistically)
     State s{bs};
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 24);
-    auto status = validate_txn(s, t);
+    auto status = validate_transaction(s, t);
     EXPECT_EQ(status, ValidationStatus::BAD_NONCE);
 }
 
@@ -114,7 +115,7 @@ TEST(Validation, validate_enough_balance)
     State s{bs};
     s.add_to_balance(a, 55'939'568'773'815'811);
 
-    auto status = validate_txn(s, t);
+    auto status = validate_transaction(s, t);
     EXPECT_EQ(status, ValidationStatus::INSUFFICIENT_BALANCE);
 }
 
@@ -137,8 +138,9 @@ TEST(Validation, successful_validation)
         .from = a};
 
     EXPECT_EQ(
-        static_validate_txn<EVMC_SHANGHAI>(t, 0), ValidationStatus::SUCCESS);
-    EXPECT_EQ(validate_txn(s, t), ValidationStatus::SUCCESS);
+        static_validate_transaction<EVMC_SHANGHAI>(t, 0),
+        ValidationStatus::SUCCESS);
+    EXPECT_EQ(validate_transaction(s, t), ValidationStatus::SUCCESS);
 }
 
 TEST(Validation, max_fee_less_than_base)
@@ -155,7 +157,7 @@ TEST(Validation, max_fee_less_than_base)
         .from = a,
         .max_priority_fee_per_gas = 100'000'000};
 
-    auto status = static_validate_txn<EVMC_SHANGHAI>(t, 37'000'000'000);
+    auto status = static_validate_transaction<EVMC_SHANGHAI>(t, 37'000'000'000);
     EXPECT_EQ(status, ValidationStatus::MAX_FEE_LESS_THAN_BASE);
 }
 
@@ -173,7 +175,7 @@ TEST(Validation, priority_fee_greater_than_max)
         .from = a,
         .max_priority_fee_per_gas = 100'000'000'000};
 
-    auto status = static_validate_txn<EVMC_SHANGHAI>(t, 29'000'000'000);
+    auto status = static_validate_transaction<EVMC_SHANGHAI>(t, 29'000'000'000);
     EXPECT_EQ(status, ValidationStatus::PRIORITY_FEE_GREATER_THAN_MAX);
 }
 
@@ -194,7 +196,8 @@ TEST(Validation, insufficent_balance_overflow)
         .to = b,
         .from = a};
 
-    EXPECT_EQ(validate_txn(s, t), ValidationStatus::INSUFFICIENT_BALANCE);
+    EXPECT_EQ(
+        validate_transaction(s, t), ValidationStatus::INSUFFICIENT_BALANCE);
 }
 
 // EIP-3860
@@ -216,7 +219,7 @@ TEST(Validation, init_code_exceed_limit)
         .data = long_data};
 
     EXPECT_EQ(
-        static_validate_txn<EVMC_SHANGHAI>(t, 0),
+        static_validate_transaction<EVMC_SHANGHAI>(t, 0),
         ValidationStatus::INIT_CODE_LIMIT_EXCEEDED);
 }
 

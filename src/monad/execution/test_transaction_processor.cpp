@@ -6,7 +6,7 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/transaction_processor.hpp>
 #include <monad/execution/tx_context.hpp>
-#include <monad/execution/validation.hpp>
+#include <monad/execution/validate_transaction.hpp>
 #include <monad/execution/validation_status.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
@@ -66,9 +66,9 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 
     processor_t const p{};
 
-    auto status = static_validate_txn<traits_t::rev>(t, 10u);
+    auto status = static_validate_transaction<traits_t::rev>(t, 10u);
     if (status == ValidationStatus::SUCCESS) {
-        status = validate_txn(s, t);
+        status = validate_transaction(s, t);
     }
     EXPECT_EQ(status, ValidationStatus::SUCCESS);
     auto result = p.execute(s, h, t, 10u, bene);

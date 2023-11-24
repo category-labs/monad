@@ -20,6 +20,8 @@
 
 #include <intx/intx.hpp>
 
+#include <tl/expected.hpp>
+
 #include <cstdint>
 #include <limits>
 

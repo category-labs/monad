@@ -71,6 +71,8 @@ add_library(
   "include/monad/analysis/analysis.hpp"
   "include/monad/analysis/analysis_fmt.hpp"
   "src/monad/analysis/analysis.cpp"
+  "include/monad/analysis/ssa.hpp"
+  "src/monad/analysis/ssa.cpp"
   # core
   "include/monad/core/account_fmt.hpp"
   "include/monad/core/account_rlp.hpp"

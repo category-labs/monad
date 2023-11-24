@@ -1,5 +1,6 @@
 #include <monad/analysis/analysis.hpp>
 #include <monad/analysis/analysis_fmt.hpp>
+#include <monad/analysis/ssa.hpp>
 #include <monad/core/byte_string.hpp>
 
 #include <evmone/instructions_opcodes.hpp>

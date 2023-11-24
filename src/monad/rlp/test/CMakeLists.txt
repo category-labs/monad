@@ -1,9 +1,0 @@
-add_unit_test(
-    TARGET 
-    monad-rlptests 
-    SOURCES 
-    decode.cpp 
-    encode.cpp 
-    LIBRARIES 
-    monad
-)

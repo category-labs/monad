@@ -253,7 +253,6 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common/src/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/analysis)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/db/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum)
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/trie/test)
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/integration)
@@ -276,6 +275,7 @@ endfunction()
 
 monad_add_test_folder("src/monad/core")
 monad_add_test_folder("src/monad/execution")
+monad_add_test_folder("src/monad/rlp")
 monad_add_test_folder("src/monad/state2")
 
 # ##############################################################################

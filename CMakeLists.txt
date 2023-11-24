@@ -140,10 +140,10 @@ add_library(
   "include/monad/execution/create_contract_address.hpp"
   "include/monad/execution/ethereum/dao.hpp"
   "include/monad/execution/ethereum/fork_traits.hpp"
-  "include/monad/execution/ethereum/genesis.hpp"
   "include/monad/execution/evm.hpp"
   "include/monad/execution/evmc_host.hpp"
   "include/monad/execution/explicit_evmc_revision.hpp"
+  "include/monad/execution/genesis.hpp"
   "include/monad/execution/precompiles.hpp"
   "include/monad/execution/replay_block_db.hpp"
   "include/monad/execution/transaction_gas.hpp"
@@ -254,7 +254,6 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/analysis)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/core/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/db/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum)
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/rlp/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/state2/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/trie/test)

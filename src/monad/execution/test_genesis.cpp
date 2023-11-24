@@ -3,7 +3,7 @@
 #include <monad/db/block_db.hpp>
 #include <monad/db/in_memory_old_trie_db.hpp>
 #include <monad/db/rocks_trie_db.hpp>
-#include <monad/execution/ethereum/genesis.hpp>
+#include <monad/execution/genesis.hpp>
 #include <monad/test/make_db.hpp>
 
 #include <evmc/evmc.hpp>

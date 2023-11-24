@@ -1,9 +1,0 @@
-add_unit_test(
-    TARGET
-    monad-executionethtests
-    SOURCES
-    genesis.cpp
-    static_precompiles.cpp
-    LIBRARIES
-    monad
-)

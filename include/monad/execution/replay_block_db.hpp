@@ -1,16 +1,12 @@
 #pragma once
 
 #include <monad/config.hpp>
-
 #include <monad/core/block.hpp>
-
 #include <monad/db/block_db.hpp>
-
 #include <monad/execution/block_processor.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
-#include <monad/execution/ethereum/genesis.hpp>
 #include <monad/execution/evmc_host.hpp>
-
+#include <monad/execution/genesis.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 

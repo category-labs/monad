@@ -7,7 +7,7 @@
 #include <monad/db/permission.hpp>
 #include <monad/db/rocks_trie_db.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
-#include <monad/execution/ethereum/genesis.hpp>
+#include <monad/execution/genesis.hpp>
 #include <monad/execution/replay_block_db.hpp>
 
 #include <CLI/CLI.hpp>

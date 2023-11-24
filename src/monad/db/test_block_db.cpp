@@ -160,3 +160,11 @@ TEST(BlockDb, CompressDecompress14000000)
     // Cleanup
     EXPECT_TRUE(block_db.remove(block_number));
 }
+
+TEST(BlockDb, DecompressBlock2397315)
+{
+    block_num_t const block_number = 2'397'315;
+    Block block;
+    BlockDb const block_db_read(test_resource::correct_block_data_dir);
+    EXPECT_TRUE(block_db_read.get(block_number, block));
+}

@@ -20,6 +20,7 @@
 #include <monad/state2/state_deltas_fmt.hpp>
 
 #include <quill/Quill.h>
+
 #include <tl/expected.hpp>
 
 #include <chrono>
@@ -134,11 +135,7 @@ struct BlockProcessor
             process_withdrawal(state, block.withdrawals);
         }
 
-        apply_block_reward(
-            block_state,
-            block,
-            Traits::block_reward,
-            Traits::additional_ommer_reward);
+        apply_block_reward<Traits::rev>(block_state, block);
 
         if constexpr (Traits::rev >= EVMC_SPURIOUS_DRAGON) {
             state.destruct_touched_dead();

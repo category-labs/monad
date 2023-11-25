@@ -4,7 +4,8 @@
 
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/core/int.hpp>
+
+#include <cstdint>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -31,10 +32,6 @@ namespace fork_traits
 
         static constexpr evmc_revision rev = EVMC_FRONTIER;
         static constexpr auto last_block_number = 1'149'999u;
-        static constexpr uint256_t block_reward =
-            5'000'000'000'000'000'000; // YP Eqn. 176
-        static constexpr uint256_t additional_ommer_reward =
-            block_reward >> 5; // YP Eqn. 172, block reward / 32
     };
 
     struct homestead : public frontier
@@ -67,10 +64,6 @@ namespace fork_traits
 
         static constexpr evmc_revision rev = EVMC_BYZANTIUM;
         static constexpr auto last_block_number = 7'279'999u;
-        static constexpr uint256_t block_reward =
-            3'000'000'000'000'000'000; // YP Eqn. 176, EIP-649
-        static constexpr uint256_t additional_ommer_reward =
-            block_reward >> 5; // YP Eqn. 172, block reward / 32
     };
 
     // EIP-1716 petersburg and constantinople forks are activated at the same
@@ -81,10 +74,6 @@ namespace fork_traits
 
         static constexpr evmc_revision rev = EVMC_PETERSBURG;
         static constexpr auto last_block_number = 9'068'999;
-        static constexpr uint256_t block_reward =
-            2'000'000'000'000'000'000; // YP Eqn. 176, EIP-1234
-        static constexpr uint256_t additional_ommer_reward =
-            block_reward >> 5; // YP Eqn. 172, block reward / 32
     };
 
     struct istanbul : public constantinople_and_petersburg
@@ -118,10 +107,6 @@ namespace fork_traits
         using next_fork_t = shanghai;
         static constexpr evmc_revision rev = EVMC_PARIS;
         static constexpr auto last_block_number = 17'034'869u;
-
-        // EIP-3675
-        static constexpr uint256_t block_reward = 0;
-        static constexpr uint256_t additional_ommer_reward = 0;
     };
 
     struct shanghai : public paris

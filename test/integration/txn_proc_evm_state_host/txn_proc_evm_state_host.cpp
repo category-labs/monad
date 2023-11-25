@@ -85,8 +85,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     EXPECT_TRUE(bs.can_merge(s.state_));
     bs.merge(s.state_);
 
-    apply_block_reward(
-        bs, b, traits_t::block_reward, traits_t::additional_ommer_reward);
+    apply_block_reward<traits_t::rev>(bs, b);
 
     State s2{bs};
     EXPECT_EQ(s2.get_balance(a), bytes32_t{3'093'750'000'000'420'000});
@@ -158,8 +157,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     EXPECT_TRUE(bs.can_merge(s.state_));
     bs.merge(s.state_);
 
-    apply_block_reward(
-        bs, b, traits_t::block_reward, traits_t::additional_ommer_reward);
+    apply_block_reward<traits_t::rev>(bs, b);
 
     State s2{bs};
     EXPECT_EQ(s2.get_balance(a), bytes32_t{5'480'000'000'000'000'000});
@@ -226,8 +224,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     EXPECT_TRUE(bs.can_merge(s.state_));
     bs.merge(s.state_);
 
-    apply_block_reward(
-        bs, b, traits_t::block_reward, traits_t::additional_ommer_reward);
+    apply_block_reward<traits_t::rev>(bs, b);
 
     State s2{bs};
     EXPECT_EQ(s2.get_balance(a), bytes32_t{5'010'428'473'773'980'000});

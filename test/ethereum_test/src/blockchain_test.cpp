@@ -46,7 +46,6 @@
 #include <optional>
 #include <span>
 #include <string>
-#include <utility>
 #include <vector>
 
 MONAD_TEST_NAMESPACE_BEGIN

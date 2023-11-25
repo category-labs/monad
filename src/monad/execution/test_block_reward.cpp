@@ -4,11 +4,11 @@
 #include <monad/core/int.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
 #include <monad/execution/block_reward.hpp>
-#include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/state2/state_deltas.hpp>
 
+#include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <intx/intx.hpp>
@@ -45,11 +45,7 @@ TEST(BlockReward, apply_block_reward)
             .ommers = {
                 BlockHeader{.number = 9, .beneficiary = b},
                 BlockHeader{.number = 8, .beneficiary = c}}};
-        apply_block_reward(
-            bs,
-            block,
-            fork_traits::frontier::block_reward,
-            fork_traits::frontier::additional_ommer_reward);
+        apply_block_reward<EVMC_FRONTIER>(bs, block);
 
         State cs{bs};
 
@@ -80,11 +76,7 @@ TEST(BlockReward, apply_block_reward)
             .ommers = {
                 BlockHeader{.number = 9, .beneficiary = b},
                 BlockHeader{.number = 8, .beneficiary = c}}};
-        apply_block_reward(
-            bs,
-            block,
-            fork_traits::byzantium::block_reward,
-            fork_traits::byzantium::additional_ommer_reward);
+        apply_block_reward<EVMC_BYZANTIUM>(bs, block);
 
         State cs{bs};
         EXPECT_EQ(
@@ -110,12 +102,7 @@ TEST(BlockReward, apply_block_reward)
             .ommers = {
                 BlockHeader{.number = 9, .beneficiary = b},
                 BlockHeader{.number = 8, .beneficiary = c}}};
-        apply_block_reward(
-            bs,
-            block,
-            fork_traits::constantinople_and_petersburg::block_reward,
-            fork_traits::constantinople_and_petersburg::
-                additional_ommer_reward);
+        apply_block_reward<EVMC_PETERSBURG>(bs, block);
 
         EXPECT_EQ(
             intx::be::load<uint256_t>(s.get_balance(a)),
@@ -137,11 +124,7 @@ TEST(BlockReward, apply_block_reward)
         BlockState bs{db};
         State s{bs};
 
-        apply_block_reward(
-            bs,
-            block,
-            fork_traits::paris::block_reward,
-            fork_traits::paris::additional_ommer_reward);
+        apply_block_reward<EVMC_PARIS>(bs, block);
 
         EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(a)), 0u);
     }

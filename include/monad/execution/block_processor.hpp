@@ -19,6 +19,8 @@
 #include <monad/state2/state_deltas.hpp>
 #include <monad/state2/state_deltas_fmt.hpp>
 
+#include <evmc/evmc.h>
+
 #include <quill/Quill.h>
 
 #include <tl/expected.hpp>
@@ -70,8 +72,8 @@ struct BlockProcessor
         return bloom;
     }
 
-    template <class Traits>
-    [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus>
+    template <evmc_revision rev>
+    tl::expected<std::vector<Receipt>, ValidationStatus>
     execute(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
     {
         auto const start_time = std::chrono::steady_clock::now();
@@ -84,7 +86,7 @@ struct BlockProcessor
         BlockState block_state{db};
         uint64_t cumulative_gas_used = 0;
 
-        if constexpr (Traits::rev == EVMC_HOMESTEAD) {
+        if constexpr (rev == EVMC_HOMESTEAD) {
             if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {
                 transfer_balance_dao(block_state);
             }
@@ -100,7 +102,7 @@ struct BlockProcessor
             Receipt receipt;
 
             if (auto const txn_status =
-                    TransactionProcessor<Traits::rev>::validate_and_execute(
+                    TransactionProcessor<rev>::validate_and_execute(
                         block.transactions[i],
                         block.header,
                         block_hash_buffer,
@@ -131,13 +133,13 @@ struct BlockProcessor
         }
 
         State state{block_state};
-        if constexpr (Traits::rev >= EVMC_SHANGHAI) {
+        if constexpr (rev >= EVMC_SHANGHAI) {
             process_withdrawal(state, block.withdrawals);
         }
 
-        apply_block_reward<Traits::rev>(block_state, block);
+        apply_block_reward<rev>(block_state, block);
 
-        if constexpr (Traits::rev >= EVMC_SPURIOUS_DRAGON) {
+        if constexpr (rev >= EVMC_SPURIOUS_DRAGON) {
             state.destruct_touched_dead();
         }
         MONAD_DEBUG_ASSERT(block_state.can_merge(state.state_));

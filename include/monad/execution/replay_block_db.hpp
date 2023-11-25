@@ -99,7 +99,7 @@ public:
                     Status::BLOCK_VALIDATION_FAILED, current_block_number};
             }
 
-            auto const receipts = block_processor.template execute<Traits>(
+            auto const receipts = block_processor.template execute<Traits::rev>(
                 block, db, block_hash_buffer);
 
             if (!verify_root_hash(

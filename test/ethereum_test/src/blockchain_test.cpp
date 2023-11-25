@@ -64,7 +64,7 @@ namespace
             return tl::unexpected(status);
         }
 
-        return processor.execute<Traits>(block, db, block_hash_buffer);
+        return processor.execute<Traits::rev>(block, db, block_hash_buffer);
     }
 
     [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus> execute(

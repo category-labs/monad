@@ -154,6 +154,7 @@ add_library(
   "include/monad/execution/validation_status.hpp"
   "src/monad/execution/baseline_execute.cpp"
   "src/monad/execution/block_hash_buffer.cpp"
+  "src/monad/execution/block_processor.cpp"
   "src/monad/execution/block_reward.cpp"
   "src/monad/execution/create_contract_address.cpp"
   "src/monad/execution/evm.cpp"

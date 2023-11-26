@@ -93,15 +93,14 @@ public:
             block_hash_buffer.set(
                 current_block_number - 1, block.header.parent_hash);
 
-            BlockProcessor block_processor{};
             if (auto const status = static_validate_block<Traits::rev>(block);
                 status != ValidationStatus::SUCCESS) {
                 return Result{
                     Status::BLOCK_VALIDATION_FAILED, current_block_number};
             }
 
-            auto const receipts = block_processor.template execute<Traits::rev>(
-                block, db, block_hash_buffer);
+            auto const receipts =
+                execute_block<Traits::rev>(block, db, block_hash_buffer);
 
             if (!verify_root_hash(
                     block.header,

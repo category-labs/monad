@@ -57,14 +57,13 @@ namespace
         Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
     {
         using namespace monad::test;
-        BlockProcessor processor;
 
         if (auto const status = static_validate_block<Traits::rev>(block);
             status != ValidationStatus::SUCCESS) {
             return tl::unexpected(status);
         }
 
-        return processor.execute<Traits::rev>(block, db, block_hash_buffer);
+        return execute_block<Traits::rev>(block, db, block_hash_buffer);
     }
 
     [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus> execute(

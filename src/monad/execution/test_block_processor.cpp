@@ -7,7 +7,7 @@
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/state2/state_deltas.hpp>
-#include <monad/test/gtest_signal_stacktrace_printer.hpp>  // NOLINT
+#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <evmc/evmc.hpp>
 
@@ -49,7 +49,7 @@ TEST(BlockProcessor, shanghai_withdrawal)
     BlockState bs{db};
 
     State state{bs};
-    BlockProcessor::process_withdrawal(state, withdrawals);
+    process_withdrawal(state, withdrawals);
 
     EXPECT_EQ(
         intx::be::load<uint256_t>(state.get_balance(a)),
@@ -80,7 +80,7 @@ TEST(BlockProcessor, transfer_balance_dao)
 
     BlockState bs{db};
 
-    BlockProcessor::transfer_balance_dao(bs);
+    transfer_balance_dao(bs);
 
     State s{bs};
     for (auto const &addr : dao::child_accounts) {

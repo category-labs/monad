@@ -59,6 +59,6 @@ static_assert(alignof(Transaction::AccessList) == 8);
 static_assert(sizeof(Transaction) == 336);
 static_assert(alignof(Transaction) == 8);
 
-[[nodiscard]] std::optional<address_t> recover_sender(Transaction const &);
+std::optional<address_t> recover_sender(Transaction const &);
 
 MONAD_NAMESPACE_END

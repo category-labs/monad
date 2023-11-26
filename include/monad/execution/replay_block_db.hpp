@@ -58,7 +58,7 @@ public:
         }
     }
 
-    [[nodiscard]] bool verify_root_hash(
+    bool verify_root_hash(
         BlockHeader const &block_header, bytes32_t /* transactions_root */,
         bytes32_t /* receipts_root */, bytes32_t const state_root,
         block_num_t /*current_block_number */) const
@@ -74,7 +74,7 @@ public:
     }
 
     template <class Traits>
-    [[nodiscard]] Result run_fork(
+    Result run_fork(
         Db &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
         BlockHashBuffer &block_hash_buffer, block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
@@ -133,7 +133,7 @@ public:
     }
 
     template <class Traits>
-    [[nodiscard]] Result
+    Result
     run(Db &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
         block_num_t const start_block_number,
         std::optional<block_num_t> const until_block_number = std::nullopt)

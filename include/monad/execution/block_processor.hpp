@@ -101,13 +101,12 @@ struct BlockProcessor
             State state{block_state};
             Receipt receipt;
 
-            if (auto const txn_status =
-                    TransactionProcessor<rev>::validate_and_execute(
-                        block.transactions[i],
-                        block.header,
-                        block_hash_buffer,
-                        state,
-                        receipt);
+            if (auto const txn_status = validate_and_execute<rev>(
+                    block.transactions[i],
+                    block.header,
+                    block_hash_buffer,
+                    state,
+                    receipt);
                 txn_status != ValidationStatus::SUCCESS) {
                 return tl::unexpected(txn_status);
             }

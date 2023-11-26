@@ -60,9 +60,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     Block const b{.header = bh, .transactions = {t}, .ommers = {ommer}};
 
     using traits_t = monad::fork_traits::byzantium;
-    using tp_t = TransactionProcessor<traits_t::rev>;
 
-    tp_t const tp{};
     auto const tx_context = get_tx_context<traits_t::rev>(t, bh);
     BlockHashBuffer const block_hash_buffer;
     EvmcHost<traits_t::rev> h{tx_context, block_hash_buffer, s};
@@ -72,7 +70,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
         ValidationStatus::SUCCESS);
     EXPECT_EQ(validate_transaction(s, t), ValidationStatus::SUCCESS);
 
-    auto r = tp.execute(s, h, t, 0, bh.beneficiary);
+    auto r = execute<traits_t::rev>(s, h, t, 0, bh.beneficiary);
     EXPECT_EQ(r.status, Receipt::Status::SUCCESS);
     EXPECT_EQ(r.gas_used, 21'000);
     EXPECT_EQ(t.type, TransactionType::eip155);
@@ -131,9 +129,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     Block const b{.header = bh, .transactions = {t}};
 
     using traits_t = monad::fork_traits::frontier;
-    using tp_t = TransactionProcessor<traits_t::rev>;
 
-    tp_t const tp{};
     auto const tx_context = get_tx_context<traits_t::rev>(t, bh);
     BlockHashBuffer const block_hash_buffer;
     EvmcHost<traits_t::rev> h{tx_context, block_hash_buffer, s};
@@ -144,7 +140,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
 
     EXPECT_EQ(validate_transaction(s, t), ValidationStatus::SUCCESS);
 
-    auto r = tp.execute(s, h, t, 0, bh.beneficiary);
+    auto r = execute<traits_t::rev>(s, h, t, 0, bh.beneficiary);
     EXPECT_EQ(r.status, Receipt::Status::FAILED);
     EXPECT_EQ(r.gas_used, 24'000);
     EXPECT_EQ(t.type, TransactionType::eip155);
@@ -198,9 +194,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     Block const b{.header = bh, .transactions = {t}};
 
     using traits_t = monad::fork_traits::frontier;
-    using tp_t = TransactionProcessor<traits_t::rev>;
 
-    tp_t const tp{};
     auto const tx_context = get_tx_context<traits_t::rev>(t, bh);
     BlockHashBuffer const block_hash_buffer;
     EvmcHost<traits_t::rev> h{tx_context, block_hash_buffer, s};
@@ -210,7 +204,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
         ValidationStatus::SUCCESS);
     EXPECT_EQ(validate_transaction(s, t), ValidationStatus::SUCCESS);
 
-    auto r = tp.execute(s, h, t, 0, bh.beneficiary);
+    auto r = execute<traits_t::rev>(s, h, t, 0, bh.beneficiary);
     EXPECT_EQ(r.status, Receipt::Status::FAILED);
     EXPECT_EQ(r.gas_used, 90'000);
     EXPECT_EQ(t.type, TransactionType::eip155);

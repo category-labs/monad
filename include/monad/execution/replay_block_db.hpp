@@ -7,6 +7,7 @@
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/genesis.hpp>
+#include <monad/execution/validate_block.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 
@@ -44,7 +45,7 @@ public:
     };
 
     template <class Traits>
-    [[nodiscard]] constexpr block_num_t
+    constexpr block_num_t
     loop_until(std::optional<block_num_t> until_block_number)
     {
         if (!until_block_number.has_value()) {

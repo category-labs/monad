@@ -7,6 +7,7 @@
 #include <monad/core/transaction.hpp>
 #include <monad/core/transaction_rlp.hpp>
 #include <monad/execution/transaction_gas.hpp>
+#include <monad/execution/validate_transaction.hpp>
 #include <monad/execution/validation_status.hpp>
 #include <monad/test/config.hpp>
 

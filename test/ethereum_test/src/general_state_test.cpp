@@ -105,9 +105,8 @@ namespace
         block_hash_buffer.set(
             block_header.number - 1, block_header.parent_hash);
         EvmcHost<Traits::rev> host{tx_context, block_hash_buffer, state};
-        TransactionProcessor<Traits::rev> const processor;
 
-        return processor.execute(
+        return execute<Traits::rev>(
             state,
             host,
             txn,
@@ -115,7 +114,7 @@ namespace
             block_header.beneficiary);
     }
 
-    [[nodiscard]] tl::expected<Receipt, ValidationStatus> execute(
+    [[nodiscard]] tl::expected<Receipt, ValidationStatus> execute_dispatch(
         evmc_revision const rev, BlockHeader const &block_header, State &state,
         Transaction const &txn)
     {
@@ -260,7 +259,8 @@ void GeneralStateTest::TestBody()
             db.commit(init_state, init_code);
             BlockState bs{db};
             State state{bs};
-            auto const result = execute(rev, block_header, state, transaction);
+            auto const result =
+                execute_dispatch(rev, block_header, state, transaction);
             // Note: no merge because only single transaction in the block
             db.commit(state.state_, state.code_);
 

@@ -1,14 +1,21 @@
 #pragma once
 
+#include <monad/core/address.hpp>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/core/int.hpp>
 #include <monad/core/transaction.hpp>
-#include <monad/execution/transaction_processor.hpp>
+#include <monad/execution/validation_status.hpp>
 #include <monad/test/config.hpp>
 
 #include <intx/intx.hpp>
 
+#include <cstdint>
 #include <optional>
+#include <vector>
 
 MONAD_TEST_NAMESPACE_BEGIN
+
 struct Indices
 {
     uint64_t input{};

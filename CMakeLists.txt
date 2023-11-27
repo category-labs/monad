@@ -163,6 +163,7 @@ add_library(
   "src/monad/execution/precompiles.cpp"
   "src/monad/execution/transaction_gas.cpp"
   "src/monad/execution/tx_context.cpp"
+  "src/monad/execution/validate_block.cpp"
   "src/monad/execution/validate_transaction.cpp"
   # rlp
   "include/monad/rlp/decode.hpp"

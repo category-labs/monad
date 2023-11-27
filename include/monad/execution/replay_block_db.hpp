@@ -3,6 +3,7 @@
 #include <monad/config.hpp>
 #include <monad/core/block.hpp>
 #include <monad/db/block_db.hpp>
+#include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_block.hpp>

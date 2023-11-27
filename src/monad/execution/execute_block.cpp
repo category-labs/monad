@@ -2,30 +2,33 @@
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/block_fmt.hpp>
+#include <monad/core/int.hpp>
+#include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
-#include <monad/core/receipt_fmt.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/core/withdrawal.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_reward.hpp>
 #include <monad/execution/ethereum/dao.hpp>
-#include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/validation_status.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
-#include <monad/state2/state_deltas.hpp>
 #include <monad/state2/state_deltas_fmt.hpp>
 
 #include <evmc/evmc.h>
 
-#include <quill/Quill.h>
+#include <intx/intx.hpp>
 
 #include <tl/expected.hpp>
 
+#include <quill/detail/LogMacros.h>
+
 #include <chrono>
+#include <cstdint>
+#include <optional>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN

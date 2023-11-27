@@ -6,7 +6,6 @@
 #include <monad/db/block_db.hpp>
 #include <monad/db/permission.hpp>
 #include <monad/db/rocks_trie_db.hpp>
-#include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/genesis.hpp>
 #include <monad/execution/replay_block_db.hpp>

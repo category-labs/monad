@@ -6,6 +6,8 @@ option(ASAN "Turn on Address Sanitizer")
 option(UBSAN "Turn on Undefined Behavior Sanitizer")
 option(EVMONE_TRACING
        "Enable instruction-level tracing for the evmone interpreter" OFF)
+option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+option(MONAD_EMIT_CODE_COVERAGE OFF)
 
 include(cmake/test.cmake)
 
@@ -283,6 +285,10 @@ monad_add_test_folder("src/monad/rlp")
 monad_add_test_folder("src/monad/state2")
 monad_add_test_folder("src/monad/trie")
 
+if(MONAD_EMIT_CODE_COVERAGE)
+  set(properties PROPERTIES FIXTURES_REQUIRED COVERAGE)
+endif()
+
 # ##############################################################################
 # fuzz tests
 # ##############################################################################
@@ -295,3 +301,6 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     add_subdirectory(${PROJECT_SOURCE_DIR}/test/fuzz)
   endif()
 endif()
+
+set(exclude_patterns ".*/monad-core/.*" ".*/monad-trie/.*" ".*test.*" ".*fmt.*" ".*replay.*" ".*/analysis/.*" ".*rocks.*" ".*auto_detect_start_block_number.*" ".*genesis.*" ".*in_memory_trie_db.*")
+monad_add_coverage_processing_tests("${exclude_patterns}")

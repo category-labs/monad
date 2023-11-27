@@ -29,6 +29,7 @@ struct Instruction
     Instruction(evmone::Opcode opcode);
     Instruction(evmone::Opcode opcode, bytes32_t data);
     Instruction(size_t offset, evmone::Opcode opcode, bytes32_t data);
+    Instruction(size_t offset, evmone::Opcode opcode);
 
     bool operator==(Instruction const &rhs) const;
     bool operator!=(Instruction const &rhs) const;

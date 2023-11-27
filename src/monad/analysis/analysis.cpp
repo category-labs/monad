@@ -48,6 +48,11 @@ Instruction::Instruction(size_t offset, evmone::Opcode opcode, bytes32_t data)
 {
 }
 
+Instruction::Instruction(size_t offset, evmone::Opcode opcode)
+    : Instruction{offset, opcode, 0x00_bytes32}
+{
+}
+
 bool Instruction::operator==(Instruction const &rhs) const
 {
     return opcode == rhs.opcode && data == rhs.data;

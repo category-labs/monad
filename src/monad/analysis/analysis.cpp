@@ -129,12 +129,6 @@ bool BasicBlock::is_control_flow_resolved() const
 
 namespace
 {
-    constexpr bool is_push(evmone::Opcode opcode)
-    {
-        return opcode >= evmone::Opcode::OP_PUSH0 &&
-               opcode <= evmone::Opcode::OP_PUSH32;
-    }
-
     std::optional<size_t> resolve_jump(
         InstructionsView const instructions, size_t index,
         JumpDestinations const &jump_destinations)

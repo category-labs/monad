@@ -24,6 +24,24 @@
 
 MONAD_ANALYSIS_NAMESPACE_BEGIN
 
+constexpr bool is_push(evmone::Opcode const opcode)
+{
+    return opcode >= evmone::Opcode::OP_PUSH0 &&
+           opcode <= evmone::Opcode::OP_PUSH32;
+}
+
+constexpr bool is_dup(evmone::Opcode const opcode)
+{
+    return opcode >= evmone::Opcode::OP_DUP1 &&
+           opcode <= evmone::Opcode::OP_DUP16;
+}
+
+constexpr bool is_swap(evmone::Opcode const opcode)
+{
+    return opcode >= evmone::Opcode::OP_SWAP1 &&
+           opcode <= evmone::Opcode::OP_SWAP16;
+}
+
 struct Instruction
 {
     Instruction(evmone::Opcode opcode);

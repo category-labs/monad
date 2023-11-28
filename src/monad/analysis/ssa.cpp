@@ -1,5 +1,7 @@
+#include <monad/analysis/config.hpp>
 #include <monad/core/assert.h>
 
+#include <monad/analysis/analysis.hpp>
 #include <monad/analysis/analysis_fmt.hpp>
 #include <monad/analysis/ssa.hpp>
 

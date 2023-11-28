@@ -82,7 +82,25 @@ using SSAControlFlowGraph = std::map<size_t, SSABasicBlock>;
 
 [[nodiscard]] SymbolicStack create_prefilled_stack();
 
+[[nodiscard]] bool resolve_phis(SSAControlFlowGraph &control_flow_graph);
+
+[[nodiscard]] bool handle_writers(SSAInstruction const *writer, int depth);
+
+[[nodiscard]] bool
+resolve_cross_references(SSAControlFlowGraph &control_flow_graph);
+
 [[nodiscard]] SSAControlFlowGraph
 lift_cfg_to_ssa(ControlFlowGraph const &control_flow_graph);
+
+struct BoostSSAGraphVertex
+{
+    bool operator==(BoostSSAGraphVertex const &other) const = default;
+    size_t id;
+    SSABasicBlock const *basic_block;
+};
+
+using UseDefGraph = BoostGraph<BoostSSAGraphVertex>;
+[[nodiscard]] UseDefGraph
+construct_use_def_graph(SSAControlFlowGraph const &graph);
 
 MONAD_ANALYSIS_NAMESPACE_END

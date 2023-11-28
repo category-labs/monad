@@ -1,9 +1,17 @@
-#include <monad/analysis/config.hpp>
-#include <monad/core/assert.h>
-
 #include <monad/analysis/analysis.hpp>
 #include <monad/analysis/analysis_fmt.hpp>
+#include <monad/analysis/config.hpp>
 #include <monad/analysis/ssa.hpp>
+#include <monad/core/assert.h>
+
+#include <optional>
+#include <stdexcept>
+#include <tuple>
+#include <utility>
+#include <variant>
+
+#include <evmone/instructions_opcodes.hpp>
+#include <evmone/instructions_traits.hpp>
 
 MONAD_ANALYSIS_NAMESPACE_BEGIN
 
@@ -20,6 +28,60 @@ SymbolicStack create_prefilled_stack()
         stack.emplace_back(PlaceholderValue{.stack_offset = -i});
     }
     return stack;
+}
+
+[[nodiscard]] bool resolve_phis(SSAControlFlowGraph &control_flow_graph)
+{
+    bool dirty = false;
+
+    for (auto const &[block_index, basic_block] : control_flow_graph) {
+        for (auto const &instruction : basic_block.instructions) {
+            instruction.resolve_arguments();
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] bool handle_writers(SSAInstruction const *writer, int depth)
+{
+    if (depth == 0) {
+        return false;
+    }
+    bool dirty = false;
+
+    if (is_push(writer->opcode)) {
+        MONAD_DEBUG_ASSERT(!writer->arguments.empty());
+        [[maybe_unused]] auto const value = writer->arguments[0];
+        // dirty |= block.add_jump_target(value)
+    }
+}
+
+[[nodiscard]] bool
+resolve_cross_references(SSAControlFlowGraph &control_flow_graph)
+{
+    using enum evmone::Opcode;
+    bool dirty = false;
+
+    for (auto const &[block_index, basic_block] : control_flow_graph) {
+        if (basic_block.instructions.empty()) {
+            continue;
+        }
+
+        auto const &last_instruction = basic_block.instructions.back();
+
+        if (last_instruction.opcode == OP_JUMP ||
+            last_instruction.opcode == OP_JUMPI) {
+            MONAD_DEBUG_ASSERT(!last_instruction.arguments.empty());
+            auto const target = last_instruction.arguments[0];
+
+            if (!std::holds_alternative<PlaceholderValue>(target.value) &&
+                target.writer != nullptr) {
+                dirty |= handle_writers(target.writer, 5);
+            }
+        }
+    }
+
+    return dirty;
 }
 
 [[nodiscard]] SSAControlFlowGraph
@@ -113,6 +175,11 @@ lift_cfg_to_ssa(ControlFlowGraph const &control_flow_graph)
                 std::move(stack)));
     }
     return result;
+}
+
+UseDefGraph construct_use_def_graph(SSAControlFlowGraph const &)
+{
+    return {};
 }
 
 MONAD_ANALYSIS_NAMESPACE_END

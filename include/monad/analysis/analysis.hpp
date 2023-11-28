@@ -65,6 +65,8 @@ using InstructionsView = std::span<Instruction const>;
 
 class UnresolvedStatic
 {
+public:
+    bool operator==(UnresolvedStatic const &) const = default;
 };
 
 class ResolvedStatic
@@ -74,6 +76,7 @@ class ResolvedStatic
 public:
     ResolvedStatic(size_t target);
     [[nodiscard]] size_t get_target() const;
+    bool operator==(ResolvedStatic const &) const = default;
 };
 
 class UnresolvedDynamic
@@ -83,6 +86,7 @@ class UnresolvedDynamic
 public:
     UnresolvedDynamic(size_t next_basic_block);
     [[nodiscard]] size_t get_next_basic_block() const;
+    bool operator==(UnresolvedDynamic const &) const = default;
 };
 
 class ResolvedDynamic
@@ -94,10 +98,13 @@ public:
     ResolvedDynamic(size_t taken_target, size_t not_taken_target);
     [[nodiscard]] size_t get_taken_target() const;
     [[nodiscard]] size_t get_not_taken_target() const;
+    bool operator==(ResolvedDynamic const &) const = default;
 };
 
 class Halting
 {
+public:
+    bool operator==(Halting const &) const = default;
 };
 
 class Linear
@@ -107,6 +114,7 @@ class Linear
 public:
     Linear(size_t target_index);
     [[nodiscard]] size_t get_next_basic_block() const;
+    bool operator==(Linear const &) const = default;
 };
 
 using ResolvedControlFlow =

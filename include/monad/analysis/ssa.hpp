@@ -80,4 +80,9 @@ struct SSABasicBlock
 
 using SSAControlFlowGraph = std::map<size_t, SSABasicBlock>;
 
+[[nodiscard]] SymbolicStack create_prefilled_stack();
+
+[[nodiscard]] SSAControlFlowGraph
+lift_cfg_to_ssa(ControlFlowGraph const &control_flow_graph);
+
 MONAD_ANALYSIS_NAMESPACE_END

@@ -3,6 +3,7 @@ add_unit_test(
     monad-analysistests
     SOURCES
     test_analysis.cpp
+    test_ssa.cpp
     LIBRARIES
     monad
     evmone

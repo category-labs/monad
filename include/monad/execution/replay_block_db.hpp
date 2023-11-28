@@ -94,8 +94,8 @@ public:
             block_hash_buffer.set(
                 current_block_number - 1, block.header.parent_hash);
 
-            if (auto const status = static_validate_block<Traits::rev>(block);
-                status != ValidationStatus::SUCCESS) {
+            if (auto const result = static_validate_block<Traits::rev>(block);
+                result.has_error()) {
                 return Result{
                     Status::BLOCK_VALIDATION_FAILED, current_block_number};
             }

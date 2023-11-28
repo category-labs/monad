@@ -9,20 +9,9 @@ enum class ValidationStatus
     SUCCESS,
 
     // Block Validation Error
-    GAS_ABOVE_LIMIT,
-    INVALID_GAS_LIMIT,
-    EXTRA_DATA_TOO_LONG,
-    WRONG_OMMERS_HASH,
-    FIELD_BEFORE_FORK,
-    MISSING_FIELD,
-    POW_BLOCK_AFTER_MERGE,
-    INVALID_NONCE,
-    TOO_MANY_OMMERS,
-    DUPLICATE_OMMERS,
-    INVALID_OMMER_HEADER,
-    WRONG_DAO_EXTRA_DATA,
-    WRONG_LOGS_BLOOM,
-    INVALID_GAS_USED,
+    WRONG_LOGS_BLOOM, // TODO used in execute
+    INVALID_GAS_USED, // TODO used in execute
+    BLOCK_ERROR, // TODO temporary translation
 
     // Transaction Validation Error
     INSUFFICIENT_BALANCE,
@@ -38,7 +27,6 @@ enum class ValidationStatus
     WRONG_CHAIN_ID,
     MISSING_SENDER,
     GAS_LIMIT_OVERFLOW,
-
 };
 
 MONAD_NAMESPACE_END

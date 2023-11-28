@@ -11,7 +11,6 @@
 #include <monad/core/int.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/execution/validation_status.hpp>
@@ -52,50 +51,48 @@ MONAD_TEST_NAMESPACE_BEGIN
 
 namespace
 {
-    template <typename Traits>
-    [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus> execute(
+    template <evmc_revision rev>
+    tl::expected<std::vector<Receipt>, ValidationStatus> execute(
         Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
     {
         using namespace monad::test;
 
-        if (auto const status = static_validate_block<Traits::rev>(block);
-            status != ValidationStatus::SUCCESS) {
-            return tl::unexpected(status);
+        if (auto const result = static_validate_block<rev>(block);
+            result.has_error()) {
+            return tl::unexpected(ValidationStatus::BLOCK_ERROR);
         }
 
-        return execute_block<Traits::rev>(block, db, block_hash_buffer);
+        return execute_block<rev>(block, db, block_hash_buffer);
     }
 
-    [[nodiscard]] tl::expected<std::vector<Receipt>, ValidationStatus> execute(
+    tl::expected<std::vector<Receipt>, ValidationStatus> execute(
         evmc_revision const rev, Block &block, test::db_t &db,
         BlockHashBuffer const &block_hash_buffer)
     {
-        using namespace monad::fork_traits;
-
         switch (rev) {
         case EVMC_FRONTIER:
-            return execute<frontier>(block, db, block_hash_buffer);
+            return execute<EVMC_FRONTIER>(block, db, block_hash_buffer);
         case EVMC_HOMESTEAD:
-            return execute<homestead>(block, db, block_hash_buffer);
+            return execute<EVMC_HOMESTEAD>(block, db, block_hash_buffer);
         case EVMC_TANGERINE_WHISTLE:
-            return execute<tangerine_whistle>(block, db, block_hash_buffer);
-        case EVMC_SPURIOUS_DRAGON:
-            return execute<spurious_dragon>(block, db, block_hash_buffer);
-        case EVMC_BYZANTIUM:
-            return execute<byzantium>(block, db, block_hash_buffer);
-        case EVMC_PETERSBURG:
-            return execute<constantinople_and_petersburg>(
+            return execute<EVMC_TANGERINE_WHISTLE>(
                 block, db, block_hash_buffer);
+        case EVMC_SPURIOUS_DRAGON:
+            return execute<EVMC_SPURIOUS_DRAGON>(block, db, block_hash_buffer);
+        case EVMC_BYZANTIUM:
+            return execute<EVMC_BYZANTIUM>(block, db, block_hash_buffer);
+        case EVMC_PETERSBURG:
+            return execute<EVMC_PETERSBURG>(block, db, block_hash_buffer);
         case EVMC_ISTANBUL:
-            return execute<istanbul>(block, db, block_hash_buffer);
+            return execute<EVMC_ISTANBUL>(block, db, block_hash_buffer);
         case EVMC_BERLIN:
-            return execute<berlin>(block, db, block_hash_buffer);
+            return execute<EVMC_BERLIN>(block, db, block_hash_buffer);
         case EVMC_LONDON:
-            return execute<london>(block, db, block_hash_buffer);
+            return execute<EVMC_LONDON>(block, db, block_hash_buffer);
         case EVMC_PARIS:
-            return execute<paris>(block, db, block_hash_buffer);
+            return execute<EVMC_PARIS>(block, db, block_hash_buffer);
         case EVMC_SHANGHAI:
-            return execute<shanghai>(block, db, block_hash_buffer);
+            return execute<EVMC_SHANGHAI>(block, db, block_hash_buffer);
         default:
             MONAD_ASSERT(false);
         }

@@ -8,7 +8,6 @@
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
-#include <monad/execution/validation_status.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 
@@ -50,18 +49,18 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     BlockHashBuffer const block_hash_buffer;
     evm_host_t h{tx_context, block_hash_buffer, s};
 
-    auto status = static_validate_transaction<traits_t::rev>(t, 10u);
-    if (status == ValidationStatus::SUCCESS) {
-        status = validate_transaction(s, t);
-    }
-    EXPECT_EQ(status, ValidationStatus::SUCCESS);
-    auto result = execute(s, h, t, 10u, bene);
-    EXPECT_EQ(result.status, 1u);
+    auto result = static_validate_transaction<traits_t::rev>(t, 10u);
+    EXPECT_TRUE(!result.has_error());
+    result = validate_transaction(s, t);
+    EXPECT_TRUE(!result.has_error());
+
+    auto receipt = execute(s, h, t, 10u, bene);
+    EXPECT_EQ(receipt.status, 1u);
     EXPECT_EQ(
         intx::be::load<uint256_t>(s.get_balance(from)),
         uint256_t{55'999'999'999'470'000});
     EXPECT_EQ(s.get_nonce(from), 26); // EVMC will inc for creation
 
     // check if miner gets the right reward
-    EXPECT_EQ(result.gas_used * 10u, uint256_t{530'000});
+    EXPECT_EQ(receipt.gas_used * 10u, uint256_t{530'000});
 }

@@ -92,7 +92,7 @@ public:
 class InMemoryTrieDB final : public Db
 {
 private:
-    mpt::node_ptr root_;
+    mpt::Node::UniquePtr root_;
     std::list<mpt::Update> update_allocator_;
     std::list<byte_string> byte_string_allocator_;
     ankerl::unordered_dense::segmented_map<bytes32_t, byte_string> code_;

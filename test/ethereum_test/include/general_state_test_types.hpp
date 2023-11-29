@@ -5,7 +5,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/transaction.hpp>
-#include <monad/execution/validation_status.hpp>
+#include <monad/execution/validate_transaction.hpp>
 #include <monad/test/config.hpp>
 
 #include <intx/intx.hpp>
@@ -43,7 +43,7 @@ struct Expectation
 {
     Indices indices;
     bytes32_t state_hash;
-    ValidationStatus exception;
+    TransactionError error;
 };
 
 MONAD_TEST_NAMESPACE_END

@@ -10,10 +10,10 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/core/result.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/validate_block.hpp>
-#include <monad/execution/validation_status.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/test/config.hpp>
@@ -27,11 +27,11 @@
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 
-#include <tl/expected.hpp>
-
 #include <quill/bundled/fmt/core.h>
 #include <quill/bundled/fmt/format.h>
 #include <quill/detail/LogMacros.h>
+
+#include <boost/outcome/try.hpp>
 
 #include <gtest/gtest.h>
 
@@ -52,20 +52,17 @@ MONAD_TEST_NAMESPACE_BEGIN
 namespace
 {
     template <evmc_revision rev>
-    tl::expected<std::vector<Receipt>, ValidationStatus> execute(
+    Result<std::vector<Receipt>> execute(
         Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
     {
         using namespace monad::test;
 
-        if (auto const result = static_validate_block<rev>(block);
-            result.has_error()) {
-            return tl::unexpected(ValidationStatus::BLOCK_ERROR);
-        }
+        BOOST_OUTCOME_TRY(static_validate_block<rev>(block));
 
         return execute_block<rev>(block, db, block_hash_buffer);
     }
 
-    tl::expected<std::vector<Receipt>, ValidationStatus> execute(
+    Result<std::vector<Receipt>> execute_dispatch(
         evmc_revision const rev, Block &block, test::db_t &db,
         BlockHashBuffer const &block_hash_buffer)
     {
@@ -204,11 +201,13 @@ void BlockchainTest::TestBody()
             block_hash_buffer.set(
                 block.header.number - 1, block.header.parent_hash);
 
-            auto const result = execute(rev, block, db, block_hash_buffer);
-            if (result) {
+            auto const result =
+                execute_dispatch(rev, block, db, block_hash_buffer);
+            if (!result.has_error()) {
                 EXPECT_FALSE(j_block.contains("expectException"));
                 EXPECT_EQ(db.state_root(), block.header.state_root) << name;
-                EXPECT_EQ(result->size(), block.transactions.size()) << name;
+                EXPECT_EQ(result.value().size(), block.transactions.size())
+                    << name;
             }
             else {
                 EXPECT_TRUE(j_block.contains("expectException"));

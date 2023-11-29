@@ -20,7 +20,7 @@ MONAD_NAMESPACE_BEGIN
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
 template <evmc_revision rev>
-BlockResult static_validate_header(BlockHeader const &header)
+Result<void> static_validate_header(BlockHeader const &header)
 {
     // YP eq. 56
     if (MONAD_UNLIKELY(header.gas_used > header.gas_limit)) {
@@ -98,7 +98,7 @@ BlockResult static_validate_header(BlockHeader const &header)
 EXPLICIT_EVMC_REVISION(static_validate_header);
 
 template <evmc_revision rev>
-constexpr BlockResult static_validate_ommers(Block const &block)
+constexpr Result<void> static_validate_ommers(Block const &block)
 {
     // TODO: What we really need is probably a generic ommer hash computation
     // function Instead of just checking this special case
@@ -135,7 +135,7 @@ constexpr BlockResult static_validate_ommers(Block const &block)
 }
 
 template <evmc_revision rev>
-constexpr BlockResult static_validate_body(Block const &block)
+constexpr Result<void> static_validate_body(Block const &block)
 {
     // TODO: Should we put computationally heavy validate_root(txn,
     // withdraw) here?
@@ -154,20 +154,16 @@ constexpr BlockResult static_validate_body(Block const &block)
 
     BOOST_OUTCOME_TRY(static_validate_ommers<rev>(block));
 
-    // TODO remove
-    for (auto const &txn : block.transactions) {
-        if (auto const status = static_validate_transaction<rev>(
-                txn, block.header.base_fee_per_gas);
-            status != ValidationStatus::SUCCESS) {
-            return BlockError::InvalidNonce;
-        }
+    for (auto const &tx : block.transactions) {
+        BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
+            tx, block.header.base_fee_per_gas));
     }
 
     return success();
 }
 
 template <evmc_revision rev>
-BlockResult static_validate_block(Block const &block)
+Result<void> static_validate_block(Block const &block)
 {
     BOOST_OUTCOME_TRY(static_validate_header<rev>(block.header));
 
@@ -204,6 +200,7 @@ quick_status_code_from_enum<monad::BlockError>::value_mappings()
         {BlockError::WrongDaoExtraData, "wrong dao extra data", {}},
         {BlockError::WrongLogsBloom, "wrong logs bloom", {}},
         {BlockError::InvalidGasUsed, "invalid gas used", {}}};
+
     return v;
 }
 

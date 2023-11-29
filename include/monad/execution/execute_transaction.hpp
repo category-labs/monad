@@ -3,7 +3,7 @@
 #include <monad/config.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/int.hpp>
-#include <monad/execution/validation_status.hpp>
+#include <monad/core/result.hpp>
 
 #include <evmc/evmc.h>
 
@@ -23,8 +23,7 @@ Receipt execute(
     uint256_t const &base_fee_per_gas, address_t const &beneficiary);
 
 template <evmc_revision rev>
-ValidationStatus validate_and_execute(
-    Transaction const &, BlockHeader const &, BlockHashBuffer const &, State &,
-    Receipt &);
+Result<Receipt> validate_and_execute(
+    Transaction const &, BlockHeader const &, BlockHashBuffer const &, State &);
 
 MONAD_NAMESPACE_END

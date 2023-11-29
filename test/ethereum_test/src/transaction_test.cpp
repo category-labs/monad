@@ -8,7 +8,6 @@
 #include <monad/core/transaction_rlp.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/validate_transaction.hpp>
-#include <monad/execution/validation_status.hpp>
 #include <monad/test/config.hpp>
 
 #include <evmc/evmc.h>
@@ -37,7 +36,7 @@ template <evmc_revision rev>
 void process_transaction(Transaction const &txn, nlohmann::json const &expected)
 {
     if (auto const result = static_validate_transaction<rev>(txn, std::nullopt);
-        result != ValidationStatus::SUCCESS) {
+        result.has_error()) {
         EXPECT_TRUE(expected.contains("exception"));
     }
     else {

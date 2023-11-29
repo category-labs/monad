@@ -9,6 +9,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/core/result.hpp>
 #include <monad/core/signature.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
@@ -17,7 +18,6 @@
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
-#include <monad/execution/validation_status.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/test/config.hpp>
@@ -32,7 +32,7 @@
 #include <quill/bundled/fmt/core.h>
 #include <quill/detail/LogMacros.h>
 
-#include <tl/expected.hpp>
+#include <boost/outcome/try.hpp>
 
 #include <test_resource_data.h>
 
@@ -49,8 +49,7 @@ using namespace monad;
 
 namespace
 {
-    [[nodiscard]] constexpr BlockHeader
-    block_header_from_env(nlohmann::json const &json)
+    constexpr BlockHeader block_header_from_env(nlohmann::json const &json)
     {
         BlockHeader o;
         o.parent_hash = json["previousHash"].get<monad::bytes32_t>();
@@ -77,26 +76,20 @@ namespace
     }
 
     template <typename Traits>
-    [[nodiscard]] tl::expected<Receipt, ValidationStatus> execute(
+    Result<Receipt> execute(
         BlockHeader const &block_header, State &state, Transaction const &txn)
     {
         using namespace monad::test;
 
-        if (auto const status = static_validate_transaction<Traits::rev>(
-                txn, block_header.base_fee_per_gas);
-            status != ValidationStatus::SUCCESS) {
-            return tl::unexpected{status};
-        }
+        BOOST_OUTCOME_TRY(static_validate_transaction<Traits::rev>(
+            txn, block_header.base_fee_per_gas));
 
-        if (auto const status = validate_transaction(state, txn);
-            status != ValidationStatus::SUCCESS) {
-            return tl::unexpected{status};
-        }
+        BOOST_OUTCOME_TRY(validate_transaction(state, txn));
 
         // sum of transaction gas limit and gas utilized in block prior (0 in
         // this case) must be no greater than the blocks gas limit
         if (block_header.gas_limit < txn.gas_limit) {
-            return tl::unexpected{ValidationStatus::GAS_LIMIT_REACHED};
+            return TransactionError::GasLimitReached;
         }
 
         auto const tx_context = get_tx_context<Traits::rev>(txn, block_header);
@@ -114,13 +107,13 @@ namespace
             block_header.beneficiary);
     }
 
-    [[nodiscard]] tl::expected<Receipt, ValidationStatus> execute_dispatch(
+    Result<Receipt> execute_dispatch(
         evmc_revision const rev, BlockHeader const &block_header, State &state,
         Transaction const &txn)
     {
         using namespace monad::fork_traits;
 
-        auto const result = [&] {
+        auto result = [&] {
             switch (rev) {
             case EVMC_FRONTIER:
                 return execute<frontier>(block_header, state, txn);
@@ -268,12 +261,16 @@ void GeneralStateTest::TestBody()
 
             auto const msg = fmt::format("fork: {}, index: {}", rev_name, i);
 
-            EXPECT_EQ(db.state_root(), expected.state_hash) << msg;
-            EXPECT_EQ(
-                result.has_value() ? ValidationStatus::SUCCESS : result.error(),
-                expected.exception)
-                << msg;
+            if (!result.has_error()) {
+                EXPECT_EQ(expected.error, TransactionError::Success) << msg;
+            }
+            else {
+                EXPECT_EQ(result.error(), expected.error) << msg;
+            }
+
             // TODO: assert something about receipt status?
+
+            EXPECT_EQ(db.state_root(), expected.state_hash) << msg;
         }
     }
 

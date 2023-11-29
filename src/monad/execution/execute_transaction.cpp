@@ -11,12 +11,13 @@
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
-#include <monad/execution/validation_status.hpp>
 #include <monad/state2/state.hpp>
 
 #include <evmc/evmc.h>
 
 #include <intx/intx.hpp>
+
+#include <boost/outcome/try.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -151,26 +152,21 @@ Receipt execute(
 EXPLICIT_EVMC_REVISION(execute);
 
 template <evmc_revision rev>
-ValidationStatus validate_and_execute(
+Result<Receipt> validate_and_execute(
     Transaction const &tx, BlockHeader const &hdr,
-    BlockHashBuffer const &block_hash_buffer, State &state, Receipt &receipt)
+    BlockHashBuffer const &block_hash_buffer, State &state)
 {
     MONAD_DEBUG_ASSERT(
-        static_validate_transaction<rev>(tx, hdr.base_fee_per_gas) ==
-        ValidationStatus::SUCCESS);
+        !static_validate_transaction<rev>(tx, hdr.base_fee_per_gas)
+             .has_error());
 
-    if (auto const validity = validate_transaction(state, tx);
-        validity != ValidationStatus::SUCCESS) {
-        // TODO: Issue #164, Issue #54
-        return validity;
-    }
+    // TODO: Issue #164, Issue #54
+    BOOST_OUTCOME_TRY(validate_transaction(state, tx));
 
     auto const tx_context = get_tx_context<rev>(tx, hdr);
     EvmcHost<rev> host{tx_context, block_hash_buffer, state};
-    receipt = execute<rev>(
+    return execute<rev>(
         state, host, tx, hdr.base_fee_per_gas.value_or(0), hdr.beneficiary);
-
-    return ValidationStatus::SUCCESS;
 }
 
 EXPLICIT_EVMC_REVISION(validate_and_execute);

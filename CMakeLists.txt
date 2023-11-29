@@ -151,7 +151,6 @@ add_library(
   "include/monad/execution/tx_context.hpp"
   "include/monad/execution/validate_block.hpp"
   "include/monad/execution/validate_transaction.hpp"
-  "include/monad/execution/validation_status.hpp"
   "src/monad/execution/baseline_execute.cpp"
   "src/monad/execution/block_hash_buffer.cpp"
   "src/monad/execution/block_reward.cpp"

@@ -1,11 +1,13 @@
 #pragma once
 
 #include <monad/config.hpp>
+#include <monad/core/result.hpp>
 
 #include <evmc/evmc.h>
 
 #include <boost/outcome/experimental/status-code/quick_status_code_from_enum.hpp>
-#include <boost/outcome/experimental/status_result.hpp>
+
+#include <initializer_list>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -28,17 +30,14 @@ enum class BlockError
     InvalidGasUsed
 };
 
-using BlockResult =
-    BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<void>;
-
 struct Block;
 struct BlockHeader;
 
 template <evmc_revision rev>
-BlockResult static_validate_header(BlockHeader const &);
+Result<void> static_validate_header(BlockHeader const &);
 
 template <evmc_revision rev>
-BlockResult static_validate_block(Block const &);
+Result<void> static_validate_block(Block const &);
 
 MONAD_NAMESPACE_END
 

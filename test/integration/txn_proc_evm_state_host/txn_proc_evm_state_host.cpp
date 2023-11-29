@@ -13,7 +13,6 @@
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
-#include <monad/execution/validation_status.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/state2/state_deltas.hpp>
@@ -65,10 +64,11 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     BlockHashBuffer const block_hash_buffer;
     EvmcHost<traits_t::rev> h{tx_context, block_hash_buffer, s};
 
-    EXPECT_EQ(
-        static_validate_transaction<traits_t::rev>(t, std::nullopt),
-        ValidationStatus::SUCCESS);
-    EXPECT_EQ(validate_transaction(s, t), ValidationStatus::SUCCESS);
+    auto const result1 =
+        static_validate_transaction<traits_t::rev>(t, std::nullopt);
+    EXPECT_TRUE(!result1.has_error());
+    auto const result2 = validate_transaction(s, t);
+    EXPECT_TRUE(!result2.has_error());
 
     auto r = execute<traits_t::rev>(s, h, t, 0, bh.beneficiary);
     EXPECT_EQ(r.status, Receipt::Status::SUCCESS);
@@ -134,11 +134,11 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     BlockHashBuffer const block_hash_buffer;
     EvmcHost<traits_t::rev> h{tx_context, block_hash_buffer, s};
 
-    EXPECT_EQ(
-        static_validate_transaction<traits_t::rev>(t, std::nullopt),
-        ValidationStatus::SUCCESS);
-
-    EXPECT_EQ(validate_transaction(s, t), ValidationStatus::SUCCESS);
+    auto const result1 =
+        static_validate_transaction<traits_t::rev>(t, std::nullopt);
+    EXPECT_TRUE(!result1.has_error());
+    auto const result2 = validate_transaction(s, t);
+    EXPECT_TRUE(!result2.has_error());
 
     auto r = execute<traits_t::rev>(s, h, t, 0, bh.beneficiary);
     EXPECT_EQ(r.status, Receipt::Status::FAILED);
@@ -199,10 +199,11 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     BlockHashBuffer const block_hash_buffer;
     EvmcHost<traits_t::rev> h{tx_context, block_hash_buffer, s};
 
-    EXPECT_EQ(
-        static_validate_transaction<traits_t::rev>(t, std::nullopt),
-        ValidationStatus::SUCCESS);
-    EXPECT_EQ(validate_transaction(s, t), ValidationStatus::SUCCESS);
+    auto const result1 =
+        static_validate_transaction<traits_t::rev>(t, std::nullopt);
+    EXPECT_TRUE(!result1.has_error());
+    auto const result2 = validate_transaction(s, t);
+    EXPECT_TRUE(!result2.has_error());
 
     auto r = execute<traits_t::rev>(s, h, t, 0, bh.beneficiary);
     EXPECT_EQ(r.status, Receipt::Status::FAILED);

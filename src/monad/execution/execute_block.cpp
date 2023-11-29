@@ -13,7 +13,7 @@
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
-#include <monad/execution/validation_status.hpp>
+#include <monad/execution/validate_block.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/state2/state_deltas_fmt.hpp>
@@ -22,9 +22,9 @@
 
 #include <intx/intx.hpp>
 
-#include <tl/expected.hpp>
-
 #include <quill/detail/LogMacros.h>
+
+#include <boost/outcome/try.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -87,7 +87,7 @@ inline void commit(BlockState &block_state)
 }
 
 template <evmc_revision rev>
-tl::expected<std::vector<Receipt>, ValidationStatus>
+Result<std::vector<Receipt>>
 execute_block(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
 {
     auto const start_time = std::chrono::steady_clock::now();
@@ -113,17 +113,12 @@ execute_block(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
         block.transactions[i].from = recover_sender(block.transactions[i]);
 
         State state{block_state};
-        Receipt receipt;
 
-        if (auto const txn_status = validate_and_execute<rev>(
-                block.transactions[i],
-                block.header,
-                block_hash_buffer,
-                state,
-                receipt);
-            txn_status != ValidationStatus::SUCCESS) {
-            return tl::unexpected(txn_status);
-        }
+        BOOST_OUTCOME_TRY(
+            auto const receipt,
+            validate_and_execute<rev>(
+                block.transactions[i], block.header, block_hash_buffer, state));
+
         LOG_DEBUG("State Deltas: {}", state.state_);
         LOG_DEBUG("Code Deltas: {}", state.code_);
 
@@ -137,12 +132,12 @@ execute_block(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
 
     // YP eq. 33
     if (compute_bloom(receipts) != block.header.logs_bloom) {
-        return tl::unexpected(ValidationStatus::WRONG_LOGS_BLOOM);
+        return BlockError::WrongLogsBloom;
     }
 
     // YP eq. 170
     if (cumulative_gas_used != block.header.gas_used) {
-        return tl::unexpected(ValidationStatus::INVALID_GAS_USED);
+        return BlockError::InvalidGasUsed;
     }
 
     State state{block_state};

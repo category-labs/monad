@@ -154,11 +154,6 @@ constexpr Result<void> static_validate_body(Block const &block)
 
     BOOST_OUTCOME_TRY(static_validate_ommers<rev>(block));
 
-    for (auto const &tx : block.transactions) {
-        BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
-            tx, block.header.base_fee_per_gas));
-    }
-
     return success();
 }
 

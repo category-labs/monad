@@ -156,9 +156,8 @@ Result<Receipt> validate_and_execute(
     Transaction const &tx, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, State &state)
 {
-    MONAD_DEBUG_ASSERT(
-        !static_validate_transaction<rev>(tx, hdr.base_fee_per_gas)
-             .has_error());
+    BOOST_OUTCOME_TRY(
+        static_validate_transaction<rev>(tx, hdr.base_fee_per_gas));
 
     // TODO: Issue #164, Issue #54
     BOOST_OUTCOME_TRY(validate_transaction(state, tx));

@@ -45,59 +45,42 @@ struct Instruction
 using Instructions = std::vector<Instruction>;
 using InstructionsView = std::span<Instruction const>;
 
-class UnresolvedStatic
+struct UnresolvedStatic
 {
     friend bool
     operator==(UnresolvedStatic const &, UnresolvedStatic const &) = default;
 };
 
-class ResolvedStatic
+struct ResolvedStatic
 {
-    size_t target_;
-
-public:
-    ResolvedStatic(size_t target);
-    [[nodiscard]] size_t get_target() const;
+    size_t target;
     friend bool
     operator==(ResolvedStatic const &, ResolvedStatic const &) = default;
 };
 
-class UnresolvedDynamic
+struct UnresolvedDynamic
 {
-    size_t next_basic_block_;
-
-public:
-    UnresolvedDynamic(size_t next_basic_block);
-    [[nodiscard]] size_t get_next_basic_block() const;
+    size_t next_basic_block;
     friend bool
     operator==(UnresolvedDynamic const &, UnresolvedDynamic const &) = default;
 };
 
-class ResolvedDynamic
+struct ResolvedDynamic
 {
-    size_t taken_target_;
-    size_t not_taken_target_;
-
-public:
-    ResolvedDynamic(size_t taken_target, size_t not_taken_target);
-    [[nodiscard]] size_t get_taken_target() const;
-    [[nodiscard]] size_t get_not_taken_target() const;
+    size_t taken_target;
+    size_t not_taken_target;
     friend bool
     operator==(ResolvedDynamic const &, ResolvedDynamic const &) = default;
 };
 
-class Halting
+struct Halting
 {
     friend bool operator==(Halting const &, Halting const &) = default;
 };
 
-class Linear
+struct Linear
 {
-    size_t next_basic_block_;
-
-public:
-    Linear(size_t target_index);
-    [[nodiscard]] size_t get_next_basic_block() const;
+    size_t next_basic_block;
     friend bool operator==(Linear const &, Linear const &) = default;
 };
 
@@ -107,20 +90,16 @@ using UnresolvedControlFlow = std::variant<UnresolvedDynamic, UnresolvedStatic>;
 
 using ControlFlow = std::variant<ResolvedControlFlow, UnresolvedControlFlow>;
 
-class BasicBlock
+struct BasicBlock
 {
-public:
     BasicBlock(InstructionsView instructions_view, ControlFlow control_flow);
 
-    [[nodiscard]] Instructions const &get_instructions() const;
-    [[nodiscard]] ControlFlow const &get_control_flow() const;
     [[nodiscard]] std::optional<size_t> get_indirect_branch() const;
     [[nodiscard]] std::optional<size_t> get_next_basic_block() const;
     [[nodiscard]] bool is_control_flow_resolved() const;
 
-private:
-    Instructions instructions_;
-    ControlFlow control_flow_;
+    Instructions instructions;
+    ControlFlow control_flow;
 };
 
 using JumpDestinations = std::map<bytes32_t, size_t>;

@@ -63,66 +63,10 @@ bool Instruction::operator!=(Instruction const &rhs) const
     return !(rhs == *this);
 }
 
-ResolvedStatic::ResolvedStatic(size_t target)
-    : target_{target}
-{
-}
-
-size_t ResolvedStatic::get_target() const
-{
-    return target_;
-}
-
-UnresolvedDynamic::UnresolvedDynamic(size_t next_basic_block)
-    : next_basic_block_{next_basic_block}
-{
-}
-
-size_t UnresolvedDynamic::get_next_basic_block() const
-{
-    return next_basic_block_;
-}
-
-ResolvedDynamic::ResolvedDynamic(size_t taken_target, size_t not_taken_target)
-    : taken_target_{taken_target}
-    , not_taken_target_{not_taken_target}
-{
-}
-
-size_t ResolvedDynamic::get_taken_target() const
-{
-    return taken_target_;
-}
-
-size_t ResolvedDynamic::get_not_taken_target() const
-{
-    return not_taken_target_;
-}
-
-Linear::Linear(size_t next_basic_block)
-    : next_basic_block_{next_basic_block}
-{
-}
-
-size_t Linear::get_next_basic_block() const
-{
-    return next_basic_block_;
-}
-
 BasicBlock::BasicBlock(InstructionsView instructions, ControlFlow control_flow)
-    : instructions_{instructions.begin(), instructions.end()}
-    , control_flow_{control_flow}
+    : instructions{instructions.begin(), instructions.end()}
+    , control_flow{control_flow}
 {
-}
-
-Instructions const &BasicBlock::get_instructions() const
-{
-    return instructions_;
-}
-
-ControlFlow const &BasicBlock::get_control_flow() const
-{
-    return control_flow_;
 }
 
 std::optional<size_t> BasicBlock::get_indirect_branch() const
@@ -134,13 +78,13 @@ std::optional<size_t> BasicBlock::get_indirect_branch() const
                 return std::visit(
                     overloaded{
                         [](ResolvedDynamic const &resolved_dynamic) -> Return {
-                            return resolved_dynamic.get_taken_target();
+                            return resolved_dynamic.taken_target;
                         },
                         [](auto) -> Return { return std::nullopt; }},
                     resolved);
             },
             [](auto) -> Return { return std::nullopt; }},
-        control_flow_);
+        control_flow);
 }
 
 std::optional<size_t> BasicBlock::get_next_basic_block() const
@@ -152,13 +96,13 @@ std::optional<size_t> BasicBlock::get_next_basic_block() const
                 return std::visit(
                     overloaded{
                         [](Linear const &linear) -> Return {
-                            return linear.get_next_basic_block();
+                            return linear.next_basic_block;
                         },
                         [](ResolvedStatic const &resolved_static) -> Return {
-                            return resolved_static.get_target();
+                            return resolved_static.target;
                         },
                         [](ResolvedDynamic const &resolved_dynamic) -> Return {
-                            return resolved_dynamic.get_not_taken_target();
+                            return resolved_dynamic.not_taken_target;
                         },
                         [](Halting const &) -> Return { return std::nullopt; }},
                     resolved);
@@ -168,19 +112,19 @@ std::optional<size_t> BasicBlock::get_next_basic_block() const
                     overloaded{
                         [](UnresolvedDynamic const &unresolved_dynamic)
                             -> Return {
-                            return unresolved_dynamic.get_next_basic_block();
+                            return unresolved_dynamic.next_basic_block;
                         },
                         [](UnresolvedStatic const &) -> Return {
                             return std::nullopt;
                         }},
                     unresolved);
             }},
-        control_flow_);
+        control_flow);
 }
 
 bool BasicBlock::is_control_flow_resolved() const
 {
-    return std::holds_alternative<ResolvedControlFlow>(control_flow_);
+    return std::holds_alternative<ResolvedControlFlow>(control_flow);
 }
 
 namespace
@@ -433,10 +377,8 @@ ControlFlowGraph prune_unreachable_blocks(ControlFlowGraph graph)
     std::vector<size_t> nodes_to_prune;
     for (auto &[index, node] : graph) {
         if (index != first_basic_block_index &&
-            !incident_nodes.contains(index) &&
-            !node.get_instructions().empty() &&
-            node.get_instructions().begin()->opcode !=
-                evmone::Opcode::OP_JUMPDEST) {
+            !incident_nodes.contains(index) && !node.instructions.empty() &&
+            node.instructions.begin()->opcode != evmone::Opcode::OP_JUMPDEST) {
             nodes_to_prune.emplace_back(index);
         }
     }

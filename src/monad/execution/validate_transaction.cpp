@@ -2,6 +2,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
+#include <monad/core/result.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/transaction_gas.hpp>
@@ -12,7 +13,13 @@
 
 #include <intx/intx.hpp>
 
+#include <boost/outcome/config.hpp>
+#include <boost/outcome/experimental/status-code/config.hpp>
+#include <boost/outcome/experimental/status-code/generic_code.hpp>
+#include <boost/outcome/success_failure.hpp>
+
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <optional>
 

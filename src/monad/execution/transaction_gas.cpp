@@ -26,7 +26,7 @@ inline constexpr auto g_txn_create(Transaction const &tx) noexcept
 inline constexpr auto g_access_and_storage(Transaction const &tx) noexcept
 {
     uint64_t g = tx.access_list.size() * 2'400u;
-    for (auto &i : tx.access_list) {
+    for (auto const &i : tx.access_list) {
         g += i.keys.size() * 1'900u;
     }
     return g;

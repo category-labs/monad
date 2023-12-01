@@ -3,16 +3,21 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/likely.h>
+#include <monad/core/result.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/validate_block.hpp>
-#include <monad/execution/validate_transaction.hpp>
 
 #include <evmc/evmc.h>
 
+#include <boost/outcome/config.hpp>
+#include <boost/outcome/experimental/status-code/config.hpp>
+#include <boost/outcome/experimental/status-code/generic_code.hpp>
+#include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
 
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 
 MONAD_NAMESPACE_BEGIN

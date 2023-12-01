@@ -9,6 +9,8 @@
 #include <evmone/instructions_opcodes.hpp>
 #include <evmone/instructions_traits.hpp>
 
+#include <evmc/evmc.hpp>
+
 #include <boost/graph/detail/adjacency_list.hpp>
 
 #include <algorithm>

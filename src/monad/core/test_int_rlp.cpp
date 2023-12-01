@@ -170,7 +170,7 @@ TEST(Rlp_Number, EncodeCombinations)
     EXPECT_EQ(encoding, monad::byte_string({0xC2, 0x80, 0x09}));
 
     // encoding list that is larger than 55 bytes
-    auto const fifty_six_char_string =
+    auto const *const fifty_six_char_string =
         "Lorem ipsum dolor sit amet, consectetur adipisicing elit";
     auto const fifty_six_char_string_encoding = monad::byte_string(
         {0xb8, 0x38, 'L', 'o', 'r', 'e', 'm', ' ', 'i', 'p', 's', 'u',

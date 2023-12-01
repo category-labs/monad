@@ -99,7 +99,7 @@ TEST(Tokenizer, EthereumTestTwoOps)
     // bytecode trimmed from from
     // ./monad/third_party/ethereum-tests/GeneralStateTests/VMTests/vmArithmeticTest/twoOps.json",
 
-    auto const bytecode_string =
+    auto const *const bytecode_string =
         "6003600160020101661100010001000055600160016002010166110001000100015560"
         "0360016002020166110001000200005560016001600202016611000100020001556003"
         "6001600203016611000100030000556001600160020301661100010003000155600360"

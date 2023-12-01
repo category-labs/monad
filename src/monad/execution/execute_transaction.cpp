@@ -4,6 +4,7 @@
 #include <monad/core/block.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/core/result.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_transaction.hpp>

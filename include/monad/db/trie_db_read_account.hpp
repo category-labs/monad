@@ -48,7 +48,7 @@ template <typename Cursor>
 
 template <typename Cursor>
 [[nodiscard]] std::optional<Account> trie_db_read_account(
-    address_t const &a, Cursor &&leaves_cursor, Cursor &&trie_cursor)
+    Address const &a, Cursor &&leaves_cursor, Cursor &&trie_cursor)
 {
     auto const hashed_account_address = trie::Nibbles{
         std::bit_cast<bytes32_t>(ethash::keccak256(a.bytes, sizeof(a.bytes)))};

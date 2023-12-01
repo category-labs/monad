@@ -22,10 +22,10 @@ class BlockState final
 public:
     BlockState(Db &);
 
-    std::optional<Account> read_account(address_t const &);
+    std::optional<Account> read_account(Address const &);
 
     bytes32_t read_storage(
-        address_t const &, uint64_t incarnation, bytes32_t const &location);
+        Address const &, uint64_t incarnation, bytes32_t const &location);
 
     byte_string read_code(bytes32_t const &hash);
 

@@ -6,9 +6,9 @@
 
 MONAD_NAMESPACE_BEGIN
 
-using address_t = ::evmc::address;
+using Address = ::evmc::address;
 
-static_assert(sizeof(address_t) == 20);
-static_assert(alignof(address_t) == 1);
+static_assert(sizeof(Address) == 20);
+static_assert(alignof(Address) == 1);
 
 MONAD_NAMESPACE_END

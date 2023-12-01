@@ -12,10 +12,10 @@
 MONAD_NAMESPACE_BEGIN
 
 std::optional<Account> &
-read_account(address_t const &, StateDeltas &, BlockState &);
+read_account(Address const &, StateDeltas &, BlockState &);
 
 Delta<bytes32_t> &read_storage_delta(
-    address_t const &, uint64_t incarnation, bytes32_t const &location,
+    Address const &, uint64_t incarnation, bytes32_t const &location,
     StateDeltas &, BlockState &);
 
 byte_string &read_code(bytes32_t const &, Code &, BlockState &);

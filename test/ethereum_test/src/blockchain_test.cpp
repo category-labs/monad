@@ -102,7 +102,7 @@ namespace
 
         for (auto const &[addr, j_account] : json.items()) {
             nlohmann::json const addr_json = addr;
-            auto const addr_bytes = addr_json.get<address_t>();
+            auto const addr_bytes = addr_json.get<Address>();
             auto const hashed_account = std::bit_cast<bytes32_t>(
                 ethash::keccak256(addr_bytes.bytes, sizeof(addr_bytes.bytes)));
             auto const db_addr_key = fmt::format("{}", hashed_account);

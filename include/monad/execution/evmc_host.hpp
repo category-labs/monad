@@ -35,38 +35,37 @@ public:
 
     virtual ~EvmcHostBase() noexcept = default;
 
-    virtual bytes32_t get_storage(
-        address_t const &, bytes32_t const &key) const noexcept override;
+    virtual bytes32_t
+    get_storage(Address const &, bytes32_t const &key) const noexcept override;
 
     virtual evmc_storage_status set_storage(
-        address_t const &, bytes32_t const &key,
+        Address const &, bytes32_t const &key,
         bytes32_t const &value) noexcept override;
 
     virtual evmc::uint256be
-    get_balance(address_t const &) const noexcept override;
+    get_balance(Address const &) const noexcept override;
 
-    virtual size_t get_code_size(address_t const &) const noexcept override;
+    virtual size_t get_code_size(Address const &) const noexcept override;
 
-    virtual bytes32_t get_code_hash(address_t const &) const noexcept override;
+    virtual bytes32_t get_code_hash(Address const &) const noexcept override;
 
     virtual size_t copy_code(
-        address_t const &, size_t offset, uint8_t *data,
+        Address const &, size_t offset, uint8_t *data,
         size_t size) const noexcept override;
 
     virtual bool selfdestruct(
-        address_t const &address,
-        address_t const &beneficiary) noexcept override;
+        Address const &address, Address const &beneficiary) noexcept override;
 
     virtual evmc_tx_context get_tx_context() const noexcept override;
 
     virtual bytes32_t get_block_hash(int64_t) const noexcept override;
 
     virtual void emit_log(
-        address_t const &, uint8_t const *data, size_t data_size,
+        Address const &, uint8_t const *data, size_t data_size,
         bytes32_t const topics[], size_t num_topics) noexcept override;
 
     virtual evmc_access_status
-    access_storage(address_t const &, bytes32_t const &key) noexcept override;
+    access_storage(Address const &, bytes32_t const &key) noexcept override;
 };
 
 template <evmc_revision rev>
@@ -74,8 +73,7 @@ struct EvmcHost final : public EvmcHostBase
 {
     using EvmcHostBase::EvmcHostBase;
 
-    virtual bool
-    account_exists(address_t const &address) const noexcept override
+    virtual bool account_exists(Address const &address) const noexcept override
     {
         if constexpr (rev < EVMC_SPURIOUS_DRAGON) {
             return state_.account_exists(address);
@@ -102,7 +100,7 @@ struct EvmcHost final : public EvmcHostBase
     }
 
     virtual evmc_access_status
-    access_account(address_t const &address) noexcept override
+    access_account(Address const &address) noexcept override
     {
         if (is_precompile<rev>(address)) {
             return EVMC_ACCESS_WARM;

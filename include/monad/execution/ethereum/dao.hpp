@@ -17,7 +17,7 @@ namespace dao
     constexpr auto withdraw_account{
         0xbf4ed7b27f1d666546e30d74d50d173d20bca754_address};
 
-    constexpr address_t child_accounts[]{
+    constexpr Address child_accounts[]{
         0xd4fe7bc31cedb7bfb8a345f31e668033056b2728_address,
         0xb3fb0e5aba0e20e5c49d252dfd30e102b171a425_address,
         0x2c19c7f9ae8b751e37aeb2d93a699722395ae18f_address,

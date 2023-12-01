@@ -24,13 +24,13 @@ MONAD_NAMESPACE_BEGIN
 
 class State : public Substate
 {
-    std::optional<Account> &read_account(address_t const &address)
+    std::optional<Account> &read_account(Address const &address)
     {
         return ::monad::read_account(address, state_, block_state_);
     }
 
     Delta<bytes32_t> &
-    read_storage_delta(address_t const &address, bytes32_t const &location)
+    read_storage_delta(Address const &address, bytes32_t const &location)
     {
         return ::monad::read_storage_delta(
             address, 0, location, state_, block_state_);
@@ -100,7 +100,7 @@ public:
     }
 
     // EVMC Host Interface
-    evmc_access_status access_account(address_t const &address)
+    evmc_access_status access_account(Address const &address)
     {
         LOG_TRACE_L1("access_account: {}", address);
 
@@ -112,7 +112,7 @@ public:
     }
 
     // EVMC Host Interface
-    bool account_exists(address_t const &address)
+    bool account_exists(Address const &address)
     {
         LOG_TRACE_L1("account_exists: {}", address);
 
@@ -121,7 +121,7 @@ public:
         return account.has_value();
     };
 
-    void create_contract(address_t const &address)
+    void create_contract(Address const &address)
     {
         LOG_TRACE_L1("create_contract: {}", address);
 
@@ -138,7 +138,7 @@ public:
     }
 
     // EVMC Host Interface
-    bytes32_t get_balance(address_t const &address)
+    bytes32_t get_balance(Address const &address)
     {
         LOG_TRACE_L1("get_balance: {}", address);
 
@@ -149,8 +149,7 @@ public:
         return bytes32_t{0u};
     }
 
-    void
-    add_to_balance(address_t const &address, uint256_t const &delta) noexcept
+    void add_to_balance(Address const &address, uint256_t const &delta) noexcept
     {
         auto &account = read_account(address);
         if (MONAD_UNLIKELY(!account.has_value())) {
@@ -172,7 +171,7 @@ public:
     }
 
     void subtract_from_balance(
-        address_t const &address, uint256_t const &delta) noexcept
+        Address const &address, uint256_t const &delta) noexcept
     {
         auto &account = read_account(address);
         if (MONAD_UNLIKELY(!account.has_value())) {
@@ -191,7 +190,7 @@ public:
         touch(address);
     }
 
-    uint64_t get_nonce(address_t const &address) noexcept
+    uint64_t get_nonce(Address const &address) noexcept
     {
         LOG_TRACE_L1("get_nonce: {}", address);
 
@@ -202,7 +201,7 @@ public:
         return 0u;
     }
 
-    void set_nonce(address_t const &address, uint64_t const nonce)
+    void set_nonce(Address const &address, uint64_t const nonce)
     {
         LOG_TRACE_L1("set_nonce: {} = {}", address, nonce);
 
@@ -214,7 +213,7 @@ public:
     }
 
     // EVMC Host Interface
-    bytes32_t get_code_hash(address_t const &address)
+    bytes32_t get_code_hash(Address const &address)
     {
         LOG_TRACE_L1("get_code_hash: {}", address);
 
@@ -225,7 +224,7 @@ public:
         return NULL_HASH;
     }
 
-    void set_code_hash(address_t const &address, bytes32_t const &hash)
+    void set_code_hash(Address const &address, bytes32_t const &hash)
     {
         LOG_TRACE_L1("set_code_hash: {} = {}", address, hash);
 
@@ -235,8 +234,8 @@ public:
     }
 
     // EVMC Host Interface
-    bool selfdestruct(
-        address_t const &address, address_t const &beneficiary) noexcept
+    bool
+    selfdestruct(Address const &address, Address const &beneficiary) noexcept
     {
         LOG_TRACE_L1("selfdestruct: {}, {}", address, beneficiary);
 
@@ -271,7 +270,7 @@ public:
         }
     }
 
-    bool account_is_dead(address_t const &address) noexcept
+    bool account_is_dead(Address const &address) noexcept
     {
         auto const &account = read_account(address);
         return !account.has_value() ||
@@ -281,7 +280,7 @@ public:
 
     // EVMC Host Interface
     evmc_access_status
-    access_storage(address_t const &address, bytes32_t const &key) noexcept
+    access_storage(Address const &address, bytes32_t const &key) noexcept
     {
         LOG_TRACE_L1("access_storage: {}, {}", address, key);
 
@@ -293,8 +292,7 @@ public:
     }
 
     // EVMC Host Interface
-    bytes32_t
-    get_storage(address_t const &address, bytes32_t const &key) noexcept
+    bytes32_t get_storage(Address const &address, bytes32_t const &key) noexcept
     {
         LOG_TRACE_L1("get_storage: {}, {}", address, key);
 
@@ -303,7 +301,7 @@ public:
 
     // EVMC Host Interface
     evmc_storage_status set_storage(
-        address_t const &address, bytes32_t const &key,
+        Address const &address, bytes32_t const &key,
         bytes32_t const &value) noexcept
     {
         LOG_TRACE_L1("set_storage: {}, {} = {}", address, key, value);
@@ -316,7 +314,7 @@ public:
     }
 
     // EVMC Host Interface
-    size_t get_code_size(address_t const &address) noexcept
+    size_t get_code_size(Address const &address) noexcept
     {
         LOG_TRACE_L1("get_code_size: {}", address);
 
@@ -329,7 +327,7 @@ public:
 
     // EVMC Host Interface
     size_t copy_code(
-        address_t const &address, size_t const offset, uint8_t *const buffer,
+        Address const &address, size_t const offset, uint8_t *const buffer,
         size_t const buffer_size) noexcept
     {
         auto const &account = read_account(address);
@@ -350,7 +348,7 @@ public:
         return 0z;
     }
 
-    byte_string get_code(address_t const &address) noexcept
+    byte_string get_code(Address const &address) noexcept
     {
         LOG_TRACE_L1("get_code: {}", address);
 
@@ -361,7 +359,7 @@ public:
         return {};
     }
 
-    void set_code(address_t const &address, byte_string const &code)
+    void set_code(Address const &address, byte_string const &code)
     {
         LOG_TRACE_L1("set_code: {} = {}", address, evmc::hex(code));
 
@@ -387,14 +385,14 @@ public:
         return logs_;
     }
 
-    void touch(address_t const &address)
+    void touch(Address const &address)
     {
         LOG_TRACE_L1("touched: {}", address);
 
         touched_.insert(address);
     }
 
-    constexpr bool is_touched(address_t const &address)
+    constexpr bool is_touched(Address const &address)
     {
         return touched_.contains(address);
     }

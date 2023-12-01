@@ -41,9 +41,9 @@ consteval unsigned num_precompiles(evmc_revision const rev)
 }
 
 template <evmc_revision rev>
-bool is_precompile(address_t const &address) noexcept
+bool is_precompile(Address const &address) noexcept
 {
-    static constexpr auto max_address = address_t{num_precompiles(rev)};
+    static constexpr auto max_address = Address{num_precompiles(rev)};
 
     if (MONAD_LIKELY(address > max_address)) {
         return false;

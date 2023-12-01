@@ -63,7 +63,7 @@ struct Trie
         trie_writer_.del_prefix(buf_.prefix());
     }
 
-    constexpr void set_trie_prefix(address_t const &prefix)
+    constexpr void set_trie_prefix(Address const &prefix)
     {
         buf_.set_prefix(prefix);
         leaves_cursor_.set_prefix(prefix);
@@ -364,15 +364,18 @@ struct Trie
     struct None
     {
     };
+
     struct FromStorage
     {
         update_iterator_t next_update;
     };
+
     struct FromUpdate
     {
         update_iterator_t it;
         update_iterator_t next_update;
     };
+
     using NextResult = std::variant<None, FromStorage, FromUpdate>;
 
     template <typename T>

@@ -77,7 +77,7 @@ constexpr evmc_message to_message(Transaction const &tx)
         if (tx.to) {
             return std::pair{EVMC_CALL, *tx.to};
         }
-        return std::pair{EVMC_CREATE, address_t{}};
+        return std::pair{EVMC_CREATE, Address{}};
     }();
 
     evmc_message msg{
@@ -96,7 +96,7 @@ constexpr evmc_message to_message(Transaction const &tx)
 template <evmc_revision rev>
 Receipt execute(
     State &state, EvmcHost<rev> &host, Transaction const &tx,
-    uint256_t const &base_fee_per_gas, address_t const &beneficiary)
+    uint256_t const &base_fee_per_gas, Address const &beneficiary)
 {
     irrevocable_change<rev>(state, tx, base_fee_per_gas);
 

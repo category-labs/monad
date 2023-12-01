@@ -38,34 +38,32 @@ public:
     StateDb(std::filesystem::path const &);
     ~StateDb();
 
-    virtual std::optional<Account>
-    read_account(address_t const &) const override;
+    virtual std::optional<Account> read_account(Address const &) const override;
 
     std::optional<Account>
-    read_account_history(address_t const &, uint64_t block_number);
+    read_account_history(Address const &, uint64_t block_number);
 
     virtual bytes32_t
-    read_storage(address_t const &, bytes32_t const &location) const override;
+    read_storage(Address const &, bytes32_t const &location) const override;
 
     bytes32_t read_storage_history(
-        address_t const &, bytes32_t const &location, uint64_t block_number);
+        Address const &, bytes32_t const &location, uint64_t block_number);
 
     virtual byte_string read_code(bytes32_t const &) const override;
 
-    using Accounts =
-        typename absl::btree_map<address_t, std::optional<Account>>;
+    using Accounts = typename absl::btree_map<Address, std::optional<Account>>;
 
     void write_accounts(Accounts const &);
 
     using Storage = typename absl::btree_map<
-        address_t,
+        Address,
         absl::btree_map<uint64_t, absl::btree_map<bytes32_t, bytes32_t>>>;
 
     void write_storage(Storage const &);
 
-    using AccountChanges = absl::btree_map<address_t, byte_string>;
+    using AccountChanges = absl::btree_map<Address, byte_string>;
     using StorageChanges = absl::btree_map<
-        address_t,
+        Address,
         absl::btree_map<uint64_t, absl::btree_map<bytes32_t, byte_string>>>;
 
     void
@@ -89,7 +87,10 @@ public:
         MONAD_ASSERT(false);
     }
 
-    auto *db() const { return db_.get(); } // TODO remove
+    auto *db() const
+    {
+        return db_.get();
+    } // TODO remove
 };
 
 MONAD_NAMESPACE_END

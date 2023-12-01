@@ -14,10 +14,10 @@ MONAD_NAMESPACE_BEGIN
 
 struct Db
 {
-    virtual std::optional<Account> read_account(address_t const &) const = 0;
+    virtual std::optional<Account> read_account(Address const &) const = 0;
 
     virtual bytes32_t
-    read_storage(address_t const &, bytes32_t const &key) const = 0;
+    read_storage(Address const &, bytes32_t const &key) const = 0;
 
     virtual byte_string read_code(bytes32_t const &) const = 0;
 

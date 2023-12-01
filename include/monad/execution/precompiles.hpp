@@ -10,10 +10,10 @@
 
 MONAD_NAMESPACE_BEGIN
 
-inline constexpr address_t ripemd_address{3};
+inline constexpr Address ripemd_address{3};
 
 template <evmc_revision rev>
-bool is_precompile(address_t const &) noexcept;
+bool is_precompile(Address const &) noexcept;
 
 template <evmc_revision rev>
 std::optional<evmc::Result> check_call_precompile(evmc_message const &);

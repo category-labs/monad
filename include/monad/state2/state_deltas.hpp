@@ -36,8 +36,7 @@ struct StateDelta
 static_assert(sizeof(StateDelta) == 240);
 static_assert(alignof(StateDelta) == 8);
 
-using StateDeltas =
-    ankerl::unordered_dense::segmented_map<address_t, StateDelta>;
+using StateDeltas = ankerl::unordered_dense::segmented_map<Address, StateDelta>;
 
 static_assert(sizeof(StateDeltas) == 64);
 static_assert(alignof(StateDeltas) == 8);

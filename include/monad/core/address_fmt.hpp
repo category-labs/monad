@@ -4,15 +4,15 @@
 #include <monad/core/basic_formatter.hpp>
 
 template <>
-struct quill::copy_loggable<monad::address_t> : std::true_type
+struct quill::copy_loggable<monad::Address> : std::true_type
 {
 };
 
 template <>
-struct fmt::formatter<monad::address_t> : public monad::basic_formatter
+struct fmt::formatter<monad::Address> : public monad::basic_formatter
 {
     template <typename FormatContext>
-    auto format(monad::address_t const &value, FormatContext &ctx) const
+    auto format(monad::Address const &value, FormatContext &ctx) const
     {
         fmt::format_to(
             ctx.out(),

@@ -19,7 +19,7 @@ MONAD_DB_NAMESPACE_BEGIN
 constexpr auto state_prefix = byte_string{0x00};
 
 template <class T>
-    requires std::same_as<T, bytes32_t> || std::same_as<T, address_t>
+    requires std::same_as<T, bytes32_t> || std::same_as<T, Address>
 constexpr byte_string to_key(T const &arg)
 {
     return byte_string{
@@ -104,7 +104,7 @@ public:
     }
 
     virtual std::optional<Account>
-    read_account(address_t const &addr) const override
+    read_account(Address const &addr) const override
     {
         auto const [node, result] = mpt::find_blocking(
             nullptr, root_.get(), state_prefix + to_key(addr));
@@ -118,7 +118,7 @@ public:
     }
 
     virtual bytes32_t
-    read_storage(address_t const &addr, bytes32_t const &key) const override
+    read_storage(Address const &addr, bytes32_t const &key) const override
     {
         auto const [node, result] = mpt::find_blocking(
             nullptr, root_.get(), state_prefix + to_key(addr) + to_key(key));

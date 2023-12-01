@@ -32,8 +32,8 @@ struct SharedTransactionData
 
     // the following fields are shared among all transactions in a test file
     uint64_t nonce;
-    address_t sender;
-    std::optional<address_t> to;
+    Address sender;
+    std::optional<Address> to;
     TransactionType transaction_type;
     uint256_t max_fee_per_gas;
     uint256_t max_priority_fee_per_gas;

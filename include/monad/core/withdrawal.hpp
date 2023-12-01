@@ -11,7 +11,7 @@ struct Withdrawal
     uint64_t index{0};
     uint64_t validator_index{};
     uint64_t amount{};
-    address_t recipient{};
+    Address recipient{};
 
     friend bool operator==(Withdrawal const &, Withdrawal const &) = default;
 };

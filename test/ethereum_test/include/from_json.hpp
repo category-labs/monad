@@ -127,12 +127,12 @@ template <typename T>
 namespace nlohmann
 {
     template <>
-    struct adl_serializer<monad::address_t>
+    struct adl_serializer<monad::Address>
     {
-        static void from_json(nlohmann::json const &json, monad::address_t &o)
+        static void from_json(nlohmann::json const &json, monad::Address &o)
         {
             auto const maybe_address =
-                evmc::from_hex<monad::address_t>(json.get<std::string>());
+                evmc::from_hex<monad::Address>(json.get<std::string>());
             if (!maybe_address) {
                 throw std::invalid_argument{fmt::format(
                     "failed to convert json object {} to hexadecimal using "
@@ -199,7 +199,7 @@ namespace nlohmann
                         storage_key.get<monad::bytes32_t>());
                 }
                 o.emplace_back(
-                    a.at("address").get<monad::address_t>(),
+                    a.at("address").get<monad::Address>(),
                     std::move(storage_access_list));
             }
         }
@@ -224,11 +224,11 @@ namespace nlohmann
             // does not use the strtoull implementation, whereas we need it so
             // we can turn a hex string into a uint64_t
             o.nonce = integer_from_json<uint64_t>(j.at("nonce"));
-            o.sender = j.at("sender").get<monad::address_t>();
+            o.sender = j.at("sender").get<monad::Address>();
 
             if (auto const to_it = j.find("to");
                 to_it != j.end() && !to_it->get<std::string>().empty()) {
-                o.to = to_it->get<monad::address_t>();
+                o.to = to_it->get<monad::Address>();
             }
 
             if (auto const gas_price_it = j.find("gasPrice");

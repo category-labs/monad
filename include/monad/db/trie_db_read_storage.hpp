@@ -9,7 +9,7 @@ MONAD_NAMESPACE_BEGIN
 
 template <typename Cursor>
 [[nodiscard]] bytes32_t trie_db_read_storage_with_hashed_key(
-    address_t const &a, trie::Nibbles const &k, Cursor &&leaves_cursor,
+    Address const &a, trie::Nibbles const &k, Cursor &&leaves_cursor,
     Cursor &&trie_cursor)
 {
     leaves_cursor.set_prefix(a);
@@ -56,7 +56,7 @@ template <typename Cursor>
 
 template <typename Cursor>
 [[nodiscard]] bytes32_t trie_db_read_storage(
-    address_t const &a, bytes32_t const &k, Cursor &&leaves_cursor,
+    Address const &a, bytes32_t const &k, Cursor &&leaves_cursor,
     Cursor &&trie_cursor)
 {
     auto const hashed_storage_key = trie::Nibbles{

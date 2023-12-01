@@ -34,7 +34,7 @@ struct BlockHeader
     byte_string_fixed<8> nonce{};
     byte_string extra_data{};
 
-    address_t beneficiary{};
+    Address beneficiary{};
 
     std::optional<uint256_t> base_fee_per_gas{std::nullopt}; // EIP-1559
     std::optional<bytes32_t> withdrawals_root{std::nullopt}; // EIP-4895

@@ -38,7 +38,7 @@ static inline rocksdb::Slice to_slice(byte_string_fixed<N> const &s)
     return rocksdb::Slice{reinterpret_cast<char const *>(s.data()), s.size()};
 }
 
-static inline rocksdb::Slice to_slice(address_t const &address)
+static inline rocksdb::Slice to_slice(Address const &address)
 {
     return rocksdb::Slice{reinterpret_cast<char const *>(address.bytes), 20};
 }
@@ -122,7 +122,7 @@ StateDb::~StateDb()
     cfs_.clear();
 }
 
-std::optional<Account> StateDb::read_account(address_t const &address) const
+std::optional<Account> StateDb::read_account(Address const &address) const
 {
     (void)address;
     (void)to_view;
@@ -130,17 +130,17 @@ std::optional<Account> StateDb::read_account(address_t const &address) const
 }
 
 std::optional<Account> StateDb::read_account_history(
-    address_t const &address, uint64_t const block_number)
+    Address const &address, uint64_t const block_number)
 {
     (void)address;
     (void)block_number;
-    typedef rocksdb::Slice (*to_slice_t)(address_t const &);
+    typedef rocksdb::Slice (*to_slice_t)(Address const &);
     (void)(to_slice_t)to_slice;
     return {};
 }
 
 bytes32_t
-StateDb::read_storage(address_t const &address, bytes32_t const &location) const
+StateDb::read_storage(Address const &address, bytes32_t const &location) const
 {
     byte_string_fixed<52> key;
     std::memcpy(&key[0], address.bytes, 20);
@@ -160,7 +160,7 @@ StateDb::read_storage(address_t const &address, bytes32_t const &location) const
 }
 
 bytes32_t StateDb::read_storage_history(
-    address_t const &address, bytes32_t const &location,
+    Address const &address, bytes32_t const &location,
     uint64_t const block_number)
 {
     byte_string_fixed<60> key;

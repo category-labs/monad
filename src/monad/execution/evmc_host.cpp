@@ -33,30 +33,29 @@ EvmcHostBase::EvmcHostBase(
 }
 
 bytes32_t EvmcHostBase::get_storage(
-    address_t const &address, bytes32_t const &key) const noexcept
+    Address const &address, bytes32_t const &key) const noexcept
 {
     return state_.get_storage(address, key);
 }
 
 evmc_storage_status EvmcHostBase::set_storage(
-    address_t const &address, bytes32_t const &key,
+    Address const &address, bytes32_t const &key,
     bytes32_t const &value) noexcept
 {
     return state_.set_storage(address, key, value);
 }
 
-evmc::uint256be
-EvmcHostBase::get_balance(address_t const &address) const noexcept
+evmc::uint256be EvmcHostBase::get_balance(Address const &address) const noexcept
 {
     return state_.get_balance(address);
 }
 
-size_t EvmcHostBase::get_code_size(address_t const &address) const noexcept
+size_t EvmcHostBase::get_code_size(Address const &address) const noexcept
 {
     return state_.get_code_size(address);
 }
 
-bytes32_t EvmcHostBase::get_code_hash(address_t const &address) const noexcept
+bytes32_t EvmcHostBase::get_code_hash(Address const &address) const noexcept
 {
     if (state_.account_is_dead(address)) {
         return bytes32_t{};
@@ -65,14 +64,14 @@ bytes32_t EvmcHostBase::get_code_hash(address_t const &address) const noexcept
 }
 
 size_t EvmcHostBase::copy_code(
-    address_t const &address, size_t offset, uint8_t *data,
+    Address const &address, size_t offset, uint8_t *data,
     size_t size) const noexcept
 {
     return state_.copy_code(address, offset, data, size);
 }
 
 bool EvmcHostBase::selfdestruct(
-    address_t const &address, address_t const &beneficiary) noexcept
+    Address const &address, Address const &beneficiary) noexcept
 {
     return state_.selfdestruct(address, beneficiary);
 }
@@ -90,7 +89,7 @@ EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
 };
 
 void EvmcHostBase::emit_log(
-    address_t const &address, uint8_t const *data, size_t data_size,
+    Address const &address, uint8_t const *data, size_t data_size,
     bytes32_t const topics[], size_t num_topics) noexcept
 {
     Receipt::Log log{.data = {data, data_size}, .address = address};
@@ -101,7 +100,7 @@ void EvmcHostBase::emit_log(
 }
 
 evmc_access_status EvmcHostBase::access_storage(
-    address_t const &address, bytes32_t const &key) noexcept
+    Address const &address, bytes32_t const &key) noexcept
 {
     return state_.access_storage(address, key);
 }

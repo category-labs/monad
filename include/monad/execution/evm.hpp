@@ -20,13 +20,13 @@ using result_t = tl::expected<void, evmc_result>;
 result_t check_sender_balance(State &, evmc_message const &) noexcept;
 
 void transfer_balances(
-    State &, evmc_message const &, address_t const &to) noexcept;
+    State &, evmc_message const &, Address const &to) noexcept;
 
 evmc_result transfer_call_balances(State &, evmc_message const &);
 
 template <evmc_revision rev>
 evmc::Result
-deploy_contract_code(State &, address_t const &, evmc::Result) noexcept;
+deploy_contract_code(State &, Address const &, evmc::Result) noexcept;
 
 template <evmc_revision rev>
 evmc::Result create_contract_account(

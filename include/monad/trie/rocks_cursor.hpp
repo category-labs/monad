@@ -35,16 +35,16 @@ struct RocksCursor
 
         [[nodiscard]] constexpr Nibbles path() const
         {
-            MONAD_DEBUG_ASSERT(!has_prefix || raw.size() > sizeof(address_t));
+            MONAD_DEBUG_ASSERT(!has_prefix || raw.size() > sizeof(Address));
             return deserialize_nibbles(
-                       has_prefix ? raw.substr(sizeof(address_t)) : raw)
+                       has_prefix ? raw.substr(sizeof(Address)) : raw)
                 .first;
         }
 
         [[nodiscard]] constexpr bool path_empty() const
         {
-            MONAD_DEBUG_ASSERT(!has_prefix || raw.size() > sizeof(address_t));
-            return (has_prefix ? raw[sizeof(address_t)] : raw[0]) == 0;
+            MONAD_DEBUG_ASSERT(!has_prefix || raw.size() > sizeof(Address));
+            return (has_prefix ? raw[sizeof(Address)] : raw[0]) == 0;
         }
     };
 
@@ -162,12 +162,15 @@ struct RocksCursor
         return !valid();
     }
 
-    constexpr void set_prefix(address_t const &address) noexcept
+    constexpr void set_prefix(Address const &address) noexcept
     {
         buf_.set_prefix(address);
     }
 
-    void reset() noexcept { it_.reset(); };
+    void reset() noexcept
+    {
+        it_.reset();
+    };
 };
 
 [[nodiscard]] inline Nibbles deserialize_nibbles(rocksdb::Slice slice)

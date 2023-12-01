@@ -26,7 +26,7 @@ struct Transaction
 {
     struct AccessEntry
     {
-        address_t a{};
+        Address a{};
         std::vector<bytes32_t> keys{};
 
         friend bool
@@ -40,8 +40,8 @@ struct Transaction
     uint256_t max_fee_per_gas{}; // gas_price
     uint64_t gas_limit{};
     uint256_t value{};
-    std::optional<address_t> to{};
-    std::optional<address_t> from{};
+    std::optional<Address> to{};
+    std::optional<Address> from{};
     byte_string data{};
     TransactionType type{};
     AccessList access_list{};
@@ -59,6 +59,6 @@ static_assert(alignof(Transaction::AccessList) == 8);
 static_assert(sizeof(Transaction) == 336);
 static_assert(alignof(Transaction) == 8);
 
-std::optional<address_t> recover_sender(Transaction const &);
+std::optional<Address> recover_sender(Transaction const &);
 
 MONAD_NAMESPACE_END

@@ -22,7 +22,7 @@ struct Receipt
     {
         byte_string data{};
         std::vector<bytes32_t> topics{};
-        address_t address{};
+        Address address{};
 
         friend bool operator==(Log const &, Log const &) = default;
     };

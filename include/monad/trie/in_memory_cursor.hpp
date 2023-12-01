@@ -35,16 +35,16 @@ struct InMemoryCursor
 
         [[nodiscard]] constexpr Nibbles path() const
         {
-            assert(!has_prefix || raw.size() > sizeof(address_t));
+            assert(!has_prefix || raw.size() > sizeof(Address));
             return deserialize_nibbles(
-                       has_prefix ? raw.substr(sizeof(address_t)) : raw)
+                       has_prefix ? raw.substr(sizeof(Address)) : raw)
                 .first;
         }
 
         [[nodiscard]] constexpr bool path_empty() const
         {
-            assert(!has_prefix || raw.size() > sizeof(address_t));
-            return (has_prefix ? raw[sizeof(address_t)] : raw[0]) == 0;
+            assert(!has_prefix || raw.size() > sizeof(Address));
+            return (has_prefix ? raw[sizeof(Address)] : raw[0]) == 0;
         }
     };
 
@@ -100,7 +100,10 @@ struct InMemoryCursor
             &storage_t::value_type::first);
     }
 
-    [[nodiscard]] constexpr bool valid() const { return is_it_valid(it_); }
+    [[nodiscard]] constexpr bool valid() const
+    {
+        return is_it_valid(it_);
+    }
 
     [[nodiscard]] constexpr bool empty() const
     {
@@ -112,7 +115,7 @@ struct InMemoryCursor
             &storage_t::value_type::first));
     }
 
-    constexpr void set_prefix(address_t const &address)
+    constexpr void set_prefix(Address const &address)
     {
         buf_.set_prefix(address);
     }

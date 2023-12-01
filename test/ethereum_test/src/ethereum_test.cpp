@@ -25,7 +25,7 @@ void load_state_from_json(nlohmann::json const &j, State &state)
 {
     for (auto const &[j_addr, j_acc] : j.items()) {
         auto const account_address =
-            evmc::from_hex<monad::address_t>(j_addr).value();
+            evmc::from_hex<monad::Address>(j_addr).value();
 
         if (j_acc.contains("code") || j_acc.contains("storage")) {
             ASSERT_TRUE(j_acc.contains("code") && j_acc.contains("storage"));

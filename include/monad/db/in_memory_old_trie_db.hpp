@@ -61,7 +61,7 @@ struct InMemoryOldTrieDB : public Db
     ////////////////////////////////////////////////////////////////////
 
     [[nodiscard]] std::optional<Account>
-    read_account(address_t const &a) const override
+    read_account(Address const &a) const override
     {
         return trie_db_read_account(
             a,
@@ -70,7 +70,7 @@ struct InMemoryOldTrieDB : public Db
     }
 
     [[nodiscard]] bytes32_t
-    read_storage(address_t const &a, bytes32_t const &key) const override
+    read_storage(Address const &a, bytes32_t const &key) const override
     {
         return trie_db_read_storage(
             a,
@@ -111,7 +111,7 @@ struct InMemoryOldTrieDB : public Db
         return accounts_trie.trie.root_hash();
     }
 
-    [[nodiscard]] bytes32_t storage_root(address_t const &a)
+    [[nodiscard]] bytes32_t storage_root(Address const &a)
     {
         storage_trie.trie.set_trie_prefix(a);
         return storage_trie.trie.root_hash();

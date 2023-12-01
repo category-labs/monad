@@ -55,10 +55,9 @@ namespace detail
         nlohmann::json &state, byte_string_view key_slice, TCursor &leaf_cursor,
         TCursor &trie_cursor)
     {
-        monad::address_t account_address;
-        std::memcpy(
-            &account_address, key_slice.data(), sizeof(monad::address_t));
-        key_slice.remove_prefix(sizeof(monad::address_t));
+        monad::Address account_address;
+        std::memcpy(&account_address, key_slice.data(), sizeof(monad::Address));
+        key_slice.remove_prefix(sizeof(monad::Address));
 
         auto const [keccaked_storage_key_nibbles, num_bytes] =
             monad::trie::deserialize_nibbles(key_slice);
@@ -83,7 +82,7 @@ namespace detail
 
     template <typename TDatabase>
     void dump_accounts_from_db(
-        TDatabase &db, nlohmann::json &state, address_t address,
+        TDatabase &db, nlohmann::json &state, Address address,
         Account const &account)
     {
         auto const keccaked_address_hex = fmt::format("{}", hash(address));

@@ -43,6 +43,7 @@ public:
         std::string *, rocksdb::Slice const &) const override final
     {
     }
+
     void FindShortSuccessor(std::string *) const override final {}
 };
 
@@ -51,10 +52,10 @@ class PrefixPathComparator : public rocksdb::Comparator
     int Compare(
         rocksdb::Slice const &s1, rocksdb::Slice const &s2) const override final
     {
-        assert(s1.size() > sizeof(address_t));
-        assert(s2.size() > sizeof(address_t));
+        assert(s1.size() > sizeof(Address));
+        assert(s2.size() > sizeof(Address));
 
-        auto const rc = std::memcmp(s1.data(), s2.data(), sizeof(address_t));
+        auto const rc = std::memcmp(s1.data(), s2.data(), sizeof(Address));
         if (rc != 0) {
             return rc;
         }
@@ -65,8 +66,8 @@ class PrefixPathComparator : public rocksdb::Comparator
         auto bs2 = byte_string_view{
             reinterpret_cast<byte_string_view::value_type const *>(s2.data()),
             s2.size()};
-        bs1.remove_prefix(sizeof(address_t));
-        bs2.remove_prefix(sizeof(address_t));
+        bs1.remove_prefix(sizeof(Address));
+        bs2.remove_prefix(sizeof(Address));
 
         return path_compare(bs1, bs2);
     }
@@ -83,6 +84,7 @@ class PrefixPathComparator : public rocksdb::Comparator
         std::string *, rocksdb::Slice const &) const override final
     {
     }
+
     void FindShortSuccessor(std::string *) const override final {}
 };
 

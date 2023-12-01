@@ -22,7 +22,7 @@ BlockState::BlockState(Db &db)
 {
 }
 
-std::optional<Account> BlockState::read_account(address_t const &address)
+std::optional<Account> BlockState::read_account(Address const &address)
 {
     // block state
     {
@@ -46,7 +46,7 @@ std::optional<Account> BlockState::read_account(address_t const &address)
 }
 
 bytes32_t BlockState::read_storage(
-    address_t const &address, uint64_t /*const incarnation*/,
+    Address const &address, uint64_t /*const incarnation*/,
     bytes32_t const &location)
 {
     // block state

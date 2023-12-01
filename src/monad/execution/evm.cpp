@@ -40,7 +40,7 @@ result_t check_sender_balance(State &state, evmc_message const &msg) noexcept
 }
 
 void transfer_balances(
-    State &state, evmc_message const &msg, address_t const &to) noexcept
+    State &state, evmc_message const &msg, Address const &to) noexcept
 {
     auto const value = intx::be::load<uint256_t>(msg.value);
     state.subtract_from_balance(msg.sender, value);
@@ -63,7 +63,7 @@ evmc_result transfer_call_balances(State &state, evmc_message const &msg)
 
 template <evmc_revision rev>
 evmc::Result deploy_contract_code(
-    State &state, address_t const &address, evmc::Result result) noexcept
+    State &state, Address const &address, evmc::Result result) noexcept
 {
     MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
 
@@ -209,7 +209,7 @@ evmc::Result call_evm(
 
     MONAD_DEBUG_ASSERT(
         msg.kind != EVMC_CALL ||
-        address_t{msg.recipient} == address_t{msg.code_address});
+        Address{msg.recipient} == Address{msg.code_address});
     if (msg.kind == EVMC_CALL && msg.flags & EVMC_STATIC) {
         // eip-161
         new_state.touch(msg.recipient);

@@ -13,7 +13,7 @@ MONAD_TRIE_NAMESPACE_BEGIN
 struct KeyBuffer
 {
     static constexpr size_t MAX_PATH_SIZE = 1 + Nibbles::MAX_SIZE / 2;
-    static constexpr size_t MAX_SIZE = sizeof(address_t) + MAX_PATH_SIZE;
+    static constexpr size_t MAX_SIZE = sizeof(Address) + MAX_PATH_SIZE;
 
     byte_string_fixed<MAX_SIZE> raw;
     size_t buf_size = 0;
@@ -23,6 +23,7 @@ struct KeyBuffer
     {
         return {&raw[0], prefix_size};
     }
+
     [[nodiscard]] constexpr byte_string_view view() const
     {
         return {&raw[0], buf_size};
@@ -30,15 +31,15 @@ struct KeyBuffer
 
     constexpr void set_prefix(byte_string_view prefix) noexcept
     {
-        MONAD_DEBUG_ASSERT(prefix.size() == sizeof(address_t));
-        prefix_size = sizeof(address_t);
-        buf_size = sizeof(address_t);
-        std::copy_n(prefix.data(), sizeof(address_t), &raw[0]);
+        MONAD_DEBUG_ASSERT(prefix.size() == sizeof(Address));
+        prefix_size = sizeof(Address);
+        buf_size = sizeof(Address);
+        std::copy_n(prefix.data(), sizeof(Address), &raw[0]);
     }
 
-    constexpr void set_prefix(address_t const &address)
+    constexpr void set_prefix(Address const &address)
     {
-        set_prefix({&address.bytes[0], sizeof(address_t)});
+        set_prefix({&address.bytes[0], sizeof(Address)});
     }
 
     constexpr void set_path(NibblesView const &nibbles)

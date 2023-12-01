@@ -306,7 +306,7 @@ struct test_case
 template <class fork = monad::fork_traits::berlin>
 void do_geth_tests(
     char const *suite_name, std::vector<test_case> const &test_cases,
-    monad::address_t const &code_address)
+    monad::Address const &code_address)
 {
     for (auto const test_case : test_cases) {
         auto const input_bytes =
@@ -457,6 +457,7 @@ static const std::vector<test_case> MODEXP_BYZANTIUM_TEST_CASES =
         .gas = 285900
     }
 };
+
 // clang-format on
 
 TEST(SpuriousDragonThroughByzantium, modular_exponentiation)
@@ -565,6 +566,7 @@ static const std::vector<test_case> BNADD_BYZANTIUM_TEST_CASES =
         .gas = 500,
     }
 };
+
 // clang-format on
 
 TEST(SpuriousDragonThroughByzantium, bn_add)
@@ -691,6 +693,7 @@ static const std::vector<test_case> BNMUL_BYZANTIUM_TEST_CASES =
         .gas = 40'000,
     }
 };
+
 // clang-format on
 
 TEST(SpuriousDragonThroughByzantium, bn_mul)
@@ -787,6 +790,7 @@ static const std::vector<test_case> BNPAIRING_BYZANTIUM_TEST_CASES =
         .gas = 260000,
     }
 };
+
 // clang-format on
 
 TEST(SpuriousDragonThroughByzantium, bn_pairing)
@@ -939,6 +943,7 @@ static const std::vector<test_case> BLAKE2F_INVALID_ISTANBUL_TEST_CASES =
         .name = "vector 3: malformed final block indicator flag"
     }
 };
+
 // clang-format on
 
 TEST(Istanbul, blake2f_valid)

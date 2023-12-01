@@ -34,7 +34,7 @@ struct RocksWriter
 
     void del_prefix(byte_string_view prefix)
     {
-        MONAD_DEBUG_ASSERT(prefix.size() == sizeof(address_t));
+        MONAD_DEBUG_ASSERT(prefix.size() == sizeof(Address));
 
         static constexpr std::array<byte_string::value_type, 34> SENTINEL = {
             65,   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,

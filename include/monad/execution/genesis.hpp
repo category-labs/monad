@@ -73,7 +73,7 @@ inline void read_genesis_state(nlohmann::json const &genesis_json, Db &db)
 {
     StateDeltas state_deltas;
     for (auto const &account_info : genesis_json["alloc"].items()) {
-        address_t address{};
+        Address address{};
         auto const address_byte_string =
             evmc::from_hex("0x" + account_info.key());
         MONAD_ASSERT(address_byte_string.has_value());

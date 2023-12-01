@@ -153,7 +153,7 @@ TEST(Rlp_Number, DecodeEncodeBigNumers)
     {
         auto encoding =
             encode_address(0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address);
-        address_t decoding{};
+        Address decoding{};
         EXPECT_EQ(decode_address(decoding, encoding).size(), 0);
         auto const address = monad::byte_string(
             {0x94, 0xf8, 0x63, 0x63, 0x77, 0xb7, 0xa9, 0x98, 0xb5, 0x1a, 0x3c,

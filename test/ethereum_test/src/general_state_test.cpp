@@ -58,7 +58,7 @@ namespace
             json["currentGasLimit"].get<monad::uint256_t>());
         o.timestamp = static_cast<uint64_t>(
             json["currentTimestamp"].get<monad::uint256_t>());
-        o.beneficiary = json["currentCoinbase"].get<monad::address_t>();
+        o.beneficiary = json["currentCoinbase"].get<monad::Address>();
 
         // we cannot use the nlohmann::json from_json<uint64_t> because
         // it does not use the strtoull implementation, whereas we need

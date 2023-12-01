@@ -21,7 +21,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-std::optional<address_t> recover_sender(Transaction const &txn)
+std::optional<Address> recover_sender(Transaction const &txn)
 {
     if (txn.from.has_value()) {
         return txn.from;
@@ -35,7 +35,7 @@ std::optional<address_t> recover_sender(Transaction const &txn)
     intx::be::unsafe::store(signature, txn.sc.r);
     intx::be::unsafe::store(signature + sizeof(txn.sc.r), txn.sc.s);
 
-    std::optional<address_t> res = evmc::address{};
+    std::optional<Address> res = evmc::address{};
     static std::unique_ptr<
         secp256k1_context,
         decltype(&secp256k1_context_destroy)> const

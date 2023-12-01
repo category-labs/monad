@@ -32,8 +32,6 @@
 #include <quill/bundled/fmt/core.h>
 #include <quill/detail/LogMacros.h>
 
-#include <boost/outcome/try.hpp>
-
 #include <test_resource_data.h>
 
 #include <algorithm>
@@ -77,34 +75,23 @@ namespace
 
     template <typename Traits>
     Result<Receipt> execute(
-        BlockHeader const &block_header, State &state, Transaction const &txn)
+        BlockHeader const &block_header, State &state, Transaction const &tx)
     {
         using namespace monad::test;
 
-        BOOST_OUTCOME_TRY(static_validate_transaction<Traits::rev>(
-            txn, block_header.base_fee_per_gas));
-
-        BOOST_OUTCOME_TRY(validate_transaction(state, txn));
-
         // sum of transaction gas limit and gas utilized in block prior (0 in
         // this case) must be no greater than the blocks gas limit
-        if (block_header.gas_limit < txn.gas_limit) {
+        if (block_header.gas_limit < tx.gas_limit) {
             return TransactionError::GasLimitReached;
         }
 
-        auto const tx_context = get_tx_context<Traits::rev>(txn, block_header);
         BlockHashBuffer block_hash_buffer;
         MONAD_ASSERT(block_header.number);
         block_hash_buffer.set(
             block_header.number - 1, block_header.parent_hash);
-        EvmcHost<Traits::rev> host{tx_context, block_hash_buffer, state};
 
-        return execute<Traits::rev>(
-            state,
-            host,
-            txn,
-            block_header.base_fee_per_gas.value_or(0),
-            block_header.beneficiary);
+        return validate_and_execute<Traits::rev>(
+            tx, block_header, block_hash_buffer, state);
     }
 
     Result<Receipt> execute_dispatch(

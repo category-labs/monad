@@ -150,8 +150,6 @@ Receipt execute(
     return receipt;
 }
 
-EXPLICIT_EVMC_REVISION(execute);
-
 template <evmc_revision rev>
 Result<Receipt> validate_and_execute(
     Transaction const &tx, BlockHeader const &hdr,

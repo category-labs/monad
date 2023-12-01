@@ -16,6 +16,7 @@
 #include <monad/state2/state.hpp>
 #include <monad/state2/state_deltas.hpp>
 
+#include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>

@@ -16,17 +16,17 @@ using namespace monad::rlp;
 TEST(Rlp_Transaction, DecodeEncodeAccessList)
 {
     // Empty List
-    monad::Transaction::AccessList const a{};
+    monad::AccessList const a{};
     auto encoding = encode_access_list(a);
     auto const empty_access_list = monad::byte_string({0xc0});
     EXPECT_EQ(encoding, empty_access_list);
 
     // Simple List
-    monad::Transaction::AccessList b{
+    monad::AccessList b{
         {0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address,
          {0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32}}};
     encoding = encode_access_list(b);
-    monad::Transaction::AccessList decoding{};
+    monad::AccessList decoding{};
     EXPECT_EQ(decode_access_list(decoding, encoding).size(), 0);
     auto const access_list = monad::byte_string(
         {0xf8, 0x38, 0xf7, 0x94, 0xf8, 0x63, 0x63, 0x77, 0xb7, 0xa9, 0x98, 0xb5,
@@ -45,8 +45,7 @@ TEST(Rlp_Transaction, DecodeEncodeAccessList)
         0x0000000000000000000000000000000000000000000000000000000000000007_bytes32};
     static constexpr auto key2{
         0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
-    static monad::Transaction::AccessList const list{
-        Transaction::AccessEntry{access_addr, {key1, key2}}};
+    static monad::AccessList const list{AccessEntry{access_addr, {key1, key2}}};
     auto const eip2930_example = monad::byte_string(
         {0xf8, 0x5b, 0xf8, 0x59, 0x94, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0,
          0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0,
@@ -68,12 +67,12 @@ TEST(Rlp_Transaction, DecodeEncodeAccessList)
 
 TEST(Rlp_Transaction, EncodeAccessListMultipleEntry)
 {
-    auto const access_list = Transaction::AccessList{
-        Transaction::AccessEntry{
+    auto const access_list = AccessList{
+        AccessEntry{
             .a = 0xcccccccccccccccccccccccccccccccccccccccc_address,
             .keys =
                 {0x000000000000000000000000000000000000000000000000000000000000ce11_bytes32}},
-        Transaction::AccessEntry{
+        AccessEntry{
             .a = 0xcccccccccccccccccccccccccccccccccccccccf_address,
             .keys = {
                 0x00000000000000000000000000000000000000000000000000000000000060a7_bytes32}}};
@@ -242,8 +241,7 @@ TEST(Rlp_Transaction, EncodeEip2930)
         0x0000000000000000000000000000000000000000000000000000000000000007_bytes32};
     static constexpr auto key2{
         0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
-    static monad::Transaction::AccessList const a{
-        Transaction::AccessEntry{access_addr, {key1, key2}}};
+    static monad::AccessList const a{AccessEntry{access_addr, {key1, key2}}};
 
     monad::Transaction const t{
         .sc = {.r = r, .s = s, .chain_id = 3}, // Ropsten
@@ -317,7 +315,7 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
         0x28ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276_u256};
     static constexpr auto s{
         0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83_u256};
-    static monad::Transaction::AccessList const a{};
+    static monad::AccessList const a{};
 
     monad::Transaction const t{
         .sc =
@@ -385,7 +383,7 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
         0x28ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276_u256};
     static constexpr auto s{
         0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83_u256};
-    static monad::Transaction::AccessList const a{};
+    static monad::AccessList const a{};
 
     monad::Transaction const t{
         .sc =

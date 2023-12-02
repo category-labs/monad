@@ -22,19 +22,24 @@ enum class TransactionType
     eip1559,
 };
 
+struct AccessEntry
+{
+    Address a{};
+    std::vector<bytes32_t> keys{};
+
+    friend bool operator==(AccessEntry const &, AccessEntry const &) = default;
+};
+
+static_assert(sizeof(AccessEntry) == 48);
+static_assert(alignof(AccessEntry) == 8);
+
+using AccessList = std::vector<AccessEntry>;
+
+static_assert(sizeof(AccessList) == 24);
+static_assert(alignof(AccessList) == 8);
+
 struct Transaction
 {
-    struct AccessEntry
-    {
-        Address a{};
-        std::vector<bytes32_t> keys{};
-
-        friend bool
-        operator==(AccessEntry const &, AccessEntry const &) = default;
-    };
-
-    using AccessList = std::vector<AccessEntry>;
-
     SignatureAndChain sc{};
     uint64_t nonce{};
     uint256_t max_fee_per_gas{}; // gas_price
@@ -49,12 +54,6 @@ struct Transaction
 
     friend bool operator==(Transaction const &, Transaction const &) = default;
 };
-
-static_assert(sizeof(Transaction::AccessEntry) == 48);
-static_assert(alignof(Transaction::AccessEntry) == 8);
-
-static_assert(sizeof(Transaction::AccessList) == 24);
-static_assert(alignof(Transaction::AccessList) == 8);
 
 static_assert(sizeof(Transaction) == 336);
 static_assert(alignof(Transaction) == 8);

@@ -187,10 +187,9 @@ namespace nlohmann
     };
 
     template <>
-    struct adl_serializer<monad::Transaction::AccessList>
+    struct adl_serializer<monad::AccessList>
     {
-        static void
-        from_json(nlohmann::json const &j, monad::Transaction::AccessList &o)
+        static void from_json(nlohmann::json const &j, monad::AccessList &o)
         {
             for (auto const &a : j) {
                 std::vector<monad::bytes32_t> storage_access_list;
@@ -257,7 +256,7 @@ namespace nlohmann
             if (auto const ac_it = j.find("accessLists"); ac_it != j.end()) {
                 for (auto const &j_access_list : *ac_it) {
                     o.access_lists.emplace_back(
-                        j_access_list.get<monad::Transaction::AccessList>());
+                        j_access_list.get<monad::AccessList>());
                 }
                 if (o.transaction_type == monad::TransactionType::eip155) {
                     // Upgrade tx type if tx has

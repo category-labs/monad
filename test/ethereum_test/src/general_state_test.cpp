@@ -228,7 +228,7 @@ void GeneralStateTest::TestBody()
                 .type = data.transaction_type,
                 .access_list =
                     data.access_lists.empty()
-                        ? Transaction::AccessList{}
+                        ? AccessList{}
                         : data.access_lists.at(expected.indices.input),
                 .max_priority_fee_per_gas =
                     rev < EVMC_LONDON

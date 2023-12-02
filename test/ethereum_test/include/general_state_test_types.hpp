@@ -25,7 +25,7 @@ struct Indices
 
 struct SharedTransactionData
 {
-    std::vector<Transaction::AccessList> access_lists;
+    std::vector<AccessList> access_lists;
     std::vector<byte_string> inputs;
     std::vector<uint64_t> gas_limits;
     std::vector<uint256_t> values;

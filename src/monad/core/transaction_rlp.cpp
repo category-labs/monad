@@ -22,7 +22,7 @@
 MONAD_RLP_NAMESPACE_BEGIN
 
 // Encode
-byte_string encode_access_list(Transaction::AccessList const &access_list)
+byte_string encode_access_list(AccessList const &access_list)
 {
     byte_string result;
     byte_string temp;
@@ -169,7 +169,7 @@ byte_string_view decode_access_entry_keys(
 }
 
 byte_string_view
-decode_access_entry(Transaction::AccessEntry &ae, byte_string_view const enc)
+decode_access_entry(AccessEntry &ae, byte_string_view const enc)
 {
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
@@ -181,8 +181,8 @@ decode_access_entry(Transaction::AccessEntry &ae, byte_string_view const enc)
     return rest_of_enc;
 }
 
-byte_string_view decode_access_list(
-    Transaction::AccessList &access_list, byte_string_view const enc)
+byte_string_view
+decode_access_list(AccessList &access_list, byte_string_view const enc)
 {
     byte_string_view payload{};
     auto const rest_of_enc = parse_list_metadata(payload, enc);
@@ -194,7 +194,7 @@ byte_string_view decode_access_list(
     access_list.reserve(list_space / access_entry_size_approx);
 
     while (payload.size() > 0) {
-        Transaction::AccessEntry ae{};
+        AccessEntry ae{};
         payload = decode_access_entry(ae, payload);
         access_list.emplace_back(ae);
     }

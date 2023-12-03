@@ -14,7 +14,7 @@ class State;
 struct Transaction;
 
 template <evmc_revision rev>
-Result<Receipt> validate_and_execute(
-    Transaction &, BlockHeader const &, BlockHashBuffer const &, State &);
+Result<Receipt>
+execute(Transaction &, BlockHeader const &, BlockHashBuffer const &, State &);
 
 MONAD_NAMESPACE_END

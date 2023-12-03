@@ -115,7 +115,7 @@ execute_block(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
 
         BOOST_OUTCOME_TRY(
             auto const receipt,
-            validate_and_execute<rev>(
+            execute<rev>(
                 block.transactions[i], block.header, block_hash_buffer, state));
 
         LOG_DEBUG("State Deltas: {}", state.state_);

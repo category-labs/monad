@@ -45,8 +45,8 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     BlockHeader const header{.beneficiary = bene};
     BlockHashBuffer const block_hash_buffer;
 
-    auto const result = validate_and_execute<EVMC_SHANGHAI>(
-        tx, header, block_hash_buffer, state);
+    auto const result =
+        execute<EVMC_SHANGHAI>(tx, header, block_hash_buffer, state);
 
     ASSERT_TRUE(!result.has_error());
 

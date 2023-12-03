@@ -90,8 +90,7 @@ namespace
         block_hash_buffer.set(
             block_header.number - 1, block_header.parent_hash);
 
-        return validate_and_execute<Traits::rev>(
-            tx, block_header, block_hash_buffer, state);
+        return execute<Traits::rev>(tx, block_header, block_hash_buffer, state);
     }
 
     Result<Receipt> execute_dispatch(

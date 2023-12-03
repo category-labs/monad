@@ -62,7 +62,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 
     BlockHashBuffer const block_hash_buffer;
 
-    auto const result = validate_and_execute<rev>(t, bh, block_hash_buffer, s);
+    auto const result = execute<rev>(t, bh, block_hash_buffer, s);
 
     ASSERT_TRUE(!result.has_error());
 
@@ -129,7 +129,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
 
     BlockHashBuffer const block_hash_buffer;
 
-    auto const result = validate_and_execute<rev>(t, bh, block_hash_buffer, s);
+    auto const result = execute<rev>(t, bh, block_hash_buffer, s);
 
     ASSERT_TRUE(!result.has_error());
 
@@ -192,7 +192,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
 
     BlockHashBuffer const block_hash_buffer;
 
-    auto const result = validate_and_execute<rev>(t, bh, block_hash_buffer, s);
+    auto const result = execute<rev>(t, bh, block_hash_buffer, s);
 
     ASSERT_TRUE(!result.has_error());
 

@@ -92,7 +92,7 @@ constexpr evmc_message to_message(Transaction const &tx)
 }
 
 template <evmc_revision rev>
-Receipt execute(
+Receipt execute_impl(
     State &state, EvmcHost<rev> &host, Transaction const &tx,
     uint256_t const &base_fee_per_gas, Address const &beneficiary)
 {
@@ -149,7 +149,7 @@ Receipt execute(
 }
 
 template <evmc_revision rev>
-Result<Receipt> validate_and_execute(
+Result<Receipt> execute(
     Transaction &tx, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, State &state)
 {
@@ -168,10 +168,10 @@ Result<Receipt> validate_and_execute(
 
     auto const tx_context = get_tx_context<rev>(tx, hdr);
     EvmcHost<rev> host{tx_context, block_hash_buffer, state};
-    return execute<rev>(
+    return execute_impl<rev>(
         state, host, tx, hdr.base_fee_per_gas.value_or(0), hdr.beneficiary);
 }
 
-EXPLICIT_EVMC_REVISION(validate_and_execute);
+EXPLICIT_EVMC_REVISION(execute);
 
 MONAD_NAMESPACE_END

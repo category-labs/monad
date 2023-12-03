@@ -35,7 +35,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     state.add_to_balance(from, 56'000'000'000'000'000);
     state.set_nonce(from, 25);
 
-    static Transaction const tx{
+    Transaction tx{
         .nonce = 25,
         .max_fee_per_gas = 10,
         .gas_limit = 55'000,

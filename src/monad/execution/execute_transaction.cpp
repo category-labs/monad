@@ -29,43 +29,41 @@ MONAD_NAMESPACE_BEGIN
 // YP Sec 6.2 "irrevocable_change"
 template <evmc_revision rev>
 constexpr void irrevocable_change(
-    State &state, Transaction const &txn, uint256_t const &base_fee_per_gas)
+    State &state, Transaction const &tx, uint256_t const &base_fee_per_gas)
 {
-    if (txn.to) { // EVM will increment if new contract
-        auto const nonce = state.get_nonce(*txn.from);
-        state.set_nonce(*txn.from, nonce + 1);
+    if (tx.to) { // EVM will increment if new contract
+        auto const nonce = state.get_nonce(*tx.from);
+        state.set_nonce(*tx.from, nonce + 1);
     }
-    MONAD_DEBUG_ASSERT(txn.from.has_value());
 
     auto const upfront_cost =
-        txn.gas_limit * gas_price<rev>(txn, base_fee_per_gas);
-    state.subtract_from_balance(txn.from.value(), upfront_cost);
+        tx.gas_limit * gas_price<rev>(tx, base_fee_per_gas);
+    state.subtract_from_balance(*tx.from, upfront_cost);
 }
 
 // YP Eqn 72
 template <evmc_revision rev>
 constexpr uint64_t g_star(
-    Transaction const &txn, uint64_t const gas_remaining, uint64_t const refund)
+    Transaction const &tx, uint64_t const gas_remaining, uint64_t const refund)
 {
     // EIP-3529
     constexpr auto max_refund_quotient = rev >= EVMC_LONDON ? 5 : 2;
     auto const refund_allowance =
-        (txn.gas_limit - gas_remaining) / max_refund_quotient;
+        (tx.gas_limit - gas_remaining) / max_refund_quotient;
 
     return gas_remaining + std::min(refund_allowance, refund);
 }
 
 template <evmc_revision rev>
 constexpr auto refund_gas(
-    State &state, Transaction const &txn, uint256_t const &base_fee_per_gas,
+    State &state, Transaction const &tx, uint256_t const &base_fee_per_gas,
     uint64_t const gas_leftover, uint64_t const refund)
 {
     // refund and priority, Eqn. 73-76
-    auto const gas_remaining = g_star<rev>(txn, gas_leftover, refund);
-    auto const gas_cost = gas_price<rev>(txn, base_fee_per_gas);
+    auto const gas_remaining = g_star<rev>(tx, gas_leftover, refund);
+    auto const gas_cost = gas_price<rev>(tx, base_fee_per_gas);
 
-    MONAD_DEBUG_ASSERT(txn.from.has_value());
-    state.add_to_balance(txn.from.value(), gas_cost * gas_remaining);
+    state.add_to_balance(*tx.from, gas_cost * gas_remaining);
 
     return gas_remaining;
 }
@@ -152,11 +150,18 @@ Receipt execute(
 
 template <evmc_revision rev>
 Result<Receipt> validate_and_execute(
-    Transaction const &tx, BlockHeader const &hdr,
+    Transaction &tx, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, State &state)
 {
     BOOST_OUTCOME_TRY(
         static_validate_transaction<rev>(tx, hdr.base_fee_per_gas));
+
+    if (MONAD_LIKELY(!tx.from.has_value())) {
+        tx.from = recover_sender(tx);
+        if (MONAD_UNLIKELY(!tx.from.has_value())) {
+            return TransactionError::MissingSender;
+        }
+    }
 
     // TODO: Issue #164, Issue #54
     BOOST_OUTCOME_TRY(validate_transaction(state, tx));

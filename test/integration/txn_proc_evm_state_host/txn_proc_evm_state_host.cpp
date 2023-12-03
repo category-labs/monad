@@ -48,7 +48,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 
     BlockHeader const bh{.number = 2, .beneficiary = a, .base_fee_per_gas = 0};
     BlockHeader const ommer{.number = 1, .beneficiary = o};
-    Transaction const t{
+    Transaction t{
         .nonce = 0,
         .max_fee_per_gas = 10,
         .gas_limit = 25'000,
@@ -115,7 +115,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
         0x55, 0x60, 0x06, 0x80, 0x60, 0x23, 0x60, 0x00, 0x39, 0x60, 0x00,
         0xf3, 0x00, 0x60, 0x60, 0x60, 0x40, 0x52, 0x00};
     BlockHeader const bh{.number = 2, .beneficiary = a, .base_fee_per_gas = 0};
-    Transaction const t{
+    Transaction t{
         .nonce = 3,
         .max_fee_per_gas = 10'000'000'000'000, // 10'000 GWei
         .gas_limit = 24'000,
@@ -178,7 +178,7 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     byte_string const code = {0xde, 0xad, 0xbe, 0xef};
     BlockHeader const bh{
         .number = 48'512, .beneficiary = a, .base_fee_per_gas = 0};
-    Transaction const t{
+    Transaction t{
         .nonce = 2,
         .max_fee_per_gas = 57'935'965'411,
         .gas_limit = 90'000,

@@ -74,8 +74,8 @@ namespace
     }
 
     template <typename Traits>
-    Result<Receipt> execute(
-        BlockHeader const &block_header, State &state, Transaction const &tx)
+    Result<Receipt>
+    execute(BlockHeader const &block_header, State &state, Transaction &tx)
     {
         using namespace monad::test;
 
@@ -96,35 +96,35 @@ namespace
 
     Result<Receipt> execute_dispatch(
         evmc_revision const rev, BlockHeader const &block_header, State &state,
-        Transaction const &txn)
+        Transaction &tx)
     {
         using namespace monad::fork_traits;
 
         auto result = [&] {
             switch (rev) {
             case EVMC_FRONTIER:
-                return execute<frontier>(block_header, state, txn);
+                return execute<frontier>(block_header, state, tx);
             case EVMC_HOMESTEAD:
-                return execute<homestead>(block_header, state, txn);
+                return execute<homestead>(block_header, state, tx);
             case EVMC_TANGERINE_WHISTLE:
-                return execute<tangerine_whistle>(block_header, state, txn);
+                return execute<tangerine_whistle>(block_header, state, tx);
             case EVMC_SPURIOUS_DRAGON:
-                return execute<spurious_dragon>(block_header, state, txn);
+                return execute<spurious_dragon>(block_header, state, tx);
             case EVMC_BYZANTIUM:
-                return execute<byzantium>(block_header, state, txn);
+                return execute<byzantium>(block_header, state, tx);
             case EVMC_PETERSBURG:
                 return execute<constantinople_and_petersburg>(
-                    block_header, state, txn);
+                    block_header, state, tx);
             case EVMC_ISTANBUL:
-                return execute<istanbul>(block_header, state, txn);
+                return execute<istanbul>(block_header, state, tx);
             case EVMC_BERLIN:
-                return execute<berlin>(block_header, state, txn);
+                return execute<berlin>(block_header, state, tx);
             case EVMC_LONDON:
-                return execute<london>(block_header, state, txn);
+                return execute<london>(block_header, state, tx);
             case EVMC_PARIS:
-                return execute<paris>(block_header, state, txn);
+                return execute<paris>(block_header, state, tx);
             case EVMC_SHANGHAI:
-                return execute<shanghai>(block_header, state, txn);
+                return execute<shanghai>(block_header, state, tx);
             default:
                 MONAD_ASSERT(false);
             }
@@ -209,7 +209,7 @@ void GeneralStateTest::TestBody()
             executed = true;
 
             auto const expected = expectations.at(i).get<Expectation>();
-            auto const transaction = Transaction{
+            Transaction transaction{
                 .sc =
                     SignatureAndChain{
                         .r = {},

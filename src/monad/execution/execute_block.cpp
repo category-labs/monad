@@ -111,8 +111,6 @@ execute_block(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
     receipts.reserve(block.transactions.size());
 
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
-        block.transactions[i].from = recover_sender(block.transactions[i]);
-
         State state{block_state};
 
         BOOST_OUTCOME_TRY(

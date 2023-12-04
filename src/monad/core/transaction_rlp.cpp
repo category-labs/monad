@@ -220,7 +220,6 @@ decode_transaction_legacy(Transaction &txn, byte_string_view const enc)
     payload = decode_sc(txn.sc, payload);
     payload = decode_unsigned<uint256_t>(txn.sc.r, payload);
     payload = decode_unsigned<uint256_t>(txn.sc.s, payload);
-    txn.from = std::nullopt;
 
     MONAD_ASSERT(payload.size() == 0);
     return rest_of_enc;
@@ -246,7 +245,6 @@ decode_transaction_eip2930(Transaction &txn, byte_string_view const enc)
     payload = decode_bool(txn.sc.odd_y_parity, payload);
     payload = decode_unsigned<uint256_t>(txn.sc.r, payload);
     payload = decode_unsigned<uint256_t>(txn.sc.s, payload);
-    txn.from = std::nullopt;
 
     MONAD_ASSERT(payload.size() == 0);
     return rest_of_enc;
@@ -273,7 +271,6 @@ decode_transaction_eip1559(Transaction &txn, byte_string_view const enc)
     payload = decode_bool(txn.sc.odd_y_parity, payload);
     payload = decode_unsigned<uint256_t>(txn.sc.r, payload);
     payload = decode_unsigned<uint256_t>(txn.sc.s, payload);
-    txn.from = std::nullopt;
 
     MONAD_ASSERT(payload.size() == 0);
     return rest_of_enc;

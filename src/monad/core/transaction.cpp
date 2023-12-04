@@ -21,37 +21,35 @@
 
 MONAD_NAMESPACE_BEGIN
 
-std::optional<Address> recover_sender(Transaction const &txn)
+std::optional<Address> recover_sender(Transaction const &tx)
 {
-    if (txn.from.has_value()) {
-        return txn.from;
-    }
+    byte_string const tx_encoding = rlp::encode_transaction_for_signing(tx);
+    ethash::hash256 const tx_encoding_hash{
+        ethash::keccak256(tx_encoding.data(), tx_encoding.size())};
 
-    byte_string const txn_encoding = rlp::encode_transaction_for_signing(txn);
-    ethash::hash256 const txn_encoding_hash{
-        ethash::keccak256(txn_encoding.data(), txn_encoding.size())};
+    uint8_t signature[sizeof(tx.sc.r) * 2];
+    intx::be::unsafe::store(signature, tx.sc.r);
+    intx::be::unsafe::store(signature + sizeof(tx.sc.r), tx.sc.s);
 
-    uint8_t signature[sizeof(txn.sc.r) * 2];
-    intx::be::unsafe::store(signature, txn.sc.r);
-    intx::be::unsafe::store(signature + sizeof(txn.sc.r), txn.sc.s);
-
-    std::optional<Address> res = evmc::address{};
-    static std::unique_ptr<
+    thread_local std::unique_ptr<
         secp256k1_context,
         decltype(&secp256k1_context_destroy)> const
         context(
             secp256k1_context_create(SILKPRE_SECP256K1_CONTEXT_FLAGS),
             &secp256k1_context_destroy);
+
+    Address result;
+
     if (!silkpre_recover_address(
-            res->bytes,
-            txn_encoding_hash.bytes,
+            result.bytes,
+            tx_encoding_hash.bytes,
             signature,
-            txn.sc.odd_y_parity,
+            tx.sc.odd_y_parity,
             context.get())) {
         return std::nullopt;
     }
 
-    return res;
+    return result;
 }
 
 MONAD_NAMESPACE_END

@@ -54,7 +54,6 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
         .gas_limit = 25'000,
         .value = 1'000'000,
         .to = to,
-        .from = from,
         .type = TransactionType::eip155};
     Block const b{.header = bh, .transactions = {t}, .ommers = {ommer}};
 
@@ -62,7 +61,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 
     BlockHashBuffer const block_hash_buffer;
 
-    auto const result = execute<rev>(t, bh, block_hash_buffer, s);
+    auto const result = execute_impl<rev>(t, from, bh, block_hash_buffer, s);
 
     ASSERT_TRUE(!result.has_error());
 
@@ -120,16 +119,15 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
         .max_fee_per_gas = 10'000'000'000'000, // 10'000 GWei
         .gas_limit = 24'000,
         .value = 0,
-        .from = creator,
-        .data = code,
-        .type = TransactionType::eip155};
+        .type = TransactionType::eip155,
+        .data = code};
     Block const b{.header = bh, .transactions = {t}};
 
     constexpr auto rev = EVMC_FRONTIER;
 
     BlockHashBuffer const block_hash_buffer;
 
-    auto const result = execute<rev>(t, bh, block_hash_buffer, s);
+    auto const result = execute_impl<rev>(t, creator, bh, block_hash_buffer, s);
 
     ASSERT_TRUE(!result.has_error());
 
@@ -183,16 +181,15 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
         .max_fee_per_gas = 57'935'965'411,
         .gas_limit = 90'000,
         .value = 10'000'000'000'000'000, // 0.01 Eth
-        .from = creator,
-        .data = code,
-        .type = TransactionType::eip155};
+        .type = TransactionType::eip155,
+        .data = code};
     Block const b{.header = bh, .transactions = {t}};
 
     constexpr auto rev = EVMC_FRONTIER;
 
     BlockHashBuffer const block_hash_buffer;
 
-    auto const result = execute<rev>(t, bh, block_hash_buffer, s);
+    auto const result = execute_impl<rev>(t, creator, bh, block_hash_buffer, s);
 
     ASSERT_TRUE(!result.has_error());
 

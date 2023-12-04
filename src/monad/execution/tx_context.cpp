@@ -1,4 +1,5 @@
 #include <monad/config.hpp>
+#include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
@@ -15,14 +16,13 @@
 MONAD_NAMESPACE_BEGIN
 
 template <evmc_revision rev>
-evmc_tx_context get_tx_context(Transaction const &tx, BlockHeader const &hdr)
+evmc_tx_context get_tx_context(
+    Transaction const &tx, Address const &sender, BlockHeader const &hdr)
 {
-    MONAD_DEBUG_ASSERT(tx.from.has_value());
-
     return {
         .tx_gas_price = to_bytes(to_big_endian(
             gas_price<rev>(tx, hdr.base_fee_per_gas.value_or(0)))),
-        .tx_origin = tx.from.value(),
+        .tx_origin = sender,
         .block_coinbase = hdr.beneficiary,
         .block_number = static_cast<int64_t>(hdr.number),
         .block_timestamp = static_cast<int64_t>(hdr.timestamp),

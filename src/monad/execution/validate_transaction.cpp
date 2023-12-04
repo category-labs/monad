@@ -1,4 +1,5 @@
 #include <monad/config.hpp>
+#include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
@@ -29,70 +30,69 @@ using BOOST_OUTCOME_V2_NAMESPACE::success;
 
 template <evmc_revision rev>
 Result<void> static_validate_transaction(
-    Transaction const &txn, std::optional<uint256_t> const &base_fee_per_gas)
+    Transaction const &tx, std::optional<uint256_t> const &base_fee_per_gas)
 {
     // EIP-155
-    if (MONAD_LIKELY(txn.sc.chain_id.has_value())) {
+    if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {
         if constexpr (rev < EVMC_SPURIOUS_DRAGON) {
             return TransactionError::TypeNotSupported;
         }
-        if (MONAD_UNLIKELY(txn.sc.chain_id.value() != 1)) {
+        if (MONAD_UNLIKELY(tx.sc.chain_id.value() != 1)) {
             return TransactionError::WrongChainId;
         }
     }
 
     // EIP-2930 & EIP-2718
     if constexpr (rev < EVMC_BERLIN) {
-        if (MONAD_UNLIKELY(txn.type != TransactionType::eip155)) {
+        if (MONAD_UNLIKELY(tx.type != TransactionType::eip155)) {
             return TransactionError::TypeNotSupported;
         }
     }
     // EIP-1559
     else if constexpr (rev < EVMC_LONDON) {
         if (MONAD_UNLIKELY(
-                txn.type != TransactionType::eip155 &&
-                txn.type != TransactionType::eip2930)) {
+                tx.type != TransactionType::eip155 &&
+                tx.type != TransactionType::eip2930)) {
             return TransactionError::TypeNotSupported;
         }
     }
     else if (MONAD_UNLIKELY(
-                 txn.type != TransactionType::eip155 &&
-                 txn.type != TransactionType::eip2930 &&
-                 txn.type != TransactionType::eip1559)) {
+                 tx.type != TransactionType::eip155 &&
+                 tx.type != TransactionType::eip2930 &&
+                 tx.type != TransactionType::eip1559)) {
         return TransactionError::TypeNotSupported;
     }
 
     // EIP-1559
-    if (MONAD_UNLIKELY(txn.max_fee_per_gas < base_fee_per_gas.value_or(0))) {
+    if (MONAD_UNLIKELY(tx.max_fee_per_gas < base_fee_per_gas.value_or(0))) {
         return TransactionError::MaxFeeLessThanBase;
     }
 
     // EIP-1559
-    if (MONAD_UNLIKELY(txn.max_priority_fee_per_gas > txn.max_fee_per_gas)) {
+    if (MONAD_UNLIKELY(tx.max_priority_fee_per_gas > tx.max_fee_per_gas)) {
         return TransactionError::PriorityFeeGreaterThanMax;
     }
 
     // EIP-3860
     if constexpr (rev >= EVMC_SHANGHAI) {
-        if (MONAD_UNLIKELY(
-                !txn.to.has_value() && txn.data.size() > 2 * 0x6000)) {
+        if (MONAD_UNLIKELY(!tx.to.has_value() && tx.data.size() > 2 * 0x6000)) {
             return TransactionError::InitCodeLimitExceeded;
         }
     }
 
     // YP eq. 62
-    if (MONAD_UNLIKELY(intrinsic_gas<rev>(txn) > txn.gas_limit)) {
+    if (MONAD_UNLIKELY(intrinsic_gas<rev>(tx) > tx.gas_limit)) {
         return TransactionError::IntrinsicGasGreaterThanLimit;
     }
 
     // EIP-2681
-    if (MONAD_UNLIKELY(txn.nonce >= std::numeric_limits<uint64_t>::max())) {
+    if (MONAD_UNLIKELY(tx.nonce >= std::numeric_limits<uint64_t>::max())) {
         return TransactionError::NonceExceedsMax;
     }
 
     // EIP-1559
     if (MONAD_UNLIKELY(
-            max_gas_cost(txn.gas_limit, txn.max_fee_per_gas) >
+            max_gas_cost(tx.gas_limit, tx.max_fee_per_gas) >
             std::numeric_limits<uint256_t>::max())) {
         return TransactionError::GasLimitOverflow;
     }
@@ -102,29 +102,23 @@ Result<void> static_validate_transaction(
 
 EXPLICIT_EVMC_REVISION(static_validate_transaction);
 
-Result<void> validate_transaction(State &state, Transaction const &txn)
+Result<void>
+validate_transaction(State &state, Transaction const &tx, Address const &sender)
 {
-    // This is only verfiable after recover_sender, so it belongs to
-    // validate
-    // YP eq. 62
-    if (MONAD_UNLIKELY(!txn.from.has_value())) {
-        return TransactionError::MissingSender;
-    }
-
     // YP eq. 62 & EIP-3607
-    if (MONAD_UNLIKELY(state.get_code_hash(*txn.from) != NULL_HASH)) {
+    if (MONAD_UNLIKELY(state.get_code_hash(sender) != NULL_HASH)) {
         return TransactionError::SenderNotEoa;
     }
 
     // YP eq. 62
-    if (MONAD_UNLIKELY(state.get_nonce(txn.from.value()) != txn.nonce)) {
+    if (MONAD_UNLIKELY(state.get_nonce(sender) != tx.nonce)) {
         return TransactionError::BadNonce;
     }
 
     // YP eq. 62
     if (MONAD_UNLIKELY(
-            intx::be::load<uint256_t>(state.get_balance(*txn.from)) <
-            (txn.value + max_gas_cost(txn.gas_limit, txn.max_fee_per_gas)))) {
+            intx::be::load<uint256_t>(state.get_balance(sender)) <
+            (tx.value + max_gas_cost(tx.gas_limit, tx.max_fee_per_gas)))) {
         return TransactionError::InsufficientBalance;
     }
 

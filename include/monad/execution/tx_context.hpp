@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/config.hpp>
+#include <monad/core/address.hpp>
 
 #include <evmc/evmc.h>
 
@@ -24,6 +25,7 @@ inline constexpr evmc_tx_context EMPTY_TX_CONTEXT{
     .block_base_fee{}};
 
 template <evmc_revision rev>
-evmc_tx_context get_tx_context(Transaction const &, BlockHeader const &);
+evmc_tx_context
+get_tx_context(Transaction const &, Address const &sender, BlockHeader const &);
 
 MONAD_NAMESPACE_END

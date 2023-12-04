@@ -29,16 +29,17 @@ MONAD_NAMESPACE_BEGIN
 // YP Sec 6.2 "irrevocable_change"
 template <evmc_revision rev>
 constexpr void irrevocable_change(
-    State &state, Transaction const &tx, uint256_t const &base_fee_per_gas)
+    State &state, Transaction const &tx, Address const &sender,
+    uint256_t const &base_fee_per_gas)
 {
     if (tx.to) { // EVM will increment if new contract
-        auto const nonce = state.get_nonce(*tx.from);
-        state.set_nonce(*tx.from, nonce + 1);
+        auto const nonce = state.get_nonce(sender);
+        state.set_nonce(sender, nonce + 1);
     }
 
     auto const upfront_cost =
         tx.gas_limit * gas_price<rev>(tx, base_fee_per_gas);
-    state.subtract_from_balance(*tx.from, upfront_cost);
+    state.subtract_from_balance(sender, upfront_cost);
 }
 
 // YP Eqn 72
@@ -56,20 +57,21 @@ constexpr uint64_t g_star(
 
 template <evmc_revision rev>
 constexpr auto refund_gas(
-    State &state, Transaction const &tx, uint256_t const &base_fee_per_gas,
-    uint64_t const gas_leftover, uint64_t const refund)
+    State &state, Transaction const &tx, Address const &sender,
+    uint256_t const &base_fee_per_gas, uint64_t const gas_leftover,
+    uint64_t const refund)
 {
     // refund and priority, Eqn. 73-76
     auto const gas_remaining = g_star<rev>(tx, gas_leftover, refund);
     auto const gas_cost = gas_price<rev>(tx, base_fee_per_gas);
 
-    state.add_to_balance(*tx.from, gas_cost * gas_remaining);
+    state.add_to_balance(sender, gas_cost * gas_remaining);
 
     return gas_remaining;
 }
 
 template <evmc_revision rev>
-constexpr evmc_message to_message(Transaction const &tx)
+constexpr evmc_message to_message(Transaction const &tx, Address const &sender)
 {
     auto const to_address = [&tx] {
         if (tx.to) {
@@ -82,7 +84,7 @@ constexpr evmc_message to_message(Transaction const &tx)
         .kind = to_address.first,
         .gas = static_cast<int64_t>(tx.gas_limit - intrinsic_gas<rev>(tx)),
         .recipient = to_address.second,
-        .sender = *tx.from,
+        .sender = sender,
         .input_data = tx.data.data(),
         .input_size = tx.data.size(),
         .code_address = to_address.second,
@@ -92,29 +94,30 @@ constexpr evmc_message to_message(Transaction const &tx)
 }
 
 template <evmc_revision rev>
-Receipt execute_impl(
+Receipt execute_impl2(
     State &state, EvmcHost<rev> &host, Transaction const &tx,
-    uint256_t const &base_fee_per_gas, Address const &beneficiary)
+    Address const &sender, uint256_t const &base_fee_per_gas,
+    Address const &beneficiary)
 {
-    irrevocable_change<rev>(state, tx, base_fee_per_gas);
+    irrevocable_change<rev>(state, tx, sender, base_fee_per_gas);
 
     // EIP-3651
     if constexpr (rev >= EVMC_SHANGHAI) {
         host.access_account(beneficiary);
     }
 
-    state.access_account(*tx.from);
+    state.access_account(sender);
     for (auto const &ae : tx.access_list) {
         state.access_account(ae.a);
         for (auto const &keys : ae.keys) {
             state.access_storage(ae.a, keys);
         }
     }
-    if (tx.to) {
+    if (MONAD_LIKELY(tx.to)) {
         state.access_account(*tx.to);
     }
 
-    auto const msg = to_message<rev>(tx);
+    auto const msg = to_message<rev>(tx, sender);
     auto const result = host.call(msg);
 
     MONAD_DEBUG_ASSERT(result.gas_left >= 0);
@@ -123,6 +126,7 @@ Receipt execute_impl(
     auto const gas_remaining = refund_gas<rev>(
         state,
         tx,
+        sender,
         base_fee_per_gas,
         static_cast<uint64_t>(result.gas_left),
         static_cast<uint64_t>(result.gas_refund));
@@ -149,27 +153,41 @@ Receipt execute_impl(
 }
 
 template <evmc_revision rev>
-Result<Receipt> execute(
-    Transaction &tx, BlockHeader const &hdr,
+Result<Receipt> execute_impl(
+    Transaction &tx, Address const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, State &state)
 {
     BOOST_OUTCOME_TRY(
         static_validate_transaction<rev>(tx, hdr.base_fee_per_gas));
 
-    if (MONAD_LIKELY(!tx.from.has_value())) {
-        tx.from = recover_sender(tx);
-        if (MONAD_UNLIKELY(!tx.from.has_value())) {
-            return TransactionError::MissingSender;
-        }
+    // TODO: Issue #164, Issue #54
+    BOOST_OUTCOME_TRY(validate_transaction(state, tx, sender));
+
+    auto const tx_context = get_tx_context<rev>(tx, sender, hdr);
+    EvmcHost<rev> host{tx_context, block_hash_buffer, state};
+    return execute_impl2<rev>(
+        state,
+        host,
+        tx,
+        sender,
+        hdr.base_fee_per_gas.value_or(0),
+        hdr.beneficiary);
+}
+
+EXPLICIT_EVMC_REVISION(execute_impl);
+
+template <evmc_revision rev>
+Result<Receipt> execute(
+    Transaction &tx, BlockHeader const &hdr,
+    BlockHashBuffer const &block_hash_buffer, State &state)
+{
+    auto const sender = recover_sender(tx);
+
+    if (MONAD_UNLIKELY(!sender.has_value())) {
+        return TransactionError::MissingSender;
     }
 
-    // TODO: Issue #164, Issue #54
-    BOOST_OUTCOME_TRY(validate_transaction(state, tx));
-
-    auto const tx_context = get_tx_context<rev>(tx, hdr);
-    EvmcHost<rev> host{tx_context, block_hash_buffer, state};
-    return execute_impl<rev>(
-        state, host, tx, hdr.base_fee_per_gas.value_or(0), hdr.beneficiary);
+    return execute_impl<rev>(tx, sender.value(), hdr, block_hash_buffer, state);
 }
 
 EXPLICIT_EVMC_REVISION(execute);

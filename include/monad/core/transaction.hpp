@@ -15,9 +15,9 @@
 
 MONAD_NAMESPACE_BEGIN
 
-enum class TransactionType
+enum class TransactionType : char
 {
-    eip155, // legacy
+    eip155 = 0, // legacy
     eip2930,
     eip1559,
 };
@@ -46,16 +46,15 @@ struct Transaction
     uint64_t gas_limit{};
     uint256_t value{};
     std::optional<Address> to{};
-    std::optional<Address> from{};
-    byte_string data{};
     TransactionType type{};
+    byte_string data{};
     AccessList access_list{};
     uint256_t max_priority_fee_per_gas{};
 
     friend bool operator==(Transaction const &, Transaction const &) = default;
 };
 
-static_assert(sizeof(Transaction) == 336);
+static_assert(sizeof(Transaction) == 304);
 static_assert(alignof(Transaction) == 8);
 
 std::optional<Address> recover_sender(Transaction const &);

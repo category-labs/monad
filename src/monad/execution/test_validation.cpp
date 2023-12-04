@@ -25,13 +25,10 @@ using db_t = db::InMemoryTrieDB;
 
 TEST(Validation, validate_enough_gas)
 {
-    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-
     static Transaction const t{
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500, // no .to, under the creation amount
-        .value = 1,
-        .from = a};
+        .value = 1};
 
     auto const result = static_validate_transaction<EVMC_SHANGHAI>(t, 0);
     EXPECT_EQ(result.error(), TransactionError::IntrinsicGasGreaterThanLimit);
@@ -49,9 +46,9 @@ TEST(Validation, validate_deployed_code)
     s.set_code_hash(a, some_non_null_hash);
     s.set_nonce(a, 24);
 
-    static Transaction const t{.gas_limit = 60'500, .from = a};
+    static Transaction const t{.gas_limit = 60'500};
 
-    auto const result = validate_transaction(s, t);
+    auto const result = validate_transaction(s, t, a);
     EXPECT_EQ(result.error(), TransactionError::SenderNotEoa);
 }
 
@@ -63,15 +60,14 @@ TEST(Validation, validate_nonce)
         .nonce = 23,
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 60'500,
-        .value = 55'939'568'773'815'811,
-        .from = a};
+        .value = 55'939'568'773'815'811};
     db_t db;
     BlockState bs{db};
     State s{bs};
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 24);
 
-    auto const result = validate_transaction(s, t);
+    auto const result = validate_transaction(s, t, a);
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
 
@@ -83,8 +79,7 @@ TEST(Validation, validate_nonce_optimistically)
         .nonce = 25,
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 60'500,
-        .value = 55'939'568'773'815'811,
-        .from = a};
+        .value = 55'939'568'773'815'811};
 
     db_t db;
     BlockState bs{db};
@@ -92,7 +87,7 @@ TEST(Validation, validate_nonce_optimistically)
     s.add_to_balance(a, 56'939'568'773'815'811);
     s.set_nonce(a, 24);
 
-    auto const result = validate_transaction(s, t);
+    auto const result = validate_transaction(s, t, a);
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
 
@@ -106,7 +101,6 @@ TEST(Validation, validate_enough_balance)
         .gas_limit = 27'500,
         .value = 55'939'568'773'815'811,
         .to = b,
-        .from = a,
         .max_priority_fee_per_gas = 100'000'000,
     };
 
@@ -115,7 +109,7 @@ TEST(Validation, validate_enough_balance)
     State s{bs};
     s.add_to_balance(a, 55'939'568'773'815'811);
 
-    auto const result = validate_transaction(s, t);
+    auto const result = validate_transaction(s, t, a);
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }
 
@@ -134,19 +128,17 @@ TEST(Validation, successful_validation)
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
         .value = 55'939'568'773'815'811,
-        .to = b,
-        .from = a};
+        .to = b};
 
     auto const result1 = static_validate_transaction<EVMC_SHANGHAI>(t, 0);
     EXPECT_TRUE(!result1.has_error());
 
-    auto const result2 = validate_transaction(s, t);
+    auto const result2 = validate_transaction(s, t, a);
     EXPECT_TRUE(!result2.has_error());
 }
 
 TEST(Validation, max_fee_less_than_base)
 {
-    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
 
     static Transaction const t{
@@ -155,7 +147,6 @@ TEST(Validation, max_fee_less_than_base)
         .gas_limit = 27'500,
         .value = 55'939'568'773'815'811,
         .to = b,
-        .from = a,
         .max_priority_fee_per_gas = 100'000'000};
 
     auto const result =
@@ -165,7 +156,6 @@ TEST(Validation, max_fee_less_than_base)
 
 TEST(Validation, priority_fee_greater_than_max)
 {
-    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
 
     static Transaction const t{
@@ -174,7 +164,6 @@ TEST(Validation, priority_fee_greater_than_max)
         .gas_limit = 27'500,
         .value = 48'979'750'000'000'000,
         .to = b,
-        .from = a,
         .max_priority_fee_per_gas = 100'000'000'000};
 
     auto const result =
@@ -196,18 +185,15 @@ TEST(Validation, insufficent_balance_overflow)
         .max_fee_per_gas = std::numeric_limits<uint256_t>::max() - 1,
         .gas_limit = 1000,
         .value = 0,
-        .to = b,
-        .from = a};
+        .to = b};
 
-    auto const result = validate_transaction(s, t);
+    auto const result = validate_transaction(s, t, a);
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }
 
 // EIP-3860
 TEST(Validation, init_code_exceed_limit)
 {
-    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-
     byte_string long_data;
     for (auto i = 0u; i < uint64_t{0xc002}; ++i) {
         long_data += {0xc0};
@@ -215,11 +201,7 @@ TEST(Validation, init_code_exceed_limit)
     // exceed EIP-3860 limit
 
     static Transaction const t{
-        .max_fee_per_gas = 0,
-        .gas_limit = 1000,
-        .value = 0,
-        .from = a,
-        .data = long_data};
+        .max_fee_per_gas = 0, .gas_limit = 1000, .value = 0, .data = long_data};
 
     auto const result = static_validate_transaction<EVMC_SHANGHAI>(t, 0);
     EXPECT_EQ(result.error(), TransactionError::InitCodeLimitExceeded);

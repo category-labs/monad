@@ -39,14 +39,13 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
         .nonce = 25,
         .max_fee_per_gas = 10,
         .gas_limit = 55'000,
-        .from = from,
     };
 
     BlockHeader const header{.beneficiary = bene};
     BlockHashBuffer const block_hash_buffer;
 
     auto const result =
-        execute<EVMC_SHANGHAI>(tx, header, block_hash_buffer, state);
+        execute_impl<EVMC_SHANGHAI>(tx, from, header, block_hash_buffer, state);
 
     ASSERT_TRUE(!result.has_error());
 

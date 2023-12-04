@@ -74,8 +74,9 @@ namespace
     }
 
     template <typename Traits>
-    Result<Receipt>
-    execute(BlockHeader const &block_header, State &state, Transaction &tx)
+    Result<Receipt> execute(
+        BlockHeader const &block_header, State &state, Transaction &tx,
+        Address const &sender)
     {
         using namespace monad::test;
 
@@ -90,40 +91,43 @@ namespace
         block_hash_buffer.set(
             block_header.number - 1, block_header.parent_hash);
 
-        return execute<Traits::rev>(tx, block_header, block_hash_buffer, state);
+        return execute_impl<Traits::rev>(
+            tx, sender, block_header, block_hash_buffer, state);
     }
 
     Result<Receipt> execute_dispatch(
         evmc_revision const rev, BlockHeader const &block_header, State &state,
-        Transaction &tx)
+        Transaction &tx, Address const &sender)
     {
         using namespace monad::fork_traits;
 
         auto result = [&] {
             switch (rev) {
             case EVMC_FRONTIER:
-                return execute<frontier>(block_header, state, tx);
+                return execute<frontier>(block_header, state, tx, sender);
             case EVMC_HOMESTEAD:
-                return execute<homestead>(block_header, state, tx);
+                return execute<homestead>(block_header, state, tx, sender);
             case EVMC_TANGERINE_WHISTLE:
-                return execute<tangerine_whistle>(block_header, state, tx);
+                return execute<tangerine_whistle>(
+                    block_header, state, tx, sender);
             case EVMC_SPURIOUS_DRAGON:
-                return execute<spurious_dragon>(block_header, state, tx);
+                return execute<spurious_dragon>(
+                    block_header, state, tx, sender);
             case EVMC_BYZANTIUM:
-                return execute<byzantium>(block_header, state, tx);
+                return execute<byzantium>(block_header, state, tx, sender);
             case EVMC_PETERSBURG:
                 return execute<constantinople_and_petersburg>(
-                    block_header, state, tx);
+                    block_header, state, tx, sender);
             case EVMC_ISTANBUL:
-                return execute<istanbul>(block_header, state, tx);
+                return execute<istanbul>(block_header, state, tx, sender);
             case EVMC_BERLIN:
-                return execute<berlin>(block_header, state, tx);
+                return execute<berlin>(block_header, state, tx, sender);
             case EVMC_LONDON:
-                return execute<london>(block_header, state, tx);
+                return execute<london>(block_header, state, tx, sender);
             case EVMC_PARIS:
-                return execute<paris>(block_header, state, tx);
+                return execute<paris>(block_header, state, tx, sender);
             case EVMC_SHANGHAI:
-                return execute<shanghai>(block_header, state, tx);
+                return execute<shanghai>(block_header, state, tx, sender);
             default:
                 MONAD_ASSERT(false);
             }
@@ -222,9 +226,8 @@ void GeneralStateTest::TestBody()
                 .gas_limit = data.gas_limits.at(expected.indices.gas_limit),
                 .value = data.values.at(expected.indices.value),
                 .to = data.to,
-                .from = data.sender,
-                .data = data.inputs.at(expected.indices.input),
                 .type = data.transaction_type,
+                .data = data.inputs.at(expected.indices.input),
                 .access_list =
                     data.access_lists.empty()
                         ? AccessList{}
@@ -238,8 +241,8 @@ void GeneralStateTest::TestBody()
             db.commit(init_state, init_code);
             BlockState bs{db};
             State state{bs};
-            auto const result =
-                execute_dispatch(rev, block_header, state, transaction);
+            auto const result = execute_dispatch(
+                rev, block_header, state, transaction, data.sender);
             // Note: no merge because only single transaction in the block
             db.commit(state.state_, state.code_);
 

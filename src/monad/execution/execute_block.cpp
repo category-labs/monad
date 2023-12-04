@@ -17,7 +17,6 @@
 #include <monad/execution/validate_block.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
-#include <monad/state2/state_deltas_fmt.hpp>
 
 #include <evmc/evmc.h>
 
@@ -111,19 +110,13 @@ execute_block(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
     receipts.reserve(block.transactions.size());
 
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
-        State state{block_state};
-
         BOOST_OUTCOME_TRY(
             auto const receipt,
             execute<rev>(
-                block.transactions[i], block.header, block_hash_buffer, state));
-
-        LOG_DEBUG("State Deltas: {}", state.state_);
-        LOG_DEBUG("Code Deltas: {}", state.code_);
-
-        MONAD_DEBUG_ASSERT(block_state.can_merge(state.state_));
-        block_state.merge(state.state_);
-        block_state.merge(state.code_);
+                block.transactions[i],
+                block.header,
+                block_hash_buffer,
+                block_state));
 
         cumulative_gas_used += receipt.gas_used;
         receipts.push_back(receipt);

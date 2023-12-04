@@ -75,8 +75,8 @@ namespace
 
     template <typename Traits>
     Result<Receipt> execute(
-        BlockHeader const &block_header, State &state, Transaction &tx,
-        Address const &sender)
+        BlockHeader const &block_header, BlockState &block_state,
+        Transaction &tx, Address const &sender)
     {
         using namespace monad::test;
 
@@ -92,42 +92,44 @@ namespace
             block_header.number - 1, block_header.parent_hash);
 
         return execute_impl<Traits::rev>(
-            tx, sender, block_header, block_hash_buffer, state);
+            tx, sender, block_header, block_hash_buffer, block_state);
     }
 
     Result<Receipt> execute_dispatch(
-        evmc_revision const rev, BlockHeader const &block_header, State &state,
-        Transaction &tx, Address const &sender)
+        evmc_revision const rev, BlockHeader const &block_header,
+        BlockState &block_state, Transaction &tx, Address const &sender)
     {
         using namespace monad::fork_traits;
 
         auto result = [&] {
             switch (rev) {
             case EVMC_FRONTIER:
-                return execute<frontier>(block_header, state, tx, sender);
+                return execute<frontier>(block_header, block_state, tx, sender);
             case EVMC_HOMESTEAD:
-                return execute<homestead>(block_header, state, tx, sender);
+                return execute<homestead>(
+                    block_header, block_state, tx, sender);
             case EVMC_TANGERINE_WHISTLE:
                 return execute<tangerine_whistle>(
-                    block_header, state, tx, sender);
+                    block_header, block_state, tx, sender);
             case EVMC_SPURIOUS_DRAGON:
                 return execute<spurious_dragon>(
-                    block_header, state, tx, sender);
+                    block_header, block_state, tx, sender);
             case EVMC_BYZANTIUM:
-                return execute<byzantium>(block_header, state, tx, sender);
+                return execute<byzantium>(
+                    block_header, block_state, tx, sender);
             case EVMC_PETERSBURG:
                 return execute<constantinople_and_petersburg>(
-                    block_header, state, tx, sender);
+                    block_header, block_state, tx, sender);
             case EVMC_ISTANBUL:
-                return execute<istanbul>(block_header, state, tx, sender);
+                return execute<istanbul>(block_header, block_state, tx, sender);
             case EVMC_BERLIN:
-                return execute<berlin>(block_header, state, tx, sender);
+                return execute<berlin>(block_header, block_state, tx, sender);
             case EVMC_LONDON:
-                return execute<london>(block_header, state, tx, sender);
+                return execute<london>(block_header, block_state, tx, sender);
             case EVMC_PARIS:
-                return execute<paris>(block_header, state, tx, sender);
+                return execute<paris>(block_header, block_state, tx, sender);
             case EVMC_SHANGHAI:
-                return execute<shanghai>(block_header, state, tx, sender);
+                return execute<shanghai>(block_header, block_state, tx, sender);
             default:
                 MONAD_ASSERT(false);
             }
@@ -135,7 +137,9 @@ namespace
 
         // Apply 0 block reward
         if (rev < EVMC_SPURIOUS_DRAGON) {
+            State state{block_state};
             state.add_to_balance(block_header.beneficiary, 0);
+            block_state.merge(state.state_);
         }
 
         return result;
@@ -239,12 +243,11 @@ void GeneralStateTest::TestBody()
 
             db_t db;
             db.commit(init_state, init_code);
-            BlockState bs{db};
-            State state{bs};
+            BlockState block_state{db};
             auto const result = execute_dispatch(
-                rev, block_header, state, transaction, data.sender);
+                rev, block_header, block_state, transaction, data.sender);
             // Note: no merge because only single transaction in the block
-            db.commit(state.state_, state.code_);
+            block_state.commit();
 
             LOG_DEBUG("post_state: {}", test::dump_state_from_db(db).dump());
 

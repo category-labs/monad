@@ -407,6 +407,8 @@ public:
         destructed_ = std::move(new_state.destructed_);
         logs_ = std::move(new_state.logs_);
     }
+
+    void log_debug() const;
 };
 
 MONAD_NAMESPACE_END

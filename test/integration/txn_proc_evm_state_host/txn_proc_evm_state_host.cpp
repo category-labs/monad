@@ -36,7 +36,6 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 {
     account_store_db_t db{};
     BlockState bs{db};
-    State s{bs};
 
     db.commit(
         StateDeltas{
@@ -61,7 +60,7 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
 
     BlockHashBuffer const block_hash_buffer;
 
-    auto const result = execute_impl<rev>(t, from, bh, block_hash_buffer, s);
+    auto const result = execute_impl<rev>(t, from, bh, block_hash_buffer, bs);
 
     ASSERT_TRUE(!result.has_error());
 
@@ -70,6 +69,9 @@ TEST(TxnProcEvmInterpStateHost, account_transfer_miner_ommer_award)
     EXPECT_EQ(r.status, Receipt::Status::SUCCESS);
     EXPECT_EQ(r.gas_used, 21'000);
     EXPECT_EQ(t.type, TransactionType::eip155);
+
+    State s{bs};
+
     EXPECT_EQ(s.get_balance(from), bytes32_t{8'790'000});
     EXPECT_EQ(s.get_balance(to), bytes32_t{1'000'000});
 
@@ -95,7 +97,6 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
         0x9a049f5d18c239efaa258af9f3e7002949a977a0_address;
     account_store_db_t db{};
     BlockState bs{db};
-    State s{bs};
 
     db.commit(
         StateDeltas{
@@ -127,7 +128,8 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
 
     BlockHashBuffer const block_hash_buffer;
 
-    auto const result = execute_impl<rev>(t, creator, bh, block_hash_buffer, s);
+    auto const result =
+        execute_impl<rev>(t, creator, bh, block_hash_buffer, bs);
 
     ASSERT_TRUE(!result.has_error());
 
@@ -136,6 +138,9 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure)
     EXPECT_EQ(r.status, Receipt::Status::FAILED);
     EXPECT_EQ(r.gas_used, 24'000);
     EXPECT_EQ(t.type, TransactionType::eip155);
+
+    State s{bs};
+
     EXPECT_EQ(s.get_balance(creator), bytes32_t{8'760'000'000'000'000'000});
     EXPECT_EQ(s.get_balance(created), bytes32_t{0});
 
@@ -160,7 +165,6 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
         0x4dae54c8645c47dd55782091eca145c7bff974bc_address;
     account_store_db_t db{};
     BlockState bs{db};
-    State s{bs};
 
     db.commit(
         StateDeltas{
@@ -189,7 +193,8 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
 
     BlockHashBuffer const block_hash_buffer;
 
-    auto const result = execute_impl<rev>(t, creator, bh, block_hash_buffer, s);
+    auto const result =
+        execute_impl<rev>(t, creator, bh, block_hash_buffer, bs);
 
     ASSERT_TRUE(!result.has_error());
 
@@ -198,6 +203,9 @@ TEST(TxnProcEvmInterpStateHost, out_of_gas_account_creation_failure_with_value)
     EXPECT_EQ(r.status, Receipt::Status::FAILED);
     EXPECT_EQ(r.gas_used, 90'000);
     EXPECT_EQ(t.type, TransactionType::eip155);
+
+    State s{bs};
+
     EXPECT_EQ(s.get_balance(creator), bytes32_t{4'936'905'359'437'569'240});
     EXPECT_EQ(s.get_nonce(creator), 3);
     EXPECT_FALSE(s.account_exists(created));

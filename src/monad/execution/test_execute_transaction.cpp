@@ -30,10 +30,13 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 
     db_t db;
     BlockState bs{db};
-    State state{bs};
 
-    state.add_to_balance(from, 56'000'000'000'000'000);
-    state.set_nonce(from, 25);
+    {
+        State state{bs};
+        state.add_to_balance(from, 56'000'000'000'000'000);
+        state.set_nonce(from, 25);
+        bs.merge(state.state_);
+    }
 
     Transaction tx{
         .nonce = 25,
@@ -45,17 +48,20 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     BlockHashBuffer const block_hash_buffer;
 
     auto const result =
-        execute_impl<EVMC_SHANGHAI>(tx, from, header, block_hash_buffer, state);
+        execute_impl<EVMC_SHANGHAI>(tx, from, header, block_hash_buffer, bs);
 
     ASSERT_TRUE(!result.has_error());
 
     auto const &receipt = result.value();
 
     EXPECT_EQ(receipt.status, 1u);
-    EXPECT_EQ(
-        intx::be::load<uint256_t>(state.get_balance(from)),
-        uint256_t{55'999'999'999'470'000});
-    EXPECT_EQ(state.get_nonce(from), 26); // EVMC will inc for creation
+    {
+        State state{bs};
+        EXPECT_EQ(
+            intx::be::load<uint256_t>(state.get_balance(from)),
+            uint256_t{55'999'999'999'470'000});
+        EXPECT_EQ(state.get_nonce(from), 26); // EVMC will inc for creation
+    }
 
     // check if miner gets the right reward
     EXPECT_EQ(receipt.gas_used * 10u, uint256_t{530'000});

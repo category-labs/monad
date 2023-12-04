@@ -10,17 +10,17 @@ MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
 struct BlockHeader;
+class BlockState;
 struct Receipt;
-class State;
 struct Transaction;
 
 template <evmc_revision rev>
 Result<Receipt> execute_impl(
     Transaction &, Address const &sender, BlockHeader const &,
-    BlockHashBuffer const &, State &);
+    BlockHashBuffer const &, BlockState &);
 
 template <evmc_revision rev>
-Result<Receipt>
-execute(Transaction &, BlockHeader const &, BlockHashBuffer const &, State &);
+Result<Receipt> execute(
+    Transaction &, BlockHeader const &, BlockHashBuffer const &, BlockState &);
 
 MONAD_NAMESPACE_END

@@ -26,7 +26,7 @@ std::optional<Account> BlockState::read_account(Address const &address)
 {
     // block state
     {
-        SharedLock const lock{mutex_};
+        ReadLock const lock{mutex_};
         auto const it = state_.find(address);
         if (MONAD_LIKELY(it != state_.end())) {
             return it->second.account.second;
@@ -35,7 +35,7 @@ std::optional<Account> BlockState::read_account(Address const &address)
     // database
     auto result = db_.read_account(address);
     {
-        LockGuard const lock{mutex_};
+        WriteLock const lock{mutex_};
         auto const [it, inserted] = state_.try_emplace(
             address, StateDelta{.account = {result, result}, .storage = {}});
         if (MONAD_UNLIKELY(!inserted)) {
@@ -51,7 +51,7 @@ bytes32_t BlockState::read_storage(
 {
     // block state
     {
-        SharedLock const lock{mutex_};
+        ReadLock const lock{mutex_};
         auto const it = state_.find(address);
         MONAD_ASSERT(it != state_.end());
         auto const &storage = it->second.storage;
@@ -65,7 +65,7 @@ bytes32_t BlockState::read_storage(
     // database
     auto result = db_.read_storage(address, location);
     {
-        LockGuard const lock{mutex_};
+        WriteLock const lock{mutex_};
         auto const it = state_.find(address);
         MONAD_ASSERT(it != state_.end());
         auto &storage = it->second.storage;
@@ -84,7 +84,7 @@ byte_string BlockState::read_code(bytes32_t const &hash)
 {
     // block state
     {
-        SharedLock const lock{mutex_};
+        ReadLock const lock{mutex_};
         auto const it = code_.find(hash);
         if (MONAD_LIKELY(it != code_.end())) {
             return it->second;
@@ -93,7 +93,7 @@ byte_string BlockState::read_code(bytes32_t const &hash)
     // database
     auto result = db_.read_code(hash);
     {
-        LockGuard const lock{mutex_};
+        WriteLock const lock{mutex_};
         auto const [it, inserted] = code_.try_emplace(hash, result);
         if (MONAD_UNLIKELY(!inserted)) {
             result = it->second;
@@ -104,25 +104,25 @@ byte_string BlockState::read_code(bytes32_t const &hash)
 
 bool BlockState::can_merge(StateDeltas const &state)
 {
-    SharedLock const lock{mutex_};
+    ReadLock const lock{mutex_};
     return ::monad::can_merge(state_, state);
 }
 
 void BlockState::merge(StateDeltas const &state)
 {
-    LockGuard const lock{mutex_};
+    WriteLock const lock{mutex_};
     ::monad::merge(state_, state);
 }
 
 void BlockState::merge(Code const &code)
 {
-    LockGuard const lock{mutex_};
+    WriteLock const lock{mutex_};
     ::monad::merge(code_, code);
 }
 
 void BlockState::commit()
 {
-    SharedLock const lock{mutex_};
+    ReadLock const lock{mutex_};
     db_.commit(state_, code_);
 }
 

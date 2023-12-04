@@ -11,8 +11,8 @@ MONAD_NAMESPACE_BEGIN
 class BlockState final
 {
     using Mutex = std::shared_mutex;
-    using SharedLock = std::shared_lock<Mutex>;
-    using LockGuard = std::lock_guard<Mutex>;
+    using ReadLock = std::shared_lock<Mutex>;
+    using WriteLock = std::lock_guard<Mutex>;
 
     Db &db_;
     Mutex mutex_;

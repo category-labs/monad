@@ -93,23 +93,15 @@ public:
     Code code_;
 
     explicit State(BlockState &block_state)
-        : block_state_{block_state}
+        : Substate{}
+        , block_state_{block_state}
         , state_{}
         , code_{}
     {
     }
 
-    // EVMC Host Interface
-    evmc_access_status access_account(Address const &address)
-    {
-        LOG_TRACE_L1("access_account: {}", address);
-
-        auto const [_, inserted] = accessed_.insert(address);
-        if (inserted) {
-            return EVMC_ACCESS_COLD;
-        }
-        return EVMC_ACCESS_WARM;
-    }
+    State(State &&) = default;
+    State(State const &) = default;
 
     // EVMC Host Interface
     bool account_exists(Address const &address)
@@ -244,14 +236,15 @@ public:
 
         add_to_balance(beneficiary, account->balance);
         account->balance = 0;
-        return destructed_.insert(address).second;
+
+        return Substate::selfdestruct(address);
     }
 
     void destruct_suicides() noexcept
     {
         LOG_TRACE_L1("destruct_suicides");
 
-        for (auto const &address : destructed_) {
+        for (auto const &address : destructed()) {
             auto &account = read_account(address);
             MONAD_DEBUG_ASSERT(account.has_value());
             account.reset();
@@ -262,8 +255,8 @@ public:
     {
         LOG_TRACE_L1("destruct_touched_dead");
 
-        for (auto const &touched : touched_) {
-            auto &account = read_account(touched);
+        for (auto const &address : touched()) {
+            auto &account = read_account(address);
             if (account.has_value() && account.value() == Account{}) {
                 account.reset();
             }
@@ -276,19 +269,6 @@ public:
         return !account.has_value() ||
                (account->balance == 0 && account->code_hash == NULL_HASH &&
                 account->nonce == 0);
-    }
-
-    // EVMC Host Interface
-    evmc_access_status
-    access_storage(Address const &address, bytes32_t const &key) noexcept
-    {
-        LOG_TRACE_L1("access_storage: {}, {}", address, key);
-
-        auto const &[_, inserted] = accessed_storage_[address].insert(key);
-        if (inserted) {
-            return EVMC_ACCESS_COLD;
-        }
-        return EVMC_ACCESS_WARM;
     }
 
     // EVMC Host Interface
@@ -375,37 +355,11 @@ public:
         }
     }
 
-    void store_log(Receipt::Log &&log)
-    {
-        logs_.emplace_back(log);
-    }
-
-    std::vector<Receipt::Log> &logs()
-    {
-        return logs_;
-    }
-
-    void touch(Address const &address)
-    {
-        LOG_TRACE_L1("touched: {}", address);
-
-        touched_.insert(address);
-    }
-
-    constexpr bool is_touched(Address const &address)
-    {
-        return touched_.contains(address);
-    }
-
     void merge(State &new_state)
     {
         state_ = std::move(new_state.state_);
         code_ = std::move(new_state.code_);
-        touched_ = std::move(new_state.touched_);
-        accessed_ = std::move(new_state.accessed_);
-        accessed_storage_ = std::move(new_state.accessed_storage_);
-        destructed_ = std::move(new_state.destructed_);
-        logs_ = std::move(new_state.logs_);
+        Substate::operator=(new_state);
     }
 
     void log_debug() const;

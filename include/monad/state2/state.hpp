@@ -103,6 +103,28 @@ public:
     State(State &&) = default;
     State(State const &) = default;
 
+    State &operator=(State &&other)
+    {
+        MONAD_DEBUG_ASSERT(&block_state_ == &other.block_state_);
+
+        Substate::operator=(other);
+        state_ = std::move(other.state_);
+        code_ = std::move(other.code_);
+
+        return *this;
+    }
+
+    State &operator=(State const &other)
+    {
+        MONAD_DEBUG_ASSERT(&block_state_ == &other.block_state_);
+
+        Substate::operator=(other);
+        state_ = other.state_;
+        code_ = other.code_;
+
+        return *this;
+    }
+
     // EVMC Host Interface
     bool account_exists(Address const &address)
     {
@@ -353,13 +375,6 @@ public:
                 read_code(account->code_hash, code_, block_state_) = code;
             }
         }
-    }
-
-    void merge(State &new_state)
-    {
-        state_ = std::move(new_state.state_);
-        code_ = std::move(new_state.code_);
-        Substate::operator=(new_state);
     }
 
     void log_debug() const;

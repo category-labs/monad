@@ -672,7 +672,8 @@ TYPED_TEST(StateTest, can_merge_new_account)
         EXPECT_EQ(s.set_storage(a, key2, value1), EVMC_STORAGE_ADDED);
         EXPECT_EQ(s.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
         EXPECT_EQ(s.get_code_size(a), code1.size());
-        t.merge(s);
+
+        t = s;
     }
 }
 
@@ -715,7 +716,7 @@ TYPED_TEST(StateTest, can_merge_update)
         EXPECT_TRUE(s.selfdestruct(c, b));
         s.destruct_suicides();
 
-        t.merge(s);
+        t = s;
     }
 }
 

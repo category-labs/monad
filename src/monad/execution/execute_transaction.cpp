@@ -3,6 +3,7 @@
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/int.hpp>
+#include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/core/transaction.hpp>
@@ -145,7 +146,7 @@ Receipt execute_impl2(
         .status = result.status_code == EVMC_SUCCESS ? 1u : 0u,
         .gas_used = gas_used,
         .type = tx.type};
-    for (auto &log : state.logs()) {
+    for (auto const &log : state.logs()) {
         receipt.add_log(std::move(log));
     }
 

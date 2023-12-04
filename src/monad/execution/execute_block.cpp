@@ -6,7 +6,6 @@
 #include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
-#include <monad/core/transaction.hpp>
 #include <monad/core/withdrawal.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_reward.hpp>

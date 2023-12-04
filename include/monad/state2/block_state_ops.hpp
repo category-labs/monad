@@ -1,22 +1,12 @@
 #pragma once
 
 #include <monad/config.hpp>
-#include <monad/core/account.hpp>
-#include <monad/core/address.hpp>
-
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state_deltas.hpp>
 
-#include <optional>
-
 MONAD_NAMESPACE_BEGIN
-
-std::optional<Account> &
-read_account(Address const &, StateDeltas &, BlockState &);
-
-Delta<bytes32_t> &read_storage_delta(
-    Address const &, uint64_t incarnation, bytes32_t const &location,
-    StateDeltas &, BlockState &);
 
 byte_string &read_code(bytes32_t const &, Code &, BlockState &);
 

@@ -24,17 +24,10 @@ MONAD_NAMESPACE_BEGIN
 
 class State : public Substate
 {
-    std::optional<Account> &read_account(Address const &address)
-    {
-        return ::monad::read_account(address, state_, block_state_);
-    }
+    std::optional<Account> &read_account(Address const &);
 
     Delta<bytes32_t> &
-    read_storage_delta(Address const &address, bytes32_t const &location)
-    {
-        return ::monad::read_storage_delta(
-            address, 0, location, state_, block_state_);
-    }
+    read_storage_delta(Address const &, bytes32_t const &location);
 
     evmc_storage_status zero_out_key(Delta<bytes32_t> &delta)
     {

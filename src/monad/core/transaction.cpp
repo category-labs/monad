@@ -6,8 +6,6 @@
 
 #include <silkpre/ecdsa.h>
 
-#include <evmc/evmc.hpp>
-
 #include <ethash/hash_types.hpp>
 #include <ethash/keccak.hpp>
 

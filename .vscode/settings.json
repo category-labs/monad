@@ -3,5 +3,15 @@
     "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
     "files.exclude": {
         "**/__pycache__": true
+    },
+    "files.associations": {
+        "*.ipp": "cpp",
+        "*.tcc": "cpp",
+        "__locale": "cpp",
+        "chrono": "cpp",
+        "forward_list": "cpp",
+        "functional": "cpp",
+        "initializer_list": "cpp",
+        "list": "cpp"
     }
 }

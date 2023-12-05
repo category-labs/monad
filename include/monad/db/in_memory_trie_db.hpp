@@ -43,7 +43,8 @@ struct Compute
         MONAD_DEBUG_ASSERT(node.value().size() > sizeof(bytes32_t));
 
         Account acc;
-        rlp::decode_account(acc, node.value());
+        auto const remaining = rlp::decode_account(acc, node.value());
+        MONAD_DEBUG_ASSERT(!remaining.has_error());
         bytes32_t storage_root = NULL_ROOT;
         if (node.number_of_children()) {
             MONAD_DEBUG_ASSERT(node.data().size() == sizeof(bytes32_t));
@@ -113,7 +114,8 @@ public:
         }
         MONAD_DEBUG_ASSERT(node != nullptr);
         Account acct;
-        rlp::decode_account(acct, node->value());
+        auto const remaining = rlp::decode_account(acct, node->value());
+        MONAD_DEBUG_ASSERT(!remaining.has_error());
         return acct;
     }
 

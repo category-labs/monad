@@ -2,6 +2,7 @@
 
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/result.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
 #include <monad/rlp/encode2.hpp>
@@ -18,17 +19,18 @@ inline byte_string encode_address(std::optional<Address> const &address)
     return encode_string2(to_byte_string_view(address->bytes));
 }
 
-inline byte_string_view
+inline decode_result_t
 decode_address(Address &address, byte_string_view const enc)
 {
     return decode_byte_array<20>(address.bytes, enc);
 }
 
-inline byte_string_view
+inline decode_result_t
 decode_address(std::optional<Address> &address, byte_string_view const enc)
 {
     byte_string_view payload{};
-    auto const rest_of_enc = parse_string_metadata(payload, enc);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_string_metadata(payload, enc));
     if (payload.size() == sizeof(Address)) {
         address = Address{};
         std::memcpy(address->bytes, payload.data(), sizeof(Address));

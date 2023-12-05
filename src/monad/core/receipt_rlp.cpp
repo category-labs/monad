@@ -6,10 +6,14 @@
 #include <monad/core/int_rlp.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/receipt_rlp.hpp>
+#include <monad/core/result.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
+#include <monad/rlp/decode_error.hpp>
 #include <monad/rlp/encode2.hpp>
+
+#include <boost/outcome/try.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -63,16 +67,17 @@ byte_string encode_receipt(Receipt const &receipt)
 }
 
 // Decode
-byte_string_view decode_bloom(Receipt::Bloom &bloom, byte_string_view const enc)
+decode_result_t decode_bloom(Receipt::Bloom &bloom, byte_string_view const enc)
 {
     return decode_byte_array<256>(bloom.data(), enc);
 }
 
-byte_string_view
+decode_result_t
 decode_topics(std::vector<bytes32_t> &topics, byte_string_view const enc)
 {
     byte_string_view payload{};
-    auto const rest_of_enc = parse_list_metadata(payload, enc);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_list_metadata(payload, enc));
     constexpr size_t topic_size =
         33; // 1 byte for header, 32 bytes for byte32_t
     auto const list_space = payload.size();
@@ -81,7 +86,7 @@ decode_topics(std::vector<bytes32_t> &topics, byte_string_view const enc)
 
     while (payload.size() > 0) {
         bytes32_t topic{};
-        payload = decode_bytes32(topic, payload);
+        BOOST_OUTCOME_TRY(payload, decode_bytes32(topic, payload));
         topics.emplace_back(topic);
     }
 
@@ -90,23 +95,25 @@ decode_topics(std::vector<bytes32_t> &topics, byte_string_view const enc)
     return rest_of_enc;
 }
 
-byte_string_view decode_log(Receipt::Log &log, byte_string_view const enc)
+decode_result_t decode_log(Receipt::Log &log, byte_string_view const enc)
 {
     byte_string_view payload{};
-    auto const rest_of_enc = parse_list_metadata(payload, enc);
-    payload = decode_address(log.address, payload);
-    payload = decode_topics(log.topics, payload);
-    payload = decode_string(log.data, payload);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_list_metadata(payload, enc));
+    BOOST_OUTCOME_TRY(payload, decode_address(log.address, payload));
+    BOOST_OUTCOME_TRY(payload, decode_topics(log.topics, payload));
+    BOOST_OUTCOME_TRY(payload, decode_string(log.data, payload));
 
     MONAD_ASSERT(payload.size() == 0);
     return rest_of_enc;
 }
 
-byte_string_view
+decode_result_t
 decode_logs(std::vector<Receipt::Log> &logs, byte_string_view const enc)
 {
     byte_string_view payload{};
-    auto const rest_of_enc = parse_list_metadata(payload, enc);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_list_metadata(payload, enc));
     constexpr size_t approx_data_size = 32;
     constexpr size_t approx_num_topics = 10;
     // 20 bytes for address, 33 bytes per topic
@@ -118,7 +125,7 @@ decode_logs(std::vector<Receipt::Log> &logs, byte_string_view const enc)
 
     while (payload.size() > 0) {
         Receipt::Log log{};
-        payload = decode_log(log, payload);
+        BOOST_OUTCOME_TRY(payload, decode_log(log, payload));
         logs.emplace_back(log);
     }
 
@@ -126,21 +133,24 @@ decode_logs(std::vector<Receipt::Log> &logs, byte_string_view const enc)
     return rest_of_enc;
 }
 
-byte_string_view
+decode_result_t
 decode_untyped_receipt(Receipt &receipt, byte_string_view const enc)
 {
     byte_string_view payload{};
-    auto const rest_of_enc = parse_list_metadata(payload, enc);
-    payload = decode_unsigned<uint64_t>(receipt.status, payload);
-    payload = decode_unsigned<uint64_t>(receipt.gas_used, payload);
-    payload = decode_bloom(receipt.bloom, payload);
-    payload = decode_logs(receipt.logs, payload);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_list_metadata(payload, enc));
+    BOOST_OUTCOME_TRY(
+        payload, decode_unsigned<uint64_t>(receipt.status, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_unsigned<uint64_t>(receipt.gas_used, payload));
+    BOOST_OUTCOME_TRY(payload, decode_bloom(receipt.bloom, payload));
+    BOOST_OUTCOME_TRY(payload, decode_logs(receipt.logs, payload));
 
     MONAD_ASSERT(payload.size() == 0);
     return rest_of_enc;
 }
 
-byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
+decode_result_t decode_receipt(Receipt &receipt, byte_string_view const enc)
 {
     MONAD_ASSERT(enc.size() > 0);
 
@@ -149,7 +159,8 @@ byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
     if (first < 0xc0) // eip 2718 - typed transaction envelope
     {
         byte_string_view payload{};
-        auto const rest_of_enc = parse_string_metadata(payload, enc);
+        BOOST_OUTCOME_TRY(
+            auto const rest_of_enc, parse_string_metadata(payload, enc));
         MONAD_ASSERT(payload.size() > 0);
 
         uint8_t const &type = payload[0];
@@ -163,10 +174,10 @@ byte_string_view decode_receipt(Receipt &receipt, byte_string_view const enc)
             break;
         default:
             MONAD_ASSERT(false); // invalid transaction type
-            return {};
         }
-        auto const rest_of_receipt_enc =
-            decode_untyped_receipt(receipt, receipt_enc);
+        BOOST_OUTCOME_TRY(
+            auto const rest_of_receipt_enc,
+            decode_untyped_receipt(receipt, receipt_enc));
         MONAD_ASSERT(rest_of_receipt_enc.size() == 0);
         return rest_of_enc;
     }

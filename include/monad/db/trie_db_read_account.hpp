@@ -42,7 +42,8 @@ template <typename Cursor>
     bytes32_t _;
     auto const rest =
         rlp::decode_account(ret, _, std::get<trie::Leaf>(node).value);
-    MONAD_ASSERT(rest.empty());
+    MONAD_ASSERT(rest.has_value());
+    MONAD_ASSERT(rest.assume_value().empty());
     return ret;
 }
 

@@ -185,8 +185,10 @@ void BlockchainTest::TestBody()
         for (auto const &j_block : j_contents.at("blocks")) {
             Block block;
             auto const rlp = j_block.at("rlp").get<byte_string>();
-            auto const rest = rlp::decode_block(block, rlp);
-            EXPECT_TRUE(rest.empty()) << name;
+            auto const remaining = rlp::decode_block(block, rlp);
+            ASSERT_FALSE(remaining.has_error()) << name;
+            EXPECT_EQ(remaining.assume_value().size(), 0) << name;
+
             if (block.header.number == 0) {
                 EXPECT_TRUE(j_block.contains("expectException"));
                 continue;

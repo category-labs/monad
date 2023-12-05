@@ -165,6 +165,8 @@ add_library(
   "src/monad/execution/validate_block.cpp"
   "src/monad/execution/validate_transaction.cpp"
   # rlp
+  "include/monad/rlp/config.hpp"
+  "include/monad/rlp/decode_error.hpp"
   "include/monad/rlp/decode.hpp"
   "include/monad/rlp/encode2.hpp"
   # state

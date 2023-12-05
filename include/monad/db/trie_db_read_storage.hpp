@@ -40,7 +40,8 @@ template <typename Cursor>
     byte_string zeroless;
     auto const rest =
         rlp::decode_string(zeroless, std::get<trie::Leaf>(node).value);
-    MONAD_ASSERT(rest.empty());
+    MONAD_ASSERT(rest.has_value());
+    MONAD_ASSERT(rest.assume_value().empty());
     MONAD_ASSERT(zeroless.size() <= sizeof(bytes32_t));
 
     bytes32_t ret;

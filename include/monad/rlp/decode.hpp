@@ -4,6 +4,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/rlp/config.hpp>
+#include <monad/rlp/decode_error.hpp>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
@@ -25,7 +26,7 @@ constexpr size_t decode_length(byte_string_view const enc)
     return decode_raw_num<size_t>(enc);
 }
 
-constexpr byte_string_view
+inline decode_result_t
 parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
 {
     size_t i = 0;
@@ -40,7 +41,7 @@ parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
     else if (enc[0] < 0xb8) // [0x80, 0xb7]
     {
         ++i;
-        const uint8_t length = enc[0] - 0x80;
+        uint8_t const length = enc[0] - 0x80;
         end = i + length;
     }
     else // [0xb8, 0xbf]
@@ -57,7 +58,7 @@ parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
     return enc.substr(end);
 }
 
-constexpr byte_string_view
+inline decode_result_t
 parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
 {
     size_t i = 0;
@@ -83,27 +84,29 @@ parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
 }
 
 template <size_t size>
-constexpr byte_string_view
+decode_result_t
 decode_byte_array(uint8_t bytes[size], byte_string_view const enc)
 {
     byte_string_view payload{};
-    auto const rest_of_enc = parse_string_metadata(payload, enc);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_string_metadata(payload, enc));
     MONAD_ASSERT(payload.size() == size);
     std::memcpy(bytes, payload.data(), size);
     return rest_of_enc;
 }
 
-constexpr byte_string_view
+inline decode_result_t
 decode_string(byte_string &byte_str, byte_string_view const enc)
 {
     byte_string_view payload{};
-    auto const rest_of_enc = parse_string_metadata(payload, enc);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_string_metadata(payload, enc));
     byte_str = byte_string(payload);
     return rest_of_enc;
 }
 
 template <size_t N>
-byte_string_view
+decode_result_t
 decode_byte_string_fixed(byte_string_fixed<N> &data, byte_string_view const enc)
 {
     return decode_byte_array<N>(data.data(), enc);

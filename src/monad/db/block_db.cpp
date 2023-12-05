@@ -39,8 +39,9 @@ bool BlockDb::get(uint64_t const num, Block &block) const
     brotli_buffer.resize(brotli_size);
     MONAD_ASSERT(brotli_result == BROTLI_DECODER_RESULT_SUCCESS);
     byte_string_view const view2{brotli_buffer};
-    auto const decoding_result = rlp::decode_block(block, view2);
-    MONAD_ASSERT(decoding_result.empty());
+    auto const remaining = rlp::decode_block(block, view2);
+    MONAD_ASSERT(
+        !remaining.has_error() && remaining.assume_value().size() == 0);
     return true;
 }
 

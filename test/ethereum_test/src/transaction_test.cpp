@@ -107,7 +107,8 @@ void TransactionTest::TestBody()
     Transaction txn;
     auto const txn_rlp = j_content.at("txbytes").get<byte_string>();
     auto const remaining = rlp::decode_transaction(txn, txn_rlp);
-    EXPECT_TRUE(remaining.empty()) << test_name;
+    ASSERT_FALSE(remaining.has_error()) << test_name;
+    EXPECT_EQ(remaining.assume_value().size(), 0) << test_name;
 
     for (auto const &element : j_content.at("result").items()) {
         auto const &fork_name = element.key();

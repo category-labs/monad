@@ -13,7 +13,7 @@ inline byte_string encode_bytes32(bytes32_t const &byte)
     return encode_string2(to_byte_string_view(byte.bytes));
 }
 
-inline byte_string_view
+inline decode_result_t
 decode_bytes32(bytes32_t &byte, byte_string_view const enc)
 {
     return decode_byte_array<32>(byte.bytes, enc);

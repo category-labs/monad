@@ -8,13 +8,17 @@
 #include <monad/core/int.hpp>
 #include <monad/core/int_rlp.hpp>
 #include <monad/core/receipt_rlp.hpp>
+#include <monad/core/result.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/core/transaction_rlp.hpp>
 #include <monad/core/withdrawal.hpp>
 #include <monad/core/withdrawal_rlp.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
+#include <monad/rlp/decode_error.hpp>
 #include <monad/rlp/encode2.hpp>
+
+#include <boost/outcome/try.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -89,34 +93,50 @@ byte_string encode_block(Block const &block)
 }
 
 // Decode
-byte_string_view
+decode_result_t
 decode_block_header(BlockHeader &block_header, byte_string_view const enc)
 {
     byte_string_view payload{};
-    auto const rest_of_enc = parse_list_metadata(payload, enc);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_list_metadata(payload, enc));
 
-    payload = decode_bytes32(block_header.parent_hash, payload);
-    payload = decode_bytes32(block_header.ommers_hash, payload);
-    payload = decode_address(block_header.beneficiary, payload);
-    payload = decode_bytes32(block_header.state_root, payload);
-    payload = decode_bytes32(block_header.transactions_root, payload);
-    payload = decode_bytes32(block_header.receipts_root, payload);
-    payload = decode_bloom(block_header.logs_bloom, payload);
-    payload = decode_unsigned<uint256_t>(block_header.difficulty, payload);
-    payload = decode_unsigned<uint64_t>(block_header.number, payload);
-    payload = decode_unsigned<uint64_t>(block_header.gas_limit, payload);
-    payload = decode_unsigned<uint64_t>(block_header.gas_used, payload);
-    payload = decode_unsigned<uint64_t>(block_header.timestamp, payload);
-    payload = decode_string(block_header.extra_data, payload);
-    payload = decode_bytes32(block_header.prev_randao, payload);
-    payload = decode_byte_string_fixed<8>(block_header.nonce, payload);
+    BOOST_OUTCOME_TRY(
+        payload, decode_bytes32(block_header.parent_hash, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_bytes32(block_header.ommers_hash, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_address(block_header.beneficiary, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_bytes32(block_header.state_root, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_bytes32(block_header.transactions_root, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_bytes32(block_header.receipts_root, payload));
+    BOOST_OUTCOME_TRY(payload, decode_bloom(block_header.logs_bloom, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_unsigned<uint256_t>(block_header.difficulty, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_unsigned<uint64_t>(block_header.number, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_unsigned<uint64_t>(block_header.gas_limit, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_unsigned<uint64_t>(block_header.gas_used, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_unsigned<uint64_t>(block_header.timestamp, payload));
+    BOOST_OUTCOME_TRY(payload, decode_string(block_header.extra_data, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_bytes32(block_header.prev_randao, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_byte_string_fixed<8>(block_header.nonce, payload));
     if (payload.size() > 0) {
         uint64_t base_fee_per_gas{};
-        payload = decode_unsigned<uint64_t>(base_fee_per_gas, payload);
+        BOOST_OUTCOME_TRY(
+            payload, decode_unsigned<uint64_t>(base_fee_per_gas, payload));
         block_header.base_fee_per_gas.emplace(base_fee_per_gas);
         if (payload.size() > 0) {
             bytes32_t withdrawal_root{};
-            payload = decode_bytes32(withdrawal_root, payload);
+            BOOST_OUTCOME_TRY(
+                payload, decode_bytes32(withdrawal_root, payload));
             block_header.withdrawals_root.emplace(withdrawal_root);
         }
         else {
@@ -131,17 +151,18 @@ decode_block_header(BlockHeader &block_header, byte_string_view const enc)
     return rest_of_enc;
 }
 
-byte_string_view decode_transaction_vector(
+decode_result_t decode_transaction_vector(
     std::vector<Transaction> &txns, byte_string_view const enc)
 {
     byte_string_view payload{};
-    auto const rest_of_enc = parse_list_metadata(payload, enc);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_list_metadata(payload, enc));
     MONAD_ASSERT(txns.size() == 0);
 
     // TODO: Reserve txn vector size for better perf
     while (payload.size() > 0) {
         Transaction txn{};
-        payload = decode_transaction(txn, payload);
+        BOOST_OUTCOME_TRY(payload, decode_transaction(txn, payload));
         txns.emplace_back(txn);
     }
 
@@ -149,16 +170,17 @@ byte_string_view decode_transaction_vector(
     return rest_of_enc;
 }
 
-byte_string_view decode_block_header_vector(
+decode_result_t decode_block_header_vector(
     std::vector<BlockHeader> &ommers, byte_string_view const enc)
 {
     byte_string_view payload{};
-    auto const rest_of_enc = parse_list_metadata(payload, enc);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_list_metadata(payload, enc));
     MONAD_ASSERT(ommers.size() == 0);
 
     while (payload.size() > 0) {
         BlockHeader ommer{};
-        payload = decode_block_header(ommer, payload);
+        BOOST_OUTCOME_TRY(payload, decode_block_header(ommer, payload));
         ommers.emplace_back(ommer);
     }
 
@@ -166,18 +188,22 @@ byte_string_view decode_block_header_vector(
     return rest_of_enc;
 }
 
-byte_string_view decode_block(Block &block, byte_string_view const enc)
+decode_result_t decode_block(Block &block, byte_string_view const enc)
 {
     byte_string_view payload{};
-    auto const rest_of_enc = parse_list_metadata(payload, enc);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_list_metadata(payload, enc));
 
-    payload = decode_block_header(block.header, payload);
-    payload = decode_transaction_vector(block.transactions, payload);
-    payload = decode_block_header_vector(block.ommers, payload);
+    BOOST_OUTCOME_TRY(payload, decode_block_header(block.header, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_transaction_vector(block.transactions, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_block_header_vector(block.ommers, payload));
 
     if (payload.size() > 0) {
         std::vector<Withdrawal> withdrawals{};
-        payload = decode_withdrawal_list(withdrawals, payload);
+        BOOST_OUTCOME_TRY(
+            payload, decode_withdrawal_list(withdrawals, payload));
         block.withdrawals = withdrawals;
     }
 

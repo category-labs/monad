@@ -39,7 +39,9 @@ TEST(Rlp_Number, DecodeEncodeUnsigned)
     {
         auto encoding = encode_unsigned(0u);
         uint8_t decoding{};
-        EXPECT_EQ(decode_unsigned<uint8_t>(decoding, encoding).size(), 0);
+        auto const remaining = decode_unsigned<uint8_t>(decoding, encoding);
+        EXPECT_FALSE(remaining.has_error());
+        EXPECT_EQ(remaining.assume_value().size(), 0);
         EXPECT_EQ(encoding, monad::byte_string({0x80}));
         EXPECT_EQ(decoding, 0u);
     }
@@ -48,7 +50,9 @@ TEST(Rlp_Number, DecodeEncodeUnsigned)
     {
         auto encoding = encode_unsigned(uint8_t{0});
         uint8_t decoding{};
-        EXPECT_EQ(decode_unsigned<uint8_t>(decoding, encoding).size(), 0);
+        auto const remaining = decode_unsigned<uint8_t>(decoding, encoding);
+        EXPECT_FALSE(remaining.has_error());
+        EXPECT_EQ(remaining.assume_value().size(), 0);
         EXPECT_EQ(encoding, monad::byte_string({0x80}));
         EXPECT_EQ(decoding, uint8_t{0});
     }
@@ -57,7 +61,9 @@ TEST(Rlp_Number, DecodeEncodeUnsigned)
     {
         auto encoding = encode_unsigned(15u);
         uint8_t decoding{};
-        EXPECT_EQ(decode_unsigned<uint8_t>(decoding, encoding).size(), 0);
+        auto const remaining = decode_unsigned<uint8_t>(decoding, encoding);
+        EXPECT_FALSE(remaining.has_error());
+        EXPECT_EQ(remaining.assume_value().size(), 0);
         EXPECT_EQ(encoding, monad::byte_string({0x0f}));
         EXPECT_EQ(decoding, 15u);
     }
@@ -66,7 +72,9 @@ TEST(Rlp_Number, DecodeEncodeUnsigned)
     {
         auto encoding = encode_unsigned(uint8_t{15});
         uint8_t decoding{};
-        EXPECT_EQ(decode_unsigned<uint8_t>(decoding, encoding).size(), 0);
+        auto const remaining = decode_unsigned<uint8_t>(decoding, encoding);
+        EXPECT_FALSE(remaining.has_error());
+        EXPECT_EQ(remaining.assume_value().size(), 0);
         EXPECT_EQ(encoding, monad::byte_string({0x0f}));
         EXPECT_EQ(decoding, uint8_t{15});
     }
@@ -75,7 +83,9 @@ TEST(Rlp_Number, DecodeEncodeUnsigned)
     {
         auto encoding = encode_unsigned(1024u);
         uint16_t decoding{};
-        EXPECT_EQ(decode_unsigned<uint16_t>(decoding, encoding).size(), 0);
+        auto const remaining = decode_unsigned<uint16_t>(decoding, encoding);
+        EXPECT_FALSE(remaining.has_error());
+        EXPECT_EQ(remaining.assume_value().size(), 0);
         auto const ten_twenty_four_encoding =
             monad::byte_string({0x82, 0x04, 0x00});
         EXPECT_EQ(encoding, ten_twenty_four_encoding);
@@ -92,7 +102,9 @@ TEST(Rlp_Number, DecodeEncodeBigNumers)
         auto encoding =
             encode_unsigned(0xbea34dd04b09ad3b6014251ee2457807_u128);
         uint128_t decoding{};
-        EXPECT_EQ(decode_unsigned<uint128_t>(decoding, encoding).size(), 0);
+        auto const remaining = decode_unsigned<uint128_t>(decoding, encoding);
+        EXPECT_FALSE(remaining.has_error());
+        EXPECT_EQ(remaining.assume_value().size(), 0);
         auto const sorta_big_num = monad::byte_string(
             {0x90,
              0xbe,
@@ -120,7 +132,9 @@ TEST(Rlp_Number, DecodeEncodeBigNumers)
         auto encoding = encode_unsigned(
             0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_u256);
         uint256_t decoding{};
-        EXPECT_EQ(decode_unsigned<uint256_t>(decoding, encoding).size(), 0);
+        auto const remaining = decode_unsigned<uint256_t>(decoding, encoding);
+        EXPECT_FALSE(remaining.has_error());
+        EXPECT_EQ(remaining.assume_value().size(), 0);
         auto const big_num = monad::byte_string(
             {0xa0, 0xbe, 0xa3, 0x4d, 0xd0, 0x4b, 0x09, 0xad, 0x3b, 0x60, 0x14,
              0x25, 0x1e, 0xe2, 0x45, 0x78, 0x07, 0x40, 0x87, 0xee, 0x60, 0xfd,
@@ -138,7 +152,9 @@ TEST(Rlp_Number, DecodeEncodeBigNumers)
             0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32);
 
         bytes32_t decoding{};
-        EXPECT_EQ(decode_bytes32(decoding, encoding).size(), 0);
+        auto const remaining = decode_bytes32(decoding, encoding);
+        EXPECT_FALSE(remaining.has_error());
+        EXPECT_EQ(remaining.assume_value().size(), 0);
         auto const big_be_num = monad::byte_string(
             {0xa0, 0xbe, 0xa3, 0x4d, 0xd0, 0x4b, 0x09, 0xad, 0x3b, 0x60, 0x14,
              0x25, 0x1e, 0xe2, 0x45, 0x78, 0x07, 0x40, 0x87, 0xee, 0x60, 0xfd,
@@ -154,7 +170,9 @@ TEST(Rlp_Number, DecodeEncodeBigNumers)
         auto encoding =
             encode_address(0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address);
         Address decoding{};
-        EXPECT_EQ(decode_address(decoding, encoding).size(), 0);
+        auto const remaining = decode_address(decoding, encoding);
+        EXPECT_FALSE(remaining.has_error());
+        EXPECT_EQ(remaining.assume_value().size(), 0);
         auto const address = monad::byte_string(
             {0x94, 0xf8, 0x63, 0x63, 0x77, 0xb7, 0xa9, 0x98, 0xb5, 0x1a, 0x3c,
              0xf2, 0xbd, 0x71, 0x1b, 0x87, 0x0b, 0x3a, 0xb0, 0xad, 0x56});

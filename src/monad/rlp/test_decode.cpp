@@ -15,7 +15,9 @@ TEST(Rlp, DecodeAfterEncodeString)
         std::string const empty_string = "";
         auto encoding = encode_string2(to_byte_string_view(empty_string));
         byte_string decoding{};
-        EXPECT_EQ(decode_string(decoding, encoding).size(), 0);
+        auto const remaining = decode_string(decoding, encoding);
+        ASSERT_FALSE(remaining.has_error());
+        EXPECT_EQ(remaining.assume_value().size(), 0);
         EXPECT_EQ(decoding, to_byte_string_view(empty_string));
     }
 
@@ -23,7 +25,9 @@ TEST(Rlp, DecodeAfterEncodeString)
         std::string const short_string = "hello world";
         auto encoding = encode_string2(to_byte_string_view(short_string));
         byte_string decoding{};
-        EXPECT_EQ(decode_string(decoding, encoding).size(), 0);
+        auto const remaining = decode_string(decoding, encoding);
+        ASSERT_FALSE(remaining.has_error());
+        EXPECT_EQ(remaining.assume_value().size(), 0);
         EXPECT_EQ(decoding, to_byte_string_view(short_string));
     }
 
@@ -32,7 +36,9 @@ TEST(Rlp, DecodeAfterEncodeString)
             "Lorem ipsum dolor sit amet, consectetur adipisicing elit";
         auto encoding = encode_string2(to_byte_string_view(long_string));
         byte_string decoding{};
-        EXPECT_EQ(decode_string(decoding, encoding).size(), 0);
+        auto const remaining = decode_string(decoding, encoding);
+        ASSERT_FALSE(remaining.has_error());
+        EXPECT_EQ(remaining.assume_value().size(), 0);
         EXPECT_EQ(decoding, to_byte_string_view(long_string));
     }
 }

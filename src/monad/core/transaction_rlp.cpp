@@ -5,13 +5,17 @@
 #include <monad/core/bytes_rlp.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/int_rlp.hpp>
+#include <monad/core/result.hpp>
 #include <monad/core/signature.hpp>
 #include <monad/core/signature_rlp.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/core/transaction_rlp.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
+#include <monad/rlp/decode_error.hpp>
 #include <monad/rlp/encode2.hpp>
+
+#include <boost/outcome/try.hpp>
 
 #include <cassert>
 #include <cstddef>
@@ -148,11 +152,12 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
 }
 
 // Decode
-byte_string_view decode_access_entry_keys(
+decode_result_t decode_access_entry_keys(
     std::vector<bytes32_t> &keys, byte_string_view const enc)
 {
     byte_string_view payload{};
-    auto const rest_of_enc = parse_list_metadata(payload, enc);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_list_metadata(payload, enc));
     constexpr size_t key_size = 33; // 1 byte for header, 32 bytes for byte32_t
     auto const list_space = payload.size();
     MONAD_ASSERT(keys.size() == 0);
@@ -160,7 +165,7 @@ byte_string_view decode_access_entry_keys(
 
     while (payload.size() > 0) {
         bytes32_t key{};
-        payload = decode_bytes32(key, payload);
+        BOOST_OUTCOME_TRY(payload, decode_bytes32(key, payload));
         keys.emplace_back(key);
     }
 
@@ -168,24 +173,25 @@ byte_string_view decode_access_entry_keys(
     return rest_of_enc;
 }
 
-byte_string_view
-decode_access_entry(AccessEntry &ae, byte_string_view const enc)
+decode_result_t decode_access_entry(AccessEntry &ae, byte_string_view const enc)
 {
     byte_string_view payload{};
-    auto const rest_of_enc = parse_list_metadata(payload, enc);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_list_metadata(payload, enc));
 
-    payload = decode_address(ae.a, payload);
-    payload = decode_access_entry_keys(ae.keys, payload);
+    BOOST_OUTCOME_TRY(payload, decode_address(ae.a, payload));
+    BOOST_OUTCOME_TRY(payload, decode_access_entry_keys(ae.keys, payload));
 
     MONAD_ASSERT(payload.size() == 0);
     return rest_of_enc;
 }
 
-byte_string_view
+decode_result_t
 decode_access_list(AccessList &access_list, byte_string_view const enc)
 {
     byte_string_view payload{};
-    auto const rest_of_enc = parse_list_metadata(payload, enc);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_list_metadata(payload, enc));
     constexpr size_t approx_num_keys = 10;
     // 20 bytes for address, 33 bytes per key
     constexpr size_t access_entry_size_approx = 20 + 33 * approx_num_keys;
@@ -195,7 +201,7 @@ decode_access_list(AccessList &access_list, byte_string_view const enc)
 
     while (payload.size() > 0) {
         AccessEntry ae{};
-        payload = decode_access_entry(ae, payload);
+        BOOST_OUTCOME_TRY(payload, decode_access_entry(ae, payload));
         access_list.emplace_back(ae);
     }
 
@@ -203,81 +209,93 @@ decode_access_list(AccessList &access_list, byte_string_view const enc)
     return rest_of_enc;
 }
 
-byte_string_view
+decode_result_t
 decode_transaction_legacy(Transaction &txn, byte_string_view const enc)
 {
     MONAD_ASSERT(enc.size() > 0);
     byte_string_view payload{};
-    auto const rest_of_enc = parse_list_metadata(payload, enc);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_list_metadata(payload, enc));
 
     txn.type = TransactionType::eip155;
-    payload = decode_unsigned<uint64_t>(txn.nonce, payload);
-    payload = decode_unsigned<uint256_t>(txn.max_fee_per_gas, payload);
-    payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
-    payload = decode_address(txn.to, payload);
-    payload = decode_unsigned<uint256_t>(txn.value, payload);
-    payload = decode_string(txn.data, payload);
-    payload = decode_sc(txn.sc, payload);
-    payload = decode_unsigned<uint256_t>(txn.sc.r, payload);
-    payload = decode_unsigned<uint256_t>(txn.sc.s, payload);
+    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint64_t>(txn.nonce, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_unsigned<uint256_t>(txn.max_fee_per_gas, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_unsigned<uint64_t>(txn.gas_limit, payload));
+    BOOST_OUTCOME_TRY(payload, decode_address(txn.to, payload));
+    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.value, payload));
+    BOOST_OUTCOME_TRY(payload, decode_string(txn.data, payload));
+    BOOST_OUTCOME_TRY(payload, decode_sc(txn.sc, payload));
+    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.sc.r, payload));
+    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.sc.s, payload));
 
     MONAD_ASSERT(payload.size() == 0);
     return rest_of_enc;
 }
 
-byte_string_view
+decode_result_t
 decode_transaction_eip2930(Transaction &txn, byte_string_view const enc)
 {
     MONAD_ASSERT(enc.size() > 0);
     byte_string_view payload{};
-    auto const rest_of_enc = parse_list_metadata(payload, enc);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_list_metadata(payload, enc));
 
     txn.type = TransactionType::eip2930;
     txn.sc.chain_id = uint256_t{};
-    payload = decode_unsigned<uint256_t>(*txn.sc.chain_id, payload);
-    payload = decode_unsigned<uint64_t>(txn.nonce, payload);
-    payload = decode_unsigned<uint256_t>(txn.max_fee_per_gas, payload);
-    payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
-    payload = decode_address(txn.to, payload);
-    payload = decode_unsigned<uint256_t>(txn.value, payload);
-    payload = decode_string(txn.data, payload);
-    payload = decode_access_list(txn.access_list, payload);
-    payload = decode_bool(txn.sc.odd_y_parity, payload);
-    payload = decode_unsigned<uint256_t>(txn.sc.r, payload);
-    payload = decode_unsigned<uint256_t>(txn.sc.s, payload);
+    BOOST_OUTCOME_TRY(
+        payload, decode_unsigned<uint256_t>(*txn.sc.chain_id, payload));
+    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint64_t>(txn.nonce, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_unsigned<uint256_t>(txn.max_fee_per_gas, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_unsigned<uint64_t>(txn.gas_limit, payload));
+    BOOST_OUTCOME_TRY(payload, decode_address(txn.to, payload));
+    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.value, payload));
+    BOOST_OUTCOME_TRY(payload, decode_string(txn.data, payload));
+    BOOST_OUTCOME_TRY(payload, decode_access_list(txn.access_list, payload));
+    BOOST_OUTCOME_TRY(payload, decode_bool(txn.sc.odd_y_parity, payload));
+    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.sc.r, payload));
+    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.sc.s, payload));
 
     MONAD_ASSERT(payload.size() == 0);
     return rest_of_enc;
 }
 
-byte_string_view
+decode_result_t
 decode_transaction_eip1559(Transaction &txn, byte_string_view const enc)
 {
     MONAD_ASSERT(enc.size() > 0);
     byte_string_view payload{};
-    auto const rest_of_enc = parse_list_metadata(payload, enc);
+    BOOST_OUTCOME_TRY(
+        auto const rest_of_enc, parse_list_metadata(payload, enc));
 
     txn.type = TransactionType::eip1559;
     txn.sc.chain_id = uint256_t{};
-    payload = decode_unsigned<uint256_t>(*txn.sc.chain_id, payload);
-    payload = decode_unsigned<uint64_t>(txn.nonce, payload);
-    payload = decode_unsigned<uint256_t>(txn.max_priority_fee_per_gas, payload);
-    payload = decode_unsigned<uint256_t>(txn.max_fee_per_gas, payload);
-    payload = decode_unsigned<uint64_t>(txn.gas_limit, payload);
-    payload = decode_address(txn.to, payload);
-    payload = decode_unsigned<uint256_t>(txn.value, payload);
-    payload = decode_string(txn.data, payload);
-    payload = decode_access_list(txn.access_list, payload);
-    payload = decode_bool(txn.sc.odd_y_parity, payload);
-    payload = decode_unsigned<uint256_t>(txn.sc.r, payload);
-    payload = decode_unsigned<uint256_t>(txn.sc.s, payload);
+    BOOST_OUTCOME_TRY(
+        payload, decode_unsigned<uint256_t>(*txn.sc.chain_id, payload));
+    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint64_t>(txn.nonce, payload));
+    BOOST_OUTCOME_TRY(
+        payload,
+        decode_unsigned<uint256_t>(txn.max_priority_fee_per_gas, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_unsigned<uint256_t>(txn.max_fee_per_gas, payload));
+    BOOST_OUTCOME_TRY(
+        payload, decode_unsigned<uint64_t>(txn.gas_limit, payload));
+    BOOST_OUTCOME_TRY(payload, decode_address(txn.to, payload));
+    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.value, payload));
+    BOOST_OUTCOME_TRY(payload, decode_string(txn.data, payload));
+    BOOST_OUTCOME_TRY(payload, decode_access_list(txn.access_list, payload));
+    BOOST_OUTCOME_TRY(payload, decode_bool(txn.sc.odd_y_parity, payload));
+    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.sc.r, payload));
+    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.sc.s, payload));
 
     MONAD_ASSERT(payload.size() == 0);
     return rest_of_enc;
 }
 
-byte_string_view
-decode_transaction(Transaction &txn, byte_string_view const enc)
+decode_result_t decode_transaction(Transaction &txn, byte_string_view const enc)
 {
     MONAD_ASSERT(enc.size() > 0);
 
@@ -285,13 +303,14 @@ decode_transaction(Transaction &txn, byte_string_view const enc)
     if (first < 0xc0) // eip 2718 - typed transaction envelope
     {
         byte_string_view payload{};
-        auto const rest_of_enc = parse_string_metadata(payload, enc);
+        BOOST_OUTCOME_TRY(
+            auto const rest_of_enc, parse_string_metadata(payload, enc));
         MONAD_ASSERT(payload.size() > 0);
 
         uint8_t const &type = payload[0];
         auto const txn_enc = payload.substr(1, payload.size() - 1);
 
-        byte_string_view (*decoder)(Transaction &, byte_string_view const);
+        decode_result_t (*decoder)(Transaction &, byte_string_view const);
         switch (type) {
         case 0x1:
             decoder = &decode_transaction_eip2930;
@@ -301,9 +320,8 @@ decode_transaction(Transaction &txn, byte_string_view const enc)
             break;
         default:
             MONAD_ASSERT(false); // invalid transaction type
-            return {};
         }
-        auto const rest_of_txn_enc = decoder(txn, txn_enc);
+        BOOST_OUTCOME_TRY(auto const rest_of_txn_enc, decoder(txn, txn_enc));
         MONAD_ASSERT(rest_of_txn_enc.size() == 0);
         return rest_of_enc;
     }

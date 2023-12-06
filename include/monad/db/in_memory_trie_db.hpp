@@ -35,8 +35,12 @@ struct Compute
     {
         MONAD_DEBUG_ASSERT(node.has_value());
 
+        // this is the block number leaf
+        if (MONAD_UNLIKELY(node.value().empty())) {
+            return {};
+        }
         // this is a storage leaf
-        if (node.value().size() == sizeof(bytes32_t)) {
+        else if (node.value().size() == sizeof(bytes32_t)) {
             return rlp::encode_string2(rlp::zeroless_view(node.value()));
         }
 
@@ -75,6 +79,11 @@ public:
     virtual void backward() override {}
 
     virtual mpt::Compute &get_compute() override
+    {
+        return compute_;
+    }
+
+    virtual mpt::Compute &get_compute(uint8_t) override
     {
         return compute_;
     }
@@ -200,7 +209,8 @@ public:
         updates.push_front(state_update);
         mpt::UpdateAux aux;
         EmptyStateMachine state_machine;
-        root_ = upsert(aux, state_machine, root_.get(), std::move(updates));
+        root_ =
+            upsert(aux, state_machine, std::move(root_), std::move(updates));
 
         update_allocator_.clear();
         byte_string_allocator_.clear();

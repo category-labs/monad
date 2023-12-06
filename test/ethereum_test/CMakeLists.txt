@@ -18,6 +18,8 @@ target_include_directories(
   monad-ethereum-test PUBLIC ${PROJECT_SOURCE_DIR}/test/unit/common/include)
 monad_compile_options(monad-ethereum-test)
 
+target_link_libraries(monad-ethereum-test PRIVATE monad_unit_test_common)
+
 function(add_ethereum_test)
   set(ONE_VALUE_ARGS FORK)
   cmake_parse_arguments(ADD_ETHEREUM_TEST "" "${ONE_VALUE_ARGS}" "" ${ARGN})

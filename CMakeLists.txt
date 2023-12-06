@@ -237,7 +237,6 @@ endif()
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/ethereum_test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common)
-add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common/src/test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/analysis)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum)
 

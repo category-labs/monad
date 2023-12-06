@@ -17,7 +17,6 @@
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/test/config.hpp>
-#include <monad/test/dump_state_from_db.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -226,7 +225,7 @@ void BlockchainTest::TestBody()
                 j_contents.at("postStateHash").get<bytes32_t>());
         }
 
-        auto const dump = test::dump_state_from_db(db);
+        auto const dump = db.to_json();
         if (has_post_state) {
             validate_post_state(j_contents.at("postState"), dump);
         }

@@ -31,8 +31,6 @@
 #include <quill/bundled/fmt/format.h>
 #include <quill/detail/LogMacros.h>
 
-#include <boost/outcome/try.hpp>
-
 #include <gtest/gtest.h>
 
 #include <test_resource_data.h>
@@ -186,8 +184,10 @@ void BlockchainTest::TestBody()
             Block block;
             auto const rlp = j_block.at("rlp").get<byte_string>();
             auto const remaining = rlp::decode_block(block, rlp);
-            ASSERT_FALSE(remaining.has_error()) << name;
-            EXPECT_EQ(remaining.assume_value().size(), 0) << name;
+            if (remaining.has_error() || !remaining.assume_value().empty()) {
+                EXPECT_TRUE(j_block.contains("expectException")) << name;
+                continue;
+            }
 
             if (block.header.number == 0) {
                 EXPECT_TRUE(j_block.contains("expectException"));

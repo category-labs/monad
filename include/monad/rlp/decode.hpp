@@ -3,17 +3,22 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/likely.h>
 #include <monad/core/result.hpp>
 #include <monad/rlp/config.hpp>
+#include <monad/rlp/decode_error.hpp>
 
 #include <boost/outcome/try.hpp>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
 template <unsigned_integral T>
-constexpr T decode_raw_num(byte_string_view const enc)
+constexpr Result<T> decode_raw_num(byte_string_view const enc)
 {
-    MONAD_ASSERT(enc.size() <= sizeof(T));
+    if (MONAD_UNLIKELY(enc.size() > sizeof(T))) {
+        return DecodeError::Overflow;
+    }
+
     T result{};
     std::memcpy(
         &intx::as_bytes(result)[sizeof(T) - enc.size()],
@@ -23,7 +28,7 @@ constexpr T decode_raw_num(byte_string_view const enc)
     return result;
 }
 
-constexpr size_t decode_length(byte_string_view const enc)
+constexpr Result<size_t> decode_length(byte_string_view const enc)
 {
     return decode_raw_num<size_t>(enc);
 }
@@ -35,7 +40,11 @@ parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
     size_t end = 0;
 
     MONAD_ASSERT(!enc.empty());
-    MONAD_ASSERT(enc[0] < 0xc0);
+
+    if (MONAD_UNLIKELY(enc[0] >= 0xc0)) {
+        return DecodeError::TypeUnexpected;
+    }
+
     if (enc[0] < 0x80) // [0x00, 0x7f]
     {
         end = i + 1;
@@ -51,7 +60,8 @@ parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
         ++i;
         uint8_t length_of_length = enc[0] - 0xb7;
         MONAD_ASSERT(i + length_of_length < enc.size());
-        auto const length = decode_length(enc.substr(i, length_of_length));
+        BOOST_OUTCOME_TRY(
+            auto const length, decode_length(enc.substr(i, length_of_length)));
         i += length_of_length;
         end = i + length;
     }
@@ -67,7 +77,11 @@ parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
     size_t length;
     ++i;
     MONAD_ASSERT(!enc.empty());
-    MONAD_ASSERT(enc[0] >= 0xc0);
+
+    if (MONAD_UNLIKELY(enc[0] < 0xc0)) {
+        return DecodeError::TypeUnexpected;
+    }
+
     if (enc[0] < 0xf8) {
         length = enc[0] - 0xc0;
     }
@@ -75,7 +89,8 @@ parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
         size_t const length_of_length = enc[0] - 0xf7;
         MONAD_ASSERT(i + length_of_length < enc.size());
 
-        length = decode_length(enc.substr(i, length_of_length));
+        BOOST_OUTCOME_TRY(
+            length, decode_length(enc.substr(i, length_of_length)));
         i += length_of_length;
     }
     auto const end = i + length;

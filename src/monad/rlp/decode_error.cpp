@@ -18,7 +18,9 @@ quick_status_code_from_enum<monad::rlp::DecodeError>::value_mappings()
     using monad::rlp::DecodeError;
 
     static std::initializer_list<mapping> const v = {
-        {DecodeError::Success, "Success", {errc::success}},
+        {DecodeError::Success, "success", {errc::success}},
+        {DecodeError::TypeUnexpected, "type unexpected", {}},
+        {DecodeError::Overflow, "overflow", {}},
     };
 
     return v;

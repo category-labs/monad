@@ -21,16 +21,58 @@ using namespace monad::rlp;
 
 TEST(Rlp_Number, DecodeUnsigned)
 {
-    EXPECT_EQ(0, decode_length(monad::byte_string({0x00})));
-    EXPECT_EQ(15, decode_length(monad::byte_string({0x0f})));
-    EXPECT_EQ(122, decode_length(monad::byte_string({0x7a})));
-    EXPECT_EQ(1024, decode_length(monad::byte_string({0x04, 0x00})));
-    EXPECT_EQ(772, decode_length(monad::byte_string({0x03, 0x04})));
-    EXPECT_EQ(553, decode_length(monad::byte_string({0x02, 0x29})));
-    EXPECT_EQ(1176, decode_length(monad::byte_string({0x04, 0x98})));
-    EXPECT_EQ(16706, decode_length(monad::byte_string({0x41, 0x42})));
-    EXPECT_EQ(31530, decode_length(monad::byte_string({0x7b, 0x2a})));
-    EXPECT_EQ(65535, decode_length(monad::byte_string({0xff, 0xff})));
+    {
+        auto const remaining = decode_length(monad::byte_string({0x00}));
+        EXPECT_TRUE(!remaining.has_error() && remaining.assume_value() == 0);
+    }
+
+    {
+        auto const remaining = decode_length(monad::byte_string({0x0f}));
+        EXPECT_TRUE(!remaining.has_error() && remaining.assume_value() == 15);
+    }
+
+    {
+        auto const remaining = decode_length(monad::byte_string({0x7a}));
+        EXPECT_TRUE(!remaining.has_error() && remaining.assume_value() == 122);
+    }
+
+    {
+        auto const remaining = decode_length(monad::byte_string({0x04, 0x00}));
+        EXPECT_TRUE(!remaining.has_error() && remaining.assume_value() == 1024);
+    }
+
+    {
+        auto const remaining = decode_length(monad::byte_string({0x03, 0x04}));
+        EXPECT_TRUE(!remaining.has_error() && remaining.assume_value() == 772);
+    }
+
+    {
+        auto const remaining = decode_length(monad::byte_string({0x02, 0x29}));
+        EXPECT_TRUE(!remaining.has_error() && remaining.assume_value() == 553);
+    }
+
+    {
+        auto const remaining = decode_length(monad::byte_string({0x04, 0x98}));
+        EXPECT_TRUE(!remaining.has_error() && remaining.assume_value() == 1176);
+    }
+
+    {
+        auto const remaining = decode_length(monad::byte_string({0x41, 0x42}));
+        EXPECT_TRUE(
+            !remaining.has_error() && remaining.assume_value() == 16706);
+    }
+
+    {
+        auto const remaining = decode_length(monad::byte_string({0x7b, 0x2a}));
+        EXPECT_TRUE(
+            !remaining.has_error() && remaining.assume_value() == 31530);
+    }
+
+    {
+        auto const remaining = decode_length(monad::byte_string({0xff, 0xff}));
+        EXPECT_TRUE(
+            !remaining.has_error() && remaining.assume_value() == 65535);
+    }
 }
 
 TEST(Rlp_Number, DecodeEncodeUnsigned)

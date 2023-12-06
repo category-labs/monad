@@ -23,7 +23,7 @@ decode_unsigned(T &u_num, byte_string_view const enc)
     byte_string_view payload{};
     BOOST_OUTCOME_TRY(
         auto const rest_of_enc, parse_string_metadata(payload, enc));
-    u_num = decode_raw_num<T>(payload);
+    BOOST_OUTCOME_TRY(u_num, decode_raw_num<T>(payload));
     return rest_of_enc;
 }
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <monad/core/byte_string.hpp>
 #include <monad/rlp/config.hpp>
 
 #include <boost/outcome/config.hpp>
@@ -13,6 +12,8 @@ MONAD_RLP_NAMESPACE_BEGIN
 enum class DecodeError
 {
     Success = 0,
+    TypeUnexpected,
+    Overflow,
 };
 
 MONAD_RLP_NAMESPACE_END

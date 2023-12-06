@@ -2,6 +2,7 @@
 
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/result.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
 #include <monad/rlp/encode2.hpp>
@@ -13,7 +14,7 @@ inline byte_string encode_bytes32(bytes32_t const &byte)
     return encode_string2(to_byte_string_view(byte.bytes));
 }
 
-inline decode_result_t
+inline Result<byte_string_view>
 decode_bytes32(bytes32_t &byte, byte_string_view const enc)
 {
     return decode_byte_array<32>(byte.bytes, enc);

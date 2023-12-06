@@ -6,7 +6,6 @@
 #include <monad/core/withdrawal.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
-#include <monad/rlp/decode_error.hpp>
 #include <monad/rlp/encode2.hpp>
 
 #include <boost/outcome/try.hpp>
@@ -25,7 +24,7 @@ byte_string encode_withdrawal(Withdrawal const &withdrawal)
         encode_unsigned(withdrawal.amount));
 }
 
-decode_result_t
+Result<byte_string_view>
 decode_withdrawal(Withdrawal &withdrawal, byte_string_view const enc)
 {
     if (enc.size() == 0) {
@@ -48,7 +47,7 @@ decode_withdrawal(Withdrawal &withdrawal, byte_string_view const enc)
     return rest_of_enc;
 }
 
-decode_result_t decode_withdrawal_list(
+Result<byte_string_view> decode_withdrawal_list(
     std::vector<Withdrawal> &withdrawal_list, byte_string_view const enc)
 {
     byte_string_view payload{};

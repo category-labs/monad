@@ -51,7 +51,7 @@ TEST(Rlp_Receipt, DecodeEncodeLog)
         auto encoded = encode_log(log);
         Receipt::Log decoded{};
         auto const remaining = decode_log(decoded, encoded);
-        EXPECT_FALSE(remaining.has_error());
+        ASSERT_FALSE(remaining.has_error());
         EXPECT_EQ(remaining.assume_value().size(), 0);
 
         EXPECT_EQ(encoded, rlp_log);
@@ -100,7 +100,7 @@ TEST(Rlp_Receipt, DecodeEncodeBloom)
     auto const encoded = encode_bloom(bloom);
     Receipt::Bloom decoded{};
     auto const remaining = decode_bloom(decoded, encoded);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
 
     EXPECT_EQ(encoded, rlp_bloom);
@@ -168,7 +168,7 @@ TEST(Rlp_Receipt, DecodeEncodeEip155Receipt)
     auto const encoded = encode_receipt(r);
     Receipt decoded{};
     auto const remaining = decode_receipt(decoded, encoded);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
 
     EXPECT_EQ(encoded, rlp_receipt);
@@ -253,7 +253,7 @@ TEST(Rlp_Receipt, EncodeEip1559Receipt)
     auto const encoded = encode_receipt(r);
     Receipt decoded{};
     auto const remaining = decode_receipt(decoded, encoded);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
 
     EXPECT_EQ(encoded, rlp_receipt);
@@ -338,7 +338,7 @@ TEST(Rlp_Receipt, EncodeEip2930Receipt)
     auto const encoded = encode_receipt(r);
     Receipt decoded{};
     auto const remaining = decode_receipt(decoded, encoded);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
 
     EXPECT_EQ(encoded, rlp_receipt);

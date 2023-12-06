@@ -9,7 +9,6 @@
 #include <monad/core/result.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
-#include <monad/rlp/decode_error.hpp>
 #include <monad/rlp/encode2.hpp>
 
 #include <boost/outcome/try.hpp>
@@ -36,7 +35,7 @@ byte_string encode_account(Account const &account)
         encode_bytes32(account.code_hash));
 }
 
-decode_result_t decode_account(
+Result<byte_string_view> decode_account(
     Account &account, bytes32_t &storage_root, byte_string_view const enc)
 {
     byte_string_view payload{};
@@ -54,7 +53,8 @@ decode_result_t decode_account(
     return rest_of_enc;
 }
 
-decode_result_t decode_account(Account &account, byte_string_view const enc)
+Result<byte_string_view>
+decode_account(Account &account, byte_string_view const enc)
 {
     byte_string_view payload{};
     BOOST_OUTCOME_TRY(

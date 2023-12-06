@@ -3,8 +3,10 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/result.hpp>
 #include <monad/rlp/config.hpp>
-#include <monad/rlp/decode_error.hpp>
+
+#include <boost/outcome/try.hpp>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
@@ -26,7 +28,7 @@ constexpr size_t decode_length(byte_string_view const enc)
     return decode_raw_num<size_t>(enc);
 }
 
-inline decode_result_t
+constexpr Result<byte_string_view>
 parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
 {
     size_t i = 0;
@@ -58,7 +60,7 @@ parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
     return enc.substr(end);
 }
 
-inline decode_result_t
+constexpr Result<byte_string_view>
 parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
 {
     size_t i = 0;
@@ -84,7 +86,7 @@ parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
 }
 
 template <size_t size>
-decode_result_t
+constexpr Result<byte_string_view>
 decode_byte_array(uint8_t bytes[size], byte_string_view const enc)
 {
     byte_string_view payload{};
@@ -95,7 +97,7 @@ decode_byte_array(uint8_t bytes[size], byte_string_view const enc)
     return rest_of_enc;
 }
 
-inline decode_result_t
+constexpr Result<byte_string_view>
 decode_string(byte_string &byte_str, byte_string_view const enc)
 {
     byte_string_view payload{};
@@ -106,7 +108,7 @@ decode_string(byte_string &byte_str, byte_string_view const enc)
 }
 
 template <size_t N>
-decode_result_t
+constexpr Result<byte_string_view>
 decode_byte_string_fixed(byte_string_fixed<N> &data, byte_string_view const enc)
 {
     return decode_byte_array<N>(data.data(), enc);

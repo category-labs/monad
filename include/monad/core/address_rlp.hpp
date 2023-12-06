@@ -7,6 +7,8 @@
 #include <monad/rlp/decode.hpp>
 #include <monad/rlp/encode2.hpp>
 
+#include <boost/outcome/try.hpp>
+
 #include <optional>
 
 MONAD_RLP_NAMESPACE_BEGIN
@@ -19,13 +21,13 @@ inline byte_string encode_address(std::optional<Address> const &address)
     return encode_string2(to_byte_string_view(address->bytes));
 }
 
-inline decode_result_t
+inline Result<byte_string_view>
 decode_address(Address &address, byte_string_view const enc)
 {
     return decode_byte_array<20>(address.bytes, enc);
 }
 
-inline decode_result_t
+inline Result<byte_string_view>
 decode_address(std::optional<Address> &address, byte_string_view const enc)
 {
     byte_string_view payload{};

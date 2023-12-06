@@ -3,6 +3,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/int_rlp.hpp>
+#include <monad/core/result.hpp>
 #include <monad/core/signature.hpp>
 #include <monad/rlp/config.hpp>
 
@@ -10,6 +11,6 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
-decode_result_t decode_sc(SignatureAndChain &, byte_string_view);
+Result<byte_string_view> decode_sc(SignatureAndChain &, byte_string_view);
 
 MONAD_RLP_NAMESPACE_END

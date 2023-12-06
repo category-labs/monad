@@ -108,7 +108,7 @@ TEST(Rlp_Block, DecodeEncodeBlock46402)
     auto const encoded_block = rlp::encode_block(block);
     Block decoded_block;
     auto const remaining = rlp::decode_block(decoded_block, encoded_block);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
     EXPECT_EQ(decoded_block, block);
 }
@@ -265,7 +265,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730000)
     auto const encoded_block = rlp::encode_block(block);
     Block decoded_block;
     auto const remaining = rlp::decode_block(decoded_block, encoded_block);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
     EXPECT_EQ(decoded_block, block);
 }
@@ -449,7 +449,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
     auto const encoded_block = rlp::encode_block(block);
     Block decoded_block;
     auto const remaining = rlp::decode_block(decoded_block, encoded_block);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
     EXPECT_EQ(decoded_block, block);
 }
@@ -518,7 +518,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730002)
     auto const encoded_block = rlp::encode_block(block);
     Block decoded_block;
     auto const remaining = rlp::decode_block(decoded_block, encoded_block);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
     EXPECT_EQ(decoded_block, block);
 }
@@ -572,7 +572,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730009)
     auto const encoded_block = rlp::encode_block(block);
     Block decoded_block;
     auto const remaining = rlp::decode_block(decoded_block, encoded_block);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
     EXPECT_EQ(decoded_block, block);
 }
@@ -690,7 +690,7 @@ TEST(Rlp_Block, DecodeEncodeBlock14000000)
     auto const encoded_block = rlp::encode_block(block);
     Block decoded_block;
     auto const remaining = rlp::decode_block(decoded_block, encoded_block);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
     EXPECT_EQ(decoded_block, block);
 }
@@ -759,7 +759,7 @@ TEST(Rlp_Block, DecodeEncodeShanghai)
     auto const remaining = rlp::decode_block(decoded_block, encoded_block);
 
     // Header
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
     EXPECT_EQ(
         decoded_block.header.parent_hash,

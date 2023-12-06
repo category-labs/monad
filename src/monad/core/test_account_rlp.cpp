@@ -36,7 +36,7 @@ TEST(Rlp_Account, Encode)
 
     auto const remaining =
         decode_account(decoded_account, decoded_storage_root, encoded_account);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
 
     EXPECT_EQ(encoded_account, rlp_account);

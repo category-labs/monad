@@ -169,6 +169,7 @@ add_library(
   "include/monad/rlp/decode_error.hpp"
   "include/monad/rlp/decode.hpp"
   "include/monad/rlp/encode2.hpp"
+  "src/monad/rlp/decode_error.cpp"
   # state
   "include/monad/state2/block_state.hpp"
   "include/monad/state2/block_state_ops.hpp"

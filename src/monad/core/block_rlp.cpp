@@ -15,7 +15,6 @@
 #include <monad/core/withdrawal_rlp.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
-#include <monad/rlp/decode_error.hpp>
 #include <monad/rlp/encode2.hpp>
 
 #include <boost/outcome/try.hpp>
@@ -93,7 +92,7 @@ byte_string encode_block(Block const &block)
 }
 
 // Decode
-decode_result_t
+Result<byte_string_view>
 decode_block_header(BlockHeader &block_header, byte_string_view const enc)
 {
     byte_string_view payload{};
@@ -151,7 +150,7 @@ decode_block_header(BlockHeader &block_header, byte_string_view const enc)
     return rest_of_enc;
 }
 
-decode_result_t decode_transaction_vector(
+Result<byte_string_view> decode_transaction_vector(
     std::vector<Transaction> &txns, byte_string_view const enc)
 {
     byte_string_view payload{};
@@ -170,7 +169,7 @@ decode_result_t decode_transaction_vector(
     return rest_of_enc;
 }
 
-decode_result_t decode_block_header_vector(
+Result<byte_string_view> decode_block_header_vector(
     std::vector<BlockHeader> &ommers, byte_string_view const enc)
 {
     byte_string_view payload{};
@@ -188,7 +187,7 @@ decode_result_t decode_block_header_vector(
     return rest_of_enc;
 }
 
-decode_result_t decode_block(Block &block, byte_string_view const enc)
+Result<byte_string_view> decode_block(Block &block, byte_string_view const enc)
 {
     byte_string_view payload{};
     BOOST_OUTCOME_TRY(

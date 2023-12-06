@@ -4,7 +4,6 @@
 #include <monad/core/signature.hpp>
 #include <monad/core/signature_rlp.hpp>
 #include <monad/rlp/config.hpp>
-#include <monad/rlp/decode_error.hpp>
 
 #include <boost/outcome/try.hpp>
 
@@ -12,7 +11,8 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
-decode_result_t decode_sc(SignatureAndChain &sc, byte_string_view const enc)
+Result<byte_string_view>
+decode_sc(SignatureAndChain &sc, byte_string_view const enc)
 {
     uint64_t v{};
     BOOST_OUTCOME_TRY(

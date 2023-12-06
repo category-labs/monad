@@ -12,7 +12,6 @@
 #include <monad/core/transaction_rlp.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
-#include <monad/rlp/decode_error.hpp>
 #include <monad/rlp/encode2.hpp>
 
 #include <boost/outcome/try.hpp>
@@ -152,7 +151,7 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
 }
 
 // Decode
-decode_result_t decode_access_entry_keys(
+Result<byte_string_view> decode_access_entry_keys(
     std::vector<bytes32_t> &keys, byte_string_view const enc)
 {
     byte_string_view payload{};
@@ -173,7 +172,8 @@ decode_result_t decode_access_entry_keys(
     return rest_of_enc;
 }
 
-decode_result_t decode_access_entry(AccessEntry &ae, byte_string_view const enc)
+Result<byte_string_view>
+decode_access_entry(AccessEntry &ae, byte_string_view const enc)
 {
     byte_string_view payload{};
     BOOST_OUTCOME_TRY(
@@ -186,7 +186,7 @@ decode_result_t decode_access_entry(AccessEntry &ae, byte_string_view const enc)
     return rest_of_enc;
 }
 
-decode_result_t
+Result<byte_string_view>
 decode_access_list(AccessList &access_list, byte_string_view const enc)
 {
     byte_string_view payload{};
@@ -209,7 +209,7 @@ decode_access_list(AccessList &access_list, byte_string_view const enc)
     return rest_of_enc;
 }
 
-decode_result_t
+Result<byte_string_view>
 decode_transaction_legacy(Transaction &txn, byte_string_view const enc)
 {
     MONAD_ASSERT(enc.size() > 0);
@@ -234,7 +234,7 @@ decode_transaction_legacy(Transaction &txn, byte_string_view const enc)
     return rest_of_enc;
 }
 
-decode_result_t
+Result<byte_string_view>
 decode_transaction_eip2930(Transaction &txn, byte_string_view const enc)
 {
     MONAD_ASSERT(enc.size() > 0);
@@ -263,7 +263,7 @@ decode_transaction_eip2930(Transaction &txn, byte_string_view const enc)
     return rest_of_enc;
 }
 
-decode_result_t
+Result<byte_string_view>
 decode_transaction_eip1559(Transaction &txn, byte_string_view const enc)
 {
     MONAD_ASSERT(enc.size() > 0);
@@ -295,7 +295,8 @@ decode_transaction_eip1559(Transaction &txn, byte_string_view const enc)
     return rest_of_enc;
 }
 
-decode_result_t decode_transaction(Transaction &txn, byte_string_view const enc)
+Result<byte_string_view>
+decode_transaction(Transaction &txn, byte_string_view const enc)
 {
     MONAD_ASSERT(enc.size() > 0);
 
@@ -310,7 +311,8 @@ decode_result_t decode_transaction(Transaction &txn, byte_string_view const enc)
         uint8_t const &type = payload[0];
         auto const txn_enc = payload.substr(1, payload.size() - 1);
 
-        decode_result_t (*decoder)(Transaction &, byte_string_view const);
+        Result<byte_string_view> (*decoder)(
+            Transaction &, byte_string_view const);
         switch (type) {
         case 0x1:
             decoder = &decode_transaction_eip2930;

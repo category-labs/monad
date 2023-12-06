@@ -61,7 +61,7 @@ TEST(Rlp_Transaction, DecodeEncodeAccessList)
     encoding = encode_access_list(list);
     decoding = {};
     auto const remaining = decode_access_list(decoding, encoding);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
 
     EXPECT_EQ(encoding, eip2930_example);
@@ -131,7 +131,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacy)
 
     monad::Transaction decoding{};
     auto const remaining = decode_transaction(decoding, legacy_rlp_transaction);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
 
     // Encode
@@ -169,7 +169,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacyNoTo)
 
     monad::Transaction decoding{};
     auto const remaining = decode_transaction(decoding, legacy_rlp_transaction);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
 
     EXPECT_EQ(decoding.nonce, t.nonce);
@@ -216,7 +216,7 @@ TEST(Rlp_Transaction, EncodeEip155)
     auto const eip155_rlp_transaction = encode_transaction(t);
     monad::Transaction decoding{};
     auto const remaining = decode_transaction(decoding, eip155_rlp_transaction);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
 
     EXPECT_EQ(eip155_rlp_transaction, eip155_transaction);
@@ -287,7 +287,7 @@ TEST(Rlp_Transaction, EncodeEip2930)
     monad::Transaction decoding{};
     auto const remaining =
         decode_transaction(decoding, eip2930_rlp_transaction);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
 
     EXPECT_EQ(eip2930_rlp_transaction, eip2930_transaction);
@@ -358,7 +358,7 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
     monad::Transaction decoding{};
     auto const remaining =
         decode_transaction(decoding, eip1559_rlp_transaction);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
 
     EXPECT_EQ(eip1559_rlp_transaction, eip1559_transaction);
@@ -429,7 +429,7 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
     monad::Transaction decoding{};
     auto const remaining =
         decode_transaction(decoding, eip1559_rlp_transaction);
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
 
     EXPECT_EQ(eip1559_rlp_transaction, eip1559_transaction);

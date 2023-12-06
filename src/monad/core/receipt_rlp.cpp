@@ -10,7 +10,6 @@
 #include <monad/core/transaction.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
-#include <monad/rlp/decode_error.hpp>
 #include <monad/rlp/encode2.hpp>
 
 #include <boost/outcome/try.hpp>
@@ -67,12 +66,13 @@ byte_string encode_receipt(Receipt const &receipt)
 }
 
 // Decode
-decode_result_t decode_bloom(Receipt::Bloom &bloom, byte_string_view const enc)
+Result<byte_string_view>
+decode_bloom(Receipt::Bloom &bloom, byte_string_view const enc)
 {
     return decode_byte_array<256>(bloom.data(), enc);
 }
 
-decode_result_t
+Result<byte_string_view>
 decode_topics(std::vector<bytes32_t> &topics, byte_string_view const enc)
 {
     byte_string_view payload{};
@@ -95,7 +95,8 @@ decode_topics(std::vector<bytes32_t> &topics, byte_string_view const enc)
     return rest_of_enc;
 }
 
-decode_result_t decode_log(Receipt::Log &log, byte_string_view const enc)
+Result<byte_string_view>
+decode_log(Receipt::Log &log, byte_string_view const enc)
 {
     byte_string_view payload{};
     BOOST_OUTCOME_TRY(
@@ -108,7 +109,7 @@ decode_result_t decode_log(Receipt::Log &log, byte_string_view const enc)
     return rest_of_enc;
 }
 
-decode_result_t
+Result<byte_string_view>
 decode_logs(std::vector<Receipt::Log> &logs, byte_string_view const enc)
 {
     byte_string_view payload{};
@@ -133,7 +134,7 @@ decode_logs(std::vector<Receipt::Log> &logs, byte_string_view const enc)
     return rest_of_enc;
 }
 
-decode_result_t
+Result<byte_string_view>
 decode_untyped_receipt(Receipt &receipt, byte_string_view const enc)
 {
     byte_string_view payload{};
@@ -150,7 +151,8 @@ decode_untyped_receipt(Receipt &receipt, byte_string_view const enc)
     return rest_of_enc;
 }
 
-decode_result_t decode_receipt(Receipt &receipt, byte_string_view const enc)
+Result<byte_string_view>
+decode_receipt(Receipt &receipt, byte_string_view const enc)
 {
     MONAD_ASSERT(enc.size() > 0);
 

@@ -31,7 +31,7 @@ TEST(Rlp_Withdrawal, encode_decode_withdrawal)
     auto const remaining =
         decode_withdrawal(decoded_withdrawal, encoded_withdrawal);
 
-    EXPECT_FALSE(remaining.has_error());
+    ASSERT_FALSE(remaining.has_error());
     EXPECT_EQ(remaining.assume_value().size(), 0);
     EXPECT_EQ(decoded_withdrawal.index, original_withdrawal.index);
     EXPECT_EQ(

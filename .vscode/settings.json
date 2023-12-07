@@ -7,11 +7,30 @@
     "files.associations": {
         "*.ipp": "cpp",
         "*.tcc": "cpp",
+        "__hash_table": "cpp",
         "__locale": "cpp",
+        "__node_handle": "cpp",
+        "__split_buffer": "cpp",
+        "__tree": "cpp",
+        "array": "cpp",
+        "bitset": "cpp",
         "chrono": "cpp",
+        "deque": "cpp",
+        "filesystem": "cpp",
+        "format": "cpp",
         "forward_list": "cpp",
         "functional": "cpp",
         "initializer_list": "cpp",
-        "list": "cpp"
+        "list": "cpp",
+        "locale": "cpp",
+        "map": "cpp",
+        "set": "cpp",
+        "span": "cpp",
+        "stacktrace": "cpp",
+        "string": "cpp",
+        "string_view": "cpp",
+        "unordered_map": "cpp",
+        "unordered_set": "cpp",
+        "vector": "cpp"
     }
 }

@@ -6,11 +6,6 @@ set(shanghai_excluded_tests
     "BlockchainTests.InvalidBlocks/bc4895_withdrawals/withdrawalsRLPlessElements.json" # RLP
     "BlockchainTests.InvalidBlocks/bc4895_withdrawals/withdrawalsRLPnotAList.json" # RLP
     "BlockchainTests.InvalidBlocks/bc4895_withdrawals/withdrawalsValidatorIndexBounds.json" # RLP
-    "GeneralStateTests.stCreate2/RevertInCreateInInitCreate2.json" # Incarnation
-    "GeneralStateTests.stCreate2/create2collisionStorage.json" # Incarnation
-    "GeneralStateTests.stExtCodeHash/dynamicAccountOverwriteEmpty.json" # Incarnation
-    "GeneralStateTests.stRevertTest/RevertInCreateInInit.json" # Incarnation
-    "GeneralStateTests.stSStoreTest/InitCollision.json" # Incarnation
     "BlockchainTests.GeneralStateTests/stCreate2/RevertInCreateInInitCreate2.json" # Incarnation
     "BlockchainTests.GeneralStateTests/stCreate2/create2collisionStorage.json" # Incarnation
     "BlockchainTests.GeneralStateTests/stEIP1559/lowGasLimit.json" # ParentHeader

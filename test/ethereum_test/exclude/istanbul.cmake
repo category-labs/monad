@@ -11,11 +11,6 @@ set(istanbul_excluded_tests
     "BlockchainTests.InvalidBlocks/bcForgedTest/bcTransactRLPRandomByte.json" # RLP
     "BlockchainTests.InvalidBlocks/bcForgedTest/bcTransactRLPTooLarge.json" # RLP
     "BlockchainTests.InvalidBlocks/bcForgedTest/bcTransactRLPZeroByte.json" # RLP
-    "GeneralStateTests.stCreate2/RevertInCreateInInitCreate2.json" # Incarnation
-    "GeneralStateTests.stCreate2/create2collisionStorage.json" # Incarnation
-    "GeneralStateTests.stExtCodeHash/dynamicAccountOverwriteEmpty.json" # Incarnation
-    "GeneralStateTests.stRevertTest/RevertInCreateInInit.json" # Incarnation
-    "GeneralStateTests.stSStoreTest/InitCollision.json" # Incarnation
     "BlockchainTests.GeneralStateTests/stCreate2/RevertInCreateInInitCreate2.json" # Incarnation
     "BlockchainTests.GeneralStateTests/stCreate2/create2collisionStorage.json" # Incarnation
     "BlockchainTests.GeneralStateTests/stExtCodeHash/dynamicAccountOverwriteEmpty.json" # Incarnation

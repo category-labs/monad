@@ -20,7 +20,6 @@ find_package(Boost REQUIRED COMPONENTS fiber graph log)
 find_package(PkgConfig REQUIRED)
 find_package(absl REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
-pkg_check_modules(rocksdb REQUIRED IMPORTED_TARGET rocksdb)
 
 set(BUILD_SHARED_LIBS OFF)
 
@@ -117,6 +116,7 @@ add_library(
   "include/monad/db/create_and_prune_block_history.hpp"
   "include/monad/db/db.hpp"
   "include/monad/db/file_db.hpp"
+  "include/monad/db/in_memory_old_trie_db.hpp"
   "include/monad/db/in_memory_trie_db.hpp"
   "include/monad/db/permission.hpp"
   "include/monad/db/prepare_state.hpp"
@@ -181,12 +181,9 @@ add_library(
   "include/monad/trie/node_rlp.hpp"
   "include/monad/trie/node.hpp"
   "include/monad/trie/trie.hpp"
-  "include/monad/trie/rocks_cursor.hpp"
-  "include/monad/trie/rocks_writer.hpp"
   "include/monad/trie/util.hpp"
   "include/monad/trie/key_buffer.hpp"
   "include/monad/trie/comparator.hpp"
-  "include/monad/trie/rocks_comparator.hpp"
   "include/monad/trie/process_transformation_list.hpp"
   "include/monad/trie/update_fmt.hpp"
   "include/monad/trie/update.hpp"
@@ -213,7 +210,6 @@ target_link_libraries(
   PRIVATE Boost::graph
   PRIVATE Boost::log
   PRIVATE PkgConfig::brotli
-  PRIVATE PkgConfig::rocksdb
   PRIVATE absl::btree
   PUBLIC ethash::keccak
   PUBLIC evmc

@@ -6,7 +6,6 @@
 #include <monad/trie/in_memory_comparator.hpp>
 #include <monad/trie/nibbles.hpp>
 #include <monad/trie/node.hpp>
-#include <monad/trie/rocks_comparator.hpp>
 #include <monad/trie/update.hpp>
 
 #include <evmc/evmc.hpp>

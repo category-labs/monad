@@ -106,16 +106,15 @@ public:
     }
 };
 
-using rocks_fixture_t = test::rocks_fixture<PathComparator>;
 using in_memory_fixture_t = test::in_memory_fixture<InMemoryPathComparator>;
 
 template <typename TFixture>
 struct GenerateTransformationListTest : public TFixture
 {
 };
-using GenerateTransformationListTypes = ::testing::Types<
-    GenerateTransformationListFixture<rocks_fixture_t>,
-    GenerateTransformationListFixture<in_memory_fixture_t>>;
+
+using GenerateTransformationListTypes =
+    ::testing::Types<GenerateTransformationListFixture<in_memory_fixture_t>>;
 TYPED_TEST_SUITE(
     GenerateTransformationListTest, GenerateTransformationListTypes);
 
@@ -123,15 +122,17 @@ template <typename TFixture>
 struct TrieUpdateTest : public TFixture
 {
 };
-using TrieUpdateTypes = ::testing::Types<
-    TrieUpdateFixture<rocks_fixture_t>, TrieUpdateFixture<in_memory_fixture_t>>;
+
+using TrieUpdateTypes =
+    ::testing::Types<TrieUpdateFixture<in_memory_fixture_t>>;
 TYPED_TEST_SUITE(TrieUpdateTest, TrieUpdateTypes);
 
 template <typename TFixture>
 struct BasicTrieTest : public TFixture
 {
 };
-using BasicTrieTypes = ::testing::Types<rocks_fixture_t, in_memory_fixture_t>;
+
+using BasicTrieTypes = ::testing::Types<in_memory_fixture_t>;
 TYPED_TEST_SUITE(BasicTrieTest, BasicTrieTypes);
 
 TYPED_TEST(BasicTrieTest, EmptyTrie)

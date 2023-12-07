@@ -1,12 +1,16 @@
 #pragma once
 
+#include <monad/core/address.hpp>
+#include <monad/core/address_fmt.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/bytes_fmt.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/int_fmt.hpp>
 #include <monad/db/in_memory_old_trie_db.hpp>
-#include <monad/db/rocks_trie_db.hpp>
+#include <monad/db/trie_db_read_account.hpp>
 #include <monad/test/config.hpp>
+#include <monad/trie/nibbles.hpp>
+#include <monad/trie/nibbles_fmt.hpp>
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -97,45 +101,6 @@ namespace detail
         state[keccaked_address_hex]["code"] = fmt::format(
             "0x{:02x}", fmt::join(std::as_bytes(std::span(code)), ""));
     }
-}
-
-[[nodiscard]] inline nlohmann::json
-dump_accounts_from_db(monad::db::RocksTrieDB &db)
-{
-    nlohmann::json state = nlohmann::json::object();
-
-    auto leaf_cursor = db.accounts_trie.make_leaf_cursor();
-    auto trie_cursor = db.accounts_trie.make_trie_cursor();
-
-    std::unique_ptr<rocksdb::Iterator> it{
-        db.db->NewIterator({}, db.accounts_trie.leaves_cursor.cf_)};
-
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        auto const hashed_account_address =
-            monad::trie::deserialize_nibbles(it->key());
-        detail::dump_accounts_from_trie(
-            state, db, hashed_account_address, leaf_cursor, trie_cursor);
-    }
-
-    return state;
-}
-
-[[nodiscard]] inline nlohmann::json
-dump_storage_from_db(monad::db::RocksTrieDB &db)
-{
-    nlohmann::json state = nlohmann::json::object();
-    auto leaf_cursor = db.storage_trie.make_leaf_cursor();
-    auto trie_cursor = db.storage_trie.make_trie_cursor();
-
-    std::unique_ptr<rocksdb::Iterator> it{
-        db.db->NewIterator({}, db.storage_trie.leaves_cursor.cf_)};
-
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        auto key_slice = monad::db::from_slice(it->key());
-        detail::dump_storage_from_trie(
-            state, key_slice, leaf_cursor, trie_cursor);
-    }
-    return state;
 }
 
 [[nodiscard]] inline nlohmann::json

@@ -3,7 +3,6 @@
 #include <monad/test/one_hundred_updates.hpp>
 #include <monad/test/trie_fixture.hpp>
 #include <monad/trie/in_memory_comparator.hpp>
-#include <monad/trie/rocks_comparator.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -19,10 +18,10 @@ template <typename TFixture>
 struct BasicTrieTest : public TFixture
 {
 };
-using rocks_fixture_t = test::rocks_fixture<PrefixPathComparator>;
+
 using in_memory_fixture_t =
     test::in_memory_fixture<InMemoryPrefixPathComparator>;
-using BasicTrieTypes = ::testing::Types<rocks_fixture_t, in_memory_fixture_t>;
+using BasicTrieTypes = ::testing::Types<in_memory_fixture_t>;
 TYPED_TEST_SUITE(BasicTrieTest, BasicTrieTypes);
 
 TYPED_TEST(BasicTrieTest, MultipleTrie)

@@ -4,8 +4,8 @@
 #include <monad/core/log_level_map.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/db/block_db.hpp>
+#include <monad/db/in_memory_trie_db.hpp>
 #include <monad/db/permission.hpp>
-#include <monad/db/rocks_trie_db.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/genesis.hpp>
 #include <monad/execution/replay_block_db.hpp>
@@ -76,12 +76,10 @@ int main(int argc, char *argv[])
 
     auto const start_time = std::chrono::steady_clock::now();
 
-    using db_t = db::RocksTrieDB;
-
     BlockDb block_db(block_db_path);
-    db_t db{db::Writable{}, state_db_path, std::nullopt, block_history_size};
+    db::InMemoryTrieDB db{};
 
-    block_num_t start_block_number = db.starting_block_number;
+    block_num_t start_block_number = 0; // TODO
 
     quill::get_root_logger()->set_log_level(log_level);
 
@@ -100,7 +98,7 @@ int main(int argc, char *argv[])
         start_block_number = 1u;
     }
 
-    ReplayFromBlockDb<db_t> replay_eth;
+    ReplayFromBlockDb<decltype(db)> replay_eth;
 
     [[maybe_unused]] auto result = replay_eth.run<eth_start_fork>(
         db,

@@ -1,7 +1,6 @@
 #include <monad/core/account.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/db/in_memory_old_trie_db.hpp>
-#include <monad/db/rocks_trie_db.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/test/dump_state_from_db.hpp>
 #include <monad/test/make_db.hpp>
@@ -26,7 +25,7 @@ struct StateSerialization : public testing::Test
 {
 };
 
-using DBTypes = ::testing::Types<db::InMemoryOldTrieDB, db::RocksTrieDB>;
+using DBTypes = ::testing::Types<db::InMemoryOldTrieDB>;
 
 TYPED_TEST_SUITE(StateSerialization, DBTypes);
 

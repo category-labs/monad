@@ -1,9 +1,7 @@
 #include <monad/core/account.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/db/in_memory_old_trie_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
-#include <monad/db/rocks_trie_db.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/state2/state_deltas.hpp>
@@ -53,8 +51,7 @@ struct StateTest : public testing::Test
 {
 };
 
-using DBTypes = ::testing::Types<
-    db::InMemoryOldTrieDB, db::RocksTrieDB, db::InMemoryTrieDB>;
+using DBTypes = ::testing::Types<db::InMemoryTrieDB>;
 TYPED_TEST_SUITE(StateTest, DBTypes);
 
 TYPED_TEST(StateTest, access_account)

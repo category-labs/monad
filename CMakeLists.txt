@@ -109,18 +109,15 @@ add_library(
   "src/monad/core/transaction.cpp"
   "src/monad/core/withdrawal_rlp.cpp"
   # db
-  "include/monad/db/assert.h"
   "include/monad/db/block_db.hpp"
   "include/monad/db/config.hpp"
   "include/monad/db/db.hpp"
   "include/monad/db/file_db.hpp"
   "include/monad/db/in_memory_old_trie_db.hpp"
   "include/monad/db/in_memory_trie_db.hpp"
-  "include/monad/db/prepare_state.hpp"
   "include/monad/db/trie_db_process_changes.hpp"
   "include/monad/db/trie_db_read_account.hpp"
   "include/monad/db/trie_db_read_storage.hpp"
-  "include/monad/db/util.hpp"
   "src/monad/db/block_db.cpp"
   "src/monad/db/file_db.cpp"
   # execution

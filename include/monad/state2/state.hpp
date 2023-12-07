@@ -6,6 +6,7 @@
 #include <monad/core/address.hpp>
 #include <monad/core/address_fmt.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/bytes_fmt.hpp>
 #include <monad/core/int.hpp>
@@ -13,7 +14,6 @@
 #include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
 #include <monad/state2/block_state.hpp>
-#include <monad/state2/block_state_ops.hpp>
 #include <monad/state2/substate.hpp>
 
 #include <ethash/keccak.hpp>
@@ -28,6 +28,8 @@ class State : public Substate
 
     Delta<bytes32_t> &
     read_storage_delta(Address const &, bytes32_t const &location);
+
+    byte_string &read_code(bytes32_t const &hash);
 
     evmc_storage_status zero_out_key(Delta<bytes32_t> &delta)
     {
@@ -315,7 +317,7 @@ public:
 
         auto const &account = read_account(address);
         if (MONAD_LIKELY(account.has_value())) {
-            return read_code(account->code_hash, code_, block_state_).size();
+            return read_code(account->code_hash).size();
         }
         return 0u;
     }
@@ -327,8 +329,7 @@ public:
     {
         auto const &account = read_account(address);
         if (MONAD_LIKELY(account.has_value())) {
-            auto const &code =
-                read_code(account->code_hash, code_, block_state_);
+            auto const &code = read_code(account->code_hash);
             if (offset > code.size()) {
                 return 0z;
             }
@@ -349,7 +350,7 @@ public:
 
         auto const &account = read_account(address);
         if (MONAD_LIKELY(account.has_value())) {
-            return read_code(account->code_hash, code_, block_state_);
+            return read_code(account->code_hash);
         }
         return {};
     }
@@ -365,7 +366,7 @@ public:
         if (MONAD_LIKELY(account.has_value())) {
             account->code_hash = code_hash;
             if (!code.empty()) {
-                read_code(account->code_hash, code_, block_state_) = code;
+                read_code(code_hash) = code;
             }
         }
     }

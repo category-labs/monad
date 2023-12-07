@@ -47,6 +47,20 @@ State::read_storage_delta(Address const &address, bytes32_t const &location)
     return it2->second;
 }
 
+byte_string &State::read_code(bytes32_t const &hash)
+{
+    // code
+    {
+        auto const it = code_.find(hash);
+        if (MONAD_LIKELY(it != code_.end())) {
+            return it->second;
+        }
+    }
+    auto const result = block_state_.read_code(hash);
+    auto const [it, _] = code_.try_emplace(hash, result);
+    return it->second;
+}
+
 void State::log_debug() const
 {
     LOG_DEBUG("State Deltas: {}", state_);

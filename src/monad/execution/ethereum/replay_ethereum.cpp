@@ -5,7 +5,6 @@
 #include <monad/core/receipt.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
-#include <monad/db/permission.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/genesis.hpp>
 #include <monad/execution/replay_block_db.hpp>

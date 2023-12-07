@@ -2,7 +2,6 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
-#include <monad/db/permission.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/test/make_db.hpp>
 

@@ -198,7 +198,7 @@ MONAD_ANALYSIS_NAMESPACE_END
 
 template <>
 struct fmt::formatter<monad::analysis::Instruction>
-    : public monad::basic_formatter
+    : public monad::BasicFormatter
 {
     template <typename FormatContext>
     auto format(

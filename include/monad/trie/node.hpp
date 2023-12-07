@@ -302,7 +302,7 @@ deserialize_node(Nibbles const &key, byte_string_view value)
 MONAD_TRIE_NAMESPACE_END
 
 template <>
-struct fmt::formatter<monad::trie::Branch> : public monad::basic_formatter
+struct fmt::formatter<monad::trie::Branch> : public monad::BasicFormatter
 {
     template <typename FormatContext>
     auto format(monad::trie::Branch const &branch, FormatContext &ctx) const
@@ -347,7 +347,7 @@ struct fmt::formatter<monad::trie::Branch> : public monad::basic_formatter
 };
 
 template <>
-struct fmt::formatter<monad::trie::Leaf> : public monad::basic_formatter
+struct fmt::formatter<monad::trie::Leaf> : public monad::BasicFormatter
 {
     template <typename FormatContext>
     auto format(monad::trie::Leaf const &leaf, FormatContext &ctx) const
@@ -365,7 +365,7 @@ struct fmt::formatter<monad::trie::Leaf> : public monad::basic_formatter
 };
 
 template <>
-struct fmt::formatter<monad::trie::Node> : public monad::basic_formatter
+struct fmt::formatter<monad::trie::Node> : public monad::BasicFormatter
 {
     template <typename FormatContext>
     auto format(monad::trie::Node const &update, FormatContext &ctx) const

@@ -11,7 +11,7 @@ struct quill::copy_loggable<monad::Account> : std::true_type
 };
 
 template <>
-struct fmt::formatter<monad::Account> : public monad::basic_formatter
+struct fmt::formatter<monad::Account> : public monad::BasicFormatter
 {
     template <typename FormatContext>
     auto format(monad::Account const &a, FormatContext &ctx) const

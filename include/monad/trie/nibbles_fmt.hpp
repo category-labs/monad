@@ -9,7 +9,7 @@ struct quill::copy_loggable<monad::trie::Nibbles> : std::true_type
 };
 
 template <>
-struct fmt::formatter<monad::trie::Nibbles> : public monad::basic_formatter
+struct fmt::formatter<monad::trie::Nibbles> : public monad::BasicFormatter
 {
     template <typename FormatContext>
     auto format(monad::trie::Nibbles const &n, FormatContext &ctx) const

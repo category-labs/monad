@@ -29,7 +29,7 @@ struct quill::copy_loggable<monad::Code> : std::true_type
 };
 
 template <>
-struct fmt::formatter<monad::StateDelta> : public monad::basic_formatter
+struct fmt::formatter<monad::StateDelta> : public monad::BasicFormatter
 {
     template <typename FormatContext>
     auto format(monad::StateDelta const &state_delta, FormatContext &ctx) const
@@ -49,7 +49,7 @@ struct fmt::formatter<monad::StateDelta> : public monad::basic_formatter
 };
 
 template <>
-struct fmt::formatter<monad::StateDeltas> : public monad::basic_formatter
+struct fmt::formatter<monad::StateDeltas> : public monad::BasicFormatter
 {
     template <typename FormatContext>
     auto
@@ -71,7 +71,7 @@ struct fmt::formatter<monad::StateDeltas> : public monad::basic_formatter
 };
 
 template <>
-struct fmt::formatter<monad::Code> : public monad::basic_formatter
+struct fmt::formatter<monad::Code> : public monad::BasicFormatter
 {
     template <typename FormatContext>
     auto format(monad::Code const &code, FormatContext &ctx) const

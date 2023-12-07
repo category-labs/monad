@@ -9,7 +9,7 @@ struct quill::copy_loggable<monad::TransactionType> : std::true_type
 };
 
 template <>
-struct fmt::formatter<monad::TransactionType> : public monad::basic_formatter
+struct fmt::formatter<monad::TransactionType> : public monad::BasicFormatter
 {
     template <typename FormatContext>
     auto format(monad::TransactionType const &t, FormatContext &ctx) const

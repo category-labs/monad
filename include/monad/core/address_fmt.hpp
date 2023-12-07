@@ -3,13 +3,16 @@
 #include <monad/core/address.hpp>
 #include <monad/core/basic_formatter.hpp>
 
+#include <quill/Quill.h>
+#include <quill/bundled/fmt/format.h>
+
 template <>
 struct quill::copy_loggable<monad::Address> : std::true_type
 {
 };
 
 template <>
-struct fmt::formatter<monad::Address> : public monad::basic_formatter
+struct fmt::formatter<monad::Address> : public monad::BasicFormatter
 {
     template <typename FormatContext>
     auto format(monad::Address const &value, FormatContext &ctx) const

@@ -16,7 +16,7 @@ struct quill::copy_loggable<monad::Receipt> : std::true_type
 };
 
 template <>
-struct fmt::formatter<monad::Receipt::Log> : public monad::basic_formatter
+struct fmt::formatter<monad::Receipt::Log> : public monad::BasicFormatter
 {
     template <typename FormatContext>
     auto format(monad::Receipt::Log const &l, FormatContext &ctx) const
@@ -36,7 +36,7 @@ struct fmt::formatter<monad::Receipt::Log> : public monad::basic_formatter
 };
 
 template <>
-struct fmt::formatter<monad::Receipt> : public monad::basic_formatter
+struct fmt::formatter<monad::Receipt> : public monad::BasicFormatter
 {
     template <typename FormatContext>
     auto format(monad::Receipt const &r, FormatContext &ctx) const

@@ -8,13 +8,16 @@
 #include <monad/core/receipt_fmt.hpp>
 #include <monad/core/transaction_fmt.hpp>
 
+#include <quill/Quill.h>
+#include <quill/bundled/fmt/format.h>
+
 template <>
 struct quill::copy_loggable<monad::BlockHeader> : std::true_type
 {
 };
 
 template <>
-struct fmt::formatter<monad::BlockHeader> : public monad::basic_formatter
+struct fmt::formatter<monad::BlockHeader> : public monad::BasicFormatter
 {
     template <typename FormatContext>
     auto format(monad::BlockHeader const &bh, FormatContext &ctx) const

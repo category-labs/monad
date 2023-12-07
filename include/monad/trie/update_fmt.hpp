@@ -10,7 +10,7 @@ struct quill::copy_loggable<monad::trie::Update> : std::true_type
 };
 
 template <>
-struct fmt::formatter<monad::trie::Upsert> : public monad::basic_formatter
+struct fmt::formatter<monad::trie::Upsert> : public monad::BasicFormatter
 {
     template <typename FormatContext>
     auto format(monad::trie::Upsert const &u, FormatContext &ctx) const
@@ -25,7 +25,7 @@ struct fmt::formatter<monad::trie::Upsert> : public monad::basic_formatter
 };
 
 template <>
-struct fmt::formatter<monad::trie::Delete> : public monad::basic_formatter
+struct fmt::formatter<monad::trie::Delete> : public monad::BasicFormatter
 {
     template <typename FormatContext>
     auto format(monad::trie::Delete const &d, FormatContext &ctx) const
@@ -36,7 +36,7 @@ struct fmt::formatter<monad::trie::Delete> : public monad::basic_formatter
 };
 
 template <>
-struct fmt::formatter<monad::trie::Update> : public monad::basic_formatter
+struct fmt::formatter<monad::trie::Update> : public monad::BasicFormatter
 {
     template <typename FormatContext>
     auto format(monad::trie::Update const &update, FormatContext &ctx) const

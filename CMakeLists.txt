@@ -30,7 +30,6 @@ set_source_files_properties(
   PROPERTIES COMPILE_OPTIONS -O2)
 add_subdirectory(third_party/intx)
 add_subdirectory(third_party/silkpre)
-add_subdirectory(third_party/quill SYSTEM)
 
 function(monad_compile_options target)
   monad_core_compile_options(${target})
@@ -76,7 +75,6 @@ add_library(
   "include/monad/core/address_fmt.hpp"
   "include/monad/core/address_rlp.hpp"
   "include/monad/core/address.hpp"
-  "include/monad/core/basic_formatter.hpp"
   "include/monad/core/block_fmt.hpp"
   "include/monad/core/block_rlp.hpp"
   "include/monad/core/block.hpp"

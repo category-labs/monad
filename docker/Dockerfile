@@ -12,20 +12,17 @@ RUN --mount=target=monad monad/monad-core/scripts/fedora/install_deps.sh
 
 RUN yum -y install \
   brotli \
-  gmp \
-  rocksdb
+  gmp
 # TODO fedora 39 broken
 # brotli-debuginfo
 # gmp-debuginfo
-# rocksdb-debuginfo
 
 RUN --mount=target=monad monad/monad-core/scripts/fedora/install_devel.sh
 
 RUN yum -y install \
   brotli-devel \
   cli11-devel \
-  gmp-devel \
-  rocksdb-devel
+  gmp-devel
 
 COPY . monad
 

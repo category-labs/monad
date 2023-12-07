@@ -6,12 +6,9 @@ target_sources(
   PRIVATE include/blockchain_test.hpp
           include/ethereum_test.hpp
           include/from_json.hpp
-          include/general_state_test.hpp
-          include/general_state_test_types.hpp
           include/transaction_test.hpp
           src/blockchain_test.cpp
           src/ethereum_test.cpp
-          src/general_state_test.cpp
           src/main.cpp
           src/transaction_test.cpp)
 

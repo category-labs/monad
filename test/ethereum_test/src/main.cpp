@@ -2,7 +2,6 @@
 
 #include <blockchain_test.hpp>
 #include <ethereum_test.hpp>
-#include <general_state_test.hpp>
 #include <transaction_test.hpp>
 
 #include <evmc/evmc.h>
@@ -41,7 +40,6 @@ int main(int argc, char *argv[])
     quill::start(true);
     quill::get_root_logger()->set_log_level(log_level);
 
-    test::register_general_state_tests(revision, txn_index);
     test::register_blockchain_tests(revision);
     test::register_transaction_tests(revision);
 

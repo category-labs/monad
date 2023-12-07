@@ -1,7 +1,5 @@
 #pragma once
 
-#include <general_state_test_types.hpp>
-
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
@@ -214,86 +212,6 @@ namespace nlohmann
     };
 
     template <>
-    struct adl_serializer<monad::test::SharedTransactionData>
-    {
-        static void from_json(
-            nlohmann::json const &j, monad::test::SharedTransactionData &o)
-        {
-            // we cannot use the nlohmann::json from_json<uint64_t> because it
-            // does not use the strtoull implementation, whereas we need it so
-            // we can turn a hex string into a uint64_t
-            o.nonce = integer_from_json<uint64_t>(j.at("nonce"));
-            o.sender = j.at("sender").get<monad::Address>();
-
-            if (auto const to_it = j.find("to");
-                to_it != j.end() && !to_it->get<std::string>().empty()) {
-                o.to = to_it->get<monad::Address>();
-            }
-
-            if (auto const gas_price_it = j.find("gasPrice");
-                gas_price_it != j.end()) {
-                o.transaction_type = monad::TransactionType::eip155;
-                o.max_fee_per_gas = integer_from_json<uint64_t>(*gas_price_it);
-                if (j.contains("maxFeePerGas") ||
-                    j.contains("maxPriorityFeePerGas")) {
-                    throw std::invalid_argument(
-                        "invalid transaction: contains "
-                        "both legacy and EIP-1559 fees");
-                }
-            }
-            else {
-                o.transaction_type = monad::TransactionType::eip1559;
-                o.max_fee_per_gas =
-                    integer_from_json<uint64_t>(j.at("maxFeePerGas"));
-                o.max_priority_fee_per_gas =
-                    integer_from_json<uint64_t>(j.at("maxPriorityFeePerGas"));
-            }
-
-            for (auto const &j_data : j.at("data")) {
-                o.inputs.emplace_back(j_data.get<monad::byte_string>());
-            }
-
-            if (auto const ac_it = j.find("accessLists"); ac_it != j.end()) {
-                for (auto const &j_access_list : *ac_it) {
-                    o.access_lists.emplace_back(
-                        j_access_list.get<monad::AccessList>());
-                }
-                if (o.transaction_type == monad::TransactionType::eip155) {
-                    // Upgrade tx type if tx has
-                    // access lists
-                    o.transaction_type = monad::TransactionType::eip2930;
-                }
-            }
-            if (!o.access_lists.empty()) {
-                MONAD_ASSERT(o.inputs.size() == o.access_lists.size());
-            }
-
-            for (auto const &j_gas_limit : j.at("gasLimit")) {
-                o.gas_limits.emplace_back(
-                    integer_from_json<int64_t>(j_gas_limit));
-            }
-
-            for (auto const &j_value : j.at("value")) {
-                o.values.emplace_back(j_value.get<monad::uint256_t>());
-            }
-        }
-    };
-
-    template <>
-    struct adl_serializer<monad::test::Indices>
-    {
-        static void from_json(json const &j, monad::test::Indices &indices)
-        {
-            indices.input =
-                integer_from_json<uint64_t>(j.at("data").get<uint64_t>());
-            indices.gas_limit =
-                integer_from_json<uint64_t>(j.at("gas").get<uint64_t>());
-            indices.value =
-                integer_from_json<uint64_t>(j.at("value").get<uint64_t>());
-        }
-    };
-
-    template <>
     struct adl_serializer<monad::TransactionError>
     {
         static void
@@ -333,22 +251,6 @@ namespace nlohmann
                 // unhandled exception type
                 MONAD_ASSERT(false);
             }
-        }
-    };
-
-    template <>
-    struct adl_serializer<monad::test::Expectation>
-    {
-        static void
-        from_json(nlohmann::json const &j, monad::test::Expectation &o)
-        {
-            using monad::TransactionError;
-
-            o.indices = j.at("indexes").get<monad::test::Indices>();
-            o.state_hash = j.at("hash").get<monad::bytes32_t>();
-            o.error = j.contains("expectException")
-                          ? j.at("expectException").get<TransactionError>()
-                          : TransactionError::Success;
         }
     };
 }

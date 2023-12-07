@@ -13,9 +13,10 @@ RUN --mount=target=monad monad/monad-core/scripts/fedora/install_deps.sh
 RUN yum -y install \
   brotli \
   gmp
-# TODO fedora 39 broken
-# brotli-debuginfo
-# gmp-debuginfo
+
+RUN debuginfo-install -y \
+  brotli \
+  gmp
 
 RUN --mount=target=monad monad/monad-core/scripts/fedora/install_devel.sh
 

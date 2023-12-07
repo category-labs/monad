@@ -178,7 +178,7 @@ evmc::Result create_contract_account(
     }
 
     if (result.status_code == EVMC_SUCCESS) {
-        state = new_state;
+        state = std::move(new_state);
     }
     else {
         result.gas_refund = 0;
@@ -233,7 +233,7 @@ evmc::Result call_evm(
         result.status_code == EVMC_REVERT || result.gas_left == 0);
 
     if (result.status_code == EVMC_SUCCESS) {
-        state = new_state;
+        state = std::move(new_state);
     }
     else if (MONAD_UNLIKELY(new_state.is_touched(ripemd_address))) {
         // YP K.1. Deletion of an Account Despite Out-of-gas.

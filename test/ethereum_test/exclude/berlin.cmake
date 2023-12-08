@@ -1,13 +1,7 @@
 set(berlin_excluded_tests
     "BlockchainTests.InvalidBlocks/bcForgedTest/bcBlockRLPPrefixed0000.json" # RLP
-    "BlockchainTests.InvalidBlocks/bcForgedTest/bcBlockRLPRandomByte.json" # RLP
-    "BlockchainTests.InvalidBlocks/bcForgedTest/bcBlockRLPTooLarge.json" # RLP
-    "BlockchainTests.InvalidBlocks/bcForgedTest/bcBlockRLPZeroByte.json" # RLP
     "BlockchainTests.InvalidBlocks/bcForgedTest/bcInvalidRLPTest_BLOCK.json" # RLP
     "BlockchainTests.InvalidBlocks/bcForgedTest/bcInvalidRLPTest_TRANSACT.json" # RLP
-    "BlockchainTests.InvalidBlocks/bcForgedTest/bcTransactRLPRandomByte.json" # RLP
-    "BlockchainTests.InvalidBlocks/bcForgedTest/bcTransactRLPTooLarge.json" # RLP
-    "BlockchainTests.InvalidBlocks/bcForgedTest/bcTransactRLPZeroByte.json" # RLP
     "BlockchainTests.GeneralStateTests/stCreate2/RevertInCreateInInitCreate2.json" # Incarnation
     "BlockchainTests.GeneralStateTests/stCreate2/create2collisionStorage.json" # Incarnation
     "BlockchainTests.GeneralStateTests/stExtCodeHash/dynamicAccountOverwriteEmpty.json" # Incarnation
@@ -78,25 +72,8 @@ set(berlin_excluded_tests
     "BlockchainTests.ValidBlocks/bcTotalDifficultyTest/sideChainWithNewMaxDifficultyStartingFromBlock3AfterBlock4.json" # Difficulty (Pre-merge)
     "BlockchainTests.ValidBlocks/bcTotalDifficultyTest/uncleBlockAtBlock3AfterBlock3.json" # Difficulty (Pre-merge)
     "BlockchainTests.ValidBlocks/bcTotalDifficultyTest/uncleBlockAtBlock3afterBlock4.json" # Difficulty (Pre-merge)
-    "TransactionTests.ttAddress/AddressLessThan20.json"
-    "TransactionTests.ttAddress/AddressMoreThan20.json"
-    "TransactionTests.ttAddress/AddressMoreThan20PrefixedBy0.json"
-    "TransactionTests.ttEIP1559/GasLimitPriceProductOverflow.json"
     "TransactionTests.ttEIP1559/GasLimitPriceProductOverflowtMinusOne.json"
-    "TransactionTests.ttEIP1559/GasLimitPriceProductPlusOneOverflow.json"
-    "TransactionTests.ttEIP1559/maxFeePerGas00prefix.json"
-    "TransactionTests.ttEIP1559/maxFeePerGas32BytesValue.json"
-    "TransactionTests.ttEIP1559/maxFeePerGasOverflow.json"
-    "TransactionTests.ttEIP1559/maxPriorityFeePerGas00prefix.json"
-    "TransactionTests.ttEIP1559/maxPriorityFeePerGasOverflow.json"
-    "TransactionTests.ttEIP1559/maxPriorityFeePerGass32BytesValue.json"
-    "TransactionTests.ttEIP2930/accessListAddressGreaterThan20.json"
-    "TransactionTests.ttEIP2930/accessListAddressLessThan20.json"
-    "TransactionTests.ttEIP2930/accessListAddressPrefix00.json"
-    "TransactionTests.ttEIP2930/accessListStorage0x0001.json"
     "TransactionTests.ttEIP2930/accessListStorage32Bytes.json"
-    "TransactionTests.ttEIP2930/accessListStorageOver32Bytes.json"
-    "TransactionTests.ttEIP2930/accessListStoragePrefix00.json"
     "TransactionTests.ttGasPrice/TransactionWithLeadingZerosGasPrice.json"
     "TransactionTests.ttNonce/TransactionWithLeadingZerosNonce.json"
     "TransactionTests.ttNonce/TransactionWithZerosBigInt.json"
@@ -104,15 +81,10 @@ set(berlin_excluded_tests
     "TransactionTests.ttRSValue/TransactionWithSvalueHigh.json"
     "TransactionTests.ttRSValue/TransactionWithSvalueLargerThan_c_secp256k1n_x05.json"
     "TransactionTests.ttRSValue/TransactionWithSvaluePrefixed00BigInt.json"
-    "TransactionTests.ttSignature/TransactionWithTooManyRLPElements.json"
     "TransactionTests.ttVValue/ValidChainID1InvalidV00.json"
     "TransactionTests.ttVValue/ValidChainID1InvalidV01.json"
     "TransactionTests.ttValue/TransactionWithLeadingZerosValue.json"
-    "TransactionTests.ttWrongRLP/RLPAddressWithFirstZeros.json"
-    "TransactionTests.ttWrongRLP/RLPAddressWrongSize.json"
     "TransactionTests.ttWrongRLP/RLPArrayLengthWithFirstZeros.json"
-    "TransactionTests.ttWrongRLP/RLPExtraRandomByteAtTheEnd.json"
-    "TransactionTests.ttWrongRLP/RLPHeaderSizeOverflowInt32.json"
     "TransactionTests.ttWrongRLP/RLPIncorrectByteEncoding00.json"
     "TransactionTests.ttWrongRLP/RLPIncorrectByteEncoding01.json"
     "TransactionTests.ttWrongRLP/RLPIncorrectByteEncoding127.json"
@@ -121,27 +93,5 @@ set(berlin_excluded_tests
     "TransactionTests.ttWrongRLP/RLP_04_maxFeePerGas32BytesValue.json"
     "TransactionTests.ttWrongRLP/RLP_09_maxFeePerGas32BytesValue.json"
     "TransactionTests.ttWrongRLP/TRANSCT_HeaderGivenAsArray_0.json"
-    "TransactionTests.ttWrongRLP/TRANSCT_HeaderLargerThanRLP_0.json"
-    "TransactionTests.ttWrongRLP/TRANSCT__RandomByteAtRLP_0.json"
-    "TransactionTests.ttWrongRLP/TRANSCT__RandomByteAtRLP_1.json"
-    "TransactionTests.ttWrongRLP/TRANSCT__RandomByteAtRLP_2.json"
-    "TransactionTests.ttWrongRLP/TRANSCT__RandomByteAtRLP_3.json"
-    "TransactionTests.ttWrongRLP/TRANSCT__RandomByteAtRLP_5.json"
-    "TransactionTests.ttWrongRLP/TRANSCT__RandomByteAtRLP_6.json"
-    "TransactionTests.ttWrongRLP/TRANSCT__RandomByteAtRLP_7.json"
-    "TransactionTests.ttWrongRLP/TRANSCT__RandomByteAtRLP_8.json"
-    "TransactionTests.ttWrongRLP/TRANSCT__ZeroByteAtRLP_0.json"
-    "TransactionTests.ttWrongRLP/TRANSCT__ZeroByteAtRLP_1.json"
-    "TransactionTests.ttWrongRLP/TRANSCT__ZeroByteAtRLP_2.json"
-    "TransactionTests.ttWrongRLP/TRANSCT__ZeroByteAtRLP_3.json"
-    "TransactionTests.ttWrongRLP/TRANSCT__ZeroByteAtRLP_4.json"
-    "TransactionTests.ttWrongRLP/TRANSCT__ZeroByteAtRLP_5.json"
-    "TransactionTests.ttWrongRLP/TRANSCT__ZeroByteAtRLP_6.json"
-    "TransactionTests.ttWrongRLP/TRANSCT__ZeroByteAtRLP_7.json"
-    "TransactionTests.ttWrongRLP/TRANSCT__ZeroByteAtRLP_8.json"
-    "TransactionTests.ttWrongRLP/TRANSCT_to_Prefixed0000.json"
-    "TransactionTests.ttWrongRLP/TRANSCT_to_TooLarge.json"
-    "TransactionTests.ttWrongRLP/TRANSCT_to_TooShort.json"
     "TransactionTests.ttWrongRLP/aCrashingRLP.json"
-    "TransactionTests.ttWrongRLP/aMaliciousRLP.json"
 )

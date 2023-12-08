@@ -195,7 +195,7 @@ decode_receipt(Receipt &receipt, byte_string_view const enc)
             receipt.type = TransactionType::eip1559;
             break;
         default:
-            MONAD_ASSERT(false); // invalid transaction type
+            return DecodeError::InvalidTxnType;
         }
         BOOST_OUTCOME_TRY(
             auto const rest_of_receipt_enc,

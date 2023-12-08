@@ -24,6 +24,7 @@ quick_status_code_from_enum<monad::rlp::DecodeError>::value_mappings()
         {DecodeError::InputTooLong, "input too long", {}},
         {DecodeError::InputTooShort, "input too short", {}},
         {DecodeError::ArrayLengthUnexpected, "array length unexpected", {}},
+        {DecodeError::InvalidTxnType, "invalid txn type", {}},
     };
 
     return v;

@@ -341,7 +341,7 @@ decode_transaction(Transaction &txn, byte_string_view const enc)
             decoder = &decode_transaction_eip1559;
             break;
         default:
-            MONAD_ASSERT(false); // invalid transaction type
+            return DecodeError::InvalidTxnType;
         }
         BOOST_OUTCOME_TRY(auto const rest_of_txn_enc, decoder(txn, txn_enc));
 

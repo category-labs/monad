@@ -46,6 +46,7 @@ private:
 
 public:
     InMemoryTrieDB() = default;
+    InMemoryTrieDB(nlohmann::json const &);
 
     virtual std::optional<Account> read_account(Address const &) const override;
     virtual bytes32_t

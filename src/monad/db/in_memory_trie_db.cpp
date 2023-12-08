@@ -1,6 +1,6 @@
-#include <ethash/keccak.hpp>
 #include <monad/core/account_rlp.hpp>
 #include <monad/core/bytes_fmt.hpp>
+#include <monad/core/int.hpp>
 #include <monad/core/int_fmt.hpp>
 #include <monad/db/config.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
@@ -8,7 +8,11 @@
 #include <monad/mpt/traverse.hpp>
 #include <monad/rlp/encode2.hpp>
 
+#include <ethash/keccak.hpp>
+#include <evmc/evmc.hpp>
+
 #include <algorithm>
+#include <cstdlib>
 
 MONAD_DB_NAMESPACE_BEGIN
 
@@ -84,6 +88,56 @@ uint8_t EmptyStateMachine::get_state() const
 mpt::CacheOption EmptyStateMachine::cache_option() const
 {
     return mpt::CacheOption::CacheAll;
+}
+
+InMemoryTrieDB::InMemoryTrieDB(nlohmann::json const &json)
+{
+    mpt::UpdateList account_updates;
+    for (auto const &[key, value] : json.items()) {
+        mpt::UpdateList storage_updates;
+        for (auto const &[storage_key, storage_value] :
+             value.at("storage").items()) {
+            storage_updates.push_front(
+                update_allocator_.emplace_back(mpt::Update{
+                    .key = byte_string_allocator_.emplace_back(
+                        evmc::from_hex(storage_key).value()),
+                    .value = byte_string_allocator_.emplace_back(
+                        evmc::from_hex(storage_value.get<std::string>())
+                            .value()),
+                    .incarnation = false,
+                    .next = mpt::UpdateList{}}));
+        }
+        auto const code =
+            evmc::from_hex(value.at("code").get<std::string>()).value();
+        auto const acct = Account{
+            .balance = intx::from_string<uint256_t>(value.at("balance")),
+            .code_hash = std::bit_cast<bytes32_t>(
+                ethash::keccak256(code.data(), code.size())),
+            .nonce = std::stoull(value.at("nonce").get<std::string>())};
+        account_updates.push_front(update_allocator_.emplace_back(mpt::Update{
+            .key = byte_string_allocator_.emplace_back(
+                evmc::from_hex(key).value()),
+            .value =
+                byte_string_allocator_.emplace_back(rlp::encode_account(acct)),
+            .incarnation = false,
+            .next = std::move(storage_updates)}));
+        code_.try_emplace(acct.code_hash, code);
+    }
+    mpt::UpdateList updates;
+    mpt::Update update{
+        .key = mpt::NibblesView{state_prefix},
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(account_updates)};
+    updates.push_front(update);
+
+    mpt::UpdateAux aux;
+    EmptyStateMachine state_machine;
+    root_ = upsert(aux, state_machine, std::move(root_), std::move(updates));
+    MONAD_DEBUG_ASSERT(root_);
+
+    update_allocator_.clear();
+    byte_string_allocator_.clear();
 }
 
 std::optional<Account> InMemoryTrieDB::read_account(Address const &addr) const

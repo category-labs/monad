@@ -367,3 +367,77 @@ TYPED_TEST(DBTest, to_json)
 
     EXPECT_EQ(expected_payload, db.to_json());
 }
+
+TYPED_TEST(DBTest, construct_from_json)
+{
+    auto db = test::make_db<TypeParam>();
+
+    auto const a = 0x0000000000000000000000000000000000000100_address;
+    auto const a_code =
+        evmc::from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                       "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
+                       "ffffffffffffffffffffff0160005500")
+            .value();
+    auto const a_code_hash = std::bit_cast<bytes32_t>(
+        ethash::keccak256(a_code.data(), a_code.size()));
+    auto const b = 0x0000000000000000000000000000000000000101_address;
+    auto const b_code =
+        evmc::from_hex("60047ffffffffffffffffffffffffffffffffffffffffffffffffff"
+                       "fffffffffffffff0160005500")
+            .value();
+    auto const b_code_hash = std::bit_cast<bytes32_t>(
+        ethash::keccak256(b_code.data(), b_code.size()));
+    auto const c = 0x0000000000000000000000000000000000000102_address;
+    auto const c_code =
+        evmc::from_hex("60017ffffffffffffffffffffffffffffffffffffffffffffffffff"
+                       "fffffffffffffff0160005500")
+            .value();
+    auto const c_code_hash = std::bit_cast<bytes32_t>(
+        ethash::keccak256(c_code.data(), c_code.size()));
+
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0xba1a9ce0ba1a9ce,
+                          .code_hash = a_code_hash}},
+                 .storage =
+                     {{bytes32_t{},
+                       {bytes32_t{},
+                        0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe_bytes32}}}}},
+            {b,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0xba1a9ce0ba1a9ce,
+                          .code_hash = b_code_hash}}}},
+            {c,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0xba1a9ce0ba1a9ce,
+                          .code_hash = c_code_hash}}}}},
+        Code{
+            {a_code_hash, a_code},
+            {b_code_hash, b_code},
+            {c_code_hash, c_code}});
+
+    EXPECT_EQ(
+        db.state_root(),
+        0x68f8b98475fb3cec838e8f19a3c59d4587212706bd1ddeaa1e79b14ae2081d5a_bytes32);
+
+    auto const json = db.to_json();
+
+    TypeParam const db_from_json(json);
+    EXPECT_EQ(
+        db_from_json.state_root(),
+        0x68f8b98475fb3cec838e8f19a3c59d4587212706bd1ddeaa1e79b14ae2081d5a_bytes32);
+    EXPECT_EQ(db_from_json.read_code(a_code_hash), a_code);
+    EXPECT_EQ(db_from_json.read_code(b_code_hash), b_code);
+    EXPECT_EQ(db_from_json.read_code(c_code_hash), c_code);
+}

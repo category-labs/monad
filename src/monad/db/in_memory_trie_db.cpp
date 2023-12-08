@@ -1,7 +1,11 @@
 #include <ethash/keccak.hpp>
 #include <monad/core/account_rlp.hpp>
+#include <monad/core/bytes_fmt.hpp>
+#include <monad/core/int_fmt.hpp>
 #include <monad/db/config.hpp>
 #include <monad/db/in_memory_trie_db.hpp>
+#include <monad/mpt/nibbles_view_fmt.hpp>
+#include <monad/mpt/traverse.hpp>
 #include <monad/rlp/encode2.hpp>
 
 #include <algorithm>
@@ -193,6 +197,129 @@ bytes32_t InMemoryTrieDB::state_root() const
         std::copy_n(root_->data().data(), sizeof(bytes32_t), root.bytes);
     }
     return root;
+}
+
+nlohmann::json InMemoryTrieDB::to_json() const
+{
+    struct Traverse : public mpt::TraverseMachine
+    {
+        InMemoryTrieDB const &db;
+        nlohmann::json json;
+        mpt::Nibbles path;
+
+        Traverse(InMemoryTrieDB const &db)
+            : db(db)
+            , json(nlohmann::json::object())
+            , path()
+        {
+        }
+
+        virtual void
+        down(unsigned char const branch, mpt::Node const &node) override
+        {
+            path = branch == mpt::INVALID_BRANCH
+                       ? concat(mpt::NibblesView{path}, node.path_nibble_view())
+                       : concat(
+                             mpt::NibblesView{path},
+                             branch,
+                             node.path_nibble_view());
+            auto const view = mpt::NibblesView{path};
+
+            if (view.nibble_size() <= (state_prefix.size() * 2)) {
+                return;
+            }
+
+            MONAD_DEBUG_ASSERT(
+                view.substr(0, state_prefix.size() * 2) ==
+                mpt::NibblesView{state_prefix});
+
+            if (view.nibble_size() ==
+                ((state_prefix.size() + KECCAK256_SIZE) * 2)) {
+                handle_account(node);
+            }
+            else if (
+                view.nibble_size() ==
+                ((state_prefix.size() + KECCAK256_SIZE + KECCAK256_SIZE) * 2)) {
+                handle_storage(node);
+            }
+        }
+
+        virtual void
+        up(unsigned char const branch, mpt::Node const &node) override
+        {
+            auto const path_view = mpt::NibblesView{path};
+            auto const rem_size = [&] {
+                if (branch == mpt::INVALID_BRANCH) {
+                    int const rem_size = path_view.nibble_size() -
+                                         node.path_nibble_view().nibble_size();
+                    MONAD_DEBUG_ASSERT(rem_size >= 0);
+                    MONAD_DEBUG_ASSERT(
+                        path_view.substr(static_cast<unsigned>(rem_size)) ==
+                        node.path_nibble_view());
+                    return rem_size;
+                }
+                int const rem_size = path_view.nibble_size() - 1 -
+                                     node.path_nibble_view().nibble_size();
+                MONAD_DEBUG_ASSERT(rem_size >= 0);
+                MONAD_DEBUG_ASSERT(
+                    path_view.substr(static_cast<unsigned>(rem_size)) ==
+                    concat(branch, node.path_nibble_view()));
+                return rem_size;
+            }();
+            path = path_view.substr(0, static_cast<unsigned>(rem_size));
+        }
+
+        void handle_account(mpt::Node const &node)
+        {
+            MONAD_DEBUG_ASSERT(node.has_value());
+
+            Account acct;
+            auto const result = rlp::decode_account(acct, node.value());
+            MONAD_DEBUG_ASSERT(result.has_value());
+            MONAD_DEBUG_ASSERT(result.assume_value().empty());
+
+            auto const key = fmt::format(
+                "{}",
+                mpt::NibblesView{path}.substr(
+                    state_prefix.size() * 2, KECCAK256_SIZE * 2));
+
+            json[key]["balance"] = fmt::format("{}", acct.balance);
+            json[key]["nonce"] = fmt::format("0x{:x}", acct.nonce);
+
+            auto const code = db.read_code(acct.code_hash);
+            json[key]["code"] = fmt::format(
+                "0x{:02x}", fmt::join(std::as_bytes(std::span(code)), ""));
+
+            if (!json[key].contains("storage")) {
+                json[key]["storage"] = nlohmann::json::object();
+            }
+        }
+
+        void handle_storage(mpt::Node const &node)
+        {
+            MONAD_DEBUG_ASSERT(node.has_value());
+            MONAD_DEBUG_ASSERT(node.value().size() == sizeof(bytes32_t));
+
+            auto const acct_key = fmt::format(
+                "{}",
+                mpt::NibblesView{path}.substr(
+                    state_prefix.size() * 2, KECCAK256_SIZE * 2));
+
+            auto const key = fmt::format(
+                "{}",
+                mpt::NibblesView{path}.substr(
+                    (state_prefix.size() + KECCAK256_SIZE) * 2,
+                    KECCAK256_SIZE * 2));
+
+            bytes32_t value;
+            std::copy_n(node.value().begin(), sizeof(bytes32_t), value.bytes);
+
+            json[acct_key]["storage"][key] = fmt::format("{}", value);
+        }
+    } traverse(*this);
+
+    mpt::preorder_traverse(*root_, traverse);
+    return traverse.json;
 }
 
 MONAD_DB_NAMESPACE_END

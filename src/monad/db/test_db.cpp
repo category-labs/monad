@@ -218,7 +218,6 @@ TYPED_TEST(DBTest, to_json)
     "balance": "838137708091124174",
     "code": "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
     "nonce": "0x0",
-    "original_account_address": "0x0000000000000000000000000000000000000100",
     "storage": {
       "0x290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563": "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"
     }

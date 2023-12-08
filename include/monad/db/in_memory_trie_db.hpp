@@ -7,6 +7,7 @@
 #include <monad/mpt/trie.hpp>
 
 #include <ankerl/unordered_dense.h>
+#include <nlohmann/json.hpp>
 
 #include <list>
 
@@ -54,6 +55,7 @@ public:
     virtual void create_and_prune_block_history(uint64_t) const override;
 
     bytes32_t state_root() const;
+    nlohmann::json to_json() const;
 };
 
 MONAD_DB_NAMESPACE_END

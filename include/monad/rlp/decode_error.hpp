@@ -18,6 +18,7 @@ enum class DecodeError
     InputTooShort,
     ArrayLengthUnexpected,
     InvalidTxnType,
+    LeadingZero,
 };
 
 MONAD_RLP_NAMESPACE_END

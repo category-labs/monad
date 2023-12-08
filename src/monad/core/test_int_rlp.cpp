@@ -6,6 +6,7 @@
 #include <monad/core/int.hpp>
 #include <monad/core/int_rlp.hpp>
 #include <monad/rlp/decode.hpp>
+#include <monad/rlp/decode_error.hpp>
 #include <monad/rlp/encode2.hpp>
 
 #include <evmc/evmc.hpp>
@@ -22,8 +23,15 @@ using namespace monad::rlp;
 TEST(Rlp_Number, DecodeUnsigned)
 {
     {
-        auto const remaining = decode_length(monad::byte_string({0x00}));
+        auto const remaining = decode_length(monad::byte_string({}));
         EXPECT_TRUE(!remaining.has_error() && remaining.assume_value() == 0);
+    }
+
+    {
+        auto const remaining = decode_length(monad::byte_string({0x00}));
+        EXPECT_TRUE(
+            remaining.has_error() &&
+            remaining.assume_error() == DecodeError::LeadingZero);
     }
 
     {

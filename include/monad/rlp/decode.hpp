@@ -19,6 +19,14 @@ constexpr Result<T> decode_raw_num(byte_string_view const enc)
         return DecodeError::Overflow;
     }
 
+    if (enc.empty()) {
+        return 0;
+    }
+
+    if (enc[0] == 0) {
+        return DecodeError::LeadingZero;
+    }
+
     T result{};
     std::memcpy(
         &intx::as_bytes(result)[sizeof(T) - enc.size()],

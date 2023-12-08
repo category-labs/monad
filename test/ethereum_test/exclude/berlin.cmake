@@ -1,7 +1,4 @@
 set(berlin_excluded_tests
-    "BlockchainTests.InvalidBlocks/bcForgedTest/bcBlockRLPPrefixed0000.json" # RLP
-    "BlockchainTests.InvalidBlocks/bcForgedTest/bcInvalidRLPTest_BLOCK.json" # RLP
-    "BlockchainTests.InvalidBlocks/bcForgedTest/bcInvalidRLPTest_TRANSACT.json" # RLP
     "BlockchainTests.GeneralStateTests/stCreate2/RevertInCreateInInitCreate2.json" # Incarnation
     "BlockchainTests.GeneralStateTests/stCreate2/create2collisionStorage.json" # Incarnation
     "BlockchainTests.GeneralStateTests/stExtCodeHash/dynamicAccountOverwriteEmpty.json" # Incarnation
@@ -74,24 +71,8 @@ set(berlin_excluded_tests
     "BlockchainTests.ValidBlocks/bcTotalDifficultyTest/uncleBlockAtBlock3afterBlock4.json" # Difficulty (Pre-merge)
     "TransactionTests.ttEIP1559/GasLimitPriceProductOverflowtMinusOne.json"
     "TransactionTests.ttEIP2930/accessListStorage32Bytes.json"
-    "TransactionTests.ttGasPrice/TransactionWithLeadingZerosGasPrice.json"
-    "TransactionTests.ttNonce/TransactionWithLeadingZerosNonce.json"
-    "TransactionTests.ttNonce/TransactionWithZerosBigInt.json"
-    "TransactionTests.ttRSValue/TransactionWithRvaluePrefixed00BigInt.json"
     "TransactionTests.ttRSValue/TransactionWithSvalueHigh.json"
     "TransactionTests.ttRSValue/TransactionWithSvalueLargerThan_c_secp256k1n_x05.json"
-    "TransactionTests.ttRSValue/TransactionWithSvaluePrefixed00BigInt.json"
-    "TransactionTests.ttVValue/ValidChainID1InvalidV00.json"
-    "TransactionTests.ttVValue/ValidChainID1InvalidV01.json"
-    "TransactionTests.ttValue/TransactionWithLeadingZerosValue.json"
-    "TransactionTests.ttWrongRLP/RLPArrayLengthWithFirstZeros.json"
-    "TransactionTests.ttWrongRLP/RLPIncorrectByteEncoding00.json"
     "TransactionTests.ttWrongRLP/RLPIncorrectByteEncoding01.json"
     "TransactionTests.ttWrongRLP/RLPIncorrectByteEncoding127.json"
-    "TransactionTests.ttWrongRLP/RLPListLengthWithFirstZeros.json"
-    "TransactionTests.ttWrongRLP/RLPTransactionGivenAsArray.json"
-    "TransactionTests.ttWrongRLP/RLP_04_maxFeePerGas32BytesValue.json"
-    "TransactionTests.ttWrongRLP/RLP_09_maxFeePerGas32BytesValue.json"
-    "TransactionTests.ttWrongRLP/TRANSCT_HeaderGivenAsArray_0.json"
-    "TransactionTests.ttWrongRLP/aCrashingRLP.json"
 )

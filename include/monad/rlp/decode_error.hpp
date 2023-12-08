@@ -14,6 +14,9 @@ enum class DecodeError
     Success = 0,
     TypeUnexpected,
     Overflow,
+    InputTooLong,
+    InputTooShort,
+    ArrayLengthUnexpected,
 };
 
 MONAD_RLP_NAMESPACE_END

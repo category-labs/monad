@@ -7,6 +7,7 @@
 #include <monad/core/bytes_rlp.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/int_rlp.hpp>
+#include <monad/core/likely.h>
 #include <monad/core/receipt_rlp.hpp>
 #include <monad/core/result.hpp>
 #include <monad/core/transaction.hpp>
@@ -15,6 +16,7 @@
 #include <monad/core/withdrawal_rlp.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
+#include <monad/rlp/decode_error.hpp>
 #include <monad/rlp/encode2.hpp>
 
 #include <boost/outcome/try.hpp>
@@ -146,7 +148,10 @@ decode_block_header(BlockHeader &block_header, byte_string_view const enc)
         block_header.base_fee_per_gas = std::nullopt;
     }
 
-    MONAD_DEBUG_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return DecodeError::InputTooLong;
+    }
+
     return rest_of_enc;
 }
 
@@ -165,7 +170,10 @@ Result<byte_string_view> decode_transaction_vector(
         txns.emplace_back(txn);
     }
 
-    MONAD_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return DecodeError::InputTooLong;
+    }
+
     return rest_of_enc;
 }
 
@@ -183,7 +191,10 @@ Result<byte_string_view> decode_block_header_vector(
         ommers.emplace_back(ommer);
     }
 
-    MONAD_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return DecodeError::InputTooLong;
+    }
+
     return rest_of_enc;
 }
 
@@ -206,7 +217,10 @@ Result<byte_string_view> decode_block(Block &block, byte_string_view const enc)
         block.withdrawals = withdrawals;
     }
 
-    MONAD_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return DecodeError::InputTooLong;
+    }
+
     return rest_of_enc;
 }
 

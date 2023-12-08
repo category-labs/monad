@@ -2,9 +2,11 @@
 
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/likely.h>
 #include <monad/core/result.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
+#include <monad/rlp/decode_error.hpp>
 #include <monad/rlp/encode2.hpp>
 
 #include <boost/outcome/try.hpp>
@@ -33,12 +35,18 @@ decode_address(std::optional<Address> &address, byte_string_view const enc)
     byte_string_view payload{};
     BOOST_OUTCOME_TRY(
         auto const rest_of_enc, parse_string_metadata(payload, enc));
-    if (payload.size() == sizeof(Address)) {
+    if (MONAD_LIKELY(payload.size() == sizeof(Address))) {
         address = Address{};
         std::memcpy(address->bytes, payload.data(), sizeof(Address));
     }
+    else if (payload.size() > sizeof(Address)) {
+        return DecodeError::InputTooLong;
+    }
     else {
-        MONAD_ASSERT(payload.size() == 0);
+        if (MONAD_UNLIKELY(!payload.empty())) {
+            return DecodeError::InputTooShort;
+        }
+
         address.reset();
     }
     return rest_of_enc;

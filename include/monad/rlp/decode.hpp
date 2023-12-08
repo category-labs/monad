@@ -39,7 +39,9 @@ parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
     size_t i = 0;
     size_t end = 0;
 
-    MONAD_ASSERT(!enc.empty());
+    if (MONAD_UNLIKELY(enc.empty())) {
+        return DecodeError::InputTooShort;
+    }
 
     if (MONAD_UNLIKELY(enc[0] >= 0xc0)) {
         return DecodeError::TypeUnexpected;
@@ -59,13 +61,21 @@ parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
     {
         ++i;
         uint8_t length_of_length = enc[0] - 0xb7;
-        MONAD_ASSERT(i + length_of_length < enc.size());
+
+        if (MONAD_UNLIKELY(i + length_of_length >= enc.size())) {
+            return DecodeError::InputTooShort;
+        }
+
         BOOST_OUTCOME_TRY(
             auto const length, decode_length(enc.substr(i, length_of_length)));
         i += length_of_length;
         end = i + length;
     }
-    MONAD_ASSERT(end <= enc.size());
+
+    if (MONAD_UNLIKELY(end > enc.size())) {
+        return DecodeError::InputTooShort;
+    }
+
     payload = enc.substr(i, end - i);
     return enc.substr(end);
 }
@@ -76,7 +86,10 @@ parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
     size_t i = 0;
     size_t length;
     ++i;
-    MONAD_ASSERT(!enc.empty());
+
+    if (MONAD_UNLIKELY(enc.empty())) {
+        return DecodeError::InputTooShort;
+    }
 
     if (MONAD_UNLIKELY(enc[0] < 0xc0)) {
         return DecodeError::TypeUnexpected;
@@ -87,14 +100,20 @@ parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
     }
     else {
         size_t const length_of_length = enc[0] - 0xf7;
-        MONAD_ASSERT(i + length_of_length < enc.size());
+
+        if (MONAD_UNLIKELY(i + length_of_length >= enc.size())) {
+            return DecodeError::InputTooShort;
+        }
 
         BOOST_OUTCOME_TRY(
             length, decode_length(enc.substr(i, length_of_length)));
         i += length_of_length;
     }
     auto const end = i + length;
-    MONAD_ASSERT(end <= enc.size());
+
+    if (MONAD_UNLIKELY(end > enc.size())) {
+        return DecodeError::InputTooShort;
+    }
 
     payload = enc.substr(i, end - i);
     return enc.substr(end, enc.size() - end);
@@ -107,7 +126,11 @@ decode_byte_array(uint8_t bytes[size], byte_string_view const enc)
     byte_string_view payload{};
     BOOST_OUTCOME_TRY(
         auto const rest_of_enc, parse_string_metadata(payload, enc));
-    MONAD_ASSERT(payload.size() == size);
+
+    if (MONAD_UNLIKELY(payload.size() != size)) {
+        return DecodeError::ArrayLengthUnexpected;
+    }
+
     std::memcpy(bytes, payload.data(), size);
     return rest_of_enc;
 }

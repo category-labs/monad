@@ -21,6 +21,9 @@ quick_status_code_from_enum<monad::rlp::DecodeError>::value_mappings()
         {DecodeError::Success, "success", {errc::success}},
         {DecodeError::TypeUnexpected, "type unexpected", {}},
         {DecodeError::Overflow, "overflow", {}},
+        {DecodeError::InputTooLong, "input too long", {}},
+        {DecodeError::InputTooShort, "input too short", {}},
+        {DecodeError::ArrayLengthUnexpected, "array length unexpected", {}},
     };
 
     return v;

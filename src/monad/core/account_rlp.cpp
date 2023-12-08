@@ -6,9 +6,11 @@
 #include <monad/core/bytes_rlp.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/int_rlp.hpp>
+#include <monad/core/likely.h>
 #include <monad/core/result.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
+#include <monad/rlp/decode_error.hpp>
 #include <monad/rlp/encode2.hpp>
 
 #include <boost/outcome/try.hpp>
@@ -49,7 +51,10 @@ Result<byte_string_view> decode_account(
     BOOST_OUTCOME_TRY(payload, decode_bytes32(storage_root, payload));
     BOOST_OUTCOME_TRY(payload, decode_bytes32(account.code_hash, payload));
 
-    MONAD_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return DecodeError::InputTooLong;
+    }
+
     return rest_of_enc;
 }
 
@@ -66,7 +71,10 @@ decode_account(Account &account, byte_string_view const enc)
         payload, decode_unsigned<uint256_t>(account.balance, payload));
     BOOST_OUTCOME_TRY(payload, decode_bytes32(account.code_hash, payload));
 
-    MONAD_ASSERT(payload.size() == 0);
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return DecodeError::InputTooLong;
+    }
+
     return rest_of_enc;
 }
 

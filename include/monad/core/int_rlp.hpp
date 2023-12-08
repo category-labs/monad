@@ -2,9 +2,11 @@
 
 #include <monad/core/byte_string.hpp>
 #include <monad/core/int.hpp>
+#include <monad/core/likely.h>
 #include <monad/core/result.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
+#include <monad/rlp/decode_error.hpp>
 #include <monad/rlp/encode2.hpp>
 
 #include <boost/outcome/try.hpp>
@@ -32,7 +34,11 @@ decode_bool(bool &target, byte_string_view const enc)
 {
     uint64_t i{0};
     BOOST_OUTCOME_TRY(auto const ret, decode_unsigned<uint64_t>(i, enc));
-    MONAD_DEBUG_ASSERT(i <= 1);
+
+    if (MONAD_UNLIKELY(i > 1)) {
+        return DecodeError::Overflow;
+    }
+
     target = i;
     return ret;
 }

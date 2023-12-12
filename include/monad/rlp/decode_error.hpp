@@ -25,6 +25,7 @@ enum class DecodeError
     ArrayLengthUnexpected,
     InvalidTxnType,
     LeadingZero,
+    InvalidNumberSize,
 };
 
 MONAD_RLP_NAMESPACE_END

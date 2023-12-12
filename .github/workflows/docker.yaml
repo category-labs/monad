@@ -10,7 +10,7 @@ jobs:
         CMAKE_BUILD_TYPE: [RelWithDebInfo, Debug]
         compiler: [{CXX: g++, CC: gcc}, {CXX: clang++, CC: clang}]
 
-    runs-on: peach10
+    runs-on: self-hosted
 
     steps:
       - id: generate_token

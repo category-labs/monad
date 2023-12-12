@@ -26,6 +26,12 @@ decode_unsigned(T &u_num, byte_string_view const enc)
     BOOST_OUTCOME_TRY(
         auto const rest_of_enc, parse_string_metadata(payload, enc));
     BOOST_OUTCOME_TRY(u_num, decode_raw_num<T>(payload));
+
+    if (MONAD_UNLIKELY(
+            (enc.size() > rest_of_enc.size() + 1) && (u_num < 0x80))) {
+        return DecodeError::InvalidNumberSize;
+    }
+
     return rest_of_enc;
 }
 

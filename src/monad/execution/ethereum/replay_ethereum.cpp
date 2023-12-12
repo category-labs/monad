@@ -18,14 +18,11 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
-#include <iostream>
 #include <optional>
 #include <ostream>
-#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
-using receiptCollector = std::vector<std::vector<Receipt>>;
 using eth_start_fork = fork_traits::frontier;
 
 MONAD_NAMESPACE_END
@@ -39,7 +36,6 @@ int main(int argc, char *argv[])
     std::filesystem::path block_db_path{};
     std::filesystem::path state_db_path{};
     std::filesystem::path genesis_file_path{};
-    uint64_t block_history_size = 1u;
     uint64_t checkpoint_frequency = 1000u;
     std::optional<block_num_t> finish_block_number = std::nullopt;
 
@@ -52,10 +48,6 @@ int main(int argc, char *argv[])
         ->required();
     auto *has_genesis_file = cli.add_option(
         "--genesis_file", genesis_file_path, "genesis file directory");
-    cli.add_option(
-        "--block_history_size",
-        block_history_size,
-        "size of state_db block history");
     cli.add_option(
         "--checkpoint_frequency",
         checkpoint_frequency,
@@ -83,11 +75,10 @@ int main(int argc, char *argv[])
     quill::get_root_logger()->set_log_level(log_level);
 
     LOG_INFO(
-        "Running with block_db = {}, state_db = {}, block_history_size = {}, "
+        "Running with block_db = {}, state_db = {}, "
         "(inferred) start_block_number = {}, finish block number = {}",
         block_db_path,
         state_db_path,
-        block_history_size,
         start_block_number,
         finish_block_number);
 

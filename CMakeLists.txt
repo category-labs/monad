@@ -90,6 +90,7 @@ add_library(
   "include/monad/core/receipt_fmt.hpp"
   "include/monad/core/receipt_rlp.hpp"
   "include/monad/core/receipt.hpp"
+  "include/monad/core/signature_fmt.hpp"
   "include/monad/core/signature_rlp.hpp"
   "include/monad/core/signature.hpp"
   "include/monad/core/transaction_fmt.hpp"

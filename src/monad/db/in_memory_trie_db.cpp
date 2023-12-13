@@ -113,7 +113,8 @@ InMemoryTrieDB::InMemoryTrieDB(nlohmann::json const &json)
             .balance = intx::from_string<uint256_t>(value.at("balance")),
             .code_hash = std::bit_cast<bytes32_t>(
                 ethash::keccak256(code.data(), code.size())),
-            .nonce = std::stoull(value.at("nonce").get<std::string>())};
+            .nonce =
+                std::stoull(value.at("nonce").get<std::string>(), nullptr, 16)};
         account_updates.push_front(update_allocator_.emplace_back(mpt::Update{
             .key = byte_string_allocator_.emplace_back(
                 evmc::from_hex(key).value()),

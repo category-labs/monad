@@ -403,7 +403,8 @@ TYPED_TEST(DBTest, construct_from_json)
                      {std::nullopt,
                       Account{
                           .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = a_code_hash}},
+                          .code_hash = a_code_hash,
+                          .nonce = 1}},
                  .storage =
                      {{bytes32_t{},
                        {bytes32_t{},
@@ -429,14 +430,14 @@ TYPED_TEST(DBTest, construct_from_json)
 
     EXPECT_EQ(
         db.state_root(),
-        0x68f8b98475fb3cec838e8f19a3c59d4587212706bd1ddeaa1e79b14ae2081d5a_bytes32);
+        0x0db882784a5586abe909adb6d785f9bacde636ecbef55c44d5a4d852a31cdfcf_bytes32);
 
     auto const json = db.to_json();
 
     TypeParam const db_from_json(json);
     EXPECT_EQ(
         db_from_json.state_root(),
-        0x68f8b98475fb3cec838e8f19a3c59d4587212706bd1ddeaa1e79b14ae2081d5a_bytes32);
+        0x0db882784a5586abe909adb6d785f9bacde636ecbef55c44d5a4d852a31cdfcf_bytes32);
     EXPECT_EQ(db_from_json.read_code(a_code_hash), a_code);
     EXPECT_EQ(db_from_json.read_code(b_code_hash), b_code);
     EXPECT_EQ(db_from_json.read_code(c_code_hash), c_code);

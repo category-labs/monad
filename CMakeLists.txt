@@ -244,6 +244,8 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/ethereum)
 function(monad_add_test2 target)
   add_executable(${target} "test/unit/common/src/test/main.cpp" ${ARGN})
   monad_compile_options(${target})
+  target_compile_options(${target} PUBLIC "-Wno-missing-field-initializers"
+  )# TODO
   target_include_directories(${target} PRIVATE "test/unit/common/include")
   target_link_libraries(${target} monad GTest::GTest GTest::Main)
   gtest_discover_tests(${target} DISCOVERY_MODE PRE_TEST)

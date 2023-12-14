@@ -30,52 +30,66 @@ namespace
                 .bytes,
             sizeof(bytes32_t)};
     }
-}
 
-byte_string Compute::compute(mpt::Node const &node)
-{
-    MONAD_DEBUG_ASSERT(node.has_value());
+    struct Compute
+    {
+        static byte_string compute(mpt::Node const &node)
+        {
+            MONAD_DEBUG_ASSERT(node.has_value());
 
-    // this is the block number leaf
-    if (MONAD_UNLIKELY(node.value().empty())) {
-        return {};
-    }
-    // this is a storage leaf
-    else if (node.value().size() == sizeof(bytes32_t)) {
-        return rlp::encode_string2(rlp::zeroless_view(node.value()));
-    }
+            // this is the block number leaf
+            if (MONAD_UNLIKELY(node.value().empty())) {
+                return {};
+            }
+            // this is a storage leaf
+            else if (node.value().size() == sizeof(bytes32_t)) {
+                return rlp::encode_string2(rlp::zeroless_view(node.value()));
+            }
 
-    MONAD_DEBUG_ASSERT(node.value().size() > sizeof(bytes32_t));
+            MONAD_DEBUG_ASSERT(node.value().size() > sizeof(bytes32_t));
 
-    Account acc;
-    auto const result = rlp::decode_account(acc, node.value());
-    MONAD_DEBUG_ASSERT(result.has_value());
-    MONAD_DEBUG_ASSERT(result.assume_value().empty());
-    bytes32_t storage_root = NULL_ROOT;
-    if (node.number_of_children()) {
-        MONAD_DEBUG_ASSERT(node.data().size() == sizeof(bytes32_t));
-        std::copy_n(node.data().data(), sizeof(bytes32_t), storage_root.bytes);
-    }
-    return rlp::encode_account(acc, storage_root);
-}
+            Account acc;
+            auto const result = rlp::decode_account(acc, node.value());
+            MONAD_DEBUG_ASSERT(result.has_value());
+            MONAD_DEBUG_ASSERT(result.assume_value().empty());
+            bytes32_t storage_root = NULL_ROOT;
+            if (node.number_of_children()) {
+                MONAD_DEBUG_ASSERT(node.data().size() == sizeof(bytes32_t));
+                std::copy_n(
+                    node.data().data(), sizeof(bytes32_t), storage_root.bytes);
+            }
+            return rlp::encode_account(acc, storage_root);
+        }
+    };
 
-std::unique_ptr<mpt::StateMachine> EmptyStateMachine::clone() const
-{
-    return std::make_unique<EmptyStateMachine>();
-}
+    using MerkleCompute = mpt::MerkleComputeBase<Compute>;
 
-void EmptyStateMachine::down(unsigned char) {}
+    class EmptyStateMachine final : public mpt::StateMachine
+    {
+    private:
+        MerkleCompute compute_;
 
-void EmptyStateMachine::up(size_t) {}
+    public:
+        virtual std::unique_ptr<mpt::StateMachine> clone() const override
+        {
+            return std::make_unique<EmptyStateMachine>();
+        }
 
-mpt::Compute &EmptyStateMachine::get_compute()
-{
-    return compute_;
-}
+        virtual void down(unsigned char) override {}
 
-mpt::CacheOption EmptyStateMachine::get_cache_option() const
-{
-    return mpt::CacheOption::CacheAll;
+        virtual void up(size_t) override {}
+
+        virtual mpt::Compute &get_compute() override
+        {
+            return compute_;
+        }
+
+        virtual mpt::CacheOption get_cache_option() const override
+        {
+            return mpt::CacheOption::CacheAll;
+        }
+    };
+
 }
 
 InMemoryTrieDB::InMemoryTrieDB(nlohmann::json const &json)

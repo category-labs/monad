@@ -13,26 +13,6 @@
 
 MONAD_DB_NAMESPACE_BEGIN
 
-struct Compute
-{
-    static byte_string compute(mpt::Node const &);
-};
-
-using MerkleCompute = mpt::MerkleComputeBase<Compute>;
-
-class EmptyStateMachine final : public mpt::StateMachine
-{
-private:
-    MerkleCompute compute_;
-
-public:
-    virtual std::unique_ptr<StateMachine> clone() const override;
-    virtual void down(unsigned char nibble) override;
-    virtual void up(size_t) override;
-    virtual mpt::Compute &get_compute() override;
-    virtual mpt::CacheOption get_cache_option() const override;
-};
-
 class InMemoryTrieDB final : public Db
 {
 private:

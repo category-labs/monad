@@ -83,11 +83,15 @@ constexpr evmc_message to_message(Transaction const &tx, Address const &sender)
 
     evmc_message msg{
         .kind = to_address.first,
+        .flags = 0,
+        .depth = 0,
         .gas = static_cast<int64_t>(tx.gas_limit - intrinsic_gas<rev>(tx)),
         .recipient = to_address.second,
         .sender = sender,
         .input_data = tx.data.data(),
         .input_size = tx.data.size(),
+        .value = {},
+        .create2_salt = {},
         .code_address = to_address.second,
     };
     intx::be::store(msg.value.bytes, tx.value);

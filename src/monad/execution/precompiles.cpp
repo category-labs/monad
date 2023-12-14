@@ -91,7 +91,10 @@ std::optional<evmc::Result> check_call_precompile(evmc_message const &msg)
         .gas_refund = 0,
         .output_data = output.data,
         .output_size = output.size,
-        .release = evmc_free_result_memory}};
+        .release = evmc_free_result_memory,
+        .create_address = {},
+        .padding = {},
+    }};
 }
 
 EXPLICIT_EVMC_REVISION(check_call_precompile);

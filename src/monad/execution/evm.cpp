@@ -34,7 +34,15 @@ check_sender_balance(State &state, evmc_message const &msg) noexcept
         intx::be::load<uint256_t>(state.get_balance(msg.sender));
     if (balance < value) {
         return evmc_result{
-            .status_code = EVMC_INSUFFICIENT_BALANCE, .gas_left = msg.gas};
+            .status_code = EVMC_INSUFFICIENT_BALANCE,
+            .gas_left = msg.gas,
+            .gas_refund = 0, // unused
+            .output_data = nullptr, // unused
+            .output_size = 0, // unused
+            .release = nullptr, // unused
+            .create_address = {}, // unused
+            .padding = {}, // unused
+        };
     }
     return std::nullopt;
 }
@@ -58,7 +66,16 @@ evmc_result transfer_call_balances(State &state, evmc_message const &msg)
             transfer_balances(state, msg, msg.recipient);
         }
     }
-    return {.status_code = EVMC_SUCCESS};
+    return {
+        .status_code = EVMC_SUCCESS,
+        .gas_left = 0, // unused
+        .gas_refund = 0, // unused
+        .output_data = nullptr, // unused
+        .output_size = 0, // unused
+        .release = nullptr, // unused
+        .create_address = {}, // unused
+        .padding = {}, // unused
+    };
 }
 
 template <evmc_revision rev>
@@ -157,11 +174,15 @@ evmc::Result create_contract_account(
 
     evmc_message const m_call{
         .kind = EVMC_CALL,
+        .flags = 0,
         .depth = msg.depth,
         .gas = msg.gas,
         .recipient = contract_address,
         .sender = msg.sender,
+        .input_data = nullptr,
+        .input_size = 0,
         .value = msg.value,
+        .create2_salt = {},
         .code_address = contract_address,
     };
 

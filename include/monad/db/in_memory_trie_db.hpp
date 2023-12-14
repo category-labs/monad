@@ -18,7 +18,7 @@ struct Compute
     static byte_string compute(mpt::Node const &);
 };
 
-using MerkleCompute = mpt::detail::MerkleComputeBase<Compute>;
+using MerkleCompute = mpt::MerkleComputeBase<Compute>;
 
 class EmptyStateMachine final : public mpt::TrieStateMachine
 {
@@ -33,7 +33,7 @@ public:
     virtual mpt::Compute &get_compute() override;
     virtual mpt::Compute &get_compute(uint8_t) override;
     virtual uint8_t get_state() const override;
-    virtual mpt::CacheOption cache_option() const override;
+    virtual mpt::CacheOption get_cache_option() const override;
 };
 
 class InMemoryTrieDB final : public Db

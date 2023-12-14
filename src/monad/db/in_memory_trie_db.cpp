@@ -85,7 +85,7 @@ uint8_t EmptyStateMachine::get_state() const
     return 0;
 }
 
-mpt::CacheOption EmptyStateMachine::cache_option() const
+mpt::CacheOption EmptyStateMachine::get_cache_option() const
 {
     return mpt::CacheOption::CacheAll;
 }
@@ -143,8 +143,9 @@ InMemoryTrieDB::InMemoryTrieDB(nlohmann::json const &json)
 
 std::optional<Account> InMemoryTrieDB::read_account(Address const &addr) const
 {
+    mpt::UpdateAux aux;
     auto const [node, result] =
-        mpt::find_blocking(nullptr, root_.get(), state_prefix + to_key(addr));
+        mpt::find_blocking(aux, root_.get(), state_prefix + to_key(addr));
     if (result != mpt::find_result::success) {
         return std::nullopt;
     }
@@ -159,8 +160,9 @@ std::optional<Account> InMemoryTrieDB::read_account(Address const &addr) const
 bytes32_t
 InMemoryTrieDB::read_storage(Address const &addr, bytes32_t const &key) const
 {
+    mpt::UpdateAux aux;
     auto const [node, result] = mpt::find_blocking(
-        nullptr, root_.get(), state_prefix + to_key(addr) + to_key(key));
+        aux, root_.get(), state_prefix + to_key(addr) + to_key(key));
     if (result != mpt::find_result::success) {
         return {};
     }

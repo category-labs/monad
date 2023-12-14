@@ -30,7 +30,7 @@ static_assert(alignof(StorageDelta) == 1);
 struct StateDelta
 {
     AccountDelta account;
-    ankerl::unordered_dense::segmented_map<bytes32_t, StorageDelta> storage;
+    ankerl::unordered_dense::segmented_map<bytes32_t, StorageDelta> storage{};
 };
 
 static_assert(sizeof(StateDelta) == 240);

@@ -29,6 +29,8 @@ set_source_files_properties(
   third_party/evmone/lib/evmone/baseline.cpp TARGET_DIRECTORY evmone
   PROPERTIES COMPILE_OPTIONS -O2)
 add_subdirectory(third_party/intx)
+set(OPTIONAL_BUILD_TESTS OFF)
+add_subdirectory(third_party/optional SYSTEM)
 add_subdirectory(third_party/silkpre)
 
 function(monad_compile_options target)
@@ -210,7 +212,6 @@ target_link_libraries(
   PUBLIC nlohmann_json::nlohmann_json
   PUBLIC quill::quill
   PUBLIC silkpre
-  PUBLIC tl::expected
   PUBLIC tl::optional
   PUBLIC unordered_dense)
 monad_compile_options(monad)

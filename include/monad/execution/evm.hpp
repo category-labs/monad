@@ -6,18 +6,12 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-#include <tl/expected.hpp>
-
 MONAD_NAMESPACE_BEGIN
 
 template <evmc_revision rev>
 struct EvmcHost;
 
 class State;
-
-using result_t = tl::expected<void, evmc_result>;
-
-result_t check_sender_balance(State &, evmc_message const &) noexcept;
 
 void transfer_balances(
     State &, evmc_message const &, Address const &to) noexcept;

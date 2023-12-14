@@ -59,30 +59,18 @@ byte_string Compute::compute(mpt::Node const &node)
     return rlp::encode_account(acc, storage_root);
 }
 
-std::unique_ptr<mpt::TrieStateMachine> EmptyStateMachine::clone() const
+std::unique_ptr<mpt::StateMachine> EmptyStateMachine::clone() const
 {
     return std::make_unique<EmptyStateMachine>();
 }
 
-void EmptyStateMachine::reset(std::optional<uint8_t>) {}
+void EmptyStateMachine::down(unsigned char) {}
 
-void EmptyStateMachine::forward(byte_string_view) {}
-
-void EmptyStateMachine::backward() {}
+void EmptyStateMachine::up(size_t) {}
 
 mpt::Compute &EmptyStateMachine::get_compute()
 {
     return compute_;
-}
-
-mpt::Compute &EmptyStateMachine::get_compute(uint8_t)
-{
-    return compute_;
-}
-
-uint8_t EmptyStateMachine::get_state() const
-{
-    return 0;
 }
 
 mpt::CacheOption EmptyStateMachine::get_cache_option() const

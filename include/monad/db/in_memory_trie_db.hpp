@@ -20,19 +20,16 @@ struct Compute
 
 using MerkleCompute = mpt::MerkleComputeBase<Compute>;
 
-class EmptyStateMachine final : public mpt::TrieStateMachine
+class EmptyStateMachine final : public mpt::StateMachine
 {
 private:
     MerkleCompute compute_;
 
 public:
-    virtual std::unique_ptr<TrieStateMachine> clone() const override;
-    virtual void reset(std::optional<uint8_t>) override;
-    virtual void forward(byte_string_view) override;
-    virtual void backward() override;
+    virtual std::unique_ptr<StateMachine> clone() const override;
+    virtual void down(unsigned char nibble) override;
+    virtual void up(size_t) override;
     virtual mpt::Compute &get_compute() override;
-    virtual mpt::Compute &get_compute(uint8_t) override;
-    virtual uint8_t get_state() const override;
     virtual mpt::CacheOption get_cache_option() const override;
 };
 

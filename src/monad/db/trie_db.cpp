@@ -16,6 +16,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <set>
@@ -554,6 +555,8 @@ void TrieDb::create_and_prune_block_history(uint64_t) const {
 
 void TrieDb::write_to_file(uint64_t block_number)
 {
+    auto const start_time = std::chrono::steady_clock::now();
+
     std::string const filename = std::to_string(block_number) + ".json";
     std::filesystem::path const file_path = root_path_ / filename;
 
@@ -561,6 +564,15 @@ void TrieDb::write_to_file(uint64_t block_number)
 
     std::ofstream ofile(file_path);
     ofile << to_json().dump(4);
+
+    auto const finished_time = std::chrono::steady_clock::now();
+    auto const elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            finished_time - start_time);
+    LOG_INFO(
+        "Finished dumping to json file at block = {}, time elapsed = {}",
+        block_number,
+        elapsed_ms);
 }
 
 bytes32_t TrieDb::state_root()

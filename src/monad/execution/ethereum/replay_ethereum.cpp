@@ -81,6 +81,15 @@ int main(int argc, char *argv[])
     BlockDb block_db(block_db_path);
     db::TrieDb db{mpt::DbOptions{.on_disk = false}, json, state_db_path};
 
+    auto const finished_time1 = std::chrono::steady_clock::now();
+    auto const elapsed_ms1 =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            finished_time1 - start_time);
+    LOG_ERROR(
+        "Finished loading json at block = {}, time elapsed = {}",
+        start_block_number,
+        elapsed_ms1);
+
     quill::get_root_logger()->set_log_level(log_level);
 
     LOG_INFO(

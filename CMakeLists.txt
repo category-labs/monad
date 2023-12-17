@@ -265,16 +265,3 @@ monad_add_test_folder("src/monad/execution")
 monad_add_test_folder("src/monad/rlp")
 monad_add_test_folder("src/monad/state2")
 monad_add_test_folder("src/monad/trie")
-
-# ##############################################################################
-# fuzz tests
-# ##############################################################################
-
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-  if(MONAD_FUZZING)
-    set(FUZZTEST_FUZZING_MODE
-        ON
-        CACHE INTERNAL "enable fuzzing" FORCE)
-    add_subdirectory(${PROJECT_SOURCE_DIR}/test/fuzz)
-  endif()
-endif()

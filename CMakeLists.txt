@@ -30,7 +30,6 @@ set_source_files_properties(
   PROPERTIES COMPILE_OPTIONS -O2)
 add_subdirectory(third_party/intx)
 set(OPTIONAL_BUILD_TESTS OFF)
-add_subdirectory(third_party/optional SYSTEM)
 add_subdirectory(third_party/silkpre)
 
 function(monad_compile_options target)
@@ -113,11 +112,7 @@ add_library(
   "include/monad/db/config.hpp"
   "include/monad/db/db.hpp"
   "include/monad/db/file_db.hpp"
-  "include/monad/db/in_memory_old_trie_db.hpp"
   "include/monad/db/in_memory_trie_db.hpp"
-  "include/monad/db/trie_db_process_changes.hpp"
-  "include/monad/db/trie_db_read_account.hpp"
-  "include/monad/db/trie_db_read_storage.hpp"
   "src/monad/db/block_db.cpp"
   "src/monad/db/file_db.cpp"
   "src/monad/db/in_memory_trie_db.cpp"
@@ -167,23 +162,7 @@ add_library(
   "include/monad/state2/substate.hpp"
   "src/monad/state2/block_state.cpp"
   "src/monad/state2/state.cpp"
-  "src/monad/state2/state_deltas.cpp"
-  # trie
-  "include/monad/trie/compact_encode.hpp"
-  "include/monad/trie/nibbles_fmt.hpp"
-  "include/monad/trie/nibbles_view.hpp"
-  "include/monad/trie/nibbles.hpp"
-  "include/monad/trie/node_rlp.hpp"
-  "include/monad/trie/node.hpp"
-  "include/monad/trie/trie.hpp"
-  "include/monad/trie/util.hpp"
-  "include/monad/trie/key_buffer.hpp"
-  "include/monad/trie/comparator.hpp"
-  "include/monad/trie/process_transformation_list.hpp"
-  "include/monad/trie/update_fmt.hpp"
-  "include/monad/trie/update.hpp"
-  "include/monad/trie/get_trie_key_of_leaf.hpp"
-  "src/monad/trie/node_rlp.cpp")
+  "src/monad/state2/state_deltas.cpp")
 
 target_include_directories(
   monad
@@ -212,7 +191,6 @@ target_link_libraries(
   PUBLIC nlohmann_json::nlohmann_json
   PUBLIC quill::quill
   PUBLIC silkpre
-  PUBLIC tl::optional
   PUBLIC unordered_dense)
 monad_compile_options(monad)
 

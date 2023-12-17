@@ -17,6 +17,3 @@
 [submodule "third_party/silkpre"]
 	path = third_party/silkpre
 	url = https://github.com/monad-crypto/silkpre.git
-[submodule "third_party/optional"]
-	path = third_party/optional
-	url = https://github.com/TartanLlama/optional.git

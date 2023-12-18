@@ -16,9 +16,14 @@
 
 MONAD_DB_NAMESPACE_BEGIN
 
+using namespace monad::mpt;
+
 namespace
 {
-    constexpr auto state_prefix = byte_string{0x00};
+    constexpr unsigned char state_nibble = 0;
+    constexpr unsigned char code_nibble = 1;
+    auto const state_nibbles = concat(state_nibble);
+    auto const code_nibbles = concat(code_nibble);
 
     template <class T>
         requires std::same_as<T, bytes32_t> || std::same_as<T, Address>
@@ -31,9 +36,9 @@ namespace
             sizeof(bytes32_t)};
     }
 
-    struct Compute
+    struct LeafCompute
     {
-        static byte_string compute(mpt::Node const &node)
+        static byte_string compute(Node const &node)
         {
             MONAD_DEBUG_ASSERT(node.has_value());
 
@@ -62,80 +67,134 @@ namespace
         }
     };
 
-    using MerkleCompute = mpt::MerkleComputeBase<Compute>;
+    using MerkleCompute = MerkleComputeBase<LeafCompute>;
 
-    class EmptyStateMachine final : public mpt::StateMachine
+    struct EmptyCompute : public Compute
+    {
+        virtual unsigned compute_len(std::span<ChildData>, uint16_t) override
+        {
+            return 0;
+        };
+
+        virtual unsigned compute_branch(unsigned char *, Node *) override
+        {
+            return 0;
+        };
+
+        virtual unsigned compute(unsigned char *, Node *) override
+        {
+            return 0;
+        };
+    };
+
+    class TrieStateMachine final : public StateMachine
     {
     private:
-        MerkleCompute compute_;
+        uint8_t depth = 0;
+        bool is_merkle = false;
 
     public:
-        virtual std::unique_ptr<mpt::StateMachine> clone() const override
+        virtual std::unique_ptr<StateMachine> clone() const override
         {
-            return std::make_unique<EmptyStateMachine>();
+            return std::make_unique<TrieStateMachine>();
         }
 
-        virtual void down(unsigned char) override {}
-
-        virtual void up(size_t) override {}
-
-        virtual mpt::Compute &get_compute() override
+        virtual void down(unsigned char const nibble) override
         {
-            return compute_;
+            ++depth;
+            MONAD_DEBUG_ASSERT(
+                (nibble == state_nibble || nibble == code_nibble) ||
+                depth != 1);
+            if (MONAD_UNLIKELY(depth == 1 && nibble == state_nibble)) {
+                is_merkle = true;
+            }
         }
 
-        virtual mpt::CacheOption get_cache_option() const override
+        virtual void up(size_t const n) override
         {
-            return mpt::CacheOption::CacheAll;
+            MONAD_DEBUG_ASSERT(n <= depth);
+            depth -= static_cast<uint8_t>(n);
+            if (MONAD_UNLIKELY(is_merkle && depth < 1)) {
+                is_merkle = false;
+            }
+        }
+
+        virtual Compute &get_compute() override
+        {
+            static EmptyCompute empty;
+            static MerkleCompute merkle;
+            if (MONAD_LIKELY(is_merkle)) {
+                return merkle;
+            }
+            else {
+                return empty;
+            }
+        }
+
+        virtual CacheOption get_cache_option() const override
+        {
+            return CacheOption::CacheAll;
         }
     };
 
+    static_assert(sizeof(TrieStateMachine) == 16);
 }
 
 InMemoryTrieDB::InMemoryTrieDB(nlohmann::json const &json)
 {
-    mpt::UpdateList account_updates;
+    UpdateList account_updates;
+    UpdateList code_updates;
     for (auto const &[key, value] : json.items()) {
-        mpt::UpdateList storage_updates;
+        UpdateList storage_updates;
         for (auto const &[storage_key, storage_value] :
              value.at("storage").items()) {
-            storage_updates.push_front(
-                update_allocator_.emplace_back(mpt::Update{
-                    .key = byte_string_allocator_.emplace_back(
-                        evmc::from_hex(storage_key).value()),
-                    .value = byte_string_allocator_.emplace_back(
-                        evmc::from_hex(storage_value.get<std::string>())
-                            .value()),
-                    .incarnation = false,
-                    .next = mpt::UpdateList{}}));
+            storage_updates.push_front(update_allocator_.emplace_back(Update{
+                .key = byte_string_allocator_.emplace_back(
+                    evmc::from_hex(storage_key).value()),
+                .value = byte_string_allocator_.emplace_back(
+                    evmc::from_hex(storage_value.get<std::string>()).value()),
+                .incarnation = false,
+                .next = UpdateList{}}));
         }
-        auto const code =
-            evmc::from_hex(value.at("code").get<std::string>()).value();
+        auto const &code = byte_string_allocator_.emplace_back(
+            evmc::from_hex(value.at("code").get<std::string>()).value());
         auto const acct = Account{
             .balance = intx::from_string<uint256_t>(value.at("balance")),
             .code_hash = std::bit_cast<bytes32_t>(
                 ethash::keccak256(code.data(), code.size())),
             .nonce =
                 std::stoull(value.at("nonce").get<std::string>(), nullptr, 16)};
-        account_updates.push_front(update_allocator_.emplace_back(mpt::Update{
+        account_updates.push_front(update_allocator_.emplace_back(Update{
             .key = byte_string_allocator_.emplace_back(
                 evmc::from_hex(key).value()),
             .value =
                 byte_string_allocator_.emplace_back(rlp::encode_account(acct)),
             .incarnation = false,
             .next = std::move(storage_updates)}));
-        code_.try_emplace(acct.code_hash, code);
+
+        code_updates.push_front(update_allocator_.emplace_back(Update{
+            .key = byte_string_allocator_.emplace_back(
+                to_byte_string_view(acct.code_hash.bytes)),
+            .value = code,
+            .incarnation = false,
+            .next = UpdateList{}}));
     }
-    mpt::UpdateList updates;
-    mpt::Update update{
-        .key = mpt::NibblesView{state_prefix},
+    UpdateList updates;
+    Update state_update{
+        .key = state_nibbles,
         .value = byte_string_view{},
         .incarnation = false,
         .next = std::move(account_updates)};
-    updates.push_front(update);
+    Update code_update{
+        .key = code_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(code_updates)};
+    updates.push_front(state_update);
+    updates.push_front(code_update);
 
-    mpt::UpdateAux aux;
-    EmptyStateMachine state_machine;
+    UpdateAux aux;
+    TrieStateMachine state_machine;
     root_ = upsert(aux, state_machine, std::move(root_), std::move(updates));
     MONAD_DEBUG_ASSERT(root_);
 
@@ -145,10 +204,10 @@ InMemoryTrieDB::InMemoryTrieDB(nlohmann::json const &json)
 
 std::optional<Account> InMemoryTrieDB::read_account(Address const &addr) const
 {
-    mpt::UpdateAux aux;
-    auto const [node, result] =
-        mpt::find_blocking(aux, root_.get(), state_prefix + to_key(addr));
-    if (result != mpt::find_result::success) {
+    UpdateAux aux;
+    auto const [node, result] = find_blocking(
+        aux, root_.get(), concat(state_nibble, NibblesView{to_key(addr)}));
+    if (result != find_result::success) {
         return std::nullopt;
     }
     MONAD_DEBUG_ASSERT(node != nullptr);
@@ -162,10 +221,13 @@ std::optional<Account> InMemoryTrieDB::read_account(Address const &addr) const
 bytes32_t
 InMemoryTrieDB::read_storage(Address const &addr, bytes32_t const &key) const
 {
-    mpt::UpdateAux aux;
-    auto const [node, result] = mpt::find_blocking(
-        aux, root_.get(), state_prefix + to_key(addr) + to_key(key));
-    if (result != mpt::find_result::success) {
+    UpdateAux aux;
+    auto const [node, result] = find_blocking(
+        aux,
+        root_.get(),
+        concat(
+            state_nibble, NibblesView{to_key(addr)}, NibblesView{to_key(key)}));
+    if (result != find_result::success) {
         return {};
     }
     MONAD_DEBUG_ASSERT(node != nullptr);
@@ -177,35 +239,39 @@ InMemoryTrieDB::read_storage(Address const &addr, bytes32_t const &key) const
 
 byte_string InMemoryTrieDB::read_code(bytes32_t const &hash) const
 {
-    if (code_.contains(hash)) {
-        return code_.at(hash);
+    UpdateAux aux;
+    auto const [node, result] = find_blocking(
+        aux,
+        root_.get(),
+        concat(code_nibble, NibblesView{to_byte_string_view(hash.bytes)}));
+    if (result != find_result::success) {
+        return byte_string{};
     }
-    return byte_string{};
+    return byte_string{node->value()};
 }
 
 void InMemoryTrieDB::commit(StateDeltas const &state_deltas, Code const &code)
 {
-    mpt::UpdateList account_updates;
+    UpdateList account_updates;
     for (auto const &[addr, delta] : state_deltas) {
-        mpt::UpdateList storage_updates;
+        UpdateList storage_updates;
         std::optional<byte_string_view> value;
         auto const &account = delta.account.second;
         if (account.has_value()) {
             for (auto const &[key, delta] : delta.storage) {
                 if (delta.first != delta.second) {
                     storage_updates.push_front(
-                        update_allocator_.emplace_back(mpt::Update{
+                        update_allocator_.emplace_back(Update{
                             .key =
-                                mpt::NibblesView{
-                                    byte_string_allocator_.emplace_back(
-                                        to_key(key))},
+                                NibblesView{byte_string_allocator_.emplace_back(
+                                    to_key(key))},
                             .value =
                                 delta.second == bytes32_t{}
                                     ? std::nullopt
                                     : std::make_optional(to_byte_string_view(
                                           delta.second.bytes)),
                             .incarnation = false,
-                            .next = mpt::UpdateList{}}));
+                            .next = UpdateList{}}));
                 }
             }
             value = byte_string_allocator_.emplace_back(
@@ -213,31 +279,41 @@ void InMemoryTrieDB::commit(StateDeltas const &state_deltas, Code const &code)
         }
 
         if (!storage_updates.empty() || delta.account.first != account) {
-            account_updates.push_front(
-                update_allocator_.emplace_back(mpt::Update{
-                    .key = mpt::NibblesView{byte_string_allocator_.emplace_back(
-                        to_key(addr))},
-                    .value = value,
-                    .incarnation = account.has_value()
-                                       ? account.value().incarnation != 0
-                                       : false,
-                    .next = std::move(storage_updates)}));
+            account_updates.push_front(update_allocator_.emplace_back(Update{
+                .key = NibblesView{byte_string_allocator_.emplace_back(
+                    to_key(addr))},
+                .value = value,
+                .incarnation = account.has_value()
+                                   ? account.value().incarnation != 0
+                                   : false,
+                .next = std::move(storage_updates)}));
         }
     }
 
+    UpdateList code_updates;
     for (auto const &[hash, bytes] : code) {
-        code_[hash] = bytes;
+        code_updates.push_front(update_allocator_.emplace_back(Update{
+            .key = NibblesView{to_byte_string_view(hash.bytes)},
+            .value = bytes,
+            .incarnation = false,
+            .next = UpdateList{}}));
     }
 
-    auto state_update = mpt::Update{
-        .key = mpt::NibblesView{state_prefix},
+    auto state_update = Update{
+        .key = state_nibbles,
         .value = byte_string_view{},
         .incarnation = false,
         .next = std::move(account_updates)};
-    mpt::UpdateList updates;
+    auto code_update = Update{
+        .key = code_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(code_updates)};
+    UpdateList updates;
     updates.push_front(state_update);
-    mpt::UpdateAux aux;
-    EmptyStateMachine state_machine;
+    updates.push_front(code_update);
+    UpdateAux aux;
+    TrieStateMachine state_machine;
     root_ = upsert(aux, state_machine, std::move(root_), std::move(updates));
 
     update_allocator_.clear();
@@ -251,20 +327,23 @@ void InMemoryTrieDB::create_and_prune_block_history(uint64_t) const {
 bytes32_t InMemoryTrieDB::state_root() const
 {
     bytes32_t root = NULL_ROOT;
-    if (root_ && root_->number_of_children()) {
-        MONAD_DEBUG_ASSERT(root_->data().size() == sizeof(bytes32_t));
-        std::copy_n(root_->data().data(), sizeof(bytes32_t), root.bytes);
+    UpdateAux aux;
+    auto const [node, result] = find_blocking(aux, root_.get(), state_nibbles);
+    if (result != find_result::success || node->number_of_children() == 0) {
+        return root;
     }
+    MONAD_DEBUG_ASSERT(node->data().size() == sizeof(bytes32_t));
+    std::copy_n(node->data().data(), sizeof(bytes32_t), root.bytes);
     return root;
 }
 
 nlohmann::json InMemoryTrieDB::to_json() const
 {
-    struct Traverse : public mpt::TraverseMachine
+    struct Traverse : public TraverseMachine
     {
         InMemoryTrieDB const &db;
         nlohmann::json json;
-        mpt::Nibbles path;
+        Nibbles path;
 
         Traverse(InMemoryTrieDB const &db)
             : db(db)
@@ -273,49 +352,30 @@ nlohmann::json InMemoryTrieDB::to_json() const
         {
         }
 
-        virtual void
-        down(unsigned char const branch, mpt::Node const &node) override
+        virtual void down(unsigned char const branch, Node const &node) override
         {
-            path = branch == mpt::INVALID_BRANCH
-                       ? concat(mpt::NibblesView{path}, node.path_nibble_view())
-                       : concat(
-                             mpt::NibblesView{path},
-                             branch,
-                             node.path_nibble_view());
-            auto const view = mpt::NibblesView{path};
-
-            if (view.nibble_size() <= (state_prefix.size() * 2)) {
+            if (branch == INVALID_BRANCH) {
+                MONAD_DEBUG_ASSERT(node.path_nibble_view().nibble_size() == 0);
                 return;
             }
+            path = concat(NibblesView{path}, branch, node.path_nibble_view());
 
-            MONAD_DEBUG_ASSERT(
-                view.substr(0, state_prefix.size() * 2) ==
-                mpt::NibblesView{state_prefix});
-
-            if (view.nibble_size() ==
-                ((state_prefix.size() + KECCAK256_SIZE) * 2)) {
+            if (path.nibble_size() == (KECCAK256_SIZE * 2)) {
                 handle_account(node);
             }
             else if (
-                view.nibble_size() ==
-                ((state_prefix.size() + KECCAK256_SIZE + KECCAK256_SIZE) * 2)) {
+                path.nibble_size() == ((KECCAK256_SIZE + KECCAK256_SIZE) * 2)) {
                 handle_storage(node);
             }
         }
 
-        virtual void
-        up(unsigned char const branch, mpt::Node const &node) override
+        virtual void up(unsigned char const branch, Node const &node) override
         {
-            auto const path_view = mpt::NibblesView{path};
+            auto const path_view = NibblesView{path};
             auto const rem_size = [&] {
-                if (branch == mpt::INVALID_BRANCH) {
-                    int const rem_size = path_view.nibble_size() -
-                                         node.path_nibble_view().nibble_size();
-                    MONAD_DEBUG_ASSERT(rem_size >= 0);
-                    MONAD_DEBUG_ASSERT(
-                        path_view.substr(static_cast<unsigned>(rem_size)) ==
-                        node.path_nibble_view());
-                    return rem_size;
+                if (branch == INVALID_BRANCH) {
+                    MONAD_DEBUG_ASSERT(path_view.nibble_size() == 0);
+                    return 0;
                 }
                 int const rem_size = path_view.nibble_size() - 1 -
                                      node.path_nibble_view().nibble_size();
@@ -328,7 +388,7 @@ nlohmann::json InMemoryTrieDB::to_json() const
             path = path_view.substr(0, static_cast<unsigned>(rem_size));
         }
 
-        void handle_account(mpt::Node const &node)
+        void handle_account(Node const &node)
         {
             MONAD_DEBUG_ASSERT(node.has_value());
 
@@ -337,10 +397,7 @@ nlohmann::json InMemoryTrieDB::to_json() const
             MONAD_DEBUG_ASSERT(result.has_value());
             MONAD_DEBUG_ASSERT(result.assume_value().empty());
 
-            auto const key = fmt::format(
-                "{}",
-                mpt::NibblesView{path}.substr(
-                    state_prefix.size() * 2, KECCAK256_SIZE * 2));
+            auto const key = fmt::format("{}", NibblesView{path});
 
             json[key]["balance"] = fmt::format("{}", acct.balance);
             json[key]["nonce"] = fmt::format("0x{:x}", acct.nonce);
@@ -354,21 +411,18 @@ nlohmann::json InMemoryTrieDB::to_json() const
             }
         }
 
-        void handle_storage(mpt::Node const &node)
+        void handle_storage(Node const &node)
         {
             MONAD_DEBUG_ASSERT(node.has_value());
             MONAD_DEBUG_ASSERT(node.value().size() == sizeof(bytes32_t));
 
             auto const acct_key = fmt::format(
-                "{}",
-                mpt::NibblesView{path}.substr(
-                    state_prefix.size() * 2, KECCAK256_SIZE * 2));
+                "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));
 
             auto const key = fmt::format(
                 "{}",
-                mpt::NibblesView{path}.substr(
-                    (state_prefix.size() + KECCAK256_SIZE) * 2,
-                    KECCAK256_SIZE * 2));
+                NibblesView{path}.substr(
+                    KECCAK256_SIZE * 2, KECCAK256_SIZE * 2));
 
             bytes32_t value;
             std::copy_n(node.value().begin(), sizeof(bytes32_t), value.bytes);
@@ -377,7 +431,12 @@ nlohmann::json InMemoryTrieDB::to_json() const
         }
     } traverse(*this);
 
-    mpt::preorder_traverse(*root_, traverse);
+    UpdateAux aux;
+    auto const [node, result] = find_blocking(aux, root_.get(), state_nibbles);
+    if (result == find_result::success) {
+        MONAD_DEBUG_ASSERT(node);
+        preorder_traverse(*node, traverse);
+    }
     return traverse.json;
 }
 

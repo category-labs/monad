@@ -6,7 +6,6 @@
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/trie.hpp>
 
-#include <ankerl/unordered_dense.h>
 #include <nlohmann/json.hpp>
 
 #include <list>
@@ -19,7 +18,6 @@ private:
     mpt::Node::UniquePtr root_;
     std::list<mpt::Update> update_allocator_;
     std::list<byte_string> byte_string_allocator_;
-    ankerl::unordered_dense::segmented_map<bytes32_t, byte_string> code_;
 
 public:
     InMemoryTrieDB() = default;

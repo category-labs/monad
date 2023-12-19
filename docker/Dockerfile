@@ -12,17 +12,14 @@ RUN apt install -y dialog
 
 RUN apt install -y ca-certificates curl gnupg software-properties-common wget
 
-RUN --mount=target=src src/monad-core/scripts/ubuntu-build/install-gcc.sh
+COPY monad-core/scripts/ubuntu-build/ /opt
 
-RUN --mount=target=src src/monad-core/scripts/ubuntu-build/install-clang.sh
-
-RUN --mount=target=src src/monad-core/scripts/ubuntu-build/install-boost.sh
-
-RUN --mount=target=src src/monad-core/scripts/ubuntu-build/install-cmake.sh
-
-RUN --mount=target=src src/monad-core/scripts/ubuntu-build/install-tools.sh
-
-RUN --mount=target=src src/monad-core/scripts/ubuntu-build/install-deps.sh
+RUN /opt/install-gcc.sh
+RUN /opt/install-clang.sh
+RUN /opt/install-boost.sh
+RUN /opt/install-cmake.sh
+RUN /opt/install-tools.sh
+RUN /opt/install-deps.sh
 
 RUN apt install -y \
   libbrotli-dev \

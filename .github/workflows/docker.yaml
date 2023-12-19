@@ -26,6 +26,8 @@ jobs:
           submodules: recursive
           token: ${{ steps.generate_token.outputs.token }}
 
+      - uses: docker/setup-buildx-action@v3
+
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
       - run: sudo bash -c "echo 1024 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages"
@@ -33,4 +35,17 @@ jobs:
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
 
-      - run: docker build --ulimit memlock=-1:-1 --build-arg CC=${{ matrix.compiler.CC }} --build-arg CXX=${{ matrix.compiler.CXX }} --build-arg CMAKE_BUILD_TYPE=${{ matrix.CMAKE_BUILD_TYPE }} --file docker/Dockerfile .
+      - uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: false
+          provenance: false
+          builder: ${{ steps.buildx.outsputs.name }}
+          build-args: |-
+            CC=${{ matrix.compiler.CC }}
+            CXX=${{ matrix.compiler.CXX }}
+            CMAKE_BUILD_TYPE=${{ matrix.CMAKE_BUILD_TYPE }}
+          ulimit: "memlock=-1:-1"
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

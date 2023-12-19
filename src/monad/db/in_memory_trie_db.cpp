@@ -148,15 +148,15 @@ InMemoryTrieDB::InMemoryTrieDB(nlohmann::json const &json)
         UpdateList storage_updates;
         for (auto const &[storage_key, storage_value] :
              value.at("storage").items()) {
-            storage_updates.push_front(update_allocator_.emplace_back(Update{
-                .key = byte_string_allocator_.emplace_back(
+            storage_updates.push_front(update_alloc_.emplace_back(Update{
+                .key = bytes_alloc_.emplace_back(
                     evmc::from_hex(storage_key).value()),
-                .value = byte_string_allocator_.emplace_back(
+                .value = bytes_alloc_.emplace_back(
                     evmc::from_hex(storage_value.get<std::string>()).value()),
                 .incarnation = false,
                 .next = UpdateList{}}));
         }
-        auto const &code = byte_string_allocator_.emplace_back(
+        auto const &code = bytes_alloc_.emplace_back(
             evmc::from_hex(value.at("code").get<std::string>()).value());
         auto const acct = Account{
             .balance = intx::from_string<uint256_t>(value.at("balance")),
@@ -164,16 +164,14 @@ InMemoryTrieDB::InMemoryTrieDB(nlohmann::json const &json)
                 ethash::keccak256(code.data(), code.size())),
             .nonce =
                 std::stoull(value.at("nonce").get<std::string>(), nullptr, 16)};
-        account_updates.push_front(update_allocator_.emplace_back(Update{
-            .key = byte_string_allocator_.emplace_back(
-                evmc::from_hex(key).value()),
-            .value =
-                byte_string_allocator_.emplace_back(rlp::encode_account(acct)),
+        account_updates.push_front(update_alloc_.emplace_back(Update{
+            .key = bytes_alloc_.emplace_back(evmc::from_hex(key).value()),
+            .value = bytes_alloc_.emplace_back(rlp::encode_account(acct)),
             .incarnation = false,
             .next = std::move(storage_updates)}));
 
-        code_updates.push_front(update_allocator_.emplace_back(Update{
-            .key = byte_string_allocator_.emplace_back(
+        code_updates.push_front(update_alloc_.emplace_back(Update{
+            .key = bytes_alloc_.emplace_back(
                 to_byte_string_view(acct.code_hash.bytes)),
             .value = code,
             .incarnation = false,
@@ -198,8 +196,8 @@ InMemoryTrieDB::InMemoryTrieDB(nlohmann::json const &json)
     root_ = upsert(aux, state_machine, std::move(root_), std::move(updates));
     MONAD_DEBUG_ASSERT(root_);
 
-    update_allocator_.clear();
-    byte_string_allocator_.clear();
+    update_alloc_.clear();
+    bytes_alloc_.clear();
 }
 
 std::optional<Account> InMemoryTrieDB::read_account(Address const &addr) const
@@ -261,10 +259,9 @@ void InMemoryTrieDB::commit(StateDeltas const &state_deltas, Code const &code)
             for (auto const &[key, delta] : delta.storage) {
                 if (delta.first != delta.second) {
                     storage_updates.push_front(
-                        update_allocator_.emplace_back(Update{
-                            .key =
-                                NibblesView{byte_string_allocator_.emplace_back(
-                                    to_key(key))},
+                        update_alloc_.emplace_back(Update{
+                            .key = NibblesView{bytes_alloc_.emplace_back(
+                                to_key(key))},
                             .value =
                                 delta.second == bytes32_t{}
                                     ? std::nullopt
@@ -274,14 +271,13 @@ void InMemoryTrieDB::commit(StateDeltas const &state_deltas, Code const &code)
                             .next = UpdateList{}}));
                 }
             }
-            value = byte_string_allocator_.emplace_back(
-                rlp::encode_account(account.value()));
+            value =
+                bytes_alloc_.emplace_back(rlp::encode_account(account.value()));
         }
 
         if (!storage_updates.empty() || delta.account.first != account) {
-            account_updates.push_front(update_allocator_.emplace_back(Update{
-                .key = NibblesView{byte_string_allocator_.emplace_back(
-                    to_key(addr))},
+            account_updates.push_front(update_alloc_.emplace_back(Update{
+                .key = NibblesView{bytes_alloc_.emplace_back(to_key(addr))},
                 .value = value,
                 .incarnation = account.has_value()
                                    ? account.value().incarnation != 0
@@ -292,7 +288,7 @@ void InMemoryTrieDB::commit(StateDeltas const &state_deltas, Code const &code)
 
     UpdateList code_updates;
     for (auto const &[hash, bytes] : code) {
-        code_updates.push_front(update_allocator_.emplace_back(Update{
+        code_updates.push_front(update_alloc_.emplace_back(Update{
             .key = NibblesView{to_byte_string_view(hash.bytes)},
             .value = bytes,
             .incarnation = false,
@@ -316,8 +312,8 @@ void InMemoryTrieDB::commit(StateDeltas const &state_deltas, Code const &code)
     TrieStateMachine state_machine;
     root_ = upsert(aux, state_machine, std::move(root_), std::move(updates));
 
-    update_allocator_.clear();
-    byte_string_allocator_.clear();
+    update_alloc_.clear();
+    bytes_alloc_.clear();
 }
 
 void InMemoryTrieDB::create_and_prune_block_history(uint64_t) const {

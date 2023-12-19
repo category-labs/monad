@@ -16,8 +16,8 @@ class InMemoryTrieDB final : public Db
 {
 private:
     mpt::Node::UniquePtr root_;
-    std::list<mpt::Update> update_allocator_;
-    std::list<byte_string> byte_string_allocator_;
+    std::list<mpt::Update> update_alloc_;
+    std::list<byte_string> bytes_alloc_;
 
 public:
     InMemoryTrieDB() = default;

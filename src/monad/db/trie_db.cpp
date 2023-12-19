@@ -867,4 +867,144 @@ nlohmann::json TrieDb::to_json()
     return traverse.json;
 }
 
+void TrieDb::to_json(std::ofstream &ofile)
+{
+    struct Traverse : public mpt::TraverseMachine
+    {
+        TrieDb &db;
+        nlohmann::json json;
+        mpt::Nibbles path;
+        std::ofstream &ofile;
+        std::string current_key;
+        bool first = true;
+
+        Traverse(TrieDb &db, std::ofstream &o)
+            : db(db)
+            , json(nlohmann::json::object())
+            , path()
+            , ofile(o)
+        {
+            ofile << "{\n";
+        }
+
+        ~Traverse()
+        {
+            write_indented_json(4);
+            ofile << "}\n";
+            ofile.flush();
+        }
+
+        void write_indented_json(uint64_t const indent_level)
+        {
+            if (!first) {
+                ofile << ",\n";
+            }
+
+            for (auto it = json.begin(); it != json.end(); ++it) {
+                ofile << std::string(indent_level, ' ');
+
+                if (it != json.begin()) {
+                    ofile << ",\n";
+                    ofile << std::string(indent_level, ' ');
+                }
+
+                ofile << "\"" << it.key() << "\": " << it.value();
+                first = false;
+            }
+
+            ofile.flush();
+        }
+
+        virtual void
+        down(unsigned char const branch, mpt::Node const &node) override
+        {
+            if (branch == INVALID_BRANCH) {
+                MONAD_DEBUG_ASSERT(node.path_nibble_view().nibble_size() == 0);
+                return;
+            }
+            path = concat(NibblesView{path}, branch, node.path_nibble_view());
+
+            if (path.nibble_size() == (KECCAK256_SIZE * 2)) {
+                handle_account(node);
+            }
+            else if (
+                path.nibble_size() == ((KECCAK256_SIZE + KECCAK256_SIZE) * 2)) {
+                handle_storage(node);
+            }
+        }
+
+        virtual void
+        up(unsigned char const branch, mpt::Node const &node) override
+        {
+            auto const path_view = NibblesView{path};
+            auto const rem_size = [&] {
+                if (branch == INVALID_BRANCH) {
+                    MONAD_DEBUG_ASSERT(path_view.nibble_size() == 0);
+                    return 0;
+                }
+                int const rem_size = path_view.nibble_size() - 1 -
+                                     node.path_nibble_view().nibble_size();
+                MONAD_DEBUG_ASSERT(rem_size >= 0);
+                MONAD_DEBUG_ASSERT(
+                    path_view.substr(static_cast<unsigned>(rem_size)) ==
+                    concat(branch, node.path_nibble_view()));
+                return rem_size;
+            }();
+            path = path_view.substr(0, static_cast<unsigned>(rem_size));
+        }
+
+        void handle_account(mpt::Node const &node)
+        {
+            MONAD_DEBUG_ASSERT(node.has_value());
+
+            Account acct;
+            auto const result = rlp::decode_account(acct, node.value());
+            MONAD_DEBUG_ASSERT(result.has_value());
+            MONAD_DEBUG_ASSERT(result.assume_value().empty());
+
+            auto const key = fmt::format("{}", NibblesView{path});
+
+            if (key != current_key) {
+                write_indented_json(4);
+                json.clear();
+                json[key] = nlohmann::json::object();
+            }
+
+            json[key]["balance"] = fmt::format("{}", acct.balance);
+            json[key]["nonce"] = fmt::format("0x{:x}", acct.nonce);
+
+            auto const code = db.read_code(acct.code_hash);
+            json[key]["code"] = fmt::format(
+                "0x{:02x}", fmt::join(std::as_bytes(std::span(code)), ""));
+
+            if (!json[key].contains("storage")) {
+                json[key]["storage"] = nlohmann::json::object();
+            }
+        }
+
+        void handle_storage(mpt::Node const &node)
+        {
+            MONAD_DEBUG_ASSERT(node.has_value());
+            MONAD_DEBUG_ASSERT(node.value().size() == sizeof(bytes32_t));
+
+            auto const acct_key = fmt::format(
+                "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));
+
+            auto const key = fmt::format(
+                "{}",
+                NibblesView{path}.substr(
+                    KECCAK256_SIZE * 2, KECCAK256_SIZE * 2));
+
+            bytes32_t value;
+            std::copy_n(node.value().begin(), sizeof(bytes32_t), value.bytes);
+
+            json[acct_key]["storage"][key] = fmt::format(
+                "0x{:02x}",
+                fmt::join(std::as_bytes(std::span(value.bytes)), ""));
+        }
+    } traverse(*this, ofile);
+
+    db_.traverse(state_nibbles, traverse);
+}
+
 MONAD_DB_NAMESPACE_END

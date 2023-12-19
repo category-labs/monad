@@ -55,6 +55,7 @@ public:
 
     bytes32_t state_root();
     nlohmann::json to_json();
+    void to_json(std::ofstream &ofile);
 };
 
 MONAD_DB_NAMESPACE_END

@@ -13,7 +13,8 @@ jobs:
     runs-on: ubuntu-latest-32
 
     steps:
-      - id: generate_token
+      - name: Generate app token
+        id: generate_token
         uses: tibdex/github-app-token@v1
         with:
           app_id: ${{ secrets.REPO_READONLY_GITHUB_APP_ID }}
@@ -21,12 +22,11 @@ jobs:
           permissions: >-
             {"contents": "read"}
 
-      - uses: actions/checkout@v3
+      - name: Checkout repo and submodules
+        uses: actions/checkout@v3
         with:
           submodules: recursive
           token: ${{ steps.generate_token.outputs.token }}
-
-      - uses: docker/setup-buildx-action@v3
 
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
@@ -35,17 +35,28 @@ jobs:
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
 
-      - uses: docker/build-push-action@v4
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build `base` stage
+        uses: docker/build-push-action@v5
         with:
           context: .
           file: docker/Dockerfile
-          push: false
-          provenance: false
-          builder: ${{ steps.buildx.outsputs.name }}
+          ulimit: "memlock=-1:-1"
+          target: base
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,scope=base,mode=max
+
+      - name: Build `build_and_test` stage
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
           build-args: |-
             CC=${{ matrix.compiler.CC }}
             CXX=${{ matrix.compiler.CXX }}
             CMAKE_BUILD_TYPE=${{ matrix.CMAKE_BUILD_TYPE }}
           ulimit: "memlock=-1:-1"
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          target: build_and_test
+          cache-from: type=gha,scope=base

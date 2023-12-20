@@ -1,6 +1,6 @@
 # docker build -f docker/Dockerfile .
 
-FROM ubuntu:22.04
+FROM ubuntu:22.04 as base
 
 RUN apt update
 
@@ -25,6 +25,8 @@ RUN apt install -y \
   libbrotli-dev \
   libcli11-dev \
   libgmp-dev
+
+FROM base as build_and_test
 
 COPY . src
 

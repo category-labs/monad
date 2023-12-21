@@ -24,17 +24,14 @@ jobs:
           permissions: >-
             {"contents": "read"}
 
-      - name: Checkout repo and submodules
+      - name: Checkout repo
         uses: actions/checkout@v3
-        with:
-          token: ${{ steps.generate_token.outputs.token }}
 
       - name: Checkout submodules
         env:
           TOKEN: ${{ steps.generate_token.outputs.token }}
         run: |
           sed -i "s/git@github.com:/https:\/\/github.com\//" .gitmodules
-          git submodule sync --recursive
           git submodule foreach git config url."https://${TOKEN}:x-oauth-basic@github.com/".insteadOf "https://github.com/"
           git submodule update --init --recursive --depth 1 
 

@@ -131,9 +131,9 @@ namespace
             }
         }
 
-        virtual CacheOption get_cache_option() const override
+        virtual bool cache() const override
         {
-            return CacheOption::CacheAll;
+            return true;
         }
     };
 

@@ -24,16 +24,11 @@ jobs:
           permissions: >-
             {"contents": "read"}
 
-      - name: Checkout repo
+      - name: Checkout repo and submodules
         uses: actions/checkout@v3
-
-      - name: Checkout submodules
-        env:
-          TOKEN: ${{ steps.generate_token.outputs.token }}
-        run: |
-          sed -i "s/git@github.com:/https:\/\/github.com\//" .gitmodules
-          git submodule foreach git config url."https://${TOKEN}:x-oauth-basic@github.com/".insteadOf "https://github.com/"
-          git submodule update --init --recursive --depth 1 
+        with:
+          submodules: recursive
+          token: ${{ steps.generate_token.outputs.token }}
 
       # - name: Setup Docker Buildx
       #   uses: docker/setup-buildx-action@v3

@@ -28,13 +28,6 @@ jobs:
           submodules: recursive
           token: ${{ steps.generate_token.outputs.token }}
 
-      - run: cat /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
-      - run: cat /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
-      - run: sudo bash -c "echo 1024 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages"
-      - run: sudo bash -c "echo 16 > /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages"
-      - run: cat /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
-      - run: cat /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
-
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -47,6 +40,13 @@ jobs:
           target: base
           cache-from: type=gha,scope=base
           cache-to: type=gha,scope=base,mode=max
+
+      - run: cat /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
+      - run: cat /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
+      - run: sudo bash -c "echo 1024 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages"
+      - run: sudo bash -c "echo 16 > /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages"
+      - run: cat /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
+      - run: cat /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
 
       - name: Build `build_and_test` stage
         uses: docker/build-push-action@v5

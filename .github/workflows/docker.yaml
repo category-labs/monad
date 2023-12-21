@@ -33,8 +33,8 @@ jobs:
         env:
           TOKEN: ${{ steps.generate_token.outputs.token }}
         run: |
-          git config url."https://${TOKEN}:x-oauth-basic@github.com/".insteadOf "git@github.com:"
-          git config url."https://${TOKEN}:x-oauth-basic@github.com/".insteadOf "https://github.com/"
+          git submodule foreach git config url."https://${TOKEN}:x-oauth-basic@github.com/".insteadOf git@github.com:
+          git submodule foreach git config url."https://${TOKEN}:x-oauth-basic@github.com/".insteadOf "https://github.com/"
           git submodule update --init --recursive --depth 1 
 
       # - name: Setup Docker Buildx

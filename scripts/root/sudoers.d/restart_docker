@@ -1,1 +1,0 @@
-ALL ALL=(root) NOPASSWD: /usr/local/bin/restart_docker

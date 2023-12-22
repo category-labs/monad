@@ -2,7 +2,7 @@
 #include <monad/core/address.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/int.hpp>
-#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/trie_db.hpp>
 #include <monad/execution/block_reward.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
@@ -19,7 +19,7 @@
 
 using namespace monad;
 
-using db_t = db::InMemoryTrieDB;
+using db_t = db::TrieDb;
 
 constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 constexpr auto b{0x5353535353535353535353535353535353535353_address};
@@ -29,7 +29,7 @@ TEST(BlockReward, apply_block_reward)
 {
     // Frontier
     {
-        db_t db;
+        db_t db{mpt::DbOptions{.on_disk = false}};
         db.commit(
             StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
             Code{});
@@ -62,7 +62,7 @@ TEST(BlockReward, apply_block_reward)
 
     // Byzantium
     {
-        db_t db;
+        db_t db{mpt::DbOptions{.on_disk = false}};
         BlockState bs{db};
         State as{bs};
         (void)as.get_balance(a);
@@ -92,7 +92,7 @@ TEST(BlockReward, apply_block_reward)
 
     // Constantinople_and_petersburg
     {
-        db_t db;
+        db_t db{mpt::DbOptions{.on_disk = false}};
         BlockState bs{db};
         State s{bs};
 
@@ -120,7 +120,7 @@ TEST(BlockReward, apply_block_reward)
         Block block{};
         block.header.beneficiary = a;
 
-        db_t db;
+        db_t db{mpt::DbOptions{.on_disk = false}};
         BlockState bs{db};
         State s{bs};
 

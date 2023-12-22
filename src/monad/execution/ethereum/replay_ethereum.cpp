@@ -4,7 +4,7 @@
 #include <monad/core/log_level_map.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/db/block_db.hpp>
-#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/trie_db.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/genesis.hpp>
 #include <monad/execution/replay_block_db.hpp>
@@ -76,7 +76,7 @@ int main(int argc, char *argv[])
     auto const start_time = std::chrono::steady_clock::now();
 
     BlockDb block_db(block_db_path);
-    db::InMemoryTrieDB db{};
+    db::TrieDb db{mpt::DbOptions{.on_disk = false}};
 
     block_num_t start_block_number = 0; // TODO
 

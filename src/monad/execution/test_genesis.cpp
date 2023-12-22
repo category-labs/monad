@@ -1,9 +1,8 @@
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/db/block_db.hpp>
-#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/trie_db.hpp>
 #include <monad/execution/genesis.hpp>
-#include <monad/test/make_db.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -17,15 +16,6 @@
 #include <fstream>
 
 using namespace monad;
-
-template <typename TDB>
-struct GenesisTest : public testing::Test
-{
-};
-
-using TrieDBTypes = ::testing::Types<db::InMemoryTrieDB>;
-
-TYPED_TEST_SUITE(GenesisTest, TrieDBTypes);
 
 TEST(Genesis, read_ethereum_mainnet_genesis_header)
 {
@@ -57,11 +47,11 @@ TEST(Genesis, read_ethereum_mainnet_genesis_header)
     EXPECT_EQ(block_header.timestamp, 0);
 }
 
-TYPED_TEST(GenesisTest, ethereum_mainnet_genesis_state_root)
+TEST(Genesis, ethereum_mainnet_genesis_state_root)
 {
     auto const genesis_file_path =
         test_resource::ethereum_genesis_dir / "mainnet.json";
-    auto db = test::make_db<TypeParam>();
+    db::TrieDb db{mpt::DbOptions{.on_disk = false}};
 
     auto const block_header = read_genesis(genesis_file_path, db);
 
@@ -71,11 +61,11 @@ TYPED_TEST(GenesisTest, ethereum_mainnet_genesis_state_root)
     EXPECT_EQ(block_header.state_root, expected_state_root);
 }
 
-TYPED_TEST(GenesisTest, read_and_verify_genesis_block)
+TEST(Genesis, read_and_verify_genesis_block)
 {
     auto const genesis_file_path =
         test_resource::ethereum_genesis_dir / "mainnet.json";
     BlockDb block_db(test_resource::correct_block_data_dir);
-    auto state_db = test::make_db<TypeParam>();
+    db::TrieDb state_db{mpt::DbOptions{.on_disk = false}};
     read_and_verify_genesis(block_db, state_db, genesis_file_path);
 }

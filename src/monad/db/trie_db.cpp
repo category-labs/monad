@@ -3,7 +3,7 @@
 #include <monad/core/int.hpp>
 #include <monad/core/int_fmt.hpp>
 #include <monad/db/config.hpp>
-#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/trie_db.hpp>
 #include <monad/mpt/nibbles_view_fmt.hpp>
 #include <monad/mpt/traverse.hpp>
 #include <monad/rlp/encode2.hpp>
@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <set>
 
 MONAD_DB_NAMESPACE_BEGIN
 
@@ -86,64 +87,60 @@ namespace
             return 0;
         };
     };
-
-    class TrieStateMachine final : public StateMachine
-    {
-    private:
-        uint8_t depth = 0;
-        bool is_merkle = false;
-
-    public:
-        virtual std::unique_ptr<StateMachine> clone() const override
-        {
-            return std::make_unique<TrieStateMachine>();
-        }
-
-        virtual void down(unsigned char const nibble) override
-        {
-            ++depth;
-            MONAD_DEBUG_ASSERT(
-                (nibble == state_nibble || nibble == code_nibble) ||
-                depth != 1);
-            if (MONAD_UNLIKELY(depth == 1 && nibble == state_nibble)) {
-                is_merkle = true;
-            }
-        }
-
-        virtual void up(size_t const n) override
-        {
-            MONAD_DEBUG_ASSERT(n <= depth);
-            depth -= static_cast<uint8_t>(n);
-            if (MONAD_UNLIKELY(is_merkle && depth < 1)) {
-                is_merkle = false;
-            }
-        }
-
-        virtual Compute &get_compute() override
-        {
-            static EmptyCompute empty;
-            static MerkleCompute merkle;
-            if (MONAD_LIKELY(is_merkle)) {
-                return merkle;
-            }
-            else {
-                return empty;
-            }
-        }
-
-        virtual bool cache() const override
-        {
-            return true;
-        }
-    };
-
-    static_assert(sizeof(TrieStateMachine) == 16);
 }
 
-InMemoryTrieDB::InMemoryTrieDB(nlohmann::json const &json)
+std::unique_ptr<StateMachine> TrieDb::Machine::clone() const
+{
+    return std::make_unique<Machine>();
+}
+
+void TrieDb::Machine::down(unsigned char const nibble)
+{
+    ++depth;
+    MONAD_DEBUG_ASSERT(
+        (nibble == state_nibble || nibble == code_nibble) || depth != 1);
+    if (MONAD_UNLIKELY(depth == 1 && nibble == state_nibble)) {
+        is_merkle = true;
+    }
+}
+
+void TrieDb::Machine::up(size_t const n)
+{
+    MONAD_DEBUG_ASSERT(n <= depth);
+    depth -= static_cast<uint8_t>(n);
+    if (MONAD_UNLIKELY(is_merkle && depth < 1)) {
+        is_merkle = false;
+    }
+}
+
+Compute &TrieDb::Machine::get_compute()
+{
+    static EmptyCompute empty;
+    static MerkleCompute merkle;
+    if (MONAD_LIKELY(is_merkle)) {
+        return merkle;
+    }
+    else {
+        return empty;
+    }
+}
+
+bool TrieDb::Machine::cache() const
+{
+    return true;
+}
+
+TrieDb::TrieDb(mpt::DbOptions const &options)
+    : db_{machine_, options}
+{
+}
+
+TrieDb::TrieDb(DbOptions const &options, nlohmann::json const &json)
+    : TrieDb{options}
 {
     UpdateList account_updates;
     UpdateList code_updates;
+    std::set<bytes32_t> inserted_code;
     for (auto const &[key, value] : json.items()) {
         UpdateList storage_updates;
         for (auto const &[storage_key, storage_value] :
@@ -170,12 +167,17 @@ InMemoryTrieDB::InMemoryTrieDB(nlohmann::json const &json)
             .incarnation = false,
             .next = std::move(storage_updates)}));
 
-        code_updates.push_front(update_alloc_.emplace_back(Update{
-            .key = bytes_alloc_.emplace_back(
-                to_byte_string_view(acct.code_hash.bytes)),
-            .value = code,
-            .incarnation = false,
-            .next = UpdateList{}}));
+        if (!inserted_code.contains(acct.code_hash)) {
+            if (acct.code_hash != NULL_HASH) {
+                code_updates.push_front(update_alloc_.emplace_back(Update{
+                    .key = bytes_alloc_.emplace_back(
+                        to_byte_string_view(acct.code_hash.bytes)),
+                    .value = code,
+                    .incarnation = false,
+                    .next = UpdateList{}}));
+            }
+            inserted_code.insert(acct.code_hash);
+        }
     }
     UpdateList updates;
     Update state_update{
@@ -191,64 +193,50 @@ InMemoryTrieDB::InMemoryTrieDB(nlohmann::json const &json)
     updates.push_front(state_update);
     updates.push_front(code_update);
 
-    UpdateAux aux;
-    TrieStateMachine state_machine;
-    root_ = upsert(aux, state_machine, std::move(root_), std::move(updates));
-    MONAD_DEBUG_ASSERT(root_);
+    db_.upsert(std::move(updates));
+    MONAD_DEBUG_ASSERT(machine_.depth == 0 && machine_.is_merkle == false);
 
     update_alloc_.clear();
     bytes_alloc_.clear();
 }
 
-std::optional<Account> InMemoryTrieDB::read_account(Address const &addr) const
+std::optional<Account> TrieDb::read_account(Address const &addr)
 {
-    UpdateAux aux;
-    auto const [node, result] = find_blocking(
-        aux, root_.get(), concat(state_nibble, NibblesView{to_key(addr)}));
-    if (result != find_result::success) {
+    auto const value = db_.get(concat(state_nibble, NibblesView{to_key(addr)}));
+    if (!value.has_value()) {
         return std::nullopt;
     }
-    MONAD_DEBUG_ASSERT(node != nullptr);
     Account acct;
-    auto const decode_result = rlp::decode_account(acct, node->value());
+    auto const decode_result = rlp::decode_account(acct, value.value());
     MONAD_DEBUG_ASSERT(decode_result.has_value());
     MONAD_DEBUG_ASSERT(decode_result.assume_value().empty());
     return acct;
 }
 
-bytes32_t
-InMemoryTrieDB::read_storage(Address const &addr, bytes32_t const &key) const
+bytes32_t TrieDb::read_storage(Address const &addr, bytes32_t const &key)
 {
-    UpdateAux aux;
-    auto const [node, result] = find_blocking(
-        aux,
-        root_.get(),
-        concat(
-            state_nibble, NibblesView{to_key(addr)}, NibblesView{to_key(key)}));
-    if (result != find_result::success) {
+    auto const value = db_.get(concat(
+        state_nibble, NibblesView{to_key(addr)}, NibblesView{to_key(key)}));
+    if (!value.has_value()) {
         return {};
     }
-    MONAD_DEBUG_ASSERT(node != nullptr);
-    MONAD_DEBUG_ASSERT(node->value().size() == sizeof(bytes32_t));
-    bytes32_t value;
-    std::copy_n(node->value().begin(), sizeof(bytes32_t), value.bytes);
-    return value;
+    MONAD_DEBUG_ASSERT(value.value().size() == sizeof(bytes32_t));
+    bytes32_t ret;
+    std::copy_n(value.value().begin(), sizeof(bytes32_t), ret.bytes);
+    return ret;
 };
 
-byte_string InMemoryTrieDB::read_code(bytes32_t const &hash) const
+byte_string TrieDb::read_code(bytes32_t const &hash)
 {
-    UpdateAux aux;
-    auto const [node, result] = find_blocking(
-        aux,
-        root_.get(),
+    auto const value = db_.get(
         concat(code_nibble, NibblesView{to_byte_string_view(hash.bytes)}));
-    if (result != find_result::success) {
+    if (!value.has_value()) {
         return byte_string{};
     }
-    return byte_string{node->value()};
+    return byte_string{value.value()};
 }
 
-void InMemoryTrieDB::commit(StateDeltas const &state_deltas, Code const &code)
+void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
 {
     UpdateList account_updates;
     for (auto const &[addr, delta] : state_deltas) {
@@ -308,40 +296,38 @@ void InMemoryTrieDB::commit(StateDeltas const &state_deltas, Code const &code)
     UpdateList updates;
     updates.push_front(state_update);
     updates.push_front(code_update);
-    UpdateAux aux;
-    TrieStateMachine state_machine;
-    root_ = upsert(aux, state_machine, std::move(root_), std::move(updates));
+    db_.upsert(std::move(updates));
+    MONAD_DEBUG_ASSERT(machine_.depth == 0 && machine_.is_merkle == false);
 
     update_alloc_.clear();
     bytes_alloc_.clear();
 }
 
-void InMemoryTrieDB::create_and_prune_block_history(uint64_t) const {
+void TrieDb::create_and_prune_block_history(uint64_t) const {
 
 };
 
-bytes32_t InMemoryTrieDB::state_root() const
+bytes32_t TrieDb::state_root()
 {
-    bytes32_t root = NULL_ROOT;
-    UpdateAux aux;
-    auto const [node, result] = find_blocking(aux, root_.get(), state_nibbles);
-    if (result != find_result::success || node->number_of_children() == 0) {
-        return root;
+    auto const value = db_.get_data(state_nibbles);
+    if (!value.has_value() || value.value().empty()) {
+        return NULL_ROOT;
     }
-    MONAD_DEBUG_ASSERT(node->data().size() == sizeof(bytes32_t));
-    std::copy_n(node->data().data(), sizeof(bytes32_t), root.bytes);
+    bytes32_t root;
+    MONAD_DEBUG_ASSERT(value.value().size() == sizeof(bytes32_t));
+    std::copy_n(value.value().data(), sizeof(bytes32_t), root.bytes);
     return root;
 }
 
-nlohmann::json InMemoryTrieDB::to_json() const
+nlohmann::json TrieDb::to_json()
 {
     struct Traverse : public TraverseMachine
     {
-        InMemoryTrieDB const &db;
+        TrieDb &db;
         nlohmann::json json;
         Nibbles path;
 
-        Traverse(InMemoryTrieDB const &db)
+        Traverse(TrieDb &db)
             : db(db)
             , json(nlohmann::json::object())
             , path()
@@ -427,12 +413,8 @@ nlohmann::json InMemoryTrieDB::to_json() const
         }
     } traverse(*this);
 
-    UpdateAux aux;
-    auto const [node, result] = find_blocking(aux, root_.get(), state_nibbles);
-    if (result == find_result::success) {
-        MONAD_DEBUG_ASSERT(node);
-        preorder_traverse(*node, traverse);
-    }
+    db_.traverse(state_nibbles, traverse);
+
     return traverse.json;
 }
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/trie_db.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/test/config.hpp>
 
@@ -13,7 +13,7 @@
 
 MONAD_TEST_NAMESPACE_BEGIN
 
-using db_t = monad::db::InMemoryTrieDB;
+using db_t = monad::db::TrieDb;
 
 inline std::unordered_map<std::string, evmc_revision> const revision_map = {
     {"Frontier", EVMC_FRONTIER},

@@ -1,11 +1,10 @@
 #include <monad/core/account.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/trie_db.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state.hpp>
 #include <monad/state2/state_deltas.hpp>
-#include <monad/test/make_db.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -18,47 +17,60 @@
 
 using namespace monad;
 
-static constexpr auto a = 0x5353535353535353535353535353535353535353_address;
-static constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
-static constexpr auto c = 0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address;
-static constexpr auto key1 =
-    0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
-static constexpr auto key2 =
-    0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
-static constexpr auto key3 =
-    0x5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b_bytes32;
-static constexpr auto value1 =
-    0x0000000000000000000000000000000000000000000000000000000000000003_bytes32;
-static constexpr auto value2 =
-    0x0000000000000000000000000000000000000000000000000000000000000007_bytes32;
-static constexpr auto value3 =
-    0x000000000000000000000000000000000000000000000000000000000000000a_bytes32;
-static constexpr auto null =
-    0x0000000000000000000000000000000000000000000000000000000000000000_bytes32;
-static constexpr auto hash1 =
-    0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
-static constexpr auto code_hash1 =
-    0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
-static constexpr auto code_hash2 =
-    0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
-static constexpr auto code1 =
-    byte_string{0x65, 0x74, 0x68, 0x65, 0x72, 0x6d, 0x69};
-static constexpr auto code2 =
-    byte_string{0x6e, 0x65, 0x20, 0x2d, 0x20, 0x45, 0x55, 0x31, 0x34};
+namespace
+{
+
+    constexpr auto a = 0x5353535353535353535353535353535353535353_address;
+    constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
+    constexpr auto c = 0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address;
+    constexpr auto key1 =
+        0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
+    constexpr auto key2 =
+        0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
+    constexpr auto key3 =
+        0x5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b_bytes32;
+    constexpr auto value1 =
+        0x0000000000000000000000000000000000000000000000000000000000000003_bytes32;
+    constexpr auto value2 =
+        0x0000000000000000000000000000000000000000000000000000000000000007_bytes32;
+    constexpr auto value3 =
+        0x000000000000000000000000000000000000000000000000000000000000000a_bytes32;
+    constexpr auto null =
+        0x0000000000000000000000000000000000000000000000000000000000000000_bytes32;
+    constexpr auto hash1 =
+        0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
+    constexpr auto code_hash1 =
+        0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
+    constexpr auto code_hash2 =
+        0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
+    constexpr auto code1 =
+        byte_string{0x65, 0x74, 0x68, 0x65, 0x72, 0x6d, 0x69};
+    constexpr auto code2 =
+        byte_string{0x6e, 0x65, 0x20, 0x2d, 0x20, 0x45, 0x55, 0x31, 0x34};
+
+    struct InMemoryTrieDbFixture : public ::testing::Test
+    {
+        db::TrieDb db{mpt::DbOptions{.on_disk = false}};
+    };
+
+    struct OnDiskTrieDbFixture : public ::testing::Test
+    {
+        db::TrieDb db{mpt::DbOptions{.on_disk = true}};
+    };
+}
 
 template <typename TDB>
-struct StateTest : public testing::Test
+struct StateTest : public TDB
 {
 };
 
-using DBTypes = ::testing::Types<db::InMemoryTrieDB>;
+using DBTypes = ::testing::Types<InMemoryTrieDbFixture, OnDiskTrieDbFixture>;
 TYPED_TEST_SUITE(StateTest, DBTypes);
 
 TYPED_TEST(StateTest, access_account)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -75,9 +87,8 @@ TYPED_TEST(StateTest, access_account)
 
 TYPED_TEST(StateTest, account_exists)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -92,8 +103,7 @@ TYPED_TEST(StateTest, account_exists)
 
 TYPED_TEST(StateTest, create_contract)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
+    BlockState bs{this->db};
 
     State s{bs};
     s.create_contract(a);
@@ -107,9 +117,8 @@ TYPED_TEST(StateTest, create_contract)
 
 TYPED_TEST(StateTest, get_balance)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -125,9 +134,8 @@ TYPED_TEST(StateTest, get_balance)
 
 TYPED_TEST(StateTest, add_to_balance)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{
             {a, StateDelta{.account = {std::nullopt, Account{.balance = 1}}}}},
         Code{});
@@ -142,9 +150,8 @@ TYPED_TEST(StateTest, add_to_balance)
 
 TYPED_TEST(StateTest, get_nonce)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{
             {a, StateDelta{.account = {std::nullopt, Account{.nonce = 2}}}}},
         Code{});
@@ -158,8 +165,7 @@ TYPED_TEST(StateTest, get_nonce)
 
 TYPED_TEST(StateTest, set_nonce)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
+    BlockState bs{this->db};
 
     State s{bs};
     s.set_nonce(b, 1);
@@ -169,9 +175,8 @@ TYPED_TEST(StateTest, set_nonce)
 
 TYPED_TEST(StateTest, get_code_hash)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -187,8 +192,7 @@ TYPED_TEST(StateTest, get_code_hash)
 
 TYPED_TEST(StateTest, set_code_hash)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
+    BlockState bs{this->db};
 
     State s{bs};
     s.create_contract(b);
@@ -199,9 +203,8 @@ TYPED_TEST(StateTest, set_code_hash)
 
 TYPED_TEST(StateTest, selfdestruct)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{
             {a,
              StateDelta{.account = {std::nullopt, Account{.balance = 18'000}}}},
@@ -231,9 +234,8 @@ TYPED_TEST(StateTest, selfdestruct)
 
 TYPED_TEST(StateTest, selfdestruct_self)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -251,9 +253,8 @@ TYPED_TEST(StateTest, selfdestruct_self)
 
 TYPED_TEST(StateTest, destruct_touched_dead)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{
             {a,
              StateDelta{.account = {std::nullopt, Account{.balance = 10'000}}}},
@@ -295,8 +296,7 @@ TYPED_TEST(StateTest, destruct_touched_dead)
 // Storage
 TYPED_TEST(StateTest, access_storage)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
+    BlockState bs{this->db};
 
     State s{bs};
     EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_COLD);
@@ -311,9 +311,8 @@ TYPED_TEST(StateTest, access_storage)
 
 TYPED_TEST(StateTest, get_storage)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -340,9 +339,8 @@ TYPED_TEST(StateTest, get_storage)
 
 TYPED_TEST(StateTest, set_storage_modified)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -359,10 +357,9 @@ TYPED_TEST(StateTest, set_storage_modified)
 
 TYPED_TEST(StateTest, set_storage_deleted)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
+    BlockState bs{this->db};
 
-    db.commit(
+    this->db.commit(
         StateDeltas{
             {b,
              StateDelta{
@@ -382,9 +379,8 @@ TYPED_TEST(StateTest, set_storage_deleted)
 
 TYPED_TEST(StateTest, set_storage_added)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
@@ -400,9 +396,8 @@ TYPED_TEST(StateTest, set_storage_added)
 
 TYPED_TEST(StateTest, set_storage_different_assigned)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -421,9 +416,8 @@ TYPED_TEST(StateTest, set_storage_different_assigned)
 
 TYPED_TEST(StateTest, set_storage_unchanged_assigned)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -440,9 +434,8 @@ TYPED_TEST(StateTest, set_storage_unchanged_assigned)
 
 TYPED_TEST(StateTest, set_storage_added_deleted)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
@@ -456,9 +449,8 @@ TYPED_TEST(StateTest, set_storage_added_deleted)
 
 TYPED_TEST(StateTest, set_storage_added_deleted_null)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
@@ -472,9 +464,8 @@ TYPED_TEST(StateTest, set_storage_added_deleted_null)
 
 TYPED_TEST(StateTest, set_storage_modify_delete)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{
             {b,
              StateDelta{
@@ -492,9 +483,8 @@ TYPED_TEST(StateTest, set_storage_modify_delete)
 
 TYPED_TEST(StateTest, set_storage_delete_restored)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{
             {b,
              StateDelta{
@@ -512,9 +502,8 @@ TYPED_TEST(StateTest, set_storage_delete_restored)
 
 TYPED_TEST(StateTest, set_storage_modified_restored)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
-    db.commit(
+    BlockState bs{this->db};
+    this->db.commit(
         StateDeltas{
             {b,
              StateDelta{
@@ -533,10 +522,9 @@ TYPED_TEST(StateTest, set_storage_modified_restored)
 // Code
 TYPED_TEST(StateTest, get_code_size)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
+    BlockState bs{this->db};
     Account acct{.code_hash = code_hash1};
-    db.commit(
+    this->db.commit(
         StateDeltas{{a, StateDelta{.account = {std::nullopt, acct}}}},
         Code{{code_hash1, code1}});
 
@@ -546,12 +534,11 @@ TYPED_TEST(StateTest, get_code_size)
 
 TYPED_TEST(StateTest, copy_code)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
+    BlockState bs{this->db};
     Account acct_a{.code_hash = code_hash1};
     Account acct_b{.code_hash = code_hash2};
 
-    db.commit(
+    this->db.commit(
         StateDeltas{
             {a, StateDelta{.account = {std::nullopt, acct_a}}},
             {b, StateDelta{.account = {std::nullopt, acct_b}}}},
@@ -599,10 +586,9 @@ TYPED_TEST(StateTest, get_code)
 {
     byte_string const contract{0x60, 0x34, 0x00};
 
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
+    BlockState bs{this->db};
 
-    db.commit(
+    this->db.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -624,8 +610,7 @@ TYPED_TEST(StateTest, get_code)
 
 TYPED_TEST(StateTest, set_code)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
+    BlockState bs{this->db};
 
     State s{bs};
     s.create_contract(a);
@@ -639,10 +624,9 @@ TYPED_TEST(StateTest, set_code)
 
 TYPED_TEST(StateTest, can_merge_same_account_different_storage)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
+    BlockState bs{this->db};
 
-    db.commit(
+    this->db.commit(
         StateDeltas{
             {b,
              StateDelta{
@@ -676,10 +660,9 @@ TYPED_TEST(StateTest, can_merge_same_account_different_storage)
 
 TYPED_TEST(StateTest, cant_merge_colliding_storage)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
+    BlockState bs{this->db};
 
-    db.commit(
+    this->db.commit(
         StateDeltas{
             {b,
              StateDelta{
@@ -714,10 +697,9 @@ TYPED_TEST(StateTest, cant_merge_colliding_storage)
 
 TYPED_TEST(StateTest, merge_txn0_and_txn1)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
+    BlockState bs{this->db};
 
-    db.commit(
+    this->db.commit(
         StateDeltas{
             {a,
              StateDelta{.account = {std::nullopt, Account{.balance = 30'000}}}},
@@ -758,10 +740,9 @@ TYPED_TEST(StateTest, merge_txn0_and_txn1)
 
 TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
+    BlockState bs{this->db};
 
-    db.commit(
+    this->db.commit(
         StateDeltas{
             {b,
              StateDelta{
@@ -812,8 +793,7 @@ TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
 
 TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
 {
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
+    BlockState bs{this->db};
     State as{bs};
 
     as.create_contract(a);
@@ -823,16 +803,15 @@ TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
     bs.merge(as.state_);
     bs.commit();
 
-    EXPECT_TRUE(db.read_account(a).has_value());
-    EXPECT_EQ(db.read_account(a).value().balance, 1u);
-    EXPECT_EQ(db.read_storage(a, key1), value1);
+    EXPECT_TRUE(this->db.read_account(a).has_value());
+    EXPECT_EQ(this->db.read_account(a).value().balance, 1u);
+    EXPECT_EQ(this->db.read_storage(a, key1), value1);
 }
 
 TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
 {
     using namespace intx;
-    auto db = test::make_db<TypeParam>();
-    BlockState bs{db};
+    BlockState bs{this->db};
     State as{bs};
 
     as.create_contract(a);
@@ -841,14 +820,12 @@ TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
     bs.merge(as.state_);
     bs.commit();
 
-    EXPECT_EQ(db.read_storage(a, key1), monad::bytes32_t{});
+    EXPECT_EQ(this->db.read_storage(a, key1), monad::bytes32_t{});
 }
 
 TYPED_TEST(StateTest, commit_twice)
 {
-    auto db = test::make_db<TypeParam>();
-
-    db.commit(
+    this->db.commit(
         StateDeltas{
             {a,
              StateDelta{.account = {std::nullopt, Account{.balance = 30'000}}}},
@@ -868,7 +845,7 @@ TYPED_TEST(StateTest, commit_twice)
 
     {
         // Block 0, Txn 0
-        BlockState bs{db};
+        BlockState bs{this->db};
         State as{bs};
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 42'000);
@@ -881,12 +858,12 @@ TYPED_TEST(StateTest, commit_twice)
         bs.merge(as.state_);
         bs.commit();
 
-        EXPECT_EQ(db.read_storage(b, key1), value2);
-        EXPECT_EQ(db.read_storage(b, key2), value2);
+        EXPECT_EQ(this->db.read_storage(b, key1), value2);
+        EXPECT_EQ(this->db.read_storage(b, key2), value2);
     }
     {
         // Block 1, Txn 0
-        BlockState bs{db};
+        BlockState bs{this->db};
         State cs{bs};
         EXPECT_TRUE(cs.account_exists(a));
         EXPECT_TRUE(cs.account_exists(c));
@@ -898,7 +875,7 @@ TYPED_TEST(StateTest, commit_twice)
         bs.merge(cs.state_);
         bs.commit();
 
-        EXPECT_EQ(db.read_storage(c, key1), monad::bytes32_t{});
-        EXPECT_EQ(db.read_storage(c, key2), monad::bytes32_t{});
+        EXPECT_EQ(this->db.read_storage(c, key1), monad::bytes32_t{});
+        EXPECT_EQ(this->db.read_storage(c, key2), monad::bytes32_t{});
     }
 }

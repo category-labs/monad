@@ -2,7 +2,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
-#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
@@ -26,13 +26,13 @@
 
 using namespace monad;
 
-using db_t = db::InMemoryTrieDB;
+using db_t = db::TrieDb;
 
 using evm_host_t = EvmcHost<EVMC_SHANGHAI>;
 
 TEST(Evm, create_with_insufficient)
 {
-    db_t db{};
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
     State s{bs};
 
@@ -64,7 +64,7 @@ TEST(Evm, create_with_insufficient)
 
 TEST(Evm, eip684_existing_code)
 {
-    db_t db{};
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
     State s{bs};
 
@@ -103,7 +103,7 @@ TEST(Evm, eip684_existing_code)
 
 TEST(Evm, transfer_call_balances)
 {
-    db_t db{};
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
     State s{bs};
 
@@ -139,7 +139,7 @@ TEST(Evm, transfer_call_balances)
 
 TEST(Evm, transfer_call_balances_to_self)
 {
-    db_t db{};
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
     State s{bs};
 
@@ -172,7 +172,7 @@ TEST(Evm, transfer_call_balances_to_self)
 
 TEST(Evm, dont_transfer_on_delegatecall)
 {
-    db_t db{};
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
     State s{bs};
 
@@ -209,7 +209,7 @@ TEST(Evm, dont_transfer_on_delegatecall)
 
 TEST(Evm, dont_transfer_on_staticcall)
 {
-    db_t db{};
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
     State s{bs};
 
@@ -247,7 +247,7 @@ TEST(Evm, dont_transfer_on_staticcall)
 
 TEST(Evm, create_nonce_out_of_range)
 {
-    db_t db{};
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
     State s{bs};
 
@@ -286,7 +286,7 @@ TEST(Evm, create_nonce_out_of_range)
 
 TEST(Evm, static_precompile_execution)
 {
-    db_t db{};
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
     State s{bs};
 
@@ -331,7 +331,7 @@ TEST(Evm, static_precompile_execution)
 
 TEST(Evm, out_of_gas_static_precompile_execution)
 {
-    db_t db{};
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
     State s{bs};
 
@@ -374,7 +374,7 @@ TEST(Evm, deploy_contract_code)
 {
     static constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 
-    db_t db;
+    db_t db{mpt::DbOptions{.on_disk = false}};
     db.commit(
         StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});

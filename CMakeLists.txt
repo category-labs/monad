@@ -112,10 +112,10 @@ add_library(
   "include/monad/db/config.hpp"
   "include/monad/db/db.hpp"
   "include/monad/db/file_db.hpp"
-  "include/monad/db/in_memory_trie_db.hpp"
+  "include/monad/db/trie_db.hpp"
   "src/monad/db/block_db.cpp"
   "src/monad/db/file_db.cpp"
-  "src/monad/db/in_memory_trie_db.cpp"
+  "src/monad/db/trie_db.cpp"
   # execution
   "include/monad/execution/baseline_execute.hpp"
   "include/monad/execution/block_hash_buffer.hpp"

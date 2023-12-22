@@ -3,7 +3,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/transaction.hpp>
-#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/trie_db.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/execution/validate_transaction.hpp>
@@ -23,7 +23,7 @@
 
 using namespace monad;
 
-using db_t = db::InMemoryTrieDB;
+using db_t = db::TrieDb;
 
 TEST(Validation, validate_enough_gas)
 {
@@ -41,7 +41,7 @@ TEST(Validation, validate_deployed_code)
     static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto some_non_null_hash{
         0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
-    db_t db;
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
     State s{bs};
     s.add_to_balance(a, 56'939'568'773'815'811);
@@ -63,7 +63,7 @@ TEST(Validation, validate_nonce)
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 60'500,
         .value = 55'939'568'773'815'811};
-    db_t db;
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
     State s{bs};
     s.add_to_balance(a, 56'939'568'773'815'811);
@@ -83,7 +83,7 @@ TEST(Validation, validate_nonce_optimistically)
         .gas_limit = 60'500,
         .value = 55'939'568'773'815'811};
 
-    db_t db;
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
     State s{bs};
     s.add_to_balance(a, 56'939'568'773'815'811);
@@ -106,7 +106,7 @@ TEST(Validation, validate_enough_balance)
         .max_priority_fee_per_gas = 100'000'000,
     };
 
-    db_t db;
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
     State s{bs};
     s.add_to_balance(a, 55'939'568'773'815'811);
@@ -121,7 +121,7 @@ TEST(Validation, successful_validation)
 
     static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
-    db_t db;
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
     State s{bs};
     s.add_to_balance(a, 56'939'568'773'815'811);
@@ -185,7 +185,7 @@ TEST(Validation, insufficent_balance_overflow)
     static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
 
-    db_t db;
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
     State s{bs};
     s.add_to_balance(a, std::numeric_limits<uint256_t>::max());

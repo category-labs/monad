@@ -3,7 +3,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/transaction.hpp>
-#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/tx_context.hpp>
@@ -22,7 +22,7 @@
 
 using namespace monad;
 
-using db_t = db::InMemoryTrieDB;
+using db_t = db::TrieDb;
 
 using evmc_host_t = EvmcHost<EVMC_SHANGHAI>;
 
@@ -112,7 +112,7 @@ TEST(EvmcHost, emit_log)
     static constexpr bytes32_t topics[] = {topic0, topic1};
     static byte_string const data = {0x00, 0x01, 0x02, 0x03, 0x04};
 
-    db_t db;
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
     State state{bs};
     BlockHashBuffer const block_hash_buffer;
@@ -136,7 +136,7 @@ TEST(EvmcHost, emit_log)
 
 TEST(EvmcHost, access_precompile)
 {
-    db_t db;
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
     State state{bs};
     BlockHashBuffer const block_hash_buffer;

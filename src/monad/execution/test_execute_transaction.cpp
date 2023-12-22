@@ -1,7 +1,7 @@
 #include <monad/core/block.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/transaction.hpp>
-#include <monad/db/in_memory_trie_db.hpp>
+#include <monad/db/trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_transaction.hpp>
@@ -19,7 +19,7 @@
 
 using namespace monad;
 
-using db_t = db::InMemoryTrieDB;
+using db_t = db::TrieDb;
 
 TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 {
@@ -30,7 +30,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     static constexpr auto bene{
         0x5353535353535353535353535353535353535353_address};
 
-    db_t db;
+    db_t db{mpt::DbOptions{.on_disk = false}};
     BlockState bs{db};
 
     {

@@ -3,6 +3,7 @@
 #include <monad/config.hpp>
 #include <monad/core/block.hpp>
 #include <monad/db/block_db.hpp>
+#include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
@@ -113,7 +114,8 @@ public:
             }
             else {
                 if (current_block_number % checkpoint_frequency == 0) {
-                    db.create_and_prune_block_history(current_block_number);
+                    LOG_ERROR("At block: {}", current_block_number);
+                    db.write_to_file(current_block_number);
                 }
             }
         }

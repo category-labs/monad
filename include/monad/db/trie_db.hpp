@@ -10,7 +10,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include <filesystem>
 #include <list>
+#include <optional>
 
 MONAD_DB_NAMESPACE_BEGIN
 
@@ -20,6 +22,7 @@ private:
     ::monad::mpt::Db db_;
     std::list<mpt::Update> update_alloc_;
     std::list<byte_string> bytes_alloc_;
+    std::filesystem::path root_path_;
 
     struct Machine final : public mpt::StateMachine
     {
@@ -37,7 +40,10 @@ private:
 
 public:
     TrieDb(mpt::DbOptions const &);
-    TrieDb(mpt::DbOptions const &, nlohmann::json const &);
+    TrieDb(mpt::DbOptions const &, std::optional<nlohmann::json> const &);
+    TrieDb(
+        mpt::DbOptions const &, std::optional<nlohmann::json> const &,
+        std::filesystem::path const &root_path);
 
     virtual std::optional<Account> read_account(Address const &) override;
     virtual bytes32_t
@@ -45,6 +51,7 @@ public:
     virtual byte_string read_code(bytes32_t const &hash) override;
     virtual void commit(StateDeltas const &, Code const &) override;
     virtual void create_and_prune_block_history(uint64_t) const override;
+    virtual void write_to_file(uint64_t) override;
 
     bytes32_t state_root();
     nlohmann::json to_json();

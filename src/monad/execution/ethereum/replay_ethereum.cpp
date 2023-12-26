@@ -5,6 +5,7 @@
 #include <monad/core/receipt.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/db/trie_db.hpp>
+#include <monad/db/util.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/genesis.hpp>
 #include <monad/execution/replay_block_db.hpp>
@@ -14,6 +15,8 @@
 #include <quill/LogLevel.h>
 #include <quill/Quill.h>
 #include <quill/detail/LogMacros.h>
+
+#include <nlohmann/json.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -67,10 +70,16 @@ int main(int argc, char *argv[])
 
     auto const start_time = std::chrono::steady_clock::now();
 
-    BlockDb block_db(block_db_path);
-    db::TrieDb db{mpt::DbOptions{.on_disk = false}};
+    block_num_t start_block_number =
+        db::auto_detect_start_block_number(state_db_path);
 
-    block_num_t start_block_number = 0; // TODO
+    std::optional<nlohmann::json> json;
+    if (start_block_number != 0) {
+        json = db::read_from_file(state_db_path, start_block_number);
+    }
+
+    BlockDb block_db(block_db_path);
+    db::TrieDb db{mpt::DbOptions{.on_disk = false}, json, state_db_path};
 
     quill::get_root_logger()->set_log_level(log_level);
 

@@ -11,8 +11,11 @@
 #include <ethash/keccak.hpp>
 #include <evmc/evmc.hpp>
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <cstdlib>
+#include <filesystem>
 #include <set>
 
 MONAD_DB_NAMESPACE_BEGIN
@@ -135,13 +138,18 @@ TrieDb::TrieDb(mpt::DbOptions const &options)
 {
 }
 
-TrieDb::TrieDb(DbOptions const &options, nlohmann::json const &json)
+TrieDb::TrieDb(
+    DbOptions const &options, std::optional<nlohmann::json> const &json)
     : TrieDb{options}
 {
+    if (!json.has_value()) {
+        return;
+    }
+
     UpdateList account_updates;
     UpdateList code_updates;
     std::set<bytes32_t> inserted_code;
-    for (auto const &[key, value] : json.items()) {
+    for (auto const &[key, value] : json.value().items()) {
         UpdateList storage_updates;
         for (auto const &[storage_key, storage_value] :
              value.at("storage").items()) {
@@ -198,6 +206,14 @@ TrieDb::TrieDb(DbOptions const &options, nlohmann::json const &json)
 
     update_alloc_.clear();
     bytes_alloc_.clear();
+}
+
+TrieDb::TrieDb(
+    mpt::DbOptions const &options, std::optional<nlohmann::json> const &json,
+    std::filesystem::path const &root_path)
+    : TrieDb(options, json)
+{
+    root_path_ = root_path;
 }
 
 std::optional<Account> TrieDb::read_account(Address const &addr)
@@ -306,6 +322,17 @@ void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
 void TrieDb::create_and_prune_block_history(uint64_t) const {
 
 };
+
+void TrieDb::write_to_file(uint64_t block_number)
+{
+    std::string const filename = std::to_string(block_number) + ".json";
+    std::filesystem::path const file_path = root_path_ / filename;
+
+    MONAD_ASSERT(!std::filesystem::exists(file_path));
+
+    std::ofstream ofile(file_path);
+    ofile << to_json().dump(4);
+}
 
 bytes32_t TrieDb::state_root()
 {

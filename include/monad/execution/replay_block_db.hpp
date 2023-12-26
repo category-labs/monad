@@ -46,6 +46,10 @@ public:
         block_num_t block_number;
     };
 
+    std::chrono::time_point<std::chrono::steady_clock>
+        current_batch_start_time_ = std::chrono::steady_clock::now();
+    uint64_t num_txns_{0};
+
     template <class Traits>
     constexpr block_num_t
     loop_until(std::optional<block_num_t> until_block_number)
@@ -92,6 +96,8 @@ public:
                     Status::SUCCESS_END_OF_DB, current_block_number - 1};
             }
 
+            num_txns_ += block.transactions.size();
+
             block_hash_buffer.set(
                 current_block_number - 1, block.header.parent_hash);
 
@@ -116,6 +122,23 @@ public:
                 if (current_block_number % checkpoint_frequency == 0) {
                     LOG_ERROR("At block: {}", current_block_number);
                     db.write_to_file(current_block_number);
+
+                    auto const current_time = std::chrono::steady_clock::now();
+                    auto const time_elasped =
+                        std::chrono::duration_cast<std::chrono::seconds>(
+                            current_time - current_batch_start_time_);
+                    LOG_ERROR(
+                        "Time elaspsed = {}, num of txns executed = {}, TPS = "
+                        "{}",
+                        time_elasped,
+                        num_txns_,
+                        num_txns_ /
+                            static_cast<uint64_t>(time_elasped.count()));
+
+                    // reset
+                    current_batch_start_time_ =
+                        std::chrono::steady_clock::now();
+                    num_txns_ = 0;
                 }
             }
         }

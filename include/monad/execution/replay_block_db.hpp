@@ -121,7 +121,6 @@ public:
             else {
                 if (current_block_number % checkpoint_frequency == 0) {
                     LOG_ERROR("At block: {}", current_block_number);
-                    db.write_to_file(current_block_number);
 
                     auto const current_time = std::chrono::steady_clock::now();
                     auto const time_elasped =

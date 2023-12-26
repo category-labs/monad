@@ -79,7 +79,7 @@ int main(int argc, char *argv[])
     }
 
     BlockDb block_db(block_db_path);
-    db::TrieDb db{mpt::DbOptions{.on_disk = false}, json, state_db_path};
+    db::TrieDb db{mpt::DbOptions{.on_disk = true}, json, state_db_path};
 
     auto const finished_time1 = std::chrono::steady_clock::now();
     auto const elapsed_ms1 =

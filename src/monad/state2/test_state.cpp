@@ -798,7 +798,7 @@ TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
 
     as.create_contract(a);
     as.add_to_balance(a, 1);
-    (void)as.set_storage(a, key1, value1);
+    as.set_storage(a, key1, value1);
 
     bs.merge(as.state_);
     bs.commit();

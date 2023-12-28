@@ -217,51 +217,26 @@ decode_transaction_legacy(Transaction &txn, byte_string_view const enc)
 }
 
 Result<byte_string_view>
-decode_transaction_eip2930(Transaction &txn, byte_string_view const enc)
+decode_transaction_eip2718(Transaction &txn, byte_string_view const enc)
 {
     byte_string_view payload{};
     BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
+        auto const rest_of_enc, parse_list_metadata(payload, enc.substr(1)));
 
-    txn.type = TransactionType::eip2930;
+    txn.type =
+        enc[0] == 0x01 ? TransactionType::eip2930 : TransactionType::eip1559;
+
     txn.sc.chain_id = uint256_t{};
     BOOST_OUTCOME_TRY(
         payload, decode_unsigned<uint256_t>(*txn.sc.chain_id, payload));
     BOOST_OUTCOME_TRY(payload, decode_unsigned<uint64_t>(txn.nonce, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint256_t>(txn.max_fee_per_gas, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint64_t>(txn.gas_limit, payload));
-    BOOST_OUTCOME_TRY(payload, decode_address(txn.to, payload));
-    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.value, payload));
-    BOOST_OUTCOME_TRY(payload, decode_string(txn.data, payload));
-    BOOST_OUTCOME_TRY(payload, decode_access_list(txn.access_list, payload));
-    BOOST_OUTCOME_TRY(payload, decode_bool(txn.sc.odd_y_parity, payload));
-    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.sc.r, payload));
-    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.sc.s, payload));
 
-    if (MONAD_UNLIKELY(!payload.empty())) {
-        return DecodeError::InputTooLong;
+    if (txn.type == TransactionType::eip1559) {
+        BOOST_OUTCOME_TRY(
+            payload,
+            decode_unsigned<uint256_t>(txn.max_priority_fee_per_gas, payload));
     }
 
-    return rest_of_enc;
-}
-
-Result<byte_string_view>
-decode_transaction_eip1559(Transaction &txn, byte_string_view const enc)
-{
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
-
-    txn.type = TransactionType::eip1559;
-    txn.sc.chain_id = uint256_t{};
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint256_t>(*txn.sc.chain_id, payload));
-    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint64_t>(txn.nonce, payload));
-    BOOST_OUTCOME_TRY(
-        payload,
-        decode_unsigned<uint256_t>(txn.max_priority_fee_per_gas, payload));
     BOOST_OUTCOME_TRY(
         payload, decode_unsigned<uint256_t>(txn.max_fee_per_gas, payload));
     BOOST_OUTCOME_TRY(
@@ -297,21 +272,13 @@ decode_transaction(Transaction &txn, byte_string_view const enc)
         MONAD_ASSERT(payload.size() > 0);
 
         uint8_t const &type = payload[0];
-        auto const txn_enc = payload.substr(1, payload.size() - 1);
 
-        Result<byte_string_view> (*decoder)(
-            Transaction &, byte_string_view const);
-        switch (type) {
-        case 0x1:
-            decoder = &decode_transaction_eip2930;
-            break;
-        case 0x2:
-            decoder = &decode_transaction_eip1559;
-            break;
-        default:
+        if (MONAD_UNLIKELY(type != 0x01 && type != 0x02)) {
             return DecodeError::InvalidTxnType;
         }
-        BOOST_OUTCOME_TRY(auto const rest_of_txn_enc, decoder(txn, txn_enc));
+        BOOST_OUTCOME_TRY(
+            auto const rest_of_txn_enc,
+            decode_transaction_eip2718(txn, payload));
 
         if (MONAD_UNLIKELY(!rest_of_txn_enc.empty())) {
             return DecodeError::InputTooLong;

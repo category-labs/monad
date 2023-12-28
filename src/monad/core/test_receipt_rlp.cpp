@@ -128,7 +128,7 @@ TEST(Rlp_Receipt, DecodeEncodeEip155Receipt)
     Receipt const r{
         .bloom = bloom,
         .gas_used = gas,
-        .type = TransactionType::eip155,
+        .type = TransactionType::legacy,
         .logs = {log}};
     byte_string const rlp_receipt{
         0xf9, 0x01, 0x6a, 0x80, 0x83, 0x2b, 0x7c, 0xda, // status and gas

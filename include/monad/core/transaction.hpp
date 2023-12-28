@@ -17,7 +17,7 @@ MONAD_NAMESPACE_BEGIN
 
 enum class TransactionType : char
 {
-    eip155 = 0, // legacy
+    legacy = 0,
     eip2930,
     eip1559,
 };

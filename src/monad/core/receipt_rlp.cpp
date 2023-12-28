@@ -174,7 +174,7 @@ decode_receipt(Receipt &receipt, byte_string_view const enc)
     }
 
     uint8_t const &first = enc[0];
-    receipt.type = TransactionType::eip155;
+    receipt.type = TransactionType::legacy;
     if (first < 0xc0) // eip 2718 - typed transaction envelope
     {
         byte_string_view payload{};

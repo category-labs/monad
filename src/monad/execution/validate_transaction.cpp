@@ -52,20 +52,20 @@ Result<void> static_validate_transaction(
 
     // EIP-2930 & EIP-2718
     if constexpr (rev < EVMC_BERLIN) {
-        if (MONAD_UNLIKELY(tx.type != TransactionType::eip155)) {
+        if (MONAD_UNLIKELY(tx.type != TransactionType::legacy)) {
             return TransactionError::TypeNotSupported;
         }
     }
     // EIP-1559
     else if constexpr (rev < EVMC_LONDON) {
         if (MONAD_UNLIKELY(
-                tx.type != TransactionType::eip155 &&
+                tx.type != TransactionType::legacy &&
                 tx.type != TransactionType::eip2930)) {
             return TransactionError::TypeNotSupported;
         }
     }
     else if (MONAD_UNLIKELY(
-                 tx.type != TransactionType::eip155 &&
+                 tx.type != TransactionType::legacy &&
                  tx.type != TransactionType::eip2930 &&
                  tx.type != TransactionType::eip1559)) {
         return TransactionError::TypeNotSupported;

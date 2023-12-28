@@ -122,10 +122,10 @@ TEST(TransactionGas, txn_award)
         // gas price
         Transaction const t1{
             .max_fee_per_gas = 3'000,
-            .type = TransactionType::eip155,
+            .type = TransactionType::legacy,
             .max_priority_fee_per_gas = 1'000};
         Transaction const t2{
-            .max_fee_per_gas = 3'000, .type = TransactionType::eip155};
+            .max_fee_per_gas = 3'000, .type = TransactionType::legacy};
         Transaction const t3{
             .max_fee_per_gas = 5'000,
             .type = TransactionType::eip1559,

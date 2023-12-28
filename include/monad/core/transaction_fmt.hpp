@@ -14,8 +14,8 @@ struct fmt::formatter<monad::TransactionType> : public monad::BasicFormatter
     template <typename FormatContext>
     auto format(monad::TransactionType const &t, FormatContext &ctx) const
     {
-        if (t == monad::TransactionType::eip155) {
-            fmt::format_to(ctx.out(), "eip155");
+        if (t == monad::TransactionType::legacy) {
+            fmt::format_to(ctx.out(), "legacy");
         }
         else if (t == monad::TransactionType::eip2930) {
             fmt::format_to(ctx.out(), "eip2930");

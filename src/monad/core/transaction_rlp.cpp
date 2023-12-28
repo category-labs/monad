@@ -42,7 +42,7 @@ byte_string encode_access_list(AccessList const &access_list)
     return encode_list2(result);
 }
 
-byte_string encode_eip155_base(Transaction const &txn)
+byte_string encode_legacy_base(Transaction const &txn)
 {
     byte_string encoding{};
 
@@ -77,9 +77,9 @@ byte_string encode_eip2718_base(Transaction const &txn)
 
 byte_string encode_transaction(Transaction const &txn)
 {
-    if (txn.type == TransactionType::eip155) {
+    if (txn.type == TransactionType::legacy) {
         return encode_list2(
-            encode_eip155_base(txn),
+            encode_legacy_base(txn),
             encode_unsigned(get_v(txn.sc)),
             encode_unsigned(txn.sc.r),
             encode_unsigned(txn.sc.s));
@@ -100,16 +100,16 @@ byte_string encode_transaction(Transaction const &txn)
 
 byte_string encode_transaction_for_signing(Transaction const &txn)
 {
-    if (txn.type == TransactionType::eip155) {
+    if (txn.type == TransactionType::legacy) {
         if (txn.sc.chain_id.has_value()) {
             return encode_list2(
-                encode_eip155_base(txn),
+                encode_legacy_base(txn),
                 encode_unsigned(txn.sc.chain_id.value_or(0)),
                 encode_unsigned(0u),
                 encode_unsigned(0u));
         }
         else {
-            return encode_list2(encode_eip155_base(txn));
+            return encode_list2(encode_legacy_base(txn));
         }
     }
     else {
@@ -196,7 +196,7 @@ decode_transaction_legacy(Transaction &txn, byte_string_view const enc)
     BOOST_OUTCOME_TRY(
         auto const rest_of_enc, parse_list_metadata(payload, enc));
 
-    txn.type = TransactionType::eip155;
+    txn.type = TransactionType::legacy;
     BOOST_OUTCOME_TRY(payload, decode_unsigned<uint64_t>(txn.nonce, payload));
     BOOST_OUTCOME_TRY(
         payload, decode_unsigned<uint256_t>(txn.max_fee_per_gas, payload));

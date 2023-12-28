@@ -88,7 +88,7 @@ TEST(Rlp_Block, DecodeEncodeBlock46402)
 
     EXPECT_EQ(block.transactions.size(), 1);
 
-    EXPECT_EQ(block.transactions[0].type, TransactionType::eip155);
+    EXPECT_EQ(block.transactions[0].type, TransactionType::legacy);
     EXPECT_EQ(block.transactions[0].nonce, 3);
     EXPECT_EQ(block.transactions[0].max_fee_per_gas, 10000000000000);
     EXPECT_EQ(block.transactions[0].gas_limit, 24000);
@@ -195,7 +195,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730000)
 
     EXPECT_EQ(block.transactions.size(), 4);
 
-    EXPECT_EQ(block.transactions[0].type, TransactionType::eip155);
+    EXPECT_EQ(block.transactions[0].type, TransactionType::legacy);
     EXPECT_EQ(block.transactions[0].nonce, 1639528);
     EXPECT_EQ(block.transactions[0].max_fee_per_gas, 25000000000);
     EXPECT_EQ(block.transactions[0].gas_limit, 90000);
@@ -211,7 +211,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730000)
         block.transactions[0].sc.s,
         0x6a9c9bedc2c9ca2fc96dff90911540457716182822b8f28125040866b420492f_u256);
 
-    EXPECT_EQ(block.transactions[1].type, TransactionType::eip155);
+    EXPECT_EQ(block.transactions[1].type, TransactionType::legacy);
     EXPECT_EQ(block.transactions[1].nonce, 886728);
     EXPECT_EQ(block.transactions[1].max_fee_per_gas, 20000000000);
     EXPECT_EQ(block.transactions[1].gas_limit, 90000);
@@ -227,7 +227,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730000)
         block.transactions[1].sc.s,
         0x6b332e891a4f5b051f49016a79cfbac771061153af9660697d900325bcebef51_u256);
 
-    EXPECT_EQ(block.transactions[2].type, TransactionType::eip155);
+    EXPECT_EQ(block.transactions[2].type, TransactionType::legacy);
     EXPECT_EQ(block.transactions[2].nonce, 1639529);
     EXPECT_EQ(block.transactions[2].max_fee_per_gas, 25000000000);
     EXPECT_EQ(block.transactions[2].gas_limit, 90000);
@@ -243,7 +243,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730000)
         block.transactions[2].sc.s,
         0x2ef365b24554adad7514ae5337c669c59a9c2affdb5663aa96850cc2efd0df89_u256);
 
-    EXPECT_EQ(block.transactions[3].type, TransactionType::eip155);
+    EXPECT_EQ(block.transactions[3].type, TransactionType::legacy);
     EXPECT_EQ(block.transactions[3].nonce, 886729);
     EXPECT_EQ(block.transactions[3].max_fee_per_gas, 20000000000);
     EXPECT_EQ(block.transactions[3].gas_limit, 90000);
@@ -328,7 +328,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
 
     EXPECT_EQ(block.transactions.size(), 7);
 
-    EXPECT_EQ(block.transactions[0].type, TransactionType::eip155);
+    EXPECT_EQ(block.transactions[0].type, TransactionType::legacy);
     EXPECT_EQ(block.transactions[0].nonce, 1639530);
     EXPECT_EQ(block.transactions[0].max_fee_per_gas, 25000000000);
     EXPECT_EQ(block.transactions[0].gas_limit, 90000);
@@ -344,7 +344,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
         block.transactions[0].sc.s,
         0x32ad76b637d1d947936ed806b499c1b5df8d6d18fe598ba776523a2cce73dee5_u256);
 
-    EXPECT_EQ(block.transactions[1].type, TransactionType::eip155);
+    EXPECT_EQ(block.transactions[1].type, TransactionType::legacy);
     EXPECT_EQ(block.transactions[1].nonce, 21);
     EXPECT_EQ(block.transactions[1].max_fee_per_gas, 20000000000);
     EXPECT_EQ(block.transactions[1].gas_limit, 300000);
@@ -363,7 +363,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
         block.transactions[1].sc.s,
         0x3b6699532ca1a2115e2b516695d80f400568619e9301b55ace126558f2126d2_u256);
 
-    EXPECT_EQ(block.transactions[2].type, TransactionType::eip155);
+    EXPECT_EQ(block.transactions[2].type, TransactionType::legacy);
     EXPECT_EQ(block.transactions[2].nonce, 92940);
     EXPECT_EQ(block.transactions[2].max_fee_per_gas, 20000000000);
     EXPECT_EQ(block.transactions[2].gas_limit, 39000);
@@ -379,7 +379,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
         block.transactions[2].sc.s,
         0x8b6142aeaab3391881c9ebd7697285a690c9a1e328f7e4869b83da2e4690f55_u256);
 
-    EXPECT_EQ(block.transactions[3].type, TransactionType::eip155);
+    EXPECT_EQ(block.transactions[3].type, TransactionType::legacy);
     EXPECT_EQ(block.transactions[3].nonce, 886730);
     EXPECT_EQ(block.transactions[3].max_fee_per_gas, 20000000000);
     EXPECT_EQ(block.transactions[3].gas_limit, 90000);
@@ -395,7 +395,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
         block.transactions[3].sc.s,
         0x5cfc68a3d0a5ec17b19515b84e1de5576d5f8ffdc5eebeb4671b864c50d34ed7_u256);
 
-    EXPECT_EQ(block.transactions[4].type, TransactionType::eip155);
+    EXPECT_EQ(block.transactions[4].type, TransactionType::legacy);
     EXPECT_EQ(block.transactions[4].nonce, 1639531);
     EXPECT_EQ(block.transactions[4].max_fee_per_gas, 25000000000);
     EXPECT_EQ(block.transactions[4].gas_limit, 90000);
@@ -411,7 +411,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
         block.transactions[4].sc.s,
         0x7317951a0f0b2cd45647407b2b9c87fc89d311ff03913d2c2f42041c15d634a5_u256);
 
-    EXPECT_EQ(block.transactions[5].type, TransactionType::eip155);
+    EXPECT_EQ(block.transactions[5].type, TransactionType::legacy);
     EXPECT_EQ(block.transactions[5].nonce, 1639532);
     EXPECT_EQ(block.transactions[5].max_fee_per_gas, 25000000000);
     EXPECT_EQ(block.transactions[5].gas_limit, 90000);
@@ -427,7 +427,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
         block.transactions[5].sc.s,
         0x46c6acae965e6c8fe44785a8461b430b34c0983542aaf11a8d22de5add2f6bb2_u256);
 
-    EXPECT_EQ(block.transactions[6].type, TransactionType::eip155);
+    EXPECT_EQ(block.transactions[6].type, TransactionType::legacy);
     EXPECT_EQ(block.transactions[6].nonce, 1639533);
     EXPECT_EQ(block.transactions[6].max_fee_per_gas, 25000000000);
     EXPECT_EQ(block.transactions[6].gas_limit, 90000);
@@ -667,7 +667,7 @@ TEST(Rlp_Block, DecodeEncodeBlock14000000)
         block.transactions[0].sc.s,
         0x1dc7444f10bbd53b1f6f8d3a18916222a28539d76f8859ce3671f85eeb781d04_u256);
 
-    EXPECT_EQ(block.transactions[1].type, TransactionType::eip155);
+    EXPECT_EQ(block.transactions[1].type, TransactionType::legacy);
     EXPECT_EQ(block.transactions[1].nonce, 947217);
     EXPECT_EQ(block.transactions[1].max_fee_per_gas, 230000000000);
     EXPECT_EQ(block.transactions[1].gas_limit, 207128);

@@ -42,56 +42,60 @@ byte_string encode_access_list(AccessList const &access_list)
     return encode_list2(result);
 }
 
+byte_string encode_eip155_base(Transaction const &txn)
+{
+    byte_string encoding{};
+
+    encoding += encode_unsigned(txn.nonce);
+    encoding += encode_unsigned(txn.max_fee_per_gas);
+    encoding += encode_unsigned(txn.gas_limit);
+    encoding += encode_address(txn.to);
+    encoding += encode_unsigned(txn.value);
+    encoding += encode_string2(txn.data);
+
+    return encoding;
+}
+
+byte_string encode_eip2718_base(Transaction const &txn)
+{
+    byte_string encoding{};
+
+    encoding += encode_unsigned(txn.sc.chain_id.value_or(0));
+    encoding += encode_unsigned(txn.nonce);
+    if (txn.type == TransactionType::eip1559) {
+        encoding += encode_unsigned(txn.max_priority_fee_per_gas);
+    }
+    encoding += encode_unsigned(txn.max_fee_per_gas);
+    encoding += encode_unsigned(txn.gas_limit);
+    encoding += encode_address(txn.to);
+    encoding += encode_unsigned(txn.value);
+    encoding += encode_string2(txn.data);
+    encoding += encode_access_list(txn.access_list);
+
+    return encoding;
+}
+
 byte_string encode_transaction(Transaction const &txn)
 {
     if (txn.type == TransactionType::eip155) {
         return encode_list2(
-            encode_unsigned(txn.nonce),
-            encode_unsigned(txn.max_fee_per_gas),
-            encode_unsigned(txn.gas_limit),
-            encode_address(txn.to),
-            encode_unsigned(txn.value),
-            encode_string2(txn.data),
+            encode_eip155_base(txn),
             encode_unsigned(get_v(txn.sc)),
             encode_unsigned(txn.sc.r),
             encode_unsigned(txn.sc.s));
     }
-
-    MONAD_ASSERT(txn.sc.chain_id != std::nullopt);
-
-    if (txn.type == TransactionType::eip1559) {
+    else {
+        auto const prefix = txn.type == TransactionType::eip1559
+                                ? byte_string{0x02}
+                                : byte_string{0x01};
         return encode_string2(
-            byte_string{0x02} += encode_list2(
-                encode_unsigned(txn.sc.chain_id.value_or(0)),
-                encode_unsigned(txn.nonce),
-                encode_unsigned(txn.max_priority_fee_per_gas),
-                encode_unsigned(txn.max_fee_per_gas),
-                encode_unsigned(txn.gas_limit),
-                encode_address(txn.to),
-                encode_unsigned(txn.value),
-                encode_string2(txn.data),
-                encode_access_list(txn.access_list),
+            prefix +
+            encode_list2(
+                encode_eip2718_base(txn),
                 encode_unsigned(static_cast<unsigned>(txn.sc.odd_y_parity)),
                 encode_unsigned(txn.sc.r),
                 encode_unsigned(txn.sc.s)));
     }
-    else if (txn.type == TransactionType::eip2930) {
-        return encode_string2(
-            byte_string{0x01} += encode_list2(
-                encode_unsigned(txn.sc.chain_id.value_or(0)),
-                encode_unsigned(txn.nonce),
-                encode_unsigned(txn.max_fee_per_gas),
-                encode_unsigned(txn.gas_limit),
-                encode_address(txn.to),
-                encode_unsigned(txn.value),
-                encode_string2(txn.data),
-                encode_access_list(txn.access_list),
-                encode_unsigned(static_cast<unsigned>(txn.sc.odd_y_parity)),
-                encode_unsigned(txn.sc.r),
-                encode_unsigned(txn.sc.s)));
-    }
-    assert(false);
-    return {};
 }
 
 byte_string encode_transaction_for_signing(Transaction const &txn)
@@ -99,57 +103,21 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
     if (txn.type == TransactionType::eip155) {
         if (txn.sc.chain_id.has_value()) {
             return encode_list2(
-                encode_unsigned(txn.nonce),
-                encode_unsigned(txn.max_fee_per_gas),
-                encode_unsigned(txn.gas_limit),
-                encode_address(txn.to),
-                encode_unsigned(txn.value),
-                encode_string2(txn.data),
+                encode_eip155_base(txn),
                 encode_unsigned(txn.sc.chain_id.value_or(0)),
                 encode_unsigned(0u),
                 encode_unsigned(0u));
         }
         else {
-            return encode_list2(
-                encode_unsigned(txn.nonce),
-                encode_unsigned(txn.max_fee_per_gas),
-                encode_unsigned(txn.gas_limit),
-                encode_address(txn.to),
-                encode_unsigned(txn.value),
-                encode_string2(txn.data));
+            return encode_list2(encode_eip155_base(txn));
         }
     }
-
-    MONAD_ASSERT(txn.sc.chain_id != std::nullopt);
-
-    if (txn.type == TransactionType::eip1559) {
-        return byte_string{0x02} +
-               encode_list2(
-                   encode_unsigned(txn.sc.chain_id.value_or(0)),
-                   encode_unsigned(txn.nonce),
-                   encode_unsigned(txn.max_priority_fee_per_gas),
-                   encode_unsigned(txn.max_fee_per_gas),
-                   encode_unsigned(txn.gas_limit),
-                   encode_address(txn.to),
-                   encode_unsigned(txn.value),
-                   encode_string2(txn.data),
-                   encode_access_list(txn.access_list));
+    else {
+        auto const prefix = txn.type == TransactionType::eip1559
+                                ? byte_string{0x02}
+                                : byte_string{0x01};
+        return prefix + encode_list2(encode_eip2718_base(txn));
     }
-    else if (txn.type == TransactionType::eip2930) {
-        return byte_string{0x01} +
-               encode_list2(
-                   encode_unsigned(txn.sc.chain_id.value_or(0)),
-                   encode_unsigned(txn.nonce),
-                   encode_unsigned(txn.max_fee_per_gas),
-                   encode_unsigned(txn.gas_limit),
-                   encode_address(txn.to),
-                   encode_unsigned(txn.value),
-                   encode_string2(txn.data),
-                   encode_access_list(txn.access_list));
-    }
-
-    assert(false);
-    return {};
 }
 
 // Decode

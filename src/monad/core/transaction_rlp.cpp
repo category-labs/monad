@@ -253,8 +253,9 @@ decode_transaction_eip2718(Transaction &txn, byte_string_view const enc)
     return rest_of_enc;
 }
 
-Result<byte_string_view>
-decode_transaction(Transaction &txn, byte_string_view const enc)
+// TODO: Might need to support both (wrapped & unwrapped)
+Result<byte_string_view> decode_transaction(
+    Transaction &txn, byte_string_view const enc, bool const wrapped)
 {
     if (MONAD_UNLIKELY(enc.empty())) {
         return DecodeError::InputTooShort;
@@ -263,6 +264,22 @@ decode_transaction(Transaction &txn, byte_string_view const enc)
     uint8_t const &first = enc[0];
     if (first < 0xc0) // eip 2718 - typed transaction envelope
     {
+        if (first < 0x80) // this would indicate raw (unwrapped) transaction
+        {
+            if (MONAD_UNLIKELY(wrapped)) {
+                return DecodeError::WrongEIP2718Wrapping;
+            }
+            if (MONAD_UNLIKELY(first != 0x01 && first != 0x02)) {
+                return DecodeError::InvalidTxnType;
+            }
+            BOOST_OUTCOME_TRY(
+                auto const rest_of_enc, decode_transaction_eip2718(txn, enc));
+
+            return rest_of_enc;
+        }
+        if (MONAD_UNLIKELY(!wrapped)) {
+            return DecodeError::WrongEIP2718Wrapping;
+        }
         byte_string_view payload{};
         BOOST_OUTCOME_TRY(
             auto const rest_of_enc, parse_string_metadata(payload, enc));

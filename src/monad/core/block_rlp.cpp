@@ -166,7 +166,8 @@ Result<byte_string_view> decode_transaction_vector(
     // TODO: Reserve txn vector size for better perf
     while (payload.size() > 0) {
         Transaction txn{};
-        BOOST_OUTCOME_TRY(payload, decode_transaction(txn, payload));
+        BOOST_OUTCOME_TRY(
+            payload, decode_transaction(txn, payload, /*wrapped*/ true));
         txns.emplace_back(txn);
     }
 

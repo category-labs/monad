@@ -18,6 +18,7 @@ Result<byte_string_view>
 decode_access_entry_keys(std::vector<bytes32_t> &, byte_string_view);
 Result<byte_string_view> decode_access_entry(AccessEntry &, byte_string_view);
 Result<byte_string_view> decode_access_list(AccessList &, byte_string_view);
-Result<byte_string_view> decode_transaction(Transaction &, byte_string_view);
+Result<byte_string_view>
+decode_transaction(Transaction &, byte_string_view, bool wrapped);
 
 MONAD_RLP_NAMESPACE_END

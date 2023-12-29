@@ -26,6 +26,7 @@ enum class DecodeError
     InvalidTxnType,
     LeadingZero,
     InvalidNumberSize,
+    WrongEIP2718Wrapping,
 };
 
 MONAD_RLP_NAMESPACE_END

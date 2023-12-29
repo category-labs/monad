@@ -33,6 +33,7 @@ quick_status_code_from_enum<monad::rlp::DecodeError>::value_mappings()
         {DecodeError::InvalidTxnType, "invalid txn type", {}},
         {DecodeError::LeadingZero, "leading zero", {}},
         {DecodeError::InvalidNumberSize, "invalid number size", {}},
+        {DecodeError::WrongEIP2718Wrapping, "wrong eip2718 wrapping", {}},
     };
 
     return v;

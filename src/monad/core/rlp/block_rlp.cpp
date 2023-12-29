@@ -142,7 +142,9 @@ decode_transaction_vector(byte_string_view &enc)
 
     // TODO: Reserve txn vector size for better perf
     while (payload.size() > 0) {
-        BOOST_OUTCOME_TRY(auto txn, decode_transaction(payload));
+        // In block rlp, txn should always be wrapped
+        BOOST_OUTCOME_TRY(
+            auto txn, decode_transaction(payload, /* wrapped */ true));
         txns.emplace_back(std::move(txn));
     }
 

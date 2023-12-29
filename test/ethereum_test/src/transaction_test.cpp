@@ -106,7 +106,7 @@ void TransactionTest::TestBody()
 
     auto const txn_rlp = j_content.at("txbytes").get<byte_string>();
     byte_string_view txn_rlp_view{txn_rlp};
-    auto const txn = rlp::decode_transaction(txn_rlp_view);
+    auto const txn = rlp::decode_transaction(txn_rlp_view, /* wrapped */ false);
     if (txn.has_error() || !txn_rlp_view.empty()) {
         for (auto const &element : j_content.at("result").items()) {
             auto const &expected = element.value();

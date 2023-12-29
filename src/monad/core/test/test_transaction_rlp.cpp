@@ -137,7 +137,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacy)
 
     byte_string_view encoded_transaction_view{legacy_rlp_transaction};
     auto const decoded_transaction =
-        decode_transaction(encoded_transaction_view);
+        decode_transaction(encoded_transaction_view, /* wrapped */ true);
     ASSERT_FALSE(decoded_transaction.has_error());
     EXPECT_EQ(encoded_transaction_view.size(), 0);
 
@@ -174,7 +174,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacyNoTo)
 
     byte_string_view encoded_transaction_view{legacy_rlp_transaction};
     auto const decoded_transaction =
-        decode_transaction(encoded_transaction_view);
+        decode_transaction(encoded_transaction_view, /* wrapped */ true);
     ASSERT_FALSE(decoded_transaction.has_error());
     EXPECT_EQ(encoded_transaction_view.size(), 0);
 
@@ -224,7 +224,7 @@ TEST(Rlp_Transaction, EncodeEip155)
 
     byte_string_view encoded_transaction_view{eip155_rlp_transaction};
     auto const decoded_transaction =
-        decode_transaction(encoded_transaction_view);
+        decode_transaction(encoded_transaction_view, /* wrapped */ true);
     ASSERT_FALSE(decoded_transaction.has_error());
     EXPECT_EQ(encoded_transaction_view.size(), 0);
 
@@ -297,7 +297,7 @@ TEST(Rlp_Transaction, EncodeEip2930)
 
     byte_string_view encoded_transaction_view{eip2930_rlp_transaction};
     auto const decoded_transaction =
-        decode_transaction(encoded_transaction_view);
+        decode_transaction(encoded_transaction_view, /* wrapped */ true);
     ASSERT_FALSE(decoded_transaction.has_error());
     EXPECT_EQ(encoded_transaction_view.size(), 0);
 
@@ -374,7 +374,7 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
 
     byte_string_view encoded_transaction_view{eip1559_rlp_transaction};
     auto const decoded_transaction =
-        decode_transaction(encoded_transaction_view);
+        decode_transaction(encoded_transaction_view, /* wrapped */ true);
     ASSERT_FALSE(decoded_transaction.has_error());
     EXPECT_EQ(encoded_transaction_view.size(), 0);
 
@@ -453,7 +453,7 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
 
     byte_string_view encoded_transaction_view{eip1559_rlp_transaction};
     auto const decoded_transaction =
-        decode_transaction(encoded_transaction_view);
+        decode_transaction(encoded_transaction_view, /* wrapped */ true);
     ASSERT_FALSE(decoded_transaction.has_error());
     EXPECT_EQ(encoded_transaction_view.size(), 0);
 

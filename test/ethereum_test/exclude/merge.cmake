@@ -8,6 +8,4 @@ set(merge_excluded_tests
     "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/wrongStateRoot.json" # StateRoot
     "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/wrongTransactionsTrie.json" # Trie
     "BlockchainTests.InvalidBlocks/bcMultiChainTest/UncleFromSideChain.json" # Uncle
-    "TransactionTests.ttEIP1559/GasLimitPriceProductOverflowtMinusOne.json"
-    "TransactionTests.ttEIP2930/accessListStorage32Bytes.json"
 )

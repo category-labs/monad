@@ -55,6 +55,4 @@ set(london_excluded_tests
     "BlockchainTests.ValidBlocks/bcTotalDifficultyTest/sideChainWithNewMaxDifficultyStartingFromBlock3AfterBlock4.json" # Difficulty (Pre-merge)
     "BlockchainTests.ValidBlocks/bcTotalDifficultyTest/uncleBlockAtBlock3AfterBlock3.json" # Difficulty (Pre-merge)
     "BlockchainTests.ValidBlocks/bcTotalDifficultyTest/uncleBlockAtBlock3afterBlock4.json" # Difficulty (Pre-merge)
-    "TransactionTests.ttEIP1559/GasLimitPriceProductOverflowtMinusOne.json"
-    "TransactionTests.ttEIP2930/accessListStorage32Bytes.json"
 )

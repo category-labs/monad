@@ -5,7 +5,7 @@
 #include <monad/core/int.hpp>
 
 #include <cstdint>
-#include <type_traits>
+#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -22,10 +22,17 @@ struct Account
 static_assert(sizeof(Account) == 80);
 static_assert(alignof(Account) == 8);
 
-constexpr bool is_dead(Account const &account)
+// YP (14)
+inline constexpr bool is_empty(Account const &account)
 {
-    return account.balance == 0 && account.code_hash == NULL_HASH &&
-           account.nonce == 0;
+    return account.code_hash == NULL_HASH && account.nonce == 0 &&
+           account.balance == 0;
+}
+
+// YP (15)
+inline constexpr bool is_dead(std::optional<Account> const &account)
+{
+    return !account.has_value() || is_empty(account.value());
 }
 
 MONAD_NAMESPACE_END

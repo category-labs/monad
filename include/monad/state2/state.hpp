@@ -123,8 +123,6 @@ public:
     // EVMC Host Interface
     bool account_exists(Address const &address)
     {
-        LOG_TRACE_L1("account_exists: {}", address);
-
         auto const &account = read_account(address);
 
         return account.has_value();
@@ -132,8 +130,6 @@ public:
 
     void create_contract(Address const &address)
     {
-        LOG_TRACE_L1("create_contract: {}", address);
-
         auto &account = read_account(address);
         if (MONAD_UNLIKELY(account.has_value())) {
             // EIP-684
@@ -153,8 +149,6 @@ public:
     // EVMC Host Interface
     bytes32_t get_balance(Address const &address)
     {
-        LOG_TRACE_L1("get_balance: {}", address);
-
         auto const &account = read_account(address);
         if (MONAD_LIKELY(account.has_value())) {
             return intx::be::store<bytes32_t>(account.value().balance);
@@ -173,12 +167,6 @@ public:
             std::numeric_limits<uint256_t>::max() - delta >=
             account.value().balance);
 
-        LOG_TRACE_L1(
-            "add_to_balance {} = {} + {}",
-            address,
-            account.value().balance,
-            delta);
-
         account.value().balance += delta;
         touch(address);
     }
@@ -193,20 +181,12 @@ public:
 
         MONAD_DEBUG_ASSERT(delta <= account.value().balance);
 
-        LOG_TRACE_L1(
-            "subtract_from_balance {} = {} - {}",
-            address,
-            account.value().balance,
-            delta);
-
         account.value().balance -= delta;
         touch(address);
     }
 
     uint64_t get_nonce(Address const &address) noexcept
     {
-        LOG_TRACE_L1("get_nonce: {}", address);
-
         auto const &account = read_account(address);
         if (MONAD_LIKELY(account.has_value())) {
             return account.value().nonce;
@@ -216,8 +196,6 @@ public:
 
     void set_nonce(Address const &address, uint64_t const nonce)
     {
-        LOG_TRACE_L1("set_nonce: {} = {}", address, nonce);
-
         auto &account = read_account(address);
         if (MONAD_UNLIKELY(!account.has_value())) {
             account = Account{};
@@ -228,8 +206,6 @@ public:
     // EVMC Host Interface
     bytes32_t get_code_hash(Address const &address)
     {
-        LOG_TRACE_L1("get_code_hash: {}", address);
-
         auto const &account = read_account(address);
         if (MONAD_LIKELY(account.has_value())) {
             return account.value().code_hash;
@@ -239,8 +215,6 @@ public:
 
     void set_code_hash(Address const &address, bytes32_t const &hash)
     {
-        LOG_TRACE_L1("set_code_hash: {} = {}", address, hash);
-
         auto &account = read_account(address);
         MONAD_DEBUG_ASSERT(account.has_value());
         account.value().code_hash = hash;
@@ -250,8 +224,6 @@ public:
     bool
     selfdestruct(Address const &address, Address const &beneficiary) noexcept
     {
-        LOG_TRACE_L1("selfdestruct: {}, {}", address, beneficiary);
-
         auto &account = read_account(address);
         MONAD_DEBUG_ASSERT(account.has_value());
 
@@ -261,25 +233,21 @@ public:
         return Substate::selfdestruct(address);
     }
 
+    // YP (87)
     void destruct_suicides() noexcept
     {
-        LOG_TRACE_L1("destruct_suicides");
-
         for (auto const &address : destructed()) {
             auto &account = read_account(address);
-            MONAD_DEBUG_ASSERT(account.has_value());
             account.reset();
         }
     }
 
+    // YP (88)
     void destruct_touched_dead() noexcept
     {
-        LOG_TRACE_L1("destruct_touched_dead");
-
         for (auto const &address : touched()) {
             auto &account = read_account(address);
-            if (MONAD_UNLIKELY(
-                    account.has_value() && is_dead(account.value()))) {
+            if (MONAD_UNLIKELY(is_dead(account))) {
                 account.reset();
             }
         }
@@ -288,14 +256,12 @@ public:
     bool account_is_dead(Address const &address) noexcept
     {
         auto const &account = read_account(address);
-        return !account.has_value() || is_dead(account.value());
+        return is_dead(account);
     }
 
     // EVMC Host Interface
     bytes32_t get_storage(Address const &address, bytes32_t const &key) noexcept
     {
-        LOG_TRACE_L1("get_storage: {}, {}", address, key);
-
         return read_storage_delta(address, key).second;
     }
 
@@ -304,8 +270,6 @@ public:
         Address const &address, bytes32_t const &key,
         bytes32_t const &value) noexcept
     {
-        LOG_TRACE_L1("set_storage: {}, {} = {}", address, key, value);
-
         auto &delta = read_storage_delta(address, key);
         if (value == bytes32_t{}) {
             return zero_out_key(delta);
@@ -316,8 +280,6 @@ public:
     // EVMC Host Interface
     size_t get_code_size(Address const &address) noexcept
     {
-        LOG_TRACE_L1("get_code_size: {}", address);
-
         auto const &account = read_account(address);
         if (MONAD_LIKELY(account.has_value())) {
             return read_code(account->code_hash).size();
@@ -349,8 +311,6 @@ public:
 
     byte_string get_code(Address const &address) noexcept
     {
-        LOG_TRACE_L1("get_code: {}", address);
-
         auto const &account = read_account(address);
         if (MONAD_LIKELY(account.has_value())) {
             return read_code(account->code_hash);
@@ -360,8 +320,6 @@ public:
 
     void set_code(Address const &address, byte_string const &code)
     {
-        LOG_TRACE_L1("set_code: {} = {}", address, evmc::hex(code));
-
         auto const code_hash = std::bit_cast<monad::bytes32_t const>(
             ethash::keccak256(code.data(), code.size()));
 

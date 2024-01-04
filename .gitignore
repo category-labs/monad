@@ -17,6 +17,9 @@ compile_commands.json
 CTestTestfile.cmake
 _deps
 
+### Using Makefile for quick alias under ansible folder
+!ansible/Makefile
+
 ### github default python ignore
 
 # Byte-compiled / optimized / DLL files

@@ -1,0 +1,2 @@
+[all]
+peach10 ansible_host=peach10.monad.spacetime.org ansible_port=9022 ansible_user=root

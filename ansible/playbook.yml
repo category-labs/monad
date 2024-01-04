@@ -1,0 +1,178 @@
+---
+- name: Provision dev servers
+  hosts: all
+  become: yes
+
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Install GCC
+  tasks:
+  - name: Add Ubuntu Toolchain
+    apt_repository:
+      repo: ppa:ubuntu-toolchain-r/test
+      state: present
+      update_cache: yes
+  
+  - name: Install GCC
+    apt:
+      name:
+      - gcc-13
+      - g++-13
+  
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Install CLang
+  - name: Add LLVM repository key
+    apt_key:
+      url: "https://apt.llvm.org/llvm-snapshot.gpg.key"
+      state: present
+    become: yes
+  
+  - name: Add LLVM apt repository
+    apt_repository:
+      repo: 'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy main'
+      state: present
+      update_cache: yes
+  
+  - name: Install clang
+    vars:
+      llvm_version: 18
+    apt:
+      name:
+      - clang-tidy-{{ llvm_version }}
+      - clang-format-{{ llvm_version }}
+      - clang-tools-{{ llvm_version }}
+      - llvm-{{ llvm_version }}-dev
+      - lld-{{ llvm_version }}
+      - lldb-{{ llvm_version }}
+      - llvm-{{ llvm_version }}-tools
+      - libomp-{{ llvm_version }}-dev
+      - libc++-{{ llvm_version }}-dev
+      - libc++abi-{{ llvm_version }}-dev
+      - libclang-common-{{ llvm_version }}-dev
+      - libclang-{{ llvm_version }}-dev
+      - libclang-cpp{{ llvm_version }}-dev
+      - libunwind-{{ llvm_version }}-dev
+  
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Install Boost
+  - name: Add Boost PPA repository
+    apt_repository:
+      repo: ppa:mhier/libboost-latest
+      state: present
+      update_cache: yes
+  
+  - name: Install Boost libraries
+    apt:
+      name:
+      - libboost-fiber1.83.0
+      - libboost-graph1.83.0
+      - libboost-json1.83.0
+      - libboost-stacktrace1.83.0
+      - libboost-fiber1.83-dev
+      - libboost-graph1.83-dev
+      - libboost-json1.83-dev
+      - libboost-stacktrace1.83-dev
+      - libboost1.83-dev
+  
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Install CMake
+  - name: Add kitware apt-key
+    apt_key:
+      url: https://apt.kitware.com/keys/kitware-archive-latest.asc
+      state: present
+  
+  - name: Add kitware repo
+    apt_repository:
+      repo: deb https://apt.kitware.com/ubuntu/ jammy main
+      state: present
+  
+  - name: Install Boost libraries
+    apt:
+      name:
+      - kitware-archive-keyring
+      - cmake
+      state: latest
+  
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Install Tools
+  - name: Install tools
+    apt:
+      name:
+      - gdb
+      - ninja-build
+      - pkg-config
+      - python3-pytest
+      - valgrind
+  
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Install Deps
+  - name: Install deps
+    apt:
+      name:
+      - libabsl-dev
+      - libbenchmark-dev
+      - libgmock-dev
+      - libgtest-dev
+      - libmimalloc-dev
+      - liburing-dev
+
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Create systemd service unit to configure hugepages on boot
+  - name: Create hugepages.sh
+    copy:
+      src: "./hugepages.sh"
+      dest: "/usr/lib/systemd/system/hugepages.sh"
+      mode: 0755
+
+  - name: Extract package
+    unarchive:
+      src: "./hugepages.service"
+      dest: "/usr/lib/systemd/system/hugepages.service"
+
+  - name: Start Hugepages
+    systemd:
+      name: hugepages
+      state: started
+
+  - name: Enable Hugepages
+    systemd:
+      name: firewalld
+      state: enabled
+  
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Disable OOM killing from ever occuring
+  - name: vm-oom-kill=0
+    ansible.posix.sysctl:
+      name: vm.oom-kill 
+      value: 0
+      state: present
+  
+  - name: vm.overcommit_memory=2
+    ansible.posix.sysctl:
+      name: vm.overcommit_memory 
+      value: 2
+  
+  # Enable all traffic to be forwarded to the bridge
+  - name: net.bridge-nf-call-ip6tables=0
+    ansible.posix.sysctl:
+      name: net.bridge.bridge-nf-call-ip6tables 
+      value: 0
+  
+  - name: net.bridge-nf-call-iptables=0
+    ansible.posix.sysctl:
+      name: net.bridge.bridge-nf-call-iptables 
+      value: 0
+  
+  - name: net.bridge-nf-call-arptables=0
+    ansible.posix.sysctl:
+      name: net.bridge.bridge-nf-call-arptables
+      value: 0
+
+  - name: kernel.kptr_restrict=0
+    ansible.posix.sysctl:
+      name: kernel.kprt_restrict
+      value: 0
+
+  - name: kernel.perf_event_paranoid=0
+    ansible.posix.sysctl:
+      name: kernel.perf_event_paranoid
+      value: 0

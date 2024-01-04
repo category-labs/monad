@@ -1,0 +1,13 @@
+[Unit]
+Description=Enable Hugepages Config
+DefaultDependencies=no
+Before=dev-hugepages.mount
+ConditionPathExists=/sys/devices/system/node0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/systemd/hugepages.sh
+
+[Install]
+WantedBy=sysinit.target

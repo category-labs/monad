@@ -432,13 +432,30 @@ TYPED_TEST(StateTest, create_conflict_address_incarnation)
                  .storage = {{key1, {bytes32_t{}, value1}}}}}},
         Code{});
 
-    State s1{bs};
+    // Txn1
+    {
+        State s1{bs};
 
-    s1.create_contract(a);
-    s1.set_storage(a, key2, value2);
+        s1.create_contract(a);
+        s1.set_storage(a, key2, value2);
 
-    EXPECT_EQ(s1.get_storage(a, key1), bytes32_t{});
-    EXPECT_EQ(s1.get_storage(a, key2), value2);
+        EXPECT_EQ(s1.get_storage(a, key1), bytes32_t{});
+        EXPECT_EQ(s1.get_storage(a, key2), value2);
+
+        EXPECT_TRUE(bs.can_merge(s1.state_));
+        bs.merge(s1.state_);
+    }
+
+    // Txn2
+    {
+        State s2{bs};
+
+        s2.create_contract(a);
+        s2.set_storage(a, key1, value1);
+
+        EXPECT_EQ(s2.get_storage(a, key1), value1);
+        EXPECT_EQ(s2.get_storage(a, key2), bytes32_t{});
+    }
 }
 
 TYPED_TEST(StateTest, destruct_touched_dead)

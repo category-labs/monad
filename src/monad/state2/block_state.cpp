@@ -58,7 +58,12 @@ bytes32_t BlockState::read_storage(
         {
             auto const it2 = storage.find(location);
             if (MONAD_LIKELY(it2 != storage.end())) {
-                return it2->second.second;
+                if (MONAD_LIKELY(incarnation != 2)) {
+                    return it2->second.second;
+                }
+                else {
+                    return bytes32_t{};
+                }
             }
         }
     }

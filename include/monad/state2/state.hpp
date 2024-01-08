@@ -135,11 +135,13 @@ public:
             // EIP-684
             MONAD_ASSERT(account->nonce == 0);
             MONAD_ASSERT(account->code_hash == NULL_HASH);
-            // TODO there should be no storage deltas - can this ever occur?
-            auto const it = state_.find(address);
-            MONAD_ASSERT(it->second.storage.empty());
+
             // keep the balance, per chapter 7 of the YP
-            account->incarnation = 1;
+            account->incarnation = 2;
+
+            // remove any previous storage diff created in the same txn
+            auto const it = state_.find(address);
+            it->second.storage.clear();
         }
         else {
             account = Account{};

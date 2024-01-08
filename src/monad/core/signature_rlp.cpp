@@ -11,15 +11,13 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
-Result<byte_string_view>
-decode_sc(SignatureAndChain &sc, byte_string_view const enc)
+Result<SignatureAndChain> decode_sc(byte_string_view &enc)
 {
-    uint64_t v{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, decode_unsigned<uint64_t>(v, enc));
+    BOOST_OUTCOME_TRY(auto const v, decode_unsigned<uint64_t>(enc));
 
+    SignatureAndChain sc;
     sc.from_v(v);
-    return rest_of_enc;
+    return sc;
 }
 
 MONAD_RLP_NAMESPACE_END

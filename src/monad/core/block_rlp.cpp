@@ -94,134 +94,102 @@ byte_string encode_block(Block const &block)
 }
 
 // Decode
-Result<byte_string_view>
-decode_block_header(BlockHeader &block_header, byte_string_view const enc)
+Result<BlockHeader> decode_block_header(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
+    BlockHeader block_header;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
+    BOOST_OUTCOME_TRY(block_header.parent_hash, decode_bytes32(payload));
+    BOOST_OUTCOME_TRY(block_header.ommers_hash, decode_bytes32(payload));
+    BOOST_OUTCOME_TRY(block_header.beneficiary, decode_address(payload));
+    BOOST_OUTCOME_TRY(block_header.state_root, decode_bytes32(payload));
+    BOOST_OUTCOME_TRY(block_header.transactions_root, decode_bytes32(payload));
+    BOOST_OUTCOME_TRY(block_header.receipts_root, decode_bytes32(payload));
+    BOOST_OUTCOME_TRY(block_header.logs_bloom, decode_bloom(payload));
     BOOST_OUTCOME_TRY(
-        payload, decode_bytes32(block_header.parent_hash, payload));
+        block_header.difficulty, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(block_header.number, decode_unsigned<uint64_t>(payload));
     BOOST_OUTCOME_TRY(
-        payload, decode_bytes32(block_header.ommers_hash, payload));
+        block_header.gas_limit, decode_unsigned<uint64_t>(payload));
     BOOST_OUTCOME_TRY(
-        payload, decode_address(block_header.beneficiary, payload));
+        block_header.gas_used, decode_unsigned<uint64_t>(payload));
     BOOST_OUTCOME_TRY(
-        payload, decode_bytes32(block_header.state_root, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_bytes32(block_header.transactions_root, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_bytes32(block_header.receipts_root, payload));
-    BOOST_OUTCOME_TRY(payload, decode_bloom(block_header.logs_bloom, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint256_t>(block_header.difficulty, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint64_t>(block_header.number, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint64_t>(block_header.gas_limit, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint64_t>(block_header.gas_used, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint64_t>(block_header.timestamp, payload));
-    BOOST_OUTCOME_TRY(payload, decode_string(block_header.extra_data, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_bytes32(block_header.prev_randao, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_byte_string_fixed<8>(block_header.nonce, payload));
+        block_header.timestamp, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(block_header.extra_data, decode_string(payload));
+    BOOST_OUTCOME_TRY(block_header.prev_randao, decode_bytes32(payload));
+    BOOST_OUTCOME_TRY(block_header.nonce, decode_byte_string_fixed<8>(payload));
     if (payload.size() > 0) {
-        uint64_t base_fee_per_gas{};
         BOOST_OUTCOME_TRY(
-            payload, decode_unsigned<uint64_t>(base_fee_per_gas, payload));
-        block_header.base_fee_per_gas.emplace(base_fee_per_gas);
+            block_header.base_fee_per_gas, decode_unsigned<uint64_t>(payload));
         if (payload.size() > 0) {
-            bytes32_t withdrawal_root{};
             BOOST_OUTCOME_TRY(
-                payload, decode_bytes32(withdrawal_root, payload));
-            block_header.withdrawals_root.emplace(withdrawal_root);
+                block_header.withdrawals_root, decode_bytes32(payload));
         }
-        else {
-            block_header.withdrawals_root = std::nullopt;
-        }
-    }
-    else {
-        block_header.base_fee_per_gas = std::nullopt;
     }
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return rest_of_enc;
+    return block_header;
 }
 
-Result<byte_string_view> decode_transaction_vector(
-    std::vector<Transaction> &txns, byte_string_view const enc)
+Result<std::vector<Transaction>>
+decode_transaction_vector(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
-    MONAD_ASSERT(txns.size() == 0);
+    std::vector<Transaction> txns;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
     // TODO: Reserve txn vector size for better perf
     while (payload.size() > 0) {
-        Transaction txn{};
-        BOOST_OUTCOME_TRY(payload, decode_transaction(txn, payload));
-        txns.emplace_back(txn);
+        BOOST_OUTCOME_TRY(auto txn, decode_transaction(payload));
+        txns.emplace_back(std::move(txn));
     }
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return rest_of_enc;
+    return txns;
 }
 
-Result<byte_string_view> decode_block_header_vector(
-    std::vector<BlockHeader> &ommers, byte_string_view const enc)
+Result<std::vector<BlockHeader>>
+decode_block_header_vector(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
-    MONAD_ASSERT(ommers.size() == 0);
+    std::vector<BlockHeader> ommers;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
     while (payload.size() > 0) {
-        BlockHeader ommer{};
-        BOOST_OUTCOME_TRY(payload, decode_block_header(ommer, payload));
-        ommers.emplace_back(ommer);
+        BOOST_OUTCOME_TRY(auto ommer, decode_block_header(payload));
+        ommers.emplace_back(std::move(ommer));
     }
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return rest_of_enc;
+    return ommers;
 }
 
-Result<byte_string_view> decode_block(Block &block, byte_string_view const enc)
+Result<Block> decode_block(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
+    Block block;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
-    BOOST_OUTCOME_TRY(payload, decode_block_header(block.header, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_transaction_vector(block.transactions, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_block_header_vector(block.ommers, payload));
+    BOOST_OUTCOME_TRY(block.header, decode_block_header(payload));
+    BOOST_OUTCOME_TRY(block.transactions, decode_transaction_vector(payload));
+    BOOST_OUTCOME_TRY(block.ommers, decode_block_header_vector(payload));
 
     if (payload.size() > 0) {
-        std::vector<Withdrawal> withdrawals{};
-        BOOST_OUTCOME_TRY(
-            payload, decode_withdrawal_list(withdrawals, payload));
-        block.withdrawals = withdrawals;
+        BOOST_OUTCOME_TRY(auto withdrawals, decode_withdrawal_list(payload));
+        block.withdrawals.emplace(std::move(withdrawals));
     }
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return rest_of_enc;
+    return block;
 }
 
 MONAD_RLP_NAMESPACE_END

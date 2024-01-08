@@ -26,52 +26,42 @@ byte_string encode_withdrawal(Withdrawal const &withdrawal)
         encode_unsigned(withdrawal.amount));
 }
 
-Result<byte_string_view>
-decode_withdrawal(Withdrawal &withdrawal, byte_string_view const enc)
+Result<Withdrawal> decode_withdrawal(byte_string_view &enc)
 {
+    Withdrawal withdrawal;
     if (enc.size() == 0) {
-        return byte_string{};
+        return withdrawal;
     }
-    byte_string_view payload{};
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+    BOOST_OUTCOME_TRY(withdrawal.index, decode_unsigned<uint64_t>(payload));
     BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
-
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint64_t>(withdrawal.index, payload));
-    BOOST_OUTCOME_TRY(
-        payload,
-        decode_unsigned<uint64_t>(withdrawal.validator_index, payload));
-    BOOST_OUTCOME_TRY(payload, decode_address(withdrawal.recipient, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint64_t>(withdrawal.amount, payload));
+        withdrawal.validator_index, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(withdrawal.recipient, decode_address(payload));
+    BOOST_OUTCOME_TRY(withdrawal.amount, decode_unsigned<uint64_t>(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return rest_of_enc;
+    return withdrawal;
 }
 
-Result<byte_string_view> decode_withdrawal_list(
-    std::vector<Withdrawal> &withdrawal_list, byte_string_view const enc)
+Result<std::vector<Withdrawal>> decode_withdrawal_list(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
-
+    std::vector<Withdrawal> withdrawal_list;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
     withdrawal_list.reserve(payload.size() / sizeof(Withdrawal));
 
     while (payload.size() > 0) {
-        Withdrawal withdrawal{};
-        BOOST_OUTCOME_TRY(payload, decode_withdrawal(withdrawal, payload));
-        withdrawal_list.emplace_back(withdrawal);
+        BOOST_OUTCOME_TRY(auto withdrawal, decode_withdrawal(payload));
+        withdrawal_list.emplace_back(std::move(withdrawal));
     }
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return rest_of_enc;
+    return withdrawal_list;
 }
 
 MONAD_RLP_NAMESPACE_END

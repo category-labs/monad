@@ -19,28 +19,21 @@ inline byte_string encode_unsigned(unsigned_integral auto const &n)
 }
 
 template <unsigned_integral T>
-constexpr Result<byte_string_view>
-decode_unsigned(T &u_num, byte_string_view const enc)
+constexpr Result<T> decode_unsigned(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_string_metadata(payload, enc));
-    BOOST_OUTCOME_TRY(u_num, decode_raw_num<T>(payload));
-    return rest_of_enc;
+    BOOST_OUTCOME_TRY(auto const payload, parse_string_metadata(enc));
+    return decode_raw_num<T>(payload);
 }
 
-constexpr Result<byte_string_view>
-decode_bool(bool &target, byte_string_view const enc)
+constexpr Result<bool> decode_bool(byte_string_view &enc)
 {
-    uint64_t i{0};
-    BOOST_OUTCOME_TRY(auto const ret, decode_unsigned<uint64_t>(i, enc));
+    BOOST_OUTCOME_TRY(auto const i, decode_unsigned<uint64_t>(enc));
 
     if (MONAD_UNLIKELY(i > 1)) {
         return DecodeError::Overflow;
     }
 
-    target = i;
-    return ret;
+    return i;
 }
 
 MONAD_RLP_NAMESPACE_END

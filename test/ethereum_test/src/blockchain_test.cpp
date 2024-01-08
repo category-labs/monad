@@ -188,34 +188,38 @@ void BlockchainTest::TestBody()
 
         BlockHashBuffer block_hash_buffer;
         for (auto const &j_block : j_contents.at("blocks")) {
-            Block block;
-            auto const rlp = j_block.at("rlp").get<byte_string>();
-            auto const remaining = rlp::decode_block(block, rlp);
-            if (remaining.has_error() || !remaining.assume_value().empty()) {
+
+            auto const block_rlp = j_block.at("rlp").get<byte_string>();
+            byte_string_view block_rlp_view{block_rlp};
+            auto block = rlp::decode_block(block_rlp_view);
+            if (block.has_error() || !block_rlp_view.empty()) {
                 EXPECT_TRUE(j_block.contains("expectException")) << name;
                 continue;
             }
 
-            if (block.header.number == 0) {
+            if (block.value().header.number == 0) {
                 EXPECT_TRUE(j_block.contains("expectException"));
                 continue;
             }
             if (j_block.contains("blocknumber") &&
-                block.header.number !=
+                block.value().header.number !=
                     std::stoull(j_block.at("blocknumber").get<std::string>())) {
                 EXPECT_TRUE(j_block.contains("expectException"));
                 continue;
             }
 
             block_hash_buffer.set(
-                block.header.number - 1, block.header.parent_hash);
+                block.value().header.number - 1,
+                block.value().header.parent_hash);
 
             auto const result =
-                execute_dispatch(rev, block, db, block_hash_buffer);
+                execute_dispatch(rev, block.value(), db, block_hash_buffer);
             if (!result.has_error()) {
                 EXPECT_FALSE(j_block.contains("expectException"));
-                EXPECT_EQ(db.state_root(), block.header.state_root) << name;
-                EXPECT_EQ(result.value().size(), block.transactions.size())
+                EXPECT_EQ(db.state_root(), block.value().header.state_root)
+                    << name;
+                EXPECT_EQ(
+                    result.value().size(), block.value().transactions.size())
                     << name;
             }
             else {

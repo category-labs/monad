@@ -23,33 +23,31 @@ inline byte_string encode_address(std::optional<Address> const &address)
     return encode_string2(to_byte_string_view(address->bytes));
 }
 
-inline Result<byte_string_view>
-decode_address(Address &address, byte_string_view const enc)
+inline Result<Address> decode_address(byte_string_view &enc)
 {
-    return decode_byte_array<20>(address.bytes, enc);
+    Address addr;
+    BOOST_OUTCOME_TRY(auto const byte_array, decode_byte_string_fixed<20>(enc));
+    std::memcpy(addr.bytes, byte_array.data(), 20);
+    return addr;
 }
 
-inline Result<byte_string_view>
-decode_address(std::optional<Address> &address, byte_string_view const enc)
+inline Result<std::optional<Address>>
+decode_optional_address(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_string_metadata(payload, enc));
+    std::optional<Address> addr;
+    BOOST_OUTCOME_TRY(auto const payload, parse_string_metadata(enc));
     if (MONAD_LIKELY(payload.size() == sizeof(Address))) {
-        address = Address{};
-        std::memcpy(address->bytes, payload.data(), sizeof(Address));
+        addr = Address{};
+        std::memcpy(addr->bytes, payload.data(), sizeof(Address));
     }
     else if (payload.size() > sizeof(Address)) {
         return DecodeError::InputTooLong;
     }
-    else {
-        if (MONAD_UNLIKELY(!payload.empty())) {
-            return DecodeError::InputTooShort;
-        }
-
-        address.reset();
+    else if (MONAD_UNLIKELY(!payload.empty())) {
+        return DecodeError::InputTooShort;
     }
-    return rest_of_enc;
+
+    return addr;
 }
 
 MONAD_RLP_NAMESPACE_END

@@ -27,16 +27,16 @@ TEST(Rlp_Withdrawal, encode_decode_withdrawal)
 
     EXPECT_EQ(encoded_withdrawal, rlp_withdrawal);
 
-    Withdrawal decoded_withdrawal{};
-    auto const remaining =
-        decode_withdrawal(decoded_withdrawal, encoded_withdrawal);
+    byte_string_view encoded_withdrawal_view{encoded_withdrawal};
+    auto const decoded_withdrawal = decode_withdrawal(encoded_withdrawal_view);
 
-    ASSERT_FALSE(remaining.has_error());
-    EXPECT_EQ(remaining.assume_value().size(), 0);
-    EXPECT_EQ(decoded_withdrawal.index, original_withdrawal.index);
+    ASSERT_FALSE(decoded_withdrawal.has_error());
+    EXPECT_EQ(encoded_withdrawal_view.size(), 0);
+    EXPECT_EQ(decoded_withdrawal.value().index, original_withdrawal.index);
     EXPECT_EQ(
-        decoded_withdrawal.validator_index,
+        decoded_withdrawal.value().validator_index,
         original_withdrawal.validator_index);
-    EXPECT_EQ(decoded_withdrawal.recipient, original_withdrawal.recipient);
-    EXPECT_EQ(decoded_withdrawal.amount, original_withdrawal.amount);
+    EXPECT_EQ(
+        decoded_withdrawal.value().recipient, original_withdrawal.recipient);
+    EXPECT_EQ(decoded_withdrawal.value().amount, original_withdrawal.amount);
 }

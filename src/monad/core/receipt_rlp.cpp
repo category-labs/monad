@@ -68,125 +68,107 @@ byte_string encode_receipt(Receipt const &receipt)
 }
 
 // Decode
-Result<byte_string_view>
-decode_bloom(Receipt::Bloom &bloom, byte_string_view const enc)
+Result<Receipt::Bloom> decode_bloom(byte_string_view &enc)
 {
-    return decode_byte_array<256>(bloom.data(), enc);
+    return decode_byte_string_fixed<256>(enc);
 }
 
-Result<byte_string_view>
-decode_topics(std::vector<bytes32_t> &topics, byte_string_view const enc)
+Result<std::vector<bytes32_t>> decode_topics(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
+    std::vector<bytes32_t> topics;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
     constexpr size_t topic_size =
         33; // 1 byte for header, 32 bytes for byte32_t
     auto const list_space = payload.size();
-    MONAD_ASSERT(topics.size() == 0);
     topics.reserve(list_space / topic_size);
 
     while (payload.size() > 0) {
-        bytes32_t topic{};
-        BOOST_OUTCOME_TRY(payload, decode_bytes32(topic, payload));
-        topics.emplace_back(topic);
+        BOOST_OUTCOME_TRY(auto topic, decode_bytes32(payload));
+        topics.emplace_back(std::move(topic));
     }
-
-    MONAD_ASSERT(list_space == topics.size() * topic_size);
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return rest_of_enc;
+    return topics;
 }
 
-Result<byte_string_view>
-decode_log(Receipt::Log &log, byte_string_view const enc)
+Result<Receipt::Log> decode_log(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
-    BOOST_OUTCOME_TRY(payload, decode_address(log.address, payload));
-    BOOST_OUTCOME_TRY(payload, decode_topics(log.topics, payload));
-    BOOST_OUTCOME_TRY(payload, decode_string(log.data, payload));
+    Receipt::Log log;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+    BOOST_OUTCOME_TRY(log.address, decode_address(payload));
+    BOOST_OUTCOME_TRY(log.topics, decode_topics(payload));
+    BOOST_OUTCOME_TRY(log.data, decode_string(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return rest_of_enc;
+    return log;
 }
 
-Result<byte_string_view>
-decode_logs(std::vector<Receipt::Log> &logs, byte_string_view const enc)
+Result<std::vector<Receipt::Log>> decode_logs(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
+    std::vector<Receipt::Log> logs;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
     constexpr size_t approx_data_size = 32;
     constexpr size_t approx_num_topics = 10;
     // 20 bytes for address, 33 bytes per topic
     constexpr auto log_size_approx =
         20 + approx_data_size + 33 * approx_num_topics;
     auto const list_space = payload.size();
-    MONAD_ASSERT(logs.size() == 0);
     logs.resize(list_space / log_size_approx);
 
     while (payload.size() > 0) {
-        Receipt::Log log{};
-        BOOST_OUTCOME_TRY(payload, decode_log(log, payload));
-        logs.emplace_back(log);
+        BOOST_OUTCOME_TRY(auto log, decode_log(payload));
+        logs.emplace_back(std::move(log));
     }
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return rest_of_enc;
+    return logs;
 }
 
-Result<byte_string_view>
-decode_untyped_receipt(Receipt &receipt, byte_string_view const enc)
+Result<Receipt> decode_untyped_receipt(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint64_t>(receipt.status, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint64_t>(receipt.gas_used, payload));
-    BOOST_OUTCOME_TRY(payload, decode_bloom(receipt.bloom, payload));
-    BOOST_OUTCOME_TRY(payload, decode_logs(receipt.logs, payload));
+    Receipt receipt;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+    BOOST_OUTCOME_TRY(receipt.status, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(receipt.gas_used, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(receipt.bloom, decode_bloom(payload));
+    BOOST_OUTCOME_TRY(receipt.logs, decode_logs(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return rest_of_enc;
+    return receipt;
 }
 
-Result<byte_string_view>
-decode_receipt(Receipt &receipt, byte_string_view const enc)
+Result<Receipt> decode_receipt(byte_string_view &enc)
 {
     if (MONAD_UNLIKELY(enc.empty())) {
         return DecodeError::InputTooShort;
     }
 
+    Receipt receipt;
+
     uint8_t const &first = enc[0];
-    receipt.type = TransactionType::legacy;
     if (first < 0xc0) // eip 2718 - typed transaction envelope
     {
-        byte_string_view payload{};
-        BOOST_OUTCOME_TRY(
-            auto const rest_of_enc, parse_string_metadata(payload, enc));
+        BOOST_OUTCOME_TRY(auto const payload, parse_string_metadata(enc));
 
         if (MONAD_UNLIKELY(payload.empty())) {
             return DecodeError::InputTooShort;
         }
 
         uint8_t const &type = payload[0];
-        auto const receipt_enc = payload.substr(1, payload.size() - 1);
+        auto receipt_enc = payload.substr(1);
+        BOOST_OUTCOME_TRY(receipt, decode_untyped_receipt(receipt_enc));
         switch (type) {
         case 0x1:
             receipt.type = TransactionType::eip2930;
@@ -197,17 +179,15 @@ decode_receipt(Receipt &receipt, byte_string_view const enc)
         default:
             return DecodeError::InvalidTxnType;
         }
-        BOOST_OUTCOME_TRY(
-            auto const rest_of_receipt_enc,
-            decode_untyped_receipt(receipt, receipt_enc));
 
-        if (MONAD_UNLIKELY(!rest_of_receipt_enc.empty())) {
-            return DecodeError::InputTooLong;
-        }
-
-        return rest_of_enc;
+        return receipt;
     }
-    return decode_untyped_receipt(receipt, enc);
+    else {
+        BOOST_OUTCOME_TRY(receipt, decode_untyped_receipt(enc));
+        receipt.type = TransactionType::legacy;
+
+        return receipt;
+    }
 }
 
 MONAD_RLP_NAMESPACE_END

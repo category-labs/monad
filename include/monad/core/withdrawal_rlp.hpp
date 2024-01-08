@@ -12,8 +12,7 @@ MONAD_RLP_NAMESPACE_BEGIN
 
 byte_string encode_withdrawal(Withdrawal const &);
 
-Result<byte_string_view> decode_withdrawal(Withdrawal &, byte_string_view);
-Result<byte_string_view>
-decode_withdrawal_list(std::vector<Withdrawal> &, byte_string_view);
+Result<Withdrawal> decode_withdrawal(byte_string_view &);
+Result<std::vector<Withdrawal>> decode_withdrawal_list(byte_string_view &);
 
 MONAD_RLP_NAMESPACE_END

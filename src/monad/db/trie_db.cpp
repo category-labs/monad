@@ -63,17 +63,17 @@ namespace
 
             MONAD_ASSERT(node.value().size() > sizeof(bytes32_t));
 
-            Account acc;
-            auto const result = rlp::decode_account(acc, node.value());
-            MONAD_ASSERT(result.has_value());
-            MONAD_ASSERT(result.assume_value().empty());
+            auto encoded_account = node.value();
+            auto const acct = rlp::decode_account(encoded_account);
+            MONAD_DEBUG_ASSERT(!acct.has_error());
+            MONAD_DEBUG_ASSERT(encoded_account.empty());
             bytes32_t storage_root = NULL_ROOT;
             if (node.number_of_children()) {
                 MONAD_ASSERT(node.data().size() == sizeof(bytes32_t));
                 std::copy_n(
                     node.data().data(), sizeof(bytes32_t), storage_root.bytes);
             }
-            return rlp::encode_account(acc, storage_root);
+            return rlp::encode_account(acct.value(), storage_root);
         }
     };
 
@@ -656,11 +656,13 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     if (!value.has_value()) {
         return std::nullopt;
     }
-    Account acct{.incarnation = 0};
-    auto const decode_result = rlp::decode_account(acct, value.value());
-    MONAD_ASSERT(decode_result.has_value());
-    MONAD_ASSERT(decode_result.assume_value().empty());
-    return acct;
+
+    auto encoded_account = value.value();
+    auto acct = rlp::decode_account(encoded_account);
+    MONAD_DEBUG_ASSERT(!acct.has_error());
+    MONAD_DEBUG_ASSERT(encoded_account.empty());
+    acct.value().incarnation = 0;
+    return acct.value();
 }
 
 bytes32_t TrieDb::read_storage(Address const &addr, bytes32_t const &key)
@@ -828,17 +830,18 @@ nlohmann::json TrieDb::to_json()
         {
             MONAD_ASSERT(node.has_value());
 
-            Account acct;
-            auto const result = rlp::decode_account(acct, node.value());
-            MONAD_ASSERT(result.has_value());
-            MONAD_ASSERT(result.assume_value().empty());
+            auto encoded_account = node.value();
+
+            auto acct = rlp::decode_account(encoded_account);
+            MONAD_DEBUG_ASSERT(!acct.has_error());
+            MONAD_DEBUG_ASSERT(encoded_account.empty());
 
             auto const key = fmt::format("{}", NibblesView{path});
 
-            json[key]["balance"] = fmt::format("{}", acct.balance);
-            json[key]["nonce"] = fmt::format("0x{:x}", acct.nonce);
+            json[key]["balance"] = fmt::format("{}", acct.value().balance);
+            json[key]["nonce"] = fmt::format("0x{:x}", acct.value().nonce);
 
-            auto const code = db.read_code(acct.code_hash);
+            auto const code = db.read_code(acct.value().code_hash);
             json[key]["code"] = fmt::format(
                 "0x{:02x}", fmt::join(std::as_bytes(std::span(code)), ""));
 

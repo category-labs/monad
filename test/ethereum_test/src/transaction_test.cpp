@@ -104,10 +104,10 @@ void TransactionTest::TestBody()
     auto const test_name = json.begin().key();
     MONAD_ASSERT(!j_content.empty());
 
-    Transaction txn;
     auto const txn_rlp = j_content.at("txbytes").get<byte_string>();
-    auto const remaining = rlp::decode_transaction(txn, txn_rlp);
-    if (remaining.has_error() || !remaining.assume_value().empty()) {
+    byte_string_view txn_rlp_view{txn_rlp};
+    auto const txn = rlp::decode_transaction(txn_rlp_view);
+    if (txn.has_error() || !txn_rlp_view.empty()) {
         for (auto const &element : j_content.at("result").items()) {
             auto const &expected = element.value();
             EXPECT_TRUE(expected.contains("exception")) << test_name;
@@ -133,7 +133,7 @@ void TransactionTest::TestBody()
         }
         executed = true;
 
-        process_transaction(rev, txn, expected);
+        process_transaction(rev, txn.value(), expected);
     }
 
     if (!executed) {

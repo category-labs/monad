@@ -10,7 +10,7 @@ MONAD_RLP_NAMESPACE_BEGIN
 byte_string encode_block_header(BlockHeader const &);
 byte_string encode_block(Block const &);
 
-Result<byte_string_view> decode_block(Block &, byte_string_view);
-Result<byte_string_view> decode_block_header(BlockHeader &, byte_string_view);
+Result<Block> decode_block(byte_string_view &);
+Result<BlockHeader> decode_block_header(byte_string_view &);
 
 MONAD_RLP_NAMESPACE_END

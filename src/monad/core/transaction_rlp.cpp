@@ -121,21 +121,17 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
 }
 
 // Decode
-Result<byte_string_view> decode_access_entry_keys(
-    std::vector<bytes32_t> &keys, byte_string_view const enc)
+Result<std::vector<bytes32_t>> decode_access_entry_keys(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
+    std::vector<bytes32_t> keys;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
     constexpr size_t key_size = 33; // 1 byte for header, 32 bytes for byte32_t
     auto const list_space = payload.size();
-    MONAD_ASSERT(keys.size() == 0);
     keys.reserve(list_space / key_size);
 
     while (payload.size() > 0) {
-        bytes32_t key{};
-        BOOST_OUTCOME_TRY(payload, decode_bytes32(key, payload));
-        keys.emplace_back(key);
+        BOOST_OUTCOME_TRY(auto key, decode_bytes32(payload));
+        keys.emplace_back(std::move(key));
     }
 
     if (MONAD_UNLIKELY(!payload.empty())) {
@@ -143,121 +139,103 @@ Result<byte_string_view> decode_access_entry_keys(
     }
 
     MONAD_ASSERT(list_space == keys.size() * key_size);
-    return rest_of_enc;
+    return keys;
 }
 
-Result<byte_string_view>
-decode_access_entry(AccessEntry &ae, byte_string_view const enc)
+Result<AccessEntry> decode_access_entry(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
-
-    BOOST_OUTCOME_TRY(payload, decode_address(ae.a, payload));
-    BOOST_OUTCOME_TRY(payload, decode_access_entry_keys(ae.keys, payload));
+    AccessEntry access_entry;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+    BOOST_OUTCOME_TRY(access_entry.a, decode_address(payload));
+    BOOST_OUTCOME_TRY(access_entry.keys, decode_access_entry_keys(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return rest_of_enc;
+    return access_entry;
 }
 
-Result<byte_string_view>
-decode_access_list(AccessList &access_list, byte_string_view const enc)
+Result<AccessList> decode_access_list(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
+    AccessList access_list;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
     constexpr size_t approx_num_keys = 10;
     // 20 bytes for address, 33 bytes per key
     constexpr size_t access_entry_size_approx = 20 + 33 * approx_num_keys;
     auto const list_space = payload.size();
-    MONAD_ASSERT(access_list.size() == 0);
     access_list.reserve(list_space / access_entry_size_approx);
 
     while (payload.size() > 0) {
-        AccessEntry ae{};
-        BOOST_OUTCOME_TRY(payload, decode_access_entry(ae, payload));
-        access_list.emplace_back(ae);
+        BOOST_OUTCOME_TRY(auto access_entry, decode_access_entry(payload));
+        access_list.emplace_back(std::move(access_entry));
     }
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return rest_of_enc;
+    return access_list;
 }
 
-Result<byte_string_view>
-decode_transaction_legacy(Transaction &txn, byte_string_view const enc)
+Result<Transaction> decode_transaction_legacy(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
+    Transaction txn;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
     txn.type = TransactionType::legacy;
-    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint64_t>(txn.nonce, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint256_t>(txn.max_fee_per_gas, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint64_t>(txn.gas_limit, payload));
-    BOOST_OUTCOME_TRY(payload, decode_address(txn.to, payload));
-    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.value, payload));
-    BOOST_OUTCOME_TRY(payload, decode_string(txn.data, payload));
-    BOOST_OUTCOME_TRY(payload, decode_sc(txn.sc, payload));
-    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.sc.r, payload));
-    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.sc.s, payload));
+    BOOST_OUTCOME_TRY(txn.nonce, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(txn.max_fee_per_gas, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(txn.gas_limit, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(txn.to, decode_optional_address(payload));
+    BOOST_OUTCOME_TRY(txn.value, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(txn.data, decode_string(payload));
+    BOOST_OUTCOME_TRY(txn.sc, decode_sc(payload));
+    BOOST_OUTCOME_TRY(txn.sc.r, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(txn.sc.s, decode_unsigned<uint256_t>(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return rest_of_enc;
+    return txn;
 }
 
-Result<byte_string_view>
-decode_transaction_eip2718(Transaction &txn, byte_string_view const enc)
+Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc.substr(1)));
-
+    Transaction txn;
     txn.type =
         enc[0] == 0x01 ? TransactionType::eip2930 : TransactionType::eip1559;
+    enc = enc.substr(1);
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
     txn.sc.chain_id = uint256_t{};
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint256_t>(*txn.sc.chain_id, payload));
-    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint64_t>(txn.nonce, payload));
+    BOOST_OUTCOME_TRY(*txn.sc.chain_id, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(txn.nonce, decode_unsigned<uint64_t>(payload));
 
     if (txn.type == TransactionType::eip1559) {
         BOOST_OUTCOME_TRY(
-            payload,
-            decode_unsigned<uint256_t>(txn.max_priority_fee_per_gas, payload));
+            txn.max_priority_fee_per_gas, decode_unsigned<uint256_t>(payload));
     }
 
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint256_t>(txn.max_fee_per_gas, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint64_t>(txn.gas_limit, payload));
-    BOOST_OUTCOME_TRY(payload, decode_address(txn.to, payload));
-    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.value, payload));
-    BOOST_OUTCOME_TRY(payload, decode_string(txn.data, payload));
-    BOOST_OUTCOME_TRY(payload, decode_access_list(txn.access_list, payload));
-    BOOST_OUTCOME_TRY(payload, decode_bool(txn.sc.odd_y_parity, payload));
-    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.sc.r, payload));
-    BOOST_OUTCOME_TRY(payload, decode_unsigned<uint256_t>(txn.sc.s, payload));
+    BOOST_OUTCOME_TRY(txn.max_fee_per_gas, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(txn.gas_limit, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(txn.to, decode_optional_address(payload));
+    BOOST_OUTCOME_TRY(txn.value, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(txn.data, decode_string(payload));
+    BOOST_OUTCOME_TRY(txn.access_list, decode_access_list(payload));
+    BOOST_OUTCOME_TRY(txn.sc.odd_y_parity, decode_bool(payload));
+    BOOST_OUTCOME_TRY(txn.sc.r, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(txn.sc.s, decode_unsigned<uint256_t>(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return rest_of_enc;
+    return txn;
 }
 
-Result<byte_string_view>
-decode_transaction(Transaction &txn, byte_string_view const enc)
+Result<Transaction> decode_transaction(byte_string_view &enc)
 {
     if (MONAD_UNLIKELY(enc.empty())) {
         return DecodeError::InputTooShort;
@@ -266,9 +244,7 @@ decode_transaction(Transaction &txn, byte_string_view const enc)
     uint8_t const &first = enc[0];
     if (first < 0xc0) // eip 2718 - typed transaction envelope
     {
-        byte_string_view payload{};
-        BOOST_OUTCOME_TRY(
-            auto const rest_of_enc, parse_string_metadata(payload, enc));
+        BOOST_OUTCOME_TRY(auto payload, parse_string_metadata(enc));
         MONAD_ASSERT(payload.size() > 0);
 
         uint8_t const &type = payload[0];
@@ -276,17 +252,17 @@ decode_transaction(Transaction &txn, byte_string_view const enc)
         if (MONAD_UNLIKELY(type != 0x01 && type != 0x02)) {
             return DecodeError::InvalidTxnType;
         }
-        BOOST_OUTCOME_TRY(
-            auto const rest_of_txn_enc,
-            decode_transaction_eip2718(txn, payload));
 
-        if (MONAD_UNLIKELY(!rest_of_txn_enc.empty())) {
+        Transaction txn;
+        BOOST_OUTCOME_TRY(txn, decode_transaction_eip2718(payload));
+
+        if (MONAD_UNLIKELY(!payload.empty())) {
             return DecodeError::InputTooLong;
         }
 
-        return rest_of_enc;
+        return txn;
     }
-    return decode_transaction_legacy(txn, enc);
+    return decode_transaction_legacy(enc);
 }
 
 MONAD_RLP_NAMESPACE_END

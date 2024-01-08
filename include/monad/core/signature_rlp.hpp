@@ -11,6 +11,6 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
-Result<byte_string_view> decode_sc(SignatureAndChain &, byte_string_view);
+Result<SignatureAndChain> decode_sc(byte_string_view &);
 
 MONAD_RLP_NAMESPACE_END

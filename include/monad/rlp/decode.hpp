@@ -41,8 +41,7 @@ constexpr Result<size_t> decode_length(byte_string_view const enc)
     return decode_raw_num<size_t>(enc);
 }
 
-constexpr Result<byte_string_view>
-parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
+constexpr Result<byte_string_view> parse_string_metadata(byte_string_view &enc)
 {
     size_t i = 0;
     size_t end = 0;
@@ -84,12 +83,12 @@ parse_string_metadata(byte_string_view &payload, byte_string_view const enc)
         return DecodeError::InputTooShort;
     }
 
-    payload = enc.substr(i, end - i);
-    return enc.substr(end);
+    auto const payload = enc.substr(i, end - i);
+    enc = enc.substr(end);
+    return payload;
 }
 
-constexpr Result<byte_string_view>
-parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
+constexpr Result<byte_string_view> parse_list_metadata(byte_string_view &enc)
 {
     size_t i = 0;
     size_t length;
@@ -123,41 +122,27 @@ parse_list_metadata(byte_string_view &payload, byte_string_view const enc)
         return DecodeError::InputTooShort;
     }
 
-    payload = enc.substr(i, end - i);
-    return enc.substr(end, enc.size() - end);
+    auto const payload = enc.substr(i, end - i);
+    enc = enc.substr(end);
+    return payload;
 }
 
-template <size_t size>
-constexpr Result<byte_string_view>
-decode_byte_array(uint8_t bytes[size], byte_string_view const enc)
+constexpr Result<byte_string_view> decode_string(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_string_metadata(payload, enc));
-
-    if (MONAD_UNLIKELY(payload.size() != size)) {
-        return DecodeError::ArrayLengthUnexpected;
-    }
-
-    std::memcpy(bytes, payload.data(), size);
-    return rest_of_enc;
-}
-
-constexpr Result<byte_string_view>
-decode_string(byte_string &byte_str, byte_string_view const enc)
-{
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_string_metadata(payload, enc));
-    byte_str = byte_string(payload);
-    return rest_of_enc;
+    return parse_string_metadata(enc);
 }
 
 template <size_t N>
-constexpr Result<byte_string_view>
-decode_byte_string_fixed(byte_string_fixed<N> &data, byte_string_view const enc)
+constexpr Result<byte_string_fixed<N>>
+decode_byte_string_fixed(byte_string_view &enc)
 {
-    return decode_byte_array<N>(data.data(), enc);
+    byte_string_fixed<N> bsf;
+    BOOST_OUTCOME_TRY(auto const payload, parse_string_metadata(enc));
+    if (MONAD_UNLIKELY(payload.size() != N)) {
+        return DecodeError::ArrayLengthUnexpected;
+    }
+    std::memcpy(bsf.data(), payload.data(), N);
+    return bsf;
 }
 
 MONAD_RLP_NAMESPACE_END

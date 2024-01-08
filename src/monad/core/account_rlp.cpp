@@ -37,45 +37,37 @@ byte_string encode_account(Account const &account)
         encode_bytes32(account.code_hash));
 }
 
-Result<byte_string_view> decode_account(
-    Account &account, bytes32_t &storage_root, byte_string_view const enc)
+Result<Account> decode_account(bytes32_t &storage_root, byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint64_t>(account.nonce, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint256_t>(account.balance, payload));
-    BOOST_OUTCOME_TRY(payload, decode_bytes32(storage_root, payload));
-    BOOST_OUTCOME_TRY(payload, decode_bytes32(account.code_hash, payload));
+    Account acct;
+    BOOST_OUTCOME_TRY(acct.nonce, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(acct.balance, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(storage_root, decode_bytes32(payload));
+    BOOST_OUTCOME_TRY(acct.code_hash, decode_bytes32(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return rest_of_enc;
+    return acct;
 }
 
-Result<byte_string_view>
-decode_account(Account &account, byte_string_view const enc)
+Result<Account> decode_account(byte_string_view &enc)
 {
-    byte_string_view payload{};
-    BOOST_OUTCOME_TRY(
-        auto const rest_of_enc, parse_list_metadata(payload, enc));
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint64_t>(account.nonce, payload));
-    BOOST_OUTCOME_TRY(
-        payload, decode_unsigned<uint256_t>(account.balance, payload));
-    BOOST_OUTCOME_TRY(payload, decode_bytes32(account.code_hash, payload));
+    Account acct;
+    BOOST_OUTCOME_TRY(acct.nonce, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(acct.balance, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(acct.code_hash, decode_bytes32(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return rest_of_enc;
+    return acct;
 }
 
 MONAD_RLP_NAMESPACE_END

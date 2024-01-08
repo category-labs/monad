@@ -14,12 +14,10 @@ byte_string encode_log(Receipt::Log const &);
 byte_string encode_bloom(Receipt::Bloom const &);
 byte_string encode_receipt(Receipt const &);
 
-Result<byte_string_view> decode_bloom(Receipt::Bloom &, byte_string_view);
-Result<byte_string_view>
-decode_topics(std::vector<bytes32_t> &, byte_string_view);
-Result<byte_string_view> decode_log(Receipt::Log &, byte_string_view);
-Result<byte_string_view>
-decode_logs(std::vector<Receipt::Log> &, byte_string_view);
-Result<byte_string_view> decode_receipt(Receipt &, byte_string_view);
+Result<Receipt::Bloom> decode_bloom(byte_string_view &);
+Result<std::vector<bytes32_t>> decode_topics(byte_string_view &);
+Result<Receipt::Log> decode_log(byte_string_view &);
+Result<std::vector<Receipt::Log>> decode_logs(byte_string_view &);
+Result<Receipt> decode_receipt(byte_string_view &);
 
 MONAD_RLP_NAMESPACE_END

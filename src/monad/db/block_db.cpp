@@ -38,10 +38,12 @@ bool BlockDb::get(uint64_t const num, Block &block) const
         view.size(), view.data(), &brotli_size, brotli_buffer.data());
     brotli_buffer.resize(brotli_size);
     MONAD_ASSERT(brotli_result == BROTLI_DECODER_RESULT_SUCCESS);
-    byte_string_view const view2{brotli_buffer};
-    auto const remaining = rlp::decode_block(block, view2);
-    MONAD_ASSERT(
-        !remaining.has_error() && remaining.assume_value().size() == 0);
+    byte_string_view view2{brotli_buffer};
+
+    auto const decoded_block = rlp::decode_block(view2);
+    MONAD_ASSERT(!decoded_block.has_error());
+    MONAD_ASSERT(view2.size() == 0);
+    block = decoded_block.value();
     return true;
 }
 

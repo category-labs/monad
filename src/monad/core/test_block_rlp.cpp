@@ -106,11 +106,12 @@ TEST(Rlp_Block, DecodeEncodeBlock46402)
 
     // check encoding
     auto const encoded_block = rlp::encode_block(block);
-    Block decoded_block;
-    auto const remaining = rlp::decode_block(decoded_block, encoded_block);
-    ASSERT_FALSE(remaining.has_error());
-    EXPECT_EQ(remaining.assume_value().size(), 0);
-    EXPECT_EQ(decoded_block, block);
+    byte_string_view encoded_block_view{encoded_block};
+
+    auto const decoded_block = rlp::decode_block(encoded_block_view);
+    ASSERT_FALSE(decoded_block.has_error());
+    EXPECT_EQ(encoded_block_view.size(), 0);
+    EXPECT_EQ(decoded_block.value(), block);
 }
 
 TEST(Rlp_Block, DecodeEncodeBlock2730000)
@@ -263,11 +264,12 @@ TEST(Rlp_Block, DecodeEncodeBlock2730000)
 
     // check encoding
     auto const encoded_block = rlp::encode_block(block);
-    Block decoded_block;
-    auto const remaining = rlp::decode_block(decoded_block, encoded_block);
-    ASSERT_FALSE(remaining.has_error());
-    EXPECT_EQ(remaining.assume_value().size(), 0);
-    EXPECT_EQ(decoded_block, block);
+    byte_string_view encoded_block_view{encoded_block};
+
+    auto const decoded_block = rlp::decode_block(encoded_block_view);
+    ASSERT_FALSE(decoded_block.has_error());
+    EXPECT_EQ(encoded_block_view.size(), 0);
+    EXPECT_EQ(decoded_block.value(), block);
 }
 
 TEST(Rlp_Block, DecodeEncodeBlock2730001)
@@ -447,11 +449,12 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
 
     // check encoding
     auto const encoded_block = rlp::encode_block(block);
-    Block decoded_block;
-    auto const remaining = rlp::decode_block(decoded_block, encoded_block);
-    ASSERT_FALSE(remaining.has_error());
-    EXPECT_EQ(remaining.assume_value().size(), 0);
-    EXPECT_EQ(decoded_block, block);
+    byte_string_view encoded_block_view{encoded_block};
+
+    auto const decoded_block = rlp::decode_block(encoded_block_view);
+    ASSERT_FALSE(decoded_block.has_error());
+    EXPECT_EQ(encoded_block_view.size(), 0);
+    EXPECT_EQ(decoded_block.value(), block);
 }
 
 TEST(Rlp_Block, DecodeEncodeBlock2730002)
@@ -516,11 +519,12 @@ TEST(Rlp_Block, DecodeEncodeBlock2730002)
 
     // check encoding
     auto const encoded_block = rlp::encode_block(block);
-    Block decoded_block;
-    auto const remaining = rlp::decode_block(decoded_block, encoded_block);
-    ASSERT_FALSE(remaining.has_error());
-    EXPECT_EQ(remaining.assume_value().size(), 0);
-    EXPECT_EQ(decoded_block, block);
+    byte_string_view encoded_block_view{encoded_block};
+
+    auto const decoded_block = rlp::decode_block(encoded_block_view);
+    ASSERT_FALSE(decoded_block.has_error());
+    EXPECT_EQ(encoded_block_view.size(), 0);
+    EXPECT_EQ(decoded_block.value(), block);
 }
 
 TEST(Rlp_Block, DecodeEncodeBlock2730009)
@@ -570,11 +574,12 @@ TEST(Rlp_Block, DecodeEncodeBlock2730009)
 
     // check encoding
     auto const encoded_block = rlp::encode_block(block);
-    Block decoded_block;
-    auto const remaining = rlp::decode_block(decoded_block, encoded_block);
-    ASSERT_FALSE(remaining.has_error());
-    EXPECT_EQ(remaining.assume_value().size(), 0);
-    EXPECT_EQ(decoded_block, block);
+    byte_string_view encoded_block_view{encoded_block};
+
+    auto const decoded_block = rlp::decode_block(encoded_block_view);
+    ASSERT_FALSE(decoded_block.has_error());
+    EXPECT_EQ(encoded_block_view.size(), 0);
+    EXPECT_EQ(decoded_block.value(), block);
 }
 
 TEST(Rlp_Block, DecodeEncodeBlock14000000)
@@ -688,11 +693,12 @@ TEST(Rlp_Block, DecodeEncodeBlock14000000)
 
     // check encoding
     auto const encoded_block = rlp::encode_block(block);
-    Block decoded_block;
-    auto const remaining = rlp::decode_block(decoded_block, encoded_block);
-    ASSERT_FALSE(remaining.has_error());
-    EXPECT_EQ(remaining.assume_value().size(), 0);
-    EXPECT_EQ(decoded_block, block);
+    byte_string_view encoded_block_view{encoded_block};
+
+    auto const decoded_block = rlp::decode_block(encoded_block_view);
+    ASSERT_FALSE(decoded_block.has_error());
+    EXPECT_EQ(encoded_block_view.size(), 0);
+    EXPECT_EQ(decoded_block.value(), block);
 }
 
 TEST(Rlp_Block, DecodeEncodeShanghai)
@@ -754,30 +760,30 @@ TEST(Rlp_Block, DecodeEncodeShanghai)
         0xfc, 0xe5, 0xed, 0xbc, 0x8e, 0x2a, 0x86, 0x97, 0xc1, 0x53, 0x31, 0x67,
         0x7e, 0x6e, 0xbf, 0x0b, 0x82, 0x27, 0x10};
 
-    Block decoded_block;
+    auto const encoded_block_copy = encoded_block;
+    byte_string_view encoded_block_view{encoded_block};
 
-    auto const remaining = rlp::decode_block(decoded_block, encoded_block);
-
+    auto const decoded_block = rlp::decode_block(encoded_block_view);
     // Header
-    ASSERT_FALSE(remaining.has_error());
-    EXPECT_EQ(remaining.assume_value().size(), 0);
+    ASSERT_FALSE(decoded_block.has_error());
+    EXPECT_EQ(encoded_block_view.size(), 0);
     EXPECT_EQ(
-        decoded_block.header.parent_hash,
+        decoded_block.value().header.parent_hash,
         0x151934ad9b654c50197f37018ee5ee9bb922dec0a1b5e24a6d679cb111cdb107_bytes32);
     EXPECT_EQ(
-        decoded_block.header.ommers_hash,
+        decoded_block.value().header.ommers_hash,
         0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
     EXPECT_EQ(
-        decoded_block.header.beneficiary,
+        decoded_block.value().header.beneficiary,
         0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba_address);
     EXPECT_EQ(
-        decoded_block.header.state_root,
+        decoded_block.value().header.state_root,
         0x48cd9a5957e45beebf80278a5208b0cbe975ab4b4adb0da1509c67b26f2be3ff_bytes32);
     EXPECT_EQ(
-        decoded_block.header.transactions_root,
+        decoded_block.value().header.transactions_root,
         0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
     EXPECT_EQ(
-        decoded_block.header.receipts_root,
+        decoded_block.value().header.receipts_root,
         0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
     byte_string_fixed<256> const bloom{
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -802,67 +808,70 @@ TEST(Rlp_Block, DecodeEncodeShanghai)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00};
-    EXPECT_EQ(decoded_block.header.logs_bloom, bloom);
-    EXPECT_EQ(decoded_block.header.difficulty, 0);
-    EXPECT_EQ(decoded_block.header.number, 1);
-    EXPECT_EQ(decoded_block.header.gas_limit, 0x7fffffffffffffff);
-    EXPECT_EQ(decoded_block.header.gas_used, 0);
-    EXPECT_EQ(decoded_block.header.timestamp, 0x079e);
-
-    EXPECT_EQ(decoded_block.header.extra_data, byte_string({0x42}));
-
+    EXPECT_EQ(decoded_block.value().header.logs_bloom, bloom);
+    EXPECT_EQ(decoded_block.value().header.difficulty, 0);
+    EXPECT_EQ(decoded_block.value().header.number, 1);
+    EXPECT_EQ(decoded_block.value().header.gas_limit, 0x7fffffffffffffff);
+    EXPECT_EQ(decoded_block.value().header.gas_used, 0);
+    EXPECT_EQ(decoded_block.value().header.timestamp, 0x079e);
+    EXPECT_EQ(decoded_block.value().header.extra_data, byte_string({0x42}));
     EXPECT_EQ(
-        decoded_block.header.prev_randao,
+        decoded_block.value().header.prev_randao,
         0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
     EXPECT_EQ(
-        decoded_block.header.nonce,
+        decoded_block.value().header.nonce,
         byte_string_fixed<8UL>(
             {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}));
-    EXPECT_TRUE(decoded_block.header.base_fee_per_gas.has_value());
-    EXPECT_EQ(decoded_block.header.base_fee_per_gas.value(), 0x09);
+    EXPECT_TRUE(decoded_block.value().header.base_fee_per_gas.has_value());
+    EXPECT_EQ(decoded_block.value().header.base_fee_per_gas.value(), 0x09);
 
     // EIP-4895
-    EXPECT_TRUE(decoded_block.header.withdrawals_root.has_value());
+    EXPECT_TRUE(decoded_block.value().header.withdrawals_root.has_value());
     EXPECT_EQ(
-        decoded_block.header.withdrawals_root.value(),
+        decoded_block.value().header.withdrawals_root.value(),
         0x4a220ebe55034d51f8a58175bb504b6ebf883105010a1f6d42e557c18bbd5d69_bytes32);
 
     // Transaction
-    EXPECT_EQ(decoded_block.transactions.size(), 0);
+    EXPECT_EQ(decoded_block.value().transactions.size(), 0);
 
     // Withdrawals: EIP-4895
-    EXPECT_TRUE(decoded_block.withdrawals.has_value());
-    EXPECT_EQ(decoded_block.withdrawals.value().size(), 4);
+    EXPECT_TRUE(decoded_block.value().withdrawals.has_value());
+    EXPECT_EQ(decoded_block.value().withdrawals.value().size(), 4);
 
-    EXPECT_EQ(decoded_block.withdrawals.value()[0].index, 0x00);
-    EXPECT_EQ(decoded_block.withdrawals.value()[0].validator_index, 0x00);
+    EXPECT_EQ(decoded_block.value().withdrawals.value()[0].index, 0x00);
     EXPECT_EQ(
-        decoded_block.withdrawals.value()[0].recipient,
+        decoded_block.value().withdrawals.value()[0].validator_index, 0x00);
+    EXPECT_EQ(
+        decoded_block.value().withdrawals.value()[0].recipient,
         0xc94f5374fce5edbc8e2a8697c15331677e6ebf0b_address);
-    EXPECT_EQ(decoded_block.withdrawals.value()[0].amount, 0x2710);
+    EXPECT_EQ(decoded_block.value().withdrawals.value()[0].amount, 0x2710);
 
-    EXPECT_EQ(decoded_block.withdrawals.value()[1].index, 0x02);
-    EXPECT_EQ(decoded_block.withdrawals.value()[1].validator_index, 0x00);
+    EXPECT_EQ(decoded_block.value().withdrawals.value()[1].index, 0x02);
     EXPECT_EQ(
-        decoded_block.withdrawals.value()[1].recipient,
+        decoded_block.value().withdrawals.value()[1].validator_index, 0x00);
+    EXPECT_EQ(
+        decoded_block.value().withdrawals.value()[1].recipient,
         0xc94f5374fce5edbc8e2a8697c15331677e6ebf0b_address);
-    EXPECT_EQ(decoded_block.withdrawals.value()[1].amount, 0x2710);
+    EXPECT_EQ(decoded_block.value().withdrawals.value()[1].amount, 0x2710);
 
-    EXPECT_EQ(decoded_block.withdrawals.value()[2].index, 0x01);
-    EXPECT_EQ(decoded_block.withdrawals.value()[2].validator_index, 0x00);
+    EXPECT_EQ(decoded_block.value().withdrawals.value()[2].index, 0x01);
     EXPECT_EQ(
-        decoded_block.withdrawals.value()[2].recipient,
+        decoded_block.value().withdrawals.value()[2].validator_index, 0x00);
+    EXPECT_EQ(
+        decoded_block.value().withdrawals.value()[2].recipient,
         0xc94f5374fce5edbc8e2a8697c15331677e6ebf0b_address);
-    EXPECT_EQ(decoded_block.withdrawals.value()[2].amount, 0x2710);
+    EXPECT_EQ(decoded_block.value().withdrawals.value()[2].amount, 0x2710);
 
-    EXPECT_EQ(decoded_block.withdrawals.value()[3].index, 0x02);
-    EXPECT_EQ(decoded_block.withdrawals.value()[3].validator_index, 0x01);
+    EXPECT_EQ(decoded_block.value().withdrawals.value()[3].index, 0x02);
     EXPECT_EQ(
-        decoded_block.withdrawals.value()[3].recipient,
+        decoded_block.value().withdrawals.value()[3].validator_index, 0x01);
+    EXPECT_EQ(
+        decoded_block.value().withdrawals.value()[3].recipient,
         0xc94f5374fce5edbc8e2a8697c15331677e6ebf0b_address);
-    EXPECT_EQ(decoded_block.withdrawals.value()[3].amount, 0x2710);
+    EXPECT_EQ(decoded_block.value().withdrawals.value()[3].amount, 0x2710);
 
     // check encoding
-    auto const encoded_block_from_decoded = rlp::encode_block(decoded_block);
-    EXPECT_EQ(encoded_block_from_decoded, encoded_block);
+    auto const encoded_block_from_decoded =
+        rlp::encode_block(decoded_block.value());
+    EXPECT_EQ(encoded_block_from_decoded, encoded_block_copy);
 }

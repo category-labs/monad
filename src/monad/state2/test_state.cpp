@@ -423,6 +423,12 @@ TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
 
 TYPED_TEST(StateTest, create_conflict_address_incarnation)
 {
+    quill::start(true);
+
+    auto log_level = quill::LogLevel::Info;
+
+    quill::get_root_logger()->set_log_level(log_level);
+
     BlockState bs{this->db};
     this->db.commit(
         StateDeltas{
@@ -438,6 +444,7 @@ TYPED_TEST(StateTest, create_conflict_address_incarnation)
 
         s1.create_contract(a);
         s1.set_storage(a, key2, value2);
+        s1.set_storage(a, key3, value3);
 
         EXPECT_EQ(s1.get_storage(a, key1), bytes32_t{});
         EXPECT_EQ(s1.get_storage(a, key2), value2);
@@ -455,6 +462,19 @@ TYPED_TEST(StateTest, create_conflict_address_incarnation)
 
         EXPECT_EQ(s2.get_storage(a, key1), value1);
         EXPECT_EQ(s2.get_storage(a, key2), bytes32_t{});
+
+        EXPECT_TRUE(bs.can_merge(s2.state_));
+        bs.merge(s2.state_);
+    }
+
+    // Txn3
+    {
+        State s3{bs};
+        s3.get_balance(a);
+
+        EXPECT_EQ(s3.get_storage(a, key1), value1);
+        EXPECT_EQ(s3.get_storage(a, key2), bytes32_t{});
+        EXPECT_EQ(s3.get_storage(a, key3), bytes32_t{});
     }
 }
 

@@ -5,6 +5,14 @@
 #include <monad/core/assert.h>
 #include <monad/core/likely.h>
 
+#include <quill/LogLevel.h>
+#include <quill/Quill.h>
+#include <quill/detail/LogMacros.h>
+
+#include <monad/core/address_fmt.hpp>
+#include <monad/core/bytes_fmt.hpp>
+#include <monad/state2/state_deltas_fmt.hpp>
+
 MONAD_NAMESPACE_BEGIN
 
 /**
@@ -17,9 +25,15 @@ bool subset_f(auto const &m1, auto const &m2, auto &&f)
     for (auto it2 = m2.begin(); it2 != m2.end(); ++it2) {
         auto const it1 = m1.find(it2->first);
         if (MONAD_UNLIKELY(it1 == m1.end())) {
+            LOG_INFO("it2 first: {}", it2->first);
+            quill::flush();
             return false;
         }
         if (MONAD_UNLIKELY(!f(it1->second, it2->second))) {
+            LOG_INFO("it2->first: {}", it2->first);
+            LOG_INFO("it1->second: {}", it1->second);
+            LOG_INFO("it2->second: {}", it2->second);
+            quill::flush();
             return false;
         }
     }
@@ -40,16 +54,33 @@ void merge_f(auto &m1, auto const &m2, auto &&f)
     }
 }
 
+void special_merge_f(auto &m1, auto const &m2, auto &&f)
+{
+    for (auto it1 = m1.begin(); it1 != m1.end(); ++it1) {
+        auto const it2 = m2.find(it1->first);
+        if (it2 == m2.end()) {
+            it1->second.second = bytes32_t{};
+        }
+        else {
+            f(it1->second, it2->second);
+        }
+    }
+}
+
 bool can_merge(StateDeltas const &to, StateDeltas const &from)
 {
     return subset_f(to, from, [](auto const &d1, auto const &d2) {
         if (MONAD_UNLIKELY(d2.account.first != d1.account.second)) {
             return false;
         }
-        return subset_f(
-            d1.storage, d2.storage, [](auto const &st1, auto const &st2) {
-                return st2.first == st1.second;
-            });
+        return (d2.account.second.has_value() &&
+                d2.account.second->incarnation == 2) ||
+               subset_f(
+                   d1.storage,
+                   d2.storage,
+                   [](auto const &st1, auto const &st2) {
+                       return st2.first == st1.second;
+                   });
     });
 }
 
@@ -57,7 +88,16 @@ void merge(StateDeltas &to, StateDeltas const &from)
 {
     merge_f(to, from, [](auto &d1, auto const &d2) {
         d1.account.second = d2.account.second;
-        if (d2.account.second.has_value()) {
+        if (MONAD_UNLIKELY(
+                d2.account.second.has_value() &&
+                d2.account.second->incarnation == 2)) {
+            d1.account.second->incarnation = 1;
+            special_merge_f(
+                d1.storage, d2.storage, [](auto &st1, auto const &st2) {
+                    st1.second = st2.second;
+                });
+        }
+        else if (d2.account.second.has_value()) {
             merge_f(d1.storage, d2.storage, [](auto &st1, auto const &st2) {
                 st1.second = st2.second;
             });

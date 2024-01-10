@@ -23,10 +23,11 @@
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Install CLang
   - name: Add LLVM repository key
-    apt_key:
+    get_url:
       url: "https://apt.llvm.org/llvm-snapshot.gpg.key"
-      state: present
-    become: yes
+      dest: /etc/apt/trusted.gpg.d/llvm-snapshot.asc
+      mode: '0644'
+      force: true
   
   - name: Add LLVM apt repository
     apt_repository:
@@ -81,10 +82,12 @@
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Install CMake
   - name: Add kitware apt-key
-    apt_key:
+    get_url:
       url: https://apt.kitware.com/keys/kitware-archive-latest.asc
-      state: present
-  
+      dest: /etc/apt/trusted.gpg.d/kitware-archive-latest.asc
+      mode: '0644'
+      force: true
+    
   - name: Add kitware repo
     apt_repository:
       repo: deb https://apt.kitware.com/ubuntu/ jammy main

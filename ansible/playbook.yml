@@ -13,10 +13,12 @@
       update_cache: yes
   
   - name: Install GCC
+    vars:
+      gcc_version: 13
     apt:
       name:
-      - gcc-13
-      - g++-13
+      - gcc-{{ gcc_version }} 
+      - g++-{{ gcc_version }}
   
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Install CLang
@@ -61,17 +63,20 @@
       update_cache: yes
   
   - name: Install Boost libraries
+    vars:
+      libboost_version: 1.83
     apt:
       name:
-      - libboost-fiber1.83.0
-      - libboost-graph1.83.0
-      - libboost-json1.83.0
-      - libboost-stacktrace1.83.0
-      - libboost-fiber1.83-dev
-      - libboost-graph1.83-dev
-      - libboost-json1.83-dev
-      - libboost-stacktrace1.83-dev
-      - libboost1.83-dev
+      - libboost-fiber{{ libboost_version }}.0
+      - libboost-graph{{ libboost_version }}.0
+      - libboost-json{{ libboost_version }}.0
+      - libboost-stacktrace{{ libboost_version }}.0
+
+      - libboost-fiber{{ libboost_version }}-dev
+      - libboost-graph{{ libboost_version }}-dev
+      - libboost-json{{ libboost_version }}-dev
+      - libboost-stacktrace{{ libboost_version }}-dev
+      - libboost{{ libboost_version }}-dev
   
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Install CMake
@@ -85,7 +90,7 @@
       repo: deb https://apt.kitware.com/ubuntu/ jammy main
       state: present
   
-  - name: Install Boost libraries
+  - name: Install CMake
     apt:
       name:
       - kitware-archive-keyring
@@ -124,7 +129,7 @@
       mode: 0755
 
   - name: Extract package
-    unarchive:
+    copy:
       src: "./hugepages.service"
       dest: "/usr/lib/systemd/system/hugepages.service"
 
@@ -135,41 +140,14 @@
 
   - name: Enable Hugepages
     systemd:
-      name: firewalld
-      state: enabled
+      name: hugepages
+      enabled: true
+      state: started
   
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
-  # Disable OOM killing from ever occuring
-  - name: vm-oom-kill=0
-    ansible.posix.sysctl:
-      name: vm.oom-kill 
-      value: 0
-      state: present
-  
-  - name: vm.overcommit_memory=2
-    ansible.posix.sysctl:
-      name: vm.overcommit_memory 
-      value: 2
-  
-  # Enable all traffic to be forwarded to the bridge
-  - name: net.bridge-nf-call-ip6tables=0
-    ansible.posix.sysctl:
-      name: net.bridge.bridge-nf-call-ip6tables 
-      value: 0
-  
-  - name: net.bridge-nf-call-iptables=0
-    ansible.posix.sysctl:
-      name: net.bridge.bridge-nf-call-iptables 
-      value: 0
-  
-  - name: net.bridge-nf-call-arptables=0
-    ansible.posix.sysctl:
-      name: net.bridge.bridge-nf-call-arptables
-      value: 0
-
   - name: kernel.kptr_restrict=0
     ansible.posix.sysctl:
-      name: kernel.kprt_restrict
+      name: kernel.kptr_restrict
       value: 0
 
   - name: kernel.perf_event_paranoid=0

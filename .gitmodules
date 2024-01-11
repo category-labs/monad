@@ -13,12 +13,10 @@
 [submodule "third_party/execution-specs"]
 	path = third_party/execution-specs
 	url = https://github.com/ethereum/execution-specs.git
-[submodule "third_party/immer"]
-	path = third_party/immer
-	url = https://github.com/arximboldi/immer.git
 [submodule "third_party/intx"]
 	path = third_party/intx
 	url = https://github.com/chfast/intx.git
+	branch = master
 [submodule "third_party/silkpre"]
 	path = third_party/silkpre
 	url = https://github.com/monad-crypto/silkpre.git

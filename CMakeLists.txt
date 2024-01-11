@@ -21,24 +21,15 @@ find_package(PkgConfig REQUIRED)
 find_package(absl REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 
-# evmone
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build evmone as a shared library" FORCE)
+set(BUILD_SHARED_LIBS OFF)
+
 add_subdirectory(third_party/evmone)
 # always compile baseline with optimization due to stack size of dispatch_cgoto
 set_source_files_properties(
   third_party/evmone/lib/evmone/baseline.cpp TARGET_DIRECTORY evmone
   PROPERTIES COMPILE_OPTIONS -O2)
-
-# immer
-set(immer_BUILD_TESTS OFF CACHE BOOL "Build immer tests" FORCE)
-set(immer_BUILD_EXAMPLES OFF CACHE BOOL "Build immer examples" FORCE)
-set(immer_BUILD_DOCS OFF CACHE BOOL "Build immer docs" FORCE)
-set(immer_BUILD_EXTRAS OFF CACHE BOOL "Build immer extras" FORCE)
-add_subdirectory(third_party/immer)
-
-# intx
 add_subdirectory(third_party/intx)
-
+set(OPTIONAL_BUILD_TESTS OFF)
 add_subdirectory(third_party/silkpre)
 
 function(monad_compile_options target)

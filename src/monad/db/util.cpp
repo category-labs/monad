@@ -30,6 +30,14 @@ uint64_t auto_detect_start_block_number(std::filesystem::path const &root)
                 start_block_number,
                 std::stoul(entry.path().stem().string()) + 1);
         }
+        // else {
+        //     auto const child_path = entry.path();
+        //     if (MONAD_LIKELY(child_path.extension().string() == ".json")) {
+        //         start_block_number = std::max(
+        //             start_block_number,
+        //             std::stoul(child_path.stem().string()) + 1u);
+        //     }
+        // }
     }
 
     return start_block_number;

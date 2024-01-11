@@ -38,6 +38,16 @@ public:
     void commit();
 
     void log_debug();
+
+    StateDeltas &get_state_delta()
+    {
+        return state_;
+    }
+
+    Code &get_code_delta()
+    {
+        return code_;
+    }
 };
 
 MONAD_NAMESPACE_END

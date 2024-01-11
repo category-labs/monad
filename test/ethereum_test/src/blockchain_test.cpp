@@ -32,6 +32,8 @@
 
 #include <gtest/gtest.h>
 
+#include <nlohmann/json.hpp>
+
 #include <test_resource_data.h>
 
 #include <algorithm>
@@ -56,7 +58,9 @@ namespace
 
         BOOST_OUTCOME_TRY(static_validate_block<rev>(block));
 
-        return execute_block<rev>(block, db, block_hash_buffer);
+        nlohmann::json j = nlohmann::json::object();
+
+        return execute_block<rev>(block, db, block_hash_buffer, j);
     }
 
     Result<std::vector<Receipt>> execute_dispatch(

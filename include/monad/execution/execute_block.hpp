@@ -6,6 +6,9 @@
 
 #include <evmc/evmc.h>
 
+#include <nlohmann/json.hpp>
+
+#include <filesystem>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -16,6 +19,6 @@ struct Db;
 
 template <evmc_revision rev>
 Result<std::vector<Receipt>>
-execute_block(Block &, Db &, BlockHashBuffer const &);
+execute_block(Block &, Db &, BlockHashBuffer const &, nlohmann::json &);
 
 MONAD_NAMESPACE_END

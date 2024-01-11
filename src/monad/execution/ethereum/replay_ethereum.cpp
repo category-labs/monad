@@ -38,6 +38,8 @@ int main(int argc, char *argv[])
     std::filesystem::path state_db_path{};
     std::filesystem::path genesis_file_path{};
     std::optional<uint64_t> checkpoint_frequency = std::nullopt;
+    std::filesystem::path state_delta_log_path{};
+    uint64_t state_delta_batch_size = 1000u;
     std::optional<block_num_t> finish_block_number = std::nullopt;
 
     quill::start(true);
@@ -47,6 +49,14 @@ int main(int argc, char *argv[])
         ->required();
     cli.add_option("--state_db", state_db_path, "state_db directory")
         ->required();
+    cli.add_option(
+        "--state_delta_log_path",
+        state_delta_log_path,
+        "path to state delta log file");
+    cli.add_option(
+        "--state_delta_batch_size",
+        state_delta_batch_size,
+        "how many blocks per file for state delta");
     auto *has_genesis_file = cli.add_option(
         "--genesis_file", genesis_file_path, "genesis file directory");
     cli.add_option(
@@ -121,6 +131,8 @@ int main(int argc, char *argv[])
         db,
         block_db,
         state_db_path,
+        state_delta_log_path,
+        state_delta_batch_size,
         checkpoint_frequency,
         start_block_number,
         finish_block_number);

@@ -15,11 +15,14 @@
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/state2/block_state.hpp>
+#include <monad/state2/state_deltas_fmt.hpp>
 #include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
 
 #include <intx/intx.hpp>
+
+#include <nlohmann/json.hpp>
 
 #include <quill/detail/LogMacros.h>
 
@@ -27,7 +30,10 @@
 
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <optional>
+#include <string>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -88,8 +94,9 @@ inline void commit(BlockState &block_state)
 }
 
 template <evmc_revision rev>
-Result<std::vector<Receipt>>
-execute_block(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
+Result<std::vector<Receipt>> execute_block(
+    Block &block, Db &db, BlockHashBuffer const &block_hash_buffer,
+    nlohmann::json &state_delta_log)
 {
     auto const start_time = std::chrono::steady_clock::now();
     LOG_INFO(
@@ -146,6 +153,86 @@ execute_block(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
 
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(state);
+
+    auto const block_number = std::to_string(block.header.number);
+    auto &state_deltas = block_state.get_state_delta();
+
+    nlohmann::json j = nlohmann::json::object();
+
+    j["StateDelta"] = nlohmann::json::object();
+
+    for (auto const &[addr, state_delta] : state_deltas) {
+        auto const address = fmt::format(
+            "0x{:02x}", fmt::join(std::as_bytes(std::span(addr.bytes)), ""));
+        j["StateDelta"][address] = nlohmann::json::object();
+        auto const &account = state_delta.account.second;
+
+        // storage
+        j["StateDelta"][address]["storage"] = nlohmann::json::object();
+        if (account.has_value()) {
+            for (auto const &[key, value] : state_delta.storage) {
+                if (value.first != value.second) {
+                    auto const string_key = fmt::format(
+                        "0x{:02x}",
+                        fmt::join(std::as_bytes(std::span(key.bytes)), ""));
+                    j["StateDelta"][address]["storage"][string_key] =
+                        fmt::format("{}", value.second);
+                }
+            }
+        }
+
+        bool const second_has_value = state_delta.account.second.has_value();
+
+        if (!j["StateDelta"][address]["storage"].empty() ||
+            account != state_delta.account.first) {
+            // balance
+            j["StateDelta"][address]["balance"] = fmt::format(
+                "{}",
+                second_has_value ? state_delta.account.second->balance : 0);
+
+            // nonce
+            j["StateDelta"][address]["nonce"] = fmt::format(
+                "0x{:x}",
+                second_has_value ? state_delta.account.second->nonce : 0);
+
+            // code_hash
+            j["StateDelta"][address]["code_hash"] =
+                second_has_value
+                    ? fmt::format(
+                          "0x{:02x}",
+                          fmt::join(
+                              std::as_bytes(std::span(
+                                  state_delta.account.second->code_hash.bytes)),
+                              ""))
+                    : fmt::format(
+                          "0x{:02x}",
+                          fmt::join(
+                              std::as_bytes(std::span(NULL_HASH.bytes)), ""));
+
+            // incarnation:
+            j["StateDelta"][address]["incarnation"] = fmt::format(
+                "0x{:x}",
+                second_has_value ? state_delta.account.second->incarnation : 0);
+        }
+        else {
+            j["StateDelta"].erase(address);
+        }
+    }
+
+    auto &code_deltas = block_state.get_code_delta();
+
+    j["CodeDelta"] = nlohmann::json::object();
+
+    for (auto const &[code_hash, code] : code_deltas) {
+        auto const string_code_hash = fmt::format(
+            "0x{:02x}",
+            fmt::join(std::as_bytes(std::span(code_hash.bytes)), ""));
+
+        j["CodeDelta"][string_code_hash] = fmt::format(
+            "0x{:02x}", fmt::join(std::as_bytes(std::span(code)), ""));
+    }
+
+    state_delta_log[block_number] = j;
 
     auto const finished_time = std::chrono::steady_clock::now();
     auto const elapsed_ms =

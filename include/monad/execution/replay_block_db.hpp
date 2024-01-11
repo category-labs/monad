@@ -81,11 +81,15 @@ public:
     template <class Traits>
     Result run_fork(
         Db &db, BlockDb &block_db, std::filesystem::path const &root_path,
+        std::filesystem::path const &state_delta_path,
+        uint64_t const state_delta_batch_size,
         BlockHashBuffer &block_hash_buffer,
         std::optional<uint64_t> const checkpoint_frequency,
         block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
+        nlohmann::json state_delta_log = nlohmann::json::object();
+        uint64_t state_delta_start_block_number = current_block_number;
         for (; current_block_number <= loop_until<Traits>(until_block_number);
              ++current_block_number) {
             Block block{};
@@ -106,8 +110,8 @@ public:
                     Status::BLOCK_VALIDATION_FAILED, current_block_number};
             }
 
-            auto const receipts =
-                execute_block<Traits::rev>(block, db, block_hash_buffer);
+            auto const receipts = execute_block<Traits::rev>(
+                block, db, block_hash_buffer, state_delta_log);
 
             if (!verify_root_hash(
                     block.header,
@@ -125,6 +129,19 @@ public:
                     db::write_to_file(
                         db.to_json(), root_path, current_block_number);
                 }
+
+                if (current_block_number % state_delta_batch_size == 0) {
+                    std::ofstream ofile(
+                        state_delta_path /
+                        ("state_delta_" +
+                         std::to_string(state_delta_start_block_number) + "_" +
+                         std::to_string(state_delta_batch_size) + ".json"));
+                    ofile << state_delta_log.dump(4);
+                    ofile.flush();
+                    state_delta_log.clear();
+                    state_delta_log = nlohmann::json::object();
+                    state_delta_start_block_number = current_block_number + 1;
+                }
             }
         }
 
@@ -137,6 +154,8 @@ public:
                 db,
                 block_db,
                 root_path,
+                state_delta_path,
+                state_delta_batch_size,
                 block_hash_buffer,
                 checkpoint_frequency,
                 current_block_number,
@@ -147,6 +166,8 @@ public:
     template <class Traits>
     Result
     run(Db &db, BlockDb &block_db, std::filesystem::path const &root_path,
+        std::filesystem::path const &state_delta_path,
+        uint64_t const state_delta_batch_size,
         std::optional<uint64_t> const checkpoint_frequency,
         block_num_t const start_block_number,
         std::optional<block_num_t> const until_block_number = std::nullopt)
@@ -178,6 +199,8 @@ public:
             db,
             block_db,
             root_path,
+            state_delta_path,
+            state_delta_batch_size,
             block_hash_buffer,
             checkpoint_frequency,
             start_block_number,

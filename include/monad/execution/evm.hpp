@@ -13,9 +13,6 @@ struct EvmcHost;
 
 class State;
 
-void transfer_balances(
-    State &, evmc_message const &, Address const &to) noexcept;
-
 evmc_result transfer_call_balances(State &, evmc_message const &);
 
 template <evmc_revision rev>

@@ -23,26 +23,18 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <utility>
 
 MONAD_NAMESPACE_BEGIN
 
-std::optional<evmc_result>
+std::optional<evmc::Result>
 check_sender_balance(State &state, evmc_message const &msg) noexcept
 {
     auto const value = intx::be::load<uint256_t>(msg.value);
     auto const balance =
         intx::be::load<uint256_t>(state.get_balance(msg.sender));
     if (balance < value) {
-        return evmc_result{
-            .status_code = EVMC_INSUFFICIENT_BALANCE,
-            .gas_left = msg.gas,
-            .gas_refund = 0, // unused
-            .output_data = nullptr, // unused
-            .output_size = 0, // unused
-            .release = nullptr, // unused
-            .create_address = {}, // unused
-            .padding = {}, // unused
-        };
+        return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
     }
     return std::nullopt;
 }
@@ -55,27 +47,18 @@ void transfer_balances(
     state.add_to_balance(to, value);
 }
 
-evmc_result transfer_call_balances(State &state, evmc_message const &msg)
+evmc::Result transfer_call_balances(State &state, evmc_message const &msg)
 {
     if (msg.kind != EVMC_DELEGATECALL) {
-        if (auto const result = check_sender_balance(state, msg);
+        if (auto result = check_sender_balance(state, msg);
             result.has_value()) {
-            return result.value();
+            return std::move(result.value());
         }
         else if (msg.flags != EVMC_STATIC) {
             transfer_balances(state, msg, msg.recipient);
         }
     }
-    return {
-        .status_code = EVMC_SUCCESS,
-        .gas_left = 0, // unused
-        .gas_refund = 0, // unused
-        .output_data = nullptr, // unused
-        .output_size = 0, // unused
-        .release = nullptr, // unused
-        .create_address = {}, // unused
-        .padding = {}, // unused
-    };
+    return evmc::Result{EVMC_SUCCESS};
 }
 
 template <evmc_revision rev>
@@ -130,9 +113,8 @@ template <evmc_revision rev>
 evmc::Result create_contract_account(
     EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
 {
-    if (auto const result = check_sender_balance(state, msg);
-        result.has_value()) {
-        return evmc::Result{result.value()};
+    if (auto result = check_sender_balance(state, msg); result.has_value()) {
+        return std::move(result.value());
     }
 
     auto const nonce = state.get_nonce(msg.sender);
@@ -223,9 +205,9 @@ evmc::Result call_evm(
 {
     State new_state{state};
 
-    if (auto const result = transfer_call_balances(new_state, msg);
+    if (auto result = transfer_call_balances(new_state, msg);
         result.status_code != EVMC_SUCCESS) {
-        return evmc::Result{result};
+        return result;
     }
 
     MONAD_DEBUG_ASSERT(

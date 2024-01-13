@@ -13,7 +13,7 @@ struct EvmcHost;
 
 class State;
 
-evmc_result transfer_call_balances(State &, evmc_message const &);
+evmc::Result transfer_call_balances(State &, evmc_message const &);
 
 template <evmc_revision rev>
 evmc::Result

@@ -7,74 +7,68 @@
 
 MONAD_NAMESPACE_BEGIN
 
-/**
- * returns true if for all (x2, y2) in m2,
- *   there is (x1, y1) in m1 such that x1 = x2 and f(y1, y2) is true
- * returns false otherwise
- */
-bool subset_f(auto const &m1, auto const &m2, auto &&f)
+bool can_merge(StateDelta const &to, StateDelta const &from)
 {
-    for (auto it2 = m2.begin(); it2 != m2.end(); ++it2) {
-        auto const it1 = m1.find(it2->first);
-        if (MONAD_UNLIKELY(it1 == m1.end())) {
+    if (MONAD_UNLIKELY(from.account.first != to.account.second)) {
+        return false;
+    }
+    for (auto it = from.storage.begin(); it != from.storage.end(); ++it) {
+        auto const it2 = to.storage.find(it->first);
+        if (MONAD_UNLIKELY(it2 == to.storage.end())) {
             return false;
         }
-        if (MONAD_UNLIKELY(!f(it1->second, it2->second))) {
+        if (MONAD_UNLIKELY(it->second.first != it2->second.second)) {
             return false;
         }
     }
     return true;
 }
 
-/**
- * merge m2 into m1 using function f
- *   for each (x2, y2) in m2,
- *   find (x1, y1) in m1 such that x1 = x2 and execute f(y1, y2)
- */
-void merge_f(auto &m1, auto const &m2, auto &&f)
+void merge(StateDelta &to, StateDelta const &from)
 {
-    for (auto it2 = m2.begin(); it2 != m2.end(); ++it2) {
-        auto const it1 = m1.find(it2->first);
-        MONAD_DEBUG_ASSERT(it1 != m1.end());
-        f(it1->second, it2->second);
+    to.account.second = from.account.second;
+    if (MONAD_LIKELY(from.account.second.has_value())) {
+        for (auto it = from.storage.begin(); it != from.storage.end(); ++it) {
+            auto const it2 = to.storage.find(it->first);
+            MONAD_ASSERT(it2 != to.storage.end());
+            it2->second.second = it->second.second;
+        }
+    }
+    else {
+        to.storage.clear();
     }
 }
 
 bool can_merge(StateDeltas const &to, StateDeltas const &from)
 {
-    return subset_f(to, from, [](auto const &d1, auto const &d2) {
-        if (MONAD_UNLIKELY(d2.account.first != d1.account.second)) {
+    for (auto it = from.begin(); it != from.end(); ++it) {
+        auto const it2 = to.find(it->first);
+        MONAD_ASSERT(it2 != to.end());
+        if (MONAD_UNLIKELY(!can_merge(it2->second, it->second))) {
             return false;
         }
-        return subset_f(
-            d1.storage, d2.storage, [](auto const &st1, auto const &st2) {
-                return st2.first == st1.second;
-            });
-    });
+    }
+    return true;
 }
 
 void merge(StateDeltas &to, StateDeltas const &from)
 {
-    merge_f(to, from, [](auto &d1, auto const &d2) {
-        d1.account.second = d2.account.second;
-        if (d2.account.second.has_value()) {
-            merge_f(d1.storage, d2.storage, [](auto &st1, auto const &st2) {
-                st1.second = st2.second;
-            });
-        }
-        else {
-            d1.storage.clear();
-        }
-    });
+    for (auto it = from.begin(); it != from.end(); ++it) {
+        auto const it2 = to.find(it->first);
+        MONAD_ASSERT(it2 != to.end());
+        merge(it2->second, it->second);
+    }
 }
 
 void merge(Code &to, Code const &from)
 {
-    merge_f(to, from, [](auto &d1, auto &d2) {
-        if (d1.empty()) {
-            d1 = d2;
+    for (auto it = from.begin(); it != from.end(); ++it) {
+        auto const it2 = to.find(it->first);
+        MONAD_ASSERT(it2 != to.end());
+        if (it2->second.empty()) {
+            it2->second = it->second;
         }
-    });
+    }
 }
 
 MONAD_NAMESPACE_END

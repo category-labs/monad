@@ -5,6 +5,7 @@
 #include <intx/intx.hpp>
 
 #include <concepts>
+#include <limits>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -22,6 +23,10 @@ template <class T>
 concept unsigned_integral =
     std::unsigned_integral<T> || std::same_as<uint256_t, T> ||
     std::same_as<uint128_t, T>;
+
+inline constexpr uint128_t UINT128_MAX = std::numeric_limits<uint128_t>::max();
+
+inline constexpr uint256_t UINT256_MAX = std::numeric_limits<uint256_t>::max();
 
 using ::intx::to_big_endian;
 

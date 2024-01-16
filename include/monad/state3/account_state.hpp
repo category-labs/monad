@@ -3,7 +3,9 @@
 #include <monad/config.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
+#include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/likely.h>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/state3/account_substate.hpp>

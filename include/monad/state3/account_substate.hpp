@@ -2,24 +2,23 @@
 
 #include <monad/config.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/core/receipt.hpp>
 
 #include <evmc/evmc.h>
 
 #include <ankerl/unordered_dense.h>
-
-#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
 // YP 6.1
 class AccountSubstate
 {
+    template <class Key>
+    using Set = ankerl::unordered_dense::set<Key>;
+
     bool destructed_{false}; // A_s
     bool touched_{false}; // A_t
     bool accessed_{false}; // A_a
-    std::vector<Receipt::Log> logs_{}; // A_l
-    ankerl::unordered_dense::set<bytes32_t> accessed_storage_{}; // A_K
+    Set<bytes32_t> accessed_storage_{}; // A_K
 
 public:
     AccountSubstate() = default;
@@ -46,14 +45,8 @@ public:
         return accessed_;
     }
 
-    // A_l
-    std::vector<Receipt::Log> const &get_logs() const
-    {
-        return logs_;
-    }
-
     // A_K
-    ankerl::unordered_dense::set<bytes32_t> const &get_accessed_storage() const
+    Set<bytes32_t> const &get_accessed_storage() const
     {
         return accessed_storage_;
     }
@@ -81,12 +74,6 @@ public:
             return EVMC_ACCESS_COLD;
         }
         return EVMC_ACCESS_WARM;
-    }
-
-    // A_l
-    void append_log(Receipt::Log const &log)
-    {
-        logs_.emplace_back(log);
     }
 
     // A_K

@@ -643,7 +643,9 @@ nlohmann::json TrieDb::to_json()
             bytes32_t value;
             std::copy_n(node.value().begin(), sizeof(bytes32_t), value.bytes);
 
-            json[acct_key]["storage"][key] = fmt::format("{}", value);
+            json[acct_key]["storage"][key] = fmt::format(
+                "0x{:02x}",
+                fmt::join(std::as_bytes(std::span(value.bytes)), ""));
         }
     } traverse(*this);
 

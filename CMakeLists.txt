@@ -164,7 +164,9 @@ add_library(
   "include/monad/state2/substate.hpp"
   "src/monad/state2/block_state.cpp"
   "src/monad/state2/state.cpp"
-  "src/monad/state2/state_deltas.cpp")
+  "src/monad/state2/state_deltas.cpp"
+  # state 3
+  "include/monad/state3/account_substate.hpp")
 
 target_include_directories(
   monad

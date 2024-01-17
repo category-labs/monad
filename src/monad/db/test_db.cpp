@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include <optional>
+#include <sstream>
 #include <string>
 
 using namespace monad;
@@ -70,7 +71,7 @@ namespace
     auto const h_code_hash = std::bit_cast<bytes32_t>(
         ethash::keccak256(h_code.data(), h_code.size()));
 
-    auto const expected_payload = nlohmann::json::parse(R"(
+    auto const json_str = R"(
 {
   "0x03601462093b5945d1676df093446790fd31b20e7b12a2e8e5e09d068109616b": {
     "balance": "838137708090664833",
@@ -127,21 +128,27 @@ namespace
     "nonce": "0x0",
     "storage": {}
   }
-})");
+})";
+
+    auto const expected_payload = nlohmann::json::parse(json_str);
 
     struct InMemoryTrieDbFixture : public ::testing::Test
     {
-        static TrieDb make_db(auto... args)
+        static TrieDb make_db(auto &&...args)
         {
-            return TrieDb{mpt::DbOptions{.on_disk = false}, args...};
+            return TrieDb{
+                mpt::DbOptions{.on_disk = false},
+                std::forward<decltype(args)>(args)...};
         }
     };
 
     struct OnDiskTrieDbFixture : public ::testing::Test
     {
-        static TrieDb make_db(auto... args)
+        static TrieDb make_db(auto &&...args)
         {
-            return TrieDb{mpt::DbOptions{.on_disk = true}, args...};
+            return TrieDb{
+                mpt::DbOptions{.on_disk = true},
+                std::forward<decltype(args)>(args)...};
         }
     };
 }
@@ -372,7 +379,8 @@ TYPED_TEST(DBTest, to_json)
 
 TYPED_TEST(DBTest, construct_from_json)
 {
-    auto db = this->make_db(expected_payload);
+    std::istringstream input{json_str};
+    auto db = this->make_db(input, 2ul);
     EXPECT_EQ(
         db.state_root(),
         0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);

@@ -16,7 +16,7 @@ include(cmake/test.cmake)
 add_subdirectory("monad-core")
 add_subdirectory("monad-trie")
 
-find_package(Boost REQUIRED COMPONENTS fiber graph)
+find_package(Boost REQUIRED COMPONENTS fiber graph json)
 find_package(PkgConfig REQUIRED)
 find_package(absl REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
@@ -182,6 +182,7 @@ target_link_libraries(
   PUBLIC monad_trie
   PRIVATE Boost::fiber
   PRIVATE Boost::graph
+  PRIVATE Boost::json
   PRIVATE PkgConfig::brotli
   PRIVATE absl::btree
   PUBLIC ethash::keccak

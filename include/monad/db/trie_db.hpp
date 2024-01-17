@@ -10,6 +10,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <istream>
 #include <list>
 
 MONAD_DB_NAMESPACE_BEGIN
@@ -37,7 +38,7 @@ private:
 
 public:
     TrieDb(mpt::DbOptions const &);
-    TrieDb(mpt::DbOptions const &, nlohmann::json const &);
+    TrieDb(mpt::DbOptions const &, std::istream &, size_t batch_size = 1048576);
 
     virtual std::optional<Account> read_account(Address const &) override;
     virtual bytes32_t

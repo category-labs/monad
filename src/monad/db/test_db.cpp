@@ -20,60 +20,58 @@
 using namespace monad;
 using namespace monad::db;
 
-namespace
-{
-    constexpr auto a = 0x5353535353535353535353535353535353535353_address;
-    constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
-    constexpr auto key1 =
-        0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
-    constexpr auto key2 =
-        0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
-    constexpr auto value1 =
-        0x0000000000000013370000000000000000000000000000000000000000000003_bytes32;
-    constexpr auto value2 =
-        0x0000000000000000000000000000000000000000000000000000000000000007_bytes32;
-    constexpr auto code1 = byte_string{0xab, 0xcd, 0xef};
-    constexpr auto code2 = byte_string{0xbb, 0xbb, 0xbb};
-    constexpr auto code_hash1 =
-        0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
-    constexpr auto code_hash2 =
-        0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1bbbbbbbbb_bytes32;
+namespace {
+constexpr auto a = 0x5353535353535353535353535353535353535353_address;
+constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
+constexpr auto key1 =
+    0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
+constexpr auto key2 =
+    0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
+constexpr auto value1 =
+    0x0000000000000013370000000000000000000000000000000000000000000003_bytes32;
+constexpr auto value2 =
+    0x0000000000000000000000000000000000000000000000000000000000000007_bytes32;
+constexpr auto code1 = byte_string{0xab, 0xcd, 0xef};
+constexpr auto code2 = byte_string{0xbb, 0xbb, 0xbb};
+constexpr auto code_hash1 =
+    0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
+constexpr auto code_hash2 =
+    0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1bbbbbbbbb_bytes32;
 
-    auto const a_code =
-        evmc::from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                       "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
-                       "ffffffffffffffffffffff0160005500")
-            .value();
-    auto const a_code_hash = std::bit_cast<bytes32_t>(
-        ethash::keccak256(a_code.data(), a_code.size()));
-    auto const b_code =
-        evmc::from_hex("60047ffffffffffffffffffffffffffffffffffffffffffffffffff"
-                       "fffffffffffffff0160005500")
-            .value();
-    auto const b_code_hash = std::bit_cast<bytes32_t>(
-        ethash::keccak256(b_code.data(), b_code.size()));
-    auto const c_code =
-        evmc::from_hex("60017ffffffffffffffffffffffffffffffffffffffffffffffffff"
-                       "fffffffffffffff0160005500")
-            .value();
-    auto const c_code_hash = std::bit_cast<bytes32_t>(
-        ethash::keccak256(c_code.data(), c_code.size()));
-    auto const d_code = evmc::from_hex("600060000160005500").value();
-    auto const d_code_hash = std::bit_cast<bytes32_t>(
-        ethash::keccak256(d_code.data(), d_code.size()));
-    auto const e_code =
-        evmc::from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                       "fffffffffff60010160005500")
-            .value();
-    auto const e_code_hash = std::bit_cast<bytes32_t>(
-        ethash::keccak256(e_code.data(), e_code.size()));
-    auto const h_code =
-        evmc::from_hex("600060006000600060006004356101000162fffffff100")
-            .value();
-    auto const h_code_hash = std::bit_cast<bytes32_t>(
-        ethash::keccak256(h_code.data(), h_code.size()));
+auto const a_code =
+    evmc::from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                   "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
+                   "ffffffffffffffffffffff0160005500")
+        .value();
+auto const a_code_hash =
+    std::bit_cast<bytes32_t>(ethash::keccak256(a_code.data(), a_code.size()));
+auto const b_code =
+    evmc::from_hex("60047ffffffffffffffffffffffffffffffffffffffffffffffffff"
+                   "fffffffffffffff0160005500")
+        .value();
+auto const b_code_hash =
+    std::bit_cast<bytes32_t>(ethash::keccak256(b_code.data(), b_code.size()));
+auto const c_code =
+    evmc::from_hex("60017ffffffffffffffffffffffffffffffffffffffffffffffffff"
+                   "fffffffffffffff0160005500")
+        .value();
+auto const c_code_hash =
+    std::bit_cast<bytes32_t>(ethash::keccak256(c_code.data(), c_code.size()));
+auto const d_code = evmc::from_hex("600060000160005500").value();
+auto const d_code_hash =
+    std::bit_cast<bytes32_t>(ethash::keccak256(d_code.data(), d_code.size()));
+auto const e_code =
+    evmc::from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                   "fffffffffff60010160005500")
+        .value();
+auto const e_code_hash =
+    std::bit_cast<bytes32_t>(ethash::keccak256(e_code.data(), e_code.size()));
+auto const h_code =
+    evmc::from_hex("600060006000600060006004356101000162fffffff100").value();
+auto const h_code_hash =
+    std::bit_cast<bytes32_t>(ethash::keccak256(h_code.data(), h_code.size()));
 
-    auto const json_str = R"(
+auto const json_str = R"(
 {
   "0x03601462093b5945d1676df093446790fd31b20e7b12a2e8e5e09d068109616b": {
     "balance": "838137708090664833",
@@ -132,266 +130,194 @@ namespace
   }
 })";
 
-    auto const expected_payload = nlohmann::json::parse(json_str);
+auto const expected_payload = nlohmann::json::parse(json_str);
 
-    struct InMemoryTrieDbFixture : public ::testing::Test
-    {
-        static TrieDb make_db(auto &&...args)
-        {
-            return TrieDb{
-                mpt::DbOptions{.on_disk = false},
-                std::forward<decltype(args)>(args)...};
-        }
-    };
-
-    struct OnDiskTrieDbFixture : public ::testing::Test
-    {
-        static TrieDb make_db(auto &&...args)
-        {
-            return TrieDb{
-                mpt::DbOptions{.on_disk = true},
-                std::forward<decltype(args)>(args)...};
-        }
-    };
-}
-
-template <typename TDB>
-struct DBTest : public TDB
-{
+struct InMemoryTrieDbFixture : public ::testing::Test {
+  static TrieDb make_db(auto &&...args) {
+    return TrieDb{mpt::DbOptions{.on_disk = false},
+                  std::forward<decltype(args)>(args)...};
+  }
 };
+
+struct OnDiskTrieDbFixture : public ::testing::Test {
+  static TrieDb make_db(auto &&...args) {
+    return TrieDb{mpt::DbOptions{.on_disk = true},
+                  std::forward<decltype(args)>(args)...};
+  }
+};
+} // namespace
+
+template <typename TDB> struct DBTest : public TDB {};
 
 using DBTypes = ::testing::Types<InMemoryTrieDbFixture, OnDiskTrieDbFixture>;
 TYPED_TEST_SUITE(DBTest, DBTypes);
 
-TYPED_TEST(DBTest, read_storage)
-{
-    Account acct{.nonce = 1};
-    auto db = this->make_db();
-    db.commit(
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {std::nullopt, acct},
-                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
-        Code{});
+TYPED_TEST(DBTest, read_storage) {
+  Account acct{.nonce = 1};
+  auto db = this->make_db();
+  db.commit(
+      StateDeltas{{a, StateDelta{.account = {std::nullopt, acct},
+                                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+      Code{});
 
-    // Existing storage
-    EXPECT_EQ(db.read_storage(a, key1), value1);
+  // Existing storage
+  EXPECT_EQ(db.read_storage(a, key1), value1);
 
-    // Non-existing key
-    EXPECT_EQ(db.read_storage(a, key2), bytes32_t{});
+  // Non-existing key
+  EXPECT_EQ(db.read_storage(a, key2), bytes32_t{});
 
-    // Non-existing account
-    EXPECT_FALSE(db.read_account(b).has_value());
-    EXPECT_EQ(db.read_storage(b, key1), bytes32_t{});
+  // Non-existing account
+  EXPECT_FALSE(db.read_account(b).has_value());
+  EXPECT_EQ(db.read_storage(b, key1), bytes32_t{});
 }
 
-TYPED_TEST(DBTest, read_code)
-{
-    Account acct_a{.balance = 1, .code_hash = code_hash1, .nonce = 1};
-    auto db = this->make_db();
-    db.commit(
-        StateDeltas{{a, StateDelta{.account = {std::nullopt, acct_a}}}},
-        Code{{code_hash1, code1}});
+TYPED_TEST(DBTest, read_code) {
+  Account acct_a{.balance = 1, .code_hash = code_hash1, .nonce = 1};
+  auto db = this->make_db();
+  db.commit(StateDeltas{{a, StateDelta{.account = {std::nullopt, acct_a}}}},
+            Code{{code_hash1, code1}});
 
-    EXPECT_EQ(db.read_code(code_hash1), code1);
+  EXPECT_EQ(db.read_code(code_hash1), code1);
 
-    Account acct_b{.balance = 0, .code_hash = code_hash2, .nonce = 1};
-    db.commit(
-        StateDeltas{{b, StateDelta{.account = {std::nullopt, acct_b}}}},
-        Code{{code_hash2, code2}});
+  Account acct_b{.balance = 0, .code_hash = code_hash2, .nonce = 1};
+  db.commit(StateDeltas{{b, StateDelta{.account = {std::nullopt, acct_b}}}},
+            Code{{code_hash2, code2}});
 
-    EXPECT_EQ(db.read_code(code_hash2), code2);
+  EXPECT_EQ(db.read_code(code_hash2), code2);
 }
 
-TYPED_TEST(DBTest, ModifyStorageOfAccount)
-{
-    Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
-    auto db = this->make_db();
-    db.commit(
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {std::nullopt, acct},
-                 .storage =
-                     {{key1, {bytes32_t{}, value1}},
-                      {key2, {bytes32_t{}, value2}}}}}},
-        Code{});
+TYPED_TEST(DBTest, ModifyStorageOfAccount) {
+  Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
+  auto db = this->make_db();
+  db.commit(
+      StateDeltas{{a, StateDelta{.account = {std::nullopt, acct},
+                                 .storage = {{key1, {bytes32_t{}, value1}},
+                                             {key2, {bytes32_t{}, value2}}}}}},
+      Code{});
 
-    acct = db.read_account(a).value();
-    db.commit(
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {acct, acct},
-                 .storage = {{key2, {value2, value1}}}}}},
-        Code{});
+  acct = db.read_account(a).value();
+  db.commit(StateDeltas{{a, StateDelta{.account = {acct, acct},
+                                       .storage = {{key2, {value2, value1}}}}}},
+            Code{});
 
-    EXPECT_EQ(
-        db.state_root(),
-        0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
+  EXPECT_EQ(
+      db.state_root(),
+      0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
 }
 
-TYPED_TEST(DBTest, touch_without_modify_regression)
-{
-    auto db = this->make_db();
-    db.commit(
-        StateDeltas{{a, StateDelta{.account = {std::nullopt, std::nullopt}}}},
-        Code{});
+TYPED_TEST(DBTest, touch_without_modify_regression) {
+  auto db = this->make_db();
+  db.commit(
+      StateDeltas{{a, StateDelta{.account = {std::nullopt, std::nullopt}}}},
+      Code{});
 
-    EXPECT_EQ(db.read_account(a), std::nullopt);
-    EXPECT_EQ(db.state_root(), NULL_ROOT);
+  EXPECT_EQ(db.read_account(a), std::nullopt);
+  EXPECT_EQ(db.state_root(), NULL_ROOT);
 }
 
-TYPED_TEST(DBTest, delete_account_modify_storage_regression)
-{
-    Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
-    auto db = this->make_db();
-    db.commit(
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {std::nullopt, acct},
-                 .storage =
-                     {{key1, {bytes32_t{}, value1}},
-                      {key2, {bytes32_t{}, value2}}}}}},
-        Code{});
+TYPED_TEST(DBTest, delete_account_modify_storage_regression) {
+  Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
+  auto db = this->make_db();
+  db.commit(
+      StateDeltas{{a, StateDelta{.account = {std::nullopt, acct},
+                                 .storage = {{key1, {bytes32_t{}, value1}},
+                                             {key2, {bytes32_t{}, value2}}}}}},
+      Code{});
 
-    db.commit(
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {acct, std::nullopt},
-                 .storage =
-                     {{key1, {value1, value2}}, {key2, {value2, value1}}}}}},
-        Code{});
+  db.commit(StateDeltas{{a, StateDelta{.account = {acct, std::nullopt},
+                                       .storage = {{key1, {value1, value2}},
+                                                   {key2, {value2, value1}}}}}},
+            Code{});
 
-    EXPECT_EQ(db.read_account(a), std::nullopt);
-    EXPECT_EQ(db.read_storage(a, key1), bytes32_t{});
-    EXPECT_EQ(db.state_root(), NULL_ROOT);
+  EXPECT_EQ(db.read_account(a), std::nullopt);
+  EXPECT_EQ(db.read_storage(a, key1), bytes32_t{});
+  EXPECT_EQ(db.state_root(), NULL_ROOT);
 }
 
-TYPED_TEST(DBTest, storage_deletion)
-{
-    Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
+TYPED_TEST(DBTest, storage_deletion) {
+  Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
 
-    auto db = this->make_db();
-    db.commit(
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {std::nullopt, acct},
-                 .storage =
-                     {{key1, {bytes32_t{}, value1}},
-                      {key2, {bytes32_t{}, value2}}}}}},
-        Code{});
+  auto db = this->make_db();
+  db.commit(
+      StateDeltas{{a, StateDelta{.account = {std::nullopt, acct},
+                                 .storage = {{key1, {bytes32_t{}, value1}},
+                                             {key2, {bytes32_t{}, value2}}}}}},
+      Code{});
 
-    acct = db.read_account(a).value();
-    db.commit(
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {acct, acct},
-                 .storage = {{key1, {value1, bytes32_t{}}}}}}},
-        Code{});
+  acct = db.read_account(a).value();
+  db.commit(
+      StateDeltas{{a, StateDelta{.account = {acct, acct},
+                                 .storage = {{key1, {value1, bytes32_t{}}}}}}},
+      Code{});
 
-    EXPECT_EQ(
-        db.state_root(),
-        0xcc04b7a59a7c5d1f294402a0cbe42b5102db928fb2fad9d0d6f8c2a21a34c195_bytes32);
+  EXPECT_EQ(
+      db.state_root(),
+      0xcc04b7a59a7c5d1f294402a0cbe42b5102db928fb2fad9d0d6f8c2a21a34c195_bytes32);
 }
 
-TYPED_TEST(DBTest, to_json)
-{
-    auto const a = 0x0000000000000000000000000000000000000100_address;
-    auto const b = 0x0000000000000000000000000000000000000101_address;
-    auto const c = 0x0000000000000000000000000000000000000102_address;
-    auto const d = 0x0000000000000000000000000000000000000103_address;
-    auto const e = 0x0000000000000000000000000000000000000104_address;
-    auto const f = 0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba_address;
-    auto const g = 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address;
-    auto const h = 0xcccccccccccccccccccccccccccccccccccccccc_address;
+TYPED_TEST(DBTest, to_json) {
+  auto const a = 0x0000000000000000000000000000000000000100_address;
+  auto const b = 0x0000000000000000000000000000000000000101_address;
+  auto const c = 0x0000000000000000000000000000000000000102_address;
+  auto const d = 0x0000000000000000000000000000000000000103_address;
+  auto const e = 0x0000000000000000000000000000000000000104_address;
+  auto const f = 0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba_address;
+  auto const g = 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address;
+  auto const h = 0xcccccccccccccccccccccccccccccccccccccccc_address;
 
-    auto db = this->make_db();
-    db.commit(
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = a_code_hash}},
-                 .storage =
-                     {{bytes32_t{},
-                       {bytes32_t{},
-                        0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe_bytes32}}}}},
-            {b,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = b_code_hash}}}},
-            {c,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = c_code_hash}}}},
-            {d,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = d_code_hash}}}},
-            {e,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = e_code_hash}}}},
-            {f,
-             StateDelta{
-                 .account = {std::nullopt, Account{.balance = 0x7024c}}}},
-            {g,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0xba1a9ce0b9aa781, .nonce = 1}}}},
-            {h,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0xba1a9ce0ba1a9cf,
-                          .code_hash = h_code_hash}}}}},
-        Code{
-            {a_code_hash, a_code},
-            {b_code_hash, b_code},
-            {c_code_hash, c_code},
-            {d_code_hash, d_code},
-            {e_code_hash, e_code},
-            {h_code_hash, h_code}});
+  auto db = this->make_db();
+  db.commit(
+      StateDeltas{
+          {a,
+           StateDelta{
+               .account = {std::nullopt, Account{.balance = 0xba1a9ce0ba1a9ce,
+                                                 .code_hash = a_code_hash}},
+               .storage =
+                   {{bytes32_t{},
+                     {bytes32_t{},
+                      0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe_bytes32}}}}},
+          {b, StateDelta{.account = {std::nullopt,
+                                     Account{.balance = 0xba1a9ce0ba1a9ce,
+                                             .code_hash = b_code_hash}}}},
+          {c, StateDelta{.account = {std::nullopt,
+                                     Account{.balance = 0xba1a9ce0ba1a9ce,
+                                             .code_hash = c_code_hash}}}},
+          {d, StateDelta{.account = {std::nullopt,
+                                     Account{.balance = 0xba1a9ce0ba1a9ce,
+                                             .code_hash = d_code_hash}}}},
+          {e, StateDelta{.account = {std::nullopt,
+                                     Account{.balance = 0xba1a9ce0ba1a9ce,
+                                             .code_hash = e_code_hash}}}},
+          {f,
+           StateDelta{.account = {std::nullopt, Account{.balance = 0x7024c}}}},
+          {g, StateDelta{.account = {std::nullopt,
+                                     Account{.balance = 0xba1a9ce0b9aa781,
+                                             .nonce = 1}}}},
+          {h, StateDelta{.account = {std::nullopt,
+                                     Account{.balance = 0xba1a9ce0ba1a9cf,
+                                             .code_hash = h_code_hash}}}}},
+      Code{{a_code_hash, a_code},
+           {b_code_hash, b_code},
+           {c_code_hash, c_code},
+           {d_code_hash, d_code},
+           {e_code_hash, e_code},
+           {h_code_hash, h_code}});
 
-    EXPECT_EQ(expected_payload, db.to_json());
+  EXPECT_EQ(expected_payload, db.to_json());
 }
 
-TYPED_TEST(DBTest, construct_from_json)
-{
-    std::istringstream input{json_str};
-    auto db = this->make_db(input, 2ul);
-    EXPECT_EQ(
-        db.state_root(),
-        0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);
-    EXPECT_EQ(db.read_code(a_code_hash), a_code);
-    EXPECT_EQ(db.read_code(b_code_hash), b_code);
-    EXPECT_EQ(db.read_code(c_code_hash), c_code);
-    EXPECT_EQ(db.read_code(d_code_hash), d_code);
-    EXPECT_EQ(db.read_code(e_code_hash), e_code);
-    EXPECT_EQ(db.read_code(h_code_hash), h_code);
+TYPED_TEST(DBTest, construct_from_json) {
+  std::istringstream input{json_str};
+  auto db = this->make_db(input, 2ul);
+  EXPECT_EQ(
+      db.state_root(),
+      0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);
+  EXPECT_EQ(db.read_code(a_code_hash), a_code);
+  EXPECT_EQ(db.read_code(b_code_hash), b_code);
+  EXPECT_EQ(db.read_code(c_code_hash), c_code);
+  EXPECT_EQ(db.read_code(d_code_hash), d_code);
+  EXPECT_EQ(db.read_code(e_code_hash), e_code);
+  EXPECT_EQ(db.read_code(h_code_hash), h_code);
 }
 
 TYPED_TEST(DBTest, construct_from_binary)

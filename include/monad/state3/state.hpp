@@ -1,0 +1,570 @@
+#pragma once
+
+#include <monad/config.hpp>
+#include <monad/core/account.hpp>
+#include <monad/core/address.hpp>
+#include <monad/core/address_fmt.hpp>
+#include <monad/core/assert.h>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/core/bytes_fmt.hpp>
+#include <monad/core/int_fmt.hpp>
+#include <monad/core/receipt.hpp>
+#include <monad/state2/block_state.hpp>
+#include <monad/state3/account_state.hpp>
+
+#include <evmc/evmc.h>
+
+#include <ethash/keccak.hpp>
+
+#include <ankerl/unordered_dense.h>
+
+#include <quill/detail/LogMacros.h>
+
+#include <algorithm>
+#include <bit>
+#include <cstddef>
+#include <cstdint>
+#include <deque>
+#include <optional>
+#include <utility>
+
+MONAD_NAMESPACE_BEGIN
+
+class State
+{
+    template <typename T>
+    using Version = std::pair<unsigned, T>;
+
+    template <typename T>
+    using Stack = std::deque<T>;
+
+    template <typename K, typename V>
+    using Map = ankerl::unordered_dense::segmented_map<K, V>;
+
+    template <typename K>
+    using Set = ankerl::unordered_dense::segmented_set<K>;
+
+    template <typename T>
+    static inline constexpr T const &recent(Stack<Version<T>> const &stack)
+    {
+        MONAD_ASSERT(stack.size());
+
+        return stack.back().second;
+    }
+
+    template <typename T>
+    static inline constexpr T &
+    current(Stack<Version<T>> &stack, unsigned const version)
+    {
+        MONAD_ASSERT(stack.size());
+
+        if (version > stack.back().first) {
+            T copy = stack.back().second;
+            stack.emplace_back(version, std::move(copy));
+        }
+
+        return stack.back().second;
+    }
+
+    BlockState &block_state_;
+
+    Map<Address, AccountState> original_{};
+
+    Map<Address, Stack<Version<AccountState>>> state_{};
+
+    Stack<Version<std::vector<Receipt::Log>>> logs_{};
+
+    Map<bytes32_t, byte_string> code_{};
+
+    unsigned version_{0};
+
+    AccountState &original_account_state(Address const &address)
+    {
+        auto it = original_.find(address);
+        if (it == original_.end()) {
+            // block state
+            auto const account = block_state_.read_account(address);
+            it = original_.try_emplace(address, account).first;
+        }
+        return it->second;
+    }
+
+    AccountState const &recent_account_state(Address const &address)
+    {
+        // state
+        auto const it = state_.find(address);
+        if (it != state_.end()) {
+            return recent(it->second);
+        }
+        // original
+        return original_account_state(address);
+    }
+
+    AccountState &current_account_state(Address const &address)
+    {
+        // state
+        auto it = state_.find(address);
+        if (MONAD_UNLIKELY(it == state_.end())) {
+            // original
+            auto const &account_state = original_account_state(address);
+            it = state_.try_emplace(address).first;
+            it->second.emplace_back(version_, account_state);
+        }
+        return current(it->second, version_);
+    }
+
+    std::optional<Account> const &recent_account(Address const &address)
+    {
+        return recent_account_state(address).account_;
+    }
+
+    std::optional<Account> &current_account(Address const &address)
+    {
+        return current_account_state(address).account_;
+    }
+
+    friend class BlockState; // TODO
+
+public:
+    State(BlockState &block_state)
+        : block_state_{block_state}
+    {
+        logs_.emplace_back(0, std::vector<Receipt::Log>{});
+    }
+
+    State(State &&) = delete;
+    State(State const &) = delete;
+    State &operator=(State &&) = delete;
+    State &operator=(State const &) = delete;
+
+    void push()
+    {
+        ++version_;
+    }
+
+    void pop_accept()
+    {
+        MONAD_ASSERT(version_);
+
+        for (auto it = state_.begin(); it != state_.end(); ++it) {
+            auto const size = it->second.size();
+            MONAD_ASSERT(size);
+            if (version_ == it->second.back().first) {
+                if (size > 1 && (it->second[size - 2].first + 1) ==
+                                    it->second[size - 1].first) {
+                    it->second[size - 2].second = it->second[size - 1].second;
+                    it->second.pop_back();
+                }
+                else {
+                    it->second.back().first = version_ - 1;
+                }
+            }
+        }
+
+        // logs
+        {
+            auto const size = logs_.size();
+            MONAD_ASSERT(size);
+            if (version_ == logs_.back().first) {
+                if (size > 1 &&
+                    (logs_[size - 2].first + 1) == logs_[size - 1].first) {
+                    logs_[size - 2].second = logs_[size - 1].second;
+                    logs_.pop_back();
+                }
+                else {
+                    logs_.back().first = version_ - 1;
+                }
+            }
+        }
+
+        --version_;
+    }
+
+    void pop_reject()
+    {
+        MONAD_ASSERT(version_);
+
+        std::vector<Address> removals;
+
+        for (auto it = state_.begin(); it != state_.end(); ++it) {
+            auto const size = it->second.size();
+            MONAD_ASSERT(size);
+            if (version_ == it->second.back().first) {
+                it->second.pop_back();
+                if (it->second.empty()) {
+                    removals.push_back(it->first);
+                }
+            }
+        }
+
+        // logs
+        {
+            auto const size = logs_.size();
+            MONAD_ASSERT(size);
+            if (version_ == logs_.back().first) {
+                logs_.pop_back();
+            }
+        }
+
+        while (removals.size()) {
+            state_.erase(removals.back());
+            removals.pop_back();
+        }
+
+        --version_;
+    }
+
+    ////////////////////////////////////////
+
+    bool account_exists(Address const &address)
+    {
+        return recent_account(address).has_value();
+    }
+
+    bool account_is_dead(Address const &address)
+    {
+        return is_dead(recent_account(address));
+    }
+
+    uint64_t get_nonce(Address const &address)
+    {
+        auto const &account = recent_account(address);
+        if (MONAD_LIKELY(account.has_value())) {
+            return account.value().nonce;
+        }
+        return 0;
+    }
+
+    bytes32_t get_balance(Address const &address)
+    {
+        auto const &account = recent_account(address);
+        if (MONAD_LIKELY(account.has_value())) {
+            return intx::be::store<bytes32_t>(account.value().balance);
+        }
+        return {};
+    }
+
+    bytes32_t get_code_hash(Address const &address)
+    {
+        auto const &account = recent_account(address);
+        if (MONAD_LIKELY(account.has_value())) {
+            return account.value().code_hash;
+        }
+        return NULL_HASH;
+    }
+
+    bytes32_t get_storage(Address const &address, bytes32_t const &key)
+    {
+        auto const it = state_.find(address);
+        if (it == state_.end()) {
+            auto const it2 = original_.find(address);
+            MONAD_ASSERT(it2 != original_.end());
+            auto &account_state = it2->second;
+            auto const &account = account_state.account_;
+            MONAD_ASSERT(account.has_value());
+            auto &storage = account_state.storage_;
+            auto it3 = storage.find(key);
+            if (it3 == storage.end()) {
+                bytes32_t const value = block_state_.read_storage(
+                    address, account.value().incarnation, key);
+                it3 = storage.try_emplace(key, value).first;
+            }
+            return it3->second;
+        }
+        else {
+            auto const &account_state = recent(it->second);
+            auto const &account = account_state.account_;
+            MONAD_ASSERT(account.has_value());
+            auto const &storage = account_state.storage_;
+            if (auto const it2 = storage.find(key); it2 != storage.end()) {
+                return it2->second;
+            }
+            auto const it2 = original_.find(address);
+            MONAD_ASSERT(it2 != original_.end());
+            auto &original_account_state = it2->second;
+            auto const &original_account = original_account_state.account_;
+            if (!original_account.has_value() ||
+                account.value().incarnation !=
+                    original_account.value().incarnation) {
+                return {};
+            }
+            auto &original_storage = original_account_state.storage_;
+            auto it3 = original_storage.find(key);
+            if (it3 == original_storage.end()) {
+                bytes32_t const value = block_state_.read_storage(
+                    address, account.value().incarnation, key);
+                it3 = original_storage.try_emplace(key, value).first;
+            }
+            return it3->second;
+        }
+    }
+
+    bool is_touched(Address const &address)
+    {
+        auto const &account_state = recent_account_state(address);
+        return account_state.is_touched();
+    }
+
+    ////////////////////////////////////////
+
+    void set_nonce(Address const &address, uint64_t const nonce)
+    {
+        auto &account = current_account(address);
+        if (MONAD_UNLIKELY(!account.has_value())) {
+            account = Account{};
+        }
+        account.value().nonce = nonce;
+    }
+
+    void add_to_balance(Address const &address, uint256_t const &delta)
+    {
+        auto &account_state = current_account_state(address);
+        auto &account = account_state.account_;
+        if (MONAD_UNLIKELY(!account.has_value())) {
+            account = Account{};
+        }
+
+        MONAD_ASSERT(
+            std::numeric_limits<uint256_t>::max() - delta >=
+            account.value().balance);
+
+        account.value().balance += delta;
+        account_state.touch();
+    }
+
+    void subtract_from_balance(Address const &address, uint256_t const &delta)
+    {
+        auto &account_state = current_account_state(address);
+        auto &account = account_state.account_;
+        if (MONAD_UNLIKELY(!account.has_value())) {
+            account = Account{};
+        }
+
+        MONAD_ASSERT(delta <= account.value().balance);
+
+        account.value().balance -= delta;
+        account_state.touch();
+    }
+
+    void set_code_hash(Address const &address, bytes32_t const &hash)
+    {
+        auto &account = current_account(address);
+        MONAD_ASSERT(account.has_value());
+        account.value().code_hash = hash;
+    }
+
+    evmc_storage_status set_storage(
+        Address const &address, bytes32_t const &key, bytes32_t const &value)
+    {
+        bytes32_t original_value;
+        auto &account_state = current_account_state(address);
+        // original
+        {
+            auto &orig_account_state = original_account_state(address);
+            auto &storage = orig_account_state.storage_;
+            auto it = storage.find(key);
+            if (it == storage.end()) {
+                uint64_t const incarnation = account_state.get_incarnation();
+                bytes32_t const value =
+                    block_state_.read_storage(address, incarnation, key);
+                it = storage.try_emplace(key, value).first;
+            }
+            original_value = it->second;
+        }
+        // state
+        {
+            for (auto it = account_state.storage_.begin();
+                 it != account_state.storage_.end();
+                 ++it) {
+            }
+            auto const result =
+                account_state.set_storage(key, value, original_value);
+            for (auto it = account_state.storage_.begin();
+                 it != account_state.storage_.end();
+                 ++it) {
+            }
+            return result;
+        }
+    }
+
+    void touch(Address const &address)
+    {
+        auto &account_state = current_account_state(address);
+        account_state.touch();
+    }
+
+    evmc_access_status access_account(Address const &address)
+    {
+        auto &account_state = current_account_state(address);
+        return account_state.access();
+    }
+
+    evmc_access_status
+    access_storage(Address const &address, bytes32_t const &key)
+    {
+        auto &account_state = current_account_state(address);
+        return account_state.access_storage(key);
+    }
+
+    ////////////////////////////////////////
+
+    bool selfdestruct(Address const &address, Address const &beneficiary)
+    {
+        auto &account_state = current_account_state(address);
+        auto &account = account_state.account_;
+        MONAD_ASSERT(account.has_value());
+
+        add_to_balance(beneficiary, account.value().balance);
+        account.value().balance = 0;
+
+        return account_state.destruct();
+    }
+
+    // YP (87)
+    void destruct_suicides()
+    {
+        MONAD_ASSERT(!version_);
+
+        for (auto it = state_.begin(); it != state_.end(); ++it) {
+            auto &stack = it->second;
+            MONAD_ASSERT(stack.size() == 1);
+            MONAD_ASSERT(stack[0].first == 0);
+            auto &account_state = stack[0].second;
+            if (account_state.is_destructed()) {
+                auto &account = account_state.account_;
+                account.reset();
+            }
+        }
+    }
+
+    // YP (88)
+    void destruct_touched_dead()
+    {
+        MONAD_ASSERT(!version_);
+
+        for (auto it = state_.begin(); it != state_.end(); ++it) {
+            auto &stack = it->second;
+            MONAD_ASSERT(stack.size() == 1);
+            MONAD_ASSERT(stack[0].first == 0);
+            auto &account_state = stack[0].second;
+            if (MONAD_LIKELY(!account_state.is_touched())) {
+                continue;
+            }
+            auto &account = account_state.account_;
+            if (is_dead(account)) {
+                account.reset();
+            }
+        }
+    }
+
+    ////////////////////////////////////////
+
+    /**
+     * TODO code return reference
+     */
+
+    byte_string get_code(Address const &address)
+    {
+        auto const &account = recent_account(address);
+        if (MONAD_UNLIKELY(!account.has_value())) {
+            return {};
+        }
+        bytes32_t const &code_hash = account.value().code_hash;
+        {
+            auto const it = code_.find(code_hash);
+            if (it != code_.end()) {
+                return it->second;
+            }
+        }
+        return block_state_.read_code(code_hash);
+    }
+
+    size_t get_code_size(Address const &address)
+    {
+        auto const &account = recent_account(address);
+        if (MONAD_UNLIKELY(!account.has_value())) {
+            return 0;
+        }
+        bytes32_t const &code_hash = account.value().code_hash;
+        {
+            auto const it = code_.find(code_hash);
+            if (it != code_.end()) {
+                return it->second.size();
+            }
+        }
+        return block_state_.read_code(code_hash).size();
+    }
+
+    size_t copy_code(
+        Address const &address, size_t const offset, uint8_t *const buffer,
+        size_t const buffer_size)
+    {
+        auto const &account = recent_account(address);
+        if (MONAD_UNLIKELY(!account.has_value())) {
+            return 0;
+        }
+        bytes32_t const &code_hash = account.value().code_hash;
+        byte_string code;
+        {
+            auto const it = code_.find(code_hash);
+            if (it != code_.end()) {
+                code = it->second;
+            }
+            else {
+                code = block_state_.read_code(code_hash);
+            }
+        }
+        if (offset > code.size()) {
+            return 0;
+        }
+        auto const n = std::min(code.size() - offset, buffer_size);
+        std::copy_n(code.data() + offset, n, buffer);
+        return n;
+    }
+
+    void set_code(Address const &address, byte_string_view const &code)
+    {
+        auto &account = current_account(address);
+        if (MONAD_UNLIKELY(!account.has_value())) {
+            return;
+        }
+
+        bytes32_t const code_hash = std::bit_cast<bytes32_t>(
+            ethash::keccak256(code.data(), code.size()));
+        code_[code_hash] = code;
+        account.value().code_hash = code_hash;
+    }
+
+    ////////////////////////////////////////
+
+    void create_contract(Address const &address)
+    {
+        auto &account = current_account(address);
+        if (MONAD_UNLIKELY(account.has_value())) {
+            // EIP-684
+            MONAD_ASSERT(account->nonce == 0);
+            MONAD_ASSERT(account->code_hash == NULL_HASH);
+            // keep the balance, per chapter 7 of the YP
+            account->incarnation = 1;
+        }
+        else {
+            account = Account{};
+        }
+    }
+
+    ////////////////////////////////////////
+
+    std::vector<Receipt::Log> const &logs()
+    {
+        return recent(logs_);
+    }
+
+    void store_log(Receipt::Log const &log)
+    {
+        auto &logs = current(logs_, version_);
+        logs.push_back(log);
+    }
+};
+
+MONAD_NAMESPACE_END

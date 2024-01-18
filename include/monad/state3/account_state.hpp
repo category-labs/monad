@@ -14,6 +14,7 @@
 
 #include <ankerl/unordered_dense.h>
 
+#include <cstdint>
 #include <optional>
 #include <utility>
 
@@ -21,6 +22,7 @@ MONAD_NAMESPACE_BEGIN
 
 class AccountState final : public AccountSubstate
 {
+public: // TODO
     template <class Key, class T>
     using Map = ankerl::unordered_dense::segmented_map<Key, T>;
 
@@ -80,7 +82,15 @@ public:
         return NULL_HASH;
     }
 
-    std::optional<bytes32_t> get_storage(bytes32_t const &key)
+    constexpr uint64_t get_incarnation() const noexcept
+    {
+        if (MONAD_LIKELY(account_)) {
+            return account_->incarnation;
+        }
+        return 0;
+    }
+
+    std::optional<bytes32_t> get_storage(bytes32_t const &key) const
     {
         auto const it = storage_.find(key);
         if (MONAD_LIKELY(it != storage_.end())) {

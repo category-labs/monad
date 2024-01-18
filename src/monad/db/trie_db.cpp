@@ -345,17 +345,20 @@ namespace
 
         void write()
         {
+            printf(
+                "write a batch with %lu account updates\n",
+                account_updates_.size());
             UpdateList updates;
             updates.push_front(update_alloc_.emplace_back(Update{
                 .key = state_nibbles,
                 .value = byte_string_view{},
                 .incarnation = false,
                 .next = std::move(account_updates_)}));
-            updates.push_front(update_alloc_.emplace_back(Update{
-                .key = code_nibbles,
-                .value = byte_string_view{},
-                .incarnation = false,
-                .next = std::move(code_updates_)}));
+            // updates.push_front(update_alloc_.emplace_back(Update{
+            //     .key = code_nibbles,
+            //     .value = byte_string_view{},
+            //     .incarnation = false,
+            //     .next = std::move(code_updates_)}));
 
             db_.upsert(std::move(updates));
 
@@ -567,12 +570,15 @@ namespace
     };
 }
 
-std::unique_ptr<StateMachine> TrieDb::Machine::clone() const
+std::unique_ptr<StateMachine> InMemoryMachine::clone() const
 {
-    return std::make_unique<Machine>();
+    auto cloned = std::make_unique<InMemoryMachine>();
+    cloned->depth = this->depth;
+    cloned->is_merkle = this->is_merkle;
+    return cloned;
 }
 
-void TrieDb::Machine::down(unsigned char const nibble)
+void InMemoryMachine::down(unsigned char const nibble)
 {
     ++depth;
     MONAD_ASSERT(
@@ -582,7 +588,7 @@ void TrieDb::Machine::down(unsigned char const nibble)
     }
 }
 
-void TrieDb::Machine::up(size_t const n)
+void InMemoryMachine::up(size_t const n)
 {
     MONAD_ASSERT(n <= depth);
     depth -= static_cast<uint8_t>(n);
@@ -591,7 +597,7 @@ void TrieDb::Machine::up(size_t const n)
     }
 }
 
-Compute &TrieDb::Machine::get_compute()
+Compute &InMemoryMachine::get_compute() const
 {
     static EmptyCompute empty;
     static MerkleCompute merkle;
@@ -603,13 +609,65 @@ Compute &TrieDb::Machine::get_compute()
     }
 }
 
-bool TrieDb::Machine::cache() const
+bool InMemoryMachine::cache() const
 {
     return true;
 }
 
+std::unique_ptr<mpt::StateMachine> OnDiskMachine::clone() const
+{
+    auto cloned = std::make_unique<OnDiskMachine>();
+    cloned->depth = this->depth;
+    cloned->is_merkle = this->is_merkle;
+    return cloned;
+}
+
+void OnDiskMachine::down(unsigned char const nibble)
+{
+    ++depth;
+    MONAD_DEBUG_ASSERT(
+        (nibble == state_nibble || nibble == code_nibble) ||
+        depth != block_num_len + prefix_len);
+    if (MONAD_UNLIKELY(
+            depth == block_num_len + prefix_len && nibble == state_nibble)) {
+        is_merkle = true;
+    }
+}
+
+void OnDiskMachine::up(size_t const n)
+{
+    MONAD_DEBUG_ASSERT(n <= depth);
+    depth -= static_cast<uint8_t>(n);
+    if (MONAD_UNLIKELY(is_merkle && depth < block_num_len + prefix_len)) {
+        is_merkle = false;
+    }
+}
+
+mpt::Compute &OnDiskMachine::get_compute() const
+{
+    static EmptyCompute empty;
+    static MerkleCompute merkle;
+    if (MONAD_LIKELY(is_merkle)) {
+        return merkle;
+    }
+    else {
+        return empty;
+    }
+}
+
+bool OnDiskMachine::cache() const
+{
+    return depth <= cache_depth;
+}
+
 TrieDb::TrieDb(mpt::DbOptions const &options)
-    : db_{machine_, options}
+    : machine_{[&] -> std::unique_ptr<Machine> {
+        if (options.on_disk) {
+            return std::make_unique<OnDiskMachine>();
+        }
+        return std::make_unique<InMemoryMachine>();
+    }()}
+    , db_{*machine_, options}
 {
 }
 

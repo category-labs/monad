@@ -9,12 +9,9 @@ MONAD_NAMESPACE_BEGIN
 namespace test_resource
 {
 
-    inline std::filesystem::path const test_data_dir =
-        "@TEST_DATA_DIR@";
-    inline std::filesystem::path const build_dir =
-        "@CMAKE_BINARY_DIR@";
-    inline std::filesystem::path const third_party_dir =
-        "@THIRD_PARTY_DIR@";
+    inline std::filesystem::path const test_data_dir = "@TEST_DATA_DIR@";
+    inline std::filesystem::path const build_dir = "@CMAKE_BINARY_DIR@";
+    inline std::filesystem::path const third_party_dir = "@THIRD_PARTY_DIR@";
 
     // blocks
     inline auto const correct_block_data_dir =
@@ -31,8 +28,9 @@ namespace test_resource
         test_data_dir / "common" / "genesis" / "ethereum";
 
     // ethereum tests
-    inline auto const ethereum_tests_dir =
-        third_party_dir / "ethereum-tests";
+    inline auto const ethereum_tests_dir = third_party_dir / "ethereum-tests";
+
+    inline auto const checkpoint_dir = test_data_dir / "common" / "checkpoint";
 }
 
 MONAD_NAMESPACE_END

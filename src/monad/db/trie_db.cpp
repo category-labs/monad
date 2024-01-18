@@ -2,6 +2,7 @@
 #include <monad/core/bytes_fmt.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/int_fmt.hpp>
+#include <monad/core/unaligned.hpp>
 #include <monad/db/config.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/mpt/nibbles_view_fmt.hpp>
@@ -364,6 +365,205 @@ namespace
             bytes_alloc_.clear();
         }
     };
+
+    struct BinaryDbLoader
+    {
+    private:
+        static constexpr auto chunk_size = 1ul << 13; // 8 kb
+
+        ::monad::mpt::Db &db_;
+        std::list<mpt::Update> update_alloc_;
+        std::list<byte_string> bytes_alloc_;
+        size_t buf_size_;
+        std::unique_ptr<unsigned char[]> buf_;
+
+    public:
+        BinaryDbLoader(::monad::mpt::Db &db, size_t buf_size)
+            : db_{db}
+            , buf_size_{buf_size}
+            , buf_{std::make_unique_for_overwrite<unsigned char[]>(buf_size)}
+        {
+            MONAD_ASSERT(buf_size >= chunk_size);
+        };
+
+        void load(std::istream &accounts, std::istream &code)
+        {
+            load(
+                accounts,
+                [&](byte_string_view in, UpdateList &updates) {
+                    return parse_accounts(in, updates);
+                },
+                [&](UpdateList account_updates) {
+                    UpdateList updates;
+                    auto state_update = Update{
+                        .key = state_nibbles,
+                        .value = byte_string_view{},
+                        .incarnation = false,
+                        .next = std::move(account_updates)};
+                    updates.push_front(state_update);
+
+                    db_.upsert(std::move(updates));
+
+                    update_alloc_.clear();
+                    bytes_alloc_.clear();
+                });
+            load(
+                code,
+                [&](byte_string_view in, UpdateList &updates) {
+                    return parse_code(in, updates);
+                },
+                [&](UpdateList code_updates) {
+                    UpdateList updates;
+                    auto code_update = Update{
+                        .key = code_nibbles,
+                        .value = byte_string_view{},
+                        .incarnation = false,
+                        .next = std::move(code_updates)};
+                    updates.push_front(code_update);
+
+                    db_.upsert(std::move(updates));
+
+                    update_alloc_.clear();
+                    bytes_alloc_.clear();
+                });
+        }
+
+    private:
+        static constexpr auto storage_entry_size = sizeof(bytes32_t) * 2;
+        static_assert(storage_entry_size == 64);
+
+        void load(
+            std::istream &input,
+            std::function<size_t(byte_string_view, UpdateList &)> fparse,
+            std::function<void(UpdateList)> fwrite)
+        {
+            UpdateList updates;
+            size_t total_processed = 0;
+            size_t total_read = 0;
+            while (input.read((char *)buf_.get() + total_read, chunk_size)) {
+                auto const count = static_cast<size_t>(input.gcount());
+                MONAD_ASSERT(count <= chunk_size);
+                total_read += count;
+                total_processed += fparse(
+                    byte_string_view{
+                        buf_.get() + total_processed,
+                        total_read - total_processed},
+                    updates);
+                if (MONAD_UNLIKELY((total_read + chunk_size) > buf_size_)) {
+                    fwrite(std::move(updates));
+                    std::memmove(
+                        buf_.get(),
+                        buf_.get() + total_processed,
+                        total_read - total_processed);
+                    total_read -= total_processed;
+                    total_processed = 0;
+                    updates.clear();
+                }
+            }
+
+            auto const count = static_cast<size_t>(input.gcount());
+            MONAD_ASSERT(count <= chunk_size);
+            total_read += count;
+            total_processed += fparse(
+                byte_string_view{
+                    buf_.get() + total_processed, total_read - total_processed},
+                updates);
+            MONAD_ASSERT(total_processed == total_read);
+            MONAD_ASSERT(input.eof());
+
+            fwrite(std::move(updates));
+        }
+
+        size_t parse_accounts(byte_string_view in, UpdateList &account_updates)
+        {
+            constexpr auto account_fixed_size =
+                sizeof(bytes32_t) + sizeof(uint256_t) + sizeof(uint64_t) +
+                sizeof(bytes32_t) + sizeof(uint64_t);
+            static_assert(account_fixed_size == 112);
+            size_t total_processed = 0;
+            while (in.size() >= account_fixed_size) {
+                constexpr auto num_storage_offset =
+                    account_fixed_size - sizeof(uint64_t);
+                auto const num_storage = unaligned_load<uint64_t>(
+                    in.substr(num_storage_offset, sizeof(uint64_t)).data());
+                auto const storage_size = num_storage * storage_entry_size;
+                auto const entry_size = account_fixed_size + storage_size;
+                MONAD_ASSERT(entry_size <= buf_size_);
+                if (in.size() < entry_size) {
+                    return total_processed;
+                }
+                auto &update = update_alloc_.emplace_back(handle_account(in));
+                if (num_storage) {
+                    update.next = handle_storage(
+                        in.substr(account_fixed_size, storage_size));
+                }
+                account_updates.push_front(update);
+                total_processed += entry_size;
+                in = in.substr(entry_size);
+            }
+            return total_processed;
+        }
+
+        size_t parse_code(byte_string_view in, UpdateList &code_updates)
+        {
+            constexpr auto hash_and_len_size =
+                sizeof(bytes32_t) + sizeof(uint64_t);
+            static_assert(hash_and_len_size == 40);
+            size_t total_processed = 0;
+            while (in.size() >= hash_and_len_size) {
+                auto const code_len = unaligned_load<uint64_t>(
+                    in.substr(sizeof(bytes32_t), sizeof(uint64_t)).data());
+                auto const entry_size = code_len + hash_and_len_size;
+                MONAD_ASSERT(entry_size <= buf_size_);
+                if (in.size() < entry_size) {
+                    return total_processed;
+                }
+                code_updates.push_front(update_alloc_.emplace_back(Update{
+                    .key = in.substr(0, sizeof(bytes32_t)),
+                    .value = in.substr(hash_and_len_size, code_len),
+                    .incarnation = false,
+                    .next = UpdateList{}}));
+
+                total_processed += entry_size;
+                in = in.substr(entry_size);
+            }
+            return total_processed;
+        }
+
+        Update handle_account(byte_string_view curr)
+        {
+            constexpr auto balance_offset = sizeof(bytes32_t);
+            constexpr auto nonce_offset = balance_offset + sizeof(uint256_t);
+            constexpr auto code_hash_offset = nonce_offset + sizeof(uint64_t);
+
+            return Update{
+                .key = curr.substr(0, sizeof(bytes32_t)),
+                .value = bytes_alloc_.emplace_back(rlp::encode_account(Account{
+                    .balance = unaligned_load<uint256_t>(
+                        curr.substr(balance_offset, sizeof(uint256_t)).data()),
+                    .code_hash = unaligned_load<bytes32_t>(
+                        curr.substr(code_hash_offset, sizeof(bytes32_t))
+                            .data()),
+                    .nonce = unaligned_load<uint64_t>(
+                        curr.substr(nonce_offset, sizeof(uint64_t)).data())})),
+                .incarnation = false,
+                .next = UpdateList{}};
+        }
+
+        UpdateList handle_storage(byte_string_view in)
+        {
+            UpdateList storage_updates;
+            while (!in.empty()) {
+                storage_updates.push_front(update_alloc_.emplace_back(Update{
+                    .key = in.substr(0, sizeof(bytes32_t)),
+                    .value = in.substr(sizeof(bytes32_t), sizeof(bytes32_t)),
+                    .incarnation = false,
+                    .next = UpdateList{}}));
+                in = in.substr(storage_entry_size);
+            }
+            return storage_updates;
+        }
+    };
 }
 
 std::unique_ptr<StateMachine> TrieDb::Machine::clone() const
@@ -437,6 +637,14 @@ TrieDb::TrieDb(DbOptions const &options, std::istream &input, size_t batch_size)
     MONAD_DEBUG_ASSERT(machine_.depth == 0 && machine_.is_merkle == false);
 }
 
+TrieDb::TrieDb(
+    DbOptions const &options, std::istream &accounts, std::istream &code,
+    size_t buf_size)
+    : TrieDb{options}
+{
+    BinaryDbLoader loader{db_, buf_size};
+    loader.load(accounts, code);
+}
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
     auto const value = db_.get(concat(state_nibble, NibblesView{to_key(addr)}));

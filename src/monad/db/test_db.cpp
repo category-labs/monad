@@ -3,6 +3,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/state2/state_deltas.hpp>
+#include <test_resource_data.h>
 
 #include <evmc/evmc.hpp>
 
@@ -11,6 +12,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <fstream>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -381,6 +383,22 @@ TYPED_TEST(DBTest, construct_from_json)
 {
     std::istringstream input{json_str};
     auto db = this->make_db(input, 2ul);
+    EXPECT_EQ(
+        db.state_root(),
+        0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);
+    EXPECT_EQ(db.read_code(a_code_hash), a_code);
+    EXPECT_EQ(db.read_code(b_code_hash), b_code);
+    EXPECT_EQ(db.read_code(c_code_hash), c_code);
+    EXPECT_EQ(db.read_code(d_code_hash), d_code);
+    EXPECT_EQ(db.read_code(e_code_hash), e_code);
+    EXPECT_EQ(db.read_code(h_code_hash), h_code);
+}
+
+TYPED_TEST(DBTest, construct_from_binary)
+{
+    std::ifstream accounts(test_resource::checkpoint_dir / "accounts");
+    std::ifstream code(test_resource::checkpoint_dir / "code");
+    auto db = this->make_db(accounts, code);
     EXPECT_EQ(
         db.state_root(),
         0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);

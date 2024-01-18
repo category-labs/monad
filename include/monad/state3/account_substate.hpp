@@ -66,7 +66,7 @@ public:
     }
 
     // A_a
-    bool access()
+    evmc_access_status access()
     {
         bool const inserted = !accessed_;
         accessed_ = true;

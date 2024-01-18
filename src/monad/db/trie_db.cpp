@@ -124,13 +124,17 @@ namespace
         UpdateList code_updates_;
         ::monad::mpt::Db &db_;
         size_t batch_size_;
+        bool insert_code_; // TEMPORARY for test that does not insert code
         UpdateList storage_updates_;
         std::set<bytes32_t> inserted_code_;
 
-        JsonDbLoader(::monad::mpt::Db &db, size_t batch_size)
+        JsonDbLoader(
+            ::monad::mpt::Db &db, size_t batch_size,
+            bool const insert_code = true)
             : state_{State::Root}
             , db_{db}
             , batch_size_{batch_size}
+            , insert_code_{insert_code}
         {
         }
 
@@ -354,11 +358,13 @@ namespace
                 .value = byte_string_view{},
                 .incarnation = false,
                 .next = std::move(account_updates_)}));
-            // updates.push_front(update_alloc_.emplace_back(Update{
-            //     .key = code_nibbles,
-            //     .value = byte_string_view{},
-            //     .incarnation = false,
-            //     .next = std::move(code_updates_)}));
+            if (insert_code_) {
+                updates.push_front(update_alloc_.emplace_back(Update{
+                    .key = code_nibbles,
+                    .value = byte_string_view{},
+                    .incarnation = false,
+                    .next = std::move(code_updates_)}));
+            }
 
             db_.upsert(std::move(updates));
 
@@ -660,7 +666,7 @@ bool OnDiskMachine::cache() const
     return depth <= cache_depth;
 }
 
-TrieDb::TrieDb(mpt::DbOptions const &options)
+TrieDb::TrieDb(mpt::DbOptions const &options, bool const insert_code)
     : machine_{[&] -> std::unique_ptr<Machine> {
         if (options.on_disk) {
             return std::make_unique<OnDiskMachine>();
@@ -668,14 +674,17 @@ TrieDb::TrieDb(mpt::DbOptions const &options)
         return std::make_unique<InMemoryMachine>();
     }()}
     , db_{*machine_, options}
+    , insert_code_(insert_code)
 {
 }
 
-TrieDb::TrieDb(DbOptions const &options, std::istream &input, size_t batch_size)
-    : TrieDb{options}
+TrieDb::TrieDb(
+    DbOptions const &options, std::istream &input, bool insert_code,
+    size_t batch_size)
+    : TrieDb{options, insert_code}
 {
     boost::json::basic_parser<JsonDbLoader> parser{
-        boost::json::parse_options{}, db_, batch_size};
+        boost::json::parse_options{}, db_, batch_size, insert_code};
 
     char buf[4096];
     std::error_code ec;
@@ -693,7 +702,7 @@ TrieDb::TrieDb(DbOptions const &options, std::istream &input, size_t batch_size)
     MONAD_ASSERT(parser.done());
 
     parser.handler().write();
-    MONAD_ASSERT(machine_.depth == 0 && machine_.is_merkle == false);
+    MONAD_ASSERT(machine_->depth == 0 && machine_->is_merkle == false);
 }
 
 TrieDb::TrieDb(
@@ -778,31 +787,31 @@ void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
                 .next = std::move(storage_updates)}));
         }
     }
-
-    UpdateList code_updates;
-    for (auto const &[hash, bytes] : code) {
-        code_updates.push_front(update_alloc_.emplace_back(Update{
-            .key = NibblesView{to_byte_string_view(hash.bytes)},
-            .value = bytes,
-            .incarnation = false,
-            .next = UpdateList{}}));
-    }
-
     auto state_update = Update{
         .key = state_nibbles,
         .value = byte_string_view{},
         .incarnation = false,
         .next = std::move(account_updates)};
-    auto code_update = Update{
-        .key = code_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(code_updates)};
+
     UpdateList updates;
     updates.push_front(state_update);
-    updates.push_front(code_update);
+    if (insert_code_) {
+        UpdateList code_updates;
+        for (auto const &[hash, bytes] : code) {
+            code_updates.push_front(update_alloc_.emplace_back(Update{
+                .key = NibblesView{to_byte_string_view(hash.bytes)},
+                .value = bytes,
+                .incarnation = false,
+                .next = UpdateList{}}));
+        }
+        updates.push_front(update_alloc_.emplace_back(Update{
+            .key = code_nibbles,
+            .value = byte_string_view{},
+            .incarnation = false,
+            .next = std::move(code_updates)}));
+    }
     db_.upsert(std::move(updates));
-    MONAD_ASSERT(machine_.depth == 0 && machine_.is_merkle == false);
+    MONAD_ASSERT(machine_->depth == 0 && machine_->is_merkle == false);
 
     update_alloc_.clear();
     bytes_alloc_.clear();

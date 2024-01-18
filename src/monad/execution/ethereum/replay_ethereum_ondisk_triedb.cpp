@@ -52,7 +52,8 @@ int main(int argc, char *argv[])
                 .uring_entries = 128,
                 .sq_thread_cpu = sq_thread_cpu,
                 .dbname = dbname_path},
-            input);
+            input,
+            false /* DO NOT insert code*/);
     }
     auto bytes = fmt::format("14M state root: {}", db->state_root());
     std::cout << bytes << std::endl;

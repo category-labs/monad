@@ -60,11 +60,14 @@ private:
     ::monad::mpt::Db db_;
     std::list<mpt::Update> update_alloc_;
     std::list<byte_string> bytes_alloc_;
+    bool insert_code_;
 
 public:
-    TrieDb(mpt::DbOptions const &);
+    TrieDb(mpt::DbOptions const &, bool insert_code = true);
     // parse from json
-    TrieDb(mpt::DbOptions const &, std::istream &, size_t batch_size = 262144);
+    TrieDb(
+        mpt::DbOptions const &, std::istream &, bool insert_code = true,
+        size_t batch_size = 262144);
     // parse from binary
     TrieDb(
         mpt::DbOptions const &, std::istream &accounts, std::istream &code,

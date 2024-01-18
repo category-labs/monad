@@ -32,6 +32,7 @@ struct InMemoryMachine final : public Machine
     virtual void up(size_t const n) override;
     virtual mpt::Compute &get_compute() const override;
     virtual bool cache() const override;
+    virtual bool compact() const override;
 };
 
 //! with 12-nibble block num and 1-nibble prefix
@@ -50,6 +51,7 @@ struct OnDiskMachine final : public Machine
     virtual void up(size_t const n) override;
     virtual mpt::Compute &get_compute() const override;
     virtual bool cache() const override;
+    virtual bool compact() const override;
 };
 
 class TrieDb final : public ::monad::Db

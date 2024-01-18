@@ -620,6 +620,11 @@ bool InMemoryMachine::cache() const
     return true;
 }
 
+bool InMemoryMachine::compact() const
+{
+    return false;
+}
+
 std::unique_ptr<mpt::StateMachine> OnDiskMachine::clone() const
 {
     auto cloned = std::make_unique<OnDiskMachine>();
@@ -664,6 +669,11 @@ mpt::Compute &OnDiskMachine::get_compute() const
 bool OnDiskMachine::cache() const
 {
     return depth <= cache_depth;
+}
+
+bool OnDiskMachine::compact() const
+{
+    return depth >= block_num_len + prefix_len;
 }
 
 TrieDb::TrieDb(mpt::DbOptions const &options, bool const insert_code)

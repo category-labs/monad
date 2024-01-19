@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
     std::filesystem::path block_db_path{};
     std::filesystem::path state_db_path{};
     std::filesystem::path genesis_file_path{};
-    uint64_t checkpoint_frequency = 1000u;
+    std::optional<uint64_t> checkpoint_frequency = std::nullopt;
     std::optional<block_num_t> finish_block_number = std::nullopt;
 
     quill::start(true);
@@ -107,9 +107,9 @@ int main(int argc, char *argv[])
 
     [[maybe_unused]] auto result = replay_eth.run<eth_start_fork>(
         db,
-        checkpoint_frequency,
         block_db,
         state_db_path,
+        checkpoint_frequency,
         start_block_number,
         finish_block_number);
 

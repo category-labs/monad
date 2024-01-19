@@ -1,7 +1,6 @@
 #pragma once
 
 #include <monad/db/trie_db.hpp>
-#include <monad/state2/state.hpp>
 #include <monad/test/config.hpp>
 
 #include <evmc/evmc.h>
@@ -10,6 +9,12 @@
 
 #include <string>
 #include <unordered_map>
+
+MONAD_NAMESPACE_BEGIN
+
+class State;
+
+MONAD_NAMESPACE_END
 
 MONAD_TEST_NAMESPACE_BEGIN
 

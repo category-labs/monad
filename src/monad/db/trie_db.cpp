@@ -18,7 +18,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
-#include <filesystem>
 #include <set>
 
 MONAD_DB_NAMESPACE_BEGIN
@@ -438,14 +437,6 @@ TrieDb::TrieDb(DbOptions const &options, std::istream &input, size_t batch_size)
     MONAD_DEBUG_ASSERT(machine_.depth == 0 && machine_.is_merkle == false);
 }
 
-TrieDb::TrieDb(
-    mpt::DbOptions const &options, std::istream &input,
-    std::filesystem::path const &root_path, size_t batch_size)
-    : TrieDb(options, input, batch_size)
-{
-    root_path_ = root_path;
-}
-
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
     auto const value = db_.get(concat(state_nibble, NibblesView{to_key(addr)}));
@@ -552,28 +543,6 @@ void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
 void TrieDb::create_and_prune_block_history(uint64_t) const {
 
 };
-
-void TrieDb::write_to_file(uint64_t block_number)
-{
-    auto const start_time = std::chrono::steady_clock::now();
-
-    std::string const filename = std::to_string(block_number) + ".json";
-    std::filesystem::path const file_path = root_path_ / filename;
-
-    MONAD_ASSERT(!std::filesystem::exists(file_path));
-
-    std::ofstream ofile(file_path);
-    ofile << to_json().dump(4);
-
-    auto const finished_time = std::chrono::steady_clock::now();
-    auto const elapsed_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            finished_time - start_time);
-    LOG_INFO(
-        "Finished dumping to json file at block = {}, time elapsed = {}",
-        block_number,
-        elapsed_ms);
-}
 
 bytes32_t TrieDb::state_root()
 {

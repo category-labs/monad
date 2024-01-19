@@ -78,7 +78,9 @@ public:
     template <class Traits>
     Result run_fork(
         Db &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
-        BlockHashBuffer &block_hash_buffer, block_num_t current_block_number,
+        BlockHashBuffer &block_hash_buffer,
+        std::filesystem::path const &root_path,
+        block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
         for (; current_block_number <= loop_until<Traits>(until_block_number);
@@ -114,8 +116,9 @@ public:
             }
             else {
                 if (current_block_number % checkpoint_frequency == 0) {
-                    LOG_ERROR("At block: {}", current_block_number);
-                    db.write_to_file(current_block_number);
+                    LOG_INFO("At block: {}", current_block_number);
+                    db::write_to_file(
+                        db.to_json(), root_path, current_block_number);
                 }
             }
         }
@@ -130,6 +133,7 @@ public:
                 checkpoint_frequency,
                 block_db,
                 block_hash_buffer,
+                root_path,
                 current_block_number,
                 until_block_number);
         }
@@ -138,6 +142,7 @@ public:
     template <class Traits>
     Result
     run(Db &db, uint64_t const checkpoint_frequency, BlockDb &block_db,
+        std::filesystem::path const &root_path,
         block_num_t const start_block_number,
         std::optional<block_num_t> const until_block_number = std::nullopt)
     {
@@ -169,6 +174,7 @@ public:
             checkpoint_frequency,
             block_db,
             block_hash_buffer,
+            root_path,
             start_block_number,
             until_block_number);
     }

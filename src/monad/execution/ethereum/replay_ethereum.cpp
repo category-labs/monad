@@ -76,8 +76,7 @@ int main(int argc, char *argv[])
     std::ifstream ifile_stream(start_file);
 
     BlockDb block_db(block_db_path);
-    db::TrieDb db{
-        mpt::DbOptions{.on_disk = false}, ifile_stream, state_db_path};
+    db::TrieDb db{mpt::DbOptions{.on_disk = false}, ifile_stream};
 
     auto const finished_time1 = std::chrono::steady_clock::now();
     auto const elapsed_ms1 =
@@ -110,6 +109,7 @@ int main(int argc, char *argv[])
         db,
         checkpoint_frequency,
         block_db,
+        state_db_path,
         start_block_number,
         finish_block_number);
 

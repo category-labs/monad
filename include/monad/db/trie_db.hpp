@@ -96,6 +96,11 @@ public:
 
     bytes32_t state_root();
     nlohmann::json to_json();
+
+    ::monad::mpt::Db &db()
+    {
+        return db_;
+    }
 };
 
 MONAD_DB_NAMESPACE_END

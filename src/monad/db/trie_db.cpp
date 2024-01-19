@@ -644,7 +644,7 @@ bool InMemoryMachine::compact() const
 
 std::unique_ptr<mpt::StateMachine> OnDiskMachine::clone() const
 {
-    auto cloned = std::make_unique<OnDiskMachine>();
+    auto cloned = std::make_unique<OnDiskMachine>(this->block_num_len);
     cloned->depth = this->depth;
     cloned->is_merkle = this->is_merkle;
     return cloned;

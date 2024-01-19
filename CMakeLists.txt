@@ -158,12 +158,9 @@ add_library(
   "src/monad/rlp/decode_error.cpp"
   # state
   "include/monad/state2/block_state.hpp"
-  "include/monad/state2/state.hpp"
   "include/monad/state2/state_deltas.hpp"
   "include/monad/state2/state_deltas_fmt.hpp"
-  "include/monad/state2/substate.hpp"
   "src/monad/state2/block_state.cpp"
-  "src/monad/state2/state.cpp"
   "src/monad/state2/state_deltas.cpp"
   # state 3
   "include/monad/state3/account_state.hpp"

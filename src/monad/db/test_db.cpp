@@ -382,7 +382,7 @@ TYPED_TEST(DBTest, to_json)
 TYPED_TEST(DBTest, construct_from_json)
 {
     std::istringstream input{json_str};
-    auto db = this->make_db(input, true, 2ul);
+    auto db = this->make_db(input, true, false, 2ul);
     EXPECT_EQ(
         db.state_root(),
         0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);

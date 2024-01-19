@@ -35,16 +35,15 @@ struct InMemoryMachine final : public Machine
     virtual bool compact() const override;
 };
 
-//! with 12-nibble block num and 1-nibble prefix
 struct OnDiskMachine final : public Machine
 {
     using Machine::depth;
     using Machine::is_merkle;
 
-    static constexpr auto block_num_len = 0;
     static constexpr auto prefix_len = 1;
-    static constexpr auto cache_depth = block_num_len + prefix_len + 5;
-    static constexpr auto max_depth = block_num_len + prefix_len + 64 + 64;
+    size_t block_num_len;
+    size_t cache_depth;
+    size_t max_depth;
 
     virtual std::unique_ptr<mpt::StateMachine> clone() const override;
     virtual void down(unsigned char const nibble) override;
@@ -52,10 +51,18 @@ struct OnDiskMachine final : public Machine
     virtual mpt::Compute &get_compute() const override;
     virtual bool cache() const override;
     virtual bool compact() const override;
+
+    OnDiskMachine(size_t block_num_len_ = 0)
+        : block_num_len(block_num_len_)
+        , cache_depth(block_num_len + prefix_len + 5)
+        , max_depth(
+              block_num_len + prefix_len + sizeof(bytes32_t) * 2 +
+              sizeof(bytes32_t) * 2)
+    {
+    }
 };
 
 class TrieDb final : public ::monad::Db
-
 {
 private:
     std::unique_ptr<Machine> machine_;
@@ -63,13 +70,18 @@ private:
     std::list<mpt::Update> update_alloc_;
     std::list<byte_string> bytes_alloc_;
     bool insert_code_;
+    bool per_block_;
+    uint64_t block_id_;
 
 public:
-    TrieDb(mpt::DbOptions const &, bool insert_code = true);
+    TrieDb(
+        mpt::DbOptions const &, bool insert_code = true, bool per_block = false,
+        uint64_t block_id = 0);
     // parse from json
     TrieDb(
         mpt::DbOptions const &, std::istream &, bool insert_code = true,
-        size_t batch_size = 262144);
+        bool per_block = false, size_t batch_size = 262144,
+        uint64_t block_id = 0);
     // parse from binary
     TrieDb(
         mpt::DbOptions const &, std::istream &accounts, std::istream &code,

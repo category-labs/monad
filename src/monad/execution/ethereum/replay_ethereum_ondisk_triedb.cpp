@@ -36,14 +36,17 @@ int main(int argc, char *argv[])
 
     std::unique_ptr<db::TrieDb> db;
     if (append) {
-        db = std::make_unique<db::TrieDb>(mpt::DbOptions{
-            .on_disk = true,
-            .append = true,
-            .rd_buffers = 8192 * 32,
-            .wr_buffers = 128,
-            .uring_entries = 128,
-            .sq_thread_cpu = sq_thread_cpu,
-            .dbname_paths = std::move(dbname_paths)});
+        db = std::make_unique<db::TrieDb>(
+            mpt::DbOptions{
+                .on_disk = true,
+                .append = true,
+                .rd_buffers = 8192 * 32,
+                .wr_buffers = 128,
+                .uring_entries = 128,
+                .sq_thread_cpu = sq_thread_cpu,
+                .dbname_paths = std::move(dbname_paths)},
+            false /* DO NOT insert code*/,
+            true /* per block, start from 0*/);
     }
     else {
         MONAD_ASSERT(!snapshot_file.empty());
@@ -58,9 +61,15 @@ int main(int argc, char *argv[])
                 .sq_thread_cpu = sq_thread_cpu,
                 .dbname_paths = std::move(dbname_paths)},
             input,
-            false /* DO NOT insert code*/);
+            false /* DO NOT insert code*/,
+            true /* per block, start from 0*/,
+            1000000 /* batch size */,
+            14000000 /* start block number */);
     }
     auto bytes = fmt::format("14M state root: {}", db->state_root());
     std::cout << bytes << std::endl;
+
     // TODO: upsert state deltas
+    // 1. parse delta
+    // 2. db->commit_from_json(state_deltas, code);
 }

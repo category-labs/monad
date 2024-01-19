@@ -30,6 +30,7 @@ namespace
 {
     constexpr unsigned char state_nibble = 0;
     constexpr unsigned char code_nibble = 1;
+    constexpr unsigned char block_num_nibbles_len = 12;
     auto const state_nibbles = concat(state_nibble);
     auto const code_nibbles = concat(code_nibble);
 
@@ -125,16 +126,21 @@ namespace
         ::monad::mpt::Db &db_;
         size_t batch_size_;
         bool insert_code_; // TEMPORARY for test that does not insert code
+        bool per_block_;
+        uint64_t block_id_;
         UpdateList storage_updates_;
         std::set<bytes32_t> inserted_code_;
 
         JsonDbLoader(
             ::monad::mpt::Db &db, size_t batch_size,
-            bool const insert_code = true)
+            bool const insert_code = true, bool const per_block = false,
+            uint64_t const block_id = 0)
             : state_{State::Root}
             , db_{db}
             , batch_size_{batch_size}
             , insert_code_{insert_code}
+            , per_block_{per_block}
+            , block_id_{block_id}
         {
         }
 
@@ -365,8 +371,19 @@ namespace
                     .incarnation = false,
                     .next = std::move(code_updates_)}));
             }
-
-            db_.upsert(std::move(updates));
+            if (per_block_) {
+                UpdateList block_updates;
+                auto block_num = serialize_as_big_endian<6>(block_id_);
+                block_updates.push_front(update_alloc_.emplace_back(Update{
+                    .key = block_num,
+                    .value = byte_string_view{},
+                    .incarnation = false,
+                    .next = std::move(updates)}));
+                db_.upsert(std::move(block_updates));
+            }
+            else {
+                db_.upsert(std::move(updates));
+            }
 
             inserted_code_.clear();
             account_updates_.clear();
@@ -676,25 +693,35 @@ bool OnDiskMachine::compact() const
     return depth >= block_num_len + prefix_len;
 }
 
-TrieDb::TrieDb(mpt::DbOptions const &options, bool const insert_code)
+TrieDb::TrieDb(
+    mpt::DbOptions const &options, bool const insert_code, bool const per_block,
+    uint64_t const block_id)
     : machine_{[&] -> std::unique_ptr<Machine> {
         if (options.on_disk) {
-            return std::make_unique<OnDiskMachine>();
+            return std::make_unique<OnDiskMachine>(
+                per_block ? block_num_nibbles_len : 0);
         }
         return std::make_unique<InMemoryMachine>();
     }()}
     , db_{*machine_, options}
-    , insert_code_(insert_code)
+    , insert_code_{insert_code}
+    , per_block_{per_block}
+    , block_id_{options.append ? db_.get_max_block_id() : block_id}
 {
 }
 
 TrieDb::TrieDb(
-    DbOptions const &options, std::istream &input, bool insert_code,
-    size_t batch_size)
-    : TrieDb{options, insert_code}
+    DbOptions const &options, std::istream &input, bool const insert_code,
+    bool const per_block, size_t const batch_size, uint64_t const block_id)
+    : TrieDb{options, insert_code, per_block, block_id}
 {
     boost::json::basic_parser<JsonDbLoader> parser{
-        boost::json::parse_options{}, db_, batch_size, insert_code};
+        boost::json::parse_options{},
+        db_,
+        batch_size,
+        insert_code,
+        per_block,
+        block_id};
 
     char buf[4096];
     std::error_code ec;
@@ -820,7 +847,12 @@ void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
             .incarnation = false,
             .next = std::move(code_updates)}));
     }
-    db_.upsert(std::move(updates));
+    if (per_block_) {
+        db_.upsert_with_fixed_history_len(std::move(updates), ++block_id_);
+    }
+    else {
+        db_.upsert(std::move(updates));
+    }
     MONAD_ASSERT(machine_->depth == 0 && machine_->is_merkle == false);
 
     update_alloc_.clear();
@@ -833,7 +865,9 @@ void TrieDb::create_and_prune_block_history(uint64_t) const {
 
 bytes32_t TrieDb::state_root()
 {
-    auto const value = db_.get_data(state_nibbles);
+    byte_string block_num = serialize_as_big_endian<6>(block_id_);
+    auto const value =
+        db_.get_data(concat(NibblesView{block_num}, state_nibble));
     if (!value.has_value() || value.value().empty()) {
         return NULL_ROOT;
     }

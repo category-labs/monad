@@ -8,6 +8,10 @@
 #include <monad/db/db.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state_deltas.hpp>
+#include <monad/state2/state_deltas_fmt.hpp>
+#include <monad/state3/state.hpp>
+
+#include <quill/detail/LogMacros.h>
 
 #include <cstdint>
 #include <optional>
@@ -103,28 +107,88 @@ byte_string BlockState::read_code(bytes32_t const &hash)
     return result;
 }
 
-bool BlockState::can_merge(StateDeltas const &state)
+bool BlockState::can_merge(State const &state)
 {
     ReadLock const lock{mutex_};
-    return ::monad::can_merge(state_, state);
+
+    for (auto it = state.original_.begin(); it != state.original_.end(); ++it) {
+        auto const &address = it->first;
+        auto const &account_state = it->second;
+        auto const it2 = state_.find(address);
+        MONAD_ASSERT(it2 != state_.end());
+        if (account_state.account_ != it2->second.account.second) {
+            return false;
+        }
+        for (auto it3 = account_state.storage_.begin();
+             it3 != account_state.storage_.end();
+             ++it3) {
+            auto const it4 = it2->second.storage.find(it3->first);
+            MONAD_ASSERT(it4 != it2->second.storage.end());
+            if (it3->second != it4->second.second) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
-void BlockState::merge(StateDeltas const &state)
+void BlockState::merge(State const &state)
 {
     WriteLock const lock{mutex_};
-    ::monad::merge(state_, state);
-}
 
-void BlockState::merge(Code const &code)
-{
-    WriteLock const lock{mutex_};
-    ::monad::merge(code_, code);
+    ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
+
+    for (auto it = state.state_.begin(); it != state.state_.end(); ++it) {
+        auto const &address = it->first;
+        auto const &stack = it->second;
+        MONAD_ASSERT(stack.size() == 1);
+        MONAD_ASSERT(stack[0].first == 0);
+        auto const &account_state = stack[0].second;
+        auto const &account = account_state.account_;
+        auto const &storage = account_state.storage_;
+        auto const it2 = state_.find(address);
+        MONAD_ASSERT(it2 != state_.end());
+        it2->second.account.second = account;
+        if (account.has_value()) {
+            for (auto it3 = storage.begin(); it3 != storage.end(); ++it3) {
+                auto const it4 = it2->second.storage.find(it3->first);
+                MONAD_ASSERT(it4 != it2->second.storage.end());
+                it4->second.second = it3->second;
+            }
+            code_hashes.insert(account.value().code_hash);
+        }
+        else {
+            it2->second.storage.clear();
+        }
+    }
+
+    for (auto const &code_hash : code_hashes) {
+        auto const it = state.code_.find(code_hash);
+        if (it == state.code_.end()) {
+            continue;
+        }
+        auto const it2 = code_.find(code_hash);
+        if (it2 != code_.end()) {
+            if (it2->second.empty()) {
+                it2->second = it->second;
+            }
+        }
+        else {
+            code_[code_hash] = it->second;
+        }
+    }
 }
 
 void BlockState::commit()
 {
     ReadLock const lock{mutex_};
     db_.commit(state_, code_);
+}
+
+void BlockState::log_debug()
+{
+    LOG_DEBUG("State Deltas: {}", state_);
+    LOG_DEBUG("Code Deltas: {}", code_);
 }
 
 MONAD_NAMESPACE_END

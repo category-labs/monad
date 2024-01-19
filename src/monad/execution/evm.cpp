@@ -11,7 +11,7 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/precompiles.hpp>
-#include <monad/state2/state.hpp>
+#include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -145,14 +145,14 @@ evmc::Result create_contract_account(
         return evmc::Result{EVMC_INVALID_INSTRUCTION};
     }
 
-    State new_state{state};
+    state.push();
 
-    new_state.create_contract(contract_address);
+    state.create_contract(contract_address);
 
     // EIP-161
     constexpr auto starting_nonce = rev >= EVMC_SPURIOUS_DRAGON ? 1 : 0;
-    new_state.set_nonce(contract_address, starting_nonce);
-    transfer_balances(new_state, msg, contract_address);
+    state.set_nonce(contract_address, starting_nonce);
+    transfer_balances(state, msg, contract_address);
 
     evmc_message const m_call{
         .kind = EVMC_CALL,
@@ -168,7 +168,7 @@ evmc::Result create_contract_account(
         .code_address = contract_address,
     };
 
-    EvmcHost<rev> new_host{*host, new_state};
+    EvmcHost<rev> new_host{*host, state}; // TODO remove
     auto result = baseline_execute(
         m_call,
         rev,
@@ -177,18 +177,20 @@ evmc::Result create_contract_account(
 
     if (result.status_code == EVMC_SUCCESS) {
         result = deploy_contract_code<rev>(
-            new_state, contract_address, std::move(result));
+            state, contract_address, std::move(result));
     }
 
     if (result.status_code == EVMC_SUCCESS) {
-        state = std::move(new_state);
+        state.pop_accept();
     }
     else {
         result.gas_refund = 0;
         if (result.status_code != EVMC_REVERT) {
             result.gas_left = 0;
         }
-        if (MONAD_UNLIKELY(new_state.is_touched(ripemd_address))) {
+        bool const ripemd_touched = state.is_touched(ripemd_address);
+        state.pop_reject();
+        if (MONAD_UNLIKELY(ripemd_touched)) {
             // YP K.1. Deletion of an Account Despite Out-of-gas.
             state.touch(ripemd_address);
         }
@@ -203,10 +205,11 @@ template <evmc_revision rev>
 evmc::Result call_evm(
     EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
 {
-    State new_state{state};
+    state.push();
 
-    if (auto result = transfer_call_balances(new_state, msg);
+    if (auto result = transfer_call_balances(state, msg);
         result.status_code != EVMC_SUCCESS) {
+        state.pop_reject();
         return result;
     }
 
@@ -215,7 +218,7 @@ evmc::Result call_evm(
         Address{msg.recipient} == Address{msg.code_address});
     if (msg.kind == EVMC_CALL && msg.flags & EVMC_STATIC) {
         // eip-161
-        new_state.touch(msg.recipient);
+        state.touch(msg.recipient);
     }
 
     evmc::Result result;
@@ -224,8 +227,8 @@ evmc::Result call_evm(
         result = std::move(maybe_result.value());
     }
     else {
-        EvmcHost<rev> new_host{*host, new_state};
-        auto const code = new_state.get_code(msg.code_address);
+        EvmcHost<rev> new_host{*host, state};
+        auto const code = state.get_code(msg.code_address);
         result = baseline_execute(msg, rev, &new_host, code);
     }
 
@@ -236,11 +239,15 @@ evmc::Result call_evm(
         result.status_code == EVMC_REVERT || result.gas_left == 0);
 
     if (result.status_code == EVMC_SUCCESS) {
-        state = std::move(new_state);
+        state.pop_accept();
     }
-    else if (MONAD_UNLIKELY(new_state.is_touched(ripemd_address))) {
-        // YP K.1. Deletion of an Account Despite Out-of-gas.
-        state.touch(ripemd_address);
+    else {
+        bool const ripemd_touched = state.is_touched(ripemd_address);
+        state.pop_reject();
+        if (MONAD_UNLIKELY(ripemd_touched)) {
+            // YP K.1. Deletion of an Account Despite Out-of-gas.
+            state.touch(ripemd_address);
+        }
     }
 
     return result;

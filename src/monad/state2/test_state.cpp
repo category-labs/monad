@@ -3,8 +3,8 @@
 #include <monad/core/bytes.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/state2/block_state.hpp>
-#include <monad/state2/state.hpp>
 #include <monad/state2/state_deltas.hpp>
+#include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -267,8 +267,8 @@ TYPED_TEST(StateTest, selfdestruct_merge_incarnation)
         s1.selfdestruct(a, a);
         s1.destruct_suicides();
 
-        EXPECT_TRUE(bs.can_merge(s1.state_));
-        bs.merge(s1.state_);
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
     }
     {
         State s2{bs};
@@ -294,8 +294,8 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_incarnation)
         s1.selfdestruct(a, b);
         s1.destruct_suicides();
 
-        EXPECT_TRUE(bs.can_merge(s1.state_));
-        bs.merge(s1.state_);
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
     }
     {
         State s2{bs};
@@ -309,8 +309,8 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_incarnation)
         EXPECT_EQ(s2.get_storage(a, key1), value2);
         EXPECT_EQ(s2.get_storage(a, key2), value1);
 
-        EXPECT_TRUE(bs.can_merge(s2.state_));
-        bs.merge(s2.state_);
+        EXPECT_TRUE(bs.can_merge(s2));
+        bs.merge(s2);
     }
     {
         State s3{bs};
@@ -336,13 +336,13 @@ TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
         s1.selfdestruct(a, a);
         s1.destruct_suicides();
 
-        EXPECT_TRUE(bs.can_merge(s1.state_));
-        bs.merge(s1.state_);
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
     }
     {
         State s2{bs};
         s2.create_contract(a);
-        bs.merge(s2.state_);
+        bs.merge(s2);
     }
     {
         bs.commit();
@@ -368,8 +368,8 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
         s1.selfdestruct(a, a);
         s1.destruct_suicides();
 
-        EXPECT_TRUE(bs.can_merge(s1.state_));
-        bs.merge(s1.state_);
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
     }
     {
         State s2{bs};
@@ -378,8 +378,8 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
         s2.set_storage(a, key1, value1);
         s2.set_storage(a, key2, value2);
 
-        EXPECT_TRUE(bs.can_merge(s2.state_));
-        bs.merge(s2.state_);
+        EXPECT_TRUE(bs.can_merge(s2));
+        bs.merge(s2);
     }
     {
         bs.commit();
@@ -402,8 +402,8 @@ TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
         s1.selfdestruct(a, b);
         s1.destruct_suicides();
 
-        EXPECT_TRUE(bs.can_merge(s1.state_));
-        bs.merge(s1.state_);
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
     }
     {
         State s2{bs};
@@ -411,8 +411,8 @@ TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
 
         s2.set_storage(a, key2, value3);
 
-        EXPECT_TRUE(bs.can_merge(s2.state_));
-        bs.merge(s2.state_);
+        EXPECT_TRUE(bs.can_merge(s2));
+        bs.merge(s2);
     }
     {
         bs.commit();
@@ -838,14 +838,14 @@ TYPED_TEST(StateTest, can_merge_same_account_different_storage)
     EXPECT_TRUE(as.account_exists(b));
     EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
 
-    EXPECT_TRUE(bs.can_merge(as.state_));
-    bs.merge(as.state_);
+    EXPECT_TRUE(bs.can_merge(as));
+    bs.merge(as);
 
     EXPECT_TRUE(cs.account_exists(b));
     EXPECT_EQ(cs.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
 
-    EXPECT_TRUE(bs.can_merge(cs.state_));
-    bs.merge(cs.state_);
+    EXPECT_TRUE(bs.can_merge(cs));
+    bs.merge(cs);
 }
 
 TYPED_TEST(StateTest, cant_merge_colliding_storage)
@@ -869,10 +869,10 @@ TYPED_TEST(StateTest, cant_merge_colliding_storage)
     EXPECT_TRUE(cs.account_exists(b));
     EXPECT_EQ(cs.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
 
-    EXPECT_TRUE(bs.can_merge(as.state_));
-    bs.merge(as.state_);
+    EXPECT_TRUE(bs.can_merge(as));
+    bs.merge(as);
 
-    EXPECT_FALSE(bs.can_merge(cs.state_));
+    EXPECT_FALSE(bs.can_merge(cs));
 
     // Need to rerun txn 1 - get new changset
     {
@@ -880,8 +880,8 @@ TYPED_TEST(StateTest, cant_merge_colliding_storage)
         EXPECT_TRUE(cs.account_exists(b));
         EXPECT_EQ(cs.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
 
-        EXPECT_TRUE(bs.can_merge(cs.state_));
-        bs.merge(cs.state_);
+        EXPECT_TRUE(bs.can_merge(cs));
+        bs.merge(cs);
     }
 }
 
@@ -915,8 +915,8 @@ TYPED_TEST(StateTest, merge_txn0_and_txn1)
     EXPECT_EQ(as.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
     EXPECT_EQ(as.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
 
-    EXPECT_TRUE(bs.can_merge(as.state_));
-    bs.merge(as.state_);
+    EXPECT_TRUE(bs.can_merge(as));
+    bs.merge(as);
 
     EXPECT_TRUE(cs.account_exists(c));
     EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
@@ -924,8 +924,8 @@ TYPED_TEST(StateTest, merge_txn0_and_txn1)
     EXPECT_TRUE(cs.selfdestruct(c, a));
     cs.destruct_suicides();
 
-    EXPECT_TRUE(bs.can_merge(cs.state_));
-    bs.merge(cs.state_);
+    EXPECT_TRUE(bs.can_merge(cs));
+    bs.merge(cs);
 }
 
 TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
@@ -956,8 +956,8 @@ TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
     EXPECT_EQ(as.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
     EXPECT_EQ(as.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
 
-    EXPECT_TRUE(bs.can_merge(as.state_));
-    bs.merge(as.state_);
+    EXPECT_TRUE(bs.can_merge(as));
+    bs.merge(as);
 
     EXPECT_TRUE(cs.account_exists(c));
     EXPECT_TRUE(cs.account_exists(b));
@@ -966,7 +966,7 @@ TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
     EXPECT_TRUE(cs.selfdestruct(c, b));
     cs.destruct_suicides();
 
-    EXPECT_TRUE(bs.can_merge(cs.state_));
+    EXPECT_TRUE(bs.can_merge(cs));
 
     State ds{bs};
 
@@ -977,8 +977,8 @@ TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
     EXPECT_TRUE(ds.selfdestruct(c, b));
     ds.destruct_suicides();
 
-    EXPECT_TRUE(bs.can_merge(ds.state_));
-    bs.merge(ds.state_);
+    EXPECT_TRUE(bs.can_merge(ds));
+    bs.merge(ds);
 }
 
 TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
@@ -990,7 +990,7 @@ TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
     as.add_to_balance(a, 1);
     as.set_storage(a, key1, value1);
 
-    bs.merge(as.state_);
+    bs.merge(as);
     bs.commit();
 
     EXPECT_TRUE(this->db.read_account(a).has_value());
@@ -1007,7 +1007,7 @@ TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
     as.create_contract(a);
     EXPECT_EQ(as.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
     EXPECT_EQ(as.set_storage(a, key1, null), EVMC_STORAGE_ADDED_DELETED);
-    bs.merge(as.state_);
+    bs.merge(as);
     bs.commit();
 
     EXPECT_EQ(this->db.read_storage(a, key1), monad::bytes32_t{});
@@ -1044,8 +1044,8 @@ TYPED_TEST(StateTest, commit_twice)
         EXPECT_EQ(as.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
         EXPECT_EQ(
             as.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
-        EXPECT_TRUE(bs.can_merge(as.state_));
-        bs.merge(as.state_);
+        EXPECT_TRUE(bs.can_merge(as));
+        bs.merge(as);
         bs.commit();
 
         EXPECT_EQ(this->db.read_storage(b, key1), value2);
@@ -1061,8 +1061,8 @@ TYPED_TEST(StateTest, commit_twice)
         EXPECT_EQ(cs.set_storage(c, key2, value1), EVMC_STORAGE_MODIFIED);
         EXPECT_TRUE(cs.selfdestruct(c, a));
         cs.destruct_suicides();
-        EXPECT_TRUE(bs.can_merge(cs.state_));
-        bs.merge(cs.state_);
+        EXPECT_TRUE(bs.can_merge(cs));
+        bs.merge(cs);
         bs.commit();
 
         EXPECT_EQ(this->db.read_storage(c, key1), monad::bytes32_t{});

@@ -8,6 +8,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
+class State;
+
 class BlockState final
 {
     using Mutex = std::shared_mutex;
@@ -29,13 +31,13 @@ public:
 
     byte_string read_code(bytes32_t const &hash);
 
-    bool can_merge(StateDeltas const &);
+    bool can_merge(State const &);
 
-    void merge(StateDeltas const &);
-
-    void merge(Code const &);
+    void merge(State const &);
 
     void commit();
+
+    void log_debug();
 };
 
 MONAD_NAMESPACE_END

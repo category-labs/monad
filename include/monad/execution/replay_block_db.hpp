@@ -1,7 +1,9 @@
 #pragma once
 
 #include <monad/config.hpp>
+#include <monad/core/basic_formatter.hpp>
 #include <monad/core/block.hpp>
+#include <monad/core/bytes_fmt.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
@@ -11,9 +13,10 @@
 #include <monad/execution/genesis.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/state2/block_state.hpp>
-#include <monad/state2/state.hpp>
 
 #include <nlohmann/json.hpp>
+
+#include <quill/Quill.h>
 
 #include <test_resource_data.h>
 

@@ -13,7 +13,7 @@
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
-#include <monad/state2/state.hpp>
+#include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
 
@@ -181,11 +181,8 @@ Result<Receipt> execute_impl(
         hdr.base_fee_per_gas.value_or(0),
         hdr.beneficiary);
 
-    state.log_debug();
-
-    MONAD_DEBUG_ASSERT(block_state.can_merge(state.state_));
-    block_state.merge(state.state_);
-    block_state.merge(state.code_);
+    MONAD_ASSERT(block_state.can_merge(state));
+    block_state.merge(state);
 
     return receipt;
 }

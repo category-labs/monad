@@ -8,7 +8,7 @@
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
 #include <monad/state2/block_state.hpp>
-#include <monad/state2/state.hpp>
+#include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -37,7 +37,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
         State state{bs};
         state.add_to_balance(from, 56'000'000'000'000'000);
         state.set_nonce(from, 25);
-        bs.merge(state.state_);
+        bs.merge(state);
     }
 
     Transaction tx{

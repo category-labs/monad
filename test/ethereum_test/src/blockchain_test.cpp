@@ -15,7 +15,7 @@
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/state2/block_state.hpp>
-#include <monad/state2/state.hpp>
+#include <monad/state3/state.hpp>
 #include <monad/test/config.hpp>
 
 #include <evmc/evmc.h>
@@ -175,7 +175,8 @@ void BlockchainTest::TestBody()
             BlockState bs{db};
             State state{bs};
             load_state_from_json(j_contents.at("pre"), state);
-            db.commit(state.state_, state.code_);
+            bs.merge(state);
+            bs.commit();
         }
 
         BlockHashBuffer block_hash_buffer;
@@ -211,7 +212,8 @@ void BlockchainTest::TestBody()
                     << name;
             }
             else {
-                EXPECT_TRUE(j_block.contains("expectException"));
+                EXPECT_TRUE(j_block.contains("expectException"))
+                    << result.error().message().c_str();
             }
         }
 

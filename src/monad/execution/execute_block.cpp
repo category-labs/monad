@@ -15,7 +15,7 @@
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/state2/block_state.hpp>
-#include <monad/state2/state.hpp>
+#include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
 
@@ -55,8 +55,8 @@ inline void transfer_balance_dao(BlockState &block_state)
         state.subtract_from_balance(addr, balance);
     }
 
-    MONAD_DEBUG_ASSERT(block_state.can_merge(state.state_));
-    block_state.merge(state.state_);
+    MONAD_ASSERT(block_state.can_merge(state));
+    block_state.merge(state);
 }
 
 constexpr Receipt::Bloom compute_bloom(std::vector<Receipt> const &receipts)
@@ -75,6 +75,8 @@ inline void commit(BlockState &block_state)
 {
     auto const start_time = std::chrono::steady_clock::now();
     LOG_INFO("{}", "Committing to DB...");
+
+    block_state.log_debug();
 
     block_state.commit();
 
@@ -141,8 +143,9 @@ execute_block(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
     if constexpr (rev >= EVMC_SPURIOUS_DRAGON) {
         state.destruct_touched_dead();
     }
-    MONAD_DEBUG_ASSERT(block_state.can_merge(state.state_));
-    block_state.merge(state.state_);
+
+    MONAD_ASSERT(block_state.can_merge(state));
+    block_state.merge(state);
 
     auto const finished_time = std::chrono::steady_clock::now();
     auto const elapsed_ms =

@@ -6,7 +6,7 @@
 #include <monad/execution/block_reward.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/state2/block_state.hpp>
-#include <monad/state2/state.hpp>
+#include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
 
@@ -81,8 +81,8 @@ void apply_block_reward(BlockState &block_state, Block const &block)
         }
     }
 
-    MONAD_DEBUG_ASSERT(block_state.can_merge(state.state_));
-    block_state.merge(state.state_);
+    MONAD_ASSERT(block_state.can_merge(state));
+    block_state.merge(state);
 }
 
 EXPLICIT_EVMC_REVISION(apply_block_reward);

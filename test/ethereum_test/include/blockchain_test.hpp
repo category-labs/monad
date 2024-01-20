@@ -21,6 +21,7 @@ MONAD_NAMESPACE_BEGIN
 
 struct Block;
 class BlockHashBuffer;
+class CodeAnalysisCache;
 struct Receipt;
 
 MONAD_NAMESPACE_END
@@ -35,11 +36,12 @@ class BlockchainTest : public testing::Test
     std::optional<evmc_revision> const revision_;
 
     template <evmc_revision rev>
-    static Result<std::vector<Receipt>>
-    execute(Block &, test::db_t &, BlockHashBuffer const &);
+    static Result<std::vector<Receipt>> execute(
+        Block &, test::db_t &, BlockHashBuffer const &, CodeAnalysisCache &);
 
     static Result<std::vector<Receipt>> execute_dispatch(
-        evmc_revision, Block &, test::db_t &, BlockHashBuffer const &);
+        evmc_revision, Block &, test::db_t &, BlockHashBuffer const &,
+        CodeAnalysisCache &);
 
     static void
     validate_post_state(nlohmann::json const &json, nlohmann::json const &db);

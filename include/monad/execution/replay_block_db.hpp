@@ -7,6 +7,7 @@
 #include <monad/db/block_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/code_analysis_cache.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_block.hpp>
@@ -32,6 +33,7 @@ class ReplayFromBlockDb
 {
 public:
     uint64_t n_transactions{0};
+    CodeAnalysisCache cache;
 
     enum class Status
     {
@@ -114,7 +116,7 @@ public:
             }
 
             auto const receipts = execute_block<Traits::rev>(
-                block, db, block_hash_buffer, priority_pool);
+                block, db, block_hash_buffer, cache, priority_pool);
 
             n_transactions += block.transactions.size();
 

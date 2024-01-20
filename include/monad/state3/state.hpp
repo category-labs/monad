@@ -464,20 +464,22 @@ public:
      * TODO code return reference
      */
 
+    byte_string get_code(bytes32_t const &code_hash)
+    {
+        auto const it = code_.find(code_hash);
+        if (it != code_.end()) {
+            return it->second;
+        }
+        return block_state_.read_code(code_hash);
+    }
+
     byte_string get_code(Address const &address)
     {
         auto const &account = recent_account(address);
         if (MONAD_UNLIKELY(!account.has_value())) {
             return {};
         }
-        bytes32_t const &code_hash = account.value().code_hash;
-        {
-            auto const it = code_.find(code_hash);
-            if (it != code_.end()) {
-                return it->second;
-            }
-        }
-        return block_state_.read_code(code_hash);
+        return get_code(account.value().code_hash);
     }
 
     size_t get_code_size(Address const &address)

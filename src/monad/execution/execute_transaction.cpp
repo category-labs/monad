@@ -167,13 +167,14 @@ Receipt execute_final(
 template <evmc_revision rev>
 Result<evmc::Result> execute_impl2(
     Transaction const &tx, Address const &sender, BlockHeader const &hdr,
-    BlockHashBuffer const &block_hash_buffer, State &state)
+    BlockHashBuffer const &block_hash_buffer, CodeAnalysisCache &cache,
+    State &state)
 {
     // TODO: Issue #164, Issue #54
     BOOST_OUTCOME_TRY(validate_transaction(state, tx, sender));
 
     auto const tx_context = get_tx_context<rev>(tx, sender, hdr);
-    EvmcHost<rev> host{tx_context, block_hash_buffer, state};
+    EvmcHost<rev> host{tx_context, block_hash_buffer, cache, state};
 
     return execute_impl3<rev>(
         state,
@@ -186,9 +187,9 @@ Result<evmc::Result> execute_impl2(
 
 template <evmc_revision rev>
 Result<Receipt> execute_impl(
-    Transaction const &tx, Address const &sender, BlockHeader const &hdr,
+    Transaction &tx, Address const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
-    boost::fibers::promise<void> &prev)
+    CodeAnalysisCache &cache, boost::fibers::promise<void> &prev)
 {
     BOOST_OUTCOME_TRY(
         static_validate_transaction<rev>(tx, hdr.base_fee_per_gas));
@@ -196,8 +197,8 @@ Result<Receipt> execute_impl(
     {
         State state{block_state};
 
-        auto result =
-            execute_impl2<rev>(tx, sender, hdr, block_hash_buffer, state);
+        auto result = execute_impl2<rev>(
+            tx, sender, hdr, block_hash_buffer, cache, state);
 
         prev.get_future().wait();
 
@@ -219,8 +220,8 @@ Result<Receipt> execute_impl(
     {
         State state{block_state};
 
-        auto result =
-            execute_impl2<rev>(tx, sender, hdr, block_hash_buffer, state);
+        auto result = execute_impl2<rev>(
+            tx, sender, hdr, block_hash_buffer, cache, state);
 
         MONAD_ASSERT(block_state.can_merge(state));
         if (result.has_error()) {
@@ -243,9 +244,9 @@ EXPLICIT_EVMC_REVISION(execute_impl);
 template <evmc_revision rev>
 void execute(
     unsigned i, std::shared_ptr<std::optional<Result<Receipt>>[]> results,
-    std::shared_ptr<boost::fibers::promise<void>[]> promises,
-    Transaction const &tx, BlockHeader const &hdr,
-    BlockHashBuffer const &block_hash_buffer, BlockState &block_state)
+    std::shared_ptr<boost::fibers::promise<void>[]> promises, Transaction &tx,
+    BlockHeader const &hdr, BlockHashBuffer const &block_hash_buffer,
+    BlockState &block_state, CodeAnalysisCache &cache)
 {
     auto &result = results[i];
     auto &prev = promises[i];
@@ -260,7 +261,7 @@ void execute(
     }
 
     result = execute_impl<rev>(
-        tx, sender.value(), hdr, block_hash_buffer, block_state, prev);
+        tx, sender.value(), hdr, block_hash_buffer, block_state, cache, prev);
 
     next.set_value();
 }

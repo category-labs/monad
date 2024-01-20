@@ -13,10 +13,12 @@ MONAD_NAMESPACE_BEGIN
 
 struct Block;
 class BlockHashBuffer;
+class CodeAnalysisCache;
 struct Db;
 
 template <evmc_revision rev>
-Result<std::vector<Receipt>>
-execute_block(Block &, Db &, BlockHashBuffer const &, fiber::PriorityPool &);
+Result<std::vector<Receipt>> execute_block(
+    Block &, Db &, BlockHashBuffer const &, CodeAnalysisCache &,
+    fiber::PriorityPool &);
 
 MONAD_NAMESPACE_END

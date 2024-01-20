@@ -4,6 +4,7 @@
 #include <monad/core/int.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/code_analysis_cache.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/tx_context.hpp>
@@ -56,7 +57,8 @@ TEST(Evm, create_with_insufficient)
     intx::be::store(m.value.bytes, v);
 
     BlockHashBuffer const block_hash_buffer;
-    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    CodeAnalysisCache cache;
+    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, cache, s};
     auto const result = create_contract_account<EVMC_SHANGHAI>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
@@ -96,7 +98,8 @@ TEST(Evm, eip684_existing_code)
     intx::be::store(m.value.bytes, v);
 
     BlockHashBuffer const block_hash_buffer;
-    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    CodeAnalysisCache cache;
+    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, cache, s};
     auto const result = create_contract_account<EVMC_SHANGHAI>(&h, s, m);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
 }
@@ -257,7 +260,8 @@ TEST(Evm, create_nonce_out_of_range)
         0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
 
     BlockHashBuffer const block_hash_buffer;
-    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    CodeAnalysisCache cache;
+    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, cache, s};
 
     db.commit(
         StateDeltas{
@@ -296,7 +300,8 @@ TEST(Evm, static_precompile_execution)
         0x0000000000000000000000000000000000000004_address};
 
     BlockHashBuffer const block_hash_buffer;
-    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    CodeAnalysisCache cache;
+    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, cache, s};
 
     db.commit(
         StateDeltas{
@@ -320,7 +325,7 @@ TEST(Evm, static_precompile_execution)
         .value = {0},
         .code_address = code_address};
 
-    auto const result = call_evm<EVMC_SHANGHAI>(&h, s, m);
+    auto const result = call_evm<EVMC_SHANGHAI>(&h, s, cache, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     EXPECT_EQ(result.gas_left, 382);
@@ -341,7 +346,8 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         0x0000000000000000000000000000000000000001_address};
 
     BlockHashBuffer const block_hash_buffer;
-    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    CodeAnalysisCache cache;
+    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, cache, s};
 
     db.commit(
         StateDeltas{
@@ -365,7 +371,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         .value = {0},
         .code_address = code_address};
 
-    evmc::Result const result = call_evm<EVMC_SHANGHAI>(&h, s, m);
+    evmc::Result const result = call_evm<EVMC_SHANGHAI>(&h, s, cache, m);
 
     EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
 }

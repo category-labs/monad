@@ -19,15 +19,17 @@ MONAD_NAMESPACE_BEGIN
 EvmcHostBase::EvmcHostBase(EvmcHostBase const &host, State &state) noexcept
     : tx_context_{host.tx_context_}
     , block_hash_buffer_{host.block_hash_buffer_}
+    , cache_{host.cache_}
     , state_{state}
 {
 }
 
 EvmcHostBase::EvmcHostBase(
     evmc_tx_context const &tx_context, BlockHashBuffer const &block_hash_buffer,
-    State &state) noexcept
+    CodeAnalysisCache &cache, State &state) noexcept
     : tx_context_{tx_context}
     , block_hash_buffer_{block_hash_buffer}
+    , cache_{cache}
     , state_{state}
 {
 }

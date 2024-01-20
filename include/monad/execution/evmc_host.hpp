@@ -18,6 +18,7 @@
 MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
+class CodeAnalysisCache;
 
 class EvmcHostBase : public evmc::Host
 {
@@ -25,13 +26,15 @@ class EvmcHostBase : public evmc::Host
     BlockHashBuffer const &block_hash_buffer_;
 
 protected:
+    CodeAnalysisCache &cache_;
     State &state_;
 
 public:
     EvmcHostBase(EvmcHostBase const &, State &) noexcept;
 
     EvmcHostBase(
-        evmc_tx_context const &, BlockHashBuffer const &, State &) noexcept;
+        evmc_tx_context const &, BlockHashBuffer const &, CodeAnalysisCache &,
+        State &) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
 
@@ -96,7 +99,7 @@ struct EvmcHost final : public EvmcHostBase
             return res;
         }
 
-        return call_evm<rev>(this, state_, msg);
+        return call_evm<rev>(this, state_, cache_, msg);
     }
 
     virtual evmc_access_status

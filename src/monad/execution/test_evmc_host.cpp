@@ -5,6 +5,7 @@
 #include <monad/core/transaction.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/code_analysis_cache.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/state2/block_state.hpp>
@@ -116,7 +117,8 @@ TEST(EvmcHost, emit_log)
     BlockState bs{db};
     State state{bs};
     BlockHashBuffer const block_hash_buffer;
-    evmc_host_t host{EMPTY_TX_CONTEXT, block_hash_buffer, state};
+    CodeAnalysisCache cache;
+    evmc_host_t host{EMPTY_TX_CONTEXT, block_hash_buffer, cache, state};
 
     host.emit_log(
         from,
@@ -140,7 +142,8 @@ TEST(EvmcHost, access_precompile)
     BlockState bs{db};
     State state{bs};
     BlockHashBuffer const block_hash_buffer;
-    evmc_host_t host{EMPTY_TX_CONTEXT, block_hash_buffer, state};
+    CodeAnalysisCache cache;
+    evmc_host_t host{EMPTY_TX_CONTEXT, block_hash_buffer, cache, state};
 
     EXPECT_EQ(
         host.access_account(0x0000000000000000000000000000000000000001_address),

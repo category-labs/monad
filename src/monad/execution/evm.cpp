@@ -6,6 +6,7 @@
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
 #include <monad/execution/baseline_execute.hpp>
+#include <monad/execution/code_analysis_cache.hpp>
 #include <monad/execution/create_contract_address.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
@@ -22,6 +23,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -169,11 +171,10 @@ evmc::Result create_contract_account(
     };
 
     EvmcHost<rev> new_host{*host, state}; // TODO remove
-    auto result = baseline_execute(
-        m_call,
-        rev,
-        &new_host,
-        byte_string_view(msg.input_data, msg.input_size));
+    auto const code = byte_string_view{msg.input_data, msg.input_size};
+    auto const analysis = std::make_shared<evmone::baseline::CodeAnalysis>(
+        evmone::baseline::analyze(rev, code));
+    auto result = baseline_execute(m_call, rev, &new_host, code, analysis);
 
     if (result.status_code == EVMC_SUCCESS) {
         result = deploy_contract_code<rev>(
@@ -203,7 +204,8 @@ EXPLICIT_EVMC_REVISION(create_contract_account);
 
 template <evmc_revision rev>
 evmc::Result call_evm(
-    EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
+    EvmcHost<rev> *const host, State &state, CodeAnalysisCache &cache,
+    evmc_message const &msg) noexcept
 {
     state.push();
 
@@ -228,12 +230,24 @@ evmc::Result call_evm(
     }
     else {
         EvmcHost<rev> new_host{*host, state};
-        auto const code = state.get_code(msg.code_address);
-        result = baseline_execute(msg, rev, &new_host, code);
+        auto const code_hash = state.get_code_hash(msg.code_address);
+        if (code_hash == NULL_HASH) {
+            result = evmc::Result{EVMC_SUCCESS, msg.gas};
+        }
+        else {
+            auto const code = state.get_code(code_hash);
+            MONAD_ASSERT(!code.empty());
+            auto analysis = cache.get(code_hash);
+            if (!analysis) {
+                analysis =
+                    cache.put(code_hash, evmone::baseline::analyze(rev, code));
+            }
+            MONAD_ASSERT(analysis);
+            result = baseline_execute(msg, rev, &new_host, code, analysis);
+        }
     }
 
-    MONAD_ASSERT(
-        result.status_code == EVMC_SUCCESS || result.gas_refund == 0);
+    MONAD_ASSERT(result.status_code == EVMC_SUCCESS || result.gas_refund == 0);
     MONAD_ASSERT(
         result.status_code == EVMC_SUCCESS ||
         result.status_code == EVMC_REVERT || result.gas_left == 0);

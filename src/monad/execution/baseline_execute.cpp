@@ -1,4 +1,5 @@
 #include <monad/config.hpp>
+#include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/execution/baseline_execute.hpp>
 
@@ -32,7 +33,8 @@ MONAD_NAMESPACE_BEGIN
 
 evmc::Result baseline_execute(
     evmc_message const &msg, evmc_revision const rev, evmc::Host *const host,
-    byte_string_view const code)
+    byte_string_view const code,
+    std::shared_ptr<evmone::baseline::CodeAnalysis> const analysis)
 {
     if (code.empty()) {
         return evmc::Result{EVMC_SUCCESS, msg.gas};
@@ -53,10 +55,9 @@ evmc::Result baseline_execute(
         code,
         byte_string_view{});
 
-    auto const code_analysis = evmone::baseline::analyze(rev, code);
-
+    MONAD_ASSERT(analysis);
     auto const result =
-        evmone::baseline::execute(vm, msg.gas, *execution_state, code_analysis);
+        evmone::baseline::execute(vm, msg.gas, *execution_state, *analysis);
 
 #ifdef EVMONE_TRACING
     LOG_TRACE_L1("{}", trace_ostream.str());

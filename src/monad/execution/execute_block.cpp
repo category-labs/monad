@@ -85,7 +85,7 @@ inline void commit(BlockState &block_state)
 template <evmc_revision rev>
 Result<std::vector<Receipt>> execute_block(
     Block &block, Db &db, BlockHashBuffer const &block_hash_buffer,
-    fiber::PriorityPool &priority_pool)
+    CodeAnalysisCache &cache, fiber::PriorityPool &priority_pool)
 {
     BlockState block_state{db};
 
@@ -111,7 +111,8 @@ Result<std::vector<Receipt>> execute_block(
              &transaction = block.transactions[i],
              &header = block.header,
              &block_hash_buffer = block_hash_buffer,
-             &block_state] {
+             &block_state,
+             &cache] {
                 execute<rev>(
                     i,
                     results,
@@ -119,7 +120,8 @@ Result<std::vector<Receipt>> execute_block(
                     transaction,
                     header,
                     block_hash_buffer,
-                    block_state);
+                    block_state,
+                    cache);
             });
     }
 

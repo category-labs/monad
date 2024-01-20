@@ -139,11 +139,14 @@ int main(int argc, char *argv[])
 
     LOG_INFO(
         "Finish running, status = {}, finish(stopped) block number = {}, "
-        "number of blocks run = {}, time_elapsed = {}, num transactions = {}, "
+        "number of blocks run = {}, code analysis cache hit rate = {}/{}, "
+        "time_elapsed = {}, num transactions = {}, "
         "tps = {}",
         static_cast<int>(result.status),
         result.block_number,
         result.block_number - start_block_number + 1,
+        replay_eth.cache.hit_rate().first,
+        replay_eth.cache.hit_rate().second,
         elapsed,
         replay_eth.n_transactions,
         replay_eth.n_transactions /

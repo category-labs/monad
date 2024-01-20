@@ -3,6 +3,7 @@
 #include <monad/core/transaction.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/code_analysis_cache.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/tx_context.hpp>
@@ -55,12 +56,13 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 
     BlockHeader const header{.beneficiary = bene};
     BlockHashBuffer const block_hash_buffer;
+    CodeAnalysisCache cache;
 
     boost::fibers::promise<void> prev{};
     prev.set_value();
 
     auto const result = execute_impl<EVMC_SHANGHAI>(
-        tx, from, header, block_hash_buffer, bs, prev);
+        tx, from, header, block_hash_buffer, bs, cache, prev);
 
     ASSERT_TRUE(!result.has_error());
 

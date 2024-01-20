@@ -16,18 +16,21 @@ MONAD_NAMESPACE_BEGIN
 class BlockHashBuffer;
 struct BlockHeader;
 class BlockState;
+class CodeAnalysisCache;
 struct Receipt;
 struct Transaction;
 
 template <evmc_revision rev>
 Result<Receipt> execute_impl(
-    Transaction const &, Address const &sender, BlockHeader const &,
-    BlockHashBuffer const &, BlockState &, boost::fibers::promise<void> &prev);
+    Transaction &, Address const &sender, BlockHeader const &,
+    BlockHashBuffer const &, BlockState &, CodeAnalysisCache &,
+    boost::fibers::promise<void> &prev);
 
 template <evmc_revision rev>
 void execute(
     unsigned i, std::shared_ptr<std::optional<Result<Receipt>>[]>,
-    std::shared_ptr<boost::fibers::promise<void>[]>, Transaction const &,
-    BlockHeader const &, BlockHashBuffer const &, BlockState &);
+    std::shared_ptr<boost::fibers::promise<void>[]>, Transaction &,
+    BlockHeader const &, BlockHashBuffer const &, BlockState &,
+    CodeAnalysisCache &);
 
 MONAD_NAMESPACE_END

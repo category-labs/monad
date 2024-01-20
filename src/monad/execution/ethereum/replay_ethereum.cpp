@@ -67,23 +67,41 @@ int main(int argc, char *argv[])
     }
 
     auto const start_time = std::chrono::steady_clock::now();
+    auto start_block_number = db::auto_detect_start_block_number(state_db_path);
+    auto block_db = BlockDb(block_db_path);
+    auto const opts = mpt::DbOptions{.on_disk = false};
 
-    block_num_t start_block_number =
-        db::auto_detect_start_block_number(state_db_path);
+    auto db = [&] -> db::TrieDb {
+        if (start_block_number == 0) {
+            return db::TrieDb{opts};
+        }
 
-    std::filesystem::path start_file =
-        state_db_path / (std::to_string(start_block_number - 1) + ".json");
-    std::ifstream ifile_stream(start_file);
+        auto const dir = state_db_path / std::to_string(start_block_number - 1);
+        if (std::filesystem::exists(dir / "accounts")) {
+            MONAD_DEBUG_ASSERT(std::filesystem::exists(dir / "code"));
+            LOG_INFO("Loading from binary checkpoint in {}", dir);
+            std::ifstream accounts(dir / "accounts");
+            std::ifstream code(dir / "code");
+            return db::TrieDb{opts, accounts, code};
+        }
+        MONAD_DEBUG_ASSERT(std::filesystem::exists(dir / "state.json"));
+        LOG_INFO("Loading from json checkpoint in {}", dir);
+        std::ifstream ifile_stream(dir / "state.json");
+        return db::TrieDb{opts, ifile_stream};
+    }();
 
-    BlockDb block_db(block_db_path);
-    db::TrieDb db{mpt::DbOptions{.on_disk = false}, ifile_stream};
+    if (start_block_number == 0) {
+        MONAD_DEBUG_ASSERT(*has_genesis_file);
+        read_and_verify_genesis(block_db, db, genesis_file_path);
+        start_block_number = 1;
+    }
 
     auto const finished_time1 = std::chrono::steady_clock::now();
     auto const elapsed_ms1 =
         std::chrono::duration_cast<std::chrono::milliseconds>(
             finished_time1 - start_time);
     LOG_INFO(
-        "Finished loading json at block = {}, time elapsed = {}",
+        "Finished initializing db at block = {}, time elapsed = {}",
         start_block_number,
         elapsed_ms1);
 
@@ -96,12 +114,6 @@ int main(int argc, char *argv[])
         state_db_path,
         start_block_number,
         finish_block_number);
-
-    if (start_block_number == 0) {
-        MONAD_DEBUG_ASSERT(*has_genesis_file);
-        read_and_verify_genesis(block_db, db, genesis_file_path);
-        start_block_number = 1u;
-    }
 
     ReplayFromBlockDb<decltype(db)> replay_eth;
 

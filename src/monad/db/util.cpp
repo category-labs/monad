@@ -22,11 +22,13 @@ uint64_t auto_detect_start_block_number(std::filesystem::path const &root)
 
     uint64_t start_block_number = 0u;
     for (auto const &entry : fs::directory_iterator(root)) {
-        auto const child_path = entry.path();
-        if (MONAD_LIKELY(child_path.extension().string() == ".json")) {
+        if (fs::is_directory(entry) &&
+            (fs::exists(entry.path() / "state.json") ||
+             (fs::exists(entry.path() / "accounts") &&
+              fs::exists(entry.path() / "code")))) {
             start_block_number = std::max(
                 start_block_number,
-                std::stoul(child_path.stem().string()) + 1u);
+                std::stoul(entry.path().stem().string()) + 1);
         }
     }
 
@@ -39,12 +41,13 @@ void write_to_file(
 {
     auto const start_time = std::chrono::steady_clock::now();
 
-    std::string const filename = std::to_string(block_number) + ".json";
-    std::filesystem::path const file_path = root_path / filename;
+    auto const dir = root_path / std::to_string(block_number);
+    std::filesystem::create_directory(dir);
+    MONAD_ASSERT(std::filesystem::is_directory(dir));
 
-    MONAD_ASSERT(!std::filesystem::exists(file_path));
-
-    std::ofstream ofile(file_path);
+    auto const file = dir / "state.json";
+    MONAD_ASSERT(!std::filesystem::exists(file));
+    std::ofstream ofile(file);
     ofile << j.dump(4);
 
     auto const finished_time = std::chrono::steady_clock::now();

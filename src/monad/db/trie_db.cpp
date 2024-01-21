@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <deque>
 #include <set>
 
 MONAD_DB_NAMESPACE_BEGIN
@@ -117,8 +118,8 @@ namespace
         std::string value_;
         byte_string acct_key_;
         Account acct_;
-        std::list<mpt::Update> update_alloc_;
-        std::list<byte_string> bytes_alloc_;
+        std::deque<mpt::Update> update_alloc_;
+        std::deque<byte_string> bytes_alloc_;
         UpdateList account_updates_;
         UpdateList code_updates_;
         ::monad::mpt::Db &db_;
@@ -372,8 +373,8 @@ namespace
         static constexpr auto chunk_size = 1ul << 13; // 8 kb
 
         ::monad::mpt::Db &db_;
-        std::list<mpt::Update> update_alloc_;
-        std::list<byte_string> bytes_alloc_;
+        std::deque<mpt::Update> update_alloc_;
+        std::deque<byte_string> bytes_alloc_;
         size_t buf_size_;
         std::unique_ptr<unsigned char[]> buf_;
 
@@ -645,6 +646,7 @@ TrieDb::TrieDb(
     BinaryDbLoader loader{db_, buf_size};
     loader.load(accounts, code);
 }
+
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
     auto const value = db_.get(concat(state_nibble, NibblesView{to_key(addr)}));

@@ -9,6 +9,7 @@
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/genesis.hpp>
 #include <monad/execution/replay_block_db.hpp>
+#include <monad/fiber/priority_pool.hpp>
 
 #include <CLI/CLI.hpp>
 
@@ -16,6 +17,7 @@
 #include <quill/Quill.h>
 #include <quill/detail/LogMacros.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -66,9 +68,10 @@ int main(int argc, char *argv[])
         return cli.exit(e);
     }
 
-    auto const start_time = std::chrono::steady_clock::now();
-    auto start_block_number = db::auto_detect_start_block_number(state_db_path);
     auto block_db = BlockDb(block_db_path);
+
+    auto const load_start_time = std::chrono::steady_clock::now();
+    auto start_block_number = db::auto_detect_start_block_number(state_db_path);
     auto const opts = mpt::DbOptions{.on_disk = false};
 
     auto db = [&] -> db::TrieDb {
@@ -96,14 +99,14 @@ int main(int argc, char *argv[])
         start_block_number = 1;
     }
 
-    auto const finished_time1 = std::chrono::steady_clock::now();
-    auto const elapsed_ms1 =
+    auto const load_finish_time = std::chrono::steady_clock::now();
+    auto const load_elapsed =
         std::chrono::duration_cast<std::chrono::milliseconds>(
-            finished_time1 - start_time);
+            load_finish_time - load_start_time);
     LOG_INFO(
         "Finished initializing db at block = {}, time elapsed = {}",
         start_block_number,
-        elapsed_ms1);
+        load_elapsed);
 
     quill::get_root_logger()->set_log_level(log_level);
 
@@ -115,28 +118,36 @@ int main(int argc, char *argv[])
         start_block_number,
         finish_block_number);
 
+    fiber::PriorityPool priority_pool{4, 4};
+
     ReplayFromBlockDb<decltype(db)> replay_eth;
+
+    auto const start_time = std::chrono::steady_clock::now();
 
     [[maybe_unused]] auto result = replay_eth.run<eth_start_fork>(
         db,
         block_db,
+        priority_pool,
         state_db_path,
         checkpoint_frequency,
         start_block_number,
         finish_block_number);
 
-    auto const finished_time = std::chrono::steady_clock::now();
-    auto const elapsed_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            finished_time - start_time);
+    auto const finish_time = std::chrono::steady_clock::now();
+    auto const elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+        finish_time - start_time);
 
     LOG_INFO(
         "Finish running, status = {}, finish(stopped) block number = {}, "
-        "number of blocks run = {}, time_elapsed = {}",
+        "number of blocks run = {}, time_elapsed = {}, num transactions = {}, "
+        "tps = {}",
         static_cast<int>(result.status),
         result.block_number,
         result.block_number - start_block_number + 1,
-        elapsed_ms);
+        elapsed,
+        replay_eth.n_transactions,
+        replay_eth.n_transactions /
+            std::max(1UL, static_cast<uint64_t>(elapsed.count())));
 
     return 0;
 }

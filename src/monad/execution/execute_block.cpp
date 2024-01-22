@@ -14,6 +14,7 @@
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/validate_block.hpp>
+#include <monad/fiber/priority_pool.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/state.hpp>
 
@@ -21,13 +22,16 @@
 
 #include <intx/intx.hpp>
 
-#include <quill/detail/LogMacros.h>
-
+#include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 
-#include <chrono>
+#include <quill/detail/LogMacros.h>
+
+#include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -73,33 +77,17 @@ constexpr Receipt::Bloom compute_bloom(std::vector<Receipt> const &receipts)
 
 inline void commit(BlockState &block_state)
 {
-    auto const start_time = std::chrono::steady_clock::now();
-    LOG_INFO("{}", "Committing to DB...");
-
     block_state.log_debug();
 
     block_state.commit();
-
-    auto const finished_time = std::chrono::steady_clock::now();
-    auto const elapsed_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            finished_time - start_time);
-    LOG_INFO("Finished committing, time elapsed = {}", elapsed_ms);
 }
 
 template <evmc_revision rev>
-Result<std::vector<Receipt>>
-execute_block(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
+Result<std::vector<Receipt>> execute_block(
+    Block &block, Db &db, BlockHashBuffer const &block_hash_buffer,
+    fiber::PriorityPool &priority_pool)
 {
-    auto const start_time = std::chrono::steady_clock::now();
-    LOG_INFO(
-        "Start executing Block {}, with {} transactions",
-        block.header.number,
-        block.transactions.size());
-    LOG_DEBUG("BlockHeader Fields: {}", block.header);
-
     BlockState block_state{db};
-    uint64_t cumulative_gas_used = 0;
 
     if constexpr (rev == EVMC_HOMESTEAD) {
         if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {
@@ -107,20 +95,47 @@ execute_block(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
         }
     }
 
-    std::vector<Receipt> receipts{};
-    receipts.reserve(block.transactions.size());
+    std::shared_ptr<std::optional<Result<Receipt>>[]> results{
+        new std::optional<Result<Receipt>>[block.transactions.size()]};
+
+    std::shared_ptr<boost::fibers::promise<void>[]> promises{
+        new boost::fibers::promise<void>[block.transactions.size() + 1]};
+    promises[0].set_value();
 
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
-        BOOST_OUTCOME_TRY(
-            auto const receipt,
-            execute<rev>(
-                block.transactions[i],
-                block.header,
-                block_hash_buffer,
-                block_state));
+        priority_pool.submit(
+            i,
+            [i = i,
+             results = results,
+             promises = promises,
+             &transaction = block.transactions[i],
+             &header = block.header,
+             &block_hash_buffer = block_hash_buffer,
+             &block_state] {
+                execute<rev>(
+                    i,
+                    results,
+                    promises,
+                    transaction,
+                    header,
+                    block_hash_buffer,
+                    block_state);
+            });
+    }
 
+    auto const last = static_cast<std::ptrdiff_t>(block.transactions.size());
+    promises[last].get_future().wait();
+
+    std::vector<Receipt> receipts;
+    for (unsigned i = 0; i < block.transactions.size(); ++i) {
+        MONAD_ASSERT(results[i].has_value());
+        BOOST_OUTCOME_TRY(Receipt receipt, std::move(results[i].value()));
+        receipts.push_back(std::move(receipt));
+    }
+
+    uint64_t cumulative_gas_used = 0;
+    for (auto const &receipt : receipts) {
         cumulative_gas_used += receipt.gas_used;
-        receipts.push_back(receipt);
     }
 
     // YP eq. 33
@@ -146,16 +161,6 @@ execute_block(Block &block, Db &db, BlockHashBuffer const &block_hash_buffer)
 
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(state);
-
-    auto const finished_time = std::chrono::steady_clock::now();
-    auto const elapsed_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            finished_time - start_time);
-    LOG_INFO(
-        "Finish executing Block {}, time elapsed = {}",
-        block.header.number,
-        elapsed_ms);
-    LOG_DEBUG("Receipts: {}", receipts);
 
     commit(block_state);
 

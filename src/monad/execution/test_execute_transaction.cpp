@@ -15,6 +15,8 @@
 
 #include <intx/intx.hpp>
 
+#include <boost/fiber/future/promise.hpp>
+
 #include <gtest/gtest.h>
 
 using namespace monad;
@@ -54,8 +56,11 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     BlockHeader const header{.beneficiary = bene};
     BlockHashBuffer const block_hash_buffer;
 
-    auto const result =
-        execute_impl<EVMC_SHANGHAI>(tx, from, header, block_hash_buffer, bs);
+    boost::fibers::promise<void> prev{};
+    prev.set_value();
+
+    auto const result = execute_impl<EVMC_SHANGHAI>(
+        tx, from, header, block_hash_buffer, bs, prev);
 
     ASSERT_TRUE(!result.has_error());
 

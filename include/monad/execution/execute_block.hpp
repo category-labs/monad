@@ -3,6 +3,7 @@
 #include <monad/config.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
+#include <monad/fiber/priority_pool.hpp>
 
 #include <evmc/evmc.h>
 
@@ -16,6 +17,6 @@ struct Db;
 
 template <evmc_revision rev>
 Result<std::vector<Receipt>>
-execute_block(Block &, Db &, BlockHashBuffer const &);
+execute_block(Block &, Db &, BlockHashBuffer const &, fiber::PriorityPool &);
 
 MONAD_NAMESPACE_END

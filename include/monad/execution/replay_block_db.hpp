@@ -12,6 +12,7 @@
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/genesis.hpp>
 #include <monad/execution/validate_block.hpp>
+#include <monad/fiber/priority_pool.hpp>
 #include <monad/state2/block_state.hpp>
 
 #include <nlohmann/json.hpp>
@@ -20,6 +21,7 @@
 
 #include <test_resource_data.h>
 
+#include <cstdint>
 #include <fstream>
 #include <optional>
 
@@ -29,6 +31,8 @@ template <class Db>
 class ReplayFromBlockDb
 {
 public:
+    uint64_t n_transactions{0};
+
     enum class Status
     {
         SUCCESS_END_OF_DB,
@@ -68,10 +72,13 @@ public:
         bytes32_t /* receipts_root */, bytes32_t const state_root,
         block_num_t /*current_block_number */) const
     {
-        LOG_INFO(
-            "Computed State Root: {}, Expected State Root: {}",
-            state_root,
-            block_header.state_root);
+        if (state_root != block_header.state_root) {
+            LOG_INFO(
+                "Block: {}, Computed State Root: {}, Expected State Root: {}",
+                block_header.number,
+                state_root,
+                block_header.state_root);
+        }
 
         // TODO: only check for state root hash for now (we don't have receipt
         // and transaction trie building algo yet)
@@ -81,7 +88,7 @@ public:
     template <class Traits>
     Result run_fork(
         Db &db, BlockDb &block_db, std::filesystem::path const &root_path,
-        BlockHashBuffer &block_hash_buffer,
+        BlockHashBuffer &block_hash_buffer, fiber::PriorityPool &priority_pool,
         std::optional<uint64_t> const checkpoint_frequency,
         block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
@@ -106,8 +113,10 @@ public:
                     Status::BLOCK_VALIDATION_FAILED, current_block_number};
             }
 
-            auto const receipts =
-                execute_block<Traits::rev>(block, db, block_hash_buffer);
+            auto const receipts = execute_block<Traits::rev>(
+                block, db, block_hash_buffer, priority_pool);
+
+            n_transactions += block.transactions.size();
 
             if (!verify_root_hash(
                     block.header,
@@ -138,6 +147,7 @@ public:
                 block_db,
                 root_path,
                 block_hash_buffer,
+                priority_pool,
                 checkpoint_frequency,
                 current_block_number,
                 until_block_number);
@@ -146,7 +156,8 @@ public:
 
     template <class Traits>
     Result
-    run(Db &db, BlockDb &block_db, std::filesystem::path const &root_path,
+    run(Db &db, BlockDb &block_db, fiber::PriorityPool &priority_pool,
+        std::filesystem::path const &root_path,
         std::optional<uint64_t> const checkpoint_frequency,
         block_num_t const start_block_number,
         std::optional<block_num_t> const until_block_number = std::nullopt)
@@ -179,6 +190,7 @@ public:
             block_db,
             root_path,
             block_hash_buffer,
+            priority_pool,
             checkpoint_frequency,
             start_block_number,
             until_block_number);

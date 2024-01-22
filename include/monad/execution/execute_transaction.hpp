@@ -6,6 +6,11 @@
 
 #include <evmc/evmc.h>
 
+#include <boost/fiber/future/promise.hpp>
+
+#include <memory>
+#include <optional>
+
 MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
@@ -17,10 +22,12 @@ struct Transaction;
 template <evmc_revision rev>
 Result<Receipt> execute_impl(
     Transaction &, Address const &sender, BlockHeader const &,
-    BlockHashBuffer const &, BlockState &);
+    BlockHashBuffer const &, BlockState &, boost::fibers::promise<void> &prev);
 
 template <evmc_revision rev>
-Result<Receipt> execute(
-    Transaction &, BlockHeader const &, BlockHashBuffer const &, BlockState &);
+void execute(
+    unsigned i, std::shared_ptr<std::optional<Result<Receipt>>[]>,
+    std::shared_ptr<boost::fibers::promise<void>[]>, Transaction &,
+    BlockHeader const &, BlockHashBuffer const &, BlockState &);
 
 MONAD_NAMESPACE_END

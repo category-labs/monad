@@ -158,50 +158,89 @@ Receipt execute_impl2(
 }
 
 template <evmc_revision rev>
-Result<Receipt> execute_impl(
+Result<Receipt> execute_impl2(
     Transaction &tx, Address const &sender, BlockHeader const &hdr,
-    BlockHashBuffer const &block_hash_buffer, BlockState &block_state)
+    BlockHashBuffer const &block_hash_buffer, State &state)
 {
-    BOOST_OUTCOME_TRY(
-        static_validate_transaction<rev>(tx, hdr.base_fee_per_gas));
-
-    State state{block_state};
-
     // TODO: Issue #164, Issue #54
     BOOST_OUTCOME_TRY(validate_transaction(state, tx, sender));
 
     auto const tx_context = get_tx_context<rev>(tx, sender, hdr);
     EvmcHost<rev> host{tx_context, block_hash_buffer, state};
 
-    auto const receipt = execute_impl2<rev>(
+    return execute_impl2<rev>(
         state,
         host,
         tx,
         sender,
         hdr.base_fee_per_gas.value_or(0),
         hdr.beneficiary);
+}
 
-    MONAD_ASSERT(block_state.can_merge(state));
-    block_state.merge(state);
+template <evmc_revision rev>
+Result<Receipt> execute_impl(
+    Transaction &tx, Address const &sender, BlockHeader const &hdr,
+    BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
+    boost::fibers::promise<void> &prev)
+{
+    BOOST_OUTCOME_TRY(
+        static_validate_transaction<rev>(tx, hdr.base_fee_per_gas));
 
-    return receipt;
+    {
+        State state{block_state};
+
+        auto result =
+            execute_impl2<rev>(tx, sender, hdr, block_hash_buffer, state);
+
+        prev.get_future().wait();
+
+        if (block_state.can_merge(state)) {
+            if (!result.has_error()) {
+                block_state.merge(state);
+            }
+            return std::move(result);
+        }
+    }
+    {
+        State state{block_state};
+
+        auto result =
+            execute_impl2<rev>(tx, sender, hdr, block_hash_buffer, state);
+
+        MONAD_ASSERT(block_state.can_merge(state));
+        if (!result.has_error()) {
+            block_state.merge(state);
+        }
+
+        return std::move(result);
+    }
 }
 
 EXPLICIT_EVMC_REVISION(execute_impl);
 
 template <evmc_revision rev>
-Result<Receipt> execute(
-    Transaction &tx, BlockHeader const &hdr,
-    BlockHashBuffer const &block_hash_buffer, BlockState &block_state)
+void execute(
+    unsigned i, std::shared_ptr<std::optional<Result<Receipt>>[]> results,
+    std::shared_ptr<boost::fibers::promise<void>[]> promises, Transaction &tx,
+    BlockHeader const &hdr, BlockHashBuffer const &block_hash_buffer,
+    BlockState &block_state)
 {
+    auto &result = results[i];
+    auto &prev = promises[i];
+    auto &next = promises[i + 1];
+
     auto const sender = recover_sender(tx);
 
     if (MONAD_UNLIKELY(!sender.has_value())) {
-        return TransactionError::MissingSender;
+        result = TransactionError::MissingSender;
+        next.set_value();
+        return;
     }
 
-    return execute_impl<rev>(
-        tx, sender.value(), hdr, block_hash_buffer, block_state);
+    result = execute_impl<rev>(
+        tx, sender.value(), hdr, block_hash_buffer, block_state, prev);
+
+    next.set_value();
 }
 
 EXPLICIT_EVMC_REVISION(execute);

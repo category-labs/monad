@@ -14,6 +14,7 @@
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/validate_block.hpp>
+#include <monad/fiber/priority_pool.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/state.hpp>
 #include <monad/test/config.hpp>
@@ -46,105 +47,111 @@
 
 MONAD_TEST_NAMESPACE_BEGIN
 
-namespace
+template <evmc_revision rev>
+Result<std::vector<Receipt>> BlockchainTest::execute(
+    Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
 {
-    template <evmc_revision rev>
-    Result<std::vector<Receipt>> execute(
-        Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
-    {
-        using namespace monad::test;
+    using namespace monad::test;
 
-        BOOST_OUTCOME_TRY(static_validate_block<rev>(block));
+    BOOST_OUTCOME_TRY(static_validate_block<rev>(block));
 
-        return execute_block<rev>(block, db, block_hash_buffer);
+    return execute_block<rev>(block, db, block_hash_buffer, *pool_);
+}
+
+Result<std::vector<Receipt>> BlockchainTest::execute_dispatch(
+    evmc_revision const rev, Block &block, test::db_t &db,
+    BlockHashBuffer const &block_hash_buffer)
+{
+    switch (rev) {
+    case EVMC_FRONTIER:
+        return execute<EVMC_FRONTIER>(block, db, block_hash_buffer);
+    case EVMC_HOMESTEAD:
+        return execute<EVMC_HOMESTEAD>(block, db, block_hash_buffer);
+    case EVMC_TANGERINE_WHISTLE:
+        return execute<EVMC_TANGERINE_WHISTLE>(block, db, block_hash_buffer);
+    case EVMC_SPURIOUS_DRAGON:
+        return execute<EVMC_SPURIOUS_DRAGON>(block, db, block_hash_buffer);
+    case EVMC_BYZANTIUM:
+        return execute<EVMC_BYZANTIUM>(block, db, block_hash_buffer);
+    case EVMC_PETERSBURG:
+        return execute<EVMC_PETERSBURG>(block, db, block_hash_buffer);
+    case EVMC_ISTANBUL:
+        return execute<EVMC_ISTANBUL>(block, db, block_hash_buffer);
+    case EVMC_BERLIN:
+        return execute<EVMC_BERLIN>(block, db, block_hash_buffer);
+    case EVMC_LONDON:
+        return execute<EVMC_LONDON>(block, db, block_hash_buffer);
+    case EVMC_PARIS:
+        return execute<EVMC_PARIS>(block, db, block_hash_buffer);
+    case EVMC_SHANGHAI:
+        return execute<EVMC_SHANGHAI>(block, db, block_hash_buffer);
+    default:
+        MONAD_ASSERT(false);
     }
+}
 
-    Result<std::vector<Receipt>> execute_dispatch(
-        evmc_revision const rev, Block &block, test::db_t &db,
-        BlockHashBuffer const &block_hash_buffer)
-    {
-        switch (rev) {
-        case EVMC_FRONTIER:
-            return execute<EVMC_FRONTIER>(block, db, block_hash_buffer);
-        case EVMC_HOMESTEAD:
-            return execute<EVMC_HOMESTEAD>(block, db, block_hash_buffer);
-        case EVMC_TANGERINE_WHISTLE:
-            return execute<EVMC_TANGERINE_WHISTLE>(
-                block, db, block_hash_buffer);
-        case EVMC_SPURIOUS_DRAGON:
-            return execute<EVMC_SPURIOUS_DRAGON>(block, db, block_hash_buffer);
-        case EVMC_BYZANTIUM:
-            return execute<EVMC_BYZANTIUM>(block, db, block_hash_buffer);
-        case EVMC_PETERSBURG:
-            return execute<EVMC_PETERSBURG>(block, db, block_hash_buffer);
-        case EVMC_ISTANBUL:
-            return execute<EVMC_ISTANBUL>(block, db, block_hash_buffer);
-        case EVMC_BERLIN:
-            return execute<EVMC_BERLIN>(block, db, block_hash_buffer);
-        case EVMC_LONDON:
-            return execute<EVMC_LONDON>(block, db, block_hash_buffer);
-        case EVMC_PARIS:
-            return execute<EVMC_PARIS>(block, db, block_hash_buffer);
-        case EVMC_SHANGHAI:
-            return execute<EVMC_SHANGHAI>(block, db, block_hash_buffer);
-        default:
-            MONAD_ASSERT(false);
+void BlockchainTest::validate_post_state(
+    nlohmann::json const &json, nlohmann::json const &db)
+{
+    EXPECT_EQ(db.size(), json.size());
+
+    for (auto const &[addr, j_account] : json.items()) {
+        nlohmann::json const addr_json = addr;
+        auto const addr_bytes = addr_json.get<Address>();
+        auto const hashed_account = std::bit_cast<bytes32_t>(
+            ethash::keccak256(addr_bytes.bytes, sizeof(addr_bytes.bytes)));
+        auto const db_addr_key = fmt::format("{}", hashed_account);
+
+        ASSERT_TRUE(db.contains(db_addr_key)) << db_addr_key;
+        auto const &db_account = db.at(db_addr_key);
+
+        auto const expected_balance =
+            fmt::format("{}", j_account.at("balance").get<uint256_t>());
+        auto const expected_nonce = fmt::format(
+            "0x{:x}", integer_from_json<uint64_t>(j_account.at("nonce")));
+        auto const code = j_account.contains("code")
+                              ? j_account.at("code").get<monad::byte_string>()
+                              : monad::byte_string{};
+        auto const expected_code = fmt::format(
+            "0x{:02x}", fmt::join(std::as_bytes(std::span(code)), ""));
+
+        EXPECT_EQ(db_account.at("balance").get<std::string>(), expected_balance)
+            << db_addr_key;
+        EXPECT_EQ(db_account.at("nonce").get<std::string>(), expected_nonce)
+            << db_addr_key;
+        EXPECT_EQ(db_account.at("code").get<std::string>(), expected_code)
+            << db_addr_key;
+
+        auto const &db_storage = db_account.at("storage");
+        EXPECT_EQ(db_storage.size(), j_account.at("storage").size())
+            << db_addr_key;
+        for (auto const &[key, j_value] : j_account.at("storage").items()) {
+            nlohmann::json const key_json = key;
+            auto const key_bytes = key_json.get<bytes32_t>();
+            auto const db_storage_key = fmt::format(
+                "{}",
+                std::bit_cast<bytes32_t>(ethash::keccak256(
+                    key_bytes.bytes, sizeof(key_bytes.bytes))));
+            ASSERT_TRUE(db_storage.contains(db_storage_key)) << db_storage_key;
+            auto const expected_value =
+                fmt::format("{}", j_value.get<bytes32_t>());
+            EXPECT_EQ(db_storage.at(db_storage_key), expected_value)
+                << db_storage_key;
         }
     }
+}
 
-    void
-    validate_post_state(nlohmann::json const &json, nlohmann::json const &db)
-    {
-        EXPECT_EQ(db.size(), json.size());
+fiber::PriorityPool *BlockchainTest::pool_ = nullptr;
 
-        for (auto const &[addr, j_account] : json.items()) {
-            nlohmann::json const addr_json = addr;
-            auto const addr_bytes = addr_json.get<Address>();
-            auto const hashed_account = std::bit_cast<bytes32_t>(
-                ethash::keccak256(addr_bytes.bytes, sizeof(addr_bytes.bytes)));
-            auto const db_addr_key = fmt::format("{}", hashed_account);
+void BlockchainTest::SetUpTestSuite()
+{
+    pool_ = new fiber::PriorityPool{1, 1};
+}
 
-            ASSERT_TRUE(db.contains(db_addr_key)) << db_addr_key;
-            auto const &db_account = db.at(db_addr_key);
-
-            auto const expected_balance =
-                fmt::format("{}", j_account.at("balance").get<uint256_t>());
-            auto const expected_nonce = fmt::format(
-                "0x{:x}", integer_from_json<uint64_t>(j_account.at("nonce")));
-            auto const code =
-                j_account.contains("code")
-                    ? j_account.at("code").get<monad::byte_string>()
-                    : monad::byte_string{};
-            auto const expected_code = fmt::format(
-                "0x{:02x}", fmt::join(std::as_bytes(std::span(code)), ""));
-
-            EXPECT_EQ(
-                db_account.at("balance").get<std::string>(), expected_balance)
-                << db_addr_key;
-            EXPECT_EQ(db_account.at("nonce").get<std::string>(), expected_nonce)
-                << db_addr_key;
-            EXPECT_EQ(db_account.at("code").get<std::string>(), expected_code)
-                << db_addr_key;
-
-            auto const &db_storage = db_account.at("storage");
-            EXPECT_EQ(db_storage.size(), j_account.at("storage").size())
-                << db_addr_key;
-            for (auto const &[key, j_value] : j_account.at("storage").items()) {
-                nlohmann::json const key_json = key;
-                auto const key_bytes = key_json.get<bytes32_t>();
-                auto const db_storage_key = fmt::format(
-                    "{}",
-                    std::bit_cast<bytes32_t>(ethash::keccak256(
-                        key_bytes.bytes, sizeof(key_bytes.bytes))));
-                ASSERT_TRUE(db_storage.contains(db_storage_key))
-                    << db_storage_key;
-                auto const expected_value =
-                    fmt::format("{}", j_value.get<bytes32_t>());
-                EXPECT_EQ(db_storage.at(db_storage_key), expected_value)
-                    << db_storage_key;
-            }
-        }
-    }
+void BlockchainTest::TearDownTestSuite()
+{
+    delete pool_;
+    pool_ = nullptr;
 }
 
 void BlockchainTest::TestBody()
@@ -271,9 +278,7 @@ void register_blockchain_tests(std::optional<evmc_revision> const &revision)
                 nullptr,
                 path.string().c_str(),
                 0,
-                [=] -> testing::Test * {
-                    return new BlockchainTest(path, revision);
-                });
+                [=] { return new BlockchainTest(path, revision); });
         }
     }
 }

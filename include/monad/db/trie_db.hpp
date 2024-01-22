@@ -40,11 +40,11 @@ private:
 public:
     TrieDb(mpt::DbOptions const &);
     // parse from json
-    TrieDb(mpt::DbOptions const &, std::istream &, size_t batch_size = 1048576);
+    TrieDb(mpt::DbOptions const &, std::istream &, size_t batch_size = 262144);
     // parse from binary
     TrieDb(
         mpt::DbOptions const &, std::istream &accounts, std::istream &code,
-        size_t buf_size = 1ul << 34);
+        size_t buf_size = 1ul << 31);
 
     virtual std::optional<Account> read_account(Address const &) override;
     virtual bytes32_t

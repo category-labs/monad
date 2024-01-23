@@ -591,7 +591,7 @@ void TrieDb::Machine::up(size_t const n)
     }
 }
 
-Compute &TrieDb::Machine::get_compute()
+Compute &TrieDb::Machine::get_compute() const
 {
     static EmptyCompute empty;
     static MerkleCompute merkle;

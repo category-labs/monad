@@ -31,7 +31,7 @@ private:
         virtual std::unique_ptr<mpt::StateMachine> clone() const override;
         virtual void down(unsigned char const nibble) override;
         virtual void up(size_t const n) override;
-        virtual mpt::Compute &get_compute() override;
+        virtual mpt::Compute &get_compute() const override;
         virtual bool cache() const override;
     } machine_;
 

@@ -86,7 +86,8 @@ public:
     // parse from binary
     TrieDb(
         mpt::DbOptions const &, std::istream &accounts, std::istream &code,
-        size_t buf_size = 1ul << 31);
+        size_t buf_size = 1ul << 31, bool insert_code = true,
+        bool per_block = false, uint64_t block_id = 0);
 
     virtual std::optional<Account> read_account(Address const &) override;
     virtual bytes32_t

@@ -707,9 +707,6 @@ namespace
 
         void write()
         {
-            printf(
-                "write a batch with %lu account updates\n",
-                account_updates_.size());
             UpdateList updates;
             updates.push_front(update_alloc_.emplace_back(Update{
                 .key = state_nibbles,
@@ -755,12 +752,20 @@ namespace
         std::deque<byte_string> bytes_alloc_;
         size_t buf_size_;
         std::unique_ptr<unsigned char[]> buf_;
+        bool insert_code_;
+        bool per_block_;
+        uint64_t block_id_;
 
     public:
-        BinaryDbLoader(::monad::mpt::Db &db, size_t buf_size)
+        BinaryDbLoader(
+            ::monad::mpt::Db &db, size_t buf_size, bool insert_code = true,
+            bool per_block = false, uint64_t block_id = 0)
             : db_{db}
             , buf_size_{buf_size}
             , buf_{std::make_unique_for_overwrite<unsigned char[]>(buf_size)}
+            , insert_code_{insert_code}
+            , per_block_{per_block}
+            , block_id_{block_id}
         {
             MONAD_ASSERT(buf_size >= chunk_size);
         };
@@ -773,6 +778,9 @@ namespace
                     return parse_accounts(in, updates);
                 },
                 [&](UpdateList account_updates) {
+                    printf(
+                        "write a batch with %lu account updates\n",
+                        account_updates.size());
                     UpdateList updates;
                     auto state_update = Update{
                         .key = state_nibbles,
@@ -781,30 +789,62 @@ namespace
                         .next = std::move(account_updates)};
                     updates.push_front(state_update);
 
-                    db_.upsert(std::move(updates));
+                    if (per_block_) {
+                        UpdateList block_updates;
+                        auto block_num = serialize_as_big_endian<6>(block_id_);
+                        block_updates.push_front(
+                            update_alloc_.emplace_back(Update{
+                                .key = block_num,
+                                .value = byte_string_view{},
+                                .incarnation = false,
+                                .next = std::move(updates)}));
+                        db_.upsert(std::move(block_updates));
+                    }
+                    else {
+                        db_.upsert(std::move(updates));
+                    }
+                    printf(
+                        "trie nodes after one batch upsert() bytes %lu\n",
+                        Node::trie_node_bytes);
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();
                 });
-            load(
-                code,
-                [&](byte_string_view in, UpdateList &updates) {
-                    return parse_code(in, updates);
-                },
-                [&](UpdateList code_updates) {
-                    UpdateList updates;
-                    auto code_update = Update{
-                        .key = code_nibbles,
-                        .value = byte_string_view{},
-                        .incarnation = false,
-                        .next = std::move(code_updates)};
-                    updates.push_front(code_update);
+            if (insert_code_) {
+                load(
+                    code,
+                    [&](byte_string_view in, UpdateList &updates) {
+                        return parse_code(in, updates);
+                    },
+                    [&](UpdateList code_updates) {
+                        UpdateList updates;
+                        auto code_update = Update{
+                            .key = code_nibbles,
+                            .value = byte_string_view{},
+                            .incarnation = false,
+                            .next = std::move(code_updates)};
+                        updates.push_front(code_update);
 
-                    db_.upsert(std::move(updates));
+                        if (per_block_) {
+                            UpdateList block_updates;
+                            auto block_num =
+                                serialize_as_big_endian<6>(block_id_);
+                            block_updates.push_front(
+                                update_alloc_.emplace_back(Update{
+                                    .key = block_num,
+                                    .value = byte_string_view{},
+                                    .incarnation = false,
+                                    .next = std::move(updates)}));
+                            db_.upsert(std::move(block_updates));
+                        }
+                        else {
+                            db_.upsert(std::move(updates));
+                        }
 
-                    update_alloc_.clear();
-                    bytes_alloc_.clear();
-                });
+                        update_alloc_.clear();
+                        bytes_alloc_.clear();
+                    });
+            }
         }
 
     private:
@@ -1096,10 +1136,11 @@ TrieDb::TrieDb(
 
 TrieDb::TrieDb(
     DbOptions const &options, std::istream &accounts, std::istream &code,
-    size_t buf_size)
-    : TrieDb{options}
+    size_t buf_size, bool const insert_code, bool const per_block,
+    uint64_t const block_id)
+    : TrieDb{options, insert_code, per_block, block_id}
 {
-    BinaryDbLoader loader{db_, buf_size};
+    BinaryDbLoader loader{db_, buf_size, insert_code, per_block, block_id};
     loader.load(accounts, code);
 }
 

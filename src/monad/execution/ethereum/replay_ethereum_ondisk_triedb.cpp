@@ -69,8 +69,7 @@ std::string unzip_json(std::filesystem::path &state_delta_file)
     // copy to dest_dir
     run_command(cp_file);
     // unsip from dest_dir
-    std::string const gzip_filename =
-        dest_dir + state_delta_file.filename().string();
+    std::string const gzip_filename = dest_dir / state_delta_file.filename();
     std::string const unzip = "gunzip " + gzip_filename;
     run_command(unzip);
     run_command("rm " + gzip_filename);
@@ -94,7 +93,7 @@ int main(int argc, char *argv[])
 
     bool append = false;
     bool compaction = false;
-    std::filesystem::path snapshot_file;
+    std::filesystem::path snapshot_dir;
     std::filesystem::path deltas_dir = "/home/jhunsaker/StateDeltaLog/";
     std::vector<std::filesystem::path> dbname_paths;
     unsigned sq_thread_cpu = 10;
@@ -106,7 +105,9 @@ int main(int argc, char *argv[])
         "--db-names", dbname_paths, "db file names, can have more than one");
     cli.add_option("--kcpu", sq_thread_cpu, "io_uring sq_thread_cpu");
     cli.add_option(
-        "--snapshot-file", snapshot_file, "snapshot json file to load from");
+        "--snapshot-dir",
+        snapshot_dir,
+        "snapshot dir to load account and code from");
     cli.add_option("--snapshot-block-num", snapshot_block_id);
     cli.add_option(
         "--deltas-dir",
@@ -136,8 +137,9 @@ int main(int argc, char *argv[])
             true /* per block, start from 0*/);
     }
     else {
-        MONAD_ASSERT(!snapshot_file.empty());
-        std::ifstream input{snapshot_file};
+        MONAD_ASSERT(!snapshot_dir.empty());
+        std::ifstream accounts(snapshot_dir / "accounts");
+        std::ifstream code(snapshot_dir / "code");
         db = std::make_unique<db::TrieDb>(
             mpt::DbOptions{
                 .on_disk = true,
@@ -148,10 +150,11 @@ int main(int argc, char *argv[])
                 .uring_entries = 128,
                 .sq_thread_cpu = sq_thread_cpu,
                 .dbname_paths = std::move(dbname_paths)},
-            input,
+            accounts,
+            code,
+            1ul << 31 /* buf_size */,
             false /* DO NOT insert code*/,
             true /* per block, start from 0*/,
-            250000000 /* batch size */,
             snapshot_block_id /* start block number */);
     }
 

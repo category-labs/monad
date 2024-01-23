@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <deque>
 #include <set>
+#include <string>
 
 MONAD_DB_NAMESPACE_BEGIN
 
@@ -94,6 +95,357 @@ namespace
         {
             return 0;
         };
+    };
+
+    struct JsonDbDeltaLoader
+    {
+        static constexpr size_t max_object_size = std::size_t(-1);
+        static constexpr size_t max_array_size = std::size_t(-1);
+        static constexpr size_t max_key_size = std::size_t(-1);
+        static constexpr size_t max_string_size = std::size_t(-1);
+        static constexpr size_t bytes32_size = sizeof(bytes32_t) * 2 + 2;
+        enum class State
+        {
+            Root = 0,
+            BlockNum,
+            Deltas,
+            CodeDeltas,
+            CodeDelta,
+            AccountDeltas,
+            Accounts,
+            Account,
+            Balance,
+            CodeHash,
+            Incarnation,
+            Nonce,
+            Storage
+        } state_;
+
+        std::string key_;
+        std::string value_;
+        byte_string acct_key_;
+        Account acct_;
+        std::deque<mpt::Update> update_alloc_;
+        std::deque<byte_string> bytes_alloc_;
+        UpdateList account_updates_;
+        UpdateList code_updates_;
+        ::monad::db::TrieDb &triedb_;
+        size_t batch_size_;
+        UpdateList storage_updates_;
+        std::set<bytes32_t> inserted_code_;
+        std::chrono::duration<double> total_commit_time_;
+        bool skip_block_;
+
+        JsonDbDeltaLoader(::monad::db::TrieDb &triedb)
+            : state_{State::Root}
+            , triedb_{triedb}
+            , total_commit_time_{0}
+        {
+        }
+
+        bool on_document_begin(std::error_code &)
+        {
+            MONAD_ASSERT(state_ == State::Root);
+            return true;
+        }
+
+        bool on_document_end(std::error_code &)
+        {
+            MONAD_ASSERT(state_ == State::Root);
+            return true;
+        }
+
+        bool on_object_begin(std::error_code &)
+        {
+            if (state_ == State::Root) {
+                state_ = State::BlockNum;
+            }
+            else if (state_ == State::BlockNum) {
+                state_ = State::Deltas;
+            }
+            else if (state_ == State::CodeDeltas) {
+                state_ = State::CodeDelta;
+            }
+            else if (state_ == State::AccountDeltas) {
+                state_ = State::Accounts;
+            }
+            else if (state_ == State::Accounts) {
+                state_ = State::Account;
+            }
+            else if (state_ == State::Account) {
+                state_ = State::Storage;
+            }
+            else {
+                MONAD_ASSERT(false);
+            }
+            return true;
+        }
+
+        bool on_object_end(size_t, std::error_code &)
+        {
+            if (state_ == State::BlockNum) {
+                state_ = State::Root;
+            }
+            else if (state_ == State::Deltas) {
+                state_ = State::BlockNum;
+            }
+            else if (state_ == State::CodeDelta) {
+                state_ = State::Deltas;
+            }
+            else if (state_ == State::AccountDeltas) {
+                do_commit(); // which also clear it all
+                state_ = State::BlockNum;
+            }
+            else if (state_ == State::Accounts) {
+                state_ = State::AccountDeltas;
+            }
+            else if (state_ == State::Account) {
+                if (acct_.balance == 0 && acct_.nonce == 0 &&
+                    acct_.code_hash == NULL_HASH && acct_.incarnation == 0 &&
+                    storage_updates_.empty()) { // if it's account erasure
+                    account_updates_.push_front(update_alloc_.emplace_back(
+                        make_erase(bytes_alloc_.emplace_back(acct_key_))));
+                }
+                else {
+                    account_updates_.push_front(
+                        update_alloc_.emplace_back(Update{
+                            .key = bytes_alloc_.emplace_back(acct_key_),
+                            .value = bytes_alloc_.emplace_back(
+                                rlp::encode_account(acct_)),
+                            .incarnation = acct_.incarnation != 0,
+                            .next = std::move(storage_updates_)}));
+                    storage_updates_.clear();
+                }
+                state_ = State::Accounts;
+            }
+            else if (state_ == State::Storage) {
+                state_ = State::Account;
+            }
+            else {
+                MONAD_ASSERT(false);
+            }
+            return true;
+        }
+
+        bool on_array_begin(std::error_code &)
+
+        {
+            return false;
+        }
+
+        bool on_array_end(size_t, std::error_code &)
+        {
+            return false;
+        }
+
+        bool on_key_part(std::string_view in, size_t n, std::error_code &)
+        {
+            append_to(key_, in, n);
+            return true;
+        }
+
+        bool on_key(std::string_view in, size_t n, std::error_code &)
+        {
+            append_to(key_, in, n);
+            if (state_ == State::BlockNum) {
+                skip_block_ = std::stoull(key_) > triedb_.block_id + 1;
+                key_.clear();
+            }
+            else if (state_ == State::Deltas) {
+                if (key_ == "CodeDelta") {
+                    state_ = State::CodeDeltas;
+                }
+                else {
+                    MONAD_ASSERT(key_ == "StateDelta");
+                    state_ = State::AccountDeltas;
+                }
+                key_.clear();
+            }
+            else if (state_ == State::CodeDelta) {
+                MONAD_ASSERT(n == bytes32_size);
+                key_.clear();
+            }
+            else if (state_ == State::Accounts) {
+                MONAD_ASSERT(n == 42);
+                auto raw_acct = evmc::from_hex(key_).value();
+                acct_key_ = std::bit_cast<bytes32_t>(
+                    ethash::keccak256(raw_acct.data(), raw_acct.size()));
+                key_.clear();
+            }
+            else if (state_ == State::Account) {
+                if (key_ == "balance") {
+                    state_ = State::Balance;
+                }
+                else if (key_ == "nonce") {
+                    state_ = State::Nonce;
+                }
+                else if (key_ == "code_hash") {
+                    state_ = State::CodeHash;
+                }
+                else if (key_ == "incarnation") {
+                    state_ = State::Incarnation;
+                }
+                else if (key_ != "storage") {
+                    MONAD_ASSERT(false);
+                }
+                key_.clear();
+            }
+            else if (state_ == State::Storage) {
+                MONAD_ASSERT(n == bytes32_size);
+            }
+            else {
+                MONAD_ASSERT(false);
+            }
+
+            return true;
+        }
+
+        bool on_string_part(std::string_view in, size_t n, std::error_code &)
+        {
+            append_to(value_, in, n);
+            return true;
+        }
+
+        bool on_string(std::string_view in, size_t n, std::error_code &)
+        {
+            append_to(value_, in, n);
+            if (state_ == State::Balance) {
+                state_ = State::Account;
+                acct_.balance = intx::from_string<uint256_t>(value_);
+            }
+            else if (state_ == State::CodeHash) {
+                state_ = State::Account;
+                if (value_.size() == 2) {
+                    MONAD_ASSERT(value_ == "0x");
+                    acct_.code_hash = NULL_HASH;
+                }
+                else {
+                    auto code_hash = evmc::from_hex(value_).value();
+                    MONAD_ASSERT(code_hash.size() == 32);
+                    memcpy(acct_.code_hash.bytes, code_hash.data(), 32);
+                }
+            }
+            else if (state_ == State::Nonce) {
+                state_ = State::Account;
+                acct_.nonce = std::stoull(value_, nullptr, 16);
+            }
+            else if (state_ == State::Incarnation) {
+                state_ = State::Account;
+                acct_.incarnation = std::stoull(value_, nullptr, 16);
+            }
+            else if (state_ == State::Storage) {
+                MONAD_ASSERT(value_.size() == bytes32_size);
+                auto raw_storage = evmc::from_hex(key_).value();
+                auto storage_key = std::bit_cast<bytes32_t>(
+                    ethash::keccak256(raw_storage.data(), raw_storage.size()));
+                storage_updates_.push_front(update_alloc_.emplace_back(Update{
+                    .key = bytes_alloc_.emplace_back(storage_key),
+                    .value = bytes_alloc_.emplace_back(
+                        evmc::from_hex(value_).value()),
+                    .incarnation = false,
+                    .next = UpdateList{}}));
+                key_.clear();
+            }
+            else if (state_ != State::CodeDelta) {
+                MONAD_ASSERT(false);
+            }
+
+            value_.clear();
+            return true;
+        }
+
+        bool on_number_part(std::string_view, std::error_code &)
+        {
+            return false;
+        }
+
+        bool on_int64(std::int64_t, std::string_view, std::error_code &)
+        {
+            return false;
+        }
+
+        bool on_uint64(std::uint64_t, std::string_view, std::error_code &)
+        {
+            return false;
+        }
+
+        bool on_double(double, std::string_view, std::error_code &)
+        {
+            return false;
+        }
+
+        bool on_bool(bool, std::error_code &)
+        {
+            return false;
+        }
+
+        bool on_null(std::error_code &)
+        {
+            return false;
+        }
+
+        bool on_comment_part(std::string_view, std::error_code &)
+        {
+            return false;
+        }
+
+        bool on_comment(std::string_view, std::error_code &)
+        {
+            return false;
+        }
+
+        void append_to(std::string &to, std::string_view in, size_t n)
+        {
+            to.append(in);
+            MONAD_ASSERT(to.size() == n);
+        }
+
+        void do_commit()
+        {
+            if (!skip_block_) {
+                printf(
+                    "Commit block %lu, %lu accounts updates\n",
+                    triedb_.block_id + 1,
+                    account_updates_.size());
+                UpdateList updates;
+                updates.push_front(update_alloc_.emplace_back(Update{
+                    .key = state_nibbles,
+                    .value = byte_string_view{},
+                    .incarnation = false,
+                    .next = std::move(account_updates_)}));
+                if (triedb_.insert_code) {
+                    updates.push_front(update_alloc_.emplace_back(Update{
+                        .key = code_nibbles,
+                        .value = byte_string_view{},
+                        .incarnation = false,
+                        .next = std::move(code_updates_)}));
+                }
+                // generate the update list
+                auto begin_commit = std::chrono::steady_clock::now();
+                triedb_.commit(std::move(updates));
+                auto end_commit = std::chrono::steady_clock::now();
+                total_commit_time_ += end_commit - begin_commit;
+                // log current block root hash
+                auto root_hash =
+                    fmt::format("state root: {}", triedb_.state_root());
+                std::cout << root_hash << std::endl;
+            }
+            inserted_code_.clear();
+            account_updates_.clear();
+            code_updates_.clear();
+            update_alloc_.clear();
+            bytes_alloc_.clear();
+        }
+
+        double total_commit_time_secs()
+        {
+            return static_cast<double>(
+                       std::chrono::duration_cast<std::chrono::microseconds>(
+                           total_commit_time_)
+                           .count()) /
+                   1000000.0;
+            ;
+        }
     };
 
     struct JsonDbLoader
@@ -704,9 +1056,9 @@ TrieDb::TrieDb(
         return std::make_unique<InMemoryMachine>();
     }()}
     , db_{*machine_, options}
-    , insert_code_{insert_code}
-    , per_block_{per_block}
-    , block_id_{options.append ? db_.get_max_block_id() : block_id}
+    , insert_code{insert_code}
+    , per_block{per_block}
+    , block_id{options.append ? db_.get_max_block_id() : block_id}
 {
 }
 
@@ -787,6 +1139,42 @@ byte_string TrieDb::read_code(bytes32_t const &hash)
     return byte_string{value.value()};
 }
 
+void TrieDb::commit_multiple_blocks_from_json(std::istream &input)
+{
+    // only time the committing state_delta -> triedb part
+    boost::json::basic_parser<JsonDbDeltaLoader> parser{
+        boost::json::parse_options{}, *this};
+    char buf[4096];
+    std::error_code ec;
+    while (input.read(buf, sizeof(buf))) {
+        auto const count = static_cast<size_t>(input.gcount());
+        MONAD_ASSERT(count <= sizeof(buf));
+        parser.write_some(true, buf, count, ec);
+        MONAD_ASSERT(!ec);
+    }
+    auto const count = static_cast<size_t>(input.gcount());
+    MONAD_ASSERT(count <= sizeof(buf));
+    parser.write_some(false, buf, count, ec);
+    MONAD_ASSERT(!ec);
+    MONAD_ASSERT(input.eof());
+    MONAD_ASSERT(parser.done());
+    parser.handler().do_commit();
+    printf(
+        "Time to commit 1000 blocks state delta till db->block_id: %f s\n",
+        parser.handler().total_commit_time_secs());
+    MONAD_DEBUG_ASSERT(machine_->depth == 0 && machine_->is_merkle == false);
+}
+
+void TrieDb::commit(UpdateList updates)
+{
+    if (per_block) {
+        db_.upsert_with_fixed_history_len(std::move(updates), ++block_id);
+    }
+    else {
+        db_.upsert(std::move(updates));
+    }
+}
+
 void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
 {
     UpdateList account_updates;
@@ -832,7 +1220,7 @@ void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
 
     UpdateList updates;
     updates.push_front(state_update);
-    if (insert_code_) {
+    if (insert_code) {
         UpdateList code_updates;
         for (auto const &[hash, bytes] : code) {
             code_updates.push_front(update_alloc_.emplace_back(Update{
@@ -847,12 +1235,8 @@ void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
             .incarnation = false,
             .next = std::move(code_updates)}));
     }
-    if (per_block_) {
-        db_.upsert_with_fixed_history_len(std::move(updates), ++block_id_);
-    }
-    else {
-        db_.upsert(std::move(updates));
-    }
+    commit(std::move(updates));
+
     MONAD_ASSERT(machine_->depth == 0 && machine_->is_merkle == false);
 
     update_alloc_.clear();
@@ -865,7 +1249,7 @@ void TrieDb::create_and_prune_block_history(uint64_t) const {
 
 bytes32_t TrieDb::state_root()
 {
-    byte_string block_num = serialize_as_big_endian<6>(block_id_);
+    byte_string block_num = serialize_as_big_endian<6>(block_id);
     auto const value =
         db_.get_data(concat(NibblesView{block_num}, state_nibble));
     if (!value.has_value() || value.value().empty()) {

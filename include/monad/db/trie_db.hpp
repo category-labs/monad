@@ -69,11 +69,12 @@ private:
     ::monad::mpt::Db db_;
     std::list<mpt::Update> update_alloc_;
     std::list<byte_string> bytes_alloc_;
-    bool insert_code_;
-    bool per_block_;
-    uint64_t block_id_;
 
 public:
+    bool insert_code;
+    bool per_block;
+    uint64_t block_id;
+
     TrieDb(
         mpt::DbOptions const &, bool insert_code = true, bool per_block = false,
         uint64_t block_id = 0);
@@ -101,6 +102,10 @@ public:
     {
         return db_;
     }
+
+    void commit(mpt::UpdateList);
+
+    void commit_multiple_blocks_from_json(std::istream &);
 };
 
 MONAD_DB_NAMESPACE_END

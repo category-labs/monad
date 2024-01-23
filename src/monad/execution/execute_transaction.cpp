@@ -125,9 +125,9 @@ Receipt execute_impl2(
     auto const msg = to_message<rev>(tx, sender);
     auto const result = host.call(msg);
 
-    MONAD_DEBUG_ASSERT(result.gas_left >= 0);
-    MONAD_DEBUG_ASSERT(result.gas_refund >= 0);
-    MONAD_DEBUG_ASSERT(tx.gas_limit >= static_cast<uint64_t>(result.gas_left));
+    MONAD_ASSERT(result.gas_left >= 0);
+    MONAD_ASSERT(result.gas_refund >= 0);
+    MONAD_ASSERT(tx.gas_limit >= static_cast<uint64_t>(result.gas_left));
     auto const gas_remaining = refund_gas<rev>(
         state,
         tx,

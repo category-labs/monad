@@ -158,7 +158,7 @@ namespace
         size_t instruction_index, JumpDestinations const &jump_destinations)
     {
         using enum evmone::Opcode;
-        MONAD_DEBUG_ASSERT(opcode == OP_JUMP || opcode == OP_JUMPI);
+        MONAD_ASSERT(opcode == OP_JUMP || opcode == OP_JUMPI);
         bool const is_last = instruction_index + 1 >= instructions.size();
         if (auto maybe_jump_index = resolve_jump(
                 instructions, instruction_index, jump_destinations);
@@ -328,7 +328,7 @@ auto construct_control_flow_graph(
             break;
         }
 
-        MONAD_DEBUG_ASSERT(control_flow.has_value());
+        MONAD_ASSERT(control_flow.has_value());
         BasicBlock block{
             instructions.subspan(start, instruction_index - start + 1),
             control_flow.value()};

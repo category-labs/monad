@@ -65,7 +65,7 @@ template <evmc_revision rev>
 evmc::Result deploy_contract_code(
     State &state, Address const &address, evmc::Result result) noexcept
 {
-    MONAD_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
+    MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
 
     // EIP-3541
     if constexpr (rev >= EVMC_LONDON) {
@@ -213,7 +213,7 @@ evmc::Result call_evm(
         return result;
     }
 
-    MONAD_DEBUG_ASSERT(
+    MONAD_ASSERT(
         msg.kind != EVMC_CALL ||
         Address{msg.recipient} == Address{msg.code_address});
     if (msg.kind == EVMC_CALL && msg.flags & EVMC_STATIC) {
@@ -232,9 +232,9 @@ evmc::Result call_evm(
         result = baseline_execute(msg, rev, &new_host, code);
     }
 
-    MONAD_DEBUG_ASSERT(
+    MONAD_ASSERT(
         result.status_code == EVMC_SUCCESS || result.gas_refund == 0);
-    MONAD_DEBUG_ASSERT(
+    MONAD_ASSERT(
         result.status_code == EVMC_SUCCESS ||
         result.status_code == EVMC_REVERT || result.gas_left == 0);
 

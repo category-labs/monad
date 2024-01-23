@@ -84,7 +84,7 @@ EXPLICIT_EVMC_REVISION(intrinsic_gas);
 inline constexpr uint256_t priority_fee_per_gas(
     Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
 {
-    MONAD_DEBUG_ASSERT(tx.max_fee_per_gas >= base_fee_per_gas);
+    MONAD_ASSERT(tx.max_fee_per_gas >= base_fee_per_gas);
     auto const max_priority_fee_per_gas = tx.max_fee_per_gas - base_fee_per_gas;
 
     if (tx.type == TransactionType::eip1559) {

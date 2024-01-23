@@ -78,20 +78,20 @@ int main(int argc, char *argv[])
 
         auto const dir = state_db_path / std::to_string(start_block_number - 1);
         if (std::filesystem::exists(dir / "accounts")) {
-            MONAD_DEBUG_ASSERT(std::filesystem::exists(dir / "code"));
+            MONAD_ASSERT(std::filesystem::exists(dir / "code"));
             LOG_INFO("Loading from binary checkpoint in {}", dir);
             std::ifstream accounts(dir / "accounts");
             std::ifstream code(dir / "code");
             return db::TrieDb{opts, accounts, code};
         }
-        MONAD_DEBUG_ASSERT(std::filesystem::exists(dir / "state.json"));
+        MONAD_ASSERT(std::filesystem::exists(dir / "state.json"));
         LOG_INFO("Loading from json checkpoint in {}", dir);
         std::ifstream ifile_stream(dir / "state.json");
         return db::TrieDb{opts, ifile_stream};
     }();
 
     if (start_block_number == 0) {
-        MONAD_DEBUG_ASSERT(*has_genesis_file);
+        MONAD_ASSERT(*has_genesis_file);
         read_and_verify_genesis(block_db, db, genesis_file_path);
         start_block_number = 1;
     }

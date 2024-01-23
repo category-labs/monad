@@ -20,14 +20,14 @@ public:
 
     void set(uint64_t const n, bytes32_t const &h)
     {
-        MONAD_DEBUG_ASSERT(!n_ || n == n_);
+        MONAD_ASSERT(!n_ || n == n_);
         b_[n % N] = h;
         n_ = n + 1;
     }
 
     bytes32_t const &get(uint64_t const n) const
     {
-        MONAD_DEBUG_ASSERT(n < n_ && n + N >= n_);
+        MONAD_ASSERT(n < n_ && n + N >= n_);
         return b_[n % N];
     }
 };

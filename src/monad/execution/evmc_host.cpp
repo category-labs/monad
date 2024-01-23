@@ -84,7 +84,7 @@ evmc_tx_context EvmcHostBase::get_tx_context() const noexcept
 bytes32_t
 EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
 {
-    MONAD_DEBUG_ASSERT(block_number >= 0);
+    MONAD_ASSERT(block_number >= 0);
     return block_hash_buffer_.get(static_cast<uint64_t>(block_number));
 };
 

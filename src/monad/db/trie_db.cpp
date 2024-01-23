@@ -48,7 +48,7 @@ namespace
     {
         static byte_string compute(Node const &node)
         {
-            MONAD_DEBUG_ASSERT(node.has_value());
+            MONAD_ASSERT(node.has_value());
 
             // this is the block number leaf
             if (MONAD_UNLIKELY(node.value().empty())) {
@@ -59,15 +59,15 @@ namespace
                 return rlp::encode_string2(rlp::zeroless_view(node.value()));
             }
 
-            MONAD_DEBUG_ASSERT(node.value().size() > sizeof(bytes32_t));
+            MONAD_ASSERT(node.value().size() > sizeof(bytes32_t));
 
             Account acc;
             auto const result = rlp::decode_account(acc, node.value());
-            MONAD_DEBUG_ASSERT(result.has_value());
-            MONAD_DEBUG_ASSERT(result.assume_value().empty());
+            MONAD_ASSERT(result.has_value());
+            MONAD_ASSERT(result.assume_value().empty());
             bytes32_t storage_root = NULL_ROOT;
             if (node.number_of_children()) {
-                MONAD_DEBUG_ASSERT(node.data().size() == sizeof(bytes32_t));
+                MONAD_ASSERT(node.data().size() == sizeof(bytes32_t));
                 std::copy_n(
                     node.data().data(), sizeof(bytes32_t), storage_root.bytes);
             }
@@ -575,7 +575,7 @@ std::unique_ptr<StateMachine> TrieDb::Machine::clone() const
 void TrieDb::Machine::down(unsigned char const nibble)
 {
     ++depth;
-    MONAD_DEBUG_ASSERT(
+    MONAD_ASSERT(
         (nibble == state_nibble || nibble == code_nibble) || depth != 1);
     if (MONAD_UNLIKELY(depth == 1 && nibble == state_nibble)) {
         is_merkle = true;
@@ -584,7 +584,7 @@ void TrieDb::Machine::down(unsigned char const nibble)
 
 void TrieDb::Machine::up(size_t const n)
 {
-    MONAD_DEBUG_ASSERT(n <= depth);
+    MONAD_ASSERT(n <= depth);
     depth -= static_cast<uint8_t>(n);
     if (MONAD_UNLIKELY(is_merkle && depth < 1)) {
         is_merkle = false;
@@ -635,7 +635,7 @@ TrieDb::TrieDb(DbOptions const &options, std::istream &input, size_t batch_size)
     MONAD_ASSERT(parser.done());
 
     parser.handler().write();
-    MONAD_DEBUG_ASSERT(machine_.depth == 0 && machine_.is_merkle == false);
+    MONAD_ASSERT(machine_.depth == 0 && machine_.is_merkle == false);
 }
 
 TrieDb::TrieDb(
@@ -655,8 +655,8 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     }
     Account acct{.incarnation = 0};
     auto const decode_result = rlp::decode_account(acct, value.value());
-    MONAD_DEBUG_ASSERT(decode_result.has_value());
-    MONAD_DEBUG_ASSERT(decode_result.assume_value().empty());
+    MONAD_ASSERT(decode_result.has_value());
+    MONAD_ASSERT(decode_result.assume_value().empty());
     return acct;
 }
 
@@ -667,7 +667,7 @@ bytes32_t TrieDb::read_storage(Address const &addr, bytes32_t const &key)
     if (!value.has_value()) {
         return {};
     }
-    MONAD_DEBUG_ASSERT(value.value().size() == sizeof(bytes32_t));
+    MONAD_ASSERT(value.value().size() == sizeof(bytes32_t));
     bytes32_t ret;
     std::copy_n(value.value().begin(), sizeof(bytes32_t), ret.bytes);
     return ret;
@@ -744,7 +744,7 @@ void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
     updates.push_front(state_update);
     updates.push_front(code_update);
     db_.upsert(std::move(updates));
-    MONAD_DEBUG_ASSERT(machine_.depth == 0 && machine_.is_merkle == false);
+    MONAD_ASSERT(machine_.depth == 0 && machine_.is_merkle == false);
 
     update_alloc_.clear();
     bytes_alloc_.clear();
@@ -761,7 +761,7 @@ bytes32_t TrieDb::state_root()
         return NULL_ROOT;
     }
     bytes32_t root;
-    MONAD_DEBUG_ASSERT(value.value().size() == sizeof(bytes32_t));
+    MONAD_ASSERT(value.value().size() == sizeof(bytes32_t));
     std::copy_n(value.value().data(), sizeof(bytes32_t), root.bytes);
     return root;
 }
@@ -784,7 +784,7 @@ nlohmann::json TrieDb::to_json()
         virtual void down(unsigned char const branch, Node const &node) override
         {
             if (branch == INVALID_BRANCH) {
-                MONAD_DEBUG_ASSERT(node.path_nibble_view().nibble_size() == 0);
+                MONAD_ASSERT(node.path_nibble_view().nibble_size() == 0);
                 return;
             }
             path = concat(NibblesView{path}, branch, node.path_nibble_view());
@@ -803,13 +803,13 @@ nlohmann::json TrieDb::to_json()
             auto const path_view = NibblesView{path};
             auto const rem_size = [&] {
                 if (branch == INVALID_BRANCH) {
-                    MONAD_DEBUG_ASSERT(path_view.nibble_size() == 0);
+                    MONAD_ASSERT(path_view.nibble_size() == 0);
                     return 0;
                 }
                 int const rem_size = path_view.nibble_size() - 1 -
                                      node.path_nibble_view().nibble_size();
-                MONAD_DEBUG_ASSERT(rem_size >= 0);
-                MONAD_DEBUG_ASSERT(
+                MONAD_ASSERT(rem_size >= 0);
+                MONAD_ASSERT(
                     path_view.substr(static_cast<unsigned>(rem_size)) ==
                     concat(branch, node.path_nibble_view()));
                 return rem_size;
@@ -819,12 +819,12 @@ nlohmann::json TrieDb::to_json()
 
         void handle_account(Node const &node)
         {
-            MONAD_DEBUG_ASSERT(node.has_value());
+            MONAD_ASSERT(node.has_value());
 
             Account acct;
             auto const result = rlp::decode_account(acct, node.value());
-            MONAD_DEBUG_ASSERT(result.has_value());
-            MONAD_DEBUG_ASSERT(result.assume_value().empty());
+            MONAD_ASSERT(result.has_value());
+            MONAD_ASSERT(result.assume_value().empty());
 
             auto const key = fmt::format("{}", NibblesView{path});
 
@@ -842,8 +842,8 @@ nlohmann::json TrieDb::to_json()
 
         void handle_storage(Node const &node)
         {
-            MONAD_DEBUG_ASSERT(node.has_value());
-            MONAD_DEBUG_ASSERT(node.value().size() == sizeof(bytes32_t));
+            MONAD_ASSERT(node.has_value());
+            MONAD_ASSERT(node.value().size() == sizeof(bytes32_t));
 
             auto const acct_key = fmt::format(
                 "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));

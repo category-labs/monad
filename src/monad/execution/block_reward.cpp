@@ -43,7 +43,7 @@ constexpr uint256_t calculate_block_reward(
     uint256_t const &reward, uint256_t const &ommer_reward,
     size_t const ommers_size)
 {
-    MONAD_DEBUG_ASSERT(
+    MONAD_ASSERT(
         intx::umul(ommer_reward, uint256_t{ommers_size}) <=
         std::numeric_limits<uint256_t>::max() - reward);
 

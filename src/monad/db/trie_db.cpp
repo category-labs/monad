@@ -55,8 +55,10 @@ namespace
                 return {};
             }
             // this is a storage leaf
-            else if (node.value().size() == sizeof(bytes32_t)) {
-                return rlp::encode_string2(rlp::zeroless_view(node.value()));
+            else if (node.value().size() <= sizeof(bytes32_t)) {
+                MONAD_ASSERT(node.value().size() <= sizeof(bytes32_t));
+                MONAD_ASSERT(node.value().front());
+                return rlp::encode_string2(node.value());
             }
 
             MONAD_ASSERT(node.value().size() > sizeof(bytes32_t));
@@ -284,7 +286,7 @@ namespace
                     .key =
                         bytes_alloc_.emplace_back(evmc::from_hex(key_).value()),
                     .value = bytes_alloc_.emplace_back(
-                        evmc::from_hex(value_).value()),
+                        rlp::zeroless_view(evmc::from_hex(value_).value())),
                     .incarnation = false,
                     .next = UpdateList{}}));
                 key_.clear();
@@ -557,7 +559,8 @@ namespace
             while (!in.empty()) {
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
                     .key = in.substr(0, sizeof(bytes32_t)),
-                    .value = in.substr(sizeof(bytes32_t), sizeof(bytes32_t)),
+                    .value = rlp::zeroless_view(
+                        in.substr(sizeof(bytes32_t), sizeof(bytes32_t))),
                     .incarnation = false,
                     .next = UpdateList{}}));
                 in = in.substr(storage_entry_size);
@@ -667,9 +670,12 @@ bytes32_t TrieDb::read_storage(Address const &addr, bytes32_t const &key)
     if (!value.has_value()) {
         return {};
     }
-    MONAD_ASSERT(value.value().size() == sizeof(bytes32_t));
+    MONAD_ASSERT(value.value().size() <= sizeof(bytes32_t));
     bytes32_t ret;
-    std::copy_n(value.value().begin(), sizeof(bytes32_t), ret.bytes);
+    std::copy_n(
+        value.value().begin(),
+        value.value().size(),
+        ret.bytes + sizeof(bytes32_t) - value.value().size());
     return ret;
 };
 
@@ -700,8 +706,9 @@ void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
                             .value =
                                 delta.second == bytes32_t{}
                                     ? std::nullopt
-                                    : std::make_optional(to_byte_string_view(
-                                          delta.second.bytes)),
+                                    : std::make_optional(rlp::zeroless_view(
+                                          to_byte_string_view(
+                                              delta.second.bytes))),
                             .incarnation = false,
                             .next = UpdateList{}}));
                 }
@@ -843,7 +850,7 @@ nlohmann::json TrieDb::to_json()
         void handle_storage(Node const &node)
         {
             MONAD_ASSERT(node.has_value());
-            MONAD_ASSERT(node.value().size() == sizeof(bytes32_t));
+            MONAD_ASSERT(node.value().size() <= sizeof(bytes32_t));
 
             auto const acct_key = fmt::format(
                 "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));
@@ -854,7 +861,10 @@ nlohmann::json TrieDb::to_json()
                     KECCAK256_SIZE * 2, KECCAK256_SIZE * 2));
 
             bytes32_t value;
-            std::copy_n(node.value().begin(), sizeof(bytes32_t), value.bytes);
+            std::copy_n(
+                node.value().begin(),
+                node.value().size(),
+                value.bytes + sizeof(bytes32_t) - node.value().size());
 
             json[acct_key]["storage"][key] = fmt::format(
                 "0x{:02x}",

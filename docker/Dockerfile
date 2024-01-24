@@ -24,7 +24,8 @@ RUN /opt/install-deps.sh
 RUN apt install -y \
   libbrotli-dev \
   libcli11-dev \
-  libgmp-dev
+  libgmp-dev \
+  libtbb-dev
 
 FROM base as build_and_test
 

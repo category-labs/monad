@@ -20,7 +20,6 @@ MONAD_NAMESPACE_BEGIN
 
 BlockState::BlockState(Db &db)
     : db_{db}
-    , mutex_{}
     , state_{}
     , code_{}
 {
@@ -30,7 +29,6 @@ std::optional<Account> BlockState::read_account(Address const &address)
 {
     // block state
     {
-        ReadLock const lock{mutex_};
         auto const it = state_.find(address);
         if (MONAD_LIKELY(it != state_.end())) {
             return it->second.account.second;
@@ -39,8 +37,7 @@ std::optional<Account> BlockState::read_account(Address const &address)
     // database
     auto result = db_.read_account(address);
     {
-        WriteLock const lock{mutex_};
-        auto const [it, inserted] = state_.try_emplace(
+        auto const [it, inserted] = state_.emplace(
             address, StateDelta{.account = {result, result}, .storage = {}});
         if (MONAD_UNLIKELY(!inserted)) {
             result = it->second.account.second;
@@ -55,7 +52,6 @@ bytes32_t BlockState::read_storage(
 {
     // block state
     {
-        ReadLock const lock{mutex_};
         auto const it = state_.find(address);
         MONAD_ASSERT(it != state_.end());
         auto const &storage = it->second.storage;
@@ -70,13 +66,12 @@ bytes32_t BlockState::read_storage(
     auto result =
         incarnation == 0 ? db_.read_storage(address, location) : bytes32_t{};
     {
-        WriteLock const lock{mutex_};
         auto const it = state_.find(address);
         MONAD_ASSERT(it != state_.end());
         auto &storage = it->second.storage;
         {
             auto const [it2, inserted] =
-                storage.try_emplace(location, result, result);
+                storage.emplace(location, std::make_pair(result, result));
             if (MONAD_UNLIKELY(!inserted)) {
                 result = it2->second.second;
             }
@@ -89,7 +84,6 @@ byte_string BlockState::read_code(bytes32_t const &hash)
 {
     // block state
     {
-        ReadLock const lock{mutex_};
         auto const it = code_.find(hash);
         if (MONAD_LIKELY(it != code_.end())) {
             return it->second;
@@ -98,8 +92,7 @@ byte_string BlockState::read_code(bytes32_t const &hash)
     // database
     auto result = db_.read_code(hash);
     {
-        WriteLock const lock{mutex_};
-        auto const [it, inserted] = code_.try_emplace(hash, result);
+        auto const [it, inserted] = code_.emplace(hash, result);
         if (MONAD_UNLIKELY(!inserted)) {
             result = it->second;
         }
@@ -109,8 +102,6 @@ byte_string BlockState::read_code(bytes32_t const &hash)
 
 bool BlockState::can_merge(State const &state)
 {
-    ReadLock const lock{mutex_};
-
     for (auto it = state.original_.begin(); it != state.original_.end(); ++it) {
         auto const &address = it->first;
         auto const &account_state = it->second;
@@ -134,8 +125,6 @@ bool BlockState::can_merge(State const &state)
 
 void BlockState::merge(State const &state)
 {
-    WriteLock const lock{mutex_};
-
     ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
 
     for (auto it = state.state_.begin(); it != state.state_.end(); ++it) {
@@ -181,7 +170,6 @@ void BlockState::merge(State const &state)
 
 void BlockState::commit()
 {
-    ReadLock const lock{mutex_};
     db_.commit(state_, code_);
 }
 

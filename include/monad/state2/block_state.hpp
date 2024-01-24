@@ -4,20 +4,13 @@
 #include <monad/db/db.hpp>
 #include <monad/state2/state_deltas.hpp>
 
-#include <shared_mutex>
-
 MONAD_NAMESPACE_BEGIN
 
 class State;
 
 class BlockState final
 {
-    using Mutex = std::shared_mutex;
-    using ReadLock = std::shared_lock<Mutex>;
-    using WriteLock = std::lock_guard<Mutex>;
-
     Db &db_;
-    Mutex mutex_;
     StateDeltas state_;
     Code code_;
 

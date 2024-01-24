@@ -21,16 +21,23 @@ find_package(PkgConfig REQUIRED)
 find_package(absl REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 
+# evmone
 set(BUILD_SHARED_LIBS OFF)
-
 add_subdirectory(third_party/evmone)
 # always compile baseline with optimization due to stack size of dispatch_cgoto
 set_source_files_properties(
   third_party/evmone/lib/evmone/baseline.cpp TARGET_DIRECTORY evmone
   PROPERTIES COMPILE_OPTIONS -O2)
+
+# intx
 add_subdirectory(third_party/intx)
+
+# silkpre
 set(OPTIONAL_BUILD_TESTS OFF)
 add_subdirectory(third_party/silkpre)
+
+# tbb
+find_package(TBB REQUIRED)
 
 function(monad_compile_options target)
   monad_core_compile_options(${target})
@@ -161,7 +168,6 @@ add_library(
   "include/monad/state2/state_deltas.hpp"
   "include/monad/state2/state_deltas_fmt.hpp"
   "src/monad/state2/block_state.cpp"
-  "src/monad/state2/state_deltas.cpp"
   # state 3
   "include/monad/state3/account_state.hpp"
   "include/monad/state3/account_substate.hpp"
@@ -197,7 +203,8 @@ target_link_libraries(
   PUBLIC nlohmann_json::nlohmann_json
   PUBLIC quill::quill
   PUBLIC silkpre
-  PUBLIC unordered_dense)
+  PUBLIC unordered_dense
+  PUBLIC TBB::tbb)
 monad_compile_options(monad)
 
 if(ASAN)

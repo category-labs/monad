@@ -7,7 +7,10 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 
-#include <ankerl/unordered_dense.h>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#include <oneapi/tbb/concurrent_unordered_map.h>
+#pragma GCC diagnostic pop
 
 #include <optional>
 #include <utility>
@@ -30,28 +33,20 @@ static_assert(alignof(StorageDelta) == 1);
 struct StateDelta
 {
     AccountDelta account;
-    ankerl::unordered_dense::segmented_map<bytes32_t, StorageDelta> storage{};
+    oneapi::tbb::concurrent_unordered_map<bytes32_t, StorageDelta> storage{};
 };
 
-static_assert(sizeof(StateDelta) == 240);
+static_assert(sizeof(StateDelta) == 768);
 static_assert(alignof(StateDelta) == 8);
 
-using StateDeltas = ankerl::unordered_dense::segmented_map<Address, StateDelta>;
+using StateDeltas = oneapi::tbb::concurrent_unordered_map<Address, StateDelta>;
 
-static_assert(sizeof(StateDeltas) == 64);
+static_assert(sizeof(StateDeltas) == 592);
 static_assert(alignof(StateDeltas) == 8);
 
-using Code = ankerl::unordered_dense::segmented_map<bytes32_t, byte_string>;
+using Code = oneapi::tbb::concurrent_unordered_map<bytes32_t, byte_string>;
 
-static_assert(sizeof(Code) == 64);
+static_assert(sizeof(Code) == 592);
 static_assert(alignof(Code) == 8);
-
-bool can_merge(StateDelta const &to, StateDelta const &from);
-void merge(StateDelta &to, StateDelta const &from);
-
-bool can_merge(StateDeltas const &to, StateDeltas const &from);
-void merge(StateDeltas &to, StateDeltas const &from);
-
-void merge(Code &to, Code const &from);
 
 MONAD_NAMESPACE_END

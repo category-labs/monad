@@ -73,7 +73,7 @@ public:
         block_num_t /*current_block_number */) const
     {
         if (state_root != block_header.state_root) {
-            LOG_INFO(
+            LOG_ERROR(
                 "Block: {}, Computed State Root: {}, Expected State Root: {}",
                 block_header.number,
                 state_root,

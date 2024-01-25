@@ -32,7 +32,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     static constexpr auto bene{
         0x5353535353535353535353535353535353535353_address};
 
-    db_t db{mpt::DbOptions{.on_disk = false}};
+    db_t db{std::nullopt};
     BlockState bs{db};
 
     {

@@ -29,7 +29,7 @@ TEST(BlockReward, apply_block_reward)
 {
     // Frontier
     {
-        db_t db{mpt::DbOptions{.on_disk = false}};
+        db_t db{std::nullopt};
         db.commit(
             StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
             Code{});
@@ -62,7 +62,7 @@ TEST(BlockReward, apply_block_reward)
 
     // Byzantium
     {
-        db_t db{mpt::DbOptions{.on_disk = false}};
+        db_t db{std::nullopt};
         BlockState bs{db};
         State as{bs};
         (void)as.get_balance(a);
@@ -92,7 +92,7 @@ TEST(BlockReward, apply_block_reward)
 
     // Constantinople_and_petersburg
     {
-        db_t db{mpt::DbOptions{.on_disk = false}};
+        db_t db{std::nullopt};
         BlockState bs{db};
         State s{bs};
 
@@ -120,7 +120,7 @@ TEST(BlockReward, apply_block_reward)
         Block block{};
         block.header.beneficiary = a;
 
-        db_t db{mpt::DbOptions{.on_disk = false}};
+        db_t db{std::nullopt};
         BlockState bs{db};
         State s{bs};
 

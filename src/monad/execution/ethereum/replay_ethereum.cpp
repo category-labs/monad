@@ -24,6 +24,8 @@
 #include <fstream>
 #include <optional>
 
+#include <sys/sysinfo.h>
+
 MONAD_NAMESPACE_BEGIN
 
 using eth_start_fork = fork_traits::frontier;
@@ -41,6 +43,13 @@ int main(int argc, char *argv[])
     std::filesystem::path genesis_file_path{};
     std::optional<uint64_t> checkpoint_frequency = std::nullopt;
     std::optional<block_num_t> finish_block_number = std::nullopt;
+    bool on_disk = false;
+    bool compaction = false;
+    unsigned nthreads = 4;
+    unsigned nfibers = 4;
+    auto sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
+    std::vector<std::filesystem::path> dbname_paths;
+    int64_t file_size_db = 512; // 512GB
 
     quill::start(true);
 
@@ -59,6 +68,25 @@ int main(int argc, char *argv[])
         "--finish", finish_block_number, "1 pass the last executed block");
     cli.add_option("--log_level", log_level, "level of logging")
         ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
+    cli.add_option("--nthreads", nthreads, "number of threads");
+    cli.add_option("--nfibers", nfibers, "number of fibers");
+    cli.add_flag("--on_disk", on_disk, "config TrieDb to be on disk");
+    cli.add_flag("--compaction", compaction, "do compaction");
+    cli.add_option(
+        "--sq_thread_cpu",
+        sq_thread_cpu,
+        "io_uring sq_thread_cpu field in io_uring_params");
+    cli.add_option(
+        "--dbname_paths",
+        dbname_paths,
+        "a list of db paths separated by comma, can config storage pool "
+        "with 1 or more files/devices, will config on_disk triedb with "
+        "anonymous inode if empty");
+    cli.add_option(
+        "--file_size_db",
+        file_size_db,
+        "size of each db file, only apply to newly created files but not "
+        "existing files or raw blkdev");
 
     try {
         cli.parse(argc, argv);
@@ -72,25 +100,32 @@ int main(int argc, char *argv[])
 
     auto const load_start_time = std::chrono::steady_clock::now();
     auto start_block_number = db::auto_detect_start_block_number(state_db_path);
-    auto const opts = mpt::DbOptions{.on_disk = false};
-
+    auto const config = on_disk ? std::make_optional(mpt::OnDiskDbConfig{
+                                      .append = false,
+                                      .compaction = compaction,
+                                      .rd_buffers = 8192,
+                                      .wr_buffers = 32,
+                                      .uring_entries = 128,
+                                      .sq_thread_cpu = sq_thread_cpu,
+                                      .dbname_paths = dbname_paths,
+                                      .file_size_db = file_size_db})
+                                : std::nullopt;
     auto db = [&] -> db::TrieDb {
         if (start_block_number == 0) {
-            return db::TrieDb{opts};
+            return db::TrieDb{config};
         }
-
         auto const dir = state_db_path / std::to_string(start_block_number - 1);
         if (std::filesystem::exists(dir / "accounts")) {
             MONAD_ASSERT(std::filesystem::exists(dir / "code"));
             LOG_INFO("Loading from binary checkpoint in {}", dir);
             std::ifstream accounts(dir / "accounts");
             std::ifstream code(dir / "code");
-            return db::TrieDb{opts, accounts, code};
+            return db::TrieDb{config, accounts, code};
         }
         MONAD_ASSERT(std::filesystem::exists(dir / "state.json"));
         LOG_INFO("Loading from json checkpoint in {}", dir);
         std::ifstream ifile_stream(dir / "state.json");
-        return db::TrieDb{opts, ifile_stream};
+        return db::TrieDb{config, ifile_stream};
     }();
 
     if (start_block_number == 0) {
@@ -118,7 +153,7 @@ int main(int argc, char *argv[])
         start_block_number,
         finish_block_number);
 
-    fiber::PriorityPool priority_pool{4, 4};
+    fiber::PriorityPool priority_pool{nthreads, nfibers};
 
     ReplayFromBlockDb<decltype(db)> replay_eth;
 

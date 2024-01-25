@@ -177,7 +177,7 @@ void BlockchainTest::TestBody()
 
         executed = true;
 
-        db_t db{mpt::DbOptions{.on_disk = false}};
+        db_t db{std::nullopt};
         {
             BlockState bs{db};
             State state{bs};

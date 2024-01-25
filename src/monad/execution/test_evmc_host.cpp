@@ -112,7 +112,7 @@ TEST(EvmcHost, emit_log)
     static constexpr bytes32_t topics[] = {topic0, topic1};
     static byte_string const data = {0x00, 0x01, 0x02, 0x03, 0x04};
 
-    db_t db{mpt::DbOptions{.on_disk = false}};
+    db_t db{std::nullopt};
     BlockState bs{db};
     State state{bs};
     BlockHashBuffer const block_hash_buffer;
@@ -136,7 +136,7 @@ TEST(EvmcHost, emit_log)
 
 TEST(EvmcHost, access_precompile)
 {
-    db_t db{mpt::DbOptions{.on_disk = false}};
+    db_t db{std::nullopt};
     BlockState bs{db};
     State state{bs};
     BlockHashBuffer const block_hash_buffer;

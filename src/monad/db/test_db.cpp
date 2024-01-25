@@ -138,9 +138,7 @@ namespace
     {
         static TrieDb make_db(auto &&...args)
         {
-            return TrieDb{
-                mpt::DbOptions{.on_disk = false},
-                std::forward<decltype(args)>(args)...};
+            return TrieDb{std::nullopt, std::forward<decltype(args)>(args)...};
         }
     };
 
@@ -149,8 +147,7 @@ namespace
         static TrieDb make_db(auto &&...args)
         {
             return TrieDb{
-                mpt::DbOptions{.on_disk = true},
-                std::forward<decltype(args)>(args)...};
+                mpt::OnDiskDbConfig{}, std::forward<decltype(args)>(args)...};
         }
     };
 }

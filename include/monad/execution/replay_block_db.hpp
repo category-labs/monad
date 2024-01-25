@@ -113,6 +113,7 @@ public:
                     Status::BLOCK_VALIDATION_FAILED, current_block_number};
             }
 
+            LOG_INFO("current block number = {}", current_block_number);
             auto const receipts = execute_block<Traits::rev>(
                 block, db, block_hash_buffer, priority_pool);
 

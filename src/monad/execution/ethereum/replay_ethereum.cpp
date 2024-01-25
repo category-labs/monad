@@ -41,6 +41,12 @@ int main(int argc, char *argv[])
     std::filesystem::path genesis_file_path{};
     std::optional<uint64_t> checkpoint_frequency = std::nullopt;
     std::optional<block_num_t> finish_block_number = std::nullopt;
+    bool in_memory = false;
+    bool compaction = false;
+    unsigned nthreads = 1;
+    unsigned sq_thread_cpu = 15;
+    std::vector<std::filesystem::path> dbname_paths;
+    int64_t file_size_db = 512; // 512GB
 
     quill::start(true);
 
@@ -59,6 +65,20 @@ int main(int argc, char *argv[])
         "--finish", finish_block_number, "1 pass the last executed block");
     cli.add_option("--log_level", log_level, "level of logging")
         ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
+    cli.add_option("--nthreads", nthreads, "number of threads and fibers");
+    cli.add_flag(
+        "--in_memory", in_memory, "config TrieDb to in memory or on-disk");
+    cli.add_flag("--compaction", compaction, "do compaction");
+    cli.add_option("--sq_thread_cpu", sq_thread_cpu, "io_uring sq_thread_cpu");
+    cli.add_option(
+        "--dbname_paths",
+        dbname_paths,
+        "db file names, can have more than one");
+    cli.add_option(
+        "--file_size_db",
+        file_size_db,
+        "size to create file to if not already exist, only apply to file "
+        "not blkdev");
 
     try {
         cli.parse(argc, argv);
@@ -72,11 +92,23 @@ int main(int argc, char *argv[])
 
     auto const load_start_time = std::chrono::steady_clock::now();
     auto start_block_number = db::auto_detect_start_block_number(state_db_path);
-    auto const opts = mpt::DbOptions{.on_disk = false};
 
+    if (dbname_paths.empty()) {
+        dbname_paths.emplace_back("replay_test.db");
+    }
+    mpt::OnDiskDbConfig ondisk_config{
+        .append = false,
+        .compaction = compaction,
+        .rd_buffers = 8192,
+        .wr_buffers = 32,
+        .uring_entries = 128,
+        .sq_thread_cpu = sq_thread_cpu,
+        .dbname_paths = dbname_paths,
+        .file_size_db = file_size_db};
     auto db = [&] -> db::TrieDb {
         if (start_block_number == 0) {
-            return db::TrieDb{opts};
+            return in_memory ? db::TrieDb{std::nullopt}
+                             : db::TrieDb{ondisk_config};
         }
 
         auto const dir = state_db_path / std::to_string(start_block_number - 1);
@@ -85,12 +117,14 @@ int main(int argc, char *argv[])
             LOG_INFO("Loading from binary checkpoint in {}", dir);
             std::ifstream accounts(dir / "accounts");
             std::ifstream code(dir / "code");
-            return db::TrieDb{opts, accounts, code};
+            return in_memory ? db::TrieDb{std::nullopt, accounts, code}
+                             : db::TrieDb{ondisk_config, accounts, code};
         }
         MONAD_ASSERT(std::filesystem::exists(dir / "state.json"));
         LOG_INFO("Loading from json checkpoint in {}", dir);
         std::ifstream ifile_stream(dir / "state.json");
-        return db::TrieDb{opts, ifile_stream};
+        return in_memory ? db::TrieDb{std::nullopt, ifile_stream}
+                         : db::TrieDb{ondisk_config, ifile_stream};
     }();
 
     if (start_block_number == 0) {
@@ -118,7 +152,8 @@ int main(int argc, char *argv[])
         start_block_number,
         finish_block_number);
 
-    fiber::PriorityPool priority_pool{4, 4};
+    unsigned const nfibers = nthreads; // one fiber per thread for now
+    fiber::PriorityPool priority_pool{nthreads, nfibers};
 
     ReplayFromBlockDb<decltype(db)> replay_eth;
 

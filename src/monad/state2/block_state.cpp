@@ -128,26 +128,13 @@ void BlockState::merge(State const &state)
     ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
 
     for (auto it = state.state_.begin(); it != state.state_.end(); ++it) {
-        auto const &address = it->first;
         auto const &stack = it->second;
         MONAD_ASSERT(stack.size() == 1);
         MONAD_ASSERT(stack[0].first == 0);
         auto const &account_state = stack[0].second;
         auto const &account = account_state.account_;
-        auto const &storage = account_state.storage_;
-        auto const it2 = state_.find(address);
-        MONAD_ASSERT(it2 != state_.end());
-        it2->second.account.second = account;
         if (account.has_value()) {
-            for (auto it3 = storage.begin(); it3 != storage.end(); ++it3) {
-                auto const it4 = it2->second.storage.find(it3->first);
-                MONAD_ASSERT(it4 != it2->second.storage.end());
-                it4->second.second = it3->second;
-            }
             code_hashes.insert(account.value().code_hash);
-        }
-        else {
-            it2->second.storage.clear();
         }
     }
 
@@ -164,6 +151,29 @@ void BlockState::merge(State const &state)
         }
         else {
             code_[code_hash] = it->second;
+        }
+    }
+
+    for (auto it = state.state_.begin(); it != state.state_.end(); ++it) {
+        auto const &address = it->first;
+        auto const &stack = it->second;
+        MONAD_ASSERT(stack.size() == 1);
+        MONAD_ASSERT(stack[0].first == 0);
+        auto const &account_state = stack[0].second;
+        auto const &account = account_state.account_;
+        auto const &storage = account_state.storage_;
+        auto const it2 = state_.find(address);
+        MONAD_ASSERT(it2 != state_.end());
+        it2->second.account.second = account;
+        if (account.has_value()) {
+            for (auto it3 = storage.begin(); it3 != storage.end(); ++it3) {
+                auto const it4 = it2->second.storage.find(it3->first);
+                MONAD_ASSERT(it4 != it2->second.storage.end());
+                it4->second.second = it3->second;
+            }
+        }
+        else {
+            it2->second.storage.clear();
         }
     }
 }

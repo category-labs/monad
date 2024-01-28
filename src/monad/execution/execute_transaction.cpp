@@ -159,7 +159,7 @@ Receipt execute_impl2(
 
 template <evmc_revision rev>
 Result<Receipt> execute_impl2(
-    Transaction &tx, Address const &sender, BlockHeader const &hdr,
+    Transaction const &tx, Address const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, State &state)
 {
     // TODO: Issue #164, Issue #54
@@ -179,7 +179,7 @@ Result<Receipt> execute_impl2(
 
 template <evmc_revision rev>
 Result<Receipt> execute_impl(
-    Transaction &tx, Address const &sender, BlockHeader const &hdr,
+    Transaction const &tx, Address const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
     boost::fibers::promise<void> &prev)
 {
@@ -221,9 +221,9 @@ EXPLICIT_EVMC_REVISION(execute_impl);
 template <evmc_revision rev>
 void execute(
     unsigned i, std::shared_ptr<std::optional<Result<Receipt>>[]> results,
-    std::shared_ptr<boost::fibers::promise<void>[]> promises, Transaction &tx,
-    BlockHeader const &hdr, BlockHashBuffer const &block_hash_buffer,
-    BlockState &block_state)
+    std::shared_ptr<boost::fibers::promise<void>[]> promises,
+    Transaction const &tx, BlockHeader const &hdr,
+    BlockHashBuffer const &block_hash_buffer, BlockState &block_state)
 {
     auto &result = results[i];
     auto &prev = promises[i];

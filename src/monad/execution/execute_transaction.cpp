@@ -99,7 +99,7 @@ constexpr evmc_message to_message(Transaction const &tx, Address const &sender)
 }
 
 template <evmc_revision rev>
-Receipt execute_impl2(
+evmc::Result execute_impl3(
     State &state, EvmcHost<rev> &host, Transaction const &tx,
     Address const &sender, uint256_t const &base_fee_per_gas,
     Address const &beneficiary)
@@ -123,8 +123,15 @@ Receipt execute_impl2(
     }
 
     auto const msg = to_message<rev>(tx, sender);
-    auto const result = host.call(msg);
+    return host.call(msg);
+}
 
+template <evmc_revision rev>
+Receipt execute_final(
+    State &state, Transaction const &tx, Address const &sender,
+    uint256_t const &base_fee_per_gas, evmc::Result const &result,
+    Address const &beneficiary)
+{
     MONAD_ASSERT(result.gas_left >= 0);
     MONAD_ASSERT(result.gas_refund >= 0);
     MONAD_ASSERT(tx.gas_limit >= static_cast<uint64_t>(result.gas_left));
@@ -158,7 +165,7 @@ Receipt execute_impl2(
 }
 
 template <evmc_revision rev>
-Result<Receipt> execute_impl2(
+Result<evmc::Result> execute_impl2(
     Transaction const &tx, Address const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, State &state)
 {
@@ -168,7 +175,7 @@ Result<Receipt> execute_impl2(
     auto const tx_context = get_tx_context<rev>(tx, sender, hdr);
     EvmcHost<rev> host{tx_context, block_hash_buffer, state};
 
-    return execute_impl2<rev>(
+    return execute_impl3<rev>(
         state,
         host,
         tx,
@@ -195,10 +202,18 @@ Result<Receipt> execute_impl(
         prev.get_future().wait();
 
         if (block_state.can_merge(state)) {
-            if (!result.has_error()) {
-                block_state.merge(state);
+            if (result.has_error()) {
+                return std::move(result.error());
             }
-            return std::move(result);
+            auto const receipt = execute_final<rev>(
+                state,
+                tx,
+                sender,
+                hdr.base_fee_per_gas.value_or(0),
+                result.value(),
+                hdr.beneficiary);
+            block_state.merge(state);
+            return receipt;
         }
     }
     {
@@ -208,11 +223,18 @@ Result<Receipt> execute_impl(
             execute_impl2<rev>(tx, sender, hdr, block_hash_buffer, state);
 
         MONAD_ASSERT(block_state.can_merge(state));
-        if (!result.has_error()) {
-            block_state.merge(state);
+        if (result.has_error()) {
+            return std::move(result.error());
         }
-
-        return std::move(result);
+        auto const receipt = execute_final<rev>(
+            state,
+            tx,
+            sender,
+            hdr.base_fee_per_gas.value_or(0),
+            result.value(),
+            hdr.beneficiary);
+        block_state.merge(state);
+        return receipt;
     }
 }
 

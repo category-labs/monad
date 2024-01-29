@@ -1,3 +1,4 @@
+#include <monad/core/account_fmt.hpp>
 #include <monad/core/account_rlp.hpp>
 #include <monad/core/bytes_fmt.hpp>
 #include <monad/core/int.hpp>
@@ -739,6 +740,91 @@ byte_string TrieDb::read_code(bytes32_t const &hash)
         return byte_string{};
     }
     return byte_string{value.value()};
+}
+
+void TrieDb::commit(nlohmann::json const &state_deltas_json)
+{
+    UpdateList account_updates;
+
+    for (auto const &[addr, acct] : state_deltas_json["StateDelta"].items()) {
+        auto const address = evmc::from_hex<monad::Address>(addr).value();
+        auto const code =
+            evmc::from_hex(acct.at("code_hash").get<std::string>()).value();
+        Account account{
+            .balance = intx::from_string<uint256_t>(acct.at("balance")),
+            .nonce =
+                std::stoull(acct.at("nonce").get<std::string>(), nullptr, 16),
+            .incarnation = std::stoull(
+                acct.at("incarnation").get<std::string>(), nullptr, 16)};
+        std::memcpy(account.code_hash.bytes, code.data(), 32);
+
+        UpdateList storage_updates;
+        std::optional<byte_string_view> value;
+
+        // storage
+        if (MONAD_LIKELY(!is_empty(account))) {
+            for (auto const &[k, v] : acct["storage"].items()) {
+                bytes32_t storage_key;
+                bytes32_t storage_value;
+                std::memcpy(
+                    storage_key.bytes, evmc::from_hex(k).value().data(), 32);
+                std::memcpy(
+                    storage_value.bytes,
+                    evmc::from_hex(v.get<std::string>()).value().data(),
+                    32);
+
+                if (storage_value == bytes32_t{}) {
+                    storage_updates.push_front(
+                        update_alloc_.emplace_back(Update{
+                            .key = NibblesView{bytes_alloc_.emplace_back(
+                                to_key(storage_key))},
+                            .value = std::nullopt,
+                            .incarnation = false,
+                            .next = UpdateList{}}));
+                }
+                else {
+                    storage_updates.push_front(
+                        update_alloc_.emplace_back(Update{
+                            .key = NibblesView{bytes_alloc_.emplace_back(
+                                to_key(storage_key))},
+                            .value =
+                                bytes_alloc_.emplace_back(rlp::zeroless_view(
+                                    to_byte_string_view(storage_value.bytes))),
+                            .incarnation = false,
+                            .next = UpdateList{}}));
+                }
+            }
+            value = bytes_alloc_.emplace_back(rlp::encode_account(account));
+        }
+
+        account_updates.push_front(update_alloc_.emplace_back(Update{
+            .key = NibblesView{bytes_alloc_.emplace_back(to_key(address))},
+            .value = value,
+            .incarnation = account.incarnation != 0,
+            .next = std::move(storage_updates)}));
+    }
+
+    // Leave it empty for now
+    UpdateList code_updates;
+
+    auto state_update = Update{
+        .key = state_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(account_updates)};
+    auto code_update = Update{
+        .key = code_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(code_updates)};
+    UpdateList updates;
+    updates.push_front(state_update);
+    updates.push_front(code_update);
+    db_.upsert(std::move(updates));
+    MONAD_ASSERT(machine_.depth == 0 && machine_.is_merkle == false);
+
+    update_alloc_.clear();
+    bytes_alloc_.clear();
 }
 
 void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)

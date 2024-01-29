@@ -1,5 +1,4 @@
 #include <monad/config.hpp>
-#include <monad/core/account_fmt.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/log_level_map.hpp>
@@ -8,7 +7,6 @@
 #include <monad/execution/replay_block_db.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state_deltas.hpp>
-#include <monad/state2/state_deltas_fmt.hpp>
 
 #include <CLI/CLI.hpp>
 
@@ -28,6 +26,43 @@
 #include <vector>
 
 using namespace monad;
+
+bool verify_root_hash(
+    BlockDb &block_db, bytes32_t state_root_hash, uint64_t const block_number)
+{
+    Block block{};
+    block_db.get(block_number, block);
+
+    return block.header.state_root == state_root_hash;
+}
+
+bool process_file_and_commit_to_db(
+    db::TrieDb &trie_db, BlockDb &block_db,
+    std::filesystem::path const &file_path)
+{
+    MONAD_ASSERT(std::filesystem::exists(file_path));
+    std::ifstream ifile(file_path, std::ifstream::binary);
+    nlohmann::json state_deltas_vector_json;
+    ifile >> state_deltas_vector_json;
+
+    for (auto const &[block_number, state_deltas_json] :
+         state_deltas_vector_json.items()) {
+        trie_db.commit(state_deltas_json);
+
+        block_num_t block_number_int = std::stoull(block_number);
+        if (MONAD_UNLIKELY(!verify_root_hash(
+                block_db, trie_db.state_root(), block_number_int))) {
+            LOG_ERROR("State Root Mismatch at block: {}", block_number_int);
+            return false;
+        }
+        if (MONAD_UNLIKELY(block_number_int % 1 == 0)) {
+            LOG_INFO(
+                "Successfully processed up to block: {}", block_number_int);
+        }
+    }
+
+    return true;
+}
 
 std::vector<std::pair<monad::StateDeltas, monad::Code>>
 get_deltas_from_file(std::filesystem::path const &file_path)
@@ -89,7 +124,8 @@ get_deltas_from_file(std::filesystem::path const &file_path)
 
         // We don't care about code delta, just leave it empty for now
 
-        state_deltas_vector.emplace_back(std::make_pair(state_deltas, code_deltas));
+        state_deltas_vector.emplace_back(
+            std::make_pair(state_deltas, code_deltas));
     }
 
     return state_deltas_vector;
@@ -113,15 +149,6 @@ get_ordered_files_from_dir(std::filesystem::path const &dir_name)
 
     std::sort(file_names.begin(), file_names.end());
     return file_names;
-}
-
-bool verify_root_hash(
-    BlockDb &block_db, bytes32_t state_root_hash, uint64_t const block_number)
-{
-    Block block{};
-    block_db.get(block_number, block);
-
-    return block.header.state_root == state_root_hash;
 }
 
 int main(int argc, char *argv[])
@@ -192,31 +219,10 @@ int main(int argc, char *argv[])
 
     // block_db stuff (temp)
     BlockDb block_db{block_db_path};
-    uint64_t processed_blocks_cnt = 0;
 
     for (auto const &file : files) {
-        auto const state_deltas_vector = get_deltas_from_file(file);
-
-        for (auto const &state_deltas : state_deltas_vector) {
-            // commit the state delta to TrieDb
-            db.commit(state_deltas.first, state_deltas.second);
-
-            if (!verify_root_hash(
-                    block_db,
-                    db.state_root(),
-                    start_block_number + processed_blocks_cnt)) {
-                LOG_ERROR(
-                    "State Root Mismatch at block: {}",
-                    start_block_number + processed_blocks_cnt);
-                return 1;
-            }
-            if (processed_blocks_cnt % 1000 == 0) {
-                LOG_INFO(
-                    "At block {}, {} blocks processed",
-                    start_block_number + processed_blocks_cnt,
-                    processed_blocks_cnt);
-            }
-            ++processed_blocks_cnt;
+        if (!process_file_and_commit_to_db(db, block_db, file)) {
+            return 1;
         }
     }
 

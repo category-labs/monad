@@ -127,11 +127,34 @@ evmc::Result execute_impl3(
 }
 
 template <evmc_revision rev>
-Receipt execute_final(
-    State &state, Transaction const &tx, Address const &sender,
-    uint256_t const &base_fee_per_gas, evmc::Result const &result,
-    Address const &beneficiary)
+void execute_final(
+    State &state, Address const &beneficiary, uint256_t const &reward)
 {
+    state.add_to_balance(beneficiary, reward);
+
+    // finalize state, Eqn. 77-79
+    state.destruct_suicides();
+    if constexpr (rev >= EVMC_SPURIOUS_DRAGON) {
+        state.destruct_touched_dead();
+    }
+}
+
+template <evmc_revision rev>
+Result<std::tuple<evmc::Result, Receipt, uint256_t>> execute_impl2(
+    State &state, Transaction const &tx, Address const &sender,
+    BlockHeader const &hdr, BlockHashBuffer const &block_hash_buffer)
+{
+    // TODO: Issue #164, Issue #54
+    BOOST_OUTCOME_TRY(validate_transaction(state, tx, sender));
+
+    auto const tx_context = get_tx_context<rev>(tx, sender, hdr);
+    EvmcHost<rev> host{tx_context, block_hash_buffer, state};
+
+    uint256_t const base_fee_per_gas = hdr.base_fee_per_gas.value_or(0);
+
+    auto result = execute_impl3<rev>(
+        state, host, tx, sender, base_fee_per_gas, hdr.beneficiary);
+
     MONAD_ASSERT(result.gas_left >= 0);
     MONAD_ASSERT(result.gas_refund >= 0);
     MONAD_ASSERT(tx.gas_limit >= static_cast<uint64_t>(result.gas_left));
@@ -145,13 +168,6 @@ Receipt execute_final(
     auto const gas_used = tx.gas_limit - gas_remaining;
     auto const reward =
         calculate_txn_award<rev>(tx, base_fee_per_gas, gas_used);
-    state.add_to_balance(beneficiary, reward);
-
-    // finalize state, Eqn. 77-79
-    state.destruct_suicides();
-    if constexpr (rev >= EVMC_SPURIOUS_DRAGON) {
-        state.destruct_touched_dead();
-    }
 
     Receipt receipt{
         .status = result.status_code == EVMC_SUCCESS ? 1u : 0u,
@@ -161,27 +177,7 @@ Receipt execute_final(
         receipt.add_log(std::move(log));
     }
 
-    return receipt;
-}
-
-template <evmc_revision rev>
-Result<evmc::Result> execute_impl2(
-    Transaction const &tx, Address const &sender, BlockHeader const &hdr,
-    BlockHashBuffer const &block_hash_buffer, State &state)
-{
-    // TODO: Issue #164, Issue #54
-    BOOST_OUTCOME_TRY(validate_transaction(state, tx, sender));
-
-    auto const tx_context = get_tx_context<rev>(tx, sender, hdr);
-    EvmcHost<rev> host{tx_context, block_hash_buffer, state};
-
-    return execute_impl3<rev>(
-        state,
-        host,
-        tx,
-        sender,
-        hdr.base_fee_per_gas.value_or(0),
-        hdr.beneficiary);
+    return std::make_tuple(std::move(result), std::move(receipt), reward);
 }
 
 template <evmc_revision rev>
@@ -197,7 +193,7 @@ Result<Receipt> execute_impl(
         State state{block_state};
 
         auto result =
-            execute_impl2<rev>(tx, sender, hdr, block_hash_buffer, state);
+            execute_impl2<rev>(state, tx, sender, hdr, block_hash_buffer);
 
         prev.get_future().wait();
 
@@ -205,36 +201,25 @@ Result<Receipt> execute_impl(
             if (result.has_error()) {
                 return std::move(result.error());
             }
-            auto const receipt = execute_final<rev>(
-                state,
-                tx,
-                sender,
-                hdr.base_fee_per_gas.value_or(0),
-                result.value(),
-                hdr.beneficiary);
+            execute_final<rev>(
+                state, hdr.beneficiary, std::get<2>(result.value()));
             block_state.merge(state);
-            return receipt;
+            return std::get<1>(result.value());
         }
     }
     {
         State state{block_state};
 
         auto result =
-            execute_impl2<rev>(tx, sender, hdr, block_hash_buffer, state);
+            execute_impl2<rev>(state, tx, sender, hdr, block_hash_buffer);
 
         MONAD_ASSERT(block_state.can_merge(state));
         if (result.has_error()) {
             return std::move(result.error());
         }
-        auto const receipt = execute_final<rev>(
-            state,
-            tx,
-            sender,
-            hdr.base_fee_per_gas.value_or(0),
-            result.value(),
-            hdr.beneficiary);
+        execute_final<rev>(state, hdr.beneficiary, std::get<2>(result.value()));
         block_state.merge(state);
-        return receipt;
+        return std::get<1>(result.value());
     }
 }
 

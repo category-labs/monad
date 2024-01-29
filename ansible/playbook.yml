@@ -7,38 +7,38 @@
   # Install GCC
   tasks:
   - name: Add Ubuntu Toolchain
-    apt_repository:
+    ansible.builtin.apt_repository:
       repo: ppa:ubuntu-toolchain-r/test
       state: present
       update_cache: yes
-  
+
   - name: Install GCC
     vars:
       gcc_version: 13
-    apt:
+    ansible.builtin.apt:
       name:
-      - gcc-{{ gcc_version }} 
+      - gcc-{{ gcc_version }}
       - g++-{{ gcc_version }}
-  
+
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Install CLang
   - name: Add LLVM repository key
-    get_url:
+    ansible.builtin.get_url:
       url: "https://apt.llvm.org/llvm-snapshot.gpg.key"
       dest: /etc/apt/trusted.gpg.d/llvm-snapshot.asc
       mode: '0644'
       force: true
-  
+
   - name: Add LLVM apt repository
-    apt_repository:
+    ansible.builtin.apt_repository:
       repo: 'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy main'
       state: present
       update_cache: yes
-  
+
   - name: Install clang
     vars:
       llvm_version: 18
-    apt:
+    ansible.builtin.apt:
       name:
       - clang-tidy-{{ llvm_version }}
       - clang-format-{{ llvm_version }}
@@ -54,19 +54,19 @@
       - libclang-{{ llvm_version }}-dev
       - libclang-cpp{{ llvm_version }}-dev
       - libunwind-{{ llvm_version }}-dev
-  
+
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Install Boost
   - name: Add Boost PPA repository
-    apt_repository:
+    ansible.builtin.apt_repository:
       repo: ppa:mhier/libboost-latest
       state: present
       update_cache: yes
-  
+
   - name: Install Boost libraries
     vars:
       libboost_version: 1.83
-    apt:
+    ansible.builtin.apt:
       name:
       - libboost-fiber{{ libboost_version }}.0
       - libboost-graph{{ libboost_version }}.0
@@ -78,43 +78,43 @@
       - libboost-json{{ libboost_version }}-dev
       - libboost-stacktrace{{ libboost_version }}-dev
       - libboost{{ libboost_version }}-dev
-  
+
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Install CMake
   - name: Add kitware apt-key
-    get_url:
+    ansible.builtin.get_url:
       url: https://apt.kitware.com/keys/kitware-archive-latest.asc
       dest: /etc/apt/trusted.gpg.d/kitware-archive-latest.asc
       mode: '0644'
       force: true
-    
+
   - name: Add kitware repo
-    apt_repository:
+    ansible.builtin.apt_repository:
       repo: deb https://apt.kitware.com/ubuntu/ jammy main
       state: present
-  
+
   - name: Install CMake
-    apt:
+    ansible.builtin.apt:
       name:
       - kitware-archive-keyring
       - cmake
       state: latest
-  
+
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Install Tools
   - name: Install tools
-    apt:
+    ansible.builtin.apt:
       name:
       - gdb
       - ninja-build
       - pkg-config
       - python3-pytest
       - valgrind
-  
+
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Install Deps
   - name: Install deps
-    apt:
+    ansible.builtin.apt:
       name:
       - libabsl-dev
       - libbenchmark-dev
@@ -122,31 +122,32 @@
       - libgtest-dev
       - libmimalloc-dev
       - liburing-dev
+      - libtbb-dev
 
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Create systemd service unit to configure hugepages on boot
   - name: Create hugepages.sh
-    copy:
+    ansible.builtin.copy:
       src: "./hugepages.sh"
       dest: "/usr/lib/systemd/system/hugepages.sh"
       mode: 0755
 
   - name: Extract package
-    copy:
+    ansible.builtin.copy:
       src: "./hugepages.service"
       dest: "/usr/lib/systemd/system/hugepages.service"
 
   - name: Start Hugepages
-    systemd:
+    ansible.builtin.systemd:
       name: hugepages
       state: started
 
   - name: Enable Hugepages
-    systemd:
+    ansible.builtin.systemd:
       name: hugepages
       enabled: true
       state: started
-  
+
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   - name: kernel.kptr_restrict=0
     ansible.posix.sysctl:
@@ -157,3 +158,8 @@
     ansible.posix.sysctl:
       name: kernel.perf_event_paranoid
       value: 0
+
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Add users
+  - ansible.builtin.import_tasks:
+      file: users.yml

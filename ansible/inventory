@@ -1,2 +1,17 @@
 [all]
-peach10 ansible_host=peach10.monad.spacetime.org ansible_port=9022 ansible_user=root
+lima-jammy ansible_ssh_common_args="-F /Users/michaelhume/.lima/jammy/ssh.config"
+
+# F95X-0103 ansible_host="38.46.217.115" ansible_port="9022"
+# F95X-0104 ansible_host="38.46.217.117" ansible_port="9022"
+# F95X-0105 ansible_host="38.46.217.119" ansible_port="9022"
+# F95X-0106 ansible_host="38.46.217.121" ansible_port="9022"
+# F95X-0107 ansible_host="38.46.217.123" ansible_port="9022"
+# F95X-0108 ansible_host="38.46.217.125" ansible_port="9022"
+# F95X-0109 ansible_host="38.46.222.162" ansible_port="9022"
+# F95X-0110 ansible_host="38.46.222.164" ansible_port="9022"
+# FXG-0022  ansible_host="38.46.223.210" ansible_port="9022"
+# FXG-0023  ansible_host="38.46.223.212" ansible_port="9022"
+# FXG-0024  ansible_host="38.46.223.214" ansible_port="9022"
+# FXG-0025  ansible_host="38.46.223.216" ansible_port="9022"
+# FXG-0026  ansible_host="38.46.223.218" ansible_port="9022"
+# FXG-0011  ansible_host="23.158.72.113" ansible_port="9022"

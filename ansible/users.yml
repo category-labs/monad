@@ -1,0 +1,66 @@
+---
+- ansible.builtin.set_fact:
+    users:
+    - username: jhunsaker
+      uid: "1000"
+      group: sudo
+      ssh_keys:
+      - "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBCpjsVf59YOhsNwO8dY3jPhBzWog/8bMu0aDJZGZE/0RBRnWILPM67Ou6Z7wola4ECLoNMloR7PFRK0Cy45strA= hunsa@LAPTOP-4F58ONC3"
+    - username: aashish
+      uid: "1006"
+      ssh_keys:
+      - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCr+O55tZUDGTk1qvSuOYE8wrI/S6CNeLvRVjdtInpLwH7kSI5MHcnOrEtut/3ollMc0hnZjS7GJb1YKHz3k1Dkv5QOwr3aEJyker5Pd/rh3KvI1bIPZmoqcUO/NtmK4n/mH2Rfzpl3Gp7kaM1MZQBGvAAtS7Hl8It9nsj/OsNgWI6dlZjg8BeihvfAYdqzAS6Xins2uaHKYy61ACcxqR9aOd75a9Z9DI7N747Y/z/2StkDCvycWxrkKEQDVWj7eyitbZskcDlEQ01fNt/C0zaF6mvW0GGJEl3KbFqYIrkbF/P87utbk5N2+l9/mz0gqKKMtjAewkWYdzP6Fu5NkMxAVP06UG9iiVpWiNcppBgLXkJQTTH1453+TXbPAgHld6le/UKepf11OmolQfkcjhxKEQGtFa3Jumkqiy38GlE0zGnozBy5eRPZ8ovlHeVaq12eqBVEMdBJ/4cG3VxX9qD+7wZA6T0X5rFAkYP8f1ycgpq4J5w2/vRC42/NWI6xKCM= aashish@pop-os"
+      - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC0dgsUV8GpnmDSlHcMuKcyL7TS23Uvm2M4woyIwNAeoPz0B4aIWLS9hgtdf7+m058YBbHpfkWyB9HX9gfwVcl5JLdIZTpqZmSAvX+p9Sto+iSxGNQtW/F2veyK1+meIKxaqtRdHXFbFJ2ITYlNZPG3FFioi2rvtw2o5oQ67iPRZI3Pm02isjx4APLKO7etQHtN2zUGwYdSoSSoldDsYxIrT9hJ7E2I+wNCjvLDdPCWkV6fkyXHycrcUaKXbdCUgdtWTO3b8y13zHuZFLPsAKGMoRuHKCH9RLNhKCqwb2Wf/NJzYiZjqi5z+OsUmpr6EL+B/HP+2siEchNmMjlKKTF4D/neT131RvwwAhpe+Gl/CGTBFgGakkJ1jUazVxV6A12hc77UogYUYyqqZh4F4+5V/LpR+CKjQCsDvQC701dr9Il5OthmzSY9NxsVkdbmWbb5pxMkTNI/CmvyvgriWQZFgyulOCG8hY/yeei9PJWTmzedygqvsBTA8J3rfP9emMk= aashish@Aashishs-MBP.lan"
+    - username: vickychen
+      uid: "1008"
+      ssh_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII3tb14ntz2G28i92GmJF03Mit9JQAtRD6UcWW4ETRsd yifanc3@illinois.edu"
+    - username: alee
+      uid: "1014"
+      ssh_keys:
+      - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDwtjdcMKWZId3R/msMgmLR9yCldRNbUObOjNBH0NDKjp8AycVgW8LWvQxC1of/Jh2sVlmZAUVQRraXN4BJKiIr8zFJcCtxc5kVC+saPmnbDajozPxr9e2HjrLzfaGBbxQQE1QHOmsVQbMGOZOOSyZi44fLyeV3rGJn4AVX4/pXzRBrhjifVt6MPwV+1UlZJJxCMfuxkkBKIM3OTjbe2UPQZgSxAfM1dvIedk8mLOn37WgnHyfZxl+nnbnkM+74CbEeMb9k/skRkH1apOV/uuz86b7PKWdM185kNjOuD3D5xjoL2ah5gc9gp+Nz+HTd8ljf153dHg2N7isGiw7MNXHqu3IAuD4mQrKx4nO8SxyvvssPGp022UbBBL0erUUG1DiUo5RL7BvSEjoA1NvzajcgOCd79srfWODlarybOjOI8ilofztBMs6kdZ2oWuhLuId1sZqbgXNpHfEjuHQGyeB1wvSb444ZfaRxtNu0tk9WdaWaPnX1ygOEl8yOOJmThEM= alexanderlee@Alexanders-MacBook-Pro.local"
+    - username: mchen
+      uid: "1025"
+      ssh_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDrz8vwObEvLG8qdfDcmW5qMKYSn9WDFAd7/mT7FUJ+5 michael@Michaels-MacBook-Pro-2.local"
+    - username: ndouglas
+      uid: "1031"
+      ssh_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBSuCXKUJZjWDSPyZ4PqOAGVXZD923qETnaNNRJ/wk2m openpgp:0x9EEF27AD"
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKf2wEP7kMNdNYt3P46Ol6FbfjfN3cJFFV5MJjLHGpor openpgp:0x95B1F8A5"
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINAtqJ4imToWd0n+suHP/Dao8rWZuQR5Osl0SLCr5cj2 openpgp:0x713C2CB2"
+    - username: mhume
+      uid: "1035"
+      group: sudo
+      ssh_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICb3n4z7EaWA60t7g9cywU370HUn4YR4TZwVB6WB2VM5 mike@monad.xyz"
+    - username: klemens
+      uid: "1036"
+      ssh_keys:
+      - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCwbpZ5hZy86EZaa/44eyDPZ4VxPTWaKDlFMNakTacLJciLFFgqF8v1F5/4P/mR1hlyLGjzAN1sgroMVeEsMZiDnxDbyy16BHi44dnKIxhlLCC1cJQTm3DOK34OOeaIS5/Q6gXxe5Lr8mzbJCePV7SBYSYKHlwrTbeMAZWlv76W65q7ysymXYjqE8w1LQ3ytmvy6qdNTdoGHhoaR/UASvTv2KCNO+Dy1mZss8ay/Lp6MjnMiWiWVj0NmGSqT/B73H5paIvqQfXsrrdwnAKZLy0+oCCCT8N8DyBOja7QqX4NJmKf10O9onyu0o3eePLUv4OaaipDFn1F1ZnEPTUnNUEc76EG8x/wIkzYXqovJd0Jo962vMpx24JCBEE0qTi/coRzq+iXeIfDsOM/bnyI+4HiWQWent21uJSA4lm+bQRWjNhO138mq3W6QGed9Y9I54j7goRhgEG1NQh9852+Eh8P8+DJh+o7r5yuZKdUOghlj3WVULNcfnQfGMd7EQvsWB0= klemens@theodora"
+    - username: maged
+      uid: "1037"
+      ssh_keys:
+      - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDrIJrL3rR2heKZZY6fXcTKLjKOi2LWCl9NZFdwEDuiV6dQOyoU78c5distUi3ZOPE3apG0s9xJP2qDJbTWyKAtU16PyBxsB7+5ZMkPzpvGJ0equwH4gaB2LKRy6eh3F4x6SehlX0OGUcDeJ7jEXpCknvWx0L1tk86XP5vwbEmo2pUPyPDndiZ/twsFDIGNX6OdikiSdpOpYtouNqCDR1Kxvu/colH+mQC9DNko2QwHSE0e0HUVpIpFkH4AMOrf4ClSGSo1PCPA/4M1XjUHA1J2zpGw5tlFMIwjKfs0MhBWZ5EjQr7Xrm9w5JAVL29J13n4GTy+Y1zNxrbGdWORY2C5BhgdgFS4RxqnpbB7WnkUsSgcFfX+JUBxZAKCZI1Zl9rOFt19dI8rdmWEdAytPNKVS/xpKEXDGxQA8nPaBl2WFSno0F5DOUpuVL85030+T5PiSuh8pzRI3OqsOERnCnfOaHkUBoIegE0qgOxAzDRcQG4gt9JbFjOZKk+4tFVLQI8= magedmichael@Mageds-MacBook-Pro.local"
+    - username: monad
+      uid: "2000"
+    - username: refdata
+      uid: "2001"
+
+- name: Create User and set UID
+  ansible.builtin.user:
+    name: "{{ item.username }}"
+    uid: "{{ item.uid }}"
+    create_home: yes
+    shell: /bin/bash
+    state: present
+  with_items: "{{ users }}"
+
+- name: Set authorized key for the user
+  ansible.posix.authorized_key:
+    user: "{{ item.0.username }}"
+    state: present
+    key: "{{ item.1 }}"
+  with_subelements:
+   - "{{ users }}"
+   - ssh_keys

@@ -91,6 +91,7 @@ byte_string BlockState::read_code(bytes32_t const &hash)
     }
     // database
     auto result = db_.read_code(hash);
+    MONAD_ASSERT(hash == NULL_HASH || !result.empty());
     {
         auto const [it, inserted] = code_.emplace(hash, result);
         if (MONAD_UNLIKELY(!inserted)) {
@@ -143,22 +144,12 @@ void BlockState::merge(State const &state)
         if (it == state.code_.end()) {
             continue;
         }
-        auto const it2 = code_.find(code_hash);
-        if (it2 != code_.end()) {
-            if (it2->second.empty()) {
-                it2->second = it->second;
-            }
-        }
-        else {
-            code_[code_hash] = it->second;
-        }
+        code_.emplace(code_hash, it->second); // TODO try_emplace
     }
 
     for (auto it = state.state_.begin(); it != state.state_.end(); ++it) {
         auto const &address = it->first;
         auto const &stack = it->second;
-        MONAD_ASSERT(stack.size() == 1);
-        MONAD_ASSERT(stack[0].first == 0);
         auto const &account_state = stack[0].second;
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;

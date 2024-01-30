@@ -804,8 +804,17 @@ void TrieDb::commit(nlohmann::json const &state_deltas_json)
             .next = std::move(storage_updates)}));
     }
 
-    // Leave it empty for now
     UpdateList code_updates;
+    for (auto const &[ch, c] : state_deltas_json["CodeDelta"].items()) {
+        bytes32_t code_hash;
+        std::memcpy(code_hash.bytes, evmc::from_hex(ch).value().data(), 32);
+        code_updates.push_front(update_alloc_.emplace_back(Update{
+            .key = NibblesView{bytes_alloc_.emplace_back(to_key(code_hash))},
+            .value = bytes_alloc_.emplace_back(
+                evmc::from_hex(c.get<std::string>()).value()),
+            .incarnation = false,
+            .next = UpdateList{}}));
+    }
 
     auto state_update = Update{
         .key = state_nibbles,

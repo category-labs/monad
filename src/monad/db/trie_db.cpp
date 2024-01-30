@@ -829,11 +829,8 @@ void TrieDb::commit(nlohmann::json const &state_deltas_json)
     UpdateList updates;
     updates.push_front(state_update);
     updates.push_front(code_update);
-    db_.upsert(std::move(updates));
-    MONAD_ASSERT(machine_.depth == 0 && machine_.is_merkle == false);
 
-    update_alloc_.clear();
-    bytes_alloc_.clear();
+    commit(std::move(updates));
 }
 
 void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
@@ -897,6 +894,12 @@ void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
     UpdateList updates;
     updates.push_front(state_update);
     updates.push_front(code_update);
+
+    commit(std::move(updates));
+}
+
+void TrieDb::commit(UpdateList updates)
+{
     LOG_INFO("TrieDb::commit() block number {}", curr_block_id_);
     db_.upsert(std::move(updates), curr_block_id_);
     if (is_on_disk()) {

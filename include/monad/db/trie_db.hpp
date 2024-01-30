@@ -83,6 +83,7 @@ public:
     bytes32_t state_root(uint64_t block_id);
     nlohmann::json to_json();
     void commit(nlohmann::json const &state_deltas_json);
+    void commit(mpt::UpdateList);
 };
 
 MONAD_DB_NAMESPACE_END

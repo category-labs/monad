@@ -55,7 +55,7 @@ bool process_file_and_commit_to_db(
             LOG_ERROR("State Root Mismatch at block: {}", block_number_int);
             return false;
         }
-        if (MONAD_UNLIKELY(block_number_int % 1 == 0)) {
+        if (MONAD_UNLIKELY(block_number_int % 1000 == 0)) {
             LOG_INFO(
                 "Successfully processed up to block: {}", block_number_int);
         }
@@ -64,71 +64,64 @@ bool process_file_and_commit_to_db(
     return true;
 }
 
-std::vector<std::pair<monad::StateDeltas, monad::Code>>
-get_deltas_from_file(std::filesystem::path const &file_path)
+int run_command(std::string command)
 {
-    std::vector<std::pair<monad::StateDeltas, monad::Code>> state_deltas_vector;
-    MONAD_ASSERT(std::filesystem::exists(file_path));
-    std::ifstream ifile(file_path, std::ifstream::binary);
-    nlohmann::json state_deltas_vector_json;
-    ifile >> state_deltas_vector_json;
+    LOG_INFO("bash: {}", command);
+    std::array<char, 128> buffer;
+    std::string result;
 
-    for (auto const &[block_number, state_deltas_json] :
-         state_deltas_vector_json.items()) {
-        monad::StateDeltas state_deltas;
-        monad::Code code_deltas;
-
-        for (auto const &[addr, acct] :
-             state_deltas_json["StateDelta"].items()) {
-
-            auto const address = evmc::from_hex<monad::Address>(addr).value();
-            auto const code =
-                evmc::from_hex(acct.at("code_hash").get<std::string>()).value();
-            Account account{
-                .balance = intx::from_string<uint256_t>(acct.at("balance")),
-                .nonce = std::stoull(
-                    acct.at("nonce").get<std::string>(), nullptr, 16),
-                .incarnation = std::stoull(
-                    acct.at("incarnation").get<std::string>(), nullptr, 16)};
-            std::memcpy(account.code_hash.bytes, code.data(), 32);
-
-            StateDelta state_delta{.account = {Account{}, std::nullopt}};
-
-            if (MONAD_LIKELY(!is_empty(account))) {
-                state_delta.account.second = account;
-            }
-
-            // storage
-            for (auto const &[key, value] : acct["storage"].items()) {
-                bytes32_t storage_key;
-                bytes32_t storage_value;
-                bytes32_t fake_original_storage_value;
-                std::memcpy(
-                    storage_key.bytes, evmc::from_hex(key).value().data(), 32);
-                std::memcpy(
-                    storage_value.bytes,
-                    evmc::from_hex(value.get<std::string>()).value().data(),
-                    32);
-
-                fake_original_storage_value =
-                    storage_value == bytes32_t{} ? NULL_HASH : bytes32_t{};
-
-                state_delta.storage.emplace(std::make_pair(
-                    storage_key,
-                    std::make_pair(
-                        fake_original_storage_value, storage_value)));
-            }
-
-            state_deltas.emplace(address, state_delta);
-        }
-
-        // We don't care about code delta, just leave it empty for now
-
-        state_deltas_vector.emplace_back(
-            std::make_pair(state_deltas, code_deltas));
+    // Use popen to open a pipe and run the command
+    FILE *pipe = popen(command.c_str(), "r");
+    if (!pipe) {
+        std::cerr << "Error opening pipe." << std::endl;
+        return EXIT_FAILURE;
     }
 
-    return state_deltas_vector;
+    // Read the command output into the buffer
+    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+        result += buffer.data();
+    }
+
+    // Close the pipe
+    int status = pclose(pipe);
+
+    if (status == 0) {
+        std::cout << "Command executed successfully. Output:\n" << result;
+    }
+    else {
+        std::cerr << "Error executing the command. Exit status: " << status
+                  << std::endl;
+    }
+
+    return 0;
+}
+
+std::string unzip_json(std::filesystem::path const &state_delta_file)
+{
+    auto begin_copy_n_unzip = std::chrono::steady_clock::now();
+    // return a vector of json files
+    std::string const dest_dir = "/home/vickychen/StateDeltaLog/";
+    std::string const cp_file =
+        "cp " + state_delta_file.string() + " " + dest_dir;
+    // copy to dest_dir
+    run_command(cp_file);
+    // unsip from dest_dir
+    std::string const gzip_filename = dest_dir / state_delta_file.filename();
+    std::string const unzip = "gunzip " + gzip_filename;
+    run_command(unzip);
+    run_command("rm " + gzip_filename);
+    auto end_copy_n_unzip = std::chrono::steady_clock::now();
+    auto copy_n_unzip_secs =
+        static_cast<double>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                end_copy_n_unzip - begin_copy_n_unzip)
+                .count()) /
+        1000000.0;
+    printf(
+        "Time for cp + unzip %s: %f s\n",
+        gzip_filename.c_str(),
+        copy_n_unzip_secs);
+    return gzip_filename.substr(0, gzip_filename.size() - 3);
 }
 
 std::vector<std::filesystem::path>
@@ -157,21 +150,58 @@ int main(int argc, char *argv[])
 
     CLI::App cli{"replay_ethereum_state_delta"};
 
-    std::filesystem::path state_db_path{};
-    std::filesystem::path state_delta_path{};
     std::filesystem::path block_db_path{};
+    std::filesystem::path state_db_path{};
+    std::filesystem::path genesis_file_path{};
+    std::filesystem::path state_delta_path{"/home/jhunsaker/StateDeltaLog/"};
+    std::optional<uint64_t> checkpoint_frequency = std::nullopt;
+    std::optional<block_num_t> finish_block_number = std::nullopt;
+    bool in_memory = false;
+    std::optional<uint64_t> block_id_continue = std::nullopt;
+    bool compaction = false;
+    unsigned nthreads = 1;
+    unsigned sq_thread_cpu = 15;
+    std::vector<std::filesystem::path> dbname_paths;
+    int64_t file_size_db = 512; // 512GB
 
     quill::start(true);
 
     auto log_level = quill::LogLevel::Info;
-    cli.add_option("--state_db", state_db_path, "state_db directory")
-        ->required();
-    cli.add_option("--state_delta", state_delta_path, "state delta directory")
-        ->required();
     cli.add_option("--block_db", block_db_path, "block_db directory")
         ->required();
+    cli.add_option("--state_db", state_db_path, "state_db directory")
+        ->required();
+    auto *has_genesis_file = cli.add_option(
+        "--genesis_file", genesis_file_path, "genesis file directory");
+    cli.add_option(
+        "--checkpoint_frequency",
+        checkpoint_frequency,
+        "state db checkpointing frequency");
+    cli.add_option(
+        "--finish", finish_block_number, "1 pass the last executed block");
     cli.add_option("--log_level", log_level, "level of logging")
         ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
+    cli.add_option("--nthreads", nthreads, "number of threads and fibers");
+    cli.add_flag(
+        "--in_memory", in_memory, "config TrieDb to in memory or on-disk");
+    cli.add_option(
+        "--block_id_continue",
+        block_id_continue,
+        "block id to continue running onto an existing on disk TrieDb "
+        "instance");
+    cli.add_flag("--compaction", compaction, "do compaction");
+    cli.add_option("--sq_thread_cpu", sq_thread_cpu, "io_uring sq_thread_cpu");
+    cli.add_option(
+        "--dbname_paths",
+        dbname_paths,
+        "db file names, can have more than one");
+    cli.add_option(
+        "--file_size_db",
+        file_size_db,
+        "size to create file to if not already exist, only apply to file "
+        "not blkdev");
+    cli.add_option("--state_delta", state_delta_path, "state delta directory")
+        ->required();
 
     try {
         cli.parse(argc, argv);
@@ -181,50 +211,85 @@ int main(int argc, char *argv[])
         return cli.exit(e);
     }
 
-    auto const start_time = std::chrono::steady_clock::now();
-    auto start_block_number = db::auto_detect_start_block_number(state_db_path);
-    auto const opts = mpt::DbOptions{.on_disk = false};
+    auto block_db = BlockDb(block_db_path);
 
+    auto const load_start_time = std::chrono::steady_clock::now();
+    bool const append = block_id_continue.has_value() && !in_memory;
+    auto start_block_number =
+        append ? block_id_continue.value()
+               : db::auto_detect_start_block_number(state_db_path);
+
+    if (dbname_paths.empty()) {
+        dbname_paths.emplace_back("replay_test.db");
+    }
+    mpt::OnDiskDbConfig ondisk_config{
+        .append = append,
+        .compaction = compaction,
+        .rd_buffers = 8192,
+        .wr_buffers = 32,
+        .uring_entries = 128,
+        .sq_thread_cpu = sq_thread_cpu,
+        .start_block_id = block_id_continue,
+        .dbname_paths = dbname_paths};
     auto db = [&] -> db::TrieDb {
-        if (start_block_number == 0) {
-            return db::TrieDb{opts};
+        if (start_block_number == 0 || append) {
+            return in_memory ? db::TrieDb{std::nullopt}
+                             : db::TrieDb{ondisk_config};
         }
-
         auto const dir = state_db_path / std::to_string(start_block_number - 1);
         if (std::filesystem::exists(dir / "accounts")) {
             MONAD_ASSERT(std::filesystem::exists(dir / "code"));
             LOG_INFO("Loading from binary checkpoint in {}", dir);
             std::ifstream accounts(dir / "accounts");
             std::ifstream code(dir / "code");
-            return db::TrieDb{opts, accounts, code};
+            ondisk_config.append = false;
+            ondisk_config.start_block_id = start_block_number;
+            // in memory should always insert to the same block id
+            return in_memory ? db::TrieDb{std::nullopt, accounts, code}
+                             : db::TrieDb{ondisk_config, accounts, code};
         }
         MONAD_ASSERT(std::filesystem::exists(dir / "state.json"));
         LOG_INFO("Loading from json checkpoint in {}", dir);
         std::ifstream ifile_stream(dir / "state.json");
-        return db::TrieDb{opts, ifile_stream};
+        return in_memory ? db::TrieDb{std::nullopt, ifile_stream}
+                         : db::TrieDb{ondisk_config, ifile_stream};
     }();
 
-    auto const finished_loading_time = std::chrono::steady_clock::now();
-    auto const elapsed_loading_ms =
+    if (start_block_number == 0) {
+        MONAD_ASSERT(*has_genesis_file);
+        read_and_verify_genesis(block_db, db, genesis_file_path);
+        start_block_number = 1;
+    }
+
+    auto const load_finish_time = std::chrono::steady_clock::now();
+    auto const load_elapsed =
         std::chrono::duration_cast<std::chrono::milliseconds>(
-            finished_loading_time - start_time);
+            load_finish_time - load_start_time);
     LOG_INFO(
         "Finished initializing db at block = {}, time elapsed = {}",
         start_block_number,
-        elapsed_loading_ms);
+        load_elapsed);
 
     quill::get_root_logger()->set_log_level(log_level);
 
-    auto const files = get_ordered_files_from_dir(state_delta_path);
+    auto const state_delta_files = get_ordered_files_from_dir(state_delta_path);
 
-    // block_db stuff (temp)
-    BlockDb block_db{block_db_path};
+    LOG_INFO(
+        "Replaying TrieDb with StateDeltas (inferred) start_block_number = {}, "
+        "finish block number = {}",
+        start_block_number,
+        finish_block_number);
 
-    for (auto const &file : files) {
-        if (!process_file_and_commit_to_db(db, block_db, file)) {
+    for (auto &delta_file : state_delta_files) {
+        std::string delta_json_filename = unzip_json(delta_file);
+        if (!process_file_and_commit_to_db(db, block_db, delta_file)) {
             return 1;
         }
+        // 2. delete the json
+        run_command("rm " + delta_json_filename);
     }
+
+    // TODO end log
 
     return 0;
 }

@@ -56,6 +56,10 @@ private:
     ::monad::mpt::Db db_;
     std::list<mpt::Update> update_alloc_;
     std::list<byte_string> bytes_alloc_;
+    uint64_t curr_block_id_;
+    uint64_t block_id_for_read_;
+
+    bool is_on_disk() const noexcept;
 
 public:
     TrieDb(std::optional<mpt::OnDiskDbConfig> const &);
@@ -76,6 +80,7 @@ public:
     virtual void create_and_prune_block_history(uint64_t) const override;
 
     bytes32_t state_root();
+    bytes32_t state_root(uint64_t block_id);
     nlohmann::json to_json();
 };
 

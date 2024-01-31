@@ -42,6 +42,7 @@ int main(int argc, char *argv[])
     std::optional<uint64_t> checkpoint_frequency = std::nullopt;
     std::optional<block_num_t> finish_block_number = std::nullopt;
     bool in_memory = false;
+    std::optional<uint64_t> block_id_continue = std::nullopt;
     bool compaction = false;
     unsigned nthreads = 1;
     unsigned sq_thread_cpu = 15;
@@ -50,6 +51,25 @@ int main(int argc, char *argv[])
 
     quill::start(true);
 
+    /* Usage:
+    1. Run in memory triedb, db block_id prefix is always 0
+    $ ./replay_ethereum.cpp --in_memory --block_db ${BLOCKDB} --state_db
+       ${TESTDB} --genesis_file ${../mainnet.json} --finish 3000000
+
+    2. Run on disk triedb from genesis
+    $ ./replay_ethereum.cpp --block_db ${BLOCKDB} --state_db ${EMPTY_TESTDB}
+       --genesis_file ${../mainnet.json} --finish 3000000
+
+    3. Run on disk triedb from a snapshot (default db file)
+    $ ./replay_ethereum.cpp --block_db ${BLOCKDB} --state_db ${TESTDB}
+       --genesis_file ${../mainnet.json} --finish 4000000
+
+    4. Run on disk triedb from a existing on disk db instance,
+    `block_id_continue` can be anything <= max_existing_block_id + 1.
+    $ ./replay_ethereum.cpp --block_db ${BLOCKDB} --state_db ${EMPTY_TESTDB}
+      --genesis_file ${../mainnet.json} --finish 4000000 --block_id_continue
+      300000
+    */
     auto log_level = quill::LogLevel::Info;
     cli.add_option("--block_db", block_db_path, "block_db directory")
         ->required();
@@ -68,6 +88,11 @@ int main(int argc, char *argv[])
     cli.add_option("--nthreads", nthreads, "number of threads and fibers");
     cli.add_flag(
         "--in_memory", in_memory, "config TrieDb to in memory or on-disk");
+    cli.add_option(
+        "--block_id_continue",
+        block_id_continue,
+        "block id to continue running onto an existing on disk TrieDb "
+        "instance");
     cli.add_flag("--compaction", compaction, "do compaction");
     cli.add_option("--sq_thread_cpu", sq_thread_cpu, "io_uring sq_thread_cpu");
     cli.add_option(
@@ -91,32 +116,37 @@ int main(int argc, char *argv[])
     auto block_db = BlockDb(block_db_path);
 
     auto const load_start_time = std::chrono::steady_clock::now();
-    auto start_block_number = db::auto_detect_start_block_number(state_db_path);
+    bool const append = block_id_continue.has_value() && !in_memory;
+    auto start_block_number =
+        append ? block_id_continue.value()
+               : db::auto_detect_start_block_number(state_db_path);
 
     if (dbname_paths.empty()) {
         dbname_paths.emplace_back("replay_test.db");
     }
     mpt::OnDiskDbConfig ondisk_config{
-        .append = false,
+        .append = append,
         .compaction = compaction,
         .rd_buffers = 8192,
         .wr_buffers = 32,
         .uring_entries = 128,
         .sq_thread_cpu = sq_thread_cpu,
-        .dbname_paths = dbname_paths,
-        .file_size_db = file_size_db};
+        .start_block_id = block_id_continue,
+        .dbname_paths = dbname_paths};
     auto db = [&] -> db::TrieDb {
-        if (start_block_number == 0) {
+        if (start_block_number == 0 || append) {
             return in_memory ? db::TrieDb{std::nullopt}
                              : db::TrieDb{ondisk_config};
         }
-
         auto const dir = state_db_path / std::to_string(start_block_number - 1);
         if (std::filesystem::exists(dir / "accounts")) {
             MONAD_ASSERT(std::filesystem::exists(dir / "code"));
             LOG_INFO("Loading from binary checkpoint in {}", dir);
             std::ifstream accounts(dir / "accounts");
             std::ifstream code(dir / "code");
+            ondisk_config.append = false;
+            ondisk_config.start_block_id = start_block_number;
+            // in memory should always insert to the same block id
             return in_memory ? db::TrieDb{std::nullopt, accounts, code}
                              : db::TrieDb{ondisk_config, accounts, code};
         }

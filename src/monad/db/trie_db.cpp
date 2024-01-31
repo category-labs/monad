@@ -129,11 +129,14 @@ namespace
         size_t batch_size_;
         UpdateList storage_updates_;
         std::set<bytes32_t> inserted_code_;
+        uint64_t const block_id_;
 
-        JsonDbLoader(::monad::mpt::Db &db, size_t batch_size)
+        JsonDbLoader(
+            ::monad::mpt::Db &db, size_t batch_size, uint64_t const block_id)
             : state_{State::Root}
             , db_{db}
             , batch_size_{batch_size}
+            , block_id_{block_id}
         {
         }
 
@@ -360,7 +363,7 @@ namespace
                 .incarnation = false,
                 .next = std::move(code_updates_)}));
 
-            db_.upsert(std::move(updates));
+            db_.upsert(std::move(updates), block_id_);
 
             inserted_code_.clear();
             account_updates_.clear();
@@ -380,12 +383,15 @@ namespace
         std::deque<byte_string> bytes_alloc_;
         size_t buf_size_;
         std::unique_ptr<unsigned char[]> buf_;
+        uint64_t const block_id_;
 
     public:
-        BinaryDbLoader(::monad::mpt::Db &db, size_t buf_size)
+        BinaryDbLoader(
+            ::monad::mpt::Db &db, size_t buf_size, uint64_t const block_id)
             : db_{db}
             , buf_size_{buf_size}
             , buf_{std::make_unique_for_overwrite<unsigned char[]>(buf_size)}
+            , block_id_{block_id}
         {
             MONAD_ASSERT(buf_size >= chunk_size);
         };
@@ -406,7 +412,7 @@ namespace
                         .next = std::move(account_updates)};
                     updates.push_front(state_update);
 
-                    db_.upsert(std::move(updates));
+                    db_.upsert(std::move(updates), block_id_);
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();
@@ -425,7 +431,7 @@ namespace
                         .next = std::move(code_updates)};
                     updates.push_front(code_update);
 
-                    db_.upsert(std::move(updates));
+                    db_.upsert(std::move(updates), block_id_);
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();
@@ -646,7 +652,12 @@ TrieDb::TrieDb(std::optional<mpt::OnDiskDbConfig> const &config)
     }()}
     , db_{config.has_value() ? mpt::Db{*machine_, config.value()}
                              : mpt::Db{*machine_}}
+    , curr_block_id_{
+          // in memory triedb block id remains 0
+          config.has_value() ? config.value().start_block_id.value_or(0) : 0}
+    , block_id_for_read_{curr_block_id_ - config.has_value()}
 {
+    MONAD_ASSERT(config.has_value() == is_on_disk());
 }
 
 TrieDb::TrieDb(
@@ -654,8 +665,9 @@ TrieDb::TrieDb(
     size_t batch_size)
     : TrieDb{config}
 {
+    block_id_for_read_ = curr_block_id_;
     boost::json::basic_parser<JsonDbLoader> parser{
-        boost::json::parse_options{}, db_, batch_size};
+        boost::json::parse_options{}, db_, batch_size, curr_block_id_};
 
     char buf[4096];
     std::error_code ec;
@@ -681,13 +693,15 @@ TrieDb::TrieDb(
     std::istream &code, size_t buf_size)
     : TrieDb{config}
 {
-    BinaryDbLoader loader{db_, buf_size};
+    block_id_for_read_ = curr_block_id_;
+    BinaryDbLoader loader{db_, buf_size, curr_block_id_};
     loader.load(accounts, code);
 }
 
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
-    auto const value = db_.get(concat(state_nibble, NibblesView{to_key(addr)}));
+    auto const value = db_.get(
+        concat(state_nibble, NibblesView{to_key(addr)}), block_id_for_read_);
     if (!value.has_value()) {
         return std::nullopt;
     }
@@ -700,8 +714,10 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
 
 bytes32_t TrieDb::read_storage(Address const &addr, bytes32_t const &key)
 {
-    auto const value = db_.get(concat(
-        state_nibble, NibblesView{to_key(addr)}, NibblesView{to_key(key)}));
+    auto const value = db_.get(
+        concat(
+            state_nibble, NibblesView{to_key(addr)}, NibblesView{to_key(key)}),
+        block_id_for_read_);
     if (!value.has_value()) {
         return {};
     }
@@ -717,7 +733,8 @@ bytes32_t TrieDb::read_storage(Address const &addr, bytes32_t const &key)
 byte_string TrieDb::read_code(bytes32_t const &hash)
 {
     auto const value = db_.get(
-        concat(code_nibble, NibblesView{to_byte_string_view(hash.bytes)}));
+        concat(code_nibble, NibblesView{to_byte_string_view(hash.bytes)}),
+        block_id_for_read_);
     if (!value.has_value()) {
         return byte_string{};
     }
@@ -785,7 +802,11 @@ void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
     UpdateList updates;
     updates.push_front(state_update);
     updates.push_front(code_update);
-    db_.upsert(std::move(updates));
+    LOG_INFO("TrieDb::commit() block number {}", curr_block_id_);
+    db_.upsert(std::move(updates), curr_block_id_);
+    if (is_on_disk()) {
+        block_id_for_read_ = curr_block_id_++;
+    }
     MONAD_ASSERT(machine_->depth == 0 && machine_->is_merkle == false);
 
     update_alloc_.clear();
@@ -796,9 +817,9 @@ void TrieDb::create_and_prune_block_history(uint64_t) const {
 
 };
 
-bytes32_t TrieDb::state_root()
+bytes32_t TrieDb::state_root(uint64_t const block_id)
 {
-    auto const value = db_.get_data(state_nibbles);
+    auto const value = db_.get_data(state_nibbles, block_id);
     if (!value.has_value() || value.value().empty()) {
         return NULL_ROOT;
     }
@@ -806,6 +827,11 @@ bytes32_t TrieDb::state_root()
     MONAD_ASSERT(value.value().size() == sizeof(bytes32_t));
     std::copy_n(value.value().data(), sizeof(bytes32_t), root.bytes);
     return root;
+}
+
+bytes32_t TrieDb::state_root()
+{
+    return state_root(block_id_for_read_);
 }
 
 nlohmann::json TrieDb::to_json()
@@ -907,9 +933,21 @@ nlohmann::json TrieDb::to_json()
         }
     } traverse(*this);
 
-    db_.traverse(state_nibbles, traverse);
+    db_.traverse(state_nibbles, traverse, block_id_for_read_);
 
     return traverse.json;
+}
+
+bool TrieDb::is_on_disk() const noexcept
+{
+#if defined(__clang__)
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wpotentially-evaluated-expression"
+#endif
+    return typeid(OnDiskMachine) == typeid(*machine_);
+#if defined(__clang__)
+    #pragma GCC diagnostic pop
+#endif
 }
 
 MONAD_DB_NAMESPACE_END

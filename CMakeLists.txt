@@ -23,10 +23,10 @@ pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 
 # evmone
 set(BUILD_SHARED_LIBS OFF)
-add_subdirectory(third_party/evmone)
+add_subdirectory(evmone-private)
 # always compile baseline with optimization due to stack size of dispatch_cgoto
 set_source_files_properties(
-  third_party/evmone/lib/evmone/baseline.cpp TARGET_DIRECTORY evmone
+  evmone-private/lib/evmone/baseline.cpp TARGET_DIRECTORY evmone
   PROPERTIES COMPILE_OPTIONS -O2)
 
 # intx

@@ -1,3 +1,6 @@
+[submodule "evmone-private"]
+	path = evmone-private
+	url = git@github.com:monad-crypto/evmone-private.git
 [submodule "monad-core"]
 	path = monad-core
 	url = git@github.com:monad-crypto/monad-core.git
@@ -7,9 +10,6 @@
 [submodule "third_party/ethereum-tests"]
 	path = third_party/ethereum-tests
 	url = https://github.com/ethereum/tests
-[submodule "third_party/evmone"]
-	path = third_party/evmone
-	url = https://github.com/monad-crypto/evmone.git
 [submodule "third_party/execution-specs"]
 	path = third_party/execution-specs
 	url = https://github.com/ethereum/execution-specs.git
@@ -23,3 +23,4 @@
 [submodule "third_party/yellowpaper"]
 	path = third_party/yellowpaper
 	url = https://github.com/ethereum/yellowpaper.git
+

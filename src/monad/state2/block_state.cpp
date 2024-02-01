@@ -29,76 +29,70 @@ std::optional<Account> BlockState::read_account(Address const &address)
 {
     // block state
     {
-        auto const it = state_.find(address);
-        if (MONAD_LIKELY(it != state_.end())) {
+        StateDeltas::const_accessor it{};
+        if (MONAD_LIKELY(state_.find(it, address))) {
             return it->second.account.second;
         }
     }
     // database
-    auto result = db_.read_account(address);
     {
-        auto const [it, inserted] = state_.emplace(
-            address, StateDelta{.account = {result, result}, .storage = {}});
-        if (MONAD_UNLIKELY(!inserted)) {
-            result = it->second.account.second;
-        }
+        auto const result = db_.read_account(address);
+        StateDeltas::const_accessor it{};
+        state_.emplace(
+            it,
+            address,
+            StateDelta{.account = {result, result}, .storage = {}});
+        return it->second.account.second;
     }
-    return result;
 }
 
 bytes32_t BlockState::read_storage(
-    Address const &address, uint64_t const incarnation,
-    bytes32_t const &location)
+    Address const &address, uint64_t const incarnation, bytes32_t const &key)
 {
     // block state
     {
-        auto const it = state_.find(address);
-        MONAD_ASSERT(it != state_.end());
+        StateDeltas::const_accessor it{};
+        MONAD_ASSERT(state_.find(it, address));
         auto const &storage = it->second.storage;
         {
-            auto const it2 = storage.find(location);
-            if (MONAD_LIKELY(it2 != storage.end())) {
+            StorageDeltas::const_accessor it2{};
+            if (MONAD_LIKELY(storage.find(it2, key))) {
                 return it2->second.second;
             }
         }
     }
     // database
-    auto result =
-        incarnation == 0 ? db_.read_storage(address, location) : bytes32_t{};
     {
-        auto const it = state_.find(address);
-        MONAD_ASSERT(it != state_.end());
+        auto const result =
+            incarnation == 0 ? db_.read_storage(address, key) : bytes32_t{};
+        StateDeltas::accessor it{};
+        MONAD_ASSERT(state_.find(it, address));
         auto &storage = it->second.storage;
         {
-            auto const [it2, inserted] =
-                storage.emplace(location, std::make_pair(result, result));
-            if (MONAD_UNLIKELY(!inserted)) {
-                result = it2->second.second;
-            }
+            StorageDeltas::const_accessor it2{};
+            storage.emplace(it2, key, std::make_pair(result, result));
+            return it2->second.second;
         }
     }
-    return result;
 }
 
-byte_string BlockState::read_code(bytes32_t const &hash)
+byte_string BlockState::read_code(bytes32_t const &code_hash)
 {
     // block state
     {
-        auto const it = code_.find(hash);
-        if (MONAD_LIKELY(it != code_.end())) {
+        Code::const_accessor it{};
+        if (MONAD_LIKELY(code_.find(it, code_hash))) {
             return it->second;
         }
     }
     // database
-    auto result = db_.read_code(hash);
-    MONAD_ASSERT(hash == NULL_HASH || !result.empty());
     {
-        auto const [it, inserted] = code_.emplace(hash, result);
-        if (MONAD_UNLIKELY(!inserted)) {
-            result = it->second;
-        }
+        auto const result = db_.read_code(code_hash);
+        MONAD_ASSERT(code_hash == NULL_HASH || !result.empty());
+        Code::const_accessor it{};
+        code_.emplace(it, code_hash, result);
+        return it->second;
     }
-    return result;
 }
 
 bool BlockState::can_merge(State const &state)
@@ -106,16 +100,17 @@ bool BlockState::can_merge(State const &state)
     for (auto it = state.original_.begin(); it != state.original_.end(); ++it) {
         auto const &address = it->first;
         auto const &account_state = it->second;
-        auto const it2 = state_.find(address);
-        MONAD_ASSERT(it2 != state_.end());
-        if (account_state.account_ != it2->second.account.second) {
+        auto const &account = account_state.account_;
+        auto const &storage = account_state.storage_;
+        StateDeltas::const_accessor it2{};
+        MONAD_ASSERT(state_.find(it2, address));
+        if (account != it2->second.account.second) {
             return false;
         }
-        for (auto it3 = account_state.storage_.begin();
-             it3 != account_state.storage_.end();
-             ++it3) {
-            auto const it4 = it2->second.storage.find(it3->first);
-            MONAD_ASSERT(it4 != it2->second.storage.end());
+        // TODO account.has_value()???
+        for (auto it3 = storage.cbegin(); it3 != storage.cend(); ++it3) {
+            StorageDeltas::const_accessor it4{};
+            MONAD_ASSERT(it2->second.storage.find(it4, it3->first));
             if (it3->second != it4->second.second) {
                 return false;
             }
@@ -153,13 +148,13 @@ void BlockState::merge(State const &state)
         auto const &account_state = stack[0].second;
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
-        auto const it2 = state_.find(address);
-        MONAD_ASSERT(it2 != state_.end());
+        StateDeltas::accessor it2{};
+        MONAD_ASSERT(state_.find(it2, address));
         it2->second.account.second = account;
         if (account.has_value()) {
             for (auto it3 = storage.begin(); it3 != storage.end(); ++it3) {
-                auto const it4 = it2->second.storage.find(it3->first);
-                MONAD_ASSERT(it4 != it2->second.storage.end());
+                StorageDeltas::accessor it4{};
+                MONAD_ASSERT(it2->second.storage.find(it4, it3->first));
                 it4->second.second = it3->second;
             }
         }

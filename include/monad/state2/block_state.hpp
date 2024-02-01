@@ -19,10 +19,10 @@ public:
 
     std::optional<Account> read_account(Address const &);
 
-    bytes32_t read_storage(
-        Address const &, uint64_t incarnation, bytes32_t const &location);
+    bytes32_t
+    read_storage(Address const &, uint64_t incarnation, bytes32_t const &key);
 
-    byte_string read_code(bytes32_t const &hash);
+    byte_string read_code(bytes32_t const &code_hash);
 
     bool can_merge(State const &);
 

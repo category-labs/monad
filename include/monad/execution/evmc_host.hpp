@@ -28,8 +28,6 @@ protected:
     State &state_;
 
 public:
-    EvmcHostBase(EvmcHostBase const &, State &) noexcept;
-
     EvmcHostBase(
         evmc_tx_context const &, BlockHashBuffer const &, State &) noexcept;
 

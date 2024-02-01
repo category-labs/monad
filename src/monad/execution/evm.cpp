@@ -168,11 +168,10 @@ evmc::Result create_contract_account(
         .code_address = contract_address,
     };
 
-    EvmcHost<rev> new_host{*host, state}; // TODO remove
     auto result = baseline_execute(
         m_call,
         rev,
-        &new_host,
+        host,
         byte_string_view(msg.input_data, msg.input_size));
 
     if (result.status_code == EVMC_SUCCESS) {
@@ -227,9 +226,8 @@ evmc::Result call_evm(
         result = std::move(maybe_result.value());
     }
     else {
-        EvmcHost<rev> new_host{*host, state};
         auto const code = state.get_code(msg.code_address);
-        result = baseline_execute(msg, rev, &new_host, code);
+        result = baseline_execute(msg, rev, host, code);
     }
 
     MONAD_ASSERT(

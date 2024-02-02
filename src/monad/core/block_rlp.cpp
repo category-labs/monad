@@ -224,15 +224,4 @@ Result<byte_string_view> decode_block(Block &block, byte_string_view const enc)
     return rest_of_enc;
 }
 
-// Get RLP Header (TODO: Why not used currently?)
-byte_string_view
-get_rlp_header_from_block(byte_string_view const block_encoding)
-{
-    byte_string_view rlp_block{};
-    (void)parse_list_metadata(rlp_block, block_encoding);
-    byte_string_view rlp_block_header{};
-    (void)parse_list_metadata(rlp_block_header, rlp_block);
-    return {rlp_block.data(), rlp_block_header.end()};
-}
-
 MONAD_RLP_NAMESPACE_END

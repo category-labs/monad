@@ -13,6 +13,4 @@ byte_string encode_block(Block const &);
 Result<byte_string_view> decode_block(Block &, byte_string_view);
 Result<byte_string_view> decode_block_header(BlockHeader &, byte_string_view);
 
-byte_string_view get_rlp_header_from_block(byte_string_view);
-
 MONAD_RLP_NAMESPACE_END

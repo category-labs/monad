@@ -39,12 +39,6 @@ public:
         return touched_;
     }
 
-    // A_a
-    bool is_accessed() const
-    {
-        return accessed_;
-    }
-
     // A_K
     Set<bytes32_t> const &get_accessed_storage() const
     {

@@ -2,6 +2,7 @@
 
 build
 perf.data*
+scratch
 
 ### github default cmake ignore
 

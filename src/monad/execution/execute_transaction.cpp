@@ -241,22 +241,18 @@ Result<Receipt> execute_impl(
 EXPLICIT_EVMC_REVISION(execute_impl);
 
 template <evmc_revision rev>
-void execute(
-    unsigned i, std::shared_ptr<std::optional<Result<Receipt>>[]> results,
+Result<Receipt> execute(
     boost::fibers::promise<void> &prev, Transaction const &tx,
     BlockHeader const &hdr, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state)
 {
-    auto &result = results[i];
-
     auto const sender = recover_sender(tx);
 
     if (MONAD_UNLIKELY(!sender.has_value())) {
-        result = TransactionError::MissingSender;
-        return;
+        return TransactionError::MissingSender;
     }
 
-    result = execute_impl<rev>(
+    return execute_impl<rev>(
         tx, sender.value(), hdr, block_hash_buffer, block_state, prev);
 }
 

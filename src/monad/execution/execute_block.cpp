@@ -112,9 +112,7 @@ Result<std::vector<Receipt>> execute_block(
              &header = block.header,
              &block_hash_buffer = block_hash_buffer,
              &block_state] {
-                execute<rev>(
-                    i,
-                    results,
+                results[i] = execute<rev>(
                     promises[i],
                     transaction,
                     header,

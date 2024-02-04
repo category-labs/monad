@@ -114,11 +114,6 @@ class State
         return current(it->second, version_);
     }
 
-    std::optional<Account> const &recent_account(Address const &address)
-    {
-        return recent_account_state(address).account_;
-    }
-
     std::optional<Account> &current_account(Address const &address)
     {
         return current_account_state(address).account_;
@@ -213,6 +208,13 @@ public:
         }
 
         --version_;
+    }
+
+    ////////////////////////////////////////
+
+    std::optional<Account> const &recent_account(Address const &address)
+    {
+        return recent_account_state(address).account_;
     }
 
     ////////////////////////////////////////

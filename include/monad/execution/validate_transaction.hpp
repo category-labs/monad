@@ -1,7 +1,7 @@
 #pragma once
 
 #include <monad/config.hpp>
-#include <monad/core/address.hpp>
+#include <monad/core/account.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/result.hpp>
 
@@ -40,15 +40,14 @@ enum class TransactionError
     InvalidSignature,
 };
 
-class State;
 struct Transaction;
 
 template <evmc_revision rev>
 Result<void> static_validate_transaction(
     Transaction const &, std::optional<uint256_t> const &base_fee_per_gas);
 
-Result<void>
-validate_transaction(State &, Transaction const &, Address const &sender);
+Result<void> validate_transaction(
+    Transaction const &, std::optional<Account> const &sender_account);
 
 MONAD_NAMESPACE_END
 

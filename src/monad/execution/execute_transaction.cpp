@@ -169,8 +169,8 @@ Result<evmc::Result> execute_impl2(
     Transaction const &tx, Address const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, State &state)
 {
-    // TODO: Issue #164, Issue #54
-    BOOST_OUTCOME_TRY(validate_transaction(state, tx, sender));
+    auto const sender_account = state.recent_account(sender);
+    BOOST_OUTCOME_TRY(validate_transaction(tx, sender_account));
 
     auto const tx_context = get_tx_context<rev>(tx, sender, hdr);
     EvmcHost<rev> host{tx_context, block_hash_buffer, state};

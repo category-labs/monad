@@ -1,5 +1,5 @@
 #include <monad/config.hpp>
-#include <monad/core/address.hpp>
+#include <monad/core/account.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
@@ -8,7 +8,6 @@
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/validate_transaction.hpp>
-#include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
 
@@ -116,23 +115,37 @@ Result<void> static_validate_transaction(
 
 EXPLICIT_EVMC_REVISION(static_validate_transaction);
 
-Result<void>
-validate_transaction(State &state, Transaction const &tx, Address const &sender)
+Result<void> validate_transaction(
+    Transaction const &tx, std::optional<Account> const &sender_account)
 {
-    // YP eq. 62 & EIP-3607
-    if (MONAD_UNLIKELY(state.get_code_hash(sender) != NULL_HASH)) {
+    // YP (70)
+    uint512_t const v0 =
+        tx.value + max_gas_cost(tx.gas_limit, tx.max_fee_per_gas);
+
+    if (MONAD_UNLIKELY(!sender_account.has_value())) {
+        // YP (71)
+        if (tx.nonce) {
+            return TransactionError::BadNonce;
+        }
+        // YP (71)
+        if (v0) {
+            return TransactionError::InsufficientBalance;
+        }
+        return success();
+    }
+
+    // YP (71)
+    if (MONAD_UNLIKELY(sender_account->code_hash != NULL_HASH)) {
         return TransactionError::SenderNotEoa;
     }
 
-    // YP eq. 62
-    if (MONAD_UNLIKELY(state.get_nonce(sender) != tx.nonce)) {
+    // YP (71)
+    if (MONAD_UNLIKELY(sender_account->nonce != tx.nonce)) {
         return TransactionError::BadNonce;
     }
 
-    // YP eq. 62
-    if (MONAD_UNLIKELY(
-            intx::be::load<uint256_t>(state.get_balance(sender)) <
-            (tx.value + max_gas_cost(tx.gas_limit, tx.max_fee_per_gas)))) {
+    // YP (71)
+    if (MONAD_UNLIKELY(sender_account->balance < v0)) {
         return TransactionError::InsufficientBalance;
     }
 

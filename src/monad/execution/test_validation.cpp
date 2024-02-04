@@ -3,12 +3,9 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/transaction.hpp>
-#include <monad/db/trie_db.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/execution/validate_transaction.hpp>
-#include <monad/state2/block_state.hpp>
-#include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -23,8 +20,6 @@
 
 using namespace monad;
 
-using db_t = db::TrieDb;
-
 TEST(Validation, validate_enough_gas)
 {
     static Transaction const t{
@@ -38,80 +33,61 @@ TEST(Validation, validate_enough_gas)
 
 TEST(Validation, validate_deployed_code)
 {
-    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto some_non_null_hash{
         0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
-    db_t db{mpt::DbOptions{.on_disk = false}};
-    BlockState bs{db};
-    State s{bs};
-    s.add_to_balance(a, 56'939'568'773'815'811);
-    s.set_code_hash(a, some_non_null_hash);
-    s.set_nonce(a, 24);
 
-    static Transaction const t{.gas_limit = 60'500};
+    Transaction const tx{.gas_limit = 60'500};
+    Account const sender_account{
+        .balance = 56'939'568'773'815'811,
+        .code_hash = some_non_null_hash,
+        .nonce = 24};
 
-    auto const result = validate_transaction(s, t, a);
+    auto const result = validate_transaction(tx, sender_account);
     EXPECT_EQ(result.error(), TransactionError::SenderNotEoa);
 }
 
 TEST(Validation, validate_nonce)
 {
-    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-
-    static Transaction const t{
+    Transaction const tx{
         .nonce = 23,
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 60'500,
         .value = 55'939'568'773'815'811};
-    db_t db{mpt::DbOptions{.on_disk = false}};
-    BlockState bs{db};
-    State s{bs};
-    s.add_to_balance(a, 56'939'568'773'815'811);
-    s.set_nonce(a, 24);
+    Account const sender_account{
+        .balance = 56'939'568'773'815'811, .nonce = 24};
 
-    auto const result = validate_transaction(s, t, a);
+    auto const result = validate_transaction(tx, sender_account);
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
 
 TEST(Validation, validate_nonce_optimistically)
 {
-    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-
-    static Transaction const t{
+    Transaction const tx{
         .nonce = 25,
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 60'500,
         .value = 55'939'568'773'815'811};
+    Account const sender_account{
+        .balance = 56'939'568'773'815'811, .nonce = 24};
 
-    db_t db{mpt::DbOptions{.on_disk = false}};
-    BlockState bs{db};
-    State s{bs};
-    s.add_to_balance(a, 56'939'568'773'815'811);
-    s.set_nonce(a, 24);
-
-    auto const result = validate_transaction(s, t, a);
+    auto const result = validate_transaction(tx, sender_account);
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
 
 TEST(Validation, validate_enough_balance)
 {
-    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
 
-    static Transaction const t{
+    Transaction const tx{
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
         .value = 55'939'568'773'815'811,
         .to = b,
         .max_priority_fee_per_gas = 100'000'000,
     };
+    Account const sender_account{.balance = 55'939'568'773'815'811};
 
-    db_t db{mpt::DbOptions{.on_disk = false}};
-    BlockState bs{db};
-    State s{bs};
-    s.add_to_balance(a, 55'939'568'773'815'811);
-
-    auto const result = validate_transaction(s, t, a);
+    auto const result = validate_transaction(tx, sender_account);
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }
 
@@ -119,15 +95,9 @@ TEST(Validation, successful_validation)
 {
     using intx::operator"" _u256;
 
-    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
-    db_t db{mpt::DbOptions{.on_disk = false}};
-    BlockState bs{db};
-    State s{bs};
-    s.add_to_balance(a, 56'939'568'773'815'811);
-    s.set_nonce(a, 25);
 
-    static Transaction const t{
+    Transaction const tx{
         .sc =
             {.r =
                  0x5fd883bb01a10915ebc06621b925bd6d624cb6768976b73c0d468b31f657d15b_u256,
@@ -138,11 +108,13 @@ TEST(Validation, successful_validation)
         .gas_limit = 27'500,
         .value = 55'939'568'773'815'811,
         .to = b};
+    Account const sender_account{
+        .balance = 56'939'568'773'815'811, .nonce = 25};
 
-    auto const result1 = static_validate_transaction<EVMC_SHANGHAI>(t, 0);
+    auto const result1 = static_validate_transaction<EVMC_SHANGHAI>(tx, 0);
     EXPECT_TRUE(!result1.has_error());
 
-    auto const result2 = validate_transaction(s, t, a);
+    auto const result2 = validate_transaction(tx, sender_account);
     EXPECT_TRUE(!result2.has_error());
 }
 
@@ -182,21 +154,17 @@ TEST(Validation, priority_fee_greater_than_max)
 
 TEST(Validation, insufficent_balance_overflow)
 {
-    static constexpr auto a{0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
 
-    db_t db{mpt::DbOptions{.on_disk = false}};
-    BlockState bs{db};
-    State s{bs};
-    s.add_to_balance(a, std::numeric_limits<uint256_t>::max());
-
-    static Transaction const t{
+    Transaction const tx{
         .max_fee_per_gas = std::numeric_limits<uint256_t>::max() - 1,
         .gas_limit = 1000,
         .value = 0,
         .to = b};
+    Account const sender_account{
+        .balance = std::numeric_limits<uint256_t>::max()};
 
-    auto const result = validate_transaction(s, t, a);
+    auto const result = validate_transaction(tx, sender_account);
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }
 

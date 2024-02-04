@@ -115,7 +115,7 @@ Result<std::vector<Receipt>> execute_block(
                 execute<rev>(
                     i,
                     results,
-                    promises,
+                    promises[i],
                     transaction,
                     header,
                     block_hash_buffer,

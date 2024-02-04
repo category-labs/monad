@@ -27,7 +27,7 @@ Result<Receipt> execute_impl(
 template <evmc_revision rev>
 void execute(
     unsigned i, std::shared_ptr<std::optional<Result<Receipt>>[]>,
-    std::shared_ptr<boost::fibers::promise<void>[]>, Transaction const &,
+    boost::fibers::promise<void> &prev, Transaction const &,
     BlockHeader const &, BlockHashBuffer const &, BlockState &);
 
 MONAD_NAMESPACE_END

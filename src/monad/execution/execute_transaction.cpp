@@ -243,12 +243,11 @@ EXPLICIT_EVMC_REVISION(execute_impl);
 template <evmc_revision rev>
 void execute(
     unsigned i, std::shared_ptr<std::optional<Result<Receipt>>[]> results,
-    std::shared_ptr<boost::fibers::promise<void>[]> promises,
-    Transaction const &tx, BlockHeader const &hdr,
-    BlockHashBuffer const &block_hash_buffer, BlockState &block_state)
+    boost::fibers::promise<void> &prev, Transaction const &tx,
+    BlockHeader const &hdr, BlockHashBuffer const &block_hash_buffer,
+    BlockState &block_state)
 {
     auto &result = results[i];
-    auto &prev = promises[i];
 
     auto const sender = recover_sender(tx);
 

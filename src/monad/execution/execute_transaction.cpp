@@ -249,20 +249,16 @@ void execute(
 {
     auto &result = results[i];
     auto &prev = promises[i];
-    auto &next = promises[i + 1];
 
     auto const sender = recover_sender(tx);
 
     if (MONAD_UNLIKELY(!sender.has_value())) {
         result = TransactionError::MissingSender;
-        next.set_value();
         return;
     }
 
     result = execute_impl<rev>(
         tx, sender.value(), hdr, block_hash_buffer, block_state, prev);
-
-    next.set_value();
 }
 
 EXPLICIT_EVMC_REVISION(execute);

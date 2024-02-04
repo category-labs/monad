@@ -120,6 +120,7 @@ Result<std::vector<Receipt>> execute_block(
                     header,
                     block_hash_buffer,
                     block_state);
+                promises[i + 1].set_value();
             });
     }
 

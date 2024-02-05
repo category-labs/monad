@@ -320,7 +320,7 @@ TEST(Evm, static_precompile_execution)
         .value = {0},
         .code_address = code_address};
 
-    auto const result = call_evm<EVMC_SHANGHAI>(&h, s, m);
+    auto const result = call<EVMC_SHANGHAI>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     EXPECT_EQ(result.gas_left, 382);
@@ -365,7 +365,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         .value = {0},
         .code_address = code_address};
 
-    evmc::Result const result = call_evm<EVMC_SHANGHAI>(&h, s, m);
+    evmc::Result const result = call<EVMC_SHANGHAI>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
 }
@@ -475,7 +475,7 @@ TEST(Evm, deploy_contract_code)
 
 /*
 // TODO
-TEST(Evm, DISABLED_revert_call_evm)
+TEST(Evm, DISABLED_revert_call)
 {
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
@@ -495,7 +495,7 @@ TEST(Evm, DISABLED_revert_call_evm)
         .sender = from,
         .code_address = code_address};
 
-    auto const result = evm_t::call_evm(&h, s, m);
+    auto const result = evm_t::call(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_REVERT);
     EXPECT_TRUE(s._accounts.empty()); // revert was called on the fake
@@ -503,7 +503,7 @@ TEST(Evm, DISABLED_revert_call_evm)
 }
 
 // TODO
-TEST(Evm, DISABLED_unsuccessful_call_evm)
+TEST(Evm, DISABLED_unsuccessful_call)
 {
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
@@ -523,7 +523,7 @@ TEST(Evm, DISABLED_unsuccessful_call_evm)
         .sender = from,
         .code_address = code_address};
 
-    auto const result = evm_t::call_evm(&h, s, m);
+    auto const result = evm_t::call(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_BAD_JUMP_DESTINATION);
     EXPECT_TRUE(s._accounts.empty()); // revert was called on the fake

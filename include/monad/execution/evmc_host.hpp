@@ -81,20 +81,9 @@ struct EvmcHost final : public EvmcHostBase
 
     virtual evmc::Result call(evmc_message const &msg) noexcept override
     {
-        if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
-            auto res = create_contract_account<rev>(this, state_, msg);
-            // eip-211, eip-140
-            if (res.status_code != EVMC_REVERT) {
-                return evmc::Result{
-                    res.status_code,
-                    res.gas_left,
-                    res.gas_refund,
-                    res.create_address};
-            }
-            return res;
-        }
-
-        return call_evm<rev>(this, state_, msg);
+        return (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
+                   ? ::monad::create_contract_account<rev>(this, state_, msg)
+                   : ::monad::call<rev>(this, state_, msg);
     }
 
     virtual evmc_access_status

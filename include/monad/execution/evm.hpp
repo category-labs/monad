@@ -24,6 +24,6 @@ evmc::Result create_contract_account(
     EvmcHost<rev> *, State &, evmc_message const &) noexcept;
 
 template <evmc_revision rev>
-evmc::Result call_evm(EvmcHost<rev> *, State &, evmc_message const &) noexcept;
+evmc::Result call(EvmcHost<rev> *, State &, evmc_message const &) noexcept;
 
 MONAD_NAMESPACE_END

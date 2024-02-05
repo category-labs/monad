@@ -110,8 +110,8 @@ evmc::Result deploy_contract_code(
 EXPLICIT_EVMC_REVISION(deploy_contract_code);
 
 template <evmc_revision rev>
-evmc::Result create_contract_account(
-    EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
+std::optional<evmc::Result> pre_create_contract_account(
+    State &state, evmc_message const &msg, evmc_message &call_msg) noexcept
 {
     if (auto result = check_sender_balance(state, msg); result.has_value()) {
         return std::move(result.value());
@@ -154,7 +154,7 @@ evmc::Result create_contract_account(
     state.set_nonce(contract_address, starting_nonce);
     transfer_balances(state, msg, contract_address);
 
-    evmc_message const m_call{
+    call_msg = evmc_message{
         .kind = EVMC_CALL,
         .flags = 0,
         .depth = msg.depth,
@@ -167,13 +167,14 @@ evmc::Result create_contract_account(
         .create2_salt = {},
         .code_address = contract_address,
     };
+    return std::nullopt;
+}
 
-    auto result = baseline_execute(
-        m_call,
-        rev,
-        host,
-        byte_string_view(msg.input_data, msg.input_size));
-
+template <evmc_revision rev>
+void post_create_contract_account(
+    State &state, Address const &contract_address,
+    evmc::Result &result) noexcept
+{
     if (result.status_code == EVMC_SUCCESS) {
         result = deploy_contract_code<rev>(
             state, contract_address, std::move(result));
@@ -195,14 +196,18 @@ evmc::Result create_contract_account(
         }
     }
 
-    return result;
+    // eip-211, eip-140
+    if (result.status_code != EVMC_REVERT) {
+        result = evmc::Result{
+            result.status_code,
+            result.gas_left,
+            result.gas_refund,
+            result.create_address};
+    }
 }
 
-EXPLICIT_EVMC_REVISION(create_contract_account);
-
 template <evmc_revision rev>
-evmc::Result call_evm(
-    EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
+std::optional<evmc::Result> pre_call(evmc_message const &msg, State &state)
 {
     state.push();
 
@@ -220,18 +225,12 @@ evmc::Result call_evm(
         state.touch(msg.recipient);
     }
 
-    evmc::Result result;
-    if (auto maybe_result = check_call_precompile<rev>(msg);
-        maybe_result.has_value()) {
-        result = std::move(maybe_result.value());
-    }
-    else {
-        auto const code = state.get_code(msg.code_address);
-        result = baseline_execute(msg, rev, host, code);
-    }
+    return std::nullopt;
+}
 
-    MONAD_ASSERT(
-        result.status_code == EVMC_SUCCESS || result.gas_refund == 0);
+void post_call(State &state, evmc::Result const &result)
+{
+    MONAD_ASSERT(result.status_code == EVMC_SUCCESS || result.gas_refund == 0);
     MONAD_ASSERT(
         result.status_code == EVMC_SUCCESS ||
         result.status_code == EVMC_REVERT || result.gas_left == 0);
@@ -247,10 +246,55 @@ evmc::Result call_evm(
             state.touch(ripemd_address);
         }
     }
+}
 
+template <evmc_revision rev>
+evmc::Result create_contract_account(
+    EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
+{
+    MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
+
+    evmc_message m_call;
+    if (auto result = pre_create_contract_account<rev>(state, msg, m_call);
+        result.has_value()) {
+        return std::move(result.value());
+    }
+
+    auto result = baseline_execute(
+        m_call, rev, host, byte_string_view(msg.input_data, msg.input_size));
+
+    post_create_contract_account<rev>(state, m_call.recipient, result);
+    return std::move(result);
+}
+
+EXPLICIT_EVMC_REVISION(create_contract_account);
+
+template <evmc_revision rev>
+evmc::Result
+call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
+{
+    MONAD_ASSERT(
+        msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
+        msg.kind == EVMC_CALL);
+
+    if (auto result = pre_call<rev>(msg, state); result.has_value()) {
+        return std::move(result.value());
+    }
+
+    evmc::Result result;
+    if (auto maybe_result = check_call_precompile<rev>(msg);
+        maybe_result.has_value()) {
+        result = std::move(maybe_result.value());
+    }
+    else {
+        auto const code = state.get_code(msg.code_address);
+        result = baseline_execute(msg, rev, host, code);
+    }
+
+    post_call(state, result);
     return result;
 }
 
-EXPLICIT_EVMC_REVISION(call_evm);
+EXPLICIT_EVMC_REVISION(call);
 
 MONAD_NAMESPACE_END

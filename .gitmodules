@@ -9,7 +9,7 @@
 	url = https://github.com/ethereum/tests
 [submodule "third_party/evmone"]
 	path = third_party/evmone
-	url = https://github.com/monad-crypto/evmone.git
+	url = git@github.com:monad-crypto/evmone.git
 [submodule "third_party/execution-specs"]
 	path = third_party/execution-specs
 	url = https://github.com/ethereum/execution-specs.git

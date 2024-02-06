@@ -104,6 +104,7 @@ add_library(
   "include/monad/core/transaction_rlp.hpp"
   "include/monad/core/transaction.hpp"
   "include/monad/core/variant.hpp"
+  "include/monad/core/withdrawal_fmt.hpp"
   "include/monad/core/withdrawal_rlp.hpp"
   "include/monad/core/withdrawal.hpp"
   "src/monad/core/account_rlp.cpp"

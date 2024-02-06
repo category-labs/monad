@@ -109,6 +109,9 @@ public:
 
             if (auto const result = static_validate_block<Traits::rev>(block);
                 result.has_error()) {
+                LOG_ERROR(
+                    "Block validation error: {}",
+                    result.assume_error().value());
                 return Result{
                     Status::BLOCK_VALIDATION_FAILED, current_block_number};
             }

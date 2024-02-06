@@ -37,7 +37,9 @@ struct fmt::formatter<monad::BlockHeader> : public monad::BasicFormatter
             "Gas Limit={} "
             "Gas Used={} "
             "Timestamp={} "
-            "Extra Data=0x{:02x}"
+            "Extra Data=0x{:02x} "
+            "Base Fee Per Gas={} "
+            "Withdrawal Root={}"
             "}}",
             bh.parent_hash,
             bh.ommers_hash,
@@ -51,7 +53,9 @@ struct fmt::formatter<monad::BlockHeader> : public monad::BasicFormatter
             bh.gas_limit,
             bh.gas_used,
             bh.timestamp,
-            fmt::join(std::as_bytes(std::span(bh.extra_data)), ""));
+            fmt::join(std::as_bytes(std::span(bh.extra_data)), ""),
+            bh.base_fee_per_gas,
+            bh.withdrawals_root);
         return ctx.out();
     }
 };

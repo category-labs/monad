@@ -22,6 +22,9 @@ struct Account
 static_assert(sizeof(Account) == 80);
 static_assert(alignof(Account) == 8);
 
+static_assert(sizeof(std::optional<Account>) == 88);
+static_assert(alignof(std::optional<Account>) == 8);
+
 // YP (14)
 inline constexpr bool is_empty(Account const &account)
 {

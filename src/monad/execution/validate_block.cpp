@@ -153,7 +153,9 @@ constexpr Result<void> static_validate_body(Block const &block)
 
     // EIP-4895
     if constexpr (rev < EVMC_SHANGHAI) {
-        if (MONAD_UNLIKELY(block.withdrawals.has_value())) {
+        if (MONAD_UNLIKELY(
+                block.withdrawals.has_value() &&
+                !block.withdrawals.value().empty())) {
             return BlockError::FieldBeforeFork;
         }
     }

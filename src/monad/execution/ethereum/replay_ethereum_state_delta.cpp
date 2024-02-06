@@ -282,11 +282,10 @@ int main(int argc, char *argv[])
 
     for (auto &delta_file : state_delta_files) {
         std::string delta_json_filename = unzip_json(delta_file);
-        if (!process_file_and_commit_to_db(db, block_db, delta_file)) {
+        if (!process_file_and_commit_to_db(db, block_db, delta_json_filename)) {
             return 1;
         }
-        // 2. delete the json
-        run_command("rm " + delta_json_filename);
+        run_command("rm " + delta_file);
     }
 
     // TODO end log

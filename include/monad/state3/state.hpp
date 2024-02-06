@@ -12,6 +12,7 @@
 #include <monad/core/receipt.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/account_state.hpp>
+#include <monad/state3/version_stack.hpp>
 
 #include <evmc/evmc.h>
 
@@ -25,7 +26,6 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <optional>
 #include <utility>
 
@@ -33,47 +33,16 @@ MONAD_NAMESPACE_BEGIN
 
 class State
 {
-    template <typename T>
-    using Version = std::pair<unsigned, T>;
-
-    template <typename T>
-    using Stack = std::deque<T>;
-
     template <typename K, typename V>
     using Map = ankerl::unordered_dense::segmented_map<K, V>;
-
-    template <typename K>
-    using Set = ankerl::unordered_dense::segmented_set<K>;
-
-    template <typename T>
-    static inline constexpr T const &recent(Stack<Version<T>> const &stack)
-    {
-        MONAD_ASSERT(stack.size());
-
-        return stack.back().second;
-    }
-
-    template <typename T>
-    static inline constexpr T &
-    current(Stack<Version<T>> &stack, unsigned const version)
-    {
-        MONAD_ASSERT(stack.size());
-
-        if (version > stack.back().first) {
-            T copy = stack.back().second;
-            stack.emplace_back(version, std::move(copy));
-        }
-
-        return stack.back().second;
-    }
 
     BlockState &block_state_;
 
     Map<Address, AccountState> original_{};
 
-    Map<Address, Stack<Version<AccountState>>> state_{};
+    Map<Address, VersionStack<AccountState>> state_{};
 
-    Stack<Version<std::vector<Receipt::Log>>> logs_{};
+    VersionStack<std::vector<Receipt::Log>> logs_{{}};
 
     Map<bytes32_t, byte_string> code_{};
 
@@ -95,7 +64,7 @@ class State
         // state
         auto const it = state_.find(address);
         if (it != state_.end()) {
-            return recent(it->second);
+            return it->second.recent();
         }
         // original
         return original_account_state(address);
@@ -108,10 +77,9 @@ class State
         if (MONAD_UNLIKELY(it == state_.end())) {
             // original
             auto const &account_state = original_account_state(address);
-            it = state_.try_emplace(address).first;
-            it->second.emplace_back(version_, account_state);
+            it = state_.try_emplace(address, account_state, version_).first;
         }
-        return current(it->second, version_);
+        return it->second.current(version_);
     }
 
     std::optional<Account> &current_account(Address const &address)
@@ -125,7 +93,6 @@ public:
     State(BlockState &block_state)
         : block_state_{block_state}
     {
-        logs_.emplace_back(0, std::vector<Receipt::Log>{});
     }
 
     State(State &&) = delete;
@@ -143,35 +110,10 @@ public:
         MONAD_ASSERT(version_);
 
         for (auto it = state_.begin(); it != state_.end(); ++it) {
-            auto const size = it->second.size();
-            MONAD_ASSERT(size);
-            if (version_ == it->second.back().first) {
-                if (size > 1 && (it->second[size - 2].first + 1) ==
-                                    it->second[size - 1].first) {
-                    it->second[size - 2].second = it->second[size - 1].second;
-                    it->second.pop_back();
-                }
-                else {
-                    it->second.back().first = version_ - 1;
-                }
-            }
+            it->second.pop_accept(version_);
         }
 
-        // logs
-        {
-            auto const size = logs_.size();
-            MONAD_ASSERT(size);
-            if (version_ == logs_.back().first) {
-                if (size > 1 &&
-                    (logs_[size - 2].first + 1) == logs_[size - 1].first) {
-                    logs_[size - 2].second = logs_[size - 1].second;
-                    logs_.pop_back();
-                }
-                else {
-                    logs_.back().first = version_ - 1;
-                }
-            }
-        }
+        logs_.pop_accept(version_);
 
         --version_;
     }
@@ -183,24 +125,12 @@ public:
         std::vector<Address> removals;
 
         for (auto it = state_.begin(); it != state_.end(); ++it) {
-            auto const size = it->second.size();
-            MONAD_ASSERT(size);
-            if (version_ == it->second.back().first) {
-                it->second.pop_back();
-                if (it->second.empty()) {
-                    removals.push_back(it->first);
-                }
+            if (it->second.pop_reject(version_)) {
+                removals.push_back(it->first);
             }
         }
 
-        // logs
-        {
-            auto const size = logs_.size();
-            MONAD_ASSERT(size);
-            if (version_ == logs_.back().first) {
-                logs_.pop_back();
-            }
-        }
+        logs_.pop_reject(version_);
 
         while (removals.size()) {
             state_.erase(removals.back());
@@ -275,7 +205,7 @@ public:
             return it3->second;
         }
         else {
-            auto const &account_state = recent(it->second);
+            auto const &account_state = it->second.recent();
             auto const &account = account_state.account_;
             MONAD_ASSERT(account.has_value());
             auto const &storage = account_state.storage_;
@@ -431,8 +361,8 @@ public:
         for (auto it = state_.begin(); it != state_.end(); ++it) {
             auto &stack = it->second;
             MONAD_ASSERT(stack.size() == 1);
-            MONAD_ASSERT(stack[0].first == 0);
-            auto &account_state = stack[0].second;
+            MONAD_ASSERT(stack.version() == 0);
+            auto &account_state = stack.current(0);
             if (account_state.is_destructed()) {
                 auto &account = account_state.account_;
                 account.reset();
@@ -448,8 +378,8 @@ public:
         for (auto it = state_.begin(); it != state_.end(); ++it) {
             auto &stack = it->second;
             MONAD_ASSERT(stack.size() == 1);
-            MONAD_ASSERT(stack[0].first == 0);
-            auto &account_state = stack[0].second;
+            MONAD_ASSERT(stack.version() == 0);
+            auto &account_state = stack.current(0);
             if (MONAD_LIKELY(!account_state.is_touched())) {
                 continue;
             }
@@ -559,12 +489,12 @@ public:
 
     std::vector<Receipt::Log> const &logs()
     {
-        return recent(logs_);
+        return logs_.recent();
     }
 
     void store_log(Receipt::Log const &log)
     {
-        auto &logs = current(logs_, version_);
+        auto &logs = logs_.current(version_);
         logs.push_back(log);
     }
 };

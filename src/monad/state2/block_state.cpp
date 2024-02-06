@@ -126,8 +126,8 @@ void BlockState::merge(State const &state)
     for (auto it = state.state_.begin(); it != state.state_.end(); ++it) {
         auto const &stack = it->second;
         MONAD_ASSERT(stack.size() == 1);
-        MONAD_ASSERT(stack[0].first == 0);
-        auto const &account_state = stack[0].second;
+        MONAD_ASSERT(stack.version() == 0);
+        auto const &account_state = stack.recent();
         auto const &account = account_state.account_;
         if (account.has_value()) {
             code_hashes.insert(account.value().code_hash);
@@ -145,7 +145,7 @@ void BlockState::merge(State const &state)
     for (auto it = state.state_.begin(); it != state.state_.end(); ++it) {
         auto const &address = it->first;
         auto const &stack = it->second;
-        auto const &account_state = stack[0].second;
+        auto const &account_state = stack.recent();
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
         StateDeltas::accessor it2{};

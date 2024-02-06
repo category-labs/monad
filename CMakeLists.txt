@@ -173,6 +173,7 @@ add_library(
   "include/monad/state3/account_state.hpp"
   "include/monad/state3/account_substate.hpp"
   "include/monad/state3/state.hpp"
+  "include/monad/state3/version_stack.hpp"
   "src/monad/state3/account_state.cpp"
   "src/monad/state3/state.cpp")
 

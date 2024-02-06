@@ -13,33 +13,6 @@ include(cmake/test.cmake)
 # deps
 # ##############################################################################
 
-add_subdirectory("monad-core")
-add_subdirectory("monad-trie")
-
-find_package(Boost REQUIRED COMPONENTS fiber graph json)
-find_package(PkgConfig REQUIRED)
-find_package(absl REQUIRED)
-pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
-
-# evmone
-set(BUILD_SHARED_LIBS OFF)
-add_subdirectory(third_party/evmone)
-# always compile baseline with optimization due to stack size of dispatch_cgoto
-set_source_files_properties(
-  third_party/evmone/lib/evmone/baseline.cpp TARGET_DIRECTORY evmone
-  PROPERTIES COMPILE_OPTIONS -O2)
-
-# intx
-add_subdirectory(third_party/intx)
-
-# silkpre
-set(OPTIONAL_BUILD_TESTS OFF)
-add_subdirectory(third_party/silkpre)
-
-# tbb
-find_package(TBB PATHS "/opt/intel/oneapi/tbb/2021.11/" NO_DEFAULT_PATH QUIET)
-find_package(TBB REQUIRED)
-
 function(monad_compile_options target)
   monad_core_compile_options(${target})
 
@@ -64,6 +37,50 @@ function(monad_compile_options target)
     target_compile_definitions(${target} PUBLIC EVMONE_TRACING=1)
   endif()
 endfunction()
+
+add_subdirectory("monad-core")
+add_subdirectory("monad-trie")
+
+# TODO: merge monad with monad_evm
+add_library(monad_evm STATIC 
+  "include/monad/core/int.hpp"
+  "include/monad/evm/arithmetic.hpp"
+  "include/monad/evm/config.hpp"
+  "include/monad/evm/stack_pointer.hpp"
+  "src/monad/evm/stack_pointer.cpp"
+)
+target_include_directories(
+  monad_evm
+  PUBLIC ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(
+  monad_evm
+  PUBLIC intx::intx)
+monad_compile_options(monad_evm)
+target_link_options(monad_evm PRIVATE LINKER:-z,defs)
+
+find_package(Boost REQUIRED COMPONENTS fiber graph json)
+find_package(PkgConfig REQUIRED)
+find_package(absl REQUIRED)
+pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
+
+# evmone
+set(BUILD_SHARED_LIBS OFF)
+add_subdirectory(third_party/evmone)
+# always compile baseline with optimization due to stack size of dispatch_cgoto
+set_source_files_properties(
+  third_party/evmone/lib/evmone/baseline.cpp TARGET_DIRECTORY evmone
+  PROPERTIES COMPILE_OPTIONS -O2)
+
+# intx
+add_subdirectory(third_party/intx)
+
+# silkpre
+set(OPTIONAL_BUILD_TESTS OFF)
+add_subdirectory(third_party/silkpre)
+
+# tbb
+find_package(TBB PATHS "/opt/intel/oneapi/tbb/2021.11/" NO_DEFAULT_PATH QUIET)
+find_package(TBB REQUIRED)
 
 # ##############################################################################
 # libs

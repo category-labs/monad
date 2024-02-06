@@ -64,6 +64,7 @@ function(monad_compile_options target)
   endif()
 endfunction()
 
+
 # ##############################################################################
 # libs
 # ##############################################################################
@@ -127,6 +128,43 @@ add_library(
   "src/monad/db/file_db.cpp"
   "src/monad/db/trie_db.cpp"
   "src/monad/db/util.cpp"
+  # evm
+  "include/monad/core/int.hpp"
+  "include/monad/evm/arithmetic.hpp"
+  "include/monad/evm/bitwise.hpp"
+  "include/monad/evm/block_info.hpp"
+  "include/monad/evm/call_parameters.hpp"
+  "include/monad/evm/code_analysis.hpp"
+  "include/monad/evm/comparison.hpp"
+  "include/monad/evm/config.hpp"
+  "include/monad/evm/dup.hpp"
+  "include/monad/evm/environmental.hpp"
+  "include/monad/evm/execute.hpp"
+  "include/monad/evm/execution_environment.hpp"
+  "include/monad/evm/execution_state.hpp"
+  "include/monad/evm/explicit_revision.hpp"
+  "include/monad/evm/fee_schedule.hpp"
+  "include/monad/evm/machine_state.hpp"
+  "include/monad/evm/memory.hpp"
+  "include/monad/evm/opcodes.hpp"
+  "include/monad/evm/push.hpp"
+  "include/monad/evm/revision.hpp"
+  "include/monad/evm/sha3.hpp"
+  "include/monad/evm/stack_pointer.hpp"
+  "include/monad/evm/stack_memory_storage_flow.hpp"
+  "include/monad/evm/status.hpp"
+  "include/monad/evm/storage_status.hpp"
+  "include/monad/evm/swap.hpp"
+  "include/monad/evm/system.hpp"
+  "include/monad/evm/system_state.hpp"
+  "include/monad/evm/trait.hpp"
+  "include/monad/evm/words.hpp"
+  "src/monad/evm/execute.cpp"
+  "src/monad/evm/code_analysis.cpp"
+  "src/monad/evm/execution_state.cpp"
+  "src/monad/evm/memory.cpp"
+  "src/monad/evm/stack_pointer.cpp"
+  "src/monad/evm/system_state.cpp"
   # execution
   "include/monad/execution/baseline_execute.hpp"
   "include/monad/execution/block_hash_buffer.hpp"

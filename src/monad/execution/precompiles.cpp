@@ -2,6 +2,9 @@
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/likely.h>
+#include <monad/evm/call_parameters.hpp>
+#include <monad/evm/explicit_revision.hpp>
+#include <monad/evm/status.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/precompiles.hpp>
 
@@ -98,5 +101,44 @@ std::optional<evmc::Result> check_call_precompile(evmc_message const &msg)
 }
 
 EXPLICIT_EVMC_REVISION(check_call_precompile);
+
+// TODO: consolidate
+template <evm::Revision rev>
+std::optional<PrecompileResult>
+check_call_precompile(evm::CallParameters const &params)
+{
+    auto const &address = params.code_address;
+    constexpr auto evmc_rev =
+        static_cast<evmc_revision>(std::to_underlying(rev));
+    if (!is_precompile<evmc_rev>(address)) {
+        return std::nullopt;
+    }
+
+    auto const i = address.bytes[sizeof(address.bytes) - 1];
+
+    auto const gas_func = kSilkpreContracts[i - 1].gas;
+
+    auto const cost =
+        gas_func(params.input_data.data(), params.input_data.size(), evmc_rev);
+
+    if (MONAD_UNLIKELY(std::cmp_less(params.gas, cost))) {
+        return std::make_tuple(evm::Status::OutOfGas, 0, byte_string{});
+    }
+
+    auto const run_func = kSilkpreContracts[i - 1].run;
+
+    auto const output =
+        run_func(params.input_data.data(), params.input_data.size());
+
+    if (MONAD_UNLIKELY(!output.data)) {
+        return std::make_tuple(
+            evm::Status::PrecompileFailure, 0, byte_string{});
+    }
+
+    return std::make_tuple(
+        evm::Status::Success, cost, byte_string{output.data, output.size});
+}
+
+EXPLICIT_REVISION(check_call_precompile);
 
 MONAD_NAMESPACE_END

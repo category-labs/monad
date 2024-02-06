@@ -1,10 +1,15 @@
 #include <monad/config.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
+#include <monad/evm/call_parameters.hpp>
+#include <monad/evm/revision.hpp>
+#include <monad/evm/status.hpp>
+#include <monad/evm/system_state.hpp>
 #include <monad/execution/baseline_execute.hpp>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/execution/create_contract_address.hpp>
@@ -28,6 +33,37 @@
 #include <utility>
 
 MONAD_NAMESPACE_BEGIN
+
+evm::Status check_sender_balance(
+    evm::CallParameters const &params, evm::SystemState &sstate) noexcept
+{
+    auto const balance =
+        intx::be::load<uint256_t>(sstate.state().get_balance(params.sender));
+    if (balance < params.value) {
+        return evm::Status::InsufficientBalance;
+    }
+    return evm::Status::Success;
+}
+
+void transfer_balances(
+    evm::CallParameters const &params, evm::SystemState &sstate,
+    Address const &to) noexcept
+{
+    sstate.state().subtract_from_balance(params.sender, params.value);
+    sstate.state().add_to_balance(to, params.value);
+}
+
+evm::Status transfer_call_balances(
+    evm::CallParameters const &params, evm::SystemState &sstate)
+{
+    MONAD_ASSERT(params.can_modify_state);
+    if (auto const status = check_sender_balance(params, sstate);
+        status != evm::Status::Success) {
+        return status;
+    }
+    transfer_balances(params, sstate, params.recipient);
+    return evm::Status::Success;
+}
 
 std::optional<evmc::Result>
 check_sender_balance(State &state, evmc_message const &msg) noexcept
@@ -290,8 +326,25 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
         result = std::move(maybe_result.value());
     }
     else {
-        auto const code = state.get_code(msg.code_address);
-        result = baseline_execute(msg, rev, host, *code);
+        auto const code = state.get_code(msg.code_address)->executable_code;
+
+        // TODO
+        MONAD_ASSERT(msg.gas >= 0);
+        BlockHeader header;
+        result =
+            monad_execute<static_cast<evm::Revision>(std::to_underlying(rev))>(
+                state,
+                header,
+                code,
+                msg.sender,
+                msg.sender,
+                msg.recipient,
+                static_cast<uint64_t>(msg.gas),
+                std::bit_cast<uint256_t>(msg.value),
+                std::bit_cast<uint256_t>(host->get_tx_context().tx_gas_price),
+                byte_string_view{msg.input_data, msg.input_size},
+                0,
+                true);
     }
 
     post_call(state, result);

@@ -16,6 +16,12 @@
 
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Provision node
+  # - name: Set a hostname
+  #   ansible.builtin.hostname:
+  #     name: "{{ inventory_hostname }}"
+
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Provision node
   - ansible.builtin.import_tasks:
       file: provision.yml
 

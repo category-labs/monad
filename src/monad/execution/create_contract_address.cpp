@@ -1,9 +1,9 @@
 #include <monad/config.hpp>
 #include <monad/core/address.hpp>
-#include <monad/core/address_rlp.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/core/int_rlp.hpp>
+#include <monad/core/rlp/address_rlp.hpp>
+#include <monad/core/rlp/int_rlp.hpp>
 #include <monad/rlp/encode2.hpp>
 
 #include <ethash/hash_types.hpp>

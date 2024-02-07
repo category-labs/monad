@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/rlp/config.hpp>

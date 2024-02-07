@@ -1,6 +1,6 @@
 #include <monad/core/block.hpp>
-#include <monad/core/block_rlp.hpp>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/rlp/block_rlp.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/db/block_db.hpp>
 

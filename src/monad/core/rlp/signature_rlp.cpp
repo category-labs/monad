@@ -1,8 +1,8 @@
 #include <monad/core/byte_string.hpp>
-#include <monad/core/int_rlp.hpp>
 #include <monad/core/result.hpp>
+#include <monad/core/rlp/int_rlp.hpp>
+#include <monad/core/rlp/signature_rlp.hpp>
 #include <monad/core/signature.hpp>
-#include <monad/core/signature_rlp.hpp>
 #include <monad/rlp/config.hpp>
 
 #include <boost/outcome/try.hpp>

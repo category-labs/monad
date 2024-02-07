@@ -4,8 +4,8 @@
 
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/core/transaction.hpp>
-#include <monad/core/transaction_rlp.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/validate_transaction.hpp>
 #include <monad/test/config.hpp>

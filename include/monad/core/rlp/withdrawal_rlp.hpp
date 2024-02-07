@@ -1,6 +1,5 @@
 #pragma once
 
-#include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/result.hpp>
 #include <monad/core/withdrawal.hpp>

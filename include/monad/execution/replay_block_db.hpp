@@ -3,7 +3,7 @@
 #include <monad/config.hpp>
 #include <monad/core/basic_formatter.hpp>
 #include <monad/core/block.hpp>
-#include <monad/core/bytes_fmt.hpp>
+#include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>

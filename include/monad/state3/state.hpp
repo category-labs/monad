@@ -3,12 +3,12 @@
 #include <monad/config.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
-#include <monad/core/address_fmt.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/core/bytes_fmt.hpp>
-#include <monad/core/int_fmt.hpp>
+#include <monad/core/fmt/address_fmt.hpp>
+#include <monad/core/fmt/bytes_fmt.hpp>
+#include <monad/core/fmt/int_fmt.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/account_state.hpp>

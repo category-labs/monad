@@ -1,12 +1,12 @@
 #pragma once
 
-#include <monad/core/address_fmt.hpp>
 #include <monad/core/basic_formatter.hpp>
 #include <monad/core/block.hpp>
-#include <monad/core/bytes_fmt.hpp>
-#include <monad/core/int_fmt.hpp>
-#include <monad/core/receipt_fmt.hpp>
-#include <monad/core/transaction_fmt.hpp>
+#include <monad/core/fmt/address_fmt.hpp>
+#include <monad/core/fmt/bytes_fmt.hpp>
+#include <monad/core/fmt/int_fmt.hpp>
+#include <monad/core/fmt/receipt_fmt.hpp>
+#include <monad/core/fmt/transaction_fmt.hpp>
 
 #include <quill/Quill.h>
 #include <quill/bundled/fmt/format.h>

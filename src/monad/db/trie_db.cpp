@@ -1,6 +1,6 @@
-#include <monad/core/bytes_fmt.hpp>
+#include <monad/core/fmt/bytes_fmt.hpp>
+#include <monad/core/fmt/int_fmt.hpp>
 #include <monad/core/int.hpp>
-#include <monad/core/int_fmt.hpp>
 #include <monad/core/rlp/account_rlp.hpp>
 #include <monad/core/unaligned.hpp>
 #include <monad/db/config.hpp>

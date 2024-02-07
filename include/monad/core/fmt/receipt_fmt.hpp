@@ -1,8 +1,8 @@
 #pragma once
 
-#include <monad/core/address_fmt.hpp>
 #include <monad/core/basic_formatter.hpp>
-#include <monad/core/bytes_fmt.hpp>
+#include <monad/core/fmt/address_fmt.hpp>
+#include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/receipt.hpp>
 
 template <>

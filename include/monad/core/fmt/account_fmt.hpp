@@ -2,8 +2,8 @@
 
 #include <monad/core/account.hpp>
 #include <monad/core/basic_formatter.hpp>
-#include <monad/core/bytes_fmt.hpp>
-#include <monad/core/int_fmt.hpp>
+#include <monad/core/fmt/bytes_fmt.hpp>
+#include <monad/core/fmt/int_fmt.hpp>
 
 template <>
 struct quill::copy_loggable<monad::Account> : std::true_type

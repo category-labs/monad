@@ -1,7 +1,7 @@
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
-#include <monad/core/block_fmt.hpp>
+#include <monad/core/fmt/block_fmt.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>

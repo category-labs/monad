@@ -1,0 +1,167 @@
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Install GCC
+  - name: Add Ubuntu Toolchain
+    ansible.builtin.apt_repository:
+      repo: ppa:ubuntu-toolchain-r/test
+      state: present
+      update_cache: yes
+
+  - name: Install GCC
+    vars:
+      gcc_version: 13
+    ansible.builtin.apt:
+      name:
+      - gcc-{{ gcc_version }}
+      - g++-{{ gcc_version }}
+
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Install CLang
+  - name: Add LLVM repository key
+    ansible.builtin.get_url:
+      url: "https://apt.llvm.org/llvm-snapshot.gpg.key"
+      dest: /etc/apt/trusted.gpg.d/llvm-snapshot.asc
+      mode: '0644'
+      force: true
+
+  - name: Add LLVM apt repository
+    ansible.builtin.apt_repository:
+      repo: 'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy main'
+      state: present
+      update_cache: yes
+
+    # - name: Install clang
+    #   vars:
+    #     llvm_version: 18
+    #   ansible.builtin.apt:
+    #     name:
+    #     - clang-tidy-{{ llvm_version }}
+    #     - clang-format-{{ llvm_version }}
+    #     - clang-tools-{{ llvm_version }}
+    #     - llvm-{{ llvm_version }}-dev
+    #     - lld-{{ llvm_version }}
+    #     - lldb-{{ llvm_version }}
+    #     - llvm-{{ llvm_version }}-tools
+    #     - libomp-{{ llvm_version }}-dev
+    #     - libc++-{{ llvm_version }}-dev
+    #     - libc++abi-{{ llvm_version }}-dev
+    #     - libclang-common-{{ llvm_version }}-dev
+    #     - libclang-{{ llvm_version }}-dev
+    #     - libclang-cpp{{ llvm_version }}-dev
+    #     - libunwind-{{ llvm_version }}-dev
+
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Install Boost
+  - name: Add Boost PPA repository
+    ansible.builtin.apt_repository:
+      repo: ppa:mhier/libboost-latest
+      state: present
+      update_cache: yes
+
+  - name: Install Boost libraries
+    vars:
+      libboost_version: 1.83
+    ansible.builtin.apt:
+      name:
+      - libboost-fiber{{ libboost_version }}.0
+      - libboost-graph{{ libboost_version }}.0
+      - libboost-json{{ libboost_version }}.0
+      - libboost-stacktrace{{ libboost_version }}.0
+      - libboost-fiber{{ libboost_version }}-dev
+      - libboost-graph{{ libboost_version }}-dev
+      - libboost-json{{ libboost_version }}-dev
+      - libboost-stacktrace{{ libboost_version }}-dev
+      - libboost{{ libboost_version }}-dev
+
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Install CMake
+  - name: Add kitware apt-key
+    ansible.builtin.get_url:
+      url: https://apt.kitware.com/keys/kitware-archive-latest.asc
+      dest: /etc/apt/trusted.gpg.d/kitware-archive-latest.asc
+      mode: '0644'
+      force: true
+
+  - name: Add kitware repo
+    ansible.builtin.apt_repository:
+      repo: deb https://apt.kitware.com/ubuntu/ jammy main
+      state: present
+
+  - name: Install CMake
+    ansible.builtin.apt:
+      name:
+      - kitware-archive-keyring
+      - cmake
+      state: latest
+
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Install Tools
+  - name: Install tools
+    ansible.builtin.apt:
+      name:
+      - gdb
+      - ninja-build
+      - pkg-config
+      - python3-pytest
+      - valgrind
+
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Install Deps
+  - name: Install deps
+    ansible.builtin.apt:
+      name:
+      - libabsl-dev
+      - libbenchmark-dev
+      - libgmock-dev
+      - libgtest-dev
+      - libmimalloc-dev
+      - liburing-dev
+      - libtbb-dev
+      - linux-tools-common
+      - linux-tools-{{ ansible_kernel }}
+      - bpfcc-tools
+
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Create systemd service unit to configure hugepages on boot
+  - name: Create hugepages.sh
+    ansible.builtin.copy:
+      src: "./hugepages.sh"
+      dest: "/usr/lib/systemd/system/hugepages.sh"
+      mode: 0755
+
+  - name: Extract package
+    ansible.builtin.copy:
+      src: "./hugepages.service"
+      dest: "/usr/lib/systemd/system/hugepages.service"
+
+  - name: Start Hugepages
+    ansible.builtin.systemd:
+      name: hugepages
+      state: started
+
+  - name: Enable Hugepages
+    ansible.builtin.systemd:
+      name: hugepages
+      enabled: true
+      state: started
+
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  - name: kernel.kptr_restrict=0
+    ansible.posix.sysctl:
+      name: kernel.kptr_restrict
+      value: 0
+
+  - name: kernel.perf_event_paranoid=0
+    ansible.posix.sysctl:
+      name: kernel.perf_event_paranoid
+      value: 0
+
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  - name: Cronjob to reboot machine on Sunday @ 2am
+    ansible.builtin.cron:
+      name: Reboot node on Sunday @ 2am
+      weekday: "0"
+      minute: "0"
+      hour: "2"
+      user: root
+      job: "/usr/sbin/shutdown -r"
+

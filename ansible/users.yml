@@ -19,6 +19,7 @@
       uid: "1014"
       ssh_keys:
       - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDwtjdcMKWZId3R/msMgmLR9yCldRNbUObOjNBH0NDKjp8AycVgW8LWvQxC1of/Jh2sVlmZAUVQRraXN4BJKiIr8zFJcCtxc5kVC+saPmnbDajozPxr9e2HjrLzfaGBbxQQE1QHOmsVQbMGOZOOSyZi44fLyeV3rGJn4AVX4/pXzRBrhjifVt6MPwV+1UlZJJxCMfuxkkBKIM3OTjbe2UPQZgSxAfM1dvIedk8mLOn37WgnHyfZxl+nnbnkM+74CbEeMb9k/skRkH1apOV/uuz86b7PKWdM185kNjOuD3D5xjoL2ah5gc9gp+Nz+HTd8ljf153dHg2N7isGiw7MNXHqu3IAuD4mQrKx4nO8SxyvvssPGp022UbBBL0erUUG1DiUo5RL7BvSEjoA1NvzajcgOCd79srfWODlarybOjOI8ilofztBMs6kdZ2oWuhLuId1sZqbgXNpHfEjuHQGyeB1wvSb444ZfaRxtNu0tk9WdaWaPnX1ygOEl8yOOJmThEM= alexanderlee@Alexanders-MacBook-Pro.local"
+      - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDGjOsZeR8+VHq8WFhvwVR5VmAO1zaal24hok37rcavcElMY93A/XEdU6nnNSa5mc3Ti2Rit551m/V6nD4SF2A6I/M47imN9R6gEQIgT1gO0zPiGGYJ3wtjciP3GCs2MZj7zliXpglhW5/Kt59LXqtuj802KSgDx8XoVp/6l0e8+ddgzKSyeOeE3sPO+p8XROoXnqucWn74lYecPy/d2Rq4v2iNqvJ/xGnS++ABXUwJeQfqbLg2SO9i1lykqSb2BiJgYQNzF6JYla+vCi1iz2bLI4tCJ+shzIFy5oW0m9kN8ewO/uPBNn4/n2y1JgMh/GuFVNROdTlKEJZSVfBiXwidFUoLu+RzQSu3rb2ApfvwXqqj1UKMgjsCPRdgCU6TvapUh/67gSyjE8VJzpCvmolEHhiDvGD8y/L+k8bThHfDGEXcOXAg2ytFNtM91yfVGJfLM8Lqpx2tGhcJABV8UaC6iMTzfzcUQ9domEHKJtXRaLPjig/HZPGr4zyKOrIEUlU= alee@peach4.spacetime.org"
     - username: mchen
       uid: "1025"
       ssh_keys:
@@ -65,3 +66,12 @@
    - "{{ users }}"
    - ssh_keys
    - skip_missing: True
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+# Remove user
+# - name: Remove User
+#   ansible.builtin.user:
+#     name: "{{ item.username }}"
+#     state: absent
+#     remove: yes
+#   with_items: "{{ users }}"

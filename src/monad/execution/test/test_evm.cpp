@@ -33,7 +33,8 @@ using evm_host_t = EvmcHost<EVMC_SHANGHAI>;
 TEST(Evm, create_with_insufficient)
 {
     db_t db{std::nullopt};
-    BlockState bs{db};
+    LruCache lru(db);
+    BlockState bs{db, &lru};
     State s{bs};
 
     static constexpr auto from{
@@ -65,7 +66,8 @@ TEST(Evm, create_with_insufficient)
 TEST(Evm, eip684_existing_code)
 {
     db_t db{std::nullopt};
-    BlockState bs{db};
+    LruCache lru(db);
+    BlockState bs{db, &lru};
     State s{bs};
 
     static constexpr auto from{
@@ -104,7 +106,8 @@ TEST(Evm, eip684_existing_code)
 TEST(Evm, transfer_call_balances)
 {
     db_t db{std::nullopt};
-    BlockState bs{db};
+    LruCache lru(db);
+    BlockState bs{db, &lru};
     State s{bs};
 
     static constexpr auto from{
@@ -140,7 +143,8 @@ TEST(Evm, transfer_call_balances)
 TEST(Evm, transfer_call_balances_to_self)
 {
     db_t db{std::nullopt};
-    BlockState bs{db};
+    LruCache lru(db);
+    BlockState bs{db, &lru};
     State s{bs};
 
     static constexpr auto from{
@@ -173,7 +177,8 @@ TEST(Evm, transfer_call_balances_to_self)
 TEST(Evm, dont_transfer_on_delegatecall)
 {
     db_t db{std::nullopt};
-    BlockState bs{db};
+    LruCache lru(db);
+    BlockState bs{db, &lru};
     State s{bs};
 
     static constexpr auto from{
@@ -210,7 +215,8 @@ TEST(Evm, dont_transfer_on_delegatecall)
 TEST(Evm, dont_transfer_on_staticcall)
 {
     db_t db{std::nullopt};
-    BlockState bs{db};
+    LruCache lru(db);
+    BlockState bs{db, &lru};
     State s{bs};
 
     static constexpr auto from{
@@ -248,7 +254,8 @@ TEST(Evm, dont_transfer_on_staticcall)
 TEST(Evm, create_nonce_out_of_range)
 {
     db_t db{std::nullopt};
-    BlockState bs{db};
+    LruCache lru(db);
+    BlockState bs{db, &lru};
     State s{bs};
 
     static constexpr auto from{
@@ -287,7 +294,8 @@ TEST(Evm, create_nonce_out_of_range)
 TEST(Evm, static_precompile_execution)
 {
     db_t db{std::nullopt};
-    BlockState bs{db};
+    LruCache lru(db);
+    BlockState bs{db, &lru};
     State s{bs};
 
     static constexpr auto from{
@@ -332,7 +340,8 @@ TEST(Evm, static_precompile_execution)
 TEST(Evm, out_of_gas_static_precompile_execution)
 {
     db_t db{std::nullopt};
-    BlockState bs{db};
+    LruCache lru(db);
+    BlockState bs{db, &lru};
     State s{bs};
 
     static constexpr auto from{
@@ -378,7 +387,8 @@ TEST(Evm, deploy_contract_code)
     db.commit(
         StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
-    BlockState bs{db};
+    LruCache lru(db);
+    BlockState bs{db, &lru};
 
     // Frontier
     {

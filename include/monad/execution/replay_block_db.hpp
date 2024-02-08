@@ -13,6 +13,7 @@
 #include <monad/execution/genesis.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
+#include <monad/lru/lru_cache.hpp>
 #include <monad/state2/block_state.hpp>
 
 #include <nlohmann/json.hpp>
@@ -87,7 +88,8 @@ public:
 
     template <class Traits>
     Result run_fork(
-        Db &db, BlockDb &block_db, std::filesystem::path const &root_path,
+        Db &db, BlockDb &block_db, LruCache *lru,
+        std::filesystem::path const &root_path,
         BlockHashBuffer &block_hash_buffer, fiber::PriorityPool &priority_pool,
         std::optional<uint64_t> const checkpoint_frequency,
         block_num_t current_block_number,
@@ -117,8 +119,7 @@ public:
             }
 
             auto const receipts = execute_block<Traits::rev>(
-                block, db, block_hash_buffer, priority_pool);
-
+                block, db, lru, block_hash_buffer, priority_pool);
             n_transactions += block.transactions.size();
 
             if (!verify_root_hash(
@@ -148,6 +149,7 @@ public:
             return run_fork<typename Traits::next_fork_t>(
                 db,
                 block_db,
+                lru,
                 root_path,
                 block_hash_buffer,
                 priority_pool,
@@ -159,7 +161,8 @@ public:
 
     template <class Traits>
     Result
-    run(Db &db, BlockDb &block_db, fiber::PriorityPool &priority_pool,
+    run(Db &db, BlockDb &block_db, LruCache *lru,
+        fiber::PriorityPool &priority_pool,
         std::filesystem::path const &root_path,
         std::optional<uint64_t> const checkpoint_frequency,
         block_num_t const start_block_number,
@@ -191,6 +194,7 @@ public:
         return run_fork<Traits>(
             db,
             block_db,
+            lru,
             root_path,
             block_hash_buffer,
             priority_pool,

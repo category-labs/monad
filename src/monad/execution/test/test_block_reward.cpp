@@ -34,7 +34,8 @@ TEST(BlockReward, apply_block_reward)
             StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
             Code{});
 
-        BlockState bs{db};
+        LruCache lru(db);
+        BlockState bs{db, &lru};
         State as{bs};
 
         EXPECT_TRUE(as.account_exists(a));
@@ -63,7 +64,8 @@ TEST(BlockReward, apply_block_reward)
     // Byzantium
     {
         db_t db{std::nullopt};
-        BlockState bs{db};
+        LruCache lru(db);
+        BlockState bs{db, &lru};
         State as{bs};
         (void)as.get_balance(a);
 
@@ -93,7 +95,8 @@ TEST(BlockReward, apply_block_reward)
     // Constantinople_and_petersburg
     {
         db_t db{std::nullopt};
-        BlockState bs{db};
+        LruCache lru(db);
+        BlockState bs{db, &lru};
         State s{bs};
 
         Block const block{
@@ -121,7 +124,8 @@ TEST(BlockReward, apply_block_reward)
         block.header.beneficiary = a;
 
         db_t db{std::nullopt};
-        BlockState bs{db};
+        LruCache lru(db);
+        BlockState bs{db, &lru};
         State s{bs};
 
         apply_block_reward<EVMC_PARIS>(bs, block);

@@ -4,6 +4,7 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/fiber/priority_pool.hpp>
+#include <monad/lru/lru_cache.hpp>
 
 #include <evmc/evmc.h>
 
@@ -16,7 +17,7 @@ class BlockHashBuffer;
 struct Db;
 
 template <evmc_revision rev>
-Result<std::vector<Receipt>>
-execute_block(Block &, Db &, BlockHashBuffer const &, fiber::PriorityPool &);
+Result<std::vector<Receipt>> execute_block(
+    Block &, Db &, LruCache *, BlockHashBuffer const &, fiber::PriorityPool &);
 
 MONAD_NAMESPACE_END

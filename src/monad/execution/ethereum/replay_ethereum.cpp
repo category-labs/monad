@@ -157,11 +157,15 @@ int main(int argc, char *argv[])
 
     ReplayFromBlockDb<decltype(db)> replay_eth;
 
+    LruCache lru_cache(db);
+    LruCache *lru = &lru_cache; // Set to null to bypass LRU Cache
+
     auto const start_time = std::chrono::steady_clock::now();
 
     [[maybe_unused]] auto result = replay_eth.run<eth_start_fork>(
         db,
         block_db,
+        lru,
         priority_pool,
         state_db_path,
         checkpoint_frequency,

@@ -33,7 +33,8 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
         0x5353535353535353535353535353535353535353_address};
 
     db_t db{std::nullopt};
-    BlockState bs{db};
+    LruCache lru(db);
+    BlockState bs{db, &lru};
 
     {
         State state{bs};

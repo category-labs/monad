@@ -84,10 +84,10 @@ inline void commit(BlockState &block_state)
 
 template <evmc_revision rev>
 Result<std::vector<Receipt>> execute_block(
-    Block &block, Db &db, BlockHashBuffer const &block_hash_buffer,
+    Block &block, Db &db, LruCache *lru, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {
-    BlockState block_state{db};
+    BlockState block_state{db, lru};
 
     if constexpr (rev == EVMC_HOMESTEAD) {
         if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {

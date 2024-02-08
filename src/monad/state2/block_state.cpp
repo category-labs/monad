@@ -18,8 +18,9 @@
 
 MONAD_NAMESPACE_BEGIN
 
-BlockState::BlockState(Db &db)
+BlockState::BlockState(Db &db, LruCache *lru)
     : db_{db}
+    , lru_{lru}
     , state_{}
     , code_{}
 {
@@ -36,7 +37,9 @@ std::optional<Account> BlockState::read_account(Address const &address)
     }
     // database
     {
-        auto const result = db_.read_account(address);
+        auto const result = lru_ ?
+            lru_->read_account(address) : db_.read_account(address);
+
         StateDeltas::const_accessor it{};
         state_.emplace(
             it,
@@ -63,8 +66,10 @@ bytes32_t BlockState::read_storage(
     }
     // database
     {
-        auto const result =
-            incarnation == 0 ? db_.read_storage(address, key) : bytes32_t{};
+        auto const result = incarnation != 0 ? bytes32_t{} : lru_ ?
+            lru_->read_storage(address, key) :
+            db_.read_storage(address, key);
+
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_.find(it, address));
         auto &storage = it->second.storage;
@@ -166,6 +171,9 @@ void BlockState::merge(State const &state)
 
 void BlockState::commit()
 {
+    if (lru_) {
+        lru_->commit(state_);
+    }
     db_.commit(state_, code_);
 }
 

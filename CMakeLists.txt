@@ -159,6 +159,9 @@ add_library(
   "src/monad/execution/tx_context.cpp"
   "src/monad/execution/validate_block.cpp"
   "src/monad/execution/validate_transaction.cpp"
+  # lru
+  "include/monad/lru/lru_cache.hpp"
+  "src/monad/lru/lru_cache.cpp"
   # rlp
   "include/monad/rlp/config.hpp"
   "include/monad/rlp/decode_error.hpp"

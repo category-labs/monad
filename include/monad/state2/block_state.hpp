@@ -2,6 +2,7 @@
 
 #include <monad/config.hpp>
 #include <monad/db/db.hpp>
+#include <monad/lru/lru_cache.hpp>
 #include <monad/state2/state_deltas.hpp>
 
 MONAD_NAMESPACE_BEGIN
@@ -11,11 +12,12 @@ class State;
 class BlockState final
 {
     Db &db_;
+    LruCache *lru_;
     StateDeltas state_;
     Code code_;
 
 public:
-    BlockState(Db &);
+    BlockState(Db &, LruCache * = nullptr);
 
     std::optional<Account> read_account(Address const &);
 

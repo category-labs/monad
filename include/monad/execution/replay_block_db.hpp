@@ -120,6 +120,7 @@ public:
 
             auto const receipts = execute_block<Traits::rev>(
                 block, db, lru, block_hash_buffer, priority_pool);
+
             n_transactions += block.transactions.size();
 
             if (!verify_root_hash(

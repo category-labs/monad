@@ -14,13 +14,11 @@ class LruCache {
   template <class Key, class Value>
   using TbbLruCache = oneapi::tbb::concurrent_lru_cache<Key, Value, std::function<Value(Key)>>;
   using AccountLruCache = TbbLruCache<Address, std::optional<Account>>;
-  using AccountHandle = AccountLruCache::handle;
   using AddressKeyPair = std::pair<Address, bytes32_t>;
   using StorageLruCache = TbbLruCache<AddressKeyPair, bytes32_t>;
-  using StorageHandle = StorageLruCache::handle;
 
-  static const size_t kAccountsCacheSize = 1000;
-  static const size_t kStorageCacheSize = 1000;
+  static const size_t kAccountsCacheSize = 10'000'000;
+  static const size_t kStorageCacheSize = 10'000'000;
 
   Db& db_;
   AccountLruCache accounts_;

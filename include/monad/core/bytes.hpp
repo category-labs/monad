@@ -7,6 +7,8 @@
 #include <evmc/evmc.hpp>
 
 #include <bit>
+#include <cstddef>
+#include <functional>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -32,3 +34,11 @@ inline constexpr bytes32_t NULL_ROOT{
     0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32};
 
 MONAD_NAMESPACE_END
+
+namespace boost
+{
+    inline size_t hash_value(monad::bytes32_t const &bytes) noexcept
+    {
+        return std::hash<monad::bytes32_t>{}(bytes);
+    }
+}

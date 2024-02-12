@@ -182,7 +182,8 @@ target_include_directories(
   PUBLIC ${PROJECT_SOURCE_DIR}/include
   PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/test
   PRIVATE ${Boost_INCLUDE_DIRS}
-  PUBLIC ${silkpre_SOURCE_DIR}/lib)
+  PUBLIC ${silkpre_SOURCE_DIR}/lib
+  PUBLIC ${PROJECT_SOURCE_DIR}/third_party/thread-safe-lru)
 
 set(TEST_DATA_DIR "${PROJECT_SOURCE_DIR}/test")
 set(THIRD_PARTY_DIR "${PROJECT_SOURCE_DIR}/third_party")

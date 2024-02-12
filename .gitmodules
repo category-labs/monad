@@ -20,6 +20,9 @@
 [submodule "third_party/silkpre"]
 	path = third_party/silkpre
 	url = https://github.com/monad-crypto/silkpre.git
+[submodule "third_party/thread-safe-lru"]
+	path = third_party/thread-safe-lru
+	url = git@github.com:monad-crypto/thread-safe-lru.git
 [submodule "third_party/yellowpaper"]
 	path = third_party/yellowpaper
 	url = https://github.com/ethereum/yellowpaper.git

@@ -33,6 +33,7 @@ namespace
     constexpr unsigned char code_nibble = 1;
     auto const state_nibbles = concat(state_nibble);
     auto const code_nibbles = concat(code_nibble);
+    constexpr uint64_t block_id = 0;
 
     template <class T>
         requires std::same_as<T, bytes32_t> || std::same_as<T, Address>
@@ -360,7 +361,7 @@ namespace
                 .incarnation = false,
                 .next = std::move(code_updates_)}));
 
-            db_.upsert(std::move(updates));
+            db_.upsert(std::move(updates), block_id, false);
 
             inserted_code_.clear();
             account_updates_.clear();
@@ -406,7 +407,7 @@ namespace
                         .next = std::move(account_updates)};
                     updates.push_front(state_update);
 
-                    db_.upsert(std::move(updates));
+                    db_.upsert(std::move(updates), block_id, false);
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();
@@ -425,7 +426,7 @@ namespace
                         .next = std::move(code_updates)};
                     updates.push_front(code_update);
 
-                    db_.upsert(std::move(updates));
+                    db_.upsert(std::move(updates), block_id, false);
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();

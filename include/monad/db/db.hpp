@@ -22,6 +22,8 @@ struct Db
 
     virtual void commit(StateDeltas const &, Code const &) = 0;
 
+    virtual bytes32_t state_root() = 0;
+
     virtual void
     create_and_prune_block_history(uint64_t block_number) const = 0;
 };

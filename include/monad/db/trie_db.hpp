@@ -71,9 +71,9 @@ public:
     read_storage(Address const &, bytes32_t const &key) override;
     virtual byte_string read_code(bytes32_t const &hash) override;
     virtual void commit(StateDeltas const &, Code const &) override;
+    virtual bytes32_t state_root() override;
     virtual void create_and_prune_block_history(uint64_t) const override;
 
-    bytes32_t state_root();
     nlohmann::json to_json();
 };
 

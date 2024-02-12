@@ -4,6 +4,7 @@
 #include <monad/core/log_level_map.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/db/block_db.hpp>
+#include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
@@ -155,12 +156,14 @@ int main(int argc, char *argv[])
 
     fiber::PriorityPool priority_pool{nthreads, nfibers};
 
-    ReplayFromBlockDb<decltype(db)> replay_eth;
+    ReplayFromBlockDb replay_eth;
 
     auto const start_time = std::chrono::steady_clock::now();
 
-    [[maybe_unused]] auto result = replay_eth.run<eth_start_fork>(
-        db,
+    DbCache db_cache{db};
+
+    auto result = replay_eth.run<eth_start_fork>(
+        db_cache,
         block_db,
         priority_pool,
         state_db_path,

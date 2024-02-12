@@ -119,6 +119,7 @@ add_library(
   "include/monad/db/block_db.hpp"
   "include/monad/db/config.hpp"
   "include/monad/db/db.hpp"
+  "include/monad/db/db_cache.hpp"
   "include/monad/db/file_db.hpp"
   "include/monad/db/trie_db.hpp"
   "include/monad/db/util.hpp"

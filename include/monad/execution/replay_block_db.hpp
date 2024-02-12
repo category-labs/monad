@@ -5,6 +5,7 @@
 #include <monad/core/block.hpp>
 #include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/db/block_db.hpp>
+#include <monad/db/db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/ethereum/fork_traits.hpp>
@@ -27,7 +28,6 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <class Db>
 class ReplayFromBlockDb
 {
 public:
@@ -129,15 +129,16 @@ public:
                     current_block_number)) {
                 return Result{Status::WRONG_STATE_ROOT, current_block_number};
             }
-            else {
-                if (checkpoint_frequency.has_value() &&
-                    (current_block_number % checkpoint_frequency.value() ==
-                     0)) {
-                    LOG_INFO("At block: {}", current_block_number);
-                    db::write_to_file(
-                        db.to_json(), root_path, current_block_number);
-                }
-            }
+            /*
+                        else {
+                            if (checkpoint_frequency.has_value() &&
+                                (current_block_number %
+               checkpoint_frequency.value() == 0)) { LOG_INFO("At block: {}",
+               current_block_number); db::write_to_file( db.to_json(),
+               root_path, current_block_number);
+                            }
+                        }
+            */
         }
 
         if (until_block_number.has_value() &&

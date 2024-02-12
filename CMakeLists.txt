@@ -37,7 +37,6 @@ set(OPTIONAL_BUILD_TESTS OFF)
 add_subdirectory(third_party/silkpre)
 
 # tbb
-find_package(TBB PATHS "/opt/intel/oneapi/tbb/2021.11/" NO_DEFAULT_PATH QUIET)
 find_package(TBB REQUIRED)
 
 function(monad_compile_options target)

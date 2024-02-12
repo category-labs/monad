@@ -1,11 +1,13 @@
 #pragma once
 
 #include <monad/config.hpp>
+#include <monad/core/block.hpp>
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/state2/state_deltas.hpp>
 
 #include <memory>
+#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -29,7 +31,11 @@ public:
 
     bool can_merge(State const &);
 
-    void merge(State const &);
+    void merge(
+        State const &, std::optional<block_num_t> block_number = std::nullopt,
+        std::optional<uint64_t> txn_number = std::nullopt,
+        std::optional<Address> const sender = std::nullopt,
+        std::optional<Address> const beneficiary = std::nullopt);
 
     void commit();
 

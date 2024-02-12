@@ -1,10 +1,11 @@
-#include <monad/config.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/fmt/address_fmt.hpp>
 #include <monad/core/likely.h>
+#include <monad/core/rlp/account_rlp.hpp>
 #include <monad/db/db.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/fmt/state_deltas_fmt.hpp>
@@ -14,7 +15,15 @@
 #include <quill/detail/LogMacros.h>
 
 #include <cstdint>
+#include <fstream>
 #include <optional>
+#include <string>
+
+namespace
+{
+    static std::ofstream output_account("account.csv");
+    static std::ofstream output_storage("storage.csv");
+};
 
 MONAD_NAMESPACE_BEGIN
 
@@ -119,7 +128,11 @@ bool BlockState::can_merge(State const &state)
     return true;
 }
 
-void BlockState::merge(State const &state)
+void BlockState::merge(
+    State const &state, std::optional<block_num_t> const block_number,
+    std::optional<uint64_t> const txn_number,
+    std::optional<Address> const sender,
+    std::optional<Address> const beneficiary)
 {
     ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
 
@@ -148,11 +161,67 @@ void BlockState::merge(State const &state)
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_.find(it, address));
         it->second.account.second = account;
+
+        // logging code
+        auto const &account_original = it->second.account.first;
+        auto const address_string = fmt::format(
+            "0x{:02x}", fmt::join(std::as_bytes(std::span(address.bytes)), ""));
+
+        auto const is_sender =
+            sender.has_value() && (sender.value() == address);
+        auto const is_beneficiary =
+            beneficiary.has_value() && (beneficiary.value() == address);
+
+        auto const account_rlp_original =
+            account_original.has_value()
+                ? rlp::encode_account(account_original.value())
+                : byte_string{};
+        auto const account_string_original = fmt::format(
+            "0x{:02x}",
+            fmt::join(std::as_bytes(std::span(account_rlp_original)), ""));
+        auto const account_rlp_current =
+            account.has_value() ? rlp::encode_account(account.value())
+                                : byte_string{};
+        auto const account_string_current = fmt::format(
+            "0x{:02x}",
+            fmt::join(std::as_bytes(std::span(account_rlp_current)), ""));
+        if (block_number.has_value()) {
+            output_account << block_number.value() << ", " << txn_number.value()
+                           << ", " << address_string << ", "
+                           << account_string_original << ", "
+                           << account_string_current << ", " << is_sender
+                           << ", " << is_beneficiary << std::endl;
+        }
+
         if (account.has_value()) {
             for (auto const &[key, value] : storage) {
                 StorageDeltas::accessor it2{};
                 MONAD_ASSERT(it->second.storage.find(it2, key));
                 it2->second.second = value;
+
+                // logging code
+                auto const storage_key_string = fmt::format(
+                    "0x{:02x}",
+                    fmt::join(std::as_bytes(std::span(it2->first.bytes)), ""));
+                auto const storage_value_string_original = fmt::format(
+                    "0x{:02x}",
+                    fmt::join(
+                        std::as_bytes(std::span(it2->second.first.bytes)), ""));
+                auto const storage_value_string_current = fmt::format(
+                    "0x{:02x}",
+                    fmt::join(
+                        std::as_bytes(std::span(it2->second.second.bytes)),
+                        ""));
+
+                if (block_number.has_value()) {
+                    output_storage
+                        << block_number.value() << ", " << txn_number.value()
+                        << ", " << address_string << ", " << storage_key_string
+                        << ", " << storage_value_string_original << ", "
+                        << storage_value_string_current << std::endl;
+                }
+
+                // end of logging code
             }
         }
         else {

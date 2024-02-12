@@ -213,7 +213,12 @@ Result<Receipt> execute_impl(
                 hdr.base_fee_per_gas.value_or(0),
                 result.value(),
                 hdr.beneficiary);
-            block_state.merge(state);
+            block_state.merge(
+                state,
+                std::make_optional(hdr.number),
+                std::make_optional(i),
+                std::make_optional(sender),
+                std::make_optional(hdr.beneficiary));
             return receipt;
         }
     }
@@ -234,7 +239,12 @@ Result<Receipt> execute_impl(
             hdr.base_fee_per_gas.value_or(0),
             result.value(),
             hdr.beneficiary);
-        block_state.merge(state);
+        block_state.merge(
+            state,
+            std::make_optional(hdr.number),
+            std::make_optional(i),
+            std::make_optional(sender),
+            std::make_optional(hdr.beneficiary));
         return receipt;
     }
 }

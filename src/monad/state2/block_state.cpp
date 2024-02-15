@@ -97,21 +97,19 @@ byte_string BlockState::read_code(bytes32_t const &code_hash)
 
 bool BlockState::can_merge(State const &state)
 {
-    for (auto it = state.original_.begin(); it != state.original_.end(); ++it) {
-        auto const &address = it->first;
-        auto const &account_state = it->second;
+    for (auto const &[address, account_state] : state.original_) {
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
-        StateDeltas::const_accessor it2{};
-        MONAD_ASSERT(state_.find(it2, address));
-        if (account != it2->second.account.second) {
+        StateDeltas::const_accessor it{};
+        MONAD_ASSERT(state_.find(it, address));
+        if (account != it->second.account.second) {
             return false;
         }
         // TODO account.has_value()???
-        for (auto it3 = storage.cbegin(); it3 != storage.cend(); ++it3) {
-            StorageDeltas::const_accessor it4{};
-            MONAD_ASSERT(it2->second.storage.find(it4, it3->first));
-            if (it3->second != it4->second.second) {
+        for (auto const &[key, value] : storage) {
+            StorageDeltas::const_accessor it2{};
+            MONAD_ASSERT(it->second.storage.find(it2, key));
+            if (value != it2->second.second) {
                 return false;
             }
         }
@@ -123,8 +121,7 @@ void BlockState::merge(State const &state)
 {
     ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
 
-    for (auto it = state.state_.begin(); it != state.state_.end(); ++it) {
-        auto const &stack = it->second;
+    for (auto const &[address, stack] : state.state_) {
         MONAD_ASSERT(stack.size() == 1);
         MONAD_ASSERT(stack.version() == 0);
         auto const &account_state = stack.recent();
@@ -142,24 +139,22 @@ void BlockState::merge(State const &state)
         code_.emplace(code_hash, it->second); // TODO try_emplace
     }
 
-    for (auto it = state.state_.begin(); it != state.state_.end(); ++it) {
-        auto const &address = it->first;
-        auto const &stack = it->second;
+    for (auto const &[address, stack] : state.state_) {
         auto const &account_state = stack.recent();
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
-        StateDeltas::accessor it2{};
-        MONAD_ASSERT(state_.find(it2, address));
-        it2->second.account.second = account;
+        StateDeltas::accessor it{};
+        MONAD_ASSERT(state_.find(it, address));
+        it->second.account.second = account;
         if (account.has_value()) {
-            for (auto it3 = storage.begin(); it3 != storage.end(); ++it3) {
-                StorageDeltas::accessor it4{};
-                MONAD_ASSERT(it2->second.storage.find(it4, it3->first));
-                it4->second.second = it3->second;
+            for (auto const &[key, value] : storage) {
+                StorageDeltas::accessor it2{};
+                MONAD_ASSERT(it->second.storage.find(it2, key));
+                it2->second.second = value;
             }
         }
         else {
-            it2->second.storage.clear();
+            it->second.storage.clear();
         }
     }
 }

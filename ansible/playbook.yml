@@ -1,31 +1,48 @@
 ---
 - name: Provision dev servers
-  hosts: all
-  become: yes
+  hosts: jenkins-agents
 
   tasks:
 
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
-  # Debug
-  # - name: Gather info
-  #   ansible.builtin.setup:
-
-  # - name: Display kernel
-  #   ansible.builtin.debug:
-  #     msg: "Kernel version for {{ inventory_hostname }} is {{ ansible_kernel }}"
-
-  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Provision node
+  #
   # - name: Set a hostname
   #   ansible.builtin.hostname:
   #     name: "{{ inventory_hostname }}"
+  #  when: inventory_hostname.find("peach") != -1
 
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Provision node
-  - ansible.builtin.import_tasks:
-      file: provision.yml
+  #
+  # - ansible.builtin.import_tasks:
+  #     file: provision.yml
+  #   when: inventory_hostname.find("peach") != -1
+  #   tags:
+  #     - provision
 
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Add users
+  #
+  # - ansible.builtin.import_tasks:
+  #     file: users.yml
+  #   tags:
+  #     - users
+
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Devnet
+  #
+  # - ansible.builtin.import_tasks:
+  #     file: devnet.yml
+  #   when: inventory_hostname in groups['devnet']
+  #   tags:
+  #     - devnet
+
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
+  # Jenkins' Agents
+  #
   - ansible.builtin.import_tasks:
-      file: users.yml
+      file: jenkins-agents.yml
+    when: inventory_hostname in groups['jenkins-agents']
+    tags:
+      - jenkins-agents

@@ -9,12 +9,16 @@ setup:
 	@echo "Activating virtual environment and installing Ansible..."
 	. venv/bin/activate && \
 		venv/bin/python3 -m pip install --upgrade pip && \
-		pip install ansible 
+		pip install ansible
 
 # Run the Ansible playbook
 run:
 	@echo "Running Ansible playbook..."
-	venv/bin/ansible-playbook -i ./inventory playbook.yml 
+	venv/bin/ansible-playbook -i ./inventory playbook.yml
+
+check:
+	@echo "Running Ansible playbook..."
+	venv/bin/ansible-playbook -i ./inventory playbook.yml --check -vv
 
 # Default target
 all: setup run

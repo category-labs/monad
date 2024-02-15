@@ -291,13 +291,15 @@ public:
     {
         bytes32_t original_value;
         auto &account_state = current_account_state(address);
+        MONAD_ASSERT(account_state.account_);
         // original
         {
             auto &orig_account_state = original_account_state(address);
             auto &storage = orig_account_state.storage_;
             auto it = storage.find(key);
             if (it == storage.end()) {
-                uint64_t const incarnation = account_state.get_incarnation();
+                uint64_t const incarnation =
+                    account_state.account_->incarnation;
                 bytes32_t const value =
                     block_state_.read_storage(address, incarnation, key);
                 it = storage.try_emplace(key, value).first;

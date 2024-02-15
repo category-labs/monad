@@ -57,6 +57,10 @@ bytes32_t BlockState::read_storage(
     {
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_.find(it, address));
+        auto const &account = it->second.account.second;
+        if (!account || incarnation != account->incarnation) {
+            return {};
+        }
         auto const &storage = it->second.storage;
         {
             StorageDeltas::const_accessor it2{};
@@ -67,10 +71,16 @@ bytes32_t BlockState::read_storage(
     }
     // database
     {
-        auto const result =
-            incarnation == 0 ? db_.read_storage(address, key) : bytes32_t{};
+        if (incarnation) {
+            return {};
+        }
+        auto const result = db_.read_storage(address, key);
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_.find(it, address));
+        auto const &account = it->second.account.second;
+        if (!account || account->incarnation) {
+            return {};
+        }
         auto &storage = it->second.storage;
         {
             StorageDeltas::const_accessor it2{};
@@ -114,9 +124,15 @@ bool BlockState::can_merge(State const &state)
         // TODO account.has_value()???
         for (auto const &[key, value] : storage) {
             StorageDeltas::const_accessor it2{};
-            MONAD_ASSERT(it->second.storage.find(it2, key));
-            if (value != it2->second.second) {
-                return false;
+            if (it->second.storage.find(it2, key)) {
+                if (value != it2->second.second) {
+                    return false;
+                }
+            }
+            else {
+                if (value) {
+                    return false;
+                }
             }
         }
     }
@@ -155,8 +171,13 @@ void BlockState::merge(State const &state)
         if (account.has_value()) {
             for (auto const &[key, value] : storage) {
                 StorageDeltas::accessor it2{};
-                MONAD_ASSERT(it->second.storage.find(it2, key));
-                it2->second.second = value;
+                if (it->second.storage.find(it2, key)) {
+                    it2->second.second = value;
+                }
+                else {
+                    it->second.storage.emplace(
+                        key, std::make_pair(bytes32_t{}, value));
+                }
             }
         }
         else {

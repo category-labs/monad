@@ -201,7 +201,8 @@ Result<Receipt> execute_impl(
 
     {
         TRACE_TXN_EVENT(StartExecution);
-        State state{block_state};
+
+        State state{block_state, i + 1};
 
         auto result =
             execute_impl2<rev>(tx, sender, hdr, block_hash_buffer, state);
@@ -229,7 +230,7 @@ Result<Receipt> execute_impl(
     {
         TRACE_TXN_EVENT(StartRetry);
 
-        State state{block_state};
+        State state{block_state, i + 1};
 
         auto result =
             execute_impl2<rev>(tx, sender, hdr, block_hash_buffer, state);

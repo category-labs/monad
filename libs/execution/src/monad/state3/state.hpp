@@ -40,6 +40,8 @@ class State
 
     BlockState &block_state_;
 
+    uint64_t const incarnation_;
+
     Map<Address, AccountState> original_{};
 
     Map<Address, VersionStack<AccountState>> state_{};
@@ -92,9 +94,11 @@ class State
     friend class BlockState; // TODO
 
 public:
-    State(BlockState &block_state)
+    State(BlockState &block_state, uint64_t const incarnation = 1)
         : block_state_{block_state}
+        , incarnation_{incarnation}
     {
+        MONAD_ASSERT(incarnation_);
     }
 
     State(State &&) = delete;
@@ -246,7 +250,7 @@ public:
     {
         auto &account = current_account(address);
         if (MONAD_UNLIKELY(!account.has_value())) {
-            account = Account{};
+            account = Account{.incarnation = incarnation_};
         }
         account.value().nonce = nonce;
     }
@@ -256,7 +260,7 @@ public:
         auto &account_state = current_account_state(address);
         auto &account = account_state.account_;
         if (MONAD_UNLIKELY(!account.has_value())) {
-            account = Account{};
+            account = Account{.incarnation = incarnation_};
         }
 
         MONAD_ASSERT(
@@ -272,7 +276,7 @@ public:
         auto &account_state = current_account_state(address);
         auto &account = account_state.account_;
         if (MONAD_UNLIKELY(!account.has_value())) {
-            account = Account{};
+            account = Account{.incarnation = incarnation_};
         }
 
         MONAD_ASSERT(delta <= account.value().balance);
@@ -480,10 +484,10 @@ public:
             MONAD_ASSERT(account->nonce == 0);
             MONAD_ASSERT(account->code_hash == NULL_HASH);
             // keep the balance, per chapter 7 of the YP
-            account->incarnation = 1;
+            account->incarnation = incarnation_;
         }
         else {
-            account = Account{};
+            account = Account{.incarnation = incarnation_};
         }
     }
 

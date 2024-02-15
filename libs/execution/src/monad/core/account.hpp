@@ -14,7 +14,7 @@ struct Account
     uint256_t balance{0}; // sigma[a]_b
     bytes32_t code_hash{NULL_HASH}; // sigma[a]_c
     uint64_t nonce{0}; // sigma[a]_n
-    uint64_t incarnation{1};
+    uint64_t incarnation{0};
 
     friend bool operator==(Account const &, Account const &) = default;
 };

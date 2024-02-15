@@ -4,6 +4,7 @@
 
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/fmt/transaction_fmt.hpp>
 #include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/execution/transaction_gas.hpp>
@@ -107,6 +108,9 @@ void TransactionTest::TestBody()
     auto const txn_rlp = j_content.at("txbytes").get<byte_string>();
     byte_string_view txn_rlp_view{txn_rlp};
     auto const txn = rlp::decode_transaction(txn_rlp_view);
+
+    LOG_INFO("Decoded Transaction: {}", txn.value());
+
     if (txn.has_error() || !txn_rlp_view.empty()) {
         for (auto const &element : j_content.at("result").items()) {
             auto const &expected = element.value();

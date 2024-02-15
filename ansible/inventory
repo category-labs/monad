@@ -1,17 +1,81 @@
-[all]
-lima-jammy ansible_ssh_common_args="-F /Users/michaelhume/.lima/jammy/ssh.config"
+[monad]
+peach9
+peach10
+peach13
+peach14
+peach15
+peach16
+peach17
+peach18
+peach21
+peach22
+peach23
+peach24
+peach25
 
-# F95X-0103 ansible_host="38.46.217.115" ansible_port="9022"
-# F95X-0104 ansible_host="38.46.217.117" ansible_port="9022"
-# F95X-0105 ansible_host="38.46.217.119" ansible_port="9022"
-# F95X-0106 ansible_host="38.46.217.121" ansible_port="9022"
-# F95X-0107 ansible_host="38.46.217.123" ansible_port="9022"
-# F95X-0108 ansible_host="38.46.217.125" ansible_port="9022"
-# F95X-0109 ansible_host="38.46.222.162" ansible_port="9022"
-# F95X-0110 ansible_host="38.46.222.164" ansible_port="9022"
-# FXG-0022  ansible_host="38.46.223.210" ansible_port="9022"
-# FXG-0023  ansible_host="38.46.223.212" ansible_port="9022"
-# FXG-0024  ansible_host="38.46.223.214" ansible_port="9022"
-# FXG-0025  ansible_host="38.46.223.216" ansible_port="9022"
-# FXG-0026  ansible_host="38.46.223.218" ansible_port="9022"
-# FXG-0011  ansible_host="23.158.72.113" ansible_port="9022"
+devnet1
+devnet2
+devnet3
+devnet4
+
+[alee]
+peach16
+
+[tzhi]
+peach15
+
+[jhunsaker:children]
+monad
+
+[mhume:children]
+monad
+
+[aashish]
+peach21
+
+[alee]
+
+[ariq]
+peach21
+
+[klemens]
+peach14
+
+[maged]
+peach12
+
+[mchen]
+peach21
+
+[ndouglas]
+peach13
+
+[vickychen]
+peach9
+
+# [monad]
+# [refdata]
+
+[all:children]
+jhunsaker
+mhume
+aashish
+alee
+ariq
+klemens
+maged
+mchen
+ndouglas
+vickychen
+
+[devnet]
+devnet1 ansible_user=monad
+devnet2 ansible_user=monad
+devnet3 ansible_user=monad
+devnet4 ansible_user=monad
+
+[jenkins-agents]
+peach22
+peach23
+peach24
+peach25

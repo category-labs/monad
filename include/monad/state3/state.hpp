@@ -308,16 +308,8 @@ public:
         }
         // state
         {
-            for (auto it = account_state.storage_.begin();
-                 it != account_state.storage_.end();
-                 ++it) {
-            }
             auto const result =
                 account_state.set_storage(key, value, original_value);
-            for (auto it = account_state.storage_.begin();
-                 it != account_state.storage_.end();
-                 ++it) {
-            }
             return result;
         }
     }

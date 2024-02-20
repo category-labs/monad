@@ -3,6 +3,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/db/config.hpp>
 #include <monad/db/db.hpp>
+#include <monad/execution/code_analysis.hpp>
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
@@ -12,6 +13,7 @@
 
 #include <istream>
 #include <list>
+#include <memory>
 #include <optional>
 
 MONAD_DB_NAMESPACE_BEGIN
@@ -69,7 +71,7 @@ public:
     virtual std::optional<Account> read_account(Address const &) override;
     virtual bytes32_t
     read_storage(Address const &, bytes32_t const &key) override;
-    virtual byte_string read_code(bytes32_t const &hash) override;
+    virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) override;
     virtual void commit(StateDeltas const &, Code const &) override;
     virtual bytes32_t state_root() override;
     virtual void create_and_prune_block_history(uint64_t) const override;

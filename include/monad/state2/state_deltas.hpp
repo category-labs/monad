@@ -6,12 +6,14 @@
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/execution/code_analysis.hpp>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include <oneapi/tbb/concurrent_hash_map.h>
 #pragma GCC diagnostic pop
 
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -49,7 +51,8 @@ using StateDeltas = oneapi::tbb::concurrent_hash_map<Address, StateDelta>;
 static_assert(sizeof(StateDeltas) == 576);
 static_assert(alignof(StateDeltas) == 8);
 
-using Code = oneapi::tbb::concurrent_hash_map<bytes32_t, byte_string>;
+using Code =
+    oneapi::tbb::concurrent_hash_map<bytes32_t, std::shared_ptr<CodeAnalysis>>;
 
 static_assert(sizeof(Code) == 576);
 static_assert(alignof(Code) == 8);

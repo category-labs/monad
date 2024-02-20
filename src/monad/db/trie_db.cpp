@@ -10,10 +10,14 @@
 #include <monad/mpt/util.hpp>
 #include <monad/rlp/encode2.hpp>
 
+#include <evmone/baseline.hpp>
+
+#include <evmc/evmc.hpp>
+
+#include <ethash/keccak.hpp>
+
 #include <boost/json.hpp>
 #include <boost/json/basic_parser_impl.hpp>
-#include <ethash/keccak.hpp>
-#include <evmc/evmc.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -717,14 +721,15 @@ bytes32_t TrieDb::read_storage(Address const &addr, bytes32_t const &key)
     return ret;
 };
 
-byte_string TrieDb::read_code(bytes32_t const &hash)
+std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
 {
+    // TODO read code analysis object
     auto const value = db_.get(
-        concat(code_nibble, NibblesView{to_byte_string_view(hash.bytes)}));
+        concat(code_nibble, NibblesView{to_byte_string_view(code_hash.bytes)}));
     if (!value.has_value()) {
-        return byte_string{};
+        return std::make_shared<CodeAnalysis>(analyze({}));
     }
-    return byte_string{value.value()};
+    return std::make_shared<CodeAnalysis>(analyze(value.assume_value()));
 }
 
 void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
@@ -767,10 +772,12 @@ void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
     }
 
     UpdateList code_updates;
-    for (auto const &[hash, bytes] : code) {
+    for (auto const &[hash, code_analysis] : code) {
+        // TODO write code analysis object
+        MONAD_ASSERT(code_analysis);
         code_updates.push_front(update_alloc_.emplace_back(Update{
             .key = NibblesView{to_byte_string_view(hash.bytes)},
-            .value = bytes,
+            .value = code_analysis->executable_code,
             .incarnation = false,
             .next = UpdateList{}}));
     }
@@ -877,9 +884,10 @@ nlohmann::json TrieDb::to_json()
             json[key]["balance"] = fmt::format("{}", acct.value().balance);
             json[key]["nonce"] = fmt::format("0x{:x}", acct.value().nonce);
 
-            auto const code = db.read_code(acct.value().code_hash);
-            json[key]["code"] = fmt::format(
-                "0x{:02x}", fmt::join(std::as_bytes(std::span(code)), ""));
+            auto const code_analysis = db.read_code(acct.value().code_hash);
+            MONAD_ASSERT(code_analysis);
+            json[key]["code"] =
+                "0x" + evmc::hex(code_analysis->executable_code);
 
             if (!json[key].contains("storage")) {
                 json[key]["storage"] = nlohmann::json::object();

@@ -2,6 +2,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/db/trie_db.hpp>
+#include <monad/execution/code_analysis.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/state3/state.hpp>
@@ -13,6 +14,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <optional>
 
 using namespace monad;
@@ -45,8 +47,10 @@ namespace
         0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
     constexpr auto code1 =
         byte_string{0x65, 0x74, 0x68, 0x65, 0x72, 0x6d, 0x69};
+    auto const code_analysis1 = std::make_shared<CodeAnalysis>(analyze(code1));
     constexpr auto code2 =
         byte_string{0x6e, 0x65, 0x20, 0x2d, 0x20, 0x45, 0x55, 0x31, 0x34};
+    auto const code_analysis2 = std::make_shared<CodeAnalysis>(analyze(code2));
 
     struct InMemoryTrieDbFixture : public ::testing::Test
     {
@@ -716,7 +720,7 @@ TYPED_TEST(StateTest, get_code_size)
     Account acct{.code_hash = code_hash1};
     this->db.commit(
         StateDeltas{{a, StateDelta{.account = {std::nullopt, acct}}}},
-        Code{{code_hash1, code1}});
+        Code{{code_hash1, code_analysis1}});
 
     State s{bs};
     EXPECT_EQ(s.get_code_size(a), code1.size());
@@ -732,7 +736,7 @@ TYPED_TEST(StateTest, copy_code)
         StateDeltas{
             {a, StateDelta{.account = {std::nullopt, acct_a}}},
             {b, StateDelta{.account = {std::nullopt, acct_b}}}},
-        Code{{code_hash1, code1}, {code_hash2, code2}});
+        Code{{code_hash1, code_analysis1}, {code_hash2, code_analysis2}});
 
     static constexpr unsigned size{8};
     uint8_t buffer[size];
@@ -783,18 +787,18 @@ TYPED_TEST(StateTest, get_code)
             {a,
              StateDelta{
                  .account = {std::nullopt, Account{.code_hash = code_hash1}}}}},
-        Code{{code_hash1, contract}});
+        Code{{code_hash1, std::make_shared<CodeAnalysis>(analyze(contract))}});
 
     State s{bs};
 
     {
         s.access_account(a);
         auto const c = s.get_code(a);
-        EXPECT_EQ(c, contract);
+        EXPECT_EQ(c->executable_code, contract);
     }
     { // non-existant account
         auto const c = s.get_code(b);
-        EXPECT_EQ(c, byte_string{});
+        EXPECT_EQ(c->executable_code, byte_string{});
     }
 }
 
@@ -808,8 +812,8 @@ TYPED_TEST(StateTest, set_code)
     s.set_code(a, code2);
     s.set_code(b, byte_string{});
 
-    EXPECT_EQ(s.get_code(a), code2);
-    EXPECT_EQ(s.get_code(b), byte_string{});
+    EXPECT_EQ(s.get_code(a)->executable_code, code2);
+    EXPECT_EQ(s.get_code(b)->executable_code, byte_string{});
 }
 
 TYPED_TEST(StateTest, can_merge_same_account_different_storage)

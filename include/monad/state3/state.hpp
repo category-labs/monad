@@ -10,6 +10,7 @@
 #include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/fmt/int_fmt.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/execution/code_analysis.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/account_state.hpp>
 #include <monad/state3/version_stack.hpp>
@@ -26,6 +27,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -44,7 +46,7 @@ class State
 
     VersionStack<std::vector<Receipt::Log>> logs_{{}};
 
-    Map<bytes32_t, byte_string> code_{};
+    Map<bytes32_t, std::shared_ptr<CodeAnalysis>> code_{};
 
     unsigned version_{0};
 
@@ -390,11 +392,11 @@ public:
      * TODO code return reference
      */
 
-    byte_string get_code(Address const &address)
+    std::shared_ptr<CodeAnalysis> get_code(Address const &address)
     {
         auto const &account = recent_account(address);
         if (MONAD_UNLIKELY(!account.has_value())) {
-            return {};
+            return std::make_shared<CodeAnalysis>(analyze({}));
         }
         bytes32_t const &code_hash = account.value().code_hash;
         {
@@ -416,10 +418,14 @@ public:
         {
             auto const it = code_.find(code_hash);
             if (it != code_.end()) {
-                return it->second.size();
+                auto const &code_analysis = it->second;
+                MONAD_ASSERT(code_analysis);
+                return code_analysis->executable_code.size();
             }
         }
-        return block_state_.read_code(code_hash).size();
+        auto const code_analysis = block_state_.read_code(code_hash);
+        MONAD_ASSERT(code_analysis);
+        return code_analysis->executable_code.size();
     }
 
     size_t copy_code(
@@ -431,16 +437,18 @@ public:
             return 0;
         }
         bytes32_t const &code_hash = account.value().code_hash;
-        byte_string code;
+        std::shared_ptr<CodeAnalysis> code_analysis{};
         {
             auto const it = code_.find(code_hash);
             if (it != code_.end()) {
-                code = it->second;
+                code_analysis = it->second;
             }
             else {
-                code = block_state_.read_code(code_hash);
+                code_analysis = block_state_.read_code(code_hash);
             }
         }
+        MONAD_ASSERT(code_analysis);
+        auto const &code = code_analysis->executable_code;
         if (offset > code.size()) {
             return 0;
         }
@@ -458,7 +466,7 @@ public:
 
         bytes32_t const code_hash = std::bit_cast<bytes32_t>(
             ethash::keccak256(code.data(), code.size()));
-        code_[code_hash] = code;
+        code_[code_hash] = std::make_shared<CodeAnalysis>(analyze(code));
         account.value().code_hash = code_hash;
     }
 

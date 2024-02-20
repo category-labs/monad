@@ -131,6 +131,7 @@ add_library(
   "include/monad/execution/baseline_execute.hpp"
   "include/monad/execution/block_hash_buffer.hpp"
   "include/monad/execution/block_reward.hpp"
+  "include/monad/execution/code_analysis.hpp"
   "include/monad/execution/create_contract_address.hpp"
   "include/monad/execution/ethereum/dao.hpp"
   "include/monad/execution/ethereum/fork_traits.hpp"

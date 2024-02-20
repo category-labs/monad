@@ -2,7 +2,10 @@
 
 #include <monad/config.hpp>
 #include <monad/db/db.hpp>
+#include <monad/execution/code_analysis.hpp>
 #include <monad/state2/state_deltas.hpp>
+
+#include <memory>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -22,7 +25,7 @@ public:
     bytes32_t
     read_storage(Address const &, uint64_t incarnation, bytes32_t const &key);
 
-    byte_string read_code(bytes32_t const &code_hash);
+    std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &);
 
     bool can_merge(State const &);
 

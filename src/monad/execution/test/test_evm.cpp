@@ -393,7 +393,9 @@ TEST(Evm, deploy_contract_code)
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.gas_left, gas - 800); // G_codedeposit * size(code)
             EXPECT_EQ(r2.create_address, a);
-            EXPECT_EQ(s.get_code(a), byte_string(code, sizeof(code)));
+            EXPECT_EQ(
+                s.get_code(a)->executable_code,
+                byte_string(code, sizeof(code)));
         }
 
         // Initilization code succeeds, but deployment of code failed
@@ -423,7 +425,9 @@ TEST(Evm, deploy_contract_code)
             EXPECT_EQ(r2.create_address, a);
             EXPECT_EQ(r2.gas_left,
                       gas - 800); // G_codedeposit * size(code)
-            EXPECT_EQ(s.get_code(a), byte_string(code, sizeof(code)));
+            EXPECT_EQ(
+                s.get_code(a)->executable_code,
+                byte_string(code, sizeof(code)));
         }
 
         // Fail to deploy code - out of gas (EIP-2)

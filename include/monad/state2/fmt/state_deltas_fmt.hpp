@@ -78,12 +78,15 @@ struct fmt::formatter<monad::Code> : public monad::BasicFormatter
     {
         fmt::format_to(ctx.out(), "{{");
 
-        for (auto const &[code_hash, code_value] : code) {
+        for (auto const &[code_hash, code_analysis] : code) {
+            MONAD_ASSERT(code_analysis);
             fmt::format_to(
                 ctx.out(),
                 "Code Hash: {}, Code Value: 0x{:02x} ",
                 code_hash,
-                fmt::join(std::as_bytes(std::span{code_value}), ""));
+                fmt::join(
+                    std::as_bytes(std::span{code_analysis->executable_code}),
+                    ""));
         }
         fmt::format_to(ctx.out(), "}}");
 

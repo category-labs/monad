@@ -5,12 +5,14 @@
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/db/db.hpp>
+#include <monad/execution/code_analysis.hpp>
 #include <monad/state2/state_deltas.hpp>
 
 #include <evmc/evmc.hpp>
 
 #include <thread-safe-lru/lru-cache.h>
 
+#include <memory>
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
@@ -23,6 +25,11 @@ class DbCache final : public Db
         tstarling::ThreadSafeLRUCache<Address, std::optional<Account>>;
 
     AccountCache accounts_{10000000};
+
+    using CodeCache =
+        tstarling::ThreadSafeLRUCache<bytes32_t, std::shared_ptr<CodeAnalysis>>;
+
+    CodeCache code_{40000};
 
 public:
     DbCache(Db &db)
@@ -53,20 +60,39 @@ public:
         return db_.read_storage(address, key);
     }
 
-    virtual byte_string read_code(bytes32_t const &code_hash) override
+    virtual std::shared_ptr<CodeAnalysis>
+    read_code(bytes32_t const &code_hash) override
     {
-        return db_.read_code(code_hash);
+        {
+            CodeCache::ConstAccessor it{};
+            if (code_.find(it, code_hash)) {
+                return *it;
+            }
+        }
+        {
+            auto const code_analysis = db_.read_code(code_hash);
+            code_.insert(code_hash, code_analysis);
+            return code_analysis;
+        }
     }
 
     virtual void
     commit(StateDeltas const &state_deltas, Code const &code) override
     {
         db_.commit(state_deltas, code);
+
         for (auto it = state_deltas.cbegin(); it != state_deltas.cend(); ++it) {
             auto const &address = it->first;
             auto const &account_delta = it->second.account;
             if (account_delta.second != account_delta.first) {
                 accounts_.insert(address, account_delta.second);
+            }
+        }
+
+        for (auto const &[code_hash, code_analysis] : code) {
+            CodeCache::ConstAccessor it{};
+            if (!code_.find(it, code_hash)) {
+                code_.insert(code_hash, code_analysis);
             }
         }
     }

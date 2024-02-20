@@ -3,6 +3,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/likely.h>
 #include <monad/execution/baseline_execute.hpp>
+#include <monad/execution/code_analysis.hpp>
 
 #include <evmone/baseline.hpp>
 #include <evmone/baseline_instruction_table.hpp>
@@ -35,9 +36,9 @@ MONAD_NAMESPACE_BEGIN
 
 evmc::Result baseline_execute(
     evmc_message const &msg, evmc_revision const rev, evmc::Host *const host,
-    byte_string_view const code)
+    CodeAnalysis const &code_analysis)
 {
-    if (code.empty()) {
+    if (code_analysis.executable_code.empty()) {
         return evmc::Result{EVMC_SUCCESS, msg.gas};
     }
 
@@ -51,13 +52,10 @@ evmc::Result baseline_execute(
         rev,
         host->get_interface(),
         host->to_context(),
-        code,
+        code_analysis.executable_code,
         byte_string_view{});
 
-    auto const code_analysis = evmone::baseline::analyze(rev, code);
-
-    execution_state->analysis.baseline =
-        &code_analysis; // Assign code analysis for instruction implementations.
+    execution_state->analysis.baseline = &code_analysis;
 
     auto const &cost_table = evmone::baseline::get_baseline_cost_table(
         execution_state->rev, code_analysis.eof_header.version);

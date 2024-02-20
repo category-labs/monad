@@ -5,9 +5,11 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/db/config.hpp>
+#include <monad/execution/code_analysis.hpp>
 #include <monad/state2/state_deltas.hpp>
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
@@ -18,7 +20,7 @@ struct Db
 
     virtual bytes32_t read_storage(Address const &, bytes32_t const &key) = 0;
 
-    virtual byte_string read_code(bytes32_t const &) = 0;
+    virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) = 0;
 
     virtual void commit(StateDeltas const &, Code const &) = 0;
 

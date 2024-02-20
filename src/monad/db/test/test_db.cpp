@@ -2,6 +2,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/db/trie_db.hpp>
+#include <monad/execution/code_analysis.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <test_resource_data.h>
 
@@ -13,6 +14,7 @@
 #include <gtest/gtest.h>
 
 #include <fstream>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -32,8 +34,10 @@ namespace
         0x0000000000000013370000000000000000000000000000000000000000000003_bytes32;
     constexpr auto value2 =
         0x0000000000000000000000000000000000000000000000000000000000000007_bytes32;
-    constexpr auto code1 = byte_string{0xab, 0xcd, 0xef};
-    constexpr auto code2 = byte_string{0xbb, 0xbb, 0xbb};
+    auto const code1 =
+        std::make_shared<CodeAnalysis>(analyze(byte_string{0xab, 0xcd, 0xef}));
+    auto const code2 =
+        std::make_shared<CodeAnalysis>(analyze(byte_string{0xbb, 0xbb, 0xbb}));
     constexpr auto code_hash1 =
         0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
     constexpr auto code_hash2 =
@@ -46,32 +50,44 @@ namespace
             .value();
     auto const a_code_hash = std::bit_cast<bytes32_t>(
         ethash::keccak256(a_code.data(), a_code.size()));
+    auto const a_code_analysis =
+        std::make_shared<CodeAnalysis>(analyze(a_code));
     auto const b_code =
         evmc::from_hex("60047ffffffffffffffffffffffffffffffffffffffffffffffffff"
                        "fffffffffffffff0160005500")
             .value();
     auto const b_code_hash = std::bit_cast<bytes32_t>(
         ethash::keccak256(b_code.data(), b_code.size()));
+    auto const b_code_analysis =
+        std::make_shared<CodeAnalysis>(analyze(b_code));
     auto const c_code =
         evmc::from_hex("60017ffffffffffffffffffffffffffffffffffffffffffffffffff"
                        "fffffffffffffff0160005500")
             .value();
     auto const c_code_hash = std::bit_cast<bytes32_t>(
         ethash::keccak256(c_code.data(), c_code.size()));
+    auto const c_code_analysis =
+        std::make_shared<CodeAnalysis>(analyze(c_code));
     auto const d_code = evmc::from_hex("600060000160005500").value();
     auto const d_code_hash = std::bit_cast<bytes32_t>(
         ethash::keccak256(d_code.data(), d_code.size()));
+    auto const d_code_analysis =
+        std::make_shared<CodeAnalysis>(analyze(d_code));
     auto const e_code =
         evmc::from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
                        "fffffffffff60010160005500")
             .value();
     auto const e_code_hash = std::bit_cast<bytes32_t>(
         ethash::keccak256(e_code.data(), e_code.size()));
+    auto const e_code_analysis =
+        std::make_shared<CodeAnalysis>(analyze(e_code));
     auto const h_code =
         evmc::from_hex("600060006000600060006004356101000162fffffff100")
             .value();
     auto const h_code_hash = std::bit_cast<bytes32_t>(
         ethash::keccak256(h_code.data(), h_code.size()));
+    auto const h_code_analysis =
+        std::make_shared<CodeAnalysis>(analyze(h_code));
 
     auto const json_str = R"(
 {
@@ -191,14 +207,16 @@ TYPED_TEST(DBTest, read_code)
         StateDeltas{{a, StateDelta{.account = {std::nullopt, acct_a}}}},
         Code{{code_hash1, code1}});
 
-    EXPECT_EQ(db.read_code(code_hash1), code1);
+    EXPECT_EQ(
+        db.read_code(code_hash1)->executable_code, code1->executable_code);
 
     Account acct_b{.balance = 0, .code_hash = code_hash2, .nonce = 1};
     db.commit(
         StateDeltas{{b, StateDelta{.account = {std::nullopt, acct_b}}}},
         Code{{code_hash2, code2}});
 
-    EXPECT_EQ(db.read_code(code_hash2), code2);
+    EXPECT_EQ(
+        db.read_code(code_hash2)->executable_code, code2->executable_code);
 }
 
 TYPED_TEST(DBTest, ModifyStorageOfAccount)
@@ -366,12 +384,12 @@ TYPED_TEST(DBTest, to_json)
                           .balance = 0xba1a9ce0ba1a9cf,
                           .code_hash = h_code_hash}}}}},
         Code{
-            {a_code_hash, a_code},
-            {b_code_hash, b_code},
-            {c_code_hash, c_code},
-            {d_code_hash, d_code},
-            {e_code_hash, e_code},
-            {h_code_hash, h_code}});
+            {a_code_hash, a_code_analysis},
+            {b_code_hash, b_code_analysis},
+            {c_code_hash, c_code_analysis},
+            {d_code_hash, d_code_analysis},
+            {e_code_hash, e_code_analysis},
+            {h_code_hash, h_code_analysis}});
 
     EXPECT_EQ(expected_payload, db.to_json());
 }
@@ -383,12 +401,24 @@ TYPED_TEST(DBTest, construct_from_json)
     EXPECT_EQ(
         db.state_root(),
         0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);
-    EXPECT_EQ(db.read_code(a_code_hash), a_code);
-    EXPECT_EQ(db.read_code(b_code_hash), b_code);
-    EXPECT_EQ(db.read_code(c_code_hash), c_code);
-    EXPECT_EQ(db.read_code(d_code_hash), d_code);
-    EXPECT_EQ(db.read_code(e_code_hash), e_code);
-    EXPECT_EQ(db.read_code(h_code_hash), h_code);
+    EXPECT_EQ(
+        db.read_code(a_code_hash)->executable_code,
+        a_code_analysis->executable_code);
+    EXPECT_EQ(
+        db.read_code(b_code_hash)->executable_code,
+        b_code_analysis->executable_code);
+    EXPECT_EQ(
+        db.read_code(c_code_hash)->executable_code,
+        c_code_analysis->executable_code);
+    EXPECT_EQ(
+        db.read_code(d_code_hash)->executable_code,
+        d_code_analysis->executable_code);
+    EXPECT_EQ(
+        db.read_code(e_code_hash)->executable_code,
+        e_code_analysis->executable_code);
+    EXPECT_EQ(
+        db.read_code(h_code_hash)->executable_code,
+        h_code_analysis->executable_code);
 }
 
 TYPED_TEST(DBTest, construct_from_binary)
@@ -399,10 +429,22 @@ TYPED_TEST(DBTest, construct_from_binary)
     EXPECT_EQ(
         db.state_root(),
         0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);
-    EXPECT_EQ(db.read_code(a_code_hash), a_code);
-    EXPECT_EQ(db.read_code(b_code_hash), b_code);
-    EXPECT_EQ(db.read_code(c_code_hash), c_code);
-    EXPECT_EQ(db.read_code(d_code_hash), d_code);
-    EXPECT_EQ(db.read_code(e_code_hash), e_code);
-    EXPECT_EQ(db.read_code(h_code_hash), h_code);
+    EXPECT_EQ(
+        db.read_code(a_code_hash)->executable_code,
+        a_code_analysis->executable_code);
+    EXPECT_EQ(
+        db.read_code(b_code_hash)->executable_code,
+        b_code_analysis->executable_code);
+    EXPECT_EQ(
+        db.read_code(c_code_hash)->executable_code,
+        c_code_analysis->executable_code);
+    EXPECT_EQ(
+        db.read_code(d_code_hash)->executable_code,
+        d_code_analysis->executable_code);
+    EXPECT_EQ(
+        db.read_code(e_code_hash)->executable_code,
+        e_code_analysis->executable_code);
+    EXPECT_EQ(
+        db.read_code(h_code_hash)->executable_code,
+        h_code_analysis->executable_code);
 }

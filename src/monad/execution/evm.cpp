@@ -6,6 +6,7 @@
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
 #include <monad/execution/baseline_execute.hpp>
+#include <monad/execution/code_analysis.hpp>
 #include <monad/execution/create_contract_address.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
@@ -22,6 +23,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -260,8 +262,9 @@ evmc::Result create_contract_account(
         return std::move(result.value());
     }
 
-    auto result = baseline_execute(
-        m_call, rev, host, byte_string_view(msg.input_data, msg.input_size));
+    auto const input_code_analysis =
+        evmone::baseline::analyze(rev, {msg.input_data, msg.input_size});
+    auto result = baseline_execute(m_call, rev, host, input_code_analysis);
 
     post_create_contract_account<rev>(state, m_call.recipient, result);
     return std::move(result);
@@ -288,7 +291,7 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
     }
     else {
         auto const code = state.get_code(msg.code_address);
-        result = baseline_execute(msg, rev, host, code);
+        result = baseline_execute(msg, rev, host, *code);
     }
 
     post_call(state, result);

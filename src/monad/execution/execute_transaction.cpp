@@ -186,7 +186,8 @@ Result<evmc::Result> execute_impl2(
 
 template <evmc_revision rev>
 Result<Receipt> execute_impl(
-    Transaction const &tx, Address const &sender, BlockHeader const &hdr,
+    [[maybe_unused]] uint64_t const i, Transaction const &tx,
+    Address const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
     boost::fibers::promise<void> &prev)
 {
@@ -242,9 +243,9 @@ EXPLICIT_EVMC_REVISION(execute_impl);
 
 template <evmc_revision rev>
 Result<Receipt> execute(
-    boost::fibers::promise<void> &prev, Transaction const &tx,
+    [[maybe_unused]] uint64_t const i, Transaction const &tx,
     BlockHeader const &hdr, BlockHashBuffer const &block_hash_buffer,
-    BlockState &block_state)
+    BlockState &block_state, boost::fibers::promise<void> &prev)
 {
     auto const sender = recover_sender(tx);
 
@@ -253,7 +254,7 @@ Result<Receipt> execute(
     }
 
     return execute_impl<rev>(
-        tx, sender.value(), hdr, block_hash_buffer, block_state, prev);
+        i, tx, sender.value(), hdr, block_hash_buffer, block_state, prev);
 }
 
 EXPLICIT_EVMC_REVISION(execute);

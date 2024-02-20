@@ -60,7 +60,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     prev.set_value();
 
     auto const result = execute_impl<EVMC_SHANGHAI>(
-        tx, from, header, block_hash_buffer, bs, prev);
+        0, tx, from, header, block_hash_buffer, bs, prev);
 
     ASSERT_TRUE(!result.has_error());
 

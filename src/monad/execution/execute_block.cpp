@@ -113,11 +113,12 @@ Result<std::vector<Receipt>> execute_block(
              &block_hash_buffer = block_hash_buffer,
              &block_state] {
                 results[i] = execute<rev>(
-                    promises[i],
+                    i,
                     transaction,
                     header,
                     block_hash_buffer,
-                    block_state);
+                    block_state,
+                    promises[i]);
                 promises[i + 1].set_value();
             });
     }

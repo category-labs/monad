@@ -1,5 +1,6 @@
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Install GCC
+  #
   - name: Add Ubuntu Toolchain
     ansible.builtin.apt_repository:
       repo: ppa:ubuntu-toolchain-r/test
@@ -16,46 +17,48 @@
 
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Install CLang
+  #
   - name: Add LLVM repository key
     ansible.builtin.get_url:
-      url: "https://apt.llvm.org/llvm-snapshot.gpg.key"
+      url: https://apt.llvm.org/llvm-snapshot.gpg.key
       dest: /etc/apt/trusted.gpg.d/llvm-snapshot.asc
       mode: '0644'
       force: true
 
   - name: Add LLVM apt repository
     ansible.builtin.apt_repository:
-      repo: 'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy main'
+      repo: deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main
       state: present
-      update_cache: yes
+      update_cache: true
 
-    # - name: Install clang
-    #   vars:
-    #     llvm_version: 18
-    #   ansible.builtin.apt:
-    #     name:
-    #     - clang-tidy-{{ llvm_version }}
-    #     - clang-format-{{ llvm_version }}
-    #     - clang-tools-{{ llvm_version }}
-    #     - llvm-{{ llvm_version }}-dev
-    #     - lld-{{ llvm_version }}
-    #     - lldb-{{ llvm_version }}
-    #     - llvm-{{ llvm_version }}-tools
-    #     - libomp-{{ llvm_version }}-dev
-    #     - libc++-{{ llvm_version }}-dev
-    #     - libc++abi-{{ llvm_version }}-dev
-    #     - libclang-common-{{ llvm_version }}-dev
-    #     - libclang-{{ llvm_version }}-dev
-    #     - libclang-cpp{{ llvm_version }}-dev
-    #     - libunwind-{{ llvm_version }}-dev
+  - name: Install clang
+    vars:
+      llvm_version: 18
+    ansible.builtin.apt:
+      name:
+      - clang-tidy-{{ llvm_version }}
+      - clang-format-{{ llvm_version }}
+      - clang-tools-{{ llvm_version }}
+      - llvm-{{ llvm_version }}-dev
+      - lld-{{ llvm_version }}
+      - lldb-{{ llvm_version }}
+      - llvm-{{ llvm_version }}-tools
+      - libomp-{{ llvm_version }}-dev
+      - libc++-{{ llvm_version }}-dev
+      - libc++abi-{{ llvm_version }}-dev
+      - libclang-common-{{ llvm_version }}-dev
+      - libclang-{{ llvm_version }}-dev
+      - libclang-cpp{{ llvm_version }}-dev
+      - libunwind-{{ llvm_version }}-dev
 
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Install Boost
+  #
   - name: Add Boost PPA repository
     ansible.builtin.apt_repository:
       repo: ppa:mhier/libboost-latest
       state: present
-      update_cache: yes
+      update_cache: true
 
   - name: Install Boost libraries
     vars:
@@ -74,6 +77,14 @@
 
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Install CMake
+  #
+  - name: Add kitware apt-key
+    ansible.builtin.get_url:
+      url: https://apt.kitware.com/keys/kitware-archive-latest.asc
+      dest: /etc/apt/trusted.gpg.d/kitware-archive-latest.asc
+      mode: '0644'
+      force: true
+
   - name: Add kitware apt-key
     ansible.builtin.get_url:
       url: https://apt.kitware.com/keys/kitware-archive-latest.asc
@@ -95,6 +106,7 @@
 
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Install Tools
+  #
   - name: Install tools
     ansible.builtin.apt:
       name:
@@ -106,6 +118,7 @@
 
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Install Deps
+  #
   - name: Install deps
     ansible.builtin.apt:
       name:
@@ -117,48 +130,33 @@
       - liburing-dev
       - libtbb-dev
       - linux-tools-common
-      - linux-tools-{{ ansible_kernel }}
+      - linux-tools-generic
       - bpfcc-tools
 
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Create systemd service unit to configure hugepages on boot
-  - name: Create hugepages.sh
-    ansible.builtin.copy:
-      dest: "/usr/local/bin/hugepages.sh"
-      content: |
-        #!/bin/bash
-        echo 4 > /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
-        echo 2048 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
-      mode: 0755
-
+  #
   - name: Extract package
     ansible.builtin.copy:
-      dest: "/usr/lib/systemd/system/hugepages.service"
+      dest: /usr/lib/systemd/system/hugepages.service
       content: |
         [Unit]
         Description=Enable Hugepages Config
-        DefaultDependencies=no
-        Before=dev-hugepages.mount
-        ConditionPathExists=/sys/devices/system/node0
 
         [Service]
         Type=oneshot
         RemainAfterExit=yes
-        ExecStart=/usr/local/bin/hugepages.sh
+        ExecStart=echo 4 > /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
+        ExecStart=echo 2048 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
 
         [Install]
         WantedBy=sysinit.target
-
-  - name: Start Hugepages
-    ansible.builtin.systemd:
-      name: hugepages
-      state: started
 
   - name: Enable Hugepages
     ansible.builtin.systemd:
       name: hugepages
       enabled: true
-      state: started
+      state: stopped
 
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   - name: kernel.kptr_restrict=0

@@ -6,7 +6,8 @@
     users:
       jhunsaker:
         uid: "1000"
-        group: sudo
+        groups:
+        - sudo
         ssh_keys:
         - "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBCpjsVf59YOhsNwO8dY3jPhBzWog/8bMu0aDJZGZE/0RBRnWILPM67Ou6Z7wola4ECLoNMloR7PFRK0Cy45strA= hunsa@LAPTOP-4F58ONC3"
       ariq:
@@ -32,6 +33,8 @@
         - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDGjOsZeR8+VHq8WFhvwVR5VmAO1zaal24hok37rcavcElMY93A/XEdU6nnNSa5mc3Ti2Rit551m/V6nD4SF2A6I/M47imN9R6gEQIgT1gO0zPiGGYJ3wtjciP3GCs2MZj7zliXpglhW5/Kt59LXqtuj802KSgDx8XoVp/6l0e8+ddgzKSyeOeE3sPO+p8XROoXnqucWn74lYecPy/d2Rq4v2iNqvJ/xGnS++ABXUwJeQfqbLg2SO9i1lykqSb2BiJgYQNzF6JYla+vCi1iz2bLI4tCJ+shzIFy5oW0m9kN8ewO/uPBNn4/n2y1JgMh/GuFVNROdTlKEJZSVfBiXwidFUoLu+RzQSu3rb2ApfvwXqqj1UKMgjsCPRdgCU6TvapUh/67gSyjE8VJzpCvmolEHhiDvGD8y/L+k8bThHfDGEXcOXAg2ytFNtM91yfVGJfLM8Lqpx2tGhcJABV8UaC6iMTzfzcUQ9domEHKJtXRaLPjig/HZPGr4zyKOrIEUlU= alee@peach4.spacetime.org"
       mchen:
         uid: "1025"
+        groups:
+        - docker
         ssh_keys:
         - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDrz8vwObEvLG8qdfDcmW5qMKYSn9WDFAd7/mT7FUJ+5 michael@Michaels-MacBook-Pro-2.local"
       ndouglas:
@@ -42,7 +45,8 @@
         - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINAtqJ4imToWd0n+suHP/Dao8rWZuQR5Osl0SLCr5cj2 openpgp:0x713C2CB2"
       mhume:
         uid: "1035"
-        group: sudo
+        groups:
+        - sudo
         ssh_keys:
         - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICb3n4z7EaWA60t7g9cywU370HUn4YR4TZwVB6WB2VM5 mike@monad.xyz"
       klemens:
@@ -60,10 +64,6 @@
         - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAxIXi047GtUgcleZfT1FZkg9ouYpiz3PeH0hguip2mc jenkins@peach10"
       refdata:
         uid: "2001"
-      jenkins:
-        uid: "2002"
-        ssh_keys:
-        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAxIXi047GtUgcleZfT1FZkg9ouYpiz3PeH0hguip2mc jenkins@peach10"
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
 #
@@ -72,6 +72,8 @@
     name: "{{ item.key }}"
     uid: "{{ item.value.uid }}"
     create_home: yes
+    append: "{{ item.value.append | default(true if item.value.groups is defined else omit) }}"
+    groups: "{{ item.value.groups | default((item.value.groups | join(\",\")) if item.value.groups is defined else omit) }}"
     shell: /bin/bash
     state: present
   loop: "{{ lookup('ansible.builtin.dict', users) }}"
@@ -89,6 +91,11 @@
    - skip_missing: True
   when: item.0.key in group_names
 
+- name: Allow 'sudo' group to execute sudo without a password
+  ansible.builtin.lineinfile:
+    path: /etc/sudoers
+    line: '%sudo ALL=(ALL:ALL) NOPASSWD:ALL'
+    validate: 'visudo -cf %s'
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
 # Debug inventory

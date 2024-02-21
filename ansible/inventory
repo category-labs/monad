@@ -1,6 +1,10 @@
 [monad]
 peach9
 peach10
+
+peach11
+peach12
+
 peach13
 peach14
 peach15
@@ -13,10 +17,22 @@ peach23
 peach24
 peach25
 
+peach26
+peach27
+peach28
+
 devnet1
 devnet2
 devnet3
 devnet4
+
+devnet5
+devnet6
+devnet7
+devnet8
+
+[fiberstate:children]
+monad
 
 [alee]
 peach16
@@ -52,6 +68,7 @@ peach13
 
 [vickychen]
 peach9
+peach26
 
 # [monad]
 # [refdata]
@@ -69,12 +86,18 @@ ndouglas
 vickychen
 
 [devnet]
-devnet1 ansible_user=monad
-devnet2 ansible_user=monad
-devnet3 ansible_user=monad
-devnet4 ansible_user=monad
+devnet1
+devnet2
+devnet3
+devnet4
+devnet5
+devnet6
+devnet7
+devnet8
 
-[jenkins-agents]
+[jenkins_agents]
+peach17
+peach18
 peach22
 peach23
 peach24

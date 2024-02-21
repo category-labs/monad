@@ -6,11 +6,10 @@
 #include <monad/core/bytes.hpp>
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
+#include <monad/lru/lru_cache.hpp>
 #include <monad/state2/state_deltas.hpp>
 
 #include <evmc/evmc.hpp>
-
-#include <thread-safe-lru/lru-cache.h>
 
 #include <memory>
 #include <optional>
@@ -21,13 +20,11 @@ class DbCache final : public Db
 {
     Db &db_;
 
-    using AccountCache =
-        tstarling::ThreadSafeLRUCache<Address, std::optional<Account>>;
+    using AccountCache =LruCache<Address, std::optional<Account>>;
 
     AccountCache accounts_{10000000};
 
-    using CodeCache =
-        tstarling::ThreadSafeLRUCache<bytes32_t, std::shared_ptr<CodeAnalysis>>;
+    using CodeCache =LruCache<bytes32_t, std::shared_ptr<CodeAnalysis>>;
 
     CodeCache code_{40000};
 

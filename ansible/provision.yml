@@ -115,6 +115,8 @@
       - pkg-config
       - python3-pytest
       - valgrind
+      - smartmontools
+      - lm-sensors
 
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Install Deps
@@ -132,6 +134,40 @@
       - linux-tools-common
       - linux-tools-generic
       - bpfcc-tools
+
+  - ansible.builtin.copy:
+      dest: /etc/sudoers.d/bpfcc-tools
+      content: |
+        ALL ALL=(root) NOPASSWD: /usr/sbin/cpudist-bpfcc
+        ALL ALL=(root) NOPASSWD: /usr/sbin/offcputime-bpfcc
+        ALL ALL=(root) NOPASSWD: /usr/sbin/stackcount-bpfcc
+        ALL ALL=(root) NOPASSWD: /usr/sbin/biosnoop-bpfcc
+        ALL ALL=(root) NOPASSWD: /usr/sbin/biolatency-bpfcc
+        ALL ALL=(root) NOPASSWD: /usr/sbin/biolatpcts-bpfcc
+        ALL ALL=(root) NOPASSWD: /usr/sbin/biotop-bpfcc
+      mode: '0440'
+      owner: root
+      group: root
+      validate: /usr/sbin/visudo -cs %s
+
+  - ansible.builtin.copy:
+      dest: /etc/sudoers.d/bpftrace
+      content: |
+        ALL ALL=(root) NOPASSWD: /usr/bin/bpftrace
+      mode: '0440'
+      owner: root
+      group: root
+      validate: /usr/sbin/visudo -cs %s
+
+  - ansible.builtin.copy:
+      dest: /etc/sudoers.d/smartctl
+      content: |
+        ALL ALL=(root) NOPASSWD: /usr/bin/smartctl
+        ALL ALL=(root) NOPASSWD: /usr/bin/sensors
+      mode: '0440'
+      owner: root
+      group: root
+      validate: /usr/sbin/visudo -cs %s
 
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - /
   # Create systemd service unit to configure hugepages on boot

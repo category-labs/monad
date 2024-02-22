@@ -44,9 +44,9 @@ Result<void> static_validate_transaction(
         if constexpr (rev < EVMC_SPURIOUS_DRAGON) {
             return TransactionError::TypeNotSupported;
         }
-        if (MONAD_UNLIKELY(tx.sc.chain_id.value() != 1)) {
-            return TransactionError::WrongChainId;
-        }
+        // if (MONAD_UNLIKELY(tx.sc.chain_id.value() != 1)) {
+        //     return TransactionError::WrongChainId;
+        // }
     }
 
     // EIP-2930 & EIP-2718

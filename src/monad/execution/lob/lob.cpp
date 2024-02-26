@@ -322,11 +322,19 @@ int main(int argc, char *argv[])
             cumulative_gas_used);
         block_state.commit();
         LOG_INFO("At file {}", i);
+
+        for (auto const &receipt : receipts.value()) {
+            if (receipt.status != 1) {
+                LOG_ERROR("Error receipt: {}", receipt);
+            }
+        }
     }
 
     auto const finish_time = std::chrono::steady_clock::now();
     auto const time_elapsed = std::chrono::duration_cast<std::chrono::seconds>(
         finish_time - start_time);
+
+    auto const num = db.count();
 
     LOG_INFO(
         "Finished running, num files = {}, num transactions = {}k, time "
@@ -336,6 +344,11 @@ int main(int argc, char *argv[])
         time_elapsed,
         finish_batch * 1000 /
             std::max(1UL, static_cast<uint64_t>(time_elapsed.count())));
+
+    LOG_INFO(
+        "Number of accounts = {}, number of storage = {}",
+        num.first,
+        num.second);
 
     return 0;
 }

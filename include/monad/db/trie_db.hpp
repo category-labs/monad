@@ -82,6 +82,7 @@ public:
 
     nlohmann::json to_json();
     uint64_t current_block_number() const;
+    std::pair<uint64_t, uint64_t> count();
 };
 
 MONAD_DB_NAMESPACE_END

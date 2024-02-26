@@ -988,4 +988,63 @@ uint64_t TrieDb::current_block_number() const
     return curr_block_id_;
 }
 
+std::pair<uint64_t, uint64_t> TrieDb::count()
+{
+    struct Traverse : public TraverseMachine
+    {
+        TrieDb &db;
+        Nibbles path;
+        uint64_t num_account;
+        uint64_t num_storage;
+
+        Traverse(TrieDb &db)
+            : db(db)
+            , path()
+        {
+            num_account = 0;
+            num_storage = 0;
+        }
+
+        virtual void down(unsigned char const branch, Node const &node) override
+        {
+            if (branch == INVALID_BRANCH) {
+                MONAD_ASSERT(node.path_nibble_view().nibble_size() == 0);
+                return;
+            }
+            path = concat(NibblesView{path}, branch, node.path_nibble_view());
+
+            if (path.nibble_size() == (KECCAK256_SIZE * 2)) {
+                ++num_account;
+            }
+            else if (
+                path.nibble_size() == ((KECCAK256_SIZE + KECCAK256_SIZE) * 2)) {
+                ++num_storage;
+            }
+        }
+
+        virtual void up(unsigned char const branch, Node const &node) override
+        {
+            auto const path_view = NibblesView{path};
+            auto const rem_size = [&] {
+                if (branch == INVALID_BRANCH) {
+                    MONAD_ASSERT(path_view.nibble_size() == 0);
+                    return 0;
+                }
+                int const rem_size = path_view.nibble_size() - 1 -
+                                     node.path_nibble_view().nibble_size();
+                MONAD_ASSERT(rem_size >= 0);
+                MONAD_ASSERT(
+                    path_view.substr(static_cast<unsigned>(rem_size)) ==
+                    concat(branch, node.path_nibble_view()));
+                return rem_size;
+            }();
+            path = path_view.substr(0, static_cast<unsigned>(rem_size));
+        }
+    } traverse(*this);
+
+    db_.traverse(state_nibbles, traverse);
+
+    return std::make_pair(traverse.num_account, traverse.num_storage);
+}
+
 MONAD_DB_NAMESPACE_END

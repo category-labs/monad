@@ -1,5 +1,6 @@
 #pragma once
 
+#include <monad/cache/account_storage_cache.hpp>
 #include <monad/config.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
@@ -21,10 +22,9 @@ class DbCache final : public DbRW
 {
     DbRW &db_;
 
-    using AccountCache =
-        tstarling::ThreadSafeLRUCache<Address, std::optional<Account>>;
+    using Combined = AccountStorageCache;
 
-    AccountCache accounts_{10000000};
+    Combined cache_{10'000'000, 10'000'000};
 
     using CodeCache =
         tstarling::ThreadSafeLRUCache<bytes32_t, std::shared_ptr<CodeAnalysis>>;
@@ -39,25 +39,44 @@ public:
 
     virtual std::optional<Account> read_account(Address const &address) override
     {
-        AccountCache::ConstAccessor it{};
-        if (accounts_.find(it, address)) {
-            auto result = *it;
-            if (result.has_value()) {
-                result->incarnation = 0;
-            }
-            return result;
-        }
         {
-            auto const result = db_.read_account(address);
-            accounts_.insert(address, result);
-            return result;
+            Combined::AccountConstAccessor acc{};
+            if (cache_.find_account(acc, address)) {
+                auto result = acc->second.value_;
+                if (result.has_value()) {
+                    result->incarnation = 0;
+                }
+                return result;
+            }
         }
+        auto const result = db_.read_account(address);
+        {
+            Combined::AccountAccessor acc{};
+            cache_.insert_account(acc, address, result);
+        }
+        return result;
     }
 
     virtual bytes32_t
     read_storage(Address const &address, bytes32_t const &key) override
     {
-        return db_.read_storage(address, key);
+        {
+            Combined::StorageConstAccessor acc{};
+            if (cache_.find_storage(acc, address, key)) {
+                return acc->second.value_;
+            }
+        }
+        auto const result = db_.read_storage(address, key);
+        {
+            Combined::AccountAccessor acc{};
+            if (!cache_.find_account(acc, address)) {
+                auto const account = db_.read_account(address);
+                MONAD_ASSERT(account);
+                cache_.insert_account(acc, address, account);
+            }
+            cache_.insert_storage(acc, key, result);
+        }
+        return result;
     }
 
     virtual std::shared_ptr<CodeAnalysis>
@@ -91,7 +110,20 @@ public:
             auto const &address = it->first;
             auto const &account_delta = it->second.account;
             if (account_delta.second != account_delta.first) {
-                accounts_.insert(address, account_delta.second);
+                Combined::AccountAccessor acc{};
+                cache_.insert_account(acc, address, account_delta.second);
+            }
+            auto const &storage = it->second.storage;
+            for (auto it2 = storage.cbegin(); it2 != storage.cend(); ++it2) {
+                auto const &key = it2->first;
+                auto const &storage_delta = it2->second;
+                if (storage_delta.second != storage_delta.first) {
+                    Combined::AccountAccessor acc{};
+                    bool const found = cache_.find_account(acc, address);
+                    if (found) {
+                        cache_.insert_storage(acc, key, storage_delta.second);
+                    }
+                }
             }
         }
 

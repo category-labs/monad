@@ -78,6 +78,8 @@ add_library(
   # analysis
   "include/monad/analysis/analysis.hpp"
   "src/monad/analysis/analysis.cpp"
+  # cache
+  "include/monad/cache/account_storage_cache.hpp"
   # chain
   "include/monad/chain/chain.hpp"
   "include/monad/chain/ethereum_mainnet.hpp"

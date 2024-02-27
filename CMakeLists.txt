@@ -76,6 +76,8 @@ add_library(
   # analysis
   "include/monad/analysis/analysis.hpp"
   "src/monad/analysis/analysis.cpp"
+  # cache
+  "include/monad/cache/account_storage_cache.hpp"
   # core
   "include/monad/core/account.hpp"
   "include/monad/core/address.hpp"

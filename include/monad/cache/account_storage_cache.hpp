@@ -54,24 +54,22 @@ private:
     template <class Finder>
     struct ListNode
     {
-        static const uint64_t kOneSecond = 1'000'000'000;
-        static const uint64_t kLruUpdatePeriod = 1 * kOneSecond;
+        static constexpr uint64_t one_second = 1'000'000'000;
+        static constexpr uint64_t lru_update_period = 1 * one_second;
 
         ListNode *prev_{nullptr};
         ListNode *next_{nullptr};
-        Finder    finder_;
-        uint64_t  lru_time_;
+        Finder finder_;
+        uint64_t lru_time_;
 
-        ListNode()
-        {
-        }
+        ListNode() {}
 
         ListNode(Finder &finder)
-        : finder_(finder)
+            : finder_(finder)
         {
         }
 
-        bool isInList() const
+        bool is_in_list() const
         {
             return prev_ != nullptr;
         }
@@ -83,14 +81,13 @@ private:
 
         bool check_lru_time() const
         {
-            return (cur_time() - lru_time_) >= kLruUpdatePeriod;
+            return (cur_time() - lru_time_) >= lru_update_period;
         }
 
         uint64_t cur_time() const
         {
-            return
-                std::chrono::duration_cast<std::chrono::nanoseconds>
-                (std::chrono::system_clock::now().time_since_epoch())
+            return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                       std::chrono::system_clock::now().time_since_epoch())
                 .count();
         }
     }; /// ListNode
@@ -106,13 +103,13 @@ private:
 
         LruList()
         {
-            head_.next_= &tail_;
+            head_.next_ = &tail_;
             tail_.prev_ = &head_;
         }
 
         void update_lru(Node *node)
         {
-            if (node->isInList()) {
+            if (node->is_in_list()) {
                 delink_node(node);
                 push_front_node(node);
                 node->update_time();
@@ -128,7 +125,7 @@ private:
             node->prev_ = nullptr;
         }
 
-        void push_front_node(Node* node)
+        void push_front_node(Node *node)
         {
             Node *head = head_.next_;
             node->prev_ = &head_;
@@ -145,11 +142,11 @@ private:
             return target;
         }
 
-        void clear_list(Pool &pool) {
+        void clear_list(Pool &pool)
+        {
             Node *node = head_.next_;
             Node *next;
-            while (node != &tail_)
-            {
+            while (node != &tail_) {
                 next = node->next_;
                 pool.delete_obj(node);
                 node = next;
@@ -162,11 +159,11 @@ private:
     /// StorageMapWrapper
     struct StorageMapWrapper
     {
-        AccountStorageCache                 &cache_;
-        HashMap<bytes32_t, StorageMapValue>  map_;
+        AccountStorageCache &cache_;
+        HashMap<bytes32_t, StorageMapValue> map_;
 
         StorageMapWrapper(AccountStorageCache &cache)
-        : cache_(cache)
+            : cache_(cache)
         {
 #ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
             cache_.stats_.event_storage_map_ctor();
@@ -191,17 +188,14 @@ private:
     struct StorageFinder
     {
         std::shared_ptr<StorageMapWrapper> storage_;
-        bytes32_t                          key_;
+        bytes32_t key_;
 
-        StorageFinder()
-        {
-        }
+        StorageFinder() {}
 
         StorageFinder(
-            std::shared_ptr<StorageMapWrapper> const &storage,
-            bytes32_t key)
-        : storage_(storage)
-        , key_(key)
+            std::shared_ptr<StorageMapWrapper> const &storage, bytes32_t key)
+            : storage_(storage)
+            , key_(key)
         {
         }
     };
@@ -209,47 +203,42 @@ private:
     /// AccountMapValue
     struct AccountMapValue
     {
-        AccountNode                        *node_;
-        std::shared_ptr<StorageMapWrapper>  storage_;
-        std::optional<Account>              value_;
+        AccountNode *node_;
+        std::shared_ptr<StorageMapWrapper> storage_;
+        std::optional<Account> value_;
     };
 
     /// StorageMapValue
     struct StorageMapValue
     {
         StorageNode *node_;
-        bytes32_t    value_;
+        bytes32_t value_;
     };
 
     /// Constants
-    static const size_t kSlack = 16;
-    static const size_t kAlign = 64;
+    static constexpr size_t slack = 16;
+    static constexpr size_t line_align = 64;
 
     /// DATA
-    alignas(kAlign)
-    const size_t account_max_size_;
-    const size_t storage_max_size_;
+    alignas(line_align) size_t const account_max_size_;
+    size_t const storage_max_size_;
     AccountMap account_map_;
-    alignas(kAlign)
-    Mutex account_mutex_;
+    alignas(line_align) Mutex account_mutex_;
     AccountList account_lru_;
-    alignas(kAlign)
-    Mutex storage_mutex_;
+    alignas(line_align) Mutex storage_mutex_;
     StorageList storage_lru_;
-    alignas(kAlign)
-    std::atomic<size_t> account_size_{0};
+    alignas(line_align) std::atomic<size_t> account_size_{0};
     AccountPool account_pool_;
-    alignas(kAlign)
-    std::atomic<size_t> storage_size_{0};
+    alignas(line_align) std::atomic<size_t> storage_size_{0};
     StoragePool storage_pool_;
 
 public:
     AccountStorageCache(size_t account_max_size, size_t storage_max_size)
-    : account_max_size_(account_max_size)
-    , storage_max_size_(storage_max_size)
-    , account_map_(account_max_size_ + kSlack)
-    , account_pool_(account_max_size + kSlack)
-    , storage_pool_(storage_max_size + kSlack)
+        : account_max_size_(account_max_size)
+        , storage_max_size_(storage_max_size)
+        , account_map_(account_max_size_ + slack)
+        , account_pool_(account_max_size + slack)
+        , storage_pool_(storage_max_size + slack)
     {
     }
 
@@ -264,8 +253,7 @@ public:
     template <class Accessor>
     bool find_account(Accessor &acc, Address const &addr)
     {
-        if (!account_map_.find(acc, addr))
-        {
+        if (!account_map_.find(acc, addr)) {
 #ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
             stats_.event_account_find_miss();
 #endif
@@ -279,22 +267,19 @@ public:
         return true;
     }
 
-    bool insert_account(AccountAccessor &acc,
-                        Address const &addr,
-                        std::optional<Account> const &account)
+    bool insert_account(
+        AccountAccessor &acc, Address const &addr,
+        std::optional<Account> const &account)
     {
-        AccountMapKeyValue kv(
-                    addr, AccountMapValue(nullptr, nullptr, account));
+        AccountMapKeyValue kv(addr, AccountMapValue(nullptr, nullptr, account));
         if (!account_map_.insert(acc, kv)) {
 #ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
             stats_.event_account_insert_found();
 #endif
             acc->second.value_ = account;
-            if (account == std::nullopt)
-            {
+            if (account == std::nullopt) {
 #ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
-                if (acc->second.storage_)
-                {
+                if (acc->second.storage_) {
                     stats_.event_account_storage_reset();
                 }
 #endif
@@ -310,20 +295,17 @@ public:
         return true;
     }
 
-    bool find_storage(StorageConstAccessor &acc,
-                      Address const &addr,
-                      bytes32_t const &key)
+    bool find_storage(
+        StorageConstAccessor &acc, Address const &addr, bytes32_t const &key)
     {
         AccountConstAccessor account_acc{};
-        if (account_map_.find(account_acc, addr))
-        {
+        if (account_map_.find(account_acc, addr)) {
             auto &storage = account_acc->second.storage_;
-            if ((storage) && (storage->map_.find(acc, key)))
-            {
+            if ((storage) && (storage->map_.find(acc, key))) {
 #ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
                 stats_.event_storage_find_hit();
 #endif
-                StorageNode* node = acc->second.node_;
+                StorageNode *node = acc->second.node_;
                 try_update_lru(node, storage_lru_, storage_mutex_);
                 return true;
             }
@@ -334,20 +316,18 @@ public:
         return false;
     }
 
-    bool insert_storage(AccountAccessor &account_acc,
-                        bytes32_t const &key,
-                        bytes32_t const &value)
+    bool insert_storage(
+        AccountAccessor &account_acc, bytes32_t const &key,
+        bytes32_t const &value)
     {
         MONAD_ASSERT(!account_acc.empty());
         auto &storage = account_acc->second.storage_;
-        if (!storage)
-        {
+        if (!storage) {
             storage = std::make_shared<StorageMapWrapper>(*this);
         }
         StorageAccessor storage_acc{};
         StorageMapKeyValue kv(key, StorageMapValue(nullptr, value));
-        if (!storage->map_.insert(storage_acc, kv))
-        {
+        if (!storage->map_.insert(storage_acc, kv)) {
 #ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
             stats_.event_storage_insert_found();
 #endif
@@ -390,10 +370,10 @@ private:
         if (node->check_lru_time()) {
             std::unique_lock l(mutex);
 #ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
-            if (std::is_same<Node, AccountNode>::value)
-            {
+            if (std::is_same<Node, AccountNode>::value) {
                 stats_.event_account_update_lru();
-            } else {
+            }
+            else {
                 stats_.event_storage_update_lru();
             }
 #endif
@@ -405,8 +385,7 @@ private:
     {
         size_t sz = account_size();
         bool evicted = false;
-        if (sz >= account_max_size_)
-        {
+        if (sz >= account_max_size_) {
             account_evict();
             evicted = true;
         }
@@ -417,16 +396,15 @@ private:
 #endif
             account_lru_.push_front_node(node);
         }
-        if (!evicted)
-        {
+        if (!evicted) {
             sz = 1 + account_size_.fetch_add(1, std::memory_order_acq_rel);
         }
-        if (sz > account_max_size_)
-        {
-            if (account_size_.compare_exchange_strong(sz, sz - 1,
-                std::memory_order_acq_rel,
-                std::memory_order_relaxed))
-            {
+        if (sz > account_max_size_) {
+            if (account_size_.compare_exchange_strong(
+                    sz,
+                    sz - 1,
+                    std::memory_order_acq_rel,
+                    std::memory_order_relaxed)) {
                 account_evict();
             }
         }
@@ -436,8 +414,7 @@ private:
     {
         size_t sz = storage_size();
         bool evicted = false;
-        if (sz >= storage_max_size_)
-        {
+        if (sz >= storage_max_size_) {
             storage_evict();
             evicted = true;
         }
@@ -448,16 +425,15 @@ private:
 #endif
             storage_lru_.push_front_node(node);
         }
-        if (!evicted)
-        {
+        if (!evicted) {
             sz = 1 + storage_size_.fetch_add(1, std::memory_order_acq_rel);
         }
-        if (sz > storage_max_size_)
-        {
-            if (storage_size_.compare_exchange_strong(sz, sz - 1,
-                std::memory_order_acq_rel,
-                std::memory_order_relaxed))
-            {
+        if (sz > storage_max_size_) {
+            if (storage_size_.compare_exchange_strong(
+                    sz,
+                    sz - 1,
+                    std::memory_order_acq_rel,
+                    std::memory_order_relaxed)) {
                 storage_evict();
             }
         }
@@ -474,7 +450,7 @@ private:
             target = account_lru_.evict_lru_node();
         }
         {
-            AccountFinder& finder = target->finder_;
+            AccountFinder &finder = target->finder_;
             AccountAccessor acc;
             bool found = account_map_.find(acc, finder.addr_);
             MONAD_ASSERT(found);
@@ -512,14 +488,12 @@ public:
         std::string str;
 #ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
         str = stats_.print_account_stats();
-        if constexpr (std::is_same<Mutex, SpinLock>::value)
-        {
+        if constexpr (std::is_same<Mutex, SpinLock>::value) {
             str += " _ " + account_mutex_.print_stats();
         }
         str += " - " + account_pool_.print_stats();
         str += " ** " + stats_.print_storage_stats();
-        if constexpr (std::is_same<Mutex, SpinLock>::value)
-        {
+        if constexpr (std::is_same<Mutex, SpinLock>::value) {
             str += " _ " + storage_mutex_.print_stats();
         }
         str += " - " + storage_pool_.print_stats();
@@ -647,31 +621,37 @@ private:
         std::string print_account_stats()
         {
             char str[100];
-            sprintf(str, "%6ld %5ld %6ld %5ld %5ld %5ld""%s",
-                    n_account_find_hit_.load(std::memory_order_acquire),
-                    n_account_find_miss_.load(std::memory_order_acquire),
-                    n_account_insert_found_.load(std::memory_order_acquire),
-                    n_account_insert_new_,
-                    n_account_evict_,
-                    n_account_update_lru_,
-                    "");
+            sprintf(
+                str,
+                "%6ld %5ld %6ld %5ld %5ld %5ld"
+                "%s",
+                n_account_find_hit_.load(std::memory_order_acquire),
+                n_account_find_miss_.load(std::memory_order_acquire),
+                n_account_insert_found_.load(std::memory_order_acquire),
+                n_account_insert_new_,
+                n_account_evict_,
+                n_account_update_lru_,
+                "");
             return std::string(str);
         }
 
         std::string print_storage_stats()
         {
             char str[100];
-            sprintf(str, "%6ld %5ld %6ld %5ld %5ld %5ld . %4ld %4ld %4ld""%s",
-                    n_storage_find_hit_.load(std::memory_order_acquire),
-                    n_storage_find_miss_.load(std::memory_order_acquire),
-                    n_storage_insert_found_.load(std::memory_order_acquire),
-                    n_storage_insert_new_,
-                    n_storage_evict_,
-                    n_storage_update_lru_,
-                    n_account_storage_reset_.load(std::memory_order_acquire),
-                    n_storage_map_ctor_.load(std::memory_order_acquire),
-                    n_storage_map_dtor_.load(std::memory_order_acquire),
-                    "");
+            sprintf(
+                str,
+                "%6ld %5ld %6ld %5ld %5ld %5ld . %4ld %4ld %4ld"
+                "%s",
+                n_storage_find_hit_.load(std::memory_order_acquire),
+                n_storage_find_miss_.load(std::memory_order_acquire),
+                n_storage_insert_found_.load(std::memory_order_acquire),
+                n_storage_insert_new_,
+                n_storage_evict_,
+                n_storage_update_lru_,
+                n_account_storage_reset_.load(std::memory_order_acquire),
+                n_storage_map_ctor_.load(std::memory_order_acquire),
+                n_storage_map_dtor_.load(std::memory_order_acquire),
+                "");
             return std::string(str);
         }
     }; /// CacheStats

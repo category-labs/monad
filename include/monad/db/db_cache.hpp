@@ -1,5 +1,6 @@
 #pragma once
 
+#include <monad/cache/account_storage_cache.hpp>
 #include <monad/config.hpp>
 #include <monad/cache/account_storage_cache.hpp>
 #include <monad/core/account.hpp>
@@ -69,8 +70,7 @@ public:
         auto const result = db_.read_storage(address, key);
         {
             Combined::AccountAccessor acc{};
-            if (!cache_.find_account(acc, address))
-            {
+            if (!cache_.find_account(acc, address)) {
                 auto const account = db_.read_account(address);
                 MONAD_ASSERT(account);
                 cache_.insert_account(acc, address, account);
@@ -120,11 +120,8 @@ public:
                 if (storage_delta.second != storage_delta.first) {
                     Combined::AccountAccessor acc{};
                     bool found = cache_.find_account(acc, address);
-                    if (found)
-                    {
-                        cache_.insert_storage(acc,
-                                              key,
-                                              storage_delta.second);
+                    if (found) {
+                        cache_.insert_storage(acc, key, storage_delta.second);
                     }
                 }
             }

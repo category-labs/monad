@@ -32,6 +32,7 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <random>
 #include <sstream>
 
 #include <sys/sysinfo.h>
@@ -44,6 +45,11 @@ static constexpr auto beneficiary =
     0x388C818CA8B9251b393131C08a736A67ccB19297_address;
 static constexpr uint256_t base_fee_per_gas = 1'000'000'000u;
 std::string global_value;
+
+std::random_device rd;
+std::mt19937 gen(rd());
+std::uniform_int_distribution<uint64_t>
+    distrib(0, std::numeric_limits<uint64_t>::max());
 
 std::optional<byte_string_view>
 get(std::filesystem::path const &path, bool const setup, uint64_t const num)
@@ -86,14 +92,10 @@ std::vector<Address> get_addresses_from_file(std::filesystem::path const &path)
     std::string address;
     while (std::getline(in, line)) {
         std::stringstream ss(line);
-        // std::cout << line << std::endl;
         std::getline(ss, address, ',');
-        // std::cout << address << std::endl;
         std::getline(ss, address);
-        // std::cout << address << std::endl;
 
         address = address.substr(2, 42);
-        // std::cout << address << std::endl;
         Address formatted_address =
             evmc::from_hex<monad::Address>(address).value();
         addresses.emplace_back(std::move(formatted_address));
@@ -120,6 +122,11 @@ Block make_block(byte_string_view &encoded_txns)
     return block;
 }
 
+Address generate_random_address()
+{
+    return Address(distrib(gen));
+}
+
 MONAD_NAMESPACE_END
 
 int main(int argc, char *argv[])
@@ -130,6 +137,7 @@ int main(int argc, char *argv[])
 
     std::filesystem::path block_db_path{};
     uint64_t finish_batch = 1500;
+    uint64_t inactive_accounts = 1'000'000;
 
     bool on_disk = false;
     bool compaction = false;
@@ -144,9 +152,12 @@ int main(int argc, char *argv[])
     auto log_level = quill::LogLevel::Info;
     cli.add_option("--block_db", block_db_path, "block_db directory")
         ->required();
-
     cli.add_option(
         "--finish_batch", finish_batch, "Last batch of txn to execute");
+    cli.add_option(
+        "--inactive_accounts",
+        inactive_accounts,
+        "Number of accounts not interacting with the lob");
     cli.add_option("--log_level", log_level, "level of logging")
         ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
     cli.add_option("--nthreads", nthreads, "number of threads");
@@ -190,13 +201,30 @@ int main(int argc, char *argv[])
                                 : std::nullopt;
     auto db = db::TrieDb{config};
     LOG_INFO(
-        "Running with block_db = {}, finish batch = {}",
+        "Running with block_db = {}, finish batch = {}, inactive accounts = {}",
         block_db_path,
-        finish_batch);
+        finish_batch,
+        inactive_accounts);
 
     fiber::PriorityPool priority_pool{nthreads, nfibers};
 
     auto const addresses = get_addresses_from_file(block_db_path);
+
+    // setup some random accounts (not intended to interact with orderbook)
+    {
+        BlockState block_state{db};
+        State state{block_state};
+        for (uint64_t i = 0; i < inactive_accounts; ++i) {
+            Address addr = generate_random_address();
+            state.add_to_balance(addr, base_fee_per_gas);
+        }
+        MONAD_ASSERT(block_state.can_merge(state));
+        block_state.merge(state);
+        block_state.commit();
+    }
+
+    LOG_INFO(
+        "Finish adding balance to {} inactive accounts", inactive_accounts);
 
     // Deposit balance
     {
@@ -211,7 +239,7 @@ int main(int argc, char *argv[])
         block_state.commit();
     }
 
-    LOG_INFO("Finished adding balance to relevant accounts");
+    LOG_INFO("Finished adding balance to {} active accounts", addresses.size());
 
     // execute setup txns
     {

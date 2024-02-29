@@ -136,8 +136,8 @@ int main(int argc, char *argv[])
     CLI::App cli{"lob"};
 
     std::filesystem::path block_db_path{};
+    std::filesystem::path state_db_path{};
     uint64_t finish_batch = 1500;
-    uint64_t inactive_accounts = 1'000'000;
 
     bool on_disk = false;
     bool compaction = false;
@@ -154,10 +154,7 @@ int main(int argc, char *argv[])
         ->required();
     cli.add_option(
         "--finish_batch", finish_batch, "Last batch of txn to execute");
-    cli.add_option(
-        "--inactive_accounts",
-        inactive_accounts,
-        "Number of accounts not interacting with the lob");
+    cli.add_option("--state_db", state_db_path, "state_db directory");
     cli.add_option("--log_level", log_level, "level of logging")
         ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
     cli.add_option("--nthreads", nthreads, "number of threads");
@@ -199,32 +196,35 @@ int main(int argc, char *argv[])
                                       .dbname_paths = dbname_paths,
                                       .file_size_db = file_size_db})
                                 : std::nullopt;
-    auto db = db::TrieDb{config};
+
+    auto start_block_number = db::auto_detect_start_block_number(state_db_path);
+    auto db = [&] -> db::TrieDb {
+        if (start_block_number == 0) {
+            return db::TrieDb{config};
+        }
+        auto const dir = state_db_path / std::to_string(start_block_number - 1);
+        if (std::filesystem::exists(dir / "accounts")) {
+            MONAD_ASSERT(std::filesystem::exists(dir / "code"));
+            LOG_INFO("Loading from binary checkpoint in {}", dir);
+            std::ifstream accounts(dir / "accounts");
+            std::ifstream code(dir / "code");
+            return db::TrieDb{config, accounts, code};
+        }
+        MONAD_ASSERT(std::filesystem::exists(dir / "state.json"));
+        LOG_INFO("Loading from json checkpoint in {}", dir);
+        std::ifstream ifile_stream(dir / "state.json");
+        return db::TrieDb{config, ifile_stream};
+    }();
+
     LOG_INFO(
-        "Running with block_db = {}, finish batch = {}, inactive accounts = {}",
+        "Running with block_db = {}, finish batch = {}, state db = {}",
         block_db_path,
         finish_batch,
-        inactive_accounts);
+        state_db_path);
 
     fiber::PriorityPool priority_pool{nthreads, nfibers};
 
     auto const addresses = get_addresses_from_file(block_db_path);
-
-    // setup some random accounts (not intended to interact with orderbook)
-    {
-        BlockState block_state{db};
-        State state{block_state};
-        for (uint64_t i = 0; i < inactive_accounts; ++i) {
-            Address addr = generate_random_address();
-            state.add_to_balance(addr, base_fee_per_gas);
-        }
-        MONAD_ASSERT(block_state.can_merge(state));
-        block_state.merge(state);
-        block_state.commit();
-    }
-
-    LOG_INFO(
-        "Finish adding balance to {} inactive accounts", inactive_accounts);
 
     // Deposit balance
     {
@@ -236,6 +236,7 @@ int main(int argc, char *argv[])
         }
         MONAD_ASSERT(block_state.can_merge(state));
         block_state.merge(state);
+        LOG_INFO("Commiting deposit balance txns");
         block_state.commit();
     }
 
@@ -290,7 +291,7 @@ int main(int argc, char *argv[])
     auto const time_elapsed = std::chrono::duration_cast<std::chrono::seconds>(
         finish_time - start_time);
 
-    auto const num = db.count();
+    // auto const num = db.count();
 
     LOG_INFO(
         "Finished running, num files = {}, num transactions = {}k, time "
@@ -301,10 +302,10 @@ int main(int argc, char *argv[])
         finish_batch * 1000 /
             std::max(1UL, static_cast<uint64_t>(time_elapsed.count())));
 
-    LOG_INFO(
-        "Number of accounts = {}, number of storage = {}",
-        num.first,
-        num.second);
+    // LOG_INFO(
+    //     "Number of accounts = {}, number of storage = {}",
+    //     num.first,
+    //     num.second);
 
     return 0;
 }

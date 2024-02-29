@@ -1,3 +1,4 @@
+#include <monad/cache/keccak256_cache.hpp>
 #include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/fmt/int_fmt.hpp>
 #include <monad/core/int.hpp>
@@ -38,17 +39,6 @@ namespace
     auto const state_nibbles = concat(state_nibble);
     auto const code_nibbles = concat(code_nibble);
     constexpr uint64_t block_id = 0;
-
-    template <class T>
-        requires std::same_as<T, bytes32_t> || std::same_as<T, Address>
-    constexpr byte_string to_key(T const &arg)
-    {
-        return byte_string{
-            std::bit_cast<bytes32_t>(
-                ethash::keccak256(arg.bytes, sizeof(arg.bytes)))
-                .bytes,
-            sizeof(bytes32_t)};
-    }
 
     struct LeafCompute
     {
@@ -651,6 +641,8 @@ TrieDb::TrieDb(std::optional<mpt::OnDiskDbConfig> const &config)
     }()}
     , db_{config.has_value() ? mpt::Db{*machine_, config.value()}
                              : mpt::Db{*machine_}}
+    , k256_addr_cache_(1'000'000)
+    , k256_key_cache_(1'000'000)
 {
 }
 
@@ -688,6 +680,16 @@ TrieDb::TrieDb(
 {
     BinaryDbLoader loader{db_, buf_size};
     loader.load(accounts, code);
+}
+
+byte_string TrieDb::to_key(Address const &addr)
+{
+    return k256_addr_cache_(addr);
+}
+
+byte_string TrieDb::to_key(bytes32_t const &key)
+{
+    return k256_key_cache_(key);
 }
 
 std::optional<Account> TrieDb::read_account(Address const &addr)

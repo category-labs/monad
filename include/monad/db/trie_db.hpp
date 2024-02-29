@@ -1,5 +1,6 @@
 #pragma once
 
+#include <monad/cache/keccak256_cache.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/db/config.hpp>
 #include <monad/db/db.hpp>
@@ -56,6 +57,8 @@ private:
     ::monad::mpt::Db db_;
     std::list<mpt::Update> update_alloc_;
     std::list<byte_string> bytes_alloc_;
+    Keccak256Cache<Address> k256_addr_cache_;
+    Keccak256Cache<bytes32_t> k256_key_cache_;
 
 public:
     TrieDb(std::optional<mpt::OnDiskDbConfig> const &);
@@ -67,6 +70,9 @@ public:
     TrieDb(
         std::optional<mpt::OnDiskDbConfig> const &, std::istream &accounts,
         std::istream &code, size_t buf_size = 1ul << 31);
+
+    byte_string to_key(Address const &addr);
+    byte_string to_key(bytes32_t const &key);
 
     virtual std::optional<Account> read_account(Address const &) override;
     virtual bytes32_t

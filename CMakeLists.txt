@@ -78,6 +78,7 @@ add_library(
   "src/monad/analysis/analysis.cpp"
   # cache
   "include/monad/cache/account_storage_cache.hpp"
+  "include/monad/cache/keccak256_cache.hpp"
   # core
   "include/monad/core/account.hpp"
   "include/monad/core/address.hpp"

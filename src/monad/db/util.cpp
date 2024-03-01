@@ -12,29 +12,6 @@
 
 MONAD_DB_NAMESPACE_BEGIN
 
-uint64_t auto_detect_start_block_number(std::filesystem::path const &root)
-{
-    namespace fs = std::filesystem;
-
-    if (!fs::exists(root)) {
-        return 0u;
-    }
-
-    uint64_t start_block_number = 0u;
-    for (auto const &entry : fs::directory_iterator(root)) {
-        if (fs::is_directory(entry) &&
-            (fs::exists(entry.path() / "state.json") ||
-             (fs::exists(entry.path() / "accounts") &&
-              fs::exists(entry.path() / "code")))) {
-            start_block_number = std::max(
-                start_block_number,
-                std::stoul(entry.path().stem().string()) + 1);
-        }
-    }
-
-    return start_block_number;
-}
-
 void write_to_file(
     nlohmann::json const &j, std::filesystem::path const &root_path,
     uint64_t const block_number)

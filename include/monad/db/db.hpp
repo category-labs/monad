@@ -22,6 +22,8 @@ struct Db
 
     virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) = 0;
 
+    virtual void increment_block_number() = 0;
+
     virtual void commit(StateDeltas const &, Code const &) = 0;
 
     virtual bytes32_t state_root() = 0;

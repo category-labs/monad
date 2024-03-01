@@ -163,6 +163,7 @@ void BlockState::merge(State const &state)
 
 void BlockState::commit()
 {
+    db_.increment_block_number();
     db_.commit(state_, code_);
 }
 

@@ -87,10 +87,8 @@ public:
 
     template <class Traits>
     Result run_fork(
-        Db &db, BlockDb &block_db, std::filesystem::path const &root_path,
-        BlockHashBuffer &block_hash_buffer, fiber::PriorityPool &priority_pool,
-        std::optional<uint64_t> const checkpoint_frequency,
-        block_num_t current_block_number,
+        Db &db, BlockDb &block_db, BlockHashBuffer &block_hash_buffer,
+        fiber::PriorityPool &priority_pool, block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
         for (; current_block_number <= loop_until<Traits>(until_block_number);
@@ -129,16 +127,6 @@ public:
                     current_block_number)) {
                 return Result{Status::WRONG_STATE_ROOT, current_block_number};
             }
-            /*
-                        else {
-                            if (checkpoint_frequency.has_value() &&
-                                (current_block_number %
-               checkpoint_frequency.value() == 0)) { LOG_INFO("At block: {}",
-               current_block_number); db::write_to_file( db.to_json(),
-               root_path, current_block_number);
-                            }
-                        }
-            */
         }
 
         if (until_block_number.has_value() &&
@@ -149,10 +137,8 @@ public:
             return run_fork<typename Traits::next_fork_t>(
                 db,
                 block_db,
-                root_path,
                 block_hash_buffer,
                 priority_pool,
-                checkpoint_frequency,
                 current_block_number,
                 until_block_number);
         }
@@ -161,8 +147,6 @@ public:
     template <class Traits>
     Result
     run(Db &db, BlockDb &block_db, fiber::PriorityPool &priority_pool,
-        std::filesystem::path const &root_path,
-        std::optional<uint64_t> const checkpoint_frequency,
         block_num_t const start_block_number,
         std::optional<block_num_t> const until_block_number = std::nullopt)
     {
@@ -192,10 +176,8 @@ public:
         return run_fork<Traits>(
             db,
             block_db,
-            root_path,
             block_hash_buffer,
             priority_pool,
-            checkpoint_frequency,
             start_block_number,
             until_block_number);
     }

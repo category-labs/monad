@@ -37,7 +37,6 @@ namespace
     constexpr unsigned char code_nibble = 1;
     auto const state_nibbles = concat(state_nibble);
     auto const code_nibbles = concat(code_nibble);
-    constexpr uint64_t block_id = 0;
 
     template <class T>
         requires std::same_as<T, bytes32_t> || std::same_as<T, Address>
@@ -134,11 +133,14 @@ namespace
         size_t batch_size_;
         UpdateList storage_updates_;
         std::set<bytes32_t> inserted_code_;
+        uint64_t block_id_;
 
-        JsonDbLoader(::monad::mpt::Db &db, size_t batch_size)
+        JsonDbLoader(
+            ::monad::mpt::Db &db, size_t batch_size, uint64_t const block_id)
             : state_{State::Root}
             , db_{db}
             , batch_size_{batch_size}
+            , block_id_{block_id}
         {
         }
 
@@ -365,7 +367,7 @@ namespace
                 .incarnation = false,
                 .next = std::move(code_updates_)}));
 
-            db_.upsert(std::move(updates), block_id, false);
+            db_.upsert(std::move(updates), block_id_, false);
 
             inserted_code_.clear();
             account_updates_.clear();
@@ -385,12 +387,15 @@ namespace
         std::deque<byte_string> bytes_alloc_;
         size_t buf_size_;
         std::unique_ptr<unsigned char[]> buf_;
+        uint64_t block_id_;
 
     public:
-        BinaryDbLoader(::monad::mpt::Db &db, size_t buf_size)
+        BinaryDbLoader(
+            ::monad::mpt::Db &db, size_t buf_size, uint64_t const block_id)
             : db_{db}
             , buf_size_{buf_size}
             , buf_{std::make_unique_for_overwrite<unsigned char[]>(buf_size)}
+            , block_id_{block_id}
         {
             MONAD_ASSERT(buf_size >= chunk_size);
         };
@@ -411,7 +416,7 @@ namespace
                         .next = std::move(account_updates)};
                     updates.push_front(state_update);
 
-                    db_.upsert(std::move(updates), block_id, false);
+                    db_.upsert(std::move(updates), block_id_, false);
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();
@@ -430,7 +435,7 @@ namespace
                         .next = std::move(code_updates)};
                     updates.push_front(code_update);
 
-                    db_.upsert(std::move(updates), block_id, false);
+                    db_.upsert(std::move(updates), block_id_, false);
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();
@@ -651,16 +656,27 @@ TrieDb::TrieDb(std::optional<mpt::OnDiskDbConfig> const &config)
     }()}
     , db_{config.has_value() ? mpt::Db{*machine_, config.value()}
                              : mpt::Db{*machine_}}
+    , curr_block_id_{
+          config.has_value() ? db_.get_latest_block_id().value_or(0)
+                             : 0 /* in memory triedb block id remains 0*/}
 {
 }
 
 TrieDb::TrieDb(
     std::optional<mpt::OnDiskDbConfig> const &config, std::istream &input,
-    size_t batch_size)
+    uint64_t const init_block_number, size_t const batch_size)
     : TrieDb{config}
 {
+    if (db_.root().is_valid()) {
+        throw std::runtime_error(
+            "Unable to load snapshot to an existing db, truncate the "
+            "existing db to empty and try again");
+    }
+    if (is_on_disk_) {
+        curr_block_id_ = init_block_number;
+    } // was init to 0 and will remain 0 for in memory db
     boost::json::basic_parser<JsonDbLoader> parser{
-        boost::json::parse_options{}, db_, batch_size};
+        boost::json::parse_options{}, db_, batch_size, curr_block_id_};
 
     char buf[4096];
     std::error_code ec;
@@ -683,16 +699,25 @@ TrieDb::TrieDb(
 
 TrieDb::TrieDb(
     std::optional<mpt::OnDiskDbConfig> const &config, std::istream &accounts,
-    std::istream &code, size_t buf_size)
+    std::istream &code, uint64_t const init_block_number, size_t const buf_size)
     : TrieDb{config}
 {
-    BinaryDbLoader loader{db_, buf_size};
+    if (db_.root().is_valid()) {
+        throw std::runtime_error(
+            "Unable to load snapshot to an existing db, truncate the "
+            "existing db to empty and try again");
+    }
+    if (is_on_disk_) {
+        curr_block_id_ = init_block_number;
+    } // was init to 0 and will remain 0 for in memory db
+    BinaryDbLoader loader{db_, buf_size, curr_block_id_};
     loader.load(accounts, code);
 }
 
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
-    auto const value = db_.get(concat(state_nibble, NibblesView{to_key(addr)}));
+    auto const value = db_.get(
+        concat(state_nibble, NibblesView{to_key(addr)}), curr_block_id_);
     if (!value.has_value()) {
         return std::nullopt;
     }
@@ -707,8 +732,10 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
 
 bytes32_t TrieDb::read_storage(Address const &addr, bytes32_t const &key)
 {
-    auto const value = db_.get(concat(
-        state_nibble, NibblesView{to_key(addr)}, NibblesView{to_key(key)}));
+    auto const value = db_.get(
+        concat(
+            state_nibble, NibblesView{to_key(addr)}, NibblesView{to_key(key)}),
+        curr_block_id_);
     if (!value.has_value()) {
         return {};
     }
@@ -725,7 +752,8 @@ std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
 {
     // TODO read code analysis object
     auto const value = db_.get(
-        concat(code_nibble, NibblesView{to_byte_string_view(code_hash.bytes)}));
+        concat(code_nibble, NibblesView{to_byte_string_view(code_hash.bytes)}),
+        curr_block_id_);
     if (!value.has_value()) {
         return std::make_shared<CodeAnalysis>(analyze({}));
     }
@@ -795,11 +823,18 @@ void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
     UpdateList updates;
     updates.push_front(state_update);
     updates.push_front(code_update);
-    db_.upsert(std::move(updates));
+    db_.upsert(std::move(updates), curr_block_id_);
     MONAD_ASSERT(machine_->depth == 0 && machine_->is_merkle == false);
 
     update_alloc_.clear();
     bytes_alloc_.clear();
+}
+
+void TrieDb::increment_block_number()
+{
+    if (is_on_disk_) {
+        ++curr_block_id_;
+    }
 }
 
 void TrieDb::create_and_prune_block_history(uint64_t) const {
@@ -808,7 +843,7 @@ void TrieDb::create_and_prune_block_history(uint64_t) const {
 
 bytes32_t TrieDb::state_root()
 {
-    auto const value = db_.get_data(state_nibbles);
+    auto const value = db_.get_data(state_nibbles, curr_block_id_);
     if (!value.has_value() || value.value().empty()) {
         return NULL_ROOT;
     }
@@ -919,9 +954,14 @@ nlohmann::json TrieDb::to_json()
         }
     } traverse(*this);
 
-    db_.traverse(state_nibbles, traverse);
+    db_.traverse(state_nibbles, traverse, curr_block_id_);
 
     return traverse.json;
+}
+
+uint64_t TrieDb::current_block_number() const
+{
+    return curr_block_id_;
 }
 
 MONAD_DB_NAMESPACE_END

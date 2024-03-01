@@ -76,6 +76,11 @@ public:
         }
     }
 
+    virtual void increment_block_number() override
+    {
+        db_.increment_block_number();
+    }
+
     virtual void
     commit(StateDeltas const &state_deltas, Code const &code) override
     {

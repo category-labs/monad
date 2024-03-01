@@ -656,9 +656,33 @@ TrieDb::TrieDb(std::optional<mpt::OnDiskDbConfig> const &config)
     }()}
     , db_{config.has_value() ? mpt::Db{*machine_, config.value()}
                              : mpt::Db{*machine_}}
-    , curr_block_id_{
-          config.has_value() ? db_.get_latest_block_id().value_or(0)
-                             : 0 /* in memory triedb block id remains 0*/}
+    , curr_block_id_{[&] {
+        if (config.has_value()) {
+            if (config->start_block_id.has_value()) {
+                // throw error on invalid block number in config
+                if (!db_.get_latest_block_id().has_value() ||
+                    !db_.get_earliest_block_id().has_value()) {
+                    throw std::runtime_error(
+                        "No valid history in existing db to resume from");
+                }
+                if (config->start_block_id >
+                        db_.get_latest_block_id().value() ||
+                    config->start_block_id <
+                        db_.get_earliest_block_id().value()) {
+                    throw std::runtime_error(fmt::format(
+                        "Invalid starting block id to resume, the valid block "
+                        "id range is [{}, {}]",
+                        db_.get_earliest_block_id().value(),
+                        db_.get_latest_block_id().value()));
+                }
+                return config->start_block_id.value();
+            }
+            return db_.get_latest_block_id().value_or(0);
+        }
+        // in memory triedb block id remains 0
+        return 0ul;
+    }()}
+    , is_on_disk_{config.has_value()}
 {
 }
 

@@ -42,6 +42,7 @@ int main(int argc, char *argv[])
     std::filesystem::path block_db_path{};
     std::filesystem::path genesis_file_path{};
     std::optional<block_num_t> finish_block_number = std::nullopt;
+    std::optional<uint64_t> block_id_continue = std::nullopt;
     bool compaction = false;
     unsigned nthreads = 4;
     unsigned nfibers = 4;
@@ -56,9 +57,6 @@ int main(int argc, char *argv[])
     version db, with block number prefix always 0. On disk triedb maintains the
     state history where each block state starts after the corresponding block
     number prefix.
-
-    On disk triedb instance should be initialized using the monad_mpt cli tool
-    before running replay_ethereum.
     */
     auto log_level = quill::LogLevel::Info;
 
@@ -78,18 +76,26 @@ int main(int argc, char *argv[])
         sq_thread_cpu,
         "sq_thread_cpu field in io_uring_params, to specify the cpu set kernel "
         "poll thread is bound to in SQPOLL mode");
-    cli.add_option(
+    auto const on_disk_option = cli.add_option(
         "--db",
         dbname_paths,
         "A comma-separated list of previously created database paths. You can "
         "configure the storage pool with one or more files/devices. If no "
         "value is passed, the replay will run with an in-memory triedb");
-    cli.add_option(
+    auto const snapshot_option = cli.add_option(
         "--load_snapshot", load_snapshot, "snapshot file path to load db from");
+    auto const resume_option = cli.add_option(
+        "--block_id_continue",
+        block_id_continue,
+        "block id to continue running from an existing on disk TrieDb "
+        "instance");
     cli.add_option(
         "--dump_snapshot",
         dump_snapshot,
         "directory to dump state to at the end of run");
+
+    snapshot_option->excludes(resume_option);
+    resume_option->needs(on_disk_option);
 
     try {
         cli.parse(argc, argv);
@@ -112,13 +118,14 @@ int main(int argc, char *argv[])
                                       .wr_buffers = 32,
                                       .uring_entries = 128,
                                       .sq_thread_cpu = sq_thread_cpu,
+                                      .start_block_id = block_id_continue,
                                       .dbname_paths = dbname_paths})
                                 : std::nullopt;
     auto db = [&] -> db::TrieDb {
         if (load_snapshot.empty()) {
             return db::TrieDb{config};
         }
-
+        MONAD_ASSERT(!block_id_continue.has_value());
         namespace fs = std::filesystem;
         if (!(fs::is_directory(load_snapshot) &&
               (fs::exists(load_snapshot / "state.json") ||

@@ -44,10 +44,10 @@ class AccountStorageCache
     using StoragePool = BatchMemPool<StorageNode>;
 
 public:
-    using AccountAccessor = typename AccountMap::accessor;
-    using StorageAccessor = typename StorageMap::accessor;
-    using AccountConstAccessor = typename AccountMap::const_accessor;
-    using StorageConstAccessor = typename StorageMap::const_accessor;
+    using AccountAccessor = AccountMap::accessor;
+    using StorageAccessor = StorageMap::accessor;
+    using AccountConstAccessor = AccountMap::const_accessor;
+    using StorageConstAccessor = StorageMap::const_accessor;
 
 private:
     /// ListNode
@@ -156,6 +156,47 @@ private:
         }
     }; /// LruList
 
+/// STATS MACROS
+#ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
+    #define STATS_EVENT_ACCOUNT_EVICT() stats_.event_account_evict();
+    #define STATS_EVENT_ACCOUNT_FIND_HIT() stats_.event_account_find_hit();
+    #define STATS_EVENT_ACCOUNT_FIND_MISS() stats_.event_account_find_miss();
+    #define STATS_EVENT_ACCOUNT_INSERT_FOUND()                                 \
+        stats_.event_account_insert_found();
+    #define STATS_EVENT_ACCOUNT_INSERT_NEW() stats_.event_account_insert_new();
+    #define STATS_EVENT_ACCOUNT_STORAGE_RESET()                                \
+        stats_.event_account_storage_reset();
+    #define STATS_EVENT_STORAGE_EVICT() stats_.event_storage_evict();
+    #define STATS_EVENT_STORAGE_FIND_HIT()                                     \
+        cache_.stats_.event_storage_find_hit()
+    #define STATS_EVENT_STORAGE_FIND_MISS()                                    \
+        cache_.stats_.event_storage_find_miss()
+    #define STATS_EVENT_STORAGE_INSERT_FOUND()                                 \
+        cache_.stats_.event_storage_insert_found()
+    #define STATS_EVENT_STORAGE_INSERT_NEW()                                   \
+        cache_.stats_.event_storage_insert_new()
+    #define STATS_EVENT_STORAGE_MAP_CTOR()                                     \
+        cache_.stats_.event_storage_map_ctor()
+    #define STATS_EVENT_STORAGE_MAP_DTOR()                                     \
+        cache_.stats_.event_storage_map_dtor()
+    #define STATS_EVENT_UPDATE_LRU() stats_.event_update_lru<Node>()
+#else
+    #define STATS_EVENT_ACCOUNT_EVICT()
+    #define STATS_EVENT_ACCOUNT_FIND_HIT()
+    #define STATS_EVENT_ACCOUNT_FIND_MISS()
+    #define STATS_EVENT_ACCOUNT_INSERT_FOUND()
+    #define STATS_EVENT_ACCOUNT_INSERT_NEW()
+    #define STATS_EVENT_ACCOUNT_STORAGE_RESET()
+    #define STATS_EVENT_STORAGE_EVICT()
+    #define STATS_EVENT_STORAGE_MAP_CTOR()
+    #define STATS_EVENT_STORAGE_FIND_HIT()
+    #define STATS_EVENT_STORAGE_FIND_MISS()
+    #define STATS_EVENT_STORAGE_INSERT_FOUND()
+    #define STATS_EVENT_STORAGE_INSERT_NEW()
+    #define STATS_EVENT_STORAGE_MAP_DTOR()
+    #define STATS_EVENT_UPDATE_LRU()
+#endif
+
     /// StorageMapWrapper
     struct StorageMapWrapper
     {
@@ -165,16 +206,12 @@ private:
         StorageMapWrapper(AccountStorageCache &cache)
             : cache_(cache)
         {
-#ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
-            cache_.stats_.event_storage_map_ctor();
-#endif
+            STATS_EVENT_STORAGE_MAP_CTOR();
         }
 
         ~StorageMapWrapper()
         {
-#ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
-            cache_.stats_.event_storage_map_dtor();
-#endif
+            STATS_EVENT_STORAGE_MAP_DTOR();
         }
     };
 
@@ -254,14 +291,10 @@ public:
     bool find_account(Accessor &acc, Address const &addr)
     {
         if (!account_map_.find(acc, addr)) {
-#ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
-            stats_.event_account_find_miss();
-#endif
+            STATS_EVENT_ACCOUNT_FIND_MISS();
             return false;
         }
-#ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
-        stats_.event_account_find_hit();
-#endif
+        STATS_EVENT_ACCOUNT_FIND_HIT();
         auto node = acc->second.node_;
         try_update_lru(node, account_lru_, account_mutex_);
         return true;
@@ -273,16 +306,12 @@ public:
     {
         AccountMapKeyValue kv(addr, AccountMapValue(nullptr, nullptr, account));
         if (!account_map_.insert(acc, kv)) {
-#ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
-            stats_.event_account_insert_found();
-#endif
+            STATS_EVENT_ACCOUNT_INSERT_FOUND();
             acc->second.value_ = account;
             if (account == std::nullopt) {
-#ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
                 if (acc->second.storage_) {
-                    stats_.event_account_storage_reset();
+                    STATS_EVENT_ACCOUNT_STORAGE_RESET();
                 }
-#endif
                 acc->second.storage_.reset();
             }
             AccountNode *node = acc->second.node_;
@@ -302,17 +331,13 @@ public:
         if (account_map_.find(account_acc, addr)) {
             auto &storage = account_acc->second.storage_;
             if ((storage) && (storage->map_.find(acc, key))) {
-#ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
-                stats_.event_storage_find_hit();
-#endif
+                STATS_EVENT_STORAGE_FIND_HIT();
                 StorageNode *node = acc->second.node_;
                 try_update_lru(node, storage_lru_, storage_mutex_);
                 return true;
             }
         }
-#ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
-        stats_.event_storage_find_miss();
-#endif
+        STATS_EVENT_STORAGE_FIND_MISS();
         return false;
     }
 
@@ -328,9 +353,7 @@ public:
         StorageAccessor storage_acc{};
         StorageMapKeyValue kv(key, StorageMapValue(nullptr, value));
         if (!storage->map_.insert(storage_acc, kv)) {
-#ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
-            stats_.event_storage_insert_found();
-#endif
+            STATS_EVENT_STORAGE_INSERT_FOUND();
             storage_acc->second.value_ = value;
             StorageNode *node = storage_acc->second.node_;
             try_update_lru(node, storage_lru_, storage_mutex_);
@@ -369,14 +392,7 @@ private:
     {
         if (node->check_lru_time()) {
             std::unique_lock l(mutex);
-#ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
-            if (std::is_same<Node, AccountNode>::value) {
-                stats_.event_account_update_lru();
-            }
-            else {
-                stats_.event_storage_update_lru();
-            }
-#endif
+            STATS_EVENT_UPDATE_LRU();
             list.update_lru(node);
         }
     }
@@ -391,9 +407,7 @@ private:
         }
         {
             std::unique_lock l(account_mutex_);
-#ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
-            stats_.event_account_insert_new();
-#endif
+            STATS_EVENT_ACCOUNT_INSERT_NEW();
             account_lru_.push_front_node(node);
         }
         if (!evicted) {
@@ -420,9 +434,7 @@ private:
         }
         {
             std::unique_lock l(storage_mutex_);
-#ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
-            stats_.event_storage_insert_new();
-#endif
+            STATS_EVENT_STORAGE_INSERT_NEW();
             storage_lru_.push_front_node(node);
         }
         if (!evicted) {
@@ -444,9 +456,7 @@ private:
         AccountNode *target;
         {
             std::unique_lock l(account_mutex_);
-#ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
-            stats_.event_account_evict();
-#endif
+            STATS_EVENT_ACCOUNT_EVICT();
             target = account_lru_.evict_lru_node();
         }
         {
@@ -464,9 +474,7 @@ private:
         StorageNode *target;
         {
             std::unique_lock l(storage_mutex_);
-#ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
-            stats_.event_storage_evict();
-#endif
+            STATS_EVENT_STORAGE_EVICT();
             target = storage_lru_.evict_lru_node();
         }
         {
@@ -481,6 +489,22 @@ private:
         }
         storage_pool_.delete_obj(target);
     }
+
+/// STATS
+#undef STATS_EVENT_ACCOUNT_EVICT
+#undef STATS_EVENT_ACCOUNT_FIND_HIT
+#undef STATS_EVENT_ACCOUNT_FIND_MISS
+#undef STATS_EVENT_ACCOUNT_INSERT_FOUND
+#undef STATS_EVENT_ACCOUNT_INSERT_NEW
+#undef STATS_EVENT_ACCOUNT_STORAGE_RESET
+#undef STATS_EVENT_STORAGE_EVICT
+#undef STATS_EVENT_STORAGE_FIND_HIT
+#undef STATS_EVENT_STORAGE_FIND_MISS
+#undef STATS_EVENT_STORAGE_INSERT_FOUND
+#undef STATS_EVENT_STORAGE_INSERT_NEW
+#undef STATS_EVENT_STORAGE_MAP_CTOR
+#undef STATS_EVENT_STORAGE_MAP_DTOR
+#undef STATS_EVENT_UPDATE_LRU
 
 public:
     std::string print_stats()
@@ -548,11 +572,6 @@ private:
             ++n_account_evict_;
         }
 
-        void event_account_update_lru()
-        {
-            ++n_account_update_lru_;
-        }
-
         void event_storage_find_hit()
         {
             n_storage_find_hit_.fetch_add(1, std::memory_order_release);
@@ -578,9 +597,16 @@ private:
             ++n_storage_evict_;
         }
 
-        void event_storage_update_lru()
+        template <class Node>
+        void event_update_lru()
         {
-            ++n_storage_update_lru_;
+            if (std::same_as<Node, AccountNode>) {
+                ++n_account_update_lru_;
+            }
+            else {
+                ++n_storage_update_lru_;
+                stats_.event_storage_update_lru();
+            }
         }
 
         void event_account_storage_reset()

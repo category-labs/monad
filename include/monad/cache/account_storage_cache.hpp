@@ -59,12 +59,12 @@ private:
 
         ListNode *prev_{nullptr};
         ListNode *next_{nullptr};
-        Finder finder_;
+        Finder const finder_;
         uint64_t lru_time_;
 
         ListNode() {}
 
-        ListNode(Finder &finder)
+        ListNode(Finder const &finder)
             : finder_(finder)
         {
         }
@@ -107,7 +107,7 @@ private:
             tail_.prev_ = &head_;
         }
 
-        void update_lru(Node *node)
+        void update_lru(Node *const node)
         {
             if (node->is_in_list()) {
                 delink_node(node);
@@ -116,18 +116,18 @@ private:
             } // else item is being evicted, don't update LRU
         }
 
-        void delink_node(Node *node)
+        void delink_node(Node *const node)
         {
-            Node *prev = node->prev_;
-            Node *next = node->next_;
+            Node *const prev = node->prev_;
+            Node *const next = node->next_;
             prev->next_ = next;
             next->prev_ = prev;
             node->prev_ = nullptr;
         }
 
-        void push_front_node(Node *node)
+        void push_front_node(Node *const node)
         {
-            Node *head = head_.next_;
+            Node *const head = head_.next_;
             node->prev_ = &head_;
             node->next_ = head;
             head->prev_ = node;
@@ -136,7 +136,7 @@ private:
 
         Node *evict_lru_node()
         {
-            Node *target = tail_.prev_;
+            Node *const target = tail_.prev_;
             MONAD_ASSERT(target != &head_);
             delink_node(target);
             return target;
@@ -218,19 +218,20 @@ private:
     /// AccountFinder
     struct AccountFinder
     {
-        Address addr_;
+        Address const addr_;
     };
 
     /// StorageFinder
     struct StorageFinder
     {
-        std::shared_ptr<StorageMapWrapper> storage_;
-        bytes32_t key_;
+        std::shared_ptr<StorageMapWrapper> const storage_;
+        bytes32_t const key_;
 
         StorageFinder() {}
 
         StorageFinder(
-            std::shared_ptr<StorageMapWrapper> const &storage, bytes32_t key)
+            std::shared_ptr<StorageMapWrapper> const &storage,
+            bytes32_t const &key)
             : storage_(storage)
             , key_(key)
         {
@@ -270,7 +271,8 @@ private:
     StoragePool storage_pool_;
 
 public:
-    AccountStorageCache(size_t account_max_size, size_t storage_max_size)
+    AccountStorageCache(
+        size_t const account_max_size, size_t const storage_max_size)
         : account_max_size_(account_max_size)
         , storage_max_size_(storage_max_size)
         , account_map_(account_max_size_ + slack)
@@ -295,7 +297,7 @@ public:
             return false;
         }
         STATS_EVENT_ACCOUNT_FIND_HIT();
-        auto node = acc->second.node_;
+        AccountNode *const node = acc->second.node_;
         try_update_lru(node, account_lru_, account_mutex_);
         return true;
     }
@@ -304,7 +306,8 @@ public:
         AccountAccessor &acc, Address const &addr,
         std::optional<Account> const &account)
     {
-        AccountMapKeyValue kv(addr, AccountMapValue(nullptr, nullptr, account));
+        AccountMapKeyValue const kv(
+            addr, AccountMapValue(nullptr, nullptr, account));
         if (!account_map_.insert(acc, kv)) {
             STATS_EVENT_ACCOUNT_INSERT_FOUND();
             acc->second.value_ = account;
@@ -314,11 +317,11 @@ public:
                 }
                 acc->second.storage_.reset();
             }
-            AccountNode *node = acc->second.node_;
+            AccountNode *const node = acc->second.node_;
             try_update_lru(node, account_lru_, account_mutex_);
             return false;
         }
-        AccountNode *node = account_pool_.new_obj(AccountFinder(addr));
+        AccountNode *const node = account_pool_.new_obj(AccountFinder(addr));
         acc->second.node_ = node;
         finish_account_insert(node);
         return true;
@@ -329,10 +332,11 @@ public:
     {
         AccountConstAccessor account_acc{};
         if (account_map_.find(account_acc, addr)) {
-            auto &storage = account_acc->second.storage_;
+            std::shared_ptr<StorageMapWrapper> const &storage =
+                account_acc->second.storage_;
             if ((storage) && (storage->map_.find(acc, key))) {
                 STATS_EVENT_STORAGE_FIND_HIT();
-                StorageNode *node = acc->second.node_;
+                StorageNode *const node = acc->second.node_;
                 try_update_lru(node, storage_lru_, storage_mutex_);
                 return true;
             }
@@ -346,21 +350,23 @@ public:
         bytes32_t const &value)
     {
         MONAD_ASSERT(!account_acc.empty());
-        auto &storage = account_acc->second.storage_;
+        std::shared_ptr<StorageMapWrapper> &storage =
+            account_acc->second.storage_;
         if (!storage) {
             storage = std::make_shared<StorageMapWrapper>(*this);
         }
         StorageAccessor storage_acc{};
-        StorageMapKeyValue kv(key, StorageMapValue(nullptr, value));
+        StorageMapKeyValue const kv(key, StorageMapValue(nullptr, value));
         if (!storage->map_.insert(storage_acc, kv)) {
             STATS_EVENT_STORAGE_INSERT_FOUND();
             storage_acc->second.value_ = value;
-            StorageNode *node = storage_acc->second.node_;
+            StorageNode *const node = storage_acc->second.node_;
             try_update_lru(node, storage_lru_, storage_mutex_);
             return false;
         }
         // Note: Copies shared_ptr to storage map.
-        StorageNode *node = storage_pool_.new_obj(StorageFinder(storage, key));
+        StorageNode *const node =
+            storage_pool_.new_obj(StorageFinder(storage, key));
         storage_acc->second.node_ = node;
         storage_acc.release();
         finish_storage_insert(node);
@@ -388,7 +394,7 @@ public:
 
 private:
     template <class Node, class List>
-    void try_update_lru(Node *node, List &list, Mutex &mutex)
+    void try_update_lru(Node *const node, List &list, Mutex &mutex)
     {
         if (node->check_lru_time()) {
             std::unique_lock l(mutex);
@@ -397,7 +403,7 @@ private:
         }
     }
 
-    void finish_account_insert(AccountNode *node)
+    void finish_account_insert(AccountNode *const node)
     {
         size_t sz = account_size();
         bool evicted = false;
@@ -424,7 +430,7 @@ private:
         }
     }
 
-    void finish_storage_insert(StorageNode *node)
+    void finish_storage_insert(StorageNode *const node)
     {
         size_t sz = storage_size();
         bool evicted = false;
@@ -460,9 +466,9 @@ private:
             target = account_lru_.evict_lru_node();
         }
         {
-            AccountFinder &finder = target->finder_;
+            AccountFinder const &finder = target->finder_;
             AccountAccessor acc;
-            bool found = account_map_.find(acc, finder.addr_);
+            bool const found = account_map_.find(acc, finder.addr_);
             MONAD_ASSERT(found);
             account_map_.erase(acc);
         }
@@ -479,11 +485,11 @@ private:
         }
         {
             MONAD_ASSERT(target);
-            StorageFinder &finder = target->finder_;
+            StorageFinder const &finder = target->finder_;
             MONAD_ASSERT(finder.storage_);
             StorageMap &map = finder.storage_->map_;
             StorageAccessor acc;
-            bool found = map.find(acc, finder.key_);
+            bool const found = map.find(acc, finder.key_);
             MONAD_ASSERT(found);
             map.erase(acc);
         }

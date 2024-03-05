@@ -121,6 +121,7 @@ int main(int argc, char *argv[])
                                       .start_block_id = block_id_continue,
                                       .dbname_paths = dbname_paths})
                                 : std::nullopt;
+    uint64_t init_block_number = 0;
     auto db = [&] -> db::TrieDb {
         if (load_snapshot.empty()) {
             return db::TrieDb{config};
@@ -137,22 +138,23 @@ int main(int argc, char *argv[])
                 "in its path and includes either files 'accounts' and 'code', "
                 "or 'state.json'.");
         }
-        uint64_t const snapshot_block_number = std::stoul(load_snapshot.stem());
+        init_block_number = std::stoul(load_snapshot.stem());
         if (fs::exists(load_snapshot / "accounts")) {
             MONAD_ASSERT(fs::exists(load_snapshot / "code"));
             LOG_INFO("Loading from binary checkpoint in {}", load_snapshot);
             std::ifstream accounts(load_snapshot / "accounts");
             std::ifstream code(load_snapshot / "code");
-            return db::TrieDb{config, accounts, code, snapshot_block_number};
+            return db::TrieDb{config, accounts, code, init_block_number};
         }
         MONAD_ASSERT(fs::exists(load_snapshot / "state.json"));
         LOG_INFO("Loading from json checkpoint in {}", load_snapshot);
         std::ifstream ifile_stream(load_snapshot / "state.json");
-        return db::TrieDb{config, ifile_stream, snapshot_block_number};
+        return db::TrieDb{config, ifile_stream, init_block_number};
     }();
 
-    uint64_t const init_block_number = db.current_block_number();
-
+    if (load_snapshot.empty()) {
+        init_block_number = db.current_block_number();
+    }
     if (init_block_number == 0) {
         MONAD_ASSERT(*has_genesis_file);
         read_and_verify_genesis(block_db, db, genesis_file_path);

@@ -28,12 +28,25 @@ State &SystemState::state()
     return state_;
 }
 
+bytes32_t SystemState::get_balance(Address const &address)
+{
+    MONAD_ASSERT(address == addr_);
+    return state_.get_balance(address);
+}
+
 StorageStatus SystemState::set_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {
     MONAD_ASSERT(address == addr_);
     auto const status = state_.set_storage(address, key, value);
     return static_cast<StorageStatus>(std::to_underlying(status));
+}
+
+bool SystemState::selfdestruct(
+    Address const &address, Address const &beneficiary)
+{
+    MONAD_ASSERT(address == addr_);
+    return state_.selfdestruct(address, beneficiary);
 }
 
 MONAD_EVM_NAMESPACE_END

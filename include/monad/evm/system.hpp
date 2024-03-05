@@ -248,4 +248,48 @@ Status halt(StackPointer sp, ExecutionState &state)
     return status;
 }
 
+template <Revision rev>
+inline Status selfdestruct(StackPointer sp, ExecutionState &state)
+{
+    if (!state.env.can_modify_state) {
+        return Status::StaticModeViolation;
+    }
+
+    auto const beneficiary = intx::be::trunc<Address>(sp.pop());
+
+    if constexpr (rev >= Revision::Berlin) {
+        if (!state.sstate.access_account(beneficiary)) {
+            if (state.mstate.gas_left < cold_account_access_cost<rev>()) {
+                return Status::OutOfGas;
+            }
+            state.mstate.gas_left -= cold_account_access_cost<rev>();
+        }
+    }
+
+    if constexpr (rev >= Revision::TangerineWhistle) {
+        // EIP-150, EIP-161
+        if (rev == Revision::TangerineWhistle ||
+            state.sstate.get_balance(state.env.address)) {
+            if (!state.sstate.state().account_exists(beneficiary)) {
+                if (state.mstate.gas_left < new_account_cost) {
+                    return Status::OutOfGas;
+                }
+                state.mstate.gas_left -= new_account_cost;
+            }
+        }
+    }
+
+    auto const destructed =
+        state.sstate.selfdestruct(state.env.address, beneficiary);
+
+    // EIP-3529
+    if constexpr (rev < Revision::London) {
+        if (destructed) {
+            state.gas_refund += 24000;
+        }
+    }
+
+    return Status::Success;
+}
+
 MONAD_EVM_NAMESPACE_END

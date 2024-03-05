@@ -31,8 +31,11 @@ public:
 
     State &state();
 
+    // TODO: remove address param?
+    bytes32_t get_balance(Address const &);
     StorageStatus
     set_storage(Address const &, bytes32_t const &key, bytes32_t const &value);
+    bool selfdestruct(Address const &, Address const &beneficiary);
 };
 
 MONAD_EVM_NAMESPACE_END

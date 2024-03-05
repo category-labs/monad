@@ -167,7 +167,7 @@ namespace
         else {
             status = Trait::template impl<rev>(sptr, state);
             if (op == Opcode::STOP || op == Opcode::RETURN ||
-                status != Status::Success) {
+                op == Opcode::SELFDESTRUCT || status != Status::Success) {
                 post_call(frames, status);
                 frames.pop_back();
                 return;
@@ -239,8 +239,10 @@ Status execute(std::shared_ptr<ExecutionState> const state)
             CASE_OP(Opcode::PUSH30)
             CASE_OP(Opcode::PUSH31)
             CASE_OP(Opcode::PUSH32)
+            CASE_OP(Opcode::CALLCODE)
             CASE_OP(Opcode::CALL)
             CASE_OP(Opcode::RETURN)
+            CASE_OP(Opcode::SELFDESTRUCT)
 #undef CASE_OP
         default:
             MONAD_ASSERT(false); // TODO: handle this error more gracefully

@@ -11,18 +11,18 @@ MONAD_EVM_NAMESPACE_BEGIN
 struct CallParameters
 {
     Address sender; // s
-    Address origin; // o
+    Address const &origin; // o
     Address recipient; // r
     Address code_address; // c
     uint64_t gas; // g
     uint256_t value; // v
-    uint256_t gas_price; // p
+    uint256_t const &gas_price; // p
     byte_string_view input_data; // d
     size_t depth; // e
     bool can_modify_state; // w
 };
 
-static_assert(sizeof(CallParameters) == 184);
+static_assert(sizeof(CallParameters) == 152);
 static_assert(alignof(CallParameters) == 8);
 
 MONAD_EVM_NAMESPACE_END

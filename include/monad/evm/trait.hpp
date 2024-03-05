@@ -58,6 +58,78 @@ struct Trait<Opcode::ADD>
 };
 
 template <>
+struct Trait<Opcode::ADDRESS>
+{
+    static constexpr size_t stack_height_required = 0;
+    static constexpr int stack_height_change = 1;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
+
+    template <Revision>
+    static constexpr auto impl = address;
+
+    template <Revision>
+    static constexpr uint64_t baseline_cost()
+    {
+        return base_cost;
+    }
+};
+
+template <>
+struct Trait<Opcode::ORIGIN>
+{
+    static constexpr size_t stack_height_required = 0;
+    static constexpr int stack_height_change = 1;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
+
+    template <Revision>
+    static constexpr auto impl = origin;
+
+    template <Revision>
+    static constexpr uint64_t baseline_cost()
+    {
+        return base_cost;
+    }
+};
+
+template <>
+struct Trait<Opcode::CALLER>
+{
+    static constexpr size_t stack_height_required = 0;
+    static constexpr int stack_height_change = 1;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
+
+    template <Revision>
+    static constexpr auto impl = caller;
+
+    template <Revision>
+    static constexpr uint64_t baseline_cost()
+    {
+        return base_cost;
+    }
+};
+
+template <>
+struct Trait<Opcode::CALLVALUE>
+{
+    static constexpr size_t stack_height_required = 0;
+    static constexpr int stack_height_change = 1;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
+
+    template <Revision>
+    static constexpr auto impl = callvalue;
+
+    template <Revision>
+    static constexpr uint64_t baseline_cost()
+    {
+        return base_cost;
+    }
+};
+
+template <>
 struct Trait<Opcode::CALLDATALOAD>
 {
     static constexpr size_t stack_height_required = 1;
@@ -72,6 +144,60 @@ struct Trait<Opcode::CALLDATALOAD>
     static constexpr uint64_t baseline_cost()
     {
         return very_low_cost;
+    }
+};
+
+template <>
+struct Trait<Opcode::CALLDATASIZE>
+{
+    static constexpr size_t stack_height_required = 0;
+    static constexpr int stack_height_change = 1;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
+
+    template <Revision>
+    static constexpr auto impl = calldatasize;
+
+    template <Revision>
+    static constexpr uint64_t baseline_cost()
+    {
+        return base_cost;
+    }
+};
+
+template <>
+struct Trait<Opcode::CODESIZE>
+{
+    static constexpr size_t stack_height_required = 0;
+    static constexpr int stack_height_change = 1;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
+
+    template <Revision>
+    static constexpr auto impl = codesize;
+
+    template <Revision>
+    static constexpr uint64_t baseline_cost()
+    {
+        return base_cost;
+    }
+};
+
+template <>
+struct Trait<Opcode::GASPRICE>
+{
+    static constexpr size_t stack_height_required = 0;
+    static constexpr int stack_height_change = 1;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
+
+    template <Revision>
+    static constexpr auto impl = gasprice;
+
+    template <Revision>
+    static constexpr uint64_t baseline_cost()
+    {
+        return base_cost;
     }
 };
 

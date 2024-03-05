@@ -39,7 +39,7 @@ evm::Status check_sender_balance(
 {
     auto const balance =
         intx::be::load<uint256_t>(sstate.state().get_balance(params.sender));
-    if (balance < params.value) {
+    if (balance < intx::be::load<uint256_t>(to_bytes(params.value))) {
         return evm::Status::InsufficientBalance;
     }
     return evm::Status::Success;
@@ -49,8 +49,9 @@ void transfer_balances(
     evm::CallParameters const &params, evm::SystemState &sstate,
     Address const &to) noexcept
 {
-    sstate.state().subtract_from_balance(params.sender, params.value);
-    sstate.state().add_to_balance(to, params.value);
+    auto const value = intx::be::load<uint256_t>(to_bytes(params.value));
+    sstate.state().subtract_from_balance(params.sender, value);
+    sstate.state().add_to_balance(to, value);
 }
 
 evm::Status transfer_call_balances(

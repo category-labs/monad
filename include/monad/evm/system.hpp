@@ -21,7 +21,7 @@ std::optional<std::tuple<CallParameters, size_t, size_t>>
 pre_call(StackPointer &sp, ExecutionState &state, Status &status)
 {
     // TODO: remove once we test recursions
-    MONAD_ASSERT(state.env.depth == 0);
+    // MONAD_ASSERT(state.env.depth == 0);
 
     auto const gas = sp.pop();
     auto const address = intx::be::trunc<Address>(sp.pop());
@@ -125,7 +125,9 @@ pre_call(StackPointer &sp, ExecutionState &state, Status &status)
                          : state.env.address,
         .code_address = address,
         .gas = gas_u,
-        .value = op == Opcode::DELEGATECALL ? state.env.value : value,
+        .value = op == Opcode::DELEGATECALL
+                     ? state.env.value
+                     : intx::be::load<uint256_t>(to_bytes(value)),
         .gas_price = state.env.gas_price,
         .input_data =
             args_size_z ? state.mstate.memory.substr(args_offset_z, args_size_z)

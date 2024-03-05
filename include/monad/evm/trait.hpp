@@ -7,6 +7,7 @@
 #include <monad/evm/opcodes.hpp>
 #include <monad/evm/push.hpp>
 #include <monad/evm/revision.hpp>
+#include <monad/evm/sha3.hpp>
 #include <monad/evm/stack_memory_storage_flow.hpp>
 #include <monad/evm/status.hpp>
 #include <monad/evm/system.hpp>
@@ -54,6 +55,24 @@ struct Trait<Opcode::ADD>
     static constexpr uint64_t baseline_cost()
     {
         return very_low_cost;
+    }
+};
+
+template <>
+struct Trait<Opcode::KECCAK256>
+{
+    static constexpr size_t stack_height_required = 2;
+    static constexpr int stack_height_change = -1;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
+
+    template <Revision>
+    static constexpr auto impl = keccak256;
+
+    template <Revision>
+    static constexpr uint64_t baseline_cost()
+    {
+        return keccak256_cost;
     }
 };
 

@@ -198,6 +198,7 @@ Status execute(std::shared_ptr<ExecutionState> const state)
         break;
             CASE_OP(Opcode::STOP)
             CASE_OP(Opcode::ADD)
+            CASE_OP(Opcode::KECCAK256)
             CASE_OP(Opcode::ADDRESS)
             CASE_OP(Opcode::ORIGIN)
             CASE_OP(Opcode::CALLER)

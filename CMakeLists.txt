@@ -145,6 +145,7 @@ add_library(
   "include/monad/evm/opcodes.hpp"
   "include/monad/evm/push.hpp"
   "include/monad/evm/revision.hpp"
+  "include/monad/evm/sha3.hpp"
   "include/monad/evm/stack_pointer.hpp"
   "include/monad/evm/stack_memory_storage_flow.hpp"
   "include/monad/evm/status.hpp"

@@ -29,7 +29,6 @@ ExecutionState::ExecutionState(
     , gas_refund{0}
     , analysis{analyze(code)}
 {
-    MONAD_ASSERT(!code.empty());
 }
 
 ExecutionState::ExecutionState(

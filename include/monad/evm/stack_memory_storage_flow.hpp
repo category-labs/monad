@@ -11,6 +11,27 @@
 MONAD_EVM_NAMESPACE_BEGIN
 
 template <>
+struct Trait<Opcode::POP>
+{
+    static constexpr size_t stack_height_required = 1;
+    static constexpr int stack_height_change = -1;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
+
+    template <Revision>
+    static Status impl(StackPointer const &, ExecutionState &)
+    {
+        return Status::Success;
+    }
+
+    template <Revision>
+    static constexpr uint64_t baseline_cost()
+    {
+        return base_cost;
+    }
+};
+
+template <>
 struct Trait<Opcode::SSTORE>
 {
     static constexpr size_t stack_height_required = 2;

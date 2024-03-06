@@ -134,6 +134,7 @@ add_library(
   "include/monad/evm/call_parameters.hpp"
   "include/monad/evm/code_analysis.hpp"
   "include/monad/evm/config.hpp"
+  "include/monad/evm/dup.hpp"
   "include/monad/evm/environmental.hpp"
   "include/monad/evm/execute.hpp"
   "include/monad/evm/execution_environment.hpp"

@@ -1,5 +1,6 @@
 #include <monad/evm/arithmetic.hpp>
 #include <monad/evm/config.hpp>
+#include <monad/evm/dup.hpp>
 #include <monad/evm/environmental.hpp>
 #include <monad/evm/execute.hpp>
 #include <monad/evm/explicit_revision.hpp>
@@ -211,6 +212,7 @@ Status execute(std::shared_ptr<ExecutionState> const state)
             CASE_OP(Opcode::CALLDATASIZE)
             CASE_OP(Opcode::CODESIZE)
             CASE_OP(Opcode::GASPRICE)
+            CASE_OP(Opcode::POP)
             CASE_OP(Opcode::SSTORE)
             CASE_OP(Opcode::PUSH1)
             CASE_OP(Opcode::PUSH2)
@@ -244,6 +246,22 @@ Status execute(std::shared_ptr<ExecutionState> const state)
             CASE_OP(Opcode::PUSH30)
             CASE_OP(Opcode::PUSH31)
             CASE_OP(Opcode::PUSH32)
+            CASE_OP(Opcode::DUP1)
+            CASE_OP(Opcode::DUP2)
+            CASE_OP(Opcode::DUP3)
+            CASE_OP(Opcode::DUP4)
+            CASE_OP(Opcode::DUP5)
+            CASE_OP(Opcode::DUP6)
+            CASE_OP(Opcode::DUP7)
+            CASE_OP(Opcode::DUP8)
+            CASE_OP(Opcode::DUP9)
+            CASE_OP(Opcode::DUP10)
+            CASE_OP(Opcode::DUP11)
+            CASE_OP(Opcode::DUP12)
+            CASE_OP(Opcode::DUP13)
+            CASE_OP(Opcode::DUP14)
+            CASE_OP(Opcode::DUP15)
+            CASE_OP(Opcode::DUP16)
             CASE_OP(Opcode::CALLCODE)
             CASE_OP(Opcode::CALL)
             CASE_OP(Opcode::RETURN)

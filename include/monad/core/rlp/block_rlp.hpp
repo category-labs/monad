@@ -10,6 +10,7 @@ MONAD_RLP_NAMESPACE_BEGIN
 byte_string encode_block_header(BlockHeader const &);
 byte_string encode_block(Block const &);
 
+Result<std::vector<Transaction>> decode_transaction_vector(byte_string_view &);
 Result<Block> decode_block(byte_string_view &);
 Result<BlockHeader> decode_block_header(byte_string_view &);
 

@@ -241,6 +241,7 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/cmd)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/ethereum_test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/analysis)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/execution/lob)
 
 function(monad_add_test2 target)
   add_executable(${target} "test/unit/common/src/test/main.cpp" ${ARGN})

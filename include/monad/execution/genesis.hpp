@@ -1,16 +1,14 @@
 #pragma once
 
 #include <monad/config.hpp>
-
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-
+#include <monad/db/block_db.hpp>
 #include <monad/db/db.hpp>
-
 #include <monad/state2/state_deltas.hpp>
 
 #include <evmc/hex.hpp>
@@ -94,9 +92,8 @@ inline void read_genesis_state(nlohmann::json const &genesis_json, Db &db)
     db.commit(state_deltas, Code{});
 }
 
-template <class TStateDb>
 inline BlockHeader
-read_genesis(std::filesystem::path const &genesis_file, TStateDb &db)
+read_genesis(std::filesystem::path const &genesis_file, Db &db)
 {
     std::ifstream ifile(genesis_file.c_str());
     auto const genesis_json = nlohmann::json::parse(ifile);
@@ -113,8 +110,7 @@ read_genesis(std::filesystem::path const &genesis_file, TStateDb &db)
     return block_header;
 }
 
-template <class TBlockDb>
-inline void verify_genesis(TBlockDb &block_db, BlockHeader const &block_header)
+inline void verify_genesis(BlockDb &block_db, BlockHeader const &block_header)
 {
     Block block{};
     bool const status = block_db.get(0u, block);
@@ -124,10 +120,8 @@ inline void verify_genesis(TBlockDb &block_db, BlockHeader const &block_header)
     MONAD_ASSERT(block_header.state_root == block.header.state_root);
 }
 
-template <class TBlockDb, class TStateDb>
 inline void read_and_verify_genesis(
-    TBlockDb &block_db, TStateDb &db,
-    std::filesystem::path const &genesis_file_path)
+    BlockDb &block_db, Db &db, std::filesystem::path const &genesis_file_path)
 {
     auto const block_header = read_genesis(genesis_file_path, db);
     verify_genesis(block_db, block_header);

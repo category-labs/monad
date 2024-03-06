@@ -104,12 +104,13 @@ std::vector<Address> get_addresses_from_file(std::filesystem::path const &path)
     return addresses;
 }
 
-Block make_block(byte_string_view &encoded_txns)
+Block make_block(byte_string_view &encoded_txns, block_num_t const block_num)
 {
     Block block;
     BlockHeader block_header;
     block_header.beneficiary = beneficiary;
     block_header.base_fee_per_gas = std::make_optional(base_fee_per_gas);
+    block_header.number = block_num;
 
     auto txns = rlp::decode_transaction_vector(encoded_txns);
     if (txns.has_error()) {
@@ -117,6 +118,7 @@ Block make_block(byte_string_view &encoded_txns)
     }
     MONAD_ASSERT(!txns.has_error());
 
+    block.header = block_header;
     block.transactions = std::move(txns.value());
 
     return block;
@@ -137,15 +139,15 @@ int main(int argc, char *argv[])
 
     std::filesystem::path block_db_path{};
     std::filesystem::path state_db_path{};
+    std::optional<uint64_t> block_id_continue = std::nullopt;
     uint64_t finish_batch = 1500;
 
-    bool on_disk = false;
     bool compaction = false;
     unsigned nthreads = 4;
     unsigned nfibers = 4;
     auto sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     std::vector<std::filesystem::path> dbname_paths;
-    int64_t file_size_db = 512; // 512GB
+    std::filesystem::path load_snapshot{};
 
     quill::start(true);
 
@@ -154,28 +156,31 @@ int main(int argc, char *argv[])
         ->required();
     cli.add_option(
         "--finish_batch", finish_batch, "Last batch of txn to execute");
-    cli.add_option("--state_db", state_db_path, "state_db directory");
     cli.add_option("--log_level", log_level, "level of logging")
         ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
     cli.add_option("--nthreads", nthreads, "number of threads");
     cli.add_option("--nfibers", nfibers, "number of fibers");
-    cli.add_flag("--on_disk", on_disk, "config TrieDb to be on disk");
     cli.add_flag("--compaction", compaction, "do compaction");
     cli.add_option(
         "--sq_thread_cpu",
         sq_thread_cpu,
         "io_uring sq_thread_cpu field in io_uring_params");
-    cli.add_option(
-        "--dbname_paths",
+    auto const on_disk_option = cli.add_option(
+        "--db",
         dbname_paths,
-        "a list of db paths separated by comma, can config storage pool "
-        "with 1 or more files/devices, will config on_disk triedb with "
-        "anonymous inode if empty");
-    cli.add_option(
-        "--file_size_db",
-        file_size_db,
-        "size of each db file, only apply to newly created files but not "
-        "existing files or raw blkdev");
+        "A comma-separated list of previously created database paths. You can "
+        "configure the storage pool with one or more files/devices. If no "
+        "value is passed, the replay will run with an in-memory triedb");
+    auto const snapshot_option = cli.add_option(
+        "--load_snapshot", load_snapshot, "snapshot file path to load db from");
+    auto const resume_option = cli.add_option(
+        "--block_id_continue",
+        block_id_continue,
+        "block id to continue running from an existing on disk TrieDb "
+        "instance");
+
+    snapshot_option->excludes(resume_option);
+    resume_option->needs(on_disk_option);
 
     try {
         cli.parse(argc, argv);
@@ -186,41 +191,55 @@ int main(int argc, char *argv[])
     }
     quill::get_root_logger()->set_log_level(log_level);
 
+    bool const on_disk = !dbname_paths.empty();
     auto const config = on_disk ? std::make_optional(mpt::OnDiskDbConfig{
-                                      .append = false,
+                                      .append = true, // always open existing
                                       .compaction = compaction,
                                       .rd_buffers = 8192,
                                       .wr_buffers = 32,
                                       .uring_entries = 128,
                                       .sq_thread_cpu = sq_thread_cpu,
-                                      .dbname_paths = dbname_paths,
-                                      .file_size_db = file_size_db})
+                                      .start_block_id = block_id_continue,
+                                      .dbname_paths = dbname_paths})
                                 : std::nullopt;
 
-    auto start_block_number = db::auto_detect_start_block_number(state_db_path);
+    uint64_t init_block_number = 0;
     auto db = [&] -> db::TrieDb {
-        if (start_block_number == 0) {
+        if (load_snapshot.empty()) {
             return db::TrieDb{config};
         }
-        auto const dir = state_db_path / std::to_string(start_block_number - 1);
-        if (std::filesystem::exists(dir / "accounts")) {
-            MONAD_ASSERT(std::filesystem::exists(dir / "code"));
-            LOG_INFO("Loading from binary checkpoint in {}", dir);
-            std::ifstream accounts(dir / "accounts");
-            std::ifstream code(dir / "code");
-            return db::TrieDb{config, accounts, code};
+        MONAD_ASSERT(!block_id_continue.has_value());
+        namespace fs = std::filesystem;
+        if (!(fs::is_directory(load_snapshot) &&
+              (fs::exists(load_snapshot / "state.json") ||
+               (fs::exists(load_snapshot / "accounts") &&
+                fs::exists(load_snapshot / "code"))))) {
+            throw std::runtime_error(
+                "Invalid snapshot folder provided. Please ensure that the "
+                "directory you pass contains the block number of the snapshot "
+                "in its path and includes either files 'accounts' and 'code', "
+                "or 'state.json'.");
         }
-        MONAD_ASSERT(std::filesystem::exists(dir / "state.json"));
-        LOG_INFO("Loading from json checkpoint in {}", dir);
-        std::ifstream ifile_stream(dir / "state.json");
-        return db::TrieDb{config, ifile_stream};
+        init_block_number = std::stoul(load_snapshot.stem());
+        if (fs::exists(load_snapshot / "accounts")) {
+            MONAD_ASSERT(fs::exists(load_snapshot / "code"));
+            LOG_INFO("Loading from binary checkpoint in {}", load_snapshot);
+            std::ifstream accounts(load_snapshot / "accounts");
+            std::ifstream code(load_snapshot / "code");
+            return db::TrieDb{config, accounts, code, init_block_number};
+        }
+        MONAD_ASSERT(fs::exists(load_snapshot / "state.json"));
+        LOG_INFO("Loading from json checkpoint in {}", load_snapshot);
+        std::ifstream ifile_stream(load_snapshot / "state.json");
+        return db::TrieDb{config, ifile_stream, init_block_number};
     }();
 
+    init_block_number = db.current_block_number();
+
     LOG_INFO(
-        "Running with block_db = {}, finish batch = {}, state db = {}",
+        "Running with block_db = {}, finish batch = {}",
         block_db_path,
-        finish_batch,
-        state_db_path);
+        finish_batch);
 
     fiber::PriorityPool priority_pool{nthreads, nfibers};
 
@@ -236,7 +255,7 @@ int main(int argc, char *argv[])
         }
         MONAD_ASSERT(block_state.can_merge(state));
         block_state.merge(state);
-        LOG_INFO("Commiting deposit balance txns");
+        LOG_DEBUG("Commiting deposit balance txns");
         block_state.commit();
     }
 
@@ -246,7 +265,8 @@ int main(int argc, char *argv[])
     {
         auto block_byte_string = get(block_db_path, /*setup*/ true, 0);
         MONAD_ASSERT(block_byte_string);
-        Block setup_block = make_block(block_byte_string.value());
+        Block setup_block =
+            make_block(block_byte_string.value(), init_block_number + 1);
         BlockHashBuffer buffer;
         BlockState block_state{db};
         uint64_t cumulative_gas_used = 0u;
@@ -257,6 +277,7 @@ int main(int argc, char *argv[])
             block_state,
             cumulative_gas_used);
         block_state.commit();
+        LOG_DEBUG("Size of receipt: {}", receipts.value().size());
     }
 
     LOG_INFO("Finished executing setup transactions");
@@ -267,7 +288,8 @@ int main(int argc, char *argv[])
     for (uint64_t i = 0; i < std::min(finish_batch, uint64_t{1500}); ++i) {
         auto block_byte_string = get(block_db_path, /*setup*/ false, i);
         MONAD_ASSERT(block_byte_string);
-        Block setup_block = make_block(block_byte_string.value());
+        Block setup_block =
+            make_block(block_byte_string.value(), init_block_number + 2 + i);
         BlockHashBuffer buffer;
         BlockState block_state{db};
         uint64_t cumulative_gas_used = 0u;

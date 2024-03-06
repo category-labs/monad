@@ -2,6 +2,8 @@
 #include <monad/core/fmt/int_fmt.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/rlp/account_rlp.hpp>
+#include <monad/core/rlp/int_rlp.hpp>
+#include <monad/core/rlp/receipt_rlp.hpp>
 #include <monad/core/unaligned.hpp>
 #include <monad/db/config.hpp>
 #include <monad/db/trie_db.hpp>
@@ -35,8 +37,10 @@ namespace
 {
     constexpr unsigned char state_nibble = 0;
     constexpr unsigned char code_nibble = 1;
+    constexpr unsigned char receipt_nibble = 2;
     auto const state_nibbles = concat(state_nibble);
     auto const code_nibbles = concat(code_nibble);
+    auto const receipt_nibbles = concat(receipt_nibble);
 
     template <class T>
         requires std::same_as<T, bytes32_t> || std::same_as<T, Address>
@@ -84,24 +88,32 @@ namespace
 
     using MerkleCompute = MerkleComputeBase<LeafCompute>;
 
-    struct EmptyCompute : public Compute
+    struct RootMerkleCompute final : public MerkleCompute
+    {
+        virtual unsigned compute(unsigned char *const, Node *const) override
+        {
+            return 0;
+        }
+    };
+
+    struct EmptyCompute final : Compute
     {
         virtual unsigned compute_len(
             std::span<ChildData>, uint16_t, NibblesView,
             std::optional<byte_string_view>) override
         {
             return 0;
-        };
+        }
 
         virtual unsigned compute_branch(unsigned char *, Node *) override
         {
             return 0;
-        };
+        }
 
         virtual unsigned compute(unsigned char *, Node *) override
         {
             return 0;
-        };
+        }
     };
 
     struct JsonDbLoader
@@ -593,12 +605,20 @@ void Machine::down(unsigned char const nibble)
     ++depth;
     MONAD_ASSERT(depth <= max_depth);
     MONAD_ASSERT(
-        (nibble == state_nibble || nibble == code_nibble) ||
+        (nibble == state_nibble || nibble == code_nibble ||
+         nibble == receipt_nibble) ||
         depth != prefix_len + BLOCK_NUM_NIBBLES_LEN);
-    if (MONAD_UNLIKELY(
-            depth == prefix_len + BLOCK_NUM_NIBBLES_LEN &&
-            nibble == state_nibble)) {
-        is_merkle = true;
+    if (MONAD_UNLIKELY(depth == prefix_len + BLOCK_NUM_NIBBLES_LEN)) {
+        MONAD_ASSERT(trie_section == TrieType::Prefix);
+        if (nibble == state_nibble) {
+            trie_section = TrieType::State;
+        }
+        else if (nibble == receipt_nibble) {
+            trie_section = TrieType::Receipt;
+        }
+        else {
+            trie_section = TrieType::Code;
+        }
     }
 }
 
@@ -606,21 +626,30 @@ void Machine::up(size_t const n)
 {
     MONAD_ASSERT(n <= depth);
     depth -= static_cast<uint8_t>(n);
-    if (MONAD_UNLIKELY(
-            is_merkle && depth < prefix_len + BLOCK_NUM_NIBBLES_LEN)) {
-        is_merkle = false;
+    if (MONAD_UNLIKELY(depth < prefix_len + BLOCK_NUM_NIBBLES_LEN)) {
+        trie_section = TrieType::Prefix;
     }
 }
 
 Compute &Machine::get_compute() const
 {
-    static EmptyCompute empty;
-    static MerkleCompute merkle;
-    if (MONAD_LIKELY(is_merkle)) {
-        return merkle;
+    static EmptyCompute empty_compute;
+    static MerkleCompute state_compute;
+    static RootMerkleCompute state_root_compute;
+    static VarLenMerkleCompute receipt_compute;
+    static RootVarLenMerkleCompute receipt_root_compute;
+
+    if (MONAD_LIKELY(trie_section == TrieType::State)) {
+        return depth == prefix_len + BLOCK_NUM_NIBBLES_LEN ? state_root_compute
+                                                           : state_compute;
+    }
+    else if (trie_section == TrieType::Receipt) {
+        return depth == prefix_len + BLOCK_NUM_NIBBLES_LEN
+                   ? receipt_root_compute
+                   : receipt_compute;
     }
     else {
-        return empty;
+        return empty_compute;
     }
 }
 
@@ -720,7 +749,9 @@ TrieDb::TrieDb(
     MONAD_ASSERT(parser.done());
 
     parser.handler().write();
-    MONAD_ASSERT(machine_->depth == 0 && machine_->is_merkle == false);
+    MONAD_ASSERT(
+        machine_->depth == 0 &&
+        machine_->trie_section == Machine::TrieType::Prefix);
 }
 
 TrieDb::TrieDb(
@@ -786,7 +817,9 @@ std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
     return std::make_shared<CodeAnalysis>(analyze(value.assume_value()));
 }
 
-void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
+void TrieDb::commit(
+    StateDeltas const &state_deltas, Code const &code,
+    std::vector<Receipt> const &receipts)
 {
     UpdateList account_updates;
     for (auto const &[addr, delta] : state_deltas) {
@@ -836,6 +869,16 @@ void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
             .next = UpdateList{}}));
     }
 
+    UpdateList receipt_updates;
+    for (size_t i = 0; i < receipts.size(); ++i) {
+        auto const &receipt = receipts[i];
+        receipt_updates.push_front(update_alloc_.emplace_back(Update{
+            .key =
+                NibblesView{bytes_alloc_.emplace_back(rlp::encode_unsigned(i))},
+            .value = bytes_alloc_.emplace_back(rlp::encode_receipt(receipt)),
+            .incarnation = false,
+            .next = UpdateList{}}));
+    }
     auto state_update = Update{
         .key = state_nibbles,
         .value = byte_string_view{},
@@ -846,11 +889,17 @@ void TrieDb::commit(StateDeltas const &state_deltas, Code const &code)
         .value = byte_string_view{},
         .incarnation = false,
         .next = std::move(code_updates)};
+    auto receipt_update = Update{
+        .key = receipt_nibbles,
+        .value = byte_string_view{},
+        .incarnation = true,
+        .next = std::move(receipt_updates)};
     UpdateList updates;
     updates.push_front(state_update);
     updates.push_front(code_update);
+    updates.push_front(receipt_update);
     db_.upsert(std::move(updates), curr_block_id_);
-    MONAD_ASSERT(machine_->depth == 0 && machine_->is_merkle == false);
+    MONAD_ASSERT(machine_->trie_section == Machine::TrieType::Prefix);
 
     update_alloc_.clear();
     bytes_alloc_.clear();
@@ -870,6 +919,18 @@ void TrieDb::create_and_prune_block_history(uint64_t) const {
 bytes32_t TrieDb::state_root()
 {
     auto const value = db_.get_data(state_nibbles, curr_block_id_);
+    if (!value.has_value() || value.value().empty()) {
+        return NULL_ROOT;
+    }
+    bytes32_t root;
+    MONAD_ASSERT(value.value().size() == sizeof(bytes32_t));
+    std::copy_n(value.value().data(), sizeof(bytes32_t), root.bytes);
+    return root;
+}
+
+bytes32_t TrieDb::receipts_root()
+{
+    auto const value = db_.get_data(receipt_nibbles, curr_block_id_);
     if (!value.has_value() || value.value().empty()) {
         return NULL_ROOT;
     }

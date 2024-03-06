@@ -67,10 +67,10 @@ public:
         }
     }
 
+    template <evmc_revision rev>
     bool verify_root_hash(
         BlockHeader const &block_header, bytes32_t /* transactions_root */,
-        bytes32_t /* receipts_root */, bytes32_t const state_root,
-        block_num_t /*current_block_number */) const
+        bytes32_t const receipts_root, bytes32_t const state_root) const
     {
         if (state_root != block_header.state_root) {
             LOG_ERROR(
@@ -78,11 +78,20 @@ public:
                 block_header.number,
                 state_root,
                 block_header.state_root);
+            return false;
         }
-
-        // TODO: only check for state root hash for now (we don't have receipt
-        // and transaction trie building algo yet)
-        return state_root == block_header.state_root;
+        if constexpr (rev >= EVMC_BYZANTIUM) {
+            if (receipts_root != block_header.receipts_root) {
+                LOG_ERROR(
+                    "Block: {}, Computed Receipts Root: {}, Expected Receipts "
+                    "Root: {}",
+                    block_header.number,
+                    receipts_root,
+                    block_header.receipts_root);
+                return false;
+            }
+        }
+        return true;
     }
 
     template <class Traits>
@@ -119,12 +128,11 @@ public:
 
             n_transactions += block.transactions.size();
 
-            if (!verify_root_hash(
+            if (!verify_root_hash<Traits::rev>(
                     block.header,
                     NULL_ROOT,
-                    NULL_ROOT,
-                    db.state_root(),
-                    current_block_number)) {
+                    db.receipts_root(),
+                    db.state_root())) {
                 return Result{Status::WRONG_STATE_ROOT, current_block_number};
             }
         }

@@ -81,10 +81,11 @@ public:
         db_.increment_block_number();
     }
 
-    virtual void
-    commit(StateDeltas const &state_deltas, Code const &code) override
+    virtual void commit(
+        StateDeltas const &state_deltas, Code const &code,
+        std::vector<Receipt> const &receipts) override
     {
-        db_.commit(state_deltas, code);
+        db_.commit(state_deltas, code, receipts);
 
         for (auto it = state_deltas.cbegin(); it != state_deltas.cend(); ++it) {
             auto const &address = it->first;
@@ -105,6 +106,11 @@ public:
     virtual bytes32_t state_root() override
     {
         return db_.state_root();
+    }
+
+    virtual bytes32_t receipts_root() override
+    {
+        return db_.receipts_root();
     }
 
     virtual void

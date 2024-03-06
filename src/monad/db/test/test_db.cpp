@@ -315,6 +315,50 @@ TYPED_TEST(DBTest, storage_deletion)
         0xcc04b7a59a7c5d1f294402a0cbe42b5102db928fb2fad9d0d6f8c2a21a34c195_bytes32);
 }
 
+TYPED_TEST(DBTest, commit_receipts)
+{
+    auto db = this->make_db();
+
+    // empty receipts
+    db.commit(StateDeltas{}, Code{}, {});
+    EXPECT_EQ(db.receipts_root(), NULL_ROOT);
+
+    std::vector<Receipt> receipts;
+    receipts.emplace_back(Receipt{
+        .status = 1, .gas_used = 21'000, .type = TransactionType::legacy});
+    receipts.emplace_back(Receipt{
+        .status = 1, .gas_used = 42'000, .type = TransactionType::legacy});
+
+    // receipt with log
+    Receipt r{.status = 1, .gas_used = 65'092, .type = TransactionType::legacy};
+    r.add_log(Receipt::Log{
+        .data = from_hex("0x000000000000000000000000000000000000000000000000000"
+                         "000000000000000000000000000000000000043b2126e7a22e0c2"
+                         "88dfb469e3de4d2c097f3ca000000000000000000000000000000"
+                         "0000000000000000001195387bce41fd499000000000000000000"
+                         "0000000000000000000000000000000000000000000000"),
+        .topics =
+            {0xf341246adaac6f497bc2a656f546ab9e182111d630394f0c57c710a59a2cb567_bytes32},
+        .address = 0x8d12a197cb00d4747a1fe03395095ce2a5cc6819_address});
+    receipts.push_back(std::move(r));
+
+    db.commit(StateDeltas{}, Code{}, receipts);
+    EXPECT_EQ(
+        db.receipts_root(),
+        0x7ea023138ee7d80db04eeec9cf436dc35806b00cc5fe8e5f611fb7cf1b35b177_bytes32);
+
+    // A new receipt trie with eip1559 transaction type
+    receipts.clear();
+    receipts.emplace_back(Receipt{
+        .status = 1, .gas_used = 34865, .type = TransactionType::eip1559});
+    receipts.emplace_back(Receipt{
+        .status = 1, .gas_used = 77969, .type = TransactionType::eip1559});
+    db.commit(StateDeltas{}, Code{}, receipts);
+    EXPECT_EQ(
+        db.receipts_root(),
+        0x61f9b4707b28771a63c1ac6e220b2aa4e441dd74985be385eaf3cd7021c551e9_bytes32);
+}
+
 TYPED_TEST(DBTest, to_json)
 {
     auto const a = 0x0000000000000000000000000000000000000100_address;

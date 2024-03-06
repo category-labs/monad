@@ -218,6 +218,11 @@ void BlockchainTest::TestBody()
                 EXPECT_FALSE(j_block.contains("expectException"));
                 EXPECT_EQ(db.state_root(), block.value().header.state_root)
                     << name;
+                if (rev >= EVMC_BYZANTIUM) {
+                    EXPECT_EQ(
+                        db.receipts_root(), block.value().header.receipts_root)
+                        << name;
+                }
                 EXPECT_EQ(
                     result.value().size(), block.value().transactions.size())
                     << name;

@@ -75,11 +75,12 @@ constexpr Receipt::Bloom compute_bloom(std::vector<Receipt> const &receipts)
     return bloom;
 }
 
-inline void commit(BlockState &block_state)
+inline void
+commit(BlockState &block_state, std::vector<Receipt> const &receipts = {})
 {
     block_state.log_debug();
 
-    block_state.commit();
+    block_state.commit(receipts);
 }
 
 template <evmc_revision rev>
@@ -164,7 +165,7 @@ Result<std::vector<Receipt>> execute_block(
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(state);
 
-    commit(block_state);
+    commit(block_state, receipts);
 
     return receipts;
 }

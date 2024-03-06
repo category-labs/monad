@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/core/bytes.hpp>
+#include <monad/core/receipt.hpp>
 #include <monad/db/config.hpp>
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
@@ -20,8 +21,15 @@ MONAD_DB_NAMESPACE_BEGIN
 
 struct Machine : public mpt::StateMachine
 {
-    uint8_t depth = 0;
-    bool is_merkle = false;
+    enum class TrieType : uint8_t
+    {
+        Prefix,
+        State,
+        Code,
+        Receipt
+    };
+    uint8_t depth{0};
+    TrieType trie_section{TrieType::Prefix};
     static constexpr auto prefix_len = 1;
     static constexpr auto max_depth = mpt::BLOCK_NUM_NIBBLES_LEN + prefix_len +
                                       sizeof(bytes32_t) * 2 +
@@ -76,8 +84,11 @@ public:
     read_storage(Address const &, bytes32_t const &key) override;
     virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) override;
     virtual void increment_block_number() override;
-    virtual void commit(StateDeltas const &, Code const &) override;
+    virtual void commit(
+        StateDeltas const &, Code const &,
+        std::vector<Receipt> const & = {}) override;
     virtual bytes32_t state_root() override;
+    virtual bytes32_t receipts_root() override;
     virtual void create_and_prune_block_history(uint64_t) const override;
 
     nlohmann::json to_json();

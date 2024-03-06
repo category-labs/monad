@@ -1,5 +1,6 @@
 #pragma once
 
+#include <monad/core/assert.h>
 #include <monad/evm/config.hpp>
 #include <monad/evm/execution_state.hpp>
 #include <monad/evm/fee_schedule.hpp>
@@ -84,6 +85,29 @@ struct Trait<Opcode::SSTORE>
     static constexpr uint64_t baseline_cost()
     {
         return zero_cost;
+    }
+};
+
+template <>
+struct Trait<Opcode::PC>
+{
+    static constexpr size_t stack_height_required = 0;
+    static constexpr int stack_height_change = 1;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
+
+    template <Revision>
+    static Status impl(StackPointer sp, ExecutionState const &state)
+    {
+        MONAD_ASSERT(state.mstate.pc >= 0);
+        sp.push(state.mstate.pc);
+        return Status::Success;
+    }
+
+    template <Revision>
+    static constexpr uint64_t baseline_cost()
+    {
+        return base_cost;
     }
 };
 

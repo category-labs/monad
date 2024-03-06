@@ -1,12 +1,16 @@
 #include <monad/evm/arithmetic.hpp>
 #include <monad/evm/config.hpp>
+#include <monad/evm/environmental.hpp>
 #include <monad/evm/execute.hpp>
 #include <monad/evm/explicit_revision.hpp>
 #include <monad/evm/opcodes.hpp>
+#include <monad/evm/push.hpp>
 #include <monad/evm/revision.hpp>
+#include <monad/evm/sha3.hpp>
+#include <monad/evm/stack_memory_storage_flow.hpp>
 #include <monad/evm/stack_pointer.hpp>
 #include <monad/evm/status.hpp>
-#include <monad/evm/trait.hpp>
+#include <monad/evm/system.hpp>
 #include <monad/execution/precompiles.hpp>
 
 MONAD_EVM_NAMESPACE_BEGIN

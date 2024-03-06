@@ -7,11 +7,15 @@
 #include <monad/evm/opcodes.hpp>
 #include <monad/evm/revision.hpp>
 #include <monad/evm/stack_pointer.hpp>
+#include <monad/evm/status.hpp>
+#include <monad/evm/trait.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/precompiles.hpp>
 #include <monad/state3/state.hpp>
 
 MONAD_EVM_NAMESPACE_BEGIN
+
+// Helpers
 
 template <Revision rev, Opcode op>
     requires(
@@ -248,48 +252,135 @@ Status halt(StackPointer sp, ExecutionState &state)
     return status;
 }
 
-template <Revision rev>
-inline Status selfdestruct(StackPointer sp, ExecutionState &state)
+// Traits
+
+template <>
+struct Trait<Opcode::CALLCODE>
 {
-    if (!state.env.can_modify_state) {
-        return Status::StaticModeViolation;
-    }
+    static constexpr size_t stack_height_required = 7;
+    static constexpr int stack_height_change = -6;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
 
-    auto const beneficiary = intx::be::trunc<Address>(sp.pop());
-
-    if constexpr (rev >= Revision::Berlin) {
-        if (!state.sstate.access_account(beneficiary)) {
-            if (state.mstate.gas_left < cold_account_access_cost<rev>()) {
-                return Status::OutOfGas;
-            }
-            state.mstate.gas_left -= cold_account_access_cost<rev>();
+    template <Revision rev>
+    static constexpr uint64_t baseline_cost()
+    {
+        if constexpr (rev < Revision::TangerineWhistle) {
+            return 40;
+        }
+        else if constexpr (rev < Revision::Berlin) {
+            return 700;
+        }
+        else {
+            return warm_access_cost<Revision::Berlin>();
         }
     }
+};
 
-    if constexpr (rev >= Revision::TangerineWhistle) {
-        // EIP-150, EIP-161
-        if (rev == Revision::TangerineWhistle ||
-            state.sstate.get_balance(state.env.address)) {
-            if (!state.sstate.state().account_exists(beneficiary)) {
-                if (state.mstate.gas_left < new_account_cost) {
+template <>
+struct Trait<Opcode::CALL>
+{
+    static constexpr size_t stack_height_required = 7;
+    static constexpr int stack_height_change = -6;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
+
+    template <Revision rev>
+    static constexpr uint64_t baseline_cost()
+    {
+        if constexpr (rev < Revision::TangerineWhistle) {
+            return 40;
+        }
+        else if constexpr (rev < Revision::Berlin) {
+            return 700;
+        }
+        else {
+            return warm_access_cost<Revision::Berlin>();
+        }
+    }
+};
+
+template <>
+struct Trait<Opcode::RETURN>
+{
+    static constexpr size_t stack_height_required = 2;
+    static constexpr int stack_height_change = -2;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
+
+    template <Revision>
+    static constexpr auto impl = halt<Status::Success>;
+
+    template <Revision>
+    static constexpr uint64_t baseline_cost()
+    {
+        return zero_cost;
+    }
+};
+
+template <>
+struct Trait<Opcode::SELFDESTRUCT>
+{
+    static constexpr size_t stack_height_required = 1;
+    static constexpr int stack_height_change = -1;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
+
+    template <Revision rev>
+    static Status impl(StackPointer sp, ExecutionState &state)
+    {
+        if (!state.env.can_modify_state) {
+            return Status::StaticModeViolation;
+        }
+
+        auto const beneficiary = intx::be::trunc<Address>(sp.pop());
+
+        if constexpr (rev >= Revision::Berlin) {
+            if (!state.sstate.access_account(beneficiary)) {
+                if (state.mstate.gas_left < cold_account_access_cost<rev>()) {
                     return Status::OutOfGas;
                 }
-                state.mstate.gas_left -= new_account_cost;
+                state.mstate.gas_left -= cold_account_access_cost<rev>();
             }
         }
+
+        if constexpr (rev >= Revision::TangerineWhistle) {
+            // EIP-150, EIP-161
+            if (rev == Revision::TangerineWhistle ||
+                state.sstate.get_balance(state.env.address)) {
+                if (!state.sstate.state().account_exists(beneficiary)) {
+                    if (state.mstate.gas_left < new_account_cost) {
+                        return Status::OutOfGas;
+                    }
+                    state.mstate.gas_left -= new_account_cost;
+                }
+            }
+        }
+
+        auto const destructed =
+            state.sstate.selfdestruct(state.env.address, beneficiary);
+
+        // EIP-3529
+        if constexpr (rev < Revision::London) {
+            if (destructed) {
+                state.gas_refund += 24000;
+            }
+        }
+
+        return Status::Success;
     }
 
-    auto const destructed =
-        state.sstate.selfdestruct(state.env.address, beneficiary);
-
-    // EIP-3529
-    if constexpr (rev < Revision::London) {
-        if (destructed) {
-            state.gas_refund += 24000;
+    template <Revision rev>
+    static constexpr uint64_t baseline_cost()
+    {
+        if constexpr (rev < Revision::TangerineWhistle) {
+            return 0;
+        }
+        else {
+            // EIP-150
+            return selfdestruct_cost;
         }
     }
-
-    return Status::Success;
-}
+};
 
 MONAD_EVM_NAMESPACE_END

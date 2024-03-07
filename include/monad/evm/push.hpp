@@ -22,7 +22,7 @@ struct Trait<rev, op>
     static constexpr bool exist = rev >= Revision::Frontier;
     static constexpr uint64_t baseline_cost = very_low_cost;
 
-    static Status impl(StackPointer sp, ExecutionState const &state)
+    static void impl(StackPointer sp, ExecutionState const &state)
     {
         constexpr auto nfull_words = N / sizeof(uint64_t);
         constexpr auto npartial_bytes = N % sizeof(uint64_t);
@@ -62,7 +62,6 @@ struct Trait<rev, op>
             (state.mstate.pc + N + 1) ==
             static_cast<size_t>(data - state.analysis.code.data()));
         sp.push(value);
-        return Status::Success;
     }
 };
 

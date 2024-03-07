@@ -22,10 +22,9 @@ struct Trait<rev, Opcode::ADDRESS>
     static constexpr bool exist = rev >= Revision::Frontier;
     static constexpr uint64_t baseline_cost = base_cost;
 
-    static Status impl(StackPointer sp, ExecutionState const &state)
+    static void impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(intx::be::load<uint256_t>(state.env.address));
-        return Status::Success;
     }
 };
 
@@ -38,10 +37,9 @@ struct Trait<rev, Opcode::ORIGIN>
     static constexpr bool exist = rev >= Revision::Frontier;
     static constexpr uint64_t baseline_cost = base_cost;
 
-    static Status impl(StackPointer sp, ExecutionState const &state)
+    static void impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(intx::be::load<uint256_t>(state.env.origin));
-        return Status::Success;
     }
 };
 
@@ -54,10 +52,9 @@ struct Trait<rev, Opcode::CALLER>
     static constexpr bool exist = rev >= Revision::Frontier;
     static constexpr uint64_t baseline_cost = base_cost;
 
-    static Status impl(StackPointer sp, ExecutionState const &state)
+    static void impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(intx::be::load<uint256_t>(state.env.sender));
-        return Status::Success;
     }
 };
 
@@ -70,10 +67,9 @@ struct Trait<rev, Opcode::CALLVALUE>
     static constexpr bool exist = rev >= Revision::Frontier;
     static constexpr uint64_t baseline_cost = base_cost;
 
-    static Status impl(StackPointer sp, ExecutionState const &state)
+    static void impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(intx::be::load<uint256_t>(to_bytes(state.env.value)));
-        return Status::Success;
     }
 };
 
@@ -86,7 +82,7 @@ struct Trait<rev, Opcode::CALLDATALOAD>
     static constexpr bool exist = rev >= Revision::Frontier;
     static constexpr uint64_t baseline_cost = very_low_cost;
 
-    static Status impl(StackPointer sp, ExecutionState const &state)
+    static void impl(StackPointer sp, ExecutionState const &state)
     {
         auto const &i = sp.pop();
 
@@ -103,8 +99,6 @@ struct Trait<rev, Opcode::CALLDATALOAD>
             // integers, the representation is big-endian.
             sp.push(intx::be::load<uint256_t>(bytes));
         }
-
-        return Status::Success;
     }
 };
 
@@ -117,10 +111,9 @@ struct Trait<rev, Opcode::CALLDATASIZE>
     static constexpr bool exist = rev >= Revision::Frontier;
     static constexpr uint64_t baseline_cost = base_cost;
 
-    static Status impl(StackPointer sp, ExecutionState const &state)
+    static void impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(state.env.input_data.size());
-        return Status::Success;
     }
 };
 
@@ -133,10 +126,9 @@ struct Trait<rev, Opcode::CODESIZE>
     static constexpr bool exist = rev >= Revision::Frontier;
     static constexpr uint64_t baseline_cost = base_cost;
 
-    static Status impl(StackPointer sp, ExecutionState const &state)
+    static void impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(state.env.code.size());
-        return Status::Success;
     }
 };
 
@@ -149,10 +141,9 @@ struct Trait<rev, Opcode::GASPRICE>
     static constexpr bool exist = rev >= Revision::Frontier;
     static constexpr uint64_t baseline_cost = base_cost;
 
-    static Status impl(StackPointer sp, ExecutionState const &state)
+    static void impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(intx::be::load<uint256_t>(to_bytes(state.env.gas_price)));
-        return Status::Success;
     }
 };
 

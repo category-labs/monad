@@ -24,10 +24,9 @@ struct Trait<rev, op>
     static constexpr bool exist = rev >= Revision::Frontier;
     static constexpr uint64_t baseline_cost = very_low_cost;
 
-    static Status impl(StackPointer sp, ExecutionState const &)
+    static void impl(StackPointer sp)
     {
         sp.push(sp.at(N - 1));
-        return Status::Success;
     }
 };
 

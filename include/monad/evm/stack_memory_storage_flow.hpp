@@ -21,10 +21,7 @@ struct Trait<rev, Opcode::POP>
     static constexpr bool exist = rev >= Revision::Frontier;
     static constexpr uint64_t baseline_cost = base_cost;
 
-    static Status impl(StackPointer const &, ExecutionState &)
-    {
-        return Status::Success;
-    }
+    static void impl() {}
 };
 
 template <Revision rev>
@@ -36,7 +33,7 @@ struct Trait<rev, Opcode::MLOAD>
     static constexpr bool exist = rev >= Revision::Frontier;
     static constexpr uint64_t baseline_cost = very_low_cost;
 
-    static Status impl(StackPointer sp, ExecutionState &state) noexcept
+    static Status impl(StackPointer sp, ExecutionState &state)
     {
         auto const &offset = sp.pop();
 
@@ -144,11 +141,10 @@ struct Trait<rev, Opcode::PC>
     static constexpr bool exist = rev >= Revision::Frontier;
     static constexpr uint64_t baseline_cost = base_cost;
 
-    static Status impl(StackPointer sp, ExecutionState const &state)
+    static void impl(StackPointer sp, ExecutionState const &state)
     {
         MONAD_ASSERT(state.mstate.pc >= 0);
         sp.push(state.mstate.pc);
-        return Status::Success;
     }
 };
 
@@ -161,10 +157,9 @@ struct Trait<rev, Opcode::GAS>
     static constexpr bool exist = rev >= Revision::Frontier;
     static constexpr uint64_t baseline_cost = base_cost;
 
-    static Status impl(StackPointer sp, ExecutionState const &state)
+    static void impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(state.mstate.gas_left);
-        return Status::Success;
     }
 };
 

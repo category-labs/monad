@@ -20,10 +20,7 @@ struct Trait<rev, Opcode::STOP>
     static constexpr bool exist = rev >= Revision::Frontier;
     static constexpr uint64_t baseline_cost = zero_cost;
 
-    static Status impl(StackPointer, ExecutionState const &)
-    {
-        return Status::Success;
-    }
+    static void impl() {}
 };
 
 template <Revision rev>
@@ -35,12 +32,11 @@ struct Trait<rev, Opcode::ADD>
     static constexpr bool exist = rev >= Revision::Frontier;
     static constexpr uint64_t baseline_cost = very_low_cost;
 
-    static Status impl(StackPointer sp, ExecutionState const &)
+    static void impl(StackPointer sp)
     {
         auto const &a = sp.pop();
         auto const &b = sp.pop();
         sp.push(a + b);
-        return Status::Success;
     }
 };
 
@@ -53,12 +49,11 @@ struct Trait<rev, Opcode::SUB>
     static constexpr bool exist = rev >= Revision::Frontier;
     static constexpr uint64_t baseline_cost = very_low_cost;
 
-    static Status impl(StackPointer sp, ExecutionState const &)
+    static void impl(StackPointer sp)
     {
         auto const &a = sp.pop();
         auto const &b = sp.pop();
         sp.push(a - b);
-        return Status::Success;
     }
 };
 

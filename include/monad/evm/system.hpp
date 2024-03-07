@@ -301,7 +301,6 @@ struct Trait<rev, Opcode::DELEGATECALL>
     static constexpr int stack_height_change = -5;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Byzantium;
-
     static constexpr uint64_t baseline_cost = [] {
         if constexpr (rev < Revision::TangerineWhistle) {
             return 40;

@@ -95,6 +95,34 @@ namespace
         pframe.sp += 1;
     }
 
+    template <class Trait>
+    Status invoke(StackPointer sp, ExecutionState &state)
+    {
+        if constexpr (requires {
+                          { Trait::impl() } -> std::same_as<void>;
+                      }) {
+            return Status::Success;
+        }
+        if constexpr (requires {
+                          { Trait::impl(sp) } -> std::same_as<void>;
+                      }) {
+            Trait::impl(sp);
+            return Status::Success;
+        }
+
+        if constexpr (requires {
+                          { Trait::impl(sp, state) } -> std::same_as<Status>;
+                      }) {
+            return Trait::impl(sp, state);
+        }
+        if constexpr (requires {
+                          { Trait::impl(sp, state) } -> std::same_as<void>;
+                      }) {
+            Trait::impl(sp, state);
+            return Status::Success;
+        }
+    }
+
     template <Revision rev, Opcode op>
     void execute_opcode(Frames &frames, Status &status)
     {
@@ -167,7 +195,7 @@ namespace
             state.mstate.pc += Trait::pc_increment;
         }
         else {
-            status = Trait::impl(sptr, state);
+            status = invoke<Trait>(sptr, state);
             if (op == Opcode::STOP || op == Opcode::RETURN ||
                 op == Opcode::SELFDESTRUCT || status != Status::Success) {
                 post_call(frames, status);

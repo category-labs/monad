@@ -20,6 +20,7 @@ struct Trait<rev, Opcode::KECCAK256>
     static constexpr int stack_height_change = -1;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = keccak256_cost;
 
     static Status impl(StackPointer sp, ExecutionState &state)
     {
@@ -48,11 +49,6 @@ struct Trait<rev, Opcode::KECCAK256>
         sp.push(intx::be::load<uint256_t>(
             ethash::keccak256(data.data(), data.size())));
         return Status::Success;
-    }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return keccak256_cost;
     }
 };
 

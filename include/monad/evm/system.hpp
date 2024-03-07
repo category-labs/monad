@@ -261,9 +261,7 @@ struct Trait<rev, Opcode::CALL>
     static constexpr int stack_height_change = -6;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
-
-    static constexpr uint64_t baseline_cost()
-    {
+    static constexpr uint64_t baseline_cost = [] {
         if constexpr (rev < Revision::TangerineWhistle) {
             return 40;
         }
@@ -273,7 +271,7 @@ struct Trait<rev, Opcode::CALL>
         else {
             return warm_access_cost<Revision::Berlin>();
         }
-    }
+    }();
 };
 
 template <Revision rev>
@@ -283,9 +281,7 @@ struct Trait<rev, Opcode::CALLCODE>
     static constexpr int stack_height_change = -6;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
-
-    static constexpr uint64_t baseline_cost()
-    {
+    static constexpr uint64_t baseline_cost = [] {
         if constexpr (rev < Revision::TangerineWhistle) {
             return 40;
         }
@@ -295,7 +291,7 @@ struct Trait<rev, Opcode::CALLCODE>
         else {
             return warm_access_cost<Revision::Berlin>();
         }
-    }
+    }();
 };
 
 template <Revision rev>
@@ -306,8 +302,7 @@ struct Trait<rev, Opcode::DELEGATECALL>
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Byzantium;
 
-    static constexpr uint64_t baseline_cost()
-    {
+    static constexpr uint64_t baseline_cost = [] {
         if constexpr (rev < Revision::TangerineWhistle) {
             return 40;
         }
@@ -317,7 +312,7 @@ struct Trait<rev, Opcode::DELEGATECALL>
         else {
             return warm_access_cost<Revision::Berlin>();
         }
-    }
+    }();
 };
 
 template <Revision rev>
@@ -327,13 +322,9 @@ struct Trait<rev, Opcode::RETURN>
     static constexpr int stack_height_change = -2;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = zero_cost;
 
     static constexpr auto impl = halt<Status::Success>;
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return zero_cost;
-    }
 };
 
 template <Revision rev>
@@ -343,6 +334,15 @@ struct Trait<rev, Opcode::SELFDESTRUCT>
     static constexpr int stack_height_change = -1;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = [] {
+        if constexpr (rev < Revision::TangerineWhistle) {
+            return 0;
+        }
+        else {
+            // EIP-150
+            return selfdestruct_cost;
+        }
+    }();
 
     static Status impl(StackPointer sp, ExecutionState &state)
     {
@@ -385,17 +385,6 @@ struct Trait<rev, Opcode::SELFDESTRUCT>
         }
 
         return Status::Success;
-    }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        if constexpr (rev < Revision::TangerineWhistle) {
-            return 0;
-        }
-        else {
-            // EIP-150
-            return selfdestruct_cost;
-        }
     }
 };
 

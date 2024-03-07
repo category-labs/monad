@@ -22,16 +22,12 @@ struct Trait<rev, op>
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = very_low_cost;
 
     static Status impl(StackPointer sp, ExecutionState const &)
     {
         sp.push(sp.at(N - 1));
         return Status::Success;
-    }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return very_low_cost;
     }
 };
 

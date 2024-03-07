@@ -19,15 +19,11 @@ struct Trait<rev, Opcode::POP>
     static constexpr int stack_height_change = -1;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = base_cost;
 
     static Status impl(StackPointer const &, ExecutionState &)
     {
         return Status::Success;
-    }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return base_cost;
     }
 };
 
@@ -38,6 +34,7 @@ struct Trait<rev, Opcode::MLOAD>
     static constexpr int stack_height_change = 0;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = very_low_cost;
 
     static Status impl(StackPointer sp, ExecutionState &state) noexcept
     {
@@ -55,11 +52,6 @@ struct Trait<rev, Opcode::MLOAD>
         sp.push(intx::be::unsafe::load<uint256_t>(dst.data()));
         return Status::Success;
     }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return very_low_cost;
-    }
 };
 
 template <Revision rev>
@@ -69,6 +61,7 @@ struct Trait<rev, Opcode::MSTORE>
     static constexpr int stack_height_change = -2;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = very_low_cost;
 
     static Status impl(StackPointer sp, ExecutionState &state)
     {
@@ -90,11 +83,6 @@ struct Trait<rev, Opcode::MSTORE>
             byte_string_view{bytes.bytes, sizeof(bytes32_t)});
         return Status::Success;
     }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return very_low_cost;
-    }
 };
 
 template <Revision rev>
@@ -104,6 +92,7 @@ struct Trait<rev, Opcode::SSTORE>
     static constexpr int stack_height_change = -2;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = zero_cost;
 
     static Status impl(StackPointer sp, ExecutionState &state)
     {
@@ -144,11 +133,6 @@ struct Trait<rev, Opcode::SSTORE>
         state.gas_refund += refund;
         return Status::Success;
     }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return zero_cost;
-    }
 };
 
 template <Revision rev>
@@ -158,17 +142,13 @@ struct Trait<rev, Opcode::PC>
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = base_cost;
 
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         MONAD_ASSERT(state.mstate.pc >= 0);
         sp.push(state.mstate.pc);
         return Status::Success;
-    }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return base_cost;
     }
 };
 
@@ -179,16 +159,12 @@ struct Trait<rev, Opcode::GAS>
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = base_cost;
 
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(state.mstate.gas_left);
         return Status::Success;
-    }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return base_cost;
     }
 };
 

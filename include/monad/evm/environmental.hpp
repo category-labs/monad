@@ -20,16 +20,12 @@ struct Trait<rev, Opcode::ADDRESS>
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = base_cost;
 
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(intx::be::load<uint256_t>(state.env.address));
         return Status::Success;
-    }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return base_cost;
     }
 };
 
@@ -40,16 +36,12 @@ struct Trait<rev, Opcode::ORIGIN>
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = base_cost;
 
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(intx::be::load<uint256_t>(state.env.origin));
         return Status::Success;
-    }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return base_cost;
     }
 };
 
@@ -60,16 +52,12 @@ struct Trait<rev, Opcode::CALLER>
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = base_cost;
 
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(intx::be::load<uint256_t>(state.env.sender));
         return Status::Success;
-    }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return base_cost;
     }
 };
 
@@ -80,16 +68,12 @@ struct Trait<rev, Opcode::CALLVALUE>
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = base_cost;
 
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(intx::be::load<uint256_t>(to_bytes(state.env.value)));
         return Status::Success;
-    }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return base_cost;
     }
 };
 
@@ -100,6 +84,7 @@ struct Trait<rev, Opcode::CALLDATALOAD>
     static constexpr int stack_height_change = 0;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = very_low_cost;
 
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
@@ -121,11 +106,6 @@ struct Trait<rev, Opcode::CALLDATALOAD>
 
         return Status::Success;
     }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return very_low_cost;
-    }
 };
 
 template <Revision rev>
@@ -135,16 +115,12 @@ struct Trait<rev, Opcode::CALLDATASIZE>
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = base_cost;
 
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(state.env.input_data.size());
         return Status::Success;
-    }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return base_cost;
     }
 };
 
@@ -155,16 +131,12 @@ struct Trait<rev, Opcode::CODESIZE>
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = base_cost;
 
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(state.env.code.size());
         return Status::Success;
-    }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return base_cost;
     }
 };
 
@@ -175,16 +147,12 @@ struct Trait<rev, Opcode::GASPRICE>
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = base_cost;
 
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(intx::be::load<uint256_t>(to_bytes(state.env.gas_price)));
         return Status::Success;
-    }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return base_cost;
     }
 };
 

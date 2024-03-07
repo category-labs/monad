@@ -65,7 +65,7 @@ namespace
             status != Status::Success) {
             return status;
         }
-        else if (state.mstate.gas_left < Trait::baseline_cost()) {
+        else if (state.mstate.gas_left < Trait::baseline_cost) {
             return Status::OutOfGas;
         }
         return Status::Success;
@@ -115,8 +115,8 @@ namespace
             return;
         }
 
-        MONAD_ASSERT(state.mstate.gas_left >= Trait::baseline_cost());
-        state.mstate.gas_left -= Trait::baseline_cost();
+        MONAD_ASSERT(state.mstate.gas_left >= Trait::baseline_cost);
+        state.mstate.gas_left -= Trait::baseline_cost;
 
         if constexpr (
             op == Opcode::CALL || op == Opcode::CALLCODE ||

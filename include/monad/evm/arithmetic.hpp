@@ -18,15 +18,11 @@ struct Trait<rev, Opcode::STOP>
     static constexpr int stack_height_change = 0;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = zero_cost;
 
     static Status impl(StackPointer, ExecutionState const &)
     {
         return Status::Success;
-    }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return zero_cost;
     }
 };
 
@@ -37,6 +33,7 @@ struct Trait<rev, Opcode::ADD>
     static constexpr int stack_height_change = -1;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = very_low_cost;
 
     static Status impl(StackPointer sp, ExecutionState const &)
     {
@@ -44,11 +41,6 @@ struct Trait<rev, Opcode::ADD>
         auto const &b = sp.pop();
         sp.push(a + b);
         return Status::Success;
-    }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return very_low_cost;
     }
 };
 
@@ -59,6 +51,7 @@ struct Trait<rev, Opcode::SUB>
     static constexpr int stack_height_change = -1;
     static constexpr size_t pc_increment = 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = very_low_cost;
 
     static Status impl(StackPointer sp, ExecutionState const &)
     {
@@ -66,11 +59,6 @@ struct Trait<rev, Opcode::SUB>
         auto const &b = sp.pop();
         sp.push(a - b);
         return Status::Success;
-    }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return very_low_cost;
     }
 };
 

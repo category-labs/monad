@@ -20,6 +20,7 @@ struct Trait<rev, op>
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = N + 1;
     static constexpr bool exist = rev >= Revision::Frontier;
+    static constexpr uint64_t baseline_cost = very_low_cost;
 
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
@@ -62,11 +63,6 @@ struct Trait<rev, op>
             static_cast<size_t>(data - state.analysis.code.data()));
         sp.push(value);
         return Status::Success;
-    }
-
-    static constexpr uint64_t baseline_cost()
-    {
-        return very_low_cost;
     }
 };
 

@@ -255,6 +255,29 @@ Status halt(StackPointer sp, ExecutionState &state)
 // Traits
 
 template <>
+struct Trait<Opcode::CALL>
+{
+    static constexpr size_t stack_height_required = 7;
+    static constexpr int stack_height_change = -6;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
+
+    template <Revision rev>
+    static constexpr uint64_t baseline_cost()
+    {
+        if constexpr (rev < Revision::TangerineWhistle) {
+            return 40;
+        }
+        else if constexpr (rev < Revision::Berlin) {
+            return 700;
+        }
+        else {
+            return warm_access_cost<Revision::Berlin>();
+        }
+    }
+};
+
+template <>
 struct Trait<Opcode::CALLCODE>
 {
     static constexpr size_t stack_height_required = 7;
@@ -278,12 +301,12 @@ struct Trait<Opcode::CALLCODE>
 };
 
 template <>
-struct Trait<Opcode::CALL>
+struct Trait<Opcode::DELEGATECALL>
 {
-    static constexpr size_t stack_height_required = 7;
-    static constexpr int stack_height_change = -6;
+    static constexpr size_t stack_height_required = 6;
+    static constexpr int stack_height_change = -5;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr Revision since = Revision::Byzantium;
 
     template <Revision rev>
     static constexpr uint64_t baseline_cost()

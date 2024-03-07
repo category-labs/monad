@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/core/assert.h>
+#include <monad/core/bytes.hpp>
 #include <monad/evm/config.hpp>
 #include <monad/evm/execution_state.hpp>
 #include <monad/evm/fee_schedule.hpp>
@@ -29,6 +30,76 @@ struct Trait<Opcode::POP>
     static constexpr uint64_t baseline_cost()
     {
         return base_cost;
+    }
+};
+
+template <>
+struct Trait<Opcode::MLOAD>
+{
+    static constexpr size_t stack_height_required = 1;
+    static constexpr int stack_height_change = 0;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
+
+    template <Revision>
+    static Status impl(StackPointer sp, ExecutionState &state) noexcept
+    {
+        auto const &offset = sp.pop();
+
+        if (auto const status = state.mstate.memory.grow_if_needed(
+                state.mstate.gas_left, offset, sizeof(uint256_t));
+            status != Status::Success) {
+            return status;
+        }
+
+        MONAD_ASSERT(offset <= std::numeric_limits<size_t>::max());
+        auto const dst = state.mstate.memory.substr(
+            static_cast<size_t>(offset), sizeof(uint256_t));
+        sp.push(intx::be::unsafe::load<uint256_t>(dst.data()));
+        return Status::Success;
+    }
+
+    template <Revision>
+    static constexpr uint64_t baseline_cost()
+    {
+        return very_low_cost;
+    }
+};
+
+template <>
+struct Trait<Opcode::MSTORE>
+{
+    static constexpr size_t stack_height_required = 2;
+    static constexpr int stack_height_change = -2;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
+
+    template <Revision>
+    static Status impl(StackPointer sp, ExecutionState &state)
+    {
+        auto const &offset = sp.pop();
+        auto const &value = sp.pop();
+
+        if (auto const status = state.mstate.memory.grow_if_needed(
+                state.mstate.gas_left, offset, sizeof(uint256_t));
+            status != Status::Success) {
+            return status;
+        }
+
+        MONAD_ASSERT(offset <= std::numeric_limits<size_t>::max());
+
+        auto const bytes = intx::be::store<bytes32_t>(value);
+        state.mstate.memory.replace(
+            static_cast<size_t>(offset),
+            sizeof(uint256_t),
+            byte_string_view{bytes.bytes, sizeof(bytes32_t)});
+        return Status::Success;
+    }
+
+    template <Revision>
+    static constexpr uint64_t baseline_cost()
+    {
+        return very_low_cost;
     }
 };
 
@@ -101,6 +172,28 @@ struct Trait<Opcode::PC>
     {
         MONAD_ASSERT(state.mstate.pc >= 0);
         sp.push(state.mstate.pc);
+        return Status::Success;
+    }
+
+    template <Revision>
+    static constexpr uint64_t baseline_cost()
+    {
+        return base_cost;
+    }
+};
+
+template <>
+struct Trait<Opcode::GAS>
+{
+    static constexpr size_t stack_height_required = 0;
+    static constexpr int stack_height_change = 1;
+    static constexpr size_t pc_increment = 1;
+    static constexpr Revision since = Revision::Frontier;
+
+    template <Revision>
+    static Status impl(StackPointer sp, ExecutionState const &state)
+    {
+        sp.push(state.mstate.gas_left);
         return Status::Success;
     }
 

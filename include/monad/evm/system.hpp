@@ -254,15 +254,14 @@ Status halt(StackPointer sp, ExecutionState &state)
 
 // Traits
 
-template <>
-struct Trait<Opcode::CALL>
+template <Revision rev>
+struct Trait<rev, Opcode::CALL>
 {
     static constexpr size_t stack_height_required = 7;
     static constexpr int stack_height_change = -6;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision rev>
     static constexpr uint64_t baseline_cost()
     {
         if constexpr (rev < Revision::TangerineWhistle) {
@@ -277,15 +276,14 @@ struct Trait<Opcode::CALL>
     }
 };
 
-template <>
-struct Trait<Opcode::CALLCODE>
+template <Revision rev>
+struct Trait<rev, Opcode::CALLCODE>
 {
     static constexpr size_t stack_height_required = 7;
     static constexpr int stack_height_change = -6;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision rev>
     static constexpr uint64_t baseline_cost()
     {
         if constexpr (rev < Revision::TangerineWhistle) {
@@ -300,15 +298,14 @@ struct Trait<Opcode::CALLCODE>
     }
 };
 
-template <>
-struct Trait<Opcode::DELEGATECALL>
+template <Revision rev>
+struct Trait<rev, Opcode::DELEGATECALL>
 {
     static constexpr size_t stack_height_required = 6;
     static constexpr int stack_height_change = -5;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Byzantium;
+    static constexpr bool exist = rev >= Revision::Byzantium;
 
-    template <Revision rev>
     static constexpr uint64_t baseline_cost()
     {
         if constexpr (rev < Revision::TangerineWhistle) {
@@ -323,33 +320,30 @@ struct Trait<Opcode::DELEGATECALL>
     }
 };
 
-template <>
-struct Trait<Opcode::RETURN>
+template <Revision rev>
+struct Trait<rev, Opcode::RETURN>
 {
     static constexpr size_t stack_height_required = 2;
     static constexpr int stack_height_change = -2;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static constexpr auto impl = halt<Status::Success>;
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return zero_cost;
     }
 };
 
-template <>
-struct Trait<Opcode::SELFDESTRUCT>
+template <Revision rev>
+struct Trait<rev, Opcode::SELFDESTRUCT>
 {
     static constexpr size_t stack_height_required = 1;
     static constexpr int stack_height_change = -1;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision rev>
     static Status impl(StackPointer sp, ExecutionState &state)
     {
         if (!state.env.can_modify_state) {
@@ -393,7 +387,6 @@ struct Trait<Opcode::SELFDESTRUCT>
         return Status::Success;
     }
 
-    template <Revision rev>
     static constexpr uint64_t baseline_cost()
     {
         if constexpr (rev < Revision::TangerineWhistle) {

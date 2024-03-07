@@ -12,36 +12,33 @@
 
 MONAD_EVM_NAMESPACE_BEGIN
 
-template <>
-struct Trait<Opcode::POP>
+template <Revision rev>
+struct Trait<rev, Opcode::POP>
 {
     static constexpr size_t stack_height_required = 1;
     static constexpr int stack_height_change = -1;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer const &, ExecutionState &)
     {
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return base_cost;
     }
 };
 
-template <>
-struct Trait<Opcode::MLOAD>
+template <Revision rev>
+struct Trait<rev, Opcode::MLOAD>
 {
     static constexpr size_t stack_height_required = 1;
     static constexpr int stack_height_change = 0;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer sp, ExecutionState &state) noexcept
     {
         auto const &offset = sp.pop();
@@ -59,22 +56,20 @@ struct Trait<Opcode::MLOAD>
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return very_low_cost;
     }
 };
 
-template <>
-struct Trait<Opcode::MSTORE>
+template <Revision rev>
+struct Trait<rev, Opcode::MSTORE>
 {
     static constexpr size_t stack_height_required = 2;
     static constexpr int stack_height_change = -2;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer sp, ExecutionState &state)
     {
         auto const &offset = sp.pop();
@@ -96,22 +91,20 @@ struct Trait<Opcode::MSTORE>
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return very_low_cost;
     }
 };
 
-template <>
-struct Trait<Opcode::SSTORE>
+template <Revision rev>
+struct Trait<rev, Opcode::SSTORE>
 {
     static constexpr size_t stack_height_required = 2;
     static constexpr int stack_height_change = -2;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision rev>
     static Status impl(StackPointer sp, ExecutionState &state)
     {
         if (!state.env.can_modify_state) {
@@ -152,22 +145,20 @@ struct Trait<Opcode::SSTORE>
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return zero_cost;
     }
 };
 
-template <>
-struct Trait<Opcode::PC>
+template <Revision rev>
+struct Trait<rev, Opcode::PC>
 {
     static constexpr size_t stack_height_required = 0;
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         MONAD_ASSERT(state.mstate.pc >= 0);
@@ -175,29 +166,26 @@ struct Trait<Opcode::PC>
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return base_cost;
     }
 };
 
-template <>
-struct Trait<Opcode::GAS>
+template <Revision rev>
+struct Trait<rev, Opcode::GAS>
 {
     static constexpr size_t stack_height_required = 0;
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(state.mstate.gas_left);
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return base_cost;

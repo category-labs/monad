@@ -13,15 +13,14 @@
 
 MONAD_EVM_NAMESPACE_BEGIN
 
-template <>
-struct Trait<Opcode::KECCAK256>
+template <Revision rev>
+struct Trait<rev, Opcode::KECCAK256>
 {
     static constexpr size_t stack_height_required = 2;
     static constexpr int stack_height_change = -1;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer sp, ExecutionState &state)
     {
         auto const &offset = sp.pop();
@@ -51,7 +50,6 @@ struct Trait<Opcode::KECCAK256>
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return keccak256_cost;

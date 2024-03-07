@@ -13,103 +13,94 @@
 
 MONAD_EVM_NAMESPACE_BEGIN
 
-template <>
-struct Trait<Opcode::ADDRESS>
+template <Revision rev>
+struct Trait<rev, Opcode::ADDRESS>
 {
     static constexpr size_t stack_height_required = 0;
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(intx::be::load<uint256_t>(state.env.address));
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return base_cost;
     }
 };
 
-template <>
-struct Trait<Opcode::ORIGIN>
+template <Revision rev>
+struct Trait<rev, Opcode::ORIGIN>
 {
     static constexpr size_t stack_height_required = 0;
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(intx::be::load<uint256_t>(state.env.origin));
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return base_cost;
     }
 };
 
-template <>
-struct Trait<Opcode::CALLER>
+template <Revision rev>
+struct Trait<rev, Opcode::CALLER>
 {
     static constexpr size_t stack_height_required = 0;
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(intx::be::load<uint256_t>(state.env.sender));
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return base_cost;
     }
 };
 
-template <>
-struct Trait<Opcode::CALLVALUE>
+template <Revision rev>
+struct Trait<rev, Opcode::CALLVALUE>
 {
     static constexpr size_t stack_height_required = 0;
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(intx::be::load<uint256_t>(to_bytes(state.env.value)));
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return base_cost;
     }
 };
 
-template <>
-struct Trait<Opcode::CALLDATALOAD>
+template <Revision rev>
+struct Trait<rev, Opcode::CALLDATALOAD>
 {
     static constexpr size_t stack_height_required = 1;
     static constexpr int stack_height_change = 0;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         auto const &i = sp.pop();
@@ -131,73 +122,66 @@ struct Trait<Opcode::CALLDATALOAD>
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return very_low_cost;
     }
 };
 
-template <>
-struct Trait<Opcode::CALLDATASIZE>
+template <Revision rev>
+struct Trait<rev, Opcode::CALLDATASIZE>
 {
     static constexpr size_t stack_height_required = 0;
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(state.env.input_data.size());
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return base_cost;
     }
 };
 
-template <>
-struct Trait<Opcode::CODESIZE>
+template <Revision rev>
+struct Trait<rev, Opcode::CODESIZE>
 {
     static constexpr size_t stack_height_required = 0;
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(state.env.code.size());
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return base_cost;
     }
 };
 
-template <>
-struct Trait<Opcode::GASPRICE>
+template <Revision rev>
+struct Trait<rev, Opcode::GASPRICE>
 {
     static constexpr size_t stack_height_required = 0;
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer sp, ExecutionState const &state)
     {
         sp.push(intx::be::load<uint256_t>(to_bytes(state.env.gas_price)));
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return base_cost;

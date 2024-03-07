@@ -11,36 +11,33 @@
 
 MONAD_EVM_NAMESPACE_BEGIN
 
-template <>
-struct Trait<Opcode::STOP>
+template <Revision rev>
+struct Trait<rev, Opcode::STOP>
 {
     static constexpr size_t stack_height_required = 0;
     static constexpr int stack_height_change = 0;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer, ExecutionState const &)
     {
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return zero_cost;
     }
 };
 
-template <>
-struct Trait<Opcode::ADD>
+template <Revision rev>
+struct Trait<rev, Opcode::ADD>
 {
     static constexpr size_t stack_height_required = 2;
     static constexpr int stack_height_change = -1;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer sp, ExecutionState const &)
     {
         auto const &a = sp.pop();
@@ -49,22 +46,20 @@ struct Trait<Opcode::ADD>
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return very_low_cost;
     }
 };
 
-template <>
-struct Trait<Opcode::SUB>
+template <Revision rev>
+struct Trait<rev, Opcode::SUB>
 {
     static constexpr size_t stack_height_required = 2;
     static constexpr int stack_height_change = -1;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer sp, ExecutionState const &)
     {
         auto const &a = sp.pop();
@@ -73,7 +68,6 @@ struct Trait<Opcode::SUB>
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return very_low_cost;

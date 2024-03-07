@@ -12,25 +12,23 @@
 
 MONAD_EVM_NAMESPACE_BEGIN
 
-template <Opcode op>
+template <Revision rev, Opcode op>
     requires(op >= Opcode::DUP1 && op <= Opcode::DUP16)
-struct Trait<op>
+struct Trait<rev, op>
 {
     static constexpr size_t N =
         std::to_underlying(op) - std::to_underlying(Opcode::DUP1) + 1;
     static constexpr size_t stack_height_required = N;
     static constexpr int stack_height_change = 1;
     static constexpr size_t pc_increment = 1;
-    static constexpr Revision since = Revision::Frontier;
+    static constexpr bool exist = rev >= Revision::Frontier;
 
-    template <Revision>
     static Status impl(StackPointer sp, ExecutionState const &)
     {
         sp.push(sp.at(N - 1));
         return Status::Success;
     }
 
-    template <Revision>
     static constexpr uint64_t baseline_cost()
     {
         return very_low_cost;

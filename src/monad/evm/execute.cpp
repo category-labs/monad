@@ -14,6 +14,8 @@
 #include <monad/evm/system.hpp>
 #include <monad/execution/precompiles.hpp>
 
+#include <deque>
+
 MONAD_EVM_NAMESPACE_BEGIN
 
 namespace
@@ -29,11 +31,9 @@ namespace
 
     using Frames = std::deque<Frame>;
 
-    template <Opcode op>
+    template <class Trait>
     Status validate_stack(int const sp)
     {
-        using Trait = Trait<op>;
-
         MONAD_ASSERT(sp >= -1 && sp <= 1024);
 
         if constexpr (Trait::stack_height_change > 0) {
@@ -54,20 +54,18 @@ namespace
         return Status::Success;
     }
 
-    template <Revision rev, Opcode op>
+    template <class Trait>
     Status validate(int const sp, ExecutionState const &state)
     {
-        using Trait = Trait<op>;
-
-        if constexpr (rev < Trait::since) {
+        if constexpr (Trait::exist) {
             return Status::UndefinedInstruction;
         }
 
-        if (auto const status = validate_stack<op>(sp);
+        if (auto const status = validate_stack<Trait>(sp);
             status != Status::Success) {
             return status;
         }
-        else if (state.mstate.gas_left < Trait::template baseline_cost<rev>()) {
+        else if (state.mstate.gas_left < Trait::baseline_cost()) {
             return Status::OutOfGas;
         }
         return Status::Success;
@@ -100,7 +98,7 @@ namespace
     template <Revision rev, Opcode op>
     void execute_opcode(Frames &frames, Status &status)
     {
-        using Trait = Trait<op>;
+        using Trait = Trait<rev, op>;
         static_assert(Trait::pc_increment > 0);
 
         MONAD_ASSERT(!frames.empty());
@@ -110,16 +108,15 @@ namespace
         auto sptr = StackPointer{state.mstate.stack + sp};
         MONAD_ASSERT((state.env.depth + 1) == frames.size());
 
-        status = validate<rev, op>(sp, state);
+        status = validate<Trait>(sp, state);
         if (status != Status::Success) {
             post_call(frames, status);
             frames.pop_back();
             return;
         }
 
-        MONAD_ASSERT(
-            state.mstate.gas_left >= Trait::template baseline_cost<rev>());
-        state.mstate.gas_left -= Trait::template baseline_cost<rev>();
+        MONAD_ASSERT(state.mstate.gas_left >= Trait::baseline_cost());
+        state.mstate.gas_left -= Trait::baseline_cost();
 
         if constexpr (
             op == Opcode::CALL || op == Opcode::CALLCODE ||
@@ -170,7 +167,7 @@ namespace
             state.mstate.pc += Trait::pc_increment;
         }
         else {
-            status = Trait::template impl<rev>(sptr, state);
+            status = Trait::impl(sptr, state);
             if (op == Opcode::STOP || op == Opcode::RETURN ||
                 op == Opcode::SELFDESTRUCT || status != Status::Success) {
                 post_call(frames, status);

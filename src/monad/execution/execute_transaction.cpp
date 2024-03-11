@@ -99,34 +99,6 @@ constexpr evmc_message to_message(Transaction const &tx, Address const &sender)
 }
 
 template <evmc_revision rev>
-evmc::Result execute_impl3(
-    State &state, EvmcHost<rev> &host, Transaction const &tx,
-    Address const &sender, uint256_t const &base_fee_per_gas,
-    Address const &beneficiary)
-{
-    irrevocable_change<rev>(state, tx, sender, base_fee_per_gas);
-
-    // EIP-3651
-    if constexpr (rev >= EVMC_SHANGHAI) {
-        host.access_account(beneficiary);
-    }
-
-    state.access_account(sender);
-    for (auto const &ae : tx.access_list) {
-        state.access_account(ae.a);
-        for (auto const &keys : ae.keys) {
-            state.access_storage(ae.a, keys);
-        }
-    }
-    if (MONAD_LIKELY(tx.to)) {
-        state.access_account(*tx.to);
-    }
-
-    auto const msg = to_message<rev>(tx, sender);
-    return host.call(msg);
-}
-
-template <evmc_revision rev>
 Receipt execute_final(
     State &state, Transaction const &tx, Address const &sender,
     uint256_t const &base_fee_per_gas, evmc::Result const &result,
@@ -175,7 +147,7 @@ Result<evmc::Result> execute_impl2(
     auto const tx_context = get_tx_context<rev>(tx, sender, hdr);
     EvmcHost<rev> host{tx_context, block_hash_buffer, state};
 
-    return execute_impl3<rev>(
+    return execute_impl_no_validation<rev>(
         state,
         host,
         tx,
@@ -183,6 +155,36 @@ Result<evmc::Result> execute_impl2(
         hdr.base_fee_per_gas.value_or(0),
         hdr.beneficiary);
 }
+
+template <evmc_revision rev>
+evmc::Result execute_impl_no_validation(
+    State &state, EvmcHost<rev> &host, Transaction const &tx,
+    Address const &sender, uint256_t const &base_fee_per_gas,
+    Address const &beneficiary)
+{
+    irrevocable_change<rev>(state, tx, sender, base_fee_per_gas);
+
+    // EIP-3651
+    if constexpr (rev >= EVMC_SHANGHAI) {
+        host.access_account(beneficiary);
+    }
+
+    state.access_account(sender);
+    for (auto const &ae : tx.access_list) {
+        state.access_account(ae.a);
+        for (auto const &keys : ae.keys) {
+            state.access_storage(ae.a, keys);
+        }
+    }
+    if (MONAD_LIKELY(tx.to)) {
+        state.access_account(*tx.to);
+    }
+
+    auto const msg = to_message<rev>(tx, sender);
+    return host.call(msg);
+}
+
+EXPLICIT_EVMC_REVISION(execute_impl_no_validation);
 
 template <evmc_revision rev>
 Result<Receipt> execute_impl(

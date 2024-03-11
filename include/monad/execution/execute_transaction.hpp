@@ -2,7 +2,11 @@
 
 #include <monad/config.hpp>
 #include <monad/core/address.hpp>
+#include <monad/core/int.hpp>
 #include <monad/core/result.hpp>
+#include <monad/core/transaction.hpp>
+#include <monad/execution/evmc_host.hpp>
+#include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
 
@@ -27,5 +31,11 @@ template <evmc_revision rev>
 Result<Receipt> execute(
     uint64_t i, Transaction const &, BlockHeader const &,
     BlockHashBuffer const &, BlockState &, boost::fibers::promise<void> &prev);
+
+template <evmc_revision rev>
+evmc::Result execute_impl_no_validation(
+    State &state, EvmcHost<rev> &host, Transaction const &tx,
+    Address const &sender, uint256_t const &base_fee_per_gas,
+    Address const &beneficiary);
 
 MONAD_NAMESPACE_END

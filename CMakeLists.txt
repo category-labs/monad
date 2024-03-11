@@ -121,10 +121,12 @@ add_library(
   "include/monad/db/db.hpp"
   "include/monad/db/db_cache.hpp"
   "include/monad/db/file_db.hpp"
+  "include/monad/db/read_only_trie_db.hpp"
   "include/monad/db/trie_db.hpp"
   "include/monad/db/util.hpp"
   "src/monad/db/block_db.cpp"
   "src/monad/db/file_db.cpp"
+  "src/monad/db/read_only_trie_db.cpp"
   "src/monad/db/trie_db.cpp"
   "src/monad/db/util.cpp"
   # execution
@@ -166,6 +168,10 @@ add_library(
   "include/monad/rlp/decode.hpp"
   "include/monad/rlp/encode2.hpp"
   "src/monad/rlp/decode_error.cpp"
+  # rpc
+  "include/monad/rpc/config.hpp"
+  "include/monad/rpc/eth_call.hpp"
+  "src/monad/rpc/eth_call.cpp"
   # state
   "include/monad/state2/block_state.hpp"
   "include/monad/state2/fmt/state_deltas_fmt.hpp"

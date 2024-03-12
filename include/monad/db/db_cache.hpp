@@ -118,7 +118,7 @@ public:
                 auto const &storage_delta = it2->second;
                 if (storage_delta.second != storage_delta.first) {
                     Combined::AccountAccessor acc{};
-                    bool found = cache_.find_account(acc, address);
+                    bool const found = cache_.find_account(acc, address);
                     if (found) {
                         cache_.insert_storage(acc, key, storage_delta.second);
                     }

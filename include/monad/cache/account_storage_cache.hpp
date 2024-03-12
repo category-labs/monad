@@ -167,14 +167,11 @@ private:
     #define STATS_EVENT_ACCOUNT_STORAGE_RESET()                                \
         stats_.event_account_storage_reset();
     #define STATS_EVENT_STORAGE_EVICT() stats_.event_storage_evict();
-    #define STATS_EVENT_STORAGE_FIND_HIT()                                     \
-        stats_.event_storage_find_hit()
-    #define STATS_EVENT_STORAGE_FIND_MISS()                                    \
-        stats_.event_storage_find_miss()
+    #define STATS_EVENT_STORAGE_FIND_HIT() stats_.event_storage_find_hit()
+    #define STATS_EVENT_STORAGE_FIND_MISS() stats_.event_storage_find_miss()
     #define STATS_EVENT_STORAGE_INSERT_FOUND()                                 \
         stats_.event_storage_insert_found()
-    #define STATS_EVENT_STORAGE_INSERT_NEW()                                   \
-        stats_.event_storage_insert_new()
+    #define STATS_EVENT_STORAGE_INSERT_NEW() stats_.event_storage_insert_new()
     #define STATS_EVENT_STORAGE_MAP_CTOR()                                     \
         cache_.stats_.event_storage_map_ctor()
     #define STATS_EVENT_STORAGE_MAP_DTOR()                                     \

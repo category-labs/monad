@@ -61,8 +61,7 @@ byte_string encode_receipt(Receipt const &receipt)
 
     if (receipt.type == TransactionType::eip1559 ||
         receipt.type == TransactionType::eip2930) {
-        return encode_string2(
-            static_cast<unsigned char>(receipt.type) + receipt_bytes);
+        return static_cast<unsigned char>(receipt.type) + receipt_bytes;
     }
     return receipt_bytes;
 }
@@ -160,16 +159,9 @@ Result<Receipt> decode_receipt(byte_string_view &enc)
     uint8_t const &first = enc[0];
     if (first < 0xc0) // eip 2718 - typed transaction envelope
     {
-        BOOST_OUTCOME_TRY(auto const payload, parse_string_metadata(enc));
-
-        if (MONAD_UNLIKELY(payload.empty())) {
-            return DecodeError::InputTooShort;
-        }
-
-        uint8_t const &type = payload[0];
-        auto receipt_enc = payload.substr(1);
-        BOOST_OUTCOME_TRY(receipt, decode_untyped_receipt(receipt_enc));
-        switch (type) {
+        enc = enc.substr(1);
+        BOOST_OUTCOME_TRY(receipt, decode_untyped_receipt(enc));
+        switch (first) {
         case 0x1:
             receipt.type = TransactionType::eip2930;
             break;

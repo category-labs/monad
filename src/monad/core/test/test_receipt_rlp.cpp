@@ -216,7 +216,7 @@ TEST(Rlp_Receipt, EncodeEip1559Receipt)
         .type = TransactionType::eip1559,
         .logs = {log}};
     byte_string const rlp_receipt{
-        0xb9, 0x01, 0x6e, 0x02, // type envelope
+        0x02, // type envelope
 
         0xf9, 0x01, 0x6a, 0x80, 0x83, 0x2b, 0x7c, 0xda, // status and gas
 
@@ -303,7 +303,7 @@ TEST(Rlp_Receipt, EncodeEip2930Receipt)
         .type = TransactionType::eip2930,
         .logs = {log}};
     byte_string const rlp_receipt{
-        0xb9, 0x01, 0x6e, 0x01, // type envelope
+        0x01, // type envelope
 
         0xf9, 0x01, 0x6a, 0x80, 0x83, 0x2b, 0x7c, 0xda, // status and gas
 

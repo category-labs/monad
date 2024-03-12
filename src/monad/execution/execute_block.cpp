@@ -133,9 +133,11 @@ Result<std::vector<Receipt>> execute_block(
         receipts.push_back(std::move(receipt));
     }
 
+    // YP eq. 22
     uint64_t cumulative_gas_used = 0;
-    for (auto const &receipt : receipts) {
+    for (auto &receipt : receipts) {
         cumulative_gas_used += receipt.gas_used;
+        receipt.gas_used = cumulative_gas_used;
     }
 
     // YP eq. 33

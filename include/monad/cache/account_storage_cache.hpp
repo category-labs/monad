@@ -168,13 +168,13 @@ private:
         stats_.event_account_storage_reset();
     #define STATS_EVENT_STORAGE_EVICT() stats_.event_storage_evict();
     #define STATS_EVENT_STORAGE_FIND_HIT()                                     \
-        cache_.stats_.event_storage_find_hit()
+        stats_.event_storage_find_hit()
     #define STATS_EVENT_STORAGE_FIND_MISS()                                    \
-        cache_.stats_.event_storage_find_miss()
+        stats_.event_storage_find_miss()
     #define STATS_EVENT_STORAGE_INSERT_FOUND()                                 \
-        cache_.stats_.event_storage_insert_found()
+        stats_.event_storage_insert_found()
     #define STATS_EVENT_STORAGE_INSERT_NEW()                                   \
-        cache_.stats_.event_storage_insert_new()
+        stats_.event_storage_insert_new()
     #define STATS_EVENT_STORAGE_MAP_CTOR()                                     \
         cache_.stats_.event_storage_map_ctor()
     #define STATS_EVENT_STORAGE_MAP_DTOR()                                     \
@@ -519,14 +519,14 @@ public:
 #ifdef MONAD_ACCOUNT_STORAGE_CACHE_STATS
         str = stats_.print_account_stats();
         if constexpr (std::is_same<Mutex, SpinLock>::value) {
-            str += " _ " + account_mutex_.print_stats();
+            str += " , " + account_mutex_.print_stats();
         }
-        str += " - " + account_pool_.print_stats();
+        str += " , " + account_pool_.print_stats();
         str += " ** " + stats_.print_storage_stats();
         if constexpr (std::is_same<Mutex, SpinLock>::value) {
-            str += " _ " + storage_mutex_.print_stats();
+            str += " , " + storage_mutex_.print_stats();
         }
-        str += " - " + storage_pool_.print_stats();
+        str += " , " + storage_pool_.print_stats();
         stats_.clear_stats();
 #endif
         return str;
@@ -611,7 +611,6 @@ private:
             }
             else {
                 ++n_storage_update_lru_;
-                stats_.event_storage_update_lru();
             }
         }
 

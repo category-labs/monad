@@ -14,6 +14,9 @@
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/validate_block.hpp>
+#if PREEXEC
+#include <monad/execution/validate_transaction.hpp>
+#endif
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/state.hpp>
@@ -89,6 +92,55 @@ Result<std::vector<Receipt>> execute_block(
 {
     BlockState block_state{db};
 
+#if PREFETCH
+    size_t txns = block.transactions.size();
+    std::shared_ptr<std::optional<Address>[]> const
+        senders{new std::optional<Address>[txns]};
+    {
+        std::shared_ptr<boost::fibers::promise<void>[]> const
+            promises{new boost::fibers::promise<void>[txns]};
+
+        for (unsigned i = 0; i < txns; ++i) {
+            priority_pool.submit(
+                0,
+                [i = i,
+                 promises = promises,
+                 senders = senders,
+#if PREEXEC
+                 &hdr = block.header,
+                 &block_hash_buffer,
+                 &block_state,
+#endif
+                 &db,
+                 &tx = block.transactions[i]] {
+                    if (tx.to.has_value()) {
+                        db.read_account(tx.to.value());
+                    }
+                    auto const sender = recover_sender(tx);
+                    senders[i] = sender;
+                    if (sender.has_value()) {
+                        db.read_account(sender.value());
+#if PREEXEC
+                        State state{block_state};
+                        auto ignore =
+                            execute_impl2<rev>(
+                                tx,
+                                sender.value(),
+                                hdr,
+                                block_hash_buffer,
+                                state);
+#endif
+                    }
+                    promises[i].set_value();
+                });
+        }
+
+        for (unsigned i = 0; i < txns; ++i) {
+            promises[i].get_future().wait();
+        }
+    }
+#endif
+
     if constexpr (rev == EVMC_HOMESTEAD) {
         if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {
             transfer_balance_dao(block_state);
@@ -110,12 +162,18 @@ Result<std::vector<Receipt>> execute_block(
              promises = promises,
              &transaction = block.transactions[i],
              &header = block.header,
+#if PREFETCH
+             &sender = senders[i],
+#endif
              &block_hash_buffer = block_hash_buffer,
              &block_state] {
                 results[i] = execute<rev>(
                     i,
                     transaction,
                     header,
+#if PREFETCH
+                    sender,
+#endif
                     block_hash_buffer,
                     block_state,
                     promises[i]);

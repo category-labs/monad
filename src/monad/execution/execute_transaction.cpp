@@ -184,6 +184,10 @@ Result<evmc::Result> execute_impl2(
         hdr.beneficiary);
 }
 
+#if PREEXEC
+EXPLICIT_EVMC_REVISION(execute_impl2);
+#endif
+
 template <evmc_revision rev>
 Result<Receipt> execute_impl(
     [[maybe_unused]] uint64_t const i, Transaction const &tx,
@@ -244,10 +248,17 @@ EXPLICIT_EVMC_REVISION(execute_impl);
 template <evmc_revision rev>
 Result<Receipt> execute(
     [[maybe_unused]] uint64_t const i, Transaction const &tx,
-    BlockHeader const &hdr, BlockHashBuffer const &block_hash_buffer,
+    BlockHeader const &hdr,
+#if PREFETCH
+    std::optional<Address> const &sender,
+#endif
+    BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, boost::fibers::promise<void> &prev)
 {
+#if PREFETCH
+#else
     auto const sender = recover_sender(tx);
+#endif
 
     if (MONAD_UNLIKELY(!sender.has_value())) {
         return TransactionError::MissingSender;

@@ -142,27 +142,19 @@ int main(int const argc, char const *argv[])
         MONAD_ASSERT(!block_id_continue.has_value());
         namespace fs = std::filesystem;
         if (!(fs::is_directory(load_snapshot) &&
-              (fs::exists(load_snapshot / "state.json") ||
-               (fs::exists(load_snapshot / "accounts") &&
-                fs::exists(load_snapshot / "code"))))) {
+              fs::exists(load_snapshot / "accounts") &&
+              fs::exists(load_snapshot / "code"))) {
             throw std::runtime_error(
                 "Invalid snapshot folder provided. Please ensure that the "
                 "directory you pass contains the block number of the snapshot "
-                "in its path and includes either files 'accounts' and 'code', "
-                "or 'state.json'.");
+                "in its path and includes files 'accounts' and 'code'.");
         }
         init_block_number = std::stoul(load_snapshot.stem());
-        if (fs::exists(load_snapshot / "accounts")) {
-            MONAD_ASSERT(fs::exists(load_snapshot / "code"));
-            LOG_INFO("Loading from binary checkpoint in {}", load_snapshot);
-            std::ifstream accounts(load_snapshot / "accounts");
-            std::ifstream code(load_snapshot / "code");
-            return db::TrieDb{config, accounts, code, init_block_number};
-        }
-        MONAD_ASSERT(fs::exists(load_snapshot / "state.json"));
-        LOG_INFO("Loading from json checkpoint in {}", load_snapshot);
-        std::ifstream ifile_stream(load_snapshot / "state.json");
-        return db::TrieDb{config, ifile_stream, init_block_number};
+        MONAD_ASSERT(fs::exists(load_snapshot / "code"));
+        LOG_INFO("Loading from binary checkpoint in {}", load_snapshot);
+        std::ifstream accounts(load_snapshot / "accounts");
+        std::ifstream code(load_snapshot / "code");
+        return db::TrieDb{config, accounts, code, init_block_number};
     }();
 
     if (load_snapshot.empty()) {

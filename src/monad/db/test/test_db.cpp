@@ -438,33 +438,6 @@ TYPED_TEST(DBTest, to_json)
     EXPECT_EQ(expected_payload, db.to_json());
 }
 
-TYPED_TEST(DBTest, construct_from_json)
-{
-    std::istringstream input{json_str};
-    auto db = this->make_db(input, 0ul, 2ul);
-    EXPECT_EQ(
-        db.state_root(),
-        0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);
-    EXPECT_EQ(
-        db.read_code(a_code_hash)->executable_code,
-        a_code_analysis->executable_code);
-    EXPECT_EQ(
-        db.read_code(b_code_hash)->executable_code,
-        b_code_analysis->executable_code);
-    EXPECT_EQ(
-        db.read_code(c_code_hash)->executable_code,
-        c_code_analysis->executable_code);
-    EXPECT_EQ(
-        db.read_code(d_code_hash)->executable_code,
-        d_code_analysis->executable_code);
-    EXPECT_EQ(
-        db.read_code(e_code_hash)->executable_code,
-        e_code_analysis->executable_code);
-    EXPECT_EQ(
-        db.read_code(h_code_hash)->executable_code,
-        h_code_analysis->executable_code);
-}
-
 TYPED_TEST(DBTest, construct_from_binary)
 {
     std::ifstream accounts(test_resource::checkpoint_dir / "accounts");

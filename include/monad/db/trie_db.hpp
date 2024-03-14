@@ -69,10 +69,6 @@ private:
 
 public:
     TrieDb(std::optional<mpt::OnDiskDbConfig> const &);
-    // parse from json
-    TrieDb(
-        std::optional<mpt::OnDiskDbConfig> const &, std::istream &,
-        uint64_t init_block_number = 0ul, size_t batch_size = 262144);
     // parse from binary
     TrieDb(
         std::optional<mpt::OnDiskDbConfig> const &, std::istream &accounts,

@@ -182,6 +182,38 @@ Result<void> static_validate_block(Block const &block)
 
 EXPLICIT_EVMC_REVISION(static_validate_block);
 
+Result<void> static_validate_block(evmc_revision const rev, Block const &block)
+{
+    switch (rev) {
+    case EVMC_SHANGHAI:
+        return static_validate_block<EVMC_SHANGHAI>(block);
+    case EVMC_PARIS:
+        return static_validate_block<EVMC_PARIS>(block);
+    case EVMC_LONDON:
+        return static_validate_block<EVMC_LONDON>(block);
+    case EVMC_BERLIN:
+        return static_validate_block<EVMC_BERLIN>(block);
+    case EVMC_ISTANBUL:
+        return static_validate_block<EVMC_ISTANBUL>(block);
+    case EVMC_PETERSBURG:
+    case EVMC_CONSTANTINOPLE:
+        return static_validate_block<EVMC_PETERSBURG>(block);
+    case EVMC_BYZANTIUM:
+        return static_validate_block<EVMC_BYZANTIUM>(block);
+    case EVMC_SPURIOUS_DRAGON:
+        return static_validate_block<EVMC_SPURIOUS_DRAGON>(block);
+    case EVMC_TANGERINE_WHISTLE:
+        return static_validate_block<EVMC_TANGERINE_WHISTLE>(block);
+    case EVMC_HOMESTEAD:
+        return static_validate_block<EVMC_HOMESTEAD>(block);
+    case EVMC_FRONTIER:
+        return static_validate_block<EVMC_FRONTIER>(block);
+    default:
+        break;
+    }
+    MONAD_ASSERT(false);
+}
+
 MONAD_NAMESPACE_END
 
 BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN

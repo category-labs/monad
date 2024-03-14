@@ -7,7 +7,6 @@
 #include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
-#include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/genesis.hpp>
 #include <monad/execution/replay_block_db.hpp>
 #include <monad/execution/trace.hpp>
@@ -30,13 +29,11 @@
 
 MONAD_NAMESPACE_BEGIN
 
-using eth_start_fork = fork_traits::frontier;
-
 quill::Logger *tracer = nullptr;
 
 MONAD_NAMESPACE_END
 
-int main(int argc, char *argv[])
+int main(int const argc, char const *argv[])
 {
     using namespace monad;
 
@@ -212,7 +209,7 @@ int main(int argc, char *argv[])
 
     DbCache db_cache{db};
 
-    auto result = replay_eth.run<eth_start_fork>(
+    auto result = replay_eth.run(
         db_cache,
         block_db,
         priority_pool,

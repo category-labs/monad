@@ -46,6 +46,8 @@ Result<void> static_validate_header(BlockHeader const &);
 template <evmc_revision rev>
 Result<void> static_validate_block(Block const &);
 
+Result<void> static_validate_block(evmc_revision, Block const &);
+
 MONAD_NAMESPACE_END
 
 BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN

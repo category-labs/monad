@@ -1,5 +1,4 @@
 #include <monad/core/address.hpp>
-#include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/precompiles.hpp>
 
 #include <evmc/evmc.h>
@@ -303,7 +302,7 @@ struct test_case
 };
 
 // it was annoying to deduce the size of the array  :(
-template <class fork = monad::fork_traits::berlin>
+template <evmc_revision rev = EVMC_BERLIN>
 void do_geth_tests(
     char const *suite_name, std::vector<test_case> const &test_cases,
     monad::Address const &code_address)
@@ -322,7 +321,7 @@ void do_geth_tests(
                 .code_address = code_address};
 
             evmc::Result const result =
-                check_call_precompile<fork::rev>(input).value();
+                check_call_precompile<rev>(input).value();
 
             if (result.status_code == evmc_status_code::EVMC_SUCCESS) {
                 EXPECT_EQ(result.gas_left, gas_offset)
@@ -462,7 +461,7 @@ static const std::vector<test_case> MODEXP_BYZANTIUM_TEST_CASES =
 
 TEST(SpuriousDragonThroughByzantium, modular_exponentiation)
 {
-    do_geth_tests<monad::fork_traits::byzantium>(
+    do_geth_tests<EVMC_BYZANTIUM>(
         "Modular Exponentiation", MODEXP_BYZANTIUM_TEST_CASES, 0x05_address);
 }
 
@@ -571,7 +570,7 @@ static const std::vector<test_case> BNADD_BYZANTIUM_TEST_CASES =
 
 TEST(SpuriousDragonThroughByzantium, bn_add)
 {
-    do_geth_tests<monad::fork_traits::byzantium>(
+    do_geth_tests<EVMC_BYZANTIUM>(
         "bn_add", BNADD_BYZANTIUM_TEST_CASES, 0x06_address);
 }
 
@@ -698,7 +697,7 @@ static const std::vector<test_case> BNMUL_BYZANTIUM_TEST_CASES =
 
 TEST(SpuriousDragonThroughByzantium, bn_mul)
 {
-    do_geth_tests<monad::fork_traits::byzantium>(
+    do_geth_tests<EVMC_BYZANTIUM>(
         "bn_mul", BNMUL_BYZANTIUM_TEST_CASES, 0x07_address);
 }
 
@@ -795,7 +794,7 @@ static const std::vector<test_case> BNPAIRING_BYZANTIUM_TEST_CASES =
 
 TEST(SpuriousDragonThroughByzantium, bn_pairing)
 {
-    do_geth_tests<monad::fork_traits::byzantium>(
+    do_geth_tests<EVMC_BYZANTIUM>(
         "bn_pairing", BNPAIRING_BYZANTIUM_TEST_CASES, 0x08_address);
 }
 
@@ -825,7 +824,7 @@ TEST(Istanbul, identity)
 TEST(Istanbul, modular_exponentiation)
 {
     // the modular exponentiation behavior did not change from the previous fork
-    do_geth_tests<monad::fork_traits::istanbul>(
+    do_geth_tests<EVMC_ISTANBUL>(
         "Modular Exponentiation", MODEXP_BYZANTIUM_TEST_CASES, 0x05_address);
 }
 

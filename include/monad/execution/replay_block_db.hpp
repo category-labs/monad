@@ -1,5 +1,6 @@
 #pragma once
 
+#include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/config.hpp>
 #include <monad/core/basic_formatter.hpp>
 #include <monad/core/block.hpp>
@@ -8,7 +9,6 @@
 #include <monad/db/db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/genesis.hpp>
@@ -53,24 +53,10 @@ public:
         block_num_t block_number;
     };
 
-    template <class Traits>
-    constexpr block_num_t
-    loop_until(std::optional<block_num_t> until_block_number)
-    {
-        if (!until_block_number.has_value()) {
-            return Traits::last_block_number;
-        }
-        else {
-            return std::min(
-                until_block_number.value() - 1u,
-                static_cast<uint64_t>(Traits::last_block_number));
-        }
-    }
-
-    template <evmc_revision rev>
     bool verify_root_hash(
-        BlockHeader const &block_header, bytes32_t /* transactions_root */,
-        bytes32_t const receipts_root, bytes32_t const state_root) const
+        evmc_revision const rev, BlockHeader const &block_header,
+        bytes32_t /* transactions_root */, bytes32_t const receipts_root,
+        bytes32_t const state_root) const
     {
         if (state_root != block_header.state_root) {
             LOG_ERROR(
@@ -80,7 +66,7 @@ public:
                 block_header.state_root);
             return false;
         }
-        if constexpr (rev >= EVMC_BYZANTIUM) {
+        if (MONAD_LIKELY(rev >= EVMC_BYZANTIUM)) {
             if (receipts_root != block_header.receipts_root) {
                 LOG_ERROR(
                     "Block: {}, Computed Receipts Root: {}, Expected Receipts "
@@ -94,13 +80,14 @@ public:
         return true;
     }
 
-    template <class Traits>
     Result run_fork(
         Db &db, BlockDb &block_db, BlockHashBuffer &block_hash_buffer,
         fiber::PriorityPool &priority_pool, block_num_t current_block_number,
         std::optional<block_num_t> until_block_number = std::nullopt)
     {
-        for (; current_block_number <= loop_until<Traits>(until_block_number);
+        EthereumMainnet chain{};
+
+        for (; current_block_number <= until_block_number;
              ++current_block_number) {
             Block block{};
             bool const block_read_status =
@@ -114,7 +101,9 @@ public:
             block_hash_buffer.set(
                 current_block_number - 1, block.header.parent_hash);
 
-            if (auto const result = static_validate_block<Traits::rev>(block);
+            evmc_revision const rev = chain.get_revision(block.header);
+
+            if (auto const result = static_validate_block(rev, block);
                 result.has_error()) {
                 LOG_ERROR(
                     "Block validation error: {}",
@@ -123,12 +112,13 @@ public:
                     Status::BLOCK_VALIDATION_FAILED, current_block_number};
             }
 
-            auto const receipts = execute_block<Traits::rev>(
-                block, db, block_hash_buffer, priority_pool);
+            auto const receipts =
+                execute_block(rev, block, db, block_hash_buffer, priority_pool);
 
             n_transactions += block.transactions.size();
 
-            if (!verify_root_hash<Traits::rev>(
+            if (!verify_root_hash(
+                    rev,
                     block.header,
                     NULL_ROOT,
                     db.receipts_root(),
@@ -137,22 +127,9 @@ public:
             }
         }
 
-        if (until_block_number.has_value() &&
-            until_block_number.value() <= current_block_number) {
-            return Result{Status::SUCCESS, current_block_number - 1u};
-        }
-        else {
-            return run_fork<typename Traits::next_fork_t>(
-                db,
-                block_db,
-                block_hash_buffer,
-                priority_pool,
-                current_block_number,
-                until_block_number);
-        }
+        return Result{Status::SUCCESS, current_block_number - 1};
     }
 
-    template <class Traits>
     Result
     run(Db &db, BlockDb &block_db, fiber::PriorityPool &priority_pool,
         block_num_t const start_block_number,
@@ -181,7 +158,7 @@ public:
             ++block_number;
         }
 
-        return run_fork<Traits>(
+        return run_fork(
             db,
             block_db,
             block_hash_buffer,

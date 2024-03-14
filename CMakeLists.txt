@@ -78,6 +78,10 @@ add_library(
   # analysis
   "include/monad/analysis/analysis.hpp"
   "src/monad/analysis/analysis.cpp"
+  # chain
+  "include/monad/chain/chain.hpp"
+  "include/monad/chain/ethereum_mainnet.hpp"
+  "src/monad/chain/ethereum_mainnet.cpp"
   # core
   "include/monad/core/account.hpp"
   "include/monad/core/address.hpp"
@@ -136,7 +140,6 @@ add_library(
   "include/monad/execution/code_analysis.hpp"
   "include/monad/execution/create_contract_address.hpp"
   "include/monad/execution/ethereum/dao.hpp"
-  "include/monad/execution/ethereum/fork_traits.hpp"
   "include/monad/execution/evm.hpp"
   "include/monad/execution/evmc_host.hpp"
   "include/monad/execution/execute_block.hpp"

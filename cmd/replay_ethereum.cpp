@@ -10,6 +10,7 @@
 #include <monad/execution/ethereum/fork_traits.hpp>
 #include <monad/execution/genesis.hpp>
 #include <monad/execution/replay_block_db.hpp>
+#include <monad/execution/trace.hpp>
 #include <monad/fiber/priority_pool.hpp>
 
 #include <CLI/CLI.hpp>
@@ -31,6 +32,8 @@ MONAD_NAMESPACE_BEGIN
 
 using eth_start_fork = fork_traits::frontier;
 
+quill::Logger *tracer = nullptr;
+
 MONAD_NAMESPACE_END
 
 int main(int argc, char *argv[])
@@ -38,6 +41,7 @@ int main(int argc, char *argv[])
     using namespace monad;
 
     CLI::App cli{"replay_ethereum"};
+    cli.option_defaults()->always_capture_default();
 
     std::filesystem::path block_db_path{};
     std::filesystem::path genesis_file_path{};
@@ -50,6 +54,7 @@ int main(int argc, char *argv[])
     std::vector<std::filesystem::path> dbname_paths;
     std::filesystem::path load_snapshot{};
     std::filesystem::path dump_snapshot{};
+    std::filesystem::path trace_log = std::filesystem::absolute("trace");
 
     quill::start(true);
 
@@ -62,6 +67,7 @@ int main(int argc, char *argv[])
 
     cli.add_option("--block_db", block_db_path, "block_db directory")
         ->required();
+    cli.add_option("--trace_log", trace_log, "path to output trace file");
     auto *has_genesis_file = cli.add_option(
         "--genesis_file", genesis_file_path, "genesis file directory");
     cli.add_option(
@@ -104,6 +110,13 @@ int main(int argc, char *argv[])
         std::cout << cli.help() << std::flush;
         return cli.exit(e);
     }
+
+#ifdef ENABLE_TRACING
+    quill::FileHandlerConfig handler_cfg;
+    handler_cfg.set_pattern("%(message)", "");
+    tracer = quill::create_logger(
+        "trace", quill::file_handler(trace_log, handler_cfg));
+#endif
 
     auto block_db = BlockDb(block_db_path);
 

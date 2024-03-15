@@ -10,6 +10,7 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
+#include <monad/execution/fmt/trace_fmt.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
@@ -195,12 +196,16 @@ Result<Receipt> execute_impl(
         static_validate_transaction<rev>(tx, hdr.base_fee_per_gas));
 
     {
+        TRACE_TXN_EVENT(StartExecution);
         State state{block_state};
 
         auto result =
             execute_impl2<rev>(tx, sender, hdr, block_hash_buffer, state);
 
-        prev.get_future().wait();
+        {
+            TRACE_TXN_EVENT(StartStall);
+            prev.get_future().wait();
+        }
 
         if (block_state.can_merge(state)) {
             if (result.has_error()) {
@@ -218,6 +223,8 @@ Result<Receipt> execute_impl(
         }
     }
     {
+        TRACE_TXN_EVENT(StartRetry);
+
         State state{block_state};
 
         auto result =
@@ -235,6 +242,7 @@ Result<Receipt> execute_impl(
             result.value(),
             hdr.beneficiary);
         block_state.merge(state);
+
         return receipt;
     }
 }
@@ -247,6 +255,8 @@ Result<Receipt> execute(
     BlockHeader const &hdr, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, boost::fibers::promise<void> &prev)
 {
+    TRACE_TXN_EVENT(StartTxn);
+
     auto const sender = recover_sender(tx);
 
     if (MONAD_UNLIKELY(!sender.has_value())) {

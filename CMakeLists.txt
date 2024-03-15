@@ -59,6 +59,8 @@ function(monad_compile_options target)
   # https://gcc.gnu.org/bugzilla//show_bug.cgi?id=109647
   target_compile_definitions(${target} PUBLIC "JSON_HAS_RANGES=0")
 
+  target_compile_definitions(${target} PUBLIC "ENABLE_TRACING")
+
   if(EVMONE_TRACING)
     target_compile_definitions(${target} PUBLIC EVMONE_TRACING=1)
   endif()
@@ -140,9 +142,11 @@ add_library(
   "include/monad/execution/execute_block.hpp"
   "include/monad/execution/execute_transaction.hpp"
   "include/monad/execution/explicit_evmc_revision.hpp"
+  "include/monad/execution/fmt/trace_fmt.hpp"
   "include/monad/execution/genesis.hpp"
   "include/monad/execution/precompiles.hpp"
   "include/monad/execution/replay_block_db.hpp"
+  "include/monad/execution/trace.hpp"
   "include/monad/execution/transaction_gas.hpp"
   "include/monad/execution/tx_context.hpp"
   "include/monad/execution/validate_block.hpp"
@@ -156,6 +160,7 @@ add_library(
   "src/monad/execution/execute_block.cpp"
   "src/monad/execution/execute_transaction.cpp"
   "src/monad/execution/precompiles.cpp"
+  "src/monad/execution/trace.cpp"
   "src/monad/execution/transaction_gas.cpp"
   "src/monad/execution/tx_context.cpp"
   "src/monad/execution/validate_block.cpp"

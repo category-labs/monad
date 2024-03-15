@@ -1,4 +1,6 @@
+#include <monad/config.hpp>
 #include <monad/core/log_level_map.hpp>
+#include <monad/execution/trace.hpp>
 
 #include <blockchain_test.hpp>
 #include <ethereum_test.hpp>
@@ -18,6 +20,12 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+
+MONAD_NAMESPACE_BEGIN
+
+quill::Logger *tracer = nullptr;
+
+MONAD_NAMESPACE_END
 
 int main(int argc, char *argv[])
 {
@@ -39,6 +47,9 @@ int main(int argc, char *argv[])
 
     quill::start(true);
     quill::get_root_logger()->set_log_level(log_level);
+#ifdef ENABLE_TRACING
+    tracer = quill::create_logger("trace", quill::null_handler());
+#endif
 
     test::register_blockchain_tests(revision);
     test::register_transaction_tests(revision);

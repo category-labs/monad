@@ -13,6 +13,8 @@
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
+#include <monad/execution/fmt/trace_fmt.hpp>
+#include <monad/execution/trace.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/state2/block_state.hpp>
@@ -88,6 +90,8 @@ Result<std::vector<Receipt>> execute_block(
     Block &block, Db &db, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {
+    TRACE_BLOCK_EVENT(StartBlock);
+
     BlockState block_state{db};
 
     if constexpr (rev == EVMC_HOMESTEAD) {

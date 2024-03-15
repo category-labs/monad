@@ -3,6 +3,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/core/transaction.hpp>
+#include <monad/execution/trace.hpp>
 
 #include <silkpre/ecdsa.h>
 
@@ -21,6 +22,7 @@ MONAD_NAMESPACE_BEGIN
 
 std::optional<Address> recover_sender(Transaction const &tx)
 {
+    TRACE_TXN_EVENT(StartSenderRecovery);
     byte_string const tx_encoding = rlp::encode_transaction_for_signing(tx);
     ethash::hash256 const tx_encoding_hash{
         ethash::keccak256(tx_encoding.data(), tx_encoding.size())};

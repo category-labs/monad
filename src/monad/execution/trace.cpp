@@ -1,0 +1,55 @@
+#include <monad/config.hpp>
+#include <monad/core/assert.h>
+#include <monad/execution/fmt/trace_fmt.hpp>
+#include <monad/execution/trace.hpp>
+
+#include <quill/Quill.h>
+
+#include <chrono>
+#include <ostream>
+
+MONAD_NAMESPACE_BEGIN
+
+TraceTimer::TraceTimer(TraceEvent const &event)
+    : orig{event}
+{
+    QUILL_LOG_INFO(tracer, "{}", event);
+}
+
+TraceTimer::~TraceTimer()
+{
+    auto const type = [&] {
+        switch (orig.type) {
+        case TraceType::StartBlock:
+            return TraceType::EndBlock;
+        case TraceType::StartTxn:
+            return TraceType::EndTxn;
+        case TraceType::StartSenderRecovery:
+            return TraceType::EndSenderRecovery;
+        case TraceType::StartExecution:
+            return TraceType::EndExecution;
+        case TraceType::StartStall:
+            return TraceType::EndStall;
+        case TraceType::StartRetry:
+            return TraceType::EndRetry;
+        default:
+            MONAD_ASSERT(false);
+        }
+    }();
+    QUILL_LOG_INFO(tracer, "{}", TraceEvent{type, orig.value});
+}
+
+TraceEvent::TraceEvent(TraceType const type, uint64_t const value)
+    : type{type}
+    , time{std::chrono::steady_clock::now().time_since_epoch()}
+    , value{value}
+{
+}
+
+std::ostream &operator<<(std::ostream &os, TraceEvent const &event)
+{
+    os.write(reinterpret_cast<char const *>(&event), sizeof(TraceEvent));
+    return os;
+}
+
+MONAD_NAMESPACE_END

@@ -1,4 +1,4 @@
-# docker build -f docker/Dockerfile .
+# syntax=docker/dockerfile:1-labs
 
 FROM ubuntu:22.04 as base
 
@@ -34,10 +34,10 @@ COPY . src
 ARG CC
 ARG CXX
 ARG CMAKE_BUILD_TYPE
-ARG DISABLE_TESTS
 
 RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" ./monad-core/scripts/configure.sh
 
 RUN cd src && ./monad-core/scripts/build.sh
 
-RUN cd src && [ "$DISABLE_TESTS" = 1 ] || ./monad-core/scripts/test.sh
+# security=insecure for tests which use io_uring
+RUN --security=insecure cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} ./monad-core/scripts/test.sh

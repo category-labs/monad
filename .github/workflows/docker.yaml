@@ -57,6 +57,7 @@ jobs:
             CC=${{ matrix.compiler.CC }}
             CXX=${{ matrix.compiler.CXX }}
             CMAKE_BUILD_TYPE=${{ matrix.CMAKE_BUILD_TYPE }}
+          allow: security.insecure # for tests which use io_uring
           ulimit: "memlock=-1:-1"
           target: build_and_test
           cache-from: type=gha,scope=base

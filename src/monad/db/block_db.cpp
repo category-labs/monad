@@ -26,7 +26,12 @@ BlockDb::BlockDb(std::filesystem::path const &dir)
 bool BlockDb::get(uint64_t const num, Block &block) const
 {
     auto const key = std::to_string(num);
-    auto const result = db_.get(key.c_str());
+    auto result = db_.get(key.c_str());
+    if (!result.has_value()) {
+        auto const folder = std::to_string(num / 1000000) + 'M';
+        auto const key = folder + '/' + std::to_string(num);
+        result = db_.get(key.c_str());
+    }
     if (!result.has_value()) {
         return false;
     }

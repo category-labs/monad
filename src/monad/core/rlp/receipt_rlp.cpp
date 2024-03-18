@@ -156,7 +156,7 @@ Result<Receipt> decode_receipt(byte_string_view &enc)
 
     Receipt receipt;
 
-    uint8_t const first = enc[0];
+    unsigned char const first = enc[0];
     if (first < 0xc0) // eip 2718 - typed transaction envelope
     {
         enc = enc.substr(1);

@@ -60,13 +60,12 @@ namespace
                 return {};
             }
             // this is a storage leaf
-            else if (node.value().size() <= sizeof(bytes32_t)) {
-                MONAD_ASSERT(node.value().size() <= sizeof(bytes32_t));
+            else if (
+                node.value().size() <= sizeof(bytes32_t) &&
+                node.value()[0] != 0x00) {
                 MONAD_ASSERT(node.value().front());
                 return rlp::encode_string2(node.value());
             }
-
-            MONAD_ASSERT(node.value().size() > sizeof(bytes32_t));
 
             auto encoded_account = node.value();
             auto const acct = rlp::decode_account(encoded_account);
@@ -933,7 +932,6 @@ nlohmann::json TrieDb::to_json()
             MONAD_ASSERT(node.has_value());
 
             auto encoded_account = node.value();
-
             auto acct = rlp::decode_account(encoded_account);
             MONAD_DEBUG_ASSERT(!acct.has_error());
             MONAD_DEBUG_ASSERT(encoded_account.empty());

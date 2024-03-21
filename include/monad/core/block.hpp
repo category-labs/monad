@@ -8,12 +8,11 @@
 #include <monad/core/transaction.hpp>
 #include <monad/core/withdrawal.hpp>
 
+#include <cstdint>
 #include <optional>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
-
-using block_num_t = uint64_t;
 
 struct BlockHeader
 {

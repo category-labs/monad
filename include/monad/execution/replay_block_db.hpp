@@ -5,6 +5,7 @@
 #include <monad/core/basic_formatter.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/fmt/bytes_fmt.hpp>
+#include <monad/core/result.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/db/db.hpp>
 #include <monad/db/util.hpp>
@@ -16,7 +17,7 @@
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/state2/block_state.hpp>
 
-#include <nlohmann/json.hpp>
+#include <boost/outcome/try.hpp>
 
 #include <quill/Quill.h>
 
@@ -32,26 +33,6 @@ class ReplayFromBlockDb
 {
 public:
     uint64_t n_transactions{0};
-
-    enum class Status
-    {
-        SUCCESS_END_OF_DB,
-        SUCCESS,
-        INVALID_END_BLOCK_NUMBER,
-        START_BLOCK_NUMBER_OUTSIDE_DB,
-        DECOMPRESS_BLOCK_ERROR,
-        DECODE_BLOCK_ERROR,
-        WRONG_STATE_ROOT,
-        WRONG_TRANSACTIONS_ROOT,
-        WRONG_RECEIPTS_ROOT,
-        BLOCK_VALIDATION_FAILED,
-    };
-
-    struct Result
-    {
-        Status status;
-        block_num_t block_number;
-    };
 
     bool verify_root_hash(
         evmc_revision const rev, BlockHeader const &block_header,
@@ -80,37 +61,43 @@ public:
         return true;
     }
 
-    Result run_fork(
+    Result<uint64_t> run_fork(
         Db &db, BlockDb &block_db, BlockHashBuffer &block_hash_buffer,
-        fiber::PriorityPool &priority_pool, block_num_t current_block_number,
-        std::optional<block_num_t> until_block_number = std::nullopt)
+        fiber::PriorityPool &priority_pool, uint64_t const start_block_number,
+        uint64_t const nblocks)
     {
-        EthereumMainnet chain{};
+        MONAD_ASSERT(start_block_number);
 
-        for (; current_block_number <= until_block_number;
-             ++current_block_number) {
-            Block block{};
-            bool const block_read_status =
-                block_db.get(current_block_number, block);
+        EthereumMainnet const chain{};
 
-            if (MONAD_UNLIKELY(!block_read_status)) {
-                return Result{
-                    Status::SUCCESS_END_OF_DB, current_block_number - 1};
+        uint64_t i = 0;
+        for (; i < nblocks; ++i) {
+            uint64_t const block_number = start_block_number + i;
+            if (MONAD_UNLIKELY(!block_number)) {
+                break; // wrapped
             }
 
-            block_hash_buffer.set(
-                current_block_number - 1, block.header.parent_hash);
+            Block block{};
+            if (!block_db.get(block_number, block)) {
+                return i;
+            }
+
+            block_hash_buffer.set(block_number - 1, block.header.parent_hash);
+
+            {
+                auto result = chain.static_validate_header(block.header);
+                if (MONAD_UNLIKELY(result.has_error())) {
+                    LOG_ERROR(
+                        "block {} {}",
+                        block.header.number,
+                        result.assume_error().message().c_str());
+                    return std::move(result).assume_error();
+                }
+            }
 
             evmc_revision const rev = chain.get_revision(block.header);
 
-            if (auto const result = static_validate_block(rev, block);
-                result.has_error()) {
-                LOG_ERROR(
-                    "Block validation error: {}",
-                    result.assume_error().value());
-                return Result{
-                    Status::BLOCK_VALIDATION_FAILED, current_block_number};
-            }
+            BOOST_OUTCOME_TRY(static_validate_block(rev, block));
 
             auto const receipts =
                 execute_block(rev, block, db, block_hash_buffer, priority_pool);
@@ -123,39 +110,27 @@ public:
                     NULL_ROOT,
                     db.receipts_root(),
                     db.state_root())) {
-                return Result{Status::WRONG_STATE_ROOT, current_block_number};
+                return BlockError::WrongStateRoot;
             }
         }
 
-        return Result{Status::SUCCESS, current_block_number - 1};
+        return i;
     }
 
-    Result
+    Result<uint64_t>
     run(Db &db, BlockDb &block_db, fiber::PriorityPool &priority_pool,
-        block_num_t const start_block_number,
-        std::optional<block_num_t> const until_block_number = std::nullopt)
+        uint64_t const start_block_number, uint64_t const nblocks)
     {
         Block block{};
 
-        if (until_block_number.has_value() &&
-            (until_block_number <= start_block_number)) {
-            return Result{Status::INVALID_END_BLOCK_NUMBER, start_block_number};
-        }
-
-        if (!block_db.get(start_block_number, block)) {
-            return Result{
-                Status::START_BLOCK_NUMBER_OUTSIDE_DB, start_block_number};
-        }
-
         BlockHashBuffer block_hash_buffer;
-        block_num_t block_number =
+        uint64_t block_number =
             start_block_number < 256 ? 1 : start_block_number - 255;
-        while (block_number < start_block_number) {
+        for (; block_number < start_block_number; ++block_number) {
             block = Block{};
             bool const result = block_db.get(block_number, block);
             MONAD_ASSERT(result);
             block_hash_buffer.set(block_number - 1, block.header.parent_hash);
-            ++block_number;
         }
 
         return run_fork(
@@ -164,7 +139,7 @@ public:
             block_hash_buffer,
             priority_pool,
             start_block_number,
-            until_block_number);
+            nblocks);
     }
 };
 

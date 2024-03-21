@@ -34,7 +34,8 @@ enum class BlockError
     InvalidOmmerHeader,
     WrongDaoExtraData,
     WrongLogsBloom,
-    InvalidGasUsed
+    InvalidGasUsed,
+    WrongStateRoot
 };
 
 struct Block;

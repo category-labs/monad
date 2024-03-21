@@ -6,6 +6,7 @@
 #include <test_resource_data.h>
 
 #include <csignal>
+#include <cstdint>
 
 using namespace monad;
 
@@ -37,7 +38,7 @@ TEST(BlockDb, ReadNonDecodeableBlock)
 
 TEST(BlockDb, CompressDecompressBlock46402)
 {
-    block_num_t const block_number = 46'402;
+    uint64_t const block_number = 46'402;
 
     // Read
     Block block;
@@ -58,7 +59,7 @@ TEST(BlockDb, CompressDecompressBlock46402)
 
 TEST(BlockDb, CompressDecompressBlock2730000)
 {
-    block_num_t const block_number = 2'730'000;
+    uint64_t const block_number = 2'730'000;
 
     // Read
     Block block;
@@ -79,7 +80,7 @@ TEST(BlockDb, CompressDecompressBlock2730000)
 
 TEST(BlockDb, CompressDecompressBlock2730001)
 {
-    block_num_t const block_number = 2'730'001;
+    uint64_t const block_number = 2'730'001;
 
     // Read
     Block block;
@@ -100,7 +101,7 @@ TEST(BlockDb, CompressDecompressBlock2730001)
 
 TEST(BlockDb, CompressDecompressBlock2730002)
 {
-    block_num_t const block_number = 2'730'002;
+    uint64_t const block_number = 2'730'002;
 
     // Read
     Block block;
@@ -121,7 +122,7 @@ TEST(BlockDb, CompressDecompressBlock2730002)
 
 TEST(BlockDb, CompressDecompressBlock2730009)
 {
-    block_num_t const block_number = 2'730'009;
+    uint64_t const block_number = 2'730'009;
 
     // Read
     Block block;
@@ -142,7 +143,7 @@ TEST(BlockDb, CompressDecompressBlock2730009)
 
 TEST(BlockDb, CompressDecompress14000000)
 {
-    block_num_t const block_number = 14'000'000;
+    uint64_t const block_number = 14'000'000;
 
     // Read
     Block block;
@@ -163,7 +164,7 @@ TEST(BlockDb, CompressDecompress14000000)
 
 TEST(BlockDb, DecompressBlock2397315)
 {
-    block_num_t const block_number = 2'397'315;
+    uint64_t const block_number = 2'397'315;
     Block block;
     BlockDb const block_db_read(test_resource::correct_block_data_dir);
     EXPECT_TRUE(block_db_read.get(block_number, block));

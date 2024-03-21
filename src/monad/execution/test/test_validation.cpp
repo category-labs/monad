@@ -1,3 +1,4 @@
+#include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
@@ -199,7 +200,7 @@ TEST(Validation, wrong_dao_extra_data)
         .gas_limit = 10000,
         .extra_data = {0x00, 0x01, 0x02}};
 
-    auto const result = static_validate_header<EVMC_HOMESTEAD>(header);
+    auto const result = EthereumMainnet{}.static_validate_header(header);
     EXPECT_EQ(result.error(), BlockError::WrongDaoExtraData);
 }
 

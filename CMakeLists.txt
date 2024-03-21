@@ -81,6 +81,7 @@ add_library(
   # chain
   "include/monad/chain/chain.hpp"
   "include/monad/chain/ethereum_mainnet.hpp"
+  "src/monad/chain/chain.cpp"
   "src/monad/chain/ethereum_mainnet.cpp"
   # core
   "include/monad/core/account.hpp"

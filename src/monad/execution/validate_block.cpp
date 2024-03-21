@@ -1,12 +1,12 @@
+#include <monad/execution/validate_block.hpp>
+
 #include <monad/config.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/result.hpp>
-#include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
-#include <monad/execution/validate_block.hpp>
 
 #include <evmc/evmc.h>
 
@@ -54,18 +54,6 @@ Result<void> static_validate_header(BlockHeader const &header)
         return BlockError::ExtraDataTooLong;
     }
 
-    // TODO: Does DAO necessarily need to be in Homestead?
-    // EIP-779
-    if constexpr (rev == EVMC_HOMESTEAD) {
-        if (MONAD_UNLIKELY(
-                header.number >= dao::dao_block_number &&
-                header.number <= dao::dao_block_number + 9 &&
-                header.extra_data != dao::extra_data)) {
-            return BlockError::WrongDaoExtraData;
-        }
-    }
-
-    // Validate Field Existence
     // EIP-1559
     if constexpr (rev < EVMC_LONDON) {
         if (MONAD_UNLIKELY(header.base_fee_per_gas.has_value())) {
@@ -148,9 +136,6 @@ constexpr Result<void> static_validate_ommers(Block const &block)
 template <evmc_revision rev>
 constexpr Result<void> static_validate_body(Block const &block)
 {
-    // TODO: Should we put computationally heavy validate_root(txn,
-    // withdraw) here?
-
     // EIP-4895
     if constexpr (rev < EVMC_SHANGHAI) {
         if (MONAD_UNLIKELY(
@@ -239,7 +224,8 @@ quick_status_code_from_enum<monad::BlockError>::value_mappings()
         {BlockError::InvalidOmmerHeader, "invalid ommer header", {}},
         {BlockError::WrongDaoExtraData, "wrong dao extra data", {}},
         {BlockError::WrongLogsBloom, "wrong logs bloom", {}},
-        {BlockError::InvalidGasUsed, "invalid gas used", {}}};
+        {BlockError::InvalidGasUsed, "invalid gas used", {}},
+        {BlockError::WrongStateRoot, "wrong state root", {}}};
 
     return v;
 }

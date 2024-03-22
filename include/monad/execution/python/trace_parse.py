@@ -1,0 +1,130 @@
+import argparse
+import numpy as np
+import os
+import pandas as pd
+from collections import defaultdict
+from enum import IntEnum
+from functools import partial
+from struct import unpack
+
+
+class TraceType(IntEnum):
+    StartBlock = 0,
+    StartTxn = 1,
+    StartSenderRecovery = 2,
+    StartExecution = 3,
+    StartStall = 4,
+    StartRetry = 5,
+    EndBlock = 6,
+    EndTxn = 7,
+    EndSenderRecovery = 8,
+    EndExecution = 9,
+    EndStall = 10, 
+    EndRetry = 11,
+    StartDb = 12,
+    EndDb = 13
+
+# Quill writes a \n after every log (see first line of
+# PatternFormatter::_set_pattern), hence the +1;
+read_size = 17 + 1
+struct = "=cQQx"
+
+
+def summary(f):
+    timing = defaultdict(list)
+    start = defaultdict(dict)
+
+    for chunk in iter(partial(f.read, read_size), b""):
+        type, time, value = unpack(struct, chunk)
+        trace_type = TraceType(ord(type))
+
+        if trace_type.name.startswith("Start"):
+            start[trace_type.name[5:]][value].append(time)
+        else:
+            assert trace_type.name.startswith("End")
+            key = trace_type.name[3:]
+            assert value in start[key]
+            timing[key].append(time - start[key][value])
+            del start[key][value]
+
+    pctls = [0, 1, 25, 50, 75, 99, 100]
+    print(
+        pd.DataFrame(
+            data=[
+                np.append(
+                    [key, len(val)], np.round(np.percentile(val, pctls) / 1000, 2)
+                )
+                for key, val in sorted(timing.items())
+            ],
+            columns=["Event", "n"] + list(map(lambda x: f"{x}%(us)", pctls)),
+        ).to_string(index=False)
+    )
+
+
+    assert all(len(l) == 0 for l in start.values())
+
+def dump(f, number, txn):
+    events = defaultdict(tuple)
+    started = False
+
+    for chunk in iter(partial(f.read, read_size), b""):
+        type, time, value = unpack(struct, chunk)
+        trace_type = TraceType(ord(type))
+        if trace_type == TraceType.StartBlock and number == value:
+            assert started == False
+            started = True
+        elif trace_type == TraceType.EndBlock and started:
+            assert number == value
+            break
+        elif started and (txn == None or txn == value):
+            events[time] = (trace_type, value)
+
+    if not started:
+        assert len(events) == 0
+        print("Block not found")
+    elif len(events) == 0:
+        print("Txn events not found")
+    else:
+        print(
+            pd.DataFrame(
+                data=[
+                    [time, event[1], event[0].name]
+                    for time, event in sorted(events.items())
+                ],
+                columns=["Time(ns)", "Txn", "Event"],
+            ).to_string(index=False)
+        )
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="trace_parse", description="Trace log parser")
+    parser.add_argument(
+        "--log", required=True, help="path to log file", type=os.path.abspath
+    )
+    subparsers = parser.add_subparsers(help="actions")
+    dump_parser = subparsers.add_parser(
+        "dump",
+        help="print trace events",
+    )
+    dump_parser.add_argument(
+        "--block",
+        required=True,
+        help="block number",
+        type=int,
+    )
+    dump_parser.add_argument(
+        "--txn",
+        required=False,
+        help="txn number within block",
+        type=int,
+    )
+    args = parser.parse_args()
+    with open(args.log, "rb") as f:
+        if hasattr(args, "block"):
+            dump(f, args.block, args.txn)
+        else:
+            summary(f)
+
+
+if __name__ == "__main__":
+    main()

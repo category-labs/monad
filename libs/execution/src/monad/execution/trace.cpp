@@ -50,7 +50,9 @@ TraceEvent::TraceEvent(TraceType const type, uint64_t const value)
 
 std::ostream &operator<<(std::ostream &os, TraceEvent const &event)
 {
-    os.write(reinterpret_cast<char const *>(&event), sizeof(TraceEvent));
+    os.write(reinterpret_cast<char const *>(&event.type), sizeof(event.type));
+    os.write(reinterpret_cast<char const *>(&event.time), sizeof(event.time));
+    os.write(reinterpret_cast<char const *>(&event.value), sizeof(event.value));
     return os;
 }
 

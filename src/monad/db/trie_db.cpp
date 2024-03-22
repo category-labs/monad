@@ -53,7 +53,7 @@ namespace
             sizeof(bytes32_t)};
     }
 
-    struct LeafCompute
+    struct ComputeAccountLeaf
     {
         static byte_string compute(Node const &node)
         {
@@ -63,19 +63,11 @@ namespace
             if (MONAD_UNLIKELY(node.value().empty())) {
                 return {};
             }
-            // this is a storage leaf
-            else if (node.value().size() <= sizeof(bytes32_t)) {
-                MONAD_ASSERT(node.value().size() <= sizeof(bytes32_t));
-                MONAD_ASSERT(node.value().front());
-                return rlp::encode_string2(node.value());
-            }
-
-            MONAD_ASSERT(node.value().size() > sizeof(bytes32_t));
 
             auto encoded_account = node.value();
             auto const acct = rlp::decode_account(encoded_account);
-            MONAD_DEBUG_ASSERT(!acct.has_error());
-            MONAD_DEBUG_ASSERT(encoded_account.empty());
+            MONAD_ASSERT(!acct.has_error());
+            MONAD_ASSERT(encoded_account.empty());
             bytes32_t storage_root = NULL_ROOT;
             if (node.number_of_children()) {
                 MONAD_ASSERT(node.data().size() == sizeof(bytes32_t));
@@ -86,9 +78,36 @@ namespace
         }
     };
 
-    using MerkleCompute = MerkleComputeBase<LeafCompute>;
+    struct ComputeStorageLeaf
+    {
+        static byte_string compute(Node const &node)
+        {
+            MONAD_ASSERT(node.has_value());
+            MONAD_ASSERT(node.value().front());
+            MONAD_ASSERT(node.value().size() <= sizeof(bytes32_t));
 
-    struct RootMerkleCompute final : public MerkleCompute
+            return rlp::encode_string2(node.value());
+        }
+    };
+
+    using AccountMerkleCompute = MerkleComputeBase<ComputeAccountLeaf>;
+    using StorageMerkleCompute = MerkleComputeBase<ComputeStorageLeaf>;
+
+    struct StorageRootMerkleCompute : public StorageMerkleCompute
+    {
+        virtual unsigned
+        compute(unsigned char *const buffer, Node *const node) override
+        {
+            MONAD_ASSERT(node->has_value());
+            return encode_two_pieces(
+                buffer,
+                node->path_nibble_view(),
+                ComputeAccountLeaf::compute(*node),
+                true);
+        }
+    };
+
+    struct AccountRootMerkleCompute : public AccountMerkleCompute
     {
         virtual unsigned compute(unsigned char *const, Node *const) override
         {
@@ -634,14 +653,33 @@ void Machine::up(size_t const n)
 Compute &Machine::get_compute() const
 {
     static EmptyCompute empty_compute;
-    static MerkleCompute state_compute;
-    static RootMerkleCompute state_root_compute;
+
+    static AccountMerkleCompute account_compute;
+    static AccountRootMerkleCompute account_root_compute;
+    static StorageMerkleCompute storage_compute;
+    static StorageRootMerkleCompute storage_root_compute;
+
     static VarLenMerkleCompute receipt_compute;
     static RootVarLenMerkleCompute receipt_root_compute;
 
     if (MONAD_LIKELY(trie_section == TrieType::State)) {
-        return depth == prefix_len + BLOCK_NUM_NIBBLES_LEN ? state_root_compute
-                                                           : state_compute;
+        MONAD_ASSERT(depth >= BLOCK_NUM_NIBBLES_LEN + prefix_len);
+        if (MONAD_UNLIKELY(depth == BLOCK_NUM_NIBBLES_LEN + prefix_len)) {
+            return account_root_compute;
+        }
+        else if (
+            depth <
+            BLOCK_NUM_NIBBLES_LEN + prefix_len + 2 * sizeof(bytes32_t)) {
+            return account_compute;
+        }
+        else if (
+            depth ==
+            BLOCK_NUM_NIBBLES_LEN + prefix_len + 2 * sizeof(bytes32_t)) {
+            return storage_root_compute;
+        }
+        else {
+            return storage_compute;
+        }
     }
     else if (trie_section == TrieType::Receipt) {
         return depth == prefix_len + BLOCK_NUM_NIBBLES_LEN

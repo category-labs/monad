@@ -49,10 +49,7 @@ TEST(Validation, validate_deployed_code)
 TEST(Validation, validate_nonce)
 {
     Transaction const tx{
-        .nonce = 23,
-        .max_fee_per_gas = 29'443'849'433,
-        .gas_limit = 60'500,
-        .value = 55'939'568'773'815'811};
+        .nonce = 23, .max_fee_per_gas = 10, .gas_limit = 60'500, .value = 510};
     Account const sender_account{
         .balance = 56'939'568'773'815'811, .nonce = 24};
 
@@ -63,10 +60,7 @@ TEST(Validation, validate_nonce)
 TEST(Validation, validate_nonce_optimistically)
 {
     Transaction const tx{
-        .nonce = 25,
-        .max_fee_per_gas = 29'443'849'433,
-        .gas_limit = 60'500,
-        .value = 55'939'568'773'815'811};
+        .nonce = 25, .max_fee_per_gas = 10, .gas_limit = 60'500, .value = 10};
     Account const sender_account{
         .balance = 56'939'568'773'815'811, .nonce = 24};
 
@@ -178,7 +172,10 @@ TEST(Validation, init_code_exceed_limit)
     // exceed EIP-3860 limit
 
     static Transaction const t{
-        .max_fee_per_gas = 0, .gas_limit = 1000, .value = 0, .data = long_data};
+        .max_fee_per_gas = 0,
+        .gas_limit = 10'000'000,
+        .value = 0,
+        .data = long_data};
 
     auto const result = static_validate_transaction<EVMC_SHANGHAI>(t, 0);
     EXPECT_EQ(result.error(), TransactionError::InitCodeLimitExceeded);

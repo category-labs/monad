@@ -43,8 +43,15 @@ enum class TransactionError
 struct Transaction;
 
 template <evmc_revision rev>
+Result<void> eth_call_static_validate_transaction(
+    Transaction const &, std::optional<uint256_t> const &base_fee_per_gas);
+
+template <evmc_revision rev>
 Result<void> static_validate_transaction(
     Transaction const &, std::optional<uint256_t> const &base_fee_per_gas);
+
+Result<void> eth_call_validate_transaction(
+    Transaction const &, std::optional<Account> const &sender_account);
 
 Result<void> validate_transaction(
     Transaction const &, std::optional<Account> const &sender_account);

@@ -23,6 +23,7 @@
     #include <boost/outcome/experimental/status-code/generic_code.hpp>
 #endif
 #include <boost/outcome/success_failure.hpp>
+#include <boost/outcome/try.hpp>
 
 #include <silkpre/secp256k1n.hpp>
 
@@ -36,9 +37,50 @@ MONAD_NAMESPACE_BEGIN
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
 template <evmc_revision rev>
+Result<void> eth_call_static_validate_transaction(
+    Transaction const &tx, std::optional<uint256_t> const &base_fee_per_gas)
+{
+    // EIP-1559
+    if (MONAD_UNLIKELY(tx.max_fee_per_gas < base_fee_per_gas.value_or(0))) {
+        return TransactionError::MaxFeeLessThanBase;
+    }
+
+    // EIP-1559
+    if (MONAD_UNLIKELY(tx.max_priority_fee_per_gas > tx.max_fee_per_gas)) {
+        return TransactionError::PriorityFeeGreaterThanMax;
+    }
+
+    // EIP-1559
+    if (MONAD_UNLIKELY(
+            max_gas_cost(tx.gas_limit, tx.max_fee_per_gas) >
+            std::numeric_limits<uint256_t>::max())) {
+        return TransactionError::GasLimitOverflow;
+    }
+
+    // YP eq. 62
+    if (MONAD_UNLIKELY(intrinsic_gas<rev>(tx) > tx.gas_limit)) {
+        return TransactionError::IntrinsicGasGreaterThanLimit;
+    }
+
+    // EIP-3860
+    if constexpr (rev >= EVMC_SHANGHAI) {
+        if (MONAD_UNLIKELY(!tx.to.has_value() && tx.data.size() > 2 * 0x6000)) {
+            return TransactionError::InitCodeLimitExceeded;
+        }
+    }
+
+    return success();
+}
+
+EXPLICIT_EVMC_REVISION(eth_call_static_validate_transaction);
+
+template <evmc_revision rev>
 Result<void> static_validate_transaction(
     Transaction const &tx, std::optional<uint256_t> const &base_fee_per_gas)
 {
+    BOOST_OUTCOME_TRY(
+        eth_call_static_validate_transaction<rev>(tx, base_fee_per_gas));
+
     // EIP-155
     if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {
         if constexpr (rev < EVMC_SPURIOUS_DRAGON) {
@@ -70,38 +112,9 @@ Result<void> static_validate_transaction(
         return TransactionError::TypeNotSupported;
     }
 
-    // EIP-1559
-    if (MONAD_UNLIKELY(tx.max_fee_per_gas < base_fee_per_gas.value_or(0))) {
-        return TransactionError::MaxFeeLessThanBase;
-    }
-
-    // EIP-1559
-    if (MONAD_UNLIKELY(tx.max_priority_fee_per_gas > tx.max_fee_per_gas)) {
-        return TransactionError::PriorityFeeGreaterThanMax;
-    }
-
-    // EIP-3860
-    if constexpr (rev >= EVMC_SHANGHAI) {
-        if (MONAD_UNLIKELY(!tx.to.has_value() && tx.data.size() > 2 * 0x6000)) {
-            return TransactionError::InitCodeLimitExceeded;
-        }
-    }
-
-    // YP eq. 62
-    if (MONAD_UNLIKELY(intrinsic_gas<rev>(tx) > tx.gas_limit)) {
-        return TransactionError::IntrinsicGasGreaterThanLimit;
-    }
-
     // EIP-2681
     if (MONAD_UNLIKELY(tx.nonce >= std::numeric_limits<uint64_t>::max())) {
         return TransactionError::NonceExceedsMax;
-    }
-
-    // EIP-1559
-    if (MONAD_UNLIKELY(
-            max_gas_cost(tx.gas_limit, tx.max_fee_per_gas) >
-            std::numeric_limits<uint256_t>::max())) {
-        return TransactionError::GasLimitOverflow;
     }
 
     // EIP-2
@@ -115,7 +128,7 @@ Result<void> static_validate_transaction(
 
 EXPLICIT_EVMC_REVISION(static_validate_transaction);
 
-Result<void> validate_transaction(
+Result<void> eth_call_validate_transaction(
     Transaction const &tx, std::optional<Account> const &sender_account)
 {
     // YP (70)
@@ -123,10 +136,6 @@ Result<void> validate_transaction(
         tx.value + max_gas_cost(tx.gas_limit, tx.max_fee_per_gas);
 
     if (MONAD_UNLIKELY(!sender_account.has_value())) {
-        // YP (71)
-        if (tx.nonce) {
-            return TransactionError::BadNonce;
-        }
         // YP (71)
         if (v0) {
             return TransactionError::InsufficientBalance;
@@ -140,13 +149,29 @@ Result<void> validate_transaction(
     }
 
     // YP (71)
-    if (MONAD_UNLIKELY(sender_account->nonce != tx.nonce)) {
-        return TransactionError::BadNonce;
+    if (MONAD_UNLIKELY(sender_account->balance < v0)) {
+        return TransactionError::InsufficientBalance;
+    }
+
+    return success();
+}
+
+Result<void> validate_transaction(
+    Transaction const &tx, std::optional<Account> const &sender_account)
+{
+    BOOST_OUTCOME_TRY(eth_call_validate_transaction(tx, sender_account));
+
+    if (MONAD_UNLIKELY(!sender_account.has_value())) {
+        // YP (71)
+        if (tx.nonce) {
+            return TransactionError::BadNonce;
+        }
+        return success();
     }
 
     // YP (71)
-    if (MONAD_UNLIKELY(sender_account->balance < v0)) {
-        return TransactionError::InsufficientBalance;
+    if (MONAD_UNLIKELY(sender_account->nonce != tx.nonce)) {
+        return TransactionError::BadNonce;
     }
 
     // Note: Tg <= B_Hl - l(B_R)u can only be checked before retirement

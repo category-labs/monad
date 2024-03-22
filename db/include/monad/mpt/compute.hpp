@@ -69,6 +69,9 @@ concept compute_leaf_data = requires {
     { T::compute(std::declval<Node const &>()) } -> std::same_as<byte_string>;
 };
 
+using inline_owning_bytes_span =
+    allocators::inline_owning_span<unsigned char, 10240>;
+
 template <compute_leaf_data TComputeLeafData>
 struct MerkleComputeBase : Compute
 {
@@ -249,7 +252,7 @@ struct VarLenMerkleCompute : Compute
             return len;
         }
         // compute branch node hash
-        allocators::inline_owning_span<unsigned char> branch_str_rlp{
+        inline_owning_bytes_span branch_str_rlp{
             calc_rlp_max_size(node->value_len)};
         auto result = encode_16_children(node, branch_str_rlp);
         // encode vt
@@ -258,8 +261,7 @@ struct VarLenMerkleCompute : Compute
                      : encode_empty_string(result);
         auto const concat_len =
             static_cast<size_t>(result.data() - branch_str_rlp.data());
-        allocators::inline_owning_span<unsigned char> branch_rlp{
-            rlp::list_length(concat_len)};
+        inline_owning_bytes_span branch_rlp{rlp::list_length(concat_len)};
         rlp::encode_list(branch_rlp, {branch_str_rlp.data(), concat_len});
         return to_node_reference(
             {branch_rlp.data(), branch_rlp.size()}, buffer);
@@ -298,8 +300,7 @@ protected:
         unsigned const branch_str_max_len = calc_rlp_max_size(
             (unsigned)value.transform(&byte_string_view::size).value_or(0));
 
-        allocators::inline_owning_span<unsigned char> branch_str_rlp{
-            branch_str_max_len};
+        inline_owning_bytes_span branch_str_rlp{branch_str_max_len};
         auto result = encode_16_children(children, branch_str_rlp);
         // encode vt
         result = (value.has_value() && value.value().size())
@@ -308,8 +309,7 @@ protected:
         auto const concat_len =
             static_cast<size_t>(result.data() - branch_str_rlp.data());
         // encode list
-        allocators::inline_owning_span<unsigned char> rlp{
-            rlp::list_length(concat_len)};
+        inline_owning_bytes_span rlp{rlp::list_length(concat_len)};
         rlp::encode_list(rlp, {branch_str_rlp.data(), concat_len});
         // Compute hash to internal state and return hash length
         state.len = to_node_reference({rlp.data(), rlp.size()}, state.buffer);

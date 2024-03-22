@@ -19,7 +19,7 @@ unsigned encode_two_pieces(
     auto const concat_len =
         rlp::string_length(first) +
         (need_encode_second ? rlp::string_length(second) : second.size());
-    allocators::inline_owning_span<unsigned char> concat_rlp{concat_len};
+    inline_owning_bytes_span concat_rlp{concat_len};
     auto result = rlp::encode_string(concat_rlp, first);
     result = need_encode_second ? rlp::encode_string(result, second) : [&] {
         memcpy(result.data(), second.data(), second.size());
@@ -28,8 +28,7 @@ unsigned encode_two_pieces(
     MONAD_DEBUG_ASSERT(
         (unsigned long)(result.data() - concat_rlp.data()) == concat_len);
 
-    allocators::inline_owning_span<unsigned char> rlp{
-        rlp::list_length(concat_len)};
+    inline_owning_bytes_span rlp{rlp::list_length(concat_len)};
     rlp::encode_list(rlp, {concat_rlp.data(), concat_rlp.size()});
     auto ret = to_node_reference({rlp.data(), rlp.size()}, dest);
     // free any long array allocated on heap

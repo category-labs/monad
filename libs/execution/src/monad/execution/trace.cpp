@@ -34,6 +34,12 @@ TraceTimer::~TraceTimer()
             return TraceType::EndStall;
         case TraceType::StartRetry:
             return TraceType::EndRetry;
+        case TraceType::StartReadAccount:
+            return TraceType::EndReadAccount;
+        case TraceType::StartReadStorage:
+            return TraceType::EndReadStorage;
+        case TraceType::StartReadCode:
+            return TraceType::EndReadCode;
         default:
             MONAD_ASSERT(false);
         }

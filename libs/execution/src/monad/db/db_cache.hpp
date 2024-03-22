@@ -7,6 +7,7 @@
 #include <monad/core/bytes_hash_compare.hpp>
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
+#include <monad/execution/trace.hpp>
 #include <monad/lru/lru_cache.hpp>
 #include <monad/state2/state_deltas.hpp>
 
@@ -64,9 +65,37 @@ public:
 
     virtual std::optional<Account> read_account(Address const &address) override
     {
+        TRACE_TXN_EVENT(StartReadAccount);
         {
+<<<<<<< HEAD:libs/execution/src/monad/db/db_cache.hpp
             AccountsCache::ConstAccessor acc{};
             if (accounts_.find(acc, address)) {
+=======
+            Combined::AccountConstAccessor acc{};
+            if (cache_.find_account(acc, address)) {
+                auto result = acc->second.value_;
+                if (result.has_value()) {
+                    result->incarnation = 0;
+                }
+                return result;
+            }
+        }
+        auto const result = db_.read_account(address);
+        {
+            Combined::AccountAccessor acc{};
+            cache_.insert_account(acc, address, result);
+        }
+        return result;
+    }
+
+    virtual bytes32_t
+    read_storage(Address const &address, bytes32_t const &key) override
+    {
+        TRACE_TXN_EVENT(StartReadStorage);
+        {
+            Combined::StorageConstAccessor acc{};
+            if (cache_.find_storage(acc, address, key)) {
+>>>>>>> 6e0bd441 (trace db):include/monad/db/db_cache.hpp
                 return acc->second.value_;
             }
         }
@@ -94,6 +123,8 @@ public:
     virtual std::shared_ptr<CodeAnalysis>
     read_code(bytes32_t const &code_hash) override
     {
+        TRACE_TXN_EVENT(StartReadCode);
+
         {
             CodeCache::ConstAccessor it{};
             if (code_.find(it, code_hash)) {

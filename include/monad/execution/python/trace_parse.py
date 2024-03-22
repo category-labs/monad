@@ -9,20 +9,25 @@ from struct import unpack
 
 
 class TraceType(IntEnum):
-    StartBlock = 0,
-    StartTxn = 1,
-    StartSenderRecovery = 2,
-    StartExecution = 3,
-    StartStall = 4,
-    StartRetry = 5,
-    EndBlock = 6,
-    EndTxn = 7,
-    EndSenderRecovery = 8,
-    EndExecution = 9,
-    EndStall = 10, 
-    EndRetry = 11,
-    StartDb = 12,
-    EndDb = 13
+    StartBlock = 0
+    EndBlock = 1
+    StartTxn = 2
+    EndTxn = 3
+    StartSenderRecovery = 4
+    EndSenderRecovery = 5
+    StartExecution = 6
+    EndExecution = 7
+    StartStall = 8
+    EndStall = 9
+    StartRetry = 10
+    EndRetry = 11
+    StartReadAccount = 12
+    EndReadAccount = 13
+    StartReadStorage = 14
+    EndReadStorage = 15
+    StartReadCode = 16
+    EndReadCode = 17
+
 
 # Quill writes a \n after every log (see first line of
 # PatternFormatter::_set_pattern), hence the +1;
@@ -32,7 +37,7 @@ struct = "=cQQx"
 
 def summary(f):
     timing = defaultdict(list)
-    start = defaultdict(dict)
+    start = defaultdict(lambda: defaultdict(list))
 
     for chunk in iter(partial(f.read, read_size), b""):
         type, time, value = unpack(struct, chunk)
@@ -44,8 +49,12 @@ def summary(f):
             assert trace_type.name.startswith("End")
             key = trace_type.name[3:]
             assert value in start[key]
-            timing[key].append(time - start[key][value])
-            del start[key][value]
+            assert len(start[key][value]) > 0
+            timing[key].append(time - start[key][value].pop())
+            if len(start[key][value]) == 0:
+                del start[key][value]
+
+    assert all(len(l) == 0 for l in start.values())
 
     pctls = [0, 1, 25, 50, 75, 99, 100]
     print(
@@ -60,8 +69,6 @@ def summary(f):
         ).to_string(index=False)
     )
 
-
-    assert all(len(l) == 0 for l in start.values())
 
 def dump(f, number, txn):
     events = defaultdict(tuple)

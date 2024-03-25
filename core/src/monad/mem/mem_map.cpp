@@ -5,11 +5,11 @@
 #include <monad/core/assert.h>
 #include <monad/core/math.hpp>
 
-#include <unistd.h>
 #include <sys/mman.h>
+#include <unistd.h>
 
-#include <cstddef>
 #include <bit>
+#include <cstddef>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -62,7 +62,9 @@ MemMap::MemMap(size_t const size, size_t pagesize)
 
 MemMap::~MemMap()
 {
-    MONAD_ASSERT(!munmap(data_, size_));
+    if (data_ != nullptr) {
+        MONAD_ASSERT(!munmap(data_, size_));
+    }
 }
 
 MONAD_NAMESPACE_END

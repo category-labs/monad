@@ -7,44 +7,37 @@
 #include <monad/core/small_prng.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
+#include <monad/mem/mem_map.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <iostream>
+#include <sstream>
 #include <vector>
 
 #include <sys/capability.h>
+#include <unistd.h>
 
 /* Throughput maximising with complete disregard to latency:
-
-
-- For Intel Corporation Optane SSD 900P:
-
-src/monad/async/test/benchmark_io_test --storage /dev/mapper/xpoint-rawblk2 \
---kernel-poll-thread 15 --enable-io-polling --ring-entries 32
-
-Total ops/sec: 531845 mean latency: 107116 min: 29830 max: 585684
-
-eager completions is a little slower.
-
-
-- For Samsung Electronics Co Ltd NVMe SSD Controller PM9A1/PM9A3/980PRO:
-
-src/monad/async/test/benchmark_io_test --storage /dev/mapper/raid0-rawblk0 \
---kernel-poll-thread 15 --ring-entries 256
-
-Total ops/sec: 590681 mean latency: 568522 min: 84719 max: 2.08905e+06
-
-i/o polling is slower, eager completions is a lot slower.
-
 
 - For the peach27 device (Micron Technology Inc 7450 PRO NVMe SSD):
 
 src/monad/async/test/benchmark_io_test --storage /dev/mapper/raid0-rawblk0 \
 --kernel-poll-thread 15 --ring-entries 256 --eager-completions
 
-Total ops/sec: 856148 mean latency: 322514 min: 7304 max: 971711
+Total ops/sec: 820388 mean latency: 1.4192e+06 min: 175299 max: 1.26249e+07
 
 i/o polling appears to make no difference for this machine.
+
+
+- For the peach11 device (Samsung 990 Pro SSD):
+
+benchmark_io_test --storage /dev/nvme0n1 --kernel-poll-thread 15 \
+--enable-io-polling
+
+Total ops/sec: 850750 mean latency: 283715 min: 56461 max: 1.65677e+06
+
+Eager completions is a little slower.
 
 */
 
@@ -52,38 +45,21 @@ i/o polling appears to make no difference for this machine.
 
 /* Throughput maximising without significantly increasing mean and max latency:
 
-
-- For Intel Corporation Optane SSD 900P:
-
-src/monad/async/test/benchmark_io_test --storage /dev/mapper/xpoint-rawblk2 \
---workload 0 --concurrent-io 16 --eager-completions --enable-io-polling
-
-Total ops/sec: 372308 mean latency: 12061.7 min: 8230 max: 79229
-
-This is 70% of the maximum possible throughput above. Highest i/o priority has
-no effect.
-
-
-- For Samsung Electronics Co Ltd NVMe SSD Controller PM9A1/PM9A3/980PRO:
-
-src/monad/async/test/benchmark_io_test --storage /dev/mapper/raid0-rawblk0 \
---workload 0 --concurrent-io 16 --eager-completions --enable-io-polling
-
-Total ops/sec: 366382 mean latency: 13792.9 min: 11070 max: 129159
-
-This is 62% of the maximum possible throughput above. Highest i/o priority cuts
-max latency by about 20%.
-
-
 - For the peach27 device (Micron Technology Inc 7450 PRO NVMe SSD):
 
 src/monad/async/test/benchmark_io_test --storage /dev/mapper/raid0-rawblk0 \
---workload 0 --concurrent-io 64 --eager-completions --enable-io-polling
+--workload 0 --concurrent-io 16 --eager-completions
 
-Total ops/sec: 605389 mean latency: 12385.3 min: 130 max: 203562
+Total ops/sec: 203233 mean latency: 78421.1 min: 58399 max: 515098
 
-This is 70% of the maximum possible throughput above. Highest i/o priority has
-no effect.
+
+- For the peach11 device (Samsung 990 Pro SSD):
+
+benchmark_io_test --storage /dev/nvme0n1 --workload 0 --concurrent-io 256 \
+--eager-completions
+
+Total ops/sec: 565411 mean latency: 42563.2 min: 32500 max: 386681
+
 */
 
 /***************************************************************************/
@@ -124,19 +100,45 @@ Total ops/sec: 530874 mean latency: 29019.5 min: 12080 max: 160468
 
 struct shared_state_t
 {
-    size_t const chunk_count;
-    uint32_t const chunk_capacity_div_disk_page_size;
+    std::vector<std::pair<uint32_t, uint32_t>> const
+        chunk_sizes_div_disk_page_size;
 
     bool done{false};
     uint32_t ops{0};
     uint64_t min_ns, max_ns, acc_ns;
     monad::small_prng rand;
 
-    constexpr shared_state_t(size_t const chunk_count_, size_t chunk_capacity_)
-        : chunk_count(chunk_count_)
-        , chunk_capacity_div_disk_page_size(
-              uint32_t(chunk_capacity_ / MONAD_ASYNC_NAMESPACE::DISK_PAGE_SIZE))
+    constexpr explicit shared_state_t(MONAD_ASYNC_NAMESPACE::AsyncIO &io)
+        : chunk_sizes_div_disk_page_size([&] {
+            std::vector<std::pair<uint32_t, uint32_t>> ret(io.chunk_count());
+            for (uint32_t n = 0; n < uint32_t(ret.size()); n++) {
+                ret[n] = {
+                    n,
+                    uint32_t(
+                        io.storage_pool()
+                            .chunk(MONAD_ASYNC_NAMESPACE::storage_pool::seq, n)
+                            ->size() /
+                        MONAD_ASYNC_NAMESPACE::DISK_PAGE_SIZE)};
+            }
+            ret.erase(
+                std::remove_if(
+                    ret.begin(),
+                    ret.end(),
+                    [](const auto &x) { return x.second == 0; }),
+                ret.end());
+            return ret;
+        }())
     {
+    }
+
+    MONAD_ASYNC_NAMESPACE::file_offset_t test_surface_available() const noexcept
+    {
+        MONAD_ASYNC_NAMESPACE::file_offset_t ret = 0;
+        for (auto &i : chunk_sizes_div_disk_page_size) {
+            ret += i.second;
+        }
+        ret *= MONAD_ASYNC_NAMESPACE::DISK_PAGE_SIZE;
+        return ret;
     }
 };
 
@@ -186,11 +188,12 @@ inline void receiver_t::set_value(
         auto *state =
             static_cast<connected_state_ptr_type::element_type *>(rawstate);
         auto r = shared->rand();
-        auto chunk_id = r % shared->chunk_count;
-        auto offset_into_chunk =
-            (r >> 16) % shared->chunk_capacity_div_disk_page_size;
+        auto [chunk_id, chunk_size_div_disk_page_size] =
+            shared->chunk_sizes_div_disk_page_size
+                [r % uint32_t(shared->chunk_sizes_div_disk_page_size.size())];
+        auto offset_into_chunk = (r >> 16) % chunk_size_div_disk_page_size;
         MONAD_ASYNC_NAMESPACE::chunk_offset_t offset(
-            uint32_t(chunk_id),
+            chunk_id,
             offset_into_chunk * MONAD_ASYNC_NAMESPACE::DISK_PAGE_SIZE);
         auto const io_priority = state->io_priority();
         state->reset(
@@ -213,6 +216,7 @@ set it to the desired size beforehand).
 )");
     try {
         bool destroy_and_fill = false;
+        unsigned destroy_and_really_fill_count = 0;
         std::vector<std::filesystem::path> storage_paths;
         monad::io::RingConfig ringconfig{128};
         unsigned concurrent_io = 2048;
@@ -230,7 +234,13 @@ set it to the desired size beforehand).
         cli.add_flag(
             "--fill",
             destroy_and_fill,
-            "destroy all existing contents, fill all chunks to full before "
+            "destroy all existing contents, mark all chunks as full before "
+            "doing test.");
+        cli.add_option(
+            "--really-fill",
+            destroy_and_really_fill_count,
+            "destroy all existing contents, actually fill chunks specified "
+            "before "
             "doing test.");
         cli.add_option(
             "--concurrent-io",
@@ -303,6 +313,9 @@ set it to the desired size beforehand).
                 return 1;
             }
         }
+        if (destroy_and_really_fill_count > 0) {
+            destroy_and_fill = true;
+        }
 
         auto const mode =
             destroy_and_fill
@@ -318,7 +331,37 @@ set it to the desired size beforehand).
             concurrent_io,
             MONAD_ASYNC_NAMESPACE::AsyncIO::READ_BUFFER_SIZE);
         auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{pool, rwbuf};
-        if (destroy_and_fill) {
+        if (destroy_and_really_fill_count > 0) {
+            uint32_t const tofill = std::min(
+                uint32_t(destroy_and_really_fill_count),
+                uint32_t(io.chunk_count()));
+            monad::small_prng rand;
+            std::span<uint32_t> buffer;
+            monad::MemMap storage;
+            auto make_storage = [&](size_t bytes) {
+                storage = monad::MemMap(bytes);
+                buffer = {
+                    (uint32_t *)storage.get_data(),
+                    storage.get_size() / sizeof(uint32_t)};
+                for (auto &p : buffer) {
+                    p = rand();
+                }
+            };
+            for (uint32_t n = 0; n < tofill; n++) {
+                auto const bytes = uint32_t(io.chunk_capacity(n));
+                auto [fd, offset] = pool.chunk(pool.seq, n)->write_fd(bytes);
+                if (buffer.size_bytes() < bytes) {
+                    make_storage(bytes);
+                }
+                auto const written =
+                    ::pwrite(fd, buffer.data(), bytes, off_t(offset));
+                if (written < 0) {
+                    throw std::system_error(errno, std::system_category());
+                }
+                MONAD_ASSERT(written > 0);
+            }
+        }
+        else if (destroy_and_fill) {
             for (uint32_t n = 0; n < io.chunk_count(); n++) {
                 pool.chunk(pool.seq, n)
                     ->write_fd(uint32_t(io.chunk_capacity(n)));
@@ -327,8 +370,23 @@ set it to the desired size beforehand).
         io.set_capture_io_latencies(true);
         io.set_concurrent_read_io_limit(concurrent_read_io_limit);
 
-        shared_state_t shared_state{
-            io.chunk_count(), uint32_t(io.chunk_capacity(0))};
+        shared_state_t shared_state{io};
+        if (auto bytes = shared_state.test_surface_available(); bytes < 1024) {
+            std::stringstream ss;
+            ss << "Storage used for test has " << bytes
+               << " bytes allocated, this is too little to run the test. "
+                  "Consider using --fill or --really-fill.";
+            throw std::runtime_error(std::move(ss).str());
+        }
+        if (auto bytes = shared_state.test_surface_available();
+            bytes < 100ULL * 1024 * 1024 * 1024) {
+            std::cerr << "WARNING: Storage used for test has "
+                      << (double(bytes) / 1024.0 / 1024.0 / 1024.0)
+                      << " Gb allocated, it is recommended at least 100 Gb is "
+                         "available for the random read test."
+                      << std::endl;
+        }
+
         std::vector<connected_state_ptr_type> states;
         states.reserve(concurrent_io);
         for (size_t n = 0; n < concurrent_io; n++) {

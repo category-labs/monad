@@ -47,9 +47,9 @@ int main(int argc, char *argv[])
     std::filesystem::path genesis_file_path{};
     std::optional<block_num_t> finish_block_number = std::nullopt;
     std::optional<uint64_t> block_id_continue = std::nullopt;
-    bool compaction = false;
+    bool no_compaction = false;
     unsigned nthreads = 4;
-    unsigned nfibers = 4;
+    unsigned nfibers = 256;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     std::vector<std::filesystem::path> dbname_paths;
     std::filesystem::path load_snapshot{};
@@ -74,14 +74,18 @@ int main(int argc, char *argv[])
         "--finish", finish_block_number, "1 pass the last executed block");
     cli.add_option("--log_level", log_level, "level of logging")
         ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
-    cli.add_option("--nthreads", nthreads, "number of threads");
-    cli.add_option("--nfibers", nfibers, "number of fibers");
-    cli.add_flag("--compaction", compaction, "do compaction");
+    cli.add_option("--nthreads", nthreads, "number of threads. Default is 4.");
+    cli.add_option("--nfibers", nfibers, "number of fibers. Default is 256.");
+    cli.add_flag(
+        "--no-compaction",
+        no_compaction,
+        "do not do compaction. Default is do compaction.");
     cli.add_option(
         "--sq_thread_cpu",
         sq_thread_cpu,
         "sq_thread_cpu field in io_uring_params, to specify the cpu set kernel "
-        "poll thread is bound to in SQPOLL mode");
+        "poll thread is bound to in SQPOLL mode. Default is the last CPU in "
+        "the system.");
     auto const on_disk_option = cli.add_option(
         "--db",
         dbname_paths,
@@ -107,7 +111,6 @@ int main(int argc, char *argv[])
         cli.parse(argc, argv);
     }
     catch (const CLI::CallForHelp &e) {
-        std::cout << cli.help() << std::flush;
         return cli.exit(e);
     }
 
@@ -126,7 +129,7 @@ int main(int argc, char *argv[])
 
     auto const config = on_disk ? std::make_optional(mpt::OnDiskDbConfig{
                                       .append = true, // always open existing
-                                      .compaction = compaction,
+                                      .compaction = !no_compaction,
                                       .rd_buffers = 8192,
                                       .wr_buffers = 32,
                                       .uring_entries = 128,

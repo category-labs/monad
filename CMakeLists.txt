@@ -72,8 +72,8 @@ endfunction()
 
 # monad
 
-add_library(
-  monad STATIC
+set(
+  MONAD_SOURCES
   "include/monad/config.hpp"
   # analysis
   "include/monad/analysis/analysis.hpp"
@@ -183,6 +183,9 @@ add_library(
   "include/monad/state3/version_stack.hpp"
   "src/monad/state3/account_state.cpp"
   "src/monad/state3/state.cpp")
+
+add_library(monad STATIC ${MONAD_SOURCES})
+add_library(monad_shared SHARED ${MONAD_SOURCES})
 
 target_include_directories(
   monad

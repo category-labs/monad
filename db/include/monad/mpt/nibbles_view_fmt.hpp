@@ -1,3 +1,5 @@
+#pragma once
+
 #include <monad/core/basic_formatter.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 

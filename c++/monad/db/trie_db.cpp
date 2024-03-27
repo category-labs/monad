@@ -567,6 +567,7 @@ TrieDb::TrieDb(std::optional<mpt::OnDiskDbConfig> const &config)
     }()}
     , is_on_disk_{config.has_value()}
 {
+    load_latest_cursors();
 }
 
 TrieDb::TrieDb(
@@ -584,19 +585,44 @@ TrieDb::TrieDb(
     } // was init to 0 and will remain 0 for in memory db
     BinaryDbLoader loader{db_, buf_size, curr_block_id_};
     loader.load(accounts, code);
+    load_latest_cursors();
+}
+
+void TrieDb::load_latest_cursors()
+{
+    if (db_.root().is_valid()) {
+        auto res = db_.get(
+            db_.root(),
+            serialize_as_big_endian<BLOCK_NUM_BYTES>(curr_block_id_));
+        MONAD_ASSERT(res.has_value());
+        curr_trie_cursor_ = res.value();
+        res = db_.get(curr_trie_cursor_, state_nibbles);
+        MONAD_ASSERT(res.has_value());
+        state_cursor_ = res.value();
+        res = db_.get(curr_trie_cursor_, code_nibbles);
+        MONAD_ASSERT(res.has_value());
+        code_cursor_ = res.value();
+    }
+}
+
+Result<NodeCursor> TrieDb::access_account(Address const &addr)
+{
+    if (!state_cursor_.is_valid()) {
+        return system_error2::errc::no_such_file_or_directory;
+    }
+    return db_.get(state_cursor_, to_key(addr));
 }
 
 TrieDb::~TrieDb() = default;
 
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
-    auto const value = db_.get(
-        concat(state_nibble, NibblesView{to_key(addr)}), curr_block_id_);
-    if (!value.has_value()) {
+    auto const res = access_account(addr);
+    if (!res.has_value()) {
         return std::nullopt;
     }
 
-    auto encoded_account = value.value();
+    auto encoded_account = res.value().node->value();
     auto acct = decode_account_db(encoded_account);
     MONAD_DEBUG_ASSERT(!acct.has_error());
     MONAD_DEBUG_ASSERT(encoded_account.empty());
@@ -604,34 +630,48 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     return acct.value();
 }
 
-bytes32_t TrieDb::read_storage(Address const &addr, bytes32_t const &key)
+bytes32_t
+TrieDb::read_storage(NodeCursor const account_it, bytes32_t const &key)
 {
-    auto const value = db_.get(
-        concat(
-            state_nibble, NibblesView{to_key(addr)}, NibblesView{to_key(key)}),
-        curr_block_id_);
-    if (!value.has_value()) {
+    if (!account_it.is_valid()) {
         return {};
     }
-    MONAD_ASSERT(value.value().size() <= sizeof(bytes32_t));
+    auto const res = db_.get(account_it, to_key(key));
+    if (!res.has_value()) {
+        return {};
+    }
+    auto value = res.value().node->value();
+    MONAD_ASSERT(value.size() <= sizeof(bytes32_t));
     bytes32_t ret;
     std::copy_n(
-        value.value().begin(),
-        value.value().size(),
-        ret.bytes + sizeof(bytes32_t) - value.value().size());
+        value.begin(),
+        value.size(),
+        ret.bytes + sizeof(bytes32_t) - value.size());
     return ret;
 };
+
+bytes32_t TrieDb::read_storage(Address const &addr, bytes32_t const &key)
+{
+    auto account_res = access_account(addr);
+    if (!account_res.has_value()) {
+        return {};
+    }
+    return read_storage(account_res.value(), key);
+}
 
 std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
 {
     // TODO read code analysis object
-    auto const value = db_.get(
-        concat(code_nibble, NibblesView{to_byte_string_view(code_hash.bytes)}),
-        curr_block_id_);
-    if (!value.has_value()) {
+    if (!code_cursor_.is_valid()) {
         return std::make_shared<CodeAnalysis>(analyze({}));
     }
-    return std::make_shared<CodeAnalysis>(analyze(value.assume_value()));
+    auto const res =
+        db_.get(code_cursor_, to_byte_string_view(code_hash.bytes));
+    if (!res.has_value()) {
+        return std::make_shared<CodeAnalysis>(analyze({}));
+    }
+    return std::make_shared<CodeAnalysis>(
+        analyze(res.assume_value().node->value()));
 }
 
 void TrieDb::commit(
@@ -718,6 +758,7 @@ void TrieDb::commit(
     db_.upsert(std::move(updates), curr_block_id_);
     MONAD_ASSERT(machine_->trie_section == Machine::TrieType::Prefix);
 
+    load_latest_cursors();
     update_alloc_.clear();
     bytes_alloc_.clear();
 }
@@ -735,13 +776,13 @@ void TrieDb::create_and_prune_block_history(uint64_t) const {
 
 bytes32_t TrieDb::state_root()
 {
-    auto const value = db_.get_data(state_nibbles, curr_block_id_);
-    if (!value.has_value() || value.value().empty()) {
+    if (!state_cursor_.is_valid() || state_cursor_.node->data().empty()) {
         return NULL_ROOT;
     }
     bytes32_t root;
-    MONAD_ASSERT(value.value().size() == sizeof(bytes32_t));
-    std::copy_n(value.value().data(), sizeof(bytes32_t), root.bytes);
+    MONAD_ASSERT(state_cursor_.node->data().size() == sizeof(bytes32_t));
+    std::copy_n(
+        state_cursor_.node->data().data(), sizeof(bytes32_t), root.bytes);
     return root;
 }
 

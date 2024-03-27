@@ -32,6 +32,12 @@ class TrieDb final : public ::monad::DbRW
     uint64_t curr_block_id_;
     bool is_on_disk_;
 
+    mpt::NodeCursor curr_trie_cursor_{}, state_cursor_{}, code_cursor_{};
+
+    bytes32_t read_storage(mpt::NodeCursor account_it, bytes32_t const &key);
+    Result<mpt::NodeCursor> access_account(Address const &);
+    void load_latest_cursors();
+
 public:
     TrieDb(std::optional<mpt::OnDiskDbConfig> const &);
     // parse from binary

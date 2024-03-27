@@ -1,9 +1,9 @@
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
-#include <monad/execution/fmt/trace_fmt.hpp>
+#include <monad/execution/fmt/trace_fmt.hpp> // NOLINT
 #include <monad/execution/trace.hpp>
 
-#include <quill/Quill.h>
+#include <quill/Quill.h> // NOLINT
 #include <quill/detail/LogMacros.h>
 
 #include <chrono>

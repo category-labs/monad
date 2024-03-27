@@ -151,6 +151,17 @@ int main(int const argc, char const *argv[])
 
     if (load_snapshot.empty()) {
         init_block_number = db.current_block_number();
+        LOG_INFO("Loading current root into memory");
+        auto const start_time = std::chrono::steady_clock::now();
+        auto const nodes_loaded = db.prefetch_current_root();
+        auto const finish_time = std::chrono::steady_clock::now();
+        auto const elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+            finish_time - start_time);
+        LOG_INFO(
+            "Finish loading current root into memory, time_elapsed = {}, "
+            "nodes_loaded = {}",
+            elapsed,
+            nodes_loaded);
     }
     if (init_block_number == 0) {
         MONAD_ASSERT(*has_genesis_file);

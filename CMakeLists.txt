@@ -6,6 +6,7 @@ option(ASAN "Turn on Address Sanitizer")
 option(UBSAN "Turn on Undefined Behavior Sanitizer")
 option(EVMONE_TRACING
        "Enable instruction-level tracing for the evmone interpreter" OFF)
+option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(cmake/test.cmake)
 

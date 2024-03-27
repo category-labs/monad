@@ -54,10 +54,13 @@ public:
     std::optional<uint64_t> get_latest_block_id() const;
     std::optional<uint64_t> get_earliest_block_id() const;
 
-    // Only valid for RO. True if this DB is the latest DB (fast)
+    // Always true if not RO. True if this DB is the latest DB (fast)
     bool is_latest() const;
-    // Only valid for RO. Load the latest DB root
+    // Load the latest DB root
     void load_latest();
+    // Load the tree of nodes in the current DB root as far as the caching
+    // policy allows. RW only.
+    size_t prefetch();
 };
 
 MONAD_MPT_NAMESPACE_END

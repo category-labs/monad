@@ -1,4 +1,5 @@
 #include <monad/mpt/config.hpp>
+
 #include <monad/mpt/node.hpp>
 
 #include <gtest/gtest.h>

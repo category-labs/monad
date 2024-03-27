@@ -4,7 +4,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
-#include <quill/Quill.h>
+#include <quill/Quill.h> // NOLINT
 #include <quill/detail/LogMacros.h>
 
 #include <chrono>

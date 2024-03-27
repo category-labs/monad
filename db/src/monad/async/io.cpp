@@ -328,7 +328,7 @@ void AsyncIO::submit_request_(
     MONAD_DEBUG_ASSERT(uring_data != nullptr);
     assert((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
 #ifndef NDEBUG
-    for (auto &buffer : buffers) {
+    for (auto const &buffer : buffers) {
         assert(buffer.iov_base != nullptr);
         memset(buffer.iov_base, 0xff, buffer.iov_len);
     }

@@ -28,6 +28,7 @@
 #include <cerrno>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <iterator>
@@ -51,29 +52,22 @@ MONAD_MPT_NAMESPACE_BEGIN
 
 struct Db::Impl
 {
+    bool upsert_running_{false};
+    bool prefetch_running_{false};
+
     virtual ~Impl() = default;
 
     virtual Node::UniquePtr &root() = 0;
     virtual UpdateAux<> &aux() = 0;
-    virtual void upsert(
+    virtual void upsert_fiber_blocking(
         UpdateList &&, uint64_t, bool enable_compaction,
         bool can_write_to_fast) = 0;
 
     virtual find_result_type
-    find(NodeCursor const &root, NibblesView const &key)
-    {
-        return find_blocking(aux(), root, key);
-    }
-
-    virtual bool is_latest() const
-    {
-        MONAD_ASSERT(false);
-    };
-
-    virtual void load_latest()
-    {
-        MONAD_ASSERT(false);
-    };
+    find_fiber_blocking(NodeCursor const &root, NibblesView const &key) = 0;
+    virtual bool is_latest() const = 0;
+    virtual void load_latest_fiber_blocking() = 0;
+    virtual size_t prefetch_fiber_blocking(uint64_t latest_block_id) = 0;
 };
 
 struct Db::ROOnDisk final : public Db::Impl
@@ -86,7 +80,7 @@ struct Db::ROOnDisk final : public Db::Impl
     chunk_offset_t last_loaded_offset_;
     Node::UniquePtr root_;
 
-    explicit ROOnDisk(ReadOnlyOnDiskDbConfig const &options)
+    ROOnDisk(ReadOnlyOnDiskDbConfig const &options)
         : pool_{[&] -> async::storage_pool {
             async::storage_pool::creation_flags pool_options;
             pool_options.open_read_only = true;
@@ -130,9 +124,16 @@ struct Db::ROOnDisk final : public Db::Impl
         return aux_;
     }
 
-    virtual void upsert(UpdateList &&, uint64_t, bool, bool) override
+    virtual void
+    upsert_fiber_blocking(UpdateList &&, uint64_t, bool, bool) override
     {
         MONAD_ASSERT(false);
+    }
+
+    virtual find_result_type
+    find_fiber_blocking(NodeCursor const &root, NibblesView const &key) override
+    {
+        return find_blocking(aux(), root, key);
     }
 
     virtual bool is_latest() const override
@@ -140,10 +141,18 @@ struct Db::ROOnDisk final : public Db::Impl
         return last_loaded_offset_ == aux_.get_root_offset();
     }
 
-    virtual void load_latest() override
+    virtual void load_latest_fiber_blocking() override
     {
+        if (last_loaded_offset_ == aux_.get_root_offset()) {
+            return;
+        }
         last_loaded_offset_ = aux_.get_root_offset();
         root_.reset(read_node_blocking(pool_, last_loaded_offset_));
+    }
+
+    virtual size_t prefetch_fiber_blocking(uint64_t) override
+    {
+        MONAD_ASSERT(false);
     }
 };
 
@@ -169,11 +178,29 @@ struct Db::InMemory final : public Db::Impl
         return aux_;
     }
 
-    virtual void
-    upsert(UpdateList &&list, uint64_t block_id, bool, bool) override
+    virtual void upsert_fiber_blocking(
+        UpdateList &&list, uint64_t block_id, bool, bool) override
     {
         root_ = aux_.do_update(
             std::move(root_), machine_, std::move(list), block_id, false);
+    }
+
+    virtual find_result_type
+    find_fiber_blocking(NodeCursor const &root, NibblesView const &key) override
+    {
+        return find_blocking(aux(), root, key);
+    }
+
+    virtual bool is_latest() const override
+    {
+        return true;
+    }
+
+    virtual void load_latest_fiber_blocking() override {}
+
+    virtual size_t prefetch_fiber_blocking(uint64_t) override
+    {
+        return 0;
     }
 };
 
@@ -190,8 +217,16 @@ struct Db::RWOnDisk final : public Db::Impl
         bool const can_write_to_fast;
     };
 
-    using Comms =
-        std::variant<std::monostate, fiber_find_request_t, FiberUpsertRequest>;
+    struct FiberLoadAllFromBlockRequest
+    {
+        threadsafe_boost_fibers_promise<size_t> *promise;
+        NodeCursor root;
+        StateMachine &sm;
+    };
+
+    using Comms = std::variant<
+        std::monostate, fiber_find_request_t, FiberUpsertRequest,
+        FiberLoadAllFromBlockRequest>;
     ::moodycamel::ConcurrentQueue<Comms> comms_;
 
     std::mutex lock_;
@@ -270,6 +305,8 @@ struct Db::RWOnDisk final : public Db::Impl
             ::boost::container::deque<
                 threadsafe_boost_fibers_promise<Node::UniquePtr>>
                 upsert_promises;
+            ::boost::container::deque<threadsafe_boost_fibers_promise<size_t>>
+                prefetch_promises;
             /* In case you're wondering why we use a vector for a single
             element, it's because for some odd reason the MoodyCamel concurrent
             queue only supports move only types via its iterator interface. No
@@ -306,6 +343,15 @@ struct Db::RWOnDisk final : public Db::Impl
                             req->version,
                             compaction && req->enable_compaction,
                             req->can_write_to_fast));
+                    }
+                    else if (auto *req = std::get_if<3>(&request.front());
+                             req != nullptr) {
+                        // Ditto to above
+                        prefetch_promises.emplace_back(
+                            std::move(*req->promise));
+                        req->promise = &prefetch_promises.back();
+                        req->promise->set_value(
+                            mpt::load_all(aux, req->sm, req->root));
                     }
                     did_nothing = false;
                 }
@@ -411,8 +457,8 @@ struct Db::RWOnDisk final : public Db::Impl
     }
 
     // threadsafe
-    virtual find_result_type
-    find(NodeCursor const &start, NibblesView const &key) override
+    virtual find_result_type find_fiber_blocking(
+        NodeCursor const &start, NibblesView const &key) override
     {
         threadsafe_boost_fibers_promise<find_result_type> promise;
         fiber_find_request_t req{
@@ -428,7 +474,7 @@ struct Db::RWOnDisk final : public Db::Impl
     }
 
     // threadsafe
-    virtual void upsert(
+    virtual void upsert_fiber_blocking(
         UpdateList &&updates, uint64_t const version,
         bool const enable_compaction, bool const can_write_to_fast) override
     {
@@ -448,6 +494,37 @@ struct Db::RWOnDisk final : public Db::Impl
             cond_.notify_one();
         }
         root_ = fut.get();
+    }
+
+    virtual bool is_latest() const override
+    {
+        return true;
+    }
+
+    virtual void load_latest_fiber_blocking() override {}
+
+    // threadsafe
+    virtual size_t prefetch_fiber_blocking(uint64_t latest_block_id) override
+    {
+        auto const block_id_prefix =
+            serialize_as_big_endian<BLOCK_NUM_BYTES>(latest_block_id);
+        NibblesView const block_nv{block_id_prefix};
+        auto res = find_fiber_blocking(*root(), block_nv);
+        for (uint8_t n = 0; n < block_nv.nibble_size(); ++n) {
+            machine_.down(block_nv.get(n));
+        }
+        threadsafe_boost_fibers_promise<size_t> promise;
+        auto fut = promise.get_future();
+        comms_.enqueue(FiberLoadAllFromBlockRequest{
+            .promise = &promise, .root = res.first, .sm = machine_});
+        // promise is racily emptied after this point
+        if (worker_->sleeping.load(std::memory_order_acquire)) {
+            std::unique_lock const g(lock_);
+            cond_.notify_one();
+        }
+        size_t const nodes_loaded = fut.get();
+        machine_.up(block_nv.nibble_size());
+        return nodes_loaded;
     }
 };
 
@@ -472,7 +549,7 @@ Db::~Db() = default;
 Result<NodeCursor> Db::get(NodeCursor root, NibblesView const key) const
 {
     MONAD_ASSERT(impl_);
-    auto const [it, result] = impl_->find(root, key);
+    auto const [it, result] = impl_->find_fiber_blocking(root, key);
     if (result != find_result::success) {
         return DbError::key_not_found;
     }
@@ -522,8 +599,11 @@ void Db::upsert(
     bool const can_write_to_fast)
 {
     MONAD_ASSERT(impl_);
-    impl_->upsert(
+    MONAD_ASSERT(!impl_->upsert_running_);
+    impl_->upsert_running_ = true;
+    impl_->upsert_fiber_blocking(
         std::move(list), block_id, enable_compaction, can_write_to_fast);
+    impl_->upsert_running_ = false;
 }
 
 void Db::traverse(
@@ -572,7 +652,22 @@ bool Db::is_latest() const
 void Db::load_latest()
 {
     MONAD_ASSERT(impl_);
-    impl_->load_latest();
+    impl_->load_latest_fiber_blocking();
+}
+
+size_t Db::prefetch()
+{
+    MONAD_ASSERT(impl_);
+    MONAD_ASSERT(!impl_->prefetch_running_);
+    auto const latest_block_id = get_latest_block_id();
+    if (!latest_block_id.has_value()) {
+        return 0;
+    }
+    impl_->prefetch_running_ = true;
+    size_t const nodes_loaded =
+        impl_->prefetch_fiber_blocking(latest_block_id.value());
+    impl_->prefetch_running_ = false;
+    return nodes_loaded;
 }
 
 MONAD_MPT_NAMESPACE_END

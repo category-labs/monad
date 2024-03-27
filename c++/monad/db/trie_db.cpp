@@ -4,8 +4,8 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/core/fmt/bytes_fmt.hpp>
-#include <monad/core/fmt/int_fmt.hpp>
+#include <monad/core/fmt/bytes_fmt.hpp> // NOLINT
+#include <monad/core/fmt/int_fmt.hpp> // NOLINT
 #include <monad/core/int.hpp>
 #include <monad/core/keccak.h>
 #include <monad/core/likely.h>
@@ -21,7 +21,7 @@
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/nibbles_view.hpp>
-#include <monad/mpt/nibbles_view_fmt.hpp>
+#include <monad/mpt/nibbles_view_fmt.hpp> // NOLINT
 #include <monad/mpt/node.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/mpt/state_machine.hpp>
@@ -516,7 +516,7 @@ struct TrieDb::OnDiskMachine final : public TrieDb::Machine
 
     virtual bool cache() const override
     {
-        return depth <= cache_depth;
+        return depth <= cache_depth && trie_section != TrieType::Receipt;
     }
 
     virtual bool compact() const override
@@ -860,6 +860,13 @@ nlohmann::json TrieDb::to_json()
     db_.traverse(state_nibbles, traverse, curr_block_id_);
 
     return traverse.json;
+}
+
+size_t TrieDb::prefetch_current_root()
+{
+    size_t const nodes_loaded = db_.prefetch();
+    MONAD_ASSERT(machine_->trie_section == Machine::TrieType::Prefix);
+    return nodes_loaded;
 }
 
 uint64_t TrieDb::current_block_number() const

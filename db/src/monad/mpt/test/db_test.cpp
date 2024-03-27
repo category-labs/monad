@@ -1,5 +1,7 @@
 #include "test_fixtures_base.hpp"
 
+#include <gtest/gtest.h>
+
 #include <monad/async/config.hpp>
 #include <monad/async/util.hpp>
 #include <monad/core/assert.h>
@@ -13,6 +15,7 @@
 #include <monad/mpt/trie.hpp>
 #include <monad/mpt/update.hpp>
 #include <monad/mpt/util.hpp>
+
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <gtest/gtest.h>
@@ -33,6 +36,7 @@
 #include <utility>
 #include <vector>
 
+#include <stdlib.h>
 #include <unistd.h>
 
 using namespace monad::mpt;

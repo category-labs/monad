@@ -8,7 +8,7 @@
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/state2/block_state.hpp>
-#include <monad/state2/fmt/state_deltas_fmt.hpp>
+#include <monad/state2/fmt/state_deltas_fmt.hpp> // NOLINT
 #include <monad/state2/state_deltas.hpp>
 #include <monad/state3/state.hpp>
 

@@ -9,6 +9,7 @@
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/node.hpp>
 #include <monad/mpt/trie.hpp>
+
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <atomic>
@@ -93,7 +94,7 @@ TEST_F(ReadOnlyDBTest, read_only_dbs_track_writable_db)
 
         // Now try to keep up ...
         while (done.load(std::memory_order_acquire) > 0) {
-            const auto root_offset = aux.get_root_offset();
+            auto const root_offset = aux.get_root_offset();
             if (root_offset == last_root_offset) {
                 std::this_thread::yield();
                 continue;

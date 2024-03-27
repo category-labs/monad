@@ -85,6 +85,37 @@ struct async_write_node_result
     erased_connected_operation *io_state;
 };
 
+template <receiver Receiver>
+    requires(
+        MONAD_ASYNC_NAMESPACE::compatible_sender_receiver<
+            read_short_update_sender, Receiver> &&
+        MONAD_ASYNC_NAMESPACE::compatible_sender_receiver<
+            read_long_update_sender, Receiver> &&
+        Receiver::lifetime_managed_internally)
+void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
+{
+    [[likely]] if (
+        receiver.bytes_to_read <=
+        MONAD_ASYNC_NAMESPACE::AsyncIO::READ_BUFFER_SIZE) {
+        read_short_update_sender sender(receiver);
+        auto iostate =
+            aux.io->make_connected(std::move(sender), std::move(receiver));
+        iostate->initiate();
+        // TEMPORARY UNTIL ALL THIS GETS BROKEN OUT: Release
+        // management until i/o completes
+        iostate.release();
+    }
+    else {
+        read_long_update_sender sender(receiver);
+        using connected_type =
+            decltype(connect(*aux.io, std::move(sender), std::move(receiver)));
+        auto *iostate = new connected_type(
+            connect(*aux.io, std::move(sender), std::move(receiver)));
+        iostate->initiate();
+        // drop iostate
+    }
+}
+
 // invoke at the end of each block upsert
 chunk_offset_t write_new_root_node(UpdateAuxImpl &, Node &);
 
@@ -131,6 +162,109 @@ Node::UniquePtr upsert(
         auto g2(aux.set_current_upsert_tid());
         return impl();
     }
+}
+
+struct load_all_impl_
+{
+    UpdateAuxImpl &aux;
+
+    size_t nodes_loaded{0};
+
+    struct receiver_t
+    {
+        static constexpr bool lifetime_managed_internally = true;
+
+        load_all_impl_ *impl;
+        NodeCursor root;
+        unsigned const branch_index;
+        std::unique_ptr<StateMachine> sm;
+
+        chunk_offset_t rd_offset{0, 0};
+        unsigned bytes_to_read;
+        uint16_t buffer_off;
+
+        receiver_t(
+            load_all_impl_ *impl, NodeCursor root, unsigned char const branch,
+            std::unique_ptr<StateMachine> sm)
+            : impl(impl)
+            , root(root)
+            , branch_index(branch)
+            , sm(std::move(sm))
+        {
+            chunk_offset_t const offset = root.node->fnext(branch_index);
+            auto const num_pages_to_load_node =
+                node_disk_pages_spare_15{offset}.to_pages();
+            bytes_to_read =
+                static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
+            rd_offset = offset;
+            auto const new_offset =
+                round_down_align<DISK_PAGE_BITS>(offset.offset);
+            MONAD_DEBUG_ASSERT(new_offset <= chunk_offset_t::max_offset);
+            rd_offset.offset = new_offset & chunk_offset_t::max_offset;
+            buffer_off = uint16_t(offset.offset - rd_offset.offset);
+        }
+
+        template <class ResultType>
+        void set_value(erased_connected_operation *io_state, ResultType buffer_)
+        {
+            MONAD_ASSERT(buffer_);
+            // load node from read buffer
+            Node *node;
+            {
+                auto g(impl->aux.unique_lock());
+                MONAD_ASSERT(root.node->next(branch_index) == nullptr);
+                node = detail::deserialize_node_from_receiver_result(
+                           std::move(buffer_), buffer_off, io_state)
+                           .release();
+                root.node->set_next(branch_index, node);
+                impl->nodes_loaded++;
+            }
+            impl->process(NodeCursor{*node}, *sm);
+        }
+    };
+
+    explicit constexpr load_all_impl_(UpdateAuxImpl &aux)
+        : aux(aux)
+    {
+    }
+
+    void process(NodeCursor const node_cursor, StateMachine &sm)
+    {
+        Node *const node = node_cursor.node;
+        for (unsigned char i = 0; i < 16; ++i) {
+            if (node->mask & (1u << i)) {
+                auto const idx = node->to_child_index(i);
+                NibblesView const nv(
+                    node_cursor.prefix_index,
+                    node->path_nibble_index_end,
+                    node->path_data());
+                for (uint8_t n = 0; n < nv.nibble_size(); n++) {
+                    sm.down(nv.get(n));
+                }
+                sm.down(i);
+                if (sm.cache()) {
+                    auto *const next = node->next(idx);
+                    if (next == nullptr) {
+                        receiver_t receiver(
+                            this, *node, uint8_t(idx), sm.clone());
+                        async_read(aux, std::move(receiver));
+                    }
+                    else {
+                        process(NodeCursor{*next}, sm);
+                    }
+                }
+                sm.up(1 + nv.nibble_size());
+            }
+        }
+    }
+};
+
+size_t load_all(UpdateAuxImpl &aux, StateMachine &sm, NodeCursor const root)
+{
+    load_all_impl_ impl(aux);
+    impl.process(root, sm);
+    aux.io->wait_until_done();
+    return impl.nodes_loaded;
 }
 
 /////////////////////////////////////////////////////
@@ -364,37 +498,6 @@ struct compaction_receiver
         }
     }
 };
-
-template <receiver Receiver>
-    requires(
-        MONAD_ASYNC_NAMESPACE::compatible_sender_receiver<
-            read_short_update_sender, Receiver> &&
-        MONAD_ASYNC_NAMESPACE::compatible_sender_receiver<
-            read_long_update_sender, Receiver> &&
-        Receiver::lifetime_managed_internally)
-void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
-{
-    [[likely]] if (
-        receiver.bytes_to_read <=
-        MONAD_ASYNC_NAMESPACE::AsyncIO::READ_BUFFER_SIZE) {
-        read_short_update_sender sender(receiver);
-        auto iostate =
-            aux.io->make_connected(std::move(sender), std::move(receiver));
-        iostate->initiate();
-        // TEMPORARY UNTIL ALL THIS GETS BROKEN OUT: Release
-        // management until i/o completes
-        iostate.release();
-    }
-    else {
-        read_long_update_sender sender(receiver);
-        using connected_type =
-            decltype(connect(*aux.io, std::move(sender), std::move(receiver)));
-        auto *iostate = new connected_type(
-            connect(*aux.io, std::move(sender), std::move(receiver)));
-        iostate->initiate();
-        // drop iostate
-    }
-}
 
 /////////////////////////////////////////////////////
 // Create Node

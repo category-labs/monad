@@ -749,6 +749,9 @@ public:
 Node::UniquePtr
 upsert(UpdateAuxImpl &, StateMachine &, Node::UniquePtr old, UpdateList &&);
 
+// load all nodes as far as caching policy would allow
+size_t load_all(UpdateAuxImpl &, StateMachine &, NodeCursor);
+
 //////////////////////////////////////////////////////////////////////////////
 
 enum class find_result : uint8_t

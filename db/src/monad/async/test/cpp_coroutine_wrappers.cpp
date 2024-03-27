@@ -126,15 +126,15 @@ TEST_F(CppCoroutineWrappers, resume_execution_upon)
         thread_ids;
     std::atomic<bool> done{false};
     auto impl = [&]() -> awaitables::eager<void> {
-        const pid_t original_tid = gettid();
+        pid_t const original_tid = gettid();
         MONAD_ASSERT(thread_ids.push(original_tid));
         (void)co_await co_resume_execution_upon(*other);
-        const pid_t new_tid = gettid();
+        pid_t const new_tid = gettid();
         MONAD_ASSERT(thread_ids.push(new_tid));
         // Can't complete on a thread different to original, it would be a
         // race.
         (void)co_await co_resume_execution_upon(*shared_state_()->testio);
-        const pid_t final_tid = gettid();
+        pid_t const final_tid = gettid();
         MONAD_ASSERT(thread_ids.push(final_tid));
         done = true;
         co_return;

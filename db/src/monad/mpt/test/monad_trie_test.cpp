@@ -57,6 +57,8 @@
 #include <utility>
 #include <vector>
 
+#include <linux/fs.h>
+
 #undef BLOCK_SIZE // without this concurrentqueue.h gets sad
 #include "concurrentqueue.h"
 
@@ -453,7 +455,6 @@ int main(int argc, char *argv[])
                     std::ifstream s(runtime_reconfig.path);
                     std::string key;
                     std::string equals;
-                    std::string value;
                     while (!s.eof()) {
                         s >> key >> equals;
                         if (equals == "=") {

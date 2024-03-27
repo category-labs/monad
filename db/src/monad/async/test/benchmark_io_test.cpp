@@ -138,7 +138,7 @@ struct shared_state_t
                 std::remove_if(
                     ret.begin(),
                     ret.end(),
-                    [](const auto &x) { return x.second == 0; }),
+                    [](auto const &x) { return x.second == 0; }),
                 ret.end());
             return ret;
         }())
@@ -419,8 +419,8 @@ set it to the desired size beforehand).
 
         auto const begin = std::chrono::steady_clock::now();
         auto print_statistics = [&] {
-            const auto now = std::chrono::steady_clock::now();
-            const auto elapsed =
+            auto const now = std::chrono::steady_clock::now();
+            auto const elapsed =
                 double(std::chrono::duration_cast<std::chrono::milliseconds>(
                            now - begin)
                            .count());

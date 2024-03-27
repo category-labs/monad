@@ -11,6 +11,7 @@
 #include <monad/mpt/state_machine.hpp>
 
 #include <nlohmann/json.hpp>
+#include <tbb/concurrent_hash_map.h>
 
 #include <istream>
 #include <list>
@@ -33,6 +34,14 @@ class TrieDb final : public ::monad::DbRW
     bool is_on_disk_;
 
     mpt::NodeCursor curr_trie_cursor_{}, state_cursor_{}, code_cursor_{};
+
+    using AccountCursorMap = tbb::concurrent_hash_map<Address, mpt::NodeCursor>;
+    using AccountCursorConstAccessor =
+        AccountCursorMap::const_accessor; // for find
+    using AccountCursorAccessor = AccountCursorMap::accessor; // for insert
+    using AccountCursorMapKeyValue = std::pair<Address, mpt::NodeCursor>;
+
+    AccountCursorMap account_cursor_table_{};
 
     bytes32_t read_storage(mpt::NodeCursor account_it, bytes32_t const &key);
     Result<mpt::NodeCursor> access_account(Address const &);

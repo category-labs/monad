@@ -603,6 +603,7 @@ void TrieDb::load_latest_cursors()
         MONAD_ASSERT(res.has_value());
         code_cursor_ = res.value();
     }
+    account_cursor_table_.clear();
 }
 
 Result<NodeCursor> TrieDb::access_account(Address const &addr)
@@ -610,7 +611,21 @@ Result<NodeCursor> TrieDb::access_account(Address const &addr)
     if (!state_cursor_.is_valid()) {
         return system_error2::errc::no_such_file_or_directory;
     }
-    return db_.get(state_cursor_, to_key(addr));
+    // find from account table
+    AccountCursorConstAccessor const_acc;
+    if (!account_cursor_table_.find(const_acc, addr)) {
+        auto res = db_.get(state_cursor_, to_key(addr));
+        if (res.has_value()) {
+            // insert to account cursor table
+            AccountCursorAccessor acc{};
+            AccountCursorMapKeyValue const kv(addr, res.value());
+            if (!account_cursor_table_.insert(acc, kv)) {
+                acc->second = res.value();
+            }
+        }
+        return res;
+    }
+    return const_acc->second;
 }
 
 TrieDb::~TrieDb() = default;

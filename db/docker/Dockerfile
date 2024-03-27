@@ -12,7 +12,7 @@ RUN apt install -y dialog
 
 RUN apt install -y ca-certificates curl gnupg software-properties-common wget
 
-COPY monad-core/scripts/ubuntu-build/ /opt
+COPY core/scripts/ubuntu-build/ /opt
 
 RUN /opt/install-gcc.sh
 RUN /opt/install-clang.sh
@@ -37,12 +37,12 @@ ARG CMAKE_BUILD_TYPE
 
 RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} \
    CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" \
-   ./monad-core/scripts/configure.sh
+   ./core/scripts/configure.sh
 
-RUN cd src && ./monad-core/scripts/build.sh
+RUN cd src && ./core/scripts/build.sh
 
 # Replace the line below with this when you want CI to print exactly where it is hanging at
 # RUN cd src && ctest --output-on-failure -V --test-dir build
 
 # security=insecure for tests which use io_uring
-RUN --security=insecure cd src && PYTHONPATH="monad-core" CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} ./monad-core/scripts/test.sh
+RUN --security=insecure cd src && PYTHONPATH="core" CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} ./core/scripts/test.sh

@@ -52,8 +52,6 @@ int main(int const argc, char const *argv[])
     std::filesystem::path dump_snapshot{};
     std::filesystem::path trace_log = std::filesystem::absolute("trace");
 
-    quill::start(true);
-
     /* Note on triedb block number prefix: in memory triedb remains a single
     version db, with block number prefix always 0. On disk triedb maintains the
     state history where each block state starts after the corresponding block
@@ -69,18 +67,18 @@ int main(int const argc, char const *argv[])
     cli.add_option("--nblocks", nblocks, "number of blocks to execute");
     cli.add_option("--log_level", log_level, "level of logging")
         ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
-    cli.add_option("--nthreads", nthreads, "number of threads. Default is 4.");
-    cli.add_option("--nfibers", nfibers, "number of fibers. Default is 256.");
-    cli.add_flag(
-        "--no-compaction",
-        no_compaction,
-        "do not do compaction. Default is do compaction.");
+    cli.add_option("--nthreads", nthreads, "number of threads")
+        ->default_val(nthreads);
+    cli.add_option("--nfibers", nfibers, "number of fibers")
+        ->default_val(nfibers);
+    cli.add_flag("--no-compaction", no_compaction, "disable compaction")
+        ->default_val(no_compaction);
     cli.add_option(
-        "--sq_thread_cpu",
-        sq_thread_cpu,
-        "sq_thread_cpu field in io_uring_params, to specify the cpu set kernel "
-        "poll thread is bound to in SQPOLL mode. Default is the last CPU in "
-        "the system.");
+           "--sq_thread_cpu",
+           sq_thread_cpu,
+           "sq_thread_cpu field in io_uring_params, to specify the cpu set "
+           "kernel poll thread is bound to in SQPOLL mode")
+        ->default_val(sq_thread_cpu);
     cli.add_option(
         "--db",
         dbname_paths,
@@ -97,9 +95,14 @@ int main(int const argc, char const *argv[])
     try {
         cli.parse(argc, argv);
     }
-    catch (const CLI::CallForHelp &e) {
+    catch (CLI::CallForHelp const &e) {
         return cli.exit(e);
     }
+    catch (CLI::RequiredError const &e) {
+        return cli.exit(e);
+    }
+
+    quill::start(true);
 
 #ifdef ENABLE_TRACING
     quill::FileHandlerConfig handler_cfg;

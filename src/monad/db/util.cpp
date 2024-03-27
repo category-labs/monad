@@ -1,6 +1,6 @@
+#include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/likely.h>
-#include <monad/db/config.hpp>
 #include <monad/db/util.hpp>
 
 #include <nlohmann/json.hpp>
@@ -10,7 +10,7 @@
 #include <fstream>
 #include <string>
 
-MONAD_DB_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 void write_to_file(
     nlohmann::json const &j, std::filesystem::path const &root_path,
@@ -37,4 +37,4 @@ void write_to_file(
         elapsed_ms);
 }
 
-MONAD_DB_NAMESPACE_END
+MONAD_NAMESPACE_END

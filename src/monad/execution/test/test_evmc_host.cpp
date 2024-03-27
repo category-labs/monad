@@ -22,7 +22,7 @@
 
 using namespace monad;
 
-using db_t = db::TrieDb;
+using db_t = TrieDb;
 
 using evmc_host_t = EvmcHost<EVMC_SHANGHAI>;
 

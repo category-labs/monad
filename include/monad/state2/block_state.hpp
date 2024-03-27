@@ -14,12 +14,12 @@ class State;
 
 class BlockState final
 {
-    Db &db_;
+    DbRW &db_;
     StateDeltas state_;
     Code code_;
 
 public:
-    BlockState(Db &);
+    BlockState(DbRW &);
 
     std::optional<Account> read_account(Address const &);
 

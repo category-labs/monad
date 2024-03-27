@@ -17,9 +17,9 @@
 
 MONAD_NAMESPACE_BEGIN
 
-class DbCache final : public Db
+class DbCache final : public DbRW
 {
-    Db &db_;
+    DbRW &db_;
 
     using AccountCache =
         tstarling::ThreadSafeLRUCache<Address, std::optional<Account>>;
@@ -32,7 +32,7 @@ class DbCache final : public Db
     CodeCache code_{40000};
 
 public:
-    DbCache(Db &db)
+    DbCache(DbRW &db)
         : db_{db}
     {
     }

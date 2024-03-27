@@ -1,11 +1,11 @@
 #pragma once
 
+#include <monad/config.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
-#include <monad/db/config.hpp>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/state2/state_deltas.hpp>
 
@@ -15,7 +15,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct Db
+struct DbRO
 {
     virtual std::optional<Account> read_account(Address const &) = 0;
 
@@ -23,14 +23,17 @@ struct Db
 
     virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) = 0;
 
+    virtual bytes32_t state_root() = 0;
+    virtual bytes32_t receipts_root() = 0;
+};
+
+struct DbRW : public DbRO
+{
     virtual void increment_block_number() = 0;
 
     virtual void commit(
         StateDeltas const &, Code const &,
         std::vector<Receipt> const & = {}) = 0;
-
-    virtual bytes32_t state_root() = 0;
-    virtual bytes32_t receipts_root() = 0;
 
     virtual void
     create_and_prune_block_history(uint64_t block_number) const = 0;

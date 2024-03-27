@@ -123,9 +123,9 @@ int main(int const argc, char const *argv[])
                                       .dbname_paths = dbname_paths})
                                 : std::nullopt;
     uint64_t init_block_number = 0;
-    auto db = [&] -> db::TrieDb {
+    auto db = [&] -> TrieDb {
         if (load_snapshot.empty()) {
-            return db::TrieDb{config};
+            return TrieDb{config};
         }
         namespace fs = std::filesystem;
         if (!(fs::is_directory(load_snapshot) &&
@@ -141,7 +141,7 @@ int main(int const argc, char const *argv[])
         LOG_INFO("Loading from binary checkpoint in {}", load_snapshot);
         std::ifstream accounts(load_snapshot / "accounts");
         std::ifstream code(load_snapshot / "code");
-        return db::TrieDb{config, accounts, code, init_block_number};
+        return TrieDb{config, accounts, code, init_block_number};
     }();
 
     if (load_snapshot.empty()) {
@@ -207,7 +207,7 @@ int main(int const argc, char const *argv[])
 
     if (!dump_snapshot.empty()) {
         LOG_INFO("Dump db of block: {}", last_block_number);
-        db::write_to_file(db.to_json(), dump_snapshot, last_block_number);
+        write_to_file(db.to_json(), dump_snapshot, last_block_number);
     }
     return 0;
 }

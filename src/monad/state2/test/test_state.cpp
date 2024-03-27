@@ -54,12 +54,12 @@ namespace
 
     struct InMemoryTrieDbFixture : public ::testing::Test
     {
-        db::TrieDb db{std::nullopt};
+        TrieDb db{std::nullopt};
     };
 
     struct OnDiskTrieDbFixture : public ::testing::Test
     {
-        db::TrieDb db{mpt::OnDiskDbConfig{}};
+        TrieDb db{mpt::OnDiskDbConfig{}};
     };
 }
 

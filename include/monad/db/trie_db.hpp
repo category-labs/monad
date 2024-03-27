@@ -1,8 +1,8 @@
 #pragma once
 
+#include <monad/config.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
-#include <monad/db/config.hpp>
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/mpt/compute.hpp>
@@ -17,49 +17,14 @@
 #include <memory>
 #include <optional>
 
-MONAD_DB_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
-struct Machine : public mpt::StateMachine
+class TrieDb final : public ::monad::DbRW
 {
-    enum class TrieType : uint8_t
-    {
-        Prefix,
-        State,
-        Code,
-        Receipt
-    };
-    uint8_t depth{0};
-    TrieType trie_section{TrieType::Prefix};
-    static constexpr auto prefix_len = 1;
-    static constexpr auto max_depth = mpt::BLOCK_NUM_NIBBLES_LEN + prefix_len +
-                                      sizeof(bytes32_t) * 2 +
-                                      sizeof(bytes32_t) * 2;
+    struct Machine;
+    struct InMemoryMachine;
+    struct OnDiskMachine;
 
-    virtual mpt::Compute &get_compute() const override;
-    virtual void down(unsigned char const nibble) override;
-    virtual void up(size_t const n) override;
-};
-
-struct InMemoryMachine final : public Machine
-{
-    virtual bool cache() const override;
-    virtual bool compact() const override;
-    virtual std::unique_ptr<StateMachine> clone() const override;
-};
-
-struct OnDiskMachine final : public Machine
-{
-    static constexpr auto cache_depth =
-        mpt::BLOCK_NUM_NIBBLES_LEN + prefix_len + 5;
-
-    virtual bool cache() const override;
-    virtual bool compact() const override;
-    virtual std::unique_ptr<StateMachine> clone() const override;
-};
-
-class TrieDb final : public ::monad::Db
-{
-private:
     std::unique_ptr<Machine> machine_;
     ::monad::mpt::Db db_;
     std::list<mpt::Update> update_alloc_;
@@ -74,6 +39,7 @@ public:
         std::optional<mpt::OnDiskDbConfig> const &, std::istream &accounts,
         std::istream &code, uint64_t init_block_number = 0,
         size_t buf_size = 1ul << 31);
+    ~TrieDb();
 
     virtual std::optional<Account> read_account(Address const &) override;
     virtual bytes32_t
@@ -91,4 +57,4 @@ public:
     uint64_t current_block_number() const;
 };
 
-MONAD_DB_NAMESPACE_END
+MONAD_NAMESPACE_END

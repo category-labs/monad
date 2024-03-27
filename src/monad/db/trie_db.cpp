@@ -1,3 +1,4 @@
+#include <monad/config.hpp>
 #include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/fmt/int_fmt.hpp>
 #include <monad/core/int.hpp>
@@ -5,7 +6,6 @@
 #include <monad/core/rlp/int_rlp.hpp>
 #include <monad/core/rlp/receipt_rlp.hpp>
 #include <monad/core/unaligned.hpp>
-#include <monad/db/config.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/mpt/nibbles_view_fmt.hpp>
 #include <monad/mpt/traverse.hpp>
@@ -26,9 +26,47 @@
 #include <deque>
 #include <set>
 
-MONAD_DB_NAMESPACE_BEGIN
+MONAD_NAMESPACE_BEGIN
 
 using namespace monad::mpt;
+
+struct TrieDb::Machine : public mpt::StateMachine
+{
+    enum class TrieType : uint8_t
+    {
+        Prefix,
+        State,
+        Code,
+        Receipt
+    };
+    uint8_t depth{0};
+    TrieType trie_section{TrieType::Prefix};
+    static constexpr auto prefix_len = 1;
+    static constexpr auto max_depth = mpt::BLOCK_NUM_NIBBLES_LEN + prefix_len +
+                                      sizeof(bytes32_t) * 2 +
+                                      sizeof(bytes32_t) * 2;
+
+    virtual mpt::Compute &get_compute() const override;
+    virtual void down(unsigned char const nibble) override;
+    virtual void up(size_t const n) override;
+};
+
+struct TrieDb::InMemoryMachine final : public TrieDb::Machine
+{
+    virtual bool cache() const override;
+    virtual bool compact() const override;
+    virtual std::unique_ptr<StateMachine> clone() const override;
+};
+
+struct TrieDb::OnDiskMachine final : public TrieDb::Machine
+{
+    static constexpr auto cache_depth =
+        mpt::BLOCK_NUM_NIBBLES_LEN + prefix_len + 5;
+
+    virtual bool cache() const override;
+    virtual bool compact() const override;
+    virtual std::unique_ptr<StateMachine> clone() const override;
+};
 
 namespace
 {
@@ -336,12 +374,12 @@ namespace
     };
 }
 
-std::unique_ptr<StateMachine> InMemoryMachine::clone() const
+std::unique_ptr<StateMachine> TrieDb::InMemoryMachine::clone() const
 {
     return std::make_unique<InMemoryMachine>(*this);
 }
 
-void Machine::down(unsigned char const nibble)
+void TrieDb::Machine::down(unsigned char const nibble)
 {
     ++depth;
     MONAD_ASSERT(depth <= max_depth);
@@ -363,7 +401,7 @@ void Machine::down(unsigned char const nibble)
     }
 }
 
-void Machine::up(size_t const n)
+void TrieDb::Machine::up(size_t const n)
 {
     MONAD_ASSERT(n <= depth);
     depth -= static_cast<uint8_t>(n);
@@ -372,7 +410,7 @@ void Machine::up(size_t const n)
     }
 }
 
-Compute &Machine::get_compute() const
+Compute &TrieDb::Machine::get_compute() const
 {
     static EmptyCompute empty_compute;
 
@@ -413,27 +451,27 @@ Compute &Machine::get_compute() const
     }
 }
 
-bool InMemoryMachine::cache() const
+bool TrieDb::InMemoryMachine::cache() const
 {
     return true;
 }
 
-bool InMemoryMachine::compact() const
+bool TrieDb::InMemoryMachine::compact() const
 {
     return false;
 }
 
-std::unique_ptr<StateMachine> OnDiskMachine::clone() const
+std::unique_ptr<StateMachine> TrieDb::OnDiskMachine::clone() const
 {
     return std::make_unique<OnDiskMachine>(*this);
 }
 
-bool OnDiskMachine::cache() const
+bool TrieDb::OnDiskMachine::cache() const
 {
     return depth <= cache_depth;
 }
 
-bool OnDiskMachine::compact() const
+bool TrieDb::OnDiskMachine::compact() const
 {
     return depth >= BLOCK_NUM_NIBBLES_LEN;
 }
@@ -493,6 +531,8 @@ TrieDb::TrieDb(
     BinaryDbLoader loader{db_, buf_size, curr_block_id_};
     loader.load(accounts, code);
 }
+
+TrieDb::~TrieDb() {}
 
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
@@ -774,4 +814,4 @@ uint64_t TrieDb::current_block_number() const
     return curr_block_id_;
 }
 
-MONAD_DB_NAMESPACE_END
+MONAD_NAMESPACE_END

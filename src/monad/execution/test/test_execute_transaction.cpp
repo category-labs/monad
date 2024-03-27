@@ -21,7 +21,7 @@
 
 using namespace monad;
 
-using db_t = db::TrieDb;
+using db_t = TrieDb;
 
 TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 {

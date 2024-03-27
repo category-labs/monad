@@ -19,7 +19,7 @@
 
 using namespace monad;
 
-using db_t = db::TrieDb;
+using db_t = TrieDb;
 
 constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 constexpr auto b{0x5353535353535353535353535353535353535353_address};

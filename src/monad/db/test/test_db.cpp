@@ -20,7 +20,6 @@
 #include <string>
 
 using namespace monad;
-using namespace monad::db;
 
 namespace
 {

@@ -1,8 +1,11 @@
 #include <monad/config.hpp>
+#include <monad/core/assert.h>
 #include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/fmt/int_fmt.hpp>
 #include <monad/core/int.hpp>
+#include <monad/core/likely.h>
 #include <monad/core/rlp/account_rlp.hpp>
+#include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
 #include <monad/core/rlp/receipt_rlp.hpp>
 #include <monad/core/unaligned.hpp>
@@ -11,6 +14,8 @@
 #include <monad/mpt/traverse.hpp>
 #include <monad/mpt/util.hpp>
 #include <monad/rlp/encode2.hpp>
+
+#include <boost/outcome/try.hpp>
 
 #include <evmone/baseline.hpp>
 
@@ -50,6 +55,36 @@ namespace
             sizeof(bytes32_t)};
     }
 
+    byte_string encode_account_db(Account const &account)
+    {
+        byte_string encoded_account;
+        encoded_account += rlp::encode_unsigned(account.nonce);
+        encoded_account += rlp::encode_unsigned(account.balance);
+        if (account.code_hash != NULL_HASH) {
+            encoded_account += rlp::encode_bytes32(account.code_hash);
+        }
+        return rlp::encode_list2(encoded_account);
+    }
+
+    Result<Account> decode_account_db(byte_string_view &enc)
+    {
+        BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
+
+        Account acct;
+        BOOST_OUTCOME_TRY(acct.nonce, rlp::decode_unsigned<uint64_t>(payload));
+        BOOST_OUTCOME_TRY(
+            acct.balance, rlp::decode_unsigned<uint256_t>(payload));
+        if (!payload.empty()) {
+            BOOST_OUTCOME_TRY(acct.code_hash, rlp::decode_bytes32(payload));
+        }
+
+        if (MONAD_UNLIKELY(!payload.empty())) {
+            return rlp::DecodeError::InputTooLong;
+        }
+
+        return acct;
+    }
+
     struct ComputeAccountLeaf
     {
         static byte_string compute(Node const &node)
@@ -62,7 +97,7 @@ namespace
             }
 
             auto encoded_account = node.value();
-            auto const acct = rlp::decode_account(encoded_account);
+            auto const acct = decode_account_db(encoded_account);
             MONAD_ASSERT(!acct.has_error());
             MONAD_ASSERT(encoded_account.empty());
             bytes32_t storage_root = NULL_ROOT;
@@ -307,7 +342,7 @@ namespace
 
             return Update{
                 .key = curr.substr(0, sizeof(bytes32_t)),
-                .value = bytes_alloc_.emplace_back(rlp::encode_account(Account{
+                .value = bytes_alloc_.emplace_back(encode_account_db(Account{
                     .balance = unaligned_load<uint256_t>(
                         curr.substr(balance_offset, sizeof(uint256_t)).data()),
                     .code_hash = unaligned_load<bytes32_t>(
@@ -532,7 +567,7 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     }
 
     auto encoded_account = value.value();
-    auto acct = rlp::decode_account(encoded_account);
+    auto acct = decode_account_db(encoded_account);
     MONAD_DEBUG_ASSERT(!acct.has_error());
     MONAD_DEBUG_ASSERT(encoded_account.empty());
     acct.value().incarnation = 0;
@@ -596,7 +631,7 @@ void TrieDb::commit(
                 }
             }
             value =
-                bytes_alloc_.emplace_back(rlp::encode_account(account.value()));
+                bytes_alloc_.emplace_back(encode_account_db(account.value()));
         }
 
         if (!storage_updates.empty() || delta.account.first != account) {
@@ -749,7 +784,7 @@ nlohmann::json TrieDb::to_json()
 
             auto encoded_account = node.value();
 
-            auto acct = rlp::decode_account(encoded_account);
+            auto acct = decode_account_db(encoded_account);
             MONAD_DEBUG_ASSERT(!acct.has_error());
             MONAD_DEBUG_ASSERT(encoded_account.empty());
 

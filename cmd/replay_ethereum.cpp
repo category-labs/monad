@@ -67,18 +67,14 @@ int main(int const argc, char const *argv[])
     cli.add_option("--nblocks", nblocks, "number of blocks to execute");
     cli.add_option("--log_level", log_level, "level of logging")
         ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
-    cli.add_option("--nthreads", nthreads, "number of threads")
-        ->default_val(nthreads);
-    cli.add_option("--nfibers", nfibers, "number of fibers")
-        ->default_val(nfibers);
-    cli.add_flag("--no-compaction", no_compaction, "disable compaction")
-        ->default_val(no_compaction);
+    cli.add_option("--nthreads", nthreads, "number of threads");
+    cli.add_option("--nfibers", nfibers, "number of fibers");
+    cli.add_flag("--no-compaction", no_compaction, "disable compaction");
     cli.add_option(
-           "--sq_thread_cpu",
-           sq_thread_cpu,
-           "sq_thread_cpu field in io_uring_params, to specify the cpu set "
-           "kernel poll thread is bound to in SQPOLL mode")
-        ->default_val(sq_thread_cpu);
+        "--sq_thread_cpu",
+        sq_thread_cpu,
+        "sq_thread_cpu field in io_uring_params, to specify the cpu set "
+        "kernel poll thread is bound to in SQPOLL mode");
     cli.add_option(
         "--db",
         dbname_paths,

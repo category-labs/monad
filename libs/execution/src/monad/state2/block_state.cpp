@@ -7,6 +7,7 @@
 #include <monad/core/receipt.hpp>
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
+#include <monad/execution/trace.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/fmt/state_deltas_fmt.hpp> // NOLINT
 #include <monad/state2/state_deltas.hpp>
@@ -192,6 +193,7 @@ void BlockState::merge(State const &state)
 
 void BlockState::commit(std::vector<Receipt> const &receipts)
 {
+    TRACE_TXN_EVENT(StartCommit);
     db_.increment_block_number();
     db_.commit(state_, code_, receipts);
 }

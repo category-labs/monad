@@ -64,6 +64,8 @@ enum class TraceType : uint8_t
     EndReadStorage = 15,
     StartReadCode = 16,
     EndReadCode = 17,
+    StartCommit = 18,
+    EndCommit = 19,
 };
 
 struct TraceEvent

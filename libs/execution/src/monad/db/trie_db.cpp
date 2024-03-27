@@ -18,6 +18,7 @@
 #include <monad/core/unaligned.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/execution/code_analysis.hpp>
+#include <monad/execution/trace.hpp>
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/nibbles_view.hpp>

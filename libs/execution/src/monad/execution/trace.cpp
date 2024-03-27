@@ -40,6 +40,8 @@ TraceTimer::~TraceTimer()
             return TraceType::EndReadStorage;
         case TraceType::StartReadCode:
             return TraceType::EndReadCode;
+        case TraceType::StartCommit:
+            return TraceType::EndCommit;
         default:
             MONAD_ASSERT(false);
         }

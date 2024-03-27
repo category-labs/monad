@@ -27,6 +27,8 @@ class TraceType(IntEnum):
     EndReadStorage = 15
     StartReadCode = 16
     EndReadCode = 17
+    StartCommit = 18
+    EndCommit = 19
 
 
 # Quill writes a \n after every log (see first line of

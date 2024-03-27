@@ -259,34 +259,6 @@ struct Db::OnDisk
     // threadsafe
     find_result_type find_fiber_blocking(NodeCursor start, NibblesView key)
     {
-#if 0
-        // Do speculative check of the cache before going to concurrent queue
-        // Disabled for now as UpdateAux would need mutex configured
-        struct receiver_t
-        {
-            std::optional<find_request_sender::result_type::value_type> out;
-
-            void set_value(
-                MONAD_ASYNC_NAMESPACE::erased_connected_operation *,
-                find_request_sender::result_type res)
-            {
-                MONAD_ASSERT(res);
-                out = std::move(res).assume_value();
-            }
-        };
-
-        auto g(worker->aux.shared_lock());
-        auto state = MONAD_ASYNC_NAMESPACE::connect(
-            find_request_sender(worker->aux, start, key), receiver_t{});
-        // This will complete immediately, as we are not on the triedb
-        // thread
-        state.initiate();
-        MONAD_ASSERT(state.receiver().out.has_value());
-        auto const [node, result] = *state.receiver().out;
-        if (result != find_result::need_to_continue_in_io_thread) {
-            return {node, result};
-        }
-#endif
         threadsafe_boost_fibers_promise<find_result_type> promise;
         fiber_find_request_t req{
             .promise = &promise, .start = start, .key = key};

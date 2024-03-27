@@ -30,44 +30,6 @@ MONAD_NAMESPACE_BEGIN
 
 using namespace monad::mpt;
 
-struct TrieDb::Machine : public mpt::StateMachine
-{
-    enum class TrieType : uint8_t
-    {
-        Prefix,
-        State,
-        Code,
-        Receipt
-    };
-    uint8_t depth{0};
-    TrieType trie_section{TrieType::Prefix};
-    static constexpr auto prefix_len = 1;
-    static constexpr auto max_depth = mpt::BLOCK_NUM_NIBBLES_LEN + prefix_len +
-                                      sizeof(bytes32_t) * 2 +
-                                      sizeof(bytes32_t) * 2;
-
-    virtual mpt::Compute &get_compute() const override;
-    virtual void down(unsigned char const nibble) override;
-    virtual void up(size_t const n) override;
-};
-
-struct TrieDb::InMemoryMachine final : public TrieDb::Machine
-{
-    virtual bool cache() const override;
-    virtual bool compact() const override;
-    virtual std::unique_ptr<StateMachine> clone() const override;
-};
-
-struct TrieDb::OnDiskMachine final : public TrieDb::Machine
-{
-    static constexpr auto cache_depth =
-        mpt::BLOCK_NUM_NIBBLES_LEN + prefix_len + 5;
-
-    virtual bool cache() const override;
-    virtual bool compact() const override;
-    virtual std::unique_ptr<StateMachine> clone() const override;
-};
-
 namespace
 {
     constexpr unsigned char state_nibble = 0;
@@ -374,107 +336,134 @@ namespace
     };
 }
 
-std::unique_ptr<StateMachine> TrieDb::InMemoryMachine::clone() const
+struct TrieDb::Machine : public mpt::StateMachine
 {
-    return std::make_unique<InMemoryMachine>(*this);
-}
+    enum class TrieType : uint8_t
+    {
+        Prefix,
+        State,
+        Code,
+        Receipt
+    };
 
-void TrieDb::Machine::down(unsigned char const nibble)
-{
-    ++depth;
-    MONAD_ASSERT(depth <= max_depth);
-    MONAD_ASSERT(
-        (nibble == state_nibble || nibble == code_nibble ||
-         nibble == receipt_nibble) ||
-        depth != prefix_len + BLOCK_NUM_NIBBLES_LEN);
-    if (MONAD_UNLIKELY(depth == prefix_len + BLOCK_NUM_NIBBLES_LEN)) {
-        MONAD_ASSERT(trie_section == TrieType::Prefix);
-        if (nibble == state_nibble) {
-            trie_section = TrieType::State;
+    uint8_t depth{0};
+    TrieType trie_section{TrieType::Prefix};
+    static constexpr auto prefix_len = 1;
+    static constexpr auto max_depth = mpt::BLOCK_NUM_NIBBLES_LEN + prefix_len +
+                                      sizeof(bytes32_t) * 2 +
+                                      sizeof(bytes32_t) * 2;
+
+    virtual mpt::Compute &get_compute() const override
+    {
+        static EmptyCompute empty_compute;
+
+        static AccountMerkleCompute account_compute;
+        static AccountRootMerkleCompute account_root_compute;
+        static StorageMerkleCompute storage_compute;
+        static StorageRootMerkleCompute storage_root_compute;
+
+        static VarLenMerkleCompute receipt_compute;
+        static RootVarLenMerkleCompute receipt_root_compute;
+
+        if (MONAD_LIKELY(trie_section == TrieType::State)) {
+            MONAD_ASSERT(depth >= BLOCK_NUM_NIBBLES_LEN + prefix_len);
+            if (MONAD_UNLIKELY(depth == BLOCK_NUM_NIBBLES_LEN + prefix_len)) {
+                return account_root_compute;
+            }
+            else if (
+                depth <
+                BLOCK_NUM_NIBBLES_LEN + prefix_len + 2 * sizeof(bytes32_t)) {
+                return account_compute;
+            }
+            else if (
+                depth ==
+                BLOCK_NUM_NIBBLES_LEN + prefix_len + 2 * sizeof(bytes32_t)) {
+                return storage_root_compute;
+            }
+            else {
+                return storage_compute;
+            }
         }
-        else if (nibble == receipt_nibble) {
-            trie_section = TrieType::Receipt;
-        }
-        else {
-            trie_section = TrieType::Code;
-        }
-    }
-}
-
-void TrieDb::Machine::up(size_t const n)
-{
-    MONAD_ASSERT(n <= depth);
-    depth -= static_cast<uint8_t>(n);
-    if (MONAD_UNLIKELY(depth < prefix_len + BLOCK_NUM_NIBBLES_LEN)) {
-        trie_section = TrieType::Prefix;
-    }
-}
-
-Compute &TrieDb::Machine::get_compute() const
-{
-    static EmptyCompute empty_compute;
-
-    static AccountMerkleCompute account_compute;
-    static AccountRootMerkleCompute account_root_compute;
-    static StorageMerkleCompute storage_compute;
-    static StorageRootMerkleCompute storage_root_compute;
-
-    static VarLenMerkleCompute receipt_compute;
-    static RootVarLenMerkleCompute receipt_root_compute;
-
-    if (MONAD_LIKELY(trie_section == TrieType::State)) {
-        MONAD_ASSERT(depth >= BLOCK_NUM_NIBBLES_LEN + prefix_len);
-        if (MONAD_UNLIKELY(depth == BLOCK_NUM_NIBBLES_LEN + prefix_len)) {
-            return account_root_compute;
-        }
-        else if (
-            depth <
-            BLOCK_NUM_NIBBLES_LEN + prefix_len + 2 * sizeof(bytes32_t)) {
-            return account_compute;
-        }
-        else if (
-            depth ==
-            BLOCK_NUM_NIBBLES_LEN + prefix_len + 2 * sizeof(bytes32_t)) {
-            return storage_root_compute;
+        else if (trie_section == TrieType::Receipt) {
+            return depth == prefix_len + BLOCK_NUM_NIBBLES_LEN
+                       ? receipt_root_compute
+                       : receipt_compute;
         }
         else {
-            return storage_compute;
+            return empty_compute;
         }
     }
-    else if (trie_section == TrieType::Receipt) {
-        return depth == prefix_len + BLOCK_NUM_NIBBLES_LEN
-                   ? receipt_root_compute
-                   : receipt_compute;
+
+    virtual void down(unsigned char const nibble) override
+    {
+        ++depth;
+        MONAD_ASSERT(depth <= max_depth);
+        MONAD_ASSERT(
+            (nibble == state_nibble || nibble == code_nibble ||
+             nibble == receipt_nibble) ||
+            depth != prefix_len + BLOCK_NUM_NIBBLES_LEN);
+        if (MONAD_UNLIKELY(depth == prefix_len + BLOCK_NUM_NIBBLES_LEN)) {
+            MONAD_ASSERT(trie_section == TrieType::Prefix);
+            if (nibble == state_nibble) {
+                trie_section = TrieType::State;
+            }
+            else if (nibble == receipt_nibble) {
+                trie_section = TrieType::Receipt;
+            }
+            else {
+                trie_section = TrieType::Code;
+            }
+        }
     }
-    else {
-        return empty_compute;
+
+    virtual void up(size_t const n) override
+    {
+        MONAD_ASSERT(n <= depth);
+        depth -= static_cast<uint8_t>(n);
+        if (MONAD_UNLIKELY(depth < prefix_len + BLOCK_NUM_NIBBLES_LEN)) {
+            trie_section = TrieType::Prefix;
+        }
     }
-}
+};
 
-bool TrieDb::InMemoryMachine::cache() const
+struct TrieDb::InMemoryMachine final : public TrieDb::Machine
 {
-    return true;
-}
+    virtual bool cache() const override
+    {
+        return true;
+    }
 
-bool TrieDb::InMemoryMachine::compact() const
-{
-    return false;
-}
+    virtual bool compact() const override
+    {
+        return false;
+    }
 
-std::unique_ptr<StateMachine> TrieDb::OnDiskMachine::clone() const
-{
-    return std::make_unique<OnDiskMachine>(*this);
-}
+    virtual std::unique_ptr<StateMachine> clone() const override
+    {
+        return std::make_unique<InMemoryMachine>(*this);
+    }
+};
 
-bool TrieDb::OnDiskMachine::cache() const
+struct TrieDb::OnDiskMachine final : public TrieDb::Machine
 {
-    return depth <= cache_depth;
-}
+    static constexpr auto cache_depth =
+        mpt::BLOCK_NUM_NIBBLES_LEN + prefix_len + 5;
 
-bool TrieDb::OnDiskMachine::compact() const
-{
-    return depth >= BLOCK_NUM_NIBBLES_LEN;
-}
+    virtual bool cache() const override
+    {
+        return depth <= cache_depth;
+    }
+
+    virtual bool compact() const override
+    {
+        return depth >= BLOCK_NUM_NIBBLES_LEN;
+    }
+
+    virtual std::unique_ptr<StateMachine> clone() const override
+    {
+        return std::make_unique<OnDiskMachine>(*this);
+    }
+};
 
 TrieDb::TrieDb(std::optional<mpt::OnDiskDbConfig> const &config)
     : machine_{[&] -> std::unique_ptr<Machine> {

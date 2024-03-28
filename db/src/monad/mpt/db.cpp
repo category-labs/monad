@@ -50,7 +50,132 @@ MONAD_MPT_NAMESPACE_BEGIN
 template <class T>
 using concurrent_queue = ::moodycamel::ConcurrentQueue<T>;
 
-struct Db::OnDisk
+struct Db::Impl
+{
+    virtual ~Impl() = default;
+
+    virtual Node::UniquePtr &root() = 0;
+    virtual UpdateAux<> &aux() = 0;
+    virtual void upsert(UpdateList &&, uint64_t, bool enable_compaction) = 0;
+
+    virtual find_result_type
+    find(NodeCursor const &root, NibblesView const &key)
+    {
+        return find_blocking(aux(), root, key);
+    }
+
+    virtual bool is_latest() const
+    {
+        MONAD_ASSERT(false);
+    };
+
+    virtual void load_latest()
+    {
+        MONAD_ASSERT(false);
+    };
+};
+
+struct Db::ROOnDisk final : public Db::Impl
+{
+    async::storage_pool pool_;
+    io::Ring ring_;
+    io::Buffers rwbuf_;
+    async::AsyncIO io_;
+    UpdateAux<> aux_;
+    chunk_offset_t last_loaded_offset_;
+    Node::UniquePtr root_;
+
+    ROOnDisk(ReadOnlyOnDiskDbConfig const &options)
+        : pool_{[&] -> async::storage_pool {
+            async::storage_pool::creation_flags pool_options;
+            pool_options.open_read_only = true;
+            pool_options.disable_mismatching_storage_pool_check =
+                options.disable_mismatching_storage_pool_check;
+            MONAD_ASSERT(!options.dbname_paths.empty());
+            return async::storage_pool{
+                options.dbname_paths,
+                async::storage_pool::mode::open_existing,
+                pool_options};
+        }()}
+        , ring_{monad::io::RingConfig{
+              options.uring_entries, false, options.sq_thread_cpu}}
+        , rwbuf_{io::make_buffers_for_read_only(
+              ring_, options.rd_buffers,
+              async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)}
+        , io_{pool_, rwbuf_}
+        , aux_{&io_}
+        , last_loaded_offset_{aux_.get_root_offset()}
+        , root_{Node::UniquePtr{read_node_blocking(pool_, last_loaded_offset_)}}
+    {
+        io_.set_capture_io_latencies(options.capture_io_latencies);
+        io_.set_concurrent_read_io_limit(options.concurrent_read_io_limit);
+        io_.set_eager_completions(options.eager_completions);
+    }
+
+    ~ROOnDisk()
+    {
+        aux_.unique_lock();
+        // must be destroyed before aux is destroyed
+        aux_.unset_io();
+    }
+
+    virtual Node::UniquePtr &root() override
+    {
+        return root_;
+    }
+
+    virtual UpdateAux<> &aux() override
+    {
+        return aux_;
+    }
+
+    virtual void upsert(UpdateList &&, uint64_t, bool) override
+    {
+        MONAD_ASSERT(false);
+    }
+
+    virtual bool is_latest() const override
+    {
+        return last_loaded_offset_ == aux_.get_root_offset();
+    }
+
+    virtual void load_latest() override
+    {
+        last_loaded_offset_ = aux_.get_root_offset();
+        root_.reset(read_node_blocking(pool_, last_loaded_offset_));
+    }
+};
+
+struct Db::InMemory final : public Db::Impl
+{
+    UpdateAux<> aux_;
+    StateMachine &machine_;
+    Node::UniquePtr root_;
+
+    InMemory(StateMachine &machine)
+        : aux_{nullptr}
+        , machine_{machine}
+    {
+    }
+
+    virtual Node::UniquePtr &root() override
+    {
+        return root_;
+    }
+
+    virtual UpdateAux<> &aux() override
+    {
+        return aux_;
+    }
+
+    virtual void upsert(UpdateList &&list, uint64_t block_id, bool) override
+    {
+        root_ = aux_.do_update(
+            std::move(root_), machine_, std::move(list), block_id, false);
+    }
+};
+
+struct Db::RWOnDisk final : public Db::Impl
 {
     struct fiber_upsert_request_t
     {
@@ -71,7 +196,7 @@ struct Db::OnDisk
 
     struct triedb_worker
     {
-        OnDisk *parent;
+        RWOnDisk *parent;
         UpdateAuxImpl &aux;
 
         async::storage_pool pool;
@@ -82,7 +207,8 @@ struct Db::OnDisk
         std::atomic<bool> sleeping{false}, done{false};
 
         triedb_worker(
-            OnDisk *parent_, UpdateAuxImpl &aux_, OnDiskDbConfig const &options)
+            RWOnDisk *parent_, UpdateAuxImpl &aux_,
+            OnDiskDbConfig const &options)
             : parent(parent_)
             , aux(aux_)
             , pool{[&] -> async::storage_pool {
@@ -226,28 +352,43 @@ struct Db::OnDisk
 
     std::unique_ptr<triedb_worker> worker;
     std::thread worker_thread;
+    StateMachine &machine_;
+    UpdateAux<> aux_;
+    Node::UniquePtr root_;
 
-    OnDisk(UpdateAuxImpl &aux, OnDiskDbConfig const &options)
+    RWOnDisk(OnDiskDbConfig const &options, StateMachine &machine)
         : worker_thread([&] {
             {
                 std::unique_lock const g(lock);
-                worker = std::make_unique<triedb_worker>(this, aux, options);
+                worker = std::make_unique<triedb_worker>(this, aux_, options);
             }
             worker->run();
             std::unique_lock const g(lock);
             worker.reset();
         })
+        , machine_{machine}
+        , aux_{[&] {
+            comms.enqueue({});
+            while (comms.size_approx() > 0) {
+                std::this_thread::yield();
+            }
+            std::unique_lock const g(lock);
+            MONAD_ASSERT(worker);
+            return UpdateAux<>{&worker->io};
+        }()}
+        , root_(
+              aux_.get_root_offset() != INVALID_OFFSET
+                  ? Node::UniquePtr{read_node_blocking(
+                        worker->pool, aux_.get_root_offset())}
+                  : Node::UniquePtr{})
     {
-        comms.enqueue({});
-        while (comms.size_approx() > 0) {
-            std::this_thread::yield();
-        }
-        std::unique_lock const g(lock);
-        MONAD_ASSERT(worker);
     }
 
-    ~OnDisk()
+    ~RWOnDisk()
     {
+        aux_.unique_lock();
+        // must be destroyed before aux is destroyed
+        aux_.unset_io();
         {
             std::unique_lock const g(lock);
             worker->done.store(true, std::memory_order_release);
@@ -256,8 +397,19 @@ struct Db::OnDisk
         worker_thread.join();
     }
 
+    virtual Node::UniquePtr &root() override
+    {
+        return root_;
+    }
+
+    virtual UpdateAux<> &aux() override
+    {
+        return aux_;
+    }
+
     // threadsafe
-    find_result_type find_fiber_blocking(NodeCursor start, NibblesView key)
+    virtual find_result_type
+    find(NodeCursor const &start, NibblesView const &key) override
     {
         threadsafe_boost_fibers_promise<find_result_type> promise;
         fiber_find_request_t req{
@@ -273,16 +425,16 @@ struct Db::OnDisk
     }
 
     // threadsafe
-    Node::UniquePtr upsert_fiber_blocking(
-        Node::UniquePtr prev_root, StateMachine &sm, UpdateList &&updates,
-        uint64_t const version, bool const enable_compaction)
+    virtual void upsert(
+        UpdateList &&updates, uint64_t const version,
+        bool const enable_compaction) override
     {
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
         auto fut = promise.get_future();
         comms.enqueue(fiber_upsert_request_t{
             .promise = &promise,
-            .prev_root = std::move(prev_root),
-            .sm = sm,
+            .prev_root = std::move(root_),
+            .sm = machine_,
             .updates = std::move(updates),
             .version = version,
             .enable_compaction = enable_compaction});
@@ -291,44 +443,32 @@ struct Db::OnDisk
             std::unique_lock const g(lock);
             cond.notify_one();
         }
-        return fut.get();
+        root_ = fut.get();
     }
 };
 
 Db::Db(StateMachine &machine)
-    : aux_{nullptr}
-    , machine_{machine}
+    : impl_{std::make_unique<InMemory>(machine)}
 {
 }
 
 Db::Db(StateMachine &machine, OnDiskDbConfig const &config)
-    : on_disk_{std::make_unique<OnDisk>(aux_, config)}
-    , aux_{&on_disk_->worker->io}
-    , root_(
-          aux_.get_root_offset() != INVALID_OFFSET
-              ? Node::UniquePtr{read_node_blocking(
-                    on_disk_->worker->pool, aux_.get_root_offset())}
-              : Node::UniquePtr{})
-    , machine_{machine}
+    : impl_{std::make_unique<RWOnDisk>(config, machine)}
 {
-    MONAD_DEBUG_ASSERT(aux_.is_on_disk());
+    MONAD_DEBUG_ASSERT(impl_->aux().is_on_disk());
 }
 
-Db::~Db()
+Db::Db(ReadOnlyOnDiskDbConfig const &config)
+    : impl_{std::make_unique<ROOnDisk>(config)}
 {
-    auto g = aux_.unique_lock();
-    if (on_disk_) {
-        // ondisk must be destroyed before aux is destroyed
-        aux_.unset_io();
-        on_disk_.reset();
-    }
 }
+
+Db::~Db() {}
 
 Result<NodeCursor> Db::get(NodeCursor root, NibblesView const key) const
 {
-    auto const [it, result] = (on_disk_ != nullptr)
-                                  ? on_disk_->find_fiber_blocking(root, key)
-                                  : find_blocking(aux_, root, key);
+    MONAD_ASSERT(impl_);
+    auto const [it, result] = impl_->find(root, key);
     if (result != find_result::success) {
         return DbError::key_not_found;
     }
@@ -376,16 +516,8 @@ Db::get_data(NibblesView const key, uint64_t const block_id) const
 void Db::upsert(
     UpdateList list, uint64_t const block_id, bool const enable_compaction)
 {
-    root_ =
-        (on_disk_ != nullptr)
-            ? on_disk_->upsert_fiber_blocking(
-                  std::move(root_),
-                  machine_,
-                  std::move(list),
-                  block_id,
-                  enable_compaction)
-            : aux_.do_update(
-                  std::move(root_), machine_, std::move(list), block_id, false);
+    MONAD_ASSERT(impl_);
+    impl_->upsert(std::move(list), block_id, enable_compaction);
 }
 
 void Db::traverse(
@@ -401,26 +533,40 @@ void Db::traverse(
     }
     auto *node = res.value().node;
     MONAD_DEBUG_ASSERT(node != nullptr);
-    preorder_traverse(aux_, *node, machine);
+    preorder_traverse(impl_->aux(), *node, machine);
 }
 
 NodeCursor Db::root() const noexcept
 {
-    return root_ ? NodeCursor{*root_} : NodeCursor{};
+    return impl_->root() ? NodeCursor{*impl_->root()} : NodeCursor{};
 }
 
 std::optional<uint64_t> Db::get_latest_block_id() const
 {
-    return root_ ? std::make_optional<uint64_t>(
-                       aux_.max_version_in_db_history(*root_))
-                 : std::nullopt;
+    return impl_->root()
+               ? std::make_optional<uint64_t>(
+                     impl_->aux().max_version_in_db_history(*impl_->root()))
+               : std::nullopt;
 }
 
 std::optional<uint64_t> Db::get_earliest_block_id() const
 {
-    return root_ ? std::make_optional<uint64_t>(
-                       aux_.min_version_in_db_history(*root_))
-                 : std::nullopt;
+    return impl_->root()
+               ? std::make_optional<uint64_t>(
+                     impl_->aux().min_version_in_db_history(*impl_->root()))
+               : std::nullopt;
+}
+
+bool Db::is_latest() const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->is_latest();
+}
+
+void Db::load_latest()
+{
+    MONAD_ASSERT(impl_);
+    impl_->load_latest();
 }
 
 MONAD_MPT_NAMESPACE_END

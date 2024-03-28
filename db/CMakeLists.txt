@@ -51,7 +51,6 @@ add_library(
   "${PROJECT_SOURCE_DIR}/include/monad/mpt/node.hpp"
   "${PROJECT_SOURCE_DIR}/include/monad/mpt/node_cursor.hpp"
   "${PROJECT_SOURCE_DIR}/include/monad/mpt/ondisk_db_config.hpp"
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/read_only_db.hpp"
   "${PROJECT_SOURCE_DIR}/include/monad/mpt/request.hpp"
   "${PROJECT_SOURCE_DIR}/include/monad/mpt/state_machine.hpp"
   "${PROJECT_SOURCE_DIR}/include/monad/mpt/traverse.hpp"
@@ -66,7 +65,6 @@ add_library(
   "${PROJECT_SOURCE_DIR}/src/monad/mpt/find.cpp"
   "${PROJECT_SOURCE_DIR}/src/monad/mpt/mem.cpp"
   "${PROJECT_SOURCE_DIR}/src/monad/mpt/node.cpp"
-  "${PROJECT_SOURCE_DIR}/src/monad/mpt/read_only_db.cpp"
   "${PROJECT_SOURCE_DIR}/src/monad/mpt/traverse.cpp"
   "${PROJECT_SOURCE_DIR}/src/monad/mpt/trie.cpp"
   "${PROJECT_SOURCE_DIR}/src/monad/mpt/update_aux.cpp")

@@ -3,6 +3,7 @@
 #include <monad/mpt/config.hpp>
 
 #include <filesystem>
+#include <optional>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -22,6 +23,21 @@ struct OnDiskDbConfig
     std::optional<uint64_t> start_block_id{std::nullopt};
     std::vector<std::filesystem::path> dbname_paths{};
     int64_t file_size_db{512}; // truncate files to this size
+    unsigned concurrent_read_io_limit{1024};
+};
+
+struct ReadOnlyOnDiskDbConfig
+{
+    bool disable_mismatching_storage_pool_check{
+        false}; // risk of severe data loss
+    bool capture_io_latencies{false};
+    bool eager_completions{false};
+    unsigned rd_buffers{8};
+    unsigned uring_entries{8};
+    // default to disable sqpoll kernel thread since now ReadOnlyDb uses
+    // blocking read
+    std::optional<unsigned> sq_thread_cpu{std::nullopt};
+    std::vector<std::filesystem::path> dbname_paths;
     unsigned concurrent_read_io_limit{1024};
 };
 

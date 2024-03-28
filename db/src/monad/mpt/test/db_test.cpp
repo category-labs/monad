@@ -9,7 +9,6 @@
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
-#include <monad/mpt/read_only_db.hpp>
 #include <monad/mpt/traverse.hpp>
 #include <monad/mpt/trie.hpp>
 #include <monad/mpt/update.hpp>
@@ -125,7 +124,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db)
         0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
 
     ReadOnlyOnDiskDbConfig ro_config{.dbname_paths = this->config.dbname_paths};
-    ReadOnlyDb ro_db{ro_config};
+    Db ro_db{ro_config};
 
     EXPECT_EQ(ro_db.get(prefix + kv[0].first, block_id).value(), kv[0].second);
     EXPECT_EQ(ro_db.get(prefix + kv[1].first, block_id).value(), kv[1].second);

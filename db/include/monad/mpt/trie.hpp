@@ -332,7 +332,7 @@ public:
     node_writer_unique_ptr_type node_writer_slow{};
 
     // currently maintain a fixed len history
-    static constexpr unsigned version_history_len = 200;
+    static constexpr unsigned version_history_len = 1000;
 
     UpdateAuxImpl(MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr)
     {
@@ -488,7 +488,8 @@ public:
 
     Node::UniquePtr do_update(
         Node::UniquePtr prev_root, StateMachine &, UpdateList &&,
-        uint64_t version, bool compaction = false);
+        uint64_t version, bool compaction = false,
+        bool can_write_to_fast = true);
 
 #if MONAD_MPT_COLLECT_STATS
     detail::TrieUpdateCollectedStats stats;

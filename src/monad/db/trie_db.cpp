@@ -206,7 +206,7 @@ namespace
                         .next = std::move(account_updates)};
                     updates.push_front(state_update);
 
-                    db_.upsert(std::move(updates), block_id_, false);
+                    db_.upsert(std::move(updates), block_id_, false, false);
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();
@@ -225,7 +225,7 @@ namespace
                         .next = std::move(code_updates)};
                     updates.push_front(code_update);
 
-                    db_.upsert(std::move(updates), block_id_, false);
+                    db_.upsert(std::move(updates), block_id_, false, false);
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();

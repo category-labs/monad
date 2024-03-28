@@ -44,8 +44,9 @@ public:
     Result<NodeCursor> get(NodeCursor, NibblesView) const;
     Result<byte_string_view> get_data(NodeCursor, NibblesView) const;
 
-    void
-    upsert(UpdateList, uint64_t block_id = 0, bool enable_compaction = true);
+    void upsert(
+        UpdateList, uint64_t block_id = 0, bool enable_compaction = true,
+        bool can_write_to_fast = true);
     // It is always called from the main thread and should never wait on a
     // fiber future.
     void traverse(NibblesView prefix, TraverseMachine &, uint64_t block_id = 0);

@@ -53,7 +53,9 @@ struct Db::Impl
 
     virtual Node::UniquePtr &root() = 0;
     virtual UpdateAux<> &aux() = 0;
-    virtual void upsert(UpdateList &&, uint64_t, bool enable_compaction) = 0;
+    virtual void upsert(
+        UpdateList &&, uint64_t, bool enable_compaction,
+        bool can_write_to_fast) = 0;
 
     virtual find_result_type
     find(NodeCursor const &root, NibblesView const &key)
@@ -126,7 +128,7 @@ struct Db::ROOnDisk final : public Db::Impl
         return aux_;
     }
 
-    virtual void upsert(UpdateList &&, uint64_t, bool) override
+    virtual void upsert(UpdateList &&, uint64_t, bool, bool) override
     {
         MONAD_ASSERT(false);
     }
@@ -165,7 +167,8 @@ struct Db::InMemory final : public Db::Impl
         return aux_;
     }
 
-    virtual void upsert(UpdateList &&list, uint64_t block_id, bool) override
+    virtual void
+    upsert(UpdateList &&list, uint64_t block_id, bool, bool) override
     {
         root_ = aux_.do_update(
             std::move(root_), machine_, std::move(list), block_id, false);
@@ -182,6 +185,7 @@ struct Db::RWOnDisk final : public Db::Impl
         UpdateList &&updates;
         uint64_t const version;
         bool const enable_compaction;
+        bool const can_write_to_fast;
     };
 
     using Comms =
@@ -298,7 +302,8 @@ struct Db::RWOnDisk final : public Db::Impl
                             req->sm,
                             std::move(req->updates),
                             req->version,
-                            compaction && req->enable_compaction));
+                            compaction && req->enable_compaction,
+                            req->can_write_to_fast));
                     }
                     did_nothing = false;
                 }
@@ -423,7 +428,7 @@ struct Db::RWOnDisk final : public Db::Impl
     // threadsafe
     virtual void upsert(
         UpdateList &&updates, uint64_t const version,
-        bool const enable_compaction) override
+        bool const enable_compaction, bool const can_write_to_fast) override
     {
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
         auto fut = promise.get_future();
@@ -433,7 +438,8 @@ struct Db::RWOnDisk final : public Db::Impl
             .sm = machine_,
             .updates = std::move(updates),
             .version = version,
-            .enable_compaction = enable_compaction});
+            .enable_compaction = enable_compaction,
+            .can_write_to_fast = can_write_to_fast});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -510,10 +516,12 @@ Db::get_data(NibblesView const key, uint64_t const block_id) const
 }
 
 void Db::upsert(
-    UpdateList list, uint64_t const block_id, bool const enable_compaction)
+    UpdateList list, uint64_t const block_id, bool const enable_compaction,
+    bool const can_write_to_fast)
 {
     MONAD_ASSERT(impl_);
-    impl_->upsert(std::move(list), block_id, enable_compaction);
+    impl_->upsert(
+        std::move(list), block_id, enable_compaction, can_write_to_fast);
 }
 
 void Db::traverse(

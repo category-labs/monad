@@ -1200,11 +1200,12 @@ async_write_node_result async_write_node(
 chunk_offset_t
 async_write_node_set_spare(UpdateAuxImpl &aux, Node &node, bool write_to_fast)
 {
+    write_to_fast &= aux.can_write_to_fast();
     if (aux.alternate_slow_fast_writer()) {
         // alternate between slow and fast writer
-        write_to_fast &= aux.can_write_to_fast();
         aux.set_can_write_to_fast(!aux.can_write_to_fast());
     }
+
     auto off = async_write_node(
                    aux,
                    write_to_fast ? aux.node_writer_fast : aux.node_writer_slow,

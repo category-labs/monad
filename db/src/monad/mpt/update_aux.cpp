@@ -465,8 +465,9 @@ allowed to skip a version, for example for a call sequence to insert version
 */
 Node::UniquePtr UpdateAuxImpl::do_update(
     Node::UniquePtr prev_root, StateMachine &sm, UpdateList &&updates,
-    uint64_t const version, bool compaction)
+    uint64_t const version, bool compaction, bool const can_write_to_fast)
 {
+    set_can_write_to_fast(can_write_to_fast);
     auto g(unique_lock());
     auto g2(set_current_upsert_tid());
     compaction &= is_on_disk(); // compaction only takes effect for on disk trie
@@ -501,15 +502,17 @@ Node::UniquePtr UpdateAuxImpl::do_update(
                 find_blocking(*this, *prev_root, version_to_erase.back());
             auto [min_offset_fast, min_offset_slow] =
                 calc_min_offsets(*erase_root_it.node);
-            MONAD_ASSERT(min_offset_fast != INVALID_COMPACT_VIRTUAL_OFFSET);
+            if (min_offset_fast == INVALID_COMPACT_VIRTUAL_OFFSET) {
+                min_offset_fast = MIN_COMPACT_VIRTUAL_OFFSET;
+            }
             if (min_offset_slow == INVALID_COMPACT_VIRTUAL_OFFSET) {
                 min_offset_slow = MIN_COMPACT_VIRTUAL_OFFSET;
             }
             remove_chunks_before_count_fast_ = min_offset_fast.get_count();
             remove_chunks_before_count_slow_ = min_offset_slow.get_count();
+            // 2. advance compaction offsets
+            advance_compact_offsets();
         }
-        // 2. advance compaction offsets
-        advance_compact_offsets();
     }
 
     // 3. copy state if version not exists and db is not empty

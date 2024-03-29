@@ -47,9 +47,6 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-template <class T>
-using concurrent_queue = ::moodycamel::ConcurrentQueue<T>;
-
 struct Db::Impl
 {
     virtual ~Impl() = default;
@@ -177,7 +174,7 @@ struct Db::InMemory final : public Db::Impl
 
 struct Db::RWOnDisk final : public Db::Impl
 {
-    struct fiber_upsert_request_t
+    struct FiberUpsertRequest
     {
         threadsafe_boost_fibers_promise<Node::UniquePtr> *promise;
         Node::UniquePtr prev_root;
@@ -187,14 +184,14 @@ struct Db::RWOnDisk final : public Db::Impl
         bool const enable_compaction;
     };
 
-    using comms_type = std::variant<
-        std::monostate, fiber_find_request_t, fiber_upsert_request_t>;
-    concurrent_queue<comms_type> comms;
+    using Comms =
+        std::variant<std::monostate, fiber_find_request_t, FiberUpsertRequest>;
+    ::moodycamel::ConcurrentQueue<Comms> comms_;
 
-    std::mutex lock;
-    std::condition_variable cond;
+    std::mutex lock_;
+    std::condition_variable cond_;
 
-    struct triedb_worker
+    struct TrieDbWorker
     {
         RWOnDisk *parent;
         UpdateAuxImpl &aux;
@@ -206,11 +203,10 @@ struct Db::RWOnDisk final : public Db::Impl
         bool const compaction;
         std::atomic<bool> sleeping{false}, done{false};
 
-        triedb_worker(
-            RWOnDisk *parent_, UpdateAuxImpl &aux_,
-            OnDiskDbConfig const &options)
-            : parent(parent_)
-            , aux(aux_)
+        TrieDbWorker(
+            RWOnDisk *parent, UpdateAuxImpl &aux, OnDiskDbConfig const &options)
+            : parent(parent)
+            , aux(aux)
             , pool{[&] -> async::storage_pool {
                 if (options.dbname_paths.empty()) {
                     return async::storage_pool{
@@ -273,13 +269,13 @@ struct Db::RWOnDisk final : public Db::Impl
             queue only supports move only types via its iterator interface. No
             that makes no sense to me either, but it is what it is.
             */
-            std::vector<comms_type> request;
+            std::vector<Comms> request;
             request.reserve(1);
             unsigned did_nothing_count = 0;
             while (!done.load(std::memory_order_acquire)) {
                 bool did_nothing = true;
                 request.clear();
-                if (parent->comms.try_dequeue_bulk(
+                if (parent->comms_.try_dequeue_bulk(
                         std::back_inserter(request), 1) > 0) {
                     if (auto *req = std::get_if<1>(&request.front());
                         req != nullptr) {
@@ -332,7 +328,7 @@ struct Db::RWOnDisk final : public Db::Impl
                     did_nothing_count = 0;
                 }
                 if (did_nothing_count > 1000000) {
-                    std::unique_lock g(parent->lock);
+                    std::unique_lock g(parent->lock_);
                     sleeping.store(true, std::memory_order_release);
                     /* Very irritatingly, Boost.Fiber may have fibers scheduled
                      which weren't ready before, and if we sleep forever here
@@ -340,9 +336,9 @@ struct Db::RWOnDisk final : public Db::Impl
                      hang. So pulse Boost.Fiber every second at most for those
                      extremely rare occasions.
                      */
-                    parent->cond.wait_for(g, std::chrono::seconds(1), [this] {
+                    parent->cond_.wait_for(g, std::chrono::seconds(1), [this] {
                         return done.load(std::memory_order_acquire) ||
-                               parent->comms.size_approx() > 0;
+                               parent->comms_.size_approx() > 0;
                     });
                     sleeping.store(false, std::memory_order_release);
                 }
@@ -350,36 +346,36 @@ struct Db::RWOnDisk final : public Db::Impl
         }
     };
 
-    std::unique_ptr<triedb_worker> worker;
-    std::thread worker_thread;
+    std::unique_ptr<TrieDbWorker> worker_;
+    std::thread worker_thread_;
     StateMachine &machine_;
     UpdateAux<> aux_;
     Node::UniquePtr root_;
 
     RWOnDisk(OnDiskDbConfig const &options, StateMachine &machine)
-        : worker_thread([&] {
+        : worker_thread_([&] {
             {
-                std::unique_lock const g(lock);
-                worker = std::make_unique<triedb_worker>(this, aux_, options);
+                std::unique_lock const g(lock_);
+                worker_ = std::make_unique<TrieDbWorker>(this, aux_, options);
             }
-            worker->run();
-            std::unique_lock const g(lock);
-            worker.reset();
+            worker_->run();
+            std::unique_lock const g(lock_);
+            worker_.reset();
         })
         , machine_{machine}
         , aux_{[&] {
-            comms.enqueue({});
-            while (comms.size_approx() > 0) {
+            comms_.enqueue({});
+            while (comms_.size_approx() > 0) {
                 std::this_thread::yield();
             }
-            std::unique_lock const g(lock);
-            MONAD_ASSERT(worker);
-            return UpdateAux<>{&worker->io};
+            std::unique_lock const g(lock_);
+            MONAD_ASSERT(worker_);
+            return UpdateAux<>{&worker_->io};
         }()}
         , root_(
               aux_.get_root_offset() != INVALID_OFFSET
                   ? Node::UniquePtr{read_node_blocking(
-                        worker->pool, aux_.get_root_offset())}
+                        worker_->pool, aux_.get_root_offset())}
                   : Node::UniquePtr{})
     {
     }
@@ -390,11 +386,11 @@ struct Db::RWOnDisk final : public Db::Impl
         // must be destroyed before aux is destroyed
         aux_.unset_io();
         {
-            std::unique_lock const g(lock);
-            worker->done.store(true, std::memory_order_release);
-            cond.notify_one();
+            std::unique_lock const g(lock_);
+            worker_->done.store(true, std::memory_order_release);
+            cond_.notify_one();
         }
-        worker_thread.join();
+        worker_thread_.join();
     }
 
     virtual Node::UniquePtr &root() override
@@ -415,11 +411,11 @@ struct Db::RWOnDisk final : public Db::Impl
         fiber_find_request_t req{
             .promise = &promise, .start = start, .key = key};
         auto fut = promise.get_future();
-        comms.enqueue(req);
+        comms_.enqueue(req);
         // promise is racily emptied after this point
-        if (worker->sleeping.load(std::memory_order_acquire)) {
-            std::unique_lock const g(lock);
-            cond.notify_one();
+        if (worker_->sleeping.load(std::memory_order_acquire)) {
+            std::unique_lock const g(lock_);
+            cond_.notify_one();
         }
         return fut.get();
     }
@@ -431,7 +427,7 @@ struct Db::RWOnDisk final : public Db::Impl
     {
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
         auto fut = promise.get_future();
-        comms.enqueue(fiber_upsert_request_t{
+        comms_.enqueue(FiberUpsertRequest{
             .promise = &promise,
             .prev_root = std::move(root_),
             .sm = machine_,
@@ -439,9 +435,9 @@ struct Db::RWOnDisk final : public Db::Impl
             .version = version,
             .enable_compaction = enable_compaction});
         // promise is racily emptied after this point
-        if (worker->sleeping.load(std::memory_order_acquire)) {
-            std::unique_lock const g(lock);
-            cond.notify_one();
+        if (worker_->sleeping.load(std::memory_order_acquire)) {
+            std::unique_lock const g(lock_);
+            cond_.notify_one();
         }
         root_ = fut.get();
     }

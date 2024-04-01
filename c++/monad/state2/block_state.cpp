@@ -24,7 +24,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-BlockState::BlockState(DbRW &db)
+BlockState::BlockState(DbRO &db)
     : db_{db}
 {
 }
@@ -167,8 +167,10 @@ void BlockState::merge(State const &state)
 
 void BlockState::commit(std::vector<Receipt> const &receipts)
 {
-    db_.increment_block_number();
-    db_.commit(state_, code_, receipts);
+    DbRW *db_rw = static_cast<DbRW *>(&db_);
+    MONAD_ASSERT(db_rw != nullptr);
+    db_rw->increment_block_number();
+    db_rw->commit(state_, code_, receipts);
 }
 
 void BlockState::log_debug()

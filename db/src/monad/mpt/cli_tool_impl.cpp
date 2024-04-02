@@ -378,6 +378,8 @@ struct impl_t
     bool create_database = false;
     bool truncate_database = false;
     bool create_empty_database = false;
+    bool create_chunk_increasing = false;
+    bool debug_printing = false;
     std::filesystem::path archive_database;
     std::filesystem::path restore_database;
     std::vector<std::filesystem::path> storage_paths;
@@ -410,26 +412,20 @@ public:
     template <class T = void>
     MONAD_ASYNC_NAMESPACE::file_offset_t print_list_info(
         MONAD_MPT_NAMESPACE::UpdateAuxImpl &aux,
-        MONAD_MPT_NAMESPACE::detail::db_metadata::chunk_info_t const *item,
+        MONAD_MPT_NAMESPACE::detail::db_metadata::chunk_info_t const
+            *const item_,
         char const *name, T *list = nullptr)
     {
-        if (item == nullptr) {
+        if (item_ == nullptr) {
             cout << "     " << name << ": 0 chunks" << std::endl;
             return 0;
         }
         MONAD_ASYNC_NAMESPACE::file_offset_t total_capacity = 0, total_used = 0;
-        uint32_t last_insertion_count = 0;
+        uint32_t count = 0;
+        auto const *item = item_;
         do {
             auto chunkid = item->index(aux.db_metadata());
-            if (!flags.open_read_only) {
-                // Need to reset this to zero based for archival
-                auto *item2 = const_cast<
-                    MONAD_MPT_NAMESPACE::detail::db_metadata::chunk_info_t *>(
-                    item);
-                item2->insertion_count0_ = last_insertion_count & 0x3ff;
-                item2->insertion_count1_ = (last_insertion_count >> 10) & 0x3ff;
-                last_insertion_count++;
-            }
+            count++;
             auto chunk = pool->activate_chunk(pool->seq, chunkid);
             MONAD_DEBUG_ASSERT(chunk->zone_id().second == chunkid);
             if constexpr (!std::is_void_v<T>) {
@@ -444,9 +440,21 @@ public:
             item = item->next(aux.db_metadata());
         }
         while (item != nullptr);
-        cout << "     " << name << ": " << last_insertion_count
-             << " chunks with capacity " << print_bytes(total_capacity)
-             << " used " << print_bytes(total_used) << std::endl;
+        cout << "     " << name << ": " << count << " chunks with capacity "
+             << print_bytes(total_capacity) << " used "
+             << print_bytes(total_used) << std::endl;
+        if (debug_printing) {
+            std::cerr << "        ";
+            item = item_;
+            do {
+                auto chunkid = item->index(aux.db_metadata());
+                std::cerr << " " << chunkid << " ("
+                          << uint32_t(item->insertion_count()) << ")";
+                item = item->next(aux.db_metadata());
+            }
+            while (item != nullptr);
+            std::cerr << std::endl;
+        }
         return total_used;
     }
 
@@ -750,6 +758,10 @@ public:
         cout << std::endl;
 
         // Fix up triedb metadata to match archived
+        monad::mpt::detail::unsigned_20 fast_list_base_insertion_count(
+            UINT32_MAX);
+        monad::mpt::detail::unsigned_20 slow_list_base_insertion_count(
+            UINT32_MAX);
         for (auto &i : todecompress) {
             if (i.type == monad::async::storage_pool::cnv && i.chunk_id == 0) {
                 auto const *old_metadata =
@@ -795,26 +807,61 @@ public:
                     metadata->max_db_history_version =
                         old_metadata->max_db_history_version;
                 });
+                fast_list_base_insertion_count =
+                    old_metadata->fast_list_begin()->insertion_count();
+                slow_list_base_insertion_count =
+                    old_metadata->slow_list_begin()->insertion_count();
                 break;
             }
         }
 
         // Sort chunks into correct order, fast list by insertion count,
-        // then slow list by insertion count
+        // then slow list by insertion count, with all cnv chunks to the end
         std::sort(
             todecompress.begin(),
             todecompress.end(),
-            [](chunk_info_restore_t const &a, chunk_info_restore_t const &b) {
-                if (a.metadata.in_fast_list && !b.metadata.in_fast_list) {
+            [fast_list_base_insertion_count, slow_list_base_insertion_count](
+                chunk_info_restore_t const &a, chunk_info_restore_t const &b) {
+                if (a.type > b.type) {
                     return true;
                 }
-                if (a.metadata.in_fast_list == b.metadata.in_fast_list ||
-                    a.metadata.in_slow_list == b.metadata.in_slow_list) {
-                    return a.metadata.insertion_count() <
-                           b.metadata.insertion_count();
+                if (a.type == b.type) {
+                    if (a.metadata.in_fast_list && !b.metadata.in_fast_list) {
+                        return true;
+                    }
+                    if (a.metadata.in_fast_list == b.metadata.in_fast_list ||
+                        a.metadata.in_slow_list == b.metadata.in_slow_list) {
+                        if (a.metadata.in_fast_list) {
+                            return (a.metadata.insertion_count() -
+                                    fast_list_base_insertion_count) <
+                                   (b.metadata.insertion_count() -
+                                    fast_list_base_insertion_count);
+                        }
+                        else {
+                            return (a.metadata.insertion_count() -
+                                    slow_list_base_insertion_count) <
+                                   (b.metadata.insertion_count() -
+                                    slow_list_base_insertion_count);
+                        }
+                    }
                 }
                 return false;
             });
+        if (debug_printing) {
+            std::cerr << "Fast list:";
+            auto it = todecompress.begin();
+            for (; it != todecompress.end() && it->metadata.in_fast_list;
+                 ++it) {
+                std::cerr << " " << it->chunk_id;
+            }
+            std::cerr << "\nSlow list:";
+            for (; it != todecompress.end() &&
+                   it->type == monad::async::storage_pool::seq;
+                 ++it) {
+                std::cerr << " " << it->chunk_id;
+            }
+            std::cerr << std::endl;
+        }
 
         // Use UpdateAux to adjust the fast and slow lists
         monad::io::Ring ring(1);
@@ -832,13 +879,33 @@ public:
                     aux.append(
                         monad::mpt::UpdateAuxImpl::chunk_list::fast,
                         i.chunk_id);
-                    fast_chunks_inserted++;
+                    if (0 == fast_chunks_inserted++) {
+                        auto *const item2 =
+                            const_cast<MONAD_MPT_NAMESPACE::detail::
+                                           db_metadata::chunk_info_t *>(
+                                aux.db_metadata()->fast_list_begin());
+                        item2->insertion_count0_ =
+                            uint32_t(fast_list_base_insertion_count) & 0x3ff;
+                        item2->insertion_count1_ =
+                            (uint32_t(fast_list_base_insertion_count) >> 10) &
+                            0x3ff;
+                    }
                 }
                 else if (i.metadata.in_slow_list) {
                     aux.append(
                         monad::mpt::UpdateAuxImpl::chunk_list::slow,
                         i.chunk_id);
-                    slow_chunks_inserted++;
+                    if (0 == slow_chunks_inserted++) {
+                        auto *const item2 =
+                            const_cast<MONAD_MPT_NAMESPACE::detail::
+                                           db_metadata::chunk_info_t *>(
+                                aux.db_metadata()->slow_list_begin());
+                        item2->insertion_count0_ =
+                            uint32_t(slow_list_base_insertion_count) & 0x3ff;
+                        item2->insertion_count1_ =
+                            (uint32_t(slow_list_base_insertion_count) >> 10) &
+                            0x3ff;
+                    }
                 }
                 if (i.metadata.in_fast_list || i.metadata.in_slow_list) {
                     auto it =
@@ -981,13 +1048,22 @@ public:
             chunk_info_archive_t cnv_info{
                 pool->activate_chunk(pool->cnv, 0), -1};
             tocompress.push_back(&cnv_info);
+            if (debug_printing) {
+                std::cerr << "Fast list:";
+            }
             for (auto &i : fast) {
                 if (i.chunk_ptr->size() > 0) {
                     tocompress.push_back(&i);
                     MONAD_ASSERT(
                         i.chunk_ptr->zone_id().second <
                         pool->chunks(pool->seq));
+                    if (debug_printing) {
+                        std::cerr << " " << i.chunk_ptr->zone_id().second;
+                    }
                 }
+            }
+            if (debug_printing) {
+                std::cerr << "\nSlow list:";
             }
             for (auto &i : slow) {
                 if (i.chunk_ptr->size() > 0) {
@@ -995,7 +1071,13 @@ public:
                     MONAD_ASSERT(
                         i.chunk_ptr->zone_id().second <
                         pool->chunks(pool->seq));
+                    if (debug_printing) {
+                        std::cerr << " " << i.chunk_ptr->zone_id().second;
+                    }
                 }
+            }
+            if (debug_printing) {
+                std::cerr << std::endl;
             }
             cout << std::endl;
             for (auto it = tocompress.begin(); it != tocompress.end();) {
@@ -1205,13 +1287,21 @@ opened.
                 "set chunk capacity during database creation (default is 28, "
                 "1<<28 "
                 "= 256Mb, max is 31).");
+            cli.add_flag(
+                "--chunk-increasing",
+                impl.create_chunk_increasing,
+                "if creating a new database, order the chunks sequentially "
+                "increasing instead of randomly mixed.");
             cli.add_option(
                 "--compression-level",
                 impl.compression_level,
                 "zstd compression to use during archival (default is 3, 0 "
                 "disables, negative values are ultra fast, positive values "
-                "past "
-                "about 10 get real slow).");
+                "past about 10 get real slow).");
+            cli.add_flag(
+                "--debug",
+                impl.debug_printing,
+                "print additional information useful for debugging issues.");
             {
                 // Weirdly CLI11 wants reversed args for its vector consuming
                 // overload
@@ -1222,6 +1312,9 @@ opened.
             auto mode =
                 MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing;
             impl.flags.chunk_capacity = impl.chunk_capacity & 31;
+            if (impl.create_chunk_increasing) {
+                impl.flags.interleave_chunks_evenly = true;
+            }
             impl.flags.open_read_only = true;
             impl.flags.open_read_only_allow_dirty =
                 impl.allow_dirty || !impl.archive_database.empty();

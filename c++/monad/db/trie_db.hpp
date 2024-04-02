@@ -19,14 +19,32 @@
 
 MONAD_NAMESPACE_BEGIN
 
-class TrieDb final : public ::monad::DbRW
+class TrieDbRO final : public DbRO
+{
+    mpt::Db db_;
+    uint64_t curr_block_id_;
+
+public:
+    TrieDbRO(mpt::ReadOnlyOnDiskDbConfig const &, uint64_t const);
+    ~TrieDbRO();
+
+    virtual std::optional<Account> read_account(Address const &) override;
+    virtual bytes32_t
+    read_storage(Address const &, bytes32_t const &key) override;
+    virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) override;
+
+    virtual bytes32_t state_root() override;
+    virtual bytes32_t receipts_root() override;
+};
+
+class TrieDb final : public DbRW
 {
     struct Machine;
     struct InMemoryMachine;
     struct OnDiskMachine;
 
     std::unique_ptr<Machine> machine_;
-    ::monad::mpt::Db db_;
+    mpt::Db db_;
     std::list<mpt::Update> update_alloc_;
     std::list<byte_string> bytes_alloc_;
     uint64_t curr_block_id_;

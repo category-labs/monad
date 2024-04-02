@@ -115,6 +115,83 @@ namespace
         return acct;
     }
 
+    std::optional<Account> read_account_helper(
+        Address const &addr, Db const &db, uint64_t const curr_block_id)
+    {
+        auto const value = db.get(
+            concat(state_nibble, NibblesView{to_key(addr)}), curr_block_id);
+        if (!value.has_value()) {
+            return std::nullopt;
+        }
+
+        auto encoded_account = value.value();
+        auto acct = decode_account_db(encoded_account);
+        MONAD_DEBUG_ASSERT(!acct.has_error());
+        MONAD_DEBUG_ASSERT(encoded_account.empty());
+        acct.value().incarnation = 0;
+        return acct.value();
+    }
+
+    bytes32_t read_storage_helper(
+        Address const &addr, bytes32_t const &key, Db const &db,
+        uint64_t const curr_block_id)
+    {
+        auto const value = db.get(
+            concat(
+                state_nibble,
+                NibblesView{to_key(addr)},
+                NibblesView{to_key(key)}),
+            curr_block_id);
+        if (!value.has_value()) {
+            return {};
+        }
+        MONAD_ASSERT(value.value().size() <= sizeof(bytes32_t));
+        bytes32_t ret;
+        std::copy_n(
+            value.value().begin(),
+            value.value().size(),
+            ret.bytes + sizeof(bytes32_t) - value.value().size());
+        return ret;
+    }
+
+    std::shared_ptr<CodeAnalysis> read_code_helper(
+        bytes32_t const &code_hash, Db const &db, uint64_t const curr_block_id)
+    {
+        // TODO read code analysis object
+        auto const value = db.get(
+            concat(
+                code_nibble, NibblesView{to_byte_string_view(code_hash.bytes)}),
+            curr_block_id);
+        if (!value.has_value()) {
+            return std::make_shared<CodeAnalysis>(analyze({}));
+        }
+        return std::make_shared<CodeAnalysis>(analyze(value.assume_value()));
+    }
+
+    bytes32_t state_root_helper(Db const &db, uint64_t const curr_block_id)
+    {
+        auto const value = db.get_data(state_nibbles, curr_block_id);
+        if (!value.has_value() || value.value().empty()) {
+            return NULL_ROOT;
+        }
+        bytes32_t root;
+        MONAD_ASSERT(value.value().size() == sizeof(bytes32_t));
+        std::copy_n(value.value().data(), sizeof(bytes32_t), root.bytes);
+        return root;
+    }
+
+    bytes32_t receipts_root_helper(Db const &db, uint64_t const curr_block_id)
+    {
+        auto const value = db.get_data(receipt_nibbles, curr_block_id);
+        if (!value.has_value() || value.value().empty()) {
+            return NULL_ROOT;
+        }
+        bytes32_t root;
+        MONAD_ASSERT(value.value().size() == sizeof(bytes32_t));
+        std::copy_n(value.value().data(), sizeof(bytes32_t), root.bytes);
+        return root;
+    }
+
     struct ComputeAccountLeaf
     {
         static byte_string compute(Node const &node)
@@ -401,6 +478,40 @@ namespace
     };
 }
 
+TrieDbRO::TrieDbRO(
+    mpt::ReadOnlyOnDiskDbConfig const &config, uint64_t const block_id)
+    : db_(config)
+    , curr_block_id_(block_id)
+{
+}
+
+TrieDbRO::~TrieDbRO() {}
+
+std::optional<Account> TrieDbRO::read_account(Address const &addr)
+{
+    return read_account_helper(addr, db_, curr_block_id_);
+}
+
+bytes32_t TrieDbRO::read_storage(Address const &addr, bytes32_t const &key)
+{
+    return read_storage_helper(addr, key, db_, curr_block_id_);
+}
+
+std::shared_ptr<CodeAnalysis> TrieDbRO::read_code(bytes32_t const &code_hash)
+{
+    return read_code_helper(code_hash, db_, curr_block_id_);
+}
+
+bytes32_t TrieDbRO::state_root()
+{
+    return state_root_helper(db_, curr_block_id_);
+}
+
+bytes32_t TrieDbRO::receipts_root()
+{
+    return receipts_root_helper(db_, curr_block_id_);
+}
+
 struct TrieDb::Machine : public mpt::StateMachine
 {
     enum class TrieType : uint8_t
@@ -590,48 +701,17 @@ TrieDb::~TrieDb() = default;
 
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
-    auto const value = db_.get(
-        concat(state_nibble, NibblesView{to_key(addr)}), curr_block_id_);
-    if (!value.has_value()) {
-        return std::nullopt;
-    }
-
-    auto encoded_account = value.value();
-    auto acct = decode_account_db(encoded_account);
-    MONAD_DEBUG_ASSERT(!acct.has_error());
-    MONAD_DEBUG_ASSERT(encoded_account.empty());
-    acct.value().incarnation = 0;
-    return acct.value();
+    return read_account_helper(addr, db_, curr_block_id_);
 }
 
 bytes32_t TrieDb::read_storage(Address const &addr, bytes32_t const &key)
 {
-    auto const value = db_.get(
-        concat(
-            state_nibble, NibblesView{to_key(addr)}, NibblesView{to_key(key)}),
-        curr_block_id_);
-    if (!value.has_value()) {
-        return {};
-    }
-    MONAD_ASSERT(value.value().size() <= sizeof(bytes32_t));
-    bytes32_t ret;
-    std::copy_n(
-        value.value().begin(),
-        value.value().size(),
-        ret.bytes + sizeof(bytes32_t) - value.value().size());
-    return ret;
-};
+    return read_storage_helper(addr, key, db_, curr_block_id_);
+}
 
 std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
 {
-    // TODO read code analysis object
-    auto const value = db_.get(
-        concat(code_nibble, NibblesView{to_byte_string_view(code_hash.bytes)}),
-        curr_block_id_);
-    if (!value.has_value()) {
-        return std::make_shared<CodeAnalysis>(analyze({}));
-    }
-    return std::make_shared<CodeAnalysis>(analyze(value.assume_value()));
+    return read_code_helper(code_hash, db_, curr_block_id_);
 }
 
 void TrieDb::commit(
@@ -729,32 +809,16 @@ void TrieDb::increment_block_number()
     }
 }
 
-void TrieDb::create_and_prune_block_history(uint64_t) const {
-
-};
+void TrieDb::create_and_prune_block_history(uint64_t) const {}
 
 bytes32_t TrieDb::state_root()
 {
-    auto const value = db_.get_data(state_nibbles, curr_block_id_);
-    if (!value.has_value() || value.value().empty()) {
-        return NULL_ROOT;
-    }
-    bytes32_t root;
-    MONAD_ASSERT(value.value().size() == sizeof(bytes32_t));
-    std::copy_n(value.value().data(), sizeof(bytes32_t), root.bytes);
-    return root;
+    return state_root_helper(db_, curr_block_id_);
 }
 
 bytes32_t TrieDb::receipts_root()
 {
-    auto const value = db_.get_data(receipt_nibbles, curr_block_id_);
-    if (!value.has_value() || value.value().empty()) {
-        return NULL_ROOT;
-    }
-    bytes32_t root;
-    MONAD_ASSERT(value.value().size() == sizeof(bytes32_t));
-    std::copy_n(value.value().data(), sizeof(bytes32_t), root.bytes);
-    return root;
+    return receipts_root_helper(db_, curr_block_id_);
 }
 
 nlohmann::json TrieDb::to_json()

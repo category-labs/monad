@@ -19,6 +19,8 @@
 
 #include <gtest/gtest.h>
 
+#include <optional>
+
 using namespace monad;
 
 using db_t = TrieDb;
@@ -42,7 +44,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
         bs.merge(state);
     }
 
-    Transaction tx{
+    Transaction const tx{
         .sc =
             {.r =
                  0x5fd883bb01a10915ebc06621b925bd6d624cb6768976b73c0d468b31f657d15b_u256,

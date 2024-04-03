@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <utility>
 #include <vector>
 
 MONAD_RLP_NAMESPACE_BEGIN

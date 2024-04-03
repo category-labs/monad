@@ -1,17 +1,14 @@
-#include <monad/core/result.hpp>
-#include <monad/rlp/config.hpp>
 #include <monad/rlp/decode_error.hpp>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
     #include <boost/outcome/experimental/status-code/status-code/config.hpp>
+    #include <boost/outcome/experimental/status-code/status-code/generic_code.hpp>
     #include <boost/outcome/experimental/status-code/status-code/quick_status_code_from_enum.hpp>
 #else
     #include <boost/outcome/experimental/status-code/config.hpp>
     #include <boost/outcome/experimental/status-code/quick_status_code_from_enum.hpp>
 #endif
-
-#include <boost/outcome/success_failure.hpp>
 
 #include <initializer_list>
 

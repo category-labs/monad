@@ -1,13 +1,15 @@
-#include "gtest/gtest.h"
-
+#include <monad/core/byte_string.hpp>
 #include <monad/core/hex_literal.hpp>
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/node.hpp>
-
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
+#include <gtest/gtest.h>
+
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 
 using namespace monad::mpt;
@@ -163,7 +165,7 @@ TEST(NodeTest, extension_node)
 
 TEST(NodeTest, super_large_node)
 {
-    DummyCompute comp{};
+    DummyCompute const comp{};
     size_t const value_len = 255 * 1024 * 1024;
     monad::byte_string value(value_len, 0);
     Node::UniquePtr node{make_node(0, {}, {}, value, {})};

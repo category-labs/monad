@@ -1,8 +1,7 @@
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
-#include <monad/core/block.hpp>
+#include <monad/core/likely.h>
 #include <monad/core/log_level_map.hpp>
-#include <monad/core/receipt.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
@@ -11,19 +10,25 @@
 #include <monad/execution/replay_block_db.hpp>
 #include <monad/execution/trace.hpp>
 #include <monad/fiber/priority_pool.hpp>
+#include <monad/mpt/ondisk_db_config.hpp>
 
 #include <CLI/CLI.hpp>
 
 #include <quill/LogLevel.h>
 #include <quill/Quill.h>
 #include <quill/detail/LogMacros.h>
+#include <quill/handlers/FileHandler.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 #include <sys/sysinfo.h>
 

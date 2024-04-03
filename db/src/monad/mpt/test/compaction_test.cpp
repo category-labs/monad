@@ -1,3 +1,4 @@
+#include "test_fixtures_base.hpp"
 #include "test_fixtures_gtest.hpp"
 
 #include <monad/async/config.hpp>

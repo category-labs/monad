@@ -1,5 +1,19 @@
 #include <monad/mpt/compute.hpp>
 
+#include <monad/core/assert.h>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/keccak.h>
+#include <monad/mpt/config.hpp>
+#include <monad/mpt/merkle/compact_encode.hpp>
+#include <monad/mpt/merkle/node_reference.hpp>
+#include <monad/mpt/nibbles_view.hpp>
+#include <monad/mpt/node.hpp>
+#include <monad/rlp/encode.hpp>
+
+#include <cstddef>
+#include <cstring>
+#include <span>
+
 MONAD_MPT_NAMESPACE_BEGIN
 
 unsigned encode_two_pieces(
@@ -19,7 +33,7 @@ unsigned encode_two_pieces(
     auto const concat_len =
         rlp::string_length(first) +
         (need_encode_second ? rlp::string_length(second) : second.size());
-    inline_owning_bytes_span concat_rlp{concat_len};
+    inline_owning_bytes_span const concat_rlp{concat_len};
     auto result = rlp::encode_string(concat_rlp, first);
     result = need_encode_second ? rlp::encode_string(result, second) : [&] {
         memcpy(result.data(), second.data(), second.size());
@@ -28,7 +42,7 @@ unsigned encode_two_pieces(
     MONAD_DEBUG_ASSERT(
         (unsigned long)(result.data() - concat_rlp.data()) == concat_len);
 
-    inline_owning_bytes_span rlp{rlp::list_length(concat_len)};
+    inline_owning_bytes_span const rlp{rlp::list_length(concat_len)};
     rlp::encode_list(rlp, {concat_rlp.data(), concat_rlp.size()});
     auto ret = to_node_reference({rlp.data(), rlp.size()}, dest);
     // free any long array allocated on heap

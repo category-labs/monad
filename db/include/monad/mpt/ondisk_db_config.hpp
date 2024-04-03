@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <vector>
 
 MONAD_MPT_NAMESPACE_BEGIN
 

@@ -3,6 +3,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/execution/code_analysis.hpp>
+#include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/state3/state.hpp>

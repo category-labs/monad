@@ -1,20 +1,34 @@
-#include <CLI/CLI.hpp>
-
 #include <monad/async/config.hpp>
+#include <monad/async/detail/scope_polyfill.hpp>
+#include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/io.hpp>
 #include <monad/async/io_senders.hpp>
 #include <monad/async/storage_pool.hpp>
+#include <monad/core/assert.h>
 #include <monad/core/small_prng.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
 #include <monad/mem/mem_map.hpp>
 
+#include <CLI/CLI.hpp>
+
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <exception>
+#include <filesystem>
 #include <iostream>
+#include <span>
 #include <sstream>
+#include <stdexcept>
+#include <system_error>
+#include <tuple>
+#include <utility>
 #include <vector>
 
+#include <linux/capability.h>
 #include <sys/capability.h>
 #include <unistd.h>
 
@@ -134,7 +148,7 @@ struct shared_state_t
     MONAD_ASYNC_NAMESPACE::file_offset_t test_surface_available() const noexcept
     {
         MONAD_ASYNC_NAMESPACE::file_offset_t ret = 0;
-        for (auto &i : chunk_sizes_div_disk_page_size) {
+        for (auto const &i : chunk_sizes_div_disk_page_size) {
             ret += i.second;
         }
         ret *= MONAD_ASYNC_NAMESPACE::DISK_PAGE_SIZE;
@@ -192,7 +206,7 @@ inline void receiver_t::set_value(
             shared->chunk_sizes_div_disk_page_size
                 [r % uint32_t(shared->chunk_sizes_div_disk_page_size.size())];
         auto offset_into_chunk = (r >> 16) % chunk_size_div_disk_page_size;
-        MONAD_ASYNC_NAMESPACE::chunk_offset_t offset(
+        MONAD_ASYNC_NAMESPACE::chunk_offset_t const offset(
             chunk_id,
             offset_into_chunk * MONAD_ASYNC_NAMESPACE::DISK_PAGE_SIZE);
         auto const io_priority = state->io_priority();
@@ -297,7 +311,7 @@ set it to the desired size beforehand).
         if (highest_io_priority) {
             // We will need the CAP_SYS_NICE capability for this to work
             MONAD_ASSERT(CAP_IS_SUPPORTED(CAP_SYS_NICE));
-            auto caps = cap_get_proc();
+            auto *caps = cap_get_proc();
             MONAD_ASSERT(caps != nullptr);
             auto uncaps =
                 monad::make_scope_exit([&]() noexcept { cap_free(caps); });

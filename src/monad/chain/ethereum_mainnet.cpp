@@ -4,11 +4,13 @@
 #include <monad/core/block.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
+#include <monad/core/result.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/validate_block.hpp>
 
 #include <evmc/evmc.h>
 
+#include <boost/outcome/config.hpp>
 #include <boost/outcome/success_failure.hpp>
 
 MONAD_NAMESPACE_BEGIN

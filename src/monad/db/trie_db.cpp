@@ -1,35 +1,65 @@
 #include <monad/config.hpp>
+#include <monad/core/account.hpp>
+#include <monad/core/address.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/fmt/int_fmt.hpp>
 #include <monad/core/int.hpp>
+#include <monad/core/keccak.h>
 #include <monad/core/likely.h>
+#include <monad/core/receipt.hpp>
+#include <monad/core/result.hpp>
 #include <monad/core/rlp/account_rlp.hpp>
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
 #include <monad/core/rlp/receipt_rlp.hpp>
 #include <monad/core/unaligned.hpp>
 #include <monad/db/trie_db.hpp>
+#include <monad/execution/code_analysis.hpp>
+#include <monad/mpt/compute.hpp>
+#include <monad/mpt/db.hpp>
+#include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/nibbles_view_fmt.hpp>
+#include <monad/mpt/node.hpp>
+#include <monad/mpt/ondisk_db_config.hpp>
+#include <monad/mpt/state_machine.hpp>
 #include <monad/mpt/traverse.hpp>
+#include <monad/mpt/update.hpp>
 #include <monad/mpt/util.hpp>
+#include <monad/rlp/decode.hpp>
+#include <monad/rlp/decode_error.hpp>
 #include <monad/rlp/encode2.hpp>
+#include <monad/state2/state_deltas.hpp>
 
 #include <boost/outcome/try.hpp>
 
-#include <evmone/baseline.hpp>
-
 #include <evmc/evmc.hpp>
+#include <evmc/hex.hpp>
 
 #include <ethash/keccak.hpp>
 
 #include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
+
+#include <quill/bundled/fmt/core.h>
+#include <quill/bundled/fmt/format.h>
 
 #include <algorithm>
-#include <chrono>
+#include <concepts>
+#include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <deque>
-#include <set>
+#include <functional>
+#include <istream>
+#include <memory>
+#include <optional>
+#include <span>
+#include <stdexcept>
+#include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -556,7 +586,7 @@ TrieDb::TrieDb(
     loader.load(accounts, code);
 }
 
-TrieDb::~TrieDb() {}
+TrieDb::~TrieDb() = default;
 
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
@@ -733,12 +763,11 @@ nlohmann::json TrieDb::to_json()
     {
         TrieDb &db;
         nlohmann::json json;
-        Nibbles path;
+        Nibbles path{};
 
-        Traverse(TrieDb &db)
+        explicit Traverse(TrieDb &db)
             : db(db)
             , json(nlohmann::json::object())
-            , path()
         {
         }
 

@@ -1,4 +1,5 @@
 #include <monad/chain/ethereum_mainnet.hpp>
+#include <monad/core/account.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>

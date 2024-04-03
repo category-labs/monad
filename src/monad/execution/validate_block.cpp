@@ -1,6 +1,7 @@
 #include <monad/execution/validate_block.hpp>
 
 #include <monad/config.hpp>
+#include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>

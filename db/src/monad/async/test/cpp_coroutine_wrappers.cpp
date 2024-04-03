@@ -3,7 +3,6 @@
 #include <monad/async/concepts.hpp>
 #include <monad/async/config.hpp>
 #include <monad/async/cpp_coroutine_wrappers.hpp>
-#include <monad/async/detail/boost_outcome_coroutine_support.hpp>
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/io_senders.hpp>
 #include <monad/async/io_worker_pool.hpp>
@@ -13,6 +12,7 @@
 
 #include <boost/lockfree/policies.hpp>
 #include <boost/lockfree/queue.hpp>
+#include <boost/outcome/coroutine_support.hpp>
 #include <boost/outcome/try.hpp>
 
 #include <atomic>

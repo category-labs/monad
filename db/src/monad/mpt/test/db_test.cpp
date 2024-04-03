@@ -1,7 +1,7 @@
 #include "test_fixtures_base.hpp"
 
-#include <gtest/gtest.h>
-
+#include <monad/async/config.hpp>
+#include <monad/async/util.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/hex_literal.hpp>
@@ -13,8 +13,9 @@
 #include <monad/mpt/trie.hpp>
 #include <monad/mpt/update.hpp>
 #include <monad/mpt/util.hpp>
-
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+
+#include <gtest/gtest.h>
 
 #include <boost/fiber/fiber.hpp>
 #include <boost/fiber/operations.hpp>
@@ -24,12 +25,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <initializer_list>
 #include <iostream>
 #include <iterator>
 #include <thread>
 #include <utility>
 #include <vector>
+
+#include <unistd.h>
 
 using namespace monad::mpt;
 using namespace monad::test;
@@ -123,7 +127,8 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db)
         this->db.get_data(prefix, block_id).value(),
         0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
 
-    ReadOnlyOnDiskDbConfig ro_config{.dbname_paths = this->config.dbname_paths};
+    ReadOnlyOnDiskDbConfig const ro_config{
+        .dbname_paths = this->config.dbname_paths};
     Db ro_db{ro_config};
 
     EXPECT_EQ(ro_db.get(prefix + kv[0].first, block_id).value(), kv[0].second);
@@ -192,7 +197,7 @@ TEST(DbTest, load_correct_root_upon_repon_nonempty_db)
     uint64_t const block_id = 0x123;
 
     {
-        Db db{machine, config};
+        Db const db{machine, config};
         // db is init to empty
         EXPECT_FALSE(db.root().is_valid());
         EXPECT_FALSE(db.get_latest_block_id().has_value());
@@ -225,7 +230,7 @@ TEST(DbTest, load_correct_root_upon_repon_nonempty_db)
 
     { // reopen the same db again, this time we will have a valid root loaded
         config.append = true;
-        Db db{machine, config};
+        Db const db{machine, config};
         EXPECT_TRUE(db.root().is_valid());
         EXPECT_TRUE(db.get_latest_block_id().has_value());
         EXPECT_EQ(db.get_latest_block_id().value(), block_id);

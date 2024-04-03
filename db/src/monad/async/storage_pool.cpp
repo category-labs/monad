@@ -35,6 +35,7 @@
 #include <asm-generic/ioctl.h>
 #include <fcntl.h>
 #include <linux/falloc.h>
+#include <linux/limits.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>

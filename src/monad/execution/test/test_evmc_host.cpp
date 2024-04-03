@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <optional>
 
 using namespace monad;
 

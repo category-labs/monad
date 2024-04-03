@@ -33,6 +33,8 @@
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <optional>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <variant>
@@ -84,7 +86,7 @@ struct Db::ROOnDisk final : public Db::Impl
     chunk_offset_t last_loaded_offset_;
     Node::UniquePtr root_;
 
-    ROOnDisk(ReadOnlyOnDiskDbConfig const &options)
+    explicit ROOnDisk(ReadOnlyOnDiskDbConfig const &options)
         : pool_{[&] -> async::storage_pool {
             async::storage_pool::creation_flags pool_options;
             pool_options.open_read_only = true;
@@ -151,7 +153,7 @@ struct Db::InMemory final : public Db::Impl
     StateMachine &machine_;
     Node::UniquePtr root_;
 
-    InMemory(StateMachine &machine)
+    explicit InMemory(StateMachine &machine)
         : aux_{nullptr}
         , machine_{machine}
     {
@@ -465,7 +467,7 @@ Db::Db(ReadOnlyOnDiskDbConfig const &config)
 {
 }
 
-Db::~Db() {}
+Db::~Db() = default;
 
 Result<NodeCursor> Db::get(NodeCursor root, NibblesView const key) const
 {

@@ -31,6 +31,8 @@
 #include <quill/bundled/fmt/format.h>
 #include <quill/detail/LogMacros.h>
 
+#include <boost/outcome/try.hpp>
+
 #include <gtest/gtest.h>
 
 #include <test_resource_data.h>

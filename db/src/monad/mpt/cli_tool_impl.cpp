@@ -3,37 +3,57 @@
 #include "cli_tool_impl.hpp"
 
 #include <monad/async/config.hpp>
+#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/io.hpp>
+#include <monad/async/storage_pool.hpp>
+#include <monad/async/util.hpp>
+#include <monad/core/assert.h>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/detail/db_metadata.hpp>
-
-#include <monad/async/storage_pool.hpp>
 #include <monad/mpt/detail/kbhit.hpp>
 #include <monad/mpt/trie.hpp>
 
+#include <algorithm>
+#include <atomic>
+#include <bit>
 #include <cctype>
+#include <cerrno>
+#include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
 #include <exception>
 #include <filesystem>
 #include <future>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
+#include <optional>
 #include <span>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
 
 #include <archive.h>
 #include <archive_entry.h>
+#include <bits/time.h>
+#include <bits/types/struct_sched_param.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <sched.h>
 #include <sys/mman.h>
 #include <sys/statfs.h>
+#include <time.h>
+#include <unistd.h>
 #include <zstd.h>
 
 std::string print_bytes(MONAD_ASYNC_NAMESPACE::file_offset_t bytes_)
@@ -72,7 +92,7 @@ std::string print_bytes(MONAD_ASYNC_NAMESPACE::file_offset_t bytes_)
 
 static size_t const true_hardware_concurrency = [] {
     auto v = std::thread::hardware_concurrency();
-    int fd = ::open("/sys/devices/system/cpu/smt/active", O_RDONLY);
+    int const fd = ::open("/sys/devices/system/cpu/smt/active", O_RDONLY);
     if (fd != -1) {
         char buffer = 0;
         if (::read(fd, &buffer, 1) == 1) {
@@ -170,7 +190,7 @@ struct chunk_info_restore_t
                 else {
                     // We don't have enough physical RAM, so use
                     // files as temporary backing storage
-                    int fd = monad::async::make_temporary_inode();
+                    int const fd = monad::async::make_temporary_inode();
                     if (fd == -1) {
                         throw std::system_error(errno, std::system_category());
                     }
@@ -292,7 +312,7 @@ struct chunk_info_archive_t
     // Runs in a separate kernel thread
     void run(int const compression_level)
     {
-        int fd = monad::async::make_temporary_inode();
+        int const fd = monad::async::make_temporary_inode();
         if (fd == -1) {
             throw std::system_error(errno, std::system_category());
         }
@@ -490,9 +510,9 @@ public:
         uint32_t max_chunk_id[2] = {0, 0};
         for (archive_entry *entry = nullptr;
              archive_read_next_header(in, &entry) == ARCHIVE_OK;) {
-            std::filesystem::path pathname(archive_entry_pathname(entry));
+            std::filesystem::path const pathname(archive_entry_pathname(entry));
             monad::async::storage_pool::chunk_type type;
-            std::string_view pathname_sv(pathname.native());
+            std::string_view const pathname_sv(pathname.native());
             auto const type_sv = pathname_sv.substr(0, 4);
             if (type_sv == "cnv/") {
                 type = monad::async::storage_pool::cnv;
@@ -656,7 +676,7 @@ public:
             auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*pool, rwbuf};
             MONAD_MPT_NAMESPACE::UpdateAux<> aux(&io);
             for (;;) {
-                auto *item = aux.db_metadata()->fast_list_begin();
+                auto const *item = aux.db_metadata()->fast_list_begin();
                 if (item == nullptr) {
                     break;
                 }
@@ -666,7 +686,7 @@ public:
                 chunks.push_back(chunkid);
             }
             for (;;) {
-                auto *item = aux.db_metadata()->slow_list_begin();
+                auto const *item = aux.db_metadata()->slow_list_begin();
                 if (item == nullptr) {
                     break;
                 }
@@ -676,7 +696,7 @@ public:
                 chunks.push_back(chunkid);
             }
             for (;;) {
-                auto *item = aux.db_metadata()->free_list_begin();
+                auto const *item = aux.db_metadata()->free_list_begin();
                 if (item == nullptr) {
                     break;
                 }
@@ -804,7 +824,8 @@ public:
             MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
         auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*pool, rwbuf};
         MONAD_MPT_NAMESPACE::UpdateAux<> aux(&io);
-        size_t slow_chunks_inserted = 0, fast_chunks_inserted = 0;
+        size_t slow_chunks_inserted = 0;
+        size_t fast_chunks_inserted = 0;
         for (auto &i : todecompress) {
             if (i.type == monad::async::storage_pool::seq) {
                 if (i.metadata.in_fast_list) {
@@ -901,7 +922,7 @@ public:
                      true_hardware_concurrency */
                 * pool->activate_chunk(monad::async::storage_pool::seq, 0)
                       ->capacity();
-            int tempfd = monad::async::make_temporary_inode();
+            int const tempfd = monad::async::make_temporary_inode();
             if (tempfd == -1) {
                 throw std::system_error(errno, std::system_category());
             }
@@ -1130,7 +1151,7 @@ opened.
     try {
         impl_t impl(cout, cerr);
         {
-            auto cli_ops_group = cli.add_option_group(
+            auto *cli_ops_group = cli.add_option_group(
                 "Mutating operations, if none of these are "
                 "specified the storage is opened read-only");
             cli_ops_group->require_option(0, 1);
@@ -1246,7 +1267,7 @@ opened.
                 impl.cli_ask_question(ss.str().c_str());
             }
             if (mode == MONAD_ASYNC_NAMESPACE::storage_pool::mode::truncate) {
-                MONAD_ASYNC_NAMESPACE::storage_pool pool{
+                MONAD_ASYNC_NAMESPACE::storage_pool const pool{
                     {impl.storage_paths}, mode, impl.flags};
                 (void)pool;
                 mode = MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing;
@@ -1272,7 +1293,7 @@ opened.
             auto const default_width = int(cout.width());
             auto const default_prec = int(cout.precision());
             std::fixed(cout);
-            for (auto &device : impl.pool->devices()) {
+            for (auto const &device : impl.pool->devices()) {
                 auto cap = device.capacity();
                 cout << "\n   " << std::setw(15) << print_bytes(cap.first)
                      << std::setw(15) << print_bytes(cap.second) << std::setw(6)

@@ -15,8 +15,8 @@ class State;
 class BlockState final
 {
     DbRW &db_;
-    StateDeltas state_;
-    Code code_;
+    StateDeltas state_{};
+    Code code_{};
 
 public:
     BlockState(DbRW &);

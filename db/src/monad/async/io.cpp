@@ -14,6 +14,7 @@
 #include <atomic>
 #include <cassert>
 #include <cerrno>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -30,6 +31,7 @@
 #include <utility>
 #include <vector>
 
+#include <bits/types/struct_iovec.h>
 #include <fcntl.h>
 #include <liburing.h>
 #include <liburing/io_uring.h>
@@ -817,7 +819,7 @@ unsigned char *AsyncIO::poll_uring_while_no_io_buffers_(bool is_write)
         }
         // Reap completions until a buffer frees up, only reaping completions
         // for the write or other ring exclusively.
-        poll_uring_(1, is_write ? 1 : 2);
+        poll_uring_(true, is_write ? 1 : 2);
         auto *mem = (is_write ? wr_pool_ : rd_pool_).alloc();
         if (mem != nullptr) {
             return mem;

@@ -1,7 +1,6 @@
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
-#include <monad/core/fmt/block_fmt.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
@@ -13,7 +12,6 @@
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
-#include <monad/execution/fmt/trace_fmt.hpp>
 #include <monad/execution/trace.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
@@ -26,8 +24,6 @@
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
-
-#include <quill/detail/LogMacros.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -100,10 +96,10 @@ Result<std::vector<Receipt>> execute_block(
         }
     }
 
-    std::shared_ptr<std::optional<Result<Receipt>>[]> results{
+    std::shared_ptr<std::optional<Result<Receipt>>[]> const results{
         new std::optional<Result<Receipt>>[block.transactions.size()]};
 
-    std::shared_ptr<boost::fibers::promise<void>[]> promises{
+    std::shared_ptr<boost::fibers::promise<void>[]> const promises{
         new boost::fibers::promise<void>[block.transactions.size() + 1]};
     promises[0].set_value();
 

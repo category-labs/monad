@@ -1,17 +1,26 @@
+#include "test_fixtures_base.hpp"
 #include "test_fixtures_gtest.hpp"
 
 #include <monad/async/config.hpp>
+#include <monad/async/io.hpp>
+#include <monad/core/byte_string.hpp>
+#include <monad/io/buffers.hpp>
+#include <monad/io/ring.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/node.hpp>
-#include <monad/mpt/update.hpp>
-
+#include <monad/mpt/trie.hpp>
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
+#include <atomic>
+#include <chrono>
+#include <cstddef>
+#include <future>
 #include <iostream>
 #include <latch>
 #include <sstream>
 #include <string>
-#include <vector>
+#include <thread>
+#include <utility>
 
 using namespace MONAD_ASYNC_NAMESPACE;
 using namespace MONAD_MPT_NAMESPACE;
@@ -38,7 +47,9 @@ TEST_F(ReadOnlyDBTest, read_only_dbs_track_writable_db)
 {
     auto pool = state()->pool.clone_as_read_only();
     // Can only have one AsyncIO instance per kernel thread
-    std::latch do_append(1), append_done(1), second_block_checked(1);
+    std::latch do_append(1);
+    std::latch append_done(1);
+    std::latch second_block_checked(1);
     std::atomic<int> done{0};
     auto fut = std::async(std::launch::async, [&] {
         monad::io::Ring ring{2};
@@ -47,7 +58,7 @@ TEST_F(ReadOnlyDBTest, read_only_dbs_track_writable_db)
             2,
             MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)};
         MONAD_ASYNC_NAMESPACE::AsyncIO io{pool, rwbuf};
-        monad::test::MerkleCompute comp;
+        monad::test::MerkleCompute const comp;
         monad::test::StateMachineAlwaysMerkle sm;
         monad::test::UpdateAux<void> aux{&io};
         ASSERT_EQ(state()->aux.get_root_offset(), aux.get_root_offset());

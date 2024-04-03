@@ -2,26 +2,30 @@
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
-#include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/likely.h>
+#include <monad/core/receipt.hpp>
 #include <monad/db/db.hpp>
+#include <monad/execution/code_analysis.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/fmt/state_deltas_fmt.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/state3/state.hpp>
 
+#include <ankerl/unordered_dense.h>
+
 #include <quill/detail/LogMacros.h>
 
 #include <cstdint>
+#include <memory>
 #include <optional>
+#include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
 BlockState::BlockState(DbRW &db)
     : db_{db}
-    , state_{}
-    , code_{}
 {
 }
 

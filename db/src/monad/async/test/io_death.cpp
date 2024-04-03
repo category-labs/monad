@@ -1,8 +1,8 @@
-#include "gtest/gtest.h"
 
 #include <monad/async/concepts.hpp>
 #include <monad/async/config.hpp>
 #include <monad/async/connected_operation.hpp>
+#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/io.hpp>
 #include <monad/async/io_senders.hpp>
@@ -10,6 +10,8 @@
 #include <monad/core/assert.h>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
+
+#include <gtest/gtest.h>
 
 // DO NOT include gtest_signal_stacktrace_printer.hpp here, it interferes with
 // Google Test's death test handling
@@ -28,7 +30,8 @@ namespace
 
         monad::async::storage_pool pool(
             monad::async::use_anonymous_inode_tag{});
-        monad::io::Ring testring1, testring2(1);
+        monad::io::Ring testring1;
+        monad::io::Ring testring2(1);
         monad::io::Buffers testrwbuf =
             monad::io::make_buffers_for_segregated_read_write(
                 testring1,
@@ -78,7 +81,8 @@ namespace
 
         monad::async::storage_pool pool(
             monad::async::use_anonymous_inode_tag{});
-        monad::io::Ring testring1, testring2(1);
+        monad::io::Ring testring1;
+        monad::io::Ring testring2(1);
         monad::io::Buffers testrwbuf = make_buffers_for_segregated_read_write(
             testring1,
             testring2,

@@ -1,4 +1,3 @@
-#include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/likely.h>
@@ -18,6 +17,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 MONAD_RLP_NAMESPACE_BEGIN

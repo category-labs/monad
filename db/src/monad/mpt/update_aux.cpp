@@ -14,15 +14,19 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <span>
+#include <stdexcept>
+#include <thread>
 #include <utility>
 #include <vector>
 
 #include <sys/mman.h>
+#include <unistd.h>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -162,7 +166,7 @@ void UpdateAuxImpl::rewind_to_match_offsets()
     auto const fast_offset = db_metadata()->db_offsets.start_of_wip_offset_fast;
     auto const slow_offset = db_metadata()->db_offsets.start_of_wip_offset_slow;
 
-    auto *ci = db_metadata_[0]->at(fast_offset.id);
+    auto const *ci = db_metadata_[0]->at(fast_offset.id);
     while (ci != db_metadata_[0]->fast_list_end()) {
         auto const idx = db_metadata_[0]->fast_list.end;
         remove(idx);
@@ -174,7 +178,7 @@ void UpdateAuxImpl::rewind_to_match_offsets()
     MONAD_ASSERT(fast_offset_chunk->try_trim_contents(fast_offset.offset));
 
     // Same for slow list
-    auto *slow_ci = db_metadata_[0]->at(slow_offset.id);
+    auto const *slow_ci = db_metadata_[0]->at(slow_offset.id);
     while (slow_ci != db_metadata_[0]->slow_list_end()) {
         auto const idx = db_metadata_[0]->slow_list.end;
         remove(idx);
@@ -646,9 +650,9 @@ void UpdateAuxImpl::free_compacted_chunks()
     auto free_chunks_from_ci_till_count =
         [&](detail::db_metadata::chunk_info_t const *ci,
             uint32_t const count_before) {
-            uint32_t idx = ci->index(db_metadata()),
-                     count =
-                         (uint32_t)db_metadata()->at(idx)->insertion_count();
+            uint32_t idx = ci->index(db_metadata());
+            uint32_t count =
+                (uint32_t)db_metadata()->at(idx)->insertion_count();
             for (; count < count_before && ci != nullptr;
                  idx = ci->index(db_metadata()),
                  count = (uint32_t)db_metadata()->at(idx)->insertion_count()) {

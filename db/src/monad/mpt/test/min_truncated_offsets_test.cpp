@@ -1,3 +1,4 @@
+#include "test_fixtures_base.hpp"
 #include "test_fixtures_gtest.hpp"
 
 #include <monad/core/assert.h>
@@ -13,6 +14,7 @@
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>

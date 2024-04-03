@@ -6,7 +6,6 @@
 
 #include <evmc/evmc.hpp>
 
-#include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 
 #include <gtest/gtest.h>
@@ -14,6 +13,7 @@
 #include <test_resource_data.h>
 
 #include <fstream>
+#include <optional>
 
 using namespace monad;
 

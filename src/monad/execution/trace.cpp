@@ -4,8 +4,10 @@
 #include <monad/execution/trace.hpp>
 
 #include <quill/Quill.h>
+#include <quill/detail/LogMacros.h>
 
 #include <chrono>
+#include <cstdint>
 #include <ostream>
 
 MONAD_NAMESPACE_BEGIN

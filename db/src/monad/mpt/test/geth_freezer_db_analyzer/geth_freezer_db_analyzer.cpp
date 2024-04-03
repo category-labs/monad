@@ -1,3 +1,7 @@
+#include <monad/core/assert.h>
+#include <monad/core/cmemory.hpp>
+#include <monad/core/unordered_map.hpp>
+
 #include <CLI/CLI.hpp>
 
 #include <algorithm>
@@ -32,10 +36,6 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
-
-#include <monad/core/assert.h>
-#include <monad/core/cmemory.hpp>
-#include <monad/core/unordered_map.hpp>
 
 #if __has_include(<snappy.h>)
     #define MONAD_GETH_FREEZER_DB_HAVE_SNAPPY_H 1

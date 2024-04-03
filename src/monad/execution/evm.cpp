@@ -6,13 +6,14 @@
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
 #include <monad/execution/baseline_execute.hpp>
-#include <monad/execution/code_analysis.hpp>
 #include <monad/execution/create_contract_address.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/precompiles.hpp>
 #include <monad/state3/state.hpp>
+
+#include <evmone/baseline.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -23,7 +24,6 @@
 
 #include <cstdint>
 #include <limits>
-#include <memory>
 #include <optional>
 #include <utility>
 

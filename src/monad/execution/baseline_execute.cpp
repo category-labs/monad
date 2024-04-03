@@ -60,7 +60,7 @@ evmc::Result baseline_execute(
     auto const &cost_table = evmone::baseline::get_baseline_cost_table(
         execution_state->rev, code_analysis.eof_header.version);
 
-    evmone::VM vm{};
+    evmone::VM const vm{};
     auto const gas = evmone::baseline::monad_execute(
         vm.get_tracer(), msg.gas, *execution_state, cost_table, code_analysis);
 

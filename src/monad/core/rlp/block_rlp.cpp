@@ -1,7 +1,5 @@
-#include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
-#include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/result.hpp>
@@ -13,7 +11,6 @@
 #include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/core/rlp/withdrawal_rlp.hpp>
 #include <monad/core/transaction.hpp>
-#include <monad/core/withdrawal.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
 #include <monad/rlp/decode_error.hpp>
@@ -23,6 +20,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <utility>
 #include <vector>
 
 MONAD_RLP_NAMESPACE_BEGIN

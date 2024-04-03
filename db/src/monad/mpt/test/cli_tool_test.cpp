@@ -1,16 +1,26 @@
+#include "test_fixtures_base.hpp"
 #include "test_fixtures_gtest.hpp"
 
 #include "../cli_tool_impl.hpp"
 
+#include <monad/async/config.hpp>
 #include <monad/async/detail/scope_polyfill.hpp>
-
+#include <monad/async/io.hpp>
+#include <monad/async/storage_pool.hpp>
+#include <monad/io/buffers.hpp>
+#include <monad/io/ring.hpp>
+#include <monad/mpt/node.hpp>
+#include <monad/mpt/trie.hpp>
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
+#include <filesystem>
+#include <future>
 #include <iostream>
 #include <ostream>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -19,7 +29,8 @@ using namespace monad::test;
 
 TEST(cli_tool, no_args_prints_fatal_and_help)
 {
-    std::stringstream cout, cerr;
+    std::stringstream cout;
+    std::stringstream cerr;
     std::string_view args[] = {"monad_mpt"};
     int const retcode = main_impl(cout, cerr, args);
     ASSERT_EQ(retcode, 1);
@@ -29,7 +40,8 @@ TEST(cli_tool, no_args_prints_fatal_and_help)
 
 TEST(cli_tool, help_prints_help)
 {
-    std::stringstream cout, cerr;
+    std::stringstream cout;
+    std::stringstream cerr;
     std::string_view args[] = {"monad_mpt", "--help"};
     int const retcode = main_impl(cout, cerr, args);
     ASSERT_EQ(retcode, 0);
@@ -51,7 +63,8 @@ TEST(cli_tool, create)
     }
     std::cout << "temp file being used: " << temppath << std::endl;
     {
-        std::stringstream cout, cerr;
+        std::stringstream cout;
+        std::stringstream cerr;
         std::string_view args[] = {
             "monad_mpt", "--storage", temppath, "--create"};
         int const retcode = main_impl(cout, cerr, args);
@@ -108,7 +121,8 @@ struct cli_tool_fixture
         std::cout << "DB path: " << dbpath1 << std::endl;
         {
             std::cout << "archiving to file: " << temppath1 << std::endl;
-            std::stringstream cout, cerr;
+            std::stringstream cout;
+            std::stringstream cerr;
             std::string_view args[] = {
                 "monad_mpt", "--storage", dbpath1, "--archive", temppath1};
             int const retcode = std::async(std::launch::async, [&] {
@@ -156,7 +170,8 @@ struct cli_tool_fixture
                 std::cout << " " << i;
             }
             std::cout << std::endl;
-            std::stringstream cout, cerr;
+            std::stringstream cout;
+            std::stringstream cerr;
             std::vector<std::string_view> args{
                 "monad_mpt",
                 "--chunk-capacity",
@@ -191,10 +206,10 @@ struct cli_tool_fixture
                         1,
                         monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
                 monad::async::AsyncIO testio(pool, testrwbuf);
-                monad::mpt::UpdateAux<> aux{&testio};
+                monad::mpt::UpdateAux<> const aux{&testio};
                 monad::mpt::Node::UniquePtr root_ptr{
                     read_node_blocking(pool, aux.get_root_offset())};
-                monad::mpt::NodeCursor root(*root_ptr);
+                monad::mpt::NodeCursor const root(*root_ptr);
 
                 for (auto &key : this->state()->keys) {
                     auto ret = monad::mpt::find_blocking(aux, root, key.first);
@@ -231,7 +246,8 @@ struct cli_tool_fixture
             });
             {
                 std::cout << "archiving to file: " << temppath2 << std::endl;
-                std::stringstream cout, cerr;
+                std::stringstream cout;
+                std::stringstream cerr;
                 std::vector<std::string_view> args{
                     "monad_mpt", "--archive", temppath2};
                 for (auto &i : dbpath2) {
@@ -249,7 +265,8 @@ struct cli_tool_fixture
             {
                 std::cout << "restoring from file " << temppath2 << " to "
                           << dbpath3 << std::endl;
-                std::stringstream cout, cerr;
+                std::stringstream cout;
+                std::stringstream cerr;
                 std::string_view args[] = {
                     "monad_mpt",
                     "--storage",
@@ -282,10 +299,10 @@ struct cli_tool_fixture
                             1,
                             monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
                     monad::async::AsyncIO testio(pool, testrwbuf);
-                    monad::mpt::UpdateAux<> aux{&testio};
+                    monad::mpt::UpdateAux<> const aux{&testio};
                     monad::mpt::Node::UniquePtr root_ptr{
                         read_node_blocking(pool, aux.get_root_offset())};
-                    monad::mpt::NodeCursor root(*root_ptr);
+                    monad::mpt::NodeCursor const root(*root_ptr);
 
                     for (auto &key : this->state()->keys) {
                         auto ret =

@@ -3,8 +3,11 @@
 #include "test_fixtures_base.hpp"
 
 #include <monad/async/config.hpp>
+#include <monad/async/connected_operation.hpp>
 #include <monad/async/detail/scope_polyfill.hpp>
+#include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/io.hpp>
+#include <monad/async/io_senders.hpp>
 #include <monad/async/storage_pool.hpp>
 #include <monad/core/array.hpp>
 #include <monad/core/assert.h>
@@ -14,6 +17,7 @@
 #include <monad/core/unordered_map.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
+#include <monad/mpt/detail/boost_fiber_workarounds.hpp>
 #include <monad/mpt/find_request_sender.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/node.hpp>
@@ -22,7 +26,12 @@
 #include <monad/mpt/update.hpp>
 #include <monad/mpt/util.hpp>
 
+#include <boost/fiber/fiber.hpp>
+#include <boost/fiber/operations.hpp>
+
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cassert>
 #include <cerrno>
 #include <chrono>
@@ -38,10 +47,13 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <random>
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -52,6 +64,7 @@ template <class T>
 using concurrent_queue = moodycamel::ConcurrentQueue<T>;
 
 #include <fcntl.h>
+#include <linux/fs.h>
 #include <signal.h>
 #include <sys/mman.h>
 #include <sys/syscall.h> // for SYS_gettid
@@ -416,10 +429,10 @@ int main(int argc, char *argv[])
                    : MONAD_ASYNC_NAMESPACE::storage_pool::mode::truncate};
 
         // init uring
-        monad::io::Ring ring1({512, use_iopoll, sq_thread_cpu}),
-            ring2(16
-                  /* max concurrent write buffers in use <= 6 */
-            );
+        monad::io::Ring ring1({512, use_iopoll, sq_thread_cpu});
+        monad::io::Ring ring2(16
+                              /* max concurrent write buffers in use <= 6 */
+        );
 
         // init buffer
         monad::io::Buffers rwbuf = make_buffers_for_segregated_read_write(
@@ -438,7 +451,9 @@ int main(int argc, char *argv[])
                 runtime_reconfig.last_parsed = now;
                 if (std::filesystem::exists(runtime_reconfig.path)) {
                     std::ifstream s(runtime_reconfig.path);
-                    std::string key, equals, value;
+                    std::string key;
+                    std::string equals;
+                    std::string value;
                     while (!s.eof()) {
                         s >> key >> equals;
                         if (equals == "=") {
@@ -616,7 +631,7 @@ int main(int argc, char *argv[])
             {
                 auto db = load_db();
                 UpdateAux<> &aux = std::get<0>(*db);
-                NodeCursor state_start = std::get<2>(*db);
+                NodeCursor const state_start = std::get<2>(*db);
                 printf(
                     "\n********************************************************"
                     "*"
@@ -715,7 +730,7 @@ int main(int argc, char *argv[])
             {
                 auto db = load_db();
                 UpdateAux<> &aux = std::get<0>(*db);
-                NodeCursor state_start = std::get<2>(*db);
+                NodeCursor const state_start = std::get<2>(*db);
                 printf(
                     "\n********************************************************"
                     "*"
@@ -794,7 +809,7 @@ int main(int argc, char *argv[])
             {
                 auto db = load_db();
                 UpdateAux<> &aux = std::get<0>(*db);
-                NodeCursor state_start = std::get<2>(*db);
+                NodeCursor const state_start = std::get<2>(*db);
                 printf(
                     "\n********************************************************"
                     "*"
@@ -819,7 +834,7 @@ int main(int argc, char *argv[])
                             monad::mpt::find_result_type>,
                         4>
                         promises;
-                    auto promise_it = promises.begin();
+                    auto *promise_it = promises.begin();
                     while (0 == signal_done.load(std::memory_order_relaxed)) {
                         size_t key_src = (rand() % (n_slices * SLICE_LEN));
                         keccak256(
@@ -906,7 +921,7 @@ int main(int argc, char *argv[])
             if (!use_iopoll) {
                 auto db = load_db();
                 UpdateAux<> &aux = std::get<0>(*db);
-                NodeCursor state_start = get<2>(*db);
+                NodeCursor const state_start = get<2>(*db);
                 printf(
                     "\n********************************************************"
                     "*"
@@ -968,7 +983,7 @@ int main(int argc, char *argv[])
                         std::tuple{},
                         std::tuple<UpdateAuxImpl &, inflight_map_t &>{
                             aux, inflights});
-                    auto state_it = states.begin();
+                    auto *state_it = states.begin();
                     while (0 == signal_done.load(std::memory_order_relaxed)) {
                         auto &state = *state_it++;
                         if (state_it == states.end()) {

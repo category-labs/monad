@@ -14,11 +14,13 @@
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <chrono>
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <system_error>
 #include <utility>
@@ -134,7 +136,8 @@ namespace
     {
         monad::async::storage_pool pool(
             monad::async::use_anonymous_inode_tag{});
-        monad::io::Ring testring1, testring2(1);
+        monad::io::Ring testring1;
+        monad::io::Ring testring2(1);
         monad::io::Buffers testrwbuf =
             monad::io::make_buffers_for_segregated_read_write(
                 testring1,
@@ -259,11 +262,11 @@ namespace
     {
         monad::async::storage_pool pool(
             monad::async::use_anonymous_inode_tag{});
-        monad::io::Ring testring1(4),
-            testring2(
-                {sqe_exhaustion_does_not_reorder_writes_receiver::COUNT,
-                 false,
-                 std::nullopt});
+        monad::io::Ring testring1(4);
+        monad::io::Ring testring2(
+            {sqe_exhaustion_does_not_reorder_writes_receiver::COUNT,
+             false,
+             std::nullopt});
         monad::io::Buffers testrwbuf =
             monad::io::make_buffers_for_segregated_read_write(
                 testring1,
@@ -347,7 +350,8 @@ namespace
                 i.initiate();
             }
             testio.wait_until_done();
-            long min = LONG_MAX, max = 0;
+            long min = LONG_MAX;
+            long max = 0;
             for (auto &i : states) {
                 auto diff =
                     std::chrono::duration_cast<std::chrono::nanoseconds>(

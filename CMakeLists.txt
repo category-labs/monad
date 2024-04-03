@@ -77,14 +77,14 @@ add_library(
   "include/monad/config.hpp"
   # analysis
   "include/monad/analysis/analysis.hpp"
-  "src/monad/analysis/analysis.cpp"
+  "c++/monad/analysis/analysis.cpp"
   # cache
   "include/monad/cache/account_storage_cache.hpp"
   # chain
   "include/monad/chain/chain.hpp"
   "include/monad/chain/ethereum_mainnet.hpp"
-  "src/monad/chain/chain.cpp"
-  "src/monad/chain/ethereum_mainnet.cpp"
+  "c++/monad/chain/chain.cpp"
+  "c++/monad/chain/ethereum_mainnet.cpp"
   # core
   "include/monad/core/account.hpp"
   "include/monad/core/address.hpp"
@@ -115,15 +115,15 @@ add_library(
   "include/monad/core/transaction.hpp"
   "include/monad/core/variant.hpp"
   "include/monad/core/withdrawal.hpp"
-  "src/monad/core/receipt.cpp"
-  "src/monad/core/rlp/account_rlp.cpp"
-  "src/monad/core/rlp/block_rlp.cpp"
-  "src/monad/core/rlp/receipt_rlp.cpp"
-  "src/monad/core/rlp/signature_rlp.cpp"
-  "src/monad/core/rlp/transaction_rlp.cpp"
-  "src/monad/core/rlp/withdrawal_rlp.cpp"
-  "src/monad/core/signature.cpp"
-  "src/monad/core/transaction.cpp"
+  "c++/monad/core/receipt.cpp"
+  "c++/monad/core/rlp/account_rlp.cpp"
+  "c++/monad/core/rlp/block_rlp.cpp"
+  "c++/monad/core/rlp/receipt_rlp.cpp"
+  "c++/monad/core/rlp/signature_rlp.cpp"
+  "c++/monad/core/rlp/transaction_rlp.cpp"
+  "c++/monad/core/rlp/withdrawal_rlp.cpp"
+  "c++/monad/core/signature.cpp"
+  "c++/monad/core/transaction.cpp"
   # db
   "include/monad/db/block_db.hpp"
   "include/monad/db/db.hpp"
@@ -131,10 +131,10 @@ add_library(
   "include/monad/db/file_db.hpp"
   "include/monad/db/trie_db.hpp"
   "include/monad/db/util.hpp"
-  "src/monad/db/block_db.cpp"
-  "src/monad/db/file_db.cpp"
-  "src/monad/db/trie_db.cpp"
-  "src/monad/db/util.cpp"
+  "c++/monad/db/block_db.cpp"
+  "c++/monad/db/file_db.cpp"
+  "c++/monad/db/trie_db.cpp"
+  "c++/monad/db/util.cpp"
   # execution
   "include/monad/execution/baseline_execute.hpp"
   "include/monad/execution/block_hash_buffer.hpp"
@@ -156,38 +156,38 @@ add_library(
   "include/monad/execution/tx_context.hpp"
   "include/monad/execution/validate_block.hpp"
   "include/monad/execution/validate_transaction.hpp"
-  "src/monad/execution/baseline_execute.cpp"
-  "src/monad/execution/block_hash_buffer.cpp"
-  "src/monad/execution/block_reward.cpp"
-  "src/monad/execution/create_contract_address.cpp"
-  "src/monad/execution/evm.cpp"
-  "src/monad/execution/evmc_host.cpp"
-  "src/monad/execution/execute_block.cpp"
-  "src/monad/execution/execute_transaction.cpp"
-  "src/monad/execution/precompiles.cpp"
-  "src/monad/execution/trace.cpp"
-  "src/monad/execution/transaction_gas.cpp"
-  "src/monad/execution/tx_context.cpp"
-  "src/monad/execution/validate_block.cpp"
-  "src/monad/execution/validate_transaction.cpp"
+  "c++/monad/execution/baseline_execute.cpp"
+  "c++/monad/execution/block_hash_buffer.cpp"
+  "c++/monad/execution/block_reward.cpp"
+  "c++/monad/execution/create_contract_address.cpp"
+  "c++/monad/execution/evm.cpp"
+  "c++/monad/execution/evmc_host.cpp"
+  "c++/monad/execution/execute_block.cpp"
+  "c++/monad/execution/execute_transaction.cpp"
+  "c++/monad/execution/precompiles.cpp"
+  "c++/monad/execution/trace.cpp"
+  "c++/monad/execution/transaction_gas.cpp"
+  "c++/monad/execution/tx_context.cpp"
+  "c++/monad/execution/validate_block.cpp"
+  "c++/monad/execution/validate_transaction.cpp"
   # rlp
   "include/monad/rlp/config.hpp"
   "include/monad/rlp/decode_error.hpp"
   "include/monad/rlp/decode.hpp"
   "include/monad/rlp/encode2.hpp"
-  "src/monad/rlp/decode_error.cpp"
+  "c++/monad/rlp/decode_error.cpp"
   # state
   "include/monad/state2/block_state.hpp"
   "include/monad/state2/fmt/state_deltas_fmt.hpp"
   "include/monad/state2/state_deltas.hpp"
-  "src/monad/state2/block_state.cpp"
+  "c++/monad/state2/block_state.cpp"
   # state 3
   "include/monad/state3/account_state.hpp"
   "include/monad/state3/account_substate.hpp"
   "include/monad/state3/state.hpp"
   "include/monad/state3/version_stack.hpp"
-  "src/monad/state3/account_state.cpp"
-  "src/monad/state3/state.cpp")
+  "c++/monad/state3/account_state.cpp"
+  "c++/monad/state3/state.cpp")
 
 target_include_directories(
   monad
@@ -250,7 +250,7 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/cmd)
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/ethereum_test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common)
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/analysis)
+add_subdirectory(${PROJECT_SOURCE_DIR}/c++/monad/analysis)
 
 function(monad_add_test2 target)
   add_executable(${target} "test/unit/common/src/test/main.cpp" ${ARGN})
@@ -270,9 +270,9 @@ function(monad_add_test_folder target)
   endforeach()
 endfunction()
 
-monad_add_test_folder("src/monad/core")
-monad_add_test_folder("src/monad/db")
-monad_add_test_folder("src/monad/execution")
-monad_add_test_folder("src/monad/rlp")
-monad_add_test_folder("src/monad/state2")
-monad_add_test_folder("src/monad/trie")
+monad_add_test_folder("c++/monad/core")
+monad_add_test_folder("c++/monad/db")
+monad_add_test_folder("c++/monad/execution")
+monad_add_test_folder("c++/monad/rlp")
+monad_add_test_folder("c++/monad/state2")
+monad_add_test_folder("c++/monad/trie")

@@ -102,7 +102,7 @@ constexpr evmc_message to_message(Transaction const &tx, Address const &sender)
 }
 
 template <evmc_revision rev>
-evmc::Result execute_impl3(
+evmc::Result execute_impl_no_validation(
     State &state, EvmcHost<rev> &host, Transaction const &tx,
     Address const &sender, uint256_t const &base_fee_per_gas,
     Address const &beneficiary)
@@ -128,6 +128,8 @@ evmc::Result execute_impl3(
     auto const msg = to_message<rev>(tx, sender);
     return host.call(msg);
 }
+
+EXPLICIT_EVMC_REVISION(execute_impl_no_validation);
 
 template <evmc_revision rev>
 Receipt execute_final(
@@ -178,7 +180,7 @@ Result<evmc::Result> execute_impl2(
     auto const tx_context = get_tx_context<rev>(tx, sender, hdr);
     EvmcHost<rev> host{tx_context, block_hash_buffer, state};
 
-    return execute_impl3<rev>(
+    return execute_impl_no_validation<rev>(
         state,
         host,
         tx,

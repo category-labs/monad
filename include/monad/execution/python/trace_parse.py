@@ -33,8 +33,8 @@ class TraceType(IntEnum):
 
 # Quill writes a \n after every log (see first line of
 # PatternFormatter::_set_pattern), hence the +1;
-read_size = 17 + 1
-struct = "=cQQx"
+read_size = 21 + 1
+struct = "=ciQQx"
 
 
 def summary(f):
@@ -42,7 +42,7 @@ def summary(f):
     start = defaultdict(lambda: defaultdict(list))
 
     for chunk in iter(partial(f.read, read_size), b""):
-        type, time, value = unpack(struct, chunk)
+        type, tid, time, value = unpack(struct, chunk)
         trace_type = TraceType(ord(type))
 
         if trace_type.name.startswith("Start"):
@@ -78,7 +78,7 @@ def dump(f, number, txn):
     started = False
 
     for chunk in iter(partial(f.read, read_size), b""):
-        type, time, value = unpack(struct, chunk)
+        type, tid, time, value = unpack(struct, chunk)
         trace_type = TraceType(ord(type))
         if trace_type == TraceType.StartBlock and number == value:
             assert started == False
@@ -87,7 +87,7 @@ def dump(f, number, txn):
             assert number == value
             break
         elif started and (txn == None or txn == value):
-            events[time] = (trace_type, value)
+            events[time] = (trace_type, tid, value)
 
     if not started:
         assert len(events) == 0
@@ -98,10 +98,10 @@ def dump(f, number, txn):
         print(
             pd.DataFrame(
                 data=[
-                    [time, event[1], event[0].name]
+                    [time, event[1], event[2], event[0].name]
                     for time, event in sorted(events.items())
                 ],
-                columns=["Time(ns)", "Txn", "Event"],
+                columns=["Time(ns)", "Tid", "Txn", "Event"],
             ).to_string(index=False)
         )
 

@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdint>
 #include <ostream>
+#include <unistd.h>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -51,6 +52,7 @@ TraceTimer::~TraceTimer()
 
 TraceEvent::TraceEvent(TraceType const type, uint64_t const value)
     : type{type}
+    , tid(gettid())
     , time{std::chrono::steady_clock::now().time_since_epoch()}
     , value{value}
 {
@@ -59,6 +61,7 @@ TraceEvent::TraceEvent(TraceType const type, uint64_t const value)
 std::ostream &operator<<(std::ostream &os, TraceEvent const &event)
 {
     os.write(reinterpret_cast<char const *>(&event.type), sizeof(event.type));
+    os.write(reinterpret_cast<char const *>(&event.tid), sizeof(event.tid));
     os.write(reinterpret_cast<char const *>(&event.time), sizeof(event.time));
     os.write(reinterpret_cast<char const *>(&event.value), sizeof(event.value));
     return os;

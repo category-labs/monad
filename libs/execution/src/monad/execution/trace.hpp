@@ -71,6 +71,7 @@ enum class TraceType : uint8_t
 struct TraceEvent
 {
     TraceType type;
+    pid_t tid;
     std::chrono::nanoseconds time;
     uint64_t value;
 

@@ -63,11 +63,12 @@ def summary(f):
         pd.DataFrame(
             data=[
                 np.append(
-                    [key, len(val)], np.round(np.percentile(val, pctls) / 1000, 2)
+                    [key, len(val), np.round(np.average(val) / 1000, 2)],
+                    np.round(np.percentile(val, pctls) / 1000, 2),
                 )
                 for key, val in sorted(timing.items())
             ],
-            columns=["Event", "n"] + list(map(lambda x: f"{x}%(us)", pctls)),
+            columns=["Event", "n", "avg(us)"] + list(map(lambda x: f"{x}%(us)", pctls)),
         ).to_string(index=False)
     )
 

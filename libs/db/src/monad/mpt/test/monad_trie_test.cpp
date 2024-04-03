@@ -141,12 +141,13 @@ Node::UniquePtr batch_upsert_commit(
     fprintf(
         stdout,
         "next_key_id: %lu, nkeys upserted: %lu, upsert+commit in RAM: %f "
-        "/s, total_t %.4f s, max creads %u\n=====\n",
+        "/s, total_t %.4f s, max creads %u, nread %u\n=====\n",
         (key_offset + vec_idx + nkeys) % MAX_NUM_KEYS,
         nkeys,
         (double)nkeys / tm_ram,
         tm_ram,
-        aux.io->max_reads_in_flight());
+        aux.io->max_reads_in_flight(),
+        aux.io->nreads());
     fflush(stdout);
     aux.io->reset_records();
 

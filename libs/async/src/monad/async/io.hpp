@@ -172,6 +172,11 @@ public:
         return records_.max_inflight_rd;
     }
 
+    unsigned nreads() const noexcept
+    {
+        return records_.nreads;
+    }
+
     unsigned reads_scatter_in_flight() const noexcept
     {
         return records_.inflight_rd_scatter;

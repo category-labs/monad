@@ -525,10 +525,10 @@ Node::UniquePtr UpdateAuxImpl::do_update(
             }
             MONAD_ASSERT(!erase.empty());
             // set chunk count that can be erased
-            auto [erase_root_it, res] =
+            auto [erase_cursor, res] =
                 find_blocking(*this, *prev_root, version_to_erase.back());
             auto [min_offset_fast, min_offset_slow] =
-                calc_min_offsets(*erase_root_it.node);
+                calc_min_offsets(*erase_cursor.node);
             if (min_offset_fast == INVALID_COMPACT_VIRTUAL_OFFSET) {
                 min_offset_fast = MIN_COMPACT_VIRTUAL_OFFSET;
             }
@@ -538,7 +538,17 @@ Node::UniquePtr UpdateAuxImpl::do_update(
             remove_chunks_before_count_fast_ = min_offset_fast.get_count();
             remove_chunks_before_count_slow_ = min_offset_slow.get_count();
             // 2. advance compaction offsets
-            advance_compact_offsets();
+            advance_compact_offsets(erase_cursor);
+#if COLLECT_MPT_STATS
+            printf(
+                "disk usage: %.2f%\ncompact range [%d, %d]\n remove chunks "
+                "before [%d, %d]\n",
+                (100.0 * used_chunks_ratio),
+                compact_offset_range_fast_,
+                compact_offset_range_slow_,
+                remove_chunks_before_count_fast_,
+                remove_chunks_before_count_slow_);
+#endif
         }
     }
 
@@ -596,7 +606,7 @@ Node::UniquePtr UpdateAuxImpl::move_subtrie(
     return root;
 }
 
-void UpdateAuxImpl::advance_compact_offsets()
+void UpdateAuxImpl::advance_compact_offsets(NodeCursor const block_to_erase)
 {
     MONAD_ASSERT(is_on_disk());
     // update disk growth speed trackers
@@ -615,10 +625,8 @@ void UpdateAuxImpl::advance_compact_offsets()
     last_block_end_offset_fast_ = curr_fast_writer_offset;
     last_block_end_offset_slow_ = curr_slow_writer_offset;
 
-    if (num_chunks(chunk_list::fast) <= 200 /* disk usage less than 50GB */) {
-        // not doing compaction, no need to update compaction related vars
-        return;
-    }
+    compact_virtual_chunk_offset_t const max_offset_fast =
+        calc_max_child_offset(*block_to_erase.node, true /*fast*/);
     compact_offset_fast = db_metadata()->db_offsets.last_compact_offset_fast;
     compact_offset_slow = db_metadata()->db_offsets.last_compact_offset_slow;
     double const used_chunks_ratio =
@@ -627,8 +635,10 @@ void UpdateAuxImpl::advance_compact_offsets()
     compact_offset_range_slow_ = MIN_COMPACT_VIRTUAL_OFFSET;
     // Compaction pace control based on free space left on disk
     if (used_chunks_ratio <= 0.8) {
-        compact_offset_range_fast_.set_value(
-            (uint32_t)std::lround(last_block_disk_growth_fast_ * 0.85));
+        compact_offset_fast.set_value(max_offset_fast);
+        compact_offset_range_fast_ =
+            compact_offset_fast -
+            db_metadata()->db_offsets.last_compact_offset_fast;
     }
     else {
         auto slow_fast_inuse_ratio =
@@ -658,15 +668,9 @@ void UpdateAuxImpl::advance_compact_offsets()
                     last_block_disk_growth_slow_) +
                 2);
         }
+        compact_offset_fast += compact_offset_range_fast_;
+        compact_offset_slow += compact_offset_range_slow_;
     }
-    compact_offset_fast += compact_offset_range_fast_;
-    compact_offset_slow += compact_offset_range_slow_;
-    compact_offset_range_fast_ =
-        compact_offset_fast -
-        db_metadata()->db_offsets.last_compact_offset_fast;
-    compact_offset_range_slow_ =
-        compact_offset_slow -
-        db_metadata()->db_offsets.last_compact_offset_slow;
 }
 
 // must call this when db is non empty
@@ -759,6 +763,19 @@ uint32_t UpdateAuxImpl::num_chunks(chunk_list const list) const noexcept
                1;
     }
     return 0;
+}
+
+compact_virtual_chunk_offset_t
+UpdateAuxImpl::calc_max_child_offset(Node &node, bool const fast)
+{
+    compact_virtual_chunk_offset_t ret = MIN_COMPACT_VIRTUAL_OFFSET;
+    for (unsigned i = 0; i < node.number_of_children(); ++i) {
+        auto const virtual_offset = physical_to_virtual(node.fnext(i));
+        if (virtual_offset.in_fast_list() == fast) {
+            ret = std::max(ret, compact_virtual_chunk_offset_t{virtual_offset});
+        }
+    }
+    return ret;
 }
 
 void UpdateAuxImpl::print_update_stats()

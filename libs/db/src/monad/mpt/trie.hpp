@@ -148,7 +148,7 @@ class UpdateAuxImpl
 
     void reset_node_writers();
 
-    void advance_compact_offsets();
+    void advance_compact_offsets(NodeCursor);
 
     void free_compacted_chunks();
 
@@ -622,6 +622,9 @@ public:
     uint64_t max_version_in_db_history(Node &root) const noexcept;
     bool contains_version(
         Node::UniquePtr &root, uint64_t const version) const noexcept;
+
+    compact_virtual_chunk_offset_t
+    calc_max_child_offset(Node &node, bool fast = true);
 };
 
 static_assert(

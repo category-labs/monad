@@ -137,6 +137,16 @@ async_write_node_set_spare(UpdateAuxImpl &aux, Node &node, bool is_fast);
 node_writer_unique_ptr_type
 replace_node_writer(UpdateAuxImpl &, node_writer_unique_ptr_type const &);
 
+struct CompactConfig
+{
+    unsigned version_history_len{20000};
+    double disk_usage_to_compact_slow{0.8};
+    double disk_usage_to_shorten_history{0.9};
+};
+
+static constexpr CompactConfig monad_trie_test_compact_config{100};
+static constexpr CompactConfig replay_compact_config{};
+
 // \class Auxiliaries for triedb update
 class UpdateAuxImpl
 {
@@ -148,21 +158,17 @@ class UpdateAuxImpl
 
     void reset_node_writers();
 
-    void advance_compact_offsets(NodeCursor);
+    void advance_compact_offsets(NodeCursor, uint64_t last_max_version);
 
     void free_compacted_chunks();
 
     /******** Compaction ********/
     uint32_t remove_chunks_before_count_fast_{0};
     uint32_t remove_chunks_before_count_slow_{0};
-    // speed control var
+    // last block end offsets
     compact_virtual_chunk_offset_t last_block_end_offset_fast_{
         MIN_COMPACT_VIRTUAL_OFFSET};
     compact_virtual_chunk_offset_t last_block_end_offset_slow_{
-        MIN_COMPACT_VIRTUAL_OFFSET};
-    compact_virtual_chunk_offset_t last_block_disk_growth_fast_{
-        MIN_COMPACT_VIRTUAL_OFFSET};
-    compact_virtual_chunk_offset_t last_block_disk_growth_slow_{
         MIN_COMPACT_VIRTUAL_OFFSET};
     // compaction range
     compact_virtual_chunk_offset_t compact_offset_range_fast_{
@@ -174,6 +180,7 @@ class UpdateAuxImpl
                                               // currently upserting
     bool alternate_slow_fast_writer_{false};
     bool can_write_to_fast_{true};
+    CompactConfig compact_config_{};
 
     virtual void lock_unique_() const = 0;
 
@@ -331,13 +338,12 @@ public:
     node_writer_unique_ptr_type node_writer_fast{};
     node_writer_unique_ptr_type node_writer_slow{};
 
-    // currently maintain a fixed len history
-    static constexpr unsigned version_history_len = 1000;
-
-    UpdateAuxImpl(MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr)
+    UpdateAuxImpl(
+        MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
+        std::optional<CompactConfig> compact_config = std::nullopt)
     {
         if (io_) {
-            set_io(io_);
+            set_io(io_, compact_config);
             // reset offsets
             auto const &db_offsets = db_metadata()->db_offsets;
             compact_offset_fast = db_offsets.last_compact_offset_fast;
@@ -482,7 +488,16 @@ public:
                *current_upsert_tid_ != gettid();
     }
 
-    void set_io(MONAD_ASYNC_NAMESPACE::AsyncIO *);
+    void set_io(
+        MONAD_ASYNC_NAMESPACE::AsyncIO *,
+        std::optional<CompactConfig> compact_config = std::nullopt);
+
+    void set_compact_config_unittest_only(CompactConfig compact_config)
+    {
+        // only take effect when compaction is enabled
+        compact_config_ = compact_config;
+        update_max_history_len_metadata(compact_config.version_history_len);
+    }
 
     void unset_io();
 
@@ -546,7 +561,7 @@ public:
     void advance_offsets_to(
         chunk_offset_t root_offset, chunk_offset_t fast_offset,
         chunk_offset_t slow_offset) noexcept;
-    void update_slow_fast_ratio_metadata() noexcept;
+    void update_max_history_len_metadata(unsigned) noexcept;
     void update_ondisk_db_history_metadata(
         uint64_t min_version, uint64_t max_version) noexcept;
 
@@ -629,7 +644,7 @@ public:
 
 static_assert(
     sizeof(UpdateAuxImpl) ==
-    120 + MONAD_MPT_COLLECT_STATS * sizeof(detail::TrieUpdateCollectedStats));
+    136 + MONAD_MPT_COLLECT_STATS * sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAuxImpl) == 8);
 
 template <lockable_or_void LockType = void>
@@ -749,8 +764,10 @@ class UpdateAux<void> final : public UpdateAuxImpl
     }
 
 public:
-    UpdateAux(MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr)
-        : UpdateAuxImpl(io_)
+    UpdateAux(
+        MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
+        std::optional<CompactConfig> compact_config_ = std::nullopt)
+        : UpdateAuxImpl(io_, compact_config_)
     {
     }
 

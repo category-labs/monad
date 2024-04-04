@@ -109,7 +109,7 @@ namespace detail
         /* NOTE Remember to update the DB restore implementation in the CLI tool
         if you modify anything after this!
         */
-        float slow_fast_ratio;
+        unsigned curr_max_history_len;
         std::atomic<uint64_t> min_db_history_version;
         std::atomic<uint64_t> max_db_history_version;
 
@@ -423,10 +423,10 @@ namespace detail
             db_offsets.store(offsets_to_apply, std::memory_order_release);
         }
 
-        void update_slow_fast_ratio_(float const ratio) noexcept
+        void update_max_history_len_(unsigned const history_len) noexcept
         {
             auto g = hold_dirty();
-            slow_fast_ratio = ratio;
+            curr_max_history_len = history_len;
         }
 
         void update_db_history_versions_(

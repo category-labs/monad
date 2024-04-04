@@ -810,6 +810,11 @@ TYPED_TEST(TrieTest, root_data_always_hashed)
 TYPED_TEST(TrieTest, aux_do_update_fixed_history_len)
 {
     this->sm = std::make_unique<StateMachineWithBlockNo>();
+    // set compaction config with 100 history versions
+    if (this->aux.is_on_disk()) {
+        this->aux.set_compact_config_unittest_only(
+            monad_trie_test_compact_config);
+    }
 
     auto const &kv = fixed_updates::kv;
     uint64_t const start_block_id = 0x123;
@@ -845,7 +850,7 @@ TYPED_TEST(TrieTest, aux_do_update_fixed_history_len)
         // check db maintain expected historical versions
         if (this->aux.is_on_disk()) {
             if (block_id - start_block_id <
-                UpdateAuxImpl::version_history_len) {
+                monad_trie_test_compact_config.version_history_len) {
                 EXPECT_EQ(
                     this->aux.max_version_in_db_history(*this->root) -
                         this->aux.min_version_in_db_history(*this->root),
@@ -855,7 +860,7 @@ TYPED_TEST(TrieTest, aux_do_update_fixed_history_len)
                 EXPECT_EQ(
                     this->aux.max_version_in_db_history(*this->root) -
                         this->aux.min_version_in_db_history(*this->root),
-                    UpdateAuxImpl::version_history_len);
+                    monad_trie_test_compact_config.version_history_len);
             }
         }
         else {

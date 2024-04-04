@@ -472,7 +472,7 @@ struct Db::RWOnDisk final : public Db::Impl
                   async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
                   async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE)}
             , io{pool, rwbuf}
-            , compaction{options.compaction}
+            , compaction{options.compact_config.has_value()}
         {
             io.set_capture_io_latencies(options.capture_io_latencies);
             io.set_concurrent_read_io_limit(options.concurrent_read_io_limit);
@@ -656,7 +656,7 @@ struct Db::RWOnDisk final : public Db::Impl
             }
             std::unique_lock const g(lock_);
             MONAD_ASSERT(worker_);
-            return UpdateAux<>{&worker_->io};
+            return UpdateAux<>{&worker_->io, options.compact_config};
         }()}
         , root_(
               aux_.get_root_offset() != INVALID_OFFSET

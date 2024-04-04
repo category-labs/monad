@@ -120,16 +120,20 @@ int main(int const argc, char const *argv[])
 
         bool const on_disk = !dbname_paths.empty();
 
-        auto const config = on_disk
-                                ? std::make_optional(mpt::OnDiskDbConfig{
-                                      .append = true, // always open existing
-                                      .compaction = !no_compaction,
-                                      .rd_buffers = 8192,
-                                      .wr_buffers = 32,
-                                      .uring_entries = 128,
-                                      .sq_thread_cpu = sq_thread_cpu,
-                                      .dbname_paths = dbname_paths})
-                                : std::nullopt;
+        auto const config =
+            on_disk ? std::make_optional(mpt::OnDiskDbConfig{
+                          .append = true, // always open existing
+                          .rd_buffers = 8192,
+                          .wr_buffers = 32,
+                          .uring_entries = 128,
+                          .sq_thread_cpu = sq_thread_cpu,
+                          .compact_config =
+                              no_compaction
+                                  ? std::nullopt
+                                  : std::make_optional<mpt::CompactConfig>(
+                                        mpt::replay_compact_config),
+                          .dbname_paths = dbname_paths})
+                    : std::nullopt;
         uint64_t init_block_number = 0;
         auto db = [&] -> TrieDb {
             if (load_snapshot.empty()) {

@@ -819,7 +819,8 @@ public:
                 do_([&](monad::mpt::detail::db_metadata *metadata) {
                     metadata->db_offsets.store(
                         old_metadata->db_offsets, std::memory_order_release);
-                    metadata->slow_fast_ratio = old_metadata->slow_fast_ratio;
+                    metadata->curr_max_history_len =
+                        old_metadata->curr_max_history_len;
                     metadata->min_db_history_version.store(
                         old_metadata->min_db_history_version.load(
                             std::memory_order_acquire),

@@ -499,7 +499,7 @@ int main(int argc, char *argv[])
             UpdateAux<> aux{};
             monad::test::StateMachineWithBlockNo sm{};
             if (!in_memory) {
-                aux.set_io(&io);
+                aux.set_io(&io, monad_trie_test_compact_config);
             }
 
             Node::UniquePtr root{};

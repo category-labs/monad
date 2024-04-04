@@ -135,13 +135,12 @@ void UpdateAuxImpl::advance_offsets_to(
     do_(db_metadata_[1]);
 }
 
-void UpdateAuxImpl::update_slow_fast_ratio_metadata() noexcept
+void UpdateAuxImpl::update_max_history_len_metadata(
+    unsigned const history_len) noexcept
 {
     MONAD_ASSERT(is_on_disk());
-    auto ratio = (float)num_chunks(chunk_list::slow) /
-                 (float)num_chunks(chunk_list::fast);
     auto do_ = [&](detail::db_metadata *m) {
-        m->update_slow_fast_ratio_(ratio);
+        m->update_max_history_len_(history_len);
     };
     do_(db_metadata_[0]);
     do_(db_metadata_[1]);
@@ -203,7 +202,8 @@ UpdateAuxImpl::~UpdateAuxImpl()
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wclass-memaccess"
 #endif
-void UpdateAuxImpl::set_io(AsyncIO *io_)
+void UpdateAuxImpl::set_io(
+    AsyncIO *io_, std::optional<CompactConfig> compact_config)
 {
     io = io_;
     auto const chunk_count = io->chunk_count();
@@ -420,10 +420,18 @@ void UpdateAuxImpl::set_io(AsyncIO *io_)
             // the initial fast/slow offset points into a block in use as a
             // sanity check
             reset_node_writers();
+            if (compact_config.has_value()) {
+                compact_config_ = compact_config.value();
+            }
+            update_max_history_len_metadata(
+                compact_config_.version_history_len);
         }
     }
     else { // resume from an existing db and underlying storage devices
         if (!io->is_read_only()) {
+            if (compact_config.has_value()) {
+                compact_config_ = compact_config.value();
+            }
             // Reset/init node writer's offsets, destroy contents after
             // fast_offset.id chunck
             rewind_to_match_offsets();
@@ -504,51 +512,32 @@ Node::UniquePtr UpdateAuxImpl::do_update(
         prev_root ? min_version_in_db_history(*prev_root) : version;
 
     UpdateList db_updates;
-    std::vector<byte_string> version_to_erase;
-    std::vector<Update> erase;
+    std::vector<byte_string> versions_to_erase;
+    std::vector<Update> erase_updates;
     if (compaction) {
         MONAD_ASSERT(is_on_disk());
-        // 1. erase any outdated versions from history
         if (prev_root && max_version_in_db_history(*prev_root) - min_version >=
-                             version_history_len) {
+                             db_metadata()->curr_max_history_len) {
             auto const max_version = max_version_in_db_history(*prev_root);
             // since we choose std::vector, must reserve or reference got
             // invalidated
-            version_to_erase.reserve(max_version - min_version);
-            erase.reserve(max_version - min_version);
-            while (max_version - min_version >= version_history_len) {
-                db_updates.push_front(
-                    erase.emplace_back(make_erase(version_to_erase.emplace_back(
+            versions_to_erase.reserve(max_version - min_version);
+            erase_updates.reserve(max_version - min_version);
+            // 1. erase any outdated versions from history
+            while (max_version - min_version >=
+                   db_metadata()->curr_max_history_len) {
+                db_updates.push_front(erase_updates.emplace_back(
+                    make_erase(versions_to_erase.emplace_back(
                         serialize_as_big_endian<BLOCK_NUM_BYTES>(
                             min_version)))));
                 min_version++;
             }
-            MONAD_ASSERT(!erase.empty());
-            // set chunk count that can be erased
+            MONAD_ASSERT(!erase_updates.empty());
             auto [erase_cursor, res] =
-                find_blocking(*this, *prev_root, version_to_erase.back());
-            auto [min_offset_fast, min_offset_slow] =
-                calc_min_offsets(*erase_cursor.node);
-            if (min_offset_fast == INVALID_COMPACT_VIRTUAL_OFFSET) {
-                min_offset_fast = MIN_COMPACT_VIRTUAL_OFFSET;
-            }
-            if (min_offset_slow == INVALID_COMPACT_VIRTUAL_OFFSET) {
-                min_offset_slow = MIN_COMPACT_VIRTUAL_OFFSET;
-            }
-            remove_chunks_before_count_fast_ = min_offset_fast.get_count();
-            remove_chunks_before_count_slow_ = min_offset_slow.get_count();
+                find_blocking(*this, *prev_root, versions_to_erase.back());
+            MONAD_ASSERT(res == find_result::success);
             // 2. advance compaction offsets
-            advance_compact_offsets(erase_cursor);
-#if COLLECT_MPT_STATS
-            printf(
-                "disk usage: %.2f%\ncompact range [%d, %d]\n remove chunks "
-                "before [%d, %d]\n",
-                (100.0 * used_chunks_ratio),
-                compact_offset_range_fast_,
-                compact_offset_range_slow_,
-                remove_chunks_before_count_fast_,
-                remove_chunks_before_count_slow_);
-#endif
+            advance_compact_offsets(erase_cursor, max_version);
         }
     }
 
@@ -606,71 +595,97 @@ Node::UniquePtr UpdateAuxImpl::move_subtrie(
     return root;
 }
 
-void UpdateAuxImpl::advance_compact_offsets(NodeCursor const block_to_erase)
+void UpdateAuxImpl::advance_compact_offsets(
+    NodeCursor const block_to_erase, uint64_t last_max_version)
 {
     MONAD_ASSERT(is_on_disk());
-    // update disk growth speed trackers
-    compact_virtual_chunk_offset_t const curr_fast_writer_offset{
-        physical_to_virtual(node_writer_fast->sender().offset())};
-    compact_virtual_chunk_offset_t const curr_slow_writer_offset{
-        physical_to_virtual(node_writer_slow->sender().offset())};
-    last_block_disk_growth_fast_ =
-        last_block_end_offset_fast_ == 0
-            ? MIN_COMPACT_VIRTUAL_OFFSET
-            : curr_fast_writer_offset - last_block_end_offset_fast_;
-    last_block_disk_growth_slow_ =
-        last_block_end_offset_slow_ == 0
-            ? MIN_COMPACT_VIRTUAL_OFFSET
-            : curr_slow_writer_offset - last_block_end_offset_slow_;
-    last_block_end_offset_fast_ = curr_fast_writer_offset;
-    last_block_end_offset_slow_ = curr_slow_writer_offset;
 
+    auto [min_offset_fast, min_offset_slow] =
+        calc_min_offsets(*block_to_erase.node);
+    if (min_offset_fast == INVALID_COMPACT_VIRTUAL_OFFSET) {
+        min_offset_fast = MIN_COMPACT_VIRTUAL_OFFSET;
+    }
+    if (min_offset_slow == INVALID_COMPACT_VIRTUAL_OFFSET) {
+        min_offset_slow = MIN_COMPACT_VIRTUAL_OFFSET;
+    }
+    remove_chunks_before_count_fast_ = min_offset_fast.get_count();
+    remove_chunks_before_count_slow_ = min_offset_slow.get_count();
     compact_virtual_chunk_offset_t const max_offset_fast =
         calc_max_child_offset(*block_to_erase.node, true /*fast*/);
+    // init to last block compact offsets
     compact_offset_fast = db_metadata()->db_offsets.last_compact_offset_fast;
     compact_offset_slow = db_metadata()->db_offsets.last_compact_offset_slow;
     double const used_chunks_ratio =
-        1 - num_chunks(chunk_list::free) / (double)io->chunk_count();
-    compact_offset_range_fast_ = MIN_COMPACT_VIRTUAL_OFFSET;
-    compact_offset_range_slow_ = MIN_COMPACT_VIRTUAL_OFFSET;
+        1.0 - num_chunks(chunk_list::free) / (double)io->chunk_count();
     // Compaction pace control based on free space left on disk
-    if (used_chunks_ratio <= 0.8) {
-        compact_offset_fast.set_value(max_offset_fast);
-        compact_offset_range_fast_ =
-            compact_offset_fast -
-            db_metadata()->db_offsets.last_compact_offset_fast;
-    }
-    else {
-        auto slow_fast_inuse_ratio =
-            (double)num_chunks(chunk_list::slow) / num_chunks(chunk_list::fast);
-        if (db_metadata()->slow_fast_ratio == 0.0) {
-            update_slow_fast_ratio_metadata();
-        }
-        if (slow_fast_inuse_ratio < db_metadata()->slow_fast_ratio) {
-            // slow can continue to grow
-            compact_offset_range_slow_.set_value((uint32_t)std::lround(
-                (double)last_block_disk_growth_slow_ *
-                ((double)slow_fast_inuse_ratio /
-                 db_metadata()->slow_fast_ratio)));
-            // more agressive compaction on fast chunks
-            compact_offset_range_fast_.set_value(
-                last_block_disk_growth_fast_ + last_block_disk_growth_slow_ -
-                compact_offset_range_slow_ + 5);
+    // when disk usage is low, compact one block in fast list
+    compact_offset_fast.set_value(max_offset_fast);
+    compact_offset_range_fast_ =
+        compact_offset_fast -
+        db_metadata()->db_offsets.last_compact_offset_fast;
+    if (used_chunks_ratio > compact_config_.disk_usage_to_compact_slow) {
+        if (used_chunks_ratio > compact_config_.disk_usage_to_shorten_history) {
+            update_max_history_len_metadata(
+                db_metadata()->curr_max_history_len - 1);
+            printf(
+                "decrement version history to %u\n",
+                db_metadata()->curr_max_history_len);
         }
         else {
-            // compact slow list more agressively until ratio is met
-            compact_offset_range_fast_.set_value(
-                (uint32_t)std::lround(last_block_disk_growth_fast_ * 0.99));
-            // slow can continue to grow
-            compact_offset_range_slow_.set_value(
-                std::max(
-                    db_metadata()->db_offsets.last_compact_offset_range_slow,
-                    last_block_disk_growth_slow_) +
-                2);
+            // disk growth speed trackers
+            compact_virtual_chunk_offset_t const fast_writer_offset{
+                physical_to_virtual(node_writer_fast->sender().offset())};
+            compact_virtual_chunk_offset_t const slow_writer_offset{
+                physical_to_virtual(node_writer_slow->sender().offset())};
+            compact_virtual_chunk_offset_t const last_block_disk_growth_slow =
+                last_block_end_offset_slow_ == MIN_COMPACT_VIRTUAL_OFFSET
+                    ? MIN_COMPACT_VIRTUAL_OFFSET
+                    : slow_writer_offset - last_block_end_offset_slow_;
+            // compact slow list
+            compact_offset_range_slow_.set_value(std::min(
+                (uint32_t)compact_offset_range_fast_,
+                std::min(
+                    (uint32_t)compact_offset_range_slow_ +
+                        !(last_max_version % 4),
+                    (uint32_t)last_block_disk_growth_slow)));
+            compact_offset_slow += compact_offset_range_slow_;
+#if MONAD_MPT_COLLECT_STATS
+            printf(
+                "last block slow list grow %u\n",
+                (uint32_t)last_block_disk_growth_slow);
+#endif
         }
-        compact_offset_fast += compact_offset_range_fast_;
-        compact_offset_slow += compact_offset_range_slow_;
     }
+    else if (
+        db_metadata()->curr_max_history_len <
+        compact_config_.version_history_len) {
+        update_max_history_len_metadata(
+            db_metadata()->curr_max_history_len + 1);
+        printf(
+            "increment version history to %u\n",
+            db_metadata()->curr_max_history_len);
+    }
+    // correcting slow list compaction offset
+    compact_offset_slow = std::max(compact_offset_slow, min_offset_slow);
+    compact_offset_range_slow_ =
+        compact_offset_slow -
+        db_metadata()->db_offsets.last_compact_offset_slow;
+
+    last_block_end_offset_fast_ = compact_virtual_chunk_offset_t{
+        physical_to_virtual(node_writer_fast->sender().offset())};
+    last_block_end_offset_slow_ = compact_virtual_chunk_offset_t{
+        physical_to_virtual(node_writer_slow->sender().offset())};
+
+#if MONAD_MPT_COLLECT_STATS
+    printf(
+        "disk usage: %.4f \ncompact range [%u, %u]\nremove chunks before [%u, "
+        "%u]\n",
+        used_chunks_ratio,
+        (uint32_t)compact_offset_range_fast_,
+        (uint32_t)compact_offset_range_slow_,
+        remove_chunks_before_count_fast_,
+        remove_chunks_before_count_slow_);
+#endif
 }
 
 // must call this when db is non empty

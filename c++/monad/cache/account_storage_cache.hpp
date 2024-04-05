@@ -81,7 +81,7 @@ private:
 
         bool check_lru_time() const
         {
-            int64_t lru_time = lru_time_.load(std::memory_order_acquire);
+            int64_t const lru_time = lru_time_.load(std::memory_order_acquire);
             return (cur_time() - lru_time) >= lru_update_period;
         }
 

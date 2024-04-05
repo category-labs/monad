@@ -60,7 +60,7 @@ private:
         ListNode *prev_{nullptr};
         ListNode *next_{nullptr};
         Finder const finder_;
-        int64_t lru_time_;
+        std::atomic<int64_t> lru_time_;
 
         ListNode() {}
 
@@ -76,12 +76,13 @@ private:
 
         void update_time()
         {
-            lru_time_ = cur_time();
+            lru_time_.store(cur_time(), std::memory_order_release);
         }
 
         bool check_lru_time() const
         {
-            return (cur_time() - lru_time_) >= lru_update_period;
+            int64_t lru_time = lru_time_.load(std::memory_order_acquire);
+            return (cur_time() - lru_time) >= lru_update_period;
         }
 
         int64_t cur_time() const

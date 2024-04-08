@@ -30,58 +30,58 @@ pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
 # ##############################################################################
 add_library(
   monad_async STATIC
-  "${PROJECT_SOURCE_DIR}/src/monad/async/boost_fiber_wrappers.cpp"
-  "${PROJECT_SOURCE_DIR}/src/monad/async/io.cpp"
-  "${PROJECT_SOURCE_DIR}/src/monad/async/storage_pool.cpp"
-  "${PROJECT_SOURCE_DIR}/src/monad/async/util.cpp")
-target_include_directories(monad_async PUBLIC "${PROJECT_SOURCE_DIR}/include")
+  "src/monad/async/boost_fiber_wrappers.cpp"
+  "src/monad/async/io.cpp"
+  "src/monad/async/storage_pool.cpp"
+  "src/monad/async/util.cpp")
+target_include_directories(monad_async PUBLIC "include")
 monad_core_compile_options(monad_async)
 target_link_libraries(monad_async PUBLIC monad_core Boost::fiber)
 
 add_library(
   monad_trie STATIC
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/config.hpp"
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/compute.hpp"
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/db.hpp"
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/db_error.hpp"
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/find_request_sender.hpp"
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/mem.hpp"
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/nibbles_view.hpp"
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/nibbles_view_fmt.hpp"
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/node.hpp"
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/node_cursor.hpp"
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/ondisk_db_config.hpp"
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/request.hpp"
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/state_machine.hpp"
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/traverse.hpp"
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/trie.hpp"
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/util.hpp"
-  "${PROJECT_SOURCE_DIR}/include/monad/mpt/update.hpp"
-  "${PROJECT_SOURCE_DIR}/src/monad/mpt/compute.cpp"
-  "${PROJECT_SOURCE_DIR}/src/monad/mpt/copy_node.cpp"
-  "${PROJECT_SOURCE_DIR}/src/monad/mpt/db.cpp"
-  "${PROJECT_SOURCE_DIR}/src/monad/mpt/find_notify_fiber.cpp"
-  "${PROJECT_SOURCE_DIR}/src/monad/mpt/find_request_sender.cpp"
-  "${PROJECT_SOURCE_DIR}/src/monad/mpt/find.cpp"
-  "${PROJECT_SOURCE_DIR}/src/monad/mpt/mem.cpp"
-  "${PROJECT_SOURCE_DIR}/src/monad/mpt/node.cpp"
-  "${PROJECT_SOURCE_DIR}/src/monad/mpt/traverse.cpp"
-  "${PROJECT_SOURCE_DIR}/src/monad/mpt/trie.cpp"
-  "${PROJECT_SOURCE_DIR}/src/monad/mpt/update_aux.cpp")
+  "include/monad/mpt/config.hpp"
+  "include/monad/mpt/compute.hpp"
+  "include/monad/mpt/db.hpp"
+  "include/monad/mpt/db_error.hpp"
+  "include/monad/mpt/find_request_sender.hpp"
+  "include/monad/mpt/mem.hpp"
+  "include/monad/mpt/nibbles_view.hpp"
+  "include/monad/mpt/nibbles_view_fmt.hpp"
+  "include/monad/mpt/node.hpp"
+  "include/monad/mpt/node_cursor.hpp"
+  "include/monad/mpt/ondisk_db_config.hpp"
+  "include/monad/mpt/request.hpp"
+  "include/monad/mpt/state_machine.hpp"
+  "include/monad/mpt/traverse.hpp"
+  "include/monad/mpt/trie.hpp"
+  "include/monad/mpt/util.hpp"
+  "include/monad/mpt/update.hpp"
+  "src/monad/mpt/compute.cpp"
+  "src/monad/mpt/copy_node.cpp"
+  "src/monad/mpt/db.cpp"
+  "src/monad/mpt/find_notify_fiber.cpp"
+  "src/monad/mpt/find_request_sender.cpp"
+  "src/monad/mpt/find.cpp"
+  "src/monad/mpt/mem.cpp"
+  "src/monad/mpt/node.cpp"
+  "src/monad/mpt/traverse.cpp"
+  "src/monad/mpt/trie.cpp"
+  "src/monad/mpt/update_aux.cpp")
 target_include_directories(
   monad_trie PUBLIC
-  "${PROJECT_SOURCE_DIR}/include"
+  "include"
 )
 target_include_directories(
   monad_trie PRIVATE
-  "${PROJECT_SOURCE_DIR}/third_party"
+  "third_party"
 )
 monad_core_compile_options(monad_trie)
 target_link_libraries(monad_trie PRIVATE Boost::boost)
 target_link_libraries(monad_trie PUBLIC monad_async)
 target_link_libraries(monad_trie PUBLIC monad_core)
-add_executable(monad_mpt "${PROJECT_SOURCE_DIR}/src/monad/mpt/cli_tool_main.cpp"
-  "${PROJECT_SOURCE_DIR}/src/monad/mpt/cli_tool_impl.cpp")
+add_executable(monad_mpt "src/monad/mpt/cli_tool_main.cpp"
+  "src/monad/mpt/cli_tool_impl.cpp")
 monad_core_compile_options(monad_mpt)
 target_link_libraries(monad_mpt PUBLIC monad_trie PkgConfig::zstd PkgConfig::archive CLI11::CLI11)
 

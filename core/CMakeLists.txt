@@ -77,37 +77,35 @@ endfunction()
 
 add_library(
   monad_core STATIC
-  "c/include/monad/core/assert.h"
-  "c/include/monad/core/bit_util.h"
-  "c/include/monad/core/cpu_relax.h"
-  "c/include/monad/core/likely.h"
-  "c/include/monad/core/spinlock.h"
-  "c/include/monad/core/tl_tid.h"
-  "c/include/monad/mem/huge_mem.h"
-  "c/src/monad/core/assert.c"
-  "c/src/monad/core/tl_tid.c"
-  "c/src/monad/mem/huge_mem.c"
   # config
   "c++/monad/config.hpp"
   # core
   "c++/monad/core/array.hpp"
+  "c++/monad/core/assert.c"
+  "c++/monad/core/assert.h"
   "c++/monad/core/backtrace.cpp"
   "c++/monad/core/backtrace.hpp"
   "c++/monad/core/basic_formatter.hpp"
+  "c++/monad/core/bit_util.h"
   "c++/monad/core/byte_string.hpp"
   "c++/monad/core/cmemory.hpp"
+  "c++/monad/core/cpu_relax.h"
   "c++/monad/core/endian.hpp"
   "c++/monad/core/hash.hpp"
   "c++/monad/core/hex_literal.hpp"
   "c++/monad/core/keccak.c"
   "c++/monad/core/keccak.h"
   "c++/monad/core/keccak_impl.S"
+  "c++/monad/core/likely.h"
   "c++/monad/core/math.hpp"
   "c++/monad/core/nibble.h"
   "c++/monad/core/offset.hpp"
   "c++/monad/core/result.hpp"
   "c++/monad/core/size_of.hpp"
   "c++/monad/core/small_prng.hpp"
+  "c++/monad/core/spinlock.h"
+  "c++/monad/core/tl_tid.c"
+  "c++/monad/core/tl_tid.h"
   "c++/monad/core/unaligned.hpp"
   "c++/monad/lru/lru_cache.hpp"
   "c++/monad/mem/batch_mem_pool.hpp"
@@ -133,7 +131,9 @@ add_library(
   # mem
   "c++/monad/mem/cpool.h"
   "c++/monad/mem/dynamic_allocator.hpp"
+  "c++/monad/mem/huge_mem.c"
   "c++/monad/mem/huge_mem.cpp"
+  "c++/monad/mem/huge_mem.h"
   "c++/monad/mem/huge_mem.hpp"
   "c++/monad/mem/mem_map.cpp"
   "c++/monad/mem/mem_map.hpp"
@@ -164,10 +164,9 @@ target_link_libraries(monad_core PUBLIC openssl_sha3_asm uring Boost::fiber
 add_library(
   monad_core_disas STATIC
   # core
-  "c/src/monad/core/spinlock_disas.c"
-  # core
   "c++/monad/core/math_disas.cpp"
   "c++/monad/core/offset_disas.cpp"
+  "c++/monad/core/spinlock_disas.c"
   "c++/monad/mem/cpool_disas.c"
   # rlp
   "c++/monad/rlp/encode_disas.cpp")
@@ -184,5 +183,5 @@ find_package(GTest REQUIRED)
 
 add_subdirectory("test")
 
-monad_add_test(bit_util_test c/src/monad/core/bit_util_test.cpp)
-monad_add_test(huge_mem_test c/src/monad/mem/huge_mem_test.cpp)
+monad_add_test(bit_util_test c++/monad/core/bit_util_test.cpp)
+monad_add_test(huge_mem_test c++/monad/mem/huge_mem_test.cpp)

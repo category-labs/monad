@@ -109,9 +109,9 @@ add_library(
   "include/monad/lru/lru_cache.hpp"
   "include/monad/mem/batch_mem_pool.hpp"
   "include/monad/synchronization/spin_lock.hpp"
-  "src/monad/core/backtrace.cpp"
-  "src/monad/core/keccak.c"
-  "src/monad/core/keccak_impl.S"
+  "c++/monad/core/backtrace.cpp"
+  "c++/monad/core/keccak.c"
+  "c++/monad/core/keccak_impl.S"
   # fiber
   "include/monad/fiber/config.hpp"
   "include/monad/fiber/priority_algorithm.hpp"
@@ -119,26 +119,26 @@ add_library(
   "include/monad/fiber/priority_properties.hpp"
   "include/monad/fiber/priority_queue.hpp"
   "include/monad/fiber/priority_task.hpp"
-  "src/monad/fiber/priority_algorithm.cpp"
-  "src/monad/fiber/priority_pool.cpp"
-  "src/monad/fiber/priority_queue.cpp"
+  "c++/monad/fiber/priority_algorithm.cpp"
+  "c++/monad/fiber/priority_pool.cpp"
+  "c++/monad/fiber/priority_queue.cpp"
   # io
   "include/monad/io/buffer_pool.hpp"
   "include/monad/io/buffers.hpp"
   "include/monad/io/config.hpp"
   "include/monad/io/ring.hpp"
-  "src/monad/io/buffer_pool.cpp"
-  "src/monad/io/buffers.cpp"
-  "src/monad/io/ring.cpp"
+  "c++/monad/io/buffer_pool.cpp"
+  "c++/monad/io/buffers.cpp"
+  "c++/monad/io/ring.cpp"
   # mem
   "include/monad/mem/cpool.h"
   "include/monad/mem/huge_mem.hpp"
   "include/monad/mem/dynamic_allocator.hpp"
   "include/monad/mem/mem_map.hpp"
   "include/monad/mem/pool_allocator.hpp"
-  "src/monad/mem/huge_mem.cpp"
-  "src/monad/mem/mem_map.cpp"
-  "src/monad/mem/pool_allocator.cpp"
+  "c++/monad/mem/huge_mem.cpp"
+  "c++/monad/mem/mem_map.cpp"
+  "c++/monad/mem/pool_allocator.cpp"
   # rlp
   "include/monad/rlp/config.hpp"
   "include/monad/rlp/encode.hpp"
@@ -166,11 +166,11 @@ add_library(
   # core
   "c/src/monad/core/spinlock_disas.c"
   # core
-  "src/monad/core/math_disas.cpp"
-  "src/monad/core/offset_disas.cpp"
-  "src/monad/mem/cpool_disas.c"
+  "c++/monad/core/math_disas.cpp"
+  "c++/monad/core/offset_disas.cpp"
+  "c++/monad/mem/cpool_disas.c"
   # rlp
-  "src/monad/rlp/encode_disas.cpp")
+  "c++/monad/rlp/encode_disas.cpp")
 monad_core_compile_options(monad_core_disas)
 target_link_libraries(monad_core_disas PUBLIC monad_core)
 

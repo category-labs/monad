@@ -762,6 +762,10 @@ public:
             UINT32_MAX);
         monad::mpt::detail::unsigned_20 slow_list_base_insertion_count(
             UINT32_MAX);
+        uint32_t fast_list_begin_index{UINT32_MAX},
+            fast_list_end_index{UINT32_MAX};
+        uint32_t slow_list_begin_index{UINT32_MAX},
+            slow_list_end_index{UINT32_MAX};
         for (auto &i : todecompress) {
             if (i.type == monad::async::storage_pool::cnv && i.chunk_id == 0) {
                 auto const *old_metadata =
@@ -811,6 +815,26 @@ public:
                     old_metadata->fast_list_begin()->insertion_count();
                 slow_list_base_insertion_count =
                     old_metadata->slow_list_begin()->insertion_count();
+                MONAD_ASSERT(old_metadata->fast_list.begin != UINT32_MAX);
+                MONAD_ASSERT(old_metadata->slow_list.begin != UINT32_MAX);
+                fast_list_begin_index = old_metadata->fast_list.begin;
+                slow_list_begin_index = old_metadata->slow_list.begin;
+                if (auto const max_seq_chunk =
+                        std::max(fast_list_begin_index, slow_list_begin_index);
+                    max_seq_chunk >=
+                    pool->chunks(monad::async::storage_pool::seq)) {
+                    std::stringstream ss;
+                    ss << "DB archive " << restore_database
+                       << " uses seq chunks up to " << max_seq_chunk
+                       << " in db metadata, but the destination pool's seq "
+                          "chunk count is "
+                       << pool->chunks(monad::async::storage_pool::seq)
+                       << ". You will need to configure a destination pool "
+                          "with more seq chunks.";
+                    throw std::runtime_error(ss.str());
+                }
+                fast_list_end_index = old_metadata->fast_list.end;
+                slow_list_end_index = old_metadata->slow_list.end;
                 break;
             }
         }
@@ -873,6 +897,23 @@ public:
         MONAD_MPT_NAMESPACE::UpdateAux<> aux(&io);
         size_t slow_chunks_inserted = 0;
         size_t fast_chunks_inserted = 0;
+        auto override_insertion_count =
+            [](monad::mpt::detail::db_metadata *db,
+               monad::mpt::UpdateAuxImpl::chunk_list type,
+               monad::mpt::detail::unsigned_20 initial_insertion_count) {
+                MONAD_ASSERT(
+                    type != monad::mpt::UpdateAuxImpl::chunk_list::free);
+                auto g = db->hold_dirty();
+                auto *i =
+                    const_cast<monad::mpt::detail::db_metadata::chunk_info_t *>(
+                        type == monad::mpt::UpdateAuxImpl::chunk_list::fast
+                            ? db->fast_list_begin()
+                            : db->slow_list_begin());
+                i->insertion_count0_ =
+                    uint32_t(initial_insertion_count) & 0x3ff;
+                i->insertion_count1_ =
+                    uint32_t(initial_insertion_count >> 10) & 0x3ff;
+            };
         for (auto &i : todecompress) {
             if (i.type == monad::async::storage_pool::seq) {
                 if (i.metadata.in_fast_list) {
@@ -880,15 +921,10 @@ public:
                         monad::mpt::UpdateAuxImpl::chunk_list::fast,
                         i.chunk_id);
                     if (0 == fast_chunks_inserted++) {
-                        auto *const item2 =
-                            const_cast<MONAD_MPT_NAMESPACE::detail::
-                                           db_metadata::chunk_info_t *>(
-                                aux.db_metadata()->fast_list_begin());
-                        item2->insertion_count0_ =
-                            uint32_t(fast_list_base_insertion_count) & 0x3ff;
-                        item2->insertion_count1_ =
-                            (uint32_t(fast_list_base_insertion_count) >> 10) &
-                            0x3ff;
+                        aux.modify_metadata(
+                            override_insertion_count,
+                            monad::mpt::UpdateAuxImpl::chunk_list::fast,
+                            fast_list_base_insertion_count);
                     }
                 }
                 else if (i.metadata.in_slow_list) {
@@ -896,15 +932,10 @@ public:
                         monad::mpt::UpdateAuxImpl::chunk_list::slow,
                         i.chunk_id);
                     if (0 == slow_chunks_inserted++) {
-                        auto *const item2 =
-                            const_cast<MONAD_MPT_NAMESPACE::detail::
-                                           db_metadata::chunk_info_t *>(
-                                aux.db_metadata()->slow_list_begin());
-                        item2->insertion_count0_ =
-                            uint32_t(slow_list_base_insertion_count) & 0x3ff;
-                        item2->insertion_count1_ =
-                            (uint32_t(slow_list_base_insertion_count) >> 10) &
-                            0x3ff;
+                        aux.modify_metadata(
+                            override_insertion_count,
+                            monad::mpt::UpdateAuxImpl::chunk_list::slow,
+                            slow_list_base_insertion_count);
                     }
                 }
                 if (i.metadata.in_fast_list || i.metadata.in_slow_list) {
@@ -915,26 +946,50 @@ public:
                 }
             }
         }
-        auto it = chunks.begin();
-        while (*it == UINT32_MAX) {
-            ++it;
-        }
+        MONAD_ASSERT(
+            slow_chunks_inserted + fast_chunks_inserted ==
+            todecompress.size() - 1);
         if (fast_chunks_inserted == 0) {
-            aux.append(monad::mpt::UpdateAuxImpl::chunk_list::fast, *it);
-            ++it;
+            aux.append(
+                monad::mpt::UpdateAuxImpl::chunk_list::fast,
+                fast_list_begin_index);
+            auto it =
+                std::find(chunks.begin(), chunks.end(), fast_list_begin_index);
+            MONAD_ASSERT(it != chunks.end());
+            *it = UINT32_MAX;
+            // override the first insertion count
+            aux.modify_metadata(
+                override_insertion_count,
+                monad::mpt::UpdateAuxImpl::chunk_list::slow,
+                fast_list_base_insertion_count);
         }
+        MONAD_ASSERT(
+            aux.db_metadata()->fast_list.begin == fast_list_begin_index);
+        MONAD_ASSERT(aux.db_metadata()->fast_list.end == fast_list_end_index);
+
         if (slow_chunks_inserted == 0) {
-            aux.append(monad::mpt::UpdateAuxImpl::chunk_list::slow, *it);
-            ++it;
+            aux.append(
+                monad::mpt::UpdateAuxImpl::chunk_list::slow,
+                slow_list_begin_index);
+            auto it =
+                std::find(chunks.begin(), chunks.end(), slow_list_begin_index);
+            MONAD_ASSERT(it != chunks.end());
+            *it = UINT32_MAX;
+            // override the first insertion count
+            aux.modify_metadata(
+                override_insertion_count,
+                monad::mpt::UpdateAuxImpl::chunk_list::slow,
+                slow_list_base_insertion_count);
         }
-        for (; it != chunks.end(); ++it) {
+        MONAD_ASSERT(
+            aux.db_metadata()->slow_list.begin == slow_list_begin_index);
+        MONAD_ASSERT(aux.db_metadata()->slow_list.end == slow_list_end_index);
+
+        for (auto it = chunks.begin(); it != chunks.end(); ++it) {
             if (*it != UINT32_MAX) {
                 aux.append(monad::mpt::UpdateAuxImpl::chunk_list::free, *it);
             }
         }
-        MONAD_ASSERT(
-            slow_chunks_inserted + fast_chunks_inserted ==
-            todecompress.size() - 1);
 
         auto const end = std::chrono::steady_clock::now();
         double const secs =

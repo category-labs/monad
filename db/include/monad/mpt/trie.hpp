@@ -528,6 +528,16 @@ public:
     void append(chunk_list list, uint32_t idx) noexcept;
     void remove(uint32_t idx) noexcept;
 
+    template <typename Func, typename... Args>
+        requires std::invocable<
+            std::function<void(detail::db_metadata *, Args...)>,
+            detail::db_metadata *, Args...>
+    void modify_metadata(Func func, Args &&...args) noexcept
+    {
+        func(db_metadata_[0], std::forward<Args>(args)...);
+        func(db_metadata_[1], std::forward<Args>(args)...);
+    }
+
     // The following two functions should only be invoked after completing a
     // block commit
     void advance_offsets_to(

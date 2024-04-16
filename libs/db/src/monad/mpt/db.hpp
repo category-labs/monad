@@ -61,9 +61,8 @@ public:
     Result<byte_string_view>
     get_data(NodeCursor, NibblesView, uint64_t block_id = 0) const;
 
-    void upsert(
-        UpdateList, uint64_t block_id = 0, bool enable_compaction = true,
-        bool can_write_to_fast = true);
+    void
+    upsert(UpdateList, uint64_t block_id = 0, bool can_write_to_fast = true);
     // Traverse APIs: return value indicates if we have finished the full
     // traversal or not.
     // Parallel traversal is a single threaded out of order traverse using async

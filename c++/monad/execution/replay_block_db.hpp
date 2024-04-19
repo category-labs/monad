@@ -6,6 +6,7 @@
 #include <monad/core/block.hpp>
 #include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/result.hpp>
+#include <monad/core/spmc_stream.h>
 #include <monad/db/block_db.hpp>
 #include <monad/db/db.hpp>
 #include <monad/db/util.hpp>
@@ -62,9 +63,9 @@ public:
     }
 
     Result<uint64_t> run_fork(
-        DbRW &db, BlockDb &block_db, BlockHashBuffer &block_hash_buffer,
-        fiber::PriorityPool &priority_pool, uint64_t const start_block_number,
-        uint64_t const nblocks)
+        DbRW &db, SpmcStream *const events, BlockDb &block_db,
+        BlockHashBuffer &block_hash_buffer, fiber::PriorityPool &priority_pool,
+        uint64_t const start_block_number, uint64_t const nblocks)
     {
         MONAD_ASSERT(start_block_number);
 
@@ -99,8 +100,8 @@ public:
 
             BOOST_OUTCOME_TRY(static_validate_block(rev, block));
 
-            auto const receipts =
-                execute_block(rev, block, db, block_hash_buffer, priority_pool);
+            auto const receipts = execute_block(
+                rev, block, db, events, block_hash_buffer, priority_pool);
 
             n_transactions += block.transactions.size();
 
@@ -118,8 +119,9 @@ public:
     }
 
     Result<uint64_t>
-    run(DbRW &db, BlockDb &block_db, fiber::PriorityPool &priority_pool,
-        uint64_t const start_block_number, uint64_t const nblocks)
+    run(DbRW &db, SpmcStream *const events, BlockDb &block_db,
+        fiber::PriorityPool &priority_pool, uint64_t const start_block_number,
+        uint64_t const nblocks)
     {
         Block block{};
 
@@ -135,6 +137,7 @@ public:
 
         return run_fork(
             db,
+            events,
             block_db,
             block_hash_buffer,
             priority_pool,

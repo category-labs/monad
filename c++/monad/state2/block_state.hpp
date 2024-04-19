@@ -8,6 +8,8 @@
 
 #include <memory>
 
+struct SpmcStream;
+
 MONAD_NAMESPACE_BEGIN
 
 class State;
@@ -17,9 +19,10 @@ class BlockState final
     DbRW &db_;
     StateDeltas state_{};
     Code code_{};
+    SpmcStream *events_;
 
 public:
-    BlockState(DbRW &);
+    BlockState(DbRW &, SpmcStream * = nullptr);
 
     std::optional<Account> read_account(Address const &);
 

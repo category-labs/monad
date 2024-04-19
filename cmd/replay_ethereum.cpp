@@ -2,6 +2,7 @@
 #include <monad/core/assert.h>
 #include <monad/core/likely.h>
 #include <monad/core/log_level_map.hpp>
+#include <monad/core/spmc_stream.h>
 #include <monad/db/block_db.hpp>
 #include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
@@ -196,8 +197,15 @@ int main(int const argc, char const *argv[])
 
     DbCache db_cache{db};
 
+    auto const path = "events_" + std::to_string(getpid());
+    auto *const events = spmc_stream_create(path.c_str(), true);
+
+    LOG_INFO("spmc created {}", path);
+
     auto const result = replay_eth.run(
-        db_cache, block_db, priority_pool, start_block_number, nblocks);
+        db_cache, events, block_db, priority_pool, start_block_number, nblocks);
+
+    spmc_stream_destroy(events);
 
     if (MONAD_UNLIKELY(result.has_error())) {
         return EXIT_FAILURE;

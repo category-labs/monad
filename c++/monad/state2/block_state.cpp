@@ -5,6 +5,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
+#include <monad/core/spmc_stream.h>
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/state2/block_state.hpp>
@@ -24,8 +25,9 @@
 
 MONAD_NAMESPACE_BEGIN
 
-BlockState::BlockState(DbRW &db)
+BlockState::BlockState(DbRW &db, SpmcStream *const events)
     : db_{db}
+    , events_{events}
 {
 }
 
@@ -161,6 +163,46 @@ void BlockState::merge(State const &state)
         }
         else {
             it->second.storage.clear();
+        }
+    }
+
+    if (events_) {
+        for (auto const &[address, stack] : state.state_) {
+            MONAD_ASSERT(spmc_stream_write(events_, "A", 1) == 0);
+            MONAD_ASSERT(
+                spmc_stream_write(events_, &address, sizeof(Address)) == 0);
+            auto const &account_state = stack.recent();
+            auto const &account = account_state.account_;
+            if (!account.has_value()) {
+                spmc_stream_push(events_);
+                continue;
+            }
+            MONAD_ASSERT(
+                spmc_stream_write(events_, &account.value(), sizeof(Account)) ==
+                0);
+            spmc_stream_push(events_);
+
+            auto const &storage = account_state.storage_;
+            if (storage.empty()) {
+                continue;
+            }
+            constexpr auto nstorage_per_element =
+                (SPMC_STREAM_MAX_PAYLOAD_SIZE - 1) / (sizeof(bytes32_t) * 2);
+            static_assert(nstorage_per_element > 0);
+            size_t i = 0;
+            MONAD_ASSERT(spmc_stream_write(events_, "S", 1) == 0);
+            for (auto const &[key, value] : storage) {
+                if (i > 0 && (i % nstorage_per_element) == 0) {
+                    spmc_stream_push(events_);
+                    MONAD_ASSERT(spmc_stream_write(events_, "S", 1) == 0);
+                }
+                MONAD_ASSERT(
+                    spmc_stream_write(events_, &key, sizeof(bytes32_t)) == 0);
+                MONAD_ASSERT(
+                    spmc_stream_write(events_, &value, sizeof(bytes32_t)) == 0);
+                ++i;
+            }
+            spmc_stream_push(events_);
         }
     }
 }

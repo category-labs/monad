@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-cmake_policy(SET CMP0144 NEW) ## find_package uses upper-case _ROOT variables
+cmake_policy(SET CMP0144 NEW) # find_package uses upper-case _ROOT variables
 
 include(CheckCXXSourceRuns)
 include(CheckCXXSymbolExists)
@@ -22,18 +22,25 @@ else()
   find_package(Boost REQUIRED COMPONENTS context fiber stacktrace_addr2line)
 endif()
 function(check_if_boost_fiber_needs_ucontext_macro)
-  set(prog "#include <boost/context/fiber.hpp>\nint main(void){\n::boost::context::fiber foo;\nreturn 0;\n}")
+  set(prog
+      "#include <boost/context/fiber.hpp>\nint main(void){\n::boost::context::fiber foo;\nreturn 0;\n}"
+  )
   set(CMAKE_REQUIRED_LIBRARIES "Boost::context")
   check_cxx_source_runs("${prog}" BOOST_FIBER_LINKS_WITHOUT_ADDITIONAL_MACROS)
   if(NOT BOOST_FIBER_LINKS_WITHOUT_ADDITIONAL_MACROS)
     set(CMAKE_REQUIRED_DEFINITIONS "-DBOOST_USE_UCONTEXT=1")
-    check_cxx_source_runs("${prog}" BOOST_FIBER_LINKS_WITH_BOOST_USE_UCONTEXT_MACRO)
+    check_cxx_source_runs("${prog}"
+                          BOOST_FIBER_LINKS_WITH_BOOST_USE_UCONTEXT_MACRO)
     if(BOOST_FIBER_LINKS_WITH_BOOST_USE_UCONTEXT_MACRO)
       get_target_property(var Boost::context INTERFACE_COMPILE_DEFINITIONS)
       list(APPEND var "-DBOOST_USE_UCONTEXT=1")
-      set_target_properties(Boost::context PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${var}")
+      set_target_properties(Boost::context
+                            PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${var}")
     else()
-      message(FATAL_ERROR "FATAL: Boost.Context needs additional help to link, and I need to be taught what")
+      message(
+        FATAL_ERROR
+          "FATAL: Boost.Context needs additional help to link, and I need to be taught what"
+      )
     endif()
   endif()
 endfunction()
@@ -104,6 +111,8 @@ add_library(
   "c++/monad/core/size_of.hpp"
   "c++/monad/core/small_prng.hpp"
   "c++/monad/core/spinlock.h"
+  "c++/monad/core/spmc_stream.c"
+  "c++/monad/core/spmc_stream.h"
   "c++/monad/core/tl_tid.c"
   "c++/monad/core/tl_tid.h"
   "c++/monad/core/unaligned.hpp"

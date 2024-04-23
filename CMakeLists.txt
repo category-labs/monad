@@ -41,9 +41,18 @@ add_subdirectory(third_party/silkpre)
 find_package(TBB REQUIRED)
 
 function(monad_compile_options target)
-  monad_core_compile_options(${target})
+  set_property(TARGET ${target} PROPERTY C_STANDARD 23)
+  set_property(TARGET ${target} PROPERTY C_STANDARD_REQUIRED ON)
+  set_property(TARGET ${target} PROPERTY CXX_STANDARD 23)
+  set_property(TARGET ${target} PROPERTY CXX_STANDARD_REQUIRED ON)
 
-  target_compile_options(${target} PUBLIC -DQUILL_ROOT_LOGGER_ONLY)
+  target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic
+                                           -Wconversion -Werror)
+
+  target_compile_options(
+    ${target} PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wno-missing-field-initializers>)
+
+  target_compile_definitions(${target} PUBLIC QUILL_ROOT_LOGGER_ONLY)
 
   target_compile_options(
     ${target}

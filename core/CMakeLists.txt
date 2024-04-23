@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-cmake_policy(SET CMP0144 NEW) ## find_package uses upper-case _ROOT variables
+cmake_policy(SET CMP0144 NEW) # find_package uses upper-case _ROOT variables
 
 include(CheckCXXSourceRuns)
 include(CheckCXXSymbolExists)
@@ -22,18 +22,25 @@ else()
   find_package(Boost REQUIRED COMPONENTS context fiber stacktrace_addr2line)
 endif()
 function(check_if_boost_fiber_needs_ucontext_macro)
-  set(prog "#include <boost/context/fiber.hpp>\nint main(void){\n::boost::context::fiber foo;\nreturn 0;\n}")
+  set(prog
+      "#include <boost/context/fiber.hpp>\nint main(void){\n::boost::context::fiber foo;\nreturn 0;\n}"
+  )
   set(CMAKE_REQUIRED_LIBRARIES "Boost::context")
   check_cxx_source_runs("${prog}" BOOST_FIBER_LINKS_WITHOUT_ADDITIONAL_MACROS)
   if(NOT BOOST_FIBER_LINKS_WITHOUT_ADDITIONAL_MACROS)
     set(CMAKE_REQUIRED_DEFINITIONS "-DBOOST_USE_UCONTEXT=1")
-    check_cxx_source_runs("${prog}" BOOST_FIBER_LINKS_WITH_BOOST_USE_UCONTEXT_MACRO)
+    check_cxx_source_runs("${prog}"
+                          BOOST_FIBER_LINKS_WITH_BOOST_USE_UCONTEXT_MACRO)
     if(BOOST_FIBER_LINKS_WITH_BOOST_USE_UCONTEXT_MACRO)
       get_target_property(var Boost::context INTERFACE_COMPILE_DEFINITIONS)
       list(APPEND var "-DBOOST_USE_UCONTEXT=1")
-      set_target_properties(Boost::context PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${var}")
+      set_target_properties(Boost::context
+                            PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${var}")
     else()
-      message(FATAL_ERROR "FATAL: Boost.Context needs additional help to link, and I need to be taught what")
+      message(
+        FATAL_ERROR
+          "FATAL: Boost.Context needs additional help to link, and I need to be taught what"
+      )
     endif()
   endif()
 endfunction()
@@ -61,19 +68,6 @@ target_include_directories(openssl_sha3_asm INTERFACE "third_party/openssl")
 # ##############################################################################
 # libs
 # ##############################################################################
-
-function(monad_core_compile_options target)
-  set_property(TARGET ${target} PROPERTY C_STANDARD 23)
-  set_property(TARGET ${target} PROPERTY C_STANDARD_REQUIRED ON)
-  set_property(TARGET ${target} PROPERTY CXX_STANDARD 23)
-  set_property(TARGET ${target} PROPERTY CXX_STANDARD_REQUIRED ON)
-
-  target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic
-                                           -Wconversion -Werror)
-
-  target_compile_options(
-    ${target} PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wno-missing-field-initializers>)
-endfunction()
 
 add_library(
   monad_core STATIC
@@ -147,7 +141,7 @@ add_library(
   # util
   "c++/monad/util/stopwatch.hpp")
 target_include_directories(monad_core PUBLIC "c++" "c/include")
-monad_core_compile_options(monad_core)
+monad_compile_options(monad_core)
 target_compile_definitions(monad_core PUBLIC "BOOST_STACKTRACE_LINK=1")
 if(linux_flavour MATCHES "debian|ubuntu")
   target_compile_definitions(monad_core
@@ -170,7 +164,7 @@ add_library(
   "c++/monad/mem/cpool_disas.c"
   # rlp
   "c++/monad/rlp/encode_disas.cpp")
-monad_core_compile_options(monad_core_disas)
+monad_compile_options(monad_core_disas)
 target_link_libraries(monad_core_disas PUBLIC monad_core)
 
 # ##############################################################################

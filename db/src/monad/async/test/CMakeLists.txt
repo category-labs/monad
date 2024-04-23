@@ -17,17 +17,21 @@ add_trie_test(TARGET io_death_test SOURCES "io_death.cpp")
 add_trie_test(TARGET io_worker_pool_test SOURCES "io_worker_pool.cpp")
 target_link_options(io_worker_pool_test PUBLIC "-rdynamic")
 execute_process(
-  COMMAND bash -c "awk -F= '/^ID=/{print $2}' /etc/os-release | tr -d '\n' | tr -d '\"'"
-  OUTPUT_VARIABLE linux_flavour
-)
-if(linux_flavour MATCHES "debian|ubuntu" AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-  # This produces the best backtraces on Debian/Ubuntu, addr2line doesn't work well on those
-  # backtrace.h is within GCC's internal headers, so clang doesn't find it.
-  target_compile_definitions(io_worker_pool_test PUBLIC "BOOST_STACKTRACE_USE_BACKTRACE=1")
+  COMMAND bash -c
+          "awk -F= '/^ID=/{print $2}' /etc/os-release | tr -d '\n' | tr -d '\"'"
+  OUTPUT_VARIABLE linux_flavour)
+if(linux_flavour MATCHES "debian|ubuntu" AND NOT CMAKE_CXX_COMPILER_ID STREQUAL
+                                             "Clang")
+  # This produces the best backtraces on Debian/Ubuntu, addr2line doesn't work
+  # well on those backtrace.h is within GCC's internal headers, so clang doesn't
+  # find it.
+  target_compile_definitions(io_worker_pool_test
+                             PUBLIC "BOOST_STACKTRACE_USE_BACKTRACE=1")
   target_link_libraries(io_worker_pool_test PUBLIC "backtrace")
 else()
   # This produces lovely backtraces on CentOS
-  target_compile_definitions(io_worker_pool_test PUBLIC "BOOST_STACKTRACE_USE_ADDR2LINE=1")
+  target_compile_definitions(io_worker_pool_test
+                             PUBLIC "BOOST_STACKTRACE_USE_ADDR2LINE=1")
   target_link_libraries(io_worker_pool_test PUBLIC "dl")
 endif()
 
@@ -48,9 +52,8 @@ gtest_discover_tests(
 
 add_trie_test(TARGET storage_pool_test SOURCES "storage_pool.cpp")
 
-
 # monad async perf test
 add_executable(benchmark_io_test "benchmark_io_test.cpp")
-monad_core_compile_options(benchmark_io_test)
-target_link_libraries(benchmark_io_test PUBLIC monad_core CLI11::CLI11 PkgConfig::cap monad_async)
-
+monad_compile_options(benchmark_io_test)
+target_link_libraries(benchmark_io_test PUBLIC monad_core CLI11::CLI11
+                                               PkgConfig::cap monad_async)

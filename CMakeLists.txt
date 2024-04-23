@@ -14,32 +14,6 @@ include(cmake/test.cmake)
 # deps
 # ##############################################################################
 
-add_subdirectory("monad-core")
-add_subdirectory("monad-trie")
-
-find_package(Boost REQUIRED COMPONENTS fiber graph json)
-find_package(PkgConfig REQUIRED)
-find_package(absl REQUIRED)
-pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
-
-# evmone
-set(BUILD_SHARED_LIBS OFF)
-add_subdirectory(third_party/evmone)
-# always compile baseline with optimization due to stack size of dispatch_cgoto
-set_source_files_properties(
-  third_party/evmone/lib/evmone/baseline.cpp TARGET_DIRECTORY evmone
-  PROPERTIES COMPILE_OPTIONS -O2)
-
-# intx
-add_subdirectory(third_party/intx)
-
-# silkpre
-set(OPTIONAL_BUILD_TESTS OFF)
-add_subdirectory(third_party/silkpre)
-
-# tbb
-find_package(TBB REQUIRED)
-
 function(monad_compile_options target)
   set_property(TARGET ${target} PROPERTY C_STANDARD 23)
   set_property(TARGET ${target} PROPERTY C_STANDARD_REQUIRED ON)
@@ -75,6 +49,32 @@ function(monad_compile_options target)
     target_compile_definitions(${target} PUBLIC EVMONE_TRACING=1)
   endif()
 endfunction()
+
+add_subdirectory("monad-core")
+add_subdirectory("monad-trie")
+
+find_package(Boost REQUIRED COMPONENTS fiber graph json)
+find_package(PkgConfig REQUIRED)
+find_package(absl REQUIRED)
+pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
+
+# evmone
+set(BUILD_SHARED_LIBS OFF)
+add_subdirectory(third_party/evmone)
+# always compile baseline with optimization due to stack size of dispatch_cgoto
+set_source_files_properties(
+  third_party/evmone/lib/evmone/baseline.cpp TARGET_DIRECTORY evmone
+  PROPERTIES COMPILE_OPTIONS -O2)
+
+# intx
+add_subdirectory(third_party/intx)
+
+# silkpre
+set(OPTIONAL_BUILD_TESTS OFF)
+add_subdirectory(third_party/silkpre)
+
+# tbb
+find_package(TBB REQUIRED)
 
 # ##############################################################################
 # libs

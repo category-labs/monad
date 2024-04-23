@@ -50,7 +50,7 @@ function(monad_compile_options target)
   endif()
 endfunction()
 
-add_subdirectory("monad-core")
+add_subdirectory("libs/core")
 add_subdirectory("monad-trie")
 
 find_package(Boost REQUIRED COMPONENTS fiber graph json)

@@ -12,7 +12,7 @@ RUN apt install -y dialog
 
 RUN apt install -y ca-certificates curl gnupg software-properties-common wget
 
-COPY monad-core/scripts/ubuntu-build/ /opt
+COPY scripts/ubuntu-build/ /opt
 
 RUN /opt/install-gcc.sh
 RUN /opt/install-clang.sh
@@ -38,9 +38,9 @@ ARG CC
 ARG CXX
 ARG CMAKE_BUILD_TYPE
 
-RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" ./monad-core/scripts/configure.sh
+RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" ./scripts/configure.sh
 
-RUN cd src && ./monad-core/scripts/build.sh
+RUN cd src && ./scripts/build.sh
 
 # security=insecure for tests which use io_uring
-RUN --security=insecure cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} ./monad-core/scripts/test.sh
+RUN --security=insecure cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} ./scripts/test.sh

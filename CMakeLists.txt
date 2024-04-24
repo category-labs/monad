@@ -51,7 +51,7 @@ function(monad_compile_options target)
 endfunction()
 
 add_subdirectory("libs/core")
-add_subdirectory("monad-trie")
+add_subdirectory("libs/db")
 
 find_package(Boost REQUIRED COMPONENTS fiber graph json)
 find_package(PkgConfig REQUIRED)

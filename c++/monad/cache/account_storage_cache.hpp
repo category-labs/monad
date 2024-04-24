@@ -29,13 +29,13 @@ class AccountStorageCache
     struct AccountMapValue;
     struct StorageMapValue;
 
-    template <class Key, class Value>
-    using HashMap = tbb::concurrent_hash_map<Key, Value>;
+    template <class Key, class Value, class HashCompare>
+    using HashMap = tbb::concurrent_hash_map<Key, Value, HashCompare>;
     using Mutex = SpinLock;
     using AccountNode = ListNode<AccountFinder>;
     using StorageNode = ListNode<StorageFinder>;
-    using AccountMap = HashMap<Address, AccountMapValue>;
-    using StorageMap = HashMap<bytes32_t, StorageMapValue>;
+    using AccountMap = HashMap<Address, AccountMapValue, AddressHashCompare>;
+    using StorageMap = HashMap<bytes32_t, StorageMapValue, Bytes32HashCompare>;
     using AccountMapKeyValue = std::pair<Address, AccountMapValue>;
     using StorageMapKeyValue = std::pair<bytes32_t, StorageMapValue>;
     using AccountList = LruList<AccountNode>;
@@ -199,7 +199,7 @@ private:
     struct StorageMapWrapper
     {
         AccountStorageCache &cache_;
-        HashMap<bytes32_t, StorageMapValue> map_;
+        StorageMap map_;
 
         StorageMapWrapper(AccountStorageCache &cache)
             : cache_(cache)

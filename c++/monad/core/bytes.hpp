@@ -6,6 +6,12 @@
 
 #include <evmc/evmc.hpp>
 
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#include <komihash.h>
+#pragma GCC diagnostic pop
+
 #include <bit>
 #include <cstddef>
 #include <functional>
@@ -16,6 +22,19 @@ using bytes32_t = ::evmc::bytes32;
 
 static_assert(sizeof(bytes32_t) == 32);
 static_assert(alignof(bytes32_t) == 1);
+
+struct Bytes32HashCompare
+{
+    size_t hash(bytes32_t const &a) const
+    {
+        return komihash(a.bytes, 32, 0);
+    }
+
+    bool equal(bytes32_t const &a, bytes32_t const &b) const
+    {
+        return memcmp(a.bytes, b.bytes, 32) == 0;
+    }
+};
 
 constexpr bytes32_t to_bytes(uint256_t const n) noexcept
 {

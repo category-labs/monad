@@ -11,6 +11,9 @@
 	path = third_party/intx
 	url = https://github.com/chfast/intx.git
 	branch = master
+[submodule "third_party/komihash"]
+	path = third_party/komihash
+	url = https://github.com/avaneev/komihash.git
 [submodule "third_party/silkpre"]
 	path = third_party/silkpre
 	url = https://github.com/monad-crypto/silkpre.git

@@ -1,6 +1,6 @@
 add_executable(monad-ethereum-test)
 target_link_libraries(monad-ethereum-test PRIVATE nlohmann_json::nlohmann_json
-                                                  monad GTest::gtest)
+                                                  monad_execution GTest::gtest)
 target_sources(
   monad-ethereum-test
   PRIVATE include/blockchain_test.hpp
@@ -16,6 +16,8 @@ target_include_directories(
   monad-ethereum-test PUBLIC ${PROJECT_SOURCE_DIR}/test/ethereum_test/include)
 target_include_directories(
   monad-ethereum-test PUBLIC ${PROJECT_SOURCE_DIR}/test/unit/common/include)
+target_include_directories(monad-ethereum-test
+                           PRIVATE "${TOP_CURRENT_BINARY_DIR}/test")
 monad_compile_options(monad-ethereum-test)
 
 target_link_libraries(monad-ethereum-test PRIVATE monad_unit_test_common)

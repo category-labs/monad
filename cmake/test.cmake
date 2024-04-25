@@ -15,7 +15,7 @@ function(add_unit_test)
   add_executable(
     ${ADD_UNIT_TEST_TARGET}
     ${ADD_UNIT_TEST_SOURCES}
-    ${PROJECT_SOURCE_DIR}/test/unit/common/src/test/main.cpp)
+    ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../test/unit/common/src/test/main.cpp)
   monad_compile_options(${ADD_UNIT_TEST_TARGET})
 
   target_link_libraries(
@@ -30,7 +30,7 @@ function(add_integration_test)
   cmake_parse_arguments(ADD_INT_TEST "" "${ONE_VALUE_ARGS}" "" ${ARGN})
 
   add_unit_test(${ADD_INT_TEST_TARGET} ${ARGN})
-  target_link_libraries(${ADD_INT_TEST_TARGET} PUBLIC monad)
+  target_link_libraries(${ADD_INT_TEST_TARGET} PUBLIC monad_execution)
 
   if(NOT TARGET integration_tests)
     add_custom_target(integration_tests)

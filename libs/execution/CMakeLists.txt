@@ -1,0 +1,187 @@
+cmake_minimum_required(VERSION 3.20)
+
+project(monad_execution)
+
+# ##############################################################################
+# deps
+# ##############################################################################
+
+# ##############################################################################
+# libs
+# ##############################################################################
+
+add_library(
+  monad_execution STATIC
+  "src/monad/config.hpp"
+  # analysis
+  "src/monad/analysis/analysis.cpp"
+  "src/monad/analysis/analysis.hpp"
+  # cache
+  "src/monad/cache/account_storage_cache.hpp"
+  # chain
+  "src/monad/chain/chain.cpp"
+  "src/monad/chain/chain.hpp"
+  "src/monad/chain/ethereum_mainnet.cpp"
+  "src/monad/chain/ethereum_mainnet.hpp"
+  # core
+  "src/monad/core/account.hpp"
+  "src/monad/core/address.hpp"
+  "src/monad/core/block.hpp"
+  "src/monad/core/byte_string.hpp"
+  "src/monad/core/bytes.hpp"
+  "src/monad/core/fmt/account_fmt.hpp"
+  "src/monad/core/fmt/address_fmt.hpp"
+  "src/monad/core/fmt/block_fmt.hpp"
+  "src/monad/core/fmt/bytes_fmt.hpp"
+  "src/monad/core/fmt/int_fmt.hpp"
+  "src/monad/core/fmt/receipt_fmt.hpp"
+  "src/monad/core/fmt/transaction_fmt.hpp"
+  "src/monad/core/fmt/withdrawal_fmt.hpp"
+  "src/monad/core/int.hpp"
+  "src/monad/core/log_level_map.hpp"
+  "src/monad/core/receipt.cpp"
+  "src/monad/core/receipt.hpp"
+  "src/monad/core/rlp/account_rlp.cpp"
+  "src/monad/core/rlp/account_rlp.hpp"
+  "src/monad/core/rlp/address_rlp.hpp"
+  "src/monad/core/rlp/block_rlp.cpp"
+  "src/monad/core/rlp/block_rlp.hpp"
+  "src/monad/core/rlp/bytes_rlp.hpp"
+  "src/monad/core/rlp/int_rlp.hpp"
+  "src/monad/core/rlp/receipt_rlp.cpp"
+  "src/monad/core/rlp/receipt_rlp.hpp"
+  "src/monad/core/rlp/signature_rlp.cpp"
+  "src/monad/core/rlp/signature_rlp.hpp"
+  "src/monad/core/rlp/transaction_rlp.cpp"
+  "src/monad/core/rlp/transaction_rlp.hpp"
+  "src/monad/core/rlp/withdrawal_rlp.cpp"
+  "src/monad/core/rlp/withdrawal_rlp.hpp"
+  "src/monad/core/signature.cpp"
+  "src/monad/core/signature.hpp"
+  "src/monad/core/transaction.cpp"
+  "src/monad/core/transaction.hpp"
+  "src/monad/core/variant.hpp"
+  "src/monad/core/withdrawal.hpp"
+  # db
+  "src/monad/db/block_db.cpp"
+  "src/monad/db/block_db.hpp"
+  "src/monad/db/db.hpp"
+  "src/monad/db/db_cache.hpp"
+  "src/monad/db/file_db.cpp"
+  "src/monad/db/file_db.hpp"
+  "src/monad/db/trie_db.cpp"
+  "src/monad/db/trie_db.hpp"
+  "src/monad/db/util.cpp"
+  "src/monad/db/util.hpp"
+  # execution
+  "src/monad/execution/baseline_execute.cpp"
+  "src/monad/execution/baseline_execute.hpp"
+  "src/monad/execution/block_hash_buffer.cpp"
+  "src/monad/execution/block_hash_buffer.hpp"
+  "src/monad/execution/block_reward.cpp"
+  "src/monad/execution/block_reward.hpp"
+  "src/monad/execution/code_analysis.hpp"
+  "src/monad/execution/create_contract_address.cpp"
+  "src/monad/execution/create_contract_address.hpp"
+  "src/monad/execution/ethereum/dao.hpp"
+  "src/monad/execution/evm.cpp"
+  "src/monad/execution/evm.hpp"
+  "src/monad/execution/evmc_host.cpp"
+  "src/monad/execution/evmc_host.hpp"
+  "src/monad/execution/execute_block.cpp"
+  "src/monad/execution/execute_block.hpp"
+  "src/monad/execution/execute_transaction.cpp"
+  "src/monad/execution/execute_transaction.hpp"
+  "src/monad/execution/explicit_evmc_revision.hpp"
+  "src/monad/execution/fmt/trace_fmt.hpp"
+  "src/monad/execution/genesis.hpp"
+  "src/monad/execution/precompiles.cpp"
+  "src/monad/execution/precompiles.hpp"
+  "src/monad/execution/replay_block_db.hpp"
+  "src/monad/execution/trace.cpp"
+  "src/monad/execution/trace.hpp"
+  "src/monad/execution/transaction_gas.cpp"
+  "src/monad/execution/transaction_gas.hpp"
+  "src/monad/execution/tx_context.cpp"
+  "src/monad/execution/tx_context.hpp"
+  "src/monad/execution/validate_block.cpp"
+  "src/monad/execution/validate_block.hpp"
+  "src/monad/execution/validate_transaction.cpp"
+  "src/monad/execution/validate_transaction.hpp"
+  # rlp
+  "src/monad/rlp/config.hpp"
+  "src/monad/rlp/decode.hpp"
+  "src/monad/rlp/decode_error.cpp"
+  "src/monad/rlp/decode_error.hpp"
+  "src/monad/rlp/encode2.hpp"
+  # state
+  "src/monad/state2/block_state.cpp"
+  "src/monad/state2/block_state.hpp"
+  "src/monad/state2/fmt/state_deltas_fmt.hpp"
+  "src/monad/state2/state_deltas.hpp"
+  # state 3
+  "src/monad/state3/account_state.cpp"
+  "src/monad/state3/account_state.hpp"
+  "src/monad/state3/account_substate.hpp"
+  "src/monad/state3/state.cpp"
+  "src/monad/state3/state.hpp"
+  "src/monad/state3/version_stack.hpp")
+
+target_include_directories(
+  monad_execution
+  PUBLIC ${PROJECT_SOURCE_DIR}/src
+  PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/test
+  PRIVATE ${Boost_INCLUDE_DIRS}
+  PUBLIC ${silkpre_SOURCE_DIR}/lib)
+
+target_link_libraries(
+  monad_execution
+  PUBLIC monad_core
+  PUBLIC monad_trie
+  PRIVATE Boost::fiber
+  PRIVATE Boost::graph
+  PRIVATE Boost::json
+  PRIVATE PkgConfig::brotli
+  PRIVATE absl::btree
+  PUBLIC ethash::keccak
+  PUBLIC evmc
+  PUBLIC evmone
+  PUBLIC intx::intx
+  PUBLIC komihash
+  PUBLIC nlohmann_json::nlohmann_json
+  PUBLIC quill::quill
+  PUBLIC silkpre
+  PUBLIC thread_safe_lru
+  PUBLIC unordered_dense
+  PUBLIC TBB::tbb)
+monad_compile_options(monad_execution)
+
+if(ASAN)
+  message("Address Sanitizer: On")
+  target_compile_options(monad_execution PUBLIC "-fsanitize=address"
+                                                "-fno-omit-frame-pointer")
+  target_link_options(monad_execution PUBLIC "-fsanitize=address")
+endif()
+if(UBSAN)
+  message("Undefined Behavior Sanitizer: On")
+  target_compile_options(
+    monad_execution PUBLIC "-fsanitize=undefined" "-fno-omit-frame-pointer"
+                           "-fPIC")
+  target_link_options(monad_execution PUBLIC "-fsanitize=undefined")
+endif()
+if(NOT UBSAN AND NOT ASAN)
+  target_link_options(monad_execution PRIVATE LINKER:-z,defs)
+endif()
+
+# ##############################################################################
+# unit tests
+# ##############################################################################
+
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/analysis)
+
+monad_add_test_folder("src/monad/core")
+monad_add_test_folder("src/monad/db")
+monad_add_test_folder("src/monad/execution")
+monad_add_test_folder("src/monad/rlp")
+monad_add_test_folder("src/monad/state2")
+monad_add_test_folder("src/monad/trie")

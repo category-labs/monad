@@ -4,5 +4,5 @@ add_unit_test(
   SOURCES
   test_analysis.cpp
   LIBRARIES
-  monad
+  monad_execution
   evmone)

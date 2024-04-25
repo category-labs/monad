@@ -21,8 +21,6 @@
 
 #include <quill/Quill.h>
 
-#include <test_resource_data.h>
-
 #include <cstdint>
 #include <fstream>
 #include <optional>

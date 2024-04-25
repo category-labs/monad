@@ -156,22 +156,7 @@ target_link_libraries(
   PUBLIC TBB::tbb)
 monad_compile_options(monad_execution)
 
-if(ASAN)
-  message("Address Sanitizer: On")
-  target_compile_options(monad_execution PUBLIC "-fsanitize=address"
-                                                "-fno-omit-frame-pointer")
-  target_link_options(monad_execution PUBLIC "-fsanitize=address")
-endif()
-if(UBSAN)
-  message("Undefined Behavior Sanitizer: On")
-  target_compile_options(
-    monad_execution PUBLIC "-fsanitize=undefined" "-fno-omit-frame-pointer"
-                           "-fPIC")
-  target_link_options(monad_execution PUBLIC "-fsanitize=undefined")
-endif()
-if(NOT UBSAN AND NOT ASAN)
-  target_link_options(monad_execution PRIVATE LINKER:-z,defs)
-endif()
+target_link_options(monad_execution PRIVATE LINKER:-z,defs)
 
 # ##############################################################################
 # unit tests

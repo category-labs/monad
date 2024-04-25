@@ -33,41 +33,41 @@ add_library(
   "src/monad/async/io.cpp"
   "src/monad/async/storage_pool.cpp"
   "src/monad/async/util.cpp")
-target_include_directories(monad_async PUBLIC "include")
+target_include_directories(monad_async PUBLIC "src")
 monad_compile_options(monad_async)
 target_link_libraries(monad_async PUBLIC monad_core Boost::fiber)
 
 add_library(
   monad_trie STATIC
-  "include/monad/mpt/config.hpp"
-  "include/monad/mpt/compute.hpp"
-  "include/monad/mpt/db.hpp"
-  "include/monad/mpt/db_error.hpp"
-  "include/monad/mpt/find_request_sender.hpp"
-  "include/monad/mpt/mem.hpp"
-  "include/monad/mpt/nibbles_view.hpp"
-  "include/monad/mpt/nibbles_view_fmt.hpp"
-  "include/monad/mpt/node.hpp"
-  "include/monad/mpt/node_cursor.hpp"
-  "include/monad/mpt/ondisk_db_config.hpp"
-  "include/monad/mpt/request.hpp"
-  "include/monad/mpt/state_machine.hpp"
-  "include/monad/mpt/traverse.hpp"
-  "include/monad/mpt/trie.hpp"
-  "include/monad/mpt/util.hpp"
-  "include/monad/mpt/update.hpp"
   "src/monad/mpt/compute.cpp"
+  "src/monad/mpt/compute.hpp"
+  "src/monad/mpt/config.hpp"
   "src/monad/mpt/copy_node.cpp"
   "src/monad/mpt/db.cpp"
+  "src/monad/mpt/db.hpp"
+  "src/monad/mpt/db_error.hpp"
+  "src/monad/mpt/find.cpp"
   "src/monad/mpt/find_notify_fiber.cpp"
   "src/monad/mpt/find_request_sender.cpp"
-  "src/monad/mpt/find.cpp"
+  "src/monad/mpt/find_request_sender.hpp"
   "src/monad/mpt/mem.cpp"
+  "src/monad/mpt/mem.hpp"
+  "src/monad/mpt/nibbles_view.hpp"
+  "src/monad/mpt/nibbles_view_fmt.hpp"
   "src/monad/mpt/node.cpp"
+  "src/monad/mpt/node.hpp"
+  "src/monad/mpt/node_cursor.hpp"
+  "src/monad/mpt/ondisk_db_config.hpp"
+  "src/monad/mpt/request.hpp"
+  "src/monad/mpt/state_machine.hpp"
   "src/monad/mpt/traverse.cpp"
+  "src/monad/mpt/traverse.hpp"
   "src/monad/mpt/trie.cpp"
-  "src/monad/mpt/update_aux.cpp")
-target_include_directories(monad_trie PUBLIC "include")
+  "src/monad/mpt/trie.hpp"
+  "src/monad/mpt/update.hpp"
+  "src/monad/mpt/update_aux.cpp"
+  "src/monad/mpt/util.hpp")
+target_include_directories(monad_trie PUBLIC "src")
 target_include_directories(monad_trie PRIVATE "third_party")
 monad_compile_options(monad_trie)
 target_link_libraries(monad_trie PRIVATE Boost::boost)

@@ -72,75 +72,75 @@ target_include_directories(openssl_sha3_asm INTERFACE "third_party/openssl")
 add_library(
   monad_core STATIC
   # config
-  "c++/monad/config.hpp"
+  "src/monad/config.hpp"
   # core
-  "c++/monad/core/array.hpp"
-  "c++/monad/core/assert.c"
-  "c++/monad/core/assert.h"
-  "c++/monad/core/backtrace.cpp"
-  "c++/monad/core/backtrace.hpp"
-  "c++/monad/core/basic_formatter.hpp"
-  "c++/monad/core/bit_util.h"
-  "c++/monad/core/byte_string.hpp"
-  "c++/monad/core/cmemory.hpp"
-  "c++/monad/core/cpu_relax.h"
-  "c++/monad/core/endian.hpp"
-  "c++/monad/core/hash.hpp"
-  "c++/monad/core/hex_literal.hpp"
-  "c++/monad/core/keccak.c"
-  "c++/monad/core/keccak.h"
-  "c++/monad/core/keccak_impl.S"
-  "c++/monad/core/likely.h"
-  "c++/monad/core/math.hpp"
-  "c++/monad/core/nibble.h"
-  "c++/monad/core/offset.hpp"
-  "c++/monad/core/result.hpp"
-  "c++/monad/core/size_of.hpp"
-  "c++/monad/core/small_prng.hpp"
-  "c++/monad/core/spinlock.h"
-  "c++/monad/core/tl_tid.c"
-  "c++/monad/core/tl_tid.h"
-  "c++/monad/core/unaligned.hpp"
-  "c++/monad/lru/lru_cache.hpp"
-  "c++/monad/mem/batch_mem_pool.hpp"
-  "c++/monad/synchronization/spin_lock.hpp"
+  "src/monad/core/array.hpp"
+  "src/monad/core/assert.c"
+  "src/monad/core/assert.h"
+  "src/monad/core/backtrace.cpp"
+  "src/monad/core/backtrace.hpp"
+  "src/monad/core/basic_formatter.hpp"
+  "src/monad/core/bit_util.h"
+  "src/monad/core/byte_string.hpp"
+  "src/monad/core/cmemory.hpp"
+  "src/monad/core/cpu_relax.h"
+  "src/monad/core/endian.hpp"
+  "src/monad/core/hash.hpp"
+  "src/monad/core/hex_literal.hpp"
+  "src/monad/core/keccak.c"
+  "src/monad/core/keccak.h"
+  "src/monad/core/keccak_impl.S"
+  "src/monad/core/likely.h"
+  "src/monad/core/math.hpp"
+  "src/monad/core/nibble.h"
+  "src/monad/core/offset.hpp"
+  "src/monad/core/result.hpp"
+  "src/monad/core/size_of.hpp"
+  "src/monad/core/small_prng.hpp"
+  "src/monad/core/spinlock.h"
+  "src/monad/core/tl_tid.c"
+  "src/monad/core/tl_tid.h"
+  "src/monad/core/unaligned.hpp"
+  "src/monad/lru/lru_cache.hpp"
+  "src/monad/mem/batch_mem_pool.hpp"
+  "src/monad/synchronization/spin_lock.hpp"
   # fiber
-  "c++/monad/fiber/config.hpp"
-  "c++/monad/fiber/priority_algorithm.cpp"
-  "c++/monad/fiber/priority_algorithm.hpp"
-  "c++/monad/fiber/priority_pool.cpp"
-  "c++/monad/fiber/priority_pool.hpp"
-  "c++/monad/fiber/priority_properties.hpp"
-  "c++/monad/fiber/priority_queue.cpp"
-  "c++/monad/fiber/priority_queue.hpp"
-  "c++/monad/fiber/priority_task.hpp"
+  "src/monad/fiber/config.hpp"
+  "src/monad/fiber/priority_algorithm.cpp"
+  "src/monad/fiber/priority_algorithm.hpp"
+  "src/monad/fiber/priority_pool.cpp"
+  "src/monad/fiber/priority_pool.hpp"
+  "src/monad/fiber/priority_properties.hpp"
+  "src/monad/fiber/priority_queue.cpp"
+  "src/monad/fiber/priority_queue.hpp"
+  "src/monad/fiber/priority_task.hpp"
   # io
-  "c++/monad/io/buffer_pool.cpp"
-  "c++/monad/io/buffer_pool.hpp"
-  "c++/monad/io/buffers.cpp"
-  "c++/monad/io/buffers.hpp"
-  "c++/monad/io/config.hpp"
-  "c++/monad/io/ring.cpp"
-  "c++/monad/io/ring.hpp"
+  "src/monad/io/buffer_pool.cpp"
+  "src/monad/io/buffer_pool.hpp"
+  "src/monad/io/buffers.cpp"
+  "src/monad/io/buffers.hpp"
+  "src/monad/io/config.hpp"
+  "src/monad/io/ring.cpp"
+  "src/monad/io/ring.hpp"
   # mem
-  "c++/monad/mem/cpool.h"
-  "c++/monad/mem/dynamic_allocator.hpp"
-  "c++/monad/mem/huge_mem.c"
-  "c++/monad/mem/huge_mem.cpp"
-  "c++/monad/mem/huge_mem.h"
-  "c++/monad/mem/huge_mem.hpp"
-  "c++/monad/mem/mem_map.cpp"
-  "c++/monad/mem/mem_map.hpp"
-  "c++/monad/mem/pool_allocator.cpp"
-  "c++/monad/mem/pool_allocator.hpp"
+  "src/monad/mem/cpool.h"
+  "src/monad/mem/dynamic_allocator.hpp"
+  "src/monad/mem/huge_mem.c"
+  "src/monad/mem/huge_mem.cpp"
+  "src/monad/mem/huge_mem.h"
+  "src/monad/mem/huge_mem.hpp"
+  "src/monad/mem/mem_map.cpp"
+  "src/monad/mem/mem_map.hpp"
+  "src/monad/mem/pool_allocator.cpp"
+  "src/monad/mem/pool_allocator.hpp"
   # rlp
-  "c++/monad/rlp/config.hpp"
-  "c++/monad/rlp/encode.hpp"
+  "src/monad/rlp/config.hpp"
+  "src/monad/rlp/encode.hpp"
   # test
-  "c++/monad/test/gtest_signal_stacktrace_printer.hpp"
+  "src/monad/test/gtest_signal_stacktrace_printer.hpp"
   # util
-  "c++/monad/util/stopwatch.hpp")
-target_include_directories(monad_core PUBLIC "c++" "c/include")
+  "src/monad/util/stopwatch.hpp")
+target_include_directories(monad_core PUBLIC "src")
 monad_compile_options(monad_core)
 target_compile_definitions(monad_core PUBLIC "BOOST_STACKTRACE_LINK=1")
 if(linux_flavour MATCHES "debian|ubuntu")
@@ -158,12 +158,12 @@ target_link_libraries(monad_core PUBLIC openssl_sha3_asm uring Boost::fiber
 add_library(
   monad_core_disas STATIC
   # core
-  "c++/monad/core/math_disas.cpp"
-  "c++/monad/core/offset_disas.cpp"
-  "c++/monad/core/spinlock_disas.c"
-  "c++/monad/mem/cpool_disas.c"
+  "src/monad/core/math_disas.cpp"
+  "src/monad/core/offset_disas.cpp"
+  "src/monad/core/spinlock_disas.c"
+  "src/monad/mem/cpool_disas.c"
   # rlp
-  "c++/monad/rlp/encode_disas.cpp")
+  "src/monad/rlp/encode_disas.cpp")
 monad_compile_options(monad_core_disas)
 target_link_libraries(monad_core_disas PUBLIC monad_core)
 
@@ -177,5 +177,5 @@ find_package(GTest REQUIRED)
 
 add_subdirectory("test")
 
-monad_add_test(bit_util_test c++/monad/core/bit_util_test.cpp)
-monad_add_test(huge_mem_test c++/monad/mem/huge_mem_test.cpp)
+monad_add_test(bit_util_test src/monad/core/bit_util_test.cpp)
+monad_add_test(huge_mem_test src/monad/mem/huge_mem_test.cpp)

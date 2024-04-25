@@ -232,7 +232,7 @@ struct Db::RWOnDisk final : public Db::Impl
     std::mutex lock_;
     std::condition_variable cond_;
 
-    struct TrieDbWorker
+    struct IOWorker
     {
         RWOnDisk *parent;
         UpdateAuxImpl &aux;
@@ -244,7 +244,7 @@ struct Db::RWOnDisk final : public Db::Impl
         bool const compaction;
         std::atomic<bool> sleeping{false}, done{false};
 
-        TrieDbWorker(
+        IOWorker(
             RWOnDisk *parent, UpdateAuxImpl &aux, OnDiskDbConfig const &options)
             : parent(parent)
             , aux(aux)
@@ -399,7 +399,7 @@ struct Db::RWOnDisk final : public Db::Impl
         }
     };
 
-    std::unique_ptr<TrieDbWorker> worker_;
+    std::unique_ptr<IOWorker> worker_;
     std::thread worker_thread_;
     StateMachine &machine_;
     UpdateAux<> aux_;
@@ -409,7 +409,7 @@ struct Db::RWOnDisk final : public Db::Impl
         : worker_thread_([&] {
             {
                 std::unique_lock const g(lock_);
-                worker_ = std::make_unique<TrieDbWorker>(this, aux_, options);
+                worker_ = std::make_unique<IOWorker>(this, aux_, options);
             }
             worker_->run();
             std::unique_lock const g(lock_);

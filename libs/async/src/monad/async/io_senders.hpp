@@ -100,6 +100,90 @@ static_assert(sizeof(read_single_buffer_sender) == 40);
 static_assert(alignof(read_single_buffer_sender) == 8);
 static_assert(sender<read_single_buffer_sender>);
 
+class read_single_buffer_sender_external_fd
+{
+public:
+    using buffer_type = filled_read_buffer;
+    using const_buffer_type = filled_read_buffer;
+    using result_type = result<std::reference_wrapper<buffer_type>>;
+
+    static constexpr operation_type my_operation_type = operation_type::read;
+
+private:
+    int fd_;
+    file_offset_t offset_;
+    buffer_type buffer_;
+
+public:
+    constexpr read_single_buffer_sender_external_fd(
+        int fd, file_offset_t offset, size_t bytes_to_read)
+        : fd_(fd)
+        , offset_(offset)
+        , buffer_(bytes_to_read)
+    {
+    }
+
+    constexpr read_single_buffer_sender_external_fd(
+        int fd, file_offset_t offset, buffer_type buffer)
+        : fd_(fd)
+        , offset_(offset)
+        , buffer_(std::move(buffer))
+    {
+    }
+
+    constexpr file_offset_t offset() const noexcept
+    {
+        return offset_;
+    }
+
+    constexpr buffer_type const &buffer() const & noexcept
+    {
+        return buffer_;
+    }
+
+    constexpr buffer_type buffer() && noexcept
+    {
+        return std::move(buffer_);
+    }
+
+    void reset(file_offset_t offset, size_t bytes_to_read)
+    {
+        offset_ = offset;
+        buffer_ = buffer_type(bytes_to_read);
+    }
+
+    void reset(file_offset_t offset, buffer_type buffer)
+    {
+        offset_ = offset;
+        buffer_ = std::move(buffer);
+    }
+
+    result<void> operator()(erased_connected_operation *io_state) noexcept
+    {
+        if (!buffer_) {
+            buffer_.set_read_buffer(
+                io_state->executor()->get_read_buffer(buffer_.size()));
+        }
+        size_t bytes_transferred = io_state->executor()->submit_read_request(
+            buffer_.to_mutable_span(), fd_, offset_, io_state);
+        if (bytes_transferred != size_t(-1)) {
+            // It completed early
+            return make_status_code(
+                sender_errc::initiation_immediately_completed,
+                bytes_transferred);
+        }
+        return success();
+    }
+
+    result_type completed(
+        erased_connected_operation *, result<size_t> bytes_transferred) noexcept
+    {
+        BOOST_OUTCOME_TRY(auto &&count, std::move(bytes_transferred));
+        buffer_.set_bytes_transferred(count);
+        return success(std::ref(buffer_));
+    }
+};
+
 /*! \class read_multiple_buffer_sender
 \brief A Sender which (possibly partially) scatter fills one or more
 **unregistered** buffers of bytes read from an offset in a file.
@@ -368,6 +452,82 @@ public:
 static_assert(sizeof(write_single_buffer_sender) == 48);
 static_assert(alignof(write_single_buffer_sender) == 8);
 static_assert(sender<write_single_buffer_sender>);
+
+class write_on_read_buffer_sender
+{
+public:
+    using buffer_type = filled_read_buffer;
+    using const_buffer_type = filled_read_buffer;
+    using result_type = result<std::reference_wrapper<buffer_type>>;
+
+    static constexpr operation_type my_operation_type =
+        operation_type::write_on_read_buffer; // no need to get write buffers on
+                                              // connect
+
+private:
+    int fd_;
+    file_offset_t offset_;
+    buffer_type buffer_;
+
+public:
+    constexpr write_on_read_buffer_sender(
+        int fd, file_offset_t offset, buffer_type buffer)
+        : fd_(fd)
+        , offset_(offset)
+        , buffer_(std::move(buffer))
+    {
+    }
+
+    constexpr file_offset_t offset() const noexcept
+    {
+        return offset_;
+    }
+
+    constexpr buffer_type const &buffer() const & noexcept
+    {
+        return buffer_;
+    }
+
+    void reset(file_offset_t offset)
+    {
+        offset_ = offset;
+    }
+
+    void reset(file_offset_t offset, buffer_type buffer)
+    {
+        offset_ = offset;
+        buffer_ = std::move(buffer);
+    }
+
+    result<void> operator()(erased_connected_operation *io_state) noexcept
+    {
+        MONAD_DEBUG_ASSERT(!!buffer_);
+        io_state->executor()->submit_write_request(
+            buffer_, fd_, offset_, io_state, true); // use read buffer
+        return success();
+    }
+
+    result_type completed(
+        erased_connected_operation *, result<size_t> bytes_transferred) noexcept
+    {
+        if (!bytes_transferred) {
+            fprintf(
+                stderr,
+                "ERROR: Write of %zu bytes to offset %llu failed with error "
+                "'%s'\n",
+                buffer().size(),
+                offset_,
+                bytes_transferred.assume_error().message().c_str());
+        }
+        BOOST_OUTCOME_TRY(auto &&count, std::move(bytes_transferred));
+        buffer_.set_bytes_transferred(count);
+        return std::ref(buffer_);
+    }
+};
+
+static_assert(sizeof(write_on_read_buffer_sender) == 48);
+static_assert(alignof(write_on_read_buffer_sender) == 8);
+static_assert(sender<write_on_read_buffer_sender>);
 
 /*! \class timed_delay_sender
 \brief A Sender which completes after a delay. The delay can be measured by

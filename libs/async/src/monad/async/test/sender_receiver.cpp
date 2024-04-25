@@ -55,6 +55,8 @@
 #include <variant>
 #include <vector>
 
+#include <fcntl.h> // for open
+
 struct AsyncIO : public monad::test::AsyncTestFixture<::testing::Test>
 {
 };
@@ -1259,4 +1261,122 @@ TEST_F(AsyncIO, immediate_completion_decays_to_void)
     state.initiate();
     ASSERT_TRUE(out.has_value());
     EXPECT_EQ(out->value(), 5);
+}
+
+TEST_F(AsyncIO, write_on_read_buffer_sender)
+{
+    using namespace MONAD_ASYNC_NAMESPACE;
+
+    // open a new temporary file
+    int testfd = make_temporary_inode();
+    MONAD_ASSERT(testfd != -1);
+    MONAD_ASSERT(
+        -1 != ::ftruncate(testfd, static_cast<off_t>(8ULL * 1024 * 1024)));
+
+    file_offset_t offset_to_rdwr = 0;
+
+    struct write_receiver_t
+    {
+        enum : bool
+        {
+            lifetime_managed_internally = true
+        };
+
+        void set_value(
+            erased_connected_operation *,
+            read_single_buffer_sender_external_fd::result_type res)
+        {
+            MONAD_ASSERT(res);
+            res.assume_value()
+                .get()
+                .reset(); // release i/o buffer before initiating other work
+        }
+    };
+
+    struct read_then_write_receiver_t
+    {
+        enum : bool
+        {
+            lifetime_managed_internally = true
+        };
+
+        int fd;
+        file_offset_t offset;
+        unsigned bytes_to_read; // read buffer size
+        shared_state_t &shared_state;
+
+        void set_value(
+            erased_connected_operation *,
+            read_single_buffer_sender_external_fd::result_type res)
+        {
+            ASSERT_TRUE(res);
+            auto &buffer = res.assume_value().get();
+
+            // modification on the buffer within a block size
+            std::memcpy(
+                (void *)buffer.data(),
+                shared_state.testfilecontents.data(),
+                bytes_to_read);
+
+            // create a write sender using the read buffer and initiate
+            auto iostate = shared_state.testio->make_connected(
+                write_on_read_buffer_sender{fd, offset, std::move(buffer)},
+                write_receiver_t{});
+            iostate->initiate();
+            iostate.release();
+        }
+    };
+
+    struct read_receiver_t
+    {
+        enum : bool
+        {
+            lifetime_managed_internally = true
+        };
+
+        shared_state_t &shared_state;
+
+        void set_value(
+            erased_connected_operation *,
+            read_single_buffer_sender_external_fd::result_type res)
+        {
+            ASSERT_TRUE(res);
+            auto &buffer = res.assume_value().get();
+
+            EXPECT_EQ(
+                0,
+                memcmp(
+                    buffer.data(),
+                    shared_state.testfilecontents.data(),
+                    buffer.size()));
+        }
+    };
+
+    // read_then_write
+    read_then_write_receiver_t read_receiver{
+        testfd,
+        offset_to_rdwr,
+        MONAD_ASYNC_NAMESPACE::AsyncIO::READ_BUFFER_SIZE,
+        *shared_state_()};
+    read_single_buffer_sender_external_fd read_sender{
+        testfd,
+        offset_to_rdwr,
+        MONAD_ASYNC_NAMESPACE::AsyncIO::READ_BUFFER_SIZE};
+    auto rwstate = shared_state_()->testio->make_connected(
+        std::move(read_sender), std::move(read_receiver));
+    rwstate->initiate();
+    rwstate.release();
+
+    shared_state_()->testio->wait_until_done(); // 1 read, 1 write
+
+    // read again
+    auto rdstate = shared_state_()->testio->make_connected(
+        read_single_buffer_sender_external_fd{
+            testfd,
+            offset_to_rdwr,
+            MONAD_ASYNC_NAMESPACE::AsyncIO::READ_BUFFER_SIZE},
+        read_receiver_t{*shared_state_()});
+    rdstate->initiate();
+    rdstate.release();
+    shared_state_()->testio->wait_until_done(); // 1 read
 }

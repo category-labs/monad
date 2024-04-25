@@ -105,6 +105,15 @@ private:
         std::span<std::byte const> buffer, chunk_offset_t chunk_and_offset,
         void *uring_data, enum erased_connected_operation::io_priority prio);
     void submit_request_(timed_invocation_state *state, void *uring_data);
+    void submit_request_(
+        std::span<std::byte> buffer, int read_fd, bool registered_fd,
+        file_offset_t, void *uring_data,
+        enum erased_connected_operation::io_priority prio);
+    void submit_request_(
+        std::span<std::byte const> buffer, int write_fd, bool registered_fd,
+        file_offset_t, void *uring_data,
+        enum erased_connected_operation::io_priority prio,
+        bool use_read_buffer = false);
 
     void poll_uring_while_submission_queue_full_();
     bool poll_uring_(bool blocking, unsigned poll_rings_mask);
@@ -305,9 +314,8 @@ public:
         records_.nreads = 0;
     }
 
-    size_t submit_read_request(
-        std::span<std::byte> buffer, chunk_offset_t offset,
-        erased_connected_operation *uring_data)
+    size_t
+    read_request_concurrency_control(erased_connected_operation *uring_data)
     {
         if (concurrent_read_io_limit_ > 0) {
             if (records_.inflight_rd >= concurrent_read_io_limit_) {
@@ -334,15 +342,50 @@ public:
                 return size_t(-1); // we never complete immediately
             }
         }
+        return 0;
+    }
 
+    size_t submit_read_request(
+        std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
+        erased_connected_operation *uring_data)
+    {
+        if (read_request_concurrency_control(uring_data)) {
+            return size_t(-1);
+        }
         if (capture_io_latencies_) {
             uring_data->initiated = std::chrono::steady_clock::now();
         }
-        submit_request_(buffer, offset, uring_data, uring_data->io_priority());
-        if (++records_.inflight_rd > records_.max_inflight_rd) {
-            records_.max_inflight_rd = records_.inflight_rd;
+
+        MONAD_DEBUG_ASSERT(
+            (chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
+        auto const &ci = seq_chunks_[chunk_and_offset.id];
+        submit_request_(
+            buffer,
+            ci.io_uring_read_fd,
+            true,
+            ci.ptr->read_fd().second + chunk_and_offset.offset,
+            uring_data,
+            uring_data->io_priority());
+        return size_t(-1); // we never complete immediately
+    }
+
+    size_t submit_read_request(
+        std::span<std::byte> buffer, int read_fd, file_offset_t offset,
+        erased_connected_operation *uring_data)
+    {
+        if (read_request_concurrency_control(uring_data)) {
+            return size_t(-1);
         }
-        ++records_.nreads;
+        if (capture_io_latencies_) {
+            uring_data->initiated = std::chrono::steady_clock::now();
+        }
+        submit_request_(
+            buffer,
+            read_fd,
+            false,
+            offset,
+            uring_data,
+            uring_data->io_priority());
         return size_t(-1); // we never complete immediately
     }
 
@@ -355,24 +398,55 @@ public:
             uring_data->initiated = std::chrono::steady_clock::now();
         }
         submit_request_(buffers, offset, uring_data, uring_data->io_priority());
-        if (++records_.inflight_rd_scatter > records_.max_inflight_rd_scatter) {
-            records_.max_inflight_rd_scatter = records_.inflight_rd_scatter;
-        }
-        ++records_.nreads;
         return size_t(-1); // we never complete immediately
     }
 
     void submit_write_request(
-        std::span<std::byte const> buffer, chunk_offset_t offset,
+        std::span<std::byte const> buffer, chunk_offset_t chunk_and_offset,
         erased_connected_operation *uring_data)
     {
+        MONAD_ASSERT(!rwbuf_.is_read_only());
+        MONAD_DEBUG_ASSERT(buffer.size() <= WRITE_BUFFER_SIZE);
+
         if (capture_io_latencies_) {
             uring_data->initiated = std::chrono::steady_clock::now();
         }
-        submit_request_(buffer, offset, uring_data, uring_data->io_priority());
-        if (++records_.inflight_wr > records_.max_inflight_wr) {
-            records_.max_inflight_wr = records_.inflight_wr;
+        MONAD_DEBUG_ASSERT(
+            (chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
+
+        auto const &ci = seq_chunks_[chunk_and_offset.id];
+        auto offset = ci.ptr->write_fd(buffer.size()).second;
+        /* Do sanity check to ensure initiator is definitely appending where
+        they are supposed to be appending.
+        */
+        MONAD_ASSERT((chunk_and_offset.offset & 0xffff) == (offset & 0xffff));
+        submit_request_(
+            buffer,
+            ci.io_uring_write_fd,
+            true,
+            offset,
+            uring_data,
+            uring_data->io_priority(),
+            false);
+    }
+
+    void submit_write_request(
+        std::span<std::byte const> buffer, int write_fd, file_offset_t offset,
+        erased_connected_operation *uring_data, bool use_read_buffer = false)
+    {
+        MONAD_DEBUG_ASSERT(buffer.size() <= WRITE_BUFFER_SIZE);
+
+        if (capture_io_latencies_) {
+            uring_data->initiated = std::chrono::steady_clock::now();
         }
+        submit_request_(
+            buffer,
+            write_fd,
+            false,
+            offset,
+            uring_data,
+            uring_data->io_priority(),
+            use_read_buffer);
     }
 
     // WARNING: Must exist until completion!
@@ -394,7 +468,6 @@ public:
         if (capture_io_latencies_) {
             uring_data->initiated = std::chrono::steady_clock::now();
         }
-        ++records_.inflight_tm;
     }
 
     void submit_threadsafe_invocation_request(
@@ -514,7 +587,7 @@ public:
 private:
     unsigned char *poll_uring_while_no_io_buffers_(bool is_write);
 
-    template <bool is_write, class F>
+    template <bool requires_write_buffer, class F>
     auto make_connected_impl_(F &&connect)
     {
         using connected_type = decltype(connect());
@@ -531,14 +604,14 @@ private:
             new (mem) connected_type(connect()));
         // Did you accidentally pass in a foreign buffer to use?
         // Can't do that, must use buffer returned.
-        MONAD_DEBUG_ASSERT(ret->sender().buffer().data() == nullptr);
-        if constexpr (is_write) {
+        // MONAD_DEBUG_ASSERT(ret->sender().buffer().data() == nullptr);
+        if constexpr (requires_write_buffer) {
             MONAD_DEBUG_ASSERT(rwbuf_.get_write_size() >= WRITE_BUFFER_SIZE);
             auto buffer = std::move(ret->sender()).buffer();
             buffer.set_write_buffer(get_write_buffer());
             ret->sender().reset(ret->sender().offset(), std::move(buffer));
         }
-        else {
+        else { // is_read or is write_on_read_buffer
             MONAD_DEBUG_ASSERT(rwbuf_.get_read_size() >= READ_BUFFER_SIZE);
         }
         return ret;
@@ -550,7 +623,9 @@ public:
     template <sender Sender, receiver Receiver>
         requires(
             (Sender::my_operation_type == operation_type::read ||
-             Sender::my_operation_type == operation_type::write) &&
+             Sender::my_operation_type == operation_type::write ||
+             Sender::my_operation_type ==
+                 operation_type::write_on_read_buffer) &&
             requires(
                 Receiver r, erased_connected_operation *o,
                 typename Sender::result_type x) {
@@ -572,7 +647,9 @@ public:
         class... ReceiverArgs>
         requires(
             (Sender::my_operation_type == operation_type::read ||
-             Sender::my_operation_type == operation_type::write) &&
+             Sender::my_operation_type == operation_type::write ||
+             Sender::my_operation_type ==
+                 operation_type::write_on_read_buffer) &&
             requires(
                 Receiver r, erased_connected_operation *o,
                 typename Sender::result_type x) {

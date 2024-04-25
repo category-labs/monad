@@ -280,30 +280,30 @@ AsyncIO::~AsyncIO()
 }
 
 void AsyncIO::submit_request_(
-    std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
-    void *uring_data, enum erased_connected_operation::io_priority prio)
+    std::span<std::byte> buffer, int read_fd, bool registered_fd,
+    file_offset_t offset, void *uring_data,
+    enum erased_connected_operation::io_priority prio)
 {
     MONAD_DEBUG_ASSERT(uring_data != nullptr);
-    MONAD_DEBUG_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
     MONAD_DEBUG_ASSERT(buffer.size() <= READ_BUFFER_SIZE);
 #ifndef NDEBUG
     memset(buffer.data(), 0xff, buffer.size());
 #endif
-
     poll_uring_while_submission_queue_full_();
     struct io_uring_sqe *sqe =
         io_uring_get_sqe(const_cast<io_uring *>(&uring_.get_ring()));
     MONAD_ASSERT(sqe);
 
-    auto const &ci = seq_chunks_[chunk_and_offset.id];
     io_uring_prep_read_fixed(
         sqe,
-        ci.io_uring_read_fd,
+        read_fd,
         buffer.data(),
         static_cast<unsigned int>(buffer.size()),
-        ci.ptr->read_fd().second + chunk_and_offset.offset,
+        offset,
         0);
-    sqe->flags |= IOSQE_FIXED_FILE;
+    if (registered_fd) {
+        sqe->flags |= IOSQE_FIXED_FILE;
+    }
     switch (prio) {
     case erased_connected_operation::io_priority::highest:
         sqe->ioprio = IOPRIO_PRIO_VALUE(IOPRIO_CLASS_RT, 7);
@@ -319,6 +319,11 @@ void AsyncIO::submit_request_(
     io_uring_sqe_set_data(sqe, uring_data);
     MONAD_ASSERT(
         io_uring_submit(const_cast<io_uring *>(&uring_.get_ring())) >= 0);
+
+    if (++records_.inflight_rd > records_.max_inflight_rd) {
+        records_.max_inflight_rd = records_.inflight_rd;
+    }
+    ++records_.nreads;
 }
 
 void AsyncIO::submit_request_(
@@ -372,39 +377,39 @@ void AsyncIO::submit_request_(
     io_uring_sqe_set_data(sqe, uring_data);
     MONAD_ASSERT(
         io_uring_submit(const_cast<io_uring *>(&uring_.get_ring())) >= 0);
+
+    if (++records_.inflight_rd_scatter > records_.max_inflight_rd_scatter) {
+        records_.max_inflight_rd_scatter = records_.inflight_rd_scatter;
+    }
+    ++records_.nreads;
 }
 
 void AsyncIO::submit_request_(
-    std::span<std::byte const> buffer, chunk_offset_t chunk_and_offset,
-    void *uring_data, enum erased_connected_operation::io_priority prio)
+    std::span<std::byte const> buffer, int write_fd, bool registered_fd,
+    file_offset_t const offset, void *uring_data,
+    enum erased_connected_operation::io_priority prio, bool use_read_buffer)
 {
     MONAD_DEBUG_ASSERT(uring_data != nullptr);
-    MONAD_ASSERT(!rwbuf_.is_read_only());
-    MONAD_DEBUG_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
-    MONAD_DEBUG_ASSERT(buffer.size() <= WRITE_BUFFER_SIZE);
 
-    auto const &ci = seq_chunks_[chunk_and_offset.id];
-    auto offset = ci.ptr->write_fd(buffer.size()).second;
-    /* Do sanity check to ensure initiator is definitely appending where
-    they are supposed to be appending.
-    */
-    MONAD_ASSERT((chunk_and_offset.offset & 0xffff) == (offset & 0xffff));
-
-    auto *const wr_ring = (wr_uring_ != nullptr)
-                              ? const_cast<io_uring *>(&wr_uring_->get_ring())
-                              : const_cast<io_uring *>(&uring_.get_ring());
-    struct io_uring_sqe *sqe = io_uring_get_sqe(wr_ring);
+    // use the default ring is use_read_buffer is true
+    auto *const ring_to_write =
+        (wr_uring_ != nullptr && !use_read_buffer)
+            ? const_cast<io_uring *>(&wr_uring_->get_ring())
+            : const_cast<io_uring *>(&uring_.get_ring());
+    struct io_uring_sqe *sqe = io_uring_get_sqe(ring_to_write);
     MONAD_ASSERT(sqe);
 
     io_uring_prep_write_fixed(
         sqe,
-        ci.io_uring_write_fd,
+        write_fd,
         buffer.data(),
         static_cast<unsigned int>(buffer.size()),
         offset,
-        wr_ring == &uring_.get_ring());
-    sqe->flags |= IOSQE_FIXED_FILE;
-    if (wr_ring != &uring_.get_ring()) {
+        use_read_buffer ? 0 : ring_to_write == &uring_.get_ring());
+    if (registered_fd) {
+        sqe->flags |= IOSQE_FIXED_FILE;
+    }
+    if (ring_to_write != &uring_.get_ring()) {
         sqe->flags |= IOSQE_IO_DRAIN;
     }
     // TODO(niall) test this to see if it helps prevent overwhelming the device
@@ -423,7 +428,11 @@ void AsyncIO::submit_request_(
     }
 
     io_uring_sqe_set_data(sqe, uring_data);
-    MONAD_ASSERT(io_uring_submit(wr_ring) >= 0);
+    MONAD_ASSERT(io_uring_submit(ring_to_write) >= 0);
+
+    if (++records_.inflight_wr > records_.max_inflight_wr) {
+        records_.max_inflight_wr = records_.inflight_wr;
+    }
 }
 
 void AsyncIO::submit_request_(timed_invocation_state *state, void *uring_data)
@@ -451,6 +460,7 @@ void AsyncIO::submit_request_(timed_invocation_state *state, void *uring_data)
     io_uring_sqe_set_data(sqe, uring_data);
     MONAD_ASSERT(
         io_uring_submit(const_cast<io_uring *>(&uring_.get_ring())) >= 0);
+    ++records_.inflight_tm;
 }
 
 void AsyncIO::poll_uring_while_submission_queue_full_()

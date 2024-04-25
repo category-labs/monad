@@ -64,7 +64,8 @@ enum class operation_type : uint8_t
     write,
     timeout,
     threadsafeop,
-    read_scatter
+    read_scatter,
+    write_on_read_buffer
 };
 
 /*! \class filled_read_buffer
@@ -530,7 +531,8 @@ public:
 
     bool is_write() const noexcept
     {
-        return operation_type_ == operation_type::write;
+        return operation_type_ == operation_type::write ||
+               operation_type_ == operation_type::write_on_read_buffer;
     }
 
     bool is_timeout() const noexcept

@@ -381,6 +381,8 @@ namespace detail
             return this->do_possibly_deferred_initiate_(
                 detail::sender_operation_type<sender_type> ==
                         operation_type::write ||
+                    detail::sender_operation_type<sender_type> ==
+                        operation_type::write_on_read_buffer ||
                     this->is_threadsafeop(),
                 false);
         }

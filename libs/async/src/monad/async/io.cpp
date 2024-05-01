@@ -396,6 +396,9 @@ void AsyncIO::submit_request_(
         (wr_uring_ != nullptr && !use_read_buffer)
             ? const_cast<io_uring *>(&wr_uring_->get_ring())
             : const_cast<io_uring *>(&uring_.get_ring());
+    if (ring_to_write == &uring_.get_ring()) {
+        poll_uring_while_submission_queue_full_();
+    }
     struct io_uring_sqe *sqe = io_uring_get_sqe(ring_to_write);
     MONAD_ASSERT(sqe);
 

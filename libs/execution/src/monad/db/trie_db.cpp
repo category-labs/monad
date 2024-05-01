@@ -896,4 +896,16 @@ void TrieDb::set_block_number(uint64_t const n)
     block_number_ = n;
 }
 
+bool TrieDb::is_latest() const
+{
+    MONAD_ASSERT(mode_ == Mode::OnDiskReadOnly);
+    return db_.is_latest();
+}
+
+void TrieDb::load_latest()
+{
+    MONAD_ASSERT(mode_ == Mode::OnDiskReadOnly);
+    db_.load_latest();
+}
+
 MONAD_NAMESPACE_END

@@ -22,6 +22,7 @@
 #include <test_resource_data.h>
 
 #include <bit>
+#include <cstdio>
 #include <fstream>
 #include <memory>
 #include <optional>
@@ -184,6 +185,34 @@ struct DBTest : public TDB
 
 using DBTypes = ::testing::Types<InMemoryTrieDbFixture, OnDiskTrieDbFixture>;
 TYPED_TEST_SUITE(DBTest, DBTypes);
+
+TEST(DBTest, read_only)
+{
+    auto const name = std::tmpnam(nullptr);
+    {
+        TrieDb rw(mpt::OnDiskDbConfig{.dbname_paths = {name}});
+
+        Account const acct1{.nonce = 1};
+        rw.commit(
+            StateDeltas{
+                {a,
+                 StateDelta{.account = {std::nullopt, acct1}, .storage = {}}}},
+            Code{});
+        Account const acct2{.nonce = 2};
+        rw.increment_block_number();
+        rw.commit(
+            StateDeltas{
+                {a,
+                 StateDelta{.account = {std::nullopt, acct2}, .storage = {}}}},
+            Code{});
+
+        TrieDb ro{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {name}}};
+        EXPECT_EQ(ro.read_account(a), (Account{.nonce = 2, .incarnation = 0}));
+        ro.set_block_number(0);
+        EXPECT_EQ(ro.read_account(a), (Account{.nonce = 1, .incarnation = 0}));
+    }
+    std::filesystem::remove(name);
+}
 
 TYPED_TEST(DBTest, read_storage)
 {

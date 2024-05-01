@@ -83,7 +83,7 @@ commit(BlockState &block_state, std::vector<Receipt> const &receipts = {})
 
 template <evmc_revision rev>
 Result<std::vector<Receipt>> execute_block(
-    Block &block, DbRW &db, BlockHashBuffer const &block_hash_buffer,
+    Block &block, Db &db, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {
     TRACE_BLOCK_EVENT(StartBlock);
@@ -173,7 +173,7 @@ Result<std::vector<Receipt>> execute_block(
 EXPLICIT_EVMC_REVISION(execute_block);
 
 Result<std::vector<Receipt>> execute_block(
-    evmc_revision const rev, Block &block, DbRW &db,
+    evmc_revision const rev, Block &block, Db &db,
     BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {

@@ -150,7 +150,7 @@ int main(int const argc, char const *argv[])
     }();
 
     if (load_snapshot.empty()) {
-        init_block_number = db.current_block_number();
+        init_block_number = db.get_block_number();
         LOG_INFO("Loading current root into memory");
         auto const start_time = std::chrono::steady_clock::now();
         auto const nodes_loaded = db.prefetch_current_root();

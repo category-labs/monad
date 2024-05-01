@@ -24,7 +24,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-BlockState::BlockState(DbRW &db)
+BlockState::BlockState(Db &db)
     : db_{db}
 {
 }

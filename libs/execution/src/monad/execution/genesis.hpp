@@ -67,7 +67,7 @@ inline BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
     return block_header;
 }
 
-inline void read_genesis_state(nlohmann::json const &genesis_json, DbRW &db)
+inline void read_genesis_state(nlohmann::json const &genesis_json, Db &db)
 {
     StateDeltas state_deltas;
     for (auto const &account_info : genesis_json["alloc"].items()) {
@@ -93,7 +93,7 @@ inline void read_genesis_state(nlohmann::json const &genesis_json, DbRW &db)
 }
 
 inline BlockHeader
-read_genesis(std::filesystem::path const &genesis_file, DbRW &db)
+read_genesis(std::filesystem::path const &genesis_file, Db &db)
 {
     std::ifstream ifile(genesis_file.c_str());
     auto const genesis_json = nlohmann::json::parse(ifile);
@@ -121,7 +121,7 @@ inline void verify_genesis(BlockDb &block_db, BlockHeader const &block_header)
 }
 
 inline void read_and_verify_genesis(
-    BlockDb &block_db, DbRW &db, std::filesystem::path const &genesis_file_path)
+    BlockDb &block_db, Db &db, std::filesystem::path const &genesis_file_path)
 {
     auto const block_header = read_genesis(genesis_file_path, db);
     verify_genesis(block_db, block_header);

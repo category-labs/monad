@@ -19,20 +19,22 @@
 
 MONAD_NAMESPACE_BEGIN
 
-class TrieDb final : public ::monad::DbRW
+class TrieDb final : public ::monad::Db
 {
     struct Machine;
     struct InMemoryMachine;
     struct OnDiskMachine;
+    enum class Mode;
 
     std::unique_ptr<Machine> machine_;
     ::monad::mpt::Db db_;
     std::list<mpt::Update> update_alloc_;
     std::list<byte_string> bytes_alloc_;
-    uint64_t curr_block_id_;
-    bool is_on_disk_;
+    uint64_t block_number_;
+    Mode mode_;
 
 public:
+    TrieDb(mpt::ReadOnlyOnDiskDbConfig const &);
     TrieDb(std::optional<mpt::OnDiskDbConfig> const &);
     // parse from binary
     TrieDb(
@@ -55,7 +57,8 @@ public:
 
     nlohmann::json to_json();
     size_t prefetch_current_root();
-    uint64_t current_block_number() const;
+    uint64_t get_block_number() const;
+    void set_block_number(uint64_t);
 };
 
 MONAD_NAMESPACE_END

@@ -15,7 +15,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct DbRO
+struct Db
 {
     virtual std::optional<Account> read_account(Address const &) = 0;
 
@@ -25,10 +25,7 @@ struct DbRO
 
     virtual bytes32_t state_root() = 0;
     virtual bytes32_t receipts_root() = 0;
-};
 
-struct DbRW : public DbRO
-{
     virtual void increment_block_number() = 0;
 
     virtual void commit(

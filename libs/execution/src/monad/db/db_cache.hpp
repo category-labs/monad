@@ -18,9 +18,9 @@
 
 MONAD_NAMESPACE_BEGIN
 
-class DbCache final : public DbRW
+class DbCache final : public Db
 {
-    DbRW &db_;
+    Db &db_;
 
     using Combined = AccountStorageCache;
 
@@ -32,7 +32,7 @@ class DbCache final : public DbRW
     CodeCache code_{40000};
 
 public:
-    DbCache(DbRW &db)
+    DbCache(Db &db)
         : db_{db}
     {
     }

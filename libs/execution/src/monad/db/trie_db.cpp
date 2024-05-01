@@ -530,6 +530,20 @@ struct TrieDb::OnDiskMachine final : public TrieDb::Machine
     }
 };
 
+enum class TrieDb::Mode
+{
+    InMemory,
+    OnDisk,
+    OnDiskReadOnly
+};
+
+TrieDb::TrieDb(mpt::ReadOnlyOnDiskDbConfig const &config)
+    : db_{config}
+    , block_number_{db_.get_latest_block_id().value()}
+    , mode_{Mode::OnDiskReadOnly}
+{
+}
+
 TrieDb::TrieDb(std::optional<mpt::OnDiskDbConfig> const &config)
     : machine_{[&] -> std::unique_ptr<Machine> {
         if (config.has_value()) {
@@ -539,7 +553,7 @@ TrieDb::TrieDb(std::optional<mpt::OnDiskDbConfig> const &config)
     }()}
     , db_{config.has_value() ? mpt::Db{*machine_, config.value()}
                              : mpt::Db{*machine_}}
-    , curr_block_id_{[&] {
+    , block_number_{[&] {
         if (config.has_value()) {
             if (config->start_block_id.has_value()) {
                 // throw error on invalid block number in config
@@ -565,7 +579,7 @@ TrieDb::TrieDb(std::optional<mpt::OnDiskDbConfig> const &config)
         // in memory triedb block id remains 0
         return 0ul;
     }()}
-    , is_on_disk_{config.has_value()}
+    , mode_{config.has_value() ? Mode::OnDisk : Mode::InMemory}
 {
 }
 
@@ -579,10 +593,10 @@ TrieDb::TrieDb(
             "Unable to load snapshot to an existing db, truncate the "
             "existing db to empty and try again");
     }
-    if (is_on_disk_) {
-        curr_block_id_ = init_block_number;
+    if (mode_ == Mode::OnDisk) {
+        block_number_ = init_block_number;
     } // was init to 0 and will remain 0 for in memory db
-    BinaryDbLoader loader{db_, buf_size, curr_block_id_};
+    BinaryDbLoader loader{db_, buf_size, block_number_};
     loader.load(accounts, code);
 }
 
@@ -590,8 +604,8 @@ TrieDb::~TrieDb() = default;
 
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
-    auto const value = db_.get(
-        concat(state_nibble, NibblesView{to_key(addr)}), curr_block_id_);
+    auto const value =
+        db_.get(concat(state_nibble, NibblesView{to_key(addr)}), block_number_);
     if (!value.has_value()) {
         return std::nullopt;
     }
@@ -609,7 +623,7 @@ bytes32_t TrieDb::read_storage(Address const &addr, bytes32_t const &key)
     auto const value = db_.get(
         concat(
             state_nibble, NibblesView{to_key(addr)}, NibblesView{to_key(key)}),
-        curr_block_id_);
+        block_number_);
     if (!value.has_value()) {
         return {};
     }
@@ -627,7 +641,7 @@ std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
     // TODO read code analysis object
     auto const value = db_.get(
         concat(code_nibble, NibblesView{to_byte_string_view(code_hash.bytes)}),
-        curr_block_id_);
+        block_number_);
     if (!value.has_value()) {
         return std::make_shared<CodeAnalysis>(analyze({}));
     }
@@ -638,6 +652,8 @@ void TrieDb::commit(
     StateDeltas const &state_deltas, Code const &code,
     std::vector<Receipt> const &receipts)
 {
+    MONAD_ASSERT(mode_ != Mode::OnDiskReadOnly);
+
     UpdateList account_updates;
     for (auto const &[addr, delta] : state_deltas) {
         UpdateList storage_updates;
@@ -715,7 +731,7 @@ void TrieDb::commit(
     updates.push_front(state_update);
     updates.push_front(code_update);
     updates.push_front(receipt_update);
-    db_.upsert(std::move(updates), curr_block_id_);
+    db_.upsert(std::move(updates), block_number_);
     MONAD_ASSERT(machine_->trie_section == Machine::TrieType::Prefix);
 
     update_alloc_.clear();
@@ -724,8 +740,8 @@ void TrieDb::commit(
 
 void TrieDb::increment_block_number()
 {
-    if (is_on_disk_) {
-        ++curr_block_id_;
+    if (mode_ == Mode::OnDisk) {
+        ++block_number_;
     }
 }
 
@@ -735,7 +751,7 @@ void TrieDb::create_and_prune_block_history(uint64_t) const {
 
 bytes32_t TrieDb::state_root()
 {
-    auto const value = db_.get_data(state_nibbles, curr_block_id_);
+    auto const value = db_.get_data(state_nibbles, block_number_);
     if (!value.has_value() || value.value().empty()) {
         return NULL_ROOT;
     }
@@ -747,7 +763,7 @@ bytes32_t TrieDb::state_root()
 
 bytes32_t TrieDb::receipts_root()
 {
-    auto const value = db_.get_data(receipt_nibbles, curr_block_id_);
+    auto const value = db_.get_data(receipt_nibbles, block_number_);
     if (!value.has_value() || value.value().empty()) {
         return NULL_ROOT;
     }
@@ -857,7 +873,7 @@ nlohmann::json TrieDb::to_json()
         }
     } traverse(*this);
 
-    db_.traverse(state_nibbles, traverse, curr_block_id_);
+    db_.traverse(state_nibbles, traverse, block_number_);
 
     return traverse.json;
 }
@@ -869,9 +885,15 @@ size_t TrieDb::prefetch_current_root()
     return nodes_loaded;
 }
 
-uint64_t TrieDb::current_block_number() const
+uint64_t TrieDb::get_block_number() const
 {
-    return curr_block_id_;
+    return block_number_;
+}
+
+void TrieDb::set_block_number(uint64_t const n)
+{
+    MONAD_ASSERT(mode_ == Mode::OnDiskReadOnly);
+    block_number_ = n;
 }
 
 MONAD_NAMESPACE_END

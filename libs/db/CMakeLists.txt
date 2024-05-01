@@ -16,7 +16,6 @@ find_package(
   Boost 1.83 # 1.83 really is the minimum
   COMPONENTS context fiber json thread
   REQUIRED)
-find_package(CLI11 REQUIRED)
 find_package(GTest)
 find_package(PkgConfig REQUIRED)
 
@@ -27,15 +26,6 @@ pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
 # ##############################################################################
 # libs
 # ##############################################################################
-add_library(
-  monad_async STATIC
-  "src/monad/async/boost_fiber_wrappers.cpp"
-  "src/monad/async/io.cpp"
-  "src/monad/async/storage_pool.cpp"
-  "src/monad/async/util.cpp")
-target_include_directories(monad_async PUBLIC "src")
-monad_compile_options(monad_async)
-target_link_libraries(monad_async PUBLIC monad_core Boost::fiber)
 
 add_library(
   monad_trie STATIC
@@ -72,7 +62,6 @@ target_include_directories(monad_trie PRIVATE "third_party")
 monad_compile_options(monad_trie)
 target_link_libraries(monad_trie PRIVATE Boost::boost)
 target_link_libraries(monad_trie PUBLIC monad_async)
-target_link_libraries(monad_trie PUBLIC monad_core)
 add_executable(monad_mpt "src/monad/mpt/cli_tool_main.cpp"
                          "src/monad/mpt/cli_tool_impl.cpp")
 monad_compile_options(monad_mpt)
@@ -99,7 +88,6 @@ function(add_trie_test)
 endfunction()
 
 add_subdirectory("src/monad/mpt/test")
-add_subdirectory("src/monad/async/test")
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   add_subdirectory("src/monad/mpt/test/fuzz")

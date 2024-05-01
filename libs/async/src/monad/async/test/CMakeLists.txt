@@ -3,18 +3,18 @@ find_package(
   COMPONENTS fiber
   REQUIRED)
 
-add_trie_test(TARGET boost_fiber_wrappers_test SOURCES
+add_async_test(TARGET boost_fiber_wrappers_test SOURCES
               "boost_fiber_wrappers.cpp")
 target_link_libraries(boost_fiber_wrappers_test PRIVATE Boost::fiber)
 
-add_trie_test(TARGET cpp_coroutine_wrappers_test SOURCES
+add_async_test(TARGET cpp_coroutine_wrappers_test SOURCES
               "cpp_coroutine_wrappers.cpp")
 
-add_trie_test(TARGET io_test SOURCES "io.cpp")
+add_async_test(TARGET io_test SOURCES "io.cpp")
 
-add_trie_test(TARGET io_death_test SOURCES "io_death.cpp")
+add_async_test(TARGET io_death_test SOURCES "io_death.cpp")
 
-add_trie_test(TARGET io_worker_pool_test SOURCES "io_worker_pool.cpp")
+add_async_test(TARGET io_worker_pool_test SOURCES "io_worker_pool.cpp")
 target_link_options(io_worker_pool_test PUBLIC "-rdynamic")
 execute_process(
   COMMAND bash -c
@@ -35,7 +35,7 @@ else()
   target_link_libraries(io_worker_pool_test PUBLIC "dl")
 endif()
 
-add_trie_test(TARGET sender_receiver_test SOURCES "sender_receiver.cpp"
+add_async_test(TARGET sender_receiver_test SOURCES "sender_receiver.cpp"
               TEST_FILTER "-AsyncIO.timed_delay_sender_receiver")
 if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   # explodes build times if optimising
@@ -50,7 +50,7 @@ gtest_discover_tests(
   TEST_PREFIX ${PROJECT_NAME}/ TEST_FILTER "AsyncIO.timed_delay_sender_receiver"
   PROPERTIES RUN_SERIAL TRUE)
 
-add_trie_test(TARGET storage_pool_test SOURCES "storage_pool.cpp")
+add_async_test(TARGET storage_pool_test SOURCES "storage_pool.cpp")
 
 # monad async perf test
 add_executable(benchmark_io_test "benchmark_io_test.cpp")

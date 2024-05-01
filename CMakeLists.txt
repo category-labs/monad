@@ -53,6 +53,9 @@ find_package(PkgConfig REQUIRED)
 find_package(absl REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 
+# cli11
+find_package(CLI11 REQUIRED)
+
 # evmone
 set(BUILD_SHARED_LIBS OFF)
 add_subdirectory(third_party/evmone)
@@ -118,6 +121,7 @@ endfunction()
 # ##############################################################################
 
 add_subdirectory("libs/core")
+add_subdirectory("libs/async")
 add_subdirectory("libs/db")
 add_subdirectory("libs/execution")
 

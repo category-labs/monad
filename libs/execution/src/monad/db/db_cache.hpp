@@ -144,12 +144,6 @@ public:
     {
         return db_.receipts_root();
     }
-
-    virtual void
-    create_and_prune_block_history(uint64_t const block_number) const override
-    {
-        return db_.create_and_prune_block_history(block_number);
-    }
 };
 
 MONAD_NAMESPACE_END

@@ -745,10 +745,6 @@ void TrieDb::increment_block_number()
     }
 }
 
-void TrieDb::create_and_prune_block_history(uint64_t) const {
-
-};
-
 bytes32_t TrieDb::state_root()
 {
     auto const value = db_.get_data(state_nibbles, block_number_);

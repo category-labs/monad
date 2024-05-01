@@ -31,9 +31,6 @@ struct Db
     virtual void commit(
         StateDeltas const &, Code const &,
         std::vector<Receipt> const & = {}) = 0;
-
-    virtual void
-    create_and_prune_block_history(uint64_t block_number) const = 0;
 };
 
 MONAD_NAMESPACE_END

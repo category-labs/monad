@@ -53,7 +53,6 @@ public:
         std::vector<Receipt> const & = {}) override;
     virtual bytes32_t state_root() override;
     virtual bytes32_t receipts_root() override;
-    virtual void create_and_prune_block_history(uint64_t) const override;
 
     nlohmann::json to_json();
     size_t prefetch_current_root();

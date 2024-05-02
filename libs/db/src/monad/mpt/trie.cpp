@@ -1151,8 +1151,12 @@ void try_fillin_parent_with_rewritten_node(
         auto *const p = reinterpret_cast<UpwardTreeNode *>(parent);
         MONAD_DEBUG_ASSERT(tnode->cached);
         MONAD_DEBUG_ASSERT(p->children[index].offset == INVALID_OFFSET);
-        p->children[index].ptr =
+        auto &child = p->children[index];
+        child.ptr =
             tnode->node; // let parent tnode manage tnode->node's lifetime
+        child.offset = new_offset;
+        child.min_offset_fast = min_offset_fast;
+        child.min_offset_slow = min_offset_slow;
     }
     --parent->npending;
 }

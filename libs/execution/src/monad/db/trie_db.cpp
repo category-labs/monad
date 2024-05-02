@@ -88,6 +88,7 @@ namespace
     byte_string encode_account_db(Account const &account)
     {
         byte_string encoded_account;
+        encoded_account += rlp::encode_unsigned(account.incarnation);
         encoded_account += rlp::encode_unsigned(account.nonce);
         encoded_account += rlp::encode_unsigned(account.balance);
         if (account.code_hash != NULL_HASH) {
@@ -101,6 +102,8 @@ namespace
         BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
 
         Account acct;
+        BOOST_OUTCOME_TRY(
+            acct.incarnation, rlp::decode_unsigned<uint64_t>(payload));
         BOOST_OUTCOME_TRY(acct.nonce, rlp::decode_unsigned<uint64_t>(payload));
         BOOST_OUTCOME_TRY(
             acct.balance, rlp::decode_unsigned<uint256_t>(payload));
@@ -614,7 +617,7 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     auto acct = decode_account_db(encoded_account);
     MONAD_DEBUG_ASSERT(!acct.has_error());
     MONAD_DEBUG_ASSERT(encoded_account.empty());
-    acct.value().incarnation = 0;
+    acct.value().incarnation = 0; // TODO: remove this
     return acct.value();
 }
 

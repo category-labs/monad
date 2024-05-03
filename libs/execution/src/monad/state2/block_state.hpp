@@ -5,6 +5,7 @@
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/state2/state_deltas.hpp>
+#include <monad/types/incarnation.hpp>
 
 #include <memory>
 
@@ -23,8 +24,7 @@ public:
 
     std::optional<Account> read_account(Address const &);
 
-    bytes32_t
-    read_storage(Address const &, uint64_t incarnation, bytes32_t const &key);
+    bytes32_t read_storage(Address const &, Incarnation, bytes32_t const &key);
 
     std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &);
 

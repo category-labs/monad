@@ -14,6 +14,7 @@
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/account_state.hpp>
 #include <monad/state3/version_stack.hpp>
+#include <monad/types/incarnation.hpp>
 
 #include <evmc/evmc.h>
 
@@ -40,7 +41,7 @@ class State
 
     BlockState &block_state_;
 
-    uint64_t const incarnation_;
+    Incarnation const incarnation_;
 
     Map<Address, AccountState> original_{};
 
@@ -94,11 +95,10 @@ class State
     friend class BlockState; // TODO
 
 public:
-    State(BlockState &block_state, uint64_t const incarnation = 1)
+    State(BlockState &block_state, Incarnation const incarnation)
         : block_state_{block_state}
         , incarnation_{incarnation}
     {
-        MONAD_ASSERT(incarnation_);
     }
 
     State(State &&) = delete;
@@ -304,7 +304,7 @@ public:
             auto &storage = orig_account_state.storage_;
             auto it = storage.find(key);
             if (it == storage.end()) {
-                uint64_t const incarnation =
+                Incarnation const incarnation =
                     account_state.account_->incarnation;
                 bytes32_t const value =
                     block_state_.read_storage(address, incarnation, key);

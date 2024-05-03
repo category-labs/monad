@@ -35,7 +35,7 @@ TEST(BlockReward, apply_block_reward)
             Code{});
 
         BlockState bs{db};
-        State as{bs};
+        State as{bs, Incarnation{0, 0}};
 
         EXPECT_TRUE(as.account_exists(a));
 
@@ -47,7 +47,7 @@ TEST(BlockReward, apply_block_reward)
                 BlockHeader{.number = 8, .beneficiary = c}}};
         apply_block_reward<EVMC_FRONTIER>(bs, block);
 
-        State cs{bs};
+        State cs{bs, Incarnation{0, 1}};
 
         EXPECT_EQ(
             intx::be::load<uint256_t>(cs.get_balance(a)),
@@ -64,7 +64,7 @@ TEST(BlockReward, apply_block_reward)
     {
         db_t db{std::nullopt};
         BlockState bs{db};
-        State as{bs};
+        State as{bs, Incarnation{0, 0}};
         (void)as.get_balance(a);
 
         EXPECT_FALSE(as.account_exists(a));
@@ -78,7 +78,7 @@ TEST(BlockReward, apply_block_reward)
                 BlockHeader{.number = 8, .beneficiary = c}}};
         apply_block_reward<EVMC_BYZANTIUM>(bs, block);
 
-        State cs{bs};
+        State cs{bs, Incarnation{0, 1}};
         EXPECT_EQ(
             intx::be::load<uint256_t>(cs.get_balance(a)),
             3'187'500'000'000'000'000);
@@ -94,7 +94,7 @@ TEST(BlockReward, apply_block_reward)
     {
         db_t db{std::nullopt};
         BlockState bs{db};
-        State s{bs};
+        State s{bs, Incarnation{0, 0}};
 
         Block const block{
             .header = {.number = 10, .beneficiary = a},
@@ -122,7 +122,7 @@ TEST(BlockReward, apply_block_reward)
 
         db_t db{std::nullopt};
         BlockState bs{db};
-        State s{bs};
+        State s{bs, Incarnation{0, 0}};
 
         apply_block_reward<EVMC_PARIS>(bs, block);
 

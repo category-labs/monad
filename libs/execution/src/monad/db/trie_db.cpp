@@ -88,7 +88,7 @@ namespace
     byte_string encode_account_db(Account const &account)
     {
         byte_string encoded_account;
-        encoded_account += rlp::encode_unsigned(account.incarnation);
+        encoded_account += rlp::encode_unsigned(account.incarnation.to_int());
         encoded_account += rlp::encode_unsigned(account.nonce);
         encoded_account += rlp::encode_unsigned(account.balance);
         if (account.code_hash != NULL_HASH) {
@@ -103,7 +103,8 @@ namespace
 
         Account acct;
         BOOST_OUTCOME_TRY(
-            acct.incarnation, rlp::decode_unsigned<uint64_t>(payload));
+            auto const incarnation, rlp::decode_unsigned<uint64_t>(payload));
+        acct.incarnation = Incarnation::from_int(incarnation);
         BOOST_OUTCOME_TRY(acct.nonce, rlp::decode_unsigned<uint64_t>(payload));
         BOOST_OUTCOME_TRY(
             acct.balance, rlp::decode_unsigned<uint256_t>(payload));
@@ -617,7 +618,6 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     auto acct = decode_account_db(encoded_account);
     MONAD_DEBUG_ASSERT(!acct.has_error());
     MONAD_DEBUG_ASSERT(encoded_account.empty());
-    acct.value().incarnation = 0; // TODO: remove this
     return acct.value();
 }
 
@@ -684,12 +684,13 @@ void TrieDb::commit(
         }
 
         if (!storage_updates.empty() || delta.account.first != account) {
+            bool const incarnation =
+                account.has_value() && delta.account.first.has_value() &&
+                delta.account.first->incarnation != account->incarnation;
             account_updates.push_front(update_alloc_.emplace_back(Update{
                 .key = NibblesView{bytes_alloc_.emplace_back(to_key(addr))},
                 .value = value,
-                .incarnation = account.has_value()
-                                   ? account.value().incarnation != 0
-                                   : false,
+                .incarnation = incarnation,
                 .next = std::move(storage_updates)}));
         }
     }

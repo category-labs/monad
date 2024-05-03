@@ -82,7 +82,7 @@ TYPED_TEST(StateTest, access_account)
                  .account = {std::nullopt, Account{.balance = 10'000}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
 
     EXPECT_EQ(s.access_account(a), EVMC_ACCESS_COLD);
     EXPECT_EQ(s.access_account(a), EVMC_ACCESS_WARM);
@@ -100,7 +100,7 @@ TYPED_TEST(StateTest, account_exists)
                  .account = {std::nullopt, Account{.balance = 10'000}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
 
     EXPECT_TRUE(s.account_exists(a));
     EXPECT_FALSE(s.account_exists(b));
@@ -110,7 +110,7 @@ TYPED_TEST(StateTest, create_contract)
 {
     BlockState bs{this->db};
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     s.create_contract(a);
     EXPECT_TRUE(s.account_exists(a));
 
@@ -130,7 +130,7 @@ TYPED_TEST(StateTest, get_balance)
                  .account = {std::nullopt, Account{.balance = 10'000}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
 
     EXPECT_EQ(s.get_balance(a), bytes32_t{10'000});
     EXPECT_EQ(s.get_balance(b), bytes32_t{0});
@@ -145,7 +145,7 @@ TYPED_TEST(StateTest, add_to_balance)
             {a, StateDelta{.account = {std::nullopt, Account{.balance = 1}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     s.add_to_balance(a, 10'000);
     s.add_to_balance(b, 20'000);
 
@@ -161,7 +161,7 @@ TYPED_TEST(StateTest, get_nonce)
             {a, StateDelta{.account = {std::nullopt, Account{.nonce = 2}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
 
     EXPECT_EQ(s.get_nonce(a), 2);
     EXPECT_EQ(s.get_nonce(b), 0);
@@ -172,7 +172,7 @@ TYPED_TEST(StateTest, set_nonce)
 {
     BlockState bs{this->db};
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     s.set_nonce(b, 1);
 
     EXPECT_EQ(s.get_nonce(b), 1);
@@ -188,7 +188,7 @@ TYPED_TEST(StateTest, get_code_hash)
                  .account = {std::nullopt, Account{.code_hash = hash1}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
 
     EXPECT_EQ(s.get_code_hash(a), hash1);
     EXPECT_EQ(s.get_code_hash(b), NULL_HASH);
@@ -199,7 +199,7 @@ TYPED_TEST(StateTest, set_code_hash)
 {
     BlockState bs{this->db};
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     s.create_contract(b);
     s.set_code_hash(b, hash1);
 
@@ -218,7 +218,7 @@ TYPED_TEST(StateTest, selfdestruct)
                  .account = {std::nullopt, Account{.balance = 38'000}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     s.create_contract(b);
     s.add_to_balance(b, 28'000);
 
@@ -247,7 +247,7 @@ TYPED_TEST(StateTest, selfdestruct_self)
                  .account = {std::nullopt, Account{.balance = 18'000}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
 
     EXPECT_TRUE(s.selfdestruct(a, a));
     EXPECT_EQ(s.get_balance(a), bytes32_t{});
@@ -267,7 +267,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_incarnation)
                  .storage = {{key1, {bytes32_t{}, value1}}}}}},
         Code{});
     {
-        State s1{bs};
+        State s1{bs, Incarnation{1, 1}};
 
         s1.selfdestruct(a, a);
         s1.destruct_suicides();
@@ -276,7 +276,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_incarnation)
         bs.merge(s1);
     }
     {
-        State s2{bs};
+        State s2{bs, Incarnation{1, 2}};
         EXPECT_FALSE(s2.account_exists(a));
         s2.create_contract(a);
         EXPECT_EQ(s2.get_storage(a, key1), bytes32_t{});
@@ -294,7 +294,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_incarnation)
                  .storage = {{key1, {bytes32_t{}, value1}}}}}},
         Code{});
     {
-        State s1{bs};
+        State s1{bs, Incarnation{1, 1}};
 
         s1.selfdestruct(a, b);
         s1.destruct_suicides();
@@ -303,7 +303,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_incarnation)
         bs.merge(s1);
     }
     {
-        State s2{bs};
+        State s2{bs, Incarnation{1, 2}};
         EXPECT_FALSE(s2.account_exists(a));
         s2.create_contract(a);
         EXPECT_EQ(s2.get_storage(a, key1), bytes32_t{});
@@ -318,7 +318,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_incarnation)
         bs.merge(s2);
     }
     {
-        State s3{bs};
+        State s3{bs, Incarnation{1, 3}};
         EXPECT_TRUE(s3.account_exists(a));
         EXPECT_EQ(s3.get_storage(a, key1), value2);
         EXPECT_EQ(s3.get_storage(a, key2), value1);
@@ -336,7 +336,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
                  .storage = {{key1, {bytes32_t{}, value1}}}}}},
         Code{});
     {
-        State s1{bs};
+        State s1{bs, Incarnation{1, 1}};
 
         s1.selfdestruct(a, a);
         s1.destruct_suicides();
@@ -345,7 +345,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
         bs.merge(s1);
     }
     {
-        State s2{bs};
+        State s2{bs, Incarnation{1, 2}};
         s2.create_contract(a);
         bs.merge(s2);
     }
@@ -368,7 +368,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
                       {key3, {bytes32_t{}, value3}}}}}},
         Code{});
     {
-        State s1{bs};
+        State s1{bs, Incarnation{1, 1}};
 
         s1.selfdestruct(a, a);
         s1.destruct_suicides();
@@ -377,7 +377,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
         bs.merge(s1);
     }
     {
-        State s2{bs};
+        State s2{bs, Incarnation{1, 2}};
         s2.add_to_balance(a, 1000);
 
         s2.set_storage(a, key1, value1);
@@ -400,7 +400,7 @@ TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
 {
     BlockState bs{this->db};
     {
-        State s1{bs};
+        State s1{bs, Incarnation{1, 1}};
 
         s1.create_contract(a);
         s1.set_storage(a, key1, value1);
@@ -411,7 +411,7 @@ TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
         bs.merge(s1);
     }
     {
-        State s2{bs};
+        State s2{bs, Incarnation{1, 2}};
         s2.create_contract(a);
 
         s2.set_storage(a, key2, value3);
@@ -437,7 +437,7 @@ TYPED_TEST(StateTest, create_conflict_address_incarnation)
                  .storage = {{key1, {bytes32_t{}, value1}}}}}},
         Code{});
 
-    State s1{bs};
+    State s1{bs, Incarnation{1, 1}};
 
     s1.create_contract(a);
     s1.set_storage(a, key2, value2);
@@ -456,7 +456,7 @@ TYPED_TEST(StateTest, destruct_touched_dead)
             {b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(a));
     s.destruct_touched_dead();
     s.destruct_suicides();
@@ -493,7 +493,7 @@ TYPED_TEST(StateTest, access_storage)
 {
     BlockState bs{this->db};
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_COLD);
     EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_WARM);
     EXPECT_EQ(s.access_storage(b, key1), EVMC_ACCESS_COLD);
@@ -521,7 +521,7 @@ TYPED_TEST(StateTest, get_storage)
                  .storage = {{key1, {bytes32_t{}, value1}}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(a));
     EXPECT_TRUE(s.account_exists(b));
     EXPECT_EQ(s.get_storage(a, key1), value1);
@@ -544,7 +544,7 @@ TYPED_TEST(StateTest, set_storage_modified)
             {b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(a));
     EXPECT_EQ(s.set_storage(a, key2, value3), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(s.get_storage(a, key2), value3);
@@ -562,7 +562,7 @@ TYPED_TEST(StateTest, set_storage_deleted)
                  .storage = {{key1, {bytes32_t{}, value1}}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
     EXPECT_EQ(s.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
     EXPECT_EQ(s.get_storage(b, key1), null);
@@ -579,7 +579,7 @@ TYPED_TEST(StateTest, set_storage_added)
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
     EXPECT_EQ(s.set_storage(b, key1, value1), EVMC_STORAGE_ADDED);
     EXPECT_EQ(s.get_storage(b, key1), value1);
@@ -601,7 +601,7 @@ TYPED_TEST(StateTest, set_storage_different_assigned)
             {b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(a));
     EXPECT_EQ(s.set_storage(a, key2, value3), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(s.get_storage(a, key2), value3);
@@ -621,7 +621,7 @@ TYPED_TEST(StateTest, set_storage_unchanged_assigned)
             {b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(a));
     EXPECT_EQ(s.set_storage(a, key2, value2), EVMC_STORAGE_ASSIGNED);
     EXPECT_EQ(s.get_storage(a, key2), value2);
@@ -634,7 +634,7 @@ TYPED_TEST(StateTest, set_storage_added_deleted)
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
     EXPECT_EQ(s.set_storage(b, key1, value1), EVMC_STORAGE_ADDED);
     EXPECT_EQ(s.get_storage(b, key1), value1);
@@ -649,7 +649,7 @@ TYPED_TEST(StateTest, set_storage_added_deleted_null)
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
     EXPECT_EQ(s.set_storage(b, key1, null), EVMC_STORAGE_ASSIGNED);
     EXPECT_EQ(s.get_storage(b, key1), null);
@@ -668,7 +668,7 @@ TYPED_TEST(StateTest, set_storage_modify_delete)
                  .storage = {{key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
     EXPECT_EQ(s.set_storage(b, key2, value1), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(s.get_storage(b, key2), value1);
@@ -687,7 +687,7 @@ TYPED_TEST(StateTest, set_storage_delete_restored)
                  .storage = {{key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
     EXPECT_EQ(s.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
     EXPECT_EQ(s.get_storage(b, key2), null);
@@ -706,7 +706,7 @@ TYPED_TEST(StateTest, set_storage_modified_restored)
                  .storage = {{key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
     EXPECT_EQ(s.set_storage(b, key2, value1), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(s.get_storage(b, key2), value1);
@@ -723,7 +723,7 @@ TYPED_TEST(StateTest, get_code_size)
         StateDeltas{{a, StateDelta{.account = {std::nullopt, acct}}}},
         Code{{code_hash1, code_analysis1}});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     EXPECT_EQ(s.get_code_size(a), code1.size());
 }
 
@@ -742,7 +742,7 @@ TYPED_TEST(StateTest, copy_code)
     static constexpr unsigned size{8};
     uint8_t buffer[size];
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
 
     { // underflow
         auto const total = s.copy_code(a, 0u, buffer, size);
@@ -790,7 +790,7 @@ TYPED_TEST(StateTest, get_code)
                  .account = {std::nullopt, Account{.code_hash = code_hash1}}}}},
         Code{{code_hash1, std::make_shared<CodeAnalysis>(analyze(contract))}});
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
 
     {
         s.access_account(a);
@@ -807,7 +807,7 @@ TYPED_TEST(StateTest, set_code)
 {
     BlockState bs{this->db};
 
-    State s{bs};
+    State s{bs, Incarnation{1, 1}};
     s.create_contract(a);
     s.create_contract(b);
     s.set_code(a, code2);
@@ -837,18 +837,15 @@ TYPED_TEST(StateTest, can_merge_same_account_different_storage)
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    State as{bs};
-    State cs{bs};
-
+    State as{bs, Incarnation{1, 1}};
     EXPECT_TRUE(as.account_exists(b));
     EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
-
     EXPECT_TRUE(bs.can_merge(as));
     bs.merge(as);
 
+    State cs{bs, Incarnation{1, 2}};
     EXPECT_TRUE(cs.account_exists(b));
     EXPECT_EQ(cs.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
-
     EXPECT_TRUE(bs.can_merge(cs));
     bs.merge(cs);
 }
@@ -865,26 +862,23 @@ TYPED_TEST(StateTest, cant_merge_colliding_storage)
                  .storage = {{key1, {bytes32_t{}, value1}}}}}},
         Code{});
 
-    State as{bs};
-    State cs{bs};
-
+    State as{bs, Incarnation{1, 1}};
     EXPECT_TRUE(as.account_exists(b));
     EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
 
+    State cs{bs, Incarnation{1, 2}};
     EXPECT_TRUE(cs.account_exists(b));
     EXPECT_EQ(cs.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
 
     EXPECT_TRUE(bs.can_merge(as));
     bs.merge(as);
-
     EXPECT_FALSE(bs.can_merge(cs));
 
     // Need to rerun txn 1 - get new changset
     {
-        State cs{bs};
+        State cs{bs, Incarnation{1, 2}};
         EXPECT_TRUE(cs.account_exists(b));
         EXPECT_EQ(cs.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
-
         EXPECT_TRUE(bs.can_merge(cs));
         bs.merge(cs);
     }
@@ -912,84 +906,28 @@ TYPED_TEST(StateTest, merge_txn0_and_txn1)
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    State as{bs};
-    State cs{bs};
-
+    State as{bs, Incarnation{1, 1}};
     EXPECT_TRUE(as.account_exists(b));
     EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
     EXPECT_EQ(as.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
     EXPECT_EQ(as.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
-
     EXPECT_TRUE(bs.can_merge(as));
     bs.merge(as);
 
+    State cs{bs, Incarnation{1, 2}};
     EXPECT_TRUE(cs.account_exists(c));
     EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
     EXPECT_EQ(cs.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
     EXPECT_TRUE(cs.selfdestruct(c, a));
     cs.destruct_suicides();
-
     EXPECT_TRUE(bs.can_merge(cs));
     bs.merge(cs);
-}
-
-TYPED_TEST(StateTest, cant_merge_txn1_collision_need_to_rerun)
-{
-    BlockState bs{this->db};
-
-    this->db.commit(
-        StateDeltas{
-            {b,
-             StateDelta{
-                 .account = {std::nullopt, Account{.balance = 40'000}},
-                 .storage =
-                     {{key1, {bytes32_t{}, value1}},
-                      {key2, {bytes32_t{}, value2}}}}},
-            {c,
-             StateDelta{
-                 .account = {std::nullopt, Account{.balance = 50'000}},
-                 .storage =
-                     {{key1, {bytes32_t{}, value1}},
-                      {key2, {bytes32_t{}, value2}}}}}},
-        Code{});
-
-    State as{bs};
-    State cs{bs};
-
-    EXPECT_TRUE(as.account_exists(b));
-    EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
-    EXPECT_EQ(as.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
-    EXPECT_EQ(as.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
-
-    EXPECT_TRUE(bs.can_merge(as));
-    bs.merge(as);
-
-    EXPECT_TRUE(cs.account_exists(c));
-    EXPECT_TRUE(cs.account_exists(b));
-    EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
-    EXPECT_EQ(cs.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
-    EXPECT_TRUE(cs.selfdestruct(c, b));
-    cs.destruct_suicides();
-
-    EXPECT_TRUE(bs.can_merge(cs));
-
-    State ds{bs};
-
-    EXPECT_TRUE(ds.account_exists(c));
-    EXPECT_TRUE(ds.account_exists(b));
-    EXPECT_EQ(ds.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
-    EXPECT_EQ(ds.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
-    EXPECT_TRUE(ds.selfdestruct(c, b));
-    ds.destruct_suicides();
-
-    EXPECT_TRUE(bs.can_merge(ds));
-    bs.merge(ds);
 }
 
 TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
 {
     BlockState bs{this->db};
-    State as{bs};
+    State as{bs, Incarnation{1, 1}};
 
     as.create_contract(a);
     as.add_to_balance(a, 1);
@@ -1007,7 +945,7 @@ TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
 {
     using namespace intx;
     BlockState bs{this->db};
-    State as{bs};
+    State as{bs, Incarnation{1, 1}};
 
     as.create_contract(a);
     EXPECT_EQ(as.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
@@ -1041,7 +979,7 @@ TYPED_TEST(StateTest, commit_twice)
     {
         // Block 0, Txn 0
         BlockState bs{this->db};
-        State as{bs};
+        State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 42'000);
         as.set_nonce(b, 3);
@@ -1059,7 +997,7 @@ TYPED_TEST(StateTest, commit_twice)
     {
         // Block 1, Txn 0
         BlockState bs{this->db};
-        State cs{bs};
+        State cs{bs, Incarnation{2, 1}};
         EXPECT_TRUE(cs.account_exists(a));
         EXPECT_TRUE(cs.account_exists(c));
         EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);

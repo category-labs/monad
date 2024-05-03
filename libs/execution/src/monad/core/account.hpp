@@ -3,6 +3,7 @@
 #include <monad/config.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
+#include <monad/types/incarnation.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -14,7 +15,7 @@ struct Account
     uint256_t balance{0}; // sigma[a]_b
     bytes32_t code_hash{NULL_HASH}; // sigma[a]_c
     uint64_t nonce{0}; // sigma[a]_n
-    uint64_t incarnation{0};
+    Incarnation incarnation{0, 0};
 
     friend bool operator==(Account const &, Account const &) = default;
 };

@@ -115,7 +115,7 @@ TEST(EvmcHost, emit_log)
 
     db_t db{std::nullopt};
     BlockState bs{db};
-    State state{bs};
+    State state{bs, Incarnation{0, 0}};
     BlockHashBuffer const block_hash_buffer;
     evmc_host_t host{EMPTY_TX_CONTEXT, block_hash_buffer, state};
 
@@ -139,7 +139,7 @@ TEST(EvmcHost, access_precompile)
 {
     db_t db{std::nullopt};
     BlockState bs{db};
-    State state{bs};
+    State state{bs, Incarnation{0, 0}};
     BlockHashBuffer const block_hash_buffer;
     evmc_host_t host{EMPTY_TX_CONTEXT, block_hash_buffer, state};
 

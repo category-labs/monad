@@ -22,12 +22,13 @@ struct fmt::formatter<monad::Account> : public monad::BasicFormatter
             "balance={}, "
             "code_hash={}, "
             "nonce={},"
-            "incarnation={}"
+            "incarnation=({}, {})"
             "}}",
             a.balance,
             a.code_hash,
             a.nonce,
-            a.incarnation);
+            a.incarnation.get_block(),
+            a.incarnation.get_tx());
         return ctx.out();
     }
 };

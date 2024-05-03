@@ -125,7 +125,9 @@ add_library(
   "src/monad/state3/account_substate.hpp"
   "src/monad/state3/state.cpp"
   "src/monad/state3/state.hpp"
-  "src/monad/state3/version_stack.hpp")
+  "src/monad/state3/version_stack.hpp"
+  # types
+  "src/monad/types/incarnation.hpp")
 
 target_include_directories(
   monad_execution

@@ -38,7 +38,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     BlockState bs{db};
 
     {
-        State state{bs};
+        State state{bs, Incarnation{0, 0}};
         state.add_to_balance(from, 56'000'000'000'000'000);
         state.set_nonce(from, 25);
         bs.merge(state);
@@ -70,7 +70,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 
     EXPECT_EQ(receipt.status, 1u);
     {
-        State state{bs};
+        State state{bs, Incarnation{0, 0}};
         EXPECT_EQ(
             intx::be::load<uint256_t>(state.get_balance(from)),
             uint256_t{55'999'999'999'470'000});

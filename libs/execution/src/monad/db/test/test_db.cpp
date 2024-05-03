@@ -206,9 +206,9 @@ TEST(DBTest, read_only)
             Code{});
 
         TrieDb ro{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {name}}};
-        EXPECT_EQ(ro.read_account(a), (Account{.nonce = 2, .incarnation = 0}));
+        EXPECT_EQ(ro.read_account(a), Account{.nonce = 2});
         ro.set_block_number(0);
-        EXPECT_EQ(ro.read_account(a), (Account{.nonce = 1, .incarnation = 0}));
+        EXPECT_EQ(ro.read_account(a), Account{.nonce = 1});
 
         Account const acct3{.nonce = 3};
         rw.increment_block_number();
@@ -218,14 +218,14 @@ TEST(DBTest, read_only)
             Code{});
 
         EXPECT_FALSE(ro.is_latest());
-        EXPECT_EQ(ro.read_account(a), (Account{.nonce = 1, .incarnation = 0}));
+        EXPECT_EQ(ro.read_account(a), Account{.nonce = 1});
 
         ro.set_block_number(2);
         EXPECT_EQ(ro.read_account(a), std::nullopt);
 
         ro.load_latest();
         EXPECT_TRUE(ro.is_latest());
-        EXPECT_EQ(ro.read_account(a), (Account{.nonce = 3, .incarnation = 0}));
+        EXPECT_EQ(ro.read_account(a), Account{.nonce = 3});
     }
     std::filesystem::remove(name);
 }

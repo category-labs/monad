@@ -182,7 +182,7 @@ void BlockchainTest::TestBody()
         db_t db{std::nullopt};
         {
             BlockState bs{db};
-            State state{bs};
+            State state{bs, Incarnation{0, 0}};
             load_state_from_json(j_contents.at("pre"), state);
             bs.merge(state);
             bs.commit();

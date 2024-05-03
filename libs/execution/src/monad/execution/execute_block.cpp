@@ -47,9 +47,10 @@ constexpr void process_withdrawal(
     }
 }
 
-inline void transfer_balance_dao(BlockState &block_state)
+inline void
+transfer_balance_dao(BlockState &block_state, Incarnation const incarnation)
 {
-    State state{block_state};
+    State state{block_state, incarnation};
 
     for (auto const &addr : dao::child_accounts) {
         auto const balance = intx::be::load<uint256_t>(state.get_balance(addr));
@@ -92,7 +93,8 @@ Result<std::vector<Receipt>> execute_block(
 
     if constexpr (rev == EVMC_HOMESTEAD) {
         if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {
-            transfer_balance_dao(block_state);
+            transfer_balance_dao(
+                block_state, Incarnation{block.header.number, 0});
         }
     }
 
@@ -151,7 +153,9 @@ Result<std::vector<Receipt>> execute_block(
         return BlockError::InvalidGasUsed;
     }
 
-    State state{block_state};
+    State state{
+        block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
+
     if constexpr (rev >= EVMC_SHANGHAI) {
         process_withdrawal(state, block.withdrawals);
     }

@@ -42,11 +42,7 @@ public:
         {
             Combined::AccountConstAccessor acc{};
             if (cache_.find_account(acc, address)) {
-                auto result = acc->second.value_;
-                if (result.has_value()) {
-                    result->incarnation = 0;
-                }
-                return result;
+                return acc->second.value_;
             }
         }
         auto const result = db_.read_account(address);

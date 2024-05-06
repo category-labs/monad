@@ -30,6 +30,9 @@ namespace test_resource
     // ethereum tests
     inline auto const ethereum_tests_dir = third_party_dir / "ethereum-tests";
 
+    // rpc
+    inline auto const rpc_tests_dir = test_data_dir / "rpc";
+
     inline auto const checkpoint_dir = test_data_dir / "common" / "checkpoint";
 }
 

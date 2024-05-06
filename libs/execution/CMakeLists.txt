@@ -114,6 +114,10 @@ add_library(
   "src/monad/rlp/decode_error.cpp"
   "src/monad/rlp/decode_error.hpp"
   "src/monad/rlp/encode2.hpp"
+  # rpc
+  "src/monad/rpc/config.hpp"
+  "src/monad/rpc/eth_call.hpp"
+  "src/monad/rpc/eth_call.cpp"
   # state
   "src/monad/state2/block_state.cpp"
   "src/monad/state2/block_state.hpp"
@@ -172,5 +176,6 @@ monad_add_test_folder("src/monad/core")
 monad_add_test_folder("src/monad/db")
 monad_add_test_folder("src/monad/execution")
 monad_add_test_folder("src/monad/rlp")
+monad_add_test_folder("src/monad/rpc")
 monad_add_test_folder("src/monad/state2")
 monad_add_test_folder("src/monad/trie")

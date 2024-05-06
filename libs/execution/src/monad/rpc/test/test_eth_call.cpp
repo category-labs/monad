@@ -30,42 +30,85 @@ using namespace monad::rpc;
 
 namespace
 {
-    static auto const chain_rlp = test_resource::rpc_tests_dir / "chain.rlp";
-    static auto const genesis = test_resource::rpc_tests_dir / "genesis.json";
-    static auto const headstate =
+    static auto const headstate_file =
         test_resource::rpc_tests_dir / "headstate.json";
-    std::filesystem::path const db_path1 = "test1.db";
-    std::filesystem::path const db_path2 = "test2.db";
 
-    constexpr auto a = 0x5353535353535353535353535353535353535353_address;
-    constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
+    void read_headstate(TrieDb &db)
+    {
+        StateDeltas state_deltas;
+        Code code_deltas;
+        std::ifstream ifile(headstate_file.c_str());
+        auto const headstate_json = nlohmann::json::parse(ifile);
+        for (auto const &[addr, acct] : headstate_json["accounts"].items()) {
+            // address
+            Address address{};
+            auto const address_byte_string = evmc::from_hex(addr);
+            MONAD_ASSERT(address_byte_string.has_value());
+            std::copy_n(
+                address_byte_string.value().begin(),
+                address_byte_string.value().length(),
+                address.bytes);
 
-    std::string global_value;
+            // storage
+            StorageDeltas storage_deltas;
+            if (acct.contains("storage")) {
+                for (auto const &[k, v] : acct.at("storage").items()) {
+                    bytes32_t storage_key;
+                    bytes32_t storage_value;
+                    std::memcpy(
+                        storage_key.bytes,
+                        evmc::from_hex(k).value().data(),
+                        32);
+
+                    auto const storage_value_byte_string =
+                        evmc::from_hex("0x" + v.get<std::string>()).value();
+                    std::copy_n(
+                        storage_value_byte_string.begin(),
+                        storage_value_byte_string.length(),
+                        storage_value.bytes);
+
+                    storage_deltas.emplace(
+                        storage_key, std::make_pair(NULL_HASH, storage_value));
+                }
+            }
+
+            auto const balance =
+                intx::from_string<uint256_t>(acct.at("balance"));
+            auto const nonce = acct.at("nonce").get<uint64_t>();
+            auto const code =
+                acct.contains("code")
+                    ? evmc::from_hex(acct.at("code").get<std::string>()).value()
+                    : byte_string{};
+
+            Account account{
+                .balance = balance,
+                .code_hash = code == byte_string{}
+                                 ? NULL_HASH
+                                 : std::bit_cast<bytes32_t>(ethash::keccak256(
+                                       code.data(), code.size())),
+                .nonce = nonce};
+
+            state_deltas.emplace(
+                address,
+                StateDelta{
+                    .account = {std::nullopt, account},
+                    .storage = storage_deltas});
+            if (code != byte_string{}) {
+                code_deltas.emplace(
+                    account.code_hash,
+                    std::make_shared<CodeAnalysis>(analyze(code)));
+            }
+        }
+
+        db.commit(state_deltas, code_deltas);
+    }
 };
 
 TEST(Eth_Call, call_env)
 {
     auto const *const name = tmpnam(nullptr);
     TrieDb db{mpt::OnDiskDbConfig{.dbname_paths{name}}};
-    StateDeltas state_deltas;
-    Code code;
-    code.emplace(
-        0x8e0388ecf64cfa76b3a6af159f77451519a7f9bb862e4cce24175c791fdcb0df_bytes32,
-        std::make_shared<CodeAnalysis>(analyze(
-            evmc::from_hex(
-                "0x60004381526020014681526020014181526020014881526020014"
-                "481526020013281526020013481526020016000f3")
-                .value())));
-    state_deltas.emplace(
-        0x9344b07175800259691961298ca11c824e65032d_address,
-        StateDelta{
-            .account = {
-                std::nullopt,
-                Account{
-                    .code_hash =
-                        0x8e0388ecf64cfa76b3a6af159f77451519a7f9bb862e4cce24175c791fdcb0df_bytes32,
-                    .nonce = 1}}});
-    db.commit(state_deltas, code);
+    read_headstate(db);
 
     BlockState block_state{db};
     State state{block_state, Incarnation{0, 0}};
@@ -132,26 +175,7 @@ TEST(Eth_Call, call_contract)
 {
     auto const *const name = tmpnam(nullptr);
     TrieDb db{mpt::OnDiskDbConfig{.dbname_paths{name}}};
-    StateDeltas state_deltas;
-    Code code;
-    code.emplace(
-        0x975f732458c1f6c2dd22b866b031cc509c6d4f788b1f020e351c1cdba48dacca_bytes32,
-        std::make_shared<CodeAnalysis>(analyze(
-            evmc::from_hex(
-                "0x366002146022577177726f6e672d63616c6c6461746173697a6560005260"
-                "12600efd5b60003560f01c61ff01146047576d77726f6e672d63616c6c6461"
-                "7461600052600e6012fd5b61ffee6000526002601ef3")
-                .value())));
-    state_deltas.emplace(
-        0x17e7eedce4ac02ef114a7ed9fe6e2f33feba1667_address,
-        StateDelta{
-            .account = {
-                std::nullopt,
-                Account{
-                    .code_hash =
-                        0x975f732458c1f6c2dd22b866b031cc509c6d4f788b1f020e351c1cdba48dacca_bytes32,
-                    .nonce = 1}}});
-    db.commit(state_deltas, code);
+    read_headstate(db);
 
     BlockState block_state{db};
     State state{block_state, Incarnation{0, 0}};
@@ -185,16 +209,14 @@ TEST(Eth_Call, call_contract)
 
 TEST(Eth_Call, empty_balance_transfer)
 {
-    auto const config = std::make_optional(mpt::OnDiskDbConfig{
-        .append = false,
-        .compaction = false,
-        .rd_buffers = 8192,
-        .wr_buffers = 32,
-        .uring_entries = 128,
-        .sq_thread_cpu = 2,
-        .dbname_paths = {db_path2}});
+    static constexpr auto a =
+        0x5353535353535353535353535353535353535353_address;
+    static constexpr auto b =
+        0xbebebebebebebebebebebebebebebebebebebebe_address;
 
-    TrieDb db{config};
+    auto const *const name = tmpnam(nullptr);
+    TrieDb db{mpt::OnDiskDbConfig{.dbname_paths{name}}};
+
     Account acct_a{.balance = 100'000'000, .nonce = 1};
 
     db.commit(
@@ -216,7 +238,7 @@ TEST(Eth_Call, empty_balance_transfer)
         .number = 0, .gas_limit = 10'000'000, .base_fee_per_gas = 1};
 
     auto const result =
-        eth_call_helper(good_txn, header, 0, a, empty_buffer, {db_path2});
+        eth_call_helper(good_txn, header, 0, a, empty_buffer, {name});
     if (result.has_error()) {
         std::cout << result.assume_error().value() << std::endl;
     }
@@ -234,6 +256,6 @@ TEST(Eth_Call, empty_balance_transfer)
         .data = {}};
 
     auto const bad_result =
-        eth_call_helper(bad_txn, header, 0, a, empty_buffer, {db_path2});
+        eth_call_helper(bad_txn, header, 0, a, empty_buffer, {name});
     EXPECT_TRUE(bad_result.has_error());
 }

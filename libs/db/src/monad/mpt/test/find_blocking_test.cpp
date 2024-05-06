@@ -13,6 +13,28 @@ using namespace monad::mpt;
 using namespace monad::literals;
 using namespace monad::test;
 
+TEST_F(OnDiskTrieGTest, find_blocking_cached)
+{
+    // state machine cache the nodes whose path <= 6 nibbles
+    auto const a = 0x000000deadbeef_hex;
+    auto const b = 0x000001deadbeef_hex;
+    auto const va = 0x1111_hex;
+    auto const vb = 0x2222_hex;
+    this->root = upsert_updates(
+        this->aux,
+        *this->sm,
+        std::move(this->root),
+        make_update(a, va),
+        make_update(b, vb));
+
+    EXPECT_EQ(this->root->mask, 0b011);
+
+    // find_blocking in memory
+    auto [cursor, errc] =
+        find_blocking(this->aux, NodeCursor{*this->root}, NibblesView{a}, true);
+    EXPECT_EQ(errc, find_result::need_to_read_from_disk);
+}
+
 TEST_F(InMemoryTrieGTest, find_error_message_test)
 {
     auto const a = 0x000000deadbeef_hex;

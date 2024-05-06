@@ -774,7 +774,8 @@ enum class find_result : uint8_t
     branch_not_exist_failure,
     key_ends_earlier_than_node_failure,
     node_is_not_leaf_failure,
-    need_to_continue_in_io_thread
+    need_to_continue_in_io_thread,
+    need_to_read_from_disk
 };
 using find_result_type = std::pair<NodeCursor, find_result>;
 
@@ -817,8 +818,9 @@ through blocking read.
  \warning Should only invoke it from the triedb owning
 thread, as no synchronization is provided, and user code should make sure no
 other place is modifying trie. */
-find_result_type
-find_blocking(UpdateAuxImpl const &, NodeCursor, NibblesView key);
+find_result_type find_blocking(
+    UpdateAuxImpl const &, NodeCursor, NibblesView key,
+    bool in_memory_only = false);
 
 Nibbles find_min_key_blocking(UpdateAuxImpl const &, Node &root);
 Nibbles find_max_key_blocking(UpdateAuxImpl const &, Node &root);

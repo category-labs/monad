@@ -10,8 +10,9 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-find_result_type
-find_blocking(UpdateAuxImpl const &aux, NodeCursor root, NibblesView const key)
+find_result_type find_blocking(
+    UpdateAuxImpl const &aux, NodeCursor root, NibblesView const key,
+    bool in_memory_only)
 {
     auto g(aux.shared_lock());
     if (!root.is_valid()) {
@@ -31,6 +32,12 @@ find_blocking(UpdateAuxImpl const &aux, NodeCursor root, NibblesView const key)
             // go to node's matched child
             if (!node->next(node->to_child_index(nibble))) {
                 MONAD_ASSERT(aux.is_on_disk());
+                if (in_memory_only) {
+                    return {
+                        NodeCursor{*node, node_prefix_index},
+                        find_result::need_to_read_from_disk};
+                }
+
                 auto g2(g.upgrade());
                 if (g2.upgrade_was_atomic() ||
                     !node->next(node->to_child_index(nibble))) {

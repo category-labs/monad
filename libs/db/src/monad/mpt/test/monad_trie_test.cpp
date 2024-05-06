@@ -425,66 +425,72 @@ int main(int argc, char *argv[])
                 }
             }
         }
-        MONAD_ASYNC_NAMESPACE::storage_pool pool{
-            {dbname_paths},
-            append ? MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing
-                   : MONAD_ASYNC_NAMESPACE::storage_pool::mode::truncate};
 
-        // init uring
-        monad::io::Ring ring1({512, use_iopoll, sq_thread_cpu});
-        monad::io::Ring ring2(16
-                              /* max concurrent write buffers in use <= 6 */
-        );
+        { /* upsert test begin */
+            MONAD_ASYNC_NAMESPACE::storage_pool pool{
+                {dbname_paths},
+                append
+                    ? MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing
+                    : MONAD_ASYNC_NAMESPACE::storage_pool::mode::truncate};
 
-        // init buffer
-        monad::io::Buffers rwbuf = make_buffers_for_segregated_read_write(
-            ring1,
-            ring2,
-            8192 * 16,
-            16, /* max concurrent write buffers in use <= 6 */
-            MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
-            MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+            // init uring
+            monad::io::Ring ring1({512, use_iopoll, sq_thread_cpu});
+            monad::io::Ring ring2(16
+                                  /* max concurrent write buffers in use <= 6 */
+            );
 
-        auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{pool, rwbuf};
-        io.set_concurrent_read_io_limit(concurrent_read_io_limit);
-        auto check_runtime_reconfig = [&] {
-            auto const now = std::chrono::steady_clock::now();
-            if (now - runtime_reconfig.last_parsed > std::chrono::seconds(5)) {
-                runtime_reconfig.last_parsed = now;
-                if (std::filesystem::exists(runtime_reconfig.path)) {
-                    std::ifstream s(runtime_reconfig.path);
-                    std::string key;
-                    std::string equals;
-                    while (!s.eof()) {
-                        s >> key >> equals;
-                        if (equals == "=") {
-                            if (key == "concurrent_read_io_limit") {
-                                s >> runtime_reconfig.concurrent_read_io_limit;
-                                if (runtime_reconfig.concurrent_read_io_limit !=
-                                    concurrent_read_io_limit) {
-                                    concurrent_read_io_limit =
-                                        runtime_reconfig
-                                            .concurrent_read_io_limit;
-                                    io.set_concurrent_read_io_limit(
-                                        concurrent_read_io_limit);
-                                    std::cout << "concurrent_read_io_limit = "
-                                              << concurrent_read_io_limit
-                                              << std::endl;
+            // init buffer
+            monad::io::Buffers rwbuf = make_buffers_for_segregated_read_write(
+                ring1,
+                ring2,
+                8192 * 16,
+                16, /* max concurrent write buffers in use <= 6 */
+                MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+                MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+
+            auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{pool, rwbuf};
+            io.set_concurrent_read_io_limit(concurrent_read_io_limit);
+            auto check_runtime_reconfig = [&] {
+                auto const now = std::chrono::steady_clock::now();
+                if (now - runtime_reconfig.last_parsed >
+                    std::chrono::seconds(5)) {
+                    runtime_reconfig.last_parsed = now;
+                    if (std::filesystem::exists(runtime_reconfig.path)) {
+                        std::ifstream s(runtime_reconfig.path);
+                        std::string key;
+                        std::string equals;
+                        while (!s.eof()) {
+                            s >> key >> equals;
+                            if (equals == "=") {
+                                if (key == "concurrent_read_io_limit") {
+                                    s >> runtime_reconfig
+                                             .concurrent_read_io_limit;
+                                    if (runtime_reconfig
+                                            .concurrent_read_io_limit !=
+                                        concurrent_read_io_limit) {
+                                        concurrent_read_io_limit =
+                                            runtime_reconfig
+                                                .concurrent_read_io_limit;
+                                        io.set_concurrent_read_io_limit(
+                                            concurrent_read_io_limit);
+                                        std::cout
+                                            << "concurrent_read_io_limit = "
+                                            << concurrent_read_io_limit
+                                            << std::endl;
+                                    }
                                 }
-                            }
-                            else {
-                                std::cerr << "WARNING: File "
-                                          << runtime_reconfig.path
-                                          << " had unknown key '" << key << "'."
-                                          << std::endl;
+                                else {
+                                    std::cerr << "WARNING: File "
+                                              << runtime_reconfig.path
+                                              << " had unknown key '" << key
+                                              << "'." << std::endl;
+                                }
                             }
                         }
                     }
                 }
-            }
-        };
+            };
 
-        {
             UpdateAux<> aux{};
             monad::test::StateMachineWithBlockNo sm{};
             if (!in_memory) {
@@ -599,7 +605,7 @@ int main(int argc, char *argv[])
                 csv_writer << "\n\"Total storage consumed:\"," << bytes_used
                            << std::endl;
             }
-        }
+        } /* upsert test end */
 
         if (random_read_benchmark_threads > 0) {
             {
@@ -608,6 +614,25 @@ int main(int argc, char *argv[])
                        std::chrono::seconds(1)) {
                 }
             }
+            // read only
+            // init uring
+            monad::io::Ring ring({512, use_iopoll, sq_thread_cpu});
+
+            // init buffer
+            monad::io::Buffers rwbuf = make_buffers_for_read_only(
+                ring,
+                8192 * 16,
+                MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
+
+            MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags flag{};
+            flag.open_read_only = true;
+            MONAD_ASYNC_NAMESPACE::storage_pool pool{
+                {dbname_paths},
+                MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing,
+                flag};
+            auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{pool, rwbuf};
+            io.set_concurrent_read_io_limit(concurrent_read_io_limit);
+
             auto load_db = [&] {
                 auto ret = std::make_unique<
                     std::tuple<UpdateAux<>, Node::UniquePtr, NodeCursor>>();

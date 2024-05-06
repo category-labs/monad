@@ -9,6 +9,8 @@
 
 #include <evmc/evmc.hpp>
 
+#include <nlohmann/json.hpp>
+
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -23,6 +25,7 @@ evmc_result eth_call(
 
 Result<evmc::Result> eth_call_helper(
     Transaction const &, BlockHeader const &, uint64_t const, Address const &,
-    BlockHashBuffer const &, std::vector<std::filesystem::path> const &);
+    BlockHashBuffer const &, std::vector<std::filesystem::path> const &,
+    nlohmann::json const &state_overrides = {});
 
 MONAD_RPC_NAMESPACE_END

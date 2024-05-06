@@ -204,6 +204,38 @@ TEST(Eth_Call, call_contract)
         (byte_string_view{
             result.value().output_data, result.value().output_size}),
         (byte_string{0xff, 0xee}));
+
+    // test state override (code override)
+    nlohmann::json override_json;
+    override_json["0x000f3df6d732807ef1319fb7b8bb8522d0beac02"]["code"] =
+        "0x366002146022577177726f6e672d63616c6c6461746173697a656000526012600efd"
+        "5b60003560f01c61ff01146047576d77726f6e672d63616c6c64617461600052600e60"
+        "12fd5b61ffee6000526002601ef3";
+
+    Transaction const override_txn{
+        .nonce = 0,
+        .max_fee_per_gas = 0,
+        .gas_limit = INT64_MAX,
+        .value = 0,
+        .to = 0x000f3df6d732807ef1319fb7b8bb8522d0beac02_address,
+        .data = {0xff, 0x01}};
+
+    auto const override_result = eth_call_helper(
+        override_txn,
+        header,
+        0,
+        0x0000000000000000000000000000000000000000_address,
+        buffer,
+        {name},
+        override_json);
+
+    EXPECT_FALSE(override_result.has_error());
+    EXPECT_EQ(
+        (byte_string_view{
+            override_result.value().output_data,
+            override_result.value().output_size}),
+        (byte_string{0xff, 0xee}));
+
     std::filesystem::remove(name);
 }
 
@@ -246,6 +278,7 @@ TEST(Eth_Call, empty_balance_transfer)
 
     EXPECT_EQ(result.value().status_code, EVMC_SUCCESS);
 
+    // This txn would fail because of low gas_limit
     Transaction bad_txn{
         .nonce = 2,
         .max_fee_per_gas = 100,
@@ -257,5 +290,52 @@ TEST(Eth_Call, empty_balance_transfer)
 
     auto const bad_result =
         eth_call_helper(bad_txn, header, 0, a, empty_buffer, {name});
+    EXPECT_TRUE(bad_result.has_error());
+}
+
+TEST(Eth_Call, transfer_with_state_override)
+{
+    static constexpr auto a =
+        0x5353535353535353535353535353535353535353_address;
+    static constexpr auto b =
+        0xbebebebebebebebebebebebebebebebebebebebe_address;
+
+    auto const *const name = tmpnam(nullptr);
+    TrieDb db{mpt::OnDiskDbConfig{.dbname_paths{name}}};
+
+    Account acct_a{.balance = 100'000'000, .nonce = 1};
+    db.commit(
+        StateDeltas{
+            {a, StateDelta{.account = {std::nullopt, acct_a}, .storage = {}}}},
+        Code{});
+
+    Transaction txn{
+        .nonce = 2,
+        .max_fee_per_gas = 100,
+        .gas_limit = 50'000,
+        .value = 10'000,
+        .to = std::make_optional(b),
+        .type = TransactionType::legacy,
+        .data = {}};
+
+    BlockHashBuffer empty_buffer{};
+    BlockHeader header{
+        .number = 0, .gas_limit = 10'000'000, .base_fee_per_gas = 1};
+
+    auto const result =
+        eth_call_helper(txn, header, 0, a, empty_buffer, {name});
+    if (result.has_error()) {
+        std::cout << result.assume_error().value() << std::endl;
+    }
+    MONAD_ASSERT(!result.has_error());
+
+    EXPECT_EQ(result.value().status_code, EVMC_SUCCESS);
+
+    // Add state override, reduce A's balance so that call would fail
+    nlohmann::json override_json;
+    override_json["0x5353535353535353535353535353535353535353"]["balance"] =
+        "1000";
+    auto const bad_result =
+        eth_call_helper(txn, header, 0, a, empty_buffer, {name}, override_json);
     EXPECT_TRUE(bad_result.has_error());
 }

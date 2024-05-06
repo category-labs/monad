@@ -92,7 +92,8 @@ Result<evmc::Result> eth_call_helper(
     Transaction const &txn, BlockHeader const &header,
     uint64_t const block_number, Address const &sender,
     BlockHashBuffer const &buffer,
-    std::vector<std::filesystem::path> const &dbname_paths)
+    std::vector<std::filesystem::path> const &dbname_paths,
+    nlohmann::json const &state_overrides)
 {
     // TODO: Hardset rev to be Shanghai at the moment
     static constexpr auto rev = EVMC_SHANGHAI;
@@ -112,8 +113,70 @@ Result<evmc::Result> eth_call_helper(
     BlockState block_state{ro};
     State state{block_state, Incarnation{0, 0}};
 
+    // State override
+    for (auto const &[addr, state_delta] : state_overrides.items()) {
+        // address
+        Address address{};
+        auto const address_byte_string = evmc::from_hex(addr);
+        MONAD_ASSERT(address_byte_string.has_value());
+        std::copy_n(
+            address_byte_string.value().begin(),
+            address_byte_string.value().length(),
+            address.bytes);
+
+        if (state_delta.contains("balance")) {
+            auto const balance =
+                intx::from_string<uint256_t>(state_delta.at("balance"));
+            if (balance >
+                intx::be::load<uint256_t>(state.get_balance(address))) {
+                state.add_to_balance(
+                    address,
+                    balance -
+                        intx::be::load<uint256_t>(state.get_balance(address)));
+            }
+            else {
+                state.subtract_from_balance(
+                    address,
+                    intx::be::load<uint256_t>(state.get_balance(address)) -
+                        balance);
+            }
+        }
+
+        if (state_delta.contains("nonce")) {
+            auto const nonce = state_delta.at("nonce").get<uint64_t>();
+            state.set_nonce(address, nonce);
+        }
+
+        if (state_delta.contains("code")) {
+            auto const code =
+                evmc::from_hex(state_delta.at("code").get<std::string>())
+                    .value();
+            state.set_code(address, code);
+        }
+
+        // storage is called "state"
+        if (state_delta.contains("state")) {
+            for (auto const &[k, v] : state_delta.at("state").items()) {
+                bytes32_t storage_key;
+                bytes32_t storage_value;
+                std::memcpy(
+                    storage_key.bytes, evmc::from_hex(k).value().data(), 32);
+
+                auto const storage_value_byte_string =
+                    evmc::from_hex("0x" + v.get<std::string>()).value();
+                std::copy_n(
+                    storage_value_byte_string.begin(),
+                    storage_value_byte_string.length(),
+                    storage_value.bytes);
+
+                state.set_storage(address, storage_key, storage_value);
+            }
+        }
+    }
+
+    auto &acct = state.recent_account(sender);
+
     // nonce validation hack
-    auto const acct = ro.read_account(sender);
     enriched_txn.nonce = acct.has_value() ? acct.value().nonce : 0;
 
     BOOST_OUTCOME_TRY(validate_transaction(enriched_txn, acct));

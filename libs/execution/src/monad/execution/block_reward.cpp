@@ -5,7 +5,6 @@
 #include <monad/core/likely.h>
 #include <monad/execution/block_reward.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
-#include <monad/state2/block_state.hpp>
 #include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
@@ -59,10 +58,8 @@ constexpr uint256_t const calculate_ommer_reward(
 }
 
 template <evmc_revision rev>
-void apply_block_reward(BlockState &block_state, Block const &block)
+void apply_block_reward(State &state, Block const &block)
 {
-    State state{
-        block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
     auto const miner_reward = calculate_block_reward(
         block_reward<rev>(),
         additional_ommer_reward<rev>(),
@@ -81,9 +78,6 @@ void apply_block_reward(BlockState &block_state, Block const &block)
             state.add_to_balance(ommer.beneficiary, ommer_reward);
         }
     }
-
-    MONAD_ASSERT(block_state.can_merge(state));
-    block_state.merge(state);
 }
 
 EXPLICIT_EVMC_REVISION(apply_block_reward);

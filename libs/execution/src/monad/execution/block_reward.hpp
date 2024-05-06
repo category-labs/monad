@@ -7,9 +7,9 @@
 MONAD_NAMESPACE_BEGIN
 
 struct Block;
-class BlockState;
+class State;
 
 template <evmc_revision rev>
-void apply_block_reward(BlockState &, Block const &);
+void apply_block_reward(State &, Block const &);
 
 MONAD_NAMESPACE_END

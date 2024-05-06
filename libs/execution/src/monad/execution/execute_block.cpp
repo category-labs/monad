@@ -160,7 +160,7 @@ Result<std::vector<Receipt>> execute_block(
         process_withdrawal(state, block.withdrawals);
     }
 
-    apply_block_reward<rev>(block_state, block);
+    apply_block_reward<rev>(state, block);
 
     if constexpr (rev >= EVMC_SPURIOUS_DRAGON) {
         state.destruct_touched_dead();

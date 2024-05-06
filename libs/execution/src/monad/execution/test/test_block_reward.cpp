@@ -35,7 +35,7 @@ TEST(BlockReward, apply_block_reward)
             Code{});
 
         BlockState bs{db};
-        State as{bs, Incarnation{0, 0}};
+        State as{bs, Incarnation{1, 1}};
 
         EXPECT_TRUE(as.account_exists(a));
 
@@ -45,18 +45,16 @@ TEST(BlockReward, apply_block_reward)
             .ommers = {
                 BlockHeader{.number = 9, .beneficiary = b},
                 BlockHeader{.number = 8, .beneficiary = c}}};
-        apply_block_reward<EVMC_FRONTIER>(bs, block);
-
-        State cs{bs, Incarnation{0, 1}};
+        apply_block_reward<EVMC_FRONTIER>(as, block);
 
         EXPECT_EQ(
-            intx::be::load<uint256_t>(cs.get_balance(a)),
+            intx::be::load<uint256_t>(as.get_balance(a)),
             5'312'500'000'000'000'000);
         EXPECT_EQ(
-            intx::be::load<uint256_t>(cs.get_balance(b)),
+            intx::be::load<uint256_t>(as.get_balance(b)),
             4'375'000'000'000'000'000);
         EXPECT_EQ(
-            intx::be::load<uint256_t>(cs.get_balance(c)),
+            intx::be::load<uint256_t>(as.get_balance(c)),
             3'750'000'000'000'000'000);
     }
 
@@ -64,7 +62,7 @@ TEST(BlockReward, apply_block_reward)
     {
         db_t db{std::nullopt};
         BlockState bs{db};
-        State as{bs, Incarnation{0, 0}};
+        State as{bs, Incarnation{1, 1}};
         (void)as.get_balance(a);
 
         EXPECT_FALSE(as.account_exists(a));
@@ -76,17 +74,16 @@ TEST(BlockReward, apply_block_reward)
             .ommers = {
                 BlockHeader{.number = 9, .beneficiary = b},
                 BlockHeader{.number = 8, .beneficiary = c}}};
-        apply_block_reward<EVMC_BYZANTIUM>(bs, block);
+        apply_block_reward<EVMC_BYZANTIUM>(as, block);
 
-        State cs{bs, Incarnation{0, 1}};
         EXPECT_EQ(
-            intx::be::load<uint256_t>(cs.get_balance(a)),
+            intx::be::load<uint256_t>(as.get_balance(a)),
             3'187'500'000'000'000'000);
         EXPECT_EQ(
-            intx::be::load<uint256_t>(cs.get_balance(b)),
+            intx::be::load<uint256_t>(as.get_balance(b)),
             2'625'000'000'000'000'000);
         EXPECT_EQ(
-            intx::be::load<uint256_t>(cs.get_balance(c)),
+            intx::be::load<uint256_t>(as.get_balance(c)),
             2'250'000'000'000'000'000);
     }
 
@@ -102,7 +99,7 @@ TEST(BlockReward, apply_block_reward)
             .ommers = {
                 BlockHeader{.number = 9, .beneficiary = b},
                 BlockHeader{.number = 8, .beneficiary = c}}};
-        apply_block_reward<EVMC_PETERSBURG>(bs, block);
+        apply_block_reward<EVMC_PETERSBURG>(s, block);
 
         EXPECT_EQ(
             intx::be::load<uint256_t>(s.get_balance(a)),
@@ -124,7 +121,7 @@ TEST(BlockReward, apply_block_reward)
         BlockState bs{db};
         State s{bs, Incarnation{0, 0}};
 
-        apply_block_reward<EVMC_PARIS>(bs, block);
+        apply_block_reward<EVMC_PARIS>(s, block);
 
         EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(a)), 0u);
     }

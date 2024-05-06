@@ -55,7 +55,7 @@ struct UpwardTreeNode
 
     static allocator_type &pool()
     {
-        static allocator_type v;
+        static thread_local allocator_type v;
         return v;
     }
 
@@ -147,7 +147,7 @@ struct CompactTNode
 
     static allocator_type &pool()
     {
-        static allocator_type v;
+        static thread_local allocator_type v;
         return v;
     }
 

@@ -413,6 +413,7 @@ struct Db::RWOnDisk final : public Db::Impl
             }
             worker_->run();
             std::unique_lock const g(lock_);
+            root_.reset();
             worker_.reset();
         })
         , machine_{machine}

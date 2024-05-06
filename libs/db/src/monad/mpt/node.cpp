@@ -36,8 +36,8 @@ allocators::detail::type_raw_alloc_pair<
     std::allocator<Node>, Node::BytesAllocator>
 Node::pool()
 {
-    static std::allocator<Node> a;
-    static BytesAllocator b;
+    static thread_local std::allocator<Node> a;
+    static thread_local BytesAllocator b;
     return {a, b};
 }
 

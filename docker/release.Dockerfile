@@ -66,13 +66,18 @@ RUN apt-get install -y \
 COPY . src
 WORKDIR src
 
-RUN CC=gcc-13 CXX=g++-13 CMAKE_BUILD_TYPE=RelWithDebInfo CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" ./monad-core/scripts/configure.sh
+ARG GIT_COMMIT_HASH
+RUN test -n "$GIT_COMMIT_HASH"
+ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
 
-RUN ./monad-core/scripts/build.sh
+RUN CC=gcc-13 CXX=g++-13 CMAKE_BUILD_TYPE=RelWithDebInfo CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" ./scripts/configure.sh
+
+RUN ./scripts/build.sh
 
 # security=insecure for tests which use io_uring
-RUN --security=insecure CC=gcc-13 CXX=g++-13 CMAKE_BUILD_TYPE=RelWithDebInfo ./monad-core/scripts/test.sh
+RUN --security=insecure CC=gcc-13 CXX=g++-13 CMAKE_BUILD_TYPE=RelWithDebInfo ./scripts/test.sh
 
 FROM base as runner
-COPY --from=build /src/build/monad-trie/monad_mpt /usr/local/bin/
+COPY --from=build /src/build/libs/db/monad_mpt /usr/local/bin/
 COPY --from=build /src/build/cmd/replay_ethereum /usr/local/bin/
+COPY --from=build /src/build/cmd/monad /usr/local/bin/

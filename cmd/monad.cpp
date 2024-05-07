@@ -127,7 +127,7 @@ int main(int const argc, char const *argv[])
     fs::path block_db{};
     fs::path genesis_file{};
     fs::path trace_log = std::filesystem::absolute("trace");
-    std::optional<fs::path> db_path;
+    std::vector<std::filesystem::path> dbname_paths;
     unsigned nthreads = 4;
     unsigned nfibers = 32;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
@@ -147,7 +147,14 @@ int main(int const argc, char const *argv[])
         sq_thread_cpu,
         "sq_thread_cpu field in io_uring_params, to specify the cpu set "
         "kernel poll thread is bound to in SQPOLL mode");
-    cli.add_option("--db", db_path, "path to db");
+    cli.add_option(
+           "--db",
+           dbname_paths,
+           "a space delimited list of previously created database paths. "
+           "the storage pool may be configured with one or more files/devices. "
+           "if no value is passed, the replay will run with an in-memory "
+           "triedb")
+        ->check(CLI::ExistingPath);
 
     try {
         cli.parse(argc, argv);
@@ -182,7 +189,7 @@ int main(int const argc, char const *argv[])
     auto const before = std::chrono::steady_clock::now();
     std::unique_ptr<mpt::StateMachine> machine;
     mpt::Db db = [&] {
-        if (db_path.has_value()) {
+        if (!dbname_paths.empty()) {
             machine = std::make_unique<OnDiskMachine>();
             return mpt::Db{
                 *machine,
@@ -192,8 +199,8 @@ int main(int const argc, char const *argv[])
                     .rd_buffers = 8192,
                     .wr_buffers = 32,
                     .uring_entries = 128,
-                    .sq_thread_cpu = get_nprocs() - 1,
-                    .dbname_paths = {db_path.value()}}};
+                    .sq_thread_cpu = sq_thread_cpu,
+                    .dbname_paths = dbname_paths}};
         }
         machine = std::make_unique<InMemoryMachine>();
         return mpt::Db{*machine};

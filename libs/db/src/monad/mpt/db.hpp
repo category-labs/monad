@@ -39,10 +39,13 @@ public:
     ~Db();
 
     // May wait on a fiber future
-    Result<byte_string_view> get(NibblesView, uint64_t block_id = 0) const;
-    Result<byte_string_view> get_data(NibblesView, uint64_t block_id = 0) const;
-    Result<NodeCursor> get(NodeCursor, NibblesView) const;
-    Result<byte_string_view> get_data(NodeCursor, NibblesView) const;
+    Result<byte_string_view>
+    get(NibblesView, uint64_t block_id = 0, bool cached = false) const;
+    Result<byte_string_view>
+    get_data(NibblesView, uint64_t block_id = 0, bool cached = false) const;
+    Result<NodeCursor> get(NodeCursor, NibblesView, bool cached = false) const;
+    Result<byte_string_view>
+    get_data(NodeCursor, NibblesView, bool cached = false) const;
 
     void upsert(
         UpdateList, uint64_t block_id = 0, bool enable_compaction = true,

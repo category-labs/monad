@@ -797,9 +797,10 @@ struct FiberFindRequest
     threadsafe_boost_fibers_promise<FindResultType> *promise;
     NodeCursor start{};
     NibblesView key{};
+    bool cached{false};
 };
 
-static_assert(sizeof(FiberFindRequest) == 40);
+static_assert(sizeof(FiberFindRequest) == 48);
 static_assert(alignof(FiberFindRequest) == 8);
 static_assert(std::is_trivially_copyable_v<FiberFindRequest> == true);
 

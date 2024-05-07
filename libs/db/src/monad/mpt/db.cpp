@@ -64,8 +64,9 @@ struct Db::Impl
         UpdateList &&, uint64_t, bool enable_compaction,
         bool can_write_to_fast) = 0;
 
-    virtual FindResultType
-    find_fiber_blocking(NodeCursor const &root, NibblesView const &key) = 0;
+    virtual FindResultType find_fiber_blocking(
+        NodeCursor const &root, NibblesView const &key,
+        bool cached = false) = 0;
     virtual bool is_latest() const = 0;
     virtual void load_latest_fiber_blocking() = 0;
     virtual size_t prefetch_fiber_blocking(uint64_t latest_block_id) = 0;
@@ -131,8 +132,8 @@ struct Db::ROOnDisk final : public Db::Impl
         MONAD_ASSERT(false);
     }
 
-    virtual FindResultType
-    find_fiber_blocking(NodeCursor const &root, NibblesView const &key) override
+    virtual FindResultType find_fiber_blocking(
+        NodeCursor const &root, NibblesView const &key, bool) override
     {
         return find_blocking(aux(), root, key);
     }
@@ -186,8 +187,8 @@ struct Db::InMemory final : public Db::Impl
             std::move(root_), machine_, std::move(list), block_id, false);
     }
 
-    virtual FindResultType
-    find_fiber_blocking(NodeCursor const &root, NibblesView const &key) override
+    virtual FindResultType find_fiber_blocking(
+        NodeCursor const &root, NibblesView const &key, bool) override
     {
         return find_blocking(aux(), root, key);
     }
@@ -330,7 +331,13 @@ struct Db::RWOnDisk final : public Db::Impl
                         // emptied when its future gets destroyed.
                         find_promises.emplace_back(std::move(*req->promise));
                         req->promise = &find_promises.back();
-                        find_notify_fiber_future(aux, inflights, *req);
+                        if (req->cached) {
+                            req->promise->set_value(
+                                find_blocking(aux, req->start, req->key, true));
+                        }
+                        else {
+                            find_notify_fiber_future(aux, inflights, *req);
+                        }
                     }
                     else if (auto *req = std::get_if<2>(&request.front());
                              req != nullptr) {
@@ -459,10 +466,12 @@ struct Db::RWOnDisk final : public Db::Impl
 
     // threadsafe
     virtual FindResultType find_fiber_blocking(
-        NodeCursor const &start, NibblesView const &key) override
+        NodeCursor const &start, NibblesView const &key,
+        bool const cached = false) override
     {
         threadsafe_boost_fibers_promise<FindResultType> promise;
-        FiberFindRequest req{.promise = &promise, .start = start, .key = key};
+        FiberFindRequest req{
+            .promise = &promise, .start = start, .key = key, .cached = cached};
         auto fut = promise.get_future();
         comms_.enqueue(req);
         // promise is racily emptied after this point
@@ -559,15 +568,18 @@ constexpr Result<NodeCursor> generate_db_error(find_result_msg const error)
         return DbError::root_node_is_null_failure;
     case (find_result_msg::node_is_not_leaf_failure):
         return DbError::node_is_not_leaf_failure;
+    case (find_result_msg::need_to_read_from_disk):
+        return DbError::need_to_read_from_disk;
     default:
         return DbError::unknown;
     }
 }
 
-Result<NodeCursor> Db::get(NodeCursor root, NibblesView const key) const
+Result<NodeCursor>
+Db::get(NodeCursor root, NibblesView const key, bool cached) const
 {
     MONAD_ASSERT(impl_);
-    auto const result = impl_->find_fiber_blocking(root, key);
+    auto const result = impl_->find_fiber_blocking(root, key, cached);
     if (result.msg != find_result_msg::success) {
         return generate_db_error(result.msg);
     }
@@ -577,29 +589,34 @@ Result<NodeCursor> Db::get(NodeCursor root, NibblesView const key) const
 }
 
 Result<byte_string_view>
-Db::get(NibblesView const key, uint64_t const block_id) const
+Db::get(NibblesView const key, uint64_t const block_id, bool cached) const
 {
     BOOST_OUTCOME_TRY(
         NodeCursor const block_cursor,
-        get(root(), serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id)));
-    BOOST_OUTCOME_TRY(NodeCursor const leaf_cursor, get(block_cursor, key));
+        get(root(),
+            serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id),
+            cached));
+    BOOST_OUTCOME_TRY(
+        NodeCursor const leaf_cursor, get(block_cursor, key, cached));
     return leaf_cursor.node->value();
 }
 
 Result<byte_string_view>
-Db::get_data(NodeCursor root, NibblesView const key) const
+Db::get_data(NodeCursor root, NibblesView const key, bool cached) const
 {
-    BOOST_OUTCOME_TRY(NodeCursor const node_cursor, get(root, key));
+    BOOST_OUTCOME_TRY(NodeCursor const node_cursor, get(root, key, cached));
     MONAD_DEBUG_ASSERT(node_cursor.is_valid());
     return node_cursor.node->data();
 }
 
 Result<byte_string_view>
-Db::get_data(NibblesView const key, uint64_t const block_id) const
+Db::get_data(NibblesView const key, uint64_t const block_id, bool cached) const
 {
     BOOST_OUTCOME_TRY(
         NodeCursor const block_cursor,
-        get(root(), serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id)));
+        get(root(),
+            serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id),
+            cached));
     return get_data(block_cursor, key);
 }
 

@@ -19,7 +19,8 @@ enum class DbError : uint8_t
     key_mismatch_failure,
     branch_not_exist_failure,
     key_ends_earlier_than_node_failure,
-    node_is_not_leaf_failure
+    node_is_not_leaf_failure,
+    need_to_read_from_disk
 };
 
 MONAD_MPT_NAMESPACE_END
@@ -52,6 +53,9 @@ struct quick_status_code_from_enum<MONAD_MPT_NAMESPACE::DbError>
              {}},
             {MONAD_MPT_NAMESPACE::DbError::node_is_not_leaf_failure,
              "found a non-leaf node",
+             {}},
+            {MONAD_MPT_NAMESPACE::DbError::need_to_read_from_disk,
+             "not found from cached nodes, need to read from disk",
              {}},
             {MONAD_MPT_NAMESPACE::DbError::unknown, "unknown", {}},
         };

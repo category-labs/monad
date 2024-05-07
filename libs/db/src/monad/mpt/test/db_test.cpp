@@ -9,6 +9,7 @@
 #include <monad/core/hex_literal.hpp>
 #include <monad/core/small_prng.hpp>
 #include <monad/mpt/db.hpp>
+#include <monad/mpt/db_error.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/mpt/traverse.hpp>
@@ -240,6 +241,66 @@ TEST(DbTest, load_correct_root_upon_repon_nonempty_db)
         EXPECT_EQ(db.get_latest_block_id().value(), block_id);
         EXPECT_EQ(db.get_earliest_block_id().value(), block_id);
     }
+}
+
+TEST_F(OnDiskDbFixture, db_get_api)
+{
+    // state machine cache the nodes whose path <= 6 nibbles
+    auto const a = 0x000000deadbeef_hex;
+    auto const b = 0x000001deadbeef_hex;
+    auto const va = 0x1111_hex;
+    auto const vb = 0x2222_hex;
+    auto const prefix = 0x00_hex;
+    uint64_t block_number = 0lu;
+    {
+        auto u1 = make_update(a, va);
+        auto u2 = make_update(b, vb);
+        UpdateList ul;
+        ul.push_front(u1);
+        ul.push_front(u2);
+
+        auto u_prefix = Update{
+            .key = prefix,
+            .value = monad::byte_string_view{},
+            .incarnation = false,
+            .next = std::move(ul)};
+        UpdateList ul_prefix;
+        ul_prefix.push_front(u_prefix);
+        // insert to block 0
+        this->db.upsert(std::move(ul_prefix), block_number);
+    }
+
+    // in memory cached get api
+    EXPECT_EQ(
+        db.get(prefix + a, block_number, true).assume_error(),
+        DbError::need_to_read_from_disk);
+
+    // lookup on disk
+    EXPECT_EQ(db.get(prefix + a, block_number).assume_value(), va);
+    EXPECT_EQ(db.get(prefix + b, block_number).assume_value(), vb);
+
+    // verify error messages
+    EXPECT_EQ(
+        db.get(prefix + 0x00_hex, block_number).assume_error(),
+        DbError::key_ends_earlier_than_node_failure);
+
+    EXPECT_EQ(
+        db.get(prefix + 0x000000dead_hex, block_number).assume_error(),
+        DbError::key_ends_earlier_than_node_failure);
+
+    EXPECT_EQ(
+        db.get(prefix + 0x000002_hex, block_number).assume_error(),
+        DbError::branch_not_exist_failure);
+
+    unsigned char const c = 0;
+    Nibbles const find_key = concat(NibblesView{prefix}, c, c, c, c, c);
+    EXPECT_EQ(
+        db.get(find_key, block_number).assume_error(),
+        DbError::node_is_not_leaf_failure);
+
+    EXPECT_EQ(
+        db.get(prefix + 0x000000deedbeaf_hex, block_number).assume_error(),
+        DbError::key_mismatch_failure);
 }
 
 TYPED_TEST(DbTest, simple_with_same_prefix)

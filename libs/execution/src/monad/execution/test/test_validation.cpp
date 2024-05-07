@@ -29,7 +29,7 @@ TEST(Validation, validate_enough_gas)
         .gas_limit = 27'500, // no .to, under the creation amount
         .value = 1};
 
-    auto const result = static_validate_transaction<EVMC_SHANGHAI>(t, 0);
+    auto const result = static_validate_transaction<EVMC_SHANGHAI>(t, 0, 1);
     EXPECT_EQ(result.error(), TransactionError::IntrinsicGasGreaterThanLimit);
 }
 
@@ -113,7 +113,7 @@ TEST(Validation, successful_validation)
     Account const sender_account{
         .balance = 56'939'568'773'815'811, .nonce = 25};
 
-    auto const result1 = static_validate_transaction<EVMC_SHANGHAI>(tx, 0);
+    auto const result1 = static_validate_transaction<EVMC_SHANGHAI>(tx, 0, 1);
     EXPECT_TRUE(!result1.has_error());
 
     auto const result2 = validate_transaction(tx, sender_account);
@@ -133,7 +133,7 @@ TEST(Validation, max_fee_less_than_base)
         .max_priority_fee_per_gas = 100'000'000};
 
     auto const result =
-        static_validate_transaction<EVMC_SHANGHAI>(t, 37'000'000'000);
+        static_validate_transaction<EVMC_SHANGHAI>(t, 37'000'000'000, 1);
     EXPECT_EQ(result.error(), TransactionError::MaxFeeLessThanBase);
 }
 
@@ -150,7 +150,7 @@ TEST(Validation, priority_fee_greater_than_max)
         .max_priority_fee_per_gas = 100'000'000'000};
 
     auto const result =
-        static_validate_transaction<EVMC_SHANGHAI>(t, 29'000'000'000);
+        static_validate_transaction<EVMC_SHANGHAI>(t, 29'000'000'000, 1);
     EXPECT_EQ(result.error(), TransactionError::PriorityFeeGreaterThanMax);
 }
 
@@ -182,7 +182,7 @@ TEST(Validation, init_code_exceed_limit)
     static Transaction const t{
         .max_fee_per_gas = 0, .gas_limit = 1000, .value = 0, .data = long_data};
 
-    auto const result = static_validate_transaction<EVMC_SHANGHAI>(t, 0);
+    auto const result = static_validate_transaction<EVMC_SHANGHAI>(t, 0, 1);
     EXPECT_EQ(result.error(), TransactionError::InitCodeLimitExceeded);
 }
 

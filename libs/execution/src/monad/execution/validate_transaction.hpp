@@ -44,7 +44,8 @@ struct Transaction;
 
 template <evmc_revision rev>
 Result<void> static_validate_transaction(
-    Transaction const &, std::optional<uint256_t> const &base_fee_per_gas);
+    Transaction const &, std::optional<uint256_t> const &base_fee_per_gas,
+    uint256_t const &chain_id);
 
 Result<void> validate_transaction(
     Transaction const &, std::optional<Account> const &sender_account);

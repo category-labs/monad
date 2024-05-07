@@ -134,7 +134,12 @@ public:
             BOOST_OUTCOME_TRY(
                 auto const receipts,
                 execute_block(
-                    rev, block, block_state, block_hash_buffer, priority_pool));
+                    chain,
+                    rev,
+                    block,
+                    block_state,
+                    block_hash_buffer,
+                    priority_pool));
             BOOST_OUTCOME_TRY(validate_header(receipts, block.header));
             block_state.log_debug();
             block_state.commit(receipts);

@@ -1,3 +1,4 @@
+#include <monad/chain/chain.hpp>
 #include <monad/config.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
@@ -171,13 +172,15 @@ Receipt execute_final(
 
 template <evmc_revision rev>
 Result<evmc::Result> execute_impl2(
-    Transaction const &tx, Address const &sender, BlockHeader const &hdr,
-    BlockHashBuffer const &block_hash_buffer, State &state)
+    Chain const &chain, Transaction const &tx, Address const &sender,
+    BlockHeader const &hdr, BlockHashBuffer const &block_hash_buffer,
+    State &state)
 {
     auto const sender_account = state.recent_account(sender);
     BOOST_OUTCOME_TRY(validate_transaction(tx, sender_account));
 
-    auto const tx_context = get_tx_context<rev>(tx, sender, hdr);
+    auto const tx_context =
+        get_tx_context<rev>(tx, sender, hdr, chain.get_chain_id());
     EvmcHost<rev> host{tx_context, block_hash_buffer, state};
 
     return execute_impl_no_validation<rev>(
@@ -191,21 +194,21 @@ Result<evmc::Result> execute_impl2(
 
 template <evmc_revision rev>
 Result<Receipt> execute_impl(
-    [[maybe_unused]] uint64_t const i, Transaction const &tx,
+    Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
     boost::fibers::promise<void> &prev)
 {
-    BOOST_OUTCOME_TRY(
-        static_validate_transaction<rev>(tx, hdr.base_fee_per_gas));
+    BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
+        tx, hdr.base_fee_per_gas, chain.get_chain_id()));
 
     {
         TRACE_TXN_EVENT(StartExecution);
 
         State state{block_state, Incarnation{hdr.number, i + 1}};
 
-        auto result =
-            execute_impl2<rev>(tx, sender, hdr, block_hash_buffer, state);
+        auto result = execute_impl2<rev>(
+            chain, tx, sender, hdr, block_hash_buffer, state);
 
         {
             TRACE_TXN_EVENT(StartStall);
@@ -232,8 +235,8 @@ Result<Receipt> execute_impl(
 
         State state{block_state, Incarnation{hdr.number, i + 1}};
 
-        auto result =
-            execute_impl2<rev>(tx, sender, hdr, block_hash_buffer, state);
+        auto result = execute_impl2<rev>(
+            chain, tx, sender, hdr, block_hash_buffer, state);
 
         MONAD_ASSERT(block_state.can_merge(state));
         if (result.has_error()) {
@@ -256,7 +259,7 @@ EXPLICIT_EVMC_REVISION(execute_impl);
 
 template <evmc_revision rev>
 Result<Receipt> execute(
-    [[maybe_unused]] uint64_t const i, Transaction const &tx,
+    Chain const &chain, uint64_t const i, Transaction const &tx,
     BlockHeader const &hdr, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, boost::fibers::promise<void> &prev)
 {
@@ -269,7 +272,14 @@ Result<Receipt> execute(
     }
 
     return execute_impl<rev>(
-        i, tx, sender.value(), hdr, block_hash_buffer, block_state, prev);
+        chain,
+        i,
+        tx,
+        sender.value(),
+        hdr,
+        block_hash_buffer,
+        block_state,
+        prev);
 }
 
 EXPLICIT_EVMC_REVISION(execute);

@@ -1,4 +1,4 @@
-#include <monad/chain/ethereum_mainnet.hpp>
+#include <monad/chain/monad_devnet.hpp>
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
@@ -33,7 +33,6 @@ quill::Logger *event_tracer = nullptr;
 
 MONAD_NAMESPACE_END
 
-constexpr auto rev = EVMC_SHANGHAI;
 sig_atomic_t volatile stop;
 
 void signal_handler(int)
@@ -83,6 +82,8 @@ void run_monad(
             break;
         }
 
+        auto const rev = chain.get_revision(block.header);
+
         result = static_validate_block(rev, block);
         if (MONAD_UNLIKELY(result.has_error())) {
             LOG_ERROR(
@@ -95,7 +96,7 @@ void run_monad(
         auto const before = std::chrono::steady_clock::now();
         BlockState block_state(db);
         auto const receipts = execute_block(
-            rev, block, block_state, block_hash_buffer, priority_pool);
+            chain, rev, block, block_state, block_hash_buffer, priority_pool);
         if (receipts.has_error()) {
             LOG_ERROR(
                 "block {} tx validation failed: {}",
@@ -214,8 +215,7 @@ int main(int const argc, char const *argv[])
     fiber::PriorityPool priority_pool{nthreads, nfibers};
     auto const start_time = std::chrono::steady_clock::now();
     DbCache db_cache{triedb};
-    // TODO: replace with monad specfiic mainnet
-    EthereumMainnet const chain{};
+    MonadDevnet const chain{};
     run_monad(chain, block_db, db_cache, priority_pool);
     LOG_INFO(
         "finished running, time_elapsed = {}",

@@ -1,3 +1,4 @@
+#include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/transaction.hpp>
@@ -64,7 +65,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     prev.set_value();
 
     auto const result = execute_impl<EVMC_SHANGHAI>(
-        0, tx, from, header, block_hash_buffer, bs, prev);
+        EthereumMainnet{}, 0, tx, from, header, block_hash_buffer, bs, prev);
 
     ASSERT_TRUE(!result.has_error());
 

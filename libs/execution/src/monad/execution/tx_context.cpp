@@ -16,7 +16,8 @@ MONAD_NAMESPACE_BEGIN
 
 template <evmc_revision rev>
 evmc_tx_context get_tx_context(
-    Transaction const &tx, Address const &sender, BlockHeader const &hdr)
+    Transaction const &tx, Address const &sender, BlockHeader const &hdr,
+    uint256_t const &chain_id)
 {
     return {
         .tx_gas_price = to_bytes(to_big_endian(
@@ -29,7 +30,7 @@ evmc_tx_context get_tx_context(
         .block_prev_randao = hdr.difficulty
                                  ? to_bytes(to_big_endian(hdr.difficulty))
                                  : hdr.prev_randao,
-        .chain_id = to_bytes(to_big_endian(uint256_t{1})), // TODO
+        .chain_id = to_bytes(to_big_endian(chain_id)),
         .block_base_fee =
             to_bytes(to_big_endian(hdr.base_fee_per_gas.value_or(0)))};
 }

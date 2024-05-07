@@ -25,7 +25,8 @@ inline constexpr evmc_tx_context EMPTY_TX_CONTEXT{
     .block_base_fee{}};
 
 template <evmc_revision rev>
-evmc_tx_context
-get_tx_context(Transaction const &, Address const &sender, BlockHeader const &);
+evmc_tx_context get_tx_context(
+    Transaction const &, Address const &sender, BlockHeader const &,
+    uint256_t const &chain_id);
 
 MONAD_NAMESPACE_END

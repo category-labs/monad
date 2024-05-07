@@ -1,3 +1,4 @@
+#include <monad/chain/chain.hpp>
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
@@ -65,7 +66,7 @@ transfer_balance_dao(BlockState &block_state, Incarnation const incarnation)
 
 template <evmc_revision rev>
 Result<std::vector<Receipt>> execute_block(
-    Block &block, BlockState &block_state,
+    Chain const &chain, Block &block, BlockState &block_state,
     BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {
@@ -88,7 +89,8 @@ Result<std::vector<Receipt>> execute_block(
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         priority_pool.submit(
             i,
-            [i = i,
+            [&chain = chain,
+             i = i,
              results = results,
              promises = promises,
              &transaction = block.transactions[i],
@@ -96,6 +98,7 @@ Result<std::vector<Receipt>> execute_block(
              &block_hash_buffer = block_hash_buffer,
              &block_state] {
                 results[i] = execute<rev>(
+                    chain,
                     i,
                     transaction,
                     header,
@@ -152,45 +155,45 @@ Result<std::vector<Receipt>> execute_block(
 EXPLICIT_EVMC_REVISION(execute_block);
 
 Result<std::vector<Receipt>> execute_block(
-    evmc_revision const rev, Block &block, BlockState &block_state,
-    BlockHashBuffer const &block_hash_buffer,
+    Chain const &chain, evmc_revision const rev, Block &block,
+    BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {
     switch (rev) {
     case EVMC_SHANGHAI:
         return execute_block<EVMC_SHANGHAI>(
-            block, block_state, block_hash_buffer, priority_pool);
+            chain, block, block_state, block_hash_buffer, priority_pool);
     case EVMC_PARIS:
         return execute_block<EVMC_PARIS>(
-            block, block_state, block_hash_buffer, priority_pool);
+            chain, block, block_state, block_hash_buffer, priority_pool);
     case EVMC_LONDON:
         return execute_block<EVMC_LONDON>(
-            block, block_state, block_hash_buffer, priority_pool);
+            chain, block, block_state, block_hash_buffer, priority_pool);
     case EVMC_BERLIN:
         return execute_block<EVMC_BERLIN>(
-            block, block_state, block_hash_buffer, priority_pool);
+            chain, block, block_state, block_hash_buffer, priority_pool);
     case EVMC_ISTANBUL:
         return execute_block<EVMC_ISTANBUL>(
-            block, block_state, block_hash_buffer, priority_pool);
+            chain, block, block_state, block_hash_buffer, priority_pool);
     case EVMC_PETERSBURG:
     case EVMC_CONSTANTINOPLE:
         return execute_block<EVMC_PETERSBURG>(
-            block, block_state, block_hash_buffer, priority_pool);
+            chain, block, block_state, block_hash_buffer, priority_pool);
     case EVMC_BYZANTIUM:
         return execute_block<EVMC_BYZANTIUM>(
-            block, block_state, block_hash_buffer, priority_pool);
+            chain, block, block_state, block_hash_buffer, priority_pool);
     case EVMC_SPURIOUS_DRAGON:
         return execute_block<EVMC_SPURIOUS_DRAGON>(
-            block, block_state, block_hash_buffer, priority_pool);
+            chain, block, block_state, block_hash_buffer, priority_pool);
     case EVMC_TANGERINE_WHISTLE:
         return execute_block<EVMC_TANGERINE_WHISTLE>(
-            block, block_state, block_hash_buffer, priority_pool);
+            chain, block, block_state, block_hash_buffer, priority_pool);
     case EVMC_HOMESTEAD:
         return execute_block<EVMC_HOMESTEAD>(
-            block, block_state, block_hash_buffer, priority_pool);
+            chain, block, block_state, block_hash_buffer, priority_pool);
     case EVMC_FRONTIER:
         return execute_block<EVMC_FRONTIER>(
-            block, block_state, block_hash_buffer, priority_pool);
+            chain, block, block_state, block_hash_buffer, priority_pool);
     default:
         break;
     }

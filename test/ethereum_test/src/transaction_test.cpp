@@ -35,7 +35,7 @@ MONAD_TEST_NAMESPACE_BEGIN
 template <evmc_revision rev>
 void process_transaction(Transaction const &txn, nlohmann::json const &expected)
 {
-    if (auto const result = static_validate_transaction<rev>(txn, std::nullopt);
+    if (auto const result = static_validate_transaction<rev>(txn, std::nullopt, 1);
         result.has_error()) {
         EXPECT_TRUE(expected.contains("exception"));
     }

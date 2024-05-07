@@ -17,10 +17,11 @@ class BlockState;
 
 template <evmc_revision rev>
 Result<std::vector<Receipt>> execute_block(
-    Block &, BlockState &, BlockHashBuffer const &, fiber::PriorityPool &);
+    Chain const &, Block &, BlockState &, BlockHashBuffer const &,
+    fiber::PriorityPool &);
 
 Result<std::vector<Receipt>> execute_block(
-    evmc_revision, Block &, BlockState &, BlockHashBuffer const &,
-    fiber::PriorityPool &);
+    Chain const &, evmc_revision, Block &, BlockState &,
+    BlockHashBuffer const &, fiber::PriorityPool &);
 
 MONAD_NAMESPACE_END

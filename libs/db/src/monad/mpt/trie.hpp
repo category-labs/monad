@@ -765,7 +765,7 @@ size_t load_all(UpdateAuxImpl &, StateMachine &, NodeCursor);
 
 //////////////////////////////////////////////////////////////////////////////
 
-enum class find_result : uint8_t
+enum class find_result_msg : uint8_t
 {
     unknown,
     success,
@@ -777,7 +777,13 @@ enum class find_result : uint8_t
     need_to_continue_in_io_thread,
     need_to_read_from_disk
 };
-using find_result_type = std::pair<NodeCursor, find_result>;
+
+struct FindResultType
+{
+    NodeCursor cursor;
+    unsigned matched_nibble_len;
+    find_result_msg msg;
+};
 
 using inflight_map_t = unordered_dense_map<
     chunk_offset_t,
@@ -786,22 +792,22 @@ using inflight_map_t = unordered_dense_map<
 
 // The request type to put to the fiber buffered channel for triedb thread
 // to work on
-struct fiber_find_request_t
+struct FiberFindRequest
 {
-    threadsafe_boost_fibers_promise<find_result_type> *promise;
+    threadsafe_boost_fibers_promise<FindResultType> *promise;
     NodeCursor start{};
     NibblesView key{};
 };
 
-static_assert(sizeof(fiber_find_request_t) == 40);
-static_assert(alignof(fiber_find_request_t) == 8);
-static_assert(std::is_trivially_copyable_v<fiber_find_request_t> == true);
+static_assert(sizeof(FiberFindRequest) == 40);
+static_assert(alignof(FiberFindRequest) == 8);
+static_assert(std::is_trivially_copyable_v<FiberFindRequest> == true);
 
 //! \warning this is not threadsafe, should only be called from triedb thread
 // during execution, DO NOT invoke it directly from a transaction fiber, as is
 // not race free.
 void find_notify_fiber_future(
-    UpdateAuxImpl &, inflight_map_t &inflights, fiber_find_request_t);
+    UpdateAuxImpl &, inflight_map_t &inflights, FiberFindRequest);
 
 /*! \brief Copy a leaf node under prefix `src` to prefix `dest`. Invoked before
 committing block updates to triedb. By copy we mean everything other than
@@ -818,7 +824,7 @@ through blocking read.
  \warning Should only invoke it from the triedb owning
 thread, as no synchronization is provided, and user code should make sure no
 other place is modifying trie. */
-find_result_type find_blocking(
+FindResultType find_blocking(
     UpdateAuxImpl const &, NodeCursor, NibblesView key,
     bool in_memory_only = false);
 

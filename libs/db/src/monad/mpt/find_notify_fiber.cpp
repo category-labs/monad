@@ -27,11 +27,6 @@ MONAD_MPT_NAMESPACE_BEGIN
 
 using namespace MONAD_ASYNC_NAMESPACE;
 
-void find_recursive(
-    UpdateAuxImpl &, inflight_map_t &,
-    threadsafe_boost_fibers_promise<find_result_type> &, NodeCursor root,
-    NibblesView key);
-
 namespace
 {
     struct find_receiver
@@ -100,16 +95,16 @@ namespace
 // map
 void find_recursive(
     UpdateAuxImpl &aux, inflight_map_t &inflights,
-    threadsafe_boost_fibers_promise<find_result_type> &promise, NodeCursor root,
-    NibblesView const key)
+    threadsafe_boost_fibers_promise<FindResultType> &promise, NodeCursor root,
+    NibblesView const key, unsigned prefix_index_begin = 0)
 
 {
     if (!root.is_valid()) {
         promise.set_value(
-            {NodeCursor{}, find_result::root_node_is_null_failure});
+            {NodeCursor{}, 0, find_result_msg::root_node_is_null_failure});
         return;
     }
-    unsigned prefix_index = 0;
+    unsigned prefix_index = prefix_index_begin;
     unsigned node_prefix_index = root.prefix_index;
     Node *node = root.node;
     for (; node_prefix_index < node->path_nibble_index_end;
@@ -117,24 +112,27 @@ void find_recursive(
         if (prefix_index >= key.nibble_size()) {
             promise.set_value(
                 {NodeCursor{*node, node_prefix_index},
-                 find_result::key_ends_earlier_than_node_failure});
+                 prefix_index,
+                 find_result_msg::key_ends_earlier_than_node_failure});
             return;
         }
         if (key.get(prefix_index) !=
             get_nibble(node->path_data(), node_prefix_index)) {
             promise.set_value(
                 {NodeCursor{*node, node_prefix_index},
-                 find_result::key_mismatch_failure});
+                 prefix_index,
+                 find_result_msg::key_mismatch_failure});
             return;
         }
     }
     if (prefix_index == key.nibble_size()) {
         promise.set_value(
             {NodeCursor{*node, node_prefix_index},
+             prefix_index,
              node_prefix_index != node->path_nibble_index_end
-                 ? find_result::key_ends_earlier_than_node_failure
-             : node->has_value() ? find_result::success
-                                 : find_result::node_is_not_leaf_failure});
+                 ? find_result_msg::key_ends_earlier_than_node_failure
+             : node->has_value() ? find_result_msg::success
+                                 : find_result_msg::node_is_not_leaf_failure});
         return;
     }
     MONAD_ASSERT(prefix_index < key.nibble_size());
@@ -142,24 +140,29 @@ void find_recursive(
         node->mask & (1u << branch)) {
         MONAD_DEBUG_ASSERT(
             prefix_index < std::numeric_limits<unsigned char>::max());
-        auto const next_key =
-            key.substr(static_cast<unsigned char>(prefix_index) + 1u);
         auto const child_index = node->to_child_index(branch);
         if (node->next(child_index) != nullptr) {
             find_recursive(
-                aux, inflights, promise, *node->next(child_index), next_key);
+                aux,
+                inflights,
+                promise,
+                *node->next(child_index),
+                key,
+                prefix_index + 1u);
             return;
         }
         if (aux.io->owning_thread_id() != gettid()) {
             promise.set_value(
                 {NodeCursor{*node, node_prefix_index},
-                 find_result::need_to_continue_in_io_thread});
+                 prefix_index,
+                 find_result_msg::need_to_continue_in_io_thread});
             return;
         }
         chunk_offset_t const offset = node->fnext(child_index);
-        auto cont = [&aux, &inflights, &promise, next_key](
+        auto cont = [&aux, &inflights, &promise, key, prefix_index](
                         NodeCursor node_cursor) -> result<void> {
-            find_recursive(aux, inflights, promise, node_cursor, next_key);
+            find_recursive(
+                aux, inflights, promise, node_cursor, key, prefix_index + 1u);
             return success();
         };
         if (auto lt = inflights.find(offset); lt != inflights.end()) {
@@ -174,16 +177,16 @@ void find_recursive(
     else {
         promise.set_value(
             {NodeCursor{*node, node_prefix_index},
-             find_result::branch_not_exist_failure});
+             prefix_index,
+             find_result_msg::branch_not_exist_failure});
     }
 }
 
 void find_notify_fiber_future(
-    UpdateAuxImpl &aux, inflight_map_t &inflights,
-    fiber_find_request_t const req)
+    UpdateAuxImpl &aux, inflight_map_t &inflights, FiberFindRequest const req)
 {
     auto g(aux.shared_lock());
-    find_recursive(aux, inflights, *req.promise, req.start, req.key);
+    find_recursive(aux, inflights, *req.promise, req.start, req.key, 0);
 }
 
 MONAD_MPT_NAMESPACE_END

@@ -20,9 +20,9 @@ Node::UniquePtr copy_node(
     UpdateAuxImpl &aux, Node::UniquePtr root, NibblesView const src,
     NibblesView const dest)
 {
-    auto [src_leaf_it, res] = find_blocking(aux, *root, src);
+    auto [src_leaf_it, end_nibble, res] = find_blocking(aux, *root, src);
     auto *src_leaf = src_leaf_it.node;
-    MONAD_ASSERT(res == find_result::success);
+    MONAD_ASSERT(res == find_result_msg::success);
     auto impl = [&]() -> Node::UniquePtr {
         Node *parent = nullptr;
         Node *node = root.get();

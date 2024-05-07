@@ -93,23 +93,28 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
         for (; node_prefix_index < node->path_nibble_index_end;
              ++node_prefix_index, ++prefix_index) {
             if (prefix_index >= key_.nibble_size()) {
-                res_ = {
+                res_ = FindResultType{
                     NodeCursor{*node, node_prefix_index},
-                    find_result::key_ends_earlier_than_node_failure};
+                    prefix_index,
+                    find_result_msg::key_ends_earlier_than_node_failure};
                 io_state->completed(success());
                 return success();
             }
             if (key_.get(prefix_index) !=
                 get_nibble(node->path_data(), node_prefix_index)) {
-                res_ = {
+                res_ = FindResultType{
                     NodeCursor{*node, node_prefix_index},
-                    find_result::key_mismatch_failure};
+                    prefix_index,
+                    find_result_msg::key_mismatch_failure};
                 io_state->completed(success());
                 return success();
             }
         }
         if (prefix_index == key_.nibble_size()) {
-            res_ = {NodeCursor{*node, node_prefix_index}, find_result::success};
+            res_ = FindResultType{
+                NodeCursor{*node, node_prefix_index},
+                prefix_index,
+                find_result_msg::success};
             io_state->completed(success());
             return success();
         }
@@ -126,9 +131,10 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
             }
             if (!tid_checked_) {
                 if (aux_.io->owning_thread_id() != gettid()) {
-                    res_ = {
+                    res_ = FindResultType{
                         NodeCursor{*node, node_prefix_index},
-                        find_result::need_to_continue_in_io_thread};
+                        prefix_index,
+                        find_result_msg::need_to_continue_in_io_thread};
                     return success();
                 }
                 tid_checked_ = true;
@@ -152,9 +158,10 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
             return success();
         }
         else {
-            res_ = {
+            res_ = FindResultType{
                 NodeCursor{*node, node_prefix_index},
-                find_result::branch_not_exist_failure};
+                prefix_index,
+                find_result_msg::branch_not_exist_failure};
             io_state->completed(success());
             return success();
         }

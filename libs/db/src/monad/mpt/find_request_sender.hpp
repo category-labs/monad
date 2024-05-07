@@ -13,7 +13,7 @@ class find_request_sender
     NodeCursor root_;
     NibblesView key_;
     inflight_map_t *const inflights_{nullptr};
-    std::optional<find_result_type> res_;
+    std::optional<FindResultType> res_;
     bool tid_checked_{false};
 
     MONAD_ASYNC_NAMESPACE::result<void> resume_(
@@ -26,7 +26,7 @@ class find_request_sender
     }
 
 public:
-    using result_type = MONAD_ASYNC_NAMESPACE::result<find_result_type>;
+    using result_type = MONAD_ASYNC_NAMESPACE::result<FindResultType>;
 
     constexpr find_request_sender(
         UpdateAuxImpl &aux, NodeCursor root, NibblesView key)

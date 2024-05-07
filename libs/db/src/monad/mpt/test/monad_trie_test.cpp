@@ -130,7 +130,7 @@ Node::UniquePtr batch_upsert_commit(
         1000000000.0;
 
     auto block_num = serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id);
-    auto [state_it, res] = find_blocking(aux, *new_root, block_num);
+    auto [state_it, end_nibble, res] = find_blocking(aux, *new_root, block_num);
     fprintf(stdout, "root->data : ");
     __print_bytes_in_hex(state_it.node->data());
 
@@ -644,12 +644,13 @@ int main(int argc, char *argv[])
                 }
                 root.reset(read_node_blocking(
                     io.storage_pool(), aux.get_root_offset()));
-                auto [it, res] = find_blocking(
+                auto [it, end_nibble, res] = find_blocking(
                     aux,
                     *root,
                     serialize_as_big_endian<BLOCK_NUM_BYTES>(
                         aux.max_version_in_db_history(*root)));
-                MONAD_ASSERT(res == find_result::success);
+                MONAD_ASSERT(res == find_result_msg::success);
+                MONAD_ASSERT(end_nibble == BLOCK_NUM_NIBBLES_LEN);
                 MONAD_ASSERT(it.node->has_value());
                 state_start = it;
                 return ret;
@@ -694,9 +695,11 @@ int main(int argc, char *argv[])
                         find_request_sender::result_type res)
                     {
                         MONAD_ASSERT(res);
-                        auto const [node_cursor, errc] = res.assume_value();
+                        auto const [node_cursor, end_nibble, errc] =
+                            res.assume_value();
                         MONAD_ASSERT(node_cursor.is_valid());
-                        MONAD_ASSERT(errc == monad::mpt::find_result::success);
+                        MONAD_ASSERT(
+                            errc == monad::mpt::find_result_msg::success);
                         ops++;
 
                         if (!done) {
@@ -733,8 +736,10 @@ int main(int argc, char *argv[])
                     state->receiver().sender = &state->sender();
                     state->receiver().set_value(
                         state.get(),
-                        monad::mpt::find_result_type(
-                            fake_begin, monad::mpt::find_result::success));
+                        monad::mpt::FindResultType(
+                            fake_begin,
+                            0,
+                            monad::mpt::find_result_msg::success));
                 }
 
                 auto begin = std::chrono::steady_clock::now();
@@ -780,17 +785,18 @@ int main(int argc, char *argv[])
                             (unsigned char const *)&key_src, 8, key.data());
 
                         monad::threadsafe_boost_fibers_promise<
-                            monad::mpt::find_result_type>
+                            monad::mpt::FindResultType>
                             promise;
-                        fiber_find_request_t const request{
+                        FiberFindRequest const request{
                             .promise = &promise,
                             .start = state_start,
                             .key = key};
                         find_notify_fiber_future(*aux, inflights, request);
-                        auto const [node_cursor, errc] =
+                        auto const [node_cursor, end_nibble, errc] =
                             request.promise->get_future().get();
                         MONAD_ASSERT(node_cursor.is_valid());
-                        MONAD_ASSERT(errc == monad::mpt::find_result::success);
+                        MONAD_ASSERT(
+                            errc == monad::mpt::find_result_msg::success);
                         MONAD_ASSERT(node_cursor.node->has_value());
                         ops++;
                         boost::this_fiber::yield();
@@ -846,7 +852,7 @@ int main(int argc, char *argv[])
 
                 std::atomic<uint64_t> ops{0};
                 std::atomic<int> signal_done{0};
-                concurrent_queue<fiber_find_request_t> req;
+                concurrent_queue<FiberFindRequest> req;
                 auto find = [n_slices, &ops, &signal_done, &req](
                                 NodeCursor const state_start, unsigned n) {
                     monad::small_prng rand(n);
@@ -857,7 +863,7 @@ int main(int argc, char *argv[])
                     // allowed in Boost.Fiber
                     std::array<
                         monad::threadsafe_boost_fibers_promise<
-                            monad::mpt::find_result_type>,
+                            monad::mpt::FindResultType>,
                         4>
                         promises;
                     auto *promise_it = promises.begin();
@@ -869,16 +875,18 @@ int main(int argc, char *argv[])
                         if (promise_it == promises.end()) {
                             promise_it = promises.begin();
                         }
-                        fiber_find_request_t const request{
+                        FiberFindRequest const request{
                             .promise = &*promise_it++,
                             .start = state_start,
                             .key = key};
                         request.promise->reset();
                         req.enqueue(request);
-                        auto const [node_cursor, errc] =
+                        auto const [node_cursor, end_nibble, errc] =
                             request.promise->get_future().get();
                         MONAD_ASSERT(node_cursor.is_valid());
-                        MONAD_ASSERT(errc == monad::mpt::find_result::success);
+                        MONAD_ASSERT(
+                            errc == monad::mpt::find_result_msg::success);
+                        MONAD_ASSERT(end_nibble == 2 * key.size());
                         MONAD_ASSERT(node_cursor.node->has_value());
                         ops.fetch_add(1, std::memory_order_relaxed);
                     }
@@ -889,7 +897,7 @@ int main(int argc, char *argv[])
                 };
                 auto poll = [&signal_done, &req](UpdateAuxImpl *aux) {
                     inflight_map_t inflights;
-                    fiber_find_request_t request;
+                    FiberFindRequest request;
                     for (;;) {
                         boost::this_fiber::yield();
                         if (0 == signal_done.load(std::memory_order_relaxed)) {
@@ -929,7 +937,7 @@ int main(int argc, char *argv[])
                 while (signal_done < int(random_read_benchmark_threads + 1)) {
                     boost::this_fiber::yield();
                     inflight_map_t inflights;
-                    fiber_find_request_t request;
+                    FiberFindRequest request;
                     if (req.try_dequeue(request)) {
                         find_notify_fiber_future(aux, inflights, request);
                     }
@@ -965,10 +973,10 @@ int main(int argc, char *argv[])
                     {
                         UpdateAuxImpl &aux;
                         monad::threadsafe_boost_fibers_promise<
-                            monad::mpt::find_result_type>
+                            monad::mpt::FindResultType>
                             p;
                         monad::byte_string key;
-                        fiber_find_request_t request;
+                        FiberFindRequest request;
                         inflight_map_t &inflights;
 
                         explicit receiver_t(
@@ -982,7 +990,7 @@ int main(int argc, char *argv[])
                         void reset(NodeCursor const state_start)
                         {
                             p.reset();
-                            request = fiber_find_request_t{
+                            request = FiberFindRequest{
                                 .promise = &p,
                                 .start = state_start,
                                 .key = key};
@@ -1023,10 +1031,11 @@ int main(int argc, char *argv[])
 
                         state.reset(std::tuple{}, std::tuple{state_start});
                         state.initiate();
-                        auto const [node_cursor, errc] =
+                        auto const [node_cursor, end_nibble, errc] =
                             state.receiver().p.get_future().get();
                         MONAD_ASSERT(node_cursor.is_valid());
-                        MONAD_ASSERT(errc == monad::mpt::find_result::success);
+                        MONAD_ASSERT(
+                            errc == monad::mpt::find_result_msg::success);
                         MONAD_ASSERT(node_cursor.node->has_value());
                         ops.fetch_add(1, std::memory_order_relaxed);
                     }

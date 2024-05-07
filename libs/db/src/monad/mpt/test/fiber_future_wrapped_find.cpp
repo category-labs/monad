@@ -29,14 +29,15 @@ namespace
         UpdateAuxImpl *aux, inflight_map_t *const inflights, Node *const root,
         monad::byte_string_view const key, monad::byte_string_view const value)
     {
-        monad::threadsafe_boost_fibers_promise<monad::mpt::find_result_type>
+        monad::threadsafe_boost_fibers_promise<monad::mpt::FindResultType>
             promise;
-        fiber_find_request_t const request{
+        FiberFindRequest const request{
             .promise = &promise, .start = NodeCursor{*root}, .key = key};
         find_notify_fiber_future(*aux, *inflights, request);
-        auto const [it, errc] = request.promise->get_future().get();
+        auto const [it, end_nibble, errc] = request.promise->get_future().get();
         ASSERT_TRUE(it.is_valid());
-        EXPECT_EQ(errc, monad::mpt::find_result::success);
+        EXPECT_EQ(errc, monad::mpt::find_result_msg::success);
+        EXPECT_EQ(end_nibble, monad::mpt::NibblesView{key}.nibble_size());
         EXPECT_EQ(it.node->value(), value);
     };
 

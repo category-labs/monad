@@ -10,13 +10,13 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-find_result_type find_blocking(
+FindResultType find_blocking(
     UpdateAuxImpl const &aux, NodeCursor root, NibblesView const key,
     bool in_memory_only)
 {
     auto g(aux.shared_lock());
     if (!root.is_valid()) {
-        return {NodeCursor{}, find_result::root_node_is_null_failure};
+        return {NodeCursor{}, 0, find_result_msg::root_node_is_null_failure};
     }
     Node *node = root.node;
     unsigned node_prefix_index = root.prefix_index;
@@ -27,7 +27,8 @@ find_result_type find_blocking(
             if (!(node->mask & (1u << nibble))) {
                 return {
                     NodeCursor{*node, node_prefix_index},
-                    find_result::branch_not_exist_failure};
+                    prefix_index,
+                    find_result_msg::branch_not_exist_failure};
             }
             // go to node's matched child
             if (!node->next(node->to_child_index(nibble))) {
@@ -35,7 +36,8 @@ find_result_type find_blocking(
                 if (in_memory_only) {
                     return {
                         NodeCursor{*node, node_prefix_index},
-                        find_result::need_to_read_from_disk};
+                        prefix_index,
+                        find_result_msg::need_to_read_from_disk};
                 }
 
                 auto g2(g.upgrade());
@@ -59,7 +61,8 @@ find_result_type find_blocking(
             // return the last matched node and first mismatch prefix index
             return {
                 NodeCursor{*node, node_prefix_index},
-                find_result::key_mismatch_failure};
+                prefix_index,
+                find_result_msg::key_mismatch_failure};
         }
         // nibble is matched
         ++prefix_index;
@@ -67,11 +70,12 @@ find_result_type find_blocking(
     }
     return {
         NodeCursor{*node, node_prefix_index},
-        /* prefix key exists but no leaf ends at `key`*/
+        prefix_index,
         node_prefix_index != node->path_nibble_index_end
-            ? find_result::key_ends_earlier_than_node_failure
-        : node->has_value() ? find_result::success
-                            : find_result::node_is_not_leaf_failure};
+            /* prefix key exists but no leaf ends at `key`*/
+            ? find_result_msg::key_ends_earlier_than_node_failure
+            : node->has_value() ? find_result_msg::success
+                                : find_result_msg::node_is_not_leaf_failure};
 }
 
 Nibbles find_min_key_blocking(UpdateAuxImpl const &aux, Node &root)

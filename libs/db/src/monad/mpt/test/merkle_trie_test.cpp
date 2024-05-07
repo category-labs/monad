@@ -227,30 +227,46 @@ TYPED_TEST(TrieTest, insert_unrelated_leaves_then_read)
         this->root_hash(),
         0xd339cf4033aca65996859d35da4612b642664cc40734dbdd40738aa47f1e3e44_hex);
 
-    auto [leaf_it, res] = find_blocking(this->aux, *this->root, kv[0].first);
-    EXPECT_EQ(res, monad::mpt::find_result::success);
-    EXPECT_EQ(
-        (monad::byte_string_view{
-            leaf_it.node->value_data(), leaf_it.node->value_len}),
-        kv[0].second);
-    std::tie(leaf_it, res) = find_blocking(this->aux, *this->root, kv[1].first);
-    EXPECT_EQ(res, monad::mpt::find_result::success);
-    EXPECT_EQ(
-        (monad::byte_string_view{
-            leaf_it.node->value_data(), leaf_it.node->value_len}),
-        kv[1].second);
-    std::tie(leaf_it, res) = find_blocking(this->aux, *this->root, kv[2].first);
-    EXPECT_EQ(res, monad::mpt::find_result::success);
-    EXPECT_EQ(
-        (monad::byte_string_view{
-            leaf_it.node->value_data(), leaf_it.node->value_len}),
-        kv[2].second);
-    std::tie(leaf_it, res) = find_blocking(this->aux, *this->root, kv[3].first);
-    EXPECT_EQ(res, monad::mpt::find_result::success);
-    EXPECT_EQ(
-        (monad::byte_string_view{
-            leaf_it.node->value_data(), leaf_it.node->value_len}),
-        kv[3].second);
+    {
+        auto [leaf_it, end_nibble, res] =
+            find_blocking(this->aux, *this->root, kv[0].first);
+        EXPECT_EQ(res, monad::mpt::find_result_msg::success);
+        EXPECT_EQ(end_nibble, NibblesView{kv[0].first}.nibble_size());
+        EXPECT_EQ(
+            (monad::byte_string_view{
+                leaf_it.node->value_data(), leaf_it.node->value_len}),
+            kv[0].second);
+    }
+    {
+        auto [leaf_it, end_nibble, res] =
+            find_blocking(this->aux, *this->root, kv[1].first);
+        EXPECT_EQ(res, monad::mpt::find_result_msg::success);
+        EXPECT_EQ(end_nibble, NibblesView{kv[1].first}.nibble_size());
+        EXPECT_EQ(
+            (monad::byte_string_view{
+                leaf_it.node->value_data(), leaf_it.node->value_len}),
+            kv[1].second);
+    }
+    {
+        auto [leaf_it, end_nibble, res] =
+            find_blocking(this->aux, *this->root, kv[2].first);
+        EXPECT_EQ(res, monad::mpt::find_result_msg::success);
+        EXPECT_EQ(end_nibble, NibblesView{kv[2].first}.nibble_size());
+        EXPECT_EQ(
+            (monad::byte_string_view{
+                leaf_it.node->value_data(), leaf_it.node->value_len}),
+            kv[2].second);
+    }
+    {
+        auto [leaf_it, end_nibble, res] =
+            find_blocking(this->aux, *this->root, kv[3].first);
+        EXPECT_EQ(res, monad::mpt::find_result_msg::success);
+        EXPECT_EQ(end_nibble, NibblesView{kv[3].first}.nibble_size());
+        EXPECT_EQ(
+            (monad::byte_string_view{
+                leaf_it.node->value_data(), leaf_it.node->value_len}),
+            kv[3].second);
+    }
 }
 
 TYPED_TEST(TrieTest, inserts_shorter_leaf_data)
@@ -659,8 +675,10 @@ TYPED_TEST(TrieTest, nested_updates_block_no)
         *this->sm,
         {},
         make_update(block_num, {}, false, std::move(state_changes)));
-    auto [state_it, res] = find_blocking(this->aux, *this->root, block_num);
-    EXPECT_EQ(res, monad::mpt::find_result::success);
+    auto [state_it, end_nibble, res] =
+        find_blocking(this->aux, *this->root, block_num);
+    EXPECT_EQ(res, monad::mpt::find_result_msg::success);
+    EXPECT_EQ(end_nibble, NibblesView{block_num}.nibble_size());
     EXPECT_EQ(
         state_it.node->data(),
         0x9050b05948c3aab28121ad71b3298a887cdadc55674a5f234c34aa277fbd0325_hex);
@@ -675,8 +693,10 @@ TYPED_TEST(TrieTest, nested_updates_block_no)
             std::move(this->root),
             make_update(
                 block_num, leaf_value, false, std::move(state_changes)));
-        auto [state_it, res] = find_blocking(this->aux, *this->root, block_num);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
+        auto [state_it, end_nibble, res] =
+            find_blocking(this->aux, *this->root, block_num);
+        EXPECT_EQ(end_nibble, NibblesView{block_num}.nibble_size());
+        EXPECT_EQ(res, monad::mpt::find_result_msg::success);
         EXPECT_EQ(
             state_it.node->value(),
             leaf_value); // state_root leaf has updated
@@ -693,17 +713,19 @@ TYPED_TEST(TrieTest, nested_updates_block_no)
         std::move(this->root),
         make_update(block_num2, monad::byte_string_view{}));
     {
-        auto [state_it, res] =
+        auto [state_it, end_nibble, res] =
             find_blocking(this->aux, *this->root, block_num2);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
+        EXPECT_EQ(res, monad::mpt::find_result_msg::success);
+        EXPECT_EQ(end_nibble, NibblesView{block_num2}.nibble_size());
         EXPECT_EQ(
             state_it.node->data(),
             0x9050b05948c3aab28121ad71b3298a887cdadc55674a5f234c34aa277fbd0325_hex);
     }
     {
-        auto [old_state_it, res] =
+        auto [old_state_it, end_nibble, res] =
             find_blocking(this->aux, *this->root, block_num);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
+        EXPECT_EQ(res, monad::mpt::find_result_msg::success);
+        EXPECT_EQ(end_nibble, NibblesView{block_num}.nibble_size());
         EXPECT_EQ(old_state_it.node->next(0), nullptr);
         EXPECT_EQ(
             old_state_it.node->data(),
@@ -719,18 +741,20 @@ TYPED_TEST(TrieTest, nested_updates_block_no)
         std::move(this->root),
         make_update(block_num3, 0xdeadbeef03_hex));
     {
-        auto [state_it, res] =
+        auto [state_it, end_nibble, res] =
             find_blocking(this->aux, *this->root, block_num3);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
+        EXPECT_EQ(res, monad::mpt::find_result_msg::success);
+        EXPECT_EQ(end_nibble, NibblesView{block_num3}.nibble_size());
         EXPECT_EQ(
             state_it.node->data(),
             0x9050b05948c3aab28121ad71b3298a887cdadc55674a5f234c34aa277fbd0325_hex);
         EXPECT_EQ(state_it.node->value(), 0xdeadbeef03_hex);
     }
     {
-        auto [state_it, res] =
+        auto [state_it, end_nibble, res] =
             find_blocking(this->aux, *this->root, block_num2);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
+        EXPECT_EQ(res, monad::mpt::find_result_msg::success);
+        EXPECT_EQ(end_nibble, NibblesView{block_num2}.nibble_size());
         EXPECT_EQ(
             state_it.node->data(),
             0x9050b05948c3aab28121ad71b3298a887cdadc55674a5f234c34aa277fbd0325_hex);
@@ -743,9 +767,10 @@ TYPED_TEST(TrieTest, nested_updates_block_no)
     this->root =
         copy_node(this->aux, std::move(this->root), block_num2, block_num3);
     {
-        auto [state_it, res] =
+        auto [state_it, end_nibble, res] =
             find_blocking(this->aux, *this->root, block_num3);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
+        EXPECT_EQ(res, monad::mpt::find_result_msg::success);
+        EXPECT_EQ(end_nibble, NibblesView{block_num3}.nibble_size());
         EXPECT_EQ(
             state_it.node->data(),
             0x9050b05948c3aab28121ad71b3298a887cdadc55674a5f234c34aa277fbd0325_hex);
@@ -836,9 +861,11 @@ TYPED_TEST(TrieTest, aux_do_update_fixed_history_len)
             std::move(ul_prefix),
             block_id,
             true /*compaction*/);
-        auto [state_it, res] =
-            find_blocking(this->aux, *this->root, block_num + prefix);
-        EXPECT_EQ(res, find_result::success);
+        auto find_key = block_num + prefix;
+        auto [state_it, end_nibble, res] =
+            find_blocking(this->aux, *this->root, NibblesView{find_key});
+        EXPECT_EQ(res, find_result_msg::success);
+        EXPECT_EQ(end_nibble, NibblesView{find_key}.nibble_size());
         EXPECT_EQ(
             state_it.node->data(),
             0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
@@ -926,14 +953,18 @@ TYPED_TEST(TrieTest, variable_length_trie)
 
     // find
     {
-        auto [node0, res] = find_blocking(this->aux, *this->root, key0);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
+        auto [node0, end_nibble, res] =
+            find_blocking(this->aux, *this->root, key0);
+        EXPECT_EQ(res, monad::mpt::find_result_msg::success);
+        EXPECT_EQ(end_nibble, NibblesView{key0}.nibble_size());
         EXPECT_EQ(node0.node->value(), long_value);
     }
 
     {
-        auto [node_long, res] = find_blocking(this->aux, *this->root, keylong);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
+        auto [node_long, end_nibble, res] =
+            find_blocking(this->aux, *this->root, keylong);
+        EXPECT_EQ(res, monad::mpt::find_result_msg::success);
+        EXPECT_EQ(end_nibble, NibblesView{keylong}.nibble_size());
         EXPECT_EQ(node_long.node->value(), long_value);
     }
 }
@@ -975,25 +1006,30 @@ TYPED_TEST(TrieTest, variable_length_trie_with_prefix)
             false,
             std::move(updates)));
 
-    auto [root_it, res] =
+    auto [root_it, end_nibble, res] =
         find_blocking(this->aux, NodeCursor{*this->root}, block_number_prefix);
-    EXPECT_EQ(res, find_result::success);
+    EXPECT_EQ(res, find_result_msg::success);
+    EXPECT_EQ(end_nibble, BLOCK_NUM_NIBBLES_LEN);
     EXPECT_EQ(
         root_it.node->data(),
         0x1a904a5579e7f301af64aeebbce5189b9df1e534fd2a4b642e604e92834a7611_hex);
 
     // find
     {
-        auto [node0, res] =
-            find_blocking(this->aux, *this->root, block_number_prefix + key0);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
+        auto const find_key = block_number_prefix + key0;
+        auto [node0, end_nibble, res] =
+            find_blocking(this->aux, *this->root, find_key);
+        EXPECT_EQ(res, monad::mpt::find_result_msg::success);
+        EXPECT_EQ(end_nibble, NibblesView{find_key}.nibble_size());
         EXPECT_EQ(node0.node->value(), value);
     }
 
     {
-        auto [node_long, res] = find_blocking(
-            this->aux, *this->root, block_number_prefix + keylong);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
+        auto const find_key = block_number_prefix + keylong;
+        auto [node_long, end_nibble, res] =
+            find_blocking(this->aux, *this->root, find_key);
+        EXPECT_EQ(res, monad::mpt::find_result_msg::success);
+        EXPECT_EQ(end_nibble, NibblesView{find_key}.nibble_size());
         EXPECT_EQ(node_long.node->value(), value);
     }
 }
@@ -1022,9 +1058,10 @@ TYPED_TEST(TrieTest, single_value_variable_length_trie_with_prefix)
             monad::byte_string_view{},
             false,
             std::move(updates)));
-    auto [root_it, res] =
+    auto [root_it, end_nibble, res] =
         find_blocking(this->aux, NodeCursor{*this->root}, block_number_prefix);
-    EXPECT_EQ(res, find_result::success);
+    EXPECT_EQ(res, find_result_msg::success);
+    EXPECT_EQ(end_nibble, BLOCK_NUM_NIBBLES_LEN);
     EXPECT_EQ(
         root_it.node->data(),
         0x82a7b59bf8abe584aef31b580efaadbf19d0eba0e4ea8986e23db14ba9be6cb2_hex);

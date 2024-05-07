@@ -213,7 +213,7 @@ struct cli_tool_fixture
 
                 for (auto &key : this->state()->keys) {
                     auto ret = monad::mpt::find_blocking(aux, root, key.first);
-                    EXPECT_EQ(ret.second, monad::mpt::find_result::success);
+                    EXPECT_EQ(ret.msg, monad::mpt::find_result_msg::success);
                 }
             }).get();
         }
@@ -307,7 +307,8 @@ struct cli_tool_fixture
                     for (auto &key : this->state()->keys) {
                         auto ret =
                             monad::mpt::find_blocking(aux, root, key.first);
-                        EXPECT_EQ(ret.second, monad::mpt::find_result::success);
+                        EXPECT_EQ(
+                            ret.msg, monad::mpt::find_result_msg::success);
                     }
                 }).get();
             }

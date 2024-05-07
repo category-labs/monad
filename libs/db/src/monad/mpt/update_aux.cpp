@@ -526,8 +526,10 @@ Node::UniquePtr UpdateAuxImpl::do_update(
             }
             MONAD_ASSERT(!erase.empty());
             // set chunk count that can be erased
-            auto [erase_root_it, res] =
+            auto [erase_root_it, end_nibble, res] =
                 find_blocking(*this, *prev_root, version_to_erase.back());
+            MONAD_ASSERT(res == find_result_msg::success);
+            MONAD_DEBUG_ASSERT(end_nibble == BLOCK_NUM_NIBBLES_LEN);
             auto [min_offset_fast, min_offset_slow] =
                 calc_min_offsets(*erase_root_it.node);
             if (min_offset_fast == INVALID_COMPACT_VIRTUAL_OFFSET) {

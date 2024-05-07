@@ -127,7 +127,9 @@ add_library(
   "src/monad/state3/state.hpp"
   "src/monad/state3/version_stack.hpp"
   # types
-  "src/monad/types/incarnation.hpp")
+  "src/monad/types/incarnation.hpp"
+  # types/fmt
+  "src/monad/types/fmt/incarnation_fmt.hpp")
 
 target_include_directories(
   monad_execution

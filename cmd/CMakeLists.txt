@@ -19,3 +19,6 @@ else()
 endif()
 
 target_compile_definitions(monad PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
+add_executable(interactive_cli interactive_cli_main.cpp)
+monad_compile_options(interactive_cli)
+target_link_libraries(interactive_cli PUBLIC monad_execution CLI11::CLI11)

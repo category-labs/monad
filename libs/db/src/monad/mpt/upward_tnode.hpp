@@ -50,8 +50,7 @@ struct UpwardTreeNode
         return !parent;
     }
 
-    using allocator_type =
-        allocators::boost_unordered_pool_allocator<UpwardTreeNode>;
+    using allocator_type = allocators::malloc_free_allocator<UpwardTreeNode>;
 
     static allocator_type &pool()
     {
@@ -142,8 +141,7 @@ struct CompactTNode
         return !parent;
     }
 
-    using allocator_type =
-        allocators::boost_unordered_pool_allocator<CompactTNode>;
+    using allocator_type = allocators::malloc_free_allocator<CompactTNode>;
 
     static allocator_type &pool()
     {

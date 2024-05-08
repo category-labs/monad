@@ -11,6 +11,7 @@
 #include <monad/rlp/encode.hpp>
 
 #include <cstdint>
+#include <optional>
 #include <span>
 
 MONAD_MPT_NAMESPACE_BEGIN
@@ -128,16 +129,7 @@ public:
         256 * 1024 * 1024; // 256mb, same as storage chunk size
     static constexpr size_t max_size =
         max_disk_size + max_number_of_children * KECCAK256_SIZE;
-#if !MONAD_CORE_ALLOCATORS_DISABLE_BOOST_OBJECT_POOL
-    static constexpr size_t allocator_divisor = 16;
-    using BytesAllocator = allocators::array_of_boost_pools_allocator<
-        round_up<size_t>(size_of_node, allocator_divisor),
-        round_up<size_t>(max_size_for_boost_pools, allocator_divisor),
-        allocator_divisor>;
-    static_assert(BytesAllocator::allocation_upper_bound == 66544);
-#else
     using BytesAllocator = allocators::malloc_free_allocator<std::byte>;
-#endif
 
     static allocators::detail::type_raw_alloc_pair<
         std::allocator<Node>, BytesAllocator>

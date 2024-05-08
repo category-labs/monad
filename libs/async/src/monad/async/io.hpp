@@ -415,14 +415,8 @@ private:
         std::byte v[MAX_CONNECTED_OPERATION_SIZE];
     };
 
-#if !MONAD_CORE_ALLOCATORS_DISABLE_BOOST_OBJECT_POOL
-    using connected_operation_storage_allocator_type_ =
-        allocators::boost_unordered_pool_allocator<
-            connected_operation_storage_>;
-#else
     using connected_operation_storage_allocator_type_ =
         allocators::malloc_free_allocator<connected_operation_storage_>;
-#endif
 
     connected_operation_storage_allocator_type_
         connected_operation_storage_pool_;
@@ -671,11 +665,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-#ifdef MONAD_CORE_ALLOCATORS_DISABLE_BOOST_OBJECT_POOL
 static_assert(sizeof(AsyncIO) == 224);
-#else
-static_assert(sizeof(AsyncIO) == 272);
-#endif
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

@@ -22,7 +22,7 @@
 #include <test_resource_data.h>
 
 #include <bit>
-#include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <optional>
@@ -188,7 +188,10 @@ TYPED_TEST_SUITE(DBTest, DBTypes);
 
 TEST(DBTest, read_only)
 {
-    auto const name = std::tmpnam(nullptr);
+    auto const name =
+        std::filesystem::temp_directory_path() /
+        (::testing::UnitTest::GetInstance()->current_test_info()->name() +
+         std::to_string(rand()));
     {
         TrieDb rw(mpt::OnDiskDbConfig{.dbname_paths = {name}});
 

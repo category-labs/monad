@@ -18,23 +18,6 @@ MONAD_MPT_NAMESPACE_BEGIN
 
 struct Compute;
 class NibblesView;
-class Node;
-
-static constexpr size_t size_of_node = 16;
-
-constexpr size_t calculate_node_size(
-    size_t const number_of_children, size_t const total_child_data_size,
-    size_t const value_size, size_t const path_size,
-    size_t const data_size) noexcept
-{
-    MONAD_DEBUG_ASSERT(number_of_children || total_child_data_size == 0);
-    return size_of_node +
-           (sizeof(uint16_t) // child data offset
-            + sizeof(compact_virtual_chunk_offset_t) * 2 // min truncated offset
-            + sizeof(chunk_offset_t) + sizeof(Node *)) *
-               number_of_children +
-           total_child_data_size + value_size + path_size + data_size;
-}
 
 struct node_disk_pages_spare_15
 {
@@ -285,7 +268,6 @@ public:
 };
 
 static_assert(std::is_standard_layout_v<Node>, "required by offsetof");
-static_assert(sizeof(Node) == size_of_node);
 static_assert(sizeof(Node) == 16);
 static_assert(alignof(Node) == 4);
 
@@ -313,6 +295,20 @@ struct ChildData
 
 static_assert(sizeof(ChildData) == 64);
 static_assert(alignof(ChildData) == 8);
+
+constexpr size_t calculate_node_size(
+    size_t const number_of_children, size_t const total_child_data_size,
+    size_t const value_size, size_t const path_size,
+    size_t const data_size) noexcept
+{
+    MONAD_DEBUG_ASSERT(number_of_children || total_child_data_size == 0);
+    return sizeof(Node) +
+           (sizeof(uint16_t) // child data offset
+            + sizeof(compact_virtual_chunk_offset_t) * 2 // min truncated offset
+            + sizeof(chunk_offset_t) + sizeof(Node *)) *
+               number_of_children +
+           total_child_data_size + value_size + path_size + data_size;
+}
 
 Node::UniquePtr
 make_node(Node &from, NibblesView path, std::optional<byte_string_view> value);

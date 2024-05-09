@@ -278,7 +278,7 @@ struct VarLenMerkleCompute : Compute
         // Ethereum extension: there is non-empty path
         // rlp(encoded path, inline branch hash)
         if (node->has_path()) { // extension node, rlp encode with path too
-            MONAD_ASSERT(node->data_len);
+            MONAD_ASSERT(node->bitpacked.data_len);
             return encode_two_pieces(
                 buffer,
                 node->path_nibble_view(),
@@ -364,8 +364,8 @@ private:
                    state.buffer,
                    concat(single_child.branch, node->path_nibble_view()),
                    /* second: branch hash or leaf value */
-                   node->mask ? (node->data_len ? node->data()
-                                                : [&] -> byte_string {
+                   node->mask ? (node->bitpacked.data_len ? node->data()
+                                                          : [&] -> byte_string {
                        MONAD_ASSERT(!node->has_path());
                        unsigned char branch_hash[KECCAK256_SIZE];
                        return {branch_hash, compute_branch(branch_hash, node)};

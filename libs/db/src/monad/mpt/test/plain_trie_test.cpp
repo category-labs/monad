@@ -86,7 +86,7 @@ TYPED_TEST(PlainTrieTest, var_length)
 
     EXPECT_EQ(this->root->mask, 0b11);
     EXPECT_EQ(this->root->value_len, 0);
-    EXPECT_EQ(this->root->data_len, 0);
+    EXPECT_EQ(this->root->bitpacked.data_len, 0);
     EXPECT_EQ(this->root->path_bytes(), 0);
     Node *node0 = this->root->next(0);
     Node *node1 = this->root->next(1);
@@ -263,11 +263,11 @@ TYPED_TEST(PlainTrieTest, mismatch)
         (NibblesView{0, 2, kv[0].first.data()}));
     Node *node3 = this->root->next(0);
     EXPECT_EQ(node3->mask, 1u << 4 | 1u << 0xa);
-    EXPECT_EQ(node3->data_len, 0);
+    EXPECT_EQ(node3->bitpacked.data_len, 0);
     EXPECT_EQ(node3->path_bytes(), 0);
     Node *node34 = node3->next(0);
     EXPECT_EQ(node34->mask, 0b11100000);
-    EXPECT_EQ(node34->data_len, 0);
+    EXPECT_EQ(node34->bitpacked.data_len, 0);
     EXPECT_EQ(node34->path_bytes(), 0);
     EXPECT_EQ(node34->next(0)->value_len, 2);
     EXPECT_EQ(node34->next(0)->value(), kv[0].second);

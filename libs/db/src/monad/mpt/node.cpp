@@ -53,21 +53,20 @@ Node::Node(
     std::optional<byte_string_view> value, size_t const data_size,
     NibblesView const path, int64_t const version)
     : mask(mask)
-    , data_len(static_cast<decltype(data_len)>(data_size))
     , path_nibble_index_end(path.end_nibble_)
     , value_len(static_cast<decltype(value_len)>(
           value.transform(&byte_string_view::size).value_or(0)))
     , version(version)
 {
     MONAD_DEBUG_ASSERT(
-        data_size <= std::numeric_limits<decltype(data_len)>::max());
-    MONAD_DEBUG_ASSERT(
         value.transform(&byte_string_view::size).value_or(0) <=
         std::numeric_limits<decltype(value_len)>::max());
     MONAD_DEBUG_ASSERT(path.begin_nibble_ <= path.end_nibble_);
-
     bitpacked.path_nibble_index_start = path.begin_nibble_;
     bitpacked.has_value = value.has_value();
+
+    MONAD_DEBUG_ASSERT(data_size <= Node::max_data_len);
+    bitpacked.data_len = static_cast<uint8_t>(data_size & Node::max_data_len);
 
     if (path.data_size()) {
         MONAD_DEBUG_ASSERT(path.data_);
@@ -287,17 +286,17 @@ unsigned char const *Node::data_data() const noexcept
 
 byte_string_view Node::data() const noexcept
 {
-    return {data_data(), data_len};
+    return {data_data(), bitpacked.data_len};
 }
 
 unsigned char *Node::child_data() noexcept
 {
-    return data_data() + data_len;
+    return data_data() + bitpacked.data_len;
 }
 
 unsigned char const *Node::child_data() const noexcept
 {
-    return data_data() + data_len;
+    return data_data() + bitpacked.data_len;
 }
 
 byte_string_view Node::child_data_view(unsigned const index) noexcept

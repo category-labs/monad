@@ -108,6 +108,7 @@ class Node
 public:
     static constexpr size_t max_size_for_boost_pools = 66544;
     static constexpr size_t max_number_of_children = 16;
+    static constexpr uint8_t max_data_len = (1U << 6) - 1;
     static constexpr size_t max_disk_size =
         256 * 1024 * 1024; // 256mb, same as storage chunk size
     static constexpr size_t max_size =
@@ -123,7 +124,6 @@ public:
                   std::allocator<Node>, BytesAllocator, &Node::pool,
                   &Node::get_deallocate_count>>;
 
-public:
     /* 16-bit mask for children */
     uint16_t mask{0};
 
@@ -132,11 +132,12 @@ public:
         /* does node have a value, value_len is not necessarily positive */
         bool has_value : 1 {false};
         bool path_nibble_index_start : 1 {false};
+        /* size (in byte) of intermediate cache for branch hash */
+        uint8_t data_len : 6 {0};
     } bitpacked{0};
 
     static_assert(sizeof(bitpacked) == 1);
-    /* size (in byte) of intermediate cache for branch hash */
-    uint8_t data_len{0};
+
     uint8_t path_nibble_index_end{0};
     /* node on disk size */
     uint32_t disk_size{0};

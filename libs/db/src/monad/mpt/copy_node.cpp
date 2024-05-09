@@ -57,7 +57,8 @@ Node::UniquePtr copy_node(
                             *src_leaf,
                             dest.substr(
                                 static_cast<unsigned char>(prefix_index) + 1u),
-                            src_leaf->value())
+                            src_leaf->value(),
+                            aux.current_version)
                             .release();
                     // create a node, with no leaf data
                     uint16_t const mask =
@@ -90,7 +91,8 @@ Node::UniquePtr copy_node(
                                children,
                                node->path_nibble_view(),
                                std::nullopt,
-                               0)
+                               0,
+                               aux.current_version)
                         .release();
                 }();
                 break;
@@ -112,7 +114,8 @@ Node::UniquePtr copy_node(
                         *src_leaf,
                         dest.substr(
                             static_cast<unsigned char>(prefix_index) + 1u),
-                        src_leaf->value())
+                        src_leaf->value(),
+                        aux.current_version)
                         .release();
                 Node *node_latter_half =
                     make_node(
@@ -123,7 +126,8 @@ Node::UniquePtr copy_node(
                             node->path_data()},
                         node->has_value()
                             ? std::optional<byte_string_view>{node->value()}
-                            : std::nullopt)
+                            : std::nullopt,
+                        aux.current_version)
                         .release();
                 MONAD_DEBUG_ASSERT(node_latter_half);
                 uint16_t const mask =
@@ -154,7 +158,8 @@ Node::UniquePtr copy_node(
                                node_prefix_index,
                                node->path_data()},
                            std::nullopt,
-                           0)
+                           0,
+                           aux.current_version)
                     .release();
             }();
             break;
@@ -165,10 +170,12 @@ Node::UniquePtr copy_node(
             // children as src_leaf, then deallocate the existing one
             MONAD_DEBUG_ASSERT(new_node == nullptr);
             MONAD_DEBUG_ASSERT(node != root.get());
-            new_node =
-                make_node(
-                    *src_leaf, node->path_nibble_view(), src_leaf->value())
-                    .release();
+            new_node = make_node(
+                           *src_leaf,
+                           node->path_nibble_view(),
+                           src_leaf->value(),
+                           aux.current_version)
+                           .release();
             // clear parent's children other than new_node
             if (aux.is_on_disk()) {
                 for (unsigned j = 0; j < parent->number_of_children(); ++j) {

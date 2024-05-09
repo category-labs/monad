@@ -51,12 +51,13 @@ Node::Node(prevent_public_construction_tag) {}
 Node::Node(
     prevent_public_construction_tag, uint16_t const mask,
     std::optional<byte_string_view> value, size_t const data_size,
-    NibblesView const path)
+    NibblesView const path, int64_t const version)
     : mask(mask)
     , data_len(static_cast<decltype(data_len)>(data_size))
     , path_nibble_index_end(path.end_nibble_)
     , value_len(static_cast<decltype(value_len)>(
           value.transform(&byte_string_view::size).value_or(0)))
+    , version(version)
 {
     MONAD_DEBUG_ASSERT(
         data_size <= std::numeric_limits<decltype(data_len)>::max());
@@ -412,7 +413,7 @@ void ChildData::copy_old_child(Node *const old, unsigned const i)
 
 Node::UniquePtr make_node(
     Node &from, NibblesView const path,
-    std::optional<byte_string_view> const value)
+    std::optional<byte_string_view> const value, int64_t const version)
 {
     auto const value_size =
         value.transform(&byte_string_view::size).value_or(0);
@@ -426,7 +427,8 @@ Node::UniquePtr make_node(
         from.mask,
         value,
         from.data().size(),
-        path);
+        path,
+        version);
 
     // fnext, min_count, child_data_offset
     std::copy_n(
@@ -454,7 +456,7 @@ Node::UniquePtr make_node(
 Node::UniquePtr make_node(
     uint16_t const mask, std::span<ChildData> const children,
     NibblesView const path, std::optional<byte_string_view> const value,
-    size_t const data_size)
+    size_t const data_size, int64_t const version)
 {
     MONAD_DEBUG_ASSERT(data_size <= KECCAK256_SIZE);
     if (value.has_value()) {
@@ -489,7 +491,8 @@ Node::UniquePtr make_node(
         mask,
         value,
         data_size,
-        path);
+        path,
+        version);
 
     std::copy_n(
         (byte_string_view::pointer)child_data_offsets.data(),
@@ -514,9 +517,9 @@ Node::UniquePtr make_node(
 Node::UniquePtr make_node(
     uint16_t const mask, std::span<ChildData> const children,
     NibblesView const path, std::optional<byte_string_view> const value,
-    byte_string_view const data)
+    byte_string_view const data, int64_t const version)
 {
-    auto node = make_node(mask, children, path, value, data.size());
+    auto node = make_node(mask, children, path, value, data.size(), version);
     std::copy_n(data.data(), data.size(), node->data_data());
     return node;
 }
@@ -525,11 +528,12 @@ Node::UniquePtr make_node(
 // create node with at least one child
 Node *create_node_with_children(
     Compute &comp, uint16_t const mask, std::span<ChildData> children,
-    NibblesView const path, std::optional<byte_string_view> const value)
+    NibblesView const path, std::optional<byte_string_view> const value,
+    int64_t const version)
 {
     MONAD_ASSERT(mask);
     auto const data_size = comp.compute_len(children, mask, path, value);
-    auto node = make_node(mask, children, path, value, data_size);
+    auto node = make_node(mask, children, path, value, data_size, version);
     MONAD_DEBUG_ASSERT(node);
     if (data_size) {
         comp.compute_branch(node->data_data(), node.get());

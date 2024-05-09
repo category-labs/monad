@@ -511,9 +511,15 @@ Node *create_node_from_children_if_any(
     // handle non child and single child cases
     auto const number_of_children = static_cast<unsigned>(std::popcount(mask));
     if (number_of_children == 0) {
-        return leaf_data.has_value()
-                   ? make_node(0, {}, path, leaf_data.value(), {}).release()
-                   : nullptr;
+        return leaf_data.has_value() ? make_node(
+                                           0,
+                                           {},
+                                           path,
+                                           leaf_data.value(),
+                                           {},
+                                           aux.current_version)
+                                           .release()
+                                     : nullptr;
     }
     else if (number_of_children == 1 && !leaf_data.has_value()) {
         auto const j = bitmask_index(
@@ -529,7 +535,8 @@ Node *create_node_from_children_if_any(
                    *node,
                    concat(path, children[j].branch, node->path_nibble_view()),
                    node->has_value() ? std::make_optional(node->value())
-                                     : std::nullopt)
+                                     : std::nullopt,
+                   aux.current_version)
             .release();
     }
     MONAD_DEBUG_ASSERT(
@@ -566,7 +573,7 @@ Node *create_node_from_children_if_any(
         }
     }
     return create_node_with_children(
-        sm.get_compute(), mask, children, path, leaf_data);
+        sm.get_compute(), mask, children, path, leaf_data, aux.current_version);
 }
 
 void create_node_compute_data_possibly_async(
@@ -673,7 +680,9 @@ void create_new_trie_(
         else {
             aux.collect_number_nodes_created_stats();
             entry.finalize(
-                *make_node(0, {}, path, update.value.value(), {}).release(),
+                *make_node(
+                     0, {}, path, update.value.value(), {}, aux.current_version)
+                     .release(),
                 sm.get_compute(),
                 sm.cache());
         }
@@ -1040,7 +1049,9 @@ void mismatch_handler_(
             auto &child = children[j];
             child = ChildData{.branch = static_cast<uint8_t>(i)};
             child.finalize(
-                *make_node(old, path_suffix, old.opt_value()).release(),
+                *make_node(
+                     old, path_suffix, old.opt_value(), aux.current_version)
+                     .release(),
                 sm.get_compute(),
                 sm.cache());
             sm.up(path_suffix.nibble_size() + 1);

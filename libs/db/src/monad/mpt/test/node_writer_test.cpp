@@ -63,7 +63,7 @@ public:
         auto const curr_node_writer_chunk_id =
             rewind_fast_list_(remaining_bytes_in_chunk);
         auto const value = monad::byte_string(node_value_size, 0xf);
-        auto node = make_node(0, {}, {}, value, {});
+        auto node = make_node(0, {}, {}, value, {}, 0);
         auto const chunks_before = state()->fast_list_ids().size();
         // write node
         auto const node_offset =

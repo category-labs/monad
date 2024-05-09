@@ -473,6 +473,10 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     set_can_write_to_fast(can_write_to_fast);
     auto g(unique_lock());
     auto g2(set_current_upsert_tid());
+
+    MONAD_ASSERT(version <= std::numeric_limits<int64_t>::max());
+    current_version = static_cast<int64_t>(version);
+
     compaction &= is_on_disk(); // compaction only takes effect for on disk trie
     auto const curr_version_key =
         serialize_as_big_endian<BLOCK_NUM_BYTES>(version);

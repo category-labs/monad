@@ -142,6 +142,7 @@ public:
     uint32_t disk_size{0};
     /* size (in byte) of user-passed leaf data */
     uint32_t value_len{0};
+    int64_t version{0};
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
@@ -192,7 +193,7 @@ public:
     Node(
         prevent_public_construction_tag, uint16_t mask,
         std::optional<byte_string_view> value, size_t data_size,
-        NibblesView path);
+        NibblesView path, int64_t version);
     Node(Node const &) = delete;
     Node(Node &&) = default;
     ~Node();
@@ -268,8 +269,8 @@ public:
 };
 
 static_assert(std::is_standard_layout_v<Node>, "required by offsetof");
-static_assert(sizeof(Node) == 16);
-static_assert(alignof(Node) == 4);
+static_assert(sizeof(Node) == 24);
+static_assert(alignof(Node) == 8);
 
 // ChildData is for temporarily holding a child's info, including child ptr,
 // file offset and hash data, in the update recursion.
@@ -310,21 +311,23 @@ constexpr size_t calculate_node_size(
            total_child_data_size + value_size + path_size + data_size;
 }
 
-Node::UniquePtr
-make_node(Node &from, NibblesView path, std::optional<byte_string_view> value);
+Node::UniquePtr make_node(
+    Node &from, NibblesView path, std::optional<byte_string_view> value,
+    int64_t version);
 
 Node::UniquePtr make_node(
     uint16_t mask, std::span<ChildData>, NibblesView path,
-    std::optional<byte_string_view> value, size_t data_size);
+    std::optional<byte_string_view> value, size_t data_size, int64_t version);
 
 Node::UniquePtr make_node(
     uint16_t mask, std::span<ChildData>, NibblesView path,
-    std::optional<byte_string_view> value, byte_string_view data);
+    std::optional<byte_string_view> value, byte_string_view data,
+    int64_t version);
 
 // create node: either branch/extension, with or without leaf
 Node *create_node_with_children(
     Compute &, uint16_t mask, std::span<ChildData> children, NibblesView path,
-    std::optional<byte_string_view> value = std::nullopt);
+    std::optional<byte_string_view> value, int64_t version);
 
 void serialize_node_to_buffer(
     unsigned char *const write_pos, unsigned bytes_to_write, Node const &,

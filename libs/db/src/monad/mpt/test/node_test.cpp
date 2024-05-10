@@ -56,8 +56,8 @@ TEST(NodeTest, leaf)
     EXPECT_EQ(node->mask, 0);
     EXPECT_EQ(node->value(), value);
     EXPECT_EQ(node->path_nibble_view(), path1);
-    EXPECT_EQ(node->get_mem_size(), 33);
-    EXPECT_EQ(node->get_disk_size(), 33);
+    EXPECT_EQ(node->get_mem_size(), 25);
+    EXPECT_EQ(node->get_disk_size(), 29);
 }
 
 TEST(NodeTest, leaf_single_branch)
@@ -79,8 +79,8 @@ TEST(NodeTest, leaf_single_branch)
     EXPECT_EQ(node->value(), value);
     EXPECT_EQ(node->path_nibble_view(), path2);
     EXPECT_EQ(node->bitpacked.data_len, 1);
-    EXPECT_EQ(node->get_mem_size(), 61);
-    EXPECT_EQ(node->get_disk_size(), 53);
+    EXPECT_EQ(node->get_mem_size(), 53);
+    EXPECT_EQ(node->get_disk_size(), 49);
 }
 
 TEST(NodeTest, leaf_multiple_branches)
@@ -106,8 +106,8 @@ TEST(NodeTest, leaf_multiple_branches)
     EXPECT_EQ(node->value(), value);
     EXPECT_EQ(node->path_nibble_view(), path2);
     EXPECT_EQ(node->bitpacked.data_len, 2);
-    EXPECT_EQ(node->get_mem_size(), 89);
-    EXPECT_EQ(node->get_disk_size(), 73);
+    EXPECT_EQ(node->get_mem_size(), 81);
+    EXPECT_EQ(node->get_disk_size(), 69);
 }
 
 TEST(NodeTest, branch_node)
@@ -133,8 +133,8 @@ TEST(NodeTest, branch_node)
     EXPECT_EQ(node->value_len, 0);
     EXPECT_EQ(node->bitpacked.data_len, 0);
     EXPECT_EQ(node->path_nibble_view(), path2);
-    EXPECT_EQ(node->get_mem_size(), 78);
-    EXPECT_EQ(node->get_disk_size(), 62);
+    EXPECT_EQ(node->get_mem_size(), 70);
+    EXPECT_EQ(node->get_disk_size(), 58);
 }
 
 TEST(NodeTest, extension_node)
@@ -160,8 +160,8 @@ TEST(NodeTest, extension_node)
     EXPECT_EQ(node->value_len, 0);
     EXPECT_EQ(node->path_nibble_view(), path2);
     EXPECT_EQ(node->bitpacked.data_len, 0);
-    EXPECT_EQ(node->get_mem_size(), 83);
-    EXPECT_EQ(node->get_disk_size(), 67);
+    EXPECT_EQ(node->get_mem_size(), 75);
+    EXPECT_EQ(node->get_disk_size(), 63);
 }
 
 TEST(NodeTest, super_large_node)
@@ -173,5 +173,7 @@ TEST(NodeTest, super_large_node)
     EXPECT_EQ(node->value_len, value_len);
     EXPECT_EQ(node->bitpacked.data_len, 0);
     EXPECT_EQ(node->get_mem_size(), value_len + sizeof(Node));
-    EXPECT_EQ(node->get_disk_size(), value_len + sizeof(Node));
+    EXPECT_EQ(
+        node->get_disk_size(),
+        value_len + sizeof(Node) + Node::disk_size_bytes);
 }

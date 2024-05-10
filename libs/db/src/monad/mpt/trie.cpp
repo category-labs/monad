@@ -1226,7 +1226,7 @@ async_write_node_result async_write_node(
 {
     aux.io->poll_nonblocking_if_not_within_completions(1);
     auto *sender = &node_writer->sender();
-    auto const size = node.disk_size;
+    auto const size = node.get_disk_size();
     auto const remaining_bytes = sender->remaining_buffer_bytes();
     async_write_node_result ret{
         .offset_written_to = INVALID_OFFSET,
@@ -1238,14 +1238,14 @@ async_write_node_result async_write_node(
         auto *where_to_serialize = sender->advance_buffer_append(size);
         MONAD_DEBUG_ASSERT(where_to_serialize != nullptr);
         serialize_node_to_buffer(
-            (unsigned char *)where_to_serialize, size, node);
+            (unsigned char *)where_to_serialize, size, node, size);
     }
     else {
         auto const chunk_remaining_bytes =
             aux.io->chunk_capacity(sender->offset().id) -
             sender->offset().offset - sender->written_buffer_bytes();
         node_writer_unique_ptr_type new_node_writer{};
-        unsigned offset_in_node = 0;
+        unsigned offset_in_on_disk_node = 0;
         if (size > chunk_remaining_bytes) { // start at a new chunk
             new_node_writer =
                 replace_node_writer_to_start_at_new_chunk(aux, node_writer);
@@ -1256,15 +1256,19 @@ async_write_node_result async_write_node(
             // serialization will not cross chunk boundary
             ret.offset_written_to =
                 sender->offset().add_to_offset(sender->written_buffer_bytes());
-            auto bytes_to_append =
-                std::min((unsigned)remaining_bytes, size - offset_in_node);
+            auto bytes_to_append = std::min(
+                (unsigned)remaining_bytes, size - offset_in_on_disk_node);
             auto *where_to_serialize =
                 (unsigned char *)node_writer->sender().advance_buffer_append(
                     bytes_to_append);
             MONAD_DEBUG_ASSERT(where_to_serialize != nullptr);
             serialize_node_to_buffer(
-                where_to_serialize, bytes_to_append, node, offset_in_node);
-            offset_in_node += bytes_to_append;
+                where_to_serialize,
+                bytes_to_append,
+                node,
+                size,
+                offset_in_on_disk_node);
+            offset_in_on_disk_node += bytes_to_append;
             new_node_writer = replace_node_writer(aux, node_writer);
             MONAD_DEBUG_ASSERT(
                 new_node_writer->sender().offset().id ==
@@ -1278,21 +1282,25 @@ async_write_node_result async_write_node(
         // shall be recycled by the i/o receiver
         node_writer.release();
         node_writer = std::move(new_node_writer);
-        while (offset_in_node < size) {
+        while (offset_in_on_disk_node < size) {
             auto *where_to_serialize =
                 (unsigned char *)node_writer->sender().buffer().data();
             auto bytes_to_append = std::min(
                 (unsigned)node_writer->sender().remaining_buffer_bytes(),
-                size - offset_in_node);
+                size - offset_in_on_disk_node);
             serialize_node_to_buffer(
-                where_to_serialize, bytes_to_append, node, offset_in_node);
-            offset_in_node += bytes_to_append;
-            MONAD_ASSERT(offset_in_node <= size);
+                where_to_serialize,
+                bytes_to_append,
+                node,
+                size,
+                offset_in_on_disk_node);
+            offset_in_on_disk_node += bytes_to_append;
+            MONAD_ASSERT(offset_in_on_disk_node <= size);
             MONAD_ASSERT(
                 node_writer->sender().advance_buffer_append(bytes_to_append) !=
                 nullptr);
             if (node_writer->sender().remaining_buffer_bytes() == 0) {
-                MONAD_ASSERT(offset_in_node < size);
+                MONAD_ASSERT(offset_in_on_disk_node < size);
                 // replace node writer
                 new_node_writer = replace_node_writer(aux, node_writer);
                 // initiate current node writer

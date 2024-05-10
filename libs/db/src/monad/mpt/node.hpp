@@ -111,6 +111,7 @@ public:
     static constexpr uint8_t max_data_len = (1U << 6) - 1;
     static constexpr size_t max_disk_size =
         256 * 1024 * 1024; // 256mb, same as storage chunk size
+    static constexpr unsigned disk_size_bytes = sizeof(uint32_t);
     static constexpr size_t max_size =
         max_disk_size + max_number_of_children * KECCAK256_SIZE;
     using BytesAllocator = allocators::malloc_free_allocator<std::byte>;
@@ -139,8 +140,6 @@ public:
     static_assert(sizeof(bitpacked) == 1);
 
     uint8_t path_nibble_index_end{0};
-    /* node on disk size */
-    uint32_t disk_size{0};
     /* size (in byte) of user-passed leaf data */
     uint32_t value_len{0};
     int64_t version{0};
@@ -265,12 +264,12 @@ public:
     UniquePtr next_ptr(unsigned index) noexcept;
 
     //! node size in memory
-    unsigned get_mem_size() noexcept;
-    uint32_t get_disk_size() noexcept;
+    unsigned get_mem_size() const noexcept;
+    uint32_t get_disk_size() const noexcept;
 };
 
 static_assert(std::is_standard_layout_v<Node>, "required by offsetof");
-static_assert(sizeof(Node) == 24);
+static_assert(sizeof(Node) == 16);
 static_assert(alignof(Node) == 8);
 
 // ChildData is for temporarily holding a child's info, including child ptr,
@@ -331,8 +330,8 @@ Node *create_node_with_children(
     std::optional<byte_string_view> value, int64_t version);
 
 void serialize_node_to_buffer(
-    unsigned char *const write_pos, unsigned bytes_to_write, Node const &,
-    unsigned offset = 0);
+    unsigned char *write_pos, unsigned bytes_to_write, Node const &,
+    uint32_t disk_size, unsigned offset = 0);
 
 Node::UniquePtr
 deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes);

@@ -191,6 +191,8 @@ TEST_F(LockingTrieTest, works)
    unlock exclusive
    lock exclusive
    unlock exclusive
+   lock exclusive
+   unlock exclusive
 )");
     }
 

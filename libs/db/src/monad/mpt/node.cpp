@@ -65,7 +65,7 @@ Node::Node(
     bitpacked.path_nibble_index_start = path.begin_nibble_;
     bitpacked.has_value = value.has_value();
 
-    MONAD_DEBUG_ASSERT(data_size <= Node::max_data_len);
+    MONAD_ASSERT(data_size <= Node::max_data_len);
     bitpacked.data_len = static_cast<uint8_t>(data_size & Node::max_data_len);
 
     if (path.data_size()) {
@@ -352,7 +352,7 @@ Node::UniquePtr Node::next_ptr(unsigned const index) noexcept
     return UniquePtr{p};
 }
 
-unsigned Node::get_mem_size() noexcept
+unsigned Node::get_mem_size() const noexcept
 {
     auto const *const end = next_data() + sizeof(Node *) * number_of_children();
     MONAD_DEBUG_ASSERT(end >= (unsigned char *)this);
@@ -361,13 +361,14 @@ unsigned Node::get_mem_size() noexcept
     return mem_size;
 }
 
-uint32_t Node::get_disk_size() noexcept
+uint32_t Node::get_disk_size() const noexcept
 {
     MONAD_DEBUG_ASSERT(next_data() >= (unsigned char *)this);
-    auto const disk_size =
+    auto const node_disk_size =
         static_cast<uint32_t>(next_data() - (unsigned char *)this);
-    MONAD_DEBUG_ASSERT(disk_size <= Node::max_disk_size);
-    return disk_size;
+    uint32_t const total_disk_size = node_disk_size + Node::disk_size_bytes;
+    MONAD_DEBUG_ASSERT(total_disk_size <= Node::max_disk_size);
+    return total_disk_size;
 }
 
 bool ChildData::is_valid() const
@@ -448,7 +449,6 @@ Node::UniquePtr make_node(
         std::memset(from.next_data(), 0, next_size);
     }
 
-    node->disk_size = node->get_disk_size();
     return node;
 }
 
@@ -509,7 +509,6 @@ Node::UniquePtr make_node(
         }
     }
 
-    node->disk_size = node->get_disk_size();
     return node;
 }
 
@@ -541,12 +540,29 @@ Node *create_node_with_children(
 }
 
 void serialize_node_to_buffer(
-    unsigned char *const write_pos, unsigned const bytes_to_append,
-    Node const &node, unsigned const offset)
+    unsigned char *write_pos, unsigned bytes_to_append, Node const &node,
+    uint32_t const disk_size, unsigned const offset)
 {
-    MONAD_ASSERT(node.disk_size > 0 && node.disk_size <= Node::max_disk_size);
-    MONAD_ASSERT(bytes_to_append <= node.disk_size - offset);
-    memcpy(write_pos, (unsigned char *)&node + offset, bytes_to_append);
+
+    if (offset < Node::disk_size_bytes) { // serialize node disk size
+        MONAD_ASSERT(disk_size > 0 && disk_size <= Node::max_disk_size);
+        MONAD_ASSERT(bytes_to_append <= disk_size - offset);
+        unsigned const written =
+            std::min(bytes_to_append, Node::disk_size_bytes - offset);
+        memcpy(write_pos, (unsigned char *)&disk_size + offset, written);
+        bytes_to_append -= written;
+        write_pos += written;
+    }
+
+    if (bytes_to_append) { // serialize node
+        unsigned const offset_within_node = offset >= Node::disk_size_bytes
+                                                ? offset - Node::disk_size_bytes
+                                                : 0;
+        memcpy(
+            write_pos,
+            (unsigned char *)&node + offset_within_node,
+            bytes_to_append);
+    }
 }
 
 Node::UniquePtr
@@ -555,16 +571,21 @@ deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
     for (size_t n = 0; n < max_bytes; n += 64) {
         __builtin_prefetch(read_pos + n, 0, 0);
     }
+    // Load 32-bit node on-disk size
+    auto const disk_size = unaligned_load<uint32_t>(read_pos);
+    MONAD_ASSERT(disk_size <= max_bytes);
+    MONAD_ASSERT(disk_size > 0 && disk_size <= Node::max_disk_size);
+    read_pos += Node::disk_size_bytes;
+    // Load the on disk node
     auto const mask = unaligned_load<uint16_t>(read_pos);
     auto const number_of_children = static_cast<unsigned>(std::popcount(mask));
-    auto const disk_size =
-        unaligned_load<uint32_t>(read_pos + offsetof(Node, disk_size));
-    MONAD_ASSERT(disk_size <= max_bytes);
     auto const alloc_size =
         static_cast<uint32_t>(disk_size + number_of_children * sizeof(Node *));
-    MONAD_ASSERT(disk_size > 0 && disk_size <= Node::max_disk_size);
     auto node = Node::make(alloc_size);
-    std::copy_n(read_pos, disk_size, (unsigned char *)node.get());
+    std::copy_n(
+        read_pos,
+        disk_size - Node::disk_size_bytes,
+        (unsigned char *)node.get());
     std::memset(node->next_data(), 0, number_of_children * sizeof(Node *));
     return node;
 }

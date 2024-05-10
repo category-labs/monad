@@ -771,7 +771,16 @@ public:
                 auto const *old_metadata =
                     (monad::mpt::detail::db_metadata const *)
                         i.nonchunkstorage.data();
-                MONAD_ASSERT(0 == memcmp(old_metadata->magic, "MND0", 4));
+                if (memcmp(
+                        old_metadata->magic,
+                        monad::mpt::detail::db_metadata::MAGIC,
+                        monad::mpt::detail::db_metadata::MAGIC_STRING_LEN)) {
+                    std::stringstream ss;
+                    ss << "DB archive was generated with a different version "
+                          "than the current code base, please regenerate "
+                          "archive with the new DB version";
+                    throw std::runtime_error(ss.str());
+                }
                 auto cnv_chunk =
                     pool->activate_chunk(monad::async::storage_pool::cnv, 0);
                 auto [wfd, offset] = cnv_chunk->write_fd(0);
@@ -800,7 +809,12 @@ public:
                     f(db_metadata[1]);
                 };
                 do_([&](monad::mpt::detail::db_metadata *metadata) {
-                    MONAD_ASSERT(0 == memcmp(metadata->magic, "MND0", 4));
+                    MONAD_ASSERT(
+                        0 ==
+                        memcmp(
+                            metadata->magic,
+                            monad::mpt::detail::db_metadata::MAGIC,
+                            monad::mpt::detail::db_metadata::MAGIC_STRING_LEN));
                 });
                 do_([&](monad::mpt::detail::db_metadata *metadata) {
                     metadata->db_offsets.store(
@@ -871,6 +885,7 @@ public:
                 }
                 return false;
             });
+
         if (debug_printing) {
             std::cerr << "Fast list:";
             auto it = todecompress.begin();
@@ -1005,6 +1020,7 @@ public:
     }
 
     void do_archive_database()
+
     {
         auto const begin = std::chrono::steady_clock::now();
         int fd = ::open(

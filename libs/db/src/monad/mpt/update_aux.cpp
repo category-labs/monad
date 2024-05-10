@@ -252,8 +252,14 @@ void UpdateAuxImpl::set_io(AsyncIO *io_)
     /* If the front copy vanished for some reason ... this can happen
     if something or someone zaps the front bytes of the partition.
     */
-    if (0 != memcmp(db_metadata_[0]->magic, "MND0", 4)) {
-        if (0 == memcmp(db_metadata_[1]->magic, "MND0", 4)) {
+    if (0 != memcmp(
+                 db_metadata_[0]->magic,
+                 detail::db_metadata::MAGIC,
+                 detail::db_metadata::MAGIC_STRING_LEN)) {
+        if (0 == memcmp(
+                     db_metadata_[1]->magic,
+                     detail::db_metadata::MAGIC,
+                     detail::db_metadata::MAGIC_STRING_LEN)) {
             if (can_write_to_map) {
                 // Overwrite the front copy with the backup copy
                 memcpy(db_metadata_[0], db_metadata_[1], map_size);
@@ -266,8 +272,14 @@ void UpdateAuxImpl::set_io(AsyncIO *io_)
         }
     }
     // Replace any dirty copy with the non-dirty copy
-    if (0 == memcmp(db_metadata_[0]->magic, "MND0", 4) &&
-        0 == memcmp(db_metadata_[1]->magic, "MND0", 4)) {
+    if (0 == memcmp(
+                 db_metadata_[0]->magic,
+                 detail::db_metadata::MAGIC,
+                 detail::db_metadata::MAGIC_STRING_LEN) &&
+        0 == memcmp(
+                 db_metadata_[1]->magic,
+                 detail::db_metadata::MAGIC,
+                 detail::db_metadata::MAGIC_STRING_LEN)) {
         MONAD_ASSERT(
             !db_metadata_[0]->is_dirty().load(std::memory_order_acquire) ||
             !db_metadata_[1]->is_dirty().load(std::memory_order_acquire));
@@ -307,7 +319,10 @@ void UpdateAuxImpl::set_io(AsyncIO *io_)
             }
         }
     }
-    if (0 != memcmp(db_metadata_[0]->magic, "MND0", 4)) {
+    if (0 != memcmp(
+                 db_metadata_[0]->magic,
+                 detail::db_metadata::MAGIC,
+                 detail::db_metadata::MAGIC_STRING_LEN)) {
         memset(db_metadata_[0], 0, map_size);
         MONAD_DEBUG_ASSERT((chunk_count & ~0xfffffU) == 0);
         db_metadata_[0]->chunk_info_count = chunk_count & 0xfffffU;
@@ -388,8 +403,14 @@ void UpdateAuxImpl::set_io(AsyncIO *io_)
 
         std::atomic_signal_fence(
             std::memory_order_seq_cst); // no compiler reordering here
-        memcpy(db_metadata_[0]->magic, "MND0", 4);
-        memcpy(db_metadata_[1]->magic, "MND0", 4);
+        memcpy(
+            db_metadata_[0]->magic,
+            detail::db_metadata::MAGIC,
+            detail::db_metadata::MAGIC_STRING_LEN);
+        memcpy(
+            db_metadata_[1]->magic,
+            detail::db_metadata::MAGIC,
+            detail::db_metadata::MAGIC_STRING_LEN);
 
         if (!io->is_read_only()) {
             // Default behavior: initialize node writers to start at the

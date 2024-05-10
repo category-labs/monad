@@ -37,9 +37,12 @@ namespace detail
     // For the memory map of the first conventional chunk
     struct db_metadata
     {
+        static constexpr char const *MAGIC = "MND1";
+        static constexpr unsigned MAGIC_STRING_LEN = 4;
+
         friend class MONAD_MPT_NAMESPACE::UpdateAuxImpl;
 
-        char magic[4]; // "MND0"
+        char magic[MAGIC_STRING_LEN];
         uint32_t chunk_info_count : 20; // items in chunk_info below
         uint32_t unused0_ : 4; // next item MUST be on a byte boundary
         uint32_t reserved_for_is_dirty_ : 8; // for is_dirty below

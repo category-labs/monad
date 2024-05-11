@@ -53,6 +53,7 @@ std::optional<Account> BlockState::read_account(Address const &address)
 bytes32_t BlockState::read_storage(
     Address const &address, Incarnation const incarnation, bytes32_t const &key)
 {
+    bool read_storage = false;
     // block state
     {
         StateDeltas::const_accessor it{};
@@ -68,15 +69,20 @@ bytes32_t BlockState::read_storage(
                 return it2->second.second;
             }
         }
+        auto const &orig_account = it->second.account.first;
+        if (orig_account && incarnation == orig_account->incarnation) {
+            read_storage = true;
+        }
     }
     // database
     {
-        auto const result = db_.read_storage(address, key);
+        auto const result =
+            read_storage ? db_.read_storage(address, key) : bytes32_t{};
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_.find(it, address));
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
-            return {};
+            return result;
         }
         auto &storage = it->second.storage;
         {

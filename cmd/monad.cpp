@@ -15,6 +15,7 @@
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/mpt/db.hpp>
+#include <monad/state2/block_state.hpp>
 
 #include <CLI/CLI.hpp>
 #include <quill/Quill.h>
@@ -92,16 +93,19 @@ void run_monad(
         }
 
         auto const before = std::chrono::steady_clock::now();
-        auto const receipts =
-            execute_block(rev, block, db, block_hash_buffer, priority_pool);
+        BlockState block_state(db);
+        auto const receipts = execute_block(
+            rev, block, block_state, block_hash_buffer, priority_pool);
         if (receipts.has_error()) {
-            LOG_WARNING(
-                "error when executing block: {}",
+            LOG_ERROR(
+                "when executing block: {}",
                 receipts.assume_error().message().c_str());
+            break;
         }
-        else {
-            LOG_DEBUG("generated receipts {}", receipts.assume_value());
-        }
+
+        LOG_DEBUG("generated receipts {}", receipts.assume_value());
+        block_state.log_debug();
+        block_state.commit(receipts.assume_value());
 
         LOG_INFO(
             "finished executing {} txns in block {}, time elasped={}",

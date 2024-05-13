@@ -62,34 +62,13 @@ transfer_balance_dao(BlockState &block_state, Incarnation const incarnation)
     block_state.merge(state);
 }
 
-constexpr Receipt::Bloom compute_bloom(std::vector<Receipt> const &receipts)
-{
-    Receipt::Bloom bloom{};
-    for (auto const &receipt : receipts) {
-        for (unsigned i = 0; i < 256; ++i) {
-            bloom[i] |= receipt.bloom[i];
-        }
-    }
-
-    return bloom;
-}
-
-inline void
-commit(BlockState &block_state, std::vector<Receipt> const &receipts = {})
-{
-    block_state.log_debug();
-
-    block_state.commit(receipts);
-}
-
 template <evmc_revision rev>
 Result<std::vector<Receipt>> execute_block(
-    Block &block, Db &db, BlockHashBuffer const &block_hash_buffer,
+    Block &block, BlockState &block_state,
+    BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {
     TRACE_BLOCK_EVENT(StartBlock);
-
-    BlockState block_state{db};
 
     if constexpr (rev == EVMC_HOMESTEAD) {
         if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {
@@ -143,16 +122,6 @@ Result<std::vector<Receipt>> execute_block(
         receipt.gas_used = cumulative_gas_used;
     }
 
-    // YP eq. 33
-    if (compute_bloom(receipts) != block.header.logs_bloom) {
-        return BlockError::WrongLogsBloom;
-    }
-
-    // YP eq. 170
-    if (cumulative_gas_used != block.header.gas_used) {
-        return BlockError::InvalidGasUsed;
-    }
-
     State state{
         block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
 
@@ -169,53 +138,51 @@ Result<std::vector<Receipt>> execute_block(
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(state);
 
-    commit(block_state, receipts);
-
     return receipts;
 }
 
 EXPLICIT_EVMC_REVISION(execute_block);
 
 Result<std::vector<Receipt>> execute_block(
-    evmc_revision const rev, Block &block, Db &db,
+    evmc_revision const rev, Block &block, BlockState &block_state,
     BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {
     switch (rev) {
     case EVMC_SHANGHAI:
         return execute_block<EVMC_SHANGHAI>(
-            block, db, block_hash_buffer, priority_pool);
+            block, block_state, block_hash_buffer, priority_pool);
     case EVMC_PARIS:
         return execute_block<EVMC_PARIS>(
-            block, db, block_hash_buffer, priority_pool);
+            block, block_state, block_hash_buffer, priority_pool);
     case EVMC_LONDON:
         return execute_block<EVMC_LONDON>(
-            block, db, block_hash_buffer, priority_pool);
+            block, block_state, block_hash_buffer, priority_pool);
     case EVMC_BERLIN:
         return execute_block<EVMC_BERLIN>(
-            block, db, block_hash_buffer, priority_pool);
+            block, block_state, block_hash_buffer, priority_pool);
     case EVMC_ISTANBUL:
         return execute_block<EVMC_ISTANBUL>(
-            block, db, block_hash_buffer, priority_pool);
+            block, block_state, block_hash_buffer, priority_pool);
     case EVMC_PETERSBURG:
     case EVMC_CONSTANTINOPLE:
         return execute_block<EVMC_PETERSBURG>(
-            block, db, block_hash_buffer, priority_pool);
+            block, block_state, block_hash_buffer, priority_pool);
     case EVMC_BYZANTIUM:
         return execute_block<EVMC_BYZANTIUM>(
-            block, db, block_hash_buffer, priority_pool);
+            block, block_state, block_hash_buffer, priority_pool);
     case EVMC_SPURIOUS_DRAGON:
         return execute_block<EVMC_SPURIOUS_DRAGON>(
-            block, db, block_hash_buffer, priority_pool);
+            block, block_state, block_hash_buffer, priority_pool);
     case EVMC_TANGERINE_WHISTLE:
         return execute_block<EVMC_TANGERINE_WHISTLE>(
-            block, db, block_hash_buffer, priority_pool);
+            block, block_state, block_hash_buffer, priority_pool);
     case EVMC_HOMESTEAD:
         return execute_block<EVMC_HOMESTEAD>(
-            block, db, block_hash_buffer, priority_pool);
+            block, block_state, block_hash_buffer, priority_pool);
     case EVMC_FRONTIER:
         return execute_block<EVMC_FRONTIER>(
-            block, db, block_hash_buffer, priority_pool);
+            block, block_state, block_hash_buffer, priority_pool);
     default:
         break;
     }

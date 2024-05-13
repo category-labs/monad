@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/config.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/result.hpp>
 
 #include <evmc/evmc.h>
@@ -15,6 +16,7 @@
 #endif
 
 #include <initializer_list>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -40,6 +42,7 @@ enum class BlockError
 
 struct Block;
 struct BlockHeader;
+struct Receipt;
 
 template <evmc_revision rev>
 Result<void> static_validate_header(BlockHeader const &);
@@ -48,6 +51,8 @@ template <evmc_revision rev>
 Result<void> static_validate_block(Block const &);
 
 Result<void> static_validate_block(evmc_revision, Block const &);
+
+Result<void> validate_header(std::vector<Receipt> const &, BlockHeader const &);
 
 MONAD_NAMESPACE_END
 

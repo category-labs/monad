@@ -97,8 +97,14 @@ public:
 
             BOOST_OUTCOME_TRY(static_validate_block(rev, block));
 
-            auto const receipts =
-                execute_block(rev, block, db, block_hash_buffer, priority_pool);
+            BlockState block_state(db);
+            BOOST_OUTCOME_TRY(
+                auto const receipts,
+                execute_block(
+                    rev, block, block_state, block_hash_buffer, priority_pool));
+            BOOST_OUTCOME_TRY(validate_header(receipts, block.header));
+            block_state.log_debug();
+            block_state.commit(receipts);
 
             n_transactions += block.transactions.size();
 

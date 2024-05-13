@@ -57,7 +57,14 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
 
     BOOST_OUTCOME_TRY(static_validate_block<rev>(block));
 
-    return execute_block<rev>(block, db, block_hash_buffer, *pool_);
+    BlockState block_state(db);
+    BOOST_OUTCOME_TRY(
+        auto const receipts,
+        execute_block<rev>(block, block_state, block_hash_buffer, *pool_));
+    BOOST_OUTCOME_TRY(validate_header(receipts, block.header));
+    block_state.log_debug();
+    block_state.commit(receipts);
+    return receipts;
 }
 
 Result<std::vector<Receipt>> BlockchainTest::execute_dispatch(

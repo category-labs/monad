@@ -15,6 +15,8 @@ class State;
 
 class BlockState final
 {
+
+public:
     Db &db_;
     StateDeltas state_{};
     Code code_{};

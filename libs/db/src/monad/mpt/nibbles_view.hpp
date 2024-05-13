@@ -91,7 +91,7 @@ class NibblesView
     friend inline std::ostream &
     operator<<(std::ostream &s, NibblesView const &v);
 
-private:
+public:
     friend class Nibbles;
     friend class Node;
     using size_type = Nibbles::size_type;

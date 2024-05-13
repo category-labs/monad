@@ -28,11 +28,82 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
+#include <map>
 #include <memory>
 #include <optional>
+#include <ostream>
 #include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
+
+enum class AccessOp
+{
+    GetFound = 0,
+    GetNotFound,
+    SetFound,
+    SetNotFound
+};
+
+inline void update_storage_access(
+    bytes32_t const value, Address const &address, bytes32_t const &key,
+    AccessOp const access_op,
+    std::map<Address, std::map<bytes32_t, std::vector<AccessOp>>>
+        &storage_accesses)
+{
+    MONAD_ASSERT(
+        access_op == AccessOp::GetNotFound ||
+        access_op == AccessOp::SetNotFound);
+
+    AccessOp access_op_flipped = AccessOp::GetFound;
+    if (access_op == AccessOp::GetNotFound) {
+        access_op_flipped = AccessOp::GetFound;
+    }
+    else if (access_op == AccessOp::SetNotFound) {
+        access_op_flipped = AccessOp::SetFound;
+    }
+    else {
+        assert(false);
+    }
+
+    if (value == bytes32_t{}) {
+        if (storage_accesses.find(address) == storage_accesses.end()) {
+            std::vector<AccessOp> v{access_op};
+            std::map<bytes32_t, std::vector<AccessOp>> m;
+            m.emplace(key, v);
+            storage_accesses.emplace(address, m);
+        }
+        else {
+            auto &account_storages = storage_accesses[address];
+            if (account_storages.find(key) == account_storages.end()) {
+                std::vector<AccessOp> v{access_op};
+                account_storages.emplace(key, v);
+            }
+            else {
+                account_storages[key].emplace_back(access_op);
+            }
+        }
+    }
+    else {
+        if (storage_accesses.find(address) == storage_accesses.end()) {
+            std::vector<AccessOp> v{access_op_flipped};
+            std::map<bytes32_t, std::vector<AccessOp>> m;
+            m.emplace(key, v);
+            storage_accesses.emplace(address, m);
+        }
+        else {
+            auto &account_storages = storage_accesses[address];
+            if (account_storages.find(key) == account_storages.end()) {
+                std::vector<AccessOp> v{access_op_flipped};
+                account_storages.emplace(key, v);
+            }
+            else {
+                account_storages[key].emplace_back(access_op_flipped);
+            }
+        }
+    }
+}
 
 class State
 {
@@ -95,6 +166,9 @@ class State
     friend class BlockState; // TODO
 
 public:
+    std::map<Address, std::map<bytes32_t, std::vector<AccessOp>>>
+        storage_accesses_;
+
     State(BlockState &block_state, Incarnation const incarnation)
         : block_state_{block_state}
         , incarnation_{incarnation}
@@ -208,6 +282,13 @@ public:
                     address, account.value().incarnation, key);
                 it3 = storage.try_emplace(key, value).first;
             }
+            update_storage_access(
+                it3->second,
+                address,
+                key,
+                AccessOp::GetNotFound,
+                storage_accesses_);
+
             return it3->second;
         }
         else {
@@ -216,6 +297,13 @@ public:
             MONAD_ASSERT(account.has_value());
             auto const &storage = account_state.storage_;
             if (auto const it2 = storage.find(key); it2 != storage.end()) {
+                update_storage_access(
+                    it2->second,
+                    address,
+                    key,
+                    AccessOp::GetNotFound,
+                    storage_accesses_);
+
                 return it2->second;
             }
             auto const it2 = original_.find(address);
@@ -225,6 +313,9 @@ public:
             if (!original_account.has_value() ||
                 account.value().incarnation !=
                     original_account.value().incarnation) {
+                update_storage_access(
+                    {}, address, key, AccessOp::GetNotFound, storage_accesses_);
+
                 return {};
             }
             auto &original_storage = original_account_state.storage_;
@@ -234,6 +325,14 @@ public:
                     address, account.value().incarnation, key);
                 it3 = original_storage.try_emplace(key, value).first;
             }
+
+            update_storage_access(
+                it3->second,
+                address,
+                key,
+                AccessOp::GetNotFound,
+                storage_accesses_);
+
             return it3->second;
         }
     }
@@ -306,11 +405,17 @@ public:
             if (it == storage.end()) {
                 Incarnation const incarnation =
                     account_state.account_->incarnation;
-                bytes32_t const value =
+                bytes32_t const block_state_read_value =
                     block_state_.read_storage(address, incarnation, key);
-                it = storage.try_emplace(key, value).first;
+                it = storage.try_emplace(key, block_state_read_value).first;
             }
             original_value = it->second;
+            update_storage_access(
+                original_value,
+                address,
+                key,
+                AccessOp::SetNotFound,
+                storage_accesses_);
         }
         // state
         {

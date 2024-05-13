@@ -27,6 +27,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -85,7 +86,8 @@ commit(BlockState &block_state, std::vector<Receipt> const &receipts = {})
 template <evmc_revision rev>
 Result<std::vector<Receipt>> execute_block(
     Block &block, Db &db, BlockHashBuffer const &block_hash_buffer,
-    fiber::PriorityPool &priority_pool)
+    fiber::PriorityPool &priority_pool,
+    std::map<byte_string, Address> &address_map)
 {
     TRACE_BLOCK_EVENT(StartBlock);
 
@@ -169,6 +171,15 @@ Result<std::vector<Receipt>> execute_block(
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(state);
 
+    for (auto const &[addr, delta] : block_state.state_) {
+        auto const keccaked_addr = byte_string{
+            std::bit_cast<bytes32_t>(
+                ethash::keccak256(addr.bytes, sizeof(addr.bytes)))
+                .bytes,
+            sizeof(bytes32_t)};
+        address_map.insert(std::make_pair(keccaked_addr, addr));
+    }
+
     commit(block_state, receipts);
 
     return receipts;
@@ -179,43 +190,44 @@ EXPLICIT_EVMC_REVISION(execute_block);
 Result<std::vector<Receipt>> execute_block(
     evmc_revision const rev, Block &block, Db &db,
     BlockHashBuffer const &block_hash_buffer,
-    fiber::PriorityPool &priority_pool)
+    fiber::PriorityPool &priority_pool,
+    std::map<byte_string, Address> &address_map)
 {
     switch (rev) {
     case EVMC_SHANGHAI:
         return execute_block<EVMC_SHANGHAI>(
-            block, db, block_hash_buffer, priority_pool);
+            block, db, block_hash_buffer, priority_pool, address_map);
     case EVMC_PARIS:
         return execute_block<EVMC_PARIS>(
-            block, db, block_hash_buffer, priority_pool);
+            block, db, block_hash_buffer, priority_pool, address_map);
     case EVMC_LONDON:
         return execute_block<EVMC_LONDON>(
-            block, db, block_hash_buffer, priority_pool);
+            block, db, block_hash_buffer, priority_pool, address_map);
     case EVMC_BERLIN:
         return execute_block<EVMC_BERLIN>(
-            block, db, block_hash_buffer, priority_pool);
+            block, db, block_hash_buffer, priority_pool, address_map);
     case EVMC_ISTANBUL:
         return execute_block<EVMC_ISTANBUL>(
-            block, db, block_hash_buffer, priority_pool);
+            block, db, block_hash_buffer, priority_pool, address_map);
     case EVMC_PETERSBURG:
     case EVMC_CONSTANTINOPLE:
         return execute_block<EVMC_PETERSBURG>(
-            block, db, block_hash_buffer, priority_pool);
+            block, db, block_hash_buffer, priority_pool, address_map);
     case EVMC_BYZANTIUM:
         return execute_block<EVMC_BYZANTIUM>(
-            block, db, block_hash_buffer, priority_pool);
+            block, db, block_hash_buffer, priority_pool, address_map);
     case EVMC_SPURIOUS_DRAGON:
         return execute_block<EVMC_SPURIOUS_DRAGON>(
-            block, db, block_hash_buffer, priority_pool);
+            block, db, block_hash_buffer, priority_pool, address_map);
     case EVMC_TANGERINE_WHISTLE:
         return execute_block<EVMC_TANGERINE_WHISTLE>(
-            block, db, block_hash_buffer, priority_pool);
+            block, db, block_hash_buffer, priority_pool, address_map);
     case EVMC_HOMESTEAD:
         return execute_block<EVMC_HOMESTEAD>(
-            block, db, block_hash_buffer, priority_pool);
+            block, db, block_hash_buffer, priority_pool, address_map);
     case EVMC_FRONTIER:
         return execute_block<EVMC_FRONTIER>(
-            block, db, block_hash_buffer, priority_pool);
+            block, db, block_hash_buffer, priority_pool, address_map);
     default:
         break;
     }

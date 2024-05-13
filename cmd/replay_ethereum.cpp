@@ -196,8 +196,15 @@ int main(int const argc, char const *argv[])
 
     DbCache db_cache{db};
 
+    std::map<byte_string, Address> address_map;
+
     auto const result = replay_eth.run(
-        db_cache, block_db, priority_pool, start_block_number, nblocks);
+        db_cache,
+        block_db,
+        priority_pool,
+        start_block_number,
+        nblocks,
+        address_map);
 
     if (MONAD_UNLIKELY(result.has_error())) {
         return EXIT_FAILURE;
@@ -225,5 +232,24 @@ int main(int const argc, char const *argv[])
         LOG_INFO("Dump db of block: {}", last_block_number);
         write_to_file(db.to_json(), dump_snapshot, last_block_number);
     }
+
+    // generate code size report
+    db.generate_code_size_report();
+
+    // TODO: temp testing code
+    // std::ofstream state_trie_ofile("state_trie_stats.txt");
+    // std::ofstream storage_trie_ofile("storage_trie_stats.txt");
+    // std::ofstream one_storage_ofile("one_storage_stats.txt");
+    // std::ofstream node_size_ofile("node_size_stats.txt");
+    // std::ofstream storage_value_ofile("storage_value_stats.csv");
+
+    // db.generate_report(
+    //     state_trie_ofile,
+    //     storage_trie_ofile,
+    //     one_storage_ofile,
+    //     storage_value_ofile,
+    //     node_size_ofile,
+    //     address_map);
+
     return 0;
 }

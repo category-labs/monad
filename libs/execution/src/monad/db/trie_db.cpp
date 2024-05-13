@@ -4,6 +4,7 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/fmt/account_fmt.hpp> // NOLINT
 #include <monad/core/fmt/bytes_fmt.hpp> // NOLINT
 #include <monad/core/fmt/int_fmt.hpp> // NOLINT
 #include <monad/core/int.hpp>
@@ -54,12 +55,18 @@
 #include <deque>
 #include <functional>
 #include <istream>
+#include <map>
 #include <memory>
 #include <optional>
+#include <ostream>
+#include <set>
 #include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
+
+#include <iomanip>
+#include <iostream>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -118,6 +125,28 @@ namespace
 
         return acct;
     }
+
+    template <typename T>
+    struct vector_pair_cmp_second
+    {
+        bool operator()(
+            std::pair<T, uint64_t> const &a,
+            std::pair<T, uint64_t> const &b) const
+        {
+            return a.second > b.second;
+        }
+    };
+
+    template <typename T>
+    struct vector_pair_cmp_first
+    {
+        bool operator()(
+            std::pair<uint64_t, T> const &a,
+            std::pair<uint64_t, T> const &b) const
+        {
+            return a.first < b.first;
+        }
+    };
 
     struct ComputeAccountLeaf
     {
@@ -906,6 +935,515 @@ void TrieDb::load_latest()
 {
     MONAD_ASSERT(mode_ == Mode::OnDiskReadOnly);
     db_.load_latest();
+}
+
+void TrieDb::generate_code_size_report()
+{
+    struct Traverse : public TraverseMachine
+    {
+        TrieDb &db_;
+        Nibbles path_{};
+        uint64_t total_code_size_{0};
+
+        explicit Traverse(TrieDb &db)
+            : db_(db)
+        {
+        }
+
+        ~Traverse()
+        {
+            std::cout << "Total Code Size: " << total_code_size_ << std::endl;
+        }
+
+        virtual void down(unsigned char const branch, Node const &node) override
+        {
+            if (branch == INVALID_BRANCH) {
+                MONAD_ASSERT(node.path_nibble_view().nibble_size() == 0);
+                return;
+            }
+            path_ = concat(NibblesView{path_}, branch, node.path_nibble_view());
+
+            if (path_.nibble_size() == (KECCAK256_SIZE * 2)) {
+                handle_account(node);
+            }
+        }
+
+        virtual void up(unsigned char const branch, Node const &node) override
+        {
+            auto const path_view = NibblesView{path_};
+            auto const rem_size = [&] {
+                if (branch == INVALID_BRANCH) {
+                    MONAD_ASSERT(path_view.nibble_size() == 0);
+                    return 0;
+                }
+                int const rem_size = path_view.nibble_size() - 1 -
+                                     node.path_nibble_view().nibble_size();
+                MONAD_ASSERT(rem_size >= 0);
+                MONAD_ASSERT(
+                    path_view.substr(static_cast<unsigned>(rem_size)) ==
+                    concat(branch, node.path_nibble_view()));
+                return rem_size;
+            }();
+            path_ = path_view.substr(0, static_cast<unsigned>(rem_size));
+        }
+
+        void handle_account(Node const &node)
+        {
+            MONAD_ASSERT(node.has_value());
+
+            auto encoded_account = node.value();
+
+            auto acct = decode_account_db(encoded_account);
+            MONAD_DEBUG_ASSERT(!acct.has_error());
+            MONAD_DEBUG_ASSERT(encoded_account.empty());
+
+            auto const code_analysis = db_.read_code(acct.value().code_hash);
+            MONAD_ASSERT(code_analysis);
+            total_code_size_ += code_analysis->executable_code.size();
+        }
+
+    } traverse(*this);
+
+    db_.traverse(state_nibbles, traverse, block_number_);
+}
+
+void TrieDb::generate_report(
+    std::ostream &state_trie, std::ostream &storage_trie,
+    std::ostream &one_storage, std::ostream &storage_value,
+    std::ostream &node_size, std::map<byte_string, Address> &address_map)
+{
+    struct Traverse : public TraverseMachine
+    {
+        TrieDb &db_;
+        Nibbles path_;
+
+        uint64_t total_accounts_;
+        uint64_t total_storage_tries_;
+
+        std::string node_type_path_;
+        uint64_t current_storage_trie_depth_;
+        uint64_t current_storage_trie_max_depth_;
+        uint64_t current_storage_trie_num_;
+        uint64_t current_storage_trie_zero_num_;
+
+        std::map<std::string, uint64_t> state_trie_node_type_path_;
+        std::map<uint64_t, uint64_t> state_trie_depth_;
+        std::map<uint64_t, uint64_t> storage_trie_depth_;
+        std::map<uint64_t, uint64_t> storage_trie_num_;
+
+        std::ostream &state_trie_ofile_;
+        std::ostream &storage_trie_ofile_;
+        std::ostream &one_storage_ofile_;
+        std::ostream &storage_value_ofile_; // use to record how many zero /
+                                            // non-zero storage values
+        std::map<byte_string, Address> &address_map_;
+
+        std::chrono::time_point<std::chrono::steady_clock> start_time_;
+
+        // node size recorder
+        std::map<uint64_t, uint64_t> account_leaf_node_sizes_;
+        std::map<uint64_t, uint64_t> account_branch_node_children_;
+        std::ostream &node_size_ofile_;
+
+        Traverse(
+            TrieDb &db, std::ostream &state_trie, std::ostream &storage_trie,
+            std::ostream &one_storage, std::ostream &storage_value,
+            std::ostream &node_size,
+            std::map<byte_string, Address> &address_map)
+            : db_(db)
+            , path_()
+            , total_accounts_(0)
+            , total_storage_tries_(0)
+            , node_type_path_{}
+            , current_storage_trie_depth_(0)
+            , current_storage_trie_max_depth_(1)
+            , current_storage_trie_num_(0)
+            , current_storage_trie_zero_num_(0)
+            , state_trie_node_type_path_{}
+            , state_trie_depth_{}
+            , storage_trie_depth_{}
+            , storage_trie_num_{}
+            , state_trie_ofile_(state_trie)
+            , storage_trie_ofile_(storage_trie)
+            , one_storage_ofile_(one_storage)
+            , storage_value_ofile_(storage_value)
+            , address_map_(address_map)
+            , account_leaf_node_sizes_{}
+            , account_branch_node_children_{}
+            , node_size_ofile_(node_size)
+        {
+            start_time_ = std::chrono::steady_clock::now();
+        }
+
+        void write_state_trie_stats()
+        {
+            state_trie_ofile_ << "# Walked " << total_accounts_
+                              << " (EOA + SC) accounts: \n";
+
+            std::vector<std::pair<uint64_t, uint64_t>> sorted_state_trie_depth(
+                state_trie_depth_.begin(), state_trie_depth_.end());
+            std::sort(
+                sorted_state_trie_depth.begin(),
+                sorted_state_trie_depth.end(),
+                vector_pair_cmp_first<uint64_t>());
+
+            std::vector<std::pair<std::string, uint64_t>>
+                sorted_state_trie_node_type_path(
+                    state_trie_node_type_path_.begin(),
+                    state_trie_node_type_path_.end());
+            std::sort(
+                sorted_state_trie_node_type_path.begin(),
+                sorted_state_trie_node_type_path.end(),
+                vector_pair_cmp_second<std::string>());
+
+            state_trie_ofile_ << "State Trie - Depths: \n";
+            for (auto const &[depth, cnt] : sorted_state_trie_depth) {
+                state_trie_ofile_
+                    << depth << ": "
+                    << static_cast<long double>(cnt) * 100.0 / total_accounts_
+                    << "% (" << cnt << ")\n";
+            }
+
+            state_trie_ofile_ << "\n";
+
+            state_trie_ofile_ << "State Trie - Path types: \n";
+            for (auto const &[path, cnt] : sorted_state_trie_node_type_path) {
+                state_trie_ofile_
+                    << path << ": "
+                    << static_cast<long double>(cnt) * 100.0 / total_accounts_
+                    << "% (" << cnt << ")\n";
+            }
+
+            state_trie_ofile_.flush();
+        }
+
+        void write_storage_trie_stats()
+        {
+            storage_trie_ofile_ << "# Walked " << total_storage_tries_
+                                << " Storage Tries: \n";
+
+            std::vector<std::pair<uint64_t, uint64_t>>
+                sorted_storage_trie_depth(
+                    storage_trie_depth_.begin(), storage_trie_depth_.end());
+            std::sort(
+                sorted_storage_trie_depth.begin(),
+                sorted_storage_trie_depth.end(),
+                vector_pair_cmp_first<uint64_t>());
+
+            std::vector<std::pair<uint64_t, uint64_t>> sorted_storage_trie_num(
+                storage_trie_num_.begin(), storage_trie_num_.end());
+            std::sort(
+                sorted_storage_trie_num.begin(),
+                sorted_storage_trie_num.end(),
+                vector_pair_cmp_first<uint64_t>());
+
+            storage_trie_ofile_ << "Storage Trie - Depths: \n";
+            for (auto const &[depth, cnt] : sorted_storage_trie_depth) {
+                storage_trie_ofile_ << depth << ": "
+                                    << static_cast<long double>(cnt) * 100.0 /
+                                           total_storage_tries_
+                                    << "% (" << cnt << ")\n";
+            }
+
+            storage_trie_ofile_ << "\n";
+
+            storage_trie_ofile_ << "# Storage Trie - Number of used slots: \n";
+            for (auto const &[num_used, cnt] : sorted_storage_trie_num) {
+                storage_trie_ofile_ << num_used << ": "
+                                    << static_cast<long double>(cnt) * 100.0 /
+                                           total_storage_tries_
+                                    << "% (" << cnt << ")\n";
+            }
+
+            storage_trie_ofile_.flush();
+        }
+
+        void write_node_size_stats()
+        {
+            // write account leaf size
+            std::vector<std::pair<uint64_t, uint64_t>>
+                sorted_account_leaf_node_size(
+                    account_leaf_node_sizes_.begin(),
+                    account_leaf_node_sizes_.end());
+            std::sort(
+                sorted_account_leaf_node_size.begin(),
+                sorted_account_leaf_node_size.end(),
+                vector_pair_cmp_first<uint64_t>());
+
+            node_size_ofile_ << "Account leaf node size summary: "
+                             << "\n";
+            for (auto const &[size, cnt] : sorted_account_leaf_node_size) {
+                node_size_ofile_ << size << ": " << cnt << "\n";
+            }
+
+            // write account branch node # children
+            std::vector<std::pair<uint64_t, uint64_t>>
+                sorted_account_branch_node_children(
+                    account_branch_node_children_.begin(),
+                    account_branch_node_children_.end());
+            std::sort(
+                sorted_account_branch_node_children.begin(),
+                sorted_account_branch_node_children.end(),
+                vector_pair_cmp_first<uint64_t>());
+
+            node_size_ofile_ << "Account branch node # children summary: \n";
+            for (auto const &[num_children, cnt] :
+                 sorted_account_branch_node_children) {
+                node_size_ofile_ << num_children << ": " << cnt << "\n";
+            }
+
+            node_size_ofile_.flush();
+        }
+
+        // code to output CA with 1 storage
+        void write_one_storage_stats(Node const &node)
+        {
+            auto encoded_account = node.value();
+            auto const acct = decode_account_db(encoded_account);
+            MONAD_DEBUG_ASSERT(!acct.has_error());
+            MONAD_DEBUG_ASSERT(encoded_account.empty());
+
+            auto const path_key =
+                NibblesView{path_}.substr(0, KECCAK256_SIZE * 2);
+
+            auto const keccaked_acct_key = byte_string(path_key.data_, 32);
+
+            if (address_map_.find(keccaked_acct_key) != address_map_.end()) {
+                auto const &addr =
+                    address_map_.find(byte_string{keccaked_acct_key})->second;
+
+                one_storage_ofile_
+                    << fmt::format(
+                           "0x{:02x}",
+                           fmt::join(
+                               std::as_bytes(std::span(keccaked_acct_key)), ""))
+                    << ", "
+                    << fmt::format(
+                           "0x{:02x}",
+                           fmt::join(std::as_bytes(std::span(addr.bytes)), ""))
+                    << ", ";
+
+                // TODO: only works for in-memory
+                for (unsigned char i = 0; i < 16; ++i) {
+                    if (node.mask & (1u << i)) {
+                        auto const idx =
+                            static_cast<unsigned char>(node.to_child_index(i));
+                        auto const *const child = node.next(idx);
+
+                        auto const child_path = concat(
+                            NibblesView{path_}, idx, child->path_nibble_view());
+                        auto const keccaked_storage_key_path =
+                            child_path.substr(
+                                KECCAK256_SIZE * 2, KECCAK256_SIZE * 2);
+                        auto const keccaked_storage_key =
+                            byte_string(keccaked_storage_key_path.data_, 32);
+
+                        one_storage_ofile_
+                            << fmt::format(
+                                   "0x{:02x}",
+                                   fmt::join(
+                                       std::as_bytes(
+                                           std::span(keccaked_storage_key)),
+                                       ""))
+                            << ", ";
+
+                        auto encoded_storage_value = child->value();
+                        one_storage_ofile_
+                            << fmt::format(
+                                   "0x{:02x}",
+                                   fmt::join(
+                                       std::as_bytes(
+                                           std::span(encoded_storage_value)),
+                                       ""))
+                            << "\n";
+                    }
+                }
+            }
+        }
+
+        // code to output how many zero / non-zero storage:
+        void write_storage_value_stats()
+        {
+            MONAD_ASSERT(
+                current_storage_trie_zero_num_ <= current_storage_trie_num_);
+
+            auto const path_key =
+                NibblesView{path_}.substr(0, KECCAK256_SIZE * 2);
+
+            auto const keccaked_acct_key = byte_string(path_key.data_, 32);
+            storage_value_ofile_
+                << fmt::format(
+                       "0x{:02x}",
+                       fmt::join(
+                           std::as_bytes(std::span(keccaked_acct_key)), ""))
+                << ", " << current_storage_trie_num_ << ", "
+                << current_storage_trie_zero_num_ << "\n";
+        }
+
+        ~Traverse()
+        {
+            // write_state_trie_stats();
+            // write_storage_trie_stats();
+
+            // write_node_size_stats();
+            // one_storage_ofile_.flush();
+            storage_value_ofile_.flush();
+
+            auto const finished_time = std::chrono::steady_clock::now();
+            auto const elapsed =
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    finished_time - start_time_);
+
+            LOG_INFO("Time to traverse the state trie: {}", elapsed);
+        }
+
+        virtual void down(unsigned char const branch, Node const &node) override
+        {
+            if (branch == INVALID_BRANCH) {
+                if (MONAD_LIKELY(node.path_nibble_view().nibble_size() == 0)) {
+                    node_type_path_ = "B";
+                }
+                else {
+                    node_type_path_ = "E";
+                }
+                return;
+            }
+            path_ = concat(NibblesView{path_}, branch, node.path_nibble_view());
+
+            if (path_.nibble_size() == (KECCAK256_SIZE * 2)) {
+                ++total_accounts_;
+                node_type_path_ += 'L';
+                if (MONAD_LIKELY(
+                        state_trie_node_type_path_.find(node_type_path_) !=
+                        state_trie_node_type_path_.end())) {
+                    ++state_trie_node_type_path_[node_type_path_];
+                }
+                else {
+                    state_trie_node_type_path_[node_type_path_] = 1;
+                }
+
+                ++state_trie_depth_[node_type_path_.length()];
+
+                if (MONAD_UNLIKELY(
+                        account_leaf_node_sizes_.find(node.value_len) !=
+                        account_leaf_node_sizes_.end())) {
+                    ++account_leaf_node_sizes_[node.value_len];
+                }
+                else {
+                    account_leaf_node_sizes_[node.value_len] = 1;
+                }
+
+                if (total_accounts_ % 1'000'000 == 0) {
+                    std::cout << "Total accounts traversed: " << total_accounts_
+                              << std::endl;
+                }
+            }
+            else if (path_.nibble_size() < (KECCAK256_SIZE * 2)) { // Still in
+                                                                   // account
+                                                                   // realm
+                if (!node.has_path() && node.number_of_children()) {
+                    node_type_path_ += 'B';
+                }
+                else if (node.has_path() && node.number_of_children()) {
+                    node_type_path_ += 'E';
+                }
+                else {
+                    MONAD_ASSERT(false);
+                }
+
+                // record branch & extension node stats together (in account
+                // trie context)
+                if (node.number_of_children()) {
+                    if (account_branch_node_children_.find(
+                            node.number_of_children()) ==
+                        account_branch_node_children_.end()) {
+                        account_branch_node_children_
+                            [node.number_of_children()] = 1;
+                    }
+                    else {
+                        ++account_branch_node_children_
+                            [node.number_of_children()];
+                    }
+                }
+            }
+            else if (
+                path_.nibble_size() ==
+                ((KECCAK256_SIZE + KECCAK256_SIZE) * 2)) {
+                ++current_storage_trie_depth_;
+                ++current_storage_trie_num_;
+                current_storage_trie_max_depth_ = std::max(
+                    current_storage_trie_depth_,
+                    current_storage_trie_max_depth_);
+
+                if (node.value() == byte_string{0x00} || node.value_len == 0 ||
+                    node.value_len == 1) {
+                    ++current_storage_trie_zero_num_;
+                }
+            }
+            else { //  2 * KECCAK <  path_.nibble_size() < 4 * KECCAK
+                ++current_storage_trie_depth_;
+            }
+        }
+
+        virtual void up(unsigned char const branch, Node const &node) override
+        {
+            if (path_.nibble_size() <= (KECCAK256_SIZE * 2)) {
+                node_type_path_ =
+                    node_type_path_.substr(0, node_type_path_.length() - 1);
+                if (path_.nibble_size() ==
+                    (KECCAK256_SIZE *
+                     2)) { // finish walking the current storage trie
+                    if (current_storage_trie_num_ != 0) {
+                        ++storage_trie_depth_[current_storage_trie_max_depth_];
+                        ++storage_trie_num_[current_storage_trie_num_];
+
+                        write_storage_value_stats();
+
+                        if (current_storage_trie_num_ == 1) {
+                            write_one_storage_stats(node);
+                        }
+
+                        current_storage_trie_num_ = 0;
+                        current_storage_trie_zero_num_ = 0;
+                        current_storage_trie_depth_ = 0;
+                        current_storage_trie_max_depth_ =
+                            1; // can be either 1 or 0
+
+                        ++total_storage_tries_;
+                    }
+                }
+            }
+            else {
+                MONAD_ASSERT(current_storage_trie_depth_ != 0);
+                --current_storage_trie_depth_;
+            }
+
+            auto const path_view = NibblesView{path_};
+            auto const rem_size = [&] {
+                if (branch == INVALID_BRANCH) {
+                    MONAD_ASSERT(path_view.nibble_size() == 0);
+                    return 0;
+                }
+                int const rem_size = path_view.nibble_size() - 1 -
+                                     node.path_nibble_view().nibble_size();
+                MONAD_ASSERT(rem_size >= 0);
+                MONAD_ASSERT(
+                    path_view.substr(static_cast<unsigned>(rem_size)) ==
+                    concat(branch, node.path_nibble_view()));
+                return rem_size;
+            }();
+            path_ = path_view.substr(0, static_cast<unsigned>(rem_size));
+        }
+    } traverse(
+        *this,
+        state_trie,
+        storage_trie,
+        one_storage,
+        storage_value,
+        node_size,
+        address_map);
+
+    db_.traverse(state_nibbles, traverse, block_number_);
 }
 
 MONAD_NAMESPACE_END

@@ -56,8 +56,9 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
     using namespace monad::test;
 
     BOOST_OUTCOME_TRY(static_validate_block<rev>(block));
-
-    return execute_block<rev>(block, db, block_hash_buffer, *pool_);
+    std::map<byte_string, Address> address_map;
+    return execute_block<rev>(
+        block, db, block_hash_buffer, *pool_, address_map);
 }
 
 Result<std::vector<Receipt>> BlockchainTest::execute_dispatch(

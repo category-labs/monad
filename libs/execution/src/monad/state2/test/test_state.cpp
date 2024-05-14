@@ -351,7 +351,8 @@ TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
     }
     {
         bs.commit();
-        EXPECT_EQ(this->db.read_storage(a, key1), bytes32_t{});
+        EXPECT_EQ(
+            this->db.read_storage(a, Incarnation{1, 2}, key1), bytes32_t{});
     }
 }
 
@@ -388,8 +389,8 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
     }
     {
         bs.commit();
-        EXPECT_EQ(this->db.read_storage(a, key1), value1);
-        EXPECT_EQ(this->db.read_storage(a, key2), value2);
+        EXPECT_EQ(this->db.read_storage(a, Incarnation{1, 2}, key1), value1);
+        EXPECT_EQ(this->db.read_storage(a, Incarnation{1, 2}, key2), value2);
         EXPECT_EQ(
             this->db.state_root(),
             0x5B853ED6066181BF0E0D405DA0926FD7707446BCBE670DE13C9EDA7A84F6A401_bytes32);
@@ -421,8 +422,9 @@ TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
     }
     {
         bs.commit();
-        EXPECT_EQ(this->db.read_storage(a, key1), bytes32_t{});
-        EXPECT_EQ(this->db.read_storage(a, key2), value3);
+        EXPECT_EQ(
+            this->db.read_storage(a, Incarnation{1, 2}, key1), bytes32_t{});
+        EXPECT_EQ(this->db.read_storage(a, Incarnation{1, 2}, key2), value3);
     }
 }
 
@@ -938,7 +940,7 @@ TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
 
     EXPECT_TRUE(this->db.read_account(a).has_value());
     EXPECT_EQ(this->db.read_account(a).value().balance, 1u);
-    EXPECT_EQ(this->db.read_storage(a, key1), value1);
+    EXPECT_EQ(this->db.read_storage(a, Incarnation{1, 1}, key1), value1);
 }
 
 TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
@@ -953,7 +955,8 @@ TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
     bs.merge(as);
     bs.commit();
 
-    EXPECT_EQ(this->db.read_storage(a, key1), monad::bytes32_t{});
+    EXPECT_EQ(
+        this->db.read_storage(a, Incarnation{1, 1}, key1), monad::bytes32_t{});
 }
 
 TYPED_TEST(StateTest, commit_twice)
@@ -991,8 +994,8 @@ TYPED_TEST(StateTest, commit_twice)
         bs.merge(as);
         bs.commit();
 
-        EXPECT_EQ(this->db.read_storage(b, key1), value2);
-        EXPECT_EQ(this->db.read_storage(b, key2), value2);
+        EXPECT_EQ(this->db.read_storage(b, Incarnation{1, 1}, key1), value2);
+        EXPECT_EQ(this->db.read_storage(b, Incarnation{1, 1}, key2), value2);
     }
     {
         // Block 1, Txn 0
@@ -1008,7 +1011,11 @@ TYPED_TEST(StateTest, commit_twice)
         bs.merge(cs);
         bs.commit();
 
-        EXPECT_EQ(this->db.read_storage(c, key1), monad::bytes32_t{});
-        EXPECT_EQ(this->db.read_storage(c, key2), monad::bytes32_t{});
+        EXPECT_EQ(
+            this->db.read_storage(c, Incarnation{2, 1}, key1),
+            monad::bytes32_t{});
+        EXPECT_EQ(
+            this->db.read_storage(c, Incarnation{2, 1}, key2),
+            monad::bytes32_t{});
     }
 }

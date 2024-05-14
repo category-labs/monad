@@ -15,21 +15,22 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <class Key, class Value>
+template <
+    class Key, class Value, class KeyHashCompare = tbb::tbb_hash_compare<Key>>
 class LruCache
 {
     /// TYPES
     struct ListNode;
     struct HashMapValue;
     struct LruList;
-    using HashMap = tbb::concurrent_hash_map<Key, HashMapValue>;
+    using HashMap = tbb::concurrent_hash_map<Key, HashMapValue, KeyHashCompare>;
     using HashMapKeyValue = std::pair<Key, HashMapValue>;
     using Accessor = HashMap::accessor;
     using Mutex = SpinLock;
     using Pool = BatchMemPool<ListNode>;
 
     /// CONSTANTS
-    static constexpr size_t slack = 16;
+    static constexpr size_t SLACK = 16;
 
     /// DATA
     size_t max_size_;
@@ -62,8 +63,8 @@ public:
     explicit LruCache(size_t const max_size)
         : max_size_(max_size)
         , size_(0)
-        , hmap_(max_size + slack)
-        , pool_(max_size + slack, 1)
+        , hmap_(max_size + SLACK)
+        , pool_(max_size + SLACK, 1)
     {
     }
 
@@ -130,11 +131,7 @@ private:
     void finish_insert(ListNode *node)
     {
         size_t sz = size();
-        bool evicted = false;
-        if (sz >= max_size_) {
-            evict();
-            evicted = true;
-        }
+        bool const evicted = (sz >= max_size_) && evict();
         {
             std::unique_lock l(mutex_);
             STATS_EVENT_INSERT_NEW();
@@ -149,12 +146,14 @@ private:
                     sz - 1,
                     std::memory_order_acq_rel,
                     std::memory_order_relaxed)) {
-                evict();
+                if (!evict()) {
+                    size_.fetch_add(1, std::memory_order_release);
+                }
             }
         }
     }
 
-    void evict()
+    bool evict()
     {
         ListNode *target;
         {
@@ -162,23 +161,27 @@ private:
             STATS_EVENT_EVICT();
             target = lru_.evict();
         }
+        if (!target) {
+            return false;
+        }
         Accessor acc;
         bool const found = hmap_.find(acc, target->key_);
         MONAD_ASSERT(found);
         hmap_.erase(acc);
         pool_.delete_obj(target);
+        return true;
     }
 
     /// ListNode
     struct ListNode
     {
-        static constexpr uint64_t one_second = 1'000'000'000;
-        static constexpr uint64_t lru_update_period = 1 * one_second;
+        static constexpr int64_t ONE_SECOND = 1'000'000'000;
+        static constexpr int64_t LRU_UPDATE_PERIOD = 1 * ONE_SECOND;
 
         ListNode *prev_{nullptr};
         ListNode *next_{nullptr};
         Key key_;
-        uint64_t lru_time_;
+        std::atomic<int64_t> lru_time_{0};
 
         ListNode() {}
 
@@ -187,26 +190,28 @@ private:
         {
         }
 
-        bool isInList() const
+        bool is_in_list() const
         {
             return prev_ != nullptr;
         }
 
         void update_lru_time()
         {
-            lru_time_ = cur_time();
+            lru_time_.store(cur_time(), std::memory_order_release);
         }
 
         bool check_lru_time() const
         {
-            return (cur_time() - lru_time_) >= lru_update_period;
+            return (cur_time() - lru_time_.load(std::memory_order_acquire)) >=
+                   LRU_UPDATE_PERIOD;
         }
 
-        uint64_t cur_time() const
+        int64_t cur_time() const
         {
-            return std::chrono::duration_cast<std::chrono::nanoseconds>(
+            return (int64_t)
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
                        std::chrono::system_clock::now().time_since_epoch())
-                .count();
+                    .count();
         }
     }; /// ListNode
 
@@ -224,7 +229,7 @@ private:
 
         void update_lru(ListNode *node)
         {
-            if (node->isInList()) {
+            if (node->is_in_list()) {
                 delink(node);
                 push_front(node);
                 node->update_lru_time();
@@ -265,7 +270,9 @@ private:
         ListNode *evict()
         {
             ListNode *const target = tail_.prev_;
-            MONAD_ASSERT(target != &head_);
+            if (target == &head_) {
+                return nullptr;
+            }
             delink(target);
             return target;
         }
@@ -297,13 +304,10 @@ private:
 public:
     std::string print_stats()
     {
-        std::string str;
+        std::string str =
+            std::format("{:8}", size_.load(std::memory_order_acquire));
 #ifdef MONAD_LRU_CACHE_STATS
-        str = stats_.print_stats();
-        if constexpr (std::same_as<Mutex, SpinLock>) {
-            str += " " + mutex_.print_stats();
-        }
-        str += " " + pool_.print_stats();
+        str += " / " + stats_.print_stats();
 #endif
         return str;
     }
@@ -363,10 +367,8 @@ private:
 
         std::string print_stats()
         {
-            char str[100];
-            sprintf(
-                str,
-                "%6ld %5ld %6ld %5ld %5ld %5ld",
+            std::string str = std::format(
+                "{:6} {:6} - {:6} {:6} - {:6} - {:6}",
                 n_find_hit_.load(std::memory_order_acquire),
                 n_find_miss_.load(std::memory_order_acquire),
                 n_insert_found_.load(std::memory_order_acquire),
@@ -374,7 +376,7 @@ private:
                 n_evict_,
                 n_update_lru_);
             clear_stats();
-            return std::string(str);
+            return str;
         }
     }; /// CacheStats
 

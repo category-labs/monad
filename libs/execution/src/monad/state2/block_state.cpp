@@ -76,8 +76,9 @@ bytes32_t BlockState::read_storage(
     }
     // database
     {
-        auto const result =
-            read_storage ? db_.read_storage(address, key) : bytes32_t{};
+        auto const result = read_storage
+                               ? db_.read_storage(address, incarnation, key)
+                               : bytes32_t{};
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_.find(it, address));
         auto const &account = it->second.account.second;

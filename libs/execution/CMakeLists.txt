@@ -16,8 +16,6 @@ add_library(
   # analysis
   "src/monad/analysis/analysis.cpp"
   "src/monad/analysis/analysis.hpp"
-  # cache
-  "src/monad/cache/account_storage_cache.hpp"
   # chain
   "src/monad/chain/chain.cpp"
   "src/monad/chain/chain.hpp"
@@ -151,7 +149,6 @@ target_link_libraries(
   PUBLIC evmc
   PUBLIC evmone
   PUBLIC intx::intx
-  PUBLIC komihash
   PUBLIC nlohmann_json::nlohmann_json
   PUBLIC quill::quill
   PUBLIC silkpre

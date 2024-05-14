@@ -45,7 +45,7 @@ public:
 
     virtual std::optional<Account> read_account(Address const &) override;
     virtual bytes32_t
-    read_storage(Address const &, bytes32_t const &key) override;
+    read_storage(Address const &, Incarnation, bytes32_t const &key) override;
     virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) override;
     virtual void increment_block_number() override;
     virtual void commit(
@@ -53,6 +53,7 @@ public:
         std::vector<Receipt> const & = {}) override;
     virtual bytes32_t state_root() override;
     virtual bytes32_t receipts_root() override;
+    virtual std::string print_stats() override;
 
     nlohmann::json to_json();
     size_t prefetch_current_root();
@@ -62,6 +63,21 @@ public:
     void set_block_number(uint64_t);
     bool is_latest() const;
     void load_latest();
+
+private:
+    /// STATS
+    std::atomic<uint64_t> n_storage_no_value_{0};
+    std::atomic<uint64_t> n_storage_value_{0};
+
+    void stats_storage_no_value()
+    {
+        n_storage_no_value_.fetch_add(1, std::memory_order_release);
+    }
+
+    void stats_storage_value()
+    {
+        n_storage_value_.fetch_add(1, std::memory_order_release);
+    }
 };
 
 MONAD_NAMESPACE_END

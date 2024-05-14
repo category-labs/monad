@@ -1,12 +1,13 @@
 #pragma once
 
-#include <monad/cache/account_storage_cache.hpp>
 #include <monad/config.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/bytes_hash_compare.hpp>
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
+#include <monad/lru/lru_cache.hpp>
 #include <monad/state2/state_deltas.hpp>
 
 #include <evmc/evmc.hpp>
@@ -22,13 +23,37 @@ class DbCache final : public Db
 {
     Db &db_;
 
-    using Combined = AccountStorageCache;
+    struct StorageKey
+    {
+        static constexpr size_t k_bytes =
+            sizeof(Address) + sizeof(Incarnation) + sizeof(bytes32_t);
 
-    Combined cache_{10'000'000, 10'000'000};
+        uint8_t bytes[k_bytes];
 
+        StorageKey() = default;
+
+        StorageKey(
+            Address const &addr, Incarnation incarnation, bytes32_t const &key)
+        {
+            memcpy(bytes, addr.bytes, sizeof(Address));
+            memcpy(&bytes[sizeof(Address)], &incarnation, sizeof(Incarnation));
+            memcpy(
+                &bytes[sizeof(Address) + sizeof(Incarnation)],
+                key.bytes,
+                sizeof(bytes32_t));
+        }
+    };
+
+    using AddressHashCompare = BytesHashCompare<Address>;
+    using StorageKeyHashCompare = BytesHashCompare<StorageKey>;
+    using AccountsCache =
+        LruCache<Address, std::optional<Account>, AddressHashCompare>;
+    using StorageCache = LruCache<StorageKey, bytes32_t, StorageKeyHashCompare>;
     using CodeCache =
         tstarling::ThreadSafeLRUCache<bytes32_t, std::shared_ptr<CodeAnalysis>>;
 
+    AccountsCache accounts_{10'000'000};
+    StorageCache storage_{10'000'000};
     CodeCache code_{40000};
 
 public:
@@ -40,38 +65,29 @@ public:
     virtual std::optional<Account> read_account(Address const &address) override
     {
         {
-            Combined::AccountConstAccessor acc{};
-            if (cache_.find_account(acc, address)) {
+            AccountsCache::ConstAccessor acc{};
+            if (accounts_.find(acc, address)) {
                 return acc->second.value_;
             }
         }
         auto const result = db_.read_account(address);
-        {
-            Combined::AccountAccessor acc{};
-            cache_.insert_account(acc, address, result);
-        }
+        accounts_.insert(address, result);
         return result;
     }
 
-    virtual bytes32_t
-    read_storage(Address const &address, bytes32_t const &key) override
+    virtual bytes32_t read_storage(
+        Address const &address, Incarnation incarnation,
+        bytes32_t const &key) override
     {
+        StorageKey const skey{address, incarnation, key};
         {
-            Combined::StorageConstAccessor acc{};
-            if (cache_.find_storage(acc, address, key)) {
+            StorageCache::ConstAccessor acc{};
+            if (storage_.find(acc, skey)) {
                 return acc->second.value_;
             }
         }
-        auto const result = db_.read_storage(address, key);
-        {
-            Combined::AccountAccessor acc{};
-            if (!cache_.find_account(acc, address)) {
-                auto const account = db_.read_account(address);
-                MONAD_ASSERT(account);
-                cache_.insert_account(acc, address, account);
-            }
-            cache_.insert_storage(acc, key, result);
-        }
+        auto const result = db_.read_storage(address, incarnation, key);
+        storage_.insert(skey, result);
         return result;
     }
 
@@ -106,18 +122,19 @@ public:
             auto const &address = it->first;
             auto const &account_delta = it->second.account;
             if (account_delta.second != account_delta.first) {
-                Combined::AccountAccessor acc{};
-                cache_.insert_account(acc, address, account_delta.second);
+                accounts_.insert(address, account_delta.second);
             }
             auto const &storage = it->second.storage;
+            auto const &account = account_delta.second;
             for (auto it2 = storage.cbegin(); it2 != storage.cend(); ++it2) {
                 auto const &key = it2->first;
                 auto const &storage_delta = it2->second;
                 if (storage_delta.second != storage_delta.first) {
-                    Combined::AccountAccessor acc{};
-                    bool const found = cache_.find_account(acc, address);
-                    if (found) {
-                        cache_.insert_storage(acc, key, storage_delta.second);
+                    if (account.has_value()) {
+                        auto const incarnation = account->incarnation;
+                        storage_.insert(
+                            StorageKey(address, incarnation, key),
+                            storage_delta.second);
                     }
                 }
             }
@@ -139,6 +156,12 @@ public:
     virtual bytes32_t receipts_root() override
     {
         return db_.receipts_root();
+    }
+
+    virtual std::string print_stats() override
+    {
+        return db_.print_stats() + " | " + accounts_.print_stats() + " | " +
+               storage_.print_stats();
     }
 };
 

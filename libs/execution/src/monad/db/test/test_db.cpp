@@ -246,14 +246,14 @@ TYPED_TEST(DBTest, read_storage)
         Code{});
 
     // Existing storage
-    EXPECT_EQ(db.read_storage(a, key1), value1);
+    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key1), value1);
 
     // Non-existing key
-    EXPECT_EQ(db.read_storage(a, key2), bytes32_t{});
+    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key2), bytes32_t{});
 
     // Non-existing account
     EXPECT_FALSE(db.read_account(b).has_value());
-    EXPECT_EQ(db.read_storage(b, key1), bytes32_t{});
+    EXPECT_EQ(db.read_storage(b, Incarnation{0, 0}, key1), bytes32_t{});
 }
 
 TYPED_TEST(DBTest, read_code)
@@ -339,7 +339,7 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
         Code{});
 
     EXPECT_EQ(db.read_account(a), std::nullopt);
-    EXPECT_EQ(db.read_storage(a, key1), bytes32_t{});
+    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key1), bytes32_t{});
     EXPECT_EQ(db.state_root(), NULL_ROOT);
 }
 

@@ -80,6 +80,7 @@ add_library(
   "src/monad/core/basic_formatter.hpp"
   "src/monad/core/bit_util.h"
   "src/monad/core/byte_string.hpp"
+  "src/monad/core/bytes_hash_compare.hpp"
   "src/monad/core/cmemory.hpp"
   "src/monad/core/cpu_relax.h"
   "src/monad/core/endian.hpp"
@@ -152,6 +153,7 @@ else()
 endif()
 target_link_libraries(monad_core PUBLIC openssl_sha3_asm uring Boost::fiber
                                         TBB::tbb)
+target_link_libraries(monad_core PUBLIC komihash)
 
 add_library(
   monad_core_disas STATIC

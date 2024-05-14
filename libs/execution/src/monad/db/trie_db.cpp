@@ -621,13 +621,24 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     return acct.value();
 }
 
-bytes32_t TrieDb::read_storage(Address const &addr, bytes32_t const &key)
+#define MONAD_TRIEDB_STATS
+#ifdef MONAD_TRIEDB_STATS
+    #define STATS_STORAGE_NO_VALUE() stats_storage_no_value()
+    #define STATS_STORAGE_VALUE() stats_storage_value()
+#else
+    #define STATS_STORAGE_NO_VALUE()
+    #define STATS_STORAGE_VALUE()
+#endif
+
+bytes32_t
+TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
 {
     auto const value = db_.get(
         concat(
             state_nibble, NibblesView{to_key(addr)}, NibblesView{to_key(key)}),
         block_number_);
     if (!value.has_value()) {
+        STATS_STORAGE_NO_VALUE();
         return {};
     }
     MONAD_ASSERT(value.value().size() <= sizeof(bytes32_t));
@@ -636,8 +647,14 @@ bytes32_t TrieDb::read_storage(Address const &addr, bytes32_t const &key)
         value.value().begin(),
         value.value().size(),
         ret.bytes + sizeof(bytes32_t) - value.value().size());
+    STATS_STORAGE_VALUE();
     return ret;
 };
+
+#ifdef MONAD_TRIEDB_STATS
+    #undef STATS_STORAGE_NO_VALUE
+    #undef STATS_STORAGE_VALUE
+#endif
 
 std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
 {
@@ -771,6 +788,18 @@ bytes32_t TrieDb::receipts_root()
     MONAD_ASSERT(value.value().size() == sizeof(bytes32_t));
     std::copy_n(value.value().data(), sizeof(bytes32_t), root.bytes);
     return root;
+}
+
+std::string TrieDb::print_stats()
+{
+    std::string ret;
+    ret += std::format(
+        "{:6} {:6}",
+        n_storage_no_value_.load(std::memory_order_acquire),
+        n_storage_value_.load(std::memory_order_acquire));
+    n_storage_no_value_.store(0, std::memory_order_release);
+    n_storage_value_.store(0, std::memory_order_release);
+    return ret;
 }
 
 nlohmann::json TrieDb::to_json()

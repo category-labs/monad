@@ -19,7 +19,8 @@ struct Db
 {
     virtual std::optional<Account> read_account(Address const &) = 0;
 
-    virtual bytes32_t read_storage(Address const &, bytes32_t const &key) = 0;
+    virtual bytes32_t
+    read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
 
     virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) = 0;
 
@@ -31,6 +32,11 @@ struct Db
     virtual void commit(
         StateDeltas const &, Code const &,
         std::vector<Receipt> const & = {}) = 0;
+
+    virtual std::string print_stats()
+    {
+        return {};
+    }
 };
 
 MONAD_NAMESPACE_END

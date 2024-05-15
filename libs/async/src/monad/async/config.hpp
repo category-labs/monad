@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <bit>
 #include <cassert>
 #include <compare>
 #include <cstdint>

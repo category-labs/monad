@@ -350,7 +350,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
         bs.merge(s2);
     }
     {
-        bs.commit();
+        bs.commit({});
         EXPECT_EQ(
             this->db.read_storage(a, Incarnation{1, 2}, key1), bytes32_t{});
     }
@@ -388,7 +388,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
         bs.merge(s2);
     }
     {
-        bs.commit();
+        bs.commit({});
         EXPECT_EQ(this->db.read_storage(a, Incarnation{1, 2}, key1), value1);
         EXPECT_EQ(this->db.read_storage(a, Incarnation{1, 2}, key2), value2);
         EXPECT_EQ(
@@ -421,7 +421,7 @@ TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
         bs.merge(s2);
     }
     {
-        bs.commit();
+        bs.commit({});
         EXPECT_EQ(
             this->db.read_storage(a, Incarnation{1, 2}, key1), bytes32_t{});
         EXPECT_EQ(this->db.read_storage(a, Incarnation{1, 2}, key2), value3);
@@ -936,7 +936,7 @@ TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
     as.set_storage(a, key1, value1);
 
     bs.merge(as);
-    bs.commit();
+    bs.commit({});
 
     EXPECT_TRUE(this->db.read_account(a).has_value());
     EXPECT_EQ(this->db.read_account(a).value().balance, 1u);
@@ -953,7 +953,7 @@ TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
     EXPECT_EQ(as.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
     EXPECT_EQ(as.set_storage(a, key1, null), EVMC_STORAGE_ADDED_DELETED);
     bs.merge(as);
-    bs.commit();
+    bs.commit({});
 
     EXPECT_EQ(
         this->db.read_storage(a, Incarnation{1, 1}, key1), monad::bytes32_t{});
@@ -992,7 +992,7 @@ TYPED_TEST(StateTest, commit_twice)
             as.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
-        bs.commit();
+        bs.commit({});
 
         EXPECT_EQ(this->db.read_storage(b, Incarnation{1, 1}, key1), value2);
         EXPECT_EQ(this->db.read_storage(b, Incarnation{1, 1}, key2), value2);
@@ -1009,7 +1009,7 @@ TYPED_TEST(StateTest, commit_twice)
         cs.destruct_suicides();
         EXPECT_TRUE(bs.can_merge(cs));
         bs.merge(cs);
-        bs.commit();
+        bs.commit({});
 
         EXPECT_EQ(
             this->db.read_storage(c, Incarnation{2, 1}, key1),

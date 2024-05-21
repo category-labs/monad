@@ -1,3 +1,4 @@
+#pragma once
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/node.hpp>
 

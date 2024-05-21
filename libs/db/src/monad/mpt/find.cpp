@@ -58,13 +58,13 @@ find_blocking(UpdateAuxImpl const &aux, NodeCursor root, NibblesView const key)
         ++prefix_index;
         ++node_prefix_index;
     }
-    if (node_prefix_index != node->path_nibble_index_end) {
-        // prefix key exists but no leaf ends at `key`
-        return {
-            NodeCursor{*node, node_prefix_index},
-            find_result::key_ends_earlier_than_node_failure};
-    }
-    return {NodeCursor{*node, node_prefix_index}, find_result::success};
+    return {
+        NodeCursor{*node, node_prefix_index},
+        /* prefix key exists but no leaf ends at `key`*/
+        node_prefix_index != node->path_nibble_index_end
+            ? find_result::key_ends_earlier_than_node_failure
+        : node->has_value() ? find_result::success
+                            : find_result::node_is_not_leaf_failure};
 }
 
 Nibbles find_min_key_blocking(UpdateAuxImpl const &aux, Node &root)

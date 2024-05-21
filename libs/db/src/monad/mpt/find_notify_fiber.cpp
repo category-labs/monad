@@ -130,7 +130,11 @@ void find_recursive(
     }
     if (prefix_index == key.nibble_size()) {
         promise.set_value(
-            {NodeCursor{*node, node_prefix_index}, find_result::success});
+            {NodeCursor{*node, node_prefix_index},
+             node_prefix_index != node->path_nibble_index_end
+                 ? find_result::key_ends_earlier_than_node_failure
+             : node->has_value() ? find_result::success
+                                 : find_result::node_is_not_leaf_failure});
         return;
     }
     MONAD_ASSERT(prefix_index < key.nibble_size());

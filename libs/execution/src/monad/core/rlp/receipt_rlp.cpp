@@ -45,19 +45,25 @@ byte_string encode_bloom(Receipt::Bloom const &bloom)
     return encode_string2(to_byte_string_view(bloom));
 }
 
-byte_string encode_receipt(Receipt const &receipt)
+byte_string encode_logs(std::vector<Receipt::Log> const &logs)
 {
     byte_string log_result{};
 
-    for (auto const &i : receipt.logs) {
+    for (auto const &i : logs) {
         log_result += encode_log(i);
     }
 
+    return encode_list2(log_result);
+
+}
+
+byte_string encode_receipt(Receipt const &receipt)
+{
     auto const receipt_bytes = encode_list2(
         encode_unsigned(receipt.status),
         encode_unsigned(receipt.gas_used),
         encode_bloom(receipt.bloom),
-        encode_list2(log_result));
+        encode_logs(receipt.logs));
 
     if (receipt.type == TransactionType::eip1559 ||
         receipt.type == TransactionType::eip2930) {
@@ -79,6 +85,9 @@ Result<std::vector<bytes32_t>> decode_topics(byte_string_view &enc)
     constexpr size_t topic_size =
         33; // 1 byte for header, 32 bytes for byte32_t
     auto const list_space = payload.size();
+
+    printf("%lu %lu\n", payload.size(), list_space / topic_size);
+
     topics.reserve(list_space / topic_size);
 
     while (payload.size() > 0) {
@@ -112,13 +121,6 @@ Result<std::vector<Receipt::Log>> decode_logs(byte_string_view &enc)
 {
     std::vector<Receipt::Log> logs;
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
-    constexpr size_t approx_data_size = 32;
-    constexpr size_t approx_num_topics = 10;
-    // 20 bytes for address, 33 bytes per topic
-    constexpr auto log_size_approx =
-        20 + approx_data_size + 33 * approx_num_topics;
-    auto const list_space = payload.size();
-    logs.resize(list_space / log_size_approx);
 
     while (payload.size() > 0) {
         BOOST_OUTCOME_TRY(auto log, decode_log(payload));

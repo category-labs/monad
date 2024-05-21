@@ -64,13 +64,13 @@ struct Compute
     virtual unsigned compute(unsigned char *buffer, Node *node) = 0;
 };
 
+using inline_owning_bytes_span =
+    allocators::inline_owning_span<unsigned char, 10240>;
+
 template <typename T>
 concept compute_leaf_data = requires {
     { T::compute(std::declval<Node const &>()) } -> std::same_as<byte_string>;
 };
-
-using inline_owning_bytes_span =
-    allocators::inline_owning_span<unsigned char, 10240>;
 
 template <compute_leaf_data TComputeLeafData>
 struct MerkleComputeBase : Compute
@@ -214,7 +214,13 @@ in the middle of a variable length trie.
 
 TODO for vicky: consolidate VarLenMerkleCompute and MerkleCompute into one.
 */
-struct VarLenMerkleCompute : Compute
+
+template <typename T>
+concept var_len_compute_leaf_data = requires {
+    { T::compute(std::declval<byte_string_view const>()) } -> std::same_as<byte_string>; };
+
+template <var_len_compute_leaf_data TComputeLeafData>
+struct VarLenMerkleComputeBase : Compute
 {
     static constexpr auto calc_rlp_max_size =
         [](unsigned const leaf_data_size) -> unsigned {
@@ -257,7 +263,7 @@ struct VarLenMerkleCompute : Compute
         auto result = encode_16_children(node, branch_str_rlp);
         // encode vt
         result = (node->has_value() && node->value_len)
-                     ? rlp::encode_string(result, node->value())
+                     ? rlp::encode_string(result, TComputeLeafData::compute(node->value()))
                      : encode_empty_string(result);
         auto const concat_len =
             static_cast<size_t>(result.data() - branch_str_rlp.data());
@@ -273,7 +279,8 @@ struct VarLenMerkleCompute : Compute
         if (node->number_of_children() == 0) {
             MONAD_ASSERT(node->has_value());
             return encode_two_pieces(
-                buffer, node->path_nibble_view(), node->value(), true);
+                // buffer, node->path_nibble_view(), node->value(), true);
+                buffer, node->path_nibble_view(), TComputeLeafData::compute(node->value()), true);
         }
         // Ethereum extension: there is non-empty path
         // rlp(encoded path, inline branch hash)
@@ -317,9 +324,10 @@ protected:
     }
 };
 
-struct RootVarLenMerkleCompute final : public VarLenMerkleCompute
+template <var_len_compute_leaf_data TComputeLeafData>
+struct RootVarLenMerkleComputeBase final : public VarLenMerkleComputeBase<TComputeLeafData>
 {
-    using Base = VarLenMerkleCompute;
+    using Base = VarLenMerkleComputeBase<TComputeLeafData>;
 
     virtual unsigned compute(unsigned char *const, Node *const) override
     {
@@ -345,7 +353,7 @@ struct RootVarLenMerkleCompute final : public VarLenMerkleCompute
             Base::do_compute_len(children, value);
         }
         // root data of a merkle trie is always a hash
-        state.keccak_inplace_to_root_hash();
+        Base::state.keccak_inplace_to_root_hash();
         return KECCAK256_SIZE;
     }
 
@@ -360,8 +368,8 @@ private:
         Node *const node = single_child.ptr;
         MONAD_DEBUG_ASSERT(node);
 
-        return state.len = encode_two_pieces(
-                   state.buffer,
+        return Base::state.len = encode_two_pieces(
+                   Base::state.buffer,
                    concat(single_child.branch, node->path_nibble_view()),
                    /* second: branch hash or leaf value */
                    node->mask ? (node->bitpacked.data_len ? node->data()
@@ -370,7 +378,7 @@ private:
                        unsigned char branch_hash[KECCAK256_SIZE];
                        return {branch_hash, compute_branch(branch_hash, node)};
                    }())
-                              : node->value(),
+                              : TComputeLeafData::compute(node->value()),
                    node->has_value());
     }
 };

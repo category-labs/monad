@@ -26,6 +26,7 @@ struct Receipt
     uint64_t gas_used{}; // R_u
     TransactionType type{}; // R_x
     std::vector<Log> logs{}; // R_l
+    std::optional<Address> contract_address{};
 
     void add_log(Receipt::Log const &);
 };
@@ -35,7 +36,7 @@ void populate_bloom(Receipt::Bloom &, Receipt::Log const &);
 static_assert(sizeof(Receipt::Log) == 80);
 static_assert(alignof(Receipt::Log) == 8);
 
-static_assert(sizeof(Receipt) == 304);
+static_assert(sizeof(Receipt) == 328);
 static_assert(alignof(Receipt) == 8);
 
 MONAD_NAMESPACE_END

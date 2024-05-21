@@ -14,6 +14,7 @@ byte_string encode_topics(std::vector<bytes32_t> const &);
 byte_string encode_log(Receipt::Log const &);
 byte_string encode_bloom(Receipt::Bloom const &);
 byte_string encode_receipt(Receipt const &);
+byte_string encode_logs(std::vector<Receipt::Log> const &);
 
 Result<Receipt::Bloom> decode_bloom(byte_string_view &);
 Result<std::vector<bytes32_t>> decode_topics(byte_string_view &);

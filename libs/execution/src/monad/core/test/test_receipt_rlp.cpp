@@ -192,6 +192,57 @@ TEST(Rlp_Receipt, DecodeEncodeEip155Receipt)
     }
 }
 
+TEST(Rlp_Receipt, DecodeEncodeReceiptLogSize)
+{
+    using namespace intx;
+    using namespace evmc::literals;
+
+    static constexpr uint64_t gas{2'850'010};
+    static constexpr auto addr{
+        0x3535353535353535353535353535353535353535_address};
+    static constexpr auto topic1{
+        0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32};
+    static constexpr auto topic2{
+        0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
+    static byte_string const data{0x00, 0x01, 0x02, 0x03};
+    static Receipt::Bloom bloom{};
+    bloom[78] = 0x01;
+    bloom[182] = 0x01;
+    bloom[232] = 0x01;
+
+    Receipt::Log log{.data = data, .topics = {topic1, topic2, topic1, topic2, topic1, topic2, topic1, topic2, topic1, topic2, topic1}, .address = addr};
+    Receipt const r{
+        .bloom = bloom,
+        .gas_used = gas,
+        .type = TransactionType::legacy,
+        .logs = {log}};
+    auto const encoded = encode_receipt(r);
+
+    byte_string_view encoded_receipt_view{encoded};
+    auto const decoded_receipt = decode_receipt(encoded_receipt_view);
+    ASSERT_FALSE(decoded_receipt.has_error());
+    EXPECT_EQ(encoded_receipt_view.size(), 0);
+
+    EXPECT_EQ(decoded_receipt.value().type, r.type);
+    EXPECT_EQ(decoded_receipt.value().gas_used, r.gas_used);
+    EXPECT_EQ(decoded_receipt.value().status, r.status);
+
+    // Bloom
+    EXPECT_EQ(decoded_receipt.value().bloom, r.bloom);
+
+    // Log
+    EXPECT_EQ(decoded_receipt.value().logs.size(), r.logs.size());
+
+    for (size_t i = 0u; i < decoded_receipt.value().logs.size(); ++i) {
+        EXPECT_EQ(decoded_receipt.value().logs[i].address, r.logs[i].address);
+        EXPECT_EQ(
+            decoded_receipt.value().logs[i].topics.size(),
+            r.logs[i].topics.size());
+        EXPECT_EQ(decoded_receipt.value().logs[i].topics, r.logs[i].topics);
+        EXPECT_EQ(decoded_receipt.value().logs[i].address, r.logs[i].address);
+    }
+}
+
 TEST(Rlp_Receipt, EncodeEip1559Receipt)
 {
     using namespace intx;

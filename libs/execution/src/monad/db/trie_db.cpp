@@ -12,6 +12,7 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/core/rlp/account_rlp.hpp>
+#include <monad/core/rlp/address_rlp.hpp>
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
 #include <monad/core/rlp/receipt_rlp.hpp>
@@ -119,6 +120,41 @@ namespace
         return acct;
     }
 
+    byte_string encode_receipt_db(Receipt const &receipt)
+    {
+    auto const receipt_bytes = rlp::encode_list2(
+        rlp::encode_unsigned(receipt.status),
+        rlp::encode_unsigned(receipt.gas_used),
+        rlp::encode_bloom(receipt.bloom),
+        rlp::encode_logs(receipt.logs),
+        rlp::encode_unsigned((unsigned char)receipt.type),
+        rlp::encode_address(receipt.contract_address)
+    );
+
+    return receipt_bytes;
+    }
+
+    Result<Receipt> decode_receipt_db(byte_string_view &enc)
+    {
+        Receipt receipt;
+        BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
+        BOOST_OUTCOME_TRY(receipt.status, rlp::decode_unsigned<uint64_t>(payload));
+        BOOST_OUTCOME_TRY(receipt.gas_used, rlp::decode_unsigned<uint64_t>(payload));
+        BOOST_OUTCOME_TRY(receipt.bloom, rlp::decode_bloom(payload));
+        BOOST_OUTCOME_TRY(receipt.logs, rlp::decode_logs(payload));
+
+        BOOST_OUTCOME_TRY(auto const ty, rlp::decode_unsigned<unsigned char>(payload));
+        receipt.type = (TransactionType)ty;
+
+        BOOST_OUTCOME_TRY(receipt.contract_address, rlp::decode_optional_address(payload));
+
+        if (MONAD_UNLIKELY(!payload.empty())) {
+            return rlp::DecodeError::InputTooLong;
+        }
+
+        return receipt;
+    }
+
     struct ComputeAccountLeaf
     {
         static byte_string compute(Node const &node)
@@ -156,8 +192,22 @@ namespace
         }
     };
 
+    struct ComputeReceiptLeaf
+    {
+        static byte_string compute(byte_string_view encoded_receipt)
+        {
+            auto const rcpt = decode_receipt_db(encoded_receipt);
+            MONAD_ASSERT(!rcpt.has_error());
+            MONAD_ASSERT(encoded_receipt.empty());
+
+            return rlp::encode_receipt(rcpt.value());
+        }
+    };
+
     using AccountMerkleCompute = MerkleComputeBase<ComputeAccountLeaf>;
     using StorageMerkleCompute = MerkleComputeBase<ComputeStorageLeaf>;
+    using ReceiptMerkleCompute = VarLenMerkleComputeBase<ComputeReceiptLeaf>;
+    using ReceiptRootMerkleCompute = RootVarLenMerkleComputeBase<ComputeReceiptLeaf>;
 
     struct StorageRootMerkleCompute : public StorageMerkleCompute
     {
@@ -431,8 +481,8 @@ struct TrieDb::Machine : public mpt::StateMachine
         static StorageMerkleCompute storage_compute;
         static StorageRootMerkleCompute storage_root_compute;
 
-        static VarLenMerkleCompute receipt_compute;
-        static RootVarLenMerkleCompute receipt_root_compute;
+        static ReceiptMerkleCompute receipt_compute;
+        static ReceiptRootMerkleCompute receipt_root_compute;
 
         if (MONAD_LIKELY(trie_section == TrieType::State)) {
             MONAD_ASSERT(depth >= BLOCK_NUM_NIBBLES_LEN + prefix_len);
@@ -729,7 +779,7 @@ void TrieDb::commit(
         receipt_updates.push_front(update_alloc_.emplace_back(Update{
             .key =
                 NibblesView{bytes_alloc_.emplace_back(rlp::encode_unsigned(i))},
-            .value = bytes_alloc_.emplace_back(rlp::encode_receipt(receipt)),
+            .value = bytes_alloc_.emplace_back(encode_receipt_db(receipt)),
             .incarnation = false,
             .next = UpdateList{}}));
     }

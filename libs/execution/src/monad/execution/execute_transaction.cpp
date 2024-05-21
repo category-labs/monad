@@ -161,7 +161,9 @@ Receipt execute_final(
     Receipt receipt{
         .status = result.status_code == EVMC_SUCCESS ? 1u : 0u,
         .gas_used = gas_used,
-        .type = tx.type};
+        .type = tx.type,
+        .contract_address = tx.to ? std::nullopt : std::make_optional(result.create_address)
+    };
     for (auto const &log : state.logs()) {
         receipt.add_log(std::move(log));
     }

@@ -80,3 +80,51 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     // check if miner gets the right reward
     EXPECT_EQ(receipt.gas_used * 10u, uint256_t{530'000});
 }
+
+TEST(TransactionProcessor, receipt_of_contract_address)
+{
+    using intx::operator"" _u256;
+
+    static constexpr auto from{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto bene{
+        0x5353535353535353535353535353535353535353_address};
+
+    db_t db{std::nullopt};
+    BlockState bs{db};
+
+    {
+        State state{bs, Incarnation{0, 0}};
+        state.add_to_balance(from, 56'000'000'000'000'000);
+        state.set_nonce(from, 25);
+        bs.merge(state);
+    }
+
+    Transaction const tx{
+        .sc =
+            {.r =
+                 0x5fd883bb01a10915ebc06621b925bd6d624cb6768976b73c0d468b31f657d15b_u256,
+             .s =
+                 0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256},
+        .nonce = 25,
+        .gas_limit = 55'000,
+        .to = std::nullopt
+    };
+
+    BlockHeader const header{.beneficiary = bene};
+    BlockHashBuffer const block_hash_buffer;
+
+    boost::fibers::promise<void> prev{};
+    prev.set_value();
+
+    auto const result = execute_impl<EVMC_SHANGHAI>(
+        0, tx, from, header, block_hash_buffer, bs, prev);
+
+    ASSERT_TRUE(!result.has_error());
+
+    auto const &receipt = result.value();
+
+    EXPECT_EQ(receipt.status, 1u);
+    EXPECT_TRUE(receipt.contract_address.has_value());
+}
+

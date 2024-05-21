@@ -54,6 +54,16 @@ namespace monad::test
         }
     };
 
+    struct VarLenDummyComputeLeafData
+    {
+        // TEMPORARY for POC
+        // compute leaf data as - concat(input_leaf, hash);
+        static byte_string compute(byte_string_view encoded)
+        {
+            return byte_string{encoded};
+        }
+    };
+
     class StateMachineWithBlockNo final : public StateMachine
     {
     private:
@@ -135,8 +145,8 @@ namespace monad::test
 
         virtual Compute &get_compute() const override
         {
-            static VarLenMerkleCompute m{};
-            static RootVarLenMerkleCompute rm{};
+            static VarLenMerkleComputeBase<VarLenDummyComputeLeafData> m{};
+            static RootVarLenMerkleComputeBase<VarLenDummyComputeLeafData> rm{};
             static EmptyCompute e{};
             if (MONAD_LIKELY(depth > block_num_size)) {
                 return m;
@@ -207,7 +217,7 @@ namespace monad::test
 
     using StateMachineAlwaysEmpty = StateMachineAlways<EmptyCompute>;
     using StateMachineAlwaysMerkle = StateMachineAlways<MerkleCompute>;
-    using StateMachineAlwaysVarLen = StateMachineAlways<VarLenMerkleCompute>;
+    using StateMachineAlwaysVarLen = StateMachineAlways<VarLenMerkleComputeBase<VarLenDummyComputeLeafData>>;
 
     Node::UniquePtr upsert_vector(
         UpdateAuxImpl &aux, StateMachine &sm, Node::UniquePtr old,

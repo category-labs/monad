@@ -279,7 +279,6 @@ struct VarLenMerkleComputeBase : Compute
         if (node->number_of_children() == 0) {
             MONAD_ASSERT(node->has_value());
             return encode_two_pieces(
-                // buffer, node->path_nibble_view(), node->value(), true);
                 buffer, node->path_nibble_view(), TComputeLeafData::compute(node->value()), true);
         }
         // Ethereum extension: there is non-empty path
@@ -373,7 +372,7 @@ private:
                    concat(single_child.branch, node->path_nibble_view()),
                    /* second: branch hash or leaf value */
                    node->mask ? (node->bitpacked.data_len ? node->data()
-                                                          : [&] -> byte_string {
+                                                : [&] -> byte_string {
                        MONAD_ASSERT(!node->has_path());
                        unsigned char branch_hash[KECCAK256_SIZE];
                        return {branch_hash, compute_branch(branch_hash, node)};

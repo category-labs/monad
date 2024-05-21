@@ -86,8 +86,6 @@ Result<std::vector<bytes32_t>> decode_topics(byte_string_view &enc)
         33; // 1 byte for header, 32 bytes for byte32_t
     auto const list_space = payload.size();
 
-    printf("%lu %lu\n", payload.size(), list_space / topic_size);
-
     topics.reserve(list_space / topic_size);
 
     while (payload.size() > 0) {

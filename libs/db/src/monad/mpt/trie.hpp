@@ -773,6 +773,7 @@ enum class find_result : uint8_t
     key_mismatch_failure,
     branch_not_exist_failure,
     key_ends_earlier_than_node_failure,
+    node_is_not_leaf_failure,
     need_to_continue_in_io_thread
 };
 using find_result_type = std::pair<NodeCursor, find_result>;

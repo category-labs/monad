@@ -52,9 +52,7 @@ namespace detail
 
         struct db_offsets_info_t
         {
-            // these two are advanced after each db block update, they represent
-            // the last valid root offset which is always in fast list, and the
-            // start of wip slow list offset.
+            // the following three are advanced after each db block update
             std::atomic<chunk_offset_t> root_offset;
             // starting offsets of current wip db block's contents. all contents
             // starting this point are not yet validated, and should be rewound
@@ -112,8 +110,8 @@ namespace detail
         if you modify anything after this!
         */
         float slow_fast_ratio;
-        uint64_t min_db_history_version;
-        uint64_t max_db_history_version;
+        std::atomic<uint64_t> min_db_history_version;
+        std::atomic<uint64_t> max_db_history_version;
 
         // used to know if the metadata was being
         // updated when the process suddenly exited
@@ -435,8 +433,10 @@ namespace detail
             uint64_t const min_version_, uint64_t const max_version_) noexcept
         {
             auto g = hold_dirty();
-            min_db_history_version = min_version_;
-            max_db_history_version = max_version_;
+            min_db_history_version.store(
+                min_version_, std::memory_order_release);
+            max_db_history_version.store(
+                max_version_, std::memory_order_release);
         }
     };
 

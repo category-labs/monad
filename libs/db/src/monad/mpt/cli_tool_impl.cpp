@@ -820,10 +820,14 @@ public:
                     metadata->db_offsets.store(
                         old_metadata->db_offsets, std::memory_order_release);
                     metadata->slow_fast_ratio = old_metadata->slow_fast_ratio;
-                    metadata->min_db_history_version =
-                        old_metadata->min_db_history_version;
-                    metadata->max_db_history_version =
-                        old_metadata->max_db_history_version;
+                    metadata->min_db_history_version.store(
+                        old_metadata->min_db_history_version.load(
+                            std::memory_order_acquire),
+                        std::memory_order_release);
+                    metadata->max_db_history_version.store(
+                        old_metadata->max_db_history_version.load(
+                            std::memory_order_acquire),
+                        std::memory_order_release);
                 });
                 fast_list_base_insertion_count =
                     old_metadata->fast_list_begin()->insertion_count();

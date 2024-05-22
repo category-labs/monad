@@ -398,8 +398,10 @@ void UpdateAuxImpl::set_io(AsyncIO *io_)
             MONAD_ASSERT(i_->index(db_metadata_[0]) == i);
         }
 
-        // Mark as done, init root offset for the new database as invalid
+        // Mark as done, init root offset and history versions for the new
+        // database as invalid
         advance_offsets_to(INVALID_OFFSET, fast_offset, slow_offset);
+        update_ondisk_db_history_metadata(uint64_t(-1), 0);
 
         std::atomic_signal_fence(
             std::memory_order_seq_cst); // no compiler reordering here
@@ -646,7 +648,8 @@ uint64_t UpdateAuxImpl::min_version_in_db_history(Node &root) const noexcept
         return deserialize_from_big_endian<uint64_t>(min_version);
     }
     else {
-        return db_metadata()->min_db_history_version;
+        return db_metadata()->min_db_history_version.load(
+            std::memory_order_acquire);
     }
 }
 
@@ -658,7 +661,8 @@ uint64_t UpdateAuxImpl::max_version_in_db_history(Node &root) const noexcept
         return deserialize_from_big_endian<uint64_t>(max_version);
     }
     else {
-        return db_metadata()->max_db_history_version;
+        return db_metadata()->max_db_history_version.load(
+            std::memory_order_acquire);
     }
 }
 

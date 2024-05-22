@@ -4,6 +4,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
+#include <monad/core/keccak.h>
 #include <monad/core/likely.h>
 #include <monad/execution/baseline_execute.hpp>
 #include <monad/execution/create_contract_address.hpp>
@@ -18,7 +19,7 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-#include <ethash/keccak.hpp>
+#include <ethash/hash_types.hpp>
 
 #include <intx/intx.hpp>
 
@@ -131,8 +132,8 @@ std::optional<evmc::Result> pre_create_contract_account(
             return create_contract_address(msg.sender, nonce); // YP Eqn. 85
         }
         else if (msg.kind == EVMC_CREATE2) {
-            auto const code_hash =
-                ethash::keccak256(msg.input_data, msg.input_size);
+            ethash_hash256 code_hash;
+            keccak256(msg.input_data, msg.input_size, code_hash.bytes);
             return create2_contract_address(
                 msg.sender, msg.create2_salt, code_hash);
         }

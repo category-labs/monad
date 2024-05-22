@@ -35,10 +35,10 @@
 
 #include <boost/outcome/try.hpp>
 
+#include <ethash/hash_types.hpp>
+
 #include <evmc/evmc.hpp>
 #include <evmc/hex.hpp>
-
-#include <ethash/keccak.hpp>
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -78,11 +78,9 @@ namespace
         requires std::same_as<T, bytes32_t> || std::same_as<T, Address>
     constexpr byte_string to_key(T const &arg)
     {
-        return byte_string{
-            std::bit_cast<bytes32_t>(
-                ethash::keccak256(arg.bytes, sizeof(arg.bytes)))
-                .bytes,
-            sizeof(bytes32_t)};
+        ethash::hash256 h;
+        keccak256(arg.bytes, sizeof(arg.bytes), h.bytes);
+        return byte_string{h.bytes, sizeof(ethash::hash256)};
     }
 
     byte_string encode_account_db(Account const &account)

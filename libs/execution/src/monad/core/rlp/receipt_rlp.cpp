@@ -112,13 +112,6 @@ Result<std::vector<Receipt::Log>> decode_logs(byte_string_view &enc)
 {
     std::vector<Receipt::Log> logs;
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
-    constexpr size_t approx_data_size = 32;
-    constexpr size_t approx_num_topics = 10;
-    // 20 bytes for address, 33 bytes per topic
-    constexpr auto log_size_approx =
-        20 + approx_data_size + 33 * approx_num_topics;
-    auto const list_space = payload.size();
-    logs.resize(list_space / log_size_approx);
 
     while (payload.size() > 0) {
         BOOST_OUTCOME_TRY(auto log, decode_log(payload));

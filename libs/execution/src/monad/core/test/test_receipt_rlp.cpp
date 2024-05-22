@@ -52,16 +52,17 @@ TEST(Rlp_Receipt, DecodeEncodeLog)
         EXPECT_EQ(encoded, rlp_log);
 
         byte_string_view encoded_log_view{encoded};
-        auto const decoded_log = decode_log(encoded_log_view);
-        ASSERT_FALSE(decoded_log.has_error());
+        auto const decoded_log_opt = decode_log(encoded_log_view);
+        ASSERT_FALSE(decoded_log_opt.has_error());
         EXPECT_EQ(encoded_log_view.size(), 0);
 
-        EXPECT_EQ(decoded_log.value().data, log.data);
-        EXPECT_EQ(decoded_log.value().address, log.address);
+        auto const& decoded_log = decoded_log_opt.value();
+        EXPECT_EQ(decoded_log.data, log.data);
+        EXPECT_EQ(decoded_log.address, log.address);
 
-        EXPECT_EQ(decoded_log.value().topics.size(), log.topics.size());
-        EXPECT_EQ(decoded_log.value().topics[0], log.topics[0]);
-        EXPECT_EQ(decoded_log.value().topics[1], log.topics[1]);
+        EXPECT_EQ(decoded_log.topics.size(), log.topics.size());
+        EXPECT_EQ(decoded_log.topics[0], log.topics[0]);
+        EXPECT_EQ(decoded_log.topics[1], log.topics[1]);
     }
 }
 
@@ -169,26 +170,28 @@ TEST(Rlp_Receipt, DecodeEncodeEip155Receipt)
     EXPECT_EQ(encoded, rlp_receipt);
 
     byte_string_view encoded_receipt_view{encoded};
-    auto const decoded_receipt = decode_receipt(encoded_receipt_view);
-    ASSERT_FALSE(decoded_receipt.has_error());
+    auto const decoded_receipt_opt = decode_receipt(encoded_receipt_view);
+    ASSERT_FALSE(decoded_receipt_opt.has_error());
     EXPECT_EQ(encoded_receipt_view.size(), 0);
 
-    EXPECT_EQ(decoded_receipt.value().type, r.type);
-    EXPECT_EQ(decoded_receipt.value().gas_used, r.gas_used);
-    EXPECT_EQ(decoded_receipt.value().status, r.status);
+    auto const& decoded_receipt = decoded_receipt_opt.value();
+
+    EXPECT_EQ(decoded_receipt.type, r.type);
+    EXPECT_EQ(decoded_receipt.gas_used, r.gas_used);
+    EXPECT_EQ(decoded_receipt.status, r.status);
 
     // Bloom
-    EXPECT_EQ(decoded_receipt.value().bloom, r.bloom);
+    EXPECT_EQ(decoded_receipt.bloom, r.bloom);
 
     // Log
-    EXPECT_EQ(decoded_receipt.value().logs.size(), r.logs.size());
-    for (size_t i = 0u; i < decoded_receipt.value().logs.size(); ++i) {
-        EXPECT_EQ(decoded_receipt.value().logs[i].address, r.logs[i].address);
+    EXPECT_EQ(decoded_receipt.logs.size(), r.logs.size());
+    for (size_t i = 0u; i < decoded_receipt.logs.size(); ++i) {
+        EXPECT_EQ(decoded_receipt.logs[i].address, r.logs[i].address);
         EXPECT_EQ(
-            decoded_receipt.value().logs[i].topics.size(),
+            decoded_receipt.logs[i].topics.size(),
             r.logs[i].topics.size());
-        EXPECT_EQ(decoded_receipt.value().logs[i].topics, r.logs[i].topics);
-        EXPECT_EQ(decoded_receipt.value().logs[i].address, r.logs[i].address);
+        EXPECT_EQ(decoded_receipt.logs[i].topics, r.logs[i].topics);
+        EXPECT_EQ(decoded_receipt.logs[i].address, r.logs[i].address);
     }
 }
 
@@ -219,27 +222,29 @@ TEST(Rlp_Receipt, DecodeEncodeReceiptLogSize)
     auto const encoded = encode_receipt(r);
 
     byte_string_view encoded_receipt_view{encoded};
-    auto const decoded_receipt = decode_receipt(encoded_receipt_view);
-    ASSERT_FALSE(decoded_receipt.has_error());
+    auto const decoded_receipt_opt = decode_receipt(encoded_receipt_view);
+    ASSERT_FALSE(decoded_receipt_opt.has_error());
+    auto const& decoded_receipt = decoded_receipt_opt.value();
+
     EXPECT_EQ(encoded_receipt_view.size(), 0);
 
-    EXPECT_EQ(decoded_receipt.value().type, r.type);
-    EXPECT_EQ(decoded_receipt.value().gas_used, r.gas_used);
-    EXPECT_EQ(decoded_receipt.value().status, r.status);
+    EXPECT_EQ(decoded_receipt.type, r.type);
+    EXPECT_EQ(decoded_receipt.gas_used, r.gas_used);
+    EXPECT_EQ(decoded_receipt.status, r.status);
 
     // Bloom
-    EXPECT_EQ(decoded_receipt.value().bloom, r.bloom);
+    EXPECT_EQ(decoded_receipt.bloom, r.bloom);
 
     // Log
-    EXPECT_EQ(decoded_receipt.value().logs.size(), r.logs.size());
+    EXPECT_EQ(decoded_receipt.logs.size(), r.logs.size());
 
-    for (size_t i = 0u; i < decoded_receipt.value().logs.size(); ++i) {
-        EXPECT_EQ(decoded_receipt.value().logs[i].address, r.logs[i].address);
+    for (size_t i = 0u; i < decoded_receipt.logs.size(); ++i) {
+        EXPECT_EQ(decoded_receipt.logs[i].address, r.logs[i].address);
         EXPECT_EQ(
-            decoded_receipt.value().logs[i].topics.size(),
+            decoded_receipt.logs[i].topics.size(),
             r.logs[i].topics.size());
-        EXPECT_EQ(decoded_receipt.value().logs[i].topics, r.logs[i].topics);
-        EXPECT_EQ(decoded_receipt.value().logs[i].address, r.logs[i].address);
+        EXPECT_EQ(decoded_receipt.logs[i].topics, r.logs[i].topics);
+        EXPECT_EQ(decoded_receipt.logs[i].address, r.logs[i].address);
     }
 }
 
@@ -307,26 +312,27 @@ TEST(Rlp_Receipt, EncodeEip1559Receipt)
     EXPECT_EQ(encoded, rlp_receipt);
 
     byte_string_view encoded_receipt_view{encoded};
-    auto const decoded_receipt = decode_receipt(encoded_receipt_view);
-    ASSERT_FALSE(decoded_receipt.has_error());
+    auto const decoded_receipt_opt = decode_receipt(encoded_receipt_view);
+    ASSERT_FALSE(decoded_receipt_opt.has_error());
     EXPECT_EQ(encoded_receipt_view.size(), 0);
 
-    EXPECT_EQ(decoded_receipt.value().type, r.type);
-    EXPECT_EQ(decoded_receipt.value().gas_used, r.gas_used);
-    EXPECT_EQ(decoded_receipt.value().status, r.status);
+    auto const& decoded_receipt = decoded_receipt_opt.value();
+    EXPECT_EQ(decoded_receipt.type, r.type);
+    EXPECT_EQ(decoded_receipt.gas_used, r.gas_used);
+    EXPECT_EQ(decoded_receipt.status, r.status);
 
     // Bloom
-    EXPECT_EQ(decoded_receipt.value().bloom, r.bloom);
+    EXPECT_EQ(decoded_receipt.bloom, r.bloom);
 
     // Log
-    EXPECT_EQ(decoded_receipt.value().logs.size(), r.logs.size());
-    for (size_t i = 0u; i < decoded_receipt.value().logs.size(); ++i) {
-        EXPECT_EQ(decoded_receipt.value().logs[i].address, r.logs[i].address);
+    EXPECT_EQ(decoded_receipt.logs.size(), r.logs.size());
+    for (size_t i = 0u; i < decoded_receipt.logs.size(); ++i) {
+        EXPECT_EQ(decoded_receipt.logs[i].address, r.logs[i].address);
         EXPECT_EQ(
-            decoded_receipt.value().logs[i].topics.size(),
+            decoded_receipt.logs[i].topics.size(),
             r.logs[i].topics.size());
-        EXPECT_EQ(decoded_receipt.value().logs[i].topics, r.logs[i].topics);
-        EXPECT_EQ(decoded_receipt.value().logs[i].address, r.logs[i].address);
+        EXPECT_EQ(decoded_receipt.logs[i].topics, r.logs[i].topics);
+        EXPECT_EQ(decoded_receipt.logs[i].address, r.logs[i].address);
     }
 }
 
@@ -394,25 +400,26 @@ TEST(Rlp_Receipt, EncodeEip2930Receipt)
     EXPECT_EQ(encoded, rlp_receipt);
 
     byte_string_view encoded_receipt_view{encoded};
-    auto const decoded_receipt = decode_receipt(encoded_receipt_view);
-    ASSERT_FALSE(decoded_receipt.has_error());
+    auto const decoded_receipt_opt = decode_receipt(encoded_receipt_view);
+    ASSERT_FALSE(decoded_receipt_opt.has_error());
     EXPECT_EQ(encoded_receipt_view.size(), 0);
 
-    EXPECT_EQ(decoded_receipt.value().type, r.type);
-    EXPECT_EQ(decoded_receipt.value().gas_used, r.gas_used);
-    EXPECT_EQ(decoded_receipt.value().status, r.status);
+    auto const& decoded_receipt = decoded_receipt_opt.value();
+    EXPECT_EQ(decoded_receipt.type, r.type);
+    EXPECT_EQ(decoded_receipt.gas_used, r.gas_used);
+    EXPECT_EQ(decoded_receipt.status, r.status);
 
     // Bloom
-    EXPECT_EQ(decoded_receipt.value().bloom, r.bloom);
+    EXPECT_EQ(decoded_receipt.bloom, r.bloom);
 
     // Log
-    EXPECT_EQ(decoded_receipt.value().logs.size(), r.logs.size());
-    for (size_t i = 0u; i < decoded_receipt.value().logs.size(); ++i) {
-        EXPECT_EQ(decoded_receipt.value().logs[i].address, r.logs[i].address);
+    EXPECT_EQ(decoded_receipt.logs.size(), r.logs.size());
+    for (size_t i = 0u; i < decoded_receipt.logs.size(); ++i) {
+        EXPECT_EQ(decoded_receipt.logs[i].address, r.logs[i].address);
         EXPECT_EQ(
-            decoded_receipt.value().logs[i].topics.size(),
+            decoded_receipt.logs[i].topics.size(),
             r.logs[i].topics.size());
-        EXPECT_EQ(decoded_receipt.value().logs[i].topics, r.logs[i].topics);
-        EXPECT_EQ(decoded_receipt.value().logs[i].address, r.logs[i].address);
+        EXPECT_EQ(decoded_receipt.logs[i].topics, r.logs[i].topics);
+        EXPECT_EQ(decoded_receipt.logs[i].address, r.logs[i].address);
     }
 }

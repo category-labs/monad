@@ -1,6 +1,7 @@
 #!/bin/bash
 
 packages=(
+  cmake
   gdb
   ninja-build
   pkg-config

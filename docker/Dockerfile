@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1-labs
 
-FROM ubuntu:22.04 as base
+FROM ubuntu:23.10 as base
 
 RUN apt update
 
@@ -14,10 +14,12 @@ RUN apt install -y ca-certificates curl gnupg software-properties-common wget
 
 COPY scripts/ubuntu-build/ /opt
 
-RUN /opt/install-gcc.sh
-RUN /opt/install-clang.sh
+RUN apt install -y \
+  clang-17 \
+  gcc-13 \
+  g++-13
+
 RUN /opt/install-boost.sh
-RUN /opt/install-cmake.sh
 RUN /opt/install-tools.sh
 RUN /opt/install-deps.sh
 

@@ -8,7 +8,7 @@ jobs:
     strategy:
       matrix:
         CMAKE_BUILD_TYPE: [RelWithDebInfo, Debug]
-        compiler: [{CXX: g++-13, CC: gcc-13}, {CXX: clang++-18, CC: clang-18}]
+        compiler: [{CXX: g++-13, CC: gcc-13}, {CXX: clang++-17, CC: clang-17}]
 
     runs-on: ubuntu-latest-32
 

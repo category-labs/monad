@@ -1,0 +1,539 @@
+#include <monad/core/account.hpp>
+#include <monad/core/basic_formatter.hpp> // NOLINT
+#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/core/fmt/account_fmt.hpp> // NOLINT
+#include <monad/core/fmt/bytes_fmt.hpp> // NOLINT
+#include <monad/core/fmt/receipt_fmt.hpp> // NOLINT
+#include <monad/core/keccak.hpp>
+#include <monad/core/receipt.hpp>
+#include <monad/core/result.hpp>
+#include <monad/core/rlp/int_rlp.hpp>
+#include <monad/core/rlp/receipt_rlp.hpp>
+#include <monad/db/util.hpp>
+#include <monad/mpt/db.hpp>
+#include <monad/mpt/nibbles_view.hpp>
+#include <monad/mpt/nibbles_view_fmt.hpp> // NOLINT
+#include <monad/mpt/node_cursor.hpp>
+#include <monad/mpt/ondisk_db_config.hpp>
+#include <monad/mpt/util.hpp>
+
+#include <CLI/CLI.hpp>
+#include <evmc/hex.hpp>
+#include <quill/bundled/fmt/core.h>
+#include <quill/bundled/fmt/format.h>
+
+#include <algorithm>
+#include <cctype>
+#include <charconv>
+#include <concepts>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <filesystem>
+#include <iostream>
+#include <span>
+#include <spanstream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <type_traits>
+#include <utility>
+#include <vector>
+
+using namespace monad;
+using namespace monad::mpt;
+
+namespace
+{
+    ////////////////////////////////////////
+    // CLI input parsing helpers
+    ////////////////////////////////////////
+
+    bool is_numeric(std::string_view str)
+    {
+        return !str.empty() && std::all_of(str.begin(), str.end(), ::isdigit);
+    }
+
+    std::vector<std::string> tokenize(std::string_view input, char delim = ' ')
+    {
+        std::ispanstream iss(input);
+        std::vector<std::string> tokens;
+        std::string token;
+        while (std::getline(iss, token, delim)) {
+            if (!token.empty()) {
+                tokens.emplace_back(std::move(token));
+            }
+        }
+        return tokens;
+    }
+
+    ////////////////////////////////////////
+    // TrieDb Helpers
+    ////////////////////////////////////////
+
+    std::string_view table_as_string(unsigned char table_id)
+    {
+        switch (table_id) {
+        case STATE_NIBBLE:
+            return "state";
+        case CODE_NIBBLE:
+            return "code";
+        case RECEIPT_NIBBLE:
+            return "receipt";
+        default:
+            return "invalid";
+        }
+    }
+
+    template <class T>
+        requires std::same_as<T, byte_string_view> ||
+                 std::same_as<T, std::string_view>
+    auto to_triedb_key(T input, bool already_hashed = false)
+    {
+        using res = std::invoke_result_t<hash256 (*)(T), T>;
+        return already_hashed
+                   ? byte_string{input.data(), input.size()}
+                   : byte_string{keccak256(input).bytes, sizeof(res)};
+    }
+
+    void print_account(Account const &acct)
+    {
+        fmt::print("{}\n\n", acct);
+    }
+
+    void print_receipt(Receipt const &receipt)
+    {
+        fmt::print("{}\n\n", receipt);
+    }
+
+    void print_storage(bytes32_t key, bytes32_t val)
+    {
+        fmt::print("Storage{{key={},value={}}}\n\n", key, val);
+    }
+
+    void print_code(byte_string_view const code)
+    {
+        fmt::print(
+            "{}\n\n",
+            (code.empty()
+                 ? "EMPTY"
+                 : fmt::format(
+                       "{}", fmt::join(std::as_bytes(std::span(code)), ""))));
+    }
+}
+
+struct DbStateMachine
+{
+    Db &db;
+    uint64_t curr_version{INVALID_BLOCK_ID};
+    unsigned char curr_table_id{INVALID_NIBBLE};
+    enum class DbState
+    {
+        unset = 0,
+        version_number,
+        table,
+        invalid
+    } state{DbState::unset};
+    NodeCursor cursor;
+
+    explicit DbStateMachine(Db &db)
+        : db(db)
+    {
+    }
+
+    void set_version(uint64_t const version)
+    {
+        if (state != DbState::unset) {
+            fmt::println("Error setting version use 'back' to move the cursor "
+                         "back up and try again");
+            return;
+        }
+
+        auto const min_version = db.get_earliest_block_id();
+        auto const max_version = db.get_latest_block_id();
+        if (min_version > version || max_version < version) {
+            fmt::println(
+                "Error: invalid version {}. Please choose a version in range "
+                "[{}, {}]",
+                version,
+                min_version,
+                max_version);
+            return;
+        }
+
+        fmt::println("Setting version to {}...", version);
+        curr_version = version;
+        state = DbState::version_number;
+    }
+
+    void set_table(unsigned char table_id)
+    {
+        if (state != DbState::version_number) {
+            fmt::println("Error: at wrong part of trie, only allow set table "
+                         "when cursor is set to a specific version number.");
+            return;
+        }
+
+        if (table_id == STATE_NIBBLE || table_id == CODE_NIBBLE ||
+            table_id == RECEIPT_NIBBLE) {
+            fmt::println(
+                "Setting cursor to version {}, table {} ...",
+                curr_version,
+                table_as_string(table_id));
+            auto const res = db.find(concat(table_id), curr_version);
+            if (res.has_value()) {
+                cursor = res.assume_value();
+                state = DbState::table;
+                curr_table_id = table_id;
+                if (curr_table_id != CODE_NIBBLE) {
+                    bytes32_t merkle_root = cursor.node->data().empty()
+                                                ? NULL_ROOT
+                                                : to_bytes(cursor.node->data());
+                    fmt::println(" * Merkle root is {}", merkle_root);
+                }
+                fmt::println(" * Next try look up a key in this table using "
+                             "\"get [key]\"");
+            }
+            else {
+                fmt::println(
+                    "Couldn't find root node for {} -- {}",
+                    table_as_string(table_id),
+                    res.error().message().c_str());
+            }
+        }
+        else {
+            fmt::println("Invalid table id: choose table id from 0: state, "
+                         "1: code, 2: receipt.");
+        }
+    }
+
+    Result<NodeCursor> lookup(NibblesView const key) const
+    {
+        if (state != DbState::table) {
+            fmt::println("Error: at wrong part of trie, please navigate cursor "
+                         "to a table before lookup.");
+        }
+        fmt::println(
+            "Looking up key {} \nat version {} on table {} ... ",
+            key,
+            curr_version,
+            table_as_string(curr_table_id));
+        return db.find(cursor, key, curr_version);
+    }
+
+    void back()
+    {
+        switch (state) {
+        case DbState::table:
+            state = DbState::version_number;
+            cursor = NodeCursor{};
+            fmt::println("At version {}.", curr_version);
+            break;
+        case DbState::version_number:
+            curr_version = INVALID_BLOCK_ID;
+            state = DbState::unset;
+            fmt::println("Version is unset");
+            break;
+        default:
+            curr_version = INVALID_BLOCK_ID;
+            fmt::println("Cursor is unset.");
+        }
+        curr_table_id = INVALID_NIBBLE;
+    }
+};
+
+void print_db_version_info(Db &db)
+{
+    auto const min_version = db.get_earliest_block_id();
+    auto const max_version = db.get_latest_block_id();
+    if (min_version != INVALID_BLOCK_ID && max_version != INVALID_BLOCK_ID) {
+        fmt::println(
+            "Database is open with minimum version {} and maximum version {}",
+            min_version,
+            max_version);
+    }
+    else {
+        throw std::runtime_error("This is an empty Db that contains no valid "
+                                 "versions, try a different db");
+    }
+}
+
+////////////////////////////////////////
+// Command actions
+////////////////////////////////////////
+
+void print_help()
+{
+    fmt::print(
+        "List of commands:\n\n"
+        "version [version_number]     -- Set the database version\n"
+        "table [state/receipt/code]   -- Set the trie to query\n"
+        "get [key [extradata]]        -- Get the value for the given key\n"
+        "back                         -- Move back to the previous level\n"
+        "help                         -- Show this help message\n"
+        "exit                         -- Exit the program\n"
+        "\n"
+        "For the `account` table. The user may optionally provide\n"
+        "a storage slot as the second argument.\n");
+}
+
+void do_version(DbStateMachine &sm, std::string_view const version)
+{
+    uint64_t v{};
+    auto [_, ec] =
+        std::from_chars(version.data(), version.data() + version.size(), v);
+    if (ec != std::errc()) {
+        fmt::println("Invalid version: please input a number.");
+    }
+    else {
+        sm.set_version(v);
+    }
+}
+
+void do_table(DbStateMachine &sm, std::string_view const table_name)
+{
+    unsigned char table_nibble = INVALID_NIBBLE;
+    if (table_name == "state") {
+        table_nibble = STATE_NIBBLE;
+    }
+    else if (table_name == "receipt") {
+        table_nibble = RECEIPT_NIBBLE;
+    }
+    else if (table_name == "code") {
+        table_nibble = CODE_NIBBLE;
+    }
+
+    if (table_nibble == INVALID_NIBBLE) {
+        fmt::print("Invalid table provided!\n\n");
+        print_help();
+    }
+    else {
+        sm.set_table(table_nibble);
+    }
+}
+
+void do_get_code(DbStateMachine const &sm, std::string_view const code_hash)
+{
+    auto const code_hex = evmc::from_hex(code_hash);
+    if (!code_hex) {
+        fmt::println("Code must be a valid hexadecimal value!");
+        return;
+    }
+    auto const code_query_res = sm.lookup(NibblesView{code_hex.value()});
+    if (!code_query_res) {
+        fmt::println(
+            "Could not find code {} -- {}",
+            code_hash,
+            code_query_res.error().message().c_str());
+        return;
+    }
+    print_code(code_query_res.value().node->value());
+}
+
+void do_get_account(
+    DbStateMachine const &sm, std::string_view const account,
+    std::string_view const storage)
+{
+    auto const account_hex = evmc::from_hex(account);
+    if (!account_hex) {
+        fmt::println("Account must be a valid hexadecimal value!");
+        return;
+    }
+
+    bool const account_is_hashed = (account_hex->size() == 32);
+    auto const account_key =
+        to_triedb_key(byte_string_view{account_hex.value()}, account_is_hashed);
+    auto const account_query_res = sm.lookup(NibblesView{account_key});
+    if (!account_query_res) {
+        fmt::println(
+            "Could not find account {} -- {}",
+            account,
+            account_query_res.error().message().c_str());
+        return;
+    }
+    auto account_encoded = account_query_res.value().node->value();
+    auto const acct_res = decode_account_db(account_encoded);
+    if (!acct_res) {
+        fmt::println(
+            "Could not decode account data from TrieDb -- {}",
+            acct_res.error().message().c_str());
+        return;
+    }
+    print_account(acct_res.value().second);
+
+    // Check if user provided a storage slot
+    if (!storage.empty()) {
+        bool storage_already_hashed = true;
+        auto normalized_storage = std::string(storage);
+        if (is_numeric(storage)) {
+            size_t slot_id{};
+            std::from_chars(
+                storage.data(), storage.data() + storage.size(), slot_id);
+            normalized_storage = std::format("{:064x}", slot_id);
+            storage_already_hashed = false;
+        }
+        auto const storage_slot = evmc::from_hex(normalized_storage);
+        if (!storage_slot) {
+            fmt::println("Storage must be a valid hexadecimal value!");
+            return;
+        }
+        auto const storage_slot_key = to_triedb_key(
+            byte_string_view{storage_slot.value()}, storage_already_hashed);
+        auto const storage_key =
+            concat(NibblesView{account_key}, NibblesView{storage_slot_key});
+        auto const storage_query_res = sm.lookup(storage_key);
+        if (!storage_query_res) {
+            fmt::println(
+                "Could not find storage slot {} ({}) associated with account "
+                "{}",
+                NibblesView{storage_slot_key},
+                storage,
+                account,
+                storage_query_res.error().message().c_str());
+            return;
+        }
+        auto storage_encoded = storage_query_res.value().node->value();
+        auto const storage_res = decode_storage_db(storage_encoded);
+        if (!storage_res) {
+            fmt::println(
+                "Could not decode storage data from TrieDb -- {}",
+                storage_res.error().message().c_str());
+            return;
+        }
+
+        print_storage(storage_res.value().first, storage_res.value().second);
+    }
+}
+
+void do_get_receipt(DbStateMachine &sm, std::string_view const receipt)
+{
+    size_t receipt_id{};
+
+    if (receipt.starts_with("0x")) {
+        fmt::println("Receipts should be entered in base 10 and will be "
+                     "encoded for you.");
+        return;
+    }
+    auto [_, ec] = std::from_chars(
+        receipt.data(), receipt.data() + receipt.size(), receipt_id);
+    if (ec != std::errc()) {
+        fmt::println("Receipt must be an unsigned integer!");
+        return;
+    }
+    auto const receipt_id_encoded = rlp::encode_unsigned(receipt_id);
+    auto const receipt_query_res = sm.lookup(NibblesView{receipt_id_encoded});
+    if (!receipt_query_res) {
+        fmt::println(
+            "Could not find receipt {} -- {}",
+            receipt,
+            receipt_query_res.error().message().c_str());
+        return;
+    }
+    auto receipt_encoded = receipt_query_res.value().node->value();
+    auto const receipt_res = rlp::decode_receipt(receipt_encoded);
+    if (!receipt_res) {
+        fmt::println(
+            "Could not decode receipt -- {}",
+            receipt_res.error().message().c_str());
+    }
+    auto const decoded = receipt_res.value();
+    print_receipt(decoded);
+}
+
+int interactive_impl(Db &db)
+{
+    DbStateMachine state_machine{db};
+    std::string line;
+
+    print_db_version_info(db);
+    print_help();
+
+    while (true) {
+        fmt::print("(monaddb) ");
+        std::getline(std::cin, line);
+
+        auto const tokens = tokenize(line);
+        if (tokens.empty()) {
+            continue;
+        }
+
+        if (tokens[0] == "help") {
+            print_help();
+        }
+        else if (tokens[0] == "version") {
+            if (tokens.size() == 2) {
+                do_version(state_machine, tokens[1]);
+            }
+            else {
+                fmt::println("No version number provided.");
+            }
+        }
+        else if (tokens[0] == "table") {
+            if (tokens.size() == 2) {
+                do_table(state_machine, tokens[1]);
+            }
+            else {
+                fmt::println("No table number provided.");
+            }
+        }
+        else if (tokens[0] == "get") {
+            if (state_machine.curr_table_id == INVALID_NIBBLE) {
+                fmt::println("Need to set a table id before calling get. See "
+                             "`help` for details");
+            }
+            else if (tokens.size() != 2 && tokens.size() != 3) {
+                fmt::println("No key provided.");
+            }
+            else if (state_machine.curr_table_id == STATE_NIBBLE) {
+                do_get_account(
+                    state_machine,
+                    tokens[1],
+                    tokens.size() > 2 ? tokens[2] : "");
+            }
+            else if (state_machine.curr_table_id == CODE_NIBBLE) {
+                do_get_code(state_machine, tokens[1]);
+            }
+            else if (state_machine.curr_table_id == RECEIPT_NIBBLE) {
+                do_get_receipt(state_machine, tokens[1]);
+            }
+        }
+        else if (tokens[0] == "back") {
+            state_machine.back();
+        }
+        else if (tokens[0] == "quit" || tokens[0] == "exit") {
+            // TODO key stroke exit anyway? (y or n)
+            break;
+        }
+        else {
+            fmt::println("Invalid command: \"{}\". See \"help\"", tokens[0]);
+        }
+    }
+    return 0;
+}
+
+int main(int argc, char *argv[])
+{
+    std::vector<std::filesystem::path> dbname_paths{"test.db"};
+
+    CLI::App cli{"interactive_db_cli"};
+    cli.add_option(
+           "--db",
+           dbname_paths,
+           "A comma-separated list of previously created database paths")
+        ->required();
+    cli.parse(argc, argv);
+
+    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = dbname_paths};
+
+    Db ro_db{ro_config};
+
+    fmt::print("Opening read only database ");
+    for (auto const &dbname : dbname_paths) {
+        fmt::print(" {}", dbname);
+    }
+    fmt::println(".");
+
+    return interactive_impl(ro_db);
+}

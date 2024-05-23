@@ -99,7 +99,14 @@ struct Db::ROOnDisk final : public Db::Impl
               async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)}
         , io_{pool_, rwbuf_}
         , aux_{&io_}
-        , last_loaded_offset_{aux_.get_root_offset()}
+        , last_loaded_offset_{[&] {
+            auto root_offset = aux_.get_root_offset();
+            if (root_offset == INVALID_OFFSET) {
+                throw std::runtime_error("Failed to open a read-only db from "
+                                         "an empty database.");
+            }
+            return root_offset;
+        }()}
         , root_{Node::UniquePtr{read_node_blocking(pool_, last_loaded_offset_)}}
     {
         io_.set_capture_io_latencies(options.capture_io_latencies);

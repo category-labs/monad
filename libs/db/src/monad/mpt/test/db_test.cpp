@@ -206,6 +206,89 @@ TEST(ReadOnlyDbTest, error_open_empty_rodb)
     EXPECT_THROW(Db{ro_config}, std::runtime_error);
 }
 
+TEST(ReadOnlyDbTest, read_only_db_concurrent)
+{
+    // Have one thread make forward progress by updating new versions and
+    // erasing outdated ones. Meanwhile spwan a read thread that queries
+    // historical states.
+    std::atomic<bool> done{false};
+    std::filesystem::path const dbname{
+        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+        "monad_db_test_concurrent_XXXXXX"};
+
+    auto upsert_new_version = [](Db &db, uint64_t const version) {
+        UpdateList ls;
+        auto const key = serialize_as_big_endian<BLOCK_NUM_BYTES>(version);
+        auto const value = key;
+        Update u = make_update(key, value);
+        ls.push_front(u);
+
+        db.upsert(std::move(ls), version);
+    };
+
+    auto keep_query = [&]() {
+        // construct RODb
+        ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+        Db ro_db{ro_config};
+
+        uint64_t read_version = 0;
+        auto version_bytes =
+            serialize_as_big_endian<BLOCK_NUM_BYTES>(read_version);
+
+        unsigned nsuccess = 0;
+        unsigned nfailed = 0;
+
+        while (!done.load(std::memory_order_acquire)) {
+            ro_db.load_latest();
+            auto res = ro_db.get(version_bytes, read_version);
+            if (res.has_value()) {
+                EXPECT_EQ(res.value(), version_bytes);
+                ++nsuccess;
+            }
+            else {
+                auto const min_block_id = ro_db.get_earliest_block_id();
+                EXPECT_TRUE(min_block_id.has_value());
+                read_version = min_block_id.value() + 100;
+                ++nfailed;
+            }
+        }
+        std::cout << "Reader thread finished. Currently read till version "
+                  << read_version << ". Did " << nsuccess << " successful and "
+                  << nfailed << " failed reads" << std::endl;
+        EXPECT_TRUE(nsuccess > 0);
+        EXPECT_TRUE(read_version <= ro_db.get_latest_block_id().value());
+        EXPECT_TRUE(read_version >= ro_db.get_earliest_block_id().value());
+    };
+
+    // construct RWDb
+    uint64_t version = 0;
+    StateMachineAlwaysMerkle machine{};
+    OnDiskDbConfig config{
+        .compaction = true, .dbname_paths = {dbname}, .file_size_db = 8};
+    Db db{machine, config};
+    upsert_new_version(
+        db, version); // insert something first so db is not empty
+    ++version;
+
+    // only start RODb after database is not empty
+    std::thread reader(keep_query);
+
+    // run rodb and rwdb concurrently for 10s
+    auto const begin_test = std::chrono::steady_clock::now();
+    while (std::chrono::duration_cast<std::chrono::seconds>(
+               std::chrono::steady_clock::now() - begin_test)
+               .count() < 10) {
+        upsert_new_version(db, version);
+        ++version;
+    }
+    done.store(true, std::memory_order_release);
+    reader.join();
+
+    std::cout << "Writer finished. Max version in rwdb is "
+              << db.get_latest_block_id().value() << ", min version in rwdb is "
+              << db.get_earliest_block_id().value() << std::endl;
+}
+
 TEST(ReadOnlyDbTest, load_correct_root_upon_reopen_nonempty_db)
 {
     std::filesystem::path const dbname{

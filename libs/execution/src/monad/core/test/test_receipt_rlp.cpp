@@ -52,11 +52,11 @@ TEST(Rlp_Receipt, DecodeEncodeLog)
         EXPECT_EQ(encoded, rlp_log);
 
         byte_string_view encoded_log_view{encoded};
-        auto const decoded_log_opt = decode_log(encoded_log_view);
-        ASSERT_FALSE(decoded_log_opt.has_error());
+        auto const decoded_log_outcome = decode_log(encoded_log_view);
+        ASSERT_FALSE(decoded_log_outcome.has_error());
         EXPECT_EQ(encoded_log_view.size(), 0);
 
-        auto const& decoded_log = decoded_log_opt.value();
+        auto const& decoded_log = decoded_log_outcome.value();
         EXPECT_EQ(decoded_log.data, log.data);
         EXPECT_EQ(decoded_log.address, log.address);
 
@@ -110,7 +110,6 @@ TEST(Rlp_Receipt, DecodeEncodeBloom)
 
 TEST(Rlp_Receipt, DecodeEncodeEip155Receipt)
 {
-    using namespace intx;
     using namespace evmc::literals;
 
     static constexpr uint64_t gas{2'850'010};
@@ -170,11 +169,11 @@ TEST(Rlp_Receipt, DecodeEncodeEip155Receipt)
     EXPECT_EQ(encoded, rlp_receipt);
 
     byte_string_view encoded_receipt_view{encoded};
-    auto const decoded_receipt_opt = decode_receipt(encoded_receipt_view);
-    ASSERT_FALSE(decoded_receipt_opt.has_error());
+    auto const decoded_receipt_outcome = decode_receipt(encoded_receipt_view);
+    ASSERT_FALSE(decoded_receipt_outcome.has_error());
     EXPECT_EQ(encoded_receipt_view.size(), 0);
 
-    auto const& decoded_receipt = decoded_receipt_opt.value();
+    auto const& decoded_receipt = decoded_receipt_outcome.value();
 
     EXPECT_EQ(decoded_receipt.type, r.type);
     EXPECT_EQ(decoded_receipt.gas_used, r.gas_used);
@@ -197,7 +196,6 @@ TEST(Rlp_Receipt, DecodeEncodeEip155Receipt)
 
 TEST(Rlp_Receipt, DecodeEncodeReceiptLogSize)
 {
-    using namespace intx;
     using namespace evmc::literals;
 
     static constexpr uint64_t gas{2'850'010};
@@ -222,9 +220,9 @@ TEST(Rlp_Receipt, DecodeEncodeReceiptLogSize)
     auto const encoded = encode_receipt(r);
 
     byte_string_view encoded_receipt_view{encoded};
-    auto const decoded_receipt_opt = decode_receipt(encoded_receipt_view);
-    ASSERT_FALSE(decoded_receipt_opt.has_error());
-    auto const& decoded_receipt = decoded_receipt_opt.value();
+    auto const decoded_receipt_outcome = decode_receipt(encoded_receipt_view);
+    ASSERT_FALSE(decoded_receipt_outcome.has_error());
+    auto const& decoded_receipt = decoded_receipt_outcome.value();
 
     EXPECT_EQ(encoded_receipt_view.size(), 0);
 
@@ -250,7 +248,6 @@ TEST(Rlp_Receipt, DecodeEncodeReceiptLogSize)
 
 TEST(Rlp_Receipt, EncodeEip1559Receipt)
 {
-    using namespace intx;
     using namespace evmc::literals;
 
     static constexpr uint64_t gas{2'850'010};
@@ -312,11 +309,11 @@ TEST(Rlp_Receipt, EncodeEip1559Receipt)
     EXPECT_EQ(encoded, rlp_receipt);
 
     byte_string_view encoded_receipt_view{encoded};
-    auto const decoded_receipt_opt = decode_receipt(encoded_receipt_view);
-    ASSERT_FALSE(decoded_receipt_opt.has_error());
+    auto const decoded_receipt_outcome = decode_receipt(encoded_receipt_view);
+    ASSERT_FALSE(decoded_receipt_outcome.has_error());
     EXPECT_EQ(encoded_receipt_view.size(), 0);
 
-    auto const& decoded_receipt = decoded_receipt_opt.value();
+    auto const& decoded_receipt = decoded_receipt_outcome.value();
     EXPECT_EQ(decoded_receipt.type, r.type);
     EXPECT_EQ(decoded_receipt.gas_used, r.gas_used);
     EXPECT_EQ(decoded_receipt.status, r.status);
@@ -338,7 +335,6 @@ TEST(Rlp_Receipt, EncodeEip1559Receipt)
 
 TEST(Rlp_Receipt, EncodeEip2930Receipt)
 {
-    using namespace intx;
     using namespace evmc::literals;
 
     static constexpr uint64_t gas{2'850'010};
@@ -400,11 +396,11 @@ TEST(Rlp_Receipt, EncodeEip2930Receipt)
     EXPECT_EQ(encoded, rlp_receipt);
 
     byte_string_view encoded_receipt_view{encoded};
-    auto const decoded_receipt_opt = decode_receipt(encoded_receipt_view);
-    ASSERT_FALSE(decoded_receipt_opt.has_error());
+    auto const decoded_receipt_outcome = decode_receipt(encoded_receipt_view);
+    ASSERT_FALSE(decoded_receipt_outcome.has_error());
     EXPECT_EQ(encoded_receipt_view.size(), 0);
 
-    auto const& decoded_receipt = decoded_receipt_opt.value();
+    auto const& decoded_receipt = decoded_receipt_outcome.value();
     EXPECT_EQ(decoded_receipt.type, r.type);
     EXPECT_EQ(decoded_receipt.gas_used, r.gas_used);
     EXPECT_EQ(decoded_receipt.status, r.status);

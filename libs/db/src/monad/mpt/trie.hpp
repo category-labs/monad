@@ -321,7 +321,6 @@ protected:
     };
 
 public:
-    int64_t current_version{0};
     compact_virtual_chunk_offset_t compact_offset_fast{
         MIN_COMPACT_VIRTUAL_OFFSET};
     compact_virtual_chunk_offset_t compact_offset_slow{
@@ -624,7 +623,7 @@ public:
 
 static_assert(
     sizeof(UpdateAuxImpl) ==
-    128 + MONAD_MPT_COLLECT_STATS * sizeof(detail::TrieUpdateCollectedStats));
+    120 + MONAD_MPT_COLLECT_STATS * sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAuxImpl) == 8);
 
 template <lockable_or_void LockType = void>
@@ -795,6 +794,7 @@ upsert(UpdateAuxImpl &, StateMachine &, Node::UniquePtr old, UpdateList &&);
 size_t load_all(UpdateAuxImpl &, StateMachine &, NodeCursor);
 
 //////////////////////////////////////////////////////////////////////////////
+// find
 
 enum class find_result : uint8_t
 {
@@ -853,7 +853,8 @@ find_blocking(UpdateAuxImpl const &, NodeCursor, NibblesView key);
 Nibbles find_min_key_blocking(UpdateAuxImpl const &, Node &root);
 Nibbles find_max_key_blocking(UpdateAuxImpl const &, Node &root);
 
-// helper
+//////////////////////////////////////////////////////////////////////////////
+// helpers
 inline constexpr unsigned num_pages(file_offset_t const offset, unsigned bytes)
 {
     auto const rd_offset = round_down_align<DISK_PAGE_BITS>(offset);

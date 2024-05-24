@@ -22,6 +22,7 @@ struct Update
     std::optional<byte_string_view> value{std::nullopt};
     bool incarnation{false};
     UpdateList next;
+    int64_t version{0};
 
     constexpr bool is_deletion() const noexcept
     {
@@ -29,7 +30,7 @@ struct Update
     }
 };
 
-static_assert(sizeof(Update) == 72);
+static_assert(sizeof(Update) == 80);
 static_assert(alignof(Update) == 8);
 
 // An update can mean
@@ -38,24 +39,30 @@ static_assert(alignof(Update) == 8);
 // 3. leaf erase: when opt is empty, next = nullptr
 inline Update make_update(
     monad::byte_string_view const key, monad::byte_string_view const value,
-    bool incarnation = false, UpdateList &&next = UpdateList{}) noexcept
+    bool const incarnation = false, UpdateList &&next = UpdateList{},
+    uint64_t const version = 0) noexcept
 {
+    MONAD_ASSERT(version <= std::numeric_limits<int64_t>::max());
     return Update{
         .key = key,
         .value = value,
         .incarnation = incarnation,
-        .next = std::move(next)};
+        .next = std::move(next),
+        .version = static_cast<int64_t>(version)};
 }
 
 // When updates in the nested list but not in this key value pair itself
-inline Update
-make_update(monad::byte_string_view const key, UpdateList &&next) noexcept
+inline Update make_update(
+    monad::byte_string_view const key, UpdateList &&next,
+    uint64_t const version = 0) noexcept
 {
+    MONAD_ASSERT(version <= std::numeric_limits<int64_t>::max());
     return Update{
         .key = key,
         .value = std::nullopt,
         .incarnation = false,
-        .next = std::move(next)};
+        .next = std::move(next),
+        .version = static_cast<int64_t>(version)};
 }
 
 inline Update make_erase(monad::byte_string_view const key) noexcept

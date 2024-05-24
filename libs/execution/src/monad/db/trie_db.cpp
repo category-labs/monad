@@ -226,7 +226,8 @@ namespace
                         .key = state_nibbles,
                         .value = byte_string_view{},
                         .incarnation = false,
-                        .next = std::move(account_updates)};
+                        .next = std::move(account_updates),
+                        .version = static_cast<int64_t>(block_id_)};
                     updates.push_front(state_update);
 
                     db_.upsert(std::move(updates), block_id_, false, false);
@@ -245,7 +246,8 @@ namespace
                         .key = code_nibbles,
                         .value = byte_string_view{},
                         .incarnation = false,
-                        .next = std::move(code_updates)};
+                        .next = std::move(code_updates),
+                        .version = static_cast<int64_t>(block_id_)};
                     updates.push_front(code_update);
 
                     db_.upsert(std::move(updates), block_id_, false, false);
@@ -349,7 +351,8 @@ namespace
                     .key = in.substr(0, sizeof(bytes32_t)),
                     .value = in.substr(hash_and_len_size, code_len),
                     .incarnation = false,
-                    .next = UpdateList{}}));
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(block_id_)}));
 
                 total_processed += entry_size;
                 in = in.substr(entry_size);
@@ -374,7 +377,8 @@ namespace
                     .nonce = unaligned_load<uint64_t>(
                         curr.substr(nonce_offset, sizeof(uint64_t)).data())})),
                 .incarnation = false,
-                .next = UpdateList{}};
+                .next = UpdateList{},
+                .version = static_cast<int64_t>(block_id_)};
         }
 
         UpdateList handle_storage(byte_string_view in)
@@ -386,7 +390,8 @@ namespace
                     .value = rlp::zeroless_view(
                         in.substr(sizeof(bytes32_t), sizeof(bytes32_t))),
                     .incarnation = false,
-                    .next = UpdateList{}}));
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(block_id_)}));
                 in = in.substr(storage_entry_size);
             }
             return storage_updates;
@@ -667,6 +672,7 @@ void TrieDb::commit(
     std::vector<Receipt> const &receipts)
 {
     MONAD_ASSERT(mode_ != Mode::OnDiskReadOnly);
+    MONAD_ASSERT(block_number_ <= std::numeric_limits<int64_t>::max());
 
     UpdateList account_updates;
     for (auto const &[addr, delta] : state_deltas) {
@@ -687,7 +693,8 @@ void TrieDb::commit(
                                           to_byte_string_view(
                                               delta.second.bytes))),
                             .incarnation = false,
-                            .next = UpdateList{}}));
+                            .next = UpdateList{},
+                            .version = static_cast<int64_t>(block_number_)}));
                 }
             }
             value =
@@ -703,7 +710,8 @@ void TrieDb::commit(
                     keccak256({addr.bytes, sizeof(addr.bytes)})),
                 .value = value,
                 .incarnation = incarnation,
-                .next = std::move(storage_updates)}));
+                .next = std::move(storage_updates),
+                .version = static_cast<int64_t>(block_number_)}));
         }
     }
 
@@ -715,7 +723,8 @@ void TrieDb::commit(
             .key = NibblesView{to_byte_string_view(hash.bytes)},
             .value = code_analysis->executable_code,
             .incarnation = false,
-            .next = UpdateList{}}));
+            .next = UpdateList{},
+            .version = static_cast<int64_t>(block_number_)}));
     }
 
     UpdateList receipt_updates;
@@ -726,23 +735,27 @@ void TrieDb::commit(
                 NibblesView{bytes_alloc_.emplace_back(rlp::encode_unsigned(i))},
             .value = bytes_alloc_.emplace_back(rlp::encode_receipt(receipt)),
             .incarnation = false,
-            .next = UpdateList{}}));
+            .next = UpdateList{},
+            .version = static_cast<int64_t>(block_number_)}));
     }
     auto state_update = Update{
         .key = state_nibbles,
         .value = byte_string_view{},
         .incarnation = false,
-        .next = std::move(account_updates)};
+        .next = std::move(account_updates),
+        .version = static_cast<int64_t>(block_number_)};
     auto code_update = Update{
         .key = code_nibbles,
         .value = byte_string_view{},
         .incarnation = false,
-        .next = std::move(code_updates)};
+        .next = std::move(code_updates),
+        .version = static_cast<int64_t>(block_number_)};
     auto receipt_update = Update{
         .key = receipt_nibbles,
         .value = byte_string_view{},
         .incarnation = true,
-        .next = std::move(receipt_updates)};
+        .next = std::move(receipt_updates),
+        .version = static_cast<int64_t>(block_number_)};
     UpdateList updates;
     updates.push_front(state_update);
     updates.push_front(code_update);

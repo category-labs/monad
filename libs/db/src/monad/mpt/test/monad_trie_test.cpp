@@ -111,7 +111,11 @@ Node::UniquePtr batch_upsert_commit(
         state_updates.push_front(update_alloc.emplace_back(
             erase ? make_erase(keccak_keys[i + vec_idx])
                   : make_update(
-                        keccak_keys[i + vec_idx], keccak_values[i + vec_idx])));
+                        keccak_keys[i + vec_idx],
+                        keccak_values[i + vec_idx],
+                        false,
+                        UpdateList{},
+                        block_id)));
     }
 
     auto ts_before = std::chrono::steady_clock::now();

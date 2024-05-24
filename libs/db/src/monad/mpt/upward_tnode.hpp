@@ -33,6 +33,7 @@ struct UpwardTreeNode
     allocators::owning_span<ChildData> children{};
     Nibbles path{};
     std::optional<byte_string_view> opt_leaf_data{std::nullopt};
+    int64_t version{0};
 
     [[nodiscard]] unsigned number_of_children() const
     {
@@ -76,6 +77,7 @@ inline tnode_unique_ptr make_tnode(
     uint16_t const orig_mask, unsigned const prefix_index,
     UpwardTreeNode *const parent = nullptr,
     uint8_t const branch = INVALID_BRANCH, NibblesView const path = {},
+    int64_t const version = 0,
     std::optional<byte_string_view> const opt_leaf_data = std::nullopt,
     Node::UniquePtr old = {})
 {
@@ -91,10 +93,11 @@ inline tnode_unique_ptr make_tnode(
         .old = std::move(old),
         .children = allocators::owning_span<ChildData>{n},
         .path = path,
-        .opt_leaf_data = opt_leaf_data});
+        .opt_leaf_data = opt_leaf_data,
+        .version = version});
 }
 
-static_assert(sizeof(UpwardTreeNode) == 80);
+static_assert(sizeof(UpwardTreeNode) == 88);
 static_assert(alignof(UpwardTreeNode) == 8);
 
 struct CompactTNode

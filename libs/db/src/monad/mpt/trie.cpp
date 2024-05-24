@@ -47,7 +47,7 @@ void dispatch_updates_flat_list_(
 void dispatch_updates_impl_(
     UpdateAuxImpl &, StateMachine &, UpwardTreeNode &parent, ChildData &,
     Node::UniquePtr old, Requests &, unsigned prefix_index, NibblesView path,
-    std::optional<byte_string_view> opt_leaf_data);
+    std::optional<byte_string_view> opt_leaf_data, int64_t version);
 
 void mismatch_handler_(
     UpdateAuxImpl &, StateMachine &, UpwardTreeNode &parent, ChildData &,
@@ -55,12 +55,13 @@ void mismatch_handler_(
     unsigned old_prefix_index, unsigned prefix_index);
 
 void create_new_trie_(
-    UpdateAuxImpl &aux, StateMachine &sm, ChildData &entry,
-    UpdateList &&updates, unsigned prefix_index = 0);
+    UpdateAuxImpl &aux, StateMachine &sm, int64_t &parent_version,
+    ChildData &entry, UpdateList &&updates, unsigned prefix_index = 0);
 
 void create_new_trie_from_requests_(
-    UpdateAuxImpl &, StateMachine &, ChildData &, Requests &, NibblesView path,
-    unsigned prefix_index, std::optional<byte_string_view> opt_leaf_data);
+    UpdateAuxImpl &, StateMachine &, int64_t &parent_version, ChildData &,
+    Requests &, NibblesView path, unsigned prefix_index,
+    std::optional<byte_string_view> opt_leaf_data, int64_t version);
 
 void upsert_(
     UpdateAuxImpl &, StateMachine &, UpwardTreeNode &parent, ChildData &,
@@ -112,7 +113,8 @@ Node::UniquePtr upsert(
             }
         }
         else {
-            create_new_trie_(aux, sm, entry, std::move(updates));
+            create_new_trie_(
+                aux, sm, sentinel->version, entry, std::move(updates));
         }
         auto *const root = entry.ptr;
         if (aux.is_on_disk()) {
@@ -475,21 +477,16 @@ struct compaction_receiver
 Node *create_node_from_children_if_any(
     UpdateAuxImpl &aux, StateMachine &sm, uint16_t const orig_mask,
     uint16_t const mask, std::span<ChildData> children, NibblesView const path,
-    std::optional<byte_string_view> const leaf_data = std::nullopt)
+    std::optional<byte_string_view> const leaf_data, int64_t const version)
 {
     aux.collect_number_nodes_created_stats();
     // handle non child and single child cases
     auto const number_of_children = static_cast<unsigned>(std::popcount(mask));
     if (number_of_children == 0) {
-        return leaf_data.has_value() ? make_node(
-                                           0,
-                                           {},
-                                           path,
-                                           leaf_data.value(),
-                                           {},
-                                           aux.current_version)
-                                           .release()
-                                     : nullptr;
+        return leaf_data.has_value()
+                   ? make_node(0, {}, path, leaf_data.value(), {}, version)
+                         .release()
+                   : nullptr;
     }
     else if (number_of_children == 1 && !leaf_data.has_value()) {
         auto const j = bitmask_index(
@@ -506,7 +503,7 @@ Node *create_node_from_children_if_any(
                    concat(path, children[j].branch, node->path_nibble_view()),
                    node->has_value() ? std::make_optional(node->value())
                                      : std::nullopt,
-                   aux.current_version)
+                   version)
             .release();
     }
     MONAD_DEBUG_ASSERT(
@@ -543,7 +540,7 @@ Node *create_node_from_children_if_any(
         }
     }
     return create_node_with_children(
-        sm.get_compute(), mask, children, path, leaf_data, aux.current_version);
+        sm.get_compute(), mask, children, path, leaf_data, version);
 }
 
 void create_node_compute_data_possibly_async(
@@ -571,10 +568,12 @@ void create_node_compute_data_possibly_async(
         tnode->mask,
         tnode->children,
         tnode->path,
-        tnode->opt_leaf_data);
+        tnode->opt_leaf_data,
+        tnode->version);
     MONAD_DEBUG_ASSERT(entry.branch < 16);
     if (node) {
         entry.finalize(*node, sm.get_compute(), sm.cache());
+        parent.version = std::max(parent.version, node->version);
     }
     else {
         parent.mask &=
@@ -603,12 +602,21 @@ void update_value_and_subtrie_(
     if (update.incarnation) {
         // handles empty requests sublist too
         create_new_trie_from_requests_(
-            aux, sm, entry, requests, path, 0, update.value);
+            aux,
+            sm,
+            parent.version,
+            entry,
+            requests,
+            path,
+            0,
+            update.value,
+            update.version);
         --parent.npending;
     }
     else {
         auto const opt_leaf =
             update.value.has_value() ? update.value : old->opt_value();
+        MONAD_ASSERT(update.version >= old->version);
         dispatch_updates_impl_(
             aux,
             sm,
@@ -618,7 +626,8 @@ void update_value_and_subtrie_(
             requests,
             0,
             path,
-            opt_leaf);
+            opt_leaf,
+            update.version);
     }
     return;
 }
@@ -627,8 +636,8 @@ void update_value_and_subtrie_(
 // Create a new trie from a list of updates, no incarnation
 /////////////////////////////////////////////////////
 void create_new_trie_(
-    UpdateAuxImpl &aux, StateMachine &sm, ChildData &entry,
-    UpdateList &&updates, unsigned prefix_index)
+    UpdateAuxImpl &aux, StateMachine &sm, int64_t &parent_version,
+    ChildData &entry, UpdateList &&updates, unsigned prefix_index)
 {
     if (updates.empty()) {
         return;
@@ -645,16 +654,25 @@ void create_new_trie_(
             Requests requests;
             requests.split_into_sublists(std::move(update.next), 0);
             create_new_trie_from_requests_(
-                aux, sm, entry, requests, path, 0, update.value);
+                aux,
+                sm,
+                parent_version,
+                entry,
+                requests,
+                path,
+                0,
+                update.value,
+                update.version);
         }
         else {
             aux.collect_number_nodes_created_stats();
             entry.finalize(
                 *make_node(
-                     0, {}, path, update.value.value(), {}, aux.current_version)
+                     0, {}, path, update.value.value(), {}, update.version)
                      .release(),
                 sm.get_compute(),
                 sm.cache());
+            parent_version = std::max(parent_version, entry.ptr->version);
         }
 
         if (path.nibble_size()) {
@@ -675,22 +693,26 @@ void create_new_trie_(
     create_new_trie_from_requests_(
         aux,
         sm,
+        parent_version,
         entry,
         requests,
         requests.get_first_path().substr(
             prefix_index_start, prefix_index - prefix_index_start),
         prefix_index,
-        requests.opt_leaf.and_then(&Update::value));
+        requests.opt_leaf.and_then(&Update::value),
+        requests.opt_leaf.has_value() ? requests.opt_leaf.value().version : 0);
     if (prefix_index_start != prefix_index) {
         sm.up(prefix_index - prefix_index_start);
     }
 }
 
 void create_new_trie_from_requests_(
-    UpdateAuxImpl &aux, StateMachine &sm, ChildData &entry, Requests &requests,
-    NibblesView const path, unsigned const prefix_index,
-    std::optional<byte_string_view> const opt_leaf_data)
+    UpdateAuxImpl &aux, StateMachine &sm, int64_t &parent_version,
+    ChildData &entry, Requests &requests, NibblesView const path,
+    unsigned const prefix_index,
+    std::optional<byte_string_view> const opt_leaf_data, int64_t version)
 {
+    // version will be updated bottom up
     auto const number_of_children =
         static_cast<unsigned>(std::popcount(requests.mask));
     uint16_t const mask = requests.mask;
@@ -701,15 +723,21 @@ void create_new_trie_from_requests_(
             children[j] = ChildData{.branch = static_cast<uint8_t>(i)};
             sm.down(children[j].branch);
             create_new_trie_(
-                aux, sm, children[j], std::move(requests)[i], prefix_index + 1);
+                aux,
+                sm,
+                version,
+                children[j],
+                std::move(requests)[i],
+                prefix_index + 1);
             sm.up(1);
             ++j;
         }
     }
     // can have empty children
     auto *node = create_node_from_children_if_any(
-        aux, sm, mask, mask, children, path, opt_leaf_data);
+        aux, sm, mask, mask, children, path, opt_leaf_data, version);
     MONAD_ASSERT(node);
+    parent_version = std::max(parent_version, node->version);
     entry.finalize(*node, sm.get_compute(), sm.cache());
 }
 
@@ -829,18 +857,20 @@ void dispatch_updates_impl_(
     UpdateAuxImpl &aux, StateMachine &sm, UpwardTreeNode &parent,
     ChildData &entry, Node::UniquePtr old_ptr, Requests &requests,
     unsigned const prefix_index, NibblesView const path,
-    std::optional<byte_string_view> const opt_leaf_data)
+    std::optional<byte_string_view> const opt_leaf_data, int64_t const version)
 {
     Node *old = old_ptr.get();
     uint16_t const orig_mask = old->mask | requests.mask;
     auto const number_of_children =
         static_cast<unsigned>(std::popcount(orig_mask));
+    // tnode->version will be updated bottom up
     auto tnode = make_tnode(
         orig_mask,
         prefix_index,
         &parent,
         entry.branch,
         path,
+        version,
         opt_leaf_data,
         opt_leaf_data.has_value() ? std::move(old_ptr) : Node::UniquePtr{});
     MONAD_DEBUG_ASSERT(tnode->children.size() == number_of_children);
@@ -869,6 +899,7 @@ void dispatch_updates_impl_(
                 create_new_trie_(
                     aux,
                     sm,
+                    tnode->version,
                     children[j],
                     std::move(requests)[i],
                     prefix_index + 1);
@@ -923,11 +954,13 @@ void dispatch_updates_flat_list_(
             create_new_trie_from_requests_(
                 aux,
                 sm,
+                parent.version,
                 entry,
                 requests,
                 path,
                 prefix_index,
-                opt_leaf.value().value);
+                opt_leaf.value().value,
+                opt_leaf.value().version);
             --parent.npending;
             return;
         }
@@ -941,6 +974,8 @@ void dispatch_updates_flat_list_(
             opt_leaf_data = opt_leaf.value().value;
         }
     }
+    int64_t const version =
+        opt_leaf.has_value() ? opt_leaf.value().version : old->version;
     dispatch_updates_impl_(
         aux,
         sm,
@@ -950,7 +985,8 @@ void dispatch_updates_flat_list_(
         requests,
         prefix_index,
         path,
-        opt_leaf_data);
+        opt_leaf_data,
+        version);
 }
 
 // Split `old` at old_prefix_index, `updates` are already splitted at
@@ -998,6 +1034,7 @@ void mismatch_handler_(
                 create_new_trie_(
                     aux,
                     sm,
+                    tnode->version,
                     children[j],
                     std::move(requests)[i],
                     prefix_index + 1);
@@ -1018,9 +1055,9 @@ void mismatch_handler_(
             }
             auto &child = children[j];
             child = ChildData{.branch = static_cast<uint8_t>(i)};
+            // Updated node inherits the version number directly from old node
             child.finalize(
-                *make_node(
-                     old, path_suffix, old.opt_value(), aux.current_version)
+                *make_node(old, path_suffix, old.opt_value(), old.version)
                      .release(),
                 sm.get_compute(),
                 sm.cache());

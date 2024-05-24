@@ -482,3 +482,109 @@ TYPED_TEST(PlainTrieTest, multi_level_find_blocking)
     upsert_and_find_with_prefix(0x000003_hex, 0x9876543210_hex);
     upsert_and_find_with_prefix(0x000004_hex, 0xdeadbeef_hex);
 }
+
+TYPED_TEST(PlainTrieTest, node_version)
+{
+    // Verify node verisons after multiple upserts
+    std::vector<monad::byte_string> const keys = {
+        0x000000_hex, 0x000001_hex, 0x000002_hex, 0x000010_hex, 0x000011_hex};
+    auto const value = 0xdeadbeaf_hex;
+
+    this->root = upsert_updates(
+        this->aux,
+        *this->sm,
+        std::move(this->root),
+        make_update(keys[0], value, false, {}, 0));
+    this->root = upsert_updates(
+        this->aux,
+        *this->sm,
+        std::move(this->root),
+        make_update(keys[1], value, false, {}, 1));
+    this->root = upsert_updates(
+        this->aux,
+        *this->sm,
+        std::move(this->root),
+        make_update(keys[2], value, false, {}, 2));
+
+    EXPECT_EQ(this->root->version, 2);
+
+    auto read_child = [&](Node &parent,
+                          unsigned const index) -> Node::UniquePtr {
+        return Node::UniquePtr{read_node_blocking(
+            this->aux.io->storage_pool(), parent.fnext(index))};
+    };
+    if (this->root->next(0)) {
+        EXPECT_EQ(this->root->next(0)->version, 0);
+    }
+    else {
+        EXPECT_EQ(read_child(*this->root, 0)->version, 0);
+    }
+
+    if (this->root->next(1)) {
+        EXPECT_EQ(this->root->next(1)->version, 1);
+    }
+    else {
+        EXPECT_EQ(read_child(*this->root, 1)->version, 1);
+    }
+
+    if (this->root->next(2)) {
+        EXPECT_EQ(this->root->next(2)->version, 2);
+    }
+    else {
+        EXPECT_EQ(read_child(*this->root, 2)->version, 2);
+    }
+
+    this->root = upsert_updates(
+        this->aux,
+        *this->sm,
+        std::move(this->root),
+        make_update(keys[3], value, false, {}, 3));
+    EXPECT_EQ(this->root->version, 3);
+    if (this->root->next(0)) {
+        EXPECT_EQ(this->root->next(0)->version, 2);
+    }
+    else {
+        EXPECT_EQ(read_child(*this->root, 0)->version, 2);
+    }
+    if (this->root->next(1)) {
+        EXPECT_EQ(this->root->next(1)->version, 3);
+    }
+    else {
+        EXPECT_EQ(read_child(*this->root, 1)->version, 3);
+    }
+
+    this->root = upsert_updates(
+        this->aux,
+        *this->sm,
+        std::move(this->root),
+        make_update(keys[4], value, false, {}, 4));
+    EXPECT_EQ(this->root->version, 4);
+    if (this->root->next(0)) {
+        EXPECT_EQ(this->root->next(0)->version, 2);
+    }
+    else {
+        EXPECT_EQ(read_child(*this->root, 0)->version, 2);
+    }
+
+    if (!this->root->next(1)) {
+        auto node = read_child(*this->root, 1);
+        this->root->set_next(1, node.release());
+    }
+    EXPECT_EQ(this->root->next(1)->version, 4);
+
+    if (this->root->next(1)->next(0)) {
+        EXPECT_EQ(this->root->next(1)->next(0)->version, 3);
+    }
+    else {
+        EXPECT_EQ(read_child(*this->root->next(1), 0)->version, 3);
+    }
+
+    // erase should not update the version of interior nodes
+    this->root = upsert_updates(
+        this->aux, *this->sm, std::move(this->root), make_erase(keys[4]));
+    EXPECT_EQ(this->root->version, 4);
+    EXPECT_NE(this->root->next(1), nullptr);
+    EXPECT_EQ(this->root->next(1)->version, 4);
+    EXPECT_NE(this->root->next(0), nullptr);
+    EXPECT_EQ(this->root->next(0)->version, 2);
+}

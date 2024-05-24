@@ -142,6 +142,12 @@ public:
     uint8_t path_nibble_index_end{0};
     /* size (in byte) of user-passed leaf data */
     uint32_t value_len{0};
+    /* A note on definition of node version:
+    version(leaf node) corresponds to the block number when it was
+    last updated.
+    version(interior node) >= max(version of the leaf nodes under its prefix),
+    it is greater than only when the latest update in the subtrie contains only
+    deletions. */
     int64_t version{0};
 
 #pragma GCC diagnostic push
@@ -311,6 +317,7 @@ constexpr size_t calculate_node_size(
            total_child_data_size + value_size + path_size + data_size;
 }
 
+// create mpt node
 Node::UniquePtr make_node(
     Node &from, NibblesView path, std::optional<byte_string_view> value,
     int64_t version);

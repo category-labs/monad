@@ -33,6 +33,7 @@ add_library(
   "src/monad/core/fmt/bytes_fmt.hpp"
   "src/monad/core/fmt/int_fmt.hpp"
   "src/monad/core/fmt/receipt_fmt.hpp"
+  "src/monad/core/fmt/signature_fmt.hpp"
   "src/monad/core/fmt/transaction_fmt.hpp"
   "src/monad/core/fmt/withdrawal_fmt.hpp"
   "src/monad/core/int.hpp"

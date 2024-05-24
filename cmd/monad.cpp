@@ -98,7 +98,8 @@ void run_monad(
             rev, block, block_state, block_hash_buffer, priority_pool);
         if (receipts.has_error()) {
             LOG_ERROR(
-                "when executing block: {}",
+                "block {} tx validation failed: {}",
+                block.header.number,
                 receipts.assume_error().message().c_str());
             break;
         }
@@ -108,7 +109,7 @@ void run_monad(
         block_state.commit(receipts.assume_value());
 
         LOG_INFO(
-            "finished executing {} txns in block {}, time elasped={}",
+            "finished executing {} txs in block {}, time elasped={}",
             block.transactions.size(),
             block.header.number,
             std::chrono::steady_clock::now() - before);

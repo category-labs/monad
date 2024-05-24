@@ -1,6 +1,7 @@
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
+#include <monad/core/fmt/transaction_fmt.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
@@ -111,6 +112,13 @@ Result<std::vector<Receipt>> execute_block(
     std::vector<Receipt> receipts;
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         MONAD_ASSERT(results[i].has_value());
+        if (MONAD_UNLIKELY(results[i].value().has_error())) {
+            LOG_ERROR(
+                "tx {} validation failed: {}",
+                i,
+                results[i].value().assume_error().message().c_str());
+            LOG_ERROR("failed tx: {}", block.transactions[i]);
+        }
         BOOST_OUTCOME_TRY(Receipt receipt, std::move(results[i].value()));
         receipts.push_back(std::move(receipt));
     }

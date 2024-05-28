@@ -29,12 +29,16 @@ namespace impl
     {
         size_t const lz_bits = static_cast<size_t>(std::countl_zero(n));
         size_t const lz_bytes = lz_bits / 8;
-        n <<= lz_bytes * 8;
+        if (n != 0) {
+            n <<= lz_bytes * 8;
+        }
+
         union
         {
             size_t n_be;
             unsigned char n_be_bytes[sizeof(size_t)];
         };
+
         n_be = [&n] {
             if constexpr (std::endian::native == std::endian::little) {
                 return std::byteswap(n);

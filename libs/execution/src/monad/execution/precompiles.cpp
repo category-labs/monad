@@ -79,7 +79,11 @@ std::optional<evmc::Result> check_call_precompile(evmc_message const &msg)
 
     auto const run_func = kSilkpreContracts[i - 1].run;
 
-    auto const output = run_func(msg.input_data, msg.input_size);
+    auto const output = run_func(
+        (msg.input_data != nullptr || msg.input_size != 0)
+            ? msg.input_data
+            : (uint8_t const *)"",
+        msg.input_size);
 
     if (MONAD_UNLIKELY(!output.data)) {
         return evmc::Result{evmc_status_code::EVMC_PRECOMPILE_FAILURE};

@@ -12,6 +12,7 @@
 #include <fcntl.h> // for open
 #include <stdlib.h>
 #include <sys/user.h> // for PAGE_SIZE
+#include <sys/vfs.h> // for statfs
 #include <unistd.h> // for unlink
 
 #if PAGE_SIZE != 4096
@@ -21,11 +22,11 @@
 
 MONAD_ASYNC_NAMESPACE_BEGIN
 
-const std::filesystem::path &working_temporary_directory()
+std::filesystem::path const &working_temporary_directory()
 {
     static std::filesystem::path const v = [] {
         std::filesystem::path ret;
-        auto test_path = [&](const std::filesystem::path path) -> bool {
+        auto test_path = [&](std::filesystem::path const path) -> bool {
             int fd = ::open(path.c_str(), O_RDWR | O_DIRECT | O_TMPFILE, 0600);
             if (-1 == fd && ENOTSUP == errno) {
                 auto path2 = path / "monad_XXXXXX";
@@ -36,8 +37,16 @@ const std::filesystem::path &working_temporary_directory()
                 }
             }
             if (-1 != fd) {
-                ret = path;
+                struct statfs s = {};
+                if (-1 == fstatfs(fd, &s)) {
+                    ::close(fd);
+                    return false;
+                }
                 ::close(fd);
+                if (s.f_type == 0x01021994 /* tmpfs */) {
+                    return false;
+                }
+                ret = path;
                 return true;
             }
             return false;
@@ -51,15 +60,15 @@ const std::filesystem::path &working_temporary_directory()
             // the current user, usually mounted with tmpfs XDG_CACHE_HOME  is
             // the systemd cache directory for the current user, usually at
             // $HOME/.cache
-            static const char *variables[] = {
+            static char const *variables[] = {
                 "TMPDIR",
                 "TMP",
                 "TEMP",
                 "TEMPDIR",
                 "XDG_RUNTIME_DIR",
                 "XDG_CACHE_HOME"};
-            for (const auto *variable : variables) {
-                const char *env = getenv(variable);
+            for (auto const *variable : variables) {
+                char const *env = getenv(variable);
                 if (env != nullptr) {
                     if (test_path(env)) {
                         return ret;
@@ -67,7 +76,7 @@ const std::filesystem::path &working_temporary_directory()
                 }
             }
             // Also try $HOME/.cache
-            const char *env = getenv("HOME");
+            char const *env = getenv("HOME");
             if (env != nullptr) {
                 std::filesystem::path buffer(env);
                 buffer /= ".cache";

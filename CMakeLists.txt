@@ -105,7 +105,10 @@ function(monad_add_test2 target)
     PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/test/unit/common/include")
   target_include_directories(${target} PRIVATE "${TOP_CURRENT_BINARY_DIR}/test")
   target_link_libraries(${target} monad_execution GTest::GTest GTest::Main)
-  gtest_discover_tests(${target} DISCOVERY_MODE PRE_TEST)
+  gtest_discover_tests(${target} DISCOVERY_MODE PRE_TEST
+    PROPERTIES ENVIRONMENT ASAN_OPTIONS=abort_on_error=1 ENVIRONMENT
+    UBSAN_OPTIONS=halt_on_error=1,print_stacktrace=1 ENVIRONMENT
+    TSAN_OPTIONS=external_symbolizer_path=/usr/bin/llvm-symbolizer)
 endfunction()
 
 function(monad_add_test_folder target)

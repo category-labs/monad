@@ -48,7 +48,9 @@ namespace
 }
 
 template <evmc_revision rev>
-Result<void> static_validate_header(BlockHeader const &header)
+Result<void> static_validate_header(
+    BlockHeader const &header, BlockHeader const &parent_header,
+    bool const no_parent_validation)
 {
     // YP eq. 56
     if (MONAD_UNLIKELY(header.gas_used > header.gas_limit)) {
@@ -108,13 +110,34 @@ Result<void> static_validate_header(BlockHeader const &header)
         }
     }
 
+    if (!no_parent_validation) {
+        if (MONAD_UNLIKELY(hash(parent_header) != header.parent_hash)) {
+            return BlockError::UnknownParent;
+        }
+
+        if (MONAD_UNLIKELY(header.timestamp <= parent_header.timestamp)) {
+            return BlockError::InvalidTimestamp;
+        }
+
+        // TODO: Elasticity multiplier (It would require entire Trait / config
+        // instead of just rev) EIP-2
+        auto const parent_gas_limit = parent_header.gas_limit;
+        auto const gas_delta = header.gas_limit > parent_gas_limit
+                                   ? header.gas_limit - parent_gas_limit
+                                   : parent_gas_limit - header.gas_limit;
+        if (MONAD_UNLIKELY(gas_delta >= (parent_gas_limit >> 10))) {
+            return BlockError::InvalidGasLimit;
+        }
+    }
+
     return success();
 }
 
 EXPLICIT_EVMC_REVISION(static_validate_header);
 
 template <evmc_revision rev>
-constexpr Result<void> static_validate_ommers(Block const &block)
+constexpr Result<void>
+static_validate_ommers(Block const &block, BlockHeader const &parent_header)
 {
     // TODO: What we really need is probably a generic ommer hash computation
     // function Instead of just checking this special case
@@ -144,14 +167,18 @@ constexpr Result<void> static_validate_ommers(Block const &block)
 
     // YP eq. 167
     for (auto const &ommer : block.ommers) {
-        BOOST_OUTCOME_TRY(static_validate_header<rev>(ommer));
+        // Note: We are not validating ommer header with its parent, since it
+        // requires more thought
+        BOOST_OUTCOME_TRY(static_validate_header<rev>(
+            ommer, parent_header, /*no_parent_validation*/ true));
     }
 
     return success();
 }
 
 template <evmc_revision rev>
-constexpr Result<void> static_validate_body(Block const &block)
+constexpr Result<void>
+static_validate_body(Block const &block, BlockHeader const &parent_header)
 {
     // EIP-4895
     if constexpr (rev < EVMC_SHANGHAI) {
@@ -167,49 +194,55 @@ constexpr Result<void> static_validate_body(Block const &block)
         }
     }
 
-    BOOST_OUTCOME_TRY(static_validate_ommers<rev>(block));
+    BOOST_OUTCOME_TRY(static_validate_ommers<rev>(block, parent_header));
 
     return success();
 }
 
 template <evmc_revision rev>
-Result<void> static_validate_block(Block const &block)
+Result<void>
+static_validate_block(Block const &block, BlockHeader const &parent_header)
 {
-    BOOST_OUTCOME_TRY(static_validate_header<rev>(block.header));
+    BOOST_OUTCOME_TRY(static_validate_header<rev>(
+        block.header, parent_header, /*no_parent_validation*/ false));
 
-    BOOST_OUTCOME_TRY(static_validate_body<rev>(block));
+    BOOST_OUTCOME_TRY(static_validate_body<rev>(block, parent_header));
 
     return success();
 }
 
 EXPLICIT_EVMC_REVISION(static_validate_block);
 
-Result<void> static_validate_block(evmc_revision const rev, Block const &block)
+Result<void> static_validate_block(
+    evmc_revision const rev, Block const &block,
+    BlockHeader const &parent_header)
 {
     switch (rev) {
     case EVMC_SHANGHAI:
-        return static_validate_block<EVMC_SHANGHAI>(block);
+        return static_validate_block<EVMC_SHANGHAI>(block, parent_header);
     case EVMC_PARIS:
-        return static_validate_block<EVMC_PARIS>(block);
+        return static_validate_block<EVMC_PARIS>(block, parent_header);
     case EVMC_LONDON:
-        return static_validate_block<EVMC_LONDON>(block);
+        return static_validate_block<EVMC_LONDON>(block, parent_header);
     case EVMC_BERLIN:
-        return static_validate_block<EVMC_BERLIN>(block);
+        return static_validate_block<EVMC_BERLIN>(block, parent_header);
     case EVMC_ISTANBUL:
-        return static_validate_block<EVMC_ISTANBUL>(block);
+        return static_validate_block<EVMC_ISTANBUL>(block, parent_header);
     case EVMC_PETERSBURG:
     case EVMC_CONSTANTINOPLE:
-        return static_validate_block<EVMC_PETERSBURG>(block);
+        return static_validate_block<EVMC_PETERSBURG>(block, parent_header);
     case EVMC_BYZANTIUM:
-        return static_validate_block<EVMC_BYZANTIUM>(block);
+        return static_validate_block<EVMC_BYZANTIUM>(block, parent_header);
     case EVMC_SPURIOUS_DRAGON:
-        return static_validate_block<EVMC_SPURIOUS_DRAGON>(block);
+        return static_validate_block<EVMC_SPURIOUS_DRAGON>(
+            block, parent_header);
     case EVMC_TANGERINE_WHISTLE:
-        return static_validate_block<EVMC_TANGERINE_WHISTLE>(block);
+        return static_validate_block<EVMC_TANGERINE_WHISTLE>(
+            block, parent_header);
     case EVMC_HOMESTEAD:
-        return static_validate_block<EVMC_HOMESTEAD>(block);
+        return static_validate_block<EVMC_HOMESTEAD>(block, parent_header);
     case EVMC_FRONTIER:
-        return static_validate_block<EVMC_FRONTIER>(block);
+        return static_validate_block<EVMC_FRONTIER>(block, parent_header);
     default:
         break;
     }
@@ -258,7 +291,9 @@ quick_status_code_from_enum<monad::BlockError>::value_mappings()
         {BlockError::WrongDaoExtraData, "wrong dao extra data", {}},
         {BlockError::WrongLogsBloom, "wrong logs bloom", {}},
         {BlockError::InvalidGasUsed, "invalid gas used", {}},
-        {BlockError::WrongStateRoot, "wrong state root", {}}};
+        {BlockError::WrongStateRoot, "wrong state root", {}},
+        {BlockError::UnknownParent, "unknown parent", {}},
+        {BlockError::InvalidTimestamp, "invalid timestamp", {}}};
 
     return v;
 }

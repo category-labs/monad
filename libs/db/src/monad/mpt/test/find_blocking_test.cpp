@@ -28,31 +28,31 @@ TEST_F(InMemoryTrieGTest, find_error_message_test)
 
     {
         auto [cursor, errc] = find_blocking(this->aux, NodeCursor{}, 0x00_hex);
-        EXPECT_EQ(errc, DbError::root_node_is_null_failure);
+        EXPECT_EQ(errc, DbErrc::root_node_is_null_failure);
     }
 
     {
         auto [cursor, errc] =
             find_blocking(this->aux, NodeCursor{*this->root}, 0x00_hex);
-        EXPECT_EQ(errc, DbError::key_ends_earlier_than_node_failure);
+        EXPECT_EQ(errc, DbErrc::key_ends_earlier_than_node_failure);
     }
 
     {
         auto [cursor, errc] =
             find_blocking(this->aux, NodeCursor{*this->root}, 0x000000dead_hex);
-        EXPECT_EQ(errc, DbError::key_ends_earlier_than_node_failure);
+        EXPECT_EQ(errc, DbErrc::key_ends_earlier_than_node_failure);
     }
 
     {
         auto [cursor, errc] =
             find_blocking(this->aux, NodeCursor{*this->root}, 0x000002_hex);
-        EXPECT_EQ(errc, DbError::branch_not_exist_failure);
+        EXPECT_EQ(errc, DbErrc::branch_not_exist_failure);
     }
 
     {
         auto [cursor, errc] = find_blocking(
             this->aux, NodeCursor{*this->root}, 0x000000deedbeaf_hex);
-        EXPECT_EQ(errc, DbError::key_mismatch_failure);
+        EXPECT_EQ(errc, DbErrc::key_mismatch_failure);
     }
 
     {
@@ -60,12 +60,12 @@ TEST_F(InMemoryTrieGTest, find_error_message_test)
         Nibbles const find_key = concat(c, c, c, c, c);
         auto [cursor, errc] =
             find_blocking(this->aux, NodeCursor{*this->root}, find_key);
-        EXPECT_EQ(errc, DbError::node_is_not_leaf_failure);
+        EXPECT_EQ(errc, DbErrc::node_is_not_leaf_failure);
     }
 
     {
         auto [cursor, errc] =
             find_blocking(this->aux, NodeCursor{*this->root}, a);
-        EXPECT_EQ(errc, DbError::success);
+        EXPECT_EQ(errc, DbErrc::success);
     }
 }

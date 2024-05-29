@@ -10,7 +10,7 @@
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
 #include <monad/mpt/config.hpp>
-#include <monad/mpt/db_error.hpp>
+#include <monad/mpt/db_errc.hpp>
 #include <monad/mpt/detail/boost_fiber_workarounds.hpp>
 #include <monad/mpt/find_request_sender.hpp>
 #include <monad/mpt/nibbles_view.hpp>
@@ -551,8 +551,8 @@ Result<NodeCursor> Db::get(NodeCursor root, NibblesView const key) const
 {
     MONAD_ASSERT(impl_);
     auto const [it, errc] = impl_->find_fiber_blocking(root, key);
-    if (errc != DbError::success) {
-        return static_cast<DbError>(errc);
+    if (errc != DbErrc::success) {
+        return static_cast<DbErrc>(errc);
     }
     MONAD_DEBUG_ASSERT(it.node != nullptr);
     MONAD_DEBUG_ASSERT(it.node->has_value());

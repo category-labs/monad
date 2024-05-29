@@ -35,7 +35,7 @@ add_library(
   "src/monad/mpt/copy_node.cpp"
   "src/monad/mpt/db.cpp"
   "src/monad/mpt/db.hpp"
-  "src/monad/mpt/db_error.hpp"
+  "src/monad/mpt/db_errc.hpp"
   "src/monad/mpt/find.cpp"
   "src/monad/mpt/find_notify_fiber.cpp"
   "src/monad/mpt/find_request_sender.cpp"

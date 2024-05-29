@@ -22,7 +22,7 @@ Node::UniquePtr copy_node(
 {
     auto [src_leaf_it, res] = find_blocking(aux, *root, src);
     auto *src_leaf = src_leaf_it.node;
-    MONAD_ASSERT(res == DbError::success);
+    MONAD_ASSERT(res == DbErrc::success);
     auto impl = [&]() -> Node::UniquePtr {
         Node *parent = nullptr;
         Node *node = root.get();

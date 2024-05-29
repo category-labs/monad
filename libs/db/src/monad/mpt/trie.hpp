@@ -2,7 +2,7 @@
 
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/config.hpp>
-#include <monad/mpt/db_error.hpp>
+#include <monad/mpt/db_errc.hpp>
 #include <monad/mpt/detail/collected_stats.hpp>
 #include <monad/mpt/detail/db_metadata.hpp>
 #include <monad/mpt/node.hpp>
@@ -766,7 +766,7 @@ size_t load_all(UpdateAuxImpl &, StateMachine &, NodeCursor);
 
 //////////////////////////////////////////////////////////////////////////////
 
-using find_result_type = std::pair<NodeCursor, DbError>;
+using find_result_type = std::pair<NodeCursor, DbErrc>;
 
 using inflight_map_t = unordered_dense_map<
     chunk_offset_t,

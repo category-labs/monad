@@ -24,6 +24,7 @@ add_library(
   # core
   "src/monad/core/account.hpp"
   "src/monad/core/address.hpp"
+  "src/monad/core/block.cpp"
   "src/monad/core/block.hpp"
   "src/monad/core/byte_string.hpp"
   "src/monad/core/bytes.hpp"
@@ -81,6 +82,7 @@ add_library(
   "src/monad/execution/code_analysis.hpp"
   "src/monad/execution/create_contract_address.cpp"
   "src/monad/execution/create_contract_address.hpp"
+  "src/monad/execution/difficulty.hpp"
   "src/monad/execution/ethereum/dao.hpp"
   "src/monad/execution/evm.cpp"
   "src/monad/execution/evm.hpp"

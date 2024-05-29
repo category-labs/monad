@@ -53,6 +53,8 @@ class State
 
     unsigned version_{0};
 
+    bool relaxed_{false};
+
     AccountState &original_account_state(Address const &address)
     {
         auto it = original_.find(address);
@@ -62,17 +64,6 @@ class State
             it = original_.try_emplace(address, account).first;
         }
         return it->second;
-    }
-
-    AccountState const &recent_account_state(Address const &address)
-    {
-        // state
-        auto const it = state_.find(address);
-        if (it != state_.end()) {
-            return it->second.recent();
-        }
-        // original
-        return original_account_state(address);
     }
 
     AccountState &current_account_state(Address const &address)
@@ -127,6 +118,7 @@ public:
     void pop_reject()
     {
         MONAD_ASSERT(version_);
+        set_relaxed(false);
 
         std::vector<Address> removals;
 
@@ -144,6 +136,27 @@ public:
         }
 
         --version_;
+    }
+
+    bool is_relaxed() const
+    {
+        return relaxed_;
+    }
+
+    void set_relaxed(bool value)
+    {
+        relaxed_ = value;
+    }
+
+    AccountState const &recent_account_state(Address const &address)
+    {
+        // state
+        auto const it = state_.find(address);
+        if (it != state_.end()) {
+            return it->second.recent();
+        }
+        // original
+        return original_account_state(address);
     }
 
     ////////////////////////////////////////
@@ -167,6 +180,7 @@ public:
 
     uint64_t get_nonce(Address const &address)
     {
+        MONAD_ASSERT(!is_relaxed());
         auto const &account = recent_account(address);
         if (MONAD_LIKELY(account.has_value())) {
             return account.value().nonce;
@@ -174,9 +188,34 @@ public:
         return 0;
     }
 
+    void sender_changes(
+        Address const &sender, bool const increment, uint256_t const &delta,
+        uint64_t const tx_nonce)
+    {
+        AccountState &account_state = current_account_state(sender);
+        auto &account = account_state.account_;
+        if (!account) {
+            account = Account{.incarnation = incarnation_};
+        }
+        else {
+            account_state.set_match_tx_nonce(tx_nonce);
+        }
+        if (increment) {
+            ++account->nonce;
+        }
+        account_state.touch();
+        if (delta) {
+            MONAD_ASSERT(delta <= account->balance);
+            account->balance -= delta;
+            account_state.add_to_min_balance(delta);
+        }
+    }
+
     bytes32_t get_balance(Address const &address)
     {
-        auto const &account = recent_account(address);
+        auto &account_state = recent_account_state(address);
+        const_cast<AccountState &>(account_state).set_match_balance();
+        auto &account = account_state.account_;
         if (MONAD_LIKELY(account.has_value())) {
             return intx::be::store<bytes32_t>(account.value().balance);
         }
@@ -262,13 +301,14 @@ public:
         if (MONAD_UNLIKELY(!account.has_value())) {
             account = Account{.incarnation = incarnation_};
         }
-
-        MONAD_ASSERT(
-            std::numeric_limits<uint256_t>::max() - delta >=
-            account.value().balance);
-
-        account.value().balance += delta;
         account_state.touch();
+
+        if (delta) {
+            MONAD_ASSERT(
+                std::numeric_limits<uint256_t>::max() - delta >=
+                account.value().balance);
+            account.value().balance += delta;
+        }
     }
 
     void subtract_from_balance(Address const &address, uint256_t const &delta)
@@ -278,11 +318,12 @@ public:
         if (MONAD_UNLIKELY(!account.has_value())) {
             account = Account{.incarnation = incarnation_};
         }
-
-        MONAD_ASSERT(delta <= account.value().balance);
-
-        account.value().balance -= delta;
         account_state.touch();
+        if (delta) {
+            MONAD_ASSERT(delta <= account.value().balance);
+            account.value().balance -= delta;
+            account_state.add_to_min_balance(delta);
+        }
     }
 
     void set_code_hash(Address const &address, bytes32_t const &hash)
@@ -349,6 +390,7 @@ public:
 
         add_to_balance(beneficiary, account.value().balance);
         account.value().balance = 0;
+        account_state.set_match_balance();
 
         return account_state.destruct();
     }

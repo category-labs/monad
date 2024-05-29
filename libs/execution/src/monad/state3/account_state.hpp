@@ -29,6 +29,11 @@ public: // TODO
     std::optional<Account> account_{};
     Map<bytes32_t, bytes32_t> storage_{};
 
+    bool match_nonce_{false};
+    bool match_balance_{false};
+    uint64_t match_tx_nonce_{0};
+    uint256_t min_balance_{0};
+
     evmc_storage_status zero_out_key(
         bytes32_t const &key, bytes32_t const &original_value,
         bytes32_t const &current_value);
@@ -68,6 +73,46 @@ public:
             return zero_out_key(key, original_value, current_value);
         }
         return set_current_value(key, value, original_value, current_value);
+    }
+
+    bool match_nonce() const
+    {
+        return match_nonce_;
+    }
+
+    bool match_balance() const
+    {
+        return match_balance_;
+    }
+
+    uint64_t match_tx_nonce() const
+    {
+        return match_tx_nonce_;
+    }
+
+    uint256_t const &min_balance() const
+    {
+        return min_balance_;
+    }
+
+    void set_match_nonce()
+    {
+        match_nonce_ = true;
+    }
+
+    void set_match_balance()
+    {
+        match_balance_ = true;
+    }
+
+    void set_match_tx_nonce(uint64_t tx_nonce)
+    {
+        match_tx_nonce_ = tx_nonce;
+    }
+
+    void add_to_min_balance(uint256_t const &delta)
+    {
+        min_balance_ += delta;
     }
 };
 

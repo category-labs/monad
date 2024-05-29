@@ -117,13 +117,17 @@ std::shared_ptr<CodeAnalysis> BlockState::read_code(bytes32_t const &code_hash)
 
 bool BlockState::can_merge(State const &state)
 {
-    for (auto const &[address, account_state] : state.original_) {
-        auto const &account = account_state.account_;
-        auto const &storage = account_state.storage_;
+    for (auto const &[address, base_state] : state.original_) {
+        auto const &base = base_state.account_;
+        auto const &storage = base_state.storage_;
         StateDeltas::const_accessor it{};
-        MONAD_ASSERT(state_.find(it, address));
-        if (account != it->second.account.second) {
-            return false;
+        [[maybe_unused]] bool const found = state_.find(it, address);
+        MONAD_ASSERT(found);
+        auto const &actual = it->second.account.second;
+        if (base != actual) {
+            if (!fix_account_mismatch(state, address, base_state, actual)) {
+                return false;
+            }
         }
         // TODO account.has_value()???
         for (auto const &[key, value] : storage) {
@@ -200,6 +204,93 @@ void BlockState::log_debug()
 {
     LOG_DEBUG("State Deltas: {}", state_);
     LOG_DEBUG("Code Deltas: {}", code_);
+}
+
+bool BlockState::fix_account_mismatch(
+    State const &state, Address const &address, AccountState const &base_state,
+    std::optional<Account> const &actual)
+{
+    auto const &base = base_state.account_;
+    if (is_dead(base)) {
+        return false;
+    }
+    if (is_dead(actual)) {
+        return false;
+    }
+    if (base->code_hash != actual->code_hash) {
+        return false;
+    }
+    if (base->incarnation != actual->incarnation) {
+        return false;
+    }
+    if (base->nonce != actual->nonce) {
+        if (!state.is_relaxed()) {
+            return false;
+        }
+        if (base_state.match_nonce()) {
+            return false;
+        }
+        if (base_state.match_tx_nonce() &&
+            (base_state.match_tx_nonce() != actual->nonce)) {
+            return false;
+        }
+    }
+    if (base->balance != actual->balance) {
+        if (!state.is_relaxed()) {
+            return false;
+        }
+        if (base_state.match_balance()) {
+            return false;
+        }
+        if (actual->balance < base_state.min_balance()) {
+            return false;
+        }
+    }
+    auto const it2 = state.state_.find(address);
+    if (it2 != state.state_.end()) {
+        MONAD_ASSERT(it2->second.size() == 1);
+        auto const &local_state = it2->second.recent();
+        auto &local =
+            const_cast<std::optional<Account> &>(local_state.account_);
+        if (base->nonce != actual->nonce) {
+            if (is_dead(local)) {
+                return false;
+            }
+            if (local_state.match_nonce()) {
+                return false;
+            }
+            if (local_state.match_tx_nonce() &&
+                (local_state.match_tx_nonce() != actual->nonce)) {
+                return false;
+            }
+            // Fix nonce
+            MONAD_ASSERT(base->nonce < actual->nonce);
+            MONAD_ASSERT(base->nonce <= local->nonce);
+            local->nonce += (actual->nonce - base->nonce);
+            const_cast<std::optional<Account> &>(base)->nonce = actual->nonce;
+        }
+        if (base->balance != actual->balance) {
+            if (local_state.match_balance()) {
+                return false;
+            }
+            if (actual->balance < local_state.min_balance()) {
+                return false;
+            }
+            // Fix balance
+            if (base->balance > actual->balance) {
+                auto const diff = base->balance - actual->balance;
+                MONAD_ASSERT(local->balance >= diff);
+                local->balance -= diff;
+            }
+            else {
+                auto const diff = actual->balance - base->balance;
+                local->balance += diff;
+            }
+            const_cast<std::optional<Account> &>(base)->balance =
+                actual->balance;
+        }
+    }
+    return true;
 }
 
 MONAD_NAMESPACE_END

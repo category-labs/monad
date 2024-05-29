@@ -5,6 +5,7 @@
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/state2/state_deltas.hpp>
+#include <monad/state3/account_state.hpp>
 #include <monad/types/incarnation.hpp>
 
 #include <memory>
@@ -35,6 +36,11 @@ public:
     void commit(std::vector<Receipt> const &);
 
     void log_debug();
+
+private:
+    bool fix_account_mismatch(
+        State const &state, Address const &address,
+        AccountState const &base_state, std::optional<Account> const &actual);
 };
 
 MONAD_NAMESPACE_END

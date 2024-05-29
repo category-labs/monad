@@ -10,7 +10,7 @@ jobs:
         CMAKE_BUILD_TYPE: [RelWithDebInfo, Debug]
         compiler: [{CXX: g++-13, CC: gcc-13}, {CXX: clang++-17, CC: clang-17}]
 
-    runs-on: ubuntu-latest-32
+    runs-on: ubuntu-24.04-32
 
     steps:
       - name: Generate app token

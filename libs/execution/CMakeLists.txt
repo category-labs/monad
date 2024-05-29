@@ -24,6 +24,7 @@ add_library(
   # core
   "src/monad/core/account.hpp"
   "src/monad/core/address.hpp"
+  "src/monad/core/block.cpp"
   "src/monad/core/block.hpp"
   "src/monad/core/byte_string.hpp"
   "src/monad/core/bytes.hpp"
@@ -74,6 +75,8 @@ add_library(
   # execution
   "src/monad/execution/baseline_execute.cpp"
   "src/monad/execution/baseline_execute.hpp"
+  "src/monad/execution/base_fee_per_gas.hpp"
+  "src/monad/execution/base_fee_per_gas.cpp"
   "src/monad/execution/block_hash_buffer.cpp"
   "src/monad/execution/block_hash_buffer.hpp"
   "src/monad/execution/block_reward.cpp"

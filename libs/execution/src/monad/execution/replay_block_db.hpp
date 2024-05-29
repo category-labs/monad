@@ -75,6 +75,16 @@ public:
                 break; // wrapped
             }
 
+            BlockHeader parent_header;
+            {
+                MONAD_DEBUG_ASSERT(block_number >= 1);
+                Block parent;
+                bool const parent_status =
+                    block_db.get(block_number - 1, parent);
+                MONAD_ASSERT(parent_status);
+                parent_header = parent.header;
+            }
+
             Block block{};
             if (!block_db.get(block_number, block)) {
                 return i;
@@ -95,7 +105,7 @@ public:
 
             evmc_revision const rev = chain.get_revision(block.header);
 
-            BOOST_OUTCOME_TRY(static_validate_block(rev, block));
+            BOOST_OUTCOME_TRY(static_validate_block(rev, block, parent_header));
 
             BlockState block_state(db);
             BOOST_OUTCOME_TRY(

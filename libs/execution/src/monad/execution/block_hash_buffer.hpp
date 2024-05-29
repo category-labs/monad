@@ -30,6 +30,13 @@ public:
         MONAD_ASSERT(n < n_ && n + N >= n_);
         return b_[n % N];
     }
+
+    void to_prev()
+    {
+        MONAD_DEBUG_ASSERT(n_ >= 1);
+        n_--;
+        b_[n_ % N] = NULL_HASH;
+    }
 };
 
 MONAD_NAMESPACE_END

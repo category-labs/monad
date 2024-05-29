@@ -547,30 +547,12 @@ Db::Db(ReadOnlyOnDiskDbConfig const &config)
 
 Db::~Db() = default;
 
-constexpr Result<NodeCursor> generate_db_error(find_result const error)
-{
-    switch (error) {
-    case (find_result::branch_not_exist_failure):
-        return DbError::branch_not_exist_failure;
-    case (find_result::key_ends_earlier_than_node_failure):
-        return DbError::key_ends_earlier_than_node_failure;
-    case (find_result::key_mismatch_failure):
-        return DbError::key_mismatch_failure;
-    case (find_result::root_node_is_null_failure):
-        return DbError::root_node_is_null_failure;
-    case (find_result::node_is_not_leaf_failure):
-        return DbError::node_is_not_leaf_failure;
-    default:
-        return DbError::unknown;
-    }
-}
-
 Result<NodeCursor> Db::get(NodeCursor root, NibblesView const key) const
 {
     MONAD_ASSERT(impl_);
-    auto const [it, result] = impl_->find_fiber_blocking(root, key);
-    if (result != find_result::success) {
-        return generate_db_error(result);
+    auto const [it, errc] = impl_->find_fiber_blocking(root, key);
+    if (errc != DbError::success) {
+        return static_cast<DbError>(errc);
     }
     MONAD_DEBUG_ASSERT(it.node != nullptr);
     MONAD_DEBUG_ASSERT(it.node->has_value());

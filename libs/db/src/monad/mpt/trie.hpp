@@ -2,6 +2,7 @@
 
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/config.hpp>
+#include <monad/mpt/db_error.hpp>
 #include <monad/mpt/detail/collected_stats.hpp>
 #include <monad/mpt/detail/db_metadata.hpp>
 #include <monad/mpt/node.hpp>
@@ -765,18 +766,7 @@ size_t load_all(UpdateAuxImpl &, StateMachine &, NodeCursor);
 
 //////////////////////////////////////////////////////////////////////////////
 
-enum class find_result : uint8_t
-{
-    unknown,
-    success,
-    root_node_is_null_failure,
-    key_mismatch_failure,
-    branch_not_exist_failure,
-    key_ends_earlier_than_node_failure,
-    node_is_not_leaf_failure,
-    need_to_continue_in_io_thread
-};
-using find_result_type = std::pair<NodeCursor, find_result>;
+using find_result_type = std::pair<NodeCursor, DbError>;
 
 using inflight_map_t = unordered_dense_map<
     chunk_offset_t,

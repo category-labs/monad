@@ -36,7 +36,7 @@ namespace
         find_notify_fiber_future(*aux, *inflights, request);
         auto const [it, errc] = request.promise->get_future().get();
         ASSERT_TRUE(it.is_valid());
-        EXPECT_EQ(errc, monad::mpt::find_result::success);
+        EXPECT_EQ(errc, monad::mpt::DbError::success);
         EXPECT_EQ(it.node->value(), value);
     };
 

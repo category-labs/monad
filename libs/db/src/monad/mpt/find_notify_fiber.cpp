@@ -105,8 +105,7 @@ void find_recursive(
 
 {
     if (!root.is_valid()) {
-        promise.set_value(
-            {NodeCursor{}, find_result::root_node_is_null_failure});
+        promise.set_value({NodeCursor{}, DbError::root_node_is_null_failure});
         return;
     }
     unsigned prefix_index = 0;
@@ -117,14 +116,14 @@ void find_recursive(
         if (prefix_index >= key.nibble_size()) {
             promise.set_value(
                 {NodeCursor{*node, node_prefix_index},
-                 find_result::key_ends_earlier_than_node_failure});
+                 DbError::key_ends_earlier_than_node_failure});
             return;
         }
         if (key.get(prefix_index) !=
             get_nibble(node->path_data(), node_prefix_index)) {
             promise.set_value(
                 {NodeCursor{*node, node_prefix_index},
-                 find_result::key_mismatch_failure});
+                 DbError::key_mismatch_failure});
             return;
         }
     }
@@ -132,9 +131,9 @@ void find_recursive(
         promise.set_value(
             {NodeCursor{*node, node_prefix_index},
              node_prefix_index != node->path_nibble_index_end
-                 ? find_result::key_ends_earlier_than_node_failure
-             : node->has_value() ? find_result::success
-                                 : find_result::node_is_not_leaf_failure});
+                 ? DbError::key_ends_earlier_than_node_failure
+             : node->has_value() ? DbError::success
+                                 : DbError::node_is_not_leaf_failure});
         return;
     }
     MONAD_ASSERT(prefix_index < key.nibble_size());
@@ -153,7 +152,7 @@ void find_recursive(
         if (aux.io->owning_thread_id() != gettid()) {
             promise.set_value(
                 {NodeCursor{*node, node_prefix_index},
-                 find_result::need_to_continue_in_io_thread});
+                 DbError::need_to_continue_in_io_thread});
             return;
         }
         chunk_offset_t const offset = node->fnext(child_index);
@@ -174,7 +173,7 @@ void find_recursive(
     else {
         promise.set_value(
             {NodeCursor{*node, node_prefix_index},
-             find_result::branch_not_exist_failure});
+             DbError::branch_not_exist_failure});
     }
 }
 

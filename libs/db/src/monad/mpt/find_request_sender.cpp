@@ -95,7 +95,7 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
             if (prefix_index >= key_.nibble_size()) {
                 res_ = {
                     NodeCursor{*node, node_prefix_index},
-                    find_result::key_ends_earlier_than_node_failure};
+                    DbError::key_ends_earlier_than_node_failure};
                 io_state->completed(success());
                 return success();
             }
@@ -103,13 +103,13 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
                 get_nibble(node->path_data(), node_prefix_index)) {
                 res_ = {
                     NodeCursor{*node, node_prefix_index},
-                    find_result::key_mismatch_failure};
+                    DbError::key_mismatch_failure};
                 io_state->completed(success());
                 return success();
             }
         }
         if (prefix_index == key_.nibble_size()) {
-            res_ = {NodeCursor{*node, node_prefix_index}, find_result::success};
+            res_ = {NodeCursor{*node, node_prefix_index}, DbError::success};
             io_state->completed(success());
             return success();
         }
@@ -128,7 +128,7 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
                 if (aux_.io->owning_thread_id() != gettid()) {
                     res_ = {
                         NodeCursor{*node, node_prefix_index},
-                        find_result::need_to_continue_in_io_thread};
+                        DbError::need_to_continue_in_io_thread};
                     return success();
                 }
                 tid_checked_ = true;
@@ -154,7 +154,7 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
         else {
             res_ = {
                 NodeCursor{*node, node_prefix_index},
-                find_result::branch_not_exist_failure};
+                DbError::branch_not_exist_failure};
             io_state->completed(success());
             return success();
         }

@@ -201,7 +201,7 @@ TEST_F(LockingTrieTest, works)
     {
         aux.lock().clear();
         auto [leaf_it, res] = find_blocking(aux, *root, keys.back().first);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
+        EXPECT_EQ(res, monad::mpt::DbError::success);
         EXPECT_NE(leaf_it.node, nullptr);
         EXPECT_TRUE(leaf_it.node->has_value());
 
@@ -218,7 +218,7 @@ TEST_F(LockingTrieTest, works)
     {
         aux.lock().clear();
         auto [leaf_it, res] = find_blocking(aux, *root, keys.back().first);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
+        EXPECT_EQ(res, monad::mpt::DbError::success);
         EXPECT_NE(leaf_it.node, nullptr);
         EXPECT_TRUE(leaf_it.node->has_value());
 
@@ -250,7 +250,7 @@ TEST_F(LockingTrieTest, works)
             aux.io->wait_until_done();
         }
         auto [leaf_it, res] = fut.get();
-        EXPECT_EQ(res, monad::mpt::find_result::success);
+        EXPECT_EQ(res, monad::mpt::DbError::success);
         EXPECT_NE(leaf_it.node, nullptr);
         EXPECT_TRUE(leaf_it.node->has_value());
 
@@ -278,7 +278,7 @@ TEST_F(LockingTrieTest, works)
             aux.io->wait_until_done();
         }
         auto [leaf_it, res] = fut.get();
-        EXPECT_EQ(res, monad::mpt::find_result::success);
+        EXPECT_EQ(res, monad::mpt::DbError::success);
         EXPECT_NE(leaf_it.node, nullptr);
         EXPECT_TRUE(leaf_it.node->has_value());
 

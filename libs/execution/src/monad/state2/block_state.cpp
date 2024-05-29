@@ -117,15 +117,110 @@ std::shared_ptr<CodeAnalysis> BlockState::read_code(bytes32_t const &code_hash)
 
 bool BlockState::can_merge(State const &state)
 {
-    for (auto const &[address, account_state] : state.original_) {
-        auto const &account = account_state.account_;
-        auto const &storage = account_state.storage_;
+    for (auto const &[address, base_state] : state.original_) {
+        auto const &base = base_state.account_;
+        auto const &storage = base_state.storage_;
         StateDeltas::const_accessor it{};
-        MONAD_ASSERT(state_.find(it, address));
-        if (account != it->second.account.second) {
-            return false;
+        [[maybe_unused]] bool const found = state_.find(it, address);
+        MONAD_ASSERT(found);
+        auto const &actual = it->second.account.second;
+        for (auto const &[key, value] : storage) {
+            StorageDeltas::const_accessor it2{};
+            if (it->second.storage.find(it2, key)) {
+                if (value != it2->second.second) {
+                    LOG_INFO("_storage_");
+                    return false;
+                }
+            }
+            else {
+                if (value) {
+                    LOG_INFO("_storage_");
+                    return false;
+                }
+            }
         }
+        if (base != actual) {
+            if (is_dead(base)) {
+                return false;
+            }
+            if (is_dead(actual)) {
+                return false;
+            }
+            if (base->code_hash != actual->code_hash) {
+                return false;
+            }
+            if (base->incarnation != actual->incarnation) {
+                return false;
+            }
+            if (base->nonce != actual->nonce) {
+                if (!state.is_relaxed()) {
+                    return false;
+                }
+                if (base_state.match_nonce()) {
+                    return false;
+                }
+                if (base_state.match_tx_nonce() &&
+                    (base_state.match_tx_nonce() != actual->nonce)) {
+                    return false;
+                }
+            }
+            if (base->balance != actual->balance) {
+                if (!state.is_relaxed()) {
+                    return false;
+                }
+                if (base_state.match_balance()) {
+                    return false;
+                }
+                if (actual->balance < base_state.min_balance()) {
+                    return false;
+                }
+            }
+            auto const it2 = state.state_.find(address);
+            if (it2 != state.state_.end()) {
+                MONAD_ASSERT(it2->second.size() == 1);
+                auto const &local_state = it2->second.recent();
+                auto &local =
+                    const_cast<std::optional<Account> &>(local_state.account_);
+                if (base->nonce != actual->nonce) {
+                    if (is_dead(local)) {
+                        return false;
+                    }
+                    if (local_state.match_nonce()) {
+                        return false;
+                    }
+                    if (local_state.match_tx_nonce() &&
+                        (local_state.match_tx_nonce() != actual->nonce)) {
+                        return false;
+                    }
+                    MONAD_ASSERT(base->nonce < actual->nonce);
+                    MONAD_ASSERT(base->nonce <= local->nonce);
+                    local->nonce += (actual->nonce - base->nonce);
+                    const_cast<std::optional<Account> &>(base)->nonce =
+                        actual->nonce;
+                }
+                if (base->balance != actual->balance) {
+                    if (local_state.match_balance()) {
+                        return false;
+                    }
+                    if (actual->balance < local_state.min_balance()) {
+                        return false;
+                    }
+                    if (base->balance > actual->balance) {
+                        auto const diff = base->balance - actual->balance;
+                        MONAD_ASSERT(local->balance >= diff);
+                        local->balance -= diff;
+                    }
+                    else {
+                        auto const diff = actual->balance - base->balance;
+                        local->balance += diff;
+                    }
+                    const_cast<std::optional<Account> &>(base)->balance =
+                        actual->balance;
+                }
+            } /// if local found
+        } /// if base != actual
         // TODO account.has_value()???
+#if 0
         for (auto const &[key, value] : storage) {
             StorageDeltas::const_accessor it2{};
             if (it->second.storage.find(it2, key)) {
@@ -139,6 +234,7 @@ bool BlockState::can_merge(State const &state)
                 }
             }
         }
+#endif
     }
     return true;
 }

@@ -47,7 +47,8 @@ Result<void> static_validate_transaction(
     Transaction const &, std::optional<uint256_t> const &base_fee_per_gas);
 
 Result<void> validate_transaction(
-    Transaction const &, std::optional<Account> const &sender_account);
+    Transaction const &, std::optional<Account> const &sender_account,
+    bool relaxed = false);
 
 MONAD_NAMESPACE_END
 

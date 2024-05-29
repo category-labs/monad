@@ -116,7 +116,8 @@ Result<void> static_validate_transaction(
 EXPLICIT_EVMC_REVISION(static_validate_transaction);
 
 Result<void> validate_transaction(
-    Transaction const &tx, std::optional<Account> const &sender_account)
+    Transaction const &tx, std::optional<Account> const &sender_account,
+    bool relaxed)
 {
     // YP (70)
     uint512_t const v0 =
@@ -141,7 +142,9 @@ Result<void> validate_transaction(
 
     // YP (71)
     if (MONAD_UNLIKELY(sender_account->nonce != tx.nonce)) {
-        return TransactionError::BadNonce;
+        if (!relaxed) {
+            return TransactionError::BadNonce;
+        }
     }
 
     // YP (71)

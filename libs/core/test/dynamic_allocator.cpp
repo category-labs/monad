@@ -24,7 +24,7 @@ class AllocatorTest : public ::testing::TestWithParam<size_t>
             -1,
             0);
         allocator = new (b) monad::DynamicAllocator<8, 11, 4, 13>(
-            (char *)(b) + sizeof(monad::DynamicAllocator<8, 11, 4, 132>),
+            (char *)(b) + sizeof(monad::DynamicAllocator<8, 11, 4, 13>),
             (1 << size_bit) - sizeof(monad::DynamicAllocator<8, 11, 4, 13>));
     }
     void TearDown() override

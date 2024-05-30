@@ -175,16 +175,41 @@ void Node::set_min_offset_slow(
         sizeof(compact_virtual_chunk_offset_t));
 }
 
-unsigned char *Node::child_off_data() noexcept
+unsigned char *Node::child_min_version_data() noexcept
 {
     return child_min_offset_slow_data() +
-           number_of_children() * sizeof(uint32_t);
+           number_of_children() * sizeof(compact_virtual_chunk_offset_t);
+}
+
+unsigned char const *Node::child_min_version_data() const noexcept
+{
+    return child_min_offset_slow_data() +
+           number_of_children() * sizeof(compact_virtual_chunk_offset_t);
+}
+
+int64_t Node::subtrie_min_version(unsigned const index) noexcept
+{
+    return unaligned_load<int64_t>(
+        child_min_version_data() + index * sizeof(int64_t));
+}
+
+void Node::set_subtrie_min_version(
+    unsigned const index, int64_t const min_version) noexcept
+{
+    std::memcpy(
+        child_min_version_data() + index * sizeof(int64_t),
+        &min_version,
+        sizeof(int64_t));
+}
+
+unsigned char *Node::child_off_data() noexcept
+{
+    return child_min_version_data() + number_of_children() * sizeof(int64_t);
 }
 
 unsigned char const *Node::child_off_data() const noexcept
 {
-    return child_min_offset_slow_data() +
-           number_of_children() * sizeof(uint32_t);
+    return child_min_version_data() + number_of_children() * sizeof(int64_t);
 }
 
 uint16_t Node::child_data_offset(unsigned const index) const noexcept
@@ -389,6 +414,7 @@ void ChildData::finalize(Node &node, Compute &compute, bool const cache)
     MONAD_DEBUG_ASSERT(length <= std::numeric_limits<uint8_t>::max());
     len = static_cast<uint8_t>(length);
     cache_node = cache;
+    subtrie_min_version = calc_min_version(node);
 }
 
 void ChildData::copy_old_child(Node *const old, unsigned const i)
@@ -406,6 +432,7 @@ void ChildData::copy_old_child(Node *const old, unsigned const i)
     offset = old->fnext(index);
     min_offset_fast = old->min_offset_fast(index);
     min_offset_slow = old->min_offset_slow(index);
+    subtrie_min_version = old->subtrie_min_version(index);
     cache_node = true;
 
     MONAD_DEBUG_ASSERT(is_valid());
@@ -503,6 +530,7 @@ Node::UniquePtr make_node(
             node->set_fnext(index, child.offset);
             node->set_min_offset_fast(index, child.min_offset_fast);
             node->set_min_offset_slow(index, child.min_offset_slow);
+            node->set_subtrie_min_version(index, child.subtrie_min_version);
             node->set_next(index, child.ptr);
             node->set_child_data(index, {child.data, child.len});
             ++index;
@@ -625,6 +653,15 @@ Node *read_node_blocking(
     return deserialize_node_from_buffer(
                buffer + buffer_off, size_t(bytes_read) - buffer_off)
         .release();
+}
+
+int64_t calc_min_version(Node &node)
+{
+    int64_t min_version = node.version;
+    for (unsigned i = 0; i < node.number_of_children(); ++i) {
+        min_version = std::min(min_version, node.subtrie_min_version(i));
+    }
+    return min_version;
 }
 
 MONAD_MPT_NAMESPACE_END

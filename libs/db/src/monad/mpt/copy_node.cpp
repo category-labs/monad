@@ -78,6 +78,8 @@ Node::UniquePtr copy_node(
                                 children[i].min_offset_slow =
                                     node->min_offset_slow(old_index);
                                 children[i].offset = node->fnext(old_index);
+                                children[i].subtrie_min_version =
+                                    node->subtrie_min_version(old_index);
                                 node->next_ptr(old_index).reset();
                             }
                             else {

@@ -4,6 +4,7 @@
 
 #include <monad/core/byte_string.hpp>
 #include <monad/core/cmemory.hpp>
+#include <monad/core/likely.h>
 
 #include <bit>
 #include <cstddef>
@@ -29,7 +30,7 @@ namespace impl
     {
         size_t const lz_bits = static_cast<size_t>(std::countl_zero(n));
         size_t const lz_bytes = lz_bits / 8;
-        if (n != 0) {
+        if (MONAD_LIKELY(n != 0)) {
             n <<= lz_bytes * 8;
         }
 

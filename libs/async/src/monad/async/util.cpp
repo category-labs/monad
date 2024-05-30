@@ -9,8 +9,10 @@
 #include <stdexcept>
 #include <string>
 
-#include <fcntl.h> // for open
 #include <stdlib.h>
+
+#include <fcntl.h> // for open
+#include <linux/magic.h> // for TMPFS_MAGIC
 #include <sys/user.h> // for PAGE_SIZE
 #include <sys/vfs.h> // for statfs
 #include <unistd.h> // for unlink
@@ -26,7 +28,7 @@ std::filesystem::path const &working_temporary_directory()
 {
     static std::filesystem::path const v = [] {
         std::filesystem::path ret;
-        auto test_path = [&](std::filesystem::path const path) -> bool {
+        auto test_path = [&](std::filesystem::path const &path) -> bool {
             int fd = ::open(path.c_str(), O_RDWR | O_DIRECT | O_TMPFILE, 0600);
             if (-1 == fd && ENOTSUP == errno) {
                 auto path2 = path / "monad_XXXXXX";
@@ -43,7 +45,7 @@ std::filesystem::path const &working_temporary_directory()
                     return false;
                 }
                 ::close(fd);
-                if (s.f_type == 0x01021994 /* tmpfs */) {
+                if (s.f_type == TMPFS_MAGIC) {
                     return false;
                 }
                 ret = path;
@@ -67,8 +69,8 @@ std::filesystem::path const &working_temporary_directory()
                 "TEMPDIR",
                 "XDG_RUNTIME_DIR",
                 "XDG_CACHE_HOME"};
-            for (auto const *variable : variables) {
-                char const *env = getenv(variable);
+            for (auto const *const variable : variables) {
+                char const *const env = getenv(variable);
                 if (env != nullptr) {
                     if (test_path(env)) {
                         return ret;
@@ -76,7 +78,7 @@ std::filesystem::path const &working_temporary_directory()
                 }
             }
             // Also try $HOME/.cache
-            char const *env = getenv("HOME");
+            char const *const env = getenv("HOME");
             if (env != nullptr) {
                 std::filesystem::path buffer(env);
                 buffer /= ".cache";

@@ -43,7 +43,7 @@ class Ring final
     io_uring_params const params_;
 
 public:
-    Ring(RingConfig const &config = {});
+    explicit Ring(RingConfig const &config = {});
     ~Ring();
 
     Ring(Ring const &) = delete;

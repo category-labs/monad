@@ -16,7 +16,7 @@ class FileDb final
     std::unique_ptr<Impl> impl_;
 
 public:
-    FileDb(char const *dir);
+    explicit FileDb(char const *dir);
     ~FileDb();
 
     std::optional<std::string> get(char const *key) const;

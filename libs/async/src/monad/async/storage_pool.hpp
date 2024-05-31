@@ -400,13 +400,13 @@ private:
 public:
     //! \brief Constructs a storage pool from the list of backing storage
     //! sources
-    storage_pool(
+    explicit storage_pool(
         std::span<std::filesystem::path const> sources,
         mode mode = mode::create_if_needed, creation_flags flags = {});
 
     //! \brief Constructs a storage pool from a temporary anonymous inode.
     //! Useful for test code.
-    storage_pool(use_anonymous_inode_tag, creation_flags flags = {});
+    explicit storage_pool(use_anonymous_inode_tag, creation_flags flags = {});
     ~storage_pool();
 
     //! \brief True if the storage pool was opened read only

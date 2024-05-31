@@ -14,7 +14,7 @@ class MemMap final
 
 public:
     MemMap() = default;
-    MemMap(size_t size, size_t pagesize = 0);
+    explicit MemMap(size_t size, size_t pagesize = 0);
     ~MemMap();
 
     MemMap(MemMap &&other) noexcept

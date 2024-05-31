@@ -11,7 +11,7 @@ class BufferPool
     unsigned char *next_;
 
 public:
-    BufferPool(Buffers &, bool is_read);
+    BufferPool(Buffers const &, bool is_read);
 
     [[gnu::always_inline]] unsigned char *alloc()
     {

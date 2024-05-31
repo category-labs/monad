@@ -24,7 +24,7 @@ class PriorityAlgorithm final
     lqueue_type lqueue_{};
 
 public:
-    PriorityAlgorithm(PriorityQueue &);
+    explicit PriorityAlgorithm(PriorityQueue &);
 
     PriorityAlgorithm(PriorityAlgorithm const &) = delete;
     PriorityAlgorithm(PriorityAlgorithm &&) = delete;

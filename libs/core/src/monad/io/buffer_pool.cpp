@@ -7,7 +7,7 @@
 
 MONAD_IO_NAMESPACE_BEGIN
 
-BufferPool::BufferPool(Buffers &buffers, bool const is_read)
+BufferPool::BufferPool(Buffers const &buffers, bool const is_read)
     : next_{nullptr}
 {
     if (is_read) {

@@ -19,7 +19,7 @@ public:
     typedef size_t size_type;
     typedef ptrdiff_t difference_type;
 
-    PoolAllocator(mi_heap_t * = nullptr);
+    explicit PoolAllocator(mi_heap_t * = nullptr);
 
     char *malloc(size_type);
 

@@ -12,7 +12,7 @@ class HugeMem final
     unsigned char *const data_;
 
 public:
-    HugeMem(size_t size);
+    explicit HugeMem(size_t size);
     ~HugeMem();
 
     HugeMem(HugeMem &&) = default;

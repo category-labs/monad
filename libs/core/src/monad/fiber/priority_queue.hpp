@@ -25,7 +25,8 @@ class PriorityQueue final
             return properties->get_priority();
         }
 
-        constexpr bool operator()(context *const ctx1, context *const ctx2)
+        constexpr bool
+        operator()(context const *const ctx1, context const *const ctx2)
         {
             return get_priority(ctx1) > get_priority(ctx2);
         }

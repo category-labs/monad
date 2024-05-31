@@ -9,7 +9,7 @@
 #include <monad/core/fmt/address_fmt.hpp>
 #include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/fmt/int_fmt.hpp>
-#include <monad/core/keccak.h>
+#include <monad/core/keccak.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/state2/block_state.hpp>
@@ -467,8 +467,7 @@ public:
             return;
         }
 
-        bytes32_t code_hash = {};
-        keccak256(code.data(), code.size(), code_hash.bytes);
+        auto const code_hash = std::bit_cast<bytes32_t>(keccak256(code));
         code_[code_hash] = std::make_shared<CodeAnalysis>(analyze(code));
         account.value().code_hash = code_hash;
     }

@@ -15,7 +15,7 @@ inline unsigned
 to_node_reference(byte_string_view rlp, unsigned char *dest) noexcept
 {
     if (MONAD_LIKELY(rlp.size() >= KECCAK256_SIZE)) {
-        keccak256(rlp.data(), rlp.size(), dest);
+        ::keccak256(rlp.data(), rlp.size(), dest);
         return KECCAK256_SIZE;
     }
     else {

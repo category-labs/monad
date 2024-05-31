@@ -1,6 +1,6 @@
 #include <monad/config.hpp>
 #include <monad/core/byte_string.hpp>
-#include <monad/core/keccak.h>
+#include <monad/core/keccak.hpp>
 #include <monad/core/receipt.hpp>
 
 #include <ethash/hash_types.hpp>
@@ -14,8 +14,7 @@ MONAD_NAMESPACE_BEGIN
 void set_3_bits(Receipt::Bloom &bloom, byte_string_view const bytes)
 {
     // YP Eqn 29
-    ethash::hash256 hash;
-    keccak256(bytes.data(), bytes.size(), hash.bytes);
+    auto const hash = keccak256(bytes);
     for (unsigned i = 0; i < 3; ++i) {
         // Poorly named intx function, this really is taking from our hash,
         // which is returned as big endian, to host order so we can do calcs on

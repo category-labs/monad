@@ -2,7 +2,7 @@
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/core/keccak.h>
+#include <monad/core/keccak.hpp>
 #include <monad/core/rlp/address_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
 #include <monad/rlp/encode2.hpp>
@@ -17,8 +17,7 @@ MONAD_NAMESPACE_BEGIN
 // YP Sec 7: Eq 85 and 86
 Address hash_and_clip(byte_string const &b)
 {
-    ethash_hash256 h;
-    keccak256(b.data(), b.size(), h.bytes);
+    auto const h = keccak256(b);
     Address result{};
     std::memcpy(result.bytes, &h.bytes[12], sizeof(Address));
     return result;

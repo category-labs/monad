@@ -7,7 +7,7 @@
 #include <monad/core/fmt/bytes_fmt.hpp> // NOLINT
 #include <monad/core/fmt/int_fmt.hpp> // NOLINT
 #include <monad/core/int.hpp>
-#include <monad/core/keccak.h>
+#include <monad/core/keccak.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
@@ -78,8 +78,7 @@ namespace
         requires std::same_as<T, bytes32_t> || std::same_as<T, Address>
     constexpr byte_string to_key(T const &arg)
     {
-        ethash::hash256 h;
-        keccak256(arg.bytes, sizeof(arg.bytes), h.bytes);
+        auto const h = keccak256(arg.bytes, sizeof(arg.bytes));
         return byte_string{h.bytes, sizeof(ethash::hash256)};
     }
 

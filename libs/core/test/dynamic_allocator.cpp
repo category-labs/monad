@@ -1,6 +1,6 @@
 #include <monad/mem/dynamic_allocator.hpp>
 
-#include <monad/test/gtest_signal_stacktrace_printer.hpp>  // NOLINT
+#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <gtest/gtest.h>
 
@@ -24,9 +24,11 @@ class AllocatorTest : public ::testing::TestWithParam<size_t>
             -1,
             0);
         allocator = new (b) monad::DynamicAllocator<8, 11, 4, 13>(
-            (char *)(b) + sizeof(monad::DynamicAllocator<8, 11, 4, 13>),
+            reinterpret_cast<char *>(b) +
+                sizeof(monad::DynamicAllocator<8, 11, 4, 13>),
             (1 << size_bit) - sizeof(monad::DynamicAllocator<8, 11, 4, 13>));
     }
+
     void TearDown() override
     {
         munmap(b, 1 << size_bit);
@@ -49,15 +51,15 @@ TEST_P(AllocatorTest, TestOneSlot)
     for (int i = 0; i < N; i++) // will go over two page sizes
     {
         pointers[i] = allocator->alloc(size);
-        memset((char *)pointers[i], (i % 10) - '0', size - 1);
-        memset(&((char *)pointers[i])[size - 1], '\0', 1);
+        memset(reinterpret_cast<char *>(pointers[i]), (i % 10) - '0', size - 1);
+        memset(&(reinterpret_cast<char *>(pointers[i]))[size - 1], '\0', 1);
         EXPECT_NE(pointers[i], nullptr);
     }
     for (int i = 0; i < N; i++) {
-        char *temp = (char *)malloc(size);
+        char *temp = reinterpret_cast<char *>(malloc(size));
         memset(temp, (i % 10) - '0', size - 1);
         memset(&temp[size - 1], '\0', 1);
-        EXPECT_EQ(strcmp((char *)pointers[i], temp), 0);
+        EXPECT_EQ(strcmp(reinterpret_cast<char *>(pointers[i]), temp), 0);
         allocator->dealloc(pointers[i]);
         free(temp);
     }

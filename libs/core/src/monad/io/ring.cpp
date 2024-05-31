@@ -14,7 +14,7 @@ Ring::Ring(RingConfig const &config)
     : ring_{}
     , params_{[&] {
         io_uring_params ret;
-        cmemset((char *)&ret, char(0), sizeof(ret));
+        cmemset(reinterpret_cast<char *>(&ret), char(0), sizeof(ret));
         if (config.sq_thread_cpu) {
             ret.flags |= IORING_SETUP_SQPOLL | IORING_SETUP_SQ_AFF;
             ret.sq_thread_cpu = *config.sq_thread_cpu;

@@ -246,8 +246,8 @@ bool storage_pool::chunk::try_trim_contents(uint32_t bytes)
         // /sys/block/nvmeXXX/queue/discard_max_bytes and adjust accordingly,
         // however every NVMe SSD I'm aware of has 512 and 2Tb. If we ran on MMC
         // or legacy SATA SSDs this would be very different, but we never will.
-        auto *buffer =
-            (std::byte *)aligned_alloc(DISK_PAGE_SIZE, DISK_PAGE_SIZE);
+        auto *buffer = reinterpret_cast<std::byte *>(
+            aligned_alloc(DISK_PAGE_SIZE, DISK_PAGE_SIZE));
         auto unbuffer = make_scope_exit([&]() noexcept { ::free(buffer); });
         auto const remainder = offset_ + bytes - range[0];
         // Copy any fragment of DISK_PAGE_SIZE about to get TRIMed to a
@@ -363,8 +363,8 @@ storage_pool::device storage_pool::make_device_(
     fnv1a_hash<uint32_t>::add(unique_hash, uint32_t(stat.st_size));
     size_t total_size = 0;
     {
-        auto *buffer =
-            (std::byte *)aligned_alloc(DISK_PAGE_SIZE, DISK_PAGE_SIZE * 2);
+        auto *buffer = reinterpret_cast<std::byte *>(
+            aligned_alloc(DISK_PAGE_SIZE, DISK_PAGE_SIZE * 2));
         auto unbuffer = make_scope_exit([&]() noexcept { ::free(buffer); });
         auto const offset = round_down_align<DISK_PAGE_BITS>(
             file_offset_t(stat.st_size) - sizeof(device::metadata_t));
@@ -462,7 +462,8 @@ storage_pool::device storage_pool::make_device_(
         throw std::system_error(errno, std::system_category());
     }
     auto *metadata = start_lifetime_as<device::metadata_t>(
-        (std::byte *)addr + stat.st_size - offset - sizeof(device::metadata_t));
+        reinterpret_cast<std::byte *>(addr) + stat.st_size - offset -
+        sizeof(device::metadata_t));
     MONAD_DEBUG_ASSERT(0 == memcmp(metadata->magic, "MND0", 4));
     if (auto const **dev = std::get_if<1>(&dev_no_or_dev)) {
         unique_hash = (*dev)->unique_hash_;
@@ -739,9 +740,9 @@ storage_pool::~storage_pool()
             auto total_size =
                 device.metadata_->total_size(device.size_of_file_);
             ::munmap(
-                (void *)round_down_align<CPU_PAGE_BITS>(
+                reinterpret_cast<void *>(round_down_align<CPU_PAGE_BITS>(
                     (uintptr_t)device.metadata_ + sizeof(device::metadata_t) -
-                    total_size),
+                    total_size)),
                 total_size);
         }
         if (device.uncached_readfd_ != -1) {

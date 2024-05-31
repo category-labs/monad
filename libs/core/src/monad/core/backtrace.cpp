@@ -58,7 +58,7 @@ namespace detail
         {
             auto *newp = p + sizeof(value_type) * n;
             MONAD_ASSERT(size_t(newp - buffer.data()) <= buffer.size());
-            auto *ret = (value_type *)p;
+            auto *ret = reinterpret_cast<value_type *>(p);
             p = newp;
             return ret;
         }
@@ -184,7 +184,7 @@ extern "C" void monad_stack_backtrace_capture_and_print(
     char *buffer, size_t size, int fd, unsigned indent,
     bool print_async_unsafe_info)
 {
-    stack_backtrace::capture({(std::byte *)buffer, size})
+    stack_backtrace::capture({reinterpret_cast<std::byte *>(buffer), size})
         ->print(fd, indent, print_async_unsafe_info);
 }
 

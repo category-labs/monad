@@ -116,7 +116,10 @@ public:
                 auto count = chunks(end_of_this_offset);
                 return {
                     start_lifetime_as_array<std::atomic<uint32_t>>(
-                        (std::byte *)this - count * sizeof(uint32_t), count),
+                        const_cast<std::byte *>(
+                            reinterpret_cast<std::byte const *>(this)) -
+                            count * sizeof(uint32_t),
+                        count),
                     count};
             }
 

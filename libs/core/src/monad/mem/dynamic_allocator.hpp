@@ -61,9 +61,9 @@ class DynamicAllocator
         return (lower_mask & (addr + offset - 1)) + alignment;
     }
 
-    static bool page_full(page_t *page)
+    static bool page_full(page_t const *page)
     {
-        if (page->free_block_ == (uintptr_t) nullptr &&
+        if (page->free_block_ == reinterpret_cast<uintptr_t>(nullptr) &&
             page->offset_ + page->block_size_ > PAGE) {
             return true;
         }
@@ -78,9 +78,11 @@ public:
         for (size_t i = 0; i < N_SLOTS; i++) {
             pages_[i] = nullptr;
         }
-        char *p = (char *)upper_mask(
-            (uintptr_t)mem, PAGE, 0); // start of pages memory
-        mem_start_ = (uintptr_t)p;
+        char *p = reinterpret_cast<char *>(upper_mask(
+            reinterpret_cast<uintptr_t>(mem),
+            PAGE,
+            0)); // start of pages memory
+        mem_start_ = reinterpret_cast<uintptr_t>(p);
 
         new (p)
             page_t{nullptr, nullptr, uintptr_t(nullptr), sizeof(page_t), 0, 0};
@@ -89,11 +91,11 @@ public:
         for (size_t i = 0; i < n_total_pages - 1; i++) {
             char *q = p;
             p += PAGE;
-            page_t *page = (page_t *)p;
+            page_t *page = reinterpret_cast<page_t *>(p);
             page->prev_ = nullptr;
-            *(char **)p = q;
+            *reinterpret_cast<char **>(p) = q;
         }
-        empty_pages_ = (page_t *)p;
+        empty_pages_ = reinterpret_cast<page_t *>(p);
     }
 
     void *alloc(size_t const);
@@ -127,23 +129,26 @@ DynamicAllocator<MIN_ALLOC_BITS, MAX_ALLOC_BITS, ALLIGN_BITS, PAGE_BITS>::alloc(
         pages_[slot_num] = empty_pages_;
         empty_pages_ = empty_pages_->next_;
         pages_[slot_num]->offset_ =
-            upper_mask((uintptr_t)(pages_[slot_num]), ALIGN, sizeof(page_t)) -
-            (uintptr_t)(pages_[slot_num]);
+            upper_mask(
+                reinterpret_cast<uintptr_t>(pages_[slot_num]),
+                ALIGN,
+                sizeof(page_t)) -
+            reinterpret_cast<uintptr_t>(pages_[slot_num]);
         pages_[slot_num]->next_ = nullptr;
         pages_[slot_num]->prev_ = nullptr;
         pages_[slot_num]->block_size_ = slot_to_size(slot_num);
         pages_[slot_num]->n_blocks_allocated_ = 0;
-        pages_[slot_num]->free_block_ = (uintptr_t) nullptr;
+        pages_[slot_num]->free_block_ = reinterpret_cast<uintptr_t>(nullptr);
     }
 
     // store return address
     void *ret_addr = nullptr;
     if (pages_[slot_num]->offset_ + pages_[slot_num]->block_size_ >
         PAGE) { // use free list
-        ret_addr = (void *)(pages_[slot_num]->free_block_);
+        ret_addr = reinterpret_cast<void *>(pages_[slot_num]->free_block_);
         // delete block from free list
-        pages_[slot_num]->free_block_ =
-            (uintptr_t)(*(char **)(pages_[slot_num]->free_block_));
+        pages_[slot_num]->free_block_ = reinterpret_cast<uintptr_t>(
+            *reinterpret_cast<char **>(pages_[slot_num]->free_block_));
     }
     else { // use offset
         ret_addr =
@@ -171,20 +176,21 @@ bool DynamicAllocator<MIN_ALLOC_BITS, MAX_ALLOC_BITS, ALLIGN_BITS, PAGE_BITS>::
     dealloc(void *const addr)
 {
     // find corresponding page
-    uintptr_t base_addr = (uintptr_t)addr & PAGE_LOWER_MASK;
+    uintptr_t base_addr = reinterpret_cast<uintptr_t>(addr) & PAGE_LOWER_MASK;
 
     if (base_addr < mem_start_ || base_addr + PAGE > mem_start_ + size_) {
         return false;
     }
 
-    page_t *page = (page_t *)base_addr;
+    page_t *page = reinterpret_cast<page_t *>(base_addr);
 
     // we will need this info later:
     bool is_full = page_full(page);
 
     // add freed block to the page's free list
-    *(char **)addr = (char *)(page->free_block_);
-    page->free_block_ = (uintptr_t)addr;
+    *reinterpret_cast<char **>(addr) =
+        reinterpret_cast<char *>(page->free_block_);
+    page->free_block_ = reinterpret_cast<uintptr_t>(addr);
     page->n_blocks_allocated_--;
 
     // make page available if it was full right before

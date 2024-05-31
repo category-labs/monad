@@ -668,7 +668,7 @@ public:
 static_assert(
     sizeof(execute_on_worker_pool<read_single_buffer_sender>) -
         sizeof(read_single_buffer_sender) ==
-    152);
+    232);
 static_assert(alignof(execute_on_worker_pool<read_single_buffer_sender>) == 8);
 static_assert(sender<execute_on_worker_pool<read_single_buffer_sender>>);
 

@@ -276,6 +276,7 @@ namespace
                 monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
                 monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
         monad::async::AsyncIO testio(pool, testrwbuf);
+#if 0
         {
             auto const [max_sq_entries, max_cq_entries] =
                 testio.io_uring_ring_entries_left(false);
@@ -292,6 +293,7 @@ namespace
                       << " cq entries created = " << max_cq_entries
                       << std::endl;
         }
+#endif
         std::vector<monad::async::file_offset_t> seq;
         seq.reserve(sqe_exhaustion_does_not_reorder_writes_receiver::COUNT * 2);
 

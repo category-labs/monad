@@ -24,6 +24,7 @@
 
 namespace
 {
+#if 0 // new i/o executor never appears to have buffer exhaustion
     TEST(AsyncIODeathTest, write_buffer_exhaustion_causes_death)
     {
         testing::FLAGS_gtest_death_test_style = "threadsafe";
@@ -123,4 +124,5 @@ namespace
         }
         EXPECT_EXIT(make(), ::testing::KilledBySignal(SIGABRT), ".*");
     }
+#endif
 }

@@ -14,9 +14,9 @@ $2 = {
         return 'monad_async_context'
 
     def to_string(self):
-        ret = f'is_running = {str(self.__val['is_running'])}, is_suspended = {str(self.__val['is_suspended'])}, switcher = {self.__val['switcher']}'
+        ret = f"is_running = {str(self.__val['is_running'])}, is_suspended = {str(self.__val['is_suspended'])}, switcher = {self.__val['switcher']}"
         try:
-            ret += f', stack_bottom = {str(self.__val['stack_bottom'])}, stack_top = {str(self.__val['stack_top'])}, stack_current = {str(self.__val['stack_current'])}'
+            ret += f"", stack_bottom = {str(self.__val['stack_bottom'])}, stack_top = {str(self.__val['stack_top'])}, stack_current = {str(self.__val['stack_current'])}""
         except:
             pass
         return ret
@@ -36,7 +36,7 @@ $2 = {user_ptr = 0x0, contexts = std::atomic<unsigned int> = { 10000 }, contexts
         return 'monad_async_context_switcher'
 
     def to_string(self):
-        return f'user_ptr = {str(self.__val['user_ptr'])}, contexts = {str(self.__val['contexts'])}'
+        return f"user_ptr = {str(self.__val['user_ptr'])}, contexts = {str(self.__val['contexts'])}"
 
     def children(self):
         try:

@@ -96,7 +96,7 @@ public:
     }
 };
 
-static_assert(sizeof(read_single_buffer_sender) == 40);
+static_assert(sizeof(read_single_buffer_sender) == 48);
 static_assert(alignof(read_single_buffer_sender) == 8);
 static_assert(sender<read_single_buffer_sender>);
 
@@ -365,7 +365,7 @@ public:
     }
 };
 
-static_assert(sizeof(write_single_buffer_sender) == 48);
+static_assert(sizeof(write_single_buffer_sender) == 56);
 static_assert(alignof(write_single_buffer_sender) == 8);
 static_assert(sender<write_single_buffer_sender>);
 

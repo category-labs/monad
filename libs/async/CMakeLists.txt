@@ -24,7 +24,7 @@ add_library(
   "src/monad/async/storage_pool.cpp" "src/monad/async/util.cpp")
 target_include_directories(monad_async PUBLIC "src")
 monad_compile_options(monad_async)
-target_link_libraries(monad_async PUBLIC monad_core Boost::fiber)
+target_link_libraries(monad_async PUBLIC monad_core monad_async_c Boost::fiber)
 
 # ##############################################################################
 # unit tests

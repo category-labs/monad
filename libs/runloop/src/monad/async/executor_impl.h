@@ -45,7 +45,6 @@ struct monad_async_executor_impl
     thrd_t owning_thread;
     bool within_run;
     atomic_bool need_to_empty_eventfd;
-    unsigned cancellations_in_flight;
     monad_async_context run_context;
     struct io_uring ring, wr_ring;
     unsigned wr_ring_ops_outstanding;
@@ -689,6 +688,29 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
             return nullptr;
         }
     }
+
+    /* This is quite possibly the hardest won line in this entire codebase.
+    One was seeing spurious additional CQEs being returned with user_data
+    values from a random previous CQE when cancelling an operation. Working
+    around this was expensive and painful, as user_data values pointed into
+    memory and there was no way of easily telling if a CQE userdata was
+    valid or not.
+
+    It turns out that the cause requires three conditions:
+
+    1. The op needs to be one which does not use the SQE user_data to set
+    the SQE user data, with the cancellation ops being these (they use
+    the addr field instead for no obvious reason).
+    2. io_uring_get_sqe() doesn't touch the user_data field, so if you
+    happen to get a SQE with a user_data value set from last time, it gets
+    sent again.
+    3. io_uring then MAY elect to send a spurious additional CQE with the
+    stale user_data but ONLY if the value is non-zero.
+
+    Setting the user_data to zero on SQE allocation therefore eliminates
+    the spurious CQE problem entirely.
+    */
+    sqe->user_data = 0;
     return sqe;
 }
 

@@ -31,6 +31,7 @@
 #include <utility>
 
 #include "deserialize_node_from_receiver_result.hpp"
+#include "monad/mpt/detail/db_metadata.hpp"
 
 MONAD_MPT_NAMESPACE_BEGIN
 

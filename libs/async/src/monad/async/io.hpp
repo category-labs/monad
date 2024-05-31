@@ -2,7 +2,16 @@
 
 #include <monad/async/connected_operation.hpp>
 
+#include <monad/async/config.h>
+#include <monad/async/context_switcher.h>
+#include <monad/async/cpp_helpers.hpp>
+#include <monad/async/erased_connected_operation.hpp>
+#include <monad/async/executor.h>
+#include <monad/async/file_io.h>
 #include <monad/async/storage_pool.hpp>
+#include <monad/async/task.h>
+
+#include <monad/core/unordered_map.hpp>
 
 #include <monad/io/buffer_pool.hpp>
 #include <monad/io/buffers.hpp>
@@ -12,11 +21,9 @@
 
 #include <atomic>
 #include <cassert>
-#include <concepts>
 #include <cstddef>
+#include <deque>
 #include <filesystem>
-#include <functional>
-#include <iostream>
 #include <span>
 #include <tuple>
 
@@ -56,32 +63,37 @@ private:
     struct chunk_ptr_
     {
         std::shared_ptr<T> ptr;
-        int io_uring_read_fd{-1}, io_uring_write_fd{-1}; // NOT POSIX fds!
+        int read_fd{-1}, write_fd{-1};
+        std::shared_ptr<monad_async_file_head> io_uring_read_fd,
+            io_uring_write_fd;
 
         constexpr chunk_ptr_() = default;
 
         constexpr chunk_ptr_(std::shared_ptr<T> ptr_)
             : ptr(std::move(ptr_))
-            , io_uring_read_fd(ptr ? ptr->read_fd().first : -1)
-            , io_uring_write_fd(ptr ? ptr->write_fd(0).first : -1)
+            , read_fd(ptr ? ptr->read_fd().first : -1)
+            , write_fd(ptr ? ptr->write_fd(0).first : -1)
         {
         }
     };
+
+    monad_async_executor_attr executor_attr_;
+    monad::async::executor_ptr executor_;
+    monad::async::context_switcher_ptr context_switcher_;
+    monad::async::task_ptr dispatch_task_;
+    std::unordered_map<
+        monad_async_task,
+        std::pair<task_ptr, std::unique_ptr<detail::task_attach_impl_base>>>
+        task_pool_sleeping_, task_pool_inuse_;
+
+    std::mutex threadsafe_invocations_lock_;
+    std::deque<erased_connected_operation *> threadsafe_invocations_;
 
     pid_t const owning_tid_;
     class storage_pool *storage_pool_{nullptr};
     chunk_ptr_<cnv_chunk> cnv_chunk_;
     std::vector<chunk_ptr_<seq_chunk>> seq_chunks_;
 
-    struct
-    {
-        int msgread, msgwrite;
-    } fds_;
-
-    monad::io::Ring &uring_, *wr_uring_{nullptr};
-    monad::io::Buffers &rwbuf_;
-    monad::io::BufferPool rd_pool_;
-    monad::io::BufferPool wr_pool_;
     bool eager_completions_{false};
     bool capture_io_latencies_{false};
 
@@ -95,6 +107,10 @@ private:
         erased_connected_operation *first{nullptr}, *last{nullptr};
     } concurrent_read_ios_pending_;
 
+    template <class U>
+        requires(std::is_invocable_v<U>)
+    void submit_request_within_task_(U &&f, bool force_launch_on_pool = false);
+
     void submit_request_(
         std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
         void *uring_data, enum erased_connected_operation::io_priority prio);
@@ -106,8 +122,71 @@ private:
         void *uring_data, enum erased_connected_operation::io_priority prio);
     void submit_request_(timed_invocation_state *state, void *uring_data);
 
-    void poll_uring_while_submission_queue_full_();
-    bool poll_uring_(bool blocking, unsigned poll_rings_mask);
+    void
+    invoke_completed_(erased_connected_operation *state, result<size_t> res);
+    static monad_async_result
+    dispatch_task_impl_(monad_async_task task) noexcept;
+    bool poll_uring_(bool blocking);
+
+    template <class F, class... Args>
+        requires(
+            std::is_invocable_v<F, monad_async_task_head *, Args...> &&
+            std::is_constructible_v<
+                BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<
+                    intptr_t>,
+                std::invoke_result_t<F, monad_async_task_head *, Args...>>)
+    auto &launch_on_task_from_pool_(F &&f, Args &&...args)
+    {
+        monad_async_task task;
+        std::unordered_map<
+            monad_async_task,
+            std::pair<
+                task_ptr,
+                std::unique_ptr<detail::task_attach_impl_base>>>::iterator it;
+        if (task_pool_sleeping_.empty()) {
+            monad_async_task_attr task_attr{.stack_size = 256 * 1024};
+            auto p =
+                monad::async::make_task(context_switcher_.get(), task_attr);
+            task = p.get();
+            using mapped_type =
+                typename decltype(task_pool_inuse_)::mapped_type;
+            it = task_pool_inuse_
+                     .emplace(
+                         task,
+                         mapped_type{
+                             std::move(p), typename mapped_type::second_type{}})
+                     .first;
+        }
+        else {
+            auto node =
+                task_pool_sleeping_.extract(task_pool_sleeping_.begin());
+            task = node.key();
+            it = task_pool_inuse_.insert(std::move(node)).position;
+        }
+        to_result(
+            monad_async_task_set_priorities(
+                task, monad_async_priority_low, monad_async_priority_unchanged))
+            .value();
+        it->second.second = attach_to_executor(
+            executor_.get(),
+            task,
+            [this, f = std::move(f), ... args = std::move(args)](
+                monad_async_task task) mutable -> result<intptr_t> {
+                auto ret = f(task, std::move(args)...);
+                auto node = task_pool_inuse_.extract(task);
+                MONAD_ASSERT(!node.empty());
+                auto res = task_pool_sleeping_.insert(std::move(node));
+                MONAD_ASSERT(res.inserted);
+                auto it = res.position;
+                // Now delete *this
+                task->user_code = nullptr;
+                task->user_ptr = nullptr;
+                it->second.second->task = nullptr;
+                it->second.second.reset();
+                return ret;
+            });
+        return it->second;
+    }
 
 public:
     AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf);
@@ -121,7 +200,7 @@ public:
 
     bool is_read_only() const noexcept
     {
-        return rwbuf_.is_read_only();
+        return executor_attr_.io_uring_wr_ring.entries == 0;
     }
 
     class storage_pool &storage_pool() noexcept
@@ -234,11 +313,6 @@ public:
         capture_io_latencies_ = v;
     }
 
-    // The number of submission and completion entries remaining right now. Can
-    // be stale as soon as it is returned
-    std::pair<unsigned, unsigned>
-    io_uring_ring_entries_left(bool for_wr_ring) const noexcept;
-
     // Useful for taking a copy of anonymous inode files used by the unit tests
     void dump_fd_to(size_t which, std::filesystem::path const &path);
 
@@ -248,7 +322,7 @@ public:
     {
         size_t n = 0;
         for (; n < count; n++) {
-            if (!poll_uring_(n == 0, 0)) {
+            if (!poll_uring_(n == 0)) {
                 break;
             }
         }
@@ -269,7 +343,7 @@ public:
     {
         size_t n = 0;
         for (; n < count; n++) {
-            if (!poll_uring_(false, 0)) {
+            if (!poll_uring_(false)) {
                 break;
             }
         }
@@ -464,21 +538,43 @@ public:
             std::declval<Receiver>())),
         io_connected_operation_unique_ptr_deleter>;
 
-    void do_free_read_buffer(std::byte *b) noexcept
+    void do_free_read_buffer(std::byte *b, int index) noexcept
     {
+        (void)b;
 #ifndef NDEBUG
         memset((void *)b, 0xff, READ_BUFFER_SIZE);
 #endif
-        rd_pool_.release((unsigned char *)b);
+        monad_async_task task =
+            executor_->current_task.load(std::memory_order_acquire);
+        if (task == nullptr) {
+            // This is wrong, but gets us working as
+            // monad_async_task_release_registered_io_buffer() just happens to
+            // not use task except to fetch its executor
+            task = dispatch_task_.get();
+        }
+        monad::async::to_result(
+            monad_async_task_release_registered_io_buffer(task, index))
+            .value();
     }
 
-    void do_free_write_buffer(std::byte *b) noexcept
+    void do_free_write_buffer(std::byte *b, int index) noexcept
     {
+        (void)b;
 #ifndef NDEBUG
         static_assert(WRITE_BUFFER_SIZE >= CPU_PAGE_SIZE);
         memset((void *)b, 0xff, CPU_PAGE_SIZE);
 #endif
-        wr_pool_.release((unsigned char *)b);
+        monad_async_task task =
+            executor_->current_task.load(std::memory_order_acquire);
+        if (task == nullptr) {
+            // This is wrong, but gets us working as
+            // monad_async_task_release_registered_io_buffer() just happens to
+            // not use task except to fetch its executor
+            task = dispatch_task_.get();
+        }
+        monad::async::to_result(
+            monad_async_task_release_registered_io_buffer(task, index))
+            .value();
     }
 
     using read_buffer_ptr = detail::read_buffer_ptr;
@@ -487,26 +583,45 @@ public:
     read_buffer_ptr get_read_buffer(size_t bytes) noexcept
     {
         MONAD_DEBUG_ASSERT(bytes <= READ_BUFFER_SIZE);
-        unsigned char *mem = rd_pool_.alloc();
-        if (mem == nullptr) {
-            mem = poll_uring_while_no_io_buffers_(false);
+        auto *task = executor_->current_task.load(std::memory_order_acquire);
+        monad_async_task_registered_io_buffer buffer{};
+        if (task == nullptr) {
+            buffer = poll_uring_while_no_io_buffers_(false);
+        }
+        else {
+            monad::async::to_result(monad_async_task_claim_registered_io_buffer(
+                                        &buffer, task, bytes, {}))
+                .value();
         }
         return read_buffer_ptr(
-            (std::byte *)mem, detail::read_buffer_deleter(this));
+            (std::byte *)buffer.iov[0].iov_base,
+            detail::read_buffer_deleter(this, buffer.index));
     }
 
     write_buffer_ptr get_write_buffer() noexcept
     {
-        unsigned char *mem = wr_pool_.alloc();
-        if (mem == nullptr) {
-            mem = poll_uring_while_no_io_buffers_(true);
+        monad_async_task_registered_io_buffer buffer{};
+        auto *task = executor_->current_task.load(std::memory_order_acquire);
+        if (task == nullptr) {
+            buffer = poll_uring_while_no_io_buffers_(true);
+        }
+        else {
+            monad::async::to_result(
+                monad_async_task_claim_registered_io_buffer(
+                    &buffer,
+                    task,
+                    WRITE_BUFFER_SIZE,
+                    {.for_write_ring = true, .fail_dont_suspend = false}))
+                .value();
         }
         return write_buffer_ptr(
-            (std::byte *)mem, detail::write_buffer_deleter(this));
+            (std::byte *)buffer.iov[0].iov_base,
+            detail::write_buffer_deleter(this, buffer.index));
     }
 
 private:
-    unsigned char *poll_uring_while_no_io_buffers_(bool is_write);
+    monad_async_task_registered_io_buffer
+    poll_uring_while_no_io_buffers_(bool is_write);
 
     template <bool is_write, class F>
     auto make_connected_impl_(F &&connect)
@@ -527,13 +642,9 @@ private:
         // Can't do that, must use buffer returned.
         MONAD_DEBUG_ASSERT(ret->sender().buffer().data() == nullptr);
         if constexpr (is_write) {
-            MONAD_DEBUG_ASSERT(rwbuf_.get_write_size() >= WRITE_BUFFER_SIZE);
             auto buffer = std::move(ret->sender()).buffer();
             buffer.set_write_buffer(get_write_buffer());
             ret->sender().reset(ret->sender().offset(), std::move(buffer));
-        }
-        else {
-            MONAD_DEBUG_ASSERT(rwbuf_.get_read_size() >= READ_BUFFER_SIZE);
         }
         return ret;
     }
@@ -644,8 +755,8 @@ public:
                 is_read() &&
             !std::is_void_v<T>) {
             if (res && res.assume_value() > 0) {
-                // If we filled the data from extant write buffers above, adjust
-                // bytes transferred to account for that.
+                // If we filled the data from extant write buffers above,
+                // adjust bytes transferred to account for that.
                 res = success(
                     res.assume_value() +
                     erased_connected_operation::rbtree_node_traits::get_key(
@@ -665,19 +776,19 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 224);
+static_assert(sizeof(AsyncIO) == 752);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail
 {
     inline void read_buffer_deleter::operator()(std::byte *b)
     {
-        parent_->do_free_read_buffer(b);
+        parent_->do_free_read_buffer(b, index_);
     }
 
     inline void write_buffer_deleter::operator()(std::byte *b)
     {
-        parent_->do_free_write_buffer(b);
+        parent_->do_free_write_buffer(b, index_);
     }
 }
 

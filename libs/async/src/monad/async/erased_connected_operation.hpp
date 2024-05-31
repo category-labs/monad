@@ -4,6 +4,8 @@
 
 #include <monad/core/assert.h>
 
+#include <monad/async/task.h>
+
 #include <boost/intrusive/rbtree_algorithms.hpp>
 
 #include <chrono>
@@ -24,12 +26,14 @@ namespace detail
     class read_buffer_deleter
     {
         AsyncIO *parent_{nullptr};
+        int index_{0};
 
     public:
         read_buffer_deleter() = default;
 
-        constexpr explicit read_buffer_deleter(AsyncIO *parent)
+        constexpr explicit read_buffer_deleter(AsyncIO *parent, int index)
             : parent_(parent)
+            , index_(index)
         {
             MONAD_DEBUG_ASSERT(parent != nullptr);
         }
@@ -40,12 +44,14 @@ namespace detail
     class write_buffer_deleter
     {
         AsyncIO *parent_{nullptr};
+        int index_{0};
 
     public:
         write_buffer_deleter() = default;
 
-        constexpr explicit write_buffer_deleter(AsyncIO *parent)
+        constexpr explicit write_buffer_deleter(AsyncIO *parent, int index)
             : parent_(parent)
+            , index_(index)
         {
             MONAD_DEBUG_ASSERT(parent != nullptr);
         }
@@ -155,7 +161,7 @@ public:
     }
 };
 
-static_assert(sizeof(filled_read_buffer) == 32);
+static_assert(sizeof(filled_read_buffer) == 40);
 static_assert(alignof(filled_read_buffer) == 8);
 
 /*! \class filled_write_buffer
@@ -246,7 +252,7 @@ public:
     }
 };
 
-static_assert(sizeof(filled_write_buffer) == 32);
+static_assert(sizeof(filled_write_buffer) == 40);
 static_assert(alignof(filled_write_buffer) == 8);
 
 /* \class erased_connected_operation
@@ -284,6 +290,8 @@ protected:
     std::atomic<AsyncIO *> io_{
         nullptr}; // set at construction if associated with an AsyncIO instance,
                   // which isn't mandatory
+
+    monad_async_io_status iostatus_{};
 
     struct rbtree_t_
     {
@@ -513,6 +521,30 @@ public:
         MONAD_ASSERT(!being_executed_);
     }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof" // just do what you're told
+
+    static erased_connected_operation *
+    from_iostatus(monad_async_io_status *status) noexcept
+    {
+        return (erased_connected_operation *)(((uintptr_t)status) -
+                                              offsetof(
+                                                  erased_connected_operation,
+                                                  iostatus_));
+    }
+
+#pragma GCC diagnostic pop
+
+    monad_async_io_status const *to_iostatus() const noexcept
+    {
+        return &iostatus_;
+    }
+
+    monad_async_io_status *to_iostatus() noexcept
+    {
+        return &iostatus_;
+    }
+
     bool is_unknown_operation_type() const noexcept
     {
         return operation_type_ == operation_type::unknown;
@@ -622,7 +654,7 @@ public:
     }
 };
 
-static_assert(sizeof(erased_connected_operation) == 64);
+static_assert(sizeof(erased_connected_operation) == 144);
 static_assert(alignof(erased_connected_operation) == 8);
 
 MONAD_ASYNC_NAMESPACE_END

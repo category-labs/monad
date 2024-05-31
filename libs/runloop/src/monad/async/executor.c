@@ -19,38 +19,6 @@
     #include <sanitizer/asan_interface.h>
 #endif
 
-// This is not a fast call, and should be avoided where possible
-static inline bool is_address_dereferenceable(void *addr)
-{
-#if MONAD_ASYNC_HAVE_ASAN
-    if (__asan_address_is_poisoned(addr)) {
-        return false;
-    }
-#endif
-    void *toprobe = (void *)(((uintptr_t)addr + 4095u) & ~(uintptr_t)4095u);
-    if (toprobe == nullptr) {
-        return false;
-    }
-    toprobe = (void *)((uintptr_t)addr & ~(uintptr_t)4095u);
-    if (toprobe == nullptr) {
-        return false;
-    }
-    void *mapaddr = mmap(
-        toprobe,
-        4096,
-        PROT_NONE,
-        MAP_ANONYMOUS | MAP_PRIVATE | MAP_NORESERVE | MAP_FIXED_NOREPLACE,
-        -1,
-        0);
-    if (mapaddr != MAP_FAILED) {
-        munmap(mapaddr, 4096);
-        if (mapaddr == toprobe) {
-            return false;
-        }
-    }
-    return true;
-}
-
 monad_async_result monad_async_executor_create(
     monad_async_executor *ex, struct monad_async_executor_attr *attr)
 {
@@ -565,18 +533,6 @@ static inline monad_async_result monad_async_executor_run_impl(
 #endif
                 if (task != nullptr) {
                 resume_task:
-                    if (ex->cancellations_in_flight > 0) {
-                        // Need to probe for spurious CQEs due to bug in Linux
-                        // kernel
-                        if (!is_address_dereferenceable(task) ||
-                            0 != memcmp(task->magic, "MNASTASK", 8)) {
-                            fprintf(
-                                stderr,
-                                "*** WARNING: Spurious CQE returned, "
-                                "ignoring!\n");
-                            continue;
-                        }
-                    }
                     if (atomic_load_explicit(
                             &task->head.is_suspended_awaiting,
                             memory_order_acquire)) {
@@ -595,8 +551,6 @@ static inline monad_async_result monad_async_executor_run_impl(
                         if (task->please_cancel_invoked) {
                             task->head.result =
                                 monad_async_make_failure(ECANCELED);
-                            ex->cancellations_in_flight--;
-                            assert(ex->cancellations_in_flight != (unsigned)-1);
                         }
                         else if (cqe->res < 0) {
                             task->head.result =
@@ -627,33 +581,12 @@ static inline monad_async_result monad_async_executor_run_impl(
                     }
                 }
                 else if (iostatus != nullptr) {
-                    if (ex->cancellations_in_flight > 0) {
-                        // Need to probe for spurious CQEs due to bug in Linux
-                        // kernel
-                        if (!is_address_dereferenceable(iostatus)) {
-                            fprintf(
-                                stderr,
-                                "*** WARNING: Spurious CQE returned, "
-                                "ignoring!\n");
-                            continue;
-                        }
-                    }
                     // result contains the pointer to the task which is to
                     // receive the i/o completion. It gets overwritten by the
                     // actual result of the i/o below, and that result will
                     // never be a valid pointer, so this check should be
                     // reliable.
                     task = *(struct monad_async_task_impl **)&iostatus->result;
-                    if (ex->cancellations_in_flight > 0) {
-                        if (!is_address_dereferenceable(task) ||
-                            0 != memcmp(task->magic, "MNASTASK", 8)) {
-                            fprintf(
-                                stderr,
-                                "*** WARNING: Spurious CQE returned, "
-                                "ignoring!\n");
-                            continue;
-                        }
-                    }
 #if MONAD_ASYNC_EXECUTOR_PRINTING
                     printf(
                         "*** %u. Executor %p gets result of i/o %p "
@@ -1306,17 +1239,6 @@ static inline monad_async_result monad_async_task_suspend_for_duration_cancel(
         (struct monad_async_task_impl *)atomic_load_explicit(
             &ex->head.current_task, memory_order_acquire),
         false);
-    /* This is non-obvious, so it will need explaining. It turns out
-    kernel 6.8 has a bug, it sometimes spuriously returns an additional CQE to
-    the timeout completion CQE which most unfortunately may have a user_data
-    value which was one of a previous CQE sometimes long in the past. As we
-    store encoded pointers in the user data, that turns into segfaults.
-
-    We therefore have a workaround which probes pointers returned by CQEs for
-    validity but as that's very slow, we only turn it on if a cancellation is in
-    flight.
-    */
-    ex->cancellations_in_flight++;
     io_uring_prep_timeout_remove(
         sqe, (__u64)io_uring_mangle_into_data(task), 0);
     return monad_async_make_failure(EAGAIN); // Canceller needs to wait

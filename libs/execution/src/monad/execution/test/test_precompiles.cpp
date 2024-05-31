@@ -307,7 +307,7 @@ void do_geth_tests(
     char const *suite_name, std::vector<test_case> const &test_cases,
     monad::Address const &code_address)
 {
-    for (auto const test_case : test_cases) {
+    for (auto const &test_case : test_cases) {
         auto const input_bytes =
             evmc::from_hex(std::string_view{test_case.input}).value();
         auto const expected_output_bytes =

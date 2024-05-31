@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-int main(int argc_, char *argv[])
+int main(int argc_, char const *argv[])
 {
     size_t const argc = size_t(argc_);
     std::vector<std::string_view> args(argc);

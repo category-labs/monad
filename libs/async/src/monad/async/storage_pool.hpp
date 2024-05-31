@@ -392,7 +392,7 @@ private:
         int fd, std::variant<uint64_t, device const *> dev_no_or_dev,
         creation_flags flags);
 
-    void fill_chunks_(creation_flags flags);
+    void fill_chunks_(creation_flags const &flags);
 
     struct clone_as_read_only_tag_
     {

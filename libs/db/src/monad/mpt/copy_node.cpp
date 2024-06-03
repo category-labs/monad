@@ -65,26 +65,28 @@ Node::UniquePtr copy_node(
                         static_cast<uint16_t>(node->mask | (1u << nibble));
                     std::array<ChildData, 16> children;
                     for (uint8_t i = 0; i < 16; ++i) {
-                        if (i == nibble) {
+                        if (i == nibble) { // is destination
                             children[i].branch = i;
                             children[i].ptr = leaf;
+                            children[i].subtrie_min_version =
+                                calc_min_version(*leaf);
                         }
                         else if (mask & (1u << i)) {
-                            children[i].branch = i;
+                            auto &child = children[i];
                             auto const old_index = node->to_child_index(i);
+                            child.branch = i;
+                            child.subtrie_min_version =
+                                node->subtrie_min_version(old_index);
                             if (aux.is_on_disk()) {
-                                children[i].min_offset_fast =
+                                child.min_offset_fast =
                                     node->min_offset_fast(old_index);
-                                children[i].min_offset_slow =
+                                child.min_offset_slow =
                                     node->min_offset_slow(old_index);
-                                children[i].offset = node->fnext(old_index);
-                                children[i].subtrie_min_version =
-                                    node->subtrie_min_version(old_index);
+                                child.offset = node->fnext(old_index);
                                 node->next_ptr(old_index).reset();
                             }
                             else {
-                                children[i].ptr =
-                                    node->next_ptr(old_index).release();
+                                child.ptr = node->next_ptr(old_index).release();
                             }
                         }
                     }
@@ -136,10 +138,14 @@ Node::UniquePtr copy_node(
                     static_cast<uint16_t>((1u << nibble) | (1u << node_nibble));
                 bool const leaf_first = nibble < node_nibble;
                 ChildData children[2];
-                children[!leaf_first] =
-                    ChildData{.ptr = dest_leaf, .branch = node_nibble};
-                children[leaf_first] =
-                    ChildData{.ptr = node_latter_half, .branch = nibble};
+                children[!leaf_first] = ChildData{
+                    .ptr = dest_leaf,
+                    .subtrie_min_version = calc_min_version(*dest_leaf),
+                    .branch = node_nibble};
+                children[leaf_first] = ChildData{
+                    .ptr = node_latter_half,
+                    .subtrie_min_version = calc_min_version(*node_latter_half),
+                    .branch = nibble};
                 if (aux.is_on_disk()) {
                     // Request a write for the modified node, async_write_node()
                     // serialize nodes to buffer but it's not guaranteed to land

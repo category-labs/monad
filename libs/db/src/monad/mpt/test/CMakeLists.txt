@@ -33,6 +33,7 @@ add_trie_test(TARGET node_writer_test SOURCES "node_writer_test.cpp")
 add_trie_test(TARGET plain_trie_test SOURCES "plain_trie_test.cpp")
 add_trie_test(TARGET read_only_db_test SOURCES "read_only_db_test.cpp")
 add_trie_test(TARGET state_machine_test SOURCES "state_machine_test.cpp")
+add_trie_test(TARGET subtrie_version_test SOURCES "subtrie_version_test.cpp")
 add_trie_test(TARGET unsigned_20_test SOURCES "unsigned_20_test.cpp")
 
 # monad trie perf test

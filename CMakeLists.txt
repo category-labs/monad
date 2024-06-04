@@ -50,7 +50,6 @@ endfunction()
 
 find_package(Boost REQUIRED COMPONENTS fiber graph json)
 find_package(PkgConfig REQUIRED)
-find_package(absl REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 
 # cli11

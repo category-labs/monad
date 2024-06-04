@@ -130,8 +130,6 @@ add_library(
   "src/monad/mem/huge_mem.hpp"
   "src/monad/mem/mem_map.cpp"
   "src/monad/mem/mem_map.hpp"
-  "src/monad/mem/pool_allocator.cpp"
-  "src/monad/mem/pool_allocator.hpp"
   # rlp
   "src/monad/rlp/config.hpp"
   "src/monad/rlp/encode.hpp"

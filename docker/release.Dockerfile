@@ -23,7 +23,6 @@ RUN apt-get install -y \
   libboost-stacktrace1.83.0
 
 RUN apt install -y \
-  libabsl-dev \
   libarchive-dev \
   libbenchmark-dev \
   libbrotli-dev \
@@ -32,7 +31,6 @@ RUN apt install -y \
   libgmock-dev \
   libgmp-dev \
   libgtest-dev \
-  libmimalloc-dev \
   libtbb-dev \
   liburing-dev \
   libzstd-dev

@@ -144,7 +144,6 @@ target_link_libraries(
   PRIVATE Boost::graph
   PRIVATE Boost::json
   PRIVATE PkgConfig::brotli
-  PRIVATE absl::btree
   PUBLIC ethash::keccak
   PUBLIC evmc
   PUBLIC evmone

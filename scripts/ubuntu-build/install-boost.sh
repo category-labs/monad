@@ -1,9 +1,5 @@
 #!/bin/bash
 
-add-apt-repository -y ppa:mhier/libboost-latest
-
-apt-get update
-
 apt-get install -y \
   libboost-fiber1.83.0 \
   libboost-graph1.83.0 \

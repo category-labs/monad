@@ -762,10 +762,10 @@ public:
             UINT32_MAX);
         monad::mpt::detail::unsigned_20 slow_list_base_insertion_count(
             UINT32_MAX);
-        uint32_t fast_list_begin_index{UINT32_MAX},
-            fast_list_end_index{UINT32_MAX};
-        uint32_t slow_list_begin_index{UINT32_MAX},
-            slow_list_end_index{UINT32_MAX};
+        uint32_t fast_list_begin_index{UINT32_MAX};
+        uint32_t fast_list_end_index{UINT32_MAX};
+        uint32_t slow_list_begin_index{UINT32_MAX};
+        uint32_t slow_list_end_index{UINT32_MAX};
         for (auto &i : todecompress) {
             if (i.type == monad::async::storage_pool::cnv && i.chunk_id == 0) {
                 auto const *old_metadata =
@@ -1004,9 +1004,9 @@ public:
             aux.db_metadata()->slow_list.begin == slow_list_begin_index);
         MONAD_ASSERT(aux.db_metadata()->slow_list.end == slow_list_end_index);
 
-        for (auto it = chunks.begin(); it != chunks.end(); ++it) {
-            if (*it != UINT32_MAX) {
-                aux.append(monad::mpt::UpdateAuxImpl::chunk_list::free, *it);
+        for (unsigned int &chunk : chunks) {
+            if (chunk != UINT32_MAX) {
+                aux.append(monad::mpt::UpdateAuxImpl::chunk_list::free, chunk);
             }
         }
 

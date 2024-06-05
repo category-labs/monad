@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <monad/async/config.hpp>
+#include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/util.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
@@ -25,6 +26,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -32,7 +34,9 @@
 #include <initializer_list>
 #include <iostream>
 #include <iterator>
+#include <stdexcept>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -188,6 +192,76 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
 }
 
+TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
+{
+    auto const &kv = fixed_updates::kv;
+
+    auto const prefix = 0x00_hex;
+    uint64_t const block_id = 0x123;
+
+    {
+        auto u1 = make_update(kv[0].first, kv[0].second);
+        auto u2 = make_update(kv[1].first, kv[1].second);
+        UpdateList ul;
+        ul.push_front(u1);
+        ul.push_front(u2);
+
+        auto u_prefix = Update{
+            .key = prefix,
+            .value = monad::byte_string_view{},
+            .incarnation = false,
+            .next = std::move(ul)};
+        UpdateList ul_prefix;
+        ul_prefix.push_front(u_prefix);
+
+        this->db.upsert(std::move(ul_prefix), block_id);
+    }
+    ReadOnlyOnDiskDbConfig const ro_config{
+        .dbname_paths = this->config.dbname_paths};
+    Db ro_db{ro_config};
+
+    auto async_get = [&](auto &&sender) -> monad::byte_string {
+        using sender_type = std::decay_t<decltype(sender)>;
+        struct receiver_t
+        {
+            monad::byte_string ret;
+
+            enum : bool
+            {
+                lifetime_managed_internally = true
+            };
+
+            void set_value(
+                monad::async::erased_connected_operation *,
+                sender_type::result_type res)
+            {
+                MONAD_ASSERT(res);
+                MONAD_ASSERT(!res.assume_value().empty());
+                ret = std::move(res).assume_value();
+            }
+        };
+        auto *state =
+            new auto(monad::async::connect(std::move(sender), receiver_t{}));
+        state->initiate();
+        while (state->receiver().ret.empty()) {
+            ro_db.poll(false);
+        }
+        auto ret(std::move(state->receiver().ret));
+        delete state;
+        return ret;
+    };
+
+    EXPECT_EQ(
+        async_get(make_get_sender(ro_db, prefix + kv[0].first, block_id)),
+        kv[0].second);
+    EXPECT_EQ(
+        async_get(make_get_sender(ro_db, prefix + kv[1].first, block_id)),
+        kv[1].second);
+    EXPECT_EQ(
+        async_get(make_get_data_sender(ro_db, prefix, block_id)),
+        0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+}
+
 TEST(ReadOnlyDbTest, error_open_empty_rodb)
 {
     std::filesystem::path const dbname{
@@ -196,9 +270,9 @@ TEST(ReadOnlyDbTest, error_open_empty_rodb)
 
     // construct RWDb, storage pool is set up but db remains empty
     StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig config{
+    OnDiskDbConfig const config{
         .compaction = true, .dbname_paths = {dbname}, .file_size_db = 8};
-    Db db{machine, config};
+    Db const db{machine, config};
 
     // construct RODb
     ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
@@ -263,7 +337,7 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
     // construct RWDb
     uint64_t version = 0;
     StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig config{
+    OnDiskDbConfig const config{
         .compaction = true, .dbname_paths = {dbname}, .file_size_db = 8};
     Db db{machine, config};
     upsert_new_version(

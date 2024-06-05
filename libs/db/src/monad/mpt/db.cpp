@@ -1,8 +1,12 @@
 #include <monad/mpt/db.hpp>
 
+#include <monad/async/concepts.hpp>
 #include <monad/async/config.hpp>
+#include <monad/async/connected_operation.hpp>
 #include <monad/async/detail/scope_polyfill.hpp>
+#include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/io.hpp>
+#include <monad/async/sender_errc.hpp>
 #include <monad/async/storage_pool.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
@@ -35,6 +39,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <system_error>
 #include <thread>
 #include <utility>
@@ -49,6 +54,17 @@
 #include "concurrentqueue.h"
 
 MONAD_MPT_NAMESPACE_BEGIN
+
+namespace detail
+{
+    struct void_receiver
+    {
+        void set_value(
+            async::erased_connected_operation *, async::result<void>) const
+        {
+        }
+    };
+}
 
 struct Db::Impl
 {
@@ -65,9 +81,13 @@ struct Db::Impl
 
     virtual find_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key, uint64_t version) = 0;
+    virtual async::result<void> find_async_initiate(
+        find_result_type &res, async::erased_connected_operation *io_state,
+        NodeCursor const &root, NibblesView const &key, uint64_t version) = 0;
     virtual bool is_latest() const = 0;
     virtual void load_latest_fiber_blocking() = 0;
     virtual size_t prefetch_fiber_blocking(uint64_t latest_block_id) = 0;
+    virtual size_t poll(bool blocking, size_t count) = 0;
 };
 
 struct Db::ROOnDisk final : public Db::Impl
@@ -81,7 +101,7 @@ struct Db::ROOnDisk final : public Db::Impl
     chunk_offset_t last_loaded_offset_;
     Node::UniquePtr root_;
 
-    ROOnDisk(ReadOnlyOnDiskDbConfig const &options)
+    explicit ROOnDisk(ReadOnlyOnDiskDbConfig const &options)
         : pool_{[&] -> async::storage_pool {
             async::storage_pool::creation_flags pool_options;
             pool_options.open_read_only = true;
@@ -152,7 +172,6 @@ struct Db::ROOnDisk final : public Db::Impl
             return {NodeCursor{}, find_result::unknown};
         }
         try {
-
             auto const res = find_blocking(aux(), root, key);
             // verify version still valid in history after success
             return version >= aux().db_metadata()->min_db_history_version.load(
@@ -163,6 +182,66 @@ struct Db::ROOnDisk final : public Db::Impl
         catch (std::exception const &e) { // exception implies UB
             return {NodeCursor{}, find_result::unknown};
         }
+    }
+
+    virtual async::result<void> find_async_initiate(
+        find_result_type &res, async::erased_connected_operation *io_state,
+        NodeCursor const &root, NibblesView const &key,
+        uint64_t version) override
+    {
+        // db we last loaded does not contain the version we want to find
+        if (version > last_loaded_max_version_ ||
+            version < aux().db_metadata()->min_db_history_version.load(
+                          std::memory_order_acquire)) {
+            res = {NodeCursor{}, find_result::unknown};
+            io_state->completed(async::success());
+            return async::success();
+        }
+
+        struct receiver_t
+        {
+            find_result_type &res_;
+            async::erased_connected_operation *const io_state;
+            uint64_t const version;
+            UpdateAux<> &aux;
+
+            enum : bool
+            {
+                lifetime_managed_internally = true
+            };
+
+            void set_value(
+                async::erased_connected_operation *const this_io_state,
+                find_request_sender::result_type res)
+            {
+                if (!res) {
+                    io_state->completed(
+                        async::result<void>(std::move(res).as_failure()));
+                    return;
+                }
+                try {
+                    // verify version still valid in history after success
+                    res_ =
+                        version >=
+                                aux.db_metadata()->min_db_history_version.load(
+                                    std::memory_order_acquire)
+                            ? std::move(res).assume_value()
+                            : find_result_type{
+                                  NodeCursor{}, find_result::unknown};
+                }
+                catch (std::exception const &e) { // exception implies UB
+                    res_ = {NodeCursor{}, find_result::unknown};
+                }
+                io_state->completed(async::success());
+                delete this_io_state;
+            }
+        };
+
+        auto *state = new auto(async::connect(
+            find_request_sender(aux(), root, key),
+            receiver_t{res, io_state, version, aux()}));
+        state->initiate();
+        return async::success();
     }
 
     virtual bool is_latest() const override
@@ -188,6 +267,12 @@ struct Db::ROOnDisk final : public Db::Impl
     virtual size_t prefetch_fiber_blocking(uint64_t) override
     {
         MONAD_ASSERT(false);
+    }
+
+    virtual size_t poll(bool blocking, size_t count) override
+    {
+        return blocking ? aux_.io->poll_blocking(count)
+                        : aux_.io->poll_nonblocking(count);
     }
 };
 
@@ -226,6 +311,15 @@ struct Db::InMemory final : public Db::Impl
         return find_blocking(aux(), root, key);
     }
 
+    virtual async::result<void> find_async_initiate(
+        find_result_type &res, async::erased_connected_operation *io_state,
+        NodeCursor const &root, NibblesView const &key, uint64_t = 0) override
+    {
+        res = find_blocking(aux(), root, key);
+        io_state->completed(async::success());
+        return async::success();
+    }
+
     virtual bool is_latest() const override
     {
         return true;
@@ -234,6 +328,11 @@ struct Db::InMemory final : public Db::Impl
     virtual void load_latest_fiber_blocking() override {}
 
     virtual size_t prefetch_fiber_blocking(uint64_t) override
+    {
+        return 0;
+    }
+
+    virtual size_t poll(bool, size_t) override
     {
         return 0;
     }
@@ -508,6 +607,13 @@ struct Db::RWOnDisk final : public Db::Impl
         return fut.get();
     }
 
+    virtual async::result<void> find_async_initiate(
+        find_result_type &, async::erased_connected_operation *,
+        NodeCursor const &, NibblesView const &, uint64_t = 0) override
+    {
+        return async::errc::function_not_supported;
+    }
+
     // threadsafe
     virtual void upsert_fiber_blocking(
         UpdateList &&updates, uint64_t const version,
@@ -560,6 +666,11 @@ struct Db::RWOnDisk final : public Db::Impl
         size_t const nodes_loaded = fut.get();
         machine_.up(block_nv.nibble_size());
         return nodes_loaded;
+    }
+
+    virtual size_t poll(bool, size_t) override
+    {
+        return 0;
     }
 };
 
@@ -706,6 +817,79 @@ size_t Db::prefetch()
         impl_->prefetch_fiber_blocking(latest_block_id.value());
     impl_->prefetch_running_ = false;
     return nodes_loaded;
+}
+
+size_t Db::poll(bool const blocking, size_t const count)
+{
+    MONAD_ASSERT(impl_);
+    return impl_->poll(blocking, count);
+}
+
+namespace detail
+{
+    template <class T>
+    async::result<void> DbGetSender<T>::operator()(
+        async::erased_connected_operation *io_state) noexcept
+    {
+        MONAD_ASSERT(db.impl_);
+        switch (op_type) {
+        case op_t::op_get1:
+        case op_t::op_get_data1:
+            return db.impl_->find_async_initiate(
+                res_,
+                io_state,
+                db.root(),
+                serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id),
+                block_id);
+        case op_t::op_get2:
+        case op_t::op_get_data2:
+            return db.impl_->find_async_initiate(
+                res_, io_state, cur, nv, block_id);
+        }
+        abort();
+    }
+    template struct DbGetSender<NodeCursor>;
+    template struct DbGetSender<byte_string>;
+
+    template <>
+    DbGetSender<NodeCursor>::result_type DbGetSender<NodeCursor>::completed(
+        async::erased_connected_operation *, async::result<void> res) noexcept
+    {
+        MONAD_DEBUG_ASSERT(op_type == op_t::op_get2);
+        BOOST_OUTCOME_TRY(std::move(res));
+        if (res_.second != find_result::success) {
+            return DbError::key_not_found;
+        }
+        return std::move(res_.first);
+    }
+
+    template <>
+    DbGetSender<byte_string>::result_type DbGetSender<byte_string>::completed(
+        async::erased_connected_operation *, async::result<void> r) noexcept
+    {
+        BOOST_OUTCOME_TRY(std::move(r));
+        if (res_.second != find_result::success) {
+            return DbError::key_not_found;
+        }
+        switch (op_type) {
+        case op_t::op_get1:
+        case op_t::op_get_data1: {
+            // Restart this op
+            cur = std::move(res_.first);
+            op_type =
+                (op_type == op_t::op_get1) ? op_t::op_get2 : op_t::op_get_data2;
+            return async::sender_errc::operation_must_be_reinitiated;
+        }
+        case op_t::op_get2:
+            MONAD_DEBUG_ASSERT(res_.first.node != nullptr);
+            return byte_string(res_.first.node->value());
+        case op_t::op_get_data2:
+            MONAD_DEBUG_ASSERT(res_.first.node != nullptr);
+            return byte_string(res_.first.node->data());
+        }
+        abort();
+    }
+
 }
 
 MONAD_MPT_NAMESPACE_END

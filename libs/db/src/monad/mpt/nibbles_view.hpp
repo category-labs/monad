@@ -32,6 +32,10 @@ public:
 
     constexpr Nibbles() = default;
 
+    Nibbles(Nibbles &&) = default;
+
+    Nibbles &operator=(Nibbles &&) = default;
+
     explicit Nibbles(size_t const end_nibble)
         : data_(std::make_unique<unsigned char[]>((end_nibble + 1) / 2))
         , begin_nibble_(false)

@@ -1,0 +1,33 @@
+#include <monad/procfs/statm.h>
+
+#include <monad/core/likely.h>
+
+#include <stdbool.h>
+#include <stdio.h>
+
+bool monad_procfs_self_statm(
+    long *const size, long *const resident, long *const shared)
+{
+    FILE *const fp = fopen("/proc/self/statm", "r");
+    if (MONAD_UNLIKELY(!fp)) {
+        return false;
+    }
+
+    int const result = fscanf(fp, "%ld %ld %ld", size, resident, shared);
+    if (MONAD_UNLIKELY(result != 3)) {
+        return false;
+    }
+
+    return true;
+}
+
+long monad_procfs_self_resident()
+{
+    long size, resident, shared;
+
+    if (MONAD_UNLIKELY(!monad_procfs_self_statm(&size, &resident, &shared))) {
+        return -1L;
+    }
+
+    return resident;
+}

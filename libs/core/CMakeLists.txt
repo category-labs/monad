@@ -130,6 +130,9 @@ add_library(
   "src/monad/mem/huge_mem.hpp"
   "src/monad/mem/mem_map.cpp"
   "src/monad/mem/mem_map.hpp"
+  # procfs
+  "src/monad/procfs/statm.c"
+  "src/monad/procfs/statm.h"
   # rlp
   "src/monad/rlp/config.hpp"
   "src/monad/rlp/encode.hpp"

@@ -900,7 +900,7 @@ nlohmann::json TrieDb::to_json()
         }
     } traverse(*this);
 
-    db_.traverse(state_nibbles, traverse, block_number_);
+    MONAD_ASSERT(db_.traverse(state_nibbles, traverse, block_number_));
 
     return traverse.json;
 }

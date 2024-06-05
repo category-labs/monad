@@ -48,7 +48,6 @@ add_library(
   "src/monad/mpt/ondisk_db_config.hpp"
   "src/monad/mpt/request.hpp"
   "src/monad/mpt/state_machine.hpp"
-  "src/monad/mpt/traverse.cpp"
   "src/monad/mpt/traverse.hpp"
   "src/monad/mpt/trie.cpp"
   "src/monad/mpt/trie.hpp"

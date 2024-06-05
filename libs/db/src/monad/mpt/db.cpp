@@ -88,6 +88,12 @@ struct Db::Impl
     virtual void load_latest_fiber_blocking() = 0;
     virtual size_t prefetch_fiber_blocking(uint64_t latest_block_id) = 0;
     virtual size_t poll(bool blocking, size_t count) = 0;
+
+    // return true for valid, false for outdated
+    virtual bool verify_version_still_valid(uint64_t)
+    {
+        return true;
+    }
 };
 
 struct Db::ROOnDisk final : public Db::Impl
@@ -161,21 +167,25 @@ struct Db::ROOnDisk final : public Db::Impl
         MONAD_ASSERT(false);
     }
 
+    virtual bool verify_version_still_valid(uint64_t const version) override
+    {
+        return version >= aux_.db_metadata()->min_db_history_version.load(
+                              std::memory_order_acquire);
+    }
+
     virtual find_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key,
         uint64_t const version) override
     {
         // db we last loaded does not contain the version we want to find
         if (version > last_loaded_max_version_ ||
-            version < aux().db_metadata()->min_db_history_version.load(
-                          std::memory_order_acquire)) {
+            !verify_version_still_valid(version)) {
             return {NodeCursor{}, find_result::unknown};
         }
         try {
             auto const res = find_blocking(aux(), root, key);
             // verify version still valid in history after success
-            return version >= aux().db_metadata()->min_db_history_version.load(
-                                  std::memory_order_acquire)
+            return verify_version_still_valid(version)
                        ? res
                        : find_result_type{NodeCursor{}, find_result::unknown};
         }
@@ -672,6 +682,12 @@ struct Db::RWOnDisk final : public Db::Impl
     {
         return 0;
     }
+
+    virtual bool verify_version_still_valid(uint64_t const version) override
+    {
+        return version >= aux_.db_metadata()->min_db_history_version.load(
+                              std::memory_order_acquire);
+    }
 };
 
 Db::Db(StateMachine &machine)
@@ -755,20 +771,25 @@ void Db::upsert(
     impl_->upsert_running_ = false;
 }
 
-void Db::traverse(
+bool Db::traverse(
     NibblesView const prefix, TraverseMachine &machine, uint64_t const block_id)
 {
     auto const block_id_prefix =
         serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id);
     auto res = get(root(), NibblesView{block_id_prefix}, block_id);
-    MONAD_ASSERT(res.has_value());
+    if (!res.has_value()) {
+        return false;
+    }
     res = get(res.value(), prefix, block_id);
     if (!res.has_value()) {
-        return;
+        return false;
     }
     auto *node = res.value().node;
     MONAD_DEBUG_ASSERT(node != nullptr);
-    preorder_traverse(impl_->aux(), *node, machine);
+    return preorder_traverse(
+        impl_->aux(), *node, machine, [this, block_id]() -> bool {
+            return this->impl_->verify_version_still_valid(block_id);
+        });
 }
 
 NodeCursor Db::root() const noexcept

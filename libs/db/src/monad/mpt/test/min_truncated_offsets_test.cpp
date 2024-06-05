@@ -188,7 +188,8 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
 
     } traverse{this->aux};
 
-    preorder_traverse(this->aux, *this->root, traverse);
+    ASSERT_TRUE(preorder_traverse(
+        this->aux, *this->root, traverse, [] { return true; }));
     EXPECT_EQ(traverse.level, 0);
     EXPECT_EQ(traverse.root_to_node_records.empty(), true);
 }

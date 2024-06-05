@@ -704,7 +704,8 @@ TYPED_TEST(DbTest, traverse)
         }
     } traverse;
 
-    this->db.traverse(concat(NibblesView{prefix}), traverse, block_id);
+    ASSERT_TRUE(
+        this->db.traverse(concat(NibblesView{prefix}), traverse, block_id));
     EXPECT_EQ(traverse.index, 6);
     EXPECT_EQ(traverse.num_up, 6);
 }

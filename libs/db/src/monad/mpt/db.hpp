@@ -62,7 +62,8 @@ public:
         bool can_write_to_fast = true);
     // It is always called from the main thread and should never wait on a
     // fiber future.
-    void traverse(NibblesView prefix, TraverseMachine &, uint64_t block_id = 0);
+    // Return value indicates if we have done the full traversal or not
+    bool traverse(NibblesView prefix, TraverseMachine &, uint64_t block_id = 0);
     NodeCursor root() const noexcept;
     std::optional<uint64_t> get_latest_block_id() const;
     std::optional<uint64_t> get_earliest_block_id() const;

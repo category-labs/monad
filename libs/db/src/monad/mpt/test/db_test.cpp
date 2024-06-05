@@ -363,6 +363,70 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
               << db.get_earliest_block_id().value() << std::endl;
 }
 
+TEST(ReadOnlyDbTest, read_only_db_traverse_concurrent)
+{
+    std::filesystem::path const dbname{
+        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+        "monad_db_test_traverse_concurrent_XXXXXX"};
+    StateMachineAlwaysMerkle machine{};
+    OnDiskDbConfig config{// with compaction
+                          .compaction = true,
+                          .dbname_paths = {dbname},
+                          .file_size_db = 8};
+    Db db{machine, config};
+    // prepare a list of key value pairs
+    std::vector<monad::byte_string> bytes_alloc;
+    std::vector<Update> updates_alloc;
+    for (auto i = 0; i < 20; ++i) {
+        monad::byte_string kv(KECCAK256_SIZE, 0);
+        MONAD_ASSERT(kv.size() == KECCAK256_SIZE);
+        keccak256((unsigned char const *)&i, 8, kv.data());
+        bytes_alloc.emplace_back(kv);
+        updates_alloc.push_back(Update{
+            .key = bytes_alloc.back(),
+            .value = bytes_alloc.back(),
+            .incarnation = false,
+            .next = UpdateList{}});
+    }
+
+    uint64_t version = 0;
+    auto upsert_once = [&] {
+        UpdateList ls;
+        for (auto &u : updates_alloc) {
+            ls.push_front(u);
+        }
+        db.upsert(std::move(ls), version);
+        ++version;
+    };
+    upsert_once();
+
+    std::atomic<bool> done{false};
+
+    std::thread writer([&]() {
+        while (!done.load(std::memory_order_acquire)) {
+            upsert_once();
+        }
+    });
+
+    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+    Db ro_db{ro_config};
+
+    struct DummyTraverseMachine : public TraverseMachine
+    {
+        virtual void down(unsigned char, Node const &) override {}
+
+        virtual void up(unsigned char, Node const &) override {}
+    } traverse_machine;
+
+    // read thread loop to traverse block 0 until it gets erased
+    while (ro_db.traverse(NibblesView{}, traverse_machine, 0)) {
+    }
+
+    done.store(true, std::memory_order_release);
+    writer.join();
+    EXPECT_TRUE(version > UpdateAuxImpl::version_history_len);
+}
+
 TEST(ReadOnlyDbTest, load_correct_root_upon_reopen_nonempty_db)
 {
     std::filesystem::path const dbname{

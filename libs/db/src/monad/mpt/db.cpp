@@ -77,6 +77,7 @@ struct Db::ROOnDisk final : public Db::Impl
     io::Buffers rwbuf_;
     async::AsyncIO io_;
     UpdateAux<> aux_;
+    uint64_t last_loaded_max_version_;
     chunk_offset_t last_loaded_offset_;
     Node::UniquePtr root_;
 
@@ -99,6 +100,9 @@ struct Db::ROOnDisk final : public Db::Impl
               async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)}
         , io_{pool_, rwbuf_}
         , aux_{&io_}
+        , last_loaded_max_version_{aux_.db_metadata()
+                                       ->max_db_history_version.load(
+                                           std::memory_order_acquire)}
         , last_loaded_offset_{[&] {
             auto root_offset = aux_.get_root_offset();
             if (root_offset == INVALID_OFFSET) {
@@ -137,26 +141,22 @@ struct Db::ROOnDisk final : public Db::Impl
         MONAD_ASSERT(false);
     }
 
-    bool verify_valid_version(uint64_t const version)
-    {
-        return (
-            version <= aux().db_metadata()->max_db_history_version.load(
-                           std::memory_order_acquire) &&
-            version >= aux().db_metadata()->min_db_history_version.load(
-                           std::memory_order_acquire));
-    }
-
     virtual find_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key,
         uint64_t const version) override
     {
+        // db we last loaded does not contain the version we want to find
+        if (version > last_loaded_max_version_ ||
+            version < aux().db_metadata()->min_db_history_version.load(
+                          std::memory_order_acquire)) {
+            return {NodeCursor{}, find_result::unknown};
+        }
         try {
-            if (!verify_valid_version(version)) {
-                return {NodeCursor{}, find_result::unknown};
-            }
+
             auto const res = find_blocking(aux(), root, key);
-            // verify version within range after success
-            return verify_valid_version(version)
+            // verify version still valid in history after success
+            return version >= aux().db_metadata()->min_db_history_version.load(
+                                  std::memory_order_acquire)
                        ? res
                        : find_result_type{NodeCursor{}, find_result::unknown};
         }
@@ -175,6 +175,12 @@ struct Db::ROOnDisk final : public Db::Impl
         if (last_loaded_offset_ == aux_.get_root_offset()) {
             return;
         }
+        // Do not change the order of loading max version and root offset
+        // max version can be smaller than the current root actually has but
+        // can't be greater.
+        last_loaded_max_version_ =
+            aux_.db_metadata()->max_db_history_version.load(
+                std::memory_order_acquire);
         last_loaded_offset_ = aux_.get_root_offset();
         root_.reset(read_node_blocking(pool_, last_loaded_offset_));
     }
@@ -576,7 +582,7 @@ Db::Db(ReadOnlyOnDiskDbConfig const &config)
 Db::~Db() = default;
 
 Result<NodeCursor>
-Db::get(NodeCursor root, NibblesView const key, uint64_t block_id) const
+Db::get(NodeCursor root, NibblesView const key, uint64_t const block_id) const
 {
     MONAD_ASSERT(impl_);
     auto const [it, result] = impl_->find_fiber_blocking(root, key, block_id);
@@ -603,8 +609,8 @@ Db::get(NibblesView const key, uint64_t const block_id) const
     return res.value().node->value();
 }
 
-Result<byte_string_view>
-Db::get_data(NodeCursor root, NibblesView const key, uint64_t block_id) const
+Result<byte_string_view> Db::get_data(
+    NodeCursor root, NibblesView const key, uint64_t const block_id) const
 {
     auto res = get(root, key, block_id);
     if (!res.has_value()) {

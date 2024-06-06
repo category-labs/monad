@@ -51,6 +51,7 @@ int main(int const argc, char const *argv[])
     unsigned nthreads = 4;
     unsigned nfibers = 256;
     bool no_compaction = false;
+    bool use_json = false;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     std::vector<std::filesystem::path> dbname_paths;
     std::filesystem::path load_snapshot{};
@@ -75,6 +76,7 @@ int main(int const argc, char const *argv[])
     cli.add_option("--nthreads", nthreads, "number of threads");
     cli.add_option("--nfibers", nfibers, "number of fibers");
     cli.add_flag("--no-compaction", no_compaction, "disable compaction");
+    cli.add_flag("--json", use_json, "write output in json format");
     cli.add_option(
         "--sq_thread_cpu",
         sq_thread_cpu,
@@ -150,7 +152,8 @@ int main(int const argc, char const *argv[])
             LOG_INFO("Loading from binary checkpoint in {}", load_snapshot);
             std::ifstream accounts(load_snapshot / "accounts");
             std::ifstream code(load_snapshot / "code");
-            return TrieDb{config, accounts, code, init_block_number};
+            std::ifstream storage(load_snapshot / "storage");
+            return TrieDb{config, accounts, code, storage, init_block_number};
         }();
 
         if (load_snapshot.empty()) {
@@ -234,9 +237,14 @@ int main(int const argc, char const *argv[])
             .sq_thread_cpu = sq_thread_cpu,
             .dbname_paths = dbname_paths,
             .concurrent_read_io_limit = 128}};
-        // WARNING: to_json() does parallel traverse which consumes excessive
+        // WARNING: to_binary() does parallel traverse which consumes excessive
         // memory
-        write_to_file(ro_db.to_json(), dump_snapshot, last_block_number);
+        if (use_json) {
+            write_to_file(ro_db.to_json(), dump_snapshot, last_block_number);
+        }
+        else {
+            ro_db.to_binary(dump_snapshot, last_block_number);
+        }
     }
     return 0;
 }

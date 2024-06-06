@@ -49,6 +49,29 @@ public:
 
     Nibbles(NibblesView other);
 
+    Nibbles(Nibbles const &other)
+    {
+        begin_nibble_ = other.begin_nibble_;
+        end_nibble_ = other.end_nibble_;
+        if (begin_nibble_ != end_nibble_) {
+            data_ = std::make_unique<unsigned char[]>(other.data_size());
+            std::memcpy(data_.get(), other.data_.get(), other.data_size());
+        }
+    }
+
+    Nibbles &operator=(Nibbles const &other)
+    {
+        if (this != &other) {
+            begin_nibble_ = other.begin_nibble_;
+            end_nibble_ = other.end_nibble_;
+            if (begin_nibble_ != end_nibble_) {
+                data_ = std::make_unique<unsigned char[]>(other.data_size());
+                std::memcpy(data_.get(), other.data_.get(), other.data_size());
+            }
+        }
+        return *this;
+    }
+
     [[nodiscard]] bool empty() const noexcept
     {
         return !data_;

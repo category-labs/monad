@@ -112,13 +112,16 @@ int main(int const argc, char const *argv[])
         "trace", quill::file_handler(trace_log, handler_cfg));
 #endif
 
-    auto block_db = BlockDb(block_db_path);
+    uint64_t last_block_number;
+    {
+        auto block_db = BlockDb(block_db_path);
 
-    auto const load_start_time = std::chrono::steady_clock::now();
+        auto const load_start_time = std::chrono::steady_clock::now();
 
-    bool const on_disk = !dbname_paths.empty();
+        bool const on_disk = !dbname_paths.empty();
 
-    auto const config = on_disk ? std::make_optional(mpt::OnDiskDbConfig{
+        auto const config = on_disk
+                                ? std::make_optional(mpt::OnDiskDbConfig{
                                       .append = true, // always open existing
                                       .compaction = !no_compaction,
                                       .rd_buffers = 8192,
@@ -127,103 +130,111 @@ int main(int const argc, char const *argv[])
                                       .sq_thread_cpu = sq_thread_cpu,
                                       .dbname_paths = dbname_paths})
                                 : std::nullopt;
-    uint64_t init_block_number = 0;
-    auto db = [&] -> TrieDb {
-        if (load_snapshot.empty()) {
-            return TrieDb{config};
-        }
-        namespace fs = std::filesystem;
-        if (!(fs::is_directory(load_snapshot) &&
-              fs::exists(load_snapshot / "accounts") &&
-              fs::exists(load_snapshot / "code"))) {
-            throw std::runtime_error(
-                "Invalid snapshot folder provided. Please ensure that the "
-                "directory you pass contains the block number of the snapshot "
-                "in its path and includes files 'accounts' and 'code'.");
-        }
-        init_block_number = std::stoul(load_snapshot.stem());
-        MONAD_ASSERT(fs::exists(load_snapshot / "code"));
-        LOG_INFO("Loading from binary checkpoint in {}", load_snapshot);
-        std::ifstream accounts(load_snapshot / "accounts");
-        std::ifstream code(load_snapshot / "code");
-        return TrieDb{config, accounts, code, init_block_number};
-    }();
+        uint64_t init_block_number = 0;
+        auto db = [&] -> TrieDb {
+            if (load_snapshot.empty()) {
+                return TrieDb{config};
+            }
+            namespace fs = std::filesystem;
+            if (!(fs::is_directory(load_snapshot) &&
+                  fs::exists(load_snapshot / "accounts") &&
+                  fs::exists(load_snapshot / "code"))) {
+                throw std::runtime_error(
+                    "Invalid snapshot folder provided. Please ensure that the "
+                    "directory you pass contains the block number of the "
+                    "snapshot in its path and includes files 'accounts' and "
+                    "'code'.");
+            }
+            init_block_number = std::stoul(load_snapshot.stem());
+            MONAD_ASSERT(fs::exists(load_snapshot / "code"));
+            LOG_INFO("Loading from binary checkpoint in {}", load_snapshot);
+            std::ifstream accounts(load_snapshot / "accounts");
+            std::ifstream code(load_snapshot / "code");
+            return TrieDb{config, accounts, code, init_block_number};
+        }();
 
-    if (load_snapshot.empty()) {
-        init_block_number = db.get_block_number();
-        LOG_INFO("Loading current root into memory");
+        if (load_snapshot.empty()) {
+            init_block_number = db.get_block_number();
+            LOG_INFO("Loading current root into memory");
+            auto const start_time = std::chrono::steady_clock::now();
+            auto const nodes_loaded = db.prefetch_current_root();
+            auto const finish_time = std::chrono::steady_clock::now();
+            auto const elapsed =
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    finish_time - start_time);
+            LOG_INFO(
+                "Finish loading current root into memory, time_elapsed = {}, "
+                "nodes_loaded = {}",
+                elapsed,
+                nodes_loaded);
+        }
+        if (init_block_number == 0) {
+            MONAD_ASSERT(*has_genesis_file);
+            read_and_verify_genesis(block_db, db, genesis_file_path);
+        }
+
+        auto const load_finish_time = std::chrono::steady_clock::now();
+        auto const load_elapsed =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                load_finish_time - load_start_time);
+        LOG_INFO(
+            "Finished initializing db at block = {}, time elapsed = {}",
+            init_block_number,
+            load_elapsed);
+
+        quill::get_root_logger()->set_log_level(log_level);
+
+        uint64_t const start_block_number = init_block_number + 1;
+
+        LOG_INFO(
+            "Running with block_db = {}, start block number = {}, "
+            "number blocks = {}",
+            block_db_path,
+            start_block_number,
+            nblocks);
+
+        fiber::PriorityPool priority_pool{nthreads, nfibers};
+
+        ReplayFromBlockDb replay_eth;
+
         auto const start_time = std::chrono::steady_clock::now();
-        auto const nodes_loaded = db.prefetch_current_root();
+
+        DbCache db_cache{db};
+
+        auto const result = replay_eth.run(
+            db_cache, block_db, priority_pool, start_block_number, nblocks);
+
+        if (MONAD_UNLIKELY(result.has_error())) {
+            return EXIT_FAILURE;
+        }
+
+        nblocks = result.assume_value();
+        last_block_number = start_block_number + nblocks - 1;
+
         auto const finish_time = std::chrono::steady_clock::now();
         auto const elapsed = std::chrono::duration_cast<std::chrono::seconds>(
             finish_time - start_time);
+
         LOG_INFO(
-            "Finish loading current root into memory, time_elapsed = {}, "
-            "nodes_loaded = {}",
+            "Finish running, finish(stopped) block number = {}, "
+            "number of blocks run = {}, time_elapsed = {}, num transactions = "
+            "{}, "
+            "tps = {}",
+            last_block_number,
+            nblocks,
             elapsed,
-            nodes_loaded);
+            replay_eth.n_transactions,
+            replay_eth.n_transactions /
+                std::max(1UL, static_cast<uint64_t>(elapsed.count())));
     }
-    if (init_block_number == 0) {
-        MONAD_ASSERT(*has_genesis_file);
-        read_and_verify_genesis(block_db, db, genesis_file_path);
-    }
-
-    auto const load_finish_time = std::chrono::steady_clock::now();
-    auto const load_elapsed =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            load_finish_time - load_start_time);
-    LOG_INFO(
-        "Finished initializing db at block = {}, time elapsed = {}",
-        init_block_number,
-        load_elapsed);
-
-    quill::get_root_logger()->set_log_level(log_level);
-
-    uint64_t const start_block_number = init_block_number + 1;
-
-    LOG_INFO(
-        "Running with block_db = {}, start block number = {}, "
-        "number blocks = {}",
-        block_db_path,
-        start_block_number,
-        nblocks);
-
-    fiber::PriorityPool priority_pool{nthreads, nfibers};
-
-    ReplayFromBlockDb replay_eth;
-
-    auto const start_time = std::chrono::steady_clock::now();
-
-    DbCache db_cache{db};
-
-    auto const result = replay_eth.run(
-        db_cache, block_db, priority_pool, start_block_number, nblocks);
-
-    if (MONAD_UNLIKELY(result.has_error())) {
-        return EXIT_FAILURE;
-    }
-
-    nblocks = result.assume_value();
-    uint64_t const last_block_number = start_block_number + nblocks - 1;
-
-    auto const finish_time = std::chrono::steady_clock::now();
-    auto const elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-        finish_time - start_time);
-
-    LOG_INFO(
-        "Finish running, finish(stopped) block number = {}, "
-        "number of blocks run = {}, time_elapsed = {}, num transactions = {}, "
-        "tps = {}",
-        last_block_number,
-        nblocks,
-        elapsed,
-        replay_eth.n_transactions,
-        replay_eth.n_transactions /
-            std::max(1UL, static_cast<uint64_t>(elapsed.count())));
 
     if (!dump_snapshot.empty()) {
         LOG_INFO("Dump db of block: {}", last_block_number);
-        write_to_file(db.to_json(), dump_snapshot, last_block_number);
+        TrieDb ro_db{mpt::ReadOnlyOnDiskDbConfig{
+            .sq_thread_cpu = sq_thread_cpu,
+            .dbname_paths = dbname_paths,
+            .concurrent_read_io_limit = 128}};
+        write_to_file(ro_db.to_json(), dump_snapshot, last_block_number);
     }
     return 0;
 }

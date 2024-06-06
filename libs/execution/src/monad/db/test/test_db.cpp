@@ -162,6 +162,8 @@ namespace
 
     struct InMemoryTrieDbFixture : public ::testing::Test
     {
+        static constexpr bool on_disk = false;
+
         static TrieDb make_db(auto &&...args)
         {
             return TrieDb{std::nullopt, std::forward<decltype(args)>(args)...};
@@ -170,6 +172,8 @@ namespace
 
     struct OnDiskTrieDbFixture : public ::testing::Test
     {
+        static constexpr bool on_disk = true;
+
         static TrieDb make_db(auto &&...args)
         {
             return TrieDb{
@@ -427,7 +431,15 @@ TYPED_TEST(DBTest, to_json)
     auto const g = 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address;
     auto const h = 0xcccccccccccccccccccccccccccccccccccccccc_address;
 
-    auto db = this->make_db();
+    std::filesystem::path dbname{};
+    if (this->on_disk) {
+        dbname = {
+            MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+            "monad_test_db_to_json"};
+    }
+    auto db = this->on_disk
+                  ? TrieDb{mpt::OnDiskDbConfig{.dbname_paths = {dbname}}}
+                  : this->make_db();
     db.commit(
         StateDeltas{
             {a,
@@ -492,6 +504,12 @@ TYPED_TEST(DBTest, to_json)
             {e_code_hash, e_code_analysis},
             {h_code_hash, h_code_analysis}});
 
+    if (this->on_disk) {
+        // also test to_json from a read only db
+        auto ro_db =
+            TrieDb{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+        EXPECT_EQ(expected_payload, ro_db.to_json());
+    }
     EXPECT_EQ(expected_payload, db.to_json());
 }
 

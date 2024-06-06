@@ -805,12 +805,12 @@ nlohmann::json TrieDb::to_json()
     struct Traverse : public TraverseMachine
     {
         TrieDb &db;
-        nlohmann::json json;
+        nlohmann::json &json;
         Nibbles path{};
 
-        explicit Traverse(TrieDb &db)
+        explicit Traverse(TrieDb &db, nlohmann::json &json)
             : db(db)
-            , json(nlohmann::json::object())
+            , json(json)
         {
         }
 
@@ -898,11 +898,28 @@ nlohmann::json TrieDb::to_json()
                 "0x{:02x}",
                 fmt::join(std::as_bytes(std::span(value.bytes)), ""));
         }
-    } traverse(*this);
 
-    MONAD_ASSERT(db_.traverse(state_nibbles, traverse, block_number_));
+        virtual std::unique_ptr<TraverseMachine> clone() const override
+        {
+            return std::make_unique<Traverse>(*this);
+        }
+    };
 
-    return traverse.json;
+    auto json = nlohmann::json::object();
+    Traverse traverse(*this, json);
+    // RWOndisk Db prevents any parallel traversal that does blocking i/o
+    // from running on the triedb thread, which include to_json. Thus, we can
+    // only use blocking traversal for RWOnDisk Db, but can still do parallel
+    // traverse in other cases.
+    if (mode_ == Mode::OnDisk) {
+        MONAD_ASSERT(
+            db_.traverse_blocking(state_nibbles, traverse, block_number_));
+    }
+    else {
+        MONAD_ASSERT(db_.traverse(state_nibbles, traverse, block_number_));
+    }
+
+    return json;
 }
 
 size_t TrieDb::prefetch_current_root()

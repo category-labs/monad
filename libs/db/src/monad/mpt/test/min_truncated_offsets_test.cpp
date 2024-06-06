@@ -186,6 +186,12 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
             }
         }
 
+        virtual std::unique_ptr<TraverseMachine> clone() const override
+        {
+            return std::make_unique<
+                TraverseCalculateAndVerifyMinTruncatedOffsets>(*this);
+        }
+
     } traverse{this->aux};
 
     ASSERT_TRUE(preorder_traverse(

@@ -85,37 +85,6 @@ struct async_write_node_result
     erased_connected_operation *io_state;
 };
 
-template <receiver Receiver>
-    requires(
-        MONAD_ASYNC_NAMESPACE::compatible_sender_receiver<
-            read_short_update_sender, Receiver> &&
-        MONAD_ASYNC_NAMESPACE::compatible_sender_receiver<
-            read_long_update_sender, Receiver> &&
-        Receiver::lifetime_managed_internally)
-void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
-{
-    [[likely]] if (
-        receiver.bytes_to_read <=
-        MONAD_ASYNC_NAMESPACE::AsyncIO::READ_BUFFER_SIZE) {
-        read_short_update_sender sender(receiver);
-        auto iostate =
-            aux.io->make_connected(std::move(sender), std::move(receiver));
-        iostate->initiate();
-        // TEMPORARY UNTIL ALL THIS GETS BROKEN OUT: Release
-        // management until i/o completes
-        iostate.release();
-    }
-    else {
-        read_long_update_sender sender(receiver);
-        using connected_type =
-            decltype(connect(*aux.io, std::move(sender), std::move(receiver)));
-        auto *iostate = new connected_type(
-            connect(*aux.io, std::move(sender), std::move(receiver)));
-        iostate->initiate();
-        // drop iostate
-    }
-}
-
 // invoke at the end of each block upsert
 chunk_offset_t write_new_root_node(UpdateAuxImpl &, Node &);
 

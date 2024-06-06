@@ -68,8 +68,16 @@ namespace detail
 
 struct Db::Impl
 {
+    // TODO: do we need a lock?
+    // To actually prevent multiple threads invoke any of these concurrently for
+    // RODb, and prevent traverse_blocking() invoked concurrently with upsert
+    // for RWDb, we might need a lock, but if we trust users, which are
+    // ourselves, would not do things like these, we probably also don't need
+    // the lock nor the followings.
     bool upsert_running_{false};
     bool prefetch_running_{false};
+    bool traverse_running_{false};
+    bool traverse_blocking_running_{false};
 
     virtual ~Impl() = default;
 
@@ -88,6 +96,8 @@ struct Db::Impl
     virtual void load_latest_fiber_blocking() = 0;
     virtual size_t prefetch_fiber_blocking(uint64_t latest_block_id) = 0;
     virtual size_t poll(bool blocking, size_t count) = 0;
+    virtual bool
+    traverse_fiber_blocking(Node &, TraverseMachine &, uint64_t version) = 0;
 
     // return true for valid, false for outdated
     virtual bool verify_version_still_valid(uint64_t)
@@ -284,6 +294,15 @@ struct Db::ROOnDisk final : public Db::Impl
         return blocking ? aux_.io->poll_blocking(count)
                         : aux_.io->poll_nonblocking(count);
     }
+
+    virtual bool traverse_fiber_blocking(
+        Node &node, TraverseMachine &machine, uint64_t const version) override
+    {
+        return preorder_traverse(
+            aux(), node, machine, [this, version]() -> bool {
+                return verify_version_still_valid(version);
+            });
+    }
 };
 
 struct Db::InMemory final : public Db::Impl
@@ -346,6 +365,12 @@ struct Db::InMemory final : public Db::Impl
     {
         return 0;
     }
+
+    virtual bool traverse_fiber_blocking(
+        Node &node, TraverseMachine &machine, uint64_t) override
+    {
+        return preorder_traverse(aux(), node, machine, [] { return true; });
+    }
 };
 
 struct Db::RWOnDisk final : public Db::Impl
@@ -368,9 +393,17 @@ struct Db::RWOnDisk final : public Db::Impl
         StateMachine &sm;
     };
 
+    struct FiberTraverseRequest
+    {
+        threadsafe_boost_fibers_promise<bool> *promise;
+        Node &root;
+        TraverseMachine &machine;
+        uint64_t version;
+    };
+
     using Comms = std::variant<
         std::monostate, fiber_find_request_t, FiberUpsertRequest,
-        FiberLoadAllFromBlockRequest>;
+        FiberLoadAllFromBlockRequest, FiberTraverseRequest>;
     ::moodycamel::ConcurrentQueue<Comms> comms_;
 
     std::mutex lock_;
@@ -451,6 +484,8 @@ struct Db::RWOnDisk final : public Db::Impl
                 upsert_promises;
             ::boost::container::deque<threadsafe_boost_fibers_promise<size_t>>
                 prefetch_promises;
+            ::boost::container::deque<threadsafe_boost_fibers_promise<bool>>
+                traverse_promises;
             /* In case you're wondering why we use a vector for a single
             element, it's because for some odd reason the MoodyCamel concurrent
             queue only supports move only types via its iterator interface. No
@@ -497,6 +532,25 @@ struct Db::RWOnDisk final : public Db::Impl
                         req->promise->set_value(
                             mpt::load_all(aux, req->sm, req->root));
                     }
+                    else if (auto *req = std::get_if<4>(&request.front());
+                             req != nullptr) {
+                        // Ditto to above
+                        traverse_promises.emplace_back(
+                            std::move(*req->promise));
+                        req->promise = &traverse_promises.back();
+                        // verify version is valid
+                        if (req->version <
+                            aux.db_metadata()->min_db_history_version.load(
+                                std::memory_order_acquire)) {
+                            req->promise->set_value(false);
+                        }
+                        else {
+                            req->promise->set_value(preorder_traverse(
+                                aux, req->root, req->machine, [&] {
+                                    return true;
+                                }));
+                        }
+                    }
                     did_nothing = false;
                 }
                 io.poll_nonblocking(1);
@@ -515,7 +569,16 @@ struct Db::RWOnDisk final : public Db::Impl
                        upsert_promises.front().future_has_been_destroyed()) {
                     upsert_promises.pop_front();
                 }
-                if (!find_promises.empty() || !upsert_promises.empty()) {
+                while (!prefetch_promises.empty() &&
+                       prefetch_promises.front().future_has_been_destroyed()) {
+                    prefetch_promises.pop_front();
+                }
+                while (!traverse_promises.empty() &&
+                       traverse_promises.front().future_has_been_destroyed()) {
+                    traverse_promises.pop_front();
+                }
+                if (!find_promises.empty() || !upsert_promises.empty() ||
+                    !prefetch_promises.empty() || !traverse_promises.empty()) {
                     did_nothing = false;
                 }
                 if (did_nothing) {
@@ -683,10 +746,23 @@ struct Db::RWOnDisk final : public Db::Impl
         return 0;
     }
 
-    virtual bool verify_version_still_valid(uint64_t const version) override
+    // threadsafe
+    virtual bool traverse_fiber_blocking(
+        Node &node, TraverseMachine &machine, uint64_t const version) override
     {
-        return version >= aux_.db_metadata()->min_db_history_version.load(
-                              std::memory_order_acquire);
+        threadsafe_boost_fibers_promise<bool> promise;
+        auto fut = promise.get_future();
+        comms_.enqueue(FiberTraverseRequest{
+            .promise = &promise,
+            .root = node,
+            .machine = machine,
+            .version = version});
+        // promise is racily emptied after this point
+        if (worker_->sleeping.load(std::memory_order_acquire)) {
+            std::unique_lock const g(lock_);
+            cond_.notify_one();
+        }
+        return fut.get();
     }
 };
 
@@ -774,6 +850,9 @@ void Db::upsert(
 bool Db::traverse(
     NibblesView const prefix, TraverseMachine &machine, uint64_t const block_id)
 {
+    MONAD_ASSERT(impl_);
+    MONAD_ASSERT(!impl_->traverse_running_);
+    impl_->traverse_running_ = true;
     auto const block_id_prefix =
         serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id);
     auto res = get(root(), NibblesView{block_id_prefix}, block_id);
@@ -786,19 +865,47 @@ bool Db::traverse(
     }
     auto *node = res.value().node;
     MONAD_DEBUG_ASSERT(node != nullptr);
-    return preorder_traverse(
-        impl_->aux(), *node, machine, [this, block_id]() -> bool {
-            return this->impl_->verify_version_still_valid(block_id);
+    bool const finished =
+        impl_->traverse_fiber_blocking(*node, machine, block_id);
+    impl_->traverse_running_ = false;
+    return finished;
+}
+
+bool Db::traverse_blocking(
+    NibblesView const prefix, TraverseMachine &machine, uint64_t const block_id)
+{
+    MONAD_ASSERT(impl_);
+    MONAD_ASSERT(!impl_->traverse_blocking_running_);
+    impl_->traverse_blocking_running_ = true;
+    auto const block_id_prefix =
+        serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id);
+    auto res = get(root(), NibblesView{block_id_prefix}, block_id);
+    if (!res.has_value()) {
+        return false;
+    }
+    res = get(res.value(), prefix, block_id);
+    if (!res.has_value()) {
+        return false;
+    }
+    auto *node = res.value().node;
+    MONAD_DEBUG_ASSERT(node != nullptr);
+    bool const finished = preorder_traverse_blocking(
+        impl_->aux(), *node, machine, [this, block_id] {
+            return impl_->verify_version_still_valid(block_id);
         });
+    impl_->traverse_blocking_running_ = false;
+    return finished;
 }
 
 NodeCursor Db::root() const noexcept
 {
+    MONAD_ASSERT(impl_);
     return impl_->root() ? NodeCursor{*impl_->root()} : NodeCursor{};
 }
 
 std::optional<uint64_t> Db::get_latest_block_id() const
 {
+    MONAD_ASSERT(impl_);
     return impl_->root()
                ? std::make_optional<uint64_t>(
                      impl_->aux().max_version_in_db_history(*impl_->root()))
@@ -807,6 +914,7 @@ std::optional<uint64_t> Db::get_latest_block_id() const
 
 std::optional<uint64_t> Db::get_earliest_block_id() const
 {
+    MONAD_ASSERT(impl_);
     return impl_->root()
                ? std::make_optional<uint64_t>(
                      impl_->aux().min_version_in_db_history(*impl_->root()))

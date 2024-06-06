@@ -92,6 +92,66 @@ namespace
             std::filesystem::remove(dbname);
         }
     };
+
+    struct DummyTraverseMachine : public TraverseMachine
+    {
+        Nibbles path{};
+
+        virtual void down(unsigned char branch, Node const &node) override
+        {
+            if (branch == INVALID_BRANCH) {
+                return;
+            }
+            path = concat(NibblesView{path}, branch, node.path_nibble_view());
+
+            if (node.has_value()) {
+                EXPECT_EQ(path.nibble_size(), KECCAK256_SIZE * 2);
+            }
+        }
+
+        virtual void up(unsigned char branch, Node const &node) override
+        {
+            auto const path_view = NibblesView{path};
+            auto const rem_size = [&] {
+                if (branch == INVALID_BRANCH) {
+                    MONAD_ASSERT(path_view.nibble_size() == 0);
+                    return 0;
+                }
+                int const rem_size = path_view.nibble_size() - 1 -
+                                     node.path_nibble_view().nibble_size();
+                MONAD_ASSERT(rem_size >= 0);
+                MONAD_ASSERT(
+                    path_view.substr(static_cast<unsigned>(rem_size)) ==
+                    concat(branch, node.path_nibble_view()));
+                return rem_size;
+            }();
+            path = path_view.substr(0, static_cast<unsigned>(rem_size));
+        }
+
+        virtual std::unique_ptr<TraverseMachine> clone() const override
+        {
+            return std::make_unique<DummyTraverseMachine>(*this);
+        }
+    };
+
+    std::pair<std::vector<monad::byte_string>, std::vector<Update>>
+    prepare_random_updates(unsigned size)
+    {
+        std::vector<monad::byte_string> bytes_alloc;
+        std::vector<Update> updates_alloc;
+        for (unsigned i = 0; i < size; ++i) {
+            monad::byte_string kv(KECCAK256_SIZE, 0);
+            MONAD_ASSERT(kv.size() == KECCAK256_SIZE);
+            keccak256((unsigned char const *)&i, 8, kv.data());
+            bytes_alloc.emplace_back(kv);
+            updates_alloc.push_back(Update{
+                .key = bytes_alloc.back(),
+                .value = bytes_alloc.back(),
+                .incarnation = false,
+                .next = UpdateList{}});
+        }
+        return std::make_pair(std::move(bytes_alloc), std::move(updates_alloc));
+    }
 }
 
 template <typename TFixture>
@@ -363,7 +423,7 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
               << db.get_earliest_block_id().value() << std::endl;
 }
 
-TEST(ReadOnlyDbTest, read_only_db_traverse_concurrent)
+TEST(DbTest, read_only_db_traverse_concurrent)
 {
     std::filesystem::path const dbname{
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
@@ -374,20 +434,7 @@ TEST(ReadOnlyDbTest, read_only_db_traverse_concurrent)
                           .dbname_paths = {dbname},
                           .file_size_db = 8};
     Db db{machine, config};
-    // prepare a list of key value pairs
-    std::vector<monad::byte_string> bytes_alloc;
-    std::vector<Update> updates_alloc;
-    for (auto i = 0; i < 20; ++i) {
-        monad::byte_string kv(KECCAK256_SIZE, 0);
-        MONAD_ASSERT(kv.size() == KECCAK256_SIZE);
-        keccak256((unsigned char const *)&i, 8, kv.data());
-        bytes_alloc.emplace_back(kv);
-        updates_alloc.push_back(Update{
-            .key = bytes_alloc.back(),
-            .value = bytes_alloc.back(),
-            .incarnation = false,
-            .next = UpdateList{}});
-    }
+    auto [bytes_alloc, updates_alloc] = prepare_random_updates(20);
 
     uint64_t version = 0;
     auto upsert_once = [&] {
@@ -396,7 +443,6 @@ TEST(ReadOnlyDbTest, read_only_db_traverse_concurrent)
             ls.push_front(u);
         }
         db.upsert(std::move(ls), version);
-        ++version;
     };
     upsert_once();
 
@@ -404,19 +450,14 @@ TEST(ReadOnlyDbTest, read_only_db_traverse_concurrent)
 
     std::thread writer([&]() {
         while (!done.load(std::memory_order_acquire)) {
+            ++version;
             upsert_once();
         }
     });
 
     ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
     Db ro_db{ro_config};
-
-    struct DummyTraverseMachine : public TraverseMachine
-    {
-        virtual void down(unsigned char, Node const &) override {}
-
-        virtual void up(unsigned char, Node const &) override {}
-    } traverse_machine;
+    DummyTraverseMachine traverse_machine;
 
     // read thread loop to traverse block 0 until it gets erased
     while (ro_db.traverse(NibblesView{}, traverse_machine, 0)) {
@@ -425,6 +466,49 @@ TEST(ReadOnlyDbTest, read_only_db_traverse_concurrent)
     done.store(true, std::memory_order_release);
     writer.join();
     EXPECT_TRUE(version > UpdateAuxImpl::version_history_len);
+}
+
+TEST(DBTest, benchmark_blocking_parallel_traverse)
+{
+    std::filesystem::path const dbname{
+        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+        "monad_db_test_benchmark_traverse_XXXXXX"};
+    StateMachineAlwaysMerkle machine{};
+    OnDiskDbConfig config{// with compaction
+                          .compaction = true,
+                          .sq_thread_cpu{std::nullopt},
+                          .dbname_paths = {dbname},
+                          .file_size_db = 8};
+    Db db{machine, config};
+    auto [bytes_alloc, updates_alloc] = prepare_random_updates(2000);
+    UpdateList ls;
+    for (auto &u : updates_alloc) {
+        ls.push_front(u);
+    }
+    db.upsert(std::move(ls), 0);
+
+    // benchmark traverse
+    DummyTraverseMachine traverse_machine{};
+
+    auto begin = std::chrono::steady_clock::now();
+    ASSERT_TRUE(db.traverse(NibblesView{}, traverse_machine, 0));
+    auto end = std::chrono::steady_clock::now();
+    auto const parallel_elapsed =
+        std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
+            .count();
+    std::cout << "RODb parallel traversal takes " << parallel_elapsed
+              << " ms, ";
+
+    begin = std::chrono::steady_clock::now();
+    ASSERT_TRUE(db.traverse_blocking(NibblesView{}, traverse_machine, 0));
+    end = std::chrono::steady_clock::now();
+    auto const blocking_elapsed =
+        std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
+            .count();
+    std::cout << "RWDb blocking traversal takes " << blocking_elapsed << " ms."
+              << std::endl;
+
+    EXPECT_TRUE(parallel_elapsed < blocking_elapsed);
 }
 
 TEST(ReadOnlyDbTest, load_correct_root_upon_reopen_nonempty_db)
@@ -682,8 +766,8 @@ TYPED_TEST(DbTest, traverse)
     */
     struct SimpleTraverse : public TraverseMachine
     {
-        std::atomic<size_t> index = 0;
-        std::atomic<size_t> num_up = 0;
+        size_t index{0};
+        size_t num_up{0};
 
         virtual void down(unsigned char const branch, Node const &node) override
         {
@@ -746,13 +830,17 @@ TYPED_TEST(DbTest, traverse)
             else if (index > BLOCK_NUM_NIBBLES_LEN + 5) {
                 FAIL();
             }
-
             ++index;
         }
 
         virtual void up(unsigned char const, Node const &) override
         {
             ++num_up;
+        }
+
+        virtual std::unique_ptr<TraverseMachine> clone() const override
+        {
+            return std::make_unique<SimpleTraverse>(*this);
         }
 
         Nibbles make_nibbles(std::initializer_list<uint8_t> nibbles)
@@ -770,8 +858,6 @@ TYPED_TEST(DbTest, traverse)
 
     ASSERT_TRUE(
         this->db.traverse(concat(NibblesView{prefix}), traverse, block_id));
-    EXPECT_EQ(traverse.index, 6);
-    EXPECT_EQ(traverse.num_up, 6);
 }
 
 TYPED_TEST(DbTest, scalability)

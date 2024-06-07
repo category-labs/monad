@@ -1,6 +1,5 @@
 #include <monad/core/tl_tid.h>
 
-#define _GNU_SOURCE
 #include <unistd.h>
 
 static_assert(__builtin_types_compatible_p(pid_t, int));

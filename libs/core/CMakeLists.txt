@@ -82,6 +82,12 @@ add_library(
   "src/monad/core/byte_string.hpp"
   "src/monad/core/bytes_hash_compare.hpp"
   "src/monad/core/cmemory.hpp"
+  "src/monad/core/cgroup.c"
+  "src/monad/core/cgroup.h"
+  "src/monad/core/cleanup.h"
+  "src/monad/core/cleanup.c"
+  "src/monad/core/cpuset.c"
+  "src/monad/core/cpuset.h"
   "src/monad/core/cpu_relax.h"
   "src/monad/core/endian.hpp"
   "src/monad/core/hash.hpp"
@@ -143,6 +149,7 @@ add_library(
 target_include_directories(monad_core PUBLIC "src")
 monad_compile_options(monad_core)
 target_compile_definitions(monad_core PUBLIC "BOOST_STACKTRACE_LINK=1")
+target_compile_definitions(monad_core PUBLIC "_GNU_SOURCE")
 if(linux_flavour MATCHES "debian|ubuntu")
   target_compile_definitions(monad_core
                              PUBLIC "BOOST_STACKTRACE_USE_BACKTRACE=1")
@@ -152,7 +159,7 @@ else()
                              PUBLIC "BOOST_STACKTRACE_USE_ADDR2LINE=1")
   target_link_libraries(monad_core PUBLIC Boost::stacktrace_addr2line)
 endif()
-target_link_libraries(monad_core PUBLIC openssl_sha3_asm uring Boost::fiber
+target_link_libraries(monad_core PUBLIC cgroup openssl_sha3_asm uring Boost::fiber
                                         TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)
 

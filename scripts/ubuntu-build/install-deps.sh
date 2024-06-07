@@ -2,6 +2,7 @@
 
 packages=(
   libbenchmark-dev
+  libcgroup-dev
   libgmock-dev
   libgtest-dev
   libtbb-dev

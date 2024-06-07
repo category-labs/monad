@@ -5,6 +5,15 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+#include <unistd.h>
+
+static long PAGESIZE = 0;
+
+__attribute__((constructor)) static void monad_procfs_statm_init()
+{
+    PAGESIZE = sysconf(_SC_PAGESIZE);
+}
+
 bool monad_procfs_self_statm(
     long *const size, long *const resident, long *const shared)
 {
@@ -29,5 +38,5 @@ long monad_procfs_self_resident()
         return -1L;
     }
 
-    return resident;
+    return resident * PAGESIZE;
 }

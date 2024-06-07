@@ -13,9 +13,9 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/genesis.hpp>
-#include <monad/execution/util.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
+#include <monad/procfs/statm.h>
 #include <monad/state2/block_state.hpp>
 
 #include <boost/outcome/try.hpp>
@@ -69,31 +69,37 @@ public:
 
         EthereumMainnet const chain{};
 
-        auto log_tps = [](uint64_t const num_blocks,
-                          uint64_t const end_block_number,
-                          uint64_t const ntxn,
-                          auto const begin) {
-            auto const end = std::chrono::steady_clock::now();
+        constexpr uint64_t BATCH_SIZE = 1000; // TODO param
+        uint64_t batch_num_blocks = 0;
+        uint64_t batch_num_txs = 0;
+        auto batch_begin = std::chrono::steady_clock::now();
+
+        auto log_tps = [&](uint64_t const block_num) {
+            if (!batch_num_blocks || !batch_num_txs) {
+                return;
+            }
+
+            auto const now = std::chrono::steady_clock::now();
             auto const elapsed =
                 std::chrono::duration_cast<std::chrono::microseconds>(
-                    end - begin)
+                    now - batch_begin)
                     .count();
             uint64_t const tps =
-                (ntxn) * 1'000'000 / static_cast<uint64_t>(elapsed);
+                (batch_num_txs) * 1'000'000 / static_cast<uint64_t>(elapsed);
+
             LOG_INFO(
                 "Run {:4d} blocks to {:8d}, number of transactions {:6d}, "
-                "tps = {:5d}, rss = {:8d} kB",
-                num_blocks,
-                end_block_number,
-                ntxn,
+                "tps = {:5d}, rss = {:8d} MB",
+                batch_num_blocks,
+                block_num,
+                batch_num_txs,
                 tps,
-                get_proc_rss());
-        };
+                monad_procfs_self_resident() / (1L << 20));
 
-        constexpr uint64_t BATCH_SIZE = 1000;
-        uint64_t n_transactions_batch = 0;
-        uint64_t nblocks_batch = 0;
-        auto begin_batch = std::chrono::steady_clock::now();
+            batch_num_blocks = 0;
+            batch_num_txs = 0;
+            batch_begin = now;
+        };
 
         uint64_t i = 0;
         for (; i < nblocks; ++i) {
@@ -133,9 +139,6 @@ public:
             block_state.log_debug();
             block_state.commit(receipts);
 
-            n_transactions += block.transactions.size();
-            n_transactions_batch += block.transactions.size();
-
             if (!verify_root_hash(
                     rev,
                     block.header,
@@ -144,25 +147,17 @@ public:
                     db.state_root())) {
                 return BlockError::WrongStateRoot;
             }
-            ++nblocks_batch;
+
+            n_transactions += block.transactions.size();
+            batch_num_txs += block.transactions.size();
+            ++batch_num_blocks;
 
             if (block_number % BATCH_SIZE == 0) {
-                log_tps(
-                    nblocks_batch,
-                    block_number,
-                    n_transactions_batch,
-                    begin_batch);
-                // reset counter and timer for a new batch
-                nblocks_batch = 0;
-                n_transactions_batch = 0;
-                begin_batch = std::chrono::steady_clock::now();
+                log_tps(block_number);
             }
         }
-        log_tps(
-            nblocks_batch,
-            start_block_number + i,
-            n_transactions_batch,
-            begin_batch);
+
+        log_tps(start_block_number + i);
 
         return i;
     }

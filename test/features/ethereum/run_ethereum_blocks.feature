@@ -8,7 +8,7 @@ Feature: Run Ethereum Block History
         Given I run with inferred start block number = "0"
         Given I run with finish block number = "46147"
         And I run with "trie_db_logger" log level = "Critical"
-        When I start "replay_ethereum"
+        When I start "monad"
         Then the "State Root" should match
         And the "Receipt Root" should match
         And the "Transaction Root" should match

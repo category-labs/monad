@@ -4,16 +4,16 @@ Feature: Read Ethereum Block History
     Given I run with BlockDb path = "erigon/block_db"
     And I run with StateDb path = "RocksTrieDB"
 
-  Scenario: Run replay_ethereum with invalid end block number
+  Scenario: Run monad with invalid end block number
     Given I run with inferred start block number = "2"
     And I run with finish block number = "2"
-    When I start "replay_ethereum"
+    When I start "monad"
     Then the output should not contain "block_logger"
 
-  Scenario: Run replay_ethereum with correct configuration, 1 Block, no hash validation
+  Scenario: Run monad with correct configuration, 1 Block, no hash validation
     Given I run with inferred start block number = "1"
     And I run with finish block number = "2"
-    When I start "replay_ethereum"
+    When I start "monad"
     Then the output should contain "1" "Computed Transaction Root"
     And the output should contain "1" "Expected Transaction Root"
     And the output should contain "1" "Computed Receipt Root"
@@ -21,10 +21,10 @@ Feature: Read Ethereum Block History
     And the output should contain "1" "Computed State Root"
     And the output should contain "1" "Expected State Root"
 
-  Scenario: Run replay_ethereum with correct configuration, 1000 Blocks, no hash validation
+  Scenario: Run monad with correct configuration, 1000 Blocks, no hash validation
     Given I run with inferred start block number = "0"
     And I run with finish block number = "1000"
-    When I start "replay_ethereum"
+    When I start "monad"
     Then the output should contain "1000" "Computed Transaction Root"
     And the output should contain "1000" "Expected Transaction Root"
     And the output should contain "1000" "Computed Receipt Root"

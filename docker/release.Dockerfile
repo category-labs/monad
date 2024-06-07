@@ -78,5 +78,4 @@ RUN --security=insecure CC=gcc-13 CXX=g++-13 CMAKE_BUILD_TYPE=RelWithDebInfo ./s
 
 FROM base as runner
 COPY --from=build /src/build/libs/db/monad_mpt /usr/local/bin/
-COPY --from=build /src/build/cmd/replay_ethereum /usr/local/bin/
 COPY --from=build /src/build/cmd/monad /usr/local/bin/

@@ -46,7 +46,9 @@ bool BlockDb::get(uint64_t const num, Block &block) const
     byte_string_view view2{brotli_buffer};
 
     auto const decoded_block = rlp::decode_block(view2);
-    MONAD_ASSERT(!decoded_block.has_error());
+    if (decoded_block.has_error()) {
+        return false;
+    }
     MONAD_ASSERT(view2.size() == 0);
     block = decoded_block.value();
     return true;

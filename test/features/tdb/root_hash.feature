@@ -1,6 +1,6 @@
 Feature: TDB Root Hash
 
-    # TODO: make this generate the data from replay_ethereum when that becomes ready
+    # TODO: make this generate the data from monad when that becomes ready
     Scenario: Verify state root hash from TrieDBTest/1.ModifyStorageOfAccount
         Given I run db unit test TrieDBTest/1.ModifyStorageOfAccount
         And I run tdb with the output

@@ -59,6 +59,8 @@ public:
     virtual std::string print_stats() override;
 
     nlohmann::json to_json();
+    void to_json(std::ofstream &);
+
     size_t prefetch_current_root();
     uint64_t get_block_number() const;
 

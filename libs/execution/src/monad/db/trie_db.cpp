@@ -992,6 +992,175 @@ nlohmann::json TrieDb::to_json()
     return json;
 }
 
+void TrieDb::to_json(std::ofstream &ofile)
+{
+    struct Traverse : public mpt::TraverseMachine
+    {
+        TrieDb &db;
+        nlohmann::json json;
+        mpt::Nibbles path;
+        std::ofstream &ofile;
+        std::string current_key;
+        bool first = true;
+
+        Traverse(TrieDb &db, std::ofstream &o)
+            : db(db)
+            , json(nlohmann::json::object())
+            , path()
+            , ofile(o)
+        {
+            ofile << "{\n";
+        }
+
+        ~Traverse()
+        {
+            write_indented_json(4);
+            ofile << "}\n";
+            ofile.flush();
+        }
+
+        void write_indented_json(uint64_t const indent_level)
+        {
+            if (!first) {
+                ofile << ",\n";
+            }
+
+            for (auto it = json.begin(); it != json.end(); ++it) {
+                ofile << std::string(indent_level, ' ');
+
+                if (it != json.begin()) {
+                    ofile << ",\n";
+                    ofile << std::string(indent_level, ' ');
+                }
+
+                ofile << "\"" << it.key() << "\": " << it.value();
+                first = false;
+            }
+
+            ofile.flush();
+        }
+
+        virtual bool
+        down(unsigned char const branch, mpt::Node const &node) override
+        {
+            if (branch == INVALID_BRANCH) {
+                MONAD_DEBUG_ASSERT(node.path_nibble_view().nibble_size() == 0);
+                return true;
+            }
+            path = concat(NibblesView{path}, branch, node.path_nibble_view());
+
+            if (path.nibble_size() == (KECCAK256_SIZE * 2)) {
+                handle_account(node);
+            }
+            else if (
+                path.nibble_size() == ((KECCAK256_SIZE + KECCAK256_SIZE) * 2)) {
+                handle_storage(node);
+            }
+            return true;
+        }
+
+        virtual void
+        up(unsigned char const branch, mpt::Node const &node) override
+        {
+            auto const path_view = NibblesView{path};
+            auto const rem_size = [&] {
+                if (branch == INVALID_BRANCH) {
+                    MONAD_DEBUG_ASSERT(path_view.nibble_size() == 0);
+                    return 0;
+                }
+                int const rem_size = path_view.nibble_size() - 1 -
+                                     node.path_nibble_view().nibble_size();
+                MONAD_DEBUG_ASSERT(rem_size >= 0);
+                MONAD_DEBUG_ASSERT(
+                    path_view.substr(static_cast<unsigned>(rem_size)) ==
+                    concat(branch, node.path_nibble_view()));
+                return rem_size;
+            }();
+            path = path_view.substr(0, static_cast<unsigned>(rem_size));
+        }
+
+        void handle_account(mpt::Node const &node)
+        {
+            MONAD_DEBUG_ASSERT(node.has_value());
+
+            auto encoded_account = node.value();
+
+            auto acct = decode_account_db(encoded_account);
+            MONAD_DEBUG_ASSERT(!acct.has_error());
+            MONAD_DEBUG_ASSERT(encoded_account.empty());
+
+            auto const key = fmt::format("{}", NibblesView{path});
+
+            if (key != current_key) {
+                write_indented_json(4);
+                json.clear();
+                json[key] = nlohmann::json::object();
+            }
+
+            json[key]["balance"] = fmt::format("{}", acct.value().balance);
+            json[key]["nonce"] = fmt::format("0x{:x}", acct.value().nonce);
+
+            auto const code_analysis = db.read_code(acct.value().code_hash);
+            json[key]["code"] = fmt::format(
+                "0x{:02x}",
+                fmt::join(
+                    std::as_bytes(std::span(code_analysis->executable_code)),
+                    ""));
+
+            if (!json[key].contains("storage")) {
+                json[key]["storage"] = nlohmann::json::object();
+            }
+        }
+
+        void handle_storage(mpt::Node const &node)
+        {
+            MONAD_DEBUG_ASSERT(node.has_value());
+            MONAD_DEBUG_ASSERT(node.value().size() == sizeof(bytes32_t));
+
+            auto const acct_key = fmt::format(
+                "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));
+
+            auto const key = fmt::format(
+                "{}",
+                NibblesView{path}.substr(
+                    KECCAK256_SIZE * 2, KECCAK256_SIZE * 2));
+
+            bytes32_t value;
+            std::copy_n(
+                node.value().begin(),
+                node.value().size(),
+                value.bytes + sizeof(bytes32_t) - node.value().size());
+
+            json[acct_key]["storage"][key] = fmt::format(
+                "0x{:02x}",
+                fmt::join(std::as_bytes(std::span(value.bytes)), ""));
+        }
+
+        virtual std::unique_ptr<TraverseMachine> clone() const override
+        {
+            return std::make_unique<Traverse>(*this);
+        }
+    };
+
+    Traverse traverse(*this, ofile);
+    auto res_cursor = db_.find(state_nibbles, block_number_);
+    MONAD_ASSERT(res_cursor.has_value());
+    MONAD_ASSERT(res_cursor.value().is_valid());
+
+    // RWOndisk Db prevents any parallel traversal that does blocking i/o
+    // from running on the triedb thread, which include to_json. Thus, we can
+    // only use blocking traversal for RWOnDisk Db, but can still do parallel
+    // traverse in other cases.
+    if (mode_ == Mode::OnDisk) {
+        MONAD_ASSERT(
+            db_.traverse_blocking(res_cursor.value(), traverse, block_number_));
+    }
+    else {
+        // WARNING: excessive memory usage in parallel traverse
+        MONAD_ASSERT(db_.traverse(res_cursor.value(), traverse, block_number_));
+    }
+}
+
 size_t TrieDb::prefetch_current_root()
 {
     size_t const nodes_loaded = db_.prefetch();

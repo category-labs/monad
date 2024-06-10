@@ -22,6 +22,7 @@ struct Update
     std::optional<byte_string_view> value{std::nullopt};
     bool incarnation{false};
     UpdateList next;
+    int64_t version{0};
 
     constexpr bool is_deletion() const noexcept
     {
@@ -29,7 +30,7 @@ struct Update
     }
 };
 
-static_assert(sizeof(Update) == 72);
+static_assert(sizeof(Update) == 80);
 static_assert(alignof(Update) == 8);
 
 // An update can mean

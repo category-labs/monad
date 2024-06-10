@@ -56,6 +56,7 @@ public:
     virtual std::string print_stats() override;
 
     nlohmann::json to_json();
+    void to_binary(std::filesystem::path, uint64_t const);
     size_t prefetch_current_root();
     uint64_t get_block_number() const;
 

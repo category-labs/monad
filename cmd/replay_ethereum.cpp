@@ -223,7 +223,7 @@ int main(int const argc, char const *argv[])
 
     if (!dump_snapshot.empty()) {
         LOG_INFO("Dump db of block: {}", last_block_number);
-        write_to_file(db.to_json(), dump_snapshot, last_block_number);
+        db.to_binary(dump_snapshot, last_block_number);
     }
     return 0;
 }

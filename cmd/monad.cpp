@@ -153,8 +153,9 @@ run_monad(BlockDb &block_db, Db &db, fiber::PriorityPool &priority_pool,
 
         Block block{};
         if (!block_db.get(block_number, block)) {
-            if (nblocks != std::nullopt)
+            if (nblocks == std::nullopt)
                 continue;
+            LOG_ERROR("Failed reading block {} from block_db", block_number);
             result_success = false;
             break;
         }
@@ -356,9 +357,6 @@ int main(int const argc, char const *argv[])
     auto [success, new_transactions_count, new_blocks_count] =
         run_monad(block_db, db_cache, priority_pool,
                 start_block_number, nblocks_opt);
-    if (!success) {
-        return EXIT_FAILURE;
-    }
 
     uint64_t const last_block_number = start_block_number + new_blocks_count - 1;
     auto const finish_time = std::chrono::steady_clock::now();
@@ -375,6 +373,11 @@ int main(int const argc, char const *argv[])
         elapsed,
         new_transactions_count,
         tps);
+
+    if (!success) {
+        LOG_INFO("Exit with failure status code due to previous error");
+        return EXIT_FAILURE;
+    }
 
     if (stop == 1) {
         // Exit because of received interrupt.

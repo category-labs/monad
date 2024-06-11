@@ -42,7 +42,9 @@ bool BlockDb::get(uint64_t const num, Block &block) const
     auto const brotli_result = BrotliDecoderDecompress(
         view.size(), view.data(), &brotli_size, brotli_buffer.data());
     brotli_buffer.resize(brotli_size);
-    MONAD_ASSERT(brotli_result == BROTLI_DECODER_RESULT_SUCCESS);
+    if (brotli_result != BROTLI_DECODER_RESULT_SUCCESS) {
+        return false;
+    }
     byte_string_view view2{brotli_buffer};
 
     auto const decoded_block = rlp::decode_block(view2);

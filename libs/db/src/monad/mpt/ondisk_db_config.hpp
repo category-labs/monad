@@ -36,13 +36,13 @@ struct ReadOnlyOnDiskDbConfig
         false}; // risk of severe data loss
     bool capture_io_latencies{false};
     bool eager_completions{false};
-    unsigned rd_buffers{128};
+    unsigned rd_buffers{1024};
     unsigned uring_entries{128};
     // default to disable sqpoll kernel thread since now ReadOnlyDb uses
     // blocking read
     std::optional<unsigned> sq_thread_cpu{std::nullopt};
     std::vector<std::filesystem::path> dbname_paths;
-    unsigned concurrent_read_io_limit{1024};
+    unsigned concurrent_read_io_limit{600};
 };
 
 MONAD_MPT_NAMESPACE_END

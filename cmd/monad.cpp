@@ -523,8 +523,6 @@ int main(int const argc, char const *argv[])
             .dbname_paths = dbname_paths,
             .concurrent_read_io_limit = 128}};
         TrieDb ro_db{db};
-        // WARNING: to_json() does parallel traverse which consumes excessive
-        // memory
         write_to_file(ro_db.to_json(), dump_snapshot, block_num);
     }
     return result.has_error() ? EXIT_FAILURE : EXIT_SUCCESS;

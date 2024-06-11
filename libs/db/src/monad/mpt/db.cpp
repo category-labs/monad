@@ -80,8 +80,9 @@ struct Db::Impl
     virtual size_t prefetch_fiber_blocking() = 0;
     virtual NodeCursor load_root_for_version(uint64_t version) = 0;
     virtual size_t poll(bool blocking, size_t count) = 0;
-    virtual bool
-    traverse_fiber_blocking(Node &, TraverseMachine &, uint64_t version) = 0;
+    virtual bool traverse_fiber_blocking(
+        Node &, TraverseMachine &, uint64_t version,
+        size_t concurrency_limit) = 0;
     virtual void
     move_trie_version_fiber_blocking(uint64_t src, uint64_t dest) = 0;
 };
@@ -191,12 +192,17 @@ struct Db::ROOnDisk final : public Db::Impl
     }
 
     virtual bool traverse_fiber_blocking(
-        Node &node, TraverseMachine &machine, uint64_t const version) override
+        Node &node, TraverseMachine &machine, uint64_t const version,
+        size_t const concurrency_limit) override
     {
         return preorder_traverse(
-            aux(), node, machine, [this, version]() -> bool {
+            aux(),
+            node,
+            machine,
+            [this, version]() -> bool {
                 return aux().version_is_valid_ondisk(version);
-            });
+            },
+            concurrency_limit);
     }
 
     virtual NodeCursor load_root_for_version(uint64_t const version) override
@@ -263,7 +269,7 @@ struct Db::InMemory final : public Db::Impl
     }
 
     virtual bool traverse_fiber_blocking(
-        Node &node, TraverseMachine &machine, uint64_t) override
+        Node &node, TraverseMachine &machine, uint64_t, size_t) override
     {
         return preorder_traverse(aux(), node, machine, [] { return true; });
     }
@@ -305,6 +311,7 @@ struct Db::RWOnDisk final : public Db::Impl
         Node &root;
         TraverseMachine &machine;
         uint64_t version;
+        size_t concurrency_limit;
     };
 
     struct MoveSubtrieRequest
@@ -464,9 +471,11 @@ struct Db::RWOnDisk final : public Db::Impl
                         // verify version is valid
                         if (aux.version_is_valid_ondisk(req->version)) {
                             req->promise->set_value(preorder_traverse(
-                                aux, req->root, req->machine, [&] {
-                                    return true;
-                                }));
+                                aux,
+                                req->root,
+                                req->machine,
+                                [&] { return true; },
+                                req->concurrency_limit));
                         }
                         else {
                             req->promise->set_value(false);
@@ -702,7 +711,8 @@ struct Db::RWOnDisk final : public Db::Impl
 
     // threadsafe
     virtual bool traverse_fiber_blocking(
-        Node &node, TraverseMachine &machine, uint64_t const version) override
+        Node &node, TraverseMachine &machine, uint64_t const version,
+        size_t const concurrency_limit) override
     {
         threadsafe_boost_fibers_promise<bool> promise;
         auto fut = promise.get_future();
@@ -710,7 +720,8 @@ struct Db::RWOnDisk final : public Db::Impl
             .promise = &promise,
             .root = node,
             .machine = machine,
-            .version = version});
+            .version = version,
+            .concurrency_limit = concurrency_limit});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -837,11 +848,13 @@ void Db::move_trie_version_forward(uint64_t const src, uint64_t const dest)
 }
 
 bool Db::traverse(
-    NodeCursor const cursor, TraverseMachine &machine, uint64_t const block_id)
+    NodeCursor const cursor, TraverseMachine &machine, uint64_t const block_id,
+    size_t const concurrency_limit)
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(cursor.is_valid());
-    return impl_->traverse_fiber_blocking(*cursor.node, machine, block_id);
+    return impl_->traverse_fiber_blocking(
+        *cursor.node, machine, block_id, concurrency_limit);
 }
 
 bool Db::traverse_blocking(

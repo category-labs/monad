@@ -70,7 +70,9 @@ public:
     // traversal on RWDb, use the `traverse_blocking` api below.
     // TODO: fix the excessive memory issue by pausing traverse when there are N
     // outstanding requests
-    bool traverse(NodeCursor, TraverseMachine &, uint64_t block_id);
+    bool traverse(
+        NodeCursor, TraverseMachine &, uint64_t block_id,
+        size_t concurrency_limit = 4096);
     // Blocking traverse never wait on a fiber future.
     bool traverse_blocking(NodeCursor, TraverseMachine &, uint64_t block_id);
     NodeCursor root() const noexcept;

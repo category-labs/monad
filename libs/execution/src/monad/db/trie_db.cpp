@@ -428,7 +428,7 @@ std::string TrieDb::print_stats()
     return ret;
 }
 
-nlohmann::json TrieDb::to_json()
+nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
 {
     struct Traverse : public TraverseMachine
     {
@@ -559,8 +559,8 @@ nlohmann::json TrieDb::to_json()
             db_.traverse_blocking(res_cursor.value(), traverse, block_number_));
     }
     else {
-        // WARNING: excessive memory usage in parallel traverse
-        MONAD_ASSERT(db_.traverse(res_cursor.value(), traverse, block_number_));
+        MONAD_ASSERT(db_.traverse(
+            res_cursor.value(), traverse, block_number_, concurrency_limit));
     }
 
     return json;

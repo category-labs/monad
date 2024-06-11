@@ -11,6 +11,8 @@
 #include <cstdint>
 #include <functional>
 
+#include <boost/container/deque.hpp>
+
 #include "deserialize_node_from_receiver_result.hpp"
 
 MONAD_MPT_NAMESPACE_BEGIN
@@ -90,13 +92,28 @@ namespace detail
     template <typename VerifyVersionFunc>
     struct preorder_traverse_impl
     {
+        struct receiver_t;
+
         UpdateAuxImpl &aux;
         VerifyVersionFunc verify_func;
         bool stopping{false};
+        size_t const max_outstanding_reads{4096};
+        size_t outstanding_reads{0};
+        boost::container::deque<receiver_t> reads_to_initiate{};
+
+        explicit preorder_traverse_impl(
+            UpdateAuxImpl &aux, VerifyVersionFunc verify_func,
+            size_t const concurrency_limit)
+            : aux(aux)
+            , verify_func(verify_func)
+            , max_outstanding_reads(concurrency_limit)
+        {
+        }
 
         struct receiver_t
         {
             static constexpr bool lifetime_managed_internally = true;
+
             preorder_traverse_impl *impl;
             std::unique_ptr<TraverseMachine> traverse;
             chunk_offset_t rd_offset{0, 0};
@@ -111,7 +128,6 @@ namespace detail
                 : impl(impl)
                 , traverse(std::move(traverse))
                 , branch(branch)
-
             {
                 auto const num_pages_to_load_node =
                     node_disk_pages_spare_15{offset}.to_pages();
@@ -130,6 +146,7 @@ namespace detail
                 monad::async::erased_connected_operation *io_state,
                 ResultType buffer_)
             {
+                --impl->outstanding_reads;
                 if (!buffer_ || impl->stopping ||
                     !impl->verify_func()) { // async read failure or stopping
                                             // initiated
@@ -153,10 +170,24 @@ namespace detail
             }
         };
 
+        static_assert(sizeof(receiver_t) == 32);
+        static_assert(alignof(receiver_t) == 8);
+
+        void initiate_pending_reads()
+        {
+            while (outstanding_reads < max_outstanding_reads &&
+                   !reads_to_initiate.empty()) {
+                async_read(aux, std::move(reads_to_initiate.front()));
+                ++outstanding_reads;
+                reads_to_initiate.pop_front();
+            }
+        }
+
         void process(
             Node const &node, unsigned char const branch,
             TraverseMachine &traverse)
         {
+            initiate_pending_reads();
             if (!traverse.down(branch, node)) {
                 return;
             }
@@ -178,6 +209,13 @@ namespace detail
                                 (unsigned char)i,
                                 node.fnext(idx),
                                 traverse.clone());
+                            if (outstanding_reads >= max_outstanding_reads) {
+                                reads_to_initiate.emplace_back(
+                                    std::move(receiver));
+                                ++idx;
+                                continue;
+                            }
+                            ++outstanding_reads;
                             async_read(aux, std::move(receiver));
                         }
                         else {
@@ -206,16 +244,22 @@ inline bool preorder_traverse_blocking(
 template <typename VerifyVersionFunc>
 inline bool preorder_traverse(
     UpdateAuxImpl &aux, Node const &node, TraverseMachine &traverse,
-    VerifyVersionFunc verify_func)
+    VerifyVersionFunc verify_func, size_t const concurrency_limit = 4096)
 {
     if (aux.io) {
         MONAD_ASSERT(aux.io->owning_thread_id() == get_tl_tid());
     }
-    detail::preorder_traverse_impl<VerifyVersionFunc> impl(aux, verify_func);
+    detail::preorder_traverse_impl<VerifyVersionFunc> impl(
+        aux, verify_func, concurrency_limit);
     impl.process(node, INVALID_BRANCH, traverse);
     if (aux.io) {
         aux.io->wait_until_done();
+        while (!impl.reads_to_initiate.empty()) {
+            impl.initiate_pending_reads();
+            aux.io->wait_until_done();
+        }
     }
+    MONAD_ASSERT(impl.outstanding_reads == 0);
     return !impl.stopping;
 }
 

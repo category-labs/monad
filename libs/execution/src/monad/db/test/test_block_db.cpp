@@ -23,8 +23,7 @@ TEST(BlockDb, ReadNonDecompressableBlock)
     Block block;
     BlockDb const block_db(test_resource::bad_decompress_block_data_dir);
     // DECOMPRESS_ERROR
-    EXPECT_EXIT(
-        block_db.get(46'402u, block), testing::KilledBySignal(SIGABRT), "");
+    EXPECT_FALSE(block_db.get(46'402u, block));
 }
 
 TEST(BlockDb, ReadNonDecodeableBlock)

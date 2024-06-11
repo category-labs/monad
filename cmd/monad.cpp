@@ -16,6 +16,7 @@
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/mpt/db.hpp>
+#include <monad/procfs/statm.h>
 #include <monad/state2/block_state.hpp>
 
 #include <CLI/CLI.hpp>
@@ -131,6 +132,7 @@ run_monad(BlockDb &block_db, Db &db, fiber::PriorityPool &priority_pool,
     bool result_success = true;
     uint64_t new_blocks_count = 0;
     uint64_t new_transactions_count = 0;
+    uint64_t block_number = 0;
 
     stop = 0;
     signal(SIGINT, signal_handler);
@@ -138,11 +140,43 @@ run_monad(BlockDb &block_db, Db &db, fiber::PriorityPool &priority_pool,
     // TODO: replace with monad specfiic mainnet
     EthereumMainnet const chain{};
 
+    constexpr uint64_t BATCH_SIZE = 1000; // TODO param
+    uint64_t batch_num_blocks = 0;
+    uint64_t batch_num_txs = 0;
+    auto batch_begin = std::chrono::steady_clock::now();
+
+    auto log_tps = [&]() {
+        if (!batch_num_blocks || !batch_num_txs) {
+            return;
+        }
+
+        auto const now = std::chrono::steady_clock::now();
+        auto const elapsed =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                now - batch_begin)
+                .count();
+        uint64_t const tps =
+            (batch_num_txs) * 1'000'000 / static_cast<uint64_t>(elapsed);
+
+        LOG_INFO(
+            "Run {:4d} blocks to {:8d}, number of transactions {:6d}, "
+            "tps = {:5d}, rss = {:8d} MB",
+            batch_num_blocks,
+            block_number,
+            batch_num_txs,
+            tps,
+            monad_procfs_self_resident() / (1L << 20));
+
+        batch_num_blocks = 0;
+        batch_num_txs = 0;
+        batch_begin = now;
+    };
+
     BlockHashBuffer block_hash_buffer =
         make_block_hash_buffer(start_block_number, block_db);
 
     while (stop == 0 && is_null_or_gt(nblocks, new_blocks_count)) {
-        uint64_t block_number = start_block_number + new_blocks_count;
+        block_number = start_block_number + new_blocks_count;
         if (MONAD_UNLIKELY(!block_number)) {
             LOG_ERROR(
                 "block number out of bounds with new blocks count = {}",
@@ -226,6 +260,16 @@ run_monad(BlockDb &block_db, Db &db, fiber::PriorityPool &priority_pool,
 
         ++new_blocks_count;
         new_transactions_count += block.transactions.size();
+	batch_num_txs += block.transactions.size();
+	++batch_num_blocks;
+
+        if (block_number % BATCH_SIZE == 0) {
+            log_tps();
+        }
+    }
+
+    if (block_number > 0) {
+        log_tps();
     }
 
     return {result_success, new_transactions_count, new_blocks_count};
@@ -251,6 +295,20 @@ int main(int const argc, char const *argv[])
     fs::path dump_snapshot{};
     auto log_level = quill::LogLevel::Info;
 
+    /* Note on triedb block number prefix: in memory triedb remains a single
+    version db, with block number prefix always 0. On disk triedb maintains the
+    state history where each block state starts after the corresponding block
+    number prefix.
+    */
+
+    cli.add_option("--chain", chain_type,
+        "Select blockchain specific configuration")
+        ->transform(CLI::CheckedTransformer(
+            std::map<std::string, ChainType>{
+                {"ethereum_mainnet", ChainType::EthereumMainnet},
+                {"monad_devnet", ChainType::MonadDevnet}
+            }, CLI::ignore_case))
+        ->required();
     cli.add_option("--block_db", block_db_path, "block_db directory")->required();
     cli.add_option("--trace_log", trace_log, "path to output trace file");
     cli.add_option("--log_level", log_level, "level of logging")
@@ -386,7 +444,13 @@ int main(int const argc, char const *argv[])
 
     if (!dump_snapshot.empty()) {
         LOG_INFO("Dump db of block: {}", last_block_number);
-        write_to_file(db.to_json(), dump_snapshot, last_block_number);
+        TrieDb ro_db{mpt::ReadOnlyOnDiskDbConfig{
+            .sq_thread_cpu = sq_thread_cpu,
+            .dbname_paths = dbname_paths,
+            .concurrent_read_io_limit = 128}};
+        // WARNING: to_json() does parallel traverse which consumes excessive
+        // memory
+        write_to_file(ro_db.to_json(), dump_snapshot, last_block_number);
     }
 
     return 0;

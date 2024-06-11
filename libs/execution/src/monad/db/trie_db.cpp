@@ -916,6 +916,7 @@ nlohmann::json TrieDb::to_json()
             db_.traverse_blocking(state_nibbles, traverse, block_number_));
     }
     else {
+        // WARNING: excessive memory usage in parallel traverse
         MONAD_ASSERT(db_.traverse(state_nibbles, traverse, block_number_));
     }
 

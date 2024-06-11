@@ -234,6 +234,8 @@ int main(int const argc, char const *argv[])
             .sq_thread_cpu = sq_thread_cpu,
             .dbname_paths = dbname_paths,
             .concurrent_read_io_limit = 128}};
+        // WARNING: to_json() does parallel traverse which consumes excessive
+        // memory
         write_to_file(ro_db.to_json(), dump_snapshot, last_block_number);
     }
     return 0;

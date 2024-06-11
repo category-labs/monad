@@ -90,19 +90,20 @@ namespace detail
         {
             static constexpr bool lifetime_managed_internally = true;
             preorder_traverse_impl *impl;
-            unsigned char const branch;
             std::unique_ptr<TraverseMachine> traverse;
             chunk_offset_t rd_offset{0, 0};
             unsigned bytes_to_read;
             uint16_t buffer_off;
+            unsigned char const branch;
 
             receiver_t(
                 preorder_traverse_impl *impl, unsigned char const branch,
                 chunk_offset_t const offset,
                 std::unique_ptr<TraverseMachine> traverse)
                 : impl(impl)
-                , branch(branch)
                 , traverse(std::move(traverse))
+                , branch(branch)
+
             {
                 auto const num_pages_to_load_node =
                     node_disk_pages_spare_15{offset}.to_pages();
@@ -149,9 +150,10 @@ namespace detail
             TraverseMachine &traverse)
         {
             traverse.down(branch, node);
-            for (unsigned char i = 0; i < 16; ++i) {
-                if (node.mask & (1u << i)) {
-                    auto const idx = node.to_child_index(i);
+            for (unsigned i = 0, idx = 0, bit = 1;
+                 idx < node.number_of_children();
+                 ++i, bit <<= 1) {
+                if (node.mask & bit) {
                     auto const *const next = node.next(idx);
                     if (next == nullptr) {
                         MONAD_ASSERT(aux.is_on_disk());
@@ -160,12 +162,16 @@ namespace detail
                             stopping = true;
                         }
                         receiver_t receiver(
-                            this, i, node.fnext(idx), traverse.clone());
+                            this,
+                            (unsigned char)i,
+                            node.fnext(idx),
+                            traverse.clone());
                         async_read(aux, std::move(receiver));
                     }
                     else {
-                        process(*next, i, traverse);
+                        process(*next, (unsigned char)i, traverse);
                     }
+                    ++idx;
                 }
             }
             traverse.up(branch, node);

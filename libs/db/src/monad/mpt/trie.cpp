@@ -200,9 +200,9 @@ struct load_all_impl_
     void process(NodeCursor const node_cursor, StateMachine &sm)
     {
         Node *const node = node_cursor.node;
-        for (unsigned char i = 0; i < 16; ++i) {
-            if (node->mask & (1u << i)) {
-                auto const idx = node->to_child_index(i);
+        for (unsigned i = 0, idx = 0, bit = 1; idx < node->number_of_children();
+             ++i, bit <<= 1) {
+            if (node->mask & bit) {
                 NibblesView const nv(
                     node_cursor.prefix_index,
                     node->path_nibble_index_end,
@@ -210,7 +210,7 @@ struct load_all_impl_
                 for (uint8_t n = 0; n < nv.nibble_size(); n++) {
                     sm.down(nv.get(n));
                 }
-                sm.down(i);
+                sm.down((unsigned char)i);
                 if (sm.cache()) {
                     auto *const next = node->next(idx);
                     if (next == nullptr) {
@@ -223,6 +223,7 @@ struct load_all_impl_
                     }
                 }
                 sm.up(1 + nv.nibble_size());
+                ++idx;
             }
         }
     }

@@ -68,17 +68,6 @@ namespace detail
 
 struct Db::Impl
 {
-    // TODO: do we need a lock?
-    // To actually prevent multiple threads invoke any of these concurrently for
-    // RODb, and prevent traverse_blocking() invoked concurrently with upsert
-    // for RWDb, we might need a lock, but if we trust users, which are
-    // ourselves, would not do things like these, we probably also don't need
-    // the lock nor the followings.
-    bool upsert_running_{false};
-    bool prefetch_running_{false};
-    bool traverse_running_{false};
-    bool traverse_blocking_running_{false};
-
     virtual ~Impl() = default;
 
     virtual Node::UniquePtr &root() = 0;
@@ -840,19 +829,14 @@ void Db::upsert(
     bool const can_write_to_fast)
 {
     MONAD_ASSERT(impl_);
-    MONAD_ASSERT(!impl_->upsert_running_);
-    impl_->upsert_running_ = true;
     impl_->upsert_fiber_blocking(
         std::move(list), block_id, enable_compaction, can_write_to_fast);
-    impl_->upsert_running_ = false;
 }
 
 bool Db::traverse(
     NibblesView const prefix, TraverseMachine &machine, uint64_t const block_id)
 {
     MONAD_ASSERT(impl_);
-    MONAD_ASSERT(!impl_->traverse_running_);
-    impl_->traverse_running_ = true;
     auto const block_id_prefix =
         serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id);
     auto res = get(root(), NibblesView{block_id_prefix}, block_id);
@@ -865,18 +849,13 @@ bool Db::traverse(
     }
     auto *node = res.value().node;
     MONAD_DEBUG_ASSERT(node != nullptr);
-    bool const finished =
-        impl_->traverse_fiber_blocking(*node, machine, block_id);
-    impl_->traverse_running_ = false;
-    return finished;
+    return impl_->traverse_fiber_blocking(*node, machine, block_id);
 }
 
 bool Db::traverse_blocking(
     NibblesView const prefix, TraverseMachine &machine, uint64_t const block_id)
 {
     MONAD_ASSERT(impl_);
-    MONAD_ASSERT(!impl_->traverse_blocking_running_);
-    impl_->traverse_blocking_running_ = true;
     auto const block_id_prefix =
         serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id);
     auto res = get(root(), NibblesView{block_id_prefix}, block_id);
@@ -889,12 +868,10 @@ bool Db::traverse_blocking(
     }
     auto *node = res.value().node;
     MONAD_DEBUG_ASSERT(node != nullptr);
-    bool const finished = preorder_traverse_blocking(
+    return preorder_traverse_blocking(
         impl_->aux(), *node, machine, [this, block_id] {
             return impl_->verify_version_still_valid(block_id);
         });
-    impl_->traverse_blocking_running_ = false;
-    return finished;
 }
 
 NodeCursor Db::root() const noexcept
@@ -936,16 +913,11 @@ void Db::load_latest()
 size_t Db::prefetch()
 {
     MONAD_ASSERT(impl_);
-    MONAD_ASSERT(!impl_->prefetch_running_);
     auto const latest_block_id = get_latest_block_id();
     if (!latest_block_id.has_value()) {
         return 0;
     }
-    impl_->prefetch_running_ = true;
-    size_t const nodes_loaded =
-        impl_->prefetch_fiber_blocking(latest_block_id.value());
-    impl_->prefetch_running_ = false;
-    return nodes_loaded;
+    return impl_->prefetch_fiber_blocking(latest_block_id.value());
 }
 
 size_t Db::poll(bool const blocking, size_t const count)

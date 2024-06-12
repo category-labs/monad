@@ -156,11 +156,11 @@ namespace
         {
             MONAD_ASSERT(node.has_value());
             auto encoded_storage = node.value();
-            auto const storage = decode_storage_db(encoded_storage);
+            auto const storage = rlp::decode_string(encoded_storage);
             MONAD_ASSERT(!storage.has_error());
-            MONAD_ASSERT(encoded_storage.empty());
-            return rlp::encode_string2(
-                rlp::zeroless_view(storage.value().second));
+            MONAD_ASSERT(encoded_storage.size() <= sizeof(bytes32_t) + 1);
+            MONAD_ASSERT(storage.value().size() <= sizeof(bytes32_t));
+            return rlp::encode_string2(storage.value());
         }
     };
 

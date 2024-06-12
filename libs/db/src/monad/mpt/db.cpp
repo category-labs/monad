@@ -834,42 +834,20 @@ void Db::upsert(
 }
 
 bool Db::traverse(
-    NibblesView const prefix, TraverseMachine &machine, uint64_t const block_id)
+    NodeCursor const cursor, TraverseMachine &machine, uint64_t const block_id)
 {
     MONAD_ASSERT(impl_);
-    auto const block_id_prefix =
-        serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id);
-    auto res = get(root(), NibblesView{block_id_prefix}, block_id);
-    if (!res.has_value()) {
-        return false;
-    }
-    res = get(res.value(), prefix, block_id);
-    if (!res.has_value()) {
-        return false;
-    }
-    auto *node = res.value().node;
-    MONAD_DEBUG_ASSERT(node != nullptr);
-    return impl_->traverse_fiber_blocking(*node, machine, block_id);
+    MONAD_ASSERT(cursor.is_valid());
+    return impl_->traverse_fiber_blocking(*cursor.node, machine, block_id);
 }
 
 bool Db::traverse_blocking(
-    NibblesView const prefix, TraverseMachine &machine, uint64_t const block_id)
+    NodeCursor const cursor, TraverseMachine &machine, uint64_t const block_id)
 {
     MONAD_ASSERT(impl_);
-    auto const block_id_prefix =
-        serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id);
-    auto res = get(root(), NibblesView{block_id_prefix}, block_id);
-    if (!res.has_value()) {
-        return false;
-    }
-    res = get(res.value(), prefix, block_id);
-    if (!res.has_value()) {
-        return false;
-    }
-    auto *node = res.value().node;
-    MONAD_DEBUG_ASSERT(node != nullptr);
+    MONAD_ASSERT(cursor.is_valid());
     return preorder_traverse_blocking(
-        impl_->aux(), *node, machine, [this, block_id] {
+        impl_->aux(), *cursor.node, machine, [this, block_id] {
             return impl_->verify_version_still_valid(block_id);
         });
 }

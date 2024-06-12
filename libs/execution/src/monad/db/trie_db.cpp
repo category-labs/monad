@@ -905,17 +905,27 @@ nlohmann::json TrieDb::to_json()
 
     auto json = nlohmann::json::object();
     Traverse traverse(*this, json);
+
+    auto res = db_.get(
+        db_.root(),
+        concat(
+            NibblesView{
+                serialize_as_big_endian<BLOCK_NUM_BYTES>(block_number_)},
+            state_nibble),
+        block_number_);
+    MONAD_ASSERT(res.has_value());
+    MONAD_ASSERT(res.value().is_valid());
     // RWOndisk Db prevents any parallel traversal that does blocking i/o
     // from running on the triedb thread, which include to_json. Thus, we can
     // only use blocking traversal for RWOnDisk Db, but can still do parallel
     // traverse in other cases.
     if (mode_ == Mode::OnDisk) {
         MONAD_ASSERT(
-            db_.traverse_blocking(state_nibbles, traverse, block_number_));
+            db_.traverse_blocking(res.value(), traverse, block_number_));
     }
     else {
         // WARNING: excessive memory usage in parallel traverse
-        MONAD_ASSERT(db_.traverse(state_nibbles, traverse, block_number_));
+        MONAD_ASSERT(db_.traverse(res.value(), traverse, block_number_));
     }
 
     return json;

@@ -460,7 +460,12 @@ TEST(DbTest, read_only_db_traverse_concurrent)
     DummyTraverseMachine traverse_machine;
 
     // read thread loop to traverse block 0 until it gets erased
-    while (ro_db.traverse(NibblesView{}, traverse_machine, 0)) {
+    auto res = ro_db.get(
+        ro_db.root(), serialize_as_big_endian<BLOCK_NUM_BYTES>(0ull), 0);
+    ASSERT_TRUE(res.has_value());
+    ASSERT_TRUE(res.value().is_valid());
+    NodeCursor cursor{*res.value().node};
+    while (ro_db.traverse(cursor, traverse_machine, 0)) {
     }
 
     done.store(true, std::memory_order_release);
@@ -490,8 +495,13 @@ TEST(DBTest, benchmark_blocking_parallel_traverse)
     // benchmark traverse
     DummyTraverseMachine traverse_machine{};
 
+    auto res =
+        db.get(db.root(), serialize_as_big_endian<BLOCK_NUM_BYTES>(0ull), 0);
+    ASSERT_TRUE(res.has_value());
+    ASSERT_TRUE(res.value().is_valid());
+    NodeCursor cursor{*res.value().node};
     auto begin = std::chrono::steady_clock::now();
-    ASSERT_TRUE(db.traverse(NibblesView{}, traverse_machine, 0));
+    ASSERT_TRUE(db.traverse(cursor, traverse_machine, 0));
     auto end = std::chrono::steady_clock::now();
     auto const parallel_elapsed =
         std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
@@ -500,7 +510,7 @@ TEST(DBTest, benchmark_blocking_parallel_traverse)
               << " ms, ";
 
     begin = std::chrono::steady_clock::now();
-    ASSERT_TRUE(db.traverse_blocking(NibblesView{}, traverse_machine, 0));
+    ASSERT_TRUE(db.traverse_blocking(cursor, traverse_machine, 0));
     end = std::chrono::steady_clock::now();
     auto const blocking_elapsed =
         std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
@@ -856,8 +866,16 @@ TYPED_TEST(DbTest, traverse)
         }
     } traverse;
 
-    ASSERT_TRUE(
-        this->db.traverse(concat(NibblesView{prefix}), traverse, block_id));
+    auto res = this->db.get(
+        this->db.root(),
+        concat(
+            NibblesView{serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id)},
+            NibblesView{prefix}),
+        block_id);
+    ASSERT_TRUE(res.has_value());
+    ASSERT_TRUE(res.value().is_valid());
+    NodeCursor cursor{*res.value().node};
+    ASSERT_TRUE(this->db.traverse(cursor, traverse, block_id));
 }
 
 TYPED_TEST(DbTest, scalability)

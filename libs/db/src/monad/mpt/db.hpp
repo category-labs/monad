@@ -60,19 +60,19 @@ public:
     void upsert(
         UpdateList, uint64_t block_id = 0, bool enable_compaction = true,
         bool can_write_to_fast = true);
-    // It does parallel traversal through async i/o. Note that RWDb impl waits
-    // on a fiber future, therefore any parallel traverse run on RWDb should not
-    // do any blocking i/o because that will block the fiber and hang. If you
-    // have to do blocking i/o during the traversal on RWDb, use the
-    // `traverse_blocking` api below.
+    // Traverse APIs: return value indicates if we have finished the full
+    // traversal or not.
+    // Parallel traversal is a single threaded out of order traverse using async
+    // i/o. Note that RWDb impl waits on a fiber future, therefore any parallel
+    // traverse run on RWDb should not do any blocking i/o because that will
+    // block the fiber and hang. If you have to do blocking i/o during the
+    // traversal on RWDb, use the `traverse_blocking` api below.
     // TODO: fix the excessive memory issue by pausing traverse when there are N
     // outstanding requests
-    bool traverse(NibblesView prefix, TraverseMachine &, uint64_t block_id = 0);
-    // It is always called from the main thread and should never wait on a
-    // fiber future.
-    // Return value indicates if we have done the full traversal or not
-    bool traverse_blocking(
-        NibblesView prefix, TraverseMachine &, uint64_t block_id = 0);
+    bool traverse(NodeCursor, TraverseMachine &, uint64_t block_id = 0);
+    // Blocking traverse never wait on a fiber future.
+    bool
+    traverse_blocking(NodeCursor, TraverseMachine &, uint64_t block_id = 0);
     NodeCursor root() const noexcept;
     std::optional<uint64_t> get_latest_block_id() const;
     std::optional<uint64_t> get_earliest_block_id() const;

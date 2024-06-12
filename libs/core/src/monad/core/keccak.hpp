@@ -7,18 +7,15 @@
 
 MONAD_NAMESPACE_BEGIN
 
-using hash256 = ethash::hash256;
+using ::keccak256;
 
-inline hash256 keccak256(unsigned char const *const in, unsigned long const len)
-{
-    hash256 hash;
-    ::keccak256(in, len, hash.bytes);
-    return hash;
-}
+using hash256 = ethash::hash256;
 
 inline hash256 keccak256(byte_string_view const bytes)
 {
-    return keccak256(bytes.data(), bytes.size());
+    hash256 hash;
+    keccak256(bytes.data(), bytes.size(), hash.bytes);
+    return hash;
 }
 
 MONAD_NAMESPACE_END

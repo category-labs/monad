@@ -27,7 +27,7 @@ namespace detail
         {
             MONAD_DEBUG_ASSERT(len <= KECCAK256_SIZE);
             if (len < KECCAK256_SIZE) {
-                ::keccak256(buffer, len, buffer);
+                keccak256(buffer, len, buffer);
                 len = KECCAK256_SIZE;
             }
         }

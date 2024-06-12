@@ -78,8 +78,8 @@ namespace
         requires std::same_as<T, bytes32_t> || std::same_as<T, Address>
     constexpr byte_string to_key(T const &arg)
     {
-        auto const h = keccak256(arg.bytes, sizeof(arg.bytes));
-        return byte_string{h.bytes, sizeof(ethash::hash256)};
+        auto const h = keccak256({arg.bytes, sizeof(arg.bytes)});
+        return byte_string{h.bytes, sizeof(hash256)};
     }
 
     byte_string encode_account_db(Account const &account)

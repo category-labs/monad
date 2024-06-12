@@ -132,7 +132,7 @@ std::optional<evmc::Result> pre_create_contract_account(
             return create_contract_address(msg.sender, nonce); // YP Eqn. 85
         }
         else if (msg.kind == EVMC_CREATE2) {
-            auto const code_hash = keccak256(msg.input_data, msg.input_size);
+            auto const code_hash = keccak256({msg.input_data, msg.input_size});
             return create2_contract_address(
                 msg.sender, msg.create2_salt, code_hash);
         }

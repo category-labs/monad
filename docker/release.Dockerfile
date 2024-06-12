@@ -59,7 +59,8 @@ RUN apt-get install -y \
   libboost-graph1.83-dev \
   libboost-json1.83-dev \
   libboost-stacktrace1.83-dev \
-  libboost1.83-dev
+  libboost1.83-dev \
+  libcgroup-dev
 
 COPY . src
 WORKDIR src

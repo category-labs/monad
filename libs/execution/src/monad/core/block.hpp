@@ -51,6 +51,8 @@ struct Block
     friend bool operator==(Block const &, Block const &) = default;
 };
 
+bytes32_t hash(BlockHeader const &);
+
 static_assert(sizeof(BlockHeader) == 656);
 static_assert(alignof(BlockHeader) == 8);
 

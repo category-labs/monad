@@ -3,6 +3,7 @@
 #include <ethereum_test.hpp>
 
 #include <monad/config.hpp>
+#include <monad/core/block.hpp>
 #include <monad/core/result.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/test/config.hpp>
@@ -35,11 +36,12 @@ class BlockchainTest : public testing::Test
     std::optional<evmc_revision> const revision_;
 
     template <evmc_revision rev>
-    static Result<std::vector<Receipt>>
-    execute(Block &, test::db_t &, BlockHashBuffer const &);
+    static Result<std::vector<Receipt>> execute(
+        Block &, test::db_t &, BlockHashBuffer const &, BlockHeader const &);
 
     static Result<std::vector<Receipt>> execute_dispatch(
-        evmc_revision, Block &, test::db_t &, BlockHashBuffer const &);
+        evmc_revision, Block &, test::db_t &, BlockHashBuffer const &,
+        BlockHeader const &);
 
     static void
     validate_post_state(nlohmann::json const &json, nlohmann::json const &db);

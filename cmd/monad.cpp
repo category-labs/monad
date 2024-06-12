@@ -51,6 +51,24 @@ void run_monad(
     signal(SIGINT, signal_handler);
     stop = 0;
 
+    BlockHeader parent_header{};
+    auto const initial_parent_path = block_db / "0";
+    MONAD_ASSERT(fs::exists(initial_parent_path));
+
+    {
+        std::ifstream istream(initial_parent_path);
+        std::ostringstream buf;
+        buf << istream.rdbuf();
+        auto view = byte_string_view{
+            (unsigned char *)buf.view().data(), buf.view().size()};
+        auto block_result = rlp::decode_block(view);
+        MONAD_ASSERT(!block_result.has_error());
+        MONAD_ASSERT(view.empty());
+
+        auto &parent_block = block_result.assume_value();
+        parent_header = parent_block.header;
+    }
+
     while (stop == 0) {
         auto const path = block_db / std::to_string(block_number);
         if (!fs::exists(path)) {
@@ -83,7 +101,7 @@ void run_monad(
             break;
         }
 
-        result = static_validate_block(rev, block);
+        result = static_validate_block(rev, block, parent_header);
         if (MONAD_UNLIKELY(result.has_error())) {
             LOG_ERROR(
                 "block {} validation failed: {}",
@@ -112,6 +130,7 @@ void run_monad(
             block.transactions.size(),
             block.header.number,
             std::chrono::steady_clock::now() - before);
+        parent_header = block.header;
         ++block_number;
     }
 }

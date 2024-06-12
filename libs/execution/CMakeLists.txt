@@ -24,6 +24,7 @@ add_library(
   # core
   "src/monad/core/account.hpp"
   "src/monad/core/address.hpp"
+  "src/monad/core/block.cpp"
   "src/monad/core/block.hpp"
   "src/monad/core/byte_string.hpp"
   "src/monad/core/bytes.hpp"

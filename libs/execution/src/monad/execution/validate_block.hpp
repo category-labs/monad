@@ -37,7 +37,9 @@ enum class BlockError
     WrongDaoExtraData,
     WrongLogsBloom,
     InvalidGasUsed,
-    WrongStateRoot
+    WrongStateRoot,
+    UnknownParent,
+    InvalidTimestamp,
 };
 
 struct Block;
@@ -45,12 +47,16 @@ struct BlockHeader;
 struct Receipt;
 
 template <evmc_revision rev>
-Result<void> static_validate_header(BlockHeader const &);
+Result<void> static_validate_header(
+    BlockHeader const &, BlockHeader const &parent_header,
+    bool const no_parent_validation);
 
 template <evmc_revision rev>
-Result<void> static_validate_block(Block const &);
+Result<void>
+static_validate_block(Block const &, BlockHeader const &parent_header);
 
-Result<void> static_validate_block(evmc_revision, Block const &);
+Result<void> static_validate_block(
+    evmc_revision, Block const &, BlockHeader const &parent_header);
 
 Result<void> validate_header(std::vector<Receipt> const &, BlockHeader const &);
 

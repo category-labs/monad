@@ -93,20 +93,68 @@ namespace
         }
     };
 
+    template <typename DbBase>
+    struct DbTraverseFixture : public DbBase
+    {
+        uint64_t const block_id{0x123};
+        monad::byte_string const prefix{0x00_hex};
+
+        using DbBase::db;
+
+        DbTraverseFixture()
+            : DbBase()
+        {
+            auto const k1 = 0x12345678_hex;
+            auto const v1 = 0xcafebabe_hex;
+            auto const k2 = 0x12346678_hex;
+            auto const v2 = 0xdeadbeef_hex;
+            auto const k3 = 0x12445678_hex;
+            auto const v3 = 0xdeadbabe_hex;
+            auto u1 = make_update(k1, v1);
+            auto u2 = make_update(k2, v2);
+            auto u3 = make_update(k3, v3);
+            UpdateList ul;
+            ul.push_front(u1);
+            ul.push_front(u2);
+            ul.push_front(u3);
+
+            auto u_prefix = Update{
+                .key = prefix,
+                .value = monad::byte_string_view{},
+                .incarnation = false,
+                .next = std::move(ul)};
+
+            UpdateList ul_prefix;
+            ul_prefix.push_front(u_prefix);
+            this->db.upsert(std::move(ul_prefix), block_id);
+
+            /*
+                    00
+                    |
+                    12
+                  /    \
+                 34      445678
+                / \
+             5678  6678
+            */
+        }
+    };
+
     struct DummyTraverseMachine : public TraverseMachine
     {
         Nibbles path{};
 
-        virtual void down(unsigned char branch, Node const &node) override
+        virtual bool down(unsigned char branch, Node const &node) override
         {
             if (branch == INVALID_BRANCH) {
-                return;
+                return true;
             }
             path = concat(NibblesView{path}, branch, node.path_nibble_view());
 
             if (node.has_value()) {
                 EXPECT_EQ(path.nibble_size(), KECCAK256_SIZE * 2);
             }
+            return true;
         }
 
         virtual void up(unsigned char branch, Node const &node) override
@@ -734,50 +782,33 @@ TYPED_TEST(DbTest, simple_with_increasing_block_id_prefix)
     EXPECT_FALSE(this->db.get(0x01_hex, block_id).has_value());
 }
 
-TYPED_TEST(DbTest, traverse)
+template <typename TFixture>
+struct DbTraverseTest : public TFixture
 {
-    auto const k1 = 0x12345678_hex;
-    auto const v1 = 0xcafebabe_hex;
-    auto const k2 = 0x12346678_hex;
-    auto const v2 = 0xdeadbeef_hex;
-    auto const k3 = 0x12445678_hex;
-    auto const v3 = 0xdeadbabe_hex;
-    auto u1 = make_update(k1, v1);
-    auto u2 = make_update(k2, v2);
-    auto u3 = make_update(k3, v3);
-    UpdateList ul;
-    ul.push_front(u1);
-    ul.push_front(u2);
-    ul.push_front(u3);
+};
 
-    uint64_t const block_id = 0x123;
-    auto const prefix = 0x00_hex;
-    auto u_prefix = Update{
-        .key = prefix,
-        .value = monad::byte_string_view{},
-        .incarnation = false,
-        .next = std::move(ul)};
+using DbTraverseTypes = ::testing::Types<
+    DbTraverseFixture<InMemoryDbFixture>, DbTraverseFixture<OnDiskDbFixture>>;
+TYPED_TEST_SUITE(DbTraverseTest, DbTraverseTypes);
 
-    UpdateList ul_prefix;
-    ul_prefix.push_front(u_prefix);
-    this->db.upsert(std::move(ul_prefix), block_id);
-
-    /*
-            00
-            |
-            12
-          /    \
-         34      445678
-        / \
-     5678  6678
-    */
+TYPED_TEST(DbTraverseTest, traverse)
+{
     struct SimpleTraverse : public TraverseMachine
     {
+        size_t &num_leaves;
         size_t index{0};
         size_t num_up{0};
 
-        virtual void down(unsigned char const branch, Node const &node) override
+        SimpleTraverse(size_t &num_leaves)
+            : num_leaves(num_leaves)
         {
+        }
+
+        virtual bool down(unsigned char const branch, Node const &node) override
+        {
+            if (node.has_value()) {
+                ++num_leaves;
+            }
             if (branch == INVALID_BRANCH) {
                 EXPECT_EQ(node.number_of_children(), 1);
                 EXPECT_EQ(node.mask, 0b10);
@@ -828,11 +859,11 @@ TYPED_TEST(DbTest, traverse)
                 EXPECT_EQ(
                     node.path_nibble_view(), make_nibbles({0x6, 0x7, 0x8}));
             }
-
             else {
-                FAIL();
+                MONAD_ASSERT(false);
             }
             ++index;
+            return true;
         }
 
         virtual void up(unsigned char const, Node const &) override
@@ -858,16 +889,83 @@ TYPED_TEST(DbTest, traverse)
         }
     };
 
-    SimpleTraverse traverse{};
-    auto res_cursor = this->db.find(prefix, block_id);
+    auto res_cursor = this->db.find(this->prefix, this->block_id);
     ASSERT_TRUE(res_cursor.has_value());
     ASSERT_TRUE(res_cursor.value().is_valid());
-    ASSERT_TRUE(this->db.traverse(res_cursor.value(), traverse, block_id));
+    {
+        size_t num_leaves = 0;
+        SimpleTraverse traverse{num_leaves};
+        ASSERT_TRUE(
+            this->db.traverse(res_cursor.value(), traverse, this->block_id));
+        EXPECT_EQ(num_leaves, 4);
+    }
 
-    SimpleTraverse traverse2{};
-    ASSERT_TRUE(
-        this->db.traverse_blocking(res_cursor.value(), traverse2, block_id));
-    EXPECT_EQ(traverse2.num_up, 6);
+    {
+        size_t num_leaves = 0;
+        SimpleTraverse traverse{num_leaves};
+        ASSERT_TRUE(this->db.traverse_blocking(
+            res_cursor.value(), traverse, this->block_id));
+        EXPECT_EQ(traverse.num_up, 6);
+        EXPECT_EQ(num_leaves, 4);
+    }
+}
+
+TYPED_TEST(DbTraverseTest, trimmed_traverse)
+{
+    // Trimmed traversal
+    struct TrimmedTraverse : public TraverseMachine
+    {
+        size_t &num_leaves;
+
+        TrimmedTraverse(size_t &num_leaves)
+            : num_leaves(num_leaves)
+        {
+        }
+
+        virtual bool down(unsigned char const branch, Node const &node) override
+        {
+            if (node.path_nibbles_len() == 3 && branch == 5) {
+                // trim one leaf
+                return false;
+            }
+            if (node.has_value()) {
+                ++num_leaves;
+            }
+            return true;
+        }
+
+        virtual void up(unsigned char const, Node const &) override {}
+
+        virtual std::unique_ptr<TraverseMachine> clone() const override
+        {
+            return std::make_unique<TrimmedTraverse>(*this);
+        }
+
+        virtual bool
+        should_visit(Node const &, unsigned char const branch) override
+        {
+            // trim the right most leaf
+            return branch != 4;
+        }
+    };
+
+    auto res_cursor = this->db.find(this->prefix, this->block_id);
+    ASSERT_TRUE(res_cursor.has_value());
+    ASSERT_TRUE(res_cursor.value().is_valid());
+    {
+        size_t num_leaves = 0;
+        TrimmedTraverse traverse{num_leaves};
+        ASSERT_TRUE(
+            this->db.traverse(res_cursor.value(), traverse, this->block_id));
+        EXPECT_EQ(num_leaves, 2);
+    }
+    {
+        size_t num_leaves = 0;
+        TrimmedTraverse traverse{num_leaves};
+        ASSERT_TRUE(this->db.traverse_blocking(
+            res_cursor.value(), traverse, this->block_id));
+        EXPECT_EQ(num_leaves, 2);
+    }
 }
 
 TYPED_TEST(DbTest, scalability)

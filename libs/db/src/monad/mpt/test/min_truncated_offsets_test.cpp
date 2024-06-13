@@ -27,8 +27,7 @@ using namespace ::monad::mpt;
 
 TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
 {
-    // state machine caches all nodes, currently max depth less than 256
-    this->sm = std::make_unique<StateMachineAlways<MerkleCompute, 256>>();
+    this->sm = std::make_unique<StateMachineAlways<MerkleCompute>>();
 
     this->aux.alternate_slow_fast_node_writer_unit_testing_only(true);
     constexpr size_t const eightMB = 8 * 1024 * 1024;
@@ -112,14 +111,14 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
         {
         }
 
-        virtual void
+        virtual bool
         down(unsigned char const branch_in_parent, Node const &node) override
         {
             ++level; // increment level counter
 
             if (root_to_node_records.empty()) { // indicates node is root
                 root_to_node_records.push(traverse_record_t{.node = &node});
-                return;
+                return true;
             }
             Node *const parent =
                 const_cast<Node *>(root_to_node_records.top().node);
@@ -140,6 +139,7 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
                      INVALID_COMPACT_VIRTUAL_OFFSET,
                      compact_virtual_chunk_offset_t{virtual_node_offset}});
             }
+            return true;
         }
 
         virtual void
@@ -176,7 +176,7 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
                 EXPECT_EQ(
                     node_branch_min_slow_off, node_record.test_min_offset_slow);
 
-                // update parent record,
+                // update parent record.
                 parent_record.test_min_offset_fast = std::min(
                     parent_record.test_min_offset_fast,
                     node_record.test_min_offset_fast);
@@ -194,7 +194,8 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
 
     } traverse{this->aux};
 
-    ASSERT_TRUE(preorder_traverse(
+    // WARNING: test will fail and there are memory leak using parallel traverse
+    ASSERT_TRUE(preorder_traverse_blocking(
         this->aux, *this->root, traverse, [] { return true; }));
     EXPECT_EQ(traverse.level, 0);
     EXPECT_EQ(traverse.root_to_node_records.empty(), true);

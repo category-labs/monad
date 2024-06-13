@@ -812,11 +812,11 @@ nlohmann::json TrieDb::to_json()
         {
         }
 
-        virtual void down(unsigned char const branch, Node const &node) override
+        virtual bool down(unsigned char const branch, Node const &node) override
         {
             if (branch == INVALID_BRANCH) {
                 MONAD_ASSERT(node.path_nibble_view().nibble_size() == 0);
-                return;
+                return true;
             }
             path = concat(NibblesView{path}, branch, node.path_nibble_view());
 
@@ -827,6 +827,7 @@ nlohmann::json TrieDb::to_json()
                 path.nibble_size() == ((KECCAK256_SIZE + KECCAK256_SIZE) * 2)) {
                 handle_storage(node);
             }
+            return true;
         }
 
         virtual void up(unsigned char const branch, Node const &node) override

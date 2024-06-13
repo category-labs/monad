@@ -17,9 +17,16 @@ MONAD_MPT_NAMESPACE_BEGIN
 struct TraverseMachine
 {
     virtual ~TraverseMachine() = default;
-    virtual void down(unsigned char branch, Node const &) = 0;
+    // Implement the logic to decide when to stop, return true for continue,
+    // false for stop
+    virtual bool down(unsigned char branch, Node const &) = 0;
     virtual void up(unsigned char branch, Node const &) = 0;
     virtual std::unique_ptr<TraverseMachine> clone() const = 0;
+
+    virtual bool should_visit(Node const &, unsigned char)
+    {
+        return true;
+    }
 };
 
 namespace detail
@@ -30,35 +37,35 @@ namespace detail
         UpdateAuxImpl &aux, unsigned char const branch, Node const &node,
         TraverseMachine &traverse, VerifyVersionFunc &&verify_func)
     {
-        traverse.down(branch, node);
+        if (!traverse.down(branch, node)) {
+            return true;
+        }
         for (unsigned char i = 0; i < 16; ++i) {
             if (node.mask & (1u << i)) {
-                auto const idx = node.to_child_index(i);
-                auto const *const next = node.next(idx);
-                if (next) {
+                if (traverse.should_visit(node, (unsigned char)i)) {
+                    auto const idx = node.to_child_index(i);
+                    auto const *const next = node.next(idx);
+                    if (next) {
+                        preorder_traverse_blocking_impl(
+                            aux, i, *next, traverse, verify_func);
+                        continue;
+                    }
+                    MONAD_ASSERT(aux.is_on_disk());
+                    // verify version before read
+                    if (!verify_func()) {
+                        return false;
+                    }
+                    Node::UniquePtr next_disk{};
+                    try {
+                        next_disk.reset(read_node_blocking(
+                            aux.io->storage_pool(), node.fnext(idx)));
+                    }
+                    catch (std::exception const &e) { // exception implies UB
+                        return false;
+                    }
                     preorder_traverse_blocking_impl(
-                        aux, i, *next, traverse, verify_func);
-                    continue;
+                        aux, i, *next_disk, traverse, verify_func);
                 }
-                MONAD_ASSERT(aux.is_on_disk());
-                // verify version before read
-                if (!verify_func()) {
-                    return false;
-                }
-                Node::UniquePtr next_disk{};
-                try {
-                    next_disk.reset(read_node_blocking(
-                        aux.io->storage_pool(), node.fnext(idx)));
-                }
-                catch (std::exception const &e) { // exception implies UB
-                    return false;
-                }
-                // verify version after read is done
-                if (!verify_func()) {
-                    return false;
-                }
-                preorder_traverse_blocking_impl(
-                    aux, i, *next_disk, traverse, verify_func);
             }
         }
         traverse.up(branch, node);
@@ -149,27 +156,31 @@ namespace detail
             Node const &node, unsigned char const branch,
             TraverseMachine &traverse)
         {
-            traverse.down(branch, node);
+            if (!traverse.down(branch, node)) {
+                return;
+            }
             for (unsigned i = 0, idx = 0, bit = 1;
                  idx < node.number_of_children();
                  ++i, bit <<= 1) {
                 if (node.mask & bit) {
-                    auto const *const next = node.next(idx);
-                    if (next == nullptr) {
-                        MONAD_ASSERT(aux.is_on_disk());
-                        // verify version before read
-                        if (!verify_func()) {
-                            stopping = true;
+                    if (traverse.should_visit(node, (unsigned char)i)) {
+                        auto const *const next = node.next(idx);
+                        if (next == nullptr) {
+                            MONAD_ASSERT(aux.is_on_disk());
+                            // verify version before read
+                            if (!verify_func()) {
+                                stopping = true;
+                            }
+                            receiver_t receiver(
+                                this,
+                                (unsigned char)i,
+                                node.fnext(idx),
+                                traverse.clone());
+                            async_read(aux, std::move(receiver));
                         }
-                        receiver_t receiver(
-                            this,
-                            (unsigned char)i,
-                            node.fnext(idx),
-                            traverse.clone());
-                        async_read(aux, std::move(receiver));
-                    }
-                    else {
-                        process(*next, (unsigned char)i, traverse);
+                        else {
+                            process(*next, (unsigned char)i, traverse);
+                        }
                     }
                     ++idx;
                 }

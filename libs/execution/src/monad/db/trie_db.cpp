@@ -158,7 +158,9 @@ namespace
             auto encoded_storage = node.value();
             auto const storage = rlp::decode_string(encoded_storage);
             MONAD_ASSERT(!storage.has_error());
-            MONAD_ASSERT(encoded_storage.size() <= sizeof(bytes32_t) + 1);
+            MONAD_ASSERT(
+                encoded_storage.size() >= 1 &&
+                encoded_storage.size() <= sizeof(bytes32_t) + 1);
             MONAD_ASSERT(storage.value().size() <= sizeof(bytes32_t));
             return rlp::encode_string2(storage.value());
         }
@@ -667,6 +669,9 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
     auto encoded_storage = value.value();
     auto const storage = rlp::decode_bytes32_compact(encoded_storage);
     MONAD_ASSERT(!storage.has_error());
+    MONAD_ASSERT(
+        encoded_storage.size() >= 1 &&
+        encoded_storage.size() <= sizeof(bytes32_t) + 1);
     return storage.value();
 };
 

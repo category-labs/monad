@@ -139,7 +139,7 @@ namespace
     {
         std::vector<monad::byte_string> bytes_alloc;
         std::vector<Update> updates_alloc;
-        for (unsigned i = 0; i < size; ++i) {
+        for (size_t i = 0; i < size; ++i) {
             monad::byte_string kv(KECCAK256_SIZE, 0);
             MONAD_ASSERT(kv.size() == KECCAK256_SIZE);
             keccak256((unsigned char const *)&i, 8, kv.data());

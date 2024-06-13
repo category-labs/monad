@@ -12,6 +12,8 @@ struct BlockHeader;
 
 struct Chain
 {
+    virtual ~Chain();
+
     virtual uint256_t get_chain_id() const = 0;
 
     virtual evmc_revision get_revision(BlockHeader const &) const = 0;

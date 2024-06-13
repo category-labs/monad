@@ -10,6 +10,10 @@ MONAD_NAMESPACE_BEGIN
 
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
+Chain::~Chain()
+{
+}
+
 Result<void> Chain::static_validate_header(BlockHeader const &) const
 {
     return success();

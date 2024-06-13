@@ -8,6 +8,7 @@
 #include <brotli/decode.h>
 #include <brotli/encode.h>
 #include <brotli/types.h>
+#include <quill/Quill.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -16,10 +17,47 @@
 #include <string>
 #include <string_view>
 
+using namespace monad;
+
+static bool
+brotli_decompress_block_view(
+        byte_string &brotli_buffer, byte_string_view const &view)
+{
+    size_t brotli_size = 0;
+    size_t available_in = view.size();
+    size_t available_out = available_in * 5;
+    brotli_buffer.resize(available_out);
+    BrotliDecoderResult brotli_result;
+    std::unique_ptr< BrotliDecoderState,
+        void (*)(BrotliDecoderState *)> brotli_state{
+            BrotliDecoderCreateInstance(nullptr, nullptr, nullptr),
+            BrotliDecoderDestroyInstance};
+    uint8_t const *next_in = view.data();
+    do {
+        uint8_t *next_out = &brotli_buffer.data()[brotli_size];
+        brotli_result = BrotliDecoderDecompressStream(
+            brotli_state.get(),
+            &available_in,
+            &next_in,
+            &available_out,
+            &next_out,
+            &brotli_size);
+        if (brotli_result != BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) {
+            break;
+        }
+        // Need more decompressed data. Allocate buffer space for it:
+        available_out += brotli_buffer.size();
+        brotli_buffer.resize(2 * brotli_buffer.size());
+    } while (true);
+    brotli_buffer.resize(brotli_size);
+    return brotli_result == BROTLI_DECODER_RESULT_SUCCESS;
+}
+
 MONAD_NAMESPACE_BEGIN
 
-BlockDb::BlockDb(std::filesystem::path const &dir)
-    : db_{dir.c_str()}
+BlockDb::BlockDb(
+        std::filesystem::path const &dir, BlockCompression compression)
+    : db_{dir.c_str()}, compression_{compression}
 {
 }
 
@@ -35,23 +73,21 @@ bool BlockDb::get(uint64_t const num, Block &block) const
     if (!result.has_value()) {
         return false;
     }
-    auto const view = to_byte_string_view(result.value());
-    size_t brotli_size = std::max(result->size() * 100, 1ul << 20); // TODO
-    byte_string brotli_buffer;
-    brotli_buffer.resize(brotli_size);
-    auto const brotli_result = BrotliDecoderDecompress(
-        view.size(), view.data(), &brotli_size, brotli_buffer.data());
-    brotli_buffer.resize(brotli_size);
-    if (brotli_result != BROTLI_DECODER_RESULT_SUCCESS) {
-        return false;
+    byte_string decompress_buffer;
+    auto view = to_byte_string_view(result.value());
+    if (compression_ == BlockCompression::Brotli) {
+        if (!brotli_decompress_block_view(decompress_buffer, view)) {
+            LOG_INFO("Block decompression failed");
+            return false;
+        }
+        view = decompress_buffer;
     }
-    byte_string_view view2{brotli_buffer};
-
-    auto const decoded_block = rlp::decode_block(view2);
+    auto const decoded_block = rlp::decode_block(view);
     if (decoded_block.has_error()) {
+        LOG_INFO("block decoding failed");
         return false;
     }
-    MONAD_ASSERT(view2.size() == 0);
+    MONAD_ASSERT(view.size() == 0);
     block = decoded_block.value();
     return true;
 }

@@ -12,10 +12,19 @@ struct Block;
 
 class BlockDb
 {
+public:
+    enum class BlockCompression {
+        None,
+        Brotli
+    };
+
+private:
     FileDb db_;
+    BlockCompression compression_;
 
 public:
-    BlockDb(std::filesystem::path const &);
+    BlockDb(std::filesystem::path const &,
+            BlockCompression = BlockCompression::Brotli);
 
     bool get(uint64_t, Block &) const;
 

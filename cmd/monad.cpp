@@ -1,4 +1,5 @@
 #include <monad/chain/ethereum_mainnet.hpp>
+#include <monad/chain/monad_devnet.hpp>
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
@@ -37,7 +38,8 @@ MONAD_NAMESPACE_END
 
 static sig_atomic_t volatile stop;
 
-static void prefetch_db_into_memory(TrieDb &db) {
+static void prefetch_db_into_memory(TrieDb &db)
+{
     LOG_INFO("Loading current root into memory");
     auto const start_time = std::chrono::steady_clock::now();
     auto const nodes_loaded = db.prefetch_current_root();
@@ -53,7 +55,8 @@ static void prefetch_db_into_memory(TrieDb &db) {
 
 static TrieDb make_db(
         std::optional<mpt::OnDiskDbConfig> const &config,
-        fs::path const &snapshot) {
+        fs::path const &snapshot)
+{
     if (snapshot.empty()) {
         return TrieDb{config};
     }
@@ -79,14 +82,16 @@ static void signal_handler(int)
 }
 
 static bool is_null_or_gt(
-        std::optional<uint64_t> const left, uint64_t right) {
+        std::optional<uint64_t> const left, uint64_t right)
+{
     if (!left.has_value())
         return true;
     return left.value() > right;
 }
 
 static BlockHashBuffer make_block_hash_buffer(
-        uint64_t start_block_number, BlockDb &block_db) {
+        uint64_t start_block_number, BlockDb &block_db)
+{
     BlockHashBuffer block_hash_buffer;
     uint64_t block_number =
         start_block_number < 256 ? 1 : start_block_number - 255;
@@ -103,7 +108,10 @@ static bool verify_root_hash(
     evmc_revision const rev, BlockHeader const &block_header,
     bytes32_t const receipts_root, bytes32_t const state_root)
 {
-    if (state_root != block_header.state_root) {
+    // TODO: Remove the below check block_header.state_root != evmc::bytes32{}
+    // when the block state root is implemented.
+    if (block_header.state_root != evmc::bytes32{}
+            && state_root != block_header.state_root) {
         LOG_ERROR(
             "Block: {}, Computed State Root: {}, Expected State Root: {}",
             block_header.number,
@@ -112,7 +120,10 @@ static bool verify_root_hash(
         return false;
     }
     if (MONAD_LIKELY(rev >= EVMC_BYZANTIUM)) {
-        if (receipts_root != block_header.receipts_root) {
+        // TODO: Remove the below check block_header.receipts_root != evmc::bytes32{}
+        // when the block receips root is implemented.
+        if (block_header.receipts_root != evmc::bytes32{}
+                && receipts_root != block_header.receipts_root) {
             LOG_ERROR(
                 "Block: {}, Computed Receipts Root: {}, Expected Receipts "
                 "Root: {}",
@@ -126,7 +137,8 @@ static bool verify_root_hash(
 }
 
 static std::tuple<bool, uint64_t, uint64_t>
-run_monad(BlockDb &block_db, Db &db, fiber::PriorityPool &priority_pool,
+run_monad(Chain const &chain, BlockDb &block_db,
+    Db &db, fiber::PriorityPool &priority_pool,
     uint64_t start_block_number, std::optional<uint64_t> const nblocks)
 {
     bool result_success = true;
@@ -136,9 +148,6 @@ run_monad(BlockDb &block_db, Db &db, fiber::PriorityPool &priority_pool,
 
     stop = 0;
     signal(SIGINT, signal_handler);
-
-    // TODO: replace with monad specfiic mainnet
-    EthereumMainnet const chain{};
 
     constexpr uint64_t BATCH_SIZE = 1000; // TODO param
     uint64_t batch_num_blocks = 0;
@@ -187,8 +196,9 @@ run_monad(BlockDb &block_db, Db &db, fiber::PriorityPool &priority_pool,
 
         Block block{};
         if (!block_db.get(block_number, block)) {
-            if (nblocks == std::nullopt)
+            if (nblocks == std::nullopt) {
                 continue;
+            }
             LOG_ERROR("Failed reading block {} from block_db", block_number);
             result_success = false;
             break;
@@ -260,8 +270,8 @@ run_monad(BlockDb &block_db, Db &db, fiber::PriorityPool &priority_pool,
 
         ++new_blocks_count;
         new_transactions_count += block.transactions.size();
-	batch_num_txs += block.transactions.size();
-	++batch_num_blocks;
+        batch_num_txs += block.transactions.size();
+        ++batch_num_blocks;
 
         if (block_number % BATCH_SIZE == 0) {
             log_tps();
@@ -275,6 +285,21 @@ run_monad(BlockDb &block_db, Db &db, fiber::PriorityPool &priority_pool,
     return {result_success, new_transactions_count, new_blocks_count};
 }
 
+enum class ChainType {
+    EthereumMainnet,
+    MonadDevnet
+};
+
+static std::unique_ptr<Chain> chain_from_type(ChainType t)
+{
+    switch (t) {
+    case ChainType::MonadDevnet:
+        return std::make_unique<MonadDevnet>();
+    default: //ChainType::EthereumMainnet:
+        return std::make_unique<EthereumMainnet>();
+    }
+}
+
 int main(int const argc, char const *argv[])
 {
     using namespace monad;
@@ -282,7 +307,9 @@ int main(int const argc, char const *argv[])
     CLI::App cli{"monad"};
     cli.option_defaults()->always_capture_default();
 
+    ChainType chain_type;
     fs::path block_db_path{};
+    BlockDb::BlockCompression blockCompression = BlockDb::BlockCompression::Brotli;
     fs::path genesis_file_path{};
     fs::path trace_log = fs::absolute("trace");
     std::vector<fs::path> dbname_paths;
@@ -310,6 +337,14 @@ int main(int const argc, char const *argv[])
             }, CLI::ignore_case))
         ->required();
     cli.add_option("--block_db", block_db_path, "block_db directory")->required();
+    cli.add_option(
+        "--block_compression", blockCompression,
+        "Compression method of blocks in the block_db directory")
+        ->transform(CLI::CheckedTransformer(
+            std::map<std::string, BlockDb::BlockCompression>{
+                {"none", BlockDb::BlockCompression::None},
+                {"brotli", BlockDb::BlockCompression::Brotli}
+            }, CLI::ignore_case));
     cli.add_option("--trace_log", trace_log, "path to output trace file");
     cli.add_option("--log_level", log_level, "level of logging")
         ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
@@ -318,7 +353,8 @@ int main(int const argc, char const *argv[])
         ->check(CLI::ExistingFile);
     auto *has_nblocks = cli.add_option(
             "--nblocks", nblocks,
-            "number of blocks to execute (unbounded when unspecified)");
+            "maximum number of blocks to execute "
+            "(unbounded when unspecified)");
     cli.add_option("--nthreads", nthreads, "number of threads");
     cli.add_option("--nfibers", nfibers, "number of fibers");
     cli.add_flag("--no_compaction", no_compaction, "disable compaction");
@@ -370,7 +406,7 @@ int main(int const argc, char const *argv[])
 
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
 
-    BlockDb block_db{block_db_path};
+    BlockDb block_db{block_db_path, blockCompression};
 
     auto const before = std::chrono::steady_clock::now();
     auto const config = !dbname_paths.empty()
@@ -390,7 +426,11 @@ int main(int const argc, char const *argv[])
 
     if (db.get_block_number() == 0) {
         MONAD_ASSERT(*has_genesis_file);
-        read_and_verify_genesis(block_db, db, genesis_file_path);
+        if (*has_nblocks) {
+            read_and_verify_genesis(block_db, db, genesis_file_path);
+        } else {
+            read_genesis(genesis_file_path, db);
+        }
     }
     LOG_INFO(
         "Finished initializing db at block = {}, time elapsed = {}",
@@ -410,10 +450,11 @@ int main(int const argc, char const *argv[])
     auto const start_time = std::chrono::steady_clock::now();
     DbCache db_cache{db};
 
+    auto chain = chain_from_type(chain_type);
     auto nblocks_opt =
         *has_nblocks ? std::make_optional(nblocks) : std::nullopt;
     auto [success, new_transactions_count, new_blocks_count] =
-        run_monad(block_db, db_cache, priority_pool,
+        run_monad(*chain, block_db, db_cache, priority_pool,
                 start_block_number, nblocks_opt);
 
     uint64_t const last_block_number = start_block_number + new_blocks_count - 1;

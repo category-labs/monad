@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <fstream>
 #include <string>
+#include <iostream>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -117,7 +118,10 @@ inline void verify_genesis(BlockDb &block_db, BlockHeader const &block_header)
     MONAD_ASSERT(status);
     // There should be no txn/receipt for the genesis block, so just asserting
     // on state root for now
-    MONAD_ASSERT(block_header.state_root == block.header.state_root);
+    // TODO: Remove the below check block.header.state_root != evmc::bytes32{}
+    // when the block state root is implemented.
+    MONAD_ASSERT(block.header.state_root == evmc::bytes32{}
+            || block_header.state_root == block.header.state_root);
 }
 
 inline void read_and_verify_genesis(

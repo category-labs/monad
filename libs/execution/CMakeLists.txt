@@ -21,6 +21,8 @@ add_library(
   "src/monad/chain/chain.hpp"
   "src/monad/chain/ethereum_mainnet.cpp"
   "src/monad/chain/ethereum_mainnet.hpp"
+  "src/monad/chain/monad_devnet.cpp"
+  "src/monad/chain/monad_devnet.hpp"
   # core
   "src/monad/core/account.hpp"
   "src/monad/core/address.hpp"

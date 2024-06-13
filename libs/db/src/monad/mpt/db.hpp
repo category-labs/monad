@@ -50,10 +50,14 @@ public:
     ~Db();
 
     // May wait on a fiber future
-    Result<byte_string_view> get(NibblesView, uint64_t block_id = 0) const;
-    Result<byte_string_view> get_data(NibblesView, uint64_t block_id = 0) const;
     Result<NodeCursor>
-    get(NodeCursor, NibblesView, uint64_t block_id = 0) const;
+    find(NodeCursor, NibblesView, uint64_t block_id = 0) const;
+    // Search path includes block id in the prefix
+    Result<NodeCursor> find(NibblesView prefix, uint64_t block_id = 0) const;
+    // Search path includes block id in the prefix
+    Result<byte_string_view> get(NibblesView, uint64_t block_id = 0) const;
+    // Search path includes block id in the prefix
+    Result<byte_string_view> get_data(NibblesView, uint64_t block_id = 0) const;
     Result<byte_string_view>
     get_data(NodeCursor, NibblesView, uint64_t block_id = 0) const;
 

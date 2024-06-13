@@ -460,12 +460,10 @@ TEST(DbTest, read_only_db_traverse_concurrent)
     DummyTraverseMachine traverse_machine;
 
     // read thread loop to traverse block 0 until it gets erased
-    auto res = ro_db.get(
-        ro_db.root(), serialize_as_big_endian<BLOCK_NUM_BYTES>(0ull), 0);
+    auto res = ro_db.find({}, 0);
     ASSERT_TRUE(res.has_value());
     ASSERT_TRUE(res.value().is_valid());
-    NodeCursor cursor{*res.value().node};
-    while (ro_db.traverse(cursor, traverse_machine, 0)) {
+    while (ro_db.traverse(res.value(), traverse_machine, 0)) {
     }
 
     done.store(true, std::memory_order_release);
@@ -495,13 +493,12 @@ TEST(DBTest, benchmark_blocking_parallel_traverse)
     // benchmark traverse
     DummyTraverseMachine traverse_machine{};
 
-    auto res =
-        db.get(db.root(), serialize_as_big_endian<BLOCK_NUM_BYTES>(0ull), 0);
-    ASSERT_TRUE(res.has_value());
-    ASSERT_TRUE(res.value().is_valid());
-    NodeCursor cursor{*res.value().node};
+    auto res_cursor = db.find({}, 0);
+    ASSERT_TRUE(res_cursor.has_value());
+    ASSERT_TRUE(res_cursor.value().is_valid());
+
     auto begin = std::chrono::steady_clock::now();
-    ASSERT_TRUE(db.traverse(cursor, traverse_machine, 0));
+    ASSERT_TRUE(db.traverse(res_cursor.value(), traverse_machine, 0));
     auto end = std::chrono::steady_clock::now();
     auto const parallel_elapsed =
         std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
@@ -510,7 +507,7 @@ TEST(DBTest, benchmark_blocking_parallel_traverse)
               << " ms, ";
 
     begin = std::chrono::steady_clock::now();
-    ASSERT_TRUE(db.traverse_blocking(cursor, traverse_machine, 0));
+    ASSERT_TRUE(db.traverse_blocking(res_cursor.value(), traverse_machine, 0));
     end = std::chrono::steady_clock::now();
     auto const blocking_elapsed =
         std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
@@ -635,20 +632,20 @@ TYPED_TEST(DbTest, simple_with_same_prefix)
         this->db.get_data(prefix, block_id).value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
 
-    auto prefix_to_next_root =
-        serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id) + prefix;
-    auto res = this->db.get(this->db.root(), prefix_to_next_root);
+    auto res = this->db.find(prefix, block_id);
     ASSERT_TRUE(res.has_value());
     NodeCursor const root_under_prefix = res.value();
     EXPECT_EQ(
-        this->db.get(root_under_prefix, kv[2].first).value().node->value(),
+        this->db.find(root_under_prefix, kv[2].first).value().node->value(),
         kv[2].second);
     EXPECT_EQ(
-        this->db.get(root_under_prefix, kv[3].first).value().node->value(),
+        this->db.find(root_under_prefix, kv[3].first).value().node->value(),
         kv[3].second);
     EXPECT_EQ(
         this->db.get_data(root_under_prefix, {}).value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+    auto prefix_to_next_root =
+        serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id) + prefix;
     EXPECT_EQ(
         this->db.get_data(this->db.root(), prefix_to_next_root).value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
@@ -716,20 +713,20 @@ TYPED_TEST(DbTest, simple_with_increasing_block_id_prefix)
         this->db.get_data(prefix, block_id).value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
 
-    auto prefix_to_next_root =
-        serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id) + prefix;
-    auto res = this->db.get(this->db.root(), prefix_to_next_root);
+    auto res = this->db.find(NibblesView{prefix}, block_id);
     ASSERT_TRUE(res.has_value());
     NodeCursor const root_under_prefix = res.value();
     EXPECT_EQ(
-        this->db.get(root_under_prefix, kv[2].first).value().node->value(),
+        this->db.find(root_under_prefix, kv[2].first).value().node->value(),
         kv[2].second);
     EXPECT_EQ(
-        this->db.get(root_under_prefix, kv[3].first).value().node->value(),
+        this->db.find(root_under_prefix, kv[3].first).value().node->value(),
         kv[3].second);
     EXPECT_EQ(
         this->db.get_data(root_under_prefix, {}).value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+    auto prefix_to_next_root =
+        serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id) + prefix;
     EXPECT_EQ(
         this->db.get_data(this->db.root(), prefix_to_next_root).value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
@@ -866,16 +863,10 @@ TYPED_TEST(DbTest, traverse)
         }
     } traverse;
 
-    auto res = this->db.get(
-        this->db.root(),
-        concat(
-            NibblesView{serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id)},
-            NibblesView{prefix}),
-        block_id);
-    ASSERT_TRUE(res.has_value());
-    ASSERT_TRUE(res.value().is_valid());
-    NodeCursor cursor{*res.value().node};
-    ASSERT_TRUE(this->db.traverse(cursor, traverse, block_id));
+    auto res_cursor = this->db.find(prefix, block_id);
+    ASSERT_TRUE(res_cursor.has_value());
+    ASSERT_TRUE(res_cursor.value().is_valid());
+    ASSERT_TRUE(this->db.traverse(res_cursor.value(), traverse, block_id));
 }
 
 TYPED_TEST(DbTest, scalability)

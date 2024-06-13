@@ -774,7 +774,7 @@ Db::Db(ReadOnlyOnDiskDbConfig const &config)
 Db::~Db() = default;
 
 Result<NodeCursor>
-Db::get(NodeCursor root, NibblesView const key, uint64_t const block_id) const
+Db::find(NodeCursor root, NibblesView const key, uint64_t const block_id) const
 {
     MONAD_ASSERT(impl_);
     auto const [it, result] = impl_->find_fiber_blocking(root, key, block_id);
@@ -786,15 +786,20 @@ Db::get(NodeCursor root, NibblesView const key, uint64_t const block_id) const
     return it;
 }
 
-Result<byte_string_view>
-Db::get(NibblesView const key, uint64_t const block_id) const
+Result<NodeCursor> Db::find(NibblesView const key, uint64_t block_id) const
 {
-    auto res = get(
+    auto res = find(
         root(), serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id), block_id);
     if (!res.has_value()) {
         return DbError::key_not_found;
     }
-    res = get(res.value(), key, block_id);
+    return find(res.value(), key, block_id);
+}
+
+Result<byte_string_view>
+Db::get(NibblesView const key, uint64_t const block_id) const
+{
+    auto res = find(key, block_id);
     if (!res.has_value()) {
         return DbError::key_not_found;
     }
@@ -804,24 +809,23 @@ Db::get(NibblesView const key, uint64_t const block_id) const
 Result<byte_string_view> Db::get_data(
     NodeCursor root, NibblesView const key, uint64_t const block_id) const
 {
-    auto res = get(root, key, block_id);
+    auto res = find(root, key, block_id);
     if (!res.has_value()) {
         return DbError::key_not_found;
     }
     MONAD_DEBUG_ASSERT(res.value().node != nullptr);
-
     return res.value().node->data();
 }
 
 Result<byte_string_view>
 Db::get_data(NibblesView const key, uint64_t const block_id) const
 {
-    auto res = get(
-        root(), serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id), block_id);
+    auto res = find(key, block_id);
     if (!res.has_value()) {
         return DbError::key_not_found;
     }
-    return get_data(res.value(), key, block_id);
+    MONAD_DEBUG_ASSERT(res.value().node != nullptr);
+    return res.value().node->data();
 }
 
 void Db::upsert(

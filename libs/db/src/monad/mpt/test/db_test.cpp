@@ -778,53 +778,29 @@ TYPED_TEST(DbTest, traverse)
 
         virtual void down(unsigned char const branch, Node const &node) override
         {
-            if (index == 0 + BLOCK_NUM_NIBBLES_LEN) {
-                EXPECT_EQ(branch, INVALID_BRANCH);
+            if (branch == INVALID_BRANCH) {
                 EXPECT_EQ(node.number_of_children(), 1);
                 EXPECT_EQ(node.mask, 0b10);
                 EXPECT_TRUE(node.has_value());
                 EXPECT_EQ(node.value(), monad::byte_string_view{});
                 EXPECT_TRUE(node.has_path());
-                EXPECT_EQ(node.path_nibble_view(), NibblesView(0x00_hex));
+                EXPECT_EQ(node.path_nibble_view(), make_nibbles({0x0}));
             }
-            else if (index == 1 + BLOCK_NUM_NIBBLES_LEN) {
-                EXPECT_EQ(branch, 1);
+            else if (branch == 1) {
                 EXPECT_EQ(node.number_of_children(), 2);
                 EXPECT_EQ(node.mask, 0b11000);
                 EXPECT_FALSE(node.has_value());
                 EXPECT_TRUE(node.has_path());
                 EXPECT_EQ(node.path_nibble_view(), make_nibbles({0x2}));
             }
-            else if (index == 2 + BLOCK_NUM_NIBBLES_LEN) {
-                EXPECT_EQ(branch, 3);
+            else if (branch == 3) {
                 EXPECT_EQ(node.number_of_children(), 2);
                 EXPECT_EQ(node.mask, 0b1100000);
                 EXPECT_FALSE(node.has_value());
                 EXPECT_TRUE(node.has_path());
                 EXPECT_EQ(node.path_nibble_view(), make_nibbles({0x4}));
             }
-            else if (index == 3 + BLOCK_NUM_NIBBLES_LEN) {
-                EXPECT_EQ(branch, 5);
-                EXPECT_EQ(node.number_of_children(), 0);
-                EXPECT_EQ(node.mask, 0);
-                EXPECT_TRUE(node.has_value());
-                EXPECT_EQ(node.value(), 0xcafebabe_hex);
-                EXPECT_TRUE(node.has_path());
-                EXPECT_EQ(
-                    node.path_nibble_view(), make_nibbles({0x6, 0x7, 0x8}));
-            }
-            else if (index == 4 + BLOCK_NUM_NIBBLES_LEN) {
-                EXPECT_EQ(branch, 6);
-                EXPECT_EQ(node.number_of_children(), 0);
-                EXPECT_EQ(node.mask, 0);
-                EXPECT_TRUE(node.has_value());
-                EXPECT_EQ(node.value(), 0xdeadbeef_hex);
-                EXPECT_TRUE(node.has_path());
-                EXPECT_EQ(
-                    node.path_nibble_view(), make_nibbles({0x6, 0x7, 0x8}));
-            }
-            else if (index == 5 + BLOCK_NUM_NIBBLES_LEN) {
-                EXPECT_EQ(branch, 4);
+            else if (branch == 4) {
                 EXPECT_EQ(node.number_of_children(), 0);
                 EXPECT_EQ(node.mask, 0);
                 EXPECT_TRUE(node.has_value());
@@ -834,7 +810,26 @@ TYPED_TEST(DbTest, traverse)
                     node.path_nibble_view(),
                     make_nibbles({0x4, 0x5, 0x6, 0x7, 0x8}));
             }
-            else if (index > BLOCK_NUM_NIBBLES_LEN + 5) {
+            else if (branch == 5) {
+                EXPECT_EQ(node.number_of_children(), 0);
+                EXPECT_EQ(node.mask, 0);
+                EXPECT_TRUE(node.has_value());
+                EXPECT_EQ(node.value(), 0xcafebabe_hex);
+                EXPECT_TRUE(node.has_path());
+                EXPECT_EQ(
+                    node.path_nibble_view(), make_nibbles({0x6, 0x7, 0x8}));
+            }
+            else if (branch == 6) {
+                EXPECT_EQ(node.number_of_children(), 0);
+                EXPECT_EQ(node.mask, 0);
+                EXPECT_TRUE(node.has_value());
+                EXPECT_EQ(node.value(), 0xdeadbeef_hex);
+                EXPECT_TRUE(node.has_path());
+                EXPECT_EQ(
+                    node.path_nibble_view(), make_nibbles({0x6, 0x7, 0x8}));
+            }
+
+            else {
                 FAIL();
             }
             ++index;
@@ -861,12 +856,18 @@ TYPED_TEST(DbTest, traverse)
             }
             return ret;
         }
-    } traverse;
+    };
 
+    SimpleTraverse traverse{};
     auto res_cursor = this->db.find(prefix, block_id);
     ASSERT_TRUE(res_cursor.has_value());
     ASSERT_TRUE(res_cursor.value().is_valid());
     ASSERT_TRUE(this->db.traverse(res_cursor.value(), traverse, block_id));
+
+    SimpleTraverse traverse2{};
+    ASSERT_TRUE(
+        this->db.traverse_blocking(res_cursor.value(), traverse2, block_id));
+    EXPECT_EQ(traverse2.num_up, 6);
 }
 
 TYPED_TEST(DbTest, scalability)

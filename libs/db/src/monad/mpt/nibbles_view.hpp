@@ -2,6 +2,7 @@
 
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/keccak.hpp>
 #include <monad/core/nibble.h>
 #include <monad/mpt/config.hpp>
 
@@ -161,6 +162,11 @@ public:
     // constructor from byte_string
     constexpr NibblesView(byte_string const &s) noexcept
         : NibblesView(byte_string_view{s})
+    {
+    }
+
+    constexpr NibblesView(hash256 const &h) noexcept
+        : NibblesView(0, 2 * sizeof(h.bytes), h.bytes)
     {
     }
 

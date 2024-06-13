@@ -74,14 +74,6 @@ namespace
     auto const code_nibbles = concat(code_nibble);
     auto const receipt_nibbles = concat(receipt_nibble);
 
-    template <class T>
-        requires std::same_as<T, bytes32_t> || std::same_as<T, Address>
-    constexpr byte_string to_key(T const &arg)
-    {
-        auto const h = keccak256({arg.bytes, sizeof(arg.bytes)});
-        return byte_string{h.bytes, sizeof(hash256)};
-    }
-
     byte_string encode_account_db(Account const &account)
     {
         byte_string encoded_account;
@@ -605,8 +597,11 @@ TrieDb::~TrieDb() = default;
 
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
-    auto const value =
-        db_.get(concat(state_nibble, NibblesView{to_key(addr)}), block_number_);
+    auto const value = db_.get(
+        concat(
+            state_nibble,
+            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
+        block_number_);
     if (!value.has_value()) {
         return std::nullopt;
     }
@@ -632,7 +627,9 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
 {
     auto const value = db_.get(
         concat(
-            state_nibble, NibblesView{to_key(addr)}, NibblesView{to_key(key)}),
+            state_nibble,
+            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+            NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
         block_number_);
     if (!value.has_value()) {
         STATS_STORAGE_NO_VALUE();
@@ -681,8 +678,8 @@ void TrieDb::commit(
                 if (delta.first != delta.second) {
                     storage_updates.push_front(
                         update_alloc_.emplace_back(Update{
-                            .key = NibblesView{bytes_alloc_.emplace_back(
-                                to_key(key))},
+                            .key = hash_alloc_.emplace_back(
+                                keccak256({key.bytes, sizeof(key.bytes)})),
                             .value =
                                 delta.second == bytes32_t{}
                                     ? std::nullopt
@@ -702,7 +699,8 @@ void TrieDb::commit(
                 account.has_value() && delta.account.first.has_value() &&
                 delta.account.first->incarnation != account->incarnation;
             account_updates.push_front(update_alloc_.emplace_back(Update{
-                .key = NibblesView{bytes_alloc_.emplace_back(to_key(addr))},
+                .key = hash_alloc_.emplace_back(
+                    keccak256({addr.bytes, sizeof(addr.bytes)})),
                 .value = value,
                 .incarnation = incarnation,
                 .next = std::move(storage_updates)}));
@@ -754,6 +752,7 @@ void TrieDb::commit(
 
     update_alloc_.clear();
     bytes_alloc_.clear();
+    hash_alloc_.clear();
 }
 
 void TrieDb::increment_block_number()

@@ -2,6 +2,7 @@
 
 #include <monad/config.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/keccak.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
@@ -30,6 +31,7 @@ class TrieDb final : public ::monad::Db
     ::monad::mpt::Db db_;
     std::list<mpt::Update> update_alloc_;
     std::list<byte_string> bytes_alloc_;
+    std::list<hash256> hash_alloc_;
     uint64_t block_number_;
     Mode mode_;
 

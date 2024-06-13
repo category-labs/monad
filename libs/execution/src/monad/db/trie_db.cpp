@@ -866,21 +866,20 @@ std::string TrieDb::print_stats()
 // n bytes
 //
 
-std::ofstream outf;
-std::ofstream storagef;
-
 void TrieDb::do_to_binary(
     std::filesystem::path dump_snapshot, uint64_t const block_number,
-    bool const iscode)
+    bool const is_code)
 {
     struct Traverse : public TraverseMachine
     {
         TrieDb &db;
         Nibbles path{};
         bool is_code;
+        std::ofstream &outf;
+        std::ofstream &storagef;
 
-        explicit Traverse(TrieDb &db)
-            : db(db)
+        explicit Traverse(TrieDb &db, bool is_code, std::ofstream &outf, std::ofstream &storagef)
+            : db(db), is_code(is_code), outf(outf), storagef(storagef)
         {
         }
 
@@ -1038,8 +1037,10 @@ void TrieDb::do_to_binary(
         }
     };
 
-    Traverse traverse(*this);
-    traverse.is_code = iscode;
+    std::ofstream outf;
+    std::ofstream storagef;
+
+    Traverse traverse(*this, is_code, outf, storagef);
 
     std::filesystem::create_directory(dump_snapshot);
 
@@ -1047,9 +1048,9 @@ void TrieDb::do_to_binary(
 
     std::filesystem::create_directory(dir);
 
-    outf.open(dir / (iscode ? "code" : "accounts"), std::ios_base::binary);
+    outf.open(dir / (is_code ? "code" : "accounts"), std::ios_base::binary);
 
-    if (!iscode) {
+    if (!is_code) {
         storagef.open(dir / "storage", std::ios_base::binary);
     }
 
@@ -1057,7 +1058,7 @@ void TrieDb::do_to_binary(
     // from running on the triedb thread, which include to_binary. Thus, we can
     // only use blocking traversal for RWOnDisk Db, but can still do parallel
     // traverse in other cases.
-    auto const nibs{iscode ? code_nibbles : state_nibbles};
+    auto const nibs{is_code ? code_nibbles : state_nibbles};
     if (mode_ == Mode::OnDisk) {
         MONAD_ASSERT(db_.traverse_blocking(nibs, traverse, block_number_));
     }
@@ -1066,7 +1067,7 @@ void TrieDb::do_to_binary(
         MONAD_ASSERT(db_.traverse(nibs, traverse, block_number_));
     }
 
-    if (!iscode) {
+    if (!is_code) {
         storagef.close();
     }
 

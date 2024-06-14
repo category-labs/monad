@@ -171,6 +171,7 @@ namespace detail
                             // verify version before read
                             if (!verify_func()) {
                                 stopping = true;
+                                return;
                             }
                             receiver_t receiver(
                                 this,

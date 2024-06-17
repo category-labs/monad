@@ -197,9 +197,8 @@ public:
     constexpr NibblesView
     substr(unsigned const pos, unsigned const count = npos) const
     {
+        MONAD_DEBUG_ASSERT(count == npos || count <= (nibble_size() - pos));
         auto const begin_nibble = static_cast<unsigned>(begin_nibble_) + pos;
-        MONAD_DEBUG_ASSERT(
-            count == npos || count <= (nibble_size() - begin_nibble));
         return NibblesView{
             begin_nibble,
             count == npos ? end_nibble_ : (begin_nibble + count),

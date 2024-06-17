@@ -205,6 +205,14 @@ public:
             data_};
     }
 
+    bool starts_with(NibblesView const other) const
+    {
+        if (nibble_size() < other.nibble_size()) {
+            return false;
+        }
+        return substr(0, other.nibble_size()) == other;
+    }
+
     constexpr bool operator==(NibblesView const &other) const
     {
         if (this == &other) {

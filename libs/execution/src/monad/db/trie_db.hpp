@@ -41,7 +41,7 @@ public:
     // parse from binary
     TrieDb(
         std::optional<mpt::OnDiskDbConfig> const &, std::istream &accounts,
-        std::istream &code, uint64_t init_block_number = 0,
+        std::istream &code, std::istream &storage, uint64_t init_block_number = 0,
         size_t buf_size = 1ul << 31);
     ~TrieDb();
 
@@ -58,6 +58,7 @@ public:
     virtual std::string print_stats() override;
 
     nlohmann::json to_json();
+    void to_binary(std::filesystem::path, uint64_t const);
     size_t prefetch_current_root();
     uint64_t get_block_number() const;
 
@@ -70,6 +71,8 @@ private:
     /// STATS
     std::atomic<uint64_t> n_storage_no_value_{0};
     std::atomic<uint64_t> n_storage_value_{0};
+
+    void do_to_binary(std::filesystem::path, uint64_t const, bool const);
 
     void stats_storage_no_value()
     {

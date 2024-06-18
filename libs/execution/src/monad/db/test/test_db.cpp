@@ -517,7 +517,22 @@ TYPED_TEST(DBTest, construct_from_binary)
 {
     std::ifstream accounts(test_resource::checkpoint_dir / "accounts");
     std::ifstream code(test_resource::checkpoint_dir / "code");
-    auto db = this->make_db(accounts, code);
+    std::ifstream storage(test_resource::checkpoint_dir / "storage");
+
+    auto db = this->make_db(accounts, code, storage);
+
+    auto const tempdir = std::filesystem::temp_directory_path();
+
+    db.to_binary(tempdir, 0);
+
+    auto const dir = tempdir / "0";
+
+    std::ifstream accounts1(dir / "accounts");
+    std::ifstream code1(dir / "code");
+    std::ifstream storage1(dir / "storage");
+    auto db1 = this->make_db(accounts1, code1, storage1);
+    EXPECT_EQ(db1.state_root(), db.state_root());
+
     EXPECT_EQ(
         db.state_root(),
         0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);

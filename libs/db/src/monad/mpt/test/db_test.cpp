@@ -968,6 +968,39 @@ TYPED_TEST(DbTraverseTest, trimmed_traverse)
     }
 }
 
+TEST_F(OnDiskDbFixture, move_subtrie)
+{
+    uint64_t const src = 0;
+    uint64_t const dest = 1000;
+    // insert under src
+    auto const &kv = fixed_updates::kv;
+    std::vector<Update> update_alloc{};
+    update_alloc.reserve(kv.size());
+    UpdateList updates;
+    for (auto const &[k, v] : kv) {
+        updates.push_front(update_alloc.emplace_back(make_update(k, v)));
+    }
+    db.upsert(std::move(updates), src);
+
+    EXPECT_EQ(db.get_earliest_block_id(), src);
+    EXPECT_EQ(db.get_latest_block_id(), src);
+    auto const res = db.get_data({}, src);
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(
+        res.value(),
+        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+
+    // move to dest version
+    db.move_subtrie(src, dest);
+    EXPECT_EQ(db.get_earliest_block_id(), dest);
+    EXPECT_EQ(db.get_latest_block_id(), dest);
+    auto const res2 = db.get_data({}, dest);
+    ASSERT_TRUE(res2.has_value());
+    EXPECT_EQ(
+        res2.value(),
+        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+}
+
 TYPED_TEST(DbTest, scalability)
 {
     static constexpr size_t COUNT = 1000000;

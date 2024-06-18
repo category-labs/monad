@@ -491,6 +491,9 @@ public:
         uint64_t version, bool compaction = false,
         bool can_write_to_fast = true);
 
+    Node::UniquePtr move_subtrie(
+        Node::UniquePtr prev_root, StateMachine &, uint64_t src, uint64_t dest);
+
 #if MONAD_MPT_COLLECT_STATS
     detail::TrieUpdateCollectedStats stats;
 #endif

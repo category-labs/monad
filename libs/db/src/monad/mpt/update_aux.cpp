@@ -568,6 +568,34 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     return root;
 }
 
+Node::UniquePtr UpdateAuxImpl::move_subtrie(
+    Node::UniquePtr prev_root, StateMachine &sm, uint64_t const src,
+    uint64_t const dest)
+{
+    MONAD_ASSERT(is_on_disk());
+    auto g(unique_lock());
+    auto g2(set_current_upsert_tid());
+    // db has only one version
+    MONAD_ASSERT(
+        db_metadata()->min_db_history_version.load(std::memory_order_acquire) ==
+            src &&
+        db_metadata()->max_db_history_version.load(std::memory_order_acquire) ==
+            src);
+    auto const src_block_number_prefix =
+        serialize_as_big_endian<BLOCK_NUM_BYTES>(src);
+    auto root = copy_node(
+        *this,
+        std::move(prev_root),
+        src_block_number_prefix,
+        serialize_as_big_endian<BLOCK_NUM_BYTES>(dest));
+    Update u = make_erase(src_block_number_prefix);
+    UpdateList updates;
+    updates.push_front(u);
+    root = upsert(*this, sm, std::move(root), std::move(updates));
+    update_ondisk_db_history_metadata(dest, dest);
+    return root;
+}
+
 void UpdateAuxImpl::advance_compact_offsets()
 {
     MONAD_ASSERT(is_on_disk());

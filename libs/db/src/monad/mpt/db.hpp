@@ -80,6 +80,10 @@ public:
     NodeCursor root() const noexcept;
     std::optional<uint64_t> get_latest_block_id() const;
     std::optional<uint64_t> get_earliest_block_id() const;
+    // This function moves a source trie to under a destination version,
+    // assuming the source trie is the only version present.
+    // Only the RWDb can call this API for state sync purposes.
+    void move_subtrie(uint64_t src, uint64_t dest);
 
     // Always true if not RO. True if this DB is the latest DB (fast)
     bool is_latest() const;

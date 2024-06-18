@@ -87,6 +87,7 @@ struct Db::Impl
     virtual size_t poll(bool blocking, size_t count) = 0;
     virtual bool
     traverse_fiber_blocking(Node &, TraverseMachine &, uint64_t version) = 0;
+    virtual void move_subtrie_fiber_blocking(uint64_t src, uint64_t dest) = 0;
 
     // return true for valid, false for outdated
     virtual bool verify_version_still_valid(uint64_t)
@@ -191,6 +192,11 @@ struct Db::ROOnDisk final : public Db::Impl
         catch (std::exception const &e) { // exception implies UB
             return {NodeCursor{}, find_result::unknown};
         }
+    }
+
+    virtual void move_subtrie_fiber_blocking(uint64_t, uint64_t) override
+    {
+        MONAD_ASSERT(false);
     }
 
     virtual async::result<void> find_async_initiate(
@@ -360,6 +366,11 @@ struct Db::InMemory final : public Db::Impl
     {
         return preorder_traverse(aux(), node, machine, [] { return true; });
     }
+
+    virtual void move_subtrie_fiber_blocking(uint64_t, uint64_t) override
+    {
+        MONAD_ASSERT(false);
+    }
 };
 
 struct Db::RWOnDisk final : public Db::Impl
@@ -390,9 +401,19 @@ struct Db::RWOnDisk final : public Db::Impl
         uint64_t version;
     };
 
+    struct MoveSubtrieRequest
+    {
+        threadsafe_boost_fibers_promise<Node::UniquePtr> *promise;
+        Node::UniquePtr prev_root;
+        StateMachine &sm;
+        uint64_t src;
+        uint64_t dest;
+    };
+
     using Comms = std::variant<
         std::monostate, fiber_find_request_t, FiberUpsertRequest,
-        FiberLoadAllFromBlockRequest, FiberTraverseRequest>;
+        FiberLoadAllFromBlockRequest, FiberTraverseRequest, MoveSubtrieRequest>;
+
     ::moodycamel::ConcurrentQueue<Comms> comms_;
 
     std::mutex lock_;
@@ -475,6 +496,8 @@ struct Db::RWOnDisk final : public Db::Impl
                 prefetch_promises;
             ::boost::container::deque<threadsafe_boost_fibers_promise<bool>>
                 traverse_promises;
+            ::boost::container::deque<threadsafe_boost_fibers_promise<bool>>
+                move_subtrie_promises;
             /* In case you're wondering why we use a vector for a single
             element, it's because for some odd reason the MoodyCamel concurrent
             queue only supports move only types via its iterator interface. No
@@ -540,6 +563,17 @@ struct Db::RWOnDisk final : public Db::Impl
                                 }));
                         }
                     }
+                    else if (auto *req = std::get_if<5>(&request.front());
+                             req != nullptr) {
+                        // Ditto to above
+                        upsert_promises.emplace_back(std::move(*req->promise));
+                        req->promise = &upsert_promises.back();
+                        req->promise->set_value(aux.move_subtrie(
+                            std::move(req->prev_root),
+                            req->sm,
+                            req->src,
+                            req->dest));
+                    }
                     did_nothing = false;
                 }
                 io.poll_nonblocking(1);
@@ -566,8 +600,14 @@ struct Db::RWOnDisk final : public Db::Impl
                        traverse_promises.front().future_has_been_destroyed()) {
                     traverse_promises.pop_front();
                 }
+                while (
+                    !move_subtrie_promises.empty() &&
+                    move_subtrie_promises.front().future_has_been_destroyed()) {
+                    move_subtrie_promises.pop_front();
+                }
                 if (!find_promises.empty() || !upsert_promises.empty() ||
-                    !prefetch_promises.empty() || !traverse_promises.empty()) {
+                    !prefetch_promises.empty() || !traverse_promises.empty() ||
+                    !move_subtrie_promises.empty()) {
                     did_nothing = false;
                 }
                 if (did_nothing) {
@@ -691,6 +731,25 @@ struct Db::RWOnDisk final : public Db::Impl
             .version = version,
             .enable_compaction = enable_compaction,
             .can_write_to_fast = can_write_to_fast});
+        // promise is racily emptied after this point
+        if (worker_->sleeping.load(std::memory_order_acquire)) {
+            std::unique_lock const g(lock_);
+            cond_.notify_one();
+        }
+        root_ = fut.get();
+    }
+
+    virtual void move_subtrie_fiber_blocking(
+        uint64_t const src, uint64_t const dest) override
+    {
+        threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
+        auto fut = promise.get_future();
+        comms_.enqueue(MoveSubtrieRequest{
+            .promise = &promise,
+            .prev_root = std::move(root_),
+            .sm = machine_,
+            .src = src,
+            .dest = dest});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -835,6 +894,13 @@ void Db::upsert(
     MONAD_ASSERT(impl_);
     impl_->upsert_fiber_blocking(
         std::move(list), block_id, enable_compaction, can_write_to_fast);
+}
+
+void Db::move_subtrie(uint64_t const src, uint64_t const dest)
+{
+    MONAD_ASSERT(impl_);
+    impl_->move_subtrie_fiber_blocking(src, dest);
+    return;
 }
 
 bool Db::traverse(

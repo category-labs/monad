@@ -128,7 +128,7 @@ unsigned char const *Node::child_min_offset_fast_data() const noexcept
 }
 
 compact_virtual_chunk_offset_t
-Node::min_offset_fast(unsigned const index) noexcept
+Node::min_offset_fast(unsigned const index) const noexcept
 {
     return unaligned_load<compact_virtual_chunk_offset_t>(
         child_min_offset_fast_data() +
@@ -158,7 +158,7 @@ unsigned char const *Node::child_min_offset_slow_data() const noexcept
 }
 
 compact_virtual_chunk_offset_t
-Node::min_offset_slow(unsigned const index) noexcept
+Node::min_offset_slow(unsigned const index) const noexcept
 {
     return unaligned_load<compact_virtual_chunk_offset_t>(
         child_min_offset_slow_data() +
@@ -187,7 +187,7 @@ unsigned char const *Node::child_min_version_data() const noexcept
            number_of_children() * sizeof(compact_virtual_chunk_offset_t);
 }
 
-int64_t Node::subtrie_min_version(unsigned const index) noexcept
+int64_t Node::subtrie_min_version(unsigned const index) const noexcept
 {
     return unaligned_load<int64_t>(
         child_min_version_data() + index * sizeof(int64_t));
@@ -222,7 +222,7 @@ uint16_t Node::child_data_offset(unsigned const index) const noexcept
         child_off_data() + (index - 1) * sizeof(uint16_t));
 }
 
-unsigned Node::child_data_len(unsigned const index)
+unsigned Node::child_data_len(unsigned const index) const
 {
     return child_data_offset(index + 1) - child_data_offset(index);
 }
@@ -324,7 +324,7 @@ unsigned char const *Node::child_data() const noexcept
     return data_data() + bitpacked.data_len;
 }
 
-byte_string_view Node::child_data_view(unsigned const index) noexcept
+byte_string_view Node::child_data_view(unsigned const index) const noexcept
 {
     MONAD_DEBUG_ASSERT(index < number_of_children());
     return byte_string_view{
@@ -655,7 +655,7 @@ Node *read_node_blocking(
         .release();
 }
 
-int64_t calc_min_version(Node &node)
+int64_t calc_min_version(Node const &node)
 {
     int64_t min_version = node.version;
     for (unsigned i = 0; i < node.number_of_children(); ++i) {

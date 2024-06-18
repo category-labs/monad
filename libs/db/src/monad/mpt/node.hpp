@@ -215,20 +215,22 @@ public:
     //! fastlist min_offset array
     unsigned char *child_min_offset_fast_data() noexcept;
     unsigned char const *child_min_offset_fast_data() const noexcept;
-    compact_virtual_chunk_offset_t min_offset_fast(unsigned index) noexcept;
+    compact_virtual_chunk_offset_t
+    min_offset_fast(unsigned index) const noexcept;
     void set_min_offset_fast(
         unsigned index, compact_virtual_chunk_offset_t) noexcept;
     //! slowlist min_offset array
     unsigned char *child_min_offset_slow_data() noexcept;
     unsigned char const *child_min_offset_slow_data() const noexcept;
-    compact_virtual_chunk_offset_t min_offset_slow(unsigned index) noexcept;
+    compact_virtual_chunk_offset_t
+    min_offset_slow(unsigned index) const noexcept;
     void set_min_offset_slow(
         unsigned index, compact_virtual_chunk_offset_t) noexcept;
 
     //! subtrie min version array
     unsigned char *child_min_version_data() noexcept;
     unsigned char const *child_min_version_data() const noexcept;
-    int64_t subtrie_min_version(unsigned index) noexcept;
+    int64_t subtrie_min_version(unsigned index) const noexcept;
     void set_subtrie_min_version(unsigned index, int64_t version) noexcept;
 
     //! data_offset array
@@ -236,7 +238,7 @@ public:
     unsigned char const *child_off_data() const noexcept;
     uint16_t child_data_offset(unsigned index) const noexcept;
 
-    unsigned child_data_len(unsigned index);
+    unsigned child_data_len(unsigned index) const;
     unsigned child_data_len();
 
     //! path
@@ -263,7 +265,7 @@ public:
     //! child data
     unsigned char *child_data() noexcept;
     unsigned char const *child_data() const noexcept;
-    byte_string_view child_data_view(unsigned index) noexcept;
+    byte_string_view child_data_view(unsigned index) const noexcept;
     unsigned char *child_data(unsigned index) noexcept;
     void set_child_data(unsigned index, byte_string_view data) noexcept;
 
@@ -355,6 +357,6 @@ deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes);
 Node *read_node_blocking(
     MONAD_ASYNC_NAMESPACE::storage_pool &, chunk_offset_t node_offset);
 
-int64_t calc_min_version(Node &node);
+int64_t calc_min_version(Node const &);
 
 MONAD_MPT_NAMESPACE_END

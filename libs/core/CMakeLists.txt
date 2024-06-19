@@ -57,6 +57,8 @@ add_subdirectory("third_party/unordered_dense")
 
 add_subdirectory("third_party/quill" SYSTEM)
 
+add_subdirectory("third_party/rpmalloc")
+
 add_library(
   openssl_sha3_asm INTERFACE
   "third_party/openssl/crypto/sha/asm/keccak1600-avx2.S"
@@ -160,6 +162,7 @@ else()
                              PUBLIC "BOOST_STACKTRACE_USE_ADDR2LINE=1")
   target_link_libraries(monad_core PUBLIC Boost::stacktrace_addr2line)
 endif()
+target_link_libraries(monad_core PUBLIC rpmallocwrap)
 target_link_libraries(monad_core PUBLIC cgroup openssl_sha3_asm uring Boost::fiber
                                         TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)

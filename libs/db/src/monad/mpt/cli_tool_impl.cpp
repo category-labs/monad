@@ -817,8 +817,13 @@ public:
                             monad::mpt::detail::db_metadata::MAGIC_STRING_LEN));
                 });
                 do_([&](monad::mpt::detail::db_metadata *metadata) {
-                    metadata->db_offsets.store(
-                        old_metadata->db_offsets, std::memory_order_release);
+                    metadata->db_offsets.store(old_metadata->db_offsets);
+                    metadata->root_offsets.write_pos.store(
+                        old_metadata->root_offsets.write_pos.load());
+                    memcpy(
+                        &metadata->root_offsets.offset,
+                        &old_metadata->root_offsets.offset,
+                        sizeof(metadata->root_offsets.offset));
                     metadata->slow_fast_ratio = old_metadata->slow_fast_ratio;
                     metadata->min_db_history_version.store(
                         old_metadata->min_db_history_version.load(

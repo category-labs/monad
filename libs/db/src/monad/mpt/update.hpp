@@ -38,7 +38,7 @@ static_assert(alignof(Update) == 8);
 // 2. curr trie leaf update: when opt contains a value, next = nullptr
 // 3. leaf erase: when opt is empty, next = nullptr
 inline Update make_update(
-    monad::byte_string_view const key, monad::byte_string_view const value,
+    NibblesView const key, monad::byte_string_view const value,
     bool const incarnation = false, UpdateList &&next = UpdateList{},
     uint64_t const version = 0) noexcept
 {

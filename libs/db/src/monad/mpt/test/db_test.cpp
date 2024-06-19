@@ -8,8 +8,10 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/hex_literal.hpp>
+#include <monad/core/result.hpp>
 #include <monad/core/small_prng.hpp>
 #include <monad/mpt/db.hpp>
+#include <monad/mpt/db_error.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/mpt/traverse.hpp>
@@ -215,7 +217,8 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
     auto const &kv = fixed_updates::kv;
 
     auto const prefix = 0x00_hex;
-    uint64_t const block_id = 0x123;
+    uint64_t const first_block_id = 0x123;
+    uint64_t const second_block_id = first_block_id + 1;
 
     {
         auto u1 = make_update(kv[0].first, kv[0].second);
@@ -232,27 +235,32 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
         UpdateList ul_prefix;
         ul_prefix.push_front(u_prefix);
 
-        this->db.upsert(std::move(ul_prefix), block_id);
+        this->db.upsert(std::move(ul_prefix), first_block_id);
     }
 
+    // Verify RW
     EXPECT_EQ(
-        this->db.get(prefix + kv[0].first, block_id).value(), kv[0].second);
+        this->db.get(prefix + kv[0].first, first_block_id).value(),
+        kv[0].second);
     EXPECT_EQ(
-        this->db.get(prefix + kv[1].first, block_id).value(), kv[1].second);
+        this->db.get(prefix + kv[1].first, first_block_id).value(),
+        kv[1].second);
     EXPECT_EQ(
-        this->db.get_data(prefix, block_id).value(),
+        this->db.get_data(prefix, first_block_id).value(),
         0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
 
     ReadOnlyOnDiskDbConfig const ro_config{
         .dbname_paths = this->config.dbname_paths};
     Db ro_db{ro_config};
 
-    EXPECT_EQ(ro_db.get(prefix + kv[0].first, block_id).value(), kv[0].second);
-    EXPECT_EQ(ro_db.get(prefix + kv[1].first, block_id).value(), kv[1].second);
+    // Verify RO
     EXPECT_EQ(
-        ro_db.get_data(prefix, block_id).value(),
+        ro_db.get(prefix + kv[0].first, first_block_id).value(), kv[0].second);
+    EXPECT_EQ(
+        ro_db.get(prefix + kv[1].first, first_block_id).value(), kv[1].second);
+    EXPECT_EQ(
+        ro_db.get_data(prefix, first_block_id).value(),
         0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
-    EXPECT_TRUE(ro_db.is_latest());
 
     {
         auto u1 = make_update(kv[2].first, kv[2].second);
@@ -269,35 +277,37 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
         UpdateList ul_prefix;
         ul_prefix.push_front(u_prefix);
 
-        this->db.upsert(std::move(ul_prefix), block_id);
+        this->db.upsert(std::move(ul_prefix), second_block_id);
     }
 
+    // Verify RW database can read new data
     EXPECT_EQ(
-        this->db.get(prefix + kv[2].first, block_id).value(), kv[2].second);
+        this->db.get(prefix + kv[2].first, second_block_id).value(),
+        kv[2].second);
     EXPECT_EQ(
-        this->db.get(prefix + kv[3].first, block_id).value(), kv[3].second);
+        this->db.get(prefix + kv[3].first, second_block_id).value(),
+        kv[3].second);
     EXPECT_EQ(
-        this->db.get_data(prefix, block_id).value(),
+        this->db.get_data(prefix, second_block_id).value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
 
-    // This needs to not change until told
-    EXPECT_FALSE(ro_db.is_latest());
-    EXPECT_EQ(ro_db.get(prefix + kv[0].first, block_id).value(), kv[0].second);
-    EXPECT_EQ(ro_db.get(prefix + kv[1].first, block_id).value(), kv[1].second);
+    // Verify RO database can read new data
     EXPECT_EQ(
-        ro_db.get_data(prefix, block_id).value(),
+        ro_db.get(prefix + kv[2].first, second_block_id).value(), kv[2].second);
+    EXPECT_EQ(
+        ro_db.get(prefix + kv[3].first, second_block_id).value(), kv[3].second);
+    EXPECT_EQ(
+        ro_db.get_data(prefix, second_block_id).value(),
+        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+
+    // Can still read data at previous block id
+    EXPECT_EQ(
+        ro_db.get(prefix + kv[0].first, first_block_id).value(), kv[0].second);
+    EXPECT_EQ(
+        ro_db.get(prefix + kv[1].first, first_block_id).value(), kv[1].second);
+    EXPECT_EQ(
+        ro_db.get_data(prefix, first_block_id).value(),
         0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
-
-    EXPECT_FALSE(ro_db.is_latest());
-    ro_db.load_latest();
-    EXPECT_TRUE(ro_db.is_latest());
-
-    // New one reports new
-    EXPECT_EQ(ro_db.get(prefix + kv[2].first, block_id).value(), kv[2].second);
-    EXPECT_EQ(ro_db.get(prefix + kv[3].first, block_id).value(), kv[3].second);
-    EXPECT_EQ(
-        ro_db.get_data(prefix, block_id).value(),
-        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
 }
 
 TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
@@ -305,34 +315,37 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
     auto const &kv = fixed_updates::kv;
 
     auto const prefix = 0x00_hex;
-    uint64_t const block_id = 0x123;
+    uint64_t const starting_block_id = 0x0;
 
-    {
-        auto u1 = make_update(kv[0].first, kv[0].second);
-        auto u2 = make_update(kv[1].first, kv[1].second);
-        UpdateList ul;
-        ul.push_front(u1);
-        ul.push_front(u2);
+    auto upsert =
+        [&]<class... Updates>(uint64_t const block_id, Updates... updates) {
+            UpdateList ul;
+            (ul.push_front(updates), ...);
 
-        auto u_prefix = Update{
-            .key = prefix,
-            .value = monad::byte_string_view{},
-            .incarnation = false,
-            .next = std::move(ul)};
-        UpdateList ul_prefix;
-        ul_prefix.push_front(u_prefix);
+            auto u_prefix = Update{
+                .key = prefix,
+                .value = monad::byte_string_view{},
+                .incarnation = false,
+                .next = std::move(ul)};
+            UpdateList ul_prefix;
+            ul_prefix.push_front(u_prefix);
 
-        this->db.upsert(std::move(ul_prefix), block_id);
-    }
+            this->db.upsert(std::move(ul_prefix), block_id);
+        };
+    upsert(
+        starting_block_id,
+        make_update(kv[0].first, kv[0].second),
+        make_update(kv[1].first, kv[1].second));
+
     ReadOnlyOnDiskDbConfig const ro_config{
         .dbname_paths = this->config.dbname_paths};
     Db ro_db{ro_config};
 
-    auto async_get = [&](auto &&sender) -> monad::byte_string {
+    auto async_get = [&](auto &&sender) -> monad::Result<monad::byte_string> {
         using sender_type = std::decay_t<decltype(sender)>;
         struct receiver_t
         {
-            monad::byte_string ret;
+            std::optional<monad::Result<monad::byte_string>> ret;
 
             enum : bool
             {
@@ -343,31 +356,104 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
                 monad::async::erased_connected_operation *,
                 sender_type::result_type res)
             {
-                MONAD_ASSERT(res);
-                MONAD_ASSERT(!res.assume_value().empty());
-                ret = std::move(res).assume_value();
+                ret.emplace(std::move(res));
             }
         };
         auto *state =
             new auto(monad::async::connect(std::move(sender), receiver_t{}));
         state->initiate();
-        while (state->receiver().ret.empty()) {
+        while (!state->receiver().ret.has_value()) {
             ro_db.poll(false);
         }
-        auto ret(std::move(state->receiver().ret));
+        auto ret(std::move(state->receiver().ret.value()));
         delete state;
         return ret;
     };
 
+    size_t i;
+    for (i = 1; i < UpdateAuxImpl::VERSION_HISTORY_LEN; ++i) {
+        // upsert new version
+        upsert(
+            starting_block_id + i,
+            make_update(kv[2].first, kv[2].second),
+            make_update(kv[3].first, kv[3].second));
+
+        // ensure we can still async query the old version
+        EXPECT_EQ(
+            async_get(
+                make_get_sender(ro_db, prefix + kv[0].first, starting_block_id))
+                .value(),
+            kv[0].second);
+        EXPECT_EQ(
+            async_get(
+                make_get_sender(ro_db, prefix + kv[1].first, starting_block_id))
+                .value(),
+            kv[1].second);
+        EXPECT_EQ(
+            async_get(make_get_data_sender(ro_db, prefix, starting_block_id))
+                .value(),
+            0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+    }
+
+    // This will exceed the ring buffer capacity, evicting the first block
+    upsert(
+        starting_block_id + i,
+        make_update(kv[2].first, kv[2].second),
+        make_update(kv[3].first, kv[3].second));
+    auto bad_read = async_get(
+        make_get_sender(ro_db, prefix + kv[0].first, starting_block_id));
+    EXPECT_TRUE(bad_read.has_error());
+    EXPECT_EQ(bad_read.error(), DbError::key_not_found);
+}
+
+TEST_F(OnDiskDbFixture, ro_historical)
+{
+    auto const &kv = fixed_updates::kv;
+
+    auto const prefix = 0x00_hex;
+    uint64_t const block_id = 0;
+
+    auto upsert = [&](monad::byte_string_view k,
+                      monad::byte_string_view v,
+                      uint64_t const upsert_block_id) {
+        auto u = make_update(k, v);
+        UpdateList ul;
+        ul.push_front(u);
+
+        auto u_prefix = Update{
+            .key = prefix,
+            .value = monad::byte_string_view{},
+            .incarnation = false,
+            .next = std::move(ul)};
+        UpdateList ul_prefix;
+        ul_prefix.push_front(u_prefix);
+
+        this->db.upsert(std::move(ul_prefix), upsert_block_id);
+    };
+
+    // upsert first block_id
+    upsert(kv[0].first, kv[0].second, block_id);
     EXPECT_EQ(
-        async_get(make_get_sender(ro_db, prefix + kv[0].first, block_id)),
-        kv[0].second);
-    EXPECT_EQ(
-        async_get(make_get_sender(ro_db, prefix + kv[1].first, block_id)),
-        kv[1].second);
-    EXPECT_EQ(
-        async_get(make_get_data_sender(ro_db, prefix, block_id)),
-        0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+        this->db.get(prefix + kv[0].first, block_id).value(), kv[0].second);
+
+    size_t i;
+    for (i = 1; i < UpdateAuxImpl::VERSION_HISTORY_LEN; ++i) {
+        // Write next block_id
+        upsert(kv[1].first, kv[1].second, block_id + i);
+        // can still query earlier block_id from rw
+        EXPECT_EQ(
+            this->db.get(prefix + kv[0].first, block_id).value(), kv[0].second);
+        // New block is written too...
+        EXPECT_EQ(
+            this->db.get(prefix + kv[1].first, block_id + i).value(),
+            kv[1].second);
+    }
+
+    // This will exceed ring buffer capacity, evicting the first block
+    upsert(kv[1].first, kv[1].second, block_id + i);
+    auto bad_read = this->db.get(prefix + kv[0].first, block_id);
+    EXPECT_TRUE(bad_read.has_error());
+    EXPECT_EQ(bad_read.error(), DbError::key_not_found);
 }
 
 TEST(ReadOnlyDbTest, error_open_empty_rodb)
@@ -400,7 +486,7 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
 
     auto upsert_new_version = [](Db &db, uint64_t const version) {
         UpdateList ls;
-        auto const key = serialize_as_big_endian<BLOCK_NUM_BYTES>(version);
+        auto const key = serialize_as_big_endian<6>(version);
         auto const value = key;
         Update u = make_update(key, value);
         ls.push_front(u);
@@ -414,14 +500,12 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
         Db ro_db{ro_config};
 
         uint64_t read_version = 0;
-        auto version_bytes =
-            serialize_as_big_endian<BLOCK_NUM_BYTES>(read_version);
+        auto version_bytes = serialize_as_big_endian<6>(read_version);
 
         unsigned nsuccess = 0;
         unsigned nfailed = 0;
 
         while (!done.load(std::memory_order_acquire)) {
-            ro_db.load_latest();
             auto res = ro_db.get(version_bytes, read_version);
             if (res.has_value()) {
                 EXPECT_EQ(res.value(), version_bytes);
@@ -508,7 +592,7 @@ TEST(DbTest, read_only_db_traverse_concurrent)
     DummyTraverseMachine traverse_machine;
 
     // read thread loop to traverse block 0 until it gets erased
-    auto res = ro_db.find({}, 0);
+    auto res = ro_db.load_root_for_version(0);
     ASSERT_TRUE(res.has_value());
     ASSERT_TRUE(res.value().is_valid());
     while (ro_db.traverse(res.value(), traverse_machine, 0)) {
@@ -516,7 +600,9 @@ TEST(DbTest, read_only_db_traverse_concurrent)
 
     done.store(true, std::memory_order_release);
     writer.join();
-    EXPECT_TRUE(version > UpdateAuxImpl::version_history_len);
+    EXPECT_TRUE(version >= UpdateAuxImpl::VERSION_HISTORY_LEN)
+        << "Version " << version << " should be gte"
+        << UpdateAuxImpl::VERSION_HISTORY_LEN;
 }
 
 TEST(DBTest, benchmark_blocking_parallel_traverse)
@@ -540,13 +626,8 @@ TEST(DBTest, benchmark_blocking_parallel_traverse)
 
     // benchmark traverse
     DummyTraverseMachine traverse_machine{};
-
-    auto res_cursor = db.find({}, 0);
-    ASSERT_TRUE(res_cursor.has_value());
-    ASSERT_TRUE(res_cursor.value().is_valid());
-
     auto begin = std::chrono::steady_clock::now();
-    ASSERT_TRUE(db.traverse(res_cursor.value(), traverse_machine, 0));
+    ASSERT_TRUE(db.traverse(db.root(), traverse_machine, 0));
     auto end = std::chrono::steady_clock::now();
     auto const parallel_elapsed =
         std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
@@ -555,7 +636,7 @@ TEST(DBTest, benchmark_blocking_parallel_traverse)
               << " ms, ";
 
     begin = std::chrono::steady_clock::now();
-    ASSERT_TRUE(db.traverse_blocking(res_cursor.value(), traverse_machine, 0));
+    ASSERT_TRUE(db.traverse_blocking(db.root(), traverse_machine, 0));
     end = std::chrono::steady_clock::now();
     auto const blocking_elapsed =
         std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
@@ -684,18 +765,20 @@ TYPED_TEST(DbTest, simple_with_same_prefix)
     ASSERT_TRUE(res.has_value());
     NodeCursor const root_under_prefix = res.value();
     EXPECT_EQ(
-        this->db.find(root_under_prefix, kv[2].first).value().node->value(),
+        this->db.find(root_under_prefix, kv[2].first, block_id)
+            .value()
+            .node->value(),
         kv[2].second);
     EXPECT_EQ(
-        this->db.find(root_under_prefix, kv[3].first).value().node->value(),
+        this->db.find(root_under_prefix, kv[3].first, block_id)
+            .value()
+            .node->value(),
         kv[3].second);
     EXPECT_EQ(
-        this->db.get_data(root_under_prefix, {}).value(),
+        this->db.get_data(root_under_prefix, {}, block_id).value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
-    auto prefix_to_next_root =
-        serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id) + prefix;
     EXPECT_EQ(
-        this->db.get_data(this->db.root(), prefix_to_next_root).value(),
+        this->db.get_data(this->db.root(), prefix, block_id).value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
 
     EXPECT_FALSE(this->db.get(0x01_hex, block_id).has_value());
@@ -765,18 +848,21 @@ TYPED_TEST(DbTest, simple_with_increasing_block_id_prefix)
     ASSERT_TRUE(res.has_value());
     NodeCursor const root_under_prefix = res.value();
     EXPECT_EQ(
-        this->db.find(root_under_prefix, kv[2].first).value().node->value(),
+        this->db.find(root_under_prefix, kv[2].first, block_id)
+            .value()
+            .node->value(),
         kv[2].second);
     EXPECT_EQ(
-        this->db.find(root_under_prefix, kv[3].first).value().node->value(),
+        this->db.find(root_under_prefix, kv[3].first, block_id)
+            .value()
+            .node->value(),
         kv[3].second);
     EXPECT_EQ(
-        this->db.get_data(root_under_prefix, {}).value(),
+        this->db.get_data(root_under_prefix, {}, block_id).value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
-    auto prefix_to_next_root =
-        serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id) + prefix;
     EXPECT_EQ(
-        this->db.get_data(this->db.root(), prefix_to_next_root).value(),
+        this->db.get_data(this->db.root(), NibblesView{prefix}, block_id)
+            .value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
 
     EXPECT_FALSE(this->db.get(0x01_hex, block_id).has_value());
@@ -815,7 +901,7 @@ TYPED_TEST(DbTraverseTest, traverse)
                 EXPECT_TRUE(node.has_value());
                 EXPECT_EQ(node.value(), monad::byte_string_view{});
                 EXPECT_TRUE(node.has_path());
-                EXPECT_EQ(node.path_nibble_view(), make_nibbles({0x0}));
+                EXPECT_EQ(node.path_nibble_view(), make_nibbles({0x0, 0x0}));
             }
             else if (branch == 1) {
                 EXPECT_EQ(node.number_of_children(), 2);
@@ -889,14 +975,11 @@ TYPED_TEST(DbTraverseTest, traverse)
         }
     };
 
-    auto res_cursor = this->db.find(this->prefix, this->block_id);
-    ASSERT_TRUE(res_cursor.has_value());
-    ASSERT_TRUE(res_cursor.value().is_valid());
     {
         size_t num_leaves = 0;
         SimpleTraverse traverse{num_leaves};
         ASSERT_TRUE(
-            this->db.traverse(res_cursor.value(), traverse, this->block_id));
+            this->db.traverse(this->db.root(), traverse, this->block_id));
         EXPECT_EQ(num_leaves, 4);
     }
 
@@ -904,7 +987,7 @@ TYPED_TEST(DbTraverseTest, traverse)
         size_t num_leaves = 0;
         SimpleTraverse traverse{num_leaves};
         ASSERT_TRUE(this->db.traverse_blocking(
-            res_cursor.value(), traverse, this->block_id));
+            this->db.root(), traverse, this->block_id));
         EXPECT_EQ(traverse.num_up, 6);
         EXPECT_EQ(num_leaves, 4);
     }
@@ -968,7 +1051,7 @@ TYPED_TEST(DbTraverseTest, trimmed_traverse)
     }
 }
 
-TEST_F(OnDiskDbFixture, move_subtrie)
+TEST_F(OnDiskDbFixture, update_single_trie_version)
 {
     uint64_t const src = 0;
     uint64_t const dest = 1000;
@@ -976,35 +1059,94 @@ TEST_F(OnDiskDbFixture, move_subtrie)
     auto const &kv = fixed_updates::kv;
     std::vector<Update> update_alloc{};
     update_alloc.reserve(kv.size());
-    UpdateList updates;
+    UpdateList ul;
     for (auto const &[k, v] : kv) {
-        updates.push_front(update_alloc.emplace_back(make_update(k, v)));
+        ul.push_front(update_alloc.emplace_back(make_update(k, v)));
     }
-    db.upsert(std::move(updates), src);
+    monad::byte_string const prefix{0x00_hex};
+    auto u_prefix = Update{
+        .key = prefix,
+        .value = monad::byte_string_view{},
+        .incarnation = false,
+        .next = std::move(ul)};
+    UpdateList ul_prefix;
+    ul_prefix.push_front(u_prefix);
+    db.upsert(std::move(ul_prefix), src);
 
     EXPECT_EQ(db.get_earliest_block_id(), src);
     EXPECT_EQ(db.get_latest_block_id(), src);
-    auto const res = db.get_data({}, src);
+    auto const res = db.get_data(prefix, src);
     ASSERT_TRUE(res.has_value());
     EXPECT_EQ(
         res.value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
 
-    // move to dest version
-    db.move_subtrie(src, dest);
+    // update to dest version
+    db.update_single_trie_version(src, dest);
     EXPECT_EQ(db.get_earliest_block_id(), dest);
     EXPECT_EQ(db.get_latest_block_id(), dest);
-    auto const res2 = db.get_data({}, dest);
+    auto const res2 = db.get_data(prefix, dest);
     ASSERT_TRUE(res2.has_value());
     EXPECT_EQ(
         res2.value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
 }
 
+TEST_F(OnDiskDbFixture, rw_query_old_version)
+{
+    auto const &kv = fixed_updates::kv;
+
+    auto const prefix = 0x00_hex;
+    uint64_t const block_id = 0;
+
+    auto write = [&](monad::byte_string_view k,
+                     monad::byte_string_view v,
+                     uint64_t const upsert_block_id) {
+        auto u = make_update(k, v);
+        UpdateList ul;
+        ul.push_front(u);
+
+        auto u_prefix = Update{
+            .key = prefix,
+            .value = monad::byte_string_view{},
+            .incarnation = false,
+            .next = std::move(ul)};
+        UpdateList ul_prefix;
+        ul_prefix.push_front(u_prefix);
+
+        this->db.upsert(std::move(ul_prefix), upsert_block_id);
+    };
+
+    // Write first block_id
+    write(kv[0].first, kv[0].second, block_id);
+    EXPECT_EQ(
+        this->db.get(prefix + kv[0].first, block_id).value(), kv[0].second);
+
+    size_t i;
+    for (i = 1; i < UpdateAuxImpl::VERSION_HISTORY_LEN; ++i) {
+        // Write next block_id
+        write(kv[1].first, kv[1].second, block_id + i);
+        // can still query earlier block_id from rw
+        EXPECT_EQ(
+            this->db.get(prefix + kv[0].first, block_id).value(), kv[0].second);
+        // New block is written too...
+        EXPECT_EQ(
+            this->db.get(prefix + kv[1].first, block_id + i).value(),
+            kv[1].second);
+    }
+
+    // This will exceed the ring buffer capacity, kicking out the first write.
+    write(kv[1].first, kv[1].second, block_id + i);
+    auto bad_read = this->db.get(prefix + kv[0].first, block_id);
+    EXPECT_TRUE(bad_read.has_error());
+    EXPECT_EQ(bad_read.error(), DbError::key_not_found);
+}
+
 TYPED_TEST(DbTest, scalability)
 {
     static constexpr size_t COUNT = 1000000;
     static constexpr size_t MAX_CONCURRENCY = 32;
+    static constexpr uint64_t BLOCK_ID = 0x123;
     std::vector<monad::byte_string> keys;
     {
         std::vector<monad::mpt::Update> updates;
@@ -1023,7 +1165,7 @@ TYPED_TEST(DbTest, scalability)
             updates.emplace_back(make_update(keys.back(), keys.back()));
             ul.push_front(updates.back());
         }
-        this->db.upsert(std::move(ul));
+        this->db.upsert(std::move(ul), BLOCK_ID);
     }
     std::vector<std::thread> threads;
     std::vector<::boost::fibers::fiber> fibers;
@@ -1046,7 +1188,7 @@ TYPED_TEST(DbTest, scalability)
                     }
                     while (latch.load(std::memory_order_relaxed) == 0) {
                         size_t const idx = rand() % COUNT;
-                        auto r = this->db.get(keys[idx]);
+                        auto r = this->db.get(keys[idx], BLOCK_ID);
                         MONAD_ASSERT(r);
                         ops.fetch_add(1, std::memory_order_relaxed);
                         ::boost::this_fiber::yield();
@@ -1094,7 +1236,7 @@ TYPED_TEST(DbTest, scalability)
                     }
                     while (latch.load(std::memory_order_relaxed) == 0) {
                         size_t const idx = rand() % COUNT;
-                        auto r = this->db.get(keys[idx]);
+                        auto r = this->db.get(keys[idx], BLOCK_ID);
                         MONAD_ASSERT(r);
                         ops.fetch_add(1, std::memory_order_relaxed);
                         ::boost::this_fiber::yield();

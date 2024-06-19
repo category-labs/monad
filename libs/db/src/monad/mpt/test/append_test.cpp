@@ -34,7 +34,7 @@ TYPED_TEST_SUITE(AppendTest, AppendTestTypes);
 
 TYPED_TEST(AppendTest, works)
 {
-    auto const last_root_off = this->state()->aux.get_root_offset();
+    auto const last_root_off = this->state()->aux.get_latest_root_offset();
     auto const last_slow_off =
         this->state()->aux.get_start_of_wip_slow_offset();
     auto const last_fast_off =
@@ -51,7 +51,7 @@ TYPED_TEST(AppendTest, works)
     // Reset offsets
     this->state()->aux.advance_offsets_to(
         last_root_off, last_fast_off, last_slow_off);
-    EXPECT_EQ(last_root_off, this->state()->aux.get_root_offset());
+    EXPECT_EQ(last_root_off, this->state()->aux.get_latest_root_offset());
     EXPECT_EQ(last_slow_off, this->state()->aux.get_start_of_wip_slow_offset());
     EXPECT_EQ(last_fast_off, this->state()->aux.get_start_of_wip_fast_offset());
 
@@ -67,7 +67,7 @@ TYPED_TEST(AppendTest, works)
     // Check number of chunks in use and current starting offsets are of the
     // same as before rewind
     EXPECT_EQ(this->state()->fast_list_ids().size(), 2);
-    EXPECT_EQ(this->state()->aux.get_root_offset(), last_root_off);
+    EXPECT_EQ(this->state()->aux.get_latest_root_offset(), last_root_off);
     EXPECT_EQ(this->state()->aux.get_start_of_wip_fast_offset(), last_fast_off);
     EXPECT_EQ(this->state()->aux.get_start_of_wip_slow_offset(), last_slow_off);
     EXPECT_EQ(

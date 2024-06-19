@@ -37,7 +37,7 @@ private:
 
         // reset fast offset to close to the end of last chunk
         state()->aux.advance_offsets_to(
-            state()->aux.get_root_offset(),
+            state()->aux.get_latest_root_offset(),
             fast_offset_rewind_to,
             state()->aux.get_start_of_wip_slow_offset());
         this->state()->aux.rewind_to_match_offsets();

@@ -208,7 +208,7 @@ struct cli_tool_fixture
                 monad::async::AsyncIO testio(pool, testrwbuf);
                 monad::mpt::UpdateAux<> const aux{&testio};
                 monad::mpt::Node::UniquePtr root_ptr{
-                    read_node_blocking(pool, aux.get_root_offset())};
+                    read_node_blocking(pool, aux.get_latest_root_offset())};
                 monad::mpt::NodeCursor const root(*root_ptr);
 
                 for (auto &key : this->state()->keys) {
@@ -301,7 +301,7 @@ struct cli_tool_fixture
                     monad::async::AsyncIO testio(pool, testrwbuf);
                     monad::mpt::UpdateAux<> const aux{&testio};
                     monad::mpt::Node::UniquePtr root_ptr{
-                        read_node_blocking(pool, aux.get_root_offset())};
+                        read_node_blocking(pool, aux.get_latest_root_offset())};
                     monad::mpt::NodeCursor const root(*root_ptr);
 
                     for (auto &key : this->state()->keys) {

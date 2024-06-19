@@ -622,144 +622,12 @@ TYPED_TEST(TrieTest, upsert_var_len_keys_nested)
         0x2c077fecb021212686442677ecd59ac2946c34e398b723cf1be431239cb11858_hex);
 }
 
-TYPED_TEST(TrieTest, nested_updates_block_no)
-{
-    this->sm = std::make_unique<StateMachineWithBlockNo>();
-
-    std::vector<std::pair<monad::byte_string, monad::byte_string>> const kv{
-        {0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbdd_hex,
-         0x1234_hex},
-        {0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbcc_hex,
-         0x1234_hex}};
-    std::vector<std::pair<monad::byte_string, monad::byte_string>> storage_kv{
-        {0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbdd_hex,
-         0xbeef_hex},
-        {0xabcdaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_hex,
-         0xdeadbeef_hex},
-        {0xabcdeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_hex,
-         0xcafe_hex}};
-
-    Update a = make_update(storage_kv[0].first, storage_kv[0].second);
-    Update b = make_update(storage_kv[1].first, storage_kv[1].second);
-    Update c = make_update(storage_kv[2].first, storage_kv[2].second);
-    UpdateList storage;
-    storage.push_front(a);
-    storage.push_front(b);
-    storage.push_front(c);
-    UpdateList state_changes;
-    Update s1 =
-        make_update(kv[0].first, kv[0].second, false, std::move(storage));
-    Update s2 = make_update(kv[1].first, kv[1].second);
-    state_changes.push_front(s1);
-    state_changes.push_front(s2);
-    auto block_num = 0x000000000001_hex;
-    auto block_num2 = 00000000000002_hex;
-    this->root = upsert_updates(
-        this->aux,
-        *this->sm,
-        {},
-        make_update(block_num, {}, false, std::move(state_changes)));
-    auto [state_it, res] = find_blocking(this->aux, *this->root, block_num);
-    EXPECT_EQ(res, monad::mpt::find_result::success);
-    EXPECT_EQ(
-        state_it.node->data(),
-        0x9050b05948c3aab28121ad71b3298a887cdadc55674a5f234c34aa277fbd0325_hex);
-
-    { // update the block_num leaf's value and its nested subtrie
-        UpdateList state_changes;
-        state_changes.push_front(s2); // no change in nested state trie
-        monad::byte_string const leaf_value = 0x01020304_hex;
-        this->root = upsert_updates(
-            this->aux,
-            *this->sm,
-            std::move(this->root),
-            make_update(
-                block_num, leaf_value, false, std::move(state_changes)));
-        auto [state_it, res] = find_blocking(this->aux, *this->root, block_num);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
-        EXPECT_EQ(
-            state_it.node->value(),
-            leaf_value); // state_root leaf has updated
-        EXPECT_EQ(
-            state_it.node->data(), // hash for state trie remains the same
-            0x9050b05948c3aab28121ad71b3298a887cdadc55674a5f234c34aa277fbd0325_hex);
-    }
-    // copy state root to block_num2
-    this->root =
-        copy_node(this->aux, std::move(this->root), block_num, block_num2);
-    this->root = upsert_updates(
-        this->aux,
-        *this->sm,
-        std::move(this->root),
-        make_update(block_num2, monad::byte_string_view{}));
-    {
-        auto [state_it, res] =
-            find_blocking(this->aux, *this->root, block_num2);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
-        EXPECT_EQ(
-            state_it.node->data(),
-            0x9050b05948c3aab28121ad71b3298a887cdadc55674a5f234c34aa277fbd0325_hex);
-    }
-    {
-        auto [old_state_it, res] =
-            find_blocking(this->aux, *this->root, block_num);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
-        EXPECT_EQ(old_state_it.node->next(0), nullptr);
-        EXPECT_EQ(
-            old_state_it.node->data(),
-            0x9050b05948c3aab28121ad71b3298a887cdadc55674a5f234c34aa277fbd0325_hex);
-    }
-    // copy state root to block_num3, update block_num3's leaf data
-    auto block_num3 = 0x000000000003_hex;
-    this->root =
-        copy_node(this->aux, std::move(this->root), block_num2, block_num3);
-    this->root = upsert_updates(
-        this->aux,
-        *this->sm,
-        std::move(this->root),
-        make_update(block_num3, 0xdeadbeef03_hex));
-    {
-        auto [state_it, res] =
-            find_blocking(this->aux, *this->root, block_num3);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
-        EXPECT_EQ(
-            state_it.node->data(),
-            0x9050b05948c3aab28121ad71b3298a887cdadc55674a5f234c34aa277fbd0325_hex);
-        EXPECT_EQ(state_it.node->value(), 0xdeadbeef03_hex);
-    }
-    {
-        auto [state_it, res] =
-            find_blocking(this->aux, *this->root, block_num2);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
-        EXPECT_EQ(
-            state_it.node->data(),
-            0x9050b05948c3aab28121ad71b3298a887cdadc55674a5f234c34aa277fbd0325_hex);
-        EXPECT_EQ(state_it.node->value(), monad::byte_string_view{});
-    }
-    // copy state root from block_num2 to block_num3 again. In on-disk trie
-    // case, block_num2 leaf is on disk and block_num3 leaf in memory,
-    // find_blocking() will read for leaf of block_num2, and update curr
-    // block_num3 leaf to the same as block_num2.
-    this->root =
-        copy_node(this->aux, std::move(this->root), block_num2, block_num3);
-    {
-        auto [state_it, res] =
-            find_blocking(this->aux, *this->root, block_num3);
-        EXPECT_EQ(res, monad::mpt::find_result::success);
-        EXPECT_EQ(
-            state_it.node->data(),
-            0x9050b05948c3aab28121ad71b3298a887cdadc55674a5f234c34aa277fbd0325_hex);
-        // leaf data changed here
-        EXPECT_EQ(state_it.node->value(), monad::byte_string_view{});
-    }
-}
-
 TYPED_TEST(TrieTest, verify_correct_compute_at_section_edge)
 {
-    this->sm = std::make_unique<StateMachineWithBlockNo>();
+    auto const prefix1 = 0x00_hex;
+    auto const prefix2 = 0x01_hex;
+    this->sm = std::make_unique<StateMachineMerkleWithPrefix<2>>();
 
-    auto const block_num1 = 0x000000000001_hex;
-    auto const block_num2 = 0x000000000002_hex;
     auto const key = 0x123456_hex;
     auto const value = 0xdeadbeef_hex;
 
@@ -772,20 +640,20 @@ TYPED_TEST(TrieTest, verify_correct_compute_at_section_edge)
         this->aux,
         *this->sm,
         {},
-        make_update(block_num1, empty_value),
-        make_update(block_num2, empty_value, false, std::move(next)));
+        make_update(prefix1, empty_value),
+        make_update(prefix2, empty_value, false, std::move(next)));
 
     EXPECT_EQ(this->root->child_data_len(1), 0);
     EXPECT_EQ(this->root->child_data_len(), 0);
 
-    // leaf is the end of block_num2 section, also root of account trie
-    Node *const block_num2_leaf = this->root->next(1);
-    EXPECT_EQ(block_num2_leaf->has_value(), true);
-    EXPECT_EQ(block_num2_leaf->path_nibbles_len(), 0);
-    EXPECT_EQ(block_num2_leaf->child_data_len(0), 10);
-    EXPECT_EQ(block_num2_leaf->data().size(), 32);
+    // leaf is the end of prefix2 section, also root of account trie
+    Node *const prefix2_leaf = this->root->next(1);
+    EXPECT_EQ(prefix2_leaf->has_value(), true);
+    EXPECT_EQ(prefix2_leaf->path_nibbles_len(), 0);
+    EXPECT_EQ(prefix2_leaf->child_data_len(0), 10);
+    EXPECT_EQ(prefix2_leaf->data().size(), 32);
     EXPECT_EQ(
-        block_num2_leaf->data(),
+        prefix2_leaf->data(),
         0x82efc3b165cba3705dec8fe0f7d8ec6692ae82605bdea6058d2237535dc6aa9b_hex);
 }
 
@@ -809,14 +677,13 @@ TYPED_TEST(TrieTest, root_data_always_hashed)
 
 TYPED_TEST(TrieTest, aux_do_update_fixed_history_len)
 {
-    this->sm = std::make_unique<StateMachineWithBlockNo>();
+    auto const prefix = 0x00_hex;
+    this->sm = std::make_unique<StateMachineMerkleWithPrefix<2>>();
 
     auto const &kv = fixed_updates::kv;
     uint64_t const start_block_id = 0x123;
-    auto const prefix = 0x00_hex;
 
     auto upsert_same_kv_once = [&](uint64_t const block_id) {
-        auto block_num = serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id);
         auto u1 = make_update(kv[0].first, kv[0].second);
         auto u2 = make_update(kv[1].first, kv[1].second);
         UpdateList ul;
@@ -836,8 +703,7 @@ TYPED_TEST(TrieTest, aux_do_update_fixed_history_len)
             std::move(ul_prefix),
             block_id,
             true /*compaction*/);
-        auto [state_it, res] =
-            find_blocking(this->aux, *this->root, block_num + prefix);
+        auto [state_it, res] = find_blocking(this->aux, *this->root, prefix);
         EXPECT_EQ(res, find_result::success);
         EXPECT_EQ(
             state_it.node->data(),
@@ -845,25 +711,18 @@ TYPED_TEST(TrieTest, aux_do_update_fixed_history_len)
         // check db maintain expected historical versions
         if (this->aux.is_on_disk()) {
             if (block_id - start_block_id <
-                UpdateAuxImpl::version_history_len) {
+                UpdateAuxImpl::VERSION_HISTORY_LEN) {
                 EXPECT_EQ(
-                    this->aux.max_version_in_db_history(*this->root) -
-                        this->aux.min_version_in_db_history(*this->root),
+                    this->aux.max_version_in_db_history() -
+                        this->aux.min_version_in_db_history(),
                     block_id - start_block_id);
             }
             else {
                 EXPECT_EQ(
-                    this->aux.max_version_in_db_history(*this->root) -
-                        this->aux.min_version_in_db_history(*this->root),
-                    UpdateAuxImpl::version_history_len);
+                    this->aux.max_version_in_db_history() -
+                        this->aux.min_version_in_db_history(),
+                    UpdateAuxImpl::VERSION_HISTORY_LEN);
             }
-        }
-        else {
-            EXPECT_EQ(
-                this->aux.max_version_in_db_history(*this->root), block_id);
-            EXPECT_EQ(
-                this->aux.min_version_in_db_history(*this->root),
-                start_block_id);
         }
     };
     for (uint64_t i = 0; i < 400; ++i) {
@@ -940,7 +799,9 @@ TYPED_TEST(TrieTest, variable_length_trie)
 
 TYPED_TEST(TrieTest, variable_length_trie_with_prefix)
 {
-    this->sm = std::make_unique<StateMachineVarLenTrieWithBlockNo>();
+    auto const prefix = 0x00_hex;
+
+    this->sm = std::make_unique<StateMachineVarLenTrieWithPrefix<2>>();
 
     auto const key0 = 0x80_hex;
     auto const key1 = 0x01_hex;
@@ -950,10 +811,6 @@ TYPED_TEST(TrieTest, variable_length_trie_with_prefix)
     auto const keylong = 0x808182_hex;
     auto const value =
         0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_hex;
-
-    uint64_t const block_id = 0x123;
-    auto const block_number_prefix =
-        serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id);
 
     std::list<Update> updates_alloc;
     UpdateList updates;
@@ -965,34 +822,27 @@ TYPED_TEST(TrieTest, variable_length_trie_with_prefix)
     updates.push_front(updates_alloc.emplace_back(make_update(key256, value)));
     updates.push_front(updates_alloc.emplace_back(make_update(keylong, value)));
 
-    this->root = upsert_updates(
-        this->aux,
-        *this->sm,
-        {},
-        make_update(
-            block_number_prefix,
-            monad::byte_string_view{},
-            false,
-            std::move(updates)));
+    auto u_prefix = make_update(prefix, monad::byte_string_view{});
+    u_prefix.next = std::move(updates);
+    UpdateList ul_prefix;
+    ul_prefix.push_front(u_prefix);
+    this->root = upsert(this->aux, *this->sm, {}, std::move(ul_prefix));
 
-    auto [root_it, res] =
-        find_blocking(this->aux, NodeCursor{*this->root}, block_number_prefix);
-    EXPECT_EQ(res, find_result::success);
     EXPECT_EQ(
-        root_it.node->data(),
+        this->root->data(),
         0x1a904a5579e7f301af64aeebbce5189b9df1e534fd2a4b642e604e92834a7611_hex);
 
     // find
     {
         auto [node0, res] =
-            find_blocking(this->aux, *this->root, block_number_prefix + key0);
+            find_blocking(this->aux, *this->root, prefix + key0);
         EXPECT_EQ(res, monad::mpt::find_result::success);
         EXPECT_EQ(node0.node->value(), value);
     }
 
     {
-        auto [node_long, res] = find_blocking(
-            this->aux, *this->root, block_number_prefix + keylong);
+        auto [node_long, res] =
+            find_blocking(this->aux, *this->root, prefix + keylong);
         EXPECT_EQ(res, monad::mpt::find_result::success);
         EXPECT_EQ(node_long.node->value(), value);
     }
@@ -1000,11 +850,8 @@ TYPED_TEST(TrieTest, variable_length_trie_with_prefix)
 
 TYPED_TEST(TrieTest, single_value_variable_length_trie_with_prefix)
 {
-    this->sm = std::make_unique<StateMachineVarLenTrieWithBlockNo>();
-
-    uint64_t const block_id = 0x123;
-    auto const block_number_prefix =
-        serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id);
+    auto const prefix = 0x00_hex;
+    this->sm = std::make_unique<StateMachineVarLenTrieWithPrefix<2>>();
 
     auto const keylong = 0x808182_hex;
     auto const value = 0xbeef_hex;
@@ -1013,19 +860,13 @@ TYPED_TEST(TrieTest, single_value_variable_length_trie_with_prefix)
     Update u = make_update(keylong, value);
     updates.push_front(u);
 
-    this->root = upsert_updates(
-        this->aux,
-        *this->sm,
-        {},
-        make_update(
-            block_number_prefix,
-            monad::byte_string_view{},
-            false,
-            std::move(updates)));
-    auto [root_it, res] =
-        find_blocking(this->aux, NodeCursor{*this->root}, block_number_prefix);
-    EXPECT_EQ(res, find_result::success);
+    auto u_prefix = make_update(prefix, monad::byte_string_view{});
+    u_prefix.next = std::move(updates);
+    UpdateList ul_prefix;
+    ul_prefix.push_front(u_prefix);
+    this->root = upsert(this->aux, *this->sm, {}, std::move(ul_prefix));
+
     EXPECT_EQ(
-        root_it.node->data(),
+        this->root->data(),
         0x82a7b59bf8abe584aef31b580efaadbf19d0eba0e4ea8986e23db14ba9be6cb2_hex);
 }

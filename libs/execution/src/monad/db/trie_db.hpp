@@ -68,8 +68,6 @@ public:
 
     // read-only operations
     void set_block_number(uint64_t);
-    bool is_latest() const;
-    void load_latest();
 
 private:
     /// STATS

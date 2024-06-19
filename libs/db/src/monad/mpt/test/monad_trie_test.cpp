@@ -92,6 +92,13 @@ void __print_bytes_in_hex(monad::byte_string_view arr)
     fprintf(stdout, "\n");
 }
 
+namespace
+{
+    constexpr unsigned char state_nibble = 0;
+    auto const state_nibbles = concat(state_nibble);
+    constexpr auto prefix_len = 1;
+}
+
 /*  Commit one batch of updates
     key_offset: insert key starting from this number
     nkeys: number of keys to insert in this batch
@@ -104,6 +111,7 @@ Node::UniquePtr batch_upsert_commit(
     bool compaction, Node::UniquePtr prev_root, UpdateAuxImpl &aux,
     StateMachine &sm)
 {
+
     std::vector<Update> update_alloc;
     update_alloc.reserve(SLICE_LEN);
     UpdateList state_updates;
@@ -118,13 +126,18 @@ Node::UniquePtr batch_upsert_commit(
                         block_id)));
     }
 
+    UpdateList updates;
+    Update top_update = make_update(
+        state_nibbles,
+        monad::byte_string_view{},
+        false,
+        std::move(state_updates),
+        block_id);
+    updates.push_front(top_update);
+
     auto ts_before = std::chrono::steady_clock::now();
     auto new_root = aux.do_update(
-        std::move(prev_root),
-        sm,
-        std::move(state_updates),
-        block_id,
-        compaction);
+        std::move(prev_root), sm, std::move(updates), block_id, compaction);
     auto ts_after = std::chrono::steady_clock::now();
     double const tm_ram =
         static_cast<double>(
@@ -133,10 +146,8 @@ Node::UniquePtr batch_upsert_commit(
                 .count()) /
         1000000000.0;
 
-    auto block_num = serialize_as_big_endian<BLOCK_NUM_BYTES>(block_id);
-    auto [state_it, res] = find_blocking(aux, *new_root, block_num);
     fprintf(stdout, "root->data : ");
-    __print_bytes_in_hex(state_it.node->data());
+    __print_bytes_in_hex(new_root->data());
 
     fprintf(
         stdout,
@@ -496,7 +507,7 @@ int main(int argc, char *argv[])
             };
 
             UpdateAux<> aux{};
-            monad::test::StateMachineWithBlockNo sm{};
+            monad::test::StateMachineMerkleWithPrefix<prefix_len> sm{};
             if (!in_memory) {
                 aux.set_io(&io);
             }
@@ -504,10 +515,10 @@ int main(int argc, char *argv[])
             Node::UniquePtr root{};
             if (append) {
                 root.reset(read_node_blocking(
-                    io.storage_pool(), aux.get_root_offset()));
+                    io.storage_pool(), aux.get_latest_root_offset()));
             }
             if (block_id == uint64_t(-1)) {
-                block_id = root ? aux.max_version_in_db_history(*root) + 1 : 0;
+                block_id = aux.max_version_in_db_history();
             }
             printf("starting block id %lu\n", block_id);
 
@@ -647,15 +658,8 @@ int main(int argc, char *argv[])
                     aux.set_io(&io);
                 }
                 root.reset(read_node_blocking(
-                    io.storage_pool(), aux.get_root_offset()));
-                auto [it, res] = find_blocking(
-                    aux,
-                    *root,
-                    serialize_as_big_endian<BLOCK_NUM_BYTES>(
-                        aux.max_version_in_db_history(*root)));
-                MONAD_ASSERT(res == find_result::success);
-                MONAD_ASSERT(it.node->has_value());
-                state_start = it;
+                    io.storage_pool(), aux.get_latest_root_offset()));
+                state_start = *root;
                 return ret;
             };
             {

@@ -37,7 +37,7 @@ namespace detail
     // For the memory map of the first conventional chunk
     struct db_metadata
     {
-        static constexpr char const *MAGIC = "MND3";
+        static constexpr char const *MAGIC = "MND4";
         static constexpr unsigned MAGIC_STRING_LEN = 4;
 
         friend class MONAD_MPT_NAMESPACE::UpdateAuxImpl;
@@ -50,10 +50,51 @@ namespace detail
         uint64_t capacity_in_free_list; // used to detect when free space is
                                         // running low
 
+        // Thread safe ring buffer containing root offsets on disk. One thread
+        // is both the producer and the consumer. Other threads may query
+        // relative to the front of the buffer. In the context of TrieDb, this
+        // design works well, because this min is always known to be stored N
+        // elements before the max, so no special handling is required when the
+        // ring buffer is under capacity.
+        struct root_offsets_ring_t
+        {
+            static constexpr size_t SIZE = 1024;
+            static_assert(
+                (SIZE & (SIZE - 1)) == 0, "root offsets must be a power of 2");
+            std::atomic<uint64_t> write_pos;
+            chunk_offset_t offset[SIZE];
+
+            static constexpr size_t capacity() noexcept
+            {
+                return SIZE;
+            }
+
+            void push(chunk_offset_t o) noexcept
+            {
+                auto const wp = write_pos.load(std::memory_order_relaxed);
+                auto const next_wp = wp + 1;
+                offset[wp & (SIZE - 1)] = o;
+                write_pos.store(next_wp, std::memory_order_release);
+            }
+
+            chunk_offset_t before(size_t i) const noexcept
+            {
+                auto wp = write_pos.load(std::memory_order_acquire);
+                MONAD_ASSERT(wp > 0 && i <= wp - 1);
+                return offset[(wp - 1 - i) & (SIZE - 1)];
+            }
+
+            chunk_offset_t max() const noexcept
+            {
+                auto wp = write_pos.load(std::memory_order_acquire);
+                MONAD_ASSERT(wp != 0);
+                return offset[(wp - 1) & (SIZE - 1)];
+            }
+
+        } root_offsets;
+
         struct db_offsets_info_t
         {
-            // the following three are advanced after each db block update
-            std::atomic<chunk_offset_t> root_offset;
             // starting offsets of current wip db block's contents. all contents
             // starting this point are not yet validated, and should be rewound
             // if restart.
@@ -72,15 +113,13 @@ namespace detail
             ~db_offsets_info_t() = default;
 
             constexpr db_offsets_info_t(
-                chunk_offset_t root_offset_,
                 chunk_offset_t start_of_wip_offset_fast_,
                 chunk_offset_t start_of_wip_offset_slow_,
                 compact_virtual_chunk_offset_t last_compact_offset_fast_,
                 compact_virtual_chunk_offset_t last_compact_offset_slow_,
                 compact_virtual_chunk_offset_t last_compact_offset_range_fast_,
                 compact_virtual_chunk_offset_t last_compact_offset_range_slow_)
-                : root_offset(root_offset_)
-                , start_of_wip_offset_fast(start_of_wip_offset_fast_)
+                : start_of_wip_offset_fast(start_of_wip_offset_fast_)
                 , start_of_wip_offset_slow(start_of_wip_offset_slow_)
                 , last_compact_offset_fast(last_compact_offset_fast_)
                 , last_compact_offset_slow(last_compact_offset_slow_)
@@ -91,9 +130,8 @@ namespace detail
             {
             }
 
-            void store(db_offsets_info_t const &o, std::memory_order ord)
+            void store(db_offsets_info_t const &o)
             {
-                auto const t = o.root_offset.load(std::memory_order_acquire);
                 start_of_wip_offset_fast = o.start_of_wip_offset_fast;
                 start_of_wip_offset_slow = o.start_of_wip_offset_slow;
                 last_compact_offset_fast = o.last_compact_offset_fast;
@@ -102,7 +140,6 @@ namespace detail
                     o.last_compact_offset_range_fast;
                 last_compact_offset_range_slow =
                     o.last_compact_offset_range_slow;
-                root_offset.store(t, ord);
             }
         } db_offsets;
 
@@ -416,11 +453,13 @@ namespace detail
             capacity_in_free_list -= bytes;
         }
 
-        void
-        advance_offsets_to_(db_offsets_info_t const &offsets_to_apply) noexcept
+        void advance_offsets_to_(
+            chunk_offset_t latest_root_offset,
+            db_offsets_info_t const &offsets_to_apply) noexcept
         {
             auto g = hold_dirty();
-            db_offsets.store(offsets_to_apply, std::memory_order_release);
+            db_offsets.store(offsets_to_apply);
+            root_offsets.push(latest_root_offset);
         }
 
         void update_slow_fast_ratio_(float const ratio) noexcept
@@ -429,14 +468,18 @@ namespace detail
             slow_fast_ratio = ratio;
         }
 
-        void update_db_history_versions_(
-            uint64_t const min_version_, uint64_t const max_version_) noexcept
+        void update_db_min_version_(uint64_t const min_version) noexcept
         {
             auto g = hold_dirty();
             min_db_history_version.store(
-                min_version_, std::memory_order_release);
+                min_version, std::memory_order_release);
+        }
+
+        void update_db_max_version_(uint64_t const max_version) noexcept
+        {
+            auto g = hold_dirty();
             max_db_history_version.store(
-                max_version_, std::memory_order_release);
+                max_version, std::memory_order_release);
         }
     };
 

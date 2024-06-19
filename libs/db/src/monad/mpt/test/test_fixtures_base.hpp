@@ -54,18 +54,18 @@ namespace monad::test
         }
     };
 
-    class StateMachineWithBlockNo final : public StateMachine
+    template <int prefix_len = 2>
+    class StateMachineMerkleWithPrefix final : public StateMachine
     {
     private:
-        static constexpr auto block_num_size = BLOCK_NUM_NIBBLES_LEN;
-        static constexpr auto cache_depth = block_num_size + 6;
-        static constexpr auto max_depth = block_num_size + 64 + 64;
+        static constexpr auto cache_depth = prefix_len + 6;
+        static constexpr auto max_depth = prefix_len + 64 + 64;
         size_t depth{0};
 
     public:
         virtual std::unique_ptr<StateMachine> clone() const override
         {
-            return std::make_unique<StateMachineWithBlockNo>(*this);
+            return std::make_unique<StateMachineMerkleWithPrefix>(*this);
         }
 
         virtual void down(unsigned char) override
@@ -84,10 +84,10 @@ namespace monad::test
             static MerkleCompute m{};
             static RootMerkleCompute rm{};
             static EmptyCompute e{};
-            if (MONAD_LIKELY(depth > block_num_size)) {
+            if (MONAD_LIKELY(depth > prefix_len)) {
                 return m;
             }
-            else if (depth < block_num_size) {
+            else if (depth < prefix_len) {
                 return e;
             }
             return rm;
@@ -101,25 +101,25 @@ namespace monad::test
 
         virtual constexpr bool compact() const override
         {
-            return depth >= block_num_size;
+            return true;
         }
     };
 
-    static_assert(sizeof(StateMachineWithBlockNo) == 16);
-    static_assert(alignof(StateMachineWithBlockNo) == 8);
+    static_assert(sizeof(StateMachineMerkleWithPrefix<>) == 16);
+    static_assert(alignof(StateMachineMerkleWithPrefix<>) == 8);
 
-    class StateMachineVarLenTrieWithBlockNo final : public StateMachine
+    template <int prefix_len = 2>
+    class StateMachineVarLenTrieWithPrefix final : public StateMachine
     {
     private:
-        static constexpr auto block_num_size = BLOCK_NUM_NIBBLES_LEN;
-        static constexpr auto cache_depth = block_num_size + 6;
-        static constexpr auto max_depth = block_num_size + 65;
+        static constexpr auto cache_depth = prefix_len + 6;
+        static constexpr auto max_depth = prefix_len + 65;
         size_t depth{0};
 
     public:
         virtual std::unique_ptr<StateMachine> clone() const override
         {
-            return std::make_unique<StateMachineVarLenTrieWithBlockNo>(*this);
+            return std::make_unique<StateMachineVarLenTrieWithPrefix>(*this);
         }
 
         virtual void down(unsigned char) override
@@ -138,10 +138,10 @@ namespace monad::test
             static VarLenMerkleCompute m{};
             static RootVarLenMerkleCompute rm{};
             static EmptyCompute e{};
-            if (MONAD_LIKELY(depth > block_num_size)) {
+            if (MONAD_LIKELY(depth > prefix_len)) {
                 return m;
             }
-            else if (depth < block_num_size) {
+            else if (depth < prefix_len) {
                 return e;
             }
             return rm;
@@ -155,14 +155,15 @@ namespace monad::test
 
         virtual constexpr bool compact() const override
         {
-            return depth >= block_num_size;
+            return true;
         }
     };
 
-    static_assert(sizeof(StateMachineVarLenTrieWithBlockNo) == 16);
-    static_assert(alignof(StateMachineVarLenTrieWithBlockNo) == 8);
+    static_assert(sizeof(StateMachineVarLenTrieWithPrefix<>) == 16);
+    static_assert(alignof(StateMachineVarLenTrieWithPrefix<>) == 8);
 
-    template <class Compute, size_t cache_depth = 6>
+    template <
+        class Compute, bool enable_compaction = false, size_t cache_depth = 6>
     class StateMachineAlways final : public StateMachine
     {
     private:
@@ -173,7 +174,8 @@ namespace monad::test
 
         virtual std::unique_ptr<StateMachine> clone() const override
         {
-            return std::make_unique<StateMachineAlways<Compute, cache_depth>>(
+            return std::make_unique<
+                StateMachineAlways<Compute, enable_compaction, cache_depth>>(
                 *this);
         }
 
@@ -201,7 +203,7 @@ namespace monad::test
 
         virtual constexpr bool compact() const override
         {
-            return false;
+            return enable_compaction;
         }
     };
 
@@ -536,7 +538,8 @@ namespace monad::test
                                 *(uint32_t *)(key.data() + n) = rand();
                             }
                             keys.emplace_back(
-                                std::move(key), aux.get_root_offset().id);
+                                std::move(key),
+                                aux.get_latest_root_offset().id);
                         }
                         updates.push_back(
                             make_update(keys.back().first, keys.back().first));

@@ -28,9 +28,6 @@ using MONAD_ASYNC_NAMESPACE::round_up_align;
 static constexpr uint8_t INVALID_BRANCH = 255;
 static constexpr uint8_t INVALID_PATH_INDEX = 255;
 
-static constexpr uint8_t BLOCK_NUM_BYTES = 6;
-static constexpr uint8_t BLOCK_NUM_NIBBLES_LEN = BLOCK_NUM_BYTES * 2;
-
 static byte_string const empty_trie_hash = [] {
     using namespace ::monad::literals;
     return 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_hex;

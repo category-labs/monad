@@ -332,7 +332,8 @@ public:
     node_writer_unique_ptr_type node_writer_slow{};
 
     // currently maintain a fixed len history
-    static constexpr unsigned version_history_len = 1000;
+    static constexpr auto VERSION_HISTORY_LEN =
+        detail::db_metadata::root_offsets_ring_t::capacity();
 
     UpdateAuxImpl(MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr)
     {
@@ -491,8 +492,7 @@ public:
         uint64_t version, bool compaction = false,
         bool can_write_to_fast = true);
 
-    Node::UniquePtr move_subtrie(
-        Node::UniquePtr prev_root, StateMachine &, uint64_t src, uint64_t dest);
+    void update_single_trie_version(uint64_t src, uint64_t dest);
 
 #if MONAD_MPT_COLLECT_STATS
     detail::TrieUpdateCollectedStats stats;
@@ -547,8 +547,8 @@ public:
         chunk_offset_t root_offset, chunk_offset_t fast_offset,
         chunk_offset_t slow_offset) noexcept;
     void update_slow_fast_ratio_metadata() noexcept;
-    void update_ondisk_db_history_metadata(
-        uint64_t min_version, uint64_t max_version) noexcept;
+    void update_ondisk_db_min_version(uint64_t) noexcept;
+    void update_ondisk_db_max_version(uint64_t) noexcept;
 
     // WARNING: This is destructive
     void rewind_to_match_offsets();
@@ -590,11 +590,19 @@ public:
         return io != nullptr;
     }
 
-    chunk_offset_t get_root_offset() const noexcept
+    chunk_offset_t get_latest_root_offset() const noexcept
     {
         MONAD_ASSERT(this->is_on_disk());
-        return db_metadata()->db_offsets.root_offset.load(
+        return db_metadata()->root_offsets.max();
+    }
+
+    chunk_offset_t get_root_offset_at_version(uint64_t version) const noexcept
+    {
+        MONAD_ASSERT(this->is_on_disk());
+        auto const max_version = db_metadata()->max_db_history_version.load(
             std::memory_order_acquire);
+        MONAD_ASSERT(version <= max_version);
+        return db_metadata()->root_offsets.before(max_version - version);
     }
 
     chunk_offset_t get_start_of_wip_fast_offset() const noexcept
@@ -618,10 +626,9 @@ public:
     uint32_t num_chunks(chunk_list const list) const noexcept;
 
     // must call these when db is non empty
-    uint64_t min_version_in_db_history(Node &root) const noexcept;
-    uint64_t max_version_in_db_history(Node &root) const noexcept;
-    bool contains_version(
-        Node::UniquePtr &root, uint64_t const version) const noexcept;
+    uint64_t min_version_in_db_history() const noexcept;
+    uint64_t max_version_in_db_history() const noexcept;
+    bool contains_version(uint64_t version) const noexcept;
 };
 
 static_assert(
@@ -803,6 +810,7 @@ enum class find_result : uint8_t
 {
     unknown,
     success,
+    version_no_longer_exist,
     root_node_is_null_failure,
     key_mismatch_failure,
     branch_not_exist_failure,
@@ -835,15 +843,6 @@ static_assert(std::is_trivially_copyable_v<fiber_find_request_t> == true);
 void find_notify_fiber_future(
     UpdateAuxImpl &, inflight_map_t &inflights, fiber_find_request_t);
 
-/*! \brief Copy a leaf node under prefix `src` to prefix `dest`. Invoked before
-committing block updates to triedb. By copy we mean everything other than
-path. When copying children over, also remove the original's child pointers
-to avoid dup referencing. For on-disk trie deallocate nodes under prefix `src`
-after copy is done when the node is the only in-memory child of its parent.
-Note that we handle the case where `dest` is pre-existed in trie. */
-Node::UniquePtr copy_node(
-    UpdateAuxImpl &, Node::UniquePtr root, NibblesView src, NibblesView dest);
-
 /*! \brief blocking find node indexed by key from root, It works for bothon-disk
 and in-memory trie. When node along key is not yet in memory, it load node
 through blocking read.
@@ -852,9 +851,6 @@ thread, as no synchronization is provided, and user code should make sure no
 other place is modifying trie. */
 find_result_type
 find_blocking(UpdateAuxImpl const &, NodeCursor, NibblesView key);
-
-Nibbles find_min_key_blocking(UpdateAuxImpl const &, Node &root);
-Nibbles find_max_key_blocking(UpdateAuxImpl const &, Node &root);
 
 //////////////////////////////////////////////////////////////////////////////
 // helpers

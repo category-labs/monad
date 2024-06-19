@@ -104,7 +104,7 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
         }
     };
 
-    this->sm = std::make_unique<StateMachineWithBlockNo>();
+    this->sm = std::make_unique<StateMachineAlwaysMerkle>();
 
     // Do 100 random updates for 1000 blocks, using aux.do_update()
     // A full traversal to verify versions are correct, and nodes of all
@@ -138,19 +138,12 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
 
     {
         std::stack<ExpectedSubtrieVersion> node_records{};
-        auto const max_block_id = NUM_BLOCKS - 1;
-        auto const [latest_root, res] = find_blocking(
-            this->aux,
-            NodeCursor{*this->root},
-            serialize_as_big_endian<BLOCK_NUM_BYTES>(max_block_id));
-        ASSERT_TRUE(res == find_result::success);
-        EXPECT_EQ(latest_root.node->version, max_block_id);
-        EXPECT_EQ(calc_min_version(*latest_root.node), 0);
+        EXPECT_EQ(calc_min_version(*this->root), 0);
 
         TraverseVerifyVersions traverse{node_records};
         // Must traverse in order
         preorder_traverse_blocking(
-            this->aux, *latest_root.node, traverse, [] { return true; });
+            this->aux, *this->root, traverse, [] { return true; });
         EXPECT_EQ(traverse.records.empty(), true);
     }
 
@@ -185,19 +178,12 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
 
     {
         std::stack<ExpectedSubtrieVersion> node_records{};
-        auto const max_block_id = 2 * NUM_BLOCKS - 1;
-        auto const [latest_root, res] = find_blocking(
-            this->aux,
-            NodeCursor{*this->root},
-            serialize_as_big_endian<BLOCK_NUM_BYTES>(max_block_id));
-        ASSERT_TRUE(res == find_result::success);
-        EXPECT_EQ(latest_root.node->version, max_block_id);
-        EXPECT_EQ(calc_min_version(*latest_root.node), 0);
+        EXPECT_EQ(calc_min_version(*this->root), 0);
 
         TraverseVerifyVersions traverse{node_records, true};
         // Must traverse in order
         preorder_traverse_blocking(
-            this->aux, *latest_root.node, traverse, [] { return true; });
+            this->aux, *this->root, traverse, [] { return true; });
         EXPECT_EQ(traverse.records.empty(), true);
     }
 }

@@ -50,19 +50,18 @@ public:
     ~Db();
 
     // May wait on a fiber future
-    Result<NodeCursor>
-    find(NodeCursor, NibblesView, uint64_t block_id = 0) const;
-    // Search path includes block id in the prefix
-    Result<NodeCursor> find(NibblesView prefix, uint64_t block_id = 0) const;
-    // Search path includes block id in the prefix
-    Result<byte_string_view> get(NibblesView, uint64_t block_id = 0) const;
-    // Search path includes block id in the prefix
-    Result<byte_string_view> get_data(NibblesView, uint64_t block_id = 0) const;
+    //  The `block_id` parameter is used for version control validation
+    Result<NodeCursor> find(NodeCursor, NibblesView, uint64_t block_id) const;
+    Result<NodeCursor> find(NibblesView prefix, uint64_t block_id) const;
+    Result<byte_string_view> get(NibblesView, uint64_t block_id) const;
+    Result<byte_string_view> get_data(NibblesView, uint64_t block_id) const;
     Result<byte_string_view>
-    get_data(NodeCursor, NibblesView, uint64_t block_id = 0) const;
+    get_data(NodeCursor, NibblesView, uint64_t block_id) const;
+
+    Result<NodeCursor> load_root_for_version(uint64_t block_id) const;
 
     void upsert(
-        UpdateList, uint64_t block_id = 0, bool enable_compaction = true,
+        UpdateList, uint64_t block_id, bool enable_compaction = true,
         bool can_write_to_fast = true);
     // Traverse APIs: return value indicates if we have finished the full
     // traversal or not.
@@ -73,22 +72,17 @@ public:
     // traversal on RWDb, use the `traverse_blocking` api below.
     // TODO: fix the excessive memory issue by pausing traverse when there are N
     // outstanding requests
-    bool traverse(NodeCursor, TraverseMachine &, uint64_t block_id = 0);
+    bool traverse(NodeCursor, TraverseMachine &, uint64_t block_id);
     // Blocking traverse never wait on a fiber future.
-    bool
-    traverse_blocking(NodeCursor, TraverseMachine &, uint64_t block_id = 0);
+    bool traverse_blocking(NodeCursor, TraverseMachine &, uint64_t block_id);
     NodeCursor root() const noexcept;
     std::optional<uint64_t> get_latest_block_id() const;
     std::optional<uint64_t> get_earliest_block_id() const;
     // This function moves a source trie to under a destination version,
     // assuming the source trie is the only version present.
     // Only the RWDb can call this API for state sync purposes.
-    void move_subtrie(uint64_t src, uint64_t dest);
+    void update_single_trie_version(uint64_t src, uint64_t dest);
 
-    // Always true if not RO. True if this DB is the latest DB (fast)
-    bool is_latest() const;
-    // Load the latest DB root
-    void load_latest();
     // Load the tree of nodes in the current DB root as far as the caching
     // policy allows. RW only.
     size_t prefetch();
@@ -101,6 +95,8 @@ struct detail::DbGetSender
 {
     using result_type = async::result<T>;
 
+    struct load_root_receiver_t;
+
 public:
     Db &db;
 
@@ -112,16 +108,17 @@ public:
         op_get_data2
     } op_type;
 
+    std::shared_ptr<Node> root;
     NodeCursor cur;
     Nibbles const nv;
-    uint64_t const block_id{0};
+    uint64_t const block_id;
 
     find_result_type res_;
 
 public:
     constexpr DbGetSender(
         Db &db_, op_t const op_type_, NibblesView const n,
-        uint64_t const block_id_ = 0)
+        uint64_t const block_id_)
         : db(db_)
         , op_type(op_type_)
         , nv(n)
@@ -131,21 +128,12 @@ public:
 
     constexpr DbGetSender(
         Db &db_, op_t const op_type_, NodeCursor const cur_,
-        NibblesView const n)
+        NibblesView const n, uint64_t const block_id_)
         : db(db_)
         , op_type(op_type_)
         , cur(cur_)
         , nv(n)
-    {
-    }
-
-    DbGetSender(DbGetSender &&o) noexcept
-        : db(o.db)
-        , op_type(o.op_type)
-        , cur(o.cur)
-        , nv(const_cast<Nibbles &&>(std::move(o.nv)))
-        , block_id(o.block_id)
-        , res_(std::move(o.res_))
+        , block_id(block_id_)
     {
     }
 
@@ -156,29 +144,17 @@ public:
         async::erased_connected_operation *, async::result<void> res) noexcept;
 };
 
-inline constexpr detail::DbGetSender<byte_string>
-make_get_sender(Db &db, NibblesView const nv, uint64_t const block_id = 0)
+inline detail::DbGetSender<byte_string>
+make_get_sender(Db &db, NibblesView const nv, uint64_t const block_id)
 {
     return {db, detail::DbGetSender<byte_string>::op_t::op_get1, nv, block_id};
 }
 
-inline constexpr detail::DbGetSender<byte_string>
-make_get_data_sender(Db &db, NibblesView const nv, uint64_t const block_id = 0)
+inline detail::DbGetSender<byte_string>
+make_get_data_sender(Db &db, NibblesView const nv, uint64_t const block_id)
 {
     return {
         db, detail::DbGetSender<byte_string>::op_t::op_get_data1, nv, block_id};
-}
-
-inline constexpr detail::DbGetSender<NodeCursor>
-make_get_sender(Db &db, NodeCursor const cur, NibblesView const nv)
-{
-    return {db, detail::DbGetSender<NodeCursor>::op_t::op_get2, cur, nv};
-}
-
-inline constexpr detail::DbGetSender<byte_string>
-make_get_data_sender(Db &db, NodeCursor const cur, NibblesView const nv)
-{
-    return {db, detail::DbGetSender<byte_string>::op_t::op_get_data2, cur, nv};
 }
 
 MONAD_MPT_NAMESPACE_END

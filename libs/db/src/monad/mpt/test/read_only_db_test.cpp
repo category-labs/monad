@@ -62,8 +62,11 @@ TEST_F(ReadOnlyDBTest, read_only_dbs_track_writable_db)
         monad::test::MerkleCompute const comp;
         monad::test::StateMachineAlwaysMerkle sm;
         monad::test::UpdateAux<void> aux{&io};
-        ASSERT_EQ(state()->aux.get_root_offset(), aux.get_root_offset());
-        Node::UniquePtr root{read_node_blocking(pool, aux.get_root_offset())};
+        ASSERT_EQ(
+            state()->aux.get_latest_root_offset(),
+            aux.get_latest_root_offset());
+        Node::UniquePtr root{
+            read_node_blocking(pool, aux.get_latest_root_offset())};
         auto root_hash = [&] {
             monad::byte_string res(32, 0);
             sm.get_compute().compute(res.data(), root.get());
@@ -80,21 +83,21 @@ TEST_F(ReadOnlyDBTest, read_only_dbs_track_writable_db)
         int n = 1;
         auto read_chunk = [&] {
             root = Node::UniquePtr{
-                read_node_blocking(pool, aux.get_root_offset())};
+                read_node_blocking(pool, aux.get_latest_root_offset())};
             n++;
             std::cout << "   Root hash with " << n << " chunks is "
                       << print(root_hash()) << std::endl;
             done.fetch_add(1, std::memory_order_acq_rel);
         };
-        auto last_root_offset = aux.get_root_offset();
-        ASSERT_EQ(state()->aux.get_root_offset(), last_root_offset);
+        auto last_root_offset = aux.get_latest_root_offset();
+        ASSERT_EQ(state()->aux.get_latest_root_offset(), last_root_offset);
         read_chunk();
         EXPECT_EQ(state()->root_hash(), root_hash());
         second_block_checked.count_down();
 
         // Now try to keep up ...
         while (done.load(std::memory_order_acquire) > 0) {
-            auto const root_offset = aux.get_root_offset();
+            auto const root_offset = aux.get_latest_root_offset();
             if (root_offset == last_root_offset) {
                 std::this_thread::yield();
                 continue;

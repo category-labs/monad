@@ -4,8 +4,6 @@
 #include <monad/mem/batch_mem_pool.hpp>
 #include <monad/synchronization/spin_lock.hpp>
 
-#include <quill/Quill.h>
-
 #include <tbb/concurrent_hash_map.h>
 
 #include <atomic>

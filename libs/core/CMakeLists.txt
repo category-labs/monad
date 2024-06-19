@@ -108,6 +108,7 @@ add_library(
   "src/monad/core/tl_tid.h"
   "src/monad/core/unaligned.hpp"
   "src/monad/lru/lru_cache.hpp"
+  "src/monad/lru/static_lru_cache.hpp"
   "src/monad/mem/batch_mem_pool.hpp"
   "src/monad/synchronization/spin_lock.hpp"
   # fiber
@@ -189,3 +190,4 @@ add_subdirectory("test")
 
 monad_add_test(bit_util_test src/monad/core/bit_util_test.cpp)
 monad_add_test(huge_mem_test src/monad/mem/huge_mem_test.cpp)
+monad_add_test(static_lru_test src/monad/lru/static_lru_test.cpp)

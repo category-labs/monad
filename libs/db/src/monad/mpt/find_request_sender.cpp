@@ -20,6 +20,8 @@ MONAD_MPT_NAMESPACE_BEGIN
 
 using namespace MONAD_ASYNC_NAMESPACE;
 
+// TODO: fix the version out of history range UB by version validation after
+// each io
 struct find_request_sender::find_receiver
 {
     static constexpr bool lifetime_managed_internally = true;

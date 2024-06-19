@@ -227,15 +227,20 @@ TEST(DBTest, read_only)
                 {a, StateDelta{.account = {acct2, acct3}, .storage = {}}}},
             Code{});
 
-        EXPECT_FALSE(ro.is_latest());
+        // Read block 0
         EXPECT_EQ(ro.read_account(a), Account{.nonce = 1});
-
+        // Go forward to block 2
         ro.set_block_number(2);
-        EXPECT_EQ(ro.read_account(a), std::nullopt);
-
-        ro.load_latest();
-        EXPECT_TRUE(ro.is_latest());
         EXPECT_EQ(ro.read_account(a), Account{.nonce = 3});
+        // Go backward to block 1
+        ro.set_block_number(1);
+        EXPECT_EQ(ro.read_account(a), Account{.nonce = 2});
+        // Setting the same block number is no-op.
+        ro.set_block_number(1);
+        EXPECT_EQ(ro.read_account(a), Account{.nonce = 2});
+        // Go to a random block
+        ro.set_block_number(1337);
+        EXPECT_EQ(ro.read_account(a), std::nullopt);
     }
     std::filesystem::remove(name);
 }

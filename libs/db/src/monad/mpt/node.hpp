@@ -120,10 +120,11 @@ public:
         std::allocator<Node>, BytesAllocator>
     pool();
     static size_t get_deallocate_count(Node *);
-    using UniquePtr = std::unique_ptr<
-        Node, allocators::unique_ptr_aliasing_allocator_deleter<
-                  std::allocator<Node>, BytesAllocator, &Node::pool,
-                  &Node::get_deallocate_count>>;
+
+    using Deleter = allocators::unique_ptr_aliasing_allocator_deleter<
+        std::allocator<Node>, BytesAllocator, &Node::pool,
+        &Node::get_deallocate_count>;
+    using UniquePtr = std::unique_ptr<Node, Deleter>;
 
     /* 16-bit mask for children */
     uint16_t mask{0};

@@ -18,8 +18,8 @@ TEST_F(LoadAllTest, works)
 {
     monad::test::UpdateAux<void> aux{&state()->io};
     monad::test::StateMachineAlwaysMerkle sm;
-    monad::mpt::Node::UniquePtr root{
-        monad::mpt::read_node_blocking(state()->pool, aux.get_root_offset())};
+    monad::mpt::Node::UniquePtr root{monad::mpt::read_node_blocking(
+        state()->pool, aux.get_latest_root_offset())};
     auto nodes_loaded = monad::mpt::load_all(aux, sm, *root);
     EXPECT_GE(nodes_loaded, state()->keys.size());
     std::cout << "   nodes_loaded = " << nodes_loaded << std::endl;

@@ -35,6 +35,8 @@ struct ReadOnlyOnDiskDbConfig
     bool eager_completions{false};
     unsigned rd_buffers{8};
     unsigned uring_entries{8};
+    // number of historical tries cached
+    unsigned historical_trie_lru_size{64};
     // default to disable sqpoll kernel thread since now ReadOnlyDb uses
     // blocking read
     std::optional<unsigned> sq_thread_cpu{std::nullopt};

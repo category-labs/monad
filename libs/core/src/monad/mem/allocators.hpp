@@ -78,7 +78,7 @@ namespace allocators
                 return reinterpret_cast<T *>(
                     std::aligned_alloc(alignof(T), no * sizeof(T)));
             }
-            return reinterpret_cast<T *>(std::malloc(no * sizeof(T)));
+            return reinterpret_cast<T *>(malloc(no * sizeof(T)));
         }
 
         template <class U>
@@ -89,12 +89,12 @@ namespace allocators
                 return reinterpret_cast<T *>(
                     std::aligned_alloc(alignof(U), no * sizeof(T)));
             }
-            return reinterpret_cast<T *>(std::malloc(no * sizeof(T)));
+            return reinterpret_cast<T *>(malloc(no * sizeof(T)));
         }
 
         constexpr void deallocate(T *const p, size_t const)
         {
-            std::free(p);
+            free(p);
         }
     };
 
@@ -132,7 +132,7 @@ namespace allocators
 
         constexpr void deallocate(T *const p, size_t const)
         {
-            std::free(p);
+            free(p);
         }
     };
 
@@ -419,7 +419,7 @@ namespace allocators
         void reset(U ptr) noexcept
         {
             if (_base::get() != nullptr) {
-                std::free(_base::get());
+                free(_base::get());
                 _base::release();
             }
             _base::reset(ptr);
@@ -428,7 +428,7 @@ namespace allocators
         void reset(std::nullptr_t const = nullptr) noexcept
         {
             if (_base::get() != nullptr) {
-                std::free(_base::get());
+                free(_base::get());
                 _base::release();
             }
         }

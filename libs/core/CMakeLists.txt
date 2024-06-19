@@ -135,8 +135,11 @@ add_library(
   "src/monad/mem/huge_mem.cpp"
   "src/monad/mem/huge_mem.h"
   "src/monad/mem/huge_mem.hpp"
+  "src/monad/mem/malloc.c"
   "src/monad/mem/mem_map.cpp"
   "src/monad/mem/mem_map.hpp"
+  "src/monad/mem/rpmalloc.c"
+  "src/monad/mem/rpmalloc.h"
   # procfs
   "src/monad/procfs/statm.c"
   "src/monad/procfs/statm.h"

@@ -68,7 +68,7 @@ static TrieDb make_db(
             "directory you pass contains the block number of the snapshot "
             "in its path and includes files 'accounts' and 'code'.");
     }
-    uint64_t init_block_number = std::stoul(snapshot.stem());
+    uint64_t init_block_number = std::stoull(snapshot.stem());
     MONAD_ASSERT(fs::exists(snapshot / "code"));
     LOG_INFO("Loading from binary checkpoint in {}", snapshot);
     std::ifstream accounts(snapshot / "accounts");

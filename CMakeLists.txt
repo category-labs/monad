@@ -71,6 +71,38 @@ add_subdirectory("third_party/compiler")
 add_library(komihash INTERFACE)
 target_include_directories(komihash INTERFACE "third_party/komihash")
 
+# rpmalloc
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+  set(RPMALLOC_TOOLCHAIN
+      "gcc"
+      CACHE STRING "")
+elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+  set(RPMALLOC_TOOLCHAIN
+      "clang"
+      CACHE STRING "")
+else()
+  message(FATAL_ERROR "unsupported compiler")
+endif()
+include(ExternalProject)
+ExternalProject_Add(
+  rpmalloc-external
+  GIT_REPOSITORY "https://github.com/mjansson/rpmalloc.git"
+  GIT_TAG "e4393ff85585d91400bcbad2e7266c011075b673" # 1.4.5
+  CONFIGURE_COMMAND ./configure.py --toolchain ${RPMALLOC_TOOLCHAIN}
+  BUILD_COMMAND ninja
+  BUILD_IN_SOURCE ON
+  BUILD_BYPRODUCTS
+    "${CMAKE_CURRENT_BINARY_DIR}/rpmalloc-external-prefix/src/rpmalloc-external/lib/linux/release/x86-64/librpmallocwrap.a"
+  INSTALL_COMMAND "")
+add_library(rpmallocwrap STATIC IMPORTED)
+set_property(
+  TARGET rpmallocwrap
+  PROPERTY
+    IMPORTED_LOCATION
+    "${CMAKE_CURRENT_BINARY_DIR}/rpmalloc-external-prefix/src/rpmalloc-external/lib/linux/release/x86-64/librpmallocwrap.a"
+)
+add_dependencies(rpmallocwrap rpmalloc-external)
+
 # silkpre
 set(OPTIONAL_BUILD_TESTS OFF)
 add_subdirectory(third_party/silkpre)

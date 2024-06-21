@@ -32,14 +32,16 @@ using evm_host_t = EvmcHost<EVMC_SHANGHAI>;
 
 TEST(Evm, create_with_insufficient)
 {
-    db_t db{std::nullopt};
-    BlockState bs{db};
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    BlockState bs{tdb};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
 
-    db.commit(
+    tdb.commit(
         StateDeltas{
             {from,
              StateDelta{
@@ -64,8 +66,10 @@ TEST(Evm, create_with_insufficient)
 
 TEST(Evm, eip684_existing_code)
 {
-    db_t db{std::nullopt};
-    BlockState bs{db};
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    BlockState bs{tdb};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -75,7 +79,7 @@ TEST(Evm, eip684_existing_code)
     static constexpr auto code_hash{
         0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
 
-    db.commit(
+    tdb.commit(
         StateDeltas{
             {from,
              StateDelta{
@@ -103,15 +107,17 @@ TEST(Evm, eip684_existing_code)
 
 TEST(Evm, transfer_call_balances)
 {
-    db_t db{std::nullopt};
-    BlockState bs{db};
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    BlockState bs{tdb};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    db.commit(
+    tdb.commit(
         StateDeltas{
             {to, StateDelta{.account = {std::nullopt, Account{}}}},
             {from,
@@ -139,14 +145,16 @@ TEST(Evm, transfer_call_balances)
 
 TEST(Evm, transfer_call_balances_to_self)
 {
-    db_t db{std::nullopt};
-    BlockState bs{db};
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    BlockState bs{tdb};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     static constexpr auto to = from;
-    db.commit(
+    tdb.commit(
         StateDeltas{
             {from,
              StateDelta{
@@ -172,8 +180,10 @@ TEST(Evm, transfer_call_balances_to_self)
 
 TEST(Evm, dont_transfer_on_delegatecall)
 {
-    db_t db{std::nullopt};
-    BlockState bs{db};
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    BlockState bs{tdb};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -181,7 +191,7 @@ TEST(Evm, dont_transfer_on_delegatecall)
     static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
 
-    db.commit(
+    tdb.commit(
         StateDeltas{
             {to, StateDelta{.account = {std::nullopt, Account{}}}},
             {from,
@@ -209,8 +219,10 @@ TEST(Evm, dont_transfer_on_delegatecall)
 
 TEST(Evm, dont_transfer_on_staticcall)
 {
-    db_t db{std::nullopt};
-    BlockState bs{db};
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    BlockState bs{tdb};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -218,7 +230,7 @@ TEST(Evm, dont_transfer_on_staticcall)
     static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
 
-    db.commit(
+    tdb.commit(
         StateDeltas{
             {to, StateDelta{.account = {std::nullopt, Account{}}}},
             {from,
@@ -247,8 +259,10 @@ TEST(Evm, dont_transfer_on_staticcall)
 
 TEST(Evm, create_nonce_out_of_range)
 {
-    db_t db{std::nullopt};
-    BlockState bs{db};
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    BlockState bs{tdb};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -259,7 +273,7 @@ TEST(Evm, create_nonce_out_of_range)
     BlockHashBuffer const block_hash_buffer;
     evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
-    db.commit(
+    tdb.commit(
         StateDeltas{
             {from,
              StateDelta{
@@ -286,8 +300,10 @@ TEST(Evm, create_nonce_out_of_range)
 
 TEST(Evm, static_precompile_execution)
 {
-    db_t db{std::nullopt};
-    BlockState bs{db};
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    BlockState bs{tdb};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -298,7 +314,7 @@ TEST(Evm, static_precompile_execution)
     BlockHashBuffer const block_hash_buffer;
     evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
-    db.commit(
+    tdb.commit(
         StateDeltas{
             {code_address,
              StateDelta{.account = {std::nullopt, Account{.nonce = 4}}}},
@@ -331,8 +347,10 @@ TEST(Evm, static_precompile_execution)
 
 TEST(Evm, out_of_gas_static_precompile_execution)
 {
-    db_t db{std::nullopt};
-    BlockState bs{db};
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    BlockState bs{tdb};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -343,7 +361,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
     BlockHashBuffer const block_hash_buffer;
     evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
-    db.commit(
+    tdb.commit(
         StateDeltas{
             {code_address,
              StateDelta{.account = {std::nullopt, Account{.nonce = 6}}}},
@@ -374,11 +392,13 @@ TEST(Evm, deploy_contract_code)
 {
     static constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 
-    db_t db{std::nullopt};
-    db.commit(
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    tdb.commit(
         StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
-    BlockState bs{db};
+    BlockState bs{tdb};
 
     // Frontier
     {

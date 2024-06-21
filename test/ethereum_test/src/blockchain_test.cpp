@@ -186,9 +186,11 @@ void BlockchainTest::TestBody()
 
         executed = true;
 
-        db_t db{std::nullopt};
+        InMemoryMachine machine;
+        mpt::Db db{machine};
+        db_t tdb{db};
         {
-            BlockState bs{db};
+            BlockState bs{tdb};
             State state{bs, Incarnation{0, 0}};
             load_state_from_json(j_contents.at("pre"), state);
             bs.merge(state);
@@ -222,14 +224,14 @@ void BlockchainTest::TestBody()
                 block.value().header.parent_hash);
 
             auto const result =
-                execute_dispatch(rev, block.value(), db, block_hash_buffer);
+                execute_dispatch(rev, block.value(), tdb, block_hash_buffer);
             if (!result.has_error()) {
                 EXPECT_FALSE(j_block.contains("expectException"));
-                EXPECT_EQ(db.state_root(), block.value().header.state_root)
+                EXPECT_EQ(tdb.state_root(), block.value().header.state_root)
                     << name;
                 if (rev >= EVMC_BYZANTIUM) {
                     EXPECT_EQ(
-                        db.receipts_root(), block.value().header.receipts_root)
+                        tdb.receipts_root(), block.value().header.receipts_root)
                         << name;
                 }
                 EXPECT_EQ(
@@ -248,11 +250,11 @@ void BlockchainTest::TestBody()
 
         if (has_post_state_hash) {
             EXPECT_EQ(
-                db.state_root(),
+                tdb.state_root(),
                 j_contents.at("postStateHash").get<bytes32_t>());
         }
 
-        auto const dump = db.to_json();
+        auto const dump = tdb.to_json();
         if (has_post_state) {
             validate_post_state(j_contents.at("postState"), dump);
         }

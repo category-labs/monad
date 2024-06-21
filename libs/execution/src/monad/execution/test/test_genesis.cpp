@@ -51,9 +51,11 @@ TEST(Genesis, ethereum_mainnet_genesis_state_root)
 {
     auto const genesis_file_path =
         test_resource::ethereum_genesis_dir / "mainnet.json";
-    TrieDb db{std::nullopt};
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
 
-    auto const block_header = read_genesis(genesis_file_path, db);
+    auto const block_header = read_genesis(genesis_file_path, tdb);
 
     // https://etherscan.io/block/0
     auto expected_state_root{
@@ -66,6 +68,8 @@ TEST(Genesis, read_and_verify_genesis_block)
     auto const genesis_file_path =
         test_resource::ethereum_genesis_dir / "mainnet.json";
     BlockDb block_db(test_resource::correct_block_data_dir);
-    TrieDb state_db{std::nullopt};
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb state_db{db};
     read_and_verify_genesis(block_db, state_db, genesis_file_path);
 }

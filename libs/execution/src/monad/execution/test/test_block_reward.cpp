@@ -29,12 +29,14 @@ TEST(BlockReward, apply_block_reward)
 {
     // Frontier
     {
-        db_t db{std::nullopt};
-        db.commit(
+        InMemoryMachine machine;
+        mpt::Db db{machine};
+        db_t tdb{db};
+        tdb.commit(
             StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
             Code{});
 
-        BlockState bs{db};
+        BlockState bs{tdb};
         State as{bs, Incarnation{1, 1}};
 
         EXPECT_TRUE(as.account_exists(a));
@@ -60,8 +62,10 @@ TEST(BlockReward, apply_block_reward)
 
     // Byzantium
     {
-        db_t db{std::nullopt};
-        BlockState bs{db};
+        InMemoryMachine machine;
+        mpt::Db db{machine};
+        db_t tdb{db};
+        BlockState bs{tdb};
         State as{bs, Incarnation{1, 1}};
         (void)as.get_balance(a);
 
@@ -89,8 +93,10 @@ TEST(BlockReward, apply_block_reward)
 
     // Constantinople_and_petersburg
     {
-        db_t db{std::nullopt};
-        BlockState bs{db};
+        InMemoryMachine machine;
+        mpt::Db db{machine};
+        db_t tdb{db};
+        BlockState bs{tdb};
         State s{bs, Incarnation{0, 0}};
 
         Block const block{
@@ -117,8 +123,10 @@ TEST(BlockReward, apply_block_reward)
         Block block{};
         block.header.beneficiary = a;
 
-        db_t db{std::nullopt};
-        BlockState bs{db};
+        InMemoryMachine machine;
+        mpt::Db db{machine};
+        db_t tdb{db};
+        BlockState bs{tdb};
         State s{bs, Incarnation{0, 0}};
 
         apply_block_reward<EVMC_PARIS>(s, block);

@@ -5,6 +5,7 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/db/trie_db.hpp>
+#include <monad/db/util.hpp>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/state2/state_deltas.hpp>
@@ -167,21 +168,16 @@ namespace
     {
         static constexpr bool on_disk = false;
 
-        static TrieDb make_db(auto &&...args)
-        {
-            return TrieDb{std::nullopt, std::forward<decltype(args)>(args)...};
-        }
+        InMemoryMachine machine;
+        mpt::Db db{machine};
     };
 
     struct OnDiskTrieDbFixture : public ::testing::Test
     {
         static constexpr bool on_disk = true;
 
-        static TrieDb make_db(auto &&...args)
-        {
-            return TrieDb{
-                mpt::OnDiskDbConfig{}, std::forward<decltype(args)>(args)...};
-        }
+        OnDiskMachine machine;
+        mpt::Db db{machine, mpt::OnDiskDbConfig{}};
     };
 }
 
@@ -200,7 +196,9 @@ TEST(DBTest, read_only)
         (::testing::UnitTest::GetInstance()->current_test_info()->name() +
          std::to_string(rand()));
     {
-        TrieDb rw(mpt::OnDiskDbConfig{.dbname_paths = {name}});
+        OnDiskMachine machine;
+        mpt::Db db{machine, mpt::OnDiskDbConfig{.dbname_paths = {name}}};
+        TrieDb rw(db);
 
         Account const acct1{.nonce = 1};
         rw.commit(
@@ -215,7 +213,8 @@ TEST(DBTest, read_only)
                 {a, StateDelta{.account = {acct1, acct2}, .storage = {}}}},
             Code{});
 
-        TrieDb ro{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {name}}};
+        mpt::Db db2(mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {name}});
+        TrieDb ro{db2};
         EXPECT_EQ(ro.read_account(a), Account{.nonce = 2});
         ro.set_block_number(0);
         EXPECT_EQ(ro.read_account(a), Account{.nonce = 1});
@@ -248,8 +247,8 @@ TEST(DBTest, read_only)
 TYPED_TEST(DBTest, read_storage)
 {
     Account acct{.nonce = 1};
-    auto db = this->make_db();
-    db.commit(
+    TrieDb tdb{this->db};
+    tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -258,44 +257,44 @@ TYPED_TEST(DBTest, read_storage)
         Code{});
 
     // Existing storage
-    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key1), value1);
-    EXPECT_EQ(db.read_storage_and_slot(a, key1).first, key1);
+    EXPECT_EQ(tdb.read_storage(a, Incarnation{0, 0}, key1), value1);
+    EXPECT_EQ(tdb.read_storage_and_slot(a, key1).first, key1);
 
     // Non-existing key
-    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key2), bytes32_t{});
-    EXPECT_EQ(db.read_storage_and_slot(a, key2).first, bytes32_t{});
+    EXPECT_EQ(tdb.read_storage(a, Incarnation{0, 0}, key2), bytes32_t{});
+    EXPECT_EQ(tdb.read_storage_and_slot(a, key2).first, bytes32_t{});
 
     // Non-existing account
-    EXPECT_FALSE(db.read_account(b).has_value());
-    EXPECT_EQ(db.read_storage(b, Incarnation{0, 0}, key1), bytes32_t{});
-    EXPECT_EQ(db.read_storage_and_slot(b, key1).first, bytes32_t{});
+    EXPECT_FALSE(tdb.read_account(b).has_value());
+    EXPECT_EQ(tdb.read_storage(b, Incarnation{0, 0}, key1), bytes32_t{});
+    EXPECT_EQ(tdb.read_storage_and_slot(b, key1).first, bytes32_t{});
 }
 
 TYPED_TEST(DBTest, read_code)
 {
     Account acct_a{.balance = 1, .code_hash = code_hash1, .nonce = 1};
-    auto db = this->make_db();
-    db.commit(
+    TrieDb tdb{this->db};
+    tdb.commit(
         StateDeltas{{a, StateDelta{.account = {std::nullopt, acct_a}}}},
         Code{{code_hash1, code1}});
 
     EXPECT_EQ(
-        db.read_code(code_hash1)->executable_code, code1->executable_code);
+        tdb.read_code(code_hash1)->executable_code, code1->executable_code);
 
     Account acct_b{.balance = 0, .code_hash = code_hash2, .nonce = 1};
-    db.commit(
+    tdb.commit(
         StateDeltas{{b, StateDelta{.account = {std::nullopt, acct_b}}}},
         Code{{code_hash2, code2}});
 
     EXPECT_EQ(
-        db.read_code(code_hash2)->executable_code, code2->executable_code);
+        tdb.read_code(code_hash2)->executable_code, code2->executable_code);
 }
 
 TYPED_TEST(DBTest, ModifyStorageOfAccount)
 {
     Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
-    auto db = this->make_db();
-    db.commit(
+    TrieDb tdb{this->db};
+    tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -305,8 +304,8 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    acct = db.read_account(a).value();
-    db.commit(
+    acct = tdb.read_account(a).value();
+    tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -315,26 +314,26 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
         Code{});
 
     EXPECT_EQ(
-        db.state_root(),
+        tdb.state_root(),
         0x0169f0b22c30d7d6f0bb7ea2a07be178e216b72f372a6a7bafe55602e5650e60_bytes32);
 }
 
 TYPED_TEST(DBTest, touch_without_modify_regression)
 {
-    auto db = this->make_db();
-    db.commit(
+    TrieDb tdb{this->db};
+    tdb.commit(
         StateDeltas{{a, StateDelta{.account = {std::nullopt, std::nullopt}}}},
         Code{});
 
-    EXPECT_EQ(db.read_account(a), std::nullopt);
-    EXPECT_EQ(db.state_root(), NULL_ROOT);
+    EXPECT_EQ(tdb.read_account(a), std::nullopt);
+    EXPECT_EQ(tdb.state_root(), NULL_ROOT);
 }
 
 TYPED_TEST(DBTest, delete_account_modify_storage_regression)
 {
     Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
-    auto db = this->make_db();
-    db.commit(
+    TrieDb tdb{this->db};
+    tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -344,7 +343,7 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    db.commit(
+    tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -353,17 +352,17 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
                      {{key1, {value1, value2}}, {key2, {value2, value1}}}}}},
         Code{});
 
-    EXPECT_EQ(db.read_account(a), std::nullopt);
-    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key1), bytes32_t{});
-    EXPECT_EQ(db.state_root(), NULL_ROOT);
+    EXPECT_EQ(tdb.read_account(a), std::nullopt);
+    EXPECT_EQ(tdb.read_storage(a, Incarnation{0, 0}, key1), bytes32_t{});
+    EXPECT_EQ(tdb.state_root(), NULL_ROOT);
 }
 
 TYPED_TEST(DBTest, storage_deletion)
 {
     Account acct{.balance = 1'000'000, .code_hash = code_hash1, .nonce = 1337};
 
-    auto db = this->make_db();
-    db.commit(
+    TrieDb tdb{this->db};
+    tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -373,8 +372,8 @@ TYPED_TEST(DBTest, storage_deletion)
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    acct = db.read_account(a).value();
-    db.commit(
+    acct = tdb.read_account(a).value();
+    tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -383,17 +382,16 @@ TYPED_TEST(DBTest, storage_deletion)
         Code{});
 
     EXPECT_EQ(
-        db.state_root(),
+        tdb.state_root(),
         0xcc04b7a59a7c5d1f294402a0cbe42b5102db928fb2fad9d0d6f8c2a21a34c195_bytes32);
 }
 
 TYPED_TEST(DBTest, commit_receipts)
 {
-    auto db = this->make_db();
-
+    TrieDb tdb{this->db};
     // empty receipts
-    db.commit(StateDeltas{}, Code{}, {});
-    EXPECT_EQ(db.receipts_root(), NULL_ROOT);
+    tdb.commit(StateDeltas{}, Code{}, {});
+    EXPECT_EQ(tdb.receipts_root(), NULL_ROOT);
 
     std::vector<Receipt> receipts;
     receipts.emplace_back(Receipt{
@@ -414,9 +412,9 @@ TYPED_TEST(DBTest, commit_receipts)
         .address = 0x8d12a197cb00d4747a1fe03395095ce2a5cc6819_address});
     receipts.push_back(std::move(r));
 
-    db.commit(StateDeltas{}, Code{}, receipts);
+    tdb.commit(StateDeltas{}, Code{}, receipts);
     EXPECT_EQ(
-        db.receipts_root(),
+        tdb.receipts_root(),
         0x7ea023138ee7d80db04eeec9cf436dc35806b00cc5fe8e5f611fb7cf1b35b177_bytes32);
 
     // A new receipt trie with eip1559 transaction type
@@ -425,9 +423,9 @@ TYPED_TEST(DBTest, commit_receipts)
         .status = 1, .gas_used = 34865, .type = TransactionType::eip1559});
     receipts.emplace_back(Receipt{
         .status = 1, .gas_used = 77969, .type = TransactionType::eip1559});
-    db.commit(StateDeltas{}, Code{}, receipts);
+    tdb.commit(StateDeltas{}, Code{}, receipts);
     EXPECT_EQ(
-        db.receipts_root(),
+        tdb.receipts_root(),
         0x61f9b4707b28771a63c1ac6e220b2aa4e441dd74985be385eaf3cd7021c551e9_bytes32);
 }
 
@@ -448,10 +446,15 @@ TYPED_TEST(DBTest, to_json)
             MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
             "monad_test_db_to_json"};
     }
-    auto db = this->on_disk
-                  ? TrieDb{mpt::OnDiskDbConfig{.dbname_paths = {dbname}}}
-                  : this->make_db();
-    db.commit(
+    auto db = [&] {
+        if (this->on_disk) {
+            return mpt::Db{
+                this->machine, mpt::OnDiskDbConfig{.dbname_paths = {dbname}}};
+        }
+        return mpt::Db{this->machine};
+    }();
+    TrieDb tdb{db};
+    tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -517,37 +520,38 @@ TYPED_TEST(DBTest, to_json)
 
     if (this->on_disk) {
         // also test to_json from a read only db
-        auto ro_db =
-            TrieDb{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+        mpt::Db db2{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+        auto ro_db = TrieDb{db2};
         EXPECT_EQ(expected_payload, ro_db.to_json());
     }
-    EXPECT_EQ(expected_payload, db.to_json());
+    EXPECT_EQ(expected_payload, tdb.to_json());
 }
 
-TYPED_TEST(DBTest, construct_from_binary)
+TYPED_TEST(DBTest, load_from_binary)
 {
     std::ifstream accounts(test_resource::checkpoint_dir / "accounts");
     std::ifstream code(test_resource::checkpoint_dir / "code");
-    auto db = this->make_db(accounts, code);
+    load_from_binary(this->db, accounts, code);
+    TrieDb tdb{this->db};
     EXPECT_EQ(
-        db.state_root(),
+        tdb.state_root(),
         0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);
     EXPECT_EQ(
-        db.read_code(a_code_hash)->executable_code,
+        tdb.read_code(a_code_hash)->executable_code,
         a_code_analysis->executable_code);
     EXPECT_EQ(
-        db.read_code(b_code_hash)->executable_code,
+        tdb.read_code(b_code_hash)->executable_code,
         b_code_analysis->executable_code);
     EXPECT_EQ(
-        db.read_code(c_code_hash)->executable_code,
+        tdb.read_code(c_code_hash)->executable_code,
         c_code_analysis->executable_code);
     EXPECT_EQ(
-        db.read_code(d_code_hash)->executable_code,
+        tdb.read_code(d_code_hash)->executable_code,
         d_code_analysis->executable_code);
     EXPECT_EQ(
-        db.read_code(e_code_hash)->executable_code,
+        tdb.read_code(e_code_hash)->executable_code,
         e_code_analysis->executable_code);
     EXPECT_EQ(
-        db.read_code(h_code_hash)->executable_code,
+        tdb.read_code(h_code_hash)->executable_code,
         h_code_analysis->executable_code);
 }

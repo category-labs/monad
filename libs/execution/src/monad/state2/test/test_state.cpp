@@ -55,12 +55,16 @@ namespace
 
     struct InMemoryTrieDbFixture : public ::testing::Test
     {
-        TrieDb db{std::nullopt};
+        InMemoryMachine machine;
+        mpt::Db db{machine};
+        TrieDb tdb{db};
     };
 
     struct OnDiskTrieDbFixture : public ::testing::Test
     {
-        TrieDb db{mpt::OnDiskDbConfig{}};
+        OnDiskMachine machine;
+        mpt::Db db{machine, mpt::OnDiskDbConfig{}};
+        TrieDb tdb{db};
     };
 }
 
@@ -74,8 +78,8 @@ TYPED_TEST_SUITE(StateTest, DBTypes);
 
 TYPED_TEST(StateTest, access_account)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -92,8 +96,8 @@ TYPED_TEST(StateTest, access_account)
 
 TYPED_TEST(StateTest, account_exists)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -108,7 +112,7 @@ TYPED_TEST(StateTest, account_exists)
 
 TYPED_TEST(StateTest, create_contract)
 {
-    BlockState bs{this->db};
+    BlockState bs{this->tdb};
 
     State s{bs, Incarnation{1, 1}};
     s.create_contract(a);
@@ -122,8 +126,8 @@ TYPED_TEST(StateTest, create_contract)
 
 TYPED_TEST(StateTest, get_balance)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -139,8 +143,8 @@ TYPED_TEST(StateTest, get_balance)
 
 TYPED_TEST(StateTest, add_to_balance)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a, StateDelta{.account = {std::nullopt, Account{.balance = 1}}}}},
         Code{});
@@ -155,8 +159,8 @@ TYPED_TEST(StateTest, add_to_balance)
 
 TYPED_TEST(StateTest, get_nonce)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a, StateDelta{.account = {std::nullopt, Account{.nonce = 2}}}}},
         Code{});
@@ -170,7 +174,7 @@ TYPED_TEST(StateTest, get_nonce)
 
 TYPED_TEST(StateTest, set_nonce)
 {
-    BlockState bs{this->db};
+    BlockState bs{this->tdb};
 
     State s{bs, Incarnation{1, 1}};
     s.set_nonce(b, 1);
@@ -180,8 +184,8 @@ TYPED_TEST(StateTest, set_nonce)
 
 TYPED_TEST(StateTest, get_code_hash)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -197,7 +201,7 @@ TYPED_TEST(StateTest, get_code_hash)
 
 TYPED_TEST(StateTest, set_code_hash)
 {
-    BlockState bs{this->db};
+    BlockState bs{this->tdb};
 
     State s{bs, Incarnation{1, 1}};
     s.create_contract(b);
@@ -208,8 +212,8 @@ TYPED_TEST(StateTest, set_code_hash)
 
 TYPED_TEST(StateTest, selfdestruct)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{.account = {std::nullopt, Account{.balance = 18'000}}}},
@@ -239,8 +243,8 @@ TYPED_TEST(StateTest, selfdestruct)
 
 TYPED_TEST(StateTest, selfdestruct_self)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -258,8 +262,8 @@ TYPED_TEST(StateTest, selfdestruct_self)
 
 TYPED_TEST(StateTest, selfdestruct_merge_incarnation)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -285,8 +289,8 @@ TYPED_TEST(StateTest, selfdestruct_merge_incarnation)
 
 TYPED_TEST(StateTest, selfdestruct_merge_create_incarnation)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -327,8 +331,8 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_incarnation)
 
 TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -352,14 +356,14 @@ TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
     {
         bs.commit({});
         EXPECT_EQ(
-            this->db.read_storage(a, Incarnation{1, 2}, key1), bytes32_t{});
+            this->tdb.read_storage(a, Incarnation{1, 2}, key1), bytes32_t{});
     }
 }
 
 TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -389,17 +393,17 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
     }
     {
         bs.commit({});
-        EXPECT_EQ(this->db.read_storage(a, Incarnation{1, 2}, key1), value1);
-        EXPECT_EQ(this->db.read_storage(a, Incarnation{1, 2}, key2), value2);
+        EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key1), value1);
+        EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key2), value2);
         EXPECT_EQ(
-            this->db.state_root(),
+            this->tdb.state_root(),
             0x5B853ED6066181BF0E0D405DA0926FD7707446BCBE670DE13C9EDA7A84F6A401_bytes32);
     }
 }
 
 TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
 {
-    BlockState bs{this->db};
+    BlockState bs{this->tdb};
     {
         State s1{bs, Incarnation{1, 1}};
 
@@ -423,15 +427,15 @@ TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
     {
         bs.commit({});
         EXPECT_EQ(
-            this->db.read_storage(a, Incarnation{1, 2}, key1), bytes32_t{});
-        EXPECT_EQ(this->db.read_storage(a, Incarnation{1, 2}, key2), value3);
+            this->tdb.read_storage(a, Incarnation{1, 2}, key1), bytes32_t{});
+        EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key2), value3);
     }
 }
 
 TYPED_TEST(StateTest, create_conflict_address_incarnation)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -450,8 +454,8 @@ TYPED_TEST(StateTest, create_conflict_address_incarnation)
 
 TYPED_TEST(StateTest, destruct_touched_dead)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{.account = {std::nullopt, Account{.balance = 10'000}}}},
@@ -493,7 +497,7 @@ TYPED_TEST(StateTest, destruct_touched_dead)
 // Storage
 TYPED_TEST(StateTest, access_storage)
 {
-    BlockState bs{this->db};
+    BlockState bs{this->tdb};
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_COLD);
@@ -508,8 +512,8 @@ TYPED_TEST(StateTest, access_storage)
 
 TYPED_TEST(StateTest, get_storage)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -536,8 +540,8 @@ TYPED_TEST(StateTest, get_storage)
 
 TYPED_TEST(StateTest, set_storage_modified)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -554,9 +558,9 @@ TYPED_TEST(StateTest, set_storage_modified)
 
 TYPED_TEST(StateTest, set_storage_deleted)
 {
-    BlockState bs{this->db};
+    BlockState bs{this->tdb};
 
-    this->db.commit(
+    this->tdb.commit(
         StateDeltas{
             {b,
              StateDelta{
@@ -576,8 +580,8 @@ TYPED_TEST(StateTest, set_storage_deleted)
 
 TYPED_TEST(StateTest, set_storage_added)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
@@ -593,8 +597,8 @@ TYPED_TEST(StateTest, set_storage_added)
 
 TYPED_TEST(StateTest, set_storage_different_assigned)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -613,8 +617,8 @@ TYPED_TEST(StateTest, set_storage_different_assigned)
 
 TYPED_TEST(StateTest, set_storage_unchanged_assigned)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -631,8 +635,8 @@ TYPED_TEST(StateTest, set_storage_unchanged_assigned)
 
 TYPED_TEST(StateTest, set_storage_added_deleted)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
@@ -646,8 +650,8 @@ TYPED_TEST(StateTest, set_storage_added_deleted)
 
 TYPED_TEST(StateTest, set_storage_added_deleted_null)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{});
 
@@ -661,8 +665,8 @@ TYPED_TEST(StateTest, set_storage_added_deleted_null)
 
 TYPED_TEST(StateTest, set_storage_modify_delete)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {b,
              StateDelta{
@@ -680,8 +684,8 @@ TYPED_TEST(StateTest, set_storage_modify_delete)
 
 TYPED_TEST(StateTest, set_storage_delete_restored)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {b,
              StateDelta{
@@ -699,8 +703,8 @@ TYPED_TEST(StateTest, set_storage_delete_restored)
 
 TYPED_TEST(StateTest, set_storage_modified_restored)
 {
-    BlockState bs{this->db};
-    this->db.commit(
+    BlockState bs{this->tdb};
+    this->tdb.commit(
         StateDeltas{
             {b,
              StateDelta{
@@ -719,9 +723,9 @@ TYPED_TEST(StateTest, set_storage_modified_restored)
 // Code
 TYPED_TEST(StateTest, get_code_size)
 {
-    BlockState bs{this->db};
+    BlockState bs{this->tdb};
     Account acct{.code_hash = code_hash1};
-    this->db.commit(
+    this->tdb.commit(
         StateDeltas{{a, StateDelta{.account = {std::nullopt, acct}}}},
         Code{{code_hash1, code_analysis1}});
 
@@ -731,11 +735,11 @@ TYPED_TEST(StateTest, get_code_size)
 
 TYPED_TEST(StateTest, copy_code)
 {
-    BlockState bs{this->db};
+    BlockState bs{this->tdb};
     Account acct_a{.code_hash = code_hash1};
     Account acct_b{.code_hash = code_hash2};
 
-    this->db.commit(
+    this->tdb.commit(
         StateDeltas{
             {a, StateDelta{.account = {std::nullopt, acct_a}}},
             {b, StateDelta{.account = {std::nullopt, acct_b}}}},
@@ -783,9 +787,9 @@ TYPED_TEST(StateTest, get_code)
 {
     byte_string const contract{0x60, 0x34, 0x00};
 
-    BlockState bs{this->db};
+    BlockState bs{this->tdb};
 
-    this->db.commit(
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{
@@ -807,7 +811,7 @@ TYPED_TEST(StateTest, get_code)
 
 TYPED_TEST(StateTest, set_code)
 {
-    BlockState bs{this->db};
+    BlockState bs{this->tdb};
 
     State s{bs, Incarnation{1, 1}};
     s.create_contract(a);
@@ -821,9 +825,9 @@ TYPED_TEST(StateTest, set_code)
 
 TYPED_TEST(StateTest, can_merge_same_account_different_storage)
 {
-    BlockState bs{this->db};
+    BlockState bs{this->tdb};
 
-    this->db.commit(
+    this->tdb.commit(
         StateDeltas{
             {b,
              StateDelta{
@@ -854,9 +858,9 @@ TYPED_TEST(StateTest, can_merge_same_account_different_storage)
 
 TYPED_TEST(StateTest, cant_merge_colliding_storage)
 {
-    BlockState bs{this->db};
+    BlockState bs{this->tdb};
 
-    this->db.commit(
+    this->tdb.commit(
         StateDeltas{
             {b,
              StateDelta{
@@ -888,9 +892,9 @@ TYPED_TEST(StateTest, cant_merge_colliding_storage)
 
 TYPED_TEST(StateTest, merge_txn0_and_txn1)
 {
-    BlockState bs{this->db};
+    BlockState bs{this->tdb};
 
-    this->db.commit(
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{.account = {std::nullopt, Account{.balance = 30'000}}}},
@@ -928,7 +932,7 @@ TYPED_TEST(StateTest, merge_txn0_and_txn1)
 
 TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
 {
-    BlockState bs{this->db};
+    BlockState bs{this->tdb};
     State as{bs, Incarnation{1, 1}};
 
     as.create_contract(a);
@@ -938,15 +942,15 @@ TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
     bs.merge(as);
     bs.commit({});
 
-    EXPECT_TRUE(this->db.read_account(a).has_value());
-    EXPECT_EQ(this->db.read_account(a).value().balance, 1u);
-    EXPECT_EQ(this->db.read_storage(a, Incarnation{1, 1}, key1), value1);
+    EXPECT_TRUE(this->tdb.read_account(a).has_value());
+    EXPECT_EQ(this->tdb.read_account(a).value().balance, 1u);
+    EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 1}, key1), value1);
 }
 
 TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
 {
     using namespace intx;
-    BlockState bs{this->db};
+    BlockState bs{this->tdb};
     State as{bs, Incarnation{1, 1}};
 
     as.create_contract(a);
@@ -956,12 +960,12 @@ TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
     bs.commit({});
 
     EXPECT_EQ(
-        this->db.read_storage(a, Incarnation{1, 1}, key1), monad::bytes32_t{});
+        this->tdb.read_storage(a, Incarnation{1, 1}, key1), monad::bytes32_t{});
 }
 
 TYPED_TEST(StateTest, commit_twice)
 {
-    this->db.commit(
+    this->tdb.commit(
         StateDeltas{
             {a,
              StateDelta{.account = {std::nullopt, Account{.balance = 30'000}}}},
@@ -981,7 +985,7 @@ TYPED_TEST(StateTest, commit_twice)
 
     {
         // Block 0, Txn 0
-        BlockState bs{this->db};
+        BlockState bs{this->tdb};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 42'000);
@@ -994,12 +998,12 @@ TYPED_TEST(StateTest, commit_twice)
         bs.merge(as);
         bs.commit({});
 
-        EXPECT_EQ(this->db.read_storage(b, Incarnation{1, 1}, key1), value2);
-        EXPECT_EQ(this->db.read_storage(b, Incarnation{1, 1}, key2), value2);
+        EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key1), value2);
+        EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key2), value2);
     }
     {
         // Block 1, Txn 0
-        BlockState bs{this->db};
+        BlockState bs{this->tdb};
         State cs{bs, Incarnation{2, 1}};
         EXPECT_TRUE(cs.account_exists(a));
         EXPECT_TRUE(cs.account_exists(c));
@@ -1012,10 +1016,10 @@ TYPED_TEST(StateTest, commit_twice)
         bs.commit({});
 
         EXPECT_EQ(
-            this->db.read_storage(c, Incarnation{2, 1}, key1),
+            this->tdb.read_storage(c, Incarnation{2, 1}, key1),
             monad::bytes32_t{});
         EXPECT_EQ(
-            this->db.read_storage(c, Incarnation{2, 1}, key2),
+            this->tdb.read_storage(c, Incarnation{2, 1}, key2),
             monad::bytes32_t{});
     }
 }

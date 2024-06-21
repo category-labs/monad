@@ -120,21 +120,26 @@ int main(int const argc, char const *argv[])
 
         bool const on_disk = !dbname_paths.empty();
 
-        auto const config = on_disk
-                                ? std::make_optional(mpt::OnDiskDbConfig{
-                                      .append = true, // always open existing
-                                      .compaction = !no_compaction,
-                                      .rd_buffers = 8192,
-                                      .wr_buffers = 32,
-                                      .uring_entries = 128,
-                                      .sq_thread_cpu = sq_thread_cpu,
-                                      .dbname_paths = dbname_paths})
-                                : std::nullopt;
-        uint64_t init_block_number = 0;
-        auto db = [&] -> TrieDb {
-            if (load_snapshot.empty()) {
-                return TrieDb{config};
+        std::unique_ptr<mpt::StateMachine> machine;
+        mpt::Db db = [&] {
+            if (on_disk) {
+                machine = std::make_unique<OnDiskMachine>();
+                return mpt::Db{
+                    *machine,
+                    mpt::OnDiskDbConfig{
+                        .append = true, // always open existing
+                        .compaction = !no_compaction,
+                        .rd_buffers = 8192,
+                        .wr_buffers = 32,
+                        .uring_entries = 128,
+                        .sq_thread_cpu = sq_thread_cpu,
+                        .dbname_paths = dbname_paths}};
             }
+            machine = std::make_unique<InMemoryMachine>();
+            return mpt::Db{*machine};
+        }();
+        uint64_t init_block_number = 0;
+        if (!load_snapshot.empty()) {
             namespace fs = std::filesystem;
             if (!(fs::is_directory(load_snapshot) &&
                   fs::exists(load_snapshot / "accounts") &&
@@ -150,14 +155,15 @@ int main(int const argc, char const *argv[])
             LOG_INFO("Loading from binary checkpoint in {}", load_snapshot);
             std::ifstream accounts(load_snapshot / "accounts");
             std::ifstream code(load_snapshot / "code");
-            return TrieDb{config, accounts, code, init_block_number};
-        }();
+            load_from_binary(db, accounts, code, init_block_number);
+        }
+        TrieDb triedb{db};
 
         if (load_snapshot.empty()) {
-            init_block_number = db.get_block_number();
+            init_block_number = triedb.get_block_number();
             LOG_INFO("Loading current root into memory");
             auto const start_time = std::chrono::steady_clock::now();
-            auto const nodes_loaded = db.prefetch_current_root();
+            auto const nodes_loaded = triedb.prefetch_current_root();
             auto const finish_time = std::chrono::steady_clock::now();
             auto const elapsed =
                 std::chrono::duration_cast<std::chrono::seconds>(
@@ -170,7 +176,7 @@ int main(int const argc, char const *argv[])
         }
         if (init_block_number == 0) {
             MONAD_ASSERT(*has_genesis_file);
-            read_and_verify_genesis(block_db, db, genesis_file_path);
+            read_and_verify_genesis(block_db, triedb, genesis_file_path);
         }
 
         auto const load_finish_time = std::chrono::steady_clock::now();
@@ -199,7 +205,7 @@ int main(int const argc, char const *argv[])
 
         auto const start_time = std::chrono::steady_clock::now();
 
-        DbCache db_cache{db};
+        DbCache db_cache{triedb};
 
         auto const result = replay_eth.run(
             db_cache, block_db, priority_pool, start_block_number, nblocks);
@@ -230,10 +236,11 @@ int main(int const argc, char const *argv[])
 
     if (!dump_snapshot.empty()) {
         LOG_INFO("Dump db of block: {}", last_block_number);
-        TrieDb ro_db{mpt::ReadOnlyOnDiskDbConfig{
+        mpt::Db db{mpt::ReadOnlyOnDiskDbConfig{
             .sq_thread_cpu = sq_thread_cpu,
             .dbname_paths = dbname_paths,
             .concurrent_read_io_limit = 128}};
+        TrieDb ro_db{db};
         // WARNING: to_json() does parallel traverse which consumes excessive
         // memory
         write_to_file(ro_db.to_json(), dump_snapshot, last_block_number);

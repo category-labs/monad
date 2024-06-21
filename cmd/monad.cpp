@@ -180,25 +180,33 @@ int main(int const argc, char const *argv[])
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
 
     auto const before = std::chrono::steady_clock::now();
-    auto const config = db_path.has_value()
-                            ? std::make_optional(mpt::OnDiskDbConfig{
-                                  .append = false,
-                                  .compaction = true,
-                                  .rd_buffers = 8192,
-                                  .wr_buffers = 32,
-                                  .uring_entries = 128,
-                                  .sq_thread_cpu = get_nprocs() - 1,
-                                  .dbname_paths = {db_path.value()}})
-                            : std::nullopt;
-    TrieDb db{config};
-    read_genesis(genesis_file, db);
+    std::unique_ptr<mpt::StateMachine> machine;
+    mpt::Db db = [&] {
+        if (db_path.has_value()) {
+            machine = std::make_unique<OnDiskMachine>();
+            return mpt::Db{
+                *machine,
+                mpt::OnDiskDbConfig{
+                    .append = false,
+                    .compaction = true,
+                    .rd_buffers = 8192,
+                    .wr_buffers = 32,
+                    .uring_entries = 128,
+                    .sq_thread_cpu = get_nprocs() - 1,
+                    .dbname_paths = {db_path.value()}}};
+        }
+        machine = std::make_unique<InMemoryMachine>();
+        return mpt::Db{*machine};
+    }();
+    TrieDb triedb{db};
+    read_genesis(genesis_file, triedb);
     LOG_INFO(
         "finished initializing db, time elapsed = {}",
         std::chrono::steady_clock::now() - before);
 
     fiber::PriorityPool priority_pool{nthreads, nfibers};
     auto const start_time = std::chrono::steady_clock::now();
-    DbCache db_cache{db};
+    DbCache db_cache{triedb};
     // TODO: replace with monad specfiic mainnet
     EthereumMainnet const chain{};
     run_monad(chain, block_db, db_cache, priority_pool);

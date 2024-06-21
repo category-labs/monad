@@ -10,8 +10,6 @@
 #include <monad/core/keccak.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
-#include <monad/core/result.hpp>
-#include <monad/core/rlp/account_rlp.hpp>
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
 #include <monad/core/rlp/receipt_rlp.hpp>
@@ -32,10 +30,6 @@
 #include <monad/rlp/decode_error.hpp>
 #include <monad/rlp/encode2.hpp>
 #include <monad/state2/state_deltas.hpp>
-
-#include <boost/outcome/try.hpp>
-
-#include <ethash/hash_types.hpp>
 
 #include <evmc/evmc.hpp>
 #include <evmc/hex.hpp>
@@ -65,526 +59,13 @@ MONAD_NAMESPACE_BEGIN
 
 using namespace monad::mpt;
 
-namespace
+TrieDb::TrieDb(mpt::Db &db)
+    : db_{db}
+    , block_number_{
+          db.get_latest_block_id() == INVALID_BLOCK_ID
+              ? 0
+              : db.get_latest_block_id()}
 {
-    constexpr unsigned char state_nibble = 0;
-    constexpr unsigned char code_nibble = 1;
-    constexpr unsigned char receipt_nibble = 2;
-    auto const state_nibbles = concat(state_nibble);
-    auto const code_nibbles = concat(code_nibble);
-    auto const receipt_nibbles = concat(receipt_nibble);
-
-    byte_string encode_account_db(Account const &account)
-    {
-        byte_string encoded_account;
-        encoded_account += rlp::encode_unsigned(account.incarnation.to_int());
-        encoded_account += rlp::encode_unsigned(account.nonce);
-        encoded_account += rlp::encode_unsigned(account.balance);
-        if (account.code_hash != NULL_HASH) {
-            encoded_account += rlp::encode_bytes32(account.code_hash);
-        }
-        return rlp::encode_list2(encoded_account);
-    }
-
-    Result<Account> decode_account_db(byte_string_view &enc)
-    {
-        BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
-
-        Account acct;
-        BOOST_OUTCOME_TRY(
-            auto const incarnation, rlp::decode_unsigned<uint64_t>(payload));
-        acct.incarnation = Incarnation::from_int(incarnation);
-        BOOST_OUTCOME_TRY(acct.nonce, rlp::decode_unsigned<uint64_t>(payload));
-        BOOST_OUTCOME_TRY(
-            acct.balance, rlp::decode_unsigned<uint256_t>(payload));
-        if (!payload.empty()) {
-            BOOST_OUTCOME_TRY(acct.code_hash, rlp::decode_bytes32(payload));
-        }
-
-        if (MONAD_UNLIKELY(!payload.empty())) {
-            return rlp::DecodeError::InputTooLong;
-        }
-
-        return acct;
-    }
-
-    byte_string encode_storage_db(bytes32_t const key, bytes32_t const val)
-    {
-        byte_string encoded_storage;
-        encoded_storage += rlp::encode_bytes32_compact(val);
-        encoded_storage += rlp::encode_bytes32_compact(key);
-        return encoded_storage;
-    }
-
-    Result<std::pair<bytes32_t, bytes32_t>>
-    decode_storage_db(byte_string_view &enc)
-    {
-        std::pair<bytes32_t, bytes32_t> storage;
-        BOOST_OUTCOME_TRY(storage.second, rlp::decode_bytes32_compact(enc));
-        BOOST_OUTCOME_TRY(storage.first, rlp::decode_bytes32_compact(enc));
-        return storage;
-    }
-
-    struct ComputeAccountLeaf
-    {
-        static byte_string compute(Node const &node)
-        {
-            MONAD_ASSERT(node.has_value());
-
-            // this is the block number leaf
-            if (MONAD_UNLIKELY(node.value().empty())) {
-                return {};
-            }
-
-            auto encoded_account = node.value();
-            auto const acct = decode_account_db(encoded_account);
-            MONAD_ASSERT(!acct.has_error());
-            MONAD_ASSERT(encoded_account.empty());
-            bytes32_t storage_root = NULL_ROOT;
-            if (node.number_of_children()) {
-                MONAD_ASSERT(node.data().size() == sizeof(bytes32_t));
-                std::copy_n(
-                    node.data().data(), sizeof(bytes32_t), storage_root.bytes);
-            }
-            return rlp::encode_account(acct.value(), storage_root);
-        }
-    };
-
-    struct ComputeStorageLeaf
-    {
-        static byte_string compute(Node const &node)
-        {
-            MONAD_ASSERT(node.has_value());
-            auto encoded_storage = node.value();
-            auto const storage = rlp::decode_string(encoded_storage);
-            MONAD_ASSERT(!storage.has_error());
-            MONAD_ASSERT(
-                encoded_storage.size() >= 1 &&
-                encoded_storage.size() <= sizeof(bytes32_t) + 1);
-            MONAD_ASSERT(storage.value().size() <= sizeof(bytes32_t));
-            return rlp::encode_string2(storage.value());
-        }
-    };
-
-    using AccountMerkleCompute = MerkleComputeBase<ComputeAccountLeaf>;
-    using StorageMerkleCompute = MerkleComputeBase<ComputeStorageLeaf>;
-
-    struct StorageRootMerkleCompute : public StorageMerkleCompute
-    {
-        virtual unsigned
-        compute(unsigned char *const buffer, Node *const node) override
-        {
-            MONAD_ASSERT(node->has_value());
-            return encode_two_pieces(
-                buffer,
-                node->path_nibble_view(),
-                ComputeAccountLeaf::compute(*node),
-                true);
-        }
-    };
-
-    struct AccountRootMerkleCompute : public AccountMerkleCompute
-    {
-        virtual unsigned compute(unsigned char *const, Node *const) override
-        {
-            return 0;
-        }
-    };
-
-    struct EmptyCompute final : Compute
-    {
-        virtual unsigned compute_len(
-            std::span<ChildData>, uint16_t, NibblesView,
-            std::optional<byte_string_view>) override
-        {
-            return 0;
-        }
-
-        virtual unsigned compute_branch(unsigned char *, Node *) override
-        {
-            return 0;
-        }
-
-        virtual unsigned compute(unsigned char *, Node *) override
-        {
-            return 0;
-        }
-    };
-
-    struct BinaryDbLoader
-    {
-    private:
-        static constexpr auto chunk_size = 1ul << 13; // 8 kb
-
-        ::monad::mpt::Db &db_;
-        std::deque<mpt::Update> update_alloc_;
-        std::deque<byte_string> bytes_alloc_;
-        size_t buf_size_;
-        std::unique_ptr<unsigned char[]> buf_;
-        uint64_t block_id_;
-
-    public:
-        BinaryDbLoader(
-            ::monad::mpt::Db &db, size_t buf_size, uint64_t const block_id)
-            : db_{db}
-            , buf_size_{buf_size}
-            , buf_{std::make_unique_for_overwrite<unsigned char[]>(buf_size)}
-            , block_id_{block_id}
-        {
-            MONAD_ASSERT(buf_size >= chunk_size);
-        };
-
-        void load(std::istream &accounts, std::istream &code)
-        {
-            load(
-                accounts,
-                [&](byte_string_view in, UpdateList &updates) {
-                    return parse_accounts(in, updates);
-                },
-                [&](UpdateList account_updates) {
-                    UpdateList updates;
-                    auto state_update = Update{
-                        .key = state_nibbles,
-                        .value = byte_string_view{},
-                        .incarnation = false,
-                        .next = std::move(account_updates),
-                        .version = static_cast<int64_t>(block_id_)};
-                    updates.push_front(state_update);
-
-                    db_.upsert(std::move(updates), block_id_, false, false);
-
-                    update_alloc_.clear();
-                    bytes_alloc_.clear();
-                });
-            load(
-                code,
-                [&](byte_string_view in, UpdateList &updates) {
-                    return parse_code(in, updates);
-                },
-                [&](UpdateList code_updates) {
-                    UpdateList updates;
-                    auto code_update = Update{
-                        .key = code_nibbles,
-                        .value = byte_string_view{},
-                        .incarnation = false,
-                        .next = std::move(code_updates),
-                        .version = static_cast<int64_t>(block_id_)};
-                    updates.push_front(code_update);
-
-                    db_.upsert(std::move(updates), block_id_, false, false);
-
-                    update_alloc_.clear();
-                    bytes_alloc_.clear();
-                });
-        }
-
-    private:
-        static constexpr auto storage_entry_size = sizeof(bytes32_t) * 2;
-        static_assert(storage_entry_size == 64);
-
-        void load(
-            std::istream &input,
-            std::function<size_t(byte_string_view, UpdateList &)> fparse,
-            std::function<void(UpdateList)> fwrite)
-        {
-            UpdateList updates;
-            size_t total_processed = 0;
-            size_t total_read = 0;
-            while (input.read((char *)buf_.get() + total_read, chunk_size)) {
-                auto const count = static_cast<size_t>(input.gcount());
-                MONAD_ASSERT(count <= chunk_size);
-                total_read += count;
-                total_processed += fparse(
-                    byte_string_view{
-                        buf_.get() + total_processed,
-                        total_read - total_processed},
-                    updates);
-                if (MONAD_UNLIKELY((total_read + chunk_size) > buf_size_)) {
-                    fwrite(std::move(updates));
-                    std::memmove(
-                        buf_.get(),
-                        buf_.get() + total_processed,
-                        total_read - total_processed);
-                    total_read -= total_processed;
-                    total_processed = 0;
-                    updates.clear();
-                }
-            }
-
-            auto const count = static_cast<size_t>(input.gcount());
-            MONAD_ASSERT(count <= chunk_size);
-            total_read += count;
-            total_processed += fparse(
-                byte_string_view{
-                    buf_.get() + total_processed, total_read - total_processed},
-                updates);
-            MONAD_ASSERT(total_processed == total_read);
-            MONAD_ASSERT(input.eof());
-
-            fwrite(std::move(updates));
-        }
-
-        size_t parse_accounts(byte_string_view in, UpdateList &account_updates)
-        {
-            constexpr auto account_fixed_size =
-                sizeof(bytes32_t) + sizeof(uint256_t) + sizeof(uint64_t) +
-                sizeof(bytes32_t) + sizeof(uint64_t);
-            static_assert(account_fixed_size == 112);
-            size_t total_processed = 0;
-            while (in.size() >= account_fixed_size) {
-                constexpr auto num_storage_offset =
-                    account_fixed_size - sizeof(uint64_t);
-                auto const num_storage = unaligned_load<uint64_t>(
-                    in.substr(num_storage_offset, sizeof(uint64_t)).data());
-                auto const storage_size = num_storage * storage_entry_size;
-                auto const entry_size = account_fixed_size + storage_size;
-                MONAD_ASSERT(entry_size <= buf_size_);
-                if (in.size() < entry_size) {
-                    return total_processed;
-                }
-                auto &update = update_alloc_.emplace_back(handle_account(in));
-                if (num_storage) {
-                    update.next = handle_storage(
-                        in.substr(account_fixed_size, storage_size));
-                }
-                account_updates.push_front(update);
-                total_processed += entry_size;
-                in = in.substr(entry_size);
-            }
-            return total_processed;
-        }
-
-        size_t parse_code(byte_string_view in, UpdateList &code_updates)
-        {
-            constexpr auto hash_and_len_size =
-                sizeof(bytes32_t) + sizeof(uint64_t);
-            static_assert(hash_and_len_size == 40);
-            size_t total_processed = 0;
-            while (in.size() >= hash_and_len_size) {
-                auto const code_len = unaligned_load<uint64_t>(
-                    in.substr(sizeof(bytes32_t), sizeof(uint64_t)).data());
-                auto const entry_size = code_len + hash_and_len_size;
-                MONAD_ASSERT(entry_size <= buf_size_);
-                if (in.size() < entry_size) {
-                    return total_processed;
-                }
-                code_updates.push_front(update_alloc_.emplace_back(Update{
-                    .key = in.substr(0, sizeof(bytes32_t)),
-                    .value = in.substr(hash_and_len_size, code_len),
-                    .incarnation = false,
-                    .next = UpdateList{},
-                    .version = static_cast<int64_t>(block_id_)}));
-
-                total_processed += entry_size;
-                in = in.substr(entry_size);
-            }
-            return total_processed;
-        }
-
-        Update handle_account(byte_string_view curr)
-        {
-            constexpr auto balance_offset = sizeof(bytes32_t);
-            constexpr auto nonce_offset = balance_offset + sizeof(uint256_t);
-            constexpr auto code_hash_offset = nonce_offset + sizeof(uint64_t);
-
-            return Update{
-                .key = curr.substr(0, sizeof(bytes32_t)),
-                .value = bytes_alloc_.emplace_back(encode_account_db(Account{
-                    .balance = unaligned_load<uint256_t>(
-                        curr.substr(balance_offset, sizeof(uint256_t)).data()),
-                    .code_hash = unaligned_load<bytes32_t>(
-                        curr.substr(code_hash_offset, sizeof(bytes32_t))
-                            .data()),
-                    .nonce = unaligned_load<uint64_t>(
-                        curr.substr(nonce_offset, sizeof(uint64_t)).data())})),
-                .incarnation = false,
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(block_id_)};
-        }
-
-        UpdateList handle_storage(byte_string_view in)
-        {
-            UpdateList storage_updates;
-            while (!in.empty()) {
-                storage_updates.push_front(update_alloc_.emplace_back(Update{
-                    .key = in.substr(0, sizeof(bytes32_t)),
-                    .value = bytes_alloc_.emplace_back(encode_storage_db(
-                        bytes32_t{}, // TODO: update this when binary checkpoint
-                                     // includes unhashed storage slot
-                        unaligned_load<bytes32_t>(
-                            in.substr(sizeof(bytes32_t), sizeof(bytes32_t))
-                                .data()))),
-                    .incarnation = false,
-                    .next = UpdateList{},
-                    .version = static_cast<int64_t>(block_id_)}));
-                in = in.substr(storage_entry_size);
-            }
-            return storage_updates;
-        }
-    };
-}
-
-struct TrieDb::Machine : public mpt::StateMachine
-{
-    enum class TrieType : uint8_t
-    {
-        Prefix,
-        State,
-        Code,
-        Receipt
-    };
-
-    uint8_t depth{0};
-    TrieType trie_section{TrieType::Prefix};
-    static constexpr auto prefix_len = 1;
-    static constexpr auto max_depth =
-        prefix_len + sizeof(bytes32_t) * 2 + sizeof(bytes32_t) * 2;
-
-    virtual mpt::Compute &get_compute() const override
-    {
-        static EmptyCompute empty_compute;
-
-        static AccountMerkleCompute account_compute;
-        static AccountRootMerkleCompute account_root_compute;
-        static StorageMerkleCompute storage_compute;
-        static StorageRootMerkleCompute storage_root_compute;
-
-        static VarLenMerkleCompute receipt_compute;
-        static RootVarLenMerkleCompute receipt_root_compute;
-
-        if (MONAD_LIKELY(trie_section == TrieType::State)) {
-            MONAD_ASSERT(depth >= prefix_len);
-            if (MONAD_UNLIKELY(depth == prefix_len)) {
-                return account_root_compute;
-            }
-            else if (depth < prefix_len + 2 * sizeof(bytes32_t)) {
-                return account_compute;
-            }
-            else if (depth == prefix_len + 2 * sizeof(bytes32_t)) {
-                return storage_root_compute;
-            }
-            else {
-                return storage_compute;
-            }
-        }
-        else if (trie_section == TrieType::Receipt) {
-            return depth == prefix_len ? receipt_root_compute : receipt_compute;
-        }
-        else {
-            return empty_compute;
-        }
-    }
-
-    virtual void down(unsigned char const nibble) override
-    {
-        ++depth;
-        MONAD_ASSERT(depth <= max_depth);
-        MONAD_ASSERT(
-            (nibble == state_nibble || nibble == code_nibble ||
-             nibble == receipt_nibble) ||
-            depth != prefix_len);
-        if (MONAD_UNLIKELY(depth == prefix_len)) {
-            MONAD_ASSERT(trie_section == TrieType::Prefix);
-            if (nibble == state_nibble) {
-                trie_section = TrieType::State;
-            }
-            else if (nibble == receipt_nibble) {
-                trie_section = TrieType::Receipt;
-            }
-            else {
-                trie_section = TrieType::Code;
-            }
-        }
-    }
-
-    virtual void up(size_t const n) override
-    {
-        MONAD_ASSERT(n <= depth);
-        depth -= static_cast<uint8_t>(n);
-        if (MONAD_UNLIKELY(depth < prefix_len)) {
-            trie_section = TrieType::Prefix;
-        }
-    }
-};
-
-struct TrieDb::InMemoryMachine final : public TrieDb::Machine
-{
-    virtual bool cache() const override
-    {
-        return true;
-    }
-
-    virtual bool compact() const override
-    {
-        return false;
-    }
-
-    virtual std::unique_ptr<StateMachine> clone() const override
-    {
-        return std::make_unique<InMemoryMachine>(*this);
-    }
-};
-
-struct TrieDb::OnDiskMachine final : public TrieDb::Machine
-{
-    static constexpr auto cache_depth = prefix_len + 5;
-
-    virtual bool cache() const override
-    {
-        return depth <= cache_depth && trie_section != TrieType::Receipt;
-    }
-
-    virtual bool compact() const override
-    {
-        return true;
-    }
-
-    virtual std::unique_ptr<StateMachine> clone() const override
-    {
-        return std::make_unique<OnDiskMachine>(*this);
-    }
-};
-
-TrieDb::TrieDb(mpt::ReadOnlyOnDiskDbConfig const &config)
-    : db_{config}
-    , block_number_{db_.get_latest_block_id()}
-{
-}
-
-TrieDb::TrieDb(std::optional<mpt::OnDiskDbConfig> const &config)
-    : machine_{[&] -> std::unique_ptr<Machine> {
-        if (config.has_value()) {
-            return std::make_unique<OnDiskMachine>();
-        }
-        return std::make_unique<InMemoryMachine>();
-    }()}
-    , db_{config.has_value() ? mpt::Db{*machine_, config.value()}
-                             : mpt::Db{*machine_}}
-    , block_number_{[&] {
-        auto n = db_.get_latest_block_id();
-        if (n == INVALID_BLOCK_ID) {
-            n == 0;
-        }
-        return n;
-    }()}
-{
-}
-
-TrieDb::TrieDb(
-    std::optional<mpt::OnDiskDbConfig> const &config, std::istream &accounts,
-    std::istream &code, uint64_t const init_block_number, size_t const buf_size)
-    : TrieDb{config}
-{
-    if (db_.root().is_valid()) {
-        throw std::runtime_error(
-            "Unable to load snapshot to an existing db, truncate the "
-            "existing db to empty and try again");
-    }
-    if (db_.is_on_disk()) {
-        block_number_ = init_block_number;
-    } // was init to 0 and will remain 0 for in memory db
-    BinaryDbLoader loader{db_, buf_size, block_number_};
-    loader.load(accounts, code);
 }
 
 TrieDb::~TrieDb() = default;
@@ -593,7 +74,7 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
 {
     auto const value = db_.get(
         concat(
-            state_nibble,
+            STATE_NIBBLE,
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
         block_number_);
     if (!value.has_value()) {
@@ -621,7 +102,7 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
 {
     auto const value = db_.get(
         concat(
-            state_nibble,
+            STATE_NIBBLE,
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
             NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
         block_number_);
@@ -644,7 +125,7 @@ TrieDb::read_storage_and_slot(Address const &addr, bytes32_t const &key)
 {
     auto const value = db_.get(
         concat(
-            state_nibble,
+            STATE_NIBBLE,
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
             NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
         block_number_);
@@ -669,7 +150,7 @@ std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
 {
     // TODO read code analysis object
     auto const value = db_.get(
-        concat(code_nibble, NibblesView{to_byte_string_view(code_hash.bytes)}),
+        concat(CODE_NIBBLE, NibblesView{to_byte_string_view(code_hash.bytes)}),
         block_number_);
     if (!value.has_value()) {
         return std::make_shared<CodeAnalysis>(analyze({}));
@@ -770,7 +251,6 @@ void TrieDb::commit(
     updates.push_front(code_update);
     updates.push_front(receipt_update);
     db_.upsert(std::move(updates), block_number_);
-    MONAD_ASSERT(machine_->trie_section == Machine::TrieType::Prefix);
 
     update_alloc_.clear();
     bytes_alloc_.clear();
@@ -957,9 +437,7 @@ nlohmann::json TrieDb::to_json()
 
 size_t TrieDb::prefetch_current_root()
 {
-    size_t const nodes_loaded = db_.prefetch();
-    MONAD_ASSERT(machine_->trie_section == Machine::TrieType::Prefix);
-    return nodes_loaded;
+    return db_.prefetch();
 }
 
 uint64_t TrieDb::get_block_number() const

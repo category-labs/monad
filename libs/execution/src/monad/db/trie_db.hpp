@@ -26,7 +26,6 @@ class TrieDb final : public ::monad::Db
     struct Machine;
     struct InMemoryMachine;
     struct OnDiskMachine;
-    enum class Mode;
 
     std::unique_ptr<Machine> machine_;
     ::monad::mpt::Db db_;
@@ -34,7 +33,6 @@ class TrieDb final : public ::monad::Db
     std::list<byte_string> bytes_alloc_;
     std::list<hash256> hash_alloc_;
     uint64_t block_number_;
-    Mode mode_;
 
 public:
     TrieDb(mpt::ReadOnlyOnDiskDbConfig const &);

@@ -973,6 +973,18 @@ size_t Db::poll(bool const blocking, size_t const count)
     return impl_->poll(blocking, count);
 }
 
+bool Db::is_on_disk() const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->aux().is_on_disk();
+}
+
+bool Db::is_read_only() const
+{
+    MONAD_ASSERT(impl_);
+    return is_on_disk() && impl_->aux().io->is_read_only();
+}
+
 namespace detail
 {
     template <typename T>

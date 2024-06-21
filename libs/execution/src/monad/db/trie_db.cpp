@@ -545,17 +545,9 @@ struct TrieDb::OnDiskMachine final : public TrieDb::Machine
     }
 };
 
-enum class TrieDb::Mode
-{
-    InMemory,
-    OnDisk,
-    OnDiskReadOnly
-};
-
 TrieDb::TrieDb(mpt::ReadOnlyOnDiskDbConfig const &config)
     : db_{config}
     , block_number_{db_.get_latest_block_id()}
-    , mode_{Mode::OnDiskReadOnly}
 {
 }
 
@@ -594,7 +586,6 @@ TrieDb::TrieDb(std::optional<mpt::OnDiskDbConfig> const &config)
         // in memory triedb block id remains 0
         return 0ul;
     }()}
-    , mode_{config.has_value() ? Mode::OnDisk : Mode::InMemory}
 {
 }
 
@@ -608,7 +599,7 @@ TrieDb::TrieDb(
             "Unable to load snapshot to an existing db, truncate the "
             "existing db to empty and try again");
     }
-    if (mode_ == Mode::OnDisk) {
+    if (db_.is_on_disk()) {
         block_number_ = init_block_number;
     } // was init to 0 and will remain 0 for in memory db
     BinaryDbLoader loader{db_, buf_size, block_number_};
@@ -709,7 +700,6 @@ void TrieDb::commit(
     StateDeltas const &state_deltas, Code const &code,
     std::vector<Receipt> const &receipts)
 {
-    MONAD_ASSERT(mode_ != Mode::OnDiskReadOnly);
     MONAD_ASSERT(block_number_ <= std::numeric_limits<int64_t>::max());
 
     UpdateList account_updates;
@@ -808,7 +798,7 @@ void TrieDb::commit(
 
 void TrieDb::increment_block_number()
 {
-    if (mode_ == Mode::OnDisk) {
+    if (db_.is_on_disk()) {
         ++block_number_;
     }
 }
@@ -972,7 +962,7 @@ nlohmann::json TrieDb::to_json()
     // from running on the triedb thread, which include to_json. Thus, we can
     // only use blocking traversal for RWOnDisk Db, but can still do parallel
     // traverse in other cases.
-    if (mode_ == Mode::OnDisk) {
+    if (db_.is_on_disk() && !db_.is_read_only()) {
         MONAD_ASSERT(
             db_.traverse_blocking(res_cursor.value(), traverse, block_number_));
     }
@@ -998,7 +988,6 @@ uint64_t TrieDb::get_block_number() const
 
 void TrieDb::set_block_number(uint64_t const n)
 {
-    MONAD_ASSERT(mode_ == Mode::OnDiskReadOnly);
     block_number_ = n;
 }
 

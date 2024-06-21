@@ -87,6 +87,9 @@ public:
     size_t prefetch();
     // Pump any async DB operations. RO only.
     size_t poll(bool blocking, size_t count = 1);
+
+    bool is_on_disk() const;
+    bool is_read_only() const;
 };
 
 template <class T>

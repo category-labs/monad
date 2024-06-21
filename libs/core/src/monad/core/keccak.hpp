@@ -18,4 +18,10 @@ inline hash256 keccak256(byte_string_view const bytes)
     return hash;
 }
 
+template <size_t N>
+inline hash256 keccak256(unsigned char const (&a)[N])
+{
+    return keccak256(to_byte_string_view(a));
+}
+
 MONAD_NAMESPACE_END

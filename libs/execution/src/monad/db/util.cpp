@@ -1,13 +1,26 @@
 #include <monad/config.hpp>
+#include <monad/core/account.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/int.hpp>
+#include <monad/core/likely.h>
 #include <monad/core/result.hpp>
 #include <monad/core/rlp/account_rlp.hpp>
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
 #include <monad/core/unaligned.hpp>
-#include <monad/db/trie_db.hpp>
+#include <monad/db/util.hpp>
+#include <monad/mpt/compute.hpp>
+#include <monad/mpt/db.hpp>
+#include <monad/mpt/nibbles_view.hpp>
+#include <monad/mpt/node.hpp>
+#include <monad/mpt/ondisk_db_config.hpp>
+#include <monad/mpt/state_machine.hpp>
 #include <monad/mpt/update.hpp>
+#include <monad/mpt/util.hpp>
+#include <monad/rlp/decode.hpp>
+#include <monad/rlp/decode_error.hpp>
 #include <monad/rlp/encode2.hpp>
 
 #include <boost/outcome/try.hpp>
@@ -17,11 +30,22 @@
 #include <quill/Quill.h> // NOLINT
 #include <quill/detail/LogMacros.h>
 
+#include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <deque>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <istream>
+#include <memory>
+#include <optional>
+#include <span>
+#include <stdexcept>
 #include <string>
+#include <utility>
 
 MONAD_NAMESPACE_BEGIN
 

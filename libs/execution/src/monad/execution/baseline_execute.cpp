@@ -42,11 +42,6 @@ evmc::Result baseline_execute(
         return evmc::Result{EVMC_SUCCESS, msg.gas};
     }
 
-#ifdef EVMONE_TRACING
-    std::ostringstream trace_ostream;
-    vm.add_tracer(evmone::create_instruction_tracer(trace_ostream));
-#endif
-
     auto const execution_state = std::make_unique<evmone::ExecutionState>(
         msg,
         rev,
@@ -60,7 +55,13 @@ evmc::Result baseline_execute(
     auto const &cost_table = evmone::baseline::get_baseline_cost_table(
         execution_state->rev, code_analysis.eof_header.version);
 
-    evmone::VM const vm{};
+    evmone::VM vm{};
+
+    #ifdef EVMONE_TRACING
+        std::ostringstream trace_ostream;
+        vm.add_tracer(evmone::create_instruction_tracer(trace_ostream));
+    #endif
+
     auto const gas = evmone::baseline::monad_execute(
         vm.get_tracer(), msg.gas, *execution_state, cost_table, code_analysis);
 
@@ -88,9 +89,9 @@ evmc::Result baseline_execute(
         vm.get_tracer()->notify_execution_end(result);
     }
 
-#ifdef EVMONE_TRACING
-    LOG_TRACE_L1("{}", trace_ostream.str());
-#endif
+    #ifdef EVMONE_TRACING
+        LOG_TRACE_L1("{}", trace_ostream.str());
+    #endif
 
     return evmc::Result{result};
 }

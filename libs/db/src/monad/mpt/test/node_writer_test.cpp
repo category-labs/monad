@@ -61,7 +61,8 @@ private:
     {
         MONAD_ASSERT(node_disk_size > sizeof(Node) + Node::disk_size_bytes);
         auto const node_value_size =
-            node_disk_size - sizeof(Node) - Node::disk_size_bytes;
+            node_disk_size - Node::disk_size_bytes -
+            (sizeof(Node) - node_disk_storage_offset());
         auto const value = monad::byte_string(node_value_size, 0xf);
         auto node = make_node(0, {}, {}, value, {}, 0);
         return node;

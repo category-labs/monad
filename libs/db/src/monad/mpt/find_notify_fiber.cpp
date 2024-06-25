@@ -81,6 +81,15 @@ namespace
                            std::move(buffer_), buffer_off, io_state)
                            .release();
                 parent->set_next(branch_index, node);
+                // Any non-memory child indicates it is not part of the
+                // level-based cache, and therefore it should always be added to
+                // the LRU cache.
+                if (aux->lru_list) {
+                    node->list = aux->lru_list;
+                    aux->lru_list->update(node);
+                    node->parent_reference_address =
+                        parent->next_data() + branch_index * sizeof(Node *);
+                }
             }
             auto const offset = parent->fnext(branch_index);
             auto it = inflights.find(offset);
@@ -112,6 +121,10 @@ void find_recursive(
     unsigned prefix_index = 0;
     unsigned node_prefix_index = root.prefix_index;
     Node *node = root.node;
+    if (node->is_in_lru_cache()) {
+        MONAD_DEBUG_ASSERT(node->list == aux.lru_list);
+        aux.lru_list->update(node);
+    }
     for (; node_prefix_index < node->path_nibble_index_end;
          ++node_prefix_index, ++prefix_index) {
         if (prefix_index >= key.nibble_size()) {
@@ -141,9 +154,8 @@ void find_recursive(
         auto const next_key =
             key.substr(static_cast<unsigned char>(prefix_index) + 1u);
         auto const child_index = node->to_child_index(branch);
-        if (node->next(child_index) != nullptr) {
-            find_recursive(
-                aux, inflights, promise, *node->next(child_index), next_key);
+        if (auto *const next = node->next(child_index); next != nullptr) {
+            find_recursive(aux, inflights, promise, *next, next_key);
             return;
         }
         if (aux.io->owning_thread_id() != gettid()) {

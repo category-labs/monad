@@ -84,6 +84,10 @@ struct Db::Impl
     traverse_fiber_blocking(Node &, TraverseMachine &, uint64_t version) = 0;
     virtual void
     move_trie_version_fiber_blocking(uint64_t src, uint64_t dest) = 0;
+
+    virtual void disable_lru() {}
+
+    virtual void enable_lru() {}
 };
 
 struct Db::ROOnDisk final : public Db::Impl
@@ -555,6 +559,7 @@ struct Db::RWOnDisk final : public Db::Impl
     std::unique_ptr<TrieDbWorker> worker_;
     std::thread worker_thread_;
     StateMachine &machine_;
+    std::unique_ptr<LruList> lru_list_;
     Node::UniquePtr root_; // owned by worker thread
     Node::UniquePtr reader_root_; // lifetime for reads on a different block
 
@@ -573,6 +578,11 @@ struct Db::RWOnDisk final : public Db::Impl
             worker_.reset();
         })
         , machine_{machine}
+        , lru_list_(
+              options.lru_size_mb.has_value()
+                  ? std::make_unique<LruList>(
+                        options.lru_size_mb.value() * 1024 * 1024)
+                  : std::unique_ptr<LruList>())
         , root_([&] {
             comms_.enqueue({});
             while (comms_.size_approx() > 0) {
@@ -590,6 +600,21 @@ struct Db::RWOnDisk final : public Db::Impl
             // set history length on empty db
             aux_.update_history_length_metadata(options.history_length);
         }
+        enable_lru();
+    }
+
+    virtual void disable_lru() override
+    {
+        // can only disable it at the very beginning when lru list is empty
+        if (lru_list_) {
+            MONAD_ASSERT(lru_list_->is_empty());
+        }
+        aux_.lru_list = nullptr;
+    }
+
+    virtual void enable_lru() override
+    {
+        aux_.lru_list = lru_list_.get();
     }
 
     ~RWOnDisk()
@@ -603,6 +628,9 @@ struct Db::RWOnDisk final : public Db::Impl
             cond_.notify_one();
         }
         worker_thread_.join();
+        // trie root_ must be destroyed before lru list
+        root_.reset();
+        lru_list_.reset();
     }
 
     virtual Node::UniquePtr &root() override
@@ -1131,6 +1159,16 @@ namespace detail
         abort();
     }
 
+}
+
+void Db::disable_lru()
+{
+    impl_->disable_lru();
+}
+
+void Db::enable_lru()
+{
+    impl_->enable_lru();
 }
 
 MONAD_MPT_NAMESPACE_END

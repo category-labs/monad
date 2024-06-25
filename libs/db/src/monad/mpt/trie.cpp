@@ -248,7 +248,6 @@ size_t load_all(UpdateAuxImpl &aux, StateMachine &sm, NodeCursor const root)
 void upward_update(UpdateAuxImpl &aux, StateMachine &sm, UpwardTreeNode *tnode)
 {
     while (!tnode->npending && tnode->parent) {
-        MONAD_ASSERT(tnode);
         MONAD_DEBUG_ASSERT(tnode->children.size()); // not a leaf
         auto *parent = tnode->parent;
         auto &entry = parent->children[tnode->child_index()];
@@ -431,7 +430,6 @@ struct compaction_receiver
         , sm(std::move(sm_))
     {
         MONAD_ASSERT(tnode);
-        MONAD_ASSERT(tnode->npending > 0 && tnode->npending <= 16);
         rd_offset = round_down_align<DISK_PAGE_BITS>(offset);
         auto const num_pages_to_load_node =
             node_disk_pages_spare_15{rd_offset}.to_pages();

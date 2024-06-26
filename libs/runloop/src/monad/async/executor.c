@@ -1,5 +1,6 @@
 #include "executor.h"
 
+#include "boost_result.h"
 #include "config.h"
 #include "context_switcher.h"
 #include "task.h"
@@ -685,6 +686,16 @@ static inline monad_async_result monad_async_executor_run_impl(
                     }
                 }
                 else if (magic == EXECUTOR_EVENTFD_READY_IO_URING_DATA_MAGIC) {
+                    if ((cqe->flags & IORING_CQE_F_MORE) != IORING_CQE_F_MORE) {
+                        // io_uring has dropped the eventfd poll
+                        monad_async_result r2 =
+                            monad_async_executor_setup_eventfd_polling(ex);
+                        if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(r2)) {
+                            // io_uring submit failed, if this happens something
+                            // is very wrong
+                            abort();
+                        }
+                    }
                     retry_after_this = true;
                 }
                 else if (magic == CANCELLED_OP_IO_URING_DATA_MAGIC) {

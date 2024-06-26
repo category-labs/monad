@@ -781,7 +781,7 @@ extern "C" {
     ) -> monad_async_result;
 }
 extern "C" {
-    #[doc = "! \\brief THREADSAFE Causes a sleeping executor to wake. Can be called from any\n! kernel thread. `cause_run_to_return` causes `monad_async_executor_run()` to\n! return the result given, otherwise the internal sleep wakes, executor state\n! is examined for new work and the sleep reestablished."]
+    #[doc = "! \\brief THREADSAFE Causes a sleeping executor to wake. Can be called from any\n! kernel thread. `cause_run_to_return` causes `monad_async_executor_run()` to\n! return the result given, otherwise the internal sleep wakes, executor state\n! is examined for new work and the sleep reestablished WHICH MAY NOT CAUSE RUN\n! TO RETURN."]
     pub fn monad_async_executor_wake(
         ex: monad_async_executor,
         cause_run_to_return: *const monad_async_result,

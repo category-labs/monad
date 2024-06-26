@@ -4,6 +4,7 @@
 
 #include "task_impl.h"
 
+#include "config.h"
 #include "executor.h"
 #include "util.h"
 
@@ -362,6 +363,23 @@ monad_async_executor_create_impl_fill_registered_buffers(
     return monad_async_make_success(0);
 }
 
+static inline monad_async_result
+monad_async_executor_setup_eventfd_polling(struct monad_async_executor_impl *p)
+{
+    struct io_uring_sqe *sqe = io_uring_get_sqe(&p->ring);
+    if (sqe == nullptr) {
+        abort(); // should never occur
+    }
+    io_uring_prep_poll_multishot(sqe, p->eventfd, POLLIN);
+    io_uring_sqe_set_data(
+        sqe, EXECUTOR_EVENTFD_READY_IO_URING_DATA_MAGIC, nullptr);
+    int r = io_uring_submit(&p->ring);
+    if (r < 0) {
+        return monad_async_make_failure(-r);
+    }
+    return monad_async_make_success(0);
+}
+
 static inline monad_async_result monad_async_executor_create_impl(
     struct monad_async_executor_impl *p, struct monad_async_executor_attr *attr)
 {
@@ -401,17 +419,7 @@ static inline monad_async_result monad_async_executor_create_impl(
                 "stable submits.\n");
             abort();
         }
-        struct io_uring_sqe *sqe = io_uring_get_sqe(&p->ring);
-        if (sqe == nullptr) {
-            abort(); // should never occur
-        }
-        io_uring_prep_poll_multishot(sqe, p->eventfd, POLLIN);
-        io_uring_sqe_set_data(
-            sqe, EXECUTOR_EVENTFD_READY_IO_URING_DATA_MAGIC, nullptr);
-        r = io_uring_submit(&p->ring);
-        if (r < 0) {
-            return monad_async_make_failure(-r);
-        }
+        MONAD_ASYNC_TRY_RESULT(, monad_async_executor_setup_eventfd_polling(p));
         MONAD_ASYNC_TRY_RESULT(
             ,
             monad_async_executor_create_impl_fill_registered_buffers(

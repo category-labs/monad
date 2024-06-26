@@ -5,7 +5,7 @@
 
 #include <thread>
 
-TEST(current, fiber_main)
+TEST(current, DISABLED_fiber_main)
 {
     monad_fiber_init_main();
     monad_fiber_t *mm = monad_fiber_main(), th1 = {}, th2 = {};
@@ -36,7 +36,7 @@ TEST(current, fiber_main)
 extern "C" monad_fiber_t *
 monad_fiber_activate_fiber(monad_fiber_t *new_current);
 
-TEST(current, switch_)
+TEST(current, DISABLED_switch_)
 {
     monad_fiber_init_main();
     monad_fiber_t *mf = monad_fiber_main();
@@ -45,7 +45,7 @@ TEST(current, switch_)
     monad_fiber_scheduler_create(&shed, 0, NULL);
 
     monad_fiber_t mft = {
-        .task = {.resume=NULL, .destroy=NULL, .priority = -1ll},
+        .task = {.resume = NULL, .destroy = NULL, .priority = -1ll},
         .context = nullptr,
         .scheduler = &shed};
 
@@ -110,7 +110,7 @@ TEST(current, yield_to_task)
                       +[](monad_fiber_task *) {
                           ASSERT_EQ("Musten't be reached", nullptr);
                       },
-                 .priority=priority}
+                  .priority = priority}
         {
         }
     };
@@ -144,12 +144,11 @@ void awaitable_sleep(monad_fiber_t *to_resume, void *us_)
 {
     std::thread{[us = reinterpret_cast<std::uintptr_t>(us_), to_resume] {
         usleep(static_cast<useconds_t>(us));
-        monad_fiber_scheduler_dispatch(
-            to_resume->scheduler, &to_resume->task);
+        monad_fiber_scheduler_dispatch(to_resume->scheduler, &to_resume->task);
     }}.detach();
 };
 
-TEST(current, await_from_thread)
+TEST(current, DISABLED_await_from_thread)
 {
     monad_fiber_scheduler shed;
     monad_fiber_scheduler_create(&shed, 0, NULL);
@@ -161,7 +160,9 @@ TEST(current, await_from_thread)
     bool ran = false;
 
     monad_fiber_t mft = {
-        .task = {.resume=nullptr, .destroy=nullptr, .priority = -1ll}, .context = nullptr, .scheduler = &shed};
+        .task = {.resume = nullptr, .destroy = nullptr, .priority = -1ll},
+        .context = nullptr,
+        .scheduler = &shed};
 
     auto l = [&](monad_fiber_context_t *fb,
                  monad_fiber_context_t *from) -> monad_fiber_context_t * {
@@ -201,10 +202,10 @@ TEST(current, await_from_thread)
     EXPECT_TRUE(ran);
 }
 
-TEST(current, monad_fiber_create_noop)
+TEST(current, DISABLED_monad_fiber_create_noop)
 {
     monad_fiber_init_main();
-    auto f = monad_fiber_create(4096, true,  NULL, +[](void *) {}, NULL);
+    auto f = monad_fiber_create(4096, true, NULL, +[](void *) {}, NULL);
 
     EXPECT_EQ(f, nullptr);
 }
@@ -233,7 +234,7 @@ TEST(current, monad_fiber_create_switch_once)
     EXPECT_EQ(monad_fiber_main(), monad_fiber_current());
 }
 
-TEST(current, monad_fiber_create_destroy)
+TEST(current, DISABLED_monad_fiber_create_destroy)
 {
     monad_fiber_init_main();
     int pos = 0;

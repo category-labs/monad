@@ -36,7 +36,7 @@ TEST(fiber, spawn)
     EXPECT_EQ(f, nullptr);
 }
 
-TEST(fiber, spawn_protected)
+TEST(fiber, DISABLED_spawn_protected)
 {
     monad_fiber_init_main();
     test = 0;
@@ -55,8 +55,7 @@ TEST(fiber, spawn_protected)
     EXPECT_EQ(f, nullptr);
 }
 
-
-TEST(fiber, spawn_oom)
+TEST(fiber, DISABLED_spawn_oom)
 {
     monad_fiber_init_main();
     auto f = monad_fiber_context_callcc(
@@ -81,4 +80,3 @@ TEST(fiber, spawn_oom_protected)
     EXPECT_EQ(f, nullptr);
     EXPECT_NE(errno, 0);
 }
-

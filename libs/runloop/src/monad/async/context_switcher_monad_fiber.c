@@ -72,7 +72,6 @@ static inline monad_async_result monad_async_context_switcher_fiber_destroy(
 {
     struct monad_async_context_switcher_fiber *p =
         (struct monad_async_context_switcher_fiber *)switcher;
-    assert(!p->within_resume_many);
     unsigned contexts =
         atomic_load_explicit(&p->head.contexts, memory_order_acquire);
     if (contexts != 0) {
@@ -83,6 +82,7 @@ static inline monad_async_result monad_async_context_switcher_fiber_destroy(
             contexts);
         abort();
     }
+    assert(!p->within_resume_many);
 #if MONAD_ASYNC_CONTEXT_TRACK_OWNERSHIP
     mtx_destroy(&p->head.contexts_list.lock);
 #endif
@@ -200,7 +200,7 @@ static monad_async_result monad_async_context_fiber_create(
     }
     struct monad_async_context_fiber_task_runner_info_t info = {
         .task = task, .context = p, .switcher = switcher};
-    switcher->within_resume_many = true;
+    switcher->within_resume_many++;
     if (monad_fiber_context_callcc(
             monad_fiber_main_context(),
             stack_size,
@@ -208,6 +208,7 @@ static monad_async_result monad_async_context_fiber_create(
             monad_async_context_fiber_task_runner,
             &info) == nullptr) {
         int const ec = errno;
+        switcher->within_resume_many--;
         (void)monad_async_context_fiber_destroy((monad_async_context)p);
         return monad_async_make_failure(ec);
     }
@@ -218,7 +219,7 @@ static monad_async_result monad_async_context_fiber_create(
         (char *)p->fiber -
         *(size_t *)((char *)p->fiber + sizeof(monad_fiber_context_t));
 #endif
-    switcher->within_resume_many = false;
+    switcher->within_resume_many--;
     *context = (monad_async_context)p;
     atomic_store_explicit(&p->head.switcher, nullptr, memory_order_release);
     monad_async_context_reparent_switcher(*context, &switcher->head);

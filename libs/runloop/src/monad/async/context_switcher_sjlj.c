@@ -95,7 +95,6 @@ monad_async_context_switcher_sjlj_destroy(monad_async_context_switcher switcher)
 {
     struct monad_async_context_switcher_sjlj *p =
         (struct monad_async_context_switcher_sjlj *)switcher;
-    assert(!p->within_resume_many);
     unsigned contexts =
         atomic_load_explicit(&p->head.contexts, memory_order_acquire);
     if (contexts != 0) {
@@ -106,6 +105,7 @@ monad_async_context_switcher_sjlj_destroy(monad_async_context_switcher switcher)
             contexts);
         abort();
     }
+    assert(!p->within_resume_many);
 #if MONAD_ASYNC_CONTEXT_TRACK_OWNERSHIP
     mtx_destroy(&p->head.contexts_list.lock);
 #endif

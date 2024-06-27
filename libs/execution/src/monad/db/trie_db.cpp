@@ -409,8 +409,8 @@ namespace
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
                     .key = in.substr(0, sizeof(bytes32_t)),
                     .value = bytes_alloc_.emplace_back(encode_storage_db(
-                        unaligned_load<bytes32_t>(
-                            in.substr(0, sizeof(bytes32_t)).data()),
+                        bytes32_t{}, // TODO: update this when binary checkpoint
+                                     // includes unhashed storage slot
                         unaligned_load<bytes32_t>(
                             in.substr(sizeof(bytes32_t), sizeof(bytes32_t))
                                 .data()))),
@@ -951,11 +951,17 @@ nlohmann::json TrieDb::to_json()
                 NibblesView{path}.substr(
                     KECCAK256_SIZE * 2, KECCAK256_SIZE * 2));
 
-            json[acct_key]["storage"][key] = fmt::format(
+            auto storage_data_json = nlohmann::json::object();
+            storage_data_json["slot"] = fmt::format(
+                "0x{:02x}",
+                fmt::join(
+                    std::as_bytes(std::span(storage.value().first.bytes)), ""));
+            storage_data_json["value"] = fmt::format(
                 "0x{:02x}",
                 fmt::join(
                     std::as_bytes(std::span(storage.value().second.bytes)),
                     ""));
+            json[acct_key]["storage"][key] = storage_data_json;
         }
 
         virtual std::unique_ptr<TraverseMachine> clone() const override

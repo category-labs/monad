@@ -114,7 +114,10 @@ namespace
     "nonce": "0x0",
     "storage": {
       "0x290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563":
-      "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"
+      {
+        "slot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "value": "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"
+      }
     }
   },
   "0x4599828688a5c37132b6fc04e35760b4753ce68708a7b7d4d97b940047557fdb": {

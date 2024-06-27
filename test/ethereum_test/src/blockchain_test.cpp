@@ -144,7 +144,7 @@ void BlockchainTest::validate_post_state(
             ASSERT_TRUE(db_storage.contains(db_storage_key)) << db_storage_key;
             auto const expected_value =
                 fmt::format("{}", j_value.get<bytes32_t>());
-            EXPECT_EQ(db_storage.at(db_storage_key), expected_value)
+            EXPECT_EQ(db_storage.at(db_storage_key).at("value"), expected_value)
                 << db_storage_key;
         }
     }

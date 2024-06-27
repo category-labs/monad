@@ -164,7 +164,6 @@ target_link_libraries(monad_core PUBLIC cgroup openssl_sha3_asm uring Boost::fib
                                         TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC ethash::keccak)
-target_link_libraries(monad_core PUBLIC monad_fiber_c )
 
 add_library(
   monad_core_disas STATIC

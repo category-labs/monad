@@ -1,21 +1,17 @@
 #include <monad/fiber/priority_pool.hpp>
 
 #include <monad/core/assert.h>
-#include <monad/fiber/priority_algorithm.hpp>
-#include <monad/fiber/priority_properties.hpp>
 #include <monad/fiber/config.hpp>
 #include <monad/fiber/priority_algorithm.hpp>
 #include <monad/fiber/priority_properties.hpp>
 #include <monad/fiber/priority_task.hpp>
 
-#include <boost/fiber/operations.hpp>
-#include <boost/fiber/properties.hpp>
-#include <boost/fiber/protected_fixedsize_stack.hpp>
 #include <boost/fiber/channel_op_status.hpp>
 #include <boost/fiber/fiber.hpp>
 #include <boost/fiber/mutex.hpp>
 #include <boost/fiber/operations.hpp>
 #include <boost/fiber/properties.hpp>
+#include <boost/fiber/protected_fixedsize_stack.hpp>
 
 #include <cstdio>
 #include <memory>
@@ -27,51 +23,77 @@
 
 MONAD_FIBER_NAMESPACE_BEGIN
 
-
-void PriorityPool::run_fiber_() noexcept
-{
-    working_++;
-
-    while (true)
-    {
-        std::unique_ptr<monad_fiber_task_t, monad_fiber_task_deleter> pp;
-        if ((channel_.read(pp) == EPIPE) || !pp)
-            break;
-        else
-        {
-            monad_fiber_current()->task.priority = pp->priority;
-            pp->resume(pp.get());
-        }
-    }
-
-    working_--;
-}
-
 PriorityPool::PriorityPool(unsigned const n_threads, unsigned const n_fibers)
-    : sched_(n_threads)
 {
     MONAD_ASSERT(n_threads);
     MONAD_ASSERT(n_fibers);
 
-    fibers_.reserve(n_fibers);
-    for (unsigned i = 0u; i < n_fibers; i++)
-    {
-        fibers_.emplace_back(
-        monad_fiber_create(
-            monad_fiber_default_stack_size,
-            true,
-            &sched_,
-            +[](void * t){static_cast<PriorityPool*>(t)->run_fiber_();},
-            this));
+    threads_.reserve(n_threads);
+    for (unsigned i = n_threads - 1; i > 0; --i) {
+        auto thread = std::thread([this, i] {
+            char name[16];
+            std::snprintf(name, 16, "worker %u", i);
+            pthread_setname_np(pthread_self(), name);
+            boost::fibers::use_scheduling_algorithm<PriorityAlgorithm>(queue_);
+            std::unique_lock<boost::fibers::mutex> lock{mutex_};
+            cv_.wait(lock, [this] { return done_; });
+        });
+        threads_.push_back(std::move(thread));
     }
+
+    fibers_.reserve(n_fibers);
+    auto thread = std::thread([this, n_fibers] {
+        pthread_setname_np(pthread_self(), "worker 0");
+        boost::fibers::use_scheduling_algorithm<PriorityAlgorithm>(queue_);
+        for (unsigned i = 0; i < n_fibers; ++i) {
+            auto *const properties = new PriorityProperties{nullptr};
+            boost::fibers::fiber fiber{
+                static_cast<boost::fibers::fiber_properties *>(properties),
+                std::allocator_arg,
+                boost::fibers::protected_fixedsize_stack{8 * 1024 * 1024},
+                [this, properties] {
+                    PriorityTask task;
+                    while (channel_.pop(task) ==
+                           boost::fibers::channel_op_status::success) {
+                        properties->set_priority(task.priority);
+                        boost::this_fiber::yield();
+                        task.task();
+                        properties->set_priority(0);
+                    }
+                }};
+            fibers_.push_back(std::move(fiber));
+        }
+        start_.set_value();
+        std::unique_lock<boost::fibers::mutex> lock{mutex_};
+        cv_.wait(lock, [this] { return done_; });
+    });
+    threads_.push_back(std::move(thread));
 }
 
 PriorityPool::~PriorityPool()
 {
     channel_.close();
 
-    for (auto val = working_.load(); val != 0; val = working_)
-        working_.wait(val);
+    start_.get_future().wait();
+
+    while (fibers_.size()) {
+        auto &fiber = fibers_.back();
+        fiber.join();
+        fibers_.pop_back();
+    }
+
+    {
+        std::unique_lock<boost::fibers::mutex> const lock{mutex_};
+        done_ = true;
+    }
+
+    cv_.notify_all();
+
+    while (threads_.size()) {
+        auto &thread = threads_.back();
+        thread.join();
+        threads_.pop_back();
+    }
 }
 
 MONAD_FIBER_NAMESPACE_END

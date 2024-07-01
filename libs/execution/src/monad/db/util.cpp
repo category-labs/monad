@@ -296,12 +296,8 @@ namespace
         {
             MONAD_ASSERT(node.has_value());
             auto encoded_storage = node.value();
-            auto const storage = rlp::decode_string(encoded_storage);
+            auto const storage = decode_storage_value_only(encoded_storage);
             MONAD_ASSERT(!storage.has_error());
-            MONAD_ASSERT(
-                encoded_storage.size() >= 1 &&
-                encoded_storage.size() <= sizeof(bytes32_t) + 1);
-            MONAD_ASSERT(storage.value().size() <= sizeof(bytes32_t));
             return rlp::encode_string2(storage.value());
         }
     };
@@ -485,18 +481,39 @@ Result<Account> decode_account_db(byte_string_view &enc)
 byte_string encode_storage_db(bytes32_t const key, bytes32_t const val)
 {
     byte_string encoded_storage;
-    encoded_storage += rlp::encode_bytes32_compact(val);
     encoded_storage += rlp::encode_bytes32_compact(key);
-    return encoded_storage;
+    encoded_storage += rlp::encode_bytes32_compact(val);
+    return rlp::encode_list2(encoded_storage);
 }
 
 Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &enc)
 {
+    BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
+
     std::pair<bytes32_t, bytes32_t> storage;
-    BOOST_OUTCOME_TRY(storage.second, rlp::decode_bytes32_compact(enc));
-    BOOST_OUTCOME_TRY(storage.first, rlp::decode_bytes32_compact(enc));
+    BOOST_OUTCOME_TRY(storage.first, rlp::decode_bytes32_compact(payload));
+    BOOST_OUTCOME_TRY(storage.second, rlp::decode_bytes32_compact(payload));
+
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return rlp::DecodeError::InputTooLong;
+    }
+
     return storage;
 }
+
+Result<byte_string_view> decode_storage_value_only(byte_string_view &enc)
+{
+    BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
+
+    BOOST_OUTCOME_TRY(rlp::decode_bytes32_compact(payload));
+    BOOST_OUTCOME_TRY(auto output, rlp::decode_string(payload));
+
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return rlp::DecodeError::InputTooLong;
+    }
+
+    return output;
+};
 
 void write_to_file(
     nlohmann::json const &j, std::filesystem::path const &root_path,

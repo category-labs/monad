@@ -63,6 +63,7 @@ byte_string encode_storage_db(bytes32_t const key, bytes32_t const val);
 Result<Account> decode_account_db(byte_string_view &);
 Result<std::pair<bytes32_t, bytes32_t>>
 decode_storage_db(byte_string_view &enc);
+Result<byte_string_view> decode_storage_value_only(byte_string_view &);
 
 void write_to_file(
     nlohmann::json const &, std::filesystem::path const &,

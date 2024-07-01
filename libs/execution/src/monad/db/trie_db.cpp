@@ -106,12 +106,15 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
     }
     STATS_STORAGE_VALUE();
     auto encoded_storage = value.value();
-    auto const storage = rlp::decode_bytes32_compact(encoded_storage);
+    auto const storage = decode_storage_value_only(encoded_storage);
     MONAD_ASSERT(!storage.has_error());
-    MONAD_ASSERT(
-        encoded_storage.size() >= 1 &&
-        encoded_storage.size() <= sizeof(bytes32_t) + 1);
-    return storage.value();
+
+    bytes32_t output;
+    std::copy_n(
+        storage.value().begin(),
+        storage.value().size(),
+        output.bytes + sizeof(bytes32_t) - storage.value().size());
+    return output;
 };
 
 std::pair<bytes32_t, bytes32_t>
@@ -131,7 +134,6 @@ TrieDb::read_storage_and_slot(Address const &addr, bytes32_t const &key)
     auto encoded_storage = value.value();
     auto const storage = decode_storage_db(encoded_storage);
     MONAD_ASSERT(!storage.has_error());
-    MONAD_ASSERT(encoded_storage.empty());
     return storage.value();
 };
 
@@ -376,7 +378,6 @@ nlohmann::json TrieDb::to_json()
 
             auto const storage = decode_storage_db(encoded_storage);
             MONAD_DEBUG_ASSERT(!storage.has_error());
-            MONAD_DEBUG_ASSERT(encoded_storage.empty());
 
             auto const acct_key = fmt::format(
                 "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));

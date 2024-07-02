@@ -67,8 +67,8 @@ void account_update(
     byte_string_view enc = val;
     auto after = decode_account_db(enc);
     MONAD_ASSERT(after.has_value());
-    after.value().incarnation = Incarnation{0, 0};
-    hash.insert(after.value().code_hash);
+    after.value().second.incarnation = Incarnation{0, 0};
+    hash.insert(after.value().second.code_hash);
     auto it = state.find(key);
     if (it != state.end() && it->second.value.empty()) {
         it->second.incarnation = true;
@@ -78,7 +78,8 @@ void account_update(
                  key,
                  SyncEntry{.value = {}, .incarnation = false, .storage = {}})
              .first;
-    it->second.value = encode_account_db(after.value());
+    it->second.value =
+        encode_account_db(after.value().first, after.value().second);
 }
 
 void storage_update(

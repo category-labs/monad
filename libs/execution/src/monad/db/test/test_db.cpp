@@ -105,6 +105,7 @@ namespace
   "0x03601462093b5945d1676df093446790fd31b20e7b12a2e8e5e09d068109616b": {
     "balance": "838137708090664833",
     "code": "0x",
+    "address": "0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b",
     "nonce": "0x1",
     "storage": {}
   },
@@ -112,6 +113,7 @@ namespace
     "balance": "838137708091124174",
     "code":
     "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
+    "address": "0x0000000000000000000000000000000000000100",
     "nonce": "0x0",
     "storage": {
       "0x290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563":
@@ -125,6 +127,7 @@ namespace
     "balance": "838137708091124174",
     "code":
     "0x60047fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
+    "address": "0x0000000000000000000000000000000000000101",
     "nonce": "0x0",
     "storage": {}
   },
@@ -132,12 +135,14 @@ namespace
     "balance": "838137708091124174",
     "code":
     "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff60010160005500",
+    "address": "0x0000000000000000000000000000000000000104",
     "nonce": "0x0",
     "storage": {}
   },
   "0x9d860e7bb7e6b09b87ab7406933ef2980c19d7d0192d8939cf6dc6908a03305f": {
     "balance": "459340",
     "code": "0x",
+    "address": "0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba",
     "nonce": "0x0",
     "storage": {}
   },
@@ -145,18 +150,21 @@ namespace
     "balance": "838137708091124174",
     "code":
     "0x60017fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
+    "address": "0x0000000000000000000000000000000000000102",
     "nonce": "0x0",
     "storage": {}
   },
   "0xa5cc446814c4e9060f2ecb3be03085683a83230981ca8f19d35a4438f8c2d277": {
     "balance": "838137708091124174",
     "code": "0x600060000160005500",
+    "address": "0x0000000000000000000000000000000000000103",
     "nonce": "0x0",
     "storage": {}
   },
   "0xf057b39b049c7df5dfa86c4b0869abe798cef059571a5a1e5bbf5168cf6c097b": {
     "balance": "838137708091124175",
     "code": "0x600060006000600060006004356101000162fffffff100",
+    "address": "0xcccccccccccccccccccccccccccccccccccccccc",
     "nonce": "0x0",
     "storage": {}
   }

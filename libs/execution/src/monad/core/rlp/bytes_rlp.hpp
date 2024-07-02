@@ -21,21 +21,14 @@ inline byte_string encode_bytes32_compact(bytes32_t const &byte)
 
 inline Result<bytes32_t> decode_bytes32(byte_string_view &enc)
 {
-    bytes32_t byte;
     BOOST_OUTCOME_TRY(auto const byte_array, decode_byte_string_fixed<32>(enc));
-    std::memcpy(byte.bytes, byte_array.data(), 32);
-    return byte;
+    return to_bytes(to_byte_string_view(byte_array));
 }
 
 inline Result<bytes32_t> decode_bytes32_compact(byte_string_view &enc)
 {
-    bytes32_t byte;
     BOOST_OUTCOME_TRY(auto const byte_array, decode_string(enc));
-    std::copy_n(
-        byte_array.begin(),
-        byte_array.size(),
-        byte.bytes + sizeof(bytes32_t) - byte_array.size());
-    return byte;
+    return to_bytes(byte_array);
 }
 
 MONAD_RLP_NAMESPACE_END

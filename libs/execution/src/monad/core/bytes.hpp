@@ -2,6 +2,8 @@
 
 #include <monad/config.hpp>
 
+#include <monad/core/assert.h>
+#include <monad/core/byte_string.hpp>
 #include <monad/core/int.hpp>
 
 #include <evmc/evmc.hpp>
@@ -20,6 +22,18 @@ static_assert(alignof(bytes32_t) == 1);
 constexpr bytes32_t to_bytes(uint256_t const n) noexcept
 {
     return std::bit_cast<bytes32_t>(n);
+}
+
+constexpr bytes32_t to_bytes(byte_string_view const data) noexcept
+{
+    MONAD_ASSERT(data.size() <= sizeof(bytes32_t));
+
+    bytes32_t byte;
+    std::copy_n(
+        data.begin(),
+        data.size(),
+        byte.bytes + sizeof(bytes32_t) - data.size());
+    return byte;
 }
 
 using namespace evmc::literals;

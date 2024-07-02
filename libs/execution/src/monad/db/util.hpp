@@ -2,6 +2,7 @@
 
 #include <monad/config.hpp>
 #include <monad/core/account.hpp>
+#include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/result.hpp>
 #include <monad/mpt/db.hpp>
@@ -57,13 +58,14 @@ inline mpt::Nibbles const state_nibbles = mpt::concat(STATE_NIBBLE);
 inline mpt::Nibbles const code_nibbles = mpt::concat(CODE_NIBBLE);
 inline mpt::Nibbles const receipt_nibbles = mpt::concat(RECEIPT_NIBBLE);
 
-byte_string encode_account_db(Account const &);
-byte_string encode_storage_db(bytes32_t const key, bytes32_t const val);
+byte_string encode_account_db(Address const &, Account const &);
+byte_string encode_storage_db(bytes32_t const &, bytes32_t const &);
 
-Result<Account> decode_account_db(byte_string_view &);
-Result<std::pair<bytes32_t, bytes32_t>>
-decode_storage_db(byte_string_view &enc);
-Result<byte_string_view> decode_storage_value_only(byte_string_view &);
+Result<std::pair<Address, Account>> decode_account_db(byte_string_view &);
+Result<Account> decode_account_db_ignore_address(byte_string_view &);
+
+Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &);
+Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &);
 
 void write_to_file(
     nlohmann::json const &, std::filesystem::path const &,

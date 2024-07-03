@@ -21,25 +21,26 @@ struct Receipt;
 class State;
 struct Transaction;
 
-template <evmc_revision rev>
-struct EvmcHost;
-
-template <evmc_revision rev>
 evmc::Result execute_impl_no_validation(
-    State &state, EvmcHost<rev> &host, Transaction const &tx,
-    Address const &sender, uint256_t const &base_fee_per_gas,
+    evmc_revision, BlockHashBuffer const &, BlockHeader const &,
+    uint256_t const &chain_id, State &, Transaction const &,
+    Address const &sender);
+
+Receipt execute_final(
+    evmc_revision, State &, Transaction const &, Address const &sender,
+    uint256_t const &base_fee_per_gas, evmc::Result const &,
     Address const &beneficiary);
 
 template <evmc_revision rev>
 Result<Receipt> execute_impl(
-    Chain const &, uint64_t i, Transaction const &, Address const &sender,
+    Chain &, uint64_t i, Transaction const &, Address const &sender,
     BlockHeader const &, BlockHashBuffer const &, BlockState &,
     boost::fibers::promise<void> &prev);
 
 template <evmc_revision rev>
 Result<Receipt> execute(
-    Chain const &, uint64_t i, Transaction const &,
-    std::optional<Address> const &, BlockHeader const &,
-    BlockHashBuffer const &, BlockState &, boost::fibers::promise<void> &prev);
+    Chain &, uint64_t i, Transaction const &, std::optional<Address> const &,
+    BlockHeader const &, BlockHashBuffer const &, BlockState &,
+    boost::fibers::promise<void> &prev);
 
 MONAD_NAMESPACE_END

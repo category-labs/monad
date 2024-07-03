@@ -11,6 +11,7 @@
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_transaction.hpp>
+#include <monad/execution/intrinsic_gas_buffer.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
 #include <monad/state2/block_state.hpp>
@@ -28,15 +29,17 @@ using namespace monad;
 
 namespace
 {
+    constexpr evmc_revision rev = EVMC_SHANGHAI; // TODO
+    constexpr uint256_t DEFAULT_MAX_RESERVE = 100'000'000'000'000'000;
+
     Result<evmc::Result> eth_call_impl(
         Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, Address const &sender,
-        BlockHashBuffer const &buffer,
+        IntrinsicGasBuffer &intrinsic_gas_buffer, BlockHashBuffer const &buffer,
         std::vector<std::filesystem::path> const &dbname_paths,
         monad_state_override_set const &state_overrides)
     {
-        constexpr evmc_revision rev = EVMC_SHANGHAI; // TODO
-        MonadDevnet chain;
+        MonadDevnet chain{intrinsic_gas_buffer, DEFAULT_MAX_RESERVE};
         MONAD_ASSERT(rev == chain.get_revision(header));
 
         Transaction enriched_txn{txn};
@@ -137,19 +140,26 @@ namespace
         auto const &acct = state.recent_account(sender);
         enriched_txn.nonce = acct.has_value() ? acct.value().nonce : 0;
 
-        BOOST_OUTCOME_TRY(validate_transaction(enriched_txn, acct));
-        auto const tx_context = get_tx_context<rev>(
-            enriched_txn, sender, header, chain.get_chain_id());
-        EvmcHost<rev> host{tx_context, buffer, state};
-        return execute_impl_no_validation<rev>(
-            state,
-            host,
-            enriched_txn,
-            sender,
-            header.base_fee_per_gas.value_or(0),
-            header.beneficiary);
+        BOOST_OUTCOME_TRY(
+            chain.validate_transaction(rev, enriched_txn, sender, acct));
+        return chain.execute_impl_no_validation(
+            rev, buffer, header, state, enriched_txn, sender, acct);
     }
 
+    Block get_block(std::filesystem::path const &blockdb, uint64_t const n)
+    {
+        // TODO: handle nonexistent block
+        auto const path = blockdb / std::to_string(n);
+        MONAD_ASSERT(std::filesystem::exists(path));
+        std::ifstream istream(path);
+        std::ostringstream buf;
+        buf << istream.rdbuf();
+        auto view = byte_string_view{
+            (unsigned char *)buf.view().data(), buf.view().size()};
+        auto const res = rlp::decode_block(view);
+        MONAD_ASSERT(res.has_value());
+        return res.assume_value();
+    }
 }
 
 namespace monad
@@ -260,22 +270,30 @@ monad_evmc_result eth_call(
     MONAD_ASSERT(!sender_result.has_error());
     auto const sender = sender_result.value();
 
+    IntrinsicGasBuffer intrinsic_gas_buffer;
+    for (uint64_t n = block_number < (IntrinsicGasBuffer::N - 1)
+                          ? 0
+                          : block_number - (IntrinsicGasBuffer::N - 1);
+         n <= block_number;
+         ++n) {
+        auto const block = get_block(blockdb_path, n);
+        intrinsic_gas_buffer.set_block_number(n);
+        for (auto const &tx : block.transactions) {
+            auto const sender = recover_sender(tx);
+            MONAD_ASSERT(sender.has_value());
+            intrinsic_gas_buffer.add(
+                sender.value(),
+                intrinsic_gas<rev>(tx) *
+                    gas_price<rev>(
+                        tx, block.header.base_fee_per_gas.value_or(0)));
+        }
+    }
+
     BlockHashBuffer buffer{};
     for (size_t i = block_number < 256 ? 1 : block_number - 255;
          i <= block_number;
          ++i) {
-        auto const path =
-            std::filesystem::path{blockdb_path} / std::to_string(i);
-        MONAD_ASSERT(std::filesystem::exists(path));
-        std::ifstream istream(path);
-        std::ostringstream buf;
-        buf << istream.rdbuf();
-        auto view = byte_string_view{
-            (unsigned char *)buf.view().data(), buf.view().size()};
-        auto const block_result = rlp::decode_block(view);
-        MONAD_ASSERT(block_result.has_value());
-        MONAD_ASSERT(view.empty());
-        auto const &block = block_result.assume_value();
+        auto const block = get_block(blockdb_path, i);
         buffer.set(i - 1, block.header.parent_hash);
     }
 
@@ -295,6 +313,7 @@ monad_evmc_result eth_call(
         block_header,
         block_number,
         sender,
+        intrinsic_gas_buffer,
         buffer,
         paths,
         state_overrides);

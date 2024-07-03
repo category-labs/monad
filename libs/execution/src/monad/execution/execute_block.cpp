@@ -67,7 +67,7 @@ transfer_balance_dao(BlockState &block_state, Incarnation const incarnation)
 
 template <evmc_revision rev>
 Result<std::vector<Receipt>> execute_block(
-    Chain const &chain, Block &block, BlockState &block_state,
+    Chain &chain, Block &block, BlockState &block_state,
     BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {
@@ -180,7 +180,7 @@ Result<std::vector<Receipt>> execute_block(
 EXPLICIT_EVMC_REVISION(execute_block);
 
 Result<std::vector<Receipt>> execute_block(
-    Chain const &chain, evmc_revision const rev, Block &block,
+    Chain &chain, evmc_revision const rev, Block &block,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {

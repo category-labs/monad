@@ -3,6 +3,7 @@
 #include <monad/core/int.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
+#include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/transaction_gas.hpp>
 
 #include <evmc/evmc.h>
@@ -81,6 +82,12 @@ uint64_t intrinsic_gas(Transaction const &tx) noexcept
 
 EXPLICIT_EVMC_REVISION(intrinsic_gas);
 
+uint64_t intrinsic_gas(evmc_revision rev, Transaction const &tx) noexcept
+{
+    SWITCH_EVMC_REVISION(intrinsic_gas, tx);
+    MONAD_ASSERT(false);
+}
+
 inline constexpr uint256_t priority_fee_per_gas(
     Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
 {
@@ -111,6 +118,14 @@ gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
 }
 
 EXPLICIT_EVMC_REVISION(gas_price);
+
+uint256_t gas_price(
+    evmc_revision rev, Transaction const &tx,
+    uint256_t const &base_fee_per_gas) noexcept
+{
+    SWITCH_EVMC_REVISION(gas_price, tx, base_fee_per_gas);
+    MONAD_ASSERT(false);
+}
 
 template <evmc_revision rev>
 uint256_t calculate_txn_award(

@@ -14,7 +14,8 @@
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/genesis.hpp>
-#include <monad/execution/trace/event_trace.hpp>
+#include <monad/execution/intrinsic_gas_buffer.hpp>
+#include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
@@ -50,6 +51,12 @@
 MONAD_NAMESPACE_BEGIN
 
 quill::Logger *event_tracer = nullptr;
+
+namespace
+{
+    constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
+    constexpr uint256_t DEFAULT_MAX_RESERVE = 100'000'000'000'000'000;
+}
 
 MONAD_NAMESPACE_END
 
@@ -90,14 +97,11 @@ void log_tps(
 };
 
 Result<std::pair<uint64_t, uint64_t>> run_monad(
-    Chain const &chain, Db &db, TryGet const &try_get,
+    Chain &chain, Db &db, TryGet const &try_get,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
-    uint64_t const nblocks)
+    uint64_t const nblocks,
+    std::optional<IntrinsicGasBuffer> &intrinsic_gas_buffer)
 {
-    constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
-    signal(SIGINT, signal_handler);
-    stop = 0;
-
     uint64_t const batch_size =
         nblocks == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
     uint64_t batch_num_blocks = 0;
@@ -131,6 +135,9 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
         }
 
         block_hash_buffer.set(block_num - 1, block.value().header.parent_hash);
+        if (intrinsic_gas_buffer.has_value()) {
+            intrinsic_gas_buffer.value().set_block_number(block_num);
+        }
 
         BOOST_OUTCOME_TRY(chain.static_validate_header(block.value().header));
 
@@ -191,7 +198,6 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
 
 int main(int const argc, char const *argv[])
 {
-
     CLI::App cli{"monad"};
     cli.option_defaults()->always_capture_default();
 
@@ -288,6 +294,9 @@ int main(int const argc, char const *argv[])
     catch (CLI::RequiredError const &e) {
         return cli.exit(e);
     }
+
+    signal(SIGINT, signal_handler);
+    stop = 0;
 
     auto stdout_handler = quill::stdout_handler();
     stdout_handler->set_pattern(
@@ -421,16 +430,6 @@ int main(int const argc, char const *argv[])
 
     auto db_cache = ctx ? DbCache{*ctx} : DbCache{triedb};
 
-    auto chain = [chain_config] -> std::unique_ptr<Chain> {
-        switch (chain_config) {
-        case ChainConfig::EthereumMainnet:
-            return std::make_unique<EthereumMainnet>();
-        case ChainConfig::MonadDevnet:
-            return std::make_unique<MonadDevnet>();
-        }
-        MONAD_ASSERT(false);
-    }();
-
     // TODO: consolidate
     auto const try_get = [&] -> TryGet {
         switch (chain_config) {
@@ -467,7 +466,6 @@ int main(int const argc, char const *argv[])
                 if (block_result.has_error()) {
                     return std::nullopt;
                 }
-                MONAD_ASSERT(view.empty());
                 return block_result.assume_value();
             };
         }
@@ -475,8 +473,52 @@ int main(int const argc, char const *argv[])
     }();
 
     uint64_t block_num = start_block_num;
-    auto const result =
-        run_monad(*chain, db_cache, try_get, priority_pool, block_num, nblocks);
+    std::optional<IntrinsicGasBuffer> intrinsic_gas_buffer;
+
+    auto chain = [&] -> std::unique_ptr<Chain> {
+        switch (chain_config) {
+        case ChainConfig::EthereumMainnet:
+            return std::make_unique<EthereumMainnet>();
+        case ChainConfig::MonadDevnet: {
+            auto chain = std::make_unique<MonadDevnet>(
+                intrinsic_gas_buffer.emplace(), DEFAULT_MAX_RESERVE);
+            for (uint64_t n = block_num < IntrinsicGasBuffer::N
+                                  ? 0
+                                  : block_num - IntrinsicGasBuffer::N;
+                 n < block_num && stop == 0;
+                 ++n) {
+                auto const block = try_get(n);
+                if (!block.has_value()) {
+                    std::this_thread::sleep_for(SLEEP_TIME);
+                    continue;
+                }
+                intrinsic_gas_buffer.value().set_block_number(n);
+                auto const rev = chain->get_revision(block.value().header);
+                for (auto const &tx : block.value().transactions) {
+                    auto const sender = recover_sender(tx);
+                    MONAD_ASSERT(sender.has_value());
+                    auto const base_fee_per_gas =
+                        block.value().header.base_fee_per_gas.value_or(0);
+                    intrinsic_gas_buffer.value().add(
+                        sender.value(),
+                        intrinsic_gas(rev, tx) *
+                            gas_price(rev, tx, base_fee_per_gas));
+                }
+            }
+            return chain;
+        }
+        }
+        MONAD_ASSERT(false);
+    }();
+
+    auto const result = run_monad(
+        *chain,
+        db_cache,
+        try_get,
+        priority_pool,
+        block_num,
+        nblocks,
+        intrinsic_gas_buffer);
 
     if (MONAD_UNLIKELY(result.has_error())) {
         LOG_ERROR(

@@ -17,9 +17,15 @@ uint64_t g_data(Transaction const &) noexcept;
 template <evmc_revision rev>
 uint64_t intrinsic_gas(Transaction const &) noexcept;
 
+uint64_t intrinsic_gas(evmc_revision, Transaction const &) noexcept;
+
 template <evmc_revision rev>
 uint256_t
 gas_price(Transaction const &, uint256_t const &base_fee_per_gas) noexcept;
+
+uint256_t gas_price(
+    evmc_revision, Transaction const &,
+    uint256_t const &base_fee_per_gas) noexcept;
 
 template <evmc_revision rev>
 uint256_t calculate_txn_award(

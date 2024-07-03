@@ -7,7 +7,9 @@
 #include <monad/core/likely.h>
 #include <monad/core/result.hpp>
 #include <monad/execution/ethereum/dao.hpp>
+#include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/validate_block.hpp>
+#include <monad/execution/validate_transaction.hpp>
 
 #include <evmc/evmc.h>
 
@@ -113,6 +115,32 @@ bool EthereumMainnet::validate_root(
         }
     }
     return true;
+}
+
+Result<void> EthereumMainnet::validate_transaction(
+    evmc_revision, Transaction const &tx, Address const &,
+    std::optional<Account> const &sender_account) const
+{
+    return ::monad::validate_transaction(tx, sender_account);
+}
+
+evmc::Result EthereumMainnet::execute_impl_no_validation(
+    evmc_revision const rev, BlockHashBuffer const &buf, BlockHeader const &hdr,
+    State &state, Transaction const &tx, Address const &sender,
+    std::optional<Account> const &)
+{
+    return ::monad::execute_impl_no_validation(
+        rev, buf, hdr, get_chain_id(), state, tx, sender);
+}
+
+Receipt EthereumMainnet::execute_final(
+    evmc_revision const rev, State &state, Transaction const &tx,
+    Address const &sender, uint256_t const &base_fee_per_gas,
+    evmc::Result const &result, Address const &beneficiary)
+{
+    MONAD_ASSERT(result.status_code != EVMC_REJECTED);
+    return ::monad::execute_final(
+        rev, state, tx, sender, base_fee_per_gas, result, beneficiary);
 }
 
 MONAD_NAMESPACE_END

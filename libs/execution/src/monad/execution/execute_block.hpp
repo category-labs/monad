@@ -14,14 +14,15 @@ MONAD_NAMESPACE_BEGIN
 struct Block;
 class BlockHashBuffer;
 class BlockState;
+struct Chain;
 
 template <evmc_revision rev>
 Result<std::vector<Receipt>> execute_block(
-    Chain const &, Block &, BlockState &, BlockHashBuffer const &,
+    Chain &, Block &, BlockState &, BlockHashBuffer const &,
     fiber::PriorityPool &);
 
 Result<std::vector<Receipt>> execute_block(
-    Chain const &, evmc_revision, Block &, BlockState &,
-    BlockHashBuffer const &, fiber::PriorityPool &);
+    Chain &, evmc_revision, Block &, BlockState &, BlockHashBuffer const &,
+    fiber::PriorityPool &);
 
 MONAD_NAMESPACE_END

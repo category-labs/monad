@@ -97,6 +97,7 @@ add_library(
   "src/monad/execution/explicit_evmc_revision.hpp"
   "src/monad/execution/fmt/event_trace_fmt.hpp"
   "src/monad/execution/genesis.hpp"
+  "src/monad/execution/intrinsic_gas_buffer.hpp"
   "src/monad/execution/precompiles.cpp"
   "src/monad/execution/precompiles.hpp"
   "src/monad/execution/switch_evmc_revision.hpp"

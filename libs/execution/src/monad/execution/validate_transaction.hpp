@@ -38,6 +38,7 @@ enum class TransactionError
     MissingSender,
     GasLimitOverflow,
     InvalidSignature,
+    InsufficientReserveBalance,
 };
 
 struct Transaction;

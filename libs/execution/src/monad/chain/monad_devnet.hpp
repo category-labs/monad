@@ -10,6 +10,8 @@ MONAD_NAMESPACE_BEGIN
 
 struct MonadDevnet : MonadChain
 {
+    using MonadChain::MonadChain;
+
     virtual uint256_t get_chain_id() const override;
 
     virtual evmc_revision get_revision(BlockHeader const &) const override;

@@ -11,6 +11,7 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
+#include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/trace/event_trace.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/tx_context.hpp>
@@ -106,15 +107,19 @@ constexpr evmc_message to_message(Transaction const &tx, Address const &sender)
 
 template <evmc_revision rev>
 evmc::Result execute_impl_no_validation(
-    State &state, EvmcHost<rev> &host, Transaction const &tx,
-    Address const &sender, uint256_t const &base_fee_per_gas,
-    Address const &beneficiary)
+    BlockHashBuffer const &buf, BlockHeader const &hdr,
+    uint256_t const &chain_id, State &state, Transaction const &tx,
+    Address const &sender)
 {
-    irrevocable_change<rev>(state, tx, sender, base_fee_per_gas);
+    auto const tx_context = get_tx_context<rev>(tx, sender, hdr, chain_id);
+    EvmcHost<rev> host{tx_context, buf, state};
+
+    irrevocable_change<rev>(
+        state, tx, sender, hdr.base_fee_per_gas.value_or(0));
 
     // EIP-3651
     if constexpr (rev >= EVMC_SHANGHAI) {
-        host.access_account(beneficiary);
+        host.access_account(hdr.beneficiary);
     }
 
     state.access_account(sender);
@@ -132,7 +137,15 @@ evmc::Result execute_impl_no_validation(
     return host.call(msg);
 }
 
-EXPLICIT_EVMC_REVISION(execute_impl_no_validation);
+evmc::Result execute_impl_no_validation(
+    evmc_revision const rev, BlockHashBuffer const &buf, BlockHeader const &hdr,
+    uint256_t const &chain_id, State &state, Transaction const &tx,
+    Address const &sender)
+{
+    SWITCH_EVMC_REVISION(
+        execute_impl_no_validation, buf, hdr, chain_id, state, tx, sender);
+    MONAD_ASSERT(false);
+}
 
 template <evmc_revision rev>
 Receipt execute_final(
@@ -172,31 +185,39 @@ Receipt execute_final(
     return receipt;
 }
 
+Receipt execute_final(
+    evmc_revision const rev, State &state, Transaction const &tx,
+    Address const &sender, uint256_t const &base_fee_per_gas,
+    evmc::Result const &result, Address const &beneficiary)
+{
+    SWITCH_EVMC_REVISION(
+        execute_final,
+        state,
+        tx,
+        sender,
+        base_fee_per_gas,
+        result,
+        beneficiary);
+    MONAD_ASSERT(false);
+}
+
 template <evmc_revision rev>
 Result<evmc::Result> execute_impl2(
-    Chain const &chain, Transaction const &tx, Address const &sender,
+    Chain &chain, Transaction const &tx, Address const &sender,
     BlockHeader const &hdr, BlockHashBuffer const &block_hash_buffer,
     State &state)
 {
     auto const sender_account = state.recent_account(sender);
-    BOOST_OUTCOME_TRY(validate_transaction(tx, sender_account));
+    BOOST_OUTCOME_TRY(
+        chain.validate_transaction(rev, tx, sender, sender_account));
 
-    auto const tx_context =
-        get_tx_context<rev>(tx, sender, hdr, chain.get_chain_id());
-    EvmcHost<rev> host{tx_context, block_hash_buffer, state};
-
-    return execute_impl_no_validation<rev>(
-        state,
-        host,
-        tx,
-        sender,
-        hdr.base_fee_per_gas.value_or(0),
-        hdr.beneficiary);
+    return chain.execute_impl_no_validation(
+        rev, block_hash_buffer, hdr, state, tx, sender, sender_account);
 }
 
 template <evmc_revision rev>
 Result<Receipt> execute_impl(
-    Chain const &chain, uint64_t const i, Transaction const &tx,
+    Chain &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
     boost::fibers::promise<void> &prev)
@@ -222,7 +243,8 @@ Result<Receipt> execute_impl(
             if (result.has_error()) {
                 return std::move(result.error());
             }
-            auto const receipt = execute_final<rev>(
+            auto const receipt = chain.execute_final(
+                rev,
                 state,
                 tx,
                 sender,
@@ -245,7 +267,8 @@ Result<Receipt> execute_impl(
         if (result.has_error()) {
             return std::move(result.error());
         }
-        auto const receipt = execute_final<rev>(
+        auto const receipt = chain.execute_final(
+            rev,
             state,
             tx,
             sender,
@@ -262,7 +285,7 @@ EXPLICIT_EVMC_REVISION(execute_impl);
 
 template <evmc_revision rev>
 Result<Receipt> execute(
-    Chain const &chain, uint64_t const i, Transaction const &tx,
+    Chain &chain, uint64_t const i, Transaction const &tx,
     BlockHeader const &hdr, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, boost::fibers::promise<void> &prev)
 {

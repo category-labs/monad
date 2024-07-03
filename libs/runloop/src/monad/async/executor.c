@@ -23,9 +23,14 @@
 static inline bool is_address_dereferenceable(void *addr)
 {
 #if MONAD_ASYNC_HAVE_ASAN
-    return !__asan_address_is_poisoned(addr);
-#else
+    if (__asan_address_is_poisoned(addr)) {
+        return false;
+    }
+#endif
     void *toprobe = (void *)((uintptr_t)addr & ~(uintptr_t)4095u);
+    if (toprobe == nullptr) {
+        return false;
+    }
     void *mapaddr = mmap(
         toprobe,
         4096,
@@ -40,7 +45,6 @@ static inline bool is_address_dereferenceable(void *addr)
         }
     }
     return true;
-#endif
 }
 
 monad_async_result monad_async_executor_create(

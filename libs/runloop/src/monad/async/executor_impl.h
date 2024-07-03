@@ -18,6 +18,7 @@
 #include <poll.h>
 #include <sys/eventfd.h>
 #include <sys/mman.h>
+#include <sys/resource.h> // for setrlimit
 #include <unistd.h>
 
 #if MONAD_ASYNC_HAVE_TSAN
@@ -58,7 +59,6 @@ struct monad_async_executor_impl
     monad_async_result *_Atomic cause_run_to_return;
 
     int *file_indices;
-    unsigned file_indices_size;
 
     struct monad_async_executor_impl_registered_buffers_t
     {
@@ -753,42 +753,67 @@ static inline struct io_uring_sqe *get_wrsqe_suspending_if_necessary(
     return sqe;
 }
 
+// If fd = -1, then he wants a new unallocated slot
 static inline unsigned monad_async_executor_alloc_file_index(
     struct monad_async_executor_impl *ex, int fd)
 {
+    static rlim_t maxfds;
+    if (fd == -1) {
+        fd = -2;
+    }
     if (ex->file_indices == nullptr) {
-        ex->file_indices = calloc(4, sizeof(int));
+        if (maxfds == 0) {
+            for (maxfds = 4096; maxfds >= 1024; maxfds >>= 1) {
+                struct rlimit const r = {maxfds, maxfds};
+                int const ret = setrlimit(RLIMIT_NOFILE, &r);
+                if (ret >= 0) {
+                    break;
+                }
+            }
+            if (maxfds < 4096) {
+                fprintf(
+                    stderr,
+                    "WARNING: maximum hard file descriptor kimit is %lu "
+                    "which is less than 4096. 'Too many open files' "
+                    "errors may result. You can increase the hard "
+                    "file descriptor limit for a given user by adding "
+                    "to '/etc/security/limits.conf' '<username> hard "
+                    "nofile 16384'.\n",
+                    maxfds);
+            }
+        }
+        ex->file_indices = calloc(maxfds, sizeof(int));
         if (ex->file_indices == nullptr) {
             return (unsigned)-1;
         }
-        ex->file_indices_size = 4;
-        memset(ex->file_indices, 0xff, 4 * sizeof(int));
-        int r = io_uring_register_files(&ex->ring, ex->file_indices, 4);
+        memset(ex->file_indices, 0xff, maxfds * sizeof(int));
+        int r = io_uring_register_files_sparse(&ex->ring, (unsigned)maxfds);
         if (r < 0) {
             fprintf(
                 stderr,
-                "FATAL: io_uring_register_files fails with '%s'\n",
+                "FATAL: io_uring_register_files_sparse fails with '%s'\n",
                 strerror(-r));
             abort();
         }
         if (ex->wr_ring.ring_fd != 0) {
-            r = io_uring_register_files(&ex->wr_ring, ex->file_indices, 4);
+            r = io_uring_register_files_sparse(&ex->wr_ring, (unsigned)maxfds);
             if (r < 0) {
                 fprintf(
                     stderr,
-                    "FATAL: io_uring_register_files (write ring) fails with "
+                    "FATAL: io_uring_register_files_sparse (write ring) fails "
+                    "with "
                     "'%s'\n",
                     strerror(-r));
                 abort();
             }
         }
-        memset(ex->file_indices, 0xfe, 4 * sizeof(int));
     }
-    for (unsigned n = 0; n < ex->file_indices_size; n++) {
-        if ((uint32_t)ex->file_indices[n] == 0xfefefefe) {
+    for (rlim_t n = 0; n < maxfds; n++) {
+        if (ex->file_indices[n] == -1) {
             ex->file_indices[n] = fd;
             if (fd >= 0) {
-                int r = io_uring_register_files_update(&ex->ring, n, &fd, 1);
+                int r = io_uring_register_files_update(
+                    &ex->ring, (unsigned)n, &fd, 1);
                 if (r < 0) {
                     fprintf(
                         stderr,
@@ -798,7 +823,8 @@ static inline unsigned monad_async_executor_alloc_file_index(
                     abort();
                 }
                 if (ex->wr_ring.ring_fd != 0) {
-                    r = io_uring_register_files_update(&ex->wr_ring, n, &fd, 1);
+                    r = io_uring_register_files_update(
+                        &ex->wr_ring, (unsigned)n, &fd, 1);
                     if (r < 0) {
                         fprintf(
                             stderr,
@@ -811,54 +837,20 @@ static inline unsigned monad_async_executor_alloc_file_index(
                     }
                 }
             }
-            return n;
+            return (unsigned)n;
         }
     }
-    int **new_file_indices =
-        realloc(ex->file_indices, 2 * ex->file_indices_size * sizeof(int));
-    if (new_file_indices == nullptr) {
-        return (unsigned)-1;
-    }
-    int *updlist = (ex->file_indices + ex->file_indices_size);
-    memset(updlist, 0xff, ex->file_indices_size * sizeof(int));
-    unsigned const ret = ex->file_indices_size;
-    updlist[ret] = fd;
-    int r = io_uring_register_files_update(
-        &ex->ring, ex->file_indices_size, updlist, ex->file_indices_size);
-    if (r < 0) {
-        fprintf(
-            stderr,
-            "FATAL: io_uring_register_files_update fails with '%s'\n",
-            strerror(-r));
-        abort();
-    }
-    if (ex->wr_ring.ring_fd != 0) {
-        r = io_uring_register_files_update(
-            &ex->wr_ring,
-            ex->file_indices_size,
-            updlist,
-            ex->file_indices_size);
-        if (r < 0) {
-            fprintf(
-                stderr,
-                "FATAL: io_uring_register_files_update (write ring) fails with "
-                "'%s'\n",
-                strerror(-r));
-            abort();
-        }
-    }
-    memset(
-        new_file_indices + ex->file_indices_size + 1,
-        0xfe,
-        (ex->file_indices_size - 1) * sizeof(int));
-    ex->file_indices_size *= 2;
-    return ret;
+    fprintf(
+        stderr,
+        "FATAL: More than %lu io_uring file descriptor slots have been "
+        "consumed.\n",
+        maxfds);
+    abort();
 }
 
 static inline void monad_async_executor_free_file_index(
     struct monad_async_executor_impl *ex, unsigned file_index)
 {
-    assert(file_index < ex->file_indices_size);
-    assert(ex->file_indices[file_index] != (int)0xfefefefe);
-    ex->file_indices[file_index] = (int)0xfefefefe;
+    assert(ex->file_indices[file_index] != -1);
+    ex->file_indices[file_index] = -1;
 }

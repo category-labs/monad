@@ -108,6 +108,23 @@ namespace
         return acct;
     }
 
+    byte_string encode_storage_db(bytes32_t const key, bytes32_t const val)
+    {
+        byte_string encoded_storage;
+        encoded_storage += rlp::encode_bytes32_compact(val);
+        encoded_storage += rlp::encode_bytes32_compact(key);
+        return encoded_storage;
+    }
+
+    Result<std::pair<bytes32_t, bytes32_t>>
+    decode_storage_db(byte_string_view &enc)
+    {
+        std::pair<bytes32_t, bytes32_t> storage;
+        BOOST_OUTCOME_TRY(storage.second, rlp::decode_bytes32_compact(enc));
+        BOOST_OUTCOME_TRY(storage.first, rlp::decode_bytes32_compact(enc));
+        return storage;
+    }
+
     struct ComputeAccountLeaf
     {
         static byte_string compute(Node const &node)
@@ -138,10 +155,14 @@ namespace
         static byte_string compute(Node const &node)
         {
             MONAD_ASSERT(node.has_value());
-            MONAD_ASSERT(node.value().front());
-            MONAD_ASSERT(node.value().size() <= sizeof(bytes32_t));
-
-            return rlp::encode_string2(node.value());
+            auto encoded_storage = node.value();
+            auto const storage = rlp::decode_string(encoded_storage);
+            MONAD_ASSERT(!storage.has_error());
+            MONAD_ASSERT(
+                encoded_storage.size() >= 1 &&
+                encoded_storage.size() <= sizeof(bytes32_t) + 1);
+            MONAD_ASSERT(storage.value().size() <= sizeof(bytes32_t));
+            return rlp::encode_string2(storage.value());
         }
     };
 
@@ -387,8 +408,12 @@ namespace
             while (!in.empty()) {
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
                     .key = in.substr(0, sizeof(bytes32_t)),
-                    .value = rlp::zeroless_view(
-                        in.substr(sizeof(bytes32_t), sizeof(bytes32_t))),
+                    .value = bytes_alloc_.emplace_back(encode_storage_db(
+                        bytes32_t{}, // TODO: update this when binary checkpoint
+                                     // includes unhashed storage slot
+                        unaligned_load<bytes32_t>(
+                            in.substr(sizeof(bytes32_t), sizeof(bytes32_t))
+                                .data()))),
                     .incarnation = false,
                     .next = UpdateList{},
                     .version = static_cast<int64_t>(block_id_)}));
@@ -640,14 +665,35 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
         STATS_STORAGE_NO_VALUE();
         return {};
     }
-    MONAD_ASSERT(value.value().size() <= sizeof(bytes32_t));
-    bytes32_t ret;
-    std::copy_n(
-        value.value().begin(),
-        value.value().size(),
-        ret.bytes + sizeof(bytes32_t) - value.value().size());
     STATS_STORAGE_VALUE();
-    return ret;
+    auto encoded_storage = value.value();
+    auto const storage = rlp::decode_bytes32_compact(encoded_storage);
+    MONAD_ASSERT(!storage.has_error());
+    MONAD_ASSERT(
+        encoded_storage.size() >= 1 &&
+        encoded_storage.size() <= sizeof(bytes32_t) + 1);
+    return storage.value();
+};
+
+std::pair<bytes32_t, bytes32_t>
+TrieDb::read_storage_and_slot(Address const &addr, bytes32_t const &key)
+{
+    auto const value = db_.get(
+        concat(
+            state_nibble,
+            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+            NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
+        block_number_);
+    if (!value.has_value()) {
+        STATS_STORAGE_NO_VALUE();
+        return {};
+    }
+    STATS_STORAGE_VALUE();
+    auto encoded_storage = value.value();
+    auto const storage = decode_storage_db(encoded_storage);
+    MONAD_ASSERT(!storage.has_error());
+    MONAD_ASSERT(encoded_storage.empty());
+    return storage.value();
 };
 
 #ifdef MONAD_TRIEDB_STATS
@@ -686,12 +732,12 @@ void TrieDb::commit(
                         update_alloc_.emplace_back(Update{
                             .key = hash_alloc_.emplace_back(
                                 keccak256({key.bytes, sizeof(key.bytes)})),
-                            .value =
-                                delta.second == bytes32_t{}
-                                    ? std::nullopt
-                                    : std::make_optional(rlp::zeroless_view(
-                                          to_byte_string_view(
-                                              delta.second.bytes))),
+                            .value = delta.second == bytes32_t{}
+                                         ? std::nullopt
+                                         : std::make_optional<byte_string_view>(
+                                               bytes_alloc_.emplace_back(
+                                                   encode_storage_db(
+                                                       key, delta.second))),
                             .incarnation = false,
                             .next = UpdateList{},
                             .version = static_cast<int64_t>(block_number_)}));
@@ -890,7 +936,12 @@ nlohmann::json TrieDb::to_json()
         void handle_storage(Node const &node)
         {
             MONAD_ASSERT(node.has_value());
-            MONAD_ASSERT(node.value().size() <= sizeof(bytes32_t));
+
+            auto encoded_storage = node.value();
+
+            auto const storage = decode_storage_db(encoded_storage);
+            MONAD_DEBUG_ASSERT(!storage.has_error());
+            MONAD_DEBUG_ASSERT(encoded_storage.empty());
 
             auto const acct_key = fmt::format(
                 "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));
@@ -900,15 +951,17 @@ nlohmann::json TrieDb::to_json()
                 NibblesView{path}.substr(
                     KECCAK256_SIZE * 2, KECCAK256_SIZE * 2));
 
-            bytes32_t value;
-            std::copy_n(
-                node.value().begin(),
-                node.value().size(),
-                value.bytes + sizeof(bytes32_t) - node.value().size());
-
-            json[acct_key]["storage"][key] = fmt::format(
+            auto storage_data_json = nlohmann::json::object();
+            storage_data_json["slot"] = fmt::format(
                 "0x{:02x}",
-                fmt::join(std::as_bytes(std::span(value.bytes)), ""));
+                fmt::join(
+                    std::as_bytes(std::span(storage.value().first.bytes)), ""));
+            storage_data_json["value"] = fmt::format(
+                "0x{:02x}",
+                fmt::join(
+                    std::as_bytes(std::span(storage.value().second.bytes)),
+                    ""));
+            json[acct_key]["storage"][key] = storage_data_json;
         }
 
         virtual std::unique_ptr<TraverseMachine> clone() const override

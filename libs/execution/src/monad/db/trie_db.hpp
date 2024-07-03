@@ -17,6 +17,7 @@
 #include <list>
 #include <memory>
 #include <optional>
+#include <utility>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -60,6 +61,10 @@ public:
     nlohmann::json to_json();
     size_t prefetch_current_root();
     uint64_t get_block_number() const;
+
+    // for testing only
+    std::pair<bytes32_t, bytes32_t>
+    read_storage_and_slot(Address const &, bytes32_t const &key);
 
     // read-only operations
     void set_block_number(uint64_t);

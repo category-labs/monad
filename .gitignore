@@ -4,7 +4,7 @@ build
 perf.data*
 scratch
 
-### github default cmake ignore
+### CMake ignore
 
 CMakeLists.txt.user
 CMakeCache.txt
@@ -17,6 +17,7 @@ install_manifest.txt
 compile_commands.json
 CTestTestfile.cmake
 _deps
+CMakeUserPresets.json
 
 ### github default python ignore
 
@@ -152,3 +153,6 @@ dmypy.json
 
 # vcpkg
 vcpkg_installed/
+
+# Jetbrains IDEs (i.e. CLion)
+/.idea

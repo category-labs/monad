@@ -24,18 +24,19 @@ struct monad_fiber_scheduler;
 //! move in memory until the operation completes.
 typedef struct monad_async_io_status
 {
-    struct monad_async_io_status *prev, *next;
-    monad_async_result (*cancel_)(
+    struct monad_async_io_status *MONAD_ASYNC_PUBLIC_CONST prev,
+        *MONAD_ASYNC_PUBLIC_CONST next;
+    monad_async_result (*MONAD_ASYNC_PUBLIC_CONST cancel_)(
         monad_async_task, struct monad_async_io_status *);
 
     //! Unspecified value immediately after initiating call returns. Will become
     //! bytes transferred if operation is successful, or another error if it
     //! fails or is cancelled.
-    monad_async_result result;
+    MONAD_ASYNC_PUBLIC_CONST monad_async_result result;
 
-    monad_async_cpu_ticks_count_t ticks_when_initiated;
-    monad_async_cpu_ticks_count_t ticks_when_completed;
-    monad_async_cpu_ticks_count_t ticks_when_reaped;
+    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t ticks_when_initiated;
+    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t ticks_when_completed;
+    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t ticks_when_reaped;
 
     // You can place any additional data you want after here ...
 } monad_async_io_status;
@@ -78,36 +79,38 @@ struct monad_async_task_head
     struct monad_async_task_head *io_recipient_task;
 
     // The following are **NOT** user modifiable
-    struct
+    MONAD_ASYNC_PUBLIC_CONST struct
     {
         monad_async_priority cpu;
         monad_async_priority io;
     } priority;
 
-    monad_async_result result;
+    MONAD_ASYNC_PUBLIC_CONST monad_async_result result;
     // All of these next refer to the i/o executor only i.e. if running on a
     // foreign executor, is_running will be false as that is not the i/o
     // executor.
 #ifdef __cplusplus
-    std::atomic<monad_async_executor> current_executor;
-    std::
+    MONAD_ASYNC_PUBLIC_CONST std::atomic<monad_async_executor> current_executor;
+    MONAD_ASYNC_PUBLIC_CONST std::
 #else
-    _Atomic monad_async_executor current_executor;
+    MONAD_ASYNC_PUBLIC_CONST _Atomic monad_async_executor current_executor;
 #endif
         atomic_bool is_awaiting_dispatch,
         is_pending_launch, is_running, is_suspended_sqe_exhaustion,
         is_suspended_sqe_exhaustion_wr, is_suspended_awaiting,
         is_suspended_completed, is_running_on_foreign_executor;
 
-    monad_async_cpu_ticks_count_t ticks_when_submitted;
-    monad_async_cpu_ticks_count_t ticks_when_attached;
-    monad_async_cpu_ticks_count_t ticks_when_detached;
-    monad_async_cpu_ticks_count_t ticks_when_suspended_awaiting;
-    monad_async_cpu_ticks_count_t ticks_when_suspended_completed;
-    monad_async_cpu_ticks_count_t ticks_when_resumed;
-    monad_async_cpu_ticks_count_t total_ticks_executed;
+    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t ticks_when_submitted;
+    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t ticks_when_attached;
+    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t ticks_when_detached;
+    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t
+        ticks_when_suspended_awaiting;
+    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t
+        ticks_when_suspended_completed;
+    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t ticks_when_resumed;
+    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t total_ticks_executed;
 
-    size_t io_submitted, io_completed_not_reaped;
+    MONAD_ASYNC_PUBLIC_CONST size_t io_submitted, io_completed_not_reaped;
 };
 
 //! \brief True if the task has completed executing and has exited

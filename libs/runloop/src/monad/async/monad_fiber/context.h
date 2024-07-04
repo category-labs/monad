@@ -1,9 +1,18 @@
 #pragma once
 
 #include "fcontext.h"
-#include "sanitizer.h"
 
 #include <stdbool.h>
+
+#if MONAD_ASYNC_HAVE_ASAN
+    #include <sanitizer/asan_interface.h>
+#endif
+#if MONAD_ASYNC_HAVE_TSAN
+    #include <sanitizer/tsan_interface.h>
+#endif
+#if MONAD_ASYNC_HAVE_VALGRIND
+    #include <valgrind/valgrind.h>
+#endif
 
 #if defined(__cplusplus)
 extern "C"

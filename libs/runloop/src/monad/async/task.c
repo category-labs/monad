@@ -4,7 +4,7 @@
 
 // #define MONAD_ASYNC_FIBER_PRINTING 1
 
-#include "monad/fiber/scheduler.h"
+#include "monad_fiber/scheduler.h"
 
 #include <errno.h>
 #include <stdio.h>

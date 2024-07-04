@@ -66,7 +66,7 @@ TEST(socket_io, unregistered_buffers)
                 std::cout << "   Server initiates write to socket."
                           << std::endl;
                 // Write "hello world" to the connecting socket
-                monad_async_io_status status;
+                monad_async_io_status status{};
                 struct iovec iov[] = {{(void *)"hello world", 11}};
                 struct msghdr msg = {};
                 msg.msg_iov = iov;
@@ -109,7 +109,7 @@ TEST(socket_io, unregistered_buffers)
                     monad_async_task_socket_transfer_to_uring(task, sock.get()))
                     .value();
 
-                monad_async_io_status status;
+                monad_async_io_status status{};
 
                 struct sockaddr_in addr
                 {
@@ -268,7 +268,7 @@ TEST(socket_io, registered_buffers)
                           << buffer.index << " @ " << buffer.iov->iov_base
                           << " " << buffer.iov->iov_len << std::endl;
                 memcpy(buffer.iov[0].iov_base, "hello world", 11);
-                monad_async_io_status status;
+                monad_async_io_status status{};
                 struct iovec iov[] = {{buffer.iov[0].iov_base, 11}};
                 struct msghdr msg = {};
                 msg.msg_iov = iov;
@@ -315,7 +315,7 @@ TEST(socket_io, registered_buffers)
                     monad_async_task_socket_transfer_to_uring(task, sock.get()))
                     .value();
 
-                monad_async_io_status status;
+                monad_async_io_status status{};
 
                 struct sockaddr_in addr
                 {

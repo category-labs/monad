@@ -1230,6 +1230,7 @@ node_writer_unique_ptr_type replace_node_writer(
         offset_of_next_writer.offset = 0;
     }
     // See above about handling potential reentrancy correctly
+    auto *const node_writer_ptr = node_writer.get();
     auto ret = aux.io->make_connected(
         write_single_buffer_sender{
             offset_of_next_writer,
@@ -1237,11 +1238,12 @@ node_writer_unique_ptr_type replace_node_writer(
                 AsyncIO::WRITE_BUFFER_SIZE,
                 (size_t)(chunk_capacity - offset_of_next_writer.offset))},
         write_operation_io_receiver{});
+    if (node_writer.get() != node_writer_ptr) {
+        // We reentered, please retry
+        return {};
+    }
     if (ci_ != nullptr) {
-        if (ci_ != aux.db_metadata()->free_list_end()) {
-            // We reentered, please retry
-            return {};
-        }
+        MONAD_DEBUG_ASSERT(ci_ == aux.db_metadata()->free_list_end());
         aux.remove(idx);
         bool const in_fast_list =
             aux.db_metadata()->at(offset_of_next_writer.id)->in_fast_list;

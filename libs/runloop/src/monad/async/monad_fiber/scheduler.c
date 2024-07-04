@@ -1,5 +1,7 @@
-#include <monad/fiber/assert.h>
-#include <monad/fiber/scheduler.h>
+#include "scheduler.h"
+
+#include "assert.h"
+
 #include <pthread.h>
 
 thread_local monad_fiber_scheduler_t *monad_fiber_scheduler_current_ = NULL;

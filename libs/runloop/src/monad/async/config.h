@@ -28,6 +28,14 @@
     #endif
 #endif
 
+#ifndef MONAD_ASYNC_PUBLIC_CONST
+    #ifdef MONAD_ASYNC_SOURCE
+        #define MONAD_ASYNC_PUBLIC_CONST
+    #else
+        #define MONAD_ASYNC_PUBLIC_CONST const
+    #endif
+#endif
+
 #ifdef __cplusplus
 extern "C"
 {

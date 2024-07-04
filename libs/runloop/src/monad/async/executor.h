@@ -20,23 +20,26 @@ typedef struct monad_async_executor_head
     // The following are not user modifiable
 #ifdef __cplusplus
     // C++ is difficult here and requires std::
-    std::atomic<monad_async_task> current_task;
-    std::atomic_size_t tasks_pending_launch;
-    std::atomic_size_t tasks_running;
-    std::atomic_size_t tasks_suspended_sqe_exhaustion;
-    std::atomic_size_t tasks_suspended;
+    MONAD_ASYNC_PUBLIC_CONST std::atomic<monad_async_task> current_task;
+    MONAD_ASYNC_PUBLIC_CONST std::atomic_size_t tasks_pending_launch;
+    MONAD_ASYNC_PUBLIC_CONST std::atomic_size_t tasks_running;
+    MONAD_ASYNC_PUBLIC_CONST std::atomic_size_t tasks_suspended_sqe_exhaustion;
+    MONAD_ASYNC_PUBLIC_CONST std::atomic_size_t tasks_suspended;
 #else
-    _Atomic monad_async_task current_task;
-    atomic_size_t tasks_pending_launch;
-    atomic_size_t tasks_running;
-    atomic_size_t tasks_suspended_sqe_exhaustion;
-    atomic_size_t tasks_suspended;
+    MONAD_ASYNC_PUBLIC_CONST _Atomic monad_async_task current_task;
+    MONAD_ASYNC_PUBLIC_CONST atomic_size_t tasks_pending_launch;
+    MONAD_ASYNC_PUBLIC_CONST atomic_size_t tasks_running;
+    MONAD_ASYNC_PUBLIC_CONST atomic_size_t tasks_suspended_sqe_exhaustion;
+    MONAD_ASYNC_PUBLIC_CONST atomic_size_t tasks_suspended;
 #endif
-    monad_async_cpu_ticks_count_t total_ticks_in_run;
-    monad_async_cpu_ticks_count_t total_ticks_in_task_launch;
-    monad_async_cpu_ticks_count_t total_ticks_in_io_uring;
-    monad_async_cpu_ticks_count_t total_ticks_sleeping;
-    monad_async_cpu_ticks_count_t total_ticks_in_task_completion;
+    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t total_ticks_in_run;
+    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t
+        total_ticks_in_task_launch;
+    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t
+        total_ticks_in_io_uring;
+    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t total_ticks_sleeping;
+    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t
+        total_ticks_in_task_completion;
 } *monad_async_executor;
 
 //! \brief Returns true if an executor has work before it

@@ -14,6 +14,7 @@
 struct monad_async_file_impl
 {
     struct monad_async_file_head head;
+    char magic[8];
     unsigned io_uring_file_index; // NOT a traditional file descriptor!
 };
 
@@ -141,6 +142,7 @@ monad_async_result monad_async_task_file_create(
         }
     }
     p->io_uring_file_index = file_index;
+    memcpy(p->magic, "MNASFILE", 8);
     *file = (monad_async_file)p;
     return monad_async_make_success(0);
 }
@@ -172,6 +174,7 @@ monad_async_result monad_async_task_file_create_from_existing_fd(
         return monad_async_make_failure(ENOMEM);
     }
     p->io_uring_file_index = file_index;
+    memcpy(p->magic, "MNASFILE", 8);
     *file = (monad_async_file)p;
     return monad_async_make_success(0);
 }
@@ -243,6 +246,7 @@ monad_async_task_file_destroy(monad_async_task task_, monad_async_file file_)
         if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
             return ret;
         }
+        memset(ex->magic, 0, 8);
         monad_async_executor_free_file_index(ex, file->io_uring_file_index);
     }
     free(file);

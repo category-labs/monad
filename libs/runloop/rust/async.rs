@@ -144,6 +144,7 @@ impl Default for cxx_status_code_system {
 #[doc = "! \\brief Declare a Boost.Outcome layout compatible C result type for\n! `result<intptr_t>`"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+#[must_use]
 pub struct cxx_result_status_code_system_monad_async {
     #[doc = "! \\brief Declare a Boost.Outcome layout compatible C result type for\n! `result<intptr_t>`"]
     pub value: isize,
@@ -793,7 +794,7 @@ pub type monad_async_file_offset = u64;
 #[repr(C)]
 #[derive(Debug)]
 pub struct monad_async_file_head {
-    pub executor: monad_async_executor,
+    pub executor: *mut monad_async_executor_head,
 }
 impl Default for monad_async_file_head {
     fn default() -> Self {
@@ -892,7 +893,7 @@ extern "C" {
 pub struct monad_async_socket_head {
     pub addr: sockaddr,
     pub addr_len: socklen_t,
-    pub executor: monad_async_executor,
+    pub executor: *mut monad_async_executor_head,
 }
 impl Default for monad_async_socket_head {
     fn default() -> Self {
@@ -1052,7 +1053,7 @@ pub type monad_async_work_dispatcher = *mut monad_async_work_dispatcher_head;
 #[derive(Debug)]
 pub struct monad_async_work_dispatcher_executor_head {
     pub derived: *mut monad_async_executor_head,
-    pub dispatcher: monad_async_work_dispatcher,
+    pub dispatcher: *mut monad_async_work_dispatcher_head,
     pub is_working: atomic_bool,
     pub is_idle: atomic_bool,
 }

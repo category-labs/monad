@@ -3,8 +3,8 @@
 #include "test_common.hpp"
 
 #include "monad/async/file_io.h"
+#include "monad/async/monad_fiber/scheduler.h"
 #include "monad/async/util.h"
-#include "monad/fiber/scheduler.h"
 
 #include <chrono>
 #include <filesystem>

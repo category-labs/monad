@@ -36,6 +36,7 @@ enum monad_async_socket_status : uint8_t
 struct monad_async_socket_impl
 {
     struct monad_async_socket_head head;
+    char magic[8];
 
     union
     {
@@ -71,6 +72,7 @@ monad_async_result monad_async_task_socket_create(
     p->not_created.flags = flags;
     p->status = monad_async_socket_status_not_created;
     p->io_uring_file_index = (unsigned)-1;
+    memcpy(p->magic, "MNASSOCK", 8);
     *sock = (monad_async_socket)p;
     return monad_async_make_success(0);
 }
@@ -104,6 +106,7 @@ monad_async_result monad_async_task_socket_create_from_existing_fd(
     }
     p->status = monad_async_socket_status_io_uring_file_index;
     p->io_uring_file_index = file_index;
+    memcpy(p->magic, "MNASSOCK", 8);
     *sock = (monad_async_socket)p;
     return monad_async_make_success(0);
 }
@@ -150,6 +153,7 @@ monad_async_result monad_async_task_socket_destroy(
         }
         monad_async_executor_free_file_index(ex, sock->io_uring_file_index);
     }
+    memset(sock->magic, 0, 8);
     if (sock->status != monad_async_socket_status_userspace_file_descriptor) {
         close(sock->fd);
     }

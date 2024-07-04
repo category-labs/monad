@@ -40,6 +40,7 @@ LIST_DECLARE_P(struct monad_async_task_impl);
 struct monad_async_executor_impl
 {
     struct monad_async_executor_head head;
+    char magic[8];
 
     thrd_t owning_thread;
     bool within_run;
@@ -243,6 +244,22 @@ monad_async_executor_create_impl_fill_registered_buffers(
     unsigned buffers_small_count, unsigned buffers_small_multiplier,
     unsigned buffers_large_count, unsigned buffers_large_multiplier)
 {
+#ifndef NDEBUG
+    if (buffers_small_count > (1U << 14) /*4096*/) {
+        fprintf(
+            stderr,
+            "buffers_small_count > IORING_MAX_REG_BUFFERS, this will likely "
+            "fail in release.\n");
+        abort();
+    }
+    if (buffers_large_count > (1U << 14) /*4096*/) {
+        fprintf(
+            stderr,
+            "buffers_large_count > IORING_MAX_REG_BUFFERS, this will likely "
+            "fail in release.\n");
+        abort();
+    }
+#endif
     if (buffers_small_multiplier == 0) {
         buffers_small_multiplier = 1;
     }
@@ -455,6 +472,7 @@ static inline monad_async_result monad_async_executor_create_impl(
             }
         }
     }
+    memcpy(p->magic, "MNASEXEC", 8);
     return monad_async_make_success(0);
 }
 
@@ -518,6 +536,7 @@ monad_async_executor_destroy_impl(struct monad_async_executor_impl *ex)
         }
     }
     atomic_unlock(&ex->lock);
+    memset(ex->magic, 0, 8);
     if (ex->wr_ring.ring_fd != 0) {
         io_uring_queue_exit(&ex->wr_ring);
     }

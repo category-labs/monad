@@ -8,20 +8,6 @@ find_program(RUSTC_PROGRAM rustc)
 
 add_subdirectory("third_party/boost-context")
 
-add_library(monad_fiber_c STATIC
-  "src/monad/fiber/scheduler.c"
-  "src/monad/fiber/context.c"
-  "src/monad/fiber/context_thread_local.c"
-  "src/monad/fiber/current.c"
-  "src/monad/fiber/current_thread_local.c"
-  "src/monad/fiber/task.c"
-  "src/monad/fiber/channel.c"
-)
-target_compile_features(monad_fiber_c PUBLIC c_std_23 cxx_std_20)
-target_compile_options(monad_fiber_c PRIVATE -Wall -Wextra -Wconversion -Wpedantic -Werror)
-target_include_directories(monad_fiber_c PUBLIC "src")
-target_link_libraries(monad_fiber_c PUBLIC boost_context monad_core)
-
 set(monad_async_INCLUDES
   "src/monad/async/context_switcher.h"
   "src/monad/async/executor.h"
@@ -32,6 +18,14 @@ set(monad_async_INCLUDES
   "src/monad/async/work_dispatcher.h"
 )
 add_library(monad_async_c STATIC
+  # Temporary, needs to be properly sorted through and refactored
+  "src/monad/async/monad_fiber/context.c"
+  "src/monad/async/monad_fiber/context_thread_local.c"
+  "src/monad/async/monad_fiber/current.c"
+  "src/monad/async/monad_fiber/current_thread_local.c"
+  "src/monad/async/monad_fiber/scheduler.c"
+  "src/monad/async/monad_fiber/task.c"
+
   "src/monad/async/context_switcher_monad_fiber.c"
   "src/monad/async/context_switcher_none.c"
   "src/monad/async/context_switcher_sjlj.c"
@@ -45,8 +39,9 @@ add_library(monad_async_c STATIC
 )
 target_compile_features(monad_async_c PUBLIC c_std_23 cxx_std_20)
 target_compile_options(monad_async_c PRIVATE -Wall -Wextra -Wconversion -Wpedantic -Werror)
+target_compile_definitions(monad_async_c PRIVATE _GNU_SOURCE=1 MONAD_ASYNC_SOURCE=1)
 target_include_directories(monad_async_c PUBLIC "src")
-target_link_libraries(monad_async_c PUBLIC uring Boost::boost monad_fiber_c )
+target_link_libraries(monad_async_c PUBLIC uring boost_context monad_core)
 monad_target_gdb_pretty_printer(monad_async_c monad_async_c_pretty_printer "src/monad/async/gdb_pretty_printers.py")
 
 if(BINDGEN_PROGRAM)
@@ -60,25 +55,11 @@ if(BINDGEN_PROGRAM)
     --no-layout-tests
     --no-copy "monad_async.*"
     --with-derive-default
-#    --must-use-type cxx_result_status_code_system_monad_async
+    --must-use-type cxx_result_status_code_system_monad_async
     DEPENDS ${monad_async_INCLUDES}
   )
-  add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/rust/fiber.rs"
-    COMMAND "${BINDGEN_PROGRAM}" -o "${CMAKE_CURRENT_SOURCE_DIR}/rust/fiber.rs"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/monad/fiber/all.h"
-    --allowlist-function "monad_fiber.*"
-    --allowlist-type "monad_fiber.*"
-    --allowlist-var "monad_fiber.*"
-    --generate-inline-functions
-    --no-layout-tests
-    --no-copy "monad_async.*"
-    --with-derive-default
-#    --must-use-type cxx_result_status_code_system_monad_async
-    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/monad/fiber/all.h"
-  )
-  add_custom_target(monad_async_c_regenerate_rust_bindings DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/rust/async.rs" "${CMAKE_CURRENT_SOURCE_DIR}/rust/fiber.rs")
+  add_custom_target(monad_async_c_regenerate_rust_bindings DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/rust/async.rs")
   add_dependencies(monad_async_c monad_async_c_regenerate_rust_bindings)
-  add_dependencies(monad_fiber_c monad_async_c_regenerate_rust_bindings)
 else()
   message(WARNING "WARNING: Could not regen Rust bindings as bindgen program not found")
 endif()
@@ -86,7 +67,6 @@ endif()
 enable_testing()
 
 add_subdirectory("src/monad/async/test")
-add_subdirectory("src/monad/fiber/test")
 
 if(RUSTC_PROGRAM AND NOT CMAKE_C_FLAGS_INIT MATCHES "fsanitize=")
     cmake_host_system_information(RESULT linux_flavour QUERY DISTRIB_ID)
@@ -106,7 +86,6 @@ if(RUSTC_PROGRAM AND NOT CMAKE_C_FLAGS_INIT MATCHES "fsanitize=")
     -L "$<TARGET_FILE_DIR:monad_async_c>"
     -L "$<TARGET_FILE_DIR:monad_core>"
     -l $<TARGET_NAME:monad_async_c>
-    -l $<TARGET_NAME:monad_fiber_c>
     -l $<TARGET_NAME:monad_core>
     -L "$<TARGET_FILE_DIR:boost_context>"
     -L "$<TARGET_FILE_DIR:${BOOST_STACKTRACE_LIB}>"
@@ -118,9 +97,8 @@ if(RUSTC_PROGRAM AND NOT CMAKE_C_FLAGS_INIT MATCHES "fsanitize=")
       "${CMAKE_CURRENT_SOURCE_DIR}/rust/async_with_rust_helpers.rs"
       "${CMAKE_CURRENT_SOURCE_DIR}/rust/test.rs"
       "${CMAKE_CURRENT_SOURCE_DIR}/rust/async.rs"
-      "${CMAKE_CURRENT_SOURCE_DIR}/rust/fiber.rs"
   )
   add_custom_target(monad_async_c_rust_tests ALL DEPENDS "${CMAKE_BINARY_DIR}/test/rust_tests")
-  add_dependencies(monad_async_c_rust_tests monad_async_c monad_fiber_c)
+  add_dependencies(monad_async_c_rust_tests monad_async_c)
   add_test(NAME monad_async_c_rust_tests COMMAND "${CMAKE_BINARY_DIR}/test/rust_tests" --nocapture)
 endif()

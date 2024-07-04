@@ -524,7 +524,8 @@ TEST(file_io, benchmark)
             to_result(monad_async_task_claim_registered_io_buffer(
                           &buffer, task, 1, {}))
                 .value();
-            std::vector<monad_async_io_status> iostatus(128);
+            std::vector<monad_async_io_status> iostatus(
+                128, monad_async_io_status{});
             uint32_t ops = 0;
 
             auto const begin = std::chrono::steady_clock::now();
@@ -706,7 +707,7 @@ TEST(file_io, sqe_exhaustion_does_not_reorder_writes)
                     .value();
                 auto myoffset = offset;
                 offset += 512;
-                monad_async_io_status status;
+                monad_async_io_status status{};
                 monad_async_task_file_write(
                     &status,
                     task,

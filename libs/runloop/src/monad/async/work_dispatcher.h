@@ -15,19 +15,19 @@ typedef struct monad_async_work_dispatcher_head
     // The following are not user modifiable
 #ifdef __cplusplus
     // C++ is difficult here and requires std::
-    struct
+    MONAD_ASYNC_PUBLIC_CONST struct
     {
         std::atomic_uint working, idle;
     } executors;
 
     std::atomic_size_t tasks_awaiting_dispatch;
 #else
-    struct
+    MONAD_ASYNC_PUBLIC_CONST struct
     {
         atomic_uint working, idle;
     } executors;
 
-    atomic_size_t tasks_awaiting_dispatch;
+    MONAD_ASYNC_PUBLIC_CONST atomic_size_t tasks_awaiting_dispatch;
 #endif
 } *monad_async_work_dispatcher;
 
@@ -36,7 +36,9 @@ typedef struct monad_async_work_dispatcher_executor_head
 {
     // The following are not user modifiable
     struct monad_async_executor_head *const derived;
-    monad_async_work_dispatcher dispatcher;
+    struct monad_async_work_dispatcher_head *MONAD_ASYNC_PUBLIC_CONST
+        dispatcher;
+    MONAD_ASYNC_PUBLIC_CONST
 #ifdef __cplusplus
     std::
 #endif

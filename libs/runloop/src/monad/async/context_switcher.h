@@ -37,6 +37,7 @@ typedef struct monad_async_context_switcher_head
     // The following are not user modifiable
 
     //! The number of contexts existing
+    MONAD_ASYNC_PUBLIC_CONST
 #ifdef __cplusplus
     std::
 #endif

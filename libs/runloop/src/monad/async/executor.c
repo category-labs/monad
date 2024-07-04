@@ -27,7 +27,11 @@ static inline bool is_address_dereferenceable(void *addr)
         return false;
     }
 #endif
-    void *toprobe = (void *)((uintptr_t)addr & ~(uintptr_t)4095u);
+    void *toprobe = (void *)(((uintptr_t)addr + 4095u) & ~(uintptr_t)4095u);
+    if (toprobe == nullptr) {
+        return false;
+    }
+    toprobe = (void *)((uintptr_t)addr & ~(uintptr_t)4095u);
     if (toprobe == nullptr) {
         return false;
     }
@@ -1217,49 +1221,54 @@ monad_async_result monad_async_task_set_priorities(
     struct monad_async_executor_impl *ex =
         (struct monad_async_executor_impl *)atomic_load_explicit(
             &task_->current_executor, memory_order_acquire);
-    if (ex == nullptr) {
-        return monad_async_make_failure(EINVAL);
-    }
-    if (atomic_load_explicit(&task->head.is_running, memory_order_acquire)) {
-        LIST_REMOVE_ATOMIC_COUNTER(
-            ex->tasks_running[task->head.priority.cpu],
-            task,
-            &ex->head.tasks_running);
-    }
-    else if (atomic_load_explicit(
-                 &task->head.is_suspended_awaiting, memory_order_acquire)) {
-        LIST_REMOVE_ATOMIC_COUNTER(
-            ex->tasks_suspended_awaiting[task->head.priority.cpu],
-            task,
-            &ex->head.tasks_suspended);
-    }
-    else if (atomic_load_explicit(
-                 &task->head.is_suspended_completed, memory_order_acquire)) {
-        LIST_REMOVE_ATOMIC_COUNTER(
-            ex->tasks_suspended_completed[task->head.priority.cpu],
-            task,
-            &ex->head.tasks_suspended);
+    if (ex != nullptr) {
+        if (atomic_load_explicit(
+                &task->head.is_running, memory_order_acquire)) {
+            LIST_REMOVE_ATOMIC_COUNTER(
+                ex->tasks_running[task->head.priority.cpu],
+                task,
+                &ex->head.tasks_running);
+        }
+        else if (atomic_load_explicit(
+                     &task->head.is_suspended_awaiting, memory_order_acquire)) {
+            LIST_REMOVE_ATOMIC_COUNTER(
+                ex->tasks_suspended_awaiting[task->head.priority.cpu],
+                task,
+                &ex->head.tasks_suspended);
+        }
+        else if (atomic_load_explicit(
+                     &task->head.is_suspended_completed,
+                     memory_order_acquire)) {
+            LIST_REMOVE_ATOMIC_COUNTER(
+                ex->tasks_suspended_completed[task->head.priority.cpu],
+                task,
+                &ex->head.tasks_suspended);
+        }
     }
     task->head.priority.cpu = cpu;
-    if (atomic_load_explicit(&task->head.is_running, memory_order_acquire)) {
-        LIST_APPEND_ATOMIC_COUNTER(
-            ex->tasks_running[task->head.priority.cpu],
-            task,
-            &ex->head.tasks_running);
-    }
-    else if (atomic_load_explicit(
-                 &task->head.is_suspended_awaiting, memory_order_acquire)) {
-        LIST_APPEND_ATOMIC_COUNTER(
-            ex->tasks_suspended_awaiting[task->head.priority.cpu],
-            task,
-            &ex->head.tasks_suspended);
-    }
-    else if (atomic_load_explicit(
-                 &task->head.is_suspended_completed, memory_order_acquire)) {
-        LIST_APPEND_ATOMIC_COUNTER(
-            ex->tasks_suspended_completed[task->head.priority.cpu],
-            task,
-            &ex->head.tasks_suspended);
+    if (ex != nullptr) {
+        if (atomic_load_explicit(
+                &task->head.is_running, memory_order_acquire)) {
+            LIST_APPEND_ATOMIC_COUNTER(
+                ex->tasks_running[task->head.priority.cpu],
+                task,
+                &ex->head.tasks_running);
+        }
+        else if (atomic_load_explicit(
+                     &task->head.is_suspended_awaiting, memory_order_acquire)) {
+            LIST_APPEND_ATOMIC_COUNTER(
+                ex->tasks_suspended_awaiting[task->head.priority.cpu],
+                task,
+                &ex->head.tasks_suspended);
+        }
+        else if (atomic_load_explicit(
+                     &task->head.is_suspended_completed,
+                     memory_order_acquire)) {
+            LIST_APPEND_ATOMIC_COUNTER(
+                ex->tasks_suspended_completed[task->head.priority.cpu],
+                task,
+                &ex->head.tasks_suspended);
+        }
     }
     return monad_async_make_success(0);
 }

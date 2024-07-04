@@ -1,4 +1,4 @@
-#include <monad/fiber/context.h>
+#include "context.h"
 
 thread_local monad_fiber_context_t monad_fiber_main_context_ = {
     .fiber = NULL,
@@ -8,5 +8,4 @@ thread_local monad_fiber_context_t monad_fiber_main_context_ = {
 #if defined(MONAD_USE_ASAN)
     .asan = {.fake_stack = NULL, .stack_bottom = NULL, .stack_size = 0u},
 #endif
-    .name=NULL
-};
+    .name = NULL};

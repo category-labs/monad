@@ -16,7 +16,7 @@ typedef uint64_t monad_async_file_offset;
 typedef struct monad_async_file_head
 {
     // The following are not user modifiable
-    monad_async_executor executor;
+    struct monad_async_executor_head *MONAD_ASYNC_PUBLIC_CONST executor;
 } *monad_async_file;
 
 /*! \brief EXPENSIVE, CANCELLATION POINT Suspend execution of the task until the

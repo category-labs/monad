@@ -14,11 +14,11 @@ extern "C"
 typedef struct monad_async_socket_head
 {
     // Either the locally bound or peer of connected socket
-    struct sockaddr addr;
-    socklen_t addr_len;
+    MONAD_ASYNC_PUBLIC_CONST struct sockaddr addr;
+    MONAD_ASYNC_PUBLIC_CONST socklen_t addr_len;
 
     // The following are not user modifiable
-    monad_async_executor executor;
+    struct monad_async_executor_head *MONAD_ASYNC_PUBLIC_CONST executor;
 } *monad_async_socket;
 
 /*! \brief EXPENSIVE Create a socket. See `man socket` to explain parameters.

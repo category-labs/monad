@@ -20,7 +20,7 @@ TEST(work_dispatcher, works)
     {
         std::atomic<monad_async_work_dispatcher_executor> ex;
         std::thread thread;
-        monad_async_executor_head stats;
+        monad_async_executor_head stats{};
 
         thread_state() = default;
 

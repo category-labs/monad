@@ -16,14 +16,13 @@ typedef struct monad_fiber_task
     int64_t priority;
 } monad_fiber_task_t;
 
-
 typedef struct monad_fiber_task_queue
 {
 
     // ring buffer. not lock free.
-    monad_fiber_task_t *  *memory;
+    monad_fiber_task_t **memory;
     size_t capacity;
-    monad_fiber_task_t *  *data;
+    monad_fiber_task_t **data;
     size_t size;
 } monad_fiber_task_queue_t;
 

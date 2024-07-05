@@ -3,18 +3,17 @@
 #include <monad/async/concepts.hpp>
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/io.hpp>
+#include <monad/async/util.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/nibble.h>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/detail/boost_fiber_workarounds.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/node.hpp>
+#include <monad/mpt/node_cursor.hpp>
 #include <monad/mpt/trie.hpp>
 #include <monad/mpt/util.hpp>
 
-#include <boost/fiber/future.hpp>
-
-#include <cassert>
 #include <cstdint>
 #include <limits>
 #include <utility>

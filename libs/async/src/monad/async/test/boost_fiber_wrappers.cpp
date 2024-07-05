@@ -14,12 +14,14 @@
 #include <boost/lockfree/queue.hpp>
 #include <boost/outcome/try.hpp>
 
+#include <gtest/gtest.h>
+
 #include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstring>
 #include <iostream>
-#include <ostream>
+#include <memory>
 #include <stop_token>
 #include <thread>
 #include <vector>
@@ -121,17 +123,17 @@ TEST_F(BoostFiberWrappers, resume_execution_upon)
         thread_ids;
     std::atomic<bool> done{false};
     auto impl = [&] {
-        const pid_t original_tid = gettid();
+        pid_t const original_tid = gettid();
         MONAD_ASSERT(thread_ids.push(original_tid));
         boost_fibers::resume_execution_upon(*other).get().value();
-        const pid_t new_tid = gettid();
+        pid_t const new_tid = gettid();
         MONAD_ASSERT(thread_ids.push(new_tid));
         // Can't complete on a thread different to original, it would be a
         // race.
         boost_fibers::resume_execution_upon(*shared_state_()->testio)
             .get()
             .value();
-        const pid_t final_tid = gettid();
+        pid_t const final_tid = gettid();
         MONAD_ASSERT(thread_ids.push(final_tid));
         done = true;
     };

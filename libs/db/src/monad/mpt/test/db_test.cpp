@@ -1,7 +1,5 @@
 #include "test_fixtures_base.hpp"
 
-#include <gtest/gtest.h>
-
 #include <monad/async/config.hpp>
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/util.hpp>
@@ -26,14 +24,12 @@
 
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
-#include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <filesystem>
 #include <initializer_list>
 #include <iostream>
 #include <iterator>
+#include <optional>
 #include <stdexcept>
 #include <thread>
 #include <type_traits>

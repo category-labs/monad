@@ -1,4 +1,3 @@
-#include "test_fixtures_base.hpp"
 #include "test_fixtures_gtest.hpp"
 
 #include "../cli_tool_impl.hpp"
@@ -13,10 +12,12 @@
 #include <monad/mpt/trie.hpp>
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
+#include <gtest/gtest.h>
+
 #include <filesystem>
 #include <future>
 #include <iostream>
-#include <ostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <string_view>

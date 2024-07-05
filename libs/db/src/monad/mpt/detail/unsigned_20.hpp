@@ -6,6 +6,7 @@
 
 #include <compare>
 #include <concepts>
+#include <cstdint>
 
 MONAD_MPT_NAMESPACE_BEGIN
 

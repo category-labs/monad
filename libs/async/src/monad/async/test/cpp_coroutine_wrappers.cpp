@@ -15,15 +15,17 @@
 #include <boost/outcome/coroutine_support.hpp>
 #include <boost/outcome/try.hpp>
 
+#include <gtest/gtest.h>
+
 #include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstring>
 #include <deque>
+#include <exception>
 #include <functional>
 #include <iostream>
 #include <memory>
-#include <ostream>
 #include <stop_token>
 #include <thread>
 #include <type_traits>

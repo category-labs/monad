@@ -1,5 +1,3 @@
-#include "gtest/gtest.h"
-
 #include "test_fixtures_base.hpp"
 #include "test_fixtures_gtest.hpp"
 
@@ -9,6 +7,8 @@
 #include <monad/mpt/util.hpp>
 
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+
+#include <gtest/gtest.h>
 
 #include <cstdint>
 #include <utility>

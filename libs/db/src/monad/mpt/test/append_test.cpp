@@ -8,7 +8,10 @@
 
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
+#include <gtest/gtest.h>
+
 #include <iostream>
+#include <utility>
 #include <vector>
 
 using namespace MONAD_ASYNC_NAMESPACE;

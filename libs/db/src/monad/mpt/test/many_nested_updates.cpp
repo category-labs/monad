@@ -23,11 +23,12 @@
     #pragma GCC diagnostic pop
 #endif
 
+#include <gtest/gtest.h>
+
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
-#include <ostream>
 #include <string_view>
 #include <type_traits>
 #include <utility>

@@ -7,8 +7,13 @@
 #include <monad/mpt/trie.hpp>
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
+#include <gtest/gtest.h>
+
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <optional>
+#include <vector>
 
 using namespace MONAD_MPT_NAMESPACE;
 using namespace MONAD_ASYNC_NAMESPACE;

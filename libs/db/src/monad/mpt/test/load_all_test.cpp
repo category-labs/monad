@@ -5,8 +5,9 @@
 
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
+#include <gtest/gtest.h>
+
 #include <iostream>
-#include <ostream>
 
 struct LoadAllTest
     : public monad::test::FillDBWithChunksGTest<

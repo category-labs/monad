@@ -1,16 +1,17 @@
 #pragma once
 
 #include <monad/async/concepts.hpp>
-#include <monad/async/io.hpp>
-#include <monad/async/storage_pool.hpp>
+#include <monad/core/byte_string.hpp>
 #include <monad/core/result.hpp>
-#include <monad/io/buffers.hpp>
-#include <monad/io/ring.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/nibbles_view.hpp>
-#include <monad/mpt/node.hpp>
+#include <monad/mpt/node_cursor.hpp>
 #include <monad/mpt/trie.hpp>
 #include <monad/mpt/update.hpp>
+
+#include <cstddef>
+#include <memory>
+#include <optional>
 
 MONAD_MPT_NAMESPACE_BEGIN
 

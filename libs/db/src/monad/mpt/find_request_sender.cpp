@@ -5,6 +5,7 @@
 #include <monad/async/concepts.hpp>
 #include <monad/async/config.hpp>
 #include <monad/async/erased_connected_operation.hpp>
+#include <monad/async/util.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/nibble.h>
 #include <monad/mpt/config.hpp>
@@ -12,7 +13,9 @@
 #include <monad/mpt/util.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <limits>
+#include <vector>
 
 #include <unistd.h>
 

@@ -1,18 +1,27 @@
 #pragma once
 
-#include <monad/async/storage_pool.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/endian.hpp> // NOLINT
 #include <monad/core/keccak.h>
-#include <monad/core/math.hpp>
 #include <monad/mem/allocators.hpp>
-#include <monad/mpt/detail/unsigned_20.hpp>
 #include <monad/mpt/util.hpp>
-#include <monad/rlp/encode.hpp>
 
+#include <bit>
 #include <cstdint>
+#include <limits>
+#include <memory>
 #include <optional>
 #include <span>
+#include <type_traits>
+#include <utility>
+
+namespace monad
+{
+    namespace async
+    {
+        class storage_pool;
+    }
+}
 
 MONAD_MPT_NAMESPACE_BEGIN
 

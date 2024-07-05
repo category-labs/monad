@@ -14,6 +14,8 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <memory>
+#include <span>
 #include <stdexcept>
 #include <system_error>
 #include <utility>

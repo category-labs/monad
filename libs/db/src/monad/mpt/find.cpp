@@ -3,10 +3,10 @@
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/node.hpp>
+#include <monad/mpt/node_cursor.hpp>
 #include <monad/mpt/trie.hpp>
 
 #include <bit>
-#include <cassert>
 
 MONAD_MPT_NAMESPACE_BEGIN
 

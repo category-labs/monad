@@ -6,13 +6,19 @@
 
 #include <monad/mem/allocators.hpp>
 #include <monad/mpt/config.hpp>
-#include <monad/mpt/merkle/compact_encode.hpp>
 #include <monad/mpt/merkle/node_reference.hpp>
 #include <monad/mpt/node.hpp>
 
-#include <algorithm>
+#include <bit>
+#include <concepts>
 #include <cstdint>
+#include <cstring>
+#include <optional>
+#include <ranges>
 #include <span>
+#include <string>
+#include <string_view>
+#include <utility>
 
 MONAD_MPT_NAMESPACE_BEGIN
 

@@ -12,6 +12,7 @@
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
 #include <cstddef>
 #include <memory>

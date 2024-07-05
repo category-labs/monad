@@ -1,10 +1,13 @@
 #include <monad/async/config.hpp>
+#include <monad/async/connected_operation.hpp>
 #include <monad/async/detail/start_lifetime_as_polyfill.hpp>
+#include <monad/async/io.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/small_prng.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/detail/unsigned_20.hpp>
+#include <monad/mpt/node.hpp>
 #include <monad/mpt/state_machine.hpp>
 #include <monad/mpt/trie.hpp>
 #include <monad/mpt/update.hpp>
@@ -12,12 +15,12 @@
 
 #include <algorithm>
 #include <atomic>
-#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <span>
 #include <stdexcept>
 #include <thread>
@@ -25,7 +28,7 @@
 #include <vector>
 
 #include <sys/mman.h>
-#include <unistd.h>
+#include <sys/types.h>
 
 MONAD_MPT_NAMESPACE_BEGIN
 

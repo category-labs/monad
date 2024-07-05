@@ -3,6 +3,7 @@
 #include <monad/async/config.hpp>
 #include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/storage_pool.hpp>
+#include <monad/async/util.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/keccak.h>
@@ -15,9 +16,7 @@
 
 #include <algorithm>
 #include <bit>
-#include <cassert>
 #include <cerrno>
-#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -26,6 +25,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <unistd.h>
 #include <utility>
 #include <vector>

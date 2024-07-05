@@ -11,9 +11,12 @@
 
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <stack>
 #include <utility>
 

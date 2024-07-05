@@ -16,11 +16,12 @@
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 
+#include <gtest/gtest.h>
+
 #include <chrono>
 #include <cstddef>
 #include <cstring>
 #include <iostream>
-#include <ostream>
 #include <utility>
 #include <vector>
 

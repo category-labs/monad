@@ -1,4 +1,15 @@
+#pragma once
+
+#include <monad/async/concepts.hpp>
+#include <monad/async/config.hpp>
+#include <monad/core/assert.h>
+#include <monad/mpt/config.hpp>
+#include <monad/mpt/nibbles_view.hpp>
+#include <monad/mpt/node_cursor.hpp>
 #include <monad/mpt/trie.hpp>
+
+#include <optional>
+#include <utility>
 
 MONAD_MPT_NAMESPACE_BEGIN
 

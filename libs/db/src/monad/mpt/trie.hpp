@@ -27,6 +27,9 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 // temporary

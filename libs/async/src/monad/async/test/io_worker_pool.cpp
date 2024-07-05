@@ -15,6 +15,8 @@
 #include <boost/lockfree/policies.hpp>
 #include <boost/lockfree/queue.hpp>
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -23,7 +25,6 @@
 #include <deque>
 #include <iostream>
 #include <memory>
-#include <ostream>
 #include <thread>
 #include <utility>
 #include <vector>

@@ -65,6 +65,20 @@ public:
         fiber::PriorityPool &priority_pool, uint64_t const start_block_number,
         uint64_t const nblocks)
     {
+        using benchmark_clock = std::chrono::high_resolution_clock;
+        using benchmark_tick_duration = benchmark_clock::duration;
+        using std::chrono::duration_cast;
+
+        // Fixed cost latency of the RDTSC instruction. This varies by
+        // architecture, therefore this fixed number is not very accurate but
+        // it is more accurate than not accounting for it at all (an implicit
+        // zero). This number is taken from this microbenchmark:
+        //
+        //    https://github.com/testing-laboratory/rdtscTest
+        constexpr std::chrono::nanoseconds const cycle_count_latency_ns{8};
+        constexpr benchmark_tick_duration const cycle_count_latency_ticks =
+            duration_cast<benchmark_tick_duration>(cycle_count_latency_ns);
+
         MONAD_ASSERT(start_block_number);
 
         EthereumMainnet const chain{};
@@ -72,33 +86,43 @@ public:
         constexpr uint64_t BATCH_SIZE = 1000; // TODO param
         uint64_t batch_num_blocks = 0;
         uint64_t batch_num_txs = 0;
-        auto batch_begin = std::chrono::steady_clock::now();
+        auto batch_begin = benchmark_clock::now();
+        benchmark_tick_duration batch_decode_total{};
+        benchmark_tick_duration batch_execute_total{};
 
         auto log_tps = [&](uint64_t const block_num) {
             if (!batch_num_blocks || !batch_num_txs) {
                 return;
             }
 
-            auto const now = std::chrono::steady_clock::now();
-            auto const elapsed =
-                std::chrono::duration_cast<std::chrono::microseconds>(
-                    now - batch_begin)
-                    .count();
-            uint64_t const tps =
-                (batch_num_txs) * 1'000'000 / static_cast<uint64_t>(elapsed);
+            auto const batch_elapsed = benchmark_clock::now() - batch_begin;
+
+            // We have an estimate of the number of transactions per second
+            // taken over a much smaller window than 1 second. Scale the
+            // number of batch transactions by the denominator of the period
+            // duration, so that when we divide we get something seconds-based.
+            auto const scaled_batch_num_txs =
+                batch_num_txs * benchmark_tick_duration::period::den;
 
             LOG_INFO(
                 "Run {:4d} blocks to {:8d}, number of transactions {:6d}, "
-                "tps = {:5d}, rss = {:8d} MB",
+                "dtps = {:5d}, etps = {:5d}, stps = {:5d}, rss = {:8d} MB",
                 batch_num_blocks,
                 block_num,
                 batch_num_txs,
-                tps,
+                scaled_batch_num_txs /
+                    static_cast<uint64_t>(batch_decode_total.count()),
+                scaled_batch_num_txs /
+                    static_cast<uint64_t>(batch_execute_total.count()),
+                scaled_batch_num_txs /
+                    static_cast<uint64_t>(batch_elapsed.count()),
                 monad_procfs_self_resident() / (1L << 20));
 
             batch_num_blocks = 0;
             batch_num_txs = 0;
-            batch_begin = now;
+            batch_decode_total = {};
+            batch_execute_total = {};
+            batch_begin = benchmark_clock::now();
         };
 
         uint64_t i = 0;
@@ -109,10 +133,10 @@ public:
             }
 
             Block block{};
+            auto const before_decode_block = benchmark_clock::now();
             if (!block_db.get(block_number, block)) {
                 return i;
             }
-
             block_hash_buffer.set(block_number - 1, block.header.parent_hash);
 
             {
@@ -130,6 +154,7 @@ public:
 
             BOOST_OUTCOME_TRY(static_validate_block(rev, block));
 
+            auto const before_execute_block = benchmark_clock::now();
             BlockState block_state(db);
             BOOST_OUTCOME_TRY(
                 auto const receipts,
@@ -138,6 +163,7 @@ public:
             BOOST_OUTCOME_TRY(validate_header(receipts, block.header));
             block_state.log_debug();
             block_state.commit(receipts);
+            auto const block_pipeline_finished = benchmark_clock::now();
 
             if (!verify_root_hash(
                     rev,
@@ -151,6 +177,12 @@ public:
             n_transactions += block.transactions.size();
             batch_num_txs += block.transactions.size();
             ++batch_num_blocks;
+
+            batch_decode_total += before_execute_block - before_decode_block -
+                                  cycle_count_latency_ticks;
+            batch_execute_total += block_pipeline_finished -
+                                   before_execute_block -
+                                   cycle_count_latency_ticks;
 
             if (block_number % BATCH_SIZE == 0) {
                 log_tps(block_number);

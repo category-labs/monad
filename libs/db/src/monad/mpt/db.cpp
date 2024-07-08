@@ -553,10 +553,10 @@ struct Db::RWOnDisk final : public Db::Impl
         }
     };
 
+    UpdateAux<> aux_;
     std::unique_ptr<TrieDbWorker> worker_;
     std::thread worker_thread_;
     StateMachine &machine_;
-    UpdateAux<> aux_;
     Node::UniquePtr root_; // owned by worker thread
     Node::UniquePtr reader_root_; // lifetime for reads on a different block
 
@@ -565,26 +565,28 @@ struct Db::RWOnDisk final : public Db::Impl
             {
                 std::unique_lock const g(lock_);
                 worker_ = std::make_unique<TrieDbWorker>(this, aux_, options);
+                // This bit is unfortunately nasty, but we have to initialise
+                // aux_ from this thread
+                aux_.~UpdateAux<>();
+                new (&aux_) UpdateAux<>{&worker_->io};
             }
             worker_->run();
             std::unique_lock const g(lock_);
             worker_.reset();
         })
         , machine_{machine}
-        , aux_{[&] {
+        , root_([&] {
             comms_.enqueue({});
             while (comms_.size_approx() > 0) {
                 std::this_thread::yield();
             }
             std::unique_lock const g(lock_);
             MONAD_ASSERT(worker_);
-            return UpdateAux<>{&worker_->io};
-        }()}
-        , root_(
-              aux_.get_latest_root_offset() != INVALID_OFFSET
-                  ? Node::UniquePtr{read_node_blocking(
-                        worker_->pool, aux_.get_latest_root_offset())}
-                  : Node::UniquePtr{})
+            return aux_.get_latest_root_offset() != INVALID_OFFSET
+                       ? Node::UniquePtr{read_node_blocking(
+                             worker_->pool, aux_.get_latest_root_offset())}
+                       : Node::UniquePtr{};
+        }())
     {
     }
 

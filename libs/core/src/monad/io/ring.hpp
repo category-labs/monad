@@ -56,6 +56,11 @@ public:
         return ring_;
     }
 
+    [[gnu::always_inline]] io_uring_params const &get_params() const
+    {
+        return params_;
+    }
+
     [[gnu::always_inline]] unsigned get_sq_entries() const
     {
         return params_.sq_entries;

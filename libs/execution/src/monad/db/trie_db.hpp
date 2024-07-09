@@ -43,7 +43,7 @@ public:
     TrieDb(
         std::optional<mpt::OnDiskDbConfig> const &, std::istream &accounts,
         std::istream &code, uint64_t init_block_number = 0,
-        size_t buf_size = 1ul << 31);
+        size_t buf_size = (1ul << 32) - 1);
     ~TrieDb();
 
     virtual std::optional<Account> read_account(Address const &) override;

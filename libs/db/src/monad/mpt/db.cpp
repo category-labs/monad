@@ -112,7 +112,7 @@ struct Db::ROOnDisk final : public Db::Impl
     io::Buffers rwbuf_;
     async::AsyncIO io_;
     UpdateAux<> aux_;
-    uint64_t last_loaded_version_;
+    chunk_offset_t last_loaded_root_offset_;
     Node::UniquePtr root_;
     TrieRootCache lru_;
 
@@ -135,19 +135,11 @@ struct Db::ROOnDisk final : public Db::Impl
               async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)}
         , io_{pool_, rwbuf_}
         , aux_{&io_}
-        , last_loaded_version_{aux_.db_metadata()->max_db_history_version.load(
-              std::memory_order_acquire)}
-        , root_{Node::UniquePtr{read_node_blocking(
-              pool_,
-              [&] {
-                  auto root_offset = aux_.get_latest_root_offset();
-                  if (root_offset == INVALID_OFFSET) {
-                      throw std::runtime_error(
-                          "Failed to open a read-only db from "
-                          "an empty database.");
-                  }
-                  return root_offset;
-              }())}}
+        , last_loaded_root_offset_{aux_.get_latest_root_offset()}
+        , root_{Node::UniquePtr{
+              last_loaded_root_offset_ == INVALID_OFFSET
+                  ? nullptr
+                  : read_node_blocking(pool_, last_loaded_root_offset_)}}
         , lru_{options.historical_trie_lru_size}
     {
         io_.set_capture_io_latencies(options.capture_io_latencies);
@@ -188,6 +180,9 @@ struct Db::ROOnDisk final : public Db::Impl
         NodeCursor const &root, NibblesView const &key,
         uint64_t const version) override
     {
+        if (!root.is_valid()) {
+            return {NodeCursor{}, find_result::unknown};
+        }
         // db we last loaded does not contain the version we want to find
         if (version > aux().db_metadata()->max_db_history_version.load(
                           std::memory_order_acquire) ||
@@ -300,11 +295,13 @@ struct Db::ROOnDisk final : public Db::Impl
         if (!aux().contains_version(version)) {
             return NodeCursor{};
         }
-
-        if (version != last_loaded_version_) {
-            last_loaded_version_ = version;
-            auto const offset = aux().get_root_offset_at_version(version);
-            root_.reset(read_node_blocking(pool_, offset));
+        if (auto const root_offset = aux().get_root_offset_at_version(version);
+            last_loaded_root_offset_ != root_offset) {
+            last_loaded_root_offset_ = root_offset;
+            root_.reset(
+                root_offset == INVALID_OFFSET
+                    ? nullptr
+                    : read_node_blocking(pool_, root_offset));
         }
         return root_ ? NodeCursor{*root_} : NodeCursor{};
     }
@@ -877,7 +874,7 @@ Db::find(NodeCursor root, NibblesView const key, uint64_t const block_id) const
     return it;
 }
 
-Result<NodeCursor> Db::load_root_for_version(uint64_t const block_id) const
+NodeCursor Db::load_root_for_version(uint64_t const block_id) const
 {
     MONAD_ASSERT(impl_);
     return impl_->load_root_for_version(block_id);
@@ -964,26 +961,22 @@ NodeCursor Db::root() const noexcept
     return impl_->root() ? NodeCursor{*impl_->root()} : NodeCursor{};
 }
 
-std::optional<uint64_t> Db::get_latest_block_id() const
+uint64_t Db::get_latest_block_id() const
 {
     MONAD_ASSERT(impl_);
-    return impl_->root() ? std::make_optional<uint64_t>(
-                               impl_->aux().max_version_in_db_history())
-                         : std::nullopt;
+    return impl_->aux().max_version_in_db_history();
 }
 
-std::optional<uint64_t> Db::get_earliest_block_id() const
+uint64_t Db::get_earliest_block_id() const
 {
     MONAD_ASSERT(impl_);
-    return impl_->root() ? std::make_optional<uint64_t>(
-                               impl_->aux().min_version_in_db_history())
-                         : std::nullopt;
+    return impl_->aux().min_version_in_db_history();
 }
 
 size_t Db::prefetch()
 {
     MONAD_ASSERT(impl_);
-    if (!get_latest_block_id().has_value()) {
+    if (get_latest_block_id() == INVALID_BLOCK_ID) {
         return 0;
     }
     return impl_->prefetch_fiber_blocking();

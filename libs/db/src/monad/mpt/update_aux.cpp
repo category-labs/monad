@@ -413,8 +413,8 @@ void UpdateAuxImpl::set_io(AsyncIO *io_)
         // Mark as done, init root offset and history versions for the new
         // database as invalid
         advance_offsets_to(INVALID_OFFSET, fast_offset, slow_offset);
-        update_ondisk_db_min_version(uint64_t(-1));
-        update_ondisk_db_max_version(0);
+        update_ondisk_db_min_version(INVALID_BLOCK_ID);
+        update_ondisk_db_max_version(INVALID_BLOCK_ID);
 
         std::atomic_signal_fence(
             std::memory_order_seq_cst); // no compiler reordering here
@@ -641,19 +641,18 @@ void UpdateAuxImpl::advance_compact_offsets()
         db_metadata()->db_offsets.last_compact_offset_slow;
 }
 
-// must call this when db is non empty
 uint64_t UpdateAuxImpl::min_version_in_db_history() const noexcept
 {
-    MONAD_ASSERT(!is_in_memory());
-    return db_metadata()->min_db_history_version.load(
-        std::memory_order_acquire);
+    return is_on_disk() ? db_metadata()->min_db_history_version.load(
+                              std::memory_order_acquire)
+                        : 0;
 }
 
 uint64_t UpdateAuxImpl::max_version_in_db_history() const noexcept
 {
-    MONAD_ASSERT(!is_in_memory());
-    return db_metadata()->max_db_history_version.load(
-        std::memory_order_acquire);
+    return is_on_disk() ? db_metadata()->max_db_history_version.load(
+                              std::memory_order_acquire)
+                        : 0;
 }
 
 bool UpdateAuxImpl::contains_version(uint64_t const version) const noexcept

@@ -554,7 +554,7 @@ enum class TrieDb::Mode
 
 TrieDb::TrieDb(mpt::ReadOnlyOnDiskDbConfig const &config)
     : db_{config}
-    , block_number_{db_.get_latest_block_id().value()}
+    , block_number_{db_.get_latest_block_id()}
     , mode_{Mode::OnDiskReadOnly}
 {
 }
@@ -572,24 +572,24 @@ TrieDb::TrieDb(std::optional<mpt::OnDiskDbConfig> const &config)
         if (config.has_value()) {
             if (config->start_block_id.has_value()) {
                 // throw error on invalid block number in config
-                if (!db_.get_latest_block_id().has_value() ||
-                    !db_.get_earliest_block_id().has_value()) {
+                if (db_.get_latest_block_id() == INVALID_BLOCK_ID ||
+                    db_.get_earliest_block_id() == INVALID_BLOCK_ID) {
                     throw std::runtime_error(
                         "No valid history in existing db to resume from");
                 }
-                if (config->start_block_id >
-                        db_.get_latest_block_id().value() ||
-                    config->start_block_id <
-                        db_.get_earliest_block_id().value()) {
+                if (config->start_block_id > db_.get_latest_block_id() ||
+                    config->start_block_id < db_.get_earliest_block_id()) {
                     throw std::runtime_error(fmt::format(
                         "Invalid starting block id to resume, the valid block "
                         "id range is [{}, {}]",
-                        db_.get_earliest_block_id().value(),
-                        db_.get_latest_block_id().value()));
+                        db_.get_earliest_block_id(),
+                        db_.get_latest_block_id()));
                 }
                 return config->start_block_id.value();
             }
-            return db_.get_latest_block_id().value_or(0);
+            return db_.get_latest_block_id() == INVALID_BLOCK_ID
+                       ? 0ul
+                       : db_.get_latest_block_id();
         }
         // in memory triedb block id remains 0
         return 0ul;

@@ -58,7 +58,7 @@ public:
     Result<byte_string_view>
     get_data(NodeCursor, NibblesView, uint64_t block_id) const;
 
-    Result<NodeCursor> load_root_for_version(uint64_t block_id) const;
+    NodeCursor load_root_for_version(uint64_t block_id) const;
 
     void upsert(
         UpdateList, uint64_t block_id, bool enable_compaction = true,
@@ -76,8 +76,8 @@ public:
     // Blocking traverse never wait on a fiber future.
     bool traverse_blocking(NodeCursor, TraverseMachine &, uint64_t block_id);
     NodeCursor root() const noexcept;
-    std::optional<uint64_t> get_latest_block_id() const;
-    std::optional<uint64_t> get_earliest_block_id() const;
+    uint64_t get_latest_block_id() const;
+    uint64_t get_earliest_block_id() const;
     // This function moves a source trie to under a destination version,
     // assuming the source trie is the only version present.
     // Only the RWDb can call this API for state sync purposes.

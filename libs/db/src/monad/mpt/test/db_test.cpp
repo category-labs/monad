@@ -456,7 +456,7 @@ TEST_F(OnDiskDbFixture, ro_historical)
     EXPECT_EQ(bad_read.error(), DbError::key_not_found);
 }
 
-TEST(ReadOnlyDbTest, error_open_empty_rodb)
+TEST(ReadOnlyDbTest, open_empty_rodb)
 {
     std::filesystem::path const dbname{
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
@@ -470,8 +470,13 @@ TEST(ReadOnlyDbTest, error_open_empty_rodb)
 
     // construct RODb
     ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
-    // expect failure to open an empty db
-    EXPECT_THROW(Db{ro_config}, std::runtime_error);
+    // RODb root is invalid
+    Db const ro_db{ro_config};
+    EXPECT_FALSE(ro_db.root().is_valid());
+    EXPECT_EQ(ro_db.get_latest_block_id(), INVALID_BLOCK_ID);
+    EXPECT_EQ(ro_db.get_earliest_block_id(), INVALID_BLOCK_ID);
+    // RODb get() from any block will fail
+    EXPECT_EQ(ro_db.get({}, 0).assume_error(), DbError::key_not_found);
 }
 
 TEST(ReadOnlyDbTest, read_only_db_concurrent)
@@ -505,6 +510,8 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
         unsigned nsuccess = 0;
         unsigned nfailed = 0;
 
+        while (ro_db.get(version_bytes, 0ull).has_error()) {
+        } // now the first version is written to db
         while (!done.load(std::memory_order_acquire)) {
             auto res = ro_db.get(version_bytes, read_version);
             if (res.has_value()) {
@@ -513,8 +520,8 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
             }
             else {
                 auto const min_block_id = ro_db.get_earliest_block_id();
-                EXPECT_TRUE(min_block_id.has_value());
-                read_version = min_block_id.value() + 100;
+                EXPECT_TRUE(min_block_id != INVALID_BLOCK_ID);
+                read_version = min_block_id + 100;
                 ++nfailed;
             }
         }
@@ -522,8 +529,8 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
                   << read_version << ". Did " << nsuccess << " successful and "
                   << nfailed << " failed reads" << std::endl;
         EXPECT_TRUE(nsuccess > 0);
-        EXPECT_TRUE(read_version <= ro_db.get_latest_block_id().value());
-        EXPECT_TRUE(read_version >= ro_db.get_earliest_block_id().value());
+        EXPECT_TRUE(read_version <= ro_db.get_latest_block_id());
+        EXPECT_TRUE(read_version >= ro_db.get_earliest_block_id());
     };
 
     // construct RWDb
@@ -532,11 +539,7 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
     OnDiskDbConfig const config{
         .compaction = true, .dbname_paths = {dbname}, .file_size_db = 8};
     Db db{machine, config};
-    upsert_new_version(
-        db, version); // insert something first so db is not empty
-    ++version;
 
-    // only start RODb after database is not empty
     std::thread reader(keep_query);
 
     // run rodb and rwdb concurrently for 10s
@@ -551,8 +554,8 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
     reader.join();
 
     std::cout << "Writer finished. Max version in rwdb is "
-              << db.get_latest_block_id().value() << ", min version in rwdb is "
-              << db.get_earliest_block_id().value() << std::endl;
+              << db.get_latest_block_id() << ", min version in rwdb is "
+              << db.get_earliest_block_id() << std::endl;
 }
 
 TEST(DbTest, read_only_db_traverse_concurrent)
@@ -576,14 +579,13 @@ TEST(DbTest, read_only_db_traverse_concurrent)
         }
         db.upsert(std::move(ls), version);
     };
-    upsert_once();
 
     std::atomic<bool> done{false};
 
     std::thread writer([&]() {
         while (!done.load(std::memory_order_acquire)) {
-            ++version;
             upsert_once();
+            ++version;
         }
     });
 
@@ -592,10 +594,11 @@ TEST(DbTest, read_only_db_traverse_concurrent)
     DummyTraverseMachine traverse_machine;
 
     // read thread loop to traverse block 0 until it gets erased
-    auto res = ro_db.load_root_for_version(0);
-    ASSERT_TRUE(res.has_value());
-    ASSERT_TRUE(res.value().is_valid());
-    while (ro_db.traverse(res.value(), traverse_machine, 0)) {
+    while (!ro_db.load_root_for_version(0).is_valid()) {
+    } // first block data is written to db by writer thread
+    auto const root_cursor = ro_db.load_root_for_version(0);
+    ASSERT_TRUE(root_cursor.is_valid());
+    while (ro_db.traverse(root_cursor, traverse_machine, 0)) {
     }
 
     done.store(true, std::memory_order_release);
@@ -663,7 +666,11 @@ TEST(ReadOnlyDbTest, load_correct_root_upon_reopen_nonempty_db)
         Db const db{machine, config};
         // db is init to empty
         EXPECT_FALSE(db.root().is_valid());
-        EXPECT_FALSE(db.get_latest_block_id().has_value());
+        EXPECT_EQ(db.get_latest_block_id(), INVALID_BLOCK_ID);
+
+        Db const ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+        EXPECT_FALSE(ro_db.root().is_valid());
+        EXPECT_EQ(ro_db.get_latest_block_id(), INVALID_BLOCK_ID);
     }
 
     { // reopen the same db with append flag turned on
@@ -671,7 +678,7 @@ TEST(ReadOnlyDbTest, load_correct_root_upon_reopen_nonempty_db)
         Db db{machine, config};
         // db is still empty
         EXPECT_FALSE(db.root().is_valid());
-        EXPECT_FALSE(db.get_latest_block_id().has_value());
+        EXPECT_EQ(db.get_latest_block_id(), INVALID_BLOCK_ID);
 
         auto u1 = make_update(kv[2].first, kv[2].second);
         auto u2 = make_update(kv[3].first, kv[3].second);
@@ -695,9 +702,13 @@ TEST(ReadOnlyDbTest, load_correct_root_upon_reopen_nonempty_db)
         config.append = true;
         Db const db{machine, config};
         EXPECT_TRUE(db.root().is_valid());
-        EXPECT_TRUE(db.get_latest_block_id().has_value());
-        EXPECT_EQ(db.get_latest_block_id().value(), block_id);
-        EXPECT_EQ(db.get_earliest_block_id().value(), block_id);
+        EXPECT_EQ(db.get_latest_block_id(), block_id);
+        EXPECT_EQ(db.get_earliest_block_id(), block_id);
+
+        Db const ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+        EXPECT_TRUE(db.root().is_valid());
+        EXPECT_EQ(db.get_latest_block_id(), block_id);
+        EXPECT_EQ(db.get_earliest_block_id(), block_id);
     }
 }
 

@@ -285,7 +285,7 @@ int main(int argc, char *argv[])
     bool compaction = false;
     bool use_iopoll = false;
     int file_size_db = 512; // truncate to 512 gb by default
-    uint64_t block_id = uint64_t(-1);
+    uint64_t block_id = INVALID_BLOCK_ID;
     unsigned random_read_benchmark_threads = 0;
     unsigned concurrent_read_io_limit = 0;
 
@@ -517,7 +517,7 @@ int main(int argc, char *argv[])
                 root.reset(read_node_blocking(
                     io.storage_pool(), aux.get_latest_root_offset()));
             }
-            if (block_id == uint64_t(-1)) {
+            if (block_id == INVALID_BLOCK_ID) {
                 block_id = aux.max_version_in_db_history();
             }
             printf("starting block id %lu\n", block_id);

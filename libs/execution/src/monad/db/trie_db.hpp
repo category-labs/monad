@@ -14,6 +14,7 @@
 #include <nlohmann/json.hpp>
 
 #include <istream>
+#include <limits>
 #include <list>
 #include <memory>
 #include <optional>
@@ -43,7 +44,7 @@ public:
     TrieDb(
         std::optional<mpt::OnDiskDbConfig> const &, std::istream &accounts,
         std::istream &code, uint64_t init_block_number = 0,
-        size_t buf_size = 1ul << 31);
+        size_t buf_size = std::numeric_limits<size_t>::max());
     ~TrieDb();
 
     virtual std::optional<Account> read_account(Address const &) override;

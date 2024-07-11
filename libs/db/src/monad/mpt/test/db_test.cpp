@@ -378,8 +378,7 @@ TEST(ReadOnlyDbTest, error_open_empty_rodb)
 
     // construct RWDb, storage pool is set up but db remains empty
     StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig const config{
-        .compaction = true, .dbname_paths = {dbname}, .file_size_db = 8};
+    OnDiskDbConfig const config{.dbname_paths = {dbname}, .file_size_db = 8};
     Db const db{machine, config};
 
     // construct RODb
@@ -446,7 +445,9 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
     uint64_t version = 0;
     StateMachineAlwaysMerkle machine{};
     OnDiskDbConfig const config{
-        .compaction = true, .dbname_paths = {dbname}, .file_size_db = 8};
+        .compact_config = monad_trie_test_compact_config,
+        .dbname_paths = {dbname},
+        .file_size_db = 8};
     Db db{machine, config};
     upsert_new_version(
         db, version); // insert something first so db is not empty
@@ -478,7 +479,7 @@ TEST(DbTest, read_only_db_traverse_concurrent)
         "monad_db_test_traverse_concurrent_XXXXXX"};
     StateMachineAlwaysMerkle machine{};
     OnDiskDbConfig config{// with compaction
-                          .compaction = true,
+                          .compact_config = monad_trie_test_compact_config,
                           .dbname_paths = {dbname},
                           .file_size_db = 8};
     Db db{machine, config};
@@ -516,7 +517,7 @@ TEST(DbTest, read_only_db_traverse_concurrent)
 
     done.store(true, std::memory_order_release);
     writer.join();
-    EXPECT_TRUE(version > UpdateAuxImpl::version_history_len);
+    EXPECT_TRUE(version > monad_trie_test_compact_config.version_history_len);
 }
 
 TEST(DBTest, benchmark_blocking_parallel_traverse)
@@ -526,8 +527,8 @@ TEST(DBTest, benchmark_blocking_parallel_traverse)
         "monad_db_test_benchmark_traverse_XXXXXX"};
     StateMachineAlwaysMerkle machine{};
     OnDiskDbConfig config{// with compaction
-                          .compaction = true,
                           .sq_thread_cpu{std::nullopt},
+                          .compact_config = monad_trie_test_compact_config,
                           .dbname_paths = {dbname},
                           .file_size_db = 8};
     Db db{machine, config};

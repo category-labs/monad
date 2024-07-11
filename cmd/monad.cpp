@@ -183,11 +183,11 @@ int main(int const argc, char const *argv[])
     auto const config = db_path.has_value()
                             ? std::make_optional(mpt::OnDiskDbConfig{
                                   .append = false,
-                                  .compaction = true,
                                   .rd_buffers = 8192,
                                   .wr_buffers = 32,
                                   .uring_entries = 128,
                                   .sq_thread_cpu = get_nprocs() - 1,
+                                  .compact_config = mpt::replay_compact_config,
                                   .dbname_paths = {db_path.value()}})
                             : std::nullopt;
     TrieDb db{config};

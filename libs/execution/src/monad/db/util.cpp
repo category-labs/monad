@@ -43,15 +43,18 @@ void write_to_file(
 }
 
 void incremental_write_to_file(
-    TrieDb &trie_db, std::filesystem::path const &dir,
+    TrieDb &trie_db, std::filesystem::path const &root_path,
     uint64_t const block_number)
 {
     auto const start_time = std::chrono::steady_clock::now();
 
-    auto const path = dir / (std::to_string(block_number) + ".json");
-    MONAD_ASSERT(!std::filesystem::exists(path));
+    auto const dir = root_path / std::to_string(block_number);
+    std::filesystem::create_directory(dir);
+    MONAD_ASSERT(std::filesystem::is_directory(dir));
 
-    std::ofstream ofile(path);
+    auto const file = dir / "state.json";
+    MONAD_ASSERT(!std::filesystem::exists(file));
+    std::ofstream ofile(file);
     trie_db.to_json(ofile);
 
     auto const finished_time = std::chrono::steady_clock::now();

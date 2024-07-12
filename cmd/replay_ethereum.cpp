@@ -237,7 +237,6 @@ int main(int const argc, char const *argv[])
     }
     else if (!dump_snapshot.empty()) {
         LOG_INFO("Dump db of block: {}", last_block_number);
-
         incremental_write_to_file(db, dump_snapshot, last_block_number);
     }
     return 0;

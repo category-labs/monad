@@ -1059,8 +1059,7 @@ void TrieDb::to_json(std::ofstream &ofile)
             return true;
         }
 
-        virtual void
-        up(unsigned char const branch, mpt::Node const &node) override
+        virtual void up(unsigned char const branch, Node const &node) override
         {
             auto const path_view = NibblesView{path};
             auto const rem_size = [&] {
@@ -1079,9 +1078,9 @@ void TrieDb::to_json(std::ofstream &ofile)
             path = path_view.substr(0, static_cast<unsigned>(rem_size));
         }
 
-        void handle_account(mpt::Node const &node)
+        void handle_account(Node const &node)
         {
-            MONAD_DEBUG_ASSERT(node.has_value());
+            MONAD_ASSERT(node.has_value());
 
             auto encoded_account = node.value();
 
@@ -1101,11 +1100,9 @@ void TrieDb::to_json(std::ofstream &ofile)
             json[key]["nonce"] = fmt::format("0x{:x}", acct.value().nonce);
 
             auto const code_analysis = db.read_code(acct.value().code_hash);
-            json[key]["code"] = fmt::format(
-                "0x{:02x}",
-                fmt::join(
-                    std::as_bytes(std::span(code_analysis->executable_code)),
-                    ""));
+            MONAD_ASSERT(code_analysis);
+            json[key]["code"] =
+                "0x" + evmc::hex(code_analysis->executable_code);
 
             if (!json[key].contains("storage")) {
                 json[key]["storage"] = nlohmann::json::object();
@@ -1114,8 +1111,13 @@ void TrieDb::to_json(std::ofstream &ofile)
 
         void handle_storage(mpt::Node const &node)
         {
-            MONAD_DEBUG_ASSERT(node.has_value());
-            MONAD_DEBUG_ASSERT(node.value().size() == sizeof(bytes32_t));
+            MONAD_ASSERT(node.has_value());
+
+            auto encoded_storage = node.value();
+
+            auto const storage = decode_storage_db(encoded_storage);
+            MONAD_DEBUG_ASSERT(!storage.has_error());
+            MONAD_DEBUG_ASSERT(encoded_storage.empty());
 
             auto const acct_key = fmt::format(
                 "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));
@@ -1125,15 +1127,17 @@ void TrieDb::to_json(std::ofstream &ofile)
                 NibblesView{path}.substr(
                     KECCAK256_SIZE * 2, KECCAK256_SIZE * 2));
 
-            bytes32_t value;
-            std::copy_n(
-                node.value().begin(),
-                node.value().size(),
-                value.bytes + sizeof(bytes32_t) - node.value().size());
-
-            json[acct_key]["storage"][key] = fmt::format(
+            auto storage_data_json = nlohmann::json::object();
+            storage_data_json["slot"] = fmt::format(
                 "0x{:02x}",
-                fmt::join(std::as_bytes(std::span(value.bytes)), ""));
+                fmt::join(
+                    std::as_bytes(std::span(storage.value().first.bytes)), ""));
+            storage_data_json["value"] = fmt::format(
+                "0x{:02x}",
+                fmt::join(
+                    std::as_bytes(std::span(storage.value().second.bytes)),
+                    ""));
+            json[acct_key]["storage"][key] = storage_data_json;
         }
 
         virtual std::unique_ptr<TraverseMachine> clone() const override

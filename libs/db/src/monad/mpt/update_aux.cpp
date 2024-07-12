@@ -482,22 +482,20 @@ compaction offsets;
 - upsert `updates` should include everything nested under
 version number;
 - if it's on disk, update db_metadata min max versions.
-
-Note that `version` on each call of upsert() does not always grow
-incrementally, users are allowed to insert version 0,1,2,3,4, then restore
-db from version 3 and continue with version 4,5,6... However, it is not
-allowed to skip a version, for example for a call sequence to insert version
-0,1,2,3,4,6, the call to insert version 6 will fail.
 */
 Node::UniquePtr UpdateAuxImpl::do_update(
     Node::UniquePtr prev_root, StateMachine &sm, UpdateList &&updates,
-    uint64_t const version, bool compaction, bool const can_write_to_fast)
+    uint64_t const version, bool const compaction, bool const can_write_to_fast)
 {
     set_can_write_to_fast(can_write_to_fast);
     auto g(unique_lock());
     auto g2(set_current_upsert_tid());
 
-    compaction &= is_on_disk(); // compaction only takes effect for on disk trie
+    if (prev_root) {
+        // Note that `version` must be equal or greater than last max version
+        // db version history does not always grow continuously
+        MONAD_ASSERT(version >= max_version_in_db_history(*prev_root));
+    }
     auto const curr_version_key =
         serialize_as_big_endian<BLOCK_NUM_BYTES>(version);
     uint64_t min_version =
@@ -506,8 +504,8 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     UpdateList db_updates;
     std::vector<byte_string> version_to_erase;
     std::vector<Update> erase;
-    if (compaction) {
-        MONAD_ASSERT(is_on_disk());
+    NodeCursor last_erase_root_it{};
+    if (compaction & is_on_disk()) {
         // 1. erase any outdated versions from history
         if (prev_root && max_version_in_db_history(*prev_root) - min_version >=
                              version_history_len) {
@@ -517,18 +515,29 @@ Node::UniquePtr UpdateAuxImpl::do_update(
             version_to_erase.reserve(max_version - min_version);
             erase.reserve(max_version - min_version);
             while (max_version - min_version >= version_history_len) {
-                db_updates.push_front(
-                    erase.emplace_back(make_erase(version_to_erase.emplace_back(
-                        serialize_as_big_endian<BLOCK_NUM_BYTES>(
-                            min_version)))));
+                auto to_erase =
+                    serialize_as_big_endian<BLOCK_NUM_BYTES>(min_version);
+                auto [erase_it, res] =
+                    find_blocking(*this, *prev_root, to_erase);
+                if (res == find_result::success) { // only erase existing blocks
+                    db_updates.push_front(erase.emplace_back(make_erase(
+                        version_to_erase.emplace_back(std::move(to_erase)))));
+                    last_erase_root_it = erase_it;
+                }
+                min_version++;
+            }
+            // find the minimum valid version >= the last erased version
+            while (find_blocking(
+                       *this,
+                       *prev_root,
+                       serialize_as_big_endian<BLOCK_NUM_BYTES>(min_version))
+                       .second != find_result::success) {
                 min_version++;
             }
             MONAD_ASSERT(!erase.empty());
             // set chunk count that can be erased
-            auto [erase_root_it, res] =
-                find_blocking(*this, *prev_root, version_to_erase.back());
             auto [min_offset_fast, min_offset_slow] =
-                calc_min_offsets(*erase_root_it.node);
+                calc_min_offsets(*last_erase_root_it.node);
             if (min_offset_fast == INVALID_COMPACT_VIRTUAL_OFFSET) {
                 min_offset_fast = MIN_COMPACT_VIRTUAL_OFFSET;
             }
@@ -543,9 +552,11 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     }
 
     // 3. copy state if version not exists and db is not empty
-    if (contains_version(prev_root, version - 1)) { // empty db won't enter if
-        auto const prev_version =
+    if (auto const prev_version =
             serialize_as_big_endian<BLOCK_NUM_BYTES>(version - 1);
+        prev_root && find_blocking(*this, *prev_root, prev_version).second ==
+                         find_result::success) { // empty db won't enter if
+
         prev_root = copy_node(
             *this, std::move(prev_root), prev_version, curr_version_key);
     }
@@ -575,12 +586,10 @@ Node::UniquePtr UpdateAuxImpl::move_subtrie(
     MONAD_ASSERT(is_on_disk());
     auto g(unique_lock());
     auto g2(set_current_upsert_tid());
-    // db has only one version
+    // src version must be max version in db history
     MONAD_ASSERT(
-        db_metadata()->min_db_history_version.load(std::memory_order_acquire) ==
-            src &&
         db_metadata()->max_db_history_version.load(std::memory_order_acquire) ==
-            src);
+        src);
     auto const src_block_number_prefix =
         serialize_as_big_endian<BLOCK_NUM_BYTES>(src);
     auto root = copy_node(
@@ -592,7 +601,13 @@ Node::UniquePtr UpdateAuxImpl::move_subtrie(
     UpdateList updates;
     updates.push_front(u);
     root = upsert(*this, sm, std::move(root), std::move(updates));
-    update_ondisk_db_history_metadata(dest, dest);
+    // update db max version to dest version
+    update_ondisk_db_history_metadata(
+        std::min(
+            db_metadata()->min_db_history_version.load(
+                std::memory_order_acquire),
+            dest),
+        dest);
     return root;
 }
 

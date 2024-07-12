@@ -388,7 +388,7 @@ TEST(ReadOnlyDbTest, error_open_empty_rodb)
     EXPECT_THROW(Db{ro_config}, std::runtime_error);
 }
 
-TEST(ReadOnlyDbTest, read_only_db_concurrent)
+TEST(ReadOnlyDbTest, read_only_db_concurrent_continuous_version)
 {
     // Have one thread make forward progress by updating new versions and
     // erasing outdated ones. Meanwhile spwan a read thread that queries
@@ -414,7 +414,7 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
         Db ro_db{ro_config};
 
         uint64_t read_version = 0;
-        auto version_bytes =
+        auto const key_value =
             serialize_as_big_endian<BLOCK_NUM_BYTES>(read_version);
 
         unsigned nsuccess = 0;
@@ -422,9 +422,9 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
 
         while (!done.load(std::memory_order_acquire)) {
             ro_db.load_latest();
-            auto res = ro_db.get(version_bytes, read_version);
+            auto res = ro_db.get(key_value, read_version);
             if (res.has_value()) {
-                EXPECT_EQ(res.value(), version_bytes);
+                EXPECT_EQ(res.value(), key_value);
                 ++nsuccess;
             }
             else {
@@ -455,11 +455,11 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
     // only start RODb after database is not empty
     std::thread reader(keep_query);
 
-    // run rodb and rwdb concurrently for 10s
+    // run rodb and rwdb concurrently for 5s
     auto const begin_test = std::chrono::steady_clock::now();
     while (std::chrono::duration_cast<std::chrono::seconds>(
                std::chrono::steady_clock::now() - begin_test)
-               .count() < 10) {
+               .count() < 5) {
         upsert_new_version(db, version);
         ++version;
     }
@@ -471,7 +471,104 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
               << db.get_earliest_block_id().value() << std::endl;
 }
 
-TEST(DbTest, read_only_db_traverse_concurrent)
+TEST(DBTest, read_only_db_concurrent_noncontinuous_version)
+{
+    // similar to the continuous unit test, this unit test always move odd
+    // blocks to a even block greater than it
+    std::atomic<bool> done{false};
+    std::filesystem::path const dbname{
+        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+        "monad_db_test_concurrent_noncontinuous_XXXXXX"};
+
+    auto upsert_new_version = [](Db &db, uint64_t const version) {
+        UpdateList ls;
+        auto const key = serialize_as_big_endian<BLOCK_NUM_BYTES>(version);
+        auto const value = key;
+        Update u = make_update(key, value);
+        ls.push_front(u);
+
+        db.upsert(std::move(ls), version);
+    };
+
+    auto keep_query = [&]() {
+        // construct RODb
+        ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+        Db ro_db{ro_config};
+
+        uint64_t read_version = 0;
+        bool read_odd = true;
+        auto const key_value =
+            serialize_as_big_endian<BLOCK_NUM_BYTES>(read_version);
+
+        unsigned nsuccess = 0;
+        unsigned nfailed_read_odd = 0;
+        unsigned nfailed_due_to_version_outdate = 0;
+
+        while (!done.load(std::memory_order_acquire)) {
+            ro_db.load_latest();
+            // alternate even and odd reads
+            auto res = ro_db.get(key_value, read_version + read_odd);
+            if (res.has_value()) {
+                EXPECT_EQ(res.value(), key_value);
+                ++nsuccess;
+            }
+            else if (!read_odd) { // fail on even version read means version
+                                  // outdated
+                auto const min_block_id = ro_db.get_earliest_block_id();
+                EXPECT_TRUE(min_block_id.has_value());
+                read_version = min_block_id.value() + 100;
+                ++nfailed_due_to_version_outdate;
+            }
+            else {
+                EXPECT_TRUE(read_odd);
+                ++nfailed_read_odd;
+            }
+            read_odd = !read_odd;
+        }
+        std::cout << "Reader thread finished. Currently read till version "
+                  << read_version << ".\nDid " << nsuccess
+                  << " successful reads, " << nfailed_read_odd
+                  << " failed reads on odd blocks, and "
+                  << nfailed_due_to_version_outdate
+                  << " failed reads due to block outdated." << std::endl;
+        EXPECT_TRUE(nsuccess > 0);
+        EXPECT_TRUE(read_version <= ro_db.get_latest_block_id().value());
+        EXPECT_TRUE(read_version >= ro_db.get_earliest_block_id().value());
+    };
+
+    // construct RWDb
+    uint64_t version = 0;
+    StateMachineAlwaysMerkle machine{};
+    OnDiskDbConfig const config{
+        .compaction = true, .dbname_paths = {dbname}, .file_size_db = 8};
+    Db db{machine, config};
+    upsert_new_version(
+        db, version); // insert something first so db is not empty
+    version++;
+
+    // only start RODb after database is not empty
+    std::thread reader(keep_query);
+
+    // run RWDb for 5s
+    auto const begin_test = std::chrono::steady_clock::now();
+    while (std::chrono::duration_cast<std::chrono::seconds>(
+               std::chrono::steady_clock::now() - begin_test)
+               .count() < 5) {
+        MONAD_ASSERT(version & 1);
+        upsert_new_version(db, version);
+        db.move_subtrie(
+            version, version + 1); // move odd version to under an even version
+        version += 2;
+    }
+    done.store(true, std::memory_order_release);
+    reader.join();
+
+    std::cout << "Writer finished. Max version in rwdb is "
+              << db.get_latest_block_id().value() << ", min version in rwdb is "
+              << db.get_earliest_block_id().value() << std::endl;
+}
+
+TEST(DbTest, read_only_db_traverse_concurrent_continuous_version)
 {
     std::filesystem::path const dbname{
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
@@ -970,19 +1067,25 @@ TYPED_TEST(DbTraverseTest, trimmed_traverse)
 
 TEST_F(OnDiskDbFixture, move_subtrie)
 {
-    uint64_t const src = 0;
+    uint64_t src = 0;
     uint64_t const dest = 1000;
     // insert under src
-    auto const &kv = fixed_updates::kv;
-    std::vector<Update> update_alloc{};
-    update_alloc.reserve(kv.size());
-    UpdateList updates;
-    for (auto const &[k, v] : kv) {
-        updates.push_front(update_alloc.emplace_back(make_update(k, v)));
-    }
-    db.upsert(std::move(updates), src);
+    auto insert_under_version = [&](uint64_t const version) {
+        auto const &kv = fixed_updates::kv;
+        std::vector<Update> update_alloc{};
+        update_alloc.reserve(kv.size());
+        UpdateList updates;
+        for (auto const &[k, v] : kv) {
+            updates.push_front(update_alloc.emplace_back(make_update(k, v)));
+        }
+        db.upsert(std::move(updates), version);
+    };
+    insert_under_version(src++);
+    insert_under_version(src++);
+    insert_under_version(src);
+    EXPECT_EQ(src, 2);
 
-    EXPECT_EQ(db.get_earliest_block_id(), src);
+    EXPECT_EQ(db.get_earliest_block_id(), 0);
     EXPECT_EQ(db.get_latest_block_id(), src);
     auto const res = db.get_data({}, src);
     ASSERT_TRUE(res.has_value());
@@ -992,10 +1095,13 @@ TEST_F(OnDiskDbFixture, move_subtrie)
 
     // move to dest version
     db.move_subtrie(src, dest);
-    EXPECT_EQ(db.get_earliest_block_id(), dest);
+    EXPECT_EQ(db.get_earliest_block_id(), 0);
     EXPECT_EQ(db.get_latest_block_id(), dest);
     auto const res2 = db.get_data({}, dest);
     ASSERT_TRUE(res2.has_value());
+    EXPECT_TRUE(db.get({}, src).has_error()); // version not exists anymore
+    EXPECT_TRUE(db.get({}, src - 1).has_value());
+    EXPECT_TRUE(db.get({}, dest).has_value());
     EXPECT_EQ(
         res2.value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);

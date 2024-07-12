@@ -90,7 +90,7 @@ struct Db::Impl
     virtual void move_subtrie_fiber_blocking(uint64_t src, uint64_t dest) = 0;
 
     // return true for valid, false for outdated
-    virtual bool verify_version_still_valid(uint64_t)
+    virtual bool verify_version_within_db_history_range(uint64_t)
     {
         return true;
     }
@@ -167,7 +167,8 @@ struct Db::ROOnDisk final : public Db::Impl
         MONAD_ASSERT(false);
     }
 
-    virtual bool verify_version_still_valid(uint64_t const version) override
+    virtual bool
+    verify_version_within_db_history_range(uint64_t const version) override
     {
         return version >= aux_.db_metadata()->min_db_history_version.load(
                               std::memory_order_acquire);
@@ -179,13 +180,16 @@ struct Db::ROOnDisk final : public Db::Impl
     {
         // db we last loaded does not contain the version we want to find
         if (version > last_loaded_max_version_ ||
-            !verify_version_still_valid(version)) {
+            !verify_version_within_db_history_range(version)) {
             return {NodeCursor{}, find_result::unknown};
         }
         try {
+            // if version is within range but does not actually exist
+            // (nonfindable), find_blocking() will return error, which is
+            // defined and correct behavior
             auto const res = find_blocking(aux(), root, key);
             // verify version still valid in history after success
-            return verify_version_still_valid(version)
+            return verify_version_within_db_history_range(version)
                        ? res
                        : find_result_type{NodeCursor{}, find_result::unknown};
         }
@@ -295,7 +299,7 @@ struct Db::ROOnDisk final : public Db::Impl
     {
         return preorder_traverse(
             aux(), node, machine, [this, version]() -> bool {
-                return verify_version_still_valid(version);
+                return verify_version_within_db_history_range(version);
             });
     }
 };
@@ -918,7 +922,7 @@ bool Db::traverse_blocking(
     MONAD_ASSERT(cursor.is_valid());
     return preorder_traverse_blocking(
         impl_->aux(), *cursor.node, machine, [this, block_id] {
-            return impl_->verify_version_still_valid(block_id);
+            return impl_->verify_version_within_db_history_range(block_id);
         });
 }
 

@@ -71,8 +71,8 @@ TYPED_TEST(TrieTest, nested_leave_one_child_on_branch_with_leaf)
     UpdateList updates;
     updates.push_front(base);
 
-    this->root =
-        upsert(this->aux, *this->sm, std::move(this->root), std::move(updates));
+    this->root = upsert(
+        this->aux, 0, *this->sm, std::move(this->root), std::move(updates));
     EXPECT_EQ(
         this->root_hash(),
         0xeefbd82ec11d1d2d83a23d661a8eece950f1e29fa72665f07b57fc9a903257cc_hex);
@@ -714,13 +714,13 @@ TYPED_TEST(TrieTest, aux_do_update_fixed_history_len)
                 UpdateAuxImpl::VERSION_HISTORY_LEN) {
                 EXPECT_EQ(
                     this->aux.max_version_in_db_history() -
-                        this->aux.min_version_in_db_history(),
+                        this->aux.get_first_valid_version_in_db_history(),
                     block_id - start_block_id);
             }
             else {
                 EXPECT_EQ(
                     this->aux.max_version_in_db_history() -
-                        this->aux.min_version_in_db_history(),
+                        this->aux.get_first_valid_version_in_db_history(),
                     UpdateAuxImpl::VERSION_HISTORY_LEN);
             }
         }
@@ -826,7 +826,7 @@ TYPED_TEST(TrieTest, variable_length_trie_with_prefix)
     u_prefix.next = std::move(updates);
     UpdateList ul_prefix;
     ul_prefix.push_front(u_prefix);
-    this->root = upsert(this->aux, *this->sm, {}, std::move(ul_prefix));
+    this->root = upsert(this->aux, 0, *this->sm, {}, std::move(ul_prefix));
 
     EXPECT_EQ(
         this->root->data(),
@@ -864,7 +864,7 @@ TYPED_TEST(TrieTest, single_value_variable_length_trie_with_prefix)
     u_prefix.next = std::move(updates);
     UpdateList ul_prefix;
     ul_prefix.push_front(u_prefix);
-    this->root = upsert(this->aux, *this->sm, {}, std::move(ul_prefix));
+    this->root = upsert(this->aux, 0, *this->sm, {}, std::move(ul_prefix));
 
     EXPECT_EQ(
         this->root->data(),

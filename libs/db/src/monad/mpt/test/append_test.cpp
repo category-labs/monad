@@ -49,8 +49,8 @@ TYPED_TEST(AppendTest, works)
     this->state()->print(std::cout);
 
     // Reset offsets
-    this->state()->aux.advance_offsets_to(
-        last_root_off, last_fast_off, last_slow_off);
+    this->state()->aux.append_root_offset(last_root_off);
+    this->state()->aux.advance_db_offsets_to(last_fast_off, last_slow_off);
     EXPECT_EQ(last_root_off, this->state()->aux.get_latest_root_offset());
     EXPECT_EQ(last_slow_off, this->state()->aux.get_start_of_wip_slow_offset());
     EXPECT_EQ(last_fast_off, this->state()->aux.get_start_of_wip_fast_offset());
@@ -99,7 +99,8 @@ TYPED_TEST(AppendTest, works)
             this->state()->aux,
             this->state()->sm,
             std::move(this->state()->root),
-            std::move(updates));
+            std::move(updates),
+            this->state()->version++);
     }
 
     auto const root_hash_after2 = this->state()->root_hash();

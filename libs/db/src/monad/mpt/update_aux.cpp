@@ -116,21 +116,50 @@ void UpdateAuxImpl::remove(uint32_t idx) noexcept
     }
 }
 
-void UpdateAuxImpl::advance_offsets_to(
-    chunk_offset_t const root_offset, chunk_offset_t const fast_offset,
-    chunk_offset_t const slow_offset) noexcept
+void UpdateAuxImpl::advance_db_offsets_to(
+    chunk_offset_t const fast_offset, chunk_offset_t const slow_offset) noexcept
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
-        m->advance_offsets_to_(
-            root_offset,
-            detail::db_metadata::db_offsets_info_t{
-                fast_offset,
-                slow_offset,
-                this->compact_offset_fast,
-                this->compact_offset_slow,
-                this->compact_offset_range_fast_,
-                this->compact_offset_range_slow_});
+        m->advance_db_offsets_to(detail::db_metadata::db_offsets_info_t{
+            fast_offset,
+            slow_offset,
+            this->compact_offset_fast,
+            this->compact_offset_slow,
+            this->compact_offset_range_fast_,
+            this->compact_offset_range_slow_});
+    };
+    do_(db_metadata_[0]);
+    do_(db_metadata_[1]);
+}
+
+void UpdateAuxImpl::append_root_offset(
+    chunk_offset_t const root_offset) noexcept
+{
+    MONAD_ASSERT(is_on_disk());
+    auto do_ = [&](detail::db_metadata *m) {
+        m->append_root_offset(root_offset);
+    };
+    do_(db_metadata_[0]);
+    do_(db_metadata_[1]);
+}
+
+void UpdateAuxImpl::update_root_offset(
+    size_t const i, chunk_offset_t const root_offset) noexcept
+{
+    MONAD_ASSERT(is_on_disk());
+    auto do_ = [&](detail::db_metadata *m) {
+        m->update_root_offset(i, root_offset);
+    };
+    do_(db_metadata_[0]);
+    do_(db_metadata_[1]);
+}
+
+void UpdateAuxImpl::fast_forward_next_version(uint64_t const version) noexcept
+{
+    MONAD_ASSERT(is_on_disk());
+    auto do_ = [&](detail::db_metadata *m) {
+        m->fast_forward_next_version(version);
     };
     do_(db_metadata_[0]);
     do_(db_metadata_[1]);
@@ -143,28 +172,6 @@ void UpdateAuxImpl::update_slow_fast_ratio_metadata() noexcept
                  (float)num_chunks(chunk_list::fast);
     auto do_ = [&](detail::db_metadata *m) {
         m->update_slow_fast_ratio_(ratio);
-    };
-    do_(db_metadata_[0]);
-    do_(db_metadata_[1]);
-}
-
-void UpdateAuxImpl::update_ondisk_db_min_version(
-    uint64_t const min_version) noexcept
-{
-    MONAD_ASSERT(is_on_disk());
-    auto do_ = [&](detail::db_metadata *m) {
-        m->update_db_min_version_(min_version);
-    };
-    do_(db_metadata_[0]);
-    do_(db_metadata_[1]);
-}
-
-void UpdateAuxImpl::update_ondisk_db_max_version(
-    uint64_t const max_version) noexcept
-{
-    MONAD_ASSERT(is_on_disk());
-    auto do_ = [&](detail::db_metadata *m) {
-        m->update_db_max_version_(max_version);
     };
     do_(db_metadata_[0]);
     do_(db_metadata_[1]);
@@ -412,9 +419,9 @@ void UpdateAuxImpl::set_io(AsyncIO *io_)
 
         // Mark as done, init root offset and history versions for the new
         // database as invalid
-        advance_offsets_to(INVALID_OFFSET, fast_offset, slow_offset);
-        update_ondisk_db_min_version(INVALID_BLOCK_ID);
-        update_ondisk_db_max_version(INVALID_BLOCK_ID);
+        advance_db_offsets_to(fast_offset, slow_offset);
+        db_metadata_[0]->root_offsets.reset_all(0);
+        db_metadata_[1]->root_offsets.reset_all(0);
 
         std::atomic_signal_fence(
             std::memory_order_seq_cst); // no compiler reordering here
@@ -510,7 +517,8 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     auto g2(set_current_upsert_tid());
 
     if (is_in_memory()) {
-        return upsert(*this, sm, std::move(prev_root), std::move(updates));
+        return upsert(
+            *this, version, sm, std::move(prev_root), std::move(updates));
     }
     MONAD_ASSERT(is_on_disk());
     set_can_write_to_fast(can_write_to_fast);
@@ -519,8 +527,9 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     if (has_prev_trie) {
         auto const min_version = min_version_in_db_history();
         auto const max_version = max_version_in_db_history();
-        MONAD_ASSERT(max_version >= min_version);
-        MONAD_ASSERT(version == max_version || version == max_version + 1);
+        MONAD_ASSERT(
+            max_version >= min_version || max_version == INVALID_BLOCK_ID);
+        MONAD_ASSERT(version >= max_version);
 
         if (1 + max_version - min_version >= VERSION_HISTORY_LEN) {
             uint64_t const erase_until = version - VERSION_HISTORY_LEN;
@@ -542,16 +551,11 @@ Node::UniquePtr UpdateAuxImpl::do_update(
             }
             // update the min version, because that offset may be invalidated in
             // `upsert`.
-            update_ondisk_db_min_version(erase_until + 1);
         }
     }
-    auto root = upsert(*this, sm, std::move(prev_root), std::move(updates));
+    auto root =
+        upsert(*this, version, sm, std::move(prev_root), std::move(updates));
 
-    // update max version metadata
-    update_ondisk_db_max_version(version);
-    if (!has_prev_trie) {
-        update_ondisk_db_min_version(version);
-    }
     free_compacted_chunks();
     return root;
 }
@@ -562,14 +566,10 @@ void UpdateAuxImpl::update_single_trie_version(
     MONAD_ASSERT(is_on_disk());
     auto g(unique_lock());
     auto g2(set_current_upsert_tid());
-    // db has only one version
-    MONAD_ASSERT(
-        db_metadata()->min_db_history_version.load(std::memory_order_acquire) ==
-            src &&
-        db_metadata()->max_db_history_version.load(std::memory_order_acquire) ==
-            src);
-    update_ondisk_db_min_version(dest);
-    update_ondisk_db_max_version(dest);
+    auto const offset = get_latest_root_offset();
+    update_root_offset(src, INVALID_OFFSET);
+    fast_forward_next_version(dest);
+    append_root_offset(offset);
 }
 
 void UpdateAuxImpl::advance_compact_offsets()
@@ -641,24 +641,35 @@ void UpdateAuxImpl::advance_compact_offsets()
         db_metadata()->db_offsets.last_compact_offset_slow;
 }
 
+uint64_t UpdateAuxImpl::get_first_valid_version_in_db_history() const noexcept
+{
+    if (is_on_disk()) {
+        auto &offsets = db_metadata()->root_offsets;
+        auto const max_version = offsets.max_version();
+        auto min_version = max_version + 1;
+        if (max_version == INVALID_BLOCK_ID) {
+            return INVALID_BLOCK_ID;
+        }
+        for (; min_version != max_version; ++min_version) {
+            if (offsets[min_version] != INVALID_OFFSET) {
+                break;
+            }
+        }
+        return min_version - offsets.capacity();
+    }
+    else {
+        return 0;
+    }
+}
+
 uint64_t UpdateAuxImpl::min_version_in_db_history() const noexcept
 {
-    return is_on_disk() ? db_metadata()->min_db_history_version.load(
-                              std::memory_order_acquire)
-                        : 0;
+    return is_on_disk() ? db_metadata()->get_min_version_in_history() : 0;
 }
 
 uint64_t UpdateAuxImpl::max_version_in_db_history() const noexcept
 {
-    return is_on_disk() ? db_metadata()->max_db_history_version.load(
-                              std::memory_order_acquire)
-                        : 0;
-}
-
-bool UpdateAuxImpl::contains_version(uint64_t const version) const noexcept
-{
-    return version >= min_version_in_db_history() &&
-           version <= max_version_in_db_history();
+    return is_on_disk() ? db_metadata()->get_max_version_in_history() : 0;
 }
 
 void UpdateAuxImpl::free_compacted_chunks()

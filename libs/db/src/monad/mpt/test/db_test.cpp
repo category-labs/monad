@@ -50,6 +50,24 @@ using namespace monad::test;
 
 namespace
 {
+    template <class... Updates>
+    void upsert_updates_flat_list(
+        Db &db, NibblesView prefix, uint64_t const block_id, Updates... updates)
+    {
+        UpdateList ul;
+        (ul.push_front(updates), ...);
+
+        auto u_prefix = Update{
+            .key = prefix,
+            .value = monad::byte_string_view{},
+            .incarnation = false,
+            .next = std::move(ul)};
+        UpdateList ul_prefix;
+        ul_prefix.push_front(u_prefix);
+
+        db.upsert(std::move(ul_prefix), block_id);
+    };
+
     struct InMemoryDbFixture : public ::testing::Test
     {
         StateMachineAlwaysMerkle machine;
@@ -317,22 +335,9 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
     auto const prefix = 0x00_hex;
     uint64_t const starting_block_id = 0x0;
 
-    auto upsert =
-        [&]<class... Updates>(uint64_t const block_id, Updates... updates) {
-            UpdateList ul;
-            (ul.push_front(updates), ...);
-
-            auto u_prefix = Update{
-                .key = prefix,
-                .value = monad::byte_string_view{},
-                .incarnation = false,
-                .next = std::move(ul)};
-            UpdateList ul_prefix;
-            ul_prefix.push_front(u_prefix);
-
-            this->db.upsert(std::move(ul_prefix), block_id);
-        };
-    upsert(
+    upsert_updates_flat_list(
+        db,
+        prefix,
         starting_block_id,
         make_update(kv[0].first, kv[0].second),
         make_update(kv[1].first, kv[1].second));
@@ -373,7 +378,9 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
     size_t i;
     for (i = 1; i < UpdateAuxImpl::VERSION_HISTORY_LEN; ++i) {
         // upsert new version
-        upsert(
+        upsert_updates_flat_list(
+            db,
+            prefix,
             starting_block_id + i,
             make_update(kv[2].first, kv[2].second),
             make_update(kv[3].first, kv[3].second));
@@ -396,7 +403,9 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
     }
 
     // This will exceed the ring buffer capacity, evicting the first block
-    upsert(
+    upsert_updates_flat_list(
+        db,
+        prefix,
         starting_block_id + i,
         make_update(kv[2].first, kv[2].second),
         make_update(kv[3].first, kv[3].second));
@@ -489,14 +498,23 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
         "monad_db_test_concurrent_XXXXXX"};
 
-    auto upsert_new_version = [](Db &db, uint64_t const version) {
-        UpdateList ls;
-        auto const key = serialize_as_big_endian<6>(version);
-        auto const value = key;
-        Update u = make_update(key, value);
-        ls.push_front(u);
+    auto const prefix = 0x00_hex;
 
-        db.upsert(std::move(ls), version);
+    auto upsert_new_version = [&](Db &db, uint64_t const version) {
+        UpdateList ul;
+        auto version_bytes = serialize_as_big_endian<6>(version);
+        auto u = make_update(version_bytes, version_bytes);
+        ul.push_front(u);
+
+        auto u_prefix = Update{
+            .key = prefix,
+            .value = monad::byte_string_view{},
+            .incarnation = true,
+            .next = std::move(ul)};
+        UpdateList ul_prefix;
+        ul_prefix.push_front(u_prefix);
+
+        db.upsert(std::move(ul_prefix), version);
     };
 
     auto keep_query = [&]() {
@@ -505,17 +523,22 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
         Db ro_db{ro_config};
 
         uint64_t read_version = 0;
-        auto version_bytes = serialize_as_big_endian<6>(read_version);
+        auto start_version_bytes = serialize_as_big_endian<6>(read_version);
 
         unsigned nsuccess = 0;
         unsigned nfailed = 0;
 
-        while (ro_db.get(version_bytes, 0ull).has_error()) {
-        } // now the first version is written to db
+        while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID &&
+               !done.load(std::memory_order_acquire)) {
+        }
+        // now the first version is written to db
+        ASSERT_TRUE(ro_db.get_latest_block_id() != INVALID_BLOCK_ID);
+        ASSERT_TRUE(ro_db.get_earliest_block_id() != INVALID_BLOCK_ID);
         while (!done.load(std::memory_order_acquire)) {
-            auto res = ro_db.get(version_bytes, read_version);
+            auto version_bytes = serialize_as_big_endian<6>(read_version);
+            auto res = ro_db.get(prefix + version_bytes, read_version);
             if (res.has_value()) {
-                EXPECT_EQ(res.value(), version_bytes);
+                ASSERT_EQ(res.value(), version_bytes) << "Corrupted database";
                 ++nsuccess;
             }
             else {
@@ -802,23 +825,12 @@ TYPED_TEST(DbTest, simple_with_increasing_block_id_prefix)
     auto const prefix = 0x00_hex;
     uint64_t block_id = 0x123;
 
-    {
-        auto u1 = make_update(kv[0].first, kv[0].second);
-        auto u2 = make_update(kv[1].first, kv[1].second);
-        UpdateList ul;
-        ul.push_front(u1);
-        ul.push_front(u2);
-
-        auto u_prefix = Update{
-            .key = prefix,
-            .value = monad::byte_string_view{},
-            .incarnation = false,
-            .next = std::move(ul)};
-        UpdateList ul_prefix;
-        ul_prefix.push_front(u_prefix);
-
-        this->db.upsert(std::move(ul_prefix), block_id);
-    }
+    upsert_updates_flat_list(
+        this->db,
+        prefix,
+        block_id,
+        make_update(kv[0].first, kv[0].second),
+        make_update(kv[1].first, kv[1].second));
     EXPECT_EQ(
         this->db.get(prefix + kv[0].first, block_id).value(), kv[0].second);
     EXPECT_EQ(
@@ -827,24 +839,13 @@ TYPED_TEST(DbTest, simple_with_increasing_block_id_prefix)
         this->db.get_data(prefix, block_id).value(),
         0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
 
-    {
-        ++block_id;
-        auto u1 = make_update(kv[2].first, kv[2].second);
-        auto u2 = make_update(kv[3].first, kv[3].second);
-        UpdateList ul;
-        ul.push_front(u1);
-        ul.push_front(u2);
-
-        auto u_prefix = Update{
-            .key = prefix,
-            .value = monad::byte_string_view{},
-            .incarnation = false,
-            .next = std::move(ul)};
-        UpdateList ul_prefix;
-        ul_prefix.push_front(u_prefix);
-
-        this->db.upsert(std::move(ul_prefix), block_id);
-    }
+    ++block_id;
+    upsert_updates_flat_list(
+        this->db,
+        prefix,
+        block_id,
+        make_update(kv[2].first, kv[2].second),
+        make_update(kv[3].first, kv[3].second));
 
     // test get with both apis
     EXPECT_EQ(
@@ -1151,6 +1152,103 @@ TEST_F(OnDiskDbFixture, rw_query_old_version)
     auto bad_read = this->db.get(prefix + kv[0].first, block_id);
     EXPECT_TRUE(bad_read.has_error());
     EXPECT_EQ(bad_read.error(), DbError::key_not_found);
+}
+
+TEST_F(OnDiskDbFixture, discontinuous_upsert)
+{
+    auto const &kv = fixed_updates::kv;
+
+    auto const prefix = 0x00_hex;
+    uint64_t block_id = 0;
+
+    // Upsert 10 times at block zero
+    for (int i = 0; i < 10; ++i) {
+        upsert_updates_flat_list(
+            this->db,
+            prefix,
+            block_id,
+            make_update(kv[0].first, kv[0].second),
+            make_update(kv[1].first, kv[1].second));
+        EXPECT_EQ(
+            this->db.get(prefix + kv[0].first, block_id).value(), kv[0].second);
+        EXPECT_EQ(
+            this->db.get(prefix + kv[1].first, block_id).value(), kv[1].second);
+        EXPECT_EQ(
+            this->db.get_data(prefix, block_id).value(),
+            0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+    }
+
+    // Now change the data at 0
+    upsert_updates_flat_list(
+        this->db,
+        prefix,
+        block_id,
+        make_update(kv[2].first, kv[2].second),
+        make_update(kv[3].first, kv[3].second));
+    EXPECT_EQ(
+        this->db.get(prefix + kv[2].first, block_id).value(), kv[2].second);
+    EXPECT_EQ(
+        this->db.get(prefix + kv[3].first, block_id).value(), kv[3].second);
+    EXPECT_EQ(
+        this->db.get_data(prefix, block_id).value(),
+        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+
+    // Jump ahead to block 50.
+    block_id = 50;
+    upsert_updates_flat_list(
+        this->db,
+        prefix,
+        block_id,
+        make_update(kv[0].first, kv[0].second),
+        make_update(kv[1].first, kv[1].second),
+        make_update(kv[2].first, UpdateList{}),
+        make_update(kv[3].first, UpdateList{}));
+    EXPECT_EQ(this->db.get_latest_block_id(), block_id);
+    EXPECT_EQ(
+        this->db.get(prefix + kv[0].first, block_id).value(), kv[0].second);
+    EXPECT_EQ(
+        this->db.get(prefix + kv[1].first, block_id).value(), kv[1].second);
+    EXPECT_EQ(
+        this->db.get_data(prefix, block_id).value(),
+        0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+
+    // Block zero still works
+    EXPECT_EQ(this->db.get_earliest_block_id(), 0);
+    EXPECT_FALSE(this->db.find(prefix, 0).has_error());
+    EXPECT_EQ(this->db.get(prefix + kv[2].first, 0).value(), kv[2].second);
+    EXPECT_EQ(this->db.get(prefix + kv[3].first, 0).value(), kv[3].second);
+    EXPECT_EQ(
+        this->db.get_data(prefix, 0).value(),
+        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+
+    // All in betweens should be empty
+    for (uint64_t empty_block_id = 1; empty_block_id < block_id;
+         ++empty_block_id) {
+        EXPECT_TRUE(this->db.find(prefix, empty_block_id).has_error());
+    }
+
+    // Jump way far ahead.
+    block_id = UpdateAuxImpl::VERSION_HISTORY_LEN * 3;
+    upsert_updates_flat_list(
+        this->db,
+        prefix,
+        block_id,
+        make_update(kv[2].first, kv[2].second),
+        make_update(kv[3].first, kv[3].second));
+    EXPECT_EQ(
+        this->db.get(prefix + kv[2].first, block_id).value(), kv[2].second);
+    EXPECT_EQ(
+        this->db.get(prefix + kv[3].first, block_id).value(), kv[3].second);
+    EXPECT_EQ(
+        this->db.get_data(prefix, block_id).value(),
+        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+
+    EXPECT_EQ(this->db.get_earliest_block_id(), block_id);
+    EXPECT_EQ(this->db.get_latest_block_id(), block_id);
+
+    // Version 0 and version 50 are history
+    EXPECT_TRUE(this->db.find(prefix, 0).has_error());
+    EXPECT_TRUE(this->db.find(prefix, 50).has_error());
 }
 
 TYPED_TEST(DbTest, scalability)

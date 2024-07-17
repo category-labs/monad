@@ -543,12 +543,14 @@ public:
 
     // The following two functions should only be invoked after completing a
     // block commit
-    void advance_offsets_to(
-        chunk_offset_t root_offset, chunk_offset_t fast_offset,
-        chunk_offset_t slow_offset) noexcept;
+    void advance_db_offsets_to(
+        chunk_offset_t fast_offset, chunk_offset_t slow_offset) noexcept;
+
+    void append_root_offset(chunk_offset_t root_offset) noexcept;
+    void update_root_offset(size_t i, chunk_offset_t root_offset) noexcept;
+    void fast_forward_next_version(uint64_t version) noexcept;
+
     void update_slow_fast_ratio_metadata() noexcept;
-    void update_ondisk_db_min_version(uint64_t) noexcept;
-    void update_ondisk_db_max_version(uint64_t) noexcept;
 
     // WARNING: This is destructive
     void rewind_to_match_offsets();
@@ -593,16 +595,19 @@ public:
     chunk_offset_t get_latest_root_offset() const noexcept
     {
         MONAD_ASSERT(this->is_on_disk());
-        return db_metadata()->root_offsets.max();
+        return db_metadata()
+            ->root_offsets[db_metadata()->root_offsets.max_version()];
     }
 
-    chunk_offset_t get_root_offset_at_version(uint64_t version) const noexcept
+    chunk_offset_t
+    get_root_offset_at_version(uint64_t const version) const noexcept
     {
         MONAD_ASSERT(this->is_on_disk());
-        auto const max_version = db_metadata()->max_db_history_version.load(
-            std::memory_order_acquire);
-        MONAD_ASSERT(version <= max_version);
-        return db_metadata()->root_offsets.before(max_version - version);
+        if (version >= min_version_in_db_history() &&
+            version <= max_version_in_db_history()) {
+            return db_metadata()->root_offsets[version];
+        }
+        return INVALID_OFFSET;
     }
 
     chunk_offset_t get_start_of_wip_fast_offset() const noexcept
@@ -628,7 +633,10 @@ public:
     // must call these when db is non empty
     uint64_t min_version_in_db_history() const noexcept;
     uint64_t max_version_in_db_history() const noexcept;
-    bool contains_version(uint64_t version) const noexcept;
+
+    // returns the first min version with a root offset. behavior is undefined
+    // if the max version does not have
+    uint64_t get_first_valid_version_in_db_history() const noexcept;
 };
 
 static_assert(
@@ -797,8 +805,9 @@ void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
 }
 
 // batch upsert, updates can be nested
-Node::UniquePtr
-upsert(UpdateAuxImpl &, StateMachine &, Node::UniquePtr old, UpdateList &&);
+Node::UniquePtr upsert(
+    UpdateAuxImpl &, uint64_t, StateMachine &, Node::UniquePtr old,
+    UpdateList &&);
 
 // load all nodes as far as caching policy would allow
 size_t load_all(UpdateAuxImpl &, StateMachine &, NodeCursor);

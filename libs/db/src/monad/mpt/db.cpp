@@ -172,8 +172,8 @@ struct Db::ROOnDisk final : public Db::Impl
 
     virtual bool verify_version_still_valid(uint64_t const version) override
     {
-        return version >= aux_.db_metadata()->min_db_history_version.load(
-                              std::memory_order_acquire);
+        return version >= aux().min_version_in_db_history() &&
+               aux().get_root_offset_at_version(version) != INVALID_OFFSET;
     }
 
     virtual find_result_type find_fiber_blocking(
@@ -184,8 +184,7 @@ struct Db::ROOnDisk final : public Db::Impl
             return {NodeCursor{}, find_result::unknown};
         }
         // db we last loaded does not contain the version we want to find
-        if (version > aux().db_metadata()->max_db_history_version.load(
-                          std::memory_order_acquire) ||
+        if (version > aux().db_metadata()->get_max_version_in_history() ||
             !verify_version_still_valid(version)) {
             return {NodeCursor{}, find_result::version_no_longer_exist};
         }
@@ -215,8 +214,7 @@ struct Db::ROOnDisk final : public Db::Impl
         uint64_t version) override
     {
         // verify version is valid in db history before doing anything
-        if (version > aux().db_metadata()->max_db_history_version.load(
-                          std::memory_order_acquire) ||
+        if (version > aux().db_metadata()->get_max_version_in_history() ||
             !verify_version_still_valid(version)) {
             res = {NodeCursor{}, find_result::version_no_longer_exist};
             io_state->completed(async::success());
@@ -228,7 +226,7 @@ struct Db::ROOnDisk final : public Db::Impl
             find_result_type &res_;
             async::erased_connected_operation *const io_state;
             uint64_t const version;
-            UpdateAux<> &aux;
+            Db::Impl &db;
 
             enum : bool
             {
@@ -246,14 +244,11 @@ struct Db::ROOnDisk final : public Db::Impl
                 }
                 try {
                     // verify version still valid in history after success
-                    res_ =
-                        version >=
-                                aux.db_metadata()->min_db_history_version.load(
-                                    std::memory_order_acquire)
-                            ? std::move(res).assume_value()
-                            : find_result_type{
-                                  NodeCursor{},
-                                  find_result::version_no_longer_exist};
+                    res_ = db.verify_version_still_valid(version)
+                               ? std::move(res).assume_value()
+                               : find_result_type{
+                                     NodeCursor{},
+                                     find_result::version_no_longer_exist};
                 }
                 catch (std::exception const &e) { // exception implies UB
                     res_ = {NodeCursor{}, find_result::version_no_longer_exist};
@@ -265,7 +260,7 @@ struct Db::ROOnDisk final : public Db::Impl
 
         auto *state = new auto(async::connect(
             find_request_sender(aux(), root, key),
-            receiver_t{res, io_state, version, aux()}));
+            receiver_t{res, io_state, version, *this}));
         state->initiate();
         return async::success();
     }
@@ -292,11 +287,11 @@ struct Db::ROOnDisk final : public Db::Impl
 
     virtual NodeCursor load_root_for_version(uint64_t version) override
     {
-        if (!aux().contains_version(version)) {
+        auto const root_offset = aux().get_root_offset_at_version(version);
+        if (root_offset == INVALID_OFFSET) {
             return NodeCursor{};
         }
-        if (auto const root_offset = aux().get_root_offset_at_version(version);
-            last_loaded_root_offset_ != root_offset) {
+        if (last_loaded_root_offset_ != root_offset) {
             last_loaded_root_offset_ = root_offset;
             root_.reset(
                 root_offset == INVALID_OFFSET
@@ -567,9 +562,11 @@ struct Db::RWOnDisk final : public Db::Impl
                             std::move(*req->promise));
                         req->promise = &traverse_promises.back();
                         // verify version is valid
-                        if (req->version <
-                            aux.db_metadata()->min_db_history_version.load(
-                                std::memory_order_acquire)) {
+                        bool const version_is_valid =
+                            req->version >= aux.min_version_in_db_history() &&
+                            aux.get_root_offset_at_version(req->version) !=
+                                INVALID_OFFSET;
+                        if (!version_is_valid) {
                             req->promise->set_value(false);
                         }
                         else {
@@ -594,11 +591,11 @@ struct Db::RWOnDisk final : public Db::Impl
                         // share the same promise type as upsert
                         upsert_promises.emplace_back(std::move(*req->promise));
                         req->promise = &upsert_promises.back();
-                        auto root = aux.contains_version(req->version)
+                        auto const root_offset =
+                            aux.get_root_offset_at_version(req->version);
+                        auto root = (root_offset != INVALID_OFFSET)
                                         ? Node::UniquePtr{read_node_blocking(
-                                              pool,
-                                              aux.get_root_offset_at_version(
-                                                  req->version))}
+                                              pool, root_offset)}
                                         : Node::UniquePtr{};
                         req->promise->set_value(std::move(root));
                     }
@@ -970,7 +967,7 @@ uint64_t Db::get_latest_block_id() const
 uint64_t Db::get_earliest_block_id() const
 {
     MONAD_ASSERT(impl_);
-    return impl_->aux().min_version_in_db_history();
+    return impl_->aux().get_first_valid_version_in_db_history();
 }
 
 size_t Db::prefetch()
@@ -1002,24 +999,21 @@ namespace detail
         uint16_t buffer_off;
 
         constexpr load_root_receiver_t(
-            DbGetSender<T> *sender_,
+            chunk_offset_t offset_, DbGetSender<T> *sender_,
             async::erased_connected_operation *io_state_)
             : sender(sender_)
             , io_state(io_state_)
         {
-            chunk_offset_t const offset =
-                sender->db.impl_->aux().get_root_offset_at_version(
-                    sender->block_id);
             auto const num_pages_to_load_node =
-                node_disk_pages_spare_15{offset}.to_pages();
+                node_disk_pages_spare_15{offset_}.to_pages();
             bytes_to_read =
                 static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
-            rd_offset = offset;
+            rd_offset = offset_;
             auto const new_offset =
-                round_down_align<DISK_PAGE_BITS>(offset.offset);
+                round_down_align<DISK_PAGE_BITS>(offset_.offset);
             MONAD_DEBUG_ASSERT(new_offset <= chunk_offset_t::max_offset);
             rd_offset.offset = new_offset & chunk_offset_t::max_offset;
-            buffer_off = uint16_t(offset.offset - rd_offset.offset);
+            buffer_off = uint16_t(offset_.offset - rd_offset.offset);
         }
 
         template <class ResultType>
@@ -1028,26 +1022,18 @@ namespace detail
         {
             MONAD_ASSERT(buffer_);
             bool const block_alive_after_read =
-                sender->db.impl_->aux().contains_version(sender->block_id);
+                sender->db.impl_->verify_version_still_valid(sender->block_id);
             if (block_alive_after_read) {
                 try {
                     Node::UniquePtr root =
                         detail::deserialize_node_from_receiver_result(
                             std::move(buffer_), buffer_off, io_state);
-                    if (sender->db.impl_->verify_version_still_valid(
-                            sender->block_id)) {
-                        sender->root = std::move(root);
-                        sender->res_ = {
-                            NodeCursor{*sender->root.get()},
-                            find_result::success};
-                        MONAD_ASSERT(sender->db.impl_->trie_root_cache());
-                        sender->db.impl_->trie_root_cache()->insert(
-                            sender->block_id, sender->root);
-                    }
-                    else {
-                        sender->res_ = {
-                            NodeCursor{}, find_result::version_no_longer_exist};
-                    }
+                    sender->root = std::move(root);
+                    sender->res_ = {
+                        NodeCursor{*sender->root.get()}, find_result::success};
+                    MONAD_ASSERT(sender->db.impl_->trie_root_cache());
+                    sender->db.impl_->trie_root_cache()->insert(
+                        sender->block_id, sender->root);
                 }
                 catch (std::exception const &e) {
                     sender->res_ = {
@@ -1079,8 +1065,17 @@ namespace detail
                 io_state->completed(async::success());
             }
             else {
-                async_read(
-                    db.impl_->aux(), load_root_receiver_t{this, io_state});
+                chunk_offset_t const offset =
+                    db.impl_->aux().get_root_offset_at_version(block_id);
+                if (offset == INVALID_OFFSET) {
+                    res_ = {NodeCursor{}, find_result::version_no_longer_exist};
+                    io_state->completed(async::success());
+                }
+                else {
+                    async_read(
+                        db.impl_->aux(),
+                        load_root_receiver_t{offset, this, io_state});
+                }
             }
             return async::success();
         }

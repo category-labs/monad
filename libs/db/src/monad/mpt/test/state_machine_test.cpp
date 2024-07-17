@@ -117,7 +117,7 @@ struct StateMachineTestFixture : public Base
         updates.push_front(top);
 
         this->root = upsert(
-            this->aux, *this->sm, std::move(this->root), std::move(updates));
+            this->aux, 0, *this->sm, std::move(this->root), std::move(updates));
     }
 
     void validate_down_calls(DownCalls const &expected)

@@ -213,13 +213,23 @@ namespace monad::test
 
     Node::UniquePtr upsert_vector(
         UpdateAuxImpl &aux, StateMachine &sm, Node::UniquePtr old,
-        std::vector<Update> &&update_vec)
+        std::vector<Update> &&update_vec, uint64_t const version = 0)
     {
         UpdateList update_ls;
         for (auto &it : update_vec) {
             update_ls.push_front(it);
         }
-        return upsert(aux, sm, std::move(old), std::move(update_ls));
+        return upsert(aux, version, sm, std::move(old), std::move(update_ls));
+    }
+
+    template <class... Updates>
+    [[nodiscard]] constexpr Node::UniquePtr upsert_updates_with_version(
+        UpdateAuxImpl &aux, StateMachine &sm, Node::UniquePtr old,
+        uint64_t const version, Updates... updates)
+    {
+        UpdateList update_ls;
+        (update_ls.push_front(updates), ...);
+        return upsert(aux, version, sm, std::move(old), std::move(update_ls));
     }
 
     template <class... Updates>
@@ -227,9 +237,8 @@ namespace monad::test
         UpdateAuxImpl &aux, StateMachine &sm, Node::UniquePtr old,
         Updates... updates)
     {
-        UpdateList update_ls;
-        (update_ls.push_front(updates), ...);
-        return upsert(aux, sm, std::move(old), std::move(update_ls));
+        return upsert_updates_with_version(
+            aux, sm, std::move(old), 0, std::forward<Updates>(updates)...);
     }
 
     namespace fixed_updates
@@ -461,6 +470,7 @@ namespace monad::test
             UpdateAux<LockType> aux{&io}; // trie section starts from account
             monad::small_prng rand;
             std::vector<std::pair<monad::byte_string, size_t>> keys;
+            uint64_t version{0};
 
             state_t()
             {
@@ -545,8 +555,12 @@ namespace monad::test
                             make_update(keys.back().first, keys.back().first));
                         update_ls.push_front(updates.back());
                     }
-                    root =
-                        upsert(aux, sm, std::move(root), std::move(update_ls));
+                    root = upsert(
+                        aux,
+                        version++,
+                        sm,
+                        std::move(root),
+                        std::move(update_ls));
                     size_t count = 0;
                     for (auto const *ci = aux.db_metadata()->fast_list_begin();
                          ci != nullptr;

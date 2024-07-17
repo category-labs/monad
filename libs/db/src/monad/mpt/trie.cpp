@@ -87,11 +87,11 @@ struct async_write_node_result
 };
 
 // invoke at the end of each block upsert
-chunk_offset_t write_new_root_node(UpdateAuxImpl &, Node &);
+chunk_offset_t write_new_root_node(UpdateAuxImpl &, Node &, uint64_t);
 
 Node::UniquePtr upsert(
-    UpdateAuxImpl &aux, StateMachine &sm, Node::UniquePtr old,
-    UpdateList &&updates)
+    UpdateAuxImpl &aux, uint64_t const version, StateMachine &sm,
+    Node::UniquePtr old, UpdateList &&updates)
 {
     auto impl = [&] {
         aux.reset_stats();
@@ -119,7 +119,7 @@ Node::UniquePtr upsert(
         auto *const root = entry.ptr;
         if (aux.is_on_disk()) {
             if (root) {
-                write_new_root_node(aux, *root);
+                write_new_root_node(aux, *root, version);
             }
             aux.print_update_stats();
         }
@@ -1391,7 +1391,8 @@ async_write_node_set_spare(UpdateAuxImpl &aux, Node &node, bool write_to_fast)
 }
 
 // return root physical offset
-chunk_offset_t write_new_root_node(UpdateAuxImpl &aux, Node &root)
+chunk_offset_t
+write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
 {
     auto const offset_written_to = async_write_node_set_spare(aux, root, true);
     // Round up with all bits zero
@@ -1422,8 +1423,18 @@ chunk_offset_t write_new_root_node(UpdateAuxImpl &aux, Node &root)
     // flush async write root and slow writer
     aux.io->flush();
     // write new root offset and slow ring's latest offset to the front of disk
-    aux.advance_offsets_to(
-        offset_written_to,
+    auto last_version_in_db = aux.db_metadata()->root_offsets.max_version();
+    MONAD_ASSERT(
+        version >= last_version_in_db ||
+        last_version_in_db == INVALID_BLOCK_ID);
+    if (last_version_in_db == version) {
+        aux.update_root_offset(version, offset_written_to);
+    }
+    else {
+        aux.fast_forward_next_version(version);
+        aux.append_root_offset(offset_written_to);
+    }
+    aux.advance_db_offsets_to(
         aux.node_writer_fast->sender().offset(),
         aux.node_writer_slow->sender().offset());
     return offset_written_to;

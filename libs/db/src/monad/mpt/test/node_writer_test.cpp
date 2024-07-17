@@ -36,10 +36,9 @@ private:
             rewind_chunk_id, chunk->size() - remaining_bytes_in_chunk};
 
         // reset fast offset to close to the end of last chunk
-        state()->aux.advance_offsets_to(
-            state()->aux.get_latest_root_offset(),
-            fast_offset_rewind_to,
-            state()->aux.get_start_of_wip_slow_offset());
+        state()->aux.advance_db_offsets_to(
+            fast_offset_rewind_to, state()->aux.get_start_of_wip_slow_offset());
+        state()->aux.append_root_offset(state()->aux.get_latest_root_offset());
         this->state()->aux.rewind_to_match_offsets();
 
         EXPECT_EQ(

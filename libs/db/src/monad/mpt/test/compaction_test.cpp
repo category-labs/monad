@@ -47,6 +47,7 @@ TEST_F(CompactionTest, first_chunk_is_compacted)
     }
     state()->root = upsert(
         state()->aux,
+        state()->version++,
         state()->sm,
         std::move(state()->root),
         std::move(update_ls));

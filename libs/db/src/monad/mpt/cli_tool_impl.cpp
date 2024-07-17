@@ -818,21 +818,13 @@ public:
                 });
                 do_([&](monad::mpt::detail::db_metadata *metadata) {
                     metadata->db_offsets.store(old_metadata->db_offsets);
-                    metadata->root_offsets.write_pos.store(
-                        old_metadata->root_offsets.write_pos.load());
+                    metadata->root_offsets.next_version.store(
+                        old_metadata->root_offsets.next_version.load());
                     memcpy(
-                        &metadata->root_offsets.offset,
-                        &old_metadata->root_offsets.offset,
-                        sizeof(metadata->root_offsets.offset));
+                        &metadata->root_offsets.arr,
+                        &old_metadata->root_offsets.arr,
+                        sizeof(metadata->root_offsets.arr));
                     metadata->slow_fast_ratio = old_metadata->slow_fast_ratio;
-                    metadata->min_db_history_version.store(
-                        old_metadata->min_db_history_version.load(
-                            std::memory_order_acquire),
-                        std::memory_order_release);
-                    metadata->max_db_history_version.store(
-                        old_metadata->max_db_history_version.load(
-                            std::memory_order_acquire),
-                        std::memory_order_release);
                 });
                 fast_list_base_insertion_count =
                     old_metadata->fast_list_begin()->insertion_count();

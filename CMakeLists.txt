@@ -40,8 +40,6 @@ function(monad_compile_options target)
   # https://gcc.gnu.org/bugzilla//show_bug.cgi?id=109647
   target_compile_definitions(${target} PUBLIC "JSON_HAS_RANGES=0")
 
-  target_compile_definitions(${target} PUBLIC "ENABLE_TRACING")
-
   if(EVMONE_TRACING)
     target_compile_definitions(${target} PUBLIC EVMONE_TRACING=1)
   endif()

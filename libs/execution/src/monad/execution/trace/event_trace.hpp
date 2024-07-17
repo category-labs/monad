@@ -9,7 +9,7 @@
 #include <ostream>
 #include <utility>
 
-#ifdef ENABLE_TRACING
+#ifdef ENABLE_EVENT_TRACING
     #include <monad/core/likely.h>
     #include <monad/fiber/priority_properties.hpp>
 
@@ -42,7 +42,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-extern quill::Logger *tracer;
+extern quill::Logger *event_tracer;
 
 enum class TraceType : uint8_t
 {

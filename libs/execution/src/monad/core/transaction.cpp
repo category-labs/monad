@@ -4,7 +4,7 @@
 #include <monad/core/keccak.hpp>
 #include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/core/transaction.hpp>
-#include <monad/execution/trace.hpp>
+#include <monad/execution/trace/event_trace.hpp>
 
 #include <silkpre/ecdsa.h>
 

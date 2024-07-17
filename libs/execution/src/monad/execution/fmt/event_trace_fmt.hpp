@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/execution/trace.hpp>
+#include <monad/execution/trace/event_trace.hpp>
 
 #include <quill/Quill.h>
 #include <quill/bundled/fmt/format.h>

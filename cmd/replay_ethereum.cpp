@@ -8,7 +8,7 @@
 #include <monad/db/util.hpp>
 #include <monad/execution/genesis.hpp>
 #include <monad/execution/replay_block_db.hpp>
-#include <monad/execution/trace.hpp>
+#include <monad/execution/trace/event_trace.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 
@@ -34,7 +34,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-quill::Logger *tracer = nullptr;
+quill::Logger *event_tracer = nullptr;
 
 MONAD_NAMESPACE_END
 
@@ -105,11 +105,11 @@ int main(int const argc, char const *argv[])
 
     quill::start(true);
 
-#ifdef ENABLE_TRACING
+#ifdef ENABLE_EVENT_TRACING
     quill::FileHandlerConfig handler_cfg;
     handler_cfg.set_pattern("%(message)", "");
-    tracer = quill::create_logger(
-        "trace", quill::file_handler(trace_log, handler_cfg));
+    event_tracer = quill::create_logger(
+        "event_trace", quill::file_handler(trace_log, handler_cfg));
 #endif
 
     uint64_t last_block_number;

@@ -1,7 +1,7 @@
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
-#include <monad/execution/fmt/trace_fmt.hpp> // NOLINT
-#include <monad/execution/trace.hpp>
+#include <monad/execution/fmt/event_trace_fmt.hpp> // NOLINT
+#include <monad/execution/trace/event_trace.hpp>
 
 #include <quill/Quill.h> // NOLINT
 #include <quill/detail/LogMacros.h>
@@ -15,7 +15,7 @@ MONAD_NAMESPACE_BEGIN
 TraceTimer::TraceTimer(TraceEvent const &event)
     : orig{event}
 {
-    QUILL_LOG_INFO(tracer, "{}", event);
+    QUILL_LOG_INFO(event_tracer, "{}", event);
 }
 
 TraceTimer::~TraceTimer()
@@ -38,7 +38,7 @@ TraceTimer::~TraceTimer()
             MONAD_ASSERT(false);
         }
     }();
-    QUILL_LOG_INFO(tracer, "{}", TraceEvent{type, orig.value});
+    QUILL_LOG_INFO(event_tracer, "{}", TraceEvent{type, orig.value});
 }
 
 TraceEvent::TraceEvent(TraceType const type, uint64_t const value)

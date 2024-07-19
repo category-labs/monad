@@ -332,8 +332,12 @@ public:
     node_writer_unique_ptr_type node_writer_slow{};
 
     // currently maintain a fixed len history
-    static constexpr auto VERSION_HISTORY_LEN =
-        detail::db_metadata::root_offsets_ring_t::capacity();
+    // Note that we don't assume VERSION_HISTORY_LEN always equals
+    // root_offsets_ring_t capacity, rather can be less than
+    static constexpr auto VERSION_HISTORY_LEN = 1000;
+    static_assert(
+        VERSION_HISTORY_LEN <=
+        detail::db_metadata::root_offsets_ring_t::capacity());
 
     UpdateAuxImpl(MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr)
     {
@@ -492,7 +496,7 @@ public:
         uint64_t version, bool compaction = false,
         bool can_write_to_fast = true);
 
-    void update_single_trie_version(uint64_t src, uint64_t dest);
+    void move_trie_version_forward(uint64_t src, uint64_t dest);
 
 #if MONAD_MPT_COLLECT_STATS
     detail::TrieUpdateCollectedStats stats;
@@ -603,11 +607,17 @@ public:
     get_root_offset_at_version(uint64_t const version) const noexcept
     {
         MONAD_ASSERT(this->is_on_disk());
-        if (version >= min_version_in_db_history() &&
-            version <= max_version_in_db_history()) {
+        if (version >= db_history_range_lower_bound() &&
+            version <= db_history_max_version()) {
             return db_metadata()->root_offsets[version];
         }
         return INVALID_OFFSET;
+    }
+
+    bool version_is_valid_ondisk(uint64_t const version) const noexcept
+    {
+        MONAD_ASSERT(is_on_disk());
+        return get_root_offset_at_version(version) != INVALID_OFFSET;
     }
 
     chunk_offset_t get_start_of_wip_fast_offset() const noexcept
@@ -630,13 +640,14 @@ public:
 
     uint32_t num_chunks(chunk_list const list) const noexcept;
 
-    // must call these when db is non empty
-    uint64_t min_version_in_db_history() const noexcept;
-    uint64_t max_version_in_db_history() const noexcept;
-
-    // returns the first min version with a root offset. behavior is undefined
-    // if the max version does not have
-    uint64_t get_first_valid_version_in_db_history() const noexcept;
+    // Following funcs on db history are for on disk db only. In
+    // memory db does not have any version history.
+    // Db history range, returned version NOT always valid
+    uint64_t db_history_range_lower_bound() const noexcept;
+    uint64_t db_history_max_version() const noexcept;
+    // Returns the first min version with a root offset. On disk db returns
+    // invalid if it contains empty version
+    uint64_t db_history_min_valid_version() const noexcept;
 };
 
 static_assert(

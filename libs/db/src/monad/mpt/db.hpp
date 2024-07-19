@@ -78,10 +78,9 @@ public:
     NodeCursor root() const noexcept;
     uint64_t get_latest_block_id() const;
     uint64_t get_earliest_block_id() const;
-    // This function moves a source trie to under a destination version,
-    // assuming the source trie is the only version present.
-    // Only the RWDb can call this API for state sync purposes.
-    void update_single_trie_version(uint64_t src, uint64_t dest);
+    // This function moves trie from source to destination version in db
+    // history. Only the RWDb can call this API for state sync purposes.
+    void move_trie_version_forward(uint64_t src, uint64_t dest);
 
     // Load the tree of nodes in the current DB root as far as the caching
     // policy allows. RW only.

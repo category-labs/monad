@@ -88,13 +88,7 @@ struct Db::Impl
     virtual bool
     traverse_fiber_blocking(Node &, TraverseMachine &, uint64_t version) = 0;
     virtual void
-    update_single_trie_version_fiber_blocking(uint64_t src, uint64_t dest) = 0;
-
-    // return true for valid, false for outdated
-    virtual bool verify_version_still_valid(uint64_t)
-    {
-        return true;
-    }
+    move_trie_version_fiber_blocking(uint64_t src, uint64_t dest) = 0;
 
     using TrieRootCache = static_lru_cache<uint64_t, std::shared_ptr<Node>>;
 
@@ -170,12 +164,6 @@ struct Db::ROOnDisk final : public Db::Impl
         MONAD_ASSERT(false);
     }
 
-    virtual bool verify_version_still_valid(uint64_t const version) override
-    {
-        return version >= aux().min_version_in_db_history() &&
-               aux().get_root_offset_at_version(version) != INVALID_OFFSET;
-    }
-
     virtual find_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key,
         uint64_t const version) override
@@ -184,14 +172,13 @@ struct Db::ROOnDisk final : public Db::Impl
             return {NodeCursor{}, find_result::unknown};
         }
         // db we last loaded does not contain the version we want to find
-        if (version > aux().db_metadata()->get_max_version_in_history() ||
-            !verify_version_still_valid(version)) {
+        if (!aux().version_is_valid_ondisk(version)) {
             return {NodeCursor{}, find_result::version_no_longer_exist};
         }
         try {
             auto const res = find_blocking(aux(), root, key);
             // verify version still valid in history after success
-            return verify_version_still_valid(version)
+            return aux().version_is_valid_ondisk(version)
                        ? res
                        : find_result_type{
                              NodeCursor{},
@@ -202,8 +189,7 @@ struct Db::ROOnDisk final : public Db::Impl
         }
     }
 
-    virtual void
-    update_single_trie_version_fiber_blocking(uint64_t, uint64_t) override
+    virtual void move_trie_version_fiber_blocking(uint64_t, uint64_t) override
     {
         MONAD_ASSERT(false);
     }
@@ -214,8 +200,7 @@ struct Db::ROOnDisk final : public Db::Impl
         uint64_t version) override
     {
         // verify version is valid in db history before doing anything
-        if (version > aux().db_metadata()->get_max_version_in_history() ||
-            !verify_version_still_valid(version)) {
+        if (!aux().version_is_valid_ondisk(version)) {
             res = {NodeCursor{}, find_result::version_no_longer_exist};
             io_state->completed(async::success());
             return async::success();
@@ -226,7 +211,7 @@ struct Db::ROOnDisk final : public Db::Impl
             find_result_type &res_;
             async::erased_connected_operation *const io_state;
             uint64_t const version;
-            Db::Impl &db;
+            UpdateAux<> &aux;
 
             enum : bool
             {
@@ -244,7 +229,7 @@ struct Db::ROOnDisk final : public Db::Impl
                 }
                 try {
                     // verify version still valid in history after success
-                    res_ = db.verify_version_still_valid(version)
+                    res_ = aux.version_is_valid_ondisk(version)
                                ? std::move(res).assume_value()
                                : find_result_type{
                                      NodeCursor{},
@@ -260,7 +245,7 @@ struct Db::ROOnDisk final : public Db::Impl
 
         auto *state = new auto(async::connect(
             find_request_sender(aux(), root, key),
-            receiver_t{res, io_state, version, *this}));
+            receiver_t{res, io_state, version, aux()}));
         state->initiate();
         return async::success();
     }
@@ -281,7 +266,7 @@ struct Db::ROOnDisk final : public Db::Impl
     {
         return preorder_traverse(
             aux(), node, machine, [this, version]() -> bool {
-                return verify_version_still_valid(version);
+                return aux().version_is_valid_ondisk(version);
             });
     }
 
@@ -293,10 +278,7 @@ struct Db::ROOnDisk final : public Db::Impl
         }
         if (last_loaded_root_offset_ != root_offset) {
             last_loaded_root_offset_ = root_offset;
-            root_.reset(
-                root_offset == INVALID_OFFSET
-                    ? nullptr
-                    : read_node_blocking(pool_, root_offset));
+            root_.reset(read_node_blocking(pool_, root_offset));
         }
         return root_ ? NodeCursor{*root_} : NodeCursor{};
     }
@@ -367,8 +349,7 @@ struct Db::InMemory final : public Db::Impl
         return preorder_traverse(aux(), node, machine, [] { return true; });
     }
 
-    virtual void
-    update_single_trie_version_fiber_blocking(uint64_t, uint64_t) override
+    virtual void move_trie_version_fiber_blocking(uint64_t, uint64_t) override
     {
         MONAD_ASSERT(false);
     }
@@ -508,7 +489,7 @@ struct Db::RWOnDisk final : public Db::Impl
             ::boost::container::deque<threadsafe_boost_fibers_promise<bool>>
                 traverse_promises;
             ::boost::container::deque<threadsafe_boost_fibers_promise<void>>
-                update_single_trie_version_promises;
+                move_trie_version_promises;
             /* In case you're wondering why we use a vector for a single
             element, it's because for some odd reason the MoodyCamel concurrent
             queue only supports move only types via its iterator interface. No
@@ -562,28 +543,23 @@ struct Db::RWOnDisk final : public Db::Impl
                             std::move(*req->promise));
                         req->promise = &traverse_promises.back();
                         // verify version is valid
-                        bool const version_is_valid =
-                            req->version >= aux.min_version_in_db_history() &&
-                            aux.get_root_offset_at_version(req->version) !=
-                                INVALID_OFFSET;
-                        if (!version_is_valid) {
-                            req->promise->set_value(false);
-                        }
-                        else {
+                        if (aux.version_is_valid_ondisk(req->version)) {
                             req->promise->set_value(preorder_traverse(
                                 aux, req->root, req->machine, [&] {
                                     return true;
                                 }));
                         }
+                        else {
+                            req->promise->set_value(false);
+                        }
                     }
                     else if (auto *req = std::get_if<5>(&request.front());
                              req != nullptr) {
                         // Ditto to above
-                        update_single_trie_version_promises.emplace_back(
+                        move_trie_version_promises.emplace_back(
                             std::move(*req->promise));
-                        req->promise =
-                            &update_single_trie_version_promises.back();
-                        aux.update_single_trie_version(req->src, req->dest);
+                        req->promise = &move_trie_version_promises.back();
+                        aux.move_trie_version_forward(req->src, req->dest);
                         req->promise->set_value();
                     }
                     else if (auto *req = std::get_if<6>(&request.front());
@@ -625,14 +601,14 @@ struct Db::RWOnDisk final : public Db::Impl
                        traverse_promises.front().future_has_been_destroyed()) {
                     traverse_promises.pop_front();
                 }
-                while (!update_single_trie_version_promises.empty() &&
-                       update_single_trie_version_promises.front()
+                while (!move_trie_version_promises.empty() &&
+                       move_trie_version_promises.front()
                            .future_has_been_destroyed()) {
-                    update_single_trie_version_promises.pop_front();
+                    move_trie_version_promises.pop_front();
                 }
                 if (!find_promises.empty() || !upsert_promises.empty() ||
                     !prefetch_promises.empty() || !traverse_promises.empty() ||
-                    !update_single_trie_version_promises.empty()) {
+                    !move_trie_version_promises.empty()) {
                     did_nothing = false;
                 }
                 if (did_nothing) {
@@ -765,7 +741,7 @@ struct Db::RWOnDisk final : public Db::Impl
         root_ = fut.get();
     }
 
-    virtual void update_single_trie_version_fiber_blocking(
+    virtual void move_trie_version_fiber_blocking(
         uint64_t const src, uint64_t const dest) override
     {
         threadsafe_boost_fibers_promise<void> promise;
@@ -823,7 +799,7 @@ struct Db::RWOnDisk final : public Db::Impl
 
     virtual NodeCursor load_root_for_version(uint64_t version) override
     {
-        if (MONAD_LIKELY(version == aux().max_version_in_db_history())) {
+        if (MONAD_LIKELY(version == aux().db_history_max_version())) {
             return root() ? NodeCursor{*root()} : NodeCursor{};
         }
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
@@ -926,10 +902,10 @@ void Db::upsert(
         std::move(list), block_id, enable_compaction, can_write_to_fast);
 }
 
-void Db::update_single_trie_version(uint64_t const src, uint64_t const dest)
+void Db::move_trie_version_forward(uint64_t const src, uint64_t const dest)
 {
     MONAD_ASSERT(impl_);
-    impl_->update_single_trie_version_fiber_blocking(src, dest);
+    impl_->move_trie_version_fiber_blocking(src, dest);
     return;
 }
 
@@ -948,7 +924,9 @@ bool Db::traverse_blocking(
     MONAD_ASSERT(cursor.is_valid());
     return preorder_traverse_blocking(
         impl_->aux(), *cursor.node, machine, [this, block_id] {
-            return impl_->verify_version_still_valid(block_id);
+            return impl_->aux().is_on_disk()
+                       ? impl_->aux().version_is_valid_ondisk(block_id)
+                       : true;
         });
 }
 
@@ -961,13 +939,23 @@ NodeCursor Db::root() const noexcept
 uint64_t Db::get_latest_block_id() const
 {
     MONAD_ASSERT(impl_);
-    return impl_->aux().max_version_in_db_history();
+    if (impl_->aux().is_on_disk()) {
+        return impl_->aux().db_history_max_version();
+    }
+    else {
+        return impl_->root() ? 0 : INVALID_BLOCK_ID;
+    }
 }
 
 uint64_t Db::get_earliest_block_id() const
 {
     MONAD_ASSERT(impl_);
-    return impl_->aux().get_first_valid_version_in_db_history();
+    if (impl_->aux().is_on_disk()) {
+        return impl_->aux().db_history_min_valid_version();
+    }
+    else {
+        return impl_->root() ? 0 : INVALID_BLOCK_ID;
+    }
 }
 
 size_t Db::prefetch()
@@ -1022,13 +1010,13 @@ namespace detail
         {
             MONAD_ASSERT(buffer_);
             bool const block_alive_after_read =
-                sender->db.impl_->verify_version_still_valid(sender->block_id);
+                sender->db.impl_->aux().version_is_valid_ondisk(
+                    sender->block_id);
             if (block_alive_after_read) {
                 try {
-                    Node::UniquePtr root =
+                    sender->root =
                         detail::deserialize_node_from_receiver_result(
                             std::move(buffer_), buffer_off, io_state);
-                    sender->root = std::move(root);
                     sender->res_ = {
                         NodeCursor{*sender->root.get()}, find_result::success};
                     MONAD_ASSERT(sender->db.impl_->trie_root_cache());

@@ -158,16 +158,10 @@ namespace detail
         */
         float slow_fast_ratio;
 
+        // return INVALID_BLOCK_ID indicates that db is empty
         uint64_t get_max_version_in_history() const noexcept
         {
             return root_offsets.max_version();
-        }
-
-        uint64_t get_min_version_in_history() const noexcept
-        {
-            auto const history_len = root_offsets_ring_t::capacity() - 1;
-            auto const max_version = get_max_version_in_history();
-            return max_version >= history_len ? max_version - history_len : 0;
         }
 
         // used to know if the metadata was being

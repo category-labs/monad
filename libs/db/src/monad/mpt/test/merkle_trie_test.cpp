@@ -713,14 +713,14 @@ TYPED_TEST(TrieTest, aux_do_update_fixed_history_len)
             if (block_id - start_block_id <
                 UpdateAuxImpl::VERSION_HISTORY_LEN) {
                 EXPECT_EQ(
-                    this->aux.max_version_in_db_history() -
-                        this->aux.get_first_valid_version_in_db_history(),
+                    this->aux.db_history_max_version() -
+                        this->aux.db_history_min_valid_version(),
                     block_id - start_block_id);
             }
             else {
                 EXPECT_EQ(
-                    this->aux.max_version_in_db_history() -
-                        this->aux.get_first_valid_version_in_db_history(),
+                    this->aux.db_history_max_version() -
+                        this->aux.db_history_min_valid_version(),
                     UpdateAuxImpl::VERSION_HISTORY_LEN);
             }
         }

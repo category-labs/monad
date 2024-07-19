@@ -518,7 +518,7 @@ int main(int argc, char *argv[])
                     io.storage_pool(), aux.get_latest_root_offset()));
             }
             if (block_id == INVALID_BLOCK_ID) {
-                block_id = aux.max_version_in_db_history();
+                block_id = aux.db_history_max_version() + 1;
             }
             printf("starting block id %lu\n", block_id);
 

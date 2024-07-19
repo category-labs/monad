@@ -168,8 +168,8 @@ void UpdateAuxImpl::fast_forward_next_version(uint64_t const version) noexcept
 void UpdateAuxImpl::update_slow_fast_ratio_metadata() noexcept
 {
     MONAD_ASSERT(is_on_disk());
-    auto ratio = (float)num_chunks(chunk_list::slow) /
-                 (float)num_chunks(chunk_list::fast);
+    auto const ratio = (float)num_chunks(chunk_list::slow) /
+                       (float)num_chunks(chunk_list::fast);
     auto do_ = [&](detail::db_metadata *m) {
         m->update_slow_fast_ratio_(ratio);
     };
@@ -503,11 +503,10 @@ compaction offsets;
 version number;
 - if it's on disk, update db_metadata min max versions.
 
-Note that `version` on each call of upsert() does not always grow
-incrementally, users are allowed to insert version 0,1,2,3,4, then restore
-db from version 3 and continue with version 4,5,6... However, it is not
-allowed to skip a version, for example for a call sequence to insert version
-0,1,2,3,4,6, the call to insert version 6 will fail.
+Note that `version` on each call of upsert() is either the max version or max
+version + 1. However, we do not assume that the version history is continuous
+because user can move_trie_version_forward(), which can invalidate versions in
+the middle of a continuous history.
 */
 Node::UniquePtr UpdateAuxImpl::do_update(
     Node::UniquePtr prev_root, StateMachine &sm, UpdateList &&updates,
@@ -523,47 +522,53 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     MONAD_ASSERT(is_on_disk());
     set_can_write_to_fast(can_write_to_fast);
 
-    bool const has_prev_trie{prev_root};
-    if (has_prev_trie) {
-        auto const min_version = min_version_in_db_history();
-        auto const max_version = max_version_in_db_history();
-        MONAD_ASSERT(
-            max_version >= min_version || max_version == INVALID_BLOCK_ID);
-        MONAD_ASSERT(version >= max_version);
-
-        if (1 + max_version - min_version >= VERSION_HISTORY_LEN) {
-            uint64_t const erase_until = version - VERSION_HISTORY_LEN;
-            if (compaction) {
-                auto root_to_erase = Node::UniquePtr{read_node_blocking(
-                    io->storage_pool(),
-                    get_root_offset_at_version(erase_until))};
-                auto [min_offset_fast, min_offset_slow] =
-                    calc_min_offsets(*root_to_erase);
-                if (min_offset_fast == INVALID_COMPACT_VIRTUAL_OFFSET) {
-                    min_offset_fast = MIN_COMPACT_VIRTUAL_OFFSET;
-                }
-                if (min_offset_slow == INVALID_COMPACT_VIRTUAL_OFFSET) {
-                    min_offset_slow = MIN_COMPACT_VIRTUAL_OFFSET;
-                }
-                remove_chunks_before_count_fast_ = min_offset_fast.get_count();
-                remove_chunks_before_count_slow_ = min_offset_slow.get_count();
-                advance_compact_offsets();
+    auto const max_version = db_history_max_version();
+    MONAD_ASSERT(
+        max_version == INVALID_BLOCK_ID || version == max_version ||
+        version == max_version + 1);
+    // Erase the earliest valid version if it is going to be outdated after
+    // upserting new version, advance compaction offsets
+    auto const min_valid_version = db_history_min_valid_version();
+    if (min_valid_version != INVALID_BLOCK_ID /* at least one valid version */
+        && version - min_valid_version >= VERSION_HISTORY_LEN) {
+        if (compaction) {
+            auto root_to_erase = Node::UniquePtr{read_node_blocking(
+                io->storage_pool(),
+                get_root_offset_at_version(min_valid_version))};
+            auto [min_offset_fast, min_offset_slow] =
+                calc_min_offsets(*root_to_erase);
+            if (min_offset_fast == INVALID_COMPACT_VIRTUAL_OFFSET) {
+                min_offset_fast = MIN_COMPACT_VIRTUAL_OFFSET;
             }
-            // update the min version, because that offset may be invalidated in
-            // `upsert`.
+            if (min_offset_slow == INVALID_COMPACT_VIRTUAL_OFFSET) {
+                min_offset_slow = MIN_COMPACT_VIRTUAL_OFFSET;
+            }
+            remove_chunks_before_count_fast_ = min_offset_fast.get_count();
+            remove_chunks_before_count_slow_ = min_offset_slow.get_count();
+            advance_compact_offsets();
         }
+        // erase min_valid_version, must happen before upsert() because that
+        // offset may be overwritten thus invalidated in `upsert()`.
+        update_root_offset(min_valid_version, INVALID_OFFSET);
     }
+
     auto root =
         upsert(*this, version, sm, std::move(prev_root), std::move(updates));
+    MONAD_DEBUG_ASSERT(
+        version - db_history_min_valid_version() + 1 <= VERSION_HISTORY_LEN);
 
     free_compacted_chunks();
     return root;
 }
 
-void UpdateAuxImpl::update_single_trie_version(
+void UpdateAuxImpl::move_trie_version_forward(
     uint64_t const src, uint64_t const dest)
 {
     MONAD_ASSERT(is_on_disk());
+    // only allow moving forward
+    MONAD_ASSERT(
+        dest > src && dest != INVALID_BLOCK_ID &&
+        dest >= db_history_max_version());
     auto g(unique_lock());
     auto g2(set_current_upsert_tid());
     auto const offset = get_latest_root_offset();
@@ -641,35 +646,37 @@ void UpdateAuxImpl::advance_compact_offsets()
         db_metadata()->db_offsets.last_compact_offset_slow;
 }
 
-uint64_t UpdateAuxImpl::get_first_valid_version_in_db_history() const noexcept
+uint64_t UpdateAuxImpl::db_history_min_valid_version() const noexcept
 {
-    if (is_on_disk()) {
-        auto &offsets = db_metadata()->root_offsets;
-        auto const max_version = offsets.max_version();
-        auto min_version = max_version + 1;
-        if (max_version == INVALID_BLOCK_ID) {
-            return INVALID_BLOCK_ID;
+    MONAD_ASSERT(is_on_disk());
+    auto &offsets = db_metadata()->root_offsets;
+    auto min_version = db_history_range_lower_bound();
+    for (; min_version != offsets.max_version(); ++min_version) {
+        if (offsets[min_version] != INVALID_OFFSET) {
+            break;
         }
-        for (; min_version != max_version; ++min_version) {
-            if (offsets[min_version] != INVALID_OFFSET) {
-                break;
-            }
-        }
-        return min_version - offsets.capacity();
+    }
+    return min_version;
+}
+
+uint64_t UpdateAuxImpl::db_history_range_lower_bound() const noexcept
+{
+    MONAD_ASSERT(is_on_disk());
+    auto const max_version = db_history_max_version();
+    if (max_version == INVALID_BLOCK_ID) {
+        return INVALID_BLOCK_ID;
     }
     else {
-        return 0;
+        return (max_version >= VERSION_HISTORY_LEN - 1)
+                   ? max_version - VERSION_HISTORY_LEN + 1
+                   : 0;
     }
 }
 
-uint64_t UpdateAuxImpl::min_version_in_db_history() const noexcept
+uint64_t UpdateAuxImpl::db_history_max_version() const noexcept
 {
-    return is_on_disk() ? db_metadata()->get_min_version_in_history() : 0;
-}
-
-uint64_t UpdateAuxImpl::max_version_in_db_history() const noexcept
-{
-    return is_on_disk() ? db_metadata()->get_max_version_in_history() : 0;
+    MONAD_ASSERT(is_on_disk());
+    return db_metadata()->get_max_version_in_history();
 }
 
 void UpdateAuxImpl::free_compacted_chunks()

@@ -1422,18 +1422,22 @@ write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
     }
     // flush async write root and slow writer
     aux.io->flush();
-    // write new root offset and slow ring's latest offset to the front of disk
-    auto last_version_in_db = aux.db_metadata()->root_offsets.max_version();
+    // update root offset
+    auto const last_version_in_db = aux.db_history_max_version();
     MONAD_ASSERT(
-        version >= last_version_in_db ||
-        last_version_in_db == INVALID_BLOCK_ID);
+        last_version_in_db == INVALID_BLOCK_ID ||
+        version == last_version_in_db || version == last_version_in_db + 1);
     if (last_version_in_db == version) {
         aux.update_root_offset(version, offset_written_to);
     }
     else {
-        aux.fast_forward_next_version(version);
+        if (MONAD_UNLIKELY(version != last_version_in_db + 1)) {
+            MONAD_ASSERT(last_version_in_db == INVALID_BLOCK_ID);
+            aux.fast_forward_next_version(version);
+        }
         aux.append_root_offset(offset_written_to);
     }
+    // advance fast and slow ring's latest offset in db metadata
     aux.advance_db_offsets_to(
         aux.node_writer_fast->sender().offset(),
         aux.node_writer_slow->sender().offset());

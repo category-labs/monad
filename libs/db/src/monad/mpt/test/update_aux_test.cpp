@@ -16,6 +16,11 @@
 
 using namespace std::chrono_literals;
 
+namespace
+{
+    constexpr uint64_t AUX_TEST_HISTORY_LENGTH = 1000;
+}
+
 TEST(update_aux_test, set_io_reader_dirty)
 {
     monad::async::storage_pool pool(monad::async::use_anonymous_inode_tag{});
@@ -37,7 +42,7 @@ TEST(update_aux_test, set_io_reader_dirty)
                 monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
                 monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
         monad::async::AsyncIO testio(pool, testbuf);
-        aux_writer.set_io(&testio);
+        aux_writer.set_io(&testio, AUX_TEST_HISTORY_LENGTH);
         io_set = true;
 
         while (!token.stop_requested()) {
@@ -106,10 +111,12 @@ TEST(update_aux_test, set_io_reader_dirty)
 
     // This should throw. Dirty bit stays set.
     monad::mpt::UpdateAux<> aux_reader_throw{};
-    EXPECT_THROW(aux_reader_throw.set_io(&testio), std::runtime_error);
+    EXPECT_THROW(
+        aux_reader_throw.set_io(&testio, AUX_TEST_HISTORY_LENGTH),
+        std::runtime_error);
 
     // TestAux adds instrumentation to turn off the dirty bit. Should not throw.
     TestAux aux_reader(aux_writer);
-    EXPECT_NO_THROW(aux_reader.set_io(&testio));
+    EXPECT_NO_THROW(aux_reader.set_io(&testio, AUX_TEST_HISTORY_LENGTH));
     EXPECT_TRUE(aux_reader.was_dirty) << "target codepath not exercised";
 }

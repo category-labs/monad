@@ -22,7 +22,7 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 void on_commit(
     monad_statesync_server_context &ctx, StateDeltas const &state_deltas)
 {
-    MONAD_ASSERT(ctx.deleted.size() <= UpdateAuxImpl::VERSION_HISTORY_LEN);
+    MONAD_ASSERT(ctx.deleted.size() <= ctx.rw.get_history_length());
     auto const n = ctx.rw.get_block_number();
 
     Deleted::accessor it;
@@ -65,8 +65,8 @@ void on_commit(
         }
     }
 
-    if (MONAD_LIKELY(n >= UpdateAuxImpl::VERSION_HISTORY_LEN)) {
-        ctx.deleted.erase(n - UpdateAuxImpl::VERSION_HISTORY_LEN);
+    if (MONAD_LIKELY(n >= ctx.rw.get_history_length())) {
+        ctx.deleted.erase(n - ctx.rw.get_history_length());
     }
 }
 

@@ -587,6 +587,10 @@ struct Db::RWOnDisk final : public Db::Impl
                        : Node::UniquePtr{};
         }())
     {
+        if (aux_.db_history_max_version() == INVALID_BLOCK_ID) {
+            // set history length on empty db
+            aux_.update_history_length_metadata(options.history_length);
+        }
     }
 
     ~RWOnDisk()
@@ -894,6 +898,11 @@ bool Db::is_read_only() const
 {
     MONAD_ASSERT(impl_);
     return is_on_disk() && impl_->aux().io->is_read_only();
+}
+
+uint64_t Db::get_history_length() const
+{
+    return is_on_disk() ? impl_->aux().version_history_length() : 1;
 }
 
 AsyncContext::AsyncContext(Db &db, size_t lru_size)

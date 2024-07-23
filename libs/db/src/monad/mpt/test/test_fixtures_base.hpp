@@ -14,6 +14,8 @@ namespace monad::test
     using namespace monad::mpt;
     using namespace monad::literals;
 
+    constexpr uint64_t MPT_TEST_HISTORY_LENGTH = 1000;
+
     struct DummyComputeLeafData
     {
         // TEMPORARY for POC
@@ -339,7 +341,7 @@ namespace monad::test
                   MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE))
             , io(pool, rwbuf)
             , root()
-            , aux(&io)
+            , aux(&io, MPT_TEST_HISTORY_LENGTH)
         {
         }
 
@@ -467,7 +469,9 @@ namespace monad::test
             MerkleCompute comp;
             Node::UniquePtr root;
             StateMachineAlwaysMerkle sm;
-            UpdateAux<LockType> aux{&io}; // trie section starts from account
+            UpdateAux<LockType> aux{
+                &io,
+                MPT_TEST_HISTORY_LENGTH}; // trie section starts from account
             monad::small_prng rand;
             std::vector<std::pair<monad::byte_string, size_t>> keys;
             uint64_t version{0};

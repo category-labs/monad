@@ -199,6 +199,7 @@ int main(int const argc, char const *argv[])
     bool no_compaction = false;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);
+    uint64_t history_len = 1000;
     std::vector<fs::path> dbname_paths;
     fs::path genesis;
     fs::path snapshot;
@@ -246,6 +247,10 @@ int main(int const argc, char const *argv[])
         "--dump_snapshot",
         dump_snapshot,
         "directory to dump state to at the end of run");
+    cli.add_option(
+        "--history_len",
+        history_len,
+        "history length an empty db is initialized to");
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
     group->add_option("--genesis", genesis, "genesis file")
@@ -320,7 +325,8 @@ int main(int const argc, char const *argv[])
                     .wr_buffers = 32,
                     .uring_entries = 128,
                     .sq_thread_cpu = sq_thread_cpu,
-                    .dbname_paths = dbname_paths}};
+                    .dbname_paths = dbname_paths,
+                    .history_length = history_len}};
         }
         machine = std::make_unique<InMemoryMachine>();
         return mpt::Db{*machine};

@@ -37,7 +37,7 @@ using namespace MONAD_ASYNC_NAMESPACE;
 // #define MONAD_MPT_INITIALIZE_POOL_WITH_CONSECUTIVE_CHUNKS 1
 
 virtual_chunk_offset_t
-UpdateAuxImpl::physical_to_virtual(chunk_offset_t offset) const noexcept
+UpdateAuxImpl::physical_to_virtual(chunk_offset_t const offset) const noexcept
 {
     MONAD_ASSERT(offset.id < io->chunk_count());
     auto const *ci = db_metadata_[0]->at(offset.id);
@@ -51,7 +51,7 @@ UpdateAuxImpl::physical_to_virtual(chunk_offset_t offset) const noexcept
 }
 
 std::pair<UpdateAuxImpl::chunk_list, detail::unsigned_20>
-UpdateAuxImpl::chunk_list_and_age(uint32_t idx) const noexcept
+UpdateAuxImpl::chunk_list_and_age(uint32_t const idx) const noexcept
 {
     MONAD_ASSERT(is_on_disk());
     auto const *ci = db_metadata_[0]->at(idx);
@@ -71,7 +71,7 @@ UpdateAuxImpl::chunk_list_and_age(uint32_t idx) const noexcept
     return ret;
 }
 
-void UpdateAuxImpl::append(chunk_list list, uint32_t idx) noexcept
+void UpdateAuxImpl::append(chunk_list const list, uint32_t const idx) noexcept
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
@@ -98,7 +98,7 @@ void UpdateAuxImpl::append(chunk_list list, uint32_t idx) noexcept
     }
 }
 
-void UpdateAuxImpl::remove(uint32_t idx) noexcept
+void UpdateAuxImpl::remove(uint32_t const idx) noexcept
 {
     MONAD_ASSERT(is_on_disk());
     bool const is_free_list =
@@ -181,6 +181,17 @@ void UpdateAuxImpl::update_slow_fast_ratio_metadata() noexcept
     do_(db_metadata_[1]);
 }
 
+void UpdateAuxImpl::update_history_length_metadata(
+    uint64_t const history_len) noexcept
+{
+    MONAD_ASSERT(is_on_disk());
+    auto do_ = [&](detail::db_metadata *m) {
+        m->set_history_length_(history_len);
+    };
+    do_(db_metadata_[0]);
+    do_(db_metadata_[1]);
+}
+
 void UpdateAuxImpl::rewind_to_match_offsets()
 {
     MONAD_ASSERT(is_on_disk());
@@ -228,7 +239,7 @@ UpdateAuxImpl::~UpdateAuxImpl()
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wclass-memaccess"
 #endif
-void UpdateAuxImpl::set_io(AsyncIO *io_)
+void UpdateAuxImpl::set_io(AsyncIO *io_, uint64_t const history_len)
 {
     io = io_;
     auto const chunk_count = io->chunk_count();
@@ -441,6 +452,9 @@ void UpdateAuxImpl::set_io(AsyncIO *io_)
         db_metadata_[0]->root_offsets.reset_all(0);
         db_metadata_[1]->root_offsets.reset_all(0);
 
+        // Set history length
+        update_history_length_metadata(history_len);
+
         std::atomic_signal_fence(
             std::memory_order_seq_cst); // no compiler reordering here
         memcpy(
@@ -547,8 +561,9 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     // Erase the earliest valid version if it is going to be outdated after
     // upserting new version, advance compaction offsets
     auto const min_valid_version = db_history_min_valid_version();
+    auto const version_history_len = version_history_length();
     if (min_valid_version != INVALID_BLOCK_ID /* at least one valid version */
-        && version - min_valid_version >= VERSION_HISTORY_LEN) {
+        && version - min_valid_version >= version_history_len) {
         if (compaction) {
             auto root_to_erase = Node::UniquePtr{read_node_blocking(
                 io->storage_pool(),
@@ -573,7 +588,8 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     auto root =
         upsert(*this, version, sm, std::move(prev_root), std::move(updates));
     MONAD_DEBUG_ASSERT(
-        version - db_history_min_valid_version() + 1 <= VERSION_HISTORY_LEN);
+        version - db_history_min_valid_version() + 1 <=
+        version_history_length());
 
     free_compacted_chunks();
     return root;
@@ -664,6 +680,13 @@ void UpdateAuxImpl::advance_compact_offsets()
         db_metadata()->db_offsets.last_compact_offset_slow;
 }
 
+uint64_t UpdateAuxImpl::version_history_length() const noexcept
+{
+    return start_lifetime_as<std::atomic_uint64_t const>(
+               &db_metadata()->history_length)
+        ->load(std::memory_order_relaxed);
+}
+
 uint64_t UpdateAuxImpl::db_history_min_valid_version() const noexcept
 {
     MONAD_ASSERT(is_on_disk());
@@ -685,8 +708,8 @@ uint64_t UpdateAuxImpl::db_history_range_lower_bound() const noexcept
         return INVALID_BLOCK_ID;
     }
     else {
-        return (max_version >= VERSION_HISTORY_LEN - 1)
-                   ? max_version - VERSION_HISTORY_LEN + 1
+        return (max_version >= version_history_length() - 1)
+                   ? (max_version - version_history_length() + 1)
                    : 0;
     }
 }

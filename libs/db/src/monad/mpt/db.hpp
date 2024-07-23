@@ -76,6 +76,7 @@ public:
     NodeCursor root() const noexcept;
     uint64_t get_latest_block_id() const;
     uint64_t get_earliest_block_id() const;
+    uint64_t get_history_length() const;
     // This function moves trie from source to destination version in db
     // history. Only the RWDb can call this API for state sync purposes.
     void move_trie_version_forward(uint64_t src, uint64_t dest);

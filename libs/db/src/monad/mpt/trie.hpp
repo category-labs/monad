@@ -333,18 +333,15 @@ public:
     node_writer_unique_ptr_type node_writer_fast{};
     node_writer_unique_ptr_type node_writer_slow{};
 
-    // currently maintain a fixed len history
-    // Note that we don't assume VERSION_HISTORY_LEN always equals
-    // root_offsets_ring_t capacity, rather can be less than
-    static constexpr auto VERSION_HISTORY_LEN = 1000;
-    static_assert(
-        VERSION_HISTORY_LEN <=
-        detail::db_metadata::root_offsets_ring_t::capacity());
+    static constexpr uint64_t MAX_HISTORY_LEN =
+        detail::db_metadata::root_offsets_ring_t::capacity();
 
-    UpdateAuxImpl(MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr)
+    UpdateAuxImpl(
+        MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
+        uint64_t const history_len = MAX_HISTORY_LEN)
     {
         if (io_) {
-            set_io(io_);
+            set_io(io_, history_len);
             // reset offsets
             auto const &db_offsets = db_metadata()->db_offsets;
             compact_offset_fast = db_offsets.last_compact_offset_fast;
@@ -489,7 +486,7 @@ public:
                *current_upsert_tid_ != gettid();
     }
 
-    void set_io(MONAD_ASYNC_NAMESPACE::AsyncIO *);
+    void set_io(MONAD_ASYNC_NAMESPACE::AsyncIO *, uint64_t history_length);
 
     void unset_io();
 
@@ -547,8 +544,7 @@ public:
         func(db_metadata_[1], std::forward<Args>(args)...);
     }
 
-    // The following two functions should only be invoked after completing a
-    // block commit
+    // This function should only be invoked after completing a upsert
     void advance_db_offsets_to(
         chunk_offset_t fast_offset, chunk_offset_t slow_offset) noexcept;
 
@@ -557,6 +553,7 @@ public:
     void fast_forward_next_version(uint64_t version) noexcept;
 
     void update_slow_fast_ratio_metadata() noexcept;
+    void update_history_length_metadata(uint64_t history_len) noexcept;
 
     // WARNING: This is destructive
     void rewind_to_match_offsets();
@@ -644,6 +641,8 @@ public:
 
     uint32_t num_chunks(chunk_list const list) const noexcept;
 
+    uint64_t version_history_length() const noexcept;
+
     // Following funcs on db history are for on disk db only. In
     // memory db does not have any version history.
     // Db history range, returned version NOT always valid
@@ -730,13 +729,17 @@ class UpdateAux final : public UpdateAuxImpl
     }
 
 public:
-    UpdateAux(MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr)
-        : UpdateAuxImpl(io_)
+    UpdateAux(
+        MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
+        uint64_t const history_len = MAX_HISTORY_LEN)
+        : UpdateAuxImpl(io_, history_len)
     {
     }
 
-    UpdateAux(LockType &&lock, MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr)
-        : UpdateAuxImpl(io_)
+    UpdateAux(
+        LockType &&lock, MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
+        uint64_t const history_len = MAX_HISTORY_LEN)
+        : UpdateAuxImpl(io_, history_len)
         , lock_(std::move(lock))
     {
     }
@@ -776,8 +779,10 @@ class UpdateAux<void> final : public UpdateAuxImpl
     }
 
 public:
-    UpdateAux(MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr)
-        : UpdateAuxImpl(io_)
+    UpdateAux(
+        MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
+        uint64_t const history_len = MAX_HISTORY_LEN)
+        : UpdateAuxImpl(io_, history_len)
     {
     }
 

@@ -25,6 +25,7 @@ struct OnDiskDbConfig
     std::vector<std::filesystem::path> dbname_paths{};
     int64_t file_size_db{512}; // truncate files to this size
     unsigned concurrent_read_io_limit{1024};
+    uint64_t history_length{20000};
 };
 
 struct ReadOnlyOnDiskDbConfig

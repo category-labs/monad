@@ -49,6 +49,7 @@ public:
     nlohmann::json to_json();
     size_t prefetch_current_root();
     uint64_t get_block_number() const;
+    uint64_t get_history_length() const;
 
     // for testing only
     std::pair<bytes32_t, bytes32_t>

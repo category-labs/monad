@@ -825,6 +825,7 @@ public:
                         &old_metadata->root_offsets.arr_,
                         sizeof(metadata->root_offsets.arr_));
                     metadata->slow_fast_ratio = old_metadata->slow_fast_ratio;
+                    metadata->history_length = old_metadata->history_length;
                 });
                 fast_list_base_insertion_count =
                     old_metadata->fast_list_begin()->insertion_count();

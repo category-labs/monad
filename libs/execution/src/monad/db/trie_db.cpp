@@ -435,6 +435,11 @@ uint64_t TrieDb::get_block_number() const
     return block_number_;
 }
 
+uint64_t TrieDb::get_history_length() const
+{
+    return db_.get_history_length();
+}
+
 void TrieDb::set_block_number(uint64_t const n)
 {
     block_number_ = n;

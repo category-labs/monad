@@ -50,6 +50,8 @@ using namespace monad::test;
 
 namespace
 {
+    constexpr unsigned DBTEST_HISTORY_LENGTH = 1000;
+
     template <class... Updates>
     void upsert_updates_flat_list(
         Db &db, NibblesView prefix, uint64_t const block_id, Updates... updates)
@@ -77,7 +79,7 @@ namespace
     struct OnDiskDbFixture : public ::testing::Test
     {
         StateMachineAlwaysMerkle machine;
-        Db db{machine, OnDiskDbConfig{}};
+        Db db{machine, OnDiskDbConfig{.history_length = DBTEST_HISTORY_LENGTH}};
     };
 
     struct OnDiskDbWithFileFixture : public ::testing::Test
@@ -102,7 +104,9 @@ namespace
                 return ret;
             }()}
             , machine{StateMachineAlwaysMerkle{}}
-            , config{OnDiskDbConfig{.dbname_paths = {dbname}}}
+            , config{OnDiskDbConfig{
+                  .dbname_paths = {dbname},
+                  .history_length = DBTEST_HISTORY_LENGTH}}
             , db{machine, config}
         {
         }
@@ -397,9 +401,9 @@ TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
     constexpr uint8_t const test_cached_level = 1;
     size_t i;
     constexpr size_t read_per_iteration = 3;
-    constexpr size_t expected_num_success_callbacks =
-        (UpdateAuxImpl::VERSION_HISTORY_LEN - 1) * read_per_iteration;
-    for (i = 1; i < UpdateAuxImpl::VERSION_HISTORY_LEN; ++i) {
+    size_t const expected_num_success_callbacks =
+        (ro_db.get_history_length() - 1) * read_per_iteration;
+    for (i = 1; i < ro_db.get_history_length(); ++i) {
         // upsert new version
         upsert_updates_flat_list(
             db,
@@ -541,7 +545,7 @@ TEST(ReadOnlyDbTest, open_empty_rodb)
 {
     std::filesystem::path const dbname{
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_empty_XXXXXX"};
+        "monad_db_test_empty"};
 
     // construct RWDb, storage pool is set up but db remains empty
     StateMachineAlwaysMerkle machine{};
@@ -568,7 +572,7 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
     std::atomic<bool> done{false};
     std::filesystem::path const dbname{
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_concurrent_XXXXXX"};
+        "monad_db_test_concurrent"};
 
     auto const prefix = 0x00_hex;
 
@@ -657,13 +661,15 @@ TEST(DbTest, read_only_db_traverse_concurrent)
 {
     std::filesystem::path const dbname{
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_traverse_concurrent_XXXXXX"};
+        "monad_db_test_traverse_concurrent"};
     StateMachineAlwaysMerkle machine{};
     OnDiskDbConfig config{// with compaction
                           .compaction = true,
                           .dbname_paths = {dbname},
-                          .file_size_db = 8};
+                          .file_size_db = 8,
+                          .history_length = DBTEST_HISTORY_LENGTH};
     Db db{machine, config};
+    EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
     auto [bytes_alloc, updates_alloc] = prepare_random_updates(20);
 
     uint64_t version = 0;
@@ -686,6 +692,7 @@ TEST(DbTest, read_only_db_traverse_concurrent)
 
     ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
     Db ro_db{ro_config};
+    EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
     DummyTraverseMachine traverse_machine;
 
     // read thread loop to traverse block 0 until it gets erased
@@ -698,16 +705,16 @@ TEST(DbTest, read_only_db_traverse_concurrent)
 
     done.store(true, std::memory_order_release);
     writer.join();
-    EXPECT_TRUE(version >= UpdateAuxImpl::VERSION_HISTORY_LEN)
+    EXPECT_TRUE(version >= ro_db.get_history_length())
         << "Version " << version << " should be gte"
-        << UpdateAuxImpl::VERSION_HISTORY_LEN;
+        << ro_db.get_history_length();
 }
 
 TEST(DBTest, benchmark_blocking_parallel_traverse)
 {
     std::filesystem::path const dbname{
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_benchmark_traverse_XXXXXX"};
+        "monad_db_test_benchmark_traverse"};
     StateMachineAlwaysMerkle machine{};
     OnDiskDbConfig config{// with compaction
                           .compaction = true,
@@ -749,7 +756,7 @@ TEST(ReadOnlyDbTest, load_correct_root_upon_reopen_nonempty_db)
 {
     std::filesystem::path const dbname{
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_reopen_XXXXXX"};
+        "monad_db_test_reopen"};
     StateMachineAlwaysMerkle machine{};
     OnDiskDbConfig config{.dbname_paths = {dbname}, .file_size_db = 8};
 
@@ -1166,7 +1173,7 @@ TEST_F(OnDiskDbFixture, rw_query_old_version)
         this->db.get(prefix + kv[0].first, block_id).value(), kv[0].second);
 
     size_t i;
-    for (i = 1; i < UpdateAuxImpl::VERSION_HISTORY_LEN; ++i) {
+    for (i = 1; i < this->db.get_history_length(); ++i) {
         // Write next block_id
         write(kv[1].first, kv[1].second, block_id + i);
         // can still query earlier block_id from rw
@@ -1189,15 +1196,18 @@ TEST(DbTest, move_trie_causes_discontinuous_history)
 {
     std::filesystem::path const dbname{
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_discontinuous_history_XXXXXX"};
+        "monad_db_test_discontinuous_history"};
     StateMachineAlwaysMerkle machine{};
     OnDiskDbConfig config{// with compaction
                           .compaction = true,
                           .sq_thread_cpu{std::nullopt},
                           .dbname_paths = {dbname},
-                          .file_size_db = 8};
+                          .file_size_db = 8,
+                          .history_length = DBTEST_HISTORY_LENGTH};
     Db db{machine, config};
+    EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
     Db ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
 
     // continuous upsert() and move_trie_version_forward() leads to
     // discontinuity in history
@@ -1247,14 +1257,14 @@ TEST(DbTest, move_trie_causes_discontinuous_history)
 
     // Move trie version to a later dest_block_id, which invalidates some
     // but not all history versions
-    uint64_t const dest_block_id = 1005;
+    uint64_t const dest_block_id = ro_db.get_history_length() + 5;
     db.move_trie_version_forward(block_id, dest_block_id);
 
-    // Now valid version are 6-9, 1005
+    // Now valid version are 6-9, 1005 (DBTEST_HISTORY_LENGTH+5)
     EXPECT_EQ(ro_db.get_latest_block_id(), dest_block_id);
     EXPECT_EQ(
         ro_db.get_earliest_block_id(),
-        dest_block_id - UpdateAuxImpl::VERSION_HISTORY_LEN + 1);
+        dest_block_id - ro_db.get_history_length() + 1);
 
     // src block 10 should be invalid
     EXPECT_TRUE(ro_db.find(prefix, block_id).has_error());
@@ -1288,7 +1298,7 @@ TEST(DbTest, move_trie_causes_discontinuous_history)
     EXPECT_EQ(ro_db.get_latest_block_id(), max_block_id);
 
     // Jump way far ahead, which erases all histories
-    uint64_t far_dest_block_id = UpdateAuxImpl::VERSION_HISTORY_LEN * 3;
+    uint64_t far_dest_block_id = ro_db.get_history_length() * 3;
     db.move_trie_version_forward(db.get_latest_block_id(), far_dest_block_id);
 
     EXPECT_EQ(

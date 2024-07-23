@@ -290,6 +290,7 @@ int main(int argc, char *argv[])
     int file_size_db = 512; // truncate to 512 gb by default
     unsigned random_read_benchmark_threads = 0;
     unsigned concurrent_read_io_limit = 0;
+    uint64_t history_len = 100;
 
     struct runtime_reconfig_t
     {
@@ -315,7 +316,7 @@ int main(int argc, char *argv[])
         cli.add_option("-n", n_slices, "n batch updates");
         cli.add_option("--kcpu", sq_thread_cpu, "io_uring sq_thread_cpu");
         cli.add_flag("--erase", erase, "test erase");
-        cli.add_flag(
+        auto *is_inmemory = cli.add_flag(
             "--in-memory", in_memory, "config trie to in memory or on-disk");
         cli.add_flag(
             "--empty-cpu-caches",
@@ -348,6 +349,9 @@ int main(int argc, char *argv[])
             "--runtime-reconfig-file",
             runtime_reconfig.path,
             "a file to parse every five seconds to adjust config as test runs");
+        cli.add_option(
+               "--history", history_len, "Initialize disk db history length")
+            ->excludes(is_inmemory);
         cli.parse(argc, argv);
 
         MONAD_ASSERT(in_memory + append < 2);
@@ -507,7 +511,8 @@ int main(int argc, char *argv[])
                 }
             };
 
-            auto aux = in_memory ? UpdateAux<>() : UpdateAux<>(&io);
+            auto aux =
+                in_memory ? UpdateAux<>() : UpdateAux<>(&io, history_len);
             monad::test::StateMachineMerkleWithPrefix<prefix_len> sm{};
 
             Node::UniquePtr root{};
@@ -651,7 +656,7 @@ int main(int argc, char *argv[])
                 Node::UniquePtr &root = std::get<1>(*ret);
                 NodeCursor &state_start = std::get<2>(*ret);
                 if (!in_memory) {
-                    aux.set_io(&io);
+                    aux.set_io(&io, history_len);
                 }
                 root.reset(read_node_blocking(
                     io.storage_pool(), aux.get_latest_root_offset()));

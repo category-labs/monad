@@ -45,7 +45,7 @@ namespace detail
     // For the memory map of the first conventional chunk
     struct db_metadata
     {
-        static constexpr char const *MAGIC = "MND5";
+        static constexpr char const *MAGIC = "MND6";
         static constexpr unsigned MAGIC_STRING_LEN = 4;
 
         friend class MONAD_MPT_NAMESPACE::UpdateAuxImpl;
@@ -71,7 +71,7 @@ namespace detail
         // ring buffer is under capacity.
         struct root_offsets_ring_t
         {
-            static constexpr size_t SIZE = 1024;
+            static constexpr size_t SIZE = 65536;
             static_assert(
                 (SIZE & (SIZE - 1)) == 0, "root offsets must be a power of 2");
 
@@ -197,6 +197,9 @@ namespace detail
         tool if you modify anything after this!
         */
         float slow_fast_ratio;
+        // cannot use atomic_uint64_t here because db_metadata has to be
+        // trivially copyable for db_copy().
+        uint64_t history_length;
 
         // return INVALID_BLOCK_ID indicates that db is empty
         uint64_t get_max_version_in_history() const noexcept
@@ -544,6 +547,14 @@ namespace detail
                     curr_version = root_offsets.max_version();
                 }
             }
+        }
+
+        void set_history_length_(uint64_t history_len) noexcept
+        {
+            auto g = hold_dirty();
+            MONAD_ASSERT(history_len <= root_offsets_ring_t::capacity());
+            reinterpret_cast<std::atomic_uint64_t *>(&history_length)
+                ->store(history_len, std::memory_order_relaxed);
         }
 
         void update_slow_fast_ratio_(float const ratio) noexcept

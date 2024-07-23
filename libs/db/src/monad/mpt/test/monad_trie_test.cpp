@@ -152,14 +152,17 @@ Node::UniquePtr batch_upsert_commit(
     fprintf(
         stdout,
         "next_key_id: %lu, nkeys upserted: %lu, upsert+commit in RAM: %f "
-        "/s, total_t %.4f s, max creads %u\n=====\n",
+        "/s, total_t %.4f s",
         (key_offset + vec_idx + nkeys) % MAX_NUM_KEYS,
         nkeys,
         (double)nkeys / tm_ram,
-        tm_ram,
-        aux.io->max_reads_in_flight());
+        tm_ram);
+    if (aux.is_on_disk()) {
+        fprintf(stdout, ", max creads %u", aux.io->max_reads_in_flight());
+        aux.io->reset_records();
+    }
+    fprintf(stdout, "\n=====\n");
     fflush(stdout);
-    aux.io->reset_records();
 
     if (csv_writer) {
         csv_writer << (key_offset + vec_idx + nkeys) << ","
@@ -285,7 +288,6 @@ int main(int argc, char *argv[])
     bool compaction = false;
     bool use_iopoll = false;
     int file_size_db = 512; // truncate to 512 gb by default
-    uint64_t block_id = INVALID_BLOCK_ID;
     unsigned random_read_benchmark_threads = 0;
     unsigned concurrent_read_io_limit = 0;
 
@@ -301,7 +303,8 @@ int main(int argc, char *argv[])
     CLI::App cli{"monad_merge_trie_test"};
     try {
         printf("main() runs on tid %ld\n", syscall(SYS_gettid));
-        cli.add_flag("--append", append, "append at a specific block in db");
+        cli.add_flag(
+            "--append", append, "append to the latest block in existing db");
         cli.add_option(
             "--db-names",
             dbname_paths,
@@ -326,8 +329,6 @@ int main(int argc, char *argv[])
             "--random-keys", random_keys, "generate random integers as keys");
         cli.add_flag("--compaction", compaction, "perform compaction on disk");
         cli.add_flag("--use-iopoll", use_iopoll, "use i/o polling in io_uring");
-        cli.add_option(
-            "--block-id", block_id, "block id to start inserting at");
         cli.add_option(
             "--file-size-gb",
             file_size_db,
@@ -506,20 +507,15 @@ int main(int argc, char *argv[])
                 }
             };
 
-            UpdateAux<> aux{};
+            auto aux = in_memory ? UpdateAux<>() : UpdateAux<>(&io);
             monad::test::StateMachineMerkleWithPrefix<prefix_len> sm{};
-            if (!in_memory) {
-                aux.set_io(&io);
-            }
 
             Node::UniquePtr root{};
             if (append) {
                 root.reset(read_node_blocking(
                     io.storage_pool(), aux.get_latest_root_offset()));
             }
-            if (block_id == INVALID_BLOCK_ID) {
-                block_id = aux.db_history_max_version() + 1;
-            }
+            auto block_id = in_memory ? 0 : (aux.db_history_max_version() + 1);
             printf("starting block id %lu\n", block_id);
 
             auto begin_test = std::chrono::steady_clock::now();
@@ -659,7 +655,9 @@ int main(int argc, char *argv[])
                 }
                 root.reset(read_node_blocking(
                     io.storage_pool(), aux.get_latest_root_offset()));
-                state_start = *root;
+                auto [res, errc] = find_blocking(aux, *root, state_nibbles);
+                MONAD_ASSERT(errc == find_result::success);
+                state_start = res;
                 return ret;
             };
             {

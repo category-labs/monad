@@ -7,6 +7,7 @@
 #include <monad/core/bytes_hash_compare.hpp>
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
+#include <monad/execution/trace.hpp>
 #include <monad/lru/lru_cache.hpp>
 #include <monad/state2/state_deltas.hpp>
 
@@ -64,6 +65,7 @@ public:
 
     virtual std::optional<Account> read_account(Address const &address) override
     {
+        TRACE_TXN_EVENT(StartReadAccount);
         {
             AccountsCache::ConstAccessor acc{};
             if (accounts_.find(acc, address)) {
@@ -79,6 +81,7 @@ public:
         Address const &address, Incarnation incarnation,
         bytes32_t const &key) override
     {
+        TRACE_TXN_EVENT(StartReadStorage);
         StorageKey const skey{address, incarnation, key};
         {
             StorageCache::ConstAccessor acc{};
@@ -94,6 +97,8 @@ public:
     virtual std::shared_ptr<CodeAnalysis>
     read_code(bytes32_t const &code_hash) override
     {
+        TRACE_TXN_EVENT(StartReadCode);
+
         {
             CodeCache::ConstAccessor it{};
             if (code_.find(it, code_hash)) {

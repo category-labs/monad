@@ -9,20 +9,29 @@ namespace detail
 {
     struct TrieUpdateCollectedStats
     {
-        unsigned num_nodes_created{0};
         // counters
-        unsigned num_nodes_copied{0};
-        unsigned num_compaction_reads{0};
-        unsigned nodes_copied_from_fast_to_slow{0};
-        unsigned nodes_copied_from_fast_to_fast{0};
-        unsigned nodes_copied_from_slow_to_slow{0};
+        unsigned nodes_created_or_updated{0};
+        // reads stats
+        unsigned nreads_compaction{0};
         // [0]: fast, [1]: slow
-        unsigned nreads_before_offset[2] = {0, 0};
-        unsigned nreads_after_offset[2] = {0, 0};
-        unsigned bytes_read_before_offset[2] = {0, 0};
-        unsigned bytes_read_after_offset[2] = {0, 0};
-        unsigned nodes_copied_for_compacting_slow = 0;
-        unsigned nodes_copied_for_compacting_fast = 0;
+        unsigned nreads_before_compact_offset[2] = {0, 0};
+        unsigned nreads_after_compact_offset[2] = {0, 0};
+        unsigned bytes_read_before_compact_offset[2] = {0, 0};
+        unsigned bytes_read_after_compact_offset[2] = {0, 0};
+
+        // node copy stats
+        unsigned compacted_nodes_in_fast{0}; // fast to slow
+        unsigned compacted_nodes_in_slow{0}; // slow to slow
+        unsigned nodes_copied_fast_to_fast_for_fast{0};
+        unsigned nodes_copied_fast_to_fast_for_slow{0};
+        unsigned nodes_copied_slow_to_fast_for_slow{0};
+
+        // bytes copied stats
+        // Sum of the following three equals the current block slow ring
+        // growth
+        unsigned compacted_bytes_in_fast{0}; // copied from fast to slow
+        unsigned compacted_bytes_in_slow{0}; // copied from slow to slow
+        unsigned bytes_copied_slow_to_fast_for_slow{0};
 
         void reset()
         {
@@ -31,7 +40,7 @@ namespace detail
         }
     };
 
-    static_assert(sizeof(TrieUpdateCollectedStats) == 64);
+    static_assert(sizeof(TrieUpdateCollectedStats) == 72);
     static_assert(alignof(TrieUpdateCollectedStats) == 4);
     static_assert(std::is_trivially_copyable_v<TrieUpdateCollectedStats>);
 }

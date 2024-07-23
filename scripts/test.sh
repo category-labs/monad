@@ -2,8 +2,10 @@
 
 set -Eeuo pipefail
 
+BUILD_DIR="${1:-build}"
+
 CTEST_PARALLEL_LEVEL=${CTEST_PARALLEL_LEVEL:-$(nproc)} \
-  ctest --output-on-failure --timeout 300 --test-dir build
+  ctest --output-on-failure --timeout 300 --test-dir "${BUILD_DIR}"
 
 PYTEST_MATCH_ARGS=""
 if [ "${CC}" != "clang" ] || [ "${CMAKE_BUILD_TYPE}" != "RelWithDebInfo" ]; then

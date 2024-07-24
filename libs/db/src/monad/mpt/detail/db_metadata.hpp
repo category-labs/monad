@@ -508,7 +508,7 @@ namespace detail
             capacity_in_free_list -= bytes;
         }
 
-        void advance_db_offsets_to(
+        void advance_db_offsets_to_(
             db_offsets_info_t const &offsets_to_apply) noexcept
         {
             auto g = hold_dirty();
@@ -516,20 +516,20 @@ namespace detail
         }
 
         void
-        append_root_offset(chunk_offset_t const latest_root_offset) noexcept
+        append_root_offset_(chunk_offset_t const latest_root_offset) noexcept
         {
             auto g = hold_dirty();
             root_offsets.push(latest_root_offset);
         }
 
-        void update_root_offset(
+        void update_root_offset_(
             size_t const i, chunk_offset_t const latest_root_offset) noexcept
         {
             auto g = hold_dirty();
             root_offsets.assign(i, latest_root_offset);
         }
 
-        void fast_forward_next_version(uint64_t const new_version)
+        void fast_forward_next_version_(uint64_t const new_version)
         {
             auto g = hold_dirty();
             uint64_t curr_version = root_offsets.max_version();

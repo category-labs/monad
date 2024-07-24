@@ -125,7 +125,7 @@ void UpdateAuxImpl::advance_db_offsets_to(
     MONAD_ASSERT(db_metadata()->at(fast_offset.id)->in_fast_list);
     MONAD_ASSERT(db_metadata()->at(slow_offset.id)->in_slow_list);
     auto do_ = [&](detail::db_metadata *m) {
-        m->advance_db_offsets_to(detail::db_metadata::db_offsets_info_t{
+        m->advance_db_offsets_to_(detail::db_metadata::db_offsets_info_t{
             fast_offset,
             slow_offset,
             this->compact_offset_fast,
@@ -142,7 +142,7 @@ void UpdateAuxImpl::append_root_offset(
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
-        m->append_root_offset(root_offset);
+        m->append_root_offset_(root_offset);
     };
     do_(db_metadata_[0]);
     do_(db_metadata_[1]);
@@ -153,7 +153,7 @@ void UpdateAuxImpl::update_root_offset(
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
-        m->update_root_offset(i, root_offset);
+        m->update_root_offset_(i, root_offset);
     };
     do_(db_metadata_[0]);
     do_(db_metadata_[1]);
@@ -163,7 +163,7 @@ void UpdateAuxImpl::fast_forward_next_version(uint64_t const version) noexcept
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
-        m->fast_forward_next_version(version);
+        m->fast_forward_next_version_(version);
     };
     do_(db_metadata_[0]);
     do_(db_metadata_[1]);

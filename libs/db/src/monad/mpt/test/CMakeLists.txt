@@ -50,4 +50,11 @@ monad_compile_options(monad_trie_test_statistical_generation_test)
 target_link_libraries(monad_trie_test_statistical_generation_test
                       PUBLIC monad_core)
 
+# stress test
+add_executable(read_only_db_stress_test
+               "read_only_db_stress_test.cpp")
+monad_compile_options(read_only_db_stress_test)
+target_link_libraries(read_only_db_stress_test
+                      PUBLIC monad_trie monad_async monad_core CLI11::CLI11)
+
 add_subdirectory("geth_freezer_db_analyzer")

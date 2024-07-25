@@ -71,6 +71,8 @@ private:
     {
         n_storage_value_.fetch_add(1, std::memory_order_release);
     }
+
+    bytes32_t merkle_root(mpt::Nibbles const &);
 };
 
 MONAD_NAMESPACE_END

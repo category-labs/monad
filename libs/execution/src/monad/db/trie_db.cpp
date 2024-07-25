@@ -260,19 +260,17 @@ void TrieDb::increment_block_number()
 
 bytes32_t TrieDb::state_root()
 {
-    auto const value = db_.get_data(state_nibbles, block_number_);
-    if (!value.has_value() || value.value().empty()) {
-        return NULL_ROOT;
-    }
-    bytes32_t root;
-    MONAD_ASSERT(value.value().size() == sizeof(bytes32_t));
-    std::copy_n(value.value().data(), sizeof(bytes32_t), root.bytes);
-    return root;
+    return merkle_root(state_nibbles);
 }
 
 bytes32_t TrieDb::receipts_root()
 {
-    auto const value = db_.get_data(receipt_nibbles, block_number_);
+    return merkle_root(receipt_nibbles);
+}
+
+bytes32_t TrieDb::merkle_root(mpt::Nibbles const &nibbles)
+{
+    auto const value = db_.get_data(nibbles, block_number_);
     if (!value.has_value() || value.value().empty()) {
         return NULL_ROOT;
     }

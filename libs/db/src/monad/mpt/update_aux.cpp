@@ -120,6 +120,10 @@ void UpdateAuxImpl::advance_db_offsets_to(
     chunk_offset_t const fast_offset, chunk_offset_t const slow_offset) noexcept
 {
     MONAD_ASSERT(is_on_disk());
+    // To detect bugs in replacing fast/slow node writer to the wrong chunk
+    // list
+    MONAD_ASSERT(db_metadata()->at(fast_offset.id)->in_fast_list);
+    MONAD_ASSERT(db_metadata()->at(slow_offset.id)->in_slow_list);
     auto do_ = [&](detail::db_metadata *m) {
         m->advance_db_offsets_to(detail::db_metadata::db_offsets_info_t{
             fast_offset,
@@ -182,7 +186,9 @@ void UpdateAuxImpl::rewind_to_match_offsets()
     MONAD_ASSERT(is_on_disk());
     // Free all chunks after fast_offset.id
     auto const fast_offset = db_metadata()->db_offsets.start_of_wip_offset_fast;
+    MONAD_ASSERT(db_metadata()->at(fast_offset.id)->in_fast_list);
     auto const slow_offset = db_metadata()->db_offsets.start_of_wip_offset_slow;
+    MONAD_ASSERT(db_metadata()->at(slow_offset.id)->in_slow_list);
 
     auto const *ci = db_metadata_[0]->at(fast_offset.id);
     while (ci != db_metadata_[0]->fast_list_end()) {

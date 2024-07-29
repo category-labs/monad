@@ -1211,6 +1211,8 @@ node_writer_unique_ptr_type replace_node_writer(
     // Can't use add_to_offset(), because it asserts if we go past the
     // capacity
     auto offset_of_next_writer = node_writer->sender().offset();
+    bool const in_fast_list =
+        aux.db_metadata()->at(offset_of_next_writer.id)->in_fast_list;
     file_offset_t offset = offset_of_next_writer.offset;
     offset += node_writer->sender().written_buffer_bytes();
     offset_of_next_writer.offset = offset & chunk_offset_t::max_offset;
@@ -1220,9 +1222,8 @@ node_writer_unique_ptr_type replace_node_writer(
     detail::db_metadata::chunk_info_t const *ci_ = nullptr;
     uint32_t idx;
     if (offset == chunk_capacity) {
-        // If after the current write buffer we're hitting chunk capacity or the
-        // remaining bytes in current chunk not enough for the second half of
-        // node, we replace writer to the start of next chunk.
+        // If after the current write buffer we're hitting chunk capacity, we
+        // replace writer to the start of next chunk.
         ci_ = aux.db_metadata()->free_list_end();
         MONAD_ASSERT(ci_ != nullptr); // we are out of free blocks!
         idx = ci_->index(aux.db_metadata());
@@ -1245,8 +1246,6 @@ node_writer_unique_ptr_type replace_node_writer(
     if (ci_ != nullptr) {
         MONAD_DEBUG_ASSERT(ci_ == aux.db_metadata()->free_list_end());
         aux.remove(idx);
-        bool const in_fast_list =
-            aux.db_metadata()->at(offset_of_next_writer.id)->in_fast_list;
         aux.append(
             in_fast_list ? UpdateAuxImpl::chunk_list::fast
                          : UpdateAuxImpl::chunk_list::slow,
@@ -1269,7 +1268,8 @@ retry:
         .offset_written_to = INVALID_OFFSET,
         .bytes_appended = size,
         .io_state = node_writer.get()};
-    [[likely]] if (size <= remaining_bytes) {
+    [[likely]] if (size <= remaining_bytes) { // Node can fit into current
+                                              // buffer
         ret.offset_written_to =
             sender->offset().add_to_offset(sender->written_buffer_bytes());
         auto *where_to_serialize = sender->advance_buffer_append(size);
@@ -1283,7 +1283,8 @@ retry:
             sender->offset().offset - sender->written_buffer_bytes();
         node_writer_unique_ptr_type new_node_writer{};
         unsigned offset_in_on_disk_node = 0;
-        if (size > chunk_remaining_bytes) { // start at a new chunk
+        if (size > chunk_remaining_bytes) {
+            // Node won't fit in the rest of current chunk, start at a new chunk
             new_node_writer =
                 replace_node_writer_to_start_at_new_chunk(aux, node_writer);
             if (!new_node_writer) {
@@ -1332,6 +1333,7 @@ retry:
         // shall be recycled by the i/o receiver
         node_writer.release();
         node_writer = std::move(new_node_writer);
+        // serialize the rest of the node to buffer
         while (offset_in_on_disk_node < size) {
             auto *where_to_serialize =
                 (unsigned char *)node_writer->sender().buffer().data();

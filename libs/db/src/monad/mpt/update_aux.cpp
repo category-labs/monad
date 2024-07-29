@@ -281,7 +281,7 @@ void UpdateAuxImpl::set_io(AsyncIO *io_)
                      detail::db_metadata::MAGIC_STRING_LEN)) {
             if (can_write_to_map) {
                 // Overwrite the front copy with the backup copy
-                memcpy(db_metadata_[0], db_metadata_[1], map_size);
+                db_copy(db_metadata_[0], db_metadata_[1], map_size);
             }
             else {
                 // We don't have writable maps, so can't forward progress
@@ -299,17 +299,14 @@ void UpdateAuxImpl::set_io(AsyncIO *io_)
                  db_metadata_[1]->magic,
                  detail::db_metadata::MAGIC,
                  detail::db_metadata::MAGIC_STRING_LEN)) {
-        MONAD_ASSERT(
-            !db_metadata_[0]->is_dirty().load(std::memory_order_acquire) ||
-            !db_metadata_[1]->is_dirty().load(std::memory_order_acquire));
         if (can_write_to_map) {
             // Replace the dirty copy with the non-dirty copy
             if (db_metadata_[0]->is_dirty().load(std::memory_order_acquire)) {
-                memcpy(db_metadata_[0], db_metadata_[1], map_size);
+                db_copy(db_metadata_[0], db_metadata_[1], map_size);
             }
             else if (db_metadata_[1]->is_dirty().load(
                          std::memory_order_acquire)) {
-                memcpy(db_metadata_[1], db_metadata_[0], map_size);
+                db_copy(db_metadata_[1], db_metadata_[0], map_size);
             }
         }
         else {
@@ -365,6 +362,7 @@ void UpdateAuxImpl::set_io(AsyncIO *io_)
             ci.prev_chunk_id = ci.next_chunk_id =
                 detail::db_metadata::chunk_info_t::INVALID_CHUNK_ID;
         }
+        // magics are not set yet, so memcpy is fine here
         memcpy(db_metadata_[1], db_metadata_[0], map_size);
 
         // Insert all chunks into the free list

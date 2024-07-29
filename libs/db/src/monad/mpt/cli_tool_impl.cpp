@@ -818,12 +818,12 @@ public:
                 });
                 do_([&](monad::mpt::detail::db_metadata *metadata) {
                     metadata->db_offsets.store(old_metadata->db_offsets);
-                    metadata->root_offsets.next_version.store(
-                        old_metadata->root_offsets.next_version.load());
+                    metadata->root_offsets.next_version_ =
+                        old_metadata->root_offsets.next_version_;
                     memcpy(
-                        &metadata->root_offsets.arr,
-                        &old_metadata->root_offsets.arr,
-                        sizeof(metadata->root_offsets.arr));
+                        &metadata->root_offsets.arr_,
+                        &old_metadata->root_offsets.arr_,
+                        sizeof(metadata->root_offsets.arr_));
                     metadata->slow_fast_ratio = old_metadata->slow_fast_ratio;
                 });
                 fast_list_base_insertion_count =

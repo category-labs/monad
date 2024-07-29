@@ -1,17 +1,23 @@
 #pragma once
 
 #include <monad/mpt/config.hpp>
+
+#include <monad/core/assert.h>
 #include <monad/mpt/util.hpp>
 
 #include <monad/async/detail/start_lifetime_as_polyfill.hpp>
 
 #include "unsigned_20.hpp"
 
+#include <atomic>
+#include <type_traits>
+
 MONAD_MPT_NAMESPACE_BEGIN
 class UpdateAuxImpl;
 
 namespace detail
 {
+    struct db_metadata;
 #ifndef __clang__
     constexpr bool bitfield_layout_check()
     {
@@ -33,6 +39,8 @@ namespace detail
         return ret.x[3];
     }
 #endif
+    inline void
+    db_copy(db_metadata *dest, db_metadata const *src, size_t bytes);
 
     // For the memory map of the first conventional chunk
     struct db_metadata
@@ -41,6 +49,11 @@ namespace detail
         static constexpr unsigned MAGIC_STRING_LEN = 4;
 
         friend class MONAD_MPT_NAMESPACE::UpdateAuxImpl;
+        friend inline void
+        db_copy(db_metadata *dest, db_metadata const *src, size_t bytes);
+
+        // Needed to please the compiler in db_copy()
+        db_metadata &operator=(db_metadata const &) = default;
 
         char magic[MAGIC_STRING_LEN];
         uint32_t chunk_info_count : 20; // items in chunk_info below
@@ -61,8 +74,25 @@ namespace detail
             static constexpr size_t SIZE = 1024;
             static_assert(
                 (SIZE & (SIZE - 1)) == 0, "root offsets must be a power of 2");
-            std::atomic<uint64_t> next_version;
-            std::atomic<chunk_offset_t> arr[SIZE];
+
+            uint64_t next_version_; // all bits zero turns into INVALID_BLOCK_ID
+            chunk_offset_t arr_[SIZE];
+
+            struct as_atomics_
+            {
+                std::atomic<uint64_t> next_version;
+                std::atomic<chunk_offset_t> arr[SIZE];
+            };
+
+            as_atomics_ *self()
+            {
+                return start_lifetime_as<as_atomics_>(this);
+            }
+
+            as_atomics_ const *self() const
+            {
+                return start_lifetime_as<as_atomics_ const>(this);
+            }
 
             static constexpr size_t capacity() noexcept
             {
@@ -71,43 +101,52 @@ namespace detail
 
             void push(chunk_offset_t const o) noexcept
             {
-                auto const wp = next_version.load(std::memory_order_relaxed);
+                auto *self = this->self();
+                auto const wp =
+                    self->next_version.load(std::memory_order_relaxed);
                 auto const next_wp = wp + 1;
-                arr[wp & (SIZE - 1)].store(o, std::memory_order_release);
-                next_version.store(next_wp, std::memory_order_relaxed);
+                MONAD_ASSERT(next_wp != 0);
+                self->arr[wp & (SIZE - 1)].store(o, std::memory_order_release);
+                self->next_version.store(next_wp, std::memory_order_release);
             }
 
             void assign(size_t const i, chunk_offset_t const o) noexcept
             {
-                arr[i & (SIZE - 1)].store(o, std::memory_order_release);
+                self()->arr[i & (SIZE - 1)].store(o, std::memory_order_release);
             }
 
             chunk_offset_t operator[](size_t const i) const noexcept
             {
-                return arr[i & (SIZE - 1)].load(std::memory_order_acquire);
+                return self()->arr[i & (SIZE - 1)].load(
+                    std::memory_order_acquire);
             }
 
             uint64_t max_version() const noexcept
             {
-                auto const wp = next_version.load(std::memory_order_relaxed);
+                auto const wp =
+                    self()->next_version.load(std::memory_order_acquire);
                 return wp - 1;
             }
 
             void reset_all(uint64_t const version)
             {
+                self()->next_version.store(0, std::memory_order_release);
                 for (size_t i = 0; i < capacity(); ++i) {
                     push(INVALID_OFFSET);
                 }
-                next_version.store(version, std::memory_order_relaxed);
+                self()->next_version.store(version, std::memory_order_release);
             }
 
         } root_offsets;
 
+        static_assert(
+            sizeof(root_offsets_ring_t::as_atomics_) == sizeof(root_offsets));
+
         struct db_offsets_info_t
         {
-            // starting offsets of current wip db block's contents. all contents
-            // starting this point are not yet validated, and should be rewound
-            // if restart.
+            // starting offsets of current wip db block's contents. all
+            // contents starting this point are not yet validated, and
+            // should be rewound if restart.
             chunk_offset_t start_of_wip_offset_fast;
             chunk_offset_t start_of_wip_offset_slow;
             compact_virtual_chunk_offset_t last_compact_offset_fast;
@@ -118,7 +157,8 @@ namespace detail
             db_offsets_info_t() = delete;
             db_offsets_info_t(db_offsets_info_t const &) = delete;
             db_offsets_info_t(db_offsets_info_t &&) = delete;
-            db_offsets_info_t &operator=(db_offsets_info_t const &) = delete;
+            db_offsets_info_t &operator=(db_offsets_info_t const &) =
+                default; // purely to please the compiler
             db_offsets_info_t &operator=(db_offsets_info_t &&) = delete;
             ~db_offsets_info_t() = default;
 
@@ -153,8 +193,8 @@ namespace detail
             }
         } db_offsets;
 
-        /* NOTE Remember to update the DB restore implementation in the CLI tool
-        if you modify anything after this!
+        /* NOTE Remember to update the DB restore implementation in the CLI
+        tool if you modify anything after this!
         */
         float slow_fast_ratio;
 
@@ -187,8 +227,8 @@ namespace detail
             uint64_t prev_chunk_id : 20; // same bits as from chunk_offset_t
             uint64_t in_fast_list : 1;
             uint64_t in_slow_list : 1;
-            uint64_t insertion_count0_ : 10; // align next to 8 bit boundary to
-                                             // aid codegen
+            uint64_t insertion_count0_ : 10; // align next to 8 bit boundary
+                                             // to aid codegen
             uint64_t next_chunk_id : 20; // same bits as from chunk_offset_t
             uint64_t unused0_ : 2;
             uint64_t insertion_count1_ : 10;
@@ -442,7 +482,8 @@ namespace detail
                 return;
             }
             MONAD_ASSERT(
-                "remove_() has had mid-list removals explicitly disabled to "
+                "remove_() has had mid-list removals explicitly disabled "
+                "to "
                 "prevent insertion count becoming inaccurate" == nullptr);
             auto *prev = at_(i->prev_chunk_id);
             auto *next = at_(i->next_chunk_id);
@@ -513,6 +554,64 @@ namespace detail
     };
 
     static_assert(std::is_trivially_copyable_v<db_metadata>);
+    static_assert(std::is_trivially_copy_assignable_v<db_metadata>);
+
+    inline void atomic_memcpy(
+        void *__restrict__ dest_, void const *__restrict__ src_, size_t bytes,
+        std::memory_order load_ord = std::memory_order_acquire,
+        std::memory_order store_ord = std::memory_order_release)
+    {
+        MONAD_ASSERT((((uintptr_t)dest_) & 7) == 0);
+        MONAD_ASSERT((((uintptr_t)src_) & 7) == 0);
+        MONAD_ASSERT((((uintptr_t)bytes) & 7) == 0);
+        auto *dest = reinterpret_cast<std::atomic<uint64_t> *>(dest_);
+        auto const *src = reinterpret_cast<std::atomic<uint64_t> const *>(src_);
+        while (bytes >= 64) {
+            auto const a0 = (src++)->load(load_ord);
+            auto const a1 = (src++)->load(load_ord);
+            auto const a2 = (src++)->load(load_ord);
+            auto const a3 = (src++)->load(load_ord);
+            auto const a4 = (src++)->load(load_ord);
+            auto const a5 = (src++)->load(load_ord);
+            auto const a6 = (src++)->load(load_ord);
+            auto const a7 = (src++)->load(load_ord);
+            (dest++)->store(a0, store_ord);
+            (dest++)->store(a1, store_ord);
+            (dest++)->store(a2, store_ord);
+            (dest++)->store(a3, store_ord);
+            (dest++)->store(a4, store_ord);
+            (dest++)->store(a5, store_ord);
+            (dest++)->store(a6, store_ord);
+            (dest++)->store(a7, store_ord);
+            bytes -= 64;
+        }
+        for (size_t n = 0; n < bytes; n += 8) {
+            (dest++)->store((src++)->load(load_ord), store_ord);
+        }
+    }
+
+    /* A dirty bit setting memcpy implementation, so the dirty bit gets held
+    high during the memory copy.
+    */
+    inline void db_copy(db_metadata *dest, db_metadata const *src, size_t bytes)
+    {
+        alignas(db_metadata) std::byte buffer[sizeof(db_metadata)];
+        memcpy(buffer, src, sizeof(db_metadata));
+        auto *intr = start_lifetime_as<db_metadata>(buffer);
+        MONAD_ASSERT(intr->is_dirty().load(std::memory_order_acquire) == false);
+        auto g1 = intr->hold_dirty();
+        auto g2 = dest->hold_dirty();
+        dest->root_offsets.next_version_ = 0; // INVALID_BLOCK_ID
+        auto const old_next_version = intr->root_offsets.next_version_;
+        intr->root_offsets.next_version_ = 0; // INVALID_BLOCK_ID
+        atomic_memcpy((void *)dest, buffer, sizeof(db_metadata));
+        atomic_memcpy(
+            ((std::byte *)dest) + sizeof(db_metadata),
+            ((std::byte const *)src) + sizeof(db_metadata),
+            bytes - sizeof(db_metadata));
+        dest->root_offsets.self()->next_version.store(
+            old_next_version, std::memory_order_release);
+    };
 }
 
 MONAD_MPT_NAMESPACE_END

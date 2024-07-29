@@ -14,6 +14,7 @@
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
+#include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/trace/event_trace.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
@@ -159,44 +160,13 @@ Result<std::vector<Receipt>> execute_block(
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {
-    switch (rev) {
-    case EVMC_SHANGHAI:
-        return execute_block<EVMC_SHANGHAI>(
-            chain, block, block_state, block_hash_buffer, priority_pool);
-    case EVMC_PARIS:
-        return execute_block<EVMC_PARIS>(
-            chain, block, block_state, block_hash_buffer, priority_pool);
-    case EVMC_LONDON:
-        return execute_block<EVMC_LONDON>(
-            chain, block, block_state, block_hash_buffer, priority_pool);
-    case EVMC_BERLIN:
-        return execute_block<EVMC_BERLIN>(
-            chain, block, block_state, block_hash_buffer, priority_pool);
-    case EVMC_ISTANBUL:
-        return execute_block<EVMC_ISTANBUL>(
-            chain, block, block_state, block_hash_buffer, priority_pool);
-    case EVMC_PETERSBURG:
-    case EVMC_CONSTANTINOPLE:
-        return execute_block<EVMC_PETERSBURG>(
-            chain, block, block_state, block_hash_buffer, priority_pool);
-    case EVMC_BYZANTIUM:
-        return execute_block<EVMC_BYZANTIUM>(
-            chain, block, block_state, block_hash_buffer, priority_pool);
-    case EVMC_SPURIOUS_DRAGON:
-        return execute_block<EVMC_SPURIOUS_DRAGON>(
-            chain, block, block_state, block_hash_buffer, priority_pool);
-    case EVMC_TANGERINE_WHISTLE:
-        return execute_block<EVMC_TANGERINE_WHISTLE>(
-            chain, block, block_state, block_hash_buffer, priority_pool);
-    case EVMC_HOMESTEAD:
-        return execute_block<EVMC_HOMESTEAD>(
-            chain, block, block_state, block_hash_buffer, priority_pool);
-    case EVMC_FRONTIER:
-        return execute_block<EVMC_FRONTIER>(
-            chain, block, block_state, block_hash_buffer, priority_pool);
-    default:
-        break;
-    }
+    SWITCH_EVMC_REVISION(
+        execute_block,
+        chain,
+        block,
+        block_state,
+        block_hash_buffer,
+        priority_pool);
     MONAD_ASSERT(false);
 }
 

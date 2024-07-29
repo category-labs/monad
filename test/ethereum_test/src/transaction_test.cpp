@@ -6,6 +6,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/core/transaction.hpp>
+#include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/validate_transaction.hpp>
 #include <monad/test/config.hpp>
@@ -35,7 +36,8 @@ MONAD_TEST_NAMESPACE_BEGIN
 template <evmc_revision rev>
 void process_transaction(Transaction const &txn, nlohmann::json const &expected)
 {
-    if (auto const result = static_validate_transaction<rev>(txn, std::nullopt, 1);
+    if (auto const result =
+            static_validate_transaction<rev>(txn, std::nullopt, 1);
         result.has_error()) {
         EXPECT_TRUE(expected.contains("exception"));
     }
@@ -63,32 +65,9 @@ void process_transaction(
     evmc_revision const rev, Transaction const &txn,
     nlohmann::json const &expected)
 {
-    switch (rev) {
-    case EVMC_FRONTIER:
-        return process_transaction<EVMC_FRONTIER>(txn, expected);
-    case EVMC_HOMESTEAD:
-        return process_transaction<EVMC_HOMESTEAD>(txn, expected);
-    case EVMC_TANGERINE_WHISTLE:
-        return process_transaction<EVMC_TANGERINE_WHISTLE>(txn, expected);
-    case EVMC_SPURIOUS_DRAGON:
-        return process_transaction<EVMC_SPURIOUS_DRAGON>(txn, expected);
-    case EVMC_BYZANTIUM:
-        return process_transaction<EVMC_BYZANTIUM>(txn, expected);
-    case EVMC_PETERSBURG:
-        return process_transaction<EVMC_PETERSBURG>(txn, expected);
-    case EVMC_ISTANBUL:
-        return process_transaction<EVMC_ISTANBUL>(txn, expected);
-    case EVMC_BERLIN:
-        return process_transaction<EVMC_BERLIN>(txn, expected);
-    case EVMC_LONDON:
-        return process_transaction<EVMC_LONDON>(txn, expected);
-    case EVMC_PARIS:
-        return process_transaction<EVMC_PARIS>(txn, expected);
-    case EVMC_SHANGHAI:
-        return process_transaction<EVMC_SHANGHAI>(txn, expected);
-    default:
-        MONAD_ASSERT(false);
-    }
+    MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
+    SWITCH_EVMC_REVISION(process_transaction, txn, expected);
+    MONAD_ASSERT(false);
 }
 
 void TransactionTest::TestBody()

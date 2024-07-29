@@ -9,6 +9,7 @@ namespace detail
 {
     struct TrieUpdateCollectedStats
     {
+#ifdef MONAD_MPT_COLLECT_STATS
         // counters
         unsigned nodes_created_or_updated{0};
         // reads stats
@@ -32,6 +33,10 @@ namespace detail
         unsigned compacted_bytes_in_fast{0}; // copied from fast to slow
         unsigned compacted_bytes_in_slow{0}; // copied from slow to slow
         unsigned bytes_copied_slow_to_fast_for_slow{0};
+#else
+        unsigned compacted_bytes_in_slow{0};
+        char padding[4];
+#endif
 
         void reset()
         {
@@ -40,7 +45,11 @@ namespace detail
         }
     };
 
+#ifdef MONAD_MPT_COLLECT_STATS
     static_assert(sizeof(TrieUpdateCollectedStats) == 72);
+#else
+    static_assert(sizeof(TrieUpdateCollectedStats) == 8);
+#endif
     static_assert(alignof(TrieUpdateCollectedStats) == 4);
     static_assert(std::is_trivially_copyable_v<TrieUpdateCollectedStats>);
 }

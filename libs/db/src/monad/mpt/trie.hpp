@@ -148,13 +148,16 @@ class UpdateAuxImpl
 
     void reset_node_writers();
 
-    void advance_compact_offsets();
+    void advance_compact_offsets(uint64_t version_to_erase);
+
+    std::pair<uint32_t, uint32_t>
+    min_offsets_of_version(uint64_t version) const;
 
     void free_compacted_chunks();
 
     /******** Compaction ********/
-    uint32_t remove_chunks_before_count_fast_{0};
-    uint32_t remove_chunks_before_count_slow_{0};
+    uint32_t chunks_to_remove_before_count_fast_{0};
+    uint32_t chunks_to_remove_before_count_slow_{0};
     // speed control var
     compact_virtual_chunk_offset_t last_block_end_offset_fast_{
         MIN_COMPACT_VIRTUAL_OFFSET};
@@ -333,6 +336,8 @@ public:
     node_writer_unique_ptr_type node_writer_fast{};
     node_writer_unique_ptr_type node_writer_slow{};
 
+    detail::TrieUpdateCollectedStats stats;
+
     static constexpr uint64_t MAX_HISTORY_LEN =
         detail::db_metadata::root_offsets_ring_t::capacity();
 
@@ -497,9 +502,6 @@ public:
 
     void move_trie_version_forward(uint64_t src, uint64_t dest);
 
-#if MONAD_MPT_COLLECT_STATS
-    detail::TrieUpdateCollectedStats stats;
-#endif
     // collect and print trie update stats
     void reset_stats();
     void collect_number_nodes_created_stats();
@@ -653,8 +655,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAuxImpl) ==
-    120 + MONAD_MPT_COLLECT_STATS * sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAuxImpl) == 120 + sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAuxImpl) == 8);
 
 template <lockable_or_void LockType = void>

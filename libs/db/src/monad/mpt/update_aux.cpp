@@ -722,18 +722,30 @@ uint32_t UpdateAuxImpl::num_chunks(chunk_list const list) const noexcept
 {
     switch (list) {
     case chunk_list::free:
+        // Triggers when out of storage
+        MONAD_ASSERT(db_metadata_[0]->free_list_begin() != nullptr);
+        MONAD_ASSERT(db_metadata_[0]->free_list_end() != nullptr);
+
         return (uint32_t)(db_metadata_[0]->free_list_end()->insertion_count() -
                           db_metadata_[0]
                               ->free_list_begin()
                               ->insertion_count()) +
                1;
     case chunk_list::fast:
+        // Triggers when out of storage
+        MONAD_ASSERT(db_metadata_[0]->fast_list_begin() != nullptr);
+        MONAD_ASSERT(db_metadata_[0]->fast_list_end() != nullptr);
+
         return (uint32_t)(db_metadata_[0]->fast_list_end()->insertion_count() -
                           db_metadata_[0]
                               ->fast_list_begin()
                               ->insertion_count()) +
                1;
     case chunk_list::slow:
+        // Triggers when out of storage
+        MONAD_ASSERT(db_metadata_[0]->slow_list_begin() != nullptr);
+        MONAD_ASSERT(db_metadata_[0]->slow_list_end() != nullptr);
+
         return (uint32_t)(db_metadata_[0]->slow_list_end()->insertion_count() -
                           db_metadata_[0]
                               ->slow_list_begin()

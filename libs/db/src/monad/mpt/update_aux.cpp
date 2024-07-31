@@ -318,24 +318,25 @@ void UpdateAuxImpl::set_io(AsyncIO *io_)
         else {
             if (db_metadata_[0]->is_dirty().load(std::memory_order_acquire) ||
                 db_metadata_[1]->is_dirty().load(std::memory_order_acquire)) {
-                // Wait a bit to see if they clear before complaining
                 on_read_only_init_with_dirty_bit();
+
+                // Wait a bit to see if they clear before complaining
+                bool dirty;
                 auto const begin = std::chrono::steady_clock::now();
-                while (std::chrono::steady_clock::now() - begin <
-                           std::chrono::seconds(1) &&
-                       (db_metadata_[0]->is_dirty().load(
-                            std::memory_order_acquire) ||
-                        db_metadata_[1]->is_dirty().load(
-                            std::memory_order_acquire))) {
+                do {
+                    dirty = db_metadata_[0]->is_dirty().load(
+                                std::memory_order_acquire) ||
+                            db_metadata_[1]->is_dirty().load(
+                                std::memory_order_acquire);
                     std::this_thread::yield();
                 }
+                while (dirty && (std::chrono::steady_clock::now() - begin <
+                                 std::chrono::seconds(1)));
+
                 /* If after one second a dirty bit remains set, and we don't
                 have writable maps, can't forward progress.
                 */
-                if (db_metadata_[0]->is_dirty().load(
-                        std::memory_order_acquire) ||
-                    db_metadata_[1]->is_dirty().load(
-                        std::memory_order_acquire)) {
+                if (dirty) {
                     throw std::runtime_error("DB metadata was closed dirty, "
                                              "but not opened for healing");
                 }

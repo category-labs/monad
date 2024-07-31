@@ -319,6 +319,7 @@ void UpdateAuxImpl::set_io(AsyncIO *io_)
             if (db_metadata_[0]->is_dirty().load(std::memory_order_acquire) ||
                 db_metadata_[1]->is_dirty().load(std::memory_order_acquire)) {
                 // Wait a bit to see if they clear before complaining
+                on_read_only_init_with_dirty_bit();
                 auto const begin = std::chrono::steady_clock::now();
                 while (std::chrono::steady_clock::now() - begin <
                            std::chrono::seconds(1) &&

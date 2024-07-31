@@ -187,6 +187,8 @@ class UpdateAuxImpl
 
     virtual bool downgrade_unique_to_shared_() const noexcept = 0;
 
+    virtual void on_read_only_init_with_dirty_bit() noexcept {};
+
 protected:
     uint64_t upsert_call_count_{0};
 

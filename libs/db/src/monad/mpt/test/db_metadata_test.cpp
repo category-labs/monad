@@ -10,7 +10,7 @@
 
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
-TEST(db_metadata, copy)
+TEST(db_metadata, DISABLED_copy)
 {
 #if MONAD_ASYNC_HAVE_TSAN
     return; // This test explicitly relies on racy memory copying

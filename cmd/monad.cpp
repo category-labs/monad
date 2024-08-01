@@ -172,7 +172,7 @@ int main(int const argc, char const *argv[])
         "%(ascii_time) [%(thread)] %(filename):%(lineno) LOG_%(level_name)\t"
         "%(message)",
         "%Y-%m-%d %H:%M:%S.%Qns",
-        quill::Timezone::LocalTime);
+        quill::Timezone::GmtTime);
     quill::Config cfg;
     cfg.default_handlers.emplace_back(file_handler);
     quill::configure(cfg);

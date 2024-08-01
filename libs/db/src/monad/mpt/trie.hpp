@@ -609,9 +609,11 @@ public:
     get_root_offset_at_version(uint64_t const version) const noexcept
     {
         MONAD_ASSERT(this->is_on_disk());
-        if (version >= db_history_range_lower_bound() &&
-            version <= db_history_max_version()) {
-            return db_metadata()->root_offsets[version];
+        if (version <= db_history_max_version()) {
+            auto const offset = db_metadata()->root_offsets[version];
+            if (version >= db_history_range_lower_bound()) {
+                return offset;
+            }
         }
         return INVALID_OFFSET;
     }

@@ -195,7 +195,7 @@ int main(int const argc, char const *argv[])
             return mpt::Db{
                 *machine,
                 mpt::OnDiskDbConfig{
-                    .append = false,
+                    .append = true, // always open existing
                     .compaction = true,
                     .rd_buffers = 8192,
                     .wr_buffers = 32,
@@ -206,6 +206,8 @@ int main(int const argc, char const *argv[])
         machine = std::make_unique<InMemoryMachine>();
         return mpt::Db{*machine};
     }();
+    // db is empty upon start
+    MONAD_ASSERT(db.get_latest_block_id() == monad::mpt::INVALID_BLOCK_ID);
     TrieDb triedb{db};
     read_genesis(genesis_file, triedb);
     LOG_INFO(

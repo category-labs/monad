@@ -1387,6 +1387,9 @@ async_write_node_set_spare(UpdateAuxImpl &aux, Node &node, bool write_to_fast)
                    write_to_fast ? aux.node_writer_fast : aux.node_writer_slow,
                    node)
                    .offset_written_to;
+    MONAD_ASSERT(
+        (write_to_fast && aux.db_metadata()->at(off.id)->in_fast_list) ||
+        (!write_to_fast && aux.db_metadata()->at(off.id)->in_slow_list));
     unsigned const pages = num_pages(off.offset, node.get_disk_size());
     off.set_spare(static_cast<uint16_t>(node_disk_pages_spare_15{pages}));
     return off;

@@ -3,7 +3,7 @@
 MONAD_MPT_NAMESPACE_BEGIN
 
 // Turn on to collect stats
-#define MONAD_MPT_COLLECT_STATS 0
+#define MONAD_MPT_COLLECT_STATS 1
 
 namespace detail
 {

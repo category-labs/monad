@@ -37,7 +37,7 @@ using namespace MONAD_ASYNC_NAMESPACE;
 // #define MONAD_MPT_INITIALIZE_POOL_WITH_CONSECUTIVE_CHUNKS 1
 
 virtual_chunk_offset_t
-UpdateAuxImpl::physical_to_virtual(chunk_offset_t offset) const noexcept
+UpdateAuxImpl::physical_to_virtual(chunk_offset_t const offset) const noexcept
 {
     MONAD_ASSERT(offset.id < io->chunk_count());
     auto const *ci = db_metadata_[0]->at(offset.id);
@@ -51,7 +51,7 @@ UpdateAuxImpl::physical_to_virtual(chunk_offset_t offset) const noexcept
 }
 
 std::pair<UpdateAuxImpl::chunk_list, detail::unsigned_20>
-UpdateAuxImpl::chunk_list_and_age(uint32_t idx) const noexcept
+UpdateAuxImpl::chunk_list_and_age(uint32_t const idx) const noexcept
 {
     MONAD_ASSERT(is_on_disk());
     auto const *ci = db_metadata_[0]->at(idx);
@@ -71,9 +71,14 @@ UpdateAuxImpl::chunk_list_and_age(uint32_t idx) const noexcept
     return ret;
 }
 
-void UpdateAuxImpl::append(chunk_list list, uint32_t idx) noexcept
+void UpdateAuxImpl::append(chunk_list const list, uint32_t const idx) noexcept
 {
     MONAD_ASSERT(is_on_disk());
+    auto const *ci = db_metadata_[0]->at(idx);
+    printf(
+        "Append chunk from %s ",
+        ci->in_fast_list ? "fast" : ((ci->in_slow_list) ? "slow" : "free"));
+
     auto do_ = [&](detail::db_metadata *m) {
         switch (list) {
         case chunk_list::free:
@@ -89,6 +94,11 @@ void UpdateAuxImpl::append(chunk_list list, uint32_t idx) noexcept
     };
     do_(db_metadata_[0]);
     do_(db_metadata_[1]);
+    printf(
+        "to %s, idx: %4u, insertion_count: %u\n",
+        ci->in_fast_list ? "fast" : ((ci->in_slow_list) ? "slow" : "free"),
+        idx,
+        (uint32_t)ci->insertion_count());
     if (list == chunk_list::free) {
         auto chunk = io->storage_pool().chunk(storage_pool::seq, idx);
         auto capacity = chunk->capacity();
@@ -98,12 +108,16 @@ void UpdateAuxImpl::append(chunk_list list, uint32_t idx) noexcept
     }
 }
 
-void UpdateAuxImpl::remove(uint32_t idx) noexcept
+void UpdateAuxImpl::remove(uint32_t const idx) noexcept
 {
     MONAD_ASSERT(is_on_disk());
-    bool const is_free_list =
-        (!db_metadata_[0]->at_(idx)->in_fast_list &&
-         !db_metadata_[0]->at_(idx)->in_slow_list);
+    auto const *ci = db_metadata_[0]->at(idx);
+    printf(
+        "Remove chunk from %s list, idx: %4u, insertion_count: %u\n",
+        ci->in_fast_list ? "fast" : ((ci->in_slow_list) ? "slow" : "free"),
+        idx,
+        (uint32_t)ci->insertion_count());
+    bool const is_free_list = (!ci->in_fast_list && !ci->in_slow_list);
     auto do_ = [&](detail::db_metadata *m) { m->remove_(m->at_(idx)); };
     do_(db_metadata_[0]);
     do_(db_metadata_[1]);
@@ -743,6 +757,16 @@ uint32_t UpdateAuxImpl::num_chunks(chunk_list const list) const noexcept
 
 void UpdateAuxImpl::print_update_stats()
 {
+    printf(
+        "Compaction stats: compact offset: fast {count %u, offset %u}, slow "
+        "{count %u, offset %u}. compaction range: fast %4u KB, slow %4u KB\n",
+        compact_offset_fast >> 12,
+        (compact_offset_fast << 20) >> 4,
+        compact_offset_slow >> 12,
+        (compact_offset_slow << 20) >> 4,
+        (uint32_t)compact_offset_range_fast_ << 6,
+        (uint32_t)compact_offset_range_slow_ << 6);
+
 #if MONAD_MPT_COLLECT_STATS
     printf("created/updated nodes: %u\n", stats.num_nodes_created);
 

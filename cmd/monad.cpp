@@ -148,7 +148,7 @@ int main(int const argc, char const *argv[])
     unsigned nthreads = 4;
     unsigned nfibers = 32;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
-    unsigned sync_sq_thread_cpu = sq_thread_cpu - 1;
+    unsigned sync_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     auto log_level = quill::LogLevel::Info;
     std::string statesync_path;
 

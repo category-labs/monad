@@ -17,6 +17,8 @@
 #include <monad/mpt/upward_tnode.hpp>
 #include <monad/mpt/util.hpp>
 
+#include <quill/Quill.h>
+
 #include <algorithm>
 #include <bit>
 #include <cassert>
@@ -1765,10 +1767,10 @@ retry:
         // initiate current node writer
         if (node_writer->sender().written_buffer_bytes() !=
             node_writer->sender().buffer().size()) {
-            std::cout << "async_write_node "
-                      << node_writer->sender().written_buffer_bytes()
-                      << " != " << node_writer->sender().buffer().size()
-                      << std::endl;
+            LOG_INFO_CFORMAT(
+                "async_write_node %zu != %zu",
+                node_writer->sender().written_buffer_bytes(),
+                node_writer->sender().buffer().size());
         }
         MONAD_ASSERT(
             node_writer->sender().written_buffer_bytes() ==

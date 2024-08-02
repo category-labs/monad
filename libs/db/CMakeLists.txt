@@ -58,6 +58,7 @@ target_include_directories(monad_trie PRIVATE "third_party")
 monad_compile_options(monad_trie)
 target_link_libraries(monad_trie PRIVATE Boost::boost)
 target_link_libraries(monad_trie PUBLIC monad_async)
+target_link_libraries(monad_trie PUBLIC quill::quill) # TODO: remove
 add_executable(monad_mpt "src/monad/mpt/cli_tool_main.cpp"
                          "src/monad/mpt/cli_tool_impl.cpp")
 monad_compile_options(monad_mpt)
@@ -70,11 +71,15 @@ function(add_trie_test)
   cmake_parse_arguments(ADD_TRIE_TEST "" "${ONE_VALUE_ARGS}"
                         "${MULTI_VALUE_ARGS}" ${ARGN})
 
-  add_executable(${ADD_TRIE_TEST_TARGET} ${ADD_TRIE_TEST_SOURCES})
+  add_executable(
+    ${ADD_TRIE_TEST_TARGET}
+    "${PROJECT_SOURCE_DIR}/../../test/unit/common/src/test/main.cpp"
+    ${ADD_TRIE_TEST_SOURCES})
   monad_compile_options(${ADD_TRIE_TEST_TARGET})
   target_link_libraries(
-    ${ADD_TRIE_TEST_TARGET} PUBLIC monad_trie GTest::gtest_main
-                                   ${ADD_TRIE_TEST_LINK_LIBRARIES})
+    ${ADD_TRIE_TEST_TARGET}
+    PUBLIC monad_trie GTest::GTest monad_unit_test_common
+           ${ADD_TRIE_TEST_LINK_LIBRARIES})
   gtest_discover_tests(
     ${ADD_TRIE_TEST_TARGET}
     TEST_PREFIX ${PROJECT_NAME}/ TEST_FILTER ${ADD_TRIE_TEST_TEST_FILTER}

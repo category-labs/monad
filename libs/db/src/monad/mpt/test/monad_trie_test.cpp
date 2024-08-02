@@ -29,6 +29,8 @@
 #include <boost/fiber/fiber.hpp>
 #include <boost/fiber/operations.hpp>
 
+#include <quill/Quill.h>
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -371,6 +373,8 @@ int main(int argc, char *argv[])
             csv_writer.exceptions(std::ios::failbit | std::ios::badbit);
             csv_writer << "\"Keys written\",\"Per second\"\n";
         }
+
+        quill::start(true);
 
         /* This does a good job of emptying the CPU's data caches and
         data TLB. It does not empty instruction caches nor instruction TLB,

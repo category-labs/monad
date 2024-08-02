@@ -12,6 +12,8 @@
 
 #include <CLI/CLI.hpp>
 
+#include <quill/Quill.h>
+
 #include <atomic>
 #include <chrono>
 #include <filesystem>
@@ -114,6 +116,8 @@ int main(int argc, char *const argv[])
                "A comma-separated list of previously created database paths")
             ->required();
         cli.parse(argc, argv);
+
+        quill::start(true);
 
         struct sigaction sig;
         sig.sa_handler = &on_signal;

@@ -27,6 +27,7 @@
 
 #include <CLI/CLI.hpp>
 
+#include <monad/mpt/logger.h>
 #include <quill/LogLevel.h>
 #include <quill/Quill.h>
 #include <quill/detail/LogMacros.h>
@@ -317,6 +318,24 @@ int main(int const argc, char const *argv[])
     quill::configure(cfg);
     quill::start(true);
     quill::get_root_logger()->set_log_level(log_level);
+
+    auto quill_logger = [](log_level_t const level, char const *message) {
+        switch (level) {
+        case log_level_t::DEBUG:
+            LOG_DEBUG("{}", message);
+            break;
+        case log_level_t::INFO:
+            LOG_INFO("{}", message);
+            break;
+        case log_level_t::ERROR:
+            LOG_ERROR("{}", message);
+            break;
+        default:
+            LOG_INFO("{}", message);
+        }
+    };
+    db_set_logger(quill_logger);
+
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
 
 #ifdef ENABLE_EVENT_TRACING

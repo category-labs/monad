@@ -3,7 +3,7 @@
 MONAD_MPT_NAMESPACE_BEGIN
 
 // Turn on to collect stats
-#define MONAD_MPT_COLLECT_STATS 0
+#define MONAD_MPT_COLLECT_STATS 1
 
 namespace detail
 {
@@ -33,6 +33,10 @@ namespace detail
         unsigned compacted_bytes_in_fast{0}; // copied from fast to slow
         unsigned compacted_bytes_in_slow{0}; // copied from slow to slow
         unsigned bytes_copied_slow_to_fast_for_slow{0};
+
+        // expire stats
+        unsigned nodes_updated_expire{0};
+        unsigned nreads_expire{0};
 #else
         unsigned compacted_bytes_in_slow{0};
         char padding[4];
@@ -46,7 +50,7 @@ namespace detail
     };
 
 #ifdef MONAD_MPT_COLLECT_STATS
-    static_assert(sizeof(TrieUpdateCollectedStats) == 72);
+    static_assert(sizeof(TrieUpdateCollectedStats) == 80);
 #else
     static_assert(sizeof(TrieUpdateCollectedStats) == 8);
 #endif

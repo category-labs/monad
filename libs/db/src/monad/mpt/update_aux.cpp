@@ -9,6 +9,7 @@
 #include <monad/core/unordered_map.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/detail/unsigned_20.hpp>
+#include <monad/mpt/logger.h>
 #include <monad/mpt/state_machine.hpp>
 #include <monad/mpt/trie.hpp>
 #include <monad/mpt/update.hpp>
@@ -889,6 +890,19 @@ Node::UniquePtr UpdateAuxImpl::do_update(
         }
         if (prev_root) {
             advance_compact_offsets(*prev_root, version);
+            log_message(
+                log_level_t::INFO,
+                "Before upserting version %lu, compaction offset: fast %u "
+                "{%u,%u}, slow %u {%u,%u}, range: fast %uKB, slow %uKB",
+                version,
+                compact_offset_fast,
+                compact_offset_fast >> 12,
+                (compact_offset_fast << 20) >> 4,
+                compact_offset_slow,
+                compact_offset_slow >> 12,
+                (compact_offset_slow << 20) >> 4,
+                compact_offset_range_fast_ << 6,
+                compact_offset_range_slow_ << 6);
         }
         else { // no compaction if trie upsert on an empty trie
             compact_offset_fast = MIN_COMPACT_VIRTUAL_OFFSET;
@@ -915,8 +929,32 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     auto root_update = make_update(
         {}, compact_offsets_bytes, false, std::move(updates), version);
     root_updates.push_front(root_update);
-    return upsert(
+    auto root = upsert(
         *this, version, sm, std::move(prev_root), std::move(root_updates));
+    if (compaction) {
+        print_stats(version);
+    }
+    auto const curr_fast_writer_offset =
+        physical_to_virtual(node_writer_fast->sender().offset());
+    auto const curr_slow_writer_offset =
+        physical_to_virtual(node_writer_slow->sender().offset());
+    log_message(
+        INFO,
+        "Finish upserting version %lu. Current offset fast {%u,%u}, slow "
+        "{%u,%u}",
+        version,
+        curr_fast_writer_offset.count,
+        curr_fast_writer_offset.offset,
+        curr_slow_writer_offset.count,
+        curr_slow_writer_offset.offset);
+    log_message(
+        INFO,
+        "Disk usage %.4f: %u fast chunks, %u slow chunks, %u free chunks.",
+        disk_usage(),
+        num_chunks(chunk_list::fast),
+        num_chunks(chunk_list::slow),
+        num_chunks(chunk_list::free));
+    return root;
 }
 
 void UpdateAuxImpl::erase_version(uint64_t const version)
@@ -944,12 +982,15 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
     constexpr uint64_t min_history_length = 256;
 
     // Shorten history length when disk usage is high
+    auto const max_version = db_history_max_version();
+    if (max_version == INVALID_BLOCK_ID) {
+        return;
+    }
+    auto const history_length_before =
+        max_version - db_history_min_valid_version() + 1;
     auto const current_disk_usage = disk_usage();
     if (current_disk_usage > upper_bound &&
-        version_history_length() > min_history_length) {
-        std::cout << "Adjust db history length down from "
-                  << version_history_length();
-        auto const max_version = db_history_max_version();
+        history_length_before > min_history_length) {
         while (disk_usage() > upper_bound &&
                version_history_length() > min_history_length) {
             auto const version_to_erase = db_history_min_valid_version();
@@ -963,15 +1004,22 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
         MONAD_ASSERT(
             disk_usage() <= upper_bound ||
             version_history_length() == min_history_length);
-        std::cout << " to " << version_history_length() << std::endl;
+        log_message(
+            INFO,
+            "Adjust db history length down from %lu to %lu",
+            history_length_before,
+            version_history_length());
     }
     // Raise history length limit when disk usage falls low
     else if (auto const offsets = root_offsets();
              current_disk_usage < lower_bound &&
              version_history_length() < offsets.capacity()) {
         update_history_length_metadata(offsets.capacity());
-        std::cout << "Adjust db history length up to " << offsets.capacity()
-                  << std::endl;
+        log_message(
+            INFO,
+            "Adjust db history length up from %lu to %lu",
+            history_length_before,
+            version_history_length());
     }
 }
 
@@ -1191,61 +1239,73 @@ uint32_t UpdateAuxImpl::num_chunks(chunk_list const list) const noexcept
     return 0;
 }
 
-void UpdateAuxImpl::print_update_stats()
+void UpdateAuxImpl::print_stats(uint64_t const version)
 {
 #if MONAD_MPT_COLLECT_STATS
-    printf(
-        "======\n"
-        "nodes created or updated: %u\n",
-        stats.nodes_created_or_updated);
+    char buf[16 << 10];
+    char *p = buf;
+    p += sprintf(
+        p,
+        "version %lu, nodes created or updated: %u, nodes updated for expire: "
+        "%u, nreads for expire: %u\n",
+        version,
+        stats.nodes_created_or_updated,
+        stats.nodes_updated_expire,
+        stats.nreads_expire);
 
-    if (compact_offset_fast) {
-        printf(
-            "------\n"
-            "Ring  |  Copied  | CompactRange | Ratio \n"
-            "Fast  |  %5ukb |  %7ukb   | %.2f%%\n",
-            stats.compacted_bytes_in_fast >> 10,
+    if (compact_offset_range_fast_) {
+        p += sprintf(
+            p,
+            "-----------------------------------------\n"
+            "Ring |  Copied | CompactRange | Ratio (in KB)\n"
+            "Fast |%8.2f |  %11u | %.2f%%\n",
+            stats.compacted_bytes_in_fast / 1024.0,
             compact_offset_range_fast_ << 6,
             100.0 * stats.compacted_bytes_in_fast /
                 (compact_offset_range_fast_ << 16));
         if (compact_offset_range_slow_) {
-            printf(
-                "Slow  |  %5ukb |  %7ukb   | %.2f%%\n",
-                stats.compacted_bytes_in_slow >> 10,
+            p += sprintf(
+                p,
+                "Slow |%8.2f |  %11u | %.2f%%\n",
+                stats.compacted_bytes_in_slow / 1024.0,
                 compact_offset_range_slow_ << 6,
                 100.0 * stats.compacted_bytes_in_slow /
                     (compact_offset_range_slow_ << 16));
+            // slow list compaction range vs growth
+            auto const total_bytes_written_to_slow =
+                stats.compacted_bytes_in_fast + stats.compacted_bytes_in_slow;
+            p += sprintf(
+                p,
+                "-----------------------------------------\n"
+                "Slow Ring CompactRange: %uKB, Data Written To Slow Ring (in "
+                "KB)\n"
+                "%8s |%10s |%9s |%8s |  %s\n"
+                "%8.2f |%10.2f |%9.2f |%8.2f |  %.2f%%\n",
+                compact_offset_range_slow_ << 6,
+                "F-S",
+                "Active S-S",
+                "Other S-F",
+                "Total",
+                "Written/Compacted",
+                stats.compacted_bytes_in_fast / 1024.0,
+                stats.compacted_bytes_in_slow / 1024.0,
+                stats.bytes_copied_slow_to_fast_for_slow / 1024.0,
+                total_bytes_written_to_slow / 1024.0,
+                100.0 * total_bytes_written_to_slow /
+                    (compact_offset_range_slow_ << 16));
         }
-
-        // slow list compaction range vs growth
-        auto const total_bytes_written_to_slow =
-            stats.compacted_bytes_in_fast + stats.compacted_bytes_in_slow;
-        printf(
-            "------\n"
-            "Slow ring data written\n"
-            "%8s |%8s |%10s |%10s |%8s |  %s\n"
-            " %6ukb |%6ukb |%8ukb |%8ukb |%6ukb |  %.2f%%\n",
-            "Compacted",
-            "F-S",
-            "active S-S",
-            "other S-F",
-            "Total",
-            "Written/Compacted",
-            compact_offset_range_slow_ << 6,
-            stats.compacted_bytes_in_fast >> 10,
-            stats.compacted_bytes_in_slow >> 10,
-            stats.bytes_copied_slow_to_fast_for_slow >> 10,
-            total_bytes_written_to_slow >> 10,
-            100.0 * total_bytes_written_to_slow /
-                (compact_offset_range_slow_ << 16));
+        else {
+            p += sprintf(p, "Slow | No advance of compaction offset\n");
+        }
 
         // num nodes copied:
         auto const nodes_copied_for_slow =
             stats.compacted_nodes_in_fast +
             stats.nodes_copied_fast_to_fast_for_fast;
-        printf(
-            "------\nNodes copied\n"
-            "Fast: active F-S %u (%.2f%%), F-F %u "
+        p += sprintf(
+            p,
+            "-----------------------------------------\nNodes Copied:\n"
+            "Fast: fast to slow %u (%.2f%%), fast to fast %u "
             "(%.2f%%)\n",
             stats.compacted_nodes_in_fast,
             100.0 * stats.compacted_nodes_in_fast / (nodes_copied_for_slow),
@@ -1257,9 +1317,10 @@ void UpdateAuxImpl::print_update_stats()
                 stats.compacted_nodes_in_slow +
                 stats.nodes_copied_fast_to_fast_for_slow +
                 stats.nodes_copied_slow_to_fast_for_slow;
-            printf(
-                "Slow: active S-S %u (%.2f%%), F-F %u (%.2f%%), other S-F %u "
-                "(%.2f%%)\n",
+            p += sprintf(
+                p,
+                "Slow: active slow to slow %u (%.2f%%), fast to fast %u "
+                "(%.2f%%), other slow to fast %u (%.2f%%)\n",
                 stats.compacted_nodes_in_slow,
                 100.0 * stats.compacted_nodes_in_slow / nodes_copied_for_slow,
                 stats.nodes_copied_fast_to_fast_for_slow,
@@ -1269,11 +1330,10 @@ void UpdateAuxImpl::print_update_stats()
                 100.0 * stats.nodes_copied_slow_to_fast_for_slow /
                     nodes_copied_for_slow);
         }
-    }
 
-    if (compact_offset_range_fast_) {
-        printf(
-            "------\n"
+        p += sprintf(
+            p,
+            "-----------------------------------------\n"
             "Fast: compact reads within compaction range %u / "
             "total compact reads %u = %.4f\n",
             stats.nreads_before_compact_offset[0],
@@ -1282,42 +1342,40 @@ void UpdateAuxImpl::print_update_stats()
             (double)stats.nreads_before_compact_offset[0] /
                 (stats.nreads_before_compact_offset[0] +
                  stats.nreads_after_compact_offset[0]));
-        if (compact_offset_range_fast_) {
-            printf(
-                "Fast: bytes read within compaction range %.2fmb / "
-                "compaction offset range %.2fmb = %.4f, bytes read out of "
-                "compaction range %.2fmb\n",
-                (double)stats.bytes_read_before_compact_offset[0] / 1024 / 1024,
-                (double)compact_offset_range_fast_ / 16,
-                (double)stats.bytes_read_before_compact_offset[0] /
-                    compact_offset_range_fast_ / 1024 / 64,
-                (double)stats.bytes_read_after_compact_offset[0] / 1024 / 1024);
+        p += sprintf(
+            p,
+            "Fast: bytes read within compaction range %.2f MB / "
+            "compaction range %.2f MB = %.4f, bytes read out of "
+            "compaction range %.2f MB\n",
+            (double)stats.bytes_read_before_compact_offset[0] / 1024 / 1024,
+            (double)compact_offset_range_fast_ / 16,
+            (double)stats.bytes_read_before_compact_offset[0] /
+                compact_offset_range_fast_ / 1024 / 64,
+            (double)stats.bytes_read_after_compact_offset[0] / 1024 / 1024);
+        if (compact_offset_range_slow_) {
+            p += sprintf(
+                p,
+                "Slow: reads within compaction range %u / "
+                "total compact reads %u = %.4f\n",
+                stats.nreads_before_compact_offset[1],
+                stats.nreads_before_compact_offset[1] +
+                    stats.nreads_after_compact_offset[1],
+                (double)stats.nreads_before_compact_offset[1] /
+                    (stats.nreads_before_compact_offset[1] +
+                     stats.nreads_after_compact_offset[1]));
+            p += sprintf(
+                p,
+                "Slow: bytes read within compaction range %.2f MB / "
+                "compaction range %.2f MB = %.4f, bytes read out of "
+                "compaction range %.2f MB\n",
+                (double)stats.bytes_read_before_compact_offset[1] / 1024 / 1024,
+                (double)compact_offset_range_slow_ / 16,
+                (double)stats.bytes_read_before_compact_offset[1] /
+                    compact_offset_range_slow_ / 1024 / 64,
+                (double)stats.bytes_read_after_compact_offset[1] / 1024 / 1024);
         }
     }
-    if (compact_offset_range_slow_) {
-        printf(
-            "Slow: reads within compaction range %u / "
-            "total compact reads %u = %.4f\n",
-            stats.nreads_before_compact_offset[1],
-            stats.nreads_before_compact_offset[1] +
-                stats.nreads_after_compact_offset[1],
-            (double)stats.nreads_before_compact_offset[1] /
-                (stats.nreads_before_compact_offset[1] +
-                 stats.nreads_after_compact_offset[1]));
-        printf(
-            "Slow: bytes read within compaction range %.2fmb / "
-            "compaction offset range %.2fmb = %.4f, bytes read out of "
-            "compaction range %.2fmb\n",
-            (double)stats.bytes_read_before_compact_offset[1] / 1024 / 1024,
-            (double)compact_offset_range_slow_ / 16,
-            (double)stats.bytes_read_before_compact_offset[1] /
-                compact_offset_range_slow_ / 1024 / 64,
-            (double)stats.bytes_read_after_compact_offset[1] / 1024 / 1024);
-    }
-    printf(
-        "Fast list grow %u kb, Slow list grow %u kb\n",
-        last_block_disk_growth_fast_ << 6,
-        last_block_disk_growth_slow_ << 6);
+    log_message(INFO, buf);
 #endif
 }
 
@@ -1355,6 +1413,20 @@ void UpdateAuxImpl::collect_compaction_read_stats(
 #else
     (void)physical_node_offset;
     (void)bytes_to_read;
+#endif
+}
+
+void UpdateAuxImpl::collect_expire_stats(bool const is_read)
+{
+#if MONAD_MPT_COLLECT_STATS
+    if (is_read) {
+        ++stats.nreads_expire;
+    }
+    else {
+        ++stats.nodes_updated_expire;
+    }
+#elif
+    (void)is_read;
 #endif
 }
 

@@ -19,6 +19,7 @@
 #include <monad/io/ring.hpp>
 #include <monad/mpt/detail/boost_fiber_workarounds.hpp>
 #include <monad/mpt/find_request_sender.hpp>
+#include <monad/mpt/logger.h>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/node.hpp>
 #include <monad/mpt/state_machine.hpp>
@@ -28,6 +29,8 @@
 
 #include <boost/fiber/fiber.hpp>
 #include <boost/fiber/operations.hpp>
+
+#include <quill/Quill.h>
 
 #include <algorithm>
 #include <array>
@@ -371,6 +374,27 @@ int main(int argc, char *argv[])
             csv_writer.exceptions(std::ios::failbit | std::ios::badbit);
             csv_writer << "\"Keys written\",\"Per second\"\n";
         }
+
+        quill::start(true);
+        auto log_level = quill::LogLevel::Info;
+        quill::get_root_logger()->set_log_level(log_level);
+
+        auto quill_logger = [](log_level_t const level, char const *message) {
+            switch (level) {
+            case log_level_t::DEBUG:
+                LOG_DEBUG("{}", message);
+                break;
+            case log_level_t::INFO:
+                LOG_INFO("{}", message);
+                break;
+            case log_level_t::ERROR:
+                LOG_ERROR("{}", message);
+                break;
+            default:
+                LOG_INFO("{}", message);
+            }
+        };
+        db_set_logger(quill_logger);
 
         /* This does a good job of emptying the CPU's data caches and
         data TLB. It does not empty instruction caches nor instruction TLB,

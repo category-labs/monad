@@ -421,8 +421,7 @@ namespace detail
                 return;
             }
             MONAD_ASSERT(
-                "remove_() has had mid-list removals explicitly disabled "
-                "to "
+                "remove_() has had mid-list removals explicitly disabled to "
                 "prevent insertion count becoming inaccurate" == nullptr);
             auto *prev = at_(i->prev_chunk_id);
             auto *next = at_(i->next_chunk_id);

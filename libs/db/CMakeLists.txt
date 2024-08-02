@@ -39,6 +39,8 @@ add_library(
   "src/monad/mpt/find_notify_fiber.cpp"
   "src/monad/mpt/find_request_sender.cpp"
   "src/monad/mpt/find_request_sender.hpp"
+  "src/monad/mpt/logger.h"
+  "src/monad/mpt/logger.c"
   "src/monad/mpt/nibbles_view.hpp"
   "src/monad/mpt/nibbles_view_fmt.hpp"
   "src/monad/mpt/node.cpp"

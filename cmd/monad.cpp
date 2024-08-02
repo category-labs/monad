@@ -167,6 +167,10 @@ int main(int const argc, char const *argv[])
         "sq_thread_cpu field in io_uring_params, to specify the cpu set "
         "kernel poll thread is bound to in SQPOLL mode");
     cli.add_option(
+        "--sync_sq_thread_cpu",
+        sync_sq_thread_cpu,
+        "sq_thread_cpu for the state sync read only db");
+    cli.add_option(
            "--db",
            dbname_paths,
            "a space delimited list of previously created database paths. "

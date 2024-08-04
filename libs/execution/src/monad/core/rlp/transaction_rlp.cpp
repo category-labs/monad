@@ -86,16 +86,15 @@ byte_string encode_transaction(Transaction const &txn)
             encode_unsigned(txn.sc.s));
     }
     else {
-        auto const prefix = txn.type == TransactionType::eip1559
-                                ? byte_string{0x02}
-                                : byte_string{0x01};
-        return encode_string2(
-            prefix +
-            encode_list2(
-                encode_eip2718_base(txn),
-                encode_unsigned(static_cast<unsigned>(txn.sc.odd_y_parity)),
-                encode_unsigned(txn.sc.r),
-                encode_unsigned(txn.sc.s)));
+        auto const prefix =
+            byte_string(1, static_cast<unsigned char>(txn.type));
+
+        return prefix +
+               encode_list2(
+                   encode_eip2718_base(txn),
+                   encode_unsigned(static_cast<unsigned>(txn.sc.odd_y_parity)),
+                   encode_unsigned(txn.sc.r),
+                   encode_unsigned(txn.sc.s));
     }
 }
 
@@ -114,9 +113,9 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
         }
     }
     else {
-        auto const prefix = txn.type == TransactionType::eip1559
-                                ? byte_string{0x02}
-                                : byte_string{0x01};
+        auto const prefix =
+            byte_string(1, static_cast<unsigned char>(txn.type));
+
         return prefix + encode_list2(encode_eip2718_base(txn));
     }
 }
@@ -205,8 +204,12 @@ Result<Transaction> decode_transaction_legacy(byte_string_view &enc)
 Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
 {
     Transaction txn;
-    txn.type =
-        enc[0] == 0x01 ? TransactionType::eip2930 : TransactionType::eip1559;
+    MONAD_ASSERT(enc.size());
+    if (MONAD_UNLIKELY(
+            enc[0] >= static_cast<unsigned char>(TransactionType::LAST))) {
+        return DecodeError::InvalidTxnType;
+    }
+    txn.type = static_cast<TransactionType>(enc[0]);
     enc = enc.substr(1);
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
@@ -242,28 +245,12 @@ Result<Transaction> decode_transaction(byte_string_view &enc)
         return DecodeError::InputTooShort;
     }
 
-    uint8_t const &first = enc[0];
-    if (first < 0xc0) // eip 2718 - typed transaction envelope
-    {
-        BOOST_OUTCOME_TRY(auto payload, parse_string_metadata(enc));
-        MONAD_ASSERT(payload.size() > 0);
-
-        uint8_t const &type = payload[0];
-
-        if (MONAD_UNLIKELY(type != 0x01 && type != 0x02)) {
-            return DecodeError::InvalidTxnType;
-        }
-
-        Transaction txn;
-        BOOST_OUTCOME_TRY(txn, decode_transaction_eip2718(payload));
-
-        if (MONAD_UNLIKELY(!payload.empty())) {
-            return DecodeError::InputTooLong;
-        }
-
-        return txn;
+    if (enc[0] >= 0xc0) {
+        return decode_transaction_legacy(enc);
     }
-    return decode_transaction_legacy(enc);
+    else {
+        return decode_transaction_eip2718(enc);
+    }
 }
 
 MONAD_RLP_NAMESPACE_END

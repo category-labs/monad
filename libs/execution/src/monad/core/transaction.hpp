@@ -20,6 +20,7 @@ enum class TransactionType : char
     legacy = 0,
     eip2930,
     eip1559,
+    LAST,
 };
 
 struct AccessEntry

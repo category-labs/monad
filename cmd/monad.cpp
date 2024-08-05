@@ -328,7 +328,6 @@ int main(int const argc, char const *argv[])
             return mpt::Db{
                 *machine,
                 mpt::OnDiskDbConfig{
-                    .append = true,
                     .compaction = !no_compaction,
                     .rd_buffers = 8192,
                     .wr_buffers = 32,

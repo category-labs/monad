@@ -12,7 +12,6 @@ struct StateMachine;
 
 struct OnDiskDbConfig
 {
-    bool append{false};
     bool compaction{false};
     bool enable_io_polling{false};
     bool capture_io_latencies{false};
@@ -24,7 +23,6 @@ struct OnDiskDbConfig
     std::optional<uint64_t> start_block_id{std::nullopt};
     size_t lru_size_mb{0}; // node LRU is default disabled
     std::vector<std::filesystem::path> dbname_paths{};
-    int64_t file_size_db{512}; // truncate files to this size
     unsigned concurrent_read_io_limit{1024};
     uint64_t history_length{20000};
 };

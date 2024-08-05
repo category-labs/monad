@@ -1,3 +1,4 @@
+#include <monad/async/test_util.hpp>
 #include <monad/async/util.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/bytes.hpp>
@@ -37,20 +38,11 @@ namespace
 
     std::filesystem::path tmp_dbname()
     {
-        std::filesystem::path dbname(
-            MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-            "monad_statesync_test_XXXXXX");
-        int const fd = ::mkstemp((char *)dbname.native().data());
-        MONAD_ASSERT(fd != -1);
-        MONAD_ASSERT(
-            -1 !=
-            ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
-        ::close(fd);
+        std::filesystem::path dbname = async::create_temp_file(8ULL);
+        async::initialize_storage_pool(dbname);
         char const *const path = dbname.c_str();
         OnDiskMachine machine;
-        mpt::Db const db{
-            machine,
-            mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
+        mpt::Db const db{machine, mpt::OnDiskDbConfig{.dbname_paths = {path}}};
         return dbname;
     }
 
@@ -125,8 +117,7 @@ TEST(StateSync, sync_from_latest)
     auto const tmp = tmp_dbname();
     char const *const dbname = tmp.c_str();
     OnDiskMachine machine;
-    mpt::Db db{
-        machine, OnDiskDbConfig{.append = true, .dbname_paths = {dbname}}};
+    mpt::Db db{machine, OnDiskDbConfig{.dbname_paths = {dbname}}};
     std::ifstream accounts(test_resource::checkpoint_dir / "accounts");
     std::ifstream code(test_resource::checkpoint_dir / "code");
     load_from_binary(db, accounts, code, 1'000'000);
@@ -156,8 +147,7 @@ TEST(StateSync, sync_from_empty)
         &cdbname, 1, genesis.c_str(), &client, &statesync_send_request);
 
     OnDiskMachine machine;
-    mpt::Db db{
-        machine, OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}};
+    mpt::Db db{machine, OnDiskDbConfig{.dbname_paths = {sdbname}}};
     std::ifstream accounts(test_resource::checkpoint_dir / "accounts");
     std::ifstream code(test_resource::checkpoint_dir / "code");
     load_from_binary(db, accounts, code, 1'000'000);
@@ -195,8 +185,7 @@ TEST(StateSync, sync_from_some)
     auto const tmp = tmp_dbname();
     char const *const dbname = tmp.c_str();
     OnDiskMachine machine;
-    mpt::Db db{
-        machine, OnDiskDbConfig{.append = true, .dbname_paths = {dbname}}};
+    mpt::Db db{machine, OnDiskDbConfig{.dbname_paths = {dbname}}};
     TrieDb tdb{db};
     read_genesis(genesis, tdb);
     monad_statesync_server_context sctx{tdb};
@@ -319,8 +308,7 @@ TEST(StateSync, sync_from_some)
     auto const cdbname = ctmp.c_str();
     {
         OnDiskMachine machine;
-        mpt::Db cdb{
-            machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+        mpt::Db cdb{machine, OnDiskDbConfig{.dbname_paths = {cdbname}}};
         TrieDb ctdb{cdb};
         read_genesis(genesis, ctdb);
     }
@@ -386,8 +374,7 @@ TEST(StateSync, ignore_unused_code)
     {
         char const *const dbname = tmp.c_str();
         OnDiskMachine machine;
-        mpt::Db db{
-            machine, OnDiskDbConfig{.append = true, .dbname_paths = {dbname}}};
+        mpt::Db db{machine, OnDiskDbConfig{.dbname_paths = {dbname}}};
         {
             std::ifstream accounts(test_resource::checkpoint_dir / "accounts");
             std::ifstream code(test_resource::checkpoint_dir / "code");

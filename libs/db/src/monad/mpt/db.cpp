@@ -351,33 +351,9 @@ struct Db::RWOnDisk final : public Db::Impl
                     return async::storage_pool{
                         async::use_anonymous_inode_tag{}};
                 }
-                // initialize db file on disk
-                for (auto const &dbname_path : options.dbname_paths) {
-                    if (!std::filesystem::exists(dbname_path)) {
-                        int const fd = ::open(
-                            dbname_path.c_str(),
-                            O_CREAT | O_RDWR | O_CLOEXEC,
-                            0600);
-                        if (-1 == fd) {
-                            throw std::system_error(
-                                errno, std::system_category());
-                        }
-                        auto unfd = monad::make_scope_exit(
-                            [fd]() noexcept { ::close(fd); });
-                        if (-1 ==
-                            ::ftruncate(
-                                fd,
-                                options.file_size_db * 1024 * 1024 * 1024 +
-                                    24576)) {
-                            throw std::system_error(
-                                errno, std::system_category());
-                        }
-                    }
-                }
                 return async::storage_pool{
                     options.dbname_paths,
-                    options.append ? async::storage_pool::mode::open_existing
-                                   : async::storage_pool::mode::truncate};
+                    async::storage_pool::mode::open_existing};
             }()}
             , ring1{{options.uring_entries, options.enable_io_polling, options.sq_thread_cpu}}
             , ring2{options.wr_buffers}

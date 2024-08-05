@@ -4,6 +4,7 @@
 
 #include <monad/async/config.hpp>
 #include <monad/async/erased_connected_operation.hpp>
+#include <monad/async/test_util.hpp>
 #include <monad/async/util.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
@@ -91,16 +92,9 @@ namespace
 
         OnDiskDbWithFileFixture()
             : dbname{[] {
-                std::filesystem::path ret(
-                    MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-                    "monad_db_test_XXXXXX");
-                int const fd = ::mkstemp((char *)ret.native().data());
-                MONAD_ASSERT(fd != -1);
-                MONAD_ASSERT(
-                    -1 !=
-                    ::ftruncate(
-                        fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
-                ::close(fd);
+                std::filesystem::path ret =
+                    monad::async::create_temp_file(8ULL);
+                monad::async::initialize_storage_pool(ret);
                 return ret;
             }()}
             , machine{StateMachineAlwaysMerkle{}}
@@ -545,12 +539,12 @@ TEST(ReadOnlyDbTest, open_empty_rodb)
 {
     std::filesystem::path const dbname{
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_empty"};
+        "monad_db_test_empty_XXXXXX"};
+    monad::mpt::initialize_storage_pool(dbname);
 
     // construct RWDb, storage pool is set up but db remains empty
     StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig const config{
-        .compaction = true, .dbname_paths = {dbname}, .file_size_db = 8};
+    OnDiskDbConfig const config{.compaction = true, .dbname_paths = {dbname}};
     Db const db{machine, config};
 
     // construct RODb
@@ -572,7 +566,8 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
     std::atomic<bool> done{false};
     std::filesystem::path const dbname{
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_concurrent"};
+        "monad_db_test_concurrent_XXXXXX"};
+    monad::mpt::initialize_storage_pool(dbname);
 
     auto const prefix = 0x00_hex;
 
@@ -635,8 +630,7 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
     // construct RWDb
     uint64_t version = 0;
     StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig const config{
-        .compaction = true, .dbname_paths = {dbname}, .file_size_db = 8};
+    OnDiskDbConfig const config{.compaction = true, .dbname_paths = {dbname}};
     Db db{machine, config};
 
     std::thread reader(keep_query);
@@ -659,14 +653,13 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
 
 TEST(DbTest, read_only_db_traverse_concurrent)
 {
-    std::filesystem::path const dbname{
-        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_traverse_concurrent"};
+    std::filesystem::path const dbname = monad::async::create_temp_file(8ULL);
+    monad::async::initialize_storage_pool(dbname);
+
     StateMachineAlwaysMerkle machine{};
     OnDiskDbConfig config{// with compaction
                           .compaction = true,
                           .dbname_paths = {dbname},
-                          .file_size_db = 8,
                           .history_length = DBTEST_HISTORY_LENGTH};
     Db db{machine, config};
     EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
@@ -712,15 +705,14 @@ TEST(DbTest, read_only_db_traverse_concurrent)
 
 TEST(DBTest, benchmark_blocking_parallel_traverse)
 {
-    std::filesystem::path const dbname{
-        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_benchmark_traverse"};
+    std::filesystem::path const dbname = monad::async::create_temp_file(8ULL);
+    monad::async::initialize_storage_pool(dbname);
+
     StateMachineAlwaysMerkle machine{};
     OnDiskDbConfig config{// with compaction
                           .compaction = true,
                           .sq_thread_cpu{std::nullopt},
-                          .dbname_paths = {dbname},
-                          .file_size_db = 8};
+                          .dbname_paths = {dbname}};
     Db db{machine, config};
     auto [bytes_alloc, updates_alloc] = prepare_random_updates(2000);
     UpdateList ls;
@@ -756,9 +748,11 @@ TEST(ReadOnlyDbTest, load_correct_root_upon_reopen_nonempty_db)
 {
     std::filesystem::path const dbname{
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_reopen"};
+        "monad_db_test_reopen_XXXXXX"};
+    monad::mpt::initialize_storage_pool(dbname);
+
     StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig config{.dbname_paths = {dbname}, .file_size_db = 8};
+    OnDiskDbConfig config{.dbname_paths = {dbname}};
 
     auto const &kv = fixed_updates::kv;
     auto const prefix = 0x00_hex;
@@ -775,8 +769,7 @@ TEST(ReadOnlyDbTest, load_correct_root_upon_reopen_nonempty_db)
         EXPECT_EQ(ro_db.get_latest_block_id(), INVALID_BLOCK_ID);
     }
 
-    { // reopen the same db with append flag turned on
-        config.append = true;
+    { // reopen the same db
         Db db{machine, config};
         // db is still empty
         EXPECT_FALSE(db.root().is_valid());
@@ -801,7 +794,6 @@ TEST(ReadOnlyDbTest, load_correct_root_upon_reopen_nonempty_db)
     }
 
     { // reopen the same db again, this time we will have a valid root loaded
-        config.append = true;
         Db const db{machine, config};
         EXPECT_TRUE(db.root().is_valid());
         EXPECT_EQ(db.get_latest_block_id(), block_id);
@@ -1194,15 +1186,14 @@ TEST_F(OnDiskDbFixture, rw_query_old_version)
 
 TEST(DbTest, move_trie_causes_discontinuous_history)
 {
-    std::filesystem::path const dbname{
-        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_discontinuous_history"};
+    std::filesystem::path const dbname = monad::async::create_temp_file(8ULL);
+    monad::async::initialize_storage_pool(dbname);
+
     StateMachineAlwaysMerkle machine{};
     OnDiskDbConfig config{// with compaction
                           .compaction = true,
                           .sq_thread_cpu{std::nullopt},
                           .dbname_paths = {dbname},
-                          .file_size_db = 8,
                           .history_length = DBTEST_HISTORY_LENGTH};
     Db db{machine, config};
     EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);

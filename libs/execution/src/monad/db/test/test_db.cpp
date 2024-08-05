@@ -1,3 +1,4 @@
+#include <monad/async/test_util.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
@@ -199,10 +200,8 @@ TYPED_TEST_SUITE(DBTest, DBTypes);
 
 TEST(DBTest, read_only)
 {
-    auto const name =
-        std::filesystem::temp_directory_path() /
-        (::testing::UnitTest::GetInstance()->current_test_info()->name() +
-         std::to_string(rand()));
+    std::filesystem::path const name = monad::async::create_temp_file(8ULL);
+    monad::async::initialize_storage_pool(name);
     {
         OnDiskMachine machine;
         mpt::Db db{machine, mpt::OnDiskDbConfig{.dbname_paths = {name}}};
@@ -450,12 +449,11 @@ TYPED_TEST(DBTest, to_json)
 
     std::filesystem::path dbname{};
     if (this->on_disk) {
-        dbname = {
-            MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-            "monad_test_db_to_json"};
+        dbname = monad::async::create_temp_file(8ULL);
     }
     auto db = [&] {
         if (this->on_disk) {
+            monad::async::initialize_storage_pool(dbname);
             return mpt::Db{
                 this->machine, mpt::OnDiskDbConfig{.dbname_paths = {dbname}}};
         }

@@ -15,7 +15,6 @@ monad_statesync_client_context::monad_statesync_client_context(
         struct monad_statesync_client *, struct monad_sync_request))
     : db{machine,
          mpt::OnDiskDbConfig{
-             .append = true,
              .compaction = false,
              .rd_buffers = 8192,
              .wr_buffers = 32,

@@ -16,6 +16,7 @@
 #include <chrono>
 #include <filesystem>
 #include <limits>
+#include <list>
 #include <thread>
 #include <utility>
 
@@ -30,11 +31,10 @@ using namespace monad::test;
 std::atomic<bool> g_done{false};
 static_assert(std::atomic<bool>::is_always_lock_free); // async signal safe
 
-static std::pair<ethash::hash256, monad::byte_string>
-key_value_from_version(uint64_t const version)
+static monad::hash256 to_key(uint64_t const key)
 {
-    auto const version_bytes = serialize_as_big_endian<6>(version);
-    return std::make_pair(monad::keccak256(version_bytes), version_bytes);
+    auto const as_bytes = serialize_as_big_endian<sizeof(key)>(key);
+    return monad::keccak256(as_bytes);
 }
 
 static uint64_t
@@ -47,7 +47,7 @@ select_rand_version(Db const &db, monad::small_prng &rnd, double bias)
     double r = rnd();
     r = r / monad::small_prng::max();
     if (r > 0.25) {
-        r = std::pow(1, bias);
+        r = std::pow(r, bias);
     }
     return static_cast<uint64_t>(
         version_range_start + r * (version_range_end - version_range_start));
@@ -63,6 +63,7 @@ int main(int argc, char *const argv[])
     unsigned num_reader_threads = 4;
     unsigned num_traverse_threads = 2;
     double prng_bias = 1.66;
+    size_t num_nodes_per_version = 1;
     bool enable_compaction = true;
     int64_t storage_size_gb = 32;
     uint32_t timeout_seconds = std::numeric_limits<uint32_t>::max();
@@ -93,6 +94,10 @@ int main(int argc, char *const argv[])
             storage_size_gb,
             "Size the database can grow to (GB)");
         cli.add_option(
+            "--num-nodes-per-version",
+            num_nodes_per_version,
+            "Number of nodes to upsert per version");
+        cli.add_option(
             "--timeout",
             timeout_seconds,
             "Teardown the stress test after N seconds");
@@ -120,9 +125,17 @@ int main(int argc, char *const argv[])
 
         auto upsert_new_version = [&](Db &db, uint64_t const version) {
             UpdateList ul;
-            auto [key, value] = key_value_from_version(version);
-            auto u = make_update(key, value);
-            ul.push_front(u);
+
+            std::list<monad::hash256> hash_alloc;
+            std::list<Update> update_alloc;
+            auto const version_bytes =
+                serialize_as_big_endian<sizeof(uint64_t)>(version);
+            for (size_t k = 0; k < num_nodes_per_version; ++k) {
+                ul.push_front(update_alloc.emplace_back(make_update(
+                    hash_alloc.emplace_back(
+                        to_key(version * num_nodes_per_version + k)),
+                    version_bytes)));
+            }
 
             auto u_prefix = Update{
                 .key = prefix,
@@ -151,20 +164,27 @@ int main(int argc, char *const argv[])
 
             auto rnd = monad::thread_local_prng();
             while (!g_done.load(std::memory_order_acquire)) {
-                auto const read_version =
-                    select_rand_version(ro_db, rnd, prng_bias);
-                auto [key, value] = key_value_from_version(read_version);
-                auto const res = ro_db.get(
-                    concat(NibblesView{prefix}, NibblesView{key}),
-                    read_version);
-                if (res.has_value()) {
-                    MONAD_ASSERT(res.value() == value);
-                    ++nsuccess;
-                }
-                else {
-                    auto const min_version = ro_db.get_earliest_block_id();
-                    MONAD_ASSERT(read_version < min_version);
-                    ++nfailed;
+                auto const version = select_rand_version(ro_db, rnd, prng_bias);
+                auto const version_bytes =
+                    serialize_as_big_endian<sizeof(uint64_t)>(version);
+
+                for (size_t k = 0; k < num_nodes_per_version; ++k) {
+                    auto const res = ro_db.get(
+                        concat(
+                            NibblesView{prefix},
+                            NibblesView{
+                                to_key(version * num_nodes_per_version + k)}),
+                        version);
+                    if (res.has_value()) {
+                        MONAD_ASSERT(res.value() == version_bytes);
+                        ++nsuccess;
+                    }
+                    else {
+                        auto const min_version = ro_db.get_earliest_block_id();
+                        MONAD_ASSERT(version < min_version);
+                        ++nfailed;
+                        break;
+                    }
                 }
             }
             std::ostringstream oss;
@@ -192,6 +212,15 @@ int main(int argc, char *const argv[])
             struct VersionValidatorMachine : public TraverseMachine
             {
                 Nibbles path{};
+                size_t num_nodes;
+                std::atomic<bool> &done;
+
+                explicit VersionValidatorMachine(
+                    size_t num_nodes_, std::atomic<bool> &done_)
+                    : num_nodes(num_nodes_)
+                    , done(done_)
+                {
+                }
 
                 virtual bool
                 down(unsigned char branch, Node const &node) override
@@ -204,11 +233,19 @@ int main(int argc, char *const argv[])
 
                     if (node.has_value()) {
                         MONAD_ASSERT(path.nibble_size() == KECCAK256_SIZE * 2);
-                        MONAD_ASSERT(
-                            path ==
-                            NibblesView{monad::keccak256(node.value())});
+                        uint64_t const version =
+                            deserialize_from_big_endian<uint64_t>(node.value());
+                        bool found = false;
+                        for (size_t k = 0; k < num_nodes; ++k) {
+                            if (path ==
+                                NibblesView{to_key(version * num_nodes + k)}) {
+                                found = true;
+                                break;
+                            }
+                        }
+                        MONAD_ASSERT(found);
                     }
-                    return true;
+                    return !g_done;
                 }
 
                 virtual void up(unsigned char branch, Node const &node) override
@@ -242,7 +279,9 @@ int main(int argc, char *const argv[])
                 auto const version = select_rand_version(ro_db, rnd, prng_bias);
                 if (auto cursor = ro_db.find(prefix, version);
                     cursor.has_value()) {
-                    VersionValidatorMachine machine;
+                    VersionValidatorMachine machine(
+                        num_nodes_per_version, g_done);
+                    machine.num_nodes = num_nodes_per_version;
                     if (!ro_db.traverse(cursor.value(), machine, version)) {
                         auto const min_version = ro_db.get_earliest_block_id();
                         MONAD_ASSERT(version < min_version);
@@ -270,15 +309,22 @@ int main(int argc, char *const argv[])
             unsigned nsuccess = 0;
             unsigned nfailed = 0;
             while (!g_done.load(std::memory_order_acquire)) {
-                ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+                ReadOnlyOnDiskDbConfig const ro_config{
+                    .dbname_paths = {dbname}};
                 Db ro_db{ro_config};
                 auto const version = ro_db.get_earliest_block_id() + 1;
-                auto [key, value] = key_value_from_version(version);
-                auto const res = ro_db.get(concat(NibblesView{prefix}, NibblesView{key}), version);
+                auto const value =
+                    serialize_as_big_endian<sizeof(uint64_t)>(version);
+                auto const res = ro_db.get(
+                    concat(
+                        NibblesView{prefix},
+                        NibblesView{to_key(version * num_nodes_per_version)}),
+                    version);
                 if (res.has_value()) {
                     ++nsuccess;
                     MONAD_ASSERT(res.value() == value);
-                } else {
+                }
+                else {
                     ++nfailed;
                 }
             }

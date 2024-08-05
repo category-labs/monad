@@ -25,6 +25,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <optional>
 #include <sys/sysinfo.h>
 
 using namespace monad;
@@ -212,10 +213,9 @@ int main(int const argc, char const *argv[])
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
 
     auto const before = std::chrono::steady_clock::now();
-    std::unique_ptr<monad_statesync_server_network> net;
+    std::optional<monad_statesync_server_network> net;
     if (!statesync_path.empty()) {
-        net = std::make_unique<monad_statesync_server_network>(
-            statesync_path.c_str());
+        net.emplace(statesync_path.c_str());
     }
     std::unique_ptr<mpt::StateMachine> machine;
     mpt::Db db = [&] {
@@ -236,15 +236,15 @@ int main(int const argc, char const *argv[])
         return mpt::Db{*machine};
     }();
     TrieDb triedb{db};
-    std::unique_ptr<monad_statesync_server_context> ctx;
+    std::optional<monad_statesync_server_context> ctx;
     std::jthread sync_thread;
     monad_statesync_server *sync = nullptr;
     if (!statesync_path.empty()) {
         MONAD_ASSERT(db.root().is_valid());
-        ctx = std::make_unique<monad_statesync_server_context>(triedb);
+        ctx.emplace(triedb);
         sync = monad_statesync_server_create(
-            ctx.get(),
-            net.get(),
+            &ctx.value(),
+            &net.value(),
             &statesync_server_recv,
             &statesync_server_send_upsert,
             &statesync_server_send_done);

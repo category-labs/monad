@@ -123,12 +123,16 @@ void run_monad(
 
         LOG_DEBUG("generated receipts {}", receipts.assume_value());
         block_state.log_debug();
+        auto const before_commit = std::chrono::steady_clock::now();
         block_state.commit(receipts.assume_value());
 
         LOG_INFO(
-            "finished executing {} txs in block {}, time elasped={}",
+            "finished executing {} txs in block {}, execution time={}, commit "
+            "time={}, time elasped={}, ",
             block.transactions.size(),
             block.header.number,
+            before_commit - before,
+            std::chrono::steady_clock::now() - before_commit,
             std::chrono::steady_clock::now() - before);
         ++block_number;
     }

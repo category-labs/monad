@@ -60,4 +60,17 @@ jobs:
           allow: security.insecure # for tests which use io_uring
           ulimit: "memlock=-1:-1"
           target: build_and_test
+# Enable this to have the docker container copied to 'package' afterwards
+# Note that the job MUST succeed for this to occur, so you will need to modify
+# scripts/test.sh to add || true after the ctest invocation
+#          outputs: type=local,dest=package
           cache-from: type=gha,scope=base
+
+# Enable this to publish the unabridged ctest logs output in a downloadable archive
+#      - name: Publish test logs stage
+#        if: success() || failure()
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: CTest LastTest.log ${{ matrix.compiler.CXX }} ${{ matrix.CMAKE_BUILD_TYPE }}
+#          path: package/src/build/Testing/Temporary/LastTest.log
+#          retention-days: 7

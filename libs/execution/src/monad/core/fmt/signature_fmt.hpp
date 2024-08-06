@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/core/basic_formatter.hpp>
+#include <monad/core/fmt/int_fmt.hpp>
 #include <monad/core/signature.hpp>
 
 #include <quill/Quill.h>

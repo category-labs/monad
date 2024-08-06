@@ -5,6 +5,7 @@ project(monad)
 option(EVMONE_TRACING
        "Enable instruction-level tracing for the evmone interpreter" OFF)
 option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+option(BUILD_SHARED_LIBS OFF)
 
 include(cmake/test.cmake)
 
@@ -53,7 +54,6 @@ pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 find_package(CLI11 REQUIRED)
 
 # evmone
-set(BUILD_SHARED_LIBS OFF)
 add_subdirectory(third_party/evmone)
 # always compile baseline with optimization due to stack size of dispatch_cgoto
 set_source_files_properties(

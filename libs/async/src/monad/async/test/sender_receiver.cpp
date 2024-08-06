@@ -351,7 +351,7 @@ TEST_F(AsyncIO, read_multiple_buffer_sender_receiver)
             DISK_PAGE_SIZE * 2));
 }
 
-TEST_F(AsyncIO, benchmark_non_io_sender_receiver)
+TEST_F(AsyncIO, benchmark_non_zero_timeout_sender_receiver)
 {
     using namespace MONAD_ASYNC_NAMESPACE;
     static constexpr size_t COUNT = 1000;
@@ -367,15 +367,6 @@ TEST_F(AsyncIO, benchmark_non_io_sender_receiver)
             if (!done) {
                 state->initiate();
             }
-        }
-    };
-
-    struct nonreinitiating_receiver_t
-    {
-        void set_value(erased_connected_operation *, result<void> res)
-        {
-            ASSERT_TRUE(res);
-            count++;
         }
     };
 
@@ -421,6 +412,49 @@ TEST_F(AsyncIO, benchmark_non_io_sender_receiver)
             }
         });
     }
+}
+
+TEST_F(AsyncIO, benchmark_zero_timeout_sender_receiver)
+{
+    using namespace MONAD_ASYNC_NAMESPACE;
+    static constexpr size_t COUNT = 1000;
+    static std::atomic<int> done{0};
+    static size_t count = 0;
+
+    struct reinitiating_receiver_t
+    {
+        void set_value(erased_connected_operation *state, result<void> res)
+        {
+            ASSERT_TRUE(res);
+            count++;
+            if (!done) {
+                state->initiate();
+            }
+        }
+    };
+
+    auto benchmark = [&](char const *desc, auto &&initiate) {
+        std::cout << "Benchmarking " << desc << " ..." << std::endl;
+        done = false;
+        count = 0;
+        auto begin = std::chrono::steady_clock::now();
+        auto end = begin;
+        initiate();
+        for (; end - begin < std::chrono::seconds(5);
+             end = std::chrono::steady_clock::now()) {
+            shared_state_()->testio->poll_blocking(256);
+        }
+        done = true;
+        std::cout << "   Waiting until done ..." << std::endl;
+        shared_state_()->testio->wait_until_done();
+        end = std::chrono::steady_clock::now();
+        auto diff =
+            std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
+        std::cout << "   Did "
+                  << (1000.0 * static_cast<double>(count) /
+                      static_cast<double>(diff.count()))
+                  << " completions per second" << std::endl;
+    };
     {
         std::array<
             connected_operation<timed_delay_sender, reinitiating_receiver_t>,
@@ -440,6 +474,46 @@ TEST_F(AsyncIO, benchmark_non_io_sender_receiver)
             }
         });
     }
+}
+
+TEST_F(AsyncIO, benchmark_threadsafe_sender_receiver)
+{
+    using namespace MONAD_ASYNC_NAMESPACE;
+    static constexpr size_t COUNT = 1000;
+    static std::atomic<int> done{0};
+    static size_t count = 0;
+
+    struct nonreinitiating_receiver_t
+    {
+        void set_value(erased_connected_operation *, result<void> res)
+        {
+            ASSERT_TRUE(res);
+            count++;
+        }
+    };
+
+    auto benchmark = [&](char const *desc, auto &&initiate) {
+        std::cout << "Benchmarking " << desc << " ..." << std::endl;
+        done = false;
+        count = 0;
+        auto begin = std::chrono::steady_clock::now();
+        auto end = begin;
+        initiate();
+        for (; end - begin < std::chrono::seconds(5);
+             end = std::chrono::steady_clock::now()) {
+            shared_state_()->testio->poll_blocking(256);
+        }
+        done = true;
+        std::cout << "   Waiting until done ..." << std::endl;
+        shared_state_()->testio->wait_until_done();
+        end = std::chrono::steady_clock::now();
+        auto diff =
+            std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
+        std::cout << "   Did "
+                  << (1000.0 * static_cast<double>(count) /
+                      static_cast<double>(diff.count()))
+                  << " completions per second" << std::endl;
+    };
     {
         std::array<
             connected_operation<threadsafe_sender, nonreinitiating_receiver_t>,
@@ -479,6 +553,7 @@ TEST_F(AsyncIO, benchmark_non_io_sender_receiver)
             shared_state_()->testio->wait_until_done();
         }
         worker.join();
+        shared_state_()->testio->wait_until_done();
     }
 }
 

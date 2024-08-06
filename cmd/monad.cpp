@@ -127,13 +127,15 @@ void run_monad(
         block_state.commit(receipts.assume_value());
 
         LOG_INFO(
-            "finished executing {} txs in block {}, execution time={}, commit "
-            "time={}, time elasped={}, ",
+            "finished executing {} txs in block {}, num retries {}, execution "
+            "time={}, commit time={}, time elasped={}",
             block.transactions.size(),
             block.header.number,
+            block_state.n_retries,
             before_commit - before,
             std::chrono::steady_clock::now() - before_commit,
             std::chrono::steady_clock::now() - before);
+        block_state.n_retries = 0;
         ++block_number;
     }
 }

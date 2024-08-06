@@ -20,6 +20,8 @@ class BlockState final
     Code code_{};
 
 public:
+    uint64_t n_retries{0}; // for logging
+
     BlockState(Db &);
 
     std::optional<Account> read_account(Address const &);

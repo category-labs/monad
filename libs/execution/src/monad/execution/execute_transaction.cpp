@@ -230,6 +230,7 @@ Result<Receipt> execute_impl(
             return receipt;
         }
     }
+    ++block_state.n_retries;
     {
         TRACE_TXN_EVENT(StartRetry);
 

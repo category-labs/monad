@@ -539,7 +539,7 @@ struct Db::RWOnDisk final : public Db::Impl
     Node::UniquePtr root_; // owned by worker thread
     Node::UniquePtr reader_root_; // lifetime for reads on a different block
 
-    RWOnDisk(OnDiskDbConfig const &options, StateMachine &machine)
+    RWOnDisk(StateMachine &machine, OnDiskDbConfig const &options)
         : worker_thread_([&] {
             {
                 std::unique_lock const g(lock_);
@@ -739,7 +739,7 @@ Db::Db(StateMachine &machine)
 }
 
 Db::Db(StateMachine &machine, OnDiskDbConfig const &config)
-    : impl_{std::make_unique<RWOnDisk>(config, machine)}
+    : impl_{std::make_unique<RWOnDisk>(machine, config)}
 {
     MONAD_DEBUG_ASSERT(impl_->aux().is_on_disk());
 }

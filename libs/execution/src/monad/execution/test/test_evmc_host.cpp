@@ -119,7 +119,8 @@ TEST(EvmcHost, emit_log)
     BlockState bs{tdb};
     State state{bs, Incarnation{0, 0}};
     BlockHashBuffer const block_hash_buffer;
-    evmc_host_t host{EMPTY_TX_CONTEXT, block_hash_buffer, state};
+    NoopCallTracer call_tracer;
+    evmc_host_t host{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, state};
 
     host.emit_log(
         from,
@@ -145,7 +146,8 @@ TEST(EvmcHost, access_precompile)
     BlockState bs{tdb};
     State state{bs, Incarnation{0, 0}};
     BlockHashBuffer const block_hash_buffer;
-    evmc_host_t host{EMPTY_TX_CONTEXT, block_hash_buffer, state};
+    NoopCallTracer call_tracer;
+    evmc_host_t host{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, state};
 
     EXPECT_EQ(
         host.access_account(0x0000000000000000000000000000000000000001_address),

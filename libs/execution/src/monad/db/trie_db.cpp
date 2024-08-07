@@ -19,6 +19,8 @@
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/code_analysis.hpp>
+#include <monad/execution/trace/call_tracer.hpp>
+#include <monad/execution/trace/rlp/call_frame_rlp.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/nibbles_view_fmt.hpp> // NOLINT
@@ -154,6 +156,7 @@ std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
 void TrieDb::commit(
     StateDeltas const &state_deltas, Code const &code,
     BlockHeader const &header, std::vector<Receipt> const &receipts,
+    std::vector<std::vector<CallFrame>> const &call_frames,
     std::vector<Transaction> const &transactions,
     std::vector<BlockHeader> const &ommers,
     std::optional<std::vector<Withdrawal>> const &withdrawals)
@@ -216,7 +219,9 @@ void TrieDb::commit(
     UpdateList receipt_updates;
     UpdateList transaction_updates;
     UpdateList tx_hash_updates;
+    UpdateList call_frame_updates;
     MONAD_ASSERT(receipts.size() == transactions.size());
+    MONAD_ASSERT(receipts.size() == call_frames.size());
     auto const &encoded_block_number =
         bytes_alloc_.emplace_back(rlp::encode_unsigned(header.number));
     std::vector<byte_string> index_alloc;
@@ -250,6 +255,18 @@ void TrieDb::commit(
             .incarnation = false,
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));
+
+        std::span<CallFrame const> frames{call_frames[i]};
+        // TODO: a better way to ensure node size is <= 256 MB
+        if (frames.size() > 100) {
+            frames = frames.first(100);
+        }
+        call_frame_updates.push_front(update_alloc_.emplace_back(Update{
+            .key = NibblesView{rlp_index},
+            .value = bytes_alloc_.emplace_back(rlp::encode_call_frames(frames)),
+            .incarnation = false,
+            .next = UpdateList{},
+            .version = static_cast<int64_t>(block_number_)}));
     }
 
     auto const &rlp_block_header =
@@ -264,6 +281,7 @@ void TrieDb::commit(
         .version = static_cast<int64_t>(block_number_)}));
 
     UpdateList updates;
+
     auto state_update = Update{
         .key = state_nibbles,
         .value = byte_string_view{},
@@ -281,6 +299,12 @@ void TrieDb::commit(
         .value = byte_string_view{},
         .incarnation = true,
         .next = std::move(receipt_updates),
+        .version = static_cast<int64_t>(block_number_)};
+    auto call_frame_update = Update{
+        .key = call_frame_nibbles,
+        .value = byte_string_view{},
+        .incarnation = true,
+        .next = std::move(call_frame_updates),
         .version = static_cast<int64_t>(block_number_)};
     auto transaction_update = Update{
         .key = transaction_nibbles,
@@ -315,6 +339,7 @@ void TrieDb::commit(
     updates.push_front(state_update);
     updates.push_front(code_update);
     updates.push_front(receipt_update);
+    updates.push_front(call_frame_update);
     updates.push_front(transaction_update);
     updates.push_front(block_header_update);
     updates.push_front(ommer_update);

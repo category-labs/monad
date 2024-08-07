@@ -5,6 +5,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/precompiles.hpp>
+#include <monad/execution/trace/call_tracer.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/state3/state.hpp>
 
@@ -26,10 +27,12 @@ class EvmcHostBase : public evmc::Host
 
 protected:
     State &state_;
+    CallTracerBase &call_tracer_;
 
 public:
     EvmcHostBase(
-        evmc_tx_context const &, BlockHashBuffer const &, State &) noexcept;
+        CallTracerBase &, evmc_tx_context const &, BlockHashBuffer const &,
+        State &) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
 
@@ -86,14 +89,19 @@ struct EvmcHost final : public EvmcHostBase
     virtual bool selfdestruct(
         Address const &address, Address const &beneficiary) noexcept override
     {
+        call_tracer_.on_self_destruct(address, beneficiary);
         return state_.selfdestruct<rev>(address, beneficiary);
     }
 
     virtual evmc::Result call(evmc_message const &msg) noexcept override
     {
-        return (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
-                   ? ::monad::create_contract_account<rev>(this, state_, msg)
-                   : ::monad::call<rev>(this, state_, msg);
+        call_tracer_.on_enter(msg);
+        auto result =
+            (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
+                ? ::monad::create_contract_account<rev>(this, state_, msg)
+                : ::monad::call<rev>(this, state_, msg);
+        call_tracer_.on_exit(result);
+        return result;
     }
 
     virtual evmc_access_status

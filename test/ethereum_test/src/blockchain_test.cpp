@@ -18,6 +18,7 @@
 #include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/execute_block.hpp>
+#include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
@@ -66,14 +67,21 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
     BlockState block_state(db);
     EthereumMainnet const chain;
     BOOST_OUTCOME_TRY(
-        auto const receipts,
+        auto const results,
         execute_block<rev>(
             chain, block, block_state, block_hash_buffer, *pool_));
+    std::vector<Receipt> receipts(results.size());
+    std::vector<std::vector<CallFrame>> call_frames(results.size());
+    for (unsigned i = 0; i < results.size(); ++i) {
+        receipts[i] = std::move(results[i].receipt);
+        call_frames[i] = std::move(results[i].call_frames);
+    }
     BOOST_OUTCOME_TRY(chain.validate_header(receipts, block.header));
     block_state.log_debug();
     block_state.commit(
         block.header,
         receipts,
+        call_frames,
         block.transactions,
         block.ommers,
         block.withdrawals);
@@ -181,7 +189,7 @@ void BlockchainTest::TestBody()
             State state{bs, Incarnation{0, 0}};
             load_state_from_json(j_contents.at("pre"), state);
             bs.merge(state);
-            bs.commit({}, {}, {}, {}, std::nullopt);
+            bs.commit({}, {}, {}, {}, {}, std::nullopt);
         }
 
         BlockHashBuffer block_hash_buffer;

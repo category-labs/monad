@@ -13,6 +13,7 @@
 #include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/execute_block.hpp>
+#include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/genesis.hpp>
 #include <monad/execution/trace/event_trace.hpp>
 #include <monad/execution/validate_block.hpp>
@@ -141,7 +142,7 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
 
         BlockState block_state(db);
         BOOST_OUTCOME_TRY(
-            auto const receipts,
+            auto const results,
             execute_block(
                 chain,
                 rev,
@@ -150,11 +151,20 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
                 block_hash_buffer,
                 priority_pool));
 
+        std::vector<Receipt> receipts(results.size());
+        std::vector<std::vector<CallFrame>> call_frames(results.size());
+        for (unsigned i = 0; i < results.size(); ++i) {
+            auto &result = results[i];
+            receipts[i] = std::move(result.receipt);
+            call_frames[i] = (std::move(result.call_frames));
+        }
+
         BOOST_OUTCOME_TRY(chain.validate_header(receipts, block.header));
         block_state.log_debug();
         block_state.commit(
             block.header,
             receipts,
+            call_frames,
             block.transactions,
             block.ommers,
             block.withdrawals);

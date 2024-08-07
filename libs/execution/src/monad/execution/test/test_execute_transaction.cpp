@@ -69,7 +69,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 
     ASSERT_TRUE(!result.has_error());
 
-    auto const &receipt = result.value();
+    auto const &receipt = result.value().receipt;
 
     EXPECT_EQ(receipt.status, 1u);
     {

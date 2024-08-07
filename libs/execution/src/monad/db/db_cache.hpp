@@ -7,6 +7,7 @@
 #include <monad/core/bytes_hash_compare.hpp>
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
+#include <monad/execution/trace/call_tracer.hpp>
 #include <monad/lru/lru_cache.hpp>
 #include <monad/state2/state_deltas.hpp>
 
@@ -115,6 +116,7 @@ public:
     virtual void commit(
         StateDeltas const &state_deltas, Code const &code,
         BlockHeader const &header, std::vector<Receipt> const &receipts,
+        std::vector<std::vector<CallFrame>> const &call_frames,
         std::vector<Transaction> const &transactions,
         std::vector<BlockHeader> const &ommers,
         std::optional<std::vector<Withdrawal>> const &withdrawals) override
@@ -124,6 +126,7 @@ public:
             code,
             header,
             receipts,
+            call_frames,
             transactions,
             ommers,
             withdrawals);

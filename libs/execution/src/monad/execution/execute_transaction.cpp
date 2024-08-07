@@ -11,6 +11,8 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
+#include <monad/execution/trace/call_frame.hpp>
+#include <monad/execution/trace/call_tracer.hpp>
 #include <monad/execution/trace/event_trace.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/tx_context.hpp>
@@ -174,16 +176,16 @@ Receipt execute_final(
 
 template <evmc_revision rev>
 Result<evmc::Result> execute_impl2(
-    Chain const &chain, Transaction const &tx, Address const &sender,
-    BlockHeader const &hdr, BlockHashBuffer const &block_hash_buffer,
-    State &state)
+    CallTracerBase &call_tracer, Chain const &chain, Transaction const &tx,
+    Address const &sender, BlockHeader const &hdr,
+    BlockHashBuffer const &block_hash_buffer, State &state)
 {
     auto const sender_account = state.recent_account(sender);
     BOOST_OUTCOME_TRY(validate_transaction(tx, sender_account));
 
     auto const tx_context =
         get_tx_context<rev>(tx, sender, hdr, chain.get_chain_id());
-    EvmcHost<rev> host{tx_context, block_hash_buffer, state};
+    EvmcHost<rev> host{call_tracer, tx_context, block_hash_buffer, state};
 
     return execute_impl_no_validation<rev>(
         state,
@@ -195,7 +197,7 @@ Result<evmc::Result> execute_impl2(
 }
 
 template <evmc_revision rev>
-Result<Receipt> execute_impl(
+Result<ExecutionResult> execute_impl(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
@@ -210,8 +212,14 @@ Result<Receipt> execute_impl(
         State state{block_state, Incarnation{hdr.number, i + 1}};
         state.set_original_nonce(sender, tx.nonce);
 
+#ifdef ENABLE_CALL_TRACING
+        CallTracer call_tracer{tx};
+#else
+        NoopCallTracer call_tracer{};
+#endif
+
         auto result = execute_impl2<rev>(
-            chain, tx, sender, hdr, block_hash_buffer, state);
+            call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);
 
         {
             TRACE_TXN_EVENT(StartStall);
@@ -229,8 +237,13 @@ Result<Receipt> execute_impl(
                 hdr.base_fee_per_gas.value_or(0),
                 result.value(),
                 hdr.beneficiary);
+            call_tracer.on_receipt(receipt);
             block_state.merge(state);
-            return receipt;
+
+            auto const frames = call_tracer.get_frames();
+            return ExecutionResult{
+                .receipt = receipt,
+                .call_frames = {frames.begin(), frames.end()}};
         }
     }
     {
@@ -238,8 +251,14 @@ Result<Receipt> execute_impl(
 
         State state{block_state, Incarnation{hdr.number, i + 1}};
 
+#ifdef ENABLE_CALL_TRACING
+        CallTracer call_tracer{tx};
+#else
+        NoopCallTracer call_tracer{};
+#endif
+
         auto result = execute_impl2<rev>(
-            chain, tx, sender, hdr, block_hash_buffer, state);
+            call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);
 
         MONAD_ASSERT(block_state.can_merge(state));
         if (result.has_error()) {
@@ -252,16 +271,19 @@ Result<Receipt> execute_impl(
             hdr.base_fee_per_gas.value_or(0),
             result.value(),
             hdr.beneficiary);
+        call_tracer.on_receipt(receipt);
         block_state.merge(state);
 
-        return receipt;
+        auto const frames = call_tracer.get_frames();
+        return ExecutionResult{
+            .receipt = receipt, .call_frames = {frames.begin(), frames.end()}};
     }
 }
 
 EXPLICIT_EVMC_REVISION(execute_impl);
 
 template <evmc_revision rev>
-Result<Receipt> execute(
+Result<ExecutionResult> execute(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     std::optional<Address> const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, BlockState &block_state,

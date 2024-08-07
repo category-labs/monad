@@ -5,6 +5,7 @@
 #include <monad/core/receipt.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/evmc_host.hpp>
+#include <monad/execution/trace/call_tracer.hpp>
 #include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
@@ -17,11 +18,12 @@
 MONAD_NAMESPACE_BEGIN
 
 EvmcHostBase::EvmcHostBase(
-    evmc_tx_context const &tx_context, BlockHashBuffer const &block_hash_buffer,
-    State &state) noexcept
+    CallTracerBase &call_tracer, evmc_tx_context const &tx_context,
+    BlockHashBuffer const &block_hash_buffer, State &state) noexcept
     : tx_context_{tx_context}
     , block_hash_buffer_{block_hash_buffer}
     , state_{state}
+    , call_tracer_{call_tracer}
 {
 }
 

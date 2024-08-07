@@ -10,6 +10,7 @@
 #include <monad/core/transaction.hpp>
 #include <monad/core/withdrawal.hpp>
 #include <monad/execution/code_analysis.hpp>
+#include <monad/execution/trace/call_frame.hpp>
 #include <monad/state2/state_deltas.hpp>
 
 #include <cstdint>
@@ -37,6 +38,7 @@ struct Db
     virtual void commit(
         StateDeltas const &, Code const &, BlockHeader const &,
         std::vector<Receipt> const & = {},
+        std::vector<std::vector<CallFrame>> const & = {},
         std::vector<Transaction> const & = {},
         std::vector<BlockHeader> const &ommers = {},
         std::optional<std::vector<Withdrawal>> const & = {std::nullopt}) = 0;

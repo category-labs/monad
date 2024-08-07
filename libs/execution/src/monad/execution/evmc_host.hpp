@@ -71,6 +71,8 @@ public:
     virtual void set_transient_storage(
         Address const &, bytes32_t const &key,
         bytes32_t const &value) noexcept override;
+
+    std::unique_ptr<CallTracer> call_tracer = nullptr;
 };
 
 template <evmc_revision rev>
@@ -88,9 +90,17 @@ struct EvmcHost final : public EvmcHostBase
 
     virtual evmc::Result call(evmc_message const &msg) noexcept override
     {
-        return (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
-                   ? ::monad::create_contract_account<rev>(this, state_, msg)
-                   : ::monad::call<rev>(this, state_, msg);
+        if (call_tracer) {
+            call_tracer->on_enter<rev>(msg);
+        }
+        auto result =
+            (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
+                ? ::monad::create_contract_account<rev>(this, state_, msg)
+                : ::monad::call<rev>(this, state_, msg);
+        if (call_tracer) {
+            call_tracer->on_exit<rev>(result);
+        }
+        return result;
     }
 
     virtual evmc_access_status
@@ -100,6 +110,14 @@ struct EvmcHost final : public EvmcHostBase
             return EVMC_ACCESS_WARM;
         }
         return state_.access_account(address);
+    }
+
+    ////////////////////////////////////
+
+    void add_call_tracer(Transaction const &tx)
+    {
+        MONAD_ASSERT(call_tracer == nullptr);
+        call_tracer = std::make_unique<CallTracer>(tx);
     }
 };
 

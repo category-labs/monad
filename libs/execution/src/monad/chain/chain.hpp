@@ -10,6 +10,7 @@
 MONAD_NAMESPACE_BEGIN
 
 struct BlockHeader;
+struct Receipt;
 
 struct Chain
 {
@@ -18,6 +19,9 @@ struct Chain
     virtual evmc_revision get_revision(BlockHeader const &) const = 0;
 
     virtual Result<void> static_validate_header(BlockHeader const &) const;
+
+    virtual Result<void> validate_header(
+        std::vector<Receipt> const &, BlockHeader const &) const = 0;
 
     virtual bool validate_root(
         evmc_revision, BlockHeader const &, bytes32_t const &state_root,

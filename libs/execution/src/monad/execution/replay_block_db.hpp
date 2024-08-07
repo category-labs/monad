@@ -117,7 +117,7 @@ public:
                     block_state,
                     block_hash_buffer,
                     priority_pool));
-            BOOST_OUTCOME_TRY(validate_header(receipts, block.header));
+            BOOST_OUTCOME_TRY(chain.validate_header(receipts, block.header));
             block_state.log_debug();
             block_state.commit(receipts);
 

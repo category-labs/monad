@@ -32,19 +32,15 @@ MONAD_NAMESPACE_BEGIN
 
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
-namespace
+Receipt::Bloom compute_bloom(std::vector<Receipt> const &receipts)
 {
-    constexpr Receipt::Bloom compute_bloom(std::vector<Receipt> const &receipts)
-    {
-        Receipt::Bloom bloom{};
-        for (auto const &receipt : receipts) {
-            for (unsigned i = 0; i < 256; ++i) {
-                bloom[i] |= receipt.bloom[i];
-            }
+    Receipt::Bloom bloom{};
+    for (auto const &receipt : receipts) {
+        for (unsigned i = 0; i < bloom.size(); ++i) {
+            bloom[i] |= receipt.bloom[i];
         }
-
-        return bloom;
     }
+    return bloom;
 }
 
 template <evmc_revision rev>
@@ -214,22 +210,6 @@ Result<void> static_validate_block(evmc_revision const rev, Block const &block)
         break;
     }
     MONAD_ASSERT(false);
-}
-
-Result<void>
-validate_header(std::vector<Receipt> const &receipts, BlockHeader const &hdr)
-{
-    // YP eq. 33
-    if (compute_bloom(receipts) != hdr.logs_bloom) {
-        return BlockError::WrongLogsBloom;
-    }
-
-    // YP eq. 170
-    if (!receipts.empty() && receipts.back().gas_used != hdr.gas_used) {
-        return BlockError::InvalidGasUsed;
-    }
-
-    return success();
 }
 
 MONAD_NAMESPACE_END

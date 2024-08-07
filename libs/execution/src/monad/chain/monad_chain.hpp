@@ -12,6 +12,9 @@ struct BlockHeader;
 
 struct MonadChain : Chain
 {
+    Result<void> validate_header(
+        std::vector<Receipt> const &, BlockHeader const &) const override;
+
     virtual bool validate_root(
         evmc_revision, BlockHeader const &, bytes32_t const &state_root,
         bytes32_t const &receipts_root) const override;

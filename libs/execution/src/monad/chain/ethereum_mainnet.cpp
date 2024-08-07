@@ -73,6 +73,22 @@ EthereumMainnet::static_validate_header(BlockHeader const &header) const
     return success();
 }
 
+Result<void> EthereumMainnet::validate_header(
+    std::vector<Receipt> const &receipts, BlockHeader const &hdr) const
+{
+    // YP eq. 33
+    if (compute_bloom(receipts) != hdr.logs_bloom) {
+        return BlockError::WrongLogsBloom;
+    }
+
+    // YP eq. 170
+    if (!receipts.empty() && receipts.back().gas_used != hdr.gas_used) {
+        return BlockError::InvalidGasUsed;
+    }
+
+    return success();
+}
+
 bool EthereumMainnet::validate_root(
     evmc_revision const rev, BlockHeader const &hdr,
     bytes32_t const &state_root, bytes32_t const &receipts_root) const

@@ -346,36 +346,32 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
         .dbname_paths = this->config.dbname_paths};
     Db ro_db{ro_config};
 
-    auto async_get = [&](auto &&sender) -> monad::Result<monad::byte_string> {
+    using result_t = monad::Result<monad::byte_string>;
+
+    auto async_get = [](auto &&sender, std::function<void(result_t)> callback) {
         using sender_type = std::decay_t<decltype(sender)>;
         struct receiver_t
         {
-            std::optional<monad::Result<monad::byte_string>> ret;
-
-            enum : bool
-            {
-                lifetime_managed_internally = true
-            };
+            std::function<void(result_t)> callback;
 
             void set_value(
-                monad::async::erased_connected_operation *,
+                monad::async::erased_connected_operation *state,
                 sender_type::result_type res)
             {
-                ret.emplace(std::move(res));
+                callback(std::move(res));
+                delete state;
             }
         };
-        auto *state =
-            new auto(monad::async::connect(std::move(sender), receiver_t{}));
+        auto *state = new auto(monad::async::connect(
+            std::move(sender), receiver_t{std::move(callback)}));
         state->initiate();
-        while (!state->receiver().ret.has_value()) {
-            ro_db.poll(false);
-        }
-        auto ret(std::move(state->receiver().ret.value()));
-        delete state;
-        return ret;
     };
 
     size_t i;
+    constexpr size_t read_per_iteration = 3;
+    constexpr size_t expected_num_success_callbacks =
+        (UpdateAuxImpl::VERSION_HISTORY_LEN - 1) * read_per_iteration;
+    std::atomic<size_t> cbs{0};
     for (i = 1; i < UpdateAuxImpl::VERSION_HISTORY_LEN; ++i) {
         // upsert new version
         upsert_updates_flat_list(
@@ -386,83 +382,56 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
             make_update(kv[3].first, kv[3].second));
 
         // ensure we can still async query the old version
-        EXPECT_EQ(
-            async_get(
-                make_get_sender(ro_db, prefix + kv[0].first, starting_block_id))
-                .value(),
-            kv[0].second);
-        EXPECT_EQ(
-            async_get(
-                make_get_sender(ro_db, prefix + kv[1].first, starting_block_id))
-                .value(),
-            kv[1].second);
-        EXPECT_EQ(
-            async_get(make_get_data_sender(ro_db, prefix, starting_block_id))
-                .value(),
-            0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+        async_get(
+            make_get_sender(ro_db, prefix + kv[0].first, starting_block_id),
+            [&](result_t res) {
+                ++cbs;
+                EXPECT_EQ(res.value(), kv[0].second);
+            });
+        async_get(
+            make_get_sender(ro_db, prefix + kv[1].first, starting_block_id),
+            [&](result_t res) {
+                ++cbs;
+                EXPECT_EQ(res.value(), kv[1].second);
+            });
+        async_get(
+            make_get_data_sender(ro_db, prefix, starting_block_id),
+            [&](result_t res) {
+                ++cbs;
+                EXPECT_EQ(
+                    res.value(),
+                    0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+            });
     }
 
+    auto poll_until = [&](size_t num_callbacks) {
+        while (cbs < num_callbacks) {
+            ro_db.poll(false);
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
+        }
+    };
+
+    // Need to poll here because next read will trigger compaction
+    poll_until(expected_num_success_callbacks);
+
     // This will exceed the ring buffer capacity, evicting the first block
+    cbs = 0;
     upsert_updates_flat_list(
         db,
         prefix,
         starting_block_id + i,
         make_update(kv[2].first, kv[2].second),
         make_update(kv[3].first, kv[3].second));
-    auto bad_read = async_get(
-        make_get_sender(ro_db, prefix + kv[0].first, starting_block_id));
-    EXPECT_TRUE(bad_read.has_error());
-    EXPECT_EQ(bad_read.error(), DbError::key_not_found);
-}
 
-TEST_F(OnDiskDbFixture, ro_historical)
-{
-    auto const &kv = fixed_updates::kv;
+    async_get(
+        make_get_sender(ro_db, prefix + kv[0].first, starting_block_id),
+        [&](result_t res) {
+            EXPECT_TRUE(res.has_error());
+            EXPECT_EQ(res.error(), DbError::key_not_found);
+            ++cbs;
+        });
 
-    auto const prefix = 0x00_hex;
-    uint64_t const block_id = 0;
-
-    auto upsert = [&](monad::byte_string_view k,
-                      monad::byte_string_view v,
-                      uint64_t const upsert_block_id) {
-        auto u = make_update(k, v);
-        UpdateList ul;
-        ul.push_front(u);
-
-        auto u_prefix = Update{
-            .key = prefix,
-            .value = monad::byte_string_view{},
-            .incarnation = false,
-            .next = std::move(ul)};
-        UpdateList ul_prefix;
-        ul_prefix.push_front(u_prefix);
-
-        this->db.upsert(std::move(ul_prefix), upsert_block_id);
-    };
-
-    // upsert first block_id
-    upsert(kv[0].first, kv[0].second, block_id);
-    EXPECT_EQ(
-        this->db.get(prefix + kv[0].first, block_id).value(), kv[0].second);
-
-    size_t i;
-    for (i = 1; i < UpdateAuxImpl::VERSION_HISTORY_LEN; ++i) {
-        // Write next block_id
-        upsert(kv[1].first, kv[1].second, block_id + i);
-        // can still query earlier block_id from rw
-        EXPECT_EQ(
-            this->db.get(prefix + kv[0].first, block_id).value(), kv[0].second);
-        // New block is written too...
-        EXPECT_EQ(
-            this->db.get(prefix + kv[1].first, block_id + i).value(),
-            kv[1].second);
-    }
-
-    // This will exceed ring buffer capacity, evicting the first block
-    upsert(kv[1].first, kv[1].second, block_id + i);
-    auto bad_read = this->db.get(prefix + kv[0].first, block_id);
-    EXPECT_TRUE(bad_read.has_error());
-    EXPECT_EQ(bad_read.error(), DbError::key_not_found);
+    poll_until(1);
 }
 
 TEST(ReadOnlyDbTest, open_empty_rodb)

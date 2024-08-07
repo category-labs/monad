@@ -185,6 +185,10 @@ Result<evmc::Result> execute_impl2(
         get_tx_context<rev>(tx, sender, hdr, chain.get_chain_id());
     EvmcHost<rev> host{tx_context, block_hash_buffer, state};
 
+#ifdef ENABLE_CALL_TRACING
+    host.add_call_tracer(tx);
+#endif
+
     return execute_impl_no_validation<rev>(
         state,
         host,

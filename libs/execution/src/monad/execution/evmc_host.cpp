@@ -66,6 +66,9 @@ size_t EvmcHostBase::copy_code(
 bool EvmcHostBase::selfdestruct(
     Address const &address, Address const &beneficiary) noexcept
 {
+    if (call_tracer) {
+        call_tracer->on_self_destruct(address, beneficiary);
+    }
     return state_.selfdestruct(address, beneficiary);
 }
 

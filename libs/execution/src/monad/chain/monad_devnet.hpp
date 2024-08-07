@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/chain/chain.hpp>
+#include <monad/chain/monad_chain.hpp>
 #include <monad/config.hpp>
 #include <monad/core/int.hpp>
 
@@ -8,7 +8,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct MonadDevnet : Chain
+struct MonadDevnet : MonadChain
 {
     virtual uint256_t get_chain_id() const override;
 

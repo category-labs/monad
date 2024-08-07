@@ -2,6 +2,7 @@
 
 #include <monad/config.hpp>
 #include <monad/core/block.hpp>
+#include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/result.hpp>
@@ -9,6 +10,8 @@
 #include <monad/execution/validate_block.hpp>
 
 #include <evmc/evmc.h>
+
+#include <quill/Quill.h>
 
 #include <boost/outcome/config.hpp>
 #include <boost/outcome/success_failure.hpp>
@@ -68,6 +71,32 @@ EthereumMainnet::static_validate_header(BlockHeader const &header) const
         return BlockError::WrongDaoExtraData;
     }
     return success();
+}
+
+bool EthereumMainnet::validate_root(
+    evmc_revision const rev, BlockHeader const &hdr,
+    bytes32_t const &state_root, bytes32_t const &receipts_root) const
+{
+    if (state_root != hdr.state_root) {
+        LOG_ERROR(
+            "Block: {}, Computed State Root: {}, Expected State Root: {}",
+            hdr.number,
+            state_root,
+            hdr.state_root);
+        return false;
+    }
+    if (MONAD_LIKELY(rev >= EVMC_BYZANTIUM)) {
+        if (receipts_root != hdr.receipts_root) {
+            LOG_ERROR(
+                "Block: {}, Computed Receipts Root: {}, Expected Receipts "
+                "Root: {}",
+                hdr.number,
+                receipts_root,
+                hdr.receipts_root);
+            return false;
+        }
+    }
+    return true;
 }
 
 MONAD_NAMESPACE_END

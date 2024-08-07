@@ -4,7 +4,6 @@
 #include <monad/config.hpp>
 #include <monad/core/basic_formatter.hpp>
 #include <monad/core/block.hpp>
-#include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/db/db.hpp>
@@ -33,33 +32,6 @@ class ReplayFromBlockDb
 public:
     uint64_t n_transactions{0};
     uint64_t total_gas{0};
-
-    bool verify_root_hash(
-        evmc_revision const rev, BlockHeader const &block_header,
-        bytes32_t /* transactions_root */, bytes32_t const receipts_root,
-        bytes32_t const state_root) const
-    {
-        if (state_root != block_header.state_root) {
-            LOG_ERROR(
-                "Block: {}, Computed State Root: {}, Expected State Root: {}",
-                block_header.number,
-                state_root,
-                block_header.state_root);
-            return false;
-        }
-        if (MONAD_LIKELY(rev >= EVMC_BYZANTIUM)) {
-            if (receipts_root != block_header.receipts_root) {
-                LOG_ERROR(
-                    "Block: {}, Computed Receipts Root: {}, Expected Receipts "
-                    "Root: {}",
-                    block_header.number,
-                    receipts_root,
-                    block_header.receipts_root);
-                return false;
-            }
-        }
-        return true;
-    }
 
     Result<uint64_t> run_fork(
         Db &db, BlockDb &block_db, BlockHashBuffer &block_hash_buffer,
@@ -149,12 +121,8 @@ public:
             block_state.log_debug();
             block_state.commit(receipts);
 
-            if (!verify_root_hash(
-                    rev,
-                    block.header,
-                    NULL_ROOT,
-                    db.receipts_root(),
-                    db.state_root())) {
+            if (!chain.validate_root(
+                    rev, block.header, db.state_root(), db.receipts_root())) {
                 return BlockError::WrongStateRoot;
             }
 

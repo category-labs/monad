@@ -83,35 +83,46 @@ namespace
         Db db{machine, OnDiskDbConfig{.history_length = DBTEST_HISTORY_LENGTH}};
     };
 
-    struct OnDiskDbWithFileFixture : public ::testing::Test
+    template <bool Compaction, bool EnableSqThreadCpu>
+    struct FileBackedDbFixtureBase : public ::testing::Test
     {
         std::filesystem::path const dbname;
         StateMachineAlwaysMerkle machine;
         OnDiskDbConfig config;
         Db db;
 
-        OnDiskDbWithFileFixture()
+        FileBackedDbFixtureBase()
             : dbname{[] {
-                std::filesystem::path ret =
-                    monad::async::create_temp_file(8ULL);
+                auto const ret = monad::async::create_temp_file(8ULL);
                 monad::async::initialize_storage_pool(ret);
                 return ret;
             }()}
             , machine{StateMachineAlwaysMerkle{}}
             , config{OnDiskDbConfig{
+                  .compaction = Compaction,
+                  .sq_thread_cpu = EnableSqThreadCpu
+                                       ? std::optional<unsigned>(0)
+                                       : std::nullopt,
                   .dbname_paths = {dbname},
                   .history_length = DBTEST_HISTORY_LENGTH}}
             , db{machine, config}
         {
+            EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
         }
 
-        ~OnDiskDbWithFileFixture()
+        ~FileBackedDbFixtureBase()
         {
             std::filesystem::remove(dbname);
         }
     };
 
-    struct OnDiskDbWithFileAsyncFixture : public OnDiskDbWithFileFixture
+    using FileBackedDbFixture = FileBackedDbFixtureBase<false, true>;
+    using FileBackedDbWithCompactionFixture =
+        FileBackedDbFixtureBase<true, true>;
+    using FileBackedDbWithCompactionAndSqpollFixture =
+        FileBackedDbFixtureBase<true, false>;
+
+    struct FileBackedDbAsyncFixture : public FileBackedDbFixture
     {
         using result_t = monad::Result<monad::byte_string>;
 
@@ -119,7 +130,7 @@ namespace
         AsyncContextUniquePtr ctx;
         std::atomic<size_t> cbs{0}; // callbacks when found
 
-        OnDiskDbWithFileAsyncFixture()
+        FileBackedDbAsyncFixture()
             : ro_db([&] {
                 ReadOnlyOnDiskDbConfig const ro_config{
                     .dbname_paths = this->config.dbname_paths};
@@ -135,7 +146,7 @@ namespace
 
             struct receiver_t
             {
-                OnDiskDbWithFileAsyncFixture *parent;
+                FileBackedDbAsyncFixture *parent;
                 std::function<void(result_t)> callback;
 
                 void set_value(
@@ -280,7 +291,7 @@ struct DbTest : public TFixture
 using DbTypes = ::testing::Types<InMemoryDbFixture, OnDiskDbFixture>;
 TYPED_TEST_SUITE(DbTest, DbTypes);
 
-TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
+TEST_F(FileBackedDbFixture, read_only_db_single_thread)
 {
     auto const &kv = fixed_updates::kv;
 
@@ -378,7 +389,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
         0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
 }
 
-TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
+TEST_F(FileBackedDbAsyncFixture, read_only_db_single_thread_async)
 {
     auto const &kv = fixed_updates::kv;
 
@@ -464,7 +475,7 @@ TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
     poll_until(1);
 }
 
-TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
+TEST_F(FileBackedDbAsyncFixture, async_rodb_level_based_cache_works)
 {
     // Insert keys
     constexpr unsigned nkeys = 1000;
@@ -535,20 +546,10 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
     ro_db.traverse(NodeCursor{*root}, traverse_machine, version);
 }
 
-TEST(ReadOnlyDbTest, open_empty_rodb)
+TEST_F(FileBackedDbWithCompactionFixture, open_empty_rodb)
 {
-    std::filesystem::path const dbname{
-        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_empty_XXXXXX"};
-    monad::mpt::initialize_storage_pool(dbname);
-
-    // construct RWDb, storage pool is set up but db remains empty
-    StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig const config{.compaction = true, .dbname_paths = {dbname}};
-    Db const db{machine, config};
-
     // construct RODb
-    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {this->dbname}};
     // RODb root is invalid
     Db const ro_db{ro_config};
     EXPECT_FALSE(ro_db.root().is_valid());
@@ -558,16 +559,12 @@ TEST(ReadOnlyDbTest, open_empty_rodb)
     EXPECT_EQ(ro_db.get({}, 0).assume_error(), DbError::key_not_found);
 }
 
-TEST(ReadOnlyDbTest, read_only_db_concurrent)
+TEST_F(FileBackedDbWithCompactionFixture, read_only_db_concurrent)
 {
     // Have one thread make forward progress by updating new versions and
     // erasing outdated ones. Meanwhile spwan a read thread that queries
     // historical states.
     std::atomic<bool> done{false};
-    std::filesystem::path const dbname{
-        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_concurrent_XXXXXX"};
-    monad::mpt::initialize_storage_pool(dbname);
 
     auto const prefix = 0x00_hex;
 
@@ -590,7 +587,7 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
 
     auto keep_query = [&]() {
         // construct RODb
-        ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+        ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {this->dbname}};
         Db ro_db{ro_config};
 
         uint64_t read_version = 0;
@@ -627,11 +624,7 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
         EXPECT_GE(read_version, ro_db.get_earliest_block_id());
     };
 
-    // construct RWDb
     uint64_t version = 0;
-    StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig const config{.compaction = true, .dbname_paths = {dbname}};
-    Db db{machine, config};
 
     std::thread reader(keep_query);
 
@@ -640,29 +633,19 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
     while (std::chrono::duration_cast<std::chrono::seconds>(
                std::chrono::steady_clock::now() - begin_test)
                .count() < 10) {
-        upsert_new_version(db, version);
+        upsert_new_version(this->db, version);
         ++version;
     }
     done.store(true, std::memory_order_release);
     reader.join();
 
     std::cout << "Writer finished. Max version in rwdb is "
-              << db.get_latest_block_id() << ", min version in rwdb is "
-              << db.get_earliest_block_id() << std::endl;
+              << this->db.get_latest_block_id() << ", min version in rwdb is "
+              << this->db.get_earliest_block_id() << std::endl;
 }
 
-TEST(DbTest, read_only_db_traverse_concurrent)
+TEST_F(FileBackedDbWithCompactionFixture, read_only_db_traverse_concurrent)
 {
-    std::filesystem::path const dbname = monad::async::create_temp_file(8ULL);
-    monad::async::initialize_storage_pool(dbname);
-
-    StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig config{// with compaction
-                          .compaction = true,
-                          .dbname_paths = {dbname},
-                          .history_length = DBTEST_HISTORY_LENGTH};
-    Db db{machine, config};
-    EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
     auto [bytes_alloc, updates_alloc] = prepare_random_updates(20);
 
     uint64_t version = 0;
@@ -671,7 +654,7 @@ TEST(DbTest, read_only_db_traverse_concurrent)
         for (auto &u : updates_alloc) {
             ls.push_front(u);
         }
-        db.upsert(std::move(ls), version);
+        this->db.upsert(std::move(ls), version);
     };
 
     std::atomic<bool> done{false};
@@ -683,7 +666,7 @@ TEST(DbTest, read_only_db_traverse_concurrent)
         }
     });
 
-    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {this->dbname}};
     Db ro_db{ro_config};
     EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
     DummyTraverseMachine traverse_machine;
@@ -703,28 +686,21 @@ TEST(DbTest, read_only_db_traverse_concurrent)
         << ro_db.get_history_length();
 }
 
-TEST(DBTest, benchmark_blocking_parallel_traverse)
+TEST_F(
+    FileBackedDbWithCompactionAndSqpollFixture,
+    benchmark_blocking_parallel_traverse)
 {
-    std::filesystem::path const dbname = monad::async::create_temp_file(8ULL);
-    monad::async::initialize_storage_pool(dbname);
-
-    StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig config{// with compaction
-                          .compaction = true,
-                          .sq_thread_cpu{std::nullopt},
-                          .dbname_paths = {dbname}};
-    Db db{machine, config};
     auto [bytes_alloc, updates_alloc] = prepare_random_updates(2000);
     UpdateList ls;
     for (auto &u : updates_alloc) {
         ls.push_front(u);
     }
-    db.upsert(std::move(ls), 0);
+    this->db.upsert(std::move(ls), 0);
 
     // benchmark traverse
     DummyTraverseMachine traverse_machine{};
     auto begin = std::chrono::steady_clock::now();
-    ASSERT_TRUE(db.traverse(db.root(), traverse_machine, 0));
+    ASSERT_TRUE(this->db.traverse(this->db.root(), traverse_machine, 0));
     auto end = std::chrono::steady_clock::now();
     auto const parallel_elapsed =
         std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
@@ -733,7 +709,8 @@ TEST(DBTest, benchmark_blocking_parallel_traverse)
               << " ms, ";
 
     begin = std::chrono::steady_clock::now();
-    ASSERT_TRUE(db.traverse_blocking(db.root(), traverse_machine, 0));
+    ASSERT_TRUE(
+        this->db.traverse_blocking(this->db.root(), traverse_machine, 0));
     end = std::chrono::steady_clock::now();
     auto const blocking_elapsed =
         std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
@@ -744,33 +721,25 @@ TEST(DBTest, benchmark_blocking_parallel_traverse)
     EXPECT_TRUE(parallel_elapsed < blocking_elapsed);
 }
 
-TEST(ReadOnlyDbTest, load_correct_root_upon_reopen_nonempty_db)
+TEST_F(FileBackedDbFixture, load_correct_root_upon_reopen_nonempty_db)
 {
-    std::filesystem::path const dbname{
-        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_reopen_XXXXXX"};
-    monad::mpt::initialize_storage_pool(dbname);
-
-    StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig config{.dbname_paths = {dbname}};
-
     auto const &kv = fixed_updates::kv;
     auto const prefix = 0x00_hex;
     uint64_t const block_id = 0x123;
 
     {
-        Db const db{machine, config};
+        Db const db{machine, this->config};
         // db is init to empty
         EXPECT_FALSE(db.root().is_valid());
         EXPECT_EQ(db.get_latest_block_id(), INVALID_BLOCK_ID);
 
-        Db const ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+        Db const ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {this->dbname}}};
         EXPECT_FALSE(ro_db.root().is_valid());
         EXPECT_EQ(ro_db.get_latest_block_id(), INVALID_BLOCK_ID);
     }
 
     { // reopen the same db
-        Db db{machine, config};
+        Db db{machine, this->config};
         // db is still empty
         EXPECT_FALSE(db.root().is_valid());
         EXPECT_EQ(db.get_latest_block_id(), INVALID_BLOCK_ID);
@@ -794,12 +763,12 @@ TEST(ReadOnlyDbTest, load_correct_root_upon_reopen_nonempty_db)
     }
 
     { // reopen the same db again, this time we will have a valid root loaded
-        Db const db{machine, config};
+        Db const db{machine, this->config};
         EXPECT_TRUE(db.root().is_valid());
         EXPECT_EQ(db.get_latest_block_id(), block_id);
         EXPECT_EQ(db.get_earliest_block_id(), block_id);
 
-        Db const ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+        Db const ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {this->dbname}}};
         EXPECT_TRUE(db.root().is_valid());
         EXPECT_EQ(db.get_latest_block_id(), block_id);
         EXPECT_EQ(db.get_earliest_block_id(), block_id);
@@ -1184,20 +1153,11 @@ TEST_F(OnDiskDbFixture, rw_query_old_version)
     EXPECT_EQ(bad_read.error(), DbError::key_not_found);
 }
 
-TEST(DbTest, move_trie_causes_discontinuous_history)
+TEST_F(
+    FileBackedDbWithCompactionAndSqpollFixture,
+    move_trie_causes_discontinuous_history)
 {
-    std::filesystem::path const dbname = monad::async::create_temp_file(8ULL);
-    monad::async::initialize_storage_pool(dbname);
-
-    StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig config{// with compaction
-                          .compaction = true,
-                          .sq_thread_cpu{std::nullopt},
-                          .dbname_paths = {dbname},
-                          .history_length = DBTEST_HISTORY_LENGTH};
-    Db db{machine, config};
-    EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
-    Db ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {this->dbname}}};
     EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
 
     // continuous upsert() and move_trie_version_forward() leads to
@@ -1209,13 +1169,13 @@ TEST(DbTest, move_trie_causes_discontinuous_history)
     // Upsert the same data in block 0 - 10
     for (; block_id <= 10; ++block_id) {
         upsert_updates_flat_list(
-            db,
+            this->db,
             prefix,
             block_id,
             make_update(kv[0].first, kv[0].second),
             make_update(kv[1].first, kv[1].second));
-        EXPECT_TRUE(db.get(prefix + kv[0].first, block_id).has_value());
-        EXPECT_TRUE(db.get(prefix + kv[1].first, block_id).has_value());
+        EXPECT_TRUE(this->db.get(prefix + kv[0].first, block_id).has_value());
+        EXPECT_TRUE(this->db.get(prefix + kv[1].first, block_id).has_value());
 
         // ro_db
         EXPECT_EQ(
@@ -1232,7 +1192,7 @@ TEST(DbTest, move_trie_causes_discontinuous_history)
 
     // Upsert again at block 10
     upsert_updates_flat_list(
-        db,
+        this->db,
         prefix,
         block_id,
         make_update(kv[2].first, kv[2].second),
@@ -1249,7 +1209,7 @@ TEST(DbTest, move_trie_causes_discontinuous_history)
     // Move trie version to a later dest_block_id, which invalidates some
     // but not all history versions
     uint64_t const dest_block_id = ro_db.get_history_length() + 5;
-    db.move_trie_version_forward(block_id, dest_block_id);
+    this->db.move_trie_version_forward(block_id, dest_block_id);
 
     // Now valid version are 6-9, 1005 (DBTEST_HISTORY_LENGTH+5)
     EXPECT_EQ(ro_db.get_latest_block_id(), dest_block_id);
@@ -1276,7 +1236,7 @@ TEST(DbTest, move_trie_causes_discontinuous_history)
 
     // More empty upserts to invalidate the version at front
     block_id = dest_block_id + 1;
-    for (auto lower_bound = db.get_earliest_block_id(); lower_bound <= 10;
+    for (auto lower_bound = this->db.get_earliest_block_id(); lower_bound <= 10;
          ++lower_bound) {
         upsert_updates_flat_list(db, prefix, block_id);
         ++block_id;
@@ -1290,14 +1250,17 @@ TEST(DbTest, move_trie_causes_discontinuous_history)
 
     // Jump way far ahead, which erases all histories
     uint64_t far_dest_block_id = ro_db.get_history_length() * 3;
-    db.move_trie_version_forward(db.get_latest_block_id(), far_dest_block_id);
+    this->db.move_trie_version_forward(
+        db.get_latest_block_id(), far_dest_block_id);
 
     EXPECT_EQ(
-        db.get(prefix + kv[2].first, far_dest_block_id).value(), kv[2].second);
+        this->db.get(prefix + kv[2].first, far_dest_block_id).value(),
+        kv[2].second);
     EXPECT_EQ(
-        db.get(prefix + kv[3].first, far_dest_block_id).value(), kv[3].second);
+        this->db.get(prefix + kv[3].first, far_dest_block_id).value(),
+        kv[3].second);
     EXPECT_EQ(
-        db.get_data(prefix, far_dest_block_id).value(),
+        this->db.get_data(prefix, far_dest_block_id).value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
 
     // only history version

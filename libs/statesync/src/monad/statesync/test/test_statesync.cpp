@@ -38,7 +38,7 @@ namespace
 
     std::filesystem::path tmp_dbname()
     {
-        std::filesystem::path dbname = async::create_temp_file(8ULL);
+        auto const dbname = async::create_temp_file(8ULL);
         async::initialize_storage_pool(dbname);
         char const *const path = dbname.c_str();
         OnDiskMachine machine;

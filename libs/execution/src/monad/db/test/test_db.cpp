@@ -200,7 +200,7 @@ TYPED_TEST_SUITE(DBTest, DBTypes);
 
 TEST(DBTest, read_only)
 {
-    std::filesystem::path const name = monad::async::create_temp_file(8ULL);
+    auto const name = monad::async::create_temp_file(8ULL);
     monad::async::initialize_storage_pool(name);
     {
         OnDiskMachine machine;

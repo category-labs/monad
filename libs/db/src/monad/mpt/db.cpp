@@ -79,9 +79,6 @@ struct Db::Impl
 
     virtual find_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key, uint64_t version) = 0;
-    virtual async::result<void> find_async_initiate(
-        find_result_type &res, async::erased_connected_operation *io_state,
-        NodeCursor const &root, NibblesView const &key, uint64_t version) = 0;
     virtual size_t prefetch_fiber_blocking() = 0;
     virtual NodeCursor load_root_for_version(uint64_t version) = 0;
     virtual size_t poll(bool blocking, size_t count) = 0;
@@ -89,14 +86,6 @@ struct Db::Impl
     traverse_fiber_blocking(Node &, TraverseMachine &, uint64_t version) = 0;
     virtual void
     move_trie_version_fiber_blocking(uint64_t src, uint64_t dest) = 0;
-
-    using TrieRootCache = static_lru_cache<uint64_t, std::shared_ptr<Node>>;
-
-    // valid return for RO only
-    virtual TrieRootCache *trie_root_cache()
-    {
-        return nullptr;
-    }
 };
 
 struct Db::ROOnDisk final : public Db::Impl
@@ -108,7 +97,6 @@ struct Db::ROOnDisk final : public Db::Impl
     UpdateAux<> aux_;
     chunk_offset_t last_loaded_root_offset_;
     Node::UniquePtr root_;
-    TrieRootCache lru_;
 
     explicit ROOnDisk(ReadOnlyOnDiskDbConfig const &options)
         : pool_{[&] -> async::storage_pool {
@@ -134,7 +122,6 @@ struct Db::ROOnDisk final : public Db::Impl
               last_loaded_root_offset_ == INVALID_OFFSET
                   ? nullptr
                   : read_node_blocking(pool_, last_loaded_root_offset_)}}
-        , lru_{options.historical_trie_lru_size}
     {
         io_.set_capture_io_latencies(options.capture_io_latencies);
         io_.set_concurrent_read_io_limit(options.concurrent_read_io_limit);
@@ -194,62 +181,6 @@ struct Db::ROOnDisk final : public Db::Impl
         MONAD_ASSERT(false);
     }
 
-    virtual async::result<void> find_async_initiate(
-        find_result_type &res, async::erased_connected_operation *io_state,
-        NodeCursor const &root, NibblesView const &key,
-        uint64_t version) override
-    {
-        // verify version is valid in db history before doing anything
-        if (!aux().version_is_valid_ondisk(version)) {
-            res = {NodeCursor{}, find_result::version_no_longer_exist};
-            io_state->completed(async::success());
-            return async::success();
-        }
-
-        struct receiver_t
-        {
-            find_result_type &res_;
-            async::erased_connected_operation *const io_state;
-            uint64_t const version;
-            UpdateAux<> &aux;
-
-            enum : bool
-            {
-                lifetime_managed_internally = true
-            };
-
-            void set_value(
-                async::erased_connected_operation *const this_io_state,
-                find_request_sender::result_type res)
-            {
-                if (!res) {
-                    io_state->completed(
-                        async::result<void>(std::move(res).as_failure()));
-                    return;
-                }
-                try {
-                    // verify version still valid in history after success
-                    res_ = aux.version_is_valid_ondisk(version)
-                               ? std::move(res).assume_value()
-                               : find_result_type{
-                                     NodeCursor{},
-                                     find_result::version_no_longer_exist};
-                }
-                catch (std::exception const &e) { // exception implies UB
-                    res_ = {NodeCursor{}, find_result::version_no_longer_exist};
-                }
-                io_state->completed(async::success());
-                delete this_io_state;
-            }
-        };
-
-        auto *state = new auto(async::connect(
-            find_request_sender(aux(), root, key),
-            receiver_t{res, io_state, version, aux()}));
-        state->initiate();
-        return async::success();
-    }
-
     virtual size_t prefetch_fiber_blocking() override
     {
         MONAD_ASSERT(false);
@@ -281,11 +212,6 @@ struct Db::ROOnDisk final : public Db::Impl
             root_.reset(read_node_blocking(pool_, root_offset));
         }
         return root_ ? NodeCursor{*root_} : NodeCursor{};
-    }
-
-    virtual TrieRootCache *trie_root_cache() override
-    {
-        return &lru_;
     }
 };
 
@@ -322,15 +248,6 @@ struct Db::InMemory final : public Db::Impl
         NodeCursor const &root, NibblesView const &key, uint64_t = 0) override
     {
         return find_blocking(aux(), root, key);
-    }
-
-    virtual async::result<void> find_async_initiate(
-        find_result_type &res, async::erased_connected_operation *io_state,
-        NodeCursor const &root, NibblesView const &key, uint64_t = 0) override
-    {
-        res = find_blocking(aux(), root, key);
-        io_state->completed(async::success());
-        return async::success();
     }
 
     virtual size_t prefetch_fiber_blocking() override
@@ -711,13 +628,6 @@ struct Db::RWOnDisk final : public Db::Impl
         return fut.get();
     }
 
-    virtual async::result<void> find_async_initiate(
-        find_result_type &, async::erased_connected_operation *,
-        NodeCursor const &, NibblesView const &, uint64_t = 0) override
-    {
-        return async::errc::function_not_supported;
-    }
-
     // threadsafe
     virtual void upsert_fiber_blocking(
         UpdateList &&updates, uint64_t const version,
@@ -985,10 +895,44 @@ bool Db::is_read_only() const
     return is_on_disk() && impl_->aux().io->is_read_only();
 }
 
+struct AsyncContext
+{
+    using TrieRootCache = static_lru_cache<uint64_t, std::shared_ptr<Node>>;
+    using inflight_root_t = unordered_dense_map<
+        uint64_t, std::vector<std::function<void(std::shared_ptr<Node>)>>>;
+    using inflight_node_t = inflight_map_t;
+
+    UpdateAux<> &aux;
+    TrieRootCache root_cache;
+    inflight_root_t inflight_roots;
+    inflight_node_t inflight_nodes;
+
+    AsyncContext(Db &db, size_t lru_size = 64)
+        : aux(db.impl_->aux())
+        , root_cache(lru_size)
+    {
+    }
+
+    ~AsyncContext() noexcept = default;
+};
+
+AsyncContextUniquePtr async_context_create(Db &db)
+{
+    AsyncContextUniquePtr ctx(new AsyncContext(db));
+    return ctx;
+}
+
 namespace detail
 {
+    void AsyncContextDeleter::operator()(AsyncContext *ctx) const
+    {
+        delete ctx;
+    }
+
+    // Reads root nodes from on disk, and supports other inflight async requests
+    // from the same sender.
     template <typename T>
-    struct DbGetSender<T>::load_root_receiver_t
+    struct load_root_receiver_t
     {
         static constexpr bool lifetime_managed_internally = true;
 
@@ -1021,9 +965,14 @@ namespace detail
             monad::async::erased_connected_operation *, ResultType buffer_)
         {
             MONAD_ASSERT(buffer_);
+
+            auto &inflights = sender->context.inflight_roots;
+            auto it = inflights.find(sender->block_id);
+            auto pendings = std::move(it->second);
+            inflights.erase(it);
+
             bool const block_alive_after_read =
-                sender->db.impl_->aux().version_is_valid_ondisk(
-                    sender->block_id);
+                sender->context.aux.version_is_valid_ondisk(sender->block_id);
             if (block_alive_after_read) {
                 try {
                     sender->root =
@@ -1031,11 +980,10 @@ namespace detail
                             std::move(buffer_), buffer_off, io_state);
                     sender->res_ = {
                         NodeCursor{*sender->root.get()}, find_result::success};
-                    MONAD_ASSERT(sender->db.impl_->trie_root_cache());
-                    sender->db.impl_->trie_root_cache()->insert(
+                    sender->context.root_cache.insert(
                         sender->block_id, sender->root);
                 }
-                catch (std::exception const &e) {
+                catch (std::exception const &) {
                     sender->res_ = {
                         NodeCursor{}, find_result::version_no_longer_exist};
                 }
@@ -1044,7 +992,49 @@ namespace detail
                 sender->res_ = {
                     NodeCursor{}, find_result::version_no_longer_exist};
             }
+
+            for (auto &invoc : pendings) {
+                invoc(sender->root);
+            }
+        }
+    };
+
+    // Processes results from find_request_sender, proxying the result back to
+    // the DbGetSender.
+    struct find_request_receiver_t
+    {
+        find_result_type &res_;
+        async::erased_connected_operation *const io_state;
+        uint64_t const version;
+        UpdateAux<> &aux;
+
+        enum : bool
+        {
+            lifetime_managed_internally = true
+        };
+
+        void set_value(
+            async::erased_connected_operation *const this_io_state,
+            find_request_sender::result_type res)
+        {
+            if (!res) {
+                io_state->completed(
+                    async::result<void>(std::move(res).as_failure()));
+                return;
+            }
+            try {
+                // verify version still valid in history after success
+                res_ = aux.version_is_valid_ondisk(version)
+                           ? std::move(res).assume_value()
+                           : find_result_type{
+                                 NodeCursor{},
+                                 find_result::version_no_longer_exist};
+            }
+            catch (std::exception const &e) { // exception implies UB
+                res_ = {NodeCursor{}, find_result::version_no_longer_exist};
+            }
             io_state->completed(async::success());
+            delete this_io_state;
         }
     };
 
@@ -1052,37 +1042,65 @@ namespace detail
     async::result<void> DbGetSender<T>::operator()(
         async::erased_connected_operation *io_state) noexcept
     {
-        MONAD_ASSERT(db.impl_);
         switch (op_type) {
         case op_t::op_get1:
         case op_t::op_get_data1: {
-            MONAD_ASSERT(db.impl_->trie_root_cache())
-            Db::Impl::TrieRootCache::ConstAccessor acc;
-            if (db.impl_->trie_root_cache()->find(acc, block_id)) {
+            AsyncContext::TrieRootCache::ConstAccessor acc;
+            if (context.root_cache.find(acc, block_id)) {
                 // found in LRU - no IO necessary
                 root = acc->second->val;
                 res_ = {NodeCursor{*root.get()}, find_result::success};
                 io_state->completed(async::success());
+                return async::success();
             }
-            else {
-                chunk_offset_t const offset =
-                    db.impl_->aux().get_root_offset_at_version(block_id);
-                if (offset == INVALID_OFFSET) {
+
+            chunk_offset_t const offset =
+                context.aux.get_root_offset_at_version(block_id);
+            if (offset == INVALID_OFFSET) {
+                // root is no longer valid
+                res_ = {NodeCursor{}, find_result::version_no_longer_exist};
+                io_state->completed(async::success());
+                return async::success();
+            }
+
+            auto cont = [this, io_state](std::shared_ptr<Node> root_) {
+                if (!root_) {
                     res_ = {NodeCursor{}, find_result::version_no_longer_exist};
-                    io_state->completed(async::success());
                 }
                 else {
-                    async_read(
-                        db.impl_->aux(),
-                        load_root_receiver_t{offset, this, io_state});
+                    root = root_;
+                    res_ = {NodeCursor{*root.get()}, find_result::success};
                 }
+                io_state->completed(async::success());
+            };
+            auto &inflights = context.inflight_roots;
+            if (auto it = inflights.find(block_id); it != inflights.end()) {
+                it->second.emplace_back(cont);
+            }
+            else {
+                inflights[block_id].emplace_back(cont);
+                async_read(
+                    context.aux, load_root_receiver_t{offset, this, io_state});
             }
             return async::success();
         }
         case op_t::op_get2:
-        case op_t::op_get_data2:
-            return db.impl_->find_async_initiate(
-                res_, io_state, cur, nv, block_id);
+        case op_t::op_get_data2: {
+            // verify version is valid in db history before doing anything
+            if (!context.aux.version_is_valid_ondisk(block_id)) {
+                res_ = {NodeCursor{}, find_result::version_no_longer_exist};
+                io_state->completed(async::success());
+                return async::success();
+            }
+
+            auto *state = new auto(async::connect(
+                find_request_sender(
+                    context.aux, context.inflight_nodes, cur, nv),
+                find_request_receiver_t{
+                    res_, io_state, block_id, context.aux}));
+            state->initiate();
+            return async::success();
+        }
         }
         abort();
     }

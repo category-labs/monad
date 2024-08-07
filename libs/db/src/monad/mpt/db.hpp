@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <monad/async/concepts.hpp>
 #include <monad/async/io.hpp>
 #include <monad/async/storage_pool.hpp>
@@ -18,19 +20,13 @@ struct OnDiskDbConfig;
 struct ReadOnlyOnDiskDbConfig;
 struct StateMachine;
 struct TraverseMachine;
-
-namespace detail
-{
-    template <class T>
-    struct DbGetSender;
-}
+struct AsyncContext;
 
 class Db
 {
-    template <class T>
-    friend struct detail::DbGetSender;
-
 private:
+    friend struct AsyncContext;
+
     struct Impl;
     struct RWOnDisk;
     struct ROOnDisk;
@@ -92,71 +88,91 @@ public:
     bool is_read_only() const;
 };
 
-template <class T>
-struct detail::DbGetSender
+namespace detail
 {
-    using result_type = async::result<T>;
-
-    struct load_root_receiver_t;
-
-public:
-    Db &db;
-
-    enum op_t : uint8_t
+    template <class T>
+    struct DbGetSender
     {
-        op_get1,
-        op_get_data1,
-        op_get2,
-        op_get_data2
-    } op_type;
+        using result_type = async::result<T>;
 
-    std::shared_ptr<Node> root;
-    NodeCursor cur;
-    Nibbles const nv;
-    uint64_t const block_id;
+    public:
+        AsyncContext &context;
 
-    find_result_type res_;
+        enum op_t : uint8_t
+        {
+            op_get1,
+            op_get_data1,
+            op_get2,
+            op_get_data2
+        } op_type;
 
-public:
-    constexpr DbGetSender(
-        Db &db_, op_t const op_type_, NibblesView const n,
-        uint64_t const block_id_)
-        : db(db_)
-        , op_type(op_type_)
-        , nv(n)
-        , block_id(block_id_)
+        std::shared_ptr<Node> root;
+        NodeCursor cur;
+        Nibbles const nv;
+        uint64_t const block_id;
+
+        find_result_type res_;
+
+    public:
+        constexpr DbGetSender(
+            AsyncContext &context_, op_t const op_type_, NibblesView const n,
+            uint64_t const block_id_)
+            : context(context_)
+            , op_type(op_type_)
+            , nv(n)
+            , block_id(block_id_)
+        {
+        }
+
+        constexpr DbGetSender(
+            AsyncContext &context_, op_t const op_type_, NodeCursor const cur_,
+            NibblesView const n, uint64_t const block_id_)
+            : context(context_)
+            , op_type(op_type_)
+            , cur(cur_)
+            , nv(n)
+            , block_id(block_id_)
+        {
+        }
+
+        async::result<void>
+        operator()(async::erased_connected_operation *io_state) noexcept;
+
+        result_type completed(
+            async::erased_connected_operation *,
+            async::result<void> res) noexcept;
+    };
+
+    struct AsyncContextDeleter
     {
-    }
-
-    constexpr DbGetSender(
-        Db &db_, op_t const op_type_, NodeCursor const cur_,
-        NibblesView const n, uint64_t const block_id_)
-        : db(db_)
-        , op_type(op_type_)
-        , cur(cur_)
-        , nv(n)
-        , block_id(block_id_)
-    {
-    }
-
-    async::result<void>
-    operator()(async::erased_connected_operation *io_state) noexcept;
-
-    result_type completed(
-        async::erased_connected_operation *, async::result<void> res) noexcept;
-};
-
-inline detail::DbGetSender<byte_string>
-make_get_sender(Db &db, NibblesView const nv, uint64_t const block_id)
-{
-    return {db, detail::DbGetSender<byte_string>::op_t::op_get1, nv, block_id};
+        void operator()(AsyncContext *ctx) const;
+    };
 }
 
-inline detail::DbGetSender<byte_string>
-make_get_data_sender(Db &db, NibblesView const nv, uint64_t const block_id)
+using AsyncContextUniquePtr =
+    std::unique_ptr<AsyncContext, detail::AsyncContextDeleter>;
+AsyncContextUniquePtr async_context_create(Db &db);
+
+inline detail::DbGetSender<byte_string> make_get_sender(
+    AsyncContext *context, NibblesView const nv, uint64_t const block_id)
 {
+    MONAD_ASSERT(context);
     return {
-        db, detail::DbGetSender<byte_string>::op_t::op_get_data1, nv, block_id};
+        *context,
+        detail::DbGetSender<byte_string>::op_t::op_get1,
+        nv,
+        block_id};
+}
+
+inline detail::DbGetSender<byte_string> make_get_data_sender(
+    AsyncContext *context, NibblesView const nv, uint64_t const block_id)
+{
+    MONAD_ASSERT(context);
+    return {
+        *context,
+        detail::DbGetSender<byte_string>::op_t::op_get_data1,
+        nv,
+        block_id};
 }
 
 MONAD_MPT_NAMESPACE_END

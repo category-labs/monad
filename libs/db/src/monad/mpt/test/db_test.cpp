@@ -345,7 +345,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
     ReadOnlyOnDiskDbConfig const ro_config{
         .dbname_paths = this->config.dbname_paths};
     Db ro_db{ro_config};
-
+    auto ctx = async_context_create(ro_db);
     using result_t = monad::Result<monad::byte_string>;
 
     auto async_get = [](auto &&sender, std::function<void(result_t)> callback) {
@@ -383,19 +383,19 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
 
         // ensure we can still async query the old version
         async_get(
-            make_get_sender(ro_db, prefix + kv[0].first, starting_block_id),
+            make_get_sender(ctx.get(), prefix + kv[0].first, starting_block_id),
             [&](result_t res) {
                 ++cbs;
                 EXPECT_EQ(res.value(), kv[0].second);
             });
         async_get(
-            make_get_sender(ro_db, prefix + kv[1].first, starting_block_id),
+            make_get_sender(ctx.get(), prefix + kv[1].first, starting_block_id),
             [&](result_t res) {
                 ++cbs;
                 EXPECT_EQ(res.value(), kv[1].second);
             });
         async_get(
-            make_get_data_sender(ro_db, prefix, starting_block_id),
+            make_get_data_sender(ctx.get(), prefix, starting_block_id),
             [&](result_t res) {
                 ++cbs;
                 EXPECT_EQ(
@@ -424,7 +424,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
         make_update(kv[3].first, kv[3].second));
 
     async_get(
-        make_get_sender(ro_db, prefix + kv[0].first, starting_block_id),
+        make_get_sender(ctx.get(), prefix + kv[0].first, starting_block_id),
         [&](result_t res) {
             EXPECT_TRUE(res.has_error());
             EXPECT_EQ(res.error(), DbError::key_not_found);

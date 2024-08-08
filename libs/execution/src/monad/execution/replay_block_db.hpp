@@ -32,6 +32,7 @@ class ReplayFromBlockDb
 {
 public:
     uint64_t n_transactions{0};
+    uint64_t total_gas{0};
 
     bool verify_root_hash(
         evmc_revision const rev, BlockHeader const &block_header,
@@ -72,6 +73,7 @@ public:
         constexpr uint64_t BATCH_SIZE = 1000; // TODO param
         uint64_t batch_num_blocks = 0;
         uint64_t batch_num_txs = 0;
+        uint64_t batch_gas = 0;
         auto batch_begin = std::chrono::steady_clock::now();
 
         auto log_tps = [&](uint64_t const block_num) {
@@ -86,18 +88,21 @@ public:
                     .count();
             uint64_t const tps =
                 (batch_num_txs) * 1'000'000 / static_cast<uint64_t>(elapsed);
+            uint64_t gps = batch_gas / static_cast<uint64_t>(elapsed);
 
             LOG_INFO(
                 "Run {:4d} blocks to {:8d}, number of transactions {:6d}, "
-                "tps = {:5d}, rss = {:8d} MB",
+                "tps = {:5d}, gps = {:4d} M, rss = {:6d} MB",
                 batch_num_blocks,
                 block_num,
                 batch_num_txs,
                 tps,
+                gps,
                 monad_procfs_self_resident() / (1L << 20));
 
             batch_num_blocks = 0;
             batch_num_txs = 0;
+            batch_gas = 0;
             batch_begin = now;
         };
 
@@ -155,6 +160,8 @@ public:
 
             n_transactions += block.transactions.size();
             batch_num_txs += block.transactions.size();
+            total_gas += block.header.gas_used;
+            batch_gas += block.header.gas_used;
             ++batch_num_blocks;
 
             if (block_number % BATCH_SIZE == 0) {

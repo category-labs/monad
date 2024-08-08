@@ -225,13 +225,16 @@ int main(int const argc, char const *argv[])
             "Finish running, finish(stopped) block number = {}, "
             "number of blocks run = {}, time_elapsed = {}, num transactions = "
             "{}, "
-            "tps = {}",
+            "tps = {}, gps = {} M",
             last_block_number,
             nblocks,
             elapsed,
             replay_eth.n_transactions,
             replay_eth.n_transactions /
-                std::max(1UL, static_cast<uint64_t>(elapsed.count())));
+                std::max(1UL, static_cast<uint64_t>(elapsed.count())),
+            replay_eth.total_gas /
+                (1'000'000 *
+                 std::max(1UL, static_cast<uint64_t>(elapsed.count()))));
     }
 
     if (!dump_snapshot.empty()) {

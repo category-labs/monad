@@ -501,6 +501,17 @@ public:
         auto &logs = logs_.current(version_);
         logs.push_back(log);
     }
+
+    ////////////////////////////////////////
+
+    void set_to_state_incarnation(Address const &address)
+    {
+        auto &account = current_account(address);
+        if (MONAD_UNLIKELY(!account.has_value())) {
+            account = Account{.incarnation = incarnation_};
+        }
+        account.value().incarnation = incarnation_;
+    }
 };
 
 MONAD_NAMESPACE_END

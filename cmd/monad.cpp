@@ -6,6 +6,7 @@
 #include <monad/core/log_level_map.hpp>
 #include <monad/core/result.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
+#include <monad/db/block_db.hpp>
 #include <monad/db/db.hpp>
 #include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
@@ -35,6 +36,37 @@ MONAD_NAMESPACE_BEGIN
 
 quill::Logger *event_tracer = nullptr;
 
+class LedgerBlockDb : public BlockDb
+{
+    fs::path path_;
+
+public:
+    LedgerBlockDb(fs::path const path)
+        : path_{path}
+    {
+    }
+
+    virtual std::optional<Block> read_block(uint64_t const i) const override
+    {
+        auto const path = path_ / std::to_string(i);
+        if (!fs::exists(path)) {
+            return std::nullopt;
+        }
+        MONAD_ASSERT(fs::is_regular_file(path));
+        std::ifstream istream(path);
+        std::ostringstream buf;
+        buf << istream.rdbuf();
+        auto view = byte_string_view{
+            (unsigned char *)buf.view().data(), buf.view().size()};
+        auto block_result = rlp::decode_block(view);
+        if (block_result.has_error()) {
+            return std::nullopt;
+        }
+        MONAD_ASSERT(view.empty());
+        return block_result.assume_value();
+    }
+};
+
 MONAD_NAMESPACE_END
 
 sig_atomic_t volatile stop;
@@ -45,38 +77,18 @@ void signal_handler(int)
 }
 
 void run_monad(
-    Chain const &chain, fs::path const &block_db, Db &db,
+    Chain const &chain, BlockDb &block_db, Db &db,
     fiber::PriorityPool &priority_pool, size_t block_number)
 {
     BlockHashBuffer block_hash_buffer;
 
-    auto const try_get = [&block_db](uint64_t const i, Block &block) {
-        auto const path = block_db / std::to_string(i);
-        if (!fs::exists(path)) {
-            return false;
-        }
-        MONAD_ASSERT(fs::is_regular_file(path));
-        std::ifstream istream(path);
-        std::ostringstream buf;
-        buf << istream.rdbuf();
-        auto view = byte_string_view{
-            (unsigned char *)buf.view().data(), buf.view().size()};
-        auto block_result = rlp::decode_block(view);
-        if (block_result.has_error()) {
-            return false;
-        }
-        MONAD_ASSERT(view.empty());
-        block = block_result.assume_value();
-        return true;
-    };
-
-    Block block;
     for (size_t i = block_number < 256 ? 1 : block_number - 255;
          i < block_number;) {
-        if (!try_get(i, block)) {
+        auto const block = block_db.read_block(i);
+        if (!block.has_value()) {
             continue;
         }
-        block_hash_buffer.set(i - 1, block.header.parent_hash);
+        block_hash_buffer.set(i - 1, block->header.parent_hash);
         ++i;
     }
 
@@ -84,28 +96,29 @@ void run_monad(
     stop = 0;
 
     while (stop == 0) {
-        if (!try_get(block_number, block)) {
+        auto block = block_db.read_block(block_number);
+        if (!block.has_value()) {
             continue;
         }
 
-        block_hash_buffer.set(block_number - 1, block.header.parent_hash);
+        block_hash_buffer.set(block_number - 1, block->header.parent_hash);
 
-        auto result = chain.static_validate_header(block.header);
+        auto result = chain.static_validate_header(block->header);
         if (MONAD_UNLIKELY(result.has_error())) {
             LOG_ERROR(
                 "block {} header validation failed: {}",
-                block.header.number,
+                block->header.number,
                 result.assume_error().message().c_str());
             break;
         }
 
-        auto const rev = chain.get_revision(block.header);
+        auto const rev = chain.get_revision(block->header);
 
-        result = static_validate_block(rev, block);
+        result = static_validate_block(rev, block.value());
         if (MONAD_UNLIKELY(result.has_error())) {
             LOG_ERROR(
                 "block {} validation failed: {}",
-                block.header.number,
+                block->header.number,
                 result.assume_error().message().c_str());
             break;
         }
@@ -113,11 +126,16 @@ void run_monad(
         auto const before = std::chrono::steady_clock::now();
         BlockState block_state(db);
         auto const receipts = execute_block(
-            chain, rev, block, block_state, block_hash_buffer, priority_pool);
+            chain,
+            rev,
+            block.value(),
+            block_state,
+            block_hash_buffer,
+            priority_pool);
         if (receipts.has_error()) {
             LOG_ERROR(
                 "block {} tx validation failed: {}",
-                block.header.number,
+                block->header.number,
                 receipts.assume_error().message().c_str());
             break;
         }
@@ -128,8 +146,8 @@ void run_monad(
 
         LOG_INFO(
             "finished executing {} txs in block {}, time elasped={}",
-            block.transactions.size(),
-            block.header.number,
+            block->transactions.size(),
+            block->header.number,
             std::chrono::steady_clock::now() - before);
         ++block_number;
     }
@@ -142,7 +160,7 @@ int main(int const argc, char const *argv[])
     CLI::App cli{"monad"};
     cli.option_defaults()->always_capture_default();
 
-    fs::path block_db{};
+    fs::path block_db_path{};
     fs::path genesis_file{};
     fs::path trace_log = std::filesystem::absolute("trace");
     std::vector<std::filesystem::path> dbname_paths;
@@ -153,7 +171,8 @@ int main(int const argc, char const *argv[])
     auto log_level = quill::LogLevel::Info;
     std::string statesync_path;
 
-    cli.add_option("--block_db", block_db, "block_db directory")->required();
+    cli.add_option("--block_db", block_db_path, "block_db directory")
+        ->required();
     cli.add_option("--trace_log", trace_log, "path to output trace file");
     cli.add_option("--genesis_file", genesis_file, "genesis file directory")
         ->required()
@@ -280,6 +299,7 @@ int main(int const argc, char const *argv[])
     }();
 
     MonadDevnet const chain{};
+    LedgerBlockDb block_db{block_db_path};
     run_monad(
         chain,
         block_db,

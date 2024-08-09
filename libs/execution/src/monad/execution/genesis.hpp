@@ -113,12 +113,11 @@ read_genesis(std::filesystem::path const &genesis_file, Db &db)
 inline void
 verify_genesis(BrotliBlockDb &block_db, BlockHeader const &block_header)
 {
-    Block block{};
-    bool const status = block_db.get(0u, block);
-    MONAD_ASSERT(status);
+    auto const block = block_db.read_block(0u);
+    MONAD_ASSERT(block.has_value());
     // There should be no txn/receipt for the genesis block, so just asserting
     // on state root for now
-    MONAD_ASSERT(block_header.state_root == block.header.state_root);
+    MONAD_ASSERT(block_header.state_root == block.value().header.state_root);
 }
 
 inline void read_and_verify_genesis(

@@ -10,14 +10,19 @@ MONAD_NAMESPACE_BEGIN
 
 struct Block;
 
-class BrotliBlockDb
+struct BlockDb
+{
+    virtual std::optional<Block> read_block(uint64_t) const = 0;
+};
+
+class BrotliBlockDb : public BlockDb
 {
     FileDb db_;
 
 public:
     BrotliBlockDb(std::filesystem::path const &);
 
-    bool get(uint64_t, Block &) const;
+    virtual std::optional<Block> read_block(uint64_t) const override;
 
     void upsert(uint64_t, Block const &) const;
     bool remove(uint64_t) const;

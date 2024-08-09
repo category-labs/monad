@@ -34,7 +34,7 @@ public:
     uint64_t total_gas{0};
 
     Result<uint64_t> run_fork(
-        Db &db, BrotliBlockDb &block_db, BlockHashBuffer &block_hash_buffer,
+        Db &db, BlockDb &block_db, BlockHashBuffer &block_hash_buffer,
         fiber::PriorityPool &priority_pool, uint64_t const start_block_number,
         uint64_t const nblocks)
     {
@@ -85,27 +85,27 @@ public:
                 break; // wrapped
             }
 
-            Block block{};
-            if (!block_db.get(block_number, block)) {
+            auto block = block_db.read_block(block_number);
+            if (!block.has_value()) {
                 return i;
             }
 
-            block_hash_buffer.set(block_number - 1, block.header.parent_hash);
+            block_hash_buffer.set(block_number - 1, block->header.parent_hash);
 
             {
-                auto result = chain.static_validate_header(block.header);
+                auto result = chain.static_validate_header(block->header);
                 if (MONAD_UNLIKELY(result.has_error())) {
                     LOG_ERROR(
                         "block {} {}",
-                        block.header.number,
+                        block->header.number,
                         result.assume_error().message().c_str());
                     return std::move(result).assume_error();
                 }
             }
 
-            evmc_revision const rev = chain.get_revision(block.header);
+            evmc_revision const rev = chain.get_revision(block->header);
 
-            BOOST_OUTCOME_TRY(static_validate_block(rev, block));
+            BOOST_OUTCOME_TRY(static_validate_block(rev, block.value()));
 
             BlockState block_state(db);
             BOOST_OUTCOME_TRY(
@@ -113,23 +113,23 @@ public:
                 execute_block(
                     chain,
                     rev,
-                    block,
+                    block.value(),
                     block_state,
                     block_hash_buffer,
                     priority_pool));
-            BOOST_OUTCOME_TRY(chain.validate_header(receipts, block.header));
+            BOOST_OUTCOME_TRY(chain.validate_header(receipts, block->header));
             block_state.log_debug();
             block_state.commit(receipts);
 
             if (!chain.validate_root(
-                    rev, block.header, db.state_root(), db.receipts_root())) {
+                    rev, block->header, db.state_root(), db.receipts_root())) {
                 return BlockError::WrongStateRoot;
             }
 
-            n_transactions += block.transactions.size();
-            batch_num_txs += block.transactions.size();
-            total_gas += block.header.gas_used;
-            batch_gas += block.header.gas_used;
+            n_transactions += block->transactions.size();
+            batch_num_txs += block->transactions.size();
+            total_gas += block->header.gas_used;
+            batch_gas += block->header.gas_used;
             ++batch_num_blocks;
 
             if (block_number % BATCH_SIZE == 0) {
@@ -143,19 +143,17 @@ public:
     }
 
     Result<uint64_t>
-    run(Db &db, BrotliBlockDb &block_db, fiber::PriorityPool &priority_pool,
+    run(Db &db, BlockDb &block_db, fiber::PriorityPool &priority_pool,
         uint64_t const start_block_number, uint64_t const nblocks)
     {
-        Block block{};
 
         BlockHashBuffer block_hash_buffer;
         uint64_t block_number =
             start_block_number < 256 ? 1 : start_block_number - 255;
         for (; block_number < start_block_number; ++block_number) {
-            block = Block{};
-            bool const result = block_db.get(block_number, block);
-            MONAD_ASSERT(result);
-            block_hash_buffer.set(block_number - 1, block.header.parent_hash);
+            auto const block = block_db.read_block(block_number);
+            MONAD_ASSERT(block.has_value());
+            block_hash_buffer.set(block_number - 1, block->header.parent_hash);
         }
 
         return run_fork(

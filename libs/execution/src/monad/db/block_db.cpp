@@ -23,7 +23,7 @@ BrotliBlockDb::BrotliBlockDb(std::filesystem::path const &dir)
 {
 }
 
-bool BrotliBlockDb::get(uint64_t const num, Block &block) const
+std::optional<Block> BrotliBlockDb::read_block(uint64_t const num) const
 {
     auto const key = std::to_string(num);
     auto result = db_.get(key.c_str());
@@ -33,7 +33,7 @@ bool BrotliBlockDb::get(uint64_t const num, Block &block) const
         result = db_.get(key.c_str());
     }
     if (!result.has_value()) {
-        return false;
+        return std::nullopt;
     }
     auto const view = to_byte_string_view(result.value());
     size_t brotli_size = std::max(result->size() * 100, 1ul << 20); // TODO
@@ -48,8 +48,7 @@ bool BrotliBlockDb::get(uint64_t const num, Block &block) const
     auto const decoded_block = rlp::decode_block(view2);
     MONAD_ASSERT(!decoded_block.has_error());
     MONAD_ASSERT(view2.size() == 0);
-    block = decoded_block.value();
-    return true;
+    return decoded_block.value();
 }
 
 void BrotliBlockDb::upsert(uint64_t const num, Block const &block) const

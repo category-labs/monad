@@ -21,7 +21,7 @@ using namespace intx;
 TEST(Rlp_Block, DecodeEncodeBlock46402)
 {
     Block block;
-    BlockDb const block_db(test_resource::correct_block_data_dir);
+    BrotliBlockDb const block_db(test_resource::correct_block_data_dir);
     bool const res = block_db.get(46'402, block);
     ASSERT_TRUE(res);
 
@@ -117,7 +117,7 @@ TEST(Rlp_Block, DecodeEncodeBlock46402)
 TEST(Rlp_Block, DecodeEncodeBlock2730000)
 {
     Block block;
-    BlockDb const block_db(test_resource::correct_block_data_dir);
+    BrotliBlockDb const block_db(test_resource::correct_block_data_dir);
     EXPECT_TRUE(block_db.get(2'730'000, block));
 
     // Header
@@ -275,7 +275,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730000)
 TEST(Rlp_Block, DecodeEncodeBlock2730001)
 {
     Block block;
-    BlockDb const block_db(test_resource::correct_block_data_dir);
+    BrotliBlockDb const block_db(test_resource::correct_block_data_dir);
     EXPECT_TRUE(block_db.get(2'730'001, block));
 
     // Header
@@ -460,7 +460,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
 TEST(Rlp_Block, DecodeEncodeBlock2730002)
 {
     Block block;
-    BlockDb const block_db(test_resource::correct_block_data_dir);
+    BrotliBlockDb const block_db(test_resource::correct_block_data_dir);
     EXPECT_TRUE(block_db.get(2'730'002, block));
 
     // Header
@@ -530,7 +530,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730002)
 TEST(Rlp_Block, DecodeEncodeBlock2730009)
 {
     Block block;
-    BlockDb const block_db(test_resource::correct_block_data_dir);
+    BrotliBlockDb const block_db(test_resource::correct_block_data_dir);
     EXPECT_TRUE(block_db.get(2730009, block));
 
     // Header
@@ -585,7 +585,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730009)
 TEST(Rlp_Block, DecodeEncodeBlock14000000)
 {
     Block block;
-    BlockDb const block_db(test_resource::correct_block_data_dir);
+    BrotliBlockDb const block_db(test_resource::correct_block_data_dir);
     EXPECT_TRUE(block_db.get(14'000'000, block));
 
     // Header

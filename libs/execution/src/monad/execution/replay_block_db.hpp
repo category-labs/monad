@@ -34,7 +34,7 @@ public:
     uint64_t total_gas{0};
 
     Result<uint64_t> run_fork(
-        Db &db, BlockDb &block_db, BlockHashBuffer &block_hash_buffer,
+        Db &db, BrotliBlockDb &block_db, BlockHashBuffer &block_hash_buffer,
         fiber::PriorityPool &priority_pool, uint64_t const start_block_number,
         uint64_t const nblocks)
     {
@@ -143,7 +143,7 @@ public:
     }
 
     Result<uint64_t>
-    run(Db &db, BlockDb &block_db, fiber::PriorityPool &priority_pool,
+    run(Db &db, BrotliBlockDb &block_db, fiber::PriorityPool &priority_pool,
         uint64_t const start_block_number, uint64_t const nblocks)
     {
         Block block{};

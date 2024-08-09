@@ -18,12 +18,12 @@
 
 MONAD_NAMESPACE_BEGIN
 
-BlockDb::BlockDb(std::filesystem::path const &dir)
+BrotliBlockDb::BrotliBlockDb(std::filesystem::path const &dir)
     : db_{dir.c_str()}
 {
 }
 
-bool BlockDb::get(uint64_t const num, Block &block) const
+bool BrotliBlockDb::get(uint64_t const num, Block &block) const
 {
     auto const key = std::to_string(num);
     auto result = db_.get(key.c_str());
@@ -52,7 +52,7 @@ bool BlockDb::get(uint64_t const num, Block &block) const
     return true;
 }
 
-void BlockDb::upsert(uint64_t const num, Block const &block) const
+void BrotliBlockDb::upsert(uint64_t const num, Block const &block) const
 {
     auto const key = std::to_string(num);
     auto const encoded_block = rlp::encode_block(block);
@@ -76,7 +76,7 @@ void BlockDb::upsert(uint64_t const num, Block const &block) const
     db_.upsert(key.c_str(), value);
 }
 
-bool BlockDb::remove(uint64_t const num) const
+bool BrotliBlockDb::remove(uint64_t const num) const
 {
     auto const key = std::to_string(num);
     return db_.remove(key.c_str());

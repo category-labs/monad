@@ -110,7 +110,8 @@ read_genesis(std::filesystem::path const &genesis_file, Db &db)
     return block_header;
 }
 
-inline void verify_genesis(BlockDb &block_db, BlockHeader const &block_header)
+inline void
+verify_genesis(BrotliBlockDb &block_db, BlockHeader const &block_header)
 {
     Block block{};
     bool const status = block_db.get(0u, block);
@@ -121,7 +122,8 @@ inline void verify_genesis(BlockDb &block_db, BlockHeader const &block_header)
 }
 
 inline void read_and_verify_genesis(
-    BlockDb &block_db, Db &db, std::filesystem::path const &genesis_file_path)
+    BrotliBlockDb &block_db, Db &db,
+    std::filesystem::path const &genesis_file_path)
 {
     auto const block_header = read_genesis(genesis_file_path, db);
     verify_genesis(block_db, block_header);

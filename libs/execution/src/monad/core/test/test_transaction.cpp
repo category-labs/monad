@@ -13,7 +13,7 @@ using namespace monad;
 TEST(Transaction, recover_sender_block_2730000)
 {
     Block block{};
-    BlockDb const block_db(test_resource::correct_block_data_dir);
+    BrotliBlockDb const block_db(test_resource::correct_block_data_dir);
     bool const res = block_db.get(2'730'000u, block);
     ASSERT_TRUE(res);
 
@@ -39,7 +39,7 @@ TEST(Transaction, recover_sender_block_2730000)
 TEST(TransactionProcessor, recover_sender_block_14000000)
 {
     Block block{};
-    BlockDb const block_db(test_resource::correct_block_data_dir);
+    BrotliBlockDb const block_db(test_resource::correct_block_data_dir);
     bool const res = block_db.get(14'000'000u, block);
     ASSERT_TRUE(res);
 

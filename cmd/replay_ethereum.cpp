@@ -114,7 +114,7 @@ int main(int const argc, char const *argv[])
 
     uint64_t last_block_number;
     {
-        auto block_db = BlockDb(block_db_path);
+        auto block_db = BrotliBlockDb(block_db_path);
 
         auto const load_start_time = std::chrono::steady_clock::now();
 

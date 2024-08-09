@@ -10,12 +10,12 @@ MONAD_NAMESPACE_BEGIN
 
 struct Block;
 
-class BlockDb
+class BrotliBlockDb
 {
     FileDb db_;
 
 public:
-    BlockDb(std::filesystem::path const &);
+    BrotliBlockDb(std::filesystem::path const &);
 
     bool get(uint64_t, Block &) const;
 

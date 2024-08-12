@@ -16,6 +16,9 @@ class FileDb final
     std::unique_ptr<Impl> impl_;
 
 public:
+    FileDb() = delete;
+    FileDb(FileDb const &) = delete;
+    FileDb(FileDb &&);
     explicit FileDb(char const *dir);
     ~FileDb();
 

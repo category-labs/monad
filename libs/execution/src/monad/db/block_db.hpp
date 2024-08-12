@@ -15,7 +15,11 @@ class BlockDb
     FileDb db_;
 
 public:
+    BlockDb() = delete;
+    BlockDb(Block const &) = delete;
+    BlockDb(BlockDb &&) = default;
     BlockDb(std::filesystem::path const &);
+    ~BlockDb() = default;
 
     bool get(uint64_t, Block &) const;
 

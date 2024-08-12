@@ -65,6 +65,8 @@ public:
     }
 };
 
+FileDb::FileDb(FileDb &&) = default;
+
 FileDb::FileDb(char const *const dir)
     : impl_{new Impl{dir}}
 {

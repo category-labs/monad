@@ -335,7 +335,7 @@ set it to the desired size beforehand).
             destroy_and_fill
                 ? MONAD_ASYNC_NAMESPACE::storage_pool::mode::truncate
                 : MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing;
-        MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags flags;
+        MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags flags{};
         flags.interleave_chunks_evenly = true;
         MONAD_ASYNC_NAMESPACE::storage_pool pool{{storage_paths}, mode, flags};
 

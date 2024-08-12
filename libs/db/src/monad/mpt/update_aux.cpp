@@ -247,22 +247,20 @@ void UpdateAuxImpl::set_io(AsyncIO *io_)
     bool const can_write_to_map =
         (!io->storage_pool().is_read_only() ||
          io->storage_pool().is_read_only_allow_dirty());
-    db_metadata_[0] = start_lifetime_as<detail::db_metadata>(::mmap(
-        nullptr,
-        map_size,
-        can_write_to_map ? (PROT_READ | PROT_WRITE) : (PROT_READ),
-        io->storage_pool().is_read_only_allow_dirty() ? MAP_PRIVATE
-                                                      : MAP_SHARED,
-        fdw.first,
-        off_t(fdr.second)));
+    auto &fd = can_write_to_map ? fdw : fdr;
+    auto const prot = can_write_to_map ? (PROT_READ | PROT_WRITE) : (PROT_READ);
+    auto const mapflags = io->storage_pool().is_read_only_allow_dirty()
+                              ? MAP_PRIVATE
+                              : MAP_SHARED;
+    db_metadata_[0] = start_lifetime_as<detail::db_metadata>(
+        ::mmap(nullptr, map_size, prot, mapflags, fd.first, off_t(fdr.second)));
     MONAD_ASSERT(db_metadata_[0] != MAP_FAILED);
     db_metadata_[1] = start_lifetime_as<detail::db_metadata>(::mmap(
         nullptr,
         map_size,
-        can_write_to_map ? (PROT_READ | PROT_WRITE) : (PROT_READ),
-        io->storage_pool().is_read_only_allow_dirty() ? MAP_PRIVATE
-                                                      : MAP_SHARED,
-        fdw.first,
+        prot,
+        mapflags,
+        fd.first,
         off_t(fdr.second + cnv_chunk->capacity() / 2)));
     MONAD_ASSERT(db_metadata_[1] != MAP_FAILED);
     /* If on a storage which ignores TRIM, and the user just truncated
@@ -347,6 +345,20 @@ void UpdateAuxImpl::set_io(AsyncIO *io_)
                  db_metadata_[0]->magic,
                  detail::db_metadata::MAGIC,
                  detail::db_metadata::MAGIC_STRING_LEN)) {
+        if (!can_write_to_map) {
+            // We don't have writable maps, so can't forward progress
+            throw std::runtime_error(
+                "Neither copy of the DB metadata is valid, and not opened for "
+                "writing so stopping now.");
+        }
+        for (uint32_t n = 0; n < chunk_count; n++) {
+            auto chunk = io->storage_pool().chunk(storage_pool::seq, n);
+            if (chunk->size() != 0) {
+                throw std::runtime_error(
+                    "Trying to initialise new DB but storage pool contains "
+                    "existing data, stopping now to prevent data loss.");
+            }
+        }
         memset(db_metadata_[0], 0, map_size);
         MONAD_DEBUG_ASSERT((chunk_count & ~0xfffffU) == 0);
         db_metadata_[0]->chunk_info_count = chunk_count & 0xfffffU;

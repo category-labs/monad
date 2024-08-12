@@ -14,6 +14,8 @@ struct Receipt;
 
 struct Chain
 {
+    virtual ~Chain() = default;
+
     virtual uint256_t get_chain_id() const = 0;
 
     virtual evmc_revision get_revision(BlockHeader const &) const = 0;

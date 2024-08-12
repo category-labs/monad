@@ -700,8 +700,9 @@ int main(int argc, char *argv[])
                         find_request_sender::result_type res)
                     {
                         MONAD_ASSERT(res);
-                        auto const [node_cursor, errc] = res.assume_value();
-                        MONAD_ASSERT(node_cursor.is_valid());
+                        auto const [data, errc] = res.assume_value();
+                        MONAD_ASSERT(
+                            data.size() == KECCAK256_SIZE || data.size() == 0);
                         MONAD_ASSERT(errc == monad::mpt::find_result::success);
                         ops++;
 
@@ -727,20 +728,18 @@ int main(int argc, char *argv[])
                     states.emplace_back(new auto(connect(
                         *aux.io,
                         find_request_sender{
-                            aux, inflights, state_start, NibblesView{}},
+                            aux, inflights, state_start, NibblesView{}, true},
                         receiver_t(
                             ops, signal_done, n_slices, state_start, n))));
                 }
 
                 // Initiate
-                NodeCursor fake_begin{};
-                fake_begin.node = (Node *)(uintptr_t)1;
                 for (auto &state : states) {
                     state->receiver().sender = &state->sender();
                     state->receiver().set_value(
                         state.get(),
-                        monad::mpt::find_result_type(
-                            fake_begin, monad::mpt::find_result::success));
+                        monad::mpt::find_bytes_result_type(
+                            {}, monad::mpt::find_result::success));
                 }
 
                 auto begin = std::chrono::steady_clock::now();

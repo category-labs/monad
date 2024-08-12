@@ -386,18 +386,21 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
             make_get_sender(ctx.get(), prefix + kv[0].first, starting_block_id),
             [&](result_t res) {
                 ++cbs;
+                ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(res.value(), kv[0].second);
             });
         async_get(
             make_get_sender(ctx.get(), prefix + kv[1].first, starting_block_id),
             [&](result_t res) {
                 ++cbs;
+                ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(res.value(), kv[1].second);
             });
         async_get(
             make_get_data_sender(ctx.get(), prefix, starting_block_id),
             [&](result_t res) {
                 ++cbs;
+                ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(
                     res.value(),
                     0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);

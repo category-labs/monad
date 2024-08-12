@@ -96,22 +96,22 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
              ++node_prefix_index, ++prefix_index) {
             if (prefix_index >= key_.nibble_size()) {
                 res_ = {
-                    NodeCursor{*node, node_prefix_index},
+                    byte_string{},
                     find_result::key_ends_earlier_than_node_failure};
                 io_state->completed(success());
                 return success();
             }
             if (key_.get(prefix_index) !=
                 get_nibble(node->path_data(), node_prefix_index)) {
-                res_ = {
-                    NodeCursor{*node, node_prefix_index},
-                    find_result::key_mismatch_failure};
+                res_ = {byte_string{}, find_result::key_mismatch_failure};
                 io_state->completed(success());
                 return success();
             }
         }
         if (prefix_index == key_.nibble_size()) {
-            res_ = {NodeCursor{*node, node_prefix_index}, find_result::success};
+            res_ = {
+                byte_string{return_value_ ? node->value() : node->data()},
+                find_result::success};
             io_state->completed(success());
             return success();
         }
@@ -127,9 +127,10 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
                 continue;
             }
             if (!tid_checked_) {
+                MONAD_ASSERT(aux_.io != nullptr);
                 if (aux_.io->owning_thread_id() != gettid()) {
                     res_ = {
-                        NodeCursor{*node, node_prefix_index},
+                        byte_string{},
                         find_result::need_to_continue_in_io_thread};
                     return success();
                 }
@@ -154,9 +155,7 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
             return success();
         }
         else {
-            res_ = {
-                NodeCursor{*node, node_prefix_index},
-                find_result::branch_not_exist_failure};
+            res_ = {byte_string{}, find_result::branch_not_exist_failure};
             io_state->completed(success());
             return success();
         }

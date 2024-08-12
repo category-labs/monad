@@ -2,6 +2,8 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
+using find_bytes_result_type = std::pair<byte_string, find_result>;
+
 /*! \brief Sender to perform the asynchronous finding of a node.
  */
 class find_request_sender
@@ -13,8 +15,9 @@ class find_request_sender
     NodeCursor root_;
     NibblesView key_;
     inflight_map_t *const inflights_{nullptr};
-    std::optional<find_result_type> res_;
+    std::optional<find_bytes_result_type> res_;
     bool tid_checked_{false};
+    bool return_value_{true};
 
     MONAD_ASYNC_NAMESPACE::result<void> resume_(
         MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state,
@@ -26,24 +29,27 @@ class find_request_sender
     }
 
 public:
-    using result_type = MONAD_ASYNC_NAMESPACE::result<find_result_type>;
+    using result_type = MONAD_ASYNC_NAMESPACE::result<find_bytes_result_type>;
 
     constexpr find_request_sender(
-        UpdateAuxImpl &aux, NodeCursor root, NibblesView key)
+        UpdateAuxImpl &aux, NodeCursor root, NibblesView key,
+        bool const return_value)
         : aux_(aux)
         , root_(root)
         , key_(key)
+        , return_value_(return_value)
     {
         MONAD_ASSERT(root_.is_valid());
     }
 
     constexpr find_request_sender(
         UpdateAuxImpl &aux, inflight_map_t &inflights, NodeCursor root,
-        NibblesView key)
+        NibblesView key, bool const return_value)
         : aux_(aux)
         , root_(root)
         , key_(key)
         , inflights_(&inflights)
+        , return_value_(return_value)
     {
         MONAD_ASSERT(root_.is_valid());
     }
@@ -69,7 +75,7 @@ public:
     }
 };
 
-static_assert(sizeof(find_request_sender) == 88);
+static_assert(sizeof(find_request_sender) == 104);
 static_assert(alignof(find_request_sender) == 8);
 static_assert(MONAD_ASYNC_NAMESPACE::sender<find_request_sender>);
 

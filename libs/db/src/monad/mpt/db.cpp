@@ -980,18 +980,18 @@ namespace detail
                     sender->root =
                         detail::deserialize_node_from_receiver_result(
                             std::move(buffer_), buffer_off, io_state);
-                    sender->res_ = {
+                    sender->res_root = {
                         NodeCursor{*sender->root.get()}, find_result::success};
                     sender->context.root_cache.insert(
                         sender->block_id, sender->root);
                 }
                 catch (std::exception const &) {
-                    sender->res_ = {
+                    sender->res_root = {
                         NodeCursor{}, find_result::version_no_longer_exist};
                 }
             }
             else {
-                sender->res_ = {
+                sender->res_root = {
                     NodeCursor{}, find_result::version_no_longer_exist};
             }
 
@@ -1005,7 +1005,7 @@ namespace detail
     // the DbGetSender.
     struct find_request_receiver_t
     {
-        find_result_type &res_;
+        find_bytes_result_type &res_bytes;
         async::erased_connected_operation *const io_state;
         uint64_t const version;
         UpdateAux<> &aux;
@@ -1026,14 +1026,15 @@ namespace detail
             }
             try {
                 // verify version still valid in history after success
-                res_ = aux.version_is_valid_ondisk(version)
-                           ? std::move(res).assume_value()
-                           : find_result_type{
-                                 NodeCursor{},
-                                 find_result::version_no_longer_exist};
+                res_bytes = aux.version_is_valid_ondisk(version)
+                                ? std::move(res).assume_value()
+                                : find_bytes_result_type{
+                                      byte_string{},
+                                      find_result::version_no_longer_exist};
             }
             catch (std::exception const &e) { // exception implies UB
-                res_ = {NodeCursor{}, find_result::version_no_longer_exist};
+                res_bytes = {
+                    byte_string{}, find_result::version_no_longer_exist};
             }
             io_state->completed(async::success());
             delete this_io_state;
@@ -1051,7 +1052,7 @@ namespace detail
             if (context.root_cache.find(acc, block_id)) {
                 // found in LRU - no IO necessary
                 root = acc->second->val;
-                res_ = {NodeCursor{*root.get()}, find_result::success};
+                res_root = {NodeCursor{*root.get()}, find_result::success};
                 io_state->completed(async::success());
                 return async::success();
             }
@@ -1060,18 +1061,19 @@ namespace detail
                 context.aux.get_root_offset_at_version(block_id);
             if (offset == INVALID_OFFSET) {
                 // root is no longer valid
-                res_ = {NodeCursor{}, find_result::version_no_longer_exist};
+                res_root = {NodeCursor{}, find_result::version_no_longer_exist};
                 io_state->completed(async::success());
                 return async::success();
             }
 
             auto cont = [this, io_state](std::shared_ptr<Node> root_) {
                 if (!root_) {
-                    res_ = {NodeCursor{}, find_result::version_no_longer_exist};
+                    res_root = {
+                        NodeCursor{}, find_result::version_no_longer_exist};
                 }
                 else {
                     root = root_;
-                    res_ = {NodeCursor{*root.get()}, find_result::success};
+                    res_root = {NodeCursor{*root.get()}, find_result::success};
                 }
                 io_state->completed(async::success());
             };
@@ -1090,16 +1092,21 @@ namespace detail
         case op_t::op_get_data2: {
             // verify version is valid in db history before doing anything
             if (!context.aux.version_is_valid_ondisk(block_id)) {
-                res_ = {NodeCursor{}, find_result::version_no_longer_exist};
+                res_bytes = {
+                    byte_string{}, find_result::version_no_longer_exist};
                 io_state->completed(async::success());
                 return async::success();
             }
 
             auto *state = new auto(async::connect(
                 find_request_sender(
-                    context.aux, context.inflight_nodes, cur, nv),
+                    context.aux,
+                    context.inflight_nodes,
+                    cur,
+                    nv,
+                    op_type == op_t::op_get2),
                 find_request_receiver_t{
-                    res_, io_state, block_id, context.aux}));
+                    res_bytes, io_state, block_id, context.aux}));
             state->initiate();
             return async::success();
         }
@@ -1113,24 +1120,25 @@ namespace detail
         async::erased_connected_operation *, async::result<void> r) noexcept
     {
         BOOST_OUTCOME_TRY(std::move(r));
-        if (res_.second != find_result::success) {
+        auto const res_msg = (op_type == op_get1 || op_type == op_get_data1)
+                                 ? res_root.second
+                                 : res_bytes.second;
+        MONAD_ASSERT(res_msg != find_result::unknown);
+        if (res_msg != find_result::success) {
             return DbError::key_not_found;
         }
         switch (op_type) {
         case op_t::op_get1:
         case op_t::op_get_data1: {
             // Restart this op
-            cur = std::move(res_.first);
+            cur = std::move(res_root.first);
             op_type =
                 (op_type == op_t::op_get1) ? op_t::op_get2 : op_t::op_get_data2;
             return async::sender_errc::operation_must_be_reinitiated;
         }
         case op_t::op_get2:
-            MONAD_DEBUG_ASSERT(res_.first.node != nullptr);
-            return byte_string(res_.first.node->value());
         case op_t::op_get_data2:
-            MONAD_DEBUG_ASSERT(res_.first.node != nullptr);
-            return byte_string(res_.first.node->data());
+            return res_bytes.first;
         }
         abort();
     }

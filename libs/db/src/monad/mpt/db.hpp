@@ -95,7 +95,6 @@ namespace detail
     {
         using result_type = async::result<T>;
 
-    public:
         AsyncContext &context;
 
         enum op_t : uint8_t
@@ -111,9 +110,11 @@ namespace detail
         Nibbles const nv;
         uint64_t const block_id;
 
-        find_result_type res_;
+        using find_bytes_result_type = std::pair<byte_string, find_result>;
 
-    public:
+        find_result_type res_root;
+        find_bytes_result_type res_bytes;
+
         constexpr DbGetSender(
             AsyncContext &context_, op_t const op_type_, NibblesView const n,
             uint64_t const block_id_)
@@ -149,6 +150,8 @@ namespace detail
     };
 }
 
+// The following are not threadsafe. Please use async get from the RODb owning
+// thread.
 using AsyncContextUniquePtr =
     std::unique_ptr<AsyncContext, detail::AsyncContextDeleter>;
 AsyncContextUniquePtr async_context_create(Db &db);

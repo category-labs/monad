@@ -133,6 +133,10 @@ struct shared_state_t
                             .chunk(MONAD_ASYNC_NAMESPACE::storage_pool::seq, n)
                             ->size() /
                         MONAD_ASYNC_NAMESPACE::DISK_PAGE_SIZE)};
+                if (ret[n].second > 0) {
+                    // Prevent random reads off the end of the chunk
+                    ret[n].second--;
+                }
             }
             ret.erase(
                 std::remove_if(
@@ -153,6 +157,26 @@ struct shared_state_t
         }
         ret *= MONAD_ASYNC_NAMESPACE::DISK_PAGE_SIZE;
         return ret;
+    }
+
+    MONAD_ASYNC_NAMESPACE::chunk_offset_t add_op(uint64_t elapsed_ns)
+    {
+        ops++;
+        if (elapsed_ns < min_ns) {
+            min_ns = elapsed_ns;
+        }
+        if (elapsed_ns > max_ns) {
+            max_ns = elapsed_ns;
+        }
+        acc_ns += elapsed_ns;
+        auto r = rand();
+        auto [chunk_id, chunk_size_div_disk_page_size] =
+            chunk_sizes_div_disk_page_size
+                [r % uint32_t(chunk_sizes_div_disk_page_size.size())];
+        auto offset_into_chunk = (r >> 16) % chunk_size_div_disk_page_size;
+        return MONAD_ASYNC_NAMESPACE::chunk_offset_t(
+            chunk_id,
+            offset_into_chunk * MONAD_ASYNC_NAMESPACE::DISK_PAGE_SIZE);
     }
 };
 
@@ -187,28 +211,13 @@ inline void receiver_t::set_value(
                   << std::endl;
     }
     MONAD_ASSERT(buffer);
-    shared->ops++;
     auto const elapsed_ns(uint64_t(
         std::chrono::duration_cast<std::chrono::nanoseconds>(rawstate->elapsed)
             .count()));
-    if (elapsed_ns < shared->min_ns) {
-        shared->min_ns = elapsed_ns;
-    }
-    if (elapsed_ns > shared->max_ns) {
-        shared->max_ns = elapsed_ns;
-    }
-    shared->acc_ns += elapsed_ns;
+    auto const offset = shared->add_op(elapsed_ns);
     if (!shared->done) {
         auto *state =
             static_cast<connected_state_ptr_type::element_type *>(rawstate);
-        auto r = shared->rand();
-        auto [chunk_id, chunk_size_div_disk_page_size] =
-            shared->chunk_sizes_div_disk_page_size
-                [r % uint32_t(shared->chunk_sizes_div_disk_page_size.size())];
-        auto offset_into_chunk = (r >> 16) % chunk_size_div_disk_page_size;
-        MONAD_ASYNC_NAMESPACE::chunk_offset_t const offset(
-            chunk_id,
-            offset_into_chunk * MONAD_ASYNC_NAMESPACE::DISK_PAGE_SIZE);
         auto const io_priority = state->io_priority();
         state->reset(
             std::tuple{offset, MONAD_ASYNC_NAMESPACE::DISK_PAGE_SIZE},
@@ -401,14 +410,6 @@ set it to the desired size beforehand).
                       << std::endl;
         }
 
-        std::vector<connected_state_ptr_type> states;
-        states.reserve(concurrent_io);
-        for (size_t n = 0; n < concurrent_io; n++) {
-            states.push_back(io.make_connected(
-                MONAD_ASYNC_NAMESPACE::read_single_buffer_sender({0, 0}, 0),
-                receiver_t{&shared_state}));
-        }
-
         struct statistics_t
         {
             uint32_t ops_per_sec{0};
@@ -417,7 +418,7 @@ set it to the desired size beforehand).
             float max_latency{0};
         } statistics;
 
-        auto const begin = std::chrono::steady_clock::now();
+        auto begin = std::chrono::steady_clock::now();
         auto print_statistics = [&] {
             auto const now = std::chrono::steady_clock::now();
             auto const elapsed =
@@ -436,44 +437,55 @@ set it to the desired size beforehand).
                       << " max: " << statistics.max_latency << std::endl;
         };
 
-        for (auto &i : states) {
-            MONAD_ASYNC_NAMESPACE::filled_read_buffer res;
-            if (highest_io_priority) {
-                i->set_io_priority(
-                    MONAD_ASYNC_NAMESPACE::erased_connected_operation::
-                        io_priority::highest);
+        {
+            std::vector<connected_state_ptr_type> states;
+            states.reserve(concurrent_io);
+            for (size_t n = 0; n < concurrent_io; n++) {
+                states.push_back(io.make_connected(
+                    MONAD_ASYNC_NAMESPACE::read_single_buffer_sender({0, 0}, 0),
+                    receiver_t{&shared_state}));
             }
-            i->receiver().set_value(
-                i.get(),
-                MONAD_ASYNC_NAMESPACE::read_single_buffer_sender::result_type{
-                    res});
-        }
-        io.set_eager_completions(eager_completions);
-        shared_state.acc_ns = 0;
-        shared_state.max_ns = 0;
-        shared_state.min_ns = UINT64_MAX;
-        std::chrono::seconds elapsed_secs(2);
-        do {
-            auto diff = std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::steady_clock::now() - begin);
-            if (diff > elapsed_secs) {
-                print_statistics();
-                elapsed_secs = diff;
-            }
-            io.poll_nonblocking(1);
-            if (workload_us > 0) {
-                auto const begin2 = std::chrono::steady_clock::now();
-                do {
-                    /* deliberately occupy the CPU fully */
+
+            begin = std::chrono::steady_clock::now();
+            for (auto &i : states) {
+                MONAD_ASYNC_NAMESPACE::filled_read_buffer res;
+                if (highest_io_priority) {
+                    i->set_io_priority(
+                        MONAD_ASYNC_NAMESPACE::erased_connected_operation::
+                            io_priority::highest);
                 }
-                while (std::chrono::steady_clock::now() - begin2 <
-                       std::chrono::microseconds(workload_us));
+                i->receiver().set_value(
+                    i.get(),
+                    MONAD_ASYNC_NAMESPACE::read_single_buffer_sender::
+                        result_type{res});
             }
+            io.set_eager_completions(eager_completions);
+            shared_state.acc_ns = 0;
+            shared_state.max_ns = 0;
+            shared_state.min_ns = UINT64_MAX;
+            std::chrono::seconds elapsed_secs(2);
+            do {
+                auto diff = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::steady_clock::now() - begin);
+                if (diff > elapsed_secs) {
+                    print_statistics();
+                    elapsed_secs = diff;
+                }
+                io.poll_nonblocking(1);
+                if (workload_us > 0) {
+                    auto const begin2 = std::chrono::steady_clock::now();
+                    do {
+                        /* deliberately occupy the CPU fully */
+                    }
+                    while (std::chrono::steady_clock::now() - begin2 <
+                           std::chrono::microseconds(workload_us));
+                }
+            }
+            while (std::chrono::steady_clock::now() - begin <
+                   std::chrono::seconds(duration_secs));
+            shared_state.done = true;
+            io.wait_until_done();
         }
-        while (std::chrono::steady_clock::now() - begin <
-               std::chrono::seconds(duration_secs));
-        shared_state.done = true;
-        io.wait_until_done();
         print_statistics();
     }
 

@@ -122,7 +122,7 @@ function(monad_target_gdb_pretty_printer dest target printer)
   file(RELATIVE_PATH leaf "${CMAKE_SOURCE_DIR}" "${printer}")
   set(asmfile "${CMAKE_BINARY_DIR}/${leaf}.S")
   set(GDB_PRETTY_PRINTER_PATH "${printer}")
-  configure_file("${CMAKE_SOURCE_DIR}/cmake/debug_gdb_scripts.in" "${asmfile}" @ONLY)
+  configure_file("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/cmake/debug_gdb_scripts.in" "${asmfile}" @ONLY)
   add_library(${target} OBJECT "${asmfile}")
   # The use of TARGET_OBJECTS here turns out to be critical. This was very non-obvious.
   target_link_libraries(${dest} PUBLIC "$<TARGET_OBJECTS:${target}>")

@@ -721,14 +721,19 @@ int main(int argc, char *argv[])
 
                 uint64_t ops{0};
                 bool signal_done{false};
-                inflight_map_t inflights;
+                inflight_node_t inflights;
                 std::vector<std::unique_ptr<connected_state_type>> states;
                 states.reserve(random_read_benchmark_threads);
                 for (uint32_t n = 0; n < random_read_benchmark_threads; n++) {
                     states.emplace_back(new auto(connect(
                         *aux.io,
                         find_request_sender{
-                            aux, inflights, state_start, NibblesView{}, true},
+                            aux,
+                            inflights,
+                            state_start,
+                            NibblesView{},
+                            true,
+                            5},
                         receiver_t(
                             ops, signal_done, n_slices, state_start, n))));
                 }

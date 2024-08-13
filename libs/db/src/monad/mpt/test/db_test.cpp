@@ -367,6 +367,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
         state->initiate();
     };
 
+    constexpr uint8_t const TEST_CACHED_LEVELS = 1;
     size_t i;
     constexpr size_t read_per_iteration = 3;
     constexpr size_t expected_num_success_callbacks =
@@ -383,21 +384,30 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
 
         // ensure we can still async query the old version
         async_get(
-            make_get_sender(ctx.get(), prefix + kv[0].first, starting_block_id),
+            make_get_sender(
+                ctx.get(),
+                prefix + kv[0].first,
+                starting_block_id,
+                TEST_CACHED_LEVELS),
             [&](result_t res) {
                 ++cbs;
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(res.value(), kv[0].second);
             });
         async_get(
-            make_get_sender(ctx.get(), prefix + kv[1].first, starting_block_id),
+            make_get_sender(
+                ctx.get(),
+                prefix + kv[1].first,
+                starting_block_id,
+                TEST_CACHED_LEVELS),
             [&](result_t res) {
                 ++cbs;
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(res.value(), kv[1].second);
             });
         async_get(
-            make_get_data_sender(ctx.get(), prefix, starting_block_id),
+            make_get_data_sender(
+                ctx.get(), prefix, starting_block_id, TEST_CACHED_LEVELS),
             [&](result_t res) {
                 ++cbs;
                 ASSERT_TRUE(res.has_value());
@@ -427,7 +437,11 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
         make_update(kv[3].first, kv[3].second));
 
     async_get(
-        make_get_sender(ctx.get(), prefix + kv[0].first, starting_block_id),
+        make_get_sender(
+            ctx.get(),
+            prefix + kv[0].first,
+            starting_block_id,
+            TEST_CACHED_LEVELS),
         [&](result_t res) {
             EXPECT_TRUE(res.has_error());
             EXPECT_EQ(res.error(), DbError::key_not_found);

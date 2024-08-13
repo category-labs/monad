@@ -109,6 +109,7 @@ namespace detail
         NodeCursor cur;
         Nibbles const nv;
         uint64_t const block_id;
+        uint8_t const cached_levels;
 
         using find_bytes_result_type = std::pair<byte_string, find_result>;
 
@@ -117,22 +118,25 @@ namespace detail
 
         constexpr DbGetSender(
             AsyncContext &context_, op_t const op_type_, NibblesView const n,
-            uint64_t const block_id_)
+            uint64_t const block_id_, uint8_t const cached_levels_)
             : context(context_)
             , op_type(op_type_)
             , nv(n)
             , block_id(block_id_)
+            , cached_levels(cached_levels_)
         {
         }
 
         constexpr DbGetSender(
             AsyncContext &context_, op_t const op_type_, NodeCursor const cur_,
-            NibblesView const n, uint64_t const block_id_)
+            NibblesView const n, uint64_t const block_id_,
+            uint8_t const cached_levels_)
             : context(context_)
             , op_type(op_type_)
             , cur(cur_)
             , nv(n)
             , block_id(block_id_)
+            , cached_levels(cached_levels_)
         {
         }
 
@@ -157,25 +161,29 @@ using AsyncContextUniquePtr =
 AsyncContextUniquePtr async_context_create(Db &db);
 
 inline detail::DbGetSender<byte_string> make_get_sender(
-    AsyncContext *context, NibblesView const nv, uint64_t const block_id)
+    AsyncContext *context, NibblesView const nv, uint64_t const block_id,
+    uint8_t const cached_levels = 5)
 {
     MONAD_ASSERT(context);
     return {
         *context,
         detail::DbGetSender<byte_string>::op_t::op_get1,
         nv,
-        block_id};
+        block_id,
+        cached_levels};
 }
 
 inline detail::DbGetSender<byte_string> make_get_data_sender(
-    AsyncContext *context, NibblesView const nv, uint64_t const block_id)
+    AsyncContext *context, NibblesView const nv, uint64_t const block_id,
+    uint8_t const cached_levels = 5)
 {
     MONAD_ASSERT(context);
     return {
         *context,
         detail::DbGetSender<byte_string>::op_t::op_get_data1,
         nv,
-        block_id};
+        block_id,
+        cached_levels};
 }
 
 MONAD_MPT_NAMESPACE_END

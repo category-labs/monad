@@ -902,7 +902,6 @@ struct AsyncContext
     using TrieRootCache = static_lru_cache<uint64_t, std::shared_ptr<Node>>;
     using inflight_root_t = unordered_dense_map<
         uint64_t, std::vector<std::function<void(std::shared_ptr<Node>)>>>;
-    using inflight_node_t = inflight_map_t;
 
     UpdateAux<> &aux;
     TrieRootCache root_cache;
@@ -1104,7 +1103,8 @@ namespace detail
                     context.inflight_nodes,
                     cur,
                     nv,
-                    op_type == op_t::op_get2),
+                    op_type == op_t::op_get2,
+                    cached_levels),
                 find_request_receiver_t{
                     res_bytes, io_state, block_id, context.aux}));
             state->initiate();

@@ -61,17 +61,31 @@ struct find_request_sender::find_receiver
         MONAD_ASSERT(buffer_);
         MONAD_ASSERT(sender->root_.is_valid());
         MONAD_ASSERT(sender->root_.node->next(branch_index) == nullptr);
-        Node *node = detail::deserialize_node_from_receiver_result(
-                         std::move(buffer_), buffer_off, io_state)
-                         .release();
-        sender->root_.node->set_next(branch_index, node);
-        auto const offset = sender->root_.node->fnext(branch_index);
+        auto const next_offset = sender->root_.node->fnext(branch_index);
+        auto node_ptr = detail::deserialize_node_from_receiver_result(
+            std::move(buffer_), buffer_off, io_state);
+        auto *const node = node_ptr.get();
+        /* Nodes that are within cached level shares the same lifetime as
+         the root node of current version.
+         Starting from cached_level, the lifetime of the node is refcounted, and
+         all nodes that are visited below this level will remain alive as long
+         as the pending `find_request_sender`s are */
+        if (sender->curr_level_ > sender->cached_levels_ &&
+            sender->subtrie_with_sender_lifetime_ == nullptr) {
+            sender->subtrie_with_sender_lifetime_ = std::move(node_ptr);
+        }
+        else {
+            sender->root_.node->set_next(branch_index, node_ptr.release());
+        }
         if (sender->inflights_ != nullptr) {
-            auto it = sender->inflights_->find(offset);
+            auto it = sender->inflights_->find(next_offset);
             auto pendings = std::move(it->second);
             sender->inflights_->erase(it);
+            auto subtrie_with_sender_lifetime_ =
+                sender->subtrie_with_sender_lifetime_;
             for (auto &invoc : pendings) {
-                MONAD_ASSERT(invoc(NodeCursor{*node}));
+                MONAD_ASSERT(
+                    invoc(NodeCursor{*node}, subtrie_with_sender_lifetime_));
             }
         }
         else {
@@ -122,6 +136,7 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
                 prefix_index < std::numeric_limits<unsigned char>::max());
             key_ = key_.substr(static_cast<unsigned char>(prefix_index) + 1u);
             auto const child_index = node->to_child_index(branch);
+            ++this->curr_level_;
             if (node->next(child_index) != nullptr) {
                 root_ = NodeCursor{*node->next(child_index)};
                 continue;
@@ -138,8 +153,13 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
             }
             chunk_offset_t const offset = node->fnext(child_index);
             if (inflights_ != nullptr) {
-                auto cont = [this,
-                             io_state](NodeCursor const root) -> result<void> {
+                auto cont =
+                    [this, io_state](
+                        NodeCursor const root,
+                        std::shared_ptr<Node>
+                            subtrie_with_sender_lifetime_) -> result<void> {
+                    this->subtrie_with_sender_lifetime_ =
+                        subtrie_with_sender_lifetime_;
                     return this->resume_(io_state, root);
                 };
                 if (auto lt = inflights_->find(offset);

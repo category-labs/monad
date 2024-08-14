@@ -8,7 +8,9 @@
 #include <monad/core/result.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
+#include <monad/lru/static_lru_cache.hpp>
 #include <monad/mpt/config.hpp>
+#include <monad/mpt/find_request_sender.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/node.hpp>
 #include <monad/mpt/trie.hpp>
@@ -88,6 +90,27 @@ public:
     bool is_read_only() const;
 };
 
+// The following are not threadsafe. Please use async get from the RODb owning
+// thread.
+
+struct AsyncContext
+{
+    using inflight_root_t = unordered_dense_map<
+        uint64_t, std::vector<std::function<void(std::shared_ptr<Node>)>>>;
+    using TrieRootCache = static_lru_cache<uint64_t, std::shared_ptr<Node>>;
+
+    UpdateAux<> &aux;
+    TrieRootCache root_cache;
+    inflight_root_t inflight_roots;
+    inflight_node_t inflight_nodes;
+
+    AsyncContext(Db &db, size_t lru_size = 64);
+    ~AsyncContext() noexcept = default;
+};
+
+using AsyncContextUniquePtr = std::unique_ptr<AsyncContext>;
+AsyncContextUniquePtr async_context_create(Db &db);
+
 namespace detail
 {
     template <class T>
@@ -148,17 +171,7 @@ namespace detail
             async::result<void> res) noexcept;
     };
 
-    struct AsyncContextDeleter
-    {
-        void operator()(AsyncContext *ctx) const;
-    };
 }
-
-// The following are not threadsafe. Please use async get from the RODb owning
-// thread.
-using AsyncContextUniquePtr =
-    std::unique_ptr<AsyncContext, detail::AsyncContextDeleter>;
-AsyncContextUniquePtr async_context_create(Db &db);
 
 inline detail::DbGetSender<byte_string> make_get_sender(
     AsyncContext *context, NibblesView const nv, uint64_t const block_id,

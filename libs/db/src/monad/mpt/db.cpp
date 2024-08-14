@@ -13,7 +13,6 @@
 #include <monad/core/result.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
-#include <monad/lru/static_lru_cache.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/db_error.hpp>
 #include <monad/mpt/detail/boost_fiber_workarounds.hpp>
@@ -897,38 +896,19 @@ bool Db::is_read_only() const
     return is_on_disk() && impl_->aux().io->is_read_only();
 }
 
-struct AsyncContext
+AsyncContext::AsyncContext(Db &db, size_t lru_size)
+    : aux(db.impl_->aux())
+    , root_cache(lru_size)
 {
-    using TrieRootCache = static_lru_cache<uint64_t, std::shared_ptr<Node>>;
-    using inflight_root_t = unordered_dense_map<
-        uint64_t, std::vector<std::function<void(std::shared_ptr<Node>)>>>;
-
-    UpdateAux<> &aux;
-    TrieRootCache root_cache;
-    inflight_root_t inflight_roots;
-    inflight_node_t inflight_nodes;
-
-    AsyncContext(Db &db, size_t lru_size = 64)
-        : aux(db.impl_->aux())
-        , root_cache(lru_size)
-    {
-    }
-
-    ~AsyncContext() noexcept = default;
-};
+}
 
 AsyncContextUniquePtr async_context_create(Db &db)
 {
-    AsyncContextUniquePtr ctx(new AsyncContext(db));
-    return ctx;
+    return std::make_unique<AsyncContext>(db);
 }
 
 namespace detail
 {
-    void AsyncContextDeleter::operator()(AsyncContext *ctx) const
-    {
-        delete ctx;
-    }
 
     // Reads root nodes from on disk, and supports other inflight async requests
     // from the same sender.

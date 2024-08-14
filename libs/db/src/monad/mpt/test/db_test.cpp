@@ -113,8 +113,60 @@ namespace
         }
     };
 
+    struct OnDiskDbWithFileAsyncFixture : public OnDiskDbWithFileFixture
+    {
+        using result_t = monad::Result<monad::byte_string>;
+
+        Db ro_db;
+        AsyncContextUniquePtr ctx;
+        std::atomic<size_t> cbs{0}; // callbacks when found
+
+        OnDiskDbWithFileAsyncFixture()
+            : ro_db([&] {
+                ReadOnlyOnDiskDbConfig const ro_config{
+                    .dbname_paths = this->config.dbname_paths};
+                return Db{ro_config};
+            }())
+            , ctx(async_context_create(ro_db))
+        {
+        }
+
+        void async_get(auto &&sender, std::function<void(result_t)> callback)
+        {
+            using sender_type = std::decay_t<decltype(sender)>;
+
+            struct receiver_t
+            {
+                OnDiskDbWithFileAsyncFixture *parent;
+                std::function<void(result_t)> callback;
+
+                void set_value(
+                    monad::async::erased_connected_operation *state,
+                    sender_type::result_type res)
+                {
+                    ++parent->cbs;
+                    callback(std::move(res));
+                    delete state;
+                }
+            };
+
+            auto *state = new auto(monad::async::connect(
+                std::move(sender), receiver_t{this, std::move(callback)}));
+            state->initiate();
+        }
+
+        void poll_until(size_t num_callbacks)
+        {
+            while (cbs < num_callbacks) {
+                ro_db.poll(false);
+                std::this_thread::sleep_for(std::chrono::microseconds(50));
+            }
+        }
+    };
+
     template <typename DbBase>
     struct DbTraverseFixture : public DbBase
+
     {
         uint64_t const block_id{0x123};
         monad::byte_string const prefix{0x00_hex};
@@ -328,7 +380,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
         0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
 }
 
-TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
+TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
 {
     auto const &kv = fixed_updates::kv;
 
@@ -342,37 +394,11 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
         make_update(kv[0].first, kv[0].second),
         make_update(kv[1].first, kv[1].second));
 
-    ReadOnlyOnDiskDbConfig const ro_config{
-        .dbname_paths = this->config.dbname_paths};
-    Db ro_db{ro_config};
-    auto ctx = async_context_create(ro_db);
-    using result_t = monad::Result<monad::byte_string>;
-
-    auto async_get = [](auto &&sender, std::function<void(result_t)> callback) {
-        using sender_type = std::decay_t<decltype(sender)>;
-        struct receiver_t
-        {
-            std::function<void(result_t)> callback;
-
-            void set_value(
-                monad::async::erased_connected_operation *state,
-                sender_type::result_type res)
-            {
-                callback(std::move(res));
-                delete state;
-            }
-        };
-        auto *state = new auto(monad::async::connect(
-            std::move(sender), receiver_t{std::move(callback)}));
-        state->initiate();
-    };
-
-    constexpr uint8_t const TEST_CACHED_LEVELS = 1;
+    constexpr uint8_t const test_cached_level = 1;
     size_t i;
     constexpr size_t read_per_iteration = 3;
     constexpr size_t expected_num_success_callbacks =
         (UpdateAuxImpl::VERSION_HISTORY_LEN - 1) * read_per_iteration;
-    std::atomic<size_t> cbs{0};
     for (i = 1; i < UpdateAuxImpl::VERSION_HISTORY_LEN; ++i) {
         // upsert new version
         upsert_updates_flat_list(
@@ -388,9 +414,8 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
                 ctx.get(),
                 prefix + kv[0].first,
                 starting_block_id,
-                TEST_CACHED_LEVELS),
+                test_cached_level),
             [&](result_t res) {
-                ++cbs;
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(res.value(), kv[0].second);
             });
@@ -399,30 +424,21 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
                 ctx.get(),
                 prefix + kv[1].first,
                 starting_block_id,
-                TEST_CACHED_LEVELS),
+                test_cached_level),
             [&](result_t res) {
-                ++cbs;
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(res.value(), kv[1].second);
             });
         async_get(
             make_get_data_sender(
-                ctx.get(), prefix, starting_block_id, TEST_CACHED_LEVELS),
+                ctx.get(), prefix, starting_block_id, test_cached_level),
             [&](result_t res) {
-                ++cbs;
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(
                     res.value(),
                     0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
             });
     }
-
-    auto poll_until = [&](size_t num_callbacks) {
-        while (cbs < num_callbacks) {
-            ro_db.poll(false);
-            std::this_thread::sleep_for(std::chrono::microseconds(50));
-        }
-    };
 
     // Need to poll here because next read will trigger compaction
     poll_until(expected_num_success_callbacks);
@@ -441,14 +457,84 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread_async)
             ctx.get(),
             prefix + kv[0].first,
             starting_block_id,
-            TEST_CACHED_LEVELS),
+            test_cached_level),
         [&](result_t res) {
             EXPECT_TRUE(res.has_error());
             EXPECT_EQ(res.error(), DbError::key_not_found);
-            ++cbs;
         });
 
     poll_until(1);
+}
+
+TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
+{
+    // Insert keys
+    constexpr unsigned nkeys = 1000;
+    auto [kv_alloc, updates_alloc] = prepare_random_updates(nkeys);
+    uint64_t const version = 0;
+    UpdateList ls;
+    for (auto &u : updates_alloc) {
+        ls.push_front(u);
+    }
+    db.upsert(std::move(ls), version);
+
+    constexpr uint8_t test_cached_level = 3;
+
+    // Do async reads
+    for (auto const &kv : kv_alloc) {
+        async_get(
+            make_get_sender(ctx.get(), kv, version, test_cached_level),
+            [&](result_t res) {
+                EXPECT_TRUE(res.has_value());
+                EXPECT_EQ(res.value(), kv);
+            });
+    }
+
+    poll_until(nkeys);
+
+    // Do an in memory traverse to verify all cached nodes are above
+    // test_cached_level
+    struct InMemoryTraverseMachine : public TraverseMachine
+    {
+        uint8_t const expected_cache_level{3};
+        uint8_t curr_level{0};
+
+        constexpr InMemoryTraverseMachine(uint8_t const expected_cache_level_)
+            : expected_cache_level(expected_cache_level_)
+        {
+        }
+
+        virtual bool down(unsigned char, Node const &) override
+        {
+            ++curr_level;
+            return true;
+        }
+
+        virtual void up(unsigned char, Node const &) override
+        {
+            --curr_level;
+        }
+
+        virtual bool
+        should_visit(Node const &node, unsigned char branch) override
+        {
+            bool next_is_in_memory =
+                node.next(node.to_child_index(branch)) != nullptr;
+            EXPECT_EQ(next_is_in_memory, curr_level <= expected_cache_level);
+            return next_is_in_memory;
+        }
+
+        virtual std::unique_ptr<TraverseMachine> clone() const override
+        {
+            return std::make_unique<InMemoryTraverseMachine>(*this);
+        }
+    };
+
+    InMemoryTraverseMachine traverse_machine{test_cached_level};
+    AsyncContext::TrieRootCache::ConstAccessor acc;
+    ASSERT_TRUE(ctx->root_cache.find(acc, version));
+    auto root = acc->second->val;
+    ro_db.traverse(NodeCursor{*root}, traverse_machine, version);
 }
 
 TEST(ReadOnlyDbTest, open_empty_rodb)

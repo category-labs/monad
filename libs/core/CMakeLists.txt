@@ -46,9 +46,6 @@ check_if_boost_fiber_needs_ucontext_macro()
 
 find_package(TBB REQUIRED)
 
-set(ETHASH_TESTING NO)
-add_subdirectory("third_party/ethash")
-
 add_subdirectory("third_party/nanobench")
 
 add_subdirectory("third_party/nlohmann_json" SYSTEM)

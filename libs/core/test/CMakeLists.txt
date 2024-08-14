@@ -16,12 +16,3 @@ target_link_libraries(hugemem_test GTest::gmock)
 monad_add_test(io_buffers_test "io_buffers.cpp")
 monad_add_test(literal_test "literal_test.cpp")
 monad_add_test(unordered_map_test "unordered_map.cpp")
-
-# ##############################################################################
-# ethash
-# ##############################################################################
-
-add_executable(ethash-test
-               "../third_party/ethash/test/unittests/test_keccak.cpp")
-target_link_libraries(ethash-test PRIVATE ethash::global-context
-                                          GTest::gtest_main)

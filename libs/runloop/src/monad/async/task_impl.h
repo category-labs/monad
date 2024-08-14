@@ -137,6 +137,7 @@ static inline monad_async_priority monad_async_task_effective_cpu_priority(
 #ifdef NDEBUG
     #define LIST_CHECK(list, item)
 #else
+// NOLINTBEGIN(clang-analyzer-core.NullDereference)
     #define LIST_CHECK(list, item)                                             \
         {                                                                      \
             typeof((list).front) _item_ = (list).front;                        \
@@ -170,6 +171,7 @@ static inline monad_async_priority monad_async_task_effective_cpu_priority(
             }                                                                  \
             assert((item) == nullptr || found);                                \
         }
+// NOLINTEND(clang-analyzer-core.NullDereference)
 #endif
 #define LIST_PREPEND2(list, item, counter, inc, dec)                           \
     assert((item)->prev == nullptr);                                           \
@@ -232,6 +234,7 @@ static inline monad_async_priority monad_async_task_effective_cpu_priority(
     if ((counter) != nullptr)                                                  \
         inc(*counter);                                                         \
     LIST_CHECK(list, item)
+// NOLINTBEGIN(clang-analyzer-core.NullDereference)
 #define LIST_REMOVE2(list, item, counter, inc, dec)                            \
     LIST_CHECK(list, item)                                                     \
     if ((list).front == (item) && (list).back == (item)) {                     \
@@ -269,6 +272,7 @@ static inline monad_async_priority monad_async_task_effective_cpu_priority(
             dec(*counter);                                                     \
     }                                                                          \
     LIST_CHECK(list, nullptr)
+// NOLINTEND(clang-analyzer-core.NullDereference)
 
 #define LIST_COUNTER_INCR(item) (item)++
 #define LIST_COUNTER_DECR(item) (item)--

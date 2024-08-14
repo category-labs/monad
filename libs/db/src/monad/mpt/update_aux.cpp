@@ -667,7 +667,7 @@ void UpdateAuxImpl::advance_compact_offsets()
 uint64_t UpdateAuxImpl::db_history_min_valid_version() const noexcept
 {
     MONAD_ASSERT(is_on_disk());
-    auto &offsets = db_metadata()->root_offsets;
+    auto const &offsets = db_metadata()->root_offsets;
     auto min_version = db_history_range_lower_bound();
     for (; min_version != offsets.max_version(); ++min_version) {
         if (offsets[min_version] != INVALID_OFFSET) {

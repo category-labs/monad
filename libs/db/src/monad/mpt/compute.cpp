@@ -20,11 +20,9 @@ unsigned encode_two_pieces(
     unsigned char *const dest, NibblesView const path,
     byte_string_view const second, bool const has_value)
 {
-    constexpr size_t max_compact_encode_size = KECCAK256_SIZE + 1;
-
     MONAD_DEBUG_ASSERT(path.data_size() <= KECCAK256_SIZE);
 
-    unsigned char path_arr[max_compact_encode_size];
+    CompactEncodeRes path_arr;
     auto const first = compact_encode(path_arr, path, has_value);
     MONAD_ASSERT(first.size() <= max_compact_encode_size);
     // leaf and hashed node ref requires rlp encoding,

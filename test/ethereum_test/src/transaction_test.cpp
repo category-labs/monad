@@ -35,7 +35,8 @@ MONAD_TEST_NAMESPACE_BEGIN
 template <evmc_revision rev>
 void process_transaction(Transaction const &txn, nlohmann::json const &expected)
 {
-    if (auto const result = static_validate_transaction<rev>(txn, std::nullopt, 1);
+    if (auto const result =
+            static_validate_transaction<rev>(txn, std::nullopt, 1);
         result.has_error()) {
         EXPECT_TRUE(expected.contains("exception"));
     }
@@ -158,6 +159,8 @@ void register_transaction_tests(std::optional<evmc_revision> const &revision)
             auto test = fmt::format("{}", fs::relative(path, root).string());
             std::ranges::replace(test, '-', '_');
 
+            // GTest takes ownerships of test objs created by factory
+            // NOLINTBEGIN(clang-analyzer-cplusplus.NewDeleteLeak)
             testing::RegisterTest(
                 suite,
                 test.c_str(),
@@ -168,6 +171,7 @@ void register_transaction_tests(std::optional<evmc_revision> const &revision)
                 [=] -> testing::Test * {
                     return new TransactionTest(path, revision);
                 });
+            // NOLINTEND(clang-analyzer-cplusplus.NewDeleteLeak)
         }
     }
 }

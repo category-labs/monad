@@ -530,7 +530,7 @@ public:
 
     bool is_write() const noexcept
     {
-        return operation_type_ == operation_type::write;
+        return operation_type_ == operation_type::write; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
     }
 
     bool is_timeout() const noexcept

@@ -84,10 +84,13 @@ monad_async_result monad_async_work_dispatcher_executor_create(
     if (p == nullptr) {
         return monad_async_make_failure(errno);
     }
+    // NOLINTBEGIN(clang-analyzer-unix.Malloc)
     BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
         (void)monad_async_work_dispatcher_executor_destroy(
-            (monad_async_work_dispatcher_executor)p),
+            (monad_async_work_dispatcher_executor)
+                p), 
         monad_async_executor_create_impl(&p->derived, &attr->derived));
+    // NOLINTEND(clang-analyzer-unix.Malloc)
     struct monad_async_work_dispatcher_impl *dp =
         (struct monad_async_work_dispatcher_impl *)dp_;
     struct monad_async_work_dispatcher_executor_head head = {
@@ -150,7 +153,8 @@ monad_async_result monad_async_work_dispatcher_executor_run(
     }
     struct monad_async_work_dispatcher_impl *dp =
         (struct monad_async_work_dispatcher_impl *)p->head.dispatcher;
-    struct timespec ts = {0, 0}, now;
+    struct timespec ts = {0, 0};
+    struct timespec now;
     clock_gettime(CLOCK_MONOTONIC_COARSE, &now);
     int64_t const ns_since_last_work_executed =
         timespec_diff(&now, &p->last_work_executed);
@@ -271,7 +275,8 @@ monad_async_result monad_async_work_dispatcher_submit(
         (struct monad_async_work_dispatcher_impl *)dp_;
     struct monad_async_task_impl **tasks =
         (struct monad_async_task_impl **)tasks_;
-    intptr_t added = 0, subtracted = 0;
+    intptr_t added = 0;
+    intptr_t subtracted = 0;
     if (thrd_success != mutex_lock(&dp->lock)) {
         return monad_async_make_failure(errno);
     }

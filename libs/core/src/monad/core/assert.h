@@ -16,6 +16,7 @@ void __attribute__((noreturn)) monad_assertion_failed(
     else {                                                                     \
         monad_assertion_failed(                                                \
             #expr, __extension__ __PRETTY_FUNCTION__, __FILE__, __LINE__);     \
+        __builtin_unreachable(); /* so clang-tidy won't assume false */        \
     }
 
 #ifdef NDEBUG

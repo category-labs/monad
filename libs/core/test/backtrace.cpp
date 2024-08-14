@@ -1,12 +1,12 @@
 #include <monad/core/backtrace.hpp>
 
 #include <monad/core/assert.h>
-#include <monad/test/gtest_signal_stacktrace_printer.hpp>  // NOLINT
+#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <array>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
-#include <cstddef>
 #include <span>
 
 #include <unistd.h>
@@ -31,19 +31,23 @@ namespace
         auto st = func_a(storage);
         int fds[2];
         MONAD_ASSERT(-1 != ::pipe(fds));
+
         struct unfds_t
         {
             int *fds;
+
             explicit unfds_t(int *fds_)
                 : fds(fds_)
             {
             }
+
             ~unfds_t()
             {
                 ::close(fds[0]);
                 ::close(fds[1]);
             }
-        } unfds{fds};
+        } const unfds{fds};
+
         st->print(fds[1], 3, true);
         char buffer[16384];
         auto bytesread = ::read(fds[0], buffer, sizeof(buffer));

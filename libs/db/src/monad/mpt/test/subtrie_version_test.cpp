@@ -37,7 +37,7 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
         std::stack<ExpectedSubtrieVersion> &records;
         bool done_erase{false};
 
-        TraverseVerifyVersions(
+        explicit TraverseVerifyVersions(
             std::stack<ExpectedSubtrieVersion> &records,
             bool done_erase_ = false)
             : records(records)
@@ -151,7 +151,7 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
     // A full traversal to verify versions are correct
     constexpr unsigned ERASE_BATCH_SIZE = BATCH_SIZE / 2;
     for (uint64_t new_id = 0; new_id < NUM_BLOCKS; ++new_id) {
-        uint64_t block_id = new_id + NUM_BLOCKS;
+        uint64_t const block_id = new_id + NUM_BLOCKS;
         std::vector<byte_string> key_values;
         key_values.reserve(ERASE_BATCH_SIZE);
         std::vector<Update> updates_alloc;

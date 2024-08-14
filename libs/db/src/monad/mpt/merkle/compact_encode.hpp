@@ -5,9 +5,13 @@
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 
+#include <array>
 #include <cassert>
 
 MONAD_MPT_NAMESPACE_BEGIN
+
+constexpr size_t max_compact_encode_size = KECCAK256_SIZE + 1;
+using CompactEncodeRes = std::array<unsigned char, max_compact_encode_size>;
 
 inline constexpr unsigned
 compact_encode_len(unsigned const si, unsigned const ei)
@@ -19,7 +23,7 @@ compact_encode_len(unsigned const si, unsigned const ei)
 // Transform the nibbles to its compact encoding
 // https://ethereum.org/en/developers/docs/data-structures-and-encoding/patricia-merkle-trie/
 [[nodiscard]] constexpr byte_string_view compact_encode(
-    unsigned char *const res, NibblesView const nibbles, bool const terminating)
+    CompactEncodeRes &res, NibblesView const nibbles, bool const terminating)
 {
     unsigned i = 0;
 
@@ -35,11 +39,12 @@ compact_encode_len(unsigned const si, unsigned const ei)
 
     unsigned res_ci = 2;
     for (; i < nibbles.nibble_size(); i++) {
-        set_nibble(res, res_ci++, nibbles.get(i));
+        set_nibble(res.data(), res_ci++, nibbles.get(i));
     }
 
     return byte_string_view{
-        res, nibbles.nibble_size() ? (nibbles.nibble_size() / 2 + 1) : 1u};
+        res.data(),
+        nibbles.nibble_size() ? (nibbles.nibble_size() / 2 + 1) : 1u};
 }
 
 MONAD_MPT_NAMESPACE_END

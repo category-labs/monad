@@ -684,8 +684,8 @@ TYPED_TEST(TrieTest, aux_do_update_fixed_history_len)
     uint64_t const start_block_id = 0x123;
 
     auto upsert_same_kv_once = [&](uint64_t const block_id) {
-        auto u1 = make_update(kv[0].first, kv[0].second);
-        auto u2 = make_update(kv[1].first, kv[1].second);
+        auto u1 = make_update(kv[0].first, kv[0].second); // NOLINT
+        auto u2 = make_update(kv[1].first, kv[1].second); // NOLINT
         UpdateList ul;
         ul.push_front(u1);
         ul.push_front(u2);

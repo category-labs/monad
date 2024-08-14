@@ -61,7 +61,7 @@ TEST(work_dispatcher, works)
                     break;
                 }
             }
-            memcpy(&stats, ex_->derived, sizeof(stats));
+            memcpy(&stats, ex_->derived, sizeof(stats)); // NOLINT(bugprone-undefined-memory-manipulation)
             ex.store(nullptr);
         }
     };
@@ -82,7 +82,7 @@ TEST(work_dispatcher, works)
         task_ptr task;
         unsigned ops{0};
 
-        task_state(monad_async_context_switcher switcher)
+        explicit task_state(monad_async_context_switcher switcher)
             : task([&] {
                 monad_async_task_attr t_attr{};
                 return make_task(switcher, t_attr);

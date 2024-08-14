@@ -130,9 +130,9 @@ namespace
             std::function<size_t(byte_string_view, UpdateList &)> fparse,
             std::function<void(UpdateList)> fwrite)
         {
-            UpdateList updates;
             size_t total_processed = 0;
             size_t total_read = 0;
+            UpdateList updates;
             while (input.read((char *)buf_.get() + total_read, CHUNK_SIZE)) {
                 auto const count = static_cast<size_t>(input.gcount());
                 MONAD_ASSERT(count <= CHUNK_SIZE);
@@ -144,13 +144,13 @@ namespace
                     updates);
                 if (MONAD_UNLIKELY((total_read + CHUNK_SIZE) > buf_size_)) {
                     fwrite(std::move(updates));
+                    updates = UpdateList();
                     std::memmove(
                         buf_.get(),
                         buf_.get() + total_processed,
                         total_read - total_processed);
                     total_read -= total_processed;
                     total_processed = 0;
-                    updates.clear();
                 }
             }
 

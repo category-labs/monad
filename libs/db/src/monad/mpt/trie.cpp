@@ -687,7 +687,7 @@ void create_new_trie_(
                1 &&
            !requests.opt_leaf) {
         sm.down(requests.get_first_branch());
-        updates = std::move(requests).first_and_only_list();
+        updates = static_cast<Requests &&>(requests).first_and_only_list();
         ++prefix_index;
     }
     create_new_trie_from_requests_(
@@ -717,6 +717,7 @@ void create_new_trie_from_requests_(
         static_cast<unsigned>(std::popcount(requests.mask));
     uint16_t const mask = requests.mask;
     allocators::owning_span<ChildData> const children(number_of_children);
+    // clang-tidy is confused about std::move being used as an rvalue cast
     for (unsigned i = 0, j = 0, bit = 1; j < number_of_children;
          ++i, bit <<= 1) {
         if (bit & requests.mask) {
@@ -727,12 +728,13 @@ void create_new_trie_from_requests_(
                 sm,
                 version,
                 children[j],
-                std::move(requests)[i],
+                static_cast<Requests &&>(requests)[i],
                 prefix_index + 1);
             sm.up(1);
             ++j;
         }
     }
+
     // can have empty children
     auto *node = create_node_from_children_if_any(
         aux, sm, mask, mask, children, path, opt_leaf_data, version);
@@ -814,7 +816,7 @@ void upsert_(
             number_of_sublists == 1 &&
             requests.get_first_branch() == old_nibble) {
             MONAD_DEBUG_ASSERT(requests.opt_leaf == std::nullopt);
-            updates = std::move(requests)[old_nibble];
+            updates = static_cast<Requests &&>(requests)[old_nibble];
             sm.down(old_nibble);
             ++prefix_index;
             ++old_prefix_index;
@@ -838,6 +840,7 @@ void upsert_(
     }
 }
 
+// NOLINTBEGIN(clang-analyzer-unix.Malloc)
 void fillin_entry(
     UpdateAuxImpl &aux, StateMachine &sm, tnode_unique_ptr tnode,
     UpwardTreeNode &parent, ChildData &entry)
@@ -850,6 +853,8 @@ void fillin_entry(
             aux, sm, parent, entry, std::move(tnode));
     }
 }
+
+// NOLINTEND(clang-analyzer-unix.Malloc)
 
 /* dispatch updates at the end of old node's path. old node may have leaf data,
  * and there might be update to the leaf value. */
@@ -882,6 +887,9 @@ void dispatch_updates_impl_(
         if (bit & requests.mask) {
             children[j] = ChildData{.branch = static_cast<uint8_t>(i)};
             sm.down(children[j].branch);
+            // clang tidy is confused about recursive control flow. `old` won't
+            // be null here.
+            // NOLINTNEXTLINE(clang-analyzer-unix.Malloc)
             if (bit & old->mask) {
                 upsert_(
                     aux,
@@ -890,7 +898,7 @@ void dispatch_updates_impl_(
                     children[j],
                     old->next_ptr(old->to_child_index(i)),
                     old->fnext(old->to_child_index(i)),
-                    std::move(requests)[i],
+                    static_cast<Requests &&>(requests)[i],
                     prefix_index + 1,
                     INVALID_PATH_INDEX);
                 sm.up(1);
@@ -901,13 +909,16 @@ void dispatch_updates_impl_(
                     sm,
                     tnode->version,
                     children[j],
-                    std::move(requests)[i],
+                    static_cast<Requests &&>(requests)[i],
                     prefix_index + 1);
                 --tnode->npending;
                 sm.up(1);
             }
             ++j;
         }
+        // clang tidy is confused about recursive control flow. `old` won't be
+        // null here.
+        // NOLINTNEXTLINE(clang-analyzer-unix.Malloc)
         else if (bit & old->mask) {
             auto &child = children[j];
             child.copy_old_child(old, i);
@@ -1026,7 +1037,7 @@ void mismatch_handler_(
                     children[j],
                     std::move(old_ptr),
                     INVALID_OFFSET,
-                    std::move(requests)[i],
+                    static_cast<Requests &&>(requests)[i],
                     prefix_index + 1,
                     old_prefix_index + 1);
             }
@@ -1036,7 +1047,7 @@ void mismatch_handler_(
                     sm,
                     tnode->version,
                     children[j],
-                    std::move(requests)[i],
+                    static_cast<Requests &&>(requests)[i],
                     prefix_index + 1);
                 --tnode->npending;
             }
@@ -1129,7 +1140,7 @@ void try_fillin_parent_with_rewritten_node(
 {
     if (tnode->npending) { // there are unfinished async below node
         tnode.release();
-        return;
+        return; // NOLINT(clang-analyzer-unix.Malloc)
     }
     auto const new_offset =
         async_write_node_set_spare(aux, *tnode->node, tnode->rewrite_to_fast);

@@ -51,18 +51,21 @@ monad_async_result monad_async_task_file_create(
     p->io_uring_file_index = (unsigned)-1;
     struct monad_async_task_impl *task = (struct monad_async_task_impl *)task_;
     if (task->please_cancel_invoked) {
-        (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
+        (void)monad_async_task_file_destroy(
+            task_, (monad_async_file)p); // NOLINT(clang-analyzer-unix.Malloc)
         return monad_async_make_failure(ECANCELED);
     }
     unsigned file_index = monad_async_executor_alloc_file_index(ex, -1);
     if (file_index == (unsigned)-1) {
-        (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
+        (void)monad_async_task_file_destroy(
+            task_, (monad_async_file)p); // NOLINT(clang-analyzer-unix.Malloc)
         return monad_async_make_failure(ENOMEM);
     }
     struct io_uring_sqe *sqe = get_sqe_suspending_if_necessary(ex, task, true);
     if (sqe == nullptr) {
         assert(task->please_cancel_invoked);
-        (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
+        (void)monad_async_task_file_destroy(
+            task_, (monad_async_file)p); // NOLINT(clang-analyzer-unix.Malloc)
         return monad_async_make_failure(ECANCELED);
     }
     io_uring_prep_openat2_direct(
@@ -97,7 +100,8 @@ monad_async_result monad_async_task_file_create(
 #endif
     if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
         monad_async_executor_free_file_index(ex, file_index);
-        (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
+        (void)monad_async_task_file_destroy(
+            task_, (monad_async_file)p); // NOLINT(clang-analyzer-unix.Malloc)
         return ret;
     }
     p->io_uring_file_index = file_index;
@@ -106,7 +110,9 @@ monad_async_result monad_async_task_file_create(
         sqe = get_wrsqe_suspending_if_necessary(ex, task, true);
         if (sqe == nullptr) {
             assert(task->please_cancel_invoked);
-            (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
+            (void)monad_async_task_file_destroy( // NOLINT(clang-analyzer-unix.Malloc)
+                task_,
+                (monad_async_file)p);
             return monad_async_make_failure(ECANCELED);
         }
         io_uring_prep_openat2_direct(
@@ -140,7 +146,9 @@ monad_async_result monad_async_task_file_create(
                 : "success");
 #endif
         if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
-            (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
+            (void)monad_async_task_file_destroy(
+                task_,
+                (monad_async_file)p); // NOLINT(clang-analyzer-unix.Malloc)
             return ret;
         }
     }
@@ -168,12 +176,14 @@ monad_async_result monad_async_task_file_create_from_existing_fd(
     p->io_uring_file_index = (unsigned)-1;
     struct monad_async_task_impl *task = (struct monad_async_task_impl *)task_;
     if (task->please_cancel_invoked) {
-        (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
+        (void)monad_async_task_file_destroy(
+            task_, (monad_async_file)p); // NOLINT(clang-analyzer-unix.Malloc)
         return monad_async_make_failure(ECANCELED);
     }
     unsigned file_index = monad_async_executor_alloc_file_index(ex, fd);
     if (file_index == (unsigned)-1) {
-        (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
+        (void)monad_async_task_file_destroy(
+            task_, (monad_async_file)p); // NOLINT(clang-analyzer-unix.Malloc)
         return monad_async_make_failure(ENOMEM);
     }
     p->io_uring_file_index = file_index;

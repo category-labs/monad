@@ -467,13 +467,13 @@ TYPED_TEST(PlainTrieTest, multi_level_find_blocking)
         EXPECT_EQ(begin.node->value(), top_value);
 
         EXPECT_EQ(
-            find_blocking(this->aux, begin, kv[0].first).first.node->value(),
+            find_blocking(this->aux, begin, kv[0].first).first.node->value(), // NOLINT
             kv[0].second);
         EXPECT_EQ(
-            find_blocking(this->aux, begin, kv[1].first).first.node->value(),
+            find_blocking(this->aux, begin, kv[1].first).first.node->value(), // NOLINT
             kv[1].second);
         EXPECT_EQ(
-            find_blocking(this->aux, begin, kv[2].first).first.node->value(),
+            find_blocking(this->aux, begin, kv[2].first).first.node->value(), // NOLINT
             kv[2].second);
     };
 

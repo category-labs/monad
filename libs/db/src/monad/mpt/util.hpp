@@ -255,7 +255,8 @@ inline byte_string serialize_as_big_endian(UnsignedInteger n)
 template <std::unsigned_integral UnsignedInteger>
 inline UnsignedInteger deserialize_from_big_endian(NibblesView const in)
 {
-    if (in.nibble_size() > sizeof(UnsignedInteger) * 2) {
+    if (in.nibble_size() > sizeof(UnsignedInteger) * 2 ||
+        in.nibble_size() == 0) {
         throw std::runtime_error(
             "input bytes to deserialize must be less than or "
             "equal to sizeof output type\n");

@@ -435,7 +435,7 @@ int main(int const argc, char const *argv[])
                     return std::nullopt;
                 }
                 MONAD_ASSERT(fs::is_regular_file(path));
-                std::ifstream istream(path);
+                std::ifstream const istream(path);
                 std::ostringstream buf;
                 buf << istream.rdbuf();
                 auto view = byte_string_view{

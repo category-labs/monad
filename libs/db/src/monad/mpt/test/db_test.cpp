@@ -214,7 +214,7 @@ namespace
 
     struct DummyTraverseMachine : public TraverseMachine
     {
-        Nibbles path{};
+        Nibbles path;
 
         virtual bool down(unsigned char branch, Node const &node) override
         {
@@ -321,7 +321,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
 
     ReadOnlyOnDiskDbConfig const ro_config{
         .dbname_paths = this->config.dbname_paths};
-    Db ro_db{ro_config};
+    Db const ro_db{ro_config};
 
     // Verify RO
     EXPECT_EQ(
@@ -499,7 +499,8 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
         uint8_t const expected_cache_level{3};
         uint8_t curr_level{0};
 
-        constexpr InMemoryTraverseMachine(uint8_t const expected_cache_level_)
+        constexpr explicit InMemoryTraverseMachine(
+            uint8_t const expected_cache_level_)
             : expected_cache_level(expected_cache_level_)
         {
         }
@@ -518,7 +519,7 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
         virtual bool
         should_visit(Node const &node, unsigned char branch) override
         {
-            bool next_is_in_memory =
+            bool const next_is_in_memory =
                 node.next(node.to_child_index(branch)) != nullptr;
             EXPECT_EQ(next_is_in_memory, curr_level <= expected_cache_level);
             return next_is_in_memory;
@@ -592,7 +593,7 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
     auto keep_query = [&]() {
         // construct RODb
         ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
-        Db ro_db{ro_config};
+        Db const ro_db{ro_config};
 
         uint64_t read_version = 0;
         auto start_version_bytes = serialize_as_big_endian<6>(read_version);
@@ -659,10 +660,10 @@ TEST(DbTest, read_only_db_traverse_concurrent)
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
         "monad_db_test_traverse_concurrent_XXXXXX"};
     StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig config{// with compaction
-                          .compaction = true,
-                          .dbname_paths = {dbname},
-                          .file_size_db = 8};
+    OnDiskDbConfig const config{// with compaction
+                                .compaction = true,
+                                .dbname_paths = {dbname},
+                                .file_size_db = 8};
     Db db{machine, config};
     auto [bytes_alloc, updates_alloc] = prepare_random_updates(20);
 
@@ -709,11 +710,11 @@ TEST(DBTest, benchmark_blocking_parallel_traverse)
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
         "monad_db_test_benchmark_traverse_XXXXXX"};
     StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig config{// with compaction
-                          .compaction = true,
-                          .sq_thread_cpu{std::nullopt},
-                          .dbname_paths = {dbname},
-                          .file_size_db = 8};
+    OnDiskDbConfig const config{// with compaction
+                                .compaction = true,
+                                .sq_thread_cpu{std::nullopt},
+                                .dbname_paths = {dbname},
+                                .file_size_db = 8};
     Db db{machine, config};
     auto [bytes_alloc, updates_alloc] = prepare_random_updates(2000);
     UpdateList ls;
@@ -969,7 +970,7 @@ TYPED_TEST(DbTraverseTest, traverse)
         size_t index{0};
         size_t num_up{0};
 
-        SimpleTraverse(size_t &num_leaves)
+        explicit SimpleTraverse(size_t &num_leaves)
             : num_leaves(num_leaves)
         {
         }
@@ -1084,7 +1085,7 @@ TYPED_TEST(DbTraverseTest, trimmed_traverse)
     {
         size_t &num_leaves;
 
-        TrimmedTraverse(size_t &num_leaves)
+        explicit TrimmedTraverse(size_t &num_leaves)
             : num_leaves(num_leaves)
         {
         }
@@ -1191,13 +1192,13 @@ TEST(DbTest, move_trie_causes_discontinuous_history)
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
         "monad_db_test_discontinuous_history_XXXXXX"};
     StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig config{// with compaction
-                          .compaction = true,
-                          .sq_thread_cpu{std::nullopt},
-                          .dbname_paths = {dbname},
-                          .file_size_db = 8};
+    OnDiskDbConfig const config{// with compaction
+                                .compaction = true,
+                                .sq_thread_cpu{std::nullopt},
+                                .dbname_paths = {dbname},
+                                .file_size_db = 8};
     Db db{machine, config};
-    Db ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db const ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
 
     // continuous upsert() and move_trie_version_forward() leads to
     // discontinuity in history
@@ -1288,7 +1289,7 @@ TEST(DbTest, move_trie_causes_discontinuous_history)
     EXPECT_EQ(ro_db.get_latest_block_id(), max_block_id);
 
     // Jump way far ahead, which erases all histories
-    uint64_t far_dest_block_id = UpdateAuxImpl::VERSION_HISTORY_LEN * 3;
+    uint64_t const far_dest_block_id = UpdateAuxImpl::VERSION_HISTORY_LEN * 3;
     db.move_trie_version_forward(db.get_latest_block_id(), far_dest_block_id);
 
     EXPECT_EQ(

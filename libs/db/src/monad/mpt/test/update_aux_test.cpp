@@ -25,7 +25,7 @@ TEST(update_aux_test, set_io_reader_dirty)
 
     monad::mpt::UpdateAux aux_writer{};
     std::atomic<bool> io_set = false;
-    std::jthread rw_asyncio([&](std::stop_token token) {
+    std::jthread const rw_asyncio([&](std::stop_token token) {
         monad::io::Ring ring1;
         monad::io::Ring ring2;
         monad::io::Buffers testbuf =
@@ -63,7 +63,7 @@ TEST(update_aux_test, set_io_reader_dirty)
         monad::mpt::UpdateAux<> &write_aux;
         bool was_dirty{false};
 
-        TestAux(monad::mpt::UpdateAux<> &write_aux_)
+        explicit TestAux(monad::mpt::UpdateAux<> &write_aux_)
             : write_aux(write_aux_)
         {
         }

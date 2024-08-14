@@ -137,7 +137,7 @@ namespace monad::test
                     count.second = get<size_t>(count.first, count.second);
                 }
                 for (size_t n = 0; n < count.second; n++) {
-                    uint8_t length;
+                    uint8_t length{};
                     fill_(length, length_min, length_max);
                     key_type key{};
                     if constexpr (std::

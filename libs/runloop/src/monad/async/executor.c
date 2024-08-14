@@ -30,6 +30,7 @@ monad_async_result monad_async_executor_create(
     if (p == nullptr) {
         return monad_async_make_failure(errno);
     }
+    // NOLINTNEXTLINE(clang-analyzer-unix.Malloc)
     BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
         (void)monad_async_executor_destroy((monad_async_executor)p),
         monad_async_executor_create_impl(p, attr));

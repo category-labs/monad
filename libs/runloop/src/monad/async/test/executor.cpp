@@ -59,10 +59,7 @@ TEST(executor, works)
     ex_attr.io_uring_ring.entries = 64;
     auto ex = make_executor(ex_attr);
 
-    struct timespec ts
-    {
-        0, 0
-    };
+    struct timespec const ts{0, 0};
 
     auto r = monad_async_executor_run(ex.get(), 1, &ts);
     try {
@@ -400,8 +397,8 @@ TEST(executor, foreign_thread)
         std::vector<executor_thread> executor_threads{
             std::thread::hardware_concurrency()};
         std::atomic<int> latch{0};
-        for (size_t n = 0; n < executor_threads.size(); n++) {
-            executor_threads[n].thread = std::thread(
+        for (auto &n : executor_threads) {
+            n.thread = std::thread(
                 [&latch, &switcher_impl](executor_thread *state) {
                     monad_async_executor_attr ex_attr{};
                     state->executor = make_executor(ex_attr);
@@ -423,7 +420,7 @@ TEST(executor, foreign_thread)
                     }
                     state->executor.reset();
                 },
-                &executor_threads[n]);
+                &n);
         }
 
         static bool checking = false;

@@ -316,7 +316,7 @@ TEST(StateSync, sync_from_some)
     }
 
     auto const ctmp = tmp_dbname();
-    auto const cdbname = ctmp.c_str();
+    auto const *const cdbname = ctmp.c_str();
     {
         OnDiskMachine machine;
         mpt::Db cdb{

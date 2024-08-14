@@ -104,7 +104,7 @@ struct AsyncContext
     inflight_root_t inflight_roots;
     inflight_node_t inflight_nodes;
 
-    AsyncContext(Db &db, size_t lru_size = 64);
+    explicit AsyncContext(Db &db, size_t lru_size = 64);
     ~AsyncContext() noexcept = default;
 };
 

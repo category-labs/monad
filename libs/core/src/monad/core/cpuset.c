@@ -15,7 +15,8 @@ cpu_set_t monad_parse_cpuset(char *const s)
     char *state = NULL;
     char *tok = strtok_r(s, ",", &state);
     while (tok) {
-        unsigned m, n;
+        unsigned m;
+        unsigned n;
         char *tok2 = strchr(tok, '-');
         if (tok2) {
             *tok2 = '\0';

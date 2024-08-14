@@ -632,7 +632,7 @@ struct cpp_suspend_resume_io_receiver
         MONAD_ASYNC_NAMESPACE::read_single_buffer_sender::result_type buffer)
     {
         MONAD_DEBUG_ASSERT(!res.has_value());
-        res = {rawstate, std::move(buffer)};
+        res = {rawstate, std::move(buffer)}; // NOLINT
         _h.resume();
     }
 

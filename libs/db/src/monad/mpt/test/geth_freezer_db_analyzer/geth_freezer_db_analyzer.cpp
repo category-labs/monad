@@ -491,7 +491,7 @@ uint32_t calculate_histogram_by_transaction(
         auto const contents = bodies_table.contents(buffer, idx);
         auto const bodies_list =
             ((FreezerDB::rlp_item const *)contents.data())->list();
-        auto const txns_list = bodies_list.first->list();
+        auto const txns_list = bodies_list.first->list(); // NOLINT(clang-analyzer-core.CallAndMessage)
         auto const *txns_list_end =
             (std::byte const *)txns_list.first + txns_list.second;
         unordered_dense_set<eth_address> seen;

@@ -24,7 +24,7 @@
 	path = third_party/yellowpaper
 	url = https://github.com/ethereum/yellowpaper.git
 [submodule "ethash"]
-	path = libs/core/third_party/ethash
+	path = third_party/ethash
 	url = https://github.com/monad-crypto/ethash.git
 	branch = monad
 [submodule "core/third_party/nanobench"]

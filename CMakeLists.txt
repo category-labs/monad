@@ -53,15 +53,20 @@ pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 # cli11
 find_package(CLI11 REQUIRED)
 
+# intx
+add_subdirectory(third_party/intx)
+
+# ethash
+set(ETHASH_TESTING NO)
+add_subdirectory("third_party/ethash")
+
 # evmone
 add_subdirectory(third_party/evmone)
+target_include_directories(evmone PUBLIC "third_party/evmone/lib")
 # always compile baseline with optimization due to stack size of dispatch_cgoto
 set_source_files_properties(
   third_party/evmone/lib/evmone/baseline.cpp TARGET_DIRECTORY evmone
   PROPERTIES COMPILE_OPTIONS -O2)
-
-# intx
-add_subdirectory(third_party/intx)
 
 # komihash
 add_library(komihash INTERFACE)

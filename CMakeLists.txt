@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(monad)
 
+option(HUNTER_ENABLED OFF)
+
 option(EVMONE_TRACING
        "Enable instruction-level tracing for the evmone interpreter" OFF)
 option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -61,7 +63,11 @@ set(ETHASH_TESTING NO)
 add_subdirectory("third_party/ethash")
 
 # evmone
+set(ethash_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake/dummy")
+set(intx_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake/dummy")
 add_subdirectory(third_party/evmone)
+unset(ethash_DIR)
+unset(intx_DIR)
 target_include_directories(evmone PUBLIC "third_party/evmone/lib")
 # always compile baseline with optimization due to stack size of dispatch_cgoto
 set_source_files_properties(

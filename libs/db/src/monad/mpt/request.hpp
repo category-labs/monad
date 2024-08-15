@@ -20,16 +20,16 @@ struct Requests
 
     Requests() = default;
 
-    UpdateList const &operator[](size_t i) const & noexcept
+    UpdateList const &operator[](size_t i) const noexcept
     {
         MONAD_DEBUG_ASSERT(i < 16);
         return sublists[i];
     }
 
-    UpdateList &&operator[](size_t i) && noexcept
+    UpdateList &operator[](size_t i) noexcept
     {
         MONAD_DEBUG_ASSERT(i < 16);
-        return std::move(sublists[i]);
+        return sublists[i];
     }
 
     constexpr unsigned char get_first_branch() const noexcept
@@ -38,10 +38,16 @@ struct Requests
         return static_cast<unsigned char>(std::countr_zero(mask));
     }
 
-    constexpr UpdateList &&first_and_only_list() && noexcept
+    constexpr UpdateList const &first_and_only_list() const noexcept
     {
         MONAD_DEBUG_ASSERT(std::popcount(mask) == 1);
-        return std::move(sublists[get_first_branch()]);
+        return sublists[get_first_branch()];
+    }
+
+    constexpr UpdateList &first_and_only_list() noexcept
+    {
+        MONAD_DEBUG_ASSERT(std::popcount(mask) == 1);
+        return sublists[get_first_branch()];
     }
 
     constexpr NibblesView get_first_path() const noexcept

@@ -687,7 +687,7 @@ void create_new_trie_(
                1 &&
            !requests.opt_leaf) {
         sm.down(requests.get_first_branch());
-        updates = static_cast<Requests &&>(requests).first_and_only_list();
+        updates = std::move(requests.first_and_only_list());
         ++prefix_index;
     }
     create_new_trie_from_requests_(
@@ -728,7 +728,7 @@ void create_new_trie_from_requests_(
                 sm,
                 version,
                 children[j],
-                static_cast<Requests &&>(requests)[i],
+                std::move(requests[i]),
                 prefix_index + 1);
             sm.up(1);
             ++j;
@@ -816,7 +816,7 @@ void upsert_(
             number_of_sublists == 1 &&
             requests.get_first_branch() == old_nibble) {
             MONAD_DEBUG_ASSERT(requests.opt_leaf == std::nullopt);
-            updates = static_cast<Requests &&>(requests)[old_nibble];
+            updates = std::move(requests[old_nibble]);
             sm.down(old_nibble);
             ++prefix_index;
             ++old_prefix_index;
@@ -898,7 +898,7 @@ void dispatch_updates_impl_(
                     children[j],
                     old->next_ptr(old->to_child_index(i)),
                     old->fnext(old->to_child_index(i)),
-                    static_cast<Requests &&>(requests)[i],
+                    std::move(requests[i]),
                     prefix_index + 1,
                     INVALID_PATH_INDEX);
                 sm.up(1);
@@ -909,7 +909,7 @@ void dispatch_updates_impl_(
                     sm,
                     tnode->version,
                     children[j],
-                    static_cast<Requests &&>(requests)[i],
+                    std::move(requests[i]),
                     prefix_index + 1);
                 --tnode->npending;
                 sm.up(1);
@@ -1037,7 +1037,7 @@ void mismatch_handler_(
                     children[j],
                     std::move(old_ptr),
                     INVALID_OFFSET,
-                    static_cast<Requests &&>(requests)[i],
+                    std::move(requests[i]),
                     prefix_index + 1,
                     old_prefix_index + 1);
             }
@@ -1047,7 +1047,7 @@ void mismatch_handler_(
                     sm,
                     tnode->version,
                     children[j],
-                    static_cast<Requests &&>(requests)[i],
+                    std::move(requests[i]),
                     prefix_index + 1);
                 --tnode->npending;
             }

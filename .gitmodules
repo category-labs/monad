@@ -1,9 +1,6 @@
 [submodule "third_party/ethereum-tests"]
 	path = third_party/ethereum-tests
 	url = https://github.com/ethereum/tests
-[submodule "third_party/evmone"]
-	path = third_party/evmone
-	url = git@github.com:monad-crypto/evmone.git
 [submodule "third_party/execution-specs"]
 	path = third_party/execution-specs
 	url = https://github.com/ethereum/execution-specs.git
@@ -26,6 +23,9 @@
 [submodule "ethash"]
 	path = third_party/ethash
 	url = https://github.com/chfast/ethash.git
+[submodule "evmone"]
+	path = third_party/evmone
+	url = https://github.com/ethereum/evmone.git
 [submodule "core/third_party/nanobench"]
 	path = libs/core/third_party/nanobench
 	url = https://github.com/martinus/nanobench.git

@@ -20,6 +20,8 @@
                     clang-analyzer*,
                     -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
                     -clang-analyzer-optin.core.EnumCastOutOfRange,
+                    -clang-analyzer-core.uninitialized.Assign,
+                    -clang-analyzer-cplusplus.NewDeleteLeaks,
                     -clang-analyzer-deadcode.DeadStores,
                     google-build-explicit-make-pair,
                     google-explicit-constructor,

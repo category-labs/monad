@@ -109,7 +109,8 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
     uint64_t ntxs = 0;
 
     BlockHashBuffer block_hash_buffer;
-    for (uint64_t i = block_num < 256 ? 1 : block_num - 255; i < block_num;) {
+    for (uint64_t i = block_num < 256 ? 1 : block_num - 255;
+         i < block_num && stop == 0;) {
         auto const block = try_get(i);
         if (!block.has_value()) {
             std::this_thread::sleep_for(SLEEP_TIME);
@@ -396,6 +397,10 @@ int main(int const argc, char const *argv[])
         init_block_num,
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - load_start_time));
+
+    if (nblocks == 0) {
+        return EXIT_SUCCESS;
+    }
 
     uint64_t const start_block_num = init_block_num + 1;
 

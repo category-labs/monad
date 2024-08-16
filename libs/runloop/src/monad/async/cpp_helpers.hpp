@@ -2,14 +2,14 @@
 
 // Needs to come before others, on clang <stdatomic.h> breaks <atomic>
 #include <atomic>
-#include <boost/outcome/experimental/status_result.hpp>
 
 #include <liburing.h>
 
 #include "all.h"
-#include "config.h"
 #include "executor.h"
 #include "task.h"
+
+#include <monad/context/config.h>
 
 #include <memory>
 #include <type_traits>
@@ -77,51 +77,6 @@ namespace monad
                     task->current_executor.load(std::memory_order_acquire)});
         }
 
-        struct context_switcher_deleter
-        {
-            void operator()(monad_async_context_switcher t) const
-            {
-                to_result(monad_async_context_switcher_destroy(t)).value();
-            }
-        };
-
-        using context_switcher_ptr = std::unique_ptr<
-            monad_async_context_switcher_head, context_switcher_deleter>;
-
-        //! \brief Construct a context switcher instance, and return it in a
-        //! smart pointer
-        inline context_switcher_ptr
-        make_context_switcher(monad_async_context_switcher_impl impl)
-        {
-            monad_async_context_switcher ex;
-            to_result(impl.create(&ex)).value();
-            return context_switcher_ptr(ex);
-        }
-
-        struct context_deleter
-        {
-            monad_async_context_switcher switcher;
-
-            void operator()(monad_async_context t) const
-            {
-                to_result(switcher->destroy(t)).value();
-            }
-        };
-
-        using context_ptr =
-            std::unique_ptr<monad_async_context_head, context_deleter>;
-
-        //! \brief Construct a context instance, and return it in a
-        //! smart pointer
-        inline context_ptr make_context(
-            monad_async_context_switcher impl, monad_async_task task,
-            struct monad_async_task_attr &attr)
-        {
-            monad_async_context ex;
-            to_result(impl->create(&ex, impl, task, &attr)).value();
-            return context_ptr(ex, {impl});
-        }
-
         struct socket_deleter
         {
             monad_async_executor ex;
@@ -171,8 +126,7 @@ namespace monad
 
         //! \brief Construct a task instance, and return it in a smart pointer
         inline task_ptr make_task(
-            monad_async_context_switcher switcher,
-            struct monad_async_task_attr &attr)
+            monad_context_switcher switcher, struct monad_async_task_attr &attr)
         {
             monad_async_task t;
             to_result(monad_async_task_create(&t, switcher, &attr)).value();
@@ -274,8 +228,8 @@ namespace monad
                                     .value();
                             }
                         }
-                        task->user_code = nullptr;
-                        task->user_ptr = nullptr;
+                        task->derived.user_code = nullptr;
+                        task->derived.user_ptr = nullptr;
                     }
                 }
 
@@ -299,14 +253,14 @@ namespace monad
 
                 task_attach_impl(task_attach_impl &&) = default;
 
-                static monad_async_result trampoline(monad_async_task task)
+                static monad_c_result trampoline(monad_async_task task)
                 {
-                    auto *self = (task_attach_impl *)task->user_ptr;
+                    auto *self = (task_attach_impl *)task->derived.user_ptr;
                     assert(task == self->task);
                     auto ret = self->f(task);
                     // self may be deleted at this point
-                    task->user_code = nullptr;
-                    task->user_ptr = nullptr;
+                    task->derived.user_code = nullptr;
+                    task->derived.user_ptr = nullptr;
                     return ret;
                 }
             };
@@ -329,22 +283,22 @@ namespace monad
             assert(monad_async_task_has_exited(task));
             detail::task_attach_impl impl{
                 [f = std::move(f), ... args = std::move(args)](
-                    monad_async_task task) mutable -> monad_async_result {
+                    monad_async_task task) mutable -> monad_c_result {
                     BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<
                         intptr_t>
                         ret{f(task, std::move(args)...)};
                     // this may be deleted by now
-                    return ret ? monad_async_make_success(ret.assume_value())
-                               : monad_async_make_failure(
+                    return ret ? monad_c_make_success(ret.assume_value())
+                               : monad_c_make_failure(
                                      (int)ret.assume_error().value());
                 },
                 ex,
                 task};
             using impl_type = std::decay_t<decltype(impl)>;
-            task->user_code = impl_type::trampoline;
+            task->derived.user_code = impl_type::trampoline;
             auto ret =
                 std::unique_ptr<impl_type>(new impl_type(std::move(impl)));
-            task->user_ptr = ret.get();
+            task->derived.user_ptr = ret.get();
             to_result(monad_async_task_attach(ex, task, nullptr)).value();
             return ret;
         }

@@ -9,9 +9,10 @@ mod tests {
     use super::*;
 
     unsafe extern "C" fn test_executor_works_user_code(
-        task: monad_async_task,
-    ) -> monad_async_result {
-        *((*task).user_ptr as *mut i32) = 1;
+        task_: monad_context_task,
+    ) -> monad_c_result {
+        let task = task_ as monad_async_task;
+        *((*task).derived.user_ptr as *mut i32) = 1;
         {
             let current_executor: monad_async_executor =
                 to_atomic_ptr::<monad_async_executor_head>(&mut (*task).current_executor)
@@ -32,7 +33,7 @@ mod tests {
             ))
             .unwrap();
         }
-        *((*task).user_ptr as *mut i32) = 2;
+        *((*task).derived.user_ptr as *mut i32) = 2;
         {
             let current_executor: monad_async_executor =
                 to_atomic_ptr::<monad_async_executor_head>(&mut (*task).current_executor)
@@ -45,7 +46,7 @@ mod tests {
             assert_eq!((*current_executor).tasks_running, 1);
             assert_eq!((*current_executor).tasks_suspended, 0);
         }
-        monad_async_make_success(5)
+        monad_c_make_success(5)
     }
 
     #[test]
@@ -61,7 +62,7 @@ mod tests {
                 (*ex.head).tasks_running
             });
 
-            let test = |switcher: &monad_async_context_switcher_ptr, desc: &str| {
+            let test = |switcher: &monad_context_switcher_ptr, desc: &str| {
                 let mut t_attr = monad_async_task_attr {
                     ..Default::default()
                 };
@@ -73,10 +74,10 @@ mod tests {
                     let task = monad_async_task_ptr::new(switcher.head, &mut t_attr).unwrap();
                     let mut did_run: i32 = 0;
                     unsafe {
-                        (*task.head).user_ptr =
+                        (*task.head).derived.user_ptr =
                             &mut did_run as *mut _ as *mut ::std::os::raw::c_void
                     };
-                    unsafe { (*task.head).user_code = Some(test_executor_works_user_code) };
+                    unsafe { (*task.head).derived.user_code = Some(test_executor_works_user_code) };
                     unsafe {
                         to_result(monad_async_task_attach(
                             ex.head,
@@ -124,7 +125,7 @@ mod tests {
                         assert_eq!((*task.head).is_running, 0);
                         assert_eq!((*task.head).is_suspended_awaiting, 0);
                         assert_eq!((*task.head).is_suspended_completed, 0);
-                        assert_eq!(to_result((*task.head).result).unwrap(), 5);
+                        assert_eq!(to_result((*task.head).derived.result).unwrap(), 5);
                         if n == 9 {
                             print!(
                                 "\n   Task attach to task initiate took {} ticks.",
@@ -158,8 +159,7 @@ mod tests {
             };
             {
                 let switcher = unsafe {
-                    monad_async_context_switcher_ptr::new(&monad_async_context_switcher_sjlj)
-                        .unwrap()
+                    monad_context_switcher_ptr::new(&monad_context_switcher_sjlj).unwrap()
                 };
                 test(&switcher, "setjmp/longjmp");
             }

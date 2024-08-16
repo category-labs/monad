@@ -14,19 +14,18 @@ extern "C"
 typedef struct monad_async_socket_head
 {
     // Either the locally bound or peer of connected socket
-    MONAD_ASYNC_PUBLIC_CONST struct sockaddr addr;
-    MONAD_ASYNC_PUBLIC_CONST socklen_t addr_len;
+    MONAD_CONTEXT_PUBLIC_CONST struct sockaddr addr;
+    MONAD_CONTEXT_PUBLIC_CONST socklen_t addr_len;
 
     // The following are not user modifiable
-    struct monad_async_executor_head *MONAD_ASYNC_PUBLIC_CONST executor;
+    struct monad_async_executor_head *MONAD_CONTEXT_PUBLIC_CONST executor;
 } *monad_async_socket;
 
 /*! \brief EXPENSIVE Create a socket. See `man socket` to explain parameters.
 
 At least one malloc is performed, and possibly more.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
-monad_async_task_socket_create(
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_socket_create(
     monad_async_socket *sock, monad_async_task task, int domain, int type,
     int protocol, unsigned flags);
 
@@ -39,12 +38,12 @@ possible you should use the native file and socket creation functions as
 these completely bypass userspace and don't create any of the problems POSIX
 file descriptors do.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_task_socket_create_from_existing_fd(
     monad_async_socket *sock, monad_async_task task, int fd);
 
 //! \brief Suspend execution of the task until the socket has been closed
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_task_socket_destroy(monad_async_task task, monad_async_socket sock);
 
 /*! \brief EXPENSIVE Bind a socket to an interface and port.
@@ -52,8 +51,7 @@ monad_async_task_socket_destroy(monad_async_task task, monad_async_socket sock);
 This is done by blocking syscall, as io_uring is currently incapable of doing
 listening socket setup by itself.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
-monad_async_task_socket_bind(
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_socket_bind(
     monad_async_socket sock, const struct sockaddr *addr, socklen_t addrlen);
 
 /*! \brief EXPENSIVE Make a bound socket available for incoming connections.
@@ -61,7 +59,7 @@ monad_async_task_socket_bind(
 This is done by blocking syscall, as io_uring is currently incapable of doing
 listening socket setup by itself.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_task_socket_listen(monad_async_socket sock, int backlog);
 
 /*! \brief CANCELLATION POINT Transfers the socket to io_uring, which may
@@ -78,7 +76,7 @@ else blocking syscalls are used and the socket transferred into io_uring.
 When this call returns, all syscall-created resources are released and io_uring
 exclusively manages the socket.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_task_socket_transfer_to_uring(
     monad_async_task task, monad_async_socket sock);
 
@@ -89,8 +87,7 @@ accept4` to explain parameters.
 Note that if `SOCK_CLOEXEC` is set in the flags, io_uring will fail the request
 (this is non-obvious, cost me half a day of debugging, so I document it here)
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
-monad_async_task_socket_accept(
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_socket_accept(
     monad_async_socket *connected_sock, monad_async_task task,
     monad_async_socket listening_sock, int flags);
 

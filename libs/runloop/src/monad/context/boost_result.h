@@ -273,7 +273,7 @@ DEALINGS IN THE SOFTWARE.
 __asm__(
     ".pushsection \".debug_gdb_scripts\", \"MS\",@progbits,1\n"
     ".byte 4 /* Python Text */\n"
-    ".ascii \"gdb.inlined-script\\n\"\n"
+    ".ascii \"gdb.inlined-script.outcome\\n\"\n"
     ".ascii \"import gdb.printing\\n\"\n"
     ".ascii \"import os\\n\"\n"
 
@@ -281,7 +281,7 @@ __asm__(
     ".ascii \"    '''For when you want to return a synthetic string from "
     "children()'''\\n\"\n"
     ".ascii \"    return gdb.Value(s + "
-    "'\\0').cast(gdb.lookup_type('char').pointer())\\n\"\n"
+    "'\\\\0').cast(gdb.lookup_type('char').pointer())\\n\"\n"
 
     ".ascii \"class OutcomeBasicOutcomePrinter(object):\\n\"\n"
     ".ascii \"    '''Print an outcome::basic_outcome<T> and "

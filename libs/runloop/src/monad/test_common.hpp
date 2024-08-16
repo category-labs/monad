@@ -3,6 +3,7 @@
 #include "monad/async/cpp_helpers.hpp"
 
 using namespace monad::async;
+using namespace monad::context;
 #define CHECK_RESULT2(unique, ...)                                             \
     {                                                                          \
         to_result(__VA_ARGS__).value();                                        \

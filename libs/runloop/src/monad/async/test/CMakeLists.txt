@@ -10,8 +10,6 @@ function(monad_test target)
                TSAN_OPTIONS=external_symbolizer_path=/usr/bin/llvm-symbolizer)
 endfunction()
 
-monad_test(context_switcher_test "context_switcher.cpp")
-
 monad_test(executor_test "executor.cpp")
 
 monad_test(file_io_test "file_io.cpp")

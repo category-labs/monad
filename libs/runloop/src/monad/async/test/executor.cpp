@@ -1,8 +1,9 @@
 #include <gtest/gtest.h>
 
-#include "test_common.hpp"
+#include "../../test_common.hpp"
 
-#include "../config.h"
+#include <monad/context/config.h>
+
 #include "../executor.h"
 #include "../task.h"
 
@@ -35,10 +36,10 @@
 
 TEST(async_result, works)
 {
-    auto r = monad_async_make_success(EINVAL);
+    auto r = monad_c_make_success(EINVAL);
     CHECK_RESULT(r);
     try {
-        r = monad_async_make_failure(EINVAL);
+        r = monad_c_make_failure(EINVAL);
         CHECK_RESULT(r);
     }
     catch (std::exception const &e) {
@@ -80,22 +81,23 @@ TEST(executor, works)
     monad_async_task_attr t_attr{};
     std::cout << "\n\n   With none context switcher ..." << std::endl;
     for (size_t n = 0; n < 10; n++) {
-        auto s1 = make_context_switcher(monad_async_context_switcher_none);
+        auto s1 = make_context_switcher(monad_context_switcher_none);
         auto t1 = make_task(s1.get(), t_attr);
         bool did_run = false;
-        t1->user_ptr = (void *)&did_run;
-        t1->user_code = +[](monad_async_task task) -> monad_async_result {
+        t1->derived.user_ptr = (void *)&did_run;
+        t1->derived.user_code = +[](monad_context_task task) -> monad_c_result {
             *(bool *)task->user_ptr = true;
             auto *current_executor =
-                task->current_executor.load(std::memory_order_acquire);
+                ((monad_async_task)task)
+                    ->current_executor.load(std::memory_order_acquire);
             if (current_executor == nullptr) {
                 abort();
             }
-            EXPECT_EQ(current_executor->current_task, task);
+            EXPECT_EQ(current_executor->current_task, ((monad_async_task)task));
             EXPECT_EQ(current_executor->tasks_pending_launch, 0);
             EXPECT_EQ(current_executor->tasks_running, 1);
             EXPECT_EQ(current_executor->tasks_suspended, 0);
-            return monad_async_make_success(5);
+            return monad_c_make_success(5);
         };
         r = monad_async_task_attach(ex.get(), t1.get(), nullptr);
         CHECK_RESULT(r);
@@ -117,8 +119,8 @@ TEST(executor, works)
         EXPECT_FALSE(t1->is_running);
         EXPECT_FALSE(t1->is_suspended_awaiting);
         EXPECT_FALSE(t1->is_suspended_completed);
-        CHECK_RESULT(t1->result);
-        EXPECT_EQ(t1->result.value, 5);
+        CHECK_RESULT(t1->derived.result);
+        EXPECT_EQ(t1->derived.result.value, 5);
         EXPECT_TRUE(did_run);
         if (n == 9) {
             std::cout << "\n   Task attach to task initiate took "
@@ -132,9 +134,7 @@ TEST(executor, works)
         }
     }
     {
-        auto test = [&ex](
-                        monad_async_context_switcher switcher,
-                        char const *desc) {
+        auto test = [&ex](monad_context_switcher switcher, char const *desc) {
             static size_t n;
             monad_async_task_attr t_attr{};
             struct timespec ts
@@ -146,26 +146,34 @@ TEST(executor, works)
             for (n = 0; n < 10; n++) {
                 auto t1 = make_task(switcher, t_attr);
                 int did_run = 0;
-                t1->user_ptr = (void *)&did_run;
-                t1->user_code =
-                    +[](monad_async_task task) -> monad_async_result {
+                t1->derived.user_ptr = (void *)&did_run;
+                t1->derived.user_code =
+                    +[](monad_context_task task) -> monad_c_result {
                     *(int *)task->user_ptr = 1;
                     auto *current_executor =
-                        task->current_executor.load(std::memory_order_acquire);
-                    EXPECT_EQ(current_executor->current_task, task);
+                        ((monad_async_task)task)
+                            ->current_executor.load(std::memory_order_acquire);
+                    EXPECT_EQ(
+                        current_executor->current_task,
+                        ((monad_async_task)task));
                     EXPECT_EQ(current_executor->tasks_pending_launch, 0);
                     EXPECT_EQ(current_executor->tasks_running, 1);
                     EXPECT_EQ(current_executor->tasks_suspended, 0);
                     CHECK_RESULT(monad_async_task_suspend_for_duration(
-                        nullptr, task, 10000000ULL)); // 10 milliseconds
+                        nullptr,
+                        ((monad_async_task)task),
+                        10000000ULL)); // 10 milliseconds
                     *(int *)task->user_ptr = 2;
                     current_executor =
-                        task->current_executor.load(std::memory_order_acquire);
-                    EXPECT_EQ(current_executor->current_task, task);
+                        ((monad_async_task)task)
+                            ->current_executor.load(std::memory_order_acquire);
+                    EXPECT_EQ(
+                        current_executor->current_task,
+                        ((monad_async_task)task));
                     EXPECT_EQ(current_executor->tasks_pending_launch, 0);
                     EXPECT_EQ(current_executor->tasks_running, 1);
                     EXPECT_EQ(current_executor->tasks_suspended, 0);
-                    return monad_async_make_success(5);
+                    return monad_c_make_success(5);
                 };
                 auto const suspend_begins = std::chrono::steady_clock::now();
                 auto r = monad_async_task_attach(ex.get(), t1.get(), nullptr);
@@ -181,7 +189,7 @@ TEST(executor, works)
                 ts.tv_sec = 3; // timeout and fail the test after this
                 r = monad_async_executor_run(
                     ex.get(), 1, &ts); // runs and suspends
-                monad_async_cpu_ticks_count_t const ticks_when_resumed =
+                monad_context_cpu_ticks_count_t const ticks_when_resumed =
                     t1->ticks_when_resumed;
                 EXPECT_EQ(did_run, 1);
                 EXPECT_EQ(ex->tasks_pending_launch, 0);
@@ -205,8 +213,8 @@ TEST(executor, works)
                 EXPECT_FALSE(t1->is_running);
                 EXPECT_FALSE(t1->is_suspended_awaiting);
                 EXPECT_FALSE(t1->is_suspended_completed);
-                CHECK_RESULT(t1->result);
-                EXPECT_EQ(t1->result.value, 5);
+                CHECK_RESULT(t1->derived.result);
+                EXPECT_EQ(t1->derived.result.value, 5);
                 if (auto diff =
                         std::chrono::steady_clock::now() - suspend_begins;
                     diff < std::chrono::milliseconds(10)) {
@@ -251,32 +259,32 @@ TEST(executor, works)
             }
         };
         test(
-            make_context_switcher(monad_async_context_switcher_fcontext).get(),
+            make_context_switcher(monad_context_switcher_fcontext).get(),
             "fcontext");
         test(
-            make_context_switcher(monad_async_context_switcher_sjlj).get(),
+            make_context_switcher(monad_context_switcher_sjlj).get(),
             "setjmp/longjmp");
     }
 
     {
-        auto cs = make_context_switcher(monad_async_context_switcher_none);
+        auto cs = make_context_switcher(monad_context_switcher_none);
 
         struct shared_t
         {
             uint64_t ops{0};
         } shared;
 
-        auto func = +[](monad_async_task task) -> monad_async_result {
+        auto func = +[](monad_context_task task) -> monad_c_result {
             auto *shared = (shared_t *)task->user_ptr;
             shared->ops++;
-            return monad_async_make_success(0);
+            return monad_c_make_success(0);
         };
         std::vector<task_ptr> tasks;
         tasks.reserve(1024);
         for (size_t n = 0; n < 1024; n++) {
             tasks.push_back(make_task(cs.get(), t_attr));
-            tasks.back()->user_code = func;
-            tasks.back()->user_ptr = (void *)&shared;
+            tasks.back()->derived.user_code = func;
+            tasks.back()->derived.user_ptr = (void *)&shared;
         }
         std::cout << "\n\n   With none context switcher ..." << std::endl;
         auto const begin = std::chrono::steady_clock::now();
@@ -313,9 +321,7 @@ TEST(executor, works)
     }
 
     {
-        auto test = [&ex](
-                        monad_async_context_switcher switcher,
-                        char const *desc) {
+        auto test = [&ex](monad_context_switcher switcher, char const *desc) {
             monad_async_task_attr t_attr{};
             struct shared_t
             {
@@ -323,22 +329,22 @@ TEST(executor, works)
                 bool done{false};
             } shared;
 
-            auto func = +[](monad_async_task task) -> monad_async_result {
+            auto func = +[](monad_context_task task) -> monad_c_result {
                 auto *shared = (shared_t *)task->user_ptr;
                 while (!shared->done) {
                     shared->ops++;
-                    auto r =
-                        monad_async_task_suspend_for_duration(nullptr, task, 0);
+                    auto r = monad_async_task_suspend_for_duration(
+                        nullptr, ((monad_async_task)task), 0);
                     CHECK_RESULT(r);
                 }
-                return monad_async_make_success(0);
+                return monad_c_make_success(0);
             };
             std::vector<task_ptr> tasks;
             tasks.reserve(64);
             for (size_t n = 0; n < 64; n++) {
                 tasks.push_back(make_task(switcher, t_attr));
-                tasks.back()->user_code = func;
-                tasks.back()->user_ptr = (void *)&shared;
+                tasks.back()->derived.user_code = func;
+                tasks.back()->derived.user_ptr = (void *)&shared;
                 auto r = monad_async_task_attach(
                     ex.get(), tasks.back().get(), nullptr);
                 CHECK_RESULT(r);
@@ -375,17 +381,17 @@ TEST(executor, works)
                 << " ns/op." << std::endl;
         };
         test(
-            make_context_switcher(monad_async_context_switcher_fcontext).get(),
+            make_context_switcher(monad_context_switcher_fcontext).get(),
             "fcontext");
         test(
-            make_context_switcher(monad_async_context_switcher_sjlj).get(),
+            make_context_switcher(monad_context_switcher_sjlj).get(),
             "setjmp/longjmp");
     }
 }
 
 TEST(executor, foreign_thread)
 {
-    auto test = [](monad_async_context_switcher_impl switcher_impl,
+    auto test = [](monad_context_switcher_impl switcher_impl,
                    char const *desc) {
         std::cout << "\n   With " << desc << " context switcher ..."
                   << std::endl;
@@ -433,9 +439,10 @@ TEST(executor, foreign_thread)
             task_ptr task;
             uint32_t ops{0};
 
-            static monad_async_result run(monad_async_task t)
+            static monad_c_result run(monad_context_task t_)
             {
-                auto *self = (struct task *)t->user_ptr;
+                auto *t = ((monad_async_task)t_);
+                auto *self = (struct task *)t_->user_ptr;
                 self->ops++;
                 if (checking) {
                     EXPECT_EQ(self->ops, 1);
@@ -449,7 +456,7 @@ TEST(executor, foreign_thread)
                     EXPECT_FALSE(t->is_suspended_awaiting);
                     EXPECT_FALSE(t->is_suspended_completed);
                 }
-                return monad_async_make_success(0);
+                return monad_c_make_success(0);
             }
         };
 
@@ -458,8 +465,8 @@ TEST(executor, foreign_thread)
         auto switcher = make_context_switcher(switcher_impl);
         for (auto &i : tasks) {
             i.task = make_task(switcher.get(), attr);
-            i.task->user_code = task::run;
-            i.task->user_ptr = (void *)&i;
+            i.task->derived.user_code = task::run;
+            i.task->derived.user_ptr = (void *)&i;
         }
         while (latch < (int)executor_threads.size()) {
             std::this_thread::yield();
@@ -518,7 +525,7 @@ TEST(executor, foreign_thread)
         std::cout
             << "   Five seconds has passed, cancelling executor threads ..."
             << std::endl;
-        auto cancelled = monad_async_make_failure(ECANCELED);
+        auto cancelled = monad_c_make_failure(ECANCELED);
         for (auto &i : executor_threads) {
             CHECK_RESULT(
                 monad_async_executor_wake(i.executor.get(), &cancelled));
@@ -545,9 +552,9 @@ TEST(executor, foreign_thread)
                   << (diff / double(task_ops)) << " ns/op)" << std::endl;
         tasks.clear();
     };
-    test(monad_async_context_switcher_none, "none");
-    test(monad_async_context_switcher_fcontext, "fcontext");
-    test(monad_async_context_switcher_sjlj, "setjmp/longjmp");
+    test(monad_context_switcher_none, "none");
+    test(monad_context_switcher_fcontext, "fcontext");
+    test(monad_context_switcher_sjlj, "setjmp/longjmp");
 }
 
 TEST(executor, registered_io_buffers)
@@ -557,15 +564,16 @@ TEST(executor, registered_io_buffers)
     ex_attr.io_uring_wr_ring.entries = 1;
     ex_attr.io_uring_wr_ring.registered_buffers.small_count = 1;
     auto ex = make_executor(ex_attr);
-    auto switcher = make_context_switcher(monad_async_context_switcher_sjlj);
+    auto switcher = make_context_switcher(monad_context_switcher_sjlj);
 
     struct shared_t
     {
         std::set<monad_async_task> have_buffer, waiting_for_buffer;
     } shared;
 
-    auto task_impl = +[](monad_async_task task) -> monad_async_result {
-        auto *shared = (shared_t *)task->user_ptr;
+    auto task_impl = +[](monad_context_task task_) -> monad_c_result {
+        auto *shared = (shared_t *)task_->user_ptr;
+        auto *task = ((monad_async_task)task_);
         shared->waiting_for_buffer.insert(task);
         monad_async_task_registered_io_buffer buffer{};
         to_result(monad_async_task_claim_registered_file_io_write_buffer(
@@ -579,15 +587,15 @@ TEST(executor, registered_io_buffers)
             monad_async_task_release_registered_io_buffer(task, buffer.index))
             .value();
         shared->have_buffer.erase(task);
-        return monad_async_make_success(0);
+        return monad_c_make_success(0);
     };
 
     monad_async_task_attr t_attr{};
     std::vector<task_ptr> tasks;
     for (size_t n = 0; n < 10; n++) {
         tasks.push_back(make_task(switcher.get(), t_attr));
-        tasks.back()->user_code = task_impl;
-        tasks.back()->user_ptr = (void *)&shared;
+        tasks.back()->derived.user_code = task_impl;
+        tasks.back()->derived.user_ptr = (void *)&shared;
         to_result(
             monad_async_task_attach(ex.get(), tasks.back().get(), nullptr))
             .value();

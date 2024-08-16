@@ -27,7 +27,7 @@ stack frame).
 
 ### Execute a task on an i/o executor
 ```c
-monad_async_result r;
+monad_c_result r;
 
 // Create an executor
 monad_async_executor ex;
@@ -43,8 +43,8 @@ CHECK_RESULT(r);
 // You can have as many context switcher types per executor as
 // you like. This is a setjmp/longjmp context switcher. There
 // can be many others.
-monad_async_context_switcher switcher_sjlj;
-r = monad_async_context_switcher_sjlj_create(&switcher_sjlj);
+monad_context_switcher switcher_sjlj;
+r = monad_context_switcher_sjlj_create(&switcher_sjlj);
 CHECK_RESULT(r);
 
 // Create a task. Creating these is expensive, but they can be
@@ -57,8 +57,8 @@ CHECK_RESULT(r);
 
 // Set what work this task will do and its priority
 task->priority.cpu = monad_async_priority_high;
-task->user_code = myfunc;
-task->user_ptr = myptr;
+task->derived.user_code = myfunc;
+task->derived.user_ptr = myptr;
 
 // From now on cheap and deterministic in the hot path
 
@@ -84,7 +84,7 @@ CHECK_RESULT(r);
 // into unique_ptrs (c.f. cpp_helpers.hpp)
 r = monad_async_task_destroy(task);
 CHECK_RESULT(r);
-r = monad_async_context_switcher_destroy(switcher_sjlj);
+r = monad_context_switcher_destroy(switcher_sjlj);
 CHECK_RESULT(r);
 r = monad_async_executor_destroy(ex);
 CHECK_RESULT(r);
@@ -96,7 +96,7 @@ The task object can be reused for different work after the work
 completes.
 
 ```c
-static monad_async_result myfunc(monad_async_task task)
+static monad_c_result myfunc(monad_async_task task)
 {
   /* do stuff */
 
@@ -112,7 +112,7 @@ static monad_async_result myfunc(monad_async_task task)
   // efficiency.
 
   // All done, return success
-  return monad_async_make_success(0);
+  return monad_c_make_success(0);
 }
 ```
 
@@ -122,7 +122,7 @@ Work dispatcher is simple but fast -- any executor which finds itself with
 no work to do dequeues a new piece of work from the work dispatcher queue.
 
 ```c
-monad_async_result r;
+monad_c_result r;
 monad_async_task tasks[1024];  // tasks
 
 // Create a work dispatcher
@@ -159,7 +159,7 @@ An executor thread would look like:
 ```c
 void worker_thread(monad_async_work_dispatcher wd)
 {
-  monad_async_result r;
+  monad_c_result r;
 
   struct monad_async_work_dispatcher_executor_attr ex_attr;
   memset(&ex_attr, 0, sizeof(ex_attr));
@@ -205,9 +205,9 @@ write into it and initiate the write. For reads, io_uring allocates the
 registered buffer, and tells you the buffer on read completion.
 
 ```c
-static monad_async_result mytask(monad_async_task task)
+static monad_c_result mytask(monad_async_task task)
 {
-  monad_async_result r;
+  monad_c_result r;
 
   // Open a file for read. This will suspend the task and resume
   // it after the file has been opened.
@@ -255,7 +255,7 @@ static monad_async_result mytask(monad_async_task task)
   CHECK_RESULT(r);
 
   // All done, return success
-  return monad_async_make_success(0);
+  return monad_c_make_success(0);
 }
 
 ```
@@ -266,10 +266,13 @@ static monad_async_result mytask(monad_async_task task)
 - Executor `total_io_completed` never seems to match `total_io_submitted`,
 with them sometimes being very very different. I have walked the code many
 times and I don't see the cause :(
-- A context switcher based on Klemens' Boost.Context port
 - When a task exits, all i/o still occurring on that task ought to be pumped and dumped out.
 - Need to test cancellation works at every possible lifecycle and suspend state
 a task can have.
+- `thread_db.so` ought to be extended so GDB shows all contexts as if kernel threads.
+- Multiple context switcher types at the same time should work, but is completed untested
+and ought to become tested. Including with perf impact (as they usually have to
+thunk when switching between disparate contexts)
 - A context switcher implementing C++ coroutines would be nice. Some notes
 on that:
     - MSVC coroutine frame: Promise | Frame prefix | Local variables. Coroutine

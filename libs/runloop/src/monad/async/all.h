@@ -1,8 +1,9 @@
 #pragma once
 
-#include "boost_result.h"
-#include "config.h"
-#include "context_switcher.h"
+#include <monad/context/boost_result.h>
+#include <monad/context/config.h>
+#include <monad/context/context_switcher.h>
+
 #include "executor.h"
 #include "file_io.h"
 #include "socket_io.h"

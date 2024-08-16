@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include <monad/context/config.h>
 
 #include <liburing.h>
 
@@ -61,12 +61,12 @@ performance impact as it stalls the CPU and flushes its pipelines. 100-120
 cycles would be expected as a minimum, often more as it also disrupts prefetch
 and branch prediction.
 */
-extern monad_async_cpu_ticks_count_t
-monad_async_get_ticks_count(MONAD_ASYNC_CPP_STD memory_order rel);
+extern monad_context_cpu_ticks_count_t
+monad_async_get_ticks_count(MONAD_CONTEXT_CPP_STD memory_order rel);
 
 //! \brief Return how many CPU ticks per second there are. The first caller
 //! of this will need to wait up to one second for the number to be calculated.
-extern monad_async_cpu_ticks_count_t monad_async_ticks_per_second();
+extern monad_context_cpu_ticks_count_t monad_async_ticks_per_second();
 
 #ifdef __cplusplus
 }

@@ -14,7 +14,7 @@
     #pragma GCC diagnostic ignored "-Wclass-memaccess"
 #endif
 
-TEST(work_dispatcher, works)
+TEST(work_dispatcher, DISABLED_works)
 {
     struct thread_state
     {

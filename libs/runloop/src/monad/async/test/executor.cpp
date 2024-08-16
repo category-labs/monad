@@ -464,6 +464,8 @@ TEST(executor, foreign_thread)
         while (latch < (int)executor_threads.size()) {
             std::this_thread::yield();
         }
+        std::cout << "   All " << executor_threads.size()
+                  << " executor threads have launched!" << std::endl;
 
         {
             auto *task = tasks.front().task.get();
@@ -477,6 +479,9 @@ TEST(executor, foreign_thread)
             EXPECT_FALSE(task->is_suspended_awaiting);
             EXPECT_FALSE(task->is_suspended_completed);
             CHECK_RESULT(monad_async_task_attach(ex, task, switcher));
+            std::cout << "   First task attached, waiting for an executor "
+                         "thread to launch it ..."
+                      << std::endl;
             while (!monad_async_task_has_exited(task)) {
                 std::this_thread::yield();
             }
@@ -488,6 +493,7 @@ TEST(executor, foreign_thread)
             EXPECT_FALSE(task->is_suspended_awaiting);
             EXPECT_FALSE(task->is_suspended_completed);
             EXPECT_EQ(tasks.front().ops, 1);
+            std::cout << "   First task has executed." << std::endl;
         }
         checking = false;
 
@@ -509,10 +515,15 @@ TEST(executor, foreign_thread)
         }
         while (std::chrono::steady_clock::now() - begin <
                std::chrono::seconds(5));
+        std::cout
+            << "   Five seconds has passed, cancelling executor threads ..."
+            << std::endl;
         auto cancelled = monad_async_make_failure(ECANCELED);
         for (auto &i : executor_threads) {
             CHECK_RESULT(
                 monad_async_executor_wake(i.executor.get(), &cancelled));
+        }
+        for (auto &i : executor_threads) {
             i.thread.join();
         }
         auto const end = std::chrono::steady_clock::now();

@@ -3,18 +3,16 @@
 #undef _FORTIFY_SOURCE
 #define _FORTIFY_SOURCE 0
 
-// #define MONAD_ASYNC_CONTEXT_PRINTING 1
+// #define MONAD_CONTEXT_PRINTING 1
 
-#include "monad/async/context_switcher.h"
+#include "monad/context/context_switcher.h"
 
-#include "monad/async/task.h"
-
-extern void monad_async_executor_task_detach(monad_async_task task);
 #include <assert.h>
 #include <errno.h>
 #include <setjmp.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <threads.h>
 
@@ -23,34 +21,34 @@ extern void monad_async_executor_task_detach(monad_async_task task);
 #include <ucontext.h>
 #include <unistd.h>
 
-#if MONAD_ASYNC_HAVE_ASAN
+#if MONAD_CONTEXT_HAVE_ASAN
     #include <sanitizer/asan_interface.h>
 #endif
-#if MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_TSAN
     #include <sanitizer/tsan_interface.h>
 #endif
 #if MONAD_ASYNC_HAVE_VALGRIND
     #include <valgrind/valgrind.h>
 #endif
 
-monad_async_context_switcher_impl const monad_async_context_switcher_sjlj = {
-    .create = monad_async_context_switcher_sjlj_create};
+monad_context_switcher_impl const monad_context_switcher_sjlj = {
+    .create = monad_context_switcher_sjlj_create};
 
-BOOST_OUTCOME_C_NODISCARD static inline monad_async_result
-monad_async_context_sjlj_create(
-    monad_async_context *context, monad_async_context_switcher switcher,
-    monad_async_task task, const struct monad_async_task_attr *attr);
-BOOST_OUTCOME_C_NODISCARD static inline monad_async_result
-monad_async_context_sjlj_destroy(monad_async_context context);
-static inline void monad_async_context_sjlj_suspend_and_call_resume(
-    monad_async_context current_context, monad_async_context new_context);
-static inline void monad_async_context_sjlj_resume(
-    monad_async_context current_context, monad_async_context new_context);
-BOOST_OUTCOME_C_NODISCARD static inline monad_async_result
-monad_async_context_sjlj_resume_many(
-    monad_async_context_switcher switcher,
-    monad_async_result (*resumed)(
-        void *user_ptr, monad_async_context fake_current_context),
+BOOST_OUTCOME_C_NODISCARD static inline monad_c_result
+monad_context_sjlj_create(
+    monad_context *context, monad_context_switcher switcher,
+    monad_context_task task, const struct monad_context_task_attr *attr);
+BOOST_OUTCOME_C_NODISCARD static inline monad_c_result
+monad_context_sjlj_destroy(monad_context context);
+static inline void monad_context_sjlj_suspend_and_call_resume(
+    monad_context current_context, monad_context new_context);
+static inline void monad_context_sjlj_resume(
+    monad_context current_context, monad_context new_context);
+BOOST_OUTCOME_C_NODISCARD static inline monad_c_result
+monad_context_sjlj_resume_many(
+    monad_context_switcher switcher,
+    monad_c_result (*resumed)(
+        void *user_ptr, monad_context fake_current_context),
     void *user_ptr);
 
 static inline size_t get_rlimit_stack()
@@ -68,28 +66,28 @@ static inline size_t get_rlimit_stack()
     return v;
 }
 
-struct monad_async_context_sjlj
+struct monad_context_sjlj
 {
-    struct monad_async_context_head head;
+    struct monad_context_head head;
     void *stack_storage;
     ucontext_t uctx;
     jmp_buf buf;
 };
 
-struct monad_async_context_switcher_sjlj
+struct monad_context_switcher_sjlj
 {
-    struct monad_async_context_switcher_head head;
+    struct monad_context_switcher_head head;
     thrd_t owning_thread;
     size_t within_resume_many;
-    struct monad_async_context_sjlj *last_suspended;
-    struct monad_async_context_sjlj resume_many_context;
+    struct monad_context_sjlj *last_suspended;
+    struct monad_context_sjlj resume_many_context;
 };
 
-static inline monad_async_result
-monad_async_context_switcher_sjlj_destroy(monad_async_context_switcher switcher)
+static inline monad_c_result
+monad_context_switcher_sjlj_destroy(monad_context_switcher switcher)
 {
-    struct monad_async_context_switcher_sjlj *p =
-        (struct monad_async_context_switcher_sjlj *)switcher;
+    struct monad_context_switcher_sjlj *p =
+        (struct monad_context_switcher_sjlj *)switcher;
     unsigned contexts =
         atomic_load_explicit(&p->head.contexts, memory_order_acquire);
     if (contexts != 0) {
@@ -101,33 +99,32 @@ monad_async_context_switcher_sjlj_destroy(monad_async_context_switcher switcher)
         abort();
     }
     assert(!p->within_resume_many);
-#if MONAD_ASYNC_CONTEXT_TRACK_OWNERSHIP
+#if MONAD_CONTEXT_TRACK_OWNERSHIP
     mtx_destroy(&p->head.contexts_list.lock);
 #endif
     free(p);
-    return monad_async_make_success(0);
+    return monad_c_make_success(0);
 }
 
-monad_async_result
-monad_async_context_switcher_sjlj_create(monad_async_context_switcher *switcher)
+monad_c_result
+monad_context_switcher_sjlj_create(monad_context_switcher *switcher)
 {
-    struct monad_async_context_switcher_sjlj *p =
-        (struct monad_async_context_switcher_sjlj *)calloc(
-            1, sizeof(struct monad_async_context_switcher_sjlj));
+    struct monad_context_switcher_sjlj *p =
+        (struct monad_context_switcher_sjlj *)calloc(
+            1, sizeof(struct monad_context_switcher_sjlj));
     if (p == nullptr) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
-    static const struct monad_async_context_switcher_head to_copy = {
+    static const struct monad_context_switcher_head to_copy = {
         .contexts = 0,
-        .self_destroy = monad_async_context_switcher_sjlj_destroy,
-        .create = monad_async_context_sjlj_create,
-        .destroy = monad_async_context_sjlj_destroy,
-        .suspend_and_call_resume =
-            monad_async_context_sjlj_suspend_and_call_resume,
-        .resume = monad_async_context_sjlj_resume,
-        .resume_many = monad_async_context_sjlj_resume_many};
+        .self_destroy = monad_context_switcher_sjlj_destroy,
+        .create = monad_context_sjlj_create,
+        .destroy = monad_context_sjlj_destroy,
+        .suspend_and_call_resume = monad_context_sjlj_suspend_and_call_resume,
+        .resume = monad_context_sjlj_resume,
+        .resume_many = monad_context_sjlj_resume_many};
     memcpy(&p->head, &to_copy, sizeof(to_copy));
-#if MONAD_ASYNC_CONTEXT_TRACK_OWNERSHIP
+#if MONAD_CONTEXT_TRACK_OWNERSHIP
     if (thrd_success != mtx_init(&p->head.contexts_list.lock, mtx_plain)) {
         abort();
     }
@@ -135,57 +132,57 @@ monad_async_context_switcher_sjlj_create(monad_async_context_switcher *switcher)
     p->owning_thread = thrd_current();
     atomic_store_explicit(
         &p->resume_many_context.head.switcher, &p->head, memory_order_release);
-#if MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_TSAN
     p->resume_many_context.head.sanitizer.fiber = __tsan_get_current_fiber();
 #endif
-    *switcher = (monad_async_context_switcher)p;
-    return monad_async_make_success(0);
+    *switcher = (monad_context_switcher)p;
+    return monad_c_make_success(0);
 }
 
 /*****************************************************************************/
-#if MONAD_ASYNC_HAVE_ASAN || MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_ASAN || MONAD_CONTEXT_HAVE_TSAN
 static inline __attribute__((always_inline)) void start_switch_context(
-    struct monad_async_context_sjlj *dest_context, void **fake_stack_save,
+    struct monad_context_sjlj *dest_context, void **fake_stack_save,
     void const *bottom, size_t size)
 {
     (void)dest_context;
     (void)fake_stack_save;
     (void)bottom;
     (void)size;
-    #if MONAD_ASYNC_HAVE_ASAN
+    #if MONAD_CONTEXT_HAVE_ASAN
     __sanitizer_start_switch_fiber(fake_stack_save, bottom, size);
     #endif
-    #if MONAD_ASYNC_HAVE_TSAN
+    #if MONAD_CONTEXT_HAVE_TSAN
     __tsan_switch_to_fiber(dest_context->head.sanitizer.fiber, 0);
     #endif
 }
 
 static inline __attribute__((always_inline)) void finish_switch_context(
-    struct monad_async_context_sjlj *dest_context, void *fake_stack_save,
+    struct monad_context_sjlj *dest_context, void *fake_stack_save,
     void const **bottom_old, size_t *size_old)
 {
     (void)dest_context;
     (void)fake_stack_save;
     (void)bottom_old;
     (void)size_old;
-    #if MONAD_ASYNC_HAVE_ASAN
+    #if MONAD_CONTEXT_HAVE_ASAN
     __sanitizer_finish_switch_fiber(fake_stack_save, bottom_old, size_old);
     #endif
 }
 #else
-static inline void start_switch_context(
-    struct monad_async_context_sjlj *, void **, void const *, size_t)
+static inline void
+start_switch_context(struct monad_context_sjlj *, void **, void const *, size_t)
 {
 }
 
 static inline void finish_switch_context(
-    struct monad_async_context_sjlj *, void *, void const **, size_t *)
+    struct monad_context_sjlj *, void *, void const **, size_t *)
 {
 }
 #endif
 
-static void monad_async_context_sjlj_task_runner(
-    struct monad_async_context_sjlj *context, monad_async_task task)
+static void monad_context_sjlj_task_runner(
+    struct monad_context_sjlj *context, monad_context_task task)
 {
     // We are now at the base of our custom stack
     //
@@ -202,7 +199,7 @@ static void monad_async_context_sjlj_task_runner(
     //
     // just before the final longjmp out.
 
-#if MONAD_ASYNC_HAVE_ASAN
+#if MONAD_CONTEXT_HAVE_ASAN
     // First time call fake_stack_save will be null which means no historical
     // stack to restore for this brand new context
     assert(context->head.sanitizer.fake_stack_save == nullptr);
@@ -212,7 +209,7 @@ static void monad_async_context_sjlj_task_runner(
         context->head.sanitizer.fake_stack_save,
         &context->head.sanitizer.bottom,
         &context->head.sanitizer.size);
-#if MONAD_ASYNC_CONTEXT_PRINTING
+#if MONAD_CONTEXT_PRINTING
     printf(
         "*** %d: New execution context %p launches\n",
         gettid(),
@@ -230,7 +227,7 @@ static void monad_async_context_sjlj_task_runner(
         // is memory pressure
         madvise(
             stack_front, context->uctx.uc_stack.ss_size - page_size, MADV_FREE);
-#if MONAD_ASYNC_CONTEXT_PRINTING
+#if MONAD_CONTEXT_PRINTING
         printf(
             "*** %d: Execution context %p suspends in base task runner "
             "awaiting code to run\n",
@@ -238,9 +235,8 @@ static void monad_async_context_sjlj_task_runner(
             (void *)context);
         fflush(stdout);
 #endif
-        monad_async_context_sjlj_suspend_and_call_resume(
-            &context->head, nullptr);
-#if MONAD_ASYNC_CONTEXT_PRINTING
+        monad_context_sjlj_suspend_and_call_resume(&context->head, nullptr);
+#if MONAD_CONTEXT_PRINTING
         printf(
             "*** %d: Execution context %p resumes in base task runner, begins "
             "executing task.\n",
@@ -249,8 +245,8 @@ static void monad_async_context_sjlj_task_runner(
         fflush(stdout);
 #endif
 #ifndef NDEBUG
-        struct monad_async_context_switcher_sjlj *switcher =
-            (struct monad_async_context_switcher_sjlj *)atomic_load_explicit(
+        struct monad_context_switcher_sjlj *switcher =
+            (struct monad_context_switcher_sjlj *)atomic_load_explicit(
                 &context->head.switcher, memory_order_acquire);
         if (switcher->owning_thread != thrd_current()) {
             fprintf(
@@ -261,8 +257,10 @@ static void monad_async_context_sjlj_task_runner(
         }
 #endif
         // Execute the task
+        context->head.is_running = true;
         task->result = task->user_code(task);
-#if MONAD_ASYNC_CONTEXT_PRINTING
+        context->head.is_running = false;
+#if MONAD_CONTEXT_PRINTING
         printf(
             "*** %d: Execution context %p returns to base task runner, task "
             "has "
@@ -271,21 +269,20 @@ static void monad_async_context_sjlj_task_runner(
             (void *)context);
         fflush(stdout);
 #endif
-        monad_async_executor_task_detach(task);
+        task->detach(task);
     }
 }
 
-static monad_async_result monad_async_context_sjlj_create(
-    monad_async_context *context, monad_async_context_switcher switcher_,
-    monad_async_task task, const struct monad_async_task_attr *attr)
+static monad_c_result monad_context_sjlj_create(
+    monad_context *context, monad_context_switcher switcher_,
+    monad_context_task task, const struct monad_context_task_attr *attr)
 {
-    struct monad_async_context_switcher_sjlj *switcher =
-        (struct monad_async_context_switcher_sjlj *)switcher_;
-    struct monad_async_context_sjlj *p =
-        (struct monad_async_context_sjlj *)calloc(
-            1, sizeof(struct monad_async_context_sjlj));
+    struct monad_context_switcher_sjlj *switcher =
+        (struct monad_context_switcher_sjlj *)switcher_;
+    struct monad_context_sjlj *p = (struct monad_context_sjlj *)calloc(
+        1, sizeof(struct monad_context_sjlj));
     if (p == nullptr) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
     atomic_store_explicit(&p->head.switcher, switcher_, memory_order_release);
     size_t const page_size = (size_t)getpagesize();
@@ -301,7 +298,7 @@ static monad_async_result monad_async_context_sjlj_create(
         -1,
         0);
     if (p->stack_storage == MAP_FAILED) {
-        monad_async_result ret = monad_async_make_failure(errno);
+        monad_c_result ret = monad_c_make_failure(errno);
         p->stack_storage = nullptr;
         if (errno == ENOMEM) {
             fprintf(
@@ -325,7 +322,7 @@ static monad_async_result monad_async_context_sjlj_create(
         MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED | MAP_NORESERVE,
         -1,
         0);
-#if MONAD_ASYNC_CONTEXT_PRINTING
+#if MONAD_CONTEXT_PRINTING
     printf(
         "*** %d: New execution context %p is given stack between %p-%p with "
         "guard "
@@ -343,8 +340,8 @@ static monad_async_result monad_async_context_sjlj_create(
 #endif
     // Clone the current execution context
     if (getcontext(&p->uctx) == -1) {
-        monad_async_result ret = monad_async_make_failure(errno);
-        (void)monad_async_context_sjlj_destroy(&p->head);
+        monad_c_result ret = monad_c_make_failure(errno);
+        (void)monad_context_sjlj_destroy(&p->head);
         return ret;
     }
     // Replace its stack
@@ -354,12 +351,8 @@ static monad_async_result monad_async_context_sjlj_create(
     p->head.sanitizer.size = stack_size;
     // Launch execution, suspending immediately
     makecontext(
-        &p->uctx,
-        (void (*)(void))monad_async_context_sjlj_task_runner,
-        2,
-        p,
-        task);
-#if MONAD_ASYNC_HAVE_TSAN
+        &p->uctx, (void (*)(void))monad_context_sjlj_task_runner, 2, p, task);
+#if MONAD_CONTEXT_HAVE_TSAN
     p->head.sanitizer.fiber = __tsan_create_fiber(0);
 #endif
     jmp_buf old_buf;
@@ -382,29 +375,27 @@ static monad_async_result monad_async_context_sjlj_create(
     if (switcher->within_resume_many-- > 0) {
         memcpy(&switcher->resume_many_context.buf, &old_buf, sizeof(old_buf));
     }
-#if MONAD_ASYNC_CONTEXT_TRACK_OWNERSHIP
+#if MONAD_CONTEXT_TRACK_OWNERSHIP
     p->head.stack_top = stack_base;
     p->head.stack_bottom = stack_front;
 #endif
-    *context = (monad_async_context)p;
+    *context = (monad_context)p;
     atomic_store_explicit(&p->head.switcher, nullptr, memory_order_release);
-    monad_async_context_reparent_switcher(*context, switcher_);
-    return monad_async_make_success(0);
+    monad_context_reparent_switcher(*context, switcher_);
+    return monad_c_make_success(0);
 }
 
-static monad_async_result
-monad_async_context_sjlj_destroy(monad_async_context context)
+static monad_c_result monad_context_sjlj_destroy(monad_context context)
 {
-    struct monad_async_context_sjlj *p =
-        (struct monad_async_context_sjlj *)context;
-#if MONAD_ASYNC_HAVE_TSAN
+    struct monad_context_sjlj *p = (struct monad_context_sjlj *)context;
+#if MONAD_CONTEXT_HAVE_TSAN
     if (p->head.sanitizer.fiber != nullptr) {
         __tsan_destroy_fiber(p->head.sanitizer.fiber);
         p->head.sanitizer.fiber = nullptr;
     }
 #endif
     if (p->stack_storage != nullptr) {
-#if MONAD_ASYNC_CONTEXT_PRINTING
+#if MONAD_CONTEXT_PRINTING
         printf(
             "*** %d: Execution context %p is destroyed\n",
             gettid(),
@@ -417,32 +408,32 @@ monad_async_context_sjlj_destroy(monad_async_context context)
         size_t const page_size = (size_t)getpagesize();
         if (munmap(p->stack_storage, p->uctx.uc_stack.ss_size + page_size) ==
             -1) {
-            return monad_async_make_failure(errno);
+            return monad_c_make_failure(errno);
         }
         p->stack_storage = nullptr;
     }
-    monad_async_context_reparent_switcher(context, nullptr);
+    monad_context_reparent_switcher(context, nullptr);
 #if MONAD_ASYNC_GUARD_PAGE_JMPBUF
-    munmap(p, sizeof(struct monad_async_context_sjlj));
+    munmap(p, sizeof(struct monad_context_sjlj));
 #else
     free(context);
 #endif
-    return monad_async_make_success(0);
+    return monad_c_make_success(0);
 }
 
-static void monad_async_context_sjlj_suspend_and_call_resume(
-    monad_async_context current_context, monad_async_context new_context)
+static void monad_context_sjlj_suspend_and_call_resume(
+    monad_context current_context, monad_context new_context)
 {
-    struct monad_async_context_sjlj *p =
-        (struct monad_async_context_sjlj *)current_context;
-#if MONAD_ASYNC_CONTEXT_TRACK_OWNERSHIP
+    struct monad_context_sjlj *p = (struct monad_context_sjlj *)current_context;
+#if MONAD_CONTEXT_TRACK_OWNERSHIP
     p->head.stack_current = __builtin_frame_address(0);
 #endif
     int ret = setjmp(p->buf);
     if (ret != 0) {
+        current_context->is_suspended = false;
         // He has resumed
         finish_switch_context(
-            (struct monad_async_context_sjlj *)current_context,
+            (struct monad_context_sjlj *)current_context,
             p->head.sanitizer.fake_stack_save,
             &p->head.sanitizer.bottom,
             &p->head.sanitizer.size);
@@ -450,8 +441,8 @@ static void monad_async_context_sjlj_suspend_and_call_resume(
         return;
     }
     // Set last suspended
-    struct monad_async_context_switcher_sjlj *switcher =
-        (struct monad_async_context_switcher_sjlj *)atomic_load_explicit(
+    struct monad_context_switcher_sjlj *switcher =
+        (struct monad_context_switcher_sjlj *)atomic_load_explicit(
             &p->head.switcher, memory_order_acquire);
     switcher->last_suspended = p;
     if (new_context != nullptr) {
@@ -462,22 +453,22 @@ static void monad_async_context_sjlj_suspend_and_call_resume(
     }
     else {
         // Return to base
-        monad_async_context_sjlj_resume(
+        monad_context_sjlj_resume(
             current_context, &switcher->resume_many_context.head);
     }
 }
 
-static void monad_async_context_sjlj_resume(
-    monad_async_context current_context, monad_async_context new_context)
+static void monad_context_sjlj_resume(
+    monad_context current_context, monad_context new_context)
 {
     assert(
         atomic_load_explicit(
             &current_context->switcher, memory_order_acquire) ==
         atomic_load_explicit(&new_context->switcher, memory_order_acquire));
-#if MONAD_ASYNC_CONTEXT_PRINTING
+#if MONAD_CONTEXT_PRINTING
     {
-        struct monad_async_context_switcher_sjlj *switcher =
-            (struct monad_async_context_switcher_sjlj *)atomic_load_explicit(
+        struct monad_context_switcher_sjlj *switcher =
+            (struct monad_context_switcher_sjlj *)atomic_load_explicit(
                 &new_context->switcher, memory_order_acquire);
         bool new_context_is_resume_all_context =
             (new_context == &switcher->resume_many_context.head);
@@ -492,24 +483,23 @@ static void monad_async_context_sjlj_resume(
         fflush(stdout);
     }
 #endif
-    struct monad_async_context_sjlj *p =
-        (struct monad_async_context_sjlj *)new_context;
+    struct monad_context_sjlj *p = (struct monad_context_sjlj *)new_context;
     start_switch_context(
         p,
         &current_context->sanitizer.fake_stack_save,
         new_context->sanitizer.bottom,
         new_context->sanitizer.size);
+    current_context->is_suspended = true;
     longjmp(p->buf, (int)((uintptr_t)p ^ ((uintptr_t)p >> 32)));
 }
 
-static monad_async_result monad_async_context_sjlj_resume_many(
-    monad_async_context_switcher switcher_,
-    monad_async_result (*resumed)(
-        void *user_ptr, monad_async_context just_suspended),
+static monad_c_result monad_context_sjlj_resume_many(
+    monad_context_switcher switcher_,
+    monad_c_result (*resumed)(void *user_ptr, monad_context just_suspended),
     void *user_ptr)
 {
-    struct monad_async_context_switcher_sjlj *switcher =
-        (struct monad_async_context_switcher_sjlj *)switcher_;
+    struct monad_context_switcher_sjlj *switcher =
+        (struct monad_context_switcher_sjlj *)switcher_;
     switcher->last_suspended = nullptr;
     jmp_buf old_buf;
     if (switcher->within_resume_many++ > 0) {
@@ -527,8 +517,7 @@ static monad_async_result monad_async_context_sjlj_resume_many(
             (int)((uintptr_t)&switcher->resume_many_context ^
                   ((uintptr_t)&switcher->resume_many_context >> 32)) == ret);
     }
-    monad_async_result r =
-        resumed(user_ptr, &switcher->resume_many_context.head);
+    monad_c_result r = resumed(user_ptr, &switcher->resume_many_context.head);
     if (switcher->within_resume_many-- > 0) {
         memcpy(&switcher->resume_many_context.buf, &old_buf, sizeof(old_buf));
     }

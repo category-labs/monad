@@ -16,7 +16,7 @@ typedef uint64_t monad_async_file_offset;
 typedef struct monad_async_file_head
 {
     // The following are not user modifiable
-    struct monad_async_executor_head *MONAD_ASYNC_PUBLIC_CONST executor;
+    struct monad_async_executor_head *MONAD_CONTEXT_PUBLIC_CONST executor;
 } *monad_async_file;
 
 /*! \brief EXPENSIVE, CANCELLATION POINT Suspend execution of the task until the
@@ -25,8 +25,7 @@ file has been opened. See `man open2` to explain parameters.
 This is a relatively expensive operation as it may do up to two mallocs and
 several syscalls per call.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
-monad_async_task_file_create(
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_file_create(
     monad_async_file *file, monad_async_task task, monad_async_file base,
     char const *subpath, struct open_how *how);
 
@@ -39,19 +38,18 @@ possible you should use the native file and socket creation functions as
 these completely bypass userspace and don't create any of the problems POSIX
 file descriptors do.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_task_file_create_from_existing_fd(
     monad_async_file *file, monad_async_task task, int fd);
 
 //! \brief Suspend execution of the task until the file has been closed
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_task_file_destroy(monad_async_task task, monad_async_file file);
 
 //! \brief CANCELLATION POINT Suspend execution of the task until the file's
 //! valid extents have been modified as per the `fallocate` call, see `man
 //! fallocate` for more.
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
-monad_async_task_file_fallocate(
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_file_fallocate(
     monad_async_task task, monad_async_file file, int mode,
     monad_async_file_offset offset, monad_async_file_offset len);
 

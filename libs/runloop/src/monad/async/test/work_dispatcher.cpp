@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "test_common.hpp"
+#include "../../test_common.hpp"
 
 #include "monad/async/work_dispatcher.h"
 
@@ -33,7 +33,7 @@ TEST(work_dispatcher, DISABLED_works)
         {
             if (thread.joinable()) {
                 if (ex != nullptr) {
-                    auto r = monad_async_make_success(-1);
+                    auto r = monad_c_make_success(-1);
                     to_result(monad_async_work_dispatcher_executor_wake(ex, &r))
                         .value();
                 }
@@ -82,13 +82,13 @@ TEST(work_dispatcher, DISABLED_works)
         task_ptr task;
         unsigned ops{0};
 
-        task_state(monad_async_context_switcher switcher)
+        task_state(monad_context_switcher switcher)
             : task([&] {
                 monad_async_task_attr t_attr{};
                 return make_task(switcher, t_attr);
             }())
         {
-            task->user_code = task_state::run;
+            task->derived.user_code = task_state::run;
         }
 
         task_state(task_state &&o) noexcept
@@ -102,20 +102,20 @@ TEST(work_dispatcher, DISABLED_works)
             ops++;
         }
 
-        static monad_async_result run(monad_async_task task)
+        static monad_c_result run(monad_context_task task)
         {
             ((task_state *)task->user_ptr)->run();
-            return monad_async_make_success(0);
+            return monad_c_make_success(0);
         }
     };
 
-    auto cs = make_context_switcher(monad_async_context_switcher_none);
+    auto cs = make_context_switcher(monad_context_switcher_none);
     std::vector<task_state> tasks;
     for (size_t n = 0; n < 1024; n++) {
         tasks.emplace_back(cs.get());
     }
     for (auto &i : tasks) {
-        i.task->user_ptr = &i;
+        i.task->derived.user_ptr = &i;
     }
 
     std::vector<monad_async_task> task_ptrs;

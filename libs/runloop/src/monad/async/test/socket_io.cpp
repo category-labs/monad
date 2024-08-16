@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "test_common.hpp"
+#include "../../test_common.hpp"
 
 #include "monad/async/socket_io.h"
 
@@ -14,7 +14,7 @@ TEST(socket_io, unregistered_buffers)
     {
         uint16_t localhost_port{0};
 
-        monad_async_result server(monad_async_task task)
+        monad_c_result server(monad_async_task task)
         {
             try {
                 // Open a listening socket
@@ -91,7 +91,7 @@ TEST(socket_io, unregistered_buffers)
                     .value();
                 to_result(status.result).value();
                 std::cout << "   Server has shutdown socket." << std::endl;
-                return monad_async_make_success(0);
+                return monad_c_make_success(0);
             }
             catch (std::exception const &e) {
                 std::cerr << "FATAL: " << e.what() << std::endl;
@@ -99,7 +99,7 @@ TEST(socket_io, unregistered_buffers)
             }
         }
 
-        monad_async_result client(monad_async_task task)
+        monad_c_result client(monad_async_task task)
         {
             try {
                 // Connect to the listening socket
@@ -159,7 +159,7 @@ TEST(socket_io, unregistered_buffers)
                     .value();
                 to_result(status.result).value();
                 std::cout << "   Client has shutdown socket." << std::endl;
-                return monad_async_make_success(0);
+                return monad_c_make_success(0);
             }
             catch (std::exception const &e) {
                 std::cerr << "FATAL: " << e.what() << std::endl;
@@ -177,19 +177,23 @@ TEST(socket_io, unregistered_buffers)
 
     // Make a context switcher and two tasks, and attach the tasks to the
     // executor
-    auto s = make_context_switcher(monad_async_context_switcher_sjlj);
+    auto s = make_context_switcher(monad_context_switcher_sjlj);
     monad_async_task_attr t_attr{};
     auto t_server = make_task(s.get(), t_attr);
-    t_server->user_ptr = (void *)&shared_state;
-    t_server->user_code = +[](monad_async_task task) -> monad_async_result {
-        return ((shared_state_t *)task->user_ptr)->server(task);
+    t_server->derived.user_ptr = (void *)&shared_state;
+    t_server->derived.user_code =
+        +[](monad_context_task task) -> monad_c_result {
+        return ((shared_state_t *)task->user_ptr)
+            ->server((monad_async_task)task);
     };
     to_result(monad_async_task_attach(ex.get(), t_server.get(), nullptr))
         .value();
     auto t_client = make_task(s.get(), t_attr);
-    t_client->user_ptr = (void *)&shared_state;
-    t_client->user_code = +[](monad_async_task task) -> monad_async_result {
-        return ((shared_state_t *)task->user_ptr)->client(task);
+    t_client->derived.user_ptr = (void *)&shared_state;
+    t_client->derived.user_code =
+        +[](monad_context_task task) -> monad_c_result {
+        return ((shared_state_t *)task->user_ptr)
+            ->client((monad_async_task)task);
     };
     to_result(monad_async_task_attach(ex.get(), t_client.get(), nullptr))
         .value();
@@ -207,7 +211,7 @@ TEST(socket_io, registered_buffers)
     {
         uint16_t localhost_port{0};
 
-        monad_async_result server(monad_async_task task)
+        monad_c_result server(monad_async_task task)
         {
             try {
                 // Open a listening socket
@@ -298,7 +302,7 @@ TEST(socket_io, registered_buffers)
                     .value();
                 to_result(status.result).value();
                 std::cout << "   Server has shutdown socket." << std::endl;
-                return monad_async_make_success(0);
+                return monad_c_make_success(0);
             }
             catch (std::exception const &e) {
                 std::cerr << "FATAL: " << e.what() << std::endl;
@@ -306,7 +310,7 @@ TEST(socket_io, registered_buffers)
             }
         }
 
-        monad_async_result client(monad_async_task task)
+        monad_c_result client(monad_async_task task)
         {
             try {
                 // Connect to the listening socket
@@ -371,7 +375,7 @@ TEST(socket_io, registered_buffers)
                     .value();
                 to_result(status.result).value();
                 std::cout << "   Client has shutdown socket." << std::endl;
-                return monad_async_make_success(0);
+                return monad_c_make_success(0);
             }
             catch (std::exception const &e) {
                 std::cerr << "FATAL: " << e.what() << std::endl;
@@ -391,19 +395,23 @@ TEST(socket_io, registered_buffers)
 
     // Make a context switcher and two tasks, and attach the tasks to the
     // executor
-    auto s = make_context_switcher(monad_async_context_switcher_sjlj);
+    auto s = make_context_switcher(monad_context_switcher_sjlj);
     monad_async_task_attr t_attr{};
     auto t_server = make_task(s.get(), t_attr);
-    t_server->user_ptr = (void *)&shared_state;
-    t_server->user_code = +[](monad_async_task task) -> monad_async_result {
-        return ((shared_state_t *)task->user_ptr)->server(task);
+    t_server->derived.user_ptr = (void *)&shared_state;
+    t_server->derived.user_code =
+        +[](monad_context_task task) -> monad_c_result {
+        return ((shared_state_t *)task->user_ptr)
+            ->server((monad_async_task)task);
     };
     to_result(monad_async_task_attach(ex.get(), t_server.get(), nullptr))
         .value();
     auto t_client = make_task(s.get(), t_attr);
-    t_client->user_ptr = (void *)&shared_state;
-    t_client->user_code = +[](monad_async_task task) -> monad_async_result {
-        return ((shared_state_t *)task->user_ptr)->client(task);
+    t_client->derived.user_ptr = (void *)&shared_state;
+    t_client->derived.user_code =
+        +[](monad_context_task task) -> monad_c_result {
+        return ((shared_state_t *)task->user_ptr)
+            ->client((monad_async_task)task);
     };
     to_result(monad_async_task_attach(ex.get(), t_client.get(), nullptr))
         .value();

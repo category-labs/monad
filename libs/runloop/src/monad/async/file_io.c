@@ -2,8 +2,9 @@
 
 // #define MONAD_ASYNC_FILE_IO_PRINTING 1
 
-#include "boost_result.h"
-#include "config.h"
+#include <monad/context/boost_result.h>
+#include <monad/context/config.h>
+
 #include "executor.h"
 #include "executor_impl.h"
 #include "task_impl.h"
@@ -20,7 +21,7 @@ struct monad_async_file_impl
     unsigned io_uring_file_index; // NOT a traditional file descriptor!
 };
 
-static inline monad_async_result monad_async_task_file_create_cancel(
+static inline monad_c_result monad_async_task_file_create_cancel(
     struct monad_async_executor_impl *ex, struct monad_async_task_impl *task)
 {
     struct io_uring_sqe *sqe = get_sqe_suspending_if_necessary(
@@ -29,10 +30,10 @@ static inline monad_async_result monad_async_task_file_create_cancel(
             &ex->head.current_task, memory_order_acquire),
         false);
     io_uring_prep_cancel(sqe, io_uring_mangle_into_data(task), 0);
-    return monad_async_make_failure(EAGAIN); // Canceller needs to wait
+    return monad_c_make_failure(EAGAIN); // Canceller needs to wait
 }
 
-monad_async_result monad_async_task_file_create(
+monad_c_result monad_async_task_file_create(
     monad_async_file *file, monad_async_task task_, monad_async_file base,
     char const *subpath, struct open_how *how)
 {
@@ -40,30 +41,30 @@ monad_async_result monad_async_task_file_create(
         (struct monad_async_executor_impl *)atomic_load_explicit(
             &task_->current_executor, memory_order_acquire);
     if (ex == nullptr) {
-        return monad_async_make_failure(EINVAL);
+        return monad_c_make_failure(EINVAL);
     }
     struct monad_async_file_impl *p = (struct monad_async_file_impl *)calloc(
         1, sizeof(struct monad_async_file_impl));
     if (p == nullptr) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
     p->head.executor = &ex->head;
     p->io_uring_file_index = (unsigned)-1;
     struct monad_async_task_impl *task = (struct monad_async_task_impl *)task_;
     if (task->please_cancel_invoked) {
         (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
-        return monad_async_make_failure(ECANCELED);
+        return monad_c_make_failure(ECANCELED);
     }
     unsigned file_index = monad_async_executor_alloc_file_index(ex, -1);
     if (file_index == (unsigned)-1) {
         (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
-        return monad_async_make_failure(ENOMEM);
+        return monad_c_make_failure(ENOMEM);
     }
     struct io_uring_sqe *sqe = get_sqe_suspending_if_necessary(ex, task, true);
     if (sqe == nullptr) {
         assert(task->please_cancel_invoked);
         (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
-        return monad_async_make_failure(ECANCELED);
+        return monad_c_make_failure(ECANCELED);
     }
     io_uring_prep_openat2_direct(
         sqe,
@@ -82,7 +83,7 @@ monad_async_result monad_async_task_file_create(
         (void *)task,
         (void *)ex);
 #endif
-    monad_async_result ret = monad_async_executor_suspend_impl(
+    monad_c_result ret = monad_async_executor_suspend_impl(
         ex, task, monad_async_task_file_create_cancel, nullptr);
 #if MONAD_ASYNC_FILE_IO_PRINTING
     printf(
@@ -107,7 +108,7 @@ monad_async_result monad_async_task_file_create(
         if (sqe == nullptr) {
             assert(task->please_cancel_invoked);
             (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
-            return monad_async_make_failure(ECANCELED);
+            return monad_c_make_failure(ECANCELED);
         }
         io_uring_prep_openat2_direct(
             sqe,
@@ -126,7 +127,7 @@ monad_async_result monad_async_task_file_create(
             (void *)task,
             (void *)ex);
 #endif
-        monad_async_result ret = monad_async_executor_suspend_impl(
+        monad_c_result ret = monad_async_executor_suspend_impl(
             ex, task, monad_async_task_file_create_cancel, nullptr);
 #if MONAD_ASYNC_FILE_IO_PRINTING
         printf(
@@ -147,42 +148,42 @@ monad_async_result monad_async_task_file_create(
     p->io_uring_file_index = file_index;
     memcpy(p->magic, "MNASFILE", 8);
     *file = (monad_async_file)p;
-    return monad_async_make_success(0);
+    return monad_c_make_success(0);
 }
 
-monad_async_result monad_async_task_file_create_from_existing_fd(
+monad_c_result monad_async_task_file_create_from_existing_fd(
     monad_async_file *file, monad_async_task task_, int fd)
 {
     struct monad_async_executor_impl *ex =
         (struct monad_async_executor_impl *)atomic_load_explicit(
             &task_->current_executor, memory_order_acquire);
     if (ex == nullptr) {
-        return monad_async_make_failure(EINVAL);
+        return monad_c_make_failure(EINVAL);
     }
     struct monad_async_file_impl *p = (struct monad_async_file_impl *)calloc(
         1, sizeof(struct monad_async_file_impl));
     if (p == nullptr) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
     p->head.executor = &ex->head;
     p->io_uring_file_index = (unsigned)-1;
     struct monad_async_task_impl *task = (struct monad_async_task_impl *)task_;
     if (task->please_cancel_invoked) {
         (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
-        return monad_async_make_failure(ECANCELED);
+        return monad_c_make_failure(ECANCELED);
     }
     unsigned file_index = monad_async_executor_alloc_file_index(ex, fd);
     if (file_index == (unsigned)-1) {
         (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
-        return monad_async_make_failure(ENOMEM);
+        return monad_c_make_failure(ENOMEM);
     }
     p->io_uring_file_index = file_index;
     memcpy(p->magic, "MNASFILE", 8);
     *file = (monad_async_file)p;
-    return monad_async_make_success(0);
+    return monad_c_make_success(0);
 }
 
-monad_async_result
+monad_c_result
 monad_async_task_file_destroy(monad_async_task task_, monad_async_file file_)
 {
     struct monad_async_file_impl *file = (struct monad_async_file_impl *)file_;
@@ -193,7 +194,7 @@ monad_async_task_file_destroy(monad_async_task task_, monad_async_file file_)
             (struct monad_async_executor_impl *)atomic_load_explicit(
                 &task_->current_executor, memory_order_acquire);
         if (ex == nullptr) {
-            return monad_async_make_failure(EINVAL);
+            return monad_c_make_failure(EINVAL);
         }
         if (ex->wr_ring.ring_fd != 0) {
             struct io_uring_sqe *sqe =
@@ -209,7 +210,7 @@ monad_async_task_file_destroy(monad_async_task task_, monad_async_file file_)
                 (void *)task,
                 (void *)ex);
 #endif
-            monad_async_result ret =
+            monad_c_result ret =
                 monad_async_executor_suspend_impl(ex, task, nullptr, nullptr);
 #if MONAD_ASYNC_FILE_IO_PRINTING
             printf(
@@ -236,7 +237,7 @@ monad_async_task_file_destroy(monad_async_task task_, monad_async_file file_)
             (void *)task,
             (void *)ex);
 #endif
-        monad_async_result ret =
+        monad_c_result ret =
             monad_async_executor_suspend_impl(ex, task, nullptr, nullptr);
 #if MONAD_ASYNC_FILE_IO_PRINTING
         printf(
@@ -253,28 +254,28 @@ monad_async_task_file_destroy(monad_async_task task_, monad_async_file file_)
         monad_async_executor_free_file_index(ex, file->io_uring_file_index);
     }
     free(file);
-    return monad_async_make_success(0);
+    return monad_c_make_success(0);
 }
 
-monad_async_result monad_async_task_file_fallocate(
+monad_c_result monad_async_task_file_fallocate(
     monad_async_task task_, monad_async_file file_, int mode,
     monad_async_file_offset offset, monad_async_file_offset len)
 {
     struct monad_async_task_impl *task = (struct monad_async_task_impl *)task_;
     if (task->please_cancel_invoked) {
-        return monad_async_make_failure(ECANCELED);
+        return monad_c_make_failure(ECANCELED);
     }
     struct monad_async_file_impl *file = (struct monad_async_file_impl *)file_;
     struct monad_async_executor_impl *ex =
         (struct monad_async_executor_impl *)atomic_load_explicit(
             &task_->current_executor, memory_order_acquire);
     if (ex == nullptr) {
-        return monad_async_make_failure(EINVAL);
+        return monad_c_make_failure(EINVAL);
     }
     struct io_uring_sqe *sqe =
         get_wrsqe_suspending_if_necessary(ex, task, true);
     if (sqe == nullptr) {
-        return monad_async_make_failure(ECANCELED);
+        return monad_c_make_failure(ECANCELED);
     }
 #if !defined(IO_URING_VERSION_MAJOR)
     io_uring_prep_fallocate(
@@ -293,7 +294,7 @@ monad_async_result monad_async_task_file_fallocate(
         (void *)task,
         (void *)ex);
 #endif
-    monad_async_result ret =
+    monad_c_result ret =
         monad_async_executor_suspend_impl(ex, task, nullptr, nullptr);
 #if MONAD_ASYNC_FILE_IO_PRINTING
     printf(
@@ -306,10 +307,10 @@ monad_async_result monad_async_task_file_fallocate(
     if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
         return ret;
     }
-    return monad_async_make_success(0);
+    return monad_c_make_success(0);
 }
 
-static inline monad_async_result monad_async_task_file_io_cancel(
+static inline monad_c_result monad_async_task_file_io_cancel(
     monad_async_task task_, monad_async_io_status *iostatus)
 {
     struct monad_async_task_impl *task = (struct monad_async_task_impl *)task_;
@@ -318,10 +319,10 @@ static inline monad_async_result monad_async_task_file_io_cancel(
             &task->head.current_executor, memory_order_acquire);
     struct io_uring_sqe *sqe = get_sqe_suspending_if_necessary(ex, task, false);
     io_uring_prep_cancel(sqe, io_uring_mangle_into_data(iostatus), 0);
-    return monad_async_make_success(EAGAIN); // Canceller needs to wait
+    return monad_c_make_success(EAGAIN); // Canceller needs to wait
 }
 
-static inline monad_async_result monad_async_task_file_wrio_cancel(
+static inline monad_c_result monad_async_task_file_wrio_cancel(
     monad_async_task task_, monad_async_io_status *iostatus)
 {
     struct monad_async_task_impl *task = (struct monad_async_task_impl *)task_;
@@ -331,7 +332,7 @@ static inline monad_async_result monad_async_task_file_wrio_cancel(
     struct io_uring_sqe *sqe =
         get_wrsqe_suspending_if_necessary(ex, task, false);
     io_uring_prep_cancel(sqe, io_uring_mangle_into_data(iostatus), 0);
-    return monad_async_make_success(EAGAIN); // Canceller needs to wait
+    return monad_c_make_success(EAGAIN); // Canceller needs to wait
 }
 
 void monad_async_task_file_read(
@@ -350,13 +351,12 @@ void monad_async_task_file_read(
     int buffer_index = 0;
     const struct monad_async_task_claim_registered_io_buffer_flags flags_ = {
         .fail_dont_suspend = false, ._for_read_ring = true};
-    monad_async_result r =
-        monad_async_task_claim_registered_file_io_write_buffer(
-            tofill, task_, max_bytes, flags_);
+    monad_c_result r = monad_async_task_claim_registered_file_io_write_buffer(
+        tofill, task_, max_bytes, flags_);
     if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(r)) {
         if (!outcome_status_code_equal_generic(&r.error, EINVAL) &&
             !outcome_status_code_equal_generic(&r.error, ECANCELED)) {
-            MONAD_ASYNC_CHECK_RESULT(r);
+            MONAD_CONTEXT_CHECK_RESULT(r);
         }
         tofill->index = 0;
     }

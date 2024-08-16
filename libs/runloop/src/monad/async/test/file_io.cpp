@@ -1,13 +1,14 @@
 #include <gtest/gtest.h>
 
-#include "test_common.hpp"
+#include "../../test_common.hpp"
 
-#include "monad/async/config.h"
-#include "monad/async/cpp_helpers.hpp"
-#include "monad/async/executor.h"
-#include "monad/async/file_io.h"
-#include "monad/async/task.h"
-#include "monad/async/util.h"
+#include <monad/context/config.h>
+
+#include "../cpp_helpers.hpp"
+#include "../executor.h"
+#include "../file_io.h"
+#include "../task.h"
+#include "../util.h"
 
 #include <array>
 #include <atomic>
@@ -36,7 +37,7 @@ TEST(file_io, unregistered_buffers)
             unlink(tempfilepath);
         }
 
-        monad_async_result task(monad_async_task task)
+        monad_c_result task(monad_async_task task)
         {
             // Open the file
             struct open_how how
@@ -134,7 +135,7 @@ TEST(file_io, unregistered_buffers)
                       << (task->ticks_when_suspended_completed -
                           task->ticks_when_suspended_awaiting)
                       << " ticks." << std::endl;
-            return monad_async_make_success(0);
+            return monad_c_make_success(0);
         }
     } shared_state;
 
@@ -145,12 +146,12 @@ TEST(file_io, unregistered_buffers)
     auto ex = make_executor(ex_attr);
 
     // Make a context switcher and a task, and attach the task to the executor
-    auto s = make_context_switcher(monad_async_context_switcher_sjlj);
+    auto s = make_context_switcher(monad_context_switcher_sjlj);
     monad_async_task_attr t_attr{};
     auto t = make_task(s.get(), t_attr);
-    t->user_ptr = (void *)&shared_state;
-    t->user_code = +[](monad_async_task task) -> monad_async_result {
-        return ((shared_state_t *)task->user_ptr)->task(task);
+    t->derived.user_ptr = (void *)&shared_state;
+    t->derived.user_code = +[](monad_context_task task) -> monad_c_result {
+        return ((shared_state_t *)task->user_ptr)->task((monad_async_task)task);
     };
     to_result(monad_async_task_attach(ex.get(), t.get(), nullptr)).value();
 
@@ -179,7 +180,7 @@ TEST(file_io, registered_buffers)
             unlink(tempfilepath);
         }
 
-        monad_async_result task(monad_async_task task)
+        monad_c_result task(monad_async_task task)
         {
             // Open the file
             struct open_how how
@@ -294,7 +295,7 @@ TEST(file_io, registered_buffers)
             to_result(monad_async_task_release_registered_io_buffer(
                           task, buffer[1].index))
                 .value();
-            return monad_async_make_success(0);
+            return monad_c_make_success(0);
         }
     } shared_state;
 
@@ -307,12 +308,12 @@ TEST(file_io, registered_buffers)
     auto ex = make_executor(ex_attr);
 
     // Make a context switcher and a task, and attach the task to the executor
-    auto s = make_context_switcher(monad_async_context_switcher_sjlj);
+    auto s = make_context_switcher(monad_context_switcher_sjlj);
     monad_async_task_attr t_attr{};
     auto t = make_task(s.get(), t_attr);
-    t->user_ptr = (void *)&shared_state;
-    t->user_code = +[](monad_async_task task) -> monad_async_result {
-        return ((shared_state_t *)task->user_ptr)->task(task);
+    t->derived.user_ptr = (void *)&shared_state;
+    t->derived.user_code = +[](monad_context_task task) -> monad_c_result {
+        return ((shared_state_t *)task->user_ptr)->task((monad_async_task)task);
     };
     to_result(monad_async_task_attach(ex.get(), t.get(), nullptr)).value();
 
@@ -341,7 +342,7 @@ TEST(file_io, misc_ops)
             unlink(tempfilepath);
         }
 
-        monad_async_result task(monad_async_task task)
+        monad_c_result task(monad_async_task task)
         {
             // Open the file
             struct open_how how
@@ -448,7 +449,7 @@ TEST(file_io, misc_ops)
                       << (task->ticks_when_suspended_completed -
                           task->ticks_when_suspended_awaiting)
                       << " ticks." << std::endl;
-            return monad_async_make_success(0);
+            return monad_c_make_success(0);
         }
     } shared_state;
 
@@ -459,12 +460,12 @@ TEST(file_io, misc_ops)
     auto ex = make_executor(ex_attr);
 
     // Make a context switcher and a task, and attach the task to the executor
-    auto s = make_context_switcher(monad_async_context_switcher_sjlj);
+    auto s = make_context_switcher(monad_context_switcher_sjlj);
     monad_async_task_attr t_attr{};
     auto t = make_task(s.get(), t_attr);
-    t->user_ptr = (void *)&shared_state;
-    t->user_code = +[](monad_async_task task) -> monad_async_result {
-        return ((shared_state_t *)task->user_ptr)->task(task);
+    t->derived.user_ptr = (void *)&shared_state;
+    t->derived.user_code = +[](monad_context_task task) -> monad_c_result {
+        return ((shared_state_t *)task->user_ptr)->task((monad_async_task)task);
     };
     to_result(monad_async_task_attach(ex.get(), t.get(), nullptr)).value();
 
@@ -503,7 +504,7 @@ TEST(file_io, benchmark)
             unlink(tempfilepath);
         }
 
-        monad_async_result
+        monad_c_result
         task(monad_async_task task, monad_async_priority priority)
         {
             std::cout << "Task " << task << " begins with priority "
@@ -591,7 +592,7 @@ TEST(file_io, benchmark)
                       << (1000000000.0 * (double)ops / diff)
                       << " ops/sec (which is " << (diff / (double)ops)
                       << " ns/op)" << std::endl;
-            return monad_async_make_success(0);
+            return monad_c_make_success(0);
         }
     } shared_state;
 
@@ -603,19 +604,19 @@ TEST(file_io, benchmark)
 
     // Make a context switcher and two tasks which do the same thing, but with
     // different priority
-    auto s = make_context_switcher(monad_async_context_switcher_sjlj);
+    auto s = make_context_switcher(monad_context_switcher_sjlj);
     monad_async_task_attr t_attr{};
     auto t1 = make_task(s.get(), t_attr);
-    t1->user_ptr = (void *)&shared_state;
-    t1->user_code = +[](monad_async_task task) -> monad_async_result {
+    t1->derived.user_ptr = (void *)&shared_state;
+    t1->derived.user_code = +[](monad_context_task task) -> monad_c_result {
         return ((shared_state_t *)task->user_ptr)
-            ->task(task, monad_async_priority_normal);
+            ->task((monad_async_task)task, monad_async_priority_normal);
     };
     auto t2 = make_task(s.get(), t_attr);
-    t2->user_ptr = (void *)&shared_state;
-    t2->user_code = +[](monad_async_task task) -> monad_async_result {
+    t2->derived.user_ptr = (void *)&shared_state;
+    t2->derived.user_code = +[](monad_context_task task) -> monad_c_result {
         return ((shared_state_t *)task->user_ptr)
-            ->task(task, monad_async_priority_high);
+            ->task((monad_async_task)task, monad_async_priority_high);
     };
     to_result(monad_async_task_attach(ex.get(), t1.get(), nullptr)).value();
     to_result(monad_async_task_attach(ex.get(), t2.get(), nullptr)).value();
@@ -659,7 +660,7 @@ TEST(file_io, sqe_exhaustion_does_not_reorder_writes)
             ex_attr.io_uring_wr_ring.registered_buffers.small_count = COUNT / 2;
             ex = make_executor(ex_attr);
 
-            switcher = make_context_switcher(monad_async_context_switcher_sjlj);
+            switcher = make_context_switcher(monad_context_switcher_sjlj);
 
             seq.reserve(COUNT * 4);
             tasks.reserve(COUNT * 4);
@@ -669,11 +670,12 @@ TEST(file_io, sqe_exhaustion_does_not_reorder_writes)
         {
             monad_async_task_attr t_attr{};
             auto t = make_task(switcher.get(), t_attr);
-            t->user_ptr = (void *)this;
-            t->user_code = +[](monad_async_task task) -> monad_async_result {
+            t->derived.user_ptr = (void *)this;
+            t->derived.user_code =
+                +[](monad_context_task task) -> monad_c_result {
                 auto *shared_state = (shared_state_t *)task->user_ptr;
                 shared_state->fh.reset();
-                return monad_async_make_success(0);
+                return monad_c_make_success(0);
             };
             to_result(monad_async_task_attach(ex.get(), t.get(), nullptr))
                 .value();
@@ -686,7 +688,7 @@ TEST(file_io, sqe_exhaustion_does_not_reorder_writes)
             assert(!fh.has_value());
         }
 
-        monad_async_result task(monad_async_task task)
+        monad_c_result task(monad_async_task task)
         {
             if (!fh) {
                 monad_async_file file;
@@ -740,42 +742,45 @@ TEST(file_io, sqe_exhaustion_does_not_reorder_writes)
             if (seq.size() < COUNT) {
                 monad_async_task_attr t_attr{};
                 tasks.emplace_back(make_task(switcher.get(), t_attr));
-                tasks.back()->user_ptr = (void *)this;
-                tasks.back()->user_code =
-                    +[](monad_async_task task) -> monad_async_result {
-                    return ((shared_state_t *)task->user_ptr)->task(task);
+                tasks.back()->derived.user_ptr = (void *)this;
+                tasks.back()->derived.user_code =
+                    +[](monad_context_task task) -> monad_c_result {
+                    return ((shared_state_t *)task->user_ptr)
+                        ->task((monad_async_task)task);
                 };
                 to_result(monad_async_task_attach(
                               ex.get(), tasks.back().get(), nullptr))
                     .value();
                 tasks.emplace_back(make_task(switcher.get(), t_attr));
-                tasks.back()->user_ptr = (void *)this;
-                tasks.back()->user_code =
-                    +[](monad_async_task task) -> monad_async_result {
-                    return ((shared_state_t *)task->user_ptr)->task(task);
+                tasks.back()->derived.user_ptr = (void *)this;
+                tasks.back()->derived.user_code =
+                    +[](monad_context_task task) -> monad_c_result {
+                    return ((shared_state_t *)task->user_ptr)
+                        ->task((monad_async_task)task);
                 };
                 to_result(monad_async_task_attach(
                               ex.get(), tasks.back().get(), nullptr))
                     .value();
                 tasks.emplace_back(make_task(switcher.get(), t_attr));
-                tasks.back()->user_ptr = (void *)this;
-                tasks.back()->user_code =
-                    +[](monad_async_task task) -> monad_async_result {
-                    return ((shared_state_t *)task->user_ptr)->task(task);
+                tasks.back()->derived.user_ptr = (void *)this;
+                tasks.back()->derived.user_code =
+                    +[](monad_context_task task) -> monad_c_result {
+                    return ((shared_state_t *)task->user_ptr)
+                        ->task((monad_async_task)task);
                 };
                 to_result(monad_async_task_attach(
                               ex.get(), tasks.back().get(), nullptr))
                     .value();
             }
-            return monad_async_make_success(0);
+            return monad_c_make_success(0);
         }
     } shared_state;
 
     monad_async_task_attr t_attr{};
     auto t = make_task(shared_state.switcher.get(), t_attr);
-    t->user_ptr = (void *)&shared_state;
-    t->user_code = +[](monad_async_task task) -> monad_async_result {
-        return ((shared_state_t *)task->user_ptr)->task(task);
+    t->derived.user_ptr = (void *)&shared_state;
+    t->derived.user_code = +[](monad_context_task task) -> monad_c_result {
+        return ((shared_state_t *)task->user_ptr)->task((monad_async_task)task);
     };
     to_result(monad_async_task_attach(shared_state.ex.get(), t.get(), nullptr))
         .value();

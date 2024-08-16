@@ -144,14 +144,13 @@ impl Default for cxx_status_code_system {
 #[doc = "! \\brief Declare a Boost.Outcome layout compatible C result type for\n! `result<intptr_t>`"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
-#[must_use]
-pub struct cxx_result_status_code_system_monad_async {
+pub struct cxx_result_status_code_system_monad {
     #[doc = "! \\brief Declare a Boost.Outcome layout compatible C result type for\n! `result<intptr_t>`"]
     pub value: isize,
     pub flags: ::std::os::raw::c_uint,
     pub error: cxx_status_code_system,
 }
-impl Default for cxx_result_status_code_system_monad_async {
+impl Default for cxx_result_status_code_system_monad {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
         unsafe {
@@ -161,17 +160,17 @@ impl Default for cxx_result_status_code_system_monad_async {
     }
 }
 #[doc = "! \\brief Convenience typedef"]
-pub type monad_async_result = cxx_result_status_code_system_monad_async;
+pub type monad_c_result = cxx_result_status_code_system_monad;
 extern "C" {
-    #[doc = "! \\brief Return a successful `monad_async_result` for a given `intptr_t`"]
-    pub fn monad_async_make_success(v: isize) -> monad_async_result;
+    #[doc = "! \\brief Return a successful `monad_c_result` for a given `intptr_t`"]
+    pub fn monad_c_make_success(v: isize) -> monad_c_result;
 }
 extern "C" {
-    #[doc = "! \\brief Return a failure `monad_async_result` for a given `errno`"]
-    pub fn monad_async_make_failure(ec: ::std::os::raw::c_int) -> monad_async_result;
+    #[doc = "! \\brief Return a failure `monad_c_result` for a given `errno`"]
+    pub fn monad_c_make_failure(ec: ::std::os::raw::c_int) -> monad_c_result;
 }
 #[doc = "! \\brief A type representing the tick count on the CPU"]
-pub type monad_async_cpu_ticks_count_t = u64;
+pub type monad_context_cpu_ticks_count_t = u64;
 pub const monad_async_priority_monad_async_priority_high: monad_async_priority = 0;
 pub const monad_async_priority_monad_async_priority_normal: monad_async_priority = 1;
 pub const monad_async_priority_monad_async_priority_low: monad_async_priority = 2;
@@ -208,69 +207,92 @@ impl Default for mtx_t {
         }
     }
 }
-pub type monad_async_task = *mut monad_async_task_head;
-pub type monad_async_context = *mut monad_async_context_head;
+#[doc = "! \\brief The public attributes of a task"]
 #[repr(C)]
-pub struct monad_async_context_switcher_head {
+#[derive(Debug)]
+pub struct monad_context_task_head {
+    #[doc = "! \\brief The body of the task"]
+    pub user_code: ::std::option::Option<
+        unsafe extern "C" fn(arg1: *mut monad_context_task_head) -> monad_c_result,
+    >,
+    #[doc = "! \\brief Any user defined value"]
+    pub user_ptr: *mut ::std::os::raw::c_void,
+    #[doc = "! \\brief Set to the result of the task on exit; also used as scratch\n! during the task's suspend-resume cycles"]
+    pub result: monad_c_result,
+    #[doc = "! \\brief Set by the task implementation to a task detach implementation"]
+    pub detach: ::std::option::Option<unsafe extern "C" fn(task: *mut monad_context_task_head)>,
+}
+impl Default for monad_context_task_head {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[doc = "! \\brief The public attributes of a task"]
+pub type monad_context_task = *mut monad_context_task_head;
+#[doc = "! \\brief Attributes by which to construct a task"]
+#[repr(C)]
+#[derive(Debug, Default)]
+pub struct monad_context_task_attr {
+    #[doc = "! \\brief 0 chooses platform default stack size"]
+    pub stack_size: usize,
+}
+pub type monad_context = *mut monad_context_head;
+#[repr(C)]
+pub struct monad_context_switcher_head {
     pub user_ptr: *mut ::std::os::raw::c_void,
     #[doc = "! The number of contexts existing"]
     pub contexts: atomic_uint,
     #[doc = "! \\brief Destroys self"]
     pub self_destroy: ::std::option::Option<
-        unsafe extern "C" fn(
-            switcher: *mut monad_async_context_switcher_head,
-        ) -> monad_async_result,
+        unsafe extern "C" fn(switcher: *mut monad_context_switcher_head) -> monad_c_result,
     >,
     #[doc = "! \\brief Create a switchable context for a task"]
     pub create: ::std::option::Option<
         unsafe extern "C" fn(
-            context: *mut monad_async_context,
-            switcher: *mut monad_async_context_switcher_head,
-            task: monad_async_task,
-            attr: *const monad_async_task_attr,
-        ) -> monad_async_result,
+            context: *mut monad_context,
+            switcher: *mut monad_context_switcher_head,
+            task: monad_context_task,
+            attr: *const monad_context_task_attr,
+        ) -> monad_c_result,
     >,
     #[doc = "! \\brief Destroys a switchable context"]
-    pub destroy: ::std::option::Option<
-        unsafe extern "C" fn(context: monad_async_context) -> monad_async_result,
-    >,
-    #[doc = "! \\brief If running within a switchable context, suspend it and call\n! resume on the new context via its context switcher. This allows for\n! `new_context` to use a different type of context switcher to this one."]
+    pub destroy:
+        ::std::option::Option<unsafe extern "C" fn(context: monad_context) -> monad_c_result>,
+    #[doc = " \\brief If running within a switchable context, suspend it and call\nresume on the new context via its context switcher.\n\nNote that calling this from the main context will not work, as you will have\nno `current_context`. If in the main context, use `resume_many()` to\nget a suitable `current_context`.\n\nThis call differs from `resume()` by being able to cope with `new_context`\nhaving a different context switcher to the current context. If the\nnew context's switcher could be different from the current context's\nswitcher, you must use this call."]
     pub suspend_and_call_resume: ::std::option::Option<
-        unsafe extern "C" fn(
-            current_context: monad_async_context,
-            new_context: monad_async_context,
-        ),
+        unsafe extern "C" fn(current_context: monad_context, new_context: monad_context),
     >,
-    #[doc = "! \\brief Resume execution of a previously suspended switchable context.\n! Some context switchers will return from this function when the resumed\n! task next suspends, others will resume at the suspension point set by\n! `resume_many`. `new_context` must have the same context switcher as\n! `current_context`."]
+    #[doc = " \\brief Resume execution of a previously suspended switchable context.\n\nGenerally this should only be called from within `resume_many()`'s\n`resumed()` callback, and not otherwise as you won't know if the new\ncontext's switcher is the same as the current context's.\n`suspend_and_call_resume()` does check if the switchers are identical and/or\nare of the same kind but different instances, and if so will take an\noptimised path."]
     pub resume: ::std::option::Option<
-        unsafe extern "C" fn(
-            current_context: monad_async_context,
-            new_context: monad_async_context,
-        ),
+        unsafe extern "C" fn(current_context: monad_context, new_context: monad_context),
     >,
-    #[doc = "! \\brief To avoid having to set a resumption point per task when resuming\n! many tasks from the central loop of the executor, set a single\n! resumption point and call the supplied function every time a task\n! resumed within the supplied function suspends. This can be very\n! considerably more efficient for some types of context switcher."]
+    #[doc = " \\brief To avoid having to set a resumption point per task when resuming\nmany tasks from the central loop of the executor, set a single\nresumption point and call the supplied function every time a task\nresumed within the supplied function suspends. This can be very\nconsiderably more efficient for some types of context switcher.\n\nGenerally you call `resume()` from within `resumed()` as the context\nswitcher of the new context will be `switcher`."]
     pub resume_many: ::std::option::Option<
         unsafe extern "C" fn(
-            switcher: *mut monad_async_context_switcher_head,
+            switcher: *mut monad_context_switcher_head,
             resumed: ::std::option::Option<
                 unsafe extern "C" fn(
                     user_ptr: *mut ::std::os::raw::c_void,
-                    current_context_to_use_when_resuming: monad_async_context,
-                ) -> monad_async_result,
+                    current_context_to_use_when_resuming: monad_context,
+                ) -> monad_c_result,
             >,
             user_ptr: *mut ::std::os::raw::c_void,
-        ) -> monad_async_result,
+        ) -> monad_c_result,
     >,
-    pub contexts_list: monad_async_context_switcher_head__bindgen_ty_1,
+    pub contexts_list: monad_context_switcher_head__bindgen_ty_1,
 }
 #[repr(C)]
-pub struct monad_async_context_switcher_head__bindgen_ty_1 {
+pub struct monad_context_switcher_head__bindgen_ty_1 {
     pub lock: mtx_t,
-    pub front: monad_async_context,
-    pub back: monad_async_context,
+    pub front: monad_context,
+    pub back: monad_context,
     pub count: usize,
 }
-impl Default for monad_async_context_switcher_head__bindgen_ty_1 {
+impl Default for monad_context_switcher_head__bindgen_ty_1 {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
         unsafe {
@@ -279,7 +301,7 @@ impl Default for monad_async_context_switcher_head__bindgen_ty_1 {
         }
     }
 }
-impl Default for monad_async_context_switcher_head {
+impl Default for monad_context_switcher_head {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
         unsafe {
@@ -288,41 +310,41 @@ impl Default for monad_async_context_switcher_head {
         }
     }
 }
-pub type monad_async_context_switcher = *mut monad_async_context_switcher_head;
+pub type monad_context_switcher = *mut monad_context_switcher_head;
 #[repr(C)]
 #[derive(Debug, Default)]
-pub struct monad_async_context_switcher_impl {
+pub struct monad_context_switcher_impl {
     #[doc = "! \\brief Create a switcher of contexts. The\n! executor creates one of these per executor."]
     pub create: ::std::option::Option<
-        unsafe extern "C" fn(switcher: *mut monad_async_context_switcher) -> monad_async_result,
+        unsafe extern "C" fn(switcher: *mut monad_context_switcher) -> monad_c_result,
     >,
 }
 #[repr(C)]
-pub struct monad_async_context_head {
+pub struct monad_context_head {
     pub is_running: bool,
     pub is_suspended: bool,
     pub switcher: u64,
     pub stack_bottom: *mut ::std::os::raw::c_void,
     pub stack_current: *mut ::std::os::raw::c_void,
     pub stack_top: *mut ::std::os::raw::c_void,
-    pub prev: monad_async_context,
-    pub next: monad_async_context,
-    pub sanitizer: monad_async_context_head__bindgen_ty_1,
+    pub prev: monad_context,
+    pub next: monad_context,
+    pub sanitizer: monad_context_head__bindgen_ty_1,
 }
 #[repr(C)]
-pub struct monad_async_context_head__bindgen_ty_1 {
-    pub __bindgen_anon_1: monad_async_context_head__bindgen_ty_1__bindgen_ty_1,
+pub struct monad_context_head__bindgen_ty_1 {
+    pub __bindgen_anon_1: monad_context_head__bindgen_ty_1__bindgen_ty_1,
     pub bottom: *const ::std::os::raw::c_void,
     pub size: usize,
 }
 #[repr(C)]
-pub struct monad_async_context_head__bindgen_ty_1__bindgen_ty_1 {
+pub struct monad_context_head__bindgen_ty_1__bindgen_ty_1 {
     pub fake_stack_save: __BindgenUnionField<*mut ::std::os::raw::c_void>,
     pub valgrind_stack_id: __BindgenUnionField<::std::os::raw::c_uint>,
     pub fiber: __BindgenUnionField<*mut ::std::os::raw::c_void>,
     pub bindgen_union_field: u64,
 }
-impl Default for monad_async_context_head__bindgen_ty_1__bindgen_ty_1 {
+impl Default for monad_context_head__bindgen_ty_1__bindgen_ty_1 {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
         unsafe {
@@ -331,7 +353,7 @@ impl Default for monad_async_context_head__bindgen_ty_1__bindgen_ty_1 {
         }
     }
 }
-impl Default for monad_async_context_head__bindgen_ty_1 {
+impl Default for monad_context_head__bindgen_ty_1 {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
         unsafe {
@@ -340,7 +362,7 @@ impl Default for monad_async_context_head__bindgen_ty_1 {
         }
     }
 }
-impl Default for monad_async_context_head {
+impl Default for monad_context_head {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
         unsafe {
@@ -350,50 +372,49 @@ impl Default for monad_async_context_head {
     }
 }
 extern "C" {
-    pub fn monad_async_context_reparent_switcher(
-        context: monad_async_context,
-        new_switcher: monad_async_context_switcher,
+    #[doc = "! \\brief For a context currently suspended, change which context switcher to\n! use for the next resumption. Context switchers must be of same type."]
+    pub fn monad_context_reparent_switcher(
+        context: monad_context,
+        new_switcher: monad_context_switcher,
     );
 }
 extern "C" {
     #[doc = "! \\brief Destroys any context switcher"]
-    pub fn monad_async_context_switcher_destroy(
-        switcher: monad_async_context_switcher,
-    ) -> monad_async_result;
+    pub fn monad_context_switcher_destroy(switcher: monad_context_switcher) -> monad_c_result;
 }
 extern "C" {
-    #[doc = "! \\brief Creates a `setjmp`/`longjmp` based context switcher with each task\n! getting its own stack"]
-    pub fn monad_async_context_switcher_sjlj_create(
-        switcher: *mut monad_async_context_switcher,
-    ) -> monad_async_result;
+    #[doc = " \\brief Creates a `setjmp`/`longjmp` based context switcher with each task\ngetting its own stack.\n\nNote that an instance of this is NOT threadsafe, so you must either lock\na mutex around switching contexts using this context switcher or have a\ncontext switcher instance per thread."]
+    pub fn monad_context_switcher_sjlj_create(
+        switcher: *mut monad_context_switcher,
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief Convenience struct for setting a `setjmp`/`longjmp` based context\n! switcher"]
-    pub static monad_async_context_switcher_sjlj: monad_async_context_switcher_impl;
+    pub static monad_context_switcher_sjlj: monad_context_switcher_impl;
 }
 extern "C" {
-    #[doc = " \\brief Creates a none context switcher which can't suspend-resume. Useful\nfor threadpool implementation.\n\nAs this context switcher never suspends and resumes, it is safe to use a single\ninstance of this across multiple threads. In fact, the current implementation\nalways returns a static instance, and destruction does nothing. You may\ntherefore find `monad_async_context_switcher_none_instance()` more useful."]
-    pub fn monad_async_context_switcher_none_create(
-        switcher: *mut monad_async_context_switcher,
-    ) -> monad_async_result;
+    #[doc = " \\brief Creates a none context switcher which can't suspend-resume. Useful\nfor threadpool implementation.\n\nAs this context switcher never suspends and resumes, it is safe to use a single\ninstance of this across multiple threads. In fact, the current implementation\nalways returns a static instance, and destruction does nothing. You may\ntherefore find `monad_context_switcher_none_instance()` more useful."]
+    pub fn monad_context_switcher_none_create(
+        switcher: *mut monad_context_switcher,
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief Convenience struct for setting a none context\n! switcher"]
-    pub static monad_async_context_switcher_none: monad_async_context_switcher_impl;
+    pub static monad_context_switcher_none: monad_context_switcher_impl;
 }
 extern "C" {
     #[doc = "! \\brief Convenience obtainer of the static none context switcher."]
-    pub fn monad_async_context_switcher_none_instance() -> monad_async_context_switcher;
+    pub fn monad_context_switcher_none_instance() -> monad_context_switcher;
 }
 extern "C" {
-    #[doc = "! \\brief Creates a `fcontext` based context switcher with each task\n! getting its own stack. This is approx 2x faster than the `setjmp`/`longjmp`\n! context switcher if in a hot loop"]
-    pub fn monad_async_context_switcher_fcontext_create(
-        switcher: *mut monad_async_context_switcher,
-    ) -> monad_async_result;
+    #[doc = " \\brief Creates a `fcontext` based context switcher with each task\ngetting its own stack. This is approx 2x faster than the `setjmp`/`longjmp`\ncontext switcher if in a hot loop\n\nNote that an instance of this is NOT threadsafe, so you must either lock\na mutex around switching contexts using this context switcher or have a\ncontext switcher instance per thread."]
+    pub fn monad_context_switcher_fcontext_create(
+        switcher: *mut monad_context_switcher,
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief Convenience struct for setting a `fcontext` based context\n! switcher"]
-    pub static monad_async_context_switcher_fcontext: monad_async_context_switcher_impl;
+    pub static monad_context_switcher_fcontext: monad_context_switcher_impl;
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -489,6 +510,7 @@ pub struct io_uring_params {
 }
 #[doc = "! \\brief The public attributes of an executor"]
 pub type monad_async_executor = *mut monad_async_executor_head;
+pub type monad_async_task = *mut monad_async_task_head;
 #[doc = "! \\brief An i/o status state used to identify an i/o in progress. Must NOT\n! move in memory until the operation completes."]
 #[repr(C)]
 #[derive(Debug)]
@@ -499,13 +521,13 @@ pub struct monad_async_io_status {
         unsafe extern "C" fn(
             arg1: monad_async_task,
             arg2: *mut monad_async_io_status,
-        ) -> monad_async_result,
+        ) -> monad_c_result,
     >,
     #[doc = "! Unspecified value immediately after initiating call returns. Will become\n! bytes transferred if operation is successful, or another error if it\n! fails or is cancelled."]
-    pub result: monad_async_result,
-    pub ticks_when_initiated: monad_async_cpu_ticks_count_t,
-    pub ticks_when_completed: monad_async_cpu_ticks_count_t,
-    pub ticks_when_reaped: monad_async_cpu_ticks_count_t,
+    pub result: monad_c_result,
+    pub ticks_when_initiated: monad_context_cpu_ticks_count_t,
+    pub ticks_when_completed: monad_context_cpu_ticks_count_t,
+    pub ticks_when_reaped: monad_context_cpu_ticks_count_t,
 }
 impl Default for monad_async_io_status {
     fn default() -> Self {
@@ -520,13 +542,9 @@ impl Default for monad_async_io_status {
 #[repr(C)]
 #[derive(Debug)]
 pub struct monad_async_task_head {
-    pub user_code: ::std::option::Option<
-        unsafe extern "C" fn(arg1: *mut monad_async_task_head) -> monad_async_result,
-    >,
-    pub user_ptr: *mut ::std::os::raw::c_void,
+    pub derived: monad_context_task_head,
     pub io_recipient_task: *mut monad_async_task_head,
     pub priority: monad_async_task_head__bindgen_ty_1,
-    pub result: monad_async_result,
     pub current_executor: u64,
     pub is_awaiting_dispatch: u8,
     pub is_pending_launch: u8,
@@ -535,14 +553,13 @@ pub struct monad_async_task_head {
     pub is_suspended_sqe_exhaustion_wr: u8,
     pub is_suspended_awaiting: u8,
     pub is_suspended_completed: u8,
-    pub is_running_on_foreign_executor: u8,
-    pub ticks_when_submitted: monad_async_cpu_ticks_count_t,
-    pub ticks_when_attached: monad_async_cpu_ticks_count_t,
-    pub ticks_when_detached: monad_async_cpu_ticks_count_t,
-    pub ticks_when_suspended_awaiting: monad_async_cpu_ticks_count_t,
-    pub ticks_when_suspended_completed: monad_async_cpu_ticks_count_t,
-    pub ticks_when_resumed: monad_async_cpu_ticks_count_t,
-    pub total_ticks_executed: monad_async_cpu_ticks_count_t,
+    pub ticks_when_submitted: monad_context_cpu_ticks_count_t,
+    pub ticks_when_attached: monad_context_cpu_ticks_count_t,
+    pub ticks_when_detached: monad_context_cpu_ticks_count_t,
+    pub ticks_when_suspended_awaiting: monad_context_cpu_ticks_count_t,
+    pub ticks_when_suspended_completed: monad_context_cpu_ticks_count_t,
+    pub ticks_when_resumed: monad_context_cpu_ticks_count_t,
+    pub total_ticks_executed: monad_context_cpu_ticks_count_t,
     pub io_submitted: usize,
     pub io_completed_not_reaped: usize,
 }
@@ -574,35 +591,34 @@ impl Default for monad_async_task_head {
 #[repr(C)]
 #[derive(Debug, Default)]
 pub struct monad_async_task_attr {
-    #[doc = "! \\brief 0 chooses platform default stack size"]
-    pub stack_size: usize,
+    pub derived: monad_context_task_attr,
 }
 extern "C" {
     #[doc = "! \\brief EXPENSIVE Creates a task instance using the specified context\n! switcher."]
     pub fn monad_async_task_create(
         task: *mut monad_async_task,
-        switcher: monad_async_context_switcher,
+        switcher: monad_context_switcher,
         attr: *mut monad_async_task_attr,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief EXPENSIVE Destroys a task instance. If the task is currently\n! suspended, it will be cancelled first in which case `EAGAIN` may be returned\n! from this function until cancellation succeeds."]
-    pub fn monad_async_task_destroy(task: monad_async_task) -> monad_async_result;
+    pub fn monad_async_task_destroy(task: monad_async_task) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief THREADSAFE Attaches a task instance onto a given executor, which\n! means it will launch the next time the executor runs. If the task is\n! attached already to a different executor, you MUST call this function from\n! that executor's kernel thread. If you optionally choose to reparent the\n! task's context to a new context switcher instance (typical if attaching\n! to an executor on a different kernel thread), it MUST be the same type of\n! context switcher."]
     pub fn monad_async_task_attach(
         executor: monad_async_executor,
         task: monad_async_task,
-        opt_reparent_switcher: monad_async_context_switcher,
-    ) -> monad_async_result;
+        opt_reparent_switcher: monad_context_switcher,
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief THREADSAFE If a task is currently suspended on an operation, cancel\n! it. This can take some time for the relevant io_uring operation to also\n! cancel. If the task is yet to launch, don't launch it. If the task isn't\n! currently running, do nothing. The suspension point will return\n! `ECANCELED` next time the cancelled task resumes."]
     pub fn monad_async_task_cancel(
         executor: monad_async_executor,
         task: monad_async_task,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief Change the CPU or i/o priority of a task"]
@@ -610,14 +626,14 @@ extern "C" {
         task: monad_async_task,
         cpu: monad_async_priority,
         io: monad_async_priority,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief Ask io_uring to cancel a previously initiated operation. It can take\n! some time for io_uring to cancel an operation, and it may ignore your\n! request."]
     pub fn monad_async_task_io_cancel(
         task: monad_async_task,
         iostatus: *mut monad_async_io_status,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief Iterate through completed i/o for this task, reaping each from the\n! completed but not repeated list."]
@@ -635,7 +651,7 @@ extern "C" {
         completed: *mut *mut monad_async_io_status,
         task: monad_async_task,
         ns: u64,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 #[doc = "! \\brief A registered i/o buffer"]
 #[repr(C)]
@@ -709,7 +725,7 @@ extern "C" {
         task: monad_async_task,
         bytes_requested: usize,
         flags: monad_async_task_claim_registered_io_buffer_flags,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = " \\brief CANCELLATION POINT Claim an unused registered **write** buffer for\nsocket i/o, suspending if none currently available.\n\nThere are two sizes of registered i/o write buffer, small and large which are\nthe page size of the host platform (e.g. 4Kb and 2Mb if on Intel x64). Through\nbeing always whole page sizes, DMA using registered i/o buffers has the lowest\npossible overhead.\n\nIt is important to note that these buffers can ONLY be used for write operations\non the write ring. For read operations, it is io_uring which allocates the\nbuffers."]
@@ -718,14 +734,14 @@ extern "C" {
         task: monad_async_task,
         bytes_requested: usize,
         flags: monad_async_task_claim_registered_io_buffer_flags,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = " \\brief Release a previously claimed registered buffer.\n\nYou must claim write i/o buffers using\n`monad_async_task_claim_registered_file_io_write_buffer()` or\n`monad_async_task_claim_registered_socket_io_write_buffer()`. Read i/o buffers\nare allocated by io_uring, you release them after use using this function."]
     pub fn monad_async_task_release_registered_io_buffer(
         task: monad_async_task,
         buffer_index: ::std::os::raw::c_int,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 #[doc = "! \\brief The public attributes of an executor"]
 #[repr(C)]
@@ -736,11 +752,11 @@ pub struct monad_async_executor_head {
     pub tasks_running: u64,
     pub tasks_suspended_sqe_exhaustion: u64,
     pub tasks_suspended: u64,
-    pub total_ticks_in_run: monad_async_cpu_ticks_count_t,
-    pub total_ticks_in_task_launch: monad_async_cpu_ticks_count_t,
-    pub total_ticks_in_io_uring: monad_async_cpu_ticks_count_t,
-    pub total_ticks_sleeping: monad_async_cpu_ticks_count_t,
-    pub total_ticks_in_task_completion: monad_async_cpu_ticks_count_t,
+    pub total_ticks_in_run: monad_context_cpu_ticks_count_t,
+    pub total_ticks_in_task_launch: monad_context_cpu_ticks_count_t,
+    pub total_ticks_in_io_uring: monad_context_cpu_ticks_count_t,
+    pub total_ticks_sleeping: monad_context_cpu_ticks_count_t,
+    pub total_ticks_in_task_completion: monad_context_cpu_ticks_count_t,
     pub total_io_submitted: u64,
     pub total_io_completed: u64,
     pub registered_buffers: monad_async_executor_head__bindgen_ty_1,
@@ -750,8 +766,8 @@ pub struct monad_async_executor_head {
 pub struct monad_async_executor_head__bindgen_ty_1 {
     pub total_claimed: usize,
     pub total_released: usize,
-    pub ticks_last_claim: monad_async_cpu_ticks_count_t,
-    pub ticks_last_release: monad_async_cpu_ticks_count_t,
+    pub ticks_last_claim: monad_context_cpu_ticks_count_t,
+    pub ticks_last_release: monad_context_cpu_ticks_count_t,
 }
 #[doc = "! \\brief Attributes by which to construct an executor"]
 #[repr(C)]
@@ -785,11 +801,11 @@ extern "C" {
     pub fn monad_async_executor_create(
         ex: *mut monad_async_executor,
         attr: *mut monad_async_executor_attr,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief EXPENSIVE Destroys an executor instance."]
-    pub fn monad_async_executor_destroy(ex: monad_async_executor) -> monad_async_result;
+    pub fn monad_async_executor_destroy(ex: monad_async_executor) -> monad_c_result;
 }
 extern "C" {
     #[doc = " \\brief Processes no more than `max_items` work items, returning the number\nof items processed. A null `timeout` means wait forever, and a zero timeout will\npoll without blocking.\n\nNote that this function is particularly prone to early return i.e. partly\nor entirely ignoring timeout. Causes can include being woken externally by\n`monad_async_executor_wake()`, there being write i/o pending (as then two\nrings need to be checked), and the usual spurious early timeouts from Linux.\nIf you do complex processing around calling this function, it may be wise\nto only do that processing if the value returned is not zero."]
@@ -797,14 +813,26 @@ extern "C" {
         ex: monad_async_executor,
         max_items: usize,
         timeout: *const timespec,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief THREADSAFE Causes a sleeping executor to wake. Can be called from any\n! kernel thread. `cause_run_to_return` causes `monad_async_executor_run()` to\n! return the result given, otherwise the internal sleep wakes, executor state\n! is examined for new work and the sleep reestablished WHICH MAY NOT CAUSE RUN\n! TO RETURN."]
     pub fn monad_async_executor_wake(
         ex: monad_async_executor,
-        cause_run_to_return: *const monad_async_result,
-    ) -> monad_async_result;
+        cause_run_to_return: *const monad_c_result,
+    ) -> monad_c_result;
+}
+extern "C" {
+    #[doc = " \\brief If new i/o submitted since the last run exceeds\n`max_items_in_submission_queue`, invoke io_uring submit now. If submission now\noccurs, a positive successful result is returned, otherwise zero."]
+    pub fn monad_async_executor_submit(
+        ex: monad_async_executor,
+        max_items_in_nonwrite_submission_queue: usize,
+        max_items_in_write_submission_queue: usize,
+    ) -> monad_c_result;
+}
+extern "C" {
+    #[doc = " \\brief Return a pointer (as `intptr_t`) to a null terminated string\ndescribing the configuration of this executor. This lets you see what io_uring\nfeatures were detected, as well as versions and other config.\n\n\\warning You need to call `free()` on the pointer when you are done with it."]
+    pub fn monad_async_executor_config_string(ex: monad_async_executor) -> monad_c_result;
 }
 #[doc = "! \\brief An offset into a file"]
 pub type monad_async_file_offset = u64;
@@ -833,7 +861,7 @@ extern "C" {
         base: monad_async_file,
         subpath: *const ::std::os::raw::c_char,
         how: *mut open_how,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = " \\brief EXPENSIVE, CANCELLATION POINT Suspend execution of the task until the\nuserspace file descriptor has been registered with io_uring and a file instance\nrepresenting it returned.\n\nThis function is provided purely for bridging this to legacy code -- wherever\npossible you should use the native file and socket creation functions as\nthese completely bypass userspace and don't create any of the problems POSIX\nfile descriptors do."]
@@ -841,14 +869,14 @@ extern "C" {
         file: *mut monad_async_file,
         task: monad_async_task,
         fd: ::std::os::raw::c_int,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief Suspend execution of the task until the file has been closed"]
     pub fn monad_async_task_file_destroy(
         task: monad_async_task,
         file: monad_async_file,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief CANCELLATION POINT Suspend execution of the task until the file's\n! valid extents have been modified as per the `fallocate` call, see `man\n! fallocate` for more."]
@@ -858,7 +886,7 @@ extern "C" {
         mode: ::std::os::raw::c_int,
         offset: monad_async_file_offset,
         len: monad_async_file_offset,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = " \\brief Initiate a ring buffer read from an open file using `iostatus` as the\nidentifier.\n\nReturns immediately unless there are no free io_uring submission entries.\nSee `man readv2` to explain parameters. The i/o priority used will be that\nfrom the task's current i/o priority setting.\n\nThis API has io_uring allocate the buffer which is more efficient than the\napplication saying which buffer to fill. Upon completion, `tofill->iovecs[0]`\nwill be the buffer filled with up to `max_bytes` (though it can be less). When\nyou are done with the buffer, release it back to io_uring using\n`monad_async_task_release_registered_io_buffer()`.\n\n`max_bytes` chooses whether to use large or small page sized buffers and the\nactual bytes read does not affect the size of buffer chosen."]
@@ -944,7 +972,7 @@ extern "C" {
         type_: ::std::os::raw::c_int,
         protocol: ::std::os::raw::c_int,
         flags: ::std::os::raw::c_uint,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = " \\brief EXPENSIVE, CANCELLATION POINT Suspend execution of the task until the\nuserspace file descriptor has been registered with io_uring and a socket\ninstance representing it returned.\n\nThis function is provided purely for bridging this to legacy code -- wherever\npossible you should use the native file and socket creation functions as\nthese completely bypass userspace and don't create any of the problems POSIX\nfile descriptors do."]
@@ -952,14 +980,14 @@ extern "C" {
         sock: *mut monad_async_socket,
         task: monad_async_task,
         fd: ::std::os::raw::c_int,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief Suspend execution of the task until the socket has been closed"]
     pub fn monad_async_task_socket_destroy(
         task: monad_async_task,
         sock: monad_async_socket,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = " \\brief EXPENSIVE Bind a socket to an interface and port.\n\nThis is done by blocking syscall, as io_uring is currently incapable of doing\nlistening socket setup by itself."]
@@ -967,21 +995,21 @@ extern "C" {
         sock: monad_async_socket,
         addr: *const sockaddr,
         addrlen: socklen_t,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = " \\brief EXPENSIVE Make a bound socket available for incoming connections.\n\nThis is done by blocking syscall, as io_uring is currently incapable of doing\nlistening socket setup by itself."]
     pub fn monad_async_task_socket_listen(
         sock: monad_async_socket,
         backlog: ::std::os::raw::c_int,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = " \\brief CANCELLATION POINT Transfers the socket to io_uring, which may\nrequire suspending the task.\n\nAs io_uring is currently incapable of doing listening socket setup by itself,\nthere is an explicit step for transferring the configured socket to io_uring\nas it is an expensive operation.\n\nNewer Linux kernels have an io_uring capable of connecting socket setup and\ncreation entirely within io_uring. If your kernel is so capable, that is used,\nelse blocking syscalls are used and the socket transferred into io_uring.\n\nWhen this call returns, all syscall-created resources are released and io_uring\nexclusively manages the socket."]
     pub fn monad_async_task_socket_transfer_to_uring(
         task: monad_async_task,
         sock: monad_async_socket,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = " \\brief CANCELLATION POINT Suspend execution of the task if there is no\npending connection on the socket until there is a new connection. See `man\naccept4` to explain parameters.\n\nNote that if `SOCK_CLOEXEC` is set in the flags, io_uring will fail the request\n(this is non-obvious, cost me half a day of debugging, so I document it here)"]
@@ -990,7 +1018,7 @@ extern "C" {
         task: monad_async_task,
         listening_sock: monad_async_socket,
         flags: ::std::os::raw::c_int,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = " \\brief Initiate the connection of an open socket using `iostatus` as the\nidentifier.\n\nReturns immediately unless there are no free io_uring submission entries.\nSee `man connect` to explain parameters. The i/o priority used will be that\nfrom the task's current i/o priority setting."]
@@ -1074,11 +1102,11 @@ extern "C" {
 }
 extern "C" {
     #[doc = " \\brief Return the current monotonic CPU tick count.\n\n`rel` affects how the CPU tick count is measured, and it is the same as for\natomics:\n\n- `memory_order_relaxed`: Read the count in the most efficient way possible,\nwhich may be plus or minus two hundred instructions from accurate (i.e. plus\nor minus up to 100 nanoseconds, but usually a lot less). Usually costs about\n25-45 cycles, but other instructions can execute concurrently.\n- `memory_order_acquire`: Do not execute any instructions after reading the\ncount until the count has been read, but instructions preceding reading the\ncount may be executed after reading the count.\n- `memory_order_release`: Do not execute instructions preceding reading the\ncount after reading the count, but instructions after reading the count may be\nexecuted before reading the count.\n- `memory_order_acq_rel` and `memory_order_seq_cst`: Instructions preceding\nreading the count will be completed in full before reading the count, and\ninstructions after reading the count will not begin executing until the count\nhas been read. This is perfectly accurate, but comes with a substantial\nperformance impact as it stalls the CPU and flushes its pipelines. 100-120\ncycles would be expected as a minimum, often more as it also disrupts prefetch\nand branch prediction."]
-    pub fn monad_async_get_ticks_count(rel: memory_order) -> monad_async_cpu_ticks_count_t;
+    pub fn monad_async_get_ticks_count(rel: memory_order) -> monad_context_cpu_ticks_count_t;
 }
 extern "C" {
     #[doc = "! \\brief Return how many CPU ticks per second there are. The first caller\n! of this will need to wait up to one second for the number to be calculated."]
-    pub fn monad_async_ticks_per_second() -> monad_async_cpu_ticks_count_t;
+    pub fn monad_async_ticks_per_second() -> monad_context_cpu_ticks_count_t;
 }
 #[doc = "! \\brief The public attributes of a work dispatcher"]
 #[repr(C)]
@@ -1133,13 +1161,11 @@ extern "C" {
     pub fn monad_async_work_dispatcher_create(
         dp: *mut monad_async_work_dispatcher,
         attr: *mut monad_async_work_dispatcher_attr,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief EXPENSIVE Destroys a work dispatcher instance."]
-    pub fn monad_async_work_dispatcher_destroy(
-        dp: monad_async_work_dispatcher,
-    ) -> monad_async_result;
+    pub fn monad_async_work_dispatcher_destroy(dp: monad_async_work_dispatcher) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief EXPENSIVE Creates a work dispatcher executor instance."]
@@ -1147,26 +1173,26 @@ extern "C" {
         ex: *mut monad_async_work_dispatcher_executor,
         dp: monad_async_work_dispatcher,
         attr: *mut monad_async_work_dispatcher_executor_attr,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief EXPENSIVE Destroys a work dispatcher executor instance."]
     pub fn monad_async_work_dispatcher_executor_destroy(
         ex: monad_async_work_dispatcher_executor,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief Calls `monad_async_executor_run()` for the calling kernel thread,\n! attaching tasks recently submitted to kernel threads in the pool with spare\n! capacity as per the work dispatcher's configured policy. Returns the number\n! of work items executed, or -1 when time to exit."]
     pub fn monad_async_work_dispatcher_executor_run(
         ex: monad_async_work_dispatcher_executor,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief THREADSAFE Causes a sleeping work dispatcher executor to wake. Same\n! as `monad_async_executor_wake()`, but for work dispatcher executors."]
     pub fn monad_async_work_dispatcher_executor_wake(
         ex: monad_async_work_dispatcher_executor,
-        cause_run_to_return: *const monad_async_result,
-    ) -> monad_async_result;
+        cause_run_to_return: *const monad_c_result,
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief THREADSAFE Submits one or more tasks to be executed by the first\n! available executor within the work dispatcher pool. Higher priority tasks\n! are executed before lower priority tasks."]
@@ -1174,7 +1200,7 @@ extern "C" {
         dp: monad_async_work_dispatcher,
         tasks: *mut monad_async_task,
         count: usize,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief THREADSAFE Wait until all work has been dispatched or executed."]
@@ -1183,7 +1209,7 @@ extern "C" {
         max_undispatched: usize,
         max_unexecuted: usize,
         timeout: *mut timespec,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }
 extern "C" {
     #[doc = "! \\brief THREADSAFE Tells executors to quit, preferring idle executors first,\n! until no more than `max_executors` remains."]
@@ -1191,5 +1217,5 @@ extern "C" {
         dp: monad_async_work_dispatcher,
         max_executors: usize,
         timeout: *mut timespec,
-    ) -> monad_async_result;
+    ) -> monad_c_result;
 }

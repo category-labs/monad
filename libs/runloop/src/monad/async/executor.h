@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include <monad/context/config.h>
 
 #include <liburing.h>
 
@@ -18,28 +18,33 @@ extern "C"
 typedef struct monad_async_executor_head
 {
     // The following are not user modifiable
-    MONAD_ASYNC_PUBLIC_CONST MONAD_ASYNC_ATOMIC(monad_async_task) current_task;
-    MONAD_ASYNC_PUBLIC_CONST MONAD_ASYNC_ATOMIC(size_t) tasks_pending_launch;
-    MONAD_ASYNC_PUBLIC_CONST MONAD_ASYNC_ATOMIC(size_t) tasks_running;
-    MONAD_ASYNC_PUBLIC_CONST
-    MONAD_ASYNC_ATOMIC(size_t) tasks_suspended_sqe_exhaustion;
-    MONAD_ASYNC_PUBLIC_CONST MONAD_ASYNC_ATOMIC(size_t) tasks_suspended;
+    MONAD_CONTEXT_PUBLIC_CONST
+    MONAD_CONTEXT_ATOMIC(monad_async_task) current_task;
+    MONAD_CONTEXT_PUBLIC_CONST
+    MONAD_CONTEXT_ATOMIC(size_t) tasks_pending_launch;
+    MONAD_CONTEXT_PUBLIC_CONST MONAD_CONTEXT_ATOMIC(size_t) tasks_running;
+    MONAD_CONTEXT_PUBLIC_CONST
+    MONAD_CONTEXT_ATOMIC(size_t) tasks_suspended_sqe_exhaustion;
+    MONAD_CONTEXT_PUBLIC_CONST MONAD_CONTEXT_ATOMIC(size_t) tasks_suspended;
 
-    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t total_ticks_in_run;
-    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t
+    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
+        total_ticks_in_run;
+    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
         total_ticks_in_task_launch;
-    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t
+    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
         total_ticks_in_io_uring;
-    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t total_ticks_sleeping;
-    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t
+    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
+        total_ticks_sleeping;
+    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
         total_ticks_in_task_completion;
 
-    MONAD_ASYNC_PUBLIC_CONST uint64_t total_io_submitted, total_io_completed;
+    MONAD_CONTEXT_PUBLIC_CONST uint64_t total_io_submitted, total_io_completed;
 
     struct
     {
-        MONAD_ASYNC_PUBLIC_CONST size_t total_claimed, total_released;
-        MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t ticks_last_claim,
+        MONAD_CONTEXT_PUBLIC_CONST size_t total_claimed, total_released;
+        MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
+            ticks_last_claim,
             ticks_last_release;
     } registered_buffers;
 } *monad_async_executor;
@@ -118,11 +123,11 @@ configured io_uring instance, so this is why we have that.
 Do NOT use the "write ring" for writes to sockets, it will severely impact
 performance!
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result monad_async_executor_create(
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_executor_create(
     monad_async_executor *ex, struct monad_async_executor_attr *attr);
 
 //! \brief EXPENSIVE Destroys an executor instance.
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_executor_destroy(monad_async_executor ex);
 
 /*! \brief Processes no more than `max_items` work items, returning the number
@@ -136,7 +141,7 @@ rings need to be checked), and the usual spurious early timeouts from Linux.
 If you do complex processing around calling this function, it may be wise
 to only do that processing if the value returned is not zero.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result monad_async_executor_run(
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_executor_run(
     monad_async_executor ex, size_t max_items, const struct timespec *timeout);
 
 //! \brief THREADSAFE Causes a sleeping executor to wake. Can be called from any
@@ -144,8 +149,26 @@ BOOST_OUTCOME_C_NODISCARD extern monad_async_result monad_async_executor_run(
 //! return the result given, otherwise the internal sleep wakes, executor state
 //! is examined for new work and the sleep reestablished WHICH MAY NOT CAUSE RUN
 //! TO RETURN.
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result monad_async_executor_wake(
-    monad_async_executor ex, monad_async_result const *cause_run_to_return);
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_executor_wake(
+    monad_async_executor ex, monad_c_result const *cause_run_to_return);
+
+/*! \brief If new i/o submitted since the last run exceeds
+`max_items_in_submission_queue`, invoke io_uring submit now. If submission now
+occurs, a positive successful result is returned, otherwise zero.
+*/
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_executor_submit(
+    monad_async_executor ex, size_t max_items_in_nonwrite_submission_queue,
+    size_t max_items_in_write_submission_queue);
+
+/*! \brief Return a pointer (as `intptr_t`) to a null terminated string
+describing the configuration of this executor. This lets you see what io_uring
+features were detected, as well as versions and other config.
+
+\warning You need to call `free()` on the pointer when you are done with it.
+*/
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result
+monad_async_executor_config_string(
+    monad_async_executor ex); // implemented in util.cpp
 
 #ifdef __cplusplus
 }

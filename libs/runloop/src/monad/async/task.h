@@ -1,6 +1,6 @@
 #pragma once
 
-#include "context_switcher.h"
+#include "../context/context_switcher.h"
 
 #include <liburing.h>
 
@@ -24,19 +24,22 @@ struct monad_fiber_scheduler;
 //! move in memory until the operation completes.
 typedef struct monad_async_io_status
 {
-    struct monad_async_io_status *MONAD_ASYNC_PUBLIC_CONST prev,
-        *MONAD_ASYNC_PUBLIC_CONST next;
-    monad_async_result (*MONAD_ASYNC_PUBLIC_CONST cancel_)(
+    struct monad_async_io_status *MONAD_CONTEXT_PUBLIC_CONST prev,
+        *MONAD_CONTEXT_PUBLIC_CONST next;
+    monad_c_result (*MONAD_CONTEXT_PUBLIC_CONST cancel_)(
         monad_async_task, struct monad_async_io_status *);
 
     //! Unspecified value immediately after initiating call returns. Will become
     //! bytes transferred if operation is successful, or another error if it
     //! fails or is cancelled.
-    MONAD_ASYNC_PUBLIC_CONST monad_async_result result;
+    MONAD_CONTEXT_PUBLIC_CONST monad_c_result result;
 
-    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t ticks_when_initiated;
-    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t ticks_when_completed;
-    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t ticks_when_reaped;
+    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
+        ticks_when_initiated;
+    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
+        ticks_when_completed;
+    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
+        ticks_when_reaped;
 
     // You can place any additional data you want after here ...
 } monad_async_io_status;
@@ -71,9 +74,7 @@ monad_async_io_in_progress(monad_async_io_status const *iostatus, size_t len)
 //! \brief The public attributes of a task
 struct monad_async_task_head
 {
-    // These can be set by the user
-    monad_async_result (*user_code)(struct monad_async_task_head *);
-    void *user_ptr;
+    struct monad_context_task_head derived;
 
     // Set this to have i/o completions target a different task to this
     // one. This can be useful where you have tasks work on what i/o to
@@ -81,37 +82,41 @@ struct monad_async_task_head
     struct monad_async_task_head *io_recipient_task;
 
     // The following are **NOT** user modifiable
-    MONAD_ASYNC_PUBLIC_CONST struct
+    MONAD_CONTEXT_PUBLIC_CONST struct
     {
         monad_async_priority cpu;
         monad_async_priority io;
     } priority;
 
-    MONAD_ASYNC_PUBLIC_CONST monad_async_result result;
     // All of these next refer to the i/o executor only i.e. if running on a
     // foreign executor, is_running will be false as that is not the i/o
     // executor.
-    MONAD_ASYNC_PUBLIC_CONST
-    MONAD_ASYNC_ATOMIC(monad_async_executor) current_executor;
-    MONAD_ASYNC_PUBLIC_CONST MONAD_ASYNC_ATOMIC(bool) is_awaiting_dispatch,
+    MONAD_CONTEXT_PUBLIC_CONST
+    MONAD_CONTEXT_ATOMIC(monad_async_executor) current_executor;
+    MONAD_CONTEXT_PUBLIC_CONST MONAD_CONTEXT_ATOMIC(bool) is_awaiting_dispatch,
         is_pending_launch, is_running, is_suspended_sqe_exhaustion,
         is_suspended_sqe_exhaustion_wr, is_suspended_awaiting,
-        is_suspended_completed, is_running_on_foreign_executor;
+        is_suspended_completed;
 
-    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t ticks_when_submitted;
-    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t ticks_when_attached;
-    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t ticks_when_detached;
-    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t
+    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
+        ticks_when_submitted;
+    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
+        ticks_when_attached;
+    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
+        ticks_when_detached;
+    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
         ticks_when_suspended_awaiting;
-    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t
+    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
         ticks_when_suspended_completed;
-    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t ticks_when_resumed;
-    MONAD_ASYNC_PUBLIC_CONST monad_async_cpu_ticks_count_t total_ticks_executed;
+    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
+        ticks_when_resumed;
+    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
+        total_ticks_executed;
 
-    MONAD_ASYNC_PUBLIC_CONST size_t io_submitted, io_completed_not_reaped;
+    MONAD_CONTEXT_PUBLIC_CONST size_t io_submitted, io_completed_not_reaped;
 };
 #if __STDC_VERSION__ >= 202300L || defined(__cplusplus)
-static_assert(sizeof(struct monad_async_task_head) == 152);
+static_assert(sizeof(struct monad_async_task_head) == 160);
     #ifdef __cplusplus
 static_assert(alignof(struct monad_async_task_head) == 8);
     #endif
@@ -123,17 +128,12 @@ static inline bool monad_async_task_has_exited(monad_async_task const task)
 #ifdef __cplusplus
     return task->is_awaiting_dispatch.load(std::memory_order_acquire) ==
                false &&
-           task->current_executor.load(std::memory_order_acquire) == nullptr &&
-           task->is_running_on_foreign_executor.load(
-               std::memory_order_acquire) == false;
+           task->current_executor.load(std::memory_order_acquire) == nullptr;
 #else
     return atomic_load_explicit(
                &task->is_awaiting_dispatch, memory_order_acquire) == false &&
            atomic_load_explicit(
-               &task->current_executor, memory_order_acquire) == NULL &&
-           atomic_load_explicit(
-               &task->is_running_on_foreign_executor, memory_order_acquire) ==
-               false;
+               &task->current_executor, memory_order_acquire) == NULL;
 #endif
 }
 
@@ -148,7 +148,7 @@ monad_async_io_status_owning_task(monad_async_io_status const *iostatus)
 
     union punner
     {
-        monad_async_result res;
+        monad_c_result res;
         monad_async_task task;
     } pun;
 
@@ -159,20 +159,19 @@ monad_async_io_status_owning_task(monad_async_io_status const *iostatus)
 //! \brief Attributes by which to construct a task
 struct monad_async_task_attr
 {
-    //! \brief 0 chooses platform default stack size
-    size_t stack_size;
+    struct monad_context_task_attr derived;
 };
 
 //! \brief EXPENSIVE Creates a task instance using the specified context
 //! switcher.
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result monad_async_task_create(
-    monad_async_task *task, monad_async_context_switcher switcher,
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_create(
+    monad_async_task *task, monad_context_switcher switcher,
     struct monad_async_task_attr *attr);
 
 //! \brief EXPENSIVE Destroys a task instance. If the task is currently
 //! suspended, it will be cancelled first in which case `EAGAIN` may be returned
 //! from this function until cancellation succeeds.
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_task_destroy(monad_async_task task);
 
 //! \brief THREADSAFE Attaches a task instance onto a given executor, which
@@ -182,30 +181,28 @@ monad_async_task_destroy(monad_async_task task);
 //! task's context to a new context switcher instance (typical if attaching
 //! to an executor on a different kernel thread), it MUST be the same type of
 //! context switcher.
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result monad_async_task_attach(
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_attach(
     monad_async_executor executor, monad_async_task task,
-    monad_async_context_switcher
-        opt_reparent_switcher); // implemented in executor.c
+    monad_context_switcher opt_reparent_switcher); // implemented in executor.c
 
 //! \brief THREADSAFE If a task is currently suspended on an operation, cancel
 //! it. This can take some time for the relevant io_uring operation to also
 //! cancel. If the task is yet to launch, don't launch it. If the task isn't
 //! currently running, do nothing. The suspension point will return
 //! `ECANCELED` next time the cancelled task resumes.
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result monad_async_task_cancel(
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_cancel(
     monad_async_executor executor,
     monad_async_task task); // implemented in executor.c
 
 //! \brief Change the CPU or i/o priority of a task
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
-monad_async_task_set_priorities(
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_set_priorities(
     monad_async_task task, monad_async_priority cpu,
     monad_async_priority io); // implemented in executor.c
 
 //! \brief Ask io_uring to cancel a previously initiated operation. It can take
 //! some time for io_uring to cancel an operation, and it may ignore your
 //! request.
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result monad_async_task_io_cancel(
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_io_cancel(
     monad_async_task task,
     monad_async_io_status *iostatus); // implemented in executor.c
 
@@ -227,7 +224,7 @@ static uint64_t const monad_async_duration_infinite_cancelling =
 //! which can be zero (which equates "yield"). If `completed` is not null, if
 //! any i/o which the task has initiated completes during the suspension, resume
 //! the task setting `completed` to which i/o has just completed.
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_task_suspend_for_duration(
     monad_async_io_status **completed, monad_async_task task,
     uint64_t ns); // implemented in executor.c
@@ -237,24 +234,24 @@ monad_async_task_suspend_for_duration(
 //! i/o, suspending the task until more i/o completes. Returns zero when no more
 //! i/o, otherwise returns i/o completed not reaped including i/o
 //! returned.
-static inline monad_async_result monad_async_task_suspend_until_completed_io(
+static inline monad_c_result monad_async_task_suspend_until_completed_io(
     monad_async_io_status **completed, monad_async_task task, uint64_t ns)
 {
     *completed = monad_async_task_completed_io(task);
     if (*completed != NULL) {
-        return monad_async_make_success(
+        return monad_c_make_success(
             1 + (intptr_t)task->io_completed_not_reaped);
     }
     if (task->io_submitted == 0) {
-        return monad_async_make_success(0);
+        return monad_c_make_success(0);
     }
-    monad_async_result r =
+    monad_c_result r =
         monad_async_task_suspend_for_duration(completed, task, ns);
     if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(r)) {
         return r;
     }
     *completed = monad_async_task_completed_io(task);
-    return monad_async_make_success(
+    return monad_c_make_success(
         (*completed != NULL) + (intptr_t)task->io_completed_not_reaped);
 }
 
@@ -289,7 +286,7 @@ It is important to note that these buffers can ONLY be used for write operations
 on the write ring. For read operations, it is io_uring which allocates the
 buffers.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_task_claim_registered_file_io_write_buffer(
     monad_async_task_registered_io_buffer *buffer, monad_async_task task,
     size_t bytes_requested,
@@ -308,7 +305,7 @@ It is important to note that these buffers can ONLY be used for write operations
 on the write ring. For read operations, it is io_uring which allocates the
 buffers.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_task_claim_registered_socket_io_write_buffer(
     monad_async_task_registered_io_buffer *buffer, monad_async_task task,
     size_t bytes_requested,
@@ -322,7 +319,7 @@ You must claim write i/o buffers using
 `monad_async_task_claim_registered_socket_io_write_buffer()`. Read i/o buffers
 are allocated by io_uring, you release them after use using this function.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_async_result
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_task_release_registered_io_buffer(
     monad_async_task task, int buffer_index); // implemented in executor.c
 

@@ -4,7 +4,6 @@
 
 #include "task_impl.h"
 
-#include "config.h"
 #include "executor.h"
 #include "util.h"
 
@@ -21,7 +20,7 @@
 #include <sys/resource.h> // for setrlimit
 #include <unistd.h>
 
-#if MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_TSAN
     #include <sanitizer/tsan_interface.h>
 #endif
 
@@ -44,8 +43,8 @@ struct monad_async_executor_impl
 
     thrd_t owning_thread;
     bool within_run;
-    atomic_bool need_to_empty_eventfd;
-    monad_async_context run_context;
+    MONAD_CONTEXT_CPP_STD atomic_bool need_to_empty_eventfd;
+    monad_context run_context;
     struct io_uring ring, wr_ring;
     unsigned wr_ring_ops_outstanding;
     LIST_DEFINE_P(tasks_running, struct monad_async_task_impl);
@@ -56,7 +55,7 @@ struct monad_async_executor_impl
     LIST_DEFINE_P(tasks_suspended_awaiting, struct monad_async_task_impl);
     LIST_DEFINE_P(tasks_suspended_completed, struct monad_async_task_impl);
     LIST_DEFINE_N(tasks_exited, struct monad_async_task_impl);
-    monad_async_result *_Atomic cause_run_to_return;
+    MONAD_CONTEXT_ATOMIC(monad_c_result *) cause_run_to_return;
 
     int *file_indices;
 
@@ -74,15 +73,15 @@ struct monad_async_executor_impl
     } registered_buffers[2];
 
     // all items below this require taking the lock
-    atomic_int lock;
+    MONAD_CONTEXT_CPP_STD atomic_int lock;
     int eventfd;
     LIST_DEFINE_N(tasks_pending_launch, struct monad_async_task_impl);
-    monad_async_result cause_run_to_return_value;
+    monad_c_result cause_run_to_return_value;
 };
 
-extern monad_async_result monad_async_executor_suspend_impl(
+extern monad_c_result monad_async_executor_suspend_impl(
     struct monad_async_executor_impl *ex, struct monad_async_task_impl *task,
-    monad_async_result (*please_cancel)(
+    monad_c_result (*please_cancel)(
         struct monad_async_executor_impl *ex,
         struct monad_async_task_impl *task),
     monad_async_io_status **completed);
@@ -105,67 +104,70 @@ enum io_uring_user_data_type : uint8_t
         7 // special values e.g. EXECUTOR_EVENTFD_READY_IO_URING_DATA_MAGIC
 };
 
-#define io_uring_mangle_into_data(value)                                        \
-    _Generic(                                                                   \
-        (value),                                                                \
-        struct monad_async_task_impl *: (void                                   \
-                                             *)(((uintptr_t)(value)) |          \
-                                                io_uring_user_data_type_task),  \
-        struct                                                                  \
-            monad_async_io_status *: (void                                      \
-                                          *)(((uintptr_t)(value)) |             \
-                                             io_uring_user_data_type_iostatus), \
-        uintptr_t: (void *)(((uintptr_t)(value)) |                              \
-                            io_uring_user_data_type_magic))
+#ifndef __cplusplus
 
-#define io_uring_sqe_set_data(sqe, value, task)                                \
-    io_uring_sqe_set_data((sqe), io_uring_mangle_into_data(value));            \
-    assert(((sqe)->user_data & 7) != 0);                                       \
-    assert(                                                                    \
-        ((sqe)->user_data & 7) == io_uring_user_data_type_magic ||             \
-        ((uintptr_t)(value)) == ((sqe)->user_data & ~(uintptr_t)7));           \
-    _Generic(                                                                  \
-        (value),                                                               \
-        default: (void)0,                                                      \
-        struct monad_async_io_status *: io_uring_set_up_io_status(             \
-                                          (struct monad_async_io_status        \
-                                               *)(value),                      \
-                                          (task)))
+    #define io_uring_mangle_into_data(value)                                        \
+        _Generic(                                                                   \
+            (value),                                                                \
+            struct                                                                  \
+                monad_async_task_impl *: (void                                      \
+                                              *)(((uintptr_t)(value)) |             \
+                                                 io_uring_user_data_type_task),     \
+            struct                                                                  \
+                monad_async_io_status *: (void                                      \
+                                              *)(((uintptr_t)(value)) |             \
+                                                 io_uring_user_data_type_iostatus), \
+            uintptr_t: (void *)(((uintptr_t)(value)) |                              \
+                                io_uring_user_data_type_magic))
 
-#define io_uring_cqe_get_data(task, iostatus, magic, cqe)                      \
-    switch (((uintptr_t)io_uring_cqe_get_data(cqe)) & 7) {                     \
-    default: {                                                                 \
-        void *user_data = io_uring_cqe_get_data(cqe);                          \
-        (void)user_data;                                                       \
-        fprintf(                                                               \
-            stderr,                                                            \
-            "FATAL: io_uring cqe's user_data=%p which is an impossible "       \
-            "value. res=%d flags=%u\n",                                        \
-            user_data,                                                         \
-            cqe->res,                                                          \
-            cqe->flags);                                                       \
-        abort();                                                               \
-    }                                                                          \
-    case io_uring_user_data_type_task:                                         \
-        (task) =                                                               \
-            (struct monad_async_task_impl                                      \
-                 *)(((uintptr_t)io_uring_cqe_get_data(cqe)) & ~(uintptr_t)7);  \
-        (iostatus) = nullptr;                                                  \
-        (magic) = 0;                                                           \
-        break;                                                                 \
-    case io_uring_user_data_type_iostatus:                                     \
-        (task) = nullptr;                                                      \
-        (iostatus) =                                                           \
-            (struct monad_async_io_status                                      \
-                 *)(((uintptr_t)io_uring_cqe_get_data(cqe)) & ~(uintptr_t)7);  \
-        (magic) = 0;                                                           \
-        break;                                                                 \
-    case io_uring_user_data_type_magic:                                        \
-        (task) = nullptr;                                                      \
-        (iostatus) = nullptr;                                                  \
-        (magic) = (uintptr_t)io_uring_cqe_get_data(cqe);                       \
-        break;                                                                 \
-    }
+    #define io_uring_sqe_set_data(sqe, value, task)                            \
+        io_uring_sqe_set_data((sqe), io_uring_mangle_into_data(value));        \
+        assert(((sqe)->user_data & 7) != 0);                                   \
+        assert(                                                                \
+            ((sqe)->user_data & 7) == io_uring_user_data_type_magic ||         \
+            ((uintptr_t)(value)) == ((sqe)->user_data & ~(uintptr_t)7));       \
+        _Generic(                                                              \
+            (value),                                                           \
+            default: (void)0,                                                  \
+            struct monad_async_io_status *: io_uring_set_up_io_status(         \
+                                              (struct monad_async_io_status    \
+                                                   *)(value),                  \
+                                              (task)))
+
+    #define io_uring_cqe_get_data(task, iostatus, magic, cqe)                  \
+        switch (((uintptr_t)io_uring_cqe_get_data(cqe)) & 7) {                 \
+        default: {                                                             \
+            void *user_data = io_uring_cqe_get_data(cqe);                      \
+            (void)user_data;                                                   \
+            fprintf(                                                           \
+                stderr,                                                        \
+                "FATAL: io_uring cqe's user_data=%p which is an impossible "   \
+                "value. res=%d flags=%u\n",                                    \
+                user_data,                                                     \
+                cqe->res,                                                      \
+                cqe->flags);                                                   \
+            abort();                                                           \
+        }                                                                      \
+        case io_uring_user_data_type_task:                                     \
+            (task) = (struct monad_async_task_impl                             \
+                          *)(((uintptr_t)io_uring_cqe_get_data(cqe)) &         \
+                             ~(uintptr_t)7);                                   \
+            (iostatus) = nullptr;                                              \
+            (magic) = 0;                                                       \
+            break;                                                             \
+        case io_uring_user_data_type_iostatus:                                 \
+            (task) = nullptr;                                                  \
+            (iostatus) = (struct monad_async_io_status                         \
+                              *)(((uintptr_t)io_uring_cqe_get_data(cqe)) &     \
+                                 ~(uintptr_t)7);                               \
+            (magic) = 0;                                                       \
+            break;                                                             \
+        case io_uring_user_data_type_magic:                                    \
+            (task) = nullptr;                                                  \
+            (iostatus) = nullptr;                                              \
+            (magic) = (uintptr_t)io_uring_cqe_get_data(cqe);                   \
+            break;                                                             \
+        }
 
 static inline void io_uring_set_up_io_status(
     struct monad_async_io_status *iostatus, struct monad_async_task_impl *task)
@@ -177,52 +179,52 @@ static inline void io_uring_set_up_io_status(
 
 static inline void atomic_lock(atomic_int *lock)
 {
-#if MONAD_ASYNC_HAVE_TSAN
+    #if MONAD_CONTEXT_HAVE_TSAN
     __tsan_mutex_pre_lock(lock, __tsan_mutex_try_lock);
-#endif
+    #endif
     int expected = 0;
     while (!atomic_compare_exchange_strong_explicit(
         lock, &expected, 1, memory_order_acq_rel, memory_order_relaxed)) {
         thrd_yield();
         expected = 0;
     }
-#if MONAD_ASYNC_HAVE_TSAN
+    #if MONAD_CONTEXT_HAVE_TSAN
     __tsan_mutex_post_lock(lock, __tsan_mutex_try_lock, 0);
-#endif
+    #endif
 }
 
 static inline void atomic_unlock(atomic_int *lock)
 {
-#if MONAD_ASYNC_HAVE_TSAN
+    #if MONAD_CONTEXT_HAVE_TSAN
     __tsan_mutex_pre_unlock(lock, __tsan_mutex_try_lock);
-#endif
+    #endif
     atomic_store_explicit(lock, 0, memory_order_release);
-#if MONAD_ASYNC_HAVE_TSAN
+    #if MONAD_CONTEXT_HAVE_TSAN
     __tsan_mutex_post_unlock(lock, __tsan_mutex_try_lock);
-#endif
+    #endif
 }
 
 static inline int mutex_lock(mtx_t *lock)
 {
-#if MONAD_ASYNC_HAVE_TSAN
+    #if MONAD_CONTEXT_HAVE_TSAN
     __tsan_mutex_pre_lock(lock, __tsan_mutex_try_lock);
-#endif
+    #endif
     int r = mtx_lock(lock);
-#if MONAD_ASYNC_HAVE_TSAN
+    #if MONAD_CONTEXT_HAVE_TSAN
     __tsan_mutex_post_lock(lock, __tsan_mutex_try_lock, 0);
-#endif
+    #endif
     return r;
 }
 
 static inline int mutex_unlock(mtx_t *lock)
 {
-#if MONAD_ASYNC_HAVE_TSAN
+    #if MONAD_CONTEXT_HAVE_TSAN
     __tsan_mutex_pre_unlock(lock, __tsan_mutex_try_lock);
-#endif
+    #endif
     int r = mtx_unlock(lock);
-#if MONAD_ASYNC_HAVE_TSAN
+    #if MONAD_CONTEXT_HAVE_TSAN
     __tsan_mutex_post_unlock(lock, __tsan_mutex_try_lock);
-#endif
+    #endif
     return r;
 }
 
@@ -284,13 +286,13 @@ static inline int infer_buffer_index_if_possible(
     return 0;
 }
 
-static inline monad_async_result
+static inline monad_c_result
 monad_async_executor_create_impl_fill_registered_buffers(
     struct monad_async_executor_impl_registered_buffers_t *p,
     unsigned buffers_small_count, unsigned buffers_small_multiplier,
     unsigned buffers_large_count, unsigned buffers_large_multiplier)
 {
-#ifndef NDEBUG
+    #ifndef NDEBUG
     if (buffers_small_count > (1U << 14) /*4096*/) {
         fprintf(
             stderr,
@@ -305,7 +307,7 @@ monad_async_executor_create_impl_fill_registered_buffers(
             "fail in release.\n");
         abort();
     }
-#endif
+    #endif
     if (buffers_small_multiplier == 0) {
         buffers_small_multiplier = 1;
     }
@@ -315,11 +317,11 @@ monad_async_executor_create_impl_fill_registered_buffers(
     p->size = (buffers_small_count * buffers_small_multiplier) +
               (buffers_large_count * buffers_large_multiplier);
     if (p->size == 0) {
-        return monad_async_make_success(0);
+        return monad_c_make_success(0);
     }
     p->buffers = calloc(p->size, sizeof(struct iovec));
     if (p->buffers == nullptr) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
     p->buffer_count[0] = buffers_small_count;
     p->buffer_count[1] = buffers_large_count;
@@ -336,7 +338,7 @@ monad_async_executor_create_impl_fill_registered_buffers(
             -1,
             0);
         if (mem == MAP_FAILED) {
-            return monad_async_make_failure(errno);
+            return monad_c_make_failure(errno);
         }
         for (unsigned n = 0; n < buffers_small_count; n++) {
             struct monad_async_executor_free_registered_buffer *i =
@@ -361,7 +363,7 @@ monad_async_executor_create_impl_fill_registered_buffers(
             -1,
             0);
         if (mem == MAP_FAILED) {
-            return monad_async_make_failure(errno);
+            return monad_c_make_failure(errno);
         }
         for (unsigned n = 0; n < buffers_large_count; n++) {
             struct monad_async_executor_free_registered_buffer *i =
@@ -375,10 +377,10 @@ monad_async_executor_create_impl_fill_registered_buffers(
             p->free[1] = i;
         }
     }
-    return monad_async_make_success(0);
+    return monad_c_make_success(0);
 }
 
-static inline monad_async_result
+static inline monad_c_result
 monad_async_executor_setup_eventfd_polling(struct monad_async_executor_impl *p)
 {
     struct io_uring_sqe *sqe = io_uring_get_sqe(&p->ring);
@@ -391,24 +393,24 @@ monad_async_executor_setup_eventfd_polling(struct monad_async_executor_impl *p)
         sqe, EXECUTOR_EVENTFD_READY_IO_URING_DATA_MAGIC, nullptr);
     int r = io_uring_submit(&p->ring);
     if (r < 0) {
-        return monad_async_make_failure(-r);
+        return monad_c_make_failure(-r);
     }
-    return monad_async_make_success(0);
+    return monad_c_make_success(0);
 }
 
-static inline monad_async_result monad_async_executor_create_impl(
+static inline monad_c_result monad_async_executor_create_impl(
     struct monad_async_executor_impl *p, struct monad_async_executor_attr *attr)
 {
     p->owning_thread = thrd_current();
     p->eventfd = eventfd(0, EFD_CLOEXEC);
     if (-1 == p->eventfd) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
     if (attr->io_uring_ring.entries > 0) {
         int r = io_uring_queue_init_params(
             attr->io_uring_ring.entries, &p->ring, &attr->io_uring_ring.params);
         if (r < 0) {
-            return monad_async_make_failure(-r);
+            return monad_c_make_failure(-r);
         }
         if (attr->io_uring_wr_ring.entries > 0) {
             r = io_uring_queue_init_params(
@@ -416,7 +418,7 @@ static inline monad_async_result monad_async_executor_create_impl(
                 &p->wr_ring,
                 &attr->io_uring_wr_ring.params);
             if (r < 0) {
-                return monad_async_make_failure(-r);
+                return monad_c_make_failure(-r);
             }
         }
         if (!(p->ring.features & IORING_FEAT_NODROP)) {
@@ -450,7 +452,7 @@ static inline monad_async_result monad_async_executor_create_impl(
                 p->registered_buffers[0].buffers,
                 p->registered_buffers[0].size);
             if (r < 0) {
-                return monad_async_make_failure(-r);
+                return monad_c_make_failure(-r);
             }
         }
         BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
@@ -466,15 +468,15 @@ static inline monad_async_result monad_async_executor_create_impl(
                 p->registered_buffers[1].buffers,
                 p->registered_buffers[1].size);
             if (r < 0) {
-                return monad_async_make_failure(-r);
+                return monad_c_make_failure(-r);
             }
         }
     }
     memcpy(p->magic, "MNASEXEC", 8);
-    return monad_async_make_success(0);
+    return monad_c_make_success(0);
 }
 
-static inline monad_async_result
+static inline monad_c_result
 monad_async_executor_destroy_impl(struct monad_async_executor_impl *ex)
 {
     if (!thrd_equal(thrd_current(), ex->owning_thread)) {
@@ -565,13 +567,13 @@ monad_async_executor_destroy_impl(struct monad_async_executor_impl *ex)
     if (ex->registered_buffers[1].buffers != nullptr) {
         free(ex->registered_buffers[1].buffers);
     }
-    return monad_async_make_success(0);
+    return monad_c_make_success(0);
 }
 
-static inline monad_async_result monad_async_executor_wake_impl(
+static inline monad_c_result monad_async_executor_wake_impl(
     atomic_int * /*lock must be held on entry*/,
     struct monad_async_executor_impl *ex,
-    monad_async_result const *cause_run_to_return)
+    monad_c_result const *cause_run_to_return)
 {
     if (cause_run_to_return != nullptr) {
         ex->cause_run_to_return_value = *cause_run_to_return;
@@ -583,9 +585,9 @@ static inline monad_async_result monad_async_executor_wake_impl(
     atomic_store_explicit(
         &ex->need_to_empty_eventfd, true, memory_order_release);
     if (-1 == eventfd_write(ex->eventfd, 1)) {
-        return monad_async_make_success(errno);
+        return monad_c_make_success(errno);
     }
-    return monad_async_make_success(0);
+    return monad_c_make_success(0);
 }
 
 static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
@@ -631,13 +633,13 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
         task->head.total_ticks_executed +=
             task->head.ticks_when_suspended_awaiting -
             task->head.ticks_when_resumed;
-#if MONAD_ASYNC_EXECUTOR_PRINTING
+    #if MONAD_ASYNC_EXECUTOR_PRINTING
         printf(
             "*** Executor %p suspends task %p due to SQE exhaustion\n",
             (void *)ex,
             (void *)task);
         fflush(stdout);
-#endif
+    #endif
         atomic_load_explicit(&task->context->switcher, memory_order_acquire)
             ->suspend_and_call_resume(
                 task->context,
@@ -668,7 +670,7 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
         // just need to "peek" the current SQE
         struct io_uring_sq *sq = &ring->sq;
         sqe = &sq->sqes[(sq->sqe_tail - 1) & *sq->kring_mask];
-#if MONAD_ASYNC_EXECUTOR_PRINTING
+    #if MONAD_ASYNC_EXECUTOR_PRINTING
         printf(
             "*** Executor %p resumes task %p from SQE exhaustion. sqe=%p. "
             "is_cancellation_point=%d. please_cancel_invoked=%d\n",
@@ -678,7 +680,7 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
             is_cancellation_point,
             task->please_cancel_invoked);
         fflush(stdout);
-#endif
+    #endif
         if (is_cancellation_point && task->please_cancel_invoked) {
             // We need to "throw away" this SQE, as the task has been cancelled
             // We do this by setting the SQE to a noop with
@@ -895,3 +897,5 @@ static inline void monad_async_executor_free_file_index(
     assert(ex->file_indices[file_index] != -1);
     ex->file_indices[file_index] = -1;
 }
+
+#endif

@@ -1,7 +1,8 @@
 #include "monad/async/work_dispatcher.h"
 
+#include <monad/context/boost_result.h>
+
 #include "executor_impl.h"
-#include "monad/async/boost_result.h"
 
 #include <errno.h>
 #include <stdlib.h>
@@ -38,7 +39,7 @@ struct monad_async_work_dispatcher_impl
     LIST_DEFINE_P(tasks_awaiting_dispatch, struct monad_async_task_impl);
 };
 
-monad_async_result monad_async_work_dispatcher_create(
+monad_c_result monad_async_work_dispatcher_create(
     monad_async_work_dispatcher *dp,
     struct monad_async_work_dispatcher_attr *attr)
 {
@@ -46,24 +47,24 @@ monad_async_result monad_async_work_dispatcher_create(
         (struct monad_async_work_dispatcher_impl *)calloc(
             1, sizeof(struct monad_async_work_dispatcher_impl));
     if (p == nullptr) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
     p->spin_before_sleep_ms = attr->spin_before_sleep_ms;
     if (thrd_success != mtx_init(&p->lock, mtx_plain)) {
         (void)monad_async_work_dispatcher_destroy(
             (monad_async_work_dispatcher)p);
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
     if (thrd_success != cnd_init(&p->workloads_changed)) {
         (void)monad_async_work_dispatcher_destroy(
             (monad_async_work_dispatcher)p);
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
     *dp = (monad_async_work_dispatcher)p;
-    return monad_async_make_success(0);
+    return monad_c_make_success(0);
 }
 
-monad_async_result
+monad_c_result
 monad_async_work_dispatcher_destroy(monad_async_work_dispatcher dp)
 {
     struct monad_async_work_dispatcher_impl *p =
@@ -71,10 +72,10 @@ monad_async_work_dispatcher_destroy(monad_async_work_dispatcher dp)
     cnd_destroy(&p->workloads_changed);
     mtx_destroy(&p->lock);
     free(p);
-    return monad_async_make_success(0);
+    return monad_c_make_success(0);
 }
 
-monad_async_result monad_async_work_dispatcher_executor_create(
+monad_c_result monad_async_work_dispatcher_executor_create(
     monad_async_work_dispatcher_executor *ex, monad_async_work_dispatcher dp_,
     struct monad_async_work_dispatcher_executor_attr *attr)
 {
@@ -82,7 +83,7 @@ monad_async_result monad_async_work_dispatcher_executor_create(
         (struct monad_async_work_dispatcher_executor_impl *)calloc(
             1, sizeof(struct monad_async_work_dispatcher_executor_impl));
     if (p == nullptr) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
     BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
         (void)monad_async_work_dispatcher_executor_destroy(
@@ -97,17 +98,17 @@ monad_async_result monad_async_work_dispatcher_executor_create(
         .is_working = false};
     memcpy(&p->head, &head, sizeof(head));
     if (thrd_success != mutex_lock(&dp->lock)) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
     LIST_APPEND_ATOMIC_COUNTER(dp->executors.idle, p, &dp_->executors.idle);
     if (thrd_success != mutex_unlock(&dp->lock)) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
     *ex = (monad_async_work_dispatcher_executor)p;
-    return monad_async_make_success(0);
+    return monad_c_make_success(0);
 }
 
-monad_async_result monad_async_work_dispatcher_executor_destroy(
+monad_c_result monad_async_work_dispatcher_executor_destroy(
     monad_async_work_dispatcher_executor ex)
 {
     struct monad_async_work_dispatcher_executor_impl *p =
@@ -117,7 +118,7 @@ monad_async_result monad_async_work_dispatcher_executor_destroy(
     struct monad_async_work_dispatcher_impl *dp =
         (struct monad_async_work_dispatcher_impl *)p->head.dispatcher;
     if (thrd_success != mutex_lock(&dp->lock)) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
     if (atomic_load_explicit(&p->head.is_idle, memory_order_acquire)) {
         LIST_REMOVE_ATOMIC_COUNTER(
@@ -128,13 +129,13 @@ monad_async_result monad_async_work_dispatcher_executor_destroy(
             dp->executors.working, p, &dp->head.executors.working);
     }
     if (thrd_success != mutex_unlock(&dp->lock)) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
     free(p);
-    return monad_async_make_success(0);
+    return monad_c_make_success(0);
 }
 
-monad_async_result monad_async_work_dispatcher_executor_run(
+monad_c_result monad_async_work_dispatcher_executor_run(
     monad_async_work_dispatcher_executor ex)
 {
     struct monad_async_work_dispatcher_executor_impl *p =
@@ -146,7 +147,7 @@ monad_async_result monad_async_work_dispatcher_executor_run(
             &p->derived.head.tasks_running, memory_order_acquire) == 0 &&
         atomic_load_explicit(
             &p->derived.head.tasks_suspended, memory_order_acquire) == 0) {
-        return monad_async_make_success(-1);
+        return monad_c_make_success(-1);
     }
     struct monad_async_work_dispatcher_impl *dp =
         (struct monad_async_work_dispatcher_impl *)p->head.dispatcher;
@@ -158,7 +159,7 @@ monad_async_result monad_async_work_dispatcher_executor_run(
         ts.tv_sec = 30;
     }
 retry:
-    monad_async_result r = monad_async_executor_run(&p->derived.head, 256, &ts);
+    monad_c_result r = monad_async_executor_run(&p->derived.head, 256, &ts);
     if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(r)) {
         if (outcome_status_code_equal_generic(&r.error, ETIME) ||
             outcome_status_code_equal_generic(&r.error, ECANCELED)) {
@@ -178,7 +179,7 @@ retry:
         atomic_load_explicit(
             &dp->head.tasks_awaiting_dispatch, memory_order_relaxed) > 0) {
         if (thrd_success != mutex_lock(&dp->lock)) {
-            return monad_async_make_failure(errno);
+            return monad_c_make_failure(errno);
         }
         for (monad_async_priority n = monad_async_priority_high;
              n < monad_async_priority_max;
@@ -196,22 +197,22 @@ retry:
                 // Failure here is likely a logic error
                 BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(r);
                 if (dp->workloads_changed_waiting > 0) {
-#if MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_TSAN
                     __tsan_mutex_pre_signal(&dp->lock, 0);
 #endif
                     cnd_broadcast(&dp->workloads_changed);
-#if MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_TSAN
                     __tsan_mutex_post_signal(&dp->lock, 0);
 #endif
                 }
                 if (thrd_success != mutex_unlock(&dp->lock)) {
-                    return monad_async_make_failure(errno);
+                    return monad_c_make_failure(errno);
                 }
                 goto retry;
             }
         }
         if (thrd_success != mutex_unlock(&dp->lock)) {
-            return monad_async_make_failure(errno);
+            return monad_c_make_failure(errno);
         }
     }
     else if (
@@ -223,49 +224,49 @@ retry:
             &p->derived.head.tasks_suspended, memory_order_acquire) == 0) {
         // We have become idle
         if (thrd_success != mutex_lock(&dp->lock)) {
-            return monad_async_make_failure(errno);
+            return monad_c_make_failure(errno);
         }
         atomic_store_explicit(&p->head.is_working, false, memory_order_release);
         LIST_REMOVE_ATOMIC_COUNTER(
             dp->executors.working, p, &dp->head.executors.working);
-        monad_async_result r = monad_async_make_success(0);
+        monad_c_result r = monad_c_make_success(0);
         if (!atomic_load_explicit(&p->please_quit, memory_order_acquire)) {
             atomic_store_explicit(&p->head.is_idle, true, memory_order_release);
             LIST_APPEND_ATOMIC_COUNTER(
                 dp->executors.idle, p, &dp->head.executors.idle);
-            r = monad_async_make_success(-1);
+            r = monad_c_make_success(-1);
         }
         if (dp->workloads_changed_waiting > 0) {
-#if MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_TSAN
             __tsan_mutex_pre_signal(&dp->lock, 0);
 #endif
             cnd_broadcast(&dp->workloads_changed);
-#if MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_TSAN
             __tsan_mutex_post_signal(&dp->lock, 0);
 #endif
         }
         if (thrd_success != mutex_unlock(&dp->lock)) {
-            return monad_async_make_failure(errno);
+            return monad_c_make_failure(errno);
         }
         return r;
     }
-    return monad_async_make_success(0);
+    return monad_c_make_success(0);
 }
 
-monad_async_result monad_async_work_dispatcher_executor_wake(
+monad_c_result monad_async_work_dispatcher_executor_wake(
     monad_async_work_dispatcher_executor ex,
-    monad_async_result const *cause_run_to_return)
+    monad_c_result const *cause_run_to_return)
 {
     struct monad_async_work_dispatcher_executor_impl *p =
         (struct monad_async_work_dispatcher_executor_impl *)ex;
     return monad_async_executor_wake(&p->derived.head, cause_run_to_return);
 }
 
-monad_async_result monad_async_work_dispatcher_submit(
+monad_c_result monad_async_work_dispatcher_submit(
     monad_async_work_dispatcher dp_, monad_async_task *tasks_, size_t count)
 {
     if (count == 0) {
-        return monad_async_make_success(0);
+        return monad_c_make_success(0);
     }
     struct monad_async_work_dispatcher_impl *dp =
         (struct monad_async_work_dispatcher_impl *)dp_;
@@ -273,7 +274,7 @@ monad_async_result monad_async_work_dispatcher_submit(
         (struct monad_async_task_impl **)tasks_;
     intptr_t added = 0, subtracted = 0;
     if (thrd_success != mutex_lock(&dp->lock)) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
     {
         struct monad_async_task_impl **tasksp =
@@ -283,7 +284,7 @@ monad_async_result monad_async_work_dispatcher_submit(
                 tasksp++;
                 continue;
             }
-            if ((*tasksp)->head.user_code == nullptr ||
+            if ((*tasksp)->head.derived.user_code == nullptr ||
                 atomic_load_explicit(
                     &(*tasksp)->head.current_executor, memory_order_acquire) !=
                     nullptr ||
@@ -291,7 +292,7 @@ monad_async_result monad_async_work_dispatcher_submit(
                     &(*tasksp)->head.is_awaiting_dispatch,
                     memory_order_acquire) == true) {
                 (void)mutex_unlock(&dp->lock);
-                return monad_async_make_failure(EINVAL);
+                return monad_c_make_failure(EINVAL);
             }
             (*tasksp)->head.ticks_when_submitted =
                 get_ticks_count(memory_order_relaxed);
@@ -332,10 +333,10 @@ monad_async_result monad_async_work_dispatcher_submit(
                     dp->tasks_awaiting_dispatch[n],
                     item,
                     &dp->head.tasks_awaiting_dispatch);
-                monad_async_result r = monad_async_task_attach(
+                monad_c_result r = monad_async_task_attach(
                     &ex->derived.head, &item->head, nullptr);
                 // Failure here is likely a logic error
-                MONAD_ASYNC_CHECK_RESULT(r);
+                MONAD_CONTEXT_CHECK_RESULT(r);
                 struct monad_async_work_dispatcher_executor_impl *p = ex;
                 ex = ex->next;
                 atomic_store_explicit(
@@ -351,27 +352,27 @@ monad_async_result monad_async_work_dispatcher_submit(
         }
     }
     if (subtracted > 0 && dp->workloads_changed_waiting > 0) {
-#if MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_TSAN
         __tsan_mutex_pre_signal(&dp->lock, 0);
 #endif
         cnd_broadcast(&dp->workloads_changed);
-#if MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_TSAN
         __tsan_mutex_post_signal(&dp->lock, 0);
 #endif
     }
     if (thrd_success != mutex_unlock(&dp->lock)) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
-    return monad_async_make_success(added - subtracted);
+    return monad_c_make_success(added - subtracted);
 }
 
-monad_async_result monad_async_work_dispatcher_wait(
+monad_c_result monad_async_work_dispatcher_wait(
     monad_async_work_dispatcher dp_, size_t max_undispatched,
     size_t max_unexecuted, struct timespec *timeout)
 {
     struct monad_async_work_dispatcher_impl *dp =
         (struct monad_async_work_dispatcher_impl *)dp_;
-    monad_async_result r = monad_async_make_success(0);
+    monad_c_result r = monad_c_make_success(0);
     int64_t deadline = 0;
     if (timeout != nullptr && (timeout->tv_sec != 0 || timeout->tv_nsec != 0)) {
         struct timespec now;
@@ -379,7 +380,7 @@ monad_async_result monad_async_work_dispatcher_wait(
         deadline = timespec_to_ns(&now) + timespec_to_ns(timeout);
     }
     if (thrd_success != mutex_lock(&dp->lock)) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
     for (;;) {
         bool done = true;
@@ -406,12 +407,12 @@ monad_async_result monad_async_work_dispatcher_wait(
         dp->workloads_changed_waiting++;
         int ec = thrd_success;
         if (timeout == nullptr) {
-#if MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_TSAN
             __tsan_mutex_pre_unlock(&dp->lock, __tsan_mutex_try_lock);
             __tsan_mutex_post_unlock(&dp->lock, __tsan_mutex_try_lock);
 #endif
             ec = cnd_wait(&dp->workloads_changed, &dp->lock);
-#if MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_TSAN
             __tsan_mutex_pre_lock(&dp->lock, __tsan_mutex_try_lock);
             __tsan_mutex_post_lock(&dp->lock, __tsan_mutex_try_lock, 0);
 #endif
@@ -421,41 +422,41 @@ monad_async_result monad_async_work_dispatcher_wait(
             clock_gettime(CLOCK_MONOTONIC_COARSE, &now);
             int64_t remaining = deadline - timespec_to_ns(&now);
             if (remaining <= 0) {
-                r = monad_async_make_failure(ETIME);
+                r = monad_c_make_failure(ETIME);
                 break;
             }
             struct timespec portion = {
                 .tv_sec = remaining / 1000000000LL,
                 .tv_nsec = remaining % 1000000000LL};
-#if MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_TSAN
             __tsan_mutex_pre_unlock(&dp->lock, __tsan_mutex_try_lock);
             __tsan_mutex_post_unlock(&dp->lock, __tsan_mutex_try_lock);
 #endif
             ec = cnd_timedwait(&dp->workloads_changed, &dp->lock, &portion);
-#if MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_TSAN
             __tsan_mutex_pre_lock(&dp->lock, __tsan_mutex_try_lock);
             __tsan_mutex_post_lock(&dp->lock, __tsan_mutex_try_lock, 0);
 #endif
         }
         dp->workloads_changed_waiting--;
         if (ec == thrd_error) {
-            r = monad_async_make_failure(errno);
+            r = monad_c_make_failure(errno);
             break;
         }
     }
     if (thrd_success != mutex_unlock(&dp->lock)) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
     return r;
 }
 
-monad_async_result monad_async_work_dispatcher_quit(
+monad_c_result monad_async_work_dispatcher_quit(
     monad_async_work_dispatcher dp_, size_t max_executors,
     struct timespec *timeout)
 {
     struct monad_async_work_dispatcher_impl *dp =
         (struct monad_async_work_dispatcher_impl *)dp_;
-    monad_async_result r = monad_async_make_success(0);
+    monad_c_result r = monad_c_make_success(0);
     if (atomic_load_explicit(&dp->head.executors.idle, memory_order_relaxed) +
             atomic_load_explicit(
                 &dp->head.executors.working, memory_order_relaxed) <=
@@ -469,9 +470,9 @@ monad_async_result monad_async_work_dispatcher_quit(
         deadline = timespec_to_ns(&now) + timespec_to_ns(timeout);
     }
     if (thrd_success != mutex_lock(&dp->lock)) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
-    monad_async_result const cancelled = monad_async_make_failure(ECANCELED);
+    monad_c_result const cancelled = monad_c_make_failure(ECANCELED);
     for (;;) {
         int togo =
             (int)(atomic_load_explicit(
@@ -522,12 +523,12 @@ monad_async_result monad_async_work_dispatcher_quit(
         dp->workloads_changed_waiting++;
         int ec = thrd_success;
         if (timeout == nullptr) {
-#if MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_TSAN
             __tsan_mutex_pre_unlock(&dp->lock, __tsan_mutex_try_lock);
             __tsan_mutex_post_unlock(&dp->lock, __tsan_mutex_try_lock);
 #endif
             ec = cnd_wait(&dp->workloads_changed, &dp->lock);
-#if MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_TSAN
             __tsan_mutex_pre_lock(&dp->lock, __tsan_mutex_try_lock);
             __tsan_mutex_post_lock(&dp->lock, __tsan_mutex_try_lock, 0);
 #endif
@@ -537,30 +538,30 @@ monad_async_result monad_async_work_dispatcher_quit(
             clock_gettime(CLOCK_MONOTONIC_COARSE, &now);
             int64_t remaining = deadline - timespec_to_ns(&now);
             if (remaining <= 0) {
-                r = monad_async_make_failure(ETIME);
+                r = monad_c_make_failure(ETIME);
                 break;
             }
             struct timespec portion = {
                 .tv_sec = remaining / 1000000000LL,
                 .tv_nsec = remaining % 1000000000LL};
-#if MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_TSAN
             __tsan_mutex_pre_unlock(&dp->lock, __tsan_mutex_try_lock);
             __tsan_mutex_post_unlock(&dp->lock, __tsan_mutex_try_lock);
 #endif
             ec = cnd_timedwait(&dp->workloads_changed, &dp->lock, &portion);
-#if MONAD_ASYNC_HAVE_TSAN
+#if MONAD_CONTEXT_HAVE_TSAN
             __tsan_mutex_pre_lock(&dp->lock, __tsan_mutex_try_lock);
             __tsan_mutex_post_lock(&dp->lock, __tsan_mutex_try_lock, 0);
 #endif
         }
         dp->workloads_changed_waiting--;
         if (ec == thrd_error) {
-            r = monad_async_make_failure(errno);
+            r = monad_c_make_failure(errno);
             break;
         }
     }
     if (thrd_success != mutex_unlock(&dp->lock)) {
-        return monad_async_make_failure(errno);
+        return monad_c_make_failure(errno);
     }
     return r;
 }

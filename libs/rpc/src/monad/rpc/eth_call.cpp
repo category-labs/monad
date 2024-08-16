@@ -45,13 +45,17 @@ namespace
         enriched_txn.sc.s = 1;
 
         BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
-            enriched_txn, header.base_fee_per_gas, chain.get_chain_id()))
+            enriched_txn, header.base_fee_per_gas, chain.get_chain_id()));
 
-        mpt::Db db{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = dbname_paths}};
-        TrieDb ro{db};
+        // rodb is not thread safe
+        thread_local mpt::Db db{
+            mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = dbname_paths}};
+        thread_local TrieDb ro{db};
+
         ro.set_block_number(block_number);
         BlockState block_state{ro};
-        Incarnation incarnation{block_number, Incarnation::LAST_TX};
+        // avoid conflict with block reward txn
+        Incarnation incarnation{block_number, Incarnation::LAST_TX - 1u};
         State state{block_state, incarnation};
 
         // nonce validation hack
@@ -103,6 +107,7 @@ int64_t monad_evmc_result::get_gas_refund() const
     return gas_refund;
 }
 
+// TODO: eth_call should take in a handle to db instead
 monad_evmc_result eth_call(
     std::vector<uint8_t> const &rlp_txn, std::vector<uint8_t> const &rlp_header,
     std::vector<uint8_t> const &rlp_sender, uint64_t const block_number,

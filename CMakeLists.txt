@@ -68,6 +68,7 @@ set(intx_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake/dummy")
 add_subdirectory(third_party/evmone)
 unset(ethash_DIR)
 unset(intx_DIR)
+target_link_libraries(evmone_precompiles PUBLIC ethash::keccak)
 target_include_directories(evmone PUBLIC "third_party/evmone/lib")
 # always compile baseline with optimization due to stack size of dispatch_cgoto
 set_source_files_properties(

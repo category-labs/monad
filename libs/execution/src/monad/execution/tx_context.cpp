@@ -32,7 +32,13 @@ evmc_tx_context get_tx_context(
                                  : hdr.prev_randao,
         .chain_id = to_bytes(to_big_endian(chain_id)),
         .block_base_fee =
-            to_bytes(to_big_endian(hdr.base_fee_per_gas.value_or(0)))};
+            to_bytes(to_big_endian(hdr.base_fee_per_gas.value_or(0))),
+        .blob_base_fee{}, // TODO
+        .blob_hashes = nullptr, // TODO
+        .blob_hashes_count = 0, // TODO
+        .initcodes = nullptr, // TODO
+        .initcodes_count = 0, // TODO
+    };
 }
 
 EXPLICIT_EVMC_REVISION(get_tx_context);

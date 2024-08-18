@@ -64,6 +64,13 @@ public:
 
     virtual evmc_access_status
     access_storage(Address const &, bytes32_t const &key) noexcept override;
+
+    virtual bytes32_t get_transient_storage(
+        Address const &, bytes32_t const &key) const noexcept override;
+
+    virtual void set_transient_storage(
+        Address const &, bytes32_t const &key,
+        bytes32_t const &value) noexcept override;
 };
 
 template <evmc_revision rev>

@@ -460,7 +460,7 @@ public:
         return n;
     }
 
-    void set_code(Address const &address, byte_string_view const &code)
+    void set_code(Address const &address, byte_string_view const code)
     {
         auto &account = current_account(address);
         if (MONAD_UNLIKELY(!account.has_value())) {

@@ -29,7 +29,6 @@ add_library(
   "src/monad/core/account.hpp"
   "src/monad/core/address.hpp"
   "src/monad/core/block.hpp"
-  "src/monad/core/byte_string.hpp"
   "src/monad/core/bytes.hpp"
   "src/monad/core/fmt/account_fmt.hpp"
   "src/monad/core/fmt/address_fmt.hpp"

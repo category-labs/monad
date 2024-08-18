@@ -168,6 +168,8 @@ std::optional<evmc::Result> pre_create_contract_account(
         .value = msg.value,
         .create2_salt = {},
         .code_address = contract_address,
+        .code = nullptr, // TODO
+        .code_size = 0, // TODO
     };
     return std::nullopt;
 }

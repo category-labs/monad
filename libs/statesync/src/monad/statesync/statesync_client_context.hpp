@@ -6,6 +6,8 @@
 #include <monad/db/util.hpp>
 #include <monad/mpt/db.hpp>
 
+#include <komihash.h>
+
 #include <filesystem>
 #include <vector>
 
@@ -21,7 +23,7 @@ struct byte_string_hash
 
     uint64_t operator()(byte_string_view const str) const
     {
-        return ankerl::unordered_dense::hash<byte_string_view>{}(str);
+        return komihash(str.data(), str.size(), 0);
     }
 };
 

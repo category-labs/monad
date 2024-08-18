@@ -97,6 +97,8 @@ constexpr evmc_message to_message(Transaction const &tx, Address const &sender)
         .value = {},
         .create2_salt = {},
         .code_address = to_address.second,
+        .code = nullptr, // TODO
+        .code_size = 0, // TODO
     };
     intx::be::store(msg.value.bytes, tx.value);
     return msg;

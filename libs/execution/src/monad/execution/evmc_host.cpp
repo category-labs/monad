@@ -98,4 +98,17 @@ evmc_access_status EvmcHostBase::access_storage(
     return state_.access_storage(address, key);
 }
 
+bytes32_t EvmcHostBase::get_transient_storage(
+    Address const &, bytes32_t const & /*key*/) const noexcept
+{
+    MONAD_ASSERT(false); // TODO
+}
+
+void EvmcHostBase::set_transient_storage(
+    Address const &, bytes32_t const & /*key*/,
+    bytes32_t const & /*value*/) noexcept
+{
+    MONAD_ASSERT(false); // TODO
+}
+
 MONAD_NAMESPACE_END

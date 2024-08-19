@@ -252,10 +252,11 @@ int main(int const argc, char const *argv[])
         "--history_len",
         history_len,
         "history length an empty db is initialized to");
+    cli.add_option("--genesis", genesis, "genesis file")
+        ->check(CLI::ExistingFile)
+        ->required();
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
-    group->add_option("--genesis", genesis, "genesis file")
-        ->check(CLI::ExistingFile);
     group
         ->add_option(
             "--snapshot", snapshot, "snapshot file path to load db from")
@@ -271,7 +272,7 @@ int main(int const argc, char const *argv[])
         });
     group->add_option(
         "--statesync", statesync, "socket for statesync communication");
-    group->require_option(1);
+    group->require_option(-1);
 #ifdef ENABLE_EVENT_TRACING
     fs::path trace_log = fs::absolute("trace");
     cli.add_option("--trace_log", trace_log, "path to output trace file");

@@ -1,6 +1,7 @@
 #include <monad/rpc/eth_call.hpp>
 
 #include <monad/chain/monad_devnet.hpp>
+#include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/rlp/address_rlp.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
@@ -31,7 +32,8 @@ namespace
         Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, Address const &sender,
         BlockHashBuffer const &buffer,
-        std::vector<std::filesystem::path> const &dbname_paths)
+        std::vector<std::filesystem::path> const &dbname_paths,
+        monad_state_override_set const &state_overrides)
     {
         constexpr evmc_revision rev = EVMC_SHANGHAI; // TODO
         MonadDevnet chain;
@@ -58,8 +60,81 @@ namespace
         Incarnation incarnation{block_number, Incarnation::LAST_TX - 1u};
         State state{block_state, incarnation};
 
+        for (auto const &[addr, state_delta] : state_overrides.override_sets) {
+            // address
+            Address address{};
+            std::memcpy(address.bytes, addr.data(), sizeof(Address));
+
+            // This would avoid seg-fault on storage override for non-existing
+            // accounts
+            auto const &account = state.recent_account(address);
+            if (MONAD_UNLIKELY(!account.has_value())) {
+                state.create_contract(address);
+            }
+
+            if (state_delta.balance.has_value()) {
+                auto const balance = intx::be::unsafe::load<uint256_t>(
+                    state_delta.balance.value().data());
+                if (balance >
+                    intx::be::load<uint256_t>(state.get_balance(address))) {
+                    state.add_to_balance(
+                        address,
+                        balance - intx::be::load<uint256_t>(
+                                      state.get_balance(address)));
+                }
+                else {
+                    state.subtract_from_balance(
+                        address,
+                        intx::be::load<uint256_t>(state.get_balance(address)) -
+                            balance);
+                }
+            }
+
+            if (state_delta.nonce.has_value()) {
+                state.set_nonce(address, state_delta.nonce.value());
+            }
+
+            if (state_delta.code.has_value()) {
+                byte_string const code{
+                    state_delta.code.value().data(),
+                    state_delta.code.value().size()};
+                state.set_code(address, code);
+            }
+
+            auto update_state =
+                [&](std::map<std::vector<uint8_t>, std::vector<uint8_t>> const
+                        &diff) {
+                    for (auto const &[key, value] : diff) {
+                        bytes32_t storage_key;
+                        bytes32_t storage_value;
+                        std::memcpy(
+                            storage_key.bytes, key.data(), sizeof(bytes32_t));
+                        std::memcpy(
+                            storage_value.bytes,
+                            value.data(),
+                            sizeof(bytes32_t));
+
+                        state.set_storage(address, storage_key, storage_value);
+                    }
+                };
+
+            // Remove single storage
+            if (!state_delta.state_diff.empty()) {
+                // we need to access the account first before accessing its
+                // storage
+                (void)state.get_nonce(address);
+                update_state(state_delta.state_diff);
+            }
+
+            // Remove all override
+            if (!state_delta.state.empty()) {
+                state.set_to_state_incarnation(address);
+                update_state(state_delta.state);
+            }
+        }
+
         // nonce validation hack
-        auto const acct = ro.read_account(sender);
+        auto const &acct = state.recent_account(sender);
         enriched_txn.nonce = acct.has_value() ? acct.value().nonce : 0;
 
         BOOST_OUTCOME_TRY(validate_transaction(enriched_txn, acct));
@@ -107,11 +182,65 @@ int64_t monad_evmc_result::get_gas_refund() const
     return gas_refund;
 }
 
+void monad_state_override_set::add_override_address(bytes const &address)
+{
+    MONAD_ASSERT(override_sets.find(address) == override_sets.end());
+    MONAD_ASSERT(address.size() == sizeof(Address));
+    override_sets.emplace(address, monad_state_override_object());
+}
+
+void monad_state_override_set::set_override_balance(
+    bytes const &address, bytes const &balance)
+{
+    MONAD_ASSERT(override_sets.find(address) != override_sets.end());
+    MONAD_ASSERT(address.size() == sizeof(Address));
+    override_sets[address].balance = balance;
+}
+
+void monad_state_override_set::set_override_nonce(
+    bytes const &address, uint64_t const &nonce)
+{
+    MONAD_ASSERT(override_sets.find(address) != override_sets.end());
+    MONAD_ASSERT(address.size() == sizeof(Address));
+    override_sets[address].nonce = nonce;
+}
+
+void monad_state_override_set::set_override_code(
+    bytes const &address, bytes const &code)
+{
+    MONAD_ASSERT(override_sets.find(address) != override_sets.end());
+    MONAD_ASSERT(address.size() == sizeof(Address));
+    override_sets[address].code = code;
+}
+
+void monad_state_override_set::set_override_state_diff(
+    bytes const &address, bytes const &key, bytes const &value)
+{
+    MONAD_ASSERT(override_sets.find(address) != override_sets.end());
+    MONAD_ASSERT(address.size() == sizeof(Address));
+    auto &object = override_sets[address].state_diff;
+    MONAD_ASSERT(object.find(key) == object.end());
+    MONAD_ASSERT(key.size() == sizeof(bytes32_t));
+    object.emplace(key, value);
+}
+
+void monad_state_override_set::set_override_state(
+    bytes const &address, bytes const &key, bytes const &value)
+{
+    MONAD_ASSERT(override_sets.find(address) != override_sets.end());
+    MONAD_ASSERT(address.size() == sizeof(Address));
+    auto &object = override_sets[address].state;
+    MONAD_ASSERT(object.find(key) == object.end());
+    MONAD_ASSERT(key.size() == sizeof(bytes32_t));
+    object.emplace(key, value);
+}
+
 // TODO: eth_call should take in a handle to db instead
 monad_evmc_result eth_call(
     std::vector<uint8_t> const &rlp_txn, std::vector<uint8_t> const &rlp_header,
     std::vector<uint8_t> const &rlp_sender, uint64_t const block_number,
-    std::string const &triedb_path, std::string const &blockdb_path)
+    std::string const &triedb_path, std::string const &blockdb_path,
+    monad_state_override_set const &state_overrides)
 {
     byte_string_view rlp_txn_view(rlp_txn.begin(), rlp_txn.end());
     auto const txn_result = rlp::decode_transaction(rlp_txn_view);
@@ -161,8 +290,14 @@ monad_evmc_result eth_call(
             paths.emplace_back(file.path());
         }
     }
-    auto const result =
-        eth_call_impl(txn, block_header, block_number, sender, buffer, paths);
+    auto const result = eth_call_impl(
+        txn,
+        block_header,
+        block_number,
+        sender,
+        buffer,
+        paths,
+        state_overrides);
     monad_evmc_result ret;
     if (MONAD_UNLIKELY(result.has_error())) {
         ret.status_code = INT_MAX;

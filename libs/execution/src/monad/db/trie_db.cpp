@@ -270,10 +270,8 @@ bytes32_t TrieDb::merkle_root(mpt::Nibbles const &nibbles)
     if (!value.has_value() || value.value().empty()) {
         return NULL_ROOT;
     }
-    bytes32_t root;
     MONAD_ASSERT(value.value().size() == sizeof(bytes32_t));
-    std::copy_n(value.value().data(), sizeof(bytes32_t), root.bytes);
-    return root;
+    return to_bytes(value.value());
 }
 
 std::string TrieDb::print_stats()

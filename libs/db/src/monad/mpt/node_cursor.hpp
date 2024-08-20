@@ -28,7 +28,7 @@ struct NodeCursor
     {
     }
 
-    bool is_valid() const noexcept
+    constexpr bool is_valid() const noexcept
     {
         return node != nullptr;
     }

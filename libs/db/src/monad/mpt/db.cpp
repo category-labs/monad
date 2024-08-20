@@ -38,7 +38,6 @@
 #include <iterator>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <stdexcept>
 #include <system_error>
 #include <thread>
@@ -185,7 +184,7 @@ struct Db::ROOnDisk final : public Db::Impl
         MONAD_ASSERT(false);
     }
 
-    virtual size_t poll(bool blocking, size_t count) override
+    virtual size_t poll(bool const blocking, size_t const count) override
     {
         return blocking ? aux_.io->poll_blocking(count)
                         : aux_.io->poll_nonblocking(count);
@@ -200,7 +199,7 @@ struct Db::ROOnDisk final : public Db::Impl
             });
     }
 
-    virtual NodeCursor load_root_for_version(uint64_t version) override
+    virtual NodeCursor load_root_for_version(uint64_t const version) override
     {
         auto const root_offset = aux().get_root_offset_at_version(version);
         if (root_offset == INVALID_OFFSET) {
@@ -712,7 +711,7 @@ struct Db::RWOnDisk final : public Db::Impl
         return fut.get();
     }
 
-    virtual NodeCursor load_root_for_version(uint64_t version) override
+    virtual NodeCursor load_root_for_version(uint64_t const version) override
     {
         if (MONAD_LIKELY(version == aux().db_history_max_version())) {
             return root() ? NodeCursor{*root()} : NodeCursor{};

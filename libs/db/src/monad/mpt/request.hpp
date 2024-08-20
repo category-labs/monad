@@ -49,7 +49,7 @@ struct Requests
         return sublists[get_first_branch()].front().key;
     }
 
-    void reset(unsigned const prefix_index) noexcept
+    constexpr void reset(unsigned const prefix_index) noexcept
     {
         mask = 0;
         opt_leaf = std::nullopt;

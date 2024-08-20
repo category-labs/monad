@@ -25,17 +25,6 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
-// Encode
-byte_string encode_transaction_into_block(Transaction const &tx)
-{
-    if (tx.type == TransactionType::legacy) {
-        return encode_transaction(tx);
-    }
-    else {
-        return encode_string2(encode_transaction(tx));
-    }
-}
-
 byte_string encode_block_header(BlockHeader const &block_header)
 {
     byte_string encoded_block_header;
@@ -75,8 +64,14 @@ byte_string encode_block(Block const &block)
     byte_string encoded_block_transactions;
     byte_string encoded_block_ommers;
 
-    for (auto const &txn : block.transactions) {
-        encoded_block_transactions += encode_transaction_into_block(txn);
+    for (auto const &tx : block.transactions) {
+        if (tx.type == TransactionType::legacy) {
+            encoded_block_transactions += encode_transaction(tx);
+        }
+        else {
+            encoded_block_transactions +=
+                encode_string2(encode_transaction(tx));
+        }
     }
     encoded_block_transactions = encode_list2(encoded_block_transactions);
 
@@ -99,22 +94,6 @@ byte_string encode_block(Block const &block)
     }
 
     return encode_list2(encoded_block);
-}
-
-// Decode
-Result<Transaction> decode_transaction_from_block(byte_string_view &enc)
-{
-    if (MONAD_UNLIKELY(enc.empty())) {
-        return DecodeError::InputTooShort;
-    }
-
-    if (enc[0] >= 0xc0) {
-        return decode_transaction(enc);
-    }
-    else { // EIP-2718
-        BOOST_OUTCOME_TRY(auto payload, parse_string_metadata(enc));
-        return decode_transaction(payload);
-    }
 }
 
 Result<BlockHeader> decode_block_header(byte_string_view &enc)
@@ -157,23 +136,29 @@ Result<BlockHeader> decode_block_header(byte_string_view &enc)
     return block_header;
 }
 
-Result<std::vector<Transaction>>
-decode_transaction_vector(byte_string_view &enc)
+Result<std::vector<Transaction>> decode_transaction_list(byte_string_view &enc)
 {
-    std::vector<Transaction> txns;
-    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+    std::vector<Transaction> transactions;
+    BOOST_OUTCOME_TRY(auto ls, parse_list_metadata(enc));
 
     // TODO: Reserve txn vector size for better perf
-    while (payload.size() > 0) {
-        BOOST_OUTCOME_TRY(auto txn, decode_transaction_from_block(payload));
-        txns.emplace_back(std::move(txn));
+    while (ls.size() > 0) {
+        if (ls[0] >= 0xc0) {
+            BOOST_OUTCOME_TRY(auto tx, decode_transaction_legacy(ls));
+            transactions.emplace_back(std::move(tx));
+        }
+        else {
+            BOOST_OUTCOME_TRY(auto str, parse_string_metadata(ls));
+            BOOST_OUTCOME_TRY(auto tx, decode_transaction_eip2718(str));
+            transactions.emplace_back(std::move(tx));
+        }
     }
 
-    if (MONAD_UNLIKELY(!payload.empty())) {
+    if (MONAD_UNLIKELY(!ls.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return txns;
+    return transactions;
 }
 
 Result<std::vector<BlockHeader>>
@@ -200,7 +185,7 @@ Result<Block> decode_block(byte_string_view &enc)
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
     BOOST_OUTCOME_TRY(block.header, decode_block_header(payload));
-    BOOST_OUTCOME_TRY(block.transactions, decode_transaction_vector(payload));
+    BOOST_OUTCOME_TRY(block.transactions, decode_transaction_list(payload));
     BOOST_OUTCOME_TRY(block.ommers, decode_block_header_vector(payload));
 
     if (payload.size() > 0) {

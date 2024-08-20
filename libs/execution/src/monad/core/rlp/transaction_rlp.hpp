@@ -17,6 +17,9 @@ byte_string encode_transaction_for_signing(Transaction const &);
 Result<std::vector<bytes32_t>> decode_access_entry_keys(byte_string_view &);
 Result<AccessEntry> decode_access_entry(byte_string_view &);
 Result<AccessList> decode_access_list(byte_string_view &);
+
+Result<Transaction> decode_transaction_legacy(byte_string_view &);
+Result<Transaction> decode_transaction_eip2718(byte_string_view &);
 Result<Transaction> decode_transaction(byte_string_view &);
 
 MONAD_RLP_NAMESPACE_END

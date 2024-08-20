@@ -75,12 +75,12 @@ using inline_owning_bytes_span =
 template <compute_leaf_data TComputeLeafData>
 struct MerkleComputeBase : Compute
 {
-    static constexpr auto max_branch_rlp_size =
-        rlp::list_length(rlp::list_length(32) * 16 + rlp::list_length(0));
+    static constexpr auto max_branch_rlp_size = rlp::list_length(
+        rlp::list_length(KECCAK256_SIZE) * 16 + rlp::list_length(0));
     static constexpr auto max_leaf_data_size = rlp::list_length( // account rlp
         rlp::list_length(32) // balance
-        + rlp::list_length(32) // code hash
-        + rlp::list_length(32) // storage hash
+        + rlp::list_length(KECCAK256_SIZE) // code hash
+        + rlp::list_length(KECCAK256_SIZE) // storage hash
         + rlp::list_length(8) // nonce
     );
     static_assert(max_branch_rlp_size == 532);
@@ -219,7 +219,8 @@ struct VarLenMerkleCompute : Compute
     static constexpr auto calc_rlp_max_size =
         [](unsigned const leaf_data_size) -> unsigned {
         return static_cast<unsigned>(rlp::list_length(
-            rlp::list_length(32) * 16 + rlp::list_length(leaf_data_size)));
+            rlp::list_length(KECCAK256_SIZE) * 16 +
+            rlp::list_length(leaf_data_size)));
     };
 
     // Compute the intermediate branch data to the internal state.

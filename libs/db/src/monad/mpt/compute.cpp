@@ -29,7 +29,8 @@ unsigned encode_two_pieces(
     MONAD_ASSERT(first.size() <= max_compact_encode_size);
     // leaf and hashed node ref requires rlp encoding,
     // rlp encoded but unhashed branch node ref doesn't
-    bool const need_encode_second = has_value || second.size() >= 32;
+    bool const need_encode_second =
+        has_value || second.size() >= KECCAK256_SIZE;
     auto const concat_len =
         rlp::string_length(first) +
         (need_encode_second ? rlp::string_length(second) : second.size());
@@ -68,7 +69,7 @@ std::span<unsigned char> encode_16_children(
                 ++i;
             }
             MONAD_DEBUG_ASSERT(i == child.branch);
-            result = (child.len < 32)
+            result = (child.len < KECCAK256_SIZE)
                          ? [&] {
                                memcpy(result.data(), child.data, child.len);
                                return result.subspan(child.len);
@@ -91,9 +92,10 @@ encode_16_children(Node *node, std::span<unsigned char> result)
     for (unsigned i = 0, bit = 1; i < 16; ++i, bit <<= 1) {
         if (node->mask & bit) {
             auto const child_index = node->to_child_index(i);
-            MONAD_DEBUG_ASSERT(node->child_data_len(child_index) <= 32);
+            MONAD_DEBUG_ASSERT(
+                node->child_data_len(child_index) <= KECCAK256_SIZE);
             result =
-                (node->child_data_len(child_index) < 32)
+                (node->child_data_len(child_index) < KECCAK256_SIZE)
                     ? [&] {
                           memcpy(
                               result.data(),

@@ -17,11 +17,6 @@ find_package(
   COMPONENTS context fiber json thread
   REQUIRED)
 find_package(GTest)
-find_package(PkgConfig REQUIRED)
-
-pkg_check_modules(archive REQUIRED IMPORTED_TARGET libarchive)
-pkg_check_modules(cap REQUIRED IMPORTED_TARGET libcap)
-pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
 
 # ##############################################################################
 # libs
@@ -58,11 +53,6 @@ target_include_directories(monad_trie PRIVATE "third_party")
 monad_compile_options(monad_trie)
 target_link_libraries(monad_trie PRIVATE Boost::boost)
 target_link_libraries(monad_trie PUBLIC monad_async)
-add_executable(monad_mpt "src/monad/mpt/cli_tool_main.cpp"
-                         "src/monad/mpt/cli_tool_impl.cpp")
-monad_compile_options(monad_mpt)
-target_link_libraries(monad_mpt PUBLIC monad_trie PkgConfig::zstd
-                                       PkgConfig::archive CLI11::CLI11)
 
 function(add_trie_test)
   set(ONE_VALUE_ARGS TARGET TEST_FILTER)

@@ -518,7 +518,7 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
                     << " was initialised with a configuration different to "
                        "this storage pool. Is a device missing or is there an "
                        "extra device from when the pool was first "
-                       "created?\n\nYou should use the monad_mpt tool to copy "
+                       "created?\n\nYou should use the monad_cli tool to copy "
                        "and move databases around, NOT by copying partition "
                        "contents!";
                 throw std::runtime_error(std::move(str).str());
@@ -528,9 +528,9 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
                     << " was initialised with a configuration different to "
                        "this storage pool. Is a device missing or is there an "
                        "extra device from when the pool was first "
-                       "created?\n\nYou should use the monad_mpt tool to copy "
+                       "created?\n\nYou should use the monad_cli tool to copy "
                        "and move databases around, NOT by copying partition "
-                       "contents\n\nSince the monad_mpt tool was added, the "
+                       "contents\n\nSince the monad_cli tool was added, the "
                        "flag disable_mismatching_storage_pool_check is no "
                        "longer needed and has been disabled.";
                 throw std::runtime_error(std::move(str).str());

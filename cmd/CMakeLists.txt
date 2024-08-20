@@ -1,5 +1,11 @@
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
+find_package(PkgConfig REQUIRED)
+
+pkg_check_modules(archive REQUIRED IMPORTED_TARGET libarchive)
+pkg_check_modules(cap REQUIRED IMPORTED_TARGET libcap)
+pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
+
 find_package(CLI11 REQUIRED)
 
 add_executable(monad monad.cpp)
@@ -19,6 +25,9 @@ else()
 endif()
 
 target_compile_definitions(monad PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
-add_executable(monad_cli monad_cli.cpp)
+add_executable(monad_cli "cli_tool_main.cpp"
+                         "cli_tool_impl.cpp")
 monad_compile_options(monad_cli)
-target_link_libraries(monad_cli PUBLIC monad_execution CLI11::CLI11)
+target_link_libraries(monad_cli PUBLIC monad_execution PkgConfig::archive PkgConfig::zstd CLI11::CLI11)
+
+add_subdirectory(test)

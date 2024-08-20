@@ -1,5 +1,5 @@
-#include "test_fixtures_base.hpp"
-#include "test_fixtures_gtest.hpp"
+#include <monad/mpt/test/test_fixtures_base.hpp>
+#include <monad/mpt/test/test_fixtures_gtest.hpp>
 
 #include "../cli_tool_impl.hpp"
 
@@ -31,7 +31,7 @@ TEST(cli_tool, no_args_prints_fatal_and_help)
 {
     std::stringstream cout;
     std::stringstream cerr;
-    std::string_view args[] = {"monad_mpt"};
+    std::string_view args[] = {"monad_cli"};
     int const retcode = main_impl(cout, cerr, args);
     ASSERT_EQ(retcode, 1);
     EXPECT_TRUE(cerr.str().starts_with("FATAL:"));
@@ -42,7 +42,7 @@ TEST(cli_tool, help_prints_help)
 {
     std::stringstream cout;
     std::stringstream cerr;
-    std::string_view args[] = {"monad_mpt", "--help"};
+    std::string_view args[] = {"monad_cli", "--help"};
     int const retcode = main_impl(cout, cerr, args);
     ASSERT_EQ(retcode, 0);
     EXPECT_NE(std::string::npos, cout.str().find("Options:"));
@@ -66,7 +66,7 @@ TEST(cli_tool, create)
         std::stringstream cout;
         std::stringstream cerr;
         std::string_view args[] = {
-            "monad_mpt", "--storage", temppath, "--create"};
+            "monad_cli", "--storage", temppath, "--create"};
         int const retcode = main_impl(cout, cerr, args);
         ASSERT_EQ(retcode, 0);
         EXPECT_NE(
@@ -124,7 +124,7 @@ struct cli_tool_fixture
             std::stringstream cout;
             std::stringstream cerr;
             std::string_view args[] = {
-                "monad_mpt", "--storage", dbpath1, "--archive", temppath1};
+                "monad_cli", "--storage", dbpath1, "--archive", temppath1};
             int const retcode = std::async(std::launch::async, [&] {
                                     return main_impl(cout, cerr, args);
                                 }).get();
@@ -173,7 +173,7 @@ struct cli_tool_fixture
             std::stringstream cout;
             std::stringstream cerr;
             std::vector<std::string_view> args{
-                "monad_mpt",
+                "monad_cli",
                 "--chunk-capacity",
                 "23",
                 "--yes",
@@ -249,7 +249,7 @@ struct cli_tool_fixture
                 std::stringstream cout;
                 std::stringstream cerr;
                 std::vector<std::string_view> args{
-                    "monad_mpt", "--archive", temppath2};
+                    "monad_cli", "--archive", temppath2};
                 for (auto &i : dbpath2) {
                     args.push_back("--storage");
                     args.push_back(i.native());
@@ -268,7 +268,7 @@ struct cli_tool_fixture
                 std::stringstream cout;
                 std::stringstream cerr;
                 std::string_view args[] = {
-                    "monad_mpt",
+                    "monad_cli",
                     "--storage",
                     dbpath3,
                     "--chunk-capacity",

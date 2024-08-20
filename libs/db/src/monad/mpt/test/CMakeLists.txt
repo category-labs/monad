@@ -1,15 +1,6 @@
 add_trie_test(TARGET append_test SOURCES "append_test.cpp")
 add_trie_test(TARGET big_endian_serialization_test SOURCES
               "big_endian_serialization_test.cpp")
-add_trie_test(
-  TARGET
-  cli_tool_test
-  SOURCES
-  "cli_tool_test.cpp"
-  "../cli_tool_impl.cpp"
-  LINK_LIBRARIES
-  PkgConfig::zstd
-  PkgConfig::archive)
 add_trie_test(TARGET compaction_test SOURCES "compaction_test.cpp")
 add_trie_test(TARGET db_metadata_test SOURCES "db_metadata_test.cpp")
 add_trie_test(TARGET update_aux_test SOURCES "update_aux_test.cpp")

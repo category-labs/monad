@@ -9,8 +9,11 @@
 #include <boost/fiber/mutex.hpp>
 
 #include <future>
+#include <optional>
 #include <thread>
 #include <utility>
+
+#include <sched.h>
 
 MONAD_FIBER_NAMESPACE_BEGIN
 
@@ -32,7 +35,9 @@ class PriorityPool final
     std::promise<void> start_{};
 
 public:
-    PriorityPool(unsigned n_threads, unsigned n_fibers);
+    PriorityPool(
+        unsigned n_threads, unsigned n_fibers,
+        std::optional<cpu_set_t> isol_cpuset = std::nullopt);
 
     PriorityPool(PriorityPool const &) = delete;
     PriorityPool &operator=(PriorityPool const &) = delete;

@@ -1,21 +1,18 @@
 #include <monad/fiber/priority_pool.hpp>
 
 #include <monad/core/assert.h>
-#include <monad/fiber/priority_algorithm.hpp>
-#include <monad/fiber/priority_properties.hpp>
+#include <monad/core/cpuset.h>
 #include <monad/fiber/config.hpp>
 #include <monad/fiber/priority_algorithm.hpp>
 #include <monad/fiber/priority_properties.hpp>
 #include <monad/fiber/priority_task.hpp>
 
-#include <boost/fiber/operations.hpp>
-#include <boost/fiber/properties.hpp>
-#include <boost/fiber/protected_fixedsize_stack.hpp>
 #include <boost/fiber/channel_op_status.hpp>
 #include <boost/fiber/fiber.hpp>
 #include <boost/fiber/mutex.hpp>
 #include <boost/fiber/operations.hpp>
 #include <boost/fiber/properties.hpp>
+#include <boost/fiber/protected_fixedsize_stack.hpp>
 
 #include <cstdio>
 #include <memory>
@@ -27,7 +24,9 @@
 
 MONAD_FIBER_NAMESPACE_BEGIN
 
-PriorityPool::PriorityPool(unsigned const n_threads, unsigned const n_fibers)
+PriorityPool::PriorityPool(
+    unsigned const n_threads, unsigned const n_fibers,
+    std::optional<cpu_set_t> isol_cpuset)
 {
     MONAD_ASSERT(n_threads);
     MONAD_ASSERT(n_fibers);
@@ -72,6 +71,17 @@ PriorityPool::PriorityPool(unsigned const n_threads, unsigned const n_fibers)
         cv_.wait(lock, [this] { return done_; });
     });
     threads_.push_back(std::move(thread));
+    if (isol_cpuset) {
+        auto set = isol_cpuset.value();
+        for (auto &t : threads_) {
+            int cpu = monad_alloc_cpu(&set);
+            MONAD_ASSERT(cpu != -1);
+            auto pin = monad_cpuset_from_cpu(cpu);
+            int r = pthread_setaffinity_np(
+                t.native_handle(), sizeof(cpu_set_t), &pin);
+            MONAD_ASSERT(r != -1);
+        }
+    }
 }
 
 PriorityPool::~PriorityPool()

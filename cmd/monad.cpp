@@ -3,6 +3,8 @@
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/basic_formatter.hpp>
+#include <monad/core/cgroup.h>
+#include <monad/core/cpuset.h>
 #include <monad/core/likely.h>
 #include <monad/core/log_level_map.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
@@ -198,6 +200,7 @@ int main(int const argc, char const *argv[])
     unsigned nthreads = 4;
     unsigned nfibers = 256;
     bool no_compaction = false;
+    bool enable_cpu_isolation = false;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);
     uint64_t history_len = 1000;
@@ -229,15 +232,22 @@ int main(int const argc, char const *argv[])
     cli.add_option("--nthreads", nthreads, "number of threads");
     cli.add_option("--nfibers", nfibers, "number of fibers");
     cli.add_flag("--no-compaction", no_compaction, "disable compaction");
-    cli.add_option(
+    auto *sq_thread_cpu_opt = cli.add_option(
         "--sq_thread_cpu",
         sq_thread_cpu,
         "sq_thread_cpu field in io_uring_params, to specify the cpu set "
-        "kernel poll thread is bound to in SQPOLL mode");
-    cli.add_option(
+        "kernel poll thread is bound to in SQPOLL mode. This parameter "
+        " will be ignored if cpu isolation is enabled.");
+    auto *ro_sq_thread_cpu_opt = cli.add_option(
         "--ro_sq_thread_cpu",
         ro_sq_thread_cpu,
         "sq_thread_cpu for the read only db");
+    cli.add_flag(
+           "--enable_cpu_isolation",
+           enable_cpu_isolation,
+           "running process under a cgroup cpuset controller")
+        ->excludes(sq_thread_cpu_opt)
+        ->excludes(ro_sq_thread_cpu_opt);
     cli.add_option(
         "--db",
         dbname_paths,
@@ -287,6 +297,45 @@ int main(int const argc, char const *argv[])
         return cli.exit(e);
     }
 
+    bool const on_disk = !dbname_paths.empty();
+    std::optional<int> triedb_thread_cpu{std::nullopt};
+    std::optional<cpu_set_t> priority_pool_cpuset{std::nullopt};
+    if (enable_cpu_isolation) {
+        cpu_set_t isol_cpuset = monad_cgroup_cpuset();
+        int cpu = -1;
+
+        // Main thread and logger share first cpu
+        cpu = monad_alloc_cpu(&isol_cpuset);
+        MONAD_ASSERT(cpu != -1);
+        auto pin = monad_cpuset_from_cpu(cpu);
+        int r = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &pin);
+        MONAD_ASSERT(r != -1);
+        quill::Config cfg;
+        cfg.backend_thread_cpu_affinity = static_cast<uint16_t>(cpu);
+        quill::configure(cfg);
+
+        if (on_disk) {
+            // kernel submission queue
+            cpu = monad_alloc_cpu(&isol_cpuset);
+            MONAD_ASSERT(cpu != -1);
+            sq_thread_cpu = static_cast<unsigned>(cpu);
+
+            if (!statesync.empty()) {
+                cpu = monad_alloc_cpu(&isol_cpuset);
+                MONAD_ASSERT(cpu != -1);
+                ro_sq_thread_cpu = static_cast<unsigned>(cpu);
+            }
+
+            // Triedb worker
+            cpu = monad_alloc_cpu(&isol_cpuset);
+            MONAD_ASSERT(cpu != -1);
+            triedb_thread_cpu.emplace(cpu);
+        }
+
+        // priority pool gets the rest
+        priority_pool_cpuset.emplace(isol_cpuset);
+    }
+
     auto stdout_handler = quill::stdout_handler();
     stdout_handler->set_pattern(
         "%(ascii_time) [%(thread)] %(filename):%(lineno) LOG_%(level_name)\t"
@@ -315,7 +364,7 @@ int main(int const argc, char const *argv[])
     }
     std::unique_ptr<mpt::StateMachine> machine;
     mpt::Db db = [&] {
-        if (!dbname_paths.empty()) {
+        if (on_disk) {
             machine = std::make_unique<OnDiskMachine>();
             return mpt::Db{
                 *machine,
@@ -326,6 +375,7 @@ int main(int const argc, char const *argv[])
                     .wr_buffers = 32,
                     .uring_entries = 128,
                     .sq_thread_cpu = sq_thread_cpu,
+                    .triedb_thread_cpu = triedb_thread_cpu,
                     .dbname_paths = dbname_paths,
                     .history_length = history_len}};
         }
@@ -411,8 +461,8 @@ int main(int const argc, char const *argv[])
         start_block_num,
         nblocks);
 
-    fiber::PriorityPool priority_pool{nthreads, nfibers};
-
+    fiber::PriorityPool priority_pool{
+        nthreads, nfibers, std::move(priority_pool_cpuset)};
     auto const start_time = std::chrono::steady_clock::now();
 
     auto db_cache = ctx ? DbCache{*ctx} : DbCache{triedb};

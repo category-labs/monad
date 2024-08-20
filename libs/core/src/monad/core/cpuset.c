@@ -1,9 +1,11 @@
+#include <monad/core/assert.h>
 #include <monad/core/cpuset.h>
 
 #include <stdlib.h>
 #include <string.h>
 
 #include <sched.h>
+#include <sys/sysinfo.h>
 
 cpu_set_t monad_parse_cpuset(char *const s)
 {
@@ -35,4 +37,26 @@ cpu_set_t monad_parse_cpuset(char *const s)
     }
 
     return set;
+}
+
+cpu_set_t monad_cpuset_from_cpu(int cpu)
+{
+    MONAD_ASSERT(cpu >= 0);
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    CPU_SET((unsigned)cpu, &set);
+    return set;
+}
+
+int monad_alloc_cpu(cpu_set_t *input_set)
+{
+    int num_cpus = get_nprocs();
+    MONAD_ASSERT(num_cpus >= 0);
+    for (unsigned i = 0; i < (unsigned)num_cpus; ++i) {
+        if (CPU_ISSET(i, input_set)) {
+            CPU_CLR(i, input_set);
+            return (int)i;
+        }
+    }
+    return -1;
 }

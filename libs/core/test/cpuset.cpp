@@ -50,3 +50,24 @@ TEST(Cpuset, parse_empty)
     auto set = monad_parse_cpuset(evens);
     EXPECT_TRUE(CPU_EQUAL(&empty, &set));
 }
+
+TEST(Cpuset, alloc)
+{
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    CPU_SET(1, &set);
+    CPU_SET(2, &set);
+
+    int cpu = monad_alloc_cpu(&set);
+    EXPECT_EQ(cpu, 1);
+    EXPECT_FALSE(CPU_ISSET(1, &set));
+    EXPECT_TRUE(CPU_ISSET(2, &set));
+
+    cpu = monad_alloc_cpu(&set);
+    EXPECT_EQ(cpu, 2);
+    EXPECT_FALSE(CPU_ISSET(1, &set));
+    EXPECT_FALSE(CPU_ISSET(2, &set));
+
+    cpu = monad_alloc_cpu(&set);
+    EXPECT_EQ(cpu, -1);
+}

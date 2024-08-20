@@ -11,13 +11,20 @@
 #include <threads.h>
 
 #include <sched.h>
+#include <sys/sysinfo.h>
+
+#define LOG_CGROUP_ERROR(msg, ...)                                             \
+    do {                                                                       \
+        fprintf(stderr, "CPU Isolation Failed: " msg "\n", ##__VA_ARGS__);     \
+    }                                                                          \
+    while (0)
 
 static void monad_cgroup_init_or_exit()
 {
     int const result = cgroup_init();
 
     if (result) {
-        fprintf(stderr, "cgroup init failed (%s)\n", cgroup_strerror(result));
+        LOG_CGROUP_ERROR("cgroup init failed (%s)", cgroup_strerror(result));
         exit(EXIT_FAILURE);
     }
 }
@@ -33,7 +40,7 @@ static char *get_current_cgroup()
     FILE *const fp [[gnu::cleanup(cleanup_fclose)]] =
         fopen("/proc/self/cgroup", "r");
     if (!fp) {
-        fprintf(stderr, "failed to open /proc/self/cgroup\n");
+        LOG_CGROUP_ERROR("failed to open /proc/self/cgroup");
         return NULL;
     }
 
@@ -43,7 +50,7 @@ static char *get_current_cgroup()
         char *cgroup_path [[gnu::cleanup(cleanup_free)]] = NULL;
         int const result = fscanf(fp, "%d::%ms\n", &id, &cgroup_path);
         if (result != 2) {
-            fprintf(stderr, "failed to parse /proc/self/cgroup\n");
+            LOG_CGROUP_ERROR("failed to parse /proc/self/cgroup");
             return NULL;
         }
         if (id == 0) {
@@ -51,7 +58,7 @@ static char *get_current_cgroup()
             cgroup_path = NULL;
         }
         else {
-            fprintf(stderr, "cgroups version 1 not supported\n");
+            LOG_CGROUP_ERROR("cgroups version 1 not supported");
             return NULL;
         }
     }
@@ -67,27 +74,27 @@ cpu_set_t monad_cgroup_cpuset()
 
     char *const path [[gnu::cleanup(cleanup_free)]] = get_current_cgroup();
     if (!path) {
-        fprintf(stderr, "failed to get current cgroup\n");
+        LOG_CGROUP_ERROR("failed to get current cgroup");
         exit(EXIT_FAILURE);
     }
 
     struct cgroup *current_cgroup [[gnu::cleanup(cgroup_free)]] =
         cgroup_new_cgroup(path);
     if (!current_cgroup) {
-        fprintf(stderr, "failed to create cgroup\n");
+        LOG_CGROUP_ERROR("failed to create cgroup");
         exit(EXIT_FAILURE);
     }
 
     result = cgroup_get_cgroup(current_cgroup);
     if (result) {
-        fprintf(stderr, "failed to get cgroup (%s)\n", cgroup_strerror(result));
+        LOG_CGROUP_ERROR("failed to get cgroup (%s)", cgroup_strerror(result));
         exit(EXIT_FAILURE);
     }
 
     struct cgroup_controller *const cpuset_controller =
         cgroup_get_controller(current_cgroup, "cpuset");
     if (!cpuset_controller) {
-        fprintf(stderr, "failed to get cpuset controller\n");
+        LOG_CGROUP_ERROR("failed to get cpuset controller");
         exit(EXIT_FAILURE);
     }
 
@@ -95,14 +102,12 @@ cpu_set_t monad_cgroup_cpuset()
     result = cgroup_get_value_string(
         cpuset_controller, "cpuset.cpus.partition", &value);
     if (result) {
-        fprintf(
-            stderr,
-            "failed to get cpuset partition (%s)\n",
-            cgroup_strerror(result));
+        LOG_CGROUP_ERROR(
+            "failed to get cpuset partition (%s)", cgroup_strerror(result));
         exit(EXIT_FAILURE);
     }
     if (strcmp(value, "isolated") != 0 && strcmp(value, "root") != 0) {
-        fprintf(stderr, "cpuset is not isolated\n");
+        LOG_CGROUP_ERROR("cpuset is not isolated");
         exit(EXIT_FAILURE);
     }
     free(value);
@@ -111,9 +116,8 @@ cpu_set_t monad_cgroup_cpuset()
     result = cgroup_get_value_string(
         cpuset_controller, "cpuset.cpus.effective", &value);
     if (result) {
-        fprintf(
-            stderr,
-            "failed to get cpuset effective cpus (%s)\n",
+        LOG_CGROUP_ERROR(
+            "failed to get cpuset effective cpus (%s)",
             cgroup_strerror(result));
         exit(EXIT_FAILURE);
     }

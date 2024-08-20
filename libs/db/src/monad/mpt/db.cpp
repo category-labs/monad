@@ -10,6 +10,7 @@
 #include <monad/async/storage_pool.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/cpuset.h>
 #include <monad/core/result.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
@@ -48,6 +49,7 @@
 
 #include <fcntl.h>
 #include <linux/fs.h>
+#include <pthread.h>
 #include <unistd.h>
 
 #undef BLOCK_SIZE // without this concurrentqueue.h gets sad
@@ -590,6 +592,13 @@ struct Db::RWOnDisk final : public Db::Impl
         if (aux_.db_history_max_version() == INVALID_BLOCK_ID) {
             // set history length on empty db
             aux_.update_history_length_metadata(options.history_length);
+        }
+
+        if (options.triedb_thread_cpu) {
+            auto pin = monad_cpuset_from_cpu(options.triedb_thread_cpu.value());
+            int r = pthread_setaffinity_np(
+                worker_thread_.native_handle(), sizeof(cpu_set_t), &pin);
+            MONAD_ASSERT(r != -1);
         }
     }
 

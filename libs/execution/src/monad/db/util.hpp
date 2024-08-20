@@ -37,6 +37,9 @@ struct MachineBase : public mpt::StateMachine
     virtual void up(size_t const n) override;
 };
 
+static_assert(sizeof(MachineBase) == 16);
+static_assert(alignof(MachineBase) == 8);
+
 struct InMemoryMachine final : public MachineBase
 {
     virtual bool cache() const override;

@@ -2,14 +2,15 @@
 #include <monad/core/assert.h>
 #include <monad/core/basic_formatter.hpp>
 #include <monad/core/byte_string.hpp>
-#include <monad/core/keccak.hpp>
+#include <monad/core/fmt/address_fmt.hpp>
+#include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/likely.h>
+#include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/statesync/statesync_server_context.hpp>
 
 #include <quill/Quill.h>
-#include <quill/bundled/fmt/format.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -29,22 +30,17 @@ void on_commit(
     MONAD_ASSERT(ctx.deleted.emplace(it, n, Deleted::mapped_type{}));
     for (auto const &[addr, delta] : state_deltas) {
         auto const &account = delta.account.second;
-        std::vector<byte_string> storage;
+        std::vector<bytes32_t> storage;
         if (account.has_value()) {
             for (auto const &[key, delta] : delta.storage) {
                 if (delta.first != delta.second &&
                     delta.second == bytes32_t{}) {
-                    auto const akey = keccak256(addr.bytes);
-                    auto const skey = keccak256(key.bytes);
                     LOG_INFO(
-                        "Deleting Storage n={} {} ",
+                        "Deleting Storage n={} addr={} storage={} ",
                         n,
-                        fmt::format(
-                            "akey=0x{:02x} skey=0x{:02x}",
-                            fmt::join(std::as_bytes(std::span(akey.bytes)), ""),
-                            fmt::join(
-                                std::as_bytes(std::span(skey.bytes)), "")));
-                    storage.emplace_back(skey.bytes, sizeof(skey));
+                        addr,
+                        key);
+                    storage.emplace_back(key);
                 }
             }
         }
@@ -53,14 +49,11 @@ void on_commit(
             bool const incarnation =
                 account.has_value() && delta.account.first.has_value() &&
                 delta.account.first->incarnation != account->incarnation;
-            auto const key = keccak256(addr.bytes);
             if (incarnation || !account.has_value()) {
-                it->second.emplace_back(
-                    to_byte_string_view(key.bytes), std::vector<byte_string>{});
+                it->second.emplace_back(addr, std::vector<bytes32_t>{});
             }
             if (!storage.empty()) {
-                it->second.emplace_back(
-                    to_byte_string_view(key.bytes), std::move(storage));
+                it->second.emplace_back(addr, std::move(storage));
             }
         }
     }

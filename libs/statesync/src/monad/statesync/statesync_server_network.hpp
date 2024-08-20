@@ -10,6 +10,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <thread>
+#include <utility>
 
 struct monad_statesync_server_network
 {
@@ -54,18 +55,28 @@ ssize_t statesync_server_recv(
 }
 
 void statesync_server_send_upsert(
-    monad_statesync_server_network *const net, unsigned char const *const key,
-    uint64_t const key_size, unsigned char const *const value,
-    uint64_t const value_size, bool const code)
+    monad_statesync_server_network *const net, monad_sync_type const type,
+    unsigned char const *const v1, uint64_t const size1,
+    unsigned char const *const v2, uint64_t const size2)
 {
+    MONAD_ASSERT(v1 != nullptr || size1 == 0);
+    MONAD_ASSERT(v2 != nullptr || size2 == 0);
+    MONAD_ASSERT(
+        type == SyncTypeUpsertCode || type == SyncTypeUpsertAccount ||
+        type == SyncTypeUpsertStorage || type == SyncTypeUpsertAccountDelete ||
+        type == SyncTypeUpsertStorageDelete);
+
     auto const start = std::chrono::steady_clock::now();
-    net->obuf.push_back(SyncTypeUpsertHeader);
-    monad_sync_upsert_header const hdr{
-        .code = code, .key_size = key_size, .value_size = value_size};
+    net->obuf.push_back(type);
+    uint64_t const size = size1 + size2;
     net->obuf.append(
-        reinterpret_cast<unsigned char const *>(&hdr), sizeof(hdr));
-    net->obuf.append(key, key_size);
-    net->obuf.append(value, value_size);
+        reinterpret_cast<unsigned char const *>(&size), sizeof(size));
+    if (v1 != nullptr) {
+        net->obuf.append(v1, size1);
+    }
+    if (v2 != nullptr) {
+        net->obuf.append(v2, size2);
+    }
 
     if (net->obuf.size() >= (1 << 30)) {
         send(net->fd, net->obuf);
@@ -73,12 +84,12 @@ void statesync_server_send_upsert(
     }
 
     LOG_INFO(
-        "sent upsert {} code={} ns={}",
+        "sending upsert type={} {} ns={}",
+        std::to_underlying(type),
         fmt::format(
-            "key=0x{:02x} value=0x{:02x}",
-            fmt::join(std::as_bytes(std::span(key, key_size)), ""),
-            fmt::join(std::as_bytes(std::span(value, value_size)), "")),
-        code,
+            "v1=0x{:02x} v2=0x{:02x}",
+            fmt::join(std::as_bytes(std::span(v1, size1)), ""),
+            fmt::join(std::as_bytes(std::span(v2, size2)), "")),
         std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - start));
 }
@@ -93,7 +104,7 @@ void statesync_server_send_done(
     send(net->fd, net->obuf);
     net->obuf.clear();
     LOG_INFO(
-        "sent done success={} prefix={} n={} time={}",
+        "sending done success={} prefix={} n={} time={}",
         msg.success,
         msg.prefix,
         msg.n,

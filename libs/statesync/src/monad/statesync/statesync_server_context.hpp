@@ -15,7 +15,7 @@
 MONAD_NAMESPACE_BEGIN
 
 using Deleted = oneapi::tbb::concurrent_hash_map<
-    uint64_t, std::vector<std::pair<byte_string, std::vector<byte_string>>>>;
+    uint64_t, std::vector<std::pair<Address, std::vector<bytes32_t>>>>;
 
 class TrieDb;
 
@@ -27,7 +27,7 @@ struct monad_statesync_server_context final : public monad::Db
     monad::mpt::Db *ro;
     monad::Deleted deleted;
 
-    monad_statesync_server_context(monad::TrieDb &rw);
+    explicit monad_statesync_server_context(monad::TrieDb &rw);
 
     virtual std::optional<monad::Account>
     read_account(monad::Address const &addr) override;

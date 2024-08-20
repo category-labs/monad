@@ -23,9 +23,8 @@ void monad_statesync_client_handle_target(
     struct monad_statesync_client_context *, struct monad_sync_target);
 
 void monad_statesync_client_handle_upsert(
-    struct monad_statesync_client_context *, unsigned char const *key,
-    uint64_t key_size, unsigned char const *value, uint64_t value_size,
-    bool code);
+    struct monad_statesync_client_context *, enum monad_sync_type,
+    unsigned char const *, uint64_t);
 
 void monad_statesync_client_handle_done(
     struct monad_statesync_client_context *, struct monad_sync_done);

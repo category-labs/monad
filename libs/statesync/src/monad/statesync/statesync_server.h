@@ -12,9 +12,9 @@ struct monad_statesync_server *monad_statesync_server_create(
     ssize_t (*statesync_server_recv)(
         struct monad_statesync_server_network *, unsigned char *, size_t),
     void (*statesync_server_send_upsert)(
-        struct monad_statesync_server_network *, unsigned char const *key,
-        uint64_t key_size, unsigned char const *value, uint64_t value_size,
-        bool code),
+        struct monad_statesync_server_network *, enum monad_sync_type,
+        unsigned char const *v1, uint64_t size1, unsigned char const *v2,
+        uint64_t size2),
     void (*statesync_server_send_done)(
         struct monad_statesync_server_network *, struct monad_sync_done));
 

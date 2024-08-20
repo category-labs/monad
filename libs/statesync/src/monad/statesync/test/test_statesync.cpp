@@ -1,5 +1,6 @@
 #include <monad/async/util.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
@@ -11,11 +12,16 @@
 #include <test_resource_data.h>
 
 #include <ethash/keccak.hpp>
+#include <evmc/hex.hpp>
 #include <gtest/gtest.h>
 
 #include <deque>
 #include <filesystem>
 #include <fstream>
+
+using namespace monad;
+using namespace monad::mpt;
+using namespace monad::test;
 
 struct monad_statesync_client
 {
@@ -26,11 +32,8 @@ struct monad_statesync_server_network
 {
     monad_statesync_client *client;
     monad_statesync_client_context *cctx;
+    byte_string buf;
 };
-
-using namespace monad;
-using namespace monad::mpt;
-using namespace monad::test;
 
 namespace
 {
@@ -87,13 +90,19 @@ namespace
     }
 
     void statesync_server_send_upsert(
-        monad_statesync_server_network *const net,
-        unsigned char const *const key, uint64_t const key_size,
-        unsigned char const *const value, uint64_t const value_size,
-        bool const code)
+        monad_statesync_server_network *const net, monad_sync_type const type,
+        unsigned char const *const v1, uint64_t const size1,
+        unsigned char const *const v2, uint64_t const size2)
     {
+        net->buf.clear();
+        if (v1 != nullptr) {
+            net->buf.append(v1, size1);
+        }
+        if (v2 != nullptr) {
+            net->buf.append(v2, size2);
+        }
         monad_statesync_client_handle_upsert(
-            net->cctx, key, key_size, value, value_size, code);
+            net->cctx, type, net->buf.data(), net->buf.size());
     }
 
     void statesync_server_send_done(
@@ -408,12 +417,7 @@ TEST_F(StateSyncFixture, ignore_unused_code)
             0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32));
     // send some random code
     statesync_server_send_upsert(
-        &net,
-        code_hash.bytes,
-        sizeof(code_hash),
-        code.data(),
-        code.size(),
-        true);
+        &net, SyncTypeUpsertCode, code.data(), code.size(), nullptr, 0);
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
     OnDiskMachine machine;

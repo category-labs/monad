@@ -78,11 +78,6 @@ public:
         return !data_;
     }
 
-    unsigned char const *data() const noexcept
-    {
-        return data_.get();
-    }
-
     constexpr unsigned data_size() const noexcept
     {
         return (static_cast<size_type>(begin_nibble_) == end_nibble_)

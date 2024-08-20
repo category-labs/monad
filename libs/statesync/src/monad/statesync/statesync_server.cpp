@@ -3,6 +3,8 @@
 #include <monad/core/basic_formatter.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/keccak.hpp>
+#include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/unaligned.hpp>
 #include <monad/db/util.hpp>
 #include <monad/mpt/traverse.hpp>
@@ -28,9 +30,9 @@ struct monad_statesync_server
     ssize_t (*statesync_server_recv)(
         monad_statesync_server_network *, unsigned char *, size_t);
     void (*statesync_server_send_upsert)(
-        monad_statesync_server_network *, unsigned char const *key,
-        uint64_t key_size, unsigned char const *value, uint64_t value_size,
-        bool code);
+        struct monad_statesync_server_network *, monad_sync_type,
+        unsigned char const *v1, uint64_t size1, unsigned char const *v2,
+        uint64_t size2);
     void (*statesync_server_send_done)(
         monad_statesync_server_network *, monad_sync_done);
 };
@@ -68,20 +70,31 @@ bool send_deletion(
         if (!deleted.find(it, i)) {
             return false;
         }
-        for (auto const &[key, storage] : it->second) {
-            MONAD_ASSERT(key.size() == sizeof(bytes32_t));
-            if (!key.starts_with(prefix)) {
+        for (auto const &[addr, storage] : it->second) {
+            auto const hash = keccak256(addr.bytes);
+            byte_string_view const view{hash.bytes, sizeof(hash.bytes)};
+            if (!view.starts_with(prefix)) {
                 continue;
             }
             if (storage.empty()) {
                 sync->statesync_server_send_upsert(
-                    sync->net, key.data(), key.size(), nullptr, 0, false);
+                    sync->net,
+                    SyncTypeUpsertAccountDelete,
+                    reinterpret_cast<unsigned char const *>(&addr),
+                    sizeof(addr),
+                    nullptr,
+                    0);
             }
             else {
                 for (auto const &skey : storage) {
-                    auto const dkey = key + skey;
+                    auto const key = rlp::encode_bytes32_compact(skey);
                     sync->statesync_server_send_upsert(
-                        sync->net, dkey.data(), dkey.size(), nullptr, 0, false);
+                        sync->net,
+                        SyncTypeUpsertStorageDelete,
+                        reinterpret_cast<unsigned char const *>(&addr),
+                        sizeof(addr),
+                        key.data(),
+                        key.size());
                 }
             }
         }
@@ -94,22 +107,19 @@ bool statesync_server_handle_request(
 {
     struct Traverse final : public TraverseMachine
     {
-        enum class Section : uint8_t
-        {
-            None,
-            State,
-            Code
-        } section;
+        unsigned char nibble;
+        unsigned depth;
+        Address addr;
         monad_statesync_server *sync;
         NibblesView prefix;
-        Nibbles path;
         uint64_t from;
         uint64_t until;
 
         Traverse(
             monad_statesync_server *const sync, NibblesView const prefix,
             uint64_t const from, uint64_t const until)
-            : section{Section::None}
+            : nibble{INVALID_BRANCH}
+            , depth{0}
             , sync{sync}
             , prefix{prefix}
             , from{from}
@@ -119,27 +129,26 @@ bool statesync_server_handle_request(
 
         virtual bool down(unsigned char const branch, Node const &node) override
         {
-            if (section == Section::None) {
-                MONAD_ASSERT(branch != RECEIPT_NIBBLE);
-                if (branch == STATE_NIBBLE) {
-                    section = Section::State;
-                }
-                else if (branch == CODE_NIBBLE) {
-                    section = Section::Code;
-                }
+            if (branch == INVALID_BRANCH) {
+                MONAD_ASSERT(depth == 0);
+                return true;
+            }
+            else if (depth == 0 && nibble == INVALID_BRANCH) {
+                nibble = branch;
                 return true;
             }
 
-            if (path.nibble_size() < prefix.nibble_size()) {
-                MONAD_ASSERT(prefix.get(path.nibble_size()) == branch);
-                auto const ext = node.path_nibble_view();
-                auto const rest = prefix.substr(path.nibble_size() + 1);
-                for (unsigned i = 0;
-                     i < ext.nibble_size() && i < rest.nibble_size();
-                     ++i) {
-                    if (ext.get(i) != rest.get(i)) {
-                        return false;
-                    }
+            MONAD_ASSERT(nibble == STATE_NIBBLE || nibble == CODE_NIBBLE);
+            MONAD_ASSERT(
+                depth >= prefix.nibble_size() || prefix.get(depth) == branch);
+            auto const ext = node.path_nibble_view();
+            for (auto i = depth + 1; i < prefix.nibble_size(); ++i) {
+                auto const j = i - (depth + 1);
+                if (j >= ext.nibble_size()) {
+                    break;
+                }
+                if (ext.get(j) != prefix.get(i)) {
+                    return false;
                 }
             }
 
@@ -149,48 +158,58 @@ bool statesync_server_handle_request(
                 return false;
             }
 
-            path = concat(NibblesView{path}, branch, node.path_nibble_view());
+            depth += 1 + ext.nibble_size();
 
-            // TODO: change this to send the unhashed key, get rid of
-            // NibblesView::data
-            constexpr auto HASH_SIZE = KECCAK256_SIZE * 2;
-            auto const n = path.nibble_size();
-            if ((n == HASH_SIZE || n == HASH_SIZE * 2) && v <= until) {
-                MONAD_ASSERT(n == HASH_SIZE || section == Section::State);
-                MONAD_ASSERT(NibblesView{path}.starts_with(prefix));
-                MONAD_ASSERT(node.has_value());
-                sync->statesync_server_send_upsert(
-                    sync->net,
-                    path.data(),
-                    path.nibble_size() / 2,
-                    node.value().data(),
-                    node.value().size(),
-                    section == Section::Code);
+            if (node.has_value() && v <= until) {
+                constexpr unsigned HASH_SIZE = KECCAK256_SIZE * 2;
+                auto const send_upsert = [&](monad_sync_type const type,
+                                             unsigned char const *const v1 =
+                                                 nullptr,
+                                             uint64_t const size1 = 0) {
+                    sync->statesync_server_send_upsert(
+                        sync->net,
+                        type,
+                        v1,
+                        size1,
+                        node.value().data(),
+                        node.value().size());
+                };
+                if (nibble == CODE_NIBBLE) {
+                    MONAD_ASSERT(depth == HASH_SIZE);
+                    send_upsert(SyncTypeUpsertCode);
+                }
+                else {
+                    MONAD_ASSERT(nibble == STATE_NIBBLE);
+                    if (depth == HASH_SIZE) {
+                        send_upsert(SyncTypeUpsertAccount);
+                        if (node.number_of_children() > 0) {
+                            auto raw = node.value();
+                            auto const val = decode_account_db(raw);
+                            MONAD_ASSERT(val.has_value());
+                            addr = std::get<Address>(val.assume_value());
+                        }
+                    }
+                    else {
+                        MONAD_ASSERT(depth == (HASH_SIZE * 2));
+                        send_upsert(
+                            SyncTypeUpsertStorage,
+                            reinterpret_cast<unsigned char *>(&addr),
+                            sizeof(addr));
+                    }
+                }
             }
-
             return true;
         }
 
-        virtual void up(unsigned char const branch, Node const &node) override
+        virtual void up(unsigned char const, Node const &node) override
         {
-            if (path.empty()) {
-                section = Section::None;
+            if (depth == 0) {
+                nibble = INVALID_BRANCH;
                 return;
             }
-            auto const path_view = NibblesView{path};
-            auto const rem_size = [&] {
-                if (branch == INVALID_BRANCH) {
-                    return 0;
-                }
-                int const rem_size = path_view.nibble_size() - 1 -
-                                     node.path_nibble_view().nibble_size();
-                MONAD_ASSERT(rem_size >= 0);
-                MONAD_ASSERT(
-                    path_view.substr(static_cast<unsigned>(rem_size)) ==
-                    concat(branch, node.path_nibble_view()));
-                return rem_size;
-            }();
-            path = path_view.substr(0, static_cast<unsigned>(rem_size));
+            unsigned const subtrahend = 1 + node.path_nibbles_len();
+            MONAD_ASSERT(depth >= subtrahend);
+            depth -= subtrahend;
         }
 
         virtual std::unique_ptr<TraverseMachine> clone() const override
@@ -201,7 +220,8 @@ bool statesync_server_handle_request(
         virtual bool
         should_visit(Node const &node, unsigned char const branch) override
         {
-            if (section == Section::None) {
+            if (depth == 0 && nibble == INVALID_BRANCH) {
+                MONAD_ASSERT(branch != INVALID_BRANCH);
                 return branch == STATE_NIBBLE || branch == CODE_NIBBLE;
             }
             auto const v =
@@ -210,8 +230,7 @@ bool statesync_server_handle_request(
             if (static_cast<uint64_t>(v) > until) {
                 return false;
             }
-            return path.nibble_size() >= prefix.nibble_size() ||
-                   prefix.get(path.nibble_size()) == branch;
+            return depth >= prefix.nibble_size() || prefix.get(depth) == branch;
         }
     };
 
@@ -236,7 +255,7 @@ bool statesync_server_handle_request(
     }
     auto const end = std::chrono::steady_clock::now();
 
-    LOG_DEBUG(
+    LOG_INFO(
         "processed request prefix={} prefix_bytes={} target={} from={} "
         "until={} "
         "old_target={} overall={} traverse={}",
@@ -279,9 +298,9 @@ struct monad_statesync_server *monad_statesync_server_create(
     ssize_t (*statesync_server_recv)(
         monad_statesync_server_network *, unsigned char *, size_t),
     void (*statesync_server_send_upsert)(
-        monad_statesync_server_network *, unsigned char const *key,
-        uint64_t key_size, unsigned char const *value, uint64_t value_size,
-        bool code),
+        monad_statesync_server_network *, monad_sync_type,
+        unsigned char const *v1, uint64_t size1, unsigned char const *v2,
+        uint64_t size2),
     void (*statesync_server_send_done)(
         monad_statesync_server_network *, struct monad_sync_done))
 {

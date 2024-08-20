@@ -1,12 +1,14 @@
 #pragma once
 
-#include <monad/config.hpp>
+#include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/mpt/db.hpp>
+#include <monad/state2/state_deltas.hpp>
 
-#include <komihash.h>
+#include <ankerl/unordered_dense.h>
 
 #include <filesystem>
 #include <vector>
@@ -14,48 +16,22 @@
 struct monad_statesync_client;
 struct monad_sync_request;
 
-MONAD_NAMESPACE_BEGIN
-
-struct byte_string_hash
-{
-    using is_transparent = void;
-    using is_avalanching = void;
-
-    uint64_t operator()(byte_string_view const str) const
-    {
-        return komihash(str.data(), str.size(), 0);
-    }
-};
-
-template <class V>
-using ByteStringMap = ankerl::unordered_dense::segmented_map<
-    byte_string, V, byte_string_hash, std::equal_to<>>;
-
-struct SyncEntry
-{
-    byte_string value;
-    bool incarnation;
-    ByteStringMap<byte_string> storage;
-};
-
-using SyncState = ByteStringMap<SyncEntry>;
-
-using SyncCode = ankerl::unordered_dense::segmented_map<
-    monad::bytes32_t, monad::byte_string>;
-
-MONAD_NAMESPACE_END
-
 struct monad_statesync_client_context
 {
+    template <class K, class V>
+    using Map = ankerl::unordered_dense::segmented_map<K, V>;
+
     monad::OnDiskMachine machine;
     monad::mpt::Db db;
+    monad::TrieDb tdb;
     std::vector<uint64_t> progress;
     uint8_t prefix_bytes;
     uint64_t target;
     uint64_t current;
     monad::bytes32_t expected_root;
-    monad::SyncState state;
-    monad::SyncCode code;
+    Map<monad::Address, monad::StorageDeltas> buffered;
+    Map<monad::bytes32_t, monad::byte_string> code;
+    monad::StateDeltas deltas;
     std::unordered_set<monad::bytes32_t> hash;
     uint64_t n_upserts;
     std::filesystem::path genesis;

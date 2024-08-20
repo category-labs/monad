@@ -1,7 +1,8 @@
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
-#include <monad/core/block.hpp>
 #include <monad/core/likely.h>
+#include <monad/core/rlp/bytes_rlp.hpp>
+#include <monad/core/unaligned.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/execution/genesis.hpp>
 #include <monad/statesync/statesync_client.h>
@@ -15,166 +16,126 @@ using namespace monad::mpt;
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-constexpr Nibbles state_key(byte_string_view const key)
+bytes32_t read_storage(
+    monad_statesync_client_context &ctx, Address const &addr,
+    bytes32_t const &key)
 {
-    return concat(STATE_NIBBLE, NibblesView{key});
+    return ctx.tdb.read_storage(addr, Incarnation{0, 0}, key);
 }
 
-void account_delete(SyncState &state, mpt::Db &db, byte_string_view const key)
+void commit(monad_statesync_client_context &ctx)
 {
-    auto const val = db.get(state_key(key), db.get_latest_block_id());
-    if (val.has_value()) {
-        MONAD_ASSERT(!val.assume_value().empty())
-        state[key] = {.value = {}, .incarnation = false, .storage = {}};
-    }
-    else if (auto it = state.find(key); it != state.end()) {
-        state.erase(it);
-    }
-}
-
-void storage_delete(SyncState &state, mpt::Db &db, byte_string_view const key)
-{
-    auto const akey = key.substr(0, sizeof(bytes32_t));
-    auto const skey = key.substr(sizeof(bytes32_t), sizeof(bytes32_t));
-    auto const val = db.get(state_key(key), db.get_latest_block_id());
-    if (val.has_value()) {
-        auto const acct = db.get(state_key(akey), db.get_latest_block_id());
-        MONAD_ASSERT(acct.has_value() && !val.assume_value().empty())
-        auto it = state
-                      .emplace(
-                          akey,
-                          SyncEntry{
-                              .value = byte_string{acct.assume_value()},
-                              .incarnation = false,
-                              .storage = {}})
-                      .first;
-        it->second.storage[skey] = {};
-    }
-    else if (state.contains(akey) && state[akey].storage.contains(skey)) {
-        state[akey].storage.erase(skey);
-        auto const acct = db.get(state_key(akey), db.get_latest_block_id());
-        if (state[akey].storage.empty() && state[akey].value.empty() &&
-            !acct.has_value()) {
-            state.erase(akey);
+    Code code;
+    std::unordered_set<bytes32_t> remaining;
+    for (auto const &hash : ctx.hash) {
+        auto const it = ctx.code.find(hash);
+        if (it != ctx.code.end()) {
+            MONAD_ASSERT(code.emplace(
+                hash, std::make_shared<CodeAnalysis>(analyze(it->second))));
+            ctx.code.erase(it);
+        }
+        else {
+            remaining.insert(hash);
         }
     }
+    ctx.hash = std::move(remaining);
+
+    ctx.tdb.set_block_number(ctx.current);
+    ctx.tdb.commit(ctx.deltas, code);
+    ctx.deltas.clear();
 }
 
 void account_update(
-    SyncState &state, std::unordered_set<bytes32_t> &hash,
-    byte_string_view const key, byte_string_view const val)
+    monad_statesync_client_context &ctx, Address const &addr,
+    std::optional<Account> const &acct)
 {
-    byte_string_view enc = val;
-    auto after = decode_account_db(enc);
-    MONAD_ASSERT(after.has_value());
-    after.value().second.incarnation = Incarnation{0, 0};
-    hash.insert(after.value().second.code_hash);
-    auto it = state.find(key);
-    if (it != state.end() && it->second.value.empty()) {
-        it->second.incarnation = true;
+    if (acct.has_value() && acct.value().code_hash != NULL_HASH) {
+        ctx.hash.insert(acct.value().code_hash);
     }
-    it = state
-             .emplace(
-                 key,
-                 SyncEntry{.value = {}, .incarnation = false, .storage = {}})
-             .first;
-    it->second.value =
-        encode_account_db(after.value().first, after.value().second);
+
+    StateDeltas::accessor it;
+    auto const updated = ctx.deltas.find(it, addr);
+
+    if (ctx.buffered.contains(addr)) {
+        MONAD_ASSERT(!ctx.tdb.read_account(addr).has_value() && !updated);
+        if (acct.has_value()) {
+            MONAD_ASSERT(ctx.deltas.emplace(
+                addr,
+                StateDelta{
+                    .account = {std::nullopt, acct},
+                    .storage = std::move(ctx.buffered.at(addr))}));
+        }
+        ctx.buffered.erase(addr);
+    }
+    else if (!updated) {
+        MONAD_ASSERT(ctx.deltas.emplace(
+            it,
+            addr,
+            StateDelta{
+                .account = {ctx.tdb.read_account(addr), acct}, .storage = {}}));
+    }
+    else if ( // incarnation
+        it->second.account.first.has_value() &&
+        !it->second.account.second.has_value() && acct.has_value()) {
+        it.release();
+        commit(ctx);
+        account_update(ctx, addr, acct);
+    }
+    else {
+        it->second.account.second = acct;
+    }
 }
 
 void storage_update(
-    SyncState &state, mpt::Db &db, byte_string_view const key,
-    byte_string_view val)
+    monad_statesync_client_context &ctx, Address const &addr,
+    bytes32_t const &key, bytes32_t const &val)
 {
-    MONAD_ASSERT(!val.empty());
-    auto const akey = key.substr(0, sizeof(bytes32_t));
-    auto const skey = key.substr(sizeof(bytes32_t), sizeof(bytes32_t));
-    auto it = state.find(akey);
-    if (it == state.end()) {
-        auto const acct = db.get(state_key(akey), db.get_latest_block_id());
-        it = state
-                 .emplace(
-                     akey,
-                     SyncEntry{
-                         .value = acct.has_value()
-                                      ? byte_string{acct.assume_value()}
-                                      : byte_string{},
-                         .incarnation = false,
-                         .storage = {}})
-                 .first;
-    }
+    StateDeltas::accessor it;
+    auto const updated = ctx.deltas.find(it, addr);
 
-    auto const res = decode_storage_db(val);
-    MONAD_ASSERT(res.has_value());
-    auto const to = encode_storage_db({}, res.value().second);
-    it->second.storage[skey] = to;
-}
-
-void commit(monad_statesync_client_context &ctx, mpt::Db &db)
-{
-    std::list<mpt::Update> alloc;
-    UpdateList accounts;
-    SyncState tmp_state;
-    for (auto &[key, entry] : ctx.state) {
-        if (entry.value.empty() && !entry.storage.empty()) {
-            tmp_state.emplace(key, std::move(entry));
-            continue;
-        }
-        UpdateList storage;
-        for (auto const &[skey, val] : entry.storage) {
-            storage.push_front(alloc.emplace_back(Update{
-                .key = NibblesView{skey},
-                .value = val.empty()
-                             ? std::nullopt
-                             : std::make_optional<byte_string_view>(val),
-                .incarnation = false,
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(ctx.current)}));
-        }
-        accounts.push_front(alloc.emplace_back(Update{
-            .key = NibblesView{key},
-            .value = entry.value.empty()
-                         ? std::nullopt
-                         : std::make_optional<byte_string_view>(entry.value),
-            .incarnation = entry.incarnation,
-            .next = std::move(storage),
-            .version = static_cast<int64_t>(ctx.current)}));
-    }
-    UpdateList code_updates;
-
-    SyncCode tmp_code;
-    for (auto &[key, val] : ctx.code) {
-        if (ctx.hash.contains(key)) {
-            code_updates.push_front(alloc.emplace_back(Update{
-                .key = NibblesView{key},
-                .value = val,
-                .incarnation = false,
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(ctx.current)}));
+    if (ctx.buffered.contains(addr)) {
+        MONAD_ASSERT(!ctx.tdb.read_account(addr).has_value() && !updated);
+        if (val == bytes32_t{}) {
+            ctx.buffered[addr].erase(key);
+            if (ctx.buffered[addr].empty()) {
+                ctx.buffered.erase(addr);
+            }
         }
         else {
-            tmp_code.emplace(key, std::move(val));
+            StorageDeltas::accessor sit;
+            if (ctx.buffered[addr].find(sit, key)) {
+                sit->second.second = val;
+            }
+            else {
+                MONAD_ASSERT(
+                    ctx.buffered[addr].emplace(key, StorageDelta{{}, val}));
+            }
         }
     }
-
-    auto state_update = Update{
-        .key = state_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(accounts),
-        .version = static_cast<int64_t>(ctx.current)};
-    auto code_update = Update{
-        .key = code_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(code_updates),
-        .version = static_cast<int64_t>(ctx.current)};
-    UpdateList updates;
-    updates.push_front(state_update);
-    updates.push_front(code_update);
-    db.upsert(std::move(updates), ctx.current);
-    ctx.state = std::move(tmp_state);
-    ctx.code = std::move(tmp_code);
+    else if (updated) {
+        StorageDeltas::accessor sit;
+        if (it->second.storage.find(sit, key)) {
+            sit->second.second = val;
+        }
+        else {
+            MONAD_ASSERT(it->second.storage.emplace(
+                key, StorageDelta{read_storage(ctx, addr, key), val}));
+        }
+    }
+    else {
+        auto const orig = ctx.tdb.read_account(addr);
+        if (!orig.has_value()) {
+            MONAD_ASSERT(
+                ctx.buffered[addr].emplace(key, StorageDelta{{}, val}));
+        }
+        else {
+            MONAD_ASSERT(ctx.deltas.emplace(
+                addr,
+                StateDelta{
+                    .account = {orig, orig},
+                    .storage = {{key, {read_storage(ctx, addr, key), val}}}}));
+        }
+    }
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END
@@ -219,8 +180,7 @@ void monad_statesync_client_handle_target(
     }
     else if (msg.n == 0) {
         MONAD_ASSERT(ctx->db.get_latest_block_id() == INVALID_BLOCK_ID);
-        TrieDb db{ctx->db};
-        read_genesis(ctx->genesis, db);
+        read_genesis(ctx->genesis, ctx->tdb);
         ctx->progress.assign(ctx->progress.size(), msg.n);
     }
     else {
@@ -243,48 +203,49 @@ void monad_statesync_client_handle_target(
         }
     }
     ctx->target = msg.n;
-    std::memcpy(ctx->expected_root.bytes, msg.state_root, sizeof(bytes32_t));
+    ctx->expected_root =
+        to_bytes(byte_string_view{msg.state_root, sizeof(bytes32_t)});
 }
 
 void monad_statesync_client_handle_upsert(
-    monad_statesync_client_context *const ctx, unsigned char const *const key,
-    uint64_t const key_size, unsigned char const *const value,
-    uint64_t const value_size, bool const code)
+    monad_statesync_client_context *const ctx, monad_sync_type const type,
+    unsigned char const *const val, uint64_t const size)
 {
-    byte_string_view const k(key, key_size);
-    byte_string_view const v(value, value_size);
-
-    if (code) {
-        // code is immutable once inserted
-        MONAD_ASSERT(value != nullptr);
-        MONAD_ASSERT(key_size == sizeof(bytes32_t));
-        bytes32_t hash;
-        std::memcpy(hash.bytes, key, sizeof(bytes32_t));
-        ctx->code.emplace(hash, v);
+    byte_string_view raw{val, size};
+    if (type == SyncTypeUpsertCode) {
+        // code is immutable once inserted - no deletions
+        ctx->code.emplace(std::bit_cast<bytes32_t>(keccak256(raw)), raw);
+    }
+    else if (type == SyncTypeUpsertAccount) {
+        auto const res = decode_account_db(raw);
+        MONAD_ASSERT(res.has_value());
+        auto [addr, acct] = res.value();
+        acct.incarnation = Incarnation{0, 0};
+        account_update(*ctx, addr, acct);
+    }
+    else if (type == SyncTypeUpsertStorage) {
+        MONAD_ASSERT(size >= sizeof(Address));
+        raw.remove_prefix(sizeof(Address));
+        auto const res = decode_storage_db(raw);
+        MONAD_ASSERT(res.has_value());
+        auto const &[k, v] = res.value();
+        storage_update(*ctx, unaligned_load<Address>(val), k, v);
+    }
+    else if (type == SyncTypeUpsertAccountDelete) {
+        MONAD_ASSERT(size == sizeof(Address));
+        account_update(*ctx, unaligned_load<Address>(val), std::nullopt);
     }
     else {
-        MONAD_ASSERT(value_size != 0 || value == nullptr);
-        if (key_size == sizeof(bytes32_t)) {
-            if (value == nullptr) {
-                account_delete(ctx->state, ctx->db, k);
-            }
-            else {
-                account_update(ctx->state, ctx->hash, k, v);
-            }
-        }
-        else {
-            MONAD_ASSERT(key_size == (sizeof(bytes32_t) * 2));
-            if (value == nullptr) {
-                storage_delete(ctx->state, ctx->db, k);
-            }
-            else {
-                storage_update(ctx->state, ctx->db, k, v);
-            }
-        }
+        MONAD_ASSERT(type == SyncTypeUpsertStorageDelete);
+        MONAD_ASSERT(size >= sizeof(Address));
+        raw.remove_prefix(sizeof(Address));
+        auto const res = rlp::decode_bytes32_compact(raw);
+        MONAD_ASSERT(res.has_value());
+        storage_update(*ctx, unaligned_load<Address>(val), res.value(), {});
     }
 
     if ((++ctx->n_upserts % (1 << 20)) == 0) {
-        commit(*ctx, ctx->db);
+        commit(*ctx);
     }
 }
 
@@ -310,30 +271,20 @@ void monad_statesync_client_handle_done(
     }
 
     if (MONAD_UNLIKELY(monad_statesync_client_has_reached_target(ctx))) {
-        commit(*ctx, ctx->db);
+        commit(*ctx);
     }
 }
 
 bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
 {
-    MONAD_ASSERT(ctx->state.empty());
-    for (auto const &hash : ctx->hash) {
-        if (hash == NULL_HASH) {
-            continue;
-        }
-        auto const code = ctx->db.get(
-            concat(CODE_NIBBLE, NibblesView{to_byte_string_view(hash.bytes)}),
-            ctx->db.get_latest_block_id());
-        MONAD_ASSERT(code.has_value());
-        if (hash != to_bytes(keccak256(code.value()))) {
-            return false;
-        }
-    }
+    MONAD_ASSERT(
+        ctx->buffered.empty() && ctx->deltas.empty() && ctx->hash.empty());
     if (ctx->db.get_latest_block_id() != ctx->target) {
-        ctx->db.move_trie_version_forward(ctx->current, ctx->target);
+        ctx->db.move_trie_version_forward(
+            ctx->db.get_latest_block_id(), ctx->target);
     }
-    MONAD_ASSERT(ctx->target == ctx->db.get_latest_block_id());
     TrieDb db{ctx->db};
+    MONAD_ASSERT(db.get_block_number() == ctx->target);
     return db.state_root() == ctx->expected_root;
 }
 

@@ -22,6 +22,7 @@ monad_statesync_client_context::monad_statesync_client_context(
              .uring_entries = 128,
              .sq_thread_cpu = get_nprocs() - 1,
              .dbname_paths = dbname_paths}}
+    , tdb{db}
     , progress(
           static_cast<size_t>(std::pow(16, prefix_bytes * 2)),
           db.get_latest_block_id())

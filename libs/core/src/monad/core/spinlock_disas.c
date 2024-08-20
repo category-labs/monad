@@ -1,21 +1,21 @@
 #include <monad/core/spinlock.h>
 
-void spinlock_init_disas(spinlock_t *const lock)
+void spinlock_init_disas(monad_spinlock_t *const lock)
 {
-    spinlock_init(lock);
+    monad_spinlock_init(lock);
 }
 
-bool spinlock_try_lock_disas(spinlock_t *const lock)
+bool spinlock_try_lock_disas(monad_spinlock_t *const lock)
 {
-    return spinlock_try_lock(lock);
+    return monad_spinlock_try_lock(lock);
 }
 
-void spinlock_lock_disas(spinlock_t *const lock)
+void spinlock_lock_disas(monad_spinlock_t *const lock)
 {
-    spinlock_lock(lock);
+    monad_spinlock_lock(lock);
 }
 
-void spinlock_unlock_disas(spinlock_t *const lock)
+void spinlock_unlock_disas(monad_spinlock_t *const lock)
 {
-    spinlock_unlock(lock);
+    monad_spinlock_unlock(lock);
 }

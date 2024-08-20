@@ -8,7 +8,6 @@
 MONAD_MPT_NAMESPACE_BEGIN
 
 struct Compute;
-enum class CacheOption : uint8_t;
 
 struct StateMachine
 {

@@ -68,10 +68,6 @@ void log_tps(
     uint64_t const block_num, uint64_t const nblocks, uint64_t const ntxs,
     uint64_t const gas, std::chrono::steady_clock::time_point const begin)
 {
-    if (!nblocks || !ntxs) {
-        return;
-    }
-
     auto const now = std::chrono::steady_clock::now();
     auto const elapsed =
         std::chrono::duration_cast<std::chrono::microseconds>(now - begin)

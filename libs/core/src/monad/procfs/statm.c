@@ -1,6 +1,6 @@
-#include <monad/procfs/statm.h>
-
+#include <monad/core/cleanup.h>
 #include <monad/core/likely.h>
+#include <monad/procfs/statm.h>
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -17,7 +17,8 @@ __attribute__((constructor)) static void monad_procfs_statm_init()
 bool monad_procfs_self_statm(
     long *const size, long *const resident, long *const shared)
 {
-    FILE *const fp = fopen("/proc/self/statm", "r");
+    FILE *const fp [[gnu::cleanup(cleanup_fclose)]] =
+        fopen("/proc/self/statm", "r");
     if (MONAD_UNLIKELY(!fp)) {
         return false;
     }

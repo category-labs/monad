@@ -208,6 +208,7 @@ Result<Receipt> execute_impl(
         TRACE_TXN_EVENT(StartExecution);
 
         State state{block_state, Incarnation{hdr.number, i + 1}};
+        state.set_original_nonce(sender, tx.nonce);
 
         auto result = execute_impl2<rev>(
             chain, tx, sender, hdr, block_hash_buffer, state);

@@ -152,6 +152,16 @@ public:
         return recent_account_state(address).account_;
     }
 
+    void set_original_nonce(Address const &address, uint64_t const nonce)
+    {
+        auto &account_state = original_account_state(address);
+        auto &account = account_state.account_;
+        if (!account.has_value()) {
+            account = Account{};
+        }
+        account->nonce = nonce;
+    }
+
     ////////////////////////////////////////
 
     bool account_exists(Address const &address)

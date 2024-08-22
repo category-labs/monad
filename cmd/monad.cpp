@@ -443,6 +443,14 @@ int main(int const argc, char const *argv[])
                 }
                 MONAD_ASSERT(fs::is_regular_file(path));
                 std::ifstream istream(path);
+                if (!istream) {
+                    LOG_ERROR_LIMIT(
+                        std::chrono::seconds(30),
+                        "Opening {} failed with {}",
+                        path,
+                        strerror(errno));
+                    return std::nullopt;
+                }
                 std::ostringstream buf;
                 buf << istream.rdbuf();
                 auto view = byte_string_view{

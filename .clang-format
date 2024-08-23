@@ -16,7 +16,8 @@ AlignConsecutiveAssignments: None
 AlignConsecutiveBitFields: None
 AlignConsecutiveDeclarations: None
 AlignConsecutiveMacros: None
-AlignTrailingComments: false
+AlignTrailingComments:
+  Kind: Leave
 AllowShortFunctionsOnASingleLine: Empty
 AlwaysBreakTemplateDeclarations: Yes
 BinPackArguments: false

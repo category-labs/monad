@@ -517,7 +517,7 @@ int main(int argc, char *argv[])
 {
     std::vector<std::filesystem::path> dbname_paths{"test.db"};
 
-    CLI::App cli{"interactive_db_cli"};
+    CLI::App cli{"monad_cli"};
     cli.add_option(
            "--db",
            dbname_paths,

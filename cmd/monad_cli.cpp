@@ -42,6 +42,9 @@
 #include <utility>
 #include <vector>
 
+#include <stdio.h>
+#include <unistd.h>
+
 using namespace monad;
 using namespace monad::mpt;
 
@@ -452,7 +455,10 @@ int interactive_impl(Db &db)
 
     while (true) {
         fmt::print("(monaddb) ");
-        std::getline(std::cin, line);
+        if (!std::getline(std::cin, line)) {
+            fmt::print("\n");
+            break;
+        }
 
         auto const tokens = tokenize(line);
         if (tokens.empty()) {
@@ -531,6 +537,12 @@ int main(int argc, char *argv[])
     }
     catch (CLI::RequiredError const &e) {
         return cli.exit(e);
+    }
+
+    if (!isatty(STDIN_FILENO)) {
+        fmt::println("Not running interactively! Pass -it to run inside a "
+                     "docker container.");
+        return 1;
     }
 
     ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = dbname_paths};

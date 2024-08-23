@@ -523,7 +523,15 @@ int main(int argc, char *argv[])
            dbname_paths,
            "A comma-separated list of previously created database paths")
         ->required();
-    cli.parse(argc, argv);
+    try {
+        cli.parse(argc, argv);
+    }
+    catch (CLI::CallForHelp const &e) {
+        return cli.exit(e);
+    }
+    catch (CLI::RequiredError const &e) {
+        return cli.exit(e);
+    }
 
     ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = dbname_paths};
 

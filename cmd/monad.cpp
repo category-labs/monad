@@ -383,7 +383,7 @@ int main(int const argc, char const *argv[])
         });
     }
 
-    if (snapshot.empty()) {
+    if (snapshot.empty() && init_block_num != 0) {
         auto const start_time = std::chrono::steady_clock::now();
         auto const nodes_loaded = triedb.prefetch_current_root();
         LOG_INFO(

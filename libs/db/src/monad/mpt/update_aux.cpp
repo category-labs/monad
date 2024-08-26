@@ -305,6 +305,22 @@ void UpdateAuxImpl::set_io(AsyncIO *io_, uint64_t const history_len)
             }
         }
     }
+
+    constexpr unsigned magic_prefix_len =
+        detail::db_metadata::MAGIC_STRING_LEN - 1;
+    if (0 == memcmp(
+                 db_metadata_[0]->magic,
+                 detail::db_metadata::MAGIC,
+                 magic_prefix_len) &&
+        db_metadata_[0]->magic[magic_prefix_len] !=
+            detail::db_metadata::MAGIC[magic_prefix_len]) {
+        std::stringstream ss;
+        ss << "DB was generated with version " << db_metadata_[0]->magic
+           << ". The current code base is on version "
+           << monad::mpt::detail::db_metadata::MAGIC
+           << ". Please regenerate with the new DB version.";
+        throw std::runtime_error(ss.str());
+    }
     // Replace any dirty copy with the non-dirty copy
     if (0 == memcmp(
                  db_metadata_[0]->magic,

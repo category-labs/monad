@@ -776,9 +776,12 @@ public:
                         monad::mpt::detail::db_metadata::MAGIC,
                         monad::mpt::detail::db_metadata::MAGIC_STRING_LEN)) {
                     std::stringstream ss;
-                    ss << "DB archive was generated with a different version "
-                          "than the current code base, please regenerate "
-                          "archive with the new DB version";
+                    ss << "DB archive was generated with version "
+                       << old_metadata->magic
+                       << ". The current code base is on version "
+                       << monad::mpt::detail::db_metadata::MAGIC
+                       << ". Please regenerate archive with the new DB "
+                          "version.";
                     throw std::runtime_error(ss.str());
                 }
                 auto cnv_chunk =

@@ -69,11 +69,13 @@ void log_tps(
     uint64_t const gas, std::chrono::steady_clock::time_point const begin)
 {
     auto const now = std::chrono::steady_clock::now();
-    auto const elapsed =
-        std::chrono::duration_cast<std::chrono::microseconds>(now - begin)
-            .count();
-    uint64_t const tps = (ntxs) * 1'000'000 / static_cast<uint64_t>(elapsed);
-    uint64_t const gps = gas / static_cast<uint64_t>(elapsed);
+    auto const elapsed = std::max(
+        static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(now - begin)
+                .count()),
+        1UL); // for the unlikely case that elapsed < 1 mic
+    uint64_t const tps = (ntxs) * 1'000'000 / elapsed;
+    uint64_t const gps = gas / elapsed;
 
     LOG_INFO(
         "Run {:4d} blocks to {:8d}, number of transactions {:6d}, "

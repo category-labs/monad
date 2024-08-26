@@ -628,8 +628,8 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
                   << read_version << ". Did " << nsuccess << " successful and "
                   << nfailed << " failed reads" << std::endl;
         EXPECT_TRUE(nsuccess > 0);
-        EXPECT_TRUE(read_version <= ro_db.get_latest_block_id());
-        EXPECT_TRUE(read_version >= ro_db.get_earliest_block_id());
+        EXPECT_LE(read_version, ro_db.get_latest_block_id());
+        EXPECT_GE(read_version, ro_db.get_earliest_block_id());
     };
 
     // construct RWDb

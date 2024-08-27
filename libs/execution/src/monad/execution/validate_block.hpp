@@ -4,6 +4,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
+#include <monad/execution/invoke_rev.hpp>
 
 #include <evmc/evmc.h>
 
@@ -52,7 +53,7 @@ Result<void> static_validate_header(BlockHeader const &);
 template <evmc_revision rev>
 Result<void> static_validate_block(Block const &);
 
-Result<void> static_validate_block(evmc_revision, Block const &);
+DECL_REV(static_validate_block);
 
 MONAD_NAMESPACE_END
 

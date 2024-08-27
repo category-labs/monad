@@ -1,5 +1,4 @@
 #include <monad/execution/explicit_evmc_revision.hpp>
-#include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/validate_block.hpp>
 
 #include <monad/config.hpp>
@@ -180,12 +179,6 @@ Result<void> static_validate_block(Block const &block)
 }
 
 EXPLICIT_EVMC_REVISION(static_validate_block);
-
-Result<void> static_validate_block(evmc_revision const rev, Block const &block)
-{
-    SWITCH_EVMC_REVISION(static_validate_block, block);
-    MONAD_ASSERT(false);
-}
 
 MONAD_NAMESPACE_END
 

@@ -3,6 +3,7 @@
 #include <monad/config.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
+#include <monad/execution/invoke_rev.hpp>
 #include <monad/fiber/priority_pool.hpp>
 
 #include <evmc/evmc.h>
@@ -20,8 +21,6 @@ Result<std::vector<Receipt>> execute_block(
     Chain const &, Block &, BlockState &, BlockHashBuffer const &,
     fiber::PriorityPool &);
 
-Result<std::vector<Receipt>> execute_block(
-    Chain const &, evmc_revision, Block &, BlockState &,
-    BlockHashBuffer const &, fiber::PriorityPool &);
+DECL_REV(execute_block);
 
 MONAD_NAMESPACE_END

@@ -13,6 +13,7 @@
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/genesis.hpp>
+#include <monad/execution/invoke_rev.hpp>
 #include <monad/execution/trace/event_trace.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
@@ -135,14 +136,15 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
 
         evmc_revision const rev = chain.get_revision(block.value().header);
 
-        BOOST_OUTCOME_TRY(static_validate_block(rev, block.value()));
+        BOOST_OUTCOME_TRY(
+            invoke_rev<rev_static_validate_block>(rev, block.value()));
 
         BlockState block_state(db);
         BOOST_OUTCOME_TRY(
             auto const receipts,
-            execute_block(
-                chain,
+            invoke_rev<rev_execute_block>(
                 rev,
+                chain,
                 block.value(),
                 block_state,
                 block_hash_buffer,

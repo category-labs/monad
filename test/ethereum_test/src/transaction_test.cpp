@@ -6,7 +6,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/core/transaction.hpp>
-#include <monad/execution/switch_evmc_revision.hpp>
+#include <monad/execution/invoke_rev.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/validate_transaction.hpp>
 #include <monad/test/config.hpp>
@@ -61,14 +61,7 @@ void process_transaction(Transaction const &txn, nlohmann::json const &expected)
     }
 }
 
-void process_transaction(
-    evmc_revision const rev, Transaction const &txn,
-    nlohmann::json const &expected)
-{
-    MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
-    SWITCH_EVMC_REVISION(process_transaction, txn, expected);
-    MONAD_ASSERT(false);
-}
+DECL_REV(process_transaction);
 
 void TransactionTest::TestBody()
 {
@@ -112,7 +105,8 @@ void TransactionTest::TestBody()
         }
         executed = true;
 
-        process_transaction(rev, txn.value(), expected);
+        MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
+        invoke_rev<rev_process_transaction>(rev, txn.value(), expected);
     }
 
     if (!executed) {

@@ -14,7 +14,6 @@
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
-#include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/trace/event_trace.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
@@ -154,20 +153,5 @@ Result<std::vector<Receipt>> execute_block(
 }
 
 EXPLICIT_EVMC_REVISION(execute_block);
-
-Result<std::vector<Receipt>> execute_block(
-    Chain const &chain, evmc_revision const rev, Block &block,
-    BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
-    fiber::PriorityPool &priority_pool)
-{
-    SWITCH_EVMC_REVISION(
-        execute_block,
-        chain,
-        block,
-        block_state,
-        block_hash_buffer,
-        priority_pool);
-    MONAD_ASSERT(false);
-}
 
 MONAD_NAMESPACE_END

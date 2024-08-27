@@ -34,9 +34,11 @@ std::optional<evmc::Result>
 check_sender_balance(State &state, evmc_message const &msg) noexcept
 {
     auto const value = intx::be::load<uint256_t>(msg.value);
-    auto const balance =
-        intx::be::load<uint256_t>(state.get_balance(msg.sender));
+    auto &account_state = state.recent_account_state(msg.sender);
+    auto const &account = account_state.account_;
+    auto const balance = account.has_value() ? account->balance : 0;
     if (balance < value) {
+        const_cast<AccountState &>(account_state).set_match_balance();
         return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
     }
     return std::nullopt;
@@ -59,6 +61,14 @@ evmc::Result transfer_call_balances(State &state, evmc_message const &msg)
         }
         else if (msg.flags != EVMC_STATIC) {
             transfer_balances(state, msg, msg.recipient);
+        }
+        else {
+            auto const value = intx::be::load<uint256_t>(msg.value);
+            if (value) {
+                auto &account_state = state.recent_account_state(msg.sender);
+                const_cast<AccountState &>(account_state)
+                    .add_to_min_balance(value);
+            }
         }
     }
     return evmc::Result{EVMC_SUCCESS};
@@ -256,6 +266,7 @@ template <evmc_revision rev>
 evmc::Result create_contract_account(
     EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
 {
+    state.set_relaxed(false);
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
 
     evmc_message m_call;

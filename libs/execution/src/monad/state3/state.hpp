@@ -52,6 +52,8 @@ class State
 
     unsigned version_{0};
 
+    bool relaxed_{false};
+
     AccountState &original_account_state(Address const &address)
     {
         auto it = original_.find(address);
@@ -63,6 +65,7 @@ class State
         return it->second;
     }
 
+public: // TODO
     AccountState const &recent_account_state(Address const &address)
     {
         // current
@@ -74,6 +77,7 @@ class State
         return original_account_state(address);
     }
 
+private: // TODO
     AccountState &current_account_state(Address const &address)
     {
         // current
@@ -126,6 +130,7 @@ public:
     void pop_reject()
     {
         MONAD_ASSERT(version_);
+        set_relaxed(false);
 
         std::vector<Address> removals;
 
@@ -143,6 +148,16 @@ public:
         }
 
         --version_;
+    }
+
+    bool is_relaxed() const
+    {
+        return relaxed_;
+    }
+
+    void set_relaxed(bool value)
+    {
+        relaxed_ = value;
     }
 
     ////////////////////////////////////////
@@ -183,9 +198,27 @@ public:
         return 0;
     }
 
+    void
+    subtract_from_sender_balance(Address const &sender, uint256_t const &delta)
+    {
+        AccountState &account_state = current_account_state(sender);
+        auto &account = account_state.account_;
+        if (!account) {
+            account = Account{.incarnation = incarnation_};
+        }
+        account_state.touch();
+        if (delta) {
+            MONAD_ASSERT(delta <= account->balance);
+            account->balance -= delta;
+            account_state.add_to_min_balance(delta);
+        }
+    }
+
     bytes32_t get_balance(Address const &address)
     {
-        auto const &account = recent_account(address);
+        auto &account_state = recent_account_state(address);
+        const_cast<AccountState &>(account_state).set_match_balance();
+        auto const &account = account_state.account_;
         if (MONAD_LIKELY(account.has_value())) {
             return intx::be::store<bytes32_t>(account.value().balance);
         }
@@ -358,6 +391,7 @@ public:
 
         add_to_balance(beneficiary, account.value().balance);
         account.value().balance = 0;
+        account_state.set_match_balance();
 
         return account_state.destruct();
     }

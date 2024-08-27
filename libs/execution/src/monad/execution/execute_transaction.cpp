@@ -44,7 +44,7 @@ constexpr void irrevocable_change(
 
     auto const upfront_cost =
         tx.gas_limit * gas_price<rev>(tx, base_fee_per_gas);
-    state.subtract_from_balance(sender, upfront_cost);
+    state.subtract_from_sender_balance(sender, upfront_cost);
 }
 
 // YP Eqn 72
@@ -179,7 +179,11 @@ Result<evmc::Result> execute_impl2(
     State &state)
 {
     auto const sender_account = state.recent_account(sender);
-    BOOST_OUTCOME_TRY(validate_transaction(tx, sender_account));
+    auto res = validate_transaction(tx, sender_account);
+    if (res.has_error()) {
+        state.set_relaxed(false);
+        return std::move(res.error());
+    }
 
     auto const tx_context =
         get_tx_context<rev>(tx, sender, hdr, chain.get_chain_id());
@@ -209,6 +213,7 @@ Result<Receipt> execute_impl(
 
         State state{block_state, Incarnation{hdr.number, i + 1}};
         state.set_original_nonce(sender, tx.nonce);
+        state.set_relaxed(true);
 
         auto result = execute_impl2<rev>(
             chain, tx, sender, hdr, block_hash_buffer, state);

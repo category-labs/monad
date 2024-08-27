@@ -122,7 +122,9 @@ bool BlockState::can_merge(State const &state)
         auto const &storage = account_state.storage_;
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_.find(it, address));
-        if (account != it->second.account.second) {
+        auto const &actual = it->second.account.second;
+        if ((account != actual) &&
+            (!fix_account_mismatch(state, address, account_state, actual))) {
             return false;
         }
         // TODO account.has_value()???
@@ -200,6 +202,67 @@ void BlockState::log_debug()
 {
     LOG_DEBUG("State Deltas: {}", state_);
     LOG_DEBUG("Code Deltas: {}", code_);
+}
+
+bool BlockState::fix_account_mismatch(
+    State const &state, Address const &address, AccountState const &base_state,
+    std::optional<Account> const &actual)
+{
+    auto const &base = base_state.account_;
+    if (is_dead(base)) {
+        return false;
+    }
+    if (is_dead(actual)) {
+        return false;
+    }
+    if (base->code_hash != actual->code_hash) {
+        return false;
+    }
+    if (base->incarnation != actual->incarnation) {
+        return false;
+    }
+    if (base->nonce != actual->nonce) {
+        return false;
+    }
+    if (base->balance != actual->balance) {
+        if (!state.is_relaxed()) {
+            return false;
+        }
+        if (base_state.match_balance()) {
+            return false;
+        }
+        if (actual->balance < base_state.min_balance()) {
+            return false;
+        }
+    }
+    auto const it = state.current_.find(address);
+    if (it != state.current_.end()) {
+        MONAD_ASSERT(it->second.size() == 1);
+        auto const &local_state = it->second.recent();
+        auto &local =
+            const_cast<std::optional<Account> &>(local_state.account_);
+        if (base->balance != actual->balance) {
+            if (local_state.match_balance()) {
+                return false;
+            }
+            if (actual->balance < local_state.min_balance()) {
+                return false;
+            }
+            // Fix balance
+            if (base->balance > actual->balance) {
+                auto const diff = base->balance - actual->balance;
+                MONAD_ASSERT(local->balance >= diff);
+                local->balance -= diff;
+            }
+            else {
+                auto const diff = actual->balance - base->balance;
+                local->balance += diff;
+            }
+            const_cast<std::optional<Account> &>(base)->balance =
+                actual->balance;
+        }
+    }
+    return true;
 }
 
 MONAD_NAMESPACE_END

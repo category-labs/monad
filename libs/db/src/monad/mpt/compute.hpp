@@ -42,9 +42,14 @@ encode_16_children(std::span<ChildData>, std::span<unsigned char> result);
 std::span<unsigned char>
 encode_16_children(Node *, std::span<unsigned char> result);
 
+byte_string rlp_encode_branch(Node *, bool const ignore_value = false);
+
 unsigned encode_two_pieces(
     unsigned char *const dest, NibblesView const path,
     byte_string_view const second, bool const has_value = false);
+
+byte_string
+rlp_encode_two_pieces(NibblesView const, byte_string_view const, bool const);
 
 struct Compute
 {
@@ -66,7 +71,9 @@ struct Compute
 
 template <typename T>
 concept compute_leaf_data = requires {
-    { T::compute(std::declval<Node const &>()) } -> std::same_as<byte_string>;
+    {
+        T::compute(std::declval<Node const &>())
+    } -> std::same_as<byte_string>;
 };
 
 using inline_owning_bytes_span =

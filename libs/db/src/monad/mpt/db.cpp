@@ -77,6 +77,9 @@ struct Db::Impl
 
     virtual find_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key, uint64_t version) = 0;
+    virtual get_proof_result_type get_proof_fiber_blocking(
+        NodeCursor root, NibblesView const key,
+        byte_string (*compute_leaf)(NodeCursor const, NibblesView const)) = 0;
     virtual size_t prefetch_fiber_blocking() = 0;
     virtual NodeCursor load_root_for_version(uint64_t version) = 0;
     virtual size_t poll(bool blocking, size_t count) = 0;
@@ -183,6 +186,14 @@ struct Db::ROOnDisk final : public Db::Impl
         MONAD_ASSERT(false);
     }
 
+    virtual get_proof_result_type get_proof_fiber_blocking(
+        NodeCursor root, NibblesView const key,
+        byte_string (*compute_leaf)(
+            NodeCursor const, NibblesView const)) override
+    {
+        return get_trie_proof_blocking(aux(), root, key, compute_leaf);
+    }
+
     virtual size_t prefetch_fiber_blocking() override
     {
         MONAD_ASSERT(false);
@@ -250,6 +261,13 @@ struct Db::InMemory final : public Db::Impl
         NodeCursor const &root, NibblesView const &key, uint64_t = 0) override
     {
         return find_blocking(aux(), root, key);
+    }
+
+    virtual get_proof_result_type get_proof_fiber_blocking(
+        NodeCursor, NibblesView const,
+        byte_string (*)(NodeCursor const, NibblesView const)) override
+    {
+        MONAD_ASSERT(false);
     }
 
     virtual size_t prefetch_fiber_blocking() override
@@ -659,6 +677,13 @@ struct Db::RWOnDisk final : public Db::Impl
         return fut.get();
     }
 
+    virtual get_proof_result_type get_proof_fiber_blocking(
+        NodeCursor, NibblesView const,
+        byte_string (*)(NodeCursor const, NibblesView const)) override
+    {
+        MONAD_ASSERT(false);
+    }
+
     // threadsafe
     virtual void upsert_fiber_blocking(
         UpdateList &&updates, uint64_t const version,
@@ -832,6 +857,18 @@ Db::get_data(NibblesView const key, uint64_t const block_id) const
     }
     MONAD_DEBUG_ASSERT(res.value().node != nullptr);
     return res.value().node->data();
+}
+
+Result<std::pair<NodeCursor, std::vector<byte_string>>> Db::get_proof(
+    NodeCursor root, NibblesView const key,
+    byte_string (*compute_leaf)(NodeCursor const, NibblesView const)) const
+{
+    auto const [ret, result] =
+        impl_->get_proof_fiber_blocking(root, key, compute_leaf);
+    if (result != find_result::success) {
+        return DbError::key_not_found;
+    }
+    return ret;
 }
 
 void Db::upsert(

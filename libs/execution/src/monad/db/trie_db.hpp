@@ -57,6 +57,9 @@ public:
 
     // read-only operations
     void set_block_number(uint64_t);
+    std::vector<monad::byte_string>
+    get_proof(Address const &addr, bytes32_t const &key) const;
+    std::vector<monad::byte_string> get_proof(Address const &addr) const;
 
 private:
     /// STATS

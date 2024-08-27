@@ -849,6 +849,8 @@ enum class find_result : uint8_t
     need_to_continue_in_io_thread
 };
 using find_result_type = std::pair<NodeCursor, find_result>;
+using get_proof_result_type =
+    std::pair<std::pair<NodeCursor, std::vector<byte_string>>, find_result>;
 
 using inflight_map_t = unordered_dense_map<
     chunk_offset_t,
@@ -882,6 +884,9 @@ thread, as no synchronization is provided, and user code should make sure no
 other place is modifying trie. */
 find_result_type
 find_blocking(UpdateAuxImpl const &, NodeCursor, NibblesView key);
+get_proof_result_type get_trie_proof_blocking(
+    UpdateAuxImpl const &, NodeCursor, NibblesView const,
+    byte_string (*)(NodeCursor const, NibblesView const));
 
 //////////////////////////////////////////////////////////////////////////////
 // helpers

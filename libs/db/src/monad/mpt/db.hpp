@@ -58,6 +58,10 @@ public:
 
     NodeCursor load_root_for_version(uint64_t block_id) const;
 
+    Result<std::pair<NodeCursor, std::vector<byte_string>>> get_proof(
+        NodeCursor, NibblesView const,
+        byte_string (*)(NodeCursor const, NibblesView const)) const;
+
     void upsert(
         UpdateList, uint64_t block_id, bool enable_compaction = true,
         bool can_write_to_fast = true);

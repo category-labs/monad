@@ -35,12 +35,17 @@ using namespace monad;
 
 namespace
 {
-    constexpr auto a = 0x5353535353535353535353535353535353535353_address;
+    constexpr auto a =
+        0x5353535353535353535353535353535353535353_address; // 78c911f384152f4daea497b9ce2972ee659aee19faf49b6b35caed01de566201
     constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
     constexpr auto key1 =
-        0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
+        0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32; // 788ff1594590ac6811398a2fa500ae737578fc87b78b5456779ec413ceff391a
     constexpr auto key2 =
         0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
+    constexpr auto key3 =
+        0x07000000000000000000000000000000000000000000000000000000cafebabe_bytes32; // 00b66a8793f82a8f468178c2aaf13616324c2b0fbf3bb546503c1713a19c3bfc
+    constexpr auto key4 =
+        0x09000000000000000000000000000000000000000000000000000000cafebabe_bytes32; // 00cef0966e11880b93ed052ca24d4569f2ae6eb83dd5bf7a472aecbc8f842a44
     constexpr auto value1 =
         0x0000000000000013370000000000000000000000000000000000000000000003_bytes32;
     constexpr auto value2 =
@@ -562,4 +567,100 @@ TYPED_TEST(DBTest, load_from_binary)
     EXPECT_EQ(
         tdb.read_code(h_code_hash)->executable_code,
         h_code_analysis->executable_code);
+}
+
+TEST(ReadOnlyDbTest, get_proof)
+{
+    std::filesystem::path dbname{};
+    dbname = {
+        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+        "monad_test_db_get_proof"};
+    OnDiskMachine machine;
+    mpt::Db db1{machine, mpt::OnDiskDbConfig{.dbname_paths = {dbname}}};
+    TrieDb rw_db{db1};
+
+    Account acct1{.nonce = 1};
+    rw_db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, acct1},
+                 .storage =
+                     {{key1, {bytes32_t{}, value1}},
+                      {key3, {bytes32_t{}, value1}},
+                      {key4, {bytes32_t{}, value2}}}}}},
+        Code{});
+
+    mpt::Db db2(mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}});
+    TrieDb ro_db{db2};
+
+    auto acct_proof = ro_db.get_proof(a);
+    EXPECT_EQ(acct_proof.size(), 1);
+    EXPECT_EQ(
+        acct_proof[0],
+        evmc::from_hex("f86aa12078c911f384152f4daea497b9ce2972ee659aee19faf49b6"
+                       "b35caed01de566201b846f8440180a0c6d657138caaf6dd5d601361"
+                       "14bd7fa3715f43b94e4009155f1c0a1d70bfce66a0c5d2460186f72"
+                       "33c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"));
+
+    auto st_proof1 = ro_db.get_proof(a, key1);
+    EXPECT_EQ(st_proof1.size(), 2);
+    EXPECT_EQ(
+        st_proof1[0],
+        evmc::from_hex(
+            "0xf851a05ee7694dbf32d834880897e6629f8a21f588ddc1d0465d2500ef96c607"
+            "216836808080808080a0caff3c720ca8763c82b0b0815409958f1a6c2200f926dc"
+            "e3e4553ef9166ae628808080808080808080"));
+    EXPECT_EQ(
+        st_proof1[1],
+        evmc::from_hex(
+            "0xf83ca0388ff1594590ac6811398a2fa500ae737578fc87b78b5456779ec413ce"
+            "ff391a9a9913370000000000000000000000000000000000000000000003"));
+
+    auto st_proof2 = ro_db.get_proof(a, key3);
+    EXPECT_EQ(st_proof2.size(), 4);
+    EXPECT_EQ(
+        st_proof2[0],
+        evmc::from_hex(
+            "0xf851a05ee7694dbf32d834880897e6629f8a21f588ddc1d0465d2500ef96c607"
+            "216836808080808080a0caff3c720ca8763c82b0b0815409958f1a6c2200f926dc"
+            "e3e4553ef9166ae628808080808080808080"));
+    EXPECT_EQ(
+        st_proof2[1],
+        evmc::from_hex("0xe210a0ac9faf943c4fd502aa88c7570db3cb3b33a7f856f6a450f"
+                       "ed917554d9ec45544"));
+    EXPECT_EQ(
+        st_proof2[2],
+        evmc::from_hex(
+            "0xf8518080808080808080808080a0236b40f091055f05598c4f8b96d61af7ded3"
+            "ed3374f15eeee937f79b7f1f9e44a0b7a2a0fc8d7006e0353af1a213ef6ee1c868"
+            "03bc8223172a311afc89619de38380808080"));
+    EXPECT_EQ(
+        st_proof2[3],
+        evmc::from_hex(
+            "0xf83b9f366a8793f82a8f468178c2aaf13616324c2b0fbf3bb546503c1713a19c"
+            "3bfc9a9913370000000000000000000000000000000000000000000003"));
+
+    auto st_proof3 = ro_db.get_proof(a, key4);
+    EXPECT_EQ(st_proof3.size(), 4);
+    EXPECT_EQ(
+        st_proof3[0],
+        evmc::from_hex(
+            "0xf851a05ee7694dbf32d834880897e6629f8a21f588ddc1d0465d2500ef96c607"
+            "216836808080808080a0caff3c720ca8763c82b0b0815409958f1a6c2200f926dc"
+            "e3e4553ef9166ae628808080808080808080"));
+    EXPECT_EQ(
+        st_proof3[1],
+        evmc::from_hex("0xe210a0ac9faf943c4fd502aa88c7570db3cb3b33a7f856f6a450f"
+                       "ed917554d9ec45544"));
+    EXPECT_EQ(
+        st_proof3[2],
+        evmc::from_hex(
+            "0xf8518080808080808080808080a0236b40f091055f05598c4f8b96d61af7ded3"
+            "ed3374f15eeee937f79b7f1f9e44a0b7a2a0fc8d7006e0353af1a213ef6ee1c868"
+            "03bc8223172a311afc89619de38380808080"));
+    EXPECT_EQ(
+        st_proof3[3],
+        evmc::from_hex("0xe19f3ef0966e11880b93ed052ca24d4569f2ae6eb83dd5bf7a472"
+                       "aecbc8f842a4407"));
 }

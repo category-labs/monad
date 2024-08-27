@@ -959,6 +959,79 @@ TYPED_TEST(DbTest, simple_with_increasing_block_id_prefix)
     EXPECT_FALSE(this->db.get(0x01_hex, block_id).has_value());
 }
 
+TEST(ReadOnlyDbTest, get_proof_simple)
+{
+    std::filesystem::path const dbname{
+        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+        "monad_db_test_getproof_XXXXXX"};
+    StateMachineAlwaysMerkle machine{};
+    OnDiskDbConfig config{.dbname_paths = {dbname}, .file_size_db = 8};
+
+    auto const &kv = fixed_updates::kv;
+    auto const prefix = 0x00_hex;
+    uint64_t const block_id = 0x123;
+
+    Db db{machine, config};
+    auto u1 = make_update(kv[0].first, kv[0].second);
+    auto u2 = make_update(kv[1].first, kv[1].second);
+    UpdateList ul;
+    ul.push_front(u1);
+    ul.push_front(u2);
+
+    auto u_prefix = Update{
+        .key = prefix,
+        .value = monad::byte_string_view{},
+        .incarnation = false,
+        .next = std::move(ul)};
+    UpdateList ul_prefix;
+    ul_prefix.push_front(u_prefix);
+
+    // db will have a valid root and root offset after this line
+    db.upsert(std::move(ul_prefix), block_id);
+
+    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+    Db ro_db{ro_config};
+
+    auto res = ro_db.find(prefix, block_id);
+    ASSERT_TRUE(res.has_value());
+    NodeCursor const root_under_prefix = res.value();
+
+    auto dummy_compute = [](NodeCursor const,
+                            NibblesView const) -> monad::byte_string {
+        return 0xabcd_hex;
+    };
+
+    // ext --> branch --> 2 leaf nodes
+    {
+        auto ret =
+            ro_db.get_proof(root_under_prefix, kv[0].first, dummy_compute);
+        auto [node, proof] = ret.value();
+        EXPECT_EQ(
+            monad::byte_string_view(proof[0].data(), proof[0].size()),
+            0xe7850012345678a0039ce9061731e1cd8d8731655924fa0cacce1eb01f6153cba59ef7454a3d870a_hex);
+        EXPECT_EQ(
+            monad::byte_string_view(proof[1].data(), proof[1].size()),
+            0xf85180a094c29eac6ac0797c3c301f9a19c37ba782cbd8755b7476f70552f2bb1ce6c057a068cb17592d41c522507ceae11c56a5297bb24235e076cb497cc50222cbf18ff48080808080808080808080808080_hex);
+        EXPECT_EQ(
+            monad::byte_string_view(proof[2].data(), proof[2].size()),
+            0xabcd_hex);
+    }
+    {
+        auto ret =
+            ro_db.get_proof(root_under_prefix, kv[1].first, dummy_compute);
+        auto [node, proof] = ret.value();
+        EXPECT_EQ(
+            monad::byte_string_view(proof[0].data(), proof[0].size()),
+            0xe7850012345678a0039ce9061731e1cd8d8731655924fa0cacce1eb01f6153cba59ef7454a3d870a_hex);
+        EXPECT_EQ(
+            monad::byte_string_view(proof[1].data(), proof[1].size()),
+            0xf85180a094c29eac6ac0797c3c301f9a19c37ba782cbd8755b7476f70552f2bb1ce6c057a068cb17592d41c522507ceae11c56a5297bb24235e076cb497cc50222cbf18ff48080808080808080808080808080_hex);
+        EXPECT_EQ(
+            monad::byte_string_view(proof[2].data(), proof[2].size()),
+            0xabcd_hex);
+    }
+}
+
 template <typename TFixture>
 struct DbTraverseTest : public TFixture
 {

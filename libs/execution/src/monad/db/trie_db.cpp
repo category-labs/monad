@@ -10,6 +10,7 @@
 #include <monad/core/keccak.h>
 #include <monad/core/keccak.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/core/rlp/account_rlp.hpp>
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
 #include <monad/core/rlp/receipt_rlp.hpp>
@@ -146,6 +147,78 @@ std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
         return std::make_shared<CodeAnalysis>(analyze({}));
     }
     return std::make_shared<CodeAnalysis>(analyze(value.assume_value()));
+}
+
+std::vector<monad::byte_string> TrieDb::get_proof(Address const &addr) const
+{
+    auto root = db_.find(db_.root(), NibblesView(state_nibbles), block_number_);
+
+    static auto compute_account_leaf =
+        [](NodeCursor const nodeCursor,
+           NibblesView const relpath) -> byte_string {
+        auto encoded_account = nodeCursor.node->value();
+        auto acct = decode_account_db(encoded_account);
+        MONAD_DEBUG_ASSERT(!acct.has_error());
+        MONAD_DEBUG_ASSERT(encoded_account.empty());
+
+        bytes32_t storage_root = NULL_ROOT;
+        if (nodeCursor.node->number_of_children()) {
+            MONAD_ASSERT(nodeCursor.node->data().size() == sizeof(bytes32_t));
+            std::copy_n(
+                nodeCursor.node->data().data(),
+                sizeof(bytes32_t),
+                storage_root.bytes);
+        }
+
+        // encode account using provided path
+        return mpt::rlp_encode_two_pieces(
+            relpath, rlp::encode_account(acct.value(), storage_root), true);
+    };
+
+    auto const [acct_leaf, acct_proof] =
+        db_.get_proof(
+               root.value(),
+               NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+               compute_account_leaf)
+            .value();
+
+    return acct_proof;
+}
+
+std::vector<monad::byte_string>
+TrieDb::get_proof(Address const &addr, bytes32_t const &key) const
+{
+    auto acct = db_.find(
+        concat(
+            NibblesView(state_nibbles),
+            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
+        block_number_);
+
+    static auto compute_storage_leaf =
+        [](NodeCursor const nodeCursor,
+           NibblesView const relpath) -> byte_string {
+        auto encoded_storage = nodeCursor.node->value();
+        auto const storage = decode_storage_db(encoded_storage);
+        MONAD_ASSERT(!storage.has_error());
+        MONAD_ASSERT(encoded_storage.empty());
+
+        inline_owning_bytes_span const value_rlp{
+            rlp::string_length(rlp::zeroless_view(storage.value().second))};
+        rlp::encode_string(
+            value_rlp, rlp::zeroless_view(storage.value().second));
+
+        return mpt::rlp_encode_two_pieces(
+            relpath,
+            byte_string_view(value_rlp.data(), value_rlp.size()),
+            true);
+    };
+
+    auto const [storage, st_proof] =
+        db_.get_proof(
+               acct.value(), NibblesView{keccak256(key)}, compute_storage_leaf)
+            .value();
+
+    return st_proof;
 }
 
 void TrieDb::commit(

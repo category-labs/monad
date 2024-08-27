@@ -164,6 +164,7 @@ static inline monad_c_result monad_async_executor_run_impl(
     do {
         timed_out = false;
         retry_after_this = false;
+        struct timespec no_waiting = {.tv_sec = 0, .tv_nsec = 0};
         monad_context_cpu_ticks_count_t const launch_begin =
             get_ticks_count(memory_order_relaxed);
         if (atomic_load_explicit(
@@ -208,6 +209,7 @@ static inline monad_c_result monad_async_executor_run_impl(
                 }
                 atomic_store_explicit(
                     &ex->need_to_empty_eventfd, false, memory_order_release);
+                timeout = &no_waiting;
             }
             atomic_unlock(&ex->lock);
 #if MONAD_ASYNC_EXECUTOR_PRINTING >= 3
@@ -219,7 +221,6 @@ static inline monad_c_result monad_async_executor_run_impl(
             fflush(stdout);
 #endif
         }
-        struct timespec no_waiting = {.tv_sec = 0, .tv_nsec = 0};
         struct timespec single_millisecond_waiting = {
             .tv_sec = 0, .tv_nsec = 1000000};
         if (atomic_load_explicit(

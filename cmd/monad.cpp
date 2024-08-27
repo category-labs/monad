@@ -136,13 +136,12 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
 
         evmc_revision const rev = chain.get_revision(block.value().header);
 
-        BOOST_OUTCOME_TRY(
-            invoke_rev<rev_static_validate_block>(rev, block.value()));
+        BOOST_OUTCOME_TRY(invoke_rev<StaticValidateBlock>(rev, block.value()));
 
         BlockState block_state(db);
         BOOST_OUTCOME_TRY(
             auto const receipts,
-            invoke_rev<rev_execute_block>(
+            invoke_rev<ExecuteBlock>(
                 rev,
                 chain,
                 block.value(),

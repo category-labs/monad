@@ -34,34 +34,35 @@
 MONAD_TEST_NAMESPACE_BEGIN
 
 template <evmc_revision rev>
-void process_transaction(Transaction const &txn, nlohmann::json const &expected)
+struct ProcessTransaction
 {
-    if (auto const result =
-            static_validate_transaction<rev>(txn, std::nullopt, 1);
-        result.has_error()) {
-        EXPECT_TRUE(expected.contains("exception"));
-    }
-    else {
-        auto const sender = recover_sender(txn);
-        if (!sender.has_value()) {
+    void operator()(Transaction const &txn, nlohmann::json const &expected)
+    {
+        if (auto const result =
+                static_validate_transaction<rev>(txn, std::nullopt, 1);
+            result.has_error()) {
             EXPECT_TRUE(expected.contains("exception"));
         }
         else {
-            EXPECT_FALSE(expected.contains("exception"));
+            auto const sender = recover_sender(txn);
+            if (!sender.has_value()) {
+                EXPECT_TRUE(expected.contains("exception"));
+            }
+            else {
+                EXPECT_FALSE(expected.contains("exception"));
 
-            // check sender
-            EXPECT_EQ(
-                sender.value(), expected.at("sender").get<evmc::address>());
+                // check sender
+                EXPECT_EQ(
+                    sender.value(), expected.at("sender").get<evmc::address>());
 
-            // check gas
-            EXPECT_EQ(
-                intrinsic_gas<rev>(txn),
-                integer_from_json<uint64_t>(expected.at("intrinsicGas")));
+                // check gas
+                EXPECT_EQ(
+                    intrinsic_gas<rev>(txn),
+                    integer_from_json<uint64_t>(expected.at("intrinsicGas")));
+            }
         }
     }
-}
-
-DECL_REV(process_transaction);
+};
 
 void TransactionTest::TestBody()
 {
@@ -106,7 +107,7 @@ void TransactionTest::TestBody()
         executed = true;
 
         MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
-        invoke_rev<rev_process_transaction>(rev, txn.value(), expected);
+        invoke_rev<ProcessTransaction>(rev, txn.value(), expected);
     }
 
     if (!executed) {

@@ -169,7 +169,7 @@ constexpr Result<void> static_validate_body(Block const &block)
 }
 
 template <evmc_revision rev>
-Result<void> static_validate_block(Block const &block)
+Result<void> StaticValidateBlock<rev>::operator()(Block const &block)
 {
     BOOST_OUTCOME_TRY(static_validate_header<rev>(block.header));
 
@@ -178,7 +178,7 @@ Result<void> static_validate_block(Block const &block)
     return success();
 }
 
-EXPLICIT_EVMC_REVISION(static_validate_block);
+EXPLICIT_EVMC_REVISION_STRUCT(StaticValidateBlock);
 
 MONAD_NAMESPACE_END
 

@@ -51,9 +51,10 @@ template <evmc_revision rev>
 Result<void> static_validate_header(BlockHeader const &);
 
 template <evmc_revision rev>
-Result<void> static_validate_block(Block const &);
-
-DECL_REV(static_validate_block);
+struct StaticValidateBlock
+{
+    Result<void> operator()(Block const &);
+};
 
 MONAD_NAMESPACE_END
 
@@ -62,6 +63,7 @@ BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN
 template <>
 struct quick_status_code_from_enum<monad::BlockError>
     : quick_status_code_from_enum_defaults<monad::BlockError>
+
 {
     static constexpr auto const domain_name = "Block Error";
     static constexpr auto const domain_uuid =

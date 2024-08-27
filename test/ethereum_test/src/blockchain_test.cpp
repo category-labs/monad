@@ -52,26 +52,28 @@
 MONAD_TEST_NAMESPACE_BEGIN
 
 template <evmc_revision rev>
-Result<std::vector<Receipt>> execute(
-    fiber::PriorityPool &pool, Block &block, test::db_t &db,
-    BlockHashBuffer const &block_hash_buffer)
+struct Execute
 {
-    using namespace monad::test;
+    Result<std::vector<Receipt>> operator()(
+        fiber::PriorityPool &pool, Block &block, test::db_t &db,
+        BlockHashBuffer const &block_hash_buffer)
+    {
+        using namespace monad::test;
 
-    BOOST_OUTCOME_TRY(static_validate_block<rev>(block));
+        BOOST_OUTCOME_TRY(StaticValidateBlock<rev>{}(block));
 
-    BlockState block_state(db);
-    EthereumMainnet const chain;
-    BOOST_OUTCOME_TRY(
-        auto const receipts,
-        execute_block<rev>(chain, block, block_state, block_hash_buffer, pool));
-    BOOST_OUTCOME_TRY(chain.validate_header(receipts, block.header));
-    block_state.log_debug();
-    block_state.commit(receipts);
-    return receipts;
-}
-
-DECL_REV(execute);
+        BlockState block_state(db);
+        EthereumMainnet const chain;
+        BOOST_OUTCOME_TRY(
+            auto const receipts,
+            ExecuteBlock<rev>{}(
+                chain, block, block_state, block_hash_buffer, pool));
+        BOOST_OUTCOME_TRY(chain.validate_header(receipts, block.header));
+        block_state.log_debug();
+        block_state.commit(receipts);
+        return receipts;
+    }
+};
 
 void BlockchainTest::validate_post_state(
     nlohmann::json const &json, nlohmann::json const &db)
@@ -198,7 +200,7 @@ void BlockchainTest::TestBody()
                 block.value().header.parent_hash);
 
             MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
-            auto const result = invoke_rev<rev_execute>(
+            auto const result = invoke_rev<Execute>(
                 rev, *pool_, block.value(), tdb, block_hash_buffer);
             if (!result.has_error()) {
                 EXPECT_FALSE(j_block.contains("expectException"));

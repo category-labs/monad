@@ -87,6 +87,11 @@ Node::~Node()
         }
         set_next(index, nullptr);
     }
+#ifdef TRIEDB_INSTRUMENT_MEM_USAGE
+    auto const node_size = static_cast<uint64_t>(get_mem_size());
+    Node::num_nodes_in_memory.fetch_sub(1, std::memory_order_acq_rel);
+    Node::node_memory_footprint.fetch_sub(node_size, std::memory_order_acq_rel);
+#endif
 }
 
 unsigned Node::to_child_index(unsigned const branch) const noexcept

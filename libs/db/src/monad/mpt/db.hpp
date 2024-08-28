@@ -89,6 +89,9 @@ public:
 
     bool is_on_disk() const;
     bool is_read_only() const;
+
+    // Returns the memory footprint of TrieDb
+    std::pair<uint64_t, uint64_t> get_trie_memory_usage() const;
 };
 
 // The following are not threadsafe. Please use async get from the RODb owning

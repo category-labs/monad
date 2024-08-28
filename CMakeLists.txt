@@ -6,6 +6,8 @@ option(HUNTER_ENABLED OFF)
 
 option(EVMONE_TRACING
        "Enable instruction-level tracing for the evmone interpreter" OFF)
+option(TRIEDB_INSTRUMENT_MEM_USAGE
+       "Enable memory usage statistics on TrieDb Nodes" OFF)
 option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(BUILD_SHARED_LIBS OFF)
 
@@ -45,6 +47,10 @@ function(monad_compile_options target)
 
   if(EVMONE_TRACING)
     target_compile_definitions(${target} PUBLIC EVMONE_TRACING=1)
+  endif()
+
+  if(TRIEDB_INSTRUMENT_MEM_USAGE)
+    target_compile_definitions(${target} PUBLIC "TRIEDB_INSTRUMENT_MEM_USAGE=1")
   endif()
 endfunction()
 

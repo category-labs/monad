@@ -105,6 +105,11 @@ class Node
     {
     };
 
+#ifdef TRIEDB_INSTRUMENT_MEM_USAGE
+    static inline std::atomic<uint64_t> node_memory_footprint{0};
+    static inline std::atomic<uint64_t> num_nodes_in_memory{0};
+#endif
+
 public:
     static constexpr size_t max_size_for_boost_pools = 66544;
     static constexpr size_t max_number_of_children = 16;
@@ -120,6 +125,16 @@ public:
         std::allocator<Node>, BytesAllocator>
     pool();
     static size_t get_deallocate_count(Node *);
+
+#ifdef TRIEDB_INSTRUMENT_MEM_USAGE
+    static std::pair<uint64_t, uint64_t> trie_memory_usage()
+    {
+        auto const mem = node_memory_footprint.load(std::memory_order_acquire);
+        auto const num_nodes =
+            num_nodes_in_memory.load(std::memory_order_acquire);
+        return std::make_pair(mem, num_nodes);
+    }
+#endif
 
     using Deleter = allocators::unique_ptr_aliasing_allocator_deleter<
         std::allocator<Node>, BytesAllocator, &Node::pool,
@@ -186,6 +201,10 @@ public:
     static UniquePtr make(size_t bytes, Args &&...args)
     {
         MONAD_DEBUG_ASSERT(bytes <= Node::max_size);
+#ifdef TRIEDB_INSTRUMENT_MEM_USAGE
+        Node::num_nodes_in_memory.fetch_add(1, std::memory_order_acq_rel);
+        Node::node_memory_footprint.fetch_add(bytes, std::memory_order_acq_rel);
+#endif
         return allocators::allocate_aliasing_unique<
             std::allocator<Node>,
             BytesAllocator,

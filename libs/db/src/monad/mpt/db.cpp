@@ -904,6 +904,15 @@ uint64_t Db::get_history_length() const
     return is_on_disk() ? impl_->aux().version_history_length() : 1;
 }
 
+std::pair<uint64_t, uint64_t> Db::get_trie_memory_usage() const
+{
+#ifdef TRIEDB_INSTRUMENT_MEM_USAGE
+    return Node::trie_memory_usage();
+#else
+    return {};
+#endif
+}
+
 AsyncContext::AsyncContext(Db &db, size_t lru_size)
     : aux(db.impl_->aux())
     , root_cache(lru_size)

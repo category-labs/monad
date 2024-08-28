@@ -3,6 +3,7 @@
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/basic_formatter.hpp>
+#include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/log_level_map.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
@@ -394,8 +395,10 @@ int main(int const argc, char const *argv[])
     }
 
     LOG_INFO(
-        "Finished initializing db at block = {}, time elapsed = {}",
+        "Finished initializing db at block = {}, state root = {}, time elapsed "
+        "= {}",
         init_block_num,
+        triedb.state_root(),
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - load_start_time));
 

@@ -43,6 +43,10 @@ MONAD_NAMESPACE_END
 
 MONAD_TEST_NAMESPACE_BEGIN
 
+inline constexpr auto addr_a =
+    0x0000000000000000000000000000000000000100_address;
+inline constexpr auto addr_b =
+    0x0000000000000000000000000000000000000101_address;
 inline auto const a_code =
     evmc::from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
                    "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
@@ -93,7 +97,7 @@ inline void load_db(TrieDb &db, uint64_t const n)
     db.set_block_number(n);
     db.commit(
         StateDeltas{
-            {a,
+            {addr_a,
              StateDelta{
                  .account =
                      {std::nullopt,
@@ -104,7 +108,7 @@ inline void load_db(TrieDb &db, uint64_t const n)
                      {{bytes32_t{},
                        {bytes32_t{},
                         0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe_bytes32}}}}},
-            {b,
+            {addr_b,
              StateDelta{
                  .account =
                      {std::nullopt,

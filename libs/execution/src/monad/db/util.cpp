@@ -567,7 +567,6 @@ void load_from_binary(
     mpt::Db &db, std::istream &accounts, std::istream &code,
     uint64_t const init_block_number, size_t const buf_size)
 {
-    db.disable_lru();
     if (db.root().is_valid()) {
         throw std::runtime_error(
             "Unable to load snapshot to an existing db, truncate the "
@@ -576,7 +575,6 @@ void load_from_binary(
     BinaryDbLoader loader{
         db, buf_size, db.is_on_disk() ? init_block_number : 0};
     loader.load(accounts, code);
-    db.enable_lru();
 }
 
 MONAD_NAMESPACE_END

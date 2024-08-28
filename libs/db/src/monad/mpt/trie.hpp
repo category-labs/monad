@@ -333,8 +333,6 @@ public:
     node_writer_unique_ptr_type node_writer_fast{};
     node_writer_unique_ptr_type node_writer_slow{};
 
-    LruList *lru_list{nullptr};
-
     static constexpr uint64_t MAX_HISTORY_LEN =
         detail::db_metadata::root_offsets_ring_t::capacity();
 
@@ -657,7 +655,7 @@ public:
 
 static_assert(
     sizeof(UpdateAuxImpl) ==
-    128 + MONAD_MPT_COLLECT_STATS * sizeof(detail::TrieUpdateCollectedStats));
+    120 + MONAD_MPT_COLLECT_STATS * sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAuxImpl) == 8);
 
 template <lockable_or_void LockType = void>

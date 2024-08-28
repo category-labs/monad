@@ -291,7 +291,6 @@ int main(int argc, char *argv[])
     unsigned random_read_benchmark_threads = 0;
     unsigned concurrent_read_io_limit = 0;
     uint64_t history_len = 100;
-    std::optional<uint64_t> lru_size_mb = std::nullopt;
 
     struct runtime_reconfig_t
     {
@@ -352,11 +351,6 @@ int main(int argc, char *argv[])
             "a file to parse every five seconds to adjust config as test runs");
         cli.add_option(
                "--history", history_len, "Initialize disk db history length")
-            ->excludes(is_inmemory);
-        cli.add_option(
-               "--lru_size",
-               lru_size_mb,
-               "enable triedb node lru cache with size in MB")
             ->excludes(is_inmemory);
         cli.parse(argc, argv);
 
@@ -520,11 +514,6 @@ int main(int argc, char *argv[])
             auto aux =
                 in_memory ? UpdateAux<>() : UpdateAux<>(&io, history_len);
             monad::test::StateMachineMerkleWithPrefix<prefix_len> sm{};
-            std::unique_ptr<LruList> lru_list =
-                lru_size_mb ? std::make_unique<LruList>(
-                                  lru_size_mb.value() * 1024 * 1024)
-                            : nullptr;
-            aux.lru_list = lru_list.get();
 
             Node::UniquePtr root{};
             if (append) {
@@ -632,9 +621,7 @@ int main(int argc, char *argv[])
                 csv_writer << "\n\"Total storage consumed:\"," << bytes_used
                            << std::endl;
             }
-            // has to reset trie root before lru_list
-            root.reset();
-        }
+        } /* upsert test end */
 
         if (random_read_benchmark_threads > 0) {
             {

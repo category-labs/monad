@@ -89,9 +89,6 @@ public:
 
     bool is_on_disk() const;
     bool is_read_only() const;
-
-    void disable_lru();
-    void enable_lru();
 };
 
 // The following are not threadsafe. Please use async get from the RODb owning

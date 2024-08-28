@@ -202,7 +202,6 @@ int main(int const argc, char const *argv[])
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);
     uint64_t history_len = 1000;
-    std::optional<size_t> lru_size_mb = std::nullopt;
     std::vector<fs::path> dbname_paths;
     fs::path genesis;
     fs::path snapshot;
@@ -240,17 +239,12 @@ int main(int const argc, char const *argv[])
         "--ro_sq_thread_cpu",
         ro_sq_thread_cpu,
         "sq_thread_cpu for the read only db");
-    auto db_opt = cli.add_option(
+    cli.add_option(
         "--db",
         dbname_paths,
         "A comma-separated list of previously created database paths. You can "
         "configure the storage pool with one or more files/devices. If no "
         "value is passed, the replay will run with an in-memory triedb");
-    cli.add_option(
-           "--lru_size",
-           lru_size_mb,
-           "enable triedb node lru cache with size in MB")
-        ->needs(db_opt); // only allowed if running on disk
     cli.add_option(
         "--dump_snapshot",
         dump_snapshot,
@@ -333,7 +327,6 @@ int main(int const argc, char const *argv[])
                     .wr_buffers = 32,
                     .uring_entries = 128,
                     .sq_thread_cpu = sq_thread_cpu,
-                    .lru_size_mb = lru_size_mb,
                     .dbname_paths = dbname_paths,
                     .history_length = history_len}};
         }

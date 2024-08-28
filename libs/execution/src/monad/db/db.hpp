@@ -7,6 +7,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/execution/code_analysis.hpp>
+#include <monad/execution/trace/call_tracer.hpp>
 #include <monad/state2/state_deltas.hpp>
 
 #include <cstdint>
@@ -30,8 +31,8 @@ struct Db
     virtual void increment_block_number() = 0;
 
     virtual void commit(
-        StateDeltas const &, Code const &,
-        std::vector<Receipt> const & = {}) = 0;
+        StateDeltas const &, Code const &, std::vector<Receipt> const & = {},
+        BlockCallFrames const & = {}) = 0;
 
     virtual std::string print_stats()
     {

@@ -72,7 +72,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 
     ASSERT_TRUE(!result.has_error());
 
-    auto const &receipt = result.value();
+    auto const &receipt = result.value().receipt;
 
     EXPECT_EQ(receipt.status, 1u);
     {
@@ -133,7 +133,7 @@ TEST(ExecuteTransaction, exhaust_reserve_balance)
         auto const result = execute_impl<EVMC_SHANGHAI>(
             chain, 0, tx, from, header, block_hash_buffer, bs, prev);
         ASSERT_TRUE(result.has_value());
-        auto const &receipt = result.value();
+        auto const &receipt = result.value().receipt;
         EXPECT_EQ(receipt.gas_used, 53'000);
         EXPECT_EQ(receipt.status, 1);
     }
@@ -216,7 +216,7 @@ TEST(ExecuteTransaction, exhaust_reserve_balance_less_than_default)
         auto const result = execute_impl<EVMC_SHANGHAI>(
             chain, 0, tx, from, header, block_hash_buffer, bs, prev);
         ASSERT_TRUE(result.has_value());
-        auto const &receipt = result.value();
+        auto const &receipt = result.value().receipt;
         EXPECT_EQ(receipt.gas_used, 53'000);
         EXPECT_EQ(receipt.status, 1);
     }
@@ -289,7 +289,7 @@ TEST(ExecuteTransaction, insufficient_execution_balance)
         auto const result = execute_impl<EVMC_SHANGHAI>(
             chain, 0, tx, from, header, block_hash_buffer, bs, prev);
         ASSERT_TRUE(result.has_value());
-        auto const &receipt = result.value();
+        auto const &receipt = result.value().receipt;
         EXPECT_EQ(receipt.gas_used, 53'000);
         EXPECT_EQ(receipt.status, 0);
         auto const acct = bs.read_account(from);
@@ -345,7 +345,7 @@ TEST(ExecuteTransaction, replenish_reserve_balance)
         auto const result = execute_impl<EVMC_SHANGHAI>(
             chain, 0, tx, from, header, block_hash_buffer, bs, prev);
         ASSERT_TRUE(result.has_value());
-        auto const &receipt = result.value();
+        auto const &receipt = result.value().receipt;
         EXPECT_EQ(receipt.gas_used, 53'000);
         EXPECT_EQ(receipt.status, 1);
     }
@@ -385,7 +385,7 @@ TEST(ExecuteTransaction, replenish_reserve_balance)
         auto const result = execute_impl<EVMC_SHANGHAI>(
             chain, 0, tx, from, header, block_hash_buffer, bs, prev);
         ASSERT_TRUE(result.has_value());
-        auto const &receipt = result.value();
+        auto const &receipt = result.value().receipt;
         EXPECT_EQ(receipt.gas_used, 53'000);
         EXPECT_EQ(receipt.status, 1);
     }

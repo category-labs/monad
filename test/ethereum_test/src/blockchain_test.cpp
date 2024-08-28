@@ -15,6 +15,7 @@
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/execute_block.hpp>
+#include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
@@ -61,9 +62,13 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
     BlockState block_state(db);
     EthereumMainnet chain;
     BOOST_OUTCOME_TRY(
-        auto const receipts,
+        auto const results,
         execute_block<rev>(
             chain, block, block_state, block_hash_buffer, *pool_));
+    std::vector<Receipt> receipts(results.size());
+    for (unsigned i = 0; i < results.size(); ++i) {
+        receipts[i] = std::move(results[i].receipt);
+    }
     BOOST_OUTCOME_TRY(chain.validate_header(receipts, block.header));
     block_state.log_debug();
     block_state.commit(receipts);

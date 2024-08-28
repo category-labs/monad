@@ -4,6 +4,7 @@
 #include <monad/config.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/execution/trace/call_tracer.hpp>
 
 #include <evmc/evmc.h>
 
@@ -34,7 +35,7 @@ public:
         evmc_revision, Transaction const &, Address const &,
         std::optional<Account> const &) const override;
 
-    virtual evmc::Result execute_impl_no_validation(
+    virtual std::pair<evmc::Result, TxnCallFrames> execute_impl_no_validation(
         evmc_revision, BlockHashBuffer const &, BlockHeader const &, State &,
         Transaction const &, Address const &sender,
         std::optional<Account> const &) override;

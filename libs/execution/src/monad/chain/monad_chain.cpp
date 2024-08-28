@@ -74,7 +74,7 @@ Result<void> MonadChain::validate_transaction(
     return success();
 }
 
-evmc::Result MonadChain::execute_impl_no_validation(
+std::pair<evmc::Result, TxnCallFrames> MonadChain::execute_impl_no_validation(
     evmc_revision const rev, BlockHashBuffer const &buf, BlockHeader const &hdr,
     State &state, Transaction const &tx, Address const &sender,
     std::optional<Account> const &acct)
@@ -85,11 +85,11 @@ evmc::Result MonadChain::execute_impl_no_validation(
         max_gas_cost(tx.gas_limit - intrinsic_gas(rev, tx), tx.max_fee_per_gas);
     auto const balance = acct.has_value() ? acct->balance : uint256_t{0};
     if (effective_balance(default_max_reserve_, balance) < v0) {
-        return evmc::Result{EVMC_REJECTED};
+        return {evmc::Result{EVMC_REJECTED}, TxnCallFrames{}};
     }
     auto res = ::monad::execute_impl_no_validation(
         rev, buf, hdr, get_chain_id(), state, tx, sender);
-    MONAD_ASSERT(res.status_code != EVMC_REJECTED);
+    MONAD_ASSERT(res.first.status_code != EVMC_REJECTED);
     return res;
 }
 

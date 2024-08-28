@@ -3,7 +3,9 @@
 #include <monad/config.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/int.hpp>
+#include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
+#include <monad/execution/trace/call_tracer.hpp>
 
 #include <evmc/evmc.h>
 
@@ -21,7 +23,13 @@ struct Receipt;
 class State;
 struct Transaction;
 
-evmc::Result execute_impl_no_validation(
+struct ExecutionResult
+{
+    Receipt receipt;
+    TxnCallFrames call_frames;
+};
+
+std::pair<evmc::Result, TxnCallFrames> execute_impl_no_validation(
     evmc_revision, BlockHashBuffer const &, BlockHeader const &,
     uint256_t const &chain_id, State &, Transaction const &,
     Address const &sender);
@@ -32,13 +40,13 @@ Receipt execute_final(
     Address const &beneficiary);
 
 template <evmc_revision rev>
-Result<Receipt> execute_impl(
+Result<ExecutionResult> execute_impl(
     Chain &, uint64_t i, Transaction const &, Address const &sender,
     BlockHeader const &, BlockHashBuffer const &, BlockState &,
     boost::fibers::promise<void> &prev);
 
 template <evmc_revision rev>
-Result<Receipt> execute(
+Result<ExecutionResult> execute(
     Chain &, uint64_t i, Transaction const &, std::optional<Address> const &,
     BlockHeader const &, BlockHashBuffer const &, BlockState &,
     boost::fibers::promise<void> &prev);

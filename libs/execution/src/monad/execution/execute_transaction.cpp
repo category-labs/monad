@@ -106,7 +106,7 @@ constexpr evmc_message to_message(Transaction const &tx, Address const &sender)
 }
 
 template <evmc_revision rev>
-evmc::Result execute_impl_no_validation(
+std::pair<evmc::Result, TxnCallFrames> execute_impl_no_validation(
     BlockHashBuffer const &buf, BlockHeader const &hdr,
     uint256_t const &chain_id, State &state, Transaction const &tx,
     Address const &sender)
@@ -134,10 +134,31 @@ evmc::Result execute_impl_no_validation(
     }
 
     auto const msg = to_message<rev>(tx, sender);
-    return host.call(msg);
+    auto result = host.call(msg);
+
+    TxnCallFrames call_frames{};
+
+    if (host.call_tracer) {
+        call_frames = host.call_tracer->get_call_frames();
+        // a conversative bound to ensure node_size <= 256MB, as required by
+        // on-disk triedb. Practically, it doesn't add much value to have
+        // CallTrace with more than 100 CallFrames.
+        if (MONAD_UNLIKELY(call_frames.size() > 100u)) {
+            TxnCallFrames truncated_call_frames{};
+            for (auto const &single_frame : call_frames) {
+                if (single_frame.depth <= 1 &&
+                    truncated_call_frames.size() < 100) {
+                    truncated_call_frames.emplace_back(single_frame);
+                }
+            }
+            call_frames = truncated_call_frames;
+        }
+    }
+
+    return std::make_pair(std::move(result), std::move(call_frames));
 }
 
-evmc::Result execute_impl_no_validation(
+std::pair<evmc::Result, TxnCallFrames> execute_impl_no_validation(
     evmc_revision const rev, BlockHashBuffer const &buf, BlockHeader const &hdr,
     uint256_t const &chain_id, State &state, Transaction const &tx,
     Address const &sender)
@@ -202,7 +223,7 @@ Receipt execute_final(
 }
 
 template <evmc_revision rev>
-Result<evmc::Result> execute_impl2(
+Result<std::pair<evmc::Result, TxnCallFrames>> execute_impl2(
     Chain &chain, Transaction const &tx, Address const &sender,
     BlockHeader const &hdr, BlockHashBuffer const &block_hash_buffer,
     State &state)
@@ -216,7 +237,7 @@ Result<evmc::Result> execute_impl2(
 }
 
 template <evmc_revision rev>
-Result<Receipt> execute_impl(
+Result<ExecutionResult> execute_impl(
     Chain &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
@@ -249,10 +270,11 @@ Result<Receipt> execute_impl(
                 tx,
                 sender,
                 hdr.base_fee_per_gas.value_or(0),
-                result.value(),
+                result.value().first,
                 hdr.beneficiary);
             block_state.merge(state);
-            return receipt;
+            return ExecutionResult{
+                .receipt = receipt, .call_frames = result.value().second};
         }
     }
     {
@@ -273,18 +295,19 @@ Result<Receipt> execute_impl(
             tx,
             sender,
             hdr.base_fee_per_gas.value_or(0),
-            result.value(),
+            result.value().first,
             hdr.beneficiary);
         block_state.merge(state);
 
-        return receipt;
+        return ExecutionResult{
+            .receipt = receipt, .call_frames = result.value().second};
     }
 }
 
 EXPLICIT_EVMC_REVISION(execute_impl);
 
 template <evmc_revision rev>
-Result<Receipt> execute(
+Result<ExecutionResult> execute(
     Chain &chain, uint64_t const i, Transaction const &tx,
     std::optional<Address> const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, BlockState &block_state,

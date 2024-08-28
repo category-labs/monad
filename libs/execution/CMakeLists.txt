@@ -105,6 +105,8 @@ add_library(
   "src/monad/execution/trace/call_tracer.hpp"
   "src/monad/execution/trace/event_trace.cpp"
   "src/monad/execution/trace/event_trace.hpp"
+  "src/monad/execution/trace/rlp/call_frame_rlp.cpp"
+  "src/monad/execution/trace/rlp/call_frame_rlp.hpp"
   "src/monad/execution/transaction_gas.cpp"
   "src/monad/execution/transaction_gas.hpp"
   "src/monad/execution/tx_context.cpp"

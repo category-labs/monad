@@ -32,7 +32,7 @@ namespace
     constexpr evmc_revision rev = EVMC_SHANGHAI; // TODO
     constexpr uint256_t DEFAULT_MAX_RESERVE = 100'000'000'000'000'000;
 
-    Result<evmc::Result> eth_call_impl(
+    Result<std::pair<evmc::Result, TxnCallFrames>> eth_call_impl(
         Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, Address const &sender,
         IntrinsicGasBuffer &intrinsic_gas_buffer, BlockHashBuffer const &buffer,
@@ -324,14 +324,14 @@ monad_evmc_result eth_call(
     }
     else {
         int64_t const gas_used = static_cast<int64_t>(txn.gas_limit) -
-                                 result.assume_value().gas_left;
-        ret.status_code = result.assume_value().status_code;
+                                 result.assume_value().first.gas_left;
+        ret.status_code = result.assume_value().first.status_code;
         ret.output_data = {
-            result.assume_value().output_data,
-            result.assume_value().output_data +
-                result.assume_value().output_size};
+            result.assume_value().first.output_data,
+            result.assume_value().first.output_data +
+                result.assume_value().first.output_size};
         ret.gas_used = gas_used;
-        ret.gas_refund = result.assume_value().gas_refund;
+        ret.gas_refund = result.assume_value().first.gas_refund;
     }
     return ret;
 }

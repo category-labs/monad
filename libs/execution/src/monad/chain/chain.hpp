@@ -5,6 +5,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/result.hpp>
+#include <monad/execution/trace/call_tracer.hpp>
 
 #include <evmc/evmc.h>
 #include <optional>
@@ -40,7 +41,7 @@ struct Chain
         evmc_revision, Transaction const &, Address const &,
         std::optional<Account> const &) const = 0;
 
-    virtual evmc::Result execute_impl_no_validation(
+    virtual std::pair<evmc::Result, TxnCallFrames> execute_impl_no_validation(
         evmc_revision, BlockHashBuffer const &, BlockHeader const &, State &,
         Transaction const &, Address const &sender,
         std::optional<Account> const &) = 0;

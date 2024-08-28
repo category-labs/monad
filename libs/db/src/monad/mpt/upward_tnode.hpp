@@ -129,18 +129,13 @@ struct CompactTNode
                  currently_cached || parent->type == tnode_type::update)
         , node(node)
     {
-        // Ensure node is not deallocated during LRU eviction
-        node->retain_on_eviction_when_compact = true;
     }
 
     ~CompactTNode()
     {
         MONAD_DEBUG_ASSERT(npending == 0);
-        node->retain_on_eviction_when_compact = false;
-        if (!cached && !node->is_in_lru_cache()) {
-            // Lifetime not managed by it's parent TNode nor by lru, so we can
-            // garbage collect this node
-            Node::UniquePtr{node}.reset();
+        if (!cached) {
+            Node::UniquePtr{node};
         }
     }
 

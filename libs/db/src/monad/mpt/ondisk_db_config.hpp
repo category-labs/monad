@@ -22,7 +22,6 @@ struct OnDiskDbConfig
     unsigned uring_entries{512};
     std::optional<unsigned> sq_thread_cpu{0};
     std::optional<uint64_t> start_block_id{std::nullopt};
-    std::optional<size_t> lru_size_mb{std::nullopt};
     std::vector<std::filesystem::path> dbname_paths{};
     int64_t file_size_db{512}; // truncate files to this size
     unsigned concurrent_read_io_limit{1024};

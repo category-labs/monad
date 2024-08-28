@@ -477,7 +477,7 @@ public:
             return;
         }
 
-        auto const code_hash = std::bit_cast<bytes32_t>(keccak256(code));
+        auto const code_hash = to_bytes(keccak256(code));
         code_[code_hash] = std::make_shared<CodeAnalysis>(analyze(code));
         account.value().code_hash = code_hash;
     }

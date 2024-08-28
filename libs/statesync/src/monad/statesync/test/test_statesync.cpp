@@ -242,8 +242,7 @@ TEST(StateSync, sync_from_some)
                 "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
                 "ffffffffffffffffffffff0160005500")
                 .value();
-        auto const code_hash = std::bit_cast<bytes32_t>(
-            ethash::keccak256(code.data(), code.size()));
+        auto const code_hash = to_bytes(keccak256(code));
         auto const code_analysis =
             std::make_shared<CodeAnalysis>(analyze(code));
 
@@ -381,8 +380,7 @@ TEST(StateSync, ignore_unused_code)
                        "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
                        "ffffffffffffffffffffffff")
             .value();
-    auto const code_hash =
-        std::bit_cast<bytes32_t>(ethash::keccak256(code.data(), code.size()));
+    auto const code_hash = to_bytes(keccak256(code));
     {
         char const *const dbname = tmp.c_str();
         OnDiskMachine machine;

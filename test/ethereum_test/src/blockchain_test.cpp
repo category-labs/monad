@@ -9,6 +9,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
+#include <monad/core/keccak.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
@@ -23,8 +24,6 @@
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
-
-#include <ethash/keccak.hpp>
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -88,8 +87,7 @@ void BlockchainTest::validate_post_state(
     for (auto const &[addr, j_account] : json.items()) {
         nlohmann::json const addr_json = addr;
         auto const addr_bytes = addr_json.get<Address>();
-        auto const hashed_account = std::bit_cast<bytes32_t>(
-            ethash::keccak256(addr_bytes.bytes, sizeof(addr_bytes.bytes)));
+        auto const hashed_account = to_bytes(keccak256(addr_bytes.bytes));
         auto const db_addr_key = fmt::format("{}", hashed_account);
 
         ASSERT_TRUE(db.contains(db_addr_key)) << db_addr_key;
@@ -118,10 +116,8 @@ void BlockchainTest::validate_post_state(
         for (auto const &[key, j_value] : j_account.at("storage").items()) {
             nlohmann::json const key_json = key;
             auto const key_bytes = key_json.get<bytes32_t>();
-            auto const db_storage_key = fmt::format(
-                "{}",
-                std::bit_cast<bytes32_t>(ethash::keccak256(
-                    key_bytes.bytes, sizeof(key_bytes.bytes))));
+            auto const db_storage_key =
+                fmt::format("{}", to_bytes(keccak256(key_bytes.bytes)));
             ASSERT_TRUE(db_storage.contains(db_storage_key)) << db_storage_key;
             auto const expected_value =
                 fmt::format("{}", j_value.get<bytes32_t>());

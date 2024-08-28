@@ -325,7 +325,7 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
             concat(CODE_NIBBLE, NibblesView{to_byte_string_view(hash.bytes)}),
             ctx->db.get_latest_block_id());
         MONAD_ASSERT(code.has_value());
-        if (hash != std::bit_cast<bytes32_t>(keccak256(code.value()))) {
+        if (hash != to_bytes(keccak256(code.value()))) {
             return false;
         }
     }

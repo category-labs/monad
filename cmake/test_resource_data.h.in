@@ -2,10 +2,10 @@
 
 #include <monad/config.hpp>
 #include <monad/core/address.hpp>
+#include <monad/core/keccak.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/test/config.hpp>
 
-#include <ethash/keccak.hpp>
 #include <evmc/evmc.h>
 
 #include <filesystem>
@@ -52,43 +52,37 @@ inline auto const a_code =
                    "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
                    "ffffffffffffffffffffff0160005500")
         .value();
-inline auto const a_code_hash =
-    std::bit_cast<bytes32_t>(ethash::keccak256(a_code.data(), a_code.size()));
+inline auto const a_code_hash = to_bytes(keccak256(a_code));
 inline auto const a_code_analysis =
     std::make_shared<CodeAnalysis>(analyze(a_code));
 inline auto const b_code =
     evmc::from_hex("60047ffffffffffffffffffffffffffffffffffffffffffffffffff"
                    "fffffffffffffff0160005500")
         .value();
-inline auto const b_code_hash =
-    std::bit_cast<bytes32_t>(ethash::keccak256(b_code.data(), b_code.size()));
+inline auto const b_code_hash = to_bytes(keccak256(b_code));
 inline auto const b_code_analysis =
     std::make_shared<CodeAnalysis>(analyze(b_code));
 inline auto const c_code =
     evmc::from_hex("60017ffffffffffffffffffffffffffffffffffffffffffffffffff"
                    "fffffffffffffff0160005500")
         .value();
-inline auto const c_code_hash =
-    std::bit_cast<bytes32_t>(ethash::keccak256(c_code.data(), c_code.size()));
+inline auto const c_code_hash = to_bytes(keccak256(c_code));
 inline auto const c_code_analysis =
     std::make_shared<CodeAnalysis>(analyze(c_code));
 inline auto const d_code = evmc::from_hex("600060000160005500").value();
-inline auto const d_code_hash =
-    std::bit_cast<bytes32_t>(ethash::keccak256(d_code.data(), d_code.size()));
+inline auto const d_code_hash = to_bytes(keccak256(d_code));
 inline auto const d_code_analysis =
     std::make_shared<CodeAnalysis>(analyze(d_code));
 inline auto const e_code =
     evmc::from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
                    "fffffffffff60010160005500")
         .value();
-inline auto const e_code_hash =
-    std::bit_cast<bytes32_t>(ethash::keccak256(e_code.data(), e_code.size()));
+inline auto const e_code_hash = to_bytes(keccak256(e_code));
 inline auto const e_code_analysis =
     std::make_shared<CodeAnalysis>(analyze(e_code));
 inline auto const h_code =
     evmc::from_hex("600060006000600060006004356101000162fffffff100").value();
-inline auto const h_code_hash =
-    std::bit_cast<bytes32_t>(ethash::keccak256(h_code.data(), h_code.size()));
+inline auto const h_code_hash = to_bytes(keccak256(h_code));
 inline auto const h_code_analysis =
     std::make_shared<CodeAnalysis>(analyze(h_code));
 

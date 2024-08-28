@@ -579,8 +579,9 @@ struct Db::RWOnDisk final : public Db::Impl
         })
         , machine_{machine}
         , lru_list_(
-              options.lru_size_mb > 0
-                  ? std::make_unique<LruList>(options.lru_size_mb * 1024 * 1024)
+              options.lru_size_mb.has_value()
+                  ? std::make_unique<LruList>(
+                        options.lru_size_mb.value() * 1024 * 1024)
                   : std::unique_ptr<LruList>())
         , root_([&] {
             comms_.enqueue({});

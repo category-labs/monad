@@ -89,6 +89,8 @@ class CallTracer
     size_t depth_;
 
     Transaction const &tx_;
+
+    // debug helper
     hash256 tx_hash_;
 
 public:
@@ -196,12 +198,12 @@ public:
         return call_frames_;
     }
 
+    //////////////////////// debug helpers ////////////////////////
     hash256 get_tx_hash() const
     {
         return tx_hash_;
     }
 
-    //////////////////////// debug helpers ////////////////////////
     nlohmann::json to_json();
 
 private:

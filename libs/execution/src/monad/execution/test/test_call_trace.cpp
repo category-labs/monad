@@ -59,8 +59,8 @@ TEST(CallFrame, to_json)
 
 TEST(CallTrace, enter_and_exit)
 {
-    static evmc_message msg{.input_data = input};
-    static evmc::Result res{};
+    evmc_message msg{.input_data = input};
+    evmc::Result res{};
     res.output_data = output;
 
     CallTracer call_tracer{tx};

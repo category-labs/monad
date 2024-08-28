@@ -106,8 +106,8 @@ void monad_statesync_server_context::increment_block_number()
 
 void monad_statesync_server_context::commit(
     StateDeltas const &state_deltas, Code const &code,
-    std::vector<Receipt> const &receipts)
+    std::vector<Receipt> const &receipts, BlockCallFrames const &call_frames)
 {
     on_commit(*this, state_deltas);
-    rw.commit(state_deltas, code, receipts);
+    rw.commit(state_deltas, code, receipts, call_frames);
 }

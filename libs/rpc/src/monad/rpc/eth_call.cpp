@@ -142,12 +142,13 @@ namespace
             enriched_txn, sender, header, chain.get_chain_id());
         EvmcHost<rev> host{tx_context, buffer, state};
         return execute_impl_no_validation<rev>(
-            state,
-            host,
-            enriched_txn,
-            sender,
-            header.base_fee_per_gas.value_or(0),
-            header.beneficiary);
+                   state,
+                   host,
+                   enriched_txn,
+                   sender,
+                   header.base_fee_per_gas.value_or(0),
+                   header.beneficiary)
+            .first;
     }
 
 }

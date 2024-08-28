@@ -607,14 +607,16 @@ deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
     // Load the on disk node
     auto const mask = unaligned_load<uint16_t>(read_pos);
     auto const number_of_children = static_cast<unsigned>(std::popcount(mask));
-    auto const alloc_size =
-        static_cast<uint32_t>(disk_size + number_of_children * sizeof(Node *));
+    auto const alloc_size = static_cast<uint32_t>(
+        disk_size + number_of_children * sizeof(Node *) -
+        Node::disk_size_bytes);
     auto node = Node::make(alloc_size);
     std::copy_n(
         read_pos,
         disk_size - Node::disk_size_bytes,
         (unsigned char *)node.get());
     std::memset(node->next_data(), 0, number_of_children * sizeof(Node *));
+    MONAD_ASSERT(alloc_size == node->get_mem_size());
     return node;
 }
 

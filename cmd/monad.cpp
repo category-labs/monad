@@ -202,7 +202,7 @@ int main(int const argc, char const *argv[])
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);
     uint64_t history_len = 1000;
-    size_t lru_size_mb = 1024;
+    std::optional<size_t> lru_size_mb = std::nullopt;
     std::vector<fs::path> dbname_paths;
     fs::path genesis;
     fs::path snapshot;
@@ -247,10 +247,9 @@ int main(int const argc, char const *argv[])
         "configure the storage pool with one or more files/devices. If no "
         "value is passed, the replay will run with an in-memory triedb");
     cli.add_option(
-           "--lru_size_mb",
+           "--lru_size",
            lru_size_mb,
-           "triedb node LRU cache with size in MB, pass 0 to disable node LRU "
-           "cache")
+           "enable triedb node lru cache with size in MB")
         ->needs(db_opt); // only allowed if running on disk
     cli.add_option(
         "--dump_snapshot",

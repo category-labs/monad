@@ -84,43 +84,43 @@ TEST(DBTest, read_only)
         Account const acct1{.nonce = 1};
         rw.commit(
             StateDeltas{
-                {addr_a,
+                {ADDR_A,
                  StateDelta{.account = {std::nullopt, acct1}, .storage = {}}}},
             Code{});
         Account const acct2{.nonce = 2};
         rw.increment_block_number();
         rw.commit(
             StateDeltas{
-                {addr_a, StateDelta{.account = {acct1, acct2}, .storage = {}}}},
+                {ADDR_A, StateDelta{.account = {acct1, acct2}, .storage = {}}}},
             Code{});
 
         mpt::Db db2(mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {name}});
         TrieDb ro{db2};
-        EXPECT_EQ(ro.read_account(addr_a), Account{.nonce = 2});
+        EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 2});
         ro.set_block_number(0);
-        EXPECT_EQ(ro.read_account(addr_a), Account{.nonce = 1});
+        EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 1});
 
         Account const acct3{.nonce = 3};
         rw.increment_block_number();
         rw.commit(
             StateDeltas{
-                {addr_a, StateDelta{.account = {acct2, acct3}, .storage = {}}}},
+                {ADDR_A, StateDelta{.account = {acct2, acct3}, .storage = {}}}},
             Code{});
 
         // Read block 0
-        EXPECT_EQ(ro.read_account(addr_a), Account{.nonce = 1});
+        EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 1});
         // Go forward to block 2
         ro.set_block_number(2);
-        EXPECT_EQ(ro.read_account(addr_a), Account{.nonce = 3});
+        EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 3});
         // Go backward to block 1
         ro.set_block_number(1);
-        EXPECT_EQ(ro.read_account(addr_a), Account{.nonce = 2});
+        EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 2});
         // Setting the same block number is no-op.
         ro.set_block_number(1);
-        EXPECT_EQ(ro.read_account(addr_a), Account{.nonce = 2});
+        EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 2});
         // Go to a random block
         ro.set_block_number(1337);
-        EXPECT_EQ(ro.read_account(addr_a), std::nullopt);
+        EXPECT_EQ(ro.read_account(ADDR_A), std::nullopt);
     }
     std::filesystem::remove(name);
 }
@@ -131,42 +131,42 @@ TYPED_TEST(DBTest, read_storage)
     TrieDb tdb{this->db};
     tdb.commit(
         StateDeltas{
-            {addr_a,
+            {ADDR_A,
              StateDelta{
                  .account = {std::nullopt, acct},
                  .storage = {{key1, {bytes32_t{}, value1}}}}}},
         Code{});
 
     // Existing storage
-    EXPECT_EQ(tdb.read_storage(addr_a, Incarnation{0, 0}, key1), value1);
-    EXPECT_EQ(tdb.read_storage_and_slot(addr_a, key1).first, key1);
+    EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key1), value1);
+    EXPECT_EQ(tdb.read_storage_and_slot(ADDR_A, key1).first, key1);
 
     // Non-existing key
-    EXPECT_EQ(tdb.read_storage(addr_a, Incarnation{0, 0}, key2), bytes32_t{});
-    EXPECT_EQ(tdb.read_storage_and_slot(addr_a, key2).first, bytes32_t{});
+    EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key2), bytes32_t{});
+    EXPECT_EQ(tdb.read_storage_and_slot(ADDR_A, key2).first, bytes32_t{});
 
     // Non-existing account
-    EXPECT_FALSE(tdb.read_account(addr_b).has_value());
-    EXPECT_EQ(tdb.read_storage(addr_b, Incarnation{0, 0}, key1), bytes32_t{});
-    EXPECT_EQ(tdb.read_storage_and_slot(addr_b, key1).first, bytes32_t{});
+    EXPECT_FALSE(tdb.read_account(ADDR_B).has_value());
+    EXPECT_EQ(tdb.read_storage(ADDR_B, Incarnation{0, 0}, key1), bytes32_t{});
+    EXPECT_EQ(tdb.read_storage_and_slot(ADDR_B, key1).first, bytes32_t{});
 }
 
 TYPED_TEST(DBTest, read_code)
 {
-    Account acct_a{.balance = 1, .code_hash = a_code_hash, .nonce = 1};
+    Account acct_a{.balance = 1, .code_hash = A_CODE_HASH, .nonce = 1};
     TrieDb tdb{this->db};
     tdb.commit(
-        StateDeltas{{addr_a, StateDelta{.account = {std::nullopt, acct_a}}}},
-        Code{{a_code_hash, a_code_analysis}});
+        StateDeltas{{ADDR_A, StateDelta{.account = {std::nullopt, acct_a}}}},
+        Code{{A_CODE_HASH, A_CODE_ANALYSIS}});
 
-    EXPECT_EQ(tdb.read_code(a_code_hash)->executable_code, a_code);
+    EXPECT_EQ(tdb.read_code(A_CODE_HASH)->executable_code, A_CODE);
 
-    Account acct_b{.balance = 0, .code_hash = b_code_hash, .nonce = 1};
+    Account acct_b{.balance = 0, .code_hash = B_CODE_HASH, .nonce = 1};
     tdb.commit(
-        StateDeltas{{addr_b, StateDelta{.account = {std::nullopt, acct_b}}}},
-        Code{{b_code_hash, b_code_analysis}});
+        StateDeltas{{ADDR_B, StateDelta{.account = {std::nullopt, acct_b}}}},
+        Code{{B_CODE_HASH, B_CODE_ANALYSIS}});
 
-    EXPECT_EQ(tdb.read_code(b_code_hash)->executable_code, b_code);
+    EXPECT_EQ(tdb.read_code(B_CODE_HASH)->executable_code, B_CODE);
 }
 
 TYPED_TEST(DBTest, ModifyStorageOfAccount)
@@ -175,7 +175,7 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
     TrieDb tdb{this->db};
     tdb.commit(
         StateDeltas{
-            {addr_a,
+            {ADDR_A,
              StateDelta{
                  .account = {std::nullopt, acct},
                  .storage =
@@ -183,10 +183,10 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    acct = tdb.read_account(addr_a).value();
+    acct = tdb.read_account(ADDR_A).value();
     tdb.commit(
         StateDeltas{
-            {addr_a,
+            {ADDR_A,
              StateDelta{
                  .account = {acct, acct},
                  .storage = {{key2, {value2, value1}}}}}},
@@ -202,10 +202,10 @@ TYPED_TEST(DBTest, touch_without_modify_regression)
     TrieDb tdb{this->db};
     tdb.commit(
         StateDeltas{
-            {addr_a, StateDelta{.account = {std::nullopt, std::nullopt}}}},
+            {ADDR_A, StateDelta{.account = {std::nullopt, std::nullopt}}}},
         Code{});
 
-    EXPECT_EQ(tdb.read_account(addr_a), std::nullopt);
+    EXPECT_EQ(tdb.read_account(ADDR_A), std::nullopt);
     EXPECT_EQ(tdb.state_root(), NULL_ROOT);
 }
 
@@ -215,7 +215,7 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
     TrieDb tdb{this->db};
     tdb.commit(
         StateDeltas{
-            {addr_a,
+            {ADDR_A,
              StateDelta{
                  .account = {std::nullopt, acct},
                  .storage =
@@ -225,15 +225,15 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
 
     tdb.commit(
         StateDeltas{
-            {addr_a,
+            {ADDR_A,
              StateDelta{
                  .account = {acct, std::nullopt},
                  .storage =
                      {{key1, {value1, value2}}, {key2, {value2, value1}}}}}},
         Code{});
 
-    EXPECT_EQ(tdb.read_account(addr_a), std::nullopt);
-    EXPECT_EQ(tdb.read_storage(addr_a, Incarnation{0, 0}, key1), bytes32_t{});
+    EXPECT_EQ(tdb.read_account(ADDR_A), std::nullopt);
+    EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key1), bytes32_t{});
     EXPECT_EQ(tdb.state_root(), NULL_ROOT);
 }
 
@@ -244,7 +244,7 @@ TYPED_TEST(DBTest, storage_deletion)
     TrieDb tdb{this->db};
     tdb.commit(
         StateDeltas{
-            {addr_a,
+            {ADDR_A,
              StateDelta{
                  .account = {std::nullopt, acct},
                  .storage =
@@ -252,10 +252,10 @@ TYPED_TEST(DBTest, storage_deletion)
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{});
 
-    acct = tdb.read_account(addr_a).value();
+    acct = tdb.read_account(ADDR_A).value();
     tdb.commit(
         StateDeltas{
-            {addr_a,
+            {ADDR_A,
              StateDelta{
                  .account = {acct, acct},
                  .storage = {{key1, {value1, bytes32_t{}}}}}}},
@@ -416,21 +416,21 @@ TYPED_TEST(DBTest, load_from_binary)
         tdb.state_root(),
         0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);
     EXPECT_EQ(
-        tdb.read_code(a_code_hash)->executable_code,
-        a_code_analysis->executable_code);
+        tdb.read_code(A_CODE_HASH)->executable_code,
+        A_CODE_ANALYSIS->executable_code);
     EXPECT_EQ(
-        tdb.read_code(b_code_hash)->executable_code,
-        b_code_analysis->executable_code);
+        tdb.read_code(B_CODE_HASH)->executable_code,
+        B_CODE_ANALYSIS->executable_code);
     EXPECT_EQ(
-        tdb.read_code(c_code_hash)->executable_code,
-        c_code_analysis->executable_code);
+        tdb.read_code(C_CODE_HASH)->executable_code,
+        C_CODE_ANALYSIS->executable_code);
     EXPECT_EQ(
-        tdb.read_code(d_code_hash)->executable_code,
-        d_code_analysis->executable_code);
+        tdb.read_code(D_CODE_HASH)->executable_code,
+        D_CODE_ANALYSIS->executable_code);
     EXPECT_EQ(
-        tdb.read_code(e_code_hash)->executable_code,
-        e_code_analysis->executable_code);
+        tdb.read_code(E_CODE_HASH)->executable_code,
+        E_CODE_ANALYSIS->executable_code);
     EXPECT_EQ(
-        tdb.read_code(h_code_hash)->executable_code,
-        h_code_analysis->executable_code);
+        tdb.read_code(H_CODE_HASH)->executable_code,
+        H_CODE_ANALYSIS->executable_code);
 }

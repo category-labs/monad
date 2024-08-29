@@ -10,7 +10,6 @@
 #include <evmc/evmc.hpp>
 
 #include <bit>
-#include <concepts>
 #include <cstddef>
 #include <functional>
 
@@ -21,9 +20,12 @@ using bytes32_t = ::evmc::bytes32;
 static_assert(sizeof(bytes32_t) == 32);
 static_assert(alignof(bytes32_t) == 1);
 
-template <class T>
-    requires std::same_as<T, uint256_t> || std::same_as<T, hash256>
-constexpr bytes32_t to_bytes(T const n) noexcept
+constexpr bytes32_t to_bytes(uint256_t const n) noexcept
+{
+    return std::bit_cast<bytes32_t>(n);
+}
+
+constexpr bytes32_t to_bytes(hash256 const n) noexcept
 {
     return std::bit_cast<bytes32_t>(n);
 }

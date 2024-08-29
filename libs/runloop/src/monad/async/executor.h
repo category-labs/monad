@@ -88,6 +88,30 @@ struct monad_async_executor_attr
             //! \brief How many of each of small pages and of large pages the
             //! small and large buffer sizes are.
             unsigned small_multiplier, large_multiplier;
+            /*! \brief Number of small and large buffers to have io_uring
+            allocate during read operations.
+
+            io_uring can allocate i/o buffers at the point of successful read
+            which is obviously much more efficient than userspace allocating
+            read i/o buffers prior to initiating the read, which ties up i/o
+            buffers. However, socket i/o doesn't use the write ring, so if all
+            buffers are allocated for read then you would have no buffers for
+            writing to sockets. Therefore you may want some of the buffers
+            available for userspace allocation, and some for kernel allocation
+            depending on use case.
+
+            A further complication is that if you enable this facility, if
+            io_uring receives i/o and no buffers remain available to it, it
+            will fail the read i/o with a result equivalent to `ENOBUFS`. It
+            is 100% on you to free up some buffers and reschedule the read if
+            this occurs.
+
+            Note that kernel 6.8 (Ubuntu 24.04) appears to refuse to allocate
+            buffers for file i/o only, a future kernel release may fix this.
+            https://github.com/axboe/liburing/issues/1214 tracks the feature
+            request.
+            */
+            unsigned small_kernel_allocated_count, large_kernel_allocated_count;
         } registered_buffers;
     } io_uring_ring, io_uring_wr_ring;
 };

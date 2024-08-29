@@ -74,7 +74,7 @@ monad_c_result monad_async_task_file_create(
         subpath,
         how,
         file_index);
-    io_uring_sqe_set_data(sqe, task, task);
+    io_uring_sqe_set_data(sqe, task, task, nullptr);
 
 #if MONAD_ASYNC_FILE_IO_PRINTING
     printf(
@@ -118,7 +118,7 @@ monad_c_result monad_async_task_file_create(
             subpath,
             how,
             file_index);
-        io_uring_sqe_set_data(sqe, task, task);
+        io_uring_sqe_set_data(sqe, task, task, nullptr);
 
 #if MONAD_ASYNC_FILE_IO_PRINTING
         printf(
@@ -201,7 +201,7 @@ monad_async_task_file_destroy(monad_async_task task_, monad_async_file file_)
                 get_wrsqe_suspending_if_necessary(ex, task, false);
             io_uring_prep_close(sqe, 0);
             __io_uring_set_target_fixed_file(sqe, file->io_uring_file_index);
-            io_uring_sqe_set_data(sqe, task, task);
+            io_uring_sqe_set_data(sqe, task, task, nullptr);
 
 #if MONAD_ASYNC_FILE_IO_PRINTING
             printf(
@@ -228,7 +228,7 @@ monad_async_task_file_destroy(monad_async_task task_, monad_async_file file_)
             get_sqe_suspending_if_necessary(ex, task, false);
         io_uring_prep_close(sqe, 0);
         __io_uring_set_target_fixed_file(sqe, file->io_uring_file_index);
-        io_uring_sqe_set_data(sqe, task, task);
+        io_uring_sqe_set_data(sqe, task, task, nullptr);
 
 #if MONAD_ASYNC_FILE_IO_PRINTING
         printf(
@@ -285,7 +285,7 @@ monad_c_result monad_async_task_file_fallocate(
         sqe, (int)file->io_uring_file_index, mode, offset, len);
 #endif
     sqe->flags |= IOSQE_FIXED_FILE;
-    io_uring_sqe_set_data(sqe, task, task);
+    io_uring_sqe_set_data(sqe, task, task, nullptr);
 
 #if MONAD_ASYNC_FILE_IO_PRINTING
     printf(
@@ -347,7 +347,11 @@ void monad_async_task_file_read(
         (struct monad_async_executor_impl *)atomic_load_explicit(
             &task_->current_executor, memory_order_acquire);
     assert(ex != nullptr);
-    // TODO(niall): Implement IOSQE_BUFFER_SELECT support
+    assert(
+        ex->registered_buffers[0].buffers !=
+        nullptr); // use readv() if you haven't set up buffers
+    assert(
+        tofill->iov[0].iov_base == nullptr); // io_uring allocates this for you!
     int buffer_index = 0;
     const struct monad_async_task_claim_registered_io_buffer_flags flags_ = {
         .fail_dont_suspend = false, ._for_read_ring = true};
@@ -375,7 +379,7 @@ void monad_async_task_file_read(
         buffer_index);
     sqe->rw_flags = flags;
     sqe->flags |= IOSQE_FIXED_FILE;
-    io_uring_sqe_set_data(sqe, iostatus, task);
+    io_uring_sqe_set_data(sqe, iostatus, task, tofill);
     iostatus->cancel_ = monad_async_task_file_io_cancel;
     iostatus->ticks_when_initiated = get_ticks_count(memory_order_relaxed);
 
@@ -443,7 +447,7 @@ void monad_async_task_file_readv(
         }
     }
     sqe->flags |= IOSQE_FIXED_FILE;
-    io_uring_sqe_set_data(sqe, iostatus, task);
+    io_uring_sqe_set_data(sqe, iostatus, task, nullptr);
     iostatus->cancel_ = monad_async_task_file_io_cancel;
     iostatus->ticks_when_initiated = get_ticks_count(memory_order_relaxed);
 
@@ -513,7 +517,7 @@ void monad_async_task_file_write(
         }
     }
     sqe->flags |= IOSQE_FIXED_FILE;
-    io_uring_sqe_set_data(sqe, iostatus, task);
+    io_uring_sqe_set_data(sqe, iostatus, task, nullptr);
     iostatus->cancel_ = monad_async_task_file_wrio_cancel;
     iostatus->ticks_when_initiated = get_ticks_count(memory_order_relaxed);
 
@@ -546,7 +550,7 @@ void monad_async_task_file_range_sync(
     io_uring_prep_sync_file_range(
         sqe, (int)file->io_uring_file_index, bytes, offset, flags);
     sqe->flags |= IOSQE_FIXED_FILE;
-    io_uring_sqe_set_data(sqe, iostatus, task);
+    io_uring_sqe_set_data(sqe, iostatus, task, nullptr);
     iostatus->cancel_ = monad_async_task_file_wrio_cancel;
     iostatus->ticks_when_initiated = get_ticks_count(memory_order_relaxed);
 
@@ -577,7 +581,7 @@ void monad_async_task_file_durable_sync(
                task_->io_recipient_task; // WARNING: task may not be task!
     io_uring_prep_fsync(sqe, (int)file->io_uring_file_index, 0);
     sqe->flags |= IOSQE_FIXED_FILE;
-    io_uring_sqe_set_data(sqe, iostatus, task);
+    io_uring_sqe_set_data(sqe, iostatus, task, nullptr);
     iostatus->cancel_ = monad_async_task_file_wrio_cancel;
     iostatus->ticks_when_initiated = get_ticks_count(memory_order_relaxed);
 

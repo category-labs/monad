@@ -20,6 +20,15 @@ typedef struct monad_async_task_head *monad_async_task;
 struct monad_fiber_task;
 struct monad_fiber_scheduler;
 
+#if defined(__clang__)
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
+    #pragma clang diagnostic ignored "-Wnested-anon-types"
+#elif defined(__GNUC__)
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wpedantic"
+#endif
+
 //! \brief An i/o status state used to identify an i/o in progress. Must NOT
 //! move in memory until the operation completes.
 typedef struct monad_async_io_status
@@ -29,10 +38,20 @@ typedef struct monad_async_io_status
     monad_c_result (*MONAD_CONTEXT_PUBLIC_CONST cancel_)(
         monad_async_task, struct monad_async_io_status *);
 
-    //! Unspecified value immediately after initiating call returns. Will become
-    //! bytes transferred if operation is successful, or another error if it
-    //! fails or is cancelled.
-    MONAD_CONTEXT_PUBLIC_CONST monad_c_result result;
+    union
+    {
+        //! Unspecified value immediately after initiating call returns. Will
+        //! become bytes transferred if operation is successful, or another
+        //! error if it fails or is cancelled.
+        MONAD_CONTEXT_PUBLIC_CONST monad_c_result result;
+
+        struct
+        {
+            monad_async_task task_;
+            unsigned flags_;
+            struct monad_async_task_registered_io_buffer *tofill_;
+        };
+    };
 
     MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
         ticks_when_initiated;
@@ -51,11 +70,17 @@ static_assert(alignof(monad_async_io_status) == 8);
     #endif
 #endif
 
+#if defined(__clang__)
+    #pragma clang diagnostic pop
+#elif defined(__GNUC__)
+    #pragma GCC diagnostic pop
+#endif
+
 //! \brief True if the i/o is currently in progress
 static inline bool
 monad_async_is_io_in_progress(monad_async_io_status const *iostatus)
 {
-    return iostatus->result.flags == (unsigned)-1;
+    return iostatus->flags_ == (unsigned)-1;
 }
 
 //! \brief Number of the i/o is currently in progress

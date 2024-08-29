@@ -129,7 +129,7 @@ monad_c_result monad_async_task_socket_destroy(
             get_sqe_suspending_if_necessary(ex, task, false);
         io_uring_prep_close(sqe, 0);
         __io_uring_set_target_fixed_file(sqe, sock->io_uring_file_index);
-        io_uring_sqe_set_data(sqe, task, task);
+        io_uring_sqe_set_data(sqe, task, task, nullptr);
 
 #if MONAD_ASYNC_SOCKET_IO_PRINTING
         printf(
@@ -270,7 +270,7 @@ monad_c_result monad_async_task_socket_transfer_to_uring(
             sock->not_created.protocol,
             file_index,
             0);
-        io_uring_sqe_set_data(sqe, task, task);
+        io_uring_sqe_set_data(sqe, task, task, nullptr);
 
 #if MONAD_ASYNC_SOCKET_IO_PRINTING
         printf(
@@ -365,7 +365,7 @@ monad_c_result monad_async_task_socket_accept(
         flags,
         connected_file_index);
     sqe->flags |= IOSQE_FIXED_FILE;
-    io_uring_sqe_set_data(sqe, task, task);
+    io_uring_sqe_set_data(sqe, task, task, nullptr);
 
 #if MONAD_ASYNC_SOCKET_IO_PRINTING
     printf(
@@ -427,7 +427,7 @@ void monad_async_task_socket_connect(
                task_->io_recipient_task; // WARNING: task may not be task!
     io_uring_prep_connect(sqe, (int)sock->io_uring_file_index, addr, addrlen);
     sqe->flags |= IOSQE_FIXED_FILE;
-    io_uring_sqe_set_data(sqe, iostatus, task);
+    io_uring_sqe_set_data(sqe, iostatus, task, nullptr);
     iostatus->cancel_ = monad_async_task_socket_iostatus_op_cancel;
     iostatus->ticks_when_initiated = get_ticks_count(memory_order_relaxed);
 
@@ -464,7 +464,7 @@ void monad_async_task_socket_shutdown(
                task_->io_recipient_task; // WARNING: task may not be task!
     io_uring_prep_shutdown(sqe, (int)sock->io_uring_file_index, how);
     sqe->flags |= IOSQE_FIXED_FILE;
-    io_uring_sqe_set_data(sqe, iostatus, task);
+    io_uring_sqe_set_data(sqe, iostatus, task, nullptr);
     iostatus->cancel_ = monad_async_task_socket_iostatus_op_cancel;
     iostatus->ticks_when_initiated = get_ticks_count(memory_order_relaxed);
 
@@ -498,21 +498,33 @@ void monad_async_task_socket_receive(
         (struct monad_async_executor_impl *)atomic_load_explicit(
             &task_->current_executor, memory_order_acquire);
     assert(ex != nullptr);
-    // TODO(niall): Implement IOSQE_BUFFER_SELECT support
+    assert(
+        ex->registered_buffers[0].buffers !=
+        nullptr); // use receivev() if you haven't set up buffers
+    assert(
+        tofill->iov[0].iov_base == nullptr); // io_uring allocates this for you!
+    bool const is_large_page =
+        (max_bytes > ex->registered_buffers[0].buffer[0].size);
     __u16 buffer_index = 0;
-    const struct monad_async_task_claim_registered_io_buffer_flags flags_ = {
-        .fail_dont_suspend = false, ._for_read_ring = true};
-    monad_c_result r = monad_async_task_claim_registered_file_io_write_buffer(
-        tofill, task_, max_bytes, flags_);
-    if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(r)) {
-        if (!outcome_status_code_equal_generic(&r.error, EINVAL) &&
-            !outcome_status_code_equal_generic(&r.error, ECANCELED)) {
-            MONAD_CONTEXT_CHECK_RESULT(r);
+    if (ex->registered_buffers[0].buffer[is_large_page].buf_ring_count == 0) {
+        const struct monad_async_task_claim_registered_io_buffer_flags flags_ =
+            {.fail_dont_suspend = false, ._for_read_ring = true};
+        monad_c_result r =
+            monad_async_task_claim_registered_file_io_write_buffer(
+                tofill, task_, max_bytes, flags_);
+        if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(r)) {
+            if (!outcome_status_code_equal_generic(&r.error, EINVAL) &&
+                !outcome_status_code_equal_generic(&r.error, ECANCELED)) {
+                MONAD_CONTEXT_CHECK_RESULT(r);
+            }
+            tofill->index = 0;
         }
-        tofill->index = 0;
+        else {
+            buffer_index = (__u16)tofill->index - 1;
+        }
     }
     else {
-        buffer_index = (__u16)tofill->index - 1;
+        buffer_index = is_large_page; // buffer group
     }
     struct io_uring_sqe *sqe = get_sqe_suspending_if_necessary(ex, task, false);
     task = (struct monad_async_task_impl *)
@@ -525,7 +537,10 @@ void monad_async_task_socket_receive(
         (int)flags);
     sqe->buf_index = buffer_index;
     sqe->flags |= IOSQE_FIXED_FILE;
-    io_uring_sqe_set_data(sqe, iostatus, task);
+    if (ex->registered_buffers[0].buffer[is_large_page].buf_ring_count > 0) {
+        sqe->flags |= IOSQE_BUFFER_SELECT;
+    }
+    io_uring_sqe_set_data(sqe, iostatus, task, tofill);
     iostatus->cancel_ = monad_async_task_socket_iostatus_op_cancel;
     iostatus->ticks_when_initiated = get_ticks_count(memory_order_relaxed);
 
@@ -578,7 +593,7 @@ void monad_async_task_socket_receivev(
         sqe->buf_index = (__u16)buffer_index - 1;
     }
     sqe->flags |= IOSQE_FIXED_FILE;
-    io_uring_sqe_set_data(sqe, iostatus, task);
+    io_uring_sqe_set_data(sqe, iostatus, task, nullptr);
     iostatus->cancel_ = monad_async_task_socket_iostatus_op_cancel;
     iostatus->ticks_when_initiated = get_ticks_count(memory_order_relaxed);
 
@@ -635,7 +650,7 @@ void monad_async_task_socket_send(
         sqe->buf_index = (__u16)buffer_index - 1;
     }
     sqe->flags |= IOSQE_FIXED_FILE;
-    io_uring_sqe_set_data(sqe, iostatus, task);
+    io_uring_sqe_set_data(sqe, iostatus, task, nullptr);
     iostatus->cancel_ = monad_async_task_socket_iostatus_op_cancel;
     iostatus->ticks_when_initiated = get_ticks_count(memory_order_relaxed);
 

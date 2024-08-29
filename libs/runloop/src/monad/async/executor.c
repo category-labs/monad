@@ -652,7 +652,9 @@ static inline monad_c_result monad_async_executor_run_impl(
                     // actual result of the i/o below, and that result will
                     // never be a valid pointer, so this check should be
                     // reliable.
-                    task = *(struct monad_async_task_impl **)&iostatus->result;
+                    task = (struct monad_async_task_impl *)iostatus->task_;
+                    struct monad_async_task_registered_io_buffer *tofill =
+                        iostatus->tofill_;
 #if MONAD_ASYNC_EXECUTOR_PRINTING
                     printf(
                         "*** %u. Executor %p gets result of i/o %p "
@@ -682,6 +684,19 @@ static inline monad_c_result monad_async_executor_run_impl(
                     }
                     else {
                         iostatus->result = monad_c_make_success(cqe->res);
+                    }
+                    if (cqe->flags & IORING_CQE_F_BUFFER) {
+                        if (tofill == nullptr) {
+                            fprintf(
+                                stderr,
+                                "FATAL: io_uring chooses buffer but tofill was "
+                                "not set!\n");
+                            abort();
+                        }
+                        tofill->index =
+                            (int)(cqe->flags >> IORING_CQE_BUFFER_SHIFT);
+                        tofill->iov[0] = ex->registered_buffers[0]
+                                             .buffers[tofill->index - 1];
                     }
                     if (task->completed != nullptr &&
                         atomic_load_explicit(
@@ -1466,7 +1481,7 @@ monad_c_result monad_async_task_suspend_for_duration(
             ts.tv_nsec = (long long)(ns % 1000000000);
             io_uring_prep_timeout(sqe, &ts, 0, 0);
         }
-        io_uring_sqe_set_data(sqe, task, task);
+        io_uring_sqe_set_data(sqe, task, task, nullptr);
     }
 
 #if MONAD_ASYNC_EXECUTOR_PRINTING
@@ -1510,17 +1525,19 @@ monad_async_task_claim_registered_io_write_buffer_resume(
     struct monad_async_task_impl *task =
         (struct monad_async_task_impl *)((char *)ex
                                              ->registered_buffers[is_for_write]
-                                             .tasks_awaiting[is_large_page]
-                                             .front -
+                                             .buffer[is_large_page]
+                                             .tasks_awaiting.front -
                                          offsetof(
                                              struct monad_async_task_impl,
                                              io_buffer_awaiting));
     assert(
         ex->registered_buffers[is_for_write]
-            .tasks_awaiting[is_large_page]
-            .count > 0);
+            .buffer[is_large_page]
+            .tasks_awaiting.count > 0);
     LIST_REMOVE(
-        ex->registered_buffers[is_for_write].tasks_awaiting[is_large_page],
+        ex->registered_buffers[is_for_write]
+            .buffer[is_large_page]
+            .tasks_awaiting,
         &task->io_buffer_awaiting,
         (size_t *)nullptr);
 
@@ -1558,9 +1575,10 @@ monad_async_task_claim_registered_io_write_buffer_resume(
     }
     else {
         struct monad_async_executor_free_registered_buffer *p =
-            ex->registered_buffers[is_for_write].free[is_large_page];
+            ex->registered_buffers[is_for_write].buffer[is_large_page].free;
         task->head.derived.result = monad_c_make_success((intptr_t)p);
-        ex->registered_buffers[is_for_write].free[is_large_page] = p->next;
+        ex->registered_buffers[is_for_write].buffer[is_large_page].free =
+            p->next;
     }
     struct monad_async_task_impl *pos =
         ex->tasks_suspended_completed[monad_async_task_effective_cpu_priority(
@@ -1586,9 +1604,8 @@ monad_async_task_claim_registered_io_write_buffer_resume(
             (void *)task,
             is_for_write,
             is_large_page,
-            ex->registered_buffers[is_for_write]
-                .tasks_awaiting[is_large_page]
-                .count);
+            ex->registered_buffers[is_for_write] buffer[is_large_page]
+                .tasks_awaiting.count);
         fflush(stdout);
 #endif
     }
@@ -1612,9 +1629,8 @@ monad_async_task_claim_registered_io_write_buffer_resume(
             (void *)task,
             is_for_write,
             is_large_page,
-            ex->registered_buffers[is_for_write]
-                .tasks_awaiting[is_large_page]
-                .count);
+            ex->registered_buffers[is_for_write] buffer[is_large_page]
+                .tasks_awaiting.count);
         fflush(stdout);
 #endif
     }
@@ -1635,9 +1651,8 @@ monad_async_task_claim_registered_io_write_buffer_resume(
             (void *)task,
             is_for_write,
             is_large_page,
-            ex->registered_buffers[is_for_write]
-                .tasks_awaiting[is_large_page]
-                .count);
+            ex->registered_buffers[is_for_write] buffer[is_large_page]
+                .tasks_awaiting.count);
         fflush(stdout);
 #endif
     }
@@ -1650,7 +1665,8 @@ monad_async_task_claim_registered_io_write_buffer_cancel(
 {
     LIST_REMOVE(
         ex->registered_buffers[task->io_buffer_awaiting_is_for_write]
-            .tasks_awaiting[task->io_buffer_awaiting_is_for_large_page],
+            .buffer[task->io_buffer_awaiting_is_for_large_page]
+            .tasks_awaiting,
         &task->io_buffer_awaiting,
         (size_t *)nullptr);
     assert(task->please_cancel_invoked == true);
@@ -1693,29 +1709,32 @@ monad_c_result monad_async_task_claim_registered_file_io_write_buffer(
         return monad_c_make_failure(EINVAL);
     }
     if (bytes_requested >
-        ex->registered_buffers[!flags._for_read_ring].buffer_size[1]) {
+        ex->registered_buffers[!flags._for_read_ring].buffer[1].size) {
         assert(false);
         return monad_c_make_failure(EINVAL);
     }
     struct monad_async_executor_free_registered_buffer *p = nullptr;
     bool const is_large_page =
         (bytes_requested >
-         ex->registered_buffers[!flags._for_read_ring].buffer_size[0]);
-    if (ex->registered_buffers[!flags._for_read_ring].free[is_large_page] ==
-            nullptr ||
+         ex->registered_buffers[!flags._for_read_ring].buffer[0].size);
+    if (ex->registered_buffers[!flags._for_read_ring]
+                .buffer[is_large_page]
+                .free == nullptr ||
         ex->registered_buffers[!flags._for_read_ring]
-                .tasks_awaiting[is_large_page]
-                .count > 0) {
+                .buffer[is_large_page]
+                .tasks_awaiting.count > 0) {
         if (flags.fail_dont_suspend ||
             ex->registered_buffers[!flags._for_read_ring].size == 0 ||
             ex->registered_buffers[!flags._for_read_ring].buffers[0].iov_len !=
                 ex->registered_buffers[!flags._for_read_ring]
-                    .buffer_size[is_large_page]) {
+                    .buffer[is_large_page]
+                    .size) {
             return monad_c_make_failure(ENOMEM);
         }
         LIST_APPEND(
             ex->registered_buffers[!flags._for_read_ring]
-                .tasks_awaiting[is_large_page],
+                .buffer[is_large_page]
+                .tasks_awaiting,
             &task->io_buffer_awaiting,
             (size_t *)nullptr);
         assert(task->io_buffer_awaiting_is_for_write == false);
@@ -1730,9 +1749,8 @@ monad_c_result monad_async_task_claim_registered_file_io_write_buffer(
             (void *)task,
             !flags._for_read_ring,
             is_large_page,
-            ex->registered_buffers[!flags._for_read_ring]
-                .tasks_awaiting[is_large_page]
-                .count);
+            ex->registered_buffers[!flags._for_read_ring] buffer[is_large_page]
+                .tasks_awaiting.count);
         fflush(stdout);
 #endif
 #ifndef NDEBUG
@@ -1783,14 +1801,18 @@ monad_c_result monad_async_task_claim_registered_file_io_write_buffer(
         assert(p != nullptr);
     }
     else {
-        p = ex->registered_buffers[!flags._for_read_ring].free[is_large_page];
-        ex->registered_buffers[!flags._for_read_ring].free[is_large_page] =
-            p->next;
+        p = ex->registered_buffers[!flags._for_read_ring]
+                .buffer[is_large_page]
+                .free;
+        ex->registered_buffers[!flags._for_read_ring]
+            .buffer[is_large_page]
+            .free = p->next;
     }
     buffer->index = !flags._for_read_ring ? -(int)p->index : (int)p->index;
     buffer->iov[0].iov_base = (void *)p;
     buffer->iov[0].iov_len = ex->registered_buffers[!flags._for_read_ring]
-                                 .buffer_size[is_large_page];
+                                 .buffer[is_large_page]
+                                 .size;
 #if MONAD_ASYNC_EXECUTOR_PRINTING
     printf(
         "*** Executor %p hands out registered i/o buffer %p is_for_write=%d "
@@ -1839,12 +1861,36 @@ monad_c_result monad_async_task_release_registered_io_buffer(
     struct iovec *iov =
         &ex->registered_buffers[is_for_write].buffers[buffer_index - 1];
     bool const is_large_page =
-        (iov->iov_len > ex->registered_buffers[is_for_write].buffer_size[0]);
-    struct monad_async_executor_free_registered_buffer *p =
-        (struct monad_async_executor_free_registered_buffer *)iov->iov_base;
-    p->index = (unsigned)buffer_index;
-    p->next = ex->registered_buffers[is_for_write].free[is_large_page];
-    ex->registered_buffers[is_for_write].free[is_large_page] = p;
+        (iov->iov_len > ex->registered_buffers[is_for_write].buffer[0].size);
+    if (is_for_write ||
+        (unsigned)buffer_index <=
+            ex->registered_buffers[0].buffer[is_large_page].count -
+                ex->registered_buffers[0]
+                    .buffer[is_large_page]
+                    .buf_ring_count) {
+        struct monad_async_executor_free_registered_buffer *p =
+            (struct monad_async_executor_free_registered_buffer *)iov->iov_base;
+        p->index = (unsigned)buffer_index;
+        p->next =
+            ex->registered_buffers[is_for_write].buffer[is_large_page].free;
+        ex->registered_buffers[is_for_write].buffer[is_large_page].free = p;
+    }
+    else {
+        io_uring_buf_ring_add(
+            ex->registered_buffers[0].buffer[is_large_page].buf_ring,
+            ex->registered_buffers[0].buffers[buffer_index - 1].iov_base,
+            (unsigned)ex->registered_buffers[0]
+                .buffers[buffer_index - 1]
+                .iov_len,
+            (unsigned short)buffer_index,
+            ex->registered_buffers[0].buffer[is_large_page].buf_ring_mask,
+            0);
+        // FIXME: Advancing per buffer release isn't efficient, it would be
+        // better if this were batched. Equally, io_uring running out of free
+        // buffers isn't good.
+        io_uring_buf_ring_advance(
+            ex->registered_buffers[0].buffer[is_large_page].buf_ring, 1);
+    }
 #if MONAD_ASYNC_EXECUTOR_PRINTING
     printf(
         "*** Executor %p gets back registered i/o buffer %p is_for_write=%d "
@@ -1854,24 +1900,22 @@ monad_c_result monad_async_task_release_registered_io_buffer(
         (void *)p,
         is_for_write,
         is_large_page,
-        (void *)(ex->registered_buffers[is_for_write]
-                             .tasks_awaiting[is_large_page]
-                             .count > 0
-                     ? ex->registered_buffers[is_for_write]
-                           .tasks_awaiting[is_large_page]
-                           .front
-                     : nullptr),
-        ex->registered_buffers[is_for_write]
-            .tasks_awaiting[is_large_page]
-            .count);
+        (void
+             *)(ex->registered_buffers[is_for_write] buffer[is_large_page]
+                            .tasks_awaiting.count > 0
+                    ? ex->registered_buffers[is_for_write] buffer[is_large_page]
+                          .tasks_awaiting.front
+                    : nullptr),
+        ex->registered_buffers[is_for_write] buffer[is_large_page]
+            .tasks_awaiting.count);
     fflush(stdout);
 #endif
     ex->head.registered_buffers.total_released++;
     ex->head.registered_buffers.ticks_last_release =
         get_ticks_count(memory_order_relaxed);
     if (ex->registered_buffers[is_for_write]
-            .tasks_awaiting[is_large_page]
-            .count > 0) {
+            .buffer[is_large_page]
+            .tasks_awaiting.count > 0) {
         BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
             monad_async_task_claim_registered_io_write_buffer_resume(
                 ex, is_for_write, is_large_page));

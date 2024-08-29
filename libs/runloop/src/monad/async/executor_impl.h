@@ -13,6 +13,8 @@
 #include <threads.h>
 
 #include <execinfo.h>
+#include <liburing.h>
+#include <liburing/io_uring.h>
 #include <linux/ioprio.h>
 #include <poll.h>
 #include <sys/eventfd.h>
@@ -62,15 +64,24 @@ struct monad_async_executor_impl
     struct monad_async_executor_impl_registered_buffers_t
     {
         struct iovec *buffers;
-        unsigned size, buffer_count[2], buffer_size[2];
-        struct monad_async_executor_free_registered_buffer *free[2];
+        unsigned size;
 
         struct
         {
-            struct io_buffer_awaiting_list_item_t *front, *back;
-            size_t count;
-        } tasks_awaiting[2];
-    } registered_buffers[2];
+            unsigned count, size;
+            struct monad_async_executor_free_registered_buffer *free;
+
+            struct io_uring_buf_ring *buf_ring;
+            unsigned buf_ring_count;
+            int buf_ring_mask;
+
+            struct
+            {
+                struct io_buffer_awaiting_list_item_t *front, *back;
+                size_t count;
+            } tasks_awaiting;
+        } buffer[2]; // small/large
+    } registered_buffers[2]; // non-file-write ring/file write ring
 
     // all items below this require taking the lock
     MONAD_CONTEXT_CPP_STD atomic_int lock;
@@ -120,7 +131,7 @@ enum io_uring_user_data_type : uint8_t
             uintptr_t: (void *)(((uintptr_t)(value)) |                              \
                                 io_uring_user_data_type_magic))
 
-    #define io_uring_sqe_set_data(sqe, value, task)                            \
+    #define io_uring_sqe_set_data(sqe, value, task, tofill)                    \
         io_uring_sqe_set_data((sqe), io_uring_mangle_into_data(value));        \
         assert(((sqe)->user_data & 7) != 0);                                   \
         assert(                                                                \
@@ -132,7 +143,8 @@ enum io_uring_user_data_type : uint8_t
             struct monad_async_io_status *: io_uring_set_up_io_status(         \
                                               (struct monad_async_io_status    \
                                                    *)(value),                  \
-                                              (task)))
+                                              (task),                          \
+                                              (tofill)))
 
     #define io_uring_cqe_get_data(task, iostatus, magic, cqe)                  \
         switch (((uintptr_t)io_uring_cqe_get_data(cqe)) & 7) {                 \
@@ -170,11 +182,13 @@ enum io_uring_user_data_type : uint8_t
         }
 
 static inline void io_uring_set_up_io_status(
-    struct monad_async_io_status *iostatus, struct monad_async_task_impl *task)
+    struct monad_async_io_status *iostatus, struct monad_async_task_impl *task,
+    struct monad_async_task_registered_io_buffer *tofill)
 {
     iostatus->prev = iostatus->next = nullptr;
-    iostatus->result.flags = (unsigned)-1;
-    *((struct monad_async_task_impl **)&iostatus->result) = task;
+    iostatus->task_ = &task->head;
+    iostatus->flags_ = (unsigned)-1;
+    iostatus->tofill_ = tofill;
 }
 
 static inline void atomic_lock(atomic_int *lock)
@@ -248,28 +262,28 @@ static inline int infer_buffer_index_if_possible(
     }
     // This makes the big assumption that buffers[0] and
     // buffers[buffer_count[0]] are allocated in two single mmaps (see below)
-    if (ex->registered_buffers[is_write].buffer_count[0] > 0) {
+    if (ex->registered_buffers[is_write].buffer[0].count > 0) {
         const struct iovec *begin_small =
             &ex->registered_buffers[is_write].buffers[0];
         const struct iovec *end_small =
             &ex->registered_buffers[is_write].buffers
-                 [(ex->registered_buffers[is_write].buffer_count[0] > 0)
-                      ? (ex->registered_buffers[is_write].buffer_count[0] - 1)
+                 [(ex->registered_buffers[is_write].buffer[0].count > 0)
+                      ? (ex->registered_buffers[is_write].buffer[0].count - 1)
                       : 0];
         if (iovecs[0].iov_base >= begin_small->iov_base &&
             (char *)iovecs[0].iov_base <
                 (char *)end_small->iov_base + end_small->iov_len) {
             int idx = (int)(((char *)iovecs[0].iov_base -
                              (char *)begin_small->iov_base) /
-                            ex->registered_buffers[is_write].buffer_size[0]);
+                            ex->registered_buffers[is_write].buffer[0].size);
             idx += 1;
             return is_write ? -idx : idx;
         }
     }
-    if (ex->registered_buffers[is_write].buffer_count[1] > 0) {
+    if (ex->registered_buffers[is_write].buffer[1].count > 0) {
         const struct iovec *begin_large =
             &ex->registered_buffers[is_write]
-                 .buffers[ex->registered_buffers[is_write].buffer_count[0]];
+                 .buffers[ex->registered_buffers[is_write].buffer[0].count];
         const struct iovec *end_large =
             &ex->registered_buffers[is_write]
                  .buffers[ex->registered_buffers[is_write].size - 1];
@@ -278,8 +292,8 @@ static inline int infer_buffer_index_if_possible(
                 (char *)end_large->iov_base + end_large->iov_len) {
             int idx = (int)(((char *)iovecs[0].iov_base -
                              (char *)begin_large->iov_base) /
-                            ex->registered_buffers[is_write].buffer_size[1]);
-            idx += 1 + (int)ex->registered_buffers[is_write].buffer_count[0];
+                            ex->registered_buffers[is_write].buffer[1].size);
+            idx += 1 + (int)ex->registered_buffers[is_write].buffer[0].count;
             return is_write ? -idx : idx;
         }
     }
@@ -293,14 +307,14 @@ monad_async_executor_create_impl_fill_registered_buffers(
     unsigned buffers_large_count, unsigned buffers_large_multiplier)
 {
     #ifndef NDEBUG
-    if (buffers_small_count > (1U << 14) /*4096*/) {
+    if (buffers_small_count > (1U << 14) /*16384*/) {
         fprintf(
             stderr,
             "buffers_small_count > IORING_MAX_REG_BUFFERS, this will likely "
             "fail in release.\n");
         abort();
     }
-    if (buffers_large_count > (1U << 14) /*4096*/) {
+    if (buffers_large_count > (1U << 14) /*16384*/) {
         fprintf(
             stderr,
             "buffers_large_count > IORING_MAX_REG_BUFFERS, this will likely "
@@ -323,13 +337,13 @@ monad_async_executor_create_impl_fill_registered_buffers(
     if (p->buffers == nullptr) {
         return monad_c_make_failure(errno);
     }
-    p->buffer_count[0] = buffers_small_count;
-    p->buffer_count[1] = buffers_large_count;
-    p->buffer_size[0] = buffers_small_multiplier * 4096u;
-    p->buffer_size[1] = buffers_large_multiplier * 2u * 1024u * 1024u;
+    p->buffer[0].count = buffers_small_count;
+    p->buffer[1].count = buffers_large_count;
+    p->buffer[0].size = buffers_small_multiplier * 4096u;
+    p->buffer[1].size = buffers_large_multiplier * 2u * 1024u * 1024u;
     struct iovec *iov = p->buffers;
     if (buffers_small_count > 0) {
-        size_t const buffer_length = p->buffer_size[0];
+        size_t const buffer_length = p->buffer[0].size;
         void *const mem = mmap(
             nullptr,
             buffers_small_count * buffer_length,
@@ -348,12 +362,12 @@ monad_async_executor_create_impl_fill_registered_buffers(
             iov->iov_len = buffer_length;
             iov++;
             i->index = (unsigned)(iov - p->buffers);
-            i->next = p->free[0];
-            p->free[0] = i;
+            i->next = p->buffer[0].free;
+            p->buffer[0].free = i;
         }
     }
     if (buffers_large_count > 0) {
-        size_t const buffer_length = p->buffer_size[1];
+        size_t const buffer_length = p->buffer[1].size;
         void *const mem = mmap(
             nullptr,
             buffers_large_count * buffer_length,
@@ -373,8 +387,8 @@ monad_async_executor_create_impl_fill_registered_buffers(
             iov->iov_len = buffer_length;
             iov++;
             i->index = (unsigned)(iov - p->buffers);
-            i->next = p->free[1];
-            p->free[1] = i;
+            i->next = p->buffer[1].free;
+            p->buffer[1].free = i;
         }
     }
     return monad_c_make_success(0);
@@ -390,7 +404,7 @@ monad_async_executor_setup_eventfd_polling(struct monad_async_executor_impl *p)
     p->head.total_io_submitted++;
     io_uring_prep_poll_multishot(sqe, p->eventfd, POLLIN);
     io_uring_sqe_set_data(
-        sqe, EXECUTOR_EVENTFD_READY_IO_URING_DATA_MAGIC, nullptr);
+        sqe, EXECUTOR_EVENTFD_READY_IO_URING_DATA_MAGIC, nullptr, nullptr);
     int r = io_uring_submit(&p->ring);
     if (r < 0) {
         return monad_c_make_failure(-r);
@@ -454,6 +468,110 @@ static inline monad_c_result monad_async_executor_create_impl(
             if (r < 0) {
                 return monad_c_make_failure(-r);
             }
+            if (attr->io_uring_ring.registered_buffers
+                    .small_kernel_allocated_count > 0) {
+                if (attr->io_uring_ring.registered_buffers
+                        .small_kernel_allocated_count >
+                    p->registered_buffers[0].buffer[0].count) {
+                    fprintf(
+                        stderr,
+                        "FATAL: small_kernel_allocated_count = %u is larger "
+                        "than small_count = %u.\n",
+                        attr->io_uring_ring.registered_buffers
+                            .small_kernel_allocated_count,
+                        attr->io_uring_ring.registered_buffers.small_count);
+                    abort();
+                }
+                p->registered_buffers[0].buffer[0].buf_ring_count =
+                    attr->io_uring_ring.registered_buffers
+                        .small_kernel_allocated_count;
+                int topbitset =
+                    (int)(sizeof(unsigned) * __CHAR_BIT__) -
+                    __builtin_clz(
+                        p->registered_buffers[0].buffer[0].buf_ring_count);
+                if ((1u << topbitset) !=
+                    p->registered_buffers[0].buffer[0].buf_ring_count) {
+                    topbitset++;
+                }
+                int ret = 0;
+                p->registered_buffers[0].buffer[0].buf_ring =
+                    io_uring_setup_buf_ring(
+                        &p->ring, 1u << topbitset, 0, 0, &ret);
+                if (p->registered_buffers[0].buffer[0].buf_ring == nullptr) {
+                    return monad_c_make_failure(-ret);
+                }
+                p->registered_buffers[0].buffer[0].buf_ring_mask =
+                    io_uring_buf_ring_mask(1u << topbitset);
+                for (unsigned n = 0;
+                     n < p->registered_buffers[0].buffer[0].buf_ring_count;
+                     n++) {
+                    struct monad_async_executor_free_registered_buffer *buff =
+                        p->registered_buffers[0].buffer[0].free;
+                    p->registered_buffers[0].buffer[0].free = buff->next;
+                    io_uring_buf_ring_add(
+                        p->registered_buffers[0].buffer[0].buf_ring,
+                        buff,
+                        p->registered_buffers[0].buffer[0].size,
+                        (unsigned short)buff->index,
+                        p->registered_buffers[0].buffer[0].buf_ring_mask,
+                        (int)n);
+                }
+                io_uring_buf_ring_advance(
+                    p->registered_buffers[0].buffer[0].buf_ring,
+                    (int)p->registered_buffers[0].buffer[0].buf_ring_count);
+            }
+            if (attr->io_uring_ring.registered_buffers
+                    .large_kernel_allocated_count > 0) {
+                if (attr->io_uring_ring.registered_buffers
+                        .large_kernel_allocated_count >
+                    p->registered_buffers[0].buffer[1].count) {
+                    fprintf(
+                        stderr,
+                        "FATAL: large_kernel_allocated_count = %u is larger "
+                        "than large_count = %u.\n",
+                        attr->io_uring_ring.registered_buffers
+                            .large_kernel_allocated_count,
+                        attr->io_uring_ring.registered_buffers.large_count);
+                    abort();
+                }
+                p->registered_buffers[0].buffer[1].buf_ring_count =
+                    attr->io_uring_ring.registered_buffers
+                        .large_kernel_allocated_count;
+                int topbitset =
+                    (int)(sizeof(unsigned) * __CHAR_BIT__) -
+                    __builtin_clz(
+                        p->registered_buffers[0].buffer[1].buf_ring_count);
+                if ((1u << topbitset) !=
+                    p->registered_buffers[0].buffer[1].buf_ring_count) {
+                    topbitset++;
+                }
+                int ret = 0;
+                p->registered_buffers[0].buffer[1].buf_ring =
+                    io_uring_setup_buf_ring(
+                        &p->ring, 1u << topbitset, 1, 0, &ret);
+                if (p->registered_buffers[0].buffer[1].buf_ring == nullptr) {
+                    return monad_c_make_failure(-ret);
+                }
+                p->registered_buffers[0].buffer[1].buf_ring_mask =
+                    io_uring_buf_ring_mask(1u << topbitset);
+                for (unsigned n = 0;
+                     n < p->registered_buffers[0].buffer[1].buf_ring_count;
+                     n++) {
+                    struct monad_async_executor_free_registered_buffer *buff =
+                        p->registered_buffers[0].buffer[1].free;
+                    p->registered_buffers[0].buffer[1].free = buff->next;
+                    io_uring_buf_ring_add(
+                        p->registered_buffers[0].buffer[1].buf_ring,
+                        buff,
+                        p->registered_buffers[0].buffer[1].size,
+                        (unsigned short)buff->index,
+                        p->registered_buffers[0].buffer[1].buf_ring_mask,
+                        (int)n);
+                }
+                io_uring_buf_ring_advance(
+                    p->registered_buffers[0].buffer[1].buf_ring,
+                    (int)p->registered_buffers[0].buffer[1].count);
+            }
         }
         BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
             monad_async_executor_create_impl_fill_registered_buffers(
@@ -482,7 +600,8 @@ monad_async_executor_destroy_impl(struct monad_async_executor_impl *ex)
     if (!thrd_equal(thrd_current(), ex->owning_thread)) {
         fprintf(
             stderr,
-            "FATAL: You must destroy an executor from the same kernel thread "
+            "FATAL: You must destroy an executor from the same kernel "
+            "thread "
             "which owns it.\n");
         abort();
     }
@@ -541,6 +660,36 @@ monad_async_executor_destroy_impl(struct monad_async_executor_impl *ex)
         io_uring_queue_exit(&ex->wr_ring);
     }
     if (ex->ring.ring_fd != 0) {
+        if (ex->registered_buffers[0].size > 0) {
+            if (ex->registered_buffers[0].buffer[0].count > 0) {
+                int topbitset =
+                    (int)(sizeof(unsigned) * __CHAR_BIT__) -
+                    __builtin_clz(ex->registered_buffers[0].buffer[0].count);
+                if ((1u << topbitset) !=
+                    ex->registered_buffers[0].buffer[0].count) {
+                    topbitset++;
+                }
+                (void)io_uring_free_buf_ring(
+                    &ex->ring,
+                    ex->registered_buffers[0].buffer[0].buf_ring,
+                    1u << topbitset,
+                    0);
+            }
+            if (ex->registered_buffers[0].buffer[1].count > 0) {
+                int topbitset =
+                    (int)(sizeof(unsigned) * __CHAR_BIT__) -
+                    __builtin_clz(ex->registered_buffers[0].buffer[1].count);
+                if ((1u << topbitset) !=
+                    ex->registered_buffers[0].buffer[1].count) {
+                    topbitset++;
+                }
+                (void)io_uring_free_buf_ring(
+                    &ex->ring,
+                    ex->registered_buffers[0].buffer[1].buf_ring,
+                    1u << topbitset,
+                    1);
+            }
+        }
         io_uring_queue_exit(&ex->ring);
     }
     if (ex->eventfd != -1) {
@@ -598,8 +747,8 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
 {
     struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
     struct monad_async_task_impl *newtask = nullptr;
-    // If there is any higher or equal priority work waiting on a SQE, they get
-    // first dibs
+    // If there is any higher or equal priority work waiting on a SQE, they
+    // get first dibs
     if (sqe != nullptr) {
         ex->head.total_io_submitted++;
         for (uint8_t priority = monad_async_priority_high;
@@ -666,8 +815,8 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
         task->please_cancel = nullptr;
         task->completed = nullptr;
 
-        // The SQE will have already been fetched by the code resuming us, so we
-        // just need to "peek" the current SQE
+        // The SQE will have already been fetched by the code resuming us,
+        // so we just need to "peek" the current SQE
         struct io_uring_sq *sq = &ring->sq;
         sqe = &sq->sqes[(sq->sqe_tail - 1) & *sq->kring_mask];
     #if MONAD_ASYNC_EXECUTOR_PRINTING
@@ -682,11 +831,12 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
         fflush(stdout);
     #endif
         if (is_cancellation_point && task->please_cancel_invoked) {
-            // We need to "throw away" this SQE, as the task has been cancelled
-            // We do this by setting the SQE to a noop with
+            // We need to "throw away" this SQE, as the task has been
+            // cancelled We do this by setting the SQE to a noop with
             // CANCELLED_OP_IO_URING_DATA_MAGIC
             io_uring_prep_nop(sqe);
-            io_uring_sqe_set_data(sqe, CANCELLED_OP_IO_URING_DATA_MAGIC, task);
+            io_uring_sqe_set_data(
+                sqe, CANCELLED_OP_IO_URING_DATA_MAGIC, task, nullptr);
             return nullptr;
         }
     }
@@ -843,7 +993,8 @@ static inline unsigned monad_async_executor_alloc_file_index(
             if (r < 0) {
                 fprintf(
                     stderr,
-                    "FATAL: io_uring_register_files_sparse (write ring) fails "
+                    "FATAL: io_uring_register_files_sparse (write ring) "
+                    "fails "
                     "with "
                     "'%s'\n",
                     strerror(-r));

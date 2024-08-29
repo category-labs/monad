@@ -19,6 +19,7 @@ throughout.
 7. Async file i/o: open, close, read, write, sync range, durable sync.
 8. Async socket i/o: open, close, read, write, bind, listen, transfer
 to i/o uring, connect, shutdown.
+    - io_uring kernel allocated i/o buffers for reads are supported.
 9. Auto loaded GDB pretty printers for context switchers (showing all
 child contexts), and contexts themselves (showing runstate and current
 stack frame).
@@ -262,7 +263,6 @@ static monad_c_result mytask(monad_async_task task)
 
 ## Todo
 
-- Actually implement ring provided buffers.
 - Executor `total_io_completed` never seems to match `total_io_submitted`,
 with them sometimes being very very different. I have walked the code many
 times and I don't see the cause :(
@@ -270,7 +270,7 @@ times and I don't see the cause :(
 - Need to test cancellation works at every possible lifecycle and suspend state
 a task can have.
 - `thread_db.so` ought to be extended so GDB shows all contexts as if kernel threads.
-- Multiple context switcher types at the same time should work, but is completed untested
+- Multiple context switcher types at the same time should work, but is completely untested
 and ought to become tested. Including with perf impact (as they usually have to
 thunk when switching between disparate contexts)
 - A context switcher implementing C++ coroutines would be nice. Some notes

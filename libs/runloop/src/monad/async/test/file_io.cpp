@@ -235,7 +235,7 @@ TEST(file_io, registered_buffers)
             // Get my registered buffer
             // Initiate two concurrent reads
             monad_async_io_status iostatus[2]{};
-            monad_async_task_registered_io_buffer buffer[2];
+            monad_async_task_registered_io_buffer buffer[2]{};
             EXPECT_FALSE(monad_async_is_io_in_progress(&iostatus[0]));
             EXPECT_FALSE(monad_async_is_io_in_progress(&iostatus[1]));
             monad_async_task_file_read(
@@ -263,7 +263,9 @@ TEST(file_io, registered_buffers)
             for (auto *completed = monad_async_task_completed_io(task);
                  completed != nullptr;
                  completed = monad_async_task_completed_io(task)) {
-                EXPECT_TRUE(to_result(completed->result).has_value());
+                auto r = to_result(completed->result);
+                EXPECT_TRUE(r.has_value());
+                r.value();
             }
             EXPECT_EQ(task->io_submitted, 0);
             EXPECT_EQ(task->io_completed_not_reaped, 0);
@@ -556,6 +558,7 @@ TEST(file_io, benchmark)
                 to_result(monad_async_task_release_registered_io_buffer(
                               task, iostatus[idx].second.index))
                     .value();
+                iostatus[idx].second.iov[0].iov_base = nullptr;
                 monad_async_task_file_read(
                     completed,
                     task,

@@ -60,11 +60,11 @@ Returns immediately unless there are no free io_uring submission entries.
 See `man readv2` to explain parameters. The i/o priority used will be that
 from the task's current i/o priority setting.
 
-This API has io_uring allocate the buffer which is more efficient than the
-application saying which buffer to fill. Upon completion, `tofill->iovecs[0]`
-will be the buffer filled with up to `max_bytes` (though it can be less). When
-you are done with the buffer, release it back to io_uring using
-`monad_async_task_release_registered_io_buffer()`.
+Upon completion, `tofill->iovecs[0]` will be the buffer filled with up to
+`max_bytes` (though it can be less). When you are done with the buffer, release
+it back to io_uring using `monad_async_task_release_registered_io_buffer()`.
+Lack of i/o buffers will cause suspension of the calling task until i/o
+buffers are released.
 
 `max_bytes` chooses whether to use large or small page sized buffers and the
 actual bytes read does not affect the size of buffer chosen.

@@ -355,10 +355,13 @@ TEST(socket_io, registered_buffers)
                     .value();
                 auto bytesread = to_result(status.result).value();
 
-                std::cout
-                    << "   Client releases registered i/o buffer after reading "
-                    << bytesread << " bytes which are '"
-                    << (char *)buffer.iov[0].iov_base << "'." << std::endl;
+                std::cout << "   Client releases registered i/o buffer index "
+                          << buffer.index << " addr " << buffer.iov[0].iov_base
+                          << " len " << buffer.iov[0].iov_len
+                          << " after reading " << bytesread
+                          << " bytes which are '"
+                          << (char *)buffer.iov[0].iov_base << "'."
+                          << std::endl;
                 EXPECT_EQ(bytesread, 11);
                 EXPECT_STREQ((char *)buffer.iov[0].iov_base, "hello world");
                 to_result(monad_async_task_release_registered_io_buffer(
@@ -382,14 +385,13 @@ TEST(socket_io, registered_buffers)
                 std::terminate();
             }
         }
-    }
-
-    shared_state;
+    } shared_state;
 
     // Make an executor
     monad_async_executor_attr ex_attr{};
     ex_attr.io_uring_ring.entries = 64;
     ex_attr.io_uring_ring.registered_buffers.small_count = 2;
+    ex_attr.io_uring_ring.registered_buffers.small_kernel_allocated_count = 1;
     // Socket i/o never uses io_uring_wr_ring
     auto ex = make_executor(ex_attr);
 

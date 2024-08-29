@@ -513,7 +513,6 @@ pub type monad_async_executor = *mut monad_async_executor_head;
 pub type monad_async_task = *mut monad_async_task_head;
 #[doc = "! \\brief An i/o status state used to identify an i/o in progress. Must NOT\n! move in memory until the operation completes."]
 #[repr(C)]
-#[derive(Debug)]
 pub struct monad_async_io_status {
     pub prev: *mut monad_async_io_status,
     pub next: *mut monad_async_io_status,
@@ -523,11 +522,42 @@ pub struct monad_async_io_status {
             arg2: *mut monad_async_io_status,
         ) -> monad_c_result,
     >,
-    #[doc = "! Unspecified value immediately after initiating call returns. Will become\n! bytes transferred if operation is successful, or another error if it\n! fails or is cancelled."]
-    pub result: monad_c_result,
+    pub __bindgen_anon_1: monad_async_io_status__bindgen_ty_1,
     pub ticks_when_initiated: monad_context_cpu_ticks_count_t,
     pub ticks_when_completed: monad_context_cpu_ticks_count_t,
     pub ticks_when_reaped: monad_context_cpu_ticks_count_t,
+}
+#[repr(C)]
+pub struct monad_async_io_status__bindgen_ty_1 {
+    #[doc = "! Unspecified value immediately after initiating call returns. Will\n! become bytes transferred if operation is successful, or another\n! error if it fails or is cancelled."]
+    pub result: __BindgenUnionField<monad_c_result>,
+    pub __bindgen_anon_1: __BindgenUnionField<monad_async_io_status__bindgen_ty_1__bindgen_ty_1>,
+    pub bindgen_union_field: [u64; 4usize],
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct monad_async_io_status__bindgen_ty_1__bindgen_ty_1 {
+    pub task_: monad_async_task,
+    pub flags_: ::std::os::raw::c_uint,
+    pub tofill_: *mut monad_async_task_registered_io_buffer,
+}
+impl Default for monad_async_io_status__bindgen_ty_1__bindgen_ty_1 {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+impl Default for monad_async_io_status__bindgen_ty_1 {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
 }
 impl Default for monad_async_io_status {
     fn default() -> Self {
@@ -795,6 +825,10 @@ pub struct monad_async_executor_attr__bindgen_ty_1__bindgen_ty_1 {
     pub small_multiplier: ::std::os::raw::c_uint,
     #[doc = "! \\brief How many of each of small pages and of large pages the\n! small and large buffer sizes are."]
     pub large_multiplier: ::std::os::raw::c_uint,
+    #[doc = " \\brief Number of small and large buffers to have io_uring\nallocate during read operations.\n\nio_uring can allocate i/o buffers at the point of successful read\nwhich is obviously much more efficient than userspace allocating\nread i/o buffers prior to initiating the read, which ties up i/o\nbuffers. However, socket i/o doesn't use the write ring, so if all\nbuffers are allocated for read then you would have no buffers for\nwriting to sockets. Therefore you may want some of the buffers\navailable for userspace allocation, and some for kernel allocation\ndepending on use case.\n\nA further complication is that if you enable this facility, if\nio_uring receives i/o and no buffers remain available to it, it\nwill fail the read i/o with a result equivalent to `ENOBUFS`. It\nis 100% on you to free up some buffers and reschedule the read if\nthis occurs.\n\nNote that kernel 6.8 (Ubuntu 24.04) appears to refuse to allocate\nbuffers for file i/o only, a future kernel release may fix this.\nhttps://github.com/axboe/liburing/issues/1214 tracks the feature\nrequest."]
+    pub small_kernel_allocated_count: ::std::os::raw::c_uint,
+    #[doc = " \\brief Number of small and large buffers to have io_uring\nallocate during read operations.\n\nio_uring can allocate i/o buffers at the point of successful read\nwhich is obviously much more efficient than userspace allocating\nread i/o buffers prior to initiating the read, which ties up i/o\nbuffers. However, socket i/o doesn't use the write ring, so if all\nbuffers are allocated for read then you would have no buffers for\nwriting to sockets. Therefore you may want some of the buffers\navailable for userspace allocation, and some for kernel allocation\ndepending on use case.\n\nA further complication is that if you enable this facility, if\nio_uring receives i/o and no buffers remain available to it, it\nwill fail the read i/o with a result equivalent to `ENOBUFS`. It\nis 100% on you to free up some buffers and reschedule the read if\nthis occurs.\n\nNote that kernel 6.8 (Ubuntu 24.04) appears to refuse to allocate\nbuffers for file i/o only, a future kernel release may fix this.\nhttps://github.com/axboe/liburing/issues/1214 tracks the feature\nrequest."]
+    pub large_kernel_allocated_count: ::std::os::raw::c_uint,
 }
 extern "C" {
     #[doc = " \\brief EXPENSIVE Creates an executor instance. You must create it on the\nkernel thread where it will be used.\n\nGenerally, one also needs to create context switcher instances for each\nexecutor instance. This is because the context switcher needs to store how\nto resume the executor when a task's execution suspends.\n\nYou can optionally create an io_uring instance for the executor by setting\n`attr->io_uring_ring.entries` to non-zero. This will then be used to dispatch\nwork instead of an internal dispatcher.\n\nYou may additionally optionally create a second io_uring instance called\n\"write ring\" by setting `attr->io_uring_wr_ring.entries` to non-zero. This\nis mandatory if you wish to write to files, otherwise it is not used.\n\nThe reason a special io_uring instance is used for operations which modify\nfiles is because a total sequentially consistent order is applied to all file\nwrite operations. This implements a \"multi-copy atomic\" memory model similar\nto that used by ARM microprocessors. This is a weak memory model, but one\nsufficient to prevent:\n\n1. Write amplification on the device caused by multiple concurrent writes.\n\n2. Writes appearing to readers not in the order of write submission.\n\nThe most efficient way of implementing this weak memory model is a specially\nconfigured io_uring instance, so this is why we have that.\n\nDo NOT use the \"write ring\" for writes to sockets, it will severely impact\nperformance!"]
@@ -889,7 +923,7 @@ extern "C" {
     ) -> monad_c_result;
 }
 extern "C" {
-    #[doc = " \\brief Initiate a ring buffer read from an open file using `iostatus` as the\nidentifier.\n\nReturns immediately unless there are no free io_uring submission entries.\nSee `man readv2` to explain parameters. The i/o priority used will be that\nfrom the task's current i/o priority setting.\n\nThis API has io_uring allocate the buffer which is more efficient than the\napplication saying which buffer to fill. Upon completion, `tofill->iovecs[0]`\nwill be the buffer filled with up to `max_bytes` (though it can be less). When\nyou are done with the buffer, release it back to io_uring using\n`monad_async_task_release_registered_io_buffer()`.\n\n`max_bytes` chooses whether to use large or small page sized buffers and the\nactual bytes read does not affect the size of buffer chosen."]
+    #[doc = " \\brief Initiate a ring buffer read from an open file using `iostatus` as the\nidentifier.\n\nReturns immediately unless there are no free io_uring submission entries.\nSee `man readv2` to explain parameters. The i/o priority used will be that\nfrom the task's current i/o priority setting.\n\nUpon completion, `tofill->iovecs[0]` will be the buffer filled with up to\n`max_bytes` (though it can be less). When you are done with the buffer, release\nit back to io_uring using `monad_async_task_release_registered_io_buffer()`.\nLack of i/o buffers will cause suspension of the calling task until i/o\nbuffers are released.\n\n`max_bytes` chooses whether to use large or small page sized buffers and the\nactual bytes read does not affect the size of buffer chosen."]
     pub fn monad_async_task_file_read(
         iostatus: *mut monad_async_io_status,
         task: monad_async_task,
@@ -1040,7 +1074,7 @@ extern "C" {
     );
 }
 extern "C" {
-    #[doc = " \\brief Initiate a ring buffer read from an open socket using `iostatus` as\nthe identifier.\n\nReturns immediately unless there are no free io_uring submission entries.\nSee `man recvmsg` to explain parameters. The i/o priority used will be that\nfrom the task's current i/o priority setting.\n\nThis API has io_uring allocate the buffer which is more efficient than the\napplication saying which buffer to fill. Upon completion,\n`tofill->iovecs[0]` will be the buffer filled with up to `max_bytes`\n(though it can be less). When you are done with the buffer, release it back to\nio_uring using `monad_async_task_release_registered_io_buffer()`.\n\n`max_bytes` chooses whether to use large or small page sized buffers and the\nactual bytes read does not affect the size of buffer chosen.\n\n\\warning io_uring **requires** that the contents of `tofill` and everything it\npoints at have lifetime until the read completes."]
+    #[doc = " \\brief Initiate a ring buffer read from an open socket using `iostatus` as\nthe identifier.\n\nReturns immediately unless there are no free io_uring submission entries.\nSee `man recvmsg` to explain parameters. The i/o priority used will be that\nfrom the task's current i/o priority setting.\n\nIf the executor was so configured, this API has io_uring allocate the buffer\nwhich is more efficient than the application saying which buffer to fill. Upon\ncompletion, `tofill->iovecs[0]` will be the buffer filled with up to `max_bytes`\n(though it can be less). When you are done with the buffer, release it back to\nio_uring using `monad_async_task_release_registered_io_buffer()`.\nIf this operation gets a result failure comparing equivalent to `ENOBUFS`,\nthen io_uring ran out of buffers to allocate. You should increase\n`small_kernel_allocated_count` et al in `struct monad_async_executor_attr`.\n\nIf the executor was not configured with `small_kernel_allocated_count` et al,\nthen lack of i/o buffers will cause suspension of the calling task until i/o\nbuffers are released. You must still release buffers filled back to\nio_uring using `monad_async_task_release_registered_io_buffer()`\n\n`max_bytes` chooses whether to use large or small page sized buffers and the\nactual bytes read does not affect the size of buffer chosen.\n\n\\warning io_uring **requires** that the contents of `tofill` and everything it\npoints at have lifetime until the read completes."]
     pub fn monad_async_task_socket_receive(
         iostatus: *mut monad_async_io_status,
         task: monad_async_task,

@@ -336,21 +336,27 @@ monad_async_executor_config_string(monad_async_executor ex_)
                     }
                 }
                 ss << "\nThere are "
-                   << ex->registered_buffers[0].buffer_count[0]
-                   << " small registered read buffers of "
-                   << ex->registered_buffers[0].buffer_size[0] << " bytes";
+                   << ex->registered_buffers[0].buffer[0].count
+                   << " small registered non-write buffers of "
+                   << ex->registered_buffers[0].buffer[0].size
+                   << " bytes of which "
+                   << ex->registered_buffers[0].buffer[0].buf_ring_count
+                   << " are kernel allocated.";
                 ss << "\nThere are "
-                   << ex->registered_buffers[0].buffer_count[1]
-                   << " large registered read buffers of "
-                   << ex->registered_buffers[0].buffer_size[1] << " bytes";
+                   << ex->registered_buffers[0].buffer[1].count
+                   << " large registered non-write buffers of "
+                   << ex->registered_buffers[0].buffer[1].size
+                   << " bytes of which "
+                   << ex->registered_buffers[0].buffer[1].buf_ring_count
+                   << " are kernel allocated.";
                 ss << "\nThere are "
-                   << ex->registered_buffers[1].buffer_count[0]
+                   << ex->registered_buffers[1].buffer[0].count
                    << " small registered write buffers of "
-                   << ex->registered_buffers[1].buffer_size[0] << " bytes";
+                   << ex->registered_buffers[1].buffer[0].size << " bytes";
                 ss << "\nThere are "
-                   << ex->registered_buffers[1].buffer_count[1]
+                   << ex->registered_buffers[1].buffer[1].count
                    << " large registered write buffers of "
-                   << ex->registered_buffers[1].buffer_size[1] << " bytes";
+                   << ex->registered_buffers[1].buffer[1].size << " bytes";
                 ss << "\n";
             }
         };

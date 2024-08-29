@@ -30,6 +30,7 @@ struct monad_statesync_server_network
 
 using namespace monad;
 using namespace monad::mpt;
+using namespace monad::test;
 
 namespace
 {
@@ -433,4 +434,95 @@ TEST(StateSync, ignore_unused_code)
 
     std::filesystem::remove(ctmp);
     std::filesystem::remove(tmp);
+}
+
+TEST(StateSync, sync_one_account)
+{
+    auto const ctmp = tmp_dbname();
+    auto const stmp = tmp_dbname();
+    char const *const cdbname = ctmp.c_str();
+    char const *const sdbname = stmp.c_str();
+
+    monad_statesync_client client;
+    auto *const cctx = monad_statesync_client_context_create(
+        &cdbname, 1, genesis.c_str(), &client, &statesync_send_request);
+
+    OnDiskMachine machine;
+    mpt::Db db{
+        machine, OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}};
+    TrieDb tdb{db};
+    tdb.set_block_number(1'000'000);
+    tdb.commit(
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 100}},
+                 .storage = {}}}},
+        Code{});
+    auto const expected_root = tdb.state_root();
+    monad_statesync_server_context sctx{tdb};
+    mpt::Db ro{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {sdbname}}};
+    sctx.ro = &ro;
+    monad_statesync_server_network net{.client = &client, .cctx = cctx};
+    auto *const server = monad_statesync_server_create(
+        &sctx,
+        &net,
+        &statesync_server_recv,
+        &statesync_server_send_upsert,
+        &statesync_server_send_done);
+
+    monad_statesync_client_handle_target(
+        cctx, make_target(1'000'000, expected_root));
+    while (!client.rqs.empty()) {
+        monad_statesync_server_run_once(server);
+    }
+    EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+
+    monad_statesync_client_context_destroy(cctx);
+    monad_statesync_server_destroy(server);
+    std::filesystem::remove(ctmp);
+    std::filesystem::remove(stmp);
+}
+
+TEST(StateSync, sync_empty)
+{
+    auto const ctmp = tmp_dbname();
+    auto const stmp = tmp_dbname();
+    char const *const cdbname = ctmp.c_str();
+    char const *const sdbname = stmp.c_str();
+
+    monad_statesync_client client;
+    auto *const cctx = monad_statesync_client_context_create(
+        &cdbname, 1, genesis.c_str(), &client, &statesync_send_request);
+
+    OnDiskMachine machine;
+    mpt::Db db{
+        machine, OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}};
+    TrieDb tdb{db};
+    tdb.set_block_number(1'000'000);
+    tdb.commit(StateDeltas{}, Code{});
+    monad_statesync_server_context sctx{tdb};
+    mpt::Db ro{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {sdbname}}};
+    sctx.ro = &ro;
+    monad_statesync_server_network net{.client = &client, .cctx = cctx};
+    auto *const server = monad_statesync_server_create(
+        &sctx,
+        &net,
+        &statesync_server_recv,
+        &statesync_server_send_upsert,
+        &statesync_server_send_done);
+
+    monad_statesync_client_handle_target(
+        cctx, make_target(1'000'000, NULL_ROOT));
+    while (!client.rqs.empty()) {
+        monad_statesync_server_run_once(server);
+    }
+    EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+
+    monad_statesync_client_context_destroy(cctx);
+    monad_statesync_server_destroy(server);
+    std::filesystem::remove(ctmp);
+    std::filesystem::remove(stmp);
 }

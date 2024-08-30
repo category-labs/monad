@@ -14,7 +14,8 @@ using BOOST_OUTCOME_V2_NAMESPACE::success;
 namespace
 {
     // TODO
-    constexpr uint256_t DEFAULT_MAX_RESERVE = 200'000;
+    // Must match consensus max_reserve_balance setting
+    constexpr uint256_t DEFAULT_MAX_RESERVE = 100'000'000'000'000'000;
 
     uint256_t effective_reserve(
         IntrinsicGasBuffer const &buf, uint256_t const &max_reserve,

@@ -17,7 +17,7 @@ MONAD_NAMESPACE_BEGIN
 class IntrinsicGasBuffer
 {
 public:
-    static constexpr auto N = 4;
+    static constexpr auto N = 10;
 
 private:
     using Map = oneapi::tbb::concurrent_hash_map<Address, uint256_t>;
@@ -56,7 +56,7 @@ public:
     }
 };
 
-static_assert(sizeof(IntrinsicGasBuffer) == 2312);
+static_assert(sizeof(IntrinsicGasBuffer) == 5768);
 static_assert(alignof(IntrinsicGasBuffer) == 8);
 
 MONAD_NAMESPACE_END

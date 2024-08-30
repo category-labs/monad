@@ -77,8 +77,8 @@ bytes32_t BlockState::read_storage(
     // database
     {
         auto const result = read_storage
-                               ? db_.read_storage(address, incarnation, key)
-                               : bytes32_t{};
+                                ? db_.read_storage(address, incarnation, key)
+                                : bytes32_t{};
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_.find(it, address));
         auto const &account = it->second.account.second;
@@ -147,7 +147,7 @@ void BlockState::merge(State const &state)
 {
     ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
 
-    for (auto const &[address, stack] : state.state_) {
+    for (auto const &[address, stack] : state.current_) {
         MONAD_ASSERT(stack.size() == 1);
         MONAD_ASSERT(stack.version() == 0);
         auto const &account_state = stack.recent();
@@ -165,7 +165,7 @@ void BlockState::merge(State const &state)
         code_.emplace(code_hash, it->second); // TODO try_emplace
     }
 
-    for (auto const &[address, stack] : state.state_) {
+    for (auto const &[address, stack] : state.current_) {
         auto const &account_state = stack.recent();
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;

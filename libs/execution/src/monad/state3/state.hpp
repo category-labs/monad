@@ -44,7 +44,7 @@ class State
 
     Map<Address, AccountState> original_{};
 
-    Map<Address, VersionStack<AccountState>> state_{};
+    Map<Address, VersionStack<AccountState>> current_{};
 
     VersionStack<std::vector<Receipt::Log>> logs_{{}};
 
@@ -65,9 +65,9 @@ class State
 
     AccountState const &recent_account_state(Address const &address)
     {
-        // state
-        auto const it = state_.find(address);
-        if (it != state_.end()) {
+        // current
+        auto const it = current_.find(address);
+        if (it != current_.end()) {
             return it->second.recent();
         }
         // original
@@ -76,12 +76,12 @@ class State
 
     AccountState &current_account_state(Address const &address)
     {
-        // state
-        auto it = state_.find(address);
-        if (MONAD_UNLIKELY(it == state_.end())) {
+        // current
+        auto it = current_.find(address);
+        if (MONAD_UNLIKELY(it == current_.end())) {
             // original
             auto const &account_state = original_account_state(address);
-            it = state_.try_emplace(address, account_state, version_).first;
+            it = current_.try_emplace(address, account_state, version_).first;
         }
         return it->second.current(version_);
     }
@@ -114,7 +114,7 @@ public:
     {
         MONAD_ASSERT(version_);
 
-        for (auto it = state_.begin(); it != state_.end(); ++it) {
+        for (auto it = current_.begin(); it != current_.end(); ++it) {
             it->second.pop_accept(version_);
         }
 
@@ -129,7 +129,7 @@ public:
 
         std::vector<Address> removals;
 
-        for (auto it = state_.begin(); it != state_.end(); ++it) {
+        for (auto it = current_.begin(); it != current_.end(); ++it) {
             if (it->second.pop_reject(version_)) {
                 removals.push_back(it->first);
             }
@@ -138,7 +138,7 @@ public:
         logs_.pop_reject(version_);
 
         while (removals.size()) {
-            state_.erase(removals.back());
+            current_.erase(removals.back());
             removals.pop_back();
         }
 
@@ -203,8 +203,8 @@ public:
 
     bytes32_t get_storage(Address const &address, bytes32_t const &key)
     {
-        auto const it = state_.find(address);
-        if (it == state_.end()) {
+        auto const it = current_.find(address);
+        if (it == current_.end()) {
             auto const it2 = original_.find(address);
             MONAD_ASSERT(it2 != original_.end());
             auto &account_state = it2->second;
@@ -367,7 +367,7 @@ public:
     {
         MONAD_ASSERT(!version_);
 
-        for (auto it = state_.begin(); it != state_.end(); ++it) {
+        for (auto it = current_.begin(); it != current_.end(); ++it) {
             auto &stack = it->second;
             MONAD_ASSERT(stack.size() == 1);
             MONAD_ASSERT(stack.version() == 0);
@@ -384,7 +384,7 @@ public:
     {
         MONAD_ASSERT(!version_);
 
-        for (auto it = state_.begin(); it != state_.end(); ++it) {
+        for (auto it = current_.begin(); it != current_.end(); ++it) {
             auto &stack = it->second;
             MONAD_ASSERT(stack.size() == 1);
             MONAD_ASSERT(stack.version() == 0);

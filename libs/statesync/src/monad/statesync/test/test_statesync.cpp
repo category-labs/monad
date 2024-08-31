@@ -428,7 +428,6 @@ TEST_F(StateSyncFixture, ignore_unused_code)
 
 TEST_F(StateSyncFixture, sync_one_account)
 {
-    init();
     stdb.set_block_number(1'000'000);
     stdb.commit(
         StateDeltas{
@@ -438,6 +437,7 @@ TEST_F(StateSyncFixture, sync_one_account)
                  .storage = {}}}},
         Code{});
     auto const expected_root = stdb.state_root();
+    init();
     monad_statesync_client_handle_target(
         cctx, make_target(1'000'000, expected_root));
     run();
@@ -446,9 +446,9 @@ TEST_F(StateSyncFixture, sync_one_account)
 
 TEST_F(StateSyncFixture, sync_empty)
 {
-    init();
     stdb.set_block_number(1'000'000);
     stdb.commit(StateDeltas{}, Code{});
+    init();
     monad_statesync_client_handle_target(
         cctx, make_target(1'000'000, NULL_ROOT));
     run();

@@ -12,7 +12,6 @@
 #include <test_resource_data.h>
 
 #include <ethash/keccak.hpp>
-#include <evmc/hex.hpp>
 #include <gtest/gtest.h>
 
 #include <deque>
@@ -514,6 +513,27 @@ TEST_F(StateSyncFixture, account_deleted_after_storage)
         {});
     init();
     monad_statesync_client_handle_target(cctx, make_target(102, NULL_ROOT));
+}
+
+TEST_F(StateSyncFixture, benchmark)
+{
+    constexpr auto N = 1'000'000;
+    std::vector<std::pair<Address, StateDelta>> v;
+    v.reserve(N);
+    for (uint64_t i = 0; i < N; ++i) {
+        v.emplace_back(
+            i,
+            StateDelta{
+                .account = {std::nullopt, Account{.balance = i, .nonce = i}},
+                .storage = {}});
+    }
+    stdb.set_block_number(1'000'000);
+    StateDeltas deltas{v.begin(), v.end()};
+    stdb.commit(deltas, Code{});
+    auto const expected_root = stdb.state_root();
+    init();
+    monad_statesync_client_handle_target(
+        cctx, make_target(1'000'000, expected_root));
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 }

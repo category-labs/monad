@@ -454,3 +454,35 @@ TEST_F(StateSyncFixture, sync_empty)
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 }
+
+TEST_F(StateSyncFixture, account_updated_after_storage)
+{
+    stdb.set_block_number(100);
+    sctx.commit(
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 100}},
+                 .storage =
+                     {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
+                       {bytes32_t{},
+                        0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}},
+        Code{},
+        {});
+    stdb.increment_block_number();
+    sctx.commit({}, {}, {});
+    stdb.increment_block_number();
+    sctx.commit(
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {Account{.balance = 100}, Account{.balance = 200}},
+                 .storage = {}}}},
+        {},
+        {});
+    init();
+    monad_statesync_client_handle_target(
+        cctx, make_target(102, stdb.state_root()));
+    run();
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+}

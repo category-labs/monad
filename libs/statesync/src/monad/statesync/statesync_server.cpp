@@ -160,8 +160,17 @@ bool statesync_server_handle_request(
 
             depth += 1 + ext.nibble_size();
 
+            constexpr unsigned HASH_SIZE = KECCAK256_SIZE * 2;
+            bool const account = depth == HASH_SIZE && nibble == STATE_NIBBLE;
+            if (account && node.number_of_children() > 0) {
+                MONAD_ASSERT(node.has_value());
+                auto raw = node.value();
+                auto const res = decode_account_db(raw);
+                MONAD_ASSERT(res.has_value());
+                addr = std::get<Address>(res.assume_value());
+            }
+
             if (node.has_value() && v <= until) {
-                constexpr unsigned HASH_SIZE = KECCAK256_SIZE * 2;
                 auto const send_upsert = [&](monad_sync_type const type,
                                              unsigned char const *const v1 =
                                                  nullptr,
@@ -174,6 +183,7 @@ bool statesync_server_handle_request(
                         node.value().data(),
                         node.value().size());
                 };
+
                 if (nibble == CODE_NIBBLE) {
                     MONAD_ASSERT(depth == HASH_SIZE);
                     send_upsert(SyncTypeUpsertCode);
@@ -182,12 +192,6 @@ bool statesync_server_handle_request(
                     MONAD_ASSERT(nibble == STATE_NIBBLE);
                     if (depth == HASH_SIZE) {
                         send_upsert(SyncTypeUpsertAccount);
-                        if (node.number_of_children() > 0) {
-                            auto raw = node.value();
-                            auto const val = decode_account_db(raw);
-                            MONAD_ASSERT(val.has_value());
-                            addr = std::get<Address>(val.assume_value());
-                        }
                     }
                     else {
                         MONAD_ASSERT(depth == (HASH_SIZE * 2));
@@ -198,6 +202,7 @@ bool statesync_server_handle_request(
                     }
                 }
             }
+
             return true;
         }
 

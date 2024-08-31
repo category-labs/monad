@@ -214,6 +214,20 @@ TEST_F(StateSyncFixture, sync_from_empty)
     run();
     EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+
+    OnDiskMachine machine;
+    mpt::Db cdb{
+        machine,
+        mpt::OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+    TrieDb ctdb{cdb};
+    EXPECT_EQ(ctdb.get_block_number(), 1'000'000);
+    EXPECT_TRUE(ctdb.read_account(ADDR_A).has_value());
+    EXPECT_EQ(ctdb.read_code(A_CODE_HASH)->executable_code, A_CODE);
+    EXPECT_EQ(ctdb.read_code(B_CODE_HASH)->executable_code, B_CODE);
+    EXPECT_EQ(ctdb.read_code(C_CODE_HASH)->executable_code, C_CODE);
+    EXPECT_EQ(ctdb.read_code(D_CODE_HASH)->executable_code, D_CODE);
+    EXPECT_EQ(ctdb.read_code(E_CODE_HASH)->executable_code, E_CODE);
+    EXPECT_EQ(ctdb.read_code(H_CODE_HASH)->executable_code, H_CODE);
 }
 
 TEST_F(StateSyncFixture, sync_from_some)

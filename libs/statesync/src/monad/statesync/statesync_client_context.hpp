@@ -6,7 +6,6 @@
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/mpt/db.hpp>
-#include <monad/state2/state_deltas.hpp>
 
 #include <ankerl/unordered_dense.h>
 
@@ -21,6 +20,14 @@ struct monad_statesync_client_context
     template <class K, class V>
     using Map = ankerl::unordered_dense::segmented_map<K, V>;
 
+    using StorageDeltas = Map<monad::bytes32_t, monad::bytes32_t>;
+
+    struct StateDelta
+    {
+        std::optional<monad::Account> account;
+        StorageDeltas storage;
+    };
+
     monad::OnDiskMachine machine;
     monad::mpt::Db db;
     monad::TrieDb tdb;
@@ -29,9 +36,9 @@ struct monad_statesync_client_context
     uint64_t target;
     uint64_t current;
     monad::bytes32_t expected_root;
-    Map<monad::Address, monad::StorageDeltas> buffered;
+    Map<monad::Address, StorageDeltas> buffered;
     Map<monad::bytes32_t, monad::byte_string> code;
-    monad::StateDeltas deltas;
+    Map<monad::Address, StateDelta> deltas;
     std::unordered_set<monad::bytes32_t> hash;
     uint64_t n_upserts;
     std::filesystem::path genesis;

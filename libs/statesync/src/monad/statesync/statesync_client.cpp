@@ -4,6 +4,7 @@
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/unaligned.hpp>
 #include <monad/db/trie_db.hpp>
+#include <monad/db/util.hpp>
 #include <monad/execution/genesis.hpp>
 #include <monad/statesync/statesync_client.h>
 #include <monad/statesync/statesync_client_context.hpp>
@@ -25,23 +26,75 @@ bytes32_t read_storage(
 
 void commit(monad_statesync_client_context &ctx)
 {
-    Code code;
+    std::list<mpt::Update> alloc;
+    std::list<byte_string> bytes_alloc;
+    std::list<hash256> hash_alloc;
+    UpdateList accounts;
+    for (auto const &[addr, delta] : ctx.deltas) {
+        UpdateList storage;
+        for (auto const &[key, val] : delta.storage) {
+            storage.push_front(alloc.emplace_back(Update{
+                .key = hash_alloc.emplace_back(keccak256(key.bytes)),
+                .value = val == bytes32_t{}
+                             ? std::nullopt
+                             : std::make_optional<byte_string_view>(
+                                   bytes_alloc.emplace_back(
+                                       encode_storage_db(key, val))),
+                .incarnation = false,
+                .next = UpdateList{},
+                .version = static_cast<int64_t>(ctx.current)}));
+        }
+        accounts.push_front(alloc.emplace_back(Update{
+            .key = hash_alloc.emplace_back(keccak256(addr.bytes)),
+            .value = !delta.account.has_value()
+                         ? std::nullopt
+                         : std::make_optional<byte_string_view>(
+                               bytes_alloc.emplace_back(encode_account_db(
+                                   addr, delta.account.value()))),
+            .incarnation = false,
+            .next = std::move(storage),
+            .version = static_cast<int64_t>(ctx.current)}));
+    }
+    UpdateList code_updates;
+
     std::unordered_set<bytes32_t> remaining;
+    std::vector<bytes32_t> upserted;
     for (auto const &hash : ctx.hash) {
-        auto const it = ctx.code.find(hash);
-        if (it != ctx.code.end()) {
-            MONAD_ASSERT(code.emplace(
-                hash, std::make_shared<CodeAnalysis>(analyze(it->second))));
-            ctx.code.erase(it);
+        if (ctx.code.contains(hash)) {
+            code_updates.push_front(alloc.emplace_back(Update{
+                .key = NibblesView{hash},
+                .value = ctx.code.at(hash),
+                .incarnation = false,
+                .next = UpdateList{},
+                .version = static_cast<int64_t>(ctx.current)}));
+            upserted.emplace_back(hash);
         }
         else {
             remaining.insert(hash);
         }
     }
-    ctx.hash = std::move(remaining);
 
+    auto state_update = Update{
+        .key = state_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(accounts),
+        .version = static_cast<int64_t>(ctx.current)};
+    auto code_update = Update{
+        .key = code_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(code_updates),
+        .version = static_cast<int64_t>(ctx.current)};
+    UpdateList updates;
+    updates.push_front(state_update);
+    updates.push_front(code_update);
+    ctx.db.upsert(std::move(updates), ctx.current);
     ctx.tdb.set_block_number(ctx.current);
-    ctx.tdb.commit(ctx.deltas, code);
+    for (auto const &hash : upserted) {
+        MONAD_ASSERT(ctx.code.erase(hash) == 1);
+    }
+    ctx.hash = std::move(remaining);
     ctx.deltas.clear();
 }
 
@@ -49,40 +102,50 @@ void account_update(
     monad_statesync_client_context &ctx, Address const &addr,
     std::optional<Account> const &acct)
 {
+    using StateDelta = monad_statesync_client_context::StateDelta;
+
     if (acct.has_value() && acct.value().code_hash != NULL_HASH) {
         ctx.hash.insert(acct.value().code_hash);
     }
 
-    StateDeltas::accessor it;
-    auto const updated = ctx.deltas.find(it, addr);
+    auto const it = ctx.deltas.find(addr);
+    auto const updated = it != ctx.deltas.end();
 
     if (ctx.buffered.contains(addr)) {
         MONAD_ASSERT(!ctx.tdb.read_account(addr).has_value() && !updated);
         if (acct.has_value()) {
-            MONAD_ASSERT(ctx.deltas.emplace(
-                addr,
-                StateDelta{
-                    .account = {std::nullopt, acct},
-                    .storage = std::move(ctx.buffered.at(addr))}));
+            MONAD_ASSERT(
+                ctx.deltas
+                    .emplace(
+                        addr,
+                        StateDelta{
+                            .account = acct,
+                            .storage = std::move(ctx.buffered.at(addr))})
+                    .second);
         }
         ctx.buffered.erase(addr);
     }
     else if (!updated) {
-        MONAD_ASSERT(ctx.deltas.emplace(
-            it,
-            addr,
-            StateDelta{
-                .account = {ctx.tdb.read_account(addr), acct}, .storage = {}}));
+        if (acct.has_value() || ctx.tdb.read_account(addr).has_value()) {
+            MONAD_ASSERT(
+                ctx.deltas
+                    .emplace(addr, StateDelta{.account = acct, .storage = {}})
+                    .second);
+        }
     }
-    else if ( // incarnation
-        it->second.account.first.has_value() &&
-        !it->second.account.second.has_value() && acct.has_value()) {
-        it.release();
+    // incarnation
+    else if (acct.has_value() && !it->second.account.has_value()) {
         commit(ctx);
         account_update(ctx, addr, acct);
     }
+    else if (acct.has_value()) {
+        it->second.account = acct;
+    }
+    else if (ctx.tdb.read_account(addr).has_value()) {
+        it->second.account.reset();
+    }
     else {
-        it->second.account.second = acct;
+        ctx.deltas.erase(it);
     }
 }
 
@@ -90,8 +153,11 @@ void storage_update(
     monad_statesync_client_context &ctx, Address const &addr,
     bytes32_t const &key, bytes32_t const &val)
 {
-    StateDeltas::accessor it;
-    auto const updated = ctx.deltas.find(it, addr);
+    using StateDelta = monad_statesync_client_context::StateDelta;
+    using StorageDeltas = monad_statesync_client_context::StorageDeltas;
+
+    auto const it = ctx.deltas.find(addr);
+    auto const updated = it != ctx.deltas.end();
 
     if (ctx.buffered.contains(addr)) {
         MONAD_ASSERT(!ctx.tdb.read_account(addr).has_value() && !updated);
@@ -102,39 +168,42 @@ void storage_update(
             }
         }
         else {
-            StorageDeltas::accessor sit;
-            if (ctx.buffered[addr].find(sit, key)) {
-                sit->second.second = val;
+            auto const sit = ctx.buffered[addr].find(key);
+            if (sit != ctx.buffered[addr].end()) {
+                sit->second = val;
             }
             else {
-                MONAD_ASSERT(
-                    ctx.buffered[addr].emplace(key, StorageDelta{{}, val}));
+                MONAD_ASSERT(ctx.buffered[addr].emplace(key, val).second);
             }
         }
     }
-    else if (updated) {
-        StorageDeltas::accessor sit;
-        if (it->second.storage.find(sit, key)) {
-            sit->second.second = val;
+    else if (
+        val != bytes32_t{} || read_storage(ctx, addr, key) != bytes32_t{}) {
+        if (updated) {
+            it->second.storage[key] = val;
         }
         else {
-            MONAD_ASSERT(it->second.storage.emplace(
-                key, StorageDelta{read_storage(ctx, addr, key), val}));
+            auto const orig = ctx.tdb.read_account(addr);
+            if (orig.has_value()) {
+                MONAD_ASSERT(
+                    ctx.deltas
+                        .emplace(
+                            addr,
+                            StateDelta{
+                                .account = orig, .storage = {{key, val}}})
+                        .second);
+            }
+            else {
+                MONAD_ASSERT(val != bytes32_t{});
+                MONAD_ASSERT(
+                    ctx.buffered.emplace(addr, StorageDeltas{{key, val}})
+                        .second);
+            }
         }
     }
-    else {
-        auto const orig = ctx.tdb.read_account(addr);
-        if (!orig.has_value()) {
-            MONAD_ASSERT(
-                ctx.buffered[addr].emplace(key, StorageDelta{{}, val}));
-        }
-        else {
-            MONAD_ASSERT(ctx.deltas.emplace(
-                addr,
-                StateDelta{
-                    .account = {orig, orig},
-                    .storage = {{key, {read_storage(ctx, addr, key), val}}}}));
-        }
+    else if (updated && it->second.storage.contains(key)) {
+        MONAD_ASSERT(val == bytes32_t{});
+        it->second.storage.erase(key);
     }
 }
 

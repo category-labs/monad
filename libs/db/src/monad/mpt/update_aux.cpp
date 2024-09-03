@@ -498,6 +498,17 @@ void UpdateAuxImpl::set_io(AsyncIO *io_, uint64_t const history_len)
             // Reset/init node writer's offsets, destroy contents after
             // fast_offset.id chunck
             rewind_to_match_offsets();
+            // reset history length
+            if (history_len < version_history_length()) {
+                // we invalidate earlier blocks that fall outside of the history
+                // window when shortening history length
+                for (auto version = db_history_min_valid_version();
+                     version <= db_history_max_version() - history_len;
+                     ++version) {
+                    update_root_offset(version, INVALID_OFFSET);
+                }
+            }
+            update_history_length_metadata(history_len);
         }
     }
     // If the pool has changed since we configured the metadata, this will

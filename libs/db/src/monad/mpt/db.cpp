@@ -566,7 +566,7 @@ struct Db::RWOnDisk final : public Db::Impl
                 // This bit is unfortunately nasty, but we have to initialise
                 // aux_ from this thread
                 aux_.~UpdateAux<>();
-                new (&aux_) UpdateAux<>{&worker_->io};
+                new (&aux_) UpdateAux<>{&worker_->io, options.history_length};
             }
             worker_->run();
             std::unique_lock const g(lock_);
@@ -586,10 +586,6 @@ struct Db::RWOnDisk final : public Db::Impl
                        : Node::UniquePtr{};
         }())
     {
-        if (aux_.db_history_max_version() == INVALID_BLOCK_ID) {
-            // set history length on empty db
-            aux_.update_history_length_metadata(options.history_length);
-        }
     }
 
     ~RWOnDisk()

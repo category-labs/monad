@@ -552,7 +552,9 @@ namespace detail
         void set_history_length_(uint64_t history_len) noexcept
         {
             auto g = hold_dirty();
-            MONAD_ASSERT(history_len <= root_offsets_ring_t::capacity());
+            MONAD_ASSERT(
+                history_len > 0 &&
+                history_len <= root_offsets_ring_t::capacity());
             reinterpret_cast<std::atomic_uint64_t *>(&history_length)
                 ->store(history_len, std::memory_order_relaxed);
         }

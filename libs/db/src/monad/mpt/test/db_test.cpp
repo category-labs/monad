@@ -1314,6 +1314,85 @@ TEST(DbTest, move_trie_causes_discontinuous_history)
     EXPECT_EQ(ro_db.get_earliest_block_id(), far_dest_block_id);
 }
 
+TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
+{
+    EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
+
+    // Insert more than history length blocks
+    auto const &kv = fixed_updates::kv;
+    auto const prefix = 0x00_hex;
+    uint64_t const max_block_id = DBTEST_HISTORY_LENGTH + 10;
+    for (uint64_t block_id = 0; block_id <= max_block_id; ++block_id) {
+        upsert_updates_flat_list(
+            db,
+            prefix,
+            block_id,
+            make_update(kv[0].first, kv[0].second),
+            make_update(kv[1].first, kv[1].second));
+    }
+
+    EXPECT_TRUE(db.get(prefix + kv[1].first, 0).has_error());
+    EXPECT_TRUE(db.get(prefix + kv[1].first, max_block_id).has_value());
+    auto const min_block_num_before = max_block_id - DBTEST_HISTORY_LENGTH + 1;
+    EXPECT_EQ(db.get_earliest_block_id(), min_block_num_before);
+    EXPECT_TRUE(db.get(prefix + kv[1].first, min_block_num_before).has_value());
+
+    Db ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
+    EXPECT_TRUE(ro_db.get(prefix + kv[1].first, 0).has_error());
+    EXPECT_TRUE(ro_db.get(prefix + kv[1].first, max_block_id).has_value());
+    EXPECT_EQ(
+        ro_db.get_earliest_block_id(),
+        max_block_id - DBTEST_HISTORY_LENGTH + 1);
+    EXPECT_TRUE(ro_db.get(prefix + kv[1].first, ro_db.get_earliest_block_id())
+                    .has_value());
+
+    // Reopen rwdb with a shorter history length
+    config.history_length = DBTEST_HISTORY_LENGTH / 2;
+    config.append = true;
+    {
+        Db new_rw{machine, config};
+        EXPECT_EQ(new_rw.get_history_length(), config.history_length);
+        EXPECT_EQ(new_rw.get_latest_block_id(), max_block_id);
+    }
+    EXPECT_EQ(ro_db.get_history_length(), config.history_length);
+    EXPECT_EQ(ro_db.get_latest_block_id(), max_block_id);
+    EXPECT_TRUE(ro_db.get(prefix + kv[1].first, max_block_id).has_value());
+    EXPECT_TRUE(
+        ro_db.get(prefix + kv[1].first, min_block_num_before).has_error());
+    auto const min_block_num_after = max_block_id - config.history_length + 1;
+    EXPECT_EQ(ro_db.get_earliest_block_id(), min_block_num_after);
+    EXPECT_TRUE(
+        ro_db.get(prefix + kv[1].first, min_block_num_after).has_value());
+    EXPECT_TRUE(
+        ro_db.get(prefix + kv[1].first, min_block_num_after - 1).has_error());
+
+    // Reopen rwdb with a longer history length
+    config.history_length = DBTEST_HISTORY_LENGTH;
+    Db new_rw{machine, config};
+    EXPECT_EQ(new_rw.get_history_length(), config.history_length);
+    EXPECT_EQ(new_rw.get_earliest_block_id(), min_block_num_after);
+    EXPECT_EQ(ro_db.get_history_length(), config.history_length);
+    EXPECT_EQ(ro_db.get_earliest_block_id(), min_block_num_after);
+    EXPECT_EQ(ro_db.get_latest_block_id(), max_block_id);
+    EXPECT_TRUE(
+        ro_db.get(prefix + kv[1].first, min_block_num_before).has_error());
+    // Inserts more blocks
+    auto const new_max_block_id =
+        min_block_num_after + config.history_length - 1;
+    for (uint64_t block_id = max_block_id + 1; block_id <= new_max_block_id;
+         ++block_id) {
+        upsert_updates_flat_list(
+            db,
+            prefix,
+            block_id,
+            make_update(kv[0].first, kv[0].second),
+            make_update(kv[1].first, kv[1].second));
+    }
+    EXPECT_EQ(ro_db.get_latest_block_id(), new_max_block_id);
+    EXPECT_EQ(ro_db.get_earliest_block_id(), min_block_num_after);
+}
+
 TYPED_TEST(DbTest, scalability)
 {
     static constexpr size_t COUNT = 1000000;

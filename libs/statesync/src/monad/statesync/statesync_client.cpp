@@ -346,8 +346,12 @@ void monad_statesync_client_handle_done(
 
 bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
 {
-    MONAD_ASSERT(
-        ctx->buffered.empty() && ctx->deltas.empty() && ctx->hash.empty());
+    MONAD_ASSERT(ctx->deltas.empty());
+    if (!ctx->buffered.empty() || !ctx->hash.empty()) {
+        // sent storage with no account or not all code was sent
+        return false;
+    }
+
     if (ctx->db.get_latest_block_id() != ctx->target) {
         ctx->db.move_trie_version_forward(
             ctx->db.get_latest_block_id(), ctx->target);

@@ -1,6 +1,7 @@
 #include <monad/config.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/byte_string.hpp>
 #include <monad/core/likely.h>
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/precompiles.hpp>
@@ -11,6 +12,7 @@
 #include <evmc/evmc.hpp>
 #include <evmc/helpers.h>
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -60,6 +62,25 @@ bool is_precompile(Address const &address) noexcept
 
 EXPLICIT_EVMC_REVISION(is_precompile);
 
+struct PrecompiledContract
+{
+    precompiled_gas_cost_fn *gas_cost_func;
+    precompiled_execute_fn *execute_func;
+};
+
+std::array<PrecompiledContract, num_precompiles(EVMC_SHANGHAI) + 1> dispatch{{
+    {}, // precompiles start at address 0x1
+    {ecrecover_gas_cost, ecrecover_execute},
+    {sha256_gas_cost, sha256_execute},
+    {ripemd160_gas_cost, ripemd160_execute},
+    {identity_gas_cost, identity_execute},
+    {expmod_gas_cost, expmod_execute},
+    {ecadd_gas_cost, ecadd_execute},
+    {ecmul_gas_cost, ecmul_execute},
+    {snarkv_gas_cost, snarkv_execute},
+    {blake2bf_gas_cost, blake2bf_execute},
+}};
+
 template <evmc_revision rev>
 std::optional<evmc::Result> check_call_precompile(evmc_message const &msg)
 {
@@ -70,33 +91,24 @@ std::optional<evmc::Result> check_call_precompile(evmc_message const &msg)
     }
 
     auto const i = address.bytes[sizeof(address.bytes) - 1];
+    auto const [gas_cost_func, execute_func] = dispatch[i];
 
-    auto const gas_func = kSilkpreContracts[i - 1].gas;
-
-    auto const cost = gas_func(msg.input_data, msg.input_size, rev);
+    byte_string_view const input{msg.input_data, msg.input_size};
+    uint64_t const cost = gas_cost_func(input, rev);
 
     if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost))) {
         return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
     }
 
-    auto const run_func = kSilkpreContracts[i - 1].run;
-
-    auto const output = run_func(
-        (msg.input_data != nullptr || msg.input_size != 0)
-            ? msg.input_data
-            : (uint8_t const *)"",
-        msg.input_size);
-
-    if (MONAD_UNLIKELY(!output.data)) {
-        return evmc::Result{evmc_status_code::EVMC_PRECOMPILE_FAILURE};
-    }
-
+    auto const [status_code, output_buffer, output_size] = execute_func(input);
     return evmc::Result{evmc_result{
-        .status_code = evmc_status_code::EVMC_SUCCESS,
-        .gas_left = msg.gas - static_cast<int64_t>(cost),
+        .status_code = status_code,
+        .gas_left = (status_code == EVMC_SUCCESS)
+                        ? msg.gas - static_cast<int64_t>(cost)
+                        : 0,
         .gas_refund = 0,
-        .output_data = output.data,
-        .output_size = output.size,
+        .output_data = output_buffer,
+        .output_size = output_size,
         .release = evmc_free_result_memory,
         .create_address = {},
         .padding = {},

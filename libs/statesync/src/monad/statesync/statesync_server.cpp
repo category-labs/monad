@@ -242,7 +242,6 @@ bool statesync_server_handle_request(
     auto const start = std::chrono::steady_clock::now();
     auto *const ctx = sync->context;
     if (!send_deletion(sync, rq, *ctx)) {
-        LOG_INFO("failed when sending deletions");
         return false;
     }
     auto &db = *ctx->ro;
@@ -255,7 +254,6 @@ bool statesync_server_handle_request(
     auto const begin = std::chrono::steady_clock::now();
     Traverse traverse(sync, NibblesView{bytes}, rq.from, rq.until);
     if (!db.traverse(root, traverse, rq.target)) {
-        LOG_INFO("failed when handling the traverse");
         return false;
     }
     auto const end = std::chrono::steady_clock::now();

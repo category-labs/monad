@@ -83,7 +83,7 @@ void statesync_server_send_upsert(
         net->obuf.clear();
     }
 
-    LOG_INFO(
+    LOG_DEBUG(
         "sending upsert type={} {} ns={}",
         std::to_underlying(type),
         fmt::format(
@@ -103,7 +103,7 @@ void statesync_server_send_done(
         reinterpret_cast<unsigned char const *>(&msg), sizeof(msg));
     send(net->fd, net->obuf);
     net->obuf.clear();
-    LOG_INFO(
+    LOG_DEBUG(
         "sending done success={} prefix={} n={} time={}",
         msg.success,
         msg.prefix,

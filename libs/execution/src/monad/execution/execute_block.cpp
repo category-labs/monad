@@ -118,10 +118,10 @@ Result<std::vector<Receipt>> execute_block(
         MONAD_ASSERT(results[i].has_value());
         if (MONAD_UNLIKELY(results[i].value().has_error())) {
             LOG_ERROR(
-                "tx {} validation failed: {}",
+                "tx {} {} validation failed: {}",
                 i,
+                block.transactions[i],
                 results[i].value().assume_error().message().c_str());
-            LOG_ERROR("failed tx: {}", block.transactions[i]);
         }
         BOOST_OUTCOME_TRY(Receipt receipt, std::move(results[i].value()));
         receipts.push_back(std::move(receipt));

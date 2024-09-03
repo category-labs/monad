@@ -434,7 +434,9 @@ TEST_F(StateSyncFixture, ignore_unused_code)
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
     OnDiskMachine machine;
-    mpt::Db cdb{machine, mpt::OnDiskDbConfig{.dbname_paths = {cdbname}}};
+    mpt::Db cdb{
+        machine,
+        mpt::OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
     TrieDb ctdb{cdb};
     EXPECT_TRUE(ctdb.read_code(code_hash)->executable_code.empty());
 }

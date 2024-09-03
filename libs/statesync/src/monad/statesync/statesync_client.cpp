@@ -89,7 +89,7 @@ void commit(monad_statesync_client_context &ctx)
     UpdateList updates;
     updates.push_front(state_update);
     updates.push_front(code_update);
-    ctx.db.upsert(std::move(updates), ctx.current);
+    ctx.db.upsert(std::move(updates), ctx.current, false, false);
     ctx.tdb.set_block_number(ctx.current);
     for (auto const &hash : upserted) {
         MONAD_ASSERT(ctx.code.erase(hash) == 1);

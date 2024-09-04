@@ -10,6 +10,7 @@
 #include <monad/statesync/statesync_client_context.hpp>
 
 #include <bit>
+#include <deque>
 #include <filesystem>
 
 using namespace monad;
@@ -26,9 +27,9 @@ bytes32_t read_storage(
 
 void commit(monad_statesync_client_context &ctx)
 {
-    std::list<mpt::Update> alloc;
-    std::list<byte_string> bytes_alloc;
-    std::list<hash256> hash_alloc;
+    std::deque<mpt::Update> alloc;
+    std::deque<byte_string> bytes_alloc;
+    std::deque<hash256> hash_alloc;
     UpdateList accounts;
     for (auto const &[addr, delta] : ctx.deltas) {
         UpdateList storage;
@@ -58,7 +59,7 @@ void commit(monad_statesync_client_context &ctx)
     UpdateList code_updates;
 
     std::unordered_set<bytes32_t> remaining;
-    std::vector<bytes32_t> upserted;
+    std::deque<bytes32_t> upserted;
     for (auto const &hash : ctx.hash) {
         if (ctx.code.contains(hash)) {
             code_updates.push_front(alloc.emplace_back(Update{

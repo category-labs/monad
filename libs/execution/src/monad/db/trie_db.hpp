@@ -14,8 +14,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <deque>
 #include <istream>
-#include <list>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -25,9 +25,9 @@ MONAD_NAMESPACE_BEGIN
 class TrieDb final : public ::monad::Db
 {
     ::monad::mpt::Db &db_;
-    std::list<mpt::Update> update_alloc_;
-    std::list<byte_string> bytes_alloc_;
-    std::list<hash256> hash_alloc_;
+    std::deque<mpt::Update> update_alloc_;
+    std::deque<byte_string> bytes_alloc_;
+    std::deque<hash256> hash_alloc_;
     uint64_t block_number_;
 
 public:

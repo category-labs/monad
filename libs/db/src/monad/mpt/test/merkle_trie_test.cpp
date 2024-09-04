@@ -14,8 +14,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <deque>
 #include <iterator>
-#include <list>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -812,7 +812,7 @@ TYPED_TEST(TrieTest, variable_length_trie_with_prefix)
     auto const value =
         0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_hex;
 
-    std::list<Update> updates_alloc;
+    std::deque<Update> updates_alloc;
     UpdateList updates;
 
     updates.push_front(updates_alloc.emplace_back(make_update(key0, value)));

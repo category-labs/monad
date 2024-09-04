@@ -69,12 +69,19 @@ ARG GIT_COMMIT_HASH
 RUN test -n "$GIT_COMMIT_HASH"
 ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
 
-RUN CC=gcc-13 CXX=g++-13 CMAKE_BUILD_TYPE=RelWithDebInfo CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" ./scripts/configure.sh
+RUN CC=gcc-13 CXX=g++-13 CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" cmake \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
+  -DCMAKE_TOOLCHAIN_FILE:STRING=libs/core/toolchains/temp-strip-release.cmake \
+  -DCMAKE_BUILD_TYPE:STRING=Release \
+  -B build \
+  -G Ninja
 
-RUN ./scripts/build.sh
+RUN VERBOSE=1 cmake \
+  --build build \
+  --target all
 
 # security=insecure for tests which use io_uring
-RUN --security=insecure CC=gcc-13 CXX=g++-13 CMAKE_BUILD_TYPE=RelWithDebInfo ./scripts/test.sh
+RUN --security=insecure CC=gcc-13 CXX=g++-13 CMAKE_BUILD_TYPE=Release ./scripts/test.sh
 
 FROM base as runner
 COPY --from=build /src/build/libs/db/monad_mpt /usr/local/bin/

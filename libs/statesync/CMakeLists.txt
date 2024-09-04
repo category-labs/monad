@@ -24,3 +24,13 @@ monad_compile_options(monad_statesync)
 target_link_libraries(monad_statesync PUBLIC monad_execution)
 
 monad_add_test_folder("src/monad/statesync")
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  add_executable(
+    fuzz_statesync
+    "${PROJECT_SOURCE_DIR}/src/monad/statesync/test/fuzz_statesync.cpp")
+  target_compile_options(fuzz_statesync PRIVATE "-fsanitize=fuzzer")
+  target_link_options(fuzz_statesync PRIVATE "-fsanitize=fuzzer")
+  monad_compile_options(fuzz_statesync)
+  target_link_libraries(fuzz_statesync PUBLIC monad_statesync)
+endif()

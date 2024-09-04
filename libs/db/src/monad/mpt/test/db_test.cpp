@@ -620,6 +620,7 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
             else {
                 auto const min_block_id = ro_db.get_earliest_block_id();
                 EXPECT_TRUE(min_block_id != INVALID_BLOCK_ID);
+                EXPECT_GT(min_block_id, read_version);
                 read_version = min_block_id + 100;
                 ++nfailed;
             }
@@ -629,7 +630,6 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
                   << nfailed << " failed reads" << std::endl;
         EXPECT_TRUE(nsuccess > 0);
         EXPECT_LE(read_version, ro_db.get_latest_block_id());
-        EXPECT_GE(read_version, ro_db.get_earliest_block_id());
     };
 
     // construct RWDb

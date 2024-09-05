@@ -20,8 +20,10 @@ find_package(GTest)
 find_package(PkgConfig REQUIRED)
 
 pkg_check_modules(archive REQUIRED IMPORTED_TARGET libarchive)
-pkg_check_modules(cap REQUIRED IMPORTED_TARGET libcap)
 pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
+if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  pkg_check_modules(cap REQUIRED IMPORTED_TARGET libcap)
+endif()
 
 # ##############################################################################
 # libs

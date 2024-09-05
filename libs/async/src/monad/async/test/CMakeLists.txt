@@ -56,4 +56,4 @@ add_async_test(TARGET storage_pool_test SOURCES "storage_pool.cpp")
 add_executable(benchmark_io_test "benchmark_io_test.cpp")
 monad_compile_options(benchmark_io_test)
 target_link_libraries(benchmark_io_test PUBLIC monad_core CLI11::CLI11
-                                               PkgConfig::cap monad_async)
+    $<TARGET_NAME_IF_EXISTS:PkgConfig::cap> monad_async)

@@ -10,6 +10,4 @@
     #else
         #error avx2 or avx512 required
     #endif
-#else
-    #error unsupported arch
 #endif

@@ -1,5 +1,5 @@
-#include <bits/types/struct_iovec.h>
 #include <monad/io/buffers.hpp>
+#include <sys/uio.h>
 
 #include <monad/core/assert.h>
 

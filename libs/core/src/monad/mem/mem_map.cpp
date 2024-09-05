@@ -37,11 +37,18 @@ MemMap::MemMap(size_t const size, size_t pagesize)
     }()}
     , data_{[this, pagesize] {
         int huge_flags = 0;
+#if defined(__linux__)
         if (pagesize > getpagesize()) {
             int const pagebits = std::countr_zero(pagesize);
             huge_flags |= MAP_HUGETLB;
             huge_flags |= pagebits << MAP_HUGE_SHIFT;
         }
+#else
+        MONAD_ABORT(
+            "pagesize %zu exceeds default system page size %d",
+            pagesize,
+            getpagesize());
+#endif
         void *const data = mmap(
             nullptr,
             size_,

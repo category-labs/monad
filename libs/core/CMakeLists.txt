@@ -79,12 +79,8 @@ add_library(
   "src/monad/core/byte_string.hpp"
   "src/monad/core/bytes_hash_compare.hpp"
   "src/monad/core/cmemory.hpp"
-  "src/monad/core/cgroup.c"
-  "src/monad/core/cgroup.h"
   "src/monad/core/cleanup.h"
   "src/monad/core/cleanup.c"
-  "src/monad/core/cpuset.c"
-  "src/monad/core/cpuset.h"
   "src/monad/core/cpu_relax.h"
   "src/monad/core/endian.hpp"
   "src/monad/core/hash.hpp"
@@ -101,8 +97,8 @@ add_library(
   "src/monad/core/size_of.hpp"
   "src/monad/core/small_prng.hpp"
   "src/monad/core/spinlock.h"
-  "src/monad/core/tl_tid.c"
-  "src/monad/core/tl_tid.h"
+  "src/monad/core/thread.h"
+  "src/monad/core/thread.c"
   "src/monad/core/unaligned.hpp"
   "src/monad/lru/lru_cache.hpp"
   "src/monad/lru/static_lru_cache.hpp"
@@ -121,23 +117,14 @@ add_library(
   # io
   "src/monad/io/buffer_pool.cpp"
   "src/monad/io/buffer_pool.hpp"
-  "src/monad/io/buffers.cpp"
-  "src/monad/io/buffers.hpp"
   "src/monad/io/config.hpp"
-  "src/monad/io/ring.cpp"
-  "src/monad/io/ring.hpp"
   # mem
   "src/monad/mem/cpool.h"
   "src/monad/mem/dynamic_allocator.hpp"
-  "src/monad/mem/huge_mem.c"
-  "src/monad/mem/huge_mem.cpp"
   "src/monad/mem/huge_mem.h"
   "src/monad/mem/huge_mem.hpp"
   "src/monad/mem/mem_map.cpp"
   "src/monad/mem/mem_map.hpp"
-  # procfs
-  "src/monad/procfs/statm.c"
-  "src/monad/procfs/statm.h"
   # rlp
   "src/monad/rlp/config.hpp"
   "src/monad/rlp/encode.hpp"
@@ -145,6 +132,28 @@ add_library(
   "src/monad/test/gtest_signal_stacktrace_printer.hpp"
   # util
   "src/monad/util/stopwatch.hpp")
+
+if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  # Append Linux-specific implementation files
+  target_sources(monad_core PRIVATE
+    # core
+    "src/monad/core/cgroup.c"
+    "src/monad/core/cgroup.h"
+    "src/monad/core/cpuset.c"
+    "src/monad/core/cpuset.h"
+    # io
+    "src/monad/io/buffers.cpp"
+    "src/monad/io/buffers.hpp"
+    "src/monad/io/ring.hpp"
+    "src/monad/io/ring.cpp"
+    # mem
+    "src/monad/mem/huge_mem.c"
+    "src/monad/mem/huge_mem.cpp"
+    # procfs
+    "src/monad/procfs/statm.c"
+    "src/monad/procfs/statm.h")
+endif()
+
 target_include_directories(monad_core PUBLIC "src")
 monad_compile_options(monad_core)
 target_compile_definitions(monad_core PUBLIC "BOOST_STACKTRACE_LINK=1")
@@ -158,11 +167,14 @@ else()
                              PUBLIC "BOOST_STACKTRACE_USE_ADDR2LINE=1")
   target_link_libraries(monad_core PUBLIC Boost::stacktrace_addr2line)
 endif()
-target_link_libraries(monad_core PUBLIC cgroup openssl_sha3_asm uring Boost::fiber
-                                        TBB::tbb)
+target_link_libraries(monad_core PUBLIC openssl_sha3_asm Boost::fiber TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC ethash::keccak)
 target_link_libraries(monad_core PUBLIC evmc)
+
+if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  target_link_libraries(monad_core PUBLIC cgroup uring)
+endif()
 
 add_library(
   monad_core_disas STATIC

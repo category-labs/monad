@@ -2,15 +2,15 @@
 
 #include <monad/core/cpu_relax.h>
 #include <monad/core/likely.h>
-#include <monad/core/tl_tid.h>
+#include <monad/core/thread.h>
 
 #include <assert.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 
-static_assert(ATOMIC_INT_LOCK_FREE == 2);
+static_assert(ATOMIC_LONG_LOCK_FREE == 2);
 
-typedef atomic_int spinlock_t;
+typedef atomic_long spinlock_t;
 
 static inline void spinlock_init(spinlock_t *const lock)
 {
@@ -19,22 +19,22 @@ static inline void spinlock_init(spinlock_t *const lock)
 
 static inline bool spinlock_try_lock(spinlock_t *const lock)
 {
-    int expected = 0;
-    int const desired = get_tl_tid();
+    monad_tid_t expected = 0;
+    monad_tid_t const desired = monad_thread_get_id();
     return atomic_compare_exchange_weak_explicit(
         lock, &expected, desired, memory_order_acquire, memory_order_relaxed);
 }
 
 static inline void spinlock_lock(spinlock_t *const lock)
 {
-    int const desired = get_tl_tid();
+    monad_tid_t const desired = monad_thread_get_id();
     for (;;) {
         /**
          * TODO further analysis of retry logic
          * - if weak cmpxch fails, spin again or cpu relax?
          * - compare intel vs arm
          * - benchmark with real use cases
-        */
+         */
         unsigned retries = 0;
         while (
             MONAD_UNLIKELY(atomic_load_explicit(lock, memory_order_relaxed))) {
@@ -45,7 +45,7 @@ static inline void spinlock_lock(spinlock_t *const lock)
                 cpu_relax();
             }
         }
-        int expected = 0;
+        monad_tid_t expected = 0;
         if (MONAD_LIKELY(atomic_compare_exchange_weak_explicit(
                 lock,
                 &expected,

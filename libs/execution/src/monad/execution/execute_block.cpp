@@ -65,6 +65,31 @@ transfer_balance_dao(BlockState &block_state, Incarnation const incarnation)
     block_state.merge(state);
 }
 
+inline void set_beacon_root(BlockState &block_state, Block &block)
+{
+    constexpr auto BEACON_ROOTS_ADDRESS{
+        0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02_address};
+    constexpr uint256_t HISTORY_BUFFER_LENGTH{8191};
+
+    State state{block_state, Incarnation{block.header.number, 0}};
+    if (state.account_exists(BEACON_ROOTS_ADDRESS)) {
+        uint256_t timestamp{block.header.timestamp};
+        bytes32_t k1{
+            to_bytes(to_big_endian(timestamp % HISTORY_BUFFER_LENGTH))};
+        bytes32_t k2{to_bytes(to_big_endian(
+            timestamp % HISTORY_BUFFER_LENGTH + HISTORY_BUFFER_LENGTH))};
+        state.set_storage(
+            BEACON_ROOTS_ADDRESS, k1, to_bytes(to_big_endian(timestamp)));
+        state.set_storage(
+            BEACON_ROOTS_ADDRESS,
+            k2,
+            block.header.parent_beacon_block_root.value());
+
+        MONAD_ASSERT(block_state.can_merge(state));
+        block_state.merge(state);
+    }
+}
+
 template <evmc_revision rev>
 Result<std::vector<Receipt>> execute_block(
     Chain const &chain, Block &block, BlockState &block_state,
@@ -72,6 +97,10 @@ Result<std::vector<Receipt>> execute_block(
     fiber::PriorityPool &priority_pool)
 {
     TRACE_BLOCK_EVENT(StartBlock);
+
+    if constexpr (rev >= EVMC_CANCUN) {
+        set_beacon_root(block_state, block);
+    }
 
     if constexpr (rev == EVMC_HOMESTEAD) {
         if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {

@@ -151,7 +151,7 @@ monad_c_result monad_async_task_socket_destroy(
             (void *)ex,
             sock->io_uring_file_index);
 #endif
-        if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
+        if (MONAD_FAILED(ret)) {
             return ret;
         }
         monad_async_executor_free_file_index(ex, sock->io_uring_file_index);
@@ -294,7 +294,7 @@ monad_c_result monad_async_task_socket_transfer_to_uring(
                 ? outcome_status_code_message(&ret.error)
                 : "success");
 #endif
-        if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
+        if (MONAD_FAILED(ret)) {
             monad_async_executor_free_file_index(ex, file_index);
             if (!outcome_status_code_equal_generic(&ret.error, EINVAL)) {
                 (void)monad_async_task_socket_destroy(task_, sock_);
@@ -391,12 +391,12 @@ monad_c_result monad_async_task_socket_accept(
             ? outcome_status_code_message(&ret.error)
             : "success");
 #endif
-    if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
+    if (MONAD_FAILED(ret)) {
         monad_async_executor_free_file_index(ex, connected_file_index);
         return ret;
     }
     ret = monad_async_task_socket_create(connected_sock_, task_, -1, 0, 0, 0);
-    if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
+    if (MONAD_FAILED(ret)) {
         monad_async_executor_free_file_index(ex, connected_file_index);
         return ret;
     }
@@ -516,7 +516,7 @@ void monad_async_task_socket_receive(
         monad_c_result r =
             monad_async_task_claim_registered_file_io_write_buffer(
                 tofill, task_, max_bytes, flags_);
-        if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(r)) {
+        if (MONAD_FAILED(r)) {
             if (!outcome_status_code_equal_generic(&r.error, EINVAL) &&
                 !outcome_status_code_equal_generic(&r.error, ECANCELED)) {
                 MONAD_CONTEXT_CHECK_RESULT(r);

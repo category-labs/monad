@@ -3,6 +3,7 @@
 
 #include "monad/context/context_switcher.h"
 
+#include <assert.h>
 #include <errno.h>
 #include <stdatomic.h>
 #include <stdio.h>

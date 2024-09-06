@@ -2,7 +2,7 @@
 
 // #define MONAD_ASYNC_FILE_IO_PRINTING 1
 
-#include <monad/context/boost_result.h>
+#include <monad/core/c_result.h>
 #include <monad/context/config.h>
 
 #include "executor.h"
@@ -96,7 +96,7 @@ monad_c_result monad_async_task_file_create(
             ? outcome_status_code_message(&ret.error)
             : "success");
 #endif
-    if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
+    if (MONAD_FAILED(ret)) {
         monad_async_executor_free_file_index(ex, file_index);
         (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
         return ret;
@@ -140,7 +140,7 @@ monad_c_result monad_async_task_file_create(
                 ? outcome_status_code_message(&ret.error)
                 : "success");
 #endif
-        if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
+        if (MONAD_FAILED(ret)) {
             (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
             return ret;
         }
@@ -223,7 +223,7 @@ monad_async_task_file_destroy(monad_async_task task_, monad_async_file file_)
                 (void *)ex,
                 file->io_uring_file_index);
 #endif
-            if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
+            if (MONAD_FAILED(ret)) {
                 return ret;
             }
         }
@@ -250,7 +250,7 @@ monad_async_task_file_destroy(monad_async_task task_, monad_async_file file_)
             (void *)ex,
             file->io_uring_file_index);
 #endif
-        if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
+        if (MONAD_FAILED(ret)) {
             return ret;
         }
         memset(ex->magic, 0, 8);
@@ -310,7 +310,7 @@ monad_c_result monad_async_task_file_fallocate(
         (void *)ex,
         file->io_uring_file_index);
 #endif
-    if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
+    if (MONAD_FAILED(ret)) {
         return ret;
     }
     return monad_c_make_success(0);
@@ -364,7 +364,7 @@ void monad_async_task_file_read(
         .fail_dont_suspend = false, ._for_read_ring = true};
     monad_c_result r = monad_async_task_claim_registered_file_io_write_buffer(
         tofill, task_, max_bytes, flags_);
-    if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(r)) {
+    if (MONAD_FAILED(r)) {
         if (!outcome_status_code_equal_generic(&r.error, EINVAL) &&
             !outcome_status_code_equal_generic(&r.error, ECANCELED)) {
             MONAD_CONTEXT_CHECK_RESULT(r);

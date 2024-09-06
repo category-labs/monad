@@ -324,7 +324,7 @@ static inline monad_c_result monad_async_task_suspend_until_completed_io(
     }
     monad_c_result r =
         monad_async_task_suspend_for_duration(completed, task, ns);
-    if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(r)) {
+    if (MONAD_FAILED(r)) {
         return r;
     }
     *completed = monad_async_task_completed_io(task);

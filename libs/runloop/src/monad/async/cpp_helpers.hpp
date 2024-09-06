@@ -7,6 +7,7 @@
 
 #include "all.h"
 #include "executor.h"
+#include "monad/core/c_result.h"
 #include "task.h"
 
 #include <monad/context/config.h>

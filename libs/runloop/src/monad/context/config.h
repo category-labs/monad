@@ -1,6 +1,6 @@
 #pragma once
 
-#include "boost_result.h"
+#include <stdint.h>
 
 #ifndef __clang__
     #if defined(__SANITIZE_ADDRESS__)
@@ -44,31 +44,12 @@
     #endif
 #endif
 
-//! \brief Declare a Boost.Outcome layout compatible C result type for
-//! `result<intptr_t>`
-BOOST_OUTCOME_C_DECLARE_RESULT_SYSTEM(monad, intptr_t)
+#include <monad/core/c_result.h>
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
-
-//! \brief Convenience typedef
-typedef BOOST_OUTCOME_C_RESULT_SYSTEM(monad) monad_c_result;
-
-//! \brief Return a successful `monad_c_result` for a given `intptr_t`
-BOOST_OUTCOME_C_NODISCARD extern BOOST_OUTCOME_C_WEAK monad_c_result
-monad_c_make_success(intptr_t v)
-{
-    return BOOST_OUTCOME_C_MAKE_RESULT_SYSTEM_SUCCESS(monad, v);
-}
-
-//! \brief Return a failure `monad_c_result` for a given `errno`
-BOOST_OUTCOME_C_NODISCARD extern BOOST_OUTCOME_C_WEAK monad_c_result
-monad_c_make_failure(int ec)
-{
-    return BOOST_OUTCOME_C_MAKE_RESULT_SYSTEM_FAILURE_SYSTEM(monad, ec);
-}
 
 //! \brief A type representing the tick count on the CPU
 typedef uint64_t monad_context_cpu_ticks_count_t;
@@ -76,7 +57,7 @@ typedef uint64_t monad_context_cpu_ticks_count_t;
 #define MONAD_CONTEXT_CHECK_RESULT2(unique, ...)                               \
     {                                                                          \
         auto unique = (__VA_ARGS__);                                           \
-        if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(unique)) {                        \
+        if (MONAD_FAILED(unique)) {                                            \
             fprintf(                                                           \
                 stderr,                                                        \
                 "FATAL: %s\n",                                                 \

@@ -2,7 +2,7 @@
 
 #include "task.h"
 
-#include <monad/context/boost_result.h>
+#include <monad/core/c_result.h>
 #include <monad/context/config.h>
 #include <monad/context/context_switcher.h>
 
@@ -829,7 +829,7 @@ static inline monad_c_result monad_async_executor_run_impl(
                         // io_uring has dropped the eventfd poll
                         monad_c_result r2 =
                             monad_async_executor_setup_eventfd_polling(ex);
-                        if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(r2)) {
+                        if (MONAD_FAILED(r2)) {
                             // io_uring submit failed, if this happens something
                             // is very wrong
                             abort();
@@ -1735,7 +1735,7 @@ monad_c_result monad_async_task_suspend_for_duration(
         completed ? (void *)*completed : nullptr);
     fflush(stdout);
 #endif
-    if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
+    if (MONAD_FAILED(ret)) {
         if (ns > 0 && outcome_status_code_equal_generic(&ret.error, ETIME)) {
             // io_uring returns timeouts as failure with ETIME, so
             // filter those out

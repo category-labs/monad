@@ -370,8 +370,7 @@ monad_async_executor_config_string(monad_async_executor ex_)
         return monad_c_make_success((intptr_t)mem);
     }
     catch (...) {
-        return BOOST_OUTCOME_C_TO_RESULT_SYSTEM_CODE(
-            monad,
+        return to_monad_c_result(
             BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<intptr_t>(
                 BOOST_OUTCOME_V2_NAMESPACE::experimental::
                     system_code_from_exception()));

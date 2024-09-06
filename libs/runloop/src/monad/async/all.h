@@ -1,6 +1,5 @@
 #pragma once
 
-#include <monad/context/boost_result.h>
 #include <monad/context/config.h>
 #include <monad/context/context_switcher.h>
 

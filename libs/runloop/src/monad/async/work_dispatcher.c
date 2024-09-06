@@ -1,6 +1,6 @@
 #include "monad/async/work_dispatcher.h"
 
-#include <monad/context/boost_result.h>
+#include <monad/core/c_result.h>
 
 #include "executor_impl.h"
 
@@ -160,7 +160,7 @@ monad_c_result monad_async_work_dispatcher_executor_run(
     }
 retry:
     monad_c_result r = monad_async_executor_run(&p->derived.head, 256, &ts);
-    if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(r)) {
+    if (MONAD_FAILED(r)) {
         if (outcome_status_code_equal_generic(&r.error, ETIME) ||
             outcome_status_code_equal_generic(&r.error, ECANCELED)) {
             r.value = 0;

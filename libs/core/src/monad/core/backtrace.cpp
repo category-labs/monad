@@ -1,12 +1,11 @@
 #include <monad/config.hpp>
 #include <monad/core/backtrace.hpp>
 
-#include <monad/core/assert.h>
-
 #include <boost/stacktrace/detail/frame_decl.hpp>
 #include <boost/stacktrace/stacktrace.hpp>
 
 #include <algorithm>
+#include <cassert>
 #include <cstdarg>
 #include <cstddef>
 #include <cstdio>
@@ -57,7 +56,7 @@ namespace detail
         [[nodiscard]] constexpr value_type *allocate(std::size_t n)
         {
             auto *newp = p + sizeof(value_type) * n;
-            MONAD_ASSERT(size_t(newp - buffer.data()) <= buffer.size());
+            assert(size_t(newp - buffer.data()) <= buffer.size());
             auto *ret = reinterpret_cast<value_type *>(p);
             p = newp;
             return ret;
@@ -164,7 +163,7 @@ struct stack_backtrace_impl final : public stack_backtrace
 stack_backtrace::ptr
 stack_backtrace::capture(std::span<std::byte> storage) noexcept
 {
-    MONAD_ASSERT(storage.size() > sizeof(stack_backtrace_impl));
+    assert(storage.size() > sizeof(stack_backtrace_impl));
     return ptr(new (storage.data()) stack_backtrace_impl(
         storage.subspan(sizeof(stack_backtrace_impl))));
 }
@@ -173,7 +172,7 @@ stack_backtrace::ptr stack_backtrace::deserialize(
     std::span<std::byte> storage,
     std::span<std::byte const> serialised) noexcept
 {
-    MONAD_ASSERT(storage.size() > sizeof(stack_backtrace_impl));
+    assert(storage.size() > sizeof(stack_backtrace_impl));
     return ptr(new (storage.data()) stack_backtrace_impl(
         storage.subspan(sizeof(stack_backtrace_impl)),
         serialised.data(),

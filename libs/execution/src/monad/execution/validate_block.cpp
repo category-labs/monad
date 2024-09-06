@@ -78,6 +78,22 @@ Result<void> static_validate_header(BlockHeader const &header)
         return BlockError::MissingField;
     }
 
+    // EIP-4844 and EIP-4788
+    if constexpr (rev < EVMC_CANCUN) {
+        if (MONAD_UNLIKELY(
+                header.blob_gas_used.has_value() ||
+                header.excess_blob_gas.has_value() ||
+                header.parent_beacon_block_root.has_value())) {
+            return BlockError::FieldBeforeFork;
+        }
+    }
+    else if (MONAD_UNLIKELY(
+                 !header.blob_gas_used.has_value() ||
+                 !header.excess_blob_gas.has_value() ||
+                 !header.parent_beacon_block_root.has_value())) {
+        return BlockError::MissingField;
+    }
+
     // EIP-4895
     if constexpr (rev < EVMC_SHANGHAI) {
         if (MONAD_UNLIKELY(header.withdrawals_root.has_value())) {

@@ -27,7 +27,10 @@ uint256_t EthereumMainnet::get_chain_id() const
 
 evmc_revision EthereumMainnet::get_revision(BlockHeader const &header) const
 {
-    if (header.number >= 17034870) {
+    if (header.number >= 19426587) {
+        return EVMC_CANCUN;
+    }
+    else if (header.number >= 17034870) {
         return EVMC_SHANGHAI;
     }
     else if (header.number >= 15537394) {

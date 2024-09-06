@@ -37,6 +37,9 @@ struct BlockHeader
 
     std::optional<uint256_t> base_fee_per_gas{std::nullopt}; // EIP-1559
     std::optional<bytes32_t> withdrawals_root{std::nullopt}; // EIP-4895
+    std::optional<uint64_t> blob_gas_used{std::nullopt}; // EIP-4844
+    std::optional<uint64_t> excess_blob_gas{std::nullopt}; // EIP-4844
+    std::optional<bytes32_t> parent_beacon_block_root{std::nullopt}; // EIP-4788
 
     friend bool operator==(BlockHeader const &, BlockHeader const &) = default;
 };
@@ -51,10 +54,10 @@ struct Block
     friend bool operator==(Block const &, Block const &) = default;
 };
 
-static_assert(sizeof(BlockHeader) == 656);
+static_assert(sizeof(BlockHeader) == 728);
 static_assert(alignof(BlockHeader) == 8);
 
-static_assert(sizeof(Block) == 736);
+static_assert(sizeof(Block) == 808);
 static_assert(alignof(Block) == 8);
 
 MONAD_NAMESPACE_END

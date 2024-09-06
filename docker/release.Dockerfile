@@ -39,20 +39,8 @@ FROM base as build
 
 RUN apt install -y gcc-13 g++-13
 
-RUN apt install -y ninja-build pkg-config
+RUN apt install -y cmake ninja-build pkg-config
 RUN apt install -y python3-pytest
-
-######## BEGIN CMAKE
-RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null \
-  | gpg --dearmor - \
-  | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
-RUN echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main' \
-  | tee /etc/apt/sources.list.d/kitware.list >/dev/null
-RUN apt-get update
-RUN rm /usr/share/keyrings/kitware-archive-keyring.gpg
-RUN apt-get -y install kitware-archive-keyring
-RUN apt-get -y install cmake
-######## END CMAKE
 
 RUN apt-get install -y \
   libboost-fiber1.83-dev \

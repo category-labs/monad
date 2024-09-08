@@ -5,25 +5,16 @@ include(CheckCXXSourceRuns)
 project(monad_async)
 
 # ##############################################################################
-# deps
-# ##############################################################################
-
-find_package(
-  Boost 1.83 # 1.83 really is the minimum
-  COMPONENTS fiber
-  REQUIRED)
-
-# ##############################################################################
 # libs
 # ##############################################################################
 
 add_library(
   monad_async STATIC
-  "src/monad/async/boost_fiber_wrappers.cpp" "src/monad/async/io.cpp"
-  "src/monad/async/storage_pool.cpp" "src/monad/async/util.cpp")
+  "src/monad/async/io.cpp" "src/monad/async/storage_pool.cpp"
+  "src/monad/async/util.cpp")
 target_include_directories(monad_async PUBLIC "src")
 monad_compile_options(monad_async)
-target_link_libraries(monad_async PUBLIC monad_core Boost::fiber)
+target_link_libraries(monad_async PUBLIC monad_core)
 
 # ##############################################################################
 # unit tests

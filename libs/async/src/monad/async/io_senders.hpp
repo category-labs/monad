@@ -90,6 +90,17 @@ public:
     result_type completed(
         erased_connected_operation *, result<size_t> bytes_transferred) noexcept
     {
+        if (bytes_transferred.has_error()) {
+            fprintf(
+                stderr,
+                "ERROR: Read single buffer of %zu bytes from chunk %u offset "
+                "%llu failed with error '%s'\n",
+                buffer().size(),
+                offset().id,
+                file_offset_t(offset().offset),
+                bytes_transferred.assume_error().message().c_str());
+        }
+
         BOOST_OUTCOME_TRY(auto &&count, std::move(bytes_transferred));
         buffer_.set_bytes_transferred(count);
         return success(std::ref(buffer_));
@@ -209,6 +220,15 @@ public:
     result_type completed(
         erased_connected_operation *, result<size_t> bytes_transferred) noexcept
     {
+        if (bytes_transferred.has_error()) {
+            fprintf(
+                stderr,
+                "ERROR: Read multiple buffer from chunk %u offset "
+                "%llu failed with error '%s'\n",
+                offset().id,
+                file_offset_t(offset().offset),
+                bytes_transferred.assume_error().message().c_str());
+        }
         BOOST_OUTCOME_TRY(auto &&count, std::move(bytes_transferred));
         for (size_t n = 0; n < buffers_.size(); n++) {
             if (buffers_[n].size() > count) {
@@ -324,7 +344,7 @@ public:
     result_type completed(
         erased_connected_operation *, result<size_t> bytes_transferred) noexcept
     {
-        if (!bytes_transferred) {
+        if (bytes_transferred.has_error()) {
             fprintf(
                 stderr,
                 "ERROR: Write of %zu bytes to chunk %u offset %llu failed "

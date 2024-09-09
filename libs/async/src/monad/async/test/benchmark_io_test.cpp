@@ -28,8 +28,10 @@
 #include <utility>
 #include <vector>
 
-#include <linux/capability.h>
-#include <sys/capability.h>
+#if MONAD_HAVE_LIBCAP
+    #include <linux/capability.h>
+    #include <sys/capability.h>
+#endif
 #include <unistd.h>
 
 /* Throughput maximising with complete disregard to latency:
@@ -317,6 +319,7 @@ set it to the desired size beforehand).
             "thirty seconds.");
         cli.parse(argc, argv);
 
+#if MONAD_HAVE_LIBCAP
         if (highest_io_priority) {
             // We will need the CAP_SYS_NICE capability for this to work
             MONAD_ASSERT(CAP_IS_SUPPORTED(CAP_SYS_NICE));
@@ -336,6 +339,9 @@ set it to the desired size beforehand).
                 return 1;
             }
         }
+#else // MONAD_HAVE_LIBCAP
+        MONAD_ASSERT(!highest_io_priority); // Not supported without libcap
+#endif
         if (destroy_and_really_fill_count > 0) {
             destroy_and_fill = true;
         }

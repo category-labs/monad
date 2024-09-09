@@ -12,7 +12,6 @@ find_package(
   Boost 1.83 # 1.83 really is the minimum
   COMPONENTS fiber
   REQUIRED)
-pkg_check_modules(cap REQUIRED IMPORTED_TARGET libcap)
 
 # ##############################################################################
 # libs

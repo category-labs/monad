@@ -9,6 +9,8 @@
 #include <monad/statesync/statesync_client.h>
 #include <monad/statesync/statesync_client_context.hpp>
 
+#include <ankerl/unordered_dense.h>
+
 #include <bit>
 #include <deque>
 #include <filesystem>
@@ -58,7 +60,7 @@ void commit(monad_statesync_client_context &ctx)
     }
     UpdateList code_updates;
 
-    std::unordered_set<bytes32_t> remaining;
+    ankerl::unordered_dense::segmented_set<bytes32_t> remaining;
     std::deque<bytes32_t> upserted;
     for (auto const &hash : ctx.hash) {
         if (ctx.code.contains(hash)) {

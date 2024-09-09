@@ -39,7 +39,7 @@ struct monad_statesync_client_context
     Map<monad::Address, StorageDeltas> buffered;
     Map<monad::bytes32_t, monad::byte_string> code;
     Map<monad::Address, StateDelta> deltas;
-    std::unordered_set<monad::bytes32_t> hash;
+    ankerl::unordered_dense::segmented_set<monad::bytes32_t> hash;
     uint64_t n_upserts;
     std::filesystem::path genesis;
     monad_statesync_client *sync;

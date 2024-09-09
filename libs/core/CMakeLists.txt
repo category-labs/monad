@@ -104,6 +104,7 @@ add_library(
   "src/monad/core/tl_tid.c"
   "src/monad/core/tl_tid.h"
   "src/monad/core/unaligned.hpp"
+  "src/monad/core/unordered_map.hpp"
   "src/monad/lru/lru_cache.hpp"
   "src/monad/lru/static_lru_cache.hpp"
   "src/monad/mem/batch_mem_pool.hpp"
@@ -158,11 +159,12 @@ else()
                              PUBLIC "BOOST_STACKTRACE_USE_ADDR2LINE=1")
   target_link_libraries(monad_core PUBLIC Boost::stacktrace_addr2line)
 endif()
-target_link_libraries(monad_core PUBLIC cgroup openssl_sha3_asm uring Boost::fiber
-                                        TBB::tbb)
+target_link_libraries(monad_core PUBLIC cgroup openssl_sha3_asm uring
+                                        Boost::fiber TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC ethash::keccak)
 target_link_libraries(monad_core PUBLIC evmc)
+target_link_libraries(monad_core PUBLIC unordered_dense)
 
 add_library(
   monad_core_disas STATIC

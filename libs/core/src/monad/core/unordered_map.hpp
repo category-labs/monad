@@ -3,7 +3,8 @@
 #include <monad/config.hpp>
 
 #include "../../../third_party/ankerl/robin_hood.h"
-#include "../../../third_party/ankerl/unordered_dense.h"
+
+#include <ankerl/unordered_dense.h>
 
 #include <unordered_map>
 #include <unordered_set>
@@ -58,7 +59,7 @@ namespace detail
 } // namespace detail
 
 //! \brief Hash arbitrary lengths of bytes into a `size_t`. Very useful.
-inline size_t hash_bytes(const void *p, size_t len) noexcept
+inline size_t hash_bytes(void const *p, size_t len) noexcept
 {
     return size_t(ankerl::unordered_dense::detail::wyhash::hash(p, len));
 }
@@ -135,7 +136,7 @@ using unordered_dense_set = std::conditional_t<
 template <
     class Key, class T, class Hash = ankerl::unordered_dense::hash<Key>,
     class Compare = std::equal_to<Key>,
-    class Allocator = std::allocator<std::pair<const Key, T>>>
+    class Allocator = std::allocator<std::pair<Key const, T>>>
 using unordered_dense_map = std::conditional_t<
     sizeof(std::pair<Key, T>) <= 384,
     std::unordered_map<Key, T, Hash, Compare, Allocator>,

@@ -1314,11 +1314,81 @@ TEST(DbTest, move_trie_causes_discontinuous_history)
     EXPECT_EQ(ro_db.get_earliest_block_id(), far_dest_block_id);
 }
 
+TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
+{
+    std::atomic<bool> done{false};
+    Db ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+
+    // fille rwdb with some blocks
+    auto const &kv = fixed_updates::kv;
+    for (uint64_t block_id = 0; block_id < DBTEST_HISTORY_LENGTH; ++block_id) {
+        upsert_updates_flat_list(
+            db, {}, block_id, make_update(kv[0].first, kv[0].second));
+    }
+
+    EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
+    EXPECT_EQ(ro_db.get_latest_block_id(), DBTEST_HISTORY_LENGTH - 1);
+    EXPECT_EQ(ro_db.get(kv[0].first, 0).value(), kv[0].second);
+
+    uint64_t const end_history_length =
+        DBTEST_HISTORY_LENGTH - DBTEST_HISTORY_LENGTH / 2;
+    uint64_t const expected_earliest_block =
+        DBTEST_HISTORY_LENGTH - end_history_length;
+
+    // ro db starts reading from block 0, increment read block id when fail
+    // reading current block
+    auto ro_query = [&] {
+        uint64_t read_block_id = 0;
+        while (!done.load(std::memory_order_acquire)) {
+            auto const get_res = ro_db.get(kv[0].first, read_block_id);
+            if (get_res.has_error()) {
+                ++read_block_id;
+            }
+            else {
+                EXPECT_EQ(get_res.value(), kv[0].second);
+            }
+        } // update has finished
+        EXPECT_EQ(ro_db.get_earliest_block_id(), expected_earliest_block);
+        std::cout << "Reader thread finished. Currently reading block "
+                  << read_block_id << ". Earliest block number is "
+                  << ro_db.get_earliest_block_id() << std::endl;
+        EXPECT_LE(read_block_id, ro_db.get_earliest_block_id());
+
+        while (ro_db.get(kv[0].first, read_block_id).has_error()) {
+            ++read_block_id;
+        }
+        EXPECT_EQ(read_block_id, expected_earliest_block);
+        EXPECT_EQ(ro_db.get_history_length(), end_history_length);
+    };
+
+    // start read thread
+    std::thread reader(ro_query);
+
+    // current thread starts to shorten history
+    config.append = true;
+    while (config.history_length > end_history_length) {
+        config.history_length = config.history_length - 1;
+        Db new_db{machine, config};
+        EXPECT_EQ(new_db.get_history_length(), config.history_length);
+        EXPECT_EQ(new_db.get_latest_block_id(), DBTEST_HISTORY_LENGTH - 1);
+    }
+
+    EXPECT_EQ(ro_db.get_history_length(), end_history_length);
+    EXPECT_EQ(ro_db.get_earliest_block_id(), expected_earliest_block);
+
+    done.store(true, std::memory_order_release);
+    reader.join();
+    std::cout << "Writer finished. History length is shortened to "
+              << db.get_history_length() << ". Max version in rwdb is "
+              << db.get_latest_block_id() << ", min version in rwdb is "
+              << db.get_earliest_block_id() << std::endl;
+}
+
 TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
 {
     EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
 
-    // Insert more than history length blocks
+    // Insert more than history length number of blocks
     auto const &kv = fixed_updates::kv;
     auto const prefix = 0x00_hex;
     uint64_t const max_block_id = DBTEST_HISTORY_LENGTH + 10;

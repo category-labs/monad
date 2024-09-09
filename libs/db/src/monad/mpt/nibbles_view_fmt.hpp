@@ -7,7 +7,7 @@
 #include <quill/bundled/fmt/format.h>
 
 template <>
-struct quill::copy_loggable<monad::mpt::NibblesView> : std::true_type
+struct quill::copy_loggable<monad::mpt::NibblesView> : std::false_type
 {
 };
 

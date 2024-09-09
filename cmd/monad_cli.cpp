@@ -1,10 +1,12 @@
 #include <monad/core/account.hpp>
+#include <monad/core/assert.h>
 #include <monad/core/basic_formatter.hpp> // NOLINT
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/fmt/account_fmt.hpp> // NOLINT
 #include <monad/core/fmt/bytes_fmt.hpp> // NOLINT
 #include <monad/core/fmt/receipt_fmt.hpp> // NOLINT
+#include <monad/core/keccak.h>
 #include <monad/core/keccak.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
@@ -16,6 +18,7 @@
 #include <monad/mpt/nibbles_view_fmt.hpp> // NOLINT
 #include <monad/mpt/node_cursor.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
+#include <monad/mpt/traverse.hpp>
 #include <monad/mpt/util.hpp>
 
 #include <CLI/CLI.hpp>
@@ -26,18 +29,22 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <cmath>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <memory>
+#include <numeric>
 #include <span>
 #include <spanstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -196,7 +203,9 @@ struct DbStateMachine
                                                 : to_bytes(cursor.node->data());
                     fmt::println(" * Merkle root is {}", merkle_root);
                 }
-                fmt::println(" * Next try look up a key in this table using "
+                fmt::println(" * \"node_stats\" will display a summary of node "
+                             "metadata");
+                fmt::println(" * Next, try look up a key in this table using "
                              "\"get [key]\"");
             }
             else {
@@ -274,6 +283,8 @@ void print_help()
         "version [version_number]     -- Set the database version\n"
         "table [state/receipt/code]   -- Set the trie to query\n"
         "get [key [extradata]]        -- Get the value for the given key\n"
+        "node_stats [depth]           -- Print node statistics for the given "
+        "table\n"
         "back                         -- Move back to the previous level\n"
         "help                         -- Show this help message\n"
         "exit                         -- Exit the program\n"
@@ -445,6 +456,135 @@ void do_get_receipt(DbStateMachine &sm, std::string_view const receipt)
     print_receipt(decoded);
 }
 
+void do_node_stats(DbStateMachine &sm, size_t leaf_node_depth)
+{
+    struct NodeMetadata
+    {
+        std::vector<uint32_t> leaf_node_sizes;
+        std::vector<uint32_t> branch_node_num_children;
+    } metadata;
+
+    struct Traverse final : public TraverseMachine
+    {
+        NodeMetadata &metadata;
+        unsigned char nibble;
+        unsigned depth;
+        monad::mpt::NibblesView const root;
+        size_t leaf_depth;
+
+        Traverse(
+            NodeMetadata &metadata_, size_t leaf_depth_,
+            NibblesView const root_ = {})
+            : metadata{metadata_}
+            , nibble{INVALID_BRANCH}
+            , depth{root_.nibble_size()}
+            , root{root_}
+            , leaf_depth{leaf_depth_}
+        {
+        }
+
+        Traverse(Traverse const &other) = default;
+
+        virtual bool down(unsigned char const branch, Node const &node) override
+        {
+            if (branch == INVALID_BRANCH) {
+                MONAD_ASSERT(depth == root.nibble_size());
+                note(node);
+                return true;
+            }
+            else if (depth == root.nibble_size() && nibble == INVALID_BRANCH) {
+                nibble = branch;
+                note(node);
+                return true;
+            }
+            auto const ext = node.path_nibble_view();
+            depth += 1 + ext.nibble_size();
+            note(node);
+            return true;
+        }
+
+        virtual void up(unsigned char const, Node const &node) override
+        {
+            if (depth == root.nibble_size()) {
+                nibble = INVALID_BRANCH;
+                return;
+            }
+            unsigned const subtrahend =
+                1 + node.path_nibble_view().nibble_size();
+            MONAD_ASSERT(depth >= subtrahend);
+            depth -= subtrahend;
+        }
+
+        virtual bool should_visit(Node const &, unsigned char) override
+        {
+            return depth < leaf_depth;
+        }
+
+        virtual std::unique_ptr<TraverseMachine> clone() const override
+        {
+            return std::make_unique<Traverse>(*this);
+        }
+
+        void note(Node const &node)
+        {
+            if (depth == leaf_depth) {
+                metadata.leaf_node_sizes.emplace_back(node.value_len);
+            }
+            else if (depth < leaf_depth) {
+                metadata.branch_node_num_children.emplace_back(
+                    node.number_of_children());
+            }
+        }
+    } traverse(metadata, leaf_node_depth, state_nibbles);
+
+    sm.db.traverse(sm.cursor, traverse, sm.curr_version);
+
+    auto calc_stats = [](std::vector<uint32_t> const &data) {
+        auto const size = static_cast<double>(data.size());
+        double const mean =
+            std::accumulate(data.begin(), data.end(), 0.0) / size;
+
+        double const pop_var = std::accumulate(
+                                   data.begin(),
+                                   data.end(),
+                                   0.0,
+                                   [mean](double acc, uint32_t const val) {
+                                       double const dev = val - mean;
+                                       return acc + dev * dev;
+                                   }) /
+                               size;
+
+        return std::make_tuple(size, mean, sqrt(pop_var));
+    };
+
+    {
+        auto [count, mean, stddev] = calc_stats(metadata.leaf_node_sizes);
+        fmt::print(
+            "Leaf nodes summary\n"
+            "------------------\n"
+            "* Number of nodes (depth={}) : {}\n"
+            "* Average node size          : {:.2f}B\n"
+            "* Node size stddev           : {:.2f}B\n\n",
+            leaf_node_depth,
+            count,
+            mean,
+            stddev);
+    }
+    {
+        auto [count, mean, stddev] =
+            calc_stats(metadata.branch_node_num_children);
+        fmt::print(
+            "Internal nodes summary\n"
+            "----------------------\n"
+            "* Number of nodes            : {}\n"
+            "* Average number of children : {:.2f}\n"
+            "* Number of children stddev  : {:.2f}\n",
+            count,
+            mean,
+            stddev);
+    }
+}
+
 int interactive_impl(Db &db)
 {
     DbStateMachine state_machine{db};
@@ -486,8 +626,8 @@ int interactive_impl(Db &db)
         }
         else if (tokens[0] == "get") {
             if (state_machine.curr_table_id == INVALID_NIBBLE) {
-                fmt::println("Need to set a table id before calling get. See "
-                             "`help` for details");
+                fmt::println("Need to set a table id to get size statistics. "
+                             "See `help` for details");
             }
             else if (tokens.size() != 2 && tokens.size() != 3) {
                 fmt::println("No key provided.");
@@ -504,6 +644,25 @@ int interactive_impl(Db &db)
             else if (state_machine.curr_table_id == RECEIPT_NIBBLE) {
                 do_get_receipt(state_machine, tokens[1]);
             }
+        }
+        else if (tokens[0] == "node_stats") {
+            if (state_machine.curr_table_id == INVALID_NIBBLE) {
+                fmt::println("Need to set a table id before calling get. See "
+                             "`help` for details");
+                continue;
+            }
+            size_t leaf_node_depth = KECCAK256_SIZE * 2;
+            if (tokens.size() > 1) {
+                auto [_, ec] = std::from_chars(
+                    tokens[1].data(),
+                    tokens[1].data() + tokens[1].size(),
+                    leaf_node_depth);
+                if (ec != std::errc()) {
+                    fmt::println("Invalid depth: please input a number.");
+                    continue;
+                }
+            }
+            do_node_stats(state_machine, leaf_node_depth);
         }
         else if (tokens[0] == "back") {
             state_machine.back();

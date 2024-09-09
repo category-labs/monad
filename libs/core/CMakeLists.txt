@@ -54,11 +54,14 @@ add_subdirectory("third_party/unordered_dense")
 
 add_subdirectory("third_party/quill" SYSTEM)
 
-add_library(
-  openssl_sha3_asm INTERFACE
-  "third_party/openssl/crypto/sha/asm/keccak1600-avx2.S"
-  "third_party/openssl/crypto/sha/asm/keccak1600-avx512.S")
-target_include_directories(openssl_sha3_asm INTERFACE "third_party/openssl")
+add_library(openssl_sha3 OBJECT)
+target_include_directories(openssl_sha3 PRIVATE "third_party/openssl")
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
+  target_sources(openssl_sha3 PRIVATE "src/monad/core/keccak_impl.S")
+else()
+  target_sources(openssl_sha3
+                 PRIVATE "third_party/openssl/crypto/sha/keccak1600.c")
+endif()
 
 # ##############################################################################
 # libs
@@ -92,7 +95,6 @@ add_library(
   "src/monad/core/keccak.c"
   "src/monad/core/keccak.h"
   "src/monad/core/keccak.hpp"
-  "src/monad/core/keccak_impl.S"
   "src/monad/core/likely.h"
   "src/monad/core/math.hpp"
   "src/monad/core/nibble.h"
@@ -159,8 +161,8 @@ else()
                              PUBLIC "BOOST_STACKTRACE_USE_ADDR2LINE=1")
   target_link_libraries(monad_core PUBLIC Boost::stacktrace_addr2line)
 endif()
-target_link_libraries(monad_core PUBLIC cgroup openssl_sha3_asm uring
-                                        Boost::fiber TBB::tbb)
+target_link_libraries(monad_core PUBLIC cgroup openssl_sha3 uring Boost::fiber
+                                        TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC ethash::keccak)
 target_link_libraries(monad_core PUBLIC evmc)

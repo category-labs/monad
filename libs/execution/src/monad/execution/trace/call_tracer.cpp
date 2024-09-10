@@ -80,7 +80,6 @@ CallTracer::CallTracer(Transaction const &tx)
     : call_frames_{}
     , depth_{0}
     , tx_(tx)
-    , tx_hash_(keccak256(rlp::encode_transaction(tx)))
 {
 }
 
@@ -113,8 +112,9 @@ nlohmann::json CallTracer::to_json()
     size_t pos = 0;
 
     nlohmann::json res{};
+    auto const hash = keccak256(rlp::encode_transaction(tx_));
     auto const key = fmt::format(
-        "0x{:02x}", fmt::join(std::as_bytes(std::span(tx_hash_.bytes)), ""));
+        "0x{:02x}", fmt::join(std::as_bytes(std::span(hash.bytes)), ""));
     nlohmann::json value{};
     to_json_helper(value, pos);
     res[key] = value;

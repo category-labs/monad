@@ -374,7 +374,7 @@ namespace
 
 mpt::Compute &MachineBase::get_compute() const
 {
-    static EmptyCompute empty_compute; // used for CallFrame
+    static EmptyCompute empty_compute;
 
     static AccountMerkleCompute account_compute;
     static AccountRootMerkleCompute account_root_compute;

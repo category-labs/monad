@@ -239,12 +239,15 @@ void TrieDb::commit(
 
     UpdateList call_frame_updates;
     for (unsigned i = 0; i < call_frames.size(); ++i) {
-        auto const &call_frame = call_frames[i];
+        std::span<CallFrame const> frames{call_frames[i]};
+        // TODO: a better way to ensure node size is <= 256 MB
+        if (frames.size() > 100) {
+            frames = frames.first(100);
+        }
         call_frame_updates.push_front(update_alloc_.emplace_back(Update{
             .key =
                 NibblesView{bytes_alloc_.emplace_back(rlp::encode_unsigned(i))},
-            .value =
-                bytes_alloc_.emplace_back(rlp::encode_call_frames(call_frame)),
+            .value = bytes_alloc_.emplace_back(rlp::encode_call_frames(frames)),
             .incarnation = false,
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));

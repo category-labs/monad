@@ -82,12 +82,8 @@ add_library(
   "src/monad/core/byte_string.hpp"
   "src/monad/core/bytes_hash_compare.hpp"
   "src/monad/core/cmemory.hpp"
-  "src/monad/core/cgroup.c"
-  "src/monad/core/cgroup.h"
   "src/monad/core/cleanup.h"
   "src/monad/core/cleanup.c"
-  "src/monad/core/cpuset.c"
-  "src/monad/core/cpuset.h"
   "src/monad/core/cpu_relax.h"
   "src/monad/core/endian.hpp"
   "src/monad/core/hash.hpp"
@@ -129,12 +125,6 @@ add_library(
   "src/monad/io/config.hpp"
   "src/monad/io/ring.cpp"
   "src/monad/io/ring.hpp"
-  # mem
-  "src/monad/mem/huge_mem.cpp"
-  "src/monad/mem/huge_mem.hpp"
-  # procfs
-  "src/monad/procfs/statm.c"
-  "src/monad/procfs/statm.h"
   # rlp
   "src/monad/rlp/config.hpp"
   "src/monad/rlp/encode.hpp"
@@ -142,6 +132,29 @@ add_library(
   "src/monad/test/gtest_signal_stacktrace_printer.hpp"
   # util
   "src/monad/util/stopwatch.hpp")
+
+if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  # Append Linux-specific implementation files
+  target_sources(
+    monad_core
+    PRIVATE # core
+            "src/monad/core/cgroup.c"
+            "src/monad/core/cgroup.h"
+            "src/monad/core/cpuset.c"
+            "src/monad/core/cpuset.h"
+            # io
+            "src/monad/io/buffers.cpp"
+            "src/monad/io/buffers.hpp"
+            "src/monad/io/ring.hpp"
+            "src/monad/io/ring.cpp"
+            # mem
+            "src/monad/mem/huge_mem.hpp"
+            "src/monad/mem/huge_mem.cpp"
+            # procfs
+            "src/monad/procfs/statm.c"
+            "src/monad/procfs/statm.h")
+endif()
+
 target_include_directories(monad_core PUBLIC "src")
 monad_compile_options(monad_core)
 target_compile_definitions(monad_core PUBLIC "BOOST_STACKTRACE_LINK=1")
@@ -155,12 +168,15 @@ else()
                              PUBLIC "BOOST_STACKTRACE_USE_ADDR2LINE=1")
   target_link_libraries(monad_core PUBLIC Boost::stacktrace_addr2line)
 endif()
-target_link_libraries(monad_core PUBLIC cgroup openssl_sha3 uring Boost::fiber
-                                        TBB::tbb)
+target_link_libraries(monad_core PUBLIC openssl_sha3 Boost::fiber TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC ethash::keccak)
 target_link_libraries(monad_core PUBLIC evmc)
 target_link_libraries(monad_core PUBLIC unordered_dense)
+
+if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  target_link_libraries(monad_core PUBLIC cgroup uring)
+endif()
 
 add_library(
   monad_core_disas STATIC

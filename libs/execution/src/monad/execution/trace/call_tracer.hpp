@@ -17,8 +17,8 @@
 #include <quill/Quill.h> // NOLINT
 
 #include <filesystem>
-#include <map>
 #include <optional>
+#include <stack>
 #include <string>
 #include <vector>
 
@@ -58,7 +58,7 @@ enum class CallKind
 struct CallFrame
 {
     CallKind type;
-    uint64_t flags{0};
+    uint32_t flags{0};
     Address from;
     std::optional<Address> to{std::nullopt};
     uint256_t value; // amount of value transfer
@@ -85,13 +85,9 @@ using BlockCallFrames = std::vector<TxnCallFrames>;
 class CallTracer
 {
     TxnCallFrames call_frames_{};
-    std::unordered_map<size_t, size_t> depth_to_last_pos_{};
+    std::stack<size_t> last_;
     size_t depth_;
-
     Transaction const &tx_;
-
-    // debug helper
-    hash256 tx_hash_;
 
 public:
     CallTracer() = delete;
@@ -122,13 +118,11 @@ public:
 
         CallFrame call_frame{
             .type = static_cast<CallKind>(msg.kind),
-            .flags = static_cast<uint64_t>(msg.flags),
+            .flags = msg.flags,
             .from = from,
             .to = to,
             .value = intx::be::load<uint256_t>(msg.value),
-            .gas = call_frames_.empty() ? static_cast<uint64_t>(msg.gas) +
-                                              intrinsic_gas<rev>(tx_)
-                                        : static_cast<uint64_t>(msg.gas),
+            .gas = depth_ == 0 ? tx_.gas_limit : static_cast<uint64_t>(msg.gas),
             .input = msg.input_data == nullptr
                          ? byte_string{}
                          : byte_string{msg.input_data, msg.input_size},
@@ -136,7 +130,7 @@ public:
         };
 
         call_frames_.emplace_back(std::move(call_frame));
-        depth_to_last_pos_[depth_] = call_frames_.size() - 1;
+        last_.push(call_frames_.size() - 1);
     }
 
     // called when exiting the current frame
@@ -144,10 +138,9 @@ public:
     void on_exit(evmc::Result const &res)
     {
         MONAD_ASSERT(!call_frames_.empty());
+        MONAD_ASSERT(!last_.empty());
 
-        auto it = depth_to_last_pos_.find(depth_);
-        MONAD_ASSERT(it != depth_to_last_pos_.end());
-        auto &frame = call_frames_[it->second];
+        auto &frame = call_frames_.at(last_.top());
 
         auto const gas_limit = frame.gas;
         auto const gas_remaining = g_star(
@@ -169,7 +162,7 @@ public:
             frame.to = res.create_address;
         }
 
-        depth_to_last_pos_.erase(it);
+        last_.pop();
         if (depth_) {
             depth_--;
         }
@@ -199,11 +192,6 @@ public:
     }
 
     //////////////////////// debug helpers ////////////////////////
-    hash256 get_tx_hash() const
-    {
-        return tx_hash_;
-    }
-
     nlohmann::json to_json();
 
 private:

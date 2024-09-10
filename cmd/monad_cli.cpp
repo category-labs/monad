@@ -283,7 +283,7 @@ void print_help()
         "version [version_number]     -- Set the database version\n"
         "table [state/receipt/code]   -- Set the trie to query\n"
         "get [key [extradata]]        -- Get the value for the given key\n"
-        "node_stats [depth]           -- Print node statistics for the given "
+        "node_stats                   -- Print node statistics for the given "
         "table\n"
         "back                         -- Move back to the previous level\n"
         "help                         -- Show this help message\n"
@@ -456,30 +456,31 @@ void do_get_receipt(DbStateMachine &sm, std::string_view const receipt)
     print_receipt(decoded);
 }
 
-void do_node_stats(DbStateMachine &sm, size_t leaf_node_depth)
+void do_node_stats(DbStateMachine &sm)
 {
-    struct NodeMetadata
+    struct DepthMetadata
     {
-        std::vector<uint32_t> leaf_node_sizes;
-        std::vector<uint32_t> branch_node_num_children;
-    } metadata;
+        uint32_t node_count;
+        uint32_t leaf_count;
+        uint32_t branch_count;
+        std::vector<uint32_t> nibble_depth;
+    };
+
+    using TrieMetadata = std::vector<DepthMetadata>;
+    TrieMetadata metadata;
 
     struct Traverse final : public TraverseMachine
     {
-        NodeMetadata &metadata;
-        unsigned char nibble;
+        TrieMetadata &metadata;
+        unsigned nibble_depth;
         unsigned depth;
         monad::mpt::NibblesView const root;
-        size_t leaf_depth;
 
-        Traverse(
-            NodeMetadata &metadata_, size_t leaf_depth_,
-            NibblesView const root_ = {})
+        Traverse(TrieMetadata &metadata_, NibblesView const root_ = {})
             : metadata{metadata_}
-            , nibble{INVALID_BRANCH}
-            , depth{root_.nibble_size()}
+            , nibble_depth{0}
+            , depth{0}
             , root{root_}
-            , leaf_depth{leaf_depth_}
         {
         }
 
@@ -488,36 +489,26 @@ void do_node_stats(DbStateMachine &sm, size_t leaf_node_depth)
         virtual bool down(unsigned char const branch, Node const &node) override
         {
             if (branch == INVALID_BRANCH) {
-                MONAD_ASSERT(depth == root.nibble_size());
                 note(node);
                 return true;
             }
-            else if (depth == root.nibble_size() && nibble == INVALID_BRANCH) {
-                nibble = branch;
-                note(node);
-                return true;
-            }
-            auto const ext = node.path_nibble_view();
-            depth += 1 + ext.nibble_size();
+
+            ++depth;
+            nibble_depth += 1 + node.path_nibble_view().nibble_size();
             note(node);
             return true;
         }
 
-        virtual void up(unsigned char const, Node const &node) override
+        virtual void up(unsigned char const branch, Node const &node) override
         {
-            if (depth == root.nibble_size()) {
-                nibble = INVALID_BRANCH;
+            if (branch == INVALID_BRANCH) {
                 return;
             }
             unsigned const subtrahend =
                 1 + node.path_nibble_view().nibble_size();
-            MONAD_ASSERT(depth >= subtrahend);
-            depth -= subtrahend;
-        }
-
-        virtual bool should_visit(Node const &, unsigned char) override
-        {
-            return depth < leaf_depth;
+            MONAD_ASSERT(nibble_depth >= subtrahend);
+            nibble_depth -= subtrahend;
+            --depth;
         }
 
         virtual std::unique_ptr<TraverseMachine> clone() const override
@@ -527,20 +518,26 @@ void do_node_stats(DbStateMachine &sm, size_t leaf_node_depth)
 
         void note(Node const &node)
         {
-            if (depth == leaf_depth) {
-                metadata.leaf_node_sizes.emplace_back(node.value_len);
-            }
-            else if (depth < leaf_depth) {
-                metadata.branch_node_num_children.emplace_back(
-                    node.number_of_children());
-            }
+            metadata.resize(
+                std::max(metadata.size(), static_cast<size_t>(depth) + 1));
+
+            ++metadata[depth].node_count;
+            metadata[depth].leaf_count +=
+                static_cast<uint32_t>(node.value_len > 0);
+            metadata[depth].branch_count +=
+                static_cast<uint32_t>(node.number_of_children() > 0);
+            metadata[depth].nibble_depth.emplace_back(nibble_depth);
         }
-    } traverse(metadata, leaf_node_depth, state_nibbles);
+    } traverse(metadata, concat(sm.curr_table_id));
 
     sm.db.traverse(sm.cursor, traverse, sm.curr_version);
 
-    auto calc_stats = [](std::vector<uint32_t> const &data) {
+    auto agg_stats = [](std::vector<uint32_t> const &data)
+        -> std::tuple<size_t, double, double> {
         auto const size = static_cast<double>(data.size());
+        if (size == 0) {
+            return std::make_tuple(size, NAN, NAN);
+        }
         double const mean =
             std::accumulate(data.begin(), data.end(), 0.0) / size;
 
@@ -557,31 +554,26 @@ void do_node_stats(DbStateMachine &sm, size_t leaf_node_depth)
         return std::make_tuple(size, mean, sqrt(pop_var));
     };
 
-    {
-        auto [count, mean, stddev] = calc_stats(metadata.leaf_node_sizes);
-        fmt::print(
-            "Leaf nodes summary\n"
-            "------------------\n"
-            "* Number of nodes (depth={}) : {}\n"
-            "* Average node size          : {:.2f}B\n"
-            "* Node size stddev           : {:.2f}B\n\n",
-            leaf_node_depth,
-            count,
-            mean,
-            stddev);
-    }
-    {
-        auto [count, mean, stddev] =
-            calc_stats(metadata.branch_node_num_children);
-        fmt::print(
-            "Internal nodes summary\n"
-            "----------------------\n"
-            "* Number of nodes            : {}\n"
-            "* Average number of children : {:.2f}\n"
-            "* Number of children stddev  : {:.2f}\n",
-            count,
-            mean,
-            stddev);
+    fmt::println(
+        "{:>5} {:>15} {:>15} {:>15} {:>20}",
+        "depth",
+        "# nodes",
+        "# leaves",
+        "# branches",
+        "nibble depth");
+    auto format_mean = [](double mean, double stddev) {
+        return std::isnan(mean) ? "N/A"
+                                : fmt::format("{:.2f} (±{:.2f})", mean, stddev);
+    };
+    for (unsigned depth = 0; depth < metadata.size(); ++depth) {
+        auto [_, mean_nd, stddev_nd] = agg_stats(metadata[depth].nibble_depth);
+        fmt::println(
+            "{:>5} {:>15} {:>15} {:>15} {:>20}",
+            depth,
+            metadata[depth].node_count,
+            metadata[depth].leaf_count,
+            metadata[depth].branch_count,
+            format_mean(mean_nd, stddev_nd));
     }
 }
 
@@ -626,8 +618,9 @@ int interactive_impl(Db &db)
         }
         else if (tokens[0] == "get") {
             if (state_machine.curr_table_id == INVALID_NIBBLE) {
-                fmt::println("Need to set a table id to get size statistics. "
-                             "See `help` for details");
+                fmt::println(
+                    "Need to set a table id before calling \"get\". See "
+                    "`help` for details");
             }
             else if (tokens.size() != 2 && tokens.size() != 3) {
                 fmt::println("No key provided.");
@@ -647,22 +640,12 @@ int interactive_impl(Db &db)
         }
         else if (tokens[0] == "node_stats") {
             if (state_machine.curr_table_id == INVALID_NIBBLE) {
-                fmt::println("Need to set a table id before calling get. See "
-                             "`help` for details");
+                fmt::println(
+                    "Need to set a table id before calling \"node_stats\". "
+                    "See `help` for details");
                 continue;
             }
-            size_t leaf_node_depth = KECCAK256_SIZE * 2;
-            if (tokens.size() > 1) {
-                auto [_, ec] = std::from_chars(
-                    tokens[1].data(),
-                    tokens[1].data() + tokens[1].size(),
-                    leaf_node_depth);
-                if (ec != std::errc()) {
-                    fmt::println("Invalid depth: please input a number.");
-                    continue;
-                }
-            }
-            do_node_stats(state_machine, leaf_node_depth);
+            do_node_stats(state_machine);
         }
         else if (tokens[0] == "back") {
             state_machine.back();

@@ -105,7 +105,7 @@ constexpr evmc_message to_message(Transaction const &tx, Address const &sender)
 }
 
 template <evmc_revision rev>
-std::pair<evmc::Result, TxnCallFrames> execute_impl_no_validation(
+evmc::Result execute_impl_no_validation(
     State &state, EvmcHost<rev> &host, Transaction const &tx,
     Address const &sender, uint256_t const &base_fee_per_gas,
     Address const &beneficiary)
@@ -129,28 +129,7 @@ std::pair<evmc::Result, TxnCallFrames> execute_impl_no_validation(
     }
 
     auto const msg = to_message<rev>(tx, sender);
-    auto result = host.call(msg);
-
-    TxnCallFrames call_frames{};
-
-    if (host.call_tracer) {
-        call_frames = host.call_tracer->get_call_frames();
-        // a conversative bound to ensure node_size <= 256MB, as required by
-        // on-disk triedb. Practically, it doesn't add much value to have
-        // CallTrace with more than 100 CallFrames.
-        if (MONAD_UNLIKELY(call_frames.size() > 100u)) {
-            TxnCallFrames truncated_call_frames{};
-            for (auto const &single_frame : call_frames) {
-                if (single_frame.depth <= 1 &&
-                    truncated_call_frames.size() < 100) {
-                    truncated_call_frames.emplace_back(single_frame);
-                }
-            }
-            call_frames = truncated_call_frames;
-        }
-    }
-
-    return std::make_pair(std::move(result), std::move(call_frames));
+    return host.call(msg);
 }
 
 EXPLICIT_EVMC_REVISION(execute_impl_no_validation);
@@ -210,13 +189,19 @@ Result<std::pair<evmc::Result, TxnCallFrames>> execute_impl2(
     host.add_call_tracer(tx);
 #endif
 
-    return execute_impl_no_validation<rev>(
+    auto result = execute_impl_no_validation<rev>(
         state,
         host,
         tx,
         sender,
         hdr.base_fee_per_gas.value_or(0),
         hdr.beneficiary);
+
+    if (host.call_tracer) {
+        return std::make_pair(
+            std::move(result), std::move(host.call_tracer->get_call_frames()));
+    }
+    return std::make_pair(std::move(result), TxnCallFrames{});
 }
 
 template <evmc_revision rev>
@@ -256,7 +241,8 @@ Result<ExecutionResult> execute_impl(
                 hdr.beneficiary);
             block_state.merge(state);
             return ExecutionResult{
-                .receipt = receipt, .call_frames = result.value().second};
+                .receipt = receipt,
+                .call_frames = std::move(result.value().second)};
         }
     }
     {
@@ -281,7 +267,8 @@ Result<ExecutionResult> execute_impl(
         block_state.merge(state);
 
         return ExecutionResult{
-            .receipt = receipt, .call_frames = result.value().second};
+            .receipt = receipt,
+            .call_frames = std::move(result.value().second)};
     }
 }
 

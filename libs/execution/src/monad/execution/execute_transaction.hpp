@@ -33,7 +33,7 @@ struct ExecutionResult
 };
 
 template <evmc_revision rev>
-std::pair<evmc::Result, TxnCallFrames> execute_impl_no_validation(
+evmc::Result execute_impl_no_validation(
     State &state, EvmcHost<rev> &host, Transaction const &tx,
     Address const &sender, uint256_t const &base_fee_per_gas,
     Address const &beneficiary);

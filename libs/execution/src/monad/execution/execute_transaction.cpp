@@ -156,7 +156,7 @@ Receipt execute_final(
     state.add_to_balance(beneficiary, reward);
 
     // finalize state, Eqn. 77-79
-    state.destruct_suicides();
+    state.destruct_suicides<rev>();
     if constexpr (rev >= EVMC_SPURIOUS_DRAGON) {
         state.destruct_touched_dead();
     }

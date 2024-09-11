@@ -363,6 +363,7 @@ public:
     }
 
     // YP (87)
+    template <evmc_revision rev>
     void destruct_suicides()
     {
         MONAD_ASSERT(!version_);
@@ -374,7 +375,14 @@ public:
             auto &account_state = stack.current(0);
             if (account_state.is_destructed()) {
                 auto &account = account_state.account_;
-                account.reset();
+                if constexpr (rev < EVMC_CANCUN) {
+                    account.reset();
+                }
+                else {
+                    if (account->incarnation == incarnation_) {
+                        account.reset();
+                    }
+                }
             }
         }
     }

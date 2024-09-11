@@ -1,7 +1,13 @@
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/int.hpp>
+#include <monad/db/trie_db.hpp>
+#include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/evmc_host.hpp>
+#include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
+#include <monad/state2/block_state.hpp>
+#include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -12,9 +18,12 @@
 
 #include <nlohmann/json.hpp>
 
+#include <test_resource_data.h>
+
 #include <optional>
 
 using namespace monad;
+using namespace monad::test;
 
 namespace
 {
@@ -79,4 +88,136 @@ TEST(CallTrace, enter_and_exit)
     EXPECT_EQ(call_frames.size(), 2);
     EXPECT_EQ(call_frames[0].depth, 0);
     EXPECT_EQ(call_frames[1].depth, 1);
+}
+
+TEST(CallTrace, execute_success)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+
+    tdb.commit(
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0x200000,
+                          .code_hash = NULL_HASH,
+                          .nonce = 0x0}}}},
+            {ADDR_B,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0, .code_hash = NULL_HASH}}}}},
+        Code{});
+
+    BlockState bs{tdb};
+    Incarnation const incarnation{0, 0};
+    State s{bs, incarnation};
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 0x100000,
+        .value = 0x10000,
+        .to = ADDR_B,
+    };
+
+    auto const &sender = ADDR_A;
+    auto const &beneficiary = ADDR_A;
+
+    evmc_tx_context const tx_context{};
+    BlockHashBuffer buffer{};
+    EvmcHost<EVMC_SHANGHAI> host(tx_context, buffer, s);
+    host.add_call_tracer(tx);
+
+    auto const result = execute_impl_no_validation<EVMC_SHANGHAI>(
+        s, host, tx, sender, 1, beneficiary);
+    EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
+
+    ASSERT_TRUE(host.call_tracer != nullptr);
+    auto const &call_frames = host.call_tracer->get_call_frames();
+
+    ASSERT_TRUE(call_frames.size() == 1);
+
+    CallFrame expected{
+        .type = CallKind::CALL,
+        .flags = 0,
+        .from = sender,
+        .to = ADDR_B,
+        .value = 0x10000,
+        .gas = 0x100000,
+        .gas_used = 0x5208,
+        .status = EVMC_SUCCESS,
+        .depth = 0,
+    };
+
+    EXPECT_EQ(call_frames[0], expected);
+}
+
+TEST(CallTrace, execute_reverted_insufficient_balance)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+
+    tdb.commit(
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0x10000,
+                          .code_hash = NULL_HASH,
+                          .nonce = 0x0}}}},
+            {ADDR_B,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0, .code_hash = NULL_HASH}}}}},
+        Code{});
+
+    BlockState bs{tdb};
+    Incarnation const incarnation{0, 0};
+    State s{bs, incarnation};
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 0x10000,
+        .value = 0x10000,
+        .to = ADDR_B,
+    };
+
+    auto const &sender = ADDR_A;
+    auto const &beneficiary = ADDR_A;
+
+    evmc_tx_context const tx_context{};
+    BlockHashBuffer buffer{};
+    EvmcHost<EVMC_SHANGHAI> host(tx_context, buffer, s);
+    host.add_call_tracer(tx);
+
+    auto const result = execute_impl_no_validation<EVMC_SHANGHAI>(
+        s, host, tx, sender, 1, beneficiary);
+    EXPECT_TRUE(result.status_code == EVMC_INSUFFICIENT_BALANCE);
+
+    ASSERT_TRUE(host.call_tracer != nullptr);
+    auto const &call_frames = host.call_tracer->get_call_frames();
+
+    ASSERT_TRUE(call_frames.size() == 1);
+
+    CallFrame expected{
+        .type = CallKind::CALL,
+        .flags = 0,
+        .from = sender,
+        .to = ADDR_B,
+        .value = 0x10000,
+        .gas = 0x10000,
+        .gas_used = 0x5208,
+        .status = EVMC_INSUFFICIENT_BALANCE,
+        .depth = 0,
+    };
+
+    EXPECT_EQ(call_frames[0], expected);
 }

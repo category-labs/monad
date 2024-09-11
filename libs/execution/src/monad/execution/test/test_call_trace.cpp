@@ -75,16 +75,16 @@ TEST(CallTrace, enter_and_exit)
     CallTracer call_tracer{tx};
     {
         msg.depth = 0;
-        call_tracer.on_enter<rev>(msg);
+        call_tracer.on_enter(msg);
         {
             msg.depth = 1;
-            call_tracer.on_enter<rev>(msg);
-            call_tracer.on_exit<rev>(res);
+            call_tracer.on_enter(msg);
+            call_tracer.on_exit(res);
         }
-        call_tracer.on_exit<rev>(res);
+        call_tracer.on_exit(res);
     }
 
-    auto const call_frames = call_tracer.get_call_frames();
+    auto const call_frames = call_tracer.get_frames();
     EXPECT_EQ(call_frames.size(), 2);
     EXPECT_EQ(call_frames[0].depth, 0);
     EXPECT_EQ(call_frames[1].depth, 1);
@@ -129,15 +129,14 @@ TEST(CallTrace, execute_success)
 
     evmc_tx_context const tx_context{};
     BlockHashBuffer buffer{};
-    EvmcHost<EVMC_SHANGHAI> host(tx_context, buffer, s);
-    host.add_call_tracer(tx);
+    CallTracer call_tracer{tx};
+    EvmcHost<EVMC_SHANGHAI> host(call_tracer, tx_context, buffer, s);
 
     auto const result = execute_impl_no_validation<EVMC_SHANGHAI>(
         s, host, tx, sender, 1, beneficiary);
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
 
-    ASSERT_TRUE(host.call_tracer != nullptr);
-    auto const &call_frames = host.call_tracer->get_call_frames();
+    auto const &call_frames = call_tracer.get_frames();
 
     ASSERT_TRUE(call_frames.size() == 1);
 
@@ -195,15 +194,14 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
 
     evmc_tx_context const tx_context{};
     BlockHashBuffer buffer{};
-    EvmcHost<EVMC_SHANGHAI> host(tx_context, buffer, s);
-    host.add_call_tracer(tx);
+    CallTracer call_tracer{tx};
+    EvmcHost<EVMC_SHANGHAI> host(call_tracer, tx_context, buffer, s);
 
     auto const result = execute_impl_no_validation<EVMC_SHANGHAI>(
         s, host, tx, sender, 1, beneficiary);
     EXPECT_TRUE(result.status_code == EVMC_INSUFFICIENT_BALANCE);
 
-    ASSERT_TRUE(host.call_tracer != nullptr);
-    auto const &call_frames = host.call_tracer->get_call_frames();
+    auto const &call_frames = call_tracer.get_frames();
 
     ASSERT_TRUE(call_frames.size() == 1);
 

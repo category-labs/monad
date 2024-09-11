@@ -140,7 +140,8 @@ namespace
         BOOST_OUTCOME_TRY(validate_transaction(enriched_txn, acct));
         auto const tx_context = get_tx_context<rev>(
             enriched_txn, sender, header, chain.get_chain_id());
-        EvmcHost<rev> host{tx_context, buffer, state};
+        NoopCallTracer call_tracer;
+        EvmcHost<rev> host{call_tracer, tx_context, buffer, state};
         return execute_impl_no_validation<rev>(
             state,
             host,

@@ -173,35 +173,25 @@ Receipt execute_final(
 }
 
 template <evmc_revision rev>
-Result<std::pair<evmc::Result, TxnCallFrames>> execute_impl2(
-    Chain const &chain, Transaction const &tx, Address const &sender,
-    BlockHeader const &hdr, BlockHashBuffer const &block_hash_buffer,
-    State &state)
+Result<evmc::Result> execute_impl2(
+    CallTracerBase &call_tracer, Chain const &chain, Transaction const &tx,
+    Address const &sender, BlockHeader const &hdr,
+    BlockHashBuffer const &block_hash_buffer, State &state)
 {
     auto const sender_account = state.recent_account(sender);
     BOOST_OUTCOME_TRY(validate_transaction(tx, sender_account));
 
     auto const tx_context =
         get_tx_context<rev>(tx, sender, hdr, chain.get_chain_id());
-    EvmcHost<rev> host{tx_context, block_hash_buffer, state};
+    EvmcHost<rev> host{call_tracer, tx_context, block_hash_buffer, state};
 
-#ifdef ENABLE_CALL_TRACING
-    host.add_call_tracer(tx);
-#endif
-
-    auto result = execute_impl_no_validation<rev>(
+    return execute_impl_no_validation<rev>(
         state,
         host,
         tx,
         sender,
         hdr.base_fee_per_gas.value_or(0),
         hdr.beneficiary);
-
-    if (host.call_tracer) {
-        return std::make_pair(
-            std::move(result), std::move(host.call_tracer->get_call_frames()));
-    }
-    return std::make_pair(std::move(result), TxnCallFrames{});
 }
 
 template <evmc_revision rev>
@@ -220,8 +210,14 @@ Result<ExecutionResult> execute_impl(
         State state{block_state, Incarnation{hdr.number, i + 1}};
         state.set_original_nonce(sender, tx.nonce);
 
+#ifdef ENABLE_CALL_TRACING
+        CallTracer call_tracer{tx};
+#else
+        NoopCallTracer call_tracer{};
+#endif
+
         auto result = execute_impl2<rev>(
-            chain, tx, sender, hdr, block_hash_buffer, state);
+            call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);
 
         {
             TRACE_TXN_EVENT(StartStall);
@@ -237,12 +233,12 @@ Result<ExecutionResult> execute_impl(
                 tx,
                 sender,
                 hdr.base_fee_per_gas.value_or(0),
-                result.value().first,
+                result.value(),
                 hdr.beneficiary);
+            call_tracer.on_receipt(receipt);
             block_state.merge(state);
             return ExecutionResult{
-                .receipt = receipt,
-                .call_frames = std::move(result.value().second)};
+                .receipt = receipt, .call_frames = call_tracer.get_frames()};
         }
     }
     {
@@ -250,8 +246,14 @@ Result<ExecutionResult> execute_impl(
 
         State state{block_state, Incarnation{hdr.number, i + 1}};
 
+#ifdef ENABLE_CALL_TRACING
+        CallTracer call_tracer{tx};
+#else
+        NoopCallTracer call_tracer{};
+#endif
+
         auto result = execute_impl2<rev>(
-            chain, tx, sender, hdr, block_hash_buffer, state);
+            call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);
 
         MONAD_ASSERT(block_state.can_merge(state));
         if (result.has_error()) {
@@ -262,13 +264,13 @@ Result<ExecutionResult> execute_impl(
             tx,
             sender,
             hdr.base_fee_per_gas.value_or(0),
-            result.value().first,
+            result.value(),
             hdr.beneficiary);
+        call_tracer.on_receipt(receipt);
         block_state.merge(state);
 
         return ExecutionResult{
-            .receipt = receipt,
-            .call_frames = std::move(result.value().second)};
+            .receipt = receipt, .call_frames = call_tracer.get_frames()};
     }
 }
 

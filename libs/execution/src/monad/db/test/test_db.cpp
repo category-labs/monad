@@ -58,6 +58,13 @@ namespace
     auto const STRESS_TEST_CODE_ANALYSIS =
         std::make_shared<CodeAnalysis>(analyze(STRESS_TEST_CODE));
 
+    auto const REFUND_TEST_CODE =
+        evmc::from_hex("0x6000600155600060025560006003556000600455600060055500")
+            .value();
+    auto const REFUND_TEST_CODE_HASH = to_bytes(keccak256(REFUND_TEST_CODE));
+    auto const REFUND_TEST_CODE_ANALYSIS =
+        std::make_shared<CodeAnalysis>(analyze(REFUND_TEST_CODE));
+
     constexpr auto key1 =
         0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
     constexpr auto key2 =
@@ -576,6 +583,102 @@ TYPED_TEST(DBTest, call_frames_stress_test)
 #ifdef ENABLE_CALL_TRACING
     // original size: 35799, after truncate, size is 100
     EXPECT_EQ(actual_call_frames.size(), 100);
+#else
+    EXPECT_EQ(actual_call_frames.size(), 0);
+#endif
+}
+
+// test referenced from :
+// https://github.com/ethereum/tests/blob/v10.0/BlockchainTests/GeneralStateTests/stRefundTest/refund50_1.json
+TYPED_TEST(DBTest, call_frames_refund)
+{
+    TrieDb tdb{this->db};
+
+    auto const from = 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address;
+    auto const to = 0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba_address;
+    auto const ca = 0x095e7baea6a6c7c4c2dfeb977efac326af552d87_address;
+
+    tdb.commit(
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0x989680,
+                          .code_hash = NULL_HASH,
+                          .nonce = 0x0}}}},
+            {to,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0x0,
+                          .code_hash = NULL_HASH,
+                          .nonce = 0x01}}}},
+            {ca,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0x1b58,
+                          .code_hash = REFUND_TEST_CODE_HASH}},
+                 .storage =
+                     {{bytes32_t{0x01}, {bytes32_t{}, bytes32_t{0x01}}},
+                      {bytes32_t{0x02}, {bytes32_t{}, bytes32_t{0x01}}},
+                      {bytes32_t{0x03}, {bytes32_t{}, bytes32_t{0x01}}},
+                      {bytes32_t{0x04}, {bytes32_t{}, bytes32_t{0x01}}},
+                      {bytes32_t{0x05}, {bytes32_t{}, bytes32_t{0x01}}}}}}},
+        Code{{REFUND_TEST_CODE_HASH, REFUND_TEST_CODE_ANALYSIS}});
+
+    // clang-format off
+    byte_string const block_rlp = evmc::from_hex("0xf9025ff901f7a01e736f5755fc7023588f262b496b6cbc18aa9062d9c7a21b1c709f55ad66aad3a01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347942adc25665018aa1fe0e6bc666dac8fc2697ff9baa096841c0823ec823fdb0b0b8ea019c8dd6691b9f335e0433d8cfe59146e8b884ca0f0f9b1e10ec75d9799e3a49da5baeeab089b431b0073fb05fa90035e830728b8a06c8ab36ec0629c97734e8ac823cdd8397de67efb76c7beb983be73dcd3c78141b90100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008302000001830f42408259e78203e800a00000000000000000000000000000000000000000000000000000000000000000880000000000000000f862f860800a830186a094095e7baea6a6c7c4c2dfeb977efac326af552d8780801ba0eac92a424c1599d71b1c116ad53800caa599233ea91907e639b7cb98fa0da3bba06be40f001771af85bfba5e6c4d579e038e6465af3f55e71b9490ab48fcfa5b1ec0")
+            .value();
+    // clang-format on
+    byte_string_view block_rlp_view{block_rlp};
+    auto block = rlp::decode_block(block_rlp_view);
+    ASSERT_TRUE(!block.has_error());
+
+    BlockHashBuffer block_hash_buffer;
+    block_hash_buffer.set(
+        block.value().header.number - 1, block.value().header.parent_hash);
+
+    BlockState bs(tdb);
+
+    fiber::PriorityPool pool{1, 1};
+
+    auto const results = execute_block<EVMC_SHANGHAI>(
+        EthereumMainnet{}, block.value(), bs, block_hash_buffer, pool);
+
+    ASSERT_TRUE(!results.has_error());
+
+    bs.log_debug();
+
+    std::vector<Receipt> receipts;
+    BlockCallFrames call_frames;
+    for (auto &result : results.value()) {
+        receipts.emplace_back(std::move(result.receipt));
+        call_frames.emplace_back(std::move(result.call_frames));
+    }
+
+    bs.commit(receipts, call_frames);
+
+    auto const actual_call_frames = tdb.read_call_frame(0);
+
+#ifdef ENABLE_CALL_TRACING
+    ASSERT_EQ(actual_call_frames.size(), 1);
+    CallFrame expected{
+        .type = CallKind::CALL,
+        .flags = 0,
+        .from = from,
+        .to = ca,
+        .value = 0,
+        .gas = 0x186a0,
+        .gas_used = 0x8fd8,
+        .status = EVMC_SUCCESS,
+        .depth = 0};
+
+    EXPECT_EQ(actual_call_frames[0], expected);
 #else
     EXPECT_EQ(actual_call_frames.size(), 0);
 #endif

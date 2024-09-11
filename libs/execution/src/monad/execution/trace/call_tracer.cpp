@@ -22,23 +22,48 @@
 
 MONAD_NAMESPACE_BEGIN
 
-std::string_view call_kind_to_string(CallKind const &type)
+namespace
 {
-    switch (type) {
-    case CallKind::CALL:
-        return "CALL";
-    case CallKind::DELEGATECALL:
-        return "DELEGATECALL";
-    case CallKind::CALLCODE:
-        return "CALLCODE";
-    case CallKind::CREATE:
-        return "CREATE";
-    case CallKind::CREATE2:
-        return "CREATE2";
-    case CallKind::SELFDESTRUCT:
-        return "SELFDESTRUCT";
-    default:
-        MONAD_ASSERT(false);
+    void to_json_helper(
+        TxnCallFrames const &frames, nlohmann::json &json, size_t &pos)
+    {
+        if (pos >= frames.size()) {
+            return;
+        }
+        json = frames[pos].to_json();
+
+        while (pos + 1 < frames.size()) {
+            MONAD_ASSERT(json.contains("depth"));
+            if (frames[pos + 1].depth > json["depth"]) {
+                nlohmann::json j;
+                pos++;
+                to_json_helper(frames, j, pos);
+                json["calls"].push_back(j);
+            }
+            else {
+                return;
+            }
+        }
+    }
+
+    constexpr std::string_view call_kind_to_string(CallKind const &type)
+    {
+        switch (type) {
+        case CallKind::CALL:
+            return "CALL";
+        case CallKind::DELEGATECALL:
+            return "DELEGATECALL";
+        case CallKind::CALLCODE:
+            return "CALLCODE";
+        case CallKind::CREATE:
+            return "CREATE";
+        case CallKind::CREATE2:
+            return "CREATE2";
+        case CallKind::SELFDESTRUCT:
+            return "SELFDESTRUCT";
+        default:
+            MONAD_ASSERT(false);
+        }
     }
 }
 
@@ -77,37 +102,16 @@ nlohmann::json CallFrame::to_json() const
 }
 
 CallTracer::CallTracer(Transaction const &tx)
-    : call_frames_{}
+    : frames_{}
     , depth_{0}
     , tx_(tx)
 {
 }
 
-void CallTracer::to_json_helper(nlohmann::json &json, size_t &pos)
-{
-    if (pos >= call_frames_.size()) {
-        return;
-    }
-    json = call_frames_[pos].to_json();
-
-    while (pos + 1 < call_frames_.size()) {
-        MONAD_ASSERT(json.contains("depth"));
-        if (call_frames_[pos + 1].depth > json["depth"]) {
-            nlohmann::json j;
-            pos++;
-            to_json_helper(j, pos);
-            json["calls"].push_back(j);
-        }
-        else {
-            return;
-        }
-    }
-}
-
 nlohmann::json CallTracer::to_json()
 {
-    MONAD_ASSERT(!call_frames_.empty());
-    MONAD_ASSERT(call_frames_[0].depth == 0);
+    MONAD_ASSERT(!frames_.empty());
+    MONAD_ASSERT(frames_[0].depth == 0);
 
     size_t pos = 0;
 
@@ -116,7 +120,7 @@ nlohmann::json CallTracer::to_json()
     auto const key = fmt::format(
         "0x{:02x}", fmt::join(std::as_bytes(std::span(hash.bytes)), ""));
     nlohmann::json value{};
-    to_json_helper(value, pos);
+    to_json_helper(frames_, value, pos);
     res[key] = value;
 
     return res;

@@ -5,6 +5,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/keccak.hpp>
+#include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/execution/transaction_gas.hpp>
 
@@ -23,27 +24,6 @@
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
-
-namespace
-{
-    inline constexpr uint64_t g_star(
-        evmc_revision const &rev, uint64_t const gas_limit,
-        uint64_t const gas_remaining, uint64_t const refund,
-        bool const top_level = false)
-    {
-        // EIP-3529
-        if (top_level) {
-            auto const max_refund_quotient = rev >= EVMC_LONDON ? 5u : 2u;
-            auto const refund_allowance =
-                (gas_limit - gas_remaining) / max_refund_quotient;
-
-            return gas_remaining + std::min(refund_allowance, refund);
-        }
-        else {
-            return gas_remaining;
-        }
-    }
-}
 
 enum class CallKind
 {
@@ -82,11 +62,36 @@ struct CallFrame
 using TxnCallFrames = std::vector<CallFrame>;
 using BlockCallFrames = std::vector<TxnCallFrames>;
 
-class CallTracer
+struct CallTracerBase
 {
-    TxnCallFrames call_frames_{};
+    virtual void on_enter(evmc_message const &) = 0;
+    virtual void on_exit(evmc::Result const &) = 0;
+    virtual void on_self_destruct(Address const &from, Address const &to) = 0;
+    virtual void on_receipt(Receipt const &) = 0;
+    virtual TxnCallFrames get_frames() const = 0;
+};
+
+struct NoopCallTracer final : public CallTracerBase
+{
+    virtual void on_enter(evmc_message const &) override {}
+
+    virtual void on_exit(evmc::Result const &) override {}
+
+    virtual void on_self_destruct(Address const &, Address const &) override {}
+
+    virtual void on_receipt(Receipt const &) override {};
+
+    virtual TxnCallFrames get_frames() const override
+    {
+        return {};
+    };
+};
+
+class CallTracer final : public CallTracerBase
+{
+    TxnCallFrames frames_{};
     std::stack<size_t> last_;
-    size_t depth_;
+    uint64_t depth_;
     Transaction const &tx_;
 
 public:
@@ -96,60 +101,51 @@ public:
 
     explicit CallTracer(Transaction const &);
 
-    // called when entering a new frame
-    template <evmc_revision rev>
-    void on_enter(evmc_message const &msg)
+    virtual void on_enter(evmc_message const &msg) override
     {
-        depth_ = static_cast<size_t>(msg.depth);
+        depth_ = static_cast<uint64_t>(msg.depth);
 
-        Address from = msg.sender;
         // This is to conform with quicknode RPC
-        if (msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE) {
-            from = msg.recipient;
-        }
+        Address const from =
+            msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE
+                ? msg.recipient
+                : msg.sender;
 
-        std::optional<Address> to = std::nullopt;
+        std::optional<Address> to;
         if (msg.kind == EVMC_CALL) {
-            to = std::make_optional(msg.recipient);
+            to = msg.recipient;
         }
         else if (msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE) {
-            to = std::make_optional(msg.code_address);
+            to = msg.code_address;
         }
 
-        CallFrame call_frame{
+        frames_.emplace_back(CallFrame{
             .type = static_cast<CallKind>(msg.kind),
             .flags = msg.flags,
             .from = from,
             .to = to,
             .value = intx::be::load<uint256_t>(msg.value),
             .gas = depth_ == 0 ? tx_.gas_limit : static_cast<uint64_t>(msg.gas),
+            .gas_used = 0,
             .input = msg.input_data == nullptr
                          ? byte_string{}
                          : byte_string{msg.input_data, msg.input_size},
-            .depth = static_cast<uint64_t>(msg.depth),
-        };
+            .output{},
+            .status = EVMC_FAILURE,
+            .depth = depth_,
+        });
 
-        call_frames_.emplace_back(std::move(call_frame));
-        last_.push(call_frames_.size() - 1);
+        last_.push(frames_.size() - 1);
     }
 
-    // called when exiting the current frame
-    template <evmc_revision rev>
-    void on_exit(evmc::Result const &res)
+    virtual void on_exit(evmc::Result const &res) override
     {
-        MONAD_ASSERT(!call_frames_.empty());
+        MONAD_ASSERT(!frames_.empty());
         MONAD_ASSERT(!last_.empty());
 
-        auto &frame = call_frames_.at(last_.top());
+        auto &frame = frames_.at(last_.top());
 
-        auto const gas_limit = frame.gas;
-        auto const gas_remaining = g_star(
-            rev,
-            gas_limit,
-            static_cast<uint64_t>(res.gas_left),
-            static_cast<uint64_t>(res.gas_refund),
-            depth_ == 0);
-        frame.gas_used = gas_limit - gas_remaining;
+        frame.gas_used = frame.gas - static_cast<uint64_t>(res.gas_left);
 
         if (res.status_code == EVMC_SUCCESS || res.status_code == EVMC_REVERT) {
             frame.output = res.output_size == 0
@@ -163,40 +159,42 @@ public:
         }
 
         last_.pop();
-        if (depth_) {
-            depth_--;
-        }
     }
 
-    void on_self_destruct(Address const &from, Address const &to)
+    virtual void
+    on_self_destruct(Address const &from, Address const &to) override
     {
-        CallFrame call_frame{
+        // we don't change depth_ here, because exit and enter combined
+        // together here
+        frames_.emplace_back(CallFrame{
             .type = CallKind::SELFDESTRUCT,
+            .flags = 0,
             .from = from,
             .to = to,
             .value = 0,
             .gas = 0,
             .gas_used = 0,
+            .input = {},
+            .output = {},
             .status = EVMC_SUCCESS, // TODO
             .depth = depth_ + 1,
-        };
-
-        // we don't change depth_ here, because exit and enter combined together
-        // here
-        call_frames_.emplace_back(std::move(call_frame));
+        });
     }
 
-    TxnCallFrames get_call_frames() const
+    virtual void on_receipt(Receipt const &receipt) override
     {
-        return call_frames_;
+        MONAD_ASSERT(!frames_.empty());
+        MONAD_ASSERT(last_.empty());
+        frames_.front().gas_used = receipt.gas_used;
+    }
+
+    virtual TxnCallFrames get_frames() const override
+    {
+        return frames_;
     }
 
     //////////////////////// debug helpers ////////////////////////
     nlohmann::json to_json();
-
-private:
-    //////////////////////// debug helpers ////////////////////////
-    void to_json_helper(nlohmann::json &, size_t &pos);
 };
 
 MONAD_NAMESPACE_END

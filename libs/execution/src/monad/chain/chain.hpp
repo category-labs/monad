@@ -41,10 +41,10 @@ struct Chain
         evmc_revision, Transaction const &, Address const &,
         std::optional<Account> const &) const = 0;
 
-    virtual std::pair<evmc::Result, TxnCallFrames> execute_impl_no_validation(
-        evmc_revision, BlockHashBuffer const &, BlockHeader const &, State &,
-        Transaction const &, Address const &sender,
-        std::optional<Account> const &) = 0;
+    virtual evmc::Result execute_impl_no_validation(
+        CallTracerBase &, evmc_revision, BlockHashBuffer const &,
+        BlockHeader const &, State &, Transaction const &,
+        Address const &sender, std::optional<Account> const &) = 0;
 
     virtual Receipt execute_final(
         evmc_revision, State &, Transaction const &, Address const &sender,

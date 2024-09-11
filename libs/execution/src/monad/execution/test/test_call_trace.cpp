@@ -1,5 +1,6 @@
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
+#include <monad/core/block.hpp>
 #include <monad/core/int.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
@@ -75,16 +76,16 @@ TEST(CallTrace, enter_and_exit)
     CallTracer call_tracer{tx};
     {
         msg.depth = 0;
-        call_tracer.on_enter<rev>(msg);
+        call_tracer.on_enter(msg);
         {
             msg.depth = 1;
-            call_tracer.on_enter<rev>(msg);
-            call_tracer.on_exit<rev>(res);
+            call_tracer.on_enter(msg);
+            call_tracer.on_exit(res);
         }
-        call_tracer.on_exit<rev>(res);
+        call_tracer.on_exit(res);
     }
 
-    auto const call_frames = call_tracer.get_call_frames();
+    auto const call_frames = call_tracer.get_frames();
     EXPECT_EQ(call_frames.size(), 2);
     EXPECT_EQ(call_frames[0].depth, 0);
     EXPECT_EQ(call_frames[1].depth, 1);
@@ -125,19 +126,17 @@ TEST(CallTrace, execute_success)
     };
 
     auto const &sender = ADDR_A;
-    auto const &beneficiary = ADDR_A;
 
-    evmc_tx_context const tx_context{};
     BlockHashBuffer buffer{};
-    EvmcHost<EVMC_SHANGHAI> host(tx_context, buffer, s);
-    host.add_call_tracer(tx);
+    CallTracer call_tracer{tx};
 
-    auto const result = execute_impl_no_validation<EVMC_SHANGHAI>(
-        s, host, tx, sender, 1, beneficiary);
+    BlockHeader header{.beneficiary = ADDR_A};
+
+    auto const result = ::monad::execute_impl_no_validation(
+        call_tracer, rev, buffer, header, 1, s, tx, sender);
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
 
-    ASSERT_TRUE(host.call_tracer != nullptr);
-    auto const &call_frames = host.call_tracer->get_call_frames();
+    auto const &call_frames = call_tracer.get_frames();
 
     ASSERT_TRUE(call_frames.size() == 1);
 
@@ -191,19 +190,16 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
     };
 
     auto const &sender = ADDR_A;
-    auto const &beneficiary = ADDR_A;
 
-    evmc_tx_context const tx_context{};
     BlockHashBuffer buffer{};
-    EvmcHost<EVMC_SHANGHAI> host(tx_context, buffer, s);
-    host.add_call_tracer(tx);
+    CallTracer call_tracer{tx};
+    BlockHeader header{.beneficiary = ADDR_A};
 
-    auto const result = execute_impl_no_validation<EVMC_SHANGHAI>(
-        s, host, tx, sender, 1, beneficiary);
+    auto const result = ::monad::execute_impl_no_validation(
+        call_tracer, rev, buffer, header, 1, s, tx, sender);
     EXPECT_TRUE(result.status_code == EVMC_INSUFFICIENT_BALANCE);
 
-    ASSERT_TRUE(host.call_tracer != nullptr);
-    auto const &call_frames = host.call_tracer->get_call_frames();
+    auto const &call_frames = call_tracer.get_frames();
 
     ASSERT_TRUE(call_frames.size() == 1);
 

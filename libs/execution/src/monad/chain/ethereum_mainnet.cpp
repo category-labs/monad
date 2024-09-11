@@ -124,14 +124,14 @@ Result<void> EthereumMainnet::validate_transaction(
     return ::monad::validate_transaction(tx, sender_account);
 }
 
-std::pair<evmc::Result, TxnCallFrames>
-EthereumMainnet::execute_impl_no_validation(
-    evmc_revision const rev, BlockHashBuffer const &buf, BlockHeader const &hdr,
-    State &state, Transaction const &tx, Address const &sender,
+evmc::Result EthereumMainnet::execute_impl_no_validation(
+    CallTracerBase &call_tracer, evmc_revision const rev,
+    BlockHashBuffer const &buf, BlockHeader const &hdr, State &state,
+    Transaction const &tx, Address const &sender,
     std::optional<Account> const &)
 {
     return ::monad::execute_impl_no_validation(
-        rev, buf, hdr, get_chain_id(), state, tx, sender);
+        call_tracer, rev, buf, hdr, get_chain_id(), state, tx, sender);
 }
 
 Receipt EthereumMainnet::execute_final(

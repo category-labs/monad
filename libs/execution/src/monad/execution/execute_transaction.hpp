@@ -29,10 +29,10 @@ struct ExecutionResult
     TxnCallFrames call_frames;
 };
 
-std::pair<evmc::Result, TxnCallFrames> execute_impl_no_validation(
-    evmc_revision, BlockHashBuffer const &, BlockHeader const &,
-    uint256_t const &chain_id, State &, Transaction const &,
-    Address const &sender);
+evmc::Result execute_impl_no_validation(
+    CallTracerBase &, evmc_revision, BlockHashBuffer const &,
+    BlockHeader const &, uint256_t const &chain_id, State &,
+    Transaction const &, Address const &sender);
 
 Receipt execute_final(
     evmc_revision, State &, Transaction const &, Address const &sender,

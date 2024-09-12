@@ -350,14 +350,24 @@ public:
 
     ////////////////////////////////////////
 
+    template <evmc_revision rev>
     bool selfdestruct(Address const &address, Address const &beneficiary)
     {
         auto &account_state = current_account_state(address);
         auto &account = account_state.account_;
         MONAD_ASSERT(account.has_value());
 
-        add_to_balance(beneficiary, account.value().balance);
-        account.value().balance = 0;
+        if constexpr (rev < EVMC_CANCUN) {
+            add_to_balance(beneficiary, account.value().balance);
+            account.value().balance = 0;
+        }
+        else {
+            if (address != beneficiary ||
+                account->incarnation == incarnation_) {
+                add_to_balance(beneficiary, account.value().balance);
+                account.value().balance = 0;
+            }
+        }
 
         return account_state.destruct();
     }

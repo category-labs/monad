@@ -51,9 +51,6 @@ public:
         Address const &, size_t offset, uint8_t *data,
         size_t size) const noexcept override;
 
-    virtual bool selfdestruct(
-        Address const &address, Address const &beneficiary) noexcept override;
-
     virtual evmc_tx_context get_tx_context() const noexcept override;
 
     virtual bytes32_t get_block_hash(int64_t) const noexcept override;
@@ -84,6 +81,12 @@ struct EvmcHost final : public EvmcHostBase
             return state_.account_exists(address);
         }
         return !state_.account_is_dead(address);
+    }
+
+    virtual bool selfdestruct(
+        Address const &address, Address const &beneficiary) noexcept override
+    {
+        return state_.selfdestruct<rev>(address, beneficiary);
     }
 
     virtual evmc::Result call(evmc_message const &msg) noexcept override

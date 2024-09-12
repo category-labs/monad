@@ -132,9 +132,7 @@ add_library(
   # mem
   "src/monad/mem/cpool.h"
   "src/monad/mem/dynamic_allocator.hpp"
-  "src/monad/mem/huge_mem.c"
   "src/monad/mem/huge_mem.cpp"
-  "src/monad/mem/huge_mem.h"
   "src/monad/mem/huge_mem.hpp"
   "src/monad/mem/mem_map.cpp"
   "src/monad/mem/mem_map.hpp"
@@ -191,5 +189,4 @@ find_package(GTest REQUIRED)
 add_subdirectory("test")
 
 monad_add_test(bit_util_test src/monad/core/bit_util_test.cpp)
-monad_add_test(huge_mem_test src/monad/mem/huge_mem_test.cpp)
 monad_add_test(static_lru_test src/monad/lru/static_lru_test.cpp)

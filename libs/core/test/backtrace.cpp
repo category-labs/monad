@@ -1,14 +1,15 @@
 #include <monad/core/backtrace.hpp>
 
 #include <monad/core/assert.h>
-#include <monad/test/gtest_signal_stacktrace_printer.hpp>  // NOLINT
+#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <array>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
-#include <cstddef>
 #include <span>
 
+#include <time.h>
 #include <unistd.h>
 
 namespace
@@ -30,20 +31,29 @@ namespace
         std::array<std::byte, 1024> storage;
         auto st = func_a(storage);
         int fds[2];
+        timespec resolution;
         MONAD_ASSERT(-1 != ::pipe(fds));
+        MONAD_ASSERT(
+            -1 != clock_getres(CLOCK_REALTIME, &resolution),
+            "clock_getres(3) failed for clock %d",
+            CLOCK_REALTIME);
+
         struct unfds_t
         {
             int *fds;
+
             explicit unfds_t(int *fds_)
                 : fds(fds_)
             {
             }
+
             ~unfds_t()
             {
                 ::close(fds[0]);
                 ::close(fds[1]);
             }
         } unfds{fds};
+
         st->print(fds[1], 3, true);
         char buffer[16384];
         auto bytesread = ::read(fds[0], buffer, sizeof(buffer));

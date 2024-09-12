@@ -1489,6 +1489,10 @@ write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
     MONAD_ASSERT(
         last_version_in_db == INVALID_BLOCK_ID ||
         version == last_version_in_db || version == last_version_in_db + 1);
+    // advance fast and slow ring's latest offset in db metadata
+    aux.advance_db_offsets_to(
+        aux.node_writer_fast->sender().offset(),
+        aux.node_writer_slow->sender().offset());
     if (last_version_in_db == version) {
         aux.update_root_offset(version, offset_written_to);
     }
@@ -1499,10 +1503,6 @@ write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
         }
         aux.append_root_offset(offset_written_to);
     }
-    // advance fast and slow ring's latest offset in db metadata
-    aux.advance_db_offsets_to(
-        aux.node_writer_fast->sender().offset(),
-        aux.node_writer_slow->sender().offset());
     return offset_written_to;
 }
 

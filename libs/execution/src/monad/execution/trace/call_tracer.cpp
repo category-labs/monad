@@ -89,7 +89,23 @@ void CallTracer::on_enter(evmc_message const &msg)
     }
 
     frames_.emplace_back(CallFrame{
-        .type = static_cast<CallKind>(msg.kind),
+        .type =
+            [kind = msg.kind] {
+                switch (kind) {
+                case EVMC_CALL:
+                    return CallType::CALL;
+                case EVMC_DELEGATECALL:
+                    return CallType::DELEGATECALL;
+                case EVMC_CALLCODE:
+                    return CallType::CALLCODE;
+                case EVMC_CREATE:
+                    return CallType::CREATE;
+                case EVMC_CREATE2:
+                    return CallType::CREATE2;
+                default:
+                    MONAD_ASSERT(false);
+                }
+            }(),
         .flags = msg.flags,
         .from = from,
         .to = to,
@@ -124,7 +140,7 @@ void CallTracer::on_exit(evmc::Result const &res)
     }
     frame.status = res.status_code;
 
-    if (frame.type == CallKind::CREATE || frame.type == CallKind::CREATE2) {
+    if (frame.type == CallType::CREATE || frame.type == CallType::CREATE2) {
         frame.to = res.create_address;
     }
 
@@ -136,7 +152,7 @@ void CallTracer::on_self_destruct(Address const &from, Address const &to)
     // we don't change depth_ here, because exit and enter combined
     // together here
     frames_.emplace_back(CallFrame{
-        .type = CallKind::SELFDESTRUCT,
+        .type = CallType::SELFDESTRUCT,
         .flags = 0,
         .from = from,
         .to = to,

@@ -47,7 +47,7 @@ Result<CallFrame> decode_call_frame(byte_string_view &enc)
     CallFrame call_frame{};
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
     BOOST_OUTCOME_TRY(auto const type, decode_unsigned<unsigned char>(payload));
-    call_frame.type = static_cast<enum CallKind>(type);
+    call_frame.type = static_cast<enum CallType>(type);
     BOOST_OUTCOME_TRY(call_frame.flags, decode_unsigned<uint32_t>(payload));
     BOOST_OUTCOME_TRY(call_frame.from, decode_address(payload));
     BOOST_OUTCOME_TRY(call_frame.to, decode_optional_address(payload));

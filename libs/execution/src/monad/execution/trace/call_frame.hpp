@@ -12,7 +12,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-enum class CallKind
+enum class CallType
 {
     CALL = 0,
     DELEGATECALL,
@@ -24,7 +24,7 @@ enum class CallKind
 
 struct CallFrame
 {
-    CallKind type{};
+    CallType type{};
     uint32_t flags{};
     Address from{};
     std::optional<Address> to{};

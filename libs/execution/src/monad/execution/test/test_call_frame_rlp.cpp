@@ -20,7 +20,7 @@ namespace
 TEST(Rlp_CallFrame, encode_decode_call_frame)
 {
     CallFrame const call_frame{
-        .type = CallKind::CALL,
+        .type = CallType::CALL,
         .flags = 1, // static call
         .from = a,
         .to = b,
@@ -43,7 +43,7 @@ TEST(Rlp_CallFrame, encode_decode_call_frame)
 TEST(Rlp_CallFrame, encode_decode_call_frames)
 {
     CallFrame const call_frame1{
-        .type = CallKind::CALL,
+        .type = CallType::CALL,
         .flags = 1, // static call
         .from = a,
         .to = b,
@@ -57,7 +57,7 @@ TEST(Rlp_CallFrame, encode_decode_call_frames)
     };
 
     CallFrame const call_frame2{
-        .type = CallKind::DELEGATECALL,
+        .type = CallType::DELEGATECALL,
         .flags = 0,
         .from = b,
         .to = a,

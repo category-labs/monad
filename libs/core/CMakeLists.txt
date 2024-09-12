@@ -130,7 +130,6 @@ add_library(
   "src/monad/io/ring.cpp"
   "src/monad/io/ring.hpp"
   # mem
-  "src/monad/mem/cpool.h"
   "src/monad/mem/dynamic_allocator.hpp"
   "src/monad/mem/huge_mem.cpp"
   "src/monad/mem/huge_mem.hpp"
@@ -170,7 +169,6 @@ add_library(
   "src/monad/core/math_disas.cpp"
   "src/monad/core/offset_disas.cpp"
   "src/monad/core/spinlock_disas.c"
-  "src/monad/mem/cpool_disas.c"
   # rlp
   "src/monad/rlp/encode_disas.cpp")
 monad_compile_options(monad_core_disas)

@@ -150,7 +150,7 @@ std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
     return std::make_shared<CodeAnalysis>(analyze(value.assume_value()));
 }
 
-TxnCallFrames TrieDb::read_call_frame(uint64_t const idx) const
+std::vector<CallFrame> TrieDb::read_call_frame(uint64_t const idx) const
 {
     auto const value = db_.get(
         concat(CALL_FRAME_NIBBLE, NibblesView{rlp::encode_unsigned(idx)}),
@@ -168,7 +168,8 @@ TxnCallFrames TrieDb::read_call_frame(uint64_t const idx) const
 
 void TrieDb::commit(
     StateDeltas const &state_deltas, Code const &code,
-    std::vector<Receipt> const &receipts, BlockCallFrames const &call_frames)
+    std::vector<Receipt> const &receipts,
+    std::vector<std::vector<CallFrame>> const &call_frames)
 {
     MONAD_ASSERT(block_number_ <= std::numeric_limits<int64_t>::max());
 

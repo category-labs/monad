@@ -34,7 +34,9 @@ public:
 
     void merge(State const &);
 
-    void commit(std::vector<Receipt> const &, BlockCallFrames const & = {});
+    void commit(
+        std::vector<Receipt> const &,
+        std::vector<std::vector<CallFrame>> const & = {});
 
     void log_debug();
 };

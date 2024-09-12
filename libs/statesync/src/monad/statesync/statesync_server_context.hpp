@@ -17,6 +17,7 @@ MONAD_NAMESPACE_BEGIN
 using Deleted = oneapi::tbb::concurrent_hash_map<
     uint64_t, std::vector<std::pair<Address, std::vector<bytes32_t>>>>;
 
+struct CallFrame;
 class TrieDb;
 
 MONAD_NAMESPACE_END
@@ -48,5 +49,5 @@ struct monad_statesync_server_context final : public monad::Db
     virtual void commit(
         monad::StateDeltas const &state_deltas, monad::Code const &code,
         std::vector<monad::Receipt> const &receipts,
-        monad::BlockCallFrames const & = {}) override;
+        std::vector<std::vector<monad::CallFrame>> const & = {}) override;
 };

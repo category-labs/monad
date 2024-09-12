@@ -497,8 +497,8 @@ TYPED_TEST(DBTest, commit_call_frames)
     };
 
     static byte_string const encoded_txn = byte_string{0x1a, 0x1b, 0x1c};
-    TxnCallFrames const call_frame{call_frame1, call_frame2};
-    BlockCallFrames call_frames;
+    std::vector<CallFrame> const call_frame{call_frame1, call_frame2};
+    std::vector<std::vector<CallFrame>> call_frames;
     call_frames.emplace_back(call_frame);
 
     tdb.commit(StateDeltas{}, Code{}, std::vector<Receipt>{}, call_frames);
@@ -572,7 +572,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
     bs.log_debug();
 
     std::vector<Receipt> receipts;
-    BlockCallFrames call_frames;
+    std::vector<std::vector<CallFrame>> call_frames;
     for (auto &result : results.value()) {
         receipts.emplace_back(std::move(result.receipt));
         call_frames.emplace_back(std::move(result.call_frames));
@@ -659,7 +659,7 @@ TYPED_TEST(DBTest, call_frames_refund)
     bs.log_debug();
 
     std::vector<Receipt> receipts;
-    BlockCallFrames call_frames;
+    std::vector<std::vector<CallFrame>> call_frames;
     for (auto &result : results.value()) {
         receipts.emplace_back(std::move(result.receipt));
         call_frames.emplace_back(std::move(result.call_frames));

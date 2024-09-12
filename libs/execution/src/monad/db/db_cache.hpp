@@ -116,7 +116,7 @@ public:
     virtual void commit(
         StateDeltas const &state_deltas, Code const &code,
         std::vector<Receipt> const &receipts,
-        BlockCallFrames const &call_frames) override
+        std::vector<std::vector<CallFrame>> const &call_frames) override
     {
         db_.commit(state_deltas, code, receipts, call_frames);
 

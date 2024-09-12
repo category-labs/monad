@@ -5,7 +5,7 @@
 #include <monad/core/int.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
-#include <monad/execution/trace/call_tracer.hpp>
+#include <monad/execution/trace/call_frame.hpp>
 
 #include <evmc/evmc.h>
 
@@ -26,7 +26,7 @@ struct Transaction;
 struct ExecutionResult
 {
     Receipt receipt;
-    TxnCallFrames call_frames;
+    std::vector<CallFrame> call_frames;
 };
 
 evmc::Result execute_impl_no_validation(

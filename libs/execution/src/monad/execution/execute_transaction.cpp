@@ -11,6 +11,8 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
+#include <monad/execution/trace/call_frame.hpp>
+#include <monad/execution/trace/call_tracer.hpp>
 #include <monad/execution/trace/event_trace.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/tx_context.hpp>
@@ -237,8 +239,11 @@ Result<ExecutionResult> execute_impl(
                 hdr.beneficiary);
             call_tracer.on_receipt(receipt);
             block_state.merge(state);
+
+            auto const frames = call_tracer.get_frames();
             return ExecutionResult{
-                .receipt = receipt, .call_frames = call_tracer.get_frames()};
+                .receipt = receipt,
+                .call_frames = {frames.begin(), frames.end()}};
         }
     }
     {
@@ -269,8 +274,9 @@ Result<ExecutionResult> execute_impl(
         call_tracer.on_receipt(receipt);
         block_state.merge(state);
 
+        auto const frames = call_tracer.get_frames();
         return ExecutionResult{
-            .receipt = receipt, .call_frames = call_tracer.get_frames()};
+            .receipt = receipt, .call_frames = {frames.begin(), frames.end()}};
     }
 }
 

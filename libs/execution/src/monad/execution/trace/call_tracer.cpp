@@ -4,12 +4,14 @@
 #include <monad/core/fmt/address_fmt.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
+#include <monad/core/receipt.hpp>
 #include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/core/transaction.hpp>
+#include <monad/execution/trace/call_frame.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
 
+#include <evmc/evmc.hpp>
 #include <intx/intx.hpp>
-
 #include <nlohmann/json.hpp>
 
 #include <fstream>
@@ -25,12 +27,13 @@ MONAD_NAMESPACE_BEGIN
 namespace
 {
     void to_json_helper(
-        TxnCallFrames const &frames, nlohmann::json &json, size_t &pos)
+        std::span<CallFrame const> const frames, nlohmann::json &json,
+        size_t &pos)
     {
         if (pos >= frames.size()) {
             return;
         }
-        json = frames[pos].to_json();
+        json = to_json(frames[pos]);
 
         while (pos + 1 < frames.size()) {
             MONAD_ASSERT(json.contains("depth"));
@@ -45,60 +48,19 @@ namespace
             }
         }
     }
-
-    constexpr std::string_view call_kind_to_string(CallKind const &type)
-    {
-        switch (type) {
-        case CallKind::CALL:
-            return "CALL";
-        case CallKind::DELEGATECALL:
-            return "DELEGATECALL";
-        case CallKind::CALLCODE:
-            return "CALLCODE";
-        case CallKind::CREATE:
-            return "CREATE";
-        case CallKind::CREATE2:
-            return "CREATE2";
-        case CallKind::SELFDESTRUCT:
-            return "SELFDESTRUCT";
-        default:
-            MONAD_ASSERT(false);
-        }
-    }
 }
 
-nlohmann::json CallFrame::to_json() const
+void NoopCallTracer::on_enter(evmc_message const &) {}
+
+void NoopCallTracer::on_exit(evmc::Result const &) {}
+
+void NoopCallTracer::on_self_destruct(Address const &, Address const &) {}
+
+void NoopCallTracer::on_receipt(Receipt const &) {}
+
+std::span<CallFrame const> NoopCallTracer::get_frames() const
 {
-    nlohmann::json res{};
-    res["type"] = call_kind_to_string(type);
-    if (MONAD_UNLIKELY(type == CallKind::CALL && flags == EVMC_STATIC)) {
-        res["type"] = "STATICCALL";
-    }
-    res["from"] = fmt::format(
-        "0x{:02x}", fmt::join(std::as_bytes(std::span(from.bytes)), ""));
-    if (to.has_value()) {
-        res["to"] = fmt::format(
-            "0x{:02x}",
-            fmt::join(std::as_bytes(std::span(to.value().bytes)), ""));
-    }
-    res["value"] = "0x" + intx::to_string(value, 16);
-    res["gas"] = fmt::format("0x{:x}", gas);
-    res["gasUsed"] = fmt::format("0x{:x}", gas_used);
-    res["input"] = "0x" + evmc::hex(input);
-    res["output"] = "0x" + evmc::hex(output);
-
-    // If status == EVMC_SUCCESS, no error field is shown
-    if (status == EVMC_REVERT) {
-        res["error"] = "REVERT";
-    }
-    else if (status != EVMC_SUCCESS) {
-        res["error"] = "ERROR";
-    }
-
-    res["depth"] = depth; // needed for recursion
-    res["calls"] = nlohmann::json::array();
-
-    return res;
+    return {};
 }
 
 CallTracer::CallTracer(Transaction const &tx)
@@ -108,7 +70,99 @@ CallTracer::CallTracer(Transaction const &tx)
 {
 }
 
-nlohmann::json CallTracer::to_json()
+void CallTracer::on_enter(evmc_message const &msg)
+{
+    depth_ = static_cast<uint64_t>(msg.depth);
+
+    // This is to conform with quicknode RPC
+    Address const from =
+        msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE
+            ? msg.recipient
+            : msg.sender;
+
+    std::optional<Address> to;
+    if (msg.kind == EVMC_CALL) {
+        to = msg.recipient;
+    }
+    else if (msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE) {
+        to = msg.code_address;
+    }
+
+    frames_.emplace_back(CallFrame{
+        .type = static_cast<CallKind>(msg.kind),
+        .flags = msg.flags,
+        .from = from,
+        .to = to,
+        .value = intx::be::load<uint256_t>(msg.value),
+        .gas = depth_ == 0 ? tx_.gas_limit : static_cast<uint64_t>(msg.gas),
+        .gas_used = 0,
+        .input = msg.input_data == nullptr
+                     ? byte_string{}
+                     : byte_string{msg.input_data, msg.input_size},
+        .output = {},
+        .status = EVMC_FAILURE,
+        .depth = depth_,
+    });
+
+    last_.push(frames_.size() - 1);
+}
+
+void CallTracer::on_exit(evmc::Result const &res)
+{
+    MONAD_ASSERT(!frames_.empty());
+    MONAD_ASSERT(!last_.empty());
+
+    auto &frame = frames_.at(last_.top());
+
+    MONAD_ASSERT(frame.gas >= static_cast<uint64_t>(res.gas_left));
+    frame.gas_used = frame.gas - static_cast<uint64_t>(res.gas_left);
+
+    if (res.status_code == EVMC_SUCCESS || res.status_code == EVMC_REVERT) {
+        frame.output = res.output_size == 0
+                           ? byte_string{}
+                           : byte_string{res.output_data, res.output_size};
+    }
+    frame.status = res.status_code;
+
+    if (frame.type == CallKind::CREATE || frame.type == CallKind::CREATE2) {
+        frame.to = res.create_address;
+    }
+
+    last_.pop();
+}
+
+void CallTracer::on_self_destruct(Address const &from, Address const &to)
+{
+    // we don't change depth_ here, because exit and enter combined
+    // together here
+    frames_.emplace_back(CallFrame{
+        .type = CallKind::SELFDESTRUCT,
+        .flags = 0,
+        .from = from,
+        .to = to,
+        .value = 0,
+        .gas = 0,
+        .gas_used = 0,
+        .input = {},
+        .output = {},
+        .status = EVMC_SUCCESS, // TODO
+        .depth = depth_ + 1,
+    });
+}
+
+void CallTracer::on_receipt(Receipt const &receipt)
+{
+    MONAD_ASSERT(!frames_.empty());
+    MONAD_ASSERT(last_.empty());
+    frames_.front().gas_used = receipt.gas_used;
+}
+
+std::span<CallFrame const> CallTracer::get_frames() const
+{
+    return frames_;
+}
+
+nlohmann::json CallTracer::to_json() const
 {
     MONAD_ASSERT(!frames_.empty());
     MONAD_ASSERT(frames_[0].depth == 0);

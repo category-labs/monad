@@ -3,7 +3,7 @@
 #include <monad/core/result.hpp>
 #include <monad/core/rlp/address_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
-#include <monad/execution/trace/call_tracer.hpp>
+#include <monad/execution/trace/call_frame.hpp>
 #include <monad/rlp/config.hpp>
 #include <monad/rlp/decode.hpp>
 #include <monad/rlp/decode_error.hpp>
@@ -11,6 +11,7 @@
 
 #include <boost/outcome/try.hpp>
 
+#include <span>
 #include <vector>
 
 MONAD_RLP_NAMESPACE_BEGIN

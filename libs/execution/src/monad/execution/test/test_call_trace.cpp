@@ -27,7 +27,6 @@ using namespace monad::test;
 
 namespace
 {
-    constexpr auto rev = EVMC_SHANGHAI;
     uint8_t const input[] = {'i', 'n', 'p', 'u', 't'};
     uint8_t const output[] = {'o', 'u', 't', 'p', 'u', 't'};
     static Transaction const tx{.gas_limit = 10'000u};
@@ -63,7 +62,7 @@ TEST(CallFrame, to_json)
         "output":"0x"
     })";
 
-    EXPECT_EQ(call_frame.to_json(), nlohmann::json::parse(json_str));
+    EXPECT_EQ(to_json(call_frame), nlohmann::json::parse(json_str));
 }
 
 TEST(CallTrace, enter_and_exit)

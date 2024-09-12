@@ -130,7 +130,6 @@ add_library(
   "src/monad/io/ring.cpp"
   "src/monad/io/ring.hpp"
   # mem
-  "src/monad/mem/dynamic_allocator.hpp"
   "src/monad/mem/huge_mem.cpp"
   "src/monad/mem/huge_mem.hpp"
   # procfs

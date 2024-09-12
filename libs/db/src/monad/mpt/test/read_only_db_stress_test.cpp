@@ -60,7 +60,9 @@ static void on_signal(int)
 
 int main(int argc, char *const argv[])
 {
-    unsigned num_reader_threads = 4;
+    unsigned num_sync_reader_threads = 4;
+    unsigned num_async_reader_threads = 2;
+    size_t num_async_reads_inflight = 100;
     unsigned num_traverse_threads = 2;
     double prng_bias = 1.66;
     size_t num_nodes_per_version = 1;
@@ -73,9 +75,17 @@ int main(int argc, char *const argv[])
 
     try {
         cli.add_option(
-            "--num-reader-threads",
-            num_reader_threads,
-            "Number of threads doing random reads");
+            "--num-sync-reader-threads",
+            num_sync_reader_threads,
+            "Number of threads doing random blocking reads");
+        cli.add_option(
+            "--num-async-reader-threads",
+            num_async_reader_threads,
+            "Number of threads doing random async reads");
+        cli.add_option(
+            "--num-async-reads-inflight",
+            num_async_reads_inflight,
+            "Number of async reads to issue before calling poll");
         cli.add_option(
             "--num-traverse-threads",
             num_traverse_threads,
@@ -148,7 +158,7 @@ int main(int argc, char *const argv[])
             db.upsert(std::move(ul_prefix), version);
         };
 
-        auto random_read = [&]() {
+        auto random_sync_read = [&]() {
             ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
             Db ro_db{ro_config};
 
@@ -188,8 +198,96 @@ int main(int argc, char *const argv[])
                 }
             }
             std::ostringstream oss;
-            oss << "Reader thread (0x" << std::hex << std::this_thread::get_id()
-                << std::dec << ") finished"
+            oss << "Sync Reader thread (0x" << std::hex
+                << std::this_thread::get_id() << std::dec << ") finished"
+                << ". Did " << nsuccess << " successful and " << nfailed
+                << " failed reads" << std::endl;
+            std::cout << oss.str();
+        };
+
+        auto random_async_read = [&]() {
+            ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+            Db ro_db{ro_config};
+            auto async_ctx = async_context_create(ro_db);
+
+            unsigned nsuccess = 0;
+            unsigned nfailed = 0;
+
+            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID &&
+                   !g_done.load(std::memory_order_acquire)) {
+            }
+            // now the first version is written to db
+            MONAD_ASSERT(ro_db.get_latest_block_id() != INVALID_BLOCK_ID);
+            MONAD_ASSERT(ro_db.get_earliest_block_id() != INVALID_BLOCK_ID);
+
+            struct receiver_t
+            {
+                size_t *completions;
+                Db *db{nullptr};
+                unsigned *nsuccess{nullptr};
+                unsigned *nfailed{nullptr};
+                uint64_t version;
+                monad::byte_string version_bytes;
+
+                void set_value(
+                    monad::async::erased_connected_operation *state,
+                    monad::async::result<monad::byte_string> res)
+                {
+                    if (res) {
+                        MONAD_ASSERT(res.value() == version_bytes);
+                        ++(*nsuccess);
+                    }
+                    else {
+                        auto const min_version = db->get_earliest_block_id();
+                        MONAD_ASSERT(version < min_version);
+                        ++(*nfailed);
+                    }
+                    ++(*completions);
+                    delete state;
+                }
+            };
+
+            size_t enqueued{};
+            size_t completions{};
+
+            auto rnd = monad::thread_local_prng();
+            while (!g_done.load(std::memory_order_acquire)) {
+                auto const version = select_rand_version(ro_db, rnd, prng_bias);
+                auto const version_bytes =
+                    serialize_as_big_endian<sizeof(uint64_t)>(version);
+
+                for (size_t k = 0; k < num_nodes_per_version; ++k) {
+                    auto *state = new auto(monad::async::connect(
+                        monad::mpt::make_get_sender(
+                            async_ctx.get(),
+                            concat(
+                                NibblesView{prefix},
+                                NibblesView{to_key(
+                                    version * num_nodes_per_version + k)}),
+                            version),
+                        receiver_t{
+                            &completions,
+                            &ro_db,
+                            &nsuccess,
+                            &nfailed,
+                            version,
+                            version_bytes}));
+                    state->initiate();
+                    ++enqueued;
+                }
+                if (enqueued > num_async_reads_inflight) {
+                    constexpr size_t MAX_TRIEDB_ASYNC_POLLS{300'000};
+                    size_t poll_count{0};
+                    while (completions < enqueued &&
+                           poll_count < MAX_TRIEDB_ASYNC_POLLS) {
+                        ro_db.poll(true, std::numeric_limits<size_t>::max());
+                        ++poll_count;
+                    }
+                }
+            }
+            std::ostringstream oss;
+            oss << "Async reader thread (0x" << std::hex
+                << std::this_thread::get_id() << std::dec << ") finished"
                 << ". Did " << nsuccess << " successful and " << nfailed
                 << " failed reads" << std::endl;
             std::cout << oss.str();
@@ -348,8 +446,12 @@ int main(int argc, char *const argv[])
         std::cout << "Running read only DB stress test..." << std::endl;
 
         std::vector<std::thread> readers;
-        for (unsigned i = 0; i < num_reader_threads; ++i) {
-            readers.emplace_back(random_read);
+        for (unsigned i = 0; i < num_sync_reader_threads; ++i) {
+            readers.emplace_back(random_sync_read);
+        }
+
+        for (unsigned i = 0; i < num_async_reader_threads; ++i) {
+            readers.emplace_back(random_async_read);
         }
 
         for (unsigned i = 0; i < num_traverse_threads; ++i) {

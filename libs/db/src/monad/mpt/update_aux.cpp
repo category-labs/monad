@@ -198,12 +198,37 @@ void UpdateAuxImpl::update_history_length_metadata(
 void UpdateAuxImpl::rewind_to_match_offsets()
 {
     MONAD_ASSERT(is_on_disk());
-    // Free all chunks after fast_offset.id
+
     auto const fast_offset = db_metadata()->db_offsets.start_of_wip_offset_fast;
     MONAD_ASSERT(db_metadata()->at(fast_offset.id)->in_fast_list);
     auto const slow_offset = db_metadata()->db_offsets.start_of_wip_offset_slow;
     MONAD_ASSERT(db_metadata()->at(slow_offset.id)->in_slow_list);
 
+    // fast/slow list offsets should always be greater than last written root
+    // offset.
+    auto const last_written_offset =
+        db_metadata()
+            ->root_offsets[db_metadata()->get_max_version_in_history()];
+    if (last_written_offset != INVALID_OFFSET) {
+        if ((db_metadata()->at(last_written_offset.id)->in_fast_list &&
+             last_written_offset >= fast_offset)) {
+            std::stringstream ss;
+            ss << "Dectected corruption. Latest root offset "
+               << last_written_offset.raw() << " is ahead of fast list offset "
+               << fast_offset.raw();
+            throw std::runtime_error(ss.str());
+        }
+        if (db_metadata()->at(last_written_offset.id)->in_slow_list &&
+            last_written_offset >= slow_offset) {
+            std::stringstream ss;
+            ss << "Dectected corruption. Latest root offset "
+               << last_written_offset.raw() << " is ahead of slow list offset "
+               << slow_offset.raw();
+            throw std::runtime_error(ss.str());
+        }
+    }
+
+    // Free all chunks after fast_offset.id
     auto const *ci = db_metadata_[0]->at(fast_offset.id);
     while (ci != db_metadata_[0]->fast_list_end()) {
         auto const idx = db_metadata_[0]->fast_list.end;

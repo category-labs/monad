@@ -13,6 +13,7 @@
 #include <monad/io/ring.hpp>
 #include <monad/mpt/detail/db_metadata.hpp>
 #include <monad/mpt/trie.hpp>
+#include <monad/mpt/util.hpp>
 
 using namespace std::chrono_literals;
 
@@ -119,4 +120,59 @@ TEST(update_aux_test, set_io_reader_dirty)
     TestAux aux_reader(aux_writer);
     EXPECT_NO_THROW(aux_reader.set_io(&testio, AUX_TEST_HISTORY_LENGTH));
     EXPECT_TRUE(aux_reader.was_dirty) << "target codepath not exercised";
+}
+
+TEST(update_aux_test, root_offsets_fast_slow)
+{
+    monad::async::storage_pool pool(monad::async::use_anonymous_inode_tag{});
+    monad::io::Ring ring1;
+    monad::io::Ring ring2;
+    monad::io::Buffers testbuf =
+        monad::io::make_buffers_for_segregated_read_write(
+            ring1,
+            ring2,
+            2,
+            4,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+    monad::async::AsyncIO testio(pool, testbuf);
+    {
+        monad::mpt::UpdateAux aux_writer{};
+        aux_writer.set_io(&testio, AUX_TEST_HISTORY_LENGTH);
+
+        // Root offset at 0, fast list offset at 50. This is correct
+        auto const start_offset =
+            aux_writer.node_writer_fast->sender().offset();
+        (void)pool
+            .chunk(monad::async::storage_pool::chunk_type::seq, start_offset.id)
+            ->write_fd(50);
+        auto const end_offset =
+            aux_writer.node_writer_fast->sender().offset().add_to_offset(50);
+        aux_writer.append_root_offset(start_offset);
+        aux_writer.advance_db_offsets_to(
+            end_offset, aux_writer.node_writer_slow->sender().offset());
+    }
+    {
+        // verify set_io() succeeds
+        monad::mpt::UpdateAux aux_writer{};
+        aux_writer.set_io(&testio, AUX_TEST_HISTORY_LENGTH);
+        EXPECT_EQ(aux_writer.db_metadata()->get_max_version_in_history(), 0);
+
+        // Write version 1. However, append the new root offset without
+        // advancing fast list
+        auto const start_offset =
+            aux_writer.node_writer_fast->sender().offset();
+        (void)pool
+            .chunk(monad::async::storage_pool::chunk_type::seq, start_offset.id)
+            ->write_fd(100);
+        auto const end_offset =
+            aux_writer.node_writer_fast->sender().offset().add_to_offset(100);
+        aux_writer.append_root_offset(end_offset);
+    }
+    {
+        monad::mpt::UpdateAux aux_writer{};
+        EXPECT_THROW(
+            aux_writer.set_io(&testio, AUX_TEST_HISTORY_LENGTH),
+            std::runtime_error);
+    }
 }

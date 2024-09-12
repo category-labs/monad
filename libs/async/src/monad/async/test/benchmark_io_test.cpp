@@ -8,7 +8,7 @@
 #include <monad/core/small_prng.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
-#include <monad/mem/mem_map.hpp>
+#include <monad/mem/huge_mem.hpp>
 
 #include <CLI/CLI.hpp>
 
@@ -38,7 +38,7 @@
 
 - For the peach27 device (Micron Technology Inc 7450 PRO NVMe SSD):
 
-src/monad/async/test/benchmark_io_test --storage /dev/mapper/raid0-rawblk0 \
+benchmark_io_test --storage /dev/mapper/raid0-rawblk0 \
 --kernel-poll-thread 15 --ring-entries 256 --eager-completions
 
 Total ops/sec: 820388 mean latency: 1.4192e+06 min: 175299 max: 1.26249e+07
@@ -63,7 +63,7 @@ Eager completions is a little slower.
 
 - For the peach27 device (Micron Technology Inc 7450 PRO NVMe SSD):
 
-src/monad/async/test/benchmark_io_test --storage /dev/mapper/raid0-rawblk0 \
+benchmark_io_test --storage /dev/mapper/raid0-rawblk0 \
 --workload 0 --concurrent-io 16 --eager-completions
 
 Total ops/sec: 203233 mean latency: 78421.1 min: 58399 max: 515098
@@ -366,9 +366,9 @@ set it to the desired size beforehand).
                 uint32_t(io.chunk_count()));
             monad::small_prng rand;
             std::span<uint32_t> buffer;
-            monad::MemMap storage;
+            monad::HugeMem storage;
             auto make_storage = [&](size_t bytes) {
-                storage = monad::MemMap(bytes);
+                storage = monad::HugeMem{bytes};
                 buffer = {
                     (uint32_t *)storage.get_data(),
                     storage.get_size() / sizeof(uint32_t)};

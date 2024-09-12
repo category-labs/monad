@@ -134,8 +134,6 @@ add_library(
   "src/monad/mem/dynamic_allocator.hpp"
   "src/monad/mem/huge_mem.cpp"
   "src/monad/mem/huge_mem.hpp"
-  "src/monad/mem/mem_map.cpp"
-  "src/monad/mem/mem_map.hpp"
   # procfs
   "src/monad/procfs/statm.c"
   "src/monad/procfs/statm.h"

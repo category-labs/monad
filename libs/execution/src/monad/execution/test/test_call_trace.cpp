@@ -38,7 +38,7 @@ namespace
 TEST(CallFrame, to_json)
 {
     CallFrame call_frame{
-        .type = CallKind::CALL,
+        .type = CallType::CALL,
         .from = a,
         .to = std::make_optional(b),
         .value = 20'901u,
@@ -140,7 +140,7 @@ TEST(CallTrace, execute_success)
     ASSERT_TRUE(call_frames.size() == 1);
 
     CallFrame expected{
-        .type = CallKind::CALL,
+        .type = CallType::CALL,
         .flags = 0,
         .from = sender,
         .to = ADDR_B,
@@ -205,7 +205,7 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
     ASSERT_TRUE(call_frames.size() == 1);
 
     CallFrame expected{
-        .type = CallKind::CALL,
+        .type = CallType::CALL,
         .flags = 0,
         .from = sender,
         .to = ADDR_B,

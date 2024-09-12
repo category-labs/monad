@@ -8,20 +8,20 @@
 
 MONAD_NAMESPACE_BEGIN
 
-constexpr std::string_view call_kind_to_string(CallKind const &type)
+constexpr std::string_view call_kind_to_string(CallType const &type)
 {
     switch (type) {
-    case CallKind::CALL:
+    case CallType::CALL:
         return "CALL";
-    case CallKind::DELEGATECALL:
+    case CallType::DELEGATECALL:
         return "DELEGATECALL";
-    case CallKind::CALLCODE:
+    case CallType::CALLCODE:
         return "CALLCODE";
-    case CallKind::CREATE:
+    case CallType::CREATE:
         return "CREATE";
-    case CallKind::CREATE2:
+    case CallType::CREATE2:
         return "CREATE2";
-    case CallKind::SELFDESTRUCT:
+    case CallType::SELFDESTRUCT:
         return "SELFDESTRUCT";
     default:
         MONAD_ASSERT(false);
@@ -32,7 +32,7 @@ nlohmann::json to_json(CallFrame const &f)
 {
     nlohmann::json res{};
     res["type"] = call_kind_to_string(f.type);
-    if (MONAD_UNLIKELY(f.type == CallKind::CALL && f.flags == EVMC_STATIC)) {
+    if (MONAD_UNLIKELY(f.type == CallType::CALL && f.flags == EVMC_STATIC)) {
         res["type"] = "STATICCALL";
     }
     res["from"] = fmt::format(

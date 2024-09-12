@@ -469,7 +469,7 @@ TYPED_TEST(DBTest, commit_call_frames)
     TrieDb tdb{this->db};
 
     CallFrame const call_frame1{
-        .type = CallKind::CALL,
+        .type = CallType::CALL,
         .flags = 1, // static call
         .from = ADDR_A,
         .to = ADDR_B,
@@ -483,7 +483,7 @@ TYPED_TEST(DBTest, commit_call_frames)
     };
 
     CallFrame const call_frame2{
-        .type = CallKind::DELEGATECALL,
+        .type = CallType::DELEGATECALL,
         .flags = 0,
         .from = ADDR_B,
         .to = ADDR_A,
@@ -668,7 +668,7 @@ TYPED_TEST(DBTest, call_frames_refund)
 #ifdef ENABLE_CALL_TRACING
     ASSERT_EQ(actual_call_frames.size(), 1);
     CallFrame expected{
-        .type = CallKind::CALL,
+        .type = CallType::CALL,
         .flags = 0,
         .from = from,
         .to = ca,

@@ -38,7 +38,8 @@ Result<Receipt> execute_impl(
 
 template <evmc_revision rev>
 Result<Receipt> execute(
-    Chain const &, uint64_t i, Transaction const &, BlockHeader const &,
+    Chain const &, uint64_t i, Transaction const &,
+    std::optional<Address> const &, BlockHeader const &,
     BlockHashBuffer const &, BlockState &, boost::fibers::promise<void> &prev);
 
 MONAD_NAMESPACE_END

@@ -80,11 +80,33 @@ Result<std::vector<Receipt>> execute_block(
         }
     }
 
+    std::shared_ptr<std::optional<Address>[]> const senders{
+        new std::optional<Address>[block.transactions.size()]};
+
+    std::shared_ptr<boost::fibers::promise<void>[]> promises{
+        new boost::fibers::promise<void>[block.transactions.size()]};
+
+    for (unsigned i = 0; i < block.transactions.size(); ++i) {
+        priority_pool.submit(
+            0,
+            [i = i,
+             senders = senders,
+             promises = promises,
+             &transaction = block.transactions[i]] {
+                senders[i] = recover_sender(transaction);
+                promises[i].set_value();
+            });
+    }
+
+    for (unsigned i = 0; i < block.transactions.size(); ++i) {
+        promises[i].get_future().wait();
+    }
+
     std::shared_ptr<std::optional<Result<Receipt>>[]> const results{
         new std::optional<Result<Receipt>>[block.transactions.size()]};
 
-    std::shared_ptr<boost::fibers::promise<void>[]> const promises{
-        new boost::fibers::promise<void>[block.transactions.size() + 1]};
+    promises.reset(
+        new boost::fibers::promise<void>[block.transactions.size() + 1]);
     promises[0].set_value();
 
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
@@ -95,6 +117,7 @@ Result<std::vector<Receipt>> execute_block(
              results = results,
              promises = promises,
              &transaction = block.transactions[i],
+             &sender = senders[i],
              &header = block.header,
              &block_hash_buffer = block_hash_buffer,
              &block_state] {
@@ -102,6 +125,7 @@ Result<std::vector<Receipt>> execute_block(
                     chain,
                     i,
                     transaction,
+                    sender,
                     header,
                     block_hash_buffer,
                     block_state,

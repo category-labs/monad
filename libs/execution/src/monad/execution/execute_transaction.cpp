@@ -263,12 +263,11 @@ EXPLICIT_EVMC_REVISION(execute_impl);
 template <evmc_revision rev>
 Result<Receipt> execute(
     Chain const &chain, uint64_t const i, Transaction const &tx,
-    BlockHeader const &hdr, BlockHashBuffer const &block_hash_buffer,
-    BlockState &block_state, boost::fibers::promise<void> &prev)
+    std::optional<Address> const &sender, BlockHeader const &hdr,
+    BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
+    boost::fibers::promise<void> &prev)
 {
     TRACE_TXN_EVENT(StartTxn);
-
-    auto const sender = recover_sender(tx);
 
     if (MONAD_UNLIKELY(!sender.has_value())) {
         return TransactionError::MissingSender;

@@ -45,7 +45,8 @@ evmc::Result baseline_execute(
 
 #ifdef EVMONE_TRACING
     std::ostringstream trace_ostream;
-    vm->add_tracer(evmone::create_instruction_tracer(trace_ostream));
+    static_cast<evmone::VM *>(vm.get())->add_tracer(
+        evmone::create_instruction_tracer(trace_ostream));
 #endif
 
     auto const execution_state = std::make_unique<evmone::ExecutionState>(

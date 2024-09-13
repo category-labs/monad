@@ -68,6 +68,7 @@ CallTracer::CallTracer(Transaction const &tx)
     , depth_{0}
     , tx_(tx)
 {
+    frames_.reserve(128);
 }
 
 void CallTracer::on_enter(evmc_message const &msg)

@@ -4,7 +4,6 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/fmt/address_fmt.hpp>
 #include <monad/core/fmt/bytes_fmt.hpp>
-#include <monad/core/likely.h>
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/mpt/db.hpp>
@@ -23,7 +22,7 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 void on_commit(
     monad_statesync_server_context &ctx, StateDeltas const &state_deltas)
 {
-    MONAD_ASSERT(ctx.deleted.size() <= ctx.rw.get_history_length());
+    auto const history_length = ctx.rw.get_history_length();
     auto const n = ctx.rw.get_block_number();
 
     Deleted::accessor it;
@@ -58,8 +57,10 @@ void on_commit(
         }
     }
 
-    if (MONAD_LIKELY(n >= ctx.rw.get_history_length())) {
-        ctx.deleted.erase(n - ctx.rw.get_history_length());
+    uint64_t d = n;
+    while (ctx.deleted.size() > history_length) {
+        ctx.deleted.erase(d - history_length);
+        d--;
     }
 }
 

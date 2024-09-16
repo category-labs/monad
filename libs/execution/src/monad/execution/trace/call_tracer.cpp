@@ -56,7 +56,10 @@ void NoopCallTracer::on_exit(evmc::Result const &) {}
 
 void NoopCallTracer::on_self_destruct(Address const &, Address const &) {}
 
-void NoopCallTracer::on_receipt(Receipt const &) {}
+void NoopCallTracer::on_receipt(
+    Receipt const &, Transaction const &, Address const &)
+{
+}
 
 std::span<CallFrame const> NoopCallTracer::get_frames() const
 {
@@ -167,11 +170,30 @@ void CallTracer::on_self_destruct(Address const &from, Address const &to)
     });
 }
 
-void CallTracer::on_receipt(Receipt const &receipt)
+void CallTracer::on_receipt(
+    Receipt const &receipt, Transaction const &tx, Address const &sender)
 {
-    MONAD_ASSERT(!frames_.empty());
-    MONAD_ASSERT(last_.empty());
-    frames_.front().gas_used = receipt.gas_used;
+    // If we fail to validate, we still should generate a frame
+    // This is because of reserve_balance (not every valid monad tx is a valid
+    // eth tx @alee)
+    if (MONAD_UNLIKELY(frames_.empty())) {
+        frames_.emplace_back(CallFrame{
+            .type = tx.to.has_value() ? CallType::CALL : CallType::CREATE,
+            .flags = 0,
+            .from = sender,
+            .to = tx.to,
+            .value = tx.value,
+            .gas = tx.gas_limit,
+            .gas_used = receipt.gas_used,
+            .input = tx.data,
+            .output = {},
+            .status = EVMC_REJECTED,
+            .depth = 0});
+    }
+    else {
+        MONAD_ASSERT(last_.empty());
+        frames_.front().gas_used = receipt.gas_used;
+    }
 }
 
 std::span<CallFrame const> CallTracer::get_frames() const

@@ -296,6 +296,24 @@ TEST(ExecuteTransaction, insufficient_execution_balance)
         ASSERT_TRUE(acct.has_value());
         EXPECT_EQ(acct->nonce, 26);
         EXPECT_EQ(acct->balance, 55'999'999'999'947'000);
+
+#ifdef ENABLE_CALL_TRACING
+        auto const &frames = result.value().call_frames;
+        ASSERT_EQ(frames.size(), 1);
+        CallFrame expected{
+            .type = CallType::CREATE,
+            .flags = 0,
+            .from = from,
+            .to = std::nullopt,
+            .value = tx.value,
+            .gas = tx.gas_limit,
+            .gas_used = 53'000,
+            .input = {},
+            .output = {},
+            .status = EVMC_REJECTED,
+            .depth = 0};
+        EXPECT_EQ(frames[0], expected);
+#endif
     }
 }
 

@@ -274,7 +274,7 @@ Result<ExecutionResult> execute_impl(
                 hdr.base_fee_per_gas.value_or(0),
                 result.value(),
                 hdr.beneficiary);
-            call_tracer.on_receipt(receipt);
+            call_tracer.on_receipt(receipt, tx, sender);
             block_state.merge(state);
 
             auto const frames = call_tracer.get_frames();
@@ -309,7 +309,7 @@ Result<ExecutionResult> execute_impl(
             hdr.base_fee_per_gas.value_or(0),
             result.value(),
             hdr.beneficiary);
-        call_tracer.on_receipt(receipt);
+        call_tracer.on_receipt(receipt, tx, sender);
         block_state.merge(state);
 
         auto const frames = call_tracer.get_frames();

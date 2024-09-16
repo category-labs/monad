@@ -22,7 +22,8 @@ struct CallTracerBase
     virtual void on_enter(evmc_message const &) = 0;
     virtual void on_exit(evmc::Result const &) = 0;
     virtual void on_self_destruct(Address const &from, Address const &to) = 0;
-    virtual void on_receipt(Receipt const &) = 0;
+    virtual void
+    on_receipt(Receipt const &, Transaction const &, Address const &sender) = 0;
     virtual std::span<CallFrame const> get_frames() const = 0;
 };
 
@@ -31,7 +32,8 @@ struct NoopCallTracer final : public CallTracerBase
     virtual void on_enter(evmc_message const &) override;
     virtual void on_exit(evmc::Result const &) override;
     virtual void on_self_destruct(Address const &, Address const &) override;
-    virtual void on_receipt(Receipt const &) override;
+    virtual void on_receipt(
+        Receipt const &, Transaction const &, Address const &sender) override;
     virtual std::span<CallFrame const> get_frames() const override;
 };
 
@@ -52,7 +54,8 @@ public:
     virtual void on_exit(evmc::Result const &) override;
     virtual void
     on_self_destruct(Address const &from, Address const &to) override;
-    virtual void on_receipt(Receipt const &) override;
+    virtual void on_receipt(
+        Receipt const &, Transaction const &, Address const &sender) override;
     virtual std::span<CallFrame const> get_frames() const override;
 
     nlohmann::json to_json() const;

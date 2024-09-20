@@ -67,8 +67,8 @@ int main(int argc, char *const argv[])
     double prng_bias = 1.66;
     size_t num_nodes_per_version = 1;
     bool enable_compaction = true;
-    int64_t storage_size_gb = 32;
     uint32_t timeout_seconds = std::numeric_limits<uint32_t>::max();
+    std::vector<std::filesystem::path> dbname_paths;
     CLI::App cli(
         "Tool for stress testing concurrent RO DB instances",
         "read_only_db_stress_test");
@@ -100,10 +100,6 @@ int main(int argc, char *const argv[])
             enable_compaction,
             "Enable compaction when writing new DB versions");
         cli.add_option(
-            "--storage-size",
-            storage_size_gb,
-            "Size the database can grow to (GB)");
-        cli.add_option(
             "--num-nodes-per-version",
             num_nodes_per_version,
             "Number of nodes to upsert per version");
@@ -111,6 +107,11 @@ int main(int argc, char *const argv[])
             "--timeout",
             timeout_seconds,
             "Teardown the stress test after N seconds");
+        cli.add_option(
+               "--db",
+               dbname_paths,
+               "A comma-separated list of previously created database paths")
+            ->required();
         cli.parse(argc, argv);
 
         struct sigaction sig;
@@ -118,18 +119,6 @@ int main(int argc, char *const argv[])
         sig.sa_flags = 0;
         sigaction(SIGINT, &sig, nullptr);
         sigaction(SIGALRM, &sig, nullptr);
-
-        auto tempdir = (MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-                        "read_only_db_stress_test_XXXXXX")
-                           .string();
-        if (::mkdtemp(tempdir.data()) == nullptr) {
-            std::cerr << "FATAL: Could not create temp directory: "
-                      << strerror(errno) << "\n\n";
-            return 1;
-        }
-        std::filesystem::path const dbname{
-            std::filesystem::path(tempdir) / "db"};
-        std::cout << "Database path is " << dbname << "\n\n";
 
         auto const prefix = 0x00_hex;
 
@@ -159,7 +148,8 @@ int main(int argc, char *const argv[])
         };
 
         auto random_sync_read = [&]() {
-            ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+            ReadOnlyOnDiskDbConfig const ro_config{
+                .dbname_paths = {dbname_paths}};
             Db ro_db{ro_config};
 
             while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID &&
@@ -206,7 +196,8 @@ int main(int argc, char *const argv[])
         };
 
         auto random_async_read = [&]() {
-            ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+            ReadOnlyOnDiskDbConfig const ro_config{
+                .dbname_paths = {dbname_paths}};
             Db ro_db{ro_config};
             auto async_ctx = async_context_create(ro_db);
 
@@ -294,7 +285,8 @@ int main(int argc, char *const argv[])
         };
 
         auto random_traverse = [&]() {
-            ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+            ReadOnlyOnDiskDbConfig const ro_config{
+                .dbname_paths = {dbname_paths}};
             Db ro_db{ro_config};
 
             unsigned nsuccess = 0;
@@ -408,7 +400,7 @@ int main(int argc, char *const argv[])
             unsigned nfailed = 0;
             while (!g_done.load(std::memory_order_acquire)) {
                 ReadOnlyOnDiskDbConfig const ro_config{
-                    .dbname_paths = {dbname}};
+                    .dbname_paths = dbname_paths};
                 Db ro_db{ro_config};
                 auto const version = ro_db.get_earliest_block_id() + 1;
                 auto const value =
@@ -438,9 +430,7 @@ int main(int argc, char *const argv[])
         uint64_t version = 0;
         StateMachineAlwaysMerkle machine{};
         OnDiskDbConfig const config{
-            .compaction = enable_compaction,
-            .dbname_paths = {dbname},
-            .file_size_db = storage_size_gb};
+            .compaction = enable_compaction, .dbname_paths = {dbname_paths}};
         Db db{machine, config};
 
         std::cout << "Running read only DB stress test..." << std::endl;

@@ -7,13 +7,33 @@ project(monad_core LANGUAGES C CXX ASM)
 
 option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(MONAD_CORE_FORCE_DEBUG_ASSERT
+       "Enable MONAD_DEBUG_ASSERT in any build mode" OFF)
+
 # ##############################################################################
 # deps
 # ##############################################################################
 
 include("cmake/find_our_dependency.cmake")
 
-find_package(Boost REQUIRED COMPONENTS context fiber stacktrace_backtrace)
+find_package(
+  Boost REQUIRED
+  COMPONENTS context fiber stacktrace_basic
+  OPTIONAL_COMPONENTS stacktrace_addr2line stacktrace_backtrace)
+
+if(TARGET Boost::stacktrace_backtrace)
+  set(BOOST_STACKTRACE_TARGET Boost::stacktrace_backtrace)
+  set(BOOST_STACKTRACE_OPTIONS BOOST_STACKTRACE_USE_BACKTRACE=1)
+elseif(TARGET Boost::stacktrace_addr2line)
+  set(BOOST_STACKTRACE_TARGET Boost::stacktrace_addr2line)
+  set(BOOST_STACKTRACE_OPTIONS BOOST_STACKTRACE_USE_ADDR2LINE=1)
+  message(
+    WARNING "using suboptimal backtrace library ${BOOST_STACKTRACE_TARGET}")
+else()
+  set(BOOST_STACKTRACE_TARGET Boost::stacktrace_basic)
+  message(
+    WARNING "using suboptimal backtrace library ${BOOST_STACKTRACE_TARGET}")
+endif()
 
 function(check_if_boost_fiber_needs_ucontext_macro)
   set(prog
@@ -63,14 +83,30 @@ endif()
 # libs
 # ##############################################################################
 
+# monad_core_c is a library containing source code that is compiled in C23 mode
+# and contains no C++ source files; it may be linked by downstream libraries
+# which only need C and do not want the C++ runtime as a dependency
+add_library(
+  monad_core_c OBJECT
+  "src/monad/core/assert.c"
+  "src/monad/core/assert.h")
+
+if(MONAD_CORE_FORCE_DEBUG_ASSERT)
+  target_compile_definitions(monad_core_c
+                             PUBLIC MONAD_CORE_FORCE_DEBUG_ASSERT=1)
+endif()
+
+target_compile_features(monad_core_c PUBLIC c_std_23)
+target_compile_definitions(monad_core_c PUBLIC _GNU_SOURCE)
+target_compile_options(monad_core_c PRIVATE -Wall -Werror -Wextra)
+target_include_directories(monad_core_c PUBLIC "${PROJECT_SOURCE_DIR}/src")
+
 add_library(
   monad_core STATIC
   # config
   "src/monad/config.hpp"
   # core
   "src/monad/core/array.hpp"
-  "src/monad/core/assert.c"
-  "src/monad/core/assert.h"
   "src/monad/core/backtrace.cpp"
   "src/monad/core/backtrace.hpp"
   "src/monad/core/basic_formatter.hpp"
@@ -149,10 +185,21 @@ endif()
 
 target_include_directories(monad_core PUBLIC "src")
 monad_compile_options(monad_core)
-target_compile_definitions(monad_core PUBLIC "BOOST_STACKTRACE_LINK=1")
-target_compile_definitions(monad_core PUBLIC "_GNU_SOURCE")
-target_compile_definitions(monad_core PUBLIC "BOOST_STACKTRACE_USE_BACKTRACE=1")
-target_link_libraries(monad_core PUBLIC Boost::stacktrace_backtrace)
+
+# The configuration that needs to be added for the Boost stacktrace library is
+# modeled as an interface target, so it can be linked to both `monad_core` and
+# `monad_core_crt`
+add_library(monad_core_stacktrace_options INTERFACE)
+target_compile_definitions(monad_core_stacktrace_options
+                           INTERFACE "BOOST_STACKTRACE_LINK=1")
+target_compile_definitions(monad_core_stacktrace_options
+                           INTERFACE ${BOOST_STACKTRACE_OPTIONS})
+target_link_libraries(monad_core_stacktrace_options
+                      INTERFACE ${BOOST_STACKTRACE_TARGET})
+
+target_link_libraries(monad_core PUBLIC monad_core_c)
+target_link_libraries(monad_core PRIVATE monad_core_stacktrace_options)
+
 target_link_libraries(monad_core PUBLIC openssl_sha3 Boost::fiber TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC ethash::keccak)
@@ -173,6 +220,39 @@ add_library(
   "src/monad/rlp/encode_disas.cpp")
 monad_compile_options(monad_core_disas)
 target_link_libraries(monad_core_disas PUBLIC monad_core)
+
+# Minimal "runtime" library needed to support pure C binaries. This contains
+# functions that have C linkage and follow the C ABI but are implemented in C++.
+# This is a dynamic library that statically links to the C++ runtime libraries
+# and hides all symbols except those the `monad_` prefix, so it cannot relocate
+# against any other dynamically loaded C++ runtime. All source files are
+# recompiled rather than some other kind of reuse mechanism because the code
+# generation must enable position independent code.
+add_library(
+  monad_core_crt SHARED
+  # config
+  "src/monad/config.hpp"
+  # core
+  "src/monad/core/backtrace.cpp"
+  "src/monad/core/backtrace.hpp")
+set_target_properties(monad_core_crt PROPERTIES
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON)
+target_include_directories(monad_core_crt PUBLIC "src")
+monad_compile_options(monad_core_crt)
+target_link_libraries(monad_core_crt PRIVATE monad_core_stacktrace_options)
+if(NOT APPLE)
+  if("${CMAKE_CXX_FLAGS}" MATCHES ".*-fsanitize=.*" AND
+     CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    target_compile_options(monad_core_crt PUBLIC "-fno-sanitize=function,vptr")
+  endif()
+  target_link_options(monad_core_crt PRIVATE -static-libstdc++)
+  target_link_options(
+    monad_core_crt
+    PRIVATE
+    "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/src/monad/core/core_crt.sym"
+  )
+endif()
 
 # ##############################################################################
 # tests

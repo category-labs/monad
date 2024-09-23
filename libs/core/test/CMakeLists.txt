@@ -17,3 +17,8 @@ monad_add_test(literal_test "literal_test.cpp")
 monad_add_test(priority_pool_test "priority_pool_test.cpp")
 set_target_properties(priority_pool_test PROPERTIES RUN_SERIAL ON)
 monad_add_test(unordered_map_test "unordered_map.cpp")
+
+# This target checks that we can compile a C program without any (direct)
+# C++ dependencies
+add_executable(check_c_only check_c_only.c)
+target_link_libraries(check_c_only PRIVATE monad_core_c monad_core_crt)

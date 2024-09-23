@@ -180,7 +180,8 @@ stack_backtrace::ptr stack_backtrace::deserialize(
         serialised.size()));
 }
 
-extern "C" void monad_stack_backtrace_capture_and_print(
+extern "C" __attribute__((visibility("default"))) void
+monad_stack_backtrace_capture_and_print(
     char *buffer, size_t size, int fd, unsigned indent,
     bool print_async_unsafe_info)
 {

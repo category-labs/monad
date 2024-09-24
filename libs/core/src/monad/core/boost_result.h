@@ -193,6 +193,8 @@ DEALINGS IN THE SOFTWARE.
 #ifndef BOOST_OUTCOME_C_WEAK
     #ifdef _MSC_VER
         #define BOOST_OUTCOME_C_WEAK inline
+    #elif defined(__APPLE__)
+        #define BOOST_OUTCOME_C_WEAK __attribute__((weak, visibility("default")))
     #else
         #define BOOST_OUTCOME_C_WEAK __attribute__((weak))
     #endif

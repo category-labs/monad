@@ -133,6 +133,7 @@ add_library(
   # util
   "src/monad/util/stopwatch.hpp")
 
+# cmake-format: off
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   # Append Linux-specific implementation files
   target_sources(
@@ -154,6 +155,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     "src/monad/procfs/statm.c"
     "src/monad/procfs/statm.h")
 endif()
+# cmake-format: on
 
 target_include_directories(monad_core PUBLIC "src")
 monad_compile_options(monad_core)

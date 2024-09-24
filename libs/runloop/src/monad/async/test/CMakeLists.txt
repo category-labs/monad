@@ -1,5 +1,6 @@
 function(monad_test target)
   add_executable(monad_async_c_${target} ${ARGN})
+  monad_compile_options(monad_async_c_${target})
   target_link_libraries(monad_async_c_${target} PRIVATE monad_async_c GTest::GTest GTest::Main)
   target_link_options(monad_async_c_${target} PRIVATE -rdynamic)
   gtest_discover_tests(

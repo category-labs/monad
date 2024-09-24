@@ -11,6 +11,8 @@
 
 #include <monad-boost/context/fcontext.h>
 
+#include <gdb/linux-thread-db-user-threads.h>
+
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <unistd.h>
@@ -94,9 +96,6 @@ monad_context_switcher_fcontext_destroy(monad_context_switcher switcher)
         abort();
     }
     assert(!p->within_resume_many);
-#if MONAD_CONTEXT_TRACK_OWNERSHIP
-    mtx_destroy(&p->head.contexts_list.lock);
-#endif
     free(p);
     return monad_c_make_success(0);
 }
@@ -120,11 +119,6 @@ monad_context_switcher_fcontext_create(monad_context_switcher *switcher)
         .resume = monad_context_fcontext_resume,
         .resume_many = monad_context_fcontext_resume_many};
     memcpy(&p->head, &to_copy, sizeof(to_copy));
-#if MONAD_CONTEXT_TRACK_OWNERSHIP
-    if (thrd_success != mtx_init(&p->head.contexts_list.lock, mtx_plain)) {
-        abort();
-    }
-#endif
     p->owning_thread = thrd_current();
     atomic_store_explicit(
         &p->fake_main_context.head.switcher, &p->head, memory_order_release);
@@ -273,10 +267,17 @@ monad_context_fcontext_task_runner(struct monad_transfer_t creation_transfer)
             abort();
         }
 #endif
+        userspace_thread_db_userspace_thread_info_t *ti =
+            get_thread_db_userspace_thread_info(~context->head.thread_db_slot);
+        ti->startfunc = (void (*)(void))task->user_code;
+        set_thread_db_userspace_thread_running_nonlocking(
+            ~context->head.thread_db_slot, gettid());
         // Execute the task
         context->head.is_running = true;
         task->result = task->user_code(task);
         context->head.is_running = false;
+        set_thread_db_userspace_thread_exited_nonlocking(
+            ~context->head.thread_db_slot);
 #if MONAD_CONTEXT_PRINTING
         printf(
             "*** %d: Execution context %p returns to base task runner, task "
@@ -379,13 +380,14 @@ static monad_c_result monad_context_fcontext_create(
         nullptr,
         nullptr);
     switcher->fake_main_context.fctx = old_fake_main_context_fctx;
-#if MONAD_CONTEXT_TRACK_OWNERSHIP
-    p->head.stack_top = stack_base;
-    p->head.stack_bottom = stack_front;
-#endif
     *context = (monad_context)p;
     atomic_store_explicit(&p->head.switcher, nullptr, memory_order_release);
     monad_context_reparent_switcher(*context, switcher_);
+    userspace_thread_db_userspace_thread_info_t *ti =
+        get_thread_db_userspace_thread_info(~(*context)->thread_db_slot);
+    ti->stack_sp = stack_base;
+    ti->stack_size = stack_size;
+    LINUX_THREAD_DB_USER_THREADS_SHUTUP_TSAN_LOCK_UNLOCK;
     return monad_c_make_success(0);
 }
 
@@ -429,9 +431,14 @@ static void monad_context_fcontext_suspend_and_call_resume(
 {
     struct monad_context_fcontext *p =
         (struct monad_context_fcontext *)current_context;
-#if MONAD_CONTEXT_TRACK_OWNERSHIP
-    p->head.stack_current = __builtin_frame_address(0);
-#endif
+    if (current_context->is_running && current_context->thread_db_slot != 0) {
+        userspace_thread_db_userspace_thread_info_t *ti =
+            get_thread_db_userspace_thread_info(
+                ~current_context->thread_db_slot);
+        USERSPACE_THREAD_SET_FROM_HERE(ti);
+        set_thread_db_userspace_thread_suspended_nonlocking(
+            ~current_context->thread_db_slot, ti);
+    }
     if (new_context == nullptr) {
         monad_context_fcontext_resume(
             current_context,
@@ -515,6 +522,13 @@ static void monad_context_fcontext_resume(
     struct monad_context_fcontext *source_context =
         (struct monad_context_fcontext *)transfer.data;
     source_context->fctx = transfer.fctx;
+    if (current_context->is_running &&
+        &((struct monad_context_switcher_fcontext *)atomic_load_explicit(
+              &current_context->switcher, memory_order_acquire))
+                ->fake_main_context.head != current_context) {
+        set_thread_db_userspace_thread_running_nonlocking(
+            ~current_context->thread_db_slot, gettid());
+    }
 #if MONAD_CONTEXT_PRINTING
     {
         printf(

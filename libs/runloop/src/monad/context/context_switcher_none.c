@@ -2,10 +2,73 @@
 
 #include <monad/linked_list_impl_common.h>
 
+#include <gdb/linux-thread-db-user-threads.h>
+
+#include <assert.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <threads.h>
+
+LINUX_THREAD_DB_USER_THREADS_ATOMIC(thread_db_userspace_threads_t *)
+_thread_db_userspace_threads[4];
+
+static void __attribute__((constructor)) _thread_db_userspace_threads_init()
+{
+    assert(_thread_db_userspace_threads[0] == nullptr);
+    size_t bytes = 4096; // enough for 63 items
+    void *mem = malloc(bytes);
+    if (mem != nullptr) {
+        expand_thread_db_userspace_threads(&mem, &bytes);
+    }
+    else {
+        // fprintf() may not be available yet, but abort() will be
+        abort();
+    }
+}
+
+static void _thread_db_userspace_threads_do_free(
+    LINUX_THREAD_DB_USER_THREADS_ATOMIC(thread_db_userspace_threads_t *) *
+    v_addr)
+{
+    thread_db_userspace_threads_t *v =
+        LINUX_THREAD_DB_USER_THREADS_ATOMIC_LOAD(*v_addr);
+    if (v != nullptr) {
+        LINUX_THREAD_DB_USER_THREADS_ATOMIC_STORE(*v_addr, nullptr);
+        free(v);
+    }
+}
+
+static void __attribute__((destructor)) _thread_db_userspace_threads_free()
+{
+    _thread_db_userspace_threads_do_free(&_thread_db_userspace_threads[3]);
+    _thread_db_userspace_threads_do_free(&_thread_db_userspace_threads[2]);
+    _thread_db_userspace_threads_do_free(&_thread_db_userspace_threads[1]);
+    _thread_db_userspace_threads_do_free(&_thread_db_userspace_threads[0]);
+}
+
+static size_t
+_thread_db_userspace_thread_allocate_thread_db_userspace_thread_index()
+{
+    size_t thread_db_slot = allocate_thread_db_userspace_thread_index();
+    while ((size_t)-1 == thread_db_slot) {
+        thread_db_userspace_threads_t *current =
+            LINUX_THREAD_DB_USER_THREADS_ATOMIC_LOAD(
+                _thread_db_userspace_threads[0]);
+        size_t bytes = current->total_bytes << 1;
+        void *mem = malloc(bytes);
+        if (mem == nullptr) {
+            fprintf(stderr, "FATAL: Failed to expand thread_db storage\n");
+            abort();
+        }
+        expand_thread_db_userspace_threads(&mem, &bytes);
+        if (mem != nullptr) {
+            free(mem);
+        }
+        thread_db_slot = allocate_thread_db_userspace_thread_index();
+    }
+    return thread_db_slot;
+}
 
 monad_context_switcher_impl const monad_context_switcher_none = {
     .create = monad_context_switcher_none_create};
@@ -39,9 +102,6 @@ monad_context_switcher_none_destroy(monad_context_switcher p)
             contexts);
         abort();
     }
-#if MONAD_CONTEXT_TRACK_OWNERSHIP
-    mtx_destroy(&p->contexts_list.lock);
-#endif
     return monad_c_make_success(0);
 }
 
@@ -54,9 +114,6 @@ struct monad_context_none
 static struct monad_context_switcher_none
 {
     struct monad_context_switcher_head head;
-#if MONAD_CONTEXT_TRACK_OWNERSHIP
-    bool mutex_initialised;
-#endif
 } context_switcher_none_instance = {
     {.contexts = 0,
      .self_destroy = monad_context_switcher_none_destroy,
@@ -64,12 +121,7 @@ static struct monad_context_switcher_none
      .destroy = monad_context_none_destroy,
      .suspend_and_call_resume = monad_context_none_suspend_and_call_resume,
      .resume = monad_context_none_resume,
-     .resume_many = monad_context_none_resume_many}
-#if MONAD_CONTEXT_TRACK_OWNERSHIP
-    ,
-    .mutex_initialised = false
-#endif
-};
+     .resume_many = monad_context_none_resume_many}};
 
 static thread_local size_t context_switcher_none_instance_within_resume_many;
 
@@ -77,16 +129,6 @@ monad_c_result
 monad_context_switcher_none_create(monad_context_switcher *switcher)
 {
     *switcher = &context_switcher_none_instance.head;
-#if MONAD_CONTEXT_TRACK_OWNERSHIP
-    if (!context_switcher_none_instance.mutex_initialised) {
-        if (thrd_success !=
-            mtx_init(
-                &context_switcher_none_instance.head.contexts_list.lock,
-                mtx_plain)) {
-            abort();
-        }
-    }
-#endif
     return monad_c_make_success(0);
 }
 
@@ -178,30 +220,6 @@ extern void monad_context_reparent_switcher(
     }
     if (!(current_switcher == monad_context_switcher_none_instance() &&
           new_switcher == monad_context_switcher_none_instance())) {
-#if MONAD_CONTEXT_TRACK_OWNERSHIP
-        if (current_switcher != nullptr) {
-            mtx_lock(&current_switcher->contexts_list.lock);
-            LIST_REMOVE_ATOMIC_COUNTER(
-                current_switcher->contexts_list,
-                context,
-                &current_switcher->contexts);
-            mtx_unlock(&current_switcher->contexts_list.lock);
-            assert(
-                current_switcher ==
-                atomic_load_explicit(&context->switcher, memory_order_acquire));
-        }
-        atomic_store_explicit(
-            &context->switcher, new_switcher, memory_order_release);
-        if (new_switcher != nullptr) {
-            mtx_lock(&new_switcher->contexts_list.lock);
-            LIST_APPEND_ATOMIC_COUNTER(
-                new_switcher->contexts_list, context, &new_switcher->contexts);
-            mtx_unlock(&new_switcher->contexts_list.lock);
-            assert(
-                new_switcher ==
-                atomic_load_explicit(&context->switcher, memory_order_acquire));
-        }
-#else
         if (current_switcher != nullptr) {
             atomic_fetch_sub_explicit(
                 &current_switcher->contexts, 1, memory_order_relaxed);
@@ -212,6 +230,20 @@ extern void monad_context_reparent_switcher(
             atomic_fetch_add_explicit(
                 &new_switcher->contexts, 1, memory_order_relaxed);
         }
-#endif
+        if (current_switcher == nullptr &&
+            new_switcher != monad_context_switcher_none_instance()) {
+            size_t const thread_db_slot =
+                ~_thread_db_userspace_thread_allocate_thread_db_userspace_thread_index();
+            memcpy(
+                (size_t *)&context->thread_db_slot,
+                &thread_db_slot,
+                sizeof(size_t));
+        }
+        else if (
+            current_switcher != monad_context_switcher_none_instance() &&
+            new_switcher == nullptr) {
+            deallocate_thread_db_userspace_thread_index(
+                ~context->thread_db_slot);
+        }
     }
 }

@@ -525,7 +525,6 @@ TEST(file_io, benchmark)
             };
 
             auto fh = make_file(task, nullptr, tempfilepath, how);
-            monad_async_task_registered_io_buffer buffer;
             std::vector<std::pair<
                 monad_async_io_status,
                 monad_async_task_registered_io_buffer>>

@@ -22,8 +22,12 @@ jobs:
           permissions: >-
             {"contents": "read"}
 
+      - name: Tell git to do submodules in parallel
+        run: |
+           git config --global submodule.fetchJobs 8
+
       - name: Checkout repo and submodules
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
           token: ${{ steps.generate_token.outputs.token }}

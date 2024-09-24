@@ -1,8 +1,0 @@
-#if defined(__linux__) && defined(__ELF__)
-.section .note.GNU-stack,"",%progbits
-#endif
-
-.pushsection ".debug_gdb_scripts", "MS",@progbits,1
-.byte 1 /* Python */
-.asciz "@GDB_PRETTY_PRINTER_PATH@"
-.popsection

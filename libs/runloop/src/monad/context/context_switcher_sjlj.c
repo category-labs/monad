@@ -7,6 +7,8 @@
 
 #include "monad/context/context_switcher.h"
 
+#include <gdb/linux-thread-db-user-threads.h>
+
 #include <assert.h>
 #include <errno.h>
 #include <setjmp.h>
@@ -99,9 +101,6 @@ monad_context_switcher_sjlj_destroy(monad_context_switcher switcher)
         abort();
     }
     assert(!p->within_resume_many);
-#if MONAD_CONTEXT_TRACK_OWNERSHIP
-    mtx_destroy(&p->head.contexts_list.lock);
-#endif
     free(p);
     return monad_c_make_success(0);
 }
@@ -124,11 +123,6 @@ monad_context_switcher_sjlj_create(monad_context_switcher *switcher)
         .resume = monad_context_sjlj_resume,
         .resume_many = monad_context_sjlj_resume_many};
     memcpy(&p->head, &to_copy, sizeof(to_copy));
-#if MONAD_CONTEXT_TRACK_OWNERSHIP
-    if (thrd_success != mtx_init(&p->head.contexts_list.lock, mtx_plain)) {
-        abort();
-    }
-#endif
     p->owning_thread = thrd_current();
     atomic_store_explicit(
         &p->resume_many_context.head.switcher, &p->head, memory_order_release);
@@ -256,10 +250,17 @@ static void monad_context_sjlj_task_runner(
             abort();
         }
 #endif
+        userspace_thread_db_userspace_thread_info_t *ti =
+            get_thread_db_userspace_thread_info(~context->head.thread_db_slot);
+        ti->startfunc = (void (*)(void))task->user_code;
+        set_thread_db_userspace_thread_running_nonlocking(
+            ~context->head.thread_db_slot, gettid());
         // Execute the task
         context->head.is_running = true;
         task->result = task->user_code(task);
         context->head.is_running = false;
+        set_thread_db_userspace_thread_exited_nonlocking(
+            ~context->head.thread_db_slot);
 #if MONAD_CONTEXT_PRINTING
         printf(
             "*** %d: Execution context %p returns to base task runner, task "
@@ -375,13 +376,14 @@ static monad_c_result monad_context_sjlj_create(
     if (switcher->within_resume_many-- > 0) {
         memcpy(&switcher->resume_many_context.buf, &old_buf, sizeof(old_buf));
     }
-#if MONAD_CONTEXT_TRACK_OWNERSHIP
-    p->head.stack_top = stack_base;
-    p->head.stack_bottom = stack_front;
-#endif
     *context = (monad_context)p;
     atomic_store_explicit(&p->head.switcher, nullptr, memory_order_release);
     monad_context_reparent_switcher(*context, switcher_);
+    userspace_thread_db_userspace_thread_info_t *ti =
+        get_thread_db_userspace_thread_info(~(*context)->thread_db_slot);
+    ti->stack_sp = stack_base;
+    ti->stack_size = stack_size;
+    LINUX_THREAD_DB_USER_THREADS_SHUTUP_TSAN_LOCK_UNLOCK;
     return monad_c_make_success(0);
 }
 
@@ -425,9 +427,6 @@ static void monad_context_sjlj_suspend_and_call_resume(
     monad_context current_context, monad_context new_context)
 {
     struct monad_context_sjlj *p = (struct monad_context_sjlj *)current_context;
-#if MONAD_CONTEXT_TRACK_OWNERSHIP
-    p->head.stack_current = __builtin_frame_address(0);
-#endif
     int ret = setjmp(p->buf);
     if (ret != 0) {
         current_context->is_suspended = false;
@@ -438,6 +437,10 @@ static void monad_context_sjlj_suspend_and_call_resume(
             &p->head.sanitizer.bottom,
             &p->head.sanitizer.size);
         assert((int)((uintptr_t)p ^ ((uintptr_t)p >> 32)) == ret);
+        if (current_context->is_running) {
+            set_thread_db_userspace_thread_running_nonlocking(
+                ~current_context->thread_db_slot, gettid());
+        }
         return;
     }
     // Set last suspended
@@ -445,6 +448,14 @@ static void monad_context_sjlj_suspend_and_call_resume(
         (struct monad_context_switcher_sjlj *)atomic_load_explicit(
             &p->head.switcher, memory_order_acquire);
     switcher->last_suspended = p;
+    if (current_context->is_running && current_context->thread_db_slot != 0) {
+        userspace_thread_db_userspace_thread_info_t *ti =
+            get_thread_db_userspace_thread_info(
+                ~current_context->thread_db_slot);
+        USERSPACE_THREAD_SET_FROM_HERE(ti);
+        set_thread_db_userspace_thread_suspended_nonlocking(
+            ~current_context->thread_db_slot, ti);
+    }
     if (new_context != nullptr) {
         // Call resume on the destination switcher
         atomic_load_explicit(&new_context->switcher, memory_order_acquire)

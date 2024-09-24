@@ -8,6 +8,9 @@ find_program(RUSTC_PROGRAM rustc)
 
 add_subdirectory("third_party/monad-boost-context")
 
+add_library(monad_context_c-custom-binutils-gdb INTERFACE IMPORTED)
+target_include_directories(monad_context_c-custom-binutils-gdb INTERFACE "third_party/binutils-gdb")
+
 set(monad_context_INCLUDES
   "src/monad/context/context_switcher.h"
 )
@@ -16,12 +19,39 @@ add_library(monad_context_c STATIC
   "src/monad/context/context_switcher_fcontext.c"
   "src/monad/context/context_switcher_sjlj.c"
 )
-target_compile_features(monad_context_c PUBLIC c_std_23 cxx_std_20)
-target_compile_options(monad_context_c PRIVATE -Wall -Wextra -Wconversion -Wpedantic -Werror)
-target_compile_definitions(monad_context_c PRIVATE _GNU_SOURCE=1 MONAD_CONTEXT_SOURCE=1)
+monad_compile_options(monad_context_c)
+target_compile_options(monad_context_c PRIVATE -Wpedantic)
+target_compile_definitions(monad_context_c PRIVATE MONAD_CONTEXT_SOURCE=1)
 target_include_directories(monad_context_c PUBLIC "src")
-target_link_libraries(monad_context_c PUBLIC monad_boost_context)
-monad_target_gdb_pretty_printer(monad_context_c monad_context_c_pretty_printer "src/monad/context/gdb_pretty_printers.py")
+target_link_libraries(monad_context_c PRIVATE monad_boost_context monad_context_c-custom-binutils-gdb)
+
+# This MUST be a shared library called libthread_db.so for GDB to load it
+# We do NOT use monad_compile_options() here because this custom libthread_db.so.1
+# is loaded as a plugin into GDB, and by rights should be compiled with whatever
+# GDB is. The current implementation is "lucky" in that it doesn't cause the loading
+# of anything which would blow up GDB, but if say any C++ ever appeared in the
+# source code to cause an incompatible libstdc++ to get loaded, very bad.
+add_library(monad_context_c_libthread_db SHARED
+  "src/monad/context/thread_db.c"
+)
+target_compile_features(monad_context_c_libthread_db PRIVATE c_std_23 cxx_std_20)
+target_compile_options(monad_context_c_libthread_db PRIVATE -Wall -Wextra -Wconversion -Werror)
+# Hide all symbols in this except those explicitly made visibile to prevent
+# unhelpful collision with the GDB process symbols
+target_compile_options(monad_context_c_libthread_db PRIVATE -fvisibility=hidden)
+set_target_properties(monad_context_c_libthread_db PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  OUTPUT_NAME "thread_db"
+  SUFFIX ".so.1"
+)
+target_link_libraries(monad_context_c_libthread_db PRIVATE monad_context_c-custom-binutils-gdb)
+# We need to inhibit all dependencies on anything else to prevent clashing with GDB's runtime
+# when loaded in as a plugin. TODO FIXME this is failing to link. If it does ever cause
+# problems with GDB, diagnosing and fixing this should be revisited.
+#target_link_options(monad_context_c_libthread_db PRIVATE -static)
+target_compile_definitions(monad_context_c PUBLIC MONAD_CONTEXT_CUSTOM_GDB_THREAD_DB_PATH=$<TARGET_FILE_DIR:monad_context_c_libthread_db>)
+
+
 
 set(monad_async_INCLUDES
   "src/monad/async/executor.h"
@@ -39,8 +69,8 @@ add_library(monad_async_c STATIC
   "src/monad/async/util.cpp"
   "src/monad/async/work_dispatcher.c"
 )
-target_compile_features(monad_async_c PUBLIC c_std_23 cxx_std_20)
-target_compile_options(monad_async_c PRIVATE -Wall -Wextra -Wconversion -Wpedantic -Werror)
+monad_compile_options(monad_async_c)
+target_compile_options(monad_async_c PRIVATE -Wpedantic)
 target_compile_definitions(monad_async_c PRIVATE MONAD_ASYNC_SOURCE=1)
 target_include_directories(monad_async_c PUBLIC "src")
 target_link_libraries(monad_async_c PUBLIC uring monad_core monad_context_c)
@@ -67,6 +97,7 @@ if(BINDGEN_PROGRAM)
     --must-use-type cxx_result_status_code_system_monad_async
     --
     -I ${CMAKE_CURRENT_LIST_DIR}/src
+    -D MONAD_CONTEXT_DISABLE_INLINE_CUSTOM_GDB_THREAD_DB_LOAD
     DEPENDS ${monad_async_INCLUDES} ${monad_context_INCLUDES}
   )
   add_custom_target(monad_async_c_regenerate_rust_bindings DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/rust/async.rs")

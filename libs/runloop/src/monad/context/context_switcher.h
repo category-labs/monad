@@ -6,14 +6,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#ifndef MONAD_CONTEXT_TRACK_OWNERSHIP
-    #ifdef NDEBUG
-        #define MONAD_CONTEXT_TRACK_OWNERSHIP 0
-    #else
-        #define MONAD_CONTEXT_TRACK_OWNERSHIP 1
-    #endif
-#endif
-
 #ifndef MONAD_CONTEXT_CPP_DEFAULT_INITIALISE
     #ifdef __cplusplus
         #define MONAD_CONTEXT_CPP_DEFAULT_INITIALISE                           \
@@ -22,10 +14,6 @@
     #else
         #define MONAD_CONTEXT_CPP_DEFAULT_INITIALISE
     #endif
-#endif
-
-#if MONAD_CONTEXT_TRACK_OWNERSHIP
-    #include <threads.h>
 #endif
 
 #ifdef __cplusplus
@@ -105,7 +93,7 @@ typedef struct monad_context_switcher_head
     //! \brief Create a switchable context for a task
     monad_c_result (*const create)(
         monad_context *context, struct monad_context_switcher_head *switcher,
-        monad_context_task task, const struct monad_context_task_attr *attr);
+        monad_context_task task, struct monad_context_task_attr const *attr);
     //! \brief Destroys a switchable context
     monad_c_result (*const destroy)(monad_context context);
 
@@ -151,14 +139,6 @@ typedef struct monad_context_switcher_head
         void *user_ptr);
 
     // Must come AFTER what the Rust bindings will use
-#if MONAD_CONTEXT_TRACK_OWNERSHIP
-    struct
-    {
-        mtx_t lock;
-        monad_context front, back;
-        size_t count;
-    } contexts_list;
-#endif
 } *monad_context_switcher;
 
 typedef struct monad_context_switcher_impl
@@ -176,10 +156,7 @@ typedef struct monad_context_head
     MONAD_CONTEXT_ATOMIC(monad_context_switcher) switcher;
 
     // Must come AFTER what the Rust bindings will use
-#if MONAD_CONTEXT_TRACK_OWNERSHIP
-    void *stack_bottom, *stack_current, *stack_top;
-    monad_context prev, next;
-#endif
+    size_t const thread_db_slot;
 
     struct
     {
@@ -295,7 +272,7 @@ namespace monad
         //! smart pointer
         inline context_ptr make_context(
             monad_context_switcher impl, monad_context_task task,
-            struct monad_context_task_attr &attr)
+            const struct monad_context_task_attr &attr)
         {
             monad_context ex;
             to_result(impl->create(&ex, impl, task, &attr)).value();
@@ -303,4 +280,41 @@ namespace monad
         }
     }
 }
+#endif
+
+#ifndef MONAD_CONTEXT_DISABLE_INLINE_CUSTOM_GDB_THREAD_DB_LOAD
+    #ifndef MONAD_CONTEXT_CUSTOM_GDB_THREAD_DB_PATH
+        #error                                                                 \
+            "MONAD_CONTEXT_CUSTOM_GDB_THREAD_DB_PATH should be defined to the directory of our custom libthread_db.so.1"
+    #endif
+    #define MONAD_CONTEXT_CUSTOM_GDB_THREAD_DB_PATH_STRINGISE2(x) #x
+    #define MONAD_CONTEXT_CUSTOM_GDB_THREAD_DB_PATH_STRINGISE(x)               \
+        MONAD_CONTEXT_CUSTOM_GDB_THREAD_DB_PATH_STRINGISE2(x)
+    #if defined(__ELF__)
+        #ifdef __clang__
+            #pragma clang diagnostic push
+            #pragma clang diagnostic ignored "-Woverlength-strings"
+        #endif
+__asm__(
+    ".pushsection \".debug_gdb_scripts\", \"MS\",@progbits,1\n"
+    ".byte 4 /* Python Text */\n"
+    ".ascii \"gdb.inlined-script.monad-context\\n\"\n"
+    ".ascii \"import gdb\\n\"\n"
+    ".ascii \"gdb.execute('set "
+    "libthread-db-search-"
+    "path " MONAD_CONTEXT_CUSTOM_GDB_THREAD_DB_PATH_STRINGISE(
+        MONAD_CONTEXT_CUSTOM_GDB_THREAD_DB_PATH) "')\\n\"\n"
+
+                                                 ".ascii \"print('NOTE: set "
+                                                 "libthread-db-search-"
+                                                 "path"
+                                                 " " MONAD_CONTEXT_CUSTOM_GDB_THREAD_DB_PATH_STRINGISE(
+                                                     MONAD_CONTEXT_CUSTOM_GDB_THREAD_DB_PATH) "')\\n\"\n"
+
+                                                                                              ".byte 0\n"
+                                                                                              ".popsection\n");
+        #ifdef __clang__
+            #pragma clang diagnostic pop
+        #endif
+    #endif
 #endif

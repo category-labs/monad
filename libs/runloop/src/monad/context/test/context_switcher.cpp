@@ -1,4 +1,3 @@
-#include <atomic>
 #include <gtest/gtest.h>
 
 #include "../../test_common.hpp"
@@ -10,6 +9,7 @@
 
 #include "monad/async/task.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -56,7 +56,13 @@ TEST(context_switcher, works)
     auto test_creation_destruction = [](monad_context_switcher switcher,
                                         char const *desc,
                                         bool run_switching_test) {
-        monad_context_task_attr attr{.stack_size = 4096};
+        monad_context_task_attr attr{
+#if MONAD_CONTEXT_HAVE_ASAN || MONAD_CONTEXT_HAVE_TSAN
+            .stack_size = 4096 * 4
+#else
+            .stack_size = 4096
+#endif
+        };
         std::cout << "\n\n   Testing " << desc << " ..." << std::endl;
         std::vector<context_ptr> contexts(10000);
         {
@@ -264,7 +270,13 @@ TEST(context_switcher, recursion)
             .user_code = task_->user_code, .user_ptr = task_->user_ptr,
             .detach = +[](monad_context_task) {}
         };
-        monad_context_task_attr attr{.stack_size = 4096};
+        monad_context_task_attr attr{
+#if MONAD_CONTEXT_HAVE_ASAN || MONAD_CONTEXT_HAVE_TSAN
+            .stack_size = 4096 * 4
+#else
+            .stack_size = 4096
+#endif
+        };
         auto context = make_context(shared->switcher.get(), &task, attr);
         auto *old_context = shared->current_context;
         shared->current_context = context.get();

@@ -26,7 +26,8 @@ struct MachineBase : public mpt::StateMachine
         Prefix,
         State,
         Code,
-        Receipt
+        Receipt,
+        Transaction
     };
 
     uint8_t depth{0};
@@ -57,10 +58,12 @@ struct OnDiskMachine : public MachineBase
 inline constexpr unsigned char STATE_NIBBLE = 0;
 inline constexpr unsigned char CODE_NIBBLE = 1;
 inline constexpr unsigned char RECEIPT_NIBBLE = 2;
+inline constexpr unsigned char TRANSACTION_NIBBLE = 3;
 inline constexpr unsigned char INVALID_NIBBLE = 255;
 inline mpt::Nibbles const state_nibbles = mpt::concat(STATE_NIBBLE);
 inline mpt::Nibbles const code_nibbles = mpt::concat(CODE_NIBBLE);
 inline mpt::Nibbles const receipt_nibbles = mpt::concat(RECEIPT_NIBBLE);
+inline mpt::Nibbles const transaction_nibbles = mpt::concat(TRANSACTION_NIBBLE);
 
 byte_string encode_account_db(Address const &, Account const &);
 byte_string encode_storage_db(bytes32_t const &, bytes32_t const &);

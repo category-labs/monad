@@ -152,14 +152,15 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
         BOOST_OUTCOME_TRY(
             chain.validate_header(receipts, block.value().header));
         block_state.log_debug();
-        block_state.commit(receipts);
+        block_state.commit(receipts, block.value().transactions);
 
         if (!chain.validate_root(
                 rev,
                 block.value().header,
                 db.state_root(),
-                db.receipts_root())) {
-            return BlockError::WrongStateRoot;
+                db.receipts_root(),
+                db.transactions_root())) {
+            return BlockError::WrongMerkleRoot;
         }
 
         ntxs += block.value().transactions.size();

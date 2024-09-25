@@ -12,6 +12,7 @@
 
 #include <evmc/evmc.hpp>
 #include <evmc/hex.hpp>
+#include <intx/intx.hpp>
 
 #include <ethash/keccak.hpp>
 
@@ -266,8 +267,11 @@ TYPED_TEST(DBTest, storage_deletion)
         0x1f54a52a44ffa5b8298f7ed596dea62455816e784dce02d79ea583f3a4146598_bytes32);
 }
 
-TYPED_TEST(DBTest, commit_receipts)
+TYPED_TEST(DBTest, commit_receipts_transactions)
 {
+    using namespace intx;
+    using namespace evmc::literals;
+
     TrieDb tdb{this->db};
     // empty receipts
     tdb.commit(StateDeltas{}, Code{}, {});
@@ -280,8 +284,9 @@ TYPED_TEST(DBTest, commit_receipts)
         .status = 1, .gas_used = 42'000, .type = TransactionType::legacy});
 
     // receipt with log
-    Receipt r{.status = 1, .gas_used = 65'092, .type = TransactionType::legacy};
-    r.add_log(Receipt::Log{
+    Receipt rct{
+        .status = 1, .gas_used = 65'092, .type = TransactionType::legacy};
+    rct.add_log(Receipt::Log{
         .data = from_hex("0x000000000000000000000000000000000000000000000000000"
                          "000000000000000000000000000000000000043b2126e7a22e0c2"
                          "88dfb469e3de4d2c097f3ca000000000000000000000000000000"
@@ -290,12 +295,44 @@ TYPED_TEST(DBTest, commit_receipts)
         .topics =
             {0xf341246adaac6f497bc2a656f546ab9e182111d630394f0c57c710a59a2cb567_bytes32},
         .address = 0x8d12a197cb00d4747a1fe03395095ce2a5cc6819_address});
-    receipts.push_back(std::move(r));
+    receipts.push_back(std::move(rct));
 
-    tdb.commit(StateDeltas{}, Code{}, receipts);
+    std::vector<Transaction> transactions;
+    static constexpr auto price{20'000'000'000};
+    static constexpr auto value{0xde0b6b3a7640000_u256};
+    static constexpr auto r{
+        0x28ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276_u256};
+    static constexpr auto s{
+        0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83_u256};
+    static constexpr auto to_addr{
+        0x3535353535353535353535353535353535353535_address};
+
+    Transaction const t1{
+        .sc = {.r = r, .s = s}, // no chain_id in legacy transactions
+        .nonce = 9,
+        .max_fee_per_gas = price,
+        .gas_limit = 21'000,
+        .value = value};
+    Transaction t2{
+        .sc = {.r = r, .s = s, .chain_id = 5}, // Goerli
+        .nonce = 9,
+        .max_fee_per_gas = price,
+        .gas_limit = 21'000,
+        .value = value,
+        .to = to_addr};
+    transactions.emplace_back(t1);
+    transactions.emplace_back(t2);
+    t2.nonce = 10;
+    transactions.emplace_back(t2);
+    ASSERT_EQ(receipts.size(), transactions.size());
+
+    tdb.commit(StateDeltas{}, Code{}, receipts, transactions);
     EXPECT_EQ(
         tdb.receipts_root(),
         0x7ea023138ee7d80db04eeec9cf436dc35806b00cc5fe8e5f611fb7cf1b35b177_bytes32);
+    EXPECT_EQ(
+        tdb.transactions_root(),
+        0x559ef9bb302ecd424fb70fde5bf5a27fe59cf8873090dc7aceea13e680dcc229_bytes32);
 
     // A new receipt trie with eip1559 transaction type
     receipts.clear();
@@ -303,10 +340,15 @@ TYPED_TEST(DBTest, commit_receipts)
         .status = 1, .gas_used = 34865, .type = TransactionType::eip1559});
     receipts.emplace_back(Receipt{
         .status = 1, .gas_used = 77969, .type = TransactionType::eip1559});
-    tdb.commit(StateDeltas{}, Code{}, receipts);
+    transactions.pop_back();
+    ASSERT_EQ(receipts.size(), transactions.size());
+    tdb.commit(StateDeltas{}, Code{}, receipts, transactions);
     EXPECT_EQ(
         tdb.receipts_root(),
         0x61f9b4707b28771a63c1ac6e220b2aa4e441dd74985be385eaf3cd7021c551e9_bytes32);
+    EXPECT_EQ(
+        tdb.transactions_root(),
+        0x07b32e2d270714504e825d31486ecbb01c84b4844acf3b9961da2435ca2e2a26_bytes32);
 }
 
 TYPED_TEST(DBTest, to_json)

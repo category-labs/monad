@@ -17,7 +17,8 @@ struct MonadChain : Chain
 
     virtual bool validate_root(
         evmc_revision, BlockHeader const &, bytes32_t const &state_root,
-        bytes32_t const &receipts_root) const override;
+        bytes32_t const &receipts_root,
+        bytes32_t const &transactions_root) const override;
 };
 
 MONAD_NAMESPACE_END

@@ -4,6 +4,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/keccak.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/core/transaction.hpp>
 #include <monad/db/db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/code_analysis.hpp>
@@ -40,10 +41,11 @@ public:
     virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) override;
     virtual void increment_block_number() override;
     virtual void commit(
-        StateDeltas const &, Code const &,
-        std::vector<Receipt> const & = {}) override;
+        StateDeltas const &, Code const &, std::vector<Receipt> const & = {},
+        std::vector<Transaction> const & = {}) override;
     virtual bytes32_t state_root() override;
     virtual bytes32_t receipts_root() override;
+    virtual bytes32_t transactions_root() override;
     virtual std::string print_stats() override;
 
     nlohmann::json to_json();

@@ -2,6 +2,7 @@
 
 #include <monad/config.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/core/transaction.hpp>
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/state2/state_deltas.hpp>
@@ -32,7 +33,7 @@ public:
 
     void merge(State const &);
 
-    void commit(std::vector<Receipt> const &);
+    void commit(std::vector<Receipt> const &, std::vector<Transaction> const &);
 
     void log_debug();
 };

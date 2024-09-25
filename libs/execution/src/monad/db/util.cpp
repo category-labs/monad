@@ -381,8 +381,8 @@ mpt::Compute &MachineBase::get_compute() const
     static StorageMerkleCompute storage_compute;
     static StorageRootMerkleCompute storage_root_compute;
 
-    static VarLenMerkleCompute receipt_compute;
-    static RootVarLenMerkleCompute receipt_root_compute;
+    static VarLenMerkleCompute generic_merkle_compute;
+    static RootVarLenMerkleCompute generic_root_merkle_compute;
 
     if (MONAD_LIKELY(trie_section == TrieType::State)) {
         MONAD_ASSERT(depth >= PREFIX_LEN);
@@ -399,8 +399,11 @@ mpt::Compute &MachineBase::get_compute() const
             return storage_compute;
         }
     }
-    else if (trie_section == TrieType::Receipt) {
-        return depth == PREFIX_LEN ? receipt_root_compute : receipt_compute;
+    else if (
+        trie_section == TrieType::Receipt ||
+        trie_section == TrieType::Transaction) {
+        return depth == PREFIX_LEN ? generic_root_merkle_compute
+                                   : generic_merkle_compute;
     }
     else {
         return empty_compute;
@@ -413,7 +416,7 @@ void MachineBase::down(unsigned char const nibble)
     MONAD_ASSERT(depth <= MAX_DEPTH);
     MONAD_ASSERT(
         (nibble == STATE_NIBBLE || nibble == CODE_NIBBLE ||
-         nibble == RECEIPT_NIBBLE) ||
+         nibble == RECEIPT_NIBBLE || nibble == TRANSACTION_NIBBLE) ||
         depth != PREFIX_LEN);
     if (MONAD_UNLIKELY(depth == PREFIX_LEN)) {
         MONAD_ASSERT(trie_section == TrieType::Prefix);
@@ -422,6 +425,9 @@ void MachineBase::down(unsigned char const nibble)
         }
         else if (nibble == RECEIPT_NIBBLE) {
             trie_section = TrieType::Receipt;
+        }
+        else if (nibble == TRANSACTION_NIBBLE) {
+            trie_section = TrieType::Transaction;
         }
         else {
             trie_section = TrieType::Code;
@@ -456,7 +462,8 @@ std::unique_ptr<StateMachine> InMemoryMachine::clone() const
 bool OnDiskMachine::cache() const
 {
     constexpr uint64_t CACHE_DEPTH = PREFIX_LEN + 5;
-    return depth <= CACHE_DEPTH && trie_section != TrieType::Receipt;
+    return depth <= CACHE_DEPTH &&
+           (trie_section == TrieType::State || trie_section == TrieType::Code);
 }
 
 bool OnDiskMachine::compact() const

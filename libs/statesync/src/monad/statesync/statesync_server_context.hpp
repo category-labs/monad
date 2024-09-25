@@ -43,9 +43,12 @@ struct monad_statesync_server_context final : public monad::Db
 
     virtual monad::bytes32_t receipts_root() override;
 
+    virtual monad::bytes32_t transactions_root() override;
+
     virtual void increment_block_number() override;
 
     virtual void commit(
         monad::StateDeltas const &state_deltas, monad::Code const &code,
-        std::vector<monad::Receipt> const &receipts) override;
+        std::vector<monad::Receipt> const &receipts = {},
+        std::vector<monad::Transaction> const &transactions = {}) override;
 };

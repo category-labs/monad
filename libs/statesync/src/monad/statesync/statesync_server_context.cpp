@@ -100,6 +100,11 @@ bytes32_t monad_statesync_server_context::receipts_root()
     return rw.receipts_root();
 }
 
+bytes32_t monad_statesync_server_context::transactions_root()
+{
+    return rw.transactions_root();
+}
+
 void monad_statesync_server_context::increment_block_number()
 {
     rw.increment_block_number();
@@ -107,8 +112,9 @@ void monad_statesync_server_context::increment_block_number()
 
 void monad_statesync_server_context::commit(
     StateDeltas const &state_deltas, Code const &code,
-    std::vector<Receipt> const &receipts)
+    std::vector<Receipt> const &receipts,
+    std::vector<Transaction> const &transactions)
 {
     on_commit(*this, state_deltas);
-    rw.commit(state_deltas, code, receipts);
+    rw.commit(state_deltas, code, receipts, transactions);
 }

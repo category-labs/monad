@@ -13,6 +13,7 @@
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
 #include <monad/core/rlp/receipt_rlp.hpp>
+#include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/code_analysis.hpp>
@@ -150,7 +151,8 @@ std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
 
 void TrieDb::commit(
     StateDeltas const &state_deltas, Code const &code,
-    std::vector<Receipt> const &receipts)
+    std::vector<Receipt> const &receipts,
+    std::vector<Transaction> const &transactions)
 {
     MONAD_ASSERT(block_number_ <= std::numeric_limits<int64_t>::max());
 
@@ -208,16 +210,27 @@ void TrieDb::commit(
     }
 
     UpdateList receipt_updates;
+    UpdateList transaction_updates;
+    MONAD_ASSERT(receipts.size() == transactions.size());
     for (size_t i = 0; i < receipts.size(); ++i) {
-        auto const &receipt = receipts[i];
+        auto const &rlp_index =
+            bytes_alloc_.emplace_back(rlp::encode_unsigned(i));
         receipt_updates.push_front(update_alloc_.emplace_back(Update{
-            .key =
-                NibblesView{bytes_alloc_.emplace_back(rlp::encode_unsigned(i))},
-            .value = bytes_alloc_.emplace_back(rlp::encode_receipt(receipt)),
+            .key = NibblesView{rlp_index},
+            .value =
+                bytes_alloc_.emplace_back(rlp::encode_receipt(receipts[i])),
+            .incarnation = false,
+            .next = UpdateList{},
+            .version = static_cast<int64_t>(block_number_)}));
+        transaction_updates.push_front(update_alloc_.emplace_back(Update{
+            .key = NibblesView{rlp_index},
+            .value = bytes_alloc_.emplace_back(
+                rlp::encode_transaction(transactions[i])),
             .incarnation = false,
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));
     }
+
     auto state_update = Update{
         .key = state_nibbles,
         .value = byte_string_view{},
@@ -236,10 +249,17 @@ void TrieDb::commit(
         .incarnation = true,
         .next = std::move(receipt_updates),
         .version = static_cast<int64_t>(block_number_)};
+    auto transaction_update = Update{
+        .key = transaction_nibbles,
+        .value = byte_string_view{},
+        .incarnation = true,
+        .next = std::move(transaction_updates),
+        .version = static_cast<int64_t>(block_number_)};
     UpdateList updates;
     updates.push_front(state_update);
     updates.push_front(code_update);
     updates.push_front(receipt_update);
+    updates.push_front(transaction_update);
     db_.upsert(std::move(updates), block_number_);
 
     update_alloc_.clear();
@@ -262,6 +282,11 @@ bytes32_t TrieDb::state_root()
 bytes32_t TrieDb::receipts_root()
 {
     return merkle_root(receipt_nibbles);
+}
+
+bytes32_t TrieDb::transactions_root()
+{
+    return merkle_root(transaction_nibbles);
 }
 
 bytes32_t TrieDb::merkle_root(mpt::Nibbles const &nibbles)

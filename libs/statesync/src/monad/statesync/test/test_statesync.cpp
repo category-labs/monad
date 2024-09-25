@@ -250,9 +250,7 @@ TEST_F(StateSyncFixture, sync_from_some)
         MONAD_ASSERT(acct.has_value());
         stdb.increment_block_number();
         sctx.commit(
-            StateDeltas{{ADDR1, {.account = {acct, std::nullopt}}}},
-            Code{},
-            {});
+            StateDeltas{{ADDR1, {.account = {acct, std::nullopt}}}}, Code{});
     }
     // new storage to existing account
     {
@@ -268,8 +266,7 @@ TEST_F(StateSyncFixture, sync_from_some)
                       {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
                         {{},
                          0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}},
-            Code{},
-            {});
+            Code{});
     }
     // add new smart contract
     {
@@ -304,6 +301,7 @@ TEST_F(StateSyncFixture, sync_from_some)
 
             },
             Code{{code_hash, code_analysis}},
+            {},
             {});
     }
     // delete storage
@@ -320,8 +318,7 @@ TEST_F(StateSyncFixture, sync_from_some)
                       {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
                         {0x0000000000000013370000000000000000000000000000000000000000000003_bytes32,
                          {}}}}}}},
-            Code{},
-            {});
+            Code{});
     }
     // account incarnation
     {
@@ -339,8 +336,7 @@ TEST_F(StateSyncFixture, sync_from_some)
                       {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
                         {{},
                          0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}},
-            Code{},
-            {});
+            Code{});
     }
     // delete smart contract
     {
@@ -350,9 +346,7 @@ TEST_F(StateSyncFixture, sync_from_some)
         MONAD_ASSERT(acct.has_value());
         stdb.increment_block_number();
         sctx.commit(
-            StateDeltas{{ADDR1, {.account = {acct, std::nullopt}}}},
-            Code{},
-            {});
+            StateDeltas{{ADDR1, {.account = {acct, std::nullopt}}}}, Code{});
     }
 
     auto const ctmp = tmp_dbname();
@@ -482,10 +476,9 @@ TEST_F(StateSyncFixture, account_updated_after_storage)
                      {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
                        {bytes32_t{},
                         0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}},
-        Code{},
-        {});
+        Code{});
     stdb.increment_block_number();
-    sctx.commit({}, {}, {});
+    sctx.commit({}, {}, {}, {});
     stdb.increment_block_number();
     sctx.commit(
         StateDeltas{
@@ -493,8 +486,7 @@ TEST_F(StateSyncFixture, account_updated_after_storage)
              StateDelta{
                  .account = {Account{.balance = 100}, Account{.balance = 200}},
                  .storage = {}}}},
-        {},
-        {});
+        Code{});
     init();
     monad_statesync_client_handle_target(
         cctx, make_target(102, stdb.state_root()));
@@ -514,10 +506,9 @@ TEST_F(StateSyncFixture, account_deleted_after_storage)
                      {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
                        {bytes32_t{},
                         0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}},
-        Code{},
-        {});
+        Code{});
     stdb.increment_block_number();
-    sctx.commit({}, {}, {});
+    sctx.commit({}, {}, {}, {});
     stdb.increment_block_number();
     sctx.commit(
         StateDeltas{
@@ -525,8 +516,7 @@ TEST_F(StateSyncFixture, account_deleted_after_storage)
              StateDelta{
                  .account = {Account{.balance = 100}, std::nullopt},
                  .storage = {}}}},
-        {},
-        {});
+        Code{});
     init();
     monad_statesync_client_handle_target(cctx, make_target(102, NULL_ROOT));
 }
@@ -541,8 +531,7 @@ TEST_F(StateSyncFixture, account_deleted_and_prefix_skipped)
              StateDelta{
                  .account = {std::nullopt, Account{.balance = 100}},
                  .storage = {}}}},
-        {},
-        {});
+        Code{});
     monad_statesync_client_handle_target(
         cctx, make_target(1, sctx.state_root()));
     run();
@@ -554,14 +543,13 @@ TEST_F(StateSyncFixture, account_deleted_and_prefix_skipped)
              StateDelta{
                  .account = {Account{.balance = 100}, std::nullopt},
                  .storage = {}}}},
-        {},
-        {});
+        Code{});
     monad_statesync_client_handle_target(
         cctx, make_target(2, sctx.state_root()));
     client.rqs.clear();
 
     stdb.increment_block_number();
-    sctx.commit({}, {}, {});
+    sctx.commit(StateDeltas{}, Code{});
     monad_statesync_client_handle_target(
         cctx, make_target(3, sctx.state_root()));
     run();
@@ -578,8 +566,7 @@ TEST_F(StateSyncFixture, delete_updated_account)
     sctx.commit(
         StateDeltas{
             {ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}}},
-        {},
-        {});
+        Code{});
     monad_statesync_client_handle_target(
         cctx, make_target(1, sctx.state_root()));
     run();
@@ -591,8 +578,7 @@ TEST_F(StateSyncFixture, delete_updated_account)
              StateDelta{
                  .account = {a, a},
                  .storage = {{bytes32_t{}, {bytes32_t{}, bytes32_t{64}}}}}}},
-        {},
-        {});
+        Code{});
     monad_statesync_client_handle_target(
         cctx, make_target(2, sctx.state_root()));
     client.rqs.pop_front();
@@ -604,8 +590,7 @@ TEST_F(StateSyncFixture, delete_updated_account)
     sctx.commit(
         StateDeltas{
             {ADDR_A, StateDelta{.account = {a, std::nullopt}, .storage = {}}}},
-        {},
-        {});
+        Code{});
     monad_statesync_client_handle_target(
         cctx, make_target(3, sctx.state_root()));
     run();
@@ -627,8 +612,7 @@ TEST_F(StateSyncFixture, delete_storage_after_account_deletion)
                  .storage =
                      {{bytes32_t{}, {bytes32_t{}, bytes32_t{64}}},
                       {bytes32_t{1}, {bytes32_t{}, bytes32_t{64}}}}}}},
-        {},
-        {});
+        Code{});
     monad_statesync_client_handle_target(
         cctx, make_target(1'000'000, sctx.state_root()));
     run();
@@ -637,8 +621,7 @@ TEST_F(StateSyncFixture, delete_storage_after_account_deletion)
     sctx.commit(
         StateDeltas{
             {ADDR_A, StateDelta{.account = {a, std::nullopt}, .storage = {}}}},
-        {},
-        {});
+        Code{});
 
     stdb.increment_block_number();
     sctx.commit(
@@ -647,8 +630,7 @@ TEST_F(StateSyncFixture, delete_storage_after_account_deletion)
              StateDelta{
                  .account = {std::nullopt, a},
                  .storage = {{bytes32_t{}, {bytes32_t{}, bytes32_t{64}}}}}}},
-        {},
-        {});
+        Code{});
 
     stdb.increment_block_number();
     sctx.commit(
@@ -657,8 +639,7 @@ TEST_F(StateSyncFixture, delete_storage_after_account_deletion)
              StateDelta{
                  .account = {a, a},
                  .storage = {{bytes32_t{}, {bytes32_t{64}, bytes32_t{}}}}}}},
-        {},
-        {});
+        Code{});
     monad_statesync_client_handle_target(
         cctx, make_target(1'000'003, sctx.state_root()));
     run();

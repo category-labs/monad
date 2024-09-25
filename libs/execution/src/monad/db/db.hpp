@@ -26,12 +26,13 @@ struct Db
 
     virtual bytes32_t state_root() = 0;
     virtual bytes32_t receipts_root() = 0;
+    virtual bytes32_t transactions_root() = 0;
 
     virtual void increment_block_number() = 0;
 
     virtual void commit(
-        StateDeltas const &, Code const &,
-        std::vector<Receipt> const & = {}) = 0;
+        StateDeltas const &, Code const &, std::vector<Receipt> const & = {},
+        std::vector<Transaction> const & = {}) = 0;
 
     virtual std::string print_stats()
     {

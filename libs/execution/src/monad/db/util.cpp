@@ -419,7 +419,7 @@ void MachineBase::down(unsigned char const nibble)
         (nibble == STATE_NIBBLE || nibble == CODE_NIBBLE ||
          nibble == RECEIPT_NIBBLE || nibble == TRANSACTION_NIBBLE ||
          nibble == BLOCKHEADER_NIBBLE || nibble == WITHDRAWAL_NIBBLE ||
-         nibble == OMMER_NIBBLE) ||
+         nibble == OMMER_NIBBLE || nibble == TX_HASH_NIBBLE) ||
         depth != PREFIX_LEN);
     if (MONAD_UNLIKELY(depth == PREFIX_LEN)) {
         MONAD_ASSERT(trie_section == TrieType::Prefix);
@@ -437,6 +437,9 @@ void MachineBase::down(unsigned char const nibble)
         }
         else if (nibble == WITHDRAWAL_NIBBLE) {
             trie_section = TrieType::Withdrawal;
+        }
+        else if (nibble == TX_HASH_NIBBLE) {
+            trie_section = TrieType::TxHash;
         }
         else {
             // No subtrie in the rest tables, thus treated the same as
@@ -475,12 +478,18 @@ bool OnDiskMachine::cache() const
 {
     constexpr uint64_t CACHE_DEPTH = PREFIX_LEN + 5;
     return depth <= CACHE_DEPTH &&
-           (trie_section == TrieType::State || trie_section == TrieType::Code);
+           (trie_section == TrieType::State || trie_section == TrieType::Code ||
+            trie_section == TrieType::TxHash);
 }
 
 bool OnDiskMachine::compact() const
 {
     return true;
+}
+
+bool OnDiskMachine::auto_expire() const
+{
+    return trie_section == TrieType::TxHash;
 }
 
 std::unique_ptr<StateMachine> OnDiskMachine::clone() const

@@ -2,19 +2,22 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/hex_literal.hpp>
+#include <monad/core/keccak.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/core/rlp/int_rlp.hpp>
+#include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/code_analysis.hpp>
+#include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
+#include <monad/rlp/encode2.hpp>
 #include <monad/state2/state_deltas.hpp>
 
 #include <evmc/evmc.hpp>
 #include <evmc/hex.hpp>
 #include <intx/intx.hpp>
-
-#include <ethash/keccak.hpp>
 
 #include <nlohmann/json_fwd.hpp>
 
@@ -24,6 +27,7 @@
 #include <test_resource_data.h>
 
 #include <bit>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -311,6 +315,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     receipts.push_back(std::move(rct));
 
     std::vector<Transaction> transactions;
+    std::vector<hash256> tx_hash;
     static constexpr auto price{20'000'000'000};
     static constexpr auto value{0xde0b6b3a7640000_u256};
     static constexpr auto r{
@@ -320,7 +325,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     static constexpr auto to_addr{
         0x3535353535353535353535353535353535353535_address};
 
-    Transaction const t1{
+    Transaction t1{
         .sc = {.r = r, .s = s}, // no chain_id in legacy transactions
         .nonce = 9,
         .max_fee_per_gas = price,
@@ -328,15 +333,19 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         .value = value};
     Transaction t2{
         .sc = {.r = r, .s = s, .chain_id = 5}, // Goerli
-        .nonce = 9,
+        .nonce = 10,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
         .value = value,
         .to = to_addr};
-    transactions.emplace_back(t1);
-    transactions.emplace_back(t2);
-    t2.nonce = 10;
-    transactions.emplace_back(t2);
+    Transaction t3 = t2;
+    t3.nonce = 11;
+    tx_hash.emplace_back(
+        keccak256(rlp::encode_transaction(transactions.emplace_back(t1))));
+    tx_hash.emplace_back(
+        keccak256(rlp::encode_transaction(transactions.emplace_back(t2))));
+    tx_hash.emplace_back(
+        keccak256(rlp::encode_transaction(transactions.emplace_back(t3))));
     ASSERT_EQ(receipts.size(), transactions.size());
 
     tdb.commit(StateDeltas{}, Code{}, BlockHeader{}, receipts, transactions);
@@ -345,7 +354,23 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         0x7ea023138ee7d80db04eeec9cf436dc35806b00cc5fe8e5f611fb7cf1b35b177_bytes32);
     EXPECT_EQ(
         tdb.transactions_root(),
-        0x559ef9bb302ecd424fb70fde5bf5a27fe59cf8873090dc7aceea13e680dcc229_bytes32);
+        0xfb4fce4331706502d2893deafe470d4cc97b4895294f725ccb768615a5510801_bytes32);
+
+    auto verify_tx_hash = [&](hash256 const &tx_hash,
+                              uint64_t const block_id,
+                              unsigned const tx_idx) {
+        auto const res = this->db.get(
+            concat(tx_hash_nibbles, mpt::NibblesView{tx_hash}), block_id);
+        EXPECT_TRUE(res.has_value());
+        EXPECT_EQ(
+            res.value(),
+            rlp::encode_list2(
+                rlp::encode_unsigned(block_id), rlp::encode_unsigned(tx_idx)));
+    };
+    auto const first_block = this->db.get_latest_block_id();
+    verify_tx_hash(tx_hash[0], first_block, 0);
+    verify_tx_hash(tx_hash[1], first_block, 1);
+    verify_tx_hash(tx_hash[2], first_block, 2);
 
     // A new receipt trie with eip1559 transaction type
     receipts.clear();
@@ -353,7 +378,13 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         .status = 1, .gas_used = 34865, .type = TransactionType::eip1559});
     receipts.emplace_back(Receipt{
         .status = 1, .gas_used = 77969, .type = TransactionType::eip1559});
-    transactions.pop_back();
+    transactions.clear();
+    t1.nonce = 12;
+    t2.nonce = 13;
+    tx_hash.emplace_back(
+        keccak256(rlp::encode_transaction(transactions.emplace_back(t1))));
+    tx_hash.emplace_back(
+        keccak256(rlp::encode_transaction(transactions.emplace_back(t2))));
     ASSERT_EQ(receipts.size(), transactions.size());
     tdb.commit(StateDeltas{}, Code{}, BlockHeader{}, receipts, transactions);
     EXPECT_EQ(
@@ -361,7 +392,13 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         0x61f9b4707b28771a63c1ac6e220b2aa4e441dd74985be385eaf3cd7021c551e9_bytes32);
     EXPECT_EQ(
         tdb.transactions_root(),
-        0x07b32e2d270714504e825d31486ecbb01c84b4844acf3b9961da2435ca2e2a26_bytes32);
+        0x0800aa3014aaa87b4439510e1206a7ef2568337477f0ef0c444cbc2f691e52cf_bytes32);
+    auto const second_block = this->db.get_latest_block_id();
+    verify_tx_hash(tx_hash[0], first_block, 0);
+    verify_tx_hash(tx_hash[1], first_block, 1);
+    verify_tx_hash(tx_hash[2], first_block, 2);
+    verify_tx_hash(tx_hash[3], second_block, 0);
+    verify_tx_hash(tx_hash[4], second_block, 1);
 }
 
 TYPED_TEST(DBTest, to_json)

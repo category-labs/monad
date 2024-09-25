@@ -215,7 +215,10 @@ void TrieDb::commit(
 
     UpdateList receipt_updates;
     UpdateList transaction_updates;
+    UpdateList tx_hash_updates;
     MONAD_ASSERT(receipts.size() == transactions.size());
+    auto const &encoded_block_number =
+        bytes_alloc_.emplace_back(rlp::encode_unsigned(block_number_));
     std::vector<byte_string> index_alloc;
     index_alloc.reserve(std::max(
         receipts.size(),
@@ -223,18 +226,27 @@ void TrieDb::commit(
     for (size_t i = 0; i < receipts.size(); ++i) {
         auto const &rlp_index =
             index_alloc.emplace_back(rlp::encode_unsigned(i));
-        auto const &receipt = receipts[i];
         receipt_updates.push_front(update_alloc_.emplace_back(Update{
             .key = NibblesView{rlp_index},
-            .value = bytes_alloc_.emplace_back(rlp::encode_receipt(receipt)),
+            .value =
+                bytes_alloc_.emplace_back(rlp::encode_receipt(receipts[i])),
             .incarnation = false,
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));
 
-        auto const &tx = transactions[i];
+        auto const &encoded_tx =
+            bytes_alloc_.emplace_back(rlp::encode_transaction(transactions[i]));
         transaction_updates.push_front(update_alloc_.emplace_back(Update{
             .key = NibblesView{rlp_index},
-            .value = bytes_alloc_.emplace_back(rlp::encode_transaction(tx)),
+            .value = encoded_tx,
+            .incarnation = false,
+            .next = UpdateList{},
+            .version = static_cast<int64_t>(block_number_)}));
+
+        tx_hash_updates.push_front(update_alloc_.emplace_back(Update{
+            .key = NibblesView{hash_alloc_.emplace_back(keccak256(encoded_tx))},
+            .value = bytes_alloc_.emplace_back(
+                rlp::encode_list2(encoded_block_number, rlp_index)),
             .incarnation = false,
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));
@@ -278,12 +290,19 @@ void TrieDb::commit(
         .incarnation = true,
         .next = UpdateList{},
         .version = static_cast<int64_t>(block_number_)};
+    auto tx_hash_update = Update{
+        .key = tx_hash_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(tx_hash_updates),
+        .version = static_cast<int64_t>(block_number_)};
     updates.push_front(state_update);
     updates.push_front(code_update);
     updates.push_front(receipt_update);
     updates.push_front(transaction_update);
     updates.push_front(block_header_update);
     updates.push_front(ommer_update);
+    updates.push_front(tx_hash_update);
     UpdateList withdrawal_updates;
     if (withdrawals.has_value()) {
         // only commit withdrawals when the optional has value

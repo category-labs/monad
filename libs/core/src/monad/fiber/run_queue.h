@@ -158,6 +158,9 @@ inline int monad_run_queue_try_push(monad_run_queue_t *rq, monad_fiber_t *fiber)
         ++rq->stats.total_push_not_ready;
         goto Finish;
 
+    case MF_STATE_WAIT_QUEUE:
+        fiber->wait_object = nullptr;
+        [[fallthrough]];
     case MF_STATE_CAN_RUN:
         rc = 0;
         break;

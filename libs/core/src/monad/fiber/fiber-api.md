@@ -198,7 +198,11 @@ int main(int argc, char **argv)
      state for the `monad_thread_executor_t` objects
 
 2. For the synchronization primitives:
-   - To be added in a subsequent commit
+   - `fiber_channel.h` - implements a "channel" synchronization primitive
+     for fiber objects; for a description of channels see
+     [here](https://en.wikipedia.org/wiki/Channel_(programming))
+   - `fiber_semaphore.h` - implements a semaphore synchronization
+     primitive for fibers
 
 3. The "scheduler"
    - `monad_run_queue.h` - defines the interface for a simple thread-safe
@@ -308,6 +312,17 @@ how and when a fiber performs a context switch. The model we follow is:
   (a `monad_run_queue_t` object). Each worker takes the
   next-highest-priority fiber and runs it until it suspends
 
+- Returning and suspension are different: a fiber whose function has
+  suspended can be resumed by another call to `monad_fiber_run`. If a
+  fiber function has returned however, it cannot be run again. Once a
+  a fiber's function has returned, the fiber's resources (i.e., its stack)
+  can be reused to run a new function. A fiber that is only suspended
+  cannot be changed to run a different function, however. This is
+  because the fiber holds the suspended state for the function: its
+  active stack frames. These are potentially holding stack-local C++
+  objects which should be destroyed first. Attempting to change the
+  function when the fiber is suspended will return `EBUSY`
+
 Here is an example of how you might build such a worker thread (this
 is just an API example, the current implementation is more complex):
 
@@ -337,3 +352,146 @@ while (!atomic_load(&done)) {
     }
 }
 ```
+
+## Synchronization primitives
+
+The primary synchronization primitives offered are *channels*
+(`monad_fiber_channel_t`) and *semaphores* (`monad_fiber_semaphore_t`).
+Although semaphores can be implemented in terms of channels, they simplify
+memory management for the end user if the full power of a channel is not
+needed.
+
+### Channel memory management (or "what is `monad_fiber_msghdr_t`?)
+
+At any given time, a `monad_fiber_channel_t` is in one of three states:
+
+   1. Completely empty: no available messages and no waiting fibers
+   2. Has no available messages, but has one or more fibers waiting for
+      a message to be be published
+   3. Has no waiting fibers, but has enqueued messages waiting for a
+      fiber to dequeue them
+
+Conceptually, a fiber channel is just two FIFO queues. At least one queue
+is always empty, and potentially both are empty. If one of the queues is
+*not* empty, it is potentially arbitrarily long: the API imposes no
+limit on the number of messages that can be enqueued, or the number of
+fibers that can be waiting.
+
+Fiber channel performance is important, so we do not want the channel
+itself to dynamically allocate memory during the `push` or `pop`
+operations. There is an easy, zero-overhead solution for the queue of
+waiting fibers: because a `monad_fiber_t` can only wait on one
+synchronization primitive at a time, the `monad_fiber_t` structure itself
+contains a linkage object for an intrusive list of all fibers waiting
+on a condition. This is the `TAILQ_ENTRY(monad_fiber) wait_link` field.
+When a fiber needs to wait on a condition, it links itself to the end
+of an intrusive list representing the wait queue, requiring no additional
+memory.
+
+The situation for messages is different, since there is not already an
+existing object representing the message to store the list linkage inside of.
+
+The API solution is to offer such an object, and let the client decide how
+to manage the memory for it. There are two different blocks of memory that
+need to be managed for a channel message:
+
+   - The memory that stores the message payload itself
+
+   - The memory for a structure called `monad_fiber_msghdr_t`. This "message
+     header" object has two fields: the location of the message payload
+     buffer mentioned above (stored in a `struct iovec`) and a linkage object
+     so it can be linked into an intrusive list of all waiting messages on the
+     same wait queue
+
+A typical approach it to create a message structure like this, where the
+message header and the payload buffer are part of a single object:
+
+```c
+struct my_message
+{
+    monad_fiber_msghdr_t hdr;
+    char payload[256];
+};
+```
+
+A convenience method called `monad_fiber_msghdr_init_trailing` can be used
+to initialize the payload buffer to a fixed size occurring after the header
+member, e.g.,
+
+```c
+my_message msg;
+
+monad_fiber_msghdr_init_trailing(&msg.hdr, sizeof msg.payload);
+assert(msg.msg_buf.iov_base == msg.my_buf);
+```
+
+Using the `msghdr` object, messages can be enqueued on a
+`monad_fiber_channel_t` without any dynamic memory allocation. The memory
+management for the message objects themselves is an issue left entirely to
+the user.
+
+### Why are semaphores offered as a primitive?
+
+A semaphore is like a channel whose message is empty, and serves only
+as a "wakeup ticket," i.e., a dummy message whose meaning is that one
+fiber should wake up. Since the messages have no content, there is no
+need for any of the complex external memory management that exists with
+channels. If a semaphore can be used instead of a channel, it is a
+significant win for the end user.
+
+### Notes on the `monad_fiber_semaphore_thread_acquire_one` function
+
+This function is a simple, limited hack to solve the following problem:
+synchronization primitives are only designed to work between fibers, but
+in limited circumstances, the "sleeping" side can be an ordinary thread.
+This is not a general purpose facility; it can only be used in a limited
+way.
+
+#### Why ordinary threads sleep on semaphores
+
+In the current db implementation, an ordinary thread of execution is
+sometimes treated as though it is running on a fiber. This is an API
+idiom that Boost.Fiber allowed, thus the existing db code grew to rely
+on it. This also happens in the `libs/execution` code. Eventually, all
+of these places should be removed, and then the
+`monad_fiber_semaphore_thread_acquire_one` function should be removed.
+
+#### Why are sleeping threads a problem?
+
+If `monad_fiber_semaphore_acquire` finds there are no wakeup tokens
+available, it goes to sleep until a token is released. To "sleep" means
+to be added to a fiber wait queue, which is an intrusive list of
+`monad_fiber_t` objects. Not only does an ordinary thread of execution
+not have a `monad_fiber_t` object modeling it, but the wakeup behavior
+is intimately tied to the scheduling model: to "wake up" means "call
+`monad_run_queue_try_push`", an idiom that does not make sense for an
+ordinary thread. An ordinary thread is scheduled by the operating system,
+not by our fiber scheduler.
+
+Note that this does not apply to an ordinary thread calling
+`monad_fiber_semaphore_release`: that is a common idiom that makes sense.
+A wakeup token typically represents an external event that has occurred.
+It is perfectly normal for the "signaler" of that event to be an ordinary
+thread. For example, a non-fiber I/O worker thread might signal that an
+I/O event has occurred.
+
+Thus, it is "normal" for ordinary threads to wake up fibers, but it is
+unusual (and probably a design mistake) for ordinary threads to sleep on
+(and be woken up by) synchronization primitives that were designed for
+fibers.
+
+#### When and how to use `monad_fiber_semaphore_thread_acquire_one`
+
+To support the existing code, a limited form of threads sleeping on
+semaphores is allowed. The semantics are:
+
+- The thread is not tracked on a wait queue like the waiting fibers
+  are, which may affect debuggability
+
+- No matter when a thread starts sleeping, it is always woken up
+  last: the wakeup is edge triggered by the wakeup token counter
+  being CMPXCHG'd from 1 to 0 (this is the "one" in "acquire one")
+
+- The acquiring thread does not actually sleep, but busy-waits in an
+  atomic spin loop. This unusual design choice was made because the
+  places where these waits happen can be performance sensitive

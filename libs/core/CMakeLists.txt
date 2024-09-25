@@ -140,6 +140,8 @@ add_library(
   "src/monad/fiber/config.hpp"
   "src/monad/fiber/fiber.c"
   "src/monad/fiber/fiber.h"
+  "src/monad/fiber/fiber_channel.h"
+  "src/monad/fiber/fiber_semaphore.h"
   "src/monad/fiber/fiber_inline.h"
   "src/monad/fiber/fiber_thr.c"
   "src/monad/fiber/priority_algorithm.cpp"

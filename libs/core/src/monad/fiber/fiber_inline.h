@@ -12,11 +12,11 @@
 
 #include <errno.h>
 #include <stdint.h>
-#include <sys/queue.h>
 #include <threads.h>
 
 #include <monad/core/assert.h>
-#include <monad/core/tl_tid.h>
+#include <monad/core/likely.h>
+#include <monad/core/spinlock.h>
 
 #include <monad-boost/context/fcontext.h>
 
@@ -255,6 +255,57 @@ inline void monad_fiber_yield(monad_c_result eval)
     MONAD_DEBUG_ASSERT(self != nullptr);
     MONAD_SPINLOCK_LOCK(&self->lock);
     _monad_suspend_fiber(self, MF_STATE_CAN_RUN, MF_SUSPEND_YIELD, eval);
+}
+
+static inline void _monad_fiber_sleep(
+    monad_fiber_t *fiber, monad_fiber_prio_t wakeup_prio, void *wait_object)
+{
+    MONAD_SPINLOCK_LOCK(&fiber->lock);
+    if (MONAD_UNLIKELY(fiber->state == MF_STATE_WAKE_READY)) {
+        // This is the sleep call half of a "skipped sleep"
+        MONAD_SPINLOCK_UNLOCK(&fiber->lock);
+        return;
+    }
+    if (wakeup_prio != MONAD_FIBER_PRIO_NO_CHANGE) {
+        fiber->priority = wakeup_prio;
+    }
+    fiber->wait_object = wait_object;
+    ++fiber->stats.total_sleep;
+    _monad_suspend_fiber(
+        fiber, MF_STATE_WAIT_QUEUE, MF_SUSPEND_SLEEP, (monad_c_result){});
+}
+
+static inline bool _monad_fiber_try_wakeup(monad_fiber_t *fiber)
+{
+    int rc;
+
+    MONAD_SPINLOCK_LOCK(&fiber->lock);
+    if (MONAD_UNLIKELY(fiber->state != MF_STATE_WAIT_QUEUE)) {
+        fiber->state = MF_STATE_WAKE_READY;
+        ++fiber->stats.total_skipped_sleeps;
+        MONAD_SPINLOCK_UNLOCK(&fiber->lock);
+        return true;
+    }
+    if (MONAD_UNLIKELY(fiber->run_queue == nullptr)) {
+        // XXX: only for the test suite?
+        fiber->state = MF_STATE_CAN_RUN;
+        MONAD_SPINLOCK_UNLOCK(&fiber->lock);
+        return true;
+    }
+    rc = _monad_run_queue_try_push_global(fiber->run_queue, fiber);
+    if (MONAD_LIKELY(rc == 0)) {
+        return true;
+    }
+    // We are only permitted to report failure if trying again might succeed,
+    // because our caller must repeatedly try again until this succeeds.
+    // The run queue reports ENOBUFS when the queue is full. Presumably
+    // something else must be draining it. If not, this will manifest as an
+    // infinite loop with `total_sched_fail` monotonically increasing.
+    MONAD_ASSERT(rc == ENOBUFS);
+    fiber->state = MF_STATE_WAIT_QUEUE;
+    ++fiber->stats.total_sched_fail;
+    MONAD_SPINLOCK_UNLOCK(&fiber->lock);
+    return false;
 }
 
 #ifdef __cplusplus

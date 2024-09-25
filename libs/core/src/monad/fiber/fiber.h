@@ -8,6 +8,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <sys/queue.h>
 
 #include <monad/core/c_result.h>
 #include <monad/core/spinlock.h>
@@ -44,6 +45,8 @@ typedef struct monad_fiber_attr monad_fiber_attr_t;
 typedef struct monad_fiber_suspend_info monad_fiber_suspend_info_t;
 
 typedef monad_c_result(monad_fiber_ffunc_t)(monad_fiber_args_t);
+typedef TAILQ_HEAD(monad_fiber_wait_queue, monad_fiber)
+    monad_fiber_wait_queue_t;
 typedef int64_t monad_fiber_prio_t;
 
 // TODO(ken): https://github.com/monad-crypto/monad-internal/issues/498
@@ -143,8 +146,12 @@ struct monad_fiber_stack
 
 struct monad_fiber_stats
 {
-    size_t total_reset; ///< # of times monad_fiber_set_function is called
-    size_t total_run;   ///< # of times fiber has been run (1 + <#resumed>)
+    size_t total_reset;      ///< # of times monad_fiber_set_function is called
+    size_t total_run;        ///< # of times fiber has been run (1 + <#resumed>)
+    size_t total_sleep;      ///< # of times exec slept on a sync. primitive
+    size_t total_sched_fail; ///< # times scheduling immediately failed
+    size_t total_spurious_wakeups; ///< # times woken up just to sleep again
+    size_t total_skipped_sleeps;   ///< # times signaled before needing sleep
     size_t total_migrate;          ///< # of times moved between threads
 };
 
@@ -163,12 +170,14 @@ struct monad_fiber
     enum monad_fiber_state state;        ///< Run state the fiber is in
     unsigned fiber_id;                   ///< Unique ID of fiber
     monad_fiber_prio_t priority;         ///< Scheduling priority
-    #if MONAD_CORE_RUN_QUEUE_SUPPORT_EQUAL_PRIO
+    TAILQ_ENTRY(monad_fiber) wait_link;  ///< Linkage for wait_queue
+#if MONAD_CORE_RUN_QUEUE_SUPPORT_EQUAL_PRIO
     __int128_t rq_priority;              ///< Adjusted priority, see run_queue.h
-    #endif
+#endif
     monad_run_queue_t *run_queue;        ///< Most recent run queue
     monad_fcontext_t md_suspended_ctx;   ///< Suspended context pointer
     monad_thread_executor_t *thr_exec;   ///< Current thread we're running on
+    void *wait_object;                   ///< Synch. primitive we're sleeping on
     void *user_data;                     ///< Opaque user data
     struct monad_fiber_stack stack;      ///< Stack descriptor
     struct monad_fiber_stats stats;      ///< Statistics about this context
@@ -184,11 +193,13 @@ struct monad_fiber
 
 enum monad_fiber_state : unsigned
 {
-    MF_STATE_INIT,      ///< Fiber function not run yet
-    MF_STATE_CAN_RUN,   ///< Not running but able to run
-    MF_STATE_RUN_QUEUE, ///< Scheduled on a run queue
-    MF_STATE_RUNNING,   ///< Fiber or thread is running
-    MF_STATE_FINISHED   ///< Suspended by function return; fiber is finished
+    MF_STATE_INIT,       ///< Fiber function not run yet
+    MF_STATE_CAN_RUN,    ///< Not running but able to run
+    MF_STATE_WAIT_QUEUE, ///< Asleep on a wait queue
+    MF_STATE_WAKE_READY, ///< Ready to wake up on a condition immediately
+    MF_STATE_RUN_QUEUE,  ///< Scheduled on a run queue
+    MF_STATE_RUNNING,    ///< Fiber or thread is running
+    MF_STATE_FINISHED    ///< Suspended by function return; fiber is finished
 };
 
 // clang-format on

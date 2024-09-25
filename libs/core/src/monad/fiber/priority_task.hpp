@@ -9,8 +9,8 @@ MONAD_FIBER_NAMESPACE_BEGIN
 
 struct PriorityTask
 {
-    uint64_t priority{0};
-    std::function<void()> task{};
+    int64_t priority{0};
+    std::function<void()> task;
 };
 
 static_assert(sizeof(PriorityTask) == 40);

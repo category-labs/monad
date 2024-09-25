@@ -40,35 +40,9 @@ option(MONAD_CORE_RUN_QUEUE_SUPPORT_EQUAL_PRIO
 
 include("cmake/find_our_dependency.cmake")
 
-find_package(
-  Boost REQUIRED
-  COMPONENTS context fiber stacktrace_basic
+find_package(Boost REQUIRED
+  COMPONENTS stacktrace_basic
   OPTIONAL_COMPONENTS stacktrace_backtrace)
-
-function(check_if_boost_fiber_needs_ucontext_macro)
-  set(prog
-      "#include <boost/context/fiber.hpp>\nint main(void){\n::boost::context::fiber foo;\nreturn 0;\n}"
-  )
-  set(CMAKE_REQUIRED_LIBRARIES "Boost::context")
-  check_cxx_source_runs("${prog}" BOOST_FIBER_LINKS_WITHOUT_ADDITIONAL_MACROS)
-  if(NOT BOOST_FIBER_LINKS_WITHOUT_ADDITIONAL_MACROS)
-    set(CMAKE_REQUIRED_DEFINITIONS "-DBOOST_USE_UCONTEXT=1")
-    check_cxx_source_runs("${prog}"
-                          BOOST_FIBER_LINKS_WITH_BOOST_USE_UCONTEXT_MACRO)
-    if(BOOST_FIBER_LINKS_WITH_BOOST_USE_UCONTEXT_MACRO)
-      get_target_property(var Boost::context INTERFACE_COMPILE_DEFINITIONS)
-      list(APPEND var "-DBOOST_USE_UCONTEXT=1")
-      set_target_properties(Boost::context
-                            PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${var}")
-    else()
-      message(
-        FATAL_ERROR
-          "FATAL: Boost.Context needs additional help to link, and I need to be taught what"
-      )
-    endif()
-  endif()
-endfunction()
-check_if_boost_fiber_needs_ucontext_macro()
 
 find_package(TBB REQUIRED)
 
@@ -144,13 +118,8 @@ add_library(
   "src/monad/fiber/fiber_semaphore.h"
   "src/monad/fiber/fiber_inline.h"
   "src/monad/fiber/fiber_thr.c"
-  "src/monad/fiber/priority_algorithm.cpp"
-  "src/monad/fiber/priority_algorithm.hpp"
   "src/monad/fiber/priority_pool.cpp"
   "src/monad/fiber/priority_pool.hpp"
-  "src/monad/fiber/priority_properties.hpp"
-  "src/monad/fiber/priority_queue.cpp"
-  "src/monad/fiber/priority_queue.hpp"
   "src/monad/fiber/priority_task.hpp"
   "src/monad/fiber/run_queue.c"
   "src/monad/fiber/run_queue.h"
@@ -233,7 +202,7 @@ else()
   target_link_libraries(monad_core PRIVATE Boost::stacktrace_basic)
 endif()
 
-target_link_libraries(monad_core PUBLIC openssl_sha3 Boost::fiber TBB::tbb)
+target_link_libraries(monad_core PUBLIC openssl_sha3 TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC blake3)
 target_link_libraries(monad_core PUBLIC ethash::keccak)

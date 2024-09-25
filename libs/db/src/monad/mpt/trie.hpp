@@ -17,15 +17,8 @@
 
 #include <monad/core/tl_tid.h>
 #include <monad/core/unordered_map.hpp>
-
-#ifdef __clang__
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#endif
-#include <boost/fiber/future.hpp>
-#ifdef __clang__
-    #pragma clang diagnostic pop
-#endif
+#include <monad/fiber/fiber.h>
+#include <monad/fiber/fiber_semaphore.h>
 
 #include <atomic>
 #include <bit>
@@ -33,9 +26,6 @@
 #include <functional>
 #include <optional>
 #include <vector>
-
-// temporary
-#include "detail/boost_fiber_workarounds.hpp"
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -1041,16 +1031,60 @@ using inflight_map_t = unordered_dense_map<
     std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(NodeCursor)>>,
     chunk_offset_t_hasher>;
 
+/// A simple synchronization object the works with fibers or ordinary threads,
+/// to signal when a database worker thread has produced a value; see the
+/// documentation for the `monad_fiber_semaphore_thread_acquire_one` function
+/// to understand why we don't just use a plain `monad_fiber_semaphore_t` here
+class DbSyncObject
+{
+public:
+    DbSyncObject()
+        : is_fiber_{monad_fiber_self() != nullptr}
+    {
+        reset();
+    }
+
+    void acquire()
+    {
+        if (is_fiber_) [[likely]] {
+            monad_fiber_semaphore_acquire(&sem_, MONAD_FIBER_PRIO_NO_CHANGE);
+        }
+        else {
+            monad_fiber_semaphore_thread_acquire_one(&sem_);
+        }
+    }
+
+    bool try_acquire()
+    {
+        return monad_fiber_semaphore_try_acquire(&sem_);
+    }
+
+    void release()
+    {
+        monad_fiber_semaphore_release(&sem_, 1);
+    }
+
+    void reset()
+    {
+        monad_fiber_semaphore_init(&sem_);
+    }
+
+private:
+    monad_fiber_semaphore_t sem_;
+    bool const is_fiber_;
+};
+
 // The request type to put to the fiber buffered channel for triedb thread
 // to work on
 struct fiber_find_request_t
 {
-    threadsafe_boost_fibers_promise<find_cursor_result_type> *promise;
+    DbSyncObject *sync;
+    find_cursor_result_type *result;
     NodeCursor start{};
     NibblesView key{};
 };
 
-static_assert(sizeof(fiber_find_request_t) == 40);
+static_assert(sizeof(fiber_find_request_t) == 48);
 static_assert(alignof(fiber_find_request_t) == 8);
 static_assert(std::is_trivially_copyable_v<fiber_find_request_t> == true);
 

@@ -18,13 +18,13 @@
 #include <monad/execution/validate_transaction.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/lru/static_lru_cache.hpp>
+#include <monad/mpt/trie.hpp>
 #include <monad/mpt/util.hpp>
 #include <monad/rpc/eth_call.h>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/state.hpp>
 #include <monad/types/incarnation.hpp>
 
-#include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 
 #include <quill/Quill.h>
@@ -367,8 +367,7 @@ struct monad_eth_call_executor
 {
     using BlockHashCache = static_lru_cache<uint64_t, bytes32_t>;
 
-    using DbGetPromise =
-        boost::fibers::promise<std::variant<byte_string, std::string>>;
+    using DbGetType = std::variant<byte_string, std::string>;
 
     fiber::PriorityPool pool_;
 
@@ -401,7 +400,7 @@ struct monad_eth_call_executor
 
         // create the db instances on the PriorityPool thread so all the thread
         // local storage gets instantiated on the one thread its used
-        auto promise = std::make_shared<boost::fibers::promise<void>>();
+        mpt::DbSyncObject sync;
         pool_.submit(
             0,
             [&paths = paths,
@@ -410,16 +409,16 @@ struct monad_eth_call_executor
              &latest_db = latest_db_,
              &tdb = tdb_,
              &latest_tdb = latest_tdb_,
-             promise = promise] {
+             &sync] {
                 async_io.reset(new mpt::AsyncIOContext{
                     mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = paths}});
                 db.reset(new mpt::Db{*async_io});
                 latest_db.reset(new mpt::Db{*async_io});
                 tdb.reset(new TrieDb{*db});
                 latest_tdb.reset(new TrieDb{*latest_db});
-                promise->set_value();
+                sync.release();
             });
-        promise->get_future().get();
+        sync.acquire();
         return;
     }
 
@@ -431,7 +430,7 @@ struct monad_eth_call_executor
     // the PriorityPool thread
     ~monad_eth_call_executor()
     {
-        auto promise = std::make_shared<boost::fibers::promise<void>>();
+        mpt::DbSyncObject sync;
         pool_.submit(
             0,
             [&async_io = async_io_,
@@ -439,15 +438,15 @@ struct monad_eth_call_executor
              &latest_db = latest_db_,
              &tdb = tdb_,
              &latest_tdb = latest_tdb_,
-             promise = promise] {
+             &sync] {
                 latest_tdb.reset();
                 latest_db.reset();
                 tdb.reset();
                 db.reset();
                 async_io.reset();
-                promise->set_value();
+                sync.release();
             });
-        promise->get_future().get();
+        sync.acquire();
     }
 
     std::shared_ptr<BlockHashBufferFinalized const>
@@ -464,22 +463,24 @@ struct monad_eth_call_executor
                     continue;
                 }
 
-                auto const promise = std::make_shared<DbGetPromise>();
-                pool_.submit(0, [db = db_, b = b, promise = promise] {
+                mpt::DbSyncObject sync;
+                DbGetType header_result;
+                pool_.submit(0, [db = db_, b = b, &sync, &header_result] {
                     auto const h = db->get(
                         mpt::concat(
                             FINALIZED_NIBBLE,
                             mpt::NibblesView{block_header_nibbles}),
                         b);
                     if (h.has_value()) {
-                        promise->set_value(byte_string{h.value()});
+                        header_result = byte_string{h.value()};
                     }
                     else {
-                        promise->set_value(
-                            std::string{h.error().message().c_str()});
+                        header_result =
+                            std::string{h.error().message().c_str()};
                     }
+                    sync.release();
                 });
-                auto const header_result = promise->get_future().get();
+                sync.acquire();
 
                 if (auto const header = std::get_if<0>(&header_result)) {
                     auto const h = to_bytes(keccak256(*header));

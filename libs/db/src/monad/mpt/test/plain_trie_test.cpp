@@ -3,14 +3,11 @@
 
 #include <monad/core/byte_string.hpp>
 #include <monad/core/hex_literal.hpp>
-#include <monad/mpt/detail/boost_fiber_workarounds.hpp>
 #include <monad/mpt/node.hpp>
 #include <monad/mpt/trie.hpp>
 #include <monad/mpt/update.hpp>
 
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
-
-#include <boost/fiber/future/future_status.hpp>
 
 #include <chrono>
 #include <utility>
@@ -432,16 +429,16 @@ TYPED_TEST(PlainTrieTest, large_values)
 
     same_upsert_to_clear_nodes_outside_cache_level();
     {
-        monad::threadsafe_boost_fibers_promise<find_cursor_result_type> p;
-        auto fut = p.get_future();
+        DbSyncObject sync;
+        find_cursor_result_type result;
+
         inflight_map_t inflights;
-        fiber_find_request_t const req{&p, *this->root, key1};
+        fiber_find_request_t const req{&sync, &result, *this->root, key1};
         find_notify_fiber_future(this->aux, inflights, req);
-        while (fut.wait_for(std::chrono::seconds(0)) !=
-               ::boost::fibers::future_status::ready) {
+        while (!sync.try_acquire()) {
             this->aux.io->wait_until_done();
         }
-        auto [leaf_it, res] = fut.get();
+        auto [leaf_it, res] = result;
         auto *leaf = leaf_it.node;
         EXPECT_EQ(res, find_result::success);
         EXPECT_NE(leaf, nullptr);
@@ -451,16 +448,16 @@ TYPED_TEST(PlainTrieTest, large_values)
 
     same_upsert_to_clear_nodes_outside_cache_level();
     {
-        monad::threadsafe_boost_fibers_promise<find_cursor_result_type> p;
-        auto fut = p.get_future();
+        DbSyncObject sync;
+        find_cursor_result_type result;
+
         inflight_map_t inflights;
-        fiber_find_request_t const req{&p, *this->root, key2};
+        fiber_find_request_t const req{&sync, &result, *this->root, key2};
         find_notify_fiber_future(this->aux, inflights, req);
-        while (fut.wait_for(std::chrono::seconds(0)) !=
-               ::boost::fibers::future_status::ready) {
+        while (!sync.try_acquire()) {
             this->aux.io->wait_until_done();
         }
-        auto [leaf_it, res] = fut.get();
+        auto [leaf_it, res] = result;
         auto *leaf = leaf_it.node;
         EXPECT_EQ(res, find_result::success);
         EXPECT_NE(leaf, nullptr);

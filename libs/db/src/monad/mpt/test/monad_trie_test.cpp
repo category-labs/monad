@@ -12,12 +12,15 @@
 #include <monad/core/array.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/c_result.h>
 #include <monad/core/keccak.h>
 #include <monad/core/small_prng.hpp>
 #include <monad/core/unordered_map.hpp>
+#include <monad/fiber/fiber.h>
+#include <monad/fiber/fiber_semaphore.h>
+#include <monad/fiber/run_queue.h>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
-#include <monad/mpt/detail/boost_fiber_workarounds.hpp>
 #include <monad/mpt/find_request_sender.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/node.hpp>
@@ -26,14 +29,12 @@
 #include <monad/mpt/update.hpp>
 #include <monad/mpt/util.hpp>
 
-#include <boost/fiber/fiber.hpp>
-#include <boost/fiber/operations.hpp>
-
 #include <quill/Quill.h>
 
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cassert>
 #include <cerrno>
 #include <chrono>
@@ -268,6 +269,185 @@ void prepare_keccak(
             keccak256((unsigned char const *)&val, 8, keccak_values[i].data());
         }
     }
+}
+
+struct FindArgsCommon
+{
+    unsigned n_slices;
+    UpdateAuxImpl *aux;
+    NodeCursor state_start;
+};
+
+// STMF - single thread running multiple fibers test
+struct FindArgsSTMF
+{
+    inflight_map_t *inflights;
+    bool *signal_done;
+    uint64_t *ops;
+};
+
+// MTSF - multiple threads running a single fiber test
+struct FindArgsMTSF
+{
+    std::atomic<int> *signal_done;
+    std::atomic<uint64_t> *ops;
+    concurrent_queue<fiber_find_request_t> *req_queue;
+};
+
+void init_find_fiber(
+    monad_fiber_t **fiber, monad_fiber_prio_t prio, unsigned n,
+    FindArgsCommon *find_args_common, void *find_args_specific,
+    monad_fiber_ffunc_t *find)
+{
+    (void)monad_fiber_create(nullptr, fiber);
+    (void)monad_fiber_set_function(
+        *fiber,
+        prio,
+        find,
+        {n,
+         std::bit_cast<uintptr_t>(find_args_common),
+         std::bit_cast<uintptr_t>(find_args_specific)});
+}
+
+monad_c_result find_single_thread_multi_fiber(monad_fiber_args_t mfa)
+{
+    DbSyncObject sync;
+    find_cursor_result_type result;
+
+    unsigned const n = static_cast<unsigned>(mfa.arg[0]);
+    auto *const find_args_common = std::bit_cast<FindArgsCommon *>(mfa.arg[1]);
+    auto *const find_args_stmf = std::bit_cast<FindArgsSTMF *>(mfa.arg[2]);
+    monad::small_prng rand(n);
+    monad::byte_string key;
+    key.resize(32);
+
+    while (!*find_args_stmf->signal_done) {
+        size_t key_src = (rand() % (find_args_common->n_slices * SLICE_LEN));
+        keccak256((unsigned char const *)&key_src, 8, key.data());
+        fiber_find_request_t const request{
+            .sync = &sync,
+            .result = &result,
+            .start = find_args_common->state_start,
+            .key = key};
+        find_notify_fiber_future(
+            *find_args_common->aux, *find_args_stmf->inflights, request);
+        sync.acquire();
+        auto const [node_cursor, errc] = result;
+        MONAD_ASSERT(node_cursor.is_valid());
+        MONAD_ASSERT(errc == monad::mpt::find_result::success);
+        MONAD_ASSERT(node_cursor.node->has_value());
+        ++*find_args_stmf->ops;
+    }
+    return monad_c_make_success(0);
+}
+
+monad_c_result find_multi_thread_single_fiber(monad_fiber_args_t mfa)
+{
+    DbSyncObject sync;
+    find_cursor_result_type result;
+
+    unsigned const n = static_cast<unsigned>(mfa.arg[0]);
+    auto *const find_args_common = std::bit_cast<FindArgsCommon *>(mfa.arg[1]);
+    auto *const find_args_mtsf = std::bit_cast<FindArgsMTSF *>(mfa.arg[2]);
+    monad::small_prng rand(n);
+    monad::byte_string key;
+    key.resize(32);
+
+    while (0 == find_args_mtsf->signal_done->load(std::memory_order_relaxed)) {
+        size_t key_src = (rand() % (find_args_common->n_slices * SLICE_LEN));
+        keccak256((unsigned char const *)&key_src, 8, key.data());
+        fiber_find_request_t const request{
+            .sync = &sync,
+            .result = &result,
+            .start = find_args_common->state_start,
+            .key = key};
+        find_args_mtsf->req_queue->enqueue(request);
+        sync.acquire();
+        auto const [node_cursor, errc] = result;
+        MONAD_ASSERT(node_cursor.is_valid());
+        MONAD_ASSERT(errc == monad::mpt::find_result::success);
+        MONAD_ASSERT(node_cursor.node->has_value());
+        find_args_mtsf->ops->fetch_add(1, std::memory_order_relaxed);
+    }
+    find_args_mtsf->signal_done->fetch_add(1, std::memory_order_relaxed);
+    return monad_c_make_success(0);
+}
+
+monad_c_result find_multi_thread_single_fiber_receiver(monad_fiber_args_t mfa)
+{
+    auto *const find_args_common = std::bit_cast<FindArgsCommon *>(mfa.arg[1]);
+    auto *const find_args_mtsf = std::bit_cast<FindArgsMTSF *>(mfa.arg[2]);
+
+    struct receiver_t
+    {
+        UpdateAuxImpl &aux;
+        DbSyncObject sync;
+        find_cursor_result_type result;
+        monad::byte_string key;
+        fiber_find_request_t request;
+        inflight_map_t &inflights;
+
+        explicit receiver_t(UpdateAuxImpl &aux_, inflight_map_t &inflights_)
+            : aux(aux_)
+            , inflights(inflights_)
+        {
+            key.resize(32);
+        }
+
+        void reset(NodeCursor const state_start)
+        {
+            request = fiber_find_request_t{
+                .sync = &sync,
+                .result = &result,
+                .start = state_start,
+                .key = key};
+            sync.reset();
+        }
+
+        void set_value(
+            MONAD_ASYNC_NAMESPACE::erased_connected_operation *,
+            MONAD_ASYNC_NAMESPACE::threadsafe_sender::result_type res)
+        {
+            MONAD_ASSERT(res);
+            // We are now on the triedb thread
+            find_notify_fiber_future(aux, inflights, request);
+        }
+    };
+
+    inflight_map_t inflights;
+    using connected_state_type = decltype(connect(
+        *find_args_common->aux->io,
+        MONAD_ASYNC_NAMESPACE::threadsafe_sender{},
+        receiver_t{*find_args_common->aux, inflights}));
+    auto states = ::monad::make_array<connected_state_type, 4>(
+        std::piecewise_construct,
+        *find_args_common->aux->io,
+        std::piecewise_construct,
+        std::tuple{},
+        std::tuple<UpdateAuxImpl &, inflight_map_t &>{
+            *find_args_common->aux, inflights});
+    auto *state_it = states.begin();
+    while (0 == find_args_mtsf->signal_done->load(std::memory_order_relaxed)) {
+        auto &state = *state_it++;
+        if (state_it == states.end()) {
+            state_it = states.begin();
+        }
+        size_t key_src =
+            ((unsigned)rand() % (find_args_common->n_slices * SLICE_LEN));
+        keccak256(
+            (unsigned char const *)&key_src, 8, state.receiver().key.data());
+
+        state.reset(std::tuple{}, std::tuple{find_args_common->state_start});
+        state.initiate();
+        state.receiver().sync.acquire();
+        auto const [node_cursor, errc] = state.receiver().result;
+        MONAD_ASSERT(node_cursor.is_valid());
+        MONAD_ASSERT(errc == monad::mpt::find_result::success);
+        MONAD_ASSERT(node_cursor.node->has_value());
+        find_args_mtsf->ops->fetch_add(1, std::memory_order_relaxed);
+    }
+    find_args_mtsf->signal_done->fetch_add(1, std::memory_order_relaxed);
+    return monad_c_make_success(0);
 }
 
 int main(int argc, char *argv[])
@@ -795,52 +975,53 @@ int main(int argc, char *argv[])
                 uint64_t ops{0};
                 bool signal_done{false};
                 inflight_map_t inflights;
-                auto find = [n_slices, &ops, &signal_done, &inflights](
-                                UpdateAuxImpl *aux,
-                                NodeCursor state_start,
-                                unsigned n) {
-                    monad::small_prng rand(n);
-                    monad::byte_string key;
-                    key.resize(32);
-                    while (!signal_done) {
-                        size_t key_src = (rand() % (n_slices * SLICE_LEN));
-                        keccak256(
-                            (unsigned char const *)&key_src, 8, key.data());
 
-                        monad::threadsafe_boost_fibers_promise<
-                            monad::mpt::find_cursor_result_type>
-                            promise;
-                        fiber_find_request_t const request{
-                            .promise = &promise,
-                            .start = state_start,
-                            .key = key};
-                        find_notify_fiber_future(*aux, inflights, request);
-                        auto const [node_cursor, errc] =
-                            request.promise->get_future().get();
-                        MONAD_ASSERT(node_cursor.is_valid());
-                        MONAD_ASSERT(errc == monad::mpt::find_result::success);
-                        MONAD_ASSERT(node_cursor.node->has_value());
-                        ops++;
-                        boost::this_fiber::yield();
-                    }
-                };
-                auto poll =
-                    [&signal_done](MONAD_ASYNC_NAMESPACE::AsyncIO *const io) {
-                        while (!signal_done) {
-                            io->poll_nonblocking(1);
-                            boost::this_fiber::yield();
-                        }
-                    };
+                monad_run_queue_t *run_queue;
+                std::vector<monad_fiber_t *> fibers;
 
-                std::vector<boost::fibers::fiber> fibers;
-                fibers.reserve(random_read_benchmark_threads);
-                for (unsigned n = 0; n < random_read_benchmark_threads; n++) {
-                    fibers.emplace_back(find, &aux, state_start, n);
+                if (int const rc = monad_run_queue_create(
+                        nullptr, random_read_benchmark_threads, &run_queue)) {
+                    throw std::system_error{
+                        rc,
+                        std::generic_category(),
+                        "monad_run_queue_create failed"};
                 }
-                boost::fibers::fiber poll_fiber(poll, aux.io);
+
+                FindArgsCommon find_args_common = {
+                    .n_slices = n_slices,
+                    .aux = &aux,
+                    .state_start = state_start};
+                FindArgsSTMF find_args_stmf = {
+                    .inflights = &inflights,
+                    .signal_done = &signal_done,
+                    .ops = &ops};
+                for (unsigned n = 0; n < random_read_benchmark_threads; n++) {
+                    monad_fiber_t *&fiber = fibers.emplace_back();
+                    init_find_fiber(
+                        &fiber,
+                        MONAD_FIBER_PRIO_HIGHEST + n,
+                        n,
+                        &find_args_common,
+                        &find_args_stmf,
+                        find_single_thread_multi_fiber);
+                    if (int const rc =
+                            monad_run_queue_try_push(run_queue, fiber)) {
+                        throw std::system_error{
+                            rc,
+                            std::generic_category(),
+                            "monad_run_queue_try_push failed"};
+                    }
+                }
                 auto begin = std::chrono::steady_clock::now();
                 do {
-                    boost::this_fiber::yield();
+                    monad_fiber_t *next_fiber;
+                    do {
+                        aux.io->poll_nonblocking(1);
+                        next_fiber = monad_run_queue_try_pop(run_queue);
+                    }
+                    while (next_fiber == nullptr);
+                    int const rc = monad_fiber_run(next_fiber, nullptr);
+                    MONAD_ASSERT(rc == 0);
                 }
                 while (std::chrono::steady_clock::now() - begin <
                        std::chrono::seconds(10));
@@ -852,12 +1033,27 @@ int main(int argc, char *argv[])
                     "   Did %f random reads per second.\n",
                     1000000.0 * double(ops) / double(diff.count()));
                 fflush(stdout);
+                // Gracefully cleanup the fibers (this will let any local C++
+                // destructors run)
                 signal_done = true;
-                for (auto &fiber : fibers) {
-                    io.wait_until_done();
-                    fiber.join();
+                std::size_t finished_fibers = 0;
+                while (finished_fibers < random_read_benchmark_threads) {
+                    monad_fiber_suspend_info_t suspend_info;
+                    monad_fiber_t *next_fiber =
+                        monad_run_queue_try_pop(run_queue);
+                    while (next_fiber == nullptr) {
+                        io.poll_nonblocking(1);
+                        next_fiber = monad_run_queue_try_pop(run_queue);
+                    }
+                    monad_fiber_run(next_fiber, &suspend_info);
+                    if (suspend_info.suspend_type == MF_SUSPEND_RETURN) {
+                        ++finished_fibers;
+                    }
                 }
-                poll_fiber.join();
+                for (monad_fiber_t *fiber : fibers) {
+                    monad_fiber_destroy(fiber);
+                }
+                monad_run_queue_destroy(run_queue);
             }
 
             {
@@ -875,76 +1071,44 @@ int main(int argc, char *argv[])
                 std::atomic<uint64_t> ops{0};
                 std::atomic<int> signal_done{0};
                 concurrent_queue<fiber_find_request_t> req;
-                auto find = [n_slices, &ops, &signal_done, &req](
-                                NodeCursor const state_start, unsigned n) {
-                    monad::small_prng rand(n);
-                    monad::byte_string key;
-                    key.resize(32);
-                    // We need to keep these around as destructing them when
-                    // another thread is still using them is apparently not
-                    // allowed in Boost.Fiber
-                    std::array<
-                        monad::threadsafe_boost_fibers_promise<
-                            monad::mpt::find_cursor_result_type>,
-                        4>
-                        promises;
-                    auto *promise_it = promises.begin();
-                    while (0 == signal_done.load(std::memory_order_relaxed)) {
-                        size_t key_src = (rand() % (n_slices * SLICE_LEN));
-                        keccak256(
-                            (unsigned char const *)&key_src, 8, key.data());
-
-                        if (promise_it == promises.end()) {
-                            promise_it = promises.begin();
-                        }
-                        fiber_find_request_t const request{
-                            .promise = &*promise_it++,
-                            .start = state_start,
-                            .key = key};
-                        request.promise->reset();
-                        req.enqueue(request);
-                        auto const [node_cursor, errc] =
-                            request.promise->get_future().get();
-                        MONAD_ASSERT(node_cursor.is_valid());
-                        MONAD_ASSERT(errc == monad::mpt::find_result::success);
-                        MONAD_ASSERT(node_cursor.node->has_value());
-                        ops.fetch_add(1, std::memory_order_relaxed);
-                    }
-                    signal_done.fetch_add(1, std::memory_order_relaxed);
-                    while (signal_done.load(std::memory_order_relaxed) > 0) {
-                        std::this_thread::yield();
-                    }
-                };
-                auto poll = [&signal_done, &req](UpdateAuxImpl *aux) {
-                    inflight_map_t inflights;
-                    fiber_find_request_t request;
-                    for (;;) {
-                        boost::this_fiber::yield();
-                        if (0 == signal_done.load(std::memory_order_relaxed)) {
-                            aux->io->poll_nonblocking(1);
-                        }
-                        else {
-                            aux->io->wait_until_done();
-                            return;
-                        }
-                        if (req.try_dequeue(request)) {
-                            find_notify_fiber_future(*aux, inflights, request);
-                        }
-                    }
-                };
 
                 std::vector<std::thread> threads;
                 threads.reserve(random_read_benchmark_threads);
                 for (unsigned n = 0; n < random_read_benchmark_threads; n++) {
-                    threads.emplace_back(find, state_start, n);
+                    auto thread_fn = [](unsigned n,
+                                        FindArgsCommon find_args_common,
+                                        FindArgsMTSF find_args_mtsf) {
+                        monad_fiber_t *fiber;
+                        monad_fiber_suspend_info_t suspend_info;
+                        init_find_fiber(
+                            &fiber,
+                            MONAD_FIBER_PRIO_HIGHEST,
+                            n,
+                            &find_args_common,
+                            &find_args_mtsf,
+                            find_multi_thread_single_fiber);
+                        do {
+                            (void)monad_fiber_run(fiber, &suspend_info);
+                        }
+                        while (suspend_info.suspend_type != MF_SUSPEND_RETURN);
+                        monad_fiber_destroy(fiber);
+                    };
+                    threads.emplace_back(
+                        thread_fn,
+                        n,
+                        FindArgsCommon{n_slices, &aux, state_start},
+                        FindArgsMTSF{&signal_done, &ops, &req});
                 }
-                boost::fibers::fiber poll_fiber(poll, &aux);
                 auto begin = std::chrono::steady_clock::now();
-                do {
-                    boost::this_fiber::yield();
-                }
+                inflight_map_t inflights;
                 while (std::chrono::steady_clock::now() - begin <
-                       std::chrono::seconds(10));
+                       std::chrono::seconds(10)) {
+                    fiber_find_request_t request;
+                    aux.io->poll_nonblocking(1);
+                    if (req.try_dequeue(request)) {
+                        find_notify_fiber_future(aux, inflights, request);
+                    }
+                }
                 auto end = std::chrono::steady_clock::now();
                 auto diff =
                     std::chrono::duration_cast<std::chrono::microseconds>(
@@ -955,9 +1119,8 @@ int main(int argc, char *argv[])
                 signal_done = 1;
                 std::cout << "   Joining threads 1 ..." << std::endl;
                 while (signal_done < int(random_read_benchmark_threads + 1)) {
-                    boost::this_fiber::yield();
-                    inflight_map_t inflights;
                     fiber_find_request_t request;
+                    aux.io->poll_nonblocking(1);
                     if (req.try_dequeue(request)) {
                         find_notify_fiber_future(aux, inflights, request);
                     }
@@ -967,8 +1130,6 @@ int main(int argc, char *argv[])
                 for (auto &thread : threads) {
                     thread.join();
                 }
-                std::cout << "   Joining poll fiber ..." << std::endl;
-                poll_fiber.join();
                 std::cout << "   Done!" << std::endl;
             }
 
@@ -986,108 +1147,39 @@ int main(int argc, char *argv[])
 
                 std::atomic<uint64_t> ops{0};
                 std::atomic<int> signal_done{0};
-                auto find = [n_slices, &ops, &signal_done, &aux](
-                                NodeCursor const state_start, unsigned n) {
-                    monad::small_prng rand(n);
-                    struct receiver_t
-                    {
-                        UpdateAuxImpl &aux;
-                        monad::threadsafe_boost_fibers_promise<
-                            monad::mpt::find_cursor_result_type>
-                            p;
-                        monad::byte_string key;
-                        fiber_find_request_t request;
-                        inflight_map_t &inflights;
-
-                        explicit receiver_t(
-                            UpdateAuxImpl &aux_, inflight_map_t &inflights_)
-                            : aux(aux_)
-                            , inflights(inflights_)
-                        {
-                            key.resize(32);
-                        }
-
-                        void reset(NodeCursor const state_start)
-                        {
-                            p.reset();
-                            request = fiber_find_request_t{
-                                .promise = &p,
-                                .start = state_start,
-                                .key = key};
-                        }
-                        void set_value(
-                            MONAD_ASYNC_NAMESPACE::erased_connected_operation *,
-                            MONAD_ASYNC_NAMESPACE::threadsafe_sender::
-                                result_type res)
-                        {
-                            MONAD_ASSERT(res);
-                            // We are now on the triedb thread
-                            find_notify_fiber_future(aux, inflights, request);
-                        }
-                    };
-                    inflight_map_t inflights;
-                    using connected_state_type = decltype(connect(
-                        *aux.io,
-                        MONAD_ASYNC_NAMESPACE::threadsafe_sender{},
-                        receiver_t{aux, inflights}));
-                    auto states = ::monad::make_array<connected_state_type, 4>(
-                        std::piecewise_construct,
-                        *aux.io,
-                        std::piecewise_construct,
-                        std::tuple{},
-                        std::tuple<UpdateAuxImpl &, inflight_map_t &>{
-                            aux, inflights});
-                    auto *state_it = states.begin();
-                    while (0 == signal_done.load(std::memory_order_relaxed)) {
-                        auto &state = *state_it++;
-                        if (state_it == states.end()) {
-                            state_it = states.begin();
-                        }
-                        size_t key_src = (rand() % (n_slices * SLICE_LEN));
-                        keccak256(
-                            (unsigned char const *)&key_src,
-                            8,
-                            state.receiver().key.data());
-
-                        state.reset(std::tuple{}, std::tuple{state_start});
-                        state.initiate();
-                        auto const [node_cursor, errc] =
-                            state.receiver().p.get_future().get();
-                        MONAD_ASSERT(node_cursor.is_valid());
-                        MONAD_ASSERT(errc == monad::mpt::find_result::success);
-                        MONAD_ASSERT(node_cursor.node->has_value());
-                        ops.fetch_add(1, std::memory_order_relaxed);
-                    }
-                    signal_done.fetch_add(1, std::memory_order_relaxed);
-                    while (signal_done.load(std::memory_order_relaxed) > 0) {
-                        std::this_thread::yield();
-                    }
-                };
-                auto poll = [&signal_done](UpdateAuxImpl *aux) {
-                    for (;;) {
-                        boost::this_fiber::yield();
-                        if (signal_done.load(std::memory_order_relaxed) >= 0) {
-                            aux->io->poll_nonblocking(1);
-                        }
-                        else {
-                            aux->io->wait_until_done();
-                            return;
-                        }
-                    }
-                };
 
                 std::vector<std::thread> threads;
                 threads.reserve(random_read_benchmark_threads);
                 for (unsigned n = 0; n < random_read_benchmark_threads; n++) {
-                    threads.emplace_back(find, state_start, n);
+                    auto thread_fn = [](unsigned n,
+                                        FindArgsCommon find_args_common,
+                                        FindArgsMTSF find_args_mtsf) {
+                        monad_fiber_t *fiber;
+                        monad_fiber_suspend_info_t suspend_info;
+                        init_find_fiber(
+                            &fiber,
+                            MONAD_FIBER_PRIO_HIGHEST,
+                            n,
+                            &find_args_common,
+                            &find_args_mtsf,
+                            find_multi_thread_single_fiber_receiver);
+                        do {
+                            (void)monad_fiber_run(fiber, &suspend_info);
+                        }
+                        while (suspend_info.suspend_type != MF_SUSPEND_RETURN);
+                        monad_fiber_destroy(fiber);
+                    };
+                    threads.emplace_back(
+                        thread_fn,
+                        n,
+                        FindArgsCommon{n_slices, &aux, state_start},
+                        FindArgsMTSF{&signal_done, &ops, nullptr});
                 }
-                boost::fibers::fiber poll_fiber(poll, &aux);
                 auto begin = std::chrono::steady_clock::now();
-                do {
-                    boost::this_fiber::yield();
-                }
                 while (std::chrono::steady_clock::now() - begin <
-                       std::chrono::seconds(10));
+                       std::chrono::seconds(10)) {
+                    aux.io->poll_nonblocking(1);
+                }
                 auto end = std::chrono::steady_clock::now();
                 auto diff =
                     std::chrono::duration_cast<std::chrono::microseconds>(
@@ -1098,15 +1190,13 @@ int main(int argc, char *argv[])
                 signal_done = 1;
                 std::cout << "   Joining threads 1 ..." << std::endl;
                 while (signal_done < int(random_read_benchmark_threads + 1)) {
-                    boost::this_fiber::yield();
+                    aux.io->poll_nonblocking(1);
                 }
                 std::cout << "   Joining threads 2 ..." << std::endl;
                 signal_done = -1;
                 for (auto &thread : threads) {
                     thread.join();
                 }
-                std::cout << "   Joining poll fiber ..." << std::endl;
-                poll_fiber.join();
                 std::cout << "   Done!" << std::endl;
             }
         }

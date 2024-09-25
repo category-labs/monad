@@ -7,13 +7,10 @@
 #include <monad/core/nibble.h>
 #include <monad/core/tl_tid.h>
 #include <monad/mpt/config.hpp>
-#include <monad/mpt/detail/boost_fiber_workarounds.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/node.hpp>
 #include <monad/mpt/trie.hpp>
 #include <monad/mpt/util.hpp>
-
-#include <boost/fiber/future.hpp>
 
 #include <cassert>
 #include <cstdint>
@@ -27,11 +24,6 @@
 MONAD_MPT_NAMESPACE_BEGIN
 
 using namespace MONAD_ASYNC_NAMESPACE;
-
-void find_recursive(
-    UpdateAuxImpl &, inflight_map_t &,
-    threadsafe_boost_fibers_promise<find_cursor_result_type> &, NodeCursor root,
-    NibblesView key);
 
 namespace
 {
@@ -102,15 +94,13 @@ namespace
 // existing inflight read, Otherwise, send a read request and put itself on the
 // map
 void find_recursive(
-    UpdateAuxImpl &aux, inflight_map_t &inflights,
-    threadsafe_boost_fibers_promise<find_cursor_result_type> &promise,
-    NodeCursor root, NibblesView const key)
+    UpdateAuxImpl &aux, inflight_map_t &inflights, DbSyncObject *sync,
+    find_cursor_result_type *result, NodeCursor root, NibblesView const key)
 
 {
     if (!root.is_valid()) {
-        promise.set_value(
-            {NodeCursor{}, find_result::root_node_is_null_failure});
-        return;
+        *result = {NodeCursor{}, find_result::root_node_is_null_failure};
+        return sync->release();
     }
     unsigned prefix_index = 0;
     unsigned node_prefix_index = root.prefix_index;
@@ -118,23 +108,22 @@ void find_recursive(
     for (; node_prefix_index < node->path_nibble_index_end;
          ++node_prefix_index, ++prefix_index) {
         if (prefix_index >= key.nibble_size()) {
-            promise.set_value(
-                {NodeCursor{*node, node_prefix_index},
-                 find_result::key_ends_earlier_than_node_failure});
-            return;
+            *result = {
+                NodeCursor{*node, node_prefix_index},
+                find_result::key_ends_earlier_than_node_failure};
+            return sync->release();
         }
         if (key.get(prefix_index) !=
             get_nibble(node->path_data(), node_prefix_index)) {
-            promise.set_value(
-                {NodeCursor{*node, node_prefix_index},
-                 find_result::key_mismatch_failure});
-            return;
+            *result = {
+                NodeCursor{*node, node_prefix_index},
+                find_result::key_mismatch_failure};
+            return sync->release();
         }
     }
     if (prefix_index == key.nibble_size()) {
-        promise.set_value(
-            {NodeCursor{*node, node_prefix_index}, find_result::success});
-        return;
+        *result = {NodeCursor{*node, node_prefix_index}, find_result::success};
+        return sync->release();
     }
     MONAD_ASSERT(prefix_index < key.nibble_size());
     if (unsigned char const branch = key.get(prefix_index);
@@ -146,19 +135,24 @@ void find_recursive(
         auto const child_index = node->to_child_index(branch);
         if (node->next(child_index) != nullptr) {
             find_recursive(
-                aux, inflights, promise, *node->next(child_index), next_key);
+                aux,
+                inflights,
+                sync,
+                result,
+                *node->next(child_index),
+                next_key);
             return;
         }
         if (aux.io->owning_thread_id() != get_tl_tid()) {
-            promise.set_value(
-                {NodeCursor{*node, node_prefix_index},
-                 find_result::need_to_continue_in_io_thread});
-            return;
+            *result = {
+                NodeCursor{*node, node_prefix_index},
+                find_result::need_to_continue_in_io_thread};
+            return sync->release();
         }
         chunk_offset_t const offset = node->fnext(child_index);
-        auto cont = [&aux, &inflights, &promise, next_key](
-                        NodeCursor node_cursor) -> result<void> {
-            find_recursive(aux, inflights, promise, node_cursor, next_key);
+        auto cont = [&aux, &inflights, sync, result, next_key](
+                        NodeCursor node_cursor) -> async::result<void> {
+            find_recursive(aux, inflights, sync, result, node_cursor, next_key);
             return success();
         };
         if (auto lt = inflights.find(offset); lt != inflights.end()) {
@@ -171,9 +165,10 @@ void find_recursive(
             *aux.io, std::move(receiver), receiver.bytes_to_read);
     }
     else {
-        promise.set_value(
-            {NodeCursor{*node, node_prefix_index},
-             find_result::branch_not_exist_failure});
+        *result = {
+            NodeCursor{*node, node_prefix_index},
+            find_result::branch_not_exist_failure};
+        return sync->release();
     }
 }
 
@@ -182,7 +177,7 @@ void find_notify_fiber_future(
     fiber_find_request_t const req)
 {
     auto g(aux.shared_lock());
-    find_recursive(aux, inflights, *req.promise, req.start, req.key);
+    find_recursive(aux, inflights, req.sync, req.result, req.start, req.key);
 }
 
 MONAD_MPT_NAMESPACE_END

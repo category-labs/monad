@@ -11,8 +11,6 @@
 #include <monad/rpc/eth_call.h>
 #include <test_resource_data.h>
 
-#include <boost/fiber/future/promise.hpp>
-
 #include <gtest/gtest.h>
 
 #include <vector>
@@ -65,7 +63,7 @@ namespace
     struct callback_context
     {
         monad_eth_call_result *result;
-        boost::fibers::promise<void> promise;
+        mpt::DbSyncObject sync;
 
         ~callback_context()
         {
@@ -78,7 +76,7 @@ namespace
         auto c = (callback_context *)user;
 
         c->result = result;
-        c->promise.set_value();
+        c->sync.release();
     }
 }
 
@@ -108,7 +106,6 @@ TEST_F(EthCallFixture, simple_success_call)
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
-    boost::fibers::future<void> f = ctx.promise.get_future();
     monad_eth_call_executor_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
@@ -123,7 +120,7 @@ TEST_F(EthCallFixture, simple_success_call)
         state_override,
         complete_callback,
         (void *)&ctx);
-    f.get();
+    ctx.sync.acquire();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
     monad_state_override_destroy(state_override);
@@ -159,7 +156,6 @@ TEST_F(EthCallFixture, insufficient_balance)
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
-    boost::fibers::future<void> f = ctx.promise.get_future();
     monad_eth_call_executor_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
@@ -174,7 +170,7 @@ TEST_F(EthCallFixture, insufficient_balance)
         state_override,
         complete_callback,
         (void *)&ctx);
-    f.get();
+    ctx.sync.acquire();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_REJECTED);
     EXPECT_TRUE(std::strcmp(ctx.result->message, "insufficient balance") == 0);
@@ -212,7 +208,6 @@ TEST_F(EthCallFixture, on_proposed_block)
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
-    boost::fibers::future<void> f = ctx.promise.get_future();
     monad_eth_call_executor_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
@@ -227,7 +222,7 @@ TEST_F(EthCallFixture, on_proposed_block)
         state_override,
         complete_callback,
         (void *)&ctx);
-    f.get();
+    ctx.sync.acquire();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
     monad_state_override_destroy(state_override);
@@ -263,7 +258,6 @@ TEST_F(EthCallFixture, failed_to_read)
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
-    boost::fibers::future<void> f = ctx.promise.get_future();
     monad_eth_call_executor_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
@@ -278,7 +272,7 @@ TEST_F(EthCallFixture, failed_to_read)
         state_override,
         complete_callback,
         (void *)&ctx);
-    f.get();
+    ctx.sync.acquire();
 
     EXPECT_EQ(ctx.result->status_code, EVMC_REJECTED);
     monad_state_override_destroy(state_override);
@@ -312,7 +306,6 @@ TEST_F(EthCallFixture, contract_deployment_success)
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
-    boost::fibers::future<void> f = ctx.promise.get_future();
     monad_eth_call_executor_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
@@ -327,7 +320,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
         state_override,
         complete_callback,
         (void *)&ctx);
-    f.get();
+    ctx.sync.acquire();
 
     std::string deployed_code =
         "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe036"
@@ -386,7 +379,6 @@ TEST_F(EthCallFixture, from_contract_account)
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
-    boost::fibers::future<void> f = ctx.promise.get_future();
     monad_eth_call_executor_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
@@ -401,7 +393,7 @@ TEST_F(EthCallFixture, from_contract_account)
         state_override,
         complete_callback,
         (void *)&ctx);
-    f.get();
+    ctx.sync.acquire();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
     EXPECT_EQ(ctx.result->output_data_len, 0);

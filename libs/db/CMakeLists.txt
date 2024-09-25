@@ -14,7 +14,7 @@ option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(
   Boost 1.83 # 1.83 really is the minimum
-  COMPONENTS context fiber json thread
+  COMPONENTS json thread
   REQUIRED)
 find_package(GTest)
 find_package(PkgConfig REQUIRED)

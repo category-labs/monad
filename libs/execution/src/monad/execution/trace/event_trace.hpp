@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/config.hpp>
+#include <monad/fiber/fiber.h>
 
 #include <quill/Quill.h>
 
@@ -11,9 +12,6 @@
 
 #ifdef ENABLE_EVENT_TRACING
     #include <monad/core/likely.h>
-    #include <monad/fiber/priority_properties.hpp>
-
-    #include <boost/fiber/operations.hpp>
 
     #define TRACE_BLOCK_EVENT(enum)                                            \
         auto const timer_##enum =                                              \
@@ -22,14 +20,10 @@
     #define TRACE_TXN_EVENT(enum)                                              \
         auto const timer_##enum = TraceTimer{TraceEvent{                       \
             TraceType::enum, [] {                                              \
-                auto const *const props =                                      \
-                    boost::fibers::context::active()->get_properties();        \
+                monad_fiber_t const *const fiber = monad_fiber_self();         \
                                                                                \
-                if (MONAD_LIKELY(props)) {                                     \
-                    return dynamic_cast<                                       \
-                               monad::fiber::PriorityProperties const &>(      \
-                               *props)                                         \
-                        .get_priority();                                       \
+                if (MONAD_LIKELY(fiber != nullptr)) {                          \
+                    return static_cast<uint64_t>(fiber->priority);             \
                 }                                                              \
                 else {                                                         \
                     return 0ul;                                                \

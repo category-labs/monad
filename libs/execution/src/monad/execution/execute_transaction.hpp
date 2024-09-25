@@ -9,9 +9,9 @@
 
 #include <evmc/evmc.h>
 
-#include <boost/fiber/future/promise.hpp>
-
 #include <cstdint>
+
+typedef struct monad_fiber_semaphore monad_fiber_semaphore_t;
 
 MONAD_NAMESPACE_BEGIN
 
@@ -47,12 +47,14 @@ template <evmc_revision rev>
 Result<ExecutionResult> execute_impl(
     Chain const &, uint64_t i, Transaction const &, Address const &sender,
     BlockHeader const &, BlockHashBuffer const &, BlockState &,
-    boost::fibers::promise<void> &prev);
+    monad_fiber_semaphore_t *txn_sync_semaphore);
 
 template <evmc_revision rev>
 Result<ExecutionResult> execute(
     Chain const &, uint64_t i, Transaction const &,
     std::optional<Address> const &, BlockHeader const &,
-    BlockHashBuffer const &, BlockState &, boost::fibers::promise<void> &prev);
+    BlockHashBuffer const &, BlockState &,
+    monad_fiber_semaphore_t *sender_semaphore,
+    monad_fiber_semaphore_t *txn_sync_semaphore);
 
 MONAD_NAMESPACE_END

@@ -18,6 +18,7 @@
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
+#include <monad/fiber/fiber_semaphore.h>
 #include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
@@ -25,7 +26,6 @@
 
 #include <intx/intx.hpp>
 
-#include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 
 #include <algorithm>
@@ -208,7 +208,7 @@ Result<ExecutionResult> execute_impl(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
-    boost::fibers::promise<void> &prev)
+    monad_fiber_semaphore_t *txn_sync_semaphore)
 {
     BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
         tx,
@@ -233,7 +233,9 @@ Result<ExecutionResult> execute_impl(
 
         {
             TRACE_TXN_EVENT(StartStall);
-            prev.get_future().wait();
+            // Ensure previous transaction is fully merged first
+            monad_fiber_semaphore_acquire(
+                txn_sync_semaphore, MONAD_FIBER_PRIO_NO_CHANGE);
         }
 
         if (block_state.can_merge(state)) {
@@ -304,10 +306,13 @@ Result<ExecutionResult> execute(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     std::optional<Address> const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
-    boost::fibers::promise<void> &prev)
+    monad_fiber_semaphore_t *sender_semaphore,
+    monad_fiber_semaphore_t *txn_sync_semaphore)
 {
     TRACE_TXN_EVENT(StartTxn);
 
+    // Wait for the sender to materialize
+    monad_fiber_semaphore_acquire(sender_semaphore, MONAD_FIBER_PRIO_NO_CHANGE);
     if (MONAD_UNLIKELY(!sender.has_value())) {
         return TransactionError::MissingSender;
     }
@@ -320,7 +325,7 @@ Result<ExecutionResult> execute(
         hdr,
         block_hash_buffer,
         block_state,
-        prev);
+        txn_sync_semaphore);
 }
 
 EXPLICIT_EVMC_REVISION(execute);

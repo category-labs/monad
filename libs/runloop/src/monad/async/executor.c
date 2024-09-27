@@ -42,6 +42,19 @@ monad_c_result monad_async_executor_destroy(monad_async_executor ex_)
 {
     struct monad_async_executor_impl *ex =
         (struct monad_async_executor_impl *)ex_;
+    if (ex->head.total_io_submitted != ex->head.total_io_completed) {
+        fprintf(
+            stderr,
+            "FATAL: On executor destroy, total_io_submitted = %lu "
+            "total_io_completed = %lu. If these don't match, it generally "
+            "means io_uring ops were leaked e.g. multiple suspend for "
+            "durations were issued by a task without cancelling the preceding "
+            "ones. You should fix this, as it will eventually overflow "
+            "io_uring.\n",
+            ex->head.total_io_submitted,
+            ex->head.total_io_completed);
+        abort();
+    }
     BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(monad_async_executor_destroy_impl(ex));
     free(ex);
     return monad_c_make_success(0);
@@ -558,6 +571,7 @@ static inline monad_c_result monad_async_executor_run_impl(
             fflush(stdout);
 #endif
             // Always empty the completions queue irrespective of max_items
+            uint32_t total_io_completed_to_subtract = 0;
             unsigned head;
             unsigned i = 0;
             io_uring_for_each_cqe(ring, head, cqe)
@@ -576,7 +590,8 @@ static inline monad_c_result monad_async_executor_run_impl(
                 fflush(stdout);
 #endif
                 if (cqe->user_data == 0 && cqe->res == 0 && cqe->flags == 0) {
-                    // Spurious empty CQE
+                    // Spurious empty CQE. Appears to be generated when you
+                    // cancel an op which would have produced a CQE.
                     continue;
                 }
                 struct monad_async_task_impl *task;
@@ -615,6 +630,42 @@ static inline monad_c_result monad_async_executor_run_impl(
                         task->head.ticks_when_suspended_completed =
                             get_ticks_count(memory_order_relaxed);
                         if (task->please_cancel_invoked) {
+                            if (cqe->res < 0) {
+                                switch (cqe->res) {
+                                case -ECANCELED:
+                                    // This is what we'd like to see
+                                    break;
+                                case -ENOENT:
+                                    fprintf(
+                                        stderr,
+                                        "FATAL: Executor told cancellation "
+                                        "request could not be found, this will "
+                                        "be a logic error.\n");
+                                    abort();
+                                case -EINVAL:
+                                    fprintf(
+                                        stderr,
+                                        "FATAL: Executor told cancellation "
+                                        "request had invalid arguments, this "
+                                        "will be a logic error.\n");
+                                    abort();
+                                case -EALREADY:
+                                    fprintf(
+                                        stderr,
+                                        "FATAL: FIXME we have not implemented "
+                                        "restarting waits if cancellation "
+                                        "fails.\n");
+                                    abort();
+                                default:
+                                    fprintf(
+                                        stderr,
+                                        "FATAL: Executor told cancellation "
+                                        "request has failed with '%s', this "
+                                        "will be a logic error.\n",
+                                        strerror(-cqe->res));
+                                    abort();
+                                }
+                            }
                             task->head.derived.result =
                                 monad_c_make_failure(ECANCELED);
                         }
@@ -719,6 +770,7 @@ static inline monad_c_result monad_async_executor_run_impl(
                             abort();
                         }
                     }
+                    total_io_completed_to_subtract++;
                     retry_after_this = true;
                 }
                 else if (magic == CANCELLED_OP_IO_URING_DATA_MAGIC) {
@@ -748,7 +800,7 @@ static inline monad_c_result monad_async_executor_run_impl(
             monad_context_cpu_ticks_count_t const io_uring_end =
                 get_ticks_count(memory_order_relaxed);
             ex->head.total_ticks_in_io_uring += io_uring_end - io_uring_begin;
-            ex->head.total_io_completed += i;
+            ex->head.total_io_completed += i - total_io_completed_to_subtract;
         }
         else {
             // If io_uring was not enabled for this executor, use the
@@ -1143,6 +1195,13 @@ void monad_async_executor_task_detach(monad_context_task task_)
     assert(
         atomic_load_explicit(&ex->head.current_task, memory_order_acquire) ==
         &task->head);
+    if (task->io_submitted.count != 0) {
+        fprintf(
+            stderr, "FATAL: You cannot detach a task with uncompleted i/o!\n");
+        abort();
+    }
+    // All completed i/o should be reaped before detach
+    assert(task->io_completed.count == 0);
     atomic_store_explicit(
         &ex->head.current_task, nullptr, memory_order_release);
     task->head.ticks_when_detached = get_ticks_count(memory_order_relaxed);
@@ -1604,7 +1663,8 @@ monad_async_task_claim_registered_io_write_buffer_resume(
             (void *)task,
             is_for_write,
             is_large_page,
-            ex->registered_buffers[is_for_write] buffer[is_large_page]
+            ex->registered_buffers[is_for_write]
+                .buffer[is_large_page]
                 .tasks_awaiting.count);
         fflush(stdout);
 #endif
@@ -1629,7 +1689,8 @@ monad_async_task_claim_registered_io_write_buffer_resume(
             (void *)task,
             is_for_write,
             is_large_page,
-            ex->registered_buffers[is_for_write] buffer[is_large_page]
+            ex->registered_buffers[is_for_write]
+                .buffer[is_large_page]
                 .tasks_awaiting.count);
         fflush(stdout);
 #endif
@@ -1651,7 +1712,8 @@ monad_async_task_claim_registered_io_write_buffer_resume(
             (void *)task,
             is_for_write,
             is_large_page,
-            ex->registered_buffers[is_for_write] buffer[is_large_page]
+            ex->registered_buffers[is_for_write]
+                .buffer[is_large_page]
                 .tasks_awaiting.count);
         fflush(stdout);
 #endif
@@ -1749,7 +1811,8 @@ monad_c_result monad_async_task_claim_registered_file_io_write_buffer(
             (void *)task,
             !flags._for_read_ring,
             is_large_page,
-            ex->registered_buffers[!flags._for_read_ring] buffer[is_large_page]
+            ex->registered_buffers[!flags._for_read_ring]
+                .buffer[is_large_page]
                 .tasks_awaiting.count);
         fflush(stdout);
 #endif
@@ -1897,16 +1960,18 @@ monad_c_result monad_async_task_release_registered_io_buffer(
         "is_large_page=%d will resume "
         "awaiting task=%p awaiting tasks=%zu\n",
         (void *)ex,
-        (void *)p,
+        (void *)iov->iov_base,
         is_for_write,
         is_large_page,
-        (void
-             *)(ex->registered_buffers[is_for_write] buffer[is_large_page]
-                            .tasks_awaiting.count > 0
-                    ? ex->registered_buffers[is_for_write] buffer[is_large_page]
-                          .tasks_awaiting.front
-                    : nullptr),
-        ex->registered_buffers[is_for_write] buffer[is_large_page]
+        (void *)(ex->registered_buffers[is_for_write]
+                             .buffer[is_large_page]
+                             .tasks_awaiting.count > 0
+                     ? ex->registered_buffers[is_for_write]
+                           .buffer[is_large_page]
+                           .tasks_awaiting.front
+                     : nullptr),
+        ex->registered_buffers[is_for_write]
+            .buffer[is_large_page]
             .tasks_awaiting.count);
     fflush(stdout);
 #endif

@@ -60,6 +60,19 @@ typedef struct monad_async_io_status
     MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
         ticks_when_reaped;
 
+#ifdef __cplusplus
+    constexpr monad_async_io_status()
+        : prev{}
+        , next{}
+        , cancel_{}
+        , result{}
+        , ticks_when_initiated{}
+        , ticks_when_completed{}
+        , ticks_when_reaped{}
+    {
+    }
+#endif
+
     // You can place any additional data you want after here ...
 } monad_async_io_status;
 

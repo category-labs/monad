@@ -257,6 +257,7 @@ TEST(executor, works)
                               << std::endl;
                 }
             }
+            EXPECT_EQ(ex->total_io_submitted, ex->total_io_completed);
         };
         test(
             make_context_switcher(monad_context_switcher_fcontext).get(),
@@ -318,6 +319,7 @@ TEST(executor, works)
                            .count()) /
                 double(shared.ops))
             << " ns/op." << std::endl;
+        EXPECT_EQ(ex->total_io_submitted, ex->total_io_completed);
     }
 
     {
@@ -366,6 +368,7 @@ TEST(executor, works)
                     monad_async_executor_run(ex.get(), size_t(-1), nullptr);
                 CHECK_RESULT(r);
             }
+            EXPECT_EQ(ex->total_io_submitted, ex->total_io_completed);
             std::cout
                 << "   Suspend-resume "
                 << (1000.0 * double(shared.ops) /
@@ -427,6 +430,9 @@ TEST(executor, foreign_thread)
                         }
                         state->ops += uint32_t(r.assume_value());
                     }
+                    assert(
+                        state->executor->total_io_submitted ==
+                        state->executor->total_io_completed);
                     state->executor.reset();
                 },
                 &executor_threads[n]);

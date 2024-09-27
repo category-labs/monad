@@ -122,7 +122,7 @@ namespace
         monad_statesync_server_context sctx;
         mpt::Db ro;
         monad_statesync_server_network net;
-        monad_statesync_server *server;
+        monad_statesync_server *server{};
 
         StateSyncFixture()
             : cdbname{tmp_dbname()}

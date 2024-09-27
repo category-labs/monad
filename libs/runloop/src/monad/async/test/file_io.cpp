@@ -160,6 +160,7 @@ TEST(file_io, unregistered_buffers)
         to_result(monad_async_executor_run(ex.get(), size_t(-1), nullptr))
             .value();
     }
+    EXPECT_EQ(ex->total_io_submitted, ex->total_io_completed);
 }
 
 TEST(file_io, registered_buffers)
@@ -324,6 +325,7 @@ TEST(file_io, registered_buffers)
         to_result(monad_async_executor_run(ex.get(), size_t(-1), nullptr))
             .value();
     }
+    EXPECT_EQ(ex->total_io_submitted, ex->total_io_completed);
 }
 
 TEST(file_io, misc_ops)
@@ -476,6 +478,7 @@ TEST(file_io, misc_ops)
         to_result(monad_async_executor_run(ex.get(), size_t(-1), nullptr))
             .value();
     }
+    EXPECT_EQ(ex->total_io_submitted, ex->total_io_completed);
 }
 
 TEST(file_io, benchmark)
@@ -640,6 +643,7 @@ TEST(file_io, benchmark)
         to_result(monad_async_executor_run(ex.get(), size_t(-1), nullptr))
             .value();
     }
+    EXPECT_EQ(ex->total_io_submitted, ex->total_io_completed);
 }
 
 TEST(file_io, sqe_exhaustion_does_not_reorder_writes)
@@ -793,6 +797,9 @@ TEST(file_io, sqe_exhaustion_does_not_reorder_writes)
             .value();
     }
     while (monad_async_executor_has_work(shared_state.ex.get()));
+    EXPECT_EQ(
+        shared_state.ex->total_io_submitted,
+        shared_state.ex->total_io_completed);
     std::cout << "   " << shared_state.seq.size() << " offsets written."
               << std::endl;
 

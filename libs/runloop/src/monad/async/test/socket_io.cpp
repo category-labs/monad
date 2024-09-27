@@ -423,4 +423,5 @@ TEST(socket_io, registered_buffers)
         to_result(monad_async_executor_run(ex.get(), size_t(-1), nullptr))
             .value();
     }
+    EXPECT_EQ(ex->total_io_submitted, ex->total_io_completed);
 }

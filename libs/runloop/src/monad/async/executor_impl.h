@@ -401,7 +401,7 @@ monad_async_executor_setup_eventfd_polling(struct monad_async_executor_impl *p)
     if (sqe == nullptr) {
         abort(); // should never occur
     }
-    p->head.total_io_submitted++;
+    // Do NOT increment total_io_submitted here!
     io_uring_prep_poll_multishot(sqe, p->eventfd, POLLIN);
     io_uring_sqe_set_data(
         sqe, EXECUTOR_EVENTFD_READY_IO_URING_DATA_MAGIC, nullptr, nullptr);
@@ -811,6 +811,7 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
                 &ex->head.current_task, memory_order_acquire) == nullptr);
         atomic_store_explicit(
             &ex->head.current_task, &task->head, memory_order_release);
+        bool const please_cancel_invoked = task->please_cancel_invoked;
         task->please_cancel_invoked = false;
         task->please_cancel = nullptr;
         task->completed = nullptr;
@@ -827,10 +828,10 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
             (void *)task,
             (void *)sqe,
             is_cancellation_point,
-            task->please_cancel_invoked);
+            please_cancel_invoked);
         fflush(stdout);
     #endif
-        if (is_cancellation_point && task->please_cancel_invoked) {
+        if (is_cancellation_point && please_cancel_invoked) {
             // We need to "throw away" this SQE, as the task has been
             // cancelled We do this by setting the SQE to a noop with
             // CANCELLED_OP_IO_URING_DATA_MAGIC

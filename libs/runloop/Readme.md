@@ -263,10 +263,8 @@ static monad_c_result mytask(monad_async_task task)
 
 ## Todo
 
-- Executor `total_io_completed` never seems to match `total_io_submitted`,
-with them sometimes being very very different. I have walked the code many
-times and I don't see the cause :(
-- When a task exits, all i/o still occurring on that task ought to be pumped and dumped out.
+- When a task exits, all i/o still occurring on that task ought to be pumped and dumped out
+(right now it aborts the process instead)
 - Need to test cancellation works at every possible lifecycle and suspend state
 a task can have.
 - `thread_db.so` ought to be extended so GDB shows all contexts as if kernel threads.

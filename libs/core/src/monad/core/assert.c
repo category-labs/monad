@@ -1,8 +1,8 @@
 #include <monad/core/assert.h>
 
-#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <unistd.h>
 
@@ -12,9 +12,9 @@ extern void monad_stack_backtrace_capture_and_print(
     char *buffer, size_t size, int fd, unsigned indent,
     bool print_async_unsafe_info);
 
-void monad_assertion_failed_vprintf(
+void monad_assertion_failed(
     char const *const expr, char const *const function, char const *const file,
-    long const line, char const *format, va_list ap)
+    long const line, char const *msg)
 {
     // This NEEDS to remain async signal safe!
     char buffer[16384];
@@ -46,9 +46,9 @@ void monad_assertion_failed_vprintf(
     if ((size_t)written >= sizeof(buffer)) {
         written = (int)(sizeof(buffer) - 1);
     }
-    if (format != nullptr && written < (int)(sizeof buffer - 1)) {
-        written += vsnprintf(
-            buffer + written, sizeof buffer - (size_t)written, format, ap);
+    if (msg != nullptr && written < (int)(sizeof buffer - 1)) {
+        written += (ssize_t)strlcpy(
+            buffer + written, msg, sizeof buffer - (size_t)written);
         if ((size_t)written >= sizeof(buffer)) {
             written = (int)(sizeof(buffer) - 1);
         }

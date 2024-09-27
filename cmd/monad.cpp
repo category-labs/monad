@@ -90,10 +90,11 @@ void log_tps(
 };
 
 Result<std::pair<uint64_t, uint64_t>> run_monad(
-    Chain const &chain, Db &db, TryGet const &try_get,
+    Chain const &chain, Db &db, mpt::Db const &mpt_db, TryGet const &try_get,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const nblocks)
 {
+    auto curr_db_history_length = mpt_db.get_history_length();
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
     signal(SIGINT, signal_handler);
     stop = 0;
@@ -153,7 +154,14 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
             chain.validate_header(receipts, block.value().header));
         block_state.log_debug();
         block_state.commit(receipts);
-
+        if (auto const length = mpt_db.get_history_length();
+            length != curr_db_history_length) {
+            // TODO: move this log inside db when we have a C logging
+            // interface
+            curr_db_history_length = length;
+            LOG_INFO(
+                "Db history length is updated to {}", curr_db_history_length);
+        }
         if (!chain.validate_root(
                 rev,
                 block.value().header,
@@ -251,9 +259,7 @@ int main(int const argc, char const *argv[])
         dump_snapshot,
         "directory to dump state to at the end of run");
     cli.add_option(
-        "--history_len",
-        history_len,
-        "history length an empty db is initialized to");
+        "--history_len", history_len, "initialize db history length to");
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
     group->add_option("--genesis", genesis, "genesis file")
@@ -395,10 +401,11 @@ int main(int const argc, char const *argv[])
     }
 
     LOG_INFO(
-        "Finished initializing db at block = {}, state root = {}, time elapsed "
-        "= {}",
+        "Finished initializing db at block = {}, state root = {}, history "
+        "length = {}, time elapsed = {}",
         init_block_num,
         triedb.state_root(),
+        triedb.get_history_length(),
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - load_start_time));
 
@@ -475,8 +482,8 @@ int main(int const argc, char const *argv[])
     }();
 
     uint64_t block_num = start_block_num;
-    auto const result =
-        run_monad(*chain, db_cache, try_get, priority_pool, block_num, nblocks);
+    auto const result = run_monad(
+        *chain, db_cache, db, try_get, priority_pool, block_num, nblocks);
 
     if (MONAD_UNLIKELY(result.has_error())) {
         LOG_ERROR(

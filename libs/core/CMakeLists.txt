@@ -13,12 +13,8 @@ option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include("cmake/find_our_dependency.cmake")
 
-cmake_host_system_information(RESULT linux_flavour QUERY DISTRIB_ID)
-if(linux_flavour MATCHES "debian|ubuntu")
-  find_package(Boost REQUIRED COMPONENTS context fiber stacktrace_backtrace)
-else()
-  find_package(Boost REQUIRED COMPONENTS context fiber stacktrace_addr2line)
-endif()
+find_package(Boost REQUIRED COMPONENTS context fiber stacktrace_backtrace)
+
 function(check_if_boost_fiber_needs_ucontext_macro)
   set(prog
       "#include <boost/context/fiber.hpp>\nint main(void){\n::boost::context::fiber foo;\nreturn 0;\n}"
@@ -155,15 +151,8 @@ target_include_directories(monad_core PUBLIC "src")
 monad_compile_options(monad_core)
 target_compile_definitions(monad_core PUBLIC "BOOST_STACKTRACE_LINK=1")
 target_compile_definitions(monad_core PUBLIC "_GNU_SOURCE")
-if(linux_flavour MATCHES "debian|ubuntu")
-  target_compile_definitions(monad_core
-                             PUBLIC "BOOST_STACKTRACE_USE_BACKTRACE=1")
-  target_link_libraries(monad_core PUBLIC Boost::stacktrace_backtrace)
-else()
-  target_compile_definitions(monad_core
-                             PUBLIC "BOOST_STACKTRACE_USE_ADDR2LINE=1")
-  target_link_libraries(monad_core PUBLIC Boost::stacktrace_addr2line)
-endif()
+target_compile_definitions(monad_core PUBLIC "BOOST_STACKTRACE_USE_BACKTRACE=1")
+target_link_libraries(monad_core PUBLIC Boost::stacktrace_backtrace)
 target_link_libraries(monad_core PUBLIC openssl_sha3 Boost::fiber TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC ethash::keccak)

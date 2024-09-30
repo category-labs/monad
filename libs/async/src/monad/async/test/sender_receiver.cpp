@@ -351,10 +351,11 @@ TEST_F(AsyncIO, read_multiple_buffer_sender_receiver)
             DISK_PAGE_SIZE * 2));
 }
 
-TEST_F(AsyncIO, benchmark_non_zero_timeout_sender_receiver)
+// Works around a bug in clang's Release mode optimiser
+namespace benchmark_non_zero_timeout_sender_receiver_ns
 {
     using namespace MONAD_ASYNC_NAMESPACE;
-    static constexpr size_t COUNT = 1000;
+
     static std::atomic<int> done{0};
     static size_t count = 0;
 
@@ -370,7 +371,8 @@ TEST_F(AsyncIO, benchmark_non_zero_timeout_sender_receiver)
         }
     };
 
-    auto benchmark = [&](char const *desc, auto &&initiate) {
+    void benchmark(char const *desc, auto &shared_state, auto &&initiate)
+    {
         std::cout << "Benchmarking " << desc << " ..." << std::endl;
         done = false;
         count = 0;
@@ -379,11 +381,11 @@ TEST_F(AsyncIO, benchmark_non_zero_timeout_sender_receiver)
         initiate();
         for (; end - begin < std::chrono::seconds(5);
              end = std::chrono::steady_clock::now()) {
-            shared_state_()->testio->poll_blocking(256);
+            shared_state->testio->poll_blocking(256);
         }
         done = true;
         std::cout << "   Waiting until done ..." << std::endl;
-        shared_state_()->testio->wait_until_done();
+        shared_state->testio->wait_until_done();
         end = std::chrono::steady_clock::now();
         auto diff =
             std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
@@ -392,94 +394,103 @@ TEST_F(AsyncIO, benchmark_non_zero_timeout_sender_receiver)
                       static_cast<double>(diff.count()))
                   << " completions per second" << std::endl;
     };
+}
+
+TEST_F(AsyncIO, benchmark_non_zero_timeout_sender_receiver)
+{
+    using namespace benchmark_non_zero_timeout_sender_receiver_ns;
+    static constexpr size_t COUNT = 1000;
+
     auto thepast = std::chrono::steady_clock::now();
-    {
-        std::array<
+    std::array<
+        connected_operation<timed_delay_sender, reinitiating_receiver_t>,
+        COUNT>
+        states = monad::make_array<
             connected_operation<timed_delay_sender, reinitiating_receiver_t>,
-            COUNT>
-            states = monad::make_array<
-                connected_operation<
-                    timed_delay_sender,
-                    reinitiating_receiver_t>,
-                COUNT>(
-                std::piecewise_construct,
-                *shared_state_()->testio,
-                timed_delay_sender(thepast),
-                reinitiating_receiver_t{});
-        benchmark("timed_delay_sender with a non-zero timeout", [&] {
+            COUNT>(
+            std::piecewise_construct,
+            *shared_state_()->testio,
+            timed_delay_sender(thepast),
+            reinitiating_receiver_t{});
+    benchmark(
+        "timed_delay_sender with a non-zero timeout",
+        shared_state_(),
+        [&states] {
             for (auto &i : states) {
                 i.initiate();
             }
         });
-    }
+}
+
+namespace benchmark_zero_timeout_sender_receiver_ns
+{
+    using namespace MONAD_ASYNC_NAMESPACE;
+    static std::atomic<int> done{0};
+    static size_t count = 0;
+
+    struct reinitiating_receiver_t
+    {
+        void set_value(erased_connected_operation *state, result<void> res)
+        {
+            ASSERT_TRUE(res);
+            count++;
+            if (!done) {
+                state->initiate();
+            }
+        }
+    };
+
+    void benchmark(char const *desc, auto &shared_state, auto &&initiate)
+    {
+        std::cout << "Benchmarking " << desc << " ..." << std::endl;
+        done = false;
+        count = 0;
+        auto begin = std::chrono::steady_clock::now();
+        auto end = begin;
+        initiate();
+        for (; end - begin < std::chrono::seconds(5);
+             end = std::chrono::steady_clock::now()) {
+            shared_state->testio->poll_blocking(256);
+        }
+        done = true;
+        std::cout << "   Waiting until done ..." << std::endl;
+        shared_state->testio->wait_until_done();
+        end = std::chrono::steady_clock::now();
+        auto diff =
+            std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
+        std::cout << "   Did "
+                  << (1000.0 * static_cast<double>(count) /
+                      static_cast<double>(diff.count()))
+                  << " completions per second" << std::endl;
+    };
 }
 
 TEST_F(AsyncIO, benchmark_zero_timeout_sender_receiver)
 {
-    using namespace MONAD_ASYNC_NAMESPACE;
+    using namespace benchmark_zero_timeout_sender_receiver_ns;
     static constexpr size_t COUNT = 1000;
-    static std::atomic<int> done{0};
-    static size_t count = 0;
 
-    struct reinitiating_receiver_t
-    {
-        void set_value(erased_connected_operation *state, result<void> res)
-        {
-            ASSERT_TRUE(res);
-            count++;
-            if (!done) {
-                state->initiate();
-            }
-        }
-    };
-
-    auto benchmark = [&](char const *desc, auto &&initiate) {
-        std::cout << "Benchmarking " << desc << " ..." << std::endl;
-        done = false;
-        count = 0;
-        auto begin = std::chrono::steady_clock::now();
-        auto end = begin;
-        initiate();
-        for (; end - begin < std::chrono::seconds(5);
-             end = std::chrono::steady_clock::now()) {
-            shared_state_()->testio->poll_blocking(256);
-        }
-        done = true;
-        std::cout << "   Waiting until done ..." << std::endl;
-        shared_state_()->testio->wait_until_done();
-        end = std::chrono::steady_clock::now();
-        auto diff =
-            std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
-        std::cout << "   Did "
-                  << (1000.0 * static_cast<double>(count) /
-                      static_cast<double>(diff.count()))
-                  << " completions per second" << std::endl;
-    };
-    {
-        std::array<
+    std::array<
+        connected_operation<timed_delay_sender, reinitiating_receiver_t>,
+        COUNT>
+        states = monad::make_array<
             connected_operation<timed_delay_sender, reinitiating_receiver_t>,
-            COUNT>
-            states = monad::make_array<
-                connected_operation<
-                    timed_delay_sender,
-                    reinitiating_receiver_t>,
-                COUNT>(
-                std::piecewise_construct,
-                *shared_state_()->testio,
-                timed_delay_sender(std::chrono::seconds(0)),
-                reinitiating_receiver_t{});
-        benchmark("timed_delay_sender with a zero timeout", [&] {
+            COUNT>(
+            std::piecewise_construct,
+            *shared_state_()->testio,
+            timed_delay_sender(std::chrono::seconds(0)),
+            reinitiating_receiver_t{});
+    benchmark(
+        "timed_delay_sender with a zero timeout", shared_state_(), [&states] {
             for (auto &i : states) {
                 i.initiate();
             }
         });
-    }
 }
 
-TEST_F(AsyncIO, benchmark_threadsafe_sender_receiver)
+namespace benchmark_threadsafe_sender_receiver_ns
 {
     using namespace MONAD_ASYNC_NAMESPACE;
-    static constexpr size_t COUNT = 1000;
     static std::atomic<int> done{0};
     static size_t count = 0;
 
@@ -492,7 +503,8 @@ TEST_F(AsyncIO, benchmark_threadsafe_sender_receiver)
         }
     };
 
-    auto benchmark = [&](char const *desc, auto &&initiate) {
+    void benchmark(char const *desc, auto &shared_state, auto &&initiate)
+    {
         std::cout << "Benchmarking " << desc << " ..." << std::endl;
         done = false;
         count = 0;
@@ -501,11 +513,11 @@ TEST_F(AsyncIO, benchmark_threadsafe_sender_receiver)
         initiate();
         for (; end - begin < std::chrono::seconds(5);
              end = std::chrono::steady_clock::now()) {
-            shared_state_()->testio->poll_blocking(256);
+            shared_state->testio->poll_blocking(256);
         }
         done = true;
         std::cout << "   Waiting until done ..." << std::endl;
-        shared_state_()->testio->wait_until_done();
+        shared_state->testio->wait_until_done();
         end = std::chrono::steady_clock::now();
         auto diff =
             std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
@@ -514,47 +526,50 @@ TEST_F(AsyncIO, benchmark_threadsafe_sender_receiver)
                       static_cast<double>(diff.count()))
                   << " completions per second" << std::endl;
     };
-    {
-        std::array<
+}
+
+TEST_F(AsyncIO, benchmark_threadsafe_sender_receiver)
+{
+    using namespace benchmark_threadsafe_sender_receiver_ns;
+    static constexpr size_t COUNT = 1000;
+
+    std::array<
+        connected_operation<threadsafe_sender, nonreinitiating_receiver_t>,
+        COUNT>
+        states = monad::make_array<
             connected_operation<threadsafe_sender, nonreinitiating_receiver_t>,
-            COUNT>
-            states = monad::make_array<
-                connected_operation<
-                    threadsafe_sender,
-                    nonreinitiating_receiver_t>,
-                COUNT>(
-                std::piecewise_construct,
-                *shared_state_()->testio,
-                threadsafe_sender{},
-                nonreinitiating_receiver_t{});
-        done = -2;
-        std::thread worker([&] {
-            done = -1;
-            while (done == -1) {
-                std::this_thread::yield();
-            }
-            while (done == 0) {
-                for (auto &i : states) {
-                    i.initiate();
-                }
-            }
-            std::cout << "   threadsafe_sender initiating thread exits"
-                      << std::endl;
-            done = 2;
-        });
-        while (done == -2) {
+            COUNT>(
+            std::piecewise_construct,
+            *shared_state_()->testio,
+            threadsafe_sender{},
+            nonreinitiating_receiver_t{});
+    done = -2;
+    std::thread worker([&states] {
+        done = -1;
+        while (done == -1) {
             std::this_thread::yield();
         }
-        benchmark("threadsafe_sender", [&] {});
-        std::cout << "   threadsafe_sender processing events until sending "
-                     "thread exits"
-                  << std::endl;
-        while (done == 1) {
-            shared_state_()->testio->wait_until_done();
+        while (done == 0) {
+            for (auto &i : states) {
+                i.initiate();
+            }
         }
-        worker.join();
+        std::cout << "   threadsafe_sender initiating thread exits"
+                  << std::endl;
+        done = 2;
+    });
+    while (done == -2) {
+        std::this_thread::yield();
+    }
+    benchmark("threadsafe_sender", shared_state_(), [&] {});
+    std::cout << "   threadsafe_sender processing events until sending "
+                 "thread exits"
+              << std::endl;
+    while (done == 1) {
         shared_state_()->testio->wait_until_done();
     }
+    worker.join();
+    shared_state_()->testio->wait_until_done();
 }
 
 /* A receiver which just immediately asks the sender

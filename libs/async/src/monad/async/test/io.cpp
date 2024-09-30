@@ -340,12 +340,17 @@ namespace
             monad::async::timed_delay_sender(std::chrono::seconds(0)),
             receiver_t{}));
 
-        auto run_test = [&] {
-            auto states = monad::make_array<connected_state_type, COUNT>(
-                std::piecewise_construct,
-                testio,
-                monad::async::timed_delay_sender(std::chrono::seconds(0)),
-                receiver_t{});
+        auto run_test = [&testio] {
+            alignas(connected_state_type)
+                std::byte states_storage[COUNT * sizeof(connected_state_type)];
+            std::span<connected_state_type> states(
+                (connected_state_type *)states_storage, COUNT);
+            for (auto &i : states) {
+                new (&i) connected_state_type(
+                    testio,
+                    monad::async::timed_delay_sender(std::chrono::seconds(0)),
+                    receiver_t{});
+            }
             for (auto &i : states) {
                 i.initiate();
             }
@@ -363,6 +368,9 @@ namespace
                 if (diff > max) {
                     max = diff;
                 }
+            }
+            for (auto &i : states) {
+                i.~connected_state_type();
             }
             return std::pair{min, max};
         };

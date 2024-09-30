@@ -82,6 +82,9 @@ target_include_directories(komihash INTERFACE "third_party/komihash")
 # silkpre
 set(OPTIONAL_BUILD_TESTS OFF)
 add_subdirectory(third_party/silkpre)
+# undo the injection of ccache silkpre/ff does
+set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE)
+set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK)
 
 # tbb
 find_package(TBB REQUIRED)

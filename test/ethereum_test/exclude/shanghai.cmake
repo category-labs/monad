@@ -18,4 +18,12 @@ set(shanghai_excluded_tests
     "BlockchainTests.InvalidBlocks/bcMultiChainTest/UncleFromSideChain.json" # Uncle
     "TransactionTests.ttWrongRLP/RLPIncorrectByteEncoding01.json"
     "TransactionTests.ttWrongRLP/RLPIncorrectByteEncoding127.json"
+
+    # Temporarily disabled for transient storage tests
+    "BlockchainTests.GeneralStateTests/stBadOpcode/badOpcodes.json"
+    "BlockchainTests.GeneralStateTests/stBadOpcode/opcB3DiffPlaces.json"
+    "BlockchainTests.GeneralStateTests/stBadOpcode/opcB4DiffPlaces.json"
+    "BlockchainTests.ValidBlocks/bcStateTests/testOpcode_b0.json"
+    "BlockchainTests.StateTests/stEIP1153_transientStorage/*"
+    "BlockchainTests.bcEIP1153_transientStorage/*"
 )

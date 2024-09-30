@@ -90,16 +90,12 @@ add_library(
   monad_core_c OBJECT
   "src/monad/core/assert.c"
   "src/monad/core/assert.h")
-
+monad_compile_options(monad_core_c)
 if(MONAD_CORE_FORCE_DEBUG_ASSERT)
   target_compile_definitions(monad_core_c
-                             PUBLIC MONAD_CORE_FORCE_DEBUG_ASSERT=1)
+                             PUBLIC "MONAD_CORE_FORCE_DEBUG_ASSERT")
 endif()
-
-target_compile_features(monad_core_c PUBLIC c_std_23)
-target_compile_definitions(monad_core_c PUBLIC _GNU_SOURCE)
-target_compile_options(monad_core_c PRIVATE -Wall -Werror -Wextra)
-target_include_directories(monad_core_c PUBLIC "${PROJECT_SOURCE_DIR}/src")
+target_include_directories(monad_core_c PUBLIC "src")
 
 add_library(
   monad_core STATIC
@@ -183,8 +179,8 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     "src/monad/procfs/statm.h")
 endif()
 
-target_include_directories(monad_core PUBLIC "src")
 monad_compile_options(monad_core)
+target_include_directories(monad_core PUBLIC "src")
 
 # The configuration that needs to be added for the Boost stacktrace library is
 # modeled as an interface target, so it can be linked to both `monad_core` and

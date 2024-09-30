@@ -41,6 +41,28 @@
 #include <sys/resource.h> // for setrlimit
 #include <unistd.h>
 
+#define MONAD_ASYNC_IO_URING_RETYABLE2(unique, ...)                            \
+    ({                                                                         \
+        int unique;                                                            \
+        for (;;) {                                                             \
+            unique = (__VA_ARGS__);                                            \
+            if (unique < 0) {                                                  \
+                if (unique == -EINTR) {                                        \
+                    continue;                                                  \
+                }                                                              \
+                char buffer[256] = "unknown error";                            \
+                if (strerror_r(-unique, buffer, 256) != nullptr) {             \
+                    buffer[255] = 0;                                           \
+                }                                                              \
+                throw std::runtime_error(std::string("FATAL: ") + buffer);     \
+            }                                                                  \
+            break;                                                             \
+        }                                                                      \
+        unique;                                                                \
+    })
+#define MONAD_ASYNC_IO_URING_RETYABLE(...)                                     \
+    MONAD_ASYNC_IO_URING_RETYABLE2(BOOST_OUTCOME_TRY_UNIQUE_NAME, __VA_ARGS__)
+
 MONAD_ASYNC_NAMESPACE_BEGIN
 
 namespace detail
@@ -168,7 +190,7 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
         io_uring_prep_poll_multishot(sqe, fds_.msgread, POLLIN);
         io_uring_sqe_set_data(
             sqe, detail::ASYNC_IO_MSG_PIPE_READY_IO_URING_DATA_MAGIC);
-        MONAD_ASSERT(io_uring_submit(ring) >= 0);
+        MONAD_ASYNC_IO_URING_RETYABLE(io_uring_submit(ring));
     }
 
     // TODO(niall): In the future don't activate all the chunks, as
@@ -317,8 +339,8 @@ void AsyncIO::submit_request_(
     }
 
     io_uring_sqe_set_data(sqe, uring_data);
-    MONAD_ASSERT(
-        io_uring_submit(const_cast<io_uring *>(&uring_.get_ring())) >= 0);
+    MONAD_ASYNC_IO_URING_RETYABLE(
+        io_uring_submit(const_cast<io_uring *>(&uring_.get_ring())));
 }
 
 void AsyncIO::submit_request_(
@@ -370,8 +392,8 @@ void AsyncIO::submit_request_(
     }
 
     io_uring_sqe_set_data(sqe, uring_data);
-    MONAD_ASSERT(
-        io_uring_submit(const_cast<io_uring *>(&uring_.get_ring())) >= 0);
+    MONAD_ASYNC_IO_URING_RETYABLE(
+        io_uring_submit(const_cast<io_uring *>(&uring_.get_ring())));
 }
 
 void AsyncIO::submit_request_(
@@ -423,7 +445,7 @@ void AsyncIO::submit_request_(
     }
 
     io_uring_sqe_set_data(sqe, uring_data);
-    MONAD_ASSERT(io_uring_submit(wr_ring) >= 0);
+    MONAD_ASYNC_IO_URING_RETYABLE(io_uring_submit(wr_ring));
 }
 
 void AsyncIO::submit_request_(timed_invocation_state *state, void *uring_data)
@@ -449,8 +471,8 @@ void AsyncIO::submit_request_(timed_invocation_state *state, void *uring_data)
     }
 
     io_uring_sqe_set_data(sqe, uring_data);
-    MONAD_ASSERT(
-        io_uring_submit(const_cast<io_uring *>(&uring_.get_ring())) >= 0);
+    MONAD_ASYNC_IO_URING_RETYABLE(
+        io_uring_submit(const_cast<io_uring *>(&uring_.get_ring())));
 }
 
 void AsyncIO::poll_uring_while_submission_queue_full_()
@@ -543,13 +565,14 @@ bool AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
                 // need to call the io_uring_enter syscall from userspace to do
                 // the completions processing. From studying the liburing source
                 // code, this will do it.
-                io_uring_submit(wr_ring);
+                MONAD_ASYNC_IO_URING_RETYABLE(io_uring_submit(wr_ring));
             }
             io_uring_peek_cqe(wr_ring, &cqe);
             if ((poll_rings_mask & 1) != 0) {
                 if (blocking && inflight_ts == 0 &&
                     detail::AsyncIO_per_thread_state().empty()) {
-                    MONAD_ASSERT(!io_uring_wait_cqe(ring, &cqe));
+                    MONAD_ASYNC_IO_URING_RETYABLE(
+                        io_uring_wait_cqe(ring, &cqe));
                 }
                 if (cqe == nullptr) {
                     return false;
@@ -565,11 +588,11 @@ bool AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
                 // need to call the io_uring_enter syscall from userspace to do
                 // the completions processing. From studying the liburing source
                 // code, this will do it.
-                io_uring_submit(other_ring);
+                MONAD_ASYNC_IO_URING_RETYABLE(io_uring_submit(other_ring));
             }
             if (blocking && inflight_ts == 0 && records_.inflight_wr == 0 &&
                 detail::AsyncIO_per_thread_state().empty()) {
-                MONAD_ASSERT(!io_uring_wait_cqe(ring, &cqe));
+                MONAD_ASYNC_IO_URING_RETYABLE(io_uring_wait_cqe(ring, &cqe));
             }
             else {
                 // If nothing in io_uring and there are no threadsafe ops in
@@ -595,7 +618,7 @@ bool AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
                 io_uring_prep_poll_multishot(sqe, fds_.msgread, POLLIN);
                 io_uring_sqe_set_data(
                     sqe, detail::ASYNC_IO_MSG_PIPE_READY_IO_URING_DATA_MAGIC);
-                MONAD_ASSERT(io_uring_submit(ring) >= 0);
+                MONAD_ASYNC_IO_URING_RETYABLE(io_uring_submit(ring));
             }
             auto readed = ::read(
                 fds_.msgread, &state, sizeof(erased_connected_operation *));

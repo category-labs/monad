@@ -14,6 +14,7 @@
 #include <monad/execution/code_analysis.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/account_state.hpp>
+#include <monad/state3/transient_storage.hpp>
 #include <monad/state3/version_stack.hpp>
 #include <monad/types/incarnation.hpp>
 
@@ -45,6 +46,8 @@ class State
     Map<Address, AccountState> original_{};
 
     Map<Address, VersionStack<AccountState>> current_{};
+
+    TransientStorage transient_storage_{};
 
     VersionStack<std::vector<Receipt::Log>> logs_{{}};
 
@@ -108,6 +111,8 @@ public:
     void push()
     {
         ++version_;
+
+        transient_storage_.checkpoint();
     }
 
     void pop_accept()
@@ -121,6 +126,8 @@ public:
         logs_.pop_accept(version_);
 
         --version_;
+
+        transient_storage_.commit();
     }
 
     void pop_reject()
@@ -143,6 +150,8 @@ public:
         }
 
         --version_;
+
+        transient_storage_.revert();
     }
 
     ////////////////////////////////////////
@@ -247,6 +256,12 @@ public:
         }
     }
 
+    bytes32_t
+    get_transient_storage(Address const &address, bytes32_t const &key) const
+    {
+        return transient_storage_.get(address, key);
+    }
+
     bool is_touched(Address const &address)
     {
         auto const &account_state = recent_account_state(address);
@@ -327,6 +342,12 @@ public:
                 account_state.set_storage(key, value, original_value);
             return result;
         }
+    }
+
+    void set_transient_storage(
+        Address const &address, bytes32_t const &key, bytes32_t const &value)
+    {
+        transient_storage_.put(address, key, value);
     }
 
     void touch(Address const &address)

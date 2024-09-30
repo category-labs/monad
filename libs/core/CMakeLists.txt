@@ -19,21 +19,7 @@ include("cmake/find_our_dependency.cmake")
 find_package(
   Boost REQUIRED
   COMPONENTS context fiber stacktrace_basic
-  OPTIONAL_COMPONENTS stacktrace_addr2line stacktrace_backtrace)
-
-if(TARGET Boost::stacktrace_backtrace)
-  set(BOOST_STACKTRACE_TARGET Boost::stacktrace_backtrace)
-  set(BOOST_STACKTRACE_OPTIONS BOOST_STACKTRACE_USE_BACKTRACE=1)
-elseif(TARGET Boost::stacktrace_addr2line)
-  set(BOOST_STACKTRACE_TARGET Boost::stacktrace_addr2line)
-  set(BOOST_STACKTRACE_OPTIONS BOOST_STACKTRACE_USE_ADDR2LINE=1)
-  message(
-    WARNING "using suboptimal backtrace library ${BOOST_STACKTRACE_TARGET}")
-else()
-  set(BOOST_STACKTRACE_TARGET Boost::stacktrace_basic)
-  message(
-    WARNING "using suboptimal backtrace library ${BOOST_STACKTRACE_TARGET}")
-endif()
+  OPTIONAL_COMPONENTS stacktrace_backtrace)
 
 function(check_if_boost_fiber_needs_ucontext_macro)
   set(prog
@@ -188,10 +174,16 @@ target_include_directories(monad_core PUBLIC "src")
 add_library(monad_core_stacktrace_options INTERFACE)
 target_compile_definitions(monad_core_stacktrace_options
                            INTERFACE "BOOST_STACKTRACE_LINK=1")
-target_compile_definitions(monad_core_stacktrace_options
-                           INTERFACE ${BOOST_STACKTRACE_OPTIONS})
-target_link_libraries(monad_core_stacktrace_options
-                      INTERFACE ${BOOST_STACKTRACE_TARGET})
+if(TARGET Boost::stacktrace_backtrace)
+  target_compile_definitions(monad_core_stacktrace_options
+                             INTERFACE BOOST_STACKTRACE_USE_BACKTRACE=1)
+  target_link_libraries(monad_core_stacktrace_options
+                        INTERFACE Boost::stacktrace_backtrace)
+else()
+  message(WARNING "using suboptimal basic backtrace library")
+  target_link_libraries(monad_core_stacktrace_options
+                        INTERFACE Boost::stacktrace_basic)
+endif()
 
 target_link_libraries(monad_core PUBLIC monad_core_c)
 target_link_libraries(monad_core PRIVATE monad_core_stacktrace_options)

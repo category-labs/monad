@@ -69,26 +69,14 @@ endif()
 # libs
 # ##############################################################################
 
-# monad_core_c is a library containing source code that is compiled in C23 mode
-# and contains no C++ source files; it may be linked by downstream libraries
-# which only need C and do not want the C++ runtime as a dependency
-add_library(
-  monad_core_c OBJECT
-  "src/monad/core/assert.c"
-  "src/monad/core/assert.h")
-monad_compile_options(monad_core_c)
-if(MONAD_CORE_FORCE_DEBUG_ASSERT)
-  target_compile_definitions(monad_core_c
-                             PUBLIC "MONAD_CORE_FORCE_DEBUG_ASSERT")
-endif()
-target_include_directories(monad_core_c PUBLIC "src")
-
 add_library(
   monad_core STATIC
   # config
   "src/monad/config.hpp"
   # core
   "src/monad/core/array.hpp"
+  "src/monad/core/assert.c"
+  "src/monad/core/assert.h"
   "src/monad/core/backtrace.cpp"
   "src/monad/core/backtrace.hpp"
   "src/monad/core/basic_formatter.hpp"
@@ -168,25 +156,19 @@ endif()
 monad_compile_options(monad_core)
 target_include_directories(monad_core PUBLIC "src")
 
-# The configuration that needs to be added for the Boost stacktrace library is
-# modeled as an interface target, so it can be linked to both `monad_core` and
-# `monad_core_crt`
-add_library(monad_core_stacktrace_options INTERFACE)
-target_compile_definitions(monad_core_stacktrace_options
-                           INTERFACE "BOOST_STACKTRACE_LINK=1")
-if(TARGET Boost::stacktrace_backtrace)
-  target_compile_definitions(monad_core_stacktrace_options
-                             INTERFACE BOOST_STACKTRACE_USE_BACKTRACE=1)
-  target_link_libraries(monad_core_stacktrace_options
-                        INTERFACE Boost::stacktrace_backtrace)
-else()
-  message(WARNING "using suboptimal basic backtrace library")
-  target_link_libraries(monad_core_stacktrace_options
-                        INTERFACE Boost::stacktrace_basic)
+if(MONAD_CORE_FORCE_DEBUG_ASSERT)
+  target_compile_definitions(monad_core PUBLIC "MONAD_CORE_FORCE_DEBUG_ASSERT")
 endif()
 
-target_link_libraries(monad_core PUBLIC monad_core_c)
-target_link_libraries(monad_core PRIVATE monad_core_stacktrace_options)
+target_compile_definitions(monad_core PRIVATE "BOOST_STACKTRACE_LINK=1")
+if(TARGET Boost::stacktrace_backtrace)
+  target_compile_definitions(monad_core
+                             PRIVATE BOOST_STACKTRACE_USE_BACKTRACE=1)
+  target_link_libraries(monad_core PRIVATE Boost::stacktrace_backtrace)
+else()
+  message(WARNING "using suboptimal basic backtrace library")
+  target_link_libraries(monad_core PRIVATE Boost::stacktrace_basic)
+endif()
 
 target_link_libraries(monad_core PUBLIC openssl_sha3 Boost::fiber TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)
@@ -208,39 +190,6 @@ add_library(
   "src/monad/rlp/encode_disas.cpp")
 monad_compile_options(monad_core_disas)
 target_link_libraries(monad_core_disas PUBLIC monad_core)
-
-# Minimal "runtime" library needed to support pure C binaries. This contains
-# functions that have C linkage and follow the C ABI but are implemented in C++.
-# This is a dynamic library that statically links to the C++ runtime libraries
-# and hides all symbols except those the `monad_` prefix, so it cannot relocate
-# against any other dynamically loaded C++ runtime. All source files are
-# recompiled rather than some other kind of reuse mechanism because the code
-# generation must enable position independent code.
-add_library(
-  monad_core_crt SHARED
-  # config
-  "src/monad/config.hpp"
-  # core
-  "src/monad/core/backtrace.cpp"
-  "src/monad/core/backtrace.hpp")
-set_target_properties(monad_core_crt PROPERTIES
-        CXX_VISIBILITY_PRESET hidden
-        VISIBILITY_INLINES_HIDDEN ON)
-target_include_directories(monad_core_crt PUBLIC "src")
-monad_compile_options(monad_core_crt)
-target_link_libraries(monad_core_crt PRIVATE monad_core_stacktrace_options)
-if(NOT APPLE)
-  if("${CMAKE_CXX_FLAGS}" MATCHES ".*-fsanitize=.*" AND
-     CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    target_compile_options(monad_core_crt PUBLIC "-fno-sanitize=function,vptr")
-  endif()
-  target_link_options(monad_core_crt PRIVATE -static-libstdc++)
-  target_link_options(
-    monad_core_crt
-    PRIVATE
-    "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/src/monad/core/core_crt.sym"
-  )
-endif()
 
 # ##############################################################################
 # tests

@@ -119,9 +119,8 @@ struct stack_backtrace_impl final : public stack_backtrace
         char indent_buffer[64];
         memset(indent_buffer, ' ', 64);
         indent_buffer[indent] = 0;
-        auto write = [&](char const *fmt, ...)
-            __attribute__((format(printf, 2, 3)))
-        {
+        auto write = [&](char const *fmt,
+                         ...) __attribute__((format(printf, 2, 3))) {
             va_list args;
             va_start(args, fmt);
             char buffer[1024];
@@ -179,8 +178,7 @@ stack_backtrace::ptr stack_backtrace::deserialize(
         serialised.size()));
 }
 
-extern "C" __attribute__((visibility("default"))) void
-monad_stack_backtrace_capture_and_print(
+extern "C" void monad_stack_backtrace_capture_and_print(
     char *buffer, size_t size, int fd, unsigned indent,
     bool print_async_unsafe_info)
 {

@@ -1,6 +1,0 @@
-MONAD_CORE_CRT_1.0 {
-  global:
-    monad_*;
-  local:
-    *;
-};

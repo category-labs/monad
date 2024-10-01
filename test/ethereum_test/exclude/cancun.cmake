@@ -1,8 +1,4 @@
 set(cancun_excluded_tests
-    # Transient storage (unimplemented)
-    "BlockchainTests.GeneralStateTests/Cancun/stEIP1153_transientStorage/*"
-    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip1153_tstore/*"
-    "BlockchainTests.ValidBlocks/bcEIP1153_transientStorage/*"
     # Proto danksharking (unimplemented)
     "BlockchainTests.GeneralStateTests/Cancun/stEIP4844_blobtransactions/*"
     "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/*"

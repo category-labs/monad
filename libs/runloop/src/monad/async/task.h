@@ -8,6 +8,7 @@
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -117,41 +118,49 @@ struct monad_async_task_head
     // Set this to have i/o completions target a different task to this
     // one. This can be useful where you have tasks work on what i/o to
     // initiate, but a different task will reap i/o completions.
-    struct monad_async_task_head *io_recipient_task;
+    struct monad_async_task_head *io_recipient_task
+        MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
 
     // The following are **NOT** user modifiable
     MONAD_CONTEXT_PUBLIC_CONST struct
     {
-        monad_async_priority cpu;
-        monad_async_priority io;
+        monad_async_priority cpu MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
+        monad_async_priority io MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
     } priority;
 
     // All of these next refer to the i/o executor only i.e. if running on a
     // foreign executor, is_running will be false as that is not the i/o
     // executor.
     MONAD_CONTEXT_PUBLIC_CONST
-    MONAD_CONTEXT_ATOMIC(monad_async_executor) current_executor;
-    MONAD_CONTEXT_PUBLIC_CONST MONAD_CONTEXT_ATOMIC(bool) is_awaiting_dispatch,
-        is_pending_launch, is_running, is_suspended_sqe_exhaustion,
-        is_suspended_sqe_exhaustion_wr, is_suspended_awaiting,
-        is_suspended_completed;
+    MONAD_CONTEXT_ATOMIC(monad_async_executor)
+    current_executor MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
+    MONAD_CONTEXT_PUBLIC_CONST MONAD_CONTEXT_ATOMIC(bool)
+        is_awaiting_dispatch MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
+        is_pending_launch MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
+        is_running MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
+        is_suspended_sqe_exhaustion MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
+        is_suspended_sqe_exhaustion_wr MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
+        is_suspended_awaiting MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
+        is_suspended_completed MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
 
     MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        ticks_when_submitted;
+        ticks_when_submitted MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
     MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        ticks_when_attached;
+        ticks_when_attached MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
     MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        ticks_when_detached;
+        ticks_when_detached MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
     MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        ticks_when_suspended_awaiting;
+        ticks_when_suspended_awaiting MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
     MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        ticks_when_suspended_completed;
+        ticks_when_suspended_completed MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
     MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        ticks_when_resumed;
+        ticks_when_resumed MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
     MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        total_ticks_executed;
+        total_ticks_executed MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
 
-    MONAD_CONTEXT_PUBLIC_CONST size_t io_submitted, io_completed_not_reaped;
+    MONAD_CONTEXT_PUBLIC_CONST unsigned io_submitted
+        MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
+        io_completed_not_reaped MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
 };
 #if __STDC_VERSION__ >= 202300L || defined(__cplusplus)
 static_assert(sizeof(struct monad_async_task_head) == 160);
@@ -211,6 +220,36 @@ BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_create(
 //! from this function until cancellation succeeds.
 BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_task_destroy(monad_async_task task);
+
+/*! \brief Initiate the transfer of a task's context's execution to a different
+type of executor.
+
+This function suspends the execution of the task and requests its executor to
+optionally take a copy of the public information of the task into `opt_save` so
+it can be restored later (this preserves tick counts etc), detach the task from
+the executor, and then invoke the supplied function with the now 'naked' task.
+Another type of executor may then overwrite the bytes after `monad_context_task`
+up to `MONAD_CONTEXT_TASK_ALLOCATION_SIZE`. If you need to pass your `to_invoke`
+additional state, remember there is a `user_ptr` in `monad_context_task`.
+
+Remember that when the context resumes execution in the new executor, anything
+related to `monad_async_*` no longer applies. You can choose the return value of
+this function by setting `task->head.derived.result` before resuming the
+context.
+
+If your context wishes to return to this executor later, consider using
+`monad_async_task_from_foreign_context()` followed by
+`monad_async_task_attach()`.
+*/
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result
+monad_async_task_suspend_save_detach_and_invoke(
+    monad_async_task task, monad_async_task opt_save,
+    monad_c_result (*to_invoke)(monad_context_task detached_task));
+
+//! \brief Optionally copies the `monad_async_*` parts of `opt_save` into
+//! `context_task`, and returns it as a `monad_async_task`.
+extern monad_async_task monad_async_task_from_foreign_context(
+    monad_context_task context_task, monad_async_task opt_save);
 
 //! \brief THREADSAFE Attaches a task instance onto a given executor, which
 //! means it will launch the next time the executor runs. If the task is

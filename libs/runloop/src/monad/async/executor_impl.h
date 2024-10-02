@@ -789,10 +789,11 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
             (void *)task);
         fflush(stdout);
     #endif
-        atomic_load_explicit(&task->context->switcher, memory_order_acquire)
+        atomic_load_explicit(
+            &task->head.derived.context->switcher, memory_order_acquire)
             ->suspend_and_call_resume(
-                task->context,
-                (newtask != nullptr) ? newtask->context : nullptr);
+                task->head.derived.context,
+                (newtask != nullptr) ? newtask->head.derived.context : nullptr);
         task->head.ticks_when_resumed = get_ticks_count(memory_order_relaxed);
         assert(atomic_load_explicit(wait_list_task_flag, memory_order_acquire));
         atomic_store_explicit(wait_list_task_flag, false, memory_order_release);

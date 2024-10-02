@@ -105,8 +105,9 @@ static inline monad_c_result monad_async_executor_impl_launch_pending_tasks(
             &state->ex->head.current_task, &task->head, memory_order_release);
         // This may suspend, in which case we shall either resume above
         // or it wil return (depends on context switch implementation)
-        atomic_load_explicit(&task->context->switcher, memory_order_acquire)
-            ->resume(fake_current_context, task->context);
+        atomic_load_explicit(
+            &task->head.derived.context->switcher, memory_order_acquire)
+            ->resume(fake_current_context, task->head.derived.context);
     }
 exit:
 #if MONAD_ASYNC_EXECUTOR_PRINTING
@@ -149,8 +150,9 @@ static inline monad_c_result monad_async_executor_impl_resume_tasks(
         // another operation, or exits, the loop will resume
         // iterating above or return here
         struct monad_async_task_impl *task = wait_list->front;
-        atomic_load_explicit(&task->context->switcher, memory_order_acquire)
-            ->resume(fake_current_context, task->context);
+        atomic_load_explicit(
+            &task->head.derived.context->switcher, memory_order_acquire)
+            ->resume(fake_current_context, task->head.derived.context);
     }
 
 exit:
@@ -261,7 +263,8 @@ static inline monad_c_result monad_async_executor_run_impl(
                         launch_pending_tasks_state.tasks_pending_launch[n]
                             .front;
                     monad_context_switcher task_switcher = atomic_load_explicit(
-                        &task->context->switcher, memory_order_acquire);
+                        &task->head.derived.context->switcher,
+                        memory_order_acquire);
                     BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
                         task_switcher->resume_many(
                             task_switcher,
@@ -314,9 +317,10 @@ static inline monad_c_result monad_async_executor_run_impl(
             struct io_uring *ring = nullptr;
             // If SQPOLL, this does nothing so is safe to always call
             int r = io_uring_submit(&ex->ring);
-            if (r < 0) {
+            if (r < 0 && r != -EINTR) {
                 return monad_c_make_failure(-r);
             }
+            r = 0;
             // We may now have free SQE slots after the submit
             bool need_to_submit_again = false;
             while (max_items > 0 &&
@@ -361,7 +365,8 @@ static inline monad_c_result monad_async_executor_run_impl(
 #endif
                         monad_context_switcher task_switcher =
                             atomic_load_explicit(
-                                &task->context->switcher, memory_order_acquire);
+                                &task->head.derived.context->switcher,
+                                memory_order_acquire);
                         BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
                             task_switcher->resume_many(
                                 task_switcher,
@@ -384,7 +389,7 @@ static inline monad_c_result monad_async_executor_run_impl(
             if (need_to_submit_again) {
                 // Immediately submit any newly enqueued i/o
                 r = io_uring_submit(&ex->ring);
-                if (r < 0) {
+                if (r < 0 && r != -EINTR) {
                     return monad_c_make_failure(-r);
                 }
             }
@@ -404,9 +409,10 @@ static inline monad_c_result monad_async_executor_run_impl(
 #endif
                 ring = &ex->wr_ring;
                 r = io_uring_submit(ring);
-                if (r < 0) {
+                if (r < 0 && r != -EINTR) {
                     return monad_c_make_failure(-r);
                 }
+                r = 0;
                 need_to_submit_again = false;
                 while (max_items > 0 &&
                        atomic_load_explicit(
@@ -451,7 +457,7 @@ static inline monad_c_result monad_async_executor_run_impl(
 #endif
                             monad_context_switcher task_switcher =
                                 atomic_load_explicit(
-                                    &task->context->switcher,
+                                    &task->head.derived.context->switcher,
                                     memory_order_acquire);
                             BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
                                 task_switcher->resume_many(
@@ -474,7 +480,7 @@ static inline monad_c_result monad_async_executor_run_impl(
                 }
                 if (need_to_submit_again) {
                     r = io_uring_submit(ring);
-                    if (r < 0) {
+                    if (r < 0 && r != -EINTR) {
                         return monad_c_make_failure(-r);
                     }
                 }
@@ -538,6 +544,10 @@ static inline monad_c_result monad_async_executor_run_impl(
                         nullptr);
                     if (r == 0 && cqe != nullptr) {
                         r = 1;
+                    }
+                    // Ignore temporary failure
+                    if (r == -EINTR) {
+                        r = 0;
                     }
                     monad_context_cpu_ticks_count_t const sleep_end =
                         get_ticks_count(memory_order_relaxed);
@@ -668,6 +678,9 @@ static inline monad_c_result monad_async_executor_run_impl(
                             }
                             task->head.derived.result =
                                 monad_c_make_failure(ECANCELED);
+                            // It would seem from testing that a cancelled op
+                            // generates an empty CQE, so total_io_completed
+                            // should be correctly incremented.
                         }
                         else if (cqe->res < 0) {
                             task->head.derived.result =
@@ -886,11 +899,11 @@ static inline monad_c_result monad_async_executor_run_impl(
                     memory_order_release);
                 if (task->call_after_suspend_to_executor != nullptr) {
                     monad_c_result (*call_after_suspend_to_executor)(
-                        struct monad_async_task_impl *task) =
+                        monad_context_task task) =
                         task->call_after_suspend_to_executor;
                     task->call_after_suspend_to_executor = nullptr;
                     BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
-                        call_after_suspend_to_executor(task));
+                        call_after_suspend_to_executor(&task->head.derived));
                 }
             }
 #if MONAD_ASYNC_EXECUTOR_PRINTING >= 3
@@ -946,7 +959,8 @@ static inline monad_c_result monad_async_executor_run_impl(
                                                           .current_priority]
                             .front;
                     monad_context_switcher task_switcher = atomic_load_explicit(
-                        &task->context->switcher, memory_order_acquire);
+                        &task->head.derived.context->switcher,
+                        memory_order_acquire);
                     BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
                         task_switcher->resume_many(
                             task_switcher,
@@ -991,11 +1005,12 @@ static inline monad_c_result monad_async_executor_run_impl(
                         memory_order_release);
                     if (task->call_after_suspend_to_executor != nullptr) {
                         monad_c_result (*call_after_suspend_to_executor)(
-                            struct monad_async_task_impl *task) =
+                            monad_context_task task) =
                             task->call_after_suspend_to_executor;
                         task->call_after_suspend_to_executor = nullptr;
                         BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
-                            call_after_suspend_to_executor(task));
+                            call_after_suspend_to_executor(
+                                &task->head.derived));
                     }
                 }
 #if MONAD_ASYNC_EXECUTOR_PRINTING >= 3
@@ -1105,8 +1120,9 @@ monad_c_result monad_async_executor_suspend_impl(
     printf("*** Executor %p suspends task %p\n", (void *)ex, (void *)task);
     fflush(stdout);
 #endif
-    atomic_load_explicit(&task->context->switcher, memory_order_acquire)
-        ->suspend_and_call_resume(task->context, nullptr);
+    atomic_load_explicit(
+        &task->head.derived.context->switcher, memory_order_acquire)
+        ->suspend_and_call_resume(task->head.derived.context, nullptr);
 #if MONAD_ASYNC_EXECUTOR_PRINTING
     printf(
         "*** Executor %p resumes task %p (cpu priority=%d, i/o priority=%d)\n",
@@ -1168,7 +1184,7 @@ monad_c_result monad_async_executor_submit(
                                   io_uring_sq_ready(&ex->ring) >=
                                       max_items_in_nonwrite_submission_queue)) {
         int r = io_uring_submit(&ex->ring);
-        if (r < 0) {
+        if (r < 0 && r != -EINTR) {
             return monad_c_make_failure(-r);
         }
         ret++;
@@ -1177,7 +1193,7 @@ monad_c_result monad_async_executor_submit(
                                      io_uring_sq_ready(&ex->wr_ring) >=
                                          max_items_in_write_submission_queue)) {
         int r = io_uring_submit(&ex->wr_ring);
-        if (r < 0) {
+        if (r < 0 && r != -EINTR) {
             return monad_c_make_failure(-r);
         }
         ret++;
@@ -1298,10 +1314,11 @@ monad_c_result monad_async_task_attach(
         }
         atomic_unlock(&ex->lock);
     }
-    monad_context_switcher task_switcher =
-        atomic_load_explicit(&task->context->switcher, memory_order_acquire);
+    monad_context_switcher task_switcher = atomic_load_explicit(
+        &task->head.derived.context->switcher, memory_order_acquire);
     if (opt_reparent_switcher && opt_reparent_switcher != task_switcher) {
-        monad_context_reparent_switcher(task->context, opt_reparent_switcher);
+        monad_context_reparent_switcher(
+            task->head.derived.context, opt_reparent_switcher);
         task_switcher = opt_reparent_switcher;
     }
     atomic_store_explicit(
@@ -1315,9 +1332,8 @@ monad_c_result monad_async_task_attach(
     task->head.ticks_when_attached = get_ticks_count(memory_order_relaxed);
     task->head.ticks_when_detached = 0;
     task->head.ticks_when_resumed = 0;
-    task->head.ticks_when_suspended_awaiting = 0;
-    task->head.ticks_when_suspended_completed = 0;
-    task->head.total_ticks_executed = 0;
+    // Do not set total_ticks_executed, ticks_when_suspended_awaiting,
+    // ticks_when_suspended_completed
     atomic_lock(&ex->lock);
     LIST_APPEND_ATOMIC_COUNTER(
         ex->tasks_pending_launch, task, &ex->head.tasks_pending_launch);

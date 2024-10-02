@@ -186,6 +186,7 @@ pub const memory_order_memory_order_acq_rel: memory_order = 4;
 pub const memory_order_memory_order_seq_cst: memory_order = 5;
 pub type memory_order = ::std::os::raw::c_uint;
 pub type atomic_uint = u32;
+pub type monad_context = *mut monad_context_head;
 #[doc = "! \\brief The public attributes of a task"]
 #[repr(C)]
 #[derive(Debug)]
@@ -196,6 +197,8 @@ pub struct monad_context_task_head {
     >,
     #[doc = "! \\brief Any user defined value"]
     pub user_ptr: *mut ::std::os::raw::c_void,
+    #[doc = "! \\brief The context for the running task"]
+    pub context: monad_context,
     #[doc = "! \\brief Set to the result of the task on exit; also used as scratch\n! during the task's suspend-resume cycles"]
     pub result: monad_c_result,
     #[doc = "! \\brief Set by the task implementation to a task detach implementation"]
@@ -219,7 +222,6 @@ pub struct monad_context_task_attr {
     #[doc = "! \\brief 0 chooses platform default stack size"]
     pub stack_size: usize,
 }
-pub type monad_context = *mut monad_context_head;
 #[repr(C)]
 #[derive(Debug)]
 pub struct monad_context_switcher_head {
@@ -555,8 +557,8 @@ pub struct monad_async_task_head {
     pub ticks_when_suspended_completed: monad_context_cpu_ticks_count_t,
     pub ticks_when_resumed: monad_context_cpu_ticks_count_t,
     pub total_ticks_executed: monad_context_cpu_ticks_count_t,
-    pub io_submitted: usize,
-    pub io_completed_not_reaped: usize,
+    pub io_submitted: ::std::os::raw::c_uint,
+    pub io_completed_not_reaped: ::std::os::raw::c_uint,
 }
 #[repr(C)]
 #[derive(Debug)]
@@ -599,6 +601,23 @@ extern "C" {
 extern "C" {
     #[doc = "! \\brief EXPENSIVE Destroys a task instance. If the task is currently\n! suspended, it will be cancelled first in which case `EAGAIN` may be returned\n! from this function until cancellation succeeds."]
     pub fn monad_async_task_destroy(task: monad_async_task) -> monad_c_result;
+}
+extern "C" {
+    #[doc = " \\brief Initiate the transfer of a task's context's execution to a different\ntype of executor.\n\nThis function suspends the execution of the task and requests its executor to\noptionally take a copy of the public information of the task into `opt_save` so\nit can be restored later (this preserves tick counts etc), detach the task from\nthe executor, and then invoke the supplied function with the now 'naked' task.\nAnother type of executor may then overwrite the bytes after `monad_context_task`\nup to `MONAD_CONTEXT_TASK_ALLOCATION_SIZE`. If you need to pass your `to_invoke`\nadditional state, remember there is a `user_ptr` in `monad_context_task`.\n\nRemember that when the context resumes execution in the new executor, anything\nrelated to `monad_async_*` no longer applies. You can choose the return value of\nthis function by setting `task->head.derived.result` before resuming the\ncontext.\n\nIf your context wishes to return to this executor later, consider using\n`monad_async_task_from_foreign_context()` followed by\n`monad_async_task_attach()`."]
+    pub fn monad_async_task_suspend_save_detach_and_invoke(
+        task: monad_async_task,
+        opt_save: monad_async_task,
+        to_invoke: ::std::option::Option<
+            unsafe extern "C" fn(detached_task: monad_context_task) -> monad_c_result,
+        >,
+    ) -> monad_c_result;
+}
+extern "C" {
+    #[doc = "! \\brief Optionally copies the `monad_async_*` parts of `opt_save` into\n! `context_task`, and returns it as a `monad_async_task`."]
+    pub fn monad_async_task_from_foreign_context(
+        context_task: monad_context_task,
+        opt_save: monad_async_task,
+    ) -> monad_async_task;
 }
 extern "C" {
     #[doc = "! \\brief THREADSAFE Attaches a task instance onto a given executor, which\n! means it will launch the next time the executor runs. If the task is\n! attached already to a different executor, you MUST call this function from\n! that executor's kernel thread. If you optionally choose to reparent the\n! task's context to a new context switcher instance (typical if attaching\n! to an executor on a different kernel thread), it MUST be the same type of\n! context switcher."]

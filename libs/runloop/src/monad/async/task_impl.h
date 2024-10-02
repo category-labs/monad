@@ -24,7 +24,6 @@ struct monad_async_task_impl
     struct monad_async_task_head head;
     char magic[8];
     struct monad_async_task_impl *prev, *next;
-    monad_context context;
     bool please_cancel_invoked;
     monad_c_result (*please_cancel)(
         struct monad_async_executor_impl *ex,
@@ -47,12 +46,12 @@ struct monad_async_task_impl
 
     - After task has exited and been fully detached from its executor.
     */
-    monad_c_result (*call_after_suspend_to_executor)(
-        struct monad_async_task_impl *task);
+    monad_c_result (*call_after_suspend_to_executor)(monad_context_task task);
     void *call_after_suspend_to_executor_data;
 };
 #if __STDC_VERSION__ >= 202300L || defined(__cplusplus)
-static_assert(sizeof(struct monad_async_task_impl) == 304);
+static_assert(
+    sizeof(struct monad_async_task_impl) == MONAD_ASYNC_TASK_FOOTPRINT);
 static_assert(
     sizeof(struct monad_async_task_impl) <= MONAD_CONTEXT_TASK_ALLOCATION_SIZE);
     #ifdef __cplusplus

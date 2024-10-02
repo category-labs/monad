@@ -24,9 +24,13 @@ extern "C"
 {
 #endif
 
+typedef struct monad_context_head *monad_context;
+
 //! \brief How much memory to allocate to fit all implementations of `struct
 //! monad_context_task_head`
-#define MONAD_CONTEXT_TASK_ALLOCATION_SIZE (304)
+#define MONAD_CONTEXT_TASK_ALLOCATION_SIZE (296)
+//! \brief How many of those bytes are used by the i/o executor for its state
+#define MONAD_ASYNC_TASK_FOOTPRINT (296)
 
 //! \brief The public attributes of a task
 typedef struct monad_context_task_head
@@ -37,6 +41,9 @@ typedef struct monad_context_task_head
         MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
     //! \brief Any user defined value
     void *user_ptr MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
+
+    //! \brief The context for the running task
+    monad_context context MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
 
     // The following are **NOT** user modifiable
     //! \brief Set to the result of the task on exit; also used as scratch
@@ -57,7 +64,7 @@ typedef struct monad_context_task_head
 #endif
 } *monad_context_task;
 #if __STDC_VERSION__ >= 202300L || defined(__cplusplus)
-static_assert(sizeof(struct monad_context_task_head) == 56);
+static_assert(sizeof(struct monad_context_task_head) == 64);
     #ifdef __cplusplus
 static_assert(alignof(struct monad_context_task_head) == 8);
     #endif
@@ -72,8 +79,6 @@ struct monad_context_task_attr
     //! \brief 0 chooses platform default stack size
     size_t stack_size;
 };
-
-typedef struct monad_context_head *monad_context;
 
 typedef struct monad_context_switcher_head
 {

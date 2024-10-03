@@ -673,7 +673,7 @@ storage_pool::storage_pool(
                     device::type_t_::block_device,
                     source.c_str(),
                     fd,
-                    stat.st_rdev,
+                    0ULL,
                     flags);
             }
             if ((stat.st_mode & S_IFMT) == S_IFREG) {
@@ -682,7 +682,7 @@ storage_pool::storage_pool(
                     device::type_t_::file,
                     source.c_str(),
                     fd,
-                    stat.st_dev ^ stat.st_ino,
+                    stat.st_ino,
                     flags);
             }
             std::stringstream str;

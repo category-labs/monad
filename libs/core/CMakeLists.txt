@@ -134,23 +134,23 @@ add_library(
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   # Append Linux-specific implementation files
   target_sources(
-    monad_core PRIVATE
-    # core
-    "src/monad/core/cgroup.c"
-    "src/monad/core/cgroup.h"
-    "src/monad/core/cpuset.c"
-    "src/monad/core/cpuset.h"
-    # io
-    "src/monad/io/buffers.cpp"
-    "src/monad/io/buffers.hpp"
-    "src/monad/io/ring.hpp"
-    "src/monad/io/ring.cpp"
-    # mem
-    "src/monad/mem/huge_mem.hpp"
-    "src/monad/mem/huge_mem.cpp"
-    # procfs
-    "src/monad/procfs/statm.c"
-    "src/monad/procfs/statm.h")
+    monad_core
+    PRIVATE # core
+            "src/monad/core/cgroup.c"
+            "src/monad/core/cgroup.h"
+            "src/monad/core/cpuset.c"
+            "src/monad/core/cpuset.h"
+            # io
+            "src/monad/io/buffers.cpp"
+            "src/monad/io/buffers.hpp"
+            "src/monad/io/ring.hpp"
+            "src/monad/io/ring.cpp"
+            # mem
+            "src/monad/mem/huge_mem.hpp"
+            "src/monad/mem/huge_mem.cpp"
+            # procfs
+            "src/monad/procfs/statm.c"
+            "src/monad/procfs/statm.h")
 endif()
 
 monad_compile_options(monad_core)

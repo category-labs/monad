@@ -202,7 +202,7 @@ int main(int const argc, char const *argv[])
     bool no_compaction = false;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);
-    uint64_t history_len = 1000;
+    uint64_t history_len = 20000;
     std::vector<fs::path> dbname_paths;
     fs::path genesis;
     fs::path snapshot;

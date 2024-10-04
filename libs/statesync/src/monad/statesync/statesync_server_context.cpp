@@ -79,9 +79,9 @@ monad_statesync_server_context::read_account(Address const &addr)
 }
 
 bytes32_t monad_statesync_server_context::read_storage(
-    Address const &addr, Incarnation const incarnation, bytes32_t const &key)
+    Address const &addr, bytes32_t const &key)
 {
-    return rw.read_storage(addr, incarnation, key);
+    return rw.read_storage(addr, key);
 }
 
 std::shared_ptr<CodeAnalysis>

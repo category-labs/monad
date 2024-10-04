@@ -33,8 +33,7 @@ struct monad_statesync_server_context final : public monad::Db
     read_account(monad::Address const &addr) override;
 
     virtual monad::bytes32_t read_storage(
-        monad::Address const &addr, monad::Incarnation,
-        monad::bytes32_t const &key) override;
+        monad::Address const &addr, monad::bytes32_t const &key) override;
 
     virtual std::shared_ptr<monad::CodeAnalysis>
     read_code(monad::bytes32_t const &hash) override;

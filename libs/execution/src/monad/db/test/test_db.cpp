@@ -138,16 +138,16 @@ TYPED_TEST(DBTest, read_storage)
         Code{});
 
     // Existing storage
-    EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key1), value1);
+    EXPECT_EQ(tdb.read_storage(ADDR_A, key1), value1);
     EXPECT_EQ(tdb.read_storage_and_slot(ADDR_A, key1).first, key1);
 
     // Non-existing key
-    EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key2), bytes32_t{});
+    EXPECT_EQ(tdb.read_storage(ADDR_A, key2), bytes32_t{});
     EXPECT_EQ(tdb.read_storage_and_slot(ADDR_A, key2).first, bytes32_t{});
 
     // Non-existing account
     EXPECT_FALSE(tdb.read_account(ADDR_B).has_value());
-    EXPECT_EQ(tdb.read_storage(ADDR_B, Incarnation{0, 0}, key1), bytes32_t{});
+    EXPECT_EQ(tdb.read_storage(ADDR_B, key1), bytes32_t{});
     EXPECT_EQ(tdb.read_storage_and_slot(ADDR_B, key1).first, bytes32_t{});
 }
 
@@ -233,7 +233,7 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
         Code{});
 
     EXPECT_EQ(tdb.read_account(ADDR_A), std::nullopt);
-    EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key1), bytes32_t{});
+    EXPECT_EQ(tdb.read_storage(ADDR_A, key1), bytes32_t{});
     EXPECT_EQ(tdb.state_root(), NULL_ROOT);
 }
 

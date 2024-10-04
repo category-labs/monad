@@ -25,22 +25,16 @@ class DbCache final : public Db
 
     struct StorageKey
     {
-        static constexpr size_t k_bytes =
-            sizeof(Address) + sizeof(Incarnation) + sizeof(bytes32_t);
+        static constexpr size_t k_bytes = sizeof(Address) + sizeof(bytes32_t);
 
         uint8_t bytes[k_bytes];
 
         StorageKey() = default;
 
-        StorageKey(
-            Address const &addr, Incarnation incarnation, bytes32_t const &key)
+        StorageKey(Address const &addr, bytes32_t const &key)
         {
             memcpy(bytes, addr.bytes, sizeof(Address));
-            memcpy(&bytes[sizeof(Address)], &incarnation, sizeof(Incarnation));
-            memcpy(
-                &bytes[sizeof(Address) + sizeof(Incarnation)],
-                key.bytes,
-                sizeof(bytes32_t));
+            memcpy(&bytes[sizeof(Address)], key.bytes, sizeof(bytes32_t));
         }
     };
 
@@ -75,18 +69,17 @@ public:
         return result;
     }
 
-    virtual bytes32_t read_storage(
-        Address const &address, Incarnation incarnation,
-        bytes32_t const &key) override
+    virtual bytes32_t
+    read_storage(Address const &address, bytes32_t const &key) override
     {
-        StorageKey const skey{address, incarnation, key};
+        StorageKey const skey{address, key};
         {
             StorageCache::ConstAccessor acc{};
             if (storage_.find(acc, skey)) {
                 return acc->second.value_;
             }
         }
-        auto const result = db_.read_storage(address, incarnation, key);
+        auto const result = db_.read_storage(address, key);
         storage_.insert(skey, result);
         return result;
     }
@@ -131,10 +124,8 @@ public:
                 auto const &storage_delta = it2->second;
                 if (storage_delta.second != storage_delta.first) {
                     if (account.has_value()) {
-                        auto const incarnation = account->incarnation;
                         storage_.insert(
-                            StorageKey(address, incarnation, key),
-                            storage_delta.second);
+                            StorageKey(address, key), storage_delta.second);
                     }
                 }
             }

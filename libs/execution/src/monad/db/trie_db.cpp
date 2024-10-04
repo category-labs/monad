@@ -91,8 +91,7 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     #define STATS_STORAGE_VALUE()
 #endif
 
-bytes32_t
-TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
+bytes32_t TrieDb::read_storage(Address const &addr, bytes32_t const &key)
 {
     auto const value = db_.get(
         concat(

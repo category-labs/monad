@@ -36,7 +36,7 @@ public:
 
     virtual std::optional<Account> read_account(Address const &) override;
     virtual bytes32_t
-    read_storage(Address const &, Incarnation, bytes32_t const &key) override;
+    read_storage(Address const &, bytes32_t const &key) override;
     virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) override;
     virtual void increment_block_number() override;
     virtual void commit(

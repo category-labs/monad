@@ -145,7 +145,7 @@ void account_update(
         it->second.account = acct;
     }
     else if (ctx.tdb.read_account(addr).has_value()) {
-        it->second.account.reset();
+        it->second = {};
     }
     else {
         ctx.deltas.erase(it);

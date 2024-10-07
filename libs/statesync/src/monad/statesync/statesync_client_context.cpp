@@ -25,7 +25,7 @@ monad_statesync_client_context::monad_statesync_client_context(
     , tdb{db}
     , progress(
           static_cast<size_t>(std::pow(16, prefix_bytes * 2)),
-          db.get_latest_block_id())
+          {db.get_latest_block_id(), db.get_latest_block_id()})
     , prefix_bytes(prefix_bytes)
     , target{db.get_latest_block_id()}
     , current{db.get_latest_block_id() == mpt::INVALID_BLOCK_ID ? 0 : db.get_latest_block_id() + 1}

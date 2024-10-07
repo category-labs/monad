@@ -10,6 +10,7 @@
 #include <ankerl/unordered_dense.h>
 
 #include <filesystem>
+#include <utility>
 #include <vector>
 
 struct monad_statesync_client;
@@ -31,7 +32,7 @@ struct monad_statesync_client_context
     monad::OnDiskMachine machine;
     monad::mpt::Db db;
     monad::TrieDb tdb;
-    std::vector<uint64_t> progress;
+    std::vector<std::pair<uint64_t, uint64_t>> progress;
     uint8_t prefix_bytes;
     uint64_t target;
     uint64_t current;

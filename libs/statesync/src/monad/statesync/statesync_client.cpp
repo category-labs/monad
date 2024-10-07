@@ -232,7 +232,7 @@ bool monad_statesync_client_has_reached_target(
         return false;
     }
 
-    for (auto const &n : ctx->progress) {
+    for (auto const &[n, _] : ctx->progress) {
         MONAD_ASSERT(n == INVALID_BLOCK_ID || n <= ctx->target);
         if (n != ctx->target) {
             return false;
@@ -253,15 +253,13 @@ void monad_statesync_client_handle_target(
     else if (msg.n == 0) {
         MONAD_ASSERT(ctx->db.get_latest_block_id() == INVALID_BLOCK_ID);
         read_genesis(ctx->genesis, ctx->tdb);
-        ctx->progress.assign(ctx->progress.size(), msg.n);
+        ctx->progress.assign(ctx->progress.size(), {msg.n, INVALID_BLOCK_ID});
     }
     else {
-        auto const &progress = ctx->progress;
-        for (size_t i = 0; i < progress.size(); ++i) {
-            MONAD_ASSERT(
-                progress[i] == INVALID_BLOCK_ID || progress[i] < msg.n);
-            auto const from =
-                progress[i] == INVALID_BLOCK_ID ? 0 : progress[i] + 1;
+        for (size_t i = 0; i < ctx->progress.size(); ++i) {
+            auto const &[progress, old_target] = ctx->progress[i];
+            MONAD_ASSERT(progress == INVALID_BLOCK_ID || progress < msg.n);
+            auto const from = progress == INVALID_BLOCK_ID ? 0 : progress + 1;
             ctx->statesync_send_request(
                 ctx->sync,
                 monad_sync_request{
@@ -271,7 +269,7 @@ void monad_statesync_client_handle_target(
                     .from = from,
                     .until =
                         from >= (msg.n * 99 / 100) ? msg.n : msg.n * 99 / 100,
-                    .old_target = ctx->target});
+                    .old_target = old_target});
         }
     }
     ctx->target = msg.n;
@@ -326,19 +324,20 @@ void monad_statesync_client_handle_done(
 {
     MONAD_ASSERT(msg.success);
 
-    auto &p = ctx->progress.at(msg.prefix);
-    MONAD_ASSERT(msg.n > p || p == INVALID_BLOCK_ID);
-    p = msg.n;
+    auto &[progress, old_target] = ctx->progress.at(msg.prefix);
+    MONAD_ASSERT(msg.n > progress || progress == INVALID_BLOCK_ID);
+    progress = msg.n;
+    old_target = ctx->target;
 
-    if (p != ctx->target) {
+    if (progress != ctx->target) {
         ctx->statesync_send_request(
             ctx->sync,
             monad_sync_request{
                 .prefix = msg.prefix,
                 .prefix_bytes = ctx->prefix_bytes,
                 .target = ctx->target,
-                .from = p + 1,
-                .until = std::min(p + (1 << 20), ctx->target),
+                .from = progress + 1,
+                .until = std::min(progress + (1 << 20), ctx->target),
                 .old_target = ctx->target});
     }
 

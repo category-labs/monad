@@ -568,6 +568,50 @@ TEST_F(StateSyncFixture, account_deleted_and_prefix_skipped)
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 }
 
+TEST_F(StateSyncFixture, delete_updated_account)
+{
+    init();
+
+    Account const a{.balance = 100, .incarnation = Incarnation{1, 0}};
+
+    stdb.increment_block_number();
+    sctx.commit(
+        StateDeltas{
+            {ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}}},
+        {},
+        {});
+    monad_statesync_client_handle_target(
+        cctx, make_target(1, sctx.state_root()));
+    run();
+
+    stdb.increment_block_number();
+    sctx.commit(
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {a, a},
+                 .storage = {{bytes32_t{}, {bytes32_t{}, bytes32_t{64}}}}}}},
+        {},
+        {});
+    monad_statesync_client_handle_target(
+        cctx, make_target(2, sctx.state_root()));
+    client.rqs.pop_front();
+    while (!client.rqs.empty()) {
+        monad_statesync_server_run_once(server);
+    }
+
+    stdb.increment_block_number();
+    sctx.commit(
+        StateDeltas{
+            {ADDR_A, StateDelta{.account = {a, std::nullopt}, .storage = {}}}},
+        {},
+        {});
+    monad_statesync_client_handle_target(
+        cctx, make_target(3, sctx.state_root()));
+    run();
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+}
+
 TEST_F(StateSyncFixture, benchmark)
 {
     constexpr auto N = 1'000'000;

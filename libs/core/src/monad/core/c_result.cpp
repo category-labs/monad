@@ -10,8 +10,8 @@
 
 extern char const *__progname;
 
-extern "C" __attribute__((visibility("default"))) void monad_verrc(
-    int eval, struct monad_error_code c_code, char const *format,
+extern "C" void monad_verrc(
+    int eval, cxx_status_code_system err_code, char const *format,
     std::va_list ap)
 {
     using sys_code_t = BOOST_OUTCOME_V2_NAMESPACE::experimental::system_code;
@@ -19,7 +19,7 @@ extern "C" __attribute__((visibility("default"))) void monad_verrc(
     if (format) {
         std::vfprintf(stderr, format, ap);
     }
-    auto *cxx_code = std::bit_cast<sys_code_t *>(&c_code);
+    auto *cxx_code = std::bit_cast<sys_code_t *>(&err_code);
     std::fprintf(
         stderr,
         ": %s (%s:%ld)\n",

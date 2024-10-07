@@ -28,10 +28,6 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 */
 
-#ifndef MONAD_BOOST_RESULT_INCLUDE_OK
-#error This is part of the private implementation of c_result.h; cannot include it here!
-#endif
-
 #ifndef BOOST_OUTCOME_EXPERIMENTAL_RESULT_H
 #define BOOST_OUTCOME_EXPERIMENTAL_RESULT_H
 
@@ -193,8 +189,6 @@ DEALINGS IN THE SOFTWARE.
 #ifndef BOOST_OUTCOME_C_WEAK
     #ifdef _MSC_VER
         #define BOOST_OUTCOME_C_WEAK inline
-    #elif defined(__APPLE__)
-        #define BOOST_OUTCOME_C_WEAK __attribute__((weak, visibility("default")))
     #else
         #define BOOST_OUTCOME_C_WEAK __attribute__((weak))
     #endif
@@ -414,9 +408,9 @@ __asm__(
     ".ascii \"    pp.add_printer('outcome_v2::basic_outcome', "
     "'^(boost::)?outcome_v2[_0-9a-f]*::basic_outcome<.*>$', "
     "OutcomeBasicOutcomePrinter)\\n\"\n"
-    ".ascii \"    pp.add_printer('^monad_status_result$', "
-    "OutcomeCResultStatusPrinter)\\n\"\n"
-    ".ascii \"    pp.add_printer('^monad_error_code$', "
+    ".ascii \"    pp.add_printer('cxx_result_status_code_*', "
+    "'^cxx_result_status_code_.*$', OutcomeCResultStatusPrinter)\\n\"\n"
+    ".ascii \"    pp.add_printer('cxx_status_code_*', '^cxx_status_code_.*$', "
     "OutcomeCStatusCodePrinter)\\n\"\n"
     ".ascii \"    return pp\\n\"\n"
 
@@ -441,8 +435,37 @@ extern "C"
 {
 #endif
 
+#define BOOST_OUTCOME_C_DECLARE_RESULT(ident, R, S)                            \
+    struct cxx_result_##ident                                                  \
+    {                                                                          \
+        union                                                                  \
+        {                                                                      \
+            R value;                                                           \
+            S error;                                                           \
+        };                                                                     \
+        unsigned flags;                                                        \
+    }
+
+#define BOOST_OUTCOME_C_RESULT(ident) struct cxx_result_##ident
+
+#define BOOST_OUTCOME_C_RESULT_HAS_VALUE(r) (((r).flags & 1U) == 1U)
+
+#define BOOST_OUTCOME_C_RESULT_HAS_ERROR(r) (((r).flags & 2U) == 2U)
+
+#define BOOST_OUTCOME_C_RESULT_ERROR_IS_ERRNO(r)                               \
+    (((r).flags & (1U << 4U)) == (1U << 4U))
+
 /***************************** <system_error2> support
  * ******************************/
+
+#define BOOST_OUTCOME_C_DECLARE_STATUS_CODE(ident, value_type)                 \
+    struct cxx_status_code_##ident                                             \
+    {                                                                          \
+        void *domain;                                                          \
+        value_type value;                                                      \
+    };
+
+#define BOOST_OUTCOME_C_STATUS_CODE(ident) struct cxx_status_code_##ident
 
 extern BOOST_OUTCOME_C_WEAK void outcome_make_result_status_code_success(
     void *out, size_t bytes, size_t offset, void const *toset,
@@ -456,53 +479,182 @@ extern int outcome_status_code_equal_generic(void const *a, int errcode);
 extern char const *outcome_status_code_message(void const *a);
 
 #ifdef __cplusplus
-} // extern "C"
-
-    #ifdef __clang__
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wreturn-type-c-linkage"
-    #endif
-    #include <boost/outcome/experimental/status_result.hpp>
-
-    inline BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<intptr_t>
-    to_result(const monad_c_result &r)
-    {
-        union type_punner_t
-        {
-            monad_c_result c;
-            BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<intptr_t> cpp;
-
-            type_punner_t() : c{} {}
-            ~type_punner_t() {}
-        } pun;
-
-        pun.c = r;
-        return std::move(pun.cpp);
-    }
-    BOOST_OUTCOME_C_NODISCARD inline monad_c_result
-    to_monad_c_result(BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<intptr_t> v)
-    {
-        union type_punner_t
-        {
-            BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<intptr_t> cpp;
-            monad_c_result c;
-
-            type_punner_t(BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<intptr_t> v)
-            : cpp(std::move(v)) {}
-            ~type_punner_t() {}
-        } pun{std::move(v)};
-
-        return pun.c;
-    }
-    #ifdef __clang__
-    #pragma clang diagnostic pop
-    #endif
+    #define BOOST_OUTCOME_C_DECLARE_RESULT_STATUS_CODE_CXX(ident, R, S)        \
+        static_assert(                                                         \
+            std::is_trivially_copyable<R>::value ||                            \
+                BOOST_OUTCOME_V2_NAMESPACE::trait::is_move_bitcopying<         \
+                    R>::value,                                                 \
+            "R must be trivially copyable or move bitcopying to be used in a " \
+            "C Result");                                                       \
+        static_assert(                                                         \
+            std::is_trivially_copyable<S>::value ||                            \
+                BOOST_OUTCOME_V2_NAMESPACE::trait::is_move_bitcopying<         \
+                    S>::value,                                                 \
+            "S must be trivially copyable or move bitcopying to be used in a " \
+            "C Result");                                                       \
+        inline BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<R>      \
+        to_result(const cxx_result_status_code_##ident &v)                     \
+        {                                                                      \
+            union type_punner_t                                                \
+            {                                                                  \
+                cxx_result_status_code_##ident c;                              \
+                BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<R>     \
+                    cpp;                                                       \
+                                                                               \
+                type_punner_t()                                                \
+                    : c{}                                                      \
+                {                                                              \
+                }                                                              \
+                ~type_punner_t() {}                                            \
+            } pun;                                                             \
+                                                                               \
+            pun.c = v;                                                         \
+            return std::move(pun.cpp);                                         \
+        }                                                                      \
+        BOOST_OUTCOME_C_NODISCARD inline cxx_result_status_code_##ident        \
+            to_##ident(                                                        \
+                BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<R> v)  \
+        {                                                                      \
+            union type_punner_t                                                \
+            {                                                                  \
+                BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<R>     \
+                    cpp;                                                       \
+                cxx_result_status_code_##ident c;                              \
+                                                                               \
+                type_punner_t(                                                 \
+                    BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<R> \
+                        v)                                                     \
+                    : cpp(std::move(v))                                        \
+                {                                                              \
+                }                                                              \
+                ~type_punner_t() {}                                            \
+            } pun{std::move(v)};                                               \
+                                                                               \
+            return pun.c;                                                      \
+        }
+#else
+    #define BOOST_OUTCOME_C_DECLARE_RESULT_STATUS_CODE_CXX(ident, R, S)
 #endif
+
+#define BOOST_OUTCOME_C_DECLARE_RESULT_STATUS_CODE(ident, R, S)                \
+    struct cxx_result_status_code_##ident                                      \
+    {                                                                          \
+        R value;                                                               \
+        unsigned flags;                                                        \
+        S error;                                                               \
+    };                                                                         \
+    BOOST_OUTCOME_C_NODISCARD_EXTERN_C                                         \
+    BOOST_OUTCOME_C_WEAK struct cxx_result_status_code_##ident                 \
+        outcome_make_result_##ident##_success(R value)                         \
+    {                                                                          \
+        struct cxx_result_status_code_##ident ret;                             \
+        assert(outcome_make_result_status_code_success); /* If this fails, you \
+                                                            need to compile    \
+                                                            this file at least \
+                                                            once in C++. */    \
+        outcome_make_result_status_code_success(                               \
+            (void *)&ret,                                                      \
+            sizeof(ret),                                                       \
+            offsetof(struct cxx_result_status_code_##ident, flags),            \
+            (const void *)&value,                                              \
+            sizeof(value));                                                    \
+        return ret;                                                            \
+    }                                                                          \
+    BOOST_OUTCOME_C_MSVC_FORCE_EMIT(outcome_make_result_##ident##_success)     \
+    BOOST_OUTCOME_C_NODISCARD_EXTERN_C                                         \
+    BOOST_OUTCOME_C_WEAK struct cxx_result_status_code_##ident                 \
+        outcome_make_result_##ident##_failure_posix(int errcode)               \
+    {                                                                          \
+        struct cxx_result_status_code_##ident ret;                             \
+        assert(                                                                \
+            outcome_make_result_status_code_failure_posix); /* If this fails,  \
+                                                               you need to     \
+                                                               compile this    \
+                                                               file at least   \
+                                                               once in C++. */ \
+        outcome_make_result_status_code_failure_posix(                         \
+            (void *)&ret,                                                      \
+            sizeof(ret),                                                       \
+            offsetof(struct cxx_result_status_code_##ident, flags),            \
+            errcode);                                                          \
+        return ret;                                                            \
+    }                                                                          \
+    BOOST_OUTCOME_C_MSVC_FORCE_EMIT(                                           \
+        outcome_make_result_##ident##_failure_posix)                           \
+    BOOST_OUTCOME_C_NODISCARD_EXTERN_C                                         \
+    BOOST_OUTCOME_C_WEAK struct cxx_result_status_code_##ident                 \
+        outcome_make_result_##ident##_failure_system(intptr_t errcode)         \
+    {                                                                          \
+        struct cxx_result_status_code_##ident ret;                             \
+        assert(                                                                \
+            outcome_make_result_status_code_failure_system); /* If this fails, \
+                                                                you need to    \
+                                                                compile this   \
+                                                                file at least  \
+                                                                once in C++.   \
+                                                              */               \
+        outcome_make_result_status_code_failure_system(                        \
+            (void *)&ret,                                                      \
+            sizeof(ret),                                                       \
+            offsetof(struct cxx_result_status_code_##ident, flags),            \
+            errcode);                                                          \
+        return ret;                                                            \
+    }                                                                          \
+    BOOST_OUTCOME_C_MSVC_FORCE_EMIT(                                           \
+        outcome_make_result_##ident##_failure_system)                          \
+    BOOST_OUTCOME_C_DECLARE_RESULT_STATUS_CODE_CXX(ident, R, S)
+
+#define BOOST_OUTCOME_C_RESULT_STATUS_CODE(ident)                              \
+    struct cxx_result_status_code_##ident
+
+#define BOOST_OUTCOME_C_TO_RESULT_STATUS_CODE(ident, ...)                      \
+    to_##ident(__VA_ARGS__)
+#define BOOST_OUTCOME_C_MAKE_RESULT_STATUS_CODE_SUCCESS(ident, ...)            \
+    outcome_make_result_##ident##_success(__VA_ARGS__)
+#define BOOST_OUTCOME_C_MAKE_RESULT_STATUS_CODE_FAILURE_POSIX(ident, ...)      \
+    outcome_make_result_##ident##_failure_posix(__VA_ARGS__)
+#define BOOST_OUTCOME_C_MAKE_RESULT_STATUS_CODE_FAILURE_SYSTEM(ident, ...)     \
+    outcome_make_result_##ident##_failure_system(__VA_ARGS__)
+
+struct cxx_status_code_posix
+{
+    void *domain;
+    int value;
+};
+
+#define BOOST_OUTCOME_C_DECLARE_RESULT_ERRNO(ident, R)                         \
+    BOOST_OUTCOME_C_DECLARE_RESULT_STATUS_CODE(                                \
+        posix_##ident, R, struct cxx_status_code_posix)
+#define BOOST_OUTCOME_C_RESULT_ERRNO(ident)                                    \
+    BOOST_OUTCOME_C_RESULT_STATUS_CODE(posix_##ident)
+
+struct cxx_status_code_system
+{
+    void *domain;
+    intptr_t value;
+};
+
+#define BOOST_OUTCOME_C_DECLARE_RESULT_SYSTEM(ident, R)                        \
+    BOOST_OUTCOME_C_DECLARE_RESULT_STATUS_CODE(                                \
+        system_##ident, R, struct cxx_status_code_system)
+#define BOOST_OUTCOME_C_RESULT_SYSTEM(ident)                                   \
+    BOOST_OUTCOME_C_RESULT_STATUS_CODE(system_##ident)
+
+#define BOOST_OUTCOME_C_TO_RESULT_SYSTEM_CODE(ident, ...)                      \
+    to_system_##ident(__VA_ARGS__)
+#define BOOST_OUTCOME_C_MAKE_RESULT_SYSTEM_SUCCESS(ident, ...)                 \
+    BOOST_OUTCOME_C_MAKE_RESULT_STATUS_CODE_SUCCESS(system_##ident, __VA_ARGS__)
+#define BOOST_OUTCOME_C_MAKE_RESULT_SYSTEM_FAILURE_POSIX(ident, ...)           \
+    BOOST_OUTCOME_C_MAKE_RESULT_STATUS_CODE_FAILURE_POSIX(                     \
+        system_##ident, __VA_ARGS__)
+#define BOOST_OUTCOME_C_MAKE_RESULT_SYSTEM_FAILURE_SYSTEM(ident, ...)          \
+    BOOST_OUTCOME_C_MAKE_RESULT_STATUS_CODE_FAILURE_SYSTEM(                    \
+        system_##ident, __VA_ARGS__)
 
 #define BOOST_OUTCOME_C_RESULT_SYSTEM_TRY_IMPLV(                               \
     unique, retstmt, cleanup, spec, ...)                                       \
     BOOST_OUTCOME_TRYV2_UNIQUE_STORAGE(unique, spec, __VA_ARGS__);             \
-    BOOST_OUTCOME_TRY_LIKELY_IF(monad_result_has_value(unique));               \
+    BOOST_OUTCOME_TRY_LIKELY_IF(BOOST_OUTCOME_C_RESULT_HAS_VALUE(unique));     \
     else                                                                       \
     {                                                                          \
         retstmt;                                                               \
@@ -568,17 +720,20 @@ extern char const *outcome_status_code_message(void const *a);
         BOOST_OUTCOME_C_RESULT_SYSTEM_TRY_INVOKE_TRY, __VA_ARGS__)
 
 #define BOOST_OUTCOME_C_MAKE_RESULT_SYSTEM_FROM_ENUM(ident, enum_name, ...)    \
-    outcome_make_result_status_code_failure_system_enum_##enum_name(__VA_ARGS__)
+    outcome_make_result_##ident##_failure_system_enum_##enum_name(__VA_ARGS__)
 #ifndef __cplusplus
     // Declares the function in C, needs to occur at least once in a C++ source
     // file to get implemented
     #define BOOST_OUTCOME_C_DECLARE_RESULT_SYSTEM_FROM_ENUM(                   \
         ident, enum_name, uuid, ...)                                           \
-        BOOST_OUTCOME_C_NODISCARD_EXTERN_C                                     \
-            monad_c_result                                                     \
-                outcome_make_result_status_code_failure_system_enum_##enum_name( \
+        BOOST_OUTCOME_C_NODISCARD_EXTERN_C struct                              \
+            cxx_result_status_code_system_##ident                              \
+                outcome_make_result_##ident##_failure_system_enum_##enum_name( \
                     enum enum_name v);
 #else
+}
+
+    #include <boost/outcome/experimental/status_result.hpp>
 
     #if __has_include(                                                         \
         <boost/outcome/experimental/status-code/status-code/posix_code.hpp>)
@@ -605,7 +760,12 @@ extern "C" BOOST_OUTCOME_C_WEAK void outcome_make_result_status_code_success(
     {
         BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<intptr_t> cpp;
 
-        monad_c_result c;
+        struct cxx_status_code
+        {
+            intptr_t value;
+            unsigned flags;
+            cxx_status_code_system error;
+        } c;
 
         type_punner_t()
             : cpp(0)
@@ -616,7 +776,8 @@ extern "C" BOOST_OUTCOME_C_WEAK void outcome_make_result_status_code_success(
     } pun;
 
     static_assert(sizeof(pun.cpp) == sizeof(pun.c), "");
-    static constexpr size_t punoffset = offsetof(monad_c_result, flags);
+    static constexpr size_t punoffset =
+        offsetof(type_punner_t::cxx_status_code, flags);
     assert(bytes - tosetbytes >= sizeof(pun.cpp) - punoffset);
     size_t const tocopy =
         std::min(bytes - tosetbytes, sizeof(pun.c) - punoffset);
@@ -638,7 +799,13 @@ outcome_make_result_status_code_failure_posix(
     union type_punner_t
     {
         BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<intptr_t> cpp;
-        monad_c_result c;
+
+        struct cxx_status_code
+        {
+            intptr_t value;
+            unsigned flags;
+            cxx_status_code_system error;
+        } c;
 
         explicit type_punner_t(
             BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<intptr_t>
@@ -651,7 +818,8 @@ outcome_make_result_status_code_failure_posix(
     } pun{BOOST_OUTCOME_V2_NAMESPACE::experimental::posix_code(errcode)};
 
     static_assert(sizeof(pun.cpp) == sizeof(pun.c), "");
-    static constexpr size_t punoffset = offsetof(monad_c_result, flags);
+    static constexpr size_t punoffset =
+        offsetof(type_punner_t::cxx_status_code, flags);
     assert(bytes - offset >= sizeof(pun.cpp) - punoffset);
     size_t const tocopy = std::min(bytes - offset, sizeof(pun.cpp) - punoffset);
     memcpy(out, (void *)&pun.c, sizeof(value_type));
@@ -673,7 +841,12 @@ outcome_make_result_status_code_failure_system(
     {
         BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<intptr_t> cpp;
 
-        monad_c_result c;
+        struct cxx_status_code
+        {
+            intptr_t value;
+            unsigned flags;
+            cxx_status_code_system error;
+        } c;
 
         explicit type_punner_t(
             BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<intptr_t>
@@ -692,7 +865,8 @@ outcome_make_result_status_code_failure_system(
     #endif
     };
     static_assert(sizeof(pun.cpp) == sizeof(pun.c), "");
-    static constexpr size_t punoffset = offsetof(monad_c_result, flags);
+    static constexpr size_t punoffset =
+        offsetof(type_punner_t::cxx_status_code, flags);
     assert(bytes - offset >= sizeof(pun.cpp) - punoffset);
     size_t const tocopy = std::min(bytes - offset, sizeof(pun.cpp) - punoffset);
     memcpy(out, (void *)&pun.c, sizeof(value_type));
@@ -753,7 +927,12 @@ namespace experimental
                     intptr_t>
                     cpp;
 
-                monad_c_result c;
+                struct cxx_status_code
+                {
+                    intptr_t value;
+                    unsigned flags;
+                    cxx_status_code_system error;
+                } c;
 
                 explicit type_punner_t(
                     BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<
@@ -769,7 +948,8 @@ namespace experimental
 
             static constexpr size_t bytes = sizeof(RetType);
             static constexpr size_t offset = offsetof(RetType, flags);
-            static constexpr size_t punoffset = offsetof(monad_c_result, flags);
+            static constexpr size_t punoffset =
+                offsetof(typename type_punner_t::cxx_status_code, flags);
             assert(bytes - offset >= sizeof(pun.cpp) - punoffset);
             size_t const tocopy =
                 std::min(bytes - offset, sizeof(pun.cpp) - punoffset);
@@ -791,7 +971,7 @@ BOOST_OUTCOME_V2_NAMESPACE_END
     // .. is sequence of {enum_name::value, "text description",
     // {errc::equivalent, ...}},
     #define BOOST_OUTCOME_C_DECLARE_RESULT_SYSTEM_FROM_ENUM(                   \
-        enum_name, uuid, ...)                                                  \
+        ident, enum_name, uuid, ...)                                           \
         BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN                            \
         template <>                                                            \
         struct quick_status_code_from_enum<enum enum_name>                     \
@@ -807,13 +987,16 @@ BOOST_OUTCOME_V2_NAMESPACE_END
         };                                                                     \
         BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_END                              \
         extern "C" BOOST_OUTCOME_C_NODISCARD                                   \
-            BOOST_OUTCOME_C_WEAK monad_c_result                                \
-                outcome_make_result_failure_system_enum_##enum_name(           \
+            BOOST_OUTCOME_C_WEAK struct cxx_result_status_code_system_##ident  \
+                outcome_make_result_##ident##_failure_system_enum_##enum_name( \
                     enum enum_name v)                                          \
         {                                                                      \
             return BOOST_OUTCOME_V2_NAMESPACE::experimental::detail::          \
-                outcome_make_result_failure_system_enum<monad_c_result>(v);    \
-        }
+                outcome_make_result_failure_system_enum<                       \
+                    struct cxx_result_status_code_system_##ident>(v);          \
+        }                                                                      \
+        BOOST_OUTCOME_C_MSVC_FORCE_EMIT(                                       \
+            outcome_make_result_##ident##_failure_system_enum_##enum_name)
 
     #if defined(__GNUC__) && !defined(__clang__)
         #pragma GCC diagnostic pop

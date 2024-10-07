@@ -88,7 +88,7 @@ add_library(
   "src/monad/core/cleanup.h"
   "src/monad/core/cleanup.c"
   "src/monad/core/cpu_relax.h"
-  "src/monad/core/c_result_impl.cpp"
+  "src/monad/core/c_result.cpp"
   "src/monad/core/c_result.h"
   "src/monad/core/endian.hpp"
   "src/monad/core/hash.hpp"

@@ -38,14 +38,19 @@ monad_result_has_error(monad_c_result r)
 
 #define MONAD_FAILED(X) MONAD_UNLIKELY(monad_result_has_error(X))
 
+/// monad spelling of the Boost.Outcome C try macro
+#define MONAD_C_RESULT_TRY(...) BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(__VA_ARGS__)
+
 /// Return a successful `monad_c_result` for a given `intptr_t`
-static inline monad_c_result monad_c_make_success(intptr_t value)
+[[nodiscard]] extern __attribute__((weak))
+monad_c_result monad_c_make_success(intptr_t value)
 {
     return BOOST_OUTCOME_C_MAKE_RESULT_SYSTEM_SUCCESS(monad, value);
 }
 
 /// Return a failure `monad_c_result` with the given `errno` domain code
-static inline monad_c_result monad_c_make_failure(intptr_t ec)
+[[nodiscard]] extern __attribute__((weak))
+monad_c_result monad_c_make_failure(intptr_t ec)
 {
     return BOOST_OUTCOME_C_MAKE_RESULT_SYSTEM_FAILURE_SYSTEM(monad, ec);
 }

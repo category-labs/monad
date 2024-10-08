@@ -100,10 +100,14 @@ if(BINDGEN_PROGRAM)
     --no-copy "monad_c_.*"
     --no-copy "monad_context.*"
     --with-derive-default
+    --must-use-type cxx_status_code_system
     --must-use-type cxx_result_status_code_system_monad_async
     --
     -I ${CMAKE_CURRENT_LIST_DIR}/src
+    -I ${monad_core_SOURCE_DIR}/src
+    -D _GNU_SOURCE
     -D MONAD_CONTEXT_DISABLE_INLINE_CUSTOM_GDB_THREAD_DB_LOAD
+    -std=c23
     DEPENDS ${monad_async_INCLUDES} ${monad_context_INCLUDES}
   )
   add_custom_target(monad_async_c_regenerate_rust_bindings DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/rust/async.rs")

@@ -10,6 +10,7 @@
 #include <ankerl/unordered_dense.h>
 
 #include <filesystem>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -23,11 +24,7 @@ struct monad_statesync_client_context
 
     using StorageDeltas = Map<monad::bytes32_t, monad::bytes32_t>;
 
-    struct StateDelta
-    {
-        std::optional<monad::Account> account;
-        StorageDeltas storage;
-    };
+    using StateDelta = std::pair<monad::Account, StorageDeltas>;
 
     monad::OnDiskMachine machine;
     monad::mpt::Db db;
@@ -39,7 +36,7 @@ struct monad_statesync_client_context
     monad::bytes32_t expected_root;
     Map<monad::Address, StorageDeltas> buffered;
     Map<monad::bytes32_t, monad::byte_string> code;
-    Map<monad::Address, StateDelta> deltas;
+    Map<monad::Address, std::optional<StateDelta>> deltas;
     ankerl::unordered_dense::segmented_set<monad::bytes32_t> hash;
     uint64_t n_upserts;
     std::filesystem::path genesis;

@@ -183,7 +183,7 @@ extern void monad_context_reparent_switcher(
     monad_context context, monad_context_switcher new_switcher);
 
 //! \brief Destroys any context switcher
-BOOST_OUTCOME_C_NODISCARD inline monad_c_result
+[[nodiscard]] inline monad_c_result
 monad_context_switcher_destroy(monad_context_switcher switcher)
 {
     return switcher->self_destroy(switcher);
@@ -196,7 +196,7 @@ Note that an instance of this is NOT threadsafe, so you must either lock
 a mutex around switching contexts using this context switcher or have a
 context switcher instance per thread.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result
+[[nodiscard]] extern monad_c_result
 monad_context_switcher_sjlj_create(monad_context_switcher *switcher);
 //! \brief Convenience struct for setting a `setjmp`/`longjmp` based context
 //! switcher
@@ -210,7 +210,7 @@ instance of this across multiple threads. In fact, the current implementation
 always returns a static instance, and destruction does nothing. You may
 therefore find `monad_context_switcher_none_instance()` more useful.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result
+[[nodiscard]] extern monad_c_result
 monad_context_switcher_none_create(monad_context_switcher *switcher);
 //! \brief Convenience struct for setting a none context
 //! switcher
@@ -226,7 +226,7 @@ Note that an instance of this is NOT threadsafe, so you must either lock
 a mutex around switching contexts using this context switcher or have a
 context switcher instance per thread.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result
+[[nodiscard]] extern monad_c_result
 monad_context_switcher_fcontext_create(monad_context_switcher *switcher);
 //! \brief Convenience struct for setting a `fcontext` based context
 //! switcher

@@ -41,17 +41,17 @@
 monad_context_switcher_impl const monad_context_switcher_sjlj = {
     .create = monad_context_switcher_sjlj_create};
 
-BOOST_OUTCOME_C_NODISCARD static inline monad_c_result
+[[nodiscard]] static inline monad_c_result
 monad_context_sjlj_create(
     monad_context *context, monad_context_switcher switcher,
     monad_context_task task, const struct monad_context_task_attr *attr);
-BOOST_OUTCOME_C_NODISCARD static inline monad_c_result
+[[nodiscard]] static inline monad_c_result
 monad_context_sjlj_destroy(monad_context context);
 static inline void monad_context_sjlj_suspend_and_call_resume(
     monad_context current_context, monad_context new_context);
 static inline void monad_context_sjlj_resume(
     monad_context current_context, monad_context new_context);
-BOOST_OUTCOME_C_NODISCARD static inline monad_c_result
+[[nodiscard]] static inline monad_c_result
 monad_context_sjlj_resume_many(
     monad_context_switcher switcher,
     monad_c_result (*resumed)(

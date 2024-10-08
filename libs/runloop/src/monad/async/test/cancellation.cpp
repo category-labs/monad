@@ -5,10 +5,10 @@
 #include "../executor.h"
 #include "monad/async/cpp_helpers.hpp"
 #include "monad/async/task.h"
-#include "monad/context/boost_result.h"
 #include "monad/context/config.h"
 #include "monad/context/context_switcher.h"
 
+#include <monad/core/c_result.h>
 #include <monad/core/small_prng.hpp>
 
 #include <chrono>
@@ -35,7 +35,7 @@ static void test_cancellation(char const *desc, F &&op)
             auto *task = (monad_async_task)task_;
             auto *shared = (shared_t *)task->derived.user_ptr;
             while (!shared->done) {
-                BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(shared->op(task));
+                MONAD_C_RESULT_TRY(shared->op(task));
                 shared->ops++;
             }
             return monad_c_make_success(0);

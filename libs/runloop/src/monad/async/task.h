@@ -211,14 +211,14 @@ struct monad_async_task_attr
 
 //! \brief EXPENSIVE Creates a task instance using the specified context
 //! switcher.
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_create(
+[[nodiscard]] extern monad_c_result monad_async_task_create(
     monad_async_task *task, monad_context_switcher switcher,
     struct monad_async_task_attr *attr);
 
 //! \brief EXPENSIVE Destroys a task instance. If the task is currently
 //! suspended, it will be cancelled first in which case `EAGAIN` may be returned
 //! from this function until cancellation succeeds.
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result
+[[nodiscard]] extern monad_c_result
 monad_async_task_destroy(monad_async_task task);
 
 /*! \brief Initiate the transfer of a task's context's execution to a different
@@ -241,7 +241,7 @@ If your context wishes to return to this executor later, consider using
 `monad_async_task_from_foreign_context()` followed by
 `monad_async_task_attach()`.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result
+[[nodiscard]] extern monad_c_result
 monad_async_task_suspend_save_detach_and_invoke(
     monad_async_task task, monad_async_task opt_save,
     monad_c_result (*to_invoke)(monad_context_task detached_task));
@@ -258,7 +258,7 @@ extern monad_async_task monad_async_task_from_foreign_context(
 //! task's context to a new context switcher instance (typical if attaching
 //! to an executor on a different kernel thread), it MUST be the same type of
 //! context switcher.
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_attach(
+[[nodiscard]] extern monad_c_result monad_async_task_attach(
     monad_async_executor executor, monad_async_task task,
     monad_context_switcher opt_reparent_switcher); // implemented in executor.c
 
@@ -267,25 +267,25 @@ BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_attach(
 //! cancel. If the task is yet to launch, don't launch it. If the task isn't
 //! currently running, do nothing. The suspension point will return
 //! `ECANCELED` next time the cancelled task resumes.
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_cancel(
+[[nodiscard]] extern monad_c_result monad_async_task_cancel(
     monad_async_executor executor,
     monad_async_task task); // implemented in executor.c
 
 //! \brief Change the CPU or i/o priority of a task
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_set_priorities(
+[[nodiscard]] extern monad_c_result monad_async_task_set_priorities(
     monad_async_task task, monad_async_priority cpu,
     monad_async_priority io); // implemented in executor.c
 
 //! \brief Ask io_uring to cancel a previously initiated operation. It can take
 //! some time for io_uring to cancel an operation, and it may ignore your
 //! request.
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_io_cancel(
+[[nodiscard]] extern monad_c_result monad_async_task_io_cancel(
     monad_async_task task,
     monad_async_io_status *iostatus); // implemented in executor.c
 
 //! \brief Iterate through completed i/o for this task, reaping each from the
 //! completed but not repeated list.
-BOOST_OUTCOME_C_NODISCARD extern monad_async_io_status *
+[[nodiscard]] extern monad_async_io_status *
 monad_async_task_completed_io(
     monad_async_task task); // implemented in executor.c
 
@@ -301,7 +301,7 @@ static uint64_t const monad_async_duration_infinite_cancelling =
 //! which can be zero (which equates "yield"). If `completed` is not null, if
 //! any i/o which the task has initiated completes during the suspension, resume
 //! the task setting `completed` to which i/o has just completed.
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result
+[[nodiscard]] extern monad_c_result
 monad_async_task_suspend_for_duration(
     monad_async_io_status **completed, monad_async_task task,
     uint64_t ns); // implemented in executor.c
@@ -363,7 +363,7 @@ It is important to note that these buffers can ONLY be used for write operations
 on the write ring. For read operations, it is io_uring which allocates the
 buffers.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result
+[[nodiscard]] extern monad_c_result
 monad_async_task_claim_registered_file_io_write_buffer(
     monad_async_task_registered_io_buffer *buffer, monad_async_task task,
     size_t bytes_requested,
@@ -382,7 +382,7 @@ It is important to note that these buffers can ONLY be used for write operations
 on the write ring. For read operations, it is io_uring which allocates the
 buffers.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result
+[[nodiscard]] extern monad_c_result
 monad_async_task_claim_registered_socket_io_write_buffer(
     monad_async_task_registered_io_buffer *buffer, monad_async_task task,
     size_t bytes_requested,
@@ -396,7 +396,7 @@ You must claim write i/o buffers using
 `monad_async_task_claim_registered_socket_io_write_buffer()`. Read i/o buffers
 are allocated by io_uring, you release them after use using this function.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result
+[[nodiscard]] extern monad_c_result
 monad_async_task_release_registered_io_buffer(
     monad_async_task task, int buffer_index); // implemented in executor.c
 

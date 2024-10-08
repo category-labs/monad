@@ -451,9 +451,9 @@ static inline monad_c_result monad_async_executor_create_impl(
                 "stable submits.\n");
             abort();
         }
-        BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
+        MONAD_C_RESULT_TRY(
             monad_async_executor_setup_eventfd_polling(p));
-        BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
+        MONAD_C_RESULT_TRY(
             monad_async_executor_create_impl_fill_registered_buffers(
                 &p->registered_buffers[0],
                 attr->io_uring_ring.registered_buffers.small_count,
@@ -573,7 +573,7 @@ static inline monad_c_result monad_async_executor_create_impl(
                     (int)p->registered_buffers[0].buffer[1].count);
             }
         }
-        BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
+        MONAD_C_RESULT_TRY(
             monad_async_executor_create_impl_fill_registered_buffers(
                 &p->registered_buffers[1],
                 attr->io_uring_wr_ring.registered_buffers.small_count,
@@ -613,7 +613,7 @@ monad_async_executor_destroy_impl(struct monad_async_executor_impl *ex)
             break;
         }
         atomic_unlock(&ex->lock);
-        BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
+        MONAD_C_RESULT_TRY(
             monad_async_task_cancel(&ex->head, &task->head));
         atomic_lock(&ex->lock);
     }
@@ -627,7 +627,7 @@ monad_async_executor_destroy_impl(struct monad_async_executor_impl *ex)
                 break;
             }
             atomic_unlock(&ex->lock);
-            BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
+            MONAD_C_RESULT_TRY(
                 monad_async_task_cancel(&ex->head, &task->head));
             atomic_lock(&ex->lock);
         }
@@ -638,7 +638,7 @@ monad_async_executor_destroy_impl(struct monad_async_executor_impl *ex)
                 break;
             }
             atomic_unlock(&ex->lock);
-            BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
+            MONAD_C_RESULT_TRY(
                 monad_async_task_cancel(&ex->head, &task->head));
             atomic_lock(&ex->lock);
         }
@@ -649,7 +649,7 @@ monad_async_executor_destroy_impl(struct monad_async_executor_impl *ex)
                 break;
             }
             atomic_unlock(&ex->lock);
-            BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
+            MONAD_C_RESULT_TRY(
                 monad_async_task_cancel(&ex->head, &task->head));
             atomic_lock(&ex->lock);
         }

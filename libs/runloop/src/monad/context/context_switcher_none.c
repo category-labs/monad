@@ -73,17 +73,17 @@ _thread_db_userspace_thread_allocate_thread_db_userspace_thread_index()
 monad_context_switcher_impl const monad_context_switcher_none = {
     .create = monad_context_switcher_none_create};
 
-BOOST_OUTCOME_C_NODISCARD static inline monad_c_result
+[[nodiscard]] static inline monad_c_result
 monad_context_none_create(
     monad_context *context, monad_context_switcher switcher,
     monad_context_task task, const struct monad_context_task_attr *attr);
-BOOST_OUTCOME_C_NODISCARD static inline monad_c_result
+[[nodiscard]] static inline monad_c_result
 monad_context_none_destroy(monad_context context);
 static inline void monad_context_none_suspend_and_call_resume(
     monad_context current_context, monad_context new_context);
 static inline void monad_context_none_resume(
     monad_context current_context, monad_context new_context);
-BOOST_OUTCOME_C_NODISCARD static inline monad_c_result
+[[nodiscard]] static inline monad_c_result
 monad_context_none_resume_many(
     monad_context_switcher switcher,
     monad_c_result (*resumed)(void *user_ptr, monad_context just_suspended),

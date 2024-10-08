@@ -85,7 +85,7 @@ monad_c_result monad_async_work_dispatcher_executor_create(
     if (p == nullptr) {
         return monad_c_make_failure(errno);
     }
-    BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
+    MONAD_C_RESULT_TRY(
         (void)monad_async_work_dispatcher_executor_destroy(
             (monad_async_work_dispatcher_executor)p),
         monad_async_executor_create_impl(&p->derived, &attr->derived));
@@ -113,7 +113,7 @@ monad_c_result monad_async_work_dispatcher_executor_destroy(
 {
     struct monad_async_work_dispatcher_executor_impl *p =
         (struct monad_async_work_dispatcher_executor_impl *)ex;
-    BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
+    MONAD_C_RESULT_TRY(
         monad_async_executor_destroy_impl(&p->derived));
     struct monad_async_work_dispatcher_impl *dp =
         (struct monad_async_work_dispatcher_impl *)p->head.dispatcher;
@@ -166,7 +166,7 @@ retry:
             r.value = 0;
         }
         else {
-            BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(r);
+            MONAD_C_RESULT_TRY(r);
         }
     }
     if (r.value > 0) {
@@ -195,7 +195,7 @@ retry:
                 r = monad_async_task_attach(
                     &p->derived.head, &item->head, nullptr);
                 // Failure here is likely a logic error
-                BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(r);
+                MONAD_C_RESULT_TRY(r);
                 if (dp->workloads_changed_waiting > 0) {
 #if MONAD_CONTEXT_HAVE_TSAN
                     __tsan_mutex_pre_signal(&dp->lock, 0);
@@ -497,7 +497,7 @@ monad_c_result monad_async_work_dispatcher_quit(
                 atomic_store_explicit(
                     &ex->please_quit, true, memory_order_release);
                 togo--;
-                BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
+                MONAD_C_RESULT_TRY(
                     (void)mutex_unlock(&dp->lock),
                     monad_async_executor_wake(&ex->derived.head, &cancelled));
             }
@@ -515,7 +515,7 @@ monad_c_result monad_async_work_dispatcher_quit(
                 atomic_store_explicit(
                     &ex->please_quit, true, memory_order_release);
                 togo--;
-                BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
+                MONAD_C_RESULT_TRY(
                     (void)mutex_unlock(&dp->lock),
                     monad_async_executor_wake(&ex->derived.head, &cancelled));
             }

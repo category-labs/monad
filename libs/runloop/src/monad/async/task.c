@@ -130,7 +130,7 @@ monad_c_result monad_async_task_destroy(monad_async_task task)
         }
     }
     memset(p->magic, 0, 8);
-    BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
+    MONAD_C_RESULT_TRY(
         atomic_load_explicit(
             &p->head.derived.context->switcher, memory_order_acquire)
             ->destroy(p->head.derived.context));

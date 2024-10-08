@@ -147,11 +147,11 @@ configured io_uring instance, so this is why we have that.
 Do NOT use the "write ring" for writes to sockets, it will severely impact
 performance!
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_executor_create(
+[[nodiscard]] extern monad_c_result monad_async_executor_create(
     monad_async_executor *ex, struct monad_async_executor_attr *attr);
 
 //! \brief EXPENSIVE Destroys an executor instance.
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result
+[[nodiscard]] extern monad_c_result
 monad_async_executor_destroy(monad_async_executor ex);
 
 /*! \brief Processes no more than `max_items` work items, returning the number
@@ -165,7 +165,7 @@ rings need to be checked), and the usual spurious early timeouts from Linux.
 If you do complex processing around calling this function, it may be wise
 to only do that processing if the value returned is not zero.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_executor_run(
+[[nodiscard]] extern monad_c_result monad_async_executor_run(
     monad_async_executor ex, size_t max_items, const struct timespec *timeout);
 
 //! \brief THREADSAFE Causes a sleeping executor to wake. Can be called from any
@@ -173,14 +173,14 @@ BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_executor_run(
 //! return the result given, otherwise the internal sleep wakes, executor state
 //! is examined for new work and the sleep reestablished WHICH MAY NOT CAUSE RUN
 //! TO RETURN.
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_executor_wake(
+[[nodiscard]] extern monad_c_result monad_async_executor_wake(
     monad_async_executor ex, monad_c_result const *cause_run_to_return);
 
 /*! \brief If new i/o submitted since the last run exceeds
 `max_items_in_submission_queue`, invoke io_uring submit now. If submission now
 occurs, a positive successful result is returned, otherwise zero.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_executor_submit(
+[[nodiscard]] extern monad_c_result monad_async_executor_submit(
     monad_async_executor ex, size_t max_items_in_nonwrite_submission_queue,
     size_t max_items_in_write_submission_queue);
 
@@ -190,7 +190,7 @@ features were detected, as well as versions and other config.
 
 \warning You need to call `free()` on the pointer when you are done with it.
 */
-BOOST_OUTCOME_C_NODISCARD extern monad_c_result
+[[nodiscard]] extern monad_c_result
 monad_async_executor_config_string(
     monad_async_executor ex); // implemented in util.cpp
 

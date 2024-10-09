@@ -46,8 +46,6 @@ class State
 
     Map<Address, VersionStack<AccountState>> current_{};
 
-    Map<Address, VersionStack<Map<bytes32_t, bytes32_t>>> transient_storage_{};
-
     VersionStack<std::vector<Receipt::Log>> logs_{{}};
 
     Map<bytes32_t, std::shared_ptr<CodeAnalysis>> code_{};
@@ -120,12 +118,6 @@ public:
             it->second.pop_accept(version_);
         }
 
-        for (auto it = transient_storage_.begin();
-             it != transient_storage_.end();
-             ++it) {
-            it->second.pop_accept(version_);
-        }
-
         logs_.pop_accept(version_);
 
         --version_;
@@ -136,19 +128,10 @@ public:
         MONAD_ASSERT(version_);
 
         std::vector<Address> removals;
-        std::vector<Address> transient_removals;
 
         for (auto it = current_.begin(); it != current_.end(); ++it) {
             if (it->second.pop_reject(version_)) {
                 removals.push_back(it->first);
-            }
-        }
-
-        for (auto it = transient_storage_.begin();
-             it != transient_storage_.end();
-             ++it) {
-            if (it->second.pop_reject(version_)) {
-                transient_removals.push_back(it->first);
             }
         }
 
@@ -157,11 +140,6 @@ public:
         while (removals.size()) {
             current_.erase(removals.back());
             removals.pop_back();
-        }
-
-        while (transient_removals.size()) {
-            transient_storage_.erase(transient_removals.back());
-            transient_removals.pop_back();
         }
 
         --version_;
@@ -272,17 +250,7 @@ public:
     bytes32_t
     get_transient_storage(Address const &address, bytes32_t const &key)
     {
-        auto const addr_it = transient_storage_.find(address);
-        if (addr_it == transient_storage_.end()) {
-            return {};
-        }
-
-        auto const key_it = addr_it->second.current(version_).find(key);
-        if (key_it == addr_it->second.current(version_).end()) {
-            return {};
-        }
-
-        return key_it->second;
+        return recent_account_state(address).get_transient_storage(key);
     }
 
     bool is_touched(Address const &address)
@@ -370,9 +338,7 @@ public:
     void set_transient_storage(
         Address const &address, bytes32_t const &key, bytes32_t const &value)
     {
-        transient_storage_.try_emplace(
-            address, Map<bytes32_t, bytes32_t>{}, version_);
-        transient_storage_.at(address).current(version_)[key] = value;
+        current_account_state(address).set_transient_storage(key, value);
     }
 
     void touch(Address const &address)

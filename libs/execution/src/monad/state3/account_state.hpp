@@ -28,6 +28,7 @@ public: // TODO
 
     std::optional<Account> account_{};
     Map<bytes32_t, bytes32_t> storage_{};
+    Map<bytes32_t, bytes32_t> transient_storage_{};
 
     evmc_storage_status zero_out_key(
         bytes32_t const &key, bytes32_t const &original_value,
@@ -53,6 +54,15 @@ public:
     AccountState &operator=(AccountState &&) = default;
     AccountState &operator=(AccountState const &) = default;
 
+    bytes32_t get_transient_storage(bytes32_t const &key) const
+    {
+        auto const it = transient_storage_.find(key);
+        if (MONAD_LIKELY(it != transient_storage_.end())) {
+            return it->second;
+        }
+        return {};
+    }
+
     evmc_storage_status set_storage(
         bytes32_t const &key, bytes32_t const &value,
         bytes32_t const &original_value)
@@ -68,6 +78,11 @@ public:
             return zero_out_key(key, original_value, current_value);
         }
         return set_current_value(key, value, original_value, current_value);
+    }
+
+    void set_transient_storage(bytes32_t const &key, bytes32_t const &value)
+    {
+        transient_storage_[key] = value;
     }
 };
 

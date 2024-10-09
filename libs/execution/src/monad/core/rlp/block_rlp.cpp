@@ -55,6 +55,19 @@ byte_string encode_block_header(BlockHeader const &block_header)
             encode_bytes32(block_header.withdrawals_root.value());
     }
 
+    if (block_header.blob_gas_used.has_value()) {
+        encoded_block_header +=
+            encode_unsigned(block_header.blob_gas_used.value());
+    }
+    if (block_header.excess_blob_gas.has_value()) {
+        encoded_block_header +=
+            encode_unsigned(block_header.excess_blob_gas.value());
+    }
+    if (block_header.parent_beacon_block_root.has_value()) {
+        encoded_block_header +=
+            encode_bytes32(block_header.parent_beacon_block_root.value());
+    }
+
     return encode_list2(encoded_block_header);
 }
 

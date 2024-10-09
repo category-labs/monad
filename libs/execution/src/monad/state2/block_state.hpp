@@ -1,6 +1,8 @@
 #pragma once
 
 #include <monad/config.hpp>
+#include <monad/core/block.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/db/db.hpp>
@@ -33,7 +35,9 @@ public:
 
     void merge(State const &);
 
-    void commit(std::vector<Receipt> const &, std::vector<Transaction> const &);
+    void commit(
+        BlockHeader const &, std::vector<Receipt> const &,
+        std::vector<Transaction> const &);
 
     void log_debug();
 };

@@ -66,7 +66,7 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
             chain, block, block_state, block_hash_buffer, *pool_));
     BOOST_OUTCOME_TRY(chain.validate_header(receipts, block.header));
     block_state.log_debug();
-    block_state.commit(receipts, block.transactions);
+    block_state.commit(block.header, receipts, block.transactions);
     return receipts;
 }
 
@@ -171,7 +171,7 @@ void BlockchainTest::TestBody()
             State state{bs, Incarnation{0, 0}};
             load_state_from_json(j_contents.at("pre"), state);
             bs.merge(state);
-            bs.commit({}, {});
+            bs.commit({}, {}, {});
         }
 
         BlockHashBuffer block_hash_buffer;
@@ -218,6 +218,14 @@ void BlockchainTest::TestBody()
                 EXPECT_EQ(
                     result.value().size(), block.value().transactions.size())
                     << name;
+                // verify block header is stored correctly
+                auto res =
+                    db.get(block_header_nibbles, block.value().header.number);
+                EXPECT_TRUE(res.has_value());
+                auto const decode_res = rlp::decode_block_header(res.value());
+                EXPECT_TRUE(decode_res.has_value());
+                auto const decoded_block_header = decode_res.value();
+                EXPECT_EQ(decode_res.value(), block.value().header);
             }
             else {
                 EXPECT_TRUE(j_block.contains("expectException"))

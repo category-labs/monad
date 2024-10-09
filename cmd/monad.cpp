@@ -152,7 +152,8 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
         BOOST_OUTCOME_TRY(
             chain.validate_header(receipts, block.value().header));
         block_state.log_debug();
-        block_state.commit(receipts, block.value().transactions);
+        block_state.commit(
+            block.value().header, receipts, block.value().transactions);
 
         if (!chain.validate_root(
                 rev,

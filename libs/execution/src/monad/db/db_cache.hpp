@@ -114,10 +114,10 @@ public:
 
     virtual void commit(
         StateDeltas const &state_deltas, Code const &code,
-        std::vector<Receipt> const &receipts,
+        BlockHeader const &header, std::vector<Receipt> const &receipts,
         std::vector<Transaction> const &transactions) override
     {
-        db_.commit(state_deltas, code, receipts, transactions);
+        db_.commit(state_deltas, code, header, receipts, transactions);
 
         for (auto it = state_deltas.cbegin(); it != state_deltas.cend(); ++it) {
             auto const &address = it->first;

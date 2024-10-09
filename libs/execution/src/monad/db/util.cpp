@@ -416,7 +416,8 @@ void MachineBase::down(unsigned char const nibble)
     MONAD_ASSERT(depth <= MAX_DEPTH);
     MONAD_ASSERT(
         (nibble == STATE_NIBBLE || nibble == CODE_NIBBLE ||
-         nibble == RECEIPT_NIBBLE || nibble == TRANSACTION_NIBBLE) ||
+         nibble == RECEIPT_NIBBLE || nibble == TRANSACTION_NIBBLE ||
+         nibble == BLOCKHEADER_NIBBLE) ||
         depth != PREFIX_LEN);
     if (MONAD_UNLIKELY(depth == PREFIX_LEN)) {
         MONAD_ASSERT(trie_section == TrieType::Prefix);
@@ -429,8 +430,11 @@ void MachineBase::down(unsigned char const nibble)
         else if (nibble == TRANSACTION_NIBBLE) {
             trie_section = TrieType::Transaction;
         }
-        else {
+        else if (nibble == CODE_NIBBLE) {
             trie_section = TrieType::Code;
+        }
+        else {
+            MONAD_ASSERT(nibble == BLOCKHEADER_NIBBLE);
         }
     }
 }

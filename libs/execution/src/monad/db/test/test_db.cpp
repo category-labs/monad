@@ -87,13 +87,15 @@ TEST(DBTest, read_only)
             StateDeltas{
                 {ADDR_A,
                  StateDelta{.account = {std::nullopt, acct1}, .storage = {}}}},
-            Code{});
+            Code{},
+            BlockHeader{});
         Account const acct2{.nonce = 2};
         rw.increment_block_number();
         rw.commit(
             StateDeltas{
                 {ADDR_A, StateDelta{.account = {acct1, acct2}, .storage = {}}}},
-            Code{});
+            Code{},
+            BlockHeader{});
 
         mpt::Db db2(mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {name}});
         TrieDb ro{db2};
@@ -106,7 +108,8 @@ TEST(DBTest, read_only)
         rw.commit(
             StateDeltas{
                 {ADDR_A, StateDelta{.account = {acct2, acct3}, .storage = {}}}},
-            Code{});
+            Code{},
+            BlockHeader{});
 
         // Read block 0
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 1});
@@ -136,7 +139,8 @@ TYPED_TEST(DBTest, read_storage)
              StateDelta{
                  .account = {std::nullopt, acct},
                  .storage = {{key1, {bytes32_t{}, value1}}}}}},
-        Code{});
+        Code{},
+        BlockHeader{});
 
     // Existing storage
     EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key1), value1);
@@ -158,14 +162,16 @@ TYPED_TEST(DBTest, read_code)
     TrieDb tdb{this->db};
     tdb.commit(
         StateDeltas{{ADDR_A, StateDelta{.account = {std::nullopt, acct_a}}}},
-        Code{{A_CODE_HASH, A_CODE_ANALYSIS}});
+        Code{{A_CODE_HASH, A_CODE_ANALYSIS}},
+        BlockHeader{});
 
     EXPECT_EQ(tdb.read_code(A_CODE_HASH)->executable_code, A_CODE);
 
     Account acct_b{.balance = 0, .code_hash = B_CODE_HASH, .nonce = 1};
     tdb.commit(
         StateDeltas{{ADDR_B, StateDelta{.account = {std::nullopt, acct_b}}}},
-        Code{{B_CODE_HASH, B_CODE_ANALYSIS}});
+        Code{{B_CODE_HASH, B_CODE_ANALYSIS}},
+        BlockHeader{});
 
     EXPECT_EQ(tdb.read_code(B_CODE_HASH)->executable_code, B_CODE);
 }
@@ -182,7 +188,8 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
                  .storage =
                      {{key1, {bytes32_t{}, value1}},
                       {key2, {bytes32_t{}, value2}}}}}},
-        Code{});
+        Code{},
+        BlockHeader{});
 
     acct = tdb.read_account(ADDR_A).value();
     tdb.commit(
@@ -191,7 +198,8 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
              StateDelta{
                  .account = {acct, acct},
                  .storage = {{key2, {value2, value1}}}}}},
-        Code{});
+        Code{},
+        BlockHeader{});
 
     EXPECT_EQ(
         tdb.state_root(),
@@ -204,7 +212,8 @@ TYPED_TEST(DBTest, touch_without_modify_regression)
     tdb.commit(
         StateDeltas{
             {ADDR_A, StateDelta{.account = {std::nullopt, std::nullopt}}}},
-        Code{});
+        Code{},
+        BlockHeader{});
 
     EXPECT_EQ(tdb.read_account(ADDR_A), std::nullopt);
     EXPECT_EQ(tdb.state_root(), NULL_ROOT);
@@ -222,7 +231,8 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
                  .storage =
                      {{key1, {bytes32_t{}, value1}},
                       {key2, {bytes32_t{}, value2}}}}}},
-        Code{});
+        Code{},
+        BlockHeader{});
 
     tdb.commit(
         StateDeltas{
@@ -231,7 +241,8 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
                  .account = {acct, std::nullopt},
                  .storage =
                      {{key1, {value1, value2}}, {key2, {value2, value1}}}}}},
-        Code{});
+        Code{},
+        BlockHeader{});
 
     EXPECT_EQ(tdb.read_account(ADDR_A), std::nullopt);
     EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key1), bytes32_t{});
@@ -251,7 +262,8 @@ TYPED_TEST(DBTest, storage_deletion)
                  .storage =
                      {{key1, {bytes32_t{}, value1}},
                       {key2, {bytes32_t{}, value2}}}}}},
-        Code{});
+        Code{},
+        BlockHeader{});
 
     acct = tdb.read_account(ADDR_A).value();
     tdb.commit(
@@ -260,7 +272,8 @@ TYPED_TEST(DBTest, storage_deletion)
              StateDelta{
                  .account = {acct, acct},
                  .storage = {{key1, {value1, bytes32_t{}}}}}}},
-        Code{});
+        Code{},
+        BlockHeader{});
 
     EXPECT_EQ(
         tdb.state_root(),
@@ -274,7 +287,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
 
     TrieDb tdb{this->db};
     // empty receipts
-    tdb.commit(StateDeltas{}, Code{}, {});
+    tdb.commit(StateDeltas{}, Code{}, BlockHeader{});
     EXPECT_EQ(tdb.receipts_root(), NULL_ROOT);
 
     std::vector<Receipt> receipts;
@@ -326,7 +339,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     transactions.emplace_back(t2);
     ASSERT_EQ(receipts.size(), transactions.size());
 
-    tdb.commit(StateDeltas{}, Code{}, receipts, transactions);
+    tdb.commit(StateDeltas{}, Code{}, BlockHeader{}, receipts, transactions);
     EXPECT_EQ(
         tdb.receipts_root(),
         0x7ea023138ee7d80db04eeec9cf436dc35806b00cc5fe8e5f611fb7cf1b35b177_bytes32);
@@ -342,7 +355,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         .status = 1, .gas_used = 77969, .type = TransactionType::eip1559});
     transactions.pop_back();
     ASSERT_EQ(receipts.size(), transactions.size());
-    tdb.commit(StateDeltas{}, Code{}, receipts, transactions);
+    tdb.commit(StateDeltas{}, Code{}, BlockHeader{}, receipts, transactions);
     EXPECT_EQ(
         tdb.receipts_root(),
         0x61f9b4707b28771a63c1ac6e220b2aa4e441dd74985be385eaf3cd7021c551e9_bytes32);

@@ -5,6 +5,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
+#include <monad/core/rlp/block_rlp.hpp>
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/state2/block_state.hpp>
@@ -191,11 +192,11 @@ void BlockState::merge(State const &state)
 }
 
 void BlockState::commit(
-    std::vector<Receipt> const &receipts,
+    BlockHeader const &header, std::vector<Receipt> const &receipts,
     std::vector<Transaction> const &transactions)
 {
     db_.increment_block_number();
-    db_.commit(state_, code_, receipts, transactions);
+    db_.commit(state_, code_, header, receipts, transactions);
 }
 
 void BlockState::log_debug()

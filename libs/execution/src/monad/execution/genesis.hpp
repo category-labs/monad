@@ -67,9 +67,9 @@ inline BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
     return block_header;
 }
 
-inline void read_genesis_state(nlohmann::json const &genesis_json, Db &db)
+inline void read_genesis_state(
+    nlohmann::json const &genesis_json, StateDeltas &state_deltas)
 {
-    StateDeltas state_deltas;
     for (auto const &account_info : genesis_json["alloc"].items()) {
         Address address{};
         auto const address_byte_string =
@@ -89,7 +89,6 @@ inline void read_genesis_state(nlohmann::json const &genesis_json, Db &db)
         state_deltas.emplace(
             address, StateDelta{.account = {std::nullopt, account}});
     }
-    db.commit(state_deltas, Code{});
 }
 
 inline BlockHeader
@@ -103,7 +102,9 @@ read_genesis(std::filesystem::path const &genesis_file, Db &db)
     block_header.transactions_root = NULL_ROOT;
     block_header.receipts_root = NULL_ROOT;
 
-    read_genesis_state(genesis_json, db);
+    StateDeltas state_deltas;
+    read_genesis_state(genesis_json, state_deltas);
+    db.commit(state_deltas, Code{}, block_header);
 
     block_header.state_root = db.state_root();
 

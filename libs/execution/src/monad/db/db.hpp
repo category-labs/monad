@@ -3,9 +3,11 @@
 #include <monad/config.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
+#include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/core/transaction.hpp>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/state2/state_deltas.hpp>
 
@@ -31,7 +33,8 @@ struct Db
     virtual void increment_block_number() = 0;
 
     virtual void commit(
-        StateDeltas const &, Code const &, std::vector<Receipt> const & = {},
+        StateDeltas const &, Code const &, BlockHeader const &,
+        std::vector<Receipt> const & = {},
         std::vector<Transaction> const & = {}) = 0;
 
     virtual std::string print_stats()

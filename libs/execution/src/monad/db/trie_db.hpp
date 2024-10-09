@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/config.hpp>
+#include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/keccak.hpp>
 #include <monad/core/receipt.hpp>
@@ -41,7 +42,8 @@ public:
     virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) override;
     virtual void increment_block_number() override;
     virtual void commit(
-        StateDeltas const &, Code const &, std::vector<Receipt> const & = {},
+        StateDeltas const &, Code const &, BlockHeader const &,
+        std::vector<Receipt> const & = {},
         std::vector<Transaction> const & = {}) override;
     virtual bytes32_t state_root() override;
     virtual bytes32_t receipts_root() override;

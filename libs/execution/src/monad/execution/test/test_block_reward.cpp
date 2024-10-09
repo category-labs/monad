@@ -34,7 +34,8 @@ TEST(BlockReward, apply_block_reward)
         db_t tdb{db};
         tdb.commit(
             StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
-            Code{});
+            Code{},
+            BlockHeader{});
 
         BlockState bs{tdb};
         State as{bs, Incarnation{1, 1}};

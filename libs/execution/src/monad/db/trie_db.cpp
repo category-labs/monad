@@ -10,6 +10,7 @@
 #include <monad/core/keccak.h>
 #include <monad/core/keccak.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/core/rlp/block_rlp.hpp>
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
 #include <monad/core/rlp/receipt_rlp.hpp>
@@ -151,7 +152,7 @@ std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
 
 void TrieDb::commit(
     StateDeltas const &state_deltas, Code const &code,
-    std::vector<Receipt> const &receipts,
+    BlockHeader const &header, std::vector<Receipt> const &receipts,
     std::vector<Transaction> const &transactions)
 {
     MONAD_ASSERT(block_number_ <= std::numeric_limits<int64_t>::max());
@@ -255,11 +256,19 @@ void TrieDb::commit(
         .incarnation = true,
         .next = std::move(transaction_updates),
         .version = static_cast<int64_t>(block_number_)};
+    auto block_header_update = Update{
+        .key = block_header_nibbles,
+        .value = bytes_alloc_.emplace_back(rlp::encode_block_header(header)),
+        .incarnation = true,
+        .next = UpdateList{},
+        .version = static_cast<int64_t>(block_number_)};
     UpdateList updates;
     updates.push_front(state_update);
     updates.push_front(code_update);
     updates.push_front(receipt_update);
     updates.push_front(transaction_update);
+    updates.push_front(block_header_update);
+
     db_.upsert(std::move(updates), block_number_);
 
     update_alloc_.clear();

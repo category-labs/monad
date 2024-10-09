@@ -4,10 +4,15 @@
 #define _FORTIFY_SOURCE 0
 
 // #define MONAD_CONTEXT_PRINTING 1
+// #define MONAD_CONTEXT_DISABLE_GDB_IPC
 
 #include "monad/context/context_switcher.h"
 
-#include <gdb/linux-thread-db-user-threads.h>
+#include <monad/core/tl_tid.h>
+
+#ifndef MONAD_CONTEXT_DISABLE_GDB_IPC
+    #include <gdb/linux-thread-db-user-threads.h>
+#endif
 
 #include <assert.h>
 #include <errno.h>
@@ -206,7 +211,7 @@ static void monad_context_sjlj_task_runner(
 #if MONAD_CONTEXT_PRINTING
     printf(
         "*** %d: New execution context %p launches\n",
-        gettid(),
+        get_tl_tid(),
         (void *)context);
     fflush(stdout);
 #endif
@@ -225,7 +230,7 @@ static void monad_context_sjlj_task_runner(
         printf(
             "*** %d: Execution context %p suspends in base task runner "
             "awaiting code to run\n",
-            gettid(),
+            get_tl_tid(),
             (void *)context);
         fflush(stdout);
 #endif
@@ -234,7 +239,7 @@ static void monad_context_sjlj_task_runner(
         printf(
             "*** %d: Execution context %p resumes in base task runner, begins "
             "executing task.\n",
-            gettid(),
+            get_tl_tid(),
             (void *)context);
         fflush(stdout);
 #endif
@@ -250,23 +255,27 @@ static void monad_context_sjlj_task_runner(
             abort();
         }
 #endif
+#ifndef MONAD_CONTEXT_DISABLE_GDB_IPC
         userspace_thread_db_userspace_thread_info_t *ti =
             get_thread_db_userspace_thread_info(~context->head.thread_db_slot);
         ti->startfunc = (void (*)(void))task->user_code;
         set_thread_db_userspace_thread_running_nonlocking(
-            ~context->head.thread_db_slot, gettid());
+            ~context->head.thread_db_slot, get_tl_tid());
+#endif
         // Execute the task
         context->head.is_running = true;
         task->result = task->user_code(task);
         context->head.is_running = false;
+#ifndef MONAD_CONTEXT_DISABLE_GDB_IPC
         set_thread_db_userspace_thread_exited_nonlocking(
             ~context->head.thread_db_slot);
+#endif
 #if MONAD_CONTEXT_PRINTING
         printf(
             "*** %d: Execution context %p returns to base task runner, task "
             "has "
             "exited\n",
-            gettid(),
+            get_tl_tid(),
             (void *)context);
         fflush(stdout);
 #endif
@@ -328,7 +337,7 @@ static monad_c_result monad_context_sjlj_create(
         "*** %d: New execution context %p is given stack between %p-%p with "
         "guard "
         "page at %p\n",
-        gettid(),
+        get_tl_tid(),
         (void *)p,
         (void *)stack_front,
         (void *)stack_base,
@@ -379,11 +388,13 @@ static monad_c_result monad_context_sjlj_create(
     *context = (monad_context)p;
     atomic_store_explicit(&p->head.switcher, nullptr, memory_order_release);
     monad_context_reparent_switcher(*context, switcher_);
+#ifndef MONAD_CONTEXT_DISABLE_GDB_IPC
     userspace_thread_db_userspace_thread_info_t *ti =
         get_thread_db_userspace_thread_info(~(*context)->thread_db_slot);
     ti->stack_sp = stack_base;
     ti->stack_size = stack_size;
     LINUX_THREAD_DB_USER_THREADS_SHUTUP_TSAN_LOCK_UNLOCK;
+#endif
     return monad_c_make_success(0);
 }
 
@@ -400,7 +411,7 @@ static monad_c_result monad_context_sjlj_destroy(monad_context context)
 #if MONAD_CONTEXT_PRINTING
         printf(
             "*** %d: Execution context %p is destroyed\n",
-            gettid(),
+            get_tl_tid(),
             (void *)context);
         fflush(stdout);
 #endif
@@ -437,10 +448,12 @@ static void monad_context_sjlj_suspend_and_call_resume(
             &p->head.sanitizer.bottom,
             &p->head.sanitizer.size);
         assert((int)((uintptr_t)p ^ ((uintptr_t)p >> 32)) == ret);
+#ifndef MONAD_CONTEXT_DISABLE_GDB_IPC
         if (current_context->is_running) {
             set_thread_db_userspace_thread_running_nonlocking(
-                ~current_context->thread_db_slot, gettid());
+                ~current_context->thread_db_slot, get_tl_tid());
         }
+#endif
         return;
     }
     // Set last suspended
@@ -448,6 +461,7 @@ static void monad_context_sjlj_suspend_and_call_resume(
         (struct monad_context_switcher_sjlj *)atomic_load_explicit(
             &p->head.switcher, memory_order_acquire);
     switcher->last_suspended = p;
+#ifndef MONAD_CONTEXT_DISABLE_GDB_IPC
     if (current_context->is_running && current_context->thread_db_slot != 0) {
         userspace_thread_db_userspace_thread_info_t *ti =
             get_thread_db_userspace_thread_info(
@@ -456,6 +470,7 @@ static void monad_context_sjlj_suspend_and_call_resume(
         set_thread_db_userspace_thread_suspended_nonlocking(
             ~current_context->thread_db_slot, ti);
     }
+#endif
     if (new_context != nullptr) {
         // Call resume on the destination switcher
         atomic_load_explicit(&new_context->switcher, memory_order_acquire)
@@ -487,7 +502,7 @@ static void monad_context_sjlj_resume(
             "*** %d: Execution context %p initiates resumption of execution in "
             "context "
             "%p (is_resume_many_context = %d)\n",
-            gettid(),
+            get_tl_tid(),
             (void *)current_context,
             (void *)new_context,
             new_context_is_resume_all_context);

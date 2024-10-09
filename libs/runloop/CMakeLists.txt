@@ -25,7 +25,7 @@ monad_compile_options(monad_context_c)
 target_compile_options(monad_context_c PRIVATE -Wpedantic)
 target_compile_definitions(monad_context_c PRIVATE MONAD_CONTEXT_SOURCE=1)
 target_include_directories(monad_context_c PUBLIC "src")
-target_link_libraries(monad_context_c PRIVATE monad_boost_context monad_context_c-custom-binutils-gdb)
+target_link_libraries(monad_context_c PRIVATE monad_boost_context monad_core monad_context_c-custom-binutils-gdb)
 
 # This MUST be a shared library called libthread_db.so for GDB to load it
 # We do NOT use monad_compile_options() here because this custom libthread_db.so.1

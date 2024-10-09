@@ -1,4 +1,5 @@
 // #define MONAD_CONTEXT_PRINTING 1
+// #define MONAD_CONTEXT_DISABLE_GDB_IPC
 
 #include "monad/context/context_switcher.h"
 
@@ -10,8 +11,11 @@
 #include <threads.h>
 
 #include <monad-boost/context/fcontext.h>
+#include <monad/core/tl_tid.h>
 
-#include <gdb/linux-thread-db-user-threads.h>
+#ifndef MONAD_CONTEXT_DISABLE_GDB_IPC
+    #include <gdb/linux-thread-db-user-threads.h>
+#endif
 
 #include <sys/mman.h>
 #include <sys/resource.h>
@@ -223,7 +227,7 @@ monad_context_fcontext_task_runner(struct monad_transfer_t creation_transfer)
 #if MONAD_CONTEXT_PRINTING
     printf(
         "*** %d: New execution context %p launches\n",
-        gettid(),
+        get_tl_tid(),
         (void *)context);
     fflush(stdout);
 #endif
@@ -242,7 +246,7 @@ monad_context_fcontext_task_runner(struct monad_transfer_t creation_transfer)
         printf(
             "*** %d: Execution context %p suspends in base task runner "
             "awaiting code to run\n",
-            gettid(),
+            get_tl_tid(),
             (void *)context);
         fflush(stdout);
 #endif
@@ -251,7 +255,7 @@ monad_context_fcontext_task_runner(struct monad_transfer_t creation_transfer)
         printf(
             "*** %d: Execution context %p resumes in base task runner, begins "
             "executing task.\n",
-            gettid(),
+            get_tl_tid(),
             (void *)context);
         fflush(stdout);
 #endif
@@ -267,23 +271,27 @@ monad_context_fcontext_task_runner(struct monad_transfer_t creation_transfer)
             abort();
         }
 #endif
+#ifndef MONAD_CONTEXT_DISABLE_GDB_IPC
         userspace_thread_db_userspace_thread_info_t *ti =
             get_thread_db_userspace_thread_info(~context->head.thread_db_slot);
         ti->startfunc = (void (*)(void))task->user_code;
         set_thread_db_userspace_thread_running_nonlocking(
-            ~context->head.thread_db_slot, gettid());
+            ~context->head.thread_db_slot, get_tl_tid());
+#endif
         // Execute the task
         context->head.is_running = true;
         task->result = task->user_code(task);
         context->head.is_running = false;
+#ifndef MONAD_CONTEXT_DISABLE_GDB_IPC
         set_thread_db_userspace_thread_exited_nonlocking(
             ~context->head.thread_db_slot);
+#endif
 #if MONAD_CONTEXT_PRINTING
         printf(
             "*** %d: Execution context %p returns to base task runner, task "
             "has "
             "exited\n",
-            gettid(),
+            get_tl_tid(),
             (void *)context);
         fflush(stdout);
 #endif
@@ -347,7 +355,7 @@ static monad_c_result monad_context_fcontext_create(
         "*** %d: New execution context %p is given stack between %p-%p with "
         "guard "
         "page at %p\n",
-        gettid(),
+        get_tl_tid(),
         (void *)p,
         (void *)stack_front,
         (void *)stack_base,
@@ -383,11 +391,13 @@ static monad_c_result monad_context_fcontext_create(
     *context = (monad_context)p;
     atomic_store_explicit(&p->head.switcher, nullptr, memory_order_release);
     monad_context_reparent_switcher(*context, switcher_);
+#ifndef MONAD_CONTEXT_DISABLE_GDB_IPC
     userspace_thread_db_userspace_thread_info_t *ti =
         get_thread_db_userspace_thread_info(~(*context)->thread_db_slot);
     ti->stack_sp = stack_base;
     ti->stack_size = stack_size;
     LINUX_THREAD_DB_USER_THREADS_SHUTUP_TSAN_LOCK_UNLOCK;
+#endif
     return monad_c_make_success(0);
 }
 
@@ -404,7 +414,7 @@ static monad_c_result monad_context_fcontext_destroy(monad_context context)
 #if MONAD_CONTEXT_PRINTING
         printf(
             "*** %d: Execution context %p is destroyed\n",
-            gettid(),
+            get_tl_tid(),
             (void *)context);
         fflush(stdout);
 #endif
@@ -431,6 +441,7 @@ static void monad_context_fcontext_suspend_and_call_resume(
 {
     struct monad_context_fcontext *p =
         (struct monad_context_fcontext *)current_context;
+#ifndef MONAD_CONTEXT_DISABLE_GDB_IPC
     if (current_context->is_running && current_context->thread_db_slot != 0) {
         userspace_thread_db_userspace_thread_info_t *ti =
             get_thread_db_userspace_thread_info(
@@ -439,6 +450,7 @@ static void monad_context_fcontext_suspend_and_call_resume(
         set_thread_db_userspace_thread_suspended_nonlocking(
             ~current_context->thread_db_slot, ti);
     }
+#endif
     if (new_context == nullptr) {
         monad_context_fcontext_resume(
             current_context,
@@ -496,7 +508,7 @@ static void monad_context_fcontext_resume(
         printf(
             "*** %d: Execution context %p initiates resumption of execution in "
             "context %p (fctx = %p, is main context = %d)\n",
-            gettid(),
+            get_tl_tid(),
             (void *)current_context,
             (void *)new_context,
             (void *)p->fctx,
@@ -522,19 +534,21 @@ static void monad_context_fcontext_resume(
     struct monad_context_fcontext *source_context =
         (struct monad_context_fcontext *)transfer.data;
     source_context->fctx = transfer.fctx;
+#ifndef MONAD_CONTEXT_DISABLE_GDB_IPC
     if (current_context->is_running &&
         &((struct monad_context_switcher_fcontext *)atomic_load_explicit(
               &current_context->switcher, memory_order_acquire))
                 ->fake_main_context.head != current_context) {
         set_thread_db_userspace_thread_running_nonlocking(
-            ~current_context->thread_db_slot, gettid());
+            ~current_context->thread_db_slot, get_tl_tid());
     }
+#endif
 #if MONAD_CONTEXT_PRINTING
     {
         printf(
             "*** %d: Execution context %p has resumed execution from context "
             "%p which has been saved as %p\n",
-            gettid(),
+            get_tl_tid(),
             (void *)current_context,
             (void *)source_context,
             (void *)transfer.fctx);
@@ -556,7 +570,7 @@ static monad_c_result monad_context_fcontext_resume_many(
 #if MONAD_CONTEXT_PRINTING
     printf(
         "*** %d: Resume many entry saves current main context %p\n",
-        gettid(),
+        get_tl_tid(),
         (void *)old_fake_main_context_fctx);
     fflush(stdout);
 #endif
@@ -565,7 +579,7 @@ static monad_c_result monad_context_fcontext_resume_many(
     printf(
         "*** %d: Resume many exit replaces current main context %p with saved "
         "main context %p\n",
-        gettid(),
+        get_tl_tid(),
         (void *)switcher->fake_main_context.fctx,
         (void *)old_fake_main_context_fctx);
     fflush(stdout);

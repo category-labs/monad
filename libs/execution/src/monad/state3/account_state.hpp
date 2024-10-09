@@ -53,6 +53,44 @@ public:
     AccountState &operator=(AccountState &&) = default;
     AccountState &operator=(AccountState const &) = default;
 
+    ////////////////////////
+
+    constexpr bool exists() const
+    {
+        return account_.has_value();
+    }
+
+    constexpr bool is_dead() const
+    {
+        return ::monad::is_dead(account_);
+    }
+
+    constexpr uint64_t get_nonce() const
+    {
+        if (MONAD_UNLIKELY(!account_)) {
+            return 0;
+        }
+        return account_->nonce;
+    }
+
+    constexpr bytes32_t get_balance() const
+    {
+        if (MONAD_UNLIKELY(!account_)) {
+            return {};
+        }
+        return intx::be::store<bytes32_t>(account_->balance);
+    }
+
+    constexpr bytes32_t get_code_hash() const
+    {
+        if (MONAD_UNLIKELY(!account_)) {
+            return NULL_HASH;
+        }
+        return account_->code_hash;
+    }
+
+    ////////////////////////
+
     evmc_storage_status set_storage(
         bytes32_t const &key, bytes32_t const &value,
         bytes32_t const &original_value)

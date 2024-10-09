@@ -27,16 +27,16 @@ static_assert(sizeof(std::optional<Account>) == 88);
 static_assert(alignof(std::optional<Account>) == 8);
 
 // YP (14)
-inline constexpr bool is_empty(Account const &account)
+constexpr bool is_empty(Account const &account)
 {
     return account.code_hash == NULL_HASH && account.nonce == 0 &&
            account.balance == 0;
 }
 
 // YP (15)
-inline constexpr bool is_dead(std::optional<Account> const &account)
+constexpr bool is_dead(std::optional<Account> const &account)
 {
-    return !account.has_value() || is_empty(account.value());
+    return !account || is_empty(*account);
 }
 
 MONAD_NAMESPACE_END

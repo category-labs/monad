@@ -166,39 +166,27 @@ public:
 
     bool account_exists(Address const &address)
     {
-        return recent_account(address).has_value();
+        return recent_account_state(address).exists();
     }
 
     bool account_is_dead(Address const &address)
     {
-        return is_dead(recent_account(address));
+        return recent_account_state(address).is_dead();
     }
 
     uint64_t get_nonce(Address const &address)
     {
-        auto const &account = recent_account(address);
-        if (MONAD_LIKELY(account.has_value())) {
-            return account.value().nonce;
-        }
-        return 0;
+        return recent_account_state(address).get_nonce();
     }
 
     bytes32_t get_balance(Address const &address)
     {
-        auto const &account = recent_account(address);
-        if (MONAD_LIKELY(account.has_value())) {
-            return intx::be::store<bytes32_t>(account.value().balance);
-        }
-        return {};
+        return recent_account_state(address).get_balance();
     }
 
     bytes32_t get_code_hash(Address const &address)
     {
-        auto const &account = recent_account(address);
-        if (MONAD_LIKELY(account.has_value())) {
-            return account.value().code_hash;
-        }
-        return NULL_HASH;
+        return recent_account_state(address).get_code_hash();
     }
 
     bytes32_t get_storage(Address const &address, bytes32_t const &key)

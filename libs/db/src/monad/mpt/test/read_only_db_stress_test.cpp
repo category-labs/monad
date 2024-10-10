@@ -28,7 +28,8 @@
 using namespace monad::mpt;
 using namespace monad::test;
 
-std::atomic<bool> g_done{false};
+sig_atomic_t volatile g_done = 0;
+
 static_assert(std::atomic<bool>::is_always_lock_free); // async signal safe
 
 static monad::hash256 to_key(uint64_t const key)
@@ -55,7 +56,7 @@ select_rand_version(Db const &db, monad::small_prng &rnd, double bias)
 
 static void on_signal(int)
 {
-    g_done.store(true, std::memory_order_release);
+    g_done = 1;
 }
 
 int main(int argc, char *const argv[])
@@ -152,8 +153,7 @@ int main(int argc, char *const argv[])
                 .dbname_paths = {dbname_paths}};
             Db ro_db{ro_config};
 
-            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID &&
-                   !g_done.load(std::memory_order_acquire)) {
+            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID && !g_done) {
             }
             // now the first version is written to db
             MONAD_ASSERT(ro_db.get_latest_block_id() != INVALID_BLOCK_ID);
@@ -163,7 +163,7 @@ int main(int argc, char *const argv[])
             unsigned nfailed = 0;
 
             auto rnd = monad::thread_local_prng();
-            while (!g_done.load(std::memory_order_acquire)) {
+            while (!g_done) {
                 auto const version = select_rand_version(ro_db, rnd, prng_bias);
                 auto const version_bytes =
                     serialize_as_big_endian<sizeof(uint64_t)>(version);
@@ -204,8 +204,7 @@ int main(int argc, char *const argv[])
             unsigned nsuccess = 0;
             unsigned nfailed = 0;
 
-            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID &&
-                   !g_done.load(std::memory_order_acquire)) {
+            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID && !g_done) {
             }
             // now the first version is written to db
             MONAD_ASSERT(ro_db.get_latest_block_id() != INVALID_BLOCK_ID);
@@ -242,7 +241,7 @@ int main(int argc, char *const argv[])
             size_t completions{};
 
             auto rnd = monad::thread_local_prng();
-            while (!g_done.load(std::memory_order_acquire)) {
+            while (!g_done) {
                 auto const version = select_rand_version(ro_db, rnd, prng_bias);
                 auto const version_bytes =
                     serialize_as_big_endian<sizeof(uint64_t)>(version);
@@ -292,8 +291,7 @@ int main(int argc, char *const argv[])
             unsigned nsuccess = 0;
             unsigned nfailed = 0;
 
-            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID &&
-                   !g_done.load(std::memory_order_acquire)) {
+            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID && !g_done) {
             }
             // now the first version is written to db
             MONAD_ASSERT(ro_db.get_latest_block_id() != INVALID_BLOCK_ID);
@@ -303,10 +301,10 @@ int main(int argc, char *const argv[])
             {
                 Nibbles path{};
                 size_t num_nodes;
-                std::atomic<bool> &done;
+                sig_atomic_t volatile &done;
 
                 explicit VersionValidatorMachine(
-                    size_t num_nodes_, std::atomic<bool> &done_)
+                    size_t num_nodes_, sig_atomic_t volatile &done_)
                     : num_nodes(num_nodes_)
                     , done(done_)
                 {
@@ -365,7 +363,7 @@ int main(int argc, char *const argv[])
             };
 
             auto rnd = monad::thread_local_prng();
-            while (!g_done.load(std::memory_order_acquire)) {
+            while (!g_done) {
                 auto const version = select_rand_version(ro_db, rnd, prng_bias);
                 if (auto cursor = ro_db.find(prefix, version);
                     cursor.has_value()) {
@@ -398,7 +396,7 @@ int main(int argc, char *const argv[])
         auto open_close_read_only = [&]() {
             unsigned nsuccess = 0;
             unsigned nfailed = 0;
-            while (!g_done.load(std::memory_order_acquire)) {
+            while (!g_done) {
                 ReadOnlyOnDiskDbConfig const ro_config{
                     .dbname_paths = dbname_paths};
                 Db ro_db{ro_config};
@@ -450,7 +448,7 @@ int main(int argc, char *const argv[])
         readers.emplace_back(open_close_read_only);
 
         alarm(timeout_seconds);
-        while (!g_done.load(std::memory_order_acquire)) {
+        while (!g_done) {
             upsert_new_version(db, version);
             ++version;
         }

@@ -16,6 +16,10 @@
 #include <stddef.h>
 #include <string.h>
 
+#ifdef __cplusplus
+    #include <new>
+#endif
+
 static_assert(ATOMIC_INT_LOCK_FREE == 2);
 
 typedef struct monad_spinlock monad_spinlock_t;

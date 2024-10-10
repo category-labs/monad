@@ -15,6 +15,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
+class TrieDb;
+
 struct MachineBase : public mpt::StateMachine
 {
     static constexpr uint64_t PREFIX_LEN = 1;
@@ -71,9 +73,8 @@ Result<Account> decode_account_db_ignore_address(byte_string_view &);
 Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &);
 Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &);
 
-void write_to_file(
-    nlohmann::json const &, std::filesystem::path const &,
-    uint64_t block_number);
+void incremental_write_to_file(
+    TrieDb &, std::filesystem::path const &, uint64_t const);
 
 void load_from_binary(
     mpt::Db &, std::istream &accounts, std::istream &code,

@@ -286,18 +286,57 @@ std::string TrieDb::print_stats()
     return ret;
 }
 
-nlohmann::json TrieDb::to_json()
+nlohmann::json TrieDb::to_json(std::ostream *ofile)
 {
     struct Traverse : public TraverseMachine
     {
         TrieDb &db;
         nlohmann::json &json;
-        Nibbles path{};
+        mpt::Nibbles path;
+        std::ostream *ofile;
+        std::string current_key;
+        bool first = true;
 
-        explicit Traverse(TrieDb &db, nlohmann::json &json)
+        explicit Traverse(TrieDb &db, nlohmann::json &json, std::ostream *o)
             : db(db)
             , json(json)
+            , path()
+            , ofile(o)
         {
+            if (ofile) {
+                *ofile << "{\n";
+            }
+        }
+
+        ~Traverse()
+        {
+            if (ofile) {
+                write_indented_json(4);
+                *ofile << "}\n";
+                (*ofile).flush();
+                json.clear();
+            }
+        }
+
+        void write_indented_json(uint64_t const indent_level)
+        {
+            if (!first) {
+                *ofile << ",\n";
+            }
+
+            for (auto it = json.begin(); it != json.end(); ++it) {
+                *ofile << std::string(indent_level, ' ');
+
+                if (it != json.begin()) {
+                    *ofile << ",\n";
+                    *ofile << std::string(indent_level, ' ');
+                }
+
+                *ofile << "\"" << it.key() << "\": " << it.value();
+                first = false;
+            }
+
+            (*ofile).flush();
         }
 
         virtual bool down(unsigned char const branch, Node const &node) override
@@ -347,6 +386,14 @@ nlohmann::json TrieDb::to_json()
             MONAD_DEBUG_ASSERT(!acct.has_error());
 
             auto const key = fmt::format("{}", NibblesView{path});
+
+            if (ofile) {
+                if (key != current_key) {
+                    write_indented_json(4);
+                    json.clear();
+                    json[key] = nlohmann::json::object();
+                }
+            }
 
             json[key]["address"] = fmt::format("{}", acct.value().first);
             json[key]["balance"] =
@@ -402,8 +449,7 @@ nlohmann::json TrieDb::to_json()
     };
 
     auto json = nlohmann::json::object();
-    Traverse traverse(*this, json);
-
+    Traverse traverse(*this, json, ofile);
     auto res_cursor = db_.find(state_nibbles, block_number_);
     MONAD_ASSERT(res_cursor.has_value());
     MONAD_ASSERT(res_cursor.value().is_valid());

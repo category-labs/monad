@@ -518,7 +518,7 @@ int main(int const argc, char const *argv[])
         TrieDb ro_db{db};
         // WARNING: to_json() does parallel traverse which consumes excessive
         // memory
-        write_to_file(ro_db.to_json(), dump_snapshot, block_num);
+        incremental_write_to_file(ro_db, dump_snapshot, block_num);
     }
     return result.has_error() ? EXIT_FAILURE : EXIT_SUCCESS;
 }

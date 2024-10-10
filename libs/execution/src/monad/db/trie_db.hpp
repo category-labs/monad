@@ -46,7 +46,8 @@ public:
     virtual bytes32_t receipts_root() override;
     virtual std::string print_stats() override;
 
-    nlohmann::json to_json();
+    nlohmann::json to_json(std::ostream * = nullptr);
+
     size_t prefetch_current_root();
     uint64_t get_block_number() const;
     uint64_t get_history_length() const;

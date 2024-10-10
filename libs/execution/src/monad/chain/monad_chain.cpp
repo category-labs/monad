@@ -14,7 +14,8 @@ Result<void> MonadChain::validate_header(
 
 bool MonadChain::validate_root(
     evmc_revision const, BlockHeader const &, bytes32_t const &,
-    bytes32_t const &, bytes32_t const &) const
+    bytes32_t const &, bytes32_t const &,
+    std::optional<bytes32_t> const &) const
 {
     // TODO
     return true;

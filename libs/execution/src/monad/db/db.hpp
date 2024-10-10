@@ -8,6 +8,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
+#include <monad/core/withdrawal.hpp>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/state2/state_deltas.hpp>
 
@@ -29,13 +30,15 @@ struct Db
     virtual bytes32_t state_root() = 0;
     virtual bytes32_t receipts_root() = 0;
     virtual bytes32_t transactions_root() = 0;
+    virtual std::optional<bytes32_t> withdrawals_root() = 0;
 
     virtual void increment_block_number() = 0;
 
     virtual void commit(
         StateDeltas const &, Code const &, BlockHeader const &,
         std::vector<Receipt> const & = {},
-        std::vector<Transaction> const & = {}) = 0;
+        std::vector<Transaction> const & = {},
+        std::optional<std::vector<Withdrawal>> const & = {std::nullopt}) = 0;
 
     virtual std::string print_stats()
     {

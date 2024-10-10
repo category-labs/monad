@@ -193,10 +193,11 @@ void BlockState::merge(State const &state)
 
 void BlockState::commit(
     BlockHeader const &header, std::vector<Receipt> const &receipts,
-    std::vector<Transaction> const &transactions)
+    std::vector<Transaction> const &transactions,
+    std::optional<std::vector<Withdrawal>> const &withdrawals)
 {
     db_.increment_block_number();
-    db_.commit(state_, code_, header, receipts, transactions);
+    db_.commit(state_, code_, header, receipts, transactions, withdrawals);
 }
 
 void BlockState::log_debug()

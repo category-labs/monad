@@ -115,9 +115,11 @@ public:
     virtual void commit(
         StateDeltas const &state_deltas, Code const &code,
         BlockHeader const &header, std::vector<Receipt> const &receipts,
-        std::vector<Transaction> const &transactions) override
+        std::vector<Transaction> const &transactions,
+        std::optional<std::vector<Withdrawal>> const &withdrawals) override
     {
-        db_.commit(state_deltas, code, header, receipts, transactions);
+        db_.commit(
+            state_deltas, code, header, receipts, transactions, withdrawals);
 
         for (auto it = state_deltas.cbegin(); it != state_deltas.cend(); ++it) {
             auto const &address = it->first;
@@ -162,6 +164,11 @@ public:
     virtual bytes32_t transactions_root() override
     {
         return db_.transactions_root();
+    }
+
+    virtual std::optional<bytes32_t> withdrawals_root() override
+    {
+        return db_.withdrawals_root();
     }
 
     virtual std::string print_stats() override

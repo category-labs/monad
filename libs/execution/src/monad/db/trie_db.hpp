@@ -44,10 +44,13 @@ public:
     virtual void commit(
         StateDeltas const &, Code const &, BlockHeader const &,
         std::vector<Receipt> const & = {},
-        std::vector<Transaction> const & = {}) override;
+        std::vector<Transaction> const & = {},
+        std::optional<std::vector<Withdrawal>> const & = {
+            std::nullopt}) override;
     virtual bytes32_t state_root() override;
     virtual bytes32_t receipts_root() override;
     virtual bytes32_t transactions_root() override;
+    virtual std::optional<bytes32_t> withdrawals_root() override;
     virtual std::string print_stats() override;
 
     nlohmann::json to_json();

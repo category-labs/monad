@@ -105,6 +105,11 @@ bytes32_t monad_statesync_server_context::transactions_root()
     return rw.transactions_root();
 }
 
+std::optional<bytes32_t> monad_statesync_server_context::withdrawals_root()
+{
+    return rw.withdrawals_root();
+}
+
 void monad_statesync_server_context::increment_block_number()
 {
     rw.increment_block_number();
@@ -113,8 +118,9 @@ void monad_statesync_server_context::increment_block_number()
 void monad_statesync_server_context::commit(
     StateDeltas const &state_deltas, Code const &code,
     BlockHeader const &header, std::vector<Receipt> const &receipts,
-    std::vector<Transaction> const &transactions)
+    std::vector<Transaction> const &transactions,
+    std::optional<std::vector<Withdrawal>> const &withdrawals)
 {
     on_commit(*this, state_deltas);
-    rw.commit(state_deltas, code, header, receipts, transactions);
+    rw.commit(state_deltas, code, header, receipts, transactions, withdrawals);
 }

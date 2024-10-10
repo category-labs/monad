@@ -95,7 +95,8 @@ Result<void> EthereumMainnet::validate_header(
 bool EthereumMainnet::validate_root(
     evmc_revision const rev, BlockHeader const &hdr,
     bytes32_t const &state_root, bytes32_t const &receipts_root,
-    bytes32_t const &transactions_root) const
+    bytes32_t const &transactions_root,
+    std::optional<bytes32_t> const &withdrawals_root) const
 {
     if (state_root != hdr.state_root) {
         LOG_ERROR(
@@ -123,6 +124,15 @@ bool EthereumMainnet::validate_root(
             hdr.number,
             transactions_root,
             hdr.transactions_root);
+        return false;
+    }
+    if (withdrawals_root != hdr.withdrawals_root) {
+        LOG_ERROR(
+            "Block: {}, Computed Withdrawals Root: {}, Expected Withdrawals "
+            "Root: {}",
+            hdr.number,
+            withdrawals_root,
+            hdr.withdrawals_root);
         return false;
     }
     return true;

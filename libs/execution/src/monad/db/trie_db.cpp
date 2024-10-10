@@ -15,6 +15,7 @@
 #include <monad/core/rlp/int_rlp.hpp>
 #include <monad/core/rlp/receipt_rlp.hpp>
 #include <monad/core/rlp/transaction_rlp.hpp>
+#include <monad/core/rlp/withdrawal_rlp.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/code_analysis.hpp>
@@ -153,7 +154,8 @@ std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
 void TrieDb::commit(
     StateDeltas const &state_deltas, Code const &code,
     BlockHeader const &header, std::vector<Receipt> const &receipts,
-    std::vector<Transaction> const &transactions)
+    std::vector<Transaction> const &transactions,
+    std::optional<std::vector<Withdrawal>> const &withdrawals)
 {
     MONAD_ASSERT(block_number_ <= std::numeric_limits<int64_t>::max());
 
@@ -213,24 +215,31 @@ void TrieDb::commit(
     UpdateList receipt_updates;
     UpdateList transaction_updates;
     MONAD_ASSERT(receipts.size() == transactions.size());
+    std::vector<byte_string> index_alloc;
+    index_alloc.reserve(std::max(
+        receipts.size(),
+        withdrawals.transform(&std::vector<Withdrawal>::size).value_or(0)));
     for (size_t i = 0; i < receipts.size(); ++i) {
         auto const &rlp_index =
-            bytes_alloc_.emplace_back(rlp::encode_unsigned(i));
+            index_alloc.emplace_back(rlp::encode_unsigned(i));
+        auto const &receipt = receipts[i];
         receipt_updates.push_front(update_alloc_.emplace_back(Update{
             .key = NibblesView{rlp_index},
-            .value =
-                bytes_alloc_.emplace_back(rlp::encode_receipt(receipts[i])),
+            .value = bytes_alloc_.emplace_back(rlp::encode_receipt(receipt)),
             .incarnation = false,
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));
+
+        auto const &tx = transactions[i];
         transaction_updates.push_front(update_alloc_.emplace_back(Update{
             .key = NibblesView{rlp_index},
-            .value = bytes_alloc_.emplace_back(
-                rlp::encode_transaction(transactions[i])),
+            .value = bytes_alloc_.emplace_back(rlp::encode_transaction(tx)),
             .incarnation = false,
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));
     }
+
+    UpdateList updates;
 
     auto state_update = Update{
         .key = state_nibbles,
@@ -262,12 +271,33 @@ void TrieDb::commit(
         .incarnation = true,
         .next = UpdateList{},
         .version = static_cast<int64_t>(block_number_)};
-    UpdateList updates;
     updates.push_front(state_update);
     updates.push_front(code_update);
     updates.push_front(receipt_update);
     updates.push_front(transaction_update);
     updates.push_front(block_header_update);
+    UpdateList withdrawal_updates;
+    if (withdrawals.has_value()) {
+        // only commit withdrawals when the optional has value
+        for (size_t i = 0; i < withdrawals.value().size(); ++i) {
+            if (i >= index_alloc.size()) {
+                index_alloc.emplace_back(rlp::encode_unsigned(i));
+            }
+            withdrawal_updates.push_front(update_alloc_.emplace_back(Update{
+                .key = NibblesView{index_alloc[i]},
+                .value = bytes_alloc_.emplace_back(
+                    rlp::encode_withdrawal(withdrawals.value()[i])),
+                .incarnation = false,
+                .next = UpdateList{},
+                .version = static_cast<int64_t>(block_number_)}));
+        }
+        updates.push_front(update_alloc_.emplace_back(Update{
+            .key = withdrawal_nibbles,
+            .value = byte_string_view{},
+            .incarnation = true,
+            .next = std::move(withdrawal_updates),
+            .version = static_cast<int64_t>(block_number_)}));
+    }
 
     db_.upsert(std::move(updates), block_number_);
 
@@ -296,6 +326,19 @@ bytes32_t TrieDb::receipts_root()
 bytes32_t TrieDb::transactions_root()
 {
     return merkle_root(transaction_nibbles);
+}
+
+std::optional<bytes32_t> TrieDb::withdrawals_root()
+{
+    auto const value = db_.get_data(withdrawal_nibbles, block_number_);
+    if (value.has_error()) {
+        return std::nullopt;
+    }
+    if (value.value().empty()) {
+        return NULL_ROOT;
+    }
+    MONAD_ASSERT(value.value().size() == sizeof(bytes32_t));
+    return to_bytes(value.value());
 }
 
 bytes32_t TrieDb::merkle_root(mpt::Nibbles const &nibbles)

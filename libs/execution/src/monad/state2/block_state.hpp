@@ -37,7 +37,8 @@ public:
 
     void commit(
         BlockHeader const &, std::vector<Receipt> const &,
-        std::vector<Transaction> const &);
+        std::vector<Transaction> const &,
+        std::optional<std::vector<Withdrawal>> const &);
 
     void log_debug();
 };

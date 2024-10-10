@@ -153,14 +153,18 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
             chain.validate_header(receipts, block.value().header));
         block_state.log_debug();
         block_state.commit(
-            block.value().header, receipts, block.value().transactions);
+            block.value().header,
+            receipts,
+            block.value().transactions,
+            block.value().withdrawals);
 
         if (!chain.validate_root(
                 rev,
                 block.value().header,
                 db.state_root(),
                 db.receipts_root(),
-                db.transactions_root())) {
+                db.transactions_root(),
+                db.withdrawals_root())) {
             return BlockError::WrongMerkleRoot;
         }
 

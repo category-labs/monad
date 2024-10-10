@@ -401,7 +401,8 @@ mpt::Compute &MachineBase::get_compute() const
     }
     else if (
         trie_section == TrieType::Receipt ||
-        trie_section == TrieType::Transaction) {
+        trie_section == TrieType::Transaction ||
+        trie_section == TrieType::Withdrawal) {
         return depth == PREFIX_LEN ? generic_root_merkle_compute
                                    : generic_merkle_compute;
     }
@@ -417,7 +418,7 @@ void MachineBase::down(unsigned char const nibble)
     MONAD_ASSERT(
         (nibble == STATE_NIBBLE || nibble == CODE_NIBBLE ||
          nibble == RECEIPT_NIBBLE || nibble == TRANSACTION_NIBBLE ||
-         nibble == BLOCKHEADER_NIBBLE) ||
+         nibble == BLOCKHEADER_NIBBLE || nibble == WITHDRAWAL_NIBBLE) ||
         depth != PREFIX_LEN);
     if (MONAD_UNLIKELY(depth == PREFIX_LEN)) {
         MONAD_ASSERT(trie_section == TrieType::Prefix);
@@ -432,6 +433,9 @@ void MachineBase::down(unsigned char const nibble)
         }
         else if (nibble == CODE_NIBBLE) {
             trie_section = TrieType::Code;
+        }
+        else if (nibble == WITHDRAWAL_NIBBLE) {
+            trie_section = TrieType::Withdrawal;
         }
         else {
             MONAD_ASSERT(nibble == BLOCKHEADER_NIBBLE);

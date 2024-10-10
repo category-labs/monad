@@ -66,7 +66,8 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
             chain, block, block_state, block_hash_buffer, *pool_));
     BOOST_OUTCOME_TRY(chain.validate_header(receipts, block.header));
     block_state.log_debug();
-    block_state.commit(block.header, receipts, block.transactions);
+    block_state.commit(
+        block.header, receipts, block.transactions, block.withdrawals);
     return receipts;
 }
 
@@ -171,7 +172,7 @@ void BlockchainTest::TestBody()
             State state{bs, Incarnation{0, 0}};
             load_state_from_json(j_contents.at("pre"), state);
             bs.merge(state);
-            bs.commit({}, {}, {});
+            bs.commit({}, {}, {}, std::nullopt);
         }
 
         BlockHashBuffer block_hash_buffer;
@@ -209,6 +210,10 @@ void BlockchainTest::TestBody()
                 EXPECT_EQ(
                     tdb.transactions_root(),
                     block.value().header.transactions_root)
+                    << name;
+                EXPECT_EQ(
+                    tdb.withdrawals_root(),
+                    block.value().header.withdrawals_root)
                     << name;
                 if (rev >= EVMC_BYZANTIUM) {
                     EXPECT_EQ(

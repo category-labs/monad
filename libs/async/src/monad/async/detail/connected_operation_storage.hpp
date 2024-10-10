@@ -3,6 +3,7 @@
 #include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/sender_errc.hpp>
+#include <monad/core/tl_tid.h>
 
 #include <memory>
 
@@ -143,7 +144,7 @@ namespace detail
             // (except for threadsafeop)
             MONAD_DEBUG_ASSERT(
                 this->executor() == nullptr || this->is_threadsafeop() ||
-                this->executor()->owning_thread_id() == gettid());
+                this->executor()->owning_thread_id() == get_tl_tid());
             this->being_executed_ = true;
             // Prevent compiler reordering write of being_executed_ after this
             // point without using actual atomics.

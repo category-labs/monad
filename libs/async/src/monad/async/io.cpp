@@ -7,6 +7,7 @@
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/storage_pool.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/tl_tid.h>
 #include <monad/core/unordered_map.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
@@ -156,7 +157,7 @@ namespace detail
 }
 
 AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
-    : owning_tid_(gettid())
+    : owning_tid_(get_tl_tid())
     , fds_{-1, -1}
     , uring_(rwbuf.ring())
     , wr_uring_(rwbuf.wr_ring())
@@ -511,7 +512,7 @@ bool AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
     // completions
     MONAD_DEBUG_ASSERT((poll_rings_mask & 3) != 3);
     auto h = detail::AsyncIO_per_thread_state().enter_completions();
-    MONAD_DEBUG_ASSERT(owning_tid_ == gettid());
+    MONAD_DEBUG_ASSERT(owning_tid_ == get_tl_tid());
 
     struct io_uring_cqe *cqe = nullptr;
     auto *const other_ring = const_cast<io_uring *>(&uring_.get_ring());

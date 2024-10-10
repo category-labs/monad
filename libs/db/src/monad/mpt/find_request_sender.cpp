@@ -7,6 +7,7 @@
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/nibble.h>
+#include <monad/core/tl_tid.h>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/trie.hpp>
 #include <monad/mpt/util.hpp>
@@ -143,7 +144,7 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
             }
             if (!tid_checked_) {
                 MONAD_ASSERT(aux_.io != nullptr);
-                if (aux_.io->owning_thread_id() != gettid()) {
+                if (aux_.io->owning_thread_id() != get_tl_tid()) {
                     res_ = {
                         byte_string{},
                         find_result::need_to_continue_in_io_thread};

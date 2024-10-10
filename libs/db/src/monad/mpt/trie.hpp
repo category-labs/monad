@@ -14,6 +14,7 @@
 #include <monad/async/io.hpp>
 #include <monad/async/io_senders.hpp>
 
+#include <monad/core/tl_tid.h>
 #include <monad/core/unordered_map.hpp>
 
 #ifdef __clang__
@@ -439,7 +440,7 @@ public:
             explicit constexpr holder(UpdateAuxImpl *parent)
                 : parent_(parent)
             {
-                parent_->current_upsert_tid_ = gettid();
+                parent_->current_upsert_tid_ = get_tl_tid();
             }
 
         public:
@@ -477,19 +478,19 @@ public:
     bool is_current_thread_concurrent_to_upsert() const noexcept
     {
         return current_upsert_tid_.has_value() &&
-               *current_upsert_tid_ != gettid();
+               *current_upsert_tid_ != get_tl_tid();
     }
 
     bool is_current_thread_upserting() const noexcept
     {
         return current_upsert_tid_.has_value() &&
-               *current_upsert_tid_ == gettid();
+               *current_upsert_tid_ == get_tl_tid();
     }
 
     bool has_upsert_run_since() const noexcept
     {
         return current_upsert_tid_.has_value() &&
-               *current_upsert_tid_ != gettid();
+               *current_upsert_tid_ != get_tl_tid();
     }
 
     void set_io(

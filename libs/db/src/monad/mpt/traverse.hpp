@@ -2,6 +2,7 @@
 
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/io.hpp>
+#include <monad/core/tl_tid.h>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/node.hpp>
 #include <monad/mpt/trie.hpp>
@@ -207,7 +208,7 @@ inline bool preorder_traverse(
     VerifyVersionFunc verify_func)
 {
     if (aux.io) {
-        MONAD_ASSERT(aux.io->owning_thread_id() == gettid());
+        MONAD_ASSERT(aux.io->owning_thread_id() == get_tl_tid());
     }
     detail::preorder_traverse_impl<VerifyVersionFunc> impl(aux, verify_func);
     impl.process(node, INVALID_BRANCH, traverse);

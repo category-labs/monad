@@ -37,8 +37,8 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <fcntl.h>
 #include <filesystem>
-#include <fstream>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -344,10 +344,13 @@ int main(int const argc, char const *argv[])
                     "can not load checkpoint into non-empty database");
             }
             LOG_INFO("Loading from binary checkpoint in {}", snapshot);
-            std::ifstream accounts(snapshot / "accounts");
-            std::ifstream code(snapshot / "code");
+            int accounts_fd = open((snapshot / "accounts").c_str(), O_RDONLY);
+            int code_fd = open((snapshot / "code").c_str(), O_RDONLY);
+            if (MONAD_UNLIKELY(accounts_fd == -1 || code_fd == -1)) {
+                throw std::runtime_error("Can't open binary files properly");
+            }
             auto const n = std::stoul(snapshot.stem());
-            load_from_binary(db, accounts, code, n);
+            load_from_binary(db, accounts_fd, code_fd, init_block_num);
             return n;
         }
         else if (!db.root().is_valid()) {

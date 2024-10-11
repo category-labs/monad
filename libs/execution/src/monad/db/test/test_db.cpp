@@ -24,8 +24,8 @@
 #include <test_resource_data.h>
 
 #include <bit>
+#include <fcntl.h>
 #include <filesystem>
-#include <fstream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -450,9 +450,13 @@ TYPED_TEST(DBTest, to_json)
 
 TYPED_TEST(DBTest, load_from_binary)
 {
-    std::ifstream accounts(test_resource::checkpoint_dir / "accounts");
-    std::ifstream code(test_resource::checkpoint_dir / "code");
-    load_from_binary(this->db, accounts, code);
+    int account_fd =
+        open((test_resource::checkpoint_dir / "accounts").c_str(), O_RDONLY);
+    int code_fd =
+        open((test_resource::checkpoint_dir / "code").c_str(), O_RDONLY);
+    ASSERT_TRUE(account_fd != -1 && code_fd != -1);
+    load_from_binary(this->db, account_fd, code_fd);
+
     TrieDb tdb{this->db};
     EXPECT_EQ(
         tdb.state_root(),

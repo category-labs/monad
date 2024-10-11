@@ -15,8 +15,8 @@
 #include <gtest/gtest.h>
 
 #include <deque>
+#include <fcntl.h>
 #include <filesystem>
-#include <fstream>
 
 using namespace monad;
 using namespace monad::mpt;

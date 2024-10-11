@@ -79,8 +79,7 @@ void write_to_file(
     uint64_t block_number);
 
 void load_from_binary(
-    mpt::Db &, std::istream &accounts, std::istream &code,
-    uint64_t init_block_number = 0,
-    size_t buf_size = 1ul << 32); // TODO: dynamic loading
+    mpt::Db &, int account_fd, int code_fd, uint64_t init_block_number = 0,
+    size_t buf_size = (1ul << 32) - 1);
 
 MONAD_NAMESPACE_END

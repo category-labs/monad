@@ -651,6 +651,7 @@ Node *read_node_blocking(
             bytes_to_read,
             rd_offset,
             strerror(errno));
+        MONAD_ASSERT("pread failed in read_node_blocking()" == nullptr);
     }
     return deserialize_node_from_buffer(
                buffer + buffer_off, size_t(bytes_read) - buffer_off)

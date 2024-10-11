@@ -39,6 +39,11 @@ target_compile_options(monad_context_c_libthread_db PRIVATE -Wall -Wextra -Wconv
 # Hide all symbols in this except those explicitly made visibile to prevent
 # unhelpful collision with the GDB process symbols
 target_compile_options(monad_context_c_libthread_db PRIVATE -fvisibility=hidden)
+# Because GDB loads libthread_db.so, if we compile it with a sanitiser, the
+# sanitiser will blow up as it needs GDB to have sanitiser enabled too. So
+# prevent our toolchain having effects here.
+target_compile_options(monad_context_c_libthread_db PRIVATE -fno-sanitize=all)
+target_link_options(monad_context_c_libthread_db PRIVATE -fno-sanitize=all)
 set_target_properties(monad_context_c_libthread_db PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   OUTPUT_NAME "thread_db"
@@ -50,7 +55,6 @@ target_link_libraries(monad_context_c_libthread_db PRIVATE monad_context_c-custo
 # problems with GDB, diagnosing and fixing this should be revisited.
 #target_link_options(monad_context_c_libthread_db PRIVATE -static)
 target_compile_definitions(monad_context_c PUBLIC MONAD_CONTEXT_CUSTOM_GDB_THREAD_DB_PATH=$<TARGET_FILE_DIR:monad_context_c_libthread_db>)
-
 
 
 set(monad_async_INCLUDES

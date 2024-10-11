@@ -775,7 +775,7 @@ Result<byte_string_view>
 Db::get(NibblesView const key, uint64_t const block_id) const
 {
     auto res = find(key, block_id);
-    if (!res.has_value()) {
+    if (!res.has_value() || !res.value().node->has_value()) {
         return DbError::key_not_found;
     }
     return res.value().node->value();

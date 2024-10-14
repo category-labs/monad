@@ -11,11 +11,13 @@ function(monad_test target)
                TSAN_OPTIONS=external_symbolizer_path=/usr/bin/llvm-symbolizer)
 endfunction()
 
+monad_test(cancellation_test "cancellation.cpp")
+
 monad_test(executor_test "executor.cpp")
 
-monad_test(foreign_executor_test "foreign_executor.cpp")
-
 monad_test(file_io_test "file_io.cpp")
+
+monad_test(foreign_executor_test "foreign_executor.cpp")
 
 monad_test(socket_io_test "socket_io.cpp")
 

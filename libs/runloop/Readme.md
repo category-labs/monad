@@ -266,10 +266,10 @@ static monad_c_result mytask(monad_async_task task)
 
 ## Todo
 
-- When a task exits, all i/o still occurring on that task ought to be pumped and dumped out
-(right now it aborts the process instead)
 - Need to test cancellation works at every possible lifecycle and suspend state
 a task can have.
+- Should be able to clamp max i/o concurrency, and have `AsyncIO` wrapper set that from its config.
+- `AsyncIO` wrapper doesn't currently handle `EAGAIN`.
 - Multiple context switcher types at the same time should work, but is completely untested
 and ought to become tested. Including with perf impact (as they usually have to
 thunk when switching between disparate contexts)
@@ -280,3 +280,5 @@ frame is: `struct msvc_frame_prefix { void(*factivate)(void*); uint16_t index, f
 Implementation is a state machine based on switching `index`.
     - GCC/clang coroutine frame: Frame prefix | Promise | Unknown | Local
 variables. Coroutine frame is: `struct clang_frame_prefix { void(*factivate)(void*); void(*fdestroy)(void*);};`.
+- When a task exits, all i/o still occurring on that task ought to be pumped and dumped out
+(right now it aborts the process instead)

@@ -19,16 +19,26 @@ struct io_buffer_awaiting_list_item_t
 };
 struct monad_async_executor_impl;
 
+enum monad_async_task_impl_please_cancel_invoked_status : uint8_t
+{
+    please_cancel_not_invoked = 0,
+    please_cancel_invoked_not_seen_yet,
+    please_cancel_invoked_seen,
+    please_cancel_invoked_seen_awaiting_uring, // io_uring still has to return a
+                                               // completion
+    please_cancel_cancelled
+};
+
 struct monad_async_task_impl
 {
     struct monad_async_task_head head;
     char magic[8];
     struct monad_async_task_impl *prev, *next;
-    bool please_cancel_invoked;
     monad_c_result (*please_cancel)(
         struct monad_async_executor_impl *ex,
         struct monad_async_task_impl *task);
 
+    // For io_uring ops which use monad_async_io_status as their base
     struct
     {
         monad_async_io_status *front, *back;
@@ -36,13 +46,16 @@ struct monad_async_task_impl
     } io_submitted, io_completed;
 
     struct io_buffer_awaiting_list_item_t io_buffer_awaiting;
+    monad_async_io_status **completed;
     bool io_buffer_awaiting_was_inserted_at_front;
     bool io_buffer_awaiting_is_for_write;
     bool io_buffer_awaiting_is_for_large_page;
+    enum monad_async_task_impl_please_cancel_invoked_status
+        please_cancel_status;
+    int8_t please_cancel_invoked_suspending_ops_remaining;
 
-    monad_async_io_status **completed;
-
-    /* Set this to have it executed next time executor run regains control at:
+    /* Set this to have it executed next time executor run regains control
+    at:
 
     - After task has exited and been fully detached from its executor.
     */

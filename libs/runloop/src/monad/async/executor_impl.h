@@ -1,6 +1,6 @@
 #pragma once
 
-// #define MONAD_ASYNC_EXECUTOR_PRINTING 3
+// #define MONAD_ASYNC_EXECUTOR_PRINTING 1
 
 #include "task_impl.h"
 
@@ -812,8 +812,7 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
                 &ex->head.current_task, memory_order_acquire) == nullptr);
         atomic_store_explicit(
             &ex->head.current_task, &task->head, memory_order_release);
-        bool const please_cancel_invoked = task->please_cancel_invoked;
-        task->please_cancel_invoked = false;
+        // Do NOT reset please_cancel_invoked
         task->please_cancel = nullptr;
         task->completed = nullptr;
 
@@ -824,15 +823,16 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
     #if MONAD_ASYNC_EXECUTOR_PRINTING
         printf(
             "*** Executor %p resumes task %p from SQE exhaustion. sqe=%p. "
-            "is_cancellation_point=%d. please_cancel_invoked=%d\n",
+            "is_cancellation_point=%d. please_cancel_status=%d\n",
             (void *)ex,
             (void *)task,
             (void *)sqe,
             is_cancellation_point,
-            please_cancel_invoked);
+            task->please_cancel_status);
         fflush(stdout);
     #endif
-        if (is_cancellation_point && please_cancel_invoked) {
+        if (is_cancellation_point &&
+            task->please_cancel_status != please_cancel_not_invoked) {
             // We need to "throw away" this SQE, as the task has been
             // cancelled We do this by setting the SQE to a noop with
             // CANCELLED_OP_IO_URING_DATA_MAGIC
@@ -946,6 +946,48 @@ static inline struct io_uring_sqe *get_wrsqe_suspending_if_necessary(
     sqe->flags |= IOSQE_IO_DRAIN;
     ex->wr_ring_ops_outstanding++;
     return sqe;
+}
+
+static inline struct io_uring_sqe *
+get_sqe_for_cancellation(struct monad_async_executor_impl *ex)
+{
+    struct monad_async_task_impl *current_task =
+        (struct monad_async_task_impl *)atomic_load_explicit(
+            &ex->head.current_task, memory_order_acquire);
+    if (current_task != nullptr) {
+        // We are within the executor
+        return get_sqe_suspending_if_necessary(ex, current_task, false);
+    }
+    // We are outside the executor
+    for (;;) {
+        struct io_uring_sqe *sqe = io_uring_get_sqe(&ex->ring);
+        if (sqe != nullptr) {
+            ex->head.total_io_submitted++;
+            return sqe;
+        }
+        io_uring_submit(&ex->ring);
+    }
+}
+
+static inline struct io_uring_sqe *
+get_wrsqe_for_cancellation(struct monad_async_executor_impl *ex)
+{
+    struct monad_async_task_impl *current_task =
+        (struct monad_async_task_impl *)atomic_load_explicit(
+            &ex->head.current_task, memory_order_acquire);
+    if (current_task != nullptr) {
+        // We are within the executor
+        return get_wrsqe_suspending_if_necessary(ex, current_task, false);
+    }
+    // We are outside the executor
+    for (;;) {
+        struct io_uring_sqe *sqe = io_uring_get_sqe(&ex->wr_ring);
+        if (sqe != nullptr) {
+            ex->head.total_io_submitted++;
+            return sqe;
+        }
+        io_uring_submit(&ex->wr_ring);
+    }
 }
 
 // If fd = -1, then he wants a new unallocated slot

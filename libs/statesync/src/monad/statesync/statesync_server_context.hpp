@@ -54,5 +54,6 @@ struct monad_statesync_server_context final : public monad::Db
         monad::BlockHeader const &,
         std::vector<monad::Receipt> const &receipts = {},
         std::vector<monad::Transaction> const &transactions = {},
+        std::vector<monad::BlockHeader> const &ommers = {},
         std::optional<std::vector<monad::Withdrawal>> const & = {}) override;
 };

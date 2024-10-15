@@ -155,6 +155,7 @@ void TrieDb::commit(
     StateDeltas const &state_deltas, Code const &code,
     BlockHeader const &header, std::vector<Receipt> const &receipts,
     std::vector<Transaction> const &transactions,
+    std::vector<BlockHeader> const &ommers,
     std::optional<std::vector<Withdrawal>> const &withdrawals)
 {
     MONAD_ASSERT(block_number_ <= std::numeric_limits<int64_t>::max());
@@ -271,11 +272,18 @@ void TrieDb::commit(
         .incarnation = true,
         .next = UpdateList{},
         .version = static_cast<int64_t>(block_number_)};
+    auto ommer_update = Update{
+        .key = ommer_nibbles,
+        .value = bytes_alloc_.emplace_back(rlp::encode_ommers(ommers)),
+        .incarnation = true,
+        .next = UpdateList{},
+        .version = static_cast<int64_t>(block_number_)};
     updates.push_front(state_update);
     updates.push_front(code_update);
     updates.push_front(receipt_update);
     updates.push_front(transaction_update);
     updates.push_front(block_header_update);
+    updates.push_front(ommer_update);
     UpdateList withdrawal_updates;
     if (withdrawals.has_value()) {
         // only commit withdrawals when the optional has value

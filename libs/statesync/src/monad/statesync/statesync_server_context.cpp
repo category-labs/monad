@@ -119,8 +119,16 @@ void monad_statesync_server_context::commit(
     StateDeltas const &state_deltas, Code const &code,
     BlockHeader const &header, std::vector<Receipt> const &receipts,
     std::vector<Transaction> const &transactions,
+    std::vector<BlockHeader> const &ommers,
     std::optional<std::vector<Withdrawal>> const &withdrawals)
 {
     on_commit(*this, state_deltas);
-    rw.commit(state_deltas, code, header, receipts, transactions, withdrawals);
+    rw.commit(
+        state_deltas,
+        code,
+        header,
+        receipts,
+        transactions,
+        ommers,
+        withdrawals);
 }

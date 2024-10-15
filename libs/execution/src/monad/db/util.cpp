@@ -418,7 +418,8 @@ void MachineBase::down(unsigned char const nibble)
     MONAD_ASSERT(
         (nibble == STATE_NIBBLE || nibble == CODE_NIBBLE ||
          nibble == RECEIPT_NIBBLE || nibble == TRANSACTION_NIBBLE ||
-         nibble == BLOCKHEADER_NIBBLE || nibble == WITHDRAWAL_NIBBLE) ||
+         nibble == BLOCKHEADER_NIBBLE || nibble == WITHDRAWAL_NIBBLE ||
+         nibble == OMMER_NIBBLE) ||
         depth != PREFIX_LEN);
     if (MONAD_UNLIKELY(depth == PREFIX_LEN)) {
         MONAD_ASSERT(trie_section == TrieType::Prefix);
@@ -438,7 +439,10 @@ void MachineBase::down(unsigned char const nibble)
             trie_section = TrieType::Withdrawal;
         }
         else {
-            MONAD_ASSERT(nibble == BLOCKHEADER_NIBBLE);
+            // No subtrie in the rest tables, thus treated the same as
+            // TrieType::Prefix
+            MONAD_ASSERT(
+                nibble == BLOCKHEADER_NIBBLE || nibble == OMMER_NIBBLE);
         }
     }
 }

@@ -62,6 +62,7 @@ inline constexpr unsigned char RECEIPT_NIBBLE = 2;
 inline constexpr unsigned char TRANSACTION_NIBBLE = 3;
 inline constexpr unsigned char BLOCKHEADER_NIBBLE = 4;
 inline constexpr unsigned char WITHDRAWAL_NIBBLE = 5;
+inline constexpr unsigned char OMMER_NIBBLE = 6;
 inline constexpr unsigned char INVALID_NIBBLE = 255;
 inline mpt::Nibbles const state_nibbles = mpt::concat(STATE_NIBBLE);
 inline mpt::Nibbles const code_nibbles = mpt::concat(CODE_NIBBLE);
@@ -69,6 +70,7 @@ inline mpt::Nibbles const receipt_nibbles = mpt::concat(RECEIPT_NIBBLE);
 inline mpt::Nibbles const transaction_nibbles = mpt::concat(TRANSACTION_NIBBLE);
 inline mpt::Nibbles const block_header_nibbles =
     mpt::concat(BLOCKHEADER_NIBBLE);
+inline mpt::Nibbles const ommer_nibbles = mpt::concat(OMMER_NIBBLE);
 inline mpt::Nibbles const withdrawal_nibbles = mpt::concat(WITHDRAWAL_NIBBLE);
 
 byte_string encode_account_db(Address const &, Account const &);

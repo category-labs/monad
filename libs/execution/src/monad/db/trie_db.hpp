@@ -45,6 +45,7 @@ public:
         StateDeltas const &, Code const &, BlockHeader const &,
         std::vector<Receipt> const & = {},
         std::vector<Transaction> const & = {},
+        std::vector<BlockHeader> const &ommers = {},
         std::optional<std::vector<Withdrawal>> const & = {
             std::nullopt}) override;
     virtual bytes32_t state_root() override;

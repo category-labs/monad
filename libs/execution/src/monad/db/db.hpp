@@ -38,6 +38,7 @@ struct Db
         StateDeltas const &, Code const &, BlockHeader const &,
         std::vector<Receipt> const & = {},
         std::vector<Transaction> const & = {},
+        std::vector<BlockHeader> const &ommers = {},
         std::optional<std::vector<Withdrawal>> const & = {std::nullopt}) = 0;
 
     virtual std::string print_stats()

@@ -9,6 +9,7 @@
 #include <monad/statesync/statesync_client.h>
 #include <monad/statesync/statesync_server.h>
 #include <monad/statesync/statesync_server_context.hpp>
+#include <monad/statesync/statesync_version.h>
 #include <test_resource_data.h>
 
 #include <ethash/keccak.hpp>
@@ -100,8 +101,9 @@ namespace
         if (v2 != nullptr) {
             net->buf.append(v2, size2);
         }
+        // TODO: prefixes have different protocols
         MONAD_ASSERT(monad_statesync_client_handle_upsert(
-            net->cctx, type, net->buf.data(), net->buf.size()));
+            net->cctx, 0, type, net->buf.data(), net->buf.size()));
     }
 
     void statesync_server_send_done(
@@ -143,6 +145,10 @@ namespace
             cctx = monad_statesync_client_context_create(
                 &str, 1, genesis.c_str(), &client, &statesync_send_request);
             net = {.client = &client, .cctx = cctx};
+            for (size_t i = 0; i < MONAD_STATESYNC_N_PREFIXES; ++i) {
+                monad_statesync_client_handle_new_peer(
+                    cctx, i, MONAD_STATESYNC_VERSION);
+            }
             server = monad_statesync_server_create(
                 &sctx,
                 &net,

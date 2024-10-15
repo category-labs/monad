@@ -12,11 +12,14 @@ add_library(
   "src/monad/statesync/statesync_client_context.cpp"
   "src/monad/statesync/statesync_client_context.hpp"
   "src/monad/statesync/statesync_messages.h"
+  "src/monad/statesync/statesync_protocol.hpp"
+  "src/monad/statesync/statesync_protocol.cpp"
   "src/monad/statesync/statesync_server.cpp"
   "src/monad/statesync/statesync_server.h"
   "src/monad/statesync/statesync_server_context.cpp"
   "src/monad/statesync/statesync_server_context.hpp"
-  "src/monad/statesync/statesync_server_context.hpp")
+  "src/monad/statesync/statesync_server_context.hpp"
+  "src/monad/statesync/statesync_version.h")
 
 target_include_directories(monad_statesync PUBLIC ${PROJECT_SOURCE_DIR}/src)
 

@@ -9,6 +9,7 @@
 #include <monad/statesync/statesync_messages.h>
 #include <monad/statesync/statesync_server.h>
 #include <monad/statesync/statesync_server_context.hpp>
+#include <monad/statesync/statesync_version.h>
 
 #include <ankerl/unordered_dense.h>
 #include <quill/Quill.h>
@@ -73,7 +74,7 @@ void statesync_server_send_upsert(
         net->buf.append(v2, size2);
     }
     MONAD_ASSERT(monad_statesync_client_handle_upsert(
-        net->cctx, type, net->buf.data(), net->buf.size()));
+        net->cctx, 0, type, net->buf.data(), net->buf.size()));
 }
 
 void statesync_server_send_done(
@@ -269,6 +270,10 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
     sctx.ro = &ro;
     monad_statesync_server_network net{
         .client = &client, .cctx = cctx, .buf = {}};
+    for (size_t i = 0; i < MONAD_STATESYNC_N_PREFIXES; ++i) {
+        monad_statesync_client_handle_new_peer(
+            cctx, i, MONAD_STATESYNC_VERSION);
+    }
     monad_statesync_server *const server = monad_statesync_server_create(
         &sctx,
         &net,

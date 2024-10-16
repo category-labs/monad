@@ -28,6 +28,23 @@
 
 MONAD_NAMESPACE_BEGIN
 
+namespace
+{
+    // Approximates `factor * e ** (n/d) using Taylor expansion
+    uint256_t fake_exponential(uint256_t factor, uint256_t n, uint256_t d)
+    {
+        int i = 1;
+        uint256_t output = 0;
+        uint256_t acc = factor * d;
+        while (acc > 0) {
+            output += acc;
+            acc = (acc * n) / (d * i);
+            ++i;
+        }
+        return output / d;
+    }
+}
+
 // Intrinsic gas related functions
 inline constexpr auto g_txn_create(Transaction const &tx) noexcept
 {
@@ -115,7 +132,8 @@ inline constexpr uint256_t priority_fee_per_gas(
     MONAD_ASSERT(tx.max_fee_per_gas >= base_fee_per_gas);
     auto const max_priority_fee_per_gas = tx.max_fee_per_gas - base_fee_per_gas;
 
-    if (tx.type == TransactionType::eip1559) {
+    if (tx.type == TransactionType::eip1559 ||
+        tx.type == TransactionType::eip4844) {
         return std::min(tx.max_priority_fee_per_gas, max_priority_fee_per_gas);
     }
     // EIP-1559: "Legacy Ethereum transactions will still work and
@@ -152,5 +170,27 @@ uint256_t calculate_txn_award(
 }
 
 EXPLICIT_EVMC_REVISION(calculate_txn_award);
+
+uint256_t
+calc_blob_fee(Transaction const &tx, uint64_t const excess_blob_gas) noexcept
+{
+    return get_base_fee_per_blob_gas(excess_blob_gas) * get_total_blob_gas(tx);
+}
+
+uint256_t get_base_fee_per_blob_gas(uint64_t const excess_blob_gas) noexcept
+{
+    constexpr uint256_t MIN_BASE_FEE_PER_BLOB_GAS = 1;
+    constexpr uint256_t BLOB_BASE_FEE_UPDATE_FRACTION = 3338477;
+    return fake_exponential(
+        MIN_BASE_FEE_PER_BLOB_GAS,
+        uint256_t{excess_blob_gas},
+        BLOB_BASE_FEE_UPDATE_FRACTION);
+}
+
+uint64_t get_total_blob_gas(Transaction const &tx) noexcept
+{
+    constexpr uint64_t GAS_PER_BLOB{131072};
+    return GAS_PER_BLOB * tx.blob_versioned_hashes.size();
+}
 
 MONAD_NAMESPACE_END

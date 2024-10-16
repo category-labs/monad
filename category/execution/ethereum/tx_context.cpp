@@ -48,9 +48,10 @@ evmc_tx_context get_tx_context(
         .chain_id = to_bytes(to_big_endian(chain_id)),
         .block_base_fee =
             to_bytes(to_big_endian(hdr.base_fee_per_gas.value_or(0))),
-        .blob_base_fee{}, // TODO
-        .blob_hashes = nullptr, // TODO
-        .blob_hashes_count = 0, // TODO
+        .blob_base_fee = to_bytes(to_big_endian(
+            get_base_fee_per_blob_gas(hdr.excess_blob_gas.value_or(0)))),
+        .blob_hashes = tx.blob_versioned_hashes.data(),
+        .blob_hashes_count = tx.blob_versioned_hashes.size(),
         .initcodes = nullptr, // TODO
         .initcodes_count = 0, // TODO
     };

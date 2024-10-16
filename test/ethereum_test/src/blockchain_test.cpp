@@ -36,7 +36,7 @@
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
-#include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -44,6 +44,7 @@
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/mpt/nibbles_view.hpp>
+
 #include <monad/test/config.hpp>
 
 #include <evmc/evmc.h>
@@ -333,6 +334,10 @@ fiber::PriorityPool *BlockchainTest::pool_ = nullptr;
 void BlockchainTest::SetUpTestSuite()
 {
     pool_ = new fiber::PriorityPool{1, 1};
+    std::string const trusted_setup_file = test_resource::third_party_dir /
+                                           "c-kzg-4844" / "src" /
+                                           "trusted_setup.txt";
+    ASSERT_TRUE(monad::init_trusted_setup(trusted_setup_file));
 }
 
 void BlockchainTest::TearDownTestSuite()

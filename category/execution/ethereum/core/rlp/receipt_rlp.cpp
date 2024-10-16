@@ -75,7 +75,8 @@ byte_string encode_receipt(Receipt const &receipt)
         encode_list2(log_result));
 
     if (receipt.type == TransactionType::eip1559 ||
-        receipt.type == TransactionType::eip2930) {
+        receipt.type == TransactionType::eip2930 ||
+        receipt.type == TransactionType::eip4844) {
         return static_cast<unsigned char>(receipt.type) + receipt_bytes;
     }
     return receipt_bytes;

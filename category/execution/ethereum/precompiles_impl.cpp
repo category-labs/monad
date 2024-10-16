@@ -15,26 +15,77 @@
 
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
 
 #include <blst.h>
+#include <eip4844/eip4844.h>
 #include <evmc/evmc.h>
+#include <evmc/hex.hpp>
+#include <setup/settings.h>
+#include <setup/setup.h>
 #include <silkpre/precompile.h>
+#include <silkpre/sha256.h>
 
 #include <cstring>
 #include <intx/intx.hpp>
 
 namespace
 {
+    std::optional<KZGSettings> g_trustedSetup;
+
     constexpr size_t num_words(size_t const length)
     {
         constexpr size_t WORD_SIZE = 32;
         return (length + WORD_SIZE - 1) / WORD_SIZE;
     }
+
+    monad::bytes32_t kzg_to_version_hashed(KZGCommitment const &commitment)
+    {
+        constexpr uint8_t VERSION_HASH_VERSION_KZG = 1;
+        monad::bytes32_t h;
+        silkpre_sha256(
+            h.bytes,
+            commitment.bytes,
+            sizeof(KZGCommitment),
+            true /* use_cpu_extensions */);
+        h.bytes[0] = VERSION_HASH_VERSION_KZG;
+        return h;
+    }
+
+    struct bytes64_t
+    {
+        uint8_t bytes[64];
+    };
+
+    constexpr bytes64_t blob_precompile_return_value()
+    {
+        constexpr std::string_view v{
+            "0x0000000000000000000000000000000000000000000000000000000000001000"
+            "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001"};
+        constexpr auto r = evmc::from_hex<bytes64_t>(v);
+        static_assert(r.has_value());
+        return r.value();
+    }
 }
 
 MONAD_NAMESPACE_BEGIN
+
+bool init_trusted_setup(std::string const &file)
+{
+    if (!g_trustedSetup.has_value()) {
+        KZGSettings settings;
+        FILE *fp = fopen(file.c_str(), "r");
+        if (fp) {
+            if (load_trusted_setup_file(&settings, fp, 0) == C_KZG_OK) {
+                g_trustedSetup.emplace(settings);
+            }
+            fclose(fp);
+        }
+    }
+    return g_trustedSetup.has_value();
+}
 
 template <SilkpreRunFunction Func>
 static inline PrecompileResult silkpre_execute(byte_string_view const input)
@@ -105,7 +156,6 @@ uint64_t expmod_gas_cost(byte_string_view const input, evmc_revision const rev)
 
 uint64_t point_evaluation_gas_cost(byte_string_view, evmc_revision)
 {
-    // TODO: https://github.com/category-labs/monad/pull/968
     return 50'000;
 }
 
@@ -225,10 +275,45 @@ PrecompileResult blake2bf_execute(byte_string_view const input)
     return silkpre_execute<silkpre_blake2_f_run>(input);
 }
 
-PrecompileResult point_evaluation_execute(byte_string_view)
+PrecompileResult point_evaluation_execute(byte_string_view input)
 {
-    // TODO: https://github.com/category-labs/monad/pull/968
-    return PrecompileResult::failure();
+    if (input.size() != 192) {
+        return PrecompileResult::failure();
+    }
+
+    bytes32_t versioned_hash;
+    std::memcpy(versioned_hash.bytes, input.data(), sizeof(bytes32_t));
+
+    auto const *const z =
+        reinterpret_cast<Bytes32 const *>(input.substr(32).data());
+    auto const *const y =
+        reinterpret_cast<Bytes32 const *>(input.substr(64).data());
+    auto const *const commitment_data =
+        reinterpret_cast<KZGCommitment const *>(input.substr(96).data());
+    auto const *const proof =
+        reinterpret_cast<KZGProof const *>(input.substr(144).data());
+
+    KZGCommitment commitment{*commitment_data};
+    if (versioned_hash != kzg_to_version_hashed(commitment)) {
+        return PrecompileResult::failure();
+    }
+
+    bool ok{false};
+    verify_kzg_proof(&ok, &commitment, z, y, proof, &g_trustedSetup.value());
+    if (!ok) {
+        return PrecompileResult::failure();
+    }
+
+    auto *const output = static_cast<uint8_t *>(std::malloc(sizeof(bytes64_t)));
+    MONAD_ASSERT(output != nullptr);
+    std::memcpy(
+        output, blob_precompile_return_value().bytes, sizeof(bytes64_t));
+
+    return {
+        .status_code = EVMC_SUCCESS,
+        .obuf = output,
+        .output_size = sizeof(bytes64_t),
+    };
 }
 
 PrecompileResult bls12_g1_add_execute(byte_string_view const input)

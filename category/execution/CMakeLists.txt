@@ -212,6 +212,7 @@ target_link_libraries(
   PRIVATE blst::blst
   PRIVATE Boost::fiber
   PRIVATE Boost::json
+  PUBLIC c-kzg-4844
   PRIVATE PkgConfig::brotli
   PUBLIC ethash::keccak
   PUBLIC evmc

@@ -13,10 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/execution/ethereum/explicit_evmc_revision.hpp>
-#include <category/execution/ethereum/switch_evmc_revision.hpp>
-#include <category/execution/ethereum/validate_block.hpp>
-
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
@@ -26,6 +22,10 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/explicit_evmc_revision.hpp>
+#include <category/execution/ethereum/switch_evmc_revision.hpp>
+#include <category/execution/ethereum/transaction_gas.hpp>
+#include <category/execution/ethereum/validate_block.hpp>
 
 #include <evmc/evmc.h>
 
@@ -190,6 +190,28 @@ constexpr Result<void> static_validate_ommers(Block const &block)
 }
 
 template <evmc_revision rev>
+constexpr Result<void> static_validate_4844(Block const &block)
+{
+    if constexpr (rev >= EVMC_CANCUN) {
+        uint64_t blob_gas_used = 0;
+        for (auto const &tx : block.transactions) {
+            if (tx.type == TransactionType::eip4844) {
+                blob_gas_used += get_total_blob_gas(tx);
+            }
+        }
+        constexpr uint64_t MAX_BLOB_GAS_PER_BLOCK = 786432;
+        if (MONAD_UNLIKELY(blob_gas_used > MAX_BLOB_GAS_PER_BLOCK)) {
+            return BlockError::GasAboveLimit;
+        }
+        if (MONAD_UNLIKELY(
+                block.header.blob_gas_used.value() != blob_gas_used)) {
+            return BlockError::InvalidGasUsed;
+        }
+    }
+    return success();
+}
+
+template <evmc_revision rev>
 constexpr Result<void> static_validate_body(Block const &block)
 {
     // EIP-4895
@@ -205,6 +227,7 @@ constexpr Result<void> static_validate_body(Block const &block)
     }
 
     BOOST_OUTCOME_TRY(static_validate_ommers<rev>(block));
+    BOOST_OUTCOME_TRY(static_validate_4844<rev>(block));
 
     return success();
 }

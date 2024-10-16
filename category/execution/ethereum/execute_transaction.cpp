@@ -47,16 +47,22 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 template <evmc_revision rev>
 constexpr void irrevocable_change(
     State &state, Transaction const &tx, Address const &sender,
-    uint256_t const &base_fee_per_gas)
+    uint256_t const &base_fee_per_gas, uint64_t const excess_blob_gas)
 {
     if (tx.to) { // EVM will increment if new contract
         auto const nonce = state.get_nonce(sender);
         state.set_nonce(sender, nonce + 1);
     }
 
+    uint256_t blob_gas = 0;
+    if constexpr (rev >= EVMC_CANCUN) {
+        blob_gas = (tx.type == TransactionType::eip4844)
+                       ? calc_blob_fee(tx, excess_blob_gas)
+                       : 0;
+    }
     auto const upfront_cost =
         tx.gas_limit * gas_price<rev>(tx, base_fee_per_gas);
-    state.subtract_from_balance(sender, upfront_cost);
+    state.subtract_from_balance(sender, upfront_cost + blob_gas);
 }
 
 // YP Eqn 72 - template version for each revision
@@ -120,7 +126,11 @@ evmc::Result ExecuteTransactionNoValidation<rev>::operator()(
     State &state, EvmcHost<rev> &host)
 {
     irrevocable_change<rev>(
-        state, tx_, sender_, header_.base_fee_per_gas.value_or(0));
+        state,
+        tx_,
+        sender_,
+        header_.base_fee_per_gas.value_or(0),
+        header_.excess_blob_gas.value_or(0));
 
     // EIP-3651
     if constexpr (rev >= EVMC_SHANGHAI) {
@@ -259,6 +269,7 @@ Result<ExecutionResult> ExecuteTransaction<rev>::operator()()
     BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
         tx_,
         header_.base_fee_per_gas,
+        header_.excess_blob_gas,
         chain_.get_chain_id(),
         chain_.get_max_code_size(header_.number, header_.timestamp)));
 

@@ -25,6 +25,7 @@
 MONAD_NAMESPACE_BEGIN
 
 struct Transaction;
+struct BlockHeader;
 
 template <evmc_revision rev>
 uint64_t g_data(Transaction const &) noexcept;
@@ -48,5 +49,9 @@ max_gas_cost(uint64_t const gas_limit, uint256_t max_fee_per_gas) noexcept
 {
     return intx::umul(uint256_t{gas_limit}, max_fee_per_gas);
 }
+
+uint256_t calc_blob_fee(Transaction const &, uint64_t) noexcept;
+uint256_t get_base_fee_per_blob_gas(uint64_t) noexcept;
+uint64_t get_total_blob_gas(Transaction const &) noexcept;
 
 MONAD_NAMESPACE_END

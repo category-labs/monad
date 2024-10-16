@@ -78,15 +78,27 @@ byte_string encode_eip2718_base(Transaction const &txn)
 
     encoding += encode_unsigned(txn.sc.chain_id.value_or(0));
     encoding += encode_unsigned(txn.nonce);
-    if (txn.type == TransactionType::eip1559) {
+
+    if (txn.type == TransactionType::eip1559 ||
+        txn.type == TransactionType::eip4844) {
         encoding += encode_unsigned(txn.max_priority_fee_per_gas);
     }
+
     encoding += encode_unsigned(txn.max_fee_per_gas);
     encoding += encode_unsigned(txn.gas_limit);
     encoding += encode_address(txn.to);
     encoding += encode_unsigned(txn.value);
     encoding += encode_string2(txn.data);
     encoding += encode_access_list(txn.access_list);
+
+    if (txn.type == TransactionType::eip4844) {
+        encoding += encode_unsigned(txn.max_fee_per_blob_gas);
+        byte_string blob_versioned_hashes;
+        for (auto const &hash : txn.blob_versioned_hashes) {
+            blob_versioned_hashes += encode_bytes32(hash);
+        }
+        encoding += encode_list2(blob_versioned_hashes);
+    }
 
     return encoding;
 }
@@ -228,7 +240,8 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
     BOOST_OUTCOME_TRY(*txn.sc.chain_id, decode_unsigned<uint256_t>(payload));
     BOOST_OUTCOME_TRY(txn.nonce, decode_unsigned<uint64_t>(payload));
 
-    if (txn.type == TransactionType::eip1559) {
+    if (txn.type == TransactionType::eip1559 ||
+        txn.type == TransactionType::eip4844) {
         BOOST_OUTCOME_TRY(
             txn.max_priority_fee_per_gas, decode_unsigned<uint256_t>(payload));
     }
@@ -239,6 +252,20 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
     BOOST_OUTCOME_TRY(txn.value, decode_unsigned<uint256_t>(payload));
     BOOST_OUTCOME_TRY(txn.data, decode_string(payload));
     BOOST_OUTCOME_TRY(txn.access_list, decode_access_list(payload));
+
+    if (txn.type == TransactionType::eip4844) {
+        if (!txn.to.has_value()) {
+            return DecodeError::InputTooShort;
+        }
+        BOOST_OUTCOME_TRY(
+            txn.max_fee_per_blob_gas, decode_unsigned<uint256_t>(payload));
+        BOOST_OUTCOME_TRY(auto hashes_payload, parse_list_metadata(payload));
+        while (hashes_payload.size() >= sizeof(bytes32_t)) {
+            BOOST_OUTCOME_TRY(auto const hash, decode_bytes32(hashes_payload));
+            txn.blob_versioned_hashes.emplace_back(std::move(hash));
+        }
+    }
+
     BOOST_OUTCOME_TRY(txn.sc.y_parity, decode_unsigned<uint8_t>(payload));
     BOOST_OUTCOME_TRY(txn.sc.r, decode_unsigned<uint256_t>(payload));
     BOOST_OUTCOME_TRY(txn.sc.s, decode_unsigned<uint256_t>(payload));

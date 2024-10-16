@@ -53,7 +53,8 @@ using BOOST_OUTCOME_V2_NAMESPACE::success;
 template <evmc_revision rev>
 Result<void> static_validate_transaction(
     Transaction const &tx, std::optional<uint256_t> const &base_fee_per_gas,
-    uint256_t const &chain_id, size_t const max_code_size)
+    std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id,
+    size_t const max_code_size)
 {
     // EIP-155
     if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {
@@ -79,10 +80,19 @@ Result<void> static_validate_transaction(
             return TransactionError::TypeNotSupported;
         }
     }
+    else if constexpr (rev < EVMC_CANCUN) {
+        if (MONAD_UNLIKELY(
+                tx.type != TransactionType::legacy &&
+                tx.type != TransactionType::eip2930 &&
+                tx.type != TransactionType::eip1559)) {
+            return TransactionError::TypeNotSupported;
+        }
+    }
     else if (MONAD_UNLIKELY(
                  tx.type != TransactionType::legacy &&
                  tx.type != TransactionType::eip2930 &&
-                 tx.type != TransactionType::eip1559)) {
+                 tx.type != TransactionType::eip1559 &&
+                 tx.type != TransactionType::eip4844)) {
         return TransactionError::TypeNotSupported;
     }
 
@@ -134,6 +144,27 @@ Result<void> static_validate_transaction(
         return TransactionError::InvalidSignature;
     }
 
+    if constexpr (rev >= EVMC_CANCUN) {
+        if (tx.type == TransactionType::eip4844) {
+            if (MONAD_UNLIKELY(tx.blob_versioned_hashes.empty())) {
+                return TransactionError::InvalidBlobHash;
+            }
+
+            constexpr uint8_t VERSIONED_HASH_VERSION_KZG = 0x01;
+            for (auto const &h : tx.blob_versioned_hashes) {
+                if (MONAD_UNLIKELY(h.bytes[0] != VERSIONED_HASH_VERSION_KZG)) {
+                    return TransactionError::InvalidBlobHash;
+                }
+            }
+
+            if (MONAD_UNLIKELY(
+                    tx.max_fee_per_blob_gas <
+                    get_base_fee_per_blob_gas(excess_blob_gas.value()))) {
+                return TransactionError::GasLimitOverflow;
+            }
+        }
+    }
+
     return success();
 }
 
@@ -143,8 +174,10 @@ Result<void> validate_transaction(
     Transaction const &tx, std::optional<Account> const &sender_account)
 {
     // YP (70)
-    uint512_t const v0 =
-        tx.value + max_gas_cost(tx.gas_limit, tx.max_fee_per_gas);
+    uint512_t v0 = tx.value + max_gas_cost(tx.gas_limit, tx.max_fee_per_gas);
+    if (tx.type == TransactionType::eip4844) {
+        v0 += tx.max_fee_per_blob_gas * get_total_blob_gas(tx);
+    }
 
     if (MONAD_UNLIKELY(!sender_account.has_value())) {
         // YP (71)
@@ -210,7 +243,8 @@ quick_status_code_from_enum<monad::TransactionError>::value_mappings()
         {TransactionError::WrongChainId, "wrong chain id", {}},
         {TransactionError::MissingSender, "missing sender", {}},
         {TransactionError::GasLimitOverflow, "gas limit overflow", {}},
-        {TransactionError::InvalidSignature, "invalid signature", {}}};
+        {TransactionError::InvalidSignature, "invalid signature", {}},
+        {TransactionError::InvalidBlobHash, "invalid blob hash", {}}};
 
     return v;
 }

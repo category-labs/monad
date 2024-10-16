@@ -113,6 +113,7 @@ namespace
         BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
             enriched_txn,
             header.base_fee_per_gas,
+            header.excess_blob_gas,
             chain.get_chain_id(),
             max_code_size));
 

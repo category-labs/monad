@@ -61,6 +61,8 @@ include(cmake/test.cmake)
 # deps
 # ##############################################################################
 
+set(THIRD_PARTY_DIR "${PROJECT_SOURCE_DIR}/third_party")
+
 function(monad_compile_options target)
   set_property(TARGET ${target} PROPERTY C_STANDARD 23)
   set_property(TARGET ${target} PROPERTY C_STANDARD_REQUIRED ON)
@@ -112,6 +114,9 @@ add_subdirectory(third_party/BLAKE3/c)
 # blst
 set(DOWNLOAD_BLST OFF)
 include(cmake/blst.cmake)
+
+# c-kzg-4844
+add_subdirectory("third_party/c-kzg-4844-builder")
 
 # cli11
 find_package(CLI11 REQUIRED)

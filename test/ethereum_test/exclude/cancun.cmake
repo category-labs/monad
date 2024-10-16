@@ -1,25 +1,41 @@
 set(cancun_excluded_tests
-    # Proto danksharking (unimplemented)
-    "BlockchainTests.GeneralStateTests/Cancun/stEIP4844_blobtransactions/*"
-    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/*"
-    "BlockchainTests.cancun/eip4844_blobs/*"
-    # new precompile (unimplemented)
-    "BlockchainTests.GeneralStateTests/Pyspecs/shanghai/eip4895_withdrawals/withdrawing_to_precompiles.json"
-    "BlockchainTests.shanghai/eip4895_withdrawals/withdrawals/withdrawing_to_precompiles.json"
-    # test includes new tx type (unimplemented)
-    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4788_beacon_root/tx_to_beacon_root_contract.json"
-    "BlockchainTests.cancun/eip4788_beacon_root/beacon_root_contract/tx_to_beacon_root_contract.json"
-    # MCOPY (unimplemented)
-    "BlockchainTests.GeneralStateTests/Cancun/stEIP5656-MCOPY/*"
+    # EIP-4844 block validation: Need access to parent header
+    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_excess_blob_gas_above_target_change.json"
+    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_excess_blob_gas_change.json"
+    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/fork_transition_excess_blob_gas.json"
+    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_excess_blob_gas_target_blobs_increase_from_zero.json"
+    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_non_multiple_excess_blob_gas.json"
+    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_zero_excess_blob_gas_in_header.json"
+    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/correct_excess_blob_gas_calculation.json"
+    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_excess_blob_gas_above_target_change.json"
+    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_static_excess_blob_gas_from_zero_on_blobs_above_target.json"
+    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_static_excess_blob_gas.json"
+    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_negative_excess_blob_gas.json"
+    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_excess_blob_gas_change.json"
+    "BlockchainTests.cancun/eip4844_blobs/excess_blob_gas/invalid_static_excess_blob_gas.json"
+    "BlockchainTests.cancun/eip4844_blobs/excess_blob_gas/invalid_non_multiple_excess_blob_gas.json"
+    "BlockchainTests.cancun/eip4844_blobs/excess_blob_gas/invalid_static_excess_blob_gas_from_zero_on_blobs_above_target.json"
+    "BlockchainTests.cancun/eip4844_blobs/excess_blob_gas/invalid_excess_blob_gas_above_target_change.json"
+    "BlockchainTests.cancun/eip4844_blobs/excess_blob_gas/invalid_excess_blob_gas_change.json"
+    "BlockchainTests.cancun/eip4844_blobs/excess_blob_gas/invalid_excess_blob_gas_target_blobs_increase_from_zero.json"
+    "BlockchainTests.cancun/eip4844_blobs/excess_blob_gas/invalid_negative_excess_blob_gas.json"
+    "BlockchainTests.cancun/eip4844_blobs/excess_blob_gas/invalid_zero_excess_blob_gas_in_header.json"
+
+    # withdrawals root
     "BlockchainTests.InvalidBlocks/bc4895_withdrawals/incorrectWithdrawalsRoot.json"
-    "BlockchainTests.GeneralStateTests/stBadOpcode/*"
-    "BlockchainTests.GeneralStateTests/stBugs/*"
-    "BlockchainTests.GeneralStateTests/stCallCodes/*"
-    "BlockchainTests.GeneralStateTests/stCallCreateCallCodeTest/*"
-    "BlockchainTests.GeneralStateTests/stCallDelegateCodesCallCodeHomestead/*"
-    "BlockchainTests.GeneralStateTests/stCallDelegateCodesHomestead/*"
-    "BlockchainTests.GeneralStateTests/stCreate2/*"
-    "BlockchainTests.GeneralStateTests/stCreateTest/*"
+
+    # EIP-1559
+    "BlockchainTests.InvalidBlocks/bcEIP1559/badBlocks.json"
+    "BlockchainTests.InvalidBlocks/bcEIP1559/badUncles.json"
+    "BlockchainTests.InvalidBlocks/bcEIP1559/baseFee.json"
+    "BlockchainTests.InvalidBlocks/bcEIP1559/checkGasLimit.json"
+    "BlockchainTests.InvalidBlocks/bcEIP1559/feeCap.json"
+    "BlockchainTests.InvalidBlocks/bcEIP1559/gasLimit20m.json"
+    "BlockchainTests.InvalidBlocks/bcEIP1559/gasLimit40m.json"
+    "BlockchainTests.InvalidBlocks/bcEIP1559/intrinsicOrFail.json"
+    "BlockchainTests.InvalidBlocks/bcEIP1559/transFail.json"
+    "BlockchainTests.InvalidBlocks/bcEIP1559/valCausesOOF.json"
+
     # Stricter validation
     "BlockchainTests.InvalidBlocks/bc4895_withdrawals/accountInteractions.json"
     "BlockchainTests.InvalidBlocks/bcEIP1559/badBlocks.json"
@@ -50,24 +66,20 @@ set(cancun_excluded_tests
     "BlockchainTests.InvalidBlocks/bcStateTests/callcodeOutput2.json"
     "BlockchainTests.InvalidBlocks/bcStateTests/createNameRegistratorPerTxsNotEnoughGasAt.json"
     "BlockchainTests.InvalidBlocks/bcStateTests/dataTx.json"
-    "BlockchainTests.ValidBlocks/bcEIP4844_blobtransactions/blockWithAllTransactionTypes.json"
-    "BlockchainTests.ValidBlocks/bcRandomBlockhashTest/randomStatetest193BC.json"
-    "BlockchainTests.ValidBlocks/bcRandomBlockhashTest/randomStatetest344BC.json"
-    "BlockchainTests.ValidBlocks/bcStateTests/OOGStateCopyContainingDeletedContract.json"
-    "BlockchainTests.ValidBlocks/bcStateTests/testOpcode_50.json"
-    "BlockchainTests.ValidBlocks/bcStateTests/testOpcode_f0.json"
-    "BlockchainTests.ValidBlocks/bcValidBlockTest/reentrencySuicide.json"
+
+    # Slow + stack-heavy tests
+    "BlockchainTests.GeneralStateTests/stBadOpcode/*"
+    "BlockchainTests.GeneralStateTests/stBugs/*"
+    "BlockchainTests.GeneralStateTests/stCallCodes/*"
+    "BlockchainTests.GeneralStateTests/stCallCreateCallCodeTest/*"
+    "BlockchainTests.GeneralStateTests/stCallDelegateCodesCallCodeHomestead/*"
+    "BlockchainTests.GeneralStateTests/stCallDelegateCodesHomestead/*"
+    "BlockchainTests.GeneralStateTests/stCreate2/*"
+    "BlockchainTests.GeneralStateTests/stCreateTest/*"
+
     # misc
-    "BlockchainTests.GeneralStateTests/stEIP1559/baseFeeDiffPlaces.json"
-    "BlockchainTests.GeneralStateTests/stEIP1559/gasPriceDiffPlaces.json"
-    "BlockchainTests.GeneralStateTests/stEIP2930/variedContext.json"
+    "BlockchainTests.GeneralStateTests/stCreate2/RevertInCreateInInitCreate2Paris.json"
+    "BlockchainTests.GeneralStateTests/stCreate2/create2collisionStorageParis.json"
     "BlockchainTests.GeneralStateTests/stExtCodeHash/dynamicAccountOverwriteEmpty_Paris.json"
-    "BlockchainTests.GeneralStateTests/stPreCompiledContracts/idPrecomps.json"
-    "BlockchainTests.GeneralStateTests/stPreCompiledContracts/precompsEIP2929Cancun.json"
     "BlockchainTests.GeneralStateTests/stRevertTest/RevertInCreateInInit_Paris.json"
-    "BlockchainTests.GeneralStateTests/stRevertTest/TouchToEmptyAccountRevert3_Paris.json"
-    "BlockchainTests.GeneralStateTests/stSelfBalance/diffPlaces.json"
-    "BlockchainTests.GeneralStateTests/stSpecialTest/failed_tx_xcf416c53_Paris.json"
-    "BlockchainTests.GeneralStateTests/stSStoreTest/InitCollisionParis.json"
-    "BlockchainTests.frontier/precompiles/precompiles/precompiles.json"
-    "BlockchainTests.frontier/scenarios/scenarios/scenarios.json")
+    "BlockchainTests.GeneralStateTests/stSStoreTest/InitCollisionParis.json")

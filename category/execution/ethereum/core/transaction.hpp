@@ -35,6 +35,7 @@ enum class TransactionType : char
     legacy = 0,
     eip2930,
     eip1559,
+    eip4844,
     LAST,
 };
 
@@ -66,11 +67,13 @@ struct Transaction
     byte_string data{};
     AccessList access_list{};
     uint256_t max_priority_fee_per_gas{};
+    uint256_t max_fee_per_blob_gas{};
+    std::vector<bytes32_t> blob_versioned_hashes{};
 
     friend bool operator==(Transaction const &, Transaction const &) = default;
 };
 
-static_assert(sizeof(Transaction) == 304);
+static_assert(sizeof(Transaction) == 360);
 static_assert(alignof(Transaction) == 8);
 
 std::optional<Address> recover_sender(Transaction const &);

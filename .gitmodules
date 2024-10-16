@@ -41,6 +41,9 @@
 [submodule "third_party/BLAKE3"]
 	path = third_party/BLAKE3
 	url = https://github.com/BLAKE3-team/BLAKE3.git
+[submodule "third_party/c-kzg-4844"]
+	path = third_party/c-kzg-4844
+	url = https://github.com/ethereum/c-kzg-4844.git
 [submodule "libs/vm/third_party/asmjit"]
 	path = third_party/asmjit
 	url = git@github.com:asmjit/asmjit.git

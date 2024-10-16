@@ -1,3 +1,4 @@
+#include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/core/block.hpp>
 #include <monad/db/block_db.hpp>
 
@@ -13,7 +14,8 @@ using namespace monad;
 TEST(BlockDb, ReadNonExistingBlock)
 {
     Block block;
-    BlockDb const block_db(test_resource::correct_block_data_dir);
+    EthereumMainnet const chain;
+    BlockDb const block_db{test_resource::correct_block_data_dir, chain};
     // NO_BLOCK_FOUND
     EXPECT_FALSE(block_db.get(3u, block));
 }
@@ -21,7 +23,8 @@ TEST(BlockDb, ReadNonExistingBlock)
 TEST(BlockDb, ReadNonDecompressableBlock)
 {
     Block block;
-    BlockDb const block_db(test_resource::bad_decompress_block_data_dir);
+    EthereumMainnet const chain;
+    BlockDb const block_db{test_resource::bad_decompress_block_data_dir, chain};
     // DECOMPRESS_ERROR
     EXPECT_EXIT(
         block_db.get(46'402u, block), testing::KilledBySignal(SIGABRT), "");
@@ -30,7 +33,8 @@ TEST(BlockDb, ReadNonDecompressableBlock)
 TEST(BlockDb, ReadNonDecodeableBlock)
 {
     Block block;
-    BlockDb const block_db(test_resource::bad_decode_block_data_dir);
+    EthereumMainnet const chain;
+    BlockDb const block_db{test_resource::bad_decode_block_data_dir, chain};
     // DECODE_ERROR
     EXPECT_EXIT(
         block_db.get(46'402u, block), testing::KilledBySignal(SIGABRT), "");
@@ -42,11 +46,13 @@ TEST(BlockDb, CompressDecompressBlock46402)
 
     // Read
     Block block;
-    BlockDb const block_db_read(test_resource::correct_block_data_dir);
+    EthereumMainnet const chain;
+    BlockDb const block_db_read{test_resource::correct_block_data_dir, chain};
     EXPECT_TRUE(block_db_read.get(block_number, block));
 
     // Compress
-    BlockDb const block_db(test_resource::self_compressed_block_data_dir);
+    BlockDb const block_db{
+        test_resource::self_compressed_block_data_dir, chain};
     block_db.remove(block_number);
     block_db.upsert(block_number, block);
     Block self_decoded_block;
@@ -63,11 +69,13 @@ TEST(BlockDb, CompressDecompressBlock2730000)
 
     // Read
     Block block;
-    BlockDb const block_db_read(test_resource::correct_block_data_dir);
+    EthereumMainnet const chain;
+    BlockDb const block_db_read{test_resource::correct_block_data_dir, chain};
     EXPECT_TRUE(block_db_read.get(block_number, block));
 
     // Compress
-    BlockDb const block_db(test_resource::self_compressed_block_data_dir);
+    BlockDb const block_db{
+        test_resource::self_compressed_block_data_dir, chain};
     block_db.remove(block_number);
     block_db.upsert(block_number, block);
     Block self_decoded_block;
@@ -84,11 +92,13 @@ TEST(BlockDb, CompressDecompressBlock2730001)
 
     // Read
     Block block;
-    BlockDb const block_db_read(test_resource::correct_block_data_dir);
+    EthereumMainnet const chain;
+    BlockDb const block_db_read{test_resource::correct_block_data_dir, chain};
     EXPECT_TRUE(block_db_read.get(block_number, block));
 
     // Compress
-    BlockDb const block_db(test_resource::self_compressed_block_data_dir);
+    BlockDb const block_db{
+        test_resource::self_compressed_block_data_dir, chain};
     block_db.remove(block_number);
     block_db.upsert(block_number, block);
     Block self_decoded_block;
@@ -105,11 +115,13 @@ TEST(BlockDb, CompressDecompressBlock2730002)
 
     // Read
     Block block;
-    BlockDb const block_db_read(test_resource::correct_block_data_dir);
+    EthereumMainnet const chain;
+    BlockDb const block_db_read{test_resource::correct_block_data_dir, chain};
     EXPECT_TRUE(block_db_read.get(block_number, block));
 
     // Compress
-    BlockDb const block_db(test_resource::self_compressed_block_data_dir);
+    BlockDb const block_db{
+        test_resource::self_compressed_block_data_dir, chain};
     block_db.remove(block_number);
     block_db.upsert(block_number, block);
     Block self_decoded_block;
@@ -126,11 +138,13 @@ TEST(BlockDb, CompressDecompressBlock2730009)
 
     // Read
     Block block;
-    BlockDb const block_db_read(test_resource::correct_block_data_dir);
+    EthereumMainnet const chain;
+    BlockDb const block_db_read{test_resource::correct_block_data_dir, chain};
     EXPECT_TRUE(block_db_read.get(block_number, block));
 
     // Compress
-    BlockDb const block_db(test_resource::self_compressed_block_data_dir);
+    BlockDb const block_db{
+        test_resource::self_compressed_block_data_dir, chain};
     block_db.remove(block_number);
     block_db.upsert(block_number, block);
     Block self_decoded_block;
@@ -147,11 +161,13 @@ TEST(BlockDb, CompressDecompress14000000)
 
     // Read
     Block block;
-    BlockDb const block_db_read(test_resource::correct_block_data_dir);
+    EthereumMainnet const chain;
+    BlockDb const block_db_read{test_resource::correct_block_data_dir, chain};
     EXPECT_TRUE(block_db_read.get(block_number, block));
 
     // Compress
-    BlockDb const block_db(test_resource::self_compressed_block_data_dir);
+    BlockDb const block_db{
+        test_resource::self_compressed_block_data_dir, chain};
     block_db.remove(block_number);
     block_db.upsert(block_number, block);
     Block self_decoded_block;
@@ -166,6 +182,7 @@ TEST(BlockDb, DecompressBlock2397315)
 {
     uint64_t const block_number = 2'397'315;
     Block block;
-    BlockDb const block_db_read(test_resource::correct_block_data_dir);
+    EthereumMainnet const chain;
+    BlockDb const block_db_read{test_resource::correct_block_data_dir, chain};
     EXPECT_TRUE(block_db_read.get(block_number, block));
 }

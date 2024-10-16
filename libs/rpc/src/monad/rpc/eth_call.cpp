@@ -37,7 +37,8 @@ namespace
     {
         constexpr evmc_revision rev = EVMC_SHANGHAI; // TODO
         MonadDevnet chain;
-        MONAD_ASSERT(rev == chain.get_revision(header));
+        MONAD_ASSERT(
+            rev == chain.get_revision(header.number, header.timestamp));
 
         Transaction enriched_txn{txn};
 
@@ -242,6 +243,7 @@ monad_evmc_result eth_call(
     std::string const &triedb_path, std::string const &blockdb_path,
     monad_state_override_set const &state_overrides)
 {
+    MonadDevnet const chain;
     byte_string_view rlp_txn_view(rlp_txn.begin(), rlp_txn.end());
     auto const txn_result = rlp::decode_transaction(rlp_txn_view);
     MONAD_ASSERT(!txn_result.has_error());
@@ -249,7 +251,8 @@ monad_evmc_result eth_call(
     auto const txn = txn_result.value();
 
     byte_string_view rlp_header_view(rlp_header.begin(), rlp_header.end());
-    auto const block_header_result = rlp::decode_block_header(rlp_header_view);
+    auto const block_header_result =
+        rlp::decode_block_header(chain, rlp_header_view);
     MONAD_ASSERT(rlp_header_view.empty());
     MONAD_ASSERT(!block_header_result.has_error());
     auto const block_header = block_header_result.value();
@@ -272,7 +275,7 @@ monad_evmc_result eth_call(
         buf << istream.rdbuf();
         auto view = byte_string_view{
             (unsigned char *)buf.view().data(), buf.view().size()};
-        auto const block_result = rlp::decode_block(view);
+        auto const block_result = rlp::decode_block(chain, view);
         MONAD_ASSERT(block_result.has_value());
         MONAD_ASSERT(view.empty());
         auto const &block = block_result.assume_value();

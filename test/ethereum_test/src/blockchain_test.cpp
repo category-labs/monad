@@ -2,7 +2,7 @@
 #include <ethereum_test.hpp>
 #include <from_json.hpp>
 
-#include <monad/chain/ethereum_mainnet.hpp>
+#include <monad/chain/ethereum_test_chain.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
@@ -59,7 +59,7 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
     BOOST_OUTCOME_TRY(static_validate_block<rev>(block));
 
     BlockState block_state(db);
-    EthereumMainnet const chain;
+    EthereumTestChain const chain(rev);
     BOOST_OUTCOME_TRY(
         auto const receipts,
         execute_block<rev>(
@@ -180,7 +180,8 @@ void BlockchainTest::TestBody()
 
             auto const block_rlp = j_block.at("rlp").get<byte_string>();
             byte_string_view block_rlp_view{block_rlp};
-            auto block = rlp::decode_block(block_rlp_view);
+            EthereumTestChain const chain(rev);
+            auto block = rlp::decode_block(chain, block_rlp_view);
             if (block.has_error() || !block_rlp_view.empty()) {
                 EXPECT_TRUE(j_block.contains("expectException")) << name;
                 continue;

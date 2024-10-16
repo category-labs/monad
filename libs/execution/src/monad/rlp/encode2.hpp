@@ -9,7 +9,8 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
-inline byte_string const EMPTY_STRING = {0x80};
+constexpr byte_string EMPTY_STRING = {0x80};
+constexpr byte_string EMPTY_LIST = {0xc0};
 
 inline byte_string_view zeroless_view(byte_string_view const string_view)
 {

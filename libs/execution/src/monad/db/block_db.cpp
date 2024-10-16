@@ -18,8 +18,9 @@
 
 MONAD_NAMESPACE_BEGIN
 
-BlockDb::BlockDb(std::filesystem::path const &dir)
+BlockDb::BlockDb(std::filesystem::path const &dir, Chain const &chain)
     : db_{dir.c_str()}
+    , chain_{chain}
 {
 }
 
@@ -45,7 +46,7 @@ bool BlockDb::get(uint64_t const num, Block &block) const
     MONAD_ASSERT(brotli_result == BROTLI_DECODER_RESULT_SUCCESS);
     byte_string_view view2{brotli_buffer};
 
-    auto const decoded_block = rlp::decode_block(view2);
+    auto const decoded_block = rlp::decode_block(chain_, view2);
     MONAD_ASSERT(!decoded_block.has_error());
     MONAD_ASSERT(view2.size() == 0);
     block = decoded_block.value();
@@ -55,7 +56,9 @@ bool BlockDb::get(uint64_t const num, Block &block) const
 void BlockDb::upsert(uint64_t const num, Block const &block) const
 {
     auto const key = std::to_string(num);
-    auto const encoded_block = rlp::encode_block(block);
+    auto const encoded_block = rlp::encode_block(
+        chain_.get_revision(block.header.number, block.header.timestamp),
+        block);
     size_t brotli_size = BrotliEncoderMaxCompressedSize(encoded_block.size());
     MONAD_ASSERT(brotli_size);
     byte_string brotli_buffer;

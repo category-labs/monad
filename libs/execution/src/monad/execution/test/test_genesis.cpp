@@ -1,3 +1,4 @@
+#include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/db/block_db.hpp>
@@ -65,9 +66,10 @@ TEST(Genesis, ethereum_mainnet_genesis_state_root)
 
 TEST(Genesis, read_and_verify_genesis_block)
 {
+    EthereumMainnet const chain;
     auto const genesis_file_path =
         test_resource::ethereum_genesis_dir / "mainnet.json";
-    BlockDb block_db(test_resource::correct_block_data_dir);
+    BlockDb block_db{test_resource::correct_block_data_dir, chain};
     InMemoryMachine machine;
     mpt::Db db{machine};
     TrieDb state_db{db};

@@ -17,7 +17,7 @@ struct EthereumMainnet : Chain
 {
     virtual uint256_t get_chain_id() const override;
 
-    virtual evmc_revision get_revision(BlockHeader const &) const override;
+    virtual evmc_revision get_revision(uint64_t, uint64_t) const override;
 
     virtual Result<void>
     static_validate_header(BlockHeader const &) const override;

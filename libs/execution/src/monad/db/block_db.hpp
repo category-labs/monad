@@ -1,5 +1,6 @@
 #pragma once
 
+#include <monad/chain/chain.hpp>
 #include <monad/config.hpp>
 #include <monad/db/file_db.hpp>
 
@@ -13,12 +14,13 @@ struct Block;
 class BlockDb
 {
     FileDb db_;
+    Chain const &chain_;
 
 public:
     BlockDb() = delete;
     BlockDb(Block const &) = delete;
     BlockDb(BlockDb &&) = default;
-    explicit BlockDb(std::filesystem::path const &);
+    explicit BlockDb(std::filesystem::path const &, Chain const &);
     ~BlockDb() = default;
 
     bool get(uint64_t, Block &) const;

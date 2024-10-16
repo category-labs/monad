@@ -124,19 +124,20 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
             ? std::numeric_limits<uint64_t>::max()
             : block_num + nblocks - 1;
     while (block_num <= end_block_num && stop == 0) {
-        auto block = try_get(block_num);
-        if (!block.has_value()) {
+        auto opt_block = try_get(block_num);
+        if (!opt_block.has_value()) {
             std::this_thread::sleep_for(SLEEP_TIME);
             continue;
         }
+        auto &block = opt_block.value();
 
-        block_hash_buffer.set(block_num - 1, block.value().header.parent_hash);
+        block_hash_buffer.set(block_num - 1, block.header.parent_hash);
 
-        BOOST_OUTCOME_TRY(chain.static_validate_header(block.value().header));
+        BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
 
-        evmc_revision const rev = chain.get_revision(block.value().header);
+        evmc_revision const rev = chain.get_revision(block.header);
 
-        BOOST_OUTCOME_TRY(static_validate_block(rev, block.value()));
+        BOOST_OUTCOME_TRY(static_validate_block(rev, block));
 
         BlockState block_state(db);
         BOOST_OUTCOME_TRY(
@@ -144,23 +145,19 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
             execute_block(
                 chain,
                 rev,
-                block.value(),
+                block,
                 block_state,
                 block_hash_buffer,
                 priority_pool));
 
-        BOOST_OUTCOME_TRY(
-            chain.validate_header(receipts, block.value().header));
+        BOOST_OUTCOME_TRY(chain.validate_header(receipts, block.header));
         block_state.log_debug();
         block_state.commit(
-            block.value().header,
-            receipts,
-            block.value().transactions,
-            block.value().withdrawals);
+            block.header, receipts, block.transactions, block.withdrawals);
 
         if (!chain.validate_root(
                 rev,
-                block.value().header,
+                block.header,
                 db.state_root(),
                 db.receipts_root(),
                 db.transactions_root(),
@@ -168,10 +165,10 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
             return BlockError::WrongMerkleRoot;
         }
 
-        ntxs += block.value().transactions.size();
-        batch_num_txs += block.value().transactions.size();
-        total_gas += block.value().header.gas_used;
-        batch_gas += block.value().header.gas_used;
+        ntxs += block.transactions.size();
+        batch_num_txs += block.transactions.size();
+        total_gas += block.header.gas_used;
+        batch_gas += block.header.gas_used;
         ++batch_num_blocks;
 
         if (block_num % batch_size == 0) {

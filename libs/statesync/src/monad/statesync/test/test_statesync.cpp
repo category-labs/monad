@@ -100,8 +100,8 @@ namespace
         if (v2 != nullptr) {
             net->buf.append(v2, size2);
         }
-        monad_statesync_client_handle_upsert(
-            net->cctx, type, net->buf.data(), net->buf.size());
+        MONAD_ASSERT(monad_statesync_client_handle_upsert(
+            net->cctx, type, net->buf.data(), net->buf.size()));
     }
 
     void statesync_server_send_done(

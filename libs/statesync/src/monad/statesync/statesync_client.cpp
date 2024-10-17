@@ -287,7 +287,7 @@ void monad_statesync_client_handle_target(
         to_bytes(byte_string_view{msg.state_root, sizeof(bytes32_t)});
 }
 
-void monad_statesync_client_handle_upsert(
+bool monad_statesync_client_handle_upsert(
     monad_statesync_client_context *const ctx, monad_sync_type const type,
     unsigned char const *const val, uint64_t const size)
 {
@@ -298,35 +298,49 @@ void monad_statesync_client_handle_upsert(
     }
     else if (type == SYNC_TYPE_UPSERT_ACCOUNT) {
         auto const res = decode_account_db(raw);
-        MONAD_ASSERT(res.has_value());
+        if (res.has_error()) {
+            return false;
+        }
         auto [addr, acct] = res.value();
         acct.incarnation = Incarnation{0, 0};
         account_update(*ctx, addr, acct);
     }
     else if (type == SYNC_TYPE_UPSERT_STORAGE) {
-        MONAD_ASSERT(size >= sizeof(Address));
+        if (size < sizeof(Address)) {
+            return false;
+        }
         raw.remove_prefix(sizeof(Address));
         auto const res = decode_storage_db(raw);
-        MONAD_ASSERT(res.has_value());
+        if (res.has_error()) {
+            return false;
+        }
         auto const &[k, v] = res.value();
         storage_update(*ctx, unaligned_load<Address>(val), k, v);
     }
     else if (type == SYNC_TYPE_UPSERT_ACCOUNT_DELETE) {
-        MONAD_ASSERT(size == sizeof(Address));
+        if (size != sizeof(Address)) {
+            return false;
+        }
         account_update(*ctx, unaligned_load<Address>(val), std::nullopt);
     }
     else {
         MONAD_ASSERT(type == SYNC_TYPE_UPSERT_STORAGE_DELETE);
-        MONAD_ASSERT(size >= sizeof(Address));
+        if (size < sizeof(Address)) {
+            return false;
+        }
         raw.remove_prefix(sizeof(Address));
         auto const res = rlp::decode_bytes32_compact(raw);
-        MONAD_ASSERT(res.has_value());
+        if (res.has_error()) {
+            return false;
+        }
         storage_update(*ctx, unaligned_load<Address>(val), res.value(), {});
     }
 
     if ((++ctx->n_upserts % (1 << 20)) == 0) {
         commit(*ctx);
     }
+
+    return true;
 }
 
 void monad_statesync_client_handle_done(

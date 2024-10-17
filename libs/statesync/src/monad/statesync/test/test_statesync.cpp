@@ -76,7 +76,7 @@ namespace
         size_t const len)
     {
         if (len == 1) {
-            constexpr auto MSG_TYPE = SyncTypeRequest;
+            constexpr auto MSG_TYPE = SYNC_TYPE_REQUEST;
             std::memcpy(buf, &MSG_TYPE, 1);
         }
         else {
@@ -431,7 +431,7 @@ TEST_F(StateSyncFixture, ignore_unused_code)
             0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32));
     // send some random code
     statesync_server_send_upsert(
-        &net, SyncTypeUpsertCode, code.data(), code.size(), nullptr, 0);
+        &net, SYNC_TYPE_UPSERT_CODE, code.data(), code.size(), nullptr, 0);
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
     OnDiskMachine machine;

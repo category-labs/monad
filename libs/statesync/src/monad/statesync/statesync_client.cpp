@@ -292,18 +292,18 @@ void monad_statesync_client_handle_upsert(
     unsigned char const *const val, uint64_t const size)
 {
     byte_string_view raw{val, size};
-    if (type == SyncTypeUpsertCode) {
+    if (type == SYNC_TYPE_UPSERT_CODE) {
         // code is immutable once inserted - no deletions
         ctx->code.emplace(std::bit_cast<bytes32_t>(keccak256(raw)), raw);
     }
-    else if (type == SyncTypeUpsertAccount) {
+    else if (type == SYNC_TYPE_UPSERT_ACCOUNT) {
         auto const res = decode_account_db(raw);
         MONAD_ASSERT(res.has_value());
         auto [addr, acct] = res.value();
         acct.incarnation = Incarnation{0, 0};
         account_update(*ctx, addr, acct);
     }
-    else if (type == SyncTypeUpsertStorage) {
+    else if (type == SYNC_TYPE_UPSERT_STORAGE) {
         MONAD_ASSERT(size >= sizeof(Address));
         raw.remove_prefix(sizeof(Address));
         auto const res = decode_storage_db(raw);
@@ -311,12 +311,12 @@ void monad_statesync_client_handle_upsert(
         auto const &[k, v] = res.value();
         storage_update(*ctx, unaligned_load<Address>(val), k, v);
     }
-    else if (type == SyncTypeUpsertAccountDelete) {
+    else if (type == SYNC_TYPE_UPSERT_ACCOUNT_DELETE) {
         MONAD_ASSERT(size == sizeof(Address));
         account_update(*ctx, unaligned_load<Address>(val), std::nullopt);
     }
     else {
-        MONAD_ASSERT(type == SyncTypeUpsertStorageDelete);
+        MONAD_ASSERT(type == SYNC_TYPE_UPSERT_STORAGE_DELETE);
         MONAD_ASSERT(size >= sizeof(Address));
         raw.remove_prefix(sizeof(Address));
         auto const res = rlp::decode_bytes32_compact(raw);

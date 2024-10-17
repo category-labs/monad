@@ -62,9 +62,10 @@ void statesync_server_send_upsert(
     MONAD_ASSERT(v1 != nullptr || size1 == 0);
     MONAD_ASSERT(v2 != nullptr || size2 == 0);
     MONAD_ASSERT(
-        type == SyncTypeUpsertCode || type == SyncTypeUpsertAccount ||
-        type == SyncTypeUpsertStorage || type == SyncTypeUpsertAccountDelete ||
-        type == SyncTypeUpsertStorageDelete);
+        type == SYNC_TYPE_UPSERT_CODE || type == SYNC_TYPE_UPSERT_ACCOUNT ||
+        type == SYNC_TYPE_UPSERT_STORAGE ||
+        type == SYNC_TYPE_UPSERT_ACCOUNT_DELETE ||
+        type == SYNC_TYPE_UPSERT_STORAGE_DELETE);
 
     auto const start = std::chrono::steady_clock::now();
     net->obuf.push_back(type);
@@ -98,7 +99,7 @@ void statesync_server_send_done(
     monad_statesync_server_network *const net, monad_sync_done const msg)
 {
     auto const start = std::chrono::steady_clock::now();
-    net->obuf.push_back(SyncTypeDone);
+    net->obuf.push_back(SYNC_TYPE_DONE);
     net->obuf.append(
         reinterpret_cast<unsigned char const *>(&msg), sizeof(msg));
     send(net->fd, net->obuf);

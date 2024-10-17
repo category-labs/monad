@@ -18,6 +18,11 @@ struct StateMachine
     virtual Compute &get_compute() const = 0;
     virtual bool cache() const = 0;
     virtual bool compact() const = 0;
+
+    virtual bool auto_expire() const
+    {
+        return false;
+    }
 };
 
 MONAD_MPT_NAMESPACE_END

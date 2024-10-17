@@ -95,7 +95,7 @@ Node::UniquePtr upsert(
 {
     auto impl = [&] {
         aux.reset_stats();
-        auto sentinel = make_tnode(1 /*mask*/, 0 /*prefix_index*/);
+        auto sentinel = make_tnode(1 /*mask*/);
         ChildData &entry = sentinel->children[0];
         sentinel->children[0] = ChildData{.branch = 0};
         if (old) {
@@ -858,7 +858,6 @@ void dispatch_updates_impl_(
     // tnode->version will be updated bottom up
     auto tnode = make_tnode(
         orig_mask,
-        prefix_index,
         &parent,
         entry.branch,
         path,
@@ -993,8 +992,7 @@ void mismatch_handler_(
         get_nibble(old.path_data(), old_prefix_index);
     uint16_t const orig_mask =
         static_cast<uint16_t>(1u << old_nibble | requests.mask);
-    auto tnode =
-        make_tnode(orig_mask, prefix_index, &parent, entry.branch, path);
+    auto tnode = make_tnode(orig_mask, &parent, entry.branch, path);
     auto const number_of_children =
         static_cast<unsigned>(std::popcount(orig_mask));
     MONAD_DEBUG_ASSERT(

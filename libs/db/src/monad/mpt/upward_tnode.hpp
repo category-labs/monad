@@ -23,7 +23,6 @@ struct UpwardTreeNode
     tnode_type type{tnode_type::update};
     uint8_t npending{0};
     uint8_t branch{INVALID_BRANCH};
-    uint8_t prefix_index{0};
     uint16_t mask{0};
     uint16_t orig_mask{0};
     // tnode owns old node's lifetime only when old is leaf node, as
@@ -74,8 +73,7 @@ struct UpwardTreeNode
 using tnode_unique_ptr = UpwardTreeNode::unique_ptr_type;
 
 inline tnode_unique_ptr make_tnode(
-    uint16_t const orig_mask, unsigned const prefix_index,
-    UpwardTreeNode *const parent = nullptr,
+    uint16_t const orig_mask, UpwardTreeNode *const parent = nullptr,
     uint8_t const branch = INVALID_BRANCH, NibblesView const path = {},
     int64_t const version = 0,
     std::optional<byte_string_view> const opt_leaf_data = std::nullopt,
@@ -87,7 +85,6 @@ inline tnode_unique_ptr make_tnode(
         .type = tnode_type::update,
         .npending = n,
         .branch = branch,
-        .prefix_index = static_cast<uint8_t>(prefix_index),
         .mask = orig_mask,
         .orig_mask = orig_mask,
         .old = std::move(old),

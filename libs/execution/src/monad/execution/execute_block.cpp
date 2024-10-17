@@ -117,7 +117,7 @@ Result<std::vector<Receipt>> execute_block(
 
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         priority_pool.submit(
-            0,
+            i,
             [i = i,
              senders = senders,
              promises = promises,

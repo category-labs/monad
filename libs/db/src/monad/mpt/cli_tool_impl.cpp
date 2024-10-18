@@ -378,6 +378,7 @@ struct impl_t
     bool create_database = false;
     bool truncate_database = false;
     bool create_empty_database = false;
+    std::optional<uint64_t> rewind_database_to;
     bool create_chunk_increasing = false;
     bool debug_printing = false;
     std::filesystem::path archive_database;
@@ -1025,7 +1026,6 @@ public:
     }
 
     void do_archive_database()
-
     {
         auto const begin = std::chrono::steady_clock::now();
         int fd = ::open(
@@ -1345,6 +1345,10 @@ opened.
                 impl.create_empty_database,
                 "create a new database if needed, otherwise truncate "
                 "existing.");
+            cli_ops_group->add_option(
+                "--rewind-to",
+                impl.rewind_database_to,
+                "rewind database to an earlier point in its history.");
             cli.add_option(
                 "--archive",
                 impl.archive_database,
@@ -1398,8 +1402,7 @@ opened.
                 if (!impl.archive_database.empty()) {
                     impl.cli_ask_question(
                         "WARNING: Combining --restore with --archive will "
-                        "first "
-                        "restore and then archive. Are you sure?\n");
+                        "first restore and then archive. Are you sure?\n");
                 }
                 impl.truncate_database = true;
             }
@@ -1435,6 +1438,10 @@ opened.
                 ss << ". Are you sure?\n";
                 impl.cli_ask_question(ss.str().c_str());
             }
+            else if (impl.rewind_database_to) {
+                impl.flags.open_read_only = false;
+                impl.flags.open_read_only_allow_dirty = false;
+            }
             if (mode == MONAD_ASYNC_NAMESPACE::storage_pool::mode::truncate) {
                 MONAD_ASYNC_NAMESPACE::storage_pool const pool{
                     {impl.storage_paths}, mode, impl.flags};
@@ -1449,10 +1456,25 @@ opened.
         }
 
         monad::io::Ring ring(1);
-        monad::io::Buffers rwbuf = monad::io::make_buffers_for_read_only(
-            ring,
-            2,
-            MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
+        auto wr_ring(
+            (impl.rewind_database_to) ? std::optional<monad::io::Ring>(4)
+                                      : std::nullopt);
+        monad::io::Buffers rwbuf =
+            (impl.rewind_database_to)
+                ? monad::io::make_buffers_for_segregated_read_write(
+                      ring,
+                      *wr_ring,
+                      2,
+                      4,
+                      MONAD_ASYNC_NAMESPACE::AsyncIO::
+                          MONAD_IO_BUFFERS_READ_SIZE,
+                      MONAD_ASYNC_NAMESPACE::AsyncIO::
+                          MONAD_IO_BUFFERS_WRITE_SIZE)
+                : monad::io::make_buffers_for_read_only(
+                      ring,
+                      2,
+                      MONAD_ASYNC_NAMESPACE::AsyncIO::
+                          MONAD_IO_BUFFERS_READ_SIZE);
         auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*impl.pool, rwbuf};
         MONAD_MPT_NAMESPACE::UpdateAux<> aux(&io);
 
@@ -1475,7 +1497,6 @@ opened.
                  << std::endl;
 
             cout << "MPT database internal lists:\n";
-
             impl.total_used += impl.print_list_info(
                 aux, aux.db_metadata()->fast_list_begin(), "Fast", &impl.fast);
             impl.total_used += impl.print_list_info(
@@ -1483,6 +1504,46 @@ opened.
             impl.print_list_info(
                 aux, aux.db_metadata()->free_list_begin(), "Free");
 
+            cout << "MPT database has "
+                 << (1 + aux.db_history_max_version() -
+                     aux.db_history_min_valid_version())
+                 << " history, earliest is "
+                 << aux.db_history_min_valid_version() << " latest is "
+                 << aux.db_history_max_version()
+                 << ".\n     It has been configured to retain no more than "
+                 << aux.version_history_length() << ".\n";
+
+            if (impl.rewind_database_to) {
+                if (*impl.rewind_database_to <
+                    aux.db_history_min_valid_version()) {
+                    cout << "\nWARNING: Cannot rewind database to before "
+                         << aux.db_history_min_valid_version()
+                         << ", ignoring request.\n";
+                }
+                else if (
+                    *impl.rewind_database_to >= aux.db_history_max_version()) {
+                    cout << "\nWARNING: Cannot rewind database to after or "
+                            "equal "
+                         << aux.db_history_max_version()
+                         << ", ignoring request.\n";
+                }
+                else {
+                    std::stringstream ss;
+                    ss << "\nWARNING: --rewind-to will destroy history "
+                       << (*impl.rewind_database_to + 1) << " - "
+                       << aux.db_history_max_version() << ". Are you sure?\n";
+                    impl.cli_ask_question(ss.str().c_str());
+                    aux.rewind_to_version(*impl.rewind_database_to);
+                    cout << "\nSuccess! Now:\n";
+                    impl.print_list_info(
+                        aux, aux.db_metadata()->fast_list_begin(), "Fast");
+                    impl.print_list_info(
+                        aux, aux.db_metadata()->slow_list_begin(), "Slow");
+                    impl.print_list_info(
+                        aux, aux.db_metadata()->free_list_begin(), "Free");
+                    return 0;
+                }
+            }
             if (!impl.archive_database.empty()) {
                 impl.do_archive_database();
             }

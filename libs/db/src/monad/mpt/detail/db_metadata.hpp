@@ -5,6 +5,7 @@
 #include <monad/core/assert.h>
 #include <monad/mpt/util.hpp>
 
+#include <monad/async/config.hpp>
 #include <monad/async/detail/start_lifetime_as_polyfill.hpp>
 
 #include "unsigned_20.hpp"
@@ -135,6 +136,19 @@ namespace detail
                     push(INVALID_OFFSET);
                 }
                 self()->next_version.store(version, std::memory_order_release);
+            }
+
+            void rewind_to_version(uint64_t const version)
+            {
+                if (max_version() - version > capacity()) {
+                    reset_all(version);
+                    return;
+                }
+                for (uint64_t i = version + 1; i <= max_version(); i++) {
+                    assign(i, async::INVALID_OFFSET);
+                }
+                self()->next_version.store(
+                    version + 1, std::memory_order_release);
             }
 
         } root_offsets;

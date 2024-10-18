@@ -3,6 +3,7 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/small_prng.hpp>
+#include <monad/core/unordered_map.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/detail/unsigned_20.hpp>
 #include <monad/mpt/state_machine.hpp>
@@ -213,7 +214,7 @@ void UpdateAuxImpl::rewind_to_match_offsets()
         if ((db_metadata()->at(last_written_offset.id)->in_fast_list &&
              last_written_offset >= fast_offset)) {
             std::stringstream ss;
-            ss << "Dectected corruption. Latest root offset "
+            ss << "Detected corruption. Latest root offset "
                << last_written_offset.raw() << " is ahead of fast list offset "
                << fast_offset.raw();
             throw std::runtime_error(ss.str());
@@ -221,7 +222,7 @@ void UpdateAuxImpl::rewind_to_match_offsets()
         if (db_metadata()->at(last_written_offset.id)->in_slow_list &&
             last_written_offset >= slow_offset) {
             std::stringstream ss;
-            ss << "Dectected corruption. Latest root offset "
+            ss << "Detected corruption. Latest root offset "
                << last_written_offset.raw() << " is ahead of slow list offset "
                << slow_offset.raw();
             throw std::runtime_error(ss.str());
@@ -254,6 +255,39 @@ void UpdateAuxImpl::rewind_to_match_offsets()
 
     // Reset node_writers offset to the same offsets in db_metadata
     reset_node_writers();
+}
+
+void UpdateAuxImpl::rewind_to_version(uint64_t const version)
+{
+    MONAD_ASSERT(is_on_disk());
+    auto do_ = [&](detail::db_metadata *m) {
+        auto g = m->hold_dirty();
+        m->root_offsets.rewind_to_version(version);
+    };
+    do_(db_metadata_[0]);
+    do_(db_metadata_[1]);
+    auto last_written_offset = db_metadata()->root_offsets[version];
+    bool const last_written_offset_is_in_fast_list =
+        db_metadata()->at(last_written_offset.id)->in_fast_list;
+    unsigned const bytes_to_read =
+        node_disk_pages_spare_15{last_written_offset}.to_pages()
+        << DISK_PAGE_BITS;
+    if (last_written_offset_is_in_fast_list) {
+        // Form offset after the root node for future appends
+        last_written_offset = round_down_align<DISK_PAGE_BITS>(
+            last_written_offset.add_to_offset(bytes_to_read));
+        if (last_written_offset.offset >= chunk_offset_t::max_offset) {
+            last_written_offset.id =
+                db_metadata()->at(last_written_offset.id)->next_chunk_id;
+            last_written_offset.offset = 0;
+        }
+        advance_db_offsets_to(
+            last_written_offset, get_start_of_wip_slow_offset());
+    }
+    // Discard all chunks no longer in use, and if root is on fast list
+    // replace the now partially written chunk with a fresh one able to be
+    // appended immediately after
+    rewind_to_match_offsets();
 }
 
 UpdateAuxImpl::~UpdateAuxImpl()

@@ -556,8 +556,10 @@ public:
     void update_slow_fast_ratio_metadata() noexcept;
     void update_history_length_metadata(uint64_t history_len) noexcept;
 
-    // WARNING: This is destructive
+    // WARNING: These are destructive, they discard immediately any extraneous
+    // data.
     void rewind_to_match_offsets();
+    void rewind_to_version(uint64_t version);
 
     void set_initial_insertion_count_unit_testing_only(uint32_t count)
     {

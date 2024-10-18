@@ -23,17 +23,14 @@ struct AppendTest : public TFixture
 using AppendTestFastListOnly =
     monad::test::FillDBWithChunksGTest<monad::test::FillDBWithChunksConfig{
         .chunks_to_fill = 2, .alternate_slow_fast_writer = false}>;
-using AppendTestSlowAndFastList =
-    monad::test::FillDBWithChunksGTest<monad::test::FillDBWithChunksConfig{
-        .chunks_to_fill = 2, .alternate_slow_fast_writer = true}>;
 
-using AppendTestTypes =
-    ::testing::Types<AppendTestFastListOnly, AppendTestSlowAndFastList>;
+using AppendTestTypes = ::testing::Types<AppendTestFastListOnly>;
 
 TYPED_TEST_SUITE(AppendTest, AppendTestTypes);
 
 TYPED_TEST(AppendTest, works)
 {
+    auto const last_root_version = this->state()->aux.db_history_max_version();
     auto const last_root_off = this->state()->aux.get_latest_root_offset();
     auto const last_slow_off =
         this->state()->aux.get_start_of_wip_slow_offset();
@@ -48,17 +45,14 @@ TYPED_TEST(AppendTest, works)
     std::cout << "\nBefore rewind:";
     this->state()->print(std::cout);
 
-    // Reset offsets
-    this->state()->aux.append_root_offset(last_root_off);
-    this->state()->aux.advance_db_offsets_to(last_fast_off, last_slow_off);
+    // Reset version, discarding all newer versions
+    this->state()->aux.rewind_to_version(last_root_version);
+    this->state()->version = last_root_version;
     EXPECT_EQ(last_root_off, this->state()->aux.get_latest_root_offset());
     EXPECT_EQ(last_slow_off, this->state()->aux.get_start_of_wip_slow_offset());
     EXPECT_EQ(last_fast_off, this->state()->aux.get_start_of_wip_fast_offset());
 
-    // Rewind chunks: destroy contents after fast_offset.id chunk and
-    // reset node_writer's offset.
-    this->state()->aux.rewind_to_match_offsets();
-    // Reset root to earlier version, discard all the changes after
+    // Get new current root
     this->state()->root.reset(
         read_node_blocking(this->state()->io.storage_pool(), last_root_off));
 

@@ -533,6 +533,15 @@ namespace monad::test
                 std::cout << "\n\n   Free list: "
                           << aux.db_metadata()->capacity_in_free_list
                           << " bytes.";
+                auto const most_recent_offset =
+                    aux.db_metadata()
+                        ->root_offsets[aux.db_history_max_version()];
+                std::cout << "\n\n   DB version history is "
+                          << aux.db_history_min_valid_version() << " - "
+                          << aux.db_history_max_version()
+                          << ". Most recent DB history is id "
+                          << most_recent_offset.id << " offset "
+                          << most_recent_offset.offset;
                 std::cout << std::endl;
                 return s;
             }

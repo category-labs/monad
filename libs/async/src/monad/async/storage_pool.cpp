@@ -255,7 +255,7 @@ bool storage_pool::chunk::try_trim_contents(uint32_t bytes)
         auto const bytesread = (remainder == 0)
                                    ? 0
                                    : ::pread(
-                                         write_fd_,
+                                         read_fd_,
                                          buffer,
                                          DISK_PAGE_SIZE,
                                          static_cast<off_t>(range[0]));

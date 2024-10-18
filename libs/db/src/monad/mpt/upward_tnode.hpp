@@ -14,7 +14,8 @@ MONAD_MPT_NAMESPACE_BEGIN
 enum class tnode_type : uint8_t
 {
     update,
-    copy // for compaction
+    compact,
+    expire
 };
 
 struct UpwardTreeNode
@@ -99,8 +100,9 @@ static_assert(alignof(UpwardTreeNode) == 8);
 
 struct CompactTNode
 {
+    // parent can be of any of the three TNode types
     CompactTNode *parent{nullptr};
-    tnode_type type{tnode_type::copy};
+    tnode_type type{tnode_type::compact};
     uint8_t npending{0};
     uint8_t index{INVALID_BRANCH}; // of parent
     bool rewrite_to_fast{false};
@@ -110,7 +112,7 @@ struct CompactTNode
     CompactTNode(
         CompactTNode *const parent, unsigned const index, Node::UniquePtr ptr)
         : parent(parent)
-        , type(tnode_type::copy)
+        , type(tnode_type::compact)
         , npending(ptr ? static_cast<uint8_t>(ptr->number_of_children()) : 0)
         , index(static_cast<uint8_t>(index))
         , node(std::move(ptr))
@@ -165,5 +167,78 @@ struct CompactTNode
 
 static_assert(sizeof(CompactTNode) == 24);
 static_assert(alignof(CompactTNode) == 8);
+
+struct ExpireTNode
+{
+    // parent can be `UpdateTNode` or `ExpireTNode`, will never be
+    // `CompactTNode`
+    ExpireTNode *parent{nullptr};
+    tnode_type type{tnode_type::expire};
+    uint8_t npending{0};
+    uint8_t branch{INVALID_BRANCH};
+    uint16_t mask{0};
+    // above must be the same as UpwardTreeNode
+    uint8_t index{INVALID_BRANCH};
+    bool cached{true};
+    // mask indicate which child to cache, by orig child index
+    uint16_t cache_mask{0};
+    Node::UniquePtr node{nullptr};
+
+    ExpireTNode(
+        ExpireTNode *const parent, unsigned const branch, unsigned const index,
+        Node::UniquePtr ptr)
+        : parent(parent)
+        , npending(ptr ? static_cast<uint8_t>(ptr->number_of_children()) : 0)
+        , branch(static_cast<uint8_t>(branch))
+        , mask(ptr ? ptr->mask : 0)
+        , index(static_cast<uint8_t>(index))
+        , node(std::move(ptr))
+    {
+    }
+
+    void update_after_async_read(Node::UniquePtr ptr)
+    {
+        npending = static_cast<uint8_t>(ptr->number_of_children());
+        mask = ptr->mask;
+        node = std::move(ptr);
+        // See note in CompactTNode above
+        cached = parent->type == tnode_type::update;
+    }
+
+    bool is_sentinel() const noexcept
+    {
+        return !parent;
+    }
+
+    using allocator_type = allocators::malloc_free_allocator<ExpireTNode>;
+
+    static allocator_type &pool()
+    {
+        static allocator_type v;
+        return v;
+    }
+
+    using unique_ptr_type = std::unique_ptr<
+        ExpireTNode, allocators::unique_ptr_allocator_deleter<
+                         allocator_type, &ExpireTNode::pool>>;
+
+    static unique_ptr_type make(ExpireTNode v)
+    {
+        return allocators::allocate_unique<allocator_type, &ExpireTNode::pool>(
+            std::move(v));
+    }
+
+    static unique_ptr_type make(
+        ExpireTNode *const parent, unsigned const branch, unsigned index,
+        Node::UniquePtr node)
+    {
+        MONAD_DEBUG_ASSERT(parent);
+        return allocators::allocate_unique<allocator_type, &ExpireTNode::pool>(
+            parent, branch, index, std::move(node));
+    }
+};
+
+static_assert(sizeof(ExpireTNode) == 32);
+static_assert(alignof(ExpireTNode) == 8);
 
 MONAD_MPT_NAMESPACE_END

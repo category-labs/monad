@@ -327,6 +327,8 @@ protected:
     };
 
 public:
+    int64_t min_version_after_upsert{0};
+
     compact_virtual_chunk_offset_t compact_offset_fast{
         MIN_COMPACT_VIRTUAL_OFFSET};
     compact_virtual_chunk_offset_t compact_offset_slow{
@@ -345,7 +347,6 @@ public:
     UpdateAuxImpl(
         MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
         std::optional<uint64_t> const history_len = {})
-
     {
         if (io_) {
             set_io(io_, history_len);
@@ -661,7 +662,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAuxImpl) == 120 + sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAuxImpl) == 128 + sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAuxImpl) == 8);
 
 template <lockable_or_void LockType = void>

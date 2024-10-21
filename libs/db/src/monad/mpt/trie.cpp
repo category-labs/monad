@@ -73,9 +73,8 @@ void create_node_compute_data_possibly_async(
     tnode_unique_ptr, bool might_on_disk = true);
 
 void compact_(
-    UpdateAuxImpl &, StateMachine &, CompactTNode *parent, unsigned index,
-    Node *, bool cached, chunk_offset_t node_offset,
-    bool copy_node_for_fast_or_slow);
+    UpdateAuxImpl &, StateMachine &, CompactTNode::unique_ptr_type,
+    chunk_offset_t node_offset, bool copy_node_for_fast_or_slow);
 
 void try_fillin_parent_with_rewritten_node(
     UpdateAuxImpl &, CompactTNode::unique_ptr_type);
@@ -117,14 +116,14 @@ Node::UniquePtr upsert(
             create_new_trie_(
                 aux, sm, sentinel->version, entry, std::move(updates));
         }
-        auto *const root = entry.ptr;
+        auto root = std::move(entry.ptr);
         if (aux.is_on_disk()) {
             if (root) {
                 write_new_root_node(aux, *root, version);
             }
             aux.print_update_stats();
         }
-        return Node::UniquePtr{root};
+        return root;
     };
     if (aux.is_current_thread_upserting()) {
         return impl();
@@ -393,8 +392,7 @@ struct read_single_child_receiver
             tnode->orig_mask,
             static_cast<unsigned>(std::countr_zero(tnode->mask)))];
         child.ptr = detail::deserialize_node_from_receiver_result(
-                        std::move(buffer_), buffer_off, io_state)
-                        .release();
+            std::move(buffer_), buffer_off, io_state);
         auto const path_size = tnode->path.nibble_size();
         create_node_compute_data_possibly_async(
             *aux, *sm, *parent, entry, tnode_unique_ptr{tnode}, false);
@@ -413,8 +411,7 @@ struct compaction_receiver
     UpdateAuxImpl *aux;
     chunk_offset_t rd_offset;
     chunk_offset_t orig_offset;
-    CompactTNode *tnode;
-    uint8_t index;
+    CompactTNode::unique_ptr_type tnode;
     unsigned bytes_to_read;
     uint16_t buffer_off;
     std::unique_ptr<StateMachine> sm;
@@ -422,17 +419,16 @@ struct compaction_receiver
 
     compaction_receiver(
         UpdateAuxImpl *aux_, std::unique_ptr<StateMachine> sm_,
-        CompactTNode *tnode_, unsigned const index_,
-        chunk_offset_t const offset, bool const copy_node_for_fast_or_slow_)
+        CompactTNode::unique_ptr_type tnode_, chunk_offset_t const offset,
+        bool const copy_node_for_fast_or_slow_)
         : aux(aux_)
         , rd_offset({0, 0})
         , orig_offset(offset)
-        , tnode(tnode_)
-        , index(static_cast<uint8_t>(index_))
+        , tnode(std::move(tnode_))
         , sm(std::move(sm_))
         , copy_node_for_fast_or_slow(copy_node_for_fast_or_slow_)
     {
-        MONAD_ASSERT(tnode);
+        MONAD_ASSERT(tnode && tnode->type == tnode_type::copy);
         rd_offset = round_down_align<DISK_PAGE_BITS>(offset);
         auto const num_pages_to_load_node =
             node_disk_pages_spare_15{rd_offset}.to_pages();
@@ -451,31 +447,27 @@ struct compaction_receiver
     void set_value(erased_connected_operation *io_state, ResultType buffer_)
     {
         MONAD_ASSERT(buffer_);
-        Node *node = detail::deserialize_node_from_receiver_result(
-                         std::move(buffer_), buffer_off, io_state)
-                         .release();
+        tnode->update_after_async_read(
+            detail::deserialize_node_from_receiver_result(
+                std::move(buffer_), buffer_off, io_state));
+        auto *parent = tnode->parent;
         compact_(
             *aux,
             *sm,
-            tnode,
-            index,
-            node,
-            false,
+            std::move(tnode),
             orig_offset,
             copy_node_for_fast_or_slow);
-        // now if tnode has everything it needs
-        while (!tnode->npending) {
-            if (tnode->type == tnode_type::update) {
-                upward_update(*aux, *sm, (UpwardTreeNode *)tnode);
+        while (!parent->npending) {
+            if (parent->type == tnode_type::update) {
+                upward_update(*aux, *sm, (UpwardTreeNode *)parent);
                 return;
             }
-            auto *parent = tnode->parent;
-            MONAD_ASSERT(parent);
-            // tnode is freed after this call
+            auto *next_parent = parent->parent;
+            MONAD_ASSERT(next_parent);
             try_fillin_parent_with_rewritten_node(
-                *aux, CompactTNode::unique_ptr_type{tnode});
-            // upward by one level
-            tnode = parent;
+                *aux, CompactTNode::unique_ptr_type{parent});
+            // go one level up
+            parent = next_parent;
         }
     }
 };
@@ -483,7 +475,7 @@ struct compaction_receiver
 /////////////////////////////////////////////////////
 // Create Node
 /////////////////////////////////////////////////////
-Node *create_node_from_children_if_any(
+Node::UniquePtr create_node_from_children_if_any(
     UpdateAuxImpl &aux, StateMachine &sm, uint16_t const orig_mask,
     uint16_t const mask, std::span<ChildData> children, NibblesView const path,
     std::optional<byte_string_view> const leaf_data, int64_t const version)
@@ -494,26 +486,24 @@ Node *create_node_from_children_if_any(
     if (number_of_children == 0) {
         return leaf_data.has_value()
                    ? make_node(0, {}, path, leaf_data.value(), {}, version)
-                         .release()
-                   : nullptr;
+                   : Node::UniquePtr{};
     }
     else if (number_of_children == 1 && !leaf_data.has_value()) {
         auto const j = bitmask_index(
             orig_mask, static_cast<unsigned>(std::countr_zero(mask)));
         MONAD_DEBUG_ASSERT(children[j].ptr);
-        auto const node = Node::UniquePtr{children[j].ptr};
+        auto node = std::move(children[j].ptr);
         /* Note: there's a potential superfluous extension hash recomputation
         when node coaleases upon erases, because we compute node hash when path
         is not yet the final form. There's not yet a good way to avoid this
         unless we delay all the compute() after all child branches finish
         creating nodes and return in the recursion */
         return make_node(
-                   *node,
-                   concat(path, children[j].branch, node->path_nibble_view()),
-                   node->has_value() ? std::make_optional(node->value())
-                                     : std::nullopt,
-                   version)
-            .release();
+            *node,
+            concat(path, children[j].branch, node->path_nibble_view()),
+            node->has_value() ? std::make_optional(node->value())
+                              : std::nullopt,
+            version); // node is deallocated
     }
     MONAD_DEBUG_ASSERT(
         number_of_children > 1 ||
@@ -541,10 +531,7 @@ Node *create_node_from_children_if_any(
             // apply cache based on state machine state, always cache node that
             // is a single child
             if (child.ptr && number_of_children > 1 && !child.cache_node) {
-                {
-                    Node::UniquePtr const _{child.ptr};
-                }
-                child.ptr = nullptr;
+                child.ptr.reset();
             }
         }
     }
@@ -570,7 +557,7 @@ void create_node_compute_data_possibly_async(
             return;
         }
     }
-    Node *node = create_node_from_children_if_any(
+    auto node = create_node_from_children_if_any(
         aux,
         sm,
         tnode->orig_mask,
@@ -581,12 +568,11 @@ void create_node_compute_data_possibly_async(
         tnode->version);
     MONAD_DEBUG_ASSERT(entry.branch < 16);
     if (node) {
-        entry.finalize(*node, sm.get_compute(), sm.cache());
         parent.version = std::max(parent.version, node->version);
+        entry.finalize(std::move(node), sm.get_compute(), sm.cache());
     }
     else {
-        parent.mask &=
-            static_cast<uint16_t>(~(static_cast<uint16_t>(1u << entry.branch)));
+        parent.mask &= static_cast<uint16_t>(~(1u << entry.branch));
         entry.erase();
     }
     --parent.npending;
@@ -600,7 +586,6 @@ void update_value_and_subtrie_(
     if (update.is_deletion()) {
         parent.mask &= static_cast<uint16_t>(~(1u << entry.branch));
         entry.erase();
-        MONAD_DEBUG_ASSERT(entry.ptr == nullptr);
         --parent.npending;
         return;
     }
@@ -676,9 +661,8 @@ void create_new_trie_(
         else {
             aux.collect_number_nodes_created_stats();
             entry.finalize(
-                *make_node(
-                     0, {}, path, update.value.value(), {}, update.version)
-                     .release(),
+                make_node(
+                    0, {}, path, update.value.value(), {}, update.version),
                 sm.get_compute(),
                 sm.cache());
             parent_version = std::max(parent_version, entry.ptr->version);
@@ -743,11 +727,11 @@ void create_new_trie_from_requests_(
         }
     }
     // can have empty children
-    auto *node = create_node_from_children_if_any(
+    auto node = create_node_from_children_if_any(
         aux, sm, mask, mask, children, path, opt_leaf_data, version);
     MONAD_ASSERT(node);
     parent_version = std::max(parent_version, node->version);
-    entry.finalize(*node, sm.get_compute(), sm.cache());
+    entry.finalize(std::move(node), sm.get_compute(), sm.cache());
 }
 
 /////////////////////////////////////////////////////
@@ -920,22 +904,18 @@ void dispatch_updates_impl_(
         else if (bit & old->mask) {
             auto &child = children[j];
             child.copy_old_child(old, i);
-            auto const old_index = old->to_child_index(i);
-            auto const orig_child_offset = old->fnext(old_index);
             if (aux.is_on_disk() && sm.compact() &&
-                (old->min_offset_fast(old_index) < aux.compact_offset_fast ||
-                 old->min_offset_slow(old_index) < aux.compact_offset_slow)) {
-                child.offset = INVALID_OFFSET; // to be rewritten
+                (child.min_offset_fast < aux.compact_offset_fast ||
+                 child.min_offset_slow < aux.compact_offset_slow)) {
                 bool const copy_node_for_fast =
-                    old->min_offset_fast(old_index) < aux.compact_offset_fast;
+                    child.min_offset_fast < aux.compact_offset_fast;
+                auto compact_tnode = CompactTNode::make(
+                    (CompactTNode *)tnode.get(), j, std::move(child.ptr));
                 compact_(
                     aux,
                     sm,
-                    reinterpret_cast<CompactTNode *>(tnode.get()),
-                    j,
-                    child.ptr,
-                    true,
-                    orig_child_offset,
+                    std::move(compact_tnode),
+                    child.offset,
                     copy_node_for_fast);
             }
             else {
@@ -1066,10 +1046,10 @@ void mismatch_handler_(
             child = ChildData{.branch = static_cast<uint8_t>(i)};
             // Updated node inherits the version number directly from old node
             child.finalize(
-                *make_node(old, path_suffix, old.opt_value(), old.version)
-                     .release(),
+                make_node(old, path_suffix, old.opt_value(), old.version),
                 sm.get_compute(),
                 sm.cache());
+            MONAD_DEBUG_ASSERT(child.offset == INVALID_OFFSET);
             sm.up(path_suffix.nibble_size() + 1);
             if (auto const [min_offset_fast, min_offset_slow] =
                     calc_min_offsets(*child.ptr);
@@ -1078,13 +1058,12 @@ void mismatch_handler_(
                  min_offset_slow < aux.compact_offset_slow)) {
                 bool const copy_node_for_fast =
                     min_offset_fast < aux.compact_offset_fast;
+                auto compact_tnode = CompactTNode::make(
+                    (CompactTNode *)tnode.get(), j, std::move(child.ptr));
                 compact_(
                     aux,
                     sm,
-                    (CompactTNode *)tnode.get(),
-                    j,
-                    child.ptr,
-                    true,
+                    std::move(compact_tnode),
                     INVALID_OFFSET,
                     copy_node_for_fast);
             }
@@ -1098,16 +1077,15 @@ void mismatch_handler_(
 }
 
 void compact_(
-    UpdateAuxImpl &aux, StateMachine &sm, CompactTNode *const parent,
-    unsigned const index, Node *const node, bool const cached,
+    UpdateAuxImpl &aux, StateMachine &sm, CompactTNode::unique_ptr_type tnode,
     chunk_offset_t const node_offset, bool const copy_node_for_fast_or_slow)
 {
-    if (!node) {
+    MONAD_ASSERT(tnode->type == tnode_type::copy);
+    if (!tnode->node) {
         compaction_receiver receiver(
             &aux,
             sm.clone(),
-            parent,
-            index,
+            std::move(tnode),
             node_offset,
             copy_node_for_fast_or_slow);
         async_read(aux, std::move(receiver));
@@ -1131,27 +1109,26 @@ void compact_(
                (!virtual_node_offset.in_fast_list() &&
                 compacted_virtual_offset >= aux.compact_offset_slow);
     }();
-    auto tnode =
-        CompactTNode::make(parent, index, node, rewrite_to_fast, cached);
 
+    Node &node = *tnode->node;
+    tnode->rewrite_to_fast = rewrite_to_fast;
     aux.collect_compacted_nodes_stats(
         copy_node_for_fast_or_slow,
         rewrite_to_fast,
         virtual_node_offset,
-        node->get_disk_size());
+        node.get_disk_size());
 
-    for (unsigned j = 0; j < node->number_of_children(); ++j) {
-        if (node->min_offset_fast(j) < aux.compact_offset_fast ||
-            node->min_offset_slow(j) < aux.compact_offset_slow) {
+    for (unsigned j = 0; j < node.number_of_children(); ++j) {
+        if (node.min_offset_fast(j) < aux.compact_offset_fast ||
+            node.min_offset_slow(j) < aux.compact_offset_slow) {
+            auto child_tnode =
+                CompactTNode::make(tnode.get(), j, node.next_ptr(j));
             compact_(
                 aux,
                 sm,
-                tnode.get(),
-                j,
-                node->next(j),
-                true,
-                node->fnext(j),
-                node->min_offset_fast(j) < aux.compact_offset_fast);
+                std::move(child_tnode),
+                node.fnext(j),
+                node.min_offset_fast(j) < aux.compact_offset_fast);
         }
         else {
             --tnode->npending;
@@ -1196,17 +1173,15 @@ void try_fillin_parent_with_rewritten_node(
         parent->node->set_fnext(index, new_offset);
         parent->node->set_min_offset_fast(index, min_offset_fast);
         parent->node->set_min_offset_slow(index, min_offset_slow);
-        if (tnode->cached) { // debug
-            MONAD_DEBUG_ASSERT(parent->node->next(index) == tnode->node);
+        if (tnode->cached) {
+            parent->node->set_next(index, tnode->node.release());
         }
     }
     else { // parent tnode is an update tnode
         auto *const p = reinterpret_cast<UpwardTreeNode *>(parent);
         MONAD_DEBUG_ASSERT(tnode->cached);
-        MONAD_DEBUG_ASSERT(p->children[index].offset == INVALID_OFFSET);
         auto &child = p->children[index];
-        child.ptr =
-            tnode->node; // let parent tnode manage tnode->node's lifetime
+        child.ptr = std::move(tnode->node);
         child.offset = new_offset;
         child.min_offset_fast = min_offset_fast;
         child.min_offset_slow = min_offset_slow;

@@ -291,7 +291,7 @@ static_assert(alignof(Node) == 8);
 // file offset and hash data, in the update recursion.
 struct ChildData
 {
-    Node *ptr{nullptr};
+    Node::UniquePtr ptr{nullptr};
     chunk_offset_t offset{INVALID_OFFSET}; // physical offsets
     unsigned char data[32] = {0};
     int64_t subtrie_min_version{std::numeric_limits<int64_t>::max()};
@@ -302,11 +302,11 @@ struct ChildData
 
     uint8_t branch{INVALID_BRANCH};
     uint8_t len{0};
-    bool cache_node{true};
+    bool cache_node{true}; // attach ptr to parent if cache, free otherwise
 
     bool is_valid() const;
     void erase();
-    void finalize(Node &, Compute &, bool cache);
+    void finalize(Node::UniquePtr, Compute &, bool cache);
     void copy_old_child(Node *old, unsigned i);
 };
 
@@ -342,7 +342,7 @@ Node::UniquePtr make_node(
     int64_t version);
 
 // create node: either branch/extension, with or without leaf
-Node *create_node_with_children(
+Node::UniquePtr create_node_with_children(
     Compute &, uint16_t mask, std::span<ChildData> children, NibblesView path,
     std::optional<byte_string_view> value, int64_t version);
 

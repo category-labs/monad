@@ -105,38 +105,33 @@ struct CompactTNode
     CompactTNode *parent{nullptr};
     tnode_type type{tnode_type::copy};
     uint8_t npending{0};
-    uint8_t index{INVALID_BRANCH};
+    uint8_t index{INVALID_BRANCH}; // of parent
     bool rewrite_to_fast{false};
-    bool cached{false};
-    Node *node;
+    bool cached{true}; // cache the owned node
+    Node::UniquePtr node{nullptr};
 
     CompactTNode(
-        CompactTNode *const parent, unsigned const index, Node *const node,
-        bool const rewrite_to_fast, bool const currently_cached)
+        CompactTNode *const parent, unsigned const index, Node::UniquePtr ptr)
         : parent(parent)
         , type(tnode_type::copy)
-        , npending(static_cast<uint8_t>(node->number_of_children()))
+        , npending(ptr ? static_cast<uint8_t>(ptr->number_of_children()) : 0)
         , index(static_cast<uint8_t>(index))
-        , rewrite_to_fast(rewrite_to_fast)
-        , cached(/* Should always cache the compacted node who is child of an
-                    update tnode, because there is a corner case where update
-                    tnode only has single child left after applying all updates,
-                    but if not cached, then that single child may have been
-                    compacted and deallocated from memory but not yet landed on
-                    disk (either in write buffer or inflight for write), thus
-                    `cached` value is either the node is currently cached in
-                    memory or its node is child of an update tnode. */
-                 currently_cached || parent->type == tnode_type::update)
-        , node(node)
+        , node(std::move(ptr))
     {
     }
 
-    ~CompactTNode()
+    void update_after_async_read(Node::UniquePtr ptr)
     {
-        MONAD_DEBUG_ASSERT(npending == 0);
-        if (!cached) {
-            Node::UniquePtr{node};
-        }
+        npending = static_cast<uint8_t>(ptr->number_of_children());
+        node = std::move(ptr);
+        /* Should always cache the compacted node who is child of an update
+           tnode, because there is a corner case where update tnode only has
+           single child left after applying all updates, but if not cached, then
+           that single child may have been compacted and deallocated from memory
+           but not yet landed on disk (either in write buffer or inflight for
+           write), thus `cached` value is either the node is currently cached in
+           memory or its node is child of an update tnode. */
+        cached = parent->type == tnode_type::update;
     }
 
     bool is_sentinel() const noexcept
@@ -162,14 +157,12 @@ struct CompactTNode
             std::move(v));
     }
 
-    static unique_ptr_type make(
-        CompactTNode *const parent, unsigned const index, Node *const node,
-        bool const rewrite_to_fast, bool const cached)
+    static unique_ptr_type
+    make(CompactTNode *const parent, unsigned const index, Node::UniquePtr node)
     {
-        MONAD_DEBUG_ASSERT(node);
         MONAD_DEBUG_ASSERT(parent);
         return allocators::allocate_unique<allocator_type, &CompactTNode::pool>(
-            parent, index, node, rewrite_to_fast, cached);
+            parent, index, std::move(node));
     }
 };
 

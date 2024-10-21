@@ -403,25 +403,27 @@ bool ChildData::is_valid() const
 
 void ChildData::erase()
 {
+    MONAD_ASSERT(!ptr);
     branch = INVALID_BRANCH;
 }
 
-void ChildData::finalize(Node &node, Compute &compute, bool const cache)
+void ChildData::finalize(
+    Node::UniquePtr node, Compute &compute, bool const cache)
 {
     MONAD_DEBUG_ASSERT(is_valid());
-    ptr = &node;
-    auto const length = compute.compute(data, ptr);
+    ptr = std::move(node);
+    auto const length = compute.compute(data, ptr.get());
     MONAD_DEBUG_ASSERT(length <= std::numeric_limits<uint8_t>::max());
     len = static_cast<uint8_t>(length);
     cache_node = cache;
-    subtrie_min_version = calc_min_version(node);
+    subtrie_min_version = calc_min_version(*ptr);
 }
 
 void ChildData::copy_old_child(Node *const old, unsigned const i)
 {
     auto const index = old->to_child_index(i);
     if (old->next(index)) { // in memory, infers cached
-        ptr = old->next_ptr(index).release();
+        ptr = old->next_ptr(index);
     }
     auto const old_data = old->child_data_view(index);
     memcpy(&data, old_data.data(), old_data.size());
@@ -525,13 +527,13 @@ Node::UniquePtr make_node(
         child_data_offsets.size() * sizeof(uint16_t),
         node->child_off_data());
 
-    for (unsigned index = 0; auto const &child : children) {
+    for (unsigned index = 0; auto &child : children) {
         if (child.is_valid()) {
             node->set_fnext(index, child.offset);
             node->set_min_offset_fast(index, child.min_offset_fast);
             node->set_min_offset_slow(index, child.min_offset_slow);
             node->set_subtrie_min_version(index, child.subtrie_min_version);
-            node->set_next(index, child.ptr);
+            node->set_next(index, child.ptr.release());
             node->set_child_data(index, {child.data, child.len});
             ++index;
         }
@@ -552,7 +554,7 @@ Node::UniquePtr make_node(
 
 // all children's offset are set before creating parent
 // create node with at least one child
-Node *create_node_with_children(
+Node::UniquePtr create_node_with_children(
     Compute &comp, uint16_t const mask, std::span<ChildData> children,
     NibblesView const path, std::optional<byte_string_view> const value,
     int64_t const version)
@@ -564,7 +566,7 @@ Node *create_node_with_children(
     if (data_size) {
         comp.compute_branch(node->data_data(), node.get());
     }
-    return node.release();
+    return node;
 }
 
 void serialize_node_to_buffer(

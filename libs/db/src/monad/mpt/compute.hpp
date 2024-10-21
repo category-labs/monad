@@ -188,7 +188,7 @@ protected:
 
     unsigned compute_hash_with_extra_nibble_to_state_(ChildData &single_child)
     {
-        Node *const node = single_child.ptr;
+        Node *const node = single_child.ptr.get();
         MONAD_DEBUG_ASSERT(node);
 
         return state.len = encode_two_pieces(
@@ -358,7 +358,7 @@ struct RootVarLenMerkleCompute final : public VarLenMerkleCompute
 private:
     unsigned compute_hash_with_extra_nibble_to_state_(ChildData &single_child)
     {
-        Node *const node = single_child.ptr;
+        Node *const node = single_child.ptr.get();
         MONAD_DEBUG_ASSERT(node);
 
         return state.len = encode_two_pieces(

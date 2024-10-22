@@ -5,6 +5,10 @@
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
+ *
+ * Modified 2024 Kenneth Camann:
+ * - Removed #include of OS-dependent header <openssl/e_os2.h> and added
+ *   <stdint.h> for the uintXX_t typdefs; this makes the file freestanding
  */
 
 #include <stdint.h>

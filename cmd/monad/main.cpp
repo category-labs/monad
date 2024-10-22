@@ -7,11 +7,13 @@
 #include <monad/chain/monad_testnet.hpp>
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/async_signal_handling.hpp>
 #include <monad/core/basic_formatter.hpp>
 #include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/log_level_map.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
+#include <monad/core/scope_polyfill.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
@@ -35,6 +37,7 @@
 #include <boost/outcome/try.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -45,7 +48,6 @@
 #include <string>
 #include <vector>
 
-#include <signal.h>
 #include <sys/sysinfo.h>
 
 MONAD_NAMESPACE_BEGIN
@@ -54,19 +56,12 @@ quill::Logger *event_tracer = nullptr;
 
 MONAD_NAMESPACE_END
 
-sig_atomic_t volatile stop;
-
-void signal_handler(int)
-{
-    stop = 1;
-}
-
 using namespace monad;
 namespace fs = std::filesystem;
 
 int main(int const argc, char const *argv[])
 {
-
+    auto const async_signal_handling_installation = async_signal_handling();
     CLI::App cli{"monad"};
     cli.option_defaults()->always_capture_default();
 
@@ -164,7 +159,7 @@ int main(int const argc, char const *argv[])
     quill::Config cfg;
     cfg.default_handlers.emplace_back(stdout_handler);
     quill::configure(cfg);
-    quill::start(true);
+    quill::start(false);
     quill::get_root_logger()->set_log_level(log_level);
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
 
@@ -174,6 +169,26 @@ int main(int const argc, char const *argv[])
     event_tracer = quill::create_logger(
         "event_trace", quill::file_handler(trace_log, handler_cfg));
 #endif
+
+    std::atomic<bool> stop{false};
+    auto stop_signal_handler = [&stop](
+                                   const struct signalfd_siginfo &si,
+                                   async_signal_handling::handler *) -> bool {
+        stop = true;
+        LOG_INFO(
+            "Signal {} ({}) received, requesting stop.",
+            async_signal_handling::signal_description((int)si.ssi_signo),
+            si.ssi_signo);
+        return true;
+    };
+    auto sighup_handler =
+        async_signal_handling::add_handler(SIGHUP, 0, stop_signal_handler);
+    auto sigint_handler =
+        async_signal_handling::add_handler(SIGINT, 0, stop_signal_handler);
+    auto sigterm_handler =
+        async_signal_handling::add_handler(SIGTERM, 0, stop_signal_handler);
+    auto mark_sigint_handler_handled =
+        make_scope_exit([&]() noexcept { sigint_handler->mark_as_handled(); });
 
     auto const db_in_memory = dbname_paths.empty();
     [[maybe_unused]] auto const load_start_time =
@@ -308,9 +323,6 @@ int main(int const argc, char const *argv[])
         MONAD_ASSERT(init_block_hash_buffer_from_blockdb(
             block_db, start_block_num, block_hash_buffer));
     }
-
-    signal(SIGINT, signal_handler);
-    stop = 0;
 
     uint64_t block_num = start_block_num;
     uint64_t const end_block_num =

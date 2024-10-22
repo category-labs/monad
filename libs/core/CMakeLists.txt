@@ -77,6 +77,8 @@ add_library(
   "src/monad/core/array.hpp"
   "src/monad/core/assert.c"
   "src/monad/core/assert.h"
+  "src/monad/core/async_signal_handling.hpp"
+  "src/monad/core/async_signal_handling.cpp"
   "src/monad/core/backtrace.cpp"
   "src/monad/core/backtrace.hpp"
   "src/monad/core/basic_formatter.hpp"

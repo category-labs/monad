@@ -4,15 +4,16 @@
 
 #include <monad/async/config.hpp>
 #include <monad/async/connected_operation.hpp>
-#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/io.hpp>
 #include <monad/async/io_senders.hpp>
 #include <monad/async/storage_pool.hpp>
 #include <monad/core/array.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/async_signal_handling.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/keccak.h>
+#include <monad/core/scope_polyfill.hpp>
 #include <monad/core/small_prng.hpp>
 #include <monad/core/unordered_map.hpp>
 #include <monad/io/buffers.hpp>
@@ -78,12 +79,6 @@ using concurrent_queue = moodycamel::ConcurrentQueue<T>;
 #define MAX_NUM_KEYS 250000000
 
 using namespace monad::mpt;
-
-static void ctrl_c_handler(int s)
-{
-    (void)s;
-    exit(0);
-}
 
 void __print_bytes_in_hex(monad::byte_string_view arr)
 {
@@ -272,11 +267,14 @@ void prepare_keccak(
 
 int main(int argc, char *argv[])
 {
-    struct sigaction sig;
-    sig.sa_handler = &ctrl_c_handler;
-    sigemptyset(&sig.sa_mask);
-    sig.sa_flags = 0;
-    sigaction(SIGINT, &sig, nullptr);
+    auto async_signal_handling_installation = monad::async_signal_handling();
+    auto sigint_handler = monad::async_signal_handling::add_handler(
+        SIGINT,
+        0,
+        [](const struct signalfd_siginfo &,
+           monad::async_signal_handling::handler *) -> bool { exit(0); });
+    auto mark_sigint_handler_handled = monad::make_scope_exit(
+        [&]() noexcept { sigint_handler->mark_as_handled(); });
 
     unsigned n_slices = 20;
     bool append = false;

@@ -1,9 +1,9 @@
 
 #include <monad/async/storage_pool.hpp>
 
-#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/hash.hpp>
+#include <monad/core/scope_polyfill.hpp>
 
 #include <monad/async/config.hpp>
 #include <monad/async/detail/start_lifetime_as_polyfill.hpp>

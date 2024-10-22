@@ -3,10 +3,10 @@
 #include <monad/async/concepts.hpp>
 #include <monad/async/config.hpp>
 #include <monad/async/detail/connected_operation_storage.hpp>
-#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/storage_pool.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/scope_polyfill.hpp>
 #include <monad/core/tl_tid.h>
 #include <monad/core/unordered_map.hpp>
 #include <monad/io/buffers.hpp>

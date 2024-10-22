@@ -1,9 +1,9 @@
-#include "monad/async/detail/scope_polyfill.hpp"
 #include "gtest/gtest.h"
 
-#include <atomic>
+#include <monad/core/scope_polyfill.hpp>
 #include <monad/mpt/detail/db_metadata.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <stop_token>
 #include <thread>

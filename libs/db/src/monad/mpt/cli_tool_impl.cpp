@@ -3,12 +3,11 @@
 #include "cli_tool_impl.hpp"
 
 #include <monad/async/config.hpp>
-#include <monad/async/detail/scope_polyfill.hpp>
-#include <monad/async/detail/start_lifetime_as_polyfill.hpp>
 #include <monad/async/io.hpp>
 #include <monad/async/storage_pool.hpp>
 #include <monad/async/util.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/scope_polyfill.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
 #include <monad/mpt/config.hpp>

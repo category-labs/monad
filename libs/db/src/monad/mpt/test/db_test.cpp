@@ -1,8 +1,7 @@
 #include "test_fixtures_base.hpp"
 
-#include <gtest/gtest.h>
-
 #include <monad/async/config.hpp>
+#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/util.hpp>
 #include <monad/core/assert.h>
@@ -63,7 +62,8 @@ namespace
             .key = prefix,
             .value = monad::byte_string_view{},
             .incarnation = false,
-            .next = std::move(ul)};
+            .next = std::move(ul),
+            .version = static_cast<int64_t>(block_id)};
         UpdateList ul_prefix;
         ul_prefix.push_front(u_prefix);
 
@@ -82,29 +82,33 @@ namespace
         Db db{machine, OnDiskDbConfig{.history_length = DBTEST_HISTORY_LENGTH}};
     };
 
+    std::filesystem::path create_temp_file()
+    {
+        std::filesystem::path const filename{
+            MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+            "monad_db_test_XXXXXX"};
+        int const fd = ::mkstemp((char *)filename.native().data());
+        MONAD_ASSERT(fd != -1);
+        MONAD_ASSERT(-1 != ::ftruncate(fd, 8ULL * 1024 * 1024 * 1024));
+        ::close(fd);
+        return filename;
+    }
+
     struct OnDiskDbWithFileFixture : public ::testing::Test
     {
         std::filesystem::path const dbname;
-        StateMachineAlwaysMerkle machine;
+        using StateMachineMerkleWithCompact = StateMachineAlways<
+            MerkleCompute, StateMachineConfig{.compaction = true}>;
+        StateMachineMerkleWithCompact machine;
         OnDiskDbConfig config;
         Db db;
 
         OnDiskDbWithFileFixture()
-            : dbname{[] {
-                std::filesystem::path ret(
-                    MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-                    "monad_db_test_XXXXXX");
-                int const fd = ::mkstemp((char *)ret.native().data());
-                MONAD_ASSERT(fd != -1);
-                MONAD_ASSERT(
-                    -1 !=
-                    ::ftruncate(
-                        fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
-                ::close(fd);
-                return ret;
-            }()}
-            , machine{StateMachineAlwaysMerkle{}}
+            : dbname{create_temp_file()}
+            , machine{StateMachineMerkleWithCompact{}}
             , config{OnDiskDbConfig{
+                  .compaction = true,
+                  .sq_thread_cpu = std::nullopt,
                   .dbname_paths = {dbname},
                   .history_length = DBTEST_HISTORY_LENGTH}}
             , db{machine, config}
@@ -541,18 +545,8 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
     ro_db.traverse(NodeCursor{*root}, traverse_machine, version);
 }
 
-TEST(ReadOnlyDbTest, open_empty_rodb)
+TEST_F(OnDiskDbWithFileFixture, open_emtpy_rodb)
 {
-    std::filesystem::path const dbname{
-        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_empty"};
-
-    // construct RWDb, storage pool is set up but db remains empty
-    StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig const config{
-        .compaction = true, .dbname_paths = {dbname}, .file_size_db = 8};
-    Db const db{machine, config};
-
     // construct RODb
     ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
     // RODb root is invalid
@@ -564,16 +558,12 @@ TEST(ReadOnlyDbTest, open_empty_rodb)
     EXPECT_EQ(ro_db.get({}, 0).assume_error(), DbError::key_not_found);
 }
 
-TEST(ReadOnlyDbTest, read_only_db_concurrent)
+TEST_F(OnDiskDbWithFileFixture, read_only_db_concurrent)
 {
     // Have one thread make forward progress by updating new versions and
     // erasing outdated ones. Meanwhile spwan a read thread that queries
     // historical states.
     std::atomic<bool> done{false};
-    std::filesystem::path const dbname{
-        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_concurrent"};
-
     auto const prefix = 0x00_hex;
 
     auto upsert_new_version = [&](Db &db, uint64_t const version) {
@@ -634,10 +624,6 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
 
     // construct RWDb
     uint64_t version = 0;
-    StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig const config{
-        .compaction = true, .dbname_paths = {dbname}, .file_size_db = 8};
-    Db db{machine, config};
 
     std::thread reader(keep_query);
 
@@ -657,18 +643,8 @@ TEST(ReadOnlyDbTest, read_only_db_concurrent)
               << db.get_earliest_block_id() << std::endl;
 }
 
-TEST(DbTest, read_only_db_traverse_concurrent)
+TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_concurrent)
 {
-    std::filesystem::path const dbname{
-        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_traverse_concurrent"};
-    StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig config{// with compaction
-                          .compaction = true,
-                          .dbname_paths = {dbname},
-                          .file_size_db = 8,
-                          .history_length = DBTEST_HISTORY_LENGTH};
-    Db db{machine, config};
     EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
     auto [bytes_alloc, updates_alloc] = prepare_random_updates(20);
 
@@ -710,18 +686,8 @@ TEST(DbTest, read_only_db_traverse_concurrent)
         << ro_db.get_history_length();
 }
 
-TEST(DBTest, benchmark_blocking_parallel_traverse)
+TEST_F(OnDiskDbWithFileFixture, benchmark_blocking_parallel_traverse)
 {
-    std::filesystem::path const dbname{
-        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_benchmark_traverse"};
-    StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig config{// with compaction
-                          .compaction = true,
-                          .sq_thread_cpu{std::nullopt},
-                          .dbname_paths = {dbname},
-                          .file_size_db = 8};
-    Db db{machine, config};
     auto [bytes_alloc, updates_alloc] = prepare_random_updates(2000);
     UpdateList ls;
     for (auto &u : updates_alloc) {
@@ -752,14 +718,8 @@ TEST(DBTest, benchmark_blocking_parallel_traverse)
     EXPECT_TRUE(parallel_elapsed < blocking_elapsed);
 }
 
-TEST(ReadOnlyDbTest, load_correct_root_upon_reopen_nonempty_db)
+TEST_F(OnDiskDbWithFileFixture, load_correct_root_upon_reopen_nonempty_db)
 {
-    std::filesystem::path const dbname{
-        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_reopen"};
-    StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig config{.dbname_paths = {dbname}, .file_size_db = 8};
-
     auto const &kv = fixed_updates::kv;
     auto const prefix = 0x00_hex;
     uint64_t const block_id = 0x123;
@@ -1192,19 +1152,154 @@ TEST_F(OnDiskDbFixture, rw_query_old_version)
     EXPECT_EQ(bad_read.error(), DbError::key_not_found);
 }
 
-TEST(DbTest, move_trie_causes_discontinuous_history)
+TEST(DbTest, auto_expire_large_set)
 {
-    std::filesystem::path const dbname{
-        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_db_test_discontinuous_history"};
-    StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig config{// with compaction
-                          .compaction = true,
-                          .sq_thread_cpu{std::nullopt},
-                          .dbname_paths = {dbname},
-                          .file_size_db = 8,
-                          .history_length = DBTEST_HISTORY_LENGTH};
+    auto const dbname = create_temp_file();
+    auto undb = monad::make_scope_exit(
+        [&]() noexcept { std::filesystem::remove(dbname); });
+    StateMachineAlways<
+        EmptyCompute,
+        StateMachineConfig{
+            .compaction = true, .expire = true, .cache_depth = 3}>
+        machine{};
+    constexpr auto history_len = 20;
+    OnDiskDbConfig config{
+        .compaction = true,
+        .sq_thread_cpu{std::nullopt},
+        .dbname_paths = {dbname},
+        .file_size_db = 8,
+        .history_length = history_len};
     Db db{machine, config};
+
+    auto const prefix = 0x00_hex;
+    monad::byte_string const value(256 * 1024, 0);
+    std::vector<monad::byte_string> keys;
+    std::vector<monad::byte_string> values;
+    constexpr unsigned keys_per_block = 5;
+    constexpr uint64_t blocks = 1000;
+    keys.reserve(blocks * keys_per_block);
+
+    // randomize keys
+    auto const seed = static_cast<uint32_t>(time(NULL));
+    std::cout << "seed to reproduce: " << seed << std::endl;
+    monad::small_prng rand(seed);
+    for (uint64_t block_id = 0; block_id < blocks; ++block_id) {
+        for (unsigned i = 0; i < keys_per_block; ++i) {
+            auto &key = keys.emplace_back(monad::byte_string(32, 0));
+            uint64_t raw = rand();
+            keccak256((unsigned char const *)&raw, 8, key.data());
+        }
+        uint64_t const index = keys_per_block * block_id;
+        upsert_updates_flat_list(
+            db,
+            prefix,
+            block_id,
+            make_update(keys[index], value, false, UpdateList{}, block_id),
+            make_update(keys[index + 1], value, false, UpdateList{}, block_id),
+            make_update(keys[index + 2], value, false, UpdateList{}, block_id),
+            make_update(keys[index + 3], value, false, UpdateList{}, block_id),
+            make_update(keys[index + 4], value, false, UpdateList{}, block_id));
+        if (block_id >= history_len) {
+            // query keys of block before (block_id - history_length + 1) should
+            // fail
+            auto index = (unsigned)(block_id - history_len) * keys_per_block;
+            for (unsigned i = 0; i < keys_per_block; ++i) {
+                EXPECT_FALSE(db.get(prefix + keys[index], block_id))
+                    << "Expect failed look up of key = keccak(" << index
+                    << ") at block " << block_id;
+                ++index;
+            }
+            for (; index < keys_per_block * block_id; ++index) {
+                EXPECT_TRUE(db.get(prefix + keys[index], block_id))
+                    << "Expect successful look up of key = keccak(" << index
+                    << ") at block " << block_id;
+            }
+        }
+    }
+}
+
+TEST(DbTest, auto_expire)
+{
+    auto const dbname = create_temp_file();
+    auto undb = monad::make_scope_exit(
+        [&]() noexcept { std::filesystem::remove(dbname); });
+    StateMachineAlways<
+        EmptyCompute,
+        StateMachineConfig{
+            .compaction = true, .expire = true, .cache_depth = 3}>
+        machine{};
+    OnDiskDbConfig config{
+        .compaction = true,
+        .sq_thread_cpu{std::nullopt},
+        .dbname_paths = {dbname},
+        .file_size_db = 8,
+        .history_length = 5};
+    Db db{machine, config};
+    auto const prefix = 0x00_hex;
+    // insert 10 keys
+    std::vector<monad::byte_string> keys;
+    for (uint64_t i = 0; i < 10; ++i) {
+        keys.emplace_back(serialize_as_big_endian<8>(i));
+    }
+
+    for (uint64_t block_id = 0; block_id < 10; ++block_id) {
+        upsert_updates_flat_list(
+            db,
+            prefix,
+            block_id,
+            make_update(
+                keys[block_id], keys[block_id], false, UpdateList{}, block_id));
+        EXPECT_TRUE(db.get(prefix + keys[block_id], block_id).has_value())
+            << block_id;
+    }
+
+    uint64_t latest_block_id = db.get_latest_block_id(),
+             earliest_block_id = db.get_earliest_block_id();
+    for (unsigned i = 0; i <= latest_block_id; ++i) {
+        auto const res = db.get(prefix + keys[i], latest_block_id);
+        if (i < earliest_block_id) { // keys 0-4 are expired
+            EXPECT_FALSE(res.has_value()) << i;
+        }
+        else {
+            EXPECT_TRUE(res.has_value()) << i;
+            EXPECT_EQ(res.value(), keys[i]);
+        }
+    }
+
+    // insert 5 more keys, branch out at an earlier nibble
+    constexpr uint64_t offset = 0x100;
+    for (uint64_t i = 0; i < 5; ++i) {
+        keys.emplace_back(serialize_as_big_endian<8>(i + offset));
+    }
+    for (uint64_t block_id = latest_block_id + 1;
+         block_id <= 5 + latest_block_id;
+         ++block_id) {
+        upsert_updates_flat_list(
+            db,
+            prefix,
+            block_id,
+            make_update(
+                keys[block_id], keys[block_id], false, UpdateList{}, block_id));
+        EXPECT_TRUE(db.get(prefix + keys[block_id], block_id).has_value())
+            << block_id;
+    }
+
+    latest_block_id = db.get_latest_block_id(); // 14
+    earliest_block_id = db.get_earliest_block_id(); // 10
+    for (unsigned i = 0; i <= latest_block_id; ++i) {
+        auto const res = db.get(prefix + keys[i], latest_block_id);
+        if (i < earliest_block_id) { // keys 0-9 are expired
+            EXPECT_FALSE(res.has_value()) << i;
+        }
+        else {
+            EXPECT_TRUE(res.has_value()) << i;
+            EXPECT_EQ(res.value(), keys[i]);
+        }
+    }
+}
+
+TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
+{
     EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
     Db ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
     EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);

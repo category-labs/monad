@@ -164,8 +164,14 @@ namespace monad::test
     static_assert(sizeof(StateMachineVarLenTrieWithPrefix<>) == 16);
     static_assert(alignof(StateMachineVarLenTrieWithPrefix<>) == 8);
 
-    template <
-        class Compute, bool enable_compaction = false, size_t cache_depth = 6>
+    struct StateMachineConfig
+    {
+        bool compaction{false};
+        bool expire{false};
+        size_t cache_depth{6};
+    };
+
+    template <class Compute, StateMachineConfig config = StateMachineConfig{}>
     class StateMachineAlways final : public StateMachine
     {
     private:
@@ -176,9 +182,7 @@ namespace monad::test
 
         virtual std::unique_ptr<StateMachine> clone() const override
         {
-            return std::make_unique<
-                StateMachineAlways<Compute, enable_compaction, cache_depth>>(
-                *this);
+            return std::make_unique<StateMachineAlways<Compute, config>>(*this);
         }
 
         virtual void down(unsigned char) override
@@ -200,12 +204,17 @@ namespace monad::test
 
         virtual constexpr bool cache() const override
         {
-            return depth < cache_depth;
+            return depth < config.cache_depth;
         }
 
         virtual constexpr bool compact() const override
         {
-            return enable_compaction;
+            return config.compaction;
+        }
+
+        virtual constexpr bool auto_expire() const override
+        {
+            return config.expire;
         }
     };
 
@@ -565,8 +574,8 @@ namespace monad::test
                                 std::move(key),
                                 aux.get_latest_root_offset().id);
                         }
-                        updates.push_back(
-                            make_update(keys.back().first, keys.back().first));
+                        updates.push_back(make_update(
+                            keys.back().first, keys.back().first, 0));
                         update_ls.push_front(updates.back());
                     }
                     root = upsert(

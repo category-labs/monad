@@ -789,10 +789,12 @@ void UpdateAuxImpl::advance_compact_offsets(uint64_t version_to_erase)
         MONAD_ASSERT(version_history_length() > 1);
         auto const compacted_erased_root_offset =
             compact_virtual_chunk_offset_t{virtual_root_offset};
-        compact_offset_range_fast_.set_value(divide_and_round(
-            curr_fast_writer_offset - compacted_erased_root_offset,
-            max_version - version_to_erase));
-        compact_offset_fast += compact_offset_range_fast_;
+        if (compact_offset_fast < curr_fast_writer_offset) {
+            compact_offset_range_fast_.set_value(divide_and_round(
+                curr_fast_writer_offset - compacted_erased_root_offset,
+                max_version - version_to_erase));
+            compact_offset_fast += compact_offset_range_fast_;
+        }
     }
     update_root_offset(version_to_erase, INVALID_OFFSET);
     free_compacted_chunks(); // Free released chunks here because the history

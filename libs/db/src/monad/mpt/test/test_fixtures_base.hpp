@@ -415,6 +415,8 @@ namespace monad::test
     {
         size_t chunks_to_fill;
         size_t chunks_max{64};
+        size_t history_len{MPT_TEST_HISTORY_LENGTH};
+        size_t updates_per_block{1000};
         bool alternate_slow_fast_writer{false};
         bool use_anonymous_inode{true};
     };
@@ -470,8 +472,7 @@ namespace monad::test
             Node::UniquePtr root;
             StateMachineAlwaysMerkle sm;
             UpdateAux<LockType> aux{
-                &io,
-                MPT_TEST_HISTORY_LENGTH}; // trie section starts from account
+                &io, Config.history_len}; // trie section starts from account
             monad::small_prng rand;
             std::vector<std::pair<monad::byte_string, size_t>> keys;
             uint64_t version{0};
@@ -549,11 +550,11 @@ namespace monad::test
             void ensure_total_chunks(size_t chunks)
             {
                 std::vector<Update> updates;
-                updates.reserve(1000);
+                updates.reserve(Config.updates_per_block);
                 for (;;) {
                     UpdateList update_ls;
                     updates.clear();
-                    for (size_t n = 0; n < 1000; n++) {
+                    for (size_t n = 0; n < Config.updates_per_block; n++) {
                         {
                             monad::byte_string key(
                                 0x1234567812345678123456781234567812345678123456781234567812345678_hex);

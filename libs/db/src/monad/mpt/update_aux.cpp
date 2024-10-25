@@ -259,6 +259,7 @@ void UpdateAuxImpl::rewind_to_match_offsets()
 
 void UpdateAuxImpl::rewind_to_version(uint64_t const version)
 {
+    MONAD_ASSERT(version_is_valid_ondisk(version));
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
         auto g = m->hold_dirty();
@@ -301,7 +302,8 @@ UpdateAuxImpl::~UpdateAuxImpl()
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wclass-memaccess"
 #endif
-void UpdateAuxImpl::set_io(AsyncIO *io_, uint64_t const history_len)
+void UpdateAuxImpl::set_io(
+    AsyncIO *io_, std::optional<uint64_t> const history_len)
 {
     io = io_;
     auto const chunk_count = io->chunk_count();
@@ -451,6 +453,7 @@ void UpdateAuxImpl::set_io(AsyncIO *io_, uint64_t const history_len)
         memset(db_metadata_[0], 0, map_size);
         MONAD_DEBUG_ASSERT((chunk_count & ~0xfffffU) == 0);
         db_metadata_[0]->chunk_info_count = chunk_count & 0xfffffU;
+        db_metadata_[0]->history_length = MAX_HISTORY_LEN;
         memset(
             &db_metadata_[0]->free_list,
             0xff,
@@ -531,7 +534,9 @@ void UpdateAuxImpl::set_io(AsyncIO *io_, uint64_t const history_len)
         db_metadata_[1]->root_offsets.reset_all(0);
 
         // Set history length
-        update_history_length_metadata(history_len);
+        if (history_len.has_value()) {
+            update_history_length_metadata(*history_len);
+        }
 
         std::atomic_signal_fence(
             std::memory_order_seq_cst); // no compiler reordering here
@@ -557,17 +562,20 @@ void UpdateAuxImpl::set_io(AsyncIO *io_, uint64_t const history_len)
             // Reset/init node writer's offsets, destroy contents after
             // fast_offset.id chunck
             rewind_to_match_offsets();
-            // reset history length
-            if (history_len < version_history_length()) {
-                // we invalidate earlier blocks that fall outside of the history
-                // window when shortening history length
-                for (auto version = db_history_min_valid_version();
-                     version <= db_history_max_version() - history_len;
-                     ++version) {
-                    update_root_offset(version, INVALID_OFFSET);
+            if (history_len.has_value()) {
+                // reset history length
+                if (history_len < version_history_length() &&
+                    history_len <= db_history_max_version()) {
+                    // we invalidate earlier blocks that fall outside of the
+                    // history window when shortening history length
+                    for (auto version = db_history_min_valid_version();
+                         version <= db_history_max_version() - *history_len;
+                         ++version) {
+                        update_root_offset(version, INVALID_OFFSET);
+                    }
                 }
+                update_history_length_metadata(*history_len);
             }
-            update_history_length_metadata(history_len);
         }
     }
     // If the pool has changed since we configured the metadata, this will

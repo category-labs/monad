@@ -343,7 +343,8 @@ public:
 
     UpdateAuxImpl(
         MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
-        uint64_t const history_len = MAX_HISTORY_LEN)
+        std::optional<uint64_t> const history_len = {})
+
     {
         if (io_) {
             set_io(io_, history_len);
@@ -491,7 +492,9 @@ public:
                *current_upsert_tid_ != gettid();
     }
 
-    void set_io(MONAD_ASYNC_NAMESPACE::AsyncIO *, uint64_t history_length);
+    void set_io(
+        MONAD_ASYNC_NAMESPACE::AsyncIO *,
+        std::optional<uint64_t> history_length = {});
 
     void unset_io();
 
@@ -733,14 +736,14 @@ class UpdateAux final : public UpdateAuxImpl
 public:
     UpdateAux(
         MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
-        uint64_t const history_len = MAX_HISTORY_LEN)
+        std::optional<uint64_t> const history_len = {})
         : UpdateAuxImpl(io_, history_len)
     {
     }
 
     UpdateAux(
         LockType &&lock, MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
-        uint64_t const history_len = MAX_HISTORY_LEN)
+        std::optional<uint64_t> const history_len = {})
         : UpdateAuxImpl(io_, history_len)
         , lock_(std::move(lock))
     {
@@ -783,7 +786,7 @@ class UpdateAux<void> final : public UpdateAuxImpl
 public:
     UpdateAux(
         MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
-        uint64_t const history_len = MAX_HISTORY_LEN)
+        std::optional<uint64_t> const history_len = {})
         : UpdateAuxImpl(io_, history_len)
     {
     }

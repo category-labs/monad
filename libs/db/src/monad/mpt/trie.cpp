@@ -41,16 +41,16 @@ using namespace MONAD_ASYNC_NAMESPACE;
  `*_prefix_index_start` is the starting nibble index in current function frame
 */
 void dispatch_updates_flat_list_(
-    UpdateAuxImpl &, StateMachine &, UpwardTreeNode &parent, ChildData &,
+    UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
     Node::UniquePtr old, Requests &, NibblesView path, unsigned prefix_index);
 
 void dispatch_updates_impl_(
-    UpdateAuxImpl &, StateMachine &, UpwardTreeNode &parent, ChildData &,
+    UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
     Node::UniquePtr old, Requests &, unsigned prefix_index, NibblesView path,
     std::optional<byte_string_view> opt_leaf_data, int64_t version);
 
 void mismatch_handler_(
-    UpdateAuxImpl &, StateMachine &, UpwardTreeNode &parent, ChildData &,
+    UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
     Node::UniquePtr old, Requests &, NibblesView path,
     unsigned old_prefix_index, unsigned prefix_index);
 
@@ -64,12 +64,12 @@ void create_new_trie_from_requests_(
     std::optional<byte_string_view> opt_leaf_data, int64_t version);
 
 void upsert_(
-    UpdateAuxImpl &, StateMachine &, UpwardTreeNode &parent, ChildData &,
+    UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
     Node::UniquePtr old, chunk_offset_t offset, UpdateList &&,
     unsigned prefix_index = 0, unsigned old_prefix_index = 0);
 
 void create_node_compute_data_possibly_async(
-    UpdateAuxImpl &, StateMachine &, UpwardTreeNode &parent, ChildData &,
+    UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
     tnode_unique_ptr, bool might_on_disk = true);
 
 void compact_(
@@ -257,7 +257,7 @@ size_t load_all(UpdateAuxImpl &aux, StateMachine &sm, NodeCursor const root)
 
 // Upward update until a unfinished parent node. For each tnode, create the
 // trie Node when all its children are created
-void upward_update(UpdateAuxImpl &aux, StateMachine &sm, UpwardTreeNode *tnode)
+void upward_update(UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode *tnode)
 {
     while (!tnode->npending && tnode->parent) {
         MONAD_DEBUG_ASSERT(tnode->children.size()); // not a leaf
@@ -280,7 +280,7 @@ struct update_receiver
     UpdateAuxImpl *aux;
     std::unique_ptr<StateMachine> sm;
     UpdateList updates;
-    UpwardTreeNode *parent;
+    UpdateTNode *parent;
     ChildData &entry;
     chunk_offset_t rd_offset;
     unsigned bytes_to_read;
@@ -289,7 +289,7 @@ struct update_receiver
 
     update_receiver(
         UpdateAuxImpl *aux, std::unique_ptr<StateMachine> sm, ChildData &entry,
-        chunk_offset_t offset, UpdateList &&updates, UpwardTreeNode *parent,
+        chunk_offset_t offset, UpdateList &&updates, UpdateTNode *parent,
         unsigned const prefix_index)
         : aux(aux)
         , sm(std::move(sm))
@@ -394,12 +394,12 @@ struct read_single_child_expire_receiver
             tnode->parent,
             tnode->index,
             tnode->branch,
-            tnode->cached);
+            tnode->cache_node);
         // upward update
         auto *parent = tnode->parent;
         while (!parent->npending) {
             if (parent->type == tnode_type::update) {
-                upward_update(*aux, *sm, (UpwardTreeNode *)parent);
+                upward_update(*aux, *sm, (UpdateTNode *)parent);
                 return;
             }
             auto *next_parent = parent->parent;
@@ -418,7 +418,7 @@ struct read_single_child_receiver
 
     UpdateAuxImpl *aux;
     chunk_offset_t rd_offset;
-    UpwardTreeNode *tnode; // single child tnode
+    UpdateTNode *tnode; // single child tnode
     ChildData &child;
     unsigned bytes_to_read;
     uint16_t buffer_off;
@@ -426,7 +426,7 @@ struct read_single_child_receiver
 
     read_single_child_receiver(
         UpdateAuxImpl *const aux, std::unique_ptr<StateMachine> sm,
-        UpwardTreeNode *const tnode, ChildData &child)
+        UpdateTNode *const tnode, ChildData &child)
         : aux(aux)
         , rd_offset(0, 0)
         , tnode(tnode)
@@ -546,7 +546,7 @@ struct compaction_receiver
             copy_node_for_fast_or_slow);
         while (!parent->npending) {
             if (parent->type == tnode_type::update) {
-                upward_update(*aux, *sm, (UpwardTreeNode *)parent);
+                upward_update(*aux, *sm, (UpdateTNode *)parent);
                 return;
             }
             auto *next_parent = parent->parent;
@@ -611,7 +611,7 @@ struct expire_receiver
         expire_(*aux, *sm, std::move(tnode), INVALID_OFFSET);
         while (!parent->npending) {
             if (parent->type == tnode_type::update) {
-                upward_update(*aux, *sm, (UpwardTreeNode *)parent);
+                upward_update(*aux, *sm, (UpdateTNode *)parent);
                 return;
             }
             MONAD_DEBUG_ASSERT(parent->type == tnode_type::expire);
@@ -785,8 +785,8 @@ Node::UniquePtr create_node_from_children_if_any(
 }
 
 void create_node_compute_data_possibly_async(
-    UpdateAuxImpl &aux, StateMachine &sm, UpwardTreeNode &parent,
-    ChildData &entry, tnode_unique_ptr tnode, bool const might_on_disk)
+    UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
+    tnode_unique_ptr tnode, bool const might_on_disk)
 {
     if (might_on_disk && tnode->number_of_children() == 1) {
         auto &child = tnode->children[bitmask_index(
@@ -828,9 +828,8 @@ void create_node_compute_data_possibly_async(
 }
 
 void update_value_and_subtrie_(
-    UpdateAuxImpl &aux, StateMachine &sm, UpwardTreeNode &parent,
-    ChildData &entry, Node::UniquePtr old, NibblesView const path,
-    Update &update)
+    UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
+    Node::UniquePtr old, NibblesView const path, Update &update)
 {
     if (update.is_deletion()) {
         parent.mask &= static_cast<uint16_t>(~(1u << entry.branch));
@@ -996,9 +995,9 @@ void create_new_trie_from_requests_(
 /////////////////////////////////////////////////////
 
 void upsert_(
-    UpdateAuxImpl &aux, StateMachine &sm, UpwardTreeNode &parent,
-    ChildData &entry, Node::UniquePtr old, chunk_offset_t const old_offset,
-    UpdateList &&updates, unsigned prefix_index, unsigned old_prefix_index)
+    UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
+    Node::UniquePtr old, chunk_offset_t const old_offset, UpdateList &&updates,
+    unsigned prefix_index, unsigned old_prefix_index)
 {
     if (!old) {
         update_receiver receiver(
@@ -1090,7 +1089,7 @@ void upsert_(
 
 void fillin_entry(
     UpdateAuxImpl &aux, StateMachine &sm, tnode_unique_ptr tnode,
-    UpwardTreeNode &parent, ChildData &entry)
+    UpdateTNode &parent, ChildData &entry)
 {
     if (tnode->npending) {
         tnode.release();
@@ -1104,10 +1103,10 @@ void fillin_entry(
 /* dispatch updates at the end of old node's path. old node may have leaf data,
  * and there might be update to the leaf value. */
 void dispatch_updates_impl_(
-    UpdateAuxImpl &aux, StateMachine &sm, UpwardTreeNode &parent,
-    ChildData &entry, Node::UniquePtr old_ptr, Requests &requests,
-    unsigned const prefix_index, NibblesView const path,
-    std::optional<byte_string_view> const opt_leaf_data, int64_t const version)
+    UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
+    Node::UniquePtr old_ptr, Requests &requests, unsigned const prefix_index,
+    NibblesView const path, std::optional<byte_string_view> const opt_leaf_data,
+    int64_t const version)
 {
     Node *old = old_ptr.get();
     uint16_t const orig_mask = old->mask | requests.mask;
@@ -1166,7 +1165,7 @@ void dispatch_updates_impl_(
                     // expire_() is similar to dispatch_updates() except that it
                     // can cut off some branches for data expiration
                     auto expire_tnode = ExpireTNode::make(
-                        (ExpireTNode *)tnode.get(), i, j, std::move(child.ptr));
+                        tnode.get(), i, j, std::move(child.ptr));
                     expire_(aux, sm, std::move(expire_tnode), child.offset);
                 }
                 else if (
@@ -1176,7 +1175,7 @@ void dispatch_updates_impl_(
                     bool const copy_node_for_fast =
                         child.min_offset_fast < aux.compact_offset_fast;
                     auto compact_tnode = CompactTNode::make(
-                        (CompactTNode *)tnode.get(), j, std::move(child.ptr));
+                        tnode.get(), j, std::move(child.ptr));
                     compact_(
                         aux,
                         sm,
@@ -1198,9 +1197,9 @@ void dispatch_updates_impl_(
 }
 
 void dispatch_updates_flat_list_(
-    UpdateAuxImpl &aux, StateMachine &sm, UpwardTreeNode &parent,
-    ChildData &entry, Node::UniquePtr old, Requests &requests,
-    NibblesView const path, unsigned prefix_index)
+    UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
+    Node::UniquePtr old, Requests &requests, NibblesView const path,
+    unsigned prefix_index)
 {
     auto &opt_leaf = requests.opt_leaf;
     auto opt_leaf_data = old->opt_value();
@@ -1251,10 +1250,9 @@ void dispatch_updates_flat_list_(
 // Split `old` at old_prefix_index, `updates` are already splitted at
 // prefix_index to `requests`, which can have 1 or more sublists.
 void mismatch_handler_(
-    UpdateAuxImpl &aux, StateMachine &sm, UpwardTreeNode &parent,
-    ChildData &entry, Node::UniquePtr old_ptr, Requests &requests,
-    NibblesView const path, unsigned const old_prefix_index,
-    unsigned const prefix_index)
+    UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
+    Node::UniquePtr old_ptr, Requests &requests, NibblesView const path,
+    unsigned const old_prefix_index, unsigned const prefix_index)
 {
     Node &old = *old_ptr;
     MONAD_DEBUG_ASSERT(old.has_path());
@@ -1326,7 +1324,7 @@ void mismatch_handler_(
                 if (sm.auto_expire() &&
                     child.subtrie_min_version < aux.min_version_after_upsert) {
                     auto expire_tnode = ExpireTNode::make(
-                        (ExpireTNode *)tnode.get(), i, j, std::move(child.ptr));
+                        tnode.get(), i, j, std::move(child.ptr));
                     expire_(aux, sm, std::move(expire_tnode), INVALID_OFFSET);
                 }
                 else if (auto const [min_offset_fast, min_offset_slow] =
@@ -1339,7 +1337,7 @@ void mismatch_handler_(
                     bool const copy_node_for_fast =
                         min_offset_fast < aux.compact_offset_fast;
                     auto compact_tnode = CompactTNode::make(
-                        (CompactTNode *)tnode.get(), j, std::move(child.ptr));
+                        tnode.get(), j, std::move(child.ptr));
                     compact_(
                         aux,
                         sm,
@@ -1385,7 +1383,7 @@ void expire_(
         // this branch is expired, erase it from parent
         parent->mask &= static_cast<uint16_t>(~(1u << tnode->branch));
         if (parent->type == tnode_type::update) {
-            ((UpwardTreeNode *)parent)->children[tnode->index].erase();
+            ((UpdateTNode *)parent)->children[tnode->index].erase();
         }
         --parent->npending;
         return;
@@ -1405,8 +1403,8 @@ void expire_(
             else if (
                 node.min_offset_fast(j) < aux.compact_offset_fast ||
                 node.min_offset_slow(j) < aux.compact_offset_slow) {
-                auto child_tnode = CompactTNode::make(
-                    (CompactTNode *)tnode.get(), j, node.move_next(j));
+                auto child_tnode =
+                    CompactTNode::make(tnode.get(), j, node.move_next(j));
                 compact_(
                     aux,
                     sm,
@@ -1431,7 +1429,7 @@ void fillin_parent_after_expiration(
         // expire this branch from parent
         parent->mask &= static_cast<uint16_t>(~(1u << branch));
         if (parent->type == tnode_type::update) {
-            ((UpwardTreeNode *)parent)->children[index].erase();
+            ((UpdateTNode *)parent)->children[index].erase();
         }
     }
     else {
@@ -1442,9 +1440,10 @@ void fillin_parent_after_expiration(
         auto const min_version = calc_min_version(*new_node);
         MONAD_DEBUG_ASSERT(min_version >= aux.min_version_after_upsert);
         if (parent->type == tnode_type::update) {
-            auto &child = ((UpwardTreeNode *)parent)->children[index];
-            MONAD_ASSERT(!child.ptr);
+            auto &child = ((UpdateTNode *)parent)->children[index];
+            MONAD_ASSERT(!child.ptr); // been transferred to tnode
             child.offset = new_offset;
+            MONAD_DEBUG_ASSERT(cache_node);
             child.ptr = std::move(new_node);
             child.min_offset_fast = min_offset_fast;
             child.min_offset_slow = min_offset_slow;
@@ -1475,7 +1474,7 @@ void try_fillin_parent_after_expiration(
     auto const index = tnode->index;
     auto const branch = tnode->branch;
     auto *const parent = tnode->parent;
-    auto const cache_node = tnode->cached;
+    auto const cache_node = tnode->cache_node;
     auto [done, new_node] =
         create_node_with_expired_branches(aux, sm, std::move(tnode));
     if (!done) {
@@ -1579,8 +1578,8 @@ void try_fillin_parent_with_rewritten_node(
     auto *parent = tnode->parent;
     auto const index = tnode->index;
     if (parent->type == tnode_type::update) {
-        auto *const p = reinterpret_cast<UpwardTreeNode *>(parent);
-        MONAD_DEBUG_ASSERT(tnode->cached);
+        auto *const p = reinterpret_cast<UpdateTNode *>(parent);
+        MONAD_DEBUG_ASSERT(tnode->cache_node);
         auto &child = p->children[index];
         child.ptr = std::move(tnode->node);
         child.offset = new_offset;
@@ -1598,12 +1597,13 @@ void try_fillin_parent_with_rewritten_node(
         node->set_fnext(index, new_offset);
         node->set_min_offset_fast(index, min_offset_fast);
         node->set_min_offset_slow(index, min_offset_slow);
-        if (tnode->cached || parent->type == tnode_type::expire) {
-            if (parent->type == tnode_type::expire && tnode->cached) {
+        if (tnode->cache_node || parent->type == tnode_type::expire) {
+            // Delay tnode->node deallocation to parent ExpireTNode
+            node->set_next(index, std::move(tnode->node));
+            if (tnode->cache_node && parent->type == tnode_type::expire) {
                 ((ExpireTNode *)parent)->cache_mask |=
                     static_cast<uint16_t>(1u << tnode->index);
             }
-            node->set_next(index, std::move(tnode->node));
         }
     }
     --parent->npending;

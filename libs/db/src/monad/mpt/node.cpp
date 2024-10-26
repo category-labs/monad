@@ -432,7 +432,7 @@ void ChildData::copy_old_child(Node *const old, unsigned const i)
     min_offset_fast = old->min_offset_fast(index);
     min_offset_slow = old->min_offset_slow(index);
     subtrie_min_version = old->subtrie_min_version(index);
-    cache_node = true;
+    cache_node = ptr != nullptr;
 
     MONAD_DEBUG_ASSERT(is_valid());
 }

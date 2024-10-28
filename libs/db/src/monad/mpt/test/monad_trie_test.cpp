@@ -517,8 +517,8 @@ int main(int argc, char *argv[])
 
             Node::UniquePtr root{};
             if (append) {
-                root.reset(read_node_blocking(
-                    io.storage_pool(), aux.get_latest_root_offset()));
+                root = read_node_blocking(
+                    io.storage_pool(), aux.get_latest_root_offset());
             }
             auto block_id = in_memory ? 0 : (aux.db_history_max_version() + 1);
             printf("starting block id %lu\n", block_id);
@@ -658,8 +658,8 @@ int main(int argc, char *argv[])
                 if (!in_memory) {
                     aux.set_io(&io, history_len);
                 }
-                root.reset(read_node_blocking(
-                    io.storage_pool(), aux.get_latest_root_offset()));
+                root = read_node_blocking(
+                    io.storage_pool(), aux.get_latest_root_offset());
                 auto [res, errc] = find_blocking(aux, *root, state_nibbles);
                 MONAD_ASSERT(errc == find_result::success);
                 state_start = res;

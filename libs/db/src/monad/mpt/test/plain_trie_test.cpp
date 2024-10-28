@@ -510,8 +510,8 @@ TYPED_TEST(PlainTrieTest, node_version)
 
     auto read_child = [&](Node &parent,
                           unsigned const index) -> Node::UniquePtr {
-        return Node::UniquePtr{read_node_blocking(
-            this->aux.io->storage_pool(), parent.fnext(index))};
+        return read_node_blocking(
+            this->aux.io->storage_pool(), parent.fnext(index));
     };
     if (this->root->next(0)) {
         EXPECT_EQ(this->root->next(0)->version, 0);
@@ -567,8 +567,7 @@ TYPED_TEST(PlainTrieTest, node_version)
     }
 
     if (!this->root->next(1)) {
-        auto node = read_child(*this->root, 1);
-        this->root->set_next(1, node.release());
+        this->root->set_next(1, read_child(*this->root, 1));
     }
     EXPECT_EQ(this->root->next(1)->version, 4);
 

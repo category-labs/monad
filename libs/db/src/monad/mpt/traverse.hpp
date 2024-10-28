@@ -57,8 +57,8 @@ namespace detail
                     }
                     Node::UniquePtr next_disk{};
                     try {
-                        next_disk.reset(read_node_blocking(
-                            aux.io->storage_pool(), node.fnext(idx)));
+                        next_disk = read_node_blocking(
+                            aux.io->storage_pool(), node.fnext(idx));
                     }
                     catch (std::exception const &e) { // exception implies UB
                         return false;

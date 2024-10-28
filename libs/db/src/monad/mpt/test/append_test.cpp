@@ -53,8 +53,8 @@ TYPED_TEST(AppendTest, works)
     EXPECT_EQ(last_fast_off, this->state()->aux.get_start_of_wip_fast_offset());
 
     // Get new current root
-    this->state()->root.reset(
-        read_node_blocking(this->state()->io.storage_pool(), last_root_off));
+    this->state()->root =
+        read_node_blocking(this->state()->io.storage_pool(), last_root_off);
 
     std::cout << "\nAfter rewind:";
     this->state()->print(std::cout);

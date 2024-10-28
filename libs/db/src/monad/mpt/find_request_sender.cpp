@@ -75,7 +75,7 @@ struct find_request_sender::find_receiver
             sender->subtrie_with_sender_lifetime_ = std::move(node_ptr);
         }
         else {
-            sender->root_.node->set_next(branch_index, node_ptr.release());
+            sender->root_.node->set_next(branch_index, std::move(node_ptr));
         }
         if (sender->inflights_ != nullptr) {
             auto it = sender->inflights_->find(next_offset);

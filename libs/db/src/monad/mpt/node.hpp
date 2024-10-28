@@ -275,8 +275,8 @@ public:
     unsigned char const *next_data() const noexcept;
     Node *next(size_t index) noexcept;
     Node const *next(size_t index) const noexcept;
-    void set_next(unsigned index, Node *) noexcept;
-    UniquePtr next_ptr(unsigned index) noexcept;
+    void set_next(unsigned index, Node::UniquePtr) noexcept;
+    UniquePtr move_next(unsigned index) noexcept;
 
     //! node size in memory
     unsigned get_mem_size() const noexcept;
@@ -355,7 +355,7 @@ deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes);
 
 //! input argument is node's physical offset
 //! chunk_offset_t spare bits store the num page to read
-Node *read_node_blocking(
+Node::UniquePtr read_node_blocking(
     MONAD_ASYNC_NAMESPACE::storage_pool &, chunk_offset_t node_offset);
 
 int64_t calc_min_version(Node const &);

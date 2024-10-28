@@ -180,17 +180,16 @@ struct load_all_impl_
         {
             MONAD_ASSERT(buffer_);
             // load node from read buffer
-            Node *node;
             {
                 auto g(impl->aux.unique_lock());
                 MONAD_ASSERT(root.node->next(branch_index) == nullptr);
-                node = detail::deserialize_node_from_receiver_result(
-                           std::move(buffer_), buffer_off, io_state)
-                           .release();
-                root.node->set_next(branch_index, node);
+                root.node->set_next(
+                    branch_index,
+                    detail::deserialize_node_from_receiver_result(
+                        std::move(buffer_), buffer_off, io_state));
                 impl->nodes_loaded++;
             }
-            impl->process(NodeCursor{*node}, *sm);
+            impl->process(NodeCursor{*root.node->next(branch_index)}, *sm);
         }
     };
 
@@ -881,7 +880,7 @@ void dispatch_updates_impl_(
                     sm,
                     *tnode,
                     children[j],
-                    old->next_ptr(old->to_child_index(i)),
+                    old->move_next(old->to_child_index(i)),
                     old->fnext(old->to_child_index(i)),
                     std::move(requests)[i],
                     prefix_index + 1,
@@ -1122,7 +1121,7 @@ void compact_(
         if (node.min_offset_fast(j) < aux.compact_offset_fast ||
             node.min_offset_slow(j) < aux.compact_offset_slow) {
             auto child_tnode =
-                CompactTNode::make(tnode.get(), j, node.next_ptr(j));
+                CompactTNode::make(tnode.get(), j, node.move_next(j));
             compact_(
                 aux,
                 sm,
@@ -1174,7 +1173,7 @@ void try_fillin_parent_with_rewritten_node(
         parent->node->set_min_offset_fast(index, min_offset_fast);
         parent->node->set_min_offset_slow(index, min_offset_slow);
         if (tnode->cached) {
-            parent->node->set_next(index, tnode->node.release());
+            parent->node->set_next(index, std::move(tnode->node));
         }
     }
     else { // parent tnode is an update tnode

@@ -116,10 +116,10 @@ struct Db::ROOnDisk final : public Db::Impl
         , io_{pool_, rwbuf_}
         , aux_{&io_}
         , last_loaded_root_offset_{aux_.get_latest_root_offset()}
-        , root_{Node::UniquePtr{
+        , root_{
               last_loaded_root_offset_ == INVALID_OFFSET
-                  ? nullptr
-                  : read_node_blocking(pool_, last_loaded_root_offset_)}}
+                  ? Node::UniquePtr{}
+                  : read_node_blocking(pool_, last_loaded_root_offset_)}
     {
         io_.set_capture_io_latencies(options.capture_io_latencies);
         io_.set_concurrent_read_io_limit(options.concurrent_read_io_limit);
@@ -207,7 +207,7 @@ struct Db::ROOnDisk final : public Db::Impl
         }
         if (last_loaded_root_offset_ != root_offset) {
             last_loaded_root_offset_ = root_offset;
-            root_.reset(read_node_blocking(pool_, root_offset));
+            root_ = read_node_blocking(pool_, root_offset);
         }
         return root_ ? NodeCursor{*root_} : NodeCursor{};
     }
@@ -485,8 +485,7 @@ struct Db::RWOnDisk final : public Db::Impl
                         auto const root_offset =
                             aux.get_root_offset_at_version(req->version);
                         auto root = (root_offset != INVALID_OFFSET)
-                                        ? Node::UniquePtr{read_node_blocking(
-                                              pool, root_offset)}
+                                        ? read_node_blocking(pool, root_offset)
                                         : Node::UniquePtr{};
                         req->promise->set_value(std::move(root));
                     }
@@ -581,8 +580,8 @@ struct Db::RWOnDisk final : public Db::Impl
             std::unique_lock const g(lock_);
             MONAD_ASSERT(worker_);
             return aux_.get_latest_root_offset() != INVALID_OFFSET
-                       ? Node::UniquePtr{read_node_blocking(
-                             worker_->pool, aux_.get_latest_root_offset())}
+                       ? read_node_blocking(
+                             worker_->pool, aux_.get_latest_root_offset())
                        : Node::UniquePtr{};
         }())
     {

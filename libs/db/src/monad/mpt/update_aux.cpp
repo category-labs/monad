@@ -706,8 +706,8 @@ UpdateAuxImpl::min_offsets_of_version(uint64_t const version) const
 {
     // TODO: can save a blocking read if we store the min_offset_fast/slow to
     // the version ring buffer in metadata
-    auto root_to_erase = Node::UniquePtr{read_node_blocking(
-        io->storage_pool(), get_root_offset_at_version(version))};
+    auto root_to_erase = read_node_blocking(
+        io->storage_pool(), get_root_offset_at_version(version));
     auto [min_offset_fast, min_offset_slow] = calc_min_offsets(*root_to_erase);
     if (min_offset_fast == INVALID_COMPACT_VIRTUAL_OFFSET) {
         min_offset_fast = MIN_COMPACT_VIRTUAL_OFFSET;

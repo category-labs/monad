@@ -75,13 +75,12 @@ namespace
             ResultType buffer_)
         {
             MONAD_ASSERT(buffer_);
-            Node *node = parent->next(branch_index);
-            if (node == nullptr) {
-                node = detail::deserialize_node_from_receiver_result(
-                           std::move(buffer_), buffer_off, io_state)
-                           .release();
-                parent->set_next(branch_index, node);
-            }
+            MONAD_ASSERT(parent->next(branch_index) == nullptr);
+            parent->set_next(
+                branch_index,
+                detail::deserialize_node_from_receiver_result(
+                    std::move(buffer_), buffer_off, io_state));
+            auto *const node = parent->next(branch_index);
             auto const offset = parent->fnext(branch_index);
             auto it = inflights.find(offset);
             auto pendings = std::move(it->second);

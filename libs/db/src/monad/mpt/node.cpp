@@ -81,11 +81,7 @@ Node::Node(
 Node::~Node()
 {
     for (uint8_t index = 0; index < number_of_children(); ++index) {
-        {
-            UniquePtr const _{next(index)};
-            (void)_;
-        }
-        set_next(index, nullptr);
+        move_next(index).reset();
     }
 }
 
@@ -364,16 +360,17 @@ Node const *Node::next(size_t const index) const noexcept
     return unaligned_load<Node *>(next_data() + index * sizeof(Node *));
 }
 
-void Node::set_next(unsigned const index, Node *const node) noexcept
+void Node::set_next(unsigned const index, Node::UniquePtr node_ptr) noexcept
 {
+    Node *node = node_ptr.release();
     node ? memcpy(next_data() + index * sizeof(Node *), &node, sizeof(Node *))
          : memset(next_data() + index * sizeof(Node *), 0, sizeof(Node *));
 }
 
-Node::UniquePtr Node::next_ptr(unsigned const index) noexcept
+Node::UniquePtr Node::move_next(unsigned const index) noexcept
 {
     Node *p = next(index);
-    set_next(index, nullptr);
+    set_next(index, {nullptr});
     return UniquePtr{p};
 }
 
@@ -423,7 +420,7 @@ void ChildData::copy_old_child(Node *const old, unsigned const i)
 {
     auto const index = old->to_child_index(i);
     if (old->next(index)) { // in memory, infers cached
-        ptr = old->next_ptr(index);
+        ptr = old->move_next(index);
     }
     auto const old_data = old->child_data_view(index);
     memcpy(&data, old_data.data(), old_data.size());
@@ -533,7 +530,7 @@ Node::UniquePtr make_node(
             node->set_min_offset_fast(index, child.min_offset_fast);
             node->set_min_offset_slow(index, child.min_offset_slow);
             node->set_subtrie_min_version(index, child.subtrie_min_version);
-            node->set_next(index, child.ptr.release());
+            node->set_next(index, std::move(child.ptr));
             node->set_child_data(index, {child.data, child.len});
             ++index;
         }
@@ -622,7 +619,7 @@ deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
     return node;
 }
 
-Node *read_node_blocking(
+Node::UniquePtr read_node_blocking(
     MONAD_ASYNC_NAMESPACE::storage_pool &pool, chunk_offset_t node_offset)
 {
     MONAD_DEBUG_ASSERT(
@@ -656,8 +653,7 @@ Node *read_node_blocking(
         MONAD_ASSERT("pread failed in read_node_blocking()" == nullptr);
     }
     return deserialize_node_from_buffer(
-               buffer + buffer_off, size_t(bytes_read) - buffer_off)
-        .release();
+        buffer + buffer_off, size_t(bytes_read) - buffer_off);
 }
 
 int64_t calc_min_version(Node const &node)

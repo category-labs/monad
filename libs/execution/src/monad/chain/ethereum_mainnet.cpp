@@ -80,12 +80,13 @@ Result<void> EthereumMainnet::validate_header(
     std::vector<Receipt> const &receipts, BlockHeader const &hdr) const
 {
     // YP eq. 33
-    if (compute_bloom(receipts) != hdr.logs_bloom) {
+    if (MONAD_UNLIKELY(compute_bloom(receipts) != hdr.logs_bloom)) {
         return BlockError::WrongLogsBloom;
     }
 
     // YP eq. 170
-    if (!receipts.empty() && receipts.back().gas_used != hdr.gas_used) {
+    if (MONAD_UNLIKELY(
+            !receipts.empty() && receipts.back().gas_used != hdr.gas_used)) {
         return BlockError::InvalidGasUsed;
     }
 
@@ -98,7 +99,7 @@ bool EthereumMainnet::validate_root(
     bytes32_t const &transactions_root,
     std::optional<bytes32_t> const &withdrawals_root) const
 {
-    if (state_root != hdr.state_root) {
+    if (MONAD_UNLIKELY(state_root != hdr.state_root)) {
         LOG_ERROR(
             "Block: {}, Computed State Root: {}, Expected State Root: {}",
             hdr.number,
@@ -107,7 +108,7 @@ bool EthereumMainnet::validate_root(
         return false;
     }
     if (MONAD_LIKELY(rev >= EVMC_BYZANTIUM)) {
-        if (receipts_root != hdr.receipts_root) {
+        if (MONAD_UNLIKELY(receipts_root != hdr.receipts_root)) {
             LOG_ERROR(
                 "Block: {}, Computed Receipts Root: {}, Expected Receipts "
                 "Root: {}",
@@ -117,7 +118,7 @@ bool EthereumMainnet::validate_root(
             return false;
         }
     }
-    if (transactions_root != hdr.transactions_root) {
+    if (MONAD_UNLIKELY(transactions_root != hdr.transactions_root)) {
         LOG_ERROR(
             "Block: {}, Computed Transactions Root: {}, Expected Transactions "
             "Root: {}",
@@ -126,7 +127,7 @@ bool EthereumMainnet::validate_root(
             hdr.transactions_root);
         return false;
     }
-    if (withdrawals_root != hdr.withdrawals_root) {
+    if (MONAD_UNLIKELY(withdrawals_root != hdr.withdrawals_root)) {
         LOG_ERROR(
             "Block: {}, Computed Withdrawals Root: {}, Expected Withdrawals "
             "Root: {}",

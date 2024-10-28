@@ -10,6 +10,7 @@ option(EVMONE_TRACING
        "Enable instruction-level tracing for the evmone interpreter" OFF)
 option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(BUILD_SHARED_LIBS OFF)
+option(MONAD_EMIT_CODE_COVERAGE OFF)
 
 include(cmake/test.cmake)
 
@@ -48,6 +49,12 @@ function(monad_compile_options target)
 
   if(EVMONE_TRACING)
     target_compile_definitions(${target} PUBLIC EVMONE_TRACING=1)
+  endif()
+
+  # monad code coverage report
+  if(MONAD_EMIT_CODE_COVERAGE)
+    target_compile_options(${target} PRIVATE --coverage)
+    target_link_options(${target} PUBLIC --coverage)
   endif()
 endfunction()
 
@@ -148,6 +155,53 @@ function(monad_target_gdb_pretty_printer dest target printer)
   target_link_libraries(${dest} PUBLIC "$<TARGET_OBJECTS:${target}>")
 endfunction()
 
+function(monad_add_coverage_processing_tests)
+  if(MONAD_EMIT_CODE_COVERAGE AND "${CMAKE_CURRENT_BINARY_DIR}" STREQUAL
+                                  "${CMAKE_BINARY_DIR}")
+    # .gcda files append per run, so they must be removed before every coverage
+    # run
+    add_test(
+      NAME ${PROJECT_NAME}/PreCoverageSetup
+      COMMAND find . -type f -name '*.gcda' -delete
+      WORKING_DIRECTORY "${CMAKE_BUILD_DIR}")
+    set_tests_properties(${PROJECT_NAME}/PreCoverageSetup
+                         PROPERTIES FIXTURES_SETUP COVERAGE RUN_SERIAL ON)
+    find_program(GCOVR_COMMAND gcovr REQUIRED DOC "path to the gcovr program")
+    set(gcov_command)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      string(REPLACE "clang++" "llvm-cov" llvmcov "${CMAKE_CXX_COMPILER}")
+      find_program(LLVMCOV_COMMAND "${llvmcov}" REQUIRED
+                   DOC "path to the llvm-cov program")
+      set(gcov_command "${LLVMCOV_COMMAND} gcov")
+    else()
+      string(REPLACE "g++" "gcov" gcov "${CMAKE_CXX_COMPILER}")
+      find_program(GCOV_COMMAND "${gcov}" REQUIRED
+                   DOC "path to the gcov program")
+      set(gcov_command "${GCOV_COMMAND}")
+    endif()
+    add_test(
+      NAME ${PROJECT_NAME}/PostCoverageCleanup
+      COMMAND
+        ${GCOVR_COMMAND} --gcov-executable "${gcov_command}" -r
+        "${CMAKE_SOURCE_DIR}" --exclude=.*/third_party/.*
+        --gcov-ignore-parse-errors --exclude-throw-branches --branches -p
+        --txt=coverage.txt --html-details=coverage_report.html
+      WORKING_DIRECTORY "${CMAKE_BUILD_DIR}")
+    set_tests_properties(${PROJECT_NAME}/PostCoverageCleanup
+                         PROPERTIES FIXTURES_CLEANUP COVERAGE RUN_SERIAL ON)
+    find_program(BASH_COMMAND bash REQUIRED DOC "path to the bash program")
+    add_test(
+      NAME ${PROJECT_NAME}/CoveragePrintSummary
+      COMMAND
+        "${BASH_COMMAND}" -c
+        "echo \"\n\n          *** A much nicer HTML edition of this has been written to coverage_report.html ***\n\n\" >> coverage.txt && dd if=coverage.txt of=/dev/tty bs=65536"
+      WORKING_DIRECTORY "${CMAKE_BUILD_DIR}")
+    set_tests_properties(
+      ${PROJECT_NAME}/CoveragePrintSummary
+      PROPERTIES DEPENDS ${PROJECT_NAME}/PostCoverageCleanup RUN_SERIAL ON)
+  endif()
+endfunction()
+
 # ##############################################################################
 # libs
 # ##############################################################################
@@ -172,3 +226,5 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/cmd)
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/ethereum_test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common)
+
+monad_add_coverage_processing_tests()

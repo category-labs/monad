@@ -1,0 +1,35 @@
+#ifndef MONAD_EVENT_DEF_FIRST
+#define MONAD_EVENT_DEF_FIRST(C_SUFFIX, CAMEL_NAME, TRACE_FLAGS, DESCRIPTION) \
+    MONAD_EVENT_DEF(C_SUFFIX, CAMEL_NAME, TRACE_FLAGS, DESCRIPTION)
+#endif
+
+MONAD_EVENT_DEF_FIRST(CHANNEL_META, ChannelMeta, MONAD_EVENT_TRACE_DEFAULT, \
+    "Injection of fiber_channel metadata")
+
+MONAD_EVENT_DEF(SEMAPHORE_META, SemaphoreMeta, MONAD_EVENT_TRACE_DEFAULT, \
+    "Injection of fiber_semaphore metadata")
+
+MONAD_EVENT_DEF(SYNC_FIBER_SLEEP, SyncFiberSleep, MONAD_EVENT_TRACE_DEFAULT, \
+    "Fiber going to sleeping on a synchronization primitive")
+
+MONAD_EVENT_DEF(SYNC_SCHED_WAKEUP, SyncSchedWakeup, MONAD_EVENT_TRACE_DEFAULT, \
+    "Fiber scheduled to wake up (synchronization primitive is signaled)")
+
+MONAD_EVENT_DEF(SYNC_FIBER_WAKEUP, SyncFiberWakeup, MONAD_EVENT_TRACE_DEFAULT, \
+    "Fiber has woken up from sleep to try acquiring primitive")
+
+MONAD_EVENT_DEF(SYNC_SPURIOUS_WAKEUP, SyncSpuriousWakeup, \
+    MONAD_EVENT_TRACE_DEFAULT, \
+    "Spurious wakeup; the message or token was consumed by something else")
+
+MONAD_EVENT_DEF(SYNC_ACQUIRE, SyncAcquire, MONAD_EVENT_TRACE_DEFAULT, \
+    "Fiber has acquired the object it originally slept on")
+
+MONAD_EVENT_DEF(RUN_QUEUE_PUSH, RunQueuePush, MONAD_EVENT_TRACE_DEFAULT, \
+    "Run queue has enqueued a fiber to be priority scheduled")
+
+MONAD_EVENT_DEF(RUN_QUEUE_POP, RunQueuePop, MONAD_EVENT_TRACE_DEFAULT, \
+    "Run queue has dequeued a fiber ready for execution")
+
+#undef MONAD_EVENT_DEF
+#undef MONAD_EVENT_DEF_FIRST

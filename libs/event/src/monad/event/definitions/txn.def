@@ -1,0 +1,29 @@
+#ifndef MONAD_EVENT_DEF_FIRST
+#define MONAD_EVENT_DEF_FIRST(C_SUFFIX, CAMEL_NAME, TRACE_FLAGS, DESCRIPTION) \
+    MONAD_EVENT_DEF(C_SUFFIX, CAMEL_NAME, TRACE_FLAGS, DESCRIPTION)
+#endif
+
+MONAD_EVENT_DEF_FIRST(TXN_RECOVER, TransactionRecoverSender, \
+    MONAD_EVENT_TRACE_PUSH_SCOPE, \
+    "Sender recovery portion of transaction execution; happens before TransactionExecTotal")
+
+MONAD_EVENT_DEF(TXN_EXEC_START, TransactionExecStart, \
+    MONAD_EVENT_TRACE_PUSH_SCOPE, \
+    "Start of execution of a single transaction; happens after sender cryptographic recovery")
+
+MONAD_EVENT_DEF(TXN_CORE, TransactionCore, MONAD_EVENT_TRACE_PUSH_SCOPE, \
+    "Core execution plus any stall and the attempt to merge; excl. retry")
+
+MONAD_EVENT_DEF(TXN_MERGE_WAIT, TransactionStall, \
+    MONAD_EVENT_TRACE_PUSH_SCOPE, \
+    "Waiting for previous txn merge before attempting our own merge")
+
+MONAD_EVENT_DEF(TXN_RETRY, TransactionRetry, MONAD_EVENT_TRACE_PUSH_SCOPE, \
+    "Transaction re-execution upon merge interference")
+
+MONAD_EVENT_DEF(TXN_EXEC_END, TransactionExecEnd, \
+    MONAD_EVENT_TRACE_PUSH_SCOPE, \
+    "End of execution of a single transaction")
+
+#undef MONAD_EVENT_DEF
+#undef MONAD_EVENT_DEF_FIRST

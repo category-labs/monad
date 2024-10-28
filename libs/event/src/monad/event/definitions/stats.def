@@ -1,0 +1,13 @@
+#ifndef MONAD_EVENT_DEF_FIRST
+#define MONAD_EVENT_DEF_FIRST(C_SUFFIX, CAMEL_NAME, TRACE_FLAGS, DESCRIPTION) \
+    MONAD_EVENT_DEF(C_SUFFIX, CAMEL_NAME, TRACE_FLAGS, DESCRIPTION)
+#endif
+
+MONAD_EVENT_DEF_FIRST(FIBER_STATS, FiberStatistics, MONAD_EVENT_TRACE_DEFAULT, \
+    "Payload of the `struct monad_fiber_stats` object")
+
+MONAD_EVENT_DEF(RUN_QUEUE_STATS, RunQueueStatistics, MONAD_EVENT_TRACE_DEFAULT, \
+    "Payload of the `struct monad_run_queue_stats` object")
+
+#undef MONAD_EVENT_DEF
+#undef MONAD_EVENT_DEF_FIRST

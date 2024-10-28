@@ -1,0 +1,28 @@
+#ifndef MONAD_EVENT_DEF_FIRST
+#define MONAD_EVENT_DEF_FIRST(C_SUFFIX, CAMEL_NAME, TRACE_FLAGS, DESCRIPTION) \
+    MONAD_EVENT_DEF(C_SUFFIX, CAMEL_NAME, TRACE_FLAGS, DESCRIPTION)
+#endif
+
+MONAD_EVENT_DEF_FIRST(THREAD_CREATE, ThreadCreate, MONAD_EVENT_TRACE_DEFAULT, \
+    "Sent when a new thread starts recording data, or upon creation of session")
+
+MONAD_EVENT_DEF(THREAD_EXIT, ThreadExit, MONAD_EVENT_TRACE_DEFAULT, \
+    "Sent before a thread exits")
+
+MONAD_EVENT_DEF(SESSION_START, SessionStart, MONAD_EVENT_TRACE_DEFAULT, \
+    "The first event sent in any session")
+
+MONAD_EVENT_DEF(SYNC_EVENT_GAP, SyncEventGap, MONAD_EVENT_TRACE_DEFAULT, \
+    "Events were lost internally on the recorder queue to the session queue")
+
+MONAD_EVENT_DEF(HEARTBEAT, Heartbeat, MONAD_EVENT_TRACE_DEFAULT, \
+    "Periodic heartbeat emitted by the event server")
+
+MONAD_EVENT_DEF(THR_PAGE_ALLOC, ThreadPageAlloc, MONAD_EVENT_TRACE_DEFAULT, \
+    "Event recorder pulled a new page from the pool free list")
+
+MONAD_EVENT_DEF(TEST_COUNT_64, TestCount64, MONAD_EVENT_TRACE_DEFAULT, \
+    "A special event emitted only by the test suite")
+
+#undef MONAD_EVENT_DEF
+#undef MONAD_EVENT_DEF_FIRST

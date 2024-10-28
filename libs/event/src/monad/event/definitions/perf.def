@@ -1,0 +1,17 @@
+#ifndef MONAD_EVENT_DEF_FIRST
+#define MONAD_EVENT_DEF_FIRST(C_SUFFIX, CAMEL_NAME, TRACE_FLAGS, DESCRIPTION) \
+    MONAD_EVENT_DEF(C_SUFFIX, CAMEL_NAME, TRACE_FLAGS, DESCRIPTION)
+#endif
+
+MONAD_EVENT_DEF_FIRST(TRACE_GAP, TraceGap, MONAD_EVENT_TRACE_DEFAULT, \
+    "Trace recorder thread sequence number gap (slow trace consumer)")
+
+MONAD_EVENT_DEF(TRACE_PAYLOAD_EXPIRED, TracePayloadExpired, \
+    MONAD_EVENT_TRACE_DEFAULT, \
+    "Event payload expired before event copy out (slow trace consumer)")
+
+MONAD_EVENT_DEF(FIBER_SWITCH, FiberSwitch, MONAD_EVENT_TRACE_PUSH_SCOPE, \
+    "Thread context switched into/out-of a fiber context")
+
+#undef MONAD_EVENT_DEF
+#undef MONAD_EVENT_DEF_FIRST

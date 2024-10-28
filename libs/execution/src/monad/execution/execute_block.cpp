@@ -8,6 +8,8 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/core/withdrawal.hpp>
+#include <monad/event/event.h>
+#include <monad/event/event_recorder.h>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_reward.hpp>
 #include <monad/execution/ethereum/dao.hpp>
@@ -96,6 +98,7 @@ Result<std::vector<ExecutionResult>> execute_block(
     BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {
+    MONAD_EVENT_EXPR(MONAD_EVENT_BLOCK_START, 0, block.header.number);
     TRACE_BLOCK_EVENT(StartBlock);
 
     if constexpr (rev >= EVMC_CANCUN) {
@@ -142,6 +145,7 @@ Result<std::vector<ExecutionResult>> execute_block(
         priority_pool.submit(
             i,
             [&chain = chain,
+             block_num = block.header.number,
              i = i,
              results = results,
              promises = promises,
@@ -150,6 +154,8 @@ Result<std::vector<ExecutionResult>> execute_block(
              &header = block.header,
              &block_hash_buffer = block_hash_buffer,
              &block_state] {
+                MONAD_EVENT_EXPR(MONAD_EVENT_TXN_EXEC_START, 0,
+                    static_cast<uint64_t const&>(block_num << 24 | i));
                 results[i] = execute<rev>(
                     chain,
                     i,
@@ -160,6 +166,12 @@ Result<std::vector<ExecutionResult>> execute_block(
                     block_state,
                     promises[i]);
                 promises[i + 1].set_value();
+                uint64_t const gas_used =
+                    MONAD_LIKELY(results[i] && results[i]->has_value())
+                        ? results[i]->value().receipt.gas_used
+                        : 0;
+                MONAD_EVENT_EXPR(
+                    MONAD_EVENT_TXN_EXEC_END, MONAD_EVENT_POP_SCOPE, gas_used);
             });
     }
 
@@ -202,7 +214,7 @@ Result<std::vector<ExecutionResult>> execute_block(
 
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(state);
-
+    MONAD_EVENT(MONAD_EVENT_BLOCK_END, MONAD_EVENT_POP_SCOPE);
     return retvals;
 }
 

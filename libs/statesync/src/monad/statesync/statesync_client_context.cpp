@@ -75,7 +75,6 @@ void monad_statesync_client_context::commit()
     }
     UpdateList code_updates;
 
-    ankerl::unordered_dense::segmented_set<bytes32_t> remaining;
     std::deque<bytes32_t> upserted;
     for (auto const &hash : hash) {
         if (code.contains(hash)) {
@@ -86,9 +85,6 @@ void monad_statesync_client_context::commit()
                 .next = UpdateList{},
                 .version = static_cast<int64_t>(current)}));
             upserted.emplace_back(hash);
-        }
-        else {
-            remaining.insert(hash);
         }
     }
 
@@ -112,6 +108,5 @@ void monad_statesync_client_context::commit()
     for (auto const &hash : upserted) {
         MONAD_ASSERT(code.erase(hash) == 1);
     }
-    hash = std::move(remaining);
     deltas.clear();
 }

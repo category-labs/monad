@@ -123,8 +123,8 @@ void monad_statesync_client_handle_done(
 bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
 {
     MONAD_ASSERT(ctx->deltas.empty());
-    if (!ctx->buffered.empty() || !ctx->hash.empty()) {
-        // sent storage with no account or not all code was sent
+    if (!ctx->buffered.empty()) {
+        // sent storage with no account
         return false;
     }
 
@@ -134,6 +134,12 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
     }
     TrieDb db{ctx->db};
     MONAD_ASSERT(db.get_block_number() == ctx->target);
+
+    for (auto const &hash : ctx->hash) {
+        if (db.read_code(hash) == nullptr) {
+            return false;
+        }
+    }
     return db.state_root() == ctx->expected_root;
 }
 

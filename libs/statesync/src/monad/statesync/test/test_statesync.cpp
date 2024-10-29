@@ -673,6 +673,66 @@ TEST_F(StateSyncFixture, delete_storage_after_account_deletion)
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 }
 
+TEST_F(StateSyncFixture, update_contract_twice)
+{
+    init();
+
+    constexpr auto ADDR1 = 0x5353535353535353535353535353535353535353_address;
+    stdb.increment_block_number();
+
+    auto const code =
+        evmc::from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                       "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
+                       "ffffffffffffffffffffff0160005500")
+            .value();
+    auto const code_hash = to_bytes(keccak256(code));
+    auto const code_analysis = std::make_shared<CodeAnalysis>(analyze(code));
+
+    Account const a{
+        .balance = 1337,
+        .code_hash = code_hash,
+        .nonce = 1,
+        .incarnation = Incarnation{1, 0}};
+
+    sctx.commit(
+        StateDeltas{
+            {ADDR1,
+             {.account = {std::nullopt, a},
+              .storage =
+                  {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
+                    {{},
+                     0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}
+
+        },
+        Code{{code_hash, code_analysis}},
+        {},
+        {});
+
+    monad_statesync_client_handle_target(
+        cctx, make_target(1, sctx.state_root()));
+    run();
+
+    stdb.increment_block_number();
+    sctx.commit(
+        StateDeltas{
+            {ADDR1,
+             {.account = {a, a},
+              .storage =
+                  {{0x0000000000000000000000000000000000000000000000000000000011110000_bytes32,
+                    {{},
+                     0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}
+
+        },
+        Code{},
+        {},
+        {});
+    monad_statesync_client_handle_target(
+        cctx, make_target(2, sctx.state_root()));
+    run();
+
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+}
+
 TEST_F(StateSyncFixture, benchmark)
 {
     constexpr auto N = 1'000'000;

@@ -408,6 +408,13 @@ static inline monad_c_result monad_async_executor_run_impl(
                 }
 #endif
                 ring = &ex->wr_ring;
+                /* This will use syscall enter if either the submission or
+                completion queues have flagged that they need it e.g. the SQPOLL
+                thread has gone to sleep and needs reawakening, or the CQE queue
+                has entered overflow. This means it can take some time,
+                occasionally, but it's better than an explicit call to
+                io_uring_wait_cqes().
+                */
                 r = io_uring_submit(ring);
                 if (r < 0 && r != -EINTR) {
                     return monad_c_make_failure(-r);
@@ -491,18 +498,14 @@ static inline monad_c_result monad_async_executor_run_impl(
                     // extant write ops
                     timeout = &single_millisecond_waiting;
                 }
-                if (0 == r) {
-                    ex->wr_ring_ops_outstanding--;
-                }
             }
             // If write ring did not have a CQE for us, examine the non-write
             // ring
-            if (0 != r) {
-                assert(cqe == nullptr);
+            if (cqe == nullptr) {
                 ring = &ex->ring;
                 // Speculatively peek to avoid syscalls
                 r = io_uring_peek_cqe(ring, &cqe);
-                if (0 != r) {
+                if (cqe == nullptr) {
                     if (atomic_load_explicit(
                             &ex->head.tasks_suspended_sqe_exhaustion,
                             memory_order_acquire) > 0) {
@@ -533,25 +536,37 @@ static inline monad_c_result monad_async_executor_run_impl(
                     }
                     fflush(stdout);
 #endif
-                    monad_context_cpu_ticks_count_t const sleep_begin =
-                        get_ticks_count(memory_order_relaxed);
-                    // This is the new faster io_uring wait syscall
-                    r = io_uring_wait_cqes(
-                        ring,
-                        &cqe,
-                        1,
-                        (struct __kernel_timespec *)timeout,
-                        nullptr);
-                    if (r == 0 && cqe != nullptr) {
-                        r = 1;
+                    if (timeout != nullptr && timeout->tv_sec == 0 &&
+                        timeout->tv_nsec == 0 &&
+                        (ring->flags & IORING_SETUP_SQPOLL) != 0 &&
+                        (*ring->sq.kflags & IORING_SQ_NEED_WAKEUP) == 0) {
+                        // If SQPOLL and zero timeout and no reason to call
+                        // syscall io_uring_enter, skip that.
                     }
-                    // Ignore temporary failure
-                    if (r == -EINTR) {
-                        r = 0;
+                    else {
+                        monad_context_cpu_ticks_count_t const sleep_begin =
+                            get_ticks_count(memory_order_relaxed);
+                        // This is the new faster io_uring wait syscall
+                        // It calls syscall io_uring_enter2. It does not have an
+                        // optimisation for zero timeout.
+                        r = io_uring_wait_cqes(
+                            ring,
+                            &cqe,
+                            1,
+                            (struct __kernel_timespec *)timeout,
+                            nullptr);
+                        if (r == 0 && cqe != nullptr) {
+                            r = 1;
+                        }
+                        // Ignore temporary failure
+                        if (r == -EINTR) {
+                            r = 0;
+                        }
+                        monad_context_cpu_ticks_count_t const sleep_end =
+                            get_ticks_count(memory_order_relaxed);
+                        ex->head.total_ticks_sleeping +=
+                            sleep_end - sleep_begin;
                     }
-                    monad_context_cpu_ticks_count_t const sleep_end =
-                        get_ticks_count(memory_order_relaxed);
-                    ex->head.total_ticks_sleeping = sleep_end - sleep_begin;
                 }
             }
             if (r < 0) {
@@ -862,6 +877,10 @@ static inline monad_c_result monad_async_executor_run_impl(
             printf("*** Executor %p ends processing io_uring\n", (void *)ex);
             fflush(stdout);
 #endif
+            if (ring == &ex->wr_ring) {
+                assert(ex->wr_ring_ops_outstanding >= i);
+                ex->wr_ring_ops_outstanding -= i;
+            }
             monad_context_cpu_ticks_count_t const io_uring_end =
                 get_ticks_count(memory_order_relaxed);
             ex->head.total_ticks_in_io_uring += io_uring_end - io_uring_begin;
@@ -885,7 +904,7 @@ static inline monad_c_result monad_async_executor_run_impl(
                 int r = ppoll(fds, 1, nullptr, nullptr);
                 monad_context_cpu_ticks_count_t const sleep_end =
                     get_ticks_count(memory_order_relaxed);
-                ex->head.total_ticks_sleeping = sleep_end - sleep_begin;
+                ex->head.total_ticks_sleeping += sleep_end - sleep_begin;
                 if (r == 0) {
                     timed_out = true;
                 }
@@ -923,7 +942,7 @@ static inline monad_c_result monad_async_executor_run_impl(
                 int r = ppoll(fds, 1, timeout, nullptr);
                 monad_context_cpu_ticks_count_t const sleep_end =
                     get_ticks_count(memory_order_relaxed);
-                ex->head.total_ticks_sleeping = sleep_end - sleep_begin;
+                ex->head.total_ticks_sleeping += sleep_end - sleep_begin;
                 if (r == 0) {
                     timed_out = true;
                 }
@@ -1039,7 +1058,7 @@ static inline monad_c_result monad_async_executor_run_impl(
 #endif
             monad_context_cpu_ticks_count_t const completions_end =
                 get_ticks_count(memory_order_relaxed);
-            ex->head.total_ticks_in_task_completion =
+            ex->head.total_ticks_in_task_completion +=
                 completions_end - completions_begin;
             if (ex->tasks_exited.count > 0) {
 #if MONAD_ASYNC_EXECUTOR_PRINTING >= 3

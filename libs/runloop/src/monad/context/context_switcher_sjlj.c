@@ -222,10 +222,6 @@ static void monad_context_sjlj_task_runner(
     (void)stack_base;
     (void)stack_front;
     for (;;) {
-        // Tell the Linux kernel that this stack can be lazy reclaimed if there
-        // is memory pressure
-        madvise(
-            stack_front, context->uctx.uc_stack.ss_size - page_size, MADV_FREE);
 #if MONAD_CONTEXT_PRINTING
         printf(
             "*** %d: Execution context %p suspends in base task runner "

@@ -270,9 +270,9 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
     sctx.ro = &ro;
     monad_statesync_server_network net{
         .client = &client, .cctx = cctx, .buf = {}};
-    for (size_t i = 0; i < MONAD_STATESYNC_N_PREFIXES; ++i) {
+    for (size_t i = 0; i < monad_statesync_client_prefixes(); ++i) {
         monad_statesync_client_handle_new_peer(
-            cctx, i, MONAD_STATESYNC_VERSION);
+            cctx, i, monad_statesync_version());
     }
     monad_statesync_server *const server = monad_statesync_server_create(
         &sctx,

@@ -28,9 +28,9 @@ monad_statesync_client_context::monad_statesync_client_context(
              .dbname_paths = dbname_paths}}
     , tdb{db}
     , progress(
-          MONAD_STATESYNC_N_PREFIXES,
+          monad_statesync_client_prefixes(),
           {db.get_latest_block_id(), db.get_latest_block_id()})
-    , protocol(MONAD_STATESYNC_N_PREFIXES)
+    , protocol(monad_statesync_client_prefixes())
     , target{db.get_latest_block_id()}
     , current{db.get_latest_block_id() == mpt::INVALID_BLOCK_ID ? 0 : db.get_latest_block_id() + 1}
     , expected_root{NULL_ROOT}

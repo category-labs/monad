@@ -1,14 +1,15 @@
 #pragma once
 
-#include <cstdint>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-// Bump when there are modifications to the protocol
-constexpr uint32_t MONAD_STATESYNC_VERSION = 1;
+uint32_t monad_statesync_version();
+
+bool monad_statesync_client_compatible(uint32_t version);
 
 #ifdef __cplusplus
 }

@@ -27,10 +27,14 @@ monad_statesync_client_context *monad_statesync_client_context_create(
         paths, genesis_file, sync, statesync_send_request};
 }
 
-bool monad_statesync_client_compatible(uint32_t const version)
+uint8_t monad_statesync_client_prefix_bytes()
 {
-    static_assert(MONAD_STATESYNC_VERSION == 1, "modify on version bump");
-    return version <= MONAD_STATESYNC_VERSION && version >= 1;
+    return 1;
+}
+
+size_t monad_statesync_client_prefixes()
+{
+    return 1 << (8 * monad_statesync_client_prefix_bytes());
 }
 
 bool monad_statesync_client_has_reached_target(

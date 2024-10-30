@@ -145,9 +145,9 @@ namespace
             cctx = monad_statesync_client_context_create(
                 &str, 1, genesis.c_str(), &client, &statesync_send_request);
             net = {.client = &client, .cctx = cctx};
-            for (size_t i = 0; i < MONAD_STATESYNC_N_PREFIXES; ++i) {
+            for (size_t i = 0; i < monad_statesync_client_prefixes(); ++i) {
                 monad_statesync_client_handle_new_peer(
-                    cctx, i, MONAD_STATESYNC_VERSION);
+                    cctx, i, monad_statesync_version());
             }
             server = monad_statesync_server_create(
                 &sctx,

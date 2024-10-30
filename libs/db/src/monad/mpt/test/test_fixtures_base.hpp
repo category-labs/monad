@@ -453,12 +453,12 @@ namespace monad::test
                 if (-1 == fd) {
                     abort();
                 }
-                if (-1 ==
-                    ftruncate(
-                        fd,
-                        Config.chunks_max * MONAD_ASYNC_NAMESPACE::AsyncIO::
-                                                MONAD_IO_BUFFERS_WRITE_SIZE +
-                            24576)) {
+                if (-1 == ftruncate(
+                              fd,
+                              (3 + Config.chunks_max) *
+                                      MONAD_ASYNC_NAMESPACE::AsyncIO::
+                                          MONAD_IO_BUFFERS_WRITE_SIZE +
+                                  24576)) {
                     abort();
                 }
                 ::close(fd);

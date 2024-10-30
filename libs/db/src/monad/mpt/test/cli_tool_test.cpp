@@ -137,7 +137,7 @@ struct cli_tool_fixture
         if (Config.interleave_multiple_sources) {
             if (-1 == truncate(
                           dbpath2a,
-                          (1 + Config.chunks_max / 2) *
+                          (4 + Config.chunks_max / 2) *
                                   MONAD_ASYNC_NAMESPACE::AsyncIO::
                                       MONAD_IO_BUFFERS_WRITE_SIZE +
                               24576)) {
@@ -145,7 +145,7 @@ struct cli_tool_fixture
             }
             if (-1 == truncate(
                           dbpath2b,
-                          (1 + Config.chunks_max / 2) *
+                          (4 + Config.chunks_max / 2) *
                                   MONAD_ASYNC_NAMESPACE::AsyncIO::
                                       MONAD_IO_BUFFERS_WRITE_SIZE +
                               24576)) {
@@ -155,11 +155,12 @@ struct cli_tool_fixture
             dbpath2.push_back(dbpath2b);
         }
         else {
-            if (-1 == truncate(
-                          dbpath2a,
-                          Config.chunks_max * MONAD_ASYNC_NAMESPACE::AsyncIO::
+            if (-1 ==
+                truncate(
+                    dbpath2a,
+                    (3 + Config.chunks_max) * MONAD_ASYNC_NAMESPACE::AsyncIO::
                                                   MONAD_IO_BUFFERS_WRITE_SIZE +
-                              24576)) {
+                        24576)) {
                 abort();
             }
             dbpath2.push_back(dbpath2a);
@@ -232,11 +233,12 @@ struct cli_tool_fixture
             if (-1 == fd) {
                 abort();
             }
-            if (-1 == ftruncate(
-                          fd,
-                          Config.chunks_max * MONAD_ASYNC_NAMESPACE::AsyncIO::
+            if (-1 ==
+                ftruncate(
+                    fd,
+                    (3 + Config.chunks_max) * MONAD_ASYNC_NAMESPACE::AsyncIO::
                                                   MONAD_IO_BUFFERS_WRITE_SIZE +
-                              24576)) {
+                        24576)) {
                 abort();
             }
             ::close(fd);
@@ -332,7 +334,7 @@ TEST_F(cli_tool_archives_restores, archives_restores)
  identically sized DBs, this test ensures that this will remain so.
  */
 struct cli_tool_one_chunk_too_many
-    : public cli_tool_fixture<config{.chunks_to_fill = 4, .chunks_max = 6}>
+    : public cli_tool_fixture<config{.chunks_to_fill = 4, .chunks_max = 5}>
 {
 };
 
@@ -344,7 +346,7 @@ TEST_F(cli_tool_one_chunk_too_many, one_chunk_too_many)
 struct cli_tool_non_one_one_chunk_ids
     : public cli_tool_fixture<config{
           .chunks_to_fill = 4,
-          .chunks_max = 6,
+          .chunks_max = 5,
           .interleave_multiple_sources = true}>
 {
 };

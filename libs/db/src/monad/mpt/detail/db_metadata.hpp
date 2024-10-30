@@ -580,6 +580,8 @@ namespace detail
 
     static_assert(std::is_trivially_copyable_v<db_metadata>);
     static_assert(std::is_trivially_copy_assignable_v<db_metadata>);
+    static_assert(sizeof(db_metadata) == 524384);
+    static_assert(alignof(db_metadata) == 8);
 
     inline void atomic_memcpy(
         void *__restrict__ dest_, void const *__restrict__ src_, size_t bytes,

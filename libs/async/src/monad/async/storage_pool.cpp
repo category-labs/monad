@@ -19,6 +19,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <format>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -491,13 +492,17 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
     for (auto const &device : devices_) {
         if (device.is_file() || device.is_block_device()) {
             auto const devicechunks = device.chunks();
-            MONAD_ASSERT(devicechunks > 0);
+            if (devicechunks < 4) {
+                throw std::runtime_error(std::format(
+                    "Device {} has {} chunks the minimum allowed is four.",
+                    device.current_path().c_str(),
+                    devicechunks));
+            }
             MONAD_DEBUG_ASSERT(
                 devicechunks <= std::numeric_limits<uint32_t>::max());
-            if (devicechunks > 1) {
-                chunks.push_back(devicechunks - 1);
-                total += devicechunks - 1;
-            }
+            // Take off three for the cnv chunks
+            chunks.push_back(devicechunks - 3);
+            total += devicechunks - 3;
             fnv1a_hash<uint32_t>::add(
                 hashshouldbe, static_cast<uint32_t>(devicechunks));
             fnv1a_hash<uint32_t>::add(
@@ -537,14 +542,20 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
             }
         }
     }
-    // First block of each device goes to conventional, remainder go to
+    // First three blocks of each device goes to conventional, remainder go to
     // sequential
-    chunks_[cnv].reserve(devices_.size());
-    for (auto &device : devices_) {
-        chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 0);
-    }
+    chunks_[cnv].reserve(devices_.size() * 3);
     chunks_[seq].reserve(total);
     if (flags.interleave_chunks_evenly) {
+        for (auto &device : devices_) {
+            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 0);
+        }
+        for (auto &device : devices_) {
+            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 1);
+        }
+        for (auto &device : devices_) {
+            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 2);
+        }
         // We now need to evenly spread the sequential chunks such that if
         // device A has 20, device B has 10 and device C has 5, the interleaving
         // would be ABACABA i.e. a ratio of 4:2:1
@@ -553,7 +564,7 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
         for (size_t n = 0; n < chunks.size(); n++) {
             chunkratios[n] = double(total) / static_cast<double>(chunks[n]);
             chunkcounts[n] = chunkratios[n];
-            chunks[n] = 1;
+            chunks[n] = 3;
         }
         while (chunks_[seq].size() < chunks_[seq].capacity()) {
             for (size_t n = 0; n < chunks.size(); n++) {
@@ -576,10 +587,15 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
 #endif
     }
     else {
+        for (auto &device : devices_) {
+            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 0);
+            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 1);
+            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 2);
+        }
         for (size_t deviceidx = 0; deviceidx < chunks.size(); deviceidx++) {
-            for (size_t n = 1; n <= chunks[deviceidx]; n++) {
+            for (size_t n = 0; n < chunks[deviceidx]; n++) {
                 chunks_[seq].emplace_back(
-                    std::weak_ptr<class chunk>{}, devices_[deviceidx], n);
+                    std::weak_ptr<class chunk>{}, devices_[deviceidx], 3 + n);
             }
         }
     }

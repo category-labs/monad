@@ -216,6 +216,12 @@ struct cli_tool_fixture
                     auto ret = monad::mpt::find_blocking(aux, root, key.first);
                     EXPECT_EQ(ret.second, monad::mpt::find_result::success);
                 }
+                EXPECT_EQ(
+                    this->state()->aux.db_history_min_valid_version(),
+                    aux.db_history_min_valid_version());
+                EXPECT_EQ(
+                    this->state()->aux.db_history_max_version(),
+                    aux.db_history_max_version());
             }).get();
         }
         if (Config.interleave_multiple_sources) {
@@ -311,6 +317,12 @@ struct cli_tool_fixture
                             monad::mpt::find_blocking(aux, root, key.first);
                         EXPECT_EQ(ret.second, monad::mpt::find_result::success);
                     }
+                    EXPECT_EQ(
+                        this->state()->aux.db_history_min_valid_version(),
+                        aux.db_history_min_valid_version());
+                    EXPECT_EQ(
+                        this->state()->aux.db_history_max_version(),
+                        aux.db_history_max_version());
                 }).get();
             }
         }

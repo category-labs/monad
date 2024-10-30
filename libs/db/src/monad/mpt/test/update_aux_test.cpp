@@ -156,7 +156,7 @@ TEST(update_aux_test, root_offsets_fast_slow)
         // verify set_io() succeeds
         monad::mpt::UpdateAux aux_writer{};
         aux_writer.set_io(&testio, AUX_TEST_HISTORY_LENGTH);
-        EXPECT_EQ(aux_writer.db_metadata()->get_max_version_in_history(), 0);
+        EXPECT_EQ(aux_writer.root_offsets().max_version(), 0);
 
         // Write version 1. However, append the new root offset without
         // advancing fast list

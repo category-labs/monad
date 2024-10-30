@@ -143,9 +143,13 @@ class UpdateAuxImpl
 {
     uint32_t initial_insertion_count_on_pool_creation_{0};
 
-    detail::db_metadata *db_metadata_[2]{
-        nullptr, nullptr}; // two copies, to prevent sudden process
-                           // exits making the DB irretrievable
+    struct db_metadata_
+    {
+        detail::db_metadata *main{nullptr};
+        std::span<chunk_offset_t>
+            root_offsets; // if not-null, mmap of DB version ring buffer storage
+    } db_metadata_[2]; // two copies, to prevent sudden process
+                       // exits making the DB irretrievable
 
     void reset_node_writers();
 
@@ -341,8 +345,8 @@ public:
 
     detail::TrieUpdateCollectedStats stats;
 
-    static constexpr uint64_t MAX_HISTORY_LEN =
-        detail::db_metadata::root_offsets_ring_t::capacity();
+    // Future PRs will make this growable
+    uint64_t max_history_len{detail::db_metadata::root_offsets_ring_t::SIZE};
 
     UpdateAuxImpl(
         MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
@@ -527,7 +531,125 @@ public:
 
     detail::db_metadata const *db_metadata() const noexcept
     {
-        return db_metadata_[0];
+        return db_metadata_[0].main;
+    }
+
+    auto root_offsets(unsigned which = 0) const
+    {
+        class root_offsets_delegator
+        {
+            struct as_atomics_
+            {
+                std::atomic<uint64_t> next_version;
+
+                union
+                {
+                    struct
+                    {
+                        uint32_t
+                            high_bits_all_set; // All bits one to deliberately
+                                               // break older codebases
+                        uint32_t cnv_chunk_id; // The read-write chunk id
+                    } chunks[2]
+                            [detail::db_metadata::root_offsets_ring_t::SIZE /
+                             2];
+
+                    std::atomic<chunk_offset_t>
+                        arr[detail::db_metadata::root_offsets_ring_t::SIZE];
+                } storage;
+            } *const root_offsets_;
+
+            static_assert(
+                sizeof(detail::db_metadata::root_offsets_ring_t) ==
+                sizeof(as_atomics_));
+
+        public:
+            constexpr root_offsets_delegator(
+                detail::db_metadata::root_offsets_ring_t *root_offsets)
+                : root_offsets_((as_atomics_ *)root_offsets)
+            {
+            }
+
+            as_atomics_ *self()
+            {
+                return start_lifetime_as<as_atomics_>(root_offsets_);
+            }
+
+            as_atomics_ const *self() const
+            {
+                return start_lifetime_as<as_atomics_ const>(root_offsets_);
+            }
+
+            static constexpr size_t capacity() noexcept
+            {
+                return detail::db_metadata::root_offsets_ring_t::SIZE;
+            }
+
+            void push(chunk_offset_t const o) noexcept
+            {
+                auto *self = this->self();
+                auto const wp =
+                    self->next_version.load(std::memory_order_relaxed);
+                auto const next_wp = wp + 1;
+                MONAD_ASSERT(next_wp != 0);
+                self->storage
+                    .arr
+                        [wp &
+                         (detail::db_metadata::root_offsets_ring_t::SIZE - 1)]
+                    .store(o, std::memory_order_release);
+                self->next_version.store(next_wp, std::memory_order_release);
+            }
+
+            void assign(size_t const i, chunk_offset_t const o) noexcept
+            {
+                self()
+                    ->storage
+                    .arr
+                        [i &
+                         (detail::db_metadata::root_offsets_ring_t::SIZE - 1)]
+                    .store(o, std::memory_order_release);
+            }
+
+            chunk_offset_t operator[](size_t const i) const noexcept
+            {
+                return self()
+                    ->storage
+                    .arr
+                        [i &
+                         (detail::db_metadata::root_offsets_ring_t::SIZE - 1)]
+                    .load(std::memory_order_acquire);
+            }
+
+            // return INVALID_BLOCK_ID indicates that db is empty
+            uint64_t max_version() const noexcept
+            {
+                auto const wp =
+                    self()->next_version.load(std::memory_order_acquire);
+                return wp - 1;
+            }
+
+            void reset_all(uint64_t const version)
+            {
+                self()->next_version.store(0, std::memory_order_release);
+                for (size_t i = 0; i < capacity(); ++i) {
+                    push(INVALID_OFFSET);
+                }
+                self()->next_version.store(version, std::memory_order_release);
+            }
+
+            void rewind_to_version(uint64_t const version)
+            {
+                MONAD_ASSERT(version < max_version());
+                MONAD_ASSERT(max_version() - version <= capacity());
+                for (uint64_t i = version + 1; i <= max_version(); i++) {
+                    assign(i, async::INVALID_OFFSET);
+                }
+                self()->next_version.store(
+                    version + 1, std::memory_order_release);
+            }
+        };
+
+        return root_offsets_delegator{&db_metadata_[which].main->root_offsets};
     }
 
     // translate between virtual and physical addresses chunk_offset_t
@@ -546,8 +668,8 @@ public:
             detail::db_metadata *, Args...>
     void modify_metadata(Func func, Args &&...args) noexcept
     {
-        func(db_metadata_[0], std::forward<Args>(args)...);
-        func(db_metadata_[1], std::forward<Args>(args)...);
+        func(db_metadata_[0].main, std::forward<Args>(args)...);
+        func(db_metadata_[1].main, std::forward<Args>(args)...);
     }
 
     // This function should only be invoked after completing a upsert
@@ -606,8 +728,8 @@ public:
     chunk_offset_t get_latest_root_offset() const noexcept
     {
         MONAD_ASSERT(this->is_on_disk());
-        return db_metadata()
-            ->root_offsets[db_metadata()->root_offsets.max_version()];
+        auto const ro = root_offsets();
+        return ro[ro.max_version()];
     }
 
     chunk_offset_t
@@ -615,7 +737,7 @@ public:
     {
         MONAD_ASSERT(this->is_on_disk());
         if (version <= db_history_max_version()) {
-            auto const offset = db_metadata()->root_offsets[version];
+            auto const offset = root_offsets()[version];
             if (version >= db_history_range_lower_bound()) {
                 return offset;
             }
@@ -662,7 +784,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAuxImpl) == 128 + sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAuxImpl) == 168 + sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAuxImpl) == 8);
 
 template <lockable_or_void LockType = void>

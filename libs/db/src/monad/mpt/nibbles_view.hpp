@@ -311,13 +311,8 @@ inline std::ostream &operator<<(std::ostream &s, NibblesView const &v)
     auto const oldwidth = int(s.width());
     s.width(2);
     s << "0x" << std::hex;
-    for (NibblesView::size_type n = 0; n < v.end_nibble_ / 2; n++) {
-        if (n == 0 && v.begin_nibble_) {
-            s << uint32_t(v.data_[n] & 0xf);
-        }
-        else {
-            s << uint32_t(v.data_[n]);
-        }
+    for (NibblesView::size_type n = 0; n < v.nibble_size(); n++) {
+        s << static_cast<uint32_t>(v.get(n));
     }
     s.width(oldwidth);
     return s << std::dec;

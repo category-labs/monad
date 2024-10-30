@@ -1,5 +1,6 @@
 #pragma once
 
+#include <monad/core/byte_string.hpp>
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/detail/collected_stats.hpp>
@@ -886,6 +887,23 @@ thread, as no synchronization is provided, and user code should make sure no
 other place is modifying trie. */
 find_result_type
 find_blocking(UpdateAuxImpl const &, NodeCursor, NibblesView key);
+
+//////////////////////////////////////////////////////////////////////////////
+// get_proof
+using compute_leaf_fn = byte_string(Node const &);
+using get_proof_result_type = std::pair<Nibbles, std::vector<byte_string>>;
+
+struct ProofOptions
+{
+    NibblesView prefix;
+    size_t leaf_nibbles_len;
+    bool root_is_subtrie = false;
+};
+
+// Returns the proof for a prefix.
+get_proof_result_type get_proof_blocking(
+    UpdateAuxImpl const &, NodeCursor, compute_leaf_fn on_leaf,
+    ProofOptions const &);
 
 //////////////////////////////////////////////////////////////////////////////
 // helpers

@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <span>
 
 MONAD_MPT_NAMESPACE_BEGIN
@@ -42,9 +43,21 @@ encode_16_children(std::span<ChildData>, std::span<unsigned char> result);
 std::span<unsigned char>
 encode_16_children(Node *, std::span<unsigned char> result);
 
+using on_result_fn = std::function<void(byte_string_view)>;
+
+void encode_branch(Node *, on_result_fn, bool const ignore_value = false);
+byte_string encode_branch(Node *, bool const ignore_value = false);
+
 unsigned encode_two_pieces(
     unsigned char *const dest, NibblesView const path,
     byte_string_view const second, bool const has_value = false);
+
+void encode_two_pieces(
+    on_result_fn fn, NibblesView const path, byte_string_view const second,
+    bool const has_value);
+
+byte_string encode_two_pieces(
+    NibblesView const, byte_string_view const, bool const has_value = false);
 
 struct Compute
 {

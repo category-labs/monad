@@ -130,7 +130,8 @@ namespace
             (code.empty()
                  ? "EMPTY"
                  : fmt::format(
-                       "{}", fmt::join(std::as_bytes(std::span(code)), ""))));
+                       "0x{:02x}",
+                       fmt::join(std::as_bytes(std::span(code)), ""))));
     }
 }
 

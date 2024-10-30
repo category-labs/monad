@@ -30,7 +30,7 @@ using namespace MONAD_ASYNC_NAMESPACE;
 
 void find_recursive(
     UpdateAuxImpl &, inflight_map_t &,
-    threadsafe_boost_fibers_promise<find_result_type> &, NodeCursor root,
+    threadsafe_boost_fibers_promise<find_cursor_result_type> &, NodeCursor root,
     NibblesView key);
 
 namespace
@@ -103,8 +103,8 @@ namespace
 // map
 void find_recursive(
     UpdateAuxImpl &aux, inflight_map_t &inflights,
-    threadsafe_boost_fibers_promise<find_result_type> &promise, NodeCursor root,
-    NibblesView const key)
+    threadsafe_boost_fibers_promise<find_cursor_result_type> &promise,
+    NodeCursor root, NibblesView const key)
 
 {
     if (!root.is_valid()) {

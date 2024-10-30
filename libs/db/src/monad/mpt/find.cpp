@@ -10,7 +10,7 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-find_result_type
+find_cursor_result_type
 find_blocking(UpdateAuxImpl const &aux, NodeCursor root, NibblesView const key)
 {
     auto g(aux.shared_lock());

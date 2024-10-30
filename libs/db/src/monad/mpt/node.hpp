@@ -358,6 +358,8 @@ deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes);
 Node::UniquePtr read_node_blocking(
     MONAD_ASYNC_NAMESPACE::storage_pool &, chunk_offset_t node_offset);
 
+Node::UniquePtr copy_node(Node const *);
+
 int64_t calc_min_version(Node const &);
 
 MONAD_MPT_NAMESPACE_END

@@ -29,7 +29,8 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
 
     struct receiver_t
     {
-        std::optional<monad::mpt::find_request_sender::result_type::value_type>
+        std::optional<
+            monad::mpt::find_request_sender<>::result_type::value_type>
             res;
 
         enum : bool
@@ -39,7 +40,7 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
 
         void set_value(
             monad::async::erased_connected_operation *,
-            monad::mpt::find_request_sender::result_type r)
+            monad::mpt::find_request_sender<>::result_type r)
         {
             MONAD_ASSERT(r);
             res = std::move(r).assume_value();
@@ -49,7 +50,7 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
     // Initiate an async find of a key
     monad::mpt::inflight_node_t inflights;
     auto state = monad::async::connect(
-        monad::mpt::find_request_sender(aux, inflights, *root, key, true, 5),
+        monad::mpt::find_request_sender<>(aux, inflights, *root, key, true, 5),
         receiver_t{});
     state.initiate();
 

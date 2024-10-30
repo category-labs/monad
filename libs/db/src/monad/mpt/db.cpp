@@ -80,7 +80,7 @@ struct Db::Impl
         uint64_t src_version, NibblesView src, uint64_t dest_version,
         NibblesView dest, bool blocked_by_write = true) = 0;
 
-    virtual find_result_type find_fiber_blocking(
+    virtual find_cursor_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key, uint64_t version) = 0;
     virtual size_t prefetch_fiber_blocking() = 0;
     virtual NodeCursor load_root_for_version(uint64_t version) = 0;
@@ -160,7 +160,7 @@ struct Db::ROOnDisk final : public Db::Impl
         MONAD_ASSERT(false);
     }
 
-    virtual find_result_type find_fiber_blocking(
+    virtual find_cursor_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key,
         uint64_t const version) override
     {
@@ -176,7 +176,7 @@ struct Db::ROOnDisk final : public Db::Impl
             // verify version still valid in history after success
             return aux().version_is_valid_ondisk(version)
                        ? res
-                       : find_result_type{
+                       : find_cursor_result_type{
                              NodeCursor{},
                              find_result::version_no_longer_exist};
         }
@@ -296,7 +296,7 @@ struct Db::InMemory final : public Db::Impl
             copy_trie_to_dest(aux_, *root_, src, {}, dest, dest_version, false);
     }
 
-    virtual find_result_type find_fiber_blocking(
+    virtual find_cursor_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key, uint64_t = 0) override
     {
         return find_blocking(aux(), root, key);
@@ -475,7 +475,7 @@ struct Db::RWOnDisk final : public Db::Impl
         {
             inflight_map_t inflights;
             ::boost::container::deque<
-                threadsafe_boost_fibers_promise<find_result_type>>
+                threadsafe_boost_fibers_promise<find_cursor_result_type>>
                 find_promises;
             ::boost::container::deque<
                 threadsafe_boost_fibers_promise<Node::UniquePtr>>
@@ -723,10 +723,10 @@ struct Db::RWOnDisk final : public Db::Impl
     }
 
     // threadsafe
-    virtual find_result_type find_fiber_blocking(
+    virtual find_cursor_result_type find_fiber_blocking(
         NodeCursor const &start, NibblesView const &key, uint64_t = 0) override
     {
-        threadsafe_boost_fibers_promise<find_result_type> promise;
+        threadsafe_boost_fibers_promise<find_cursor_result_type> promise;
         fiber_find_request_t req{
             .promise = &promise, .start = start, .key = key};
         auto fut = promise.get_future();
@@ -1245,9 +1245,10 @@ namespace detail
 
     // Processes results from find_request_sender, proxying the result back to
     // the DbGetSender.
+    template <return_type T>
     struct find_request_receiver_t
     {
-        find_bytes_result_type &res_bytes;
+        find_result_type<T> &get_result;
         async::erased_connected_operation *const io_state;
         uint64_t const version;
         UpdateAux<> &aux;
@@ -1259,7 +1260,7 @@ namespace detail
 
         void set_value(
             async::erased_connected_operation *const this_io_state,
-            find_request_sender::result_type res)
+            find_request_sender<T>::result_type res)
         {
             if (!res) {
                 io_state->completed(
@@ -1268,28 +1269,28 @@ namespace detail
             }
             try {
                 // verify version still valid in history after success
-                res_bytes = aux.version_is_valid_ondisk(version)
-                                ? std::move(res).assume_value()
-                                : find_bytes_result_type{
-                                      byte_string{},
-                                      find_result::version_no_longer_exist};
+                get_result =
+                    aux.version_is_valid_ondisk(version)
+                        ? std::move(res).assume_value()
+                        : find_result_type<T>{
+                              T{}, find_result::version_no_longer_exist};
             }
             catch (std::exception const &e) { // exception implies UB
-                res_bytes = {
-                    byte_string{}, find_result::version_no_longer_exist};
+                get_result = {T{}, find_result::version_no_longer_exist};
             }
             io_state->completed(async::success());
             delete this_io_state;
         }
     };
 
-    template <class T>
+    template <return_type T>
     async::result<void> DbGetSender<T>::operator()(
         async::erased_connected_operation *io_state) noexcept
     {
         switch (op_type) {
         case op_t::op_get1:
-        case op_t::op_get_data1: {
+        case op_t::op_get_data1:
+        case op_t::op_get_node1: {
             chunk_offset_t const offset =
                 context.aux.get_root_offset_at_version(block_id);
             AsyncContext::TrieRootCache::ConstAccessor acc;
@@ -1330,61 +1331,76 @@ namespace detail
             return async::success();
         }
         case op_t::op_get2:
-        case op_t::op_get_data2: {
+        case op_t::op_get_data2:
+        case op_t::op_get_node2: {
             // verify version is valid in db history before doing anything
             if (!context.aux.version_is_valid_ondisk(block_id)) {
-                res_bytes = {
-                    byte_string{}, find_result::version_no_longer_exist};
+                get_result = {T{}, find_result::version_no_longer_exist};
                 io_state->completed(async::success());
                 return async::success();
             }
 
             auto *state = new auto(async::connect(
-                find_request_sender(
+                find_request_sender<T>(
                     context.aux,
                     context.inflight_nodes,
                     cur,
                     nv,
                     op_type == op_t::op_get2,
                     cached_levels),
-                find_request_receiver_t{
-                    res_bytes, io_state, block_id, context.aux}));
+                find_request_receiver_t<T>{
+                    get_result, io_state, block_id, context.aux}));
             state->initiate();
             return async::success();
         }
         }
         abort();
     }
-    template struct DbGetSender<byte_string>;
 
-    template <>
-    DbGetSender<byte_string>::result_type DbGetSender<byte_string>::completed(
+    template <return_type T>
+    DbGetSender<T>::result_type DbGetSender<T>::completed(
         async::erased_connected_operation *, async::result<void> r) noexcept
     {
         BOOST_OUTCOME_TRY(std::move(r));
-        auto const res_msg = (op_type == op_get1 || op_type == op_get_data1)
+        auto const res_msg = (op_type == op_get1 || op_type == op_get_data1 ||
+                              op_type == op_get_node1)
                                  ? res_root.second
-                                 : res_bytes.second;
+                                 : get_result.second;
         MONAD_ASSERT(res_msg != find_result::unknown);
         if (res_msg != find_result::success) {
             return DbError::key_not_found;
         }
         switch (op_type) {
         case op_t::op_get1:
-        case op_t::op_get_data1: {
+        case op_t::op_get_data1:
+        case op_t::op_get_node1: {
             // Restart this op
             cur = std::move(res_root.first);
-            op_type =
-                (op_type == op_t::op_get1) ? op_t::op_get2 : op_t::op_get_data2;
+            switch (op_type) {
+            case op_t::op_get1:
+                op_type = op_get2;
+                break;
+            case op_t::op_get_data1:
+                op_type = op_get_data2;
+                break;
+            case op_t::op_get_node1:
+                op_type = op_get_node2;
+                break;
+            default:
+                MONAD_ASSERT(false);
+            }
             return async::sender_errc::operation_must_be_reinitiated;
         }
         case op_t::op_get2:
         case op_t::op_get_data2:
-            return res_bytes.first;
+        case op_t::op_get_node2:
+            return {std::move(get_result.first)};
         }
         abort();
     }
 
+    template struct DbGetSender<byte_string>;
+    template struct DbGetSender<Node::UniquePtr>;
 }
 
 MONAD_MPT_NAMESPACE_END

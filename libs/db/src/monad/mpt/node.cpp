@@ -655,6 +655,18 @@ Node::UniquePtr read_node_blocking(
         buffer + buffer_off, size_t(bytes_read) - buffer_off);
 }
 
+Node::UniquePtr copy_node(Node const *const node)
+{
+    auto const alloc_size = node->get_mem_size();
+    auto node_copy = Node::make(alloc_size);
+    std::copy_n(
+        (unsigned char *)node, alloc_size, (unsigned char *)node_copy.get());
+    // reset all in memory children
+    auto const next_size = node->number_of_children() * sizeof(Node *);
+    std::memset(node_copy->next_data(), 0, next_size);
+    return node_copy;
+}
+
 int64_t calc_min_version(Node const &node)
 {
     int64_t min_version = node.version;

@@ -125,7 +125,8 @@ namespace
 
     struct OnDiskDbWithFileAsyncFixture : public OnDiskDbWithFileFixture
     {
-        using result_t = monad::Result<monad::byte_string>;
+        template <return_type T>
+        using result_t = monad::Result<T>;
 
         Db ro_db;
         AsyncContextUniquePtr ctx;
@@ -141,14 +142,15 @@ namespace
         {
         }
 
-        void async_get(auto &&sender, std::function<void(result_t)> callback)
+        template <return_type T>
+        void async_get(auto &&sender, std::function<void(result_t<T>)> callback)
         {
             using sender_type = std::decay_t<decltype(sender)>;
 
             struct receiver_t
             {
                 OnDiskDbWithFileAsyncFixture *parent;
-                std::function<void(result_t)> callback;
+                std::function<void(result_t<T>)> callback;
 
                 void set_value(
                     monad::async::erased_connected_operation *state,
@@ -410,7 +412,7 @@ TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
 
     constexpr uint8_t const test_cached_level = 1;
     size_t i;
-    constexpr size_t read_per_iteration = 3;
+    constexpr size_t read_per_iteration = 5;
     size_t const expected_num_success_callbacks =
         (ro_db.get_history_length() - 1) * read_per_iteration;
     for (i = 1; i < ro_db.get_history_length(); ++i) {
@@ -423,33 +425,52 @@ TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
             make_update(kv[3].first, kv[3].second));
 
         // ensure we can still async query the old version
-        async_get(
+        async_get<monad::byte_string>(
             make_get_sender(
                 ctx.get(),
                 prefix + kv[0].first,
                 starting_block_id,
                 test_cached_level),
-            [&](result_t res) {
+            [&](result_t<monad::byte_string> res) {
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(res.value(), kv[0].second);
             });
-        async_get(
+        async_get<monad::byte_string>(
             make_get_sender(
                 ctx.get(),
                 prefix + kv[1].first,
                 starting_block_id,
                 test_cached_level),
-            [&](result_t res) {
+            [&](result_t<monad::byte_string> res) {
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(res.value(), kv[1].second);
             });
-        async_get(
+        async_get<Node::UniquePtr>(
+            make_get_node_sender(
+                ctx.get(),
+                prefix + kv[0].first,
+                starting_block_id,
+                test_cached_level),
+            [&](result_t<Node::UniquePtr> res) {
+                ASSERT_TRUE(res.has_value());
+                EXPECT_EQ(res.value()->value(), kv[0].second);
+            });
+        async_get<monad::byte_string>(
             make_get_data_sender(
                 ctx.get(), prefix, starting_block_id, test_cached_level),
-            [&](result_t res) {
+            [&](result_t<monad::byte_string> res) {
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(
                     res.value(),
+                    0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+            });
+        async_get<Node::UniquePtr>(
+            make_get_node_sender(
+                ctx.get(), prefix, starting_block_id, test_cached_level),
+            [&](result_t<Node::UniquePtr> res) {
+                ASSERT_TRUE(res.has_value());
+                EXPECT_EQ(
+                    res.value()->data(),
                     0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
             });
     }
@@ -466,14 +487,14 @@ TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
         make_update(kv[2].first, kv[2].second),
         make_update(kv[3].first, kv[3].second));
 
-    async_get(
+    async_get<monad::byte_string>(
         make_get_sender(
             ctx.get(),
             prefix + kv[0].first,
             starting_block_id,
             test_cached_level),
-        [&](result_t res) {
-            EXPECT_TRUE(res.has_error());
+        [&](result_t<monad::byte_string> res) {
+            ASSERT_TRUE(res.has_error());
             EXPECT_EQ(res.error(), DbError::key_not_found);
         });
 
@@ -496,10 +517,10 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
 
     // Do async reads
     for (auto const &kv : kv_alloc) {
-        async_get(
+        async_get<monad::byte_string>(
             make_get_sender(ctx.get(), kv, version, test_cached_level),
-            [&](result_t res) {
-                EXPECT_TRUE(res.has_value());
+            [&](result_t<monad::byte_string> res) {
+                ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(res.value(), kv);
             });
     }
@@ -565,9 +586,9 @@ TEST_F(OnDiskDbWithFileAsyncFixture, root_cache_invalidation)
     upsert_updates_flat_list(
         db, prefix0, block_id, make_update(kv[0].first, kv[0].second));
 
-    async_get(
+    async_get<monad::byte_string>(
         make_get_sender(ctx.get(), prefix0 + kv[0].first, block_id),
-        [&](result_t res) {
+        [&](result_t<monad::byte_string> res) {
             ASSERT_TRUE(res.has_value());
             EXPECT_EQ(res.value(), kv[0].second);
         });
@@ -579,9 +600,9 @@ TEST_F(OnDiskDbWithFileAsyncFixture, root_cache_invalidation)
     db.copy_trie(block_id, prefix0, block_id, final_prefix, true);
 
     // Do another async read on the same version
-    async_get(
+    async_get<monad::byte_string>(
         make_get_sender(ctx.get(), final_prefix + kv[0].first, block_id),
-        [&](result_t res) {
+        [&](result_t<monad::byte_string> res) {
             ASSERT_TRUE(res.has_value());
             EXPECT_EQ(res.value(), kv[0].second);
         });

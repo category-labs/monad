@@ -14,18 +14,22 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-using find_bytes_result_type = std::pair<byte_string, find_result>;
-
 using inflight_node_t = unordered_dense_map<
     chunk_offset_t,
     std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(
         NodeCursor, std::shared_ptr<Node>)>>,
     chunk_offset_t_hasher>;
 
+template <class T>
+concept return_type =
+    std::same_as<T, byte_string> || std::same_as<T, Node::UniquePtr>;
+
 /*! \brief Sender to perform the asynchronous finding of a node.
  */
+template <return_type T = byte_string>
 class find_request_sender
 {
+private:
     struct find_receiver;
     friend struct find_receiver;
 
@@ -33,7 +37,7 @@ class find_request_sender
     NodeCursor root_;
     NibblesView key_;
     inflight_node_t &inflights_;
-    std::optional<find_bytes_result_type> res_;
+    std::optional<find_result_type<T>> res_{std::nullopt};
     bool tid_checked_{false};
     bool return_value_{true};
     uint8_t const cached_levels_{5};
@@ -50,7 +54,7 @@ class find_request_sender
     }
 
 public:
-    using result_type = MONAD_ASYNC_NAMESPACE::result<find_bytes_result_type>;
+    using result_type = MONAD_ASYNC_NAMESPACE::result<find_result_type<T>>;
 
     constexpr find_request_sender(
         UpdateAuxImpl &aux, inflight_node_t &inflights, NodeCursor const root,
@@ -81,21 +85,27 @@ public:
 
     result_type completed(
         MONAD_ASYNC_NAMESPACE::erased_connected_operation *,
-        MONAD_ASYNC_NAMESPACE::result<void> res) const noexcept
+        MONAD_ASYNC_NAMESPACE::result<void> res) noexcept
     {
         BOOST_OUTCOME_TRY(std::move(res));
         MONAD_ASSERT(res_.has_value());
-        return *res_;
+        return {std::move(*res_)};
     }
 };
 
-static_assert(sizeof(find_request_sender) == 120);
-static_assert(alignof(find_request_sender) == 8);
-static_assert(MONAD_ASYNC_NAMESPACE::sender<find_request_sender>);
+static_assert(sizeof(find_request_sender<byte_string>) == 120);
+static_assert(alignof(find_request_sender<byte_string>) == 8);
+static_assert(MONAD_ASYNC_NAMESPACE::sender<find_request_sender<byte_string>>);
+
+static_assert(sizeof(find_request_sender<Node::UniquePtr>) == 96);
+static_assert(alignof(find_request_sender<Node::UniquePtr>) == 8);
+static_assert(
+    MONAD_ASYNC_NAMESPACE::sender<find_request_sender<Node::UniquePtr>>);
 
 // TODO: fix the version out of history range UB by version validation after
 // each io
-struct find_request_sender::find_receiver
+template <return_type T>
+struct find_request_sender<T>::find_receiver
 {
     static constexpr bool lifetime_managed_internally = true;
 
@@ -167,7 +177,8 @@ struct find_request_sender::find_receiver
     }
 };
 
-inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender::operator()(
+template <return_type T>
+inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
     MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state) noexcept
 {
     /* This is slightly bold, we basically repeatedly self reenter the Sender's
@@ -183,23 +194,26 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender::operator()(
         for (; node_prefix_index < node->path_nibble_index_end;
              ++node_prefix_index, ++prefix_index) {
             if (prefix_index >= key_.nibble_size()) {
-                res_ = {
-                    byte_string{},
-                    find_result::key_ends_earlier_than_node_failure};
+                res_ = {T{}, find_result::key_ends_earlier_than_node_failure};
                 io_state->completed(success());
                 return success();
             }
             if (key_.get(prefix_index) !=
                 get_nibble(node->path_data(), node_prefix_index)) {
-                res_ = {byte_string{}, find_result::key_mismatch_failure};
+                res_ = {T{}, find_result::key_mismatch_failure};
                 io_state->completed(success());
                 return success();
             }
         }
         if (prefix_index == key_.nibble_size()) {
-            res_ = {
-                byte_string{return_value_ ? node->value() : node->data()},
-                find_result::success};
+            if constexpr (std::is_same_v<T, byte_string>) {
+                res_ = {
+                    byte_string{return_value_ ? node->value() : node->data()},
+                    find_result::success};
+            }
+            else {
+                res_ = {copy_node(node), find_result::success};
+            }
             io_state->completed(success());
             return success();
         }
@@ -218,9 +232,7 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender::operator()(
             if (!tid_checked_) {
                 MONAD_ASSERT(aux_.io != nullptr);
                 if (aux_.io->owning_thread_id() != get_tl_tid()) {
-                    res_ = {
-                        byte_string{},
-                        find_result::need_to_continue_in_io_thread};
+                    res_ = {T{}, find_result::need_to_continue_in_io_thread};
                     return success();
                 }
                 tid_checked_ = true;
@@ -245,7 +257,7 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender::operator()(
             return success();
         }
         else {
-            res_ = {byte_string{}, find_result::branch_not_exist_failure};
+            res_ = {T{}, find_result::branch_not_exist_failure};
             io_state->completed(success());
             return success();
         }

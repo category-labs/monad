@@ -126,7 +126,7 @@ AsyncContextUniquePtr async_context_create(Db &db);
 
 namespace detail
 {
-    template <class T>
+    template <return_type T>
     struct DbGetSender
     {
         using result_type = async::result<T>;
@@ -136,9 +136,11 @@ namespace detail
         enum op_t : uint8_t
         {
             op_get1,
-            op_get_data1,
             op_get2,
-            op_get_data2
+            op_get_data1,
+            op_get_data2,
+            op_get_node1,
+            op_get_node2
         } op_type;
 
         std::shared_ptr<Node> root;
@@ -147,10 +149,8 @@ namespace detail
         uint64_t const block_id;
         uint8_t const cached_levels;
 
-        using find_bytes_result_type = std::pair<byte_string, find_result>;
-
-        find_result_type res_root;
-        find_bytes_result_type res_bytes;
+        find_result_type<NodeCursor> res_root;
+        find_result_type<T> get_result;
 
         constexpr DbGetSender(
             AsyncContext &context_, op_t const op_type_, NibblesView const n,
@@ -161,6 +161,9 @@ namespace detail
             , block_id(block_id_)
             , cached_levels(cached_levels_)
         {
+            if constexpr (std::same_as<T, Node::UniquePtr>) {
+                MONAD_ASSERT(op_type == op_t::op_get_node1);
+            }
         }
 
         constexpr DbGetSender(
@@ -174,6 +177,9 @@ namespace detail
             , block_id(block_id_)
             , cached_levels(cached_levels_)
         {
+            if constexpr (std::same_as<T, Node::UniquePtr>) {
+                MONAD_ASSERT(op_type == op_t::op_get_node1);
+            }
         }
 
         async::result<void>
@@ -207,6 +213,19 @@ inline detail::DbGetSender<byte_string> make_get_data_sender(
     return {
         *context,
         detail::DbGetSender<byte_string>::op_t::op_get_data1,
+        nv,
+        block_id,
+        cached_levels};
+}
+
+inline detail::DbGetSender<Node::UniquePtr> make_get_node_sender(
+    AsyncContext *context, NibblesView const nv, uint64_t const block_id,
+    uint8_t const cached_levels = 5)
+{
+    MONAD_ASSERT(context);
+    return {
+        *context,
+        detail::DbGetSender<Node::UniquePtr>::op_t::op_get_node1,
         nv,
         block_id,
         cached_levels};

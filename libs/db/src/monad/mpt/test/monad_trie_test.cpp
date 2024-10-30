@@ -630,6 +630,8 @@ int main(int argc, char *argv[])
         } /* upsert test end */
 
         if (random_read_benchmark_threads > 0) {
+            using find_bytes_request_sender =
+                find_request_sender<monad::byte_string>;
             {
                 auto begin = std::chrono::steady_clock::now();
                 while (std::chrono::steady_clock::now() - begin <
@@ -688,7 +690,7 @@ int main(int argc, char *argv[])
                     uint64_t &ops;
                     bool &done;
                     unsigned const n_slices;
-                    find_request_sender *sender{nullptr};
+                    find_bytes_request_sender *sender{nullptr};
                     NodeCursor state_start;
                     monad::small_prng rand;
                     monad::byte_string key;
@@ -708,7 +710,7 @@ int main(int argc, char *argv[])
                     void set_value(
                         MONAD_ASYNC_NAMESPACE::erased_connected_operation
                             *io_state,
-                        find_request_sender::result_type res)
+                        find_bytes_request_sender::result_type res)
                     {
                         MONAD_ASSERT(res);
                         auto const [data, errc] = res.assume_value();
@@ -728,7 +730,7 @@ int main(int argc, char *argv[])
                 };
 
                 using connected_state_type = MONAD_ASYNC_NAMESPACE::
-                    connected_operation<find_request_sender, receiver_t>;
+                    connected_operation<find_bytes_request_sender, receiver_t>;
 
                 uint64_t ops{0};
                 bool signal_done{false};
@@ -738,7 +740,7 @@ int main(int argc, char *argv[])
                 for (uint32_t n = 0; n < random_read_benchmark_threads; n++) {
                     states.emplace_back(new auto(connect(
                         *aux.io,
-                        find_request_sender{
+                        find_bytes_request_sender{
                             aux,
                             inflights,
                             state_start,
@@ -754,7 +756,7 @@ int main(int argc, char *argv[])
                     state->receiver().sender = &state->sender();
                     state->receiver().set_value(
                         state.get(),
-                        monad::mpt::find_bytes_result_type(
+                        monad::mpt::find_result_type<monad::byte_string>(
                             {}, monad::mpt::find_result::success));
                 }
 
@@ -801,7 +803,7 @@ int main(int argc, char *argv[])
                             (unsigned char const *)&key_src, 8, key.data());
 
                         monad::threadsafe_boost_fibers_promise<
-                            monad::mpt::find_result_type>
+                            monad::mpt::find_cursor_result_type>
                             promise;
                         fiber_find_request_t const request{
                             .promise = &promise,
@@ -878,7 +880,7 @@ int main(int argc, char *argv[])
                     // allowed in Boost.Fiber
                     std::array<
                         monad::threadsafe_boost_fibers_promise<
-                            monad::mpt::find_result_type>,
+                            monad::mpt::find_cursor_result_type>,
                         4>
                         promises;
                     auto *promise_it = promises.begin();
@@ -986,7 +988,7 @@ int main(int argc, char *argv[])
                     {
                         UpdateAuxImpl &aux;
                         monad::threadsafe_boost_fibers_promise<
-                            monad::mpt::find_result_type>
+                            monad::mpt::find_cursor_result_type>
                             p;
                         monad::byte_string key;
                         fiber_find_request_t request;

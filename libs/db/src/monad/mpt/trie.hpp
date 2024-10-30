@@ -1027,7 +1027,10 @@ enum class find_result : uint8_t
     key_ends_earlier_than_node_failure,
     need_to_continue_in_io_thread
 };
-using find_result_type = std::pair<NodeCursor, find_result>;
+template <class T>
+using find_result_type = std::pair<T, find_result>;
+
+using find_cursor_result_type = find_result_type<NodeCursor>;
 
 using inflight_map_t = unordered_dense_map<
     chunk_offset_t,
@@ -1038,7 +1041,7 @@ using inflight_map_t = unordered_dense_map<
 // to work on
 struct fiber_find_request_t
 {
-    threadsafe_boost_fibers_promise<find_result_type> *promise;
+    threadsafe_boost_fibers_promise<find_cursor_result_type> *promise;
     NodeCursor start{};
     NibblesView key{};
 };
@@ -1060,7 +1063,7 @@ the node through blocking read.
 \warning Should only invoke it from the triedb owning
 thread, as no synchronization is provided, and user code should make sure no
 other place is modifying trie. */
-find_result_type
+find_cursor_result_type
 find_blocking(UpdateAuxImpl const &, NodeCursor, NibblesView key);
 
 //////////////////////////////////////////////////////////////////////////////

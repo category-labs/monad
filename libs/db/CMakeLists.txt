@@ -37,7 +37,6 @@ add_library(
   "src/monad/mpt/db_error.hpp"
   "src/monad/mpt/find.cpp"
   "src/monad/mpt/find_notify_fiber.cpp"
-  "src/monad/mpt/find_request_sender.cpp"
   "src/monad/mpt/find_request_sender.hpp"
   "src/monad/mpt/nibbles_view.hpp"
   "src/monad/mpt/nibbles_view_fmt.hpp"

@@ -1265,6 +1265,7 @@ namespace detail
             if (!res) {
                 io_state->completed(
                     async::result<void>(std::move(res).as_failure()));
+                delete this_io_state;
                 return;
             }
             try {

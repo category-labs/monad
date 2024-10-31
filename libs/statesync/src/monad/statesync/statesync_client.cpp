@@ -131,6 +131,10 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
         // sent storage with no account
         return false;
     }
+    else if (!ctx->pending.empty()) {
+        // missing code
+        return false;
+    }
 
     if (ctx->db.get_latest_block_id() != ctx->target) {
         ctx->db.move_trie_version_forward(
@@ -139,11 +143,6 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
     TrieDb db{ctx->db};
     MONAD_ASSERT(db.get_block_number() == ctx->target);
 
-    for (auto const &hash : ctx->hash) {
-        if (db.read_code(hash) == nullptr) {
-            return false;
-        }
-    }
     return db.state_root() == ctx->expected_root;
 }
 

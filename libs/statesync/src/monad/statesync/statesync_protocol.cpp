@@ -26,8 +26,12 @@ void account_update(
 {
     using StorageDeltas = monad_statesync_client_context::StorageDeltas;
 
-    if (acct.has_value() && acct.value().code_hash != NULL_HASH) {
-        ctx.hash.insert(acct.value().code_hash);
+    if (acct.has_value()) {
+        auto const &hash = acct.value().code_hash;
+        if (hash != NULL_HASH && !ctx.pending.contains(hash) &&
+            !ctx.upserted.contains(hash)) {
+            ctx.pending.emplace(hash);
+        }
     }
 
     auto const it = ctx.deltas.find(addr);

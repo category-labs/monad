@@ -13,11 +13,16 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
+#include <monad/core/rlp/int_rlp.hpp>
+#include <monad/core/rlp/transaction_rlp.hpp>
+#include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
+#include <monad/mpt/nibbles_view.hpp>
+#include <monad/rlp/encode2.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/state.hpp>
 #include <monad/test/config.hpp>
@@ -205,6 +210,7 @@ void BlockchainTest::TestBody()
                 block.value().header.number - 1,
                 block.value().header.parent_hash);
 
+            uint64_t const curr_block_number = block.value().header.number;
             auto const result =
                 execute_dispatch(rev, block.value(), tdb, block_hash_buffer);
             if (!result.has_error()) {
@@ -220,7 +226,7 @@ void BlockchainTest::TestBody()
                     block.value().header.withdrawals_root)
                     << name;
                 auto const encoded_ommers_res =
-                    db.get(ommer_nibbles, block.value().header.number);
+                    db.get(ommer_nibbles, curr_block_number);
                 EXPECT_TRUE(encoded_ommers_res.has_value());
                 EXPECT_EQ(
                     to_bytes(keccak256(encoded_ommers_res.value())),
@@ -233,14 +239,30 @@ void BlockchainTest::TestBody()
                 EXPECT_EQ(
                     result.value().size(), block.value().transactions.size())
                     << name;
-                // verify block header is stored correctly
-                auto res =
-                    db.get(block_header_nibbles, block.value().header.number);
-                EXPECT_TRUE(res.has_value());
-                auto const decode_res = rlp::decode_block_header(res.value());
-                EXPECT_TRUE(decode_res.has_value());
-                auto const decoded_block_header = decode_res.value();
-                EXPECT_EQ(decode_res.value(), block.value().header);
+                { // verify block header is stored correctly
+                    auto res = db.get(block_header_nibbles, curr_block_number);
+                    EXPECT_TRUE(res.has_value());
+                    auto const decode_res =
+                        rlp::decode_block_header(res.value());
+                    EXPECT_TRUE(decode_res.has_value());
+                    auto const decoded_block_header = decode_res.value();
+                    EXPECT_EQ(decode_res.value(), block.value().header);
+                }
+                // verify tx hash
+                for (unsigned i = 0; i < block.value().transactions.size();
+                     ++i) {
+                    auto const &tx = block.value().transactions[i];
+                    auto const hash = keccak256(rlp::encode_transaction(tx));
+                    auto tx_hash_res = db.get(
+                        mpt::concat(tx_hash_nibbles, mpt::NibblesView{hash}),
+                        curr_block_number);
+                    EXPECT_TRUE(tx_hash_res.has_value());
+                    EXPECT_EQ(
+                        tx_hash_res.value(),
+                        rlp::encode_list2(
+                            rlp::encode_unsigned(curr_block_number),
+                            rlp::encode_unsigned(i)));
+                }
             }
             else {
                 EXPECT_TRUE(j_block.contains("expectException"))

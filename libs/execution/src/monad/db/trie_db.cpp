@@ -218,7 +218,7 @@ void TrieDb::commit(
     UpdateList tx_hash_updates;
     MONAD_ASSERT(receipts.size() == transactions.size());
     auto const &encoded_block_number =
-        bytes_alloc_.emplace_back(rlp::encode_unsigned(block_number_));
+        bytes_alloc_.emplace_back(rlp::encode_unsigned(header.number));
     std::vector<byte_string> index_alloc;
     index_alloc.reserve(std::max(
         receipts.size(),

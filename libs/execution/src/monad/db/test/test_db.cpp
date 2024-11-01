@@ -348,7 +348,13 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         keccak256(rlp::encode_transaction(transactions.emplace_back(t3))));
     ASSERT_EQ(receipts.size(), transactions.size());
 
-    tdb.commit(StateDeltas{}, Code{}, BlockHeader{}, receipts, transactions);
+    constexpr uint64_t first_block = 0;
+    tdb.commit(
+        StateDeltas{},
+        Code{},
+        BlockHeader{.number = first_block},
+        receipts,
+        transactions);
     EXPECT_EQ(
         tdb.receipts_root(),
         0x7ea023138ee7d80db04eeec9cf436dc35806b00cc5fe8e5f611fb7cf1b35b177_bytes32);
@@ -360,19 +366,20 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
                               uint64_t const block_id,
                               unsigned const tx_idx) {
         auto const res = this->db.get(
-            concat(tx_hash_nibbles, mpt::NibblesView{tx_hash}), block_id);
+            concat(tx_hash_nibbles, mpt::NibblesView{tx_hash}),
+            this->db.get_latest_block_id());
         EXPECT_TRUE(res.has_value());
         EXPECT_EQ(
             res.value(),
             rlp::encode_list2(
                 rlp::encode_unsigned(block_id), rlp::encode_unsigned(tx_idx)));
     };
-    auto const first_block = this->db.get_latest_block_id();
     verify_tx_hash(tx_hash[0], first_block, 0);
     verify_tx_hash(tx_hash[1], first_block, 1);
     verify_tx_hash(tx_hash[2], first_block, 2);
 
     // A new receipt trie with eip1559 transaction type
+    constexpr uint64_t second_block = 1;
     receipts.clear();
     receipts.emplace_back(Receipt{
         .status = 1, .gas_used = 34865, .type = TransactionType::eip1559});
@@ -386,14 +393,19 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     tx_hash.emplace_back(
         keccak256(rlp::encode_transaction(transactions.emplace_back(t2))));
     ASSERT_EQ(receipts.size(), transactions.size());
-    tdb.commit(StateDeltas{}, Code{}, BlockHeader{}, receipts, transactions);
+    tdb.increment_block_number();
+    tdb.commit(
+        StateDeltas{},
+        Code{},
+        BlockHeader{.number = second_block},
+        receipts,
+        transactions);
     EXPECT_EQ(
         tdb.receipts_root(),
         0x61f9b4707b28771a63c1ac6e220b2aa4e441dd74985be385eaf3cd7021c551e9_bytes32);
     EXPECT_EQ(
         tdb.transactions_root(),
         0x0800aa3014aaa87b4439510e1206a7ef2568337477f0ef0c444cbc2f691e52cf_bytes32);
-    auto const second_block = this->db.get_latest_block_id();
     verify_tx_hash(tx_hash[0], first_block, 0);
     verify_tx_hash(tx_hash[1], first_block, 1);
     verify_tx_hash(tx_hash[2], first_block, 2);

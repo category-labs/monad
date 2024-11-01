@@ -29,7 +29,8 @@ struct MachineBase : public mpt::StateMachine
         Receipt,
         Transaction,
         Withdrawal,
-        TxHash
+        TxHash,
+        BlockHash
     };
 
     uint8_t depth{0};
@@ -66,6 +67,7 @@ inline constexpr unsigned char BLOCKHEADER_NIBBLE = 4;
 inline constexpr unsigned char WITHDRAWAL_NIBBLE = 5;
 inline constexpr unsigned char OMMER_NIBBLE = 6;
 inline constexpr unsigned char TX_HASH_NIBBLE = 7;
+inline constexpr unsigned char BLOCK_HASH_NIBBLE = 8;
 inline constexpr unsigned char INVALID_NIBBLE = 255;
 inline mpt::Nibbles const state_nibbles = mpt::concat(STATE_NIBBLE);
 inline mpt::Nibbles const code_nibbles = mpt::concat(CODE_NIBBLE);
@@ -76,6 +78,7 @@ inline mpt::Nibbles const block_header_nibbles =
 inline mpt::Nibbles const ommer_nibbles = mpt::concat(OMMER_NIBBLE);
 inline mpt::Nibbles const withdrawal_nibbles = mpt::concat(WITHDRAWAL_NIBBLE);
 inline mpt::Nibbles const tx_hash_nibbles = mpt::concat(TX_HASH_NIBBLE);
+inline mpt::Nibbles const block_hash_nibbles = mpt::concat(BLOCK_HASH_NIBBLE);
 
 byte_string encode_account_db(Address const &, Account const &);
 byte_string encode_storage_db(bytes32_t const &, bytes32_t const &);

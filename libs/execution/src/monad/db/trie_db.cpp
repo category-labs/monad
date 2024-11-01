@@ -252,8 +252,18 @@ void TrieDb::commit(
             .version = static_cast<int64_t>(block_number_)}));
     }
 
-    UpdateList updates;
+    auto const &rlp_block_header =
+        bytes_alloc_.emplace_back(rlp::encode_block_header(header));
+    UpdateList block_hash_nested_updates;
+    block_hash_nested_updates.push_front(update_alloc_.emplace_back(Update{
+        .key =
+            NibblesView{hash_alloc_.emplace_back(keccak256(rlp_block_header))},
+        .value = encoded_block_number,
+        .incarnation = false,
+        .next = UpdateList{},
+        .version = static_cast<int64_t>(block_number_)}));
 
+    UpdateList updates;
     auto state_update = Update{
         .key = state_nibbles,
         .value = byte_string_view{},
@@ -280,7 +290,7 @@ void TrieDb::commit(
         .version = static_cast<int64_t>(block_number_)};
     auto block_header_update = Update{
         .key = block_header_nibbles,
-        .value = bytes_alloc_.emplace_back(rlp::encode_block_header(header)),
+        .value = rlp_block_header,
         .incarnation = true,
         .next = UpdateList{},
         .version = static_cast<int64_t>(block_number_)};
@@ -296,6 +306,12 @@ void TrieDb::commit(
         .incarnation = false,
         .next = std::move(tx_hash_updates),
         .version = static_cast<int64_t>(block_number_)};
+    auto block_hash_update = Update{
+        .key = block_hash_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(block_hash_nested_updates),
+        .version = static_cast<int64_t>(block_number_)};
     updates.push_front(state_update);
     updates.push_front(code_update);
     updates.push_front(receipt_update);
@@ -303,6 +319,7 @@ void TrieDb::commit(
     updates.push_front(block_header_update);
     updates.push_front(ommer_update);
     updates.push_front(tx_hash_update);
+    updates.push_front(block_hash_update);
     UpdateList withdrawal_updates;
     if (withdrawals.has_value()) {
         // only commit withdrawals when the optional has value

@@ -248,6 +248,19 @@ void BlockchainTest::TestBody()
                     auto const decoded_block_header = decode_res.value();
                     EXPECT_EQ(decode_res.value(), block.value().header);
                 }
+                { // look up block hash
+                    auto const block_hash = keccak256(
+                        rlp::encode_block_header(block.value().header));
+                    auto res = db.get(
+                        mpt::concat(
+                            block_hash_nibbles, mpt::NibblesView{block_hash}),
+                        curr_block_number);
+                    EXPECT_TRUE(res.has_value());
+                    auto const decoded_number =
+                        rlp::decode_unsigned<uint64_t>(res.value());
+                    EXPECT_TRUE(decoded_number.has_value());
+                    EXPECT_EQ(decoded_number.value(), curr_block_number);
+                }
                 // verify tx hash
                 for (unsigned i = 0; i < block.value().transactions.size();
                      ++i) {

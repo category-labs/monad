@@ -281,10 +281,11 @@ void monad_statesync_server_handle_request(
     if (!success) {
         LOG_INFO(
             "could not handle request prefix={} from={} until={} "
-            "target={}",
+            "old_target={} target={}",
             rq.prefix,
             rq.from,
             rq.until,
+            rq.old_target,
             rq.target);
     }
     sync->statesync_server_send_done(

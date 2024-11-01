@@ -47,7 +47,7 @@ namespace detail
     // For the memory map of the first conventional chunk
     struct db_metadata
     {
-        static constexpr char const *MAGIC = "MONAD002";
+        static constexpr char const *MAGIC = "MONAD003";
         static constexpr unsigned MAGIC_STRING_LEN = 8;
 
         friend class MONAD_MPT_NAMESPACE::UpdateAuxImpl;
@@ -74,10 +74,12 @@ namespace detail
         // ring buffer is under capacity.
         struct root_offsets_ring_t
         {
-            static constexpr size_t SIZE = 65536;
+            static constexpr size_t SIZE_ = 65536;
             static_assert(
-                (SIZE & (SIZE - 1)) == 0, "root offsets must be a power of 2");
+                (SIZE_ & (SIZE_ - 1)) == 0,
+                "root offsets must be a power of 2");
 
+            uint64_t version_lower_bound_;
             uint64_t next_version_; // all bits zero turns into INVALID_BLOCK_ID
 
             union
@@ -86,7 +88,7 @@ namespace detail
                 {
                     uint32_t high_bits_all_set; // All bits one to deliberately
                                                 // break older codebases
-                    uint32_t cnv_chunk_len; // How long the following list is
+                    uint32_t cnv_chunks_len; // How long the following list is
 
                     struct
                     {
@@ -94,10 +96,10 @@ namespace detail
                             high_bits_all_set; // All bits one to deliberately
                                                // break older codebases
                         uint32_t cnv_chunk_id; // The read-write chunk id
-                    } cnv_chunks[SIZE - 1];
+                    } cnv_chunks[SIZE_ - 1];
                 };
 
-                chunk_offset_t arr[SIZE];
+                chunk_offset_t arr[SIZE_];
             } storage_;
         } root_offsets;
 
@@ -473,7 +475,7 @@ namespace detail
 
     static_assert(std::is_trivially_copyable_v<db_metadata>);
     static_assert(std::is_trivially_copy_assignable_v<db_metadata>);
-    static_assert(sizeof(db_metadata) == 524384);
+    static_assert(sizeof(db_metadata) == 524392);
     static_assert(alignof(db_metadata) == 8);
 
     inline void atomic_memcpy(

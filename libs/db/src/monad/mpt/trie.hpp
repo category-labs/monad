@@ -1,5 +1,6 @@
 #pragma once
 
+#include <monad/async/config.hpp>
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/detail/collected_stats.hpp>
@@ -26,6 +27,8 @@
     #pragma clang diagnostic pop
 #endif
 
+#include <atomic>
+#include <bit>
 #include <cstdint>
 #include <functional>
 #include <vector>
@@ -154,9 +157,6 @@ replace_node_writer(UpdateAuxImpl &, node_writer_unique_ptr_type const &);
 // \class Auxiliaries for triedb update
 class UpdateAuxImpl
 {
-    static constexpr uint64_t max_history_len =
-        detail::db_metadata::root_offsets_ring_t::SIZE;
-
     uint32_t initial_insertion_count_on_pool_creation_{0};
     bool enable_dynamic_history_length_{true};
 
@@ -553,103 +553,100 @@ public:
     {
         class root_offsets_delegator
         {
-            struct as_atomics_
+            std::atomic_ref<uint64_t> version_lower_bound_;
+            std::atomic_ref<uint64_t> next_version_;
+            std::span<chunk_offset_t> root_offsets_chunks_;
+
+            void
+            update_version_lower_bound_(uint64_t lower_bound = uint64_t(-1))
             {
-                std::atomic<uint64_t> next_version;
-
-                union
-                {
-                    struct
-                    {
-                        uint32_t
-                            high_bits_all_set; // All bits one to deliberately
-                                               // break older codebases
-                        uint32_t cnv_chunk_id; // The read-write chunk id
-                    } chunks[2]
-                            [detail::db_metadata::root_offsets_ring_t::SIZE /
-                             2];
-
-                    std::atomic<chunk_offset_t>
-                        arr[detail::db_metadata::root_offsets_ring_t::SIZE];
-                } storage;
-            } *const root_offsets_;
-
-            static_assert(
-                sizeof(detail::db_metadata::root_offsets_ring_t) ==
-                sizeof(as_atomics_));
+                auto const version_lower_bound =
+                    version_lower_bound_.load(std::memory_order_acquire);
+                auto idx = (lower_bound < version_lower_bound)
+                               ? lower_bound
+                               : version_lower_bound;
+                auto const max_version =
+                    next_version_.load(std::memory_order_acquire) - 1;
+                while (idx < max_version && (*this)[idx] == INVALID_OFFSET) {
+                    idx++;
+                }
+                if (idx != version_lower_bound) {
+                    version_lower_bound_.store(idx, std::memory_order_release);
+                }
+            }
 
         public:
-            constexpr root_offsets_delegator(
-                detail::db_metadata::root_offsets_ring_t *root_offsets)
-                : root_offsets_((as_atomics_ *)root_offsets)
+            explicit root_offsets_delegator(const struct db_metadata_ *m)
+                : version_lower_bound_(
+                      m->main->root_offsets.version_lower_bound_)
+                , next_version_(m->main->root_offsets.next_version_)
+                , root_offsets_chunks_(
+                      m->root_offsets.empty()
+                          ? std::span<chunk_offset_t>(
+                                m->main->root_offsets.storage_.arr)
+                          : std::span<chunk_offset_t>(m->root_offsets))
             {
+                MONAD_DEBUG_ASSERT(
+                    root_offsets_chunks_.size() ==
+                    1ULL
+                        << (63 -
+                            std::countl_zero(root_offsets_chunks_.size())));
             }
 
-            as_atomics_ *self()
+            size_t capacity() const noexcept
             {
-                return start_lifetime_as<as_atomics_>(root_offsets_);
-            }
-
-            as_atomics_ const *self() const
-            {
-                return start_lifetime_as<as_atomics_ const>(root_offsets_);
-            }
-
-            static constexpr size_t capacity() noexcept
-            {
-                return detail::db_metadata::root_offsets_ring_t::SIZE;
+                return root_offsets_chunks_.size();
             }
 
             void push(chunk_offset_t const o) noexcept
             {
-                auto *self = this->self();
-                auto const wp =
-                    self->next_version.load(std::memory_order_relaxed);
+                auto const wp = next_version_.load(std::memory_order_relaxed);
                 auto const next_wp = wp + 1;
                 MONAD_ASSERT(next_wp != 0);
-                self->storage
-                    .arr
-                        [wp &
-                         (detail::db_metadata::root_offsets_ring_t::SIZE - 1)]
-                    .store(o, std::memory_order_release);
-                self->next_version.store(next_wp, std::memory_order_release);
+                auto *p = start_lifetime_as<std::atomic<chunk_offset_t>>(
+                    &root_offsets_chunks_
+                        [wp & (root_offsets_chunks_.size() - 1)]);
+                p->store(o, std::memory_order_release);
+                next_version_.store(next_wp, std::memory_order_release);
+                if (o != INVALID_OFFSET) {
+                    update_version_lower_bound_();
+                }
             }
 
             void assign(size_t const i, chunk_offset_t const o) noexcept
             {
-                self()
-                    ->storage
-                    .arr
-                        [i &
-                         (detail::db_metadata::root_offsets_ring_t::SIZE - 1)]
-                    .store(o, std::memory_order_release);
+                auto *p = start_lifetime_as<std::atomic<chunk_offset_t>>(
+                    &root_offsets_chunks_
+                        [i & (root_offsets_chunks_.size() - 1)]);
+                p->store(o, std::memory_order_release);
+                update_version_lower_bound_(
+                    (o != INVALID_OFFSET) ? i : uint64_t(-1));
             }
 
             chunk_offset_t operator[](size_t const i) const noexcept
             {
-                return self()
-                    ->storage
-                    .arr
-                        [i &
-                         (detail::db_metadata::root_offsets_ring_t::SIZE - 1)]
-                    .load(std::memory_order_acquire);
+                return start_lifetime_as<std::atomic<chunk_offset_t> const>(
+                           &root_offsets_chunks_
+                               [i & (root_offsets_chunks_.size() - 1)])
+                    ->load(std::memory_order_acquire);
             }
 
             // return INVALID_BLOCK_ID indicates that db is empty
             uint64_t max_version() const noexcept
             {
-                auto const wp =
-                    self()->next_version.load(std::memory_order_acquire);
+                auto const wp = next_version_.load(std::memory_order_acquire);
                 return wp - 1;
             }
 
             void reset_all(uint64_t const version)
             {
-                self()->next_version.store(0, std::memory_order_release);
+                version_lower_bound_.store(0, std::memory_order_release);
+                next_version_.store(0, std::memory_order_release);
                 for (size_t i = 0; i < capacity(); ++i) {
                     push(INVALID_OFFSET);
                 }
-                self()->next_version.store(version, std::memory_order_release);
+                version_lower_bound_.store(version, std::memory_order_release);
+                next_version_.store(version, std::memory_order_release);
             }
 
             void rewind_to_version(uint64_t const version)
@@ -659,12 +656,17 @@ public:
                 for (uint64_t i = version + 1; i <= max_version(); i++) {
                     assign(i, async::INVALID_OFFSET);
                 }
-                self()->next_version.store(
-                    version + 1, std::memory_order_release);
+                if (version <
+                    version_lower_bound_.load(std::memory_order_acquire)) {
+                    version_lower_bound_.store(
+                        version, std::memory_order_release);
+                }
+                next_version_.store(version + 1, std::memory_order_release);
+                update_version_lower_bound_();
             }
         };
 
-        return root_offsets_delegator{&db_metadata_[which].main->root_offsets};
+        return root_offsets_delegator{&db_metadata_[which]};
     }
 
     // translate between virtual and physical addresses chunk_offset_t
@@ -741,7 +743,7 @@ public:
 
     double disk_usage() const
     {
-        return 1 -
+        return 1.0 -
                (double)num_chunks(chunk_list::free) / (double)io->chunk_count();
     }
 
@@ -791,6 +793,7 @@ public:
 
     uint32_t num_chunks(chunk_list const list) const noexcept;
 
+    uint64_t version_history_max_possible() const noexcept;
     uint64_t version_history_length() const noexcept;
 
     // Following funcs on db history are for on disk db only. In

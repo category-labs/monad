@@ -814,22 +814,23 @@ storage_pool::activate_chunk(chunk_type const which, uint32_t const id)
         return ret;
     }
     g.unlock();
+    auto &chunkinfo = chunks_[which][id];
     switch (which) {
     case chunk_type::cnv:
         ret = std::shared_ptr<cnv_chunk>(new cnv_chunk(
-            devices_[id],
-            devices_[id].cached_readwritefd_,
-            devices_[id].cached_readwritefd_,
-            0,
-            devices_[id].metadata_->chunk_capacity,
-            id,
+            chunkinfo.device,
+            chunkinfo.device.cached_readwritefd_,
+            chunkinfo.device.cached_readwritefd_,
+            file_offset_t(chunkinfo.chunk_offset_into_device) *
+                chunkinfo.device.metadata_->chunk_capacity,
+            chunkinfo.device.metadata_->chunk_capacity,
+            chunkinfo.chunk_offset_into_device,
             id,
             false,
             false,
             false));
         break;
     case chunk_type::seq: {
-        auto &chunkinfo = chunks_[chunk_type::seq][id];
         int fds[2] = {
             chunkinfo.device.uncached_readfd_,
             chunkinfo.device.uncached_writefd_};

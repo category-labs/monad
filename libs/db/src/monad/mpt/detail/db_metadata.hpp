@@ -26,9 +26,10 @@ namespace detail
          */
         constexpr struct
         {
-            uint32_t chunk_info_count : 20;
-            uint32_t unused0_ : 4;
-            uint32_t reserved0_ : 8;
+            uint64_t chunk_info_count : 20;
+            uint64_t using_chunks_for_root_offsets : 1;
+            uint64_t unused0_ : 35;
+            uint64_t reserved0_ : 8;
         } v{.reserved0_ = 1};
 
         struct type
@@ -37,7 +38,7 @@ namespace detail
         };
 
         constexpr type ret = std::bit_cast<type>(v);
-        return ret.x[3];
+        return ret.x[sizeof(v) - 1]; // last byte
     }
 #endif
     inline void
@@ -46,8 +47,8 @@ namespace detail
     // For the memory map of the first conventional chunk
     struct db_metadata
     {
-        static constexpr char const *MAGIC = "MND6";
-        static constexpr unsigned MAGIC_STRING_LEN = 4;
+        static constexpr char const *MAGIC = "MONAD001";
+        static constexpr unsigned MAGIC_STRING_LEN = 8;
 
         friend class MONAD_MPT_NAMESPACE::UpdateAuxImpl;
         friend inline void
@@ -57,10 +58,10 @@ namespace detail
         db_metadata &operator=(db_metadata const &) = default;
 
         char magic[MAGIC_STRING_LEN];
-        uint32_t chunk_info_count : 20; // items in chunk_info below
-        uint32_t using_chunks_for_root_offsets : 1;
-        uint32_t unused0_ : 3; // next item MUST be on a byte boundary
-        uint32_t reserved_for_is_dirty_ : 8; // for is_dirty below
+        uint64_t chunk_info_count : 20; // items in chunk_info below
+        uint64_t using_chunks_for_root_offsets : 1;
+        uint64_t unused0_ : 35; // next item MUST be on a byte boundary
+        uint64_t reserved_for_is_dirty_ : 8; // for is_dirty below
         // DO NOT INSERT ANYTHING IN HERE
         uint64_t capacity_in_free_list; // used to detect when free space is
                                         // running low
@@ -479,7 +480,7 @@ namespace detail
 
     static_assert(std::is_trivially_copyable_v<db_metadata>);
     static_assert(std::is_trivially_copy_assignable_v<db_metadata>);
-    static_assert(sizeof(db_metadata) == 524384);
+    static_assert(sizeof(db_metadata) == 524392);
     static_assert(alignof(db_metadata) == 8);
 
     inline void atomic_memcpy(

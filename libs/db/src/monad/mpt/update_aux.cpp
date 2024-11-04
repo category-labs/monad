@@ -395,15 +395,17 @@ void UpdateAuxImpl::set_io(
             }
         }
     }
-
+    constexpr unsigned magic_version_len = 3;
     constexpr unsigned magic_prefix_len =
-        detail::db_metadata::MAGIC_STRING_LEN - 1;
+        detail::db_metadata::MAGIC_STRING_LEN - magic_version_len;
     if (0 == memcmp(
                  db_metadata_[0].main->magic,
                  detail::db_metadata::MAGIC,
                  magic_prefix_len) &&
-        db_metadata_[0].main->magic[magic_prefix_len] !=
-            detail::db_metadata::MAGIC[magic_prefix_len]) {
+        memcmp(
+            db_metadata_[0].main->magic + magic_prefix_len,
+            detail::db_metadata::MAGIC + magic_prefix_len,
+            magic_version_len)) {
         std::stringstream ss;
         ss << "DB was generated with version " << db_metadata_[0].main->magic
            << ". The current code base is on version "

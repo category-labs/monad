@@ -62,10 +62,6 @@ public:
     uint64_t get_block_number() const;
     uint64_t get_history_length() const;
 
-    // for testing only
-    std::pair<bytes32_t, bytes32_t>
-    read_storage_and_slot(Address const &, bytes32_t const &key);
-
     void set_block_number(uint64_t);
 
 private:

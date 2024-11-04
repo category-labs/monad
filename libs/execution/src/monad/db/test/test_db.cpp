@@ -91,6 +91,9 @@ namespace
         mpt::Db db{machine, mpt::OnDiskDbConfig{}};
     };
 
+    ///////////////////////////////////////////
+    // DB Getters
+    ///////////////////////////////////////////
     std::vector<CallFrame> read_call_frame(
         mpt::Db const &db, uint64_t const block_number, uint64_t const idx)
     {
@@ -107,6 +110,25 @@ namespace
         MONAD_ASSERT(!call_frame.has_error());
         MONAD_ASSERT(encoded_call_frame.empty());
         return call_frame.value();
+    }
+
+    std::pair<bytes32_t, bytes32_t> read_storage_and_slot(
+        mpt::Db const &db, uint64_t const block_number, Address const &addr,
+        bytes32_t const &key)
+    {
+        auto const value = db.get(
+            mpt::concat(
+                STATE_NIBBLE,
+                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+                mpt::NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
+            block_number);
+        if (!value.has_value()) {
+            return {};
+        }
+        auto encoded_storage = value.value();
+        auto const storage = decode_storage_db(encoded_storage);
+        MONAD_ASSERT(!storage.has_error());
+        return storage.value();
     }
 }
 
@@ -191,16 +213,25 @@ TYPED_TEST(DBTest, read_storage)
 
     // Existing storage
     EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key1), value1);
-    EXPECT_EQ(tdb.read_storage_and_slot(ADDR_A, key1).first, key1);
+    EXPECT_EQ(
+        read_storage_and_slot(this->db, tdb.get_block_number(), ADDR_A, key1)
+            .first,
+        key1);
 
     // Non-existing key
     EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key2), bytes32_t{});
-    EXPECT_EQ(tdb.read_storage_and_slot(ADDR_A, key2).first, bytes32_t{});
+    EXPECT_EQ(
+        read_storage_and_slot(this->db, tdb.get_block_number(), ADDR_A, key2)
+            .first,
+        bytes32_t{});
 
     // Non-existing account
     EXPECT_FALSE(tdb.read_account(ADDR_B).has_value());
     EXPECT_EQ(tdb.read_storage(ADDR_B, Incarnation{0, 0}, key1), bytes32_t{});
-    EXPECT_EQ(tdb.read_storage_and_slot(ADDR_B, key1).first, bytes32_t{});
+    EXPECT_EQ(
+        read_storage_and_slot(this->db, tdb.get_block_number(), ADDR_B, key1)
+            .first,
+        bytes32_t{});
 }
 
 TYPED_TEST(DBTest, read_code)

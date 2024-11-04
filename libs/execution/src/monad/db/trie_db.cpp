@@ -116,26 +116,6 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
     return to_bytes(storage.value());
 };
 
-std::pair<bytes32_t, bytes32_t>
-TrieDb::read_storage_and_slot(Address const &addr, bytes32_t const &key)
-{
-    auto const value = db_.get(
-        concat(
-            STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-            NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
-        block_number_);
-    if (!value.has_value()) {
-        STATS_STORAGE_NO_VALUE();
-        return {};
-    }
-    STATS_STORAGE_VALUE();
-    auto encoded_storage = value.value();
-    auto const storage = decode_storage_db(encoded_storage);
-    MONAD_ASSERT(!storage.has_error());
-    return storage.value();
-};
-
 #ifdef MONAD_TRIEDB_STATS
     #undef STATS_STORAGE_NO_VALUE
     #undef STATS_STORAGE_VALUE

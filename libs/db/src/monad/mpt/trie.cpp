@@ -1630,24 +1630,56 @@ node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
     auto *tozero = sender->advance_buffer_append(remaining_buffer_bytes);
     MONAD_DEBUG_ASSERT(tozero != nullptr);
     memset(tozero, 0, remaining_buffer_bytes);
+
     /* If there aren't enough write buffers, this may poll uring until a free
     write buffer appears. However, that polling may write a node, causing
     this function to be reentered, and another free chunk allocated and now
     writes are being directed there instead. Obviously then replacing that new
     partially filled chunk with this new chunk is something which trips the
-    assets.
+    asserts.
 
     Replacing the runloop exposed this bug much more clearly than before, but we
     had been seeing occasional issues somewhere around here for some time now,
     it just wasn't obvious the cause. Anyway detect when reentrancy occurs, and
     if so undo this operation and tell the caller to retry.
     */
+    static thread_local struct reentrancy_detection_t
+    {
+        int count{0}, max_count{0};
+    } reentrancy_detection;
+
+    int const my_reentrancy_count = reentrancy_detection.count++;
+    MONAD_ASSERT(my_reentrancy_count >= 0);
+    if (my_reentrancy_count == 0) {
+        // We are at the base
+        reentrancy_detection.max_count = 0;
+    }
+    else if (my_reentrancy_count > reentrancy_detection.max_count) {
+        // We are reentering
+        LOG_INFO_CFORMAT(
+            "replace_node_writer_to_start_at_new_chunk reenter "
+            "my_reentrancy_count = "
+            "%d max_count = %d",
+            my_reentrancy_count,
+            reentrancy_detection.max_count);
+        reentrancy_detection.max_count = my_reentrancy_count;
+    }
     auto ret = aux.io->make_connected(
         write_single_buffer_sender{
             offset_of_new_writer, AsyncIO::WRITE_BUFFER_SIZE},
         write_operation_io_receiver{AsyncIO::WRITE_BUFFER_SIZE});
-    if (ci_ != aux.db_metadata()->free_list_end()) {
+    reentrancy_detection.count--;
+    MONAD_ASSERT(reentrancy_detection.count >= 0);
+    // The deepest-most reentrancy must succeed, and all less deep reentrancies
+    // must retry
+    if (my_reentrancy_count != reentrancy_detection.max_count) {
         // We reentered, please retry
+        LOG_INFO_CFORMAT(
+            "replace_node_writer_to_start_at_new_chunk retry "
+            "my_reentrancy_count = "
+            "%d max_count = %d",
+            my_reentrancy_count,
+            reentrancy_detection.max_count);
         return {};
     }
     aux.remove(idx);

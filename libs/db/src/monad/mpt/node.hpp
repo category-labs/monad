@@ -318,7 +318,6 @@ constexpr size_t calculate_node_size(
     size_t const value_size, size_t const path_size,
     size_t const data_size) noexcept
 {
-    MONAD_DEBUG_ASSERT(number_of_children || total_child_data_size == 0);
     return sizeof(Node) +
            (sizeof(uint16_t) // child data offset
             + sizeof(compact_virtual_chunk_offset_t) * 2 // min truncated offset
@@ -327,6 +326,16 @@ constexpr size_t calculate_node_size(
                number_of_children +
            total_child_data_size + value_size + path_size + data_size;
 }
+
+// Maximum value size that can be stored in a leaf node.  This is calculated by
+// taking the maximum possible node size and subtracting the overhead of the
+// Node metadata. We use KECCAK256_SIZE for the path length since the state trie
+// is our deepest trie in practice.
+constexpr size_t MAX_VALUE_LEN_OF_LEAF =
+    Node::max_disk_size -
+    calculate_node_size(
+        0 /* number_of_children */, 0 /* child_data_size */, 0 /* value_size */,
+        KECCAK256_SIZE /* path_size */, KECCAK256_SIZE /* data_size*/);
 
 Node::UniquePtr make_node(
     Node &from, NibblesView path, std::optional<byte_string_view> value,

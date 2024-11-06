@@ -1644,7 +1644,7 @@ node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
     auto ret = aux.io->make_connected(
         write_single_buffer_sender{
             offset_of_new_writer, AsyncIO::WRITE_BUFFER_SIZE},
-        write_operation_io_receiver{});
+        write_operation_io_receiver{AsyncIO::WRITE_BUFFER_SIZE});
     if (ci_ != aux.db_metadata()->free_list_end()) {
         // We reentered, please retry
         return {};
@@ -1684,13 +1684,12 @@ node_writer_unique_ptr_type replace_node_writer(
     }
     // See above about handling potential reentrancy correctly
     auto *const node_writer_ptr = node_writer.get();
+    size_t const bytes_to_write = std::min(
+        AsyncIO::WRITE_BUFFER_SIZE,
+        (size_t)(chunk_capacity - offset_of_next_writer.offset));
     auto ret = aux.io->make_connected(
-        write_single_buffer_sender{
-            offset_of_next_writer,
-            std::min(
-                AsyncIO::WRITE_BUFFER_SIZE,
-                (size_t)(chunk_capacity - offset_of_next_writer.offset))},
-        write_operation_io_receiver{});
+        write_single_buffer_sender{offset_of_next_writer, bytes_to_write},
+        write_operation_io_receiver{bytes_to_write});
     if (node_writer.get() != node_writer_ptr) {
         // We reentered, please retry
         return {};
@@ -1868,6 +1867,8 @@ write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
         }
         auto to_initiate = std::move(node_writer);
         node_writer = std::move(new_node_writer);
+        to_initiate->receiver().reset(
+            to_initiate->sender().written_buffer_bytes());
         to_initiate->initiate();
         // shall be recycled by the i/o receiver
         to_initiate.release();

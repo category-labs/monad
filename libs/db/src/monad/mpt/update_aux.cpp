@@ -637,15 +637,13 @@ void UpdateAuxImpl::reset_node_writers()
         auto chunk =
             io->storage_pool().chunk(storage_pool::seq, node_writer_offset.id);
         MONAD_ASSERT(chunk->size() >= node_writer_offset.offset);
+        size_t const bytes_to_write = std::min(
+            AsyncIO::WRITE_BUFFER_SIZE,
+            size_t(chunk->capacity() - node_writer_offset.offset));
         return io ? io->make_connected(
                         write_single_buffer_sender{
-                            node_writer_offset,
-                            std::min(
-                                AsyncIO::WRITE_BUFFER_SIZE,
-                                size_t(
-                                    chunk->capacity() -
-                                    node_writer_offset.offset))},
-                        write_operation_io_receiver{})
+                            node_writer_offset, bytes_to_write},
+                        write_operation_io_receiver{bytes_to_write})
                   : node_writer_unique_ptr_type{};
     };
     node_writer_fast =

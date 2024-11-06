@@ -45,12 +45,22 @@ class Node;
 
 struct write_operation_io_receiver
 {
+    size_t should_be_written;
+
     // Node *parent{nullptr};
+
+    explicit constexpr write_operation_io_receiver(
+        size_t const should_be_written_)
+        : should_be_written(should_be_written_)
+    {
+    }
+
     void set_value(
         MONAD_ASYNC_NAMESPACE::erased_connected_operation *,
         MONAD_ASYNC_NAMESPACE::write_single_buffer_sender::result_type res)
     {
         MONAD_ASSERT(res);
+        MONAD_ASSERT(res.assume_value().get().size() == should_be_written);
         res.assume_value()
             .get()
             .reset(); // release i/o buffer before initiating other work
@@ -61,7 +71,10 @@ struct write_operation_io_receiver
         // }
     }
 
-    void reset() {}
+    void reset(size_t const should_be_written_)
+    {
+        should_be_written = should_be_written_;
+    }
 };
 
 using node_writer_unique_ptr_type =

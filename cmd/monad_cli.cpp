@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <concepts>
 #include <cstddef>
@@ -598,6 +599,7 @@ int interactive_impl(Db &db)
             continue;
         }
 
+        auto const begin = std::chrono::steady_clock::now();
         if (tokens[0] == "help") {
             print_help();
         }
@@ -658,6 +660,7 @@ int interactive_impl(Db &db)
         else {
             fmt::println("Invalid command: \"{}\". See \"help\"", tokens[0]);
         }
+        fmt::println("Took {}", std::chrono::steady_clock::now() - begin);
     }
     return 0;
 }

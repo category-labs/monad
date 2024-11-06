@@ -535,8 +535,8 @@ namespace detail
             ((std::byte *)dest) + sizeof(db_metadata),
             ((std::byte const *)src) + sizeof(db_metadata),
             bytes - sizeof(db_metadata));
-        ((std::atomic<uint64_t> *)&dest->root_offsets.next_version_)
-            ->store(old_next_version, std::memory_order_release);
+        std::atomic_ref<uint64_t>(dest->root_offsets.next_version_)
+            .store(old_next_version, std::memory_order_release);
     };
 }
 

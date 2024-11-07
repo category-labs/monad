@@ -19,23 +19,20 @@ typedef struct monad_async_executor_head
 {
     // The following are not user modifiable
     MONAD_CONTEXT_PUBLIC_CONST
-    MONAD_CONTEXT_ATOMIC(monad_async_task) current_task;
+    MONAD_CPP_ATOMIC(monad_async_task) current_task;
     MONAD_CONTEXT_PUBLIC_CONST
-    MONAD_CONTEXT_ATOMIC(size_t) tasks_pending_launch;
-    MONAD_CONTEXT_PUBLIC_CONST MONAD_CONTEXT_ATOMIC(size_t) tasks_running;
+    MONAD_CPP_ATOMIC(size_t) tasks_pending_launch;
+    MONAD_CONTEXT_PUBLIC_CONST MONAD_CPP_ATOMIC(size_t) tasks_running;
     MONAD_CONTEXT_PUBLIC_CONST
-    MONAD_CONTEXT_ATOMIC(size_t) tasks_suspended_sqe_exhaustion;
-    MONAD_CONTEXT_PUBLIC_CONST MONAD_CONTEXT_ATOMIC(size_t) tasks_suspended;
+    MONAD_CPP_ATOMIC(size_t) tasks_suspended_sqe_exhaustion;
+    MONAD_CONTEXT_PUBLIC_CONST MONAD_CPP_ATOMIC(size_t) tasks_suspended;
 
-    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        total_ticks_in_run;
-    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
+    MONAD_CONTEXT_PUBLIC_CONST monad_cpu_ticks_count_t total_ticks_in_run;
+    MONAD_CONTEXT_PUBLIC_CONST monad_cpu_ticks_count_t
         total_ticks_in_task_launch;
-    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        total_ticks_in_io_uring;
-    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        total_ticks_sleeping;
-    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
+    MONAD_CONTEXT_PUBLIC_CONST monad_cpu_ticks_count_t total_ticks_in_io_uring;
+    MONAD_CONTEXT_PUBLIC_CONST monad_cpu_ticks_count_t total_ticks_sleeping;
+    MONAD_CONTEXT_PUBLIC_CONST monad_cpu_ticks_count_t
         total_ticks_in_task_completion;
 
     MONAD_CONTEXT_PUBLIC_CONST uint64_t total_io_submitted, total_io_completed;
@@ -43,8 +40,7 @@ typedef struct monad_async_executor_head
     struct
     {
         MONAD_CONTEXT_PUBLIC_CONST size_t total_claimed, total_released;
-        MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-            ticks_last_claim,
+        MONAD_CONTEXT_PUBLIC_CONST monad_cpu_ticks_count_t ticks_last_claim,
             ticks_last_release;
     } registered_buffers;
 } *monad_async_executor;

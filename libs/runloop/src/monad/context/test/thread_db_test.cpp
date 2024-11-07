@@ -176,7 +176,7 @@ namespace
 
 TEST(context_switcher_thread_db, loads_in)
 {
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
     // TSAN randomly interferes with our libthread_db load
     return;
 #endif
@@ -203,7 +203,7 @@ TEST(context_switcher_thread_db, loads_in)
 
 TEST(context_switcher_thread_db, enumerates_context)
 {
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
     // TSAN spins up a background thread which messes up the hardcoded numbers
     // here
     return;

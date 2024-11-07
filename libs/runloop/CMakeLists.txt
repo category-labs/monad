@@ -64,7 +64,6 @@ set(monad_async_INCLUDES
   "src/monad/async/file_io.h"
   "src/monad/async/socket_io.h"
   "src/monad/async/task.h"
-  "src/monad/async/util.h"
   "src/monad/async/work_dispatcher.h"
 )
 add_library(monad_async_c STATIC
@@ -103,6 +102,7 @@ if(BINDGEN_PROGRAM)
     --must-use-type cxx_result_status_code_system_monad_async
     --
     -I ${CMAKE_CURRENT_LIST_DIR}/src
+    -I ${CMAKE_CURRENT_LIST_DIR}/../core/src
     -D MONAD_CONTEXT_DISABLE_INLINE_CUSTOM_GDB_THREAD_DB_LOAD
     DEPENDS ${monad_async_INCLUDES} ${monad_context_INCLUDES}
   )

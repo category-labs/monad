@@ -5,6 +5,8 @@
 #include <liburing.h>
 
 // Must come after <liburing.h>, otherwise breaks build on clang
+#include <monad/util/ticks_count.h>
+
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -20,6 +22,18 @@ typedef struct monad_async_task_head *monad_async_task;
 
 struct monad_fiber_task;
 struct monad_fiber_scheduler;
+
+//! \brief Task priority classes
+typedef enum monad_async_priority
+    : unsigned char
+{
+    monad_async_priority_high = 0,
+    monad_async_priority_normal = 1,
+    monad_async_priority_low = 2,
+
+    monad_async_priority_max = 3,
+    monad_async_priority_unchanged = (unsigned char)-1
+} monad_async_priority;
 
 #if defined(__clang__)
     #pragma clang diagnostic push
@@ -54,12 +68,9 @@ typedef struct monad_async_io_status
         };
     };
 
-    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        ticks_when_initiated;
-    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        ticks_when_completed;
-    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        ticks_when_reaped;
+    MONAD_CONTEXT_PUBLIC_CONST monad_cpu_ticks_count_t ticks_when_initiated;
+    MONAD_CONTEXT_PUBLIC_CONST monad_cpu_ticks_count_t ticks_when_completed;
+    MONAD_CONTEXT_PUBLIC_CONST monad_cpu_ticks_count_t ticks_when_reaped;
 
 #ifdef __cplusplus
     constexpr monad_async_io_status()
@@ -132,9 +143,9 @@ struct monad_async_task_head
     // foreign executor, is_running will be false as that is not the i/o
     // executor.
     MONAD_CONTEXT_PUBLIC_CONST
-    MONAD_CONTEXT_ATOMIC(monad_async_executor)
+    MONAD_CPP_ATOMIC(monad_async_executor)
     current_executor MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
-    MONAD_CONTEXT_PUBLIC_CONST MONAD_CONTEXT_ATOMIC(bool)
+    MONAD_CONTEXT_PUBLIC_CONST MONAD_CPP_ATOMIC(bool)
         is_awaiting_dispatch MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
         is_pending_launch MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
         is_running MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
@@ -143,20 +154,20 @@ struct monad_async_task_head
         is_suspended_awaiting MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
         is_suspended_completed MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
 
-    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        ticks_when_submitted MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
-    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        ticks_when_attached MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
-    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        ticks_when_detached MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
-    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
+    MONAD_CONTEXT_PUBLIC_CONST monad_cpu_ticks_count_t ticks_when_submitted
+        MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
+    MONAD_CONTEXT_PUBLIC_CONST monad_cpu_ticks_count_t ticks_when_attached
+        MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
+    MONAD_CONTEXT_PUBLIC_CONST monad_cpu_ticks_count_t ticks_when_detached
+        MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
+    MONAD_CONTEXT_PUBLIC_CONST monad_cpu_ticks_count_t
         ticks_when_suspended_awaiting MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
-    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
+    MONAD_CONTEXT_PUBLIC_CONST monad_cpu_ticks_count_t
         ticks_when_suspended_completed MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
-    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        ticks_when_resumed MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
-    MONAD_CONTEXT_PUBLIC_CONST monad_context_cpu_ticks_count_t
-        total_ticks_executed MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
+    MONAD_CONTEXT_PUBLIC_CONST monad_cpu_ticks_count_t ticks_when_resumed
+        MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
+    MONAD_CONTEXT_PUBLIC_CONST monad_cpu_ticks_count_t total_ticks_executed
+        MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
 
     MONAD_CONTEXT_PUBLIC_CONST unsigned io_submitted
         MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,

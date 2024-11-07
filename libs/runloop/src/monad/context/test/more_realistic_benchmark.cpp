@@ -80,7 +80,7 @@ TEST(context_switcher, more_realistic_benchmark)
         };
         if (switcher) {
             monad_context_task_attr attr{
-#if MONAD_CONTEXT_HAVE_ASAN || MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_ASAN || MONAD_HAVE_TSAN
                 .stack_size = 4096 * 4
 #else
                 .stack_size = 4096

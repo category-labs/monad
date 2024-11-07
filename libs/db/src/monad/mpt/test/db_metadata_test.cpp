@@ -12,7 +12,7 @@
 
 TEST(db_metadata, DISABLED_copy)
 {
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
     return; // This test explicitly relies on racy memory copying
 #endif
     monad::mpt::detail::db_metadata *metadata[3];

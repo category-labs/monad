@@ -1,6 +1,5 @@
 #pragma once
 
-#include <monad/context/boost_result.h>
 #include <monad/context/config.h>
 #include <monad/context/context_switcher.h>
 
@@ -8,7 +7,6 @@
 #include "file_io.h"
 #include "socket_io.h"
 #include "task.h"
-#include "util.h"
 #include "work_dispatcher.h"
 
 #ifdef __cplusplus

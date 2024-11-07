@@ -92,7 +92,7 @@ TEST(context_switcher, works)
                                         char const *desc,
                                         bool run_switching_test) {
         monad_context_task_attr attr{
-#if MONAD_CONTEXT_HAVE_ASAN || MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_ASAN || MONAD_HAVE_TSAN
             .stack_size = 4096 * 4
 #else
             .stack_size = 4096
@@ -221,7 +221,7 @@ TEST(context_switcher, works)
 
 TEST(context_switcher, scaling)
 {
-#if MONAD_CONTEXT_HAVE_ASAN || MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_ASAN || MONAD_HAVE_TSAN
     // The sanitisers try to map memory which fails causing the test to fail
     return;
 #endif
@@ -306,7 +306,7 @@ TEST(context_switcher, recursion)
             .detach = +[](monad_context_task) {}
         };
         monad_context_task_attr attr{
-#if MONAD_CONTEXT_HAVE_ASAN || MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_ASAN || MONAD_HAVE_TSAN
             .stack_size = 4096 * 4
 #else
             .stack_size = 4096

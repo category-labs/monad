@@ -189,7 +189,7 @@ TEST(executor, works)
                 ts.tv_sec = 3; // timeout and fail the test after this
                 r = monad_async_executor_run(
                     ex.get(), 1, &ts); // runs and suspends
-                monad_context_cpu_ticks_count_t const ticks_when_resumed =
+                monad_cpu_ticks_count_t const ticks_when_resumed =
                     t1->ticks_when_resumed;
                 EXPECT_EQ(did_run, 1);
                 EXPECT_EQ(ex->tasks_pending_launch, 0);

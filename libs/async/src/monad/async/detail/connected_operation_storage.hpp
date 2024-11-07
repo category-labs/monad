@@ -1,8 +1,8 @@
 #pragma once
 
-#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/sender_errc.hpp>
+#include <monad/core/scope_polyfill.hpp>
 #include <monad/core/tl_tid.h>
 
 #include <memory>

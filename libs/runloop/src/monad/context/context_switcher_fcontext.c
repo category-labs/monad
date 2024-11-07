@@ -21,10 +21,10 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
-#if MONAD_CONTEXT_HAVE_ASAN
+#if MONAD_HAVE_ASAN
     #include <sanitizer/asan_interface.h>
 #endif
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
     #include <sanitizer/tsan_interface.h>
 #endif
 #if MONAD_ASYNC_HAVE_VALGRIND
@@ -126,7 +126,7 @@ monad_context_switcher_fcontext_create(monad_context_switcher *switcher)
     p->owning_thread = thrd_current();
     atomic_store_explicit(
         &p->fake_main_context.head.switcher, &p->head, memory_order_release);
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
     p->fake_main_context.head.sanitizer.fiber = __tsan_get_current_fiber();
 #endif
     *switcher = (monad_context_switcher)p;
@@ -134,7 +134,7 @@ monad_context_switcher_fcontext_create(monad_context_switcher *switcher)
 }
 
 /*****************************************************************************/
-#if MONAD_CONTEXT_HAVE_ASAN || MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_ASAN || MONAD_HAVE_TSAN
 static inline __attribute__((always_inline)) void start_switch_context(
     struct monad_context_head *dest_context, void **fake_stack_save,
     void const *bottom, size_t size)
@@ -143,10 +143,10 @@ static inline __attribute__((always_inline)) void start_switch_context(
     (void)fake_stack_save;
     (void)bottom;
     (void)size;
-    #if MONAD_CONTEXT_HAVE_ASAN
+    #if MONAD_HAVE_ASAN
     __sanitizer_start_switch_fiber(fake_stack_save, bottom, size);
     #endif
-    #if MONAD_CONTEXT_HAVE_TSAN
+    #if MONAD_HAVE_TSAN
     __tsan_switch_to_fiber(dest_context->sanitizer.fiber, 0);
     #endif
 }
@@ -159,7 +159,7 @@ static inline __attribute__((always_inline)) void finish_switch_context(
     (void)fake_stack_save;
     (void)bottom_old;
     (void)size_old;
-    #if MONAD_CONTEXT_HAVE_ASAN
+    #if MONAD_HAVE_ASAN
     __sanitizer_finish_switch_fiber(fake_stack_save, bottom_old, size_old);
     #endif
 }
@@ -214,7 +214,7 @@ monad_context_fcontext_task_runner(struct monad_transfer_t creation_transfer)
     creation_transfer.fctx = nullptr;
     creation_transfer.data = nullptr;
 
-#if MONAD_CONTEXT_HAVE_ASAN
+#if MONAD_HAVE_ASAN
     // First time call fake_stack_save will be null which means no historical
     // stack to restore for this brand new context
     assert(context->head.sanitizer.fake_stack_save == nullptr);
@@ -362,7 +362,7 @@ static monad_c_result monad_context_fcontext_create(
     p->head.sanitizer.valgrind_stack_id =
         VALGRIND_STACK_REGISTER(stack_front, stack_base);
 #endif
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
     p->head.sanitizer.fiber = __tsan_create_fiber(0);
 #endif
     // Launch execution, suspending immediately
@@ -400,7 +400,7 @@ static monad_c_result monad_context_fcontext_create(
 static monad_c_result monad_context_fcontext_destroy(monad_context context)
 {
     struct monad_context_fcontext *p = (struct monad_context_fcontext *)context;
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
     if (p->head.sanitizer.fiber != nullptr) {
         __tsan_destroy_fiber(p->head.sanitizer.fiber);
         p->head.sanitizer.fiber = nullptr;

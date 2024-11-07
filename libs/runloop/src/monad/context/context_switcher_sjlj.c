@@ -28,10 +28,10 @@
 #include <ucontext.h>
 #include <unistd.h>
 
-#if MONAD_CONTEXT_HAVE_ASAN
+#if MONAD_HAVE_ASAN
     #include <sanitizer/asan_interface.h>
 #endif
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
     #include <sanitizer/tsan_interface.h>
 #endif
 #if MONAD_ASYNC_HAVE_VALGRIND
@@ -131,7 +131,7 @@ monad_context_switcher_sjlj_create(monad_context_switcher *switcher)
     p->owning_thread = thrd_current();
     atomic_store_explicit(
         &p->resume_many_context.head.switcher, &p->head, memory_order_release);
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
     p->resume_many_context.head.sanitizer.fiber = __tsan_get_current_fiber();
 #endif
     *switcher = (monad_context_switcher)p;
@@ -139,7 +139,7 @@ monad_context_switcher_sjlj_create(monad_context_switcher *switcher)
 }
 
 /*****************************************************************************/
-#if MONAD_CONTEXT_HAVE_ASAN || MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_ASAN || MONAD_HAVE_TSAN
 static inline __attribute__((always_inline)) void start_switch_context(
     struct monad_context_sjlj *dest_context, void **fake_stack_save,
     void const *bottom, size_t size)
@@ -148,10 +148,10 @@ static inline __attribute__((always_inline)) void start_switch_context(
     (void)fake_stack_save;
     (void)bottom;
     (void)size;
-    #if MONAD_CONTEXT_HAVE_ASAN
+    #if MONAD_HAVE_ASAN
     __sanitizer_start_switch_fiber(fake_stack_save, bottom, size);
     #endif
-    #if MONAD_CONTEXT_HAVE_TSAN
+    #if MONAD_HAVE_TSAN
     __tsan_switch_to_fiber(dest_context->head.sanitizer.fiber, 0);
     #endif
 }
@@ -164,7 +164,7 @@ static inline __attribute__((always_inline)) void finish_switch_context(
     (void)fake_stack_save;
     (void)bottom_old;
     (void)size_old;
-    #if MONAD_CONTEXT_HAVE_ASAN
+    #if MONAD_HAVE_ASAN
     __sanitizer_finish_switch_fiber(fake_stack_save, bottom_old, size_old);
     #endif
 }
@@ -198,7 +198,7 @@ static void monad_context_sjlj_task_runner(
     //
     // just before the final longjmp out.
 
-#if MONAD_CONTEXT_HAVE_ASAN
+#if MONAD_HAVE_ASAN
     // First time call fake_stack_save will be null which means no historical
     // stack to restore for this brand new context
     assert(context->head.sanitizer.fake_stack_save == nullptr);
@@ -358,7 +358,7 @@ static monad_c_result monad_context_sjlj_create(
     // Launch execution, suspending immediately
     makecontext(
         &p->uctx, (void (*)(void))monad_context_sjlj_task_runner, 2, p, task);
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
     p->head.sanitizer.fiber = __tsan_create_fiber(0);
 #endif
     jmp_buf old_buf;
@@ -397,7 +397,7 @@ static monad_c_result monad_context_sjlj_create(
 static monad_c_result monad_context_sjlj_destroy(monad_context context)
 {
     struct monad_context_sjlj *p = (struct monad_context_sjlj *)context;
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
     if (p->head.sanitizer.fiber != nullptr) {
         __tsan_destroy_fiber(p->head.sanitizer.fiber);
         p->head.sanitizer.fiber = nullptr;

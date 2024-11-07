@@ -89,7 +89,7 @@ typedef struct monad_context_switcher_head
 
     //! The number of contexts existing
     MONAD_CONTEXT_PUBLIC_CONST
-    MONAD_CONTEXT_CPP_STD atomic_uint contexts;
+    MONAD_CPP_STD atomic_uint contexts;
 
     //! \brief Destroys self
     monad_c_result (*const self_destroy)(
@@ -158,7 +158,7 @@ typedef struct monad_context_head
     // The following are not user modifiable
     MONAD_CONTEXT_PUBLIC_CONST bool is_running, is_suspended;
     MONAD_CONTEXT_PUBLIC_CONST
-    MONAD_CONTEXT_ATOMIC(monad_context_switcher) switcher;
+    MONAD_CPP_ATOMIC(monad_context_switcher) switcher;
 
     // Must come AFTER what the Rust bindings will use
     size_t const thread_db_slot;

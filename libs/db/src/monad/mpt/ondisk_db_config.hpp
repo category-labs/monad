@@ -17,6 +17,7 @@ struct OnDiskDbConfig
     bool enable_io_polling{false};
     bool capture_io_latencies{false};
     bool eager_completions{false};
+    bool enable_dynamic_history_length{true};
     unsigned rd_buffers{1024};
     unsigned wr_buffers{4};
     unsigned uring_entries{512};

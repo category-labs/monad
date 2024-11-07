@@ -155,6 +155,7 @@ replace_node_writer(UpdateAuxImpl &, node_writer_unique_ptr_type const &);
 class UpdateAuxImpl
 {
     uint32_t initial_insertion_count_on_pool_creation_{0};
+    bool enable_dynamic_history_length_{true};
 
     struct db_metadata_
     {
@@ -166,7 +167,7 @@ class UpdateAuxImpl
 
     void reset_node_writers();
 
-    void advance_compact_offsets(uint64_t version_to_erase);
+    void advance_compact_offsets();
 
     std::pair<uint32_t, uint32_t>
     min_offsets_of_version(uint64_t version) const;
@@ -522,6 +523,7 @@ public:
         uint64_t version, bool compaction = false,
         bool can_write_to_fast = true);
 
+    void adjust_history_length_based_on_disk_usage();
     void move_trie_version_forward(uint64_t src, uint64_t dest);
 
     // collect and print trie update stats
@@ -713,6 +715,11 @@ public:
         alternate_slow_fast_writer_ = alternate;
     }
 
+    void toggle_dynamic_history_length_adjustment(bool const enable)
+    {
+        enable_dynamic_history_length_ = enable;
+    }
+
     bool alternate_slow_fast_writer() const noexcept
     {
         return alternate_slow_fast_writer_;
@@ -736,6 +743,12 @@ public:
     constexpr bool is_on_disk() const noexcept
     {
         return io != nullptr;
+    }
+
+    double disk_usage() const
+    {
+        return 1 -
+               (double)num_chunks(chunk_list::free) / (double)io->chunk_count();
     }
 
     chunk_offset_t get_latest_root_offset() const noexcept

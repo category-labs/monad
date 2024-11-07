@@ -79,7 +79,11 @@ namespace
     struct OnDiskDbFixture : public ::testing::Test
     {
         StateMachineAlwaysMerkle machine;
-        Db db{machine, OnDiskDbConfig{.history_length = DBTEST_HISTORY_LENGTH}};
+        Db db{
+            machine,
+            OnDiskDbConfig{
+                .enable_dynamic_history_length = false,
+                .history_length = DBTEST_HISTORY_LENGTH}};
     };
 
     std::filesystem::path create_temp_file()
@@ -108,6 +112,7 @@ namespace
             , machine{StateMachineMerkleWithCompact{}}
             , config{OnDiskDbConfig{
                   .compaction = true,
+                  .enable_dynamic_history_length = false,
                   .sq_thread_cpu = std::nullopt,
                   .dbname_paths = {dbname},
                   .history_length = DBTEST_HISTORY_LENGTH}}
@@ -1165,6 +1170,7 @@ TEST(DbTest, auto_expire_large_set)
     constexpr auto history_len = 20;
     OnDiskDbConfig config{
         .compaction = true,
+        .enable_dynamic_history_length = false,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
         .file_size_db = 8,
@@ -1230,6 +1236,7 @@ TEST(DbTest, auto_expire)
         machine{};
     OnDiskDbConfig config{
         .compaction = true,
+        .enable_dynamic_history_length = false,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
         .file_size_db = 8,

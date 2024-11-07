@@ -566,6 +566,8 @@ struct Db::RWOnDisk final : public Db::Impl
                 // aux_ from this thread
                 aux_.~UpdateAux<>();
                 new (&aux_) UpdateAux<>{&worker_->io, options.history_length};
+                aux_.toggle_dynamic_history_length_adjustment(
+                    options.enable_dynamic_history_length);
             }
             worker_->run();
             std::unique_lock const g(lock_);

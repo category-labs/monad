@@ -3,12 +3,12 @@
 #include "../../test_common.hpp"
 
 #include <monad/context/config.h>
+#include <monad/util/temp_files.h>
 
 #include "../cpp_helpers.hpp"
 #include "../executor.h"
 #include "../file_io.h"
 #include "../task.h"
-#include "../util.h"
 
 #include <array>
 #include <atomic>
@@ -27,8 +27,8 @@ TEST(file_io, unregistered_buffers)
 
         shared_state_t()
         {
-            int fd = monad_async_make_temporary_file(
-                tempfilepath, sizeof(tempfilepath));
+            int fd =
+                monad_make_temporary_file(tempfilepath, sizeof(tempfilepath));
             close(fd);
         }
 
@@ -171,8 +171,8 @@ TEST(file_io, registered_buffers)
 
         shared_state_t()
         {
-            int fd = monad_async_make_temporary_file(
-                tempfilepath, sizeof(tempfilepath));
+            int fd =
+                monad_make_temporary_file(tempfilepath, sizeof(tempfilepath));
             close(fd);
         }
 
@@ -336,8 +336,8 @@ TEST(file_io, misc_ops)
 
         shared_state_t()
         {
-            int fd = monad_async_make_temporary_file(
-                tempfilepath, sizeof(tempfilepath));
+            int fd =
+                monad_make_temporary_file(tempfilepath, sizeof(tempfilepath));
             close(fd);
         }
 
@@ -492,8 +492,8 @@ TEST(file_io, benchmark)
 
         shared_state_t()
         {
-            int fd = monad_async_make_temporary_file(
-                tempfilepath, sizeof(tempfilepath));
+            int fd =
+                monad_make_temporary_file(tempfilepath, sizeof(tempfilepath));
             static constexpr std::string_view text(
                 R"(Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
       Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat voluptatem. Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur? Quis autem vel eum iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur, vel illum qui dolorem eum fugiat quo voluptas nulla pariatur?
@@ -701,7 +701,7 @@ TEST(file_io, sqe_exhaustion_does_not_reorder_writes)
         {
             if (!fh) {
                 monad_async_file file;
-                int fd = monad_async_make_temporary_inode();
+                int fd = monad_make_temporary_inode();
                 to_result(monad_async_task_file_create_from_existing_fd(
                               &file, task, fd))
                     .value();

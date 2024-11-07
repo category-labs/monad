@@ -2,7 +2,6 @@
 
 // #define MONAD_ASYNC_FILE_IO_PRINTING 1
 
-#include <monad/context/boost_result.h>
 #include <monad/context/config.h>
 
 #include "executor.h"

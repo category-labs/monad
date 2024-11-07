@@ -1,7 +1,5 @@
 #include "monad/async/work_dispatcher.h"
 
-#include <monad/context/boost_result.h>
-
 #include "executor_impl.h"
 
 #include <errno.h>
@@ -197,11 +195,11 @@ retry:
                 // Failure here is likely a logic error
                 BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(r);
                 if (dp->workloads_changed_waiting > 0) {
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
                     __tsan_mutex_pre_signal(&dp->lock, 0);
 #endif
                     cnd_broadcast(&dp->workloads_changed);
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
                     __tsan_mutex_post_signal(&dp->lock, 0);
 #endif
                 }
@@ -237,11 +235,11 @@ retry:
             r = monad_c_make_success(-1);
         }
         if (dp->workloads_changed_waiting > 0) {
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
             __tsan_mutex_pre_signal(&dp->lock, 0);
 #endif
             cnd_broadcast(&dp->workloads_changed);
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
             __tsan_mutex_post_signal(&dp->lock, 0);
 #endif
         }
@@ -352,11 +350,11 @@ monad_c_result monad_async_work_dispatcher_submit(
         }
     }
     if (subtracted > 0 && dp->workloads_changed_waiting > 0) {
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
         __tsan_mutex_pre_signal(&dp->lock, 0);
 #endif
         cnd_broadcast(&dp->workloads_changed);
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
         __tsan_mutex_post_signal(&dp->lock, 0);
 #endif
     }
@@ -407,12 +405,12 @@ monad_c_result monad_async_work_dispatcher_wait(
         dp->workloads_changed_waiting++;
         int ec = thrd_success;
         if (timeout == nullptr) {
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
             __tsan_mutex_pre_unlock(&dp->lock, __tsan_mutex_try_lock);
             __tsan_mutex_post_unlock(&dp->lock, __tsan_mutex_try_lock);
 #endif
             ec = cnd_wait(&dp->workloads_changed, &dp->lock);
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
             __tsan_mutex_pre_lock(&dp->lock, __tsan_mutex_try_lock);
             __tsan_mutex_post_lock(&dp->lock, __tsan_mutex_try_lock, 0);
 #endif
@@ -428,12 +426,12 @@ monad_c_result monad_async_work_dispatcher_wait(
             struct timespec portion = {
                 .tv_sec = remaining / 1000000000LL,
                 .tv_nsec = remaining % 1000000000LL};
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
             __tsan_mutex_pre_unlock(&dp->lock, __tsan_mutex_try_lock);
             __tsan_mutex_post_unlock(&dp->lock, __tsan_mutex_try_lock);
 #endif
             ec = cnd_timedwait(&dp->workloads_changed, &dp->lock, &portion);
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
             __tsan_mutex_pre_lock(&dp->lock, __tsan_mutex_try_lock);
             __tsan_mutex_post_lock(&dp->lock, __tsan_mutex_try_lock, 0);
 #endif
@@ -523,12 +521,12 @@ monad_c_result monad_async_work_dispatcher_quit(
         dp->workloads_changed_waiting++;
         int ec = thrd_success;
         if (timeout == nullptr) {
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
             __tsan_mutex_pre_unlock(&dp->lock, __tsan_mutex_try_lock);
             __tsan_mutex_post_unlock(&dp->lock, __tsan_mutex_try_lock);
 #endif
             ec = cnd_wait(&dp->workloads_changed, &dp->lock);
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
             __tsan_mutex_pre_lock(&dp->lock, __tsan_mutex_try_lock);
             __tsan_mutex_post_lock(&dp->lock, __tsan_mutex_try_lock, 0);
 #endif
@@ -544,12 +542,12 @@ monad_c_result monad_async_work_dispatcher_quit(
             struct timespec portion = {
                 .tv_sec = remaining / 1000000000LL,
                 .tv_nsec = remaining % 1000000000LL};
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
             __tsan_mutex_pre_unlock(&dp->lock, __tsan_mutex_try_lock);
             __tsan_mutex_post_unlock(&dp->lock, __tsan_mutex_try_lock);
 #endif
             ec = cnd_timedwait(&dp->workloads_changed, &dp->lock, &portion);
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
             __tsan_mutex_pre_lock(&dp->lock, __tsan_mutex_try_lock);
             __tsan_mutex_post_lock(&dp->lock, __tsan_mutex_try_lock, 0);
 #endif

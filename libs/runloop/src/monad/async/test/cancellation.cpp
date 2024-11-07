@@ -198,7 +198,7 @@ TEST(cancellation, file_open_close)
         };
 
         char tempfilepath[256];
-        close(monad_async_make_temporary_file(
+        close(monad_make_temporary_file(
             tempfilepath, sizeof(tempfilepath)));
         auto fh = make_file(task, nullptr, tempfilepath, how);
         unlink(tempfilepath);

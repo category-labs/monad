@@ -2,7 +2,6 @@
 
 #include "task.h"
 
-#include <monad/context/boost_result.h>
 #include <monad/context/config.h>
 #include <monad/context/context_switcher.h>
 
@@ -18,7 +17,7 @@
 #include <poll.h>
 #include <sys/mman.h>
 
-#if MONAD_CONTEXT_HAVE_ASAN
+#if MONAD_HAVE_ASAN
     #include <sanitizer/asan_interface.h>
 #endif
 
@@ -241,7 +240,7 @@ static inline monad_c_result monad_async_executor_run_impl(
         timed_out = false;
         retry_after_this = false;
         struct timespec no_waiting = {.tv_sec = 0, .tv_nsec = 0};
-        monad_context_cpu_ticks_count_t const launch_begin =
+        monad_cpu_ticks_count_t const launch_begin =
             get_ticks_count(memory_order_relaxed);
         if (atomic_load_explicit(
                 &ex->need_to_empty_eventfd, memory_order_acquire) ||
@@ -352,12 +351,12 @@ static inline monad_c_result monad_async_executor_run_impl(
             fflush(stdout);
 #endif
         }
-        monad_context_cpu_ticks_count_t const launch_end =
+        monad_cpu_ticks_count_t const launch_end =
             get_ticks_count(memory_order_relaxed);
         ex->head.total_ticks_in_task_launch += launch_end - launch_begin;
 
         if (ex->ring.ring_fd != 0) {
-            monad_context_cpu_ticks_count_t const io_uring_begin =
+            monad_cpu_ticks_count_t const io_uring_begin =
                 get_ticks_count(memory_order_relaxed);
 #if MONAD_ASYNC_EXECUTOR_PRINTING >= 3
             printf("*** Executor %p begins processing io_uring\n", (void *)ex);
@@ -605,7 +604,7 @@ static inline monad_c_result monad_async_executor_run_impl(
                         // syscall io_uring_enter, skip that.
                     }
                     else {
-                        monad_context_cpu_ticks_count_t const sleep_begin =
+                    monad_cpu_ticks_count_t const sleep_begin =
                             get_ticks_count(memory_order_relaxed);
                         // This is the new faster io_uring wait syscall
                         // It calls syscall io_uring_enter2. It does not have an
@@ -623,7 +622,7 @@ static inline monad_c_result monad_async_executor_run_impl(
                         if (r == -EINTR) {
                             r = 0;
                         }
-                        monad_context_cpu_ticks_count_t const sleep_end =
+                    monad_cpu_ticks_count_t const sleep_end =
                             get_ticks_count(memory_order_relaxed);
                         ex->head.total_ticks_sleeping +=
                             sleep_end - sleep_begin;
@@ -953,7 +952,7 @@ static inline monad_c_result monad_async_executor_run_impl(
                     ex->wr_ring_ops_outstanding -= i;
                 }
             }
-            monad_context_cpu_ticks_count_t const io_uring_end =
+            monad_cpu_ticks_count_t const io_uring_end =
                 get_ticks_count(memory_order_relaxed);
             ex->head.total_ticks_in_io_uring += io_uring_end - io_uring_begin;
             ex->head.total_io_completed += i - total_io_completed_to_subtract;
@@ -971,10 +970,10 @@ static inline monad_c_result monad_async_executor_run_impl(
 #endif
                 struct pollfd fds[1] = {
                     {.fd = ex->eventfd, .events = POLLIN, .revents = 0}};
-                monad_context_cpu_ticks_count_t const sleep_begin =
+                monad_cpu_ticks_count_t const sleep_begin =
                     get_ticks_count(memory_order_relaxed);
                 int r = ppoll(fds, 1, nullptr, nullptr);
-                monad_context_cpu_ticks_count_t const sleep_end =
+                monad_cpu_ticks_count_t const sleep_end =
                     get_ticks_count(memory_order_relaxed);
                 ex->head.total_ticks_sleeping += sleep_end - sleep_begin;
                 if (r == 0) {
@@ -1009,10 +1008,10 @@ static inline monad_c_result monad_async_executor_run_impl(
 #endif
                 struct pollfd fds[1] = {
                     {.fd = ex->eventfd, .events = POLLIN, .revents = 0}};
-                monad_context_cpu_ticks_count_t const sleep_begin =
+                monad_cpu_ticks_count_t const sleep_begin =
                     get_ticks_count(memory_order_relaxed);
                 int r = ppoll(fds, 1, timeout, nullptr);
-                monad_context_cpu_ticks_count_t const sleep_end =
+                monad_cpu_ticks_count_t const sleep_end =
                     get_ticks_count(memory_order_relaxed);
                 ex->head.total_ticks_sleeping += sleep_end - sleep_begin;
                 if (r == 0) {
@@ -1084,7 +1083,7 @@ static inline monad_c_result monad_async_executor_run_impl(
                                                  .count),
             .wait_list = ex->tasks_suspended_completed};
         if (max_items > 0) {
-            monad_context_cpu_ticks_count_t const completions_begin =
+            monad_cpu_ticks_count_t const completions_begin =
                 get_ticks_count(memory_order_relaxed);
 #if MONAD_ASYNC_EXECUTOR_PRINTING >= 3
             printf(
@@ -1128,7 +1127,7 @@ static inline monad_c_result monad_async_executor_run_impl(
             printf("*** Executor %p ends processing completions\n", (void *)ex);
             fflush(stdout);
 #endif
-            monad_context_cpu_ticks_count_t const completions_end =
+            monad_cpu_ticks_count_t const completions_end =
                 get_ticks_count(memory_order_relaxed);
             ex->head.total_ticks_in_task_completion +=
                 completions_end - completions_begin;
@@ -1232,7 +1231,7 @@ monad_c_result monad_async_executor_run(
         abort();
     }
     ex->within_run = true;
-    monad_context_cpu_ticks_count_t const run_begin =
+    monad_cpu_ticks_count_t const run_begin =
         get_ticks_count(memory_order_relaxed);
 #if MONAD_ASYNC_EXECUTOR_PRINTING >= 2
     printf("*** Executor %p enters run\n", (void *)ex);
@@ -1247,7 +1246,7 @@ monad_c_result monad_async_executor_run(
         ret.value);
     fflush(stdout);
 #endif
-    monad_context_cpu_ticks_count_t const run_end =
+    monad_cpu_ticks_count_t const run_end =
         get_ticks_count(memory_order_relaxed);
     ex->head.total_ticks_in_run += run_end - run_begin;
     ex->within_run = false;

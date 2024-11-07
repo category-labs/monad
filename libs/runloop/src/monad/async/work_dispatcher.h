@@ -15,11 +15,11 @@ typedef struct monad_async_work_dispatcher_head
     // The following are not user modifiable
     MONAD_CONTEXT_PUBLIC_CONST struct
     {
-        MONAD_CONTEXT_ATOMIC(unsigned) working, idle;
+        MONAD_CPP_ATOMIC(unsigned) working, idle;
     } executors;
 
     MONAD_CONTEXT_PUBLIC_CONST
-    MONAD_CONTEXT_ATOMIC(size_t) tasks_awaiting_dispatch;
+    MONAD_CPP_ATOMIC(size_t) tasks_awaiting_dispatch;
 } *monad_async_work_dispatcher;
 
 //! \brief The public attributes of a work dispatcher
@@ -29,7 +29,7 @@ typedef struct monad_async_work_dispatcher_executor_head
     struct monad_async_executor_head *const derived;
     struct monad_async_work_dispatcher_head *MONAD_CONTEXT_PUBLIC_CONST
         dispatcher;
-    MONAD_CONTEXT_PUBLIC_CONST MONAD_CONTEXT_ATOMIC(bool) is_working, is_idle;
+    MONAD_CONTEXT_PUBLIC_CONST MONAD_CPP_ATOMIC(bool) is_working, is_idle;
 } *monad_async_work_dispatcher_executor;
 
 //! \brief Attributes by which to construct a work dispatcher

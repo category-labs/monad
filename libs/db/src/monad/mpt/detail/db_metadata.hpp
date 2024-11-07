@@ -6,7 +6,7 @@
 #include <monad/mpt/util.hpp>
 
 #include <monad/async/config.hpp>
-#include <monad/async/detail/start_lifetime_as_polyfill.hpp>
+#include <monad/core/start_lifetime_as_polyfill.hpp>
 
 #include "unsigned_20.hpp"
 

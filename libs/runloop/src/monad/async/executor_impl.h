@@ -5,7 +5,8 @@
 #include "task_impl.h"
 
 #include "executor.h"
-#include "util.h"
+
+#include <monad/util/ticks_count_impl.h>
 
 #include <assert.h>
 #include <stdio.h>
@@ -22,7 +23,7 @@
 #include <sys/resource.h> // for setrlimit
 #include <unistd.h>
 
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
     #include <sanitizer/tsan_interface.h>
 #endif
 
@@ -45,7 +46,7 @@ struct monad_async_executor_impl
 
     thrd_t owning_thread;
     bool within_run;
-    MONAD_CONTEXT_CPP_STD atomic_bool need_to_empty_eventfd;
+    MONAD_CPP_STD atomic_bool need_to_empty_eventfd;
     monad_context run_context;
     struct io_uring ring, wr_ring;
     unsigned wr_ring_ops_outstanding;
@@ -57,7 +58,7 @@ struct monad_async_executor_impl
     LIST_DEFINE_P(tasks_suspended_awaiting, struct monad_async_task_impl);
     LIST_DEFINE_P(tasks_suspended_completed, struct monad_async_task_impl);
     LIST_DEFINE_N(tasks_exited, struct monad_async_task_impl);
-    MONAD_CONTEXT_ATOMIC(monad_c_result *) cause_run_to_return;
+    MONAD_CPP_ATOMIC(monad_c_result *) cause_run_to_return;
 
     int *file_indices;
 
@@ -91,7 +92,7 @@ struct monad_async_executor_impl
     } max_io_concurrency;
 
     // all items below this require taking the lock
-    MONAD_CONTEXT_CPP_STD atomic_int lock;
+    MONAD_CPP_STD atomic_int lock;
     int eventfd;
     LIST_DEFINE_N(tasks_pending_launch, struct monad_async_task_impl);
     monad_c_result cause_run_to_return_value;
@@ -201,7 +202,7 @@ static inline void io_uring_set_up_io_status(
 
 static inline void atomic_lock(atomic_int *lock)
 {
-    #if MONAD_CONTEXT_HAVE_TSAN
+    #if MONAD_HAVE_TSAN
     __tsan_mutex_pre_lock(lock, __tsan_mutex_try_lock);
     #endif
     int expected = 0;
@@ -210,29 +211,29 @@ static inline void atomic_lock(atomic_int *lock)
         thrd_yield();
         expected = 0;
     }
-    #if MONAD_CONTEXT_HAVE_TSAN
+    #if MONAD_HAVE_TSAN
     __tsan_mutex_post_lock(lock, __tsan_mutex_try_lock, 0);
     #endif
 }
 
 static inline void atomic_unlock(atomic_int *lock)
 {
-    #if MONAD_CONTEXT_HAVE_TSAN
+    #if MONAD_HAVE_TSAN
     __tsan_mutex_pre_unlock(lock, __tsan_mutex_try_lock);
     #endif
     atomic_store_explicit(lock, 0, memory_order_release);
-    #if MONAD_CONTEXT_HAVE_TSAN
+    #if MONAD_HAVE_TSAN
     __tsan_mutex_post_unlock(lock, __tsan_mutex_try_lock);
     #endif
 }
 
 static inline int mutex_lock(mtx_t *lock)
 {
-    #if MONAD_CONTEXT_HAVE_TSAN
+    #if MONAD_HAVE_TSAN
     __tsan_mutex_pre_lock(lock, __tsan_mutex_try_lock);
     #endif
     int r = mtx_lock(lock);
-    #if MONAD_CONTEXT_HAVE_TSAN
+    #if MONAD_HAVE_TSAN
     __tsan_mutex_post_lock(lock, __tsan_mutex_try_lock, 0);
     #endif
     return r;
@@ -240,11 +241,11 @@ static inline int mutex_lock(mtx_t *lock)
 
 static inline int mutex_unlock(mtx_t *lock)
 {
-    #if MONAD_CONTEXT_HAVE_TSAN
+    #if MONAD_HAVE_TSAN
     __tsan_mutex_pre_unlock(lock, __tsan_mutex_try_lock);
     #endif
     int r = mtx_unlock(lock);
-    #if MONAD_CONTEXT_HAVE_TSAN
+    #if MONAD_HAVE_TSAN
     __tsan_mutex_post_unlock(lock, __tsan_mutex_try_lock);
     #endif
     return r;

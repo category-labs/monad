@@ -22,9 +22,9 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 void on_commit(
     monad_statesync_server_context &ctx, StateDeltas const &state_deltas)
 {
-    auto const history_length = ctx.rw.get_history_length();
-    auto const n = ctx.rw.get_block_number();
+    constexpr auto HISTORY_LENGTH = 1200; // 20 minutes with 1s block times
 
+    auto const n = ctx.rw.get_block_number();
     Deleted::accessor it;
     MONAD_ASSERT(ctx.deleted.emplace(it, n, Deleted::mapped_type{}));
     for (auto const &[addr, delta] : state_deltas) {
@@ -57,10 +57,8 @@ void on_commit(
         }
     }
 
-    uint64_t d = n;
-    while (ctx.deleted.size() > history_length) {
-        ctx.deleted.erase(d - history_length);
-        d--;
+    if (ctx.deleted.size() > HISTORY_LENGTH) {
+        MONAD_ASSERT(ctx.deleted.erase(n - HISTORY_LENGTH));
     }
 }
 

@@ -147,7 +147,9 @@ Node::UniquePtr batch_upsert_commit(
         1000000000.0;
 
     fprintf(stdout, "root->data : ");
-    __print_bytes_in_hex(new_root->data());
+    MONAD_ASSERT(new_root->next(0) != nullptr);
+    MONAD_ASSERT(new_root->next(0)->number_of_children() > 1);
+    __print_bytes_in_hex(new_root->next(0)->data());
 
     fprintf(
         stdout,

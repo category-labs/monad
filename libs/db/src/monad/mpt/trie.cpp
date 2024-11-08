@@ -100,7 +100,6 @@ Node::UniquePtr upsert(
     UpdateAuxImpl &aux, uint64_t const version, StateMachine &sm,
     Node::UniquePtr old, UpdateList &&updates)
 {
-
     auto impl = [&] {
         if (aux.is_on_disk()) {
             aux.min_version_after_upsert =
@@ -895,6 +894,7 @@ void create_new_trie_(
             MONAD_DEBUG_ASSERT(update.value.has_value());
             Requests requests;
             requests.split_into_sublists(std::move(update.next), 0);
+            MONAD_ASSERT(requests.opt_leaf == std::nullopt);
             create_new_trie_from_requests_(
                 aux,
                 sm,

@@ -170,12 +170,11 @@ class UpdateAuxImpl
 
     void reset_node_writers();
 
-    void advance_compact_offsets();
-
-    std::pair<uint32_t, uint32_t>
-    min_offsets_of_version(uint64_t version) const;
+    void advance_compact_offsets(Node &prev_root, uint64_t version);
 
     void free_compacted_chunks();
+
+    void erase_version(uint64_t const version);
 
     /******** Compaction ********/
     uint32_t chunks_to_remove_before_count_fast_{0};
@@ -368,12 +367,6 @@ public:
     {
         if (io_) {
             set_io(io_, history_len);
-            // reset offsets
-            auto const &db_offsets = db_metadata()->db_offsets;
-            compact_offset_fast = db_offsets.last_compact_offset_fast;
-            compact_offset_slow = db_offsets.last_compact_offset_slow;
-            compact_offset_range_fast_ = db_offsets.last_compact_offset_fast;
-            compact_offset_range_slow_ = db_offsets.last_compact_offset_slow;
         }
     }
 

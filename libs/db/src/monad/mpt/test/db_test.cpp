@@ -945,16 +945,21 @@ TYPED_TEST(DbTraverseTest, traverse)
 
         virtual bool down(unsigned char const branch, Node const &node) override
         {
-            if (node.has_value()) {
+            if (node.has_value() && branch != INVALID_BRANCH) {
                 ++num_leaves;
             }
             if (branch == INVALID_BRANCH) {
-                EXPECT_EQ(node.number_of_children(), 1);
+                // root is always a leaf
+                EXPECT_TRUE(node.has_value());
+                EXPECT_EQ(node.path_nibbles_len(), 0);
+                EXPECT_GT(node.mask, 0);
+            }
+            else if (branch == 0) { // immediate node under root
                 EXPECT_EQ(node.mask, 0b10);
                 EXPECT_TRUE(node.has_value());
                 EXPECT_EQ(node.value(), monad::byte_string_view{});
                 EXPECT_TRUE(node.has_path());
-                EXPECT_EQ(node.path_nibble_view(), make_nibbles({0x0, 0x0}));
+                EXPECT_EQ(node.path_nibble_view(), make_nibbles({0x0}));
             }
             else if (branch == 1) {
                 EXPECT_EQ(node.number_of_children(), 2);
@@ -1041,7 +1046,7 @@ TYPED_TEST(DbTraverseTest, traverse)
         SimpleTraverse traverse{num_leaves};
         ASSERT_TRUE(this->db.traverse_blocking(
             this->db.root(), traverse, this->block_id));
-        EXPECT_EQ(traverse.num_up, 6);
+        EXPECT_EQ(traverse.num_up, 7);
         EXPECT_EQ(num_leaves, 4);
     }
 }
@@ -1415,17 +1420,20 @@ TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
 {
     std::atomic<bool> done{false};
     Db ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    auto const prefix = 0x00_hex;
 
     // fille rwdb with some blocks
     auto const &kv = fixed_updates::kv;
     for (uint64_t block_id = 0; block_id < DBTEST_HISTORY_LENGTH; ++block_id) {
         upsert_updates_flat_list(
-            db, {}, block_id, make_update(kv[0].first, kv[0].second));
+            db, prefix, block_id, make_update(kv[0].first, kv[0].second));
     }
 
     EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
     EXPECT_EQ(ro_db.get_latest_block_id(), DBTEST_HISTORY_LENGTH - 1);
-    EXPECT_EQ(ro_db.get(kv[0].first, 0).value(), kv[0].second);
+    auto const res = ro_db.get(prefix + kv[0].first, 0);
+    EXPECT_TRUE(res.has_value());
+    EXPECT_EQ(res.value(), kv[0].second);
 
     uint64_t const end_history_length =
         DBTEST_HISTORY_LENGTH - DBTEST_HISTORY_LENGTH / 2;
@@ -1437,7 +1445,7 @@ TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
     auto ro_query = [&] {
         uint64_t read_block_id = 0;
         while (!done.load(std::memory_order_acquire)) {
-            auto const get_res = ro_db.get(kv[0].first, read_block_id);
+            auto const get_res = ro_db.get(prefix + kv[0].first, read_block_id);
             if (get_res.has_error()) {
                 ++read_block_id;
             }
@@ -1451,7 +1459,7 @@ TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
                   << ro_db.get_earliest_block_id() << std::endl;
         EXPECT_LE(read_block_id, ro_db.get_earliest_block_id());
 
-        while (ro_db.get(kv[0].first, read_block_id).has_error()) {
+        while (ro_db.get(prefix + kv[0].first, read_block_id).has_error()) {
             ++read_block_id;
         }
         EXPECT_EQ(read_block_id, expected_earliest_block);

@@ -17,7 +17,6 @@ struct OnDiskDbConfig
     bool enable_io_polling{false};
     bool capture_io_latencies{false};
     bool eager_completions{false};
-    bool enable_dynamic_history_length{true};
     unsigned rd_buffers{1024};
     unsigned wr_buffers{4};
     unsigned uring_entries{512};
@@ -26,7 +25,9 @@ struct OnDiskDbConfig
     std::vector<std::filesystem::path> dbname_paths{};
     int64_t file_size_db{512}; // truncate files to this size
     unsigned concurrent_read_io_limit{1024};
-    std::optional<uint64_t> history_length{20000};
+    // fixed history length if contains value, otherwise rely on db to adjust
+    // history length upon disk usage
+    std::optional<uint64_t> fixed_history_length{std::nullopt};
 };
 
 struct ReadOnlyOnDiskDbConfig

@@ -568,6 +568,7 @@ void UpdateAuxImpl::set_io(
         // Set history length
         if (history_len.has_value()) {
             update_history_length_metadata(*history_len);
+            enable_dynamic_history_length_ = false;
         }
 
         std::atomic_signal_fence(

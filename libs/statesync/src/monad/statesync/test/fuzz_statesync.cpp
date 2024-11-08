@@ -259,11 +259,7 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
     std::filesystem::path sdbname{tmp_dbname()};
     OnDiskMachine machine;
     mpt::Db sdb{
-        machine,
-        OnDiskDbConfig{
-            .append = true,
-            .dbname_paths = {sdbname},
-            .history_length = 10000}};
+        machine, OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}};
     TrieDb stdb{sdb};
     monad_statesync_server_context sctx{stdb};
     mpt::Db ro{ReadOnlyOnDiskDbConfig{.dbname_paths{sdbname}}};

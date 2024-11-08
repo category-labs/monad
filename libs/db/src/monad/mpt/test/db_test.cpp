@@ -81,9 +81,7 @@ namespace
         StateMachineAlwaysMerkle machine;
         Db db{
             machine,
-            OnDiskDbConfig{
-                .enable_dynamic_history_length = false,
-                .history_length = DBTEST_HISTORY_LENGTH}};
+            OnDiskDbConfig{.fixed_history_length = DBTEST_HISTORY_LENGTH}};
     };
 
     std::filesystem::path create_temp_file()
@@ -112,10 +110,9 @@ namespace
             , machine{StateMachineMerkleWithCompact{}}
             , config{OnDiskDbConfig{
                   .compaction = true,
-                  .enable_dynamic_history_length = false,
                   .sq_thread_cpu = std::nullopt,
                   .dbname_paths = {dbname},
-                  .history_length = DBTEST_HISTORY_LENGTH}}
+                  .fixed_history_length = DBTEST_HISTORY_LENGTH}}
             , db{machine, config}
         {
         }
@@ -1170,11 +1167,10 @@ TEST(DbTest, auto_expire_large_set)
     constexpr auto history_len = 20;
     OnDiskDbConfig config{
         .compaction = true,
-        .enable_dynamic_history_length = false,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
         .file_size_db = 8,
-        .history_length = history_len};
+        .fixed_history_length = history_len};
     Db db{machine, config};
 
     auto const prefix = 0x00_hex;
@@ -1236,11 +1232,10 @@ TEST(DbTest, auto_expire)
         machine{};
     OnDiskDbConfig config{
         .compaction = true,
-        .enable_dynamic_history_length = false,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
         .file_size_db = 8,
-        .history_length = 5};
+        .fixed_history_length = 5};
     Db db{machine, config};
     auto const prefix = 0x00_hex;
     // insert 10 keys
@@ -1468,10 +1463,10 @@ TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
 
     // current thread starts to shorten history
     config.append = true;
-    while (config.history_length > end_history_length) {
-        config.history_length = *config.history_length - 1;
+    while (config.fixed_history_length > end_history_length) {
+        config.fixed_history_length = *config.fixed_history_length - 1;
         Db new_db{machine, config};
-        EXPECT_EQ(new_db.get_history_length(), config.history_length);
+        EXPECT_EQ(new_db.get_history_length(), config.fixed_history_length);
         EXPECT_EQ(new_db.get_latest_block_id(), DBTEST_HISTORY_LENGTH - 1);
     }
 
@@ -1520,19 +1515,20 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
                     .has_value());
 
     // Reopen rwdb with a shorter history length
-    config.history_length = DBTEST_HISTORY_LENGTH / 2;
+    config.fixed_history_length = DBTEST_HISTORY_LENGTH / 2;
     config.append = true;
     {
         Db new_rw{machine, config};
-        EXPECT_EQ(new_rw.get_history_length(), config.history_length);
+        EXPECT_EQ(new_rw.get_history_length(), config.fixed_history_length);
         EXPECT_EQ(new_rw.get_latest_block_id(), max_block_id);
     }
-    EXPECT_EQ(ro_db.get_history_length(), config.history_length);
+    EXPECT_EQ(ro_db.get_history_length(), config.fixed_history_length);
     EXPECT_EQ(ro_db.get_latest_block_id(), max_block_id);
     EXPECT_TRUE(ro_db.get(prefix + kv[1].first, max_block_id).has_value());
     EXPECT_TRUE(
         ro_db.get(prefix + kv[1].first, min_block_num_before).has_error());
-    auto const min_block_num_after = max_block_id - *config.history_length + 1;
+    auto const min_block_num_after =
+        max_block_id - *config.fixed_history_length + 1;
     EXPECT_EQ(ro_db.get_earliest_block_id(), min_block_num_after);
     EXPECT_TRUE(
         ro_db.get(prefix + kv[1].first, min_block_num_after).has_value());
@@ -1540,18 +1536,18 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
         ro_db.get(prefix + kv[1].first, min_block_num_after - 1).has_error());
 
     // Reopen rwdb with a longer history length
-    config.history_length = DBTEST_HISTORY_LENGTH;
+    config.fixed_history_length = DBTEST_HISTORY_LENGTH;
     Db new_rw{machine, config};
-    EXPECT_EQ(new_rw.get_history_length(), config.history_length);
+    EXPECT_EQ(new_rw.get_history_length(), config.fixed_history_length);
     EXPECT_EQ(new_rw.get_earliest_block_id(), min_block_num_after);
-    EXPECT_EQ(ro_db.get_history_length(), config.history_length);
+    EXPECT_EQ(ro_db.get_history_length(), config.fixed_history_length);
     EXPECT_EQ(ro_db.get_earliest_block_id(), min_block_num_after);
     EXPECT_EQ(ro_db.get_latest_block_id(), max_block_id);
     EXPECT_TRUE(
         ro_db.get(prefix + kv[1].first, min_block_num_before).has_error());
     // Inserts more blocks
     auto const new_max_block_id =
-        min_block_num_after + *config.history_length - 1;
+        min_block_num_after + *config.fixed_history_length - 1;
     for (uint64_t block_id = max_block_id + 1; block_id <= new_max_block_id;
          ++block_id) {
         upsert_updates_flat_list(

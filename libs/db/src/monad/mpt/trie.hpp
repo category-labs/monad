@@ -154,6 +154,9 @@ replace_node_writer(UpdateAuxImpl &, node_writer_unique_ptr_type const &);
 // \class Auxiliaries for triedb update
 class UpdateAuxImpl
 {
+    static constexpr uint64_t max_history_len =
+        detail::db_metadata::root_offsets_ring_t::SIZE;
+
     uint32_t initial_insertion_count_on_pool_creation_{0};
     bool enable_dynamic_history_length_{true};
 
@@ -358,9 +361,6 @@ public:
     node_writer_unique_ptr_type node_writer_slow{};
 
     detail::TrieUpdateCollectedStats stats;
-
-    // Future PRs will make this growable
-    uint64_t max_history_len{detail::db_metadata::root_offsets_ring_t::SIZE};
 
     UpdateAuxImpl(
         MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
@@ -715,11 +715,6 @@ public:
         alternate_slow_fast_writer_ = alternate;
     }
 
-    void toggle_dynamic_history_length_adjustment(bool const enable)
-    {
-        enable_dynamic_history_length_ = enable;
-    }
-
     bool alternate_slow_fast_writer() const noexcept
     {
         return alternate_slow_fast_writer_;
@@ -810,7 +805,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAuxImpl) == 168 + sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAuxImpl) == 160 + sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAuxImpl) == 8);
 
 template <lockable_or_void LockType = void>

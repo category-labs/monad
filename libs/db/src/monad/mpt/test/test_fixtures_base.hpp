@@ -490,7 +490,6 @@ namespace monad::test
             {
                 aux.alternate_slow_fast_node_writer_unit_testing_only(
                     Config.alternate_slow_fast_writer);
-                aux.toggle_dynamic_history_length_adjustment(false);
                 ensure_total_chunks(Config.chunks_to_fill);
                 std::cout << "After suite set up before testing:";
                 print(std::cout);

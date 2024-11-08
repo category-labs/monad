@@ -1461,6 +1461,136 @@ TEST(DbTest, auto_expire)
     }
 }
 
+TYPED_TEST(DbTest, copy_trie_from_to_same_version)
+{
+    // insert random updates under a src prefix
+    constexpr unsigned nkeys = 20;
+    auto [kv_alloc, updates_alloc] = prepare_random_updates(nkeys);
+    auto const src_prefix = 0x00_hex;
+    auto const dest_prefix = 0x01_hex;
+    auto const dest_prefix2 = 0x02_hex;
+    auto const long_dest_prefix = 0x1010_hex;
+    uint64_t const version = 0;
+    UpdateList ls;
+    for (auto &u : updates_alloc) {
+        ls.push_front(u);
+    }
+    UpdateList updates;
+    Update top_update{
+        .key = src_prefix,
+        .value = monad::byte_string_view{},
+        .incarnation = true,
+        .next = std::move(ls),
+        .version = version};
+    updates.push_front(top_update);
+    this->db.upsert(std::move(updates), version);
+    auto const src_prefix_data =
+        monad::byte_string{this->db.get_data(src_prefix, version).value()};
+
+    auto verify_dest_state = [&](Db &db, monad::byte_string const prefix) {
+        EXPECT_EQ(db.get_latest_block_id(), version);
+        auto const data_res = db.get_data(prefix, version);
+        EXPECT_TRUE(data_res.has_value()) << NibblesView{prefix};
+        EXPECT_EQ(src_prefix_data, data_res.value()) << NibblesView{prefix};
+        // look up from prefix, assert same data as src trie
+        for (unsigned i = 0; i < nkeys; ++i) {
+            auto const res = db.get(prefix + kv_alloc[i], version);
+            EXPECT_TRUE(res.has_value()) << NibblesView{prefix};
+            EXPECT_EQ(res.value(), kv_alloc[i]) << NibblesView{prefix};
+        }
+    };
+    // copy to dest prefix, switch to dest_version
+    this->db.copy_trie(version, src_prefix, version, dest_prefix);
+    if (this->db.is_on_disk()) {
+        verify_dest_state(this->db, src_prefix);
+    }
+    verify_dest_state(this->db, dest_prefix);
+
+    this->db.copy_trie(version, dest_prefix, version, dest_prefix2);
+    if (this->db.is_on_disk()) {
+        verify_dest_state(this->db, src_prefix);
+        verify_dest_state(this->db, dest_prefix);
+    }
+    verify_dest_state(this->db, dest_prefix2);
+
+    // copy from src to an existing prefix
+    if (this->db.is_on_disk()) {
+        this->db.copy_trie(version, src_prefix, version, dest_prefix);
+        verify_dest_state(this->db, src_prefix);
+        verify_dest_state(this->db, dest_prefix);
+    }
+
+    // copy from dest2 to longer prefix
+    this->db.copy_trie(version, dest_prefix2, version, long_dest_prefix);
+    if (this->db.is_on_disk()) {
+        verify_dest_state(this->db, src_prefix);
+        verify_dest_state(this->db, dest_prefix2);
+    }
+    verify_dest_state(this->db, long_dest_prefix);
+}
+
+TEST_F(OnDiskDbWithFileFixture, copy_trie_to_different_version)
+{
+    std::deque<monad::byte_string> kv_alloc;
+    for (size_t i = 0; i < 10; ++i) {
+        kv_alloc.emplace_back(keccak_int_to_string(i));
+    }
+    auto const prefix0 = 0x001234_hex;
+    auto const prefix1 = 0x001235_hex;
+    auto const final_prefix = 0x10_hex;
+    uint64_t const block_id = 0;
+    upsert_updates_flat_list(
+        db,
+        prefix0,
+        block_id,
+        make_update(kv_alloc[0], kv_alloc[0]),
+        make_update(kv_alloc[1], kv_alloc[1]),
+        make_update(kv_alloc[2], kv_alloc[2]),
+        make_update(kv_alloc[3], kv_alloc[3]),
+        make_update(kv_alloc[4], kv_alloc[4]),
+        make_update(kv_alloc[5], kv_alloc[5]),
+        make_update(kv_alloc[6], kv_alloc[6]),
+        make_update(kv_alloc[7], kv_alloc[7]),
+        make_update(kv_alloc[8], kv_alloc[8]),
+        make_update(kv_alloc[9], kv_alloc[9]));
+
+    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+    Db rodb{ro_config};
+    monad::byte_string const data{rodb.get({}, block_id).value()};
+    EXPECT_EQ(data.size(), 8);
+
+    // copy trie to a new version
+    // read: can't read new dest version until upserting
+    db.copy_trie(block_id, prefix0, block_id + 1, prefix1);
+    EXPECT_FALSE(rodb.get({}, block_id + 1).has_value());
+    db.upsert({}, block_id + 1);
+    // read only db should be able to read
+    {
+        auto const res = rodb.get(prefix1 + kv_alloc[0], block_id + 1);
+        EXPECT_TRUE(res.has_value());
+        EXPECT_EQ(res.value(), kv_alloc[0]);
+    }
+    // copy trie to a different prefix in the same version
+    db.copy_trie(block_id + 1, prefix1, block_id + 1, final_prefix, false);
+    EXPECT_FALSE(rodb.get(final_prefix, block_id + 1).has_value());
+    db.upsert({}, block_id + 1);
+    {
+        auto const res = rodb.get(final_prefix + kv_alloc[0], block_id + 1);
+        EXPECT_TRUE(res.has_value());
+        EXPECT_EQ(res.value(), kv_alloc[0]);
+    }
+    { // verify that src trie is still valid
+        auto const res = rodb.get(prefix1 + kv_alloc[0], block_id + 1);
+        EXPECT_TRUE(res.has_value());
+        EXPECT_EQ(res.value(), kv_alloc[0]);
+    }
+
+    monad::byte_string const data_after{rodb.get({}, block_id).value()};
+    monad::byte_string const data_new{rodb.get({}, block_id + 1).value()};
+    EXPECT_EQ(data, data_after);
+    EXPECT_EQ(data_after, data_new);
+}
+
 TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
 {
     EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);

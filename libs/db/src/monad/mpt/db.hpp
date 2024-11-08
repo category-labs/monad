@@ -58,9 +58,14 @@ public:
 
     NodeCursor load_root_for_version(uint64_t block_id) const;
 
+    void copy_trie(
+        uint64_t src_version, NibblesView src, uint64_t dest_version,
+        NibblesView dest, bool blocked_by_write = true);
+
     void upsert(
         UpdateList, uint64_t block_id, bool enable_compaction = true,
         bool can_write_to_fast = true);
+
     // Traverse APIs: return value indicates if we have finished the full
     // traversal or not.
     // Parallel traversal is a single threaded out of order traverse using async

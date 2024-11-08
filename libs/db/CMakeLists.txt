@@ -31,6 +31,7 @@ add_library(
   "src/monad/mpt/compute.cpp"
   "src/monad/mpt/compute.hpp"
   "src/monad/mpt/config.hpp"
+  "src/monad/mpt/copy_trie.cpp"
   "src/monad/mpt/db.cpp"
   "src/monad/mpt/db.hpp"
   "src/monad/mpt/db_error.hpp"

@@ -74,6 +74,9 @@ struct Db::Impl
     virtual void upsert_fiber_blocking(
         UpdateList &&, uint64_t, bool enable_compaction,
         bool can_write_to_fast) = 0;
+    virtual void copy_trie_fiber_blocking(
+        uint64_t src_version, NibblesView src, uint64_t dest_version,
+        NibblesView dest, bool blocked_by_write = true) = 0;
 
     virtual find_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key, uint64_t version) = 0;
@@ -185,6 +188,12 @@ struct Db::ROOnDisk final : public Db::Impl
         MONAD_ASSERT(false);
     }
 
+    virtual void copy_trie_fiber_blocking(
+        uint64_t, NibblesView, uint64_t, NibblesView, bool) override
+    {
+        MONAD_ASSERT(false);
+    }
+
     virtual size_t poll(bool const blocking, size_t const count) override
     {
         return blocking ? aux_.io->poll_blocking(count)
@@ -252,6 +261,17 @@ struct Db::InMemory final : public Db::Impl
         root_version_ = version;
     }
 
+    virtual void copy_trie_fiber_blocking(
+        uint64_t, NibblesView const src, uint64_t const dest_version,
+        NibblesView const dest, bool const) override
+    {
+        // in memory copy_trie only allows moving trie from src to prefix under
+        // the same version
+        root_ =
+            copy_trie_to_dest(aux_, *root_, src, {}, dest, dest_version, false);
+        root_version_ = dest_version;
+    }
+
     virtual find_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key, uint64_t = 0) override
     {
@@ -298,6 +318,17 @@ struct Db::RWOnDisk final : public Db::Impl
         bool const can_write_to_fast;
     };
 
+    struct FiberCopyTrieRequest
+    {
+        threadsafe_boost_fibers_promise<Node::UniquePtr> *promise;
+        Node &src_root;
+        NibblesView src;
+        Node::UniquePtr dest_root;
+        NibblesView dest;
+        uint64_t dest_version;
+        bool blocked_by_write;
+    };
+
     struct FiberLoadAllFromBlockRequest
     {
         threadsafe_boost_fibers_promise<size_t> *promise;
@@ -330,7 +361,7 @@ struct Db::RWOnDisk final : public Db::Impl
     using Comms = std::variant<
         std::monostate, fiber_find_request_t, FiberUpsertRequest,
         FiberLoadAllFromBlockRequest, FiberTraverseRequest, MoveSubtrieRequest,
-        FiberLoadRootVersionRequest>;
+        FiberLoadRootVersionRequest, FiberCopyTrieRequest>;
 
     ::moodycamel::ConcurrentQueue<Comms> comms_;
 
@@ -500,6 +531,21 @@ struct Db::RWOnDisk final : public Db::Impl
                         MONAD_ASSERT(root_offset != INVALID_OFFSET);
                         req->promise->set_value(
                             read_node_blocking(pool, root_offset));
+                    }
+                    else if (auto *req = std::get_if<7>(&request.front());
+                             req != nullptr) {
+                        // share the same promise type as upsert
+                        upsert_promises.emplace_back(std::move(*req->promise));
+                        req->promise = &upsert_promises.back();
+                        auto root = copy_trie_to_dest(
+                            aux,
+                            req->src_root,
+                            req->src,
+                            std::move(req->dest_root),
+                            req->dest,
+                            req->dest_version,
+                            req->blocked_by_write);
+                        req->promise->set_value(std::move(root));
                     }
                     did_nothing = false;
                 }
@@ -752,6 +798,48 @@ struct Db::RWOnDisk final : public Db::Impl
         }
         return root() ? NodeCursor{*root()} : NodeCursor{};
     }
+
+    virtual void copy_trie_fiber_blocking(
+        uint64_t const src_version, NibblesView const src,
+        uint64_t const dest_version, NibblesView const dest,
+        bool const blocked_by_write = true) override
+    {
+        if (src_version != root_version_) {
+            root_ = read_node_blocking(
+                aux_.io->storage_pool(),
+                aux_.get_root_offset_at_version(src_version));
+            root_version_ = src_version;
+        }
+        Node &src_root = *root_;
+        Node::UniquePtr dest_root{};
+        if (src_version == dest_version) {
+            dest_root = std::move(root_);
+        }
+        else if (auto const root_offset =
+                     aux_.get_root_offset_at_version(dest_version);
+                 root_offset != INVALID_OFFSET) {
+            dest_root =
+                read_node_blocking(aux_.io->storage_pool(), root_offset);
+        }
+
+        threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
+        auto fut = promise.get_future();
+        comms_.enqueue(FiberCopyTrieRequest{
+            .promise = &promise,
+            .src_root = src_root,
+            .src = src,
+            .dest_root = std::move(dest_root),
+            .dest = dest,
+            .dest_version = dest_version,
+            .blocked_by_write = blocked_by_write});
+        // promise is racily emptied after this point
+        if (worker_->sleeping.load(std::memory_order_acquire)) {
+            std::unique_lock const g(lock_);
+            cond_.notify_one();
+        }
+        root_ = fut.get();
+        root_version_ = dest_version;
+    }
 };
 
 Db::Db(StateMachine &machine)
@@ -838,6 +926,16 @@ void Db::upsert(
     MONAD_ASSERT(impl_);
     impl_->upsert_fiber_blocking(
         std::move(list), block_id, enable_compaction, can_write_to_fast);
+}
+
+void Db::copy_trie(
+    uint64_t const src_version, NibblesView const src,
+    uint64_t const dest_version, NibblesView const dest,
+    bool const blocked_by_write)
+{
+    MONAD_ASSERT(impl_);
+    impl_->copy_trie_fiber_blocking(
+        src_version, src, dest_version, dest, blocked_by_write);
 }
 
 void Db::move_trie_version_forward(uint64_t const src, uint64_t const dest)

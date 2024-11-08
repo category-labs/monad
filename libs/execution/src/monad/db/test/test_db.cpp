@@ -99,7 +99,9 @@ namespace
     {
         auto const value = db.get(
             mpt::concat(
-                CALL_FRAME_NIBBLE, mpt::NibblesView{rlp::encode_unsigned(idx)}),
+                FINALIZED_NIBBLE,
+                CALL_FRAME_NIBBLE,
+                mpt::NibblesView{rlp::encode_unsigned(idx)}),
             block_number);
         if (!value.has_value()) {
             return {};
@@ -118,6 +120,7 @@ namespace
     {
         auto const value = db.get(
             mpt::concat(
+                FINALIZED_NIBBLE,
                 STATE_NIBBLE,
                 mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
                 mpt::NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
@@ -443,7 +446,8 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
                               uint64_t const block_id,
                               unsigned const tx_idx) {
         auto const res = this->db.get(
-            concat(tx_hash_nibbles, mpt::NibblesView{tx_hash}),
+            concat(
+                finalized_nibbles, tx_hash_nibbles, mpt::NibblesView{tx_hash}),
             this->db.get_latest_block_id());
         EXPECT_TRUE(res.has_value());
         EXPECT_EQ(

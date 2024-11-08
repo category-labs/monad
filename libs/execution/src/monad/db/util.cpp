@@ -94,7 +94,17 @@ namespace
                         .version = static_cast<int64_t>(block_id_)};
                     updates.push_front(state_update);
 
-                    db_.upsert(std::move(updates), block_id_, false, false);
+                    UpdateList finalized_updates;
+                    Update finalized{
+                        .key = finalized_nibbles,
+                        .value = byte_string_view{},
+                        .incarnation = false,
+                        .next = std::move(updates),
+                        .version = static_cast<int64_t>(block_id_),
+                    };
+                    finalized_updates.push_front(finalized);
+                    db_.upsert(
+                        std::move(finalized_updates), block_id_, false, false);
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();
@@ -114,7 +124,17 @@ namespace
                         .version = static_cast<int64_t>(block_id_)};
                     updates.push_front(code_update);
 
-                    db_.upsert(std::move(updates), block_id_, false, false);
+                    UpdateList finalized_updates;
+                    Update finalized{
+                        .key = finalized_nibbles,
+                        .value = byte_string_view{},
+                        .incarnation = false,
+                        .next = std::move(updates),
+                        .version = static_cast<int64_t>(block_id_),
+                    };
+                    finalized_updates.push_front(finalized);
+                    db_.upsert(
+                        std::move(finalized_updates), block_id_, false, false);
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();
@@ -490,7 +510,7 @@ bool OnDiskMachine::cache() const
 
 bool OnDiskMachine::compact() const
 {
-    return true;
+    return depth >= PREFIX_LEN;
 }
 
 bool OnDiskMachine::auto_expire() const

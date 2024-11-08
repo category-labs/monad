@@ -17,7 +17,12 @@ MONAD_NAMESPACE_BEGIN
 
 struct MachineBase : public mpt::StateMachine
 {
-    static constexpr uint64_t PREFIX_LEN = 1;
+    static constexpr uint64_t TABLE_PREFIX_LEN = 1;
+    static constexpr uint64_t PROPOSAL_PREFIX_LEN = 1;
+    // TODO: We need to increase `MAX_DEPTH` by sizeof(bytes32_t) once we
+    // operate on proposals
+    static constexpr uint64_t PREFIX_LEN =
+        TABLE_PREFIX_LEN + PROPOSAL_PREFIX_LEN;
     static constexpr uint64_t MAX_DEPTH =
         PREFIX_LEN + sizeof(bytes32_t) * 2 + sizeof(bytes32_t) * 2;
 
@@ -59,6 +64,9 @@ struct OnDiskMachine : public MachineBase
     virtual std::unique_ptr<StateMachine> clone() const override;
 };
 
+//////////////////////////////////////////////////////////
+// Table Nibbles
+//////////////////////////////////////////////////////////
 inline constexpr unsigned char STATE_NIBBLE = 0;
 inline constexpr unsigned char CODE_NIBBLE = 1;
 inline constexpr unsigned char RECEIPT_NIBBLE = 2;
@@ -81,6 +89,14 @@ inline mpt::Nibbles const ommer_nibbles = mpt::concat(OMMER_NIBBLE);
 inline mpt::Nibbles const withdrawal_nibbles = mpt::concat(WITHDRAWAL_NIBBLE);
 inline mpt::Nibbles const tx_hash_nibbles = mpt::concat(TX_HASH_NIBBLE);
 inline mpt::Nibbles const block_hash_nibbles = mpt::concat(BLOCK_HASH_NIBBLE);
+
+//////////////////////////////////////////////////////////
+// Proposed and finialized subtries. Active on all tables.
+//////////////////////////////////////////////////////////
+inline constexpr unsigned char PROPOSAL_NIBBLE = 0;
+inline constexpr unsigned char FINALIZED_NIBBLE = 1;
+inline mpt::Nibbles const proposal_nibbles = mpt::concat(PROPOSAL_NIBBLE);
+inline mpt::Nibbles const finalized_nibbles = mpt::concat(FINALIZED_NIBBLE);
 
 byte_string encode_account_db(Address const &, Account const &);
 byte_string encode_storage_db(bytes32_t const &, bytes32_t const &);

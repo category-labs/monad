@@ -251,9 +251,13 @@ bool statesync_server_handle_request(
     if (!root.is_valid()) {
         return false;
     }
+    auto const finalized_root = db.find(root, finalized_nibbles, rq.target);
+    if (!finalized_root.has_value()) {
+        return false;
+    }
     auto const begin = std::chrono::steady_clock::now();
     Traverse traverse(sync, NibblesView{bytes}, rq.from, rq.until);
-    if (!db.traverse(root, traverse, rq.target)) {
+    if (!db.traverse(finalized_root.value(), traverse, rq.target)) {
         return false;
     }
     auto const end = std::chrono::steady_clock::now();

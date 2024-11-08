@@ -74,6 +74,7 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
 {
     auto const value = db_.get(
         concat(
+            FINALIZED_NIBBLE,
             STATE_NIBBLE,
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
         block_number_);
@@ -101,6 +102,7 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
 {
     auto const value = db_.get(
         concat(
+            FINALIZED_NIBBLE,
             STATE_NIBBLE,
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
             NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
@@ -125,7 +127,10 @@ std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
 {
     // TODO read code analysis object
     auto const value = db_.get(
-        concat(CODE_NIBBLE, NibblesView{to_byte_string_view(code_hash.bytes)}),
+        concat(
+            FINALIZED_NIBBLE,
+            CODE_NIBBLE,
+            NibblesView{to_byte_string_view(code_hash.bytes)}),
         block_number_);
     if (!value.has_value()) {
         return std::make_shared<CodeAnalysis>(analyze({}));
@@ -348,7 +353,16 @@ void TrieDb::commit(
             .version = static_cast<int64_t>(block_number_)}));
     }
 
-    db_.upsert(std::move(updates), block_number_);
+    Update finalized{
+        .key = finalized_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(updates),
+        .version = static_cast<int64_t>(block_number_),
+    };
+    UpdateList finalized_updates;
+    finalized_updates.push_front(finalized);
+    db_.upsert(std::move(finalized_updates), block_number_);
 
     update_alloc_.clear();
     bytes_alloc_.clear();
@@ -379,7 +393,8 @@ bytes32_t TrieDb::transactions_root()
 
 std::optional<bytes32_t> TrieDb::withdrawals_root()
 {
-    auto const value = db_.get_data(withdrawal_nibbles, block_number_);
+    auto const value = db_.get_data(
+        concat(FINALIZED_NIBBLE, WITHDRAWAL_NIBBLE), block_number_);
     if (value.has_error()) {
         return std::nullopt;
     }
@@ -392,7 +407,8 @@ std::optional<bytes32_t> TrieDb::withdrawals_root()
 
 bytes32_t TrieDb::merkle_root(mpt::Nibbles const &nibbles)
 {
-    auto const value = db_.get_data(nibbles, block_number_);
+    auto const value = db_.get_data(
+        concat(FINALIZED_NIBBLE, NibblesView{nibbles}), block_number_);
     if (!value.has_value() || value.value().empty()) {
         return NULL_ROOT;
     }
@@ -530,7 +546,8 @@ nlohmann::json TrieDb::to_json()
     auto json = nlohmann::json::object();
     Traverse traverse(*this, json);
 
-    auto res_cursor = db_.find(state_nibbles, block_number_);
+    auto res_cursor =
+        db_.find(concat(FINALIZED_NIBBLE, STATE_NIBBLE), block_number_);
     MONAD_ASSERT(res_cursor.has_value());
     MONAD_ASSERT(res_cursor.value().is_valid());
     // RWOndisk Db prevents any parallel traversal that does blocking i/o

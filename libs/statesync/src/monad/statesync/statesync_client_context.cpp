@@ -88,6 +88,7 @@ void monad_statesync_client_context::commit()
         }
     }
 
+    // TODO: commit to proposals nibble and immediately finalize the proposal.
     auto state_update = Update{
         .key = state_nibbles,
         .value = byte_string_view{},
@@ -103,7 +104,17 @@ void monad_statesync_client_context::commit()
     UpdateList updates;
     updates.push_front(state_update);
     updates.push_front(code_update);
-    db.upsert(std::move(updates), current, false, false);
+
+    UpdateList finalized_updates;
+    Update finalized{
+        .key = finalized_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(updates),
+        .version = static_cast<int64_t>(current)};
+    finalized_updates.push_front(finalized);
+
+    db.upsert(std::move(finalized_updates), current, false, false);
     tdb.set_block_number(current);
     for (auto const &hash : upserted) {
         MONAD_ASSERT(this->upserted.emplace(hash).second);

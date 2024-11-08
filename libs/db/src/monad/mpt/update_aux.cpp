@@ -129,13 +129,8 @@ void UpdateAuxImpl::advance_db_offsets_to(
     MONAD_ASSERT(db_metadata()->at(fast_offset.id)->in_fast_list);
     MONAD_ASSERT(db_metadata()->at(slow_offset.id)->in_slow_list);
     auto do_ = [&](detail::db_metadata *m) {
-        m->advance_db_offsets_to_(detail::db_metadata::db_offsets_info_t{
-            fast_offset,
-            slow_offset,
-            this->compact_offset_fast,
-            this->compact_offset_slow,
-            this->compact_offset_range_fast_,
-            this->compact_offset_range_slow_});
+        m->advance_db_offsets_to_(
+            detail::db_metadata::db_offsets_info_t{fast_offset, slow_offset});
     };
     do_(db_metadata_[0].main);
     do_(db_metadata_[1].main);
@@ -688,7 +683,9 @@ Node::UniquePtr UpdateAuxImpl::do_update(
             adjust_history_length_based_on_disk_usage();
         }
         // kick off compaction before we reach history length limit
-        advance_compact_offsets();
+        if (prev_root) {
+            advance_compact_offsets(*prev_root);
+        }
     }
     // Erase the earliest valid version if it is going to be outdated after
     // upserting new version
@@ -788,7 +785,7 @@ uint32_t divide_and_round(uint32_t const dividend, uint64_t const divisor)
     return result_floor + static_cast<uint32_t>(r <= fractional);
 }
 
-void UpdateAuxImpl::advance_compact_offsets()
+void UpdateAuxImpl::advance_compact_offsets(Node &prev_root)
 {
     /* Note on ring based compaction:
     Fast list compaction is steady pace based on disk growth over recent blocks,
@@ -834,8 +831,12 @@ void UpdateAuxImpl::advance_compact_offsets()
             history_length_to_start_compaction) {
         return;
     }
-    compact_offset_fast = db_metadata()->db_offsets.last_compact_offset_fast;
-    compact_offset_slow = db_metadata()->db_offsets.last_compact_offset_slow;
+    std::tie(compact_offset_fast, compact_offset_slow) =
+        calc_min_offsets(prev_root);
+    MONAD_ASSERT(compact_offset_fast != INVALID_COMPACT_VIRTUAL_OFFSET);
+    if (compact_offset_slow == INVALID_COMPACT_VIRTUAL_OFFSET) {
+        compact_offset_slow = MIN_COMPACT_VIRTUAL_OFFSET;
+    }
     compact_offset_range_fast_ = MIN_COMPACT_VIRTUAL_OFFSET;
 
     MONAD_ASSERT(version_history_length() > 1);
@@ -861,10 +862,13 @@ void UpdateAuxImpl::advance_compact_offsets()
     auto const compacted_erased_root_offset =
         compact_virtual_chunk_offset_t{virtual_root_offset};
     if (compact_offset_fast < curr_fast_writer_offset) {
-        compact_offset_range_fast_.set_value(divide_and_round(
+        auto const to_advance = divide_and_round(
             curr_fast_writer_offset - compacted_erased_root_offset,
-            max_version - min_version_on_fast));
-        compact_offset_fast += compact_offset_range_fast_;
+            max_version - min_version_on_fast);
+        if (compact_offset_fast + to_advance < curr_fast_writer_offset) {
+            compact_offset_range_fast_.set_value(to_advance);
+            compact_offset_fast += compact_offset_range_fast_;
+        }
     }
     constexpr double usage_limit_start_compact_slow = 0.6;
     constexpr double slow_usage_limit_start_compact_slow = 0.2;

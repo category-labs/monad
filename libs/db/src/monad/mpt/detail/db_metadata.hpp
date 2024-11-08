@@ -47,7 +47,7 @@ namespace detail
     // For the memory map of the first conventional chunk
     struct db_metadata
     {
-        static constexpr char const *MAGIC = "MONAD002";
+        static constexpr char const *MAGIC = "MONAD003";
         static constexpr unsigned MAGIC_STRING_LEN = 8;
 
         friend class MONAD_MPT_NAMESPACE::UpdateAuxImpl;
@@ -108,10 +108,6 @@ namespace detail
             // should be rewound if restart.
             chunk_offset_t start_of_wip_offset_fast;
             chunk_offset_t start_of_wip_offset_slow;
-            compact_virtual_chunk_offset_t last_compact_offset_fast;
-            compact_virtual_chunk_offset_t last_compact_offset_slow;
-            compact_virtual_chunk_offset_t last_compact_offset_range_fast;
-            compact_virtual_chunk_offset_t last_compact_offset_range_slow;
 
             db_offsets_info_t() = delete;
             db_offsets_info_t(db_offsets_info_t const &) = delete;
@@ -123,19 +119,9 @@ namespace detail
 
             constexpr db_offsets_info_t(
                 chunk_offset_t start_of_wip_offset_fast_,
-                chunk_offset_t start_of_wip_offset_slow_,
-                compact_virtual_chunk_offset_t last_compact_offset_fast_,
-                compact_virtual_chunk_offset_t last_compact_offset_slow_,
-                compact_virtual_chunk_offset_t last_compact_offset_range_fast_,
-                compact_virtual_chunk_offset_t last_compact_offset_range_slow_)
+                chunk_offset_t start_of_wip_offset_slow_)
                 : start_of_wip_offset_fast(start_of_wip_offset_fast_)
                 , start_of_wip_offset_slow(start_of_wip_offset_slow_)
-                , last_compact_offset_fast(last_compact_offset_fast_)
-                , last_compact_offset_slow(last_compact_offset_slow_)
-                , last_compact_offset_range_fast(
-                      last_compact_offset_range_fast_)
-                , last_compact_offset_range_slow(
-                      last_compact_offset_range_slow_)
             {
             }
 
@@ -143,12 +129,6 @@ namespace detail
             {
                 start_of_wip_offset_fast = o.start_of_wip_offset_fast;
                 start_of_wip_offset_slow = o.start_of_wip_offset_slow;
-                last_compact_offset_fast = o.last_compact_offset_fast;
-                last_compact_offset_slow = o.last_compact_offset_slow;
-                last_compact_offset_range_fast =
-                    o.last_compact_offset_range_fast;
-                last_compact_offset_range_slow =
-                    o.last_compact_offset_range_slow;
             }
         } db_offsets;
 
@@ -473,7 +453,7 @@ namespace detail
 
     static_assert(std::is_trivially_copyable_v<db_metadata>);
     static_assert(std::is_trivially_copy_assignable_v<db_metadata>);
-    static_assert(sizeof(db_metadata) == 524384);
+    static_assert(sizeof(db_metadata) == 524368);
     static_assert(alignof(db_metadata) == 8);
 
     inline void atomic_memcpy(

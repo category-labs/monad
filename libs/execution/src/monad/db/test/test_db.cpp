@@ -721,7 +721,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
     auto block = rlp::decode_block(block_rlp_view);
     ASSERT_TRUE(!block.has_error());
 
-    BlockHashBuffer block_hash_buffer;
+    BlockHashBufferFinalized block_hash_buffer;
     block_hash_buffer.set(
         block.value().header.number - 1, block.value().header.parent_hash);
 
@@ -814,7 +814,7 @@ TYPED_TEST(DBTest, call_frames_refund)
     auto block = rlp::decode_block(block_rlp_view);
     ASSERT_TRUE(!block.has_error());
 
-    BlockHashBuffer block_hash_buffer;
+    BlockHashBufferFinalized block_hash_buffer;
     block_hash_buffer.set(
         block.value().header.number - 1, block.value().header.parent_hash);
 

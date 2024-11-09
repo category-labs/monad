@@ -261,7 +261,7 @@ monad_evmc_result eth_call(
     MONAD_ASSERT(!sender_result.has_error());
     auto const sender = sender_result.value();
 
-    BlockHashBuffer buffer{};
+    BlockHashBufferFinalized buffer{};
     for (size_t i = block_number < 256 ? 1 : block_number - 255;
          i <= block_number;
          ++i) {

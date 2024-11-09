@@ -192,7 +192,7 @@ void BlockchainTest::TestBody()
             bs.commit({}, {}, {}, {}, {}, std::nullopt);
         }
 
-        BlockHashBuffer block_hash_buffer;
+        BlockHashBufferFinalized block_hash_buffer;
         for (auto const &j_block : j_contents.at("blocks")) {
 
             auto const block_rlp = j_block.at("rlp").get<byte_string>();

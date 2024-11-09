@@ -1,35 +1,73 @@
 #pragma once
 
 #include <monad/config.hpp>
-#include <monad/core/assert.h>
 #include <monad/core/bytes.hpp>
 
 #include <cstdint>
+#include <deque>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer
 {
+public:
     static constexpr unsigned N = 256;
 
+    virtual uint64_t n() const = 0;
+    virtual bytes32_t const &get(uint64_t) const = 0;
+    virtual ~BlockHashBuffer() = default;
+};
+
+class BlockHashBufferFinalized : public BlockHashBuffer
+{
     bytes32_t b_[N];
     uint64_t n_;
 
 public:
-    BlockHashBuffer();
+    BlockHashBufferFinalized();
 
-    void set(uint64_t const n, bytes32_t const &h)
-    {
-        MONAD_ASSERT(!n_ || n == n_);
-        b_[n % N] = h;
-        n_ = n + 1;
-    }
+    uint64_t n() const override;
+    bytes32_t const &get(uint64_t) const override;
 
-    bytes32_t const &get(uint64_t const n) const
+    void set(uint64_t, bytes32_t const &);
+};
+
+class BlockHashBufferProposal : public BlockHashBuffer
+{
+    uint64_t n_;
+    BlockHashBuffer const *buf_;
+    std::vector<bytes32_t> deltas_;
+
+public:
+    BlockHashBufferProposal(
+        bytes32_t const &, BlockHashBufferFinalized const &);
+    BlockHashBufferProposal(bytes32_t const &, BlockHashBufferProposal const &);
+
+    uint64_t n() const override;
+    bytes32_t const &get(uint64_t) const override;
+};
+
+class BlockHashChain
+{
+    BlockHashBufferFinalized &buf_;
+    uint64_t last_finalized_round_;
+
+    struct Proposal
     {
-        MONAD_ASSERT(n < n_ && n + N >= n_);
-        return b_[n % N];
-    }
+        uint64_t round;
+        uint64_t parent_round;
+        BlockHashBufferProposal buf;
+    };
+
+    std::deque<Proposal> proposals_;
+
+public:
+    BlockHashChain(
+        BlockHashBufferFinalized &, uint64_t last_finalized_round = 0);
+    void propose(bytes32_t const &, uint64_t round, uint64_t parent_round);
+    void finalize(uint64_t const round);
+    BlockHashBuffer const &find_chain(uint64_t) const;
 };
 
 MONAD_NAMESPACE_END

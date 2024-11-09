@@ -108,7 +108,7 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
     auto batch_begin = std::chrono::steady_clock::now();
     uint64_t ntxs = 0;
 
-    BlockHashBuffer block_hash_buffer;
+    BlockHashBufferFinalized block_hash_buffer;
     for (uint64_t i = block_num < 256 ? 1 : block_num - 255;
          i < block_num && stop == 0;) {
         auto const block = try_get(i);

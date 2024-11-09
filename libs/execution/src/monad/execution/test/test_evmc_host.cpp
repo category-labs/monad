@@ -118,7 +118,7 @@ TEST(EvmcHost, emit_log)
     db_t tdb{db};
     BlockState bs{tdb};
     State state{bs, Incarnation{0, 0}};
-    BlockHashBuffer const block_hash_buffer;
+    BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
     evmc_host_t host{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, state};
 
@@ -145,7 +145,7 @@ TEST(EvmcHost, access_precompile)
     db_t tdb{db};
     BlockState bs{tdb};
     State state{bs, Incarnation{0, 0}};
-    BlockHashBuffer const block_hash_buffer;
+    BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
     evmc_host_t host{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, state};
 

@@ -18,15 +18,21 @@ MONAD_NAMESPACE_BEGIN
 struct MachineBase : public mpt::StateMachine
 {
     static constexpr uint64_t TABLE_PREFIX_LEN = 1;
-    static constexpr uint64_t PROPOSAL_PREFIX_LEN = 1;
-    // TODO: We need to increase `MAX_DEPTH` by sizeof(bytes32_t) once we
-    // operate on proposals
-    static constexpr uint64_t PREFIX_LEN =
-        TABLE_PREFIX_LEN + PROPOSAL_PREFIX_LEN;
-    static constexpr uint64_t MAX_DEPTH =
-        PREFIX_LEN + sizeof(bytes32_t) * 2 + sizeof(bytes32_t) * 2;
+    static constexpr uint64_t TOP_NIBBLE_PREFIX_LEN = 1;
+    static constexpr uint64_t FINALIZED_PREFIX_LEN =
+        TOP_NIBBLE_PREFIX_LEN + TABLE_PREFIX_LEN;
+    static constexpr uint64_t PROPOSAL_PREFIX_LEN =
+        TOP_NIBBLE_PREFIX_LEN + sizeof(uint64_t) * 2 /* round number prefix */ +
+        TABLE_PREFIX_LEN;
 
     enum class TrieType : uint8_t
+    {
+        Undefined,
+        Finalized,
+        Proposal
+    };
+
+    enum class TableType : uint8_t
     {
         Prefix,
         State,
@@ -39,11 +45,18 @@ struct MachineBase : public mpt::StateMachine
     };
 
     uint8_t depth{0};
-    TrieType trie_section{TrieType::Prefix};
+    TrieType trie_section{TrieType::Undefined};
+    TableType table{TableType::Prefix};
 
     virtual mpt::Compute &get_compute() const override;
     virtual void down(unsigned char const nibble) override;
     virtual void up(size_t const n) override;
+    constexpr uint8_t prefix_len() const;
+
+    constexpr uint8_t max_depth(uint8_t const prefix_length) const
+    {
+        return prefix_length + sizeof(bytes32_t) * 2 + sizeof(bytes32_t) * 2;
+    }
 };
 
 static_assert(sizeof(MachineBase) == 16);

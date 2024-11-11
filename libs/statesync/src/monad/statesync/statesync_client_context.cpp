@@ -88,7 +88,6 @@ void monad_statesync_client_context::commit()
         }
     }
 
-    // TODO: commit to proposals nibble and immediately finalize the proposal.
     auto state_update = Update{
         .key = state_nibbles,
         .value = byte_string_view{},

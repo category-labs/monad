@@ -695,7 +695,6 @@ public:
     void update_root_offset(size_t i, chunk_offset_t root_offset) noexcept;
     void fast_forward_next_version(uint64_t version) noexcept;
 
-    void update_slow_fast_ratio_metadata() noexcept;
     void update_history_length_metadata(uint64_t history_len) noexcept;
 
     // WARNING: These are destructive, they discard immediately any extraneous

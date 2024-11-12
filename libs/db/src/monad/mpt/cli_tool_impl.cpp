@@ -828,7 +828,6 @@ public:
                         &metadata->root_offsets.storage_,
                         &old_metadata->root_offsets.storage_,
                         sizeof(metadata->root_offsets.storage_));
-                    metadata->slow_fast_ratio = old_metadata->slow_fast_ratio;
                     metadata->history_length = old_metadata->history_length;
                 });
                 fast_list_base_insertion_count =

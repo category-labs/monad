@@ -47,7 +47,7 @@ namespace detail
     // For the memory map of the first conventional chunk
     struct db_metadata
     {
-        static constexpr char const *MAGIC = "MONAD001";
+        static constexpr char const *MAGIC = "MONAD002";
         static constexpr unsigned MAGIC_STRING_LEN = 8;
 
         friend class MONAD_MPT_NAMESPACE::UpdateAuxImpl;
@@ -155,7 +155,6 @@ namespace detail
         /* NOTE Remember to update the DB restore implementation in the CLI
         tool if you modify anything after this!
         */
-        float slow_fast_ratio;
         // cannot use atomic_uint64_t here because db_metadata has to be
         // trivially copyable for db_copy().
         uint64_t history_length;
@@ -470,17 +469,11 @@ namespace detail
             auto g = hold_dirty();
             db_offsets.store(offsets_to_apply);
         }
-
-        void update_slow_fast_ratio_(float const ratio) noexcept
-        {
-            auto g = hold_dirty();
-            slow_fast_ratio = ratio;
-        }
     };
 
     static_assert(std::is_trivially_copyable_v<db_metadata>);
     static_assert(std::is_trivially_copy_assignable_v<db_metadata>);
-    static_assert(sizeof(db_metadata) == 524392);
+    static_assert(sizeof(db_metadata) == 524384);
     static_assert(alignof(db_metadata) == 8);
 
     inline void atomic_memcpy(

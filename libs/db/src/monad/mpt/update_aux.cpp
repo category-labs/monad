@@ -189,18 +189,6 @@ void UpdateAuxImpl::fast_forward_next_version(
     do_(db_metadata_[1].main);
 }
 
-void UpdateAuxImpl::update_slow_fast_ratio_metadata() noexcept
-{
-    MONAD_ASSERT(is_on_disk());
-    auto const ratio = (float)num_chunks(chunk_list::slow) /
-                       (float)num_chunks(chunk_list::fast);
-    auto do_ = [&](detail::db_metadata *m) {
-        m->update_slow_fast_ratio_(ratio);
-    };
-    do_(db_metadata_[0].main);
-    do_(db_metadata_[1].main);
-}
-
 void UpdateAuxImpl::update_history_length_metadata(
     uint64_t const history_len) noexcept
 {

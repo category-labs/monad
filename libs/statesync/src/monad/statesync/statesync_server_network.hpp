@@ -65,7 +65,8 @@ void statesync_server_send_upsert(
         type == SYNC_TYPE_UPSERT_CODE || type == SYNC_TYPE_UPSERT_ACCOUNT ||
         type == SYNC_TYPE_UPSERT_STORAGE ||
         type == SYNC_TYPE_UPSERT_ACCOUNT_DELETE ||
-        type == SYNC_TYPE_UPSERT_STORAGE_DELETE);
+        type == SYNC_TYPE_UPSERT_STORAGE_DELETE ||
+        type == SYNC_TYPE_UPSERT_HEADER);
 
     auto const start = std::chrono::steady_clock::now();
     net->obuf.push_back(type);

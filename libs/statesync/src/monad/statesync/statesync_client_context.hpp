@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/core/address.hpp>
+#include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/db/trie_db.hpp>
@@ -10,6 +11,7 @@
 
 #include <ankerl/unordered_dense.h>
 
+#include <array>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -33,9 +35,9 @@ struct monad_statesync_client_context
     monad::TrieDb tdb;
     std::vector<std::pair<uint64_t, uint64_t>> progress;
     std::vector<std::unique_ptr<monad::StatesyncProtocol>> protocol;
-    uint64_t target;
+    std::array<monad::BlockHeader, 256> hdrs;
+    monad::BlockHeader tgrt;
     uint64_t current;
-    monad::bytes32_t expected_root;
     Map<monad::Address, StorageDeltas> buffered;
     ankerl::unordered_dense::segmented_set<monad::bytes32_t> upserted;
     ankerl::unordered_dense::segmented_set<monad::bytes32_t> pending;

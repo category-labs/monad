@@ -20,6 +20,7 @@ enum monad_sync_type : uint8_t
     SYNC_TYPE_UPSERT_STORAGE = 5,
     SYNC_TYPE_UPSERT_ACCOUNT_DELETE = 6,
     SYNC_TYPE_UPSERT_STORAGE_DELETE = 7,
+    SYNC_TYPE_UPSERT_HEADER = 8,
 };
 
 static_assert(sizeof(enum monad_sync_type) == 1);
@@ -37,15 +38,6 @@ struct monad_sync_request
 
 static_assert(sizeof(struct monad_sync_request) == 48);
 static_assert(alignof(struct monad_sync_request) == 8);
-
-struct monad_sync_target
-{
-    uint64_t n;
-    unsigned char state_root[32];
-};
-
-static_assert(sizeof(struct monad_sync_target) == 40);
-static_assert(alignof(struct monad_sync_target) == 8);
 
 struct monad_sync_done
 {

@@ -1,6 +1,7 @@
 #include <monad/config.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/rlp/block_rlp.hpp>
 #include <monad/core/unaligned.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/state2/state_deltas.hpp>
@@ -280,6 +281,8 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
     std::span<uint8_t const> raw{data, size};
     State state{};
 
+    BlockHeader hdr{.parent_hash = NULL_HASH, .number = 0};
+    sctx.commit(StateDeltas{}, Code{}, hdr);
     while (raw.size() >= sizeof(uint64_t)) {
         StateDeltas deltas;
         uint64_t const n = unaligned_load<uint64_t>(raw.data());
@@ -309,12 +312,13 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
                           ? std::numeric_limits<uint64_t>::max()
                           : n;
         stdb.increment_block_number();
-        sctx.commit(deltas, {}, {});
-        monad_sync_target target;
-        target.n = stdb.get_block_number();
-        bytes32_t const root = stdb.state_root();
-        std::memcpy(target.state_root, root.bytes, sizeof(root.bytes));
-        monad_statesync_client_handle_target(cctx, target);
+        hdr.parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr)));
+        hdr.number = stdb.get_block_number();
+        sctx.commit(deltas, {}, hdr);
+        BlockHeader tgrt{hdr};
+        tgrt.state_root = sctx.state_root();
+        auto const rlp = rlp::encode_block_header(tgrt);
+        monad_statesync_client_handle_target(cctx, rlp.data(), rlp.size());
         while (!client.rqs.empty()) {
             monad_statesync_server_run_once(server);
         }

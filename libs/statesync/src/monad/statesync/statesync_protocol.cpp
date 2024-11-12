@@ -1,6 +1,7 @@
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/bytes.hpp>
+#include <monad/core/rlp/block_rlp.hpp>
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/unaligned.hpp>
 #include <monad/db/util.hpp>
@@ -149,19 +150,19 @@ MONAD_NAMESPACE_BEGIN
 void StatesyncProtocolV1::send_request(
     monad_statesync_client_context *const ctx, uint64_t const prefix) const
 {
+    auto const tgrt = ctx->tgrt.number;
     auto const &[progress, old_target] = ctx->progress[prefix];
-    MONAD_ASSERT(progress == INVALID_BLOCK_ID || progress < ctx->target);
-    MONAD_ASSERT(old_target == INVALID_BLOCK_ID || old_target <= ctx->target);
+    MONAD_ASSERT(progress == INVALID_BLOCK_ID || progress < tgrt);
+    MONAD_ASSERT(old_target == INVALID_BLOCK_ID || old_target <= tgrt);
     auto const from = progress == INVALID_BLOCK_ID ? 0 : progress + 1;
     ctx->statesync_send_request(
         ctx->sync,
         monad_sync_request{
             .prefix = prefix,
             .prefix_bytes = monad_statesync_client_prefix_bytes(),
-            .target = ctx->target,
+            .target = tgrt,
             .from = from,
-            .until = from >= (ctx->target * 99 / 100) ? ctx->target
-                                                      : ctx->target * 99 / 100,
+            .until = from >= (tgrt * 99 / 100) ? tgrt : tgrt * 99 / 100,
             .old_target = old_target});
 }
 
@@ -201,8 +202,7 @@ bool StatesyncProtocolV1::handle_upsert(
         }
         account_update(*ctx, unaligned_load<Address>(val), std::nullopt);
     }
-    else {
-        MONAD_ASSERT(type == SYNC_TYPE_UPSERT_STORAGE_DELETE);
+    else if (type == SYNC_TYPE_UPSERT_STORAGE_DELETE) {
         if (size < sizeof(Address)) {
             return false;
         }
@@ -212,6 +212,14 @@ bool StatesyncProtocolV1::handle_upsert(
             return false;
         }
         storage_update(*ctx, unaligned_load<Address>(val), res.value(), {});
+    }
+    else {
+        MONAD_ASSERT(type == SYNC_TYPE_UPSERT_HEADER);
+        auto const res = rlp::decode_block_header(raw);
+        if (res.has_error()) {
+            return false;
+        }
+        ctx->hdrs[res.value().number % ctx->hdrs.size()] = res.value();
     }
 
     if ((++ctx->n_upserts % (1 << 20)) == 0) {

@@ -241,10 +241,32 @@ bool statesync_server_handle_request(
 
     auto const start = std::chrono::steady_clock::now();
     auto *const ctx = sync->context;
+    auto &db = *ctx->ro;
+    if (rq.prefix < 256 && rq.target > rq.prefix) {
+        auto const version = rq.target - rq.prefix - 1;
+        auto const root = db.load_root_for_version(version);
+        if (!root.is_valid()) {
+            return false;
+        }
+        auto const res = db.find(
+            root, concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), version);
+        if (res.has_error() || !res.value().is_valid()) {
+            return false;
+        }
+        auto const &val = res.value().node->value();
+        MONAD_ASSERT(!val.empty());
+        sync->statesync_server_send_upsert(
+            sync->net,
+            SYNC_TYPE_UPSERT_HEADER,
+            val.data(),
+            val.size(),
+            nullptr,
+            0);
+    }
+
     if (!send_deletion(sync, rq, *ctx)) {
         return false;
     }
-    auto &db = *ctx->ro;
 
     auto const bytes = from_prefix(rq.prefix, rq.prefix_bytes);
     auto const root = db.load_root_for_version(rq.target);

@@ -802,11 +802,6 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     MONAD_ASSERT(is_on_disk());
     set_can_write_to_fast(can_write_to_fast);
 
-    auto const max_version = db_history_max_version();
-    MONAD_ASSERT(
-        max_version == INVALID_BLOCK_ID || version == max_version ||
-        version == max_version + 1);
-
     if (compaction) {
         if (enable_dynamic_history_length_) {
             // WARNING: this step may remove historical blocks and free disk
@@ -819,6 +814,7 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     // Erase the earliest valid version if it is going to be outdated after
     // upserting new version
     if (auto const min_valid_version = db_history_min_valid_version();
+        version > min_valid_version &&
         min_valid_version != INVALID_BLOCK_ID /* at least one valid version */
         && version - min_valid_version >= version_history_length()) {
         std::tie(
@@ -831,13 +827,7 @@ Node::UniquePtr UpdateAuxImpl::do_update(
         update_root_offset(min_valid_version, INVALID_OFFSET);
         free_compacted_chunks();
     }
-    auto root =
-        upsert(*this, version, sm, std::move(prev_root), std::move(updates));
-    MONAD_DEBUG_ASSERT(
-        version - db_history_min_valid_version() + 1 <=
-        version_history_length());
-
-    return root;
+    return upsert(*this, version, sm, std::move(prev_root), std::move(updates));
 }
 
 void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()

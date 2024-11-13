@@ -24,12 +24,18 @@ static_assert(ATOMIC_INT_LOCK_FREE == 2);
 
 typedef struct monad_spinlock monad_spinlock_t;
 
-#if MONAD_SPINLOCK_TRACK_STATS_ATOMIC
-typedef atomic_ulong monad_spinstat_t;
-    #define MONAD_SPINSTAT_INC(X) atomic_fetch_add(&(X), 1)
+#if MONAD_SPINLOCK_TRACK_STATS
+    #if MONAD_SPINLOCK_TRACK_STATS_ATOMIC
+        typedef atomic_ulong monad_spinstat_t;
+        #define MONAD_SPINSTAT_INC(X)                                          \
+            atomic_fetch_add_explicit(&(X), 1, memory_order_relaxed)
+    #else
+        typedef unsigned long monad_spinstat_t;
+        #define MONAD_SPINSTAT_INC(X) ++(X)
+    #endif
 #else
-typedef unsigned long monad_spinstat_t;
-    #define MONAD_SPINSTAT_INC(X) ++(X)
+    typedef unsigned long monad_spinstat_t;
+    #define MONAD_SPINSTAT_INC(X)
 #endif
 
 // TODO(ken): remove this workaround when we have clang-19
@@ -65,7 +71,7 @@ struct monad_spinlock
 #endif
 };
 
-static inline bool monad_spinlock_is_owned(monad_spinlock_t *const lock)
+static inline bool monad_spinlock_is_self_owned(monad_spinlock_t *const lock)
 {
     return atomic_load_explicit(&lock->owner_tid, memory_order_acquire) ==
            get_tl_tid();
@@ -94,31 +100,29 @@ static inline void monad_spinlock_init(monad_spinlock_t *const lock)
 static inline bool monad_spinlock_try_lock(monad_spinlock_t *const lock)
 {
     int expected = 0;
-    int const desired = get_tl_tid();
-    bool const is_locked = atomic_compare_exchange_weak_explicit(
+    MONAD_SPINSTAT_INC(lock->stats.total_try_locks);
+    bool const is_locked = atomic_compare_exchange_strong_explicit(
         &lock->owner_tid,
         &expected,
-        desired,
-        memory_order_acquire,
+        get_tl_tid(),
+        memory_order_acq_rel,
         memory_order_relaxed);
-#if MONAD_SPINLOCK_TRACK_STATS
-    MONAD_SPINSTAT_INC(lock->stats.total_try_locks);
     if (MONAD_UNLIKELY(!is_locked)) {
         MONAD_SPINSTAT_INC(lock->stats.total_try_lock_fail);
     }
-#endif
     return is_locked;
 }
 
 static inline void monad_spinlock_lock(monad_spinlock_t *const lock)
 {
+    MONAD_SPINSTAT_INC(lock->stats.total_locks);
     int const desired = get_tl_tid();
     int expected;
     bool owned;
     [[maybe_unused]] unsigned long tries = 0;
     [[maybe_unused]] unsigned histo_bucket;
 
-    MONAD_DEBUG_ASSERT(!monad_spinlock_is_owned(lock));
+    MONAD_DEBUG_ASSERT(!monad_spinlock_is_self_owned(lock));
 
 TryAgain:
     expected = 0;
@@ -126,7 +130,7 @@ TryAgain:
         &lock->owner_tid,
         &expected,
         desired,
-        memory_order_acquire,
+        memory_order_acq_rel,
         memory_order_relaxed);
     if (MONAD_UNLIKELY(!owned)) {
         monad_spinloop_hint();
@@ -137,7 +141,6 @@ TryAgain:
     }
 
 #if MONAD_SPINLOCK_TRACK_STATS
-    MONAD_SPINSTAT_INC(lock->stats.total_locks);
     if (MONAD_LIKELY(tries > 1)) {
         MONAD_SPINSTAT_INC(lock->stats.total_lock_init_fail);
     }
@@ -151,7 +154,7 @@ TryAgain:
 
 static inline void monad_spinlock_unlock(monad_spinlock_t *const lock)
 {
-    MONAD_DEBUG_ASSERT(monad_spinlock_is_owned(lock));
+    MONAD_DEBUG_ASSERT(monad_spinlock_is_self_owned(lock));
     atomic_store_explicit(&lock->owner_tid, 0, memory_order_release);
 }
 

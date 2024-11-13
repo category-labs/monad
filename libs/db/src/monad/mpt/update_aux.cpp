@@ -688,6 +688,7 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     // Erase the earliest valid version if it is going to be outdated after
     // upserting new version
     if (auto const min_valid_version = db_history_min_valid_version();
+        version > min_valid_version &&
         min_valid_version != INVALID_BLOCK_ID /* at least one valid version */
         && version - min_valid_version >= version_history_length()) {
         std::tie(

@@ -664,7 +664,8 @@ the middle of a continuous history.
 */
 Node::UniquePtr UpdateAuxImpl::do_update(
     Node::UniquePtr prev_root, StateMachine &sm, UpdateList &&updates,
-    uint64_t const version, bool const compaction, bool const can_write_to_fast)
+    uint64_t const version, bool const compaction, bool const can_write_to_fast,
+    bool const disable_recycle_upon_version_deletion)
 {
     auto g(unique_lock());
     auto g2(set_current_upsert_tid());
@@ -691,17 +692,39 @@ Node::UniquePtr UpdateAuxImpl::do_update(
         version > min_valid_version &&
         min_valid_version != INVALID_BLOCK_ID /* at least one valid version */
         && version - min_valid_version >= version_history_length()) {
-        std::tie(
-            chunks_to_remove_before_count_fast_,
-            chunks_to_remove_before_count_slow_) =
-            min_offsets_of_version(min_valid_version);
         // erase min_valid_version, must happen before upsert() because that
         // offset slot in ring buffer may be overwritten thus invalidated in
         // `upsert()`.
-        update_root_offset(min_valid_version, INVALID_OFFSET);
+        erase_version(min_valid_version);
+    }
+
+    auto root =
+        upsert(*this, version, sm, std::move(prev_root), std::move(updates));
+    if (disable_recycle_upon_version_deletion) {
+        auto root_offset = get_root_offset_at_version(version);
+        MONAD_ASSERT(root_offset.bits_format == 1);
+        root_offset.bits_format = 0;
+        update_root_offset(version, root_offset);
+    }
+    return root;
+}
+
+void UpdateAuxImpl::erase_version(uint64_t const version)
+{
+    if (get_root_offset_at_version(version).bits_format == 1) {
+        std::tie(
+            chunks_to_remove_before_count_fast_,
+            chunks_to_remove_before_count_slow_) =
+            min_offsets_of_version(version);
+        // MUST NOT CHANGE ORDER
+        // Remove the root from the ring buffer before recycling disk chunks
+        // ensures crash recovery integrity
+        update_root_offset(version, INVALID_OFFSET);
         free_compacted_chunks();
     }
-    return upsert(*this, version, sm, std::move(prev_root), std::move(updates));
+    else {
+        update_root_offset(version, INVALID_OFFSET);
+    }
 }
 
 void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
@@ -717,12 +740,7 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
            version_history_length() > min_history_length) {
         auto const version_to_erase = db_history_min_valid_version();
         MONAD_ASSERT(version_to_erase != INVALID_BLOCK_ID);
-        std::tie(
-            chunks_to_remove_before_count_fast_,
-            chunks_to_remove_before_count_slow_) =
-            min_offsets_of_version(version_to_erase);
-        update_root_offset(version_to_erase, INVALID_OFFSET);
-        free_compacted_chunks();
+        erase_version(version_to_erase);
         update_history_length_metadata(
             std::max(max_version - version_to_erase, min_history_length));
         return;

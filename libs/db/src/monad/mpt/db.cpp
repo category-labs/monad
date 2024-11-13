@@ -72,8 +72,8 @@ struct Db::Impl
     virtual Node::UniquePtr &root() = 0;
     virtual UpdateAux<> &aux() = 0;
     virtual void upsert_fiber_blocking(
-        UpdateList &&, uint64_t, bool enable_compaction,
-        bool can_write_to_fast) = 0;
+        UpdateList &&, uint64_t, bool enable_compaction, bool can_write_to_fast,
+        bool const disable_recycle_upon_version_deletion) = 0;
 
     virtual find_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key, uint64_t version) = 0;
@@ -144,7 +144,7 @@ struct Db::ROOnDisk final : public Db::Impl
     }
 
     virtual void
-    upsert_fiber_blocking(UpdateList &&, uint64_t, bool, bool) override
+    upsert_fiber_blocking(UpdateList &&, uint64_t, bool, bool, bool) override
     {
         MONAD_ASSERT(false);
     }
@@ -239,7 +239,7 @@ struct Db::InMemory final : public Db::Impl
     }
 
     virtual void upsert_fiber_blocking(
-        UpdateList &&list, uint64_t version, bool, bool) override
+        UpdateList &&list, uint64_t version, bool, bool, bool) override
     {
         root_ = aux_.do_update(
             std::move(root_), machine_, std::move(list), version, false);
@@ -290,6 +290,7 @@ struct Db::RWOnDisk final : public Db::Impl
         uint64_t const version;
         bool const enable_compaction;
         bool const can_write_to_fast;
+        bool const disable_recycle_upon_version_deletion;
     };
 
     struct FiberLoadAllFromBlockRequest
@@ -444,7 +445,8 @@ struct Db::RWOnDisk final : public Db::Impl
                             std::move(req->updates),
                             req->version,
                             compaction && req->enable_compaction,
-                            req->can_write_to_fast));
+                            req->can_write_to_fast,
+                            req->disable_recycle_upon_version_deletion));
                     }
                     else if (auto *req = std::get_if<3>(&request.front());
                              req != nullptr) {
@@ -635,7 +637,8 @@ struct Db::RWOnDisk final : public Db::Impl
     // threadsafe
     virtual void upsert_fiber_blocking(
         UpdateList &&updates, uint64_t const version,
-        bool const enable_compaction, bool const can_write_to_fast) override
+        bool const enable_compaction, bool const can_write_to_fast,
+        bool const disable_recycle_upon_version_deletion) override
     {
         // reload root to handle out-of-order upserts
         if (version != root_version_ &&
@@ -652,7 +655,9 @@ struct Db::RWOnDisk final : public Db::Impl
             .updates = std::move(updates),
             .version = version,
             .enable_compaction = enable_compaction,
-            .can_write_to_fast = can_write_to_fast});
+            .can_write_to_fast = can_write_to_fast,
+            .disable_recycle_upon_version_deletion =
+                disable_recycle_upon_version_deletion});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -822,11 +827,16 @@ Db::get_data(NibblesView const key, uint64_t const block_id) const
 
 void Db::upsert(
     UpdateList list, uint64_t const block_id, bool const enable_compaction,
-    bool const can_write_to_fast)
+    bool const can_write_to_fast,
+    bool const disable_recycle_upon_version_deletion)
 {
     MONAD_ASSERT(impl_);
     impl_->upsert_fiber_blocking(
-        std::move(list), block_id, enable_compaction, can_write_to_fast);
+        std::move(list),
+        block_id,
+        enable_compaction,
+        can_write_to_fast,
+        disable_recycle_upon_version_deletion);
 }
 
 void Db::move_trie_version_forward(uint64_t const src, uint64_t const dest)

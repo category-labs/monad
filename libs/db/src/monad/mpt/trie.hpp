@@ -521,8 +521,10 @@ public:
     Node::UniquePtr do_update(
         Node::UniquePtr prev_root, StateMachine &, UpdateList &&,
         uint64_t version, bool compaction = false,
-        bool can_write_to_fast = true);
+        bool can_write_to_fast = true,
+        bool disable_recycle_upon_version_deletion = false);
 
+    void erase_version(uint64_t versino);
     void adjust_history_length_based_on_disk_usage();
     void move_trie_version_forward(uint64_t src, uint64_t dest);
 

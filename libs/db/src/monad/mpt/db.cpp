@@ -589,7 +589,6 @@ struct Db::RWOnDisk final : public Db::Impl
                        : Node::UniquePtr{};
         }())
         , root_version_(aux_.db_history_max_version())
-
     {
     }
 
@@ -638,6 +637,12 @@ struct Db::RWOnDisk final : public Db::Impl
         UpdateList &&updates, uint64_t const version,
         bool const enable_compaction, bool const can_write_to_fast) override
     {
+        // reload root to handle out-of-order upserts
+        if (version != root_version_ &&
+            (version != root_version_ + 1 ||
+             aux().version_is_valid_ondisk(version))) {
+            load_root_for_version(version);
+        }
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
         auto fut = promise.get_future();
         comms_.enqueue(FiberUpsertRequest{

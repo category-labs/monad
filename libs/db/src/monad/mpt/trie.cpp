@@ -1880,21 +1880,20 @@ write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
     }
     // flush async write root and slow writer
     aux.io->flush();
-    // update root offset
-    auto const last_version_in_db = aux.db_history_max_version();
-    MONAD_ASSERT(
-        last_version_in_db == INVALID_BLOCK_ID ||
-        version == last_version_in_db || version == last_version_in_db + 1);
     // advance fast and slow ring's latest offset in db metadata
     aux.advance_db_offsets_to(
         aux.node_writer_fast->sender().offset(),
         aux.node_writer_slow->sender().offset());
-    if (last_version_in_db == version) {
+    // update root offset
+    auto const max_version_in_db = aux.db_history_max_version();
+    if (max_version_in_db != INVALID_BLOCK_ID && version <= max_version_in_db) {
+        // Uncomment this after niall's changes
+        // MONAD_ASSERT(version >= history_lower_bound);
         aux.update_root_offset(version, offset_written_to);
     }
     else {
-        if (MONAD_UNLIKELY(version != last_version_in_db + 1)) {
-            MONAD_ASSERT(last_version_in_db == INVALID_BLOCK_ID);
+        if (MONAD_UNLIKELY(version != max_version_in_db + 1)) {
+            MONAD_ASSERT(max_version_in_db == INVALID_BLOCK_ID);
             aux.fast_forward_next_version(version);
         }
         aux.append_root_offset(offset_written_to);

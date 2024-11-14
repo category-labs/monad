@@ -1,7 +1,14 @@
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/db/block_db.hpp>
+#include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
+#include <monad/mpt/db.hpp>
+
+#include <quill/LogLevel.h>
+#include <quill/Quill.h>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -124,6 +131,50 @@ BlockHashBuffer const &BlockHashChain::find_chain(uint64_t const round) const
         return buf_;
     }
     return it->buf;
+}
+
+bool init_block_hash_buffer_from_triedb(
+    mpt::Db &rodb, uint64_t const block_number,
+    BlockHashBufferFinalized &block_hash_buffer)
+{
+    for (uint64_t b = block_number < 256 ? 0 : block_number - 256;
+         b < block_number;
+         ++b) {
+        auto const header = rodb.get(
+            mpt::concat(
+                FINALIZED_NIBBLE, mpt::NibblesView{block_header_nibbles}),
+            b);
+        if (!header.has_value()) {
+            LOG_WARNING(
+                "Could not query block header {} from TrieDb -- {}",
+                b,
+                header.error().message());
+            return false;
+        }
+        auto const h = to_bytes(keccak256(header.value()));
+        block_hash_buffer.set(b, h);
+    }
+
+    return true;
+}
+
+bool init_block_hash_buffer_from_blockdb(
+    BlockDb &block_db, uint64_t const block_number,
+    BlockHashBufferFinalized &block_hash_buffer)
+{
+    for (uint64_t b = block_number < 256 ? 1 : block_number - 255;
+         b <= block_number;
+         ++b) {
+        Block block;
+        auto const ok = block_db.get(b, block);
+        if (!ok) {
+            LOG_WARNING("Could not query block {} from blockdb.", b);
+            return false;
+        }
+        block_hash_buffer.set(b - 1, block.header.parent_hash);
+    }
+
+    return true;
 }
 
 MONAD_NAMESPACE_END

@@ -9,6 +9,13 @@
 
 MONAD_NAMESPACE_BEGIN
 
+class BlockDb;
+
+namespace mpt
+{
+    class Db;
+}
+
 class BlockHashBuffer
 {
 public:
@@ -69,5 +76,10 @@ public:
     void finalize(uint64_t const round);
     BlockHashBuffer const &find_chain(uint64_t) const;
 };
+
+bool init_block_hash_buffer_from_triedb(
+    mpt::Db &, uint64_t, BlockHashBufferFinalized &);
+bool init_block_hash_buffer_from_blockdb(
+    BlockDb &, uint64_t, BlockHashBufferFinalized &);
 
 MONAD_NAMESPACE_END

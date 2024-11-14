@@ -91,9 +91,9 @@ void log_tps(
 };
 
 Result<std::pair<uint64_t, uint64_t>> run_monad(
-    Chain const &chain, Db &db, TryGet const &try_get,
-    fiber::PriorityPool &priority_pool, uint64_t &block_num,
-    uint64_t const nblocks)
+    Chain const &chain, Db &db, BlockHashBufferFinalized &block_hash_buffer,
+    TryGet const &try_get, fiber::PriorityPool &priority_pool,
+    uint64_t &block_num, uint64_t const nblocks)
 {
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
     signal(SIGINT, signal_handler);
@@ -108,18 +108,6 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
     auto batch_begin = std::chrono::steady_clock::now();
     uint64_t ntxs = 0;
 
-    BlockHashBufferFinalized block_hash_buffer;
-    for (uint64_t i = block_num < 256 ? 1 : block_num - 255;
-         i < block_num && stop == 0;) {
-        auto const block = try_get(i);
-        if (!block.has_value()) {
-            std::this_thread::sleep_for(SLEEP_TIME);
-            continue;
-        }
-        block_hash_buffer.set(i - 1, block.value().header.parent_hash);
-        ++i;
-    }
-
     uint64_t const end_block_num =
         (std::numeric_limits<uint64_t>::max() - block_num + 1) <= nblocks
             ? std::numeric_limits<uint64_t>::max()
@@ -131,8 +119,6 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
             continue;
         }
         auto &block = opt_block.value();
-
-        block_hash_buffer.set(block_num - 1, block.header.parent_hash);
 
         BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
 
@@ -179,6 +165,10 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
                 db.withdrawals_root())) {
             return BlockError::WrongMerkleRoot;
         }
+
+        auto const h =
+            to_bytes(keccak256(rlp::encode_block_header(block.header)));
+        block_hash_buffer.set(block_num, h);
 
         ntxs += block.transactions.size();
         batch_num_txs += block.transactions.size();
@@ -482,9 +472,35 @@ int main(int const argc, char const *argv[])
         MONAD_ASSERT(false);
     }();
 
+    BlockHashBufferFinalized block_hash_buffer;
+    {
+        mpt::Db rodb{mpt::ReadOnlyOnDiskDbConfig{
+            .sq_thread_cpu = ro_sq_thread_cpu, .dbname_paths = dbname_paths}};
+
+        // We need to init from BlockDb if rev <= BYZANTIUM. Before EIP-658,
+        // receipts root was calculated using a transaction status code and
+        // intermediate state root. TrieDb only supports EIP-658 calculation of
+        // recipts root. Therefore, before EIP-658, our eth header hashes will
+        // not match the expected results when replaying ethereum history.
+        if (chain->get_revision(init_block_num, 0) <= EVMC_BYZANTIUM ||
+            !init_block_hash_buffer_from_triedb(
+                rodb, start_block_num, block_hash_buffer)) {
+            BlockDb block_db{block_db_path};
+            MONAD_ASSERT(chain_config == ChainConfig::EthereumMainnet);
+            MONAD_ASSERT(init_block_hash_buffer_from_blockdb(
+                block_db, start_block_num, block_hash_buffer));
+        }
+    }
+
     uint64_t block_num = start_block_num;
-    auto const result =
-        run_monad(*chain, db_cache, try_get, priority_pool, block_num, nblocks);
+    auto const result = run_monad(
+        *chain,
+        db_cache,
+        block_hash_buffer,
+        try_get,
+        priority_pool,
+        block_num,
+        nblocks);
 
     if (MONAD_UNLIKELY(result.has_error())) {
         LOG_ERROR(

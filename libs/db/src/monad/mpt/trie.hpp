@@ -1030,10 +1030,11 @@ static_assert(std::is_trivially_copyable_v<fiber_find_request_t> == true);
 void find_notify_fiber_future(
     UpdateAuxImpl &, inflight_map_t &inflights, fiber_find_request_t);
 
-/*! \brief blocking find node indexed by key from root, It works for bothon-disk
-and in-memory trie. When node along key is not yet in memory, it load node
-through blocking read.
- \warning Should only invoke it from the triedb owning
+/*! \brief blocking find node indexed by key from root, It works for both
+on-disk and in-memory trie. When node along key is not yet in memory, it loads
+the node through blocking read.
+
+\warning Should only invoke it from the triedb owning
 thread, as no synchronization is provided, and user code should make sure no
 other place is modifying trie. */
 find_result_type

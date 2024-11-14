@@ -61,36 +61,35 @@ struct find_request_sender::find_receiver
     {
         MONAD_ASSERT(buffer_);
         MONAD_ASSERT(sender->root_.is_valid());
-        MONAD_ASSERT(sender->root_.node->next(branch_index) == nullptr);
         auto const next_offset = sender->root_.node->fnext(branch_index);
-        auto node_ptr = detail::deserialize_node_from_receiver_result(
-            std::move(buffer_), buffer_off, io_state);
-        auto *const node = node_ptr.get();
-        /* Nodes that are within cached level shares the same lifetime as
-         the root node of current version.
-         Starting from cached_level, the lifetime of the node is refcounted, and
-         all nodes that are visited below this level will remain alive as long
-         as the pending `find_request_sender`s are */
-        if (sender->curr_level_ > sender->cached_levels_ &&
-            sender->subtrie_with_sender_lifetime_ == nullptr) {
-            sender->subtrie_with_sender_lifetime_ = std::move(node_ptr);
+        auto *node = sender->root_.node->next(branch_index);
+        if (node == nullptr) {
+            auto node_ptr = detail::deserialize_node_from_receiver_result(
+                std::move(buffer_), buffer_off, io_state);
+            node = node_ptr.get();
+            /* Nodes that are within cached level shares the same lifetime as
+             the root node of current version.
+             Starting from cached_level, the lifetime of the node is refcounted,
+             and all nodes that are visited below this level will remain alive
+             as long as the pending `find_request_sender`s are */
+            if (sender->curr_level_ > sender->cached_levels_ &&
+                sender->subtrie_with_sender_lifetime_ == nullptr) {
+                sender->subtrie_with_sender_lifetime_ = std::move(node_ptr);
+            }
+            else {
+                sender->root_.node->set_next(branch_index, std::move(node_ptr));
+            }
         }
-        else {
-            sender->root_.node->set_next(branch_index, std::move(node_ptr));
-        }
-        if (sender->inflights_ != nullptr) {
-            auto it = sender->inflights_->find(next_offset);
+        auto it = sender->inflights_.find(next_offset);
+        if (it != sender->inflights_.end()) {
             auto pendings = std::move(it->second);
-            sender->inflights_->erase(it);
+            sender->inflights_.erase(it);
             auto subtrie_with_sender_lifetime_ =
                 sender->subtrie_with_sender_lifetime_;
             for (auto &invoc : pendings) {
                 MONAD_ASSERT(
-                    invoc(NodeCursor{*node}, subtrie_with_sender_lifetime_));
+                    invoc(NodeCursor(*node), subtrie_with_sender_lifetime_));
             }
-        }
-        else {
-            MONAD_ASSERT(sender->resume_(io_state, NodeCursor{*node}));
         }
     }
 };
@@ -153,23 +152,19 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
                 tid_checked_ = true;
             }
             chunk_offset_t const offset = node->fnext(child_index);
-            if (inflights_ != nullptr) {
-                auto cont =
-                    [this, io_state](
-                        NodeCursor const root,
-                        std::shared_ptr<Node>
-                            subtrie_with_sender_lifetime_) -> result<void> {
-                    this->subtrie_with_sender_lifetime_ =
-                        subtrie_with_sender_lifetime_;
-                    return this->resume_(io_state, root);
-                };
-                if (auto lt = inflights_->find(offset);
-                    lt != inflights_->end()) {
-                    lt->second.emplace_back(cont);
-                    return success();
-                }
-                (*inflights_)[offset].emplace_back(cont);
+            auto cont = [this, io_state](
+                            NodeCursor const root,
+                            std::shared_ptr<Node>
+                                subtrie_with_sender_lifetime_) -> result<void> {
+                this->subtrie_with_sender_lifetime_ =
+                    subtrie_with_sender_lifetime_;
+                return this->resume_(io_state, root);
+            };
+            if (auto lt = inflights_.find(offset); lt != inflights_.end()) {
+                lt->second.emplace_back(cont);
+                return success();
             }
+            inflights_[offset].emplace_back(cont);
             find_receiver receiver(this, io_state, branch);
             detail::initiate_async_read_update(
                 *aux_.io, std::move(receiver), receiver.bytes_to_read);

@@ -22,7 +22,7 @@ class find_request_sender
     UpdateAuxImpl &aux_;
     NodeCursor root_;
     NibblesView key_;
-    inflight_node_t *const inflights_{nullptr};
+    inflight_node_t &inflights_;
     std::optional<find_bytes_result_type> res_;
     bool tid_checked_{false};
     bool return_value_{true};
@@ -43,25 +43,13 @@ public:
     using result_type = MONAD_ASYNC_NAMESPACE::result<find_bytes_result_type>;
 
     constexpr find_request_sender(
-        UpdateAuxImpl &aux, NodeCursor const root, NibblesView const key,
-        bool const return_value, uint8_t const cached_levels)
-        : aux_(aux)
-        , root_(root)
-        , key_(key)
-        , return_value_(return_value)
-        , cached_levels_(cached_levels)
-    {
-        MONAD_ASSERT(root_.is_valid());
-    }
-
-    constexpr find_request_sender(
         UpdateAuxImpl &aux, inflight_node_t &inflights, NodeCursor const root,
         NibblesView const key, bool const return_value,
         uint8_t const cached_levels)
         : aux_(aux)
         , root_(root)
         , key_(key)
-        , inflights_(&inflights)
+        , inflights_(inflights)
         , return_value_(return_value)
         , cached_levels_(cached_levels)
     {

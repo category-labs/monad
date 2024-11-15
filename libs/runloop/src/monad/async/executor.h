@@ -79,6 +79,9 @@ struct monad_async_executor_attr
         //! \brief If this is zero, this executor will be incapable of doing
         //! i/o! It also no longer initialises io_uring for this executor.
         unsigned entries;
+
+        //! \brief The parameters to give to io_uring during ring
+        //! construction.
         struct io_uring_params params;
 
         struct
@@ -114,6 +117,25 @@ struct monad_async_executor_attr
             unsigned small_kernel_allocated_count, large_kernel_allocated_count;
         } registered_buffers;
     } io_uring_ring, io_uring_wr_ring;
+
+    /*! \brief For file i/o, the maximum concurrent read or write ops is
+    constrained by registered i/o buffers available. However, as i/o
+    buffers remain in use for a while, one may wish to reduce max i/o
+    concurrency still further.
+
+    The kernel considerably gates i/o concurrency on its own, however
+    it has been benchmarked that io_uring appears to not scale well
+    to outstanding i/o (I think it uses linear lists). So for highly
+    bursty concurrent i/o loads, gating i/o concurrency in user space
+    can prove to be an overall win.
+
+    You should benchmark turning this on, as it does add a fair bit of
+    overhead so it can be an overall loss as well as a win.
+
+    If enabled, this will ensure that `total_io_submitted - total_io_completed
+    <= max_io_concurrency`.
+    */
+    unsigned max_io_concurrency;
 };
 
 /*! \brief EXPENSIVE Creates an executor instance. You must create it on the

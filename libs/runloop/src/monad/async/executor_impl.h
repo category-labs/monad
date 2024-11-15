@@ -83,6 +83,13 @@ struct monad_async_executor_impl
         } buffer[2]; // small/large
     } registered_buffers[2]; // non-file-write ring/file write ring
 
+    struct monad_async_executor_impl_max_io_concurrency_t
+    {
+        unsigned limit;
+        struct max_concurrent_io_list_item_t *front, *back;
+        size_t count;
+    } max_io_concurrency;
+
     // all items below this require taking the lock
     MONAD_CONTEXT_CPP_STD atomic_int lock;
     int eventfd;
@@ -95,7 +102,8 @@ extern monad_c_result monad_async_executor_suspend_impl(
     monad_c_result (*please_cancel)(
         struct monad_async_executor_impl *ex,
         struct monad_async_task_impl *task),
-    monad_async_io_status **completed);
+    monad_async_io_status **completed,
+    struct monad_async_task_impl *task_to_resume);
 
 // diseased dead beef in hex, last three bits set
 static uintptr_t const EXECUTOR_EVENTFD_READY_IO_URING_DATA_MAGIC =
@@ -416,6 +424,7 @@ static inline monad_c_result monad_async_executor_create_impl(
     struct monad_async_executor_impl *p, struct monad_async_executor_attr *attr)
 {
     p->owning_thread = thrd_current();
+    p->max_io_concurrency.limit = attr->max_io_concurrency;
     p->eventfd = eventfd(0, EFD_CLOEXEC);
     if (-1 == p->eventfd) {
         return monad_c_make_failure(errno);
@@ -739,12 +748,152 @@ static inline monad_c_result monad_async_executor_wake_impl(
     return monad_c_make_success(0);
 }
 
+// Cancellation for tasks waiting due to max i/o concurrency
+static inline monad_c_result suspend_task_if_max_concurrent_io_cancel(
+    struct monad_async_executor_impl *ex, struct monad_async_task_impl *task)
+{
+    assert(task->please_cancel_status != please_cancel_not_invoked);
+    task->head.derived.result = monad_c_make_failure(ECANCELED);
+    assert(
+        atomic_load_explicit(
+            &task->head.is_suspended_awaiting, memory_order_acquire) == true);
+    atomic_store_explicit(
+        &task->head.is_suspended_awaiting, false, memory_order_release);
+    LIST_REMOVE(
+        ex->tasks_suspended_awaiting[monad_async_task_effective_cpu_priority(
+            task)],
+        task,
+        (size_t *)nullptr);
+    task->head.ticks_when_suspended_completed =
+        get_ticks_count(memory_order_relaxed);
+    atomic_store_explicit(
+        &task->head.is_suspended_completed, true, memory_order_release);
+    LIST_APPEND(
+        ex->tasks_suspended_completed[monad_async_task_effective_cpu_priority(
+            task)],
+        task,
+        (size_t *)nullptr);
+    return monad_c_make_success(0);
+}
+
+static inline monad_c_result suspend_task_if_max_concurrent_io(
+    struct monad_async_executor_impl *ex, struct monad_async_task_impl *task,
+    bool is_cancellation_point)
+{
+    uint64_t const current_io_concurrency =
+        ex->head.total_io_submitted - ex->head.total_io_completed;
+    if (ex->max_io_concurrency.count > 0 ||
+        current_io_concurrency >= ex->max_io_concurrency.limit) {
+        // If there are tasks suspended on max i/o concurrency and there is
+        // spare capacity, suspend me and resume them directly for
+        // efficiency
+        struct monad_async_task_impl *task_to_resume = nullptr;
+        if (ex->max_io_concurrency.count > 0 &&
+            current_io_concurrency < ex->max_io_concurrency.limit) {
+            task_to_resume = (struct monad_async_task_impl
+                                  *)((char *)ex->max_io_concurrency.front -
+                                     offsetof(
+                                         struct monad_async_task_impl,
+                                         max_concurrent_io_awaiting));
+            assert(
+                atomic_load_explicit(
+                    &task_to_resume->head.is_suspended_awaiting,
+                    memory_order_acquire) == true);
+            task_to_resume->head.derived.result = monad_c_make_success(0);
+            // Unlike anywhere else, tasks suspended due to max_concurrent_io
+            // aren't suspended for any other reason so migrate them to the
+            // suspended completed list
+            atomic_store_explicit(
+                &task_to_resume->head.is_suspended_awaiting,
+                false,
+                memory_order_release);
+            LIST_REMOVE(
+                ex->tasks_suspended_awaiting
+                    [monad_async_task_effective_cpu_priority(task)],
+                task_to_resume,
+                (size_t *)nullptr);
+            atomic_store_explicit(
+                &task_to_resume->head.is_suspended_completed,
+                true,
+                memory_order_release);
+            LIST_APPEND(
+                ex->tasks_suspended_completed
+                    [monad_async_task_effective_cpu_priority(task)],
+                task_to_resume,
+                (size_t *)nullptr);
+        }
+        LIST_APPEND(
+            ex->max_io_concurrency,
+            &task->max_concurrent_io_awaiting,
+            (size_t *)nullptr);
+    #if MONAD_ASYNC_EXECUTOR_PRINTING
+        printf(
+            "*** Executor %p suspends task %p awaiting max concurrency "
+            "current_io_concurrency = %lu "
+            "is_for_write=%d tasks_awaiting.count=%zu\n",
+            (void *)ex,
+            (void *)task,
+            current_io_concurrency,
+            !flags._for_read_ring,
+            ex->max_io_concurrency.count);
+        fflush(stdout);
+    #endif
+        BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(monad_async_executor_suspend_impl(
+            ex,
+            task,
+            suspend_task_if_max_concurrent_io_cancel,
+            nullptr,
+            task_to_resume));
+    #if MONAD_ASYNC_EXECUTOR_PRINTING
+        printf(
+            "*** Executor %p resumes task %p awaiting max concurrency "
+            "is_for_write=%d please_cancel_status=%d\n",
+            (void *)ex,
+            (void *)task,
+            !flags._for_read_ring,
+            task->please_cancel_status);
+        fflush(stdout);
+    #endif
+        LIST_REMOVE(
+            ex->max_io_concurrency,
+            &task->max_concurrent_io_awaiting,
+            (size_t *)nullptr);
+        if (is_cancellation_point &&
+            task->please_cancel_status != please_cancel_not_invoked) {
+            if (task->please_cancel_status < please_cancel_invoked_seen) {
+                task->please_cancel_status = please_cancel_invoked_seen;
+            }
+            return monad_c_make_failure(ECANCELED);
+        }
+    }
+    return monad_c_make_success(0);
+}
+
+struct get_sqe_suspending_if_necessary_flags
+{
+    bool is_cancellation_point;
+    bool max_concurrent_io_pacing_already_done;
+};
+
 static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
     struct io_uring *ring,
     struct list_define_p_monad_async_task_impl_t wait_list[],
     atomic_bool *wait_list_task_flag, struct monad_async_executor_impl *ex,
-    struct monad_async_task_impl *task, bool is_cancellation_point)
+    struct monad_async_task_impl *task,
+    const struct get_sqe_suspending_if_necessary_flags flags)
 {
+    if (ex->max_io_concurrency.limit > 0 &&
+        !flags.max_concurrent_io_pacing_already_done) {
+        monad_c_result r = suspend_task_if_max_concurrent_io(
+            ex, task, flags.is_cancellation_point);
+        if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(r)) {
+            if (!outcome_status_code_equal_generic(&r.error, ECANCELED)) {
+                MONAD_CONTEXT_CHECK_RESULT(r);
+            }
+            return nullptr;
+        }
+    }
+
     struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
     struct monad_async_task_impl *newtask = nullptr;
     // If there is any higher or equal priority work waiting on a SQE, they
@@ -831,7 +980,7 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
             task->please_cancel_status);
         fflush(stdout);
     #endif
-        if (is_cancellation_point &&
+        if (flags.is_cancellation_point &&
             task->please_cancel_status != please_cancel_not_invoked) {
             // We need to "throw away" this SQE, as the task has been
             // cancelled We do this by setting the SQE to a noop with
@@ -870,7 +1019,7 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
 
 static inline struct io_uring_sqe *get_sqe_suspending_if_necessary(
     struct monad_async_executor_impl *ex, struct monad_async_task_impl *task,
-    bool is_cancellation_point)
+    const struct get_sqe_suspending_if_necessary_flags flags)
 {
     if (ex == nullptr ||
         atomic_load_explicit(&ex->head.current_task, memory_order_acquire) !=
@@ -889,7 +1038,7 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary(
         &task->head.is_suspended_sqe_exhaustion,
         ex,
         task,
-        is_cancellation_point);
+        flags);
     if (sqe == nullptr) {
         return nullptr;
     }
@@ -908,7 +1057,7 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary(
 
 static inline struct io_uring_sqe *get_wrsqe_suspending_if_necessary(
     struct monad_async_executor_impl *ex, struct monad_async_task_impl *task,
-    bool is_cancellation_point)
+    const struct get_sqe_suspending_if_necessary_flags flags)
 {
     if (ex == nullptr ||
         atomic_load_explicit(&ex->head.current_task, memory_order_acquire) !=
@@ -927,7 +1076,7 @@ static inline struct io_uring_sqe *get_wrsqe_suspending_if_necessary(
         &task->head.is_suspended_sqe_exhaustion_wr,
         ex,
         task,
-        is_cancellation_point);
+        flags);
     if (sqe == nullptr) {
         return nullptr;
     }
@@ -956,7 +1105,10 @@ get_sqe_for_cancellation(struct monad_async_executor_impl *ex)
             &ex->head.current_task, memory_order_acquire);
     if (current_task != nullptr) {
         // We are within the executor
-        return get_sqe_suspending_if_necessary(ex, current_task, false);
+        struct get_sqe_suspending_if_necessary_flags const flags = {
+            .is_cancellation_point = false,
+            .max_concurrent_io_pacing_already_done = true};
+        return get_sqe_suspending_if_necessary(ex, current_task, flags);
     }
     // We are outside the executor
     for (;;) {
@@ -977,7 +1129,10 @@ get_wrsqe_for_cancellation(struct monad_async_executor_impl *ex)
             &ex->head.current_task, memory_order_acquire);
     if (current_task != nullptr) {
         // We are within the executor
-        return get_wrsqe_suspending_if_necessary(ex, current_task, false);
+        struct get_sqe_suspending_if_necessary_flags const flags = {
+            .is_cancellation_point = false,
+            .max_concurrent_io_pacing_already_done = true};
+        return get_wrsqe_suspending_if_necessary(ex, current_task, flags);
     }
     // We are outside the executor
     for (;;) {

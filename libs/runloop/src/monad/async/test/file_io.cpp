@@ -483,6 +483,8 @@ TEST(file_io, misc_ops)
 
 TEST(file_io, benchmark)
 {
+    static constexpr size_t CONCURRENCY = 128;
+
     struct shared_state_t
     {
         char tempfilepath[256];
@@ -496,7 +498,8 @@ TEST(file_io, benchmark)
                 R"(Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
       Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat voluptatem. Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur? Quis autem vel eum iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur, vel illum qui dolorem eum fugiat quo voluptas nulla pariatur?
 )");
-            for (size_t length = 0; length < 64 * 512; length += text.size()) {
+            for (size_t length = 0; length < CONCURRENCY * 512;
+                 length += text.size()) {
                 if (-1 == write(fd, text.data(), text.size())) {
                     abort();
                 }
@@ -529,7 +532,7 @@ TEST(file_io, benchmark)
                 monad_async_io_status,
                 monad_async_task_registered_io_buffer>>
                 iostatus(
-                    128,
+                    CONCURRENCY,
                     {monad_async_io_status{},
                      monad_async_task_registered_io_buffer{}});
             uint32_t ops = 0;
@@ -808,4 +811,169 @@ TEST(file_io, sqe_exhaustion_does_not_reorder_writes)
         offset2 += 512;
     }
     EXPECT_EQ(shared_state.seq.back(), shared_state.offset - 512);
+}
+
+TEST(file_io, max_io_concurrency)
+{
+    static constexpr size_t CONCURRENCY = 4096;
+
+    struct shared_state_t
+    {
+        char tempfilepath[256];
+        bool done{false};
+
+        shared_state_t()
+        {
+            int fd = monad_async_make_temporary_file(
+                tempfilepath, sizeof(tempfilepath));
+            static constexpr std::string_view text(
+                R"(Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+      Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat voluptatem. Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur? Quis autem vel eum iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur, vel illum qui dolorem eum fugiat quo voluptas nulla pariatur?
+)");
+            for (size_t length = 0; length < CONCURRENCY * 512;
+                 length += text.size()) {
+                if (-1 == write(fd, text.data(), text.size())) {
+                    abort();
+                }
+            }
+            close(fd);
+        }
+
+        ~shared_state_t()
+        {
+            unlink(tempfilepath);
+        }
+
+        monad_c_result task(monad_async_task task)
+        {
+            // Open the file
+            struct open_how how
+            {
+                .flags = O_RDONLY | O_DIRECT, .mode = 0, .resolve = 0
+            };
+
+            auto fh = make_file(task, nullptr, tempfilepath, how);
+            std::vector<std::pair<
+                monad_async_io_status,
+                monad_async_task_registered_io_buffer>>
+                iostatus(
+                    CONCURRENCY,
+                    {monad_async_io_status{},
+                     monad_async_task_registered_io_buffer{}});
+            uint32_t ops = 0;
+
+            auto const begin = std::chrono::steady_clock::now();
+            for (size_t n = 0; n < iostatus.size(); n++) {
+                monad_async_task_file_read(
+                    &iostatus[n].first,
+                    task,
+                    fh.get(),
+                    &iostatus[n].second,
+                    512,
+                    n * 512,
+                    0);
+                ops++;
+            }
+            while (!done) {
+                monad_async_io_status *completed;
+                to_result(monad_async_task_suspend_until_completed_io(
+                              &completed, task, (uint64_t)-1))
+                    .value();
+                auto idx =
+                    size_t((uintptr_t)completed - (uintptr_t)iostatus.data()) /
+                    sizeof(std::pair<
+                           monad_async_io_status,
+                           monad_async_task_registered_io_buffer>);
+                assert(&iostatus[idx].first == completed);
+                to_result(monad_async_task_release_registered_io_buffer(
+                              task, iostatus[idx].second.index))
+                    .value();
+                iostatus[idx].second.iov[0].iov_base = nullptr;
+                monad_async_task_file_read(
+                    completed,
+                    task,
+                    fh.get(),
+                    &iostatus[idx].second,
+                    512,
+                    idx * 512,
+                    0);
+                ops++;
+            }
+            while (task->io_submitted + task->io_completed_not_reaped > 0) {
+                monad_async_io_status *completed;
+                if (to_result(monad_async_task_suspend_until_completed_io(
+                                  &completed, task, 0))
+                        .value() == 0) {
+                    continue;
+                }
+                auto idx =
+                    size_t((uintptr_t)completed - (uintptr_t)iostatus.data()) /
+                    sizeof(std::pair<
+                           monad_async_io_status,
+                           monad_async_task_registered_io_buffer>);
+                to_result(monad_async_task_release_registered_io_buffer(
+                              task, iostatus[idx].second.index))
+                    .value();
+            }
+            auto const end = std::chrono::steady_clock::now();
+            auto const diff =
+                double(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                           end - begin)
+                           .count());
+            std::cout << "   Task did " << ops << " read i/o which is "
+                      << (1000000000.0 * (double)ops / diff)
+                      << " ops/sec (which is " << (diff / (double)ops)
+                      << " ns/op)" << std::endl;
+            return monad_c_make_success(0);
+        }
+    } shared_state;
+
+    auto do_test = [&](unsigned max_io_concurrency) {
+        std::cout << "\nTesting with max_io_concurrency = "
+                  << max_io_concurrency << " ..." << std::endl;
+        shared_state.done = false;
+
+        // Make an executor
+        monad_async_executor_attr ex_attr{};
+        ex_attr.io_uring_ring.entries = 1024;
+        ex_attr.io_uring_ring.registered_buffers.small_count = CONCURRENCY;
+        ex_attr.max_io_concurrency = max_io_concurrency;
+        auto ex = make_executor(ex_attr);
+
+        // Make a context switcher
+        auto s = make_context_switcher(monad_context_switcher_fcontext);
+        monad_async_task_attr t_attr{};
+        auto t1 = make_task(s.get(), t_attr);
+        t1->derived.user_ptr = (void *)&shared_state;
+        t1->derived.user_code = +[](monad_context_task task) -> monad_c_result {
+            return ((shared_state_t *)task->user_ptr)
+                ->task((monad_async_task)task);
+        };
+        to_result(monad_async_task_attach(ex.get(), t1.get(), nullptr)).value();
+
+        // Run the executor for five seconds
+        auto const begin = std::chrono::steady_clock::now();
+        for (;;) {
+            to_result(monad_async_executor_run(ex.get(), 1024, nullptr))
+                .value();
+            if (std::chrono::steady_clock::now() - begin >=
+                std::chrono::seconds(5)) {
+                break;
+            }
+        }
+        shared_state.done = true;
+
+        // Run the executor until all tasks exit
+        while (monad_async_executor_has_work(ex.get())) {
+            to_result(monad_async_executor_run(ex.get(), size_t(-1), nullptr))
+                .value();
+        }
+        EXPECT_EQ(ex->total_io_submitted, ex->total_io_completed);
+    };
+    do_test(0);
+    do_test(1024);
+    do_test(256);
+    do_test(64);
+    do_test(16);
+    do_test(4);
 }

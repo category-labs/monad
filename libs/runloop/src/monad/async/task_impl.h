@@ -17,6 +17,11 @@ struct io_buffer_awaiting_list_item_t
 {
     struct io_buffer_awaiting_list_item_t *prev, *next;
 };
+
+struct max_concurrent_io_list_item_t
+{
+    struct max_concurrent_io_list_item_t *prev, *next;
+};
 struct monad_async_executor_impl;
 
 enum monad_async_task_impl_please_cancel_invoked_status : uint8_t
@@ -45,7 +50,12 @@ struct monad_async_task_impl
         size_t count;
     } io_submitted, io_completed;
 
-    struct io_buffer_awaiting_list_item_t io_buffer_awaiting;
+    union
+    {
+        struct io_buffer_awaiting_list_item_t io_buffer_awaiting;
+        struct max_concurrent_io_list_item_t max_concurrent_io_awaiting;
+    };
+
     monad_async_io_status **completed;
     bool io_buffer_awaiting_was_inserted_at_front;
     bool io_buffer_awaiting_is_for_write;

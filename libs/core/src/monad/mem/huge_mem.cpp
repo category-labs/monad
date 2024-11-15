@@ -51,8 +51,10 @@ HugeMem::HugeMem(size_t const size)
 
 HugeMem::~HugeMem()
 {
-    MONAD_ASSERT(!munlock(data_, size_));
-    MONAD_ASSERT(!munmap(data_, size_));
+    if (size_ > 0) {
+        MONAD_ASSERT(!munlock(data_, size_));
+        MONAD_ASSERT(!munmap(data_, size_));
+    }
 }
 
 MONAD_NAMESPACE_END

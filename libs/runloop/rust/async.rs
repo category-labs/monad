@@ -789,12 +789,15 @@ pub struct monad_async_executor_head__bindgen_ty_1 {
 pub struct monad_async_executor_attr {
     pub io_uring_ring: monad_async_executor_attr__bindgen_ty_1,
     pub io_uring_wr_ring: monad_async_executor_attr__bindgen_ty_1,
+    #[doc = " \\brief For file i/o, the maximum concurrent read or write ops is\nconstrained by registered i/o buffers available. However, as i/o\nbuffers remain in use for a while, one may wish to reduce max i/o\nconcurrency still further.\n\nThe kernel considerably gates i/o concurrency on its own, however\nit has been benchmarked that io_uring appears to not scale well\nto outstanding i/o (I think it uses linear lists). So for highly\nbursty concurrent i/o loads, gating i/o concurrency in user space\ncan prove to be an overall win.\n\nYou should benchmark turning this on, as it does add a fair bit of\noverhead so it can be an overall loss as well as a win.\n\nIf enabled, this will ensure that `total_io_submitted - total_io_completed\n<= max_io_concurrency`."]
+    pub max_io_concurrency: ::std::os::raw::c_uint,
 }
 #[repr(C)]
 #[derive(Debug, Default)]
 pub struct monad_async_executor_attr__bindgen_ty_1 {
     #[doc = "! \\brief If this is zero, this executor will be incapable of doing\n! i/o! It also no longer initialises io_uring for this executor."]
     pub entries: ::std::os::raw::c_uint,
+    #[doc = "! \\brief The parameters to give to io_uring during ring\n! construction."]
     pub params: io_uring_params,
     pub registered_buffers: monad_async_executor_attr__bindgen_ty_1__bindgen_ty_1,
 }

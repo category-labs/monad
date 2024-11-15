@@ -268,8 +268,9 @@ static monad_c_result mytask(monad_async_task task)
 
 - Need to test cancellation works at every possible lifecycle and suspend state
 a task can have.
-- Should be able to clamp max i/o concurrency, and have `AsyncIO` wrapper set that from its config.
-- `AsyncIO` wrapper doesn't currently handle `EAGAIN`.
+- `AsyncIO` wrapper doesn't currently handle `EAGAIN`. _Probably_ doesn't matter as
+99% of that should be handled internally by the new runloop. But not ALL of it is
+handled, some is passed on.
 - Multiple context switcher types at the same time should work, but is completely untested
 and ought to become tested. Including with perf impact (as they usually have to
 thunk when switching between disparate contexts)

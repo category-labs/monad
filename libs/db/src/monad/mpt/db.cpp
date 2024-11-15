@@ -203,6 +203,8 @@ struct Db::ROOnDisk final : public Db::Impl
     {
         auto const root_offset = aux().get_root_offset_at_version(version);
         if (root_offset == INVALID_OFFSET) {
+            root_ = nullptr;
+            last_loaded_root_offset_ = root_offset;
             return NodeCursor{};
         }
         if (last_loaded_root_offset_ != root_offset) {
@@ -486,10 +488,9 @@ struct Db::RWOnDisk final : public Db::Impl
                         req->promise = &upsert_promises.back();
                         auto const root_offset =
                             aux.get_root_offset_at_version(req->version);
-                        auto root = (root_offset != INVALID_OFFSET)
-                                        ? read_node_blocking(pool, root_offset)
-                                        : Node::UniquePtr{};
-                        req->promise->set_value(std::move(root));
+                        MONAD_ASSERT(root_offset != INVALID_OFFSET);
+                        req->promise->set_value(
+                            read_node_blocking(pool, root_offset));
                     }
                     did_nothing = false;
                 }
@@ -717,6 +718,8 @@ struct Db::RWOnDisk final : public Db::Impl
     {
         if (version != root_version_) {
             if (!aux().version_is_valid_ondisk(version)) {
+                root_ = nullptr;
+                root_version_ = version;
                 return NodeCursor{};
             }
             threadsafe_boost_fibers_promise<Node::UniquePtr> promise;

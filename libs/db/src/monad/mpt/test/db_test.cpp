@@ -9,6 +9,7 @@
 #include <monad/core/hex_literal.hpp>
 #include <monad/core/result.hpp>
 #include <monad/core/small_prng.hpp>
+#include <monad/core/unaligned.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/db_error.hpp>
 #include <monad/mpt/nibbles_view.hpp>
@@ -31,6 +32,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <deque>
 #include <filesystem>
 #include <initializer_list>
 #include <iostream>
@@ -84,14 +86,14 @@ namespace
             OnDiskDbConfig{.fixed_history_length = DBTEST_HISTORY_LENGTH}};
     };
 
-    std::filesystem::path create_temp_file()
+    std::filesystem::path create_temp_file(long size_gb)
     {
         std::filesystem::path const filename{
             MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
             "monad_db_test_XXXXXX"};
         int const fd = ::mkstemp((char *)filename.native().data());
         MONAD_ASSERT(fd != -1);
-        MONAD_ASSERT(-1 != ::ftruncate(fd, 8ULL * 1024 * 1024 * 1024));
+        MONAD_ASSERT(-1 != ::ftruncate(fd, size_gb * 1024 * 1024 * 1024));
         ::close(fd);
         return filename;
     }
@@ -106,7 +108,7 @@ namespace
         Db db;
 
         OnDiskDbWithFileFixture()
-            : dbname{create_temp_file()}
+            : dbname{create_temp_file(8)}
             , machine{StateMachineMerkleWithCompact{}}
             , config{OnDiskDbConfig{
                   .compaction = true,
@@ -264,19 +266,23 @@ namespace
         }
     };
 
+    monad::byte_string keccak_int_to_string(size_t const n)
+    {
+        monad::byte_string ret(KECCAK256_SIZE, 0);
+        keccak256((unsigned char const *)&n, 8, ret.data());
+        return ret;
+    }
+
     std::pair<std::vector<monad::byte_string>, std::vector<Update>>
     prepare_random_updates(unsigned size)
     {
         std::vector<monad::byte_string> bytes_alloc;
         std::vector<Update> updates_alloc;
         for (size_t i = 0; i < size; ++i) {
-            monad::byte_string kv(KECCAK256_SIZE, 0);
-            MONAD_ASSERT(kv.size() == KECCAK256_SIZE);
-            keccak256((unsigned char const *)&i, 8, kv.data());
-            bytes_alloc.emplace_back(kv);
+            auto &kv = bytes_alloc.emplace_back(keccak_int_to_string(i));
             updates_alloc.push_back(Update{
-                .key = bytes_alloc.back(),
-                .value = bytes_alloc.back(),
+                .key = kv,
+                .value = kv,
                 .incarnation = false,
                 .next = UpdateList{}});
         }
@@ -776,6 +782,158 @@ TEST_F(OnDiskDbWithFileFixture, load_correct_root_upon_reopen_nonempty_db)
     }
 }
 
+TEST(DbTest, out_of_order_upserts_to_nonexist_earlier_version)
+{
+    auto const dbname = create_temp_file(2); // 2Gb db
+    auto undb = monad::make_scope_exit(
+        [&]() noexcept { std::filesystem::remove(dbname); });
+    StateMachineAlways<EmptyCompute, StateMachineConfig{.compaction = true}>
+        machine{};
+    OnDiskDbConfig config{
+        .compaction = true,
+        .sq_thread_cpu{std::nullopt},
+        .dbname_paths = {dbname},
+        .fixed_history_length = DBTEST_HISTORY_LENGTH};
+    Db db{machine, config};
+
+    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+    Db rodb{ro_config};
+
+    constexpr size_t total_keys = 10000;
+    auto [bytes_alloc, updates_alloc] = prepare_random_updates(total_keys);
+
+    UpdateList ls;
+    for (unsigned i = 0; i < total_keys; ++i) {
+        ls.push_front(updates_alloc[i]);
+    }
+    db.upsert(std::move(ls), 0);
+    constexpr uint64_t start_version = 1000;
+
+    db.move_trie_version_forward(0, start_version);
+    EXPECT_EQ(rodb.get_earliest_block_id(), start_version);
+    EXPECT_EQ(rodb.get_latest_block_id(), start_version);
+    EXPECT_EQ(rodb.get_history_length(), DBTEST_HISTORY_LENGTH);
+
+    constexpr uint64_t min_version = 900;
+    for (uint64_t v = start_version - 1; v >= min_version; --v) {
+        UpdateList ls;
+        ls.push_front(updates_alloc.front());
+        db.upsert(std::move(ls), v);
+        EXPECT_EQ(rodb.get_earliest_block_id(), v);
+        EXPECT_EQ(rodb.get_latest_block_id(), start_version);
+    }
+
+    db.load_root_for_version(start_version);
+    uint64_t const max_version = 2000;
+    for (uint64_t v = start_version + 1; v <= max_version; ++v) {
+        // upsert existing
+        UpdateList ls;
+        ls.push_front(updates_alloc.front());
+        db.upsert(std::move(ls), v);
+        EXPECT_EQ(
+            rodb.get_earliest_block_id(),
+            std::max(v - DBTEST_HISTORY_LENGTH + 1, min_version));
+        EXPECT_EQ(rodb.get_latest_block_id(), v);
+    }
+
+    // lookup
+    for (auto const &k : bytes_alloc) {
+        auto res = rodb.get(k, max_version);
+        ASSERT_TRUE(res.has_value());
+        EXPECT_EQ(res.value(), k);
+    }
+}
+
+TEST(DbTest, out_of_order_upserts_with_compaction)
+{
+    auto const dbname = create_temp_file(3); // 3Gb db
+    auto undb = monad::make_scope_exit(
+        [&]() noexcept { std::filesystem::remove(dbname); });
+    StateMachineAlways<MerkleCompute, StateMachineConfig{.compaction = true}>
+        machine{};
+    OnDiskDbConfig config{
+        .compaction = true,
+        .sq_thread_cpu{std::nullopt},
+        .dbname_paths = {dbname},
+        .fixed_history_length = DBTEST_HISTORY_LENGTH};
+    Db db{machine, config};
+    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+    Db rodb{ro_config};
+
+    auto get_release_offsets = [](monad::byte_string_view const bytes)
+        -> std::pair<uint32_t, uint32_t> {
+        MONAD_ASSERT(bytes.size() == 8);
+        return {
+            monad::unaligned_load<uint32_t>(bytes.data()),
+            monad::unaligned_load<uint32_t>(bytes.data() + sizeof(uint32_t))};
+    };
+
+    auto const prefix = 0x00_hex;
+    constexpr unsigned keys_per_version = 5;
+    uint64_t block_id = 0;
+    uint64_t n = 0;
+
+    for (block_id = 0; block_id < 1000; ++block_id) {
+        std::deque<monad::byte_string> kv_alloc;
+        for (unsigned i = 0; i < keys_per_version; ++i) {
+            kv_alloc.emplace_back(keccak_int_to_string(n++));
+        }
+        // upsert N
+        upsert_updates_flat_list(
+            db,
+            prefix,
+            block_id,
+            make_update(kv_alloc[0], kv_alloc[0]),
+            make_update(kv_alloc[1], kv_alloc[1]),
+            make_update(kv_alloc[2], kv_alloc[2]),
+            make_update(kv_alloc[3], kv_alloc[3]),
+            make_update(kv_alloc[4], kv_alloc[4]));
+        if (block_id == 0) {
+            continue;
+        }
+        auto const result_n = rodb.get({}, block_id);
+        EXPECT_TRUE(result_n.has_value());
+        auto const [fast_n, slow_n] = get_release_offsets(result_n.value());
+        auto const result_before = rodb.get({}, block_id - 1);
+        EXPECT_TRUE(result_before.has_value());
+        auto const [fast_n_1, slow_n_1] =
+            get_release_offsets(result_before.value());
+        EXPECT_GE(fast_n, fast_n_1);
+        EXPECT_GE(slow_n, slow_n_1);
+        // upsert on top of N-1
+        upsert_updates_flat_list(
+            db,
+            prefix,
+            block_id - 1,
+            make_update(kv_alloc[0], kv_alloc[0]),
+            make_update(kv_alloc[1], kv_alloc[1]),
+            make_update(kv_alloc[2], kv_alloc[2]),
+            make_update(kv_alloc[3], kv_alloc[3]),
+            make_update(kv_alloc[4], kv_alloc[4]));
+        auto const result_after = rodb.get({}, block_id - 1);
+        EXPECT_TRUE(result_after.has_value());
+        // offsets remain the same after the second upsert
+        EXPECT_EQ(result_before.value(), result_after.value());
+        // convert to byte_string so that both data are in scope
+        monad::byte_string const data_n_1{
+            rodb.get_data({prefix}, block_id - 1).value()};
+        monad::byte_string const data_n{
+            rodb.get_data({prefix}, block_id).value()};
+        EXPECT_EQ(data_n_1, data_n) << block_id;
+        // prepare for upserting N+1 on top of N
+        db.load_root_for_version(block_id);
+    }
+
+    ASSERT_EQ(n, block_id * keys_per_version);
+    auto const result_n = rodb.get({}, block_id - 1);
+    EXPECT_TRUE(result_n.has_value());
+    auto const [fast_n, slow_n] = get_release_offsets(result_n.value());
+    EXPECT_EQ(
+        rodb.get_data({prefix}, block_id - 1).value(),
+        0x03786bcd10037502a4e08158de71f8078a40ce46c93ba13db90cb11841679f5e_hex);
+    EXPECT_GT(fast_n, 0);
+}
+
 TYPED_TEST(DbTest, simple_with_same_prefix)
 {
     auto const &kv = fixed_updates::kv;
@@ -1161,7 +1319,7 @@ TEST_F(OnDiskDbFixture, rw_query_old_version)
 
 TEST(DbTest, auto_expire_large_set)
 {
-    auto const dbname = create_temp_file();
+    auto const dbname = create_temp_file(8);
     auto undb = monad::make_scope_exit(
         [&]() noexcept { std::filesystem::remove(dbname); });
     StateMachineAlways<
@@ -1174,7 +1332,6 @@ TEST(DbTest, auto_expire_large_set)
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
-        .file_size_db = 8,
         .fixed_history_length = history_len};
     Db db{machine, config};
 
@@ -1227,7 +1384,7 @@ TEST(DbTest, auto_expire_large_set)
 
 TEST(DbTest, auto_expire)
 {
-    auto const dbname = create_temp_file();
+    auto const dbname = create_temp_file(8);
     auto undb = monad::make_scope_exit(
         [&]() noexcept { std::filesystem::remove(dbname); });
     StateMachineAlways<
@@ -1239,7 +1396,6 @@ TEST(DbTest, auto_expire)
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
-        .file_size_db = 8,
         .fixed_history_length = 5};
     Db db{machine, config};
     auto const prefix = 0x00_hex;

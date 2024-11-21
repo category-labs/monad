@@ -413,10 +413,6 @@ int main(int const argc, char const *argv[])
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - load_start_time));
 
-    if (nblocks == 0) {
-        return EXIT_SUCCESS;
-    }
-
     uint64_t const start_block_num = init_block_num + 1;
 
     LOG_INFO(

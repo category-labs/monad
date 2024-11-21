@@ -172,6 +172,11 @@ public:
         }
     }
 
+    virtual BlockHeader read_eth_header() override
+    {
+        return db_.read_eth_header();
+    }
+
     virtual bytes32_t state_root() override
     {
         return db_.state_root();

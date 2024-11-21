@@ -281,17 +281,6 @@ void TrieDb::commit(
             .version = static_cast<int64_t>(block_number_)}));
     }
 
-    auto const &rlp_block_header =
-        bytes_alloc_.emplace_back(rlp::encode_block_header(header));
-    UpdateList block_hash_nested_updates;
-    block_hash_nested_updates.push_front(update_alloc_.emplace_back(Update{
-        .key =
-            NibblesView{hash_alloc_.emplace_back(keccak256(rlp_block_header))},
-        .value = encoded_block_number,
-        .incarnation = false,
-        .next = UpdateList{},
-        .version = static_cast<int64_t>(block_number_)}));
-
     UpdateList updates;
 
     auto state_update = Update{
@@ -324,12 +313,6 @@ void TrieDb::commit(
         .incarnation = true,
         .next = std::move(transaction_updates),
         .version = static_cast<int64_t>(block_number_)};
-    auto block_header_update = Update{
-        .key = block_header_nibbles,
-        .value = rlp_block_header,
-        .incarnation = true,
-        .next = UpdateList{},
-        .version = static_cast<int64_t>(block_number_)};
     auto ommer_update = Update{
         .key = ommer_nibbles,
         .value = bytes_alloc_.emplace_back(rlp::encode_ommers(ommers)),
@@ -342,21 +325,13 @@ void TrieDb::commit(
         .incarnation = false,
         .next = std::move(tx_hash_updates),
         .version = static_cast<int64_t>(block_number_)};
-    auto block_hash_update = Update{
-        .key = block_hash_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(block_hash_nested_updates),
-        .version = static_cast<int64_t>(block_number_)};
     updates.push_front(state_update);
     updates.push_front(code_update);
     updates.push_front(receipt_update);
     updates.push_front(call_frame_update);
     updates.push_front(transaction_update);
-    updates.push_front(block_header_update);
     updates.push_front(ommer_update);
     updates.push_front(tx_hash_update);
-    updates.push_front(block_hash_update);
     UpdateList withdrawal_updates;
     if (withdrawals.has_value()) {
         // only commit withdrawals when the optional has value
@@ -389,6 +364,46 @@ void TrieDb::commit(
         .version = static_cast<int64_t>(block_number_)}));
 
     db_.upsert(std::move(ls), block_number_);
+
+    BlockHeader complete_header = header;
+    auto const eth_header_rlp = rlp::encode_block_header(complete_header);
+
+    UpdateList block_hash_nested_updates;
+    block_hash_nested_updates.push_front(update_alloc_.emplace_back(Update{
+        .key = hash_alloc_.emplace_back(keccak256(eth_header_rlp)),
+        .value = encoded_block_number,
+        .incarnation = false,
+        .next = UpdateList{},
+        .version = static_cast<int64_t>(block_number_)}));
+
+    UpdateList updates2;
+
+    auto block_header_update = Update{
+        .key = block_header_nibbles,
+        .value = eth_header_rlp,
+        .incarnation = true,
+        .next = UpdateList{},
+        .version = static_cast<int64_t>(block_number_)};
+    auto block_hash_update = Update{
+        .key = block_hash_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(block_hash_nested_updates),
+        .version = static_cast<int64_t>(block_number_)};
+
+    updates2.push_front(block_header_update);
+    updates2.push_front(block_hash_update);
+
+    UpdateList ls2;
+    ls2.push_front(update_alloc_.emplace_back(Update{
+        .key = prefix_,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(updates2),
+        .version = static_cast<int64_t>(block_number_)}));
+
+    db_.upsert(std::move(ls2), block_number_);
+
     if (!round_number_.has_value()) {
         db_.update_finalized_block(block_number_);
     }
@@ -480,6 +495,20 @@ bytes32_t TrieDb::merkle_root(mpt::Nibbles const &nibbles)
     }
     MONAD_ASSERT(value.value().size() == sizeof(bytes32_t));
     return to_bytes(value.value());
+}
+
+BlockHeader TrieDb::read_eth_header()
+{
+    auto const query_res =
+        db_.get(concat(prefix_, BLOCKHEADER_NIBBLE), block_number_);
+    MONAD_ASSERT(!query_res.has_error());
+    auto encoded_header_db = query_res.value();
+    auto decode_res = rlp::decode_block_header(encoded_header_db);
+    MONAD_ASSERT_PRINTF(
+        decode_res.has_value(),
+        "FATAL: Could not decode eth header : %s",
+        decode_res.error().message().c_str());
+    return std::move(decode_res.value());
 }
 
 std::string TrieDb::print_stats()

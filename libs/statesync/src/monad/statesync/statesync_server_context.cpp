@@ -88,6 +88,11 @@ monad_statesync_server_context::read_code(bytes32_t const &hash)
     return rw.read_code(hash);
 }
 
+monad::BlockHeader monad_statesync_server_context::read_eth_header()
+{
+    return rw.read_eth_header();
+}
+
 bytes32_t monad_statesync_server_context::state_root()
 {
     return rw.state_root();

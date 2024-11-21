@@ -40,6 +40,8 @@ struct monad_statesync_server_context final : public monad::Db
     virtual std::shared_ptr<monad::CodeAnalysis>
     read_code(monad::bytes32_t const &hash) override;
 
+    virtual monad::BlockHeader read_eth_header() override;
+
     virtual monad::bytes32_t state_root() override;
 
     virtual monad::bytes32_t receipts_root() override;

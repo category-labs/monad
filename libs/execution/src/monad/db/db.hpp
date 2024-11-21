@@ -28,6 +28,7 @@ struct Db
 
     virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) = 0;
 
+    virtual BlockHeader read_eth_header() = 0;
     virtual bytes32_t state_root() = 0;
     virtual bytes32_t receipts_root() = 0;
     virtual bytes32_t transactions_root() = 0;

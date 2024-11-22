@@ -41,10 +41,10 @@ namespace
          * because `i_am_null` is not a compile-time constant. The intention is
          * to make it fail unless a fixed-address string is provided. Note that
          * if we wrote `char const *const i_am_null = nullptr` instead, it would
-         * succeed since __builtin_constant_p(i_am_null) is true in that case.
-         * That is OK (nullptr is explicitly checked for); all we're trying to
-         * prevent here is dereferencing runtime-dynamic invalid pointers in a
-         * signal handler. A known compile-time constant `char const *` value
+         * succeed since __builtin_constant_p(i_am_null) is true. That is OK
+         * (nullptr is explicitly checked for); all we're trying to prevent here
+         * here is dereferencing runtime-dynamic invalid pointers during assert
+         * failure handling. A known compile-time constant `char const *` value
          * should either be nullptr or is almost certainly safe to dereference.
          */
         // MONAD_ASSERT(true, i_am_null);

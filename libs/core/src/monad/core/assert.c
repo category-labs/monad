@@ -43,12 +43,12 @@ void monad_assertion_failed(
             line,
             function);
     }
-    if ((size_t)written >= sizeof(buffer)) {
-        written = (int)(sizeof(buffer) - 1);
+    if (written < 0 || (size_t)written >= sizeof(buffer)) {
+        written = (ssize_t)sizeof(buffer) - 1;
     }
-    if (msg != nullptr && written < (int)(sizeof buffer - 1)) {
+    if (msg != nullptr) {
         written += (ssize_t)strlcpy(
-            buffer + written, msg, sizeof buffer - (size_t)written);
+            buffer + written, msg, sizeof(buffer) - (size_t)written);
         if ((size_t)written >= sizeof(buffer)) {
             written = (int)(sizeof(buffer) - 1);
         }
@@ -57,10 +57,8 @@ void monad_assertion_failed(
         }
     }
     // abort() is async signal safe in glibc
-    written = write(2 /*stderr*/, buffer, (size_t)written);
-    if (written == -1) {
-        // This is to shut up the warning
-        abort();
+    if (write(STDERR_FILENO, buffer, (size_t)written) == -1) {
+        abort(); // Needed because of -Werror=unused-result
     }
     abort();
 }

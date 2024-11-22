@@ -13,10 +13,9 @@ extern "C"
 
 #define MONAD_ASSERTION_FAILED_WITH_MSG(expr, msg)                             \
     /* Ensure msg is a static string at a fixed address; we do this because */ \
-    /* MONAD_ASSERT can be used within a signal handler, and we don't want */  \
-    /* a "double fault" occurring if dereferencing an unknown pointer could */ \
-    /* cause a nested error, e.g., a SIGSEGV raised by reading *msg while */   \
-    /* we're handling another signal */                                        \
+    /* we don't want a fault occurring if dereferencing an unknown pointer */  \
+    /* could cause a nested error, e.g., SIGSEGV raised by reading *msg */     \
+    /* while we're reporting assertion failure */                              \
     static_assert(__builtin_constant_p(msg));                                  \
     monad_assertion_failed(                                                    \
         #expr, __extension__ __PRETTY_FUNCTION__, __FILE__, __LINE__, msg);
@@ -44,16 +43,19 @@ extern "C"
     }                                                                          \
     else {                                                                     \
         char buf[1 << 14]; /* 16 KiB */                                        \
-        char *const buf_end = buf + sizeof buf;                                \
+        int written;                                                           \
+        char *const buf_end = buf + sizeof(buf);                               \
         char *p = stpcpy(buf, "assertion failure message: ");                  \
-        p += snprintf(                                                         \
+        written = snprintf(                                                    \
             p, (size_t)(buf_end - p), (format)__VA_OPT__(, ) __VA_ARGS__);     \
+        /* If snprintf fails (written < 0) we're not sure what state buf */    \
+        /* is in; write as much as possible so we don't lose info, but */      \
+        /* leave room for "\n\0" */                                            \
+        p = written < 0 ? buf_end - 2 : p + written;                           \
         if (p < buf_end) {                                                     \
-            stpncpy(p, "\n", (size_t)(buf_end - p));                           \
+            strncpy(p, "\n", (size_t)(buf_end - p));                           \
         }                                                                      \
-        else {                                                                 \
-            buf_end[-1] = '\0';                                                \
-        }                                                                      \
+        buf_end[-1] = '\0';                                                    \
         monad_assertion_failed(                                                \
             #expr,                                                             \
             __extension__ __PRETTY_FUNCTION__,                                 \
@@ -78,15 +80,17 @@ extern "C"
 #define MONAD_ABORT_PRINTF(format, ...)                                        \
     {                                                                          \
         char buf[1 << 14]; /* 16 KiB */                                        \
-        char *const buf_end = buf + sizeof buf;                                \
+        int written;                                                           \
+        char *const buf_end = buf + sizeof(buf);                               \
         char *p = stpcpy(buf, "abort message: ");                              \
-        p += snprintf(p, buf_end - p, (format)__VA_OPT__(, ) __VA_ARGS__);     \
+        written =                                                              \
+            snprintf(p, buf_end - p, (format)__VA_OPT__(, ) __VA_ARGS__);      \
+        /* See comment in MONAD_ASSERT_PRINTF */                               \
+        p = written < 0 ? buf_end - 2 : p + written;                           \
         if (p < buf_end) {                                                     \
-            stpncpy(p, "\n", buf_end - p);                                     \
+            strncpy(p, "\n", buf_end - p);                                     \
         }                                                                      \
-        else {                                                                 \
-            buf_end[-1] = '\0';                                                \
-        }                                                                      \
+        buf_end[-1] = '\0';                                                    \
         monad_assertion_failed(                                                \
             nullptr,                                                           \
             __extension__ __PRETTY_FUNCTION__,                                 \

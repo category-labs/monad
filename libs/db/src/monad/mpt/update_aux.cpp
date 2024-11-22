@@ -971,14 +971,9 @@ void UpdateAuxImpl::advance_compact_offsets(
         return;
     }
     constexpr auto fast_usage_limit_start_compaction = 0.1;
-    constexpr uint64_t history_length_to_start_compaction = 65536;
     auto const fast_disk_usage =
         num_chunks(chunk_list::fast) / (double)io->chunk_count();
-    auto const max_version = db_history_max_version();
-    uint64_t const min_valid_version = db_history_min_valid_version();
-    if (fast_disk_usage < fast_usage_limit_start_compaction &&
-        max_version - min_valid_version + 1 <
-            history_length_to_start_compaction) {
+    if (fast_disk_usage < fast_usage_limit_start_compaction) {
         return;
     }
 
@@ -987,36 +982,14 @@ void UpdateAuxImpl::advance_compact_offsets(
         compact_offset_slow != INVALID_COMPACT_VIRTUAL_OFFSET);
     compact_offset_range_fast_ = MIN_COMPACT_VIRTUAL_OFFSET;
 
-    MONAD_ASSERT(version_history_length() > 1);
     /* Compact the fast ring based on average disk growth over recent blocks. */
-    // get the earliest version whose root is written to fast list
-    uint64_t min_version_on_fast = min_valid_version;
-    auto virtual_root_offset =
-        physical_to_virtual(get_root_offset_at_version(min_version_on_fast));
-    if (!virtual_root_offset.in_fast_list()) {
-        while (true) {
-            auto const root_offset =
-                get_root_offset_at_version(++min_version_on_fast);
-            if (root_offset != INVALID_OFFSET) {
-                virtual_root_offset = physical_to_virtual(root_offset);
-                if (virtual_root_offset.in_fast_list()) {
-                    break;
-                }
-            }
-        }
-    }
-    MONAD_ASSERT(virtual_root_offset.in_fast_list());
-
-    auto const compacted_erased_root_offset =
-        compact_virtual_chunk_offset_t{virtual_root_offset};
     if (compact_offset_fast < curr_fast_writer_offset) {
-        auto const to_advance = divide_and_round(
-            curr_fast_writer_offset - compacted_erased_root_offset,
-            max_version - min_version_on_fast);
-        if (compact_offset_fast + to_advance < curr_fast_writer_offset) {
-            compact_offset_range_fast_.set_value(to_advance);
-            compact_offset_fast += compact_offset_range_fast_;
-        }
+        auto const valid_history_length =
+            db_history_max_version() - db_history_min_valid_version() + 1;
+        compact_offset_range_fast_.set_value(divide_and_round(
+            curr_fast_writer_offset - compact_offset_fast,
+            valid_history_length));
+        compact_offset_fast += compact_offset_range_fast_;
     }
     constexpr double usage_limit_start_compact_slow = 0.6;
     constexpr double slow_usage_limit_start_compact_slow = 0.2;
@@ -1038,6 +1011,9 @@ void UpdateAuxImpl::advance_compact_offsets(
                           stats.compacted_bytes_in_slow))
                 : 1);
         compact_offset_slow += compact_offset_range_slow_;
+    }
+    else {
+        compact_offset_range_slow_ = MIN_COMPACT_VIRTUAL_OFFSET;
     }
 }
 

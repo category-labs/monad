@@ -128,6 +128,16 @@ add_library(
   "src/monad/lru/static_lru_cache.hpp"
   "src/monad/mem/batch_mem_pool.hpp"
   "src/monad/synchronization/spin_lock.hpp"
+  # event
+  "src/monad/event/event_recorder.c"
+  "src/monad/event/event_recorder.h"
+  "src/monad/event/event_recorder_inline.h"
+  "src/monad/event/event_server.c"
+  "src/monad/event/event_server.h"
+  "src/monad/event/event_server_export.c"
+  "src/monad/event/event_server_internal.h"
+  "src/monad/event/event_shared.c"
+  "src/monad/event/event_shared.h"
   # fiber
   "src/monad/fiber/config.hpp"
   "src/monad/fiber/priority_algorithm.cpp"
@@ -203,6 +213,7 @@ else()
 endif()
 
 target_link_libraries(monad_core PUBLIC openssl_sha3 Boost::fiber TBB::tbb)
+target_link_libraries(monad_core PUBLIC monad_event_core)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC ethash::keccak)
 target_link_libraries(monad_core PUBLIC evmc)

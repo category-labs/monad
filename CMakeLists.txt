@@ -170,6 +170,7 @@ endfunction()
 # libs
 # ##############################################################################
 
+add_subdirectory("libs/event")
 add_subdirectory("libs/core")
 add_subdirectory("libs/runloop")
 add_subdirectory("libs/async")

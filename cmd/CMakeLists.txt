@@ -22,3 +22,13 @@ target_compile_definitions(monad PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
 add_executable(monad_cli monad_cli.cpp)
 monad_compile_options(monad_cli)
 target_link_libraries(monad_cli PUBLIC monad_execution CLI11::CLI11)
+
+add_executable(eventcap eventcap.cpp)
+monad_compile_options(eventcap)
+target_link_libraries(eventcap PRIVATE monad_event_queue CLI11::CLI11)
+target_compile_options(eventcap PRIVATE -Wno-missing-field-initializers)
+
+add_executable(exportshm exportshm.cpp)
+monad_compile_options(exportshm)
+target_link_libraries(exportshm PRIVATE monad_core monad_event_queue CLI11::CLI11)
+target_compile_options(exportshm PRIVATE -Wno-missing-field-initializers)

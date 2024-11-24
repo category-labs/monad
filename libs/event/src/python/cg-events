@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+
+"""This program generates source code in various programming languages
+for working with monad "execution event" objects. Its main purpose is to
+generate the central event enumeration type and the structure types for
+the event payloads. It can also be extended to emit "pretty-printers"
+for the payload types.
+
+The "golden source" definitions for the events also lives here, inside the
+`definitions` directory. The files in that directory define the event names,
+metadata, a C datatypes for the payloads (as ctypes objects). This is loaded
+into an intermediate Python representation (`class EventInfo`), which is then
+passed to various code generators (defined in the `backends` subdirectory).
+"""
+
+import argparse
+import importlib.util
+import pathlib
+import sys
+
+parser = argparse.ArgumentParser(description='monad event code generator')
+
+parser.add_argument('-v', '--verbose', action='count', default=0,
+    help='Be more verbose, may be repeated')
+
+def register_backends(p: argparse.ArgumentParser):
+  # The immediate subcommand is the name of the backend generator
+  subparsers = p.add_subparsers(title='backends')
+
+  # Glob all the '.py' files in the 'backends' directory, load each as a module
+  # and call its `register_backend` function; this allows each file to register
+  # a subparser for its backend options and to register its 'backend_main'
+  # function with that subparser
+  backend_dir = pathlib.Path(__file__).parent / 'backends'
+  py_files = sorted(backend_dir.glob('**/*.py'), key=lambda f: str(f.stem))
+  for py_file in py_files:
+    spec = importlib.util.spec_from_file_location(f'backends.{py_file.stem}', py_file)
+    backend_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(backend_module)
+    if hasattr(backend_module, 'register_backend'):
+      backend_module.register_backend(subparsers)
+
+def main(args: argparse.Namespace) -> int:
+  from event import load_events
+  events = load_events()
+  if args.verbose > 1:
+    print(f'dump of {len(events)} events:', file=sys.stderr)
+    for e in events:
+      print(e, file=sys.stderr)
+  if hasattr(args, 'backend_main'):
+    return args.backend_main(args, events)
+
+if __name__ == '__main__':
+  register_backends(parser)
+  sys.exit(main(parser.parse_args()))

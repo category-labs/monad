@@ -1,3 +1,4 @@
+#include "event_init.hpp"
 #include "runloop_ethereum.hpp"
 #include "runloop_monad.hpp"
 
@@ -11,7 +12,6 @@
 #include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/log_level_map.hpp>
-#include <monad/core/rlp/block_rlp.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
@@ -20,7 +20,6 @@
 #include <monad/execution/trace/event_trace.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
-#include <monad/procfs/statm.h>
 #include <monad/state2/block_state.hpp>
 #include <monad/statesync/statesync_server.h>
 #include <monad/statesync/statesync_server_context.hpp>
@@ -30,7 +29,6 @@
 
 #include <quill/LogLevel.h>
 #include <quill/Quill.h>
-#include <quill/handlers/FileHandler.h>
 
 #include <boost/outcome/try.hpp>
 
@@ -43,6 +41,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <signal.h>
@@ -76,12 +75,17 @@ int main(int const argc, char const *argv[])
     unsigned nthreads = 4;
     unsigned nfibers = 256;
     bool no_compaction = false;
+    EventRingConfig event_ring_config[] = {
+        DefaultEventRingConfig[MONAD_EVENT_QUEUE_EXEC],
+        DefaultEventRingConfig[MONAD_EVENT_QUEUE_TRACE]};
+    bool no_events = false;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);
     std::vector<fs::path> dbname_paths;
     fs::path genesis;
     fs::path snapshot;
     fs::path dump_snapshot;
+    fs::path event_socket_path;
     std::string statesync;
     auto log_level = quill::LogLevel::Info;
 
@@ -120,6 +124,10 @@ int main(int const argc, char const *argv[])
         "--dump_snapshot",
         dump_snapshot,
         "directory to dump state to at the end of run");
+    cli.add_option(
+        "--event-socket-path",
+        event_socket_path,
+        "path to the socket file used by the event server");
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
     group->add_option("--genesis", genesis, "genesis file")
@@ -140,6 +148,7 @@ int main(int const argc, char const *argv[])
     group->add_option(
         "--statesync", statesync, "socket for statesync communication");
     group->require_option(1);
+    cli.add_flag("--no-events", no_events, "disable the event recorder");
 #ifdef ENABLE_EVENT_TRACING
     fs::path trace_log = fs::absolute("trace");
     cli.add_option("--trace_log", trace_log, "path to output trace file");
@@ -167,6 +176,15 @@ int main(int const argc, char const *argv[])
     quill::start(true);
     quill::get_root_logger()->set_log_level(log_level);
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
+
+    // Initialize the event system near the start of the initialization process,
+    // so it has a chance to record trace information during startup
+    monad_event_server *event_server = nullptr;
+    std::jthread event_server_thread;
+    if (!no_events) {
+        event_server_thread = init_event_system(
+            event_ring_config, event_socket_path, &event_server);
+    }
 
 #ifdef ENABLE_EVENT_TRACING
     quill::FileHandlerConfig handler_cfg;
@@ -387,6 +405,12 @@ int main(int const argc, char const *argv[])
             .concurrent_read_io_limit = 128}};
         TrieDb ro_db{db};
         write_to_file(ro_db.to_json(), dump_snapshot, block_num);
+    }
+
+    if (event_server != nullptr) {
+        event_server_thread.request_stop();
+        event_server_thread.join();
+        monad_event_server_destroy(event_server);
     }
     return result.has_error() ? EXIT_FAILURE : EXIT_SUCCESS;
 }

@@ -8,6 +8,8 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/core/transaction.hpp>
+#include <monad/event/event.h>
+#include <monad/event/event_recorder.h>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
@@ -252,6 +254,7 @@ Result<ExecutionResult> execute_impl(
     }
     {
         TRACE_TXN_EVENT(StartRetry);
+        MONAD_EVENT(MONAD_EVENT_TXN_RESTART, 0);
 
         State state{block_state, Incarnation{hdr.number, i + 1}};
 

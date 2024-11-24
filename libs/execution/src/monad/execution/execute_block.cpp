@@ -8,6 +8,7 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/core/withdrawal.hpp>
+#include <monad/event/event_recorder.h>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_reward.hpp>
 #include <monad/execution/ethereum/dao.hpp>
@@ -22,9 +23,11 @@
 #include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
+#include <sys/uio.h>
 
 #include <intx/intx.hpp>
 
+#include <boost/fiber/fss.hpp>
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 
@@ -36,6 +39,40 @@
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
+
+static boost::fibers::fiber_specific_ptr<uint32_t> g_fss_txn_num;
+
+extern "C" uint32_t monad_event_get_txn_num()
+{
+    return boost::fibers::context::active()
+               ? g_fss_txn_num.get() != nullptr ? *g_fss_txn_num : 0
+               : 0;
+}
+
+static size_t init_txn_header_iovec(Transaction const &txn, iovec (&iov)[2])
+{
+    size_t iovlen = 1;
+    auto *const header = static_cast<monad_event_txn_header *>(iov[0].iov_base);
+    header->nonce = txn.nonce;
+    header->gas_limit = txn.gas_limit;
+    header->max_fee_per_gas =
+        *std::bit_cast<evmc_bytes32 const *>(as_bytes(txn.max_fee_per_gas));
+    header->value = *std::bit_cast<evmc_bytes32 const *>(as_bytes(txn.value));
+    header->to = txn.to ? *txn.to : Address{};
+    header->txn_type = static_cast<uint8_t>(txn.type);
+    header->r = *std::bit_cast<evmc_bytes32 const *>(as_bytes(txn.sc.r));
+    header->s = *std::bit_cast<evmc_bytes32 const *>(as_bytes(txn.sc.s));
+    header->y_parity = txn.sc.odd_y_parity ? 1 : 0;
+    header->chain_id = *std::bit_cast<evmc_bytes32 const *>(
+        as_bytes(txn.sc.chain_id.value_or(0)));
+    header->data_length = static_cast<uint32_t>(size(txn.data));
+    if (header->data_length > 0) {
+        ++iovlen;
+        iov[1].iov_base = (void *)data(txn.data);
+        iov[1].iov_len = header->data_length;
+    }
+    return iovlen;
+}
 
 // EIP-4895
 constexpr void process_withdrawal(
@@ -124,6 +161,14 @@ Result<std::vector<ExecutionResult>> execute_block(
              &transaction = block.transactions[i]] {
                 senders[i] = recover_sender(transaction);
                 promises[i].set_value();
+                monad_event_txn_header txn_header;
+                iovec iov[2] = {
+                    {.iov_base = &txn_header, .iov_len = sizeof txn_header},
+                };
+                size_t const iovlen = init_txn_header_iovec(transaction, iov);
+                g_fss_txn_num.reset(new uint32_t{i});
+                MONAD_EVENT_IOV(MONAD_EVENT_TXN_START, 0, iov, iovlen);
+                g_fss_txn_num.release();
             });
     }
 
@@ -150,6 +195,7 @@ Result<std::vector<ExecutionResult>> execute_block(
              &header = block.header,
              &block_hash_buffer = block_hash_buffer,
              &block_state] {
+                g_fss_txn_num.reset(new uint32_t{i});
                 results[i] = execute<rev>(
                     chain,
                     i,
@@ -160,6 +206,8 @@ Result<std::vector<ExecutionResult>> execute_block(
                     block_state,
                     promises[i]);
                 promises[i + 1].set_value();
+                MONAD_EVENT(MONAD_EVENT_TXN_END, 0);
+                g_fss_txn_num.release();
             });
     }
 

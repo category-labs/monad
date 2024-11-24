@@ -12,6 +12,9 @@
 #include <monad/db/block_db.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
+#include <monad/event/event.h>
+#include <monad/event/event_recorder.h>
+#include <monad/event/event_server.h>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
@@ -66,6 +69,57 @@ using namespace monad;
 namespace fs = std::filesystem;
 
 using TryGet = std::move_only_function<std::optional<Block>(uint64_t) const>;
+
+static monad_event_block_exec_header *init_block_exec_header(
+    Block const &block, monad_event_block_exec_header *exec_header)
+{
+    exec_header->bft_block_id = monad_event_bytes32{};
+    exec_header->round = 0;
+    exec_header->parent_hash = block.header.parent_hash;
+    exec_header->ommers_hash = block.header.ommers_hash;
+    exec_header->beneficiary = block.header.beneficiary;
+    exec_header->difficulty = static_cast<uint64_t>(block.header.difficulty);
+    exec_header->number = block.header.number;
+    exec_header->gas_limit = block.header.gas_limit;
+    exec_header->timestamp = block.header.timestamp;
+    exec_header->extra_data_length = size(block.header.extra_data);
+    memcpy(
+        exec_header->extra_data.bytes,
+        data(block.header.extra_data),
+        exec_header->extra_data_length);
+    exec_header->mix_hash = block.header.prev_randao;
+    memcpy(
+        exec_header->nonce,
+        block.header.nonce.data(),
+        sizeof exec_header->nonce);
+    exec_header->base_fee_per_gas = *std::bit_cast<evmc_bytes32 const *>(
+        as_bytes(block.header.base_fee_per_gas.value_or(0)));
+    exec_header->txn_count = size(block.transactions);
+    return exec_header;
+}
+
+static monad_event_block_exec_result *init_block_exec_result(
+    Block const &block, monad_event_block_exec_result *exec_result)
+{
+    memcpy(
+        exec_result->logs_bloom,
+        data(block.header.logs_bloom),
+        sizeof exec_result->logs_bloom);
+    exec_result->state_root = block.header.state_root;
+    exec_result->transactions_root = block.header.transactions_root;
+    exec_result->receipts_root = block.header.receipts_root;
+    if (block.header.withdrawals_root) {
+        exec_result->withdrawals_root = *block.header.withdrawals_root;
+    }
+    else {
+        memset(
+            exec_result->withdrawals_root.bytes,
+            0,
+            sizeof exec_result->withdrawals_root);
+    }
+    exec_result->gas_used = block.header.gas_used;
+    return exec_result;
+}
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
@@ -143,6 +197,16 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
             (block.header.number == init_block_num)
                 ? std::nullopt
                 : std::make_optional(block.header.number - 1));
+
+        // Allocate a block execution header payload (which also reserves a
+        // block flow ID) for this block
+        // TODO(ken): when we have the "proposed blocks" concept, this can and
+        //   should be done as soon as we know the execution block header
+        monad_event_block_exec_header *const block_exec_header =
+            init_block_exec_header(
+                block, monad_event_recorder_alloc_block_exec_header());
+        monad_event_recorder_start_block(block_exec_header);
+
         BlockState block_state(db);
         BOOST_OUTCOME_TRY(
             auto const results,
@@ -182,6 +246,11 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
             to_bytes(keccak256(rlp::encode_block_header(output_header)));
         block_hash_buffer.set(block_num, h);
 
+        // Record the termination of the block
+        monad_event_block_exec_result exec_result;
+        monad_event_recorder_end_block(
+            init_block_exec_result(block, &exec_result));
+
         ntxs += block.transactions.size();
         batch_num_txs += block.transactions.size();
         total_gas += block.header.gas_used;
@@ -209,6 +278,60 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
     return {ntxs, total_gas};
 }
 
+/*
+ * Event server functions
+ */
+
+static void monad_event_server_logger(int severity, char const *msg, void *ctx)
+{
+    constexpr quill::LogLevel syslog_to_quill_levels[] = {
+        quill::LogLevel::Critical,
+        quill::LogLevel::Critical,
+        quill::LogLevel::Critical,
+        quill::LogLevel::Error,
+        quill::LogLevel::Warning,
+        quill::LogLevel::Info,
+        quill::LogLevel::Info,
+        quill::LogLevel::Debug};
+    auto *const logger = static_cast<quill::Logger *>(ctx);
+    if (!logger->should_log(syslog_to_quill_levels[severity])) {
+        return;
+    }
+    QUILL_DYNAMIC_LOG(logger, syslog_to_quill_levels[severity], "{}", msg);
+}
+
+static void event_server_thread_main(
+    std::stop_token const token, monad_event_server *server)
+{
+    pthread_setname_np(pthread_self(), "event_server");
+    timespec const timeout{.tv_sec = 1, .tv_nsec = 30'000'000};
+    while (!token.stop_requested() && stop == 0) {
+        (void)monad_event_server_process_work(
+            server, &timeout, nullptr, nullptr);
+    }
+}
+
+static std::jthread init_event_server(
+    fs::path const &event_socket_path, monad_event_server **event_server)
+{
+    int srv_rc;
+    monad_event_server_options event_server_opts = {
+        .log_fn = monad_event_server_logger,
+        .log_context = quill::get_root_logger(),
+        .socket_path = MONAD_EVENT_DEFAULT_SOCKET_PATH};
+    // Note the comma operator because c_str() is only temporary
+    event_server_opts.socket_path = event_socket_path.c_str(),
+    srv_rc = monad_event_server_create(&event_server_opts, event_server);
+    if (srv_rc != 0) {
+        // TODO(ken): should this be an exception?
+        LOG_ERROR("event server initialization error, server is disabled");
+        return {};
+    }
+
+    // Launch the event server as a separate thread
+    return std::jthread{event_server_thread_main, *event_server};
+}
+
 int main(int const argc, char const *argv[])
 {
 
@@ -221,12 +344,14 @@ int main(int const argc, char const *argv[])
     unsigned nthreads = 4;
     unsigned nfibers = 256;
     bool no_compaction = false;
+    bool no_events = false;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);
     std::vector<fs::path> dbname_paths;
     fs::path genesis;
     fs::path snapshot;
     fs::path dump_snapshot;
+    fs::path event_socket_path;
     std::string statesync;
     auto log_level = quill::LogLevel::Info;
 
@@ -265,6 +390,10 @@ int main(int const argc, char const *argv[])
         "--dump_snapshot",
         dump_snapshot,
         "directory to dump state to at the end of run");
+    cli.add_option(
+        "--event-socket-path",
+        event_socket_path,
+        "path to the socket file used by the event server");
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
     group->add_option("--genesis", genesis, "genesis file")
@@ -285,6 +414,7 @@ int main(int const argc, char const *argv[])
     group->add_option(
         "--statesync", statesync, "socket for statesync communication");
     group->require_option(1);
+    cli.add_flag("--no-events", no_events, "disable the event recorder");
 #ifdef ENABLE_EVENT_TRACING
     fs::path trace_log = fs::absolute("trace");
     cli.add_option("--trace_log", trace_log, "path to output trace file");
@@ -312,6 +442,21 @@ int main(int const argc, char const *argv[])
     quill::start(true);
     quill::get_root_logger()->set_log_level(log_level);
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
+
+    /*
+     * Event recorder
+     */
+
+    monad_event_server *event_server = nullptr;
+    std::jthread event_server_thread;
+    if (!no_events) {
+        monad_event_recorder_set_enabled(MONAD_EVENT_QUEUE_EXEC, true);
+
+        // Host an event server on a separate thread, so external clients can
+        // connect
+        event_server_thread =
+            init_event_server(event_socket_path, &event_server);
+    }
 
 #ifdef ENABLE_EVENT_TRACING
     quill::FileHandlerConfig handler_cfg;
@@ -548,6 +693,12 @@ int main(int const argc, char const *argv[])
             .concurrent_read_io_limit = 128}};
         TrieDb ro_db{db};
         write_to_file(ro_db.to_json(), dump_snapshot, block_num);
+    }
+
+    if (event_server != nullptr) {
+        event_server_thread.request_stop();
+        event_server_thread.join();
+        monad_event_server_destroy(event_server);
     }
     return result.has_error() ? EXIT_FAILURE : EXIT_SUCCESS;
 }

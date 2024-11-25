@@ -153,17 +153,24 @@ function(monad_add_test_folder target)
   endforeach()
 endfunction()
 
-function(monad_target_gdb_pretty_printer dest target printer)
-  file(REAL_PATH "${printer}" printer)
-  file(RELATIVE_PATH leaf "${CMAKE_SOURCE_DIR}" "${printer}")
-  set(asmfile "${CMAKE_BINARY_DIR}/${leaf}.S")
-  set(GDB_PRETTY_PRINTER_PATH "${printer}")
-  configure_file("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/cmake/debug_gdb_scripts.in"
-                 "${asmfile}" @ONLY)
-  add_library(${target} OBJECT "${asmfile}")
-  # The use of TARGET_OBJECTS here turns out to be critical. This was very
-  # non-obvious.
-  target_link_libraries(${dest} PUBLIC "$<TARGET_OBJECTS:${target}>")
+function(monad_add_test_death target)
+  cmake_parse_arguments(ADD_DEATH_TEST "" "FAIL_REGEX"
+    "SOURCES;LINK_LIBRARIES;TEST_PROPERTIES" ${ARGN})
+  if(NOT ADD_DEATH_TEST_FAIL_REGEX)
+    message(FATAL_ERROR "FATAL: FAIL_REGEX is mandatory")
+  endif()
+  add_executable(${target} ${ADD_DEATH_TEST_SOURCES})
+  monad_compile_options(${target})
+  target_link_libraries(${target} PUBLIC GTest::gtest_main
+                        ${ADD_DEATH_TEST_LINK_LIBRARIES})
+  add_test(NAME "${PROJECT_NAME}/${target}"
+           COMMAND ${CMAKE_COMMAND} -E env $<TARGET_FILE:${target}>)
+  set_tests_properties("${PROJECT_NAME}/${target}" PROPERTIES
+           PASS_REGULAR_EXPRESSION "${ADD_DEATH_TEST_FAIL_REGEX}"
+           ${ADD_DEATH_TEST_TEST_PROPERTIES}
+           ENVIRONMENT ASAN_OPTIONS=abort_on_error=1 ENVIRONMENT
+           UBSAN_OPTIONS=halt_on_error=1,print_stacktrace=1 ENVIRONMENT
+           TSAN_OPTIONS=external_symbolizer_path=/usr/bin/llvm-symbolizer)
 endfunction()
 
 # ##############################################################################

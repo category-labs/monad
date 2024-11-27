@@ -243,6 +243,8 @@ monad_evmc_result eth_call(
     std::string const &triedb_path, std::string const &blockdb_path,
     monad_state_override_set const &state_overrides)
 {
+    monad_evmc_result ret;
+
     byte_string_view rlp_txn_view(rlp_txn.begin(), rlp_txn.end());
     auto const txn_result = rlp::decode_transaction(rlp_txn_view);
     MONAD_ASSERT(!txn_result.has_error());
@@ -267,15 +269,22 @@ monad_evmc_result eth_call(
          ++i) {
         auto const path =
             std::filesystem::path{blockdb_path} / std::to_string(i);
-        MONAD_ASSERT(std::filesystem::exists(path));
+        if (MONAD_UNLIKELY(!std::filesystem::exists(path))) {
+            ret.status_code = EVMC_FAILURE;
+            ret.message = path.string() + " doesn't exist";
+            return ret;
+        }
         std::ifstream istream(path);
         std::ostringstream buf;
         buf << istream.rdbuf();
         auto view = byte_string_view{
             (unsigned char *)buf.view().data(), buf.view().size()};
         auto const block_result = rlp::decode_block(view);
-        MONAD_ASSERT(block_result.has_value());
-        MONAD_ASSERT(view.empty());
+        if (MONAD_UNLIKELY(block_result.has_error() || !view.empty())) {
+            ret.status_code = EVMC_FAILURE;
+            ret.message = "Error in decoding block";
+            return ret;
+        }
         auto const &block = block_result.assume_value();
         buffer.set(i - 1, block.header.parent_hash);
     }
@@ -299,9 +308,8 @@ monad_evmc_result eth_call(
         buffer,
         paths,
         state_overrides);
-    monad_evmc_result ret;
     if (MONAD_UNLIKELY(result.has_error())) {
-        ret.status_code = INT_MAX;
+        ret.status_code = EVMC_FAILURE;
         ret.message = result.error().message().c_str();
     }
     else {

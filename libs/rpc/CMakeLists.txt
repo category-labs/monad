@@ -7,7 +7,9 @@ project(monad_rpc)
 add_library(
   monad_rpc STATIC
   # rpc
+  "src/monad/rpc/error.cpp"
   "src/monad/rpc/eth_call.cpp"
+  "src/monad/rpc/error.hpp"
   "src/monad/rpc/eth_call.hpp"
 )
 

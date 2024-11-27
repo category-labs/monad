@@ -1,7 +1,10 @@
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/bytes.hpp>
+#include <monad/core/rlp/block_rlp.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
+
+#include <quill/Quill.h>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -150,6 +153,47 @@ BlockHashChain::find_chain(uint64_t const parent_round) const
         }
     }
     return buf_;
+}
+
+bool init_block_hash_buffer(
+    mpt::Db &rodb, uint64_t const block_number,
+    BlockHashBufferFinalized &block_hash_buffer)
+{
+    TrieDb tdb{rodb};
+    for (uint64_t b = block_number < 256 ? 0 : block_number - 256;
+         b < block_number;
+         ++b) {
+        tdb.set_block_number(b);
+        auto const header = tdb.read_header();
+        if (MONAD_UNLIKELY(!header.has_value())) {
+            // changed to warning, bc it's not fatal for eth_call
+            LOG_WARNING("Could not query block header {} from TrieDb", b);
+            return false;
+        }
+        auto const h = std::bit_cast<bytes32_t>(
+            keccak256(rlp::encode_block_header(header.value())));
+        block_hash_buffer.set(b, h);
+    }
+    return true;
+}
+
+bool init_block_hash_buffer(
+    BlockDb &block_db, uint64_t const block_number,
+    BlockHashBufferFinalized &block_hash_buffer)
+{
+    for (uint64_t b = block_number < 256 ? 1 : block_number - 255;
+         b <= block_number;
+         ++b) {
+        Block block;
+        auto const ok = block_db.get(b, block);
+        if (MONAD_UNLIKELY(!ok)) {
+            // same as above
+            LOG_WARNING("Could not query block {} from blockdb.", b);
+            return false;
+        }
+        block_hash_buffer.set(b - 1, block.header.parent_hash);
+    }
+    return true;
 }
 
 MONAD_NAMESPACE_END

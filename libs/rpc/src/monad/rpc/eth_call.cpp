@@ -11,6 +11,7 @@
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_transaction.hpp>
+#include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
 #include <monad/state2/block_state.hpp>
@@ -28,17 +29,13 @@ using namespace monad;
 
 namespace
 {
+    template <evmc_revision rev>
     Result<evmc::Result> eth_call_impl(
-        Transaction const &txn, BlockHeader const &header,
+        Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, Address const &sender,
-        BlockHashBuffer const &buffer,
         std::vector<std::filesystem::path> const &dbname_paths,
         monad_state_override_set const &state_overrides)
     {
-        constexpr evmc_revision rev = EVMC_SHANGHAI; // TODO
-        MonadDevnet chain;
-        MONAD_ASSERT(rev == chain.get_revision(header.number));
-
         Transaction enriched_txn{txn};
 
         // SignatureAndChain validation hacks
@@ -53,6 +50,11 @@ namespace
         thread_local mpt::Db db{
             mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = dbname_paths}};
         thread_local TrieDb ro{db};
+
+        BlockHashBufferFinalized buffer{};
+        if (!init_block_hash_buffer(db, block_number, buffer)) {
+            return TransactionError::BlockHashBufferError;
+        }
 
         ro.set_block_number(block_number);
         BlockState block_state{ro};
@@ -151,6 +153,25 @@ namespace
             header.beneficiary);
     }
 
+    Result<evmc::Result> eth_call_impl(
+        Chain const &chain, evmc_revision const rev, Transaction const &txn,
+        BlockHeader const &header, uint64_t const block_number,
+        Address const &sender,
+        std::vector<std::filesystem::path> const &dbname_paths,
+        monad_state_override_set const &state_overrides)
+    {
+        SWITCH_EVMC_REVISION(
+            eth_call_impl,
+            chain,
+            txn,
+            header,
+            block_number,
+            sender,
+            dbname_paths,
+            state_overrides);
+        MONAD_ASSERT(false);
+    }
+
 }
 
 namespace monad
@@ -240,9 +261,11 @@ void monad_state_override_set::set_override_state(
 monad_evmc_result eth_call(
     std::vector<uint8_t> const &rlp_txn, std::vector<uint8_t> const &rlp_header,
     std::vector<uint8_t> const &rlp_sender, uint64_t const block_number,
-    std::string const &triedb_path, std::string const &blockdb_path,
+    std::string const &triedb_path,
     monad_state_override_set const &state_overrides)
 {
+    monad_evmc_result ret;
+
     byte_string_view rlp_txn_view(rlp_txn.begin(), rlp_txn.end());
     auto const txn_result = rlp::decode_transaction(rlp_txn_view);
     MONAD_ASSERT(!txn_result.has_error());
@@ -261,25 +284,6 @@ monad_evmc_result eth_call(
     MONAD_ASSERT(!sender_result.has_error());
     auto const sender = sender_result.value();
 
-    BlockHashBufferFinalized buffer{};
-    for (size_t i = block_number < 256 ? 1 : block_number - 255;
-         i <= block_number;
-         ++i) {
-        auto const path =
-            std::filesystem::path{blockdb_path} / std::to_string(i);
-        MONAD_ASSERT(std::filesystem::exists(path));
-        std::ifstream istream(path);
-        std::ostringstream buf;
-        buf << istream.rdbuf();
-        auto view = byte_string_view{
-            (unsigned char *)buf.view().data(), buf.view().size()};
-        auto const block_result = rlp::decode_block(view);
-        MONAD_ASSERT(block_result.has_value());
-        MONAD_ASSERT(view.empty());
-        auto const &block = block_result.assume_value();
-        buffer.set(i - 1, block.header.parent_hash);
-    }
-
     std::vector<std::filesystem::path> paths;
     if (std::filesystem::is_block_file(triedb_path)) {
         paths.emplace_back(triedb_path);
@@ -291,17 +295,21 @@ monad_evmc_result eth_call(
             paths.emplace_back(file.path());
         }
     }
+
+    MonadDevnet chain;
+    evmc_revision const rev = chain.get_revision(block_number);
+
     auto const result = eth_call_impl(
+        chain,
+        rev,
         txn,
         block_header,
         block_number,
         sender,
-        buffer,
         paths,
         state_overrides);
-    monad_evmc_result ret;
     if (MONAD_UNLIKELY(result.has_error())) {
-        ret.status_code = INT_MAX;
+        ret.status_code = EVMC_FAILURE;
         ret.message = result.error().message().c_str();
     }
     else {

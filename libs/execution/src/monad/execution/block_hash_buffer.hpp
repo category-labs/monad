@@ -2,6 +2,8 @@
 
 #include <monad/config.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/db/block_db.hpp>
+#include <monad/db/trie_db.hpp>
 
 #include <cstdint>
 #include <deque>
@@ -76,5 +78,13 @@ public:
     BlockHashBuffer const &finalize(uint64_t const round);
     BlockHashBuffer const &find_chain(uint64_t parent_round) const;
 };
+
+bool init_block_hash_buffer(
+    mpt::Db &rodb, uint64_t const block_number,
+    BlockHashBufferFinalized &block_hash_buffer);
+
+bool init_block_hash_buffer(
+    BlockDb &block_db, uint64_t const block_number,
+    BlockHashBufferFinalized &block_hash_buffer);
 
 MONAD_NAMESPACE_END

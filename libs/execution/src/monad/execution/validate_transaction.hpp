@@ -38,6 +38,8 @@ enum class TransactionError
     MissingSender,
     GasLimitOverflow,
     InvalidSignature,
+    // TODO: properly construct this error
+    BlockHashBufferError,
 };
 
 struct Transaction;

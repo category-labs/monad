@@ -187,7 +187,10 @@ quick_status_code_from_enum<monad::TransactionError>::value_mappings()
         {TransactionError::WrongChainId, "wrong chain id", {}},
         {TransactionError::MissingSender, "missing sender", {}},
         {TransactionError::GasLimitOverflow, "gas limit overflow", {}},
-        {TransactionError::InvalidSignature, "invalid signature", {}}};
+        {TransactionError::InvalidSignature, "invalid signature", {}},
+        {TransactionError::BlockHashBufferError,
+         "error in constructing block hash buffer",
+         {}}};
 
     return v;
 }

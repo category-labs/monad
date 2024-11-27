@@ -27,10 +27,15 @@ struct monad_async_executor_impl;
 enum monad_async_task_impl_please_cancel_invoked_status : uint8_t
 {
     please_cancel_not_invoked = 0,
+    // cancellation requested but nothing else has seen it yet
     please_cancel_invoked_not_seen_yet,
+    // the task's user code has been told ECANCELED
     please_cancel_invoked_seen,
-    please_cancel_invoked_seen_awaiting_uring, // io_uring still has to return a
-                                               // completion
+    // io_uring still has to return a completion for the op cancellation request
+    // until the last of those is received cannot tell task user code ECANCELED
+    please_cancel_invoked_seen_awaiting_uring,
+    // the task will not resume again (it never started executing before
+    // cancellation)
     please_cancel_cancelled
 };
 

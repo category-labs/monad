@@ -704,7 +704,9 @@ static inline monad_c_result monad_async_executor_run_impl(
                 resume_task:
                     assert(0 == memcmp(task->magic, "MNASTASK", 8));
                     if (task->please_cancel_status !=
-                        please_cancel_not_invoked) {
+                            please_cancel_not_invoked &&
+                        task->please_cancel_status !=
+                            please_cancel_invoked_seen) {
                         /* It would seem from testing that there is always a
                         one-one relationship between SQE and CQE, so we always
                         get one CQE for every SQE submitted.
@@ -766,7 +768,7 @@ static inline monad_c_result monad_async_executor_run_impl(
                     if (atomic_load_explicit(
                             &task->head.is_suspended_awaiting,
                             memory_order_acquire) &&
-                        task->please_cancel_invoked_suspending_ops_remaining ==
+                        task->please_cancel_invoked_suspending_ops_remaining <=
                             0) {
 #if MONAD_ASYNC_EXECUTOR_PRINTING
                         printf(
@@ -782,7 +784,9 @@ static inline monad_c_result monad_async_executor_run_impl(
                         task->head.ticks_when_suspended_completed =
                             get_ticks_count(memory_order_relaxed);
                         if (task->please_cancel_status !=
-                            please_cancel_not_invoked) {
+                                please_cancel_not_invoked &&
+                            task->please_cancel_status !=
+                                please_cancel_invoked_seen) {
                             if (cqe->res < 0) {
                                 switch (cqe->res) {
                                 case -ECANCELED:
@@ -809,6 +813,8 @@ static inline monad_c_result monad_async_executor_run_impl(
                             }
                             task->head.derived.result =
                                 monad_c_make_failure(ECANCELED);
+                            task->please_cancel_status =
+                                please_cancel_invoked_seen;
                         }
                         else if (cqe->res < 0) {
                             task->head.derived.result =
@@ -940,7 +946,12 @@ static inline monad_c_result monad_async_executor_run_impl(
 #endif
             if (ring == &ex->wr_ring) {
                 assert(ex->wr_ring_ops_outstanding >= i);
-                ex->wr_ring_ops_outstanding -= i;
+                if (i > ex->wr_ring_ops_outstanding) {
+                    ex->wr_ring_ops_outstanding = 0;
+                }
+                else {
+                    ex->wr_ring_ops_outstanding -= i;
+                }
             }
             monad_context_cpu_ticks_count_t const io_uring_end =
                 get_ticks_count(memory_order_relaxed);
@@ -1626,7 +1637,6 @@ monad_async_task_cancel(monad_async_executor ex_, monad_async_task task_)
             &task->head.is_suspended_sqe_exhaustion, memory_order_acquire) ||
         atomic_load_explicit(
             &task->head.is_suspended_sqe_exhaustion_wr, memory_order_acquire)) {
-        task->please_cancel_status = please_cancel_invoked_not_seen_yet;
         // Invoke the cancellation routine
         if (task->please_cancel == nullptr) {
 #if MONAD_ASYNC_EXECUTOR_PRINTING
@@ -1650,9 +1660,13 @@ monad_async_task_cancel(monad_async_executor ex_, monad_async_task task_)
                 awaiting_msg);
             fflush(stdout);
 #endif
+            // We will be handling cancellation without involving io_uring
+            task->please_cancel_status = please_cancel_invoked_seen;
             atomic_unlock(&ex->lock);
             return monad_c_make_failure(EAGAIN);
         }
+        // We will need to handle cancellation CQEs
+        task->please_cancel_status = please_cancel_invoked_not_seen_yet;
         monad_c_result r = task->please_cancel(ex, task);
 #if MONAD_ASYNC_EXECUTOR_PRINTING
         char const *awaiting_msg = "i/o";

@@ -2,14 +2,18 @@
 
 #include "../../test_common.hpp"
 
-#include "../executor.h"
-#include "monad/async/cpp_helpers.hpp"
-#include "monad/async/task.h"
-#include "monad/context/boost_result.h"
-#include "monad/context/config.h"
-#include "monad/context/context_switcher.h"
+#include <monad/async/cpp_helpers.hpp>
+#include <monad/async/executor.h>
+#include <monad/async/task.h>
+#include <monad/context/boost_result.h>
+#include <monad/context/config.h>
+#include <monad/context/context_switcher.h>
 
 #include <monad/core/small_prng.hpp>
+
+#include <boost/outcome/config.hpp>
+#include <boost/outcome/experimental/status-code/status-code/generic_code.hpp>
+#include <boost/outcome/experimental/status-code/status-code/status_error.hpp>
 
 #include <chrono>
 #include <type_traits>
@@ -21,6 +25,7 @@ static void test_cancellation(char const *desc, F &&op)
     {
         monad_async_executor_attr ex_attr{};
         ex_attr.io_uring_ring.entries = 64;
+        ex_attr.io_uring_wr_ring.entries = 64;
         auto ex = make_executor(ex_attr);
         auto switcher = make_context_switcher(monad_context_switcher_fcontext);
 
@@ -138,6 +143,35 @@ TEST(cancellation, suspend_for_duration)
         "suspend for duration", [](monad_async_task task) -> monad_c_result {
             return monad_async_task_suspend_for_duration(
                 nullptr, task, 1000000ULL); // 1 millisecond
+        });
+}
+
+TEST(cancellation, file_open_close)
+{
+    test_cancellation(
+        "file open close", [](monad_async_task task) -> monad_c_result {
+            try {
+                struct open_how how = {
+                    .flags = O_RDWR, .mode = 0, .resolve = 0};
+                char tempfilepath[256];
+                close(monad_async_make_temporary_file(
+                    tempfilepath, sizeof(tempfilepath)));
+                auto fh = make_file(task, nullptr, tempfilepath, how);
+                unlink(tempfilepath);
+                BOOST_OUTCOME_C_RESULT_SYSTEM_TRY(
+                    monad_async_task_file_fallocate(
+                        task, fh.get(), 0, 0, 1024));
+                fh.reset();
+                return monad_c_make_success(0);
+            }
+            catch (const BOOST_OUTCOME_V2_NAMESPACE::experimental::status_error<
+                   BOOST_OUTCOME_V2_NAMESPACE::experimental::posix_code::
+                       domain_type> &e) {
+                return BOOST_OUTCOME_C_TO_RESULT_SYSTEM_CODE(monad, e.code());
+            }
+            catch (...) {
+                abort();
+            }
         });
 }
 

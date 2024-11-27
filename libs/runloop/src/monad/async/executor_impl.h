@@ -829,12 +829,10 @@ static inline monad_c_result suspend_task_if_max_concurrent_io(
     #if MONAD_ASYNC_EXECUTOR_PRINTING
         printf(
             "*** Executor %p suspends task %p awaiting max concurrency "
-            "current_io_concurrency = %lu "
-            "is_for_write=%d tasks_awaiting.count=%zu\n",
+            "current_io_concurrency = %lu tasks_awaiting.count=%zu\n",
             (void *)ex,
             (void *)task,
             current_io_concurrency,
-            !flags._for_read_ring,
             ex->max_io_concurrency.count);
         fflush(stdout);
     #endif
@@ -847,10 +845,9 @@ static inline monad_c_result suspend_task_if_max_concurrent_io(
     #if MONAD_ASYNC_EXECUTOR_PRINTING
         printf(
             "*** Executor %p resumes task %p awaiting max concurrency "
-            "is_for_write=%d please_cancel_status=%d\n",
+            "please_cancel_status=%d\n",
             (void *)ex,
             (void *)task,
-            !flags._for_read_ring,
             task->please_cancel_status);
         fflush(stdout);
     #endif
@@ -976,7 +973,7 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
             (void *)ex,
             (void *)task,
             (void *)sqe,
-            is_cancellation_point,
+            flags.is_cancellation_point,
             task->please_cancel_status);
         fflush(stdout);
     #endif
@@ -988,6 +985,10 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
             io_uring_prep_nop(sqe);
             io_uring_sqe_set_data(
                 sqe, CANCELLED_OP_IO_URING_DATA_MAGIC, task, nullptr);
+            if (ring == &ex->wr_ring) {
+                // This line took a few hours to figure out
+                ex->wr_ring_ops_outstanding++;
+            }
             return nullptr;
         }
     }
@@ -1132,12 +1133,18 @@ get_wrsqe_for_cancellation(struct monad_async_executor_impl *ex)
         struct get_sqe_suspending_if_necessary_flags const flags = {
             .is_cancellation_point = false,
             .max_concurrent_io_pacing_already_done = true};
-        return get_wrsqe_suspending_if_necessary(ex, current_task, flags);
+        struct io_uring_sqe *sqe =
+            get_wrsqe_suspending_if_necessary(ex, current_task, flags);
+        // Do NOT set IOSQE_IO_DRAIN, otherwise cancellation doesn't work!
+        sqe->flags &= (__u8)(~IOSQE_IO_DRAIN);
+        return sqe;
     }
     // We are outside the executor
     for (;;) {
         struct io_uring_sqe *sqe = io_uring_get_sqe(&ex->wr_ring);
         if (sqe != nullptr) {
+            // Do NOT set IOSQE_IO_DRAIN, otherwise cancellation doesn't work!
+            ex->wr_ring_ops_outstanding++;
             ex->head.total_io_submitted++;
             return sqe;
         }

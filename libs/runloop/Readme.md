@@ -268,6 +268,15 @@ static monad_c_result mytask(monad_async_task task)
 
 - Need to test cancellation works at every possible lifecycle and suspend state
 a task can have.
+- Operations to have a portion of a memory map asynchronously paged in, and paged
+out, would be useful:
+    - `IORING_OP_MADVISE`:
+        - `MADV_REMOVE` punches a hole in the backing file.
+        - `MADV_FREE` throws away contents of any dirty pages (lazy).
+        - `MADV_COLD` page these out before other pages.
+        - `MADV_PAGEOUT` page these out immediately                  <===== THIS ONE
+        - `MADV_POPULATE_READ` page these in for read immediately    <===== THIS ONE
+        - `MADV_POPULATE_WRITE` page these in for write immediately  <===== THIS ONE
 - `AsyncIO` wrapper doesn't currently handle `EAGAIN`. _Probably_ doesn't matter as
 99% of that should be handled internally by the new runloop. But not ALL of it is
 handled, some is passed on.

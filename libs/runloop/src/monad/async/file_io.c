@@ -18,15 +18,41 @@ struct monad_async_file_impl
 {
     struct monad_async_file_head head;
     char magic[8];
-    unsigned io_uring_file_index; // NOT a traditional file descriptor!
+    unsigned io_uring_file_index_read; // NOT a traditional file descriptor!
+    unsigned io_uring_file_index_write; // NOT a traditional file descriptor!
 };
 
-static inline monad_c_result monad_async_task_file_create_cancel(
+static inline monad_c_result monad_async_task_file_create_cancel1(
     struct monad_async_executor_impl *ex, struct monad_async_task_impl *task)
 {
     struct io_uring_sqe *sqe = get_sqe_for_cancellation(ex);
     io_uring_prep_cancel(sqe, io_uring_mangle_into_data(task), 0);
     sqe->user_data = (__u64)io_uring_mangle_into_data(task);
+#if MONAD_ASYNC_FILE_IO_PRINTING
+    printf(
+        "*** Task %p running on executor %p initiates cancel "
+        "file_open\n",
+        (void *)task,
+        (void *)ex);
+    fflush(stdout);
+#endif
+    return monad_c_make_failure(EAGAIN); // Canceller needs to wait
+}
+
+static inline monad_c_result monad_async_task_file_create_cancel2(
+    struct monad_async_executor_impl *ex, struct monad_async_task_impl *task)
+{
+    struct io_uring_sqe *sqe = get_wrsqe_for_cancellation(ex);
+    io_uring_prep_cancel(sqe, io_uring_mangle_into_data(task), 0);
+    sqe->user_data = (__u64)io_uring_mangle_into_data(task);
+#if MONAD_ASYNC_FILE_IO_PRINTING
+    printf(
+        "*** Task %p running on executor %p initiates cancel "
+        "file_open (write ring)\n",
+        (void *)task,
+        (void *)ex);
+    fflush(stdout);
+#endif
     return monad_c_make_failure(EAGAIN); // Canceller needs to wait
 }
 
@@ -46,7 +72,8 @@ monad_c_result monad_async_task_file_create(
         return monad_c_make_failure(errno);
     }
     p->head.executor = &ex->head;
-    p->io_uring_file_index = (unsigned)-1;
+    p->io_uring_file_index_read = (unsigned)-1;
+    p->io_uring_file_index_write = (unsigned)-1;
     struct monad_async_task_impl *task = (struct monad_async_task_impl *)task_;
     if (task->please_cancel_status != please_cancel_not_invoked) {
         if (task->please_cancel_status < please_cancel_invoked_seen) {
@@ -71,9 +98,9 @@ monad_c_result monad_async_task_file_create(
     }
     io_uring_prep_openat2_direct(
         sqe,
-        (base == nullptr)
-            ? AT_FDCWD
-            : (int)((struct monad_async_file_impl *)base)->io_uring_file_index,
+        (base == nullptr) ? AT_FDCWD
+                          : (int)((struct monad_async_file_impl *)base)
+                                ->io_uring_file_index_read,
         subpath,
         how,
         file_index);
@@ -85,9 +112,10 @@ monad_c_result monad_async_task_file_create(
         "file_open\n",
         (void *)task,
         (void *)ex);
+    fflush(stdout);
 #endif
     monad_c_result ret = monad_async_executor_suspend_impl(
-        ex, task, monad_async_task_file_create_cancel, nullptr, nullptr);
+        ex, task, monad_async_task_file_create_cancel1, nullptr, nullptr);
 #if MONAD_ASYNC_FILE_IO_PRINTING
     printf(
         "*** Task %p running on executor %p completes "
@@ -98,13 +126,14 @@ monad_c_result monad_async_task_file_create(
         BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)
             ? outcome_status_code_message(&ret.error)
             : "success");
+    fflush(stdout);
 #endif
     if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
         monad_async_executor_free_file_index(ex, file_index);
         (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
         return ret;
     }
-    p->io_uring_file_index = file_index;
+    p->io_uring_file_index_read = file_index;
 
     if (ex->wr_ring.ring_fd != 0) {
         struct get_sqe_suspending_if_necessary_flags const flags = {
@@ -120,7 +149,7 @@ monad_c_result monad_async_task_file_create(
             sqe,
             (base == nullptr) ? AT_FDCWD
                               : (int)((struct monad_async_file_impl *)base)
-                                    ->io_uring_file_index,
+                                    ->io_uring_file_index_read,
             subpath,
             how,
             file_index);
@@ -132,9 +161,10 @@ monad_c_result monad_async_task_file_create(
             "file_open (write ring)\n",
             (void *)task,
             (void *)ex);
+        fflush(stdout);
 #endif
         monad_c_result ret = monad_async_executor_suspend_impl(
-            ex, task, monad_async_task_file_create_cancel, nullptr, nullptr);
+            ex, task, monad_async_task_file_create_cancel2, nullptr, nullptr);
 #if MONAD_ASYNC_FILE_IO_PRINTING
         printf(
             "*** Task %p running on executor %p completes "
@@ -145,13 +175,14 @@ monad_c_result monad_async_task_file_create(
             BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)
                 ? outcome_status_code_message(&ret.error)
                 : "success");
+        fflush(stdout);
 #endif
         if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
             (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
             return ret;
         }
+        p->io_uring_file_index_write = file_index;
     }
-    p->io_uring_file_index = file_index;
     memcpy(p->magic, "MNASFILE", 8);
     *file = (monad_async_file)p;
     return monad_c_make_success(0);
@@ -172,7 +203,8 @@ monad_c_result monad_async_task_file_create_from_existing_fd(
         return monad_c_make_failure(errno);
     }
     p->head.executor = &ex->head;
-    p->io_uring_file_index = (unsigned)-1;
+    p->io_uring_file_index_read = (unsigned)-1;
+    p->io_uring_file_index_write = (unsigned)-1;
     struct monad_async_task_impl *task = (struct monad_async_task_impl *)task_;
     if (task->please_cancel_status != please_cancel_not_invoked) {
         if (task->please_cancel_status < please_cancel_invoked_seen) {
@@ -186,7 +218,10 @@ monad_c_result monad_async_task_file_create_from_existing_fd(
         (void)monad_async_task_file_destroy(task_, (monad_async_file)p);
         return monad_c_make_failure(ENOMEM);
     }
-    p->io_uring_file_index = file_index;
+    p->io_uring_file_index_read = file_index;
+    if (ex->wr_ring.ring_fd != 0) {
+        p->io_uring_file_index_write = file_index;
+    }
     memcpy(p->magic, "MNASFILE", 8);
     *file = (monad_async_file)p;
     return monad_c_make_success(0);
@@ -196,7 +231,7 @@ monad_c_result
 monad_async_task_file_destroy(monad_async_task task_, monad_async_file file_)
 {
     struct monad_async_file_impl *file = (struct monad_async_file_impl *)file_;
-    if (file->io_uring_file_index != (unsigned)-1) {
+    if (file->io_uring_file_index_read != (unsigned)-1) {
         struct monad_async_task_impl *task =
             (struct monad_async_task_impl *)task_;
         struct monad_async_executor_impl *ex =
@@ -205,14 +240,15 @@ monad_async_task_file_destroy(monad_async_task task_, monad_async_file file_)
         if (ex == nullptr) {
             return monad_c_make_failure(EINVAL);
         }
-        if (ex->wr_ring.ring_fd != 0) {
+        if (file->io_uring_file_index_write != (unsigned)-1) {
             struct get_sqe_suspending_if_necessary_flags const flags = {
                 .is_cancellation_point = false,
                 .max_concurrent_io_pacing_already_done = false};
             struct io_uring_sqe *sqe =
                 get_wrsqe_suspending_if_necessary(ex, task, flags);
             io_uring_prep_close(sqe, 0);
-            __io_uring_set_target_fixed_file(sqe, file->io_uring_file_index);
+            __io_uring_set_target_fixed_file(
+                sqe, file->io_uring_file_index_write);
             io_uring_sqe_set_data(sqe, task, task, nullptr);
 
 #if MONAD_ASYNC_FILE_IO_PRINTING
@@ -221,6 +257,7 @@ monad_async_task_file_destroy(monad_async_task task_, monad_async_file file_)
                 "file_close (write ring)\n",
                 (void *)task,
                 (void *)ex);
+            fflush(stdout);
 #endif
             monad_c_result ret = monad_async_executor_suspend_impl(
                 ex, task, nullptr, nullptr, nullptr);
@@ -230,7 +267,8 @@ monad_async_task_file_destroy(monad_async_task task_, monad_async_file file_)
                 "file_close (write ring) for file_index=%u\n",
                 (void *)task,
                 (void *)ex,
-                file->io_uring_file_index);
+                file->io_uring_file_index_write);
+            fflush(stdout);
 #endif
             if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
                 return ret;
@@ -242,7 +280,7 @@ monad_async_task_file_destroy(monad_async_task task_, monad_async_file file_)
         struct io_uring_sqe *sqe =
             get_sqe_suspending_if_necessary(ex, task, flags);
         io_uring_prep_close(sqe, 0);
-        __io_uring_set_target_fixed_file(sqe, file->io_uring_file_index);
+        __io_uring_set_target_fixed_file(sqe, file->io_uring_file_index_read);
         io_uring_sqe_set_data(sqe, task, task, nullptr);
 
 #if MONAD_ASYNC_FILE_IO_PRINTING
@@ -251,6 +289,7 @@ monad_async_task_file_destroy(monad_async_task task_, monad_async_file file_)
             "file_close\n",
             (void *)task,
             (void *)ex);
+        fflush(stdout);
 #endif
         monad_c_result ret = monad_async_executor_suspend_impl(
             ex, task, nullptr, nullptr, nullptr);
@@ -260,13 +299,15 @@ monad_async_task_file_destroy(monad_async_task task_, monad_async_file file_)
             "file_close for file_index=%u\n",
             (void *)task,
             (void *)ex,
-            file->io_uring_file_index);
+            file->io_uring_file_index_read);
+        fflush(stdout);
 #endif
         if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
             return ret;
         }
         memset(ex->magic, 0, 8);
-        monad_async_executor_free_file_index(ex, file->io_uring_file_index);
+        monad_async_executor_free_file_index(
+            ex, file->io_uring_file_index_read);
     }
     free(file);
     return monad_c_make_success(0);
@@ -284,6 +325,9 @@ monad_c_result monad_async_task_file_fallocate(
         return monad_c_make_failure(ECANCELED);
     }
     struct monad_async_file_impl *file = (struct monad_async_file_impl *)file_;
+    if (file->io_uring_file_index_write == (unsigned)-1) {
+        return monad_c_make_failure(EBADF);
+    }
     struct monad_async_executor_impl *ex =
         (struct monad_async_executor_impl *)atomic_load_explicit(
             &task_->current_executor, memory_order_acquire);
@@ -303,7 +347,7 @@ monad_c_result monad_async_task_file_fallocate(
         sqe, (int)file->io_uring_file_index, mode, (off_t)offset, (off_t)len);
 #else
     io_uring_prep_fallocate(
-        sqe, (int)file->io_uring_file_index, mode, offset, len);
+        sqe, (int)file->io_uring_file_index_write, mode, offset, len);
 #endif
     sqe->flags |= IOSQE_FIXED_FILE;
     io_uring_sqe_set_data(sqe, task, task, nullptr);
@@ -314,6 +358,7 @@ monad_c_result monad_async_task_file_fallocate(
         "file_allocate\n",
         (void *)task,
         (void *)ex);
+    fflush(stdout);
 #endif
     monad_c_result ret =
         monad_async_executor_suspend_impl(ex, task, nullptr, nullptr, nullptr);
@@ -323,7 +368,8 @@ monad_c_result monad_async_task_file_fallocate(
         "file_allocate for file_index=%u\n",
         (void *)task,
         (void *)ex,
-        file->io_uring_file_index);
+        file->io_uring_file_index_write);
+    fflush(stdout);
 #endif
     if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
         return ret;
@@ -406,7 +452,7 @@ void monad_async_task_file_read(
                task_->io_recipient_task; // WARNING: task may not be task!
     io_uring_prep_read_fixed(
         sqe,
-        (int)file->io_uring_file_index,
+        (int)file->io_uring_file_index_read,
         tofill->iov[0].iov_base,
         (unsigned)max_bytes,
         offset,
@@ -428,6 +474,7 @@ void monad_async_task_file_read(
         buffer_index,
         max_bytes,
         offset);
+    fflush(stdout);
 #endif
     LIST_APPEND(task->io_submitted, iostatus, &task->head.io_submitted);
 }
@@ -455,13 +502,17 @@ void monad_async_task_file_readv(
     if (buffer_index == 0) {
         if (nr_vecs != 1) {
             io_uring_prep_readv(
-                sqe, (int)file->io_uring_file_index, iovecs, nr_vecs, offset);
+                sqe,
+                (int)file->io_uring_file_index_read,
+                iovecs,
+                nr_vecs,
+                offset);
             sqe->rw_flags = flags;
         }
         else {
             io_uring_prep_read(
                 sqe,
-                (int)file->io_uring_file_index,
+                (int)file->io_uring_file_index_read,
                 iovecs[0].iov_base,
                 (unsigned)iovecs[0].iov_len,
                 offset);
@@ -476,7 +527,7 @@ void monad_async_task_file_readv(
         else {
             io_uring_prep_read_fixed(
                 sqe,
-                (int)file->io_uring_file_index,
+                (int)file->io_uring_file_index_read,
                 iovecs[0].iov_base,
                 (unsigned)iovecs[0].iov_len,
                 offset,
@@ -500,6 +551,7 @@ void monad_async_task_file_readv(
         buffer_index,
         iovecs[0].iov_len,
         offset);
+    fflush(stdout);
 #endif
     LIST_APPEND(task->io_submitted, iostatus, &task->head.io_submitted);
 }
@@ -529,13 +581,17 @@ void monad_async_task_file_write(
     if (buffer_index == 0) {
         if (nr_vecs != 1) {
             io_uring_prep_writev(
-                sqe, (int)file->io_uring_file_index, iovecs, nr_vecs, offset);
+                sqe,
+                (int)file->io_uring_file_index_write,
+                iovecs,
+                nr_vecs,
+                offset);
             sqe->rw_flags = flags;
         }
         else {
             io_uring_prep_write(
                 sqe,
-                (int)file->io_uring_file_index,
+                (int)file->io_uring_file_index_write,
                 iovecs[0].iov_base,
                 (unsigned)iovecs[0].iov_len,
                 offset);
@@ -550,7 +606,7 @@ void monad_async_task_file_write(
         else {
             io_uring_prep_write_fixed(
                 sqe,
-                (int)file->io_uring_file_index,
+                (int)file->io_uring_file_index_write,
                 iovecs[0].iov_base,
                 (unsigned)iovecs[0].iov_len,
                 offset,
@@ -569,6 +625,7 @@ void monad_async_task_file_write(
         (void *)task,
         (void *)ex,
         (void *)iostatus);
+    fflush(stdout);
 #endif
     LIST_APPEND(task->io_submitted, iostatus, &task->head.io_submitted);
 }
@@ -592,7 +649,7 @@ void monad_async_task_file_range_sync(
     task = (struct monad_async_task_impl *)
                task_->io_recipient_task; // WARNING: task may not be task!
     io_uring_prep_sync_file_range(
-        sqe, (int)file->io_uring_file_index, bytes, offset, flags);
+        sqe, (int)file->io_uring_file_index_write, bytes, offset, flags);
     sqe->flags |= IOSQE_FIXED_FILE;
     io_uring_sqe_set_data(sqe, iostatus, task, nullptr);
     iostatus->cancel_ = monad_async_task_file_wrio_cancel;
@@ -605,6 +662,7 @@ void monad_async_task_file_range_sync(
         (void *)task,
         (void *)ex,
         (void *)iostatus);
+    fflush(stdout);
 #endif
     LIST_APPEND(task->io_submitted, iostatus, &task->head.io_submitted);
 }
@@ -626,7 +684,7 @@ void monad_async_task_file_durable_sync(
         get_wrsqe_suspending_if_necessary(ex, task, flags);
     task = (struct monad_async_task_impl *)
                task_->io_recipient_task; // WARNING: task may not be task!
-    io_uring_prep_fsync(sqe, (int)file->io_uring_file_index, 0);
+    io_uring_prep_fsync(sqe, (int)file->io_uring_file_index_write, 0);
     sqe->flags |= IOSQE_FIXED_FILE;
     io_uring_sqe_set_data(sqe, iostatus, task, nullptr);
     iostatus->cancel_ = monad_async_task_file_wrio_cancel;
@@ -639,6 +697,7 @@ void monad_async_task_file_durable_sync(
         (void *)task,
         (void *)ex,
         (void *)iostatus);
+    fflush(stdout);
 #endif
     LIST_APPEND(task->io_submitted, iostatus, &task->head.io_submitted);
 }

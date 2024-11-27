@@ -41,6 +41,7 @@
 #include <numeric>
 #include <span>
 #include <spanstream>
+#include <stack>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -148,11 +149,17 @@ struct DbStateMachine
         table,
         invalid
     } state{DbState::unset};
-    NodeCursor cursor;
+    std::stack<NodeCursor> cursors;
 
     explicit DbStateMachine(Db &db)
         : db(db)
     {
+    }
+
+    NodeCursor current_cursor() const
+    {
+        MONAD_ASSERT(!cursors.empty());
+        return cursors.top();
     }
 
     void set_version(uint64_t const version)
@@ -174,10 +181,21 @@ struct DbStateMachine
                 max_version);
             return;
         }
-
-        fmt::println("Setting version to {}...", version);
-        curr_version = version;
-        state = DbState::version_number;
+        // TODO: print out finalized and any proposal rounds
+        // prompt user to select "f" or a specific round number
+        fmt::println("Setting version to {} on finalized trie ...", version);
+        auto const res = db.find(finalized_nibbles, version);
+        if (res.has_value()) {
+            curr_version = version;
+            cursors.emplace(res.assume_value());
+            state = DbState::version_number;
+        }
+        else {
+            fmt::println(
+                "Couldn't find any finalized tables for version {} -- {}",
+                version,
+                res.error().message().c_str());
+        }
     }
 
     void set_table(unsigned char table_id)
@@ -194,9 +212,10 @@ struct DbStateMachine
                 "Setting cursor to version {}, table {} ...",
                 curr_version,
                 table_as_string(table_id));
-            auto const res = db.find(concat(table_id), curr_version);
+            auto const res =
+                db.find(current_cursor(), concat(table_id), curr_version);
             if (res.has_value()) {
-                cursor = res.assume_value();
+                auto &cursor = cursors.emplace(res.assume_value());
                 state = DbState::table;
                 curr_table_id = table_id;
                 if (curr_table_id != CODE_NIBBLE) {
@@ -234,25 +253,30 @@ struct DbStateMachine
             key,
             curr_version,
             table_as_string(curr_table_id));
-        return db.find(cursor, key, curr_version);
+        return db.find(current_cursor(), key, curr_version);
     }
 
     void back()
     {
         switch (state) {
         case DbState::table:
+            MONAD_ASSERT(!cursors.empty());
+            cursors.pop();
             state = DbState::version_number;
-            cursor = NodeCursor{};
-            fmt::println("At version {}.", curr_version);
+            fmt::println(
+                "Moved back toversion {} under finalized nibble.",
+                curr_version);
             break;
         case DbState::version_number:
+            MONAD_ASSERT(!cursors.empty());
+            cursors.pop();
             curr_version = INVALID_BLOCK_ID;
             state = DbState::unset;
             fmt::println("Version is unset");
             break;
         default:
             curr_version = INVALID_BLOCK_ID;
-            fmt::println("Cursor is unset.");
+            fmt::println("No action taken: State is already unset.");
         }
         curr_table_id = INVALID_NIBBLE;
     }
@@ -532,7 +556,7 @@ void do_node_stats(DbStateMachine &sm)
         }
     } traverse(metadata, concat(sm.curr_table_id));
 
-    sm.db.traverse(sm.cursor, traverse, sm.curr_version);
+    sm.db.traverse(sm.current_cursor(), traverse, sm.curr_version);
 
     auto agg_stats = [](std::vector<uint32_t> const &data)
         -> std::tuple<size_t, double, double> {

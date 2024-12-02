@@ -185,6 +185,7 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/analysis)
 
 monad_add_test_folder("src/monad/core")
 monad_add_test_folder("src/monad/db")
+monad_add_test_folder("src/monad/event")
 monad_add_test_folder("src/monad/execution")
 monad_add_test_folder("src/monad/rlp")
 monad_add_test_folder("src/monad/state2")

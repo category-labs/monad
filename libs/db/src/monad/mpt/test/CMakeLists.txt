@@ -26,6 +26,8 @@ add_trie_test(TARGET many_nested_updates SOURCES "many_nested_updates.cpp"
 add_trie_test(TARGET merkle_trie_test SOURCES "merkle_trie_test.cpp")
 add_trie_test(TARGET min_truncated_offsets_test SOURCES
               "min_truncated_offsets_test.cpp")
+add_trie_test(TARGET mixed_async_sync_loads_test SOURCES
+              "mixed_async_sync_loads_test.cpp")
 add_trie_test(TARGET nibbles_view_test SOURCES "nibbles_view_test.cpp")
 add_trie_test(TARGET node_disk_pages_spare_test SOURCES
               "node_disk_pages_spare_test.cpp")

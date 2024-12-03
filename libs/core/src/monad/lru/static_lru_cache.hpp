@@ -9,7 +9,9 @@
 MONAD_NAMESPACE_BEGIN
 
 // An LRU cache with a fixed max size. Calls to `find()` will not allocate.
-template <typename Key, typename Value>
+template <
+    typename Key, typename Value,
+    typename Hash = ankerl::unordered_dense::hash<Key>>
 class static_lru_cache
 {
     struct list_node
@@ -22,7 +24,7 @@ class static_lru_cache
 
     using List = boost::intrusive::list<list_node>;
     using ListIter = typename List::iterator;
-    using Map = ankerl::unordered_dense::segmented_map<Key, ListIter>;
+    using Map = ankerl::unordered_dense::segmented_map<Key, ListIter, Hash>;
 
     allocators::owning_span<list_node> array_;
     boost::intrusive::list<list_node> list_;
@@ -31,8 +33,9 @@ class static_lru_cache
 public:
     using ConstAccessor = Map::const_iterator;
 
-    explicit static_lru_cache(size_t const size)
-        : array_(size)
+    explicit static_lru_cache(
+        size_t const size, Key const &key = Key(), Value const &value = Value())
+        : array_(size, list_node{.key = key, .val = value})
     {
         for (size_t i = 0; i < size; ++i) {
             list_.push_back(array_[i]);

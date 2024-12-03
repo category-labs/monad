@@ -3,6 +3,7 @@
 #include <memory>
 
 #include <monad/async/concepts.hpp>
+#include <monad/async/config.hpp>
 #include <monad/async/io.hpp>
 #include <monad/async/storage_pool.hpp>
 #include <monad/core/result.hpp>
@@ -105,7 +106,8 @@ struct AsyncContext
 {
     using inflight_root_t = unordered_dense_map<
         uint64_t, std::vector<std::function<void(std::shared_ptr<Node>)>>>;
-    using TrieRootCache = static_lru_cache<uint64_t, std::shared_ptr<Node>>;
+    using TrieRootCache = static_lru_cache<
+        chunk_offset_t, std::shared_ptr<Node>, chunk_offset_t_hasher>;
 
     UpdateAux<> &aux;
     TrieRootCache root_cache;

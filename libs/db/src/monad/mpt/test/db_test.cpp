@@ -545,8 +545,10 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
     };
 
     InMemoryTraverseMachine traverse_machine{test_cached_level};
+    ASSERT_EQ(ctx->root_cache.size(), 1);
+    auto const key = ctx->root_cache.cbegin()->first;
     AsyncContext::TrieRootCache::ConstAccessor acc;
-    ASSERT_TRUE(ctx->root_cache.find(acc, version));
+    ASSERT_TRUE(ctx->root_cache.find(acc, key));
     auto root = acc->second->val;
     ro_db.traverse(NodeCursor{*root}, traverse_machine, version);
 }

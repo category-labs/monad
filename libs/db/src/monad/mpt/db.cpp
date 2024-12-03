@@ -1030,7 +1030,7 @@ uint64_t Db::get_history_length() const
 
 AsyncContext::AsyncContext(Db &db, size_t lru_size)
     : aux(db.impl_->aux())
-    , root_cache(lru_size)
+    , root_cache(lru_size, chunk_offset_t::invalid_value())
 {
 }
 
@@ -1049,6 +1049,7 @@ namespace detail
     {
         static constexpr bool lifetime_managed_internally = true;
 
+        chunk_offset_t offset;
         DbGetSender<T> *sender;
         async::erased_connected_operation *const io_state;
         chunk_offset_t rd_offset{0, 0};
@@ -1058,7 +1059,8 @@ namespace detail
         constexpr load_root_receiver_t(
             chunk_offset_t offset_, DbGetSender<T> *sender_,
             async::erased_connected_operation *io_state_)
-            : sender(sender_)
+            : offset(offset_)
+            , sender(sender_)
             , io_state(io_state_)
         {
             auto const num_pages_to_load_node =
@@ -1098,11 +1100,10 @@ namespace detail
                     {
                         AsyncContext::TrieRootCache::ConstAccessor acc;
                         MONAD_ASSERT(
-                            sender->context.root_cache.find(
-                                acc, sender->block_id) == false);
+                            sender->context.root_cache.find(acc, offset) ==
+                            false);
                     }
-                    sender->context.root_cache.insert(
-                        sender->block_id, sender->root);
+                    sender->context.root_cache.insert(offset, sender->root);
                 }
                 catch (std::exception const &) {
                     sender->res_root = {
@@ -1169,17 +1170,16 @@ namespace detail
         switch (op_type) {
         case op_t::op_get1:
         case op_t::op_get_data1: {
+            chunk_offset_t const offset =
+                context.aux.get_root_offset_at_version(block_id);
             AsyncContext::TrieRootCache::ConstAccessor acc;
-            if (context.root_cache.find(acc, block_id)) {
+            if (context.root_cache.find(acc, offset)) {
                 // found in LRU - no IO necessary
                 root = acc->second->val;
                 res_root = {NodeCursor{*root.get()}, find_result::success};
                 io_state->completed(async::success());
                 return async::success();
             }
-
-            chunk_offset_t const offset =
-                context.aux.get_root_offset_at_version(block_id);
             if (offset == INVALID_OFFSET) {
                 // root is no longer valid
                 res_root = {NodeCursor{}, find_result::version_no_longer_exist};

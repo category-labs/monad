@@ -101,15 +101,13 @@ namespace
     struct OnDiskDbWithFileFixture : public ::testing::Test
     {
         std::filesystem::path const dbname;
-        using StateMachineMerkleWithCompact = StateMachineAlways<
-            MerkleCompute, StateMachineConfig{.compaction = true}>;
-        StateMachineMerkleWithCompact machine;
+        StateMachineAlwaysMerkle machine;
         OnDiskDbConfig config;
         Db db;
 
         OnDiskDbWithFileFixture()
             : dbname{create_temp_file(8)}
-            , machine{StateMachineMerkleWithCompact{}}
+            , machine{StateMachineAlwaysMerkle{}}
             , config{OnDiskDbConfig{
                   .compaction = true,
                   .sq_thread_cpu = std::nullopt,
@@ -787,8 +785,7 @@ TEST(DbTest, out_of_order_upserts_to_nonexist_earlier_version)
     auto const dbname = create_temp_file(2); // 2Gb db
     auto undb = monad::make_scope_exit(
         [&]() noexcept { std::filesystem::remove(dbname); });
-    StateMachineAlways<EmptyCompute, StateMachineConfig{.compaction = true}>
-        machine{};
+    StateMachineAlwaysEmpty machine{};
     OnDiskDbConfig config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
@@ -849,8 +846,7 @@ TEST(DbTest, out_of_order_upserts_with_compaction)
     auto const dbname = create_temp_file(3); // 3Gb db
     auto undb = monad::make_scope_exit(
         [&]() noexcept { std::filesystem::remove(dbname); });
-    StateMachineAlways<MerkleCompute, StateMachineConfig{.compaction = true}>
-        machine{};
+    StateMachineAlwaysMerkle machine{};
     OnDiskDbConfig config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
@@ -1324,8 +1320,7 @@ TEST(DbTest, auto_expire_large_set)
         [&]() noexcept { std::filesystem::remove(dbname); });
     StateMachineAlways<
         EmptyCompute,
-        StateMachineConfig{
-            .compaction = true, .expire = true, .cache_depth = 3}>
+        StateMachineConfig{.expire = true, .cache_depth = 3}>
         machine{};
     constexpr auto history_len = 20;
     OnDiskDbConfig config{
@@ -1389,8 +1384,7 @@ TEST(DbTest, auto_expire)
         [&]() noexcept { std::filesystem::remove(dbname); });
     StateMachineAlways<
         EmptyCompute,
-        StateMachineConfig{
-            .compaction = true, .expire = true, .cache_depth = 3}>
+        StateMachineConfig{.expire = true, .cache_depth = 3}>
         machine{};
     OnDiskDbConfig config{
         .compaction = true,

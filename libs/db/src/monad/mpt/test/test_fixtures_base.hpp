@@ -166,7 +166,6 @@ namespace monad::test
 
     struct StateMachineConfig
     {
-        bool compaction{false};
         bool expire{false};
         size_t cache_depth{6};
     };
@@ -209,7 +208,7 @@ namespace monad::test
 
         virtual constexpr bool compact() const override
         {
-            return config.compaction;
+            return true;
         }
 
         virtual constexpr bool auto_expire() const override

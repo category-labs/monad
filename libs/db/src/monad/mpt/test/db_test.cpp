@@ -546,11 +546,50 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
 
     InMemoryTraverseMachine traverse_machine{test_cached_level};
     ASSERT_EQ(ctx->root_cache.size(), 1);
-    auto const key = ctx->root_cache.cbegin()->first;
+    auto const offset = ctx->aux.get_root_offset_at_version(version);
+    ASSERT_NE(offset, INVALID_OFFSET);
+
     AsyncContext::TrieRootCache::ConstAccessor acc;
-    ASSERT_TRUE(ctx->root_cache.find(acc, key));
+    ASSERT_TRUE(ctx->root_cache.find(acc, offset));
     auto root = acc->second->val;
     ro_db.traverse(NodeCursor{*root}, traverse_machine, version);
+}
+
+TEST_F(OnDiskDbWithFileAsyncFixture, root_cache_invalidation)
+{
+    auto const &kv = fixed_updates::kv;
+
+    auto const prefix0 = 0x001234_hex;
+    auto const final_prefix = 0x10_hex;
+    uint64_t const block_id = 0;
+    upsert_updates_flat_list(
+        db, prefix0, block_id, make_update(kv[0].first, kv[0].second));
+
+    async_get(
+        make_get_sender(ctx.get(), prefix0 + kv[0].first, block_id),
+        [&](result_t res) {
+            ASSERT_TRUE(res.has_value());
+            EXPECT_EQ(res.value(), kv[0].second);
+        });
+    poll_until(1);
+
+    ASSERT_EQ(ctx.get()->root_cache.size(), 1);
+
+    // Copy trie to new prefix. This rewrites the root offset in memory
+    db.copy_trie(block_id, prefix0, block_id, final_prefix, true);
+
+    // Do another async read on the same version
+    async_get(
+        make_get_sender(ctx.get(), final_prefix + kv[0].first, block_id),
+        [&](result_t res) {
+            ASSERT_TRUE(res.has_value());
+            EXPECT_EQ(res.value(), kv[0].second);
+        });
+    poll_until(2);
+
+    // There should be 2 elements in the root cache because the offset in memory
+    // has changed.
+    EXPECT_EQ(ctx.get()->root_cache.size(), 2);
 }
 
 TEST_F(OnDiskDbWithFileFixture, open_emtpy_rodb)

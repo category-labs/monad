@@ -174,8 +174,19 @@ struct DbStateMachine
                 max_version);
             return;
         }
-
-        fmt::println("Setting version to {}...", version);
+        auto const res = db.find(finalized_nibbles, version);
+        if (!res.has_value()) {
+            fmt::println(
+                "Error: version {} is valid, but can't find finalized nibble "
+                "on it -- {}",
+                version,
+                res.error().message().c_str());
+            return;
+        }
+        fmt::println(
+            "Version {} contains finalized nibble, setting version to {}...",
+            version,
+            version);
         curr_version = version;
         state = DbState::version_number;
     }
@@ -194,7 +205,8 @@ struct DbStateMachine
                 "Setting cursor to version {}, table {} ...",
                 curr_version,
                 table_as_string(table_id));
-            auto const res = db.find(concat(table_id), curr_version);
+            auto const res =
+                db.find(concat(FINALIZED_NIBBLE, table_id), curr_version);
             if (res.has_value()) {
                 cursor = res.assume_value();
                 state = DbState::table;

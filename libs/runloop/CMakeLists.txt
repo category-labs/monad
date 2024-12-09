@@ -8,6 +8,8 @@ find_package(GTest REQUIRED)
 find_program(BINDGEN_PROGRAM bindgen)
 find_program(RUSTC_PROGRAM rustc)
 
+option(MONAD_RUNLOOP_RUN_BINDGEN "Emit runloop rust language bindings using bindgen" ON)
+
 add_subdirectory("third_party/monad-boost-context")
 
 add_library(monad_context_c-custom-binutils-gdb INTERFACE IMPORTED)
@@ -81,7 +83,7 @@ target_compile_definitions(monad_async_c PRIVATE MONAD_ASYNC_SOURCE=1)
 target_include_directories(monad_async_c PUBLIC "src")
 target_link_libraries(monad_async_c PUBLIC uring monad_core monad_context_c)
 
-if(BINDGEN_PROGRAM)
+if(BINDGEN_PROGRAM AND MONAD_RUNLOOP_RUN_BINDGEN)
   add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/rust/async.rs"
     COMMAND "${BINDGEN_PROGRAM}" -o "${CMAKE_CURRENT_SOURCE_DIR}/rust/async.rs"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/monad/async/all.h"
@@ -104,6 +106,7 @@ if(BINDGEN_PROGRAM)
     --
     -I ${CMAKE_CURRENT_LIST_DIR}/src
     -D MONAD_CONTEXT_DISABLE_INLINE_CUSTOM_GDB_THREAD_DB_LOAD
+    -std=c23
     DEPENDS ${monad_async_INCLUDES} ${monad_context_INCLUDES}
   )
   add_custom_target(monad_async_c_regenerate_rust_bindings DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/rust/async.rs")
@@ -117,7 +120,7 @@ enable_testing()
 add_subdirectory("src/monad/async/test")
 add_subdirectory("src/monad/context/test")
 
-if(RUSTC_PROGRAM AND NOT CMAKE_C_FLAGS_INIT MATCHES "fsanitize=")
+if(RUSTC_PROGRAM AND NOT CMAKE_C_FLAGS_INIT MATCHES "fsanitize=" AND MONAD_RUNLOOP_RUN_BINDGEN)
     cmake_host_system_information(RESULT linux_flavour QUERY DISTRIB_ID)
     if(linux_flavour MATCHES "debian|ubuntu")
         find_package(Boost REQUIRED stacktrace_backtrace)

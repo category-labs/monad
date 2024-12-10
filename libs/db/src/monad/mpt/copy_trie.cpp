@@ -1,5 +1,6 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
+#include <monad/mem/allocators.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/node.hpp>
@@ -7,6 +8,7 @@
 #include <monad/mpt/util.hpp>
 
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -22,10 +24,13 @@ Node::UniquePtr create_node_add_new_branch(
 {
     uint16_t const mask =
         static_cast<uint16_t>(node->mask | (1u << new_branch));
-    std::array<ChildData, 16> children;
-    for (unsigned i = 0, old_j = 0, bit = 1; i < 16; ++i, bit <<= 1) {
+    allocators::inline_owning_span<
+        ChildData,
+        sizeof(ChildData) * Node::max_number_of_children>
+        children{static_cast<uint8_t>(std::popcount(mask))};
+    for (unsigned i = 0, j = 0, old_j = 0, bit = 1; i < 16; ++i, bit <<= 1) {
         if (i == new_branch) {
-            auto &child = children[i];
+            auto &child = children[j];
             child.branch = (unsigned char)i;
             child.ptr = std::move(new_child);
             child.subtrie_min_version = calc_min_version(*child.ptr);
@@ -36,9 +41,10 @@ Node::UniquePtr create_node_add_new_branch(
                     calc_min_offsets(
                         *child.ptr, aux.physical_to_virtual(child.offset));
             }
+            ++j;
         }
         else if (mask & bit) {
-            auto &child = children[i];
+            auto &child = children[j];
             child.branch = (unsigned char)i;
             child.ptr = node->move_next(old_j);
             child.subtrie_min_version = node->subtrie_min_version(old_j);
@@ -48,6 +54,8 @@ Node::UniquePtr create_node_add_new_branch(
                 child.offset = node->fnext(old_j);
                 MONAD_ASSERT(child.offset != INVALID_OFFSET);
             }
+            ++old_j;
+            ++j;
         }
     }
     return make_node(

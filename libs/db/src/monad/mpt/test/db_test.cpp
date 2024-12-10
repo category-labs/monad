@@ -1564,66 +1564,92 @@ TYPED_TEST(DbTest, copy_trie_from_to_same_version)
     verify_dest_state(this->db, long_dest_prefix);
 }
 
-TEST_F(OnDiskDbWithFileFixture, copy_trie_to_different_version)
+TEST_F(OnDiskDbWithFileFixture, copy_trie_to_different_version_modify_state)
 {
     std::deque<monad::byte_string> kv_alloc;
     for (size_t i = 0; i < 10; ++i) {
         kv_alloc.emplace_back(keccak_int_to_string(i));
     }
-    auto const prefix0 = 0x001234_hex;
+    auto const prefix = 0x0012_hex;
+    auto const prefix0 = 0x001233_hex;
     auto const prefix1 = 0x001235_hex;
-    auto const final_prefix = 0x10_hex;
+    auto const prefix2 = 0x001239_hex;
+    auto const last_prefix = 0x10_hex;
     uint64_t const block_id = 0;
     upsert_updates_flat_list(
-        db,
-        prefix0,
-        block_id,
-        make_update(kv_alloc[0], kv_alloc[0]),
-        make_update(kv_alloc[1], kv_alloc[1]),
-        make_update(kv_alloc[2], kv_alloc[2]),
-        make_update(kv_alloc[3], kv_alloc[3]),
-        make_update(kv_alloc[4], kv_alloc[4]),
-        make_update(kv_alloc[5], kv_alloc[5]),
-        make_update(kv_alloc[6], kv_alloc[6]),
-        make_update(kv_alloc[7], kv_alloc[7]),
-        make_update(kv_alloc[8], kv_alloc[8]),
-        make_update(kv_alloc[9], kv_alloc[9]));
+        db, prefix, block_id, make_update(kv_alloc[0], kv_alloc[0]));
 
     ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
     Db rodb{ro_config};
-    monad::byte_string const data{rodb.get({}, block_id).value()};
-    EXPECT_EQ(data.size(), 8);
 
     // copy trie to a new version
     // read: can't read new dest version until upserting
-    db.copy_trie(block_id, prefix0, block_id + 1, prefix1);
+    db.copy_trie(block_id, prefix, block_id + 1, prefix0);
     EXPECT_FALSE(rodb.get({}, block_id + 1).has_value());
     db.upsert({}, block_id + 1);
-    // read only db should be able to read
-    {
-        auto const res = rodb.get(prefix1 + kv_alloc[0], block_id + 1);
-        EXPECT_TRUE(res.has_value());
-        EXPECT_EQ(res.value(), kv_alloc[0]);
-    }
-    // copy trie to a different prefix in the same version
-    db.copy_trie(block_id + 1, prefix1, block_id + 1, final_prefix, false);
-    EXPECT_FALSE(rodb.get(final_prefix, block_id + 1).has_value());
-    db.upsert({}, block_id + 1);
-    {
-        auto const res = rodb.get(final_prefix + kv_alloc[0], block_id + 1);
-        EXPECT_TRUE(res.has_value());
-        EXPECT_EQ(res.value(), kv_alloc[0]);
-    }
-    { // verify that src trie is still valid
-        auto const res = rodb.get(prefix1 + kv_alloc[0], block_id + 1);
-        EXPECT_TRUE(res.has_value());
-        EXPECT_EQ(res.value(), kv_alloc[0]);
-    }
 
-    monad::byte_string const data_after{rodb.get({}, block_id).value()};
-    monad::byte_string const data_new{rodb.get({}, block_id + 1).value()};
-    EXPECT_EQ(data, data_after);
-    EXPECT_EQ(data_after, data_new);
+    db.copy_trie(block_id, prefix, block_id + 1, prefix1);
+    upsert_updates_flat_list(
+        db, prefix1, block_id + 1, make_update(kv_alloc[1], kv_alloc[1]));
+
+    auto verify_before1 = [&](int const invoke_count) {
+        auto res = rodb.get(prefix1 + kv_alloc[0], block_id + 1);
+        ASSERT_TRUE(res.has_value()) << invoke_count;
+        EXPECT_EQ(res.value(), kv_alloc[0]);
+        res = rodb.get(prefix1 + kv_alloc[1], block_id + 1);
+        ASSERT_TRUE(res.has_value()) << invoke_count;
+        EXPECT_EQ(res.value(), kv_alloc[1]);
+        ASSERT_FALSE(rodb.get(prefix1 + kv_alloc[2], block_id + 1))
+            << invoke_count;
+
+        res = rodb.get(prefix0 + kv_alloc[0], block_id + 1);
+        ASSERT_TRUE(res.has_value()) << invoke_count;
+        EXPECT_EQ(res.value(), kv_alloc[0]);
+        ASSERT_FALSE(rodb.get(prefix0 + kv_alloc[1], block_id + 1))
+            << invoke_count;
+        ASSERT_FALSE(rodb.get(prefix0 + kv_alloc[2], block_id + 1))
+            << invoke_count;
+    };
+    int invoke_idx = 0;
+    verify_before1(invoke_idx++);
+
+    db.copy_trie(block_id, prefix, block_id + 1, prefix2);
+    upsert_updates_flat_list(
+        db, prefix2, block_id + 1, make_update(kv_alloc[2], kv_alloc[2]));
+
+    auto verify_before2 = [&](int const invoke_count) {
+        auto res = rodb.get(prefix2 + kv_alloc[0], block_id + 1);
+        ASSERT_TRUE(res.has_value()) << invoke_count;
+        EXPECT_EQ(res.value(), kv_alloc[0]);
+        res = rodb.get(prefix2 + kv_alloc[2], block_id + 1);
+        ASSERT_TRUE(res.has_value()) << invoke_count;
+        EXPECT_EQ(res.value(), kv_alloc[2]);
+        ASSERT_FALSE(rodb.get(prefix2 + kv_alloc[1], block_id + 1))
+            << invoke_count;
+
+        verify_before1(invoke_count);
+    };
+    verify_before2(invoke_idx++);
+
+    // copy trie to a different prefix within the same version
+    db.copy_trie(block_id + 1, prefix1, block_id + 1, last_prefix, false);
+    EXPECT_FALSE(rodb.get(last_prefix, block_id + 1).has_value());
+    upsert_updates_flat_list(
+        db, last_prefix, block_id + 1, make_update(kv_alloc[3], kv_alloc[3]));
+    {
+        auto res = rodb.get(last_prefix + kv_alloc[0], block_id + 1);
+        ASSERT_TRUE(res.has_value());
+        EXPECT_EQ(res.value(), kv_alloc[0]);
+        res = rodb.get(last_prefix + kv_alloc[1], block_id + 1);
+        ASSERT_TRUE(res.has_value());
+        EXPECT_EQ(res.value(), kv_alloc[1]);
+        res = rodb.get(last_prefix + kv_alloc[3], block_id + 1);
+        ASSERT_TRUE(res.has_value());
+        EXPECT_EQ(res.value(), kv_alloc[3]);
+        ASSERT_FALSE(rodb.get(last_prefix + kv_alloc[2], block_id + 1));
+
+        verify_before2(invoke_idx++);
+    }
 }
 
 TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)

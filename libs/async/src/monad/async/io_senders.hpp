@@ -511,6 +511,7 @@ static_assert(sizeof(timed_delay_sender) == 24);
 static_assert(alignof(timed_delay_sender) == 8);
 static_assert(sender<timed_delay_sender>);
 
+// note(alee): unused
 /*! \class threadsafe_sender
 \brief A Sender which completes on the kernel thread executing an `AsyncIO`
 instance, but which can be initiated thread safely from any other kernel

@@ -187,3 +187,14 @@ monad_add_test_folder("src/monad/execution")
 monad_add_test_folder("src/monad/rlp")
 monad_add_test_folder("src/monad/state2")
 monad_add_test_folder("src/monad/trie")
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  add_executable(
+    fuzz_execution
+    "${PROJECT_SOURCE_DIR}/src/monad/execution/test/fuzz_execution.cpp")
+  target_compile_options(fuzz_execution PRIVATE "-fsanitize=fuzzer")
+  target_link_options(fuzz_execution PRIVATE "-fsanitize=fuzzer")
+  monad_compile_options(fuzz_execution)
+  target_include_directories(fuzz_execution PRIVATE "${TOP_CURRENT_BINARY_DIR}/test")
+  target_link_libraries(fuzz_execution PUBLIC monad_execution)
+endif()

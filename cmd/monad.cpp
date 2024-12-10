@@ -528,13 +528,13 @@ int main(int const argc, char const *argv[])
                 auto const path = block_db_path / filename;
                 if (MONAD_UNLIKELY(
                         !fs::exists(path) || !fs::is_regular_file(path))) {
-                    LOG_ERROR("File doesn't exist: ", path);
-                    MONAD_ASSERT(false);
+                    MONAD_ABORT_PRINTF(
+                        "File doesn't exist %s", path.native().c_str());
                 }
                 std::ifstream istream(path);
                 if (MONAD_UNLIKELY(!istream)) {
-                    LOG_ERROR("Could not open file: {}", path);
-                    MONAD_ASSERT(false);
+                    MONAD_ABORT_PRINTF(
+                        "Could not open file %s", path.native().c_str());
                 }
 
                 std::ostringstream buf;

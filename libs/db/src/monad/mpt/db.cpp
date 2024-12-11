@@ -130,7 +130,9 @@ struct Db::ROOnDisk final : public Db::Impl
         , root_{
               last_loaded_root_offset_ == INVALID_OFFSET
                   ? Node::UniquePtr{}
-                  : read_node_blocking(pool_, last_loaded_root_offset_)}
+                  : read_node_blocking(
+                        aux_, last_loaded_root_offset_,
+                        aux_.db_history_max_version())}
     {
         io_.set_capture_io_latencies(options.capture_io_latencies);
         io_.set_concurrent_read_io_limit(options.concurrent_read_io_limit);
@@ -167,22 +169,16 @@ struct Db::ROOnDisk final : public Db::Impl
         if (!root.is_valid()) {
             return {NodeCursor{}, find_result::unknown};
         }
-        // db we last loaded does not contain the version we want to find
+        // the root we last loaded does not contain the version we want to find
         if (!aux().version_is_valid_ondisk(version)) {
             return {NodeCursor{}, find_result::version_no_longer_exist};
         }
-        try {
-            auto const res = find_blocking(aux(), root, key);
-            // verify version still valid in history after success
-            return aux().version_is_valid_ondisk(version)
-                       ? res
-                       : find_cursor_result_type{
-                             NodeCursor{},
-                             find_result::version_no_longer_exist};
-        }
-        catch (std::exception const &e) { // exception implies UB
-            return {NodeCursor{}, find_result::version_no_longer_exist};
-        }
+        auto const res = find_blocking(aux(), root, key, version);
+        // verify version still valid in history after success
+        return aux().version_is_valid_ondisk(version)
+                   ? res
+                   : find_cursor_result_type{
+                         NodeCursor{}, find_result::version_no_longer_exist};
     }
 
     virtual void move_trie_version_fiber_blocking(uint64_t, uint64_t) override
@@ -225,7 +221,7 @@ struct Db::ROOnDisk final : public Db::Impl
         }
         if (last_loaded_root_offset_ != root_offset) {
             last_loaded_root_offset_ = root_offset;
-            root_ = read_node_blocking(pool_, root_offset);
+            root_ = read_node_blocking(aux_, root_offset, version);
         }
         return root_ ? NodeCursor{*root_} : NodeCursor{};
     }
@@ -281,19 +277,21 @@ struct Db::InMemory final : public Db::Impl
     }
 
     virtual void copy_trie_fiber_blocking(
-        uint64_t, NibblesView const src, uint64_t const dest_version,
-        NibblesView const dest, bool const) override
+        uint64_t const src_version, NibblesView const src,
+        uint64_t const dest_version, NibblesView const dest,
+        bool const) override
     {
         // in memory copy_trie only allows moving trie from src to prefix under
         // the same version
-        root_ =
-            copy_trie_to_dest(aux_, *root_, src, {}, dest, dest_version, false);
+        root_ = copy_trie_to_dest(
+            aux_, *root_, src, src_version, {}, dest, dest_version, false);
     }
 
     virtual find_cursor_result_type find_fiber_blocking(
-        NodeCursor const &root, NibblesView const &key, uint64_t = 0) override
+        NodeCursor const &root, NibblesView const &key,
+        uint64_t const version = 0) override
     {
-        return find_blocking(aux(), root, key);
+        return find_blocking(aux(), root, key, version);
     }
 
     virtual size_t prefetch_fiber_blocking() override
@@ -357,6 +355,7 @@ struct Db::RWOnDisk final : public Db::Impl
         threadsafe_boost_fibers_promise<Node::UniquePtr> *promise;
         Node &src_root;
         NibblesView src;
+        uint64_t src_version;
         Node::UniquePtr dest_root;
         NibblesView dest;
         uint64_t dest_version;
@@ -565,7 +564,7 @@ struct Db::RWOnDisk final : public Db::Impl
                             aux.get_root_offset_at_version(req->version);
                         MONAD_ASSERT(root_offset != INVALID_OFFSET);
                         req->promise->set_value(
-                            read_node_blocking(pool, root_offset));
+                            read_node_blocking(aux, root_offset, req->version));
                     }
                     else if (auto *req = std::get_if<7>(&request.front());
                              req != nullptr) {
@@ -576,6 +575,7 @@ struct Db::RWOnDisk final : public Db::Impl
                             aux,
                             req->src_root,
                             req->src,
+                            req->src_version,
                             std::move(req->dest_root),
                             req->dest,
                             req->dest_version,
@@ -686,7 +686,9 @@ struct Db::RWOnDisk final : public Db::Impl
             MONAD_ASSERT(worker_);
             return aux_.get_latest_root_offset() != INVALID_OFFSET
                        ? read_node_blocking(
-                             worker_->pool, aux_.get_latest_root_offset())
+                             aux_,
+                             aux_.get_latest_root_offset(),
+                             aux_.db_history_max_version())
                        : Node::UniquePtr{};
         }())
         , root_version_(aux_.db_history_max_version())
@@ -872,8 +874,9 @@ struct Db::RWOnDisk final : public Db::Impl
     {
         if (src_version != root_version_) {
             root_ = read_node_blocking(
-                aux_.io->storage_pool(),
-                aux_.get_root_offset_at_version(src_version));
+                aux_,
+                aux_.get_root_offset_at_version(src_version),
+                src_version);
             root_version_ = src_version;
         }
         Node &src_root = *root_;
@@ -884,8 +887,7 @@ struct Db::RWOnDisk final : public Db::Impl
         else if (auto const root_offset =
                      aux_.get_root_offset_at_version(dest_version);
                  root_offset != INVALID_OFFSET) {
-            dest_root =
-                read_node_blocking(aux_.io->storage_pool(), root_offset);
+            dest_root = read_node_blocking(aux_, root_offset, dest_version);
         }
 
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
@@ -894,6 +896,7 @@ struct Db::RWOnDisk final : public Db::Impl
             .promise = &promise,
             .src_root = src_root,
             .src = src,
+            .src_version = src_version,
             .dest_root = std::move(dest_root),
             .dest = dest,
             .dest_version = dest_version,
@@ -1215,29 +1218,20 @@ namespace detail
             auto pendings = std::move(it->second);
             inflights.erase(it);
             std::shared_ptr<Node> root{};
-
             bool const block_alive_after_read =
                 sender->context.aux.version_is_valid_ondisk(sender->block_id);
             if (block_alive_after_read) {
-                try {
-                    sender->root =
-                        detail::deserialize_node_from_receiver_result(
-                            std::move(buffer_), buffer_off, io_state);
-                    root = sender->root;
-                    sender->res_root = {
-                        NodeCursor{*sender->root.get()}, find_result::success};
-                    {
-                        AsyncContext::TrieRootCache::ConstAccessor acc;
-                        MONAD_ASSERT(
-                            sender->context.root_cache.find(acc, offset) ==
-                            false);
-                    }
-                    sender->context.root_cache.insert(offset, sender->root);
+                sender->root = detail::deserialize_node_from_receiver_result(
+                    std::move(buffer_), buffer_off, io_state);
+                root = sender->root;
+                sender->res_root = {
+                    NodeCursor{*sender->root.get()}, find_result::success};
+                {
+                    AsyncContext::TrieRootCache::ConstAccessor acc;
+                    MONAD_ASSERT(
+                        sender->context.root_cache.find(acc, offset) == false);
                 }
-                catch (std::exception const &) {
-                    sender->res_root = {
-                        NodeCursor{}, find_result::version_no_longer_exist};
-                }
+                sender->context.root_cache.insert(offset, sender->root);
             }
             else {
                 sender->res_root = {
@@ -1277,17 +1271,11 @@ namespace detail
                 delete this_io_state;
                 return;
             }
-            try {
-                // verify version still valid in history after success
-                get_result =
-                    aux.version_is_valid_ondisk(version)
-                        ? std::move(res).assume_value()
-                        : find_result_type<T>{
-                              T{}, find_result::version_no_longer_exist};
-            }
-            catch (std::exception const &e) { // exception implies UB
-                get_result = {T{}, find_result::version_no_longer_exist};
-            }
+            get_result = aux.version_is_valid_ondisk(version)
+                             ? std::move(res).assume_value()
+                             : find_result_type<T>{
+                                   T{}, find_result::version_no_longer_exist};
+
             io_state->completed(async::success());
             delete this_io_state;
         }

@@ -1151,8 +1151,8 @@ Node::UniquePtr UpdateAuxImpl::do_update(
 
 void UpdateAuxImpl::erase_version(uint64_t const version)
 {
-    auto root_to_erase = read_node_blocking(
-        io->storage_pool(), get_root_offset_at_version(version));
+    Node::UniquePtr root_to_erase =
+        read_node_blocking(*this, get_root_offset_at_version(version), version);
     auto const [min_offset_fast, min_offset_slow] =
         deserialize_compaction_offsets(root_to_erase->value());
     MONAD_ASSERT(

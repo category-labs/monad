@@ -45,6 +45,7 @@ add_library(
   "src/monad/mpt/node_cursor.hpp"
   "src/monad/mpt/ondisk_db_config.hpp"
   "src/monad/mpt/request.hpp"
+  "src/monad/mpt/read_node_blocking.cpp"
   "src/monad/mpt/state_machine.hpp"
   "src/monad/mpt/traverse.hpp"
   "src/monad/mpt/trie.cpp"

@@ -31,6 +31,7 @@
 #include <bit>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <vector>
 
 // temporary
@@ -1010,7 +1011,7 @@ Node::UniquePtr upsert(
 // The in-memory effect is similar to a move operation.
 Node::UniquePtr copy_trie_to_dest(
     UpdateAuxImpl &, Node &src_root, NibblesView src_prefix,
-    Node::UniquePtr dest_root, NibblesView dest_prefx,
+    uint64_t src_version, Node::UniquePtr dest_root, NibblesView dest_prefx,
     uint64_t const dest_version, bool must_write_to_disk);
 
 // load all nodes as far as caching policy would allow
@@ -1063,11 +1064,20 @@ void find_notify_fiber_future(
 on-disk and in-memory trie. When node along key is not yet in memory, it loads
 the node through blocking read.
 
-\warning Should only invoke it from the triedb owning
-thread, as no synchronization is provided, and user code should make sure no
-other place is modifying trie. */
-find_cursor_result_type
-find_blocking(UpdateAuxImpl const &, NodeCursor, NibblesView key);
+\warning Should only invoke it from the triedb owning thread, as no
+synchronization is provided, and user code should make sure no other place is
+modifying trie.
+*/
+find_cursor_result_type find_blocking(
+    UpdateAuxImpl const &, NodeCursor, NibblesView key, uint64_t version);
+
+/* This function reads a node from the specified physical offset `node_offset`,
+where the spare bits indicate the number of pages to read. It returns a valid
+`Node::UniquePtr` on success, and returns `nullptr` if the specified version
+becomes invalid.
+*/
+Node::UniquePtr read_node_blocking(
+    UpdateAuxImpl const &, chunk_offset_t node_offset, uint64_t version);
 
 //////////////////////////////////////////////////////////////////////////////
 // helpers

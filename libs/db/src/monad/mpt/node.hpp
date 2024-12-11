@@ -353,11 +353,6 @@ void serialize_node_to_buffer(
 Node::UniquePtr
 deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes);
 
-//! input argument is node's physical offset
-//! chunk_offset_t spare bits store the num page to read
-Node::UniquePtr read_node_blocking(
-    MONAD_ASYNC_NAMESPACE::storage_pool &, chunk_offset_t node_offset);
-
 Node::UniquePtr copy_node(Node const *);
 
 int64_t calc_min_version(Node const &);

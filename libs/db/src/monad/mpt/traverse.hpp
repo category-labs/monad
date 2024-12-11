@@ -45,14 +45,6 @@ namespace detail
         TraverseSender &sender,
         async::erased_connected_operation *traverse_state, Node const &node,
         TraverseMachine &machine, unsigned char const branch);
-}
-
-namespace detail
-{
-    inline bool verify_version_valid(UpdateAuxImpl &aux, uint64_t const version)
-    {
-        return aux.is_on_disk() ? aux.version_is_valid_ondisk(version) : true;
-    }
 
     // current implementation does not contaminate triedb node caching
     inline bool preorder_traverse_blocking_impl(
@@ -73,20 +65,13 @@ namespace detail
                         continue;
                     }
                     MONAD_ASSERT(aux.is_on_disk());
-                    // verify version before read
-                    if (!verify_version_valid(aux, version)) {
+                    Node::UniquePtr next_node_ondisk =
+                        read_node_blocking(aux, node.fnext(idx), version);
+                    if (!next_node_ondisk ||
+                        !preorder_traverse_blocking_impl(
+                            aux, i, *next_node_ondisk, traverse, version)) {
                         return false;
                     }
-                    Node::UniquePtr next_disk{};
-                    try {
-                        next_disk = read_node_blocking(
-                            aux.io->storage_pool(), node.fnext(idx));
-                    }
-                    catch (std::exception const &e) { // exception implies UB
-                        return false;
-                    }
-                    preorder_traverse_blocking_impl(
-                        aux, i, *next_disk, traverse, version);
                 }
             }
         }
@@ -152,7 +137,7 @@ namespace detail
                 MONAD_ASSERT(buffer_);
                 --sender->outstanding_reads;
                 if (sender->version_expired_before_complete ||
-                    !verify_version_valid(sender->aux, sender->version)) {
+                    !sender->aux.version_is_valid_ondisk(sender->version)) {
                     // async read failure or stopping initiated
                     sender->version_expired_before_complete = true;
                     sender->reads_to_initiate.clear();
@@ -272,7 +257,8 @@ namespace detail
                     if (next == nullptr) {
                         MONAD_ASSERT(sender.aux.is_on_disk());
                         // verify version before read
-                        if (!verify_version_valid(sender.aux, sender.version)) {
+                        if (!sender.aux.version_is_valid_ondisk(
+                                sender.version)) {
                             sender.version_expired_before_complete = true;
                             sender.reads_to_initiate.clear();
                             return;

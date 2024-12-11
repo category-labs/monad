@@ -62,11 +62,12 @@ TEST_F(ReadOnlyDBTest, read_only_dbs_track_writable_db)
         monad::test::MerkleCompute const comp;
         monad::test::StateMachineAlwaysMerkle sm;
         monad::test::UpdateAux<void> aux{&io};
+        auto const latest_version = aux.db_history_max_version();
         ASSERT_EQ(
             state()->aux.get_latest_root_offset(),
             aux.get_latest_root_offset());
-        Node::UniquePtr root{
-            read_node_blocking(pool, aux.get_latest_root_offset())};
+        Node::UniquePtr root{read_node_blocking(
+            aux, aux.get_latest_root_offset(), latest_version)};
         auto root_hash = [&] {
             monad::byte_string res(32, 0);
             sm.get_compute().compute(res.data(), root.get());
@@ -82,8 +83,8 @@ TEST_F(ReadOnlyDBTest, read_only_dbs_track_writable_db)
         append_done.wait();
         int n = 1;
         auto read_chunk = [&] {
-            root = Node::UniquePtr{
-                read_node_blocking(pool, aux.get_latest_root_offset())};
+            root = Node::UniquePtr{read_node_blocking(
+                aux, aux.get_latest_root_offset(), latest_version)};
             n++;
             std::cout << "   Root hash with " << n << " chunks is "
                       << print(root_hash()) << std::endl;

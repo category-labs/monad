@@ -111,9 +111,11 @@ Node::UniquePtr create_node_with_two_children(
 
 Node::UniquePtr copy_trie_impl(
     UpdateAuxImpl &aux, Node &src_root, NibblesView const src_prefix,
-    Node::UniquePtr root, NibblesView const dest, uint64_t const dest_version)
+    uint64_t const src_version, Node::UniquePtr root, NibblesView const dest,
+    uint64_t const dest_version)
 {
-    auto [src_cursor, res] = find_blocking(aux, src_root, src_prefix);
+    auto [src_cursor, res] =
+        find_blocking(aux, src_root, src_prefix, src_version);
     MONAD_ASSERT(res == find_result::success);
     Node &src_node = *src_cursor.node;
     if (!root) {
@@ -198,10 +200,10 @@ Node::UniquePtr copy_trie_impl(
         if (node->mask & (1u << nibble)) {
             auto const index = node->to_child_index(nibble);
             if (node->next(index) == nullptr) {
-                node->set_next(
-                    index,
-                    read_node_blocking(
-                        aux.io->storage_pool(), node->fnext(index)));
+                Node::UniquePtr next_node_ondisk =
+                    read_node_blocking(aux, node->fnext(index), dest_version);
+                MONAD_ASSERT(next_node_ondisk != nullptr);
+                node->set_next(index, std::move(next_node_ondisk));
             }
             // there is a matched branch, go to next child
             parent = node;
@@ -268,14 +270,16 @@ Node::UniquePtr copy_trie_impl(
 
 Node::UniquePtr copy_trie_to_dest(
     UpdateAuxImpl &aux, Node &src_root, NibblesView const src_prefix,
-    Node::UniquePtr root, NibblesView const dest_prefix,
-    uint64_t const dest_version, bool const must_write_to_disk)
+    uint64_t const src_version, Node::UniquePtr root,
+    NibblesView const dest_prefix, uint64_t const dest_version,
+    bool const must_write_to_disk)
 {
     auto impl = [&]() -> Node::UniquePtr {
         root = copy_trie_impl(
             aux,
             src_root,
             src_prefix,
+            src_version,
             std::move(root),
             dest_prefix,
             dest_version);

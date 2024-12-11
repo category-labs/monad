@@ -208,12 +208,15 @@ struct cli_tool_fixture
                         monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
                 monad::async::AsyncIO testio(pool, testrwbuf);
                 monad::mpt::UpdateAux<> const aux{&testio};
-                monad::mpt::Node::UniquePtr root_ptr{
-                    read_node_blocking(pool, aux.get_latest_root_offset())};
+                monad::mpt::Node::UniquePtr root_ptr{read_node_blocking(
+                    aux,
+                    aux.get_latest_root_offset(),
+                    aux.db_history_max_version())};
                 monad::mpt::NodeCursor const root(*root_ptr);
 
                 for (auto &key : this->state()->keys) {
-                    auto ret = monad::mpt::find_blocking(aux, root, key.first);
+                    auto ret = monad::mpt::find_blocking(
+                        aux, root, key.first, aux.db_history_max_version());
                     EXPECT_EQ(ret.second, monad::mpt::find_result::success);
                 }
                 EXPECT_EQ(
@@ -308,13 +311,15 @@ struct cli_tool_fixture
                             monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
                     monad::async::AsyncIO testio(pool, testrwbuf);
                     monad::mpt::UpdateAux<> const aux{&testio};
-                    monad::mpt::Node::UniquePtr root_ptr{
-                        read_node_blocking(pool, aux.get_latest_root_offset())};
+                    monad::mpt::Node::UniquePtr root_ptr{read_node_blocking(
+                        aux,
+                        aux.get_latest_root_offset(),
+                        aux.db_history_max_version())};
                     monad::mpt::NodeCursor const root(*root_ptr);
 
                     for (auto &key : this->state()->keys) {
-                        auto ret =
-                            monad::mpt::find_blocking(aux, root, key.first);
+                        auto ret = monad::mpt::find_blocking(
+                            aux, root, key.first, aux.db_history_max_version());
                         EXPECT_EQ(ret.second, monad::mpt::find_result::success);
                     }
                     EXPECT_EQ(

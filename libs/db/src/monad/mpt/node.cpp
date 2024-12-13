@@ -600,7 +600,8 @@ deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
     }
     // Load 32-bit node on-disk size
     auto const disk_size = unaligned_load<uint32_t>(read_pos);
-    MONAD_ASSERT(disk_size <= max_bytes);
+    MONAD_ASSERT_PRINTF(
+        disk_size <= max_bytes, "deserialized node disk size is %u", disk_size);
     MONAD_ASSERT(disk_size > 0 && disk_size <= Node::max_disk_size);
     read_pos += Node::disk_size_bytes;
     // Load the on disk node
@@ -644,13 +645,11 @@ Node::UniquePtr read_node_blocking(
         bytes_to_read,
         static_cast<off_t>(fd.second + rd_offset));
     if (bytes_read < 0) {
-        fprintf(
-            stderr,
+        MONAD_ABORT_PRINTF(
             "FATAL: pread(%u, %llu) failed with '%s'\n",
             bytes_to_read,
             rd_offset,
             strerror(errno));
-        MONAD_ASSERT("pread failed in read_node_blocking()" == nullptr);
     }
     return deserialize_node_from_buffer(
         buffer + buffer_off, size_t(bytes_read) - buffer_off);

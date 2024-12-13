@@ -83,12 +83,12 @@ extern "C"
         int written;                                                           \
         char *const buf_end = buf + sizeof(buf);                               \
         char *p = stpcpy(buf, "abort message: ");                              \
-        written =                                                              \
-            snprintf(p, buf_end - p, (format)__VA_OPT__(, ) __VA_ARGS__);      \
+        written = snprintf(                                                    \
+            p, (size_t)(buf_end - p), (format)__VA_OPT__(, ) __VA_ARGS__);     \
         /* See comment in MONAD_ASSERT_PRINTF */                               \
         p = written < 0 ? buf_end - 2 : p + written;                           \
         if (p < buf_end) {                                                     \
-            strncpy(p, "\n", buf_end - p);                                     \
+            strncpy(p, "\n", (size_t)(buf_end - p));                           \
         }                                                                      \
         buf_end[-1] = '\0';                                                    \
         monad_assertion_failed(                                                \

@@ -1,3 +1,4 @@
+#include <monad/core/assert.h>
 #include <monad/core/backtrace.hpp>
 
 #include <monad/core/assert.h>

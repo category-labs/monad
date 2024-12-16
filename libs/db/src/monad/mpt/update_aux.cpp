@@ -269,6 +269,44 @@ void UpdateAuxImpl::set_latest_verified_version(uint64_t const version) noexcept
     do_(db_metadata_[1].main);
 }
 
+int64_t UpdateAuxImpl::get_auto_expire_version_metadata() const noexcept
+{
+    MONAD_ASSERT(is_on_disk());
+    return start_lifetime_as<std::atomic_int64_t const>(
+               &db_metadata()->auto_expire_version)
+        ->load(std::memory_order_acquire);
+}
+
+void UpdateAuxImpl::set_auto_expire_version_metadata(
+    int64_t const version) noexcept
+{
+    MONAD_ASSERT(is_on_disk());
+    auto do_ = [&](detail::db_metadata *m) {
+        auto g = m->hold_dirty();
+        reinterpret_cast<std::atomic_int64_t *>(&m->auto_expire_version)
+            ->store(version, std::memory_order_release);
+    };
+    do_(db_metadata_[0].main);
+    do_(db_metadata_[1].main);
+}
+
+int64_t UpdateAuxImpl::calc_auto_expire_version() noexcept
+{
+    MONAD_ASSERT(is_on_disk());
+    if (db_history_max_version() == INVALID_BLOCK_ID) {
+        return 0;
+    }
+    auto const min_valid_version = db_history_min_valid_version();
+    if (min_valid_version == db_history_max_version()) {
+        return static_cast<int64_t>(min_valid_version);
+    }
+    auto const min_expire_version =
+        static_cast<uint64_t>(get_auto_expire_version_metadata());
+    return static_cast<int64_t>(
+        min_valid_version > min_expire_version + 1 ? min_expire_version + 2
+                                                   : min_valid_version);
+}
+
 void UpdateAuxImpl::rewind_to_match_offsets()
 {
     MONAD_ASSERT(is_on_disk());
@@ -737,6 +775,7 @@ void UpdateAuxImpl::set_io(
         }
         set_latest_finalized_version(INVALID_BLOCK_ID);
         set_latest_verified_version(INVALID_BLOCK_ID);
+        set_auto_expire_version_metadata(0);
 
         // Set history length
         if (history_len.has_value()) {
@@ -895,6 +934,7 @@ Node::UniquePtr UpdateAuxImpl::do_update(
             compact_offset_slow = MIN_COMPACT_VIRTUAL_OFFSET;
         }
     }
+
     // Erase the earliest valid version if it is going to be outdated after
     // upserting new version
     if (auto const min_valid_version = db_history_min_valid_version();
@@ -906,6 +946,7 @@ Node::UniquePtr UpdateAuxImpl::do_update(
         // `upsert()`.
         erase_version(min_valid_version);
     }
+    curr_upsert_auto_expire_version = calc_auto_expire_version();
     UpdateList root_updates;
     byte_string const compact_offsets_bytes =
         version_is_valid_ondisk(version)
@@ -915,8 +956,10 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     auto root_update = make_update(
         {}, compact_offsets_bytes, false, std::move(updates), version);
     root_updates.push_front(root_update);
-    return upsert(
+    auto root = upsert(
         *this, version, sm, std::move(prev_root), std::move(root_updates));
+    set_auto_expire_version_metadata(curr_upsert_auto_expire_version);
+    return root;
 }
 
 void UpdateAuxImpl::erase_version(uint64_t const version)

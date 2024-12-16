@@ -835,6 +835,8 @@ public:
                             old_metadata->latest_finalized_version;
                         metadata->latest_verified_version =
                             old_metadata->latest_verified_version;
+                        metadata->auto_expire_version =
+                            old_metadata->auto_expire_version;
                     });
                     fast_list_base_insertion_count =
                         old_metadata->fast_list_begin()->insertion_count();
@@ -1537,8 +1539,10 @@ opened.
                  << ".\n     It has been configured to retain no more than "
                  << aux.version_history_length()
                  << ".\n     Latest finalized is "
-                 << aux.get_latest_finalized_version() << " latest verified is "
-                 << aux.get_latest_verified_version() << "\n";
+                 << aux.get_latest_finalized_version()
+                 << ", latest verified is " << aux.get_latest_verified_version()
+                 << ", auto expire version is "
+                 << aux.get_auto_expire_version_metadata() << "\n";
 
             if (impl.rewind_database_to) {
                 if (*impl.rewind_database_to <

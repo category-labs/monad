@@ -126,6 +126,11 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
 
         BOOST_OUTCOME_TRY(static_validate_block(rev, block));
 
+        // Ethereum: commit to `round = block_number`, and finalize immediately
+        // after. always execute off of the previous proposal round
+        // TODO: Monad chain
+        db.set(
+            block.header.number, block.header.number, block.header.number - 1);
         BlockState block_state(db);
         BOOST_OUTCOME_TRY(
             auto const results,
@@ -154,6 +159,7 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
             block.transactions,
             block.ommers,
             block.withdrawals);
+        db.finalize(block.header.number, block.header.number);
 
         if (!chain.validate_root(
                 rev,
@@ -164,6 +170,7 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
                 db.withdrawals_root())) {
             return BlockError::WrongMerkleRoot;
         }
+        db.update_verified_block(block.header.number);
 
         auto const h =
             to_bytes(keccak256(rlp::encode_block_header(block.header)));
@@ -337,6 +344,7 @@ int main(int const argc, char const *argv[])
         return mpt::Db{*machine};
     }();
 
+    TrieDb triedb{db}; // init block number to latest finalized block
     // Note: in memory db block number is always zero
     uint64_t const init_block_num = [&] {
         if (!snapshot.empty()) {
@@ -357,9 +365,8 @@ int main(int const argc, char const *argv[])
             TrieDb tdb{db};
             read_genesis(genesis, tdb);
         }
-        return db.get_latest_block_id();
+        return triedb.get_block_number();
     }();
-    TrieDb triedb{db};
 
     std::optional<monad_statesync_server_context> ctx;
     std::jthread sync_thread;
@@ -397,9 +404,12 @@ int main(int const argc, char const *argv[])
     }
 
     LOG_INFO(
-        "Finished initializing db at block = {}, state root = {}, time elapsed "
+        "Finished initializing db at block = {}, last finalized block = {}, "
+        "last verified block = {}, state root = {}, time elapsed "
         "= {}",
         init_block_num,
+        db.get_latest_finalized_block_id(),
+        db.get_latest_verified_block_id(),
         triedb.state_root(),
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - load_start_time));

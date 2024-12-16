@@ -149,12 +149,14 @@ TEST(DBTest, read_only)
         std::filesystem::temp_directory_path() /
         (::testing::UnitTest::GetInstance()->current_test_info()->name() +
          std::to_string(rand()));
+    uint64_t block_number = 0;
     {
         OnDiskMachine machine;
         mpt::Db db{machine, mpt::OnDiskDbConfig{.dbname_paths = {name}}};
         TrieDb rw(db);
 
         Account const acct1{.nonce = 1};
+        rw.set_block_number(block_number);
         rw.commit(
             StateDeltas{
                 {ADDR_A,
@@ -162,7 +164,7 @@ TEST(DBTest, read_only)
             Code{},
             BlockHeader{});
         Account const acct2{.nonce = 2};
-        rw.increment_block_number();
+        rw.set_block_number(++block_number);
         rw.commit(
             StateDeltas{
                 {ADDR_A, StateDelta{.account = {acct1, acct2}, .storage = {}}}},
@@ -171,12 +173,13 @@ TEST(DBTest, read_only)
 
         mpt::Db db2(mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {name}});
         TrieDb ro{db2};
+        ASSERT_EQ(ro.get_block_number(), block_number);
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 2});
         ro.set_block_number(0);
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 1});
 
         Account const acct3{.nonce = 3};
-        rw.increment_block_number();
+        rw.set_block_number(++block_number);
         rw.commit(
             StateDeltas{
                 {ADDR_A, StateDelta{.account = {acct2, acct3}, .storage = {}}}},
@@ -366,8 +369,10 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     using namespace intx;
     using namespace evmc::literals;
 
+    uint64_t block_number = 0;
     TrieDb tdb{this->db};
     // empty receipts
+    tdb.set_block_number(block_number);
     tdb.commit(StateDeltas{}, Code{}, BlockHeader{});
     EXPECT_EQ(tdb.receipts_root(), NULL_ROOT);
 
@@ -474,8 +479,8 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     tx_hash.emplace_back(
         keccak256(rlp::encode_transaction(transactions.emplace_back(t2))));
     ASSERT_EQ(receipts.size(), transactions.size());
-    tdb.increment_block_number();
     call_frames.resize(receipts.size());
+    tdb.set_block_number(++block_number);
     tdb.commit(
         StateDeltas{},
         Code{},

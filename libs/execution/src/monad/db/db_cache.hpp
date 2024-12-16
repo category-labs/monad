@@ -108,9 +108,22 @@ public:
         }
     }
 
-    virtual void increment_block_number() override
+    virtual void
+    set(uint64_t const block_number, uint64_t const round_number,
+        uint64_t const parent_round_number) override
     {
-        db_.increment_block_number();
+        MONAD_ABORT("TODO: DbCache does not support proposal execution");
+    }
+
+    virtual void
+    finalize(uint64_t const block_number, uint64_t const round_number) override
+    {
+        MONAD_ABORT("TODO: DbCache does not support proposal execution");
+    }
+
+    virtual void update_verified_block(uint64_t const block_number) override
+    {
+        MONAD_ABORT("TODO: DbCache does not support proposal execution");
     }
 
     virtual void commit(

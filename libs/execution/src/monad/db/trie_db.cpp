@@ -59,12 +59,22 @@ MONAD_NAMESPACE_BEGIN
 
 using namespace monad::mpt;
 
+namespace
+{
+    Nibbles proposal_prefix(uint64_t const round_number)
+    {
+        auto const prefix =
+            serialize_as_big_endian<sizeof(uint64_t)>(round_number);
+        return concat(PROPOSAL_NIBBLE, NibblesView{prefix});
+    }
+}
+
 TrieDb::TrieDb(mpt::Db &db)
     : db_{db}
     , block_number_{
-          db.get_latest_block_id() == INVALID_BLOCK_ID
+          db.get_latest_finalized_block_id() == INVALID_BLOCK_ID
               ? 0
-              : db.get_latest_block_id()}
+              : db.get_latest_finalized_block_id()}
 {
 }
 
@@ -74,7 +84,7 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
 {
     auto const value = db_.get(
         concat(
-            FINALIZED_NIBBLE,
+            prefix_,
             STATE_NIBBLE,
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
         block_number_);
@@ -102,7 +112,7 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
 {
     auto const value = db_.get(
         concat(
-            FINALIZED_NIBBLE,
+            prefix_,
             STATE_NIBBLE,
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
             NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
@@ -128,7 +138,7 @@ std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
     // TODO read code analysis object
     auto const value = db_.get(
         concat(
-            FINALIZED_NIBBLE,
+            prefix_,
             CODE_NIBBLE,
             NibblesView{to_byte_string_view(code_hash.bytes)}),
         block_number_);
@@ -353,26 +363,86 @@ void TrieDb::commit(
             .version = static_cast<int64_t>(block_number_)}));
     }
 
-    Update finalized{
-        .key = finalized_nibbles,
+    UpdateList ls;
+    ls.push_front(update_alloc_.emplace_back(Update{
+        .key = prefix_,
         .value = byte_string_view{},
         .incarnation = false,
         .next = std::move(updates),
-        .version = static_cast<int64_t>(block_number_),
-    };
-    UpdateList finalized_updates;
-    finalized_updates.push_front(finalized);
-    db_.upsert(std::move(finalized_updates), block_number_);
+        .version = static_cast<int64_t>(block_number_)}));
+
+    db_.upsert(std::move(ls), block_number_);
+    if (!round_number_.has_value()) {
+        db_.update_finalized_block(block_number_);
+    }
 
     update_alloc_.clear();
     bytes_alloc_.clear();
     hash_alloc_.clear();
 }
 
-void TrieDb::increment_block_number()
+void TrieDb::set(
+    uint64_t const block_number, uint64_t const round_number,
+    uint64_t const parent_round_number)
 {
+    if (!db_.is_on_disk()) {
+        MONAD_ASSERT(block_number_ == 0);
+        MONAD_ASSERT(round_number_ == std::nullopt);
+        return;
+    }
+    block_number_ = block_number;
+    round_number_ = round_number;
+    prefix_ = proposal_prefix(round_number);
+
+    auto src_prefix = proposal_prefix(parent_round_number);
+    if (MONAD_UNLIKELY(db_.find(src_prefix, block_number - 1).has_error())) {
+        src_prefix = finalized_nibbles;
+        if (db_.find(src_prefix, block_number - 1).has_error()) {
+            // neither proposal nor finalized exists in parent version, set
+            // fresh state
+            return;
+        }
+    }
+    db_.copy_trie(block_number - 1, src_prefix, block_number, prefix_, false);
+}
+
+void TrieDb::finalize(uint64_t const block_number, uint64_t const round_number)
+{
+    // no re-finalization
     if (db_.is_on_disk()) {
-        ++block_number_;
+        auto const latest_finalized = db_.get_latest_finalized_block_id();
+        MONAD_ASSERT(
+            latest_finalized == INVALID_BLOCK_ID ||
+            block_number == latest_finalized + 1);
+        auto const src_prefix = proposal_prefix(round_number);
+        MONAD_ASSERT(db_.find(src_prefix, block_number).has_value());
+        db_.copy_trie(
+            block_number, src_prefix, block_number, finalized_nibbles, true);
+        db_.update_finalized_block(block_number);
+    }
+}
+
+void TrieDb::update_verified_block(uint64_t const block_number)
+{
+    // no re-verification
+    if (db_.is_on_disk()) {
+        auto const latest_verified = db_.get_latest_verified_block_id();
+        MONAD_ASSERT(
+            latest_verified == INVALID_BLOCK_ID ||
+            block_number == latest_verified + 1);
+        db_.update_verified_block(block_number);
+    }
+}
+
+void TrieDb::set_block_number(uint64_t const n)
+{
+    round_number_ = std::nullopt;
+    if (db_.is_on_disk()) {
+        block_number_ = n;
+        prefix_ = finalized_nibbles;
+    }
+    else {
+        MONAD_ASSERT(block_number_ == 0);
     }
 }
 
@@ -393,8 +463,8 @@ bytes32_t TrieDb::transactions_root()
 
 std::optional<bytes32_t> TrieDb::withdrawals_root()
 {
-    auto const value = db_.get_data(
-        concat(FINALIZED_NIBBLE, WITHDRAWAL_NIBBLE), block_number_);
+    auto const value =
+        db_.get_data(concat(prefix_, WITHDRAWAL_NIBBLE), block_number_);
     if (value.has_error()) {
         return std::nullopt;
     }
@@ -407,8 +477,8 @@ std::optional<bytes32_t> TrieDb::withdrawals_root()
 
 bytes32_t TrieDb::merkle_root(mpt::Nibbles const &nibbles)
 {
-    auto const value = db_.get_data(
-        concat(FINALIZED_NIBBLE, NibblesView{nibbles}), block_number_);
+    auto const value =
+        db_.get_data(concat(prefix_, NibblesView{nibbles}), block_number_);
     if (!value.has_value() || value.value().empty()) {
         return NULL_ROOT;
     }
@@ -546,8 +616,7 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
     auto json = nlohmann::json::object();
     Traverse traverse(*this, json);
 
-    auto res_cursor =
-        db_.find(concat(FINALIZED_NIBBLE, STATE_NIBBLE), block_number_);
+    auto res_cursor = db_.find(concat(prefix_, STATE_NIBBLE), block_number_);
     MONAD_ASSERT(res_cursor.has_value());
     MONAD_ASSERT(res_cursor.value().is_valid());
     // RWOndisk Db prevents any parallel traversal that does blocking i/o
@@ -579,11 +648,6 @@ uint64_t TrieDb::get_block_number() const
 uint64_t TrieDb::get_history_length() const
 {
     return db_.get_history_length();
-}
-
-void TrieDb::set_block_number(uint64_t const n)
-{
-    block_number_ = n;
 }
 
 MONAD_NAMESPACE_END

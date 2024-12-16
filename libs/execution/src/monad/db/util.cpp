@@ -105,6 +105,7 @@ namespace
                     finalized_updates.push_front(finalized);
                     db_.upsert(
                         std::move(finalized_updates), block_id_, false, false);
+                    db_.update_finalized_block(block_id_);
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();

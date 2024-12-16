@@ -65,6 +65,7 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
     BOOST_OUTCOME_TRY(static_validate_block<rev>(block));
 
     BlockState block_state(db);
+    db.set_block_number(block.header.number);
     EthereumMainnet const chain;
     BOOST_OUTCOME_TRY(
         auto const results,

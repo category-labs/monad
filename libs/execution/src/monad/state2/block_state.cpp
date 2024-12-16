@@ -198,7 +198,6 @@ void BlockState::commit(
     std::vector<BlockHeader> const &ommers,
     std::optional<std::vector<Withdrawal>> const &withdrawals)
 {
-    db_.increment_block_number();
     db_.commit(
         state_,
         code_,

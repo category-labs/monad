@@ -831,6 +831,10 @@ public:
                             &old_metadata->root_offsets.storage_,
                             sizeof(metadata->root_offsets.storage_));
                         metadata->history_length = old_metadata->history_length;
+                        metadata->latest_finalized_version =
+                            old_metadata->latest_finalized_version;
+                        metadata->latest_verified_version =
+                            old_metadata->latest_verified_version;
                     });
                     fast_list_base_insertion_count =
                         old_metadata->fast_list_begin()->insertion_count();
@@ -1485,7 +1489,7 @@ opened.
                       ring,
                       *wr_ring,
                       2,
-                      4,
+                      1,
                       MONAD_ASYNC_NAMESPACE::AsyncIO::
                           MONAD_IO_BUFFERS_READ_SIZE,
                       MONAD_ASYNC_NAMESPACE::AsyncIO::
@@ -1531,7 +1535,10 @@ opened.
                  << aux.db_history_min_valid_version() << " latest is "
                  << aux.db_history_max_version()
                  << ".\n     It has been configured to retain no more than "
-                 << aux.version_history_length() << ".\n";
+                 << aux.version_history_length()
+                 << ".\n     Latest finalized is "
+                 << aux.get_latest_finalized_version() << " latest verified is "
+                 << aux.get_latest_verified_version() << "\n";
 
             if (impl.rewind_database_to) {
                 if (*impl.rewind_database_to <

@@ -183,6 +183,7 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
             ctx->db.upsert(std::move(finalized_updates), v, false, false);
         }
     }
+    ctx->db.update_finalized_block(tgrt.number);
 
     TrieDb db{ctx->db};
     MONAD_ASSERT(db.get_block_number() == tgrt.number);

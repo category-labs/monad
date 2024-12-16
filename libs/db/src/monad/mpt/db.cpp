@@ -88,6 +88,10 @@ struct Db::Impl
         size_t concurrency_limit) = 0;
     virtual void
     move_trie_version_fiber_blocking(uint64_t src, uint64_t dest) = 0;
+    virtual void update_finalized_block(uint64_t) = 0;
+    virtual void update_verified_block(uint64_t) = 0;
+    virtual uint64_t get_latest_finalized_block_id() const = 0;
+    virtual uint64_t get_latest_verified_block_id() const = 0;
 };
 
 struct Db::ROOnDisk final : public Db::Impl
@@ -119,7 +123,8 @@ struct Db::ROOnDisk final : public Db::Impl
               async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)}
         , io_{pool_, rwbuf_}
         , aux_{&io_}
-        , last_loaded_root_offset_{aux_.get_latest_root_offset()}
+        , last_loaded_root_offset_{aux_.get_root_offset_at_version(
+              aux_.db_history_max_version())}
         , root_{
               last_loaded_root_offset_ == INVALID_OFFSET
                   ? Node::UniquePtr{}
@@ -228,6 +233,26 @@ struct Db::ROOnDisk final : public Db::Impl
         }
         return root_ ? NodeCursor{*root_} : NodeCursor{};
     }
+
+    virtual void update_finalized_block(uint64_t) override
+    {
+        MONAD_ASSERT(false);
+    }
+
+    virtual void update_verified_block(uint64_t) override
+    {
+        MONAD_ASSERT(false);
+    }
+
+    virtual uint64_t get_latest_finalized_block_id() const override
+    {
+        return aux_.get_latest_finalized_version();
+    }
+
+    virtual uint64_t get_latest_verified_block_id() const override
+    {
+        return aux_.get_latest_verified_version();
+    }
 };
 
 struct Db::InMemory final : public Db::Impl
@@ -235,7 +260,6 @@ struct Db::InMemory final : public Db::Impl
     UpdateAux<> aux_;
     StateMachine &machine_;
     Node::UniquePtr root_;
-    uint64_t root_version_;
 
     explicit InMemory(StateMachine &machine)
         : aux_{nullptr}
@@ -258,7 +282,6 @@ struct Db::InMemory final : public Db::Impl
     {
         root_ = aux_.do_update(
             std::move(root_), machine_, std::move(list), version, false);
-        root_version_ = version;
     }
 
     virtual void copy_trie_fiber_blocking(
@@ -269,7 +292,6 @@ struct Db::InMemory final : public Db::Impl
         // the same version
         root_ =
             copy_trie_to_dest(aux_, *root_, src, {}, dest, dest_version, false);
-        root_version_ = dest_version;
     }
 
     virtual find_result_type find_fiber_blocking(
@@ -302,6 +324,20 @@ struct Db::InMemory final : public Db::Impl
     virtual NodeCursor load_root_for_version(uint64_t) override
     {
         return root() ? NodeCursor{*root()} : NodeCursor{};
+    }
+
+    virtual void update_verified_block(uint64_t) override {}
+
+    virtual void update_finalized_block(uint64_t) override {}
+
+    virtual uint64_t get_latest_finalized_block_id() const override
+    {
+        return INVALID_BLOCK_ID;
+    }
+
+    virtual uint64_t get_latest_verified_block_id() const override
+    {
+        return INVALID_BLOCK_ID;
     }
 };
 
@@ -840,6 +876,27 @@ struct Db::RWOnDisk final : public Db::Impl
         root_ = fut.get();
         root_version_ = dest_version;
     }
+
+    virtual void update_finalized_block(uint64_t const block_id) override
+    {
+        aux_.set_latest_finalized_version(block_id);
+    }
+
+    virtual void update_verified_block(uint64_t const block_id) override
+    {
+        MONAD_ASSERT(block_id <= aux_.db_history_max_version());
+        aux_.set_latest_verified_version(block_id);
+    }
+
+    virtual uint64_t get_latest_finalized_block_id() const override
+    {
+        return aux_.get_latest_finalized_version();
+    }
+
+    virtual uint64_t get_latest_verified_block_id() const override
+    {
+        return aux_.get_latest_verified_version();
+    }
 };
 
 Db::Db(StateMachine &machine)
@@ -972,6 +1029,30 @@ NodeCursor Db::root() const noexcept
 {
     MONAD_ASSERT(impl_);
     return impl_->root() ? NodeCursor{*impl_->root()} : NodeCursor{};
+}
+
+void Db::update_finalized_block(uint64_t const block_id)
+{
+    MONAD_ASSERT(impl_);
+    impl_->update_finalized_block(block_id);
+}
+
+void Db::update_verified_block(uint64_t const block_id)
+{
+    MONAD_ASSERT(impl_);
+    impl_->update_verified_block(block_id);
+}
+
+uint64_t Db::get_latest_finalized_block_id() const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->get_latest_finalized_block_id();
+}
+
+uint64_t Db::get_latest_verified_block_id() const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->get_latest_verified_block_id();
 }
 
 uint64_t Db::get_latest_block_id() const

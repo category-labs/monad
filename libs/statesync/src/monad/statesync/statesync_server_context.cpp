@@ -108,9 +108,23 @@ std::optional<bytes32_t> monad_statesync_server_context::withdrawals_root()
     return rw.withdrawals_root();
 }
 
-void monad_statesync_server_context::increment_block_number()
+void monad_statesync_server_context::set(
+    uint64_t const block_number, uint64_t const round_number,
+    uint64_t const parent_round_number)
 {
-    rw.increment_block_number();
+    rw.set(block_number, round_number, parent_round_number);
+}
+
+void monad_statesync_server_context::finalize(
+    uint64_t const block_number, uint64_t const round_number)
+{
+    rw.finalize(block_number, round_number);
+}
+
+void monad_statesync_server_context::update_verified_block(
+    uint64_t const block_number)
+{
+    rw.update_verified_block(block_number);
 }
 
 void monad_statesync_server_context::commit(

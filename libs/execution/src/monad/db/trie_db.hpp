@@ -33,6 +33,9 @@ class TrieDb final : public ::monad::Db
     std::deque<byte_string> bytes_alloc_;
     std::deque<hash256> hash_alloc_;
     uint64_t block_number_;
+    // upsert to finalized if it is nullopt
+    std::optional<uint64_t> round_number_{std::nullopt};
+    ::monad::mpt::Nibbles prefix_{finalized_nibbles};
 
 public:
     TrieDb(mpt::Db &);
@@ -42,7 +45,9 @@ public:
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) override;
     virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) override;
-    virtual void increment_block_number() override;
+    virtual void
+    set(uint64_t block_number, uint64_t round_number,
+        uint64_t parent_round_number) override;
     virtual void commit(
         StateDeltas const &, Code const &, BlockHeader const &,
         std::vector<Receipt> const & = {},
@@ -51,6 +56,10 @@ public:
         std::vector<BlockHeader> const &ommers = {},
         std::optional<std::vector<Withdrawal>> const & = {
             std::nullopt}) override;
+    virtual void
+    finalize(uint64_t block_number, uint64_t round_number) override;
+    virtual void update_verified_block(uint64_t) override;
+
     virtual bytes32_t state_root() override;
     virtual bytes32_t receipts_root() override;
     virtual bytes32_t transactions_root() override;

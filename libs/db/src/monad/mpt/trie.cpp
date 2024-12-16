@@ -432,16 +432,9 @@ struct read_single_child_receiver
         , child(child)
         , sm(std::move(sm))
     {
-        // prep uring data
-        if (auto const virtual_child_offset =
+        { // some sanity checks
+            auto const virtual_child_offset =
                 aux->physical_to_virtual(child.offset);
-            !virtual_child_offset.in_fast_list()) { // some sanity checks
-            MONAD_DEBUG_ASSERT(
-                virtual_child_offset.count <=
-                aux->num_chunks(
-                    virtual_child_offset.in_fast_list()
-                        ? UpdateAuxImpl::chunk_list::fast
-                        : UpdateAuxImpl::chunk_list::slow));
             // child offset is older than current node writer's start offset
             MONAD_DEBUG_ASSERT(
                 virtual_child_offset <

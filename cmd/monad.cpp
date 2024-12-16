@@ -8,7 +8,6 @@
 #include <monad/core/log_level_map.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/db/block_db.hpp>
-#include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
@@ -418,8 +417,6 @@ int main(int const argc, char const *argv[])
 
     auto const start_time = std::chrono::steady_clock::now();
 
-    auto db_cache = ctx ? DbCache{*ctx} : DbCache{triedb};
-
     auto chain = [chain_config] -> std::unique_ptr<Chain> {
         switch (chain_config) {
         case ChainConfig::EthereumMainnet:
@@ -498,7 +495,7 @@ int main(int const argc, char const *argv[])
     uint64_t block_num = start_block_num;
     auto const result = run_monad(
         *chain,
-        db_cache,
+        ctx ? static_cast<Db &>(*ctx) : static_cast<Db &>(triedb),
         block_hash_buffer,
         try_get,
         priority_pool,

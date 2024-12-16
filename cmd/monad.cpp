@@ -392,17 +392,6 @@ int main(int const argc, char const *argv[])
         });
     }
 
-    if (snapshot.empty()) {
-        auto const start_time = std::chrono::steady_clock::now();
-        auto const nodes_loaded = triedb.prefetch_current_root();
-        LOG_INFO(
-            "Finish loading current root into memory, time_elapsed = {}, "
-            "nodes_loaded = {}",
-            std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::steady_clock::now() - start_time),
-            nodes_loaded);
-    }
-
     LOG_INFO(
         "Finished initializing db at block = {}, last finalized block = {}, "
         "last verified block = {}, state root = {}, time elapsed "

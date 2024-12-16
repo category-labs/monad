@@ -82,6 +82,10 @@ set_source_files_properties(
   third_party/evmone/lib/evmone/baseline.cpp TARGET_DIRECTORY evmone
   PROPERTIES COMPILE_OPTIONS -O2)
 
+# BLAKE3
+add_library(BLAKE3 INTERFACE)
+target_include_directories(BLAKE3 INTERFACE "third_party/BLAKE3/c/")
+
 # komihash
 add_library(komihash INTERFACE)
 target_include_directories(komihash INTERFACE "third_party/komihash")

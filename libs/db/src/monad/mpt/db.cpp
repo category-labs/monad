@@ -661,6 +661,9 @@ struct Db::RWOnDisk final : public Db::Impl
                 aux_.~UpdateAux<>();
                 new (&aux_)
                     UpdateAux<>{&worker_->io, options.fixed_history_length};
+                if (options.rewind_to_latest_finalized) {
+                    aux_.rewind_to_version(aux_.get_latest_finalized_version());
+                }
             }
             worker_->run();
             std::unique_lock const g(lock_);
@@ -1074,6 +1077,17 @@ uint64_t Db::get_earliest_block_id() const
     }
     else {
         return impl_->root() ? 0 : INVALID_BLOCK_ID;
+    }
+}
+
+bool Db::version_is_valid(uint64_t const version) const
+{
+    MONAD_ASSERT(impl_);
+    if (impl_->aux().is_on_disk()) {
+        return impl_->aux().version_is_valid_ondisk(version);
+    }
+    else {
+        return true;
     }
 }
 

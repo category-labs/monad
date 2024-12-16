@@ -22,12 +22,13 @@ monad_statesync_client_context::monad_statesync_client_context(
          mpt::OnDiskDbConfig{
              .append = true,
              .compaction = false,
+             .rewind_to_latest_finalized = true,
              .rd_buffers = 8192,
              .wr_buffers = 32,
              .uring_entries = 128,
              .sq_thread_cpu = get_nprocs() - 1,
              .dbname_paths = dbname_paths}}
-    , tdb{db}
+    , tdb{db} // open with latest finalized if valid, otherwise init as block 0
     , progress(
           monad_statesync_client_prefixes(),
           {db.get_latest_block_id(), db.get_latest_block_id()})
@@ -39,6 +40,11 @@ monad_statesync_client_context::monad_statesync_client_context(
     , sync{sync}
     , statesync_send_request{statesync_send_request}
 {
+    MONAD_ASSERT(db.get(finalized_nibbles, current).has_error());
+    if (auto const latest_block = db.get_latest_block_id();
+        latest_block != mpt::INVALID_BLOCK_ID) {
+        MONAD_ASSERT(db.get(finalized_nibbles, latest_block).has_value());
+    }
 }
 
 void monad_statesync_client_context::commit()

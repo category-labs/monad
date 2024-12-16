@@ -152,6 +152,7 @@ std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
 void TrieDb::commit(
     StateDeltas const &state_deltas, Code const &code,
     BlockHeader const &header, std::vector<Receipt> const &receipts,
+    bytes32_t const &bft_block_id,
     std::vector<std::vector<CallFrame>> const &call_frames,
     std::vector<Transaction> const &transactions,
     std::vector<BlockHeader> const &ommers,
@@ -416,6 +417,12 @@ void TrieDb::commit(
         .incarnation = true,
         .next = UpdateList{},
         .version = static_cast<int64_t>(block_number_)};
+    auto bft_block_update = Update{
+        .key = bft_block_nibbles,
+        .value = bytes_alloc_.emplace_back(rlp::encode_bytes32(bft_block_id)),
+        .incarnation = true,
+        .next = UpdateList{},
+        .version = static_cast<int64_t>(block_number_)};
     auto block_hash_update = Update{
         .key = block_hash_nibbles,
         .value = byte_string_view{},
@@ -425,6 +432,7 @@ void TrieDb::commit(
 
     updates2.push_front(block_header_update);
     updates2.push_front(block_hash_update);
+    updates2.push_front(bft_block_update);
 
     UpdateList ls2;
     ls2.push_front(update_alloc_.emplace_back(Update{

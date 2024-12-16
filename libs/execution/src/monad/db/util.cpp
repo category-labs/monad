@@ -12,6 +12,7 @@
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
+#include <monad/core/rlp/receipt_rlp.hpp>
 #include <monad/core/unaligned.hpp>
 #include <monad/db/util.hpp>
 #include <monad/mpt/compute.hpp>
@@ -463,7 +464,8 @@ void MachineBase::down(unsigned char const nibble)
          nibble == RECEIPT_NIBBLE || nibble == CALL_FRAME_NIBBLE ||
          nibble == TRANSACTION_NIBBLE || nibble == BLOCKHEADER_NIBBLE ||
          nibble == WITHDRAWAL_NIBBLE || nibble == OMMER_NIBBLE ||
-         nibble == TX_HASH_NIBBLE || nibble == BLOCK_HASH_NIBBLE) ||
+         nibble == TX_HASH_NIBBLE || nibble == BLOCK_HASH_NIBBLE ||
+         nibble == BFT_BLOCK_NIBBLE) ||
         depth != prefix_length);
     if (MONAD_UNLIKELY(depth == prefix_length)) {
         MONAD_ASSERT(table == TableType::Prefix);
@@ -492,8 +494,8 @@ void MachineBase::down(unsigned char const nibble)
             // No subtrie in the rest tables, thus treated the same as
             // Table::Prefix
             MONAD_ASSERT(
-                nibble == BLOCKHEADER_NIBBLE || nibble == OMMER_NIBBLE ||
-                nibble == CALL_FRAME_NIBBLE);
+                nibble == BLOCKHEADER_NIBBLE || nibble == BFT_BLOCK_NIBBLE ||
+                nibble == OMMER_NIBBLE || nibble == CALL_FRAME_NIBBLE);
         }
     }
 }
@@ -546,6 +548,99 @@ bool OnDiskMachine::auto_expire() const
 std::unique_ptr<StateMachine> OnDiskMachine::clone() const
 {
     return std::make_unique<OnDiskMachine>(*this);
+}
+
+byte_string encode_block_header_db(BlockHeader const &block_header)
+{
+    byte_string encoded_block_header;
+
+    encoded_block_header += rlp::encode_bytes32(block_header.bft_block_id);
+
+    encoded_block_header += rlp::encode_bytes32(block_header.parent_hash);
+    encoded_block_header += rlp::encode_bytes32(block_header.ommers_hash);
+    encoded_block_header += rlp::encode_address(block_header.beneficiary);
+    encoded_block_header += rlp::encode_bloom(block_header.logs_bloom);
+    encoded_block_header += rlp::encode_unsigned(block_header.difficulty);
+    encoded_block_header += rlp::encode_unsigned(block_header.number);
+    encoded_block_header += rlp::encode_unsigned(block_header.gas_limit);
+    encoded_block_header += rlp::encode_unsigned(block_header.gas_used);
+    encoded_block_header += rlp::encode_unsigned(block_header.timestamp);
+    encoded_block_header += rlp::encode_string2(block_header.extra_data);
+    encoded_block_header += rlp::encode_bytes32(block_header.prev_randao);
+    encoded_block_header +=
+        rlp::encode_string2(to_byte_string_view(block_header.nonce));
+
+    if (block_header.base_fee_per_gas.has_value()) {
+        encoded_block_header +=
+            rlp::encode_unsigned(block_header.base_fee_per_gas.value());
+    }
+
+    if (block_header.blob_gas_used.has_value()) {
+        encoded_block_header +=
+            rlp::encode_unsigned(block_header.blob_gas_used.value());
+    }
+    if (block_header.excess_blob_gas.has_value()) {
+        encoded_block_header +=
+            rlp::encode_unsigned(block_header.excess_blob_gas.value());
+    }
+    if (block_header.parent_beacon_block_root.has_value()) {
+        encoded_block_header +=
+            rlp::encode_bytes32(block_header.parent_beacon_block_root.value());
+    }
+
+    return rlp::encode_list2(encoded_block_header);
+}
+
+Result<BlockHeader> decode_block_header_db(byte_string_view &enc)
+{
+    BlockHeader block_header;
+    BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
+
+    BOOST_OUTCOME_TRY(block_header.bft_block_id, rlp::decode_bytes32(payload));
+
+    BOOST_OUTCOME_TRY(block_header.parent_hash, rlp::decode_bytes32(payload));
+    BOOST_OUTCOME_TRY(block_header.ommers_hash, rlp::decode_bytes32(payload));
+    BOOST_OUTCOME_TRY(block_header.beneficiary, rlp::decode_address(payload));
+    BOOST_OUTCOME_TRY(block_header.logs_bloom, rlp::decode_bloom(payload));
+    BOOST_OUTCOME_TRY(
+        block_header.difficulty, rlp::decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(
+        block_header.number, rlp::decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(
+        block_header.gas_limit, rlp::decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(
+        block_header.gas_used, rlp::decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(
+        block_header.timestamp, rlp::decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(block_header.extra_data, rlp::decode_string(payload));
+    BOOST_OUTCOME_TRY(block_header.prev_randao, rlp::decode_bytes32(payload));
+    BOOST_OUTCOME_TRY(
+        block_header.nonce, rlp::decode_byte_string_fixed<8>(payload));
+
+    if (payload.size() > 0) {
+        BOOST_OUTCOME_TRY(
+            block_header.base_fee_per_gas,
+            rlp::decode_unsigned<uint64_t>(payload));
+        if (payload.size() > 0) {
+            if (payload.size() > 0) {
+                BOOST_OUTCOME_TRY(
+                    block_header.blob_gas_used,
+                    rlp::decode_unsigned<uint64_t>(payload));
+                BOOST_OUTCOME_TRY(
+                    block_header.excess_blob_gas,
+                    rlp::decode_unsigned<uint64_t>(payload));
+                BOOST_OUTCOME_TRY(
+                    block_header.parent_beacon_block_root,
+                    rlp::decode_bytes32(payload));
+            }
+        }
+    }
+
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return rlp::DecodeError::InputTooLong;
+    }
+
+    return block_header;
 }
 
 byte_string encode_account_db(Address const &address, Account const &account)

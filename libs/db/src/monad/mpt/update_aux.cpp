@@ -225,7 +225,7 @@ void UpdateAuxImpl::update_history_length_metadata(
         auto const ro = root_offsets(m == db_metadata_[1].main);
         MONAD_ASSERT(history_len > 0 && history_len <= ro.capacity());
         reinterpret_cast<std::atomic_uint64_t *>(&m->history_length)
-            ->store(history_len, std::memory_order_relaxed);
+            ->store(history_len, std::memory_order_release);
     };
     do_(db_metadata_[0].main);
     do_(db_metadata_[1].main);
@@ -390,23 +390,40 @@ void UpdateAuxImpl::rewind_to_match_offsets()
 
 void UpdateAuxImpl::rewind_to_version(uint64_t const version)
 {
-    MONAD_ASSERT(version_is_valid_ondisk(version));
     MONAD_ASSERT(is_on_disk());
+    if (version == INVALID_BLOCK_ID) { // clear the entire db
+        auto do_ = [&](detail::db_metadata *m) {
+            auto g = m->hold_dirty();
+            root_offsets(m == db_metadata_[1].main).reset_all(0);
+        };
+        do_(db_metadata_[0].main);
+        do_(db_metadata_[1].main);
+        set_latest_finalized_version(INVALID_BLOCK_ID);
+        set_latest_verified_version(INVALID_BLOCK_ID);
+        advance_db_offsets_to(
+            {db_metadata()->fast_list.begin, 0},
+            {db_metadata()->slow_list.begin, 0});
+        rewind_to_match_offsets();
+        return;
+    }
+    MONAD_ASSERT(version_is_valid_ondisk(version));
+    if (version == db_history_max_version()) {
+        return;
+    }
     auto do_ = [&](detail::db_metadata *m) {
         auto g = m->hold_dirty();
         root_offsets(m == db_metadata_[1].main).rewind_to_version(version);
-        if (auto const latest_finalized = get_latest_finalized_version();
-            latest_finalized != INVALID_BLOCK_ID &&
-            latest_finalized > version) {
-            set_latest_finalized_version(version);
-        }
-        if (auto const latest_verified = get_latest_verified_version();
-            latest_verified != INVALID_BLOCK_ID && latest_verified > version) {
-            set_latest_verified_version(version);
-        }
     };
     do_(db_metadata_[0].main);
     do_(db_metadata_[1].main);
+    if (auto const latest_finalized = get_latest_finalized_version();
+        latest_finalized != INVALID_BLOCK_ID && latest_finalized > version) {
+        set_latest_finalized_version(version);
+    }
+    if (auto const latest_verified = get_latest_verified_version();
+        latest_verified != INVALID_BLOCK_ID && latest_verified > version) {
+        set_latest_verified_version(version);
+    }
     auto last_written_offset = root_offsets()[version];
     bool const last_written_offset_is_in_fast_list =
         db_metadata()->at(last_written_offset.id)->in_fast_list;
@@ -1107,7 +1124,7 @@ void UpdateAuxImpl::move_trie_version_forward(
         dest >= db_history_max_version());
     auto g(unique_lock());
     auto g2(set_current_upsert_tid());
-    auto const offset = get_latest_root_offset();
+    auto const offset = get_root_offset_at_version(src);
     update_root_offset(src, INVALID_OFFSET);
     fast_forward_next_version(dest);
     append_root_offset(offset);
@@ -1213,7 +1230,7 @@ uint64_t UpdateAuxImpl::version_history_length() const noexcept
 {
     return start_lifetime_as<std::atomic_uint64_t const>(
                &db_metadata()->history_length)
-        ->load(std::memory_order_relaxed);
+        ->load(std::memory_order_acquire);
 }
 
 uint64_t UpdateAuxImpl::db_history_min_valid_version() const noexcept

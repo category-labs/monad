@@ -193,6 +193,7 @@ void BlockState::merge(State const &state)
 
 void BlockState::commit(
     BlockHeader const &header, std::vector<Receipt> const &receipts,
+    bytes32_t const &previous_block_header_hash,
     std::vector<std::vector<CallFrame>> const &call_frames,
     std::vector<Transaction> const &transactions,
     std::vector<BlockHeader> const &ommers,
@@ -204,6 +205,7 @@ void BlockState::commit(
         code_,
         header,
         receipts,
+        previous_block_header_hash,
         call_frames,
         transactions,
         ommers,

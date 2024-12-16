@@ -14,4 +14,7 @@ byte_string encode_ommers(std::vector<BlockHeader> const &);
 Result<Block> decode_block(byte_string_view &);
 Result<BlockHeader> decode_block_header(byte_string_view &);
 
+Result<Block> decode_monad_block(byte_string_view &);
+Result<BlockHeader> decode_monad_block_header(byte_string_view &);
+
 MONAD_RLP_NAMESPACE_END

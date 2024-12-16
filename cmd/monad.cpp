@@ -5,13 +5,18 @@
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/basic_formatter.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/log_level_map.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
+#include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
+#include <monad/event/append_only_log_emitter.hpp>
+#include <monad/event/execution_event.h>
+#include <monad/event/replay_event_emitter.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
@@ -19,6 +24,7 @@
 #include <monad/execution/trace/event_trace.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
+#include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/procfs/statm.h>
 #include <monad/state2/block_state.hpp>
@@ -44,6 +50,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -65,7 +72,7 @@ void signal_handler(int)
 using namespace monad;
 namespace fs = std::filesystem;
 
-using TryGet = std::move_only_function<std::optional<Block>(uint64_t) const>;
+using SlurpBlock = std::move_only_function<Block(std::string_view) const>;
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
@@ -97,10 +104,59 @@ void log_tps(
 
 #pragma GCC diagnostic pop
 
+Result<bytes32_t> on_proposal_event(
+    Block &block, BlockHashBuffer const &block_hash_buffer, Chain const &chain,
+    Db &db, fiber::PriorityPool &priority_pool, bool const is_first_block)
+{
+    BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
+
+    evmc_revision const rev =
+        chain.get_revision(block.header.number, block.header.timestamp);
+
+    BOOST_OUTCOME_TRY(static_validate_block(rev, block));
+
+    db.set_block_and_round(
+        block.header.number - 1,
+        is_first_block ? std::nullopt
+                       : std::make_optional(block.header.parent_round));
+
+    BlockState block_state(db);
+    BOOST_OUTCOME_TRY(
+        auto const results,
+        execute_block(
+            chain, rev, block, block_state, block_hash_buffer, priority_pool));
+
+    std::vector<Receipt> receipts(results.size());
+    std::vector<std::vector<CallFrame>> call_frames(results.size());
+    for (unsigned i = 0; i < results.size(); ++i) {
+        auto &result = results[i];
+        receipts[i] = std::move(result.receipt);
+        call_frames[i] = (std::move(result.call_frames));
+    }
+
+    block_state.log_debug();
+    block_state.commit(
+        block.header,
+        receipts,
+        block.header.bft_block_id,
+        call_frames,
+        block.transactions,
+        block.ommers,
+        block.withdrawals,
+        block.header.round);
+    auto const output_header = db.read_eth_header();
+    BOOST_OUTCOME_TRY(
+        chain.validate_output_header(block.header, output_header));
+
+    return std::bit_cast<bytes32_t>(
+        keccak256(rlp::encode_block_header(block.header)));
+}
+
 Result<std::pair<uint64_t, uint64_t>> run_monad(
-    Chain const &chain, Db &db, BlockHashBufferFinalized &block_hash_buffer,
-    TryGet const &try_get, fiber::PriorityPool &priority_pool,
-    uint64_t &block_num, uint64_t const nblocks)
+    Chain const &chain, Db &db, BlockHashChain &block_hash_chain,
+    SlurpBlock const &slurp_block, EventEmitter &emitter,
+    fiber::PriorityPool &priority_pool, uint64_t &block_num,
+    uint64_t const nblocks)
 {
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
     signal(SIGINT, signal_handler);
@@ -121,86 +177,71 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
             : block_num + nblocks - 1;
     uint64_t const init_block_num = block_num;
     while (block_num <= end_block_num && stop == 0) {
-        auto opt_block = try_get(block_num);
-        if (!opt_block.has_value()) {
+        auto const event = emitter.next_event();
+        if (!event.has_value()) {
             std::this_thread::sleep_for(SLEEP_TIME);
             continue;
         }
-        auto &block = opt_block.value();
 
-        BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
+        auto block = slurp_block(event->filename);
 
-        evmc_revision const rev =
-            chain.get_revision(block.header.number, block.header.timestamp);
+        switch (event.value().kind) {
+        case MONAD_PROPOSE_BLOCK: {
+            LOG_INFO(
+                "[KKUEHLER] Processing proposal: seqno={}, round={}, "
+                "parent_round={}",
+                block.header.number,
+                block.header.round,
+                block.header.parent_round);
+            BOOST_OUTCOME_TRY(
+                auto const block_hash,
+                on_proposal_event(
+                    block,
+                    block_hash_chain.find_chain(block.header.parent_round),
+                    chain,
+                    db,
+                    priority_pool,
+                    block.header.number == init_block_num));
+            block_hash_chain.propose(
+                block_hash, block.header.round, block.header.parent_round);
 
-        BOOST_OUTCOME_TRY(static_validate_block(rev, block));
+            ntxs += block.transactions.size();
+            batch_num_txs += block.transactions.size();
+            total_gas += block.header.gas_used;
+            batch_gas += block.header.gas_used;
+        } break;
+        case MONAD_FINALIZE_BLOCK: {
+            LOG_INFO(
+                "[KKUEHLER] Processing finalization : seqno={}, round={}",
+                block.header.number,
+                block.header.round);
+            db.finalize(block.header.number, block.header.round);
+            block_hash_chain.finalize(block.header.round);
 
-        // Ethereum: always execute off of the parent proposal round, commit to
-        // `round = block_number`, and finalize immediately after that.
-        // TODO: get round number from event emitter
-        db.set_block_and_round(
-            block.header.number - 1,
-            (block.header.number == init_block_num)
-                ? std::nullopt
-                : std::make_optional(block.header.number - 1));
-        BlockState block_state(db);
-        BOOST_OUTCOME_TRY(
-            auto const results,
-            execute_block(
-                chain,
-                rev,
-                block,
-                block_state,
-                block_hash_buffer,
-                priority_pool));
+            ++batch_num_blocks;
 
-        std::vector<Receipt> receipts(results.size());
-        std::vector<std::vector<CallFrame>> call_frames(results.size());
-        for (unsigned i = 0; i < results.size(); ++i) {
-            auto &result = results[i];
-            receipts[i] = std::move(result.receipt);
-            call_frames[i] = (std::move(result.call_frames));
+            if (block_num % batch_size == 0) {
+                log_tps(
+                    block_num,
+                    batch_num_blocks,
+                    batch_num_txs,
+                    batch_gas,
+                    batch_begin);
+                batch_num_blocks = 0;
+                batch_num_txs = 0;
+                batch_gas = 0;
+                batch_begin = std::chrono::steady_clock::now();
+            }
+            ++block_num;
+        } break;
+        case MONAD_VERIFY_BLOCK:
+            LOG_INFO(
+                "[KKUEHLER] Processing verify: seqno={}, round={}",
+                block.header.number,
+                block.header.round);
+            db.update_verified_block(block.header.number);
+            break;
         }
-
-        block_state.log_debug();
-        block_state.commit(
-            block.header,
-            receipts,
-            call_frames,
-            block.transactions,
-            block.ommers,
-            block.withdrawals,
-            block.header.number);
-        auto const output_header = db.read_eth_header();
-        BOOST_OUTCOME_TRY(
-            chain.validate_output_header(block.header, output_header));
-
-        db.finalize(block.header.number, block.header.number);
-        db.update_verified_block(block.header.number);
-
-        auto const h =
-            to_bytes(keccak256(rlp::encode_block_header(output_header)));
-        block_hash_buffer.set(block_num, h);
-
-        ntxs += block.transactions.size();
-        batch_num_txs += block.transactions.size();
-        total_gas += block.header.gas_used;
-        batch_gas += block.header.gas_used;
-        ++batch_num_blocks;
-
-        if (block_num % batch_size == 0) {
-            log_tps(
-                block_num,
-                batch_num_blocks,
-                batch_num_txs,
-                batch_gas,
-                batch_begin);
-            batch_num_blocks = 0;
-            batch_num_txs = 0;
-            batch_gas = 0;
-            batch_begin = std::chrono::steady_clock::now();
-        }
-        ++block_num;
     }
     if (batch_num_blocks > 0) {
         log_tps(
@@ -426,54 +467,84 @@ int main(int const argc, char const *argv[])
 
     auto const start_time = std::chrono::steady_clock::now();
 
-    auto chain = [chain_config] -> std::unique_ptr<Chain> {
+    using ChainPair =
+        std::pair<std::unique_ptr<Chain>, std::unique_ptr<EventEmitter>>;
+
+    auto [chain, emitter] = [&] -> ChainPair {
         switch (chain_config) {
         case CHAIN_CONFIG_ETHEREUM_MAINNET:
-            return std::make_unique<EthereumMainnet>();
+            return {
+                std::make_unique<EthereumMainnet>(),
+                std::make_unique<ReplayEventEmitter>(start_block_num)};
         case CHAIN_CONFIG_MONAD_DEVNET:
-            return std::make_unique<MonadDevnet>();
         case CHAIN_CONFIG_MONAD_TESTNET:
-            return std::make_unique<MonadTestnet>();
+            std::filesystem::path wal{block_db_path / "wal"};
+            auto emitter = std::make_unique<AppendOnlyLogEmitter>(wal);
+            auto encoded_bft_id = db.get(
+                mpt::concat(FINALIZED_NIBBLE, BFT_BLOCK_NIBBLE),
+                init_block_num);
+            if (encoded_bft_id.has_value()) {
+                auto const bft_block_id =
+                    rlp::decode_bytes32(encoded_bft_id.value());
+                MONAD_ASSERT(bft_block_id.has_value());
+                monad_execution_event rewind_ev{
+                    .kind = MONAD_PROPOSE_BLOCK, .id = bft_block_id.value()};
+                if (emitter->rewind_to_event(rewind_ev)) {
+                    emitter->next_event(); // skip this proposal
+                }
+            }
+            if (chain_config == CHAIN_CONFIG_MONAD_DEVNET) {
+                return {std::make_unique<MonadDevnet>(), std::move(emitter)};
+            }
+            else {
+                return {std::make_unique<MonadTestnet>(), std::move(emitter)};
+            }
         }
         MONAD_ASSERT(false);
     }();
 
     // TODO: consolidate
-    auto const try_get = [&] -> TryGet {
+    auto const slurp_block = [&] -> SlurpBlock {
         switch (chain_config) {
         case CHAIN_CONFIG_ETHEREUM_MAINNET:
             return [block_db = BlockDb{block_db_path}](
-                       uint64_t const i) -> std::optional<Block> {
+                       std::string_view const filename) -> Block {
+                uint64_t num{};
+                auto [_, ec] = std::from_chars(
+                    filename.data(), filename.data() + filename.size(), num);
+                MONAD_ASSERT(ec == std::errc{});
+
                 Block block;
-                if (block_db.get(i, block)) {
-                    return block;
-                }
-                return std::nullopt;
+                MONAD_ASSERT(block_db.get(num, block));
+                MONAD_ASSERT(num > 0);
+                block.header.bft_block_id = bytes32_t{num};
+                block.header.round = num;
+                block.header.parent_round = num - 1;
+                return block;
             };
         case CHAIN_CONFIG_MONAD_DEVNET:
         case CHAIN_CONFIG_MONAD_TESTNET:
-            return [block_db_path](uint64_t const i) -> std::optional<Block> {
-                auto const path = block_db_path / std::to_string(i);
-                if (!fs::exists(path)) {
-                    return std::nullopt;
+            return [block_db_path](std::string_view const filename) -> Block {
+                auto const path = block_db_path / filename;
+                if (MONAD_UNLIKELY(
+                        !fs::exists(path) || !fs::is_regular_file(path))) {
+                    LOG_ERROR("File doesn't exist: ", path);
+                    MONAD_ASSERT(false);
                 }
-                MONAD_ASSERT(fs::is_regular_file(path));
                 std::ifstream istream(path);
-                if (!istream) {
-                    LOG_ERROR_LIMIT(
-                        std::chrono::seconds(30),
-                        "Opening {} failed with {}",
-                        path,
-                        strerror(errno));
-                    return std::nullopt;
+                if (MONAD_UNLIKELY(!istream)) {
+                    LOG_ERROR("Could not open file: {}", path);
+                    MONAD_ASSERT(false);
                 }
+
                 std::ostringstream buf;
                 buf << istream.rdbuf();
                 auto view = byte_string_view{
                     (unsigned char *)buf.view().data(), buf.view().size()};
-                auto block_result = rlp::decode_block(view);
-                if (block_result.has_error()) {
-                    return std::nullopt;
+                auto block_result = rlp::decode_monad_block(view);
+                if (MONAD_UNLIKELY(block_result.has_error())) {
+                    LOG_ERROR("Could not decode block: {}", path);
+                    MONAD_ASSERT(false);
                 }
                 MONAD_ASSERT(view.empty());
                 return block_result.assume_value();
@@ -498,12 +569,14 @@ int main(int const argc, char const *argv[])
             block_db, start_block_num, block_hash_buffer));
     }
 
+    BlockHashChain block_hash_chain(block_hash_buffer);
     uint64_t block_num = start_block_num;
     auto const result = run_monad(
         *chain,
         ctx ? static_cast<Db &>(*ctx) : static_cast<Db &>(triedb),
-        block_hash_buffer,
-        try_get,
+        block_hash_chain,
+        slurp_block,
+        *emitter,
         priority_pool,
         block_num,
         nblocks);

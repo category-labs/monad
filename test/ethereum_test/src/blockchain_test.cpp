@@ -78,10 +78,12 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
         call_frames[i] = std::move(results[i].call_frames);
     }
 
+    bytes32_t const bft_block_id{block.header.number};
     block_state.log_debug();
     block_state.commit(
         block.header,
         receipts,
+        bft_block_id,
         call_frames,
         block.transactions,
         block.ommers,
@@ -231,6 +233,7 @@ void BlockchainTest::TestBody()
             bs.commit(
                 header,
                 {} /* receipts */,
+                {}, /* bft_block_id */
                 {} /* call frames */,
                 {} /* transactions */,
                 {} /* ommers */,

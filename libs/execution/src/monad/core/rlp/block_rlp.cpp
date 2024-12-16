@@ -165,6 +165,37 @@ Result<BlockHeader> decode_block_header(byte_string_view &enc)
     return block_header;
 }
 
+Result<BlockHeader> decode_monad_block_header(byte_string_view &enc)
+{
+    BlockHeader block_header;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+
+    BOOST_OUTCOME_TRY(block_header.bft_block_id, decode_bytes32(payload));
+    BOOST_OUTCOME_TRY(block_header.round, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(
+        block_header.parent_round, decode_unsigned<uint64_t>(payload));
+
+    BOOST_OUTCOME_TRY(block_header.beneficiary, decode_address(payload));
+    BOOST_OUTCOME_TRY(
+        block_header.difficulty, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(block_header.number, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(
+        block_header.gas_limit, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(
+        block_header.timestamp, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(block_header.prev_randao, decode_bytes32(payload));
+    BOOST_OUTCOME_TRY(block_header.nonce, decode_byte_string_fixed<8>(payload));
+    BOOST_OUTCOME_TRY(block_header.extra_data, decode_string(payload));
+    BOOST_OUTCOME_TRY(
+        block_header.base_fee_per_gas, decode_unsigned<uint64_t>(payload));
+
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return DecodeError::InputTooLong;
+    }
+
+    return block_header;
+}
+
 Result<std::vector<Transaction>> decode_transaction_list(byte_string_view &enc)
 {
     std::vector<Transaction> transactions;
@@ -191,13 +222,13 @@ Result<std::vector<Transaction>> decode_transaction_list(byte_string_view &enc)
 }
 
 Result<std::vector<BlockHeader>>
-decode_block_header_vector(byte_string_view &enc)
+decode_block_header_vector(byte_string_view &enc, auto &&header_decoder)
 {
     std::vector<BlockHeader> ommers;
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
     while (payload.size() > 0) {
-        BOOST_OUTCOME_TRY(auto ommer, decode_block_header(payload));
+        BOOST_OUTCOME_TRY(auto ommer, header_decoder(payload));
         ommers.emplace_back(std::move(ommer));
     }
 
@@ -215,7 +246,31 @@ Result<Block> decode_block(byte_string_view &enc)
 
     BOOST_OUTCOME_TRY(block.header, decode_block_header(payload));
     BOOST_OUTCOME_TRY(block.transactions, decode_transaction_list(payload));
-    BOOST_OUTCOME_TRY(block.ommers, decode_block_header_vector(payload));
+    BOOST_OUTCOME_TRY(
+        block.ommers, decode_block_header_vector(payload, decode_block_header));
+
+    if (payload.size() > 0) {
+        BOOST_OUTCOME_TRY(auto withdrawals, decode_withdrawal_list(payload));
+        block.withdrawals.emplace(std::move(withdrawals));
+    }
+
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return DecodeError::InputTooLong;
+    }
+
+    return block;
+}
+
+Result<Block> decode_monad_block(byte_string_view &enc)
+{
+    Block block;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+
+    BOOST_OUTCOME_TRY(block.header, decode_monad_block_header(payload));
+    BOOST_OUTCOME_TRY(block.transactions, decode_transaction_list(payload));
+    BOOST_OUTCOME_TRY(
+        block.ommers,
+        decode_block_header_vector(payload, decode_monad_block_header));
 
     if (payload.size() > 0) {
         BOOST_OUTCOME_TRY(auto withdrawals, decode_withdrawal_list(payload));

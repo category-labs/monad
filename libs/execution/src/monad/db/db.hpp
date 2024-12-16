@@ -42,7 +42,7 @@ struct Db
 
     virtual void commit(
         StateDeltas const &, Code const &, BlockHeader const &,
-        std::vector<Receipt> const & = {},
+        std::vector<Receipt> const & = {}, bytes32_t const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
         std::vector<Transaction> const & = {},
         std::vector<BlockHeader> const &ommers = {},

@@ -187,7 +187,6 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
 
     TrieDb db{ctx->db};
     MONAD_ASSERT(db.get_block_number() == tgrt.number);
-
     return db.state_root() == tgrt.state_root;
 }
 

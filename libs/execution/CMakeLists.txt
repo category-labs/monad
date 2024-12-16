@@ -77,6 +77,13 @@ add_library(
   "src/monad/db/trie_db.hpp"
   "src/monad/db/util.cpp"
   "src/monad/db/util.hpp"
+  # event
+  "src/monad/event/append_only_log_emitter.cpp"
+  "src/monad/event/append_only_log_emitter.hpp"
+  "src/monad/event/event_emitter.hpp"
+  "src/monad/event/execution_event.h"
+  "src/monad/event/replay_event_emitter.cpp"
+  "src/monad/event/replay_event_emitter.hpp"
   # execution
   "src/monad/execution/baseline_execute.cpp"
   "src/monad/execution/baseline_execute.hpp"
@@ -175,6 +182,7 @@ target_link_options(monad_execution PRIVATE LINKER:-z,defs)
 
 monad_add_test_folder("src/monad/core")
 monad_add_test_folder("src/monad/db")
+monad_add_test_folder("src/monad/event")
 monad_add_test_folder("src/monad/execution")
 monad_add_test_folder("src/monad/rlp")
 monad_add_test_folder("src/monad/state2")

@@ -428,6 +428,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         Code{},
         BlockHeader{.number = first_block},
         receipts,
+        {},
         call_frames,
         transactions);
     EXPECT_EQ(
@@ -475,6 +476,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         Code{},
         BlockHeader{.number = second_block},
         receipts,
+        {},
         call_frames,
         transactions);
     EXPECT_EQ(
@@ -663,6 +665,7 @@ TYPED_TEST(DBTest, commit_call_frames)
         Code{},
         BlockHeader{},
         receipts,
+        {},
         call_frames,
         transactions);
 
@@ -743,6 +746,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
     bs.commit(
         BlockHeader{.number = 1},
         receipts,
+        {},
         call_frames,
         block.value().transactions,
         {},
@@ -837,6 +841,7 @@ TYPED_TEST(DBTest, call_frames_refund)
     bs.commit(
         block.value().header,
         receipts,
+        {},
         call_frames,
         block.value().transactions,
         {},

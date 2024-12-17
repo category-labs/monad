@@ -21,6 +21,7 @@
 #include <monad/execution/code_analysis.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
 #include <monad/execution/trace/rlp/call_frame_rlp.hpp>
+#include <monad/execution/validate_block.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/nibbles_view_fmt.hpp> // NOLINT
@@ -158,6 +159,18 @@ void TrieDb::commit(
     std::optional<uint64_t> const round_number)
 {
     MONAD_ASSERT(header.number <= std::numeric_limits<int64_t>::max());
+
+    auto const parent_hash = [&]() {
+        auto parent_header_encoded =
+            db_.get(concat(prefix_, BLOCKHEADER_NIBBLE), block_number_);
+        if (MONAD_LIKELY(parent_header_encoded.has_value())) {
+            return to_bytes(keccak256(parent_header_encoded.value()));
+        }
+        else {
+            // this may trigger for snapshot/genesis/unit tests.
+            return header.parent_hash;
+        }
+    }();
 
     if (db_.is_on_disk() &&
         (round_number != round_number_ || header.number != block_number_)) {
@@ -366,6 +379,24 @@ void TrieDb::commit(
     db_.upsert(std::move(ls), block_number_);
 
     BlockHeader complete_header = header;
+    if (MONAD_LIKELY(header.receipts_root == NULL_ROOT)) {
+        // TODO: TrieDb does not calculate receipts root correctly before the
+        // BYZANTIUM fork. However, for empty receipts our receipts root
+        // calculation is correct.
+        //
+        // On monad, the receipts root input is always null. On replay, we set
+        // our receipts root to any non-null header input so our eth header is
+        // correct in the Db.
+        complete_header.receipts_root = receipts_root();
+    }
+    complete_header.state_root = state_root();
+    complete_header.withdrawals_root = withdrawals_root();
+    complete_header.transactions_root = transactions_root();
+    complete_header.parent_hash = parent_hash;
+    complete_header.gas_used = receipts.empty() ? 0 : receipts.back().gas_used;
+    complete_header.logs_bloom = compute_bloom(receipts);
+    complete_header.ommers_hash = compute_ommers_hash(ommers);
+
     auto const eth_header_rlp = rlp::encode_block_header(complete_header);
 
     UpdateList block_hash_nested_updates;

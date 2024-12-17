@@ -11,8 +11,6 @@
 
 #include <evmc/evmc.h>
 
-#include <quill/Quill.h>
-
 #include <boost/outcome/config.hpp>
 #include <boost/outcome/success_failure.hpp>
 
@@ -77,67 +75,50 @@ EthereumMainnet::static_validate_header(BlockHeader const &header) const
     return success();
 }
 
-Result<void> EthereumMainnet::validate_header(
-    std::vector<Receipt> const &receipts, BlockHeader const &hdr) const
+Result<void> EthereumMainnet::validate_output_header(
+    BlockHeader const &input, BlockHeader const &output) const
 {
-    // YP eq. 33
-    if (MONAD_UNLIKELY(compute_bloom(receipts) != hdr.logs_bloom)) {
-        return BlockError::WrongLogsBloom;
+    // First, validate execution inputs.
+    if (MONAD_UNLIKELY(input.ommers_hash != output.ommers_hash)) {
+        return BlockError::WrongOmmersHash;
+    }
+    if (MONAD_UNLIKELY(input.transactions_root != output.transactions_root)) {
+        return BlockError::WrongMerkleRoot;
+    }
+    if (MONAD_UNLIKELY(input.withdrawals_root != output.withdrawals_root)) {
+        return BlockError::WrongMerkleRoot;
     }
 
+    // Second, validate execution outputs known before commit.
+
     // YP eq. 170
-    if (MONAD_UNLIKELY(
-            !receipts.empty() && receipts.back().gas_used != hdr.gas_used)) {
+    if (MONAD_UNLIKELY(input.gas_used != output.gas_used)) {
         return BlockError::InvalidGasUsed;
     }
 
-    return success();
-}
+    // YP eq. 56
+    if (MONAD_UNLIKELY(output.gas_used > output.gas_limit)) {
+        return BlockError::GasAboveLimit;
+    }
 
-bool EthereumMainnet::validate_root(
-    evmc_revision const rev, BlockHeader const &hdr,
-    bytes32_t const &state_root, bytes32_t const &receipts_root,
-    bytes32_t const &transactions_root,
-    std::optional<bytes32_t> const &withdrawals_root) const
-{
-    if (MONAD_UNLIKELY(state_root != hdr.state_root)) {
-        LOG_ERROR(
-            "Block: {}, Computed State Root: {}, Expected State Root: {}",
-            hdr.number,
-            state_root,
-            hdr.state_root);
-        return false;
+    // YP eq. 33
+    if (MONAD_UNLIKELY(input.logs_bloom != output.logs_bloom)) {
+        return BlockError::WrongLogsBloom;
     }
-    if (MONAD_LIKELY(rev >= EVMC_BYZANTIUM)) {
-        if (MONAD_UNLIKELY(receipts_root != hdr.receipts_root)) {
-            LOG_ERROR(
-                "Block: {}, Computed Receipts Root: {}, Expected Receipts "
-                "Root: {}",
-                hdr.number,
-                receipts_root,
-                hdr.receipts_root);
-            return false;
-        }
+
+    if (MONAD_UNLIKELY(input.parent_hash != output.parent_hash)) {
+        return BlockError::WrongParentHash;
     }
-    if (MONAD_UNLIKELY(transactions_root != hdr.transactions_root)) {
-        LOG_ERROR(
-            "Block: {}, Computed Transactions Root: {}, Expected Transactions "
-            "Root: {}",
-            hdr.number,
-            transactions_root,
-            hdr.transactions_root);
-        return false;
+
+    // Lastly, validate execution outputs only known after commit.
+    if (MONAD_UNLIKELY(input.state_root != output.state_root)) {
+        return BlockError::WrongMerkleRoot;
     }
-    if (MONAD_UNLIKELY(withdrawals_root != hdr.withdrawals_root)) {
-        LOG_ERROR(
-            "Block: {}, Computed Withdrawals Root: {}, Expected Withdrawals "
-            "Root: {}",
-            hdr.number,
-            withdrawals_root,
-            hdr.withdrawals_root);
-        return false;
+    if (MONAD_UNLIKELY(input.receipts_root != output.receipts_root)) {
+        return BlockError::WrongMerkleRoot;
     }
-    return true;
+
+    return success();
 }
 
 MONAD_NAMESPACE_END

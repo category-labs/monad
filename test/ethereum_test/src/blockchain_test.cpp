@@ -77,7 +77,7 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
         receipts[i] = std::move(results[i].receipt);
         call_frames[i] = std::move(results[i].call_frames);
     }
-    BOOST_OUTCOME_TRY(chain.validate_header(receipts, block.header));
+
     block_state.log_debug();
     block_state.commit(
         block.header,
@@ -86,6 +86,11 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
         block.transactions,
         block.ommers,
         block.withdrawals);
+
+    auto output_header = db.read_eth_header();
+    BOOST_OUTCOME_TRY(
+        chain.validate_output_header(block.header, output_header));
+
     return receipts;
 }
 
@@ -187,7 +192,7 @@ void BlockchainTest::TestBody()
         db_t tdb{db};
         {
             auto const genesisJson = j_contents.at("genesisBlockHeader");
-            auto const header = read_genesis_blockheader(genesisJson);
+            auto header = read_genesis_blockheader(genesisJson);
             ASSERT_EQ(
                 NULL_ROOT,
                 evmc::from_hex<bytes32_t>(
@@ -203,13 +208,22 @@ void BlockchainTest::TestBody()
                 evmc::from_hex<bytes32_t>(
                     genesisJson.at("uncleHash").get<std::string>())
                     .value());
+            ASSERT_EQ(
+                bytes32_t{},
+                evmc::from_hex<bytes32_t>(
+                    genesisJson.at("parentHash").get<std::string>())
+                    .value());
+
+            std::optional<std::vector<Withdrawal>> withdrawals;
             if (rev >= EVMC_SHANGHAI) {
                 ASSERT_EQ(
                     NULL_ROOT,
                     evmc::from_hex<bytes32_t>(
                         genesisJson.at("withdrawalsRoot").get<std::string>())
                         .value());
+                withdrawals.emplace(std::vector<Withdrawal>{});
             }
+
             BlockState bs{tdb};
             State state{bs, Incarnation{0, 0}};
             load_state_from_json(j_contents.at("pre"), state);
@@ -220,8 +234,14 @@ void BlockchainTest::TestBody()
                 {} /* call frames */,
                 {} /* transactions */,
                 {} /* ommers */,
-                {} /* withdrawals */,
+                withdrawals,
                 std::nullopt);
+            ASSERT_EQ(
+                to_bytes(
+                    keccak256(rlp::encode_block_header(tdb.read_eth_header()))),
+                evmc::from_hex<bytes32_t>(
+                    genesisJson.at("hash").get<std::string>())
+                    .value());
         }
         auto db_post_state = tdb.to_json();
 

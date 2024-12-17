@@ -162,7 +162,6 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
             call_frames[i] = (std::move(result.call_frames));
         }
 
-        BOOST_OUTCOME_TRY(chain.validate_header(receipts, block.header));
         block_state.log_debug();
         block_state.commit(
             block.header,
@@ -172,21 +171,15 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
             block.ommers,
             block.withdrawals,
             block.header.number);
-        db.finalize(block.header.number, block.header.number);
+        auto const output_header = db.read_eth_header();
+        BOOST_OUTCOME_TRY(
+            chain.validate_output_header(block.header, output_header));
 
-        if (!chain.validate_root(
-                rev,
-                block.header,
-                db.state_root(),
-                db.receipts_root(),
-                db.transactions_root(),
-                db.withdrawals_root())) {
-            return BlockError::WrongMerkleRoot;
-        }
+        db.finalize(block.header.number, block.header.number);
         db.update_verified_block(block.header.number);
 
         auto const h =
-            to_bytes(keccak256(rlp::encode_block_header(block.header)));
+            to_bytes(keccak256(rlp::encode_block_header(output_header)));
         block_hash_buffer.set(block_num, h);
 
         ntxs += block.transactions.size();
@@ -485,13 +478,7 @@ int main(int const argc, char const *argv[])
     BlockHashBufferFinalized block_hash_buffer;
     bool initialized_headers_from_triedb = false;
 
-    // We need to init from BlockDb if rev <= BYZANTIUM. Before EIP-658,
-    // receipts root was calculated using a transaction status code and
-    // intermediate state root. TrieDb only supports EIP-658 calculation of
-    // recipts root. Therefore, before EIP-658, our eth header hashes will
-    // not match the expected results when replaying ethereum history.
-    if (chain->get_revision(init_block_num, 0) > EVMC_BYZANTIUM &&
-        !db_in_memory) {
+    if (!db_in_memory) {
         mpt::Db rodb{mpt::ReadOnlyOnDiskDbConfig{
             .sq_thread_cpu = ro_sq_thread_cpu, .dbname_paths = dbname_paths}};
         initialized_headers_from_triedb = init_block_hash_buffer_from_triedb(

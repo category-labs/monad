@@ -28,6 +28,7 @@ enum class BlockError
     InvalidGasLimit,
     ExtraDataTooLong,
     WrongOmmersHash,
+    WrongParentHash,
     FieldBeforeFork,
     MissingField,
     PowBlockAfterMerge,
@@ -45,6 +46,8 @@ struct Block;
 struct BlockHeader;
 
 Receipt::Bloom compute_bloom(std::vector<Receipt> const &);
+
+bytes32_t compute_ommers_hash(std::vector<BlockHeader> const &);
 
 template <evmc_revision rev>
 Result<void> static_validate_header(BlockHeader const &);

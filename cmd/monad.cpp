@@ -136,7 +136,8 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
 
         BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
 
-        evmc_revision const rev = chain.get_revision(block.header);
+        evmc_revision const rev =
+            chain.get_revision(block.header.number, block.header.timestamp);
 
         BOOST_OUTCOME_TRY(static_validate_block(rev, block));
 

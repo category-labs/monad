@@ -25,39 +25,40 @@ uint256_t EthereumMainnet::get_chain_id() const
     return 1;
 };
 
-evmc_revision EthereumMainnet::get_revision(BlockHeader const &header) const
+evmc_revision
+EthereumMainnet::get_revision(uint64_t const block_number, uint64_t const) const
 {
-    if (header.number >= 19426587) {
+    if (block_number >= 19426587) {
         return EVMC_CANCUN;
     }
-    else if (header.number >= 17034870) {
+    else if (block_number >= 17034870) {
         return EVMC_SHANGHAI;
     }
-    else if (header.number >= 15537394) {
+    else if (block_number >= 15537394) {
         return EVMC_PARIS;
     }
-    else if (header.number >= 12965000) {
+    else if (block_number >= 12965000) {
         return EVMC_LONDON;
     }
-    else if (header.number >= 12244000) {
+    else if (block_number >= 12244000) {
         return EVMC_BERLIN;
     }
-    else if (header.number >= 9069000) {
+    else if (block_number >= 9069000) {
         return EVMC_ISTANBUL;
     }
-    else if (header.number >= 7280000) {
+    else if (block_number >= 7280000) {
         return EVMC_PETERSBURG;
     }
-    else if (header.number >= 4370000) {
+    else if (block_number >= 4370000) {
         return EVMC_BYZANTIUM;
     }
-    else if (header.number >= 2675000) {
+    else if (block_number >= 2675000) {
         return EVMC_SPURIOUS_DRAGON;
     }
-    else if (header.number >= 2463000) {
+    else if (block_number >= 2463000) {
         return EVMC_TANGERINE_WHISTLE;
     }
-    else if (header.number >= 1150000) {
+    else if (block_number >= 1150000) {
         return EVMC_HOMESTEAD;
     }
     return EVMC_FRONTIER;

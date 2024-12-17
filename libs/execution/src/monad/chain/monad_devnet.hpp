@@ -12,7 +12,8 @@ struct MonadDevnet : MonadChain
 {
     virtual uint256_t get_chain_id() const override;
 
-    virtual evmc_revision get_revision(BlockHeader const &) const override;
+    virtual evmc_revision
+    get_revision(uint64_t block_number, uint64_t timestamp) const override;
 };
 
 MONAD_NAMESPACE_END

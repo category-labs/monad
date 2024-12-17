@@ -25,13 +25,13 @@ uint256_t EthereumMainnet::get_chain_id() const
     return 1;
 };
 
-evmc_revision
-EthereumMainnet::get_revision(uint64_t const block_number, uint64_t const) const
+evmc_revision EthereumMainnet::get_revision(
+    uint64_t const block_number, uint64_t const timestamp) const
 {
-    if (block_number >= 19426587) {
+    if (timestamp >= 1710338135) {
         return EVMC_CANCUN;
     }
-    else if (block_number >= 17034870) {
+    else if (timestamp >= 1681338455) {
         return EVMC_SHANGHAI;
     }
     else if (block_number >= 15537394) {

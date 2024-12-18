@@ -1,4 +1,12 @@
+#include <monad/core/block.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/core/keccak.hpp>
+#include <monad/core/rlp/block_rlp.hpp>
+#include <monad/db/trie_db.hpp>
+#include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
+#include <monad/mpt/db.hpp>
+#include <monad/mpt/ondisk_db_config.hpp>
 
 #include <gtest/gtest.h>
 
@@ -136,6 +144,44 @@ TEST(BlockHashBuffer, propose_after_crash)
 
     for (uint64_t i = 0; i < buf.n(); ++i) {
         EXPECT_EQ(bytes32_t{i}, buf.get(i));
+    }
+}
+
+TEST(BlockHashBufferTest, init_from_db)
+{
+    auto const path = [] {
+        std::filesystem::path dbname(
+            MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+            "monad_block_hash_buffer_test_XXXXXX");
+        int const fd = ::mkstemp((char *)dbname.native().data());
+        MONAD_ASSERT(fd != -1);
+        MONAD_ASSERT(
+            -1 !=
+            ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
+        ::close(fd);
+        return dbname;
+    }();
+
+    OnDiskMachine machine;
+    mpt::Db db{
+        machine, mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
+    TrieDb tdb{db};
+
+    BlockHashBufferFinalized expected;
+    for (uint64_t i = 0; i < 256; ++i) {
+        BlockHeader hdr{.number = i};
+        tdb.set_block_number(i);
+        tdb.commit({}, {}, hdr, {}, {}, {}, {}, std::nullopt);
+        expected.set(i, to_bytes(keccak256(rlp::encode_block_header(hdr))));
+    }
+
+    BlockHashBufferFinalized actual;
+    EXPECT_FALSE(init_block_hash_buffer_from_triedb(
+        db, 5000 /* invalid start block */, actual));
+    EXPECT_TRUE(init_block_hash_buffer_from_triedb(db, expected.n(), actual));
+
+    for (uint64_t i = 0; i < 256; ++i) {
+        EXPECT_EQ(expected.get(i), actual.get(i));
     }
 }
 

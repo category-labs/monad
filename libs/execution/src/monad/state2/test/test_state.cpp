@@ -2,9 +2,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/db/trie_db.hpp>
-#include <monad/db/util.hpp>
 #include <monad/execution/code_analysis.hpp>
-#include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state_deltas.hpp>
@@ -1082,6 +1080,7 @@ TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
 
     bs.merge(as);
     bs.commit({}, {}, {}, {}, {}, std::nullopt);
+
     EXPECT_TRUE(this->tdb.read_account(a).has_value());
     EXPECT_EQ(this->tdb.read_account(a).value().balance, 1u);
     EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 1}, key1), value1);
@@ -1105,10 +1104,7 @@ TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
 
 TYPED_TEST(StateTest, commit_twice)
 {
-    uint64_t const block_number = 10;
-    uint64_t const round_number = 5;
-    // prep the state of Block 9
-    this->tdb.set_block_number(block_number - 1);
+    // commit to Block 9 Finalized
     this->tdb.commit(
         StateDeltas{
             {a,
@@ -1126,11 +1122,10 @@ TYPED_TEST(StateTest, commit_twice)
                      {{key1, {bytes32_t{}, value1}},
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{},
-        BlockHeader{});
+        BlockHeader{.number = 9});
 
-    {
-        // Block 10, Round 5 on top of block 9 finalized, Txn 0
-        this->tdb.set(block_number, round_number, round_number - 1);
+    { // Commit to Block 10 Round 5, on top of block 9 finalized
+        this->tdb.set_block_and_round(9);
         BlockState bs{this->tdb};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
@@ -1142,15 +1137,14 @@ TYPED_TEST(StateTest, commit_twice)
             as.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
-        bs.commit({}, {}, {}, {}, {}, std::nullopt);
-        this->tdb.finalize(block_number, round_number);
+        bs.commit({.number = 10}, {}, {}, {}, {}, std::nullopt, 5);
+        this->tdb.finalize(10, 5);
 
         EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key1), value2);
         EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key2), value2);
     }
-    {
-        // Block 11, Round 6, Txn 0
-        this->tdb.set(block_number + 1, round_number + 1, round_number);
+    { // Commit to Block 11 Round 6, on top of block 10 round 5
+        this->tdb.set_block_and_round(10, 5);
         BlockState bs{this->tdb};
         State cs{bs, Incarnation{2, 1}};
         EXPECT_TRUE(cs.account_exists(a));
@@ -1161,26 +1155,26 @@ TYPED_TEST(StateTest, commit_twice)
         cs.destruct_suicides<EVMC_SHANGHAI>();
         EXPECT_TRUE(bs.can_merge(cs));
         bs.merge(cs);
-        bs.commit({}, {}, {}, {}, {}, std::nullopt);
-        this->tdb.finalize(block_number + 1, round_number + 1);
-
-        EXPECT_EQ(
-            this->tdb.read_storage(c, Incarnation{2, 1}, key1),
-            monad::bytes32_t{});
-        EXPECT_EQ(
-            this->tdb.read_storage(c, Incarnation{2, 1}, key2),
-            monad::bytes32_t{});
+        bs.commit({.number = 11}, {}, {}, {}, {}, std::nullopt, 6);
     }
+    EXPECT_EQ(
+        this->tdb.read_storage(c, Incarnation{2, 1}, key1), monad::bytes32_t{});
+    EXPECT_EQ(
+        this->tdb.read_storage(c, Incarnation{2, 1}, key2), monad::bytes32_t{});
+
+    // verify finalized state is the same as round 6
+    this->tdb.finalize(11, 6);
+    this->tdb.set_block_and_round(11);
+    EXPECT_EQ(
+        this->tdb.read_storage(c, Incarnation{2, 1}, key1), monad::bytes32_t{});
+    EXPECT_EQ(
+        this->tdb.read_storage(c, Incarnation{2, 1}, key2), monad::bytes32_t{});
 }
 
 TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
 {
-    // Should fail with DbCache, but pass with TrieDb
-
-    uint64_t block_number = 10;
-    uint64_t const round_number = 5;
-    // prep the state of Block 10
-    this->tdb.set(block_number, round_number, round_number - 1);
+    // This test would fail with DbCache
+    // commit to block 10, round 5
     this->tdb.commit(
         StateDeltas{
             {a,
@@ -1198,13 +1192,16 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
                      {{key1, {bytes32_t{}, value1}},
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{},
-        BlockHeader{});
-    this->tdb.finalize(block_number, round_number);
-    ++block_number;
-    constexpr uint64_t round8 = 8;
+        BlockHeader{.number = 10},
+        {},
+        {},
+        {},
+        {},
+        std::nullopt,
+        5);
     {
-        // Block 11, Round 8 on top of block 10 round 5, Txn 0
-        this->tdb.set(block_number, round8, round_number);
+        // set to block 10 round 5
+        this->tdb.set_block_and_round(10, 5);
         BlockState bs{this->tdb};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
@@ -1215,7 +1212,8 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
 
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
-        bs.commit({}, {}, {}, {}, {}, std::nullopt);
+        // Commit block 11 round 8 on top of block 10 round 5
+        bs.commit({.number = 11}, {}, {}, {}, {}, std::nullopt, 8);
 
         EXPECT_EQ(this->tdb.read_account(b).value().balance, 82'000);
         EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key1), value2);
@@ -1224,10 +1222,9 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
     }
     auto const state_root_round8 = this->tdb.state_root();
 
-    constexpr uint64_t round6 = 6;
     {
-        // Block 11, Round 6 on top of block 10 round 6, Txn 0
-        this->tdb.set(block_number, round6, round_number);
+        // set to block 10 round 5
+        this->tdb.set_block_and_round(10, 5);
         BlockState bs{this->tdb};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
@@ -1237,7 +1234,8 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
         EXPECT_EQ(as.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
-        bs.commit({}, {}, {}, {}, {}, std::nullopt);
+        // Commit block 11 round 6 on top of block 10 round 5
+        bs.commit({.number = 11}, {}, {}, {}, {}, std::nullopt, 6);
 
         EXPECT_EQ(this->tdb.read_account(b).value().balance, 84'000);
         EXPECT_EQ(
@@ -1245,12 +1243,12 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
         EXPECT_EQ(
             this->tdb.read_storage(b, Incarnation{1, 1}, key2), bytes32_t{});
     }
+
     auto const state_root_round6 = this->tdb.state_root();
 
-    constexpr uint64_t round7 = 7;
     {
-        // Block 11, Round 7 on top of block 10 round 5, Txn 0
-        this->tdb.set(block_number, round7, round_number);
+        // set to block 10 round 5
+        this->tdb.set_block_and_round(10, 5);
         BlockState bs{this->tdb};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
@@ -1261,34 +1259,22 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
         EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_DELETED_ADDED);
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
-        bs.commit({}, {}, {}, {}, {}, std::nullopt);
+        // Commit block 11 round 7 on top of block 10 round 5
+        bs.commit({.number = 11}, {}, {}, {}, {}, std::nullopt, 7);
 
         EXPECT_EQ(this->tdb.read_account(b).value().balance, 72'000);
         EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key1), value2);
         EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key2), value3);
     }
     auto const state_root_round7 = this->tdb.state_root();
-    this->tdb.finalize(block_number, round7);
+    this->tdb.finalize(11, 7);
+    this->tdb.set_block_and_round(11); // set to block 11 finalized
     EXPECT_EQ(state_root_round7, this->tdb.state_root());
 
     // check state root of previous rounds
-    auto const data6 = this->db.get_data(
-        mpt::concat(
-            PROPOSAL_NIBBLE,
-            mpt::NibblesView{
-                mpt::serialize_as_big_endian<sizeof(uint64_t)>(round6)},
-            STATE_NIBBLE),
-        block_number);
-    ASSERT_TRUE(data6.has_value());
-    EXPECT_EQ(state_root_round6, to_bytes(data6.value()));
+    this->tdb.set_block_and_round(11, 6);
+    EXPECT_EQ(state_root_round6, this->tdb.state_root());
 
-    auto const data8 = this->db.get_data(
-        mpt::concat(
-            PROPOSAL_NIBBLE,
-            mpt::NibblesView{
-                mpt::serialize_as_big_endian<sizeof(uint64_t)>(round8)},
-            STATE_NIBBLE),
-        block_number);
-    ASSERT_TRUE(data8.has_value());
-    EXPECT_EQ(state_root_round8, to_bytes(data8.value()));
+    this->tdb.set_block_and_round(11, 8);
+    EXPECT_EQ(state_root_round8, this->tdb.state_root());
 }

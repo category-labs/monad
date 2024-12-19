@@ -1489,7 +1489,7 @@ opened.
                       ring,
                       *wr_ring,
                       2,
-                      1,
+                      4,
                       MONAD_ASYNC_NAMESPACE::AsyncIO::
                           MONAD_IO_BUFFERS_READ_SIZE,
                       MONAD_ASYNC_NAMESPACE::AsyncIO::

@@ -111,6 +111,7 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
         (std::numeric_limits<uint64_t>::max() - block_num + 1) <= nblocks
             ? std::numeric_limits<uint64_t>::max()
             : block_num + nblocks - 1;
+    uint64_t const init_block_num = block_num;
     while (block_num <= end_block_num && stop == 0) {
         auto opt_block = try_get(block_num);
         if (!opt_block.has_value()) {
@@ -126,11 +127,14 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
 
         BOOST_OUTCOME_TRY(static_validate_block(rev, block));
 
-        // Ethereum: commit to `round = block_number`, and finalize immediately
-        // after. always execute off of the previous proposal round
-        // TODO: Monad chain
-        db.set(
-            block.header.number, block.header.number, block.header.number - 1);
+        // Ethereum: always execute off of the parent proposal round, commit to
+        // `round = block_number`, and finalize immediately after that.
+        // TODO: get round number from event emitter
+        db.set_block_and_round(
+            block.header.number - 1,
+            (block.header.number == init_block_num)
+                ? std::nullopt
+                : std::make_optional(block.header.number - 1));
         BlockState block_state(db);
         BOOST_OUTCOME_TRY(
             auto const results,
@@ -158,7 +162,8 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
             call_frames,
             block.transactions,
             block.ommers,
-            block.withdrawals);
+            block.withdrawals,
+            block.header.number);
         db.finalize(block.header.number, block.header.number);
 
         if (!chain.validate_root(

@@ -149,57 +149,49 @@ TEST(DBTest, read_only)
         std::filesystem::temp_directory_path() /
         (::testing::UnitTest::GetInstance()->current_test_info()->name() +
          std::to_string(rand()));
-    uint64_t block_number = 0;
     {
         OnDiskMachine machine;
         mpt::Db db{machine, mpt::OnDiskDbConfig{.dbname_paths = {name}}};
         TrieDb rw(db);
 
         Account const acct1{.nonce = 1};
-        rw.set_block_number(block_number);
         rw.commit(
             StateDeltas{
                 {ADDR_A,
                  StateDelta{.account = {std::nullopt, acct1}, .storage = {}}}},
             Code{},
-            BlockHeader{});
+            BlockHeader{.number = 0});
         Account const acct2{.nonce = 2};
-        rw.set_block_number(++block_number);
         rw.commit(
             StateDeltas{
                 {ADDR_A, StateDelta{.account = {acct1, acct2}, .storage = {}}}},
             Code{},
-            BlockHeader{});
+            BlockHeader{.number = 1});
 
         mpt::Db db2(mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {name}});
         TrieDb ro{db2};
-        ASSERT_EQ(ro.get_block_number(), block_number);
+        ASSERT_EQ(ro.get_block_number(), 1);
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 2});
-        ro.set_block_number(0);
+        ro.set_block_and_round(0);
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 1});
 
         Account const acct3{.nonce = 3};
-        rw.set_block_number(++block_number);
         rw.commit(
             StateDeltas{
                 {ADDR_A, StateDelta{.account = {acct2, acct3}, .storage = {}}}},
             Code{},
-            BlockHeader{});
-
+            BlockHeader{.number = 2});
         // Read block 0
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 1});
         // Go forward to block 2
-        ro.set_block_number(2);
+        ro.set_block_and_round(2);
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 3});
         // Go backward to block 1
-        ro.set_block_number(1);
+        ro.set_block_and_round(1);
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 2});
         // Setting the same block number is no-op.
-        ro.set_block_number(1);
+        ro.set_block_and_round(1);
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 2});
-        // Go to a random block
-        ro.set_block_number(1337);
-        EXPECT_EQ(ro.read_account(ADDR_A), std::nullopt);
     }
     std::filesystem::remove(name);
 }
@@ -369,10 +361,8 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     using namespace intx;
     using namespace evmc::literals;
 
-    uint64_t block_number = 0;
     TrieDb tdb{this->db};
     // empty receipts
-    tdb.set_block_number(block_number);
     tdb.commit(StateDeltas{}, Code{}, BlockHeader{});
     EXPECT_EQ(tdb.receipts_root(), NULL_ROOT);
 
@@ -480,7 +470,6 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         keccak256(rlp::encode_transaction(transactions.emplace_back(t2))));
     ASSERT_EQ(receipts.size(), transactions.size());
     call_frames.resize(receipts.size());
-    tdb.set_block_number(++block_number);
     tdb.commit(
         StateDeltas{},
         Code{},
@@ -716,7 +705,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
                      {std::nullopt,
                       Account{.balance = 0x1b58, .code_hash = NULL_HASH}}}}},
         Code{{STRESS_TEST_CODE_HASH, STRESS_TEST_CODE_ANALYSIS}},
-        BlockHeader{});
+        BlockHeader{.number = 0});
 
     // clang-format off
     byte_string const block_rlp = evmc::from_hex("0xf90283f90219a0d2472bbb9c83b0e7615b791409c2efaccd5cb7d923741bbc44783bf0d063f5b6a01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d4934794b94f5374fce5edbc8e2a8697c15331677e6ebf0ba0644bb1009c2332d1532062fe9c28cae87169ccaab2624aa0cfb4f0a0e59ac3aaa0cc2a2a77bb0d7a07b12d7e1d13b9f5dfff4f4bc53052b126e318f8b27b7ab8f9a027408083641cf20cfde86cd87cd57bf10c741d7553352ca96118e31ab8ceb9ceb901000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080018433428f00840ee6b2808203e800a000000000000000000000000000000000000000000000000000000000000200008800000000000000000aa056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421f863f861800a840ee6b28094bbbf5374fce5edbc8e2a8697c15331677e6ebf0b0a801ba0462186579a4be0ad8a63224059a11693b4c0684b9939f6c2394d1fbe045275f2a059d73f99e037295a5f8c0e656acdb5c8b9acd28ec73c320c277df61f2e2d54f9c0c0")
@@ -749,7 +738,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
     }
 
     bs.commit(
-        BlockHeader{},
+        BlockHeader{.number = 1},
         receipts,
         call_frames,
         block.value().transactions,
@@ -809,7 +798,7 @@ TYPED_TEST(DBTest, call_frames_refund)
                       {bytes32_t{0x04}, {bytes32_t{}, bytes32_t{0x01}}},
                       {bytes32_t{0x05}, {bytes32_t{}, bytes32_t{0x01}}}}}}},
         Code{{REFUND_TEST_CODE_HASH, REFUND_TEST_CODE_ANALYSIS}},
-        BlockHeader{});
+        BlockHeader{.number = 0});
 
     // clang-format off
     byte_string const block_rlp = evmc::from_hex("0xf9025ff901f7a01e736f5755fc7023588f262b496b6cbc18aa9062d9c7a21b1c709f55ad66aad3a01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347942adc25665018aa1fe0e6bc666dac8fc2697ff9baa096841c0823ec823fdb0b0b8ea019c8dd6691b9f335e0433d8cfe59146e8b884ca0f0f9b1e10ec75d9799e3a49da5baeeab089b431b0073fb05fa90035e830728b8a06c8ab36ec0629c97734e8ac823cdd8397de67efb76c7beb983be73dcd3c78141b90100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008302000001830f42408259e78203e800a00000000000000000000000000000000000000000000000000000000000000000880000000000000000f862f860800a830186a094095e7baea6a6c7c4c2dfeb977efac326af552d8780801ba0eac92a424c1599d71b1c116ad53800caa599233ea91907e639b7cb98fa0da3bba06be40f001771af85bfba5e6c4d579e038e6465af3f55e71b9490ab48fcfa5b1ec0")
@@ -818,6 +807,7 @@ TYPED_TEST(DBTest, call_frames_refund)
     byte_string_view block_rlp_view{block_rlp};
     auto block = rlp::decode_block(block_rlp_view);
     ASSERT_TRUE(!block.has_error());
+    EXPECT_EQ(block.value().header.number, 1);
 
     BlockHashBufferFinalized block_hash_buffer;
     block_hash_buffer.set(

@@ -108,20 +108,17 @@ public:
         }
     }
 
-    virtual void
-    set(uint64_t const block_number, uint64_t const round_number,
-        uint64_t const parent_round_number) override
+    virtual void set_block_and_round(uint64_t, uint64_t) override
     {
         MONAD_ABORT("TODO: DbCache does not support proposal execution");
     }
 
-    virtual void
-    finalize(uint64_t const block_number, uint64_t const round_number) override
+    virtual void finalize(uint64_t, uint64_t) override
     {
         MONAD_ABORT("TODO: DbCache does not support proposal execution");
     }
 
-    virtual void update_verified_block(uint64_t const block_number) override
+    virtual void update_verified_block(uint64_t) override
     {
         MONAD_ABORT("TODO: DbCache does not support proposal execution");
     }
@@ -132,7 +129,8 @@ public:
         std::vector<std::vector<CallFrame>> const &call_frames,
         std::vector<Transaction> const &transactions,
         std::vector<BlockHeader> const &ommers,
-        std::optional<std::vector<Withdrawal>> const &withdrawals) override
+        std::optional<std::vector<Withdrawal>> const &withdrawals,
+        std::optional<uint64_t> const round_number) override
     {
         db_.commit(
             state_deltas,

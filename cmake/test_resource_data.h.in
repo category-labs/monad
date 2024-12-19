@@ -88,7 +88,6 @@ inline auto const H_CODE_ANALYSIS =
 
 inline void load_db(TrieDb &db, uint64_t const n)
 {
-    db.set_block_number(n);
     db.commit(
         StateDeltas{
             {ADDR_A,
@@ -152,7 +151,7 @@ inline void load_db(TrieDb &db, uint64_t const n)
             {D_CODE_HASH, D_CODE_ANALYSIS},
             {E_CODE_HASH, E_CODE_ANALYSIS},
             {H_CODE_HASH, H_CODE_ANALYSIS}},
-        BlockHeader{});
+        BlockHeader{.number = n}); // commit to block n, finalized
 }
 
 MONAD_TEST_NAMESPACE_END

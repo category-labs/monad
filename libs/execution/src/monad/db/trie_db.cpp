@@ -63,18 +63,18 @@ namespace
 {
     Nibbles proposal_prefix(uint64_t const round_number)
     {
-        auto const prefix =
-            serialize_as_big_endian<sizeof(uint64_t)>(round_number);
-        return concat(PROPOSAL_NIBBLE, NibblesView{prefix});
+        return concat(
+            PROPOSAL_NIBBLE,
+            NibblesView{
+                serialize_as_big_endian<sizeof(uint64_t)>(round_number)});
     }
 }
 
 TrieDb::TrieDb(mpt::Db &db)
     : db_{db}
-    , block_number_{
-          db.get_latest_finalized_block_id() == INVALID_BLOCK_ID
-              ? 0
-              : db.get_latest_finalized_block_id()}
+    , block_number_{db.get_latest_finalized_block_id() == INVALID_BLOCK_ID ? 0 : db.get_latest_finalized_block_id()}
+    , round_number_{std::nullopt}
+    , prefix_{finalized_nibbles}
 {
 }
 
@@ -154,9 +154,26 @@ void TrieDb::commit(
     std::vector<std::vector<CallFrame>> const &call_frames,
     std::vector<Transaction> const &transactions,
     std::vector<BlockHeader> const &ommers,
-    std::optional<std::vector<Withdrawal>> const &withdrawals)
+    std::optional<std::vector<Withdrawal>> const &withdrawals,
+    std::optional<uint64_t> const round_number)
 {
-    MONAD_ASSERT(block_number_ <= std::numeric_limits<int64_t>::max());
+    MONAD_ASSERT(header.number <= std::numeric_limits<int64_t>::max());
+
+    if (db_.is_on_disk() &&
+        (round_number != round_number_ || header.number != block_number_)) {
+        // only copy_trie if round number or block number has changed for
+        // commit, and db is not empty
+        auto const dest_prefix = round_number.has_value()
+                                     ? proposal_prefix(round_number.value())
+                                     : finalized_nibbles;
+        if (db_.get_latest_block_id() != INVALID_BLOCK_ID) {
+            db_.copy_trie(
+                block_number_, prefix_, header.number, dest_prefix, false);
+        }
+        round_number_ = round_number;
+        block_number_ = header.number;
+        prefix_ = dest_prefix;
+    }
 
     UpdateList account_updates;
     for (auto const &[addr, delta] : state_deltas) {
@@ -381,29 +398,20 @@ void TrieDb::commit(
     hash_alloc_.clear();
 }
 
-void TrieDb::set(
-    uint64_t const block_number, uint64_t const round_number,
-    uint64_t const parent_round_number)
+void TrieDb::set_block_and_round(
+    uint64_t const block_number, std::optional<uint64_t> const round_number)
 {
+    // set read state
     if (!db_.is_on_disk()) {
         MONAD_ASSERT(block_number_ == 0);
         MONAD_ASSERT(round_number_ == std::nullopt);
         return;
     }
+    prefix_ = round_number.has_value() ? proposal_prefix(round_number.value())
+                                       : finalized_nibbles;
+    MONAD_ASSERT(db_.find(prefix_, block_number).has_value());
     block_number_ = block_number;
     round_number_ = round_number;
-    prefix_ = proposal_prefix(round_number);
-
-    auto src_prefix = proposal_prefix(parent_round_number);
-    if (MONAD_UNLIKELY(db_.find(src_prefix, block_number - 1).has_error())) {
-        src_prefix = finalized_nibbles;
-        if (db_.find(src_prefix, block_number - 1).has_error()) {
-            // neither proposal nor finalized exists in parent version, set
-            // fresh state
-            return;
-        }
-    }
-    db_.copy_trie(block_number - 1, src_prefix, block_number, prefix_, false);
 }
 
 void TrieDb::finalize(uint64_t const block_number, uint64_t const round_number)
@@ -431,18 +439,6 @@ void TrieDb::update_verified_block(uint64_t const block_number)
             latest_verified == INVALID_BLOCK_ID ||
             block_number == latest_verified + 1);
         db_.update_verified_block(block_number);
-    }
-}
-
-void TrieDb::set_block_number(uint64_t const n)
-{
-    round_number_ = std::nullopt;
-    if (db_.is_on_disk()) {
-        block_number_ = n;
-        prefix_ = finalized_nibbles;
-    }
-    else {
-        MONAD_ASSERT(block_number_ == 0);
     }
 }
 

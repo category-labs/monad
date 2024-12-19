@@ -170,7 +170,6 @@ TEST(BlockHashBufferTest, init_from_db)
     BlockHashBufferFinalized expected;
     for (uint64_t i = 0; i < 256; ++i) {
         BlockHeader hdr{.number = i};
-        tdb.set_block_number(i);
         tdb.commit({}, {}, hdr, {}, {}, {}, {}, std::nullopt);
         expected.set(i, to_bytes(keccak256(rlp::encode_block_header(hdr))));
     }

@@ -55,7 +55,7 @@ namespace
             mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = dbname_paths}};
         thread_local TrieDb ro{db};
 
-        ro.set_block_number(block_number);
+        ro.set_block_and_round(block_number);
         BlockState block_state{ro};
         // avoid conflict with block reward txn
         Incarnation incarnation{block_number, Incarnation::LAST_TX - 1u};

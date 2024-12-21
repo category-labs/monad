@@ -312,6 +312,7 @@ int main(int const argc, char const *argv[])
         "event_trace", quill::file_handler(trace_log, handler_cfg));
 #endif
 
+    auto const db_in_memory = dbname_paths.empty();
     auto const load_start_time = std::chrono::steady_clock::now();
 
     std::optional<monad_statesync_server_network> net;
@@ -320,7 +321,7 @@ int main(int const argc, char const *argv[])
     }
     std::unique_ptr<mpt::StateMachine> machine;
     mpt::Db db = [&] {
-        if (!dbname_paths.empty()) {
+        if (!db_in_memory) {
             machine = std::make_unique<OnDiskMachine>();
             return mpt::Db{
                 *machine,
@@ -473,23 +474,25 @@ int main(int const argc, char const *argv[])
     }();
 
     BlockHashBufferFinalized block_hash_buffer;
-    {
+    bool initialized_headers_from_triedb = false;
+
+    // We need to init from BlockDb if rev <= BYZANTIUM. Before EIP-658,
+    // receipts root was calculated using a transaction status code and
+    // intermediate state root. TrieDb only supports EIP-658 calculation of
+    // recipts root. Therefore, before EIP-658, our eth header hashes will
+    // not match the expected results when replaying ethereum history.
+    if (chain->get_revision(init_block_num, 0) > EVMC_BYZANTIUM &&
+        !db_in_memory) {
         mpt::Db rodb{mpt::ReadOnlyOnDiskDbConfig{
             .sq_thread_cpu = ro_sq_thread_cpu, .dbname_paths = dbname_paths}};
-
-        // We need to init from BlockDb if rev <= BYZANTIUM. Before EIP-658,
-        // receipts root was calculated using a transaction status code and
-        // intermediate state root. TrieDb only supports EIP-658 calculation of
-        // recipts root. Therefore, before EIP-658, our eth header hashes will
-        // not match the expected results when replaying ethereum history.
-        if (chain->get_revision(init_block_num, 0) <= EVMC_BYZANTIUM ||
-            !init_block_hash_buffer_from_triedb(
-                rodb, start_block_num, block_hash_buffer)) {
-            BlockDb block_db{block_db_path};
-            MONAD_ASSERT(chain_config == ChainConfig::EthereumMainnet);
-            MONAD_ASSERT(init_block_hash_buffer_from_blockdb(
-                block_db, start_block_num, block_hash_buffer));
-        }
+        initialized_headers_from_triedb = init_block_hash_buffer_from_triedb(
+            rodb, start_block_num, block_hash_buffer);
+    }
+    if (!initialized_headers_from_triedb) {
+        BlockDb block_db{block_db_path};
+        MONAD_ASSERT(chain_config == ChainConfig::EthereumMainnet);
+        MONAD_ASSERT(init_block_hash_buffer_from_blockdb(
+            block_db, start_block_num, block_hash_buffer));
     }
 
     uint64_t block_num = start_block_num;

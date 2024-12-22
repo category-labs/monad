@@ -5,14 +5,14 @@
  *
  * This file defines the structures that are passed over the UNIX domain
  * socket between the event server and event clients. The purpose of this
- * protocol is to set up the shared memory structures for an event queue
- * in both processes.
+ * protocol is to export the shared memory structures for an event ring
+ * from the server to the client.
  */
 
 #include <stddef.h>
 #include <stdint.h>
 
-enum monad_event_queue_type : uint8_t;
+enum monad_event_ring_type : uint8_t;
 
 enum monad_event_metadata_type : uint8_t
 {
@@ -26,28 +26,28 @@ enum monad_event_msg_type : unsigned
     MONAD_EVENT_MSG_NONE,
 
     // Client -> server messages
-    MONAD_EVENT_MSG_OPEN_QUEUE,
+    MONAD_EVENT_MSG_EXPORT_RING,
 
     // Server -> client messages
-    MONAD_EVENT_MSG_OPEN_ERROR,
+    MONAD_EVENT_MSG_EXPORT_ERROR,
     MONAD_EVENT_MSG_MAP_RING_CONTROL,
     MONAD_EVENT_MSG_MAP_DESCRIPTOR_TABLE,
     MONAD_EVENT_MSG_MAP_PAYLOAD_PAGE,
     MONAD_EVENT_MSG_METADATA_OFFSET,
-    MONAD_EVENT_MSG_OPEN_FINISHED
+    MONAD_EVENT_MSG_EXPORT_FINISHED
 };
 
-/// Message sent from client for msg_type == MONAD_EVENT_MSG_OPEN_QUEUE
-struct monad_event_open_queue_msg
+/// Message sent from client for msg_type == MONAD_EVENT_MSG_EXPORT_RING
+struct monad_event_export_ring_msg
 {
     enum monad_event_msg_type msg_type;
-    enum monad_event_queue_type queue_type;
+    enum monad_event_ring_type ring_type;
     uint8_t event_metadata_hash[32];
 };
 
-/// Message sent from server for msg_type == MONAD_EVENT_MSG_OPEN_ERROR; any
+/// Message sent from server for msg_type == MONAD_EVENT_MSG_EXPORT_ERROR; any
 /// request from the client that fails is answered with this message
-struct monad_event_open_error_msg
+struct monad_event_export_error_msg
 {
     enum monad_event_msg_type msg_type;
     int error_code;
@@ -56,7 +56,7 @@ struct monad_event_open_error_msg
 
 /// All "success" responses from the server re-use this same structure, but
 /// with different msg_type values; not all fields are meaningful for each type
-struct monad_event_open_success_msg
+struct monad_event_export_success_msg
 {
     enum monad_event_msg_type msg_type;
     enum monad_event_metadata_type metadata_type;

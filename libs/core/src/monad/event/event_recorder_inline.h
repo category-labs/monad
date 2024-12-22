@@ -60,21 +60,23 @@ struct monad_event_payload_page_pool
     _Atomic(uint64_t) const *prod_next;
 };
 
-// State of an event recorder; there is one of these for each event queue type.
+// State of an event recorder; there is one of these for each event ring type.
 // Each one owns an MPMC event descriptor ring and a payload page pool
 struct monad_event_recorder
 {
     alignas(64) atomic_bool enabled;
-    enum monad_event_queue_type queue_type;
+    enum monad_event_ring_type ring_type;
     struct monad_event_ring event_ring;
     struct monad_event_payload_page **all_pages;
     size_t all_pages_size;
     struct monad_event_payload_page_pool payload_page_pool;
+    int control_fd;
+    int descriptor_table_fd;
     alignas(64) atomic_bool initialized;
     monad_spinlock_t lock;
 };
 
-// Recorder state that is shared across all event queues
+// Recorder state that is shared across all event rings
 struct monad_event_recorder_shared_state
 {
     alignas(64) monad_spinlock_t lock;
@@ -90,7 +92,7 @@ struct monad_event_recorder_shared_state
 };
 
 extern struct monad_event_recorder
-    g_monad_event_recorders[MONAD_EVENT_QUEUE_COUNT];
+    g_monad_event_recorders[MONAD_EVENT_RING_COUNT];
 
 extern struct monad_event_recorder_shared_state
     g_monad_event_recorder_shared_state;
@@ -101,7 +103,7 @@ extern struct monad_event_recorder_shared_state
 struct monad_event_thread_state
 {
     uint8_t source_id;
-    struct monad_event_payload_page *payload_page[MONAD_EVENT_QUEUE_COUNT];
+    struct monad_event_payload_page *payload_page[MONAD_EVENT_RING_COUNT];
     uint64_t thread_id;
     TAILQ_ENTRY(monad_event_thread_state) next;
 };
@@ -120,10 +122,10 @@ static struct monad_event_thread_state *_monad_event_get_thread_state();
  */
 
 inline bool monad_event_recorder_set_enabled(
-    enum monad_event_queue_type queue_type, bool enabled)
+    enum monad_event_ring_type ring_type, bool enabled)
 {
     struct monad_event_recorder *const recorder =
-        &g_monad_event_recorders[queue_type];
+        &g_monad_event_recorders[ring_type];
 
     // The common case, which must be fast: we're enabling/disabling after
     // all initialization has been performed
@@ -184,7 +186,7 @@ inline void *_monad_event_alloc_payload(
     extern struct monad_event_payload_page *_monad_event_recorder_switch_page(
         struct monad_event_payload_page *);
 
-    page = thread_state->payload_page[recorder->queue_type];
+    page = thread_state->payload_page[recorder->ring_type];
     if (MONAD_UNLIKELY(page == nullptr)) {
         // Rare corner case: the first time we're recording on a particular
         // thread, the thread-local active page will be missing. This could be
@@ -192,7 +194,7 @@ inline void *_monad_event_alloc_payload(
         // because the initialization would have to happen in two places.
         extern struct monad_event_payload_page *_monad_event_alloc_payload_page(
             struct monad_event_payload_page_pool *);
-        page = thread_state->payload_page[recorder->queue_type] =
+        page = thread_state->payload_page[recorder->ring_type] =
             _monad_event_alloc_payload_page(&recorder->payload_page_pool);
     }
 
@@ -202,7 +204,7 @@ inline void *_monad_event_alloc_payload(
     allocation_size = monad_round_size_to_align(payload_size, sizeof(void *));
     if (MONAD_UNLIKELY(page->heap_next + allocation_size > page->heap_end)) {
         // Not enough memory left on this page; switch to a free page
-        page = thread_state->payload_page[recorder->queue_type] =
+        page = thread_state->payload_page[recorder->ring_type] =
             _monad_event_recorder_switch_page(page);
         // Manually inject a page allocation event descriptor into the new page
         monad_event_record(recorder, MONAD_EVENT_THR_PAGE_ALLOC, 0, nullptr, 0);
@@ -243,8 +245,7 @@ inline void *_monad_event_alloc_from_fixed_page(
     return payload;
 }
 
-static inline struct monad_event_descriptor *
-_monad_event_alloc_queue_descriptor(
+static inline struct monad_event_descriptor *_monad_event_alloc_ring_descriptor(
     struct monad_event_ring *event_ring, uint64_t *seqno)
 {
     struct monad_event_ring_control *const ctrl = event_ring->control;
@@ -284,7 +285,7 @@ inline void monad_event_record(
     // backwards on the thread with respect to the THREAD_CREATE event, which
     // is emitted if this thread is recording for this first
     thread_state = _monad_event_get_thread_state();
-    event = _monad_event_alloc_queue_descriptor(&recorder->event_ring, &seqno);
+    event = _monad_event_alloc_ring_descriptor(&recorder->event_ring, &seqno);
     event->epoch_nanos = monad_event_timestamp();
     event->type = event_type;
     event->pop_scope = flags & MONAD_EVENT_POP_SCOPE ? 1U : 0U;
@@ -315,7 +316,7 @@ inline void monad_event_recordv(
     }
 
     thread_state = _monad_event_get_thread_state();
-    event = _monad_event_alloc_queue_descriptor(&recorder->event_ring, &seqno);
+    event = _monad_event_alloc_ring_descriptor(&recorder->event_ring, &seqno);
     event->epoch_nanos = monad_event_timestamp();
     event->type = event_type;
     event->pop_scope = flags & MONAD_EVENT_POP_SCOPE ? 1U : 0U;

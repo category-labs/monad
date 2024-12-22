@@ -11,7 +11,7 @@
 #include <gtest/gtest.h>
 #include <monad/core/likely.h>
 #include <monad/event/event.h>
-#include <monad/event/event_reader.h>
+#include <monad/event/event_iterator.h>
 #include <monad/event/event_recorder.h>
 
 constexpr uint64_t MaxPerfIterations = 1UL << 20;
@@ -21,14 +21,14 @@ static void perf_consumer_main(std::latch *latch)
     constexpr size_t EventDelayHistogramSize = 30;
     constexpr size_t EventsAvailableHistogramSize = 20;
 
-    monad_event_reader reader;
+    monad_event_iterator iterator;
     monad_event_descriptor events[16];
 
     ASSERT_EQ(
         0,
-        monad_event_init_local_reader(
-            MONAD_EVENT_QUEUE_EXEC, &reader, nullptr));
-    uint64_t last_seqno = monad_event_reader_reset(&reader);
+        monad_event_init_local_iterator(
+            MONAD_EVENT_RING_EXEC, &iterator, nullptr));
+    uint64_t last_seqno = monad_event_iterator_reset(&iterator);
     uint64_t expected_counter = 0;
     uint64_t delay_histogram[EventDelayHistogramSize] = {};
     uint64_t available_histogram[EventsAvailableHistogramSize] = {};
@@ -37,8 +37,8 @@ static void perf_consumer_main(std::latch *latch)
     while (true) {
         size_t num_events = std::size(events);
         size_t available_events;
-        monad_event_poll_result const pr = monad_event_reader_bulk_copy(
-            &reader, events, &num_events, &available_events);
+        monad_event_poll_result const pr = monad_event_iterator_bulk_copy(
+            &iterator, events, &num_events, &available_events);
         if (MONAD_UNLIKELY(pr == MONAD_EVENT_NOT_READY)) {
             continue;
         }
@@ -72,7 +72,7 @@ static void perf_consumer_main(std::latch *latch)
             }
             uint64_t const counter_value =
                 *static_cast<uint64_t const *>(monad_event_payload_peek(
-                    &reader, &event_desc, &overwrite_seqno));
+                    &iterator, &event_desc, &overwrite_seqno));
             ASSERT_GE(
                 event_desc.seqno,
                 overwrite_seqno->load(std::memory_order::acquire));
@@ -114,7 +114,7 @@ TEST(event_recorder, perf_test_bulk)
     using std::chrono::duration_cast, std::chrono::nanoseconds;
 
     std::latch sync_latch{2};
-    monad_event_recorder_set_enabled(MONAD_EVENT_QUEUE_EXEC, true);
+    monad_event_recorder_set_enabled(MONAD_EVENT_RING_EXEC, true);
     std::thread consumer_thread{perf_consumer_main, &sync_latch};
     sync_latch.arrive_and_wait();
     sleep(1);

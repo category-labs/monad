@@ -52,7 +52,7 @@ struct monad_event_client
 {
     int sock_fd;
     unsigned client_id;
-    unsigned exported_queues;
+    unsigned exported_rings;
     struct monad_event_server *server;
     struct sockaddr_un sock_addr;
     TAILQ_ENTRY(monad_event_client) next;
@@ -147,17 +147,17 @@ static void close_client_err(
     struct monad_event_client *client, int error, char const *format, ...)
 {
     va_list ap;
-    struct monad_event_open_error_msg msg;
+    struct monad_event_export_error_msg msg;
     size_t send_size;
     int len;
 
-    msg.msg_type = MONAD_EVENT_MSG_OPEN_ERROR;
+    msg.msg_type = MONAD_EVENT_MSG_EXPORT_ERROR;
     msg.error_code = error;
     va_start(ap, format);
     len = vsnprintf(msg.error_buf, sizeof msg.error_buf, format, ap);
     va_end(ap);
     if (len > 0) {
-        send_size = offsetof(struct monad_event_open_error_msg, error_buf) +
+        send_size = offsetof(struct monad_event_export_error_msg, error_buf) +
                     (size_t)len + 1;
         if (send(client->sock_fd, &msg, send_size, 0) == -1) {
             WR_ERR_SRV(
@@ -176,18 +176,25 @@ static void close_client_err(
     close_client(client);
 }
 
-static void handle_open_queue_msg(
+static void handle_export_ring_msg(
     struct monad_event_client *client,
-    struct monad_event_open_queue_msg const *msg)
+    struct monad_event_export_ring_msg const *msg)
 {
     unsigned nmsgs = 0;
     struct monad_event_server *const server = client->server;
     WR_INFO_SRV(
         server,
-        "open queue %hhu for client %u",
-        msg->queue_type,
+        "received EXPORT_RING:%hhu msg for client %u",
+        msg->ring_type,
         client->client_id);
-    if (server->export_ops->export(
+    if (msg->ring_type >= MONAD_EVENT_RING_COUNT) {
+        return close_client_err(
+            client,
+            ENOSYS,
+            "client tried to export unknown event ring %hhu",
+            msg->ring_type);
+    }
+    if (server->export_ops->export_ring(
             msg,
             client->sock_fd,
             client->client_id,
@@ -195,7 +202,7 @@ static void handle_open_queue_msg(
             client,
             server->export_state,
             &nmsgs)) {
-        ++client->exported_queues;
+        ++client->exported_rings;
         ++client->server->export_count;
         WR_INFO_SRV(
             server,
@@ -203,7 +210,7 @@ static void handle_open_queue_msg(
             "%u:%hhu in %u messages",
             nmsgs - 1,
             client->client_id,
-            msg->queue_type,
+            msg->ring_type,
             nmsgs);
     }
 }
@@ -215,6 +222,7 @@ static void accept_client(struct monad_event_server *server)
     struct monad_event_client *client;
     struct epoll_event evt;
     int client_fd;
+    unsigned nmsgs = 0;
 
     client_fd = accept4(
         server->sock_fd,
@@ -246,6 +254,21 @@ static void accept_client(struct monad_event_server *server)
         WR_ERR_SRV(server, errno, "epoll_ctl(2) adding client socket failed");
         close_client(client);
     }
+
+    if (server->export_ops->export_metadata(
+            client->sock_fd,
+            client->client_id,
+            close_client_err,
+            client,
+            server->export_state,
+            &nmsgs)) {
+        WR_INFO_SRV(
+            server,
+            "exported metadata information to "
+            "client %u in %u messages",
+            client->client_id,
+            nmsgs);
+    }
 }
 
 /*
@@ -254,7 +277,7 @@ static void accept_client(struct monad_event_server *server)
 
 static void handle_client_socket_read(struct monad_event_client *client)
 {
-    struct monad_event_open_queue_msg msg;
+    struct monad_event_export_ring_msg msg;
 
     if (recv(client->sock_fd, &msg, sizeof msg, 0) == -1) {
         WR_ERR_SRV(
@@ -265,8 +288,8 @@ static void handle_client_socket_read(struct monad_event_client *client)
         close_client(client);
     }
     switch (msg.msg_type) {
-    case MONAD_EVENT_MSG_OPEN_QUEUE:
-        return handle_open_queue_msg(client, &msg);
+    case MONAD_EVENT_MSG_EXPORT_RING:
+        return handle_export_ring_msg(client, &msg);
 
     default:
         close_client_err(
@@ -519,7 +542,7 @@ bool monad_event_server_has_pending_work(struct monad_event_server *server)
 
 int monad_event_server_process_work(
     struct monad_event_server *server, struct timespec const *timeout,
-    sigset_t const *sigmask, unsigned *queues_exported)
+    sigset_t const *sigmask, unsigned *rings_exported)
 {
 #define SERVER_EPOLL_EVENT_MAX 16
     uint64_t epoch_nanos_now;
@@ -533,8 +556,8 @@ int monad_event_server_process_work(
         return EFAULT;
     }
     uint64_t const exports_before = server->export_count;
-    if (queues_exported != nullptr) {
-        *queues_exported = 0;
+    if (rings_exported != nullptr) {
+        *rings_exported = 0;
     }
     nready = epoll_pwait2(
         server->epoll_fd, events, SERVER_EPOLL_EVENT_MAX, timeout, sigmask);
@@ -564,11 +587,11 @@ int monad_event_server_process_work(
         server->last_heartbeat_time = epoch_nanos_now;
     }
 
-    // Garbage collect any connections which did not open an event queue
-    // after logging in.
+    // Garbage collect any connections which did not open an event ring after
+    // logging in.
     client = TAILQ_FIRST(&server->clients);
     while (client != nullptr) {
-        if (client->exported_queues > 0) {
+        if (client->exported_rings > 0) {
             client = TAILQ_NEXT(client, next);
             continue;
         }
@@ -579,15 +602,15 @@ int monad_event_server_process_work(
             close_client_err(
                 zombie_client,
                 ETIMEDOUT,
-                "client did not open a event queue after %lu seconds",
+                "client did not open a event ring after %lu seconds",
                 no_open_elapsed_nanos / 1'000'000'000UL);
         }
         else {
             client = TAILQ_NEXT(client, next);
         }
     }
-    if (queues_exported != nullptr) {
-        *queues_exported = (unsigned)(server->export_count - exports_before);
+    if (rings_exported != nullptr) {
+        *rings_exported = (unsigned)(server->export_count - exports_before);
     }
     return 0;
 }

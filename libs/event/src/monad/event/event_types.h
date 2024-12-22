@@ -15,7 +15,7 @@
 
 #ifdef __cplusplus
 
-#include <string.h>
+    #include <string.h>
 
 struct evmc_address;
 struct evmc_bytes32;
@@ -69,7 +69,7 @@ typedef struct monad_event_uint256_ne
 enum monad_event_type : uint16_t
 {
     MONAD_EVENT_NONE,
-    MONAD_EVENT_QUEUE_INIT,
+    MONAD_EVENT_RING_INIT,
     MONAD_EVENT_THREAD_CREATE,
     MONAD_EVENT_THREAD_EXIT,
     MONAD_EVENT_HEARTBEAT,

@@ -450,7 +450,7 @@ int main(int const argc, char const *argv[])
     monad_event_server *event_server = nullptr;
     std::jthread event_server_thread;
     if (!no_events) {
-        monad_event_recorder_set_enabled(MONAD_EVENT_QUEUE_EXEC, true);
+        monad_event_recorder_set_enabled(MONAD_EVENT_RING_EXEC, true);
 
         // Host an event server on a separate thread, so external clients can
         // connect

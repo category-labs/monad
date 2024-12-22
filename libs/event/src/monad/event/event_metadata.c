@@ -22,10 +22,10 @@ struct monad_event_metadata const g_monad_event_metadata[] = {
          .c_name = "NONE",
          .description = "reserved code so that 0 remains invalid"},
 
-    [MONAD_EVENT_QUEUE_INIT] =
-        {.type = MONAD_EVENT_QUEUE_INIT,
-         .c_name = "QUEUE_INIT",
-         .description = "Posted when a recorder queue is enabled after being reset"},
+    [MONAD_EVENT_RING_INIT] =
+        {.type = MONAD_EVENT_RING_INIT,
+         .c_name = "RING_INIT",
+         .description = "Posted when a recorder ring is enabled after being reset"},
 
     [MONAD_EVENT_THREAD_CREATE] =
         {.type = MONAD_EVENT_THREAD_CREATE,
@@ -101,10 +101,10 @@ struct monad_event_metadata const g_monad_event_metadata[] = {
 size_t const g_monad_event_metadata_size = 16;
 
 uint8_t const g_monad_event_metadata_hash[32] = {
-    0x90, 0xae, 0x97, 0x6f, 0xd9, 0xbb, 0x84, 0x23,
-    0x1e, 0x51, 0xd1, 0x57, 0xfb, 0x64, 0x71, 0xb5,
-    0xc6, 0x92, 0x2a, 0x07, 0xff, 0xa0, 0xaa, 0x00,
-    0x9d, 0x9b, 0xa2, 0xa1, 0x3b, 0xcc, 0xdb, 0x27,
+    0xe9, 0x6b, 0xa9, 0xe0, 0x3f, 0xfc, 0xe6, 0xa4,
+    0x62, 0x23, 0x84, 0x4c, 0xf7, 0x85, 0x4f, 0xdc,
+    0x03, 0xa5, 0xdd, 0x69, 0xc9, 0xea, 0xaa, 0x98,
+    0x09, 0x08, 0x5f, 0xf6, 0x10, 0x07, 0x84, 0xf2,
 };
 
 #ifdef __cplusplus

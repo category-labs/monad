@@ -17,8 +17,8 @@
 #include <monad/core/srcloc.h>
 #include <monad/core/tl_tid.h>
 #include <monad/event/event.h>
+#include <monad/event/event_iterator.h>
 #include <monad/event/event_protocol.h>
-#include <monad/event/event_reader.h>
 #include <monad/event/event_recorder.h>
 #include <monad/event/event_shared.h>
 
@@ -216,25 +216,28 @@ _monad_event_alloc_payload_page(struct monad_event_payload_page_pool *page_pool)
  * Event ring functions
  */
 
-void cleanup_event_ring(struct monad_event_ring *ring)
+void cleanup_event_ring(
+    struct monad_event_ring *ring, int *control_fd, int *descriptor_table_fd)
 {
     size_t const desc_table_map_len =
         ring->capacity * sizeof(struct monad_event_descriptor);
     if (ring->control != nullptr) {
         munmap(ring->control, (size_t)getpagesize());
-        (void)close(ring->control_fd);
+        (void)close(*control_fd);
+        *control_fd = -1;
     }
     if (ring->descriptor_table != nullptr) {
         munmap(ring->descriptor_table, desc_table_map_len);
         munmap(
             (uint8_t *)ring->descriptor_table + desc_table_map_len, PAGE_2MB);
-        (void)close(ring->descriptor_table_fd);
+        (void)close(*descriptor_table_fd);
+        *descriptor_table_fd = -1;
     }
 }
 
 int init_event_ring(
-    struct monad_event_ring *ring, enum monad_event_queue_type queue_type,
-    uint8_t ring_shift)
+    struct monad_event_ring *ring, enum monad_event_ring_type ring_type,
+    uint8_t ring_shift, int *control_fd, int *descriptor_table_fd)
 {
     size_t mmap_page_size;
     size_t desc_table_map_len;
@@ -242,18 +245,18 @@ int init_event_ring(
     char name[32];
 
     memset(ring, 0, sizeof *ring);
-    ring->control_fd = -1;
-    ring->descriptor_table_fd = -1;
+    *control_fd = -1;
+    *descriptor_table_fd = -1;
 
     // Map the ring control structure (a single, minimum-sized VM page)
     mmap_page_size = (size_t)getpagesize();
-    snprintf(name, sizeof name, "evt_rc:%d:%hhu", getpid(), queue_type);
-    ring->control_fd = memfd_create(name, MFD_CLOEXEC);
-    if (ring->control_fd == -1) {
+    snprintf(name, sizeof name, "evt_rc:%d:%hhu", getpid(), ring_type);
+    *control_fd = memfd_create(name, MFD_CLOEXEC);
+    if (*control_fd == -1) {
         saved_error = FORMAT_ERRC(errno, "memfd_create(2) failed for %s", name);
         goto Error;
     }
-    if (ftruncate(ring->control_fd, (off_t)mmap_page_size) == -1) {
+    if (ftruncate(*control_fd, (off_t)mmap_page_size) == -1) {
         saved_error = FORMAT_ERRC(errno, "ftruncate(2) failed for %s", name);
         goto Error;
     }
@@ -262,7 +265,7 @@ int init_event_ring(
         mmap_page_size,
         PROT_READ | PROT_WRITE,
         MAP_SHARED,
-        ring->control_fd,
+        *control_fd,
         0);
     if (ring->control == MAP_FAILED) {
         saved_error = FORMAT_ERRC(errno, "mmap(2) unable to map %s", name);
@@ -280,13 +283,13 @@ int init_event_ring(
             desc_table_map_len / sizeof(struct monad_event_descriptor);
         MONAD_ASSERT(stdc_has_single_bit(ring->capacity));
     }
-    snprintf(name, sizeof name, "evt_rdt:%d:%hhu", getpid(), queue_type);
-    ring->descriptor_table_fd = memfd_create(name, MFD_CLOEXEC | MFD_HUGETLB);
-    if (ring->descriptor_table_fd == -1) {
+    snprintf(name, sizeof name, "evt_rdt:%d:%hhu", getpid(), ring_type);
+    *descriptor_table_fd = memfd_create(name, MFD_CLOEXEC | MFD_HUGETLB);
+    if (*descriptor_table_fd == -1) {
         saved_error = FORMAT_ERRC(errno, "memfd_create(2) failed for %s", name);
         goto Error;
     }
-    if (ftruncate(ring->descriptor_table_fd, (off_t)desc_table_map_len) == -1) {
+    if (ftruncate(*descriptor_table_fd, (off_t)desc_table_map_len) == -1) {
         saved_error = FORMAT_ERRC(errno, "ftruncate(2) failed for %s", name);
         goto Error;
     }
@@ -314,7 +317,7 @@ int init_event_ring(
             desc_table_map_len,
             PROT_READ | PROT_WRITE,
             MAP_SHARED | MAP_FIXED | MAP_HUGETLB | MAP_POPULATE,
-            ring->descriptor_table_fd,
+            *descriptor_table_fd,
             0) == MAP_FAILED) {
         saved_error = FORMAT_ERRC(
             errno,
@@ -334,7 +337,7 @@ int init_event_ring(
             PAGE_2MB,
             PROT_READ | PROT_WRITE,
             MAP_SHARED | MAP_FIXED | MAP_HUGETLB | MAP_POPULATE,
-            ring->descriptor_table_fd,
+            *descriptor_table_fd,
             0) == MAP_FAILED) {
         saved_error = FORMAT_ERRC(
             errno, "mmap(2) wrap-around mapping for %s failed", name);
@@ -348,7 +351,7 @@ int init_event_ring(
     return 0;
 
 Error:
-    cleanup_event_ring(ring);
+    cleanup_event_ring(ring, control_fd, descriptor_table_fd);
     return saved_error;
 }
 
@@ -356,7 +359,7 @@ Error:
  * Event recorder functions
  */
 
-struct monad_event_recorder g_monad_event_recorders[MONAD_EVENT_QUEUE_COUNT];
+struct monad_event_recorder g_monad_event_recorders[MONAD_EVENT_RING_COUNT];
 
 struct monad_event_recorder_shared_state g_monad_event_recorder_shared_state;
 
@@ -395,11 +398,12 @@ init_event_recorders()
     MONAD_ASSERT(rss->block_header_table != nullptr);
     rss->process_id = (uint64_t)getpid();
 
-    for (uint8_t q = 0; q < MONAD_EVENT_QUEUE_COUNT; ++q) {
+    for (uint8_t q = 0; q < MONAD_EVENT_RING_COUNT; ++q) {
         recorder = &g_monad_event_recorders[q];
         memset(recorder, 0, sizeof *recorder);
         monad_spinlock_init(&recorder->lock);
-        recorder->queue_type = q;
+        recorder->ring_type = q;
+        recorder->control_fd = recorder->descriptor_table_fd = -1;
     }
 }
 
@@ -410,9 +414,12 @@ cleanup_event_recorders()
     struct monad_event_recorder_shared_state *const rss =
         &g_monad_event_recorder_shared_state;
 
-    for (uint8_t q = 0; q < MONAD_EVENT_QUEUE_COUNT; ++q) {
+    for (uint8_t q = 0; q < MONAD_EVENT_RING_COUNT; ++q) {
         recorder = &g_monad_event_recorders[q];
-        cleanup_event_ring(&recorder->event_ring);
+        cleanup_event_ring(
+            &recorder->event_ring,
+            &recorder->control_fd,
+            &recorder->descriptor_table_fd);
         cleanup_payload_page_pool(&recorder->payload_page_pool);
     }
     pthread_key_delete(rss->thread_state_key);
@@ -434,7 +441,10 @@ static int configure_recorder_locked(
     page_pool = &recorder->payload_page_pool;
     if (recorder->all_pages != nullptr) {
         // Reconfiguring; tear everything down and do it again
-        cleanup_event_ring(&recorder->event_ring);
+        cleanup_event_ring(
+            &recorder->event_ring,
+            &recorder->control_fd,
+            &recorder->descriptor_table_fd);
         cleanup_payload_page_pool(page_pool);
         free(recorder->all_pages);
         recorder->all_pages = nullptr;
@@ -449,7 +459,11 @@ static int configure_recorder_locked(
         ring_shift = MONAD_EVENT_RECORDER_DEFAULT_RING_SHIFT;
     }
     if ((rc = init_event_ring(
-             &recorder->event_ring, recorder->queue_type, ring_shift)) != 0) {
+             &recorder->event_ring,
+             recorder->ring_type,
+             ring_shift,
+             &recorder->control_fd,
+             &recorder->descriptor_table_fd)) != 0) {
         free(recorder->all_pages);
         recorder->all_pages_size = 0;
         return rc;
@@ -459,7 +473,10 @@ static int configure_recorder_locked(
              payload_page_size,
              payload_page_count,
              &recorder->event_ring.control->prod_next)) != 0) {
-        cleanup_event_ring(&recorder->event_ring);
+        cleanup_event_ring(
+            &recorder->event_ring,
+            &recorder->control_fd,
+            &recorder->descriptor_table_fd);
         free(recorder->all_pages);
         recorder->all_pages_size = 0;
         return rc;
@@ -484,15 +501,15 @@ static void set_metadata_descriptor_payload(
 }
 
 int monad_event_recorder_configure(
-    enum monad_event_queue_type queue_type, uint8_t ring_shift,
+    enum monad_event_ring_type ring_type, uint8_t ring_shift,
     size_t payload_page_size, uint16_t payload_page_count)
 {
     int rc;
     struct monad_event_recorder *recorder;
 
-    if (queue_type >= MONAD_EVENT_QUEUE_COUNT) {
+    if (ring_type >= MONAD_EVENT_RING_COUNT) {
         return FORMAT_ERRC(
-            EINVAL, "queue_type %hhu is not a valid value", queue_type);
+            EINVAL, "ring_type %hhu is not a valid value", ring_type);
     }
     if (ring_shift < MONAD_EVENT_RECORDER_MIN_RING_SHIFT ||
         ring_shift > MONAD_EVENT_RECORDER_MAX_RING_SHIFT) {
@@ -523,7 +540,7 @@ int monad_event_recorder_configure(
             UINT16_MAX);
     }
 
-    recorder = &g_monad_event_recorders[queue_type];
+    recorder = &g_monad_event_recorders[ring_type];
     MONAD_SPINLOCK_LOCK(&recorder->lock);
     rc = configure_recorder_locked(
         recorder, ring_shift, payload_page_size, payload_page_count);
@@ -557,7 +574,7 @@ bool _monad_event_recorder_set_enabled_slow(
         MONAD_ASSERT_PRINTF(
             rc == 0 || rc == EBUSY,
             "monad_event_recorder_configure failed for %hhu with error: %d",
-            recorder->queue_type,
+            recorder->ring_type,
             rc);
     }
     atomic_store_explicit(&recorder->initialized, true, memory_order_release);
@@ -565,7 +582,7 @@ Initialized:
     MONAD_SPINLOCK_UNLOCK(&recorder->lock);
     enabled = atomic_exchange_explicit(
         &recorder->enabled, true, memory_order_acq_rel);
-    monad_event_record(recorder, MONAD_EVENT_QUEUE_INIT, 0, nullptr, 0);
+    monad_event_record(recorder, MONAD_EVENT_RING_INIT, 0, nullptr, 0);
     return enabled;
 }
 
@@ -589,7 +606,7 @@ static void thread_state_dtor(void *arg0)
         &g_monad_event_recorder_shared_state;
 
     // Record a final event, for the exiting of this thread
-    for (uint8_t q = 0; q < MONAD_EVENT_QUEUE_COUNT; ++q) {
+    for (uint8_t q = 0; q < MONAD_EVENT_RING_COUNT; ++q) {
         monad_event_record(
             &g_monad_event_recorders[q],
             MONAD_EVENT_THREAD_EXIT,
@@ -598,7 +615,7 @@ static void thread_state_dtor(void *arg0)
             0);
     }
 
-    // Give back the queue_id for this thread, and remove the thread's recorder
+    // Give back the source_id for this thread, and remove the thread's recorder
     // state object from the global list
     MONAD_SPINLOCK_LOCK(&rss->lock);
     rss->thread_source_ids &= ~(uint64_t)(1UL << (thread_state->source_id - 1));
@@ -606,7 +623,7 @@ static void thread_state_dtor(void *arg0)
     MONAD_SPINLOCK_UNLOCK(&rss->lock);
 
     // Deactivate the recorder's payload pages
-    for (uint8_t q = 0; q < MONAD_EVENT_QUEUE_COUNT; ++q) {
+    for (uint8_t q = 0; q < MONAD_EVENT_RING_COUNT; ++q) {
         page = thread_state->payload_page[q];
         if (page != nullptr) {
             page_pool = page->page_pool;
@@ -660,8 +677,8 @@ void _monad_event_init_thread_state(
     MONAD_SPINLOCK_UNLOCK(&rss->lock);
 
     // Announce the creation of this thread
-    event = _monad_event_alloc_queue_descriptor(
-        &g_monad_event_recorders[MONAD_EVENT_QUEUE_EXEC].event_ring,
+    event = _monad_event_alloc_ring_descriptor(
+        &g_monad_event_recorders[MONAD_EVENT_RING_EXEC].event_ring,
         &thread_info->seqno);
     event->type = MONAD_EVENT_THREAD_CREATE;
     event->epoch_nanos = thread_info->epoch_nanos;
@@ -696,26 +713,26 @@ int monad_event_recorder_export_metadata_section(
     }
 }
 
-int monad_event_init_local_reader(
-    enum monad_event_queue_type queue_type, struct monad_event_reader *reader,
+int monad_event_init_local_iterator(
+    enum monad_event_ring_type ring_type, struct monad_event_iterator *iterator,
     size_t *payload_page_count)
 {
     struct monad_event_recorder *recorder;
 
-    MONAD_ASSERT(reader != nullptr);
-    if (queue_type >= MONAD_EVENT_QUEUE_COUNT) {
-        return FORMAT_ERRC(EINVAL, "invalid queue type %hhu", queue_type);
+    MONAD_ASSERT(iterator != nullptr);
+    if (ring_type >= MONAD_EVENT_RING_COUNT) {
+        return FORMAT_ERRC(EINVAL, "invalid ring type %hhu", ring_type);
     }
-    recorder = &g_monad_event_recorders[queue_type];
+    recorder = &g_monad_event_recorders[ring_type];
     if (!atomic_load_explicit(&recorder->enabled, memory_order_acquire)) {
         return FORMAT_ERRC(
-            ENODEV, "event recorder %hhu not enabled", queue_type);
+            ENODEV, "event recorder %hhu not enabled", ring_type);
     }
-    reader->desc_table = recorder->event_ring.descriptor_table;
-    reader->payload_pages =
+    iterator->desc_table = recorder->event_ring.descriptor_table;
+    iterator->payload_pages =
         (struct monad_event_payload_page const **)recorder->all_pages;
-    reader->capacity_mask = recorder->event_ring.capacity_mask;
-    reader->prod_next = &recorder->event_ring.control->prod_next;
+    iterator->capacity_mask = recorder->event_ring.capacity_mask;
+    iterator->prod_next = &recorder->event_ring.control->prod_next;
     if (payload_page_count != nullptr) {
         *payload_page_count = recorder->all_pages_size;
     }

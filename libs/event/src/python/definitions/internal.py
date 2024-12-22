@@ -8,11 +8,11 @@ register_event('NONE', None,
     "reserved code so that 0 remains invalid")
 
 #
-# QUEUE_INIT
+# RING_INIT
 #
 
-register_event('QUEUE_INIT', None,
-    "Posted when a recorder queue is enabled after being reset")
+register_event('RING_INIT', None,
+    "Posted when a recorder ring is enabled after being reset")
 
 #
 # THREAD CREATE

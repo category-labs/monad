@@ -30,7 +30,7 @@ extern "C"
 #endif
 
 enum monad_event_metadata_type : uint8_t;
-struct monad_event_reader;
+struct monad_event_iterator;
 
 /// Special behavior flags used in the `MONAD_EVENT` family of recording
 /// macros; the typical value is zero, i.e., no special behavior
@@ -44,7 +44,7 @@ enum monad_event_flags : uint8_t
 /// page
 #define MONAD_EVENT_MEMCPY(EVENT_TYPE, FLAGS, PTR, SIZE)                       \
     monad_event_record(                                                        \
-        &g_monad_event_recorders[MONAD_EVENT_QUEUE_EXEC],                      \
+        &g_monad_event_recorders[MONAD_EVENT_RING_EXEC],                       \
         (EVENT_TYPE),                                                          \
         (FLAGS),                                                               \
         (PTR),                                                                 \
@@ -60,7 +60,7 @@ enum monad_event_flags : uint8_t
 /// pair)
 #define MONAD_EVENT_IOV(EVENT_TYPE, FLAGS, IOV, IOVLEN)                        \
     monad_event_recordv(                                                       \
-        &g_monad_event_recorders[MONAD_EVENT_QUEUE_EXEC],                      \
+        &g_monad_event_recorders[MONAD_EVENT_RING_EXEC],                       \
         (EVENT_TYPE),                                                          \
         (FLAGS),                                                               \
         (IOV),                                                                 \
@@ -76,13 +76,13 @@ struct monad_event_recorder;
 /// called prior to the recorder being enabled, otherwise it will have no
 /// effect and will return EBUSY
 int monad_event_recorder_configure(
-    enum monad_event_queue_type queue_type, uint8_t ring_shift,
+    enum monad_event_ring_type ring_type, uint8_t ring_shift,
     size_t payload_page_size, uint16_t payload_page_count);
 
-/// Start or stop the recorder for the given event queue type; disabling a
+/// Start or stop the recorder for the given event ring type; disabling a
 /// recorder will allow monad_event_recorder_configure to be called again
 static bool
-monad_event_recorder_set_enabled(enum monad_event_queue_type, bool enabled);
+monad_event_recorder_set_enabled(enum monad_event_ring_type, bool enabled);
 
 /// Return a description of the last recorder error that occurred on this thread
 char const *monad_event_recorder_get_last_error();
@@ -128,8 +128,8 @@ int monad_event_recorder_export_metadata_section(
 
 /// Initialize an event reader that runs in the same process as the recorder;
 /// external processes use a special library, see libs/event/event.md
-int monad_event_init_local_reader(
-    enum monad_event_queue_type, struct monad_event_reader *,
+int monad_event_init_local_iterator(
+    enum monad_event_ring_type, struct monad_event_iterator *,
     size_t *payload_page_count);
 
 /// __attribute__((constructor)) priority of the event recorders' constructor

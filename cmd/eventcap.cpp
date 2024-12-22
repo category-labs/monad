@@ -1,10 +1,11 @@
 /**
  * @file
  *
- * Execution event capture utility - this small CLI application serves as a
- * demo of how to use the event reader API from an external process
+ * Execution event capture utility
  */
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <bit>
 #include <chrono>
@@ -16,21 +17,25 @@
 #include <format>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <thread>
 #include <utility>
 
 #include <err.h>
+#include <signal.h>
 #include <sysexits.h>
 
 #include <CLI/CLI.hpp>
 
 #include <monad/event/event.h>
+#include <monad/event/event_client.h>
+#include <monad/event/event_iterator.h>
 #include <monad/event/event_metadata.h>
-#include <monad/event/event_queue.h>
-#include <monad/event/event_reader.h>
 
 namespace fs = std::filesystem;
+
+static sig_atomic_t g_should_exit = 0;
 
 constexpr bool is_txn_event(monad_event_type type)
 {
@@ -49,18 +54,60 @@ constexpr bool is_txn_event(monad_event_type type)
     }
 }
 
+static void hexdump_event_payload(
+    std::span<std::byte const> payload, uint64_t event_seqno,
+    std::atomic<uint64_t> const *page_seqno_overwrite, std::FILE *out)
+{
+    // Large thread_locals will cause a stack overflow, so make the
+    // thread-local a pointer to a dynamic buffer
+    constexpr size_t hexdump_buf_size = 1UL << 25;
+    thread_local static std::unique_ptr<char[]> const hexdump_buf{
+        new char[hexdump_buf_size]};
+
+    std::byte const *const payload_base = data(payload);
+    std::byte const *const payload_end = payload_base + size(payload);
+    char *o = hexdump_buf.get();
+    for (std::byte const *line = payload_base; line < payload_end; line += 16) {
+        // Print one line of the dump, which is 16 bytes, in the form:
+        // <offset> <8 bytes> <8 bytes>
+        o = std::format_to(o, "{:#08x} ", line - payload_base);
+        for (uint8_t b = 0; b < 16 && line + b < payload_end; ++b) {
+            o = std::format_to(o, "{:02x}", std::to_underlying(line[b]));
+            if (b == 7) {
+                *o++ = ' '; // Extra padding after 8 bytes
+            }
+        }
+        *o++ = '\n';
+
+        // Every 512 bytes, check if the payload page data is still valid; the
+        // + 16 bias is to prevent checking the first iteration
+        if ((line - payload_base + 16) % 512 == 0 &&
+            page_seqno_overwrite->load(std::memory_order::acquire) >
+                event_seqno) {
+            break; // Escape to the end, which checks the final time
+        }
+    }
+
+    if (page_seqno_overwrite->load(std::memory_order::acquire) > event_seqno) {
+        std::fprintf(out, "ERROR: event %lu payload lost!\n", event_seqno);
+    }
+    else {
+        std::fwrite(
+            hexdump_buf.get(),
+            static_cast<size_t>(o - hexdump_buf.get()),
+            1,
+            out);
+    }
+}
+
 static void print_event(
-    monad_event_reader *reader, monad_event_descriptor const *event,
+    monad_event_iterator *iter, monad_event_descriptor const *event,
     monad_event_thread_info const *thr_info,
     monad_event_block_exec_header const *block_exec_header, std::FILE *out)
 {
     using std::chrono::nanoseconds;
-    constexpr size_t hexdump_buf_size = 1UL << 25;
     char event_buf[256];
-    // Large thread_locals will cause a stack overflow, so make the
-    // thread-local a pointer to a dynamic buffer
-    thread_local static std::unique_ptr<char[]> const hexdump_buf{
-        new char[hexdump_buf_size]};
+
     monad_event_metadata const &event_md = g_monad_event_metadata[event->type];
 
     std::chrono::sys_time<nanoseconds> const event_time{
@@ -104,8 +151,8 @@ static void print_event(
     // `seqno`
     std::atomic<uint64_t> const *page_seqno_overwrite;
     std::byte const *payload = static_cast<std::byte const *>(
-        monad_event_payload_peek(reader, event, &page_seqno_overwrite));
-    if (monad_event_reader_advance(reader)) {
+        monad_event_payload_peek(iter, event, &page_seqno_overwrite));
+    if (monad_event_iterator_advance(iter)) {
         std::fwrite(event_buf, static_cast<size_t>(o - event_buf), 1, out);
     }
     else {
@@ -115,96 +162,79 @@ static void print_event(
         std::fprintf(
             out,
             "ERROR: event %lu lost during copy-out\n",
-            reader->last_seqno + 1);
+            iter->last_seqno + 1);
         return;
     }
 
-    // Format a hexdump of the event payload
-    std::byte const *const payload_end = payload + length;
-    o = hexdump_buf.get();
-    for (std::byte const *line = payload; line < payload_end; line += 16) {
-        // Print one line of the dump, which is 16 bytes, in the form:
-        // <offset> <8 bytes> <8 bytes>
-        o = std::format_to(o, "{:#08x} ", line - payload);
-        for (uint8_t b = 0; b < 16 && line + b < payload_end; ++b) {
-            o = std::format_to(o, "{:02x}", std::to_underlying(line[b]));
-            if (b == 7) {
-                *o++ = ' '; // Extra padding after 8 bytes
-            }
-        }
-        *o++ = '\n';
-
-        // Every 512 bytes, check if the payload page data is still valid; the
-        // + 16 bias is to prevent checking the first iteration
-        if ((line - payload + 16) % 512 == 0 &&
-            page_seqno_overwrite->load(std::memory_order::acquire) > seqno) {
-            break; // Escape to the end, which checks the final time
-        }
-    }
-
-    if (page_seqno_overwrite->load(std::memory_order::acquire) > seqno) {
-        std::fprintf(out, "ERROR: event %lu payload lost!\n", seqno);
-    }
-    else {
-        std::fwrite(
-            hexdump_buf.get(),
-            static_cast<size_t>(o - hexdump_buf.get()),
-            1,
-            out);
-    }
+    hexdump_event_payload({payload, length}, seqno, page_seqno_overwrite, out);
 }
 
-// The "follow thread" behaves like `tail -f`: it pulls events from the queue
+// The "follow thread" behaves like `tail -f`: it pulls events from the ring
 // and writes them to a std::FILE* as fast as possible
 static void follow_thread_main(
-    monad_event_queue *queue, monad_event_thread_info const *thread_table,
+    std::span<monad_event_imported_ring *const> imported_rings,
+    monad_event_thread_info const *thread_table,
     monad_event_block_exec_header const *block_header_table,
     std::optional<uint64_t> start_seqno, std::FILE *out)
 {
     monad_event_descriptor const *event;
-    monad_event_reader reader;
-    size_t not_ready = 0;
-    bool done = false;
+    monad_event_proc const *const proc = imported_rings.front()->proc;
+    std::array<monad_event_iterator, MONAD_EVENT_RING_COUNT> iter_bufs{};
+    std::span<monad_event_iterator> const iters =
+        std::span{iter_bufs}.first(size(imported_rings));
+    size_t not_ready_count = 0;
 
-    monad_event_queue_init_reader(queue, &reader, nullptr);
-    if (start_seqno) {
-        reader.last_seqno = *start_seqno;
-    }
-    while (!done) {
-        switch (monad_event_reader_peek(&reader, &event)) {
-        case MONAD_EVENT_NOT_READY:
-            if ((not_ready++ & ((1U << 20) - 1)) == 0) {
-                std::fflush(out);
-                if (!monad_event_queue_is_connected(queue)) {
-                    done = true;
-                }
-            }
-            continue; // Nothing produced yet
-
-        case MONAD_EVENT_GAP:
-            fprintf(
-                out,
-                "event gap from %lu -> %lu, resetting\n",
-                reader.last_seqno,
-                event->seqno.load(std::memory_order_relaxed));
-            monad_event_reader_reset(&reader);
-            continue;
-
-        case MONAD_EVENT_READY:
-            break; // Handled in the main loop body
-
-        case MONAD_EVENT_PAYLOAD_EXPIRED:
-            std::unreachable(); // Never returned by the zero-copy API
+    for (size_t i = 0; auto *import : imported_rings) {
+        if (monad_event_imported_ring_init_iter(import, &iters[i++]) != 0) {
+            errx(
+                EX_SOFTWARE,
+                "monad_event_imported_ring_init_iter of %hhu failed: %s",
+                import->type,
+                monad_event_proc_get_last_error());
         }
-        not_ready = 0;
-        print_event(
-            &reader,
-            event,
-            &thread_table[event->source_id],
-            &block_header_table[event->block_flow_id],
-            out);
+        if (start_seqno) {
+            // TODO(ken): if we actually had more than one ring, would need
+            //   to set this on the right one. In practice it's only used
+            //   for debugging tasks starting from zero.
+            iters.back().last_seqno = *start_seqno;
+        }
     }
-    monad_event_queue_disconnect(queue);
+    while (g_should_exit == 0) {
+        for (auto &iter : iters) {
+            switch (monad_event_iterator_peek(&iter, &event)) {
+            case MONAD_EVENT_NOT_READY:
+                if ((not_ready_count++ & ((1U << 20) - 1)) == 0) {
+                    std::fflush(out);
+                    if (!monad_event_proc_is_connected(proc)) {
+                        g_should_exit = 1;
+                    }
+                }
+                continue; // Nothing produced yet
+
+            case MONAD_EVENT_GAP:
+                fprintf(
+                    out,
+                    "event gap from %lu -> %lu, resetting\n",
+                    iter.last_seqno,
+                    event->seqno.load(std::memory_order_relaxed));
+                monad_event_iterator_reset(&iter);
+                continue;
+
+            case MONAD_EVENT_READY:
+                break; // Handled in the main loop body
+
+            case MONAD_EVENT_PAYLOAD_EXPIRED:
+                std::unreachable(); // Never returned by the zero-copy API
+            }
+            not_ready_count = 0;
+            print_event(
+                &iter,
+                event,
+                &thread_table[event->source_id],
+                &block_header_table[event->block_flow_id],
+                out);
+        }
+    }
 }
 
 int main(int argc, char **argv)
@@ -213,11 +243,11 @@ int main(int argc, char **argv)
     std::thread follow_thread;
     bool follow = false;
     std::optional<uint64_t> start_seqno;
-    monad_event_queue_options queue_opts{};
+    monad_event_connect_options connect_opts{};
 
     // By default, failure to respond within 1 second means we assume the
     // server is dead
-    queue_opts.socket_timeout.tv_sec = 1;
+    connect_opts.socket_timeout.tv_sec = 1;
 
     CLI::App cli{"monad event capture tool"};
     cli.add_option(
@@ -227,7 +257,7 @@ int main(int argc, char **argv)
         "-f,--follow", follow, "stream events to stdout, as in tail -f");
     cli.add_option(
            "--timeout",
-           queue_opts.socket_timeout.tv_sec,
+           connect_opts.socket_timeout.tv_sec,
            "server socket timeout, in seconds; zero disables")
         ->capture_default_str();
     cli.add_option(
@@ -245,26 +275,39 @@ int main(int argc, char **argv)
         std::exit(cli.exit(e));
     }
 
-    if (follow) {
-        int queue_rc;
-        monad_event_queue *queue;
-        monad_event_thread_info const *thread_table;
-        monad_event_block_exec_header const *block_header_table;
-        queue_opts.queue_type = MONAD_EVENT_QUEUE_EXEC;
-        // Note the comma operator because c_str() is only temporary
-        queue_opts.socket_path = server_socket_file.c_str(),
-        queue_rc = monad_event_queue_connect(
-            &queue_opts, &queue, &thread_table, &block_header_table);
-        if (queue_rc != 0) {
+    monad_event_proc *exec_proc;
+    int connect_rc;
+    // Note the comma operator because c_str() is only temporary
+    connect_opts.socket_path = server_socket_file.c_str(),
+    connect_rc = monad_event_proc_connect(&connect_opts, &exec_proc);
+    if (connect_rc) {
+        errx(
+            EX_SOFTWARE,
+            "monad_event_proc_connect failed: %s",
+            monad_event_proc_get_last_error());
+    }
+
+    std::array<monad_event_imported_ring *, MONAD_EVENT_RING_COUNT>
+        imported_rings{};
+    monad_event_thread_info const *thread_table = exec_proc->thread_table;
+    monad_event_block_exec_header const *block_header_table =
+        exec_proc->block_header_table;
+    for (auto ring_type : {MONAD_EVENT_RING_EXEC}) {
+        if (monad_event_proc_import_ring(
+                exec_proc, MONAD_EVENT_RING_EXEC, &imported_rings[ring_type]) !=
+            0) {
             errx(
                 EX_SOFTWARE,
-                "monad_event_queue_connect failed: %s",
-                monad_event_queue_get_last_error());
+                "monad_event_proc_import_ring of %hhu failed: %s",
+                ring_type,
+                monad_event_proc_get_last_error());
         }
+    }
 
+    if (follow) {
         follow_thread = std::thread{
             follow_thread_main,
-            queue,
+            std::span{imported_rings}.first(1),
             thread_table,
             block_header_table,
             start_seqno,
@@ -274,5 +317,10 @@ int main(int argc, char **argv)
     if (follow_thread.joinable()) {
         follow_thread.join();
     }
+
+    for (monad_event_imported_ring *const i : imported_rings) {
+        (void)monad_event_imported_ring_release(i);
+    }
+    (void)monad_event_proc_disconnect(exec_proc);
     return 0;
 }

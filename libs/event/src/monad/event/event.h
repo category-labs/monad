@@ -25,13 +25,13 @@ struct monad_event_payload_page_pool;
 
 // clang-format off
 
-/// Describes which event queue an event is recorded to; different categories
-/// of events are recorded to different queues
-enum monad_event_queue_type : uint8_t
+/// Describes which event ring an event is recorded to; different categories
+/// of events are recorded to different rings
+enum monad_event_ring_type : uint8_t
 {
-    MONAD_EVENT_QUEUE_EXEC,  ///< Core execution events
-    MONAD_EVENT_QUEUE_TRACE, ///< Performance tracing events
-    MONAD_EVENT_QUEUE_COUNT, ///< Number of recognized queue types
+    MONAD_EVENT_RING_EXEC,  ///< Core execution events
+    MONAD_EVENT_RING_TRACE, ///< Performance tracing events
+    MONAD_EVENT_RING_COUNT, ///< Number of recognized ring types
 };
 
 /// Descriptor for a single event; this fixed-size object is passed via a
@@ -64,8 +64,6 @@ struct monad_event_ring
     struct monad_event_descriptor *descriptor_table;
     size_t capacity_mask;
     size_t capacity;
-    int control_fd;
-    int descriptor_table_fd;
 };
 
 /// Control register of the event ring, mapped in a shared memory page
@@ -95,6 +93,16 @@ struct monad_event_payload_page
     uint16_t page_id;
     char page_name[26];
 };
+
+/// Get the length of a payload page; this was made into a helper function
+/// because it is easy to forget that the pointers inside `page` may point into
+/// the address space of a different process
+static inline size_t
+monad_event_payload_page_length(struct monad_event_payload_page const *page)
+{
+    // Note: page->page_base != page when imported into another process
+    return (size_t)(page->heap_end - page->page_base);
+}
 
 /// Maximum number of events that can be copied out in a single call to
 /// monad_event_reader_bulk_copy

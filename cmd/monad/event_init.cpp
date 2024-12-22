@@ -75,12 +75,12 @@ static std::jthread init_event_server(
 }
 
 std::jthread monad::init_event_system(
-    std::span<EventRingConfig const, MONAD_EVENT_QUEUE_COUNT> ring_configs,
+    std::span<EventRingConfig const, MONAD_EVENT_RING_COUNT> ring_configs,
     fs::path const &event_socket_path, monad_event_server **event_server)
 {
     for (uint8_t i = 0; EventRingConfig const &c : ring_configs) {
         monad_event_recorder_set_enabled(
-            static_cast<monad_event_queue_type>(i), c.enabled);
+            static_cast<monad_event_ring_type>(i), c.enabled);
     }
 
     // Host an event server on a separate thread, so external clients can

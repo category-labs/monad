@@ -27,11 +27,10 @@
 #include <monad/core/assert.h>
 #include <monad/core/bit_util.h>
 #include <monad/event/event.h>
+#include <monad/event/event_client.h>
+#include <monad/event/event_iterator.h>
 #include <monad/event/event_metadata.h>
 #include <monad/event/event_protocol.h>
-#include <monad/event/event_queue.h>
-#include <monad/event/event_queue_internal.h>
-#include <monad/event/event_reader.h>
 
 namespace fs = std::filesystem;
 
@@ -128,8 +127,8 @@ static void close_test_file_writer(test_file_writer *tfw)
     close(tfw->fd);
 }
 
-static void
-wait_for_seqno(monad_event_queue *queue, uint64_t last_seqno, pid_t pid)
+static void wait_for_seqno(
+    monad_event_imported_ring *import, uint64_t last_seqno, pid_t pid)
 {
     std::fprintf(
         stdout,
@@ -137,15 +136,14 @@ wait_for_seqno(monad_event_queue *queue, uint64_t last_seqno, pid_t pid)
         pid,
         last_seqno);
 
-    monad_event_reader r;
-    monad_event_queue_ffi_extra ffi_ex;
-    monad_event_queue_init_reader(queue, &r, &ffi_ex);
+    monad_event_iterator iter;
+    monad_event_imported_ring_init_iter(import, &iter);
 
     // Manually rewind to the beginning
-    r.last_seqno = 0;
+    iter.last_seqno = 0;
     while (true) {
         monad_event_descriptor const *event;
-        switch (monad_event_reader_peek(&r, &event)) {
+        switch (monad_event_iterator_peek(&iter, &event)) {
         case MONAD_EVENT_GAP:
             MONAD_ABORT("unexpected gap during last_seqno wait");
 
@@ -168,16 +166,13 @@ wait_for_seqno(monad_event_queue *queue, uint64_t last_seqno, pid_t pid)
                     pid);
                 return;
             }
-            monad_event_reader_advance(&r);
+            monad_event_iterator_advance(&iter);
             break;
         }
     }
 }
 
-void export_shm_segments(
-    monad_event_queue *queue, int fd,
-    monad_event_thread_info const *thread_table,
-    monad_event_block_exec_header const *block_header_table)
+void export_shm_segments(monad_event_imported_ring *import, int fd)
 {
     test_file_writer tfw{};
     test_file_segment segment{};
@@ -188,63 +183,52 @@ void export_shm_segments(
 
     // Write the control page
     segment.type = MONAD_EVENT_MSG_MAP_RING_CONTROL;
-    save_mmap_region(
-        &tfw, &segment, queue->event_ring.control, tfw.mmap_page_size);
+    save_mmap_region(&tfw, &segment, import->ring.control, tfw.mmap_page_size);
 
     // Write as much of the descriptor table as has actually been written.
     uint64_t const last_seqno =
-        queue->event_ring.control->prod_next.load(std::memory_order_acquire);
+        import->ring.control->prod_next.load(std::memory_order_acquire);
     monad_event_descriptor const *const last_event =
-        &queue->event_ring
-             .descriptor_table[last_seqno & queue->event_ring.capacity_mask];
+        &import->ring.descriptor_table[last_seqno & import->ring.capacity_mask];
     size_t const event_count =
-        static_cast<size_t>(last_event - queue->event_ring.descriptor_table);
+        static_cast<size_t>(last_event - import->ring.descriptor_table);
     segment.type = MONAD_EVENT_MSG_MAP_DESCRIPTOR_TABLE;
     save_mmap_region(
         &tfw,
         &segment,
-        queue->event_ring.descriptor_table,
+        import->ring.descriptor_table,
         sizeof(*last_event) * event_count);
 
-    // Save all the payload pages that have something recorded to them, and
-    // figure out which one of them is the metadata page as we're doing this.
-    monad_event_payload_page const *metadata_page = nullptr;
+    // Save all the payload pages that have something recorded to them
     segment.type = MONAD_EVENT_MSG_MAP_PAYLOAD_PAGE;
-    auto const *thread_table_u8 = std::bit_cast<uint8_t const *>(thread_table);
+    monad_event_proc *const proc = import->proc;
+    auto const *thread_table_u8 =
+        std::bit_cast<uint8_t const *>(proc->thread_table);
     auto const *block_header_table_u8 =
-        std::bit_cast<uint8_t const *>(block_header_table);
-    for (uint16_t p = 0; p < queue->num_payload_pages; ++p) {
-        monad_event_payload_page const *page = queue->payload_pages[p];
+        std::bit_cast<uint8_t const *>(proc->block_header_table);
+    for (uint16_t p = 0; p < import->num_payload_pages; ++p) {
+        monad_event_payload_page const *page = import->payload_pages[p];
         if (page->alloc_count == 0) {
             // Page was never used, don't allocate a segment for it
             continue;
         }
-        segment.page_id = page->page_id;
-        // We must be extremely careful here: the pointers inside `page` point
-        // into the other process' address space, but `page` itself (and the
-        // metadata tables) is mapped at a different location in our own
-        // address space. The only thing we can safely do with that is compute
-        // the length.
+        // Don't save the entire page, just the used portion of it.
+        // TODO(ken): rather than doing this, we could just use a real
+        //   compression scheme. Then we could it the naive way and it
+        //   wouldn't matter.
         size_t const map_len = (size_t)(page->heap_next - page->page_base);
+        segment.page_id = page->page_id;
         save_mmap_region(&tfw, &segment, page, map_len);
-        if (thread_table_u8 > (uint8_t const *)page &&
-            thread_table_u8 < (uint8_t const *)page + map_len) {
-            MONAD_ASSERT(
-                block_header_table_u8 > (uint8_t const *)page &&
-                block_header_table_u8 < (uint8_t const *)page + map_len);
-            metadata_page = page;
-        }
     }
-    MONAD_ASSERT(metadata_page != nullptr);
 
     // Export thread table and block table offset; we manually write these
     // metadata sections since there is no associated mmap region for them
     ssize_t wr_bytes;
     segment.type = MONAD_EVENT_MSG_METADATA_OFFSET;
-    segment.page_id = metadata_page->page_id;
+    segment.page_id = import->proc->metadata_page->page_id;
     segment.metadata_type = MONAD_EVENT_METADATA_THREAD;
     segment.offset = static_cast<uint64_t>(
-        thread_table_u8 - std::bit_cast<uint8_t const *>(metadata_page));
+        thread_table_u8 - std::bit_cast<uint8_t const *>(proc->metadata_page));
     segment.length = 0;
     wr_bytes = pwrite(
         tfw.fd,
@@ -255,7 +239,8 @@ void export_shm_segments(
 
     segment.metadata_type = MONAD_EVENT_METADATA_BLOCK_FLOW;
     segment.offset = static_cast<uint64_t>(
-        block_header_table_u8 - std::bit_cast<uint8_t const *>(metadata_page));
+        block_header_table_u8 -
+        std::bit_cast<uint8_t const *>(proc->metadata_page));
     ;
     wr_bytes = pwrite(
         tfw.fd,
@@ -272,10 +257,10 @@ int main(int argc, char **argv)
     fs::path server_socket_file = MONAD_EVENT_DEFAULT_SOCKET_PATH;
     fs::path output_file;
     uint64_t last_seqno;
-    monad_event_queue_options queue_opts{};
+    monad_event_connect_options connect_opts{};
 
     // Defaults
-    queue_opts.socket_timeout.tv_sec = 1;
+    connect_opts.socket_timeout.tv_sec = 1;
 
     CLI::App cli{"monad event export shared memory tool"};
     cli.add_option(
@@ -283,7 +268,7 @@ int main(int argc, char **argv)
         ->capture_default_str();
     cli.add_option(
            "--timeout",
-           queue_opts.socket_timeout.tv_sec,
+           connect_opts.socket_timeout.tv_sec,
            "server socket timeout, in seconds; zero disables")
         ->capture_default_str();
     cli.add_option(
@@ -307,21 +292,17 @@ int main(int argc, char **argv)
         std::exit(cli.exit(e));
     }
 
-    // Connect to the queue
-    int queue_rc;
-    monad_event_queue *queue;
-    monad_event_thread_info const *thread_table;
-    monad_event_block_exec_header const *block_header_table;
-    queue_opts.queue_type = MONAD_EVENT_QUEUE_EXEC;
+    // Connect to the execution process
+    int connect_rc;
+    monad_event_proc *exec_proc;
     // Note the comma operator because c_str() is only temporary
-    queue_opts.socket_path = server_socket_file.c_str(),
-    queue_rc = monad_event_queue_connect(
-        &queue_opts, &queue, &thread_table, &block_header_table);
-    if (queue_rc != 0) {
+    connect_opts.socket_path = server_socket_file.c_str(),
+    connect_rc = monad_event_proc_connect(&connect_opts, &exec_proc);
+    if (connect_rc != 0) {
         errx(
             EX_SOFTWARE,
-            "monad_event_queue_connect failed: %s",
-            monad_event_queue_get_last_error());
+            "monad_event_proc_connect failed: %s",
+            monad_event_proc_get_last_error());
     }
 
     // Try to open the shared memory segment capture file
@@ -335,12 +316,12 @@ int main(int argc, char **argv)
     }
 
     // Get the socket peer's credentials so we can signal it to exit and stop
-    // writing to the queue after it reaches "last_seqno". The writer process
+    // writing to the ring after it reaches "last_seqno". The writer process
     // will die but its shared memory segments will still be mapped by us.
     ucred peercred;
     socklen_t peercred_len = sizeof peercred;
     if (getsockopt(
-            queue->sock_fd,
+            exec_proc->sock_fd,
             SOL_SOCKET,
             SO_PEERCRED,
             &peercred,
@@ -349,10 +330,19 @@ int main(int argc, char **argv)
             "could not get SO_PEERCRED for server peer: %d", errno);
     }
 
+    monad_event_imported_ring *import;
+    if (monad_event_proc_import_ring(
+            exec_proc, MONAD_EVENT_RING_EXEC, &import) != 0) {
+        errx(
+            EX_SOFTWARE,
+            "monad_event_proc_import_ring failed: %s",
+            monad_event_proc_get_last_error());
+    }
+
     // Wait for the writer to write everything, then kill it
-    wait_for_seqno(queue, last_seqno, peercred.pid);
+    wait_for_seqno(import, last_seqno, peercred.pid);
 
     // Dump all the segments to a file
-    export_shm_segments(queue, fd, thread_table, block_header_table);
+    export_shm_segments(import, fd);
     return 0;
 }

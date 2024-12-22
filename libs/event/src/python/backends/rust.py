@@ -137,7 +137,7 @@ def emit_metadata_array(events: list[EventInfo], out: typing.TextIO):
 
   evt_hash = hash_events(events)
   print("""
-/// libmonad_event_queue_ffi.so expects this symbol to be defined
+/// libmonad_event_client.a expects this symbol to be defined
 #[allow(non_upper_case_globals)]
 #[no_mangle]
 pub static g_monad_event_metadata_hash: [u8; 32] = [""", file=out)

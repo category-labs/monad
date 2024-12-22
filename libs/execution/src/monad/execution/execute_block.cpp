@@ -206,7 +206,18 @@ Result<std::vector<ExecutionResult>> execute_block(
                     block_state,
                     promises[i]);
                 promises[i + 1].set_value();
-                MONAD_EVENT(MONAD_EVENT_TXN_END, 0);
+                monad_event_txn_receipt receipt;
+                // TODO(ken): this is inconsistent with the way TXN_LOG is
+                //    handled
+                if (results[i] && results[i]->has_value()) {
+                    auto const &r = results[i]->value();
+                    receipt.status = r.receipt.status;
+                    receipt.gas_used = r.receipt.gas_used;
+                }
+                else {
+                    memset(&receipt, 0, sizeof receipt);
+                }
+                MONAD_EVENT_EXPR(MONAD_EVENT_TXN_END, 0, receipt);
                 g_fss_txn_num.release();
             });
     }

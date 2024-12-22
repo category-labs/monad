@@ -1,7 +1,7 @@
 /**
  * @file
  *
- * This file implements the OPEN_QUEUE message for a fake event server, when
+ * This file implements the EXPORT_RING message for a fake event server, when
  * it is opening a pre-recorded snapshot of some shared memory segments.
  */
 
@@ -78,6 +78,7 @@ struct test_server_context
     size_t segment_count;
     size_t map_len;
     struct mapped_test_segment *mapped_segments;
+    struct mapped_test_segment *metadata_page_segment;
     size_t ring_capacity;
     size_t page_pool_size;
     uint8_t const *metadata_hash;
@@ -101,8 +102,89 @@ cleanup_test_server_resources(struct test_server_context *test_context)
     free(test_context);
 }
 
-static bool export_test_shared_memory_to_client(
-    struct monad_event_open_queue_msg const *open_msg, int sock_fd,
+static bool export_test_metadata(
+    int sock_fd, unsigned client_id, close_client_err_fn *close_fn,
+    struct monad_event_client *client, void *arg, unsigned *nmsgs)
+{
+    union
+    {
+        char buf[CMSG_SPACE(sizeof(int))];
+        struct cmsghdr hdr;
+    } cmsg;
+    struct monad_event_export_success_msg msg;
+    struct iovec msg_iov[1] = {[0] = {.iov_base = &msg, .iov_len = sizeof msg}};
+    struct msghdr mhdr = {
+        .msg_name = nullptr,
+        .msg_namelen = 0,
+        .msg_iov = msg_iov,
+        .msg_iovlen = 1,
+        .msg_control = cmsg.buf,
+        .msg_controllen = sizeof cmsg,
+        .msg_flags = 0};
+    struct test_server_context *const test_context = arg;
+    struct monad_event_payload_page const *metadata_page =
+        test_context->metadata_page_segment->map_base;
+
+    memset(&msg, 0, sizeof msg);
+
+    cmsg.hdr.cmsg_level = SOL_SOCKET;
+    cmsg.hdr.cmsg_type = SCM_RIGHTS;
+    cmsg.hdr.cmsg_len = CMSG_LEN(sizeof(int));
+
+    // Send the metadata payload page.
+    msg.msg_type = MONAD_EVENT_MSG_MAP_PAYLOAD_PAGE;
+    msg.page_id = metadata_page->page_id;
+    *(int *)CMSG_DATA(&cmsg.hdr) = test_context->metadata_page_segment->memfd;
+    if (sendmsg(sock_fd, &mhdr, 0) == -1) {
+        close_fn(
+            client,
+            errno,
+            "unable to export metadata page for ring to client %u",
+            client_id);
+        return false;
+    }
+    ++*nmsgs;
+
+    // Send the metadata offset messages
+    for (size_t s = 0; s < test_context->segment_count; ++s) {
+        struct test_file_segment const *segment = &test_context->segments[s];
+        msg.msg_type = (enum monad_event_msg_type)segment->type;
+        if (msg.msg_type != MONAD_EVENT_MSG_METADATA_OFFSET) {
+            continue;
+        }
+        msg.metadata_type = segment->metadata_type;
+        msg.metadata_offset = (uint32_t)segment->offset;
+        *(int *)CMSG_DATA(&cmsg.hdr) = 0;
+        if (sendmsg(sock_fd, &mhdr, 0) == -1) {
+            close_fn(
+                client,
+                errno,
+                "unable to export offset mapping %lu (type %u) to client "
+                "%u",
+                s,
+                segment->type,
+                client_id);
+            return false;
+        }
+    }
+
+    msg.msg_type = MONAD_EVENT_MSG_EXPORT_FINISHED;
+    mhdr.msg_control = nullptr;
+    mhdr.msg_controllen = 0;
+    if (sendmsg(sock_fd, &mhdr, 0) == -1) {
+        close_fn(
+            client,
+            errno,
+            "unable to send final metadata message for client %u",
+            client_id);
+        return false;
+    }
+    ++*nmsgs;
+    return true;
+}
+
+static bool export_test_ring(
+    struct monad_event_export_ring_msg const *export_msg, int sock_fd,
     unsigned client_id, close_client_err_fn *close_fn,
     struct monad_event_client *client, void *arg, unsigned *nmsgs)
 {
@@ -113,7 +195,7 @@ static bool export_test_shared_memory_to_client(
         char buf[CMSG_SPACE(sizeof(int))];
         struct cmsghdr hdr;
     } cmsg;
-    struct monad_event_open_success_msg msg;
+    struct monad_event_export_success_msg msg;
     struct iovec msg_iov[1] = {[0] = {.iov_base = &msg, .iov_len = sizeof msg}};
     struct msghdr mhdr = {
         .msg_name = nullptr,
@@ -126,9 +208,9 @@ static bool export_test_shared_memory_to_client(
     struct test_server_context *const test_context = arg;
 
     if (memcmp(
-            open_msg->event_metadata_hash,
+            export_msg->event_metadata_hash,
             test_context->metadata_hash,
-            sizeof open_msg->event_metadata_hash) != 0) {
+            sizeof export_msg->event_metadata_hash) != 0) {
         close_fn(
             client, EINVAL, "client metadata hash does not match server hash");
         return false;
@@ -170,36 +252,17 @@ static bool export_test_shared_memory_to_client(
             }
             break;
 
-        case MONAD_EVENT_MSG_METADATA_OFFSET:
-            msg.metadata_type = (uint8_t)segment->metadata_type;
-            msg.metadata_offset = (uint32_t)segment->offset;
-            msg.page_id = segment->page_id;
-            *(int *)CMSG_DATA(&cmsg.hdr) = 0;
-            if (sendmsg(sock_fd, &mhdr, 0) == -1) {
-                close_fn(
-                    client,
-                    errno,
-                    "unable to export offset mapping %lu (type %u) to client "
-                    "%u",
-                    s,
-                    segment->type,
-                    client_id);
-                return false;
-            }
-            break;
-
         default:
             assert("unexpected message type");
         }
         ++*nmsgs;
     }
 
-    // Send the final message
-    msg.msg_type = MONAD_EVENT_MSG_OPEN_FINISHED;
+    msg.msg_type = MONAD_EVENT_MSG_EXPORT_FINISHED;
     mhdr.msg_control = nullptr;
     mhdr.msg_controllen = 0;
     if (sendmsg(sock_fd, &mhdr, 0) == -1) {
-        close_fn(client, errno, "unable to send final message for queue");
+        close_fn(client, errno, "unable to send final message for export_ring");
         return false;
     }
 
@@ -209,19 +272,20 @@ static bool export_test_shared_memory_to_client(
 
 static void *accept_one(void *arg0)
 {
-    unsigned queues_exported = 0;
+    unsigned rings_exported = 0;
     struct monad_event_server *const server = arg0;
     (void)pthread_detach(pthread_self());
-    while (queues_exported == 0) {
+    while (rings_exported == 0) {
         (void)monad_event_server_process_work(
-            server, nullptr, nullptr, &queues_exported);
+            server, nullptr, nullptr, &rings_exported);
     }
     return nullptr;
 }
 
 static struct shared_mem_export_ops s_export_ops = {
     .cleanup = (void (*)(void *))cleanup_test_server_resources,
-    .export = export_test_shared_memory_to_client,
+    .export_metadata = export_test_metadata,
+    .export_ring = export_test_ring,
     .heartbeat = nullptr};
 
 #define WR_ERR(ERRNO, ...)                                                     \
@@ -232,10 +296,10 @@ static struct shared_mem_export_ops s_export_ops = {
         &(monad_source_location_t){__FUNCTION__, __FILE__, __LINE__, 0},       \
         __VA_ARGS__)
 
-/// Creates a "fake" server, used only for testing the event queue client
-/// libraries with static test data that is present in memory; the static
-/// test data is typically embedded into the test binary using #embed in C or
-/// include_bytes! in Rust
+/// Creates a "fake" server, used only for testing the event client libraries
+/// with static test data that is present in memory; the static test data is
+/// typically embedded into the test binary using #embed directive in C or the
+/// include_bytes! macro in Rust
 int monad_event_test_server_create_from_bytes(
     char const *socket_path, FILE *log_file, void const *capture_data,
     size_t capture_len, bool unmap_on_close,
@@ -245,6 +309,7 @@ int monad_event_test_server_create_from_bytes(
     unsigned map_flags;
     struct test_server_context *test_context;
     struct test_file_segment const *segment;
+    uint16_t metadata_page_id = (uint16_t)-1;
     char segment_name[32];
 
     // TODO(ken): for Rust
@@ -269,9 +334,13 @@ int monad_event_test_server_create_from_bytes(
     // the contents
     segment = test_context->segments;
     while (segment->type != MONAD_EVENT_MSG_NONE) {
+        if (segment->type == MONAD_EVENT_MSG_METADATA_OFFSET) {
+            metadata_page_id = segment->page_id;
+        }
         ++test_context->segment_count;
         ++segment;
     }
+    assert(metadata_page_id != (uint16_t)-1 && "never found metadata page?");
     test_context->metadata_hash =
         (uint8_t const *)&test_context
             ->segments[test_context->segment_count + 1];
@@ -342,9 +411,11 @@ int monad_event_test_server_create_from_bytes(
             // We need to fix the internal book-keeping parameters of the
             // copied page, because the client peeks at them to calculate
             // the page size, to munmap(2) it.
-            // TODO(ken): client should not be doing that in the first place
             struct monad_event_payload_page *const payload_page = ms->map_base;
             payload_page->heap_end = payload_page->heap_next;
+            if (payload_page->page_id == metadata_page_id) {
+                test_context->metadata_page_segment = ms;
+            }
         }
     }
 

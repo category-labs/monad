@@ -76,8 +76,8 @@ int main(int const argc, char const *argv[])
     unsigned nfibers = 256;
     bool no_compaction = false;
     EventRingConfig event_ring_config[] = {
-        DefaultEventRingConfig[MONAD_EVENT_QUEUE_EXEC],
-        DefaultEventRingConfig[MONAD_EVENT_QUEUE_TRACE]};
+        DefaultEventRingConfig[MONAD_EVENT_RING_EXEC],
+        DefaultEventRingConfig[MONAD_EVENT_RING_TRACE]};
     bool no_events = false;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);

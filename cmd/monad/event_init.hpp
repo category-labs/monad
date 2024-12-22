@@ -23,10 +23,10 @@ struct EventRingConfig {
 
 // clang-format on
 
-extern EventRingConfig const DefaultEventRingConfig[MONAD_EVENT_QUEUE_COUNT];
+extern EventRingConfig const DefaultEventRingConfig[MONAD_EVENT_RING_COUNT];
 
 extern std::jthread init_event_system(
-    std::span<EventRingConfig const, MONAD_EVENT_QUEUE_COUNT>,
+    std::span<EventRingConfig const, MONAD_EVENT_RING_COUNT>,
     std::filesystem::path const &event_socket_path, monad_event_server **);
 
 MONAD_NAMESPACE_END

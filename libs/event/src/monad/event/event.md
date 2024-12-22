@@ -1,6 +1,6 @@
-# The `monad` event system
+# The `monad` execution event system
 
-The `monad` execution agent contains a system for recording events that
+The `monad` execution agent includes a system for recording events that
 occur during transaction processing. An event is something such as "an
 account balance has been updated" or "a new block has started executing."
 `monad` events can be observed by external third-party applications,
@@ -12,7 +12,7 @@ There are a few parts to the event system:
 
 1. The `monad` execution agent is the *writer* of all events
 2. An external application can become a *reader* of events
-   using the C library `libmonad_event_queue`, whose implementation
+   using the C library `libmonad_event_client`, whose implementation
    is in the same directory as this file. Because it is designed for
    third party integration, it does not depend on anything else in the
    `monad` repository and this entire directory's contents may be copied
@@ -20,13 +20,13 @@ There are a few parts to the event system:
    in another repository
 3. Some files, such as `event.h` and `event_protocol.h`, are shared by
    both the writer and reader; these are collected into the
-  `libmonad_event_core` library, which `libmonad_event_queue` links to
+  `libmonad_event_core` library, which `libmonad_event_client` links to
 
 ### Basic operation
 
 #### What is an event?
 
-Events are made up two components:
+Events are made up of two components:
 
 1. The *event descriptor* is a fixed-size (currently 32 byte) object
    describing an event that has happened. It contains the event's type,
@@ -70,15 +70,16 @@ allocated on "payload pages"
 
 A few properties about the style of communication chosen:
 
-- Multiple readers may read from the event ring simultaneously, and each
-  reader maintains its own iterator position within the ring
+- It supports _broadcast_ semantics: multiple readers may read from the event
+  ring simultaneously, and each reader maintains its own iterator position
+  within the ring
 
-- The writer is not aware of the readers -- events are written regardless
-  of whether anyone is reading them or not. This implies that the writer
-  cannot wait for a reader if it is slow. Thus, readers must iterate through
-  events quickly or they will be lost, as queue slots are overwritten by
-  later events. Conceptually the event series is a *queue* (it has FIFO
-  semantics) but is usually called a *ring* to emphasize these
+- As in typical broadcast protocols, the writer is not aware of the readers --
+  events are written regardless of whether anyone is reading them or not. This
+  implies that the writer cannot wait for a reader if it is slow. Thus, readers
+  must iterate through events quickly or they will be lost, as ring slots are
+  overwritten by later events. Conceptually the event series is a *queue* (it
+  has FIFO semantics) but is usually called a *ring* to emphasize these
   overwrite-upon-overflow semantics
 
 - This is why a sequence number is included in the event descriptor. It
@@ -213,11 +214,12 @@ with it. The most logical thing to do in that case is start by copying the
 data to stable location, and if the copy isn't valid, to never start the
 operation.
 
-An example user of the zero-copy API is the `eventcap` sample program, which
-can turn events into printed strings that are sent to `stdout`. The expensive
-work of string formatting is performed using the original memory for the
-descriptor and payload. Once formatting is complete, `eventcap` checks if an
-overwrite happened and if so, does not write the prepared buffer to `stdout`.
+An example user of the zero-copy API is the `eventwatch` example program,
+which can turn events into printed strings that are sent to `stdout`. The
+expensive work of string formatting is performed using the original memory
+for the descriptor and payload. Once formatting is complete, `eventwatch`
+checks if an overwrite happened and if so, writes an error to `stdout`
+instead of the prepared buffer.
 
 Whether you should copy or not depends on the characteristics of the reader,
 namely how easily it can deal with "aborting" processing.
@@ -243,63 +245,9 @@ descriptors and payloads, and the reader could potentially make different
 decisions for each.
 
 The user is free to manage the reading and gap recovery logic themselves
-by directly manipulating the `struct monad_event_reader` object, but a few
-APIs provide some reasonable default behavior for both the zero-copy and
-memcpy styles.
-
-#### Zero-copy style APIs
-
-API | Purpose
---- |--------
-`monad_event_reader_peek` | Get a zero-copy pointer to an event descriptor, if one is ready
-`monad_event_reader_advance` | Advance over the last `monad_event_reader_peek` descriptor, returning `true` if lifetime was active
-`monad_event_payload_peek` | Get a zero-copy pointer to an event payload; also returns a pointer to the seqno overwrite indicator
-
-#### Memcpy style APIs
-
-API | Purpose
---- | -------
-`monad_event_reader_copy_next` | Copy both the event descriptor and payload as one atomic operation; easiest API to use, but see remark below
-`monad_event_reader_bulk_copy` | Bulk memcpy as many event descriptors as will fit in a user-provided array
-`monad_event_payload_memcpy` | `memcpy` the event payload to a buffer, succeeding only if the payload copy is valid
-
-The simplest API is `monad_event_reader_copy_next`, which copies both the
-descriptor and payload, performs all validity checking, and advances the
-iterator if successful. However, the user must take care to provide a large
-enough buffer to hold any possible payload or the copied payload may be
-truncated. Here is an example of some code which will eventually call
-`abort(3)`:
-
-```.c
-void read_events(struct monad_event_reader *reader) {
-    struct monad_event_descriptor event;
-    uint8_t tiny_buf[64]; // This payload buffer is too small for most events
-
-    switch (monad_event_reader_copy_next(reader, &event, tiny_buf, sizeof tiny_buf)) {
-    case MONAD_EVENT_READY:
-        if (event.length > sizeof tiny_buf) {
-            // Event payload has more data than could fit in our buffer, so we're
-            // missing part of it. A size of 64 is far too small for many event
-            // payloads (e.g., BLOCK_START) so this is guaranteed to happen almost
-            // immediately.
-            fprintf(stderr, "truncated event! saw large event with size: %u\n",
-                    event.length);
-            abort();
-        } else {
-            do_something_with_event(&event, tiny_buf);
-        }
-        break;
-
-    case MONAD_EVENT_PAYLOAD_EXPIRED:
-        [[fallthrough]];
-    case MONAD_EVENT_GAP:
-        /* ... gap or expired payload, handle it */
-
-    case MONAD_EVENT_NOT_READY:
-        break; // Nothing ready, we're done
-    }
-}
-```
+by directly manipulating the `struct monad_event_iterator` object, but a
+few APIs provide some reasonable default behavior for both the zero-copy
+and memcpy styles.
 
 ### Event descriptors in detail
 
@@ -361,7 +309,7 @@ block. The two IDs have similar properties:
    kept on a special payload page which is never recycled, and those
    payloads live in an array which is indexed by the ID. The address of
    this shared memory array is directly returned to the caller by the
-   `monad_event_queue_connect` function. See the `eventcap` sample program
+   `monad_event_proc_connect` function. See the `eventwatch` sample program
    for an example of how these are used.
 
 The `txn_num` field is self-explanatory. For events related to transactions,
@@ -378,42 +326,119 @@ somewhat large) if their ID is not an interesting one.
 There are two communication channels between the `monad` writer
 and its readers:
 
-1. **Socket-based** - a client connects to a `monad` event queue via a
+1. **Socket-based** - a client connects to the `monad` process via a
   UNIX domain socket. A simple protocol running over this socket exports
-  the queue's shared memory regions to the consumer, using the ability
-  to pass file descriptors over a UNIX socket. Each event queue accessed
-  by the client is associated with a unique socket connection, and
-  creates a separate `struct monad_event_queue *` handle
+  the ring's shared memory regions to the consumer, using the ability
+  to pass file descriptors over a UNIX socket. Each event ring imported
+  by the client creates a separate `struct monad_event_imported_ring *` 
+  handle.
 2. **Shared-memory-based** - as described, most of the communication
   happens via lock-free shared memory data structures. Once a
-  `struct monad_event_queue *` is obtained, the client can create an
-  arbitrary number of `struct monad_event_reader` objects to read from
-  the queue, with each reader maintaining its own iterator position. This
-  communication is one-way: `monad` writes events but the readers do not
-  communicate with `monad`
+  `struct monad_event_imported_ring *` is obtained, the client can create
+  an arbitrary number of `struct monad_event_iterator` objects to read from
+  the ring, with each iterator maintaining its own position within the
+  broadcast stream. This communication is one-way: `monad` writes events
+  but the readers do not communicate with `monad`
 
 The communication system is based almost entirely on shared memory: the
 socket exists only for the initial setup and to detect (via the socket
 being closed by the operating system) if either peer process has died.
 
-There is more than one kind of event queue: the standard execution events
-are recorded to one queue, and the performance tracer (which has more
-overhead, and can be turned off) is a separate queue. When calling
-`monad_event_queue_connect`, the client chooses which queue to connect to.
-Once the queue is "opened" (all ring buffer and payload page shared memory
-segments exported), as many parallel readers as desired can be created.
-The reader's iterator state is single threaded.
+There is more than one kind of event ring: the standard execution events
+are recorded to one ring, and the performance tracer (which has more
+overhead, and can be turned off) is a separate ring. When calling
+`monad_event_proc_import_ring`, the client chooses which ring to connect
+to. Once the ring is "imported" (all ring buffer and payload page shared
+memory segments mapped locally), as many parallel iterators as desired can
+be created. The iterator state is single threaded.
 
-## Library organization
+## Client API overview
 
-### `libmonad_event_queue` vs `libmonad_event_core`
+### Core concepts
 
-The `libmonad_event_queue` library knows how to speak the socket protocol
+The three core objects in the API are:
+
+1. __monad_event_proc__ - represents a connection to a running `monad` process;
+   the primary thing the user does with this object is import event rings from
+   it, using the `monad_event_proc_import_ring` function
+2. __monad_event_imported_ring__ - represents an event ring whose shared memory
+   segments have been mapped into the current process; the primary thing the
+   client does with this object is use it to initialize iterators that point
+   into the event ring, using the `monad_event_imported_ring_init_iter`
+   function
+3. __monad_event_iterator__ - the star of the show: this iterator object is
+   used to actually read events. It offers both zero-copy and memcpy style
+   APIs, as explained below
+
+The easiest way to understand the API is to compile and run the included
+`eventwatch` program. After watching what it does (you will need to be
+running a `monad` process at the same time), read the code.
+
+### Zero-copy style APIs
+
+API | Purpose
+--- |--------
+`monad_event_iterator_peek` | Get a zero-copy pointer to an event descriptor, if one is ready
+`monad_event_iterator_advance` | Advance over the last `monad_event_iterator_peek` descriptor, returning `true` if lifetime was active
+`monad_event_payload_peek` | Get a zero-copy pointer to an event payload; also returns a pointer to the seqno overwrite indicator
+
+### memcpy style APIs
+
+API | Purpose
+--- | -------
+`monad_event_iterator_copy_next` | Copy both the event descriptor and payload as one atomic operation; easiest API to use, but see remark below
+`monad_event_iterator_bulk_copy` | Bulk memcpy as many event descriptors as will fit in a user-provided array
+`monad_event_payload_memcpy` | `memcpy` the event payload to a buffer, succeeding only if the payload copy is valid
+
+The simplest API is `monad_event_iterator_copy_next`, which copies both the
+descriptor and payload, performs all validity checking, and advances the
+iterator if successful. However, the user must take care to provide a large
+enough buffer to hold any possible payload or the copied payload may be
+truncated. Here is an example of some code which will eventually call
+`abort(3)`:
+
+```c
+void read_events(struct monad_iterator_reader *iter) {
+    struct monad_event_descriptor event;
+    uint8_t tiny_buf[64]; // This payload buffer is too small for most events
+
+    switch (monad_event_iterator_copy_next(iter, &event, tiny_buf, sizeof tiny_buf)) {
+    case MONAD_EVENT_READY:
+        if (event.length > sizeof tiny_buf) {
+            // Event payload has more data than could fit in our buffer, so we're
+            // missing part of it. A size of 64 is far too small for many event
+            // payloads (e.g., BLOCK_START) so this is guaranteed to happen almost
+            // immediately.
+            fprintf(stderr, "truncated event! saw large event with size: %u\n",
+                    event.length);
+            abort();
+        } else {
+            do_something_with_event(&event, tiny_buf);
+        }
+        break;
+
+    case MONAD_EVENT_PAYLOAD_EXPIRED:
+        [[fallthrough]];
+    case MONAD_EVENT_GAP:
+        /* ... gap or expired payload, handle it */
+
+    case MONAD_EVENT_NOT_READY:
+        break; // Nothing ready, we're done
+    }
+}
+```
+
+### Library organization
+
+#### `libmonad_event_client` vs `libmonad_event_core`
+
+The `libmonad_event_client` library knows how to speak the socket protocol
 and set up the shared memory mappings, abstracting away all the low-level
 setup details. The `libmonad_event_core` library contains the structure
-definitions and inline functions shared between the reader and writer code.
-You can use either library directly, or you can use them as an example of
-how to write your own low-level consumer machinery.
+definitions and inline functions shared between the reader and writer code,
+including the iterator type. You can use either library directly, or you
+can use them as an example of how to write your own low-level consumer
+machinery.
 
 The files in `libmonad_event_core` are:
 
@@ -423,25 +448,25 @@ File | Contains
 `event_metadata.h` | Structures that describe event and domain metadata (string names, etc.)
 `event_metadata.c` | Static data definition of all event metadata; generated code
 `event_protocol.h` | Structure types passed over the UNIX domain socket
-`event_reader.h` | Defines the basic event reader object and its API; also used directly by `monad` for in-process readers e.g., the tracer
-`event_reader_inlines.h` | Definitions of the `event_reader.h` functions, all of which are inlined for performance reasons
+`event_iterator.h` | Defines the basic event iterator object and its API; also used directly by `monad` for in-process readers e.g., the tracer
+`event_iterator_inline.h` | Definitions of the `event_iterator.h` functions, all of which are inlined for performance reasons
 `event_types.h` | Definition of the `monad_event_type` enumeration and all payload structures; generated code
 
-The files in `libmonad_event_queue` are:
+The files in `libmonad_event_client` are:
 
 File | Contains
 ---- | ----
-event_queue.h | API for connecting to an event queue from an external process and exporting its shared memory segments
-event_queue.c | Implementation of the `event_queue.h` interface
+event_client.h | API for connecting to an event ring from an external process and importing its shared memory segments
+event_client.c | Implementation of the `event_client.h` interface
 
 ### Reading events outside of C/C++
 
 As can be seen above, the event reading code is split into a "core" library
 (`libmonad_event_core`) and an IPC rendezvous library for remotely accessing
-an event queue (`libmonad_event_queue`). When working with execution events
-in other programming languages, the "core" library should be natively
-reimplemented in that language, while the IPC rendezvous logic of the C
-library can be directly reused via a C FFI strategy.
+an event ring (`libmonad_event_client`). When working with execution events
+in other programming languages, the "core" library is natively reimplemented
+in that language, while the IPC rendezvous logic of the C library is directly
+reused via a C FFI strategy.
 
 Consider that there are four parts to the event reader:
 
@@ -450,12 +475,12 @@ Consider that there are four parts to the event reader:
 2. Generated code for the event enum, the event payload types,
    and the static metadata (`event_types.h`, `event_metadata.c`)
 
-3. Inline code for polling the event ring (`event_reader.h` and
-   `event_read_inline.h`)
+3. Inline code for polling the event ring (`event_iterator.h` and
+   `event_iterator_inline.h`)
 
 4. Code for connecting to the event server and exporting the shared
-   memory segments, and initializing event readers (`event_queue.h`,
-   `event_queue.c`)
+   memory segments, and initializing event iterators (`event_client.h`,
+   `event_client.c`)
 
 It makes most sense for #1 to be implemented using the native idioms
 of the language, using its C layout-compatibility primitives (e.g.,
@@ -464,12 +489,12 @@ generated code anyway, and can just be generated natively for each target
 language. The code for #3 is very simple, extremely performance sensitive,
 and the ABI stability guarantee is strong (it will likely change only a
 few times in development history, and perhaps never). It makes sense to
-reimplement natively -- in C, the `reader` interface is entirely inlined,
+reimplement natively -- in C, the `iterator` interface is entirely inlined,
 we don't want to call these functions through a dynamically-linked GOT
 entry (and possibly some translation layer) when they are so trivial to
 just reimplement.
 
-By contrast, #4 (`event_queue.c`) is slow, verbose, wraps a custom
+By contrast, #4 (`event_client.c`) is slow, verbose, wraps a custom
 protocol, could be error prone to reimplement, as is full of exotic
 Linux-specific behavior (MAP_HUGETLB stuff, etc.). It's a good candidate
 for direct reuse.
@@ -477,4 +502,4 @@ for direct reuse.
 This is why items #1, #2, and #3 are collected into one "core" reader
 library, while item #4 is separate. For Rust, we provide a native
 implementation of the core library, along with bindings that reuse the
-C `libmonad_event_queue` to open the shared memory mappings.
+C `libmonad_event_client` to import the shared memory mappings.

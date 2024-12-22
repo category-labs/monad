@@ -5,8 +5,8 @@
  *
  * This file defines the event server interface, which can be used to host
  * an event server within a process. An event server allows the caller to
- * export event queue shared memory segments to external applications over a
- * UNIX domain socket.
+ * export an event ring's shared memory segments to external applications over
+ * a UNIX domain socket.
  *
  * There is no synchronization in the server: it is expected that only a single
  * thread at a time will call server functions.
@@ -50,7 +50,7 @@ bool monad_event_server_has_pending_work(struct monad_event_server *);
 /// server, and should be called on a separate (low priority) thread
 int monad_event_server_process_work(
     struct monad_event_server *, struct timespec const *timeout,
-    sigset_t const *sigmask, unsigned *queues_exported);
+    sigset_t const *sigmask, unsigned *rings_exported);
 
 #ifdef __cplusplus
 } // extern "C"

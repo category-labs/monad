@@ -81,6 +81,7 @@ add_library(
   "src/monad/core/backtrace.hpp"
   "src/monad/core/basic_formatter.hpp"
   "src/monad/core/bit_util.h"
+  "src/monad/core/blake3.hpp"
   "src/monad/core/byte_string.hpp"
   "src/monad/core/bytes_hash_compare.hpp"
   "src/monad/core/cmemory.hpp"
@@ -172,6 +173,7 @@ endif()
 
 target_link_libraries(monad_core PUBLIC openssl_sha3 Boost::fiber TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)
+target_link_libraries(monad_core PUBLIC blake3)
 target_link_libraries(monad_core PUBLIC ethash::keccak)
 target_link_libraries(monad_core PUBLIC evmc)
 target_link_libraries(monad_core PUBLIC unordered_dense)

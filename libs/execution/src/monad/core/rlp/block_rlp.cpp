@@ -16,6 +16,7 @@
 #include <monad/rlp/decode_error.hpp>
 #include <monad/rlp/encode2.hpp>
 
+#include <blake3.h>
 #include <boost/outcome/try.hpp>
 
 #include <cstdint>

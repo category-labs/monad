@@ -1,3 +1,4 @@
+#include <monad/core/blake3.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/hex_literal.hpp>
@@ -1179,6 +1180,7 @@ TEST(Rlp_Block, MonadConsensusBlock)
         res.value().delayed_execution_results[0], BlockHeader{.number = 4});
 
     // body
+    EXPECT_EQ(to_bytes(blake3(encoded_body)), res.value().block_body_id);
     auto const res2 = rlp::decode_consensus_block_body(encoded_body);
     EXPECT_FALSE(res2.has_error());
 }

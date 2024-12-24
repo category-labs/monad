@@ -60,4 +60,40 @@ static_assert(alignof(BlockHeader) == 8);
 static_assert(sizeof(Block) == 808);
 static_assert(alignof(Block) == 8);
 
+struct ConsensusBlockHeader
+{
+    bytes32_t parent_bft_block_id;
+    uint64_t round;
+    uint64_t parent_round;
+    bytes32_t block_body_id;
+
+    BlockHeader proposed;
+    std::vector<BlockHeader> verified_blocks;
+
+    friend bool operator==(
+        ConsensusBlockHeader const &, ConsensusBlockHeader const &) = default;
+};
+
+static_assert(sizeof(ConsensusBlockHeader) == 832);
+static_assert(alignof(ConsensusBlockHeader) == 8);
+
+struct ConsensusBlockBody
+{
+    std::vector<Transaction> transactions{};
+    std::vector<BlockHeader> ommers{};
+    std::vector<Withdrawal> withdrawals{};
+};
+
+static_assert(sizeof(ConsensusBlockBody) == 72);
+static_assert(alignof(ConsensusBlockBody) == 8);
+
+struct ConsensusBlock
+{
+    ConsensusBlockHeader header;
+    ConsensusBlockBody body;
+};
+
+static_assert(sizeof(ConsensusBlock) == 904);
+static_assert(alignof(ConsensusBlock) == 8);
+
 MONAD_NAMESPACE_END

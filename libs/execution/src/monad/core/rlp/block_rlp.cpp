@@ -171,7 +171,7 @@ Result<std::vector<Transaction>> decode_transaction_list(byte_string_view &enc)
     BOOST_OUTCOME_TRY(auto ls, parse_list_metadata(enc));
 
     // TODO: Reserve txn vector size for better perf
-    while (ls.size() > 0) {
+    while (!ls.empty()) {
         if (ls[0] >= 0xc0) {
             BOOST_OUTCOME_TRY(auto tx, decode_transaction_legacy(ls));
             transactions.emplace_back(std::move(tx));
@@ -227,6 +227,107 @@ Result<Block> decode_block(byte_string_view &enc)
     }
 
     return block;
+}
+
+Result<std::pair<bytes32_t, uint64_t>> parse_qc_subset(byte_string_view &enc)
+{
+    BOOST_OUTCOME_TRY(auto qc_info_payload, parse_list_metadata(enc));
+    BOOST_OUTCOME_TRY(
+        auto vote_info_payload, parse_list_metadata(qc_info_payload));
+
+    BOOST_OUTCOME_TRY(auto bft_block_id, decode_bytes32(vote_info_payload));
+    BOOST_OUTCOME_TRY(
+        decode_unsigned<uint64_t>(vote_info_payload)); // skip epoch
+    BOOST_OUTCOME_TRY(auto round, decode_unsigned<uint64_t>(vote_info_payload));
+    return {bft_block_id, round};
+}
+
+Result<std::vector<BlockHeader>> decode_execution_results(byte_string_view &enc)
+{
+    std::vector<BlockHeader> headers;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+    while (!payload.empty()) {
+        BOOST_OUTCOME_TRY(auto const header, decode_block_header(payload));
+        headers.emplace_back(std::move(header));
+    }
+    if (MONAD_UNLIKELY(headers.size() > 1)) {
+        return DecodeError::InputTooLong;
+    }
+    return headers;
+}
+
+Result<ConsensusBlockBody> decode_consensus_block_body(byte_string_view &enc)
+{
+    ConsensusBlockBody body;
+    BOOST_OUTCOME_TRY(auto consensus_body_payload, parse_list_metadata(enc));
+    BOOST_OUTCOME_TRY(
+        auto execution_payload, parse_list_metadata(consensus_body_payload));
+    BOOST_OUTCOME_TRY(
+        body.transactions, decode_transaction_list(execution_payload));
+    BOOST_OUTCOME_TRY(
+        body.ommers, decode_block_header_vector(execution_payload));
+    BOOST_OUTCOME_TRY(
+        body.withdrawals, decode_withdrawal_list(execution_payload));
+
+    return body;
+}
+
+Result<ConsensusBlockHeader>
+decode_consensus_block_header(byte_string_view &enc)
+{
+    ConsensusBlockHeader consensus_header;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+
+    BOOST_OUTCOME_TRY(
+        consensus_header.round, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(decode_unsigned<uint64_t>(payload)); // skip epoch
+
+    BOOST_OUTCOME_TRY(auto parent_metadata, parse_qc_subset(payload));
+    consensus_header.parent_bft_block_id = std::move(parent_metadata.first);
+    consensus_header.parent_round = std::move(parent_metadata.second);
+
+    BOOST_OUTCOME_TRY(decode_byte_string_fixed<33>(payload)); // skip proposer
+    BOOST_OUTCOME_TRY(decode_unsigned<uint64_t>(payload)); // skip seqno
+    BOOST_OUTCOME_TRY(decode_unsigned<uint64_t>(payload)); // skip timestamp
+    BOOST_OUTCOME_TRY(decode_byte_string_fixed<192>(
+        payload)); // skip round signature List[u64, bytes32]
+
+    BOOST_OUTCOME_TRY(auto eth_protocol_payload, parse_list_metadata(payload));
+    BOOST_OUTCOME_TRY(
+        consensus_header.verified_blocks,
+        decode_execution_results(eth_protocol_payload));
+
+    auto &block_header = consensus_header.proposed;
+    BOOST_OUTCOME_TRY(
+        auto proposed_payload, parse_list_metadata(eth_protocol_payload));
+    BOOST_OUTCOME_TRY(
+        block_header.ommers_hash, decode_bytes32(proposed_payload));
+    BOOST_OUTCOME_TRY(
+        block_header.beneficiary, decode_address(proposed_payload));
+    BOOST_OUTCOME_TRY(
+        block_header.transactions_root, decode_bytes32(proposed_payload));
+    BOOST_OUTCOME_TRY(
+        block_header.withdrawals_root, decode_bytes32(proposed_payload));
+    BOOST_OUTCOME_TRY(
+        block_header.difficulty, decode_unsigned<uint256_t>(proposed_payload));
+    BOOST_OUTCOME_TRY(
+        block_header.number, decode_unsigned<uint64_t>(proposed_payload));
+    BOOST_OUTCOME_TRY(
+        block_header.gas_limit, decode_unsigned<uint64_t>(proposed_payload));
+    BOOST_OUTCOME_TRY(
+        block_header.timestamp, decode_unsigned<uint64_t>(proposed_payload));
+    BOOST_OUTCOME_TRY(
+        block_header.prev_randao, decode_bytes32(proposed_payload));
+    BOOST_OUTCOME_TRY(
+        block_header.nonce, decode_byte_string_fixed<8>(proposed_payload));
+    BOOST_OUTCOME_TRY(
+        block_header.base_fee_per_gas,
+        decode_unsigned<uint64_t>(proposed_payload));
+    BOOST_OUTCOME_TRY(block_header.extra_data, decode_string(proposed_payload));
+
+    BOOST_OUTCOME_TRY(consensus_header.block_body_id, decode_bytes32(payload));
+
+    return consensus_header;
 }
 
 MONAD_RLP_NAMESPACE_END

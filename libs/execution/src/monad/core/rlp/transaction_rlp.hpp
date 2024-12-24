@@ -21,5 +21,6 @@ Result<AccessList> decode_access_list(byte_string_view &);
 Result<Transaction> decode_transaction_legacy(byte_string_view &);
 Result<Transaction> decode_transaction_eip2718(byte_string_view &);
 Result<Transaction> decode_transaction(byte_string_view &);
+Result<std::vector<Transaction>> decode_transaction_list(byte_string_view &enc);
 
 MONAD_RLP_NAMESPACE_END

@@ -170,10 +170,7 @@ Result<AccessList> decode_access_list(byte_string_view &enc)
         BOOST_OUTCOME_TRY(auto access_entry, decode_access_entry(payload));
         access_list.emplace_back(std::move(access_entry));
     }
-
-    if (MONAD_UNLIKELY(!payload.empty())) {
-        return DecodeError::InputTooLong;
-    }
+    MONAD_ASSERT(payload.empty());
 
     return access_list;
 }
@@ -251,6 +248,28 @@ Result<Transaction> decode_transaction(byte_string_view &enc)
     else {
         return decode_transaction_eip2718(enc);
     }
+}
+
+Result<std::vector<Transaction>> decode_transaction_list(byte_string_view &enc)
+{
+    std::vector<Transaction> transactions;
+    BOOST_OUTCOME_TRY(auto ls, parse_list_metadata(enc));
+
+    // TODO: Reserve txn vector size for better perf
+    while (!ls.empty()) {
+        if (ls[0] >= 0xc0) {
+            BOOST_OUTCOME_TRY(auto tx, decode_transaction_legacy(ls));
+            transactions.emplace_back(std::move(tx));
+        }
+        else {
+            BOOST_OUTCOME_TRY(auto str, parse_string_metadata(ls));
+            BOOST_OUTCOME_TRY(auto tx, decode_transaction_eip2718(str));
+            transactions.emplace_back(std::move(tx));
+        }
+    }
+    MONAD_ASSERT(ls.empty());
+
+    return transactions;
 }
 
 MONAD_RLP_NAMESPACE_END

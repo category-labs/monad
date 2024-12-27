@@ -4,8 +4,9 @@
  * @file
  *
  * Definitions of fundamental execution event objects shared between readers
- * and the transaction execution engine (the writer). Most of these are
- * resident in shared memory segments.
+ * and the transaction execution engine (the writer). Most of these structures
+ * are resident in shared memory segments mapped by both the writer and
+ * the readers.
  */
 
 #include <stdatomic.h>
@@ -34,10 +35,11 @@ enum monad_event_ring_type : uint8_t
     MONAD_EVENT_RING_COUNT, ///< Number of recognized ring types
 };
 
-/// Descriptor for a single event; this fixed-size object is passed via a
-/// shared memory queue between threads, potentially in different processes;
-/// the rest of the (variably-sized) event is called the "event payload", and
-/// lives in a shared memory heap that can be accessed using this descriptor
+/// Descriptor for a single event; this fixed-size object is passed between
+/// threads via a shared memory ring buffer (the threads are potentially in
+/// different processes). The extra content of the (variably-sized) event is
+/// called the "event payload", and lives in a shared memory heap that can be
+/// accessed using this descriptor
 struct monad_event_descriptor
 {
     _Atomic(uint64_t) seqno;     ///< Sequence number, for gap/liveness check
@@ -54,10 +56,10 @@ struct monad_event_descriptor
 
 // clang-format on
 
-/// An IPC-style ring used to implement a lock-free MPMC queue for passing
-/// event descriptors between threads, potentially in different processes.
-/// This object is not directly present in shared memory, but the control page
-/// and descriptor table are.
+/// An IPC-style ring used to implement a lock-free MPMC ring for passing event
+/// descriptors between threads, potentially in different processes. This
+/// object is not directly present in shared memory, but the control page and
+/// descriptor table are.
 struct monad_event_ring
 {
     struct monad_event_ring_control *control;
@@ -87,7 +89,7 @@ struct monad_event_payload_page
     uint64_t event_count;
     uint64_t alloc_count;
     TAILQ_ENTRY(monad_event_payload_page) page_link;
-    /* Cache line holding lifetime-constant values */
+    // Cache line holding lifetime-constant values
     alignas(64) struct monad_event_payload_page_pool *page_pool;
     int memfd;
     uint16_t page_id;

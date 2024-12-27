@@ -77,7 +77,7 @@ struct monad_event_recorder;
 /// effect and will return EBUSY
 int monad_event_recorder_configure(
     enum monad_event_ring_type ring_type, uint8_t ring_shift,
-    size_t payload_page_size, uint16_t payload_page_count);
+    uint8_t payload_page_shift, uint16_t payload_page_count);
 
 /// Start or stop the recorder for the given event ring type; disabling a
 /// recorder will allow monad_event_recorder_configure to be called again
@@ -139,13 +139,13 @@ int monad_event_init_local_iterator(
  * Min, max, and default memory sizes
  */
 
-#define MONAD_EVENT_RECORDER_DEFAULT_RING_SHIFT (20)
-#define MONAD_EVENT_RECORDER_MIN_RING_SHIFT (12)
-#define MONAD_EVENT_RECORDER_MAX_RING_SHIFT (40)
+#define MONAD_EVENT_DEFAULT_RING_SHIFT (20)
+#define MONAD_EVENT_MIN_RING_SHIFT (12)
+#define MONAD_EVENT_MAX_RING_SHIFT (40)
 
-#define MONAD_EVENT_DEFAULT_PAYLOAD_PAGE_SIZE (1UL << 24)
-#define MONAD_EVENT_MIN_PAYLOAD_PAGE_SIZE (1UL << 20)
-#define MONAD_EVENT_MAX_PAYLOAD_PAGE_SIZE (1UL << 32)
+#define MONAD_EVENT_DEFAULT_PAYLOAD_PAGE_SHIFT (24)
+#define MONAD_EVENT_MIN_PAYLOAD_PAGE_SHIFT (21)
+#define MONAD_EVENT_MAX_PAYLOAD_PAGE_SHIFT (32)
 
 #define MONAD_EVENT_DEFAULT_PAYLOAD_PAGE_COUNT (32)
 #define MONAD_EVENT_MIN_PAYLOAD_PAGE_COUNT (20)

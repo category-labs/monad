@@ -44,13 +44,15 @@ inline enum monad_event_poll_result monad_event_iterator_peek(
     struct monad_event_iterator *iterator,
     struct monad_event_descriptor const **event)
 {
-    *event = &iterator->desc_table[iterator->last_seqno & iterator->capacity_mask];
+    *event =
+        &iterator->desc_table[iterator->last_seqno & iterator->capacity_mask];
     uint64_t const seqno =
         atomic_load_explicit(&(*event)->seqno, memory_order_acquire);
     if (__builtin_expect(seqno == iterator->last_seqno + 1, 1)) {
         return MONAD_EVENT_READY;
     }
-    return seqno < iterator->last_seqno ? MONAD_EVENT_NOT_READY : MONAD_EVENT_GAP;
+    return seqno < iterator->last_seqno ? MONAD_EVENT_NOT_READY
+                                        : MONAD_EVENT_GAP;
 }
 
 inline bool monad_event_iterator_advance(struct monad_event_iterator *iterator)
@@ -115,46 +117,8 @@ inline enum monad_event_poll_result monad_event_iterator_copy_next(
         (void)monad_event_iterator_advance(iterator);
         return MONAD_EVENT_READY;
     }
-    return seqno < iterator->last_seqno ? MONAD_EVENT_NOT_READY : MONAD_EVENT_GAP;
-}
-
-inline enum monad_event_poll_result monad_event_iterator_bulk_copy(
-    struct monad_event_iterator *iterator,
-    struct monad_event_descriptor *events,
-    size_t *num_events, size_t *num_available_events)
-{
-    assert(*num_events <= MONAD_EVENT_MAX_BULK_COPY);
-    uint64_t const prod_next =
-        atomic_load_explicit(iterator->prod_next, memory_order_acquire);
-    uint64_t const avail_size = prod_next - iterator->last_seqno;
-    if (__builtin_expect(avail_size == 0, 0)) {
-        return MONAD_EVENT_NOT_READY;
-    }
-    if (num_available_events != nullptr) {
-        *num_available_events = avail_size;
-    }
-    *num_events = avail_size > *num_events ? *num_events : avail_size;
-#if defined(__cplusplus) && !defined(__clang__)
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wclass-memaccess"
-#endif
-    // Ensure the last item is materialized before we copy
-    (void)monad_event_iterator_sync_wait(iterator);
-    memcpy(
-        events,
-        &iterator->desc_table[iterator->last_seqno & iterator->capacity_mask],
-        sizeof(events[0]) * *num_events);
-#if defined(__cplusplus) && !defined(__clang__)
-    #pragma GCC diagnostic pop
-#endif
-    if (__builtin_expect(
-            atomic_load_explicit(&events[0].seqno, memory_order_acquire) !=
-                iterator->last_seqno + 1,
-            0)) {
-        return MONAD_EVENT_GAP;
-    }
-    iterator->last_seqno += *num_events;
-    return MONAD_EVENT_READY;
+    return seqno < iterator->last_seqno ? MONAD_EVENT_NOT_READY
+                                        : MONAD_EVENT_GAP;
 }
 
 inline void *monad_event_payload_memcpy(

@@ -92,7 +92,7 @@ struct monad_event_proc
 
 struct monad_event_imported_ring
 {
-    atomic_uint refcount;                ///< Reference count
+    atomic_uint refcount;                ///< Reference count keeping us alive
     uint16_t num_payload_pages;          ///< Size of `payload_pages` array
     enum monad_event_ring_type type;     ///< What kind of ring this is
     struct monad_event_ring ring;        ///< Mapping of ring in our addr space

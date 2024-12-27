@@ -47,25 +47,37 @@ large, fixed-size slabs of shared memory called "payload pages". The
 diagram below illustrates the memory layout:
 
 ```
-Event  .---------.---------.---------------.---------.---------.----
-Ring   | Event 1 | Event 2 |     ...       | Event N | (empty) | ...
-       .---------.---------.---------------.---------.---------.----
-        |         |                         |
-        |         |                         |
-        |         |    .-----------------.  |   .-----------------.
-        |         |    | Payload Page 1  |  |   | Payload Page 2  |
-        |         |    .-----------------.  |   .-----------------.
-        \---------.--> | Event 1 payload |  \-> | Event N payload |
-                  |    .-----------------.      .-----------------.
-                  \--> | Event 2 payload |      |       ...       |
-                       | (note that this |
-                       |  one is larger) |
-                       .-----------------.
-                       |       ...       |
-
-
-Event ring, containing descriptors which point at variably-sized payloads
-allocated on "payload pages"
+  ╔═Event ring══════════════════════════...═════════════════════════╗
+  ║ ┌─────────┐ ┌─────────┐ ┌─────────┐     ┌─────────┐ ┌─────────┐ ║
+  ║ │         │ │         │ │         │     │         │ │░░░░░░░░░│ ║
+  ║ │ Event 1 │ │ Event 2 │ │ Event 3 │     │ Event N │ │░ empty ░│ ║
+  ║ │         │ │         │ │         │     │         │ │░░░░░░░░░│ ║
+  ║ └────┬────┘ └────┬────┘ └─────────┘     └────┬────┘ └─────────┘ ║
+  ╚══════╬═══════════╬══════════════════...══════╬══════════════════╝
+         │           │                           │
+         │           │                           │
+         │           │                           │
+         │           │                           │
+         │           │    ┌─Payload page──┐      │   ┌─Payload page──┐
+         │           │    │┌─────────────┐│      │   │┌─────────────┐│
+         │           │    ││ Page header ││      │   ││ Page header ││
+         │           │    │├─────────────┤│      │   │├─────────────┤│
+         │           │    ││   Event 1   ││      │   ││             ││
+         └───────────┼────▶│   payload   ││      │   ││   Event N   ││
+                     │    │├─────────────┤│      └───▶│   payload   ││
+                     │    ││             ││          ││             ││
+                     │    ││             ││          │├─────────────┤│
+                     │    ││   Event 2   ││          ││░░░░░░░░░░░░░││
+                     └────▶│   payload   ││          ││░░░░░░░░░░░░░││
+                          ││             ││          ││░░░░░░░░░░░░░││
+                          ││             ││          ││░░░░free░░░░░││
+                          │├─────────────┤│          ││░░░░space░░░░││
+                          ││░░░░░░░░░░░░░││          ││░░░░░░░░░░░░░││
+                          ││░░░░free░░░░░││          ││░░░░░░░░░░░░░││
+                          ││░░░░space░░░░││          ││░░░░░░░░░░░░░││
+                          ││░░░░░░░░░░░░░││          ││░░░░░░░░░░░░░││
+                          │└─────────────┘│          │└─────────────┘│
+                          └───────────────┘          └───────────────┘
 ```
 
 A few properties about the style of communication chosen:
@@ -387,7 +399,6 @@ API | Purpose
 API | Purpose
 --- | -------
 `monad_event_iterator_copy_next` | Copy both the event descriptor and payload as one atomic operation; easiest API to use, but see remark below
-`monad_event_iterator_bulk_copy` | Bulk memcpy as many event descriptors as will fit in a user-provided array
 `monad_event_payload_memcpy` | `memcpy` the event payload to a buffer, succeeding only if the payload copy is valid
 
 The simplest API is `monad_event_iterator_copy_next`, which copies both the
@@ -503,3 +514,82 @@ This is why items #1, #2, and #3 are collected into one "core" reader
 library, while item #4 is separate. For Rust, we provide a native
 implementation of the core library, along with bindings that reuse the
 C `libmonad_event_client` to import the shared memory mappings.
+
+## Advanced topics
+
+### Diagram of core data structures
+
+A more accurate picture of the client's view of the shared memory
+layout, showing how a particular event descriptor (for "event 2")
+finds its payload:
+
+```
+  ┌─Imported event ring (◆)───────────────────────┐
+  │                                               │
+  │ ■   monad_event_descriptor descriptor_table[] │
+  │ │ ■ monad_event_payload_page *all_pages[]     │
+  │ │ │                                           │
+  └─┼─┼───────────────────────────────────────────┘
+    │ │
+    │ │
+    │ │    ╔═Event descriptor ring═══════════════...══════════════╗
+    │ │    ║ ┌─────────┐ ┌─────────┐ ┌─────────┐      ┌─────────┐ ║
+    │ │    ║ │         │ │░░░░░░░░░│ │         │      │         │ ║
+    └─┼───▶║ │ Event 1 │ │░Event 2░│ │ Event 3 │      │ Event N │ ║
+      │    ║ │         │ │░░░░░░░░░│ │         │      │         │ ║
+      │    ║ └─────────┘ └─────────┘ └─────────┘      └─────────┘ ║
+      │    ╚═════════════════════════════════════...══════════════╝
+      │                  ╱         ╲
+      │                 ╱           ╲
+      │                ╱             ╲
+      │               ╱               ╲
+      │
+      │            ┌─Event descriptor (◊)─┐
+      │            │                      │       ┌─Payload page (◎)────┐◀───┐
+      │            │ ■ uint16_t page_id   │       │                     │    │
+      │            │ │ uint32_t offset ■  │       │                     │    │
+      │            │ │                 │  │       │                     │    │
+      │            └─┼─────────────────┼──┘       │                     │    │
+      │              │                 │          │                     │    │
+      │              │                 └──────────┼▶───────────────────┐│    │
+      │              │                            ││░░░░░░░░░░░░░░░░░░░││    │
+      │              │                            ││░░Event 2 payload░░││    │
+      │              └─────────┐                  ││░░░░░░░░░░░░░░░░░░░││    │
+      │                        │                  │└───────────────────┘│    │
+      │                page_id is an array        │                     │    │
+      │                  index into the           │                     │    │
+      │                imported page table        │                     │    │
+      │                        │                  └─────────────────────┘    │
+      ▼                        │                                             │
+     ╔═════════════════════════╬═════...════════════╗                        │
+     ║ ┌───────┐ ┌───────┐ ┌───▼───┐      ┌───────┐ ║                        │
+     ║ │page * │ │page * │ │page * │      │page * │ ║                        │
+     ║ └───────┘ └───────┘ └──────■┘      └───────┘ ║                        │
+     ╚═Payload page array═════════╬══...════════════╝                        │
+                                  │                                          │
+                                  └──────────────────────────────────────────┘
+                                                  Each page array entry gives
+                                                  the shared payload page's
+   ┌─Legend───────────────────────────────┐       address as it is mapped into
+   │                                      │       _this_ client's address space
+   │ ◆ - struct monad_event_imported_ring │
+   │ ◊ - struct monad_event_descriptor    │
+   │ ◎ - struct monad_event_payload_page  │
+   └──────────────────────────────────────┘
+```
+
+Because event descriptors are in shared memory, they cannot include a direct
+pointer to the payload: the writer only knows this address within its own
+virtual address space. For any other process mapping these same shared memory
+segments, they are likely to wind up at different addresses.
+
+Instead, the descriptor specifies which page contains the payload as an
+array index, and the payload's offset within that page. The payload page
+array contains the local process' mapped address of each shared payload page,
+and the reader calculates the full address:
+
+```c
+struct monad_event_payload_page const *const page =
+    iterator->payload_pages[event->payload_page];
+void const *const payload_ptr = (uint8_t const *)page + event->offset;
+```

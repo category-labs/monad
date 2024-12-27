@@ -56,16 +56,6 @@ static enum monad_event_poll_result monad_event_iterator_copy_next(
     struct monad_event_iterator *, struct monad_event_descriptor *,
     void *payload_buf, size_t payload_buf_size);
 
-/// Copy `num_events` event descriptors into the array pointed by `events`;
-/// `num_events` initially contains the size of the `events` array, and upon
-/// return contains the number of events copied. If `num_available_events` is
-/// not nullptr, the number of events that were available (which might be
-/// larger than `num_events`) will be copied out, which can be used to detect
-/// back-pressure
-static enum monad_event_poll_result monad_event_iterator_bulk_copy(
-    struct monad_event_iterator *, struct monad_event_descriptor *events,
-    size_t *num_events, size_t *num_available_events);
-
 /// Copy the event payload from shared memory into the supplied buffer, up to
 /// `n` bytes; the total size required for an event is available using the
 /// `length` field in the event descriptor; returns nullptr if the event

@@ -46,11 +46,11 @@ register_event('HEARTBEAT', None,
     "Periodic heartbeat emitted by the event server")
 
 #
-# THR_PAGE_ALLOC
+# THR_PAGE_SWITCH
 #
 
-register_event('THR_PAGE_ALLOC', None,
-    "Event recorder pulled a new page from the pool free list")
+register_event('THR_PAGE_SWITCH', None,
+    "Event recorder recycled a page from the page pool free list")
 
 #
 # TEST_COUNT_64

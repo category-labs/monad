@@ -126,7 +126,7 @@ cleanup_payload_page_pool(struct monad_event_payload_page_pool *page_pool)
 }
 
 static struct monad_event_payload_page *
-alloc_payload_page(struct monad_event_payload_page_pool *page_pool)
+activate_payload_page(struct monad_event_payload_page_pool *page_pool)
 {
     struct monad_event_payload_page *page;
     MONAD_DEBUG_ASSERT(monad_spinlock_is_self_owned(&page_pool->lock));
@@ -172,7 +172,7 @@ alloc_payload_page(struct monad_event_payload_page_pool *page_pool)
     return page;
 }
 
-static void free_payload_page(
+static void deactivate_payload_page(
     struct monad_event_payload_page_pool *page_pool,
     struct monad_event_payload_page *page)
 {
@@ -196,18 +196,18 @@ _monad_event_recorder_switch_page(struct monad_event_payload_page *page)
 {
     struct monad_event_payload_page_pool *const page_pool = page->page_pool;
     MONAD_SPINLOCK_LOCK(&page_pool->lock);
-    free_payload_page(page_pool, page);
-    page = alloc_payload_page(page_pool);
+    deactivate_payload_page(page_pool, page);
+    page = activate_payload_page(page_pool);
     MONAD_SPINLOCK_UNLOCK(&page_pool->lock);
     return page;
 }
 
-struct monad_event_payload_page *
-_monad_event_alloc_payload_page(struct monad_event_payload_page_pool *page_pool)
+struct monad_event_payload_page *_monad_event_activate_payload_page(
+    struct monad_event_payload_page_pool *page_pool)
 {
     struct monad_event_payload_page *page;
     MONAD_SPINLOCK_LOCK(&page_pool->lock);
-    page = alloc_payload_page(page_pool);
+    page = activate_payload_page(page_pool);
     MONAD_SPINLOCK_UNLOCK(&page_pool->lock);
     return page;
 }
@@ -363,7 +363,7 @@ struct monad_event_recorder g_monad_event_recorders[MONAD_EVENT_RING_COUNT];
 
 struct monad_event_recorder_shared_state g_monad_event_recorder_shared_state;
 
-static void thread_state_dtor(void *arg0);
+static void thread_cache_dtor(void *arg0);
 
 static void __attribute__((constructor(MONAD_EVENT_RECORDER_CTOR_PRIO)))
 init_event_recorders()
@@ -375,8 +375,8 @@ init_event_recorders()
         &g_monad_event_recorder_shared_state;
 
     monad_spinlock_init(&rss->lock);
-    TAILQ_INIT(&rss->thread_states);
-    rc = pthread_key_create(&rss->thread_state_key, thread_state_dtor);
+    TAILQ_INIT(&rss->thread_caches);
+    rc = pthread_key_create(&rss->thread_cache_key, thread_cache_dtor);
     MONAD_ASSERT_PRINTF(
         rc == 0, "unable to create thread recorder pthread key, error: %d", rc);
 
@@ -422,7 +422,7 @@ cleanup_event_recorders()
             &recorder->descriptor_table_fd);
         cleanup_payload_page_pool(&recorder->payload_page_pool);
     }
-    pthread_key_delete(rss->thread_state_key);
+    pthread_key_delete(rss->thread_cache_key);
 }
 
 static int configure_recorder_locked(
@@ -456,7 +456,7 @@ static int configure_recorder_locked(
     }
     recorder->all_pages[0] = g_monad_event_recorder_shared_state.metadata_page;
     if (ring_shift == 0) {
-        ring_shift = MONAD_EVENT_RECORDER_DEFAULT_RING_SHIFT;
+        ring_shift = MONAD_EVENT_DEFAULT_RING_SHIFT;
     }
     if ((rc = init_event_ring(
              &recorder->event_ring,
@@ -511,16 +511,16 @@ int monad_event_recorder_configure(
         return FORMAT_ERRC(
             EINVAL, "ring_type %hhu is not a valid value", ring_type);
     }
-    if (ring_shift < MONAD_EVENT_RECORDER_MIN_RING_SHIFT ||
-        ring_shift > MONAD_EVENT_RECORDER_MAX_RING_SHIFT) {
+    if (ring_shift < MONAD_EVENT_MIN_RING_SHIFT ||
+        ring_shift > MONAD_EVENT_MAX_RING_SHIFT) {
         return FORMAT_ERRC(
             ERANGE,
             "ring_shift out allowed range [%hhu, %hhu]: "
             "(ring sizes: [%lu, %lu])",
-            MONAD_EVENT_RECORDER_MIN_RING_SHIFT,
-            MONAD_EVENT_RECORDER_MAX_RING_SHIFT,
-            (1UL << MONAD_EVENT_RECORDER_MIN_RING_SHIFT),
-            (1UL << MONAD_EVENT_RECORDER_MAX_RING_SHIFT));
+            MONAD_EVENT_MIN_RING_SHIFT,
+            MONAD_EVENT_MAX_RING_SHIFT,
+            (1UL << MONAD_EVENT_MIN_RING_SHIFT),
+            (1UL << MONAD_EVENT_MAX_RING_SHIFT));
     }
     if (payload_page_size < MONAD_EVENT_MIN_PAYLOAD_PAGE_SIZE ||
         payload_page_size > MONAD_EVENT_MAX_PAYLOAD_PAGE_SIZE) {
@@ -568,7 +568,7 @@ bool _monad_event_recorder_set_enabled_slow(
     if (recorder->all_pages == nullptr) {
         rc = configure_recorder_locked(
             recorder,
-            MONAD_EVENT_RECORDER_DEFAULT_RING_SHIFT,
+            MONAD_EVENT_DEFAULT_RING_SHIFT,
             MONAD_EVENT_DEFAULT_PAYLOAD_PAGE_SIZE,
             MONAD_EVENT_DEFAULT_PAYLOAD_PAGE_COUNT);
         MONAD_ASSERT_PRINTF(
@@ -592,16 +592,16 @@ char const *monad_event_recorder_get_last_error()
 }
 
 /*
- * Thread state functions
+ * Thread cache functions
  */
 
-thread_local struct monad_event_thread_state g_tls_monad_thread_state;
+thread_local struct monad_event_recorder_thr g_tls_monad_recorder_thread_cache;
 
-static void thread_state_dtor(void *arg0)
+static void thread_cache_dtor(void *arg0)
 {
     struct monad_event_payload_page *page;
     struct monad_event_payload_page_pool *page_pool;
-    struct monad_event_thread_state *const thread_state = arg0;
+    struct monad_event_recorder_thr *const thread_cache = arg0;
     struct monad_event_recorder_shared_state *const rss =
         &g_monad_event_recorder_shared_state;
 
@@ -618,24 +618,24 @@ static void thread_state_dtor(void *arg0)
     // Give back the source_id for this thread, and remove the thread's recorder
     // state object from the global list
     MONAD_SPINLOCK_LOCK(&rss->lock);
-    rss->thread_source_ids &= ~(uint64_t)(1UL << (thread_state->source_id - 1));
-    TAILQ_REMOVE(&rss->thread_states, thread_state, next);
+    rss->thread_source_ids &= ~(uint64_t)(1UL << (thread_cache->source_id - 1));
+    TAILQ_REMOVE(&rss->thread_caches, thread_cache, next);
     MONAD_SPINLOCK_UNLOCK(&rss->lock);
 
     // Deactivate the recorder's payload pages
     for (uint8_t q = 0; q < MONAD_EVENT_RING_COUNT; ++q) {
-        page = thread_state->payload_page[q];
+        page = thread_cache->payload_page[q];
         if (page != nullptr) {
             page_pool = page->page_pool;
             MONAD_SPINLOCK_LOCK(&page_pool->lock);
-            free_payload_page(page_pool, page);
+            deactivate_payload_page(page_pool, page);
             MONAD_SPINLOCK_UNLOCK(&page_pool->lock);
         }
     }
 }
 
-void _monad_event_init_thread_state(
-    struct monad_event_thread_state *thread_state)
+void _monad_event_recorder_init_thread_cache(
+    struct monad_event_recorder_thr *thread_cache)
 {
     struct monad_event_descriptor *event;
     struct monad_event_thread_info local_thread_info;
@@ -644,11 +644,11 @@ void _monad_event_init_thread_state(
         &g_monad_event_recorder_shared_state;
     unsigned s;
 
-    memset(thread_state, 0, sizeof *thread_state);
+    memset(thread_cache, 0, sizeof *thread_cache);
     memset(&local_thread_info, 0, sizeof local_thread_info);
     local_thread_info.epoch_nanos = monad_event_get_epoch_nanos();
     local_thread_info.process_id = rss->process_id;
-    local_thread_info.thread_id = thread_state->thread_id =
+    local_thread_info.thread_id = thread_cache->thread_id =
         (uint64_t)get_tl_tid();
     (void)pthread_getname_np(
         pthread_self(),
@@ -665,15 +665,15 @@ void _monad_event_init_thread_state(
         "no space left in source_id bitmap for new thread %s:%lu",
         local_thread_info.thread_name,
         local_thread_info.thread_id);
-    local_thread_info.source_id = thread_state->source_id = (uint8_t)s;
+    local_thread_info.source_id = thread_cache->source_id = (uint8_t)s;
     rss->thread_source_ids |= 1UL << (s - 1);
 
     // Copy local thread info into the metadata array that's present in shared
     // memory
     thread_info = &rss->thread_info_table[s];
     memcpy(thread_info, &local_thread_info, sizeof local_thread_info);
-    TAILQ_INSERT_TAIL(&rss->thread_states, thread_state, next);
-    pthread_setspecific(rss->thread_state_key, thread_state);
+    TAILQ_INSERT_TAIL(&rss->thread_caches, thread_cache, next);
+    pthread_setspecific(rss->thread_cache_key, thread_cache);
     MONAD_SPINLOCK_UNLOCK(&rss->lock);
 
     // Announce the creation of this thread

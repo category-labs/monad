@@ -6,6 +6,7 @@
  * API for connecting to an execution process and importing its event rings
  */
 
+#include <stdatomic.h>
 #include <stdint.h>
 
 #include <pthread.h>
@@ -81,9 +82,10 @@ struct monad_event_proc
 {
     atomic_uint refcount;
     int sock_fd;
-    struct monad_event_payload_page const *metadata_page;
     struct monad_event_thread_info const *thread_table;
     struct monad_event_block_exec_header const *block_header_table;
+    void const *metadata_page;
+    size_t metadata_page_len;
     pthread_mutex_t mtx;
     TAILQ_HEAD(, monad_event_imported_ring) imports;
 };
@@ -93,12 +95,9 @@ struct monad_event_proc
 struct monad_event_imported_ring
 {
     atomic_uint refcount;                ///< Reference count keeping us alive
-    uint16_t num_payload_pages;          ///< Size of `payload_pages` array
     enum monad_event_ring_type type;     ///< What kind of ring this is
     struct monad_event_ring ring;        ///< Mapping of ring in our addr space
-    struct monad_event_payload_page const
-        **payload_pages;                 ///< Array of shared mem payload pages
-    size_t true_desc_table_size;         ///< Table size + overwrite (for Rust)
+    size_t true_fifo_size;               ///< Table size + overwrite (for Rust)
     struct monad_event_proc *proc;       ///< Process that exported us
     TAILQ_ENTRY(monad_event_imported_ring) next; ///< Link for all proc imports
 };

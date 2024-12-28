@@ -77,6 +77,13 @@ add_library(
   "src/monad/db/trie_db.hpp"
   "src/monad/db/util.cpp"
   "src/monad/db/util.hpp"
+  # emitter
+  "src/monad/emitter/block_emitter.hpp"
+  "src/monad/emitter/execution_event.h"
+  "src/monad/emitter/replay_emitter.cpp"
+  "src/monad/emitter/replay_emitter.hpp"
+  "src/monad/emitter/execution_graph_emitter.hpp"
+  "src/monad/emitter/execution_graph_emitter.cpp"
   # execution
   "src/monad/execution/baseline_execute.cpp"
   "src/monad/execution/baseline_execute.hpp"

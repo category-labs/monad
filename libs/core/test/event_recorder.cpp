@@ -23,36 +23,39 @@ static void perf_consumer_main(std::latch *latch, uint64_t expected_len)
     constexpr unsigned HistogramShift = 10;
     constexpr uint64_t HistogramSampleMask = (1UL << HistogramShift) - 1;
 
-    monad_event_iterator iterator{};
-    ASSERT_EQ(
-        0,
-        monad_event_init_local_iterator(
-            MONAD_EVENT_RING_EXEC, &iterator, nullptr));
+    monad_event_iterator iter{};
+    ASSERT_EQ(0, monad_event_init_local_iterator(MONAD_EVENT_RING_EXEC, &iter));
     uint64_t expected_counter = 0;
     uint64_t delay_histogram[EventDelayHistogramSize] = {};
     uint64_t available_histogram[EventsAvailableHistogramSize] = {};
 
     latch->arrive_and_wait();
-    while (iterator.prod_next->load(std::memory_order_acquire) == 0)
+    // TODO(ken): this should not be necessary
+    while (__atomic_load_n(iter.seqno_fragment_next, __ATOMIC_ACQUIRE) == 0 ||
+           __atomic_load_n(iter.seqno_fragment_next, __ATOMIC_ACQUIRE) ==
+               (__uint128_t)1 << 64)
         /* wait for something to be produced */;
-    monad_event_iterator_reset(&iterator);
+    monad_event_iterator_reset(&iter);
     // Regardless of where the most recent event is, start from zero
-    uint64_t last_seqno = iterator.last_seqno = 0;
+    uint64_t last_seqno = iter.last_seqno = iter.next_fragment = 0;
     while (last_seqno < MaxPerfIterations) {
-        monad_event_descriptor const *event;
+        monad_event_fragment const *begin;
+        monad_event_fragment const *end;
         monad_event_poll_result const pr =
-            monad_event_iterator_peek(&iterator, &event);
-        if (MONAD_UNLIKELY(pr == MONAD_EVENT_NOT_READY)) {
+            monad_event_iterator_peek(&iter, &begin, &end);
+        if (MONAD_UNLIKELY(
+                pr == MONAD_EVENT_NOT_READY || pr == MONAD_EVENT_PARTIAL)) {
             continue;
         }
         ASSERT_EQ(MONAD_EVENT_READY, pr);
-        ASSERT_TRUE(monad_event_iterator_advance(&iterator));
 
         // Available histogram
         if (MONAD_UNLIKELY((last_seqno & HistogramSampleMask) == 0)) {
-            uint64_t const available_events =
-                iterator.prod_next->load(std::memory_order::acquire) -
-                event->seqno;
+            uint64_t next_seqno =
+                (uint64_t)(__atomic_load_n(
+                               iter.seqno_fragment_next, __ATOMIC_ACQUIRE) >>
+                           64);
+            uint64_t const available_events = next_seqno - begin->header.seqno;
             unsigned avail_bucket =
                 static_cast<unsigned>(std::bit_width(available_events));
             if (avail_bucket >= std::size(available_histogram)) {
@@ -62,7 +65,8 @@ static void perf_consumer_main(std::latch *latch, uint64_t expected_len)
 
             // TODO(ken): should be monad_event_get_epoch_nanos(), when we
             //   fix timestamp RDTSC support
-            auto const delay = monad_event_timestamp() - event->epoch_nanos;
+            auto const delay =
+                monad_event_timestamp() - begin->header.epoch_nanos;
             unsigned delay_bucket =
                 static_cast<unsigned>(std::bit_width(delay));
             if (delay_bucket >= std::size(delay_histogram)) {
@@ -70,20 +74,20 @@ static void perf_consumer_main(std::latch *latch, uint64_t expected_len)
             }
             ++delay_histogram[delay_bucket];
         }
-        EXPECT_EQ(last_seqno + 1, event->seqno);
-        last_seqno = event->seqno;
+        EXPECT_EQ(last_seqno + 1, begin->header.seqno);
+        last_seqno = begin->header.seqno;
 
-        std::atomic<uint64_t> const *overwrite_seqno;
-        if (MONAD_UNLIKELY(event->type != MONAD_EVENT_TEST_COUNT_64)) {
+        if (MONAD_UNLIKELY(begin->header.type != MONAD_EVENT_TEST_COUNT_64)) {
+            ASSERT_TRUE(monad_event_iterator_advance(&iter, begin));
             continue;
         }
-        uint64_t const counter_value = *static_cast<uint64_t const *>(
-            monad_event_payload_peek(&iterator, event, &overwrite_seqno));
-        ASSERT_GE(
-            event->seqno, overwrite_seqno->load(std::memory_order::acquire));
+        uint64_t const counter_value =
+            *std::bit_cast<uint64_t const *>(&begin->payload[0]);
         EXPECT_EQ(expected_counter++, counter_value);
         expected_counter = counter_value + 1;
-        ASSERT_EQ(event->length, expected_len);
+        ASSERT_EQ(begin->header.total_length, expected_len);
+
+        ASSERT_TRUE(monad_event_iterator_advance(&iter, begin));
     }
 
     fprintf(stdout, "backpressure histogram:\n");
@@ -107,10 +111,7 @@ class EventRecorderBulkTest : public testing::TestWithParam<uint32_t>
     {
         monad_event_recorder_set_enabled(MONAD_EVENT_RING_EXEC, false);
         monad_event_recorder_configure(
-            MONAD_EVENT_RING_EXEC,
-            MONAD_EVENT_DEFAULT_RING_SHIFT,
-            MONAD_EVENT_DEFAULT_PAYLOAD_PAGE_SIZE,
-            MONAD_EVENT_DEFAULT_PAYLOAD_PAGE_COUNT);
+            MONAD_EVENT_RING_EXEC, MONAD_EVENT_DEFAULT_RING_SHIFT);
     }
 };
 

@@ -9,7 +9,6 @@
     #error This file should only be included directly by event_iterator.h
 #endif
 
-#include <assert.h>
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -17,132 +16,146 @@
 
 #include <monad/event/event.h>
 
-static inline uint64_t
-monad_event_iterator_sync_wait(struct monad_event_iterator *iterator)
+static inline struct monad_event_fragment const *
+monad_event_iterator_at(struct monad_event_iterator const *iter, uint64_t f)
 {
-    struct monad_event_descriptor const *event;
-    uint64_t const prod_next =
-        atomic_load_explicit(iterator->prod_next, memory_order_acquire);
-    if (__builtin_expect(prod_next == 0, 0)) {
-        // Nothing materialized anyway
-        // TODO(ken): it is always an error if this happens? assert instead?
-        return iterator->last_seqno = 0;
+    return &iter->fragment_table[f & iter->capacity_mask];
+}
+
+static inline enum monad_event_poll_result monad_event_iterator_peek_resume(
+    struct monad_event_iterator *iter,
+    struct monad_event_fragment const **begin,
+    struct monad_event_fragment const **end)
+{
+    // Invariant: reassembly has started; iterator->next_index might be the
+    // last fragment; we only advance if we _don't_ find the last fragment
+    while (true) {
+        struct monad_event_fragment const *next =
+            monad_event_iterator_at(iter, iter->next_fragment);
+        uint64_t const next_seqno =
+            atomic_load_explicit(&next->header.seqno, memory_order_acquire);
+        if (__builtin_expect(next_seqno > iter->scan_seqno, 0)) {
+            return MONAD_EVENT_GAP;
+        }
+        if (__builtin_expect(next_seqno < iter->scan_seqno, 0)) {
+            return MONAD_EVENT_PARTIAL;
+        }
+        if (next->header.frag_no + 1 == next->header.frag_count) {
+            *end = ++next;
+            if (iter->scan_seqno ==
+                atomic_load_explicit(
+                    &(*begin)->header.seqno, memory_order_acquire)) {
+                return MONAD_EVENT_READY;
+            }
+            return MONAD_EVENT_GAP;
+        }
+        ++iter->next_fragment;
     }
-    // `prod_next` is atomically incremented before the contents of the
-    // associated descriptor table slot (which is `prod_next - 1`) are written.
-    // The contents are definitely commited when the sequence number (which is
-    // equal to `prod_next`) is atomically stored (with memory_order_release).
-    // This waits for that to happen, if it hasn't.
-    event = &iterator->desc_table[(prod_next - 1) & iterator->capacity_mask];
-    while (atomic_load_explicit(&event->seqno, memory_order_acquire) <
-           prod_next)
-        /*empty*/;
-    return prod_next - 1;
+}
+
+static inline enum monad_event_poll_result monad_event_iterator_peek_start(
+    struct monad_event_iterator *iter,
+    struct monad_event_fragment const **begin,
+    struct monad_event_fragment const **end)
+{
+    // Invariant: we're at the start of an event
+    struct monad_event_fragment const *next =
+        monad_event_iterator_at(iter, iter->next_fragment);
+    uint64_t const next_seqno =
+        atomic_load_explicit(&next->header.seqno, memory_order_acquire);
+    if (__builtin_expect(next_seqno < iter->last_seqno, 0)) {
+        return MONAD_EVENT_NOT_READY;
+    }
+    if (__builtin_expect(next_seqno == iter->last_seqno + 1, 1)) {
+        *begin = next;
+        iter->scan_seqno = next_seqno;
+        if (next->header.frag_no + 1 == next->header.frag_count) {
+            *end = ++next;
+            return MONAD_EVENT_READY;
+        }
+        iter->begin = next;
+        ++iter->next_fragment;
+        return monad_event_iterator_peek_resume(iter, begin, end);
+    }
+    return MONAD_EVENT_GAP;
 }
 
 inline enum monad_event_poll_result monad_event_iterator_peek(
-    struct monad_event_iterator *iterator,
-    struct monad_event_descriptor const **event)
+    struct monad_event_iterator *iter,
+    struct monad_event_fragment const **begin,
+    struct monad_event_fragment const **end)
 {
-    *event =
-        &iterator->desc_table[iterator->last_seqno & iterator->capacity_mask];
-    uint64_t const seqno =
-        atomic_load_explicit(&(*event)->seqno, memory_order_acquire);
-    if (__builtin_expect(seqno == iterator->last_seqno + 1, 1)) {
-        return MONAD_EVENT_READY;
-    }
-    return seqno < iterator->last_seqno ? MONAD_EVENT_NOT_READY
-                                        : MONAD_EVENT_GAP;
+    return iter->begin ? monad_event_iterator_peek_resume(iter, begin, end)
+                       : monad_event_iterator_peek_start(iter, begin, end);
 }
 
-inline bool monad_event_iterator_advance(struct monad_event_iterator *iterator)
+inline bool monad_event_iterator_advance(
+    struct monad_event_iterator *iter, struct monad_event_fragment const *begin)
 {
-    struct monad_event_descriptor const *const event =
-        &iterator->desc_table[iterator->last_seqno & iterator->capacity_mask];
-    uint64_t const seqno =
-        atomic_load_explicit(&event->seqno, memory_order_acquire);
-    if (__builtin_expect(seqno == iterator->last_seqno + 1, 1)) {
-        ++iterator->last_seqno;
-        return true;
+    if (atomic_load_explicit(&begin->header.seqno, memory_order_acquire) !=
+        iter->scan_seqno) {
+        return false;
     }
-    return false;
-}
-
-inline void const *monad_event_payload_peek(
-    struct monad_event_iterator const *iterator,
-    struct monad_event_descriptor const *event,
-    _Atomic(uint64_t) const **page_overwrite_seqno)
-{
-    struct monad_event_payload_page const *const page =
-        iterator->payload_pages[event->payload_page];
-    void const *const ptr = (uint8_t const *)page + event->offset;
-    *page_overwrite_seqno = &page->overwrite_seqno;
-    return ptr;
+    ++iter->next_fragment;
+    iter->last_seqno = iter->scan_seqno;
+    iter->scan_seqno = 0;
+    iter->begin = nullptr;
+    return true;
 }
 
 inline enum monad_event_poll_result monad_event_iterator_copy_next(
-    struct monad_event_iterator *iterator,
-    struct monad_event_descriptor *event_dst, void *payload_buf,
-    size_t payload_buf_size)
+    struct monad_event_iterator *iter, struct monad_event_header *header,
+    void *payload_buf, size_t payload_buf_size)
 {
-    uint64_t seqno;
-    size_t copy_size;
+    struct monad_event_fragment const *begin, *end;
+    enum monad_event_poll_result pr =
+        monad_event_iterator_peek(iter, &begin, &end);
 
-    struct monad_event_descriptor const *const event_src =
-        &iterator->desc_table[iterator->last_seqno & iterator->capacity_mask];
+    if (pr != MONAD_EVENT_READY) {
+        return pr;
+    }
 #if defined(__cplusplus) && !defined(__clang__)
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wclass-memaccess"
 #endif
-    memcpy(event_dst, event_src, sizeof *event_dst);
+    memcpy(header, &begin->header, sizeof *header);
 #if defined(__cplusplus) && !defined(__clang__)
     #pragma GCC diagnostic pop
 #endif
-    seqno = atomic_load_explicit(&event_dst->seqno, memory_order_relaxed);
-    if (__builtin_expect(
-            seqno !=
-                atomic_load_explicit(&event_src->seqno, memory_order_acquire),
-            0)) {
-        return MONAD_EVENT_GAP;
-    }
-    if (__builtin_expect(seqno == iterator->last_seqno + 1, 1)) {
-        copy_size = payload_buf_size > event_dst->length ? event_dst->length
-                                                         : payload_buf_size;
-        if (__builtin_expect(
-                monad_event_payload_memcpy(
-                    iterator, event_dst, payload_buf, copy_size) == nullptr,
-                0)) {
-            return MONAD_EVENT_PAYLOAD_EXPIRED;
+    for (struct monad_event_fragment const *next = begin; next != end; ++next) {
+        if (atomic_load_explicit(&next->header.seqno, memory_order_acquire) !=
+            iter->scan_seqno) {
+            return MONAD_EVENT_GAP;
         }
-        (void)monad_event_iterator_advance(iterator);
-        return MONAD_EVENT_READY;
+        size_t const copy_len = next->header.inline_length < payload_buf_size
+                                    ? next->header.inline_length
+                                    : payload_buf_size;
+        payload_buf = mempcpy(payload_buf, next->payload, copy_len);
+        payload_buf_size -= copy_len;
     }
-    return seqno < iterator->last_seqno ? MONAD_EVENT_NOT_READY
-                                        : MONAD_EVENT_GAP;
+    return monad_event_iterator_advance(iter, begin) ? MONAD_EVENT_READY
+                                                     : MONAD_EVENT_GAP;
 }
 
-inline void *monad_event_payload_memcpy(
-    struct monad_event_iterator const *iterator,
-    struct monad_event_descriptor const *event, void *dst, size_t n)
+inline uint64_t monad_event_iterator_reset(struct monad_event_iterator *iter)
 {
-    _Atomic(uint64_t) const *page_overwrite_seqno;
-    void const *const src =
-        monad_event_payload_peek(iterator, event, &page_overwrite_seqno);
-    memcpy(dst, src, n);
-    if (__builtin_expect(
-            atomic_load_explicit(page_overwrite_seqno, memory_order_acquire) >
-                atomic_load_explicit(&event->seqno, memory_order_acquire),
-            0)) {
-        // The shared memory page this payload lives in has been reused by
-        // later events. We didn't copy this fast enough to be sure that all
-        // `n` bytes are valid.
-        return nullptr;
+    struct monad_event_fragment const *frag;
+    uint64_t most_recent_seqno;
+    __uint128_t const next =
+        __atomic_load_n(iter->seqno_fragment_next, __ATOMIC_ACQUIRE);
+    uint64_t const next_seqno = (uint64_t)(next >> 64);
+    uint64_t const next_fragment = (uint64_t)next;
+    if (next_fragment == 0) {
+        iter->last_seqno = 0;
+        iter->next_fragment = 0;
     }
-    return dst;
-}
-
-inline uint64_t
-monad_event_iterator_reset(struct monad_event_iterator *iterator)
-{
-    return iterator->last_seqno = monad_event_iterator_sync_wait(iterator);
+    frag = monad_event_iterator_at(iter, next_fragment - 1);
+    do {
+        most_recent_seqno =
+            atomic_load_explicit(&frag->header.seqno, memory_order_acquire);
+    }
+    while (most_recent_seqno + 1 != next_seqno);
+    iter->last_seqno = most_recent_seqno - 1;
+    iter->next_fragment = next_fragment - frag->header.frag_count;
+    return iter->last_seqno;
 }

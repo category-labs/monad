@@ -76,8 +76,7 @@ struct monad_event_recorder;
 /// called prior to the recorder being enabled, otherwise it will have no
 /// effect and will return EBUSY
 int monad_event_recorder_configure(
-    enum monad_event_ring_type ring_type, uint8_t ring_shift,
-    size_t payload_page_size, uint16_t payload_page_count);
+    enum monad_event_ring_type ring_type, uint8_t ring_shift);
 
 /// Start or stop the recorder for the given event ring type; disabling a
 /// recorder will allow monad_event_recorder_configure to be called again
@@ -104,7 +103,7 @@ static void monad_event_record(
 /// via the `MONAD_EVENT_IOV` or `MONAD_TRACE_IOV` macros
 static void monad_event_recordv(
     struct monad_event_recorder *recorder, enum monad_event_type event_type,
-    uint8_t flags, struct iovec const *iov, size_t iovlen);
+    uint8_t flags, struct iovec *iov, size_t iovlen);
 
 /// Allocate a new block flow object in the execution recorder
 static struct monad_event_block_exec_header *
@@ -124,13 +123,12 @@ monad_event_recorder_end_block(struct monad_event_block_exec_result const *);
 /// implement the MONAD_EVENT_MSG_METADATA_OFFSET protocol message in the
 /// server)
 int monad_event_recorder_export_metadata_section(
-    enum monad_event_metadata_type, uint16_t *page_id, uint32_t *offset);
+    enum monad_event_metadata_type, uint32_t *offset);
 
 /// Initialize an event reader that runs in the same process as the recorder;
 /// external processes use a special library, see libs/event/event.md
 int monad_event_init_local_iterator(
-    enum monad_event_ring_type, struct monad_event_iterator *,
-    size_t *payload_page_count);
+    enum monad_event_ring_type, struct monad_event_iterator *);
 
 /// __attribute__((constructor)) priority of the event recorders' constructor
 #define MONAD_EVENT_RECORDER_CTOR_PRIO 1000
@@ -142,13 +140,6 @@ int monad_event_init_local_iterator(
 #define MONAD_EVENT_DEFAULT_RING_SHIFT (20)
 #define MONAD_EVENT_MIN_RING_SHIFT (12)
 #define MONAD_EVENT_MAX_RING_SHIFT (40)
-
-#define MONAD_EVENT_DEFAULT_PAYLOAD_PAGE_SIZE (1UL << 24)
-#define MONAD_EVENT_MIN_PAYLOAD_PAGE_SIZE (1UL << 20)
-#define MONAD_EVENT_MAX_PAYLOAD_PAGE_SIZE (1UL << 32)
-
-#define MONAD_EVENT_DEFAULT_PAYLOAD_PAGE_COUNT (32)
-#define MONAD_EVENT_MIN_PAYLOAD_PAGE_COUNT (20)
 
 #define MONAD_EVENT_RECORDER_INTERNAL
 #include "event_recorder_inline.h"

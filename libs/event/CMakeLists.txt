@@ -12,6 +12,7 @@ add_library(monad_event_core STATIC
 
 target_include_directories(monad_event_core PUBLIC "src")
 target_compile_features(monad_event_core PUBLIC c_std_23)
+target_link_libraries(monad_event_core PUBLIC -latomic)
 
 # This library allows external clients to import shared memory rings into their
 # address space; it also links to the core library; it is meant to be shared with external clients, and should

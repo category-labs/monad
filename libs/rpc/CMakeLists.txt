@@ -16,5 +16,6 @@ add_library(
 target_include_directories(monad_rpc PUBLIC ${PROJECT_SOURCE_DIR}/src)
 
 monad_compile_options(monad_rpc)
-
 target_link_libraries(monad_rpc PRIVATE monad_execution)
+
+monad_add_test_folder("src/monad/rpc")

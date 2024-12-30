@@ -162,9 +162,9 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
             call_frames,
             block.transactions,
             block.ommers,
-            block.withdrawals,
-            block.header.number);
+            block.withdrawals);
         db.finalize(block.header.number, block.header.number);
+        db.set_block_and_round(block.header.number);
 
         if (!chain.validate_root(
                 rev,

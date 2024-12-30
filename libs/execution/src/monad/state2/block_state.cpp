@@ -196,8 +196,7 @@ void BlockState::commit(
     std::vector<std::vector<CallFrame>> const &call_frames,
     std::vector<Transaction> const &transactions,
     std::vector<BlockHeader> const &ommers,
-    std::optional<std::vector<Withdrawal>> const &withdrawals,
-    std::optional<uint64_t> round_number)
+    std::optional<std::vector<Withdrawal>> const &withdrawals)
 {
     db_.commit(
         state_,
@@ -207,8 +206,7 @@ void BlockState::commit(
         call_frames,
         transactions,
         ommers,
-        withdrawals,
-        round_number);
+        withdrawals);
 }
 
 void BlockState::log_debug()

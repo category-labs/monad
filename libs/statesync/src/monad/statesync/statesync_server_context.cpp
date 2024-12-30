@@ -132,8 +132,7 @@ void monad_statesync_server_context::commit(
     std::vector<std::vector<CallFrame>> const &call_frames,
     std::vector<Transaction> const &transactions,
     std::vector<BlockHeader> const &ommers,
-    std::optional<std::vector<Withdrawal>> const &withdrawals,
-    std::optional<uint64_t> const round_number)
+    std::optional<std::vector<Withdrawal>> const &withdrawals)
 {
     on_commit(*this, state_deltas, header.number);
     rw.commit(
@@ -144,6 +143,5 @@ void monad_statesync_server_context::commit(
         call_frames,
         transactions,
         ommers,
-        withdrawals,
-        round_number);
+        withdrawals);
 }

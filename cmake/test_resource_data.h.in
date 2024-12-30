@@ -86,9 +86,24 @@ inline auto const H_CODE_HASH = to_bytes(keccak256(H_CODE));
 inline auto const H_CODE_ANALYSIS =
     std::make_shared<CodeAnalysis>(analyze(H_CODE));
 
-inline void load_db(TrieDb &db, uint64_t const n)
+inline void commit_sequential(
+    Db &db, StateDeltas const &deltas, Code const &code, BlockHeader const &hdr,
+    std::vector<Receipt> const &receipts = {},
+    std::vector<std::vector<CallFrame>> const &call_frames = {},
+    std::vector<Transaction> const &txns = {},
+    std::vector<BlockHeader> const &ommers = {},
+    std::optional<std::vector<Withdrawal>> const &withdrawals = std::nullopt)
 {
     db.commit(
+        deltas, code, hdr, receipts, call_frames, txns, ommers, withdrawals);
+    db.finalize(hdr.number, hdr.number);
+    db.set_block_and_round(hdr.number);
+}
+
+inline void load_db(TrieDb &db, uint64_t const n)
+{
+    commit_sequential(
+        db,
         StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -151,7 +166,7 @@ inline void load_db(TrieDb &db, uint64_t const n)
             {D_CODE_HASH, D_CODE_ANALYSIS},
             {E_CODE_HASH, E_CODE_ANALYSIS},
             {H_CODE_HASH, H_CODE_ANALYSIS}},
-        BlockHeader{.number = n}); // commit to block n, finalized
+        BlockHeader{.number = n});
 }
 
 MONAD_TEST_NAMESPACE_END

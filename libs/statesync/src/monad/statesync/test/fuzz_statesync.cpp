@@ -282,7 +282,10 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
     State state{};
 
     BlockHeader hdr{.parent_hash = NULL_HASH, .number = 0};
+    // TODO: commit different rounds per blocks and finalize
     sctx.commit(StateDeltas{}, Code{}, hdr);
+    sctx.finalize(0, 0);
+    sctx.set_block_and_round(0);
     while (raw.size() >= sizeof(uint64_t)) {
         StateDeltas deltas;
         uint64_t const n = unaligned_load<uint64_t>(raw.data());
@@ -314,6 +317,8 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
         hdr.parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr)));
         hdr.number = stdb.get_block_number() + 1;
         sctx.commit(deltas, {}, hdr);
+        sctx.finalize(hdr.number, hdr.number);
+        sctx.set_block_and_round(hdr.number, hdr.number);
         BlockHeader tgrt{hdr};
         tgrt.state_root = sctx.state_root();
         auto const rlp = rlp::encode_block_header(tgrt);

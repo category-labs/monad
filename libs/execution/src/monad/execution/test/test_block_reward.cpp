@@ -7,6 +7,7 @@
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/state3/state.hpp>
+#include <test_resource_data.h>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -18,6 +19,7 @@
 #include <optional>
 
 using namespace monad;
+using namespace monad::test;
 
 using db_t = TrieDb;
 
@@ -32,7 +34,8 @@ TEST(BlockReward, apply_block_reward)
         InMemoryMachine machine;
         mpt::Db db{machine};
         db_t tdb{db};
-        tdb.commit(
+        commit_sequential(
+            tdb,
             StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
             Code{},
             BlockHeader{});

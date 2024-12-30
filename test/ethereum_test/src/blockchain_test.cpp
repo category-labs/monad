@@ -85,6 +85,8 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
         block.transactions,
         block.ommers,
         block.withdrawals);
+    db.finalize(block.header.number, block.header.number);
+    db.set_block_and_round(block.header.number);
     return receipts;
 }
 
@@ -190,6 +192,8 @@ void BlockchainTest::TestBody()
             load_state_from_json(j_contents.at("pre"), state);
             bs.merge(state);
             bs.commit({}, {}, {}, {}, {}, std::nullopt);
+            tdb.finalize(0, 0);
+            tdb.set_block_and_round(0);
         }
 
         BlockHashBufferFinalized block_hash_buffer;

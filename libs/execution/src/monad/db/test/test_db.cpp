@@ -155,14 +155,16 @@ TEST(DBTest, read_only)
         TrieDb rw(db);
 
         Account const acct1{.nonce = 1};
-        rw.commit(
+        commit_sequential(
+            rw,
             StateDeltas{
                 {ADDR_A,
                  StateDelta{.account = {std::nullopt, acct1}, .storage = {}}}},
             Code{},
             BlockHeader{.number = 0});
         Account const acct2{.nonce = 2};
-        rw.commit(
+        commit_sequential(
+            rw,
             StateDeltas{
                 {ADDR_A, StateDelta{.account = {acct1, acct2}, .storage = {}}}},
             Code{},
@@ -176,7 +178,8 @@ TEST(DBTest, read_only)
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 1});
 
         Account const acct3{.nonce = 3};
-        rw.commit(
+        commit_sequential(
+            rw,
             StateDeltas{
                 {ADDR_A, StateDelta{.account = {acct2, acct3}, .storage = {}}}},
             Code{},
@@ -200,7 +203,8 @@ TYPED_TEST(DBTest, read_storage)
 {
     Account acct{.nonce = 1};
     TrieDb tdb{this->db};
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -236,7 +240,8 @@ TYPED_TEST(DBTest, read_code)
 {
     Account acct_a{.balance = 1, .code_hash = A_CODE_HASH, .nonce = 1};
     TrieDb tdb{this->db};
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{{ADDR_A, StateDelta{.account = {std::nullopt, acct_a}}}},
         Code{{A_CODE_HASH, A_CODE_ANALYSIS}},
         BlockHeader{});
@@ -244,7 +249,8 @@ TYPED_TEST(DBTest, read_code)
     EXPECT_EQ(tdb.read_code(A_CODE_HASH)->executable_code, A_CODE);
 
     Account acct_b{.balance = 0, .code_hash = B_CODE_HASH, .nonce = 1};
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{{ADDR_B, StateDelta{.account = {std::nullopt, acct_b}}}},
         Code{{B_CODE_HASH, B_CODE_ANALYSIS}},
         BlockHeader{});
@@ -256,7 +262,8 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
 {
     Account acct{.balance = 1'000'000, .code_hash = {}, .nonce = 1337};
     TrieDb tdb{this->db};
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -268,7 +275,8 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
         BlockHeader{});
 
     acct = tdb.read_account(ADDR_A).value();
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -285,7 +293,8 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
 TYPED_TEST(DBTest, touch_without_modify_regression)
 {
     TrieDb tdb{this->db};
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A, StateDelta{.account = {std::nullopt, std::nullopt}}}},
         Code{},
@@ -299,7 +308,8 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
 {
     Account acct{.balance = 1'000'000, .code_hash = {}, .nonce = 1337};
     TrieDb tdb{this->db};
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -310,7 +320,8 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
         Code{},
         BlockHeader{});
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -330,7 +341,8 @@ TYPED_TEST(DBTest, storage_deletion)
     Account acct{.balance = 1'000'000, .code_hash = {}, .nonce = 1337};
 
     TrieDb tdb{this->db};
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -342,7 +354,8 @@ TYPED_TEST(DBTest, storage_deletion)
         BlockHeader{});
 
     acct = tdb.read_account(ADDR_A).value();
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -363,7 +376,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
 
     TrieDb tdb{this->db};
     // empty receipts
-    tdb.commit(StateDeltas{}, Code{}, BlockHeader{});
+    commit_sequential(tdb, StateDeltas{}, Code{}, BlockHeader{});
     EXPECT_EQ(tdb.receipts_root(), NULL_ROOT);
 
     std::vector<Receipt> receipts;
@@ -423,7 +436,8 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     std::vector<std::vector<CallFrame>> call_frames;
     call_frames.resize(receipts.size());
     constexpr uint64_t first_block = 0;
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{},
         Code{},
         BlockHeader{.number = first_block},
@@ -470,7 +484,8 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         keccak256(rlp::encode_transaction(transactions.emplace_back(t2))));
     ASSERT_EQ(receipts.size(), transactions.size());
     call_frames.resize(receipts.size());
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{},
         Code{},
         BlockHeader{.number = second_block},
@@ -655,7 +670,8 @@ TYPED_TEST(DBTest, commit_call_frames)
     std::vector<Receipt> receipts(call_frames.size());
     std::vector<Transaction> transactions(call_frames.size());
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{},
         Code{},
         BlockHeader{},
@@ -682,7 +698,8 @@ TYPED_TEST(DBTest, call_frames_stress_test)
     auto const to = 0xbbbf5374fce5edbc8e2a8697c15331677e6ebf0b_address;
     auto const ca = 0xaaaf5374fce5edbc8e2a8697c15331677e6ebf0b_address;
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {from,
              StateDelta{
@@ -744,6 +761,8 @@ TYPED_TEST(DBTest, call_frames_stress_test)
         block.value().transactions,
         {},
         {});
+    tdb.finalize(1, 1);
+    tdb.set_block_and_round(1);
 
     auto const actual_call_frames =
         read_call_frame(this->db, tdb.get_block_number(), 0);
@@ -766,7 +785,8 @@ TYPED_TEST(DBTest, call_frames_refund)
     auto const to = 0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba_address;
     auto const ca = 0x095e7baea6a6c7c4c2dfeb977efac326af552d87_address;
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {from,
              StateDelta{
@@ -838,6 +858,8 @@ TYPED_TEST(DBTest, call_frames_refund)
         block.value().transactions,
         {},
         std::nullopt);
+    tdb.finalize(1, 1);
+    tdb.set_block_and_round(1);
 
     auto const actual_call_frames =
         read_call_frame(this->db, tdb.get_block_number(), 0);

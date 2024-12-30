@@ -95,7 +95,8 @@ TEST(CallTrace, execute_success)
     mpt::Db db{machine};
     TrieDb tdb{db};
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -161,7 +162,8 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
     mpt::Db db{machine};
     TrieDb tdb{db};
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A,
              StateDelta{

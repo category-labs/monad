@@ -154,25 +154,16 @@ void TrieDb::commit(
     std::vector<std::vector<CallFrame>> const &call_frames,
     std::vector<Transaction> const &transactions,
     std::vector<BlockHeader> const &ommers,
-    std::optional<std::vector<Withdrawal>> const &withdrawals,
-    std::optional<uint64_t> const round_number)
+    std::optional<std::vector<Withdrawal>> const &withdrawals)
 {
     MONAD_ASSERT(header.number <= std::numeric_limits<int64_t>::max());
 
-    if (db_.is_on_disk() &&
-        (round_number != round_number_ || header.number != block_number_)) {
-        // only copy_trie if round number or block number has changed for
-        // commit, and db is not empty
-        auto const dest_prefix = round_number.has_value()
-                                     ? proposal_prefix(round_number.value())
-                                     : finalized_nibbles;
-        if (db_.get_latest_block_id() != INVALID_BLOCK_ID) {
-            db_.copy_trie(
-                block_number_, prefix_, header.number, dest_prefix, false);
-        }
-        round_number_ = round_number;
-        block_number_ = header.number;
-        prefix_ = dest_prefix;
+    auto const dest_prefix = proposal_prefix(header.number); // TODO
+    bool const dest_exists = db_.find(dest_prefix, header.number).has_value();
+    bool const src_exists = db_.find(prefix_, block_number_).has_value();
+    if (!dest_exists && src_exists) {
+        db_.copy_trie(
+            block_number_, prefix_, header.number, dest_prefix, false);
     }
 
     UpdateList account_updates;
@@ -195,7 +186,7 @@ void TrieDb::commit(
                                                        key, delta.second))),
                             .incarnation = false,
                             .next = UpdateList{},
-                            .version = static_cast<int64_t>(block_number_)}));
+                            .version = static_cast<int64_t>(header.number)}));
                 }
             }
             value = bytes_alloc_.emplace_back(
@@ -212,7 +203,7 @@ void TrieDb::commit(
                 .value = value,
                 .incarnation = incarnation,
                 .next = std::move(storage_updates),
-                .version = static_cast<int64_t>(block_number_)}));
+                .version = static_cast<int64_t>(header.number)}));
         }
     }
 
@@ -225,7 +216,7 @@ void TrieDb::commit(
             .value = code_analysis->executable_code,
             .incarnation = false,
             .next = UpdateList{},
-            .version = static_cast<int64_t>(block_number_)}));
+            .version = static_cast<int64_t>(header.number)}));
     }
 
     UpdateList receipt_updates;
@@ -249,7 +240,7 @@ void TrieDb::commit(
                 bytes_alloc_.emplace_back(rlp::encode_receipt(receipts[i])),
             .incarnation = false,
             .next = UpdateList{},
-            .version = static_cast<int64_t>(block_number_)}));
+            .version = static_cast<int64_t>(header.number)}));
 
         auto const &encoded_tx =
             bytes_alloc_.emplace_back(rlp::encode_transaction(transactions[i]));
@@ -258,7 +249,7 @@ void TrieDb::commit(
             .value = encoded_tx,
             .incarnation = false,
             .next = UpdateList{},
-            .version = static_cast<int64_t>(block_number_)}));
+            .version = static_cast<int64_t>(header.number)}));
 
         tx_hash_updates.push_front(update_alloc_.emplace_back(Update{
             .key = NibblesView{hash_alloc_.emplace_back(keccak256(encoded_tx))},
@@ -266,7 +257,7 @@ void TrieDb::commit(
                 rlp::encode_list2(encoded_block_number, rlp_index)),
             .incarnation = false,
             .next = UpdateList{},
-            .version = static_cast<int64_t>(block_number_)}));
+            .version = static_cast<int64_t>(header.number)}));
 
         std::span<CallFrame const> frames{call_frames[i]};
         // TODO: a better way to ensure node size is <= 256 MB
@@ -278,7 +269,7 @@ void TrieDb::commit(
             .value = bytes_alloc_.emplace_back(rlp::encode_call_frames(frames)),
             .incarnation = false,
             .next = UpdateList{},
-            .version = static_cast<int64_t>(block_number_)}));
+            .version = static_cast<int64_t>(header.number)}));
     }
 
     auto const &rlp_block_header =
@@ -290,7 +281,7 @@ void TrieDb::commit(
         .value = encoded_block_number,
         .incarnation = false,
         .next = UpdateList{},
-        .version = static_cast<int64_t>(block_number_)}));
+        .version = static_cast<int64_t>(header.number)}));
 
     UpdateList updates;
 
@@ -299,55 +290,55 @@ void TrieDb::commit(
         .value = byte_string_view{},
         .incarnation = false,
         .next = std::move(account_updates),
-        .version = static_cast<int64_t>(block_number_)};
+        .version = static_cast<int64_t>(header.number)};
     auto code_update = Update{
         .key = code_nibbles,
         .value = byte_string_view{},
         .incarnation = false,
         .next = std::move(code_updates),
-        .version = static_cast<int64_t>(block_number_)};
+        .version = static_cast<int64_t>(header.number)};
     auto receipt_update = Update{
         .key = receipt_nibbles,
         .value = byte_string_view{},
         .incarnation = true,
         .next = std::move(receipt_updates),
-        .version = static_cast<int64_t>(block_number_)};
+        .version = static_cast<int64_t>(header.number)};
     auto call_frame_update = Update{
         .key = call_frame_nibbles,
         .value = byte_string_view{},
         .incarnation = true,
         .next = std::move(call_frame_updates),
-        .version = static_cast<int64_t>(block_number_)};
+        .version = static_cast<int64_t>(header.number)};
     auto transaction_update = Update{
         .key = transaction_nibbles,
         .value = byte_string_view{},
         .incarnation = true,
         .next = std::move(transaction_updates),
-        .version = static_cast<int64_t>(block_number_)};
+        .version = static_cast<int64_t>(header.number)};
     auto block_header_update = Update{
         .key = block_header_nibbles,
         .value = rlp_block_header,
         .incarnation = true,
         .next = UpdateList{},
-        .version = static_cast<int64_t>(block_number_)};
+        .version = static_cast<int64_t>(header.number)};
     auto ommer_update = Update{
         .key = ommer_nibbles,
         .value = bytes_alloc_.emplace_back(rlp::encode_ommers(ommers)),
         .incarnation = true,
         .next = UpdateList{},
-        .version = static_cast<int64_t>(block_number_)};
+        .version = static_cast<int64_t>(header.number)};
     auto tx_hash_update = Update{
         .key = tx_hash_nibbles,
         .value = byte_string_view{},
         .incarnation = false,
         .next = std::move(tx_hash_updates),
-        .version = static_cast<int64_t>(block_number_)};
+        .version = static_cast<int64_t>(header.number)};
     auto block_hash_update = Update{
         .key = block_hash_nibbles,
         .value = byte_string_view{},
         .incarnation = false,
         .next = std::move(block_hash_nested_updates),
-        .version = static_cast<int64_t>(block_number_)};
+        .version = static_cast<int64_t>(header.number)};
     updates.push_front(state_update);
     updates.push_front(code_update);
     updates.push_front(receipt_update);
@@ -370,34 +361,32 @@ void TrieDb::commit(
                     rlp::encode_withdrawal(withdrawals.value()[i])),
                 .incarnation = false,
                 .next = UpdateList{},
-                .version = static_cast<int64_t>(block_number_)}));
+                .version = static_cast<int64_t>(header.number)}));
         }
         updates.push_front(update_alloc_.emplace_back(Update{
             .key = withdrawal_nibbles,
             .value = byte_string_view{},
             .incarnation = true,
             .next = std::move(withdrawal_updates),
-            .version = static_cast<int64_t>(block_number_)}));
+            .version = static_cast<int64_t>(header.number)}));
     }
 
     UpdateList ls;
     ls.push_front(update_alloc_.emplace_back(Update{
-        .key = prefix_,
+        .key = dest_prefix,
         .value = byte_string_view{},
         .incarnation = false,
         .next = std::move(updates),
-        .version = static_cast<int64_t>(block_number_)}));
+        .version = static_cast<int64_t>(header.number)}));
 
-    db_.upsert(std::move(ls), block_number_);
-    if (!round_number_.has_value()) {
-        db_.update_finalized_block(block_number_);
-    }
+    db_.upsert(std::move(ls), header.number);
 
     update_alloc_.clear();
     bytes_alloc_.clear();
     hash_alloc_.clear();
 }
 
+// TODO: fix to let in memory read from other round
 void TrieDb::set_block_and_round(
     uint64_t const block_number, std::optional<uint64_t> const round_number)
 {
@@ -414,20 +403,16 @@ void TrieDb::set_block_and_round(
     round_number_ = round_number;
 }
 
-void TrieDb::finalize(uint64_t const block_number, uint64_t const round_number)
+void TrieDb::finalize(uint64_t block_number, uint64_t const round_number)
 {
-    // no re-finalization
-    if (db_.is_on_disk()) {
-        auto const latest_finalized = db_.get_latest_finalized_block_id();
-        MONAD_ASSERT(
-            latest_finalized == INVALID_BLOCK_ID ||
-            block_number == latest_finalized + 1);
-        auto const src_prefix = proposal_prefix(round_number);
-        MONAD_ASSERT(db_.find(src_prefix, block_number).has_value());
-        db_.copy_trie(
-            block_number, src_prefix, block_number, finalized_nibbles, true);
-        db_.update_finalized_block(block_number);
+    if (!db_.is_on_disk()) {
+        block_number = 0;
     }
+    auto const src_prefix = proposal_prefix(round_number);
+    MONAD_ASSERT(db_.find(src_prefix, block_number).has_value());
+    db_.copy_trie(
+        block_number, src_prefix, block_number, finalized_nibbles, true);
+    db_.update_finalized_block(block_number);
 }
 
 void TrieDb::update_verified_block(uint64_t const block_number)

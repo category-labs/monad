@@ -649,9 +649,10 @@ void load_from_binary(
             "Unable to load snapshot to an existing db, truncate the "
             "existing db to empty and try again");
     }
-    BinaryDbLoader loader{
-        db, buf_size, db.is_on_disk() ? init_block_number : 0};
+    auto const block_number = db.is_on_disk() ? init_block_number : 0;
+    BinaryDbLoader loader{db, buf_size, block_number};
     loader.load(accounts, code);
+    db.update_finalized_block(block_number);
 }
 
 MONAD_NAMESPACE_END

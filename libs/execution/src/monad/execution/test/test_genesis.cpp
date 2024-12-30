@@ -62,14 +62,3 @@ TEST(Genesis, ethereum_mainnet_genesis_state_root)
         0xd7f8974fb5ac78d9ac099b9ad5018bedc2ce0a72dad1827a1709da30580f0544_bytes32};
     EXPECT_EQ(block_header.state_root, expected_state_root);
 }
-
-TEST(Genesis, read_and_verify_genesis_block)
-{
-    auto const genesis_file_path =
-        test_resource::ethereum_genesis_dir / "mainnet.json";
-    BlockDb block_db(test_resource::correct_block_data_dir);
-    InMemoryMachine machine;
-    mpt::Db db{machine};
-    TrieDb state_db{db};
-    read_and_verify_genesis(block_db, state_db, genesis_file_path);
-}

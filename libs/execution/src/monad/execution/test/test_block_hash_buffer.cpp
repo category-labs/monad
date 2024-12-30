@@ -7,10 +7,12 @@
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
+#include <test_resource_data.h>
 
 #include <gtest/gtest.h>
 
 using namespace monad;
+using namespace monad::test;
 
 TEST(BlockHashBuffer, simple_chain)
 {
@@ -170,7 +172,7 @@ TEST(BlockHashBufferTest, init_from_db)
     BlockHashBufferFinalized expected;
     for (uint64_t i = 0; i < 256; ++i) {
         BlockHeader hdr{.number = i};
-        tdb.commit({}, {}, hdr, {}, {}, {}, {}, std::nullopt);
+        commit_sequential(tdb, {}, {}, hdr);
         expected.set(i, to_bytes(keccak256(rlp::encode_block_header(hdr))));
     }
 

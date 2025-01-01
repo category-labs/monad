@@ -230,7 +230,7 @@ static void print_event(
         fprintf(
             out,
             "ERROR: event %lu lost during copy-out\n",
-            iter->last_seqno + 1);
+            iter->read_last_seqno + 1);
         return;
     }
 
@@ -277,7 +277,7 @@ event_loop(struct monad_event_imported_ring const *import, FILE *out)
             fprintf(
                 out,
                 "event gap from %lu -> %lu, resetting\n",
-                iter.last_seqno,
+                iter.read_last_seqno,
                 atomic_load_explicit(&event->seqno, memory_order_relaxed));
             monad_event_iterator_reset(&iter);
             continue;

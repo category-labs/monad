@@ -818,7 +818,7 @@ int monad_event_imported_ring_init_iter(
     iter->desc_table = import->ring.descriptor_table;
     iter->payload_pages = import->payload_pages;
     iter->capacity_mask = import->ring.capacity_mask;
-    iter->prod_next = &import->ring.control->prod_next;
+    iter->write_last_seqno = &import->ring.control->last_seqno;
     (void)monad_event_iterator_reset(iter);
     return 0;
 }

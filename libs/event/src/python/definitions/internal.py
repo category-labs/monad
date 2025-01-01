@@ -53,8 +53,14 @@ register_event('THR_PAGE_SWITCH', None,
     "Event recorder recycled a page from the page pool free list")
 
 #
-# TEST_COUNT_64
+# TEST_COUNTER
 #
 
-register_event('TEST_COUNT_64', ctypes.c_uint64,
+class test_counter(ctypes.Structure):
+  _fields_ = (
+    ('writer_id', ctypes.c_uint8),
+    ('counter', ctypes.c_uint64),
+  )
+
+register_event('TEST_COUNTER', test_counter,
     "A special event emitted only by the test suite")

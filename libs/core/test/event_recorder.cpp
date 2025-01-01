@@ -7,51 +7,116 @@
 #include <latch>
 #include <span>
 #include <thread>
+#include <tuple>
+#include <vector>
+
+#include <pthread.h>
+#include <sched.h>
+#include <unistd.h>
 
 #include <gtest/gtest.h>
 #include <monad/core/likely.h>
 #include <monad/event/event.h>
 #include <monad/event/event_iterator.h>
 #include <monad/event/event_recorder.h>
+#include <monad/event/event_types.h>
 
-constexpr uint64_t MaxPerfIterations = 1UL << 20;
+constexpr uint64_t MaxPerfIterations = 1UL << 24;
 
-static void perf_consumer_main(std::latch *latch, uint64_t expected_len)
+// Running the tests with the reader disabled is a good measure of how
+// expensive the multi-threaded lock-free recording in the writer is, without
+// any potential synchronization effects of a reader.
+constexpr bool ENABLE_READER = true;
+constexpr bool DISPLAY_HISTOGRAMS = false;
+
+static bool alloc_cpu(cpu_set_t *avail_cpus, cpu_set_t *out)
+{
+    int const n_cpus = CPU_COUNT(avail_cpus);
+    CPU_ZERO(out);
+    for (int c = 0; c < n_cpus; ++c) {
+        if (CPU_ISSET(c, avail_cpus)) {
+            CPU_CLR(c, avail_cpus);
+            CPU_SET(c, out);
+            return true;
+        }
+    }
+    return false;
+}
+
+static void writer_main(
+    std::latch *latch, uint8_t writer_id, uint8_t writer_thread_count,
+    uint32_t payload_size)
+{
+    using std::chrono::duration_cast, std::chrono::nanoseconds;
+    std::byte payload_buf[1 << 14]{};
+
+    uint64_t const writer_iterations = MaxPerfIterations / writer_thread_count;
+    auto *const test_counter =
+        std::bit_cast<monad_event_test_counter *>(&payload_buf[0]);
+    test_counter->writer_id = writer_id;
+    latch->arrive_and_wait();
+    sleep(1);
+    auto const start_time = std::chrono::system_clock::now();
+    for (uint64_t counter = 0; counter < writer_iterations; ++counter) {
+        test_counter->counter = counter;
+        MONAD_EVENT_MEMCPY(
+            MONAD_EVENT_TEST_COUNTER, 0, payload_buf, payload_size);
+    }
+    auto const end_time = std::chrono::system_clock::now();
+    auto const elapsed_nanos = static_cast<uint64_t>(
+        duration_cast<nanoseconds>(end_time - start_time).count());
+    std::fprintf(
+        stdout,
+        "writer %hhu recording speed: %lu ns/evt of payload size %u "
+        "[%lu iterations in %ld]\n",
+        writer_id,
+        elapsed_nanos / writer_iterations,
+        payload_size,
+        writer_iterations,
+        elapsed_nanos);
+}
+
+static void reader_main(
+    std::latch *latch, uint8_t writer_thread_count, uint32_t expected_len)
 {
     constexpr size_t EventDelayHistogramSize = 30;
     constexpr size_t EventsAvailableHistogramSize = 20;
     constexpr unsigned HistogramShift = 10;
     constexpr uint64_t HistogramSampleMask = (1UL << HistogramShift) - 1;
 
-    monad_event_iterator iterator{};
+    uint64_t const max_writer_iteration =
+        MaxPerfIterations / writer_thread_count;
+    monad_event_iterator iter{};
+    std::vector<uint64_t> expected_counters;
+    expected_counters.resize(writer_thread_count, 0);
     ASSERT_EQ(
         0,
-        monad_event_init_local_iterator(
-            MONAD_EVENT_RING_EXEC, &iterator, nullptr));
-    uint64_t expected_counter = 0;
+        monad_event_init_local_iterator(MONAD_EVENT_RING_EXEC, &iter, nullptr));
     uint64_t delay_histogram[EventDelayHistogramSize] = {};
     uint64_t available_histogram[EventsAvailableHistogramSize] = {};
 
     latch->arrive_and_wait();
-    while (iterator.prod_next->load(std::memory_order_acquire) == 0)
+    while (iter.write_last_seqno->load(std::memory_order_acquire) == 0)
         /* wait for something to be produced */;
-    monad_event_iterator_reset(&iterator);
+    monad_event_iterator_reset(&iter);
     // Regardless of where the most recent event is, start from zero
-    uint64_t last_seqno = iterator.last_seqno = 0;
-    while (last_seqno < MaxPerfIterations) {
+    uint64_t last_seqno = iter.read_last_seqno = 0;
+    while (last_seqno < max_writer_iteration) {
         monad_event_descriptor const *event;
         monad_event_poll_result const pr =
-            monad_event_iterator_peek(&iterator, &event);
+            monad_event_iterator_peek(&iter, &event);
         if (MONAD_UNLIKELY(pr == MONAD_EVENT_NOT_READY)) {
             continue;
         }
         ASSERT_EQ(MONAD_EVENT_READY, pr);
-        ASSERT_TRUE(monad_event_iterator_advance(&iterator));
+        uint64_t const event_seqno =
+            event->seqno.load(std::memory_order::relaxed);
+        ASSERT_TRUE(monad_event_iterator_advance(&iter));
 
         // Available histogram
-        if (MONAD_UNLIKELY((last_seqno & HistogramSampleMask) == 0)) {
+        if (MONAD_UNLIKELY((last_seqno + 1) & HistogramSampleMask) == 0) {
             uint64_t const available_events =
-                iterator.prod_next->load(std::memory_order::acquire) -
+                iter.write_last_seqno->load(std::memory_order::acquire) -
                 event->seqno;
             unsigned avail_bucket =
                 static_cast<unsigned>(std::bit_width(available_events));
@@ -71,37 +136,45 @@ static void perf_consumer_main(std::latch *latch, uint64_t expected_len)
             ++delay_histogram[delay_bucket];
         }
         EXPECT_EQ(last_seqno + 1, event->seqno);
-        last_seqno = event->seqno;
+        last_seqno = event_seqno;
 
         std::atomic<uint64_t> const *overwrite_seqno;
-        if (MONAD_UNLIKELY(event->type != MONAD_EVENT_TEST_COUNT_64)) {
+        if (MONAD_UNLIKELY(event->type != MONAD_EVENT_TEST_COUNTER)) {
             continue;
         }
-        uint64_t const counter_value = *static_cast<uint64_t const *>(
-            monad_event_payload_peek(&iterator, event, &overwrite_seqno));
+        ASSERT_EQ(event->length, expected_len);
+        auto const test_counter =
+            *static_cast<monad_event_test_counter const *>(
+                monad_event_payload_peek(&iter, event, &overwrite_seqno));
         ASSERT_GE(
             event->seqno, overwrite_seqno->load(std::memory_order::acquire));
-        EXPECT_EQ(expected_counter++, counter_value);
-        expected_counter = counter_value + 1;
-        ASSERT_EQ(event->length, expected_len);
+        ASSERT_GT(writer_thread_count, test_counter.writer_id);
+        EXPECT_EQ(
+            expected_counters[test_counter.writer_id], test_counter.counter);
+        expected_counters[test_counter.writer_id] = test_counter.counter + 1;
     }
 
-    fprintf(stdout, "backpressure histogram:\n");
-    for (size_t b = 0;
-         uint64_t const v : std::span{available_histogram}.subspan(1)) {
-        fprintf(stdout, "%7lu - %7lu %lu\n", 1UL << b, (1UL << (b + 1)) - 1, v);
-        ++b;
-    }
+    if constexpr (DISPLAY_HISTOGRAMS) {
+        fprintf(stdout, "backpressure histogram:\n");
+        for (size_t b = 0;
+             uint64_t const v : std::span{available_histogram}.subspan(1)) {
+            fprintf(
+                stdout, "%7lu - %7lu %lu\n", 1UL << b, (1UL << (b + 1)) - 1, v);
+            ++b;
+        }
 
-    fprintf(stdout, "delay histogram:\n");
-    for (size_t b = 0;
-         uint64_t const v : std::span{delay_histogram}.subspan(1)) {
-        fprintf(stdout, "%7lu - %7lu %lu\n", 1UL << b, (1UL << (b + 1)) - 1, v);
-        ++b;
+        fprintf(stdout, "delay histogram:\n");
+        for (size_t b = 0;
+             uint64_t const v : std::span{delay_histogram}.subspan(1)) {
+            fprintf(
+                stdout, "%7lu - %7lu %lu\n", 1UL << b, (1UL << (b + 1)) - 1, v);
+            ++b;
+        }
     }
 }
 
-class EventRecorderBulkTest : public testing::TestWithParam<uint32_t>
+class EventRecorderBulkTest
+    : public testing::TestWithParam<std::tuple<uint8_t, uint32_t>>
 {
     void SetUp() override
     {
@@ -116,37 +189,53 @@ class EventRecorderBulkTest : public testing::TestWithParam<uint32_t>
 
 TEST_P(EventRecorderBulkTest, )
 {
-    using std::chrono::duration_cast, std::chrono::nanoseconds;
-    std::byte payload_buf[1 << 14];
+    auto const [writer_thread_count, payload_size] = GetParam();
+    std::latch sync_latch{writer_thread_count + (ENABLE_READER ? 2 : 1)};
+    std::vector<std::thread> writer_threads;
+    cpu_set_t avail_cpus, thr_cpu;
 
-    std::latch sync_latch{2};
-    uint32_t const payload_len = GetParam();
-    uint64_t *const write = std::bit_cast<uint64_t *>(&payload_buf[0]);
+    ASSERT_EQ(
+        0,
+        pthread_getaffinity_np(pthread_self(), sizeof avail_cpus, &avail_cpus));
     monad_event_recorder_set_enabled(MONAD_EVENT_RING_EXEC, true);
-    std::thread consumer_thread{perf_consumer_main, &sync_latch, payload_len};
-    sync_latch.arrive_and_wait();
-    sleep(1);
-
-    auto const start_time = std::chrono::system_clock::now();
-    for (uint64_t counter = 0; counter < MaxPerfIterations; ++counter) {
-        *write = counter;
-        MONAD_EVENT_MEMCPY(
-            MONAD_EVENT_TEST_COUNT_64, 0, payload_buf, payload_len);
+    for (uint8_t t = 0; t < writer_thread_count; ++t) {
+        char name[16];
+        snprintf(name, sizeof name, "writer-%hhu", t);
+        ASSERT_TRUE(alloc_cpu(&avail_cpus, &thr_cpu));
+        auto &thread = writer_threads.emplace_back(
+            writer_main, &sync_latch, t, writer_thread_count, payload_size);
+        auto const thr = thread.native_handle();
+        pthread_setname_np(thr, name);
+        ASSERT_EQ(0, pthread_setaffinity_np(thr, sizeof thr_cpu, &thr_cpu));
     }
-    auto const end_time = std::chrono::system_clock::now();
-    auto const elapsed_nanos = static_cast<uint64_t>(
-        duration_cast<nanoseconds>(end_time - start_time).count());
-    std::fprintf(
-        stdout,
-        "recording speed: %lu ns/evt of payload size %u [%lu iterations in "
-        "%ld]\n",
-        elapsed_nanos / MaxPerfIterations,
-        payload_len,
-        MaxPerfIterations,
-        elapsed_nanos);
-    consumer_thread.join();
+    std::thread reader_thread;
+
+    if constexpr (ENABLE_READER) {
+        ASSERT_TRUE(alloc_cpu(&avail_cpus, &thr_cpu));
+        reader_thread = std::thread{
+            reader_main, &sync_latch, writer_thread_count, payload_size};
+        auto const thr = reader_thread.native_handle();
+        pthread_setname_np(thr, "reader");
+        ASSERT_EQ(0, pthread_setaffinity_np(thr, sizeof thr_cpu, &thr_cpu));
+    }
+    sync_latch.arrive_and_wait();
+    for (auto &thr : writer_threads) {
+        thr.join();
+    }
+    if (reader_thread.joinable()) {
+        reader_thread.join();
+    }
 }
 
+// Running the full test every time is too slow
+#if RUN_FULL_EVENT_RECORDER_TEST
 INSTANTIATE_TEST_SUITE_P(
     perf_test_bulk, EventRecorderBulkTest,
-    testing::Values(8, 64, 128, 256, 512, 1024, 8192));
+    testing::Combine(
+        testing::Values(1, 2, 4),
+        testing::Values(16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192)));
+#else
+INSTANTIATE_TEST_SUITE_P(
+    perf_test_bulk, EventRecorderBulkTest,
+    testing::Combine(testing::Values(4), testing::Values(128)));
+#endif

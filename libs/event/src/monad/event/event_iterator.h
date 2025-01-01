@@ -79,9 +79,9 @@ struct monad_event_iterator
 {
     struct monad_event_descriptor const *desc_table;
     struct monad_event_payload_page const **payload_pages;
-    uint64_t last_seqno;
+    uint64_t read_last_seqno;
     size_t capacity_mask;
-    _Atomic(uint64_t) *prod_next;
+    _Atomic(uint64_t) *write_last_seqno;
 };
 
 #define MONAD_EVENT_ITERATOR_INTERNAL

@@ -23,6 +23,7 @@
 #include <monad/event/event_protocol.h>
 #include <monad/event/event_recorder.h>
 #include <monad/event/event_shared.h>
+#include <monad/event/event_types.h>
 
 static thread_local char g_error_buf[1024];
 static size_t const PAGE_2MB = 1UL << 21; // x64 2MiB large page
@@ -84,7 +85,7 @@ static int mmap_payload_page(
 
 static int configure_payload_page_pool(
     struct monad_event_payload_page_pool *page_pool, uint8_t payload_page_shift,
-    uint16_t payload_page_count, _Atomic(uint64_t) const *prod_next)
+    uint16_t payload_page_count, _Atomic(uint64_t) const *last_seqno)
 {
     char name[20];
     int rc;
@@ -107,7 +108,7 @@ static int configure_payload_page_pool(
         TAILQ_INSERT_TAIL(&page_pool->free_pages, page, page_link);
         ++page_pool->free_page_count;
     }
-    page_pool->prod_next = prod_next;
+    page_pool->last_seqno = last_seqno;
 
     return 0;
 }
@@ -124,7 +125,7 @@ cleanup_payload_page_pool(struct monad_event_payload_page_pool *page_pool)
         (void)munmap(page, (size_t)(page->heap_end - page->page_base));
     }
     page_pool->active_page_count = page_pool->free_page_count = 0;
-    page_pool->prod_next = nullptr;
+    page_pool->last_seqno = nullptr;
     MONAD_SPINLOCK_UNLOCK(&page_pool->lock);
 }
 
@@ -165,7 +166,7 @@ activate_payload_page(struct monad_event_payload_page_pool *page_pool)
     // been expired for a while.
     atomic_store_explicit(
         &page->overwrite_seqno,
-        atomic_load_explicit(page_pool->prod_next, memory_order_acquire),
+        atomic_load_explicit(page_pool->last_seqno, memory_order_acquire),
         memory_order_release);
 
     page->heap_next = page->heap_begin;
@@ -475,7 +476,7 @@ static int configure_recorder_locked(
              page_pool,
              payload_page_shift,
              payload_page_count,
-             &recorder->event_ring.control->prod_next)) != 0) {
+             &recorder->event_ring.control->last_seqno)) != 0) {
         cleanup_event_ring(
             &recorder->event_ring,
             &recorder->control_fd,
@@ -682,7 +683,7 @@ void _monad_event_recorder_init_thread_cache(
     MONAD_SPINLOCK_UNLOCK(&rss->lock);
 
     // Announce the creation of this thread
-    event = _monad_event_alloc_ring_descriptor(
+    event = _monad_event_ring_reserve_descriptor(
         &g_monad_event_recorders[MONAD_EVENT_RING_EXEC].event_ring,
         &thread_info->seqno);
     event->type = MONAD_EVENT_THREAD_CREATE;
@@ -719,12 +720,12 @@ int monad_event_recorder_export_metadata_section(
 }
 
 int monad_event_init_local_iterator(
-    enum monad_event_ring_type ring_type, struct monad_event_iterator *iterator,
+    enum monad_event_ring_type ring_type, struct monad_event_iterator *iter,
     size_t *payload_page_count)
 {
     struct monad_event_recorder *recorder;
 
-    MONAD_ASSERT(iterator != nullptr);
+    MONAD_ASSERT(iter != nullptr);
     if (ring_type >= MONAD_EVENT_RING_COUNT) {
         return FORMAT_ERRC(EINVAL, "invalid ring type %hhu", ring_type);
     }
@@ -733,11 +734,11 @@ int monad_event_init_local_iterator(
         return FORMAT_ERRC(
             ENODEV, "event recorder %hhu not enabled", ring_type);
     }
-    iterator->desc_table = recorder->event_ring.descriptor_table;
-    iterator->payload_pages =
+    iter->desc_table = recorder->event_ring.descriptor_table;
+    iter->payload_pages =
         (struct monad_event_payload_page const **)recorder->all_pages;
-    iterator->capacity_mask = recorder->event_ring.capacity_mask;
-    iterator->prod_next = &recorder->event_ring.control->prod_next;
+    iter->capacity_mask = recorder->event_ring.capacity_mask;
+    iter->write_last_seqno = &recorder->event_ring.control->last_seqno;
     if (payload_page_count != nullptr) {
         *payload_page_count = recorder->all_pages_size;
     }

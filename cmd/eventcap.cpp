@@ -157,12 +157,13 @@ static void print_event(
     }
     else {
         // Zero-copy buffer changed underneath us; the payload is gone too.
-        // Note we use `last_seqno + 1` here, as even the relaxed `seqno` load
-        // above is potentially not right (it could show the overwrite value)
+        // Note we use `read_last_seqno + 1` here, as even the relaxed `seqno`
+        // load above is potentially not right (it could hold a now-overwritten
+        // value).
         std::fprintf(
             out,
             "ERROR: event %lu lost during copy-out\n",
-            iter->last_seqno + 1);
+            iter->read_last_seqno + 1);
         return;
     }
 
@@ -196,7 +197,7 @@ static void follow_thread_main(
             // TODO(ken): if we actually had more than one ring, would need
             //   to set this on the right one. In practice it's only used
             //   for debugging tasks starting from zero.
-            iters.back().last_seqno = *start_seqno;
+            iters.back().read_last_seqno = *start_seqno;
         }
     }
     while (g_should_exit == 0) {
@@ -215,7 +216,7 @@ static void follow_thread_main(
                 fprintf(
                     out,
                     "event gap from %lu -> %lu, resetting\n",
-                    iter.last_seqno,
+                    iter.read_last_seqno,
                     event->seqno.load(std::memory_order_relaxed));
                 monad_event_iterator_reset(&iter);
                 continue;

@@ -176,7 +176,7 @@ static bool export_recorder_ring(
     msg.ring_capacity = recorder->event_ring.capacity;
     msg.payload_page_pool_size = (uint16_t)recorder->all_pages_size;
     msg.cur_seqno = atomic_load_explicit(
-        &recorder->event_ring.control->prod_next, memory_order_acquire);
+        &recorder->event_ring.control->last_seqno, memory_order_acquire);
     *(int *)CMSG_DATA(&cmsg.hdr) = recorder->control_fd;
 
     if (sendmsg(sock_fd, &mhdr, 0) == -1) {

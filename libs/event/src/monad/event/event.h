@@ -71,7 +71,7 @@ struct monad_event_ring
 /// Control register of the event ring, mapped in a shared memory page
 struct monad_event_ring_control
 {
-    alignas(64) _Atomic(uint64_t) prod_next;
+    alignas(64) _Atomic(uint64_t) last_seqno;
 };
 
 /// This structure appears at the start of the shared memory region for an

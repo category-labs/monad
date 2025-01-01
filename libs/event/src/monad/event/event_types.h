@@ -74,7 +74,7 @@ enum monad_event_type : uint16_t
     MONAD_EVENT_THREAD_EXIT,
     MONAD_EVENT_HEARTBEAT,
     MONAD_EVENT_THR_PAGE_SWITCH,
-    MONAD_EVENT_TEST_COUNT_64,
+    MONAD_EVENT_TEST_COUNTER,
     MONAD_EVENT_BLOCK_START,
     MONAD_EVENT_BLOCK_END,
     MONAD_EVENT_BLOCK_FINALIZE,
@@ -95,6 +95,13 @@ struct monad_event_thread_info
     uint64_t thread_id;
     uint8_t source_id;
     char thread_name[31];
+};
+
+/// Event payload for MONAD_EVENT_TEST_COUNTER
+struct monad_event_test_counter
+{
+    uint8_t writer_id;
+    uint64_t counter;
 };
 
 /// Event payload for MONAD_EVENT_BLOCK_START

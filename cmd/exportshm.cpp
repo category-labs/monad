@@ -140,7 +140,7 @@ static void wait_for_seqno(
     monad_event_imported_ring_init_iter(import, &iter);
 
     // Manually rewind to the beginning
-    iter.last_seqno = 0;
+    iter.read_last_seqno = 0;
     while (true) {
         monad_event_descriptor const *event;
         switch (monad_event_iterator_peek(&iter, &event)) {
@@ -186,10 +186,10 @@ void export_shm_segments(monad_event_imported_ring *import, int fd)
     save_mmap_region(&tfw, &segment, import->ring.control, tfw.mmap_page_size);
 
     // Write as much of the descriptor table as has actually been written.
-    uint64_t const last_seqno =
-        import->ring.control->prod_next.load(std::memory_order_acquire);
+    uint64_t const write_last_seqno =
+        import->ring.control->last_seqno.load(std::memory_order_acquire);
     monad_event_descriptor const *const last_event =
-        &import->ring.descriptor_table[last_seqno & import->ring.capacity_mask];
+        &import->ring.descriptor_table[write_last_seqno & import->ring.capacity_mask];
     size_t const event_count =
         static_cast<size_t>(last_event - import->ring.descriptor_table);
     segment.type = MONAD_EVENT_MSG_MAP_DESCRIPTOR_TABLE;

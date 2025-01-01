@@ -50,6 +50,11 @@ static void *_monad_event_alloc_from_fixed_page(
 extern struct monad_event_payload_page *
 _monad_event_recorder_switch_page(struct monad_event_payload_page *);
 
+// Force the activation of a payload page; used the first time a thread
+// records something
+extern struct monad_event_payload_page *
+_monad_event_activate_payload_page(struct monad_event_payload_page_pool *);
+
 TAILQ_HEAD(monad_event_payload_page_queue, monad_event_payload_page);
 
 // Event payloads live on slabs of memory called "payload pages". Each thread
@@ -63,7 +68,7 @@ struct monad_event_payload_page_pool
     size_t active_page_count;
     size_t free_page_count;
     size_t pages_allocated;
-    _Atomic(uint64_t) const *prod_next;
+    _Atomic(uint64_t) const *last_seqno;
 };
 
 // State of an event recorder; there is one of these for each event ring type.
@@ -180,11 +185,56 @@ inline struct monad_event_recorder_thr *_monad_event_recorder_get_thread_cache()
     return &g_tls_monad_recorder_thread_cache;
 }
 
+static inline struct monad_event_descriptor *
+_monad_event_ring_reserve_descriptor(
+    struct monad_event_ring *event_ring, uint64_t *seqno)
+{
+    struct monad_event_ring_control *const ctrl = event_ring->control;
+
+    // Atomically increment the control page's `last_seqno` register. The
+    // semantics of this value are:
+    //
+    //    1. When read, it will give the last sequence number that was
+    //       allocated to an event.
+    //
+    //    2. When atomically incremented, the incrementor becomes the owner
+    //       of the new "last sequence number", i.e., this is the sequence
+    //       number implicitly given to the incrementor, to record its event.
+    //
+    // Because the sequence number is the same as the (unbounded) array index
+    // plus 1, the predecessor value returned by atomic_fetch_add_explicit
+    // is also the array index where the event descriptor will be stored
+    // (modulo the ring size). Thus, reserving a sequence number for an event
+    // also reserves an array slot in the ring buffer to hold the event
+    // descriptor for that event.
+    //
+    // We return a pointer to that descriptor for the caller to manipulate.
+    // When the caller is finished populating the descriptor fields details,
+    // the caller is responsible for performing an atomic store of the sequence
+    // number with memory_order_release semantics. That store acts as the
+    // necessary barrier to ensure all other memory changes associated with
+    // recording the event become visible in other threads.
+    uint64_t const prev_seqno =
+        atomic_fetch_add_explicit(&ctrl->last_seqno, 1, memory_order_relaxed);
+    *seqno = prev_seqno + 1;
+    struct monad_event_descriptor *event = &event_ring
+                ->descriptor_table[prev_seqno & event_ring->capacity_mask];
+    // We're going to start filling in the fields of `event`. Overwrite its
+    // sequence number to zero, in case this slot is occupied by an older event
+    // and is currently being examined by a reading thread. This will ensure
+    // the reader can always detect that it has changed.
+    atomic_store_explicit(&event->seqno, 0, memory_order_release);
+    return event;
+}
+
 inline void *_monad_event_alloc_payload(
     struct monad_event_recorder *recorder,
     struct monad_event_recorder_thr *thread_cache, size_t payload_size,
-    uint16_t *page_id, uint32_t *offset, uint64_t *page_switched_time)
+    uint16_t *page_id, uint32_t *offset, uint64_t *event_time)
 {
+    extern uint32_t monad_event_get_txn_num();
+    uint64_t switch_event_seqno;
+    struct monad_event_descriptor *switch_event;
     struct monad_event_payload_page *page;
     size_t allocation_size;
     void *payload;
@@ -194,10 +244,9 @@ inline void *_monad_event_alloc_payload(
         // Rare corner case: the first time we're recording on a particular
         // thread, the thread-local active page will be missing. This could be
         // prevented by making sure it's always ready, but that is more complex
-        // because the initialization would have to happen in two places.
-        extern struct monad_event_payload_page *
-        _monad_event_activate_payload_page(
-            struct monad_event_payload_page_pool *);
+        // because the initialization would have to happen in two places
+        // (depending on whether the thread cache was created before or after
+        // the recorder was initialized).
         page = thread_cache->payload_page[recorder->ring_type] =
             _monad_event_activate_payload_page(&recorder->payload_page_pool);
     }
@@ -210,7 +259,25 @@ inline void *_monad_event_alloc_payload(
         // Not enough memory left on this page; switch to a free page
         page = thread_cache->payload_page[recorder->ring_type] =
             _monad_event_recorder_switch_page(page);
-        *page_switched_time = monad_event_timestamp();
+
+        // Manually inject a page switch event descriptor into the new page.
+        // We steal the original event's events' timestamp, then replace it
+        // with a new timestamp.
+        switch_event = _monad_event_ring_reserve_descriptor(
+            &recorder->event_ring, &switch_event_seqno);
+        switch_event->type = MONAD_EVENT_THR_PAGE_SWITCH;
+        switch_event->payload_page = page->page_id;
+        switch_event->offset = 0;
+        switch_event->pop_scope = 0;
+        switch_event->length = 0;
+        switch_event->source_id = thread_cache->source_id;
+        switch_event->block_flow_id =
+            g_monad_event_recorder_shared_state.block_flow_id & 0xFFFU;
+        switch_event->txn_num = monad_event_get_txn_num() & 0xFFFFFU;
+        switch_event->epoch_nanos = *event_time;
+        atomic_store_explicit(
+            &switch_event->seqno, switch_event_seqno, memory_order_release);
+        *event_time = monad_event_timestamp();
     }
 
     // Fill in the descriptor with the payload memory details
@@ -246,46 +313,6 @@ inline void *_monad_event_alloc_from_fixed_page(
     return payload;
 }
 
-static inline struct monad_event_descriptor *_monad_event_alloc_ring_descriptor(
-    struct monad_event_ring *event_ring, uint64_t *seqno)
-{
-    struct monad_event_ring_control *const ctrl = event_ring->control;
-
-    // Claim ownership of the `prod_next` descriptor, which is both the write
-    // index (after masking) and the new sequence number when 1 is added. We
-    // return a pointer to this descriptor for the caller to manipulate. When
-    // they are finished populating the descriptor fields details, the caller
-    // is responsible for performing an atomic store of the sequence number
-    // with memory_order_release semantics. This acts as the necessary barrier
-    // to ensure all other changes to the descriptor become visible in other
-    // threads.
-    uint64_t const prod_next =
-        atomic_fetch_add_explicit(&ctrl->prod_next, 1, memory_order_relaxed);
-    *seqno = prod_next + 1;
-    return &event_ring->descriptor_table[prod_next & event_ring->capacity_mask];
-}
-
-static inline void _monad_event_record_thr_page_switch_event(
-    struct monad_event_recorder *recorder, uint8_t source_id,
-    uint32_t block_flow_id, uint32_t txn_num, uint64_t page_switched_time)
-{
-    // Called to manually inject a page switch event descriptor into the new
-    // page
-    uint64_t seqno;
-    struct monad_event_descriptor *event =
-        _monad_event_alloc_ring_descriptor(&recorder->event_ring, &seqno);
-    event->type = MONAD_EVENT_THR_PAGE_SWITCH;
-    event->payload_page = 0;
-    event->offset = 0;
-    event->pop_scope = 0;
-    event->length = 0;
-    event->source_id = source_id;
-    event->block_flow_id = block_flow_id & 0xFFFU;
-    event->txn_num = txn_num & 0xFFFFFU;
-    event->epoch_nanos = page_switched_time;
-    atomic_store_explicit(&event->seqno, seqno, memory_order_release);
-}
-
 inline void monad_event_record(
     struct monad_event_recorder *recorder, enum monad_event_type event_type,
     uint8_t flags, void const *payload, size_t payload_size)
@@ -295,6 +322,8 @@ inline void monad_event_record(
     struct monad_event_recorder_thr *thread_cache;
     uint64_t seqno;
     uint64_t event_time;
+    uint16_t page_id;
+    uint32_t page_offset;
     void *dst;
 
     if (MONAD_UNLIKELY(
@@ -309,8 +338,20 @@ inline void monad_event_record(
     // is emitted when this thread is recording its first event
     thread_cache = _monad_event_recorder_get_thread_cache();
     event_time = monad_event_timestamp();
-    event = _monad_event_alloc_ring_descriptor(&recorder->event_ring, &seqno);
+    // Allocate the payload immediately, we do this first because calling
+    // this function can switch the activate page, and that needs to have
+    // an overwrite_seqno allocated before we allocate our sequence number.
+    dst = _monad_event_alloc_payload(
+        recorder,
+        thread_cache,
+        payload_size,
+        &page_id,
+        &page_offset,
+        &event_time);
+    event = _monad_event_ring_reserve_descriptor(&recorder->event_ring, &seqno);
     event->type = event_type;
+    event->payload_page = page_id;
+    event->offset = page_offset;
     event->pop_scope = flags & MONAD_EVENT_POP_SCOPE ? 1U : 0U;
     event->length = payload_size & 0x7FFFFFUL;
     event->source_id = thread_cache->source_id;
@@ -318,24 +359,8 @@ inline void monad_event_record(
         g_monad_event_recorder_shared_state.block_flow_id & 0xFFFU;
     event->txn_num = monad_event_get_txn_num() & 0xFFFFFU;
     event->epoch_nanos = event_time;
-    event_time = 0; // Reuse this for page_switched_time
-    dst = _monad_event_alloc_payload(
-        recorder,
-        thread_cache,
-        payload_size,
-        &event->payload_page,
-        &event->offset,
-        &event_time);
     memcpy(dst, payload, payload_size);
     atomic_store_explicit(&event->seqno, seqno, memory_order_release);
-    if (MONAD_UNLIKELY(event_time != 0)) {
-        _monad_event_record_thr_page_switch_event(
-            recorder,
-            event->source_id,
-            event->block_flow_id,
-            event->txn_num,
-            event_time);
-    }
 }
 
 inline void monad_event_recordv(
@@ -347,6 +372,8 @@ inline void monad_event_recordv(
     struct monad_event_recorder_thr *thread_cache;
     uint64_t seqno;
     uint64_t event_time;
+    uint16_t page_id;
+    uint32_t page_offset;
     void *dst;
     size_t payload_size = 0;
 
@@ -359,8 +386,23 @@ inline void monad_event_recordv(
 
     thread_cache = _monad_event_recorder_get_thread_cache();
     event_time = monad_event_timestamp();
-    event = _monad_event_alloc_ring_descriptor(&recorder->event_ring, &seqno);
+    for (size_t i = 0; i < iovlen; ++i) {
+        payload_size += iov[i].iov_len;
+    }
+    dst = _monad_event_alloc_payload(
+        recorder,
+        thread_cache,
+        payload_size,
+        &page_id,
+        &page_offset,
+        &event_time);
+    for (size_t i = 0; i < iovlen; ++i) {
+        dst = mempcpy(dst, iov[i].iov_base, iov[i].iov_len);
+    }
+    event = _monad_event_ring_reserve_descriptor(&recorder->event_ring, &seqno);
     event->type = event_type;
+    event->payload_page = page_id;
+    event->offset = page_offset;
     event->pop_scope = flags & MONAD_EVENT_POP_SCOPE ? 1U : 0U;
     event->length = payload_size & 0x7FFFFFUL;
     event->source_id = thread_cache->source_id;
@@ -368,29 +410,7 @@ inline void monad_event_recordv(
         g_monad_event_recorder_shared_state.block_flow_id & 0xFFFU;
     event->txn_num = monad_event_get_txn_num() & 0xFFFFFU;
     event->epoch_nanos = event_time;
-    for (size_t i = 0; i < iovlen; ++i) {
-        payload_size += iov[i].iov_len;
-    }
-    event_time = 0;
-    dst = _monad_event_alloc_payload(
-        recorder,
-        thread_cache,
-        payload_size,
-        &event->payload_page,
-        &event->offset,
-        &event_time);
-    for (size_t i = 0; i < iovlen; ++i) {
-        dst = mempcpy(dst, iov[i].iov_base, iov[i].iov_len);
-    }
     atomic_store_explicit(&event->seqno, seqno, memory_order_release);
-    if (MONAD_UNLIKELY(event_time != 0)) {
-        _monad_event_record_thr_page_switch_event(
-            recorder,
-            event->source_id,
-            event->block_flow_id,
-            event->txn_num,
-            event_time);
-    }
 }
 
 inline struct monad_event_block_exec_header *

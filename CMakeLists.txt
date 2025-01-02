@@ -36,11 +36,6 @@ function(monad_compile_options target)
     ${target}
     PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-attributes=clang::no_sanitize>)
 
-  # needed to resolve some potential false positives when compiling with
-  # Boost.Graph
-  target_compile_options(
-    ${target} PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>)
-
   # this is needed to turn off ranges support in nlohmann_json, because the
   # ranges standard header triggers a clang bug which is fixed in trunk but not
   # currently available to us
@@ -56,7 +51,7 @@ function(monad_compile_options target)
   endif()
 endfunction()
 
-find_package(Boost REQUIRED COMPONENTS fiber graph json)
+find_package(Boost REQUIRED COMPONENTS fiber json)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 

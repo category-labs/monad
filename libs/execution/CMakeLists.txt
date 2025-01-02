@@ -15,9 +15,6 @@ project(monad_execution)
 add_library(
   monad_execution STATIC
   "src/monad/config.hpp"
-  # analysis
-  "src/monad/analysis/analysis.cpp"
-  "src/monad/analysis/analysis.hpp"
   # chain
   "src/monad/chain/chain.cpp"
   "src/monad/chain/chain.hpp"
@@ -153,7 +150,6 @@ target_link_libraries(
   PUBLIC monad_core
   PUBLIC monad_trie
   PRIVATE Boost::fiber
-  PRIVATE Boost::graph
   PRIVATE Boost::json
   PRIVATE PkgConfig::brotli
   PUBLIC ethash::keccak
@@ -173,8 +169,6 @@ target_link_options(monad_execution PRIVATE LINKER:-z,defs)
 # ##############################################################################
 # unit tests
 # ##############################################################################
-
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/monad/analysis)
 
 monad_add_test_folder("src/monad/core")
 monad_add_test_folder("src/monad/db")

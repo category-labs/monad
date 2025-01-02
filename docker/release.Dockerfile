@@ -20,7 +20,6 @@ RUN apt update && apt install -y \
   libboost-container1.83.0 \
   libboost-fiber1.83.0 \
   libboost-filesystem1.83.0 \
-  libboost-graph1.83.0 \
   libboost-json1.83.0 \
   libboost-regex1.83.0 \
   libboost-stacktrace1.83.0
@@ -47,7 +46,6 @@ RUN apt update && apt install -y python3-pytest
 
 RUN apt update && apt-get install -y \
   libboost-fiber1.83-dev \
-  libboost-graph1.83-dev \
   libboost-json1.83-dev \
   libboost-stacktrace1.83-dev \
   libboost1.83-dev \

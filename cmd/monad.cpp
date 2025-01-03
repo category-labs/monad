@@ -1,5 +1,6 @@
 #include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/chain/monad_devnet.hpp>
+#include <monad/chain/monad_testnet.hpp>
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/basic_formatter.hpp>
@@ -231,12 +232,14 @@ int main(int const argc, char const *argv[])
     enum class ChainConfig
     {
         EthereumMainnet,
-        MonadDevnet
+        MonadDevnet,
+        MonadTestnet
     } chain_config;
 
     std::unordered_map<std::string, ChainConfig> const CHAIN_CONFIG_MAP = {
         {"ethereum_mainnet", ChainConfig::EthereumMainnet},
-        {"monad_devnet", ChainConfig::MonadDevnet}};
+        {"monad_devnet", ChainConfig::MonadDevnet},
+        {"monad_testnet", ChainConfig::MonadTestnet}};
 
     cli.add_option("--chain", chain_config, "select which chain config to run")
         ->transform(CLI::CheckedTransformer(CHAIN_CONFIG_MAP, CLI::ignore_case))
@@ -427,6 +430,8 @@ int main(int const argc, char const *argv[])
             return std::make_unique<EthereumMainnet>();
         case ChainConfig::MonadDevnet:
             return std::make_unique<MonadDevnet>();
+        case ChainConfig::MonadTestnet:
+            return std::make_unique<MonadTestnet>();
         }
         MONAD_ASSERT(false);
     }();
@@ -444,6 +449,7 @@ int main(int const argc, char const *argv[])
                 return std::nullopt;
             };
         case ChainConfig::MonadDevnet:
+        case ChainConfig::MonadTestnet:
             return [block_db_path](uint64_t const i) -> std::optional<Block> {
                 auto const path = block_db_path / std::to_string(i);
                 if (!fs::exists(path)) {

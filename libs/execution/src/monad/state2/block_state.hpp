@@ -6,10 +6,10 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/db/db.hpp>
-#include <monad/execution/code_analysis.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/types/incarnation.hpp>
+#include <monad/vm/evmone/code_analysis.hpp>
 
 #include <memory>
 #include <vector>

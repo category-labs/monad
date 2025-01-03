@@ -7,11 +7,11 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/db/db.hpp>
-#include <monad/execution/code_analysis.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/fmt/state_deltas_fmt.hpp> // NOLINT
 #include <monad/state2/state_deltas.hpp>
 #include <monad/state3/state.hpp>
+#include <monad/vm/evmone/code_analysis.hpp>
 
 #include <ankerl/unordered_dense.h>
 

@@ -1,7 +1,7 @@
 #include <monad/config.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/execution/baseline_execute.hpp>
-#include <monad/execution/code_analysis.hpp>
+#include <monad/vm/evmone/code_analysis.hpp>
 
 #include <evmone/baseline.hpp>
 

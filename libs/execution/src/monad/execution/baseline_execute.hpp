@@ -2,7 +2,7 @@
 
 #include <monad/config.hpp>
 #include <monad/core/byte_string.hpp>
-#include <monad/execution/code_analysis.hpp>
+#include <monad/vm/evmone/code_analysis.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>

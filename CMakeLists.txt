@@ -63,6 +63,7 @@ find_package(CLI11 REQUIRED)
 
 # compiler
 set(MONAD_COMPILER_STANDALONE OFF)
+set(MONAD_COMPILER_TESTING OFF)
 add_subdirectory("third_party/compiler")
 
 # ethash

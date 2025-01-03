@@ -12,7 +12,6 @@
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/execution/code_analysis.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
@@ -23,6 +22,7 @@
 #include <monad/rlp/encode2.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state_deltas.hpp>
+#include <monad/vm/evmone/code_analysis.hpp>
 
 #include <ethash/keccak.hpp>
 #include <evmc/evmc.hpp>

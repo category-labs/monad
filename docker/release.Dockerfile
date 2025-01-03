@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1-labs
 
-FROM ubuntu:24.04 as base
+FROM ubuntu:24.04 AS base
 
 RUN apt update &&     \
     apt upgrade -y && \
@@ -36,7 +36,7 @@ RUN apt update && \
       liburing-dev              \
       libzstd-dev
 
-FROM base as build
+FROM base AS build
 
 RUN apt update && \
     apt install -y \
@@ -73,7 +73,7 @@ RUN VERBOSE=1 cmake \
 # security=insecure for tests which use io_uring
 RUN --security=insecure CC=gcc-13 CXX=g++-13 CMAKE_BUILD_TYPE=Release ./scripts/test.sh
 
-FROM base as runner
+FROM base AS runner
 COPY --from=build /src/build/libs/db/monad_mpt /usr/local/bin/
 COPY --from=build /src/build/cmd/monad_cli /usr/local/bin/
 COPY --from=build /src/build/cmd/monad /usr/local/bin/

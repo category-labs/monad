@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1-labs
 
-FROM ubuntu:24.04 as base
+FROM ubuntu:24.04 AS base
 
 RUN apt update &&       \
     apt upgrade -y  &&  \
@@ -29,7 +29,7 @@ RUN apt update &&          \
   /opt/install-tools.sh && \
   /opt/install-deps.sh
 
-FROM base as build_and_test
+FROM base AS build_and_test
 
 COPY . src
 

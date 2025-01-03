@@ -2,38 +2,32 @@
 
 FROM ubuntu:24.04 as base
 
-RUN apt update && apt upgrade -y
-
-RUN apt update && apt install -y apt-utils
-
-RUN apt update && apt install -y dialog
-
-RUN apt update && apt install -y \
-  ca-certificates \
-  curl \
-  gnupg \
-  software-properties-common \
-  wget
+RUN apt update &&       \
+    apt upgrade -y  &&  \
+    apt install -y               \
+      apt-utils                  \
+      ca-certificates            \
+      clang-18                   \
+      curl                       \
+      dialog                     \
+      g++-13                     \
+      gcc-13                     \
+      gnupg                      \
+      libarchive-dev             \
+      libbrotli-dev              \
+      libcap-dev                 \
+      libcli11-dev               \
+      libgmp-dev                 \
+      libtbb-dev                 \
+      libzstd-dev                \
+      software-properties-common \
+      wget
 
 COPY scripts/ubuntu-build/ /opt
-
-RUN apt update && apt install -y \
-  clang-18 \
-  gcc-13 \
-  g++-13
-
-RUN /opt/install-boost.sh
-RUN /opt/install-tools.sh
-RUN /opt/install-deps.sh
-
-RUN apt update && apt install -y \
-  libarchive-dev \
-  libbrotli-dev \
-  libcap-dev \
-  libcli11-dev \
-  libgmp-dev \
-  libtbb-dev \
-  libzstd-dev
+RUN apt update &&          \
+  /opt/install-boost.sh && \
+  /opt/install-tools.sh && \
+  /opt/install-deps.sh
 
 FROM base as build_and_test
 

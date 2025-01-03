@@ -5,11 +5,11 @@
 #include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
-#include <monad/execution/code_analysis.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/state3/state.hpp>
+#include <monad/vm/evmone/code_analysis.hpp>
 #include <test_resource_data.h>
 
 #include <evmc/evmc.h>

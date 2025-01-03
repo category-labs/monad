@@ -6,11 +6,11 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/bytes_hash_compare.hpp>
 #include <monad/db/db.hpp>
-#include <monad/execution/code_analysis.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
 #include <monad/lru/lru_cache.hpp>
 #include <monad/state2/proposal_state.hpp>
 #include <monad/state2/state_deltas.hpp>
+#include <monad/vm/evmone/code_analysis.hpp>
 
 #include <evmc/evmc.hpp>
 

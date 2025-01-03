@@ -87,7 +87,6 @@ add_library(
   "src/monad/execution/block_hash_buffer.hpp"
   "src/monad/execution/block_reward.cpp"
   "src/monad/execution/block_reward.hpp"
-  "src/monad/execution/code_analysis.hpp"
   "src/monad/execution/create_contract_address.cpp"
   "src/monad/execution/create_contract_address.hpp"
   "src/monad/execution/ethereum/dao.hpp"
@@ -154,6 +153,7 @@ target_include_directories(
 
 target_link_libraries(
   monad_execution
+  PUBLIC monad-compiler-vm
   PUBLIC monad_core
   PUBLIC monad_trie
   PRIVATE Boost::fiber

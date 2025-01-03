@@ -1,4 +1,4 @@
-#include <monad/chain/monad_devnet.hpp>
+#include <monad/chain/monad_testnet.hpp>
 
 #include <monad/config.hpp>
 #include <monad/core/block.hpp>
@@ -8,12 +8,12 @@
 
 MONAD_NAMESPACE_BEGIN
 
-uint256_t MonadDevnet::get_chain_id() const
+uint256_t MonadTestnet::get_chain_id() const
 {
-    return 20143;
+    return 10143;
 };
 
-evmc_revision MonadDevnet::get_revision(uint64_t const, uint64_t const) const
+evmc_revision MonadTestnet::get_revision(uint64_t const, uint64_t const) const
 {
     return EVMC_SHANGHAI;
 }

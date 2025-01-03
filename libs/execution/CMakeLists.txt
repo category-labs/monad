@@ -24,6 +24,8 @@ add_library(
   "src/monad/chain/monad_chain.hpp"
   "src/monad/chain/monad_devnet.cpp"
   "src/monad/chain/monad_devnet.hpp"
+  "src/monad/chain/monad_testnet.cpp"
+  "src/monad/chain/monad_testnet.hpp"
   # core
   "src/monad/core/account.hpp"
   "src/monad/core/address.hpp"

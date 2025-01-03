@@ -22,6 +22,8 @@
 #include <syslog.h>
 #include <unistd.h>
 
+#include <zlib.h>
+
 #include <monad/core/srcloc.h>
 #include <monad/event/event.h>
 #include <monad/event/event_protocol.h>
@@ -58,11 +60,16 @@ static size_t round_size_to_align(size_t size, size_t align)
 // Redefinition of structure from exportshm.cpp
 struct test_file_segment
 {
-    uint32_t type;
-    uint16_t page_id;
-    uint16_t metadata_type;
-    uint64_t length;
+    uint16_t type;
+    uint64_t compressed_len;
+    uint64_t segment_len;
     uint64_t offset;
+
+    union
+    {
+        uint16_t metadata_type;
+        size_t ring_capacity;
+    };
 };
 
 struct mapped_test_segment
@@ -80,7 +87,6 @@ struct test_server_context
     struct mapped_test_segment *mapped_segments;
     struct mapped_test_segment *metadata_page_segment;
     size_t ring_capacity;
-    size_t page_pool_size;
     uint8_t const *metadata_hash;
     bool unmap_on_close;
 };
@@ -122,18 +128,14 @@ static bool export_test_metadata(
         .msg_controllen = sizeof cmsg,
         .msg_flags = 0};
     struct test_server_context *const test_context = arg;
-    struct monad_event_payload_page const *metadata_page =
-        test_context->metadata_page_segment->map_base;
-
-    memset(&msg, 0, sizeof msg);
 
     cmsg.hdr.cmsg_level = SOL_SOCKET;
     cmsg.hdr.cmsg_type = SCM_RIGHTS;
     cmsg.hdr.cmsg_len = CMSG_LEN(sizeof(int));
 
-    // Send the metadata payload page.
-    msg.msg_type = MONAD_EVENT_MSG_MAP_PAYLOAD_PAGE;
-    msg.page_id = metadata_page->page_id;
+    // Send the metadata page
+    memset(&msg, 0, sizeof msg);
+    msg.msg_type = MONAD_EVENT_MSG_MAP_METADATA_PAGE;
     *(int *)CMSG_DATA(&cmsg.hdr) = test_context->metadata_page_segment->memfd;
     if (sendmsg(sock_fd, &mhdr, 0) == -1) {
         close_fn(
@@ -222,8 +224,6 @@ static bool export_test_ring(
 
     memset(&msg, 0, sizeof msg);
     msg.ring_capacity = test_context->ring_capacity;
-    msg.payload_page_pool_size = (uint16_t)test_context->page_pool_size;
-    msg.cur_seqno = 0;
     for (size_t s = 0; s < test_context->segment_count; ++s) {
         struct test_file_segment const *segment = &test_context->segments[s];
         struct mapped_test_segment const *mapped_seg =
@@ -231,12 +231,15 @@ static bool export_test_ring(
 
         msg.msg_type = (enum monad_event_msg_type)segment->type;
         switch (msg.msg_type) {
-        case MONAD_EVENT_MSG_MAP_PAYLOAD_PAGE:
-            msg.page_id = segment->page_id;
+        case MONAD_EVENT_MSG_MAP_METADATA_PAGE:
             [[fallthrough]];
+        case MONAD_EVENT_MSG_METADATA_OFFSET:
+            continue;
         case MONAD_EVENT_MSG_MAP_RING_CONTROL:
             [[fallthrough]];
         case MONAD_EVENT_MSG_MAP_DESCRIPTOR_TABLE:
+            [[fallthrough]];
+        case MONAD_EVENT_MSG_MAP_PAYLOAD_BUFFER:
             msg.metadata_type = MONAD_EVENT_METADATA_NONE;
             msg.metadata_offset = 0;
             *(int *)CMSG_DATA(&cmsg.hdr) = mapped_seg->memfd;
@@ -306,10 +309,11 @@ int monad_event_test_server_create_from_bytes(
     struct monad_event_server **server_p)
 {
     int saved_error;
+    int zerr;
     unsigned map_flags;
     struct test_server_context *test_context;
     struct test_file_segment const *segment;
-    uint16_t metadata_page_id = (uint16_t)-1;
+    uLongf dest_len;
     char segment_name[32];
 
     // TODO(ken): for Rust
@@ -334,13 +338,14 @@ int monad_event_test_server_create_from_bytes(
     // the contents
     segment = test_context->segments;
     while (segment->type != MONAD_EVENT_MSG_NONE) {
-        if (segment->type == MONAD_EVENT_MSG_METADATA_OFFSET) {
-            metadata_page_id = segment->page_id;
-        }
         ++test_context->segment_count;
         ++segment;
+        if (segment->type == MONAD_EVENT_MSG_MAP_DESCRIPTOR_TABLE) {
+            test_context->ring_capacity = segment->ring_capacity;
+        }
     }
-    assert(metadata_page_id != (uint16_t)-1 && "never found metadata page?");
+    // The metadata hash is written after the segment directory (after the
+    // MONAD_EVENT_MSG_NONE sentinel value)
     test_context->metadata_hash =
         (uint8_t const *)&test_context
             ->segments[test_context->segment_count + 1];
@@ -348,17 +353,12 @@ int monad_event_test_server_create_from_bytes(
         test_context->segment_count, sizeof(test_context->mapped_segments[0]));
     assert(test_context->mapped_segments != MAP_FAILED);
 
-    // For all non-zero length segments, create and map a memfd and copy the
-    // segment contents into it. The rationale for doing this is both because
-    // we want HUGETLB support (because the client expects it) and because the
-    // protocol associates one exported memory segment with one memfd.
+    // For all segments, create and map a memfd, and decompress the saved data
+    // into it.
     for (size_t s = 0; s < test_context->segment_count; ++s) {
         struct mapped_test_segment *ms = &test_context->mapped_segments[s];
         segment = &test_context->segments[s];
-        if (segment->type == MONAD_EVENT_MSG_MAP_PAYLOAD_PAGE) {
-            ++test_context->page_pool_size;
-        }
-        if (segment->length == 0) {
+        if (segment->segment_len == 0) {
             ms->memfd = -1;
             continue;
         }
@@ -373,15 +373,11 @@ int monad_event_test_server_create_from_bytes(
             cleanup_test_server_resources(test_context);
             return saved_error;
         }
-        ms->map_len = segment->length;
+        ms->map_len = segment->segment_len;
         map_flags = 0;
         if (segment->type != MONAD_EVENT_MSG_MAP_RING_CONTROL) {
-            ms->map_len = round_size_to_align(segment->length, 1UL << 21);
+            ms->map_len = round_size_to_align(segment->segment_len, 1UL << 21);
             map_flags = MAP_HUGETLB;
-        }
-        if (segment->type == MONAD_EVENT_MSG_MAP_DESCRIPTOR_TABLE) {
-            test_context->ring_capacity =
-                ms->map_len / sizeof(struct monad_event_descriptor);
         }
         if (ftruncate(ms->memfd, (off_t)ms->map_len) == -1) {
             saved_error = WR_ERR(
@@ -403,19 +399,31 @@ int monad_event_test_server_create_from_bytes(
             cleanup_test_server_resources(test_context);
             return saved_error;
         }
-        memcpy(
+        dest_len = (uLongf)ms->map_len;
+        zerr = uncompress(
             ms->map_base,
+            &dest_len,
             (uint8_t const *)test_context->segments + segment->offset,
-            segment->length);
-        if (segment->type == MONAD_EVENT_MSG_MAP_PAYLOAD_PAGE) {
-            // We need to fix the internal book-keeping parameters of the
-            // copied page, because the client peeks at them to calculate
-            // the page size, to munmap(2) it.
-            struct monad_event_payload_page *const payload_page = ms->map_base;
-            payload_page->heap_end = payload_page->heap_next;
-            if (payload_page->page_id == metadata_page_id) {
-                test_context->metadata_page_segment = ms;
+            (uLongf)segment->compressed_len);
+        if (zerr != Z_OK) {
+            switch (zerr) {
+            case Z_BUF_ERROR:
+                saved_error = ENOBUFS;
+                break;
+            case Z_MEM_ERROR:
+                saved_error = ENOMEM;
+                break;
+            case Z_DATA_ERROR:
+                saved_error = EINVAL;
+                break;
+            default:
+                saved_error = EIO;
+                break;
             }
+            WR_ERR(saved_error, "zlib uncompress error: %s", zError(zerr));
+        }
+        if (segment->type == MONAD_EVENT_MSG_MAP_METADATA_PAGE) {
+            test_context->metadata_page_segment = ms;
         }
     }
 

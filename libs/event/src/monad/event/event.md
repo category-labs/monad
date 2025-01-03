@@ -10,7 +10,7 @@ using a high-performance inter-process communication channel.
 
 There are a few parts to the event system:
 
-1. The `monad` execution agent is the *writer* of all events
+1. The `monad` execution daemon is the *writer* of all events
 2. An external application can become a *reader* of events
    using the C library `libmonad_event_client`, whose implementation
    is in the same directory as this file. Because it is designed for
@@ -28,7 +28,7 @@ There are a few parts to the event system:
 
 Events are made up of two components:
 
-1. The *event descriptor* is a fixed-size (currently 32 byte) object
+1. The *event descriptor* is a fixed-size (currently 64 byte) object
    describing an event that has happened. It contains the event's type,
    a sequence number, and a timestamp.
 2. The *event payload* is a variably-sized piece of extra data about
@@ -42,9 +42,9 @@ Events are made up of two components:
 #### Where do events live?
 
 When an event occurs, `monad` inserts an event descriptor into a ring
-buffer that lives in a shared memory segment. Event payloads live in
-large, fixed-size slabs of shared memory called "payload pages". The
-diagram below illustrates the memory layout:
+buffer that lives in a shared memory segment. Event payloads are stored
+in a different (and much larger) shared memory segment called the
+"payload buffer." The diagram below illustrates the memory layout:
 
 ```
   ╔═Event ring══════════════════════════...═════════════════════════╗
@@ -55,29 +55,14 @@ diagram below illustrates the memory layout:
   ║ └────┬────┘ └────┬────┘ └─────────┘     └────┬────┘ └─────────┘ ║
   ╚══════╬═══════════╬══════════════════...══════╬══════════════════╝
          │           │                           │
-         │           │                           │
-         │           │                           │
-         │           │                           │
-         │           │    ┌─Payload page──┐      │   ┌─Payload page──┐
-         │           │    │┌─────────────┐│      │   │┌─────────────┐│
-         │           │    ││ Page header ││      │   ││ Page header ││
-         │           │    │├─────────────┤│      │   │├─────────────┤│
-         │           │    ││   Event 1   ││      │   ││             ││
-         └───────────┼────▶│   payload   ││      │   ││   Event N   ││
-                     │    │├─────────────┤│      └───▶│   payload   ││
-                     │    ││             ││          ││             ││
-                     │    ││             ││          │├─────────────┤│
-                     │    ││   Event 2   ││          ││░░░░░░░░░░░░░││
-                     └────▶│   payload   ││          ││░░░░░░░░░░░░░││
-                          ││             ││          ││░░░░░░░░░░░░░││
-                          ││             ││          ││░░░░free░░░░░││
-                          │├─────────────┤│          ││░░░░space░░░░││
-                          ││░░░░░░░░░░░░░││          ││░░░░░░░░░░░░░││
-                          ││░░░░free░░░░░││          ││░░░░░░░░░░░░░││
-                          ││░░░░space░░░░││          ││░░░░░░░░░░░░░││
-                          ││░░░░░░░░░░░░░││          ││░░░░░░░░░░░░░││
-                          │└─────────────┘│          │└─────────────┘│
-                          └───────────────┘          └───────────────┘
+         │           └──────┐                    └────┐
+         │                  │                         │
+   ╔═════▼══════════════════▼══════════════...════════▼════════════════════════╗
+   ║ ┌───────┐ ┌─────────────────────────┐     ┌─────────────┐ ┌─────────────┐ ║
+   ║ │Event 1│ │         Event 2         │     │   Event N   │ │░░░░free░░░░░│ ║
+   ║ │payload│ │         payload         │     │   payload   │ │░░░░space░░░░│ ║
+   ║ └───────┘ └─────────────────────────┘     └─────────────┘ └─────────────┘ ║
+   ╚═Payload buffer════════════════════════...═════════════════════════════════╝
 ```
 
 A few properties about the style of communication chosen:
@@ -89,10 +74,10 @@ A few properties about the style of communication chosen:
 - As in typical broadcast protocols, the writer is not aware of the readers --
   events are written regardless of whether anyone is reading them or not. This
   implies that the writer cannot wait for a reader if it is slow. Thus, readers
-  must iterate through events quickly or they will be lost, as ring slots are
-  overwritten by later events. Conceptually the event series is a *queue* (it
-  has FIFO semantics) but is usually called a *ring* to emphasize these
-  overwrite-upon-overflow semantics
+  must iterate through events quickly or they will be lost, as descriptor and
+  payload memory is overwritten by later events. Conceptually the event series
+  is a *queue* (it has FIFO semantics) but is usually called a *ring* to
+  emphasize these overwrite-upon-overflow semantics
 
 - This is why a sequence number is included in the event descriptor. It
   is used both to detect gaps (missing events due to slow readers) and to
@@ -129,15 +114,15 @@ struct monad_event_txn_header
 ```
 
 Note that the transaction number is not included in the payload structure.
-Because of their importance in the monad blockchain protocol, block and
-transaction numbers are encoded directly in the event descriptor (this is
-described later in the documentation).
+Because of their importance in the monad blockchain protocol, transaction
+numbers are encoded directly in the event descriptor (this is described
+later in the documentation).
 
 All the C enumeration constants start with a `MONAD_EVENT_` prefix, but
-typically the documentation and code comments refer to event types without
-the prefix, e.g., `TXN_START` or `THREAD_CREATE`. In other language
-bindings, e.g., Rust, these may be named using the languages scoping rules
-instead, e.g., `monad_event_type::TXN_START`.
+typically the documentation refers to event types without the prefix, e.g.,
+`TXN_START` or `THREAD_CREATE`. In other language bindings, e.g., Rust,
+these may be named using the languages scoping rules instead, e.g.,
+`monad_event_type::TXN_START`.
 
 ### Event lifetimes, gap detection, and zero copy APIs
 
@@ -203,7 +188,7 @@ In this example:
 #### Lifetime of an event, zero copy vs. memcpy style
 
 Because of the overwrite behavior, an event descriptor might be overwritten
-by the `monad` process while a reader is still reading its data. To prevent
+by the `monad` process while a reader is still reading its data. To deal with
 this, the reader needs to do one of two things:
 
 1. Check that the sequence number of the event descriptor matches the value it
@@ -212,11 +197,11 @@ this, the reader needs to do one of two things:
    with `memory_order_acquire` (or stronger) ordering. The provided zero copy
    API does this automatically
 
-2. Use one of the provided `memcpy`-style APIs. This effectively
-   does the same thing as option 1, but inside the library: event data is
-   copied to a user-provided buffer, and before returning we check if the
-   lifetime remained valid as the copy finished; the return value indicates
-   whether the copy is valid
+2. Use one of the provided `memcpy`-style APIs. This effectively does the
+   same thing as option 1, but inside the library: event data is copied to a
+   user-provided buffer, and before returning we check if the lifetime
+   remained valid as the copy finished; the return value indicates whether
+   the copy is valid
 
 The reason to prefer zero-copy APIs is that they do not make a copy of the
 data, and thus do less work. The reason to prefer memcpy APIs is that it is
@@ -240,17 +225,17 @@ namely how easily it can deal with "aborting" processing.
 
 Recall that events are comprised of both a fixed-size event descriptor and
 a variably-sized event payload, and both parts live in separate shared memory
-segments. There are a fixed number of event payload pages available, which is
-configurable when the `monad` process starts. Once all payload pages have
-been used, the oldest page is recycled and its data is overwritten.
+segments. The payload buffer size is configured when the `monad` process
+starts, and it cannot be changed while recording is in progress. Once all
+payload space has been used, subsequent payload writes wrap around to the
+start of the buffer, and older data is overwritten.
 
 Consequently, just as it is possible for event descriptors to be lost if a
 reader is too slow, it is also possible for payloads to expire if they are
-not read quickly enough. The detection mechanism is simple: each payload page
-header bears the sequence number in effect at the time the page was last
-recycled. Therefore, if this "overwrite sequence number" is larger than the
-sequence number in the event descriptor, it is no longer safe to read the
-event payload.
+not read quickly enough. The detection mechanism is simple: the writer
+keeps track of the minimum byte value (_before_ modular arithmetic is
+applied) that is still valid. If the value in the event descriptor is
+smaller than this, it is no longer safe to read the event payload.
 
 This means that the "zero copy vs. memcpy" decision applies to both the
 descriptors and payloads, and the reader could potentially make different
@@ -272,21 +257,32 @@ struct monad_event_descriptor
 {
     _Atomic(uint64_t) seqno;     ///< Sequence number, for gap/liveness check
     enum monad_event_type type;  ///< What kind of event this is
-    uint16_t payload_page;       ///< Shared memory page containing payload
-    uint32_t offset;             ///< Offset in page where payload starts
-    uint32_t pop_scope : 1;      ///< Ends the trace scope of an event
-    uint32_t length : 23;        ///< Size of event payload
-    uint32_t source_id : 8;      ///< ID representing origin thread
-    uint32_t block_flow_id : 12; ///< ID representing block exec header
-    uint32_t txn_num : 20;       ///< Transaction number within block
+    uint16_t block_flow_id;      ///< ID representing block exec header
+    uint8_t source_id;           ///< ID representing origin thread
+    bool pop_scope;              ///< Ends the trace scope of an event
+    bool inline_payload;         ///< True -> payload is stored inline
+    uint8_t : 8;                 ///< Unused tail padding
+    uint32_t length;             ///< Size of event payload
+    uint32_t txn_num;            ///< Transaction number within block
     uint64_t epoch_nanos;        ///< Time event was recorded
+    union
+    {
+        uint64_t payload_buf_offset; ///< Payload buffer byte offset
+        uint8_t payload[32];         ///< Payload contents if inline_payload
+    };
 };
 ```
 
 #### Other fields in `struct monad_event_descriptor`
 
 The fields which have not been described yet are `pop_scope`, `source_id`,
-`block_flow_id`, and `txn_num`.
+`block_flow_id`, `txn_num`, `inline_payload`, and the fixed-size `payload`
+array.
+
+If `inline_payload` is true, the payload is stored directly in the
+`payload` array inside the descriptor itself, rather than in the payload
+buffer. In this case, `payload_buf_offset` is not valid (its space is
+reused by the payload buffer) and the payload never expires.
 
 `pop_scope` is used by the performance tracer to express that the
 nearest-enclosing tracing scope is terminated by this event. It has no
@@ -317,12 +313,20 @@ block. The two IDs have similar properties:
 
 3. The "cheap array index" property is used by the event system itself.
    Source IDs and block flow IDs are defined by the `THREAD_CREATE` and 
-   `BLOCK_START` events, respectively. The payloads for these events are
-   kept on a special payload page which is never recycled, and those
-   payloads live in an array which is indexed by the ID. The address of
-   this shared memory array is directly returned to the caller by the
-   `monad_event_proc_connect` function. See the `eventwatch` sample program
-   for an example of how these are used.
+   `BLOCK_START` events, respectively. The payload for `THREAD_CREATE`
+   describes the thread metadata, and the payload for `BLOCK_START` describes
+   the pre-execution block header. Like all event payloads, these are copied
+   to the payload buffer, but they are also stored in arrays, in a special
+   shared memory segment called the "metadata page." The addresses of these
+   two arrays are accessible to the caller in the `monad_event_proc` object.
+   The reason for this is that if the reader joins "late" (or resets after a
+   gap), they might miss the original event that announced the creation of
+   a thread or the start of a block, but might still want to know this
+   information since subsequent events still refer to these objects. Keeping
+   the metadata around and accessible makes it easy for the reader to look
+   up thread and block metadata at any time, via an array access. For an
+   example of how these are used, check how the `eventwatch` sample program
+   prints the name of the thread that recorded an event.
 
 The `txn_num` field is self-explanatory. For events related to transactions,
 it gives the associated transaction number. This allows the reader to easily
@@ -360,7 +364,7 @@ There is more than one kind of event ring: the standard execution events
 are recorded to one ring, and the performance tracer (which has more
 overhead, and can be turned off) is a separate ring. When calling
 `monad_event_proc_import_ring`, the client chooses which ring to connect
-to. Once the ring is "imported" (all ring buffer and payload page shared
+to. Once the ring is "imported" (all ring buffer and metadata array shared
 memory segments mapped locally), as many parallel iterators as desired can
 be created. The iterator state is single threaded.
 
@@ -467,8 +471,8 @@ The files in `libmonad_event_client` are:
 
 File | Contains
 ---- | ----
-event_client.h | API for connecting to an event ring from an external process and importing its shared memory segments
-event_client.c | Implementation of the `event_client.h` interface
+`event_client.h` | API for connecting to an event ring from an external process and importing its shared memory segments
+`event_client.c` | Implementation of the `event_client.h` interface
 
 ### Reading events outside of C/C++
 
@@ -507,7 +511,7 @@ just reimplement.
 
 By contrast, #4 (`event_client.c`) is slow, verbose, wraps a custom
 protocol, could be error prone to reimplement, as is full of exotic
-Linux-specific behavior (MAP_HUGETLB stuff, etc.). It's a good candidate
+Linux-specific behavior (`MAP_HUGETLB` stuff, etc.). It's a good candidate
 for direct reuse.
 
 This is why items #1, #2, and #3 are collected into one "core" reader
@@ -519,77 +523,55 @@ C `libmonad_event_client` to import the shared memory mappings.
 
 ### Diagram of core data structures
 
-A more accurate picture of the client's view of the shared memory
-layout, showing how a particular event descriptor (for "event 2")
-finds its payload:
+A more accurate picture of the client's view of the shared memory layout,
+showing the real names of the C data structures, is shown below for the
+second recorded event:
 
 ```
-  ┌─Imported event ring (◆)───────────────────────┐
-  │                                               │
-  │ ■   monad_event_descriptor descriptor_table[] │
-  │ │ ■ monad_event_payload_page *all_pages[]     │
-  │ │ │                                           │
-  └─┼─┼───────────────────────────────────────────┘
-    │ │
-    │ │
-    │ │    ╔═Event descriptor ring═══════════════...══════════════╗
-    │ │    ║ ┌─────────┐ ┌─────────┐ ┌─────────┐      ┌─────────┐ ║
-    │ │    ║ │         │ │░░░░░░░░░│ │         │      │         │ ║
-    └─┼───▶║ │ Event 1 │ │░Event 2░│ │ Event 3 │      │ Event N │ ║
-      │    ║ │         │ │░░░░░░░░░│ │         │      │         │ ║
-      │    ║ └─────────┘ └─────────┘ └─────────┘      └─────────┘ ║
-      │    ╚═════════════════════════════════════...══════════════╝
-      │                  ╱         ╲
-      │                 ╱           ╲
-      │                ╱             ╲
-      │               ╱               ╲
-      │
-      │            ┌─Event descriptor (◊)─┐
-      │            │                      │       ┌─Payload page (◎)────┐◀───┐
-      │            │ ■ uint16_t page_id   │       │                     │    │
-      │            │ │ uint32_t offset ■  │       │                     │    │
-      │            │ │                 │  │       │                     │    │
-      │            └─┼─────────────────┼──┘       │                     │    │
-      │              │                 │          │                     │    │
-      │              │                 └──────────┼▶───────────────────┐│    │
-      │              │                            ││░░░░░░░░░░░░░░░░░░░││    │
-      │              │                            ││░░Event 2 payload░░││    │
-      │              └─────────┐                  ││░░░░░░░░░░░░░░░░░░░││    │
-      │                        │                  │└───────────────────┘│    │
-      │                page_id is an array        │                     │    │
-      │                  index into the           │                     │    │
-      │                imported page table        │                     │    │
-      │                        │                  └─────────────────────┘    │
-      ▼                        │                                             │
-     ╔═════════════════════════╬═════...════════════╗                        │
-     ║ ┌───────┐ ┌───────┐ ┌───▼───┐      ┌───────┐ ║                        │
-     ║ │page * │ │page * │ │page * │      │page * │ ║                        │
-     ║ └───────┘ └───────┘ └──────■┘      └───────┘ ║                        │
-     ╚═Payload page array═════════╬══...════════════╝                        │
-                                  │                                          │
-                                  └──────────────────────────────────────────┘
-                                                  Each page array entry gives
-                                                  the shared payload page's
-   ┌─Legend───────────────────────────────┐       address as it is mapped into
-   │                                      │       _this_ client's address space
-   │ ◆ - struct monad_event_imported_ring │
-   │ ◊ - struct monad_event_descriptor    │
-   │ ◎ - struct monad_event_payload_page  │
-   └──────────────────────────────────────┘
-```
+  ┌─Imported event ring (◆)───────────────────────┐ ┌─▶┌─Remote process connection (◎)──────────────┐
+  │                                               │ │  │                                            │
+  │ ■   monad_event_descriptor descriptor_table[] │ │  │ monad_event_thread_info threads[] ■────────┼─────┐
+  │ │ ■ uint8_t *payload_buffer                   │ │  │ monad_event_block_header block_headers[] ■─┼──┐  │
+  │ │ │ monad_event_proc *proc ■──────────────────┼─┘  │                                            │  │  │
+  └─┼─┼───────────────────────────────────────────┘    └────────────────────────────────────────────┘  │  │
+    │ │                                                                                                │  │
+    │ │                                                                                                │  │
+    │ │    ╔═Event descriptor ring═══════════════...══════════════╗     ╔═Thread metadata table══╗◀────┼──┘
+    │ │    ║ ┌─────────┐ ┌─────────┐ ┌─────────┐      ┌─────────┐ ║     ║ ┌────────────────────┐ ║     │
+    │ │    ║ │         │ │░░░░░░░░░│ │         │      │         │ ║  ┌──╬─▶ Thread 1 metadata  │ ║     │
+    └─┼───▶║ │ Event 1 │ │░Event 2░│ │ Event 3 │      │ Event N │ ║  │  ║ └────────────────────┘ ║     │
+      │    ║ │         │ │░░░░░░░░░│ │         │      │         │ ║  │  ║ ┌────────────────────┐ ║     │
+      │    ║ └─────────┘ └─────────┘ └─────────┘      └─────────┘ ║  │  ║ │ Thread 2 metadata  │ ║     │
+      │    ╚═════════════════════════════════════...══════════════╝  │  ║ └────────────────────┘ ║     │
+      │                  ╱         ╲                                 │  ║ ┌────────────────────┐ ║     │
+      │                 ╱           ╲                                │  ║ │        ...         │ ║     │
+      │                ╱             ╲                               │  ║ └────────────────────┘ ║     │
+      │               ╱               ╲                              │  ╚════════════════════════╝     │
+      │              ╱                 ╲                             │                                 │
+      │                                                              │  ╔═Block metadata table═══╗◀────┘
+      │            ┌─Event descriptor (◊)──────────┐                 │  ║ ┌────────────────────┐ ║
+      │            │                               │                 │  ║ │  Block 1 metadata  │ ║
+      │            │ ■ uint64_t payload_buf_offset │                 │  ║ └────────────────────┘ ║
+      │            │ │ uint8_t source_id ■─────────┼─────────────────┘  ║ ┌────────────────────┐ ║
+      │            │ │ uint16_t block_flow_id ■────┼────────────────────╬─▶  Block 2 metadata  │ ║
+      │            └─┼─────────────────────────────┘                    ║ └────────────────────┘ ║
+      │              │                                                  ║ ┌────────────────────┐ ║
+      │              │                                                  ║ │        ...         │ ║
+      │              │                                                  ║ └────────────────────┘ ║
+      │              │                                                  ╚════════════════════════╝
+      │              │
+      └─▶╔═══════════╬═══════════════════════════...═════════════════════════════════╗
+         ║ ┌───────┐ ▼─────────────────────────┐     ┌─────────────┐ ┌─────────────┐ ║
+         ║ │Event 1│ │         Event 2         │     │   Event N   │ │░░░░free░░░░░│ ║
+         ║ │payload│ │         payload         │     │   payload   │ │░░░░space░░░░│ ║
+         ║ └───────┘ └─────────────────────────┘     └─────────────┘ └─────────────┘ ║
+         ╚═Payload buffer════════════════════════...═════════════════════════════════╝
 
-Because event descriptors are in shared memory, they cannot include a direct
-pointer to the payload: the writer only knows this address within its own
-virtual address space. For any other process mapping these same shared memory
-segments, they are likely to wind up at different addresses.
 
-Instead, the descriptor specifies which page contains the payload as an
-array index, and the payload's offset within that page. The payload page
-array contains the local process' mapped address of each shared payload page,
-and the reader calculates the full address:
-
-```c
-struct monad_event_payload_page const *const page =
-    iterator->payload_pages[event->payload_page];
-void const *const payload_ptr = (uint8_t const *)page + event->offset;
+     ┌─Legend───────────────────────────────┐
+     │                                      │
+     │ ◆ - struct monad_event_imported_ring │
+     │ ◊ - struct monad_event_descriptor    │
+     │ ◎ - struct monad_event_proc          │
+     └──────────────────────────────────────┘
 ```

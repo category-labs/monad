@@ -76,7 +76,6 @@ map_ring_control(struct monad_event_ring *ring, struct msghdr const *mhdr)
     }
     msg = mhdr->msg_iov[0].iov_base;
     ring->capacity = msg->ring_capacity;
-    ring->capacity_mask = ring->capacity - 1;
     control_fd = *(int *)CMSG_DATA(cmsg);
     ring->control = mmap(
         nullptr, (size_t)getpagesize(), PROT_READ, MAP_SHARED, control_fd, 0);
@@ -97,7 +96,6 @@ map_descriptor_table(struct monad_event_ring *ring, struct msghdr const *mhdr)
 {
     int saved_error;
     int descriptor_table_fd;
-    size_t const PAGE_2MB = (1UL << 21); // x64 2MiB large page
     struct cmsghdr const *cmsg = CMSG_FIRSTHDR(mhdr);
     struct monad_event_export_success_msg const *const msg =
         mhdr->msg_iov[0].iov_base;
@@ -111,39 +109,15 @@ map_descriptor_table(struct monad_event_ring *ring, struct msghdr const *mhdr)
             "carry a memfd descriptor");
     }
     descriptor_table_fd = *(int *)CMSG_DATA(cmsg);
-
     ring->descriptor_table = mmap(
         nullptr,
-        desc_table_map_len + PAGE_2MB,
+        desc_table_map_len,
         PROT_READ,
-        MAP_ANONYMOUS | MAP_SHARED | MAP_HUGETLB,
-        -1,
+        MAP_SHARED | MAP_HUGETLB | MAP_POPULATE,
+        descriptor_table_fd,
         0);
     if (ring->descriptor_table == MAP_FAILED) {
-        saved_error = format_errc(
-            errno, "mmap(2) unable to reserve descriptor VM region");
-        goto Done;
-    }
-    if (mmap(
-            ring->descriptor_table,
-            desc_table_map_len,
-            PROT_READ,
-            MAP_FIXED | MAP_SHARED | MAP_HUGETLB | MAP_POPULATE,
-            descriptor_table_fd,
-            0) == MAP_FAILED) {
-        saved_error =
-            format_errc(errno, "unable to remap ring descriptor table");
-        goto Done;
-    }
-    if (mmap(
-            (uint8_t *)ring->descriptor_table + desc_table_map_len,
-            PAGE_2MB,
-            PROT_READ,
-            MAP_FIXED | MAP_SHARED | MAP_HUGETLB,
-            descriptor_table_fd,
-            0) == MAP_FAILED) {
-        saved_error = format_errc(
-            errno, "unable to remap wrap-around ring descriptor page");
+        saved_error = format_errc(errno, "unable to map ring descriptor table");
         goto Done;
     }
     saved_error = 0;
@@ -153,8 +127,72 @@ Done:
     return saved_error;
 }
 
-static int map_payload_page(
-    struct monad_event_payload_page const **page_p, struct msghdr const *mhdr)
+static int
+map_payload_buffer(struct monad_event_ring *ring, struct msghdr const *mhdr)
+{
+    int saved_error;
+    int payload_buf_fd;
+    struct stat memfd_stat;
+    struct cmsghdr const *cmsg = CMSG_FIRSTHDR(mhdr);
+    if (cmsg == nullptr || cmsg->cmsg_level != SOL_SOCKET ||
+        cmsg->cmsg_type != SCM_RIGHTS) {
+        return format_errc(
+            EPROTO,
+            "expected MAP_PAYLOAD_BUFFER message to "
+            "carry a memfd descriptor");
+    }
+    payload_buf_fd = *(int *)CMSG_DATA(cmsg);
+    if (fstat(payload_buf_fd, &memfd_stat) == -1) {
+        saved_error = format_errc(errno, "fstat(2) of payload buffer failed");
+        (void)close(payload_buf_fd);
+        return saved_error;
+    }
+    ring->payload_buf_size = (size_t)memfd_stat.st_size;
+    assert(
+        stdc_has_single_bit(ring->payload_buf_size) &&
+        stdc_has_single_bit(MONAD_EVENT_MAX_PAYLOAD_BUF_SIZE));
+    ring->payload_buf = mmap(
+        nullptr,
+        ring->payload_buf_size + MONAD_EVENT_MAX_PAYLOAD_BUF_SIZE,
+        PROT_READ,
+        MAP_ANONYMOUS | MAP_SHARED | MAP_HUGETLB,
+        -1,
+        0);
+    if (ring->payload_buf == MAP_FAILED) {
+        saved_error = format_errc(
+            errno, "mmap(2) unable to reserve payload buffer VM region");
+        goto Done;
+    }
+    if (mmap(
+            ring->payload_buf,
+            ring->payload_buf_size,
+            PROT_READ,
+            MAP_FIXED | MAP_SHARED | MAP_HUGETLB | MAP_POPULATE,
+            payload_buf_fd,
+            0) == MAP_FAILED) {
+        saved_error = format_errc(errno, "unable to remap payload buffer");
+        goto Done;
+    }
+    if (mmap(
+            (uint8_t *)ring->payload_buf + ring->payload_buf_size,
+            MONAD_EVENT_MAX_PAYLOAD_BUF_SIZE,
+            PROT_READ,
+            MAP_FIXED | MAP_SHARED | MAP_HUGETLB,
+            payload_buf_fd,
+            0) == MAP_FAILED) {
+        saved_error = format_errc(
+            errno, "unable to remap wrap-around ring descriptor page");
+        goto Done;
+    }
+    saved_error = 0;
+
+Done:
+    (void)close(payload_buf_fd);
+    return saved_error;
+}
+
+static int map_metadata_page(
+    void const **page_p, size_t *page_len, struct msghdr const *mhdr)
 {
     int memfd;
     struct stat memfd_stat;
@@ -165,24 +203,25 @@ static int map_payload_page(
         cmsg->cmsg_type != SCM_RIGHTS) {
         return format_errc(
             EPROTO,
-            "expected MAP_PAYLOAD_PAGE message to "
+            "expected MAP_METADATA_PAGE message to "
             "carry a memfd descriptor");
     }
     memfd = *(int *)CMSG_DATA(cmsg);
     if (fstat(memfd, &memfd_stat) == -1) {
-        saved_error = format_errc(errno, "fstat(2) of payload page failed");
+        saved_error = format_errc(errno, "fstat(2) of metadata page failed");
         (void)close(memfd);
         return saved_error;
     }
+    *page_len = (size_t)memfd_stat.st_size;
     *page_p = mmap(
         nullptr,
-        (size_t)memfd_stat.st_size,
+        *page_len,
         PROT_READ,
         MAP_SHARED | MAP_HUGETLB | MAP_POPULATE,
         memfd,
         0);
     if (*page_p == MAP_FAILED) {
-        saved_error = format_errc(errno, "unable to map payload page");
+        saved_error = format_errc(errno, "unable to map metadata page");
         (void)close(memfd);
         *page_p = nullptr;
         return saved_error;
@@ -195,26 +234,19 @@ static int set_metadata_table(
     struct monad_event_export_success_msg const *msg,
     struct monad_event_proc *proc, void const **table)
 {
-    size_t page_len;
     if (table == nullptr) {
         return 0;
     }
-    if (proc->metadata_page == nullptr ||
-        proc->metadata_page->page_id != msg->page_id) {
+    if (proc->metadata_page == nullptr) {
         return format_errc(
             EPROTO,
             "saw METADATA_OFFSET message before "
-            "expected metadata page or its page id "
-            "didn't match exported (expected %hu)",
-            msg->page_id);
+            "expected metadata page");
     }
-    page_len = monad_event_payload_page_length(proc->metadata_page);
-    if (page_len <= msg->metadata_offset) {
+    if (proc->metadata_page_len <= msg->metadata_offset) {
         return format_errc(
             EPROTO,
-            "protocol advertised out-of-bounds offset on metadata page "
-            "%hu",
-            msg->page_id);
+            "protocol advertised out-of-bounds offset on metadata page");
     }
     switch (msg->metadata_type) {
     case MONAD_EVENT_METADATA_THREAD:
@@ -251,12 +283,12 @@ static int recv_metadata_msgs(struct monad_event_proc *proc)
     // As soon we connect, the server will immediately push these metadata
     // messages to us:
     //
-    //   MONAD_EVENT_MSG_MAP_PAYLOAD_PAGE - file descriptor of the metadata
-    //       payload page (there should only be one of these)
+    //   MONAD_EVENT_MSG_MAP_METADATA_PAGE - file descriptor of the metadata
+    //       page (there should only be one of these)
     //
-    //   MONAD_EVENT_MSG_METADATA_OFFSET - explains where in the payload
+    //   MONAD_EVENT_MSG_METADATA_OFFSET - explains where in the metadata
     //       page one of the metadata arrays is located; the
-    //       MONAD_EVENT_MSG_MAP_PAYLOAD_PAGE for that page will already have
+    //       MONAD_EVENT_MSG_MAP_METADATA_PAGE for that page will already have
     //       been received
     //
     //   MONAD_EVENT_MSG_EXPORT_FINISHED - if this message is seen, the
@@ -280,11 +312,13 @@ static int recv_metadata_msgs(struct monad_event_proc *proc)
                 "event server reported error: %s",
                 response.err_msg.error_buf);
 
-        case MONAD_EVENT_MSG_MAP_PAYLOAD_PAGE:
+        case MONAD_EVENT_MSG_MAP_METADATA_PAGE:
             if (proc->metadata_page != nullptr) {
                 return format_errc(EPROTO, "metadata page mapped twice");
             }
-            if ((rc = map_payload_page(&proc->metadata_page, &mhdr)) != 0) {
+            if ((rc = map_metadata_page(
+                     &proc->metadata_page, &proc->metadata_page_len, &mhdr)) !=
+                0) {
                 return rc;
             }
             break;
@@ -358,8 +392,8 @@ static int import_ring(struct monad_event_imported_ring *import)
     //   MONAD_EVENT_MSG_MAP_DESCRIPTOR_TABLE - file descriptor of the event
     //       descriptor table
     //
-    //   MONAD_EVENT_MSG_MAP_PAYLOAD_PAGE - file descriptor of a single payload
-    //       page (there is an array of these)
+    //   MONAD_EVENT_MSG_MAP_PAYLOAD_BUFFER - file descriptor of the payload
+    //       buffer
     //
     //   MONAD_EVENT_MSG_EXPORT_FINISHED - if this message is seen, the import
     //       process completed successfully
@@ -398,21 +432,8 @@ static int import_ring(struct monad_event_imported_ring *import)
             }
             break;
 
-        case MONAD_EVENT_MSG_MAP_PAYLOAD_PAGE:
-            if (import->num_payload_pages == 0) {
-                import->num_payload_pages =
-                    response.ok_msg.payload_page_pool_size;
-                import->payload_pages = calloc(
-                    import->num_payload_pages,
-                    sizeof(import->payload_pages[0]));
-                if (import->payload_pages == nullptr) {
-                    return format_errc(
-                        errno, "calloc(3) for payload_page_headers failed");
-                }
-            }
-            rc = map_payload_page(
-                &import->payload_pages[response.ok_msg.page_id], &mhdr);
-            if (rc != 0) {
+        case MONAD_EVENT_MSG_MAP_PAYLOAD_BUFFER:
+            if ((rc = map_payload_buffer(&import->ring, &mhdr)) != 0) {
                 return rc;
             }
             break;
@@ -500,9 +521,7 @@ static void cleanup_proc(struct monad_event_proc *proc)
     assert(TAILQ_EMPTY(&proc->imports));
     pthread_mutex_destroy(&proc->mtx);
     if (proc->metadata_page != nullptr) {
-        munmap(
-            (void *)proc->metadata_page,
-            monad_event_payload_page_length(proc->metadata_page));
+        munmap((void *)proc->metadata_page, proc->metadata_page_len);
     }
     free_bit(&s_proc_bitmap, (unsigned)(proc - s_procs + 1));
 }
@@ -520,26 +539,21 @@ static void cleanup_imported_ring(struct monad_event_imported_ring *import)
         cleanup_proc(proc);
     }
 
-    // Unmap the event descriptor ring segments
+    // Unmap the event ring segments
+    if (ring->control != nullptr) {
+        munmap(ring->control, (size_t)getpagesize());
+    }
     if (ring->descriptor_table != nullptr) {
         size_t const map_len =
             ring->capacity * sizeof(struct monad_event_descriptor);
         munmap(ring->descriptor_table, map_len);
-        munmap((uint8_t *)ring->descriptor_table + map_len, 1UL << 21);
     }
-    if (ring->control != nullptr) {
-        munmap(ring->control, (size_t)getpagesize());
-    }
-
-    // Unmap all the payload page segments
-    for (uint16_t p = 0; p < import->num_payload_pages; ++p) {
-        struct monad_event_payload_page const *page = import->payload_pages[p];
-        if (page != nullptr) {
-            (void)munmap((void *)page, monad_event_payload_page_length(page));
-        }
+    if (ring->payload_buf != nullptr) {
+        munmap(
+            ring->payload_buf,
+            ring->payload_buf_size + MONAD_EVENT_MAX_PAYLOAD_BUF_SIZE);
     }
 
-    free(import->payload_pages);
     free_bit(&s_import_bitmap, (unsigned)(import - s_imports + 1));
 }
 
@@ -723,12 +737,12 @@ TryPinProc:
         free_bit(&s_import_bitmap, alloc_bit);
         goto UnpinProc;
     }
-    // The first large page of the ring is mapped immediately after the end so
-    // we can bulk copy near the end without complex index calculations. For
-    // languages like Rust, we want to know the "true" size of the descriptor
-    // table, e.g., for slices.
-    import->true_desc_table_size =
-        import->ring.capacity + MONAD_EVENT_MAX_BULK_COPY;
+    // Several large pages of the payload buffer are mapped immediately after
+    // the end so we can bulk copy near the end without complex index
+    // calculations. For languages like Rust, we want to know the "true" size
+    // of the payload buffer, e.g., for slices.
+    import->true_payload_buf_size =
+        import->ring.payload_buf_size + MONAD_EVENT_MAX_PAYLOAD_BUF_SIZE;
     atomic_store_explicit(&import->refcount, 1, memory_order_release);
     pthread_mutex_lock(&proc->mtx);
     TAILQ_INSERT_TAIL(&proc->imports, import, next);
@@ -816,9 +830,11 @@ int monad_event_imported_ring_init_iter(
             EOWNERDEAD, "imported ring %p was already freed", import);
     }
     iter->desc_table = import->ring.descriptor_table;
-    iter->payload_pages = import->payload_pages;
-    iter->capacity_mask = import->ring.capacity_mask;
-    iter->write_last_seqno = &import->ring.control->last_seqno;
+    iter->payload_buf = import->ring.payload_buf;
+    iter->payload_buf_size = import->ring.payload_buf_size;
+    iter->capacity_mask = import->ring.capacity - 1;
+    iter->wr_state = &import->ring.control->wr_state;
+    iter->buffer_window_start = &import->ring.control->buffer_window_start;
     (void)monad_event_iterator_reset(iter);
     return 0;
 }

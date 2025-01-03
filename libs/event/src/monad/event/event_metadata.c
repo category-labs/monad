@@ -42,11 +42,6 @@ struct monad_event_metadata const g_monad_event_metadata[] = {
          .c_name = "HEARTBEAT",
          .description = "Periodic heartbeat emitted by the event server"},
 
-    [MONAD_EVENT_THR_PAGE_SWITCH] =
-        {.type = MONAD_EVENT_THR_PAGE_SWITCH,
-         .c_name = "THR_PAGE_SWITCH",
-         .description = "Event recorder recycled a page from the page pool free list"},
-
     [MONAD_EVENT_TEST_COUNTER] =
         {.type = MONAD_EVENT_TEST_COUNTER,
          .c_name = "TEST_COUNTER",
@@ -98,13 +93,13 @@ struct monad_event_metadata const g_monad_event_metadata[] = {
          .description = "Account storage updated by transaction commit"},
 };
 
-size_t const g_monad_event_metadata_size = 16;
+size_t const g_monad_event_metadata_size = 15;
 
 uint8_t const g_monad_event_metadata_hash[32] = {
-    0x32, 0x2b, 0x72, 0x76, 0xe0, 0xb1, 0x45, 0x02,
-    0xe8, 0x8e, 0x9c, 0xe9, 0x58, 0x4f, 0x9c, 0x36,
-    0x43, 0x90, 0x6f, 0x38, 0x9f, 0x38, 0x40, 0xa9,
-    0x7a, 0xc0, 0x20, 0xb8, 0x59, 0xfc, 0x7e, 0xf6,
+    0x56, 0x43, 0x5e, 0x25, 0x3f, 0xb5, 0x12, 0x52,
+    0x06, 0x2f, 0xc1, 0xf2, 0xfa, 0xfe, 0x37, 0x72,
+    0xf4, 0x90, 0xdb, 0x61, 0x80, 0xca, 0x01, 0xad,
+    0x84, 0x0e, 0x80, 0xcd, 0xcb, 0xc5, 0x3d, 0x32,
 };
 
 #ifdef __cplusplus

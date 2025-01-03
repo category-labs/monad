@@ -32,7 +32,8 @@ enum monad_event_msg_type : unsigned
     MONAD_EVENT_MSG_EXPORT_ERROR,
     MONAD_EVENT_MSG_MAP_RING_CONTROL,
     MONAD_EVENT_MSG_MAP_DESCRIPTOR_TABLE,
-    MONAD_EVENT_MSG_MAP_PAYLOAD_PAGE,
+    MONAD_EVENT_MSG_MAP_PAYLOAD_BUFFER,
+    MONAD_EVENT_MSG_MAP_METADATA_PAGE,
     MONAD_EVENT_MSG_METADATA_OFFSET,
     MONAD_EVENT_MSG_EXPORT_FINISHED
 };
@@ -61,8 +62,5 @@ struct monad_event_export_success_msg
     enum monad_event_msg_type msg_type;
     enum monad_event_metadata_type metadata_type;
     uint32_t metadata_offset;
-    uint16_t page_id;
-    uint16_t payload_page_pool_size;
     size_t ring_capacity;
-    uint64_t cur_seqno;
 };

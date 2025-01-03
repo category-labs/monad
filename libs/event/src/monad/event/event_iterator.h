@@ -6,7 +6,6 @@
  * Defines the basic event iterator object and its API
  */
 
-#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -41,10 +40,13 @@ static enum monad_event_poll_result monad_event_iterator_peek(
 static bool monad_event_iterator_advance(struct monad_event_iterator *);
 
 /// Obtain a pointer to the event's payload in shared memory in a zero-copy
-/// fashion
+/// fashion; this never returns nullptr, even if the payload has expired; to
+/// check for expiration, call monad_event_payload_check
 static void const *monad_event_payload_peek(
-    struct monad_event_iterator const *, struct monad_event_descriptor const *,
-    _Atomic(uint64_t) const **page_overwrite_seqno);
+    struct monad_event_iterator const *, struct monad_event_descriptor const *);
+
+static bool monad_event_payload_check(
+    struct monad_event_iterator const *, struct monad_event_descriptor const *);
 
 /*
  * Copy-style APIs
@@ -72,16 +74,17 @@ static void *monad_event_payload_memcpy(
 /// initial iteration point of an open ring, and for "hard" gap recovery
 static uint64_t monad_event_iterator_reset(struct monad_event_iterator *);
 
-/// Holds the state of a single event iterator; these are initialized
-/// from the imported ring they read from using
-/// monad_event_imported_ring_init_iter
+/// Holds the state of a single event iterator; these are initialized from the
+/// imported ring they read from by calling monad_event_imported_ring_init_iter
 struct monad_event_iterator
 {
     struct monad_event_descriptor const *desc_table;
-    struct monad_event_payload_page const **payload_pages;
-    uint64_t read_last_seqno;
+    uint8_t *payload_buf;
+    size_t payload_buf_size;
     size_t capacity_mask;
-    _Atomic(uint64_t) *write_last_seqno;
+    uint64_t last_seqno;
+    struct monad_event_ring_writer_state const *wr_state;
+    uint64_t const *buffer_window_start;
 };
 
 #define MONAD_EVENT_ITERATOR_INTERNAL

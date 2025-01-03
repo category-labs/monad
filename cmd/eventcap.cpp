@@ -55,8 +55,8 @@ constexpr bool is_txn_event(monad_event_type type)
 }
 
 static void hexdump_event_payload(
-    std::span<std::byte const> payload, uint64_t event_seqno,
-    std::atomic<uint64_t> const *page_seqno_overwrite, std::FILE *out)
+    monad_event_iterator const *iter, monad_event_descriptor const *event,
+    std::span<std::byte const> payload, uint64_t event_seqno, std::FILE *out)
 {
     // Large thread_locals will cause a stack overflow, so make the
     // thread-local a pointer to a dynamic buffer
@@ -82,13 +82,12 @@ static void hexdump_event_payload(
         // Every 512 bytes, check if the payload page data is still valid; the
         // + 16 bias is to prevent checking the first iteration
         if ((line - payload_base + 16) % 512 == 0 &&
-            page_seqno_overwrite->load(std::memory_order::acquire) >
-                event_seqno) {
+            !monad_event_payload_check(iter, event)) {
             break; // Escape to the end, which checks the final time
         }
     }
 
-    if (page_seqno_overwrite->load(std::memory_order::acquire) > event_seqno) {
+    if (!monad_event_payload_check(iter, event)) {
         std::fprintf(out, "ERROR: event %lu payload lost!\n", event_seqno);
     }
     else {
@@ -149,25 +148,23 @@ static void print_event(
     // safe to touch `event` again after calling `monad_event_reader_advance`,
     // unless we manually acquire-load `event->seqno` and compare it against
     // `seqno`
-    std::atomic<uint64_t> const *page_seqno_overwrite;
-    std::byte const *payload = static_cast<std::byte const *>(
-        monad_event_payload_peek(iter, event, &page_seqno_overwrite));
+    std::byte const *payload =
+        static_cast<std::byte const *>(monad_event_payload_peek(iter, event));
     if (monad_event_iterator_advance(iter)) {
         std::fwrite(event_buf, static_cast<size_t>(o - event_buf), 1, out);
     }
     else {
         // Zero-copy buffer changed underneath us; the payload is gone too.
-        // Note we use `read_last_seqno + 1` here, as even the relaxed `seqno`
-        // load above is potentially not right (it could hold a now-overwritten
-        // value).
+        // Note we use `last_seqno + 1` here, as even the relaxed `seqno` load
+        // above is potentially not right (it could show the overwrite value)
         std::fprintf(
             out,
             "ERROR: event %lu lost during copy-out\n",
-            iter->read_last_seqno + 1);
+            iter->last_seqno + 1);
         return;
     }
 
-    hexdump_event_payload({payload, length}, seqno, page_seqno_overwrite, out);
+    hexdump_event_payload(iter, event, {payload, length}, seqno, out);
 }
 
 // The "follow thread" behaves like `tail -f`: it pulls events from the ring
@@ -197,7 +194,7 @@ static void follow_thread_main(
             // TODO(ken): if we actually had more than one ring, would need
             //   to set this on the right one. In practice it's only used
             //   for debugging tasks starting from zero.
-            iters.back().read_last_seqno = *start_seqno;
+            iters.back().last_seqno = *start_seqno;
         }
     }
     while (g_should_exit == 0) {
@@ -216,7 +213,7 @@ static void follow_thread_main(
                 fprintf(
                     out,
                     "event gap from %lu -> %lu, resetting\n",
-                    iter.read_last_seqno,
+                    iter.last_seqno,
                     event->seqno.load(std::memory_order_relaxed));
                 monad_event_iterator_reset(&iter);
                 continue;

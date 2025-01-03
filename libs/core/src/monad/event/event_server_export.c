@@ -8,6 +8,7 @@
  * and event recorder.
  */
 
+#include <stdatomic.h>
 #include <string.h>
 
 #include <errno.h>
@@ -54,12 +55,10 @@ static bool export_shared_recorder_metadata(
     cmsg.hdr.cmsg_len = CMSG_LEN(sizeof(int));
 
     MONAD_SPINLOCK_LOCK(&rss->lock);
-    // Send the metadata payload page
-    msg.msg_type = MONAD_EVENT_MSG_MAP_PAYLOAD_PAGE;
-    msg.page_id = rss->metadata_page->page_id;
-    *(int *)CMSG_DATA(&cmsg.hdr) = rss->metadata_page->memfd;
+    // Send the metadata page
+    msg.msg_type = MONAD_EVENT_MSG_MAP_METADATA_PAGE;
+    *(int *)CMSG_DATA(&cmsg.hdr) = rss->metadata_page.memfd;
     if (sendmsg(sock_fd, &mhdr, 0) == -1) {
-        // Copy the diagnostic name before unlocking the page
         MONAD_SPINLOCK_UNLOCK(&rss->lock);
         close_fn(
             client,
@@ -74,7 +73,7 @@ static bool export_shared_recorder_metadata(
     msg.msg_type = MONAD_EVENT_MSG_METADATA_OFFSET;
     msg.metadata_type = MONAD_EVENT_METADATA_THREAD;
     monad_event_recorder_export_metadata_section(
-        msg.metadata_type, &msg.page_id, &msg.metadata_offset);
+        msg.metadata_type, &msg.metadata_offset);
     if (sendmsg(sock_fd, &mhdr, 0) == -1) {
         MONAD_SPINLOCK_UNLOCK(&rss->lock);
         close_fn(
@@ -89,7 +88,7 @@ static bool export_shared_recorder_metadata(
     // Send the block info table metadata message
     msg.metadata_type = MONAD_EVENT_METADATA_BLOCK_FLOW;
     monad_event_recorder_export_metadata_section(
-        msg.metadata_type, &msg.page_id, &msg.metadata_offset);
+        msg.metadata_type, &msg.metadata_offset);
     if (sendmsg(sock_fd, &mhdr, 0) == -1) {
         MONAD_SPINLOCK_UNLOCK(&rss->lock);
         close_fn(
@@ -139,7 +138,6 @@ static bool export_recorder_ring(
         .msg_control = cmsg.buf,
         .msg_controllen = sizeof cmsg,
         .msg_flags = 0};
-    char page_name[32];
     struct monad_event_recorder *const recorder =
         &g_monad_event_recorders[export_msg->ring_type];
 
@@ -174,10 +172,7 @@ static bool export_recorder_ring(
     memset(&msg, 0, sizeof msg);
     msg.msg_type = MONAD_EVENT_MSG_MAP_RING_CONTROL;
     msg.ring_capacity = recorder->event_ring.capacity;
-    msg.payload_page_pool_size = (uint16_t)recorder->all_pages_size;
-    msg.cur_seqno = atomic_load_explicit(
-        &recorder->event_ring.control->last_seqno, memory_order_acquire);
-    *(int *)CMSG_DATA(&cmsg.hdr) = recorder->control_fd;
+    *(int *)CMSG_DATA(&cmsg.hdr) = recorder->event_ring_fds.control_fd;
 
     if (sendmsg(sock_fd, &mhdr, 0) == -1) {
         MONAD_SPINLOCK_UNLOCK(&recorder->lock);
@@ -193,7 +188,7 @@ static bool export_recorder_ring(
 
     // Export the descriptor table file descriptor
     msg.msg_type = MONAD_EVENT_MSG_MAP_DESCRIPTOR_TABLE;
-    *(int *)CMSG_DATA(&cmsg.hdr) = recorder->descriptor_table_fd;
+    *(int *)CMSG_DATA(&cmsg.hdr) = recorder->event_ring_fds.descriptor_table_fd;
 
     if (sendmsg(sock_fd, &mhdr, 0) == -1) {
         MONAD_SPINLOCK_UNLOCK(&recorder->lock);
@@ -207,30 +202,21 @@ static bool export_recorder_ring(
     }
     ++*nmsgs;
 
-    // Export all payload page file descriptors
-    msg.msg_type = MONAD_EVENT_MSG_MAP_PAYLOAD_PAGE;
-    MONAD_SPINLOCK_LOCK(&recorder->payload_page_pool.lock);
-    for (size_t p = 0; p < recorder->all_pages_size; ++p) {
-        msg.page_id = recorder->all_pages[p]->page_id;
-        *(int *)CMSG_DATA(&cmsg.hdr) = recorder->all_pages[p]->memfd;
-        if (sendmsg(sock_fd, &mhdr, 0) == -1) {
-            // Copy the diagnostic name before unlocking the page
-            strncpy(
-                page_name, recorder->all_pages[p]->page_name, sizeof page_name);
-            MONAD_SPINLOCK_UNLOCK(&recorder->payload_page_pool.lock);
-            MONAD_SPINLOCK_UNLOCK(&recorder->lock);
-            close_fn(
-                client,
-                errno,
-                "unable to export event page %s for ring %hhu to client %u",
-                page_name,
-                export_msg->ring_type,
-                client_id);
-            return false;
-        }
-        ++*nmsgs;
+    // Export the payload buffer file descriptor
+    msg.msg_type = MONAD_EVENT_MSG_MAP_PAYLOAD_BUFFER;
+    *(int *)CMSG_DATA(&cmsg.hdr) = recorder->event_ring_fds.payload_buf_fd;
+
+    if (sendmsg(sock_fd, &mhdr, 0) == -1) {
+        MONAD_SPINLOCK_UNLOCK(&recorder->lock);
+        close_fn(
+            client,
+            errno,
+            "unable to export ring %hhu payload buffer fd to client %u",
+            export_msg->ring_type,
+            client_id);
+        return false;
     }
-    MONAD_SPINLOCK_UNLOCK(&recorder->payload_page_pool.lock);
+    ++*nmsgs;
 
     // Send the final message
     msg.msg_type = MONAD_EVENT_MSG_EXPORT_FINISHED;

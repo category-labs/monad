@@ -9,8 +9,8 @@
  *      timestamps. These are needed by any file that wishes to record events.
  *
  *   2. The initialization function to configure the recorders -- setting
- *      the amount of memory for the recorder ring and payload page pool -- and
- *      a function to enable/disable a recorder gracefully
+ *      the amount of memory for the recorder descriptor table and payload
+ *      buffer -- and a function to enable/disable a recorder gracefully
  *
  *   3. Minimum, maximum, and default values for various memory configuration
  *      options
@@ -40,8 +40,8 @@ enum monad_event_flags : uint8_t
 };
 
 /// Record an event with the given type and flags, whose event payload is
-/// described by the given (PTR, SIZE) pair that will be memcpy'ed to a payload
-/// page
+/// described by the given (PTR, SIZE) pair that will be memcpy'ed to the
+/// payload buffer
 #define MONAD_EVENT_MEMCPY(EVENT_TYPE, FLAGS, PTR, SIZE)                       \
     monad_event_record(                                                        \
         &g_monad_event_recorders[MONAD_EVENT_RING_EXEC],                       \
@@ -77,7 +77,7 @@ struct monad_event_recorder;
 /// effect and will return EBUSY
 int monad_event_recorder_configure(
     enum monad_event_ring_type ring_type, uint8_t ring_shift,
-    uint8_t payload_page_shift, uint16_t payload_page_count);
+    uint8_t payload_buf_shift);
 
 /// Start or stop the recorder for the given event ring type; disabling a
 /// recorder will allow monad_event_recorder_configure to be called again
@@ -124,13 +124,12 @@ monad_event_recorder_end_block(struct monad_event_block_exec_result const *);
 /// implement the MONAD_EVENT_MSG_METADATA_OFFSET protocol message in the
 /// server)
 int monad_event_recorder_export_metadata_section(
-    enum monad_event_metadata_type, uint16_t *page_id, uint32_t *offset);
+    enum monad_event_metadata_type, uint32_t *offset);
 
 /// Initialize an event reader that runs in the same process as the recorder;
 /// external processes use a special library, see libs/event/event.md
 int monad_event_init_local_iterator(
-    enum monad_event_ring_type, struct monad_event_iterator *,
-    size_t *payload_page_count);
+    enum monad_event_ring_type, struct monad_event_iterator *);
 
 /// __attribute__((constructor)) priority of the event recorders' constructor
 #define MONAD_EVENT_RECORDER_CTOR_PRIO 1000
@@ -139,16 +138,13 @@ int monad_event_init_local_iterator(
  * Min, max, and default memory sizes
  */
 
-#define MONAD_EVENT_DEFAULT_RING_SHIFT (20)
-#define MONAD_EVENT_MIN_RING_SHIFT (12)
-#define MONAD_EVENT_MAX_RING_SHIFT (40)
+#define MONAD_EVENT_DEFAULT_EXEC_RING_SHIFT (20)
+#define MONAD_EVENT_MIN_EXEC_RING_SHIFT (16)
+#define MONAD_EVENT_MAX_EXEC_RING_SHIFT (32)
 
-#define MONAD_EVENT_DEFAULT_PAYLOAD_PAGE_SHIFT (24)
-#define MONAD_EVENT_MIN_PAYLOAD_PAGE_SHIFT (21)
-#define MONAD_EVENT_MAX_PAYLOAD_PAGE_SHIFT (32)
-
-#define MONAD_EVENT_DEFAULT_PAYLOAD_PAGE_COUNT (32)
-#define MONAD_EVENT_MIN_PAYLOAD_PAGE_COUNT (20)
+#define MONAD_EVENT_DEFAULT_EXEC_PAYLOAD_BUF_SHIFT (28)
+#define MONAD_EVENT_MIN_EXEC_PAYLOAD_BUF_SHIFT (27)
+#define MONAD_EVENT_MAX_EXEC_PAYLOAD_BUF_SHIFT (40)
 
 #define MONAD_EVENT_RECORDER_INTERNAL
 #include "event_recorder_inline.h"

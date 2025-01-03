@@ -120,8 +120,9 @@ static bool is_txn_event(enum monad_event_type type)
 }
 
 static void hexdump_event_payload(
-    uint8_t const *payload, size_t length, uint64_t event_seqno,
-    _Atomic(uint64_t) const *page_seqno_overwrite, FILE *out)
+    struct monad_event_iterator const *iter,
+    struct monad_event_descriptor const *event, uint8_t const *payload,
+    size_t length, uint64_t event_seqno, FILE *out)
 {
     static char hexdump_buf[1 << 25];
     char *o = hexdump_buf;
@@ -139,18 +140,16 @@ static void hexdump_event_payload(
         }
         *o++ = '\n';
 
-        // Every 512 bytes, check if the payload page data is still valid; the
-        // + 16 bias is to prevent checking the first iteration
+        // Every 512 bytes, check if the payload is still valid; the + 16 byte
+        // bias is to prevent checking the first iteration
         if ((line - payload + 16) % 512 == 0 &&
-            atomic_load_explicit(page_seqno_overwrite, memory_order_acquire) >
-                event_seqno) {
+            !monad_event_payload_check(iter, event)) {
             break; // Escape to the end, which checks the final time
         }
     }
 
-    if (atomic_load_explicit(page_seqno_overwrite, memory_order_acquire) >
-        event_seqno) {
-        fprintf(out, "ERROR: event %lu payload lost!\n", event_seqno);
+    if (!monad_event_payload_check(iter, event)) {
+        fprintf(stderr, "ERROR: event %lu payload lost!\n", event_seqno);
     }
     else {
         fwrite(hexdump_buf, (size_t)(o - hexdump_buf), 1, out);
@@ -166,7 +165,6 @@ static void print_event(
     static char timebuf[32];
     static time_t last_second = 0;
 
-    _Atomic(uint64_t) const *page_seqno_overwrite;
     uint8_t const *payload;
     ldiv_t time_parts;
     char event_buf[256];
@@ -180,7 +178,7 @@ static void print_event(
 
     time_parts = ldiv(event->epoch_nanos, 1'000'000'000L);
     if (time_parts.quot != last_second) {
-        // A new second has ticked. Change the time buffer.
+        // A new second has ticked. Reformat the per-second time buffer.
         struct tm;
         last_second = time_parts.quot;
         strftime(timebuf, sizeof timebuf, "%H:%M:%S", localtime(&last_second));
@@ -219,7 +217,7 @@ static void print_event(
     // safe to touch `event` again after calling `monad_event_reader_advance`,
     // unless we manually acquire-load `event->seqno` and compare it against
     // `seqno`
-    payload = monad_event_payload_peek(iter, event, &page_seqno_overwrite);
+    payload = monad_event_payload_peek(iter, event);
     if (monad_event_iterator_advance(iter)) {
         fwrite(event_buf, (size_t)(o - event_buf), 1, out);
     }
@@ -228,9 +226,9 @@ static void print_event(
         // Note we use `last_seqno + 1` here, as even the relaxed `seqno` load
         // above is potentially not right (it could show the overwrite value)
         fprintf(
-            out,
+            stderr,
             "ERROR: event %lu lost during copy-out\n",
-            iter->read_last_seqno + 1);
+            iter->last_seqno + 1);
         return;
     }
 
@@ -246,7 +244,7 @@ static void print_event(
     //
     //    // ... switch cases for other event types
     //    };
-    hexdump_event_payload(payload, length, seqno, page_seqno_overwrite, out);
+    hexdump_event_payload(iter, event, payload, length, seqno, out);
 }
 
 // The main event processing loop of the application
@@ -275,9 +273,9 @@ event_loop(struct monad_event_imported_ring const *import, FILE *out)
 
         case MONAD_EVENT_GAP:
             fprintf(
-                out,
+                stderr,
                 "event gap from %lu -> %lu, resetting\n",
-                iter.read_last_seqno,
+                iter.last_seqno,
                 atomic_load_explicit(&event->seqno, memory_order_relaxed));
             monad_event_iterator_reset(&iter);
             continue;

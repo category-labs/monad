@@ -20,49 +20,51 @@
 static inline uint64_t
 monad_event_iterator_sync_wait(struct monad_event_iterator *iter)
 {
+    uint64_t last_seqno;
     struct monad_event_descriptor const *event;
-    uint64_t const write_last_seqno =
-        atomic_load_explicit(iter->write_last_seqno, memory_order_acquire);
-    if (__builtin_expect(write_last_seqno == 0, 0)) {
+    __atomic_load(&iter->wr_state->last_seqno, &last_seqno, __ATOMIC_ACQUIRE);
+    if (__builtin_expect(last_seqno == 0, 0)) {
         // Nothing materialized anyway
-        // TODO(ken): is it an error for this to happen, since we expect
-        //    something to actually be materialized?
-        return iter->read_last_seqno = 0;
+        // TODO(ken): should it be an error if this happens? assert instead?
+        return iter->last_seqno = 0;
     }
-    // `write_last_seqno` is atomically incremented before the contents of the
-    // associated descriptor table slot (which is `write_last_seqno - 1`) are
-    // written. The contents are definitely commited when the sequence number
-    // (which is equal to `write_last_seqno`) is atomically stored with
-    // memory_order_release. This waits for that to happen, if it hasn't.
-    event = &iter->desc_table[(write_last_seqno - 1) & iter->capacity_mask];
+    // `last_seqno` is the last sequence number the event ring writer has
+    // allocated. The writer may still be in the process of recording the
+    // event associated with the sequence number, so it may not be safe
+    // to read its event descriptor yet.
+    //
+    // It is safe to read when the sequence number is atomically stored into
+    // the associated descriptor table slot (which is `last_seqno - 1`)
+    // with memory_order_release ordering. This waits for that to happen, if it
+    // hasn't yet.
+    event = &iter->desc_table[(last_seqno - 1) & iter->capacity_mask];
     while (atomic_load_explicit(&event->seqno, memory_order_acquire) <
-           write_last_seqno)
+           last_seqno)
         /*empty*/;
-    return write_last_seqno - 1;
+    return last_seqno;
 }
 
 inline enum monad_event_poll_result monad_event_iterator_peek(
     struct monad_event_iterator *iter,
     struct monad_event_descriptor const **event)
 {
-    *event = &iter->desc_table[iter->read_last_seqno & iter->capacity_mask];
+    *event = &iter->desc_table[iter->last_seqno & iter->capacity_mask];
     uint64_t const seqno =
         atomic_load_explicit(&(*event)->seqno, memory_order_acquire);
-    if (__builtin_expect(seqno == iter->read_last_seqno + 1, 1)) {
+    if (__builtin_expect(seqno == iter->last_seqno + 1, 1)) {
         return MONAD_EVENT_READY;
     }
-    return seqno < iter->read_last_seqno ? MONAD_EVENT_NOT_READY
-                                         : MONAD_EVENT_GAP;
+    return seqno < iter->last_seqno ? MONAD_EVENT_NOT_READY : MONAD_EVENT_GAP;
 }
 
 inline bool monad_event_iterator_advance(struct monad_event_iterator *iter)
 {
     struct monad_event_descriptor const *const event =
-        &iter->desc_table[iter->read_last_seqno & iter->capacity_mask];
+        &iter->desc_table[iter->last_seqno & iter->capacity_mask];
     uint64_t const seqno =
         atomic_load_explicit(&event->seqno, memory_order_acquire);
-    if (__builtin_expect(seqno == iter->read_last_seqno + 1, 1)) {
-        ++iter->read_last_seqno;
+    if (__builtin_expect(seqno == iter->last_seqno + 1, 1)) {
+        ++iter->last_seqno;
         return true;
     }
     return false;
@@ -70,14 +72,21 @@ inline bool monad_event_iterator_advance(struct monad_event_iterator *iter)
 
 inline void const *monad_event_payload_peek(
     struct monad_event_iterator const *iter,
-    struct monad_event_descriptor const *event,
-    _Atomic(uint64_t) const **page_overwrite_seqno)
+    struct monad_event_descriptor const *event)
 {
-    struct monad_event_payload_page const *const page =
-        iter->payload_pages[event->payload_page];
-    void const *const ptr = (uint8_t const *)page + event->offset;
-    *page_overwrite_seqno = &page->overwrite_seqno;
-    return ptr;
+    return event->inline_payload
+               ? event->payload
+               : iter->payload_buf +
+                     (event->payload_buf_offset & (iter->payload_buf_size - 1));
+}
+
+inline bool monad_event_payload_check(
+    struct monad_event_iterator const *iter,
+    struct monad_event_descriptor const *event)
+{
+    return event->inline_payload ||
+           event->payload_buf_offset >=
+               __atomic_load_n(iter->buffer_window_start, __ATOMIC_ACQUIRE);
 }
 
 inline enum monad_event_poll_result monad_event_iterator_copy_next(
@@ -88,7 +97,7 @@ inline enum monad_event_poll_result monad_event_iterator_copy_next(
     size_t copy_size;
 
     struct monad_event_descriptor const *const event_src =
-        &iter->desc_table[iter->read_last_seqno & iter->capacity_mask];
+        &iter->desc_table[iter->last_seqno & iter->capacity_mask];
 #if defined(__cplusplus) && !defined(__clang__)
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wclass-memaccess"
@@ -104,7 +113,7 @@ inline enum monad_event_poll_result monad_event_iterator_copy_next(
             0)) {
         return MONAD_EVENT_GAP;
     }
-    if (__builtin_expect(seqno == iter->read_last_seqno + 1, 1)) {
+    if (__builtin_expect(seqno == iter->last_seqno + 1, 1)) {
         copy_size = payload_buf_size > event_dst->length ? event_dst->length
                                                          : payload_buf_size;
         if (__builtin_expect(
@@ -116,32 +125,25 @@ inline enum monad_event_poll_result monad_event_iterator_copy_next(
         (void)monad_event_iterator_advance(iter);
         return MONAD_EVENT_READY;
     }
-    return seqno < iter->read_last_seqno ? MONAD_EVENT_NOT_READY
-                                         : MONAD_EVENT_GAP;
+    return seqno < iter->last_seqno ? MONAD_EVENT_NOT_READY : MONAD_EVENT_GAP;
 }
 
 inline void *monad_event_payload_memcpy(
     struct monad_event_iterator const *iter,
     struct monad_event_descriptor const *event, void *dst, size_t n)
 {
-    _Atomic(uint64_t) const *page_overwrite_seqno;
-    void const *const src =
-        monad_event_payload_peek(iter, event, &page_overwrite_seqno);
+    void const *const src = monad_event_payload_peek(iter, event);
     memcpy(dst, src, n);
-    if (__builtin_expect(
-            atomic_load_explicit(page_overwrite_seqno, memory_order_acquire) >
-                atomic_load_explicit(&event->seqno, memory_order_acquire),
-            0)) {
-        // The shared memory page this payload lives in has been reused by
-        // later events. We didn't copy this fast enough to be sure that all
-        // `n` bytes are valid.
+    if (__builtin_expect(!monad_event_payload_check(iter, event), 0)) {
+        // The bytes of this event were reused by a later event that overwrote
+        // it (we didn't copy this fast enough to be sure that all
+        // `n` bytes are valid).
         return nullptr;
     }
     return dst;
 }
 
-inline uint64_t
-monad_event_iterator_reset(struct monad_event_iterator *iter)
+inline uint64_t monad_event_iterator_reset(struct monad_event_iterator *iter)
 {
-    return iter->read_last_seqno = monad_event_iterator_sync_wait(iter);
+    return iter->last_seqno = monad_event_iterator_sync_wait(iter);
 }

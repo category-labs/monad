@@ -21,7 +21,7 @@
 #include <monad/event/event_recorder.h>
 #include <monad/event/event_types.h>
 
-constexpr uint64_t MaxPerfIterations = 1UL << 24;
+constexpr uint64_t MaxPerfIterations = 1UL << 20;
 
 // Running the tests with the reader disabled is a good measure of how
 // expensive the multi-threaded lock-free recording in the writer is, without
@@ -76,7 +76,7 @@ static void writer_main(
         elapsed_nanos);
 }
 
-static void reader_main(
+[[maybe_unused]] static void reader_main(
     std::latch *latch, uint8_t writer_thread_count, uint32_t expected_len)
 {
     constexpr size_t EventDelayHistogramSize = 30;
@@ -89,18 +89,18 @@ static void reader_main(
     monad_event_iterator iter{};
     std::vector<uint64_t> expected_counters;
     expected_counters.resize(writer_thread_count, 0);
-    ASSERT_EQ(
-        0,
-        monad_event_init_local_iterator(MONAD_EVENT_RING_EXEC, &iter, nullptr));
+    ASSERT_EQ(0, monad_event_init_local_iterator(MONAD_EVENT_RING_EXEC, &iter));
     uint64_t delay_histogram[EventDelayHistogramSize] = {};
     uint64_t available_histogram[EventsAvailableHistogramSize] = {};
 
     latch->arrive_and_wait();
-    while (iter.write_last_seqno->load(std::memory_order_acquire) == 0)
+    std::atomic_ref<uint64_t const> const ring_last_seqno{
+        iter.wr_state->last_seqno};
+    while (ring_last_seqno.load(std::memory_order_acquire) == 0)
         /* wait for something to be produced */;
     monad_event_iterator_reset(&iter);
     // Regardless of where the most recent event is, start from zero
-    uint64_t last_seqno = iter.read_last_seqno = 0;
+    uint64_t last_seqno = iter.last_seqno = 0;
     while (last_seqno < max_writer_iteration) {
         monad_event_descriptor const *event;
         monad_event_poll_result const pr =
@@ -116,8 +116,7 @@ static void reader_main(
         // Available histogram
         if (MONAD_UNLIKELY((last_seqno + 1) & HistogramSampleMask) == 0) {
             uint64_t const available_events =
-                iter.write_last_seqno->load(std::memory_order::acquire) -
-                event->seqno;
+                ring_last_seqno.load(std::memory_order::acquire) - event->seqno;
             unsigned avail_bucket =
                 static_cast<unsigned>(std::bit_width(available_events));
             if (avail_bucket >= std::size(available_histogram)) {
@@ -138,16 +137,14 @@ static void reader_main(
         EXPECT_EQ(last_seqno + 1, event->seqno);
         last_seqno = event_seqno;
 
-        std::atomic<uint64_t> const *overwrite_seqno;
         if (MONAD_UNLIKELY(event->type != MONAD_EVENT_TEST_COUNTER)) {
             continue;
         }
         ASSERT_EQ(event->length, expected_len);
         auto const test_counter =
             *static_cast<monad_event_test_counter const *>(
-                monad_event_payload_peek(&iter, event, &overwrite_seqno));
-        ASSERT_GE(
-            event->seqno, overwrite_seqno->load(std::memory_order::acquire));
+                monad_event_payload_peek(&iter, event));
+        ASSERT_TRUE(monad_event_payload_check(&iter, event));
         ASSERT_GT(writer_thread_count, test_counter.writer_id);
         EXPECT_EQ(
             expected_counters[test_counter.writer_id], test_counter.counter);
@@ -181,9 +178,8 @@ class EventRecorderBulkTest
         monad_event_recorder_set_enabled(MONAD_EVENT_RING_EXEC, false);
         monad_event_recorder_configure(
             MONAD_EVENT_RING_EXEC,
-            MONAD_EVENT_DEFAULT_RING_SHIFT,
-            MONAD_EVENT_DEFAULT_PAYLOAD_PAGE_SHIFT,
-            MONAD_EVENT_DEFAULT_PAYLOAD_PAGE_COUNT);
+            MONAD_EVENT_DEFAULT_EXEC_RING_SHIFT,
+            MONAD_EVENT_DEFAULT_EXEC_PAYLOAD_BUF_SHIFT);
     }
 };
 

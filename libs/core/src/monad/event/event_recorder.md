@@ -5,7 +5,7 @@
 You should have a rough idea of how the event system is designed before
 reading this. The introductory document is the `event.md` file in the
 client library directory, `libs/event`. It explains the basic concepts
-and data structures from the consumers perspective.
+and data structures from the reader's perspective.
 
 The file you are reading now explains the specific objects `monad` uses
 to record the events, and the rationale for their design.
@@ -18,16 +18,16 @@ of an "event":
 
 > Events are made up of two components:
 >
-> 1. The *event descriptor* is a fixed-size (currently 32 byte) object
->    describing an event that has happened. It contains the event's type,
->    a sequence number, and a timestamp.
+> 1. The *event descriptor* is a fixed-size (currently 64 byte) object
+>   describing an event that has happened. It contains the event's type,
+>   a sequence number, and a timestamp.
 > 2. The *event payload* is a variably-sized piece of extra data about
->    the event, which is specific to the event type. For example,
->    a "start of transaction" event contains the transaction header as its
->    payload. Some events have an empty payload, such as the heartbeat event.
->    Some of the fields in the event descriptor not already mentioned are
->    used to communicate where in shared memory the payload bytes are located,
->    and the payload's length.
+>   the event, which is specific to the event type. For example,
+>   a "start of transaction" event contains the transaction header as its
+>   payload. Some events have an empty payload, such as the heartbeat event.
+>   Some of the fields in the event descriptor not already mentioned are
+>   used to communicate where in shared memory the payload bytes are located,
+>   and the payload's length.
 
 This is shown as follows:
 
@@ -40,37 +40,19 @@ This is shown as follows:
   ║ └────┬────┘ └────┬────┘ └─────────┘     └────┬────┘ └─────────┘ ║
   ╚══════╬═══════════╬══════════════════...══════╬══════════════════╝
          │           │                           │
-         │           │                           │
-         │           │                           │
-         │           │                           │
-         │           │    ┌─Payload Page──┐      │   ┌─Payload page──┐
-         │           │    │┌─────────────┐│      │   │┌─────────────┐│
-         │           │    ││ Page header ││      │   ││ Page header ││
-         │           │    │├─────────────┤│      │   │├─────────────┤│
-         │           │    ││   Event 1   ││      │   ││             ││
-         └───────────┼────▶│   payload   ││      │   ││   Event N   ││
-                     │    │├─────────────┤│      └───▶│   payload   ││
-                     │    ││             ││          ││             ││
-                     │    ││             ││          │├─────────────┤│
-                     │    ││   Event 2   ││          ││░░░░░░░░░░░░░││
-                     └────▶│   payload   ││          ││░░░░░░░░░░░░░││
-                          ││             ││          ││░░░░░░░░░░░░░││
-                          ││             ││          ││░░░░free░░░░░││
-                          │├─────────────┤│          ││░░░░space░░░░││
-                          ││░░░░░░░░░░░░░││          ││░░░░░░░░░░░░░││
-                          ││░░░░free░░░░░││          ││░░░░░░░░░░░░░││
-                          ││░░░░space░░░░││          ││░░░░░░░░░░░░░││
-                          ││░░░░░░░░░░░░░││          ││░░░░░░░░░░░░░││
-                          │└─────────────┘│          │└─────────────┘│
-                          └───────────────┘          └───────────────┘
+         │           └──────┐                    └────┐
+         │                  │                         │
+   ╔═════▼══════════════════▼══════════════...════════▼════════════════════════╗
+   ║ ┌───────┐ ┌─────────────────────────┐     ┌─────────────┐ ┌─────────────┐ ║
+   ║ │Event 1│ │         Event 2         │     │   Event N   │ │░░░░free░░░░░│ ║
+   ║ │payload│ │         payload         │     │   payload   │ │░░░░space░░░░│ ║
+   ║ └───────┘ └─────────────────────────┘     └─────────────┘ └─────────────┘ ║
+   ╚═Payload buffer════════════════════════...═════════════════════════════════╝
 ```
 
 In C code, the "Event 1", "Event 2", etc. objects are instances of
-`struct monad_event_descriptor`. The payload pages are large slabs of
-memory that hold payload contents. At the base address of a payload
-page is a header object called `struct monad_event_payload_page`. Some
-of its fields are read by the reader, but most of them are internal
-linear allocator state used by the writer.
+`struct monad_event_descriptor`. The payload buffer is a large byte
+array.
 
 The design inspiration comes from network drivers: a typical Ethernet
 NIC reassembles packets within a FIFO bit buffer (to be DMA'ed upon
@@ -80,34 +62,38 @@ and the DMA location where the packet contents were transferred to. The
 communication of the device driver and the NIC hardware happens via a
 shared memory SPSC descriptor queue.
 
-`struct monad_event_descriptor` and `struct monad_event_payload_page`
-are defined in `event.h`, which is part of the `monad_event_core`
-library, in `libs/event`.
-
-The ring buffer array has type `struct monad_event_descriptor[]` and is
-called the _"descriptor table"_. The atomic "next index" register is
-mapped in a shared memory page by itself, called the control page. These
-objects are currently defined this way:
+The above structure is represented in code as `struct monad_event_ring`,
+defined in `event.h` (which is part of the `monad_event_core` library,
+in `libs/event`). It is defined this way:
 
 ```c
-/// Control register of the event ring, mapped in a shared memory page
-struct monad_event_ring_control
-{
-    alignas(64) _Atomic(uint64_t) prod_next;
-};
-
 /// An IPC-style ring used to implement a lock-free MPMC ring for passing event
 /// descriptors between threads, potentially in different processes. This
-/// object is not directly present in shared memory, but the control page and
-/// descriptor table are.
+/// object is not directly present in shared memory, but the control page,
+/// descriptor table, and payload buffer are.
 struct monad_event_ring
 {
     struct monad_event_ring_control *control;
     struct monad_event_descriptor *descriptor_table;
-    size_t capacity_mask;
     size_t capacity;
+    uint8_t *payload_buf;
+    size_t payload_buf_size;
 };
 ```
+
+The event descriptor array is called the _descriptor table_ in code, and
+its total size is stored in `capacity` field. The `payload_buf` and
+`payload_buf_size` fields describe the payload buffer.
+
+The "control" object stores the ring's "writer state": it keeps track
+of the last sequence number allocated, the next payload buffer byte to
+allocate. This is mapped in a shared page by itself, because this state
+is sometimes read by the reader. For example, by default when a read
+iterator is initialized it will be set to read the latest event produced.
+
+There is one other piece of data in the control page: the "buffer window".
+This is used to detect when event payloads have been overwritten by
+subsequent events. This is described in a later section.
 
 #### Important aside: what is `monad_event_core`?
 
@@ -135,7 +121,7 @@ because the event system can be reused by the performance tracer, and
 performance trace points can be placed anywhere (e.g., in `libs/db`).
 The performance tracer is described in a separate document.
 
-### Why not large, fixed-sized events and no "payload page" scheme?
+### Why not large, fixed-sized events and no "payload buffer" scheme?
 
 One might imagine a design like this could work:
 
@@ -233,6 +219,120 @@ enum monad_event_ring_type : uint8_t
 };
 ```
 
+### Sliding buffer window
+
+Both the event descriptor table and payload buffer are *ring buffers*:
+once all array slots have been used, subsequent writes wrap around to the
+beginning of the array. For event descriptors, the detection mechanism for
+slow consumers observing an overwrite relies on the sequence number, as
+described in the `event.md` documentation. For the payload buffer, a
+similar idea is used, except using the byte offset in the payload buffer
+(similar to the byte sequence number in the TCP protocol).
+
+Conceptually, we think of a ring buffer as storing an infinite number
+of items, but there is only enough space to keep the most recent items.
+As with event sequence numbers, byte offsets within the payload buffer
+increase monotonically forever: payload offsets are stored in event
+descriptors _before_ modular arithmetic is applied. For example, given
+a payload buffer of total size `S`, an event payload might be recorded
+as starting at "offset" `4 * S + 100`. This is a virtual offset that
+assumes an infinite-sized payload buffer; it corresponds to physical
+offset `payload_buf[100]`. When reading or writing payload memory, the
+library performs the virtual to physical calculation via modular
+arithmetic.
+
+Once the buffer is initially filled, we can think of the
+`uint8_t payload_buf[]` array of size `S` as a sliding window across
+the infinitely-sized virtual payload buffer: at any given time, the
+most recent `S` bytes are still valid, whereas earlier offsets in
+the `░` region are no longer valid.
+
+```
+   ...───────────────────────────────────────────────────────────────...
+                                    S
+                         ◀──────────────────────▶
+       ┌────────────────┬────────────────────────┬─────────────────┐
+       │░░░░░░░░░░░░░░░░│▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│.................│
+       │░░░░░░░░░░░░░░░░│▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│.................│
+       │░░░░░░░░░░░░░░░░│▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│.................│
+       └────────────────┴────────────────────────┴─────────────────┘
+
+   ...──Virtual payload buffer (of infinite size)────────────────────...
+
+
+  ┌─Legend────────────────────────────────────────────────┐
+  │                                                       │
+  │ ░ older payloads, overwritten in payload buffer       │
+  │ ▓ currently active payloads, stored in payload buffer │
+  │ . future payloads, not recorded yet                   │
+  │                                                       │
+  └───────────────────────────────────────────────────────┘
+```
+
+The code refers to this concept as the "buffer window": the sliding
+window of virtual offsets that have not expired. Conceptually, this is
+a window the same size as payload buffer, given by
+`[buffer_window_start, buffer_window_start + S)`. Once more than `S`
+bytes have been allocated, `buffer_window_start` slides forward,
+and any event whose virtual offset is less than `buffer_window_start`
+is known to be expired. `buffer_window_start` is stored in the ring
+control structure, which is mapped in a shared memory segment and
+shared with the reader. This is how the reader detects if an event
+payload has expired.
+
+Although this is the _concept_ of the algorithm, the recorder applies a
+small optimization. The sliding window is slightly smaller than the
+size of the payload buffer: a relatively small chunk of size
+`WINDOW_INCR` ("window increment") is cut out of the total payload buffer
+size. Thus the sliding window actually has size `S - WINDOW_INCR`. The
+name "window increment" refers to the fact that sliding window is only
+updated in even multiples of `WINDOW_INCR`. The following diagram shows
+what this looks like:
+
+```
+                                 WINDOW_INCR
+                                  ◀───────▶
+  ┌───────────────────────────────────────────────────────────────┐
+  │┌────────────────────────┬─────┬───────┬──────────────────────┐│
+  ││▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│.....│░░░░░░░│▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒││
+  ││▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│.....│░░░░░░░│▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒││
+  ││▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│.....│░░░░░░░│▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒││
+  │└────────────────────────┴▲────▲───────┴▲─────────────────────┘│
+  └─Payload buffer───────────┼────┼────────┼──────────────────────┘
+                             │    │        │
+                             │    │        buffer_window_start
+                             │    │
+                             │    buffer_window_end
+                             │
+                             next_payload_byte
+
+  ┌─Legend───────────────────────────────────────┐
+  │                                              │
+  │ ░ oldest events, no longer valid             │
+  │ ▒ older events, before buffer wrapped around │
+  │ ▓ newer events, after buffer wrapped around  │
+  │ . next event will be allocated from here     │
+  └──────────────────────────────────────────────┘
+```
+
+Keep in mind when looking at this diagram, that all values are
+stored _before_ modular arithmetic is applied, but for the purpose
+of showing them on the diagram, modular arithmetic has been applied
+to show the position in the array where they point. The ordering
+prior to modular arithmetic is `buffer_window_start <
+next_payload_byte < buffer_window_end`.
+
+Once the allocator needs to take bytes from the `WINDOW_INCR`
+region, the entire window shifts forward by `WINDOW_INCR`.
+The rationale for doing this is that readers must check the value
+of `buffer_window_start` on every single read. If the writer also
+modified it on every single write, the cache coherency protocol would
+create a lot of cache synchronization traffic for this cache line.
+By updating it only occasionally, the shared cache line is only
+updated after approximately `WINDOW_INCR` new bytes have been
+allocated (currently around 16 MiB). Given the distribution of
+event sizes, this is approximately once every 100,000 events.
+
 ## Recording library fundamentals
 
 ### Where does recording happen?
@@ -259,109 +359,126 @@ family of macros, which writes to the "main" execution event ring,
 the (equivalent) `MONAD_TRACE_` family of macros, which are defined in a
 different header.
 
-A core requirement is that the recorder operate in under 100 nanoseconds
-for events will modest payload sizes. To that end it has a few fancier
-features:
-
-- The record functions can be called by any number of `monad` threads
-  simultaneously. The event descriptor allocation is always lock-and-wait
-  free. The payload page allocation _usually_ does not lock (but see the
-  next point)
-- The record functions make use of a thread-local object to make their
-  payload-page allocation strategy trivially thread-safe (they allocate
-  from a cached thread-local payload page most of the time). On rare
-  occasional locking does occur: a spinlock is taken (on the pool of
-  payload pages) when a full page has to be swapped out for a free one
+The record functions can be called by any number of `monad` threads
+simultaneously. Both event descriptor allocation and payload allocation
+are always lock-and-wait free.
 
 The general flow of recording is:
 
-- Reserve a slot in the descriptor table to hold the next event
-  with `_monad_event_alloc_ring_descriptor`. This gives back an
-  "empty" slot in the descriptor table (pointing to an older event
-  whose contents will be overwritten)
-- Allocate space from the cached thread-local payload page, possibly
-  swapping the page for fresh one if it is full
-- Initialize all the fields of the descriptor
-- When finished, atomically write the sequence number with
-  `memory_order_release` ordering, ensuring all other associated
-  writes are visible. This is why the client must atomically acquire
-  the sequence number after finishing its calculations using the
-  zero-copy API -- to prove it did not see an event changing
-  "mid-write"
+1. **Reserve resources** - reserve all resources needed to record the
+  event by calling `_monad_event_ring_reserve`. This allocates a slot in
+  the descriptor table to hold the descriptor, a sequence number for the
+  event, and space in the payload buffer to hold the payload [^1]
+2. **Initialize descriptor** - initialize all the fields of the event
+  descriptor object, _except_ for the sequence number field. The sequence
+  number for this event was reserved in step 1, but it is not written into
+  the descriptor until the final step
+3. **Copy payload** - `memcpy(3)` the payload into the space allocated by
+  `_monad_event_ring_reserve`
+4. **Store sequence number** - atomically store the sequence number into
+   the `seqno` field of the event descriptor, with `memory_order_release`
+   ordering
+
+As described in `event.md`, the atomic updates to the sequence number
+field are how the writer communicates to the reader that the event is
+ready. The compiler and CPU memory barriers emitted by the atomic stores
+ensure that all the memory operations related to event recording become
+visible in other threads by the time the sequence number changes.
+
+There are actually two changes to the descriptor's sequence number field.
+The first happens in step 1, the "Reserve resources" step. Immediately
+after a descriptor slot is reserved for the event, the `seqno` field of the
+descriptor is set to zero with `memory_order_release` ordering. Zero is
+not a valid sequence number, so readers can detect that this descriptor
+slot is no longer valid. Because this slot belonged to an earlier event,
+it's possible that a reader is still working with it. Zeroing the sequence
+number indicates that the slot is in the process of being overwritten.
+The second write to the `seqno` field announces that the write is complete. 
+
+[^1]: All resources are allocated using a single 16 byte compare-and-swap
+instruction. This appears to have better performance than two separate
+atomic fetch add instructions. In rare cases, `buffer_window_start` may be
+updated as described earlier.
 
 ## Important objects in the recorder library
 
 ### Diagram of recorder objects
 
-This diagram shows how all the fundamental objects are related to each
-other. All arrows represent C pointers, so it illustrates how objects
-are actually arranged in memory. Because there are a lot of relationships,
-you will likely need to read the description of each object in subsequent
-sections to understand it completely.
+This diagram shows how all the important objects in the event recorder are
+related to each other. The arrows either represent C pointers, or how an
+array index field points to the indicated item in the associated array.
+Thus, this diagram illustrates how objects are actually arranged in memory.
+
+Objects surrounded by a double-line border (`═`) are resident in a shared
+memory segment. Objects with a single-line border are resident only in the
+address space of the recording process.
+
+The diagram shows the state of memory immediately after recording
+"Event 2":
 
 ```
-                                                          ┌────────▶┌─Free page 1 (◎)───────────────┐
-  ┌─Recorder (◆)──────────────────────────────────┐       │         │                               │
-  │                                               │       │         │┌─Payload page header─────────┐│
-  │ ■   monad_event_descriptor descriptor_table[] │       │         ││ uint8_t *heap_begin         ││
-  │ │ ■ monad_event_payload_page *all_pages[]     │       │         ││ uint8_t *heap_next          ││
-  │ │ │                                           │       │         ││ uint8_t *heap_end           ││
-  │ │ │ ┌─Payload page pool────────────────────┐  │       │         ││ TAILQ_ENTRY(...) next ■─────┼┼────────┐
-  │ │ │ │                                      │  │       │         │├─────────────────────────────┤│        │
-  │ │ │ │ ■ TAILQ_HEAD(...) active_pages       │  │       │         ││▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓││        │
-  │ │ │ │ │                                    │  │       │         ││▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓││        │
-  │ │ │ │ │ TAILQ_HEAD(...) free_pages ■───────┼──┼───────┘         ││▓▓ Old events, alive until ▓▓││        │
-  │ │ │ └─┼────────────────────────────────────┘  │                 ││▓▓▓ this page is recycled ▓▓▓││        │
-  │ │ │   │                                       │                 ││▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓││        │
-  └─┼─┼───┼───────────────────────────────────────┘                 ││▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓││        │
-    │ │   │                                                         │└─────────────────────────────┘│        │
-    │ │   │                                                         └───────────────────────────────┘        │
-    │ │   │                                                                                                  │
-    │ │   │    ╔═Event descriptor ring═══════════════...══════════════╗    ┌─Free page 2 (◎)────────────┐◀───┘
-    │ │   │    ║ ┌─────────┐ ┌─────────┐ ┌─────────┐      ┌─────────┐ ║    │┌──────────────────────────┐│
-    │ │   │    ║ │         │ │         │ │         │      │         │ ║    ││  details not shown, but  ││
-    └─┼───┼───▶║ │ Event 1 │ │ Event 2 │ │ Event 3 │      │ Event N │ ║    ││ same as other free page  ││
-      │   │    ║ │         │ │         │ │         │      │         │ ║    │└──────────────────────────┘│
-      │   │    ║ └─────────┘ └─────────┘ └─────────┘      └─────────┘ ║    └────────────────────────────┘
-      │   │    ╚═════════════════════════════════════...══════════════╝
-      │   │
-      │   │
-      │   │   ┌─Recorder thread cache - thread 1 (◊)────┐           ┌─Recorder thread cache - thread 2 (◊)────┐
-      │   │   │                                         │           │                                         │
-      │   │   │ ■ monad_event_payload_page *active_page │         ┌─┼─■ monad_event_payload_page *active_page │
-      │   │   │ │                                       │         │ │                                         │
-      │   │   └─┼───────────────────────────────────────┘         │ └─────────────────────────────────────────┘
-      │   │     │                                                 │
-      │   │     │                                                 │
-      │   │     │                                                 │
-      │   └─────┴─▶───────────▶┌─Active page, thread 1 (◎)─────┐  └────▶┌─Active page, thread 2 (◎)───┐
-      │                        │                               │  ┌────▶│┌──────────────────────────┐ │
-      │                        │┌─Payload page header─────────┐│  │     ││  details not shown, but  │ │
-      │               ┌────────┼┼■    uint8_t *heap_begin     ││  │     ││same as other active page │ │
-      │               │  ┌─────┼┼──■  uint8_t *heap_next      ││  │     │└──────────────────────────┘ │
-      │               │  │  ┌──┼┼────■uint8_t *heap_end       ││  │     └─────────────────────────────┘
-      │               │  │  │  ││     TAILQ_ENTRY(...) next ■─┼┼──┘
-      │               │  │  │  │├─────────────────────────────┤│
-      │               └──┼──┼──┼▶▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓││
-      │                  │  │  ││▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓││
-      │                  │  │  ││▓▓▓ Newly recorded events ▓▓▓││
-      │                  │  │  ││▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓││
-      │                  │  │  ││▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓││
-      │                  │  │  │├─────────────────────────────┤│
-      │                  └──┼──┼▶░░░░░░░░░░░░░░░░░░░░░░░░░░░░░││    ┌─Legend───────────────────────────────┐
-      │                     │  ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░││    │                                      │
-      │                     │  ││░░░░░░░░░░░ empty ░░░░░░░░░░░││    │ ◆ - struct monad_event_recorder      │
-      │                     │  ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░││    │ ◊ - struct monad_event_recorder_thr  │
-      │                     │  ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░││    │ ◎ - struct monad_event_payload_page  │
-      │                     └──┼▶─────────────────────────────┘│    └──────────────────────────────────────┘
-      │                        └───────────────────────────────┘
-      │
-    ╔═▼═════════════════════════════...════════════╗
-    ║ ┌───────┐ ┌───────┐ ┌───────┐      ┌───────┐ ║
-    ║ │page * │ │page * │ │page * │      │page * │ ║
-    ║ └───────┘ └───────┘ └───────┘      └───────┘ ║
-    ╚═Payload page array════════════...════════════╝
+    ┌─Recorder (◆)──────────────────────────────────┐ ┌─Shared recorder state (◎)──────────────────┐
+    │                                               │ │                                            │
+    │ ■   monad_event_descriptor descriptor_table[] │ │ monad_event_thread_info threads[] ■────────┼───┐
+    │ │ ■ uint8_t *payload_buf                      │ │ monad_event_block_header block_headers[] ■─┼─┐ │
+    │ │ │ monad_event_ring_control *control ■─┐     │ │                                            │ │ │
+    └─┼─┼─────────────────────────────────────┼─────┘ └────────────────────────────────────────────┘ │ │
+      │ │                                     │                                                      │ │
+      │ │                                     ▼                                                      │ │
+      │ │                 ╔═Ring control (◮)════════════════╗           ╔═Thread metadata table══╗◀──┼─┘
+      │ │                 ║                                 ║           ║ ┌────────────────────┐ ║   │
+      │ │                 ║ ■ uint64_t last_seqno           ║           ║ │ Thread 1 metadata  │ ║   │
+      │ │                 ║ │ uint64_t next_payload_byte  ■ ║           ║ └────────────────────┘ ║   │
+      │ │                 ║ │ uint64_t buffer_window_start│ ║           ║ ┌────────────────────┐ ║   │
+      │ │                 ╚═╬═════════════════════════════╬═╝   ┌───────╬─▶ Thread 2 metadata  │ ║   │
+      │ │                   │                             │     │       ║ └────────────────────┘ ║   │
+      │ │                   │                             │     │       ║ ┌────────────────────┐ ║   │
+      │ │                   │                             │     │       ║ │        ...         │ ║   │
+      │ │    ╔══════════════╬══════════════════════...═╗  │     │       ║ └────────────────────┘ ║   │
+      │ │    ║ ┌─────────┐ ┌▼────────┐ ┌─────────┐     ║  │     │       ╚════════════════════════╝   │
+      │ │    ║ │         │ │░░░░░░░░░│ │         │     ║  │     │                                    │
+      └─┼───▶║ │ Event 1 │ │░Event 2░│ │ (free)  │     ║  │     │       ╔═Block metadata table═══╗◀──┘
+        │    ║ │         │ │░░░░░░░░░│ │         │     ║  │     │       ║ ┌────────────────────┐ ║
+        │    ║ └─────────┘ └─────────┘ └─────────┘     ║  │     │   ┌───╬─▶  Block 1 metadata  │ ║
+        │    ╚═Event descriptor ring═══════════════...═╝  │     │   │   ║ └────────────────────┘ ║
+        │                   ╱         ╲                   │     │   │   ║ ┌────────────────────┐ ║
+        │                  ╱           ╲                  │     │   │   ║ │  Block 2 metadata  │ ║
+        │                 ╱             ╲                 │     │   │   ║ └────────────────────┘ ║
+        │                ╱               ╲                │     │   │   ║ ┌────────────────────┐ ║
+        │               ╱                 ╲               │     │   │   ║ │        ...         │ ║
+        │                                                 │     │   │   ║ └────────────────────┘ ║
+        │            ╔═Event descriptor (◊)══════════╗    │     │   │   ╚════════════════════════╝
+        │            ║                               ║    │     │   │
+        │            ║ ■ uint64_t payload_buf_offset ║    │     │   │
+        │            ║ │ uint8_t source_id ■─────────╬────┼─────┘   │
+        │            ║ │ uint16_t block_flow_id ■────╬────┼─────────┘
+        │            ╚═╬═════════════════════════════╝    │
+        │              │                                  │
+        │              │                                  │
+        └─▶╔═══════════╬══════════════════════════════════╬════════════════════════════╗
+           ║ ┌───────┐ ▼────────────────────────────────┐ ▼──────────────────────────┐ ║
+           ║ │Event 1│ │            Event 2             │ │░░░░░░░░░░░free░░░░░░░░░░░│ ║
+           ║ │payload│ │            payload             │ │░░░░░░░░░░space░░░░░░░░░░░│ ║
+           ║ └───────┘ └────────────────────────────────┘ └──────────────────────────┘ ║
+           ╚═Payload buffer════════════════════════════════════════════════════════════╝
+
+
+
+       ┌─Legend───────────────────────────────────────┐
+       │                                              │
+       │ ◆ - struct monad_event_recorder              │
+       │ ◎ - struct monad_event_recorder_shared_state │
+       │ ◊ - struct monad_event_descriptor            │
+       │ ◮ - struct monad_event_ring_control          │
+       └──────────────────────────────────────────────┘
 ```
+
+The diagram contains a minor inaccuracy to make the basic idea easy
+to display visually, but which is technically wrong: the last sequence
+number does not point *directly* to the array slot of the last produced
+event. This is because the array indices start a 0, but sequence numbers
+start at 1. In the code that deals with mapping sequence numbers to
+array slots, you will see a +1/-1 factor being applied.
 
 ### `struct monad_event_recorder`
 
@@ -375,117 +492,28 @@ extern struct monad_event_recorder
 
 The recorder:
 
-- Is the owner of the actual `monad_event_ring` for a given
-  `monad_event_ring_type`.
-- Owns the payload page memory pool; this supplies the payload pages
-  the store the event payloads in a given ring
-- Uses an amount of memory that can be configured before it is enabled,
-  but a reasonable default will be used otherwise
-- Can be run-time disabled, in which case no events will be recorded to
+- Is the owner of the ring's shared memory resources for a given
+  `monad_event_ring_type`
+- Uses an amount of memory that can be configured before it is enabled
+  (a reasonable default will be used if not explicitly configured)
+- Can be disabled at runtime, in which case no events will be recorded to
   the associated ring (the `MONAD_EVENT_` or `MONAD_TRACE_` macros
   will execute a single `if` statement, then exit)
 
-### `monad_event_payload_page` and `monad_event_payload_page_pool`
-
-All event payloads are allocated from a payload page, which is a large
-contiguous slab of shared memory (currently 16 MiB by default) with this
-header object placed at offset zero:
-
-```c
-struct monad_event_payload_page
-{
-    // Cache line read by readers, modified by writers
-    alignas(64) _Atomic(uint64_t) overwrite_seqno;
-    // Cache line *only* used by writer (except for the exportshm utility). The
-    // pointers here point into the writer's address space
-    alignas(64) uint8_t *page_base;
-    uint8_t *heap_begin;
-    uint8_t *heap_next;
-    uint8_t *heap_end;
-    uint64_t event_count;
-    uint64_t alloc_count;
-    TAILQ_ENTRY(monad_event_payload_page) page_link;
-    // Cache line holding lifetime-constant values
-    alignas(64) struct monad_event_payload_page_pool *page_pool;
-    int memfd;
-    uint16_t page_id;
-    char page_name[26];
-};
-```
-
-The payload allocation strategy is simple: all memory on the page that is
-not used by this header is described as the region between `heap_begin`
-and `heap_end`, and allocation just increments `heap_next` until it reaches
-`heap_end`. When `heap_next + next_allocation_size > heap_end`, the page is
-considered full, and is swapped out for a new one.
-
-The lifecycle of a page is as follows:
-
-- The payload page pool (owned by the recorder) creates a fixed number
-  of payload page objects when it is first configured (when
-  `monad_event_recorder_configure` is called)
-- This fixed number of pages is _permanent_, unless the recorder is
-  disabled and then reconfigured: no new payload pages are `mmap`'ed
-  into our address space while a recorder is running
-- At any given time, each payload page is placed on one of two lists:
-  the list of "active" pages and the list of "free" pages
-- Active pages are those that are currently being used for recording.
-  "Free" pages are pages that are full, and are waiting to be recycled
-  in the future. Until they are recycled, it is safe to read old payload
-  data from them
-- There is one active page per ring, per thread. When an event occurs,
-  its payload buffer is allocated by bumping the `heap_next` of the
-  active page. If the page fills up, that page is "deactivated": removed
-  from the active list and is placed at the _end_ of the free list. The
-  oldest free page is then made active
-
-The comment in the deactivation function explains the rationale:
-
-```c
-static void deactivate_payload_page(
-    struct monad_event_payload_page_pool *page_pool,
-    struct monad_event_payload_page *page)
-{
-    MONAD_DEBUG_ASSERT(monad_spinlock_is_self_owned(&page_pool->lock));
-
-    // Deactivate the given page by placing it at the end of the free list.
-    // The FIFO nature of the free list is critical to how our shared memory
-    // strategy works. Note that it is still safe for the event consumer to
-    // read from payload pages while they sit on the free list, and it will
-    // remain safe until the page is recycled, once it reaches the head of the
-    // free list. After it is recycled, the page will be marked as not safe to
-    // read by recording in the header the sequence number when it was recycled.
-    TAILQ_REMOVE(&page_pool->active_pages, page, page_link);
-    TAILQ_INSERT_TAIL(&page_pool->free_pages, page, page_link);
-    --page_pool->active_page_count;
-    ++page_pool->free_page_count;
-}
-```
-
-### `struct monad_event_recorder_thr`
-
-A relevant code comment reads:
-
-```c
-// To make recording as fast as possible, some of the recorder state is cached
-// in this thread-local object; namely, each thread has its own active payload
-// page that it can allocate event payloads from without locking the page pool
-struct monad_event_recorder_thr {
-    // ...
-```
-
-Despite the centrality of the recorder object, the main object that
-`monad_event_record()` interacts with is this one, which caches various
-attributes for the recording thread. Among other things, this objects
-stores the active payload page for each enabled event ring, for each
-thread.
+The two central fields shown in the diagram (`descriptor_table` and
+`payload_buf`) which point into shared memory are actually part of
+the `struct monad_event_ring` sub-object, not direct fields of
+`struct monad_event_recorder` itself. `struct monad_event_ring` is
+also used by reader, to hold the memory addresses of the imported
+shared memory segments. Only the recorder holds the original
+`memfd_create(2)` file descriptors for these regions, however.
 
 ### `struct monad_event_recorder_shared_state`
 
 A few bits of internal machinery are shared by all recorders. These
 are mostly related to the thread and block header metadata tables,
 which are described in `event.md`, and the proper cleanup of the
-thread-local objects. It is not shown in the diagram.
+thread-local objects.
 
 ## Exporting shared memory: `monad_event_server`
 

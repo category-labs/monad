@@ -184,8 +184,7 @@ TEST_F(StateSyncFixture, genesis)
         cctx,
         BlockHeader{
             .state_root =
-                0xd7f8974fb5ac78d9ac099b9ad5018bedc2ce0a72dad1827a1709da30580f0544_bytes32,
-            .number = 0});
+                0xd7f8974fb5ac78d9ac099b9ad5018bedc2ce0a72dad1827a1709da30580f0544_bytes32});
     EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 }
@@ -616,7 +615,7 @@ TEST_F(StateSyncFixture, account_deleted_after_storage)
 TEST_F(StateSyncFixture, account_deleted_and_prefix_skipped)
 {
     init();
-    BlockHeader hdr{.parent_hash = NULL_HASH, .number = 0};
+    BlockHeader hdr{.parent_hash = NULL_HASH};
     sctx.commit(StateDeltas{}, Code{}, hdr);
     hdr.parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr)));
     hdr.number = 1;
@@ -661,7 +660,7 @@ TEST_F(StateSyncFixture, account_deleted_and_prefix_skipped)
 TEST_F(StateSyncFixture, delete_updated_account)
 {
     init();
-    BlockHeader hdr{.parent_hash = NULL_HASH, .number = 0};
+    BlockHeader hdr{.parent_hash = NULL_HASH};
     sctx.commit(StateDeltas{}, Code{}, hdr);
 
     Account const a{.balance = 100, .incarnation = Incarnation{1, 0}};
@@ -781,7 +780,7 @@ TEST_F(StateSyncFixture, update_contract_twice)
 {
     init();
 
-    BlockHeader hdr{.parent_hash = NULL_HASH, .number = 0};
+    BlockHeader hdr{.parent_hash = NULL_HASH};
     sctx.commit(StateDeltas{}, Code{}, hdr);
 
     constexpr auto ADDR1 = 0x5353535353535353535353535353535353535353_address;

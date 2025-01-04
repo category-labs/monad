@@ -16,27 +16,27 @@ MONAD_NAMESPACE_BEGIN
 
 struct BlockHeader
 {
-    Receipt::Bloom logs_bloom{};
-    bytes32_t parent_hash{};
-    bytes32_t ommers_hash{};
-    bytes32_t state_root{};
-    bytes32_t transactions_root{};
-    bytes32_t receipts_root{};
-    bytes32_t prev_randao{}; // aka mix_hash
-    uint256_t difficulty{};
+    Receipt::Bloom logs_bloom{}; // H_b
+    bytes32_t parent_hash{}; // H_p
+    bytes32_t ommers_hash{}; // H_o
+    bytes32_t state_root{}; // H_r
+    bytes32_t transactions_root{}; // H_t
+    bytes32_t receipts_root{}; // H_e
+    bytes32_t prev_randao{}; // H_a
+    uint256_t difficulty{}; // H_d
 
-    uint64_t number{0};
-    uint64_t gas_limit{0};
-    uint64_t gas_used{0};
-    uint64_t timestamp{0};
+    uint64_t number{0}; // H_i
+    uint64_t gas_limit{0}; // H_l
+    uint64_t gas_used{0}; // H_g
+    uint64_t timestamp{0}; // H_s
 
-    byte_string_fixed<8> nonce{};
-    byte_string extra_data{};
+    byte_string_fixed<8> nonce{}; // H_n
+    byte_string extra_data{}; // H_x
 
-    Address beneficiary{};
+    Address beneficiary{}; // H_c
 
-    std::optional<uint256_t> base_fee_per_gas{std::nullopt}; // EIP-1559
-    std::optional<bytes32_t> withdrawals_root{std::nullopt}; // EIP-4895
+    std::optional<uint256_t> base_fee_per_gas{std::nullopt}; // H_f
+    std::optional<bytes32_t> withdrawals_root{std::nullopt}; // H_w
     std::optional<uint64_t> blob_gas_used{std::nullopt}; // EIP-4844
     std::optional<uint64_t> excess_blob_gas{std::nullopt}; // EIP-4844
     std::optional<bytes32_t> parent_beacon_block_root{std::nullopt}; // EIP-4788

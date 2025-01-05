@@ -188,6 +188,13 @@ Result<BlockHeader> decode_monad_block_header(byte_string_view &enc)
     BOOST_OUTCOME_TRY(block_header.extra_data, decode_string(payload));
     BOOST_OUTCOME_TRY(
         block_header.base_fee_per_gas, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(block_header.withdrawals_root, decode_bytes32(payload));
+    BOOST_OUTCOME_TRY(
+        block_header.blob_gas_used, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(
+        block_header.excess_blob_gas, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(
+        block_header.parent_beacon_block_root, decode_bytes32(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;

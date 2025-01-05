@@ -1037,22 +1037,21 @@ TEST(Rlp_Block, DecodeEncodeCancun)
 
 TEST(Rlp_Block, MonadBlock)
 {
-    unsigned char raw[] = {
-        0xf8, 0x95, 0xf8, 0x90, 0xa0, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x0b, 0x0a, 0x94, 0x7f, 0x4d, 0x38, 0x62, 0x89, 0x59, 0x8e, 0x59,
-        0xaa, 0xf2, 0xe2, 0xfa, 0xe8, 0x4c, 0xb4, 0x13, 0xac, 0x26, 0x7e, 0x22,
-        0x01, 0x01, 0x82, 0x03, 0xe8, 0x84, 0x67, 0x2d, 0x3e, 0x0f, 0xa0, 0x03,
-        0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03,
-        0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03,
-        0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x88, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0xa0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x82, 0x03, 0xe8, 0xc0, 0xc0, 0xc0};
-
-    auto rlp = to_byte_string_view(raw);
+    auto const raw = evmc::from_hex("f8def8d9a002ccc1ce09615baaef357345b08261fd"
+                                    "a97692284aed745ae9f97db2182a"
+                                    "8b8506059403867f9709744698e0c140c309d93baf"
+                                    "5365517680058411e1a30084677a"
+                                    "d815a0c398a0dc44b291d53419af6e5efc0280dd30"
+                                    "1db2a3cdf97dae2414782e0d3191"
+                                    "880000000000000000a00000000000000000000000"
+                                    "0000000000000000000000000000"
+                                    "00000000000000850ba43b7400a056e81f171bcc55"
+                                    "a6ff8345e692c0f86e5b48e01b99"
+                                    "6cadc001622fb5e363b4218080a000000000000000"
+                                    "0000000000000000000000000000"
+                                    "0000000000000000000000c0c0c0")
+                         .value();
+    byte_string_view rlp{raw};
     auto const res = rlp::decode_monad_block(rlp);
     EXPECT_FALSE(res.has_error());
 
@@ -1061,14 +1060,18 @@ TEST(Rlp_Block, MonadBlock)
     ASSERT_TRUE(block.header.base_fee_per_gas.has_value());
 
     // Fields that never change
-    EXPECT_EQ(block.header.difficulty, 1);
+    EXPECT_EQ(block.header.difficulty, 0);
     EXPECT_EQ(block.header.extra_data, to_byte_string_view(bytes32_t{}.bytes));
     EXPECT_EQ(block.header.nonce, byte_string_fixed<8>{});
 
-    EXPECT_EQ(block.header.number, 1);
-    EXPECT_EQ(block.header.gas_limit, 1000);
-    EXPECT_EQ(block.header.timestamp, 1731018255);
-    EXPECT_EQ(block.header.round, 11);
-    EXPECT_EQ(block.header.parent_round, 10);
-    EXPECT_EQ(block.header.base_fee_per_gas.value(), 1000);
+    EXPECT_EQ(block.header.number, 5);
+    EXPECT_EQ(block.header.gas_limit, 300000000);
+    EXPECT_EQ(block.header.timestamp, 1736103957);
+    EXPECT_EQ(block.header.withdrawals_root, NULL_ROOT);
+    EXPECT_EQ(block.header.blob_gas_used, 0);
+    EXPECT_EQ(block.header.excess_blob_gas, 0);
+    EXPECT_EQ(block.header.parent_beacon_block_root, bytes32_t{});
+    EXPECT_EQ(block.header.round, 6);
+    EXPECT_EQ(block.header.parent_round, 5);
+    EXPECT_EQ(block.header.base_fee_per_gas.value(), 50000000000);
 }

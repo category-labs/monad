@@ -98,9 +98,6 @@ read_genesis(std::filesystem::path const &genesis_file, Db &db)
     auto const genesis_json = nlohmann::json::parse(ifile);
     auto block_header = read_genesis_blockheader(genesis_json);
 
-    block_header.transactions_root = NULL_ROOT;
-    block_header.receipts_root = NULL_ROOT;
-
     StateDeltas state_deltas;
     read_genesis_state(genesis_json, state_deltas);
     db.commit(state_deltas, Code{}, block_header);

@@ -468,12 +468,8 @@ TEST(Rlp_Block, DecodeEncodeBlock2730002)
     EXPECT_EQ(
         block.header.state_root,
         0x0adde1fb82a1735191d30b109e92441a53a10edee0d2f4f63114f134f8db6e8c_bytes32);
-    EXPECT_EQ(
-        block.header.transactions_root,
-        0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
-    EXPECT_EQ(
-        block.header.receipts_root,
-        0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
+    EXPECT_EQ(block.header.transactions_root, NULL_ROOT);
+    EXPECT_EQ(block.header.receipts_root, NULL_ROOT);
     EXPECT_EQ(block.header.difficulty, 71029651597139);
     EXPECT_EQ(block.header.number, 2730002);
     EXPECT_EQ(block.header.gas_limit, 3294051);
@@ -536,12 +532,8 @@ TEST(Rlp_Block, DecodeEncodeBlock2730009)
     EXPECT_EQ(
         block.header.state_root,
         0x9be6e85fc6dcd2c9493aab527bc1eed17a2cbbefc6cae43db11a57f110ef3d7b_bytes32);
-    EXPECT_EQ(
-        block.header.transactions_root,
-        0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
-    EXPECT_EQ(
-        block.header.receipts_root,
-        0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
+    EXPECT_EQ(block.header.transactions_root, NULL_ROOT);
+    EXPECT_EQ(block.header.receipts_root, NULL_ROOT);
     EXPECT_EQ(block.header.difficulty, 71168718072168);
     EXPECT_EQ(block.header.number, 2730009);
     EXPECT_EQ(block.header.gas_limit, 3300000);
@@ -765,12 +757,8 @@ TEST(Rlp_Block, DecodeEncodeShanghai)
     EXPECT_EQ(
         decoded_block.value().header.state_root,
         0x48cd9a5957e45beebf80278a5208b0cbe975ab4b4adb0da1509c67b26f2be3ff_bytes32);
-    EXPECT_EQ(
-        decoded_block.value().header.transactions_root,
-        0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
-    EXPECT_EQ(
-        decoded_block.value().header.receipts_root,
-        0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
+    EXPECT_EQ(decoded_block.value().header.transactions_root, NULL_ROOT);
+    EXPECT_EQ(decoded_block.value().header.receipts_root, NULL_ROOT);
     byte_string_fixed<256> const bloom{
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -943,12 +931,8 @@ TEST(Rlp_Block, DecodeEncodeCancun)
     EXPECT_EQ(
         decoded_block.value().header.state_root,
         0x48cd9a5957e45beebf80278a5208b0cbe975ab4b4adb0da1509c67b26f2be3ff_bytes32);
-    EXPECT_EQ(
-        decoded_block.value().header.transactions_root,
-        0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
-    EXPECT_EQ(
-        decoded_block.value().header.receipts_root,
-        0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32);
+    EXPECT_EQ(decoded_block.value().header.transactions_root, NULL_ROOT);
+    EXPECT_EQ(decoded_block.value().header.receipts_root, NULL_ROOT);
     byte_string_fixed<256> const bloom{
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

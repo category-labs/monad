@@ -20,8 +20,8 @@ struct BlockHeader
     bytes32_t parent_hash{}; // H_p
     bytes32_t ommers_hash{NULL_LIST_HASH}; // H_o
     bytes32_t state_root{NULL_ROOT}; // H_r
-    bytes32_t transactions_root{}; // H_t
-    bytes32_t receipts_root{}; // H_e
+    bytes32_t transactions_root{NULL_ROOT}; // H_t
+    bytes32_t receipts_root{NULL_ROOT}; // H_e
     bytes32_t prev_randao{}; // H_a
     uint256_t difficulty{}; // H_d
 

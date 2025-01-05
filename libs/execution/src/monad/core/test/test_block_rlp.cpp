@@ -29,9 +29,7 @@ TEST(Rlp_Block, DecodeEncodeBlock46402)
     EXPECT_EQ(
         block.header.parent_hash,
         0x6cc737fca2da03bb89557857c7558f8ad470587b99e01689efdf0df0a040b080_bytes32);
-    EXPECT_EQ(
-        block.header.ommers_hash,
-        0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
+    EXPECT_EQ(block.header.ommers_hash, NULL_LIST_HASH);
     EXPECT_EQ(
         block.header.beneficiary,
         0x01434e4Ac3238bEC44a39ad642aBaBBB68D097e6_address);
@@ -124,9 +122,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730000)
     EXPECT_EQ(
         block.header.parent_hash,
         0x18057c6cc208419928dbf4891af02d865f5d72f34f1880a3a3674b6a2585d8ec_bytes32);
-    EXPECT_EQ(
-        block.header.ommers_hash,
-        0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
+    EXPECT_EQ(block.header.ommers_hash, NULL_LIST_HASH);
     EXPECT_EQ(
         block.header.beneficiary,
         0xEA674fdDe714fd979de3EdF0F56AA9716B898ec8_address);
@@ -282,9 +278,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
     EXPECT_EQ(
         block.header.parent_hash,
         0xfa0e5ba976931459e7aff38ba3800dfb4e75ba52b185cd41973d013b62c30b90_bytes32);
-    EXPECT_EQ(
-        block.header.ommers_hash,
-        0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
+    EXPECT_EQ(block.header.ommers_hash, NULL_LIST_HASH);
     EXPECT_EQ(
         block.header.beneficiary,
         0xEA674fdDe714fd979de3EdF0F56AA9716B898ec8_address);
@@ -467,9 +461,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730002)
     EXPECT_EQ(
         block.header.parent_hash,
         0x46d016199b63472c503b5d26b33f22a810d20f552085433177b4817c59327eba_bytes32);
-    EXPECT_EQ(
-        block.header.ommers_hash,
-        0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
+    EXPECT_EQ(block.header.ommers_hash, NULL_LIST_HASH);
     EXPECT_EQ(
         block.header.beneficiary,
         0x61C808D82A3Ac53231750daDc13c777b59310bD9_address);
@@ -537,9 +529,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730009)
     EXPECT_EQ(
         block.header.parent_hash,
         0x278677e93d6b23c260fbedeccbace563c1c8708c6a632bf0730a55c117c4cb78_bytes32);
-    EXPECT_EQ(
-        block.header.ommers_hash,
-        0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
+    EXPECT_EQ(block.header.ommers_hash, NULL_LIST_HASH);
     EXPECT_EQ(
         block.header.beneficiary,
         0x2a65Aca4D5fC5B5C859090a6c34d164135398226_address);
@@ -592,9 +582,7 @@ TEST(Rlp_Block, DecodeEncodeBlock14000000)
     EXPECT_EQ(
         block.header.parent_hash,
         0x0c9ef41f038aa58a4aa2810fda03d9d82aac9082c80283230fd74cb1cceb4b00_bytes32);
-    EXPECT_EQ(
-        block.header.ommers_hash,
-        0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
+    EXPECT_EQ(block.header.ommers_hash, NULL_LIST_HASH);
     EXPECT_EQ(
         block.header.beneficiary,
         0xEA674fdDe714fd979de3EdF0F56AA9716B898ec8_address);
@@ -770,9 +758,7 @@ TEST(Rlp_Block, DecodeEncodeShanghai)
     EXPECT_EQ(
         decoded_block.value().header.parent_hash,
         0x151934ad9b654c50197f37018ee5ee9bb922dec0a1b5e24a6d679cb111cdb107_bytes32);
-    EXPECT_EQ(
-        decoded_block.value().header.ommers_hash,
-        0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
+    EXPECT_EQ(decoded_block.value().header.ommers_hash, NULL_LIST_HASH);
     EXPECT_EQ(
         decoded_block.value().header.beneficiary,
         0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba_address);
@@ -950,9 +936,7 @@ TEST(Rlp_Block, DecodeEncodeCancun)
     EXPECT_EQ(
         decoded_block.value().header.parent_hash,
         0x151934ad9b654c50197f37018ee5ee9bb922dec0a1b5e24a6d679cb111cdb107_bytes32);
-    EXPECT_EQ(
-        decoded_block.value().header.ommers_hash,
-        0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32);
+    EXPECT_EQ(decoded_block.value().header.ommers_hash, NULL_LIST_HASH);
     EXPECT_EQ(
         decoded_block.value().header.beneficiary,
         0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba_address);

@@ -523,10 +523,7 @@ TEST_F(StateSyncFixture, sync_empty)
     }
     stdb.commit(StateDeltas{}, Code{}, BlockHeader{.number = 1'000'000});
     init();
-    handle_target(
-        cctx,
-        BlockHeader{
-            .parent_hash = parent_hash, .state_root = NULL_ROOT, .number = N});
+    handle_target(cctx, BlockHeader{.parent_hash = parent_hash, .number = N});
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 }
@@ -634,8 +631,7 @@ TEST_F(StateSyncFixture, account_deleted_and_prefix_skipped)
 
     hdr.parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr)));
     hdr.number = 2;
-    hdr.state_root =
-        0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32;
+    hdr.state_root = NULL_ROOT;
     sctx.commit(
         StateDeltas{
             {ADDR_A,
@@ -649,8 +645,7 @@ TEST_F(StateSyncFixture, account_deleted_and_prefix_skipped)
 
     hdr.parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr)));
     hdr.number = 3;
-    hdr.state_root =
-        0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32;
+    hdr.state_root = NULL_ROOT;
     sctx.commit(StateDeltas{}, Code{}, hdr);
     handle_target(cctx, hdr);
     run();
@@ -696,8 +691,7 @@ TEST_F(StateSyncFixture, delete_updated_account)
     }
 
     hdr.parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr)));
-    hdr.state_root =
-        0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32;
+    hdr.state_root = NULL_ROOT;
     hdr.number = 3;
     sctx.commit(
         StateDeltas{

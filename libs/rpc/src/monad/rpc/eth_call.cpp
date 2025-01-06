@@ -286,7 +286,15 @@ monad_evmc_result eth_call(
     auto const sender = sender_result.value();
 
     std::vector<std::filesystem::path> paths;
-    paths.emplace_back(triedb_path);
+    if (std::filesystem::is_directory(triedb_path)) {
+        for (auto const &file :
+             std::filesystem::directory_iterator(triedb_path)) {
+            paths.emplace_back(file.path());
+        }
+    }
+    else {
+        paths.emplace_back(triedb_path);
+    }
 
     MonadDevnet chain;
     evmc_revision const rev = chain.get_revision(block_header.number);

@@ -188,7 +188,7 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
         switch (event.value().kind) {
         case MONAD_PROPOSE_BLOCK: {
             LOG_INFO(
-                "[KKUEHLER] Processing proposal: seqno={}, round={}, "
+                "Processing proposal: seqno={}, round={}, "
                 "parent_round={}",
                 block.header.number,
                 block.header.round,
@@ -212,7 +212,7 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
         } break;
         case MONAD_FINALIZE_BLOCK: {
             LOG_INFO(
-                "[KKUEHLER] Processing finalization : seqno={}, round={}",
+                "Processing finalization : seqno={}, round={}",
                 block.header.number,
                 block.header.round);
             db.finalize(block.header.number, block.header.round);
@@ -236,7 +236,7 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
         } break;
         case MONAD_VERIFY_BLOCK:
             LOG_INFO(
-                "[KKUEHLER] Processing verify: seqno={}, round={}",
+                "Processing verify: seqno={}, round={}",
                 block.header.number,
                 block.header.round);
             db.update_verified_block(block.header.number);

@@ -2,7 +2,7 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
-include! {"async_with_rust_helpers.rs"}
+include! {"async.rs"}
 
 #[cfg(test)]
 mod tests {
@@ -15,10 +15,10 @@ mod tests {
         *((*task).derived.user_ptr as *mut i32) = 1;
         {
             let current_executor: monad_async_executor =
-                to_atomic_ptr::<monad_async_executor_head>(&mut (*task).current_executor)
+                to_atomic_ptr::<monad_async_executor_head>(&(*task).current_executor)
                     .load(std::sync::atomic::Ordering::Acquire);
             let current_executor_task: monad_async_task =
-                to_atomic_ptr::<monad_async_task_head>(&mut (*current_executor).current_task)
+                to_atomic_ptr::<monad_async_task_head>(&(*current_executor).current_task)
                     .load(std::sync::atomic::Ordering::Acquire);
             assert_eq!(current_executor_task, task);
             assert_eq!((*current_executor).tasks_pending_launch, 0);
@@ -36,10 +36,10 @@ mod tests {
         *((*task).derived.user_ptr as *mut i32) = 2;
         {
             let current_executor: monad_async_executor =
-                to_atomic_ptr::<monad_async_executor_head>(&mut (*task).current_executor)
+                to_atomic_ptr::<monad_async_executor_head>(&(*task).current_executor)
                     .load(std::sync::atomic::Ordering::Acquire);
             let current_executor_task: monad_async_task =
-                to_atomic_ptr::<monad_async_task_head>(&mut (*current_executor).current_task)
+                to_atomic_ptr::<monad_async_task_head>(&(*current_executor).current_task)
                     .load(std::sync::atomic::Ordering::Acquire);
             assert_eq!(current_executor_task, task);
             assert_eq!((*current_executor).tasks_pending_launch, 0);
@@ -87,11 +87,11 @@ mod tests {
                         .unwrap();
                     }
                     unsafe {
-                        assert_eq!((*task.head).is_pending_launch, 1);
-                        assert_eq!((*task.head).is_running, 0);
-                        assert_eq!((*task.head).is_suspended_awaiting, 0);
-                        assert_eq!((*task.head).is_suspended_completed, 0);
-                        assert_eq!((*ex.head).current_task, 0);
+                        assert_eq!((*task.head).is_pending_launch, true);
+                        assert_eq!((*task.head).is_running, false);
+                        assert_eq!((*task.head).is_suspended_awaiting, false);
+                        assert_eq!((*task.head).is_suspended_completed, false);
+                        assert_eq!((*ex.head).current_task, std::ptr::null_mut());
                         assert_eq!((*ex.head).tasks_pending_launch, 1);
                         assert_eq!((*ex.head).tasks_running, 0);
                         assert_eq!((*ex.head).tasks_suspended, 0);
@@ -107,10 +107,10 @@ mod tests {
                         assert_eq!((*ex.head).tasks_running, 0);
                         assert_eq!((*ex.head).tasks_suspended, 1);
                         assert_eq!(r, 1);
-                        assert_eq!((*task.head).is_pending_launch, 0);
-                        assert_eq!((*task.head).is_running, 0);
-                        assert_eq!((*task.head).is_suspended_awaiting, 1);
-                        assert_eq!((*task.head).is_suspended_completed, 0);
+                        assert_eq!((*task.head).is_pending_launch, false);
+                        assert_eq!((*task.head).is_running, false);
+                        assert_eq!((*task.head).is_suspended_awaiting, true);
+                        assert_eq!((*task.head).is_suspended_completed, false);
                     }
                     r = unsafe {
                         to_result(monad_async_executor_run(ex.head, 1, &mut ts)).unwrap()
@@ -121,10 +121,10 @@ mod tests {
                         assert_eq!((*ex.head).tasks_running, 0);
                         assert_eq!((*ex.head).tasks_suspended, 0);
                         assert_eq!(r, 1);
-                        assert_eq!((*task.head).is_pending_launch, 0);
-                        assert_eq!((*task.head).is_running, 0);
-                        assert_eq!((*task.head).is_suspended_awaiting, 0);
-                        assert_eq!((*task.head).is_suspended_completed, 0);
+                        assert_eq!((*task.head).is_pending_launch, false);
+                        assert_eq!((*task.head).is_running, false);
+                        assert_eq!((*task.head).is_suspended_awaiting, false);
+                        assert_eq!((*task.head).is_suspended_completed, false);
                         assert_eq!(to_result((*task.head).derived.result).unwrap(), 5);
                         if n == 9 {
                             print!(

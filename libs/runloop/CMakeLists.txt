@@ -81,23 +81,28 @@ target_include_directories(monad_async_c PUBLIC "src")
 target_link_libraries(monad_async_c PUBLIC uring monad_core monad_context_c)
 
 if(BINDGEN_PROGRAM)
-  add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/rust/async.rs"
-    COMMAND "${BINDGEN_PROGRAM}" -o "${CMAKE_CURRENT_SOURCE_DIR}/rust/async.rs"
+  add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/rust/async_raw_bindings.rs"
+    COMMAND "${BINDGEN_PROGRAM}" -o "${CMAKE_CURRENT_SOURCE_DIR}/rust/async_raw_bindings.rs"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/monad/async/all.h"
     --allowlist-function "monad_async.*"
     --allowlist-function "monad_c_.*"
     --allowlist-function "monad_context.*"
+    --allowlist-function "outcome_.*"
     --allowlist-type "monad_async.*"
     --allowlist-type "monad_c_.*"
     --allowlist-type "monad_context.*"
+    --allowlist-type "outcome_.*"
     --allowlist-var "monad_async.*"
     --allowlist-var "monad_c_.*"
     --allowlist-var "monad_context.*"
+    --allowlist-var "outcome_.*"
     --generate-inline-functions
     --no-layout-tests
     --no-copy "monad_async.*"
     --no-copy "monad_c_.*"
     --no-copy "monad_context.*"
+    --no-copy "outcome_.*"
+    --no-debug "cxx_status_code_system"
     --with-derive-default
     --must-use-type cxx_result_status_code_system_monad_async
     --
@@ -106,7 +111,7 @@ if(BINDGEN_PROGRAM)
     -D MONAD_CONTEXT_DISABLE_INLINE_CUSTOM_GDB_THREAD_DB_LOAD
     DEPENDS ${monad_async_INCLUDES} ${monad_context_INCLUDES}
   )
-  add_custom_target(monad_async_c_regenerate_rust_bindings DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/rust/async.rs")
+  add_custom_target(monad_async_c_regenerate_rust_bindings DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/rust/async_raw_bindings.rs")
   add_dependencies(monad_async_c monad_async_c_regenerate_rust_bindings)
 else()
   message(WARNING "WARNING: Could not regen Rust bindings as bindgen program not found")
@@ -129,8 +134,8 @@ if(RUSTC_PROGRAM AND NOT CMAKE_C_FLAGS_INIT MATCHES "fsanitize=")
         set(BOOST_STACKTRACE_LIB boost_stacktrace_addr2line)
     endif()
 
-    add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/test/rust_tests"
-    COMMAND "${RUSTC_PROGRAM}" --test -o "${CMAKE_BINARY_DIR}/test/rust_tests"
+    add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/test/monad_async_c_rust_tests"
+    COMMAND "${RUSTC_PROGRAM}" --test -o "${CMAKE_BINARY_DIR}/test/monad_async_c_rust_tests"
     "${CMAKE_CURRENT_SOURCE_DIR}/rust/test.rs"
     -L "$<TARGET_FILE_DIR:monad_async_c>"
     -L "$<TARGET_FILE_DIR:monad_context_c>"
@@ -143,11 +148,11 @@ if(RUSTC_PROGRAM AND NOT CMAKE_C_FLAGS_INIT MATCHES "fsanitize=")
     -l stdc++
     -l uring
     DEPENDS
-      "${CMAKE_CURRENT_SOURCE_DIR}/rust/async_with_rust_helpers.rs"
+      "${CMAKE_CURRENT_SOURCE_DIR}/rust/async_raw_bindings.rs"
       "${CMAKE_CURRENT_SOURCE_DIR}/rust/test.rs"
       "${CMAKE_CURRENT_SOURCE_DIR}/rust/async.rs"
   )
-  add_custom_target(monad_async_c_rust_tests ALL DEPENDS "${CMAKE_BINARY_DIR}/test/rust_tests")
+  add_custom_target(monad_async_c_rust_tests ALL DEPENDS "${CMAKE_BINARY_DIR}/test/monad_async_c_rust_tests")
   add_dependencies(monad_async_c_rust_tests monad_async_c monad_context_c)
-  add_test(NAME monad_async_c_rust_tests COMMAND "${CMAKE_BINARY_DIR}/test/rust_tests" --nocapture)
+  add_test(NAME monad_async_c_rust_tests COMMAND "${CMAKE_BINARY_DIR}/test/monad_async_c_rust_tests" --nocapture)
 endif()

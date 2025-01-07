@@ -585,6 +585,9 @@ TYPED_TEST(DBTest, to_json)
         EXPECT_EQ(expected_payload, ro_db.to_json());
     }
     EXPECT_EQ(expected_payload, tdb.to_json());
+    if (this->on_disk) {
+        std::filesystem::remove(dbname);
+    }
 }
 
 TYPED_TEST(DBTest, load_from_binary)

@@ -1,3 +1,4 @@
+#include <monad/async/util.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/keccak.hpp>
@@ -9,6 +10,10 @@
 #include <monad/mpt/ondisk_db_config.hpp>
 
 #include <gtest/gtest.h>
+#include <stdlib.h>
+#include <unistd.h> // for ftruncate
+
+#include <filesystem>
 
 using namespace monad;
 
@@ -169,7 +174,7 @@ TEST(BlockHashBufferTest, init_from_db)
 
     BlockHashBufferFinalized expected;
     for (uint64_t i = 0; i < 256; ++i) {
-        BlockHeader hdr{.number = i};
+        BlockHeader const hdr{.number = i};
         tdb.commit({}, {}, hdr, {}, {}, {}, {}, std::nullopt);
         expected.set(i, to_bytes(keccak256(rlp::encode_block_header(hdr))));
     }
@@ -182,6 +187,8 @@ TEST(BlockHashBufferTest, init_from_db)
     for (uint64_t i = 0; i < 256; ++i) {
         EXPECT_EQ(expected.get(i), actual.get(i));
     }
+
+    std::filesystem::remove(path);
 }
 
 TEST(BlockHashBufferDeathTest, bogus_round)

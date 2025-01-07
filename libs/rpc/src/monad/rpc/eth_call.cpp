@@ -1,4 +1,7 @@
+#include <monad/chain/chain_config.h>
+#include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/chain/monad_devnet.hpp>
+#include <monad/chain/monad_testnet.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/rlp/address_rlp.hpp>
@@ -248,7 +251,8 @@ void monad_state_override_set::set_override_state(
 
 // TODO: eth_call should take in a handle to db instead
 monad_evmc_result eth_call(
-    std::vector<uint8_t> const &rlp_tx, std::vector<uint8_t> const &rlp_header,
+    monad_chain_config const chain_config, std::vector<uint8_t> const &rlp_tx,
+    std::vector<uint8_t> const &rlp_header,
     std::vector<uint8_t> const &rlp_sender, uint64_t const block_number,
     std::string const &triedb_path,
     monad_state_override_set const &state_overrides)
@@ -294,12 +298,23 @@ monad_evmc_result eth_call(
         return ret;
     }
 
-    MonadDevnet chain;
+    auto chain = [chain_config] -> std::unique_ptr<Chain> {
+        switch (chain_config) {
+        case CHAIN_CONFIG_ETHEREUM_MAINNET:
+            return std::make_unique<EthereumMainnet>();
+        case CHAIN_CONFIG_MONAD_DEVNET:
+            return std::make_unique<MonadDevnet>();
+        case CHAIN_CONFIG_MONAD_TESNET:
+            return std::make_unique<MonadTestnet>();
+        }
+        MONAD_ASSERT(false);
+    }();
+
     evmc_revision const rev =
-        chain.get_revision(block_header.number, block_header.timestamp);
+        chain->get_revision(block_header.number, block_header.timestamp);
 
     auto const result = eth_call_impl(
-        chain,
+        *chain,
         rev,
         tx,
         block_header,

@@ -1,5 +1,3 @@
-#include <monad/rpc/eth_call.hpp>
-
 #include <monad/core/block.hpp>
 #include <monad/core/rlp/address_rlp.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
@@ -9,6 +7,7 @@
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
+#include <monad/rpc/eth_call.hpp>
 
 #include <gtest/gtest.h>
 
@@ -84,8 +83,14 @@ TEST_F(EthCallFixture, simple_success_call)
 
     monad_state_override_set state_override;
 
-    auto const result =
-        eth_call(rlp_tx, rlp_header, rlp_sender, 256u, dbname, state_override);
+    auto const result = eth_call(
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx,
+        rlp_header,
+        rlp_sender,
+        256u,
+        dbname,
+        state_override);
 
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
 }
@@ -116,7 +121,13 @@ TEST_F(EthCallFixture, failed_to_read)
 
     monad_state_override_set state_override;
 
-    auto const result =
-        eth_call(rlp_tx, rlp_header, rlp_sender, 1256u, dbname, state_override);
+    auto const result = eth_call(
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx,
+        rlp_header,
+        rlp_sender,
+        1256u,
+        dbname,
+        state_override);
     EXPECT_EQ(result.status_code, EVMC_REJECTED);
 }

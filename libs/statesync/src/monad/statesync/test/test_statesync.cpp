@@ -413,16 +413,6 @@ TEST_F(StateSyncFixture, sync_from_some)
             hdr6);
     }
 
-    auto const ctmp = tmp_dbname();
-    auto const cdbname = ctmp.c_str();
-    {
-        OnDiskMachine machine;
-        mpt::Db cdb{
-            machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
-        TrieDb ctdb{cdb};
-        read_genesis(genesis, ctdb);
-    }
-
     handle_target(cctx, hdr1);
     run();
 

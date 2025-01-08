@@ -304,7 +304,7 @@ monad_evmc_result eth_call(
             return std::make_unique<EthereumMainnet>();
         case CHAIN_CONFIG_MONAD_DEVNET:
             return std::make_unique<MonadDevnet>();
-        case CHAIN_CONFIG_MONAD_TESNET:
+        case CHAIN_CONFIG_MONAD_TESTNET:
             return std::make_unique<MonadTestnet>();
         }
         MONAD_ASSERT(false);

@@ -20,25 +20,29 @@ TraceTimer::TraceTimer(TraceEvent const &event)
 
 TraceTimer::~TraceTimer()
 {
-    auto const type = [&] {
-        switch (orig.type) {
-        case TraceType::StartBlock:
-            return TraceType::EndBlock;
-        case TraceType::StartTxn:
-            return TraceType::EndTxn;
-        case TraceType::StartSenderRecovery:
-            return TraceType::EndSenderRecovery;
-        case TraceType::StartExecution:
-            return TraceType::EndExecution;
-        case TraceType::StartStall:
-            return TraceType::EndStall;
-        case TraceType::StartRetry:
-            return TraceType::EndRetry;
-        default:
-            MONAD_ASSERT(false);
-        }
-    }();
-    QUILL_LOG_INFO(event_tracer, "{}", TraceEvent{type, orig.value});
+    QUILL_LOG_INFO(
+        event_tracer,
+        "{}",
+        TraceEvent{
+            [&] {
+                switch (orig.type) {
+                case TraceType::StartBlock:
+                    return TraceType::EndBlock;
+                case TraceType::StartTxn:
+                    return TraceType::EndTxn;
+                case TraceType::StartSenderRecovery:
+                    return TraceType::EndSenderRecovery;
+                case TraceType::StartExecution:
+                    return TraceType::EndExecution;
+                case TraceType::StartStall:
+                    return TraceType::EndStall;
+                case TraceType::StartRetry:
+                    return TraceType::EndRetry;
+                default:
+                    MONAD_ASSERT(false);
+                }
+            }(),
+            orig.value});
 }
 
 TraceEvent::TraceEvent(TraceType const type, uint64_t const value)

@@ -619,7 +619,7 @@ void write_to_file(
     nlohmann::json const &j, std::filesystem::path const &root_path,
     uint64_t const block_number)
 {
-    auto const start_time = std::chrono::steady_clock::now();
+    [[maybe_unused]] auto const start_time = std::chrono::steady_clock::now();
 
     auto const dir = root_path / std::to_string(block_number);
     std::filesystem::create_directory(dir);
@@ -630,14 +630,11 @@ void write_to_file(
     std::ofstream ofile(file);
     ofile << j.dump(4);
 
-    auto const finished_time = std::chrono::steady_clock::now();
-    auto const elapsed_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            finished_time - start_time);
     LOG_INFO(
         "Finished dumping to json file at block = {}, time elapsed = {}",
         block_number,
-        elapsed_ms);
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start_time));
 }
 
 void load_from_binary(

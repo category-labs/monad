@@ -68,7 +68,7 @@ void statesync_server_send_upsert(
         type == SYNC_TYPE_UPSERT_STORAGE_DELETE ||
         type == SYNC_TYPE_UPSERT_HEADER);
 
-    auto const start = std::chrono::steady_clock::now();
+    [[maybe_unused]] auto const start = std::chrono::steady_clock::now();
     net->obuf.push_back(type);
     uint64_t const size = size1 + size2;
     net->obuf.append(
@@ -99,7 +99,7 @@ void statesync_server_send_upsert(
 void statesync_server_send_done(
     monad_statesync_server_network *const net, monad_sync_done const msg)
 {
-    auto const start = std::chrono::steady_clock::now();
+    [[maybe_unused]] auto const start = std::chrono::steady_clock::now();
     net->obuf.push_back(SYNC_TYPE_DONE);
     net->obuf.append(
         reinterpret_cast<unsigned char const *>(&msg), sizeof(msg));

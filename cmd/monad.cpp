@@ -67,6 +67,10 @@ namespace fs = std::filesystem;
 
 using TryGet = std::move_only_function<std::optional<Block>(uint64_t) const>;
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 void log_tps(
     uint64_t const block_num, uint64_t const nblocks, uint64_t const ntxs,
     uint64_t const gas, std::chrono::steady_clock::time_point const begin)
@@ -90,6 +94,8 @@ void log_tps(
         gps,
         monad_procfs_self_resident() / (1L << 20));
 };
+
+#pragma GCC diagnostic pop
 
 Result<std::pair<uint64_t, uint64_t>> run_monad(
     Chain const &chain, Db &db, BlockHashBufferFinalized &block_hash_buffer,
@@ -322,7 +328,8 @@ int main(int const argc, char const *argv[])
 #endif
 
     auto const db_in_memory = dbname_paths.empty();
-    auto const load_start_time = std::chrono::steady_clock::now();
+    [[maybe_unused]] auto const load_start_time =
+        std::chrono::steady_clock::now();
 
     std::optional<monad_statesync_server_network> net;
     if (!statesync.empty()) {
@@ -514,9 +521,9 @@ int main(int const argc, char const *argv[])
             result.assume_error().message().c_str());
     }
     else {
-        auto const elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - start_time);
-        auto const [ntxs, total_gas] = result.assume_value();
+        [[maybe_unused]] auto const elapsed =
+            std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - start_time);
         LOG_INFO(
             "Finish running, finish(stopped) block number = {}, "
             "number of blocks run = {}, time_elapsed = {}, num transactions = "
@@ -525,9 +532,10 @@ int main(int const argc, char const *argv[])
             block_num,
             nblocks,
             elapsed,
-            ntxs,
-            ntxs / std::max(1UL, static_cast<uint64_t>(elapsed.count())),
-            total_gas /
+            result.assume_value().first,
+            result.assume_value().first /
+                std::max(1UL, static_cast<uint64_t>(elapsed.count())),
+            result.assume_value().second /
                 (1'000'000 *
                  std::max(1UL, static_cast<uint64_t>(elapsed.count()))));
     }

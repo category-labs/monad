@@ -239,7 +239,7 @@ bool statesync_server_handle_request(
         }
     };
 
-    auto const start = std::chrono::steady_clock::now();
+    [[maybe_unused]] auto const start = std::chrono::steady_clock::now();
     auto *const ctx = sync->context;
     auto &db = *ctx->ro;
     if (rq.prefix < 256 && rq.target > rq.prefix) {
@@ -277,12 +277,12 @@ bool statesync_server_handle_request(
     if (!finalized_root.has_value()) {
         return false;
     }
-    auto const begin = std::chrono::steady_clock::now();
+    [[maybe_unused]] auto const begin = std::chrono::steady_clock::now();
     Traverse traverse(sync, NibblesView{bytes}, rq.from, rq.until);
     if (!db.traverse(finalized_root.value(), traverse, rq.target)) {
         return false;
     }
-    auto const end = std::chrono::steady_clock::now();
+    [[maybe_unused]] auto const end = std::chrono::steady_clock::now();
 
     LOG_INFO(
         "processed request prefix={} prefix_bytes={} target={} from={} "

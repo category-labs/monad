@@ -114,10 +114,12 @@ void BlockHashChain::finalize(uint64_t const round)
     last_finalized_round_ = round;
 
     // cleanup chains
-    std::remove_if(
-        proposals_.begin(), proposals_.end(), [round](Proposal const &p) {
-            return round <= p.round;
-        });
+    proposals_.erase(
+        std::remove_if(
+            proposals_.begin(),
+            proposals_.end(),
+            [round](Proposal const &p) { return p.round <= round; }),
+        proposals_.end());
 }
 
 BlockHashBuffer const &BlockHashChain::find_chain(uint64_t const round) const

@@ -2,6 +2,7 @@
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/likely.h>
 #include <monad/db/block_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
@@ -73,10 +74,8 @@ bytes32_t const &BlockHashBufferProposal::get(uint64_t const n) const
     return buf_->get(n);
 }
 
-BlockHashChain::BlockHashChain(
-    BlockHashBufferFinalized &buf, uint64_t last_finalized_round)
+BlockHashChain::BlockHashChain(BlockHashBufferFinalized &buf)
     : buf_{buf}
-    , last_finalized_round_{last_finalized_round}
 {
 }
 
@@ -92,7 +91,6 @@ void BlockHashChain::propose(
             return;
         }
     }
-    MONAD_ASSERT(parent_round == last_finalized_round_);
     proposals_.emplace_back(Proposal{
         .round = round,
         .parent_round = parent_round,
@@ -105,13 +103,12 @@ void BlockHashChain::finalize(uint64_t const round)
 
     auto winner_it = std::find_if(
         proposals_.rbegin(), proposals_.rend(), [round](Proposal const &p) {
-            return round == p.round;
+            return p.round == round;
         });
-    MONAD_ASSERT(winner_it != proposals_.rend())
-    MONAD_ASSERT((winner_it->buf.n() - 1) == to_finalize);
-
-    buf_.set(to_finalize, winner_it->buf.get(to_finalize));
-    last_finalized_round_ = round;
+    if (MONAD_LIKELY(winner_it != proposals_.rend())) {
+        MONAD_ASSERT((winner_it->buf.n() - 1) == to_finalize);
+        buf_.set(to_finalize, winner_it->buf.get(to_finalize));
+    }
 
     // cleanup chains
     proposals_.erase(
@@ -126,10 +123,9 @@ BlockHashBuffer const &BlockHashChain::find_chain(uint64_t const round) const
 {
     auto it = std::find_if(
         proposals_.rbegin(), proposals_.rend(), [round](Proposal const &p) {
-            return round == p.round;
+            return p.round == round;
         });
     if (MONAD_UNLIKELY(it == proposals_.rend())) {
-        MONAD_ASSERT(round == last_finalized_round_)
         return buf_;
     }
     return it->buf;

@@ -58,7 +58,6 @@ public:
 class BlockHashChain
 {
     BlockHashBufferFinalized &buf_;
-    uint64_t last_finalized_round_;
 
     struct Proposal
     {
@@ -70,8 +69,8 @@ class BlockHashChain
     std::deque<Proposal> proposals_;
 
 public:
-    BlockHashChain(
-        BlockHashBufferFinalized &, uint64_t last_finalized_round = 0);
+    BlockHashChain(BlockHashBufferFinalized &);
+
     void propose(bytes32_t const &, uint64_t round, uint64_t parent_round);
     void finalize(uint64_t const round);
     BlockHashBuffer const &find_chain(uint64_t) const;

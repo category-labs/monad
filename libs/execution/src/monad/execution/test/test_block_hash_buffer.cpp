@@ -52,7 +52,7 @@ TEST(BlockHashBuffer, from_seeded_buf)
     buf.set(0, bytes32_t{1});
     buf.set(1, bytes32_t{2});
 
-    BlockHashChain chain(buf, 1 /* last_finalized_round */);
+    BlockHashChain chain(buf);
 
     chain.propose(bytes32_t{3}, 2, 1);
     chain.finalize(2);
@@ -110,6 +110,20 @@ TEST(BlockHashBuffer, fork)
     EXPECT_EQ(buf.get(3), bytes32_t{5});
 }
 
+TEST(BlockHashBuffer, double_finalize)
+{
+    BlockHashBufferFinalized buf;
+    buf.set(0, bytes32_t{0}); // genesis
+
+    BlockHashChain chain(buf);
+
+    chain.propose(bytes32_t{1}, 1 /* round */, 0 /* parent_round */);
+    chain.propose(bytes32_t{1}, 2 /* round */, 1 /* parent_round */);
+    chain.finalize(1);
+    chain.finalize(1);
+    chain.finalize(2);
+}
+
 TEST(BlockHashBuffer, keep_latest_duplicate)
 {
     BlockHashBufferFinalized buf;
@@ -139,8 +153,8 @@ TEST(BlockHashBuffer, propose_after_crash)
     }
     ASSERT_EQ(buf.n(), 100);
 
-    BlockHashChain chain(buf, 99 /* last_finalized_round */);
-    auto &buf2 = chain.find_chain(99);
+    BlockHashChain chain(buf);
+    auto const &buf2 = chain.find_chain(99);
     EXPECT_EQ(&buf, &buf2);
 
     chain.propose(bytes32_t{100}, 100 /* round */, 99 /* parent_round */);
@@ -189,40 +203,4 @@ TEST(BlockHashBufferTest, init_from_db)
     }
 
     std::filesystem::remove(path);
-}
-
-TEST(BlockHashBufferDeathTest, bogus_round)
-{
-    BlockHashBufferFinalized buf;
-    for (uint64_t i = 0; i < buf.N; ++i) {
-        buf.set(i, bytes32_t{i});
-    }
-
-    BlockHashChain chain(buf, buf.n());
-
-    // actual finalized round that is earlier than latest finalized
-    EXPECT_DEATH(chain.find_chain(20), ".*");
-    EXPECT_DEATH(
-        chain.propose(
-            bytes32_t{1}, buf.n() + 1 /* round */, 20 /* parent_round */),
-        ".*");
-
-    // bogus round
-    EXPECT_DEATH(chain.find_chain(3000), ".*");
-    EXPECT_DEATH(
-        chain.propose(
-            bytes32_t{1}, buf.n() + 1 /* round */, 3000 /* parent_round */),
-        ".*");
-}
-
-TEST(BlockHashBufferDeathTest, double_finalize)
-{
-    BlockHashBufferFinalized buf;
-    buf.set(0, bytes32_t{0}); // genesis
-
-    BlockHashChain chain(buf);
-
-    chain.propose(bytes32_t{1}, 1 /* round */, 0 /* parent_round */);
-    chain.finalize(1);
-    EXPECT_DEATH(chain.finalize(1), ".*");
 }

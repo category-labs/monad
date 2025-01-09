@@ -402,7 +402,8 @@ void TrieDb::commit(
         .next = std::move(updates2),
         .version = static_cast<int64_t>(block_number_)}));
 
-    db_.upsert(std::move(ls2), block_number_);
+    bool const enable_compaction = false;
+    db_.upsert(std::move(ls2), block_number_, enable_compaction);
 
     if (!round_number_.has_value()) {
         db_.update_finalized_block(block_number_);

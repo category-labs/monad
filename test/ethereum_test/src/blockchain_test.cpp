@@ -19,6 +19,7 @@
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
+#include <monad/execution/genesis.hpp>
 #include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
@@ -185,12 +186,44 @@ void BlockchainTest::TestBody()
         mpt::Db db{machine};
         db_t tdb{db};
         {
+            auto const genesisJson = j_contents.at("genesisBlockHeader");
+            auto const header = read_genesis_blockheader(genesisJson);
+            ASSERT_EQ(
+                NULL_ROOT,
+                evmc::from_hex<bytes32_t>(
+                    genesisJson.at("transactionsTrie").get<std::string>())
+                    .value());
+            ASSERT_EQ(
+                NULL_ROOT,
+                evmc::from_hex<bytes32_t>(
+                    genesisJson.at("receiptTrie").get<std::string>())
+                    .value());
+            ASSERT_EQ(
+                NULL_LIST_HASH,
+                evmc::from_hex<bytes32_t>(
+                    genesisJson.at("uncleHash").get<std::string>())
+                    .value());
+            if (rev >= EVMC_SHANGHAI) {
+                ASSERT_EQ(
+                    NULL_ROOT,
+                    evmc::from_hex<bytes32_t>(
+                        genesisJson.at("withdrawalsRoot").get<std::string>())
+                        .value());
+            }
             BlockState bs{tdb};
             State state{bs, Incarnation{0, 0}};
             load_state_from_json(j_contents.at("pre"), state);
             bs.merge(state);
-            bs.commit({}, {}, {}, {}, {}, std::nullopt);
+            bs.commit(
+                header,
+                {} /* receipts */,
+                {} /* call frames */,
+                {} /* transactions */,
+                {} /* ommers */,
+                {} /* withdrawals */,
+                std::nullopt);
         }
+        auto db_post_state = tdb.to_json();
 
         BlockHashBufferFinalized block_hash_buffer;
         for (auto const &j_block : j_contents.at("blocks")) {
@@ -222,6 +255,7 @@ void BlockchainTest::TestBody()
             auto const result =
                 execute_dispatch(rev, block.value(), tdb, block_hash_buffer);
             if (!result.has_error()) {
+                db_post_state = tdb.to_json();
                 EXPECT_FALSE(j_block.contains("expectException"));
                 EXPECT_EQ(tdb.state_root(), block.value().header.state_root)
                     << name;
@@ -309,11 +343,10 @@ void BlockchainTest::TestBody()
                 j_contents.at("postStateHash").get<bytes32_t>());
         }
 
-        auto const dump = tdb.to_json();
         if (has_post_state) {
-            validate_post_state(j_contents.at("postState"), dump);
+            validate_post_state(j_contents.at("postState"), db_post_state);
         }
-        LOG_DEBUG("post_state: {}", dump.dump());
+        LOG_DEBUG("post_state: {}", db_post_state.dump());
     }
 
     if (!executed) {

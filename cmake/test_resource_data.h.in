@@ -1,5 +1,6 @@
 #pragma once
 
+#include <monad/async/util.hpp>
 #include <monad/config.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/keccak.hpp>
@@ -85,6 +86,24 @@ inline auto const H_CODE =
 inline auto const H_CODE_HASH = to_bytes(keccak256(H_CODE));
 inline auto const H_CODE_ANALYSIS =
     std::make_shared<CodeAnalysis>(analyze(H_CODE));
+
+inline std::filesystem::path create_ondisk_db(std::string_view fixture_name, size_t size = 8ULL * 1024 * 1024 * 1024)
+{
+    std::filesystem::path dbname(
+        MONAD_ASYNC_NAMESPACE::working_temporary_directory() / (std::string(fixture_name) + "_XXXXXX"));
+    int const fd = ::mkstemp((char *)dbname.native().data());
+    MONAD_ASSERT(fd != -1);
+    MONAD_ASSERT(
+        -1 !=
+        ::ftruncate(fd, static_cast<off_t>(size)));
+    ::close(fd);
+    char const *const path = dbname.c_str();
+    OnDiskMachine machine;
+    mpt::Db const db{
+        machine,
+        mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
+    return dbname;
+}
 
 inline void load_db(TrieDb &db, uint64_t const n)
 {

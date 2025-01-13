@@ -64,6 +64,43 @@ inline BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
     block_header.timestamp =
         std::stoull(genesis_json["timestamp"].get<std::string>(), nullptr, 0);
 
+    if (genesis_json.contains("coinbase")) {
+        auto const coinbase =
+            evmc::from_hex(genesis_json["coinbase"].get<std::string>());
+        MONAD_ASSERT(coinbase.has_value());
+        std::copy_n(
+            coinbase.value().begin(),
+            coinbase.value().length(),
+            block_header.beneficiary.bytes);
+    }
+
+    // London fork
+    if (genesis_json.contains("baseFeePerGas")) {
+        block_header.base_fee_per_gas = intx::from_string<uint256_t>(
+            genesis_json["baseFeePerGas"].get<std::string>());
+    }
+
+    // Shanghai fork
+    if (genesis_json.contains("blobGasUsed")) {
+        block_header.blob_gas_used = std::stoull(
+            genesis_json["blobGasUsed"].get<std::string>(), nullptr, 0);
+    }
+    if (genesis_json.contains("excessBlobGas")) {
+        block_header.excess_blob_gas = std::stoull(
+            genesis_json["excessBlobGas"].get<std::string>(), nullptr, 0);
+    }
+    if (genesis_json.contains("parentBeaconBlockRoot")) {
+        auto const parent_beacon_block_root = evmc::from_hex(
+            genesis_json["parentBeaconBlockRoot"].get<std::string>());
+        MONAD_ASSERT(parent_beacon_block_root.has_value());
+        auto &write_to =
+            block_header.parent_beacon_block_root.emplace(bytes32_t{});
+        std::copy_n(
+            parent_beacon_block_root.value().begin(),
+            parent_beacon_block_root.value().length(),
+            write_to.bytes);
+    }
+
     return block_header;
 }
 

@@ -200,8 +200,8 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
 
         // Allocate a block execution header payload (which also reserves a
         // block flow ID) for this block
-        // TODO(ken): when we have the "proposed blocks" concept, this can and
-        //   should be done as soon as we know the execution block header
+        // TODO(ken): when we have the "proposed blocks" concept, this should
+        //   be done as soon as we know the execution block header
         monad_event_block_exec_header *const block_exec_header =
             init_block_exec_header(
                 block, monad_event_recorder_alloc_block_exec_header());

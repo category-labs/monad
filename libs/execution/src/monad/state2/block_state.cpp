@@ -7,6 +7,8 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/db/db.hpp>
+#include <monad/event/event_recorder.h>
+#include <monad/event/event_types.h>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/fmt/state_deltas_fmt.hpp> // NOLINT
@@ -17,6 +19,7 @@
 
 #include <quill/detail/LogMacros.h>
 
+#include <bit>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -172,20 +175,85 @@ void BlockState::merge(State const &state)
         auto const &storage = account_state.storage_;
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_.find(it, address));
+
+        // We need to decide whether or not to emit a "balance has changed"
+        // event. This event is called WR_ACCT_STATE_BALANCE ("write account
+        // state balance"). There are three versions of the Account value:
+        //
+        //    1. The account as it is known to the database, prior to any
+        //       alterations that occurred in this block, stored as
+        //       `it->second.account.first`
+        //
+        //    2. The account as it _may_ have been modified, by a prior
+        //       transaction in this same block, stored as
+        //       `it->second.account.second`.
+        //
+        //    3. The account as it appears now, after this state change; stored
+        //       in `account`
+        //
+        //  Given how the code is written, if the account was not modified in
+        //  this block, #2 will be equal to #1. Because of this property, we
+        //  only need to be concerned with the differences between #2 and #3.
+        //
+        // The only time something state-affecting might occur that does *not*
+        // record a balance change, is if version #2 and #3 of the account both
+        // exist and have the same balance. Otherwise, version #3 must have a
+        // different account balance.
+
+        bool const balance_has_not_changed =
+            it->second.account.second.has_value() && account.has_value() &&
+            it->second.account.second->balance == account->balance;
+        if (!balance_has_not_changed) {
+            monad_event_account_balance balance_delta;
+            balance_delta.address = address;
+            balance_delta.balance = account->balance
+                                        ? *std::bit_cast<evmc_bytes32 const *>(
+                                              as_bytes(account->balance))
+                                        : evmc_bytes32{};
+            MONAD_EVENT_EXPR(
+                MONAD_EVENT_WR_ACCT_STATE_BALANCE, 0, balance_delta);
+        }
+
         it->second.account.second = account;
         if (account.has_value()) {
             for (auto const &[key, value] : storage) {
                 StorageDeltas::accessor it2{};
+                monad_event_account_storage storage_delta;
+                storage_delta.address = address;
+                storage_delta.storage_key = key;
+
                 if (it->second.storage.find(it2, key)) {
+                    if (it2->second.second != value) {
+                        // TODO(ken): is this check necessary?
+                        storage_delta.storage_value = value;
+                        MONAD_EVENT_EXPR(
+                            MONAD_EVENT_WR_ACCT_STATE_STORAGE,
+                            0,
+                            storage_delta);
+                    }
                     it2->second.second = value;
                 }
                 else {
+                    storage_delta.storage_value = value;
+                    MONAD_EVENT_EXPR(
+                        MONAD_EVENT_WR_ACCT_STATE_STORAGE, 0, storage_delta);
                     it->second.storage.emplace(
                         key, std::make_pair(bytes32_t{}, value));
                 }
             }
         }
         else {
+            // Explicitly record the clearing of the storage keys
+            // TODO(ken): is this necessary?
+            monad_event_account_storage storage_delta;
+            storage_delta.address = address;
+            storage_delta.storage_value = monad_event_bytes32{};
+            for (auto const &[key, value] : it->second.storage) {
+                storage_delta.storage_key = key;
+                MONAD_EVENT_EXPR(
+                    MONAD_EVENT_WR_ACCT_STATE_STORAGE, 0, storage_delta);
+            }
+
             it->second.storage.clear();
         }
     }

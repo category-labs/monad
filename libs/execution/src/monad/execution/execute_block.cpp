@@ -9,6 +9,7 @@
 #include <monad/core/result.hpp>
 #include <monad/core/withdrawal.hpp>
 #include <monad/event/event_recorder.h>
+#include <monad/event/event_types.h>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_reward.hpp>
 #include <monad/execution/ethereum/dao.hpp>
@@ -18,6 +19,7 @@
 #include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/trace/event_trace.hpp>
 #include <monad/execution/validate_block.hpp>
+#include <monad/execution/validate_transaction.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/state.hpp>
@@ -33,6 +35,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -72,6 +75,60 @@ static size_t init_txn_header_iovec(Transaction const &txn, iovec (&iov)[2])
         iov[1].iov_len = header->data_length;
     }
     return iovlen;
+}
+
+static void record_txn_exec_result_events(Result<ExecutionResult> const &r)
+{
+    // MAX_IOVEC_LEN of 7 is:
+    //  1 for the `struct monad_event_txn_log` object
+    //  5 for the (up to) 5 log topics
+    //  1 for the data payload
+    constexpr size_t MAX_IOVEC_LEN = 7;
+
+    if (r.has_error()) {
+        // Create a reference error so we can extract its domain with
+        // `ref_txn_error.domain()`, for the purpose of checking if the
+        // r.error() domain is a TransactionError
+        static Result<ExecutionResult>::error_type const ref_txn_error =
+            TransactionError::InsufficientBalance;
+        static auto const &txn_err_domain = ref_txn_error.domain();
+        auto const &error_domain = r.error().domain();
+        auto const error_value = r.error().value();
+        if (error_domain == txn_err_domain) {
+            MONAD_EVENT_EXPR(MONAD_EVENT_TXN_REJECT, 0, error_value);
+        }
+        else {
+            monad_event_txn_exec_error ee;
+            ee.domain_id = error_domain.id();
+            ee.status_code = error_value;
+            MONAD_EVENT_EXPR(MONAD_EVENT_TXN_EXEC_ERROR, 0, ee);
+        }
+        return;
+    }
+
+    auto const &receipt = r.value().receipt;
+    iovec iov[MAX_IOVEC_LEN];
+    for (auto const &log : receipt.logs) {
+        size_t iovlen = 0;
+        monad_event_txn_log log_event;
+
+        log_event.address = log.address;
+        log_event.topic_count = static_cast<uint8_t>(size(log.topics));
+        log_event.data_length = static_cast<uint32_t>(size(log.data));
+        iov[iovlen++] = {.iov_base = &log_event, .iov_len = sizeof log_event};
+        for (bytes32_t const &topic : log.topics) {
+            iov[iovlen++] = {
+                .iov_base = const_cast<uint8_t *>(topic.bytes),
+                .iov_len = sizeof topic};
+        }
+        iov[iovlen++] = {
+            .iov_base = const_cast<uint8_t *>(log.data.data()),
+            .iov_len = log_event.data_length};
+        MONAD_EVENT_IOV(MONAD_EVENT_TXN_LOG, 0, iov, iovlen);
+    }
+    monad_event_txn_receipt const receipt_event = {
+        .status = receipt.status, .gas_used = receipt.gas_used};
+    MONAD_EVENT_EXPR(MONAD_EVENT_TXN_RECEIPT, 0, receipt_event);
 }
 
 // EIP-4895
@@ -206,18 +263,7 @@ Result<std::vector<ExecutionResult>> execute_block(
                     block_state,
                     promises[i]);
                 promises[i + 1].set_value();
-                monad_event_txn_receipt receipt;
-                // TODO(ken): this is inconsistent with the way TXN_LOG is
-                //    handled
-                if (results[i] && results[i]->has_value()) {
-                    auto const &r = results[i]->value();
-                    receipt.status = r.receipt.status;
-                    receipt.gas_used = r.receipt.gas_used;
-                }
-                else {
-                    memset(&receipt, 0, sizeof receipt);
-                }
-                MONAD_EVENT_EXPR(MONAD_EVENT_TXN_END, 0, receipt);
+                record_txn_exec_result_events(*results[i]);
                 g_fss_txn_num.release();
             });
     }

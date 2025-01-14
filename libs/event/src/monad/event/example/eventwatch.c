@@ -107,11 +107,17 @@ static bool is_txn_event(enum monad_event_type type)
     switch (type) {
     case MONAD_EVENT_TXN_START:
         [[fallthrough]];
+    case MONAD_EVENT_TXN_EXEC_ERROR:
+        [[fallthrough]];
+    case MONAD_EVENT_TXN_REJECT:
+        [[fallthrough]];
     case MONAD_EVENT_TXN_LOG:
         [[fallthrough]];
-    case MONAD_EVENT_TXN_RESTART:
+    case MONAD_EVENT_TXN_RECEIPT:
         [[fallthrough]];
-    case MONAD_EVENT_TXN_END:
+    case MONAD_EVENT_WR_ACCT_STATE_BALANCE:
+        [[fallthrough]];
+    case MONAD_EVENT_WR_ACCT_STATE_STORAGE:
         return true;
 
     default:

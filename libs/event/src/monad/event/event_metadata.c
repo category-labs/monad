@@ -67,20 +67,25 @@ struct monad_event_metadata const g_monad_event_metadata[] = {
          .c_name = "TXN_START",
          .description = "Started execution of new transaction"},
 
+    [MONAD_EVENT_TXN_REJECT] =
+        {.type = MONAD_EVENT_TXN_REJECT,
+         .c_name = "TXN_REJECT",
+         .description = "Transaction failed validation and was rejected - no receipt, not in block"},
+
+    [MONAD_EVENT_TXN_EXEC_ERROR] =
+        {.type = MONAD_EVENT_TXN_EXEC_ERROR,
+         .c_name = "TXN_EXEC_ERROR",
+         .description = "Transaction execution failed due to error in the EVM, not due to it being invalid"},
+
     [MONAD_EVENT_TXN_LOG] =
         {.type = MONAD_EVENT_TXN_LOG,
          .c_name = "TXN_LOG",
          .description = "Transaction emitted a log during speculative execution"},
 
-    [MONAD_EVENT_TXN_RESTART] =
-        {.type = MONAD_EVENT_TXN_RESTART,
-         .c_name = "TXN_RESTART",
-         .description = "Transaction restarting after speculative execution could not be merged"},
-
-    [MONAD_EVENT_TXN_END] =
-        {.type = MONAD_EVENT_TXN_END,
-         .c_name = "TXN_END",
-         .description = "Transaction execution finished (committed to proposed block"},
+    [MONAD_EVENT_TXN_RECEIPT] =
+        {.type = MONAD_EVENT_TXN_RECEIPT,
+         .c_name = "TXN_RECEIPT",
+         .description = "Transaction execution finished (merged into proposed block"},
 
     [MONAD_EVENT_WR_ACCT_STATE_BALANCE] =
         {.type = MONAD_EVENT_WR_ACCT_STATE_BALANCE,
@@ -93,13 +98,13 @@ struct monad_event_metadata const g_monad_event_metadata[] = {
          .description = "Account storage updated by transaction commit"},
 };
 
-size_t const g_monad_event_metadata_size = 15;
+size_t const g_monad_event_metadata_size = 16;
 
 uint8_t const g_monad_event_metadata_hash[32] = {
-    0x56, 0x43, 0x5e, 0x25, 0x3f, 0xb5, 0x12, 0x52,
-    0x06, 0x2f, 0xc1, 0xf2, 0xfa, 0xfe, 0x37, 0x72,
-    0xf4, 0x90, 0xdb, 0x61, 0x80, 0xca, 0x01, 0xad,
-    0x84, 0x0e, 0x80, 0xcd, 0xcb, 0xc5, 0x3d, 0x32,
+    0xca, 0x48, 0x8d, 0xd7, 0x33, 0x8b, 0xeb, 0x47,
+    0x30, 0xd0, 0xfa, 0x21, 0x65, 0x6b, 0xfe, 0x60,
+    0xd8, 0xbe, 0xf2, 0x6a, 0xe9, 0xb9, 0x12, 0xb2,
+    0x75, 0x69, 0x05, 0xaa, 0xf6, 0xce, 0x59, 0xc1,
 };
 
 #ifdef __cplusplus

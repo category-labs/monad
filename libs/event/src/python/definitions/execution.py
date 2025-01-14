@@ -73,6 +73,29 @@ register_event('TXN_START', txn_header,
     "Started execution of new transaction")
 
 #
+# TXN_REJECT
+#
+
+# "long" payload value is the integral constant of the enum value of type
+# `enum class TransactionError` from validate_transaction.hpp
+
+register_event('TXN_REJECT', ctypes.c_long,
+    "Transaction failed validation and was rejected - no receipt, not in block")
+
+#
+# TXN_EXEC_ERROR
+#
+
+class txn_exec_error(ctypes.Structure):
+  _fields_ = (
+    ('domain_id', ctypes.c_uint64),
+    ('status_code', ctypes.c_long),
+  )
+
+register_event('TXN_EXEC_ERROR', txn_exec_error,
+    "Transaction execution failed due to error in the EVM, not due to it being invalid")
+
+#
 # TXN_LOG
 #
 
@@ -87,14 +110,7 @@ register_event('TXN_LOG', txn_log,
     "Transaction emitted a log during speculative execution")
 
 #
-# TXN_RESTART
-#
-
-register_event('TXN_RESTART', None,
-    "Transaction restarting after speculative execution could not be merged")
-
-#
-# TXN_END
+# TXN_RECEIPT
 #
 
 class txn_receipt(ctypes.Structure):
@@ -103,8 +119,8 @@ class txn_receipt(ctypes.Structure):
     ('gas_used', ctypes.c_uint64),
   )
 
-register_event('TXN_END', txn_receipt,
-    "Transaction execution finished (committed to proposed block")
+register_event('TXN_RECEIPT', txn_receipt,
+    "Transaction execution finished (merged into proposed block")
 
 #
 # WR_ACCT_STATE_BALANCE

@@ -18,7 +18,6 @@
 #include <monad/core/rlp/withdrawal_rlp.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
-#include <monad/event/event_recorder.h>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
 #include <monad/execution/trace/rlp/call_frame_rlp.hpp>
@@ -211,12 +210,6 @@ void TrieDb::commit(
                             .incarnation = false,
                             .next = UpdateList{},
                             .version = static_cast<int64_t>(block_number_)}));
-                    monad_event_account_storage storage_delta;
-                    storage_delta.address = addr;
-                    storage_delta.storage_key = key;
-                    storage_delta.storage_value = delta.second;
-                    MONAD_EVENT_EXPR(
-                        MONAD_EVENT_WR_ACCT_STATE_STORAGE, 0, storage_delta);
                 }
             }
             value = bytes_alloc_.emplace_back(
@@ -234,25 +227,6 @@ void TrieDb::commit(
                 .incarnation = incarnation,
                 .next = std::move(storage_updates),
                 .version = static_cast<int64_t>(block_number_)}));
-            if (!delta.account.first || !account->balance ||
-                delta.account.first->balance != account->balance) {
-                // The account balance has changed. Either:
-                //
-                //   1. The account is created for the first time (first
-                //      predicate)
-                //   2. The account is removed (second predicate, balance has
-                //      implicitly changed to zero)
-                //   3. The account exists at both start and end of block, but
-                //      with different balances
-                monad_event_account_balance balance_delta;
-                balance_delta.address = addr;
-                balance_delta.balance =
-                    account->balance ? *std::bit_cast<evmc_bytes32 const *>(
-                                           as_bytes(account->balance))
-                                     : evmc_bytes32{};
-                MONAD_EVENT_EXPR(
-                    MONAD_EVENT_WR_ACCT_STATE_BALANCE, 0, balance_delta);
-            }
         }
     }
 

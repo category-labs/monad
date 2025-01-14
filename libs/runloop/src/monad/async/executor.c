@@ -2,8 +2,11 @@
 
 #include "task.h"
 
+#include <monad/boost_result.h>
+#include <monad/config.h>
 #include <monad/context/config.h>
 #include <monad/context/context_switcher.h>
+#include <monad/util/ticks_count.h>
 
 #include "executor_impl.h"
 #include "task_impl.h"
@@ -20,6 +23,20 @@
 #if MONAD_HAVE_ASAN
     #include <sanitizer/asan_interface.h>
 #endif
+
+static inline monad_c_result
+monad_async_task_claim_registered_io_write_buffer_resume_with_error_no_buffers_remaining(
+    struct monad_async_executor_impl *ex, bool const is_for_write,
+    bool const is_large_page);
+
+static inline monad_cpu_ticks_count_t ticks_per_sec()
+{
+    static monad_cpu_ticks_count_t v;
+    if (v == 0) {
+        v = monad_ticks_per_second();
+    }
+    return v;
+}
 
 monad_c_result monad_async_executor_create(
     monad_async_executor *ex, struct monad_async_executor_attr *attr)
@@ -236,10 +253,14 @@ static inline monad_c_result monad_async_executor_run_impl(
         .ex = ex, .max_items = &max_items};
     bool timed_out = false;
     bool retry_after_this = false;
+    const struct timespec no_waiting = {.tv_sec = 0, .tv_nsec = 0};
+    const struct timespec single_millisecond_waiting = {
+        .tv_sec = 0, .tv_nsec = 1000000};
+    const struct timespec stuck_buffers_check_waiting = {
+        .tv_sec = 0, .tv_nsec = 500000000};
     do {
         timed_out = false;
         retry_after_this = false;
-        struct timespec no_waiting = {.tv_sec = 0, .tv_nsec = 0};
         monad_cpu_ticks_count_t const launch_begin =
             get_ticks_count(memory_order_relaxed);
         if (atomic_load_explicit(
@@ -285,6 +306,7 @@ static inline monad_c_result monad_async_executor_run_impl(
                 atomic_store_explicit(
                     &ex->need_to_empty_eventfd, false, memory_order_release);
                 timeout = &no_waiting;
+                timeout_ = nullptr;
             }
             atomic_unlock(&ex->lock);
 #if MONAD_ASYNC_EXECUTOR_PRINTING >= 3
@@ -296,14 +318,13 @@ static inline monad_c_result monad_async_executor_run_impl(
             fflush(stdout);
 #endif
         }
-        struct timespec single_millisecond_waiting = {
-            .tv_sec = 0, .tv_nsec = 1000000};
         if (atomic_load_explicit(
                 &ex->head.tasks_suspended, memory_order_acquire) > 0) {
             for (int n = 0; max_items > 0 && n < monad_async_priority_max;
                  n++) {
                 if (ex->tasks_suspended_completed[n].count > 0) {
                     timeout = &no_waiting;
+                    timeout_ = nullptr;
                     break;
                 }
             }
@@ -313,6 +334,7 @@ static inline monad_c_result monad_async_executor_run_impl(
                 launch_pending_tasks_state.tasks_pending_launch_count <=
                 max_items);
             timeout = &no_waiting;
+            timeout_ = nullptr;
             for (int n = 0; max_items > 0 && n < monad_async_priority_max;
                  n++) {
                 while (
@@ -557,6 +579,7 @@ static inline monad_c_result monad_async_executor_run_impl(
                     // The write ring must be frequently polled while there are
                     // extant write ops
                     timeout = &single_millisecond_waiting;
+                    timeout_ = nullptr;
                 }
             }
             // If write ring did not have a CQE for us, examine the non-write
@@ -572,6 +595,23 @@ static inline monad_c_result monad_async_executor_run_impl(
                         // If there are tasks awaiting SQE slots, no waiting so
                         // we can clear the backlog ASAP
                         timeout = &no_waiting;
+                        timeout_ = nullptr;
+                    }
+                    else if (
+                        (ex->registered_buffers[0].buffer[0].free == nullptr ||
+                         ex->registered_buffers[0].buffer[1].free == nullptr) &&
+                        ex->registered_buffers[0]
+                                    .buffer[0]
+                                    .tasks_awaiting.count +
+                                ex->registered_buffers[0]
+                                    .buffer[1]
+                                    .tasks_awaiting.count >
+                            0 &&
+                        (timeout == nullptr ||
+                         timespec_to_ns(timeout) >
+                             timespec_to_ns(&stuck_buffers_check_waiting))) {
+                        timeout = &stuck_buffers_check_waiting;
+                        timeout_ = nullptr;
                     }
 #if MONAD_ASYNC_EXECUTOR_PRINTING >= 2
                     if (timeout == nullptr) {
@@ -604,7 +644,7 @@ static inline monad_c_result monad_async_executor_run_impl(
                         // syscall io_uring_enter, skip that.
                     }
                     else {
-                    monad_cpu_ticks_count_t const sleep_begin =
+                        monad_cpu_ticks_count_t const sleep_begin =
                             get_ticks_count(memory_order_relaxed);
                         // This is the new faster io_uring wait syscall
                         // It calls syscall io_uring_enter2. It does not have an
@@ -622,10 +662,34 @@ static inline monad_c_result monad_async_executor_run_impl(
                         if (r == -EINTR) {
                             r = 0;
                         }
-                    monad_cpu_ticks_count_t const sleep_end =
+                        monad_cpu_ticks_count_t const sleep_end =
                             get_ticks_count(memory_order_relaxed);
                         ex->head.total_ticks_sleeping +=
                             sleep_end - sleep_begin;
+
+                        // Check for tasks deadlocked by lack of i/o buffers and
+                        // give one a kick if necessary
+                        for (int is_large_page = 0; is_large_page < 2;
+                             is_large_page++) {
+                            if (ex->registered_buffers[0]
+                                        .buffer[is_large_page]
+                                        .free == nullptr &&
+                                ex->registered_buffers[0]
+                                        .buffer[is_large_page]
+                                        .tasks_awaiting.front != nullptr) {
+                                monad_cpu_ticks_count_t const
+                                    ticks_since_last_buffer_free =
+                                        sleep_end - ex->registered_buffers[0]
+                                                        .buffer[is_large_page]
+                                                        .ticks_last_free;
+                                if (ticks_since_last_buffer_free >=
+                                    ticks_per_sec() / 2) {
+                                    MONAD_CONTEXT_CHECK_RESULT(
+                                        monad_async_task_claim_registered_io_write_buffer_resume_with_error_no_buffers_remaining(
+                                            ex, false, is_large_page));
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -702,6 +766,11 @@ static inline monad_c_result monad_async_executor_run_impl(
                 if (task != nullptr) {
                 resume_task:
                     assert(0 == memcmp(task->magic, "MNASTASK", 8));
+                    assert(
+                        !(task->please_cancel_status ==
+                              please_cancel_invoked_seen &&
+                          task->please_cancel_invoked_suspending_ops_remaining >
+                              0));
                     if (task->please_cancel_status !=
                             please_cancel_not_invoked &&
                         task->please_cancel_status !=
@@ -842,6 +911,26 @@ static inline monad_c_result monad_async_executor_run_impl(
                             task,
                             (size_t *)nullptr);
                     }
+                    else {
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+                        printf(
+                            "*** %u. Executor %p NOT resuming suspended task "
+                            "%p (cpu priority=%d, i/o priority=%d) as "
+                            "is_suspended_awaiting = %d "
+                            "please_cancel_invoked_suspending_ops_remaining = "
+                            "%d\n",
+                            i,
+                            (void *)ex,
+                            (void *)task,
+                            (int)monad_async_task_effective_cpu_priority(task),
+                            (int)task->head.priority.io,
+                            atomic_load_explicit(
+                                &task->head.is_suspended_awaiting,
+                                memory_order_acquire),
+                            task->please_cancel_invoked_suspending_ops_remaining);
+                        fflush(stdout);
+#endif
+                    }
                 }
                 else if (iostatus != nullptr) {
                     // result contains the pointer to the task which is to
@@ -852,20 +941,49 @@ static inline monad_c_result monad_async_executor_run_impl(
                     task = (struct monad_async_task_impl *)iostatus->task_;
                     struct monad_async_task_registered_io_buffer *tofill =
                         iostatus->tofill_;
+                    assert(task != nullptr);
 #if MONAD_ASYNC_EXECUTOR_PRINTING
                     printf(
                         "*** %u. Executor %p gets result of i/o %p "
                         "initiated "
-                        "by task %p (cpu priority=%d, i/o priority=%d)\n",
+                        "by task %p (cpu priority=%d, i/o priority=%d) "
+                        "completed = %p is_suspended_for_io = %d "
+                        "is_suspended_sqe_exhaustion = %d "
+                        "is_suspended_sqe_exhaustion_wr = %d "
+                        "is_suspended_io_buffer_exhaustion = %d "
+                        "is_suspended_max_concurrency = %d "
+                        "is_suspended_awaiting = %d is_suspended_completed = "
+                        "%d\n",
                         i,
                         (void *)ex,
                         (void *)iostatus,
                         (void *)task,
                         (int)monad_async_task_effective_cpu_priority(task),
-                        (int)task->head.priority.io);
+                        (int)task->head.priority.io,
+                        (void *)task->completed,
+                        atomic_load_explicit(
+                            &task->head.is_suspended_for_io,
+                            memory_order_acquire),
+                        atomic_load_explicit(
+                            &task->head.is_suspended_sqe_exhaustion,
+                            memory_order_acquire),
+                        atomic_load_explicit(
+                            &task->head.is_suspended_sqe_exhaustion_wr,
+                            memory_order_acquire),
+                        atomic_load_explicit(
+                            &task->head.is_suspended_io_buffer_exhaustion,
+                            memory_order_acquire),
+                        atomic_load_explicit(
+                            &task->head.is_suspended_max_concurrency,
+                            memory_order_acquire),
+                        atomic_load_explicit(
+                            &task->head.is_suspended_awaiting,
+                            memory_order_acquire),
+                        atomic_load_explicit(
+                            &task->head.is_suspended_completed,
+                            memory_order_acquire));
                     fflush(stdout);
 #endif
-                    assert(task != nullptr);
                     assert(0 == memcmp(task->magic, "MNASTASK", 8));
                     LIST_REMOVE(
                         task->io_submitted, iostatus, &task->head.io_submitted);
@@ -894,11 +1012,63 @@ static inline monad_c_result monad_async_executor_run_impl(
                             (int)(cqe->flags >> IORING_CQE_BUFFER_SHIFT);
                         tofill->iov[0] = ex->registered_buffers[0]
                                              .buffers[tofill->index - 1];
+                        ex->head.registered_buffers.total_claimed++;
+                        ex->head.registered_buffers.ticks_last_claim =
+                            get_ticks_count(memory_order_relaxed);
                     }
-                    if (task->completed != nullptr &&
-                        atomic_load_explicit(
+                    if (cqe->res < 0 && tofill != nullptr) {
+                        // There is failure, and either the buffer came from
+                        // io_uring or we allocated it and it needs to be freed
+                        // as we own it
+                        MONAD_CHECK_RESULT(
+                            monad_async_task_release_registered_io_buffer(
+                                &task->head, tofill->index));
+                        memset(tofill, 0, sizeof(*tofill));
+                    }
+                    if (atomic_load_explicit(
                             &task->head.is_suspended_awaiting,
-                            memory_order_acquire)) {
+                            memory_order_acquire) &&
+                        task->completed != nullptr) {
+                        // If completed is set, it means the task is suspended
+                        // on an iostatus based i/o and wants to be resumed. If
+                        // completed is null, it means the task is suspended on
+                        // a non-iostatus based i/o and it does not want to be
+                        // resumed by iostatus i/o.
+                        assert(atomic_load_explicit(
+                            &task->head.is_suspended_for_io,
+                            memory_order_acquire));
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+                        printf(
+                            "*** %u. Executor %p handles result of i/o %p "
+                            "initiated by task %p by executing resume task "
+                            "(which may demur). "
+                            "completed = %p is_suspended_sqe_exhaustion = %d "
+                            "is_suspended_sqe_exhaustion_wr = %d "
+                            "is_suspended_io_buffer_exhaustion = %d "
+                            "is_suspended_max_concurrency = %d "
+                            "is_suspended_awaiting = %d\n",
+                            i,
+                            (void *)ex,
+                            (void *)iostatus,
+                            (void *)task,
+                            (void *)task->completed,
+                            atomic_load_explicit(
+                                &task->head.is_suspended_sqe_exhaustion,
+                                memory_order_acquire),
+                            atomic_load_explicit(
+                                &task->head.is_suspended_sqe_exhaustion_wr,
+                                memory_order_acquire),
+                            atomic_load_explicit(
+                                &task->head.is_suspended_io_buffer_exhaustion,
+                                memory_order_acquire),
+                            atomic_load_explicit(
+                                &task->head.is_suspended_max_concurrency,
+                                memory_order_acquire),
+                            atomic_load_explicit(
+                                &task->head.is_suspended_awaiting,
+                                memory_order_acquire));
+                        fflush(stdout);
+#endif
                         *task->completed = iostatus;
                         task->completed = nullptr;
                         cqe->res = (int)task->head.io_completed_not_reaped;
@@ -1300,6 +1470,19 @@ monad_c_result monad_async_executor_suspend_impl(
     struct monad_async_task_impl *task_to_resume)
 {
     assert(atomic_load_explicit(&task->head.is_running, memory_order_acquire));
+    // One of these must be set to indicate cause of suspension
+    assert(
+        atomic_load_explicit(
+            &task->head.is_suspended_for_io, memory_order_acquire) ||
+        atomic_load_explicit(
+            &task->head.is_suspended_sqe_exhaustion, memory_order_acquire) ||
+        atomic_load_explicit(
+            &task->head.is_suspended_sqe_exhaustion_wr, memory_order_acquire) ||
+        atomic_load_explicit(
+            &task->head.is_suspended_io_buffer_exhaustion,
+            memory_order_acquire) ||
+        atomic_load_explicit(
+            &task->head.is_suspended_max_concurrency, memory_order_acquire));
     assert(
         atomic_load_explicit(&ex->head.current_task, memory_order_acquire) ==
         &task->head);
@@ -1702,26 +1885,79 @@ monad_async_task_cancel(monad_async_executor ex_, monad_async_task task_)
     }
     else if (atomic_load_explicit(
                  &task->head.is_suspended_completed, memory_order_acquire)) {
-        // Have this return ECANCELED when it resumes
-        task->head.derived.result = monad_c_make_failure(ECANCELED);
-        task->please_cancel_status = please_cancel_invoked_not_seen_yet;
+        if (atomic_load_explicit(
+                &task->head.is_suspended_for_io, memory_order_acquire)) {
+            // Have this return ECANCELED when it resumes
+            task->head.derived.result = monad_c_make_failure(ECANCELED);
+            task->please_cancel_status = please_cancel_invoked_not_seen_yet;
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+            printf(
+                "*** Task %p running on executor %p currently pending "
+                "resumption "
+                "due to i/o completion will be told the i/o failed with "
+                "ECANCELED.\n",
+                (void *)task,
+                (void *)ex);
+            fflush(stdout);
+#endif
+            atomic_unlock(&ex->lock);
+            return monad_c_make_success(0);
+        }
+        else if (atomic_load_explicit(
+                     &task->head.is_suspended_io_buffer_exhaustion,
+                     memory_order_acquire)) {
+            // If this is true and is_suspended_awaiting is false, then the task
+            // has been assigned an i/o buffer and is shortly about to be
+            // resumed. In this case, request cancellation and do nothing else.
+            task->please_cancel_status = please_cancel_invoked_not_seen_yet;
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+            printf(
+                "*** Task %p running on executor %p currently pending "
+                "resumption "
+                "due to i/o buffer acquisition has been notified of "
+                "cancellation.\n",
+                (void *)task,
+                (void *)ex);
+            fflush(stdout);
+#endif
+            atomic_unlock(&ex->lock);
+            return monad_c_make_success(0);
+        }
+        else if (atomic_load_explicit(
+                     &task->head.is_suspended_max_concurrency,
+                     memory_order_acquire)) {
+            // If this is true and is_suspended_awaiting is false, then the task
+            // has been is shortly about to be resumed. In this case, request
+            // cancellation and do nothing else.
+            task->please_cancel_status = please_cancel_invoked_not_seen_yet;
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+            printf(
+                "*** Task %p running on executor %p currently pending "
+                "resumption "
+                "due to max concurrency has been notified of "
+                "cancellation.\n",
+                (void *)task,
+                (void *)ex);
+            fflush(stdout);
+#endif
+            atomic_unlock(&ex->lock);
+            return monad_c_make_success(0);
+        }
+        abort();
+    }
+    else {
 #if MONAD_ASYNC_EXECUTOR_PRINTING
         printf(
-            "*** Task %p running on executor %p currently pending resumption "
-            "due to i/o completion will be told the i/o failed with "
-            "ECANCELED.\n",
+            "*** Task %p running on executor %p is not cancellable as it is "
+            "neither running nor suspended. Returning ENOENT.\n",
             (void *)task,
             (void *)ex);
         fflush(stdout);
 #endif
         atomic_unlock(&ex->lock);
-    }
-    else {
-        atomic_unlock(&ex->lock);
         return monad_c_make_failure(ENOENT);
     }
-    atomic_unlock(&ex->lock);
-    return monad_c_make_success(0);
+    abort();
 }
 
 static monad_c_result monad_async_task_set_priorities_impl(
@@ -1851,7 +2087,8 @@ monad_c_result monad_async_task_suspend_for_duration(
     monad_async_io_status **completed, monad_async_task task_, uint64_t ns)
 {
     struct monad_async_task_impl *task = (struct monad_async_task_impl *)task_;
-    if (task->please_cancel_status != please_cancel_not_invoked) {
+    if (ns != monad_async_duration_infinite_non_cancelling &&
+        task->please_cancel_status != please_cancel_not_invoked) {
         if (task->please_cancel_status < please_cancel_invoked_seen) {
             task->please_cancel_status = please_cancel_invoked_seen;
         }
@@ -1865,7 +2102,8 @@ monad_c_result monad_async_task_suspend_for_duration(
     }
     // timespec must live until resumption
     struct __kernel_timespec ts;
-    if (ns != (uint64_t)-1 || completed == nullptr) {
+    if (ns != monad_async_duration_infinite_non_cancelling ||
+        completed == nullptr) {
         struct get_sqe_suspending_if_necessary_flags const flags = {
             .is_cancellation_point = true,
             .max_concurrent_io_pacing_already_done = false};
@@ -1897,12 +2135,19 @@ monad_c_result monad_async_task_suspend_for_duration(
         completed ? (void *)*completed : nullptr);
     fflush(stdout);
 #endif
+    atomic_store_explicit(
+        &task->head.is_suspended_for_io, true, memory_order_release);
     monad_c_result ret = monad_async_executor_suspend_impl(
         ex,
         task,
         monad_async_task_suspend_for_duration_cancel,
         completed,
         nullptr);
+    assert(
+        atomic_load_explicit(
+            &task->head.is_suspended_for_io, memory_order_acquire) == true);
+    atomic_store_explicit(
+        &task->head.is_suspended_for_io, false, memory_order_release);
 #if MONAD_ASYNC_EXECUTOR_PRINTING
     printf(
         "*** Task %p running on executor %p completes "
@@ -1923,23 +2168,21 @@ monad_c_result monad_async_task_suspend_for_duration(
     return monad_c_make_success(0);
 }
 
-static inline monad_c_result
-monad_async_task_claim_registered_io_write_buffer_resume(
-    struct monad_async_executor_impl *ex, bool const is_for_write,
-    bool const is_large_page)
+// Returns true if an i/o buffer was detached and passed to a resumed task
+static inline bool
+monad_async_task_claim_registered_io_write_buffer_resume_task(
+    struct monad_async_executor_impl *ex, struct monad_async_task_impl *task,
+    bool const is_for_write, bool const is_large_page,
+    bool resume_with_error_no_buffers_remaining)
 {
-    struct monad_async_task_impl *task =
-        (struct monad_async_task_impl *)((char *)ex
-                                             ->registered_buffers[is_for_write]
-                                             .buffer[is_large_page]
-                                             .tasks_awaiting.front -
-                                         offsetof(
-                                             struct monad_async_task_impl,
-                                             io_buffer_awaiting));
+    bool buffer_detached_and_passed = false;
     assert(
         ex->registered_buffers[is_for_write]
             .buffer[is_large_page]
             .tasks_awaiting.count > 0);
+    assert(atomic_load_explicit(
+        &task->head.is_suspended_io_buffer_exhaustion, memory_order_acquire));
+    // Do NOT unset is_suspended_io_buffer_exhaustion here!!!
     LIST_REMOVE(
         ex->registered_buffers[is_for_write]
             .buffer[is_large_page]
@@ -1976,18 +2219,31 @@ monad_async_task_claim_registered_io_write_buffer_resume(
     // through. To prevent i/o buffer starvation of higher priority work, we
     // also need to temporarily boost tasks given an i/o buffer so they execute
     // ASAP.
-    if (task->please_cancel_status != please_cancel_not_invoked) {
+    if (resume_with_error_no_buffers_remaining) {
+        task->head.derived.result = monad_c_make_failure(ENOBUFS);
+        atomic_store_explicit(
+            &task->head.is_suspended_io_buffer_exhaustion,
+            false,
+            memory_order_release);
+    }
+    else if (task->please_cancel_status != please_cancel_not_invoked) {
         if (task->please_cancel_status < please_cancel_invoked_seen) {
             task->please_cancel_status = please_cancel_invoked_seen;
         }
         task->head.derived.result = monad_c_make_failure(ECANCELED);
+        atomic_store_explicit(
+            &task->head.is_suspended_io_buffer_exhaustion,
+            false,
+            memory_order_release);
     }
     else {
         struct monad_async_executor_free_registered_buffer *p =
             ex->registered_buffers[is_for_write].buffer[is_large_page].free;
+        // Use the result to pass through which buffer has just been freed
         task->head.derived.result = monad_c_make_success((intptr_t)p);
         ex->registered_buffers[is_for_write].buffer[is_large_page].free =
             p->next;
+        buffer_detached_and_passed = true;
     }
     struct monad_async_task_impl *pos =
         ex->tasks_suspended_completed[monad_async_task_effective_cpu_priority(
@@ -2068,6 +2324,66 @@ monad_async_task_claim_registered_io_write_buffer_resume(
         fflush(stdout);
 #endif
     }
+    return buffer_detached_and_passed;
+}
+
+// Resume with just freed i/o buffer
+static inline monad_c_result
+monad_async_task_claim_registered_io_write_buffer_resume(
+    struct monad_async_executor_impl *ex, bool const is_for_write,
+    bool const is_large_page)
+{
+    struct monad_async_task_impl *task =
+        (struct monad_async_task_impl *)((char *)ex
+                                             ->registered_buffers[is_for_write]
+                                             .buffer[is_large_page]
+                                             .tasks_awaiting.front -
+                                         offsetof(
+                                             struct monad_async_task_impl,
+                                             io_buffer_awaiting));
+    assert(task->please_cancel_status == please_cancel_not_invoked);
+    bool const buffer_detached_and_passed =
+        monad_async_task_claim_registered_io_write_buffer_resume_task(
+            ex, task, is_for_write, is_large_page, false);
+    (void)buffer_detached_and_passed;
+    assert(buffer_detached_and_passed);
+    return monad_c_make_success(0);
+}
+
+static inline monad_c_result
+monad_async_task_claim_registered_io_write_buffer_resume_with_error_no_buffers_remaining(
+    struct monad_async_executor_impl *ex, bool const is_for_write,
+    bool const is_large_page)
+{
+    struct monad_async_task_impl *task =
+        (struct monad_async_task_impl *)((char *)ex
+                                             ->registered_buffers[is_for_write]
+                                             .buffer[is_large_page]
+                                             .tasks_awaiting.front -
+                                         offsetof(
+                                             struct monad_async_task_impl,
+                                             io_buffer_awaiting));
+    assert(task->please_cancel_status == please_cancel_not_invoked);
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+    printf(
+        "*** Executor %p initiates resumption task %p awaiting i/o buffer due "
+        "to i/o buffer deadlock is_for_write=%d is_large_page=%d "
+        "tasks_awaiting.count=%zu\n",
+        (void *)ex,
+        (void *)task,
+        task->io_buffer_awaiting_is_for_write,
+        task->io_buffer_awaiting_is_for_large_page,
+        ex->registered_buffers[task->io_buffer_awaiting_is_for_write]
+            .buffer[task->io_buffer_awaiting_is_for_large_page]
+            .tasks_awaiting.count);
+    fflush(stdout);
+#endif
+    bool const buffer_detached_and_passed =
+        monad_async_task_claim_registered_io_write_buffer_resume_task(
+            ex, task, is_for_write, is_large_page, true);
+    (void)buffer_detached_and_passed;
+    assert(!buffer_detached_and_passed);
+    ex->head.registered_buffers.total_deadlocks_broken++;
     return monad_c_make_success(0);
 }
 
@@ -2076,34 +2392,31 @@ static inline monad_c_result
 monad_async_task_claim_registered_io_write_buffer_cancel(
     struct monad_async_executor_impl *ex, struct monad_async_task_impl *task)
 {
-    LIST_REMOVE(
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+    printf(
+        "*** Executor %p initiates resumption task %p awaiting i/o buffer due "
+        "to cancellation is_for_write=%d is_large_page=%d "
+        "tasks_awaiting.count=%zu\n",
+        (void *)ex,
+        (void *)task,
+        task->io_buffer_awaiting_is_for_write,
+        task->io_buffer_awaiting_is_for_large_page,
         ex->registered_buffers[task->io_buffer_awaiting_is_for_write]
             .buffer[task->io_buffer_awaiting_is_for_large_page]
-            .tasks_awaiting,
-        &task->io_buffer_awaiting,
-        (size_t *)nullptr);
+            .tasks_awaiting.count);
+    fflush(stdout);
+#endif
     assert(task->please_cancel_status != please_cancel_not_invoked);
-    task->head.derived.result = monad_c_make_failure(ECANCELED);
-    assert(
-        atomic_load_explicit(
-            &task->head.is_suspended_awaiting, memory_order_acquire) == true);
-    atomic_store_explicit(
-        &task->head.is_suspended_awaiting, false, memory_order_release);
-    LIST_REMOVE(
-        ex->tasks_suspended_awaiting[monad_async_task_effective_cpu_priority(
-            task)],
-        task,
-        (size_t *)nullptr);
-    task->head.ticks_when_suspended_completed =
-        get_ticks_count(memory_order_relaxed);
-    atomic_store_explicit(
-        &task->head.is_suspended_completed, true, memory_order_release);
-    LIST_APPEND(
-        ex->tasks_suspended_completed[monad_async_task_effective_cpu_priority(
-            task)],
-        task,
-        (size_t *)nullptr);
-    return monad_c_make_success(0);
+    bool const buffer_detached_and_passed =
+        monad_async_task_claim_registered_io_write_buffer_resume_task(
+            ex,
+            task,
+            task->io_buffer_awaiting_is_for_write,
+            task->io_buffer_awaiting_is_for_large_page,
+            false);
+    assert(!buffer_detached_and_passed);
+    (void)buffer_detached_and_passed;
+    return monad_c_make_failure(EAGAIN); // Canceller needs to wait
 }
 
 monad_c_result monad_async_task_claim_registered_file_io_write_buffer(
@@ -2148,6 +2461,10 @@ monad_c_result monad_async_task_claim_registered_file_io_write_buffer(
                     .size) {
             return monad_c_make_failure(ENOMEM);
         }
+        atomic_store_explicit(
+            &task->head.is_suspended_io_buffer_exhaustion,
+            true,
+            memory_order_release);
         LIST_APPEND(
             ex->registered_buffers[!flags._for_read_ring]
                 .buffer[is_large_page]
@@ -2186,6 +2503,17 @@ monad_c_result monad_async_task_claim_registered_file_io_write_buffer(
             monad_async_task_claim_registered_io_write_buffer_cancel,
             nullptr,
             nullptr));
+        // Unset this flag here, not when we removed this task from the list.
+        // Otherwise cancellation cannot tell that this is a resumed task due to
+        // i/o buffer exhaustion. Note if this is false, there is no attached
+        // buffer being passed through
+        bool const buffer_detached_and_passed = atomic_load_explicit(
+            &task->head.is_suspended_io_buffer_exhaustion,
+            memory_order_acquire);
+        atomic_store_explicit(
+            &task->head.is_suspended_io_buffer_exhaustion,
+            false,
+            memory_order_release);
 #if MONAD_ASYNC_EXECUTOR_PRINTING
         printf(
             "*** Executor %p resumes task %p awaiting i/o buffer "
@@ -2212,15 +2540,51 @@ monad_c_result monad_async_task_claim_registered_file_io_write_buffer(
             -1));
         task->io_buffer_awaiting_is_for_write = false;
         task->io_buffer_awaiting_is_for_large_page = false;
-        if (task->please_cancel_status != please_cancel_not_invoked) {
-            if (task->please_cancel_status < please_cancel_invoked_seen) {
-                task->please_cancel_status = please_cancel_invoked_seen;
-            }
-            return monad_c_make_failure(ECANCELED);
-        }
         p = (struct monad_async_executor_free_registered_buffer *)
                 task->head.derived.result.value;
+        if (buffer_detached_and_passed) {
+            if (task->please_cancel_status != please_cancel_not_invoked) {
+                if (task->please_cancel_status < please_cancel_invoked_seen) {
+                    task->please_cancel_status = please_cancel_invoked_seen;
+                }
+                // If cancellation was invoked between the resumption of this
+                // task with an attached buffer, that buffer will now need
+                // freeing.
+                assert(p != nullptr);
+                // Keep counters correct
+                ex->head.registered_buffers.total_claimed++;
+                ex->head.registered_buffers.ticks_last_claim =
+                    get_ticks_count(memory_order_relaxed);
+                MONAD_CONTEXT_CHECK_RESULT(
+                    monad_async_task_release_registered_io_buffer(
+                        &task->head,
+                        !flags._for_read_ring ? -(int)p->index
+                                              : (int)p->index));
+                return monad_c_make_failure(ECANCELED);
+            }
+        }
+        else {
+            if (task->please_cancel_status != please_cancel_not_invoked) {
+                if (task->please_cancel_status < please_cancel_invoked_seen) {
+                    task->please_cancel_status = please_cancel_invoked_seen;
+                }
+                // If cancellation was invoked before the resumption of this
+                // task, result in this case will NOT contain the i/o buffer,
+                // because
+                // monad_async_task_claim_registered_io_write_buffer_resume_task()
+                // will have seen that this task is being cancelled and will not
+                // pass a buffer to me. Instead, result should have been set to
+                // ECANCELED.
+                assert(BOOST_OUTCOME_C_RESULT_HAS_ERROR(
+                    task->head.derived.result));
+                assert(task->head.derived.result.error.value == ECANCELED);
+                return monad_c_make_failure(ECANCELED);
+            }
+            // Probably ENOBUFS
+            return task->head.derived.result;
+        }
         assert(p != nullptr);
+        assert(buffer_detached_and_passed);
     }
     else {
         p = ex->registered_buffers[!flags._for_read_ring]
@@ -2335,8 +2699,11 @@ monad_c_result monad_async_task_release_registered_io_buffer(
     fflush(stdout);
 #endif
     ex->head.registered_buffers.total_released++;
-    ex->head.registered_buffers.ticks_last_release =
+    monad_cpu_ticks_count_t const ticks_now =
         get_ticks_count(memory_order_relaxed);
+    ex->registered_buffers[is_for_write].buffer[is_large_page].ticks_last_free =
+        ticks_now;
+    ex->head.registered_buffers.ticks_last_release = ticks_now;
     if (ex->registered_buffers[is_for_write]
             .buffer[is_large_page]
             .tasks_awaiting.count > 0) {

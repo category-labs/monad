@@ -6,6 +6,7 @@
 
 #include "executor.h"
 
+#include <monad/util/ticks_count.h>
 #include <monad/util/ticks_count_impl.h>
 
 #include <assert.h>
@@ -71,6 +72,7 @@ struct monad_async_executor_impl
         {
             unsigned count, size;
             struct monad_async_executor_free_registered_buffer *free;
+            monad_cpu_ticks_count_t ticks_last_free;
 
             struct io_uring_buf_ring *buf_ring;
             unsigned buf_ring_count;
@@ -664,6 +666,20 @@ monad_async_executor_destroy_impl(struct monad_async_executor_impl *ex)
             atomic_lock(&ex->lock);
         }
     }
+    if ((double)ex->head.registered_buffers.total_deadlocks_broken /
+            (double)ex->head.registered_buffers.total_released >
+        0.0001) {
+        fprintf(
+            stderr,
+            "WARNING: Executor total registered i/o buffer deadlocks broken "
+            "%lu is greater than 0.01%% of total registered i/o buffers used "
+            "%lu. "
+            "Breaking i/o buffer deadlocks is extremely slow, so please change "
+            "your i/o code to not lock up large amounts of i/o buffers at a "
+            "time.\n",
+            ex->head.registered_buffers.total_deadlocks_broken,
+            ex->head.registered_buffers.total_released);
+    }
     atomic_unlock(&ex->lock);
     memset(ex->magic, 0, 8);
     if (ex->wr_ring.ring_fd != 0) {
@@ -671,6 +687,12 @@ monad_async_executor_destroy_impl(struct monad_async_executor_impl *ex)
     }
     if (ex->ring.ring_fd != 0) {
         if (ex->registered_buffers[0].size > 0) {
+            // If this fails, your code did not correctly release every
+            // registered i/o buffer claimed. You should fix this, otherwise
+            // spurious hangs during teardown can occur.
+            assert(
+                ex->head.registered_buffers.total_claimed ==
+                ex->head.registered_buffers.total_released);
             if (ex->registered_buffers[0].buffer[0].count > 0) {
                 int topbitset =
                     (int)(sizeof(unsigned) * __CHAR_BIT__) -
@@ -823,6 +845,10 @@ static inline monad_c_result suspend_task_if_max_concurrent_io(
                 task_to_resume,
                 (size_t *)nullptr);
         }
+        atomic_store_explicit(
+            &task->head.is_suspended_max_concurrency,
+            true,
+            memory_order_release);
         LIST_APPEND(
             ex->max_io_concurrency,
             &task->max_concurrent_io_awaiting,
@@ -852,6 +878,12 @@ static inline monad_c_result suspend_task_if_max_concurrent_io(
             task->please_cancel_status);
         fflush(stdout);
     #endif
+        assert(atomic_load_explicit(
+            &task->head.is_suspended_max_concurrency, memory_order_acquire));
+        atomic_store_explicit(
+            &task->head.is_suspended_max_concurrency,
+            false,
+            memory_order_release);
         LIST_REMOVE(
             ex->max_io_concurrency,
             &task->max_concurrent_io_awaiting,

@@ -33,7 +33,8 @@ TypeMap = {
   ctypes.c_uint8 : 'u8',
   ctypes.c_uint16 : 'u16',
   ctypes.c_uint32 : 'u32',
-  ctypes.c_uint64 : 'u64'
+  ctypes.c_uint64 : 'u64',
+  ctypes.c_long : 'i64'
 }
 
 def create_command_comment() -> str:

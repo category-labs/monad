@@ -15,7 +15,7 @@
 
 #ifdef __cplusplus
 
-#include <string.h>
+    #include <string.h>
 
 struct evmc_address;
 struct evmc_bytes32;
@@ -78,9 +78,10 @@ enum monad_event_type : uint16_t
     MONAD_EVENT_BLOCK_END,
     MONAD_EVENT_BLOCK_FINALIZE,
     MONAD_EVENT_TXN_START,
+    MONAD_EVENT_TXN_REJECT,
+    MONAD_EVENT_TXN_EXEC_ERROR,
     MONAD_EVENT_TXN_LOG,
-    MONAD_EVENT_TXN_RESTART,
-    MONAD_EVENT_TXN_END,
+    MONAD_EVENT_TXN_RECEIPT,
     MONAD_EVENT_WR_ACCT_STATE_BALANCE,
     MONAD_EVENT_WR_ACCT_STATE_STORAGE,
 };
@@ -150,6 +151,13 @@ struct monad_event_txn_header
     uint32_t data_length;
 };
 
+/// Event payload for MONAD_EVENT_TXN_EXEC_ERROR
+struct monad_event_txn_exec_error
+{
+    uint64_t domain_id;
+    long status_code;
+};
+
 /// Event payload for MONAD_EVENT_TXN_LOG
 struct monad_event_txn_log
 {
@@ -158,7 +166,7 @@ struct monad_event_txn_log
     uint32_t data_length;
 };
 
-/// Event payload for MONAD_EVENT_TXN_END
+/// Event payload for MONAD_EVENT_TXN_RECEIPT
 struct monad_event_txn_receipt
 {
     uint64_t status;

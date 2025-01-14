@@ -63,7 +63,8 @@ typedef struct monad_async_io_status
         struct
         {
             monad_async_task task_;
-            unsigned flags_;
+            unsigned flags_; // set to all bits one to cause Outcome's Result to
+                             // blow up if misused
             struct monad_async_task_registered_io_buffer *tofill_;
         };
     };
@@ -149,8 +150,20 @@ struct monad_async_task_head
         is_awaiting_dispatch MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
         is_pending_launch MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
         is_running MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
+        is_suspended_for_io MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
+        // Note that is_suspended_sqe_exhaustion and
+        // is_suspended_sqe_exhaustion_wr are their own wait lists and
+        // is_suspended_awaiting will be false
         is_suspended_sqe_exhaustion MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
         is_suspended_sqe_exhaustion_wr MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
+        // Note is_suspended_io_buffer_exhaustion uses the is_suspended_awaiting
+        // and is_suspended_completed wait lists so one of those will be true
+        // as well
+        is_suspended_io_buffer_exhaustion MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
+        // Note is_suspended_max_concurrency uses the is_suspended_awaiting
+        // and is_suspended_completed wait lists so one of those will be true
+        // as well
+        is_suspended_max_concurrency MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
         is_suspended_awaiting MONAD_CONTEXT_CPP_DEFAULT_INITIALISE,
         is_suspended_completed MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
 
@@ -174,7 +187,7 @@ struct monad_async_task_head
         io_completed_not_reaped MONAD_CONTEXT_CPP_DEFAULT_INITIALISE;
 };
 #if __STDC_VERSION__ >= 202300L || defined(__cplusplus)
-static_assert(sizeof(struct monad_async_task_head) == 160);
+static_assert(sizeof(struct monad_async_task_head) == 168);
     #ifdef __cplusplus
 static_assert(alignof(struct monad_async_task_head) == 8);
     #endif
@@ -295,7 +308,7 @@ BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_io_cancel(
     monad_async_io_status *iostatus); // implemented in executor.c
 
 //! \brief Iterate through completed i/o for this task, reaping each from the
-//! completed but not repeated list.
+//! completed but not reaped list.
 BOOST_OUTCOME_C_NODISCARD extern monad_async_io_status *
 monad_async_task_completed_io(
     monad_async_task task); // implemented in executor.c
@@ -308,10 +321,18 @@ static uint64_t const monad_async_duration_infinite_non_cancelling =
 static uint64_t const monad_async_duration_infinite_cancelling =
     31536000000000000ULL; // ten years
 
-//! \brief CANCELLATION POINT Suspend execution of a task for a given duration,
-//! which can be zero (which equates "yield"). If `completed` is not null, if
-//! any i/o which the task has initiated completes during the suspension, resume
-//! the task setting `completed` to which i/o has just completed.
+/*! \brief OPTIONAL CANCELLATION POINT Suspend execution of a task for a given
+duration, which can be zero (which equates "yield"). If `completed` is not
+null, if any i/o which the task has initiated completes during the
+suspension, resume the task setting `completed` to which i/o has just
+completed.
+
+If `ns` is the special duration `monad_async_duration_infinite_non_cancelling`,
+that makes this function (and all those based upon it) not a cancellation
+point. This lets you tear down any initiated i/o etc before exiting your task.
+If you want infinity but it should be a cancellation point, use
+`monad_async_duration_infinite_cancelling`.
+*/
 BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_task_suspend_for_duration(
     monad_async_io_status **completed, monad_async_task task,

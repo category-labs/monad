@@ -30,7 +30,7 @@ typedef struct monad_context_head *monad_context;
 //! monad_context_task_head`
 #define MONAD_CONTEXT_TASK_ALLOCATION_SIZE (296)
 //! \brief How many of those bytes are used by the i/o executor for its state
-#define MONAD_ASYNC_TASK_FOOTPRINT (288)
+#define MONAD_ASYNC_TASK_FOOTPRINT (296)
 
 //! \brief The public attributes of a task
 typedef struct monad_context_task_head

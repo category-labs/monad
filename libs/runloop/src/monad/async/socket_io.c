@@ -114,17 +114,13 @@ monad_c_result monad_async_task_socket_create_from_existing_fd(
     return monad_c_make_success(0);
 }
 
-monad_c_result monad_async_task_socket_destroy(
-    monad_async_task task_, monad_async_socket sock_)
+static monad_c_result monad_async_task_socket_destroy_impl(
+    struct monad_async_task_impl *task, struct monad_async_socket_impl *sock)
 {
-    struct monad_async_socket_impl *sock =
-        (struct monad_async_socket_impl *)sock_;
     if (sock->io_uring_file_index != (unsigned)-1) {
-        struct monad_async_task_impl *task =
-            (struct monad_async_task_impl *)task_;
         struct monad_async_executor_impl *ex =
             (struct monad_async_executor_impl *)atomic_load_explicit(
-                &task_->current_executor, memory_order_acquire);
+                &task->head.current_executor, memory_order_acquire);
         if (ex == nullptr) {
             return monad_c_make_failure(EINVAL);
         }
@@ -143,16 +139,28 @@ monad_c_result monad_async_task_socket_destroy(
             "socket_close\n",
             (void *)task,
             (void *)ex);
+        fflush(stdout);
 #endif
+        atomic_store_explicit(
+            &task->head.is_suspended_for_io, true, memory_order_release);
         monad_c_result ret = monad_async_executor_suspend_impl(
             ex, task, nullptr, nullptr, nullptr);
+        assert(
+            atomic_load_explicit(
+                &task->head.is_suspended_for_io, memory_order_acquire) == true);
+        atomic_store_explicit(
+            &task->head.is_suspended_for_io, false, memory_order_release);
 #if MONAD_ASYNC_SOCKET_IO_PRINTING
         printf(
             "*** Task %p running on executor %p completes "
-            "socket_close for file_index=%u\n",
+            "socket_close for file_index=%u and ret=%s\n",
             (void *)task,
             (void *)ex,
-            sock->io_uring_file_index);
+            sock->io_uring_file_index,
+            BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)
+                ? outcome_status_code_message(&ret.error)
+                : "success");
+        fflush(stdout);
 #endif
         if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
             return ret;
@@ -165,6 +173,28 @@ monad_c_result monad_async_task_socket_destroy(
     }
     free(sock);
     return monad_c_make_success(0);
+}
+
+monad_c_result monad_async_task_socket_destroy(
+    monad_async_task task_, monad_async_socket sock_)
+{
+    struct monad_async_task_impl *task = (struct monad_async_task_impl *)task_;
+    // If socket close completes and the task has not been resumed yet,
+    // cancelling the task will reset the result to cancelled thus turning this
+    // non-cancellation point into a cancellation point. Detect this,
+    // and sink the ECANCELED if it occurs.
+    const enum monad_async_task_impl_please_cancel_invoked_status
+        starting_please_cancel_status = task->please_cancel_status;
+    monad_c_result ret = monad_async_task_socket_destroy_impl(
+        task, (struct monad_async_socket_impl *)sock_);
+    if (!BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
+        return ret;
+    }
+    if (task->please_cancel_status != starting_please_cancel_status &&
+        outcome_status_code_equal_generic(&ret.error, ECANCELED)) {
+        return monad_c_make_success(0);
+    }
+    return ret;
 }
 
 monad_c_result monad_async_task_socket_bind(
@@ -242,6 +272,12 @@ monad_c_result monad_async_task_socket_transfer_to_uring(
         return monad_c_make_failure(EINVAL);
     }
     struct monad_async_task_impl *task = (struct monad_async_task_impl *)task_;
+    if (task->please_cancel_status != please_cancel_not_invoked) {
+        if (task->please_cancel_status < please_cancel_invoked_seen) {
+            task->please_cancel_status = please_cancel_invoked_seen;
+        }
+        return monad_c_make_failure(ECANCELED);
+    }
     struct monad_async_executor_impl *ex =
         (struct monad_async_executor_impl *)atomic_load_explicit(
             &task_->current_executor, memory_order_acquire);
@@ -285,9 +321,17 @@ monad_c_result monad_async_task_socket_transfer_to_uring(
             "socket_create_direct\n",
             (void *)task,
             (void *)ex);
+        fflush(stdout);
 #endif
+        atomic_store_explicit(
+            &task->head.is_suspended_for_io, true, memory_order_release);
         monad_c_result ret = monad_async_executor_suspend_impl(
             ex, task, monad_async_task_socket_task_op_cancel, nullptr, nullptr);
+        assert(
+            atomic_load_explicit(
+                &task->head.is_suspended_for_io, memory_order_acquire) == true);
+        atomic_store_explicit(
+            &task->head.is_suspended_for_io, false, memory_order_release);
 #if MONAD_ASYNC_SOCKET_IO_PRINTING
         printf(
             "*** Task %p running on executor %p completes "
@@ -299,6 +343,7 @@ monad_c_result monad_async_task_socket_transfer_to_uring(
             BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)
                 ? outcome_status_code_message(&ret.error)
                 : "success");
+        fflush(stdout);
 #endif
         if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
             monad_async_executor_free_file_index(ex, file_index);
@@ -387,9 +432,17 @@ monad_c_result monad_async_task_socket_accept(
         "socket_accept\n",
         (void *)task,
         (void *)ex);
+    fflush(stdout);
 #endif
+    atomic_store_explicit(
+        &task->head.is_suspended_for_io, true, memory_order_release);
     monad_c_result ret =
         monad_async_executor_suspend_impl(ex, task, nullptr, nullptr, nullptr);
+    assert(
+        atomic_load_explicit(
+            &task->head.is_suspended_for_io, memory_order_acquire) == true);
+    atomic_store_explicit(
+        &task->head.is_suspended_for_io, false, memory_order_release);
 #if MONAD_ASYNC_SOCKET_IO_PRINTING
     printf(
         "*** Task %p running on executor %p completes "
@@ -400,6 +453,7 @@ monad_c_result monad_async_task_socket_accept(
         BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)
             ? outcome_status_code_message(&ret.error)
             : "success");
+    fflush(stdout);
 #endif
     if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
         monad_async_executor_free_file_index(ex, connected_file_index);
@@ -437,9 +491,30 @@ void monad_async_task_socket_connect(
             &task_->current_executor, memory_order_acquire);
     assert(ex != nullptr);
     struct get_sqe_suspending_if_necessary_flags const flags = {
-        .is_cancellation_point = false,
+        .is_cancellation_point = true,
         .max_concurrent_io_pacing_already_done = false};
     struct io_uring_sqe *sqe = get_sqe_suspending_if_necessary(ex, task, flags);
+    if (sqe == nullptr) {
+        // Put straight onto completed i/o list
+        iostatus->cancel_ = nullptr;
+        iostatus->result = monad_c_make_failure(ECANCELED);
+        iostatus->ticks_when_initiated = iostatus->ticks_when_completed =
+            get_ticks_count(memory_order_relaxed);
+#if MONAD_ASYNC_SOCKET_IO_PRINTING
+        printf(
+            "*** Task %p running on executor %p fails to initiate "
+            "socket_connect on i/o status %p due to cancellation\n",
+            (void *)task,
+            (void *)ex,
+            (void *)iostatus);
+        fflush(stdout);
+#endif
+        task = (struct monad_async_task_impl *)
+                   task_->io_recipient_task; // WARNING: task may not be task!
+        LIST_APPEND(
+            task->io_completed, iostatus, &task->head.io_completed_not_reaped);
+        return;
+    }
     task = (struct monad_async_task_impl *)
                task_->io_recipient_task; // WARNING: task may not be task!
     io_uring_prep_connect(sqe, (int)sock->io_uring_file_index, addr, addrlen);
@@ -455,6 +530,7 @@ void monad_async_task_socket_connect(
         (void *)task,
         (void *)ex,
         (void *)iostatus);
+    fflush(stdout);
 #endif
     LIST_APPEND(task->io_submitted, iostatus, &task->head.io_submitted);
 }
@@ -477,9 +553,30 @@ void monad_async_task_socket_shutdown(
             &task_->current_executor, memory_order_acquire);
     assert(ex != nullptr);
     struct get_sqe_suspending_if_necessary_flags const flags = {
-        .is_cancellation_point = false,
+        .is_cancellation_point = true,
         .max_concurrent_io_pacing_already_done = false};
     struct io_uring_sqe *sqe = get_sqe_suspending_if_necessary(ex, task, flags);
+    if (sqe == nullptr) {
+        // Put straight onto completed i/o list
+        iostatus->cancel_ = nullptr;
+        iostatus->result = monad_c_make_failure(ECANCELED);
+        iostatus->ticks_when_initiated = iostatus->ticks_when_completed =
+            get_ticks_count(memory_order_relaxed);
+#if MONAD_ASYNC_SOCKET_IO_PRINTING
+        printf(
+            "*** Task %p running on executor %p fails to initiate "
+            "socket_shutdown on i/o status %p due to cancellation\n",
+            (void *)task,
+            (void *)ex,
+            (void *)iostatus);
+        fflush(stdout);
+#endif
+        task = (struct monad_async_task_impl *)
+                   task_->io_recipient_task; // WARNING: task may not be task!
+        LIST_APPEND(
+            task->io_completed, iostatus, &task->head.io_completed_not_reaped);
+        return;
+    }
     task = (struct monad_async_task_impl *)
                task_->io_recipient_task; // WARNING: task may not be task!
     io_uring_prep_shutdown(sqe, (int)sock->io_uring_file_index, how);
@@ -495,6 +592,7 @@ void monad_async_task_socket_shutdown(
         (void *)task,
         (void *)ex,
         (void *)iostatus);
+    fflush(stdout);
 #endif
     LIST_APPEND(task->io_submitted, iostatus, &task->head.io_submitted);
 }
@@ -533,24 +631,72 @@ void monad_async_task_socket_receive(
             monad_async_task_claim_registered_file_io_write_buffer(
                 tofill, task_, max_bytes, flags_);
         if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(r)) {
-            if (!outcome_status_code_equal_generic(&r.error, EINVAL) &&
-                !outcome_status_code_equal_generic(&r.error, ECANCELED)) {
-                MONAD_CONTEXT_CHECK_RESULT(r);
-            }
-            tofill->index = 0;
+            assert(tofill->index == 0);
+            // Put straight onto completed i/o list
+            iostatus->cancel_ = nullptr;
+            iostatus->result = r;
+            iostatus->ticks_when_initiated = iostatus->ticks_when_completed =
+                get_ticks_count(memory_order_relaxed);
+#if MONAD_ASYNC_SOCKET_IO_PRINTING
+            printf(
+                "*** Task %p running on executor %p fails to initiate "
+                "socket_recv on i/o status %p buffer_index=%d max_bytes=%zu "
+                "due to %s\n",
+                (void *)task,
+                (void *)ex,
+                (void *)iostatus,
+                buffer_index,
+                max_bytes,
+                BOOST_OUTCOME_C_RESULT_HAS_ERROR(r)
+                    ? outcome_status_code_message(&r.error)
+                    : "success");
+            fflush(stdout);
+#endif
+            task =
+                (struct monad_async_task_impl *)
+                    task_->io_recipient_task; // WARNING: task may not be task!
+            LIST_APPEND(
+                task->io_completed,
+                iostatus,
+                &task->head.io_completed_not_reaped);
+            return;
         }
-        else {
-            buffer_index = (__u16)tofill->index - 1;
-        }
+        buffer_index = (__u16)tofill->index - 1;
     }
     else {
         buffer_index = is_large_page; // buffer group
     }
     struct get_sqe_suspending_if_necessary_flags const flags_ = {
-        .is_cancellation_point = false,
+        .is_cancellation_point = true,
         .max_concurrent_io_pacing_already_done = false};
     struct io_uring_sqe *sqe =
         get_sqe_suspending_if_necessary(ex, task, flags_);
+    if (sqe == nullptr) {
+        // Put straight onto completed i/o list
+        iostatus->cancel_ = nullptr;
+        iostatus->result = monad_c_make_failure(ECANCELED);
+        iostatus->ticks_when_initiated = iostatus->ticks_when_completed =
+            get_ticks_count(memory_order_relaxed);
+#if MONAD_ASYNC_SOCKET_IO_PRINTING
+        printf(
+            "*** Task %p running on executor %p fails to initiate "
+            "socket_recv on i/o status %p due to cancellation\n",
+            (void *)task,
+            (void *)ex,
+            (void *)iostatus);
+        fflush(stdout);
+#endif
+        task = (struct monad_async_task_impl *)
+                   task_->io_recipient_task; // WARNING: task may not be task!
+        LIST_APPEND(
+            task->io_completed, iostatus, &task->head.io_completed_not_reaped);
+        if (tofill->index != 0) {
+            MONAD_CHECK_RESULT(monad_async_task_release_registered_io_buffer(
+                task_, tofill->index));
+            memset(tofill, 0, sizeof(*tofill));
+        }
+        return;
+    }
     task = (struct monad_async_task_impl *)
                task_->io_recipient_task; // WARNING: task may not be task!
     io_uring_prep_recv(
@@ -575,6 +721,7 @@ void monad_async_task_socket_receive(
         (void *)task,
         (void *)ex,
         (void *)iostatus);
+    fflush(stdout);
 #endif
     LIST_APPEND(task->io_submitted, iostatus, &task->head.io_submitted);
 }
@@ -597,10 +744,31 @@ void monad_async_task_socket_receivev(
             &task_->current_executor, memory_order_acquire);
     assert(ex != nullptr);
     struct get_sqe_suspending_if_necessary_flags const flags_ = {
-        .is_cancellation_point = false,
+        .is_cancellation_point = true,
         .max_concurrent_io_pacing_already_done = false};
     struct io_uring_sqe *sqe =
         get_sqe_suspending_if_necessary(ex, task, flags_);
+    if (sqe == nullptr) {
+        // Put straight onto completed i/o list
+        iostatus->cancel_ = nullptr;
+        iostatus->result = monad_c_make_failure(ECANCELED);
+        iostatus->ticks_when_initiated = iostatus->ticks_when_completed =
+            get_ticks_count(memory_order_relaxed);
+#if MONAD_ASYNC_SOCKET_IO_PRINTING
+        printf(
+            "*** Task %p running on executor %p fails to initiate "
+            "socket_recv on i/o status %p due to cancellation\n",
+            (void *)task,
+            (void *)ex,
+            (void *)iostatus);
+        fflush(stdout);
+#endif
+        task = (struct monad_async_task_impl *)
+                   task_->io_recipient_task; // WARNING: task may not be task!
+        LIST_APPEND(
+            task->io_completed, iostatus, &task->head.io_completed_not_reaped);
+        return;
+    }
     task = (struct monad_async_task_impl *)
                task_->io_recipient_task; // WARNING: task may not be task!
     if (msg->msg_iovlen != 1) {
@@ -632,6 +800,7 @@ void monad_async_task_socket_receivev(
         (void *)task,
         (void *)ex,
         (void *)iostatus);
+    fflush(stdout);
 #endif
     LIST_APPEND(task->io_submitted, iostatus, &task->head.io_submitted);
 }
@@ -656,10 +825,31 @@ void monad_async_task_socket_send(
     assert(ex != nullptr);
     // NOT get_wrsqe_suspending_if_necessary!
     struct get_sqe_suspending_if_necessary_flags const flags_ = {
-        .is_cancellation_point = false,
+        .is_cancellation_point = true,
         .max_concurrent_io_pacing_already_done = false};
     struct io_uring_sqe *sqe =
         get_sqe_suspending_if_necessary(ex, task, flags_);
+    if (sqe == nullptr) {
+        // Put straight onto completed i/o list
+        iostatus->cancel_ = nullptr;
+        iostatus->result = monad_c_make_failure(ECANCELED);
+        iostatus->ticks_when_initiated = iostatus->ticks_when_completed =
+            get_ticks_count(memory_order_relaxed);
+#if MONAD_ASYNC_SOCKET_IO_PRINTING
+        printf(
+            "*** Task %p running on executor %p fails to initiate "
+            "socket_send on i/o status %p due to cancellation\n",
+            (void *)task,
+            (void *)ex,
+            (void *)iostatus);
+        fflush(stdout);
+#endif
+        task = (struct monad_async_task_impl *)
+                   task_->io_recipient_task; // WARNING: task may not be task!
+        LIST_APPEND(
+            task->io_completed, iostatus, &task->head.io_completed_not_reaped);
+        return;
+    }
     task = (struct monad_async_task_impl *)
                task_->io_recipient_task; // WARNING: task may not be task!
     if (msg->msg_iovlen != 1) {
@@ -689,10 +879,11 @@ void monad_async_task_socket_send(
 #if MONAD_ASYNC_SOCKET_IO_PRINTING
     printf(
         "*** Task %p running on executor %p initiates "
-        "socket_recv on i/o status %p\n",
+        "socket_send on i/o status %p\n",
         (void *)task,
         (void *)ex,
         (void *)iostatus);
+    fflush(stdout);
 #endif
     LIST_APPEND(task->io_submitted, iostatus, &task->head.io_submitted);
 }

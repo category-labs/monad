@@ -1,6 +1,7 @@
 #include <monad/config.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
@@ -8,6 +9,7 @@
 #include <monad/core/result.hpp>
 #include <monad/core/rlp/account_rlp.hpp>
 #include <monad/core/rlp/address_rlp.hpp>
+#include <monad/core/rlp/block_rlp.hpp>
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
 #include <monad/core/unaligned.hpp>
@@ -649,6 +651,33 @@ void load_from_binary(
     BinaryDbLoader loader{
         db, buf_size, db.is_on_disk() ? init_block_number : 0};
     loader.load(accounts, code);
+}
+
+void load_header(mpt::Db &db, BlockHeader const &header)
+{
+    using namespace mpt;
+
+    UpdateList header_updates;
+    UpdateList ls;
+    auto const n = db.is_on_disk() ? header.number : 0;
+    auto const header_encoded = rlp::encode_block_header(header);
+
+    Update block_header_update{
+        .key = block_header_nibbles,
+        .value = header_encoded,
+        .incarnation = true,
+        .next = mpt::UpdateList{},
+        .version = static_cast<int64_t>(n)};
+    header_updates.push_front(block_header_update);
+    mpt::Update u{
+        .key = finalized_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(header_updates),
+        .version = static_cast<int64_t>(n)};
+    ls.push_front(u);
+    db.upsert(
+        std::move(ls), n, false /* compaction */, true /* write_to_fast */);
 }
 
 MONAD_NAMESPACE_END

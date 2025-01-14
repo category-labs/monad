@@ -360,6 +360,13 @@ int main(int const argc, char const *argv[])
             std::ifstream code(snapshot / "code");
             auto const n = std::stoul(snapshot.stem());
             load_from_binary(db, accounts, code, n);
+
+            // load the eth header for snapshot
+            BlockDb block_db{block_db_path};
+            Block block;
+            MONAD_ASSERT_PRINTF(
+                block_db.get(n, block), "FATAL: Could not load block %lu", n);
+            load_header(db, block.header);
             return n;
         }
         else if (!db.root().is_valid()) {

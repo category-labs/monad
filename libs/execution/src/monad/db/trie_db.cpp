@@ -161,14 +161,15 @@ void TrieDb::commit(
     MONAD_ASSERT(header.number <= std::numeric_limits<int64_t>::max());
 
     auto const parent_hash = [&]() {
-        auto parent_header_encoded =
-            db_.get(concat(prefix_, BLOCKHEADER_NIBBLE), block_number_);
-        if (MONAD_LIKELY(parent_header_encoded.has_value())) {
-            return to_bytes(keccak256(parent_header_encoded.value()));
+        if (MONAD_UNLIKELY(header.number == 0)) {
+            return bytes32_t{};
         }
         else {
-            // this may trigger for snapshot/genesis/unit tests.
-            return header.parent_hash;
+            auto const n = db_.is_on_disk() ? header.number - 1 : 0;
+            auto const parent_header_encoded =
+                db_.get(concat(prefix_, BLOCKHEADER_NIBBLE), n);
+            MONAD_ASSERT(parent_header_encoded.has_value());
+            return to_bytes(keccak256(parent_header_encoded.value()));
         }
     }();
 

@@ -74,6 +74,7 @@ TEST_F(EthCallFixture, simple_success_call)
         .gas_limit = 100000u, .to = to, .type = TransactionType::eip1559};
     BlockHeader header{.number = 256};
 
+    tdb.set_block_and_round(header.number - 1);
     tdb.commit({}, {}, header);
 
     auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
@@ -97,10 +98,11 @@ TEST_F(EthCallFixture, simple_success_call)
 
 TEST_F(EthCallFixture, failed_to_read)
 {
-    // one block short
-    for (uint64_t i = 1001; i < 1256; ++i) {
-        BlockHeader hdr{.number = i};
-        tdb.commit({}, {}, hdr);
+    // missing 256 previous blocks
+    load_header(db, BlockHeader{.number = 1199});
+    for (uint64_t i = 1200; i < 1256; ++i) {
+        tdb.set_block_and_round(i - 1);
+        tdb.commit({}, {}, BlockHeader{.number = i});
     }
 
     static constexpr auto from{
@@ -112,6 +114,7 @@ TEST_F(EthCallFixture, failed_to_read)
         .gas_limit = 100000u, .to = to, .type = TransactionType::eip1559};
     BlockHeader header{.number = 1256};
 
+    tdb.set_block_and_round(header.number - 1);
     tdb.commit({}, {}, header);
 
     auto const rlp_tx = to_vec(rlp::encode_transaction(tx));

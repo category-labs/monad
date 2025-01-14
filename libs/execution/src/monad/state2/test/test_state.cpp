@@ -2,6 +2,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/db/trie_db.hpp>
+#include <monad/db/util.hpp>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/state2/block_state.hpp>
@@ -1104,7 +1105,10 @@ TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
 
 TYPED_TEST(StateTest, commit_twice)
 {
+    load_header(this->db, BlockHeader{.number = 8});
+
     // commit to Block 9 Finalized
+    this->tdb.set_block_and_round(8);
     this->tdb.commit(
         StateDeltas{
             {a,
@@ -1174,7 +1178,10 @@ TYPED_TEST(StateTest, commit_twice)
 TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
 {
     // This test would fail with DbCache
+    load_header(this->db, BlockHeader{.number = 9});
+
     // commit to block 10, round 5
+    this->tdb.set_block_and_round(9);
     this->tdb.commit(
         StateDeltas{
             {a,

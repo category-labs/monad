@@ -198,8 +198,10 @@ TEST_F(StateSyncFixture, sync_from_latest)
         mpt::Db db{
             machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
+        load_header(db, BlockHeader{.number = N - 257});
         for (size_t i = N - 256; i < N; ++i) {
             BlockHeader const hdr{.parent_hash = parent_hash, .number = i};
+            tdb.set_block_and_round(i - 1);
             tdb.commit({}, {}, hdr);
             parent_hash = to_bytes(
                 keccak256(rlp::encode_block_header(tdb.read_eth_header())));
@@ -223,9 +225,11 @@ TEST_F(StateSyncFixture, sync_from_empty)
     constexpr auto N = 1'000'000;
     bytes32_t parent_hash{NULL_HASH};
     {
+        load_header(sdb, BlockHeader{.number = N - 257});
         for (size_t i = N - 256; i < N; ++i) {
-            BlockHeader const hdr{.parent_hash = parent_hash, .number = i};
-            stdb.commit({}, {}, hdr);
+            stdb.set_block_and_round(i - 1);
+            stdb.commit(
+                {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
             parent_hash = to_bytes(
                 keccak256(rlp::encode_block_header(stdb.read_eth_header())));
         }
@@ -448,9 +452,11 @@ TEST_F(StateSyncFixture, ignore_unused_code)
     constexpr auto N = 1'000'000;
     bytes32_t parent_hash{NULL_HASH};
     {
+        load_header(sdb, BlockHeader{.number = N - 257});
         for (size_t i = N - 256; i < N; ++i) {
-            BlockHeader const hdr{.parent_hash = parent_hash, .number = i};
-            stdb.commit({}, {}, hdr);
+            stdb.set_block_and_round(i - 1);
+            stdb.commit(
+                {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
             parent_hash = to_bytes(
                 keccak256(rlp::encode_block_header(stdb.read_eth_header())));
         }
@@ -488,9 +494,11 @@ TEST_F(StateSyncFixture, sync_one_account)
 {
     constexpr auto N = 1'000'000;
     bytes32_t parent_hash{NULL_HASH};
+    load_header(sdb, BlockHeader{.number = N - 257});
     for (size_t i = N - 256; i < N; ++i) {
-        BlockHeader const hdr{.parent_hash = parent_hash, .number = i};
-        stdb.commit({}, {}, hdr);
+        stdb.set_block_and_round(i - 1);
+        stdb.commit(
+            {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
         parent_hash = to_bytes(
             keccak256(rlp::encode_block_header(stdb.read_eth_header())));
     }
@@ -517,9 +525,11 @@ TEST_F(StateSyncFixture, sync_empty)
 {
     constexpr auto N = 1'000'000;
     bytes32_t parent_hash{NULL_HASH};
+    load_header(sdb, BlockHeader{.number = N - 257});
     for (size_t i = N - 256; i < N; ++i) {
-        BlockHeader const hdr{.parent_hash = parent_hash, .number = i};
-        stdb.commit({}, {}, hdr);
+        stdb.set_block_and_round(i - 1);
+        stdb.commit(
+            {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
         parent_hash = to_bytes(
             keccak256(rlp::encode_block_header(stdb.read_eth_header())));
     }
@@ -724,9 +734,11 @@ TEST_F(StateSyncFixture, delete_storage_after_account_deletion)
     Account const a{.balance = 100, .incarnation = Incarnation{1, 0}};
 
     bytes32_t parent_hash{NULL_HASH};
+    load_header(sdb, BlockHeader{.number = 1'000'000 - 257});
     for (size_t i = 1'000'000 - 256; i < 1'000'000; ++i) {
-        BlockHeader const hdr{.parent_hash = parent_hash, .number = i};
-        stdb.commit({}, {}, hdr);
+        stdb.set_block_and_round(i - 1);
+        stdb.commit(
+            {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
         parent_hash = to_bytes(
             keccak256(rlp::encode_block_header(stdb.read_eth_header())));
     }
@@ -870,9 +882,11 @@ TEST_F(StateSyncFixture, benchmark)
     }
 
     bytes32_t parent_hash{NULL_HASH};
+    load_header(sdb, BlockHeader{.number = 1'000'000 - 257});
     for (size_t i = 1'000'000 - 256; i < 1'000'000; ++i) {
-        BlockHeader const hdr{.parent_hash = parent_hash, .number = i};
-        stdb.commit({}, {}, hdr);
+        stdb.set_block_and_round(i - 1);
+        stdb.commit(
+            {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
         parent_hash = to_bytes(
             keccak256(rlp::encode_block_header(stdb.read_eth_header())));
     }

@@ -15,6 +15,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
+struct BlockHeader;
+
 struct MachineBase : public mpt::StateMachine
 {
     static constexpr uint64_t TABLE_PREFIX_LEN = 1;
@@ -128,5 +130,7 @@ void load_from_binary(
     mpt::Db &, std::istream &accounts, std::istream &code,
     uint64_t init_block_number = 0,
     size_t buf_size = 1ul << 32); // TODO: dynamic loading
+
+void load_header(mpt::Db &, BlockHeader const &);
 
 MONAD_NAMESPACE_END

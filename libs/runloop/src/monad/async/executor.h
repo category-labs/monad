@@ -39,7 +39,8 @@ typedef struct monad_async_executor_head
 
     struct
     {
-        MONAD_CONTEXT_PUBLIC_CONST size_t total_claimed, total_released;
+        MONAD_CONTEXT_PUBLIC_CONST uint64_t total_claimed, total_released,
+            total_deadlocks_broken;
         MONAD_CONTEXT_PUBLIC_CONST monad_cpu_ticks_count_t ticks_last_claim,
             ticks_last_release;
     } registered_buffers;
@@ -72,8 +73,14 @@ struct monad_async_executor_attr
 {
     struct
     {
-        //! \brief If this is zero, this executor will be incapable of doing
-        //! i/o! It also no longer initialises io_uring for this executor.
+        /*! \brief If this is zero, this executor will be incapable of doing
+        i/o! It also no longer initialises io_uring for this executor.
+
+        Initiating more i/o than there are io_uring entries is inefficient as it
+        will cause initiating tasks to be suspended and resumed when more
+        io_uring entries appear. The overhead isn't as bad as running out of
+        registered i/o buffers which you should avoid where possible.
+        */
         unsigned entries;
 
         //! \brief The parameters to give to io_uring during ring
@@ -82,7 +89,14 @@ struct monad_async_executor_attr
 
         struct
         {
-            //! \brief How many small and large buffers to register.
+            /*! \brief How many small and large buffers to register.
+
+            Be aware that running out of registered i/o buffers causes execution
+            of a slow code path, and can cause execution of a **very** slow code
+            path in rare occasions. You should endeavour to never run out of i/o
+            buffers, constraining how much i/o you initiate instead (see
+            `max_io_concurrency` below).
+            */
             unsigned small_count, large_count;
             //! \brief How many of each of small pages and of large pages the
             //! small and large buffer sizes are.
@@ -103,12 +117,10 @@ struct monad_async_executor_attr
             io_uring receives i/o and no buffers remain available to it, it
             will fail the read i/o with a result equivalent to `ENOBUFS`. It
             is 100% on you to free up some buffers and reschedule the read if
-            this occurs.
-
-            Note that kernel 6.8 (Ubuntu 24.04) appears to refuse to allocate
-            buffers for file i/o only, a future kernel release may fix this.
-            https://github.com/axboe/liburing/issues/1214 tracks the feature
-            request.
+            this occurs. io_uring is much keener to return `ENOBUFS` than if
+            you don't use this facility where we use a timeout to detect i/o
+            buffer deadlock, and we only issue `ENOBUFS` in that circumstance
+            only.
             */
             unsigned small_kernel_allocated_count, large_kernel_allocated_count;
         } registered_buffers;
@@ -135,7 +147,7 @@ struct monad_async_executor_attr
 };
 
 /*! \brief EXPENSIVE Creates an executor instance. You must create it on the
- kernel thread where it will be used.
+kernel thread where it will be used.
 
 Generally, one also needs to create context switcher instances for each
 executor instance. This is because the context switcher needs to store how
@@ -210,6 +222,16 @@ features were detected, as well as versions and other config.
 */
 BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_executor_config_string(
+    monad_async_executor ex); // implemented in util.cpp
+
+/*! \brief Return a pointer (as `intptr_t`) to a null terminated string
+describing the internal state of this executor. This is useful for debugging the
+executor if it goes wrong e.g. hangs.
+
+\warning You need to call `free()` on the pointer when you are done with it.
+*/
+BOOST_OUTCOME_C_NODISCARD extern monad_c_result
+monad_async_executor_debug_string(
     monad_async_executor ex); // implemented in util.cpp
 
 #ifdef __cplusplus

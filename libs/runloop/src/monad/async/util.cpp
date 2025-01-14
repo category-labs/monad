@@ -4,6 +4,7 @@
 
 #include "executor_impl.h"
 
+#include <iomanip>
 #include <sstream>
 
 #include <boost/outcome/experimental/status-code/status-code/system_code_from_exception.hpp>
@@ -160,6 +161,100 @@ monad_async_executor_config_string(monad_async_executor ex_)
         };
         write_ring_config(&ex->ring);
         write_ring_config(&ex->wr_ring);
+        void *mem = malloc(ss.str().size() + 1);
+        if (mem == nullptr) {
+            return monad_c_make_failure(errno);
+        }
+        memcpy(mem, ss.str().data(), ss.str().size() + 1);
+        return monad_c_make_success((intptr_t)mem);
+    }
+    catch (...) {
+        return BOOST_OUTCOME_C_TO_RESULT_SYSTEM_CODE(
+            monad,
+            BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<intptr_t>(
+                BOOST_OUTCOME_V2_NAMESPACE::experimental::
+                    system_code_from_exception()));
+    }
+}
+
+extern "C" monad_c_result
+monad_async_executor_debug_string(monad_async_executor ex_)
+{
+    try {
+        struct monad_async_executor_impl *ex =
+            (struct monad_async_executor_impl *)ex_;
+        std::stringstream ss;
+        auto write_task_contents = [&](auto const *task, int indent = 3) {
+            ss << std::setw(indent) << "" << task
+               << ": is_awaiting_dispatch = " << task->head.is_awaiting_dispatch
+               << " is_pending_launch = " << task->head.is_pending_launch
+               << " is_running = " << task->head.is_running
+               << " is_suspended_for_io = " << task->head.is_suspended_for_io
+               << " is_suspended_sqe_exhaustion = "
+               << task->head.is_suspended_sqe_exhaustion
+               << " is_suspended_sqe_exhaustion_wr = "
+               << task->head.is_suspended_sqe_exhaustion_wr
+               << " is_suspended_io_buffer_exhaustion = "
+               << task->head.is_suspended_io_buffer_exhaustion
+               << " is_suspended_max_concurrency = "
+               << task->head.is_suspended_max_concurrency
+               << " is_suspended_awaiting = "
+               << task->head.is_suspended_awaiting
+               << " is_suspended_completed = "
+               << task->head.is_suspended_completed;
+        };
+        auto write_listn_contents = [&](auto const &list, int indent = 3) {
+            ss << std::setw(indent) << "" << "items " << list.count;
+            if (list.front != nullptr) {
+                ss << ":";
+                for (auto const *task = list.front; task != nullptr;
+                     task = task->next) {
+                    ss << "\n";
+                    write_task_contents(task, indent + 3);
+                }
+            }
+        };
+        auto write_listp_contents = [&](auto const &lists, int indent = 3) {
+            int priority = 0;
+            for (auto const &list : lists) {
+                ss << "\n"
+                   << std::setw(indent) << "" << "priority " << priority++
+                   << " ";
+                write_listn_contents(list, indent + 3);
+            }
+        };
+        auto write_buffers = [&](auto const &buffers, int indent = 3) {
+            auto write_buffer = [&](auto const &buffer) {
+                unsigned count = 0;
+                for (auto const *p = buffer.free; p != nullptr; p = p->next) {
+                    count++;
+                }
+                ss << "buffers total " << buffer.count << " available " << count
+                   << " tasks awaiting " << buffer.tasks_awaiting.count;
+            };
+            ss << std::setw(indent) << "" << "small ";
+            write_buffer(buffers.buffer[0]);
+            ss << "\n" << std::setw(indent) << "" << "large ";
+            write_buffer(buffers.buffer[1]);
+        };
+        ss << "Total i/o submitted " << ex->head.total_io_submitted
+           << " completed " << ex->head.total_io_completed;
+        ss << "\nTasks running: ";
+        write_listp_contents(ex->tasks_running);
+        ss << "\nTasks suspended awaiting SQE on non-write ring: ";
+        write_listp_contents(ex->tasks_suspended_submission_ring);
+        ss << "\nTasks suspended awaiting SQE on write ring: ";
+        write_listp_contents(ex->tasks_suspended_submission_wr_ring);
+        ss << "\nTasks suspended awaiting an event: ";
+        write_listp_contents(ex->tasks_suspended_awaiting);
+        ss << "\nTasks awaiting resumption: ";
+        write_listp_contents(ex->tasks_suspended_completed);
+        ss << "\nTasks exited awaiting cleanup: ";
+        write_listn_contents(ex->tasks_exited);
+        ss << "\nRegistered buffers non-write ring:\n";
+        write_buffers(ex->registered_buffers[0]);
+        ss << "\nRegistered buffers write ring:\n";
+        write_buffers(ex->registered_buffers[1]);
         void *mem = malloc(ss.str().size() + 1);
         if (mem == nullptr) {
             return monad_c_make_failure(errno);

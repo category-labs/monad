@@ -653,6 +653,7 @@ struct Db::RWOnDisk final : public Db::Impl
 
     RWOnDisk(OnDiskDbConfig const &options, StateMachine &machine)
         : worker_thread_([&] {
+            pthread_setname_np(pthread_self(), "triedb rw");
             {
                 std::unique_lock const g(lock_);
                 worker_ = std::make_unique<TrieDbWorker>(this, aux_, options);

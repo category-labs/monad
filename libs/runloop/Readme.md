@@ -268,6 +268,8 @@ static monad_c_result mytask(monad_async_task task)
 
 - Need to test cancellation works at every possible lifecycle and suspend state
 a task can have.
+    - Also need to test cancellation of individual i/o, which isn't the same as
+cancelling a task (which causes all new i/o initiation to cancel).
 - Operations to have a portion of a memory map asynchronously paged in, and paged
 out, would be useful:
     - `IORING_OP_MADVISE`:

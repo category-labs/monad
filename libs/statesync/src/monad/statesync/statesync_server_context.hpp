@@ -10,12 +10,21 @@
 #include <oneapi/tbb/concurrent_hash_map.h>
 #pragma GCC diagnostic pop
 
+#include <deque>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
-using Deleted = oneapi::tbb::concurrent_hash_map<
-    uint64_t, std::vector<std::pair<Address, std::vector<bytes32_t>>>>;
+using Deletions = std::vector<std::pair<Address, std::vector<bytes32_t>>>;
+using FinalizedDeletions =
+    oneapi::tbb::concurrent_hash_map<uint64_t, Deletions>;
+
+struct ProposedDeletions
+{
+    uint64_t block_number;
+    uint64_t round;
+    Deletions deletion;
+};
 
 struct CallFrame;
 class TrieDb;
@@ -26,7 +35,8 @@ struct monad_statesync_server_context final : public monad::Db
 {
     monad::TrieDb &rw;
     monad::mpt::Db *ro;
-    monad::Deleted deleted;
+    std::deque<monad::ProposedDeletions> proposals;
+    monad::FinalizedDeletions deleted;
 
     explicit monad_statesync_server_context(monad::TrieDb &rw);
 

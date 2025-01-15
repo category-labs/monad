@@ -447,6 +447,121 @@ TEST_F(StateSyncFixture, sync_from_some)
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 }
 
+TEST_F(StateSyncFixture, deletion_proposal)
+{
+    {
+        OnDiskMachine machine;
+        mpt::Db db{
+            machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+        TrieDb tdb{db};
+        read_genesis(genesis, tdb);
+        read_genesis(genesis, stdb);
+        init();
+    }
+    auto const root = sdb.load_root_for_version(0);
+    ASSERT_TRUE(root.is_valid());
+    auto const res =
+        sdb.find(root, concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), 0);
+    ASSERT_TRUE(res.has_value() && res.value().is_valid());
+    // delete ADDR1 on one fork
+    {
+        constexpr auto ADDR1 =
+            0x000d836201318ec6899a67540690382780743280_address;
+        auto const acct = stdb.read_account(ADDR1);
+        ASSERT_TRUE(acct.has_value());
+        sctx.set_block_and_round(0);
+        sctx.commit(
+            StateDeltas{{ADDR1, {.account = {acct, std::nullopt}}}},
+            Code{},
+            BlockHeader{.number = 1},
+            {},
+            {},
+            {},
+            {},
+            {},
+            1);
+    }
+    // delete ADDR2 on another
+    {
+        constexpr auto ADDR2 =
+            0x001762430ea9c3a26e5749afdb70da5f78ddbb8c_address;
+        auto const acct = stdb.read_account(ADDR2);
+        ASSERT_TRUE(acct.has_value());
+        sctx.set_block_and_round(0);
+        sctx.commit(
+            StateDeltas{{ADDR2, {.account = {acct, std::nullopt}}}},
+            Code{},
+            BlockHeader{.number = 1},
+            {},
+            {},
+            {},
+            {},
+            {},
+            2);
+    }
+    sctx.finalize(1, 2);
+
+    sctx.set_block_and_round(1, 1);
+    auto const bad_header = sctx.read_eth_header();
+
+    sctx.set_block_and_round(1, 2);
+    auto const finalized_header = sctx.read_eth_header();
+
+    EXPECT_NE(finalized_header.state_root, bad_header.state_root);
+    handle_target(cctx, finalized_header);
+    run();
+
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+}
+
+TEST_F(StateSyncFixture, duplicate_deletion_round)
+{
+    {
+        OnDiskMachine machine;
+        mpt::Db db{
+            machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+        TrieDb tdb{db};
+        read_genesis(genesis, tdb);
+        read_genesis(genesis, stdb);
+        init();
+    }
+    auto const root = sdb.load_root_for_version(0);
+    ASSERT_TRUE(root.is_valid());
+    auto const res =
+        sdb.find(root, concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), 0);
+    ASSERT_TRUE(res.has_value() && res.value().is_valid());
+
+    auto propose_deletion_fn = [&](Address const address) -> BlockHeader {
+        auto const acct = stdb.read_account(address);
+        MONAD_ASSERT(acct.has_value());
+        sctx.set_block_and_round(0);
+        sctx.commit(
+            StateDeltas{{address, {.account = {acct, std::nullopt}}}},
+            Code{},
+            BlockHeader{.number = 1},
+            {},
+            {},
+            {},
+            {},
+            {},
+            1);
+        return sctx.read_eth_header();
+    };
+    constexpr auto ADDR1 = 0x000d836201318ec6899a67540690382780743280_address;
+    constexpr auto ADDR2 = 0x001762430ea9c3a26e5749afdb70da5f78ddbb8c_address;
+    auto const overwritten_header =
+        propose_deletion_fn(ADDR1); // commit block 1, round 1
+    auto const finalized_header =
+        propose_deletion_fn(ADDR2); // overwrite to block 1, round 1
+    EXPECT_NE(overwritten_header.state_root, finalized_header.state_root);
+
+    sctx.finalize(1, 1);
+    handle_target(cctx, finalized_header);
+    run();
+
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+}
+
 TEST_F(StateSyncFixture, ignore_unused_code)
 {
     constexpr auto N = 1'000'000;

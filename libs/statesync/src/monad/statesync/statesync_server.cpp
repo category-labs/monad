@@ -66,7 +66,7 @@ bool send_deletion(
     auto const prefix = from_prefix(rq.prefix, rq.prefix_bytes);
 
     for (uint64_t i = rq.old_target + 1; i <= rq.target; ++i) {
-        Deleted::const_accessor it;
+        FinalizedDeletions::const_accessor it;
         if (!deleted.find(it, i)) {
             return false;
         }

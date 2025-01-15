@@ -1431,7 +1431,10 @@ void fillin_parent_after_expiration(
         auto const new_offset =
             async_write_node_set_spare(aux, *new_node, true);
         auto const &[min_offset_fast, min_offset_slow] =
-            calc_min_offsets(*new_node, INVALID_VIRTUAL_OFFSET);
+            calc_min_offsets(*new_node, aux.physical_to_virtual(new_offset));
+        MONAD_DEBUG_ASSERT(
+            min_offset_fast != INVALID_COMPACT_VIRTUAL_OFFSET ||
+            min_offset_slow != INVALID_COMPACT_VIRTUAL_OFFSET);
         auto const min_version = calc_min_version(*new_node);
         MONAD_DEBUG_ASSERT(min_version >= aux.min_version_after_upsert);
         if (parent->type == tnode_type::update) {

@@ -146,7 +146,7 @@ bool init_block_hash_buffer_from_triedb(
             LOG_WARNING(
                 "Could not query block header {} from TrieDb -- {}",
                 b,
-                header.error().message());
+                header.error().message().c_str());
             return false;
         }
         auto const h = to_bytes(keccak256(header.value()));

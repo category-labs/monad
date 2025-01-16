@@ -193,6 +193,8 @@ class UpdateAuxImpl
 
     void set_auto_expire_version_metadata(int64_t) noexcept;
 
+    void update_disk_growth_data();
+
     /******** Compaction ********/
     uint32_t chunks_to_remove_before_count_fast_{0};
     uint32_t chunks_to_remove_before_count_slow_{0};

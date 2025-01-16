@@ -997,6 +997,8 @@ Node::UniquePtr UpdateAuxImpl::do_update(
         *this, version, sm, std::move(prev_root), std::move(root_updates));
     set_auto_expire_version_metadata(curr_upsert_auto_expire_version);
     if (compaction) {
+        update_disk_growth_data();
+        // log stats
         print_update_stats(version);
     }
     [[maybe_unused]] auto const curr_fast_writer_offset =
@@ -1098,6 +1100,20 @@ void UpdateAuxImpl::move_trie_version_forward(
     append_root_offset(offset);
 }
 
+void UpdateAuxImpl::update_disk_growth_data()
+{
+    compact_virtual_chunk_offset_t const curr_fast_writer_offset{
+        physical_to_virtual(node_writer_fast->sender().offset())};
+    compact_virtual_chunk_offset_t const curr_slow_writer_offset{
+        physical_to_virtual(node_writer_slow->sender().offset())};
+    last_block_disk_growth_fast_ = // unused for speed control for now
+        curr_fast_writer_offset - last_block_end_offset_fast_;
+    last_block_disk_growth_slow_ =
+        curr_slow_writer_offset - last_block_end_offset_slow_;
+    last_block_end_offset_fast_ = curr_fast_writer_offset;
+    last_block_end_offset_slow_ = curr_slow_writer_offset;
+}
+
 void UpdateAuxImpl::advance_compact_offsets(
     Node &prev_root, uint64_t const version)
 {
@@ -1122,17 +1138,6 @@ void UpdateAuxImpl::advance_compact_offsets(
     disk usage is brought back within the threshold.
     */
     MONAD_ASSERT(is_on_disk());
-    // update disk growth speed trackers
-    compact_virtual_chunk_offset_t const curr_fast_writer_offset{
-        physical_to_virtual(node_writer_fast->sender().offset())};
-    compact_virtual_chunk_offset_t const curr_slow_writer_offset{
-        physical_to_virtual(node_writer_slow->sender().offset())};
-    last_block_disk_growth_fast_ = // unused for speed control for now
-        curr_fast_writer_offset - last_block_end_offset_fast_;
-    last_block_disk_growth_slow_ =
-        curr_slow_writer_offset - last_block_end_offset_slow_;
-    last_block_end_offset_fast_ = curr_fast_writer_offset;
-    last_block_end_offset_slow_ = curr_slow_writer_offset;
 
     std::tie(compact_offset_fast, compact_offset_slow) =
         deserialize_compaction_offsets(prev_root.value());
@@ -1152,11 +1157,11 @@ void UpdateAuxImpl::advance_compact_offsets(
     compact_offset_range_fast_ = MIN_COMPACT_VIRTUAL_OFFSET;
 
     /* Compact the fast ring based on average disk growth over recent blocks. */
-    if (compact_offset_fast < curr_fast_writer_offset) {
+    if (compact_offset_fast < last_block_end_offset_fast_) {
         auto const valid_history_length =
             db_history_max_version() - db_history_min_valid_version() + 1;
         compact_offset_range_fast_.set_value(divide_and_round(
-            curr_fast_writer_offset - compact_offset_fast,
+            last_block_end_offset_fast_ - compact_offset_fast,
             valid_history_length));
         compact_offset_fast += compact_offset_range_fast_;
     }
@@ -1317,51 +1322,35 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
         p += snprintf(
             p,
             sizeof(buf) - unsigned(p - buf),
-            "-----------------------------------------\n"
-            "Ring |  Copied | CompactRange | Ratio (in KB)\n"
-            "Fast |%8.2f |  %11u | %.2f%%\n",
-            stats.compacted_bytes_in_fast / 1024.0,
+            "   Fast: total growth ~ %u KB, compact range %u KB, "
+            "bytes copied fast to slow %.2f KB, active data ratio %.2f%%\n",
+            last_block_disk_growth_fast_ << 6,
             compact_offset_range_fast_ << 6,
+            stats.compacted_bytes_in_fast / 1024.0,
             100.0 * stats.compacted_bytes_in_fast /
                 (compact_offset_range_fast_ << 16));
         if (compact_offset_range_slow_) {
-            p += snprintf(
-                p,
-                sizeof(buf) - unsigned(p - buf),
-                "Slow |%8.2f |  %11u | %.2f%%\n",
-                stats.compacted_bytes_in_slow / 1024.0,
-                compact_offset_range_slow_ << 6,
-                100.0 * stats.compacted_bytes_in_slow /
-                    (compact_offset_range_slow_ << 16));
             // slow list compaction range vs growth
             auto const total_bytes_written_to_slow =
                 stats.compacted_bytes_in_fast + stats.compacted_bytes_in_slow;
             p += snprintf(
                 p,
                 sizeof(buf) - unsigned(p - buf),
-                "-----------------------------------------\n"
-                "Slow Ring CompactRange: %uKB, Data Written To Slow Ring (in "
-                "KB)\n"
-                "%8s |%10s |%9s |%8s |  %s\n"
-                "%8.2f |%10.2f |%9.2f |%8.2f |  %.2f%%\n",
-                compact_offset_range_slow_ << 6,
-                "F-S",
-                "Active S-S",
-                "Other S-F",
-                "Total",
-                "Written/Compacted",
-                stats.compacted_bytes_in_fast / 1024.0,
-                stats.compacted_bytes_in_slow / 1024.0,
-                stats.bytes_copied_slow_to_fast_for_slow / 1024.0,
+                "   Slow: total growth %.2f KB, compact range %u "
+                "KB, bytes copied slow to slow %.2f KB, active data ratio "
+                "%.2f%%. other bytes copied slow to fast %.2f KB.\n",
                 total_bytes_written_to_slow / 1024.0,
-                100.0 * total_bytes_written_to_slow /
-                    (compact_offset_range_slow_ << 16));
+                compact_offset_range_slow_ << 6,
+                stats.compacted_bytes_in_slow / 1024.0,
+                100.0 * stats.compacted_bytes_in_slow /
+                    (compact_offset_range_slow_ << 16),
+                stats.bytes_copied_slow_to_fast_for_slow / 1024.0);
         }
         else {
             p += snprintf(
                 p,
                 sizeof(buf) - unsigned(p - buf),
-                "Slow | No advance of compaction offset\n");
+                "   Slow: no advance of compaction offset\n");
         }
 
         // num nodes copied:
@@ -1371,8 +1360,8 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
         p += snprintf(
             p,
             sizeof(buf) - unsigned(p - buf),
-            "-----------------------------------------\nNodes Copied:\n"
-            "Fast: fast to slow %u (%.2f%%), fast to fast %u (%.2f%%)\n",
+            "[Nodes Copied]\n"
+            "   Fast: fast to slow %u (%.2f%%), fast to fast %u (%.2f%%)\n",
             stats.compacted_nodes_in_fast,
             nodes_copied_for_slow ? (100.0 * stats.compacted_nodes_in_fast /
                                      (nodes_copied_for_slow))
@@ -1390,7 +1379,7 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
             p += snprintf(
                 p,
                 sizeof(buf) - unsigned(p - buf),
-                "Slow: active slow to slow %u (%.2f%%), fast to fast %u "
+                "   Slow: active slow to slow %u (%.2f%%), fast to fast %u "
                 "(%.2f%%), other slow to fast %u (%.2f%%)\n",
                 stats.compacted_nodes_in_slow,
                 nodes_copied_for_slow ? (100.0 * stats.compacted_nodes_in_slow /
@@ -1411,8 +1400,8 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
         p += snprintf(
             p,
             sizeof(buf) - unsigned(p - buf),
-            "-----------------------------------------\n"
-            "Fast: compact reads within compaction range %u / "
+            "[Reads]\n"
+            "   Fast: compact reads within compaction range %u / "
             "total compact reads %u = %.2f%%\n",
             stats.nreads_before_compact_offset[0],
             stats.nreads_before_compact_offset[0] +
@@ -1425,7 +1414,7 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
         p += snprintf(
             p,
             sizeof(buf) - unsigned(p - buf),
-            "Fast: bytes read within compaction range %.2f KB / "
+            "   Fast: bytes read within compaction range %.2f KB / "
             "compaction range %u KB = %.2f%%, bytes read out of "
             "compaction range %.2f KB\n",
             (double)stats.bytes_read_before_compact_offset[0] / 1024,
@@ -1439,7 +1428,7 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
             p += snprintf(
                 p,
                 sizeof(buf) - unsigned(p - buf),
-                "Slow: reads within compaction range %u / "
+                "   Slow: reads within compaction range %u / "
                 "total compact reads %u = %.2f%%\n",
                 stats.nreads_before_compact_offset[1],
                 stats.nreads_before_compact_offset[1] +
@@ -1452,7 +1441,7 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
             p += snprintf(
                 p,
                 sizeof(buf) - unsigned(p - buf),
-                "Slow: bytes read within compaction range %.2f KB / "
+                "   Slow: bytes read within compaction range %.2f KB / "
                 "compaction range %u KB = %.2f%%, bytes read out of "
                 "compaction range %.2f KB\n",
                 (double)stats.bytes_read_before_compact_offset[1] / 1024,

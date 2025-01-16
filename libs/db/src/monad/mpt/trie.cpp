@@ -130,7 +130,6 @@ Node::UniquePtr upsert(
             if (root) {
                 write_new_root_node(aux, *root, version);
             }
-            aux.print_update_stats();
         }
         return root;
     };
@@ -357,6 +356,7 @@ struct read_single_child_expire_receiver
         , child_branch(child_branch)
     {
         MONAD_ASSERT(tnode && tnode->node);
+        aux->collect_expire_stats(true);
         // TODO: put in a helper to dedup logic
         rd_offset = round_down_align<DISK_PAGE_BITS>(offset);
         auto const num_pages_to_load_node =
@@ -576,6 +576,7 @@ struct expire_receiver
         , sm(std::move(sm_))
     {
         MONAD_ASSERT(tnode && tnode->type == tnode_type::expire);
+        aux->collect_expire_stats(true);
         rd_offset = round_down_align<DISK_PAGE_BITS>(offset);
         auto const num_pages_to_load_node =
             node_disk_pages_spare_15{rd_offset}.to_pages();
@@ -1474,6 +1475,7 @@ void try_fillin_parent_after_expiration(
     auto const branch = tnode->branch;
     auto *const parent = tnode->parent;
     auto const cache_node = tnode->cache_node;
+    aux.collect_expire_stats(false);
     auto [done, new_node] =
         create_node_with_expired_branches(aux, sm, std::move(tnode));
     if (!done) {

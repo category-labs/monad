@@ -537,6 +537,7 @@ public:
 
     // collect and print trie update stats
     void reset_stats();
+    void collect_expire_stats(bool is_read);
     void collect_number_nodes_created_stats();
     void collect_compaction_read_stats(
         chunk_offset_t node_offset, unsigned bytes_to_read);
@@ -544,7 +545,7 @@ public:
         bool const copy_node_for_fast, bool const rewrite_to_fast,
         virtual_chunk_offset_t node_offset, uint32_t node_disk_size);
 
-    void print_update_stats();
+    void print_update_stats(uint64_t version);
 
     enum class chunk_list : uint8_t
     {

@@ -996,6 +996,9 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     auto root = upsert(
         *this, version, sm, std::move(prev_root), std::move(root_updates));
     set_auto_expire_version_metadata(curr_upsert_auto_expire_version);
+    if (compaction) {
+        print_update_stats(version);
+    }
     return root;
 }
 
@@ -1279,13 +1282,16 @@ uint32_t UpdateAuxImpl::num_chunks(chunk_list const list) const noexcept
     return 0;
 }
 
-void UpdateAuxImpl::print_update_stats()
+void UpdateAuxImpl::print_update_stats(uint64_t const version)
 {
 #if MONAD_MPT_COLLECT_STATS
     printf(
-        "======\n"
-        "nodes created or updated: %u\n",
-        stats.nodes_created_or_updated);
+        "Version %lu: nodes created or updated for upsert = %u, nodes "
+        "updated for expire = %u, nreads for expire = %u\n",
+        version,
+        stats.nodes_created_or_updated,
+        stats.nodes_updated_expire,
+        stats.nreads_expire);
 
     if (compact_offset_fast) {
         printf(
@@ -1406,6 +1412,8 @@ void UpdateAuxImpl::print_update_stats()
         "Fast list grow %u kb, Slow list grow %u kb\n",
         last_block_disk_growth_fast_ << 6,
         last_block_disk_growth_slow_ << 6);
+#else
+    (void)version;
 #endif
 }
 
@@ -1443,6 +1451,20 @@ void UpdateAuxImpl::collect_compaction_read_stats(
 #else
     (void)physical_node_offset;
     (void)bytes_to_read;
+#endif
+}
+
+void UpdateAuxImpl::collect_expire_stats(bool const is_read)
+{
+#if MONAD_MPT_COLLECT_STATS
+    if (is_read) {
+        ++stats.nreads_expire;
+    }
+    else {
+        ++stats.nodes_updated_expire;
+    }
+#else
+    (void)is_read;
 #endif
 }
 

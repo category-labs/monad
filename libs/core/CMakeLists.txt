@@ -110,6 +110,10 @@ add_library(
   "src/monad/lru/static_lru_cache.hpp"
   "src/monad/mem/batch_mem_pool.hpp"
   "src/monad/synchronization/spin_lock.hpp"
+  # event
+  "src/monad/event/event_recorder.c"
+  "src/monad/event/event_recorder.h"
+  "src/monad/event/event_recorder_inline.h"
   # fiber
   "src/monad/fiber/config.hpp"
   "src/monad/fiber/priority_algorithm.cpp"
@@ -171,6 +175,7 @@ else()
   target_link_libraries(monad_core PRIVATE Boost::stacktrace_basic)
 endif()
 
+target_link_libraries(monad_core PUBLIC monad_event)
 target_link_libraries(monad_core PUBLIC openssl_sha3 Boost::fiber TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC blake3)

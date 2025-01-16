@@ -281,7 +281,7 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
     std::span<uint8_t const> raw{data, size};
     State state{};
 
-    BlockHeader hdr{.parent_hash = NULL_HASH, .number = 0};
+    BlockHeader hdr{.number = 0};
     sctx.commit(StateDeltas{}, Code{}, hdr);
     while (raw.size() >= sizeof(uint64_t)) {
         StateDeltas deltas;
@@ -311,12 +311,11 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
         client.mask = raw.size() < sizeof(uint64_t)
                           ? std::numeric_limits<uint64_t>::max()
                           : n;
-        hdr.parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr)));
         hdr.number = stdb.get_block_number() + 1;
+        MONAD_ASSERT(hdr.number > 0);
+        sctx.set_block_and_round(hdr.number - 1);
         sctx.commit(deltas, {}, hdr);
-        BlockHeader tgrt{hdr};
-        tgrt.state_root = sctx.state_root();
-        auto const rlp = rlp::encode_block_header(tgrt);
+        auto const rlp = rlp::encode_block_header(sctx.read_eth_header());
         monad_statesync_client_handle_target(cctx, rlp.data(), rlp.size());
         while (!client.rqs.empty()) {
             monad_statesync_server_run_once(server);

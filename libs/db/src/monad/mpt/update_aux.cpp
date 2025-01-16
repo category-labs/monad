@@ -993,9 +993,14 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     auto root_update = make_update(
         {}, compact_offsets_bytes, false, std::move(updates), version);
     root_updates.push_front(root_update);
+
+    auto upsert_begin = std::chrono::steady_clock::now();
     auto root = upsert(
         *this, version, sm, std::move(prev_root), std::move(root_updates));
     set_auto_expire_version_metadata(curr_upsert_auto_expire_version);
+
+    auto const duration = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - upsert_begin);
     if (compaction) {
         update_disk_growth_data();
         // log stats
@@ -1006,9 +1011,11 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     [[maybe_unused]] auto const curr_slow_writer_offset =
         physical_to_virtual(node_writer_slow->sender().offset());
     LOG_INFO_CFORMAT(
-        "Finish upserting version %lu. Disk usage=%.4f. Chunks: %u fast, "
-        "%u slow, %u free. Writer offsets: fast={%u,%u}, slow={%u,%u}.",
+        "Finish upserting version %lu. Time elapsed: %ld us. Disk usage: %.4f. "
+        "Chunks: %u fast, %u slow, %u free. Writer offsets: fast={%u,%u}, "
+        "slow={%u,%u}.",
         version,
+        duration.count(),
         disk_usage(),
         num_chunks(chunk_list::fast),
         num_chunks(chunk_list::slow),
@@ -1017,6 +1024,12 @@ Node::UniquePtr UpdateAuxImpl::do_update(
         curr_fast_writer_offset.offset,
         curr_slow_writer_offset.count,
         curr_slow_writer_offset.offset);
+    if (duration > std::chrono::microseconds(500'000)) {
+        LOG_WARNING_CFORMAT(
+            "Upsert version %lu takes longer than 0.5 s, time elapsed: %ld us.",
+            version,
+            duration.count());
+    }
     return root;
 }
 
@@ -1306,6 +1319,11 @@ uint32_t UpdateAuxImpl::num_chunks(chunk_list const list) const noexcept
 void UpdateAuxImpl::print_update_stats(uint64_t const version)
 {
 #if MONAD_MPT_COLLECT_STATS
+    if (stats.nodes_updated_expire > 50'000) {
+        LOG_WARNING_CFORMAT(
+            "The number of nodes updated for expire (%u) is excessively large",
+            stats.nodes_updated_expire);
+    }
     char buf[16 << 10];
     char *p = buf;
     p += snprintf(
@@ -1317,7 +1335,6 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
         stats.nodes_created_or_updated,
         stats.nodes_updated_expire,
         stats.nreads_expire);
-
     if (compact_offset_range_fast_) {
         p += snprintf(
             p,

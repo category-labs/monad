@@ -243,7 +243,7 @@ TryAgain:
     // This ensures the reader can always detect that fields are invalidated.
     event = &event_ring->descriptor_table
                  [cur_state.last_seqno & (event_ring->capacity - 1)];
-    atomic_store_explicit(&event->seqno, 0, memory_order_release);
+    __atomic_store_n(&event->seqno, 0, __ATOMIC_RELEASE);
     payload_end = cur_state.next_payload_byte;
     buffer_window_start = __atomic_load_n(
         &event_ring->control->buffer_window_start, __ATOMIC_RELAXED);
@@ -305,7 +305,7 @@ inline void monad_event_record(
     event->pop_scope = flags & MONAD_EVENT_POP_SCOPE;
     event->txn_num = monad_event_get_txn_num();
     event->epoch_nanos = event_time;
-    atomic_store_explicit(&event->seqno, seqno, memory_order_release);
+    __atomic_store_n(&event->seqno, seqno, __ATOMIC_RELEASE);
 }
 
 inline void monad_event_recordv(
@@ -343,7 +343,7 @@ inline void monad_event_recordv(
     event->pop_scope = flags & MONAD_EVENT_POP_SCOPE;
     event->txn_num = monad_event_get_txn_num();
     event->epoch_nanos = event_time;
-    atomic_store_explicit(&event->seqno, seqno, memory_order_release);
+    __atomic_store_n(&event->seqno, seqno, __ATOMIC_RELEASE);
 }
 
 inline struct monad_event_block_exec_header *

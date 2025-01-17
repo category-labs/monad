@@ -62,7 +62,7 @@ constexpr bool is_txn_event(monad_event_type type)
 
 static void hexdump_event_payload(
     monad_event_iterator const *iter, monad_event_descriptor const *event,
-    std::span<std::byte const> payload, uint64_t event_seqno, std::FILE *out)
+    std::FILE *out)
 {
     // Large thread_locals will cause a stack overflow, so make the
     // thread-local a pointer to a dynamic buffer
@@ -70,8 +70,9 @@ static void hexdump_event_payload(
     thread_local static std::unique_ptr<char[]> const hexdump_buf{
         new char[hexdump_buf_size]};
 
-    std::byte const *const payload_base = data(payload);
-    std::byte const *const payload_end = payload_base + size(payload);
+    std::byte const *payload_base =
+        static_cast<std::byte const *>(monad_event_payload_peek(iter, event));
+    std::byte const *const payload_end = payload_base + event->length;
     char *o = hexdump_buf.get();
     for (std::byte const *line = payload_base; line < payload_end; line += 16) {
         // Print one line of the dump, which is 16 bytes, in the form:
@@ -94,7 +95,7 @@ static void hexdump_event_payload(
     }
 
     if (!monad_event_payload_check(iter, event)) {
-        std::fprintf(out, "ERROR: event %lu payload lost!\n", event_seqno);
+        std::fprintf(out, "ERROR: event %lu payload lost!\n", event->seqno);
     }
     else {
         std::fwrite(
@@ -124,8 +125,6 @@ static void print_event(
     // <HH:MM::SS.nanos> <event-c-name> [<event-type> <event-type-hex>]
     //     SEQ: <sequence-no> LEN: <payload-length>
     //     SRC: <source-id> [<thread-name> <thread-id>]
-    uint64_t const seqno = event->seqno.load(std::memory_order_relaxed);
-    uint64_t const length = event->length;
     char *o = std::format_to(
         event_buf,
         "{:%H:%M:%S}: {} [{} {:#x}] SEQ: {} LEN: {} SRC: {} [{} ({})]",
@@ -133,8 +132,8 @@ static void print_event(
         event_md.c_name,
         std::to_underlying(event->type),
         std::to_underlying(event->type),
-        seqno,
-        length,
+        event->seqno,
+        event->length,
         event->source_id,
         thr_info->thread_name,
         thr_info->thread_id);
@@ -149,28 +148,9 @@ static void print_event(
         o = std::format_to(o, " TXN: {}", event->txn_num);
     }
     *o++ = '\n';
+    std::fwrite(event_buf, static_cast<size_t>(o - event_buf), 1, out);
 
-    // NOTE: we load the payload pointer now, because it will no longer be
-    // safe to touch `event` again after calling `monad_event_reader_advance`,
-    // unless we manually acquire-load `event->seqno` and compare it against
-    // `seqno`
-    std::byte const *payload =
-        static_cast<std::byte const *>(monad_event_payload_peek(iter, event));
-    if (monad_event_iterator_advance(iter)) {
-        std::fwrite(event_buf, static_cast<size_t>(o - event_buf), 1, out);
-    }
-    else {
-        // Zero-copy buffer changed underneath us; the payload is gone too.
-        // Note we use `last_seqno + 1` here, as even the relaxed `seqno` load
-        // above is potentially not right (it could show the overwrite value)
-        std::fprintf(
-            out,
-            "ERROR: event %lu lost during copy-out\n",
-            iter->last_seqno + 1);
-        return;
-    }
-
-    hexdump_event_payload(iter, event, {payload, length}, seqno, out);
+    hexdump_event_payload(iter, event, out);
 }
 
 // The "follow thread" behaves like `tail -f`: it pulls events from the ring
@@ -181,7 +161,7 @@ static void follow_thread_main(
     monad_event_block_exec_header const *block_header_table,
     std::optional<uint64_t> start_seqno, std::FILE *out)
 {
-    monad_event_descriptor const *event;
+    monad_event_descriptor event;
     monad_event_proc const *const proc = imported_rings.front()->proc;
     std::array<monad_event_iterator, MONAD_EVENT_RING_COUNT> iter_bufs{};
     std::span<monad_event_iterator> const iters =
@@ -205,7 +185,7 @@ static void follow_thread_main(
     }
     while (g_should_exit == 0) {
         for (auto &iter : iters) {
-            switch (monad_event_iterator_peek(&iter, &event)) {
+            switch (monad_event_iterator_try_next(&iter, &event)) {
             case MONAD_EVENT_NOT_READY:
                 if ((not_ready_count++ & ((1U << 20) - 1)) == 0) {
                     std::fflush(out);
@@ -220,7 +200,7 @@ static void follow_thread_main(
                     out,
                     "event gap from %lu -> %lu, resetting\n",
                     iter.last_seqno,
-                    event->seqno.load(std::memory_order_relaxed));
+                    event.seqno);
                 monad_event_iterator_reset(&iter);
                 continue;
 
@@ -233,9 +213,9 @@ static void follow_thread_main(
             not_ready_count = 0;
             print_event(
                 &iter,
-                event,
-                &thread_table[event->source_id],
-                &block_header_table[event->block_flow_id],
+                &event,
+                &thread_table[event.source_id],
+                &block_header_table[event.block_flow_id],
                 out);
         }
     }

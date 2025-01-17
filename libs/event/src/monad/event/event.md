@@ -185,66 +185,53 @@ In this example:
   in the meantime. These were subsequently overwritten, and are now lost.
   There is no way to recover or replay them
 
-#### Lifetime of an event, zero copy vs. memcpy style
+#### Lifetime of an event payload, zero copy vs. memcpy APIs
 
-Because of the overwrite behavior, an event descriptor might be overwritten
-by the `monad` process while a reader is still reading its data. To deal with
-this, the reader needs to do one of two things:
+Because of the ring buffer overwrite behavior, an event descriptor might be
+overwritten by the `monad` process while a reader is still examining its
+data. To deal with this, the reader API makes a copy of the event descriptor.
+If it detects that the event descriptor changed during the copy operation, it
+reports a gap. Copying an event descriptor is fast, because it is only a
+single cache line in size. The copy will take only a few CPU cycles.
 
-1. Check that the sequence number of the event descriptor matches the value it
-   originally had when the reader first saw it, once they are done processing
-   the event. Both reads of the sequence number must use atomic memory loads,
-   with `memory_order_acquire` (or stronger) ordering. The provided zero copy
-   API does this automatically
+This is not the case for event payloads, which could potentially be very
+large. This means a `memcpy(3)` of an event payload could be expensive, and
+it would be advantageous to read the payload bytes directly from the shared
+memory segment: a "zero-copy" API. This exposes the user to the possibility
+that the event payload could be overwritten while still using it, so two
+solutions are provided:
 
-2. Use one of the provided `memcpy`-style APIs. This effectively does the
-   same thing as option 1, but inside the library: event data is copied to a
-   user-provided buffer, and before returning we check if the lifetime
-   remained valid as the copy finished; the return value indicates whether
-   the copy is valid
+1. A simple detection mechanism allows payload overwrite to be detected at
+   any time: the writer keeps track of the minimum payload offset value
+   (_before_ modular arithmetic is applied) that is still valid. If the
+   offset value in the event descriptor is smaller than this, it is no
+   longer safe to read the event payload
 
-The reason to prefer zero-copy APIs is that they do not make a copy of the
-data, and thus do less work. The reason to prefer memcpy APIs is that it is
-not always easy (or possible) to "undo" the work you did if you find out
-later that the event was corrupted by an overwrite while you were working
-with it. The most logical thing to do in that case is start by copying the
-data to stable location, and if the copy isn't valid, to never start the
-operation.
+2. A payload `memcpy`-style API is also provided. This uses the detection
+   mechanism above in the following way: first, the payload is copied to
+   a user-provided buffer. Before returning, it checks if the lifetime
+   remained valid after the copy finished. If so, then an overwrite did not
+   occur during the copy, so the copy must be valid. Otherwise, the copy is
+   invalid
+
+The reason to prefer the zero-copy APIs is that they do less work. The
+reason to prefer memcpy APIs is that it is not always easy (or possible) to
+"undo" the work you did if you find out later that the event payload was
+corrupted by an overwrite while you were working with it. The most logical
+thing to do in that case is start by copying the data to stable location,
+and if the copy isn't valid, to never start the operation.
 
 An example user of the zero-copy API is the `eventwatch` example program,
 which can turn events into printed strings that are sent to `stdout`. The
-expensive work of string formatting is performed using the original memory
-for the descriptor and payload. Once formatting is complete, `eventwatch`
-checks if an overwrite happened and if so, writes an error to `stdout`
-instead of the prepared buffer.
+expensive work of formatting a hexdump of the event payload is performed
+using the original payload memory. If an overwrite happened during the
+string formatting, the hexdump output buffer will be wrong, but that is OK:
+it is not sent to `stdout` until the end. Once formatting is complete,
+`eventwatch` checks if the payload expired and if so, writes an error to
+`stderr` instead of writing the prepared buffer to `stdout`.
 
 Whether you should copy or not depends on the characteristics of the reader,
 namely how easily it can deal with "aborting" processing.
-
-#### Event payloads and event lifetime
-
-Recall that events are comprised of both a fixed-size event descriptor and
-a variably-sized event payload, and both parts live in separate shared memory
-segments. The payload buffer size is configured when the `monad` process
-starts, and it cannot be changed while recording is in progress. Once all
-payload space has been used, subsequent payload writes wrap around to the
-start of the buffer, and older data is overwritten.
-
-Consequently, just as it is possible for event descriptors to be lost if a
-reader is too slow, it is also possible for payloads to expire if they are
-not read quickly enough. The detection mechanism is simple: the writer
-keeps track of the minimum byte value (_before_ modular arithmetic is
-applied) that is still valid. If the value in the event descriptor is
-smaller than this, it is no longer safe to read the event payload.
-
-This means that the "zero copy vs. memcpy" decision applies to both the
-descriptors and payloads, and the reader could potentially make different
-decisions for each.
-
-The user is free to manage the reading and gap recovery logic themselves
-by directly manipulating the `struct monad_event_iterator` object, but a
-few APIs provide some reasonable default behavior for both the zero-copy
-and memcpy styles.
 
 ### Event descriptors in detail
 
@@ -255,7 +242,7 @@ The event descriptor is defined this way:
 ```c
 struct monad_event_descriptor
 {
-    _Atomic(uint64_t) seqno;     ///< Sequence number, for gap/liveness check
+    alignas(64) uint64_t seqno;  ///< Sequence number, for gap/liveness check
     enum monad_event_type type;  ///< What kind of event this is
     uint16_t block_flow_id;      ///< ID representing block exec header
     uint8_t source_id;           ///< ID representing origin thread
@@ -390,23 +377,24 @@ The easiest way to understand the API is to compile and run the included
 `eventwatch` program. After watching what it does (you will need to be
 running a `monad` process at the same time), read the code.
 
-### Zero-copy style APIs
-
-API | Purpose
---- |--------
-`monad_event_iterator_peek` | Get a zero-copy pointer to an event descriptor, if one is ready
-`monad_event_iterator_advance` | Advance over the last `monad_event_iterator_peek` descriptor, returning `true` if lifetime was active
-`monad_event_payload_peek` | Get a zero-copy pointer to an event payload; also returns a pointer to the seqno overwrite indicator
-
-### memcpy style APIs
+### Iterator APIs
 
 API | Purpose
 --- | -------
-`monad_event_iterator_copy_next` | Copy both the event descriptor and payload as one atomic operation; easiest API to use, but see remark below
+`monad_event_iterator_try_next` | Copy the next event descriptor if one is available, and advance to the next descriptor
+`monad_event_iterator_try_full` | Copy both the event descriptor and payload as one atomic operation; easiest API to use, but see remark below
+`monad_event_iterator_reset` | Reset the iterator to point to the most recently produced event descriptor; used for gap recovery
+
+### Event Payload APIs
+
+API | Purpose
+--- |--------
+`monad_event_payload_peek` | Get a zero-copy pointer to an event payload
+`monad_event_payload_check` | Check if an event payload has been overwritten
 `monad_event_payload_memcpy` | `memcpy` the event payload to a buffer, succeeding only if the payload copy is valid
 
-The simplest API is `monad_event_iterator_copy_next`, which copies both the
-descriptor and payload, performs all validity checking, and advances the
+The simplest API is `monad_event_iterator_try_full`, which copies both
+the descriptor and payload, performs all validity checking, and advances the
 iterator if successful. However, the user must take care to provide a large
 enough buffer to hold any possible payload or the copied payload may be
 truncated. Here is an example of some code which will eventually call
@@ -417,7 +405,7 @@ void read_events(struct monad_iterator_reader *iter) {
     struct monad_event_descriptor event;
     uint8_t tiny_buf[64]; // This payload buffer is too small for most events
 
-    switch (monad_event_iterator_copy_next(iter, &event, tiny_buf, sizeof tiny_buf)) {
+    switch (monad_event_iterator_try_full(iter, &event, tiny_buf, sizeof tiny_buf)) {
     case MONAD_EVENT_READY:
         if (event.length > sizeof tiny_buf) {
             // Event payload has more data than could fit in our buffer, so we're

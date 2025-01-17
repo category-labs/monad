@@ -9,11 +9,8 @@
  * the readers.
  */
 
-#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#include <sys/queue.h>
 
 #include <monad/event/event_types.h>
 
@@ -33,6 +30,7 @@ enum monad_event_ring_type : uint8_t
     MONAD_EVENT_RING_COUNT, ///< Number of recognized ring types
 };
 
+/// Size of a byte array needed to hold the largest possible event payload
 #define MONAD_EVENT_MAX_PAYLOAD_BUF_SIZE (1UL << 24)
 
 /// Descriptor for a single event; this fixed-size object is passed between
@@ -42,7 +40,7 @@ enum monad_event_ring_type : uint8_t
 /// accessed using this descriptor
 struct monad_event_descriptor
 {
-    _Atomic(uint64_t) seqno;     ///< Sequence number, for gap/liveness check
+    alignas(64) uint64_t seqno;  ///< Sequence number, for gap/liveness check
     enum monad_event_type type;  ///< What kind of event this is
     uint16_t block_flow_id;      ///< ID representing block exec header
     uint8_t source_id;           ///< ID representing origin thread

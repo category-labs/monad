@@ -21,7 +21,8 @@
 #include <monad/event/event_recorder.h>
 #include <monad/event/event_types.h>
 
-constexpr uint64_t MaxPerfIterations = 1UL << 20;
+#define RUN_FULL_EVENT_RECORDER_TEST 1
+constexpr uint64_t MaxPerfIterations = 1UL << 30;
 
 // Running the tests with the reader disabled is a good measure of how
 // expensive the multi-threaded lock-free recording in the writer is, without
@@ -94,29 +95,25 @@ static void writer_main(
     uint64_t available_histogram[EventsAvailableHistogramSize] = {};
 
     latch->arrive_and_wait();
-    std::atomic_ref<uint64_t const> const ring_last_seqno{
-        iter.wr_state->last_seqno};
+    std::atomic_ref const ring_last_seqno{iter.wr_state->last_seqno};
     while (ring_last_seqno.load(std::memory_order_acquire) == 0)
         /* wait for something to be produced */;
     monad_event_iterator_reset(&iter);
     // Regardless of where the most recent event is, start from zero
     uint64_t last_seqno = iter.last_seqno = 0;
     while (last_seqno < max_writer_iteration) {
-        monad_event_descriptor const *event;
+        monad_event_descriptor event;
         monad_event_poll_result const pr =
-            monad_event_iterator_peek(&iter, &event);
+            monad_event_iterator_try_next(&iter, &event);
         if (MONAD_UNLIKELY(pr == MONAD_EVENT_NOT_READY)) {
             continue;
         }
         ASSERT_EQ(MONAD_EVENT_READY, pr);
-        uint64_t const event_seqno =
-            event->seqno.load(std::memory_order::relaxed);
-        ASSERT_TRUE(monad_event_iterator_advance(&iter));
 
         // Available histogram
         if (MONAD_UNLIKELY((last_seqno + 1) & HistogramSampleMask) == 0) {
             uint64_t const available_events =
-                ring_last_seqno.load(std::memory_order::acquire) - event->seqno;
+                ring_last_seqno.load(std::memory_order::acquire) - event.seqno;
             unsigned avail_bucket =
                 static_cast<unsigned>(std::bit_width(available_events));
             if (avail_bucket >= std::size(available_histogram)) {
@@ -126,7 +123,7 @@ static void writer_main(
 
             // TODO(ken): should be monad_event_get_epoch_nanos(), when we
             //   fix timestamp RDTSC support
-            auto const delay = monad_event_timestamp() - event->epoch_nanos;
+            auto const delay = monad_event_timestamp() - event.epoch_nanos;
             unsigned delay_bucket =
                 static_cast<unsigned>(std::bit_width(delay));
             if (delay_bucket >= std::size(delay_histogram)) {
@@ -134,17 +131,17 @@ static void writer_main(
             }
             ++delay_histogram[delay_bucket];
         }
-        EXPECT_EQ(last_seqno + 1, event->seqno);
-        last_seqno = event_seqno;
+        EXPECT_EQ(last_seqno + 1, event.seqno);
+        last_seqno = event.seqno;
 
-        if (MONAD_UNLIKELY(event->type != MONAD_EVENT_TEST_COUNTER)) {
+        if (MONAD_UNLIKELY(event.type != MONAD_EVENT_TEST_COUNTER)) {
             continue;
         }
-        ASSERT_EQ(event->length, expected_len);
+        ASSERT_EQ(event.length, expected_len);
         auto const test_counter =
             *static_cast<monad_event_test_counter const *>(
-                monad_event_payload_peek(&iter, event));
-        ASSERT_TRUE(monad_event_payload_check(&iter, event));
+                monad_event_payload_peek(&iter, &event));
+        ASSERT_TRUE(monad_event_payload_check(&iter, &event));
         ASSERT_GT(writer_thread_count, test_counter.writer_id);
         EXPECT_EQ(
             expected_counters[test_counter.writer_id], test_counter.counter);

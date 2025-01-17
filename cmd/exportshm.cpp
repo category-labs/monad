@@ -165,8 +165,8 @@ static void wait_for_seqno(
     // Manually rewind to the beginning
     iter.last_seqno = 0;
     while (true) {
-        monad_event_descriptor const *event;
-        switch (monad_event_iterator_peek(&iter, &event)) {
+        monad_event_descriptor event;
+        switch (monad_event_iterator_try_next(&iter, &event)) {
         case MONAD_EVENT_GAP:
             MONAD_ABORT("unexpected gap during last_seqno wait");
 
@@ -177,19 +177,16 @@ static void wait_for_seqno(
             continue;
 
         case MONAD_EVENT_READY:
-            if (auto const this_seqno =
-                    event->seqno.load(std::memory_order::acquire);
-                this_seqno >= last_seqno) {
+            if (event.seqno >= last_seqno) {
                 kill(pid, SIGINT);
                 fprintf(
                     stdout,
                     "saw seqno: %lu, sent signal %d to pid %d\n",
-                    this_seqno,
+                    event.seqno,
                     SIGINT,
                     pid);
                 return;
             }
-            monad_event_iterator_advance(&iter);
             break;
         }
     }

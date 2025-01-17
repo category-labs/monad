@@ -6,7 +6,6 @@
  * process.
  */
 
-#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -127,13 +126,12 @@ static bool is_txn_event(enum monad_event_type type)
 
 static void hexdump_event_payload(
     struct monad_event_iterator const *iter,
-    struct monad_event_descriptor const *event, uint8_t const *payload,
-    size_t length, uint64_t event_seqno, FILE *out)
+    struct monad_event_descriptor const *event, FILE *out)
 {
     static char hexdump_buf[1 << 25];
     char *o = hexdump_buf;
-
-    uint8_t const *const payload_end = payload + length;
+    uint8_t const *const payload = monad_event_payload_peek(iter, event);
+    uint8_t const *const payload_end = payload + event->length;
     for (uint8_t const *line = payload; line < payload_end; line += 16) {
         // Print one line of the dump, which is 16 bytes, in the form:
         // <offset> <8 bytes> <8 bytes>
@@ -155,7 +153,7 @@ static void hexdump_event_payload(
     }
 
     if (!monad_event_payload_check(iter, event)) {
-        fprintf(stderr, "ERROR: event %lu payload lost!\n", event_seqno);
+        fprintf(stderr, "ERROR: event %lu payload lost!\n", event->seqno);
     }
     else {
         fwrite(hexdump_buf, (size_t)(o - hexdump_buf), 1, out);
@@ -171,16 +169,12 @@ static void print_event(
     static char timebuf[32];
     static time_t last_second = 0;
 
-    uint8_t const *payload;
     ldiv_t time_parts;
     char event_buf[256];
     char *o = event_buf;
 
     struct monad_event_metadata const *event_md =
         &g_monad_event_metadata[event->type];
-    uint64_t const seqno =
-        atomic_load_explicit(&event->seqno, memory_order_relaxed);
-    uint32_t const length = event->length;
 
     time_parts = ldiv(event->epoch_nanos, 1'000'000'000L);
     if (time_parts.quot != last_second) {
@@ -202,8 +196,8 @@ static void print_event(
         event_md->c_name,
         event->type,
         event->type,
-        seqno,
-        length,
+        event->seqno,
+        event->length,
         event->source_id,
         thr_info->thread_name,
         thr_info->thread_id);
@@ -218,25 +212,7 @@ static void print_event(
         o += sprintf(o, " TXN: %u", event->txn_num);
     }
     *o++ = '\n';
-
-    // NOTE: we load the payload pointer now, because it will no longer be
-    // safe to touch `event` again after calling `monad_event_reader_advance`,
-    // unless we manually acquire-load `event->seqno` and compare it against
-    // `seqno`
-    payload = monad_event_payload_peek(iter, event);
-    if (monad_event_iterator_advance(iter)) {
-        fwrite(event_buf, (size_t)(o - event_buf), 1, out);
-    }
-    else {
-        // Zero-copy buffer changed underneath us; the payload is gone too.
-        // Note we use `last_seqno + 1` here, as even the relaxed `seqno` load
-        // above is potentially not right (it could show the overwrite value)
-        fprintf(
-            stderr,
-            "ERROR: event %lu lost during copy-out\n",
-            iter->last_seqno + 1);
-        return;
-    }
+    fwrite(event_buf, (size_t)(o - event_buf), 1, out);
 
     // Dump the event payload as a hexdump to simplify the example. If you
     // want the real event payloads, they can be type cast into the appropriate
@@ -250,14 +226,14 @@ static void print_event(
     //
     //    // ... switch cases for other event types
     //    };
-    hexdump_event_payload(iter, event, payload, length, seqno, out);
+    hexdump_event_payload(iter, event, out);
 }
 
 // The main event processing loop of the application
 static void
 event_loop(struct monad_event_imported_ring const *import, FILE *out)
 {
-    struct monad_event_descriptor const *event;
+    struct monad_event_descriptor event;
     struct monad_event_iterator iter;
     struct monad_event_thread_info const *const thread_table =
         import->proc->thread_table;
@@ -267,7 +243,7 @@ event_loop(struct monad_event_imported_ring const *import, FILE *out)
 
     monad_event_imported_ring_init_iter(import, &iter);
     while (g_should_stop == 0) {
-        switch (monad_event_iterator_peek(&iter, &event)) {
+        switch (monad_event_iterator_try_next(&iter, &event)) {
         case MONAD_EVENT_NOT_READY:
             if ((not_ready_count++ & ((1U << 20) - 1)) == 0) {
                 fflush(out);
@@ -282,7 +258,7 @@ event_loop(struct monad_event_imported_ring const *import, FILE *out)
                 stderr,
                 "event gap from %lu -> %lu, resetting\n",
                 iter.last_seqno,
-                atomic_load_explicit(&event->seqno, memory_order_relaxed));
+                event.seqno);
             monad_event_iterator_reset(&iter);
             continue;
 
@@ -290,14 +266,14 @@ event_loop(struct monad_event_imported_ring const *import, FILE *out)
             break; // Handled in the main loop body
 
         case MONAD_EVENT_PAYLOAD_EXPIRED:
-            unreachable(); // Never returned by the zero-copy API
+            unreachable(); // Never returned by monad_event_iterator_try_next
         }
         not_ready_count = 0;
         print_event(
             &iter,
-            event,
-            &thread_table[event->source_id],
-            &block_header_table[event->block_flow_id],
+            &event,
+            &thread_table[event.source_id],
+            &block_header_table[event.block_flow_id],
             out);
     }
 }

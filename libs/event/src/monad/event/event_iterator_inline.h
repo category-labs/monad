@@ -9,8 +9,6 @@
     #error This file should only be included directly by event_iterator.h
 #endif
 
-#include <assert.h>
-#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -38,36 +36,30 @@ monad_event_iterator_sync_wait(struct monad_event_iterator *iter)
     // with memory_order_release ordering. This waits for that to happen, if it
     // hasn't yet.
     event = &iter->desc_table[(last_seqno - 1) & iter->capacity_mask];
-    while (atomic_load_explicit(&event->seqno, memory_order_acquire) <
-           last_seqno)
+    while (__atomic_load_n(&event->seqno, __ATOMIC_ACQUIRE) < last_seqno)
         /*empty*/;
     return last_seqno;
 }
 
-inline enum monad_event_poll_result monad_event_iterator_peek(
-    struct monad_event_iterator *iter,
-    struct monad_event_descriptor const **event)
+inline enum monad_event_poll_result monad_event_iterator_try_next(
+    struct monad_event_iterator *iter, struct monad_event_descriptor *event)
 {
-    *event = &iter->desc_table[iter->last_seqno & iter->capacity_mask];
-    uint64_t const seqno =
-        atomic_load_explicit(&(*event)->seqno, memory_order_acquire);
-    if (__builtin_expect(seqno == iter->last_seqno + 1, 1)) {
-        return MONAD_EVENT_READY;
-    }
-    return seqno < iter->last_seqno ? MONAD_EVENT_NOT_READY : MONAD_EVENT_GAP;
-}
-
-inline bool monad_event_iterator_advance(struct monad_event_iterator *iter)
-{
-    struct monad_event_descriptor const *const event =
+    struct monad_event_descriptor const *const ring_event =
         &iter->desc_table[iter->last_seqno & iter->capacity_mask];
     uint64_t const seqno =
-        atomic_load_explicit(&event->seqno, memory_order_acquire);
+        __atomic_load_n(&ring_event->seqno, __ATOMIC_ACQUIRE);
     if (__builtin_expect(seqno == iter->last_seqno + 1, 1)) {
-        ++iter->last_seqno;
-        return true;
+        // Copy the structure, but then reload sequence number with
+        // __ATOMIC_ACQUIRE, to make sure it matches
+        *event = *ring_event;
+        __atomic_load(&ring_event->seqno, &event->seqno, __ATOMIC_ACQUIRE);
+        if (__builtin_expect(event->seqno == seqno, 1)) {
+            ++iter->last_seqno;
+            return MONAD_EVENT_READY;
+        }
+        return MONAD_EVENT_GAP;
     }
-    return false;
+    return seqno < iter->last_seqno ? MONAD_EVENT_NOT_READY : MONAD_EVENT_GAP;
 }
 
 inline void const *monad_event_payload_peek(
@@ -89,45 +81,6 @@ inline bool monad_event_payload_check(
                __atomic_load_n(iter->buffer_window_start, __ATOMIC_ACQUIRE);
 }
 
-inline enum monad_event_poll_result monad_event_iterator_copy_next(
-    struct monad_event_iterator *iter, struct monad_event_descriptor *event_dst,
-    void *payload_buf, size_t payload_buf_size)
-{
-    uint64_t seqno;
-    size_t copy_size;
-
-    struct monad_event_descriptor const *const event_src =
-        &iter->desc_table[iter->last_seqno & iter->capacity_mask];
-#if defined(__cplusplus) && !defined(__clang__)
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wclass-memaccess"
-#endif
-    memcpy(event_dst, event_src, sizeof *event_dst);
-#if defined(__cplusplus) && !defined(__clang__)
-    #pragma GCC diagnostic pop
-#endif
-    seqno = atomic_load_explicit(&event_dst->seqno, memory_order_relaxed);
-    if (__builtin_expect(
-            seqno !=
-                atomic_load_explicit(&event_src->seqno, memory_order_acquire),
-            0)) {
-        return MONAD_EVENT_GAP;
-    }
-    if (__builtin_expect(seqno == iter->last_seqno + 1, 1)) {
-        copy_size = payload_buf_size > event_dst->length ? event_dst->length
-                                                         : payload_buf_size;
-        if (__builtin_expect(
-                monad_event_payload_memcpy(
-                    iter, event_dst, payload_buf, copy_size) == nullptr,
-                0)) {
-            return MONAD_EVENT_PAYLOAD_EXPIRED;
-        }
-        (void)monad_event_iterator_advance(iter);
-        return MONAD_EVENT_READY;
-    }
-    return seqno < iter->last_seqno ? MONAD_EVENT_NOT_READY : MONAD_EVENT_GAP;
-}
-
 inline void *monad_event_payload_memcpy(
     struct monad_event_iterator const *iter,
     struct monad_event_descriptor const *event, void *dst, size_t n)
@@ -141,6 +94,24 @@ inline void *monad_event_payload_memcpy(
         return nullptr;
     }
     return dst;
+}
+
+inline enum monad_event_poll_result monad_event_iterator_try_full(
+    struct monad_event_iterator *iter, struct monad_event_descriptor *event,
+    void *payload_buf, size_t payload_buf_size)
+{
+    size_t copy_size;
+    enum monad_event_poll_result const pr =
+        monad_event_iterator_try_next(iter, event);
+    if (__builtin_expect(pr != MONAD_EVENT_READY, 0)) {
+        return pr;
+    }
+    copy_size =
+        payload_buf_size > event->length ? event->length : payload_buf_size;
+    return monad_event_payload_memcpy(iter, event, payload_buf, copy_size) !=
+                   nullptr
+               ? MONAD_EVENT_READY
+               : MONAD_EVENT_PAYLOAD_EXPIRED;
 }
 
 inline uint64_t monad_event_iterator_reset(struct monad_event_iterator *iter)

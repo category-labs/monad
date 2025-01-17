@@ -14,6 +14,8 @@
 #include <monad/mpt/update.hpp>
 #include <monad/mpt/util.hpp>
 
+#include <quill/Quill.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cassert>
@@ -67,7 +69,8 @@ namespace
 // Define to avoid randomisation of free list chunks on pool creation
 // This can be useful to discover bugs in code which assume chunks are
 // consecutive
-// #define MONAD_MPT_INITIALIZE_POOL_WITH_CONSECUTIVE_CHUNKS 1
+// #define MONAD_MPT_INITIALIZE_POOL_WITH_RANDOM_SHUFFLED_CHUNKS 1
+#define MONAD_MPT_INITIALIZE_POOL_WITH_REVERSE_ORDER_CHUNKS 1
 
 virtual_chunk_offset_t
 UpdateAuxImpl::physical_to_virtual(chunk_offset_t const offset) const noexcept
@@ -319,23 +322,41 @@ void UpdateAuxImpl::rewind_to_match_offsets()
     // fast/slow list offsets should always be greater than last written root
     // offset.
     auto const ro = root_offsets();
-    auto const last_written_offset = ro[ro.max_version()];
-    if (last_written_offset != INVALID_OFFSET) {
-        if ((db_metadata()->at(last_written_offset.id)->in_fast_list &&
-             last_written_offset >= fast_offset)) {
-            std::stringstream ss;
-            ss << "Detected corruption. Latest root offset "
-               << last_written_offset.raw() << " is ahead of fast list offset "
-               << fast_offset.raw();
-            throw std::runtime_error(ss.str());
+    auto const last_root_offset = ro[ro.max_version()];
+    if (last_root_offset != INVALID_OFFSET) {
+        auto const virtual_last_root_offset =
+            physical_to_virtual(last_root_offset);
+        if (db_metadata()->at(last_root_offset.id)->in_fast_list) {
+            auto const virtual_fast_offset = physical_to_virtual(fast_offset);
+            MONAD_ASSERT_PRINTF(
+                virtual_fast_offset > virtual_last_root_offset,
+                "Detected corruption. Last root offset (id=%d, count=%d, "
+                "offset=%d) is ahead of fast list offset (id=%d, "
+                "count=%d, offset=%d)",
+                last_root_offset.id,
+                virtual_last_root_offset.count,
+                last_root_offset.offset,
+                fast_offset.id,
+                fast_offset.offset,
+                virtual_fast_offset.count);
         }
-        if (db_metadata()->at(last_written_offset.id)->in_slow_list &&
-            last_written_offset >= slow_offset) {
-            std::stringstream ss;
-            ss << "Detected corruption. Latest root offset "
-               << last_written_offset.raw() << " is ahead of slow list offset "
-               << slow_offset.raw();
-            throw std::runtime_error(ss.str());
+        else if (db_metadata()->at(last_root_offset.id)->in_slow_list) {
+            auto const virtual_slow_offset = physical_to_virtual(slow_offset);
+            MONAD_ASSERT_PRINTF(
+                virtual_slow_offset > virtual_last_root_offset,
+                "Detected corruption. Last root offset (id=%d, count=%d, "
+                "offset=%d, is ahead of slow list offset (id=%d, "
+                "count=%d, offset=%d)",
+                last_root_offset.id,
+                virtual_last_root_offset.count,
+                last_root_offset.offset,
+                slow_offset.id,
+                virtual_slow_offset.count,
+                slow_offset.offset);
+        }
+        else {
+            MONAD_ABORT_PRINTF(
+                "Detected corruption. Last root offset is in free list.");
         }
     }
 
@@ -726,9 +747,21 @@ void UpdateAuxImpl::set_io(
             MONAD_ASSERT(chunk->size() == 0); // chunks must actually be free
             chunks.push_back(n);
         }
-#if !MONAD_MPT_INITIALIZE_POOL_WITH_CONSECUTIVE_CHUNKS
+
+#if MONAD_MPT_INITIALIZE_POOL_WITH_REVERSE_ORDER_CHUNKS
+        std::reverse(chunks.begin(), chunks.end());
+        LOG_INFO_CFORMAT(
+            "Initialize db pool with %zu chunks in reverse order.",
+            chunk_count);
+#elif MONAD_MPT_INITIALIZE_POOL_WITH_RANDOM_SHUFFLED_CHUNKS
+        LOG_INFO_CFORMAT(
+            "Initialize db pool with %zu chunks in random order.", chunk_count);
         small_prng rand;
         random_shuffle(chunks.begin(), chunks.end(), rand);
+#else
+        LOG_INFO_CFORMAT(
+            "Initialize db pool with %zu chunks in increasing order.",
+            chunk_count);
 #endif
         auto append_with_insertion_count_override = [&](chunk_list list,
                                                         uint32_t id) {
@@ -754,9 +787,13 @@ void UpdateAuxImpl::set_io(
         // root offset is the front of fast list
         chunk_offset_t const fast_offset(chunks.front(), 0);
         append_with_insertion_count_override(chunk_list::fast, fast_offset.id);
+        LOG_DEBUG_CFORMAT(
+            "Append one chunk to fast list, id: %d", fast_offset.id);
         // init the first slow chunk and slow_offset
         chunk_offset_t const slow_offset(chunks[1], 0);
         append_with_insertion_count_override(chunk_list::slow, slow_offset.id);
+        LOG_DEBUG_CFORMAT(
+            "Append one chunk to slow list, id: %d", slow_offset.id);
         std::span const chunks_after_second(
             chunks.data() + 2, chunks.size() - 2);
         // insert the rest of the chunks to free list

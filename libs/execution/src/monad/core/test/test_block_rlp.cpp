@@ -1142,6 +1142,9 @@ TEST(Rlp_Block, MonadConsensusBlock)
     // header
     auto const res = rlp::decode_consensus_block_header(encoded_header);
     EXPECT_FALSE(res.has_error());
+    EXPECT_EQ(
+        to_byte_string_view(header),
+        rlp::encode_consensus_block_header(res.value()));
 
     auto const &consensus_header = res.value();
     auto const &vote = consensus_header.qc.vote;

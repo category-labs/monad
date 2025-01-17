@@ -12,6 +12,72 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
+byte_string encode_execution_inputs(BlockHeader const &header)
+{
+    byte_string encoded_inputs;
+    encoded_inputs += encode_bytes32(header.ommers_hash);
+    encoded_inputs += encode_address(header.beneficiary);
+    encoded_inputs += encode_bytes32(header.transactions_root);
+    encoded_inputs += encode_unsigned(header.difficulty);
+    encoded_inputs += encode_unsigned(header.number);
+    encoded_inputs += encode_unsigned(header.gas_limit);
+    encoded_inputs += encode_unsigned(header.timestamp);
+    encoded_inputs += encode_string2(header.extra_data);
+    encoded_inputs += encode_bytes32(header.prev_randao);
+    encoded_inputs += encode_string2(to_byte_string_view(header.nonce));
+    encoded_inputs += encode_unsigned(header.base_fee_per_gas.value_or(0u));
+    encoded_inputs +=
+        encode_bytes32(header.withdrawals_root.value_or(bytes32_t{}));
+    encoded_inputs += encode_unsigned(header.blob_gas_used.value_or(0u));
+    encoded_inputs += encode_unsigned(header.excess_blob_gas.value_or(0u));
+    encoded_inputs +=
+        encode_bytes32(header.parent_beacon_block_root.value_or(bytes32_t{}));
+    return encode_list2(encoded_inputs);
+}
+
+byte_string encode_quorum_certificate(MonadQuorumCertificate const &qc)
+{
+    byte_string vote_encoded;
+    vote_encoded += encode_bytes32(qc.vote.id);
+    vote_encoded += encode_unsigned(qc.vote.round);
+    vote_encoded += encode_unsigned(qc.vote.epoch);
+    vote_encoded += encode_bytes32(qc.vote.parent_id);
+    vote_encoded += encode_unsigned(qc.vote.parent_round);
+
+    byte_string signatures_encoded;
+    signatures_encoded += encode_list2(
+        encode_unsigned(qc.signatures.signer_map.num_bits),
+        encode_string2(qc.signatures.signer_map.bitmap));
+    signatures_encoded +=
+        encode_string2(to_byte_string_view(qc.signatures.aggregate_signature));
+
+    return encode_list2(
+        encode_list2(vote_encoded), encode_list2(signatures_encoded));
+}
+
+byte_string encode_consensus_block_header(MonadConsensusBlockHeader const &header)
+{
+    byte_string encoded_header;
+    encoded_header += encode_unsigned(header.round);
+    encoded_header += encode_unsigned(header.epoch);
+    encoded_header += encode_quorum_certificate(header.qc);
+    encoded_header += encode_string2(to_byte_string_view(header.author));
+    encoded_header += encode_unsigned(header.seqno);
+    encoded_header += encode_unsigned(header.timestamp_ns);
+    encoded_header +=
+        encode_string2(to_byte_string_view(header.round_signature));
+
+    byte_string encoded_delayed_execution_results;
+    for (auto const &res : header.delayed_execution_results) {
+        encoded_delayed_execution_results += encode_block_header(res);
+    }
+    encoded_header += encode_list2(encoded_delayed_execution_results);
+
+    encoded_header += encode_execution_inputs(header.execution_inputs);
+    encoded_header += encode_bytes32(header.block_body_id);
+    return encode_list2(encoded_header);
+}
+
 Result<BlockHeader> decode_execution_inputs(byte_string_view &enc)
 {
     BlockHeader block_header;

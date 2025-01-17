@@ -25,38 +25,27 @@ enum monad_event_poll_result
     MONAD_EVENT_PAYLOAD_EXPIRED
 };
 
-/*
- * Zero-copy style APIs
- */
-
-/// Obtain a pointer to the next event descriptor in a zero-copy fashion,
-/// if one is available
-static enum monad_event_poll_result monad_event_iterator_peek(
-    struct monad_event_iterator *, struct monad_event_descriptor const **);
-
-/// Advance to the next event, returning true only if the consumed event was
-/// still valid immediately before advancing past it. Note that if false is
-/// returned, a gap has already occurred, or is almost certainly about to occur
-static bool monad_event_iterator_advance(struct monad_event_iterator *);
-
-/// Obtain a pointer to the event's payload in shared memory in a zero-copy
-/// fashion; this never returns nullptr, even if the payload has expired; to
-/// check for expiration, call monad_event_payload_check
-static void const *monad_event_payload_peek(
-    struct monad_event_iterator const *, struct monad_event_descriptor const *);
-
-static bool monad_event_payload_check(
-    struct monad_event_iterator const *, struct monad_event_descriptor const *);
-
-/*
- * Copy-style APIs
- */
+/// Copies the next event descriptor and advances the iterator, if the next
+/// event is available and there is no sequence number gap; otherwise returns a
+/// code indicating why no event descriptor was copied
+static enum monad_event_poll_result monad_event_iterator_try_next(
+    struct monad_event_iterator *, struct monad_event_descriptor *);
 
 /// Copies both the event descriptor and payload to the provided buffers and
 /// advances to the next event if both copies are successful.
-static enum monad_event_poll_result monad_event_iterator_copy_next(
+static enum monad_event_poll_result monad_event_iterator_try_full(
     struct monad_event_iterator *, struct monad_event_descriptor *,
     void *payload_buf, size_t payload_buf_size);
+
+/// Obtain a pointer to the event's payload in shared memory in a zero-copy
+/// fashion; to check for expiration, call monad_event_payload_check
+static void const *monad_event_payload_peek(
+    struct monad_event_iterator const *, struct monad_event_descriptor const *);
+
+/// Returns true if the event payload associated with the given event
+/// descriptor is still valid; returns false if it has been overwritten
+static bool monad_event_payload_check(
+    struct monad_event_iterator const *, struct monad_event_descriptor const *);
 
 /// Copy the event payload from shared memory into the supplied buffer, up to
 /// `n` bytes; the total size required for an event is available using the
@@ -65,10 +54,6 @@ static enum monad_event_poll_result monad_event_iterator_copy_next(
 static void *monad_event_payload_memcpy(
     struct monad_event_iterator const *, struct monad_event_descriptor const *,
     void *dst, size_t n);
-
-/*
- * Other iterator APIs
- */
 
 /// Reset the iterator to point to the latest event produced; used to set the
 /// initial iteration point of an open ring, and for "hard" gap recovery

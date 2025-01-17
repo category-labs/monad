@@ -60,6 +60,7 @@ class txn_header(ctypes.Structure):
     ('gas_limit', ctypes.c_uint64),
     ('max_fee_per_gas', uint256_ne),
     ('value', uint256_ne),
+    ('from', address),
     ('to', address),
     ('txn_type', transaction_type),
     ('r', uint256_ne),

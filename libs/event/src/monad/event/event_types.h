@@ -13,9 +13,10 @@
 
 #include <stdint.h>
 
+// clang-format off
 #ifdef __cplusplus
 
-    #include <string.h>
+#include <string.h>
 
 struct evmc_address;
 struct evmc_bytes32;
@@ -23,8 +24,6 @@ struct evmc_bytes32;
 extern "C"
 {
 #endif
-
-// clang-format off
 
 typedef struct monad_event_address
 {
@@ -142,6 +141,7 @@ struct monad_event_txn_header
     uint64_t gas_limit;
     monad_event_uint256_ne max_fee_per_gas;
     monad_event_uint256_ne value;
+    monad_event_address from;
     monad_event_address to;
     uint8_t txn_type;
     monad_event_uint256_ne r;
@@ -190,4 +190,6 @@ struct monad_event_account_storage
 
 #ifdef __cplusplus
 } // extern "C"
+
+// clang-format on
 #endif

@@ -103,6 +103,7 @@ struct monad_event_txn_header
     uint64_t gas_limit;
     monad_event_uint256_ne max_fee_per_gas;
     monad_event_uint256_ne value;
+    monad_event_address from;
     monad_event_address to;
     uint8_t txn_type;
     monad_event_uint256_ne r;

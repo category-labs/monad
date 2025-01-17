@@ -28,6 +28,7 @@ HEADER_PROLOGUE = \
 
 #include <stdint.h>
 
+// clang-format off
 #ifdef __cplusplus
 
 #include <string.h>
@@ -38,8 +39,6 @@ struct evmc_bytes32;
 extern "C"
 {{
 #endif
-
-// clang-format off
 
 typedef struct monad_event_address
 {{
@@ -84,6 +83,8 @@ typedef struct monad_event_uint256_ne
 HEADER_EPILOGUE = \
 """#ifdef __cplusplus
 } // extern "C"
+
+// clang-format on
 #endif"""
 
 TypeMap = {

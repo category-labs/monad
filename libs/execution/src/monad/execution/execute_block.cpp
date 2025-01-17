@@ -52,7 +52,9 @@ extern "C" uint32_t monad_event_get_txn_num()
                : 0;
 }
 
-static size_t init_txn_header_iovec(Transaction const &txn, iovec (&iov)[2])
+static size_t init_txn_header_iovec(
+    Transaction const &txn, std::optional<Address> const &opt_sender,
+    iovec (&iov)[2])
 {
     size_t iovlen = 1;
     auto *const header = static_cast<monad_event_txn_header *>(iov[0].iov_base);
@@ -61,6 +63,7 @@ static size_t init_txn_header_iovec(Transaction const &txn, iovec (&iov)[2])
     header->max_fee_per_gas =
         *std::bit_cast<evmc_bytes32 const *>(as_bytes(txn.max_fee_per_gas));
     header->value = *std::bit_cast<evmc_bytes32 const *>(as_bytes(txn.value));
+    header->from = opt_sender ? *opt_sender : Address{};
     header->to = txn.to ? *txn.to : Address{};
     header->txn_type = static_cast<uint8_t>(txn.type);
     header->r = *std::bit_cast<evmc_bytes32 const *>(as_bytes(txn.sc.r));
@@ -222,7 +225,8 @@ Result<std::vector<ExecutionResult>> execute_block(
                 iovec iov[2] = {
                     {.iov_base = &txn_header, .iov_len = sizeof txn_header},
                 };
-                size_t const iovlen = init_txn_header_iovec(transaction, iov);
+                size_t const iovlen =
+                    init_txn_header_iovec(transaction, senders[i], iov);
                 g_fss_txn_num.reset(new uint32_t{i});
                 MONAD_EVENT_IOV(MONAD_EVENT_TXN_START, 0, iov, iovlen);
                 g_fss_txn_num.release();

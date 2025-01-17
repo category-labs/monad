@@ -16,6 +16,8 @@
 #include <monad/mpt/detail/kbhit.hpp>
 #include <monad/mpt/trie.hpp>
 
+#include <quill/Quill.h>
+
 #include <algorithm>
 #include <atomic>
 #include <bit>
@@ -1414,6 +1416,8 @@ opened.
                 std::vector<std::string> rargs(args.rbegin(), --args.rend());
                 cli.parse(std::move(rargs));
             }
+
+            quill::start(true);
 
             auto mode =
                 MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing;

@@ -58,6 +58,10 @@ pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 # cli11
 find_package(CLI11 REQUIRED)
 
+# compiler
+set(MONAD_COMPILER_STANDALONE OFF)
+add_subdirectory("third_party/compiler")
+
 # intx
 add_subdirectory(third_party/intx)
 
@@ -96,9 +100,6 @@ find_package(TBB REQUIRED)
 add_library(thread_safe_lru INTERFACE)
 target_include_directories(thread_safe_lru
                            INTERFACE "third_party/thread-safe-lru")
-
-set(MONAD_COMPILER_STANDALONE OFF)
-add_subdirectory("third_party/compiler")
 
 # ##############################################################################
 # unit tests

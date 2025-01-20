@@ -1,3 +1,6 @@
+[submodule "third_party/compiler"]
+	path = third_party/compiler
+	url = git@github.com:category-labs/monad-compiler.git
 [submodule "third_party/ethereum-tests"]
 	path = third_party/ethereum-tests
 	url = https://github.com/ethereum/tests
@@ -41,6 +44,3 @@
 [submodule "libs/runloop/third_party/binutils-gdb"]
 	path = libs/runloop/third_party/binutils-gdb
 	url = git@github.com:category-labs/binutils-gdb.git
-[submodule "third_party/compiler"]
-	path = third_party/compiler
-	url = git@github.com:category-labs/monad-compiler.git

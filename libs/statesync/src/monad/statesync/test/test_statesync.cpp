@@ -207,6 +207,10 @@ TEST_F(StateSyncFixture, sync_from_latest)
                 keccak256(rlp::encode_block_header(tdb.read_eth_header())));
         }
         load_db(tdb, N);
+        // commit some proposal to client db
+        tdb.set_block_and_round(N);
+        tdb.commit(
+            {}, {}, BlockHeader{.number = N + 1}, {}, {}, {}, {}, {}, N + 1);
         init();
     }
     handle_target(
@@ -275,6 +279,9 @@ TEST_F(StateSyncFixture, sync_from_some)
             machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
         read_genesis(genesis, tdb);
+        // commit some proposal to client db
+        tdb.commit({}, {}, BlockHeader{.number = 1}, {}, {}, {}, {}, {}, 0);
+
         read_genesis(genesis, stdb);
         init();
     }
@@ -692,6 +699,46 @@ TEST_F(StateSyncFixture, sync_empty)
     init();
     handle_target(cctx, BlockHeader{.parent_hash = parent_hash, .number = N});
     run();
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+}
+
+TEST_F(StateSyncFixture, sync_client_has_proposals)
+{
+    {
+        // init client DB
+        OnDiskMachine machine;
+        mpt::Db db{
+            machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+        TrieDb tdb{db};
+        load_header(db, BlockHeader{.number = 0});
+        for (uint64_t n = 1; n <= 249; ++n) {
+            tdb.commit({}, {}, BlockHeader{.number = n}, {}, {}, {}, {}, {}, n);
+        }
+    }
+
+    constexpr auto N = 300;
+    bytes32_t parent_hash{NULL_HASH};
+    {
+        // init server db
+        load_header(sdb, BlockHeader{.number = N - 257});
+        for (size_t i = N - 256; i < N; ++i) {
+            BlockHeader const hdr{.parent_hash = parent_hash, .number = i};
+            stdb.set_block_and_round(i - 1);
+            stdb.commit({}, {}, hdr);
+            parent_hash = to_bytes(
+                keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+        }
+        load_db(stdb, N);
+        init();
+    }
+    BlockHeader const tgrt{
+        .parent_hash = parent_hash,
+        .state_root =
+            0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32,
+        .number = N};
+    handle_target(cctx, tgrt);
+    run();
+    EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 }
 

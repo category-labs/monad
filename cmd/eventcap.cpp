@@ -180,7 +180,7 @@ static void follow_thread_main(
             // TODO(ken): if we actually had more than one ring, would need
             //   to set this on the right one. In practice it's only used
             //   for debugging tasks starting from zero.
-            iters.back().last_seqno = *start_seqno;
+            iters.back().read_last_seqno = *start_seqno;
         }
     }
     while (g_should_exit == 0) {
@@ -199,12 +199,12 @@ static void follow_thread_main(
                 fprintf(
                     out,
                     "event gap from %lu -> %lu, resetting\n",
-                    iter.last_seqno,
+                    iter.read_last_seqno,
                     event.seqno);
                 monad_event_iterator_reset(&iter);
                 continue;
 
-            case MONAD_EVENT_READY:
+            case MONAD_EVENT_SUCCESS:
                 break; // Handled in the main loop body
 
             case MONAD_EVENT_PAYLOAD_EXPIRED:

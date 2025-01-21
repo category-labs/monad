@@ -92,10 +92,10 @@ Done:
 }
 
 static int
-map_descriptor_table(struct monad_event_ring *ring, struct msghdr const *mhdr)
+map_descriptor_array(struct monad_event_ring *ring, struct msghdr const *mhdr)
 {
     int saved_error;
-    int descriptor_table_fd;
+    int descriptor_array_fd;
     struct cmsghdr const *cmsg = CMSG_FIRSTHDR(mhdr);
     struct monad_event_export_success_msg const *const msg =
         mhdr->msg_iov[0].iov_base;
@@ -108,22 +108,22 @@ map_descriptor_table(struct monad_event_ring *ring, struct msghdr const *mhdr)
             "expected MAP_DESCRIPTOR_TABLE message to "
             "carry a memfd descriptor");
     }
-    descriptor_table_fd = *(int *)CMSG_DATA(cmsg);
-    ring->descriptor_table = mmap(
+    descriptor_array_fd = *(int *)CMSG_DATA(cmsg);
+    ring->descriptors = mmap(
         nullptr,
         desc_table_map_len,
         PROT_READ,
         MAP_SHARED | MAP_HUGETLB | MAP_POPULATE,
-        descriptor_table_fd,
+        descriptor_array_fd,
         0);
-    if (ring->descriptor_table == MAP_FAILED) {
-        saved_error = format_errc(errno, "unable to map ring descriptor table");
+    if (ring->descriptors == MAP_FAILED) {
+        saved_error = format_errc(errno, "unable to map ring descriptor array");
         goto Done;
     }
     saved_error = 0;
 
 Done:
-    (void)close(descriptor_table_fd);
+    (void)close(descriptor_array_fd);
     return saved_error;
 }
 
@@ -389,8 +389,8 @@ static int import_ring(struct monad_event_imported_ring *import)
     //   MONAD_EVENT_MSG_MAP_RING_CONTROL - file descriptor of the event ring
     //       control page segment
     //
-    //   MONAD_EVENT_MSG_MAP_DESCRIPTOR_TABLE - file descriptor of the event
-    //       descriptor table
+    //   MONAD_EVENT_MSG_MAP_DESCRIPTOR_ARRAY - file descriptor of the event
+    //       descriptor array
     //
     //   MONAD_EVENT_MSG_MAP_PAYLOAD_BUFFER - file descriptor of the payload
     //       buffer
@@ -426,8 +426,8 @@ static int import_ring(struct monad_event_imported_ring *import)
             }
             break;
 
-        case MONAD_EVENT_MSG_MAP_DESCRIPTOR_TABLE:
-            if ((rc = map_descriptor_table(&import->ring, &mhdr)) != 0) {
+        case MONAD_EVENT_MSG_MAP_DESCRIPTOR_ARRAY:
+            if ((rc = map_descriptor_array(&import->ring, &mhdr)) != 0) {
                 return rc;
             }
             break;
@@ -543,10 +543,10 @@ static void cleanup_imported_ring(struct monad_event_imported_ring *import)
     if (ring->control != nullptr) {
         munmap(ring->control, (size_t)getpagesize());
     }
-    if (ring->descriptor_table != nullptr) {
+    if (ring->descriptors != nullptr) {
         size_t const map_len =
             ring->capacity * sizeof(struct monad_event_descriptor);
-        munmap(ring->descriptor_table, map_len);
+        munmap(ring->descriptors, map_len);
     }
     if (ring->payload_buf != nullptr) {
         munmap(
@@ -829,11 +829,11 @@ int monad_event_imported_ring_init_iter(
         return format_errc(
             EOWNERDEAD, "imported ring %p was already freed", import);
     }
-    iter->desc_table = import->ring.descriptor_table;
+    iter->descriptors = import->ring.descriptors;
+    iter->capacity_mask = import->ring.capacity - 1;
     iter->payload_buf = import->ring.payload_buf;
     iter->payload_buf_size = import->ring.payload_buf_size;
-    iter->capacity_mask = import->ring.capacity - 1;
-    iter->wr_state = &import->ring.control->wr_state;
+    iter->write_last_seqno = &import->ring.control->wr_state.last_seqno;
     iter->buffer_window_start = &import->ring.control->buffer_window_start;
     (void)monad_event_iterator_reset(iter);
     return 0;

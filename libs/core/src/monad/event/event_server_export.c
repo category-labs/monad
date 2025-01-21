@@ -186,9 +186,9 @@ static bool export_recorder_ring(
     }
     ++*nmsgs;
 
-    // Export the descriptor table file descriptor
-    msg.msg_type = MONAD_EVENT_MSG_MAP_DESCRIPTOR_TABLE;
-    *(int *)CMSG_DATA(&cmsg.hdr) = recorder->event_ring_fds.descriptor_table_fd;
+    // Export the descriptor array file descriptor
+    msg.msg_type = MONAD_EVENT_MSG_MAP_DESCRIPTOR_ARRAY;
+    *(int *)CMSG_DATA(&cmsg.hdr) = recorder->event_ring_fds.descriptor_array_fd;
 
     if (sendmsg(sock_fd, &mhdr, 0) == -1) {
         MONAD_SPINLOCK_UNLOCK(&recorder->lock);

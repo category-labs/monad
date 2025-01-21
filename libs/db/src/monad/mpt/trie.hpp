@@ -721,6 +721,7 @@ public:
     // data.
     void rewind_to_match_offsets();
     void rewind_to_version(uint64_t version);
+    void clear_ondisk_db();
 
     void set_initial_insertion_count_unit_testing_only(uint32_t count)
     {

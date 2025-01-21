@@ -24,15 +24,27 @@ TEST_F(RewindTest, works)
     std::cout << "DB is at " << path << ". Closing DB ..." << std::endl;
     auto &aux = this->state()->aux;
     auto &io = this->state()->io;
+    auto const max_version = aux.db_history_max_version();
+    aux.set_latest_finalized_version(max_version);
+    aux.set_latest_verified_version(max_version);
     aux.unset_io();
     std::cout << "Reopening DB ..." << std::endl;
     aux.set_io(&io, 20000);
+    std::cout << "Rewinding DB to latest version " << max_version << "..."
+              << std::endl;
+    aux.rewind_to_version(max_version);
+    EXPECT_TRUE(aux.version_is_valid_ondisk(max_version));
+    EXPECT_EQ(aux.get_latest_finalized_version(), max_version);
+    EXPECT_EQ(aux.get_latest_verified_version(), max_version);
+
     std::cout << "Rewinding DB to 9990 ..." << std::endl;
     aux.rewind_to_version(9990);
     std::cout << "\nAfter rewind to 9990:\n";
     this->state()->print(std::cout);
     EXPECT_EQ(0, aux.db_history_min_valid_version());
     EXPECT_EQ(9990, aux.db_history_max_version());
+    EXPECT_EQ(9990, aux.get_latest_finalized_version());
+    EXPECT_EQ(9990, aux.get_latest_verified_version());
     std::cout << "\nClosing DB ..." << std::endl;
     aux.unset_io();
     std::cout
@@ -41,6 +53,9 @@ TEST_F(RewindTest, works)
     aux.set_io(&io);
     EXPECT_EQ(0, aux.db_history_min_valid_version());
     EXPECT_EQ(9990, aux.db_history_max_version());
+    // rewind to latest is noop
+    EXPECT_EQ(9990, aux.get_latest_finalized_version());
+    EXPECT_EQ(9990, aux.get_latest_verified_version());
     aux.unset_io();
     std::cout << "Setting max history to 9000 and reopening ..." << std::endl;
     aux.set_io(&io, 9000);
@@ -56,6 +71,20 @@ TEST_F(RewindTest, works)
     aux.rewind_to_version(991);
     EXPECT_EQ(991, aux.db_history_min_valid_version());
     EXPECT_EQ(991, aux.db_history_max_version());
+    EXPECT_EQ(991, aux.get_latest_finalized_version());
+    EXPECT_EQ(991, aux.get_latest_verified_version());
+}
+
+TEST_F(RewindTest, clear_db)
+{
+    auto &aux = this->state()->aux;
+    aux.clear_ondisk_db();
+    EXPECT_EQ(monad::mpt::INVALID_BLOCK_ID, aux.db_history_min_valid_version());
+    EXPECT_EQ(monad::mpt::INVALID_BLOCK_ID, aux.db_history_max_version());
+    EXPECT_EQ(
+        aux.db_metadata()->fast_list.begin, aux.db_metadata()->fast_list.end);
+    EXPECT_EQ(
+        aux.db_metadata()->slow_list.begin, aux.db_metadata()->slow_list.end);
 }
 
 struct RewindTestFillOne

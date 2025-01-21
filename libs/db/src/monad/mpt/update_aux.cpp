@@ -388,25 +388,47 @@ void UpdateAuxImpl::rewind_to_match_offsets()
     reset_node_writers();
 }
 
-void UpdateAuxImpl::rewind_to_version(uint64_t const version)
+void UpdateAuxImpl::clear_ondisk_db()
 {
-    MONAD_ASSERT(version_is_valid_ondisk(version));
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
         auto g = m->hold_dirty();
-        root_offsets(m == db_metadata_[1].main).rewind_to_version(version);
-        if (auto const latest_finalized = get_latest_finalized_version();
-            latest_finalized != INVALID_BLOCK_ID &&
-            latest_finalized > version) {
-            set_latest_finalized_version(version);
-        }
-        if (auto const latest_verified = get_latest_verified_version();
-            latest_verified != INVALID_BLOCK_ID && latest_verified > version) {
-            set_latest_verified_version(version);
-        }
+        root_offsets(m == db_metadata_[1].main).reset_all(0);
     };
     do_(db_metadata_[0].main);
     do_(db_metadata_[1].main);
+    set_latest_finalized_version(INVALID_BLOCK_ID);
+    set_latest_verified_version(INVALID_BLOCK_ID);
+    set_auto_expire_version_metadata(0);
+
+    advance_db_offsets_to(
+        {db_metadata()->fast_list.begin, 0},
+        {db_metadata()->slow_list.begin, 0});
+    rewind_to_match_offsets();
+    return;
+}
+
+void UpdateAuxImpl::rewind_to_version(uint64_t const version)
+{
+    MONAD_ASSERT(is_on_disk());
+    MONAD_ASSERT(version_is_valid_ondisk(version));
+    if (version == db_history_max_version()) {
+        return;
+    }
+    auto do_ = [&](detail::db_metadata *m) {
+        auto g = m->hold_dirty();
+        root_offsets(m == db_metadata_[1].main).rewind_to_version(version);
+    };
+    do_(db_metadata_[0].main);
+    do_(db_metadata_[1].main);
+    if (auto const latest_finalized = get_latest_finalized_version();
+        latest_finalized != INVALID_BLOCK_ID && latest_finalized > version) {
+        set_latest_finalized_version(version);
+    }
+    if (auto const latest_verified = get_latest_verified_version();
+        latest_verified != INVALID_BLOCK_ID && latest_verified > version) {
+        set_latest_verified_version(version);
+    }
     auto last_written_offset = root_offsets()[version];
     bool const last_written_offset_is_in_fast_list =
         db_metadata()->at(last_written_offset.id)->in_fast_list;

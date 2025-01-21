@@ -22,12 +22,13 @@ monad_statesync_client_context::monad_statesync_client_context(
          mpt::OnDiskDbConfig{
              .append = true,
              .compaction = false,
+             .rewind_to_latest_finalized = true,
              .rd_buffers = 8192,
              .wr_buffers = 32,
              .uring_entries = 128,
              .sq_thread_cpu = get_nprocs() - 1,
              .dbname_paths = dbname_paths}}
-    , tdb{db}
+    , tdb{db} // open with latest finalized if valid, otherwise init as block 0
     , progress(
           monad_statesync_client_prefixes(),
           {db.get_latest_block_id(), db.get_latest_block_id()})

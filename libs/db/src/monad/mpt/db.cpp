@@ -661,6 +661,16 @@ struct Db::RWOnDisk final : public Db::Impl
                 aux_.~UpdateAux<>();
                 new (&aux_)
                     UpdateAux<>{&worker_->io, options.fixed_history_length};
+                if (options.rewind_to_latest_finalized) {
+                    auto const latest_block_id =
+                        aux_.get_latest_finalized_version();
+                    if (latest_block_id == INVALID_BLOCK_ID) {
+                        aux_.clear_ondisk_db();
+                    }
+                    else {
+                        aux_.rewind_to_version(latest_block_id);
+                    }
+                }
             }
             worker_->run();
             std::unique_lock const g(lock_);

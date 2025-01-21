@@ -6,11 +6,11 @@
  * Event recorder interface. There are four things in this file:
  *
  *   1. The macros and functions used for recording events and taking
- *      timestamps. These are needed by any file that wishes to record events.
+ *      timestamps. These are needed by any file that wishes to record events
  *
  *   2. The initialization function to configure the recorders -- setting
- *      the amount of memory for the recorder descriptor table and payload
- *      buffer -- and a function to enable/disable a recorder gracefully
+ *      the amount of memory for the recorder's event descriptor array and
+ *      payload buffer -- and a function to enable/disable a recorder
  *
  *   3. Minimum, maximum, and default values for various memory configuration
  *      options
@@ -36,12 +36,11 @@ struct monad_event_iterator;
 /// macros; the typical value is zero, i.e., no special behavior
 enum monad_event_flags : uint8_t
 {
-    MONAD_EVENT_POP_SCOPE = 0b1 ///< Set pop_scope=1 in descriptor (for tracer)
+    MONAD_EVENT_POP_SCOPE = 0b1 ///< Set pop_scope in descriptor (for tracer)
 };
 
-/// Record an event with the given type and flags, whose event payload is
-/// described by the given (PTR, SIZE) pair that will be memcpy'ed to the
-/// payload buffer
+/// Record an event with the given type and flags to the execution ring; the
+/// event payload is described by the given (PTR, SIZE) pair
 #define MONAD_EVENT_MEMCPY(EVENT_TYPE, FLAGS, PTR, SIZE)                       \
     monad_event_record(                                                        \
         &g_monad_event_recorders[MONAD_EVENT_RING_EXEC],                       \
@@ -50,14 +49,14 @@ enum monad_event_flags : uint8_t
         (PTR),                                                                 \
         (SIZE))
 
-/// Record an event with the given type and flags, whose event payload is
-/// described by the given l-value expression
+/// Record an event with the given type and flags to the execution ring; the
+/// event payload is described by the given l-value expression
 #define MONAD_EVENT_EXPR(EVENT_TYPE, FLAGS, LEXPR)                             \
     MONAD_EVENT_MEMCPY((EVENT_TYPE), (FLAGS), &(LEXPR), sizeof(LEXPR))
 
-/// Record an event  with the given type and flags, whose event payload is
-/// described by given `struct iovec` array (as an iovec pointer and length
-/// pair)
+/// Record an event with the given type and flags to the execution ring; the
+/// event payload is described by the given `struct iovec` array (as an iovec
+/// pointer and length pair)
 #define MONAD_EVENT_IOV(EVENT_TYPE, FLAGS, IOV, IOVLEN)                        \
     monad_event_recordv(                                                       \
         &g_monad_event_recorders[MONAD_EVENT_RING_EXEC],                       \
@@ -66,7 +65,7 @@ enum monad_event_flags : uint8_t
         (IOV),                                                                 \
         (IOVLEN))
 
-/// Record an event with an empty payload
+/// Record an event with an empty payload to the execution ring
 #define MONAD_EVENT(EVENT_TYPE, FLAGS)                                         \
     MONAD_EVENT_MEMCPY((EVENT_TYPE), (FLAGS), nullptr, 0)
 
@@ -90,18 +89,19 @@ char const *monad_event_recorder_get_last_error();
 /// Take a timestamp, in nanoseconds since the UNIX epoch
 static uint64_t monad_event_get_epoch_nanos();
 
-/// Take a timestamp, using a clock known to the recording infrastructure;
-/// it will be translated to epoch nanos before being seen by consumers
+/// Take a timestamp, using the best available performance clock; this clock
+/// might not directly measure nanoseconds, e.g., it may be a cycle counter
+/// that needs subsequent conversion
 static uint64_t monad_event_timestamp();
 
-/// Record an event; usually invoked via the `MONAD_EVENT_` or `MONAD_TRACE_`
-/// family of macros
+/// Record an event; this function is not usually called directly, but via the
+/// `MONAD_EVENT_` or `MONAD_TRACE_` family of recording macros
 static void monad_event_record(
     struct monad_event_recorder *recorder, enum monad_event_type event_type,
     uint8_t flags, void const *payload, size_t payload_size);
 
-/// Record an event with "gather I/O", similar to writev(2); usually invoked
-/// via the `MONAD_EVENT_IOV` or `MONAD_TRACE_IOV` macros
+/// Record an event with "gather I/O", similar to writev(2); usually called by
+/// the `MONAD_EVENT_IOV` or `MONAD_TRACE_IOV` macros
 static void monad_event_recordv(
     struct monad_event_recorder *recorder, enum monad_event_type event_type,
     uint8_t flags, struct iovec const *iov, size_t iovlen);
@@ -126,8 +126,8 @@ monad_event_recorder_end_block(struct monad_event_block_exec_result const *);
 int monad_event_recorder_export_metadata_section(
     enum monad_event_metadata_type, uint32_t *offset);
 
-/// Initialize an event reader that runs in the same process as the recorder;
-/// external processes use a special library, see libs/event/event.md
+/// Initialize an event iterator in the same process as the recorder; external
+/// processes use a special library to obtain iterators, see libs/event/event.md
 int monad_event_init_local_iterator(
     enum monad_event_ring_type, struct monad_event_iterator *);
 

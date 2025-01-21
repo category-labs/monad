@@ -38,7 +38,7 @@ monad_round_size_to_align(size_t size, size_t align)
 struct monad_event_ring_fds
 {
     int control_fd;
-    int descriptor_table_fd;
+    int descriptor_array_fd;
     int payload_buf_fd;
 };
 
@@ -207,7 +207,7 @@ static inline bool _monad_event_xchg_wr_state(
 
 #endif
 
-// Reserve a slot in the descriptor table to hold a new event; this allocates
+// Reserve a slot in the descriptor array to hold a new event; this allocates
 // a sequence number for the event and space in the payload buffer for its
 // payload
 static inline struct monad_event_descriptor *_monad_event_ring_reserve(
@@ -241,8 +241,9 @@ TryAgain:
     // sequence number to zero, in case this slot is occupied by an older event
     // and that older event is currently being examined by a reading thread.
     // This ensures the reader can always detect that fields are invalidated.
-    event = &event_ring->descriptor_table
-                 [cur_state.last_seqno & (event_ring->capacity - 1)];
+    event =
+        &event_ring
+             ->descriptors[cur_state.last_seqno & (event_ring->capacity - 1)];
     __atomic_store_n(&event->seqno, 0, __ATOMIC_RELEASE);
     payload_end = cur_state.next_payload_byte;
     buffer_window_start = __atomic_load_n(

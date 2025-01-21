@@ -257,12 +257,12 @@ event_loop(struct monad_event_imported_ring const *import, FILE *out)
             fprintf(
                 stderr,
                 "event gap from %lu -> %lu, resetting\n",
-                iter.last_seqno,
+                iter.read_last_seqno,
                 event.seqno);
             monad_event_iterator_reset(&iter);
             continue;
 
-        case MONAD_EVENT_READY:
+        case MONAD_EVENT_SUCCESS:
             break; // Handled in the main loop body
 
         case MONAD_EVENT_PAYLOAD_EXPIRED:

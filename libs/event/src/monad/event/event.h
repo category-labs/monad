@@ -3,10 +3,10 @@
 /**
  * @file
  *
- * Definitions of fundamental execution event objects shared between readers
- * and the transaction execution engine (the writer). Most of these structures
- * are resident in shared memory segments mapped by both the writer and
- * the readers.
+ * Definitions of fundamental event objects shared between readers and the
+ * writer (the transaction execution engine). Most of these structures are
+ * resident in shared memory segments mapped by both the writer and the
+ * readers.
  */
 
 #include <stddef.h>
@@ -33,19 +33,20 @@ enum monad_event_ring_type : uint8_t
 /// Size of a byte array needed to hold the largest possible event payload
 #define MONAD_EVENT_MAX_PAYLOAD_BUF_SIZE (1UL << 24)
 
-/// Descriptor for a single event; this fixed-size object is passed between
-/// threads via a shared memory ring buffer (the threads are potentially in
-/// different processes). The extra content of the (variably-sized) event is
-/// called the "event payload", and lives in a shared memory heap that can be
-/// accessed using this descriptor
+/// Descriptor for a single event; this fixed-size object describes the common
+/// attributes of an event, and is passed between threads via a shared memory
+/// ring buffer (the threads are potentially in different processes). The
+/// variably-sized extra content of the event (specific to each event type) is
+/// called the "event payload", and lives in a shared memory segment called the
+/// "payload buffer", which can be accessed using this descriptor
 struct monad_event_descriptor
 {
     alignas(64) uint64_t seqno;  ///< Sequence number, for gap/liveness check
     enum monad_event_type type;  ///< What kind of event this is
     uint16_t block_flow_id;      ///< ID representing block exec header
     uint8_t source_id;           ///< ID representing origin thread
-    bool pop_scope;              ///< Ends the trace scope of an event
-    bool inline_payload;         ///< True -> payload is stored inline
+    bool pop_scope;              ///< True -> ends the current trace scope
+    bool inline_payload;         ///< True -> payload stored inside descriptor
     uint8_t : 8;                 ///< Unused tail padding
     uint32_t length;             ///< Size of event payload
     uint32_t txn_num;            ///< Transaction number within block
@@ -59,26 +60,31 @@ struct monad_event_descriptor
 
 static_assert(sizeof(struct monad_event_descriptor) == 64);
 
-// clang-format on
-
-/// An IPC-style ring used to implement a lock-free MPMC ring for passing event
-/// descriptors between threads, potentially in different processes. This
-/// object is not directly present in shared memory, but the control page,
-/// descriptor table, and payload buffer are.
+/// Object that describes the event descriptor ring buffer, the event payload
+/// byte buffer, and the ring buffer control structure. This object is not
+/// directly present in shared memory, but all the pointer fields contain
+/// addresses of shared memory objects
 struct monad_event_ring
 {
-    struct monad_event_ring_control *control;
-    struct monad_event_descriptor *descriptor_table;
-    size_t capacity;
-    uint8_t *payload_buf;
-    size_t payload_buf_size;
+    struct monad_event_descriptor
+        *descriptors;                  ///< Event descriptor ring array
+    size_t capacity;                   ///< Size of `descriptors` array
+    uint8_t *payload_buf;              ///< Payload buffer start address
+    size_t payload_buf_size;           ///< Payload buffer size in bytes
+    struct monad_event_ring_control
+        *control;                      ///< Keeps track of ring state/status
 };
 
+/// Resource allocation within an event ring, i.e., the reserving of an event
+/// descriptor slot and payload buffer space to record an event, is tracked
+/// using this object
 struct monad_event_ring_writer_state
 {
-    alignas(16) uint64_t last_seqno;
-    uint64_t next_payload_byte;
+    alignas(16) uint64_t last_seqno; ///< Last sequence number allocated
+    uint64_t next_payload_byte;      ///< Next payload buffer byte to allocate
 };
+
+// clang-format on
 
 /// Control registers of the event ring, mapped in a shared memory page
 struct monad_event_ring_control

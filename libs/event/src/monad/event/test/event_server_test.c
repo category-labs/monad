@@ -237,7 +237,7 @@ static bool export_test_ring(
             continue;
         case MONAD_EVENT_MSG_MAP_RING_CONTROL:
             [[fallthrough]];
-        case MONAD_EVENT_MSG_MAP_DESCRIPTOR_TABLE:
+        case MONAD_EVENT_MSG_MAP_DESCRIPTOR_ARRAY:
             [[fallthrough]];
         case MONAD_EVENT_MSG_MAP_PAYLOAD_BUFFER:
             msg.metadata_type = MONAD_EVENT_METADATA_NONE;
@@ -340,7 +340,7 @@ int monad_event_test_server_create_from_bytes(
     while (segment->type != MONAD_EVENT_MSG_NONE) {
         ++test_context->segment_count;
         ++segment;
-        if (segment->type == MONAD_EVENT_MSG_MAP_DESCRIPTOR_TABLE) {
+        if (segment->type == MONAD_EVENT_MSG_MAP_DESCRIPTOR_ARRAY) {
             test_context->ring_capacity = segment->ring_capacity;
         }
     }

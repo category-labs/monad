@@ -163,7 +163,7 @@ static void wait_for_seqno(
     monad_event_imported_ring_init_iter(import, &iter);
 
     // Manually rewind to the beginning
-    iter.last_seqno = 0;
+    iter.read_last_seqno = 0;
     while (true) {
         monad_event_descriptor event;
         switch (monad_event_iterator_try_next(&iter, &event)) {
@@ -176,7 +176,7 @@ static void wait_for_seqno(
         case MONAD_EVENT_NOT_READY:
             continue;
 
-        case MONAD_EVENT_READY:
+        case MONAD_EVENT_SUCCESS:
             if (event.seqno >= last_seqno) {
                 kill(pid, SIGINT);
                 fprintf(
@@ -210,12 +210,12 @@ void export_shm_segments(monad_event_imported_ring *import, int fd)
         import->ring.control,
         static_cast<size_t>(getpagesize()));
 
-    // Write the descriptor table
-    segment.type = MONAD_EVENT_MSG_MAP_DESCRIPTOR_TABLE;
+    // Write the descriptor array
+    segment.type = MONAD_EVENT_MSG_MAP_DESCRIPTOR_ARRAY;
     save_mmap_region(
         &tfw,
         &segment,
-        import->ring.descriptor_table,
+        import->ring.descriptors,
         sizeof(struct monad_event_descriptor) * import->ring.capacity);
 
     // Write the payload buffer

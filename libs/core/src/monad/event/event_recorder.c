@@ -113,10 +113,10 @@ static void cleanup_event_ring(
         (void)close(fds->control_fd);
         fds->control_fd = -1;
     }
-    if (ring->descriptor_table != nullptr) {
-        munmap(ring->descriptor_table, desc_table_map_len);
-        (void)close(fds->descriptor_table_fd);
-        fds->descriptor_table_fd = -1;
+    if (ring->descriptors != nullptr) {
+        munmap(ring->descriptors, desc_table_map_len);
+        (void)close(fds->descriptor_array_fd);
+        fds->descriptor_array_fd = -1;
     }
     if (ring->payload_buf != nullptr) {
         munmap(
@@ -139,7 +139,7 @@ static int init_event_ring(
 
     memset(ring, 0, sizeof *ring);
     fds->control_fd = -1;
-    fds->descriptor_table_fd = -1;
+    fds->descriptor_array_fd = -1;
     fds->payload_buf_fd = -1;
 
     // Map the ring control structure (a single, minimum-sized VM page)
@@ -166,28 +166,28 @@ static int init_event_ring(
         goto Error;
     }
 
-    // Map the ring descriptor table
+    // Map the ring descriptor array
     ring->capacity = 1UL << ring_shift;
     MONAD_ASSERT(stdc_has_single_bit(ring->capacity));
     desc_table_map_len = ring->capacity * sizeof(struct monad_event_descriptor);
     snprintf(name, sizeof name, "evt_rdt:%d:%hhu", getpid(), ring_type);
-    fds->descriptor_table_fd = memfd_create(name, MFD_CLOEXEC | MFD_HUGETLB);
-    if (fds->descriptor_table_fd == -1) {
+    fds->descriptor_array_fd = memfd_create(name, MFD_CLOEXEC | MFD_HUGETLB);
+    if (fds->descriptor_array_fd == -1) {
         saved_error = FORMAT_ERRC(errno, "memfd_create(2) failed for %s", name);
         goto Error;
     }
-    if (ftruncate(fds->descriptor_table_fd, (off_t)desc_table_map_len) == -1) {
+    if (ftruncate(fds->descriptor_array_fd, (off_t)desc_table_map_len) == -1) {
         saved_error = FORMAT_ERRC(errno, "ftruncate(2) failed for %s", name);
         goto Error;
     }
-    ring->descriptor_table = mmap(
+    ring->descriptors = mmap(
         nullptr,
         desc_table_map_len,
         PROT_READ | PROT_WRITE,
         MAP_SHARED | MAP_HUGETLB | MAP_POPULATE,
-        fds->descriptor_table_fd,
+        fds->descriptor_array_fd,
         0);
-    if (ring->descriptor_table == MAP_FAILED) {
+    if (ring->descriptors == MAP_FAILED) {
         saved_error = FORMAT_ERRC(errno, "mmap(2) unable to map %s", name);
         goto Error;
     }
@@ -207,9 +207,9 @@ static int init_event_ring(
     }
 
     // First, reserve a single anonymous mapping whose size encompasses both
-    // the nominal size of the payload buffer table plus the size of the
-    // wrap-around large pages. We'll remap the memfd into this reserved range
-    // later, using MAP_FIXED.
+    // the nominal size of the payload buffer plus the size of the wrap-around
+    // large pages. We'll remap the memfd into this reserved range later, using
+    // MAP_FIXED.
     ring->payload_buf = mmap(
         nullptr,
         ring->payload_buf_size + MONAD_EVENT_MAX_PAYLOAD_BUF_SIZE,
@@ -237,13 +237,13 @@ static int init_event_ring(
         goto Error;
     }
 
-    // Map the "wrap around" large pages after the payload buffer table. This
-    // causes the first large pages of the buffer (enough to hold a full event
-    // payload of maximum size) to be mapped immediately after the end of the
-    // buffer, allowing us to naturally "wrap around" in memory by the
-    // size of one maximally sized event. Thus we can bulk memcpy(3) event
-    // payloads safely near the end of the table, and it will wrap around
-    // in memory without doing any error-prone index massaging.
+    // Map the "wrap around" large pages after the payload buffer. This causes
+    // the first large pages of the buffer (enough to hold a full event payload
+    // of maximum size) to be mapped immediately after the end of the buffer,
+    // allowing us to naturally "wrap around" in memory by the size of one
+    // maximally-sized event. Thus we can memcpy(3) event payloads safely near
+    // the end of the buffer, and it will wrap around in memory without needing
+    // to do any error-prone index massaging.
     if (mmap(
             (uint8_t *)ring->payload_buf_size +
                 MONAD_EVENT_MAX_PAYLOAD_BUF_SIZE,
@@ -312,7 +312,7 @@ init_event_recorders()
         monad_spinlock_init(&recorder->lock);
         recorder->ring_type = q;
         recorder->event_ring_fds.control_fd =
-            recorder->event_ring_fds.descriptor_table_fd =
+            recorder->event_ring_fds.descriptor_array_fd =
                 recorder->event_ring_fds.payload_buf_fd = -1;
     }
 }
@@ -582,13 +582,15 @@ int monad_event_init_local_iterator(
             ENODEV, "event recorder %hhu not enabled", ring_type);
     }
     memset(iter, 0, sizeof *iter);
-    iter->desc_table = recorder->event_ring.descriptor_table;
+    iter->descriptors = recorder->event_ring.descriptors;
+    iter->capacity_mask = recorder->event_ring.capacity - 1;
     iter->payload_buf = recorder->event_ring.payload_buf;
     iter->payload_buf_size = recorder->event_ring.payload_buf_size;
-    iter->capacity_mask = recorder->event_ring.capacity - 1;
-    iter->wr_state = &recorder->event_ring.control->wr_state;
+    iter->write_last_seqno = &recorder->event_ring.control->wr_state.last_seqno;
     iter->buffer_window_start =
         &recorder->event_ring.control->buffer_window_start;
+    iter->read_last_seqno =
+        __atomic_load_n(iter->write_last_seqno, __ATOMIC_ACQUIRE);
     return 0;
 }
 

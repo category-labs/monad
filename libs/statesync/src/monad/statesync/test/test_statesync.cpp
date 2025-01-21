@@ -297,8 +297,15 @@ TEST_F(StateSyncFixture, sync_from_some)
         sctx.commit(
             StateDeltas{{ADDR1, {.account = {acct, std::nullopt}}}},
             Code{},
-            hdr1);
+            hdr1,
+            {},
+            {},
+            {},
+            {},
+            {},
+            1);
         EXPECT_EQ(stdb.read_eth_header(), hdr1);
+        sctx.finalize(1, 1);
     }
     BlockHeader const hdr2{
         .parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr1))),
@@ -319,8 +326,15 @@ TEST_F(StateSyncFixture, sync_from_some)
                         {{},
                          0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}},
             Code{},
-            hdr2);
+            hdr2,
+            {},
+            {},
+            {},
+            {},
+            {},
+            2);
         EXPECT_EQ(stdb.read_eth_header(), hdr2);
+        sctx.finalize(2, 2);
     }
     BlockHeader const hdr3{
         .parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr2))),
@@ -358,8 +372,14 @@ TEST_F(StateSyncFixture, sync_from_some)
             },
             Code{{code_hash, code_analysis}},
             hdr3,
-            {});
+            {},
+            {},
+            {},
+            {},
+            {},
+            3);
         EXPECT_EQ(stdb.read_eth_header(), hdr3);
+        sctx.finalize(3, 3);
     }
     BlockHeader const hdr4{
         .parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr3))),
@@ -380,8 +400,15 @@ TEST_F(StateSyncFixture, sync_from_some)
                         {0x0000000000000013370000000000000000000000000000000000000000000003_bytes32,
                          {}}}}}}},
             Code{},
-            hdr4);
+            hdr4,
+            {},
+            {},
+            {},
+            {},
+            {},
+            4);
         EXPECT_EQ(stdb.read_eth_header(), hdr4);
+        sctx.finalize(4, 4);
     }
     BlockHeader const hdr5{
         .parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr4))),
@@ -404,8 +431,15 @@ TEST_F(StateSyncFixture, sync_from_some)
                         {{},
                          0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}},
             Code{},
-            hdr5);
+            hdr5,
+            {},
+            {},
+            {},
+            {},
+            {},
+            5);
         EXPECT_EQ(stdb.read_eth_header(), hdr5);
+        sctx.finalize(5, 5);
     }
     BlockHeader const hdr6{
         .parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr5))),
@@ -421,9 +455,15 @@ TEST_F(StateSyncFixture, sync_from_some)
         sctx.commit(
             StateDeltas{{ADDR1, {.account = {acct, std::nullopt}}}},
             Code{},
-            hdr6);
-
+            hdr6,
+            {},
+            {},
+            {},
+            {},
+            {},
+            6);
         EXPECT_EQ(stdb.read_eth_header(), hdr6);
+        sctx.finalize(6, 6);
     }
 
     handle_target(cctx, hdr1);
@@ -675,14 +715,22 @@ TEST_F(StateSyncFixture, account_updated_after_storage)
                        {bytes32_t{},
                         0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}},
         Code{},
-        hdr);
+        hdr,
+        {},
+        {},
+        {},
+        {},
+        {},
+        100);
     parent_hash =
         to_bytes(keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    sctx.finalize(100, 100);
 
     hdr = BlockHeader{.parent_hash = parent_hash, .number = 101};
-    sctx.commit({}, {}, hdr, {});
+    sctx.commit({}, {}, hdr, {}, {}, {}, {}, {}, 101);
     parent_hash =
         to_bytes(keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    sctx.finalize(101, 101);
 
     hdr = BlockHeader{.parent_hash = parent_hash, .number = 102};
     sctx.commit(
@@ -692,10 +740,14 @@ TEST_F(StateSyncFixture, account_updated_after_storage)
                  .account = {Account{.balance = 100}, Account{.balance = 200}},
                  .storage = {}}}},
         Code{},
-        hdr);
-    parent_hash =
-        to_bytes(keccak256(rlp::encode_block_header(stdb.read_eth_header())));
-
+        hdr,
+        {},
+        {},
+        {},
+        {},
+        {},
+        102);
+    sctx.finalize(102, 102);
     init();
     hdr.state_root = stdb.state_root();
     handle_target(cctx, hdr);
@@ -723,11 +775,23 @@ TEST_F(StateSyncFixture, account_deleted_after_storage)
                        {bytes32_t{},
                         0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}},
         Code{},
-        hdr);
-    hdr.parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr)));
+        hdr,
+        {},
+        {},
+        {},
+        {},
+        {},
+        100);
+    hdr.parent_hash =
+        to_bytes(keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    sctx.finalize(100, 100);
+
     hdr.number = 101;
-    sctx.commit({}, {}, hdr, {});
-    hdr.parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr)));
+    sctx.commit({}, {}, hdr, {}, {}, {}, {}, {}, 101);
+    hdr.parent_hash =
+        to_bytes(keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    sctx.finalize(101, 101);
+
     hdr.number = 102;
     sctx.commit(
         StateDeltas{
@@ -736,7 +800,15 @@ TEST_F(StateSyncFixture, account_deleted_after_storage)
                  .account = {Account{.balance = 100}, std::nullopt},
                  .storage = {}}}},
         Code{},
-        hdr);
+        hdr,
+        {},
+        {},
+        {},
+        {},
+        {},
+        102);
+    EXPECT_EQ(sctx.state_root(), NULL_ROOT);
+    sctx.finalize(102, 102);
     init();
     hdr.state_root = NULL_ROOT;
     handle_target(cctx, hdr);
@@ -746,7 +818,8 @@ TEST_F(StateSyncFixture, account_deleted_and_prefix_skipped)
 {
     init();
     BlockHeader hdr{.parent_hash = NULL_HASH};
-    sctx.commit(StateDeltas{}, Code{}, hdr);
+    sctx.commit(StateDeltas{}, Code{}, hdr, {}, {}, {}, {}, {}, 0);
+    sctx.finalize(0, 0);
     hdr.parent_hash =
         to_bytes(keccak256(rlp::encode_block_header(stdb.read_eth_header())));
     hdr.number = 1;
@@ -759,7 +832,15 @@ TEST_F(StateSyncFixture, account_deleted_and_prefix_skipped)
                  .account = {std::nullopt, Account{.balance = 100}},
                  .storage = {}}}},
         Code{},
-        hdr);
+        hdr,
+        {},
+        {},
+        {},
+        {},
+        {},
+        1);
+    sctx.finalize(1, 1);
+    EXPECT_EQ(sctx.state_root(), hdr.state_root);
     handle_target(cctx, hdr);
     run();
 
@@ -774,7 +855,15 @@ TEST_F(StateSyncFixture, account_deleted_and_prefix_skipped)
                  .account = {Account{.balance = 100}, std::nullopt},
                  .storage = {}}}},
         Code{},
-        hdr);
+        hdr,
+        {},
+        {},
+        {},
+        {},
+        {},
+        2);
+    sctx.finalize(2, 2);
+    EXPECT_EQ(sctx.state_root(), hdr.state_root);
     handle_target(cctx, hdr);
     client.rqs.clear();
 
@@ -782,7 +871,9 @@ TEST_F(StateSyncFixture, account_deleted_and_prefix_skipped)
         to_bytes(keccak256(rlp::encode_block_header(stdb.read_eth_header())));
     hdr.number = 3;
     hdr.state_root = NULL_ROOT;
-    sctx.commit(StateDeltas{}, Code{}, hdr);
+    sctx.commit(StateDeltas{}, Code{}, hdr, {}, {}, {}, {}, {}, 3);
+    sctx.finalize(3, 3);
+    EXPECT_EQ(sctx.state_root(), hdr.state_root);
     handle_target(cctx, hdr);
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
@@ -792,7 +883,8 @@ TEST_F(StateSyncFixture, delete_updated_account)
 {
     init();
     BlockHeader hdr{.parent_hash = NULL_HASH};
-    sctx.commit(StateDeltas{}, Code{}, hdr);
+    sctx.commit(StateDeltas{}, Code{}, hdr, {}, {}, {}, {}, {}, 0);
+    sctx.finalize(0, 0);
 
     Account const a{.balance = 100, .incarnation = Incarnation{1, 0}};
 
@@ -805,7 +897,14 @@ TEST_F(StateSyncFixture, delete_updated_account)
         StateDeltas{
             {ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}}},
         Code{},
-        hdr);
+        hdr,
+        {},
+        {},
+        {},
+        {},
+        {},
+        1);
+    sctx.finalize(1, 1);
     handle_target(cctx, hdr);
     run();
 
@@ -821,7 +920,14 @@ TEST_F(StateSyncFixture, delete_updated_account)
                  .account = {a, a},
                  .storage = {{bytes32_t{}, {bytes32_t{}, bytes32_t{64}}}}}}},
         Code{},
-        hdr);
+        hdr,
+        {},
+        {},
+        {},
+        {},
+        {},
+        2);
+    sctx.finalize(2, 2);
     handle_target(cctx, hdr);
     client.rqs.pop_front();
     while (!client.rqs.empty()) {
@@ -836,7 +942,14 @@ TEST_F(StateSyncFixture, delete_updated_account)
         StateDeltas{
             {ADDR_A, StateDelta{.account = {a, std::nullopt}, .storage = {}}}},
         Code{},
-        hdr);
+        hdr,
+        {},
+        {},
+        {},
+        {},
+        {},
+        3);
+    sctx.finalize(3, 3);
     handle_target(cctx, hdr);
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
@@ -872,7 +985,15 @@ TEST_F(StateSyncFixture, delete_storage_after_account_deletion)
                      {{bytes32_t{}, {bytes32_t{}, bytes32_t{64}}},
                       {bytes32_t{1}, {bytes32_t{}, bytes32_t{64}}}}}}},
         Code{},
-        hdr);
+        hdr,
+        {},
+        {},
+        {},
+        {},
+        {},
+        1'000'000);
+    sctx.finalize(1'000'000, 1'000'000);
+    EXPECT_EQ(sctx.state_root(), hdr.state_root);
     handle_target(cctx, hdr);
     run();
 
@@ -883,8 +1004,14 @@ TEST_F(StateSyncFixture, delete_storage_after_account_deletion)
         StateDeltas{
             {ADDR_A, StateDelta{.account = {a, std::nullopt}, .storage = {}}}},
         Code{},
-        hdr);
-
+        hdr,
+        {},
+        {},
+        {},
+        {},
+        {},
+        1'000'001);
+    sctx.finalize(1'000'001, 1'000'001);
     hdr.parent_hash =
         to_bytes(keccak256(rlp::encode_block_header(stdb.read_eth_header())));
     hdr.number = 1'000'002;
@@ -895,8 +1022,14 @@ TEST_F(StateSyncFixture, delete_storage_after_account_deletion)
                  .account = {std::nullopt, a},
                  .storage = {{bytes32_t{}, {bytes32_t{}, bytes32_t{64}}}}}}},
         Code{},
-        hdr);
-
+        hdr,
+        {},
+        {},
+        {},
+        {},
+        {},
+        1'000'002);
+    sctx.finalize(1'000'002, 1'000'002);
     hdr.parent_hash =
         to_bytes(keccak256(rlp::encode_block_header(stdb.read_eth_header())));
     hdr.state_root =
@@ -909,7 +1042,15 @@ TEST_F(StateSyncFixture, delete_storage_after_account_deletion)
                  .account = {a, a},
                  .storage = {{bytes32_t{}, {bytes32_t{64}, bytes32_t{}}}}}}},
         Code{},
-        hdr);
+        hdr,
+        {},
+        {},
+        {},
+        {},
+        {},
+        1'000'003);
+    EXPECT_EQ(sctx.state_root(), hdr.state_root);
+    sctx.finalize(1'000'003, 1'000'003);
     handle_target(cctx, hdr);
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
@@ -919,8 +1060,9 @@ TEST_F(StateSyncFixture, update_contract_twice)
 {
     init();
 
-    BlockHeader hdr{.parent_hash = NULL_HASH};
-    sctx.commit(StateDeltas{}, Code{}, hdr);
+    BlockHeader hdr{.parent_hash = NULL_HASH, .number = 0};
+    sctx.commit(StateDeltas{}, Code{}, hdr, {}, {}, {}, {}, {}, 0);
+    sctx.finalize(0, 0);
 
     constexpr auto ADDR1 = 0x5353535353535353535353535353535353535353_address;
     hdr.parent_hash =
@@ -955,7 +1097,14 @@ TEST_F(StateSyncFixture, update_contract_twice)
         },
         Code{{code_hash, code_analysis}},
         hdr,
-        {});
+        {},
+        {},
+        {},
+        {},
+        {},
+        1);
+    sctx.finalize(1, 1);
+    EXPECT_EQ(sctx.state_root(), hdr.state_root);
     handle_target(cctx, hdr);
     run();
 
@@ -976,7 +1125,14 @@ TEST_F(StateSyncFixture, update_contract_twice)
         },
         Code{},
         hdr,
-        {});
+        {},
+        {},
+        {},
+        {},
+        {},
+        2);
+    sctx.finalize(2, 2);
+    EXPECT_EQ(sctx.state_root(), hdr.state_root);
     handle_target(cctx, hdr);
     run();
 

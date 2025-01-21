@@ -65,12 +65,12 @@ find_package(CLI11 REQUIRED)
 set(MONAD_COMPILER_STANDALONE OFF)
 add_subdirectory("third_party/compiler")
 
-# intx
-add_subdirectory(third_party/intx)
-
 # ethash
 set(ETHASH_TESTING NO)
 add_subdirectory("third_party/ethash")
+
+# intx
+add_subdirectory(third_party/intx)
 
 # evmone
 set(ethash_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake/dummy")
@@ -125,8 +125,8 @@ function(monad_add_test2 target)
     ${target}
     PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/test/unit/common/include")
   target_include_directories(${target} PRIVATE "${TOP_CURRENT_BINARY_DIR}/test")
-  target_link_libraries(${target} monad_execution monad_statesync monad_rpc GTest::GTest
-                        GTest::Main)
+  target_link_libraries(${target} monad_execution monad_statesync monad_rpc
+                        GTest::GTest GTest::Main)
   if("${target}" MATCHES "test_statesync")
     gtest_discover_tests(
       ${target} DISCOVERY_MODE PRE_TEST
@@ -157,34 +157,39 @@ endfunction()
 
 function(monad_add_test_death target)
   cmake_parse_arguments(ADD_DEATH_TEST "" "FAIL_REGEX"
-    "SOURCES;LINK_LIBRARIES;TEST_PROPERTIES" ${ARGN})
+                        "SOURCES;LINK_LIBRARIES;TEST_PROPERTIES" ${ARGN})
   if(NOT ADD_DEATH_TEST_FAIL_REGEX)
     message(FATAL_ERROR "FATAL: FAIL_REGEX is mandatory")
   endif()
   add_executable(${target} ${ADD_DEATH_TEST_SOURCES})
   monad_compile_options(${target})
   target_link_libraries(${target} PUBLIC GTest::gtest_main
-                        ${ADD_DEATH_TEST_LINK_LIBRARIES})
-  add_test(NAME "${PROJECT_NAME}/${target}"
-           COMMAND ${CMAKE_COMMAND} -E env $<TARGET_FILE:${target}>)
-  set_tests_properties("${PROJECT_NAME}/${target}" PROPERTIES
-           PASS_REGULAR_EXPRESSION "${ADD_DEATH_TEST_FAIL_REGEX}"
-           ${ADD_DEATH_TEST_TEST_PROPERTIES}
-           ENVIRONMENT ASAN_OPTIONS=abort_on_error=1 ENVIRONMENT
-           UBSAN_OPTIONS=halt_on_error=1,print_stacktrace=1 ENVIRONMENT
-           TSAN_OPTIONS=external_symbolizer_path=/usr/bin/llvm-symbolizer)
+                                         ${ADD_DEATH_TEST_LINK_LIBRARIES})
+  add_test(NAME "${PROJECT_NAME}/${target}" COMMAND ${CMAKE_COMMAND} -E env
+                                                    $<TARGET_FILE:${target}>)
+  set_tests_properties(
+    "${PROJECT_NAME}/${target}"
+    PROPERTIES PASS_REGULAR_EXPRESSION
+               "${ADD_DEATH_TEST_FAIL_REGEX}"
+               ${ADD_DEATH_TEST_TEST_PROPERTIES}
+               ENVIRONMENT
+               ASAN_OPTIONS=abort_on_error=1
+               ENVIRONMENT
+               UBSAN_OPTIONS=halt_on_error=1,print_stacktrace=1
+               ENVIRONMENT
+               TSAN_OPTIONS=external_symbolizer_path=/usr/bin/llvm-symbolizer)
 endfunction()
 
 # ##############################################################################
 # libs
 # ##############################################################################
 
-add_subdirectory("libs/core")
-add_subdirectory("libs/runloop")
 add_subdirectory("libs/async")
+add_subdirectory("libs/core")
 add_subdirectory("libs/db")
 add_subdirectory("libs/execution")
 add_subdirectory("libs/rpc")
+add_subdirectory("libs/runloop")
 add_subdirectory("libs/statesync")
 
 # ##############################################################################

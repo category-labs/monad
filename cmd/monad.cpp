@@ -51,7 +51,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-quill::Logger *event_tracer = nullpt;
+quill::Logger *event_tracer = nullptr;
 
 MONAD_NAMESPACE_END
 

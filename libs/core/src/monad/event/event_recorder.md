@@ -67,23 +67,21 @@ defined in `event.h` (which is part of the `monad_event_core` library,
 in `libs/event`). It is defined this way:
 
 ```c
-/// An IPC-style ring used to implement a lock-free MPMC ring for passing event
-/// descriptors between threads, potentially in different processes. This
-/// object is not directly present in shared memory, but the control page,
-/// descriptor table, and payload buffer are.
+/// Object that describes the event descriptor ring buffer, the event payload
+/// byte buffer, and the ring buffer control structure. This object is not
+/// directly present in shared memory, but all of the pointer fields contain
+/// addresses of shared memory objects
 struct monad_event_ring
 {
-    struct monad_event_ring_control *control;
-    struct monad_event_descriptor *descriptor_table;
-    size_t capacity;
-    uint8_t *payload_buf;
-    size_t payload_buf_size;
+    struct monad_event_descriptor
+        *descriptors;                  ///< Event descriptor ring array
+    size_t capacity;                   ///< Size of `descriptors` array
+    uint8_t *payload_buf;              ///< Payload buffer start address
+    size_t payload_buf_size;           ///< Payload buffer size in bytes
+    struct monad_event_ring_control
+        *control;                      ///< Keeps track of ring state/status
 };
 ```
-
-The event descriptor array is called the _descriptor table_ in code, and
-its total size is stored in `capacity` field. The `payload_buf` and
-`payload_buf_size` fields describe the payload buffer.
 
 The "control" object stores the ring's "writer state": it keeps track
 of the last sequence number allocated, the next payload buffer byte to
@@ -221,7 +219,7 @@ enum monad_event_ring_type : uint8_t
 
 ### Sliding buffer window
 
-Both the event descriptor table and payload buffer are *ring buffers*:
+Both the event descriptor array and payload buffer are *ring buffers*:
 once all array slots have been used, subsequent writes wrap around to the
 beginning of the array. For event descriptors, the detection mechanism for
 slow consumers observing an overwrite relies on the sequence number, as
@@ -367,7 +365,7 @@ The general flow of recording is:
 
 1. **Reserve resources** - reserve all resources needed to record the
   event by calling `_monad_event_ring_reserve`. This allocates a slot in
-  the descriptor table to hold the descriptor, a sequence number for the
+  the descriptor array to hold the descriptor, a sequence number for the
   event, and space in the payload buffer to hold the payload [^1]
 2. **Initialize descriptor** - initialize all the fields of the event
   descriptor object, _except_ for the sequence number field. The sequence

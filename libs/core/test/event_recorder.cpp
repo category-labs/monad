@@ -94,25 +94,29 @@ static void writer_main(
     uint64_t available_histogram[EventsAvailableHistogramSize] = {};
 
     latch->arrive_and_wait();
-    std::atomic_ref const ring_last_seqno{iter.wr_state->last_seqno};
-    while (ring_last_seqno.load(std::memory_order_acquire) == 0)
-        /* wait for something to be produced */;
+    std::atomic_ref const write_last_seqno{*iter.write_last_seqno};
+    // Wait for something to be produced
+    while (write_last_seqno.load(std::memory_order_acquire) == 0) {
+        // TODO(ken): should be monad_spinloop_hint() but PR hasn't landed
+        __builtin_ia32_pause();
+    }
     monad_event_iterator_reset(&iter);
     // Regardless of where the most recent event is, start from zero
-    uint64_t last_seqno = iter.last_seqno = 0;
+    uint64_t last_seqno = iter.read_last_seqno = 0;
     while (last_seqno < max_writer_iteration) {
         monad_event_descriptor event;
-        monad_event_poll_result const pr =
+        monad_event_next_result const nr =
             monad_event_iterator_try_next(&iter, &event);
-        if (MONAD_UNLIKELY(pr == MONAD_EVENT_NOT_READY)) {
+        if (MONAD_UNLIKELY(nr == MONAD_EVENT_NOT_READY)) {
+            __builtin_ia32_pause();
             continue;
         }
-        ASSERT_EQ(MONAD_EVENT_READY, pr);
+        ASSERT_EQ(MONAD_EVENT_SUCCESS, nr);
 
         // Available histogram
         if (MONAD_UNLIKELY((last_seqno + 1) & HistogramSampleMask) == 0) {
             uint64_t const available_events =
-                ring_last_seqno.load(std::memory_order::acquire) - event.seqno;
+                write_last_seqno.load(std::memory_order::acquire) - event.seqno;
             unsigned avail_bucket =
                 static_cast<unsigned>(std::bit_width(available_events));
             if (avail_bucket >= std::size(available_histogram)) {

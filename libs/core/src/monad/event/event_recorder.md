@@ -366,7 +366,7 @@ The general flow of recording is:
 1. **Reserve resources** - reserve all resources needed to record the
   event by calling `_monad_event_ring_reserve`. This allocates a slot in
   the descriptor array to hold the descriptor, a sequence number for the
-  event, and space in the payload buffer to hold the payload [^1]
+  event, and space in the payload buffer to hold the payload
 2. **Initialize descriptor** - initialize all the fields of the event
   descriptor object, _except_ for the sequence number field. The sequence
   number for this event was reserved in step 1, but it is not written into
@@ -392,11 +392,6 @@ slot is no longer valid. Because this slot belonged to an earlier event,
 it's possible that a reader is still working with it. Zeroing the sequence
 number indicates that the slot is in the process of being overwritten.
 The second write to the `seqno` field announces that the write is complete. 
-
-[^1]: All resources are allocated using a single 16 byte compare-and-swap
-instruction. This appears to have better performance than two separate
-atomic fetch add instructions. In rare cases, `buffer_window_start` may be
-updated as described earlier.
 
 ## Important objects in the recorder library
 

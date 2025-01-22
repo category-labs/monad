@@ -30,5 +30,5 @@ target_compile_options(eventcap PRIVATE -Wno-missing-field-initializers)
 
 add_executable(exportshm exportshm.cpp)
 monad_compile_options(exportshm)
-target_link_libraries(exportshm PRIVATE monad_core monad_event_client CLI11::CLI11 -lz)
+target_link_libraries(exportshm PRIVATE monad_core monad_event_client CLI11::CLI11 -lzstd)
 target_compile_options(exportshm PRIVATE -Wno-missing-field-initializers)

@@ -22,7 +22,7 @@
 #include <syslog.h>
 #include <unistd.h>
 
-#include <zlib.h>
+#include <zstd.h>
 
 #include <monad/core/srcloc.h>
 #include <monad/event/event.h>
@@ -309,11 +309,10 @@ int monad_event_test_server_create_from_bytes(
     struct monad_event_server **server_p)
 {
     int saved_error;
-    int zerr;
     unsigned map_flags;
     struct test_server_context *test_context;
     struct test_file_segment const *segment;
-    uLongf dest_len;
+    size_t decompress_len;
     char segment_name[32];
 
     // TODO(ken): for Rust
@@ -338,11 +337,11 @@ int monad_event_test_server_create_from_bytes(
     // the contents
     segment = test_context->segments;
     while (segment->type != MONAD_EVENT_MSG_NONE) {
-        ++test_context->segment_count;
-        ++segment;
         if (segment->type == MONAD_EVENT_MSG_MAP_DESCRIPTOR_ARRAY) {
             test_context->ring_capacity = segment->ring_capacity;
         }
+        ++test_context->segment_count;
+        ++segment;
     }
     // The metadata hash is written after the segment directory (after the
     // MONAD_EVENT_MSG_NONE sentinel value)
@@ -385,6 +384,8 @@ int monad_event_test_server_create_from_bytes(
                 "unable to ftruncate %s -> %lu",
                 segment_name,
                 ms->map_len);
+            cleanup_test_server_resources(test_context);
+            return saved_error;
         }
         ms->map_base = mmap(
             nullptr,
@@ -399,28 +400,29 @@ int monad_event_test_server_create_from_bytes(
             cleanup_test_server_resources(test_context);
             return saved_error;
         }
-        dest_len = (uLongf)ms->map_len;
-        zerr = uncompress(
+        decompress_len = ZSTD_decompress(
             ms->map_base,
-            &dest_len,
+            ms->map_len,
             (uint8_t const *)test_context->segments + segment->offset,
-            (uLongf)segment->compressed_len);
-        if (zerr != Z_OK) {
-            switch (zerr) {
-            case Z_BUF_ERROR:
-                saved_error = ENOBUFS;
-                break;
-            case Z_MEM_ERROR:
-                saved_error = ENOMEM;
-                break;
-            case Z_DATA_ERROR:
-                saved_error = EINVAL;
-                break;
-            default:
-                saved_error = EIO;
-                break;
-            }
-            WR_ERR(saved_error, "zlib uncompress error: %s", zError(zerr));
+            segment->compressed_len);
+        if (ZSTD_isError(decompress_len)) {
+            saved_error = WR_ERR(
+                EIO,
+                "zstd decompress error: %s",
+                ZSTD_getErrorName(decompress_len));
+            cleanup_test_server_resources(test_context);
+            return saved_error;
+        }
+        if (decompress_len != ms->map_len) {
+            saved_error = WR_ERR(
+                EIO,
+                "zstd decompress_len of segment %lu is "
+                "%lu, expected %lu",
+                s,
+                decompress_len,
+                ms->map_len);
+            cleanup_test_server_resources(test_context);
+            return saved_error;
         }
         if (segment->type == MONAD_EVENT_MSG_MAP_METADATA_PAGE) {
             test_context->metadata_page_segment = ms;

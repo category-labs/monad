@@ -7,6 +7,7 @@
 #include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
+#include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/core/withdrawal.hpp>
 #include <monad/event/event_recorder.h>
 #include <monad/event/event_types.h>
@@ -58,10 +59,14 @@ static size_t init_txn_header_iovec(
 {
     size_t iovlen = 1;
     auto *const header = static_cast<monad_event_txn_header *>(iov[0].iov_base);
+    header->tx_hash =
+        std::bit_cast<evmc_bytes32>(keccak256(rlp::encode_transaction(txn)));
     header->nonce = txn.nonce;
     header->gas_limit = txn.gas_limit;
     header->max_fee_per_gas =
         *std::bit_cast<evmc_bytes32 const *>(as_bytes(txn.max_fee_per_gas));
+    header->max_priority_fee_per_gas = *std::bit_cast<evmc_bytes32 const *>(
+        as_bytes(txn.max_priority_fee_per_gas));
     header->value = *std::bit_cast<evmc_bytes32 const *>(as_bytes(txn.value));
     header->from = opt_sender ? *opt_sender : Address{};
     header->to = txn.to ? *txn.to : Address{};

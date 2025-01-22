@@ -120,6 +120,9 @@ struct monad_event_block_exec_header
     monad_event_bytes32 mix_hash;
     uint8_t nonce[8];
     monad_event_uint256_ne base_fee_per_gas;
+    uint64_t blob_gas_used;
+    uint64_t excess_blob_gas;
+    monad_event_bytes32 parent_beacon_block_root;
     uint64_t txn_count;
 };
 
@@ -137,9 +140,11 @@ struct monad_event_block_exec_result
 /// Event payload for MONAD_EVENT_TXN_START
 struct monad_event_txn_header
 {
+    monad_event_bytes32 tx_hash;
     uint64_t nonce;
     uint64_t gas_limit;
     monad_event_uint256_ne max_fee_per_gas;
+    monad_event_uint256_ne max_priority_fee_per_gas;
     monad_event_uint256_ne value;
     monad_event_address from;
     monad_event_address to;

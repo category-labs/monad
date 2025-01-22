@@ -52,7 +52,7 @@ if (MONAD_EVENT_BUILD_TEST_SERVER)
     target_include_directories(monad_event_test_server PUBLIC "../core/src" "src")
     target_compile_definitions(monad_event_test_server PUBLIC "_GNU_SOURCE")
     target_link_libraries(monad_event_test_server PRIVATE monad_event_core)
-    target_link_libraries(monad_event_test_server PUBLIC -lz)
+    target_link_libraries(monad_event_test_server PUBLIC -lzstd)
 
     add_executable(event_test_server_driver "src/monad/event/test/driver.c")
     target_compile_features(event_test_server_driver PRIVATE c_std_23)

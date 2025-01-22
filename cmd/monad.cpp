@@ -39,6 +39,7 @@
 #include <boost/outcome/try.hpp>
 
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -94,6 +95,10 @@ static monad_event_block_exec_header *init_block_exec_header(
         sizeof exec_header->nonce);
     exec_header->base_fee_per_gas = *std::bit_cast<evmc_bytes32 const *>(
         as_bytes(block.header.base_fee_per_gas.value_or(0)));
+    exec_header->blob_gas_used = block.header.blob_gas_used.value_or(0);
+    exec_header->excess_blob_gas = block.header.excess_blob_gas.value_or(0);
+    exec_header->parent_beacon_block_root =
+        block.header.parent_beacon_block_root.value_or(evmc_bytes32{});
     exec_header->txn_count = size(block.transactions);
     return exec_header;
 }

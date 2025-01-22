@@ -24,7 +24,7 @@
 #include <unistd.h>
 
 #include <CLI/CLI.hpp>
-#include <zlib.h>
+#include <zstd.h>
 
 #include <monad/core/assert.h>
 #include <monad/core/bit_util.h>
@@ -42,8 +42,8 @@ struct test_file_writer
 {
     int fd;
     size_t segments_written;
-    Bytef *compress_buf;
-    uLongf compress_buf_len;
+    void *compress_buf;
+    size_t compress_buf_len;
 };
 
 // A test file is an array of these entries (terminated by an all-zero
@@ -84,15 +84,15 @@ init_test_file_writer(test_file_writer *tfw, int fd, size_t max_size)
 
     // Allocate a buffer to hold the compressed data (given to zlib for
     // compress2 output)
-    tfw->compress_buf_len = static_cast<uLongf>(
-        monad_round_size_to_align(compressBound(max_size), PAGE_2MB));
-    tfw->compress_buf = static_cast<Bytef *>(mmap(
+    tfw->compress_buf_len =
+        monad_round_size_to_align(ZSTD_compressBound(max_size), PAGE_2MB);
+    tfw->compress_buf = mmap(
         nullptr,
         tfw->compress_buf_len,
         PROT_READ | PROT_WRITE,
         MAP_ANONYMOUS | MAP_PRIVATE | MAP_HUGETLB,
         -1,
-        0));
+        0);
     MONAD_ASSERT(tfw->compress_buf != MAP_FAILED);
 }
 
@@ -101,14 +101,13 @@ static void save_mmap_region(
     size_t length)
 {
     // Compress the memory segment
-    uLongf compressed_len = tfw->compress_buf_len;
-    int const z_result = compress2(
+    size_t const compressed_len = ZSTD_compress(
         tfw->compress_buf,
-        &compressed_len,
-        static_cast<Bytef const *>(data),
-        static_cast<uLongf>(length),
-        Z_BEST_COMPRESSION);
-    MONAD_ASSERT(z_result == Z_OK);
+        tfw->compress_buf_len,
+        data,
+        length,
+        ZSTD_maxCLevel());
+    MONAD_ASSERT(ZSTD_isError(compressed_len) == 0);
 
     // Write the segment descriptor describing the memory segment we're dumping
     segment->segment_len = length;

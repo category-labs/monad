@@ -163,49 +163,6 @@ inline struct monad_event_recorder_thr *_monad_event_recorder_get_thread_cache()
     return &g_tls_monad_recorder_thread_cache;
 }
 
-// In gcc (as of v14), __atomic_compare_exchange on a 16 byte value emits a
-// call to libatomic rather than emitting a CMPXCHG16B instruction. The reason
-// why is explained in gcc PR80878 and PR104688. To guarantee we have lock free
-// atomics, we define a helper function `_monad_event_xchg_wr_state` which
-// is __atomic_compare_exchange in clang and uses inline assembly in gcc.
-
-#if defined(__GNUC__) && !defined(__clang__)
-
-static inline bool _monad_event_xchg_wr_state(
-    struct monad_event_ring_writer_state *wr_state,
-    struct monad_event_ring_writer_state *expected,
-    struct monad_event_ring_writer_state *desired)
-{
-    bool result;
-
-    __asm__ __volatile__("lock; cmpxchg16b %1; setz %0"
-                         : "=q"(result),
-                           "+m"(*wr_state),
-                           "+a"(expected->last_seqno),
-                           "+d"(expected->next_payload_byte)
-                         : "b"(desired->last_seqno),
-                           "c"(desired->next_payload_byte)
-                         : "cc");
-
-    return result;
-}
-
-#else
-
-static_assert(__atomic_always_lock_free(
-    sizeof(struct monad_event_ring_writer_state), nullptr));
-
-static inline bool _monad_event_xchg_wr_state(
-    struct monad_event_ring_writer_state *wr_state,
-    struct monad_event_ring_writer_state *expected,
-    struct monad_event_ring_writer_state *desired)
-{
-    return __atomic_compare_exchange(
-        wr_state, expected, desired, true, __ATOMIC_RELAXED, __ATOMIC_RELAXED);
-}
-
-#endif
-
 // Reserve a slot in the descriptor array to hold a new event; this allocates
 // a sequence number for the event and space in the payload buffer for its
 // payload
@@ -213,38 +170,25 @@ static inline struct monad_event_descriptor *_monad_event_ring_reserve(
     struct monad_event_ring *event_ring, size_t payload_size, uint64_t *seqno,
     void **dst)
 {
-    struct monad_event_ring_writer_state cur_state;
-    struct monad_event_ring_writer_state next_state;
     struct monad_event_descriptor *event;
     uint64_t buffer_window_start;
+    uint64_t payload_begin;
     uint64_t payload_end;
     uint64_t const WINDOW_INCR = MONAD_EVENT_MAX_PAYLOAD_BUF_SIZE;
     struct monad_event_ring_control *const ctrl = event_ring->control;
     size_t const alloc_size =
         payload_size > 32 ? monad_round_size_to_align(payload_size, 8) : 0;
-    // TODO(ken): this should be an __atomic_load of the entire structure, but
-    //    splitting it apart makes it easier to deal with the missing 128-bit
-    //    atomic loads in gcc
-    cur_state.last_seqno =
-        __atomic_load_n(&ctrl->wr_state.last_seqno, __ATOMIC_RELAXED);
-    cur_state.next_payload_byte =
-        __atomic_load_n(&ctrl->wr_state.next_payload_byte, __ATOMIC_RELAXED);
-TryAgain:
-    next_state.last_seqno = cur_state.last_seqno + 1;
-    next_state.next_payload_byte = cur_state.next_payload_byte + alloc_size;
-    while (
-        !_monad_event_xchg_wr_state(&ctrl->wr_state, &cur_state, &next_state)) {
-        goto TryAgain;
-    }
+    uint64_t const last_seqno =
+        __atomic_fetch_add(&ctrl->last_seqno, 1, __ATOMIC_RELAXED);
+    payload_begin = __atomic_fetch_add(
+        &ctrl->next_payload_byte, alloc_size, __ATOMIC_RELAXED);
     // We're going to start filling in the fields of `event`. Overwrite its
     // sequence number to zero, in case this slot is occupied by an older event
     // and that older event is currently being examined by a reading thread.
     // This ensures the reader can always detect that fields are invalidated.
-    event =
-        &event_ring
-             ->descriptors[cur_state.last_seqno & (event_ring->capacity - 1)];
+    event = &event_ring->descriptors[last_seqno & (event_ring->capacity - 1)];
     __atomic_store_n(&event->seqno, 0, __ATOMIC_RELEASE);
-    payload_end = cur_state.next_payload_byte;
+    payload_end = payload_begin + alloc_size;
     buffer_window_start = __atomic_load_n(
         &event_ring->control->buffer_window_start, __ATOMIC_RELAXED);
     if (MONAD_UNLIKELY(
@@ -258,7 +202,7 @@ TryAgain:
             __ATOMIC_RELAXED,
             __ATOMIC_RELAXED);
     }
-    *seqno = next_state.last_seqno;
+    *seqno = last_seqno + 1;
     event->length = (uint32_t)payload_size;
     event->inline_payload = payload_size <= sizeof event->payload;
     if (event->inline_payload) {
@@ -266,9 +210,8 @@ TryAgain:
     }
     else {
         *dst = &event_ring->payload_buf
-                    [cur_state.next_payload_byte &
-                     (event_ring->payload_buf_size - 1)];
-        event->payload_buf_offset = cur_state.next_payload_byte;
+                    [payload_begin & (event_ring->payload_buf_size - 1)];
+        event->payload_buf_offset = payload_begin;
     }
     return event;
 }

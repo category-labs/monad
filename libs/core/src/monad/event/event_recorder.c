@@ -586,7 +586,7 @@ int monad_event_init_local_iterator(
     iter->capacity_mask = recorder->event_ring.capacity - 1;
     iter->payload_buf = recorder->event_ring.payload_buf;
     iter->payload_buf_size = recorder->event_ring.payload_buf_size;
-    iter->write_last_seqno = &recorder->event_ring.control->wr_state.last_seqno;
+    iter->write_last_seqno = &recorder->event_ring.control->last_seqno;
     iter->buffer_window_start =
         &recorder->event_ring.control->buffer_window_start;
     iter->read_last_seqno =

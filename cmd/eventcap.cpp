@@ -95,7 +95,7 @@ static void hexdump_event_payload(
     }
 
     if (!monad_event_payload_check(iter, event)) {
-        std::fprintf(out, "ERROR: event %lu payload lost!\n", event->seqno);
+        std::fprintf(stderr, "ERROR: event %lu payload lost!\n", event->seqno);
     }
     else {
         std::fwrite(
@@ -196,9 +196,9 @@ static void follow_thread_main(
                 continue; // Nothing produced yet
 
             case MONAD_EVENT_GAP:
-                fprintf(
-                    out,
-                    "event gap from %lu -> %lu, resetting\n",
+                std::fprintf(
+                    stderr,
+                    "ERROR: event gap from %lu -> %lu, resetting\n",
                     iter.read_last_seqno,
                     event.seqno);
                 monad_event_iterator_reset(&iter);

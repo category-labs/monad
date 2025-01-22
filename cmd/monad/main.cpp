@@ -33,6 +33,7 @@
 #include <boost/outcome/try.hpp>
 
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>

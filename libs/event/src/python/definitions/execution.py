@@ -20,6 +20,9 @@ class block_exec_header(ctypes.Structure):
     ('mix_hash', bytes32),
     ('nonce', ctypes.c_uint8 * 8),
     ('base_fee_per_gas', uint256_ne),
+    ('blob_gas_used', ctypes.c_uint64),
+    ('excess_blob_gas', ctypes.c_uint64),
+    ('parent_beacon_block_root', bytes32),
     ('txn_count', ctypes.c_uint64),
   )
 
@@ -37,7 +40,7 @@ class block_exec_result(ctypes.Structure):
     ('transactions_root', bytes32),
     ('receipts_root', bytes32),
     ('withdrawals_root', bytes32),
-    ('gas_used', ctypes.c_uint64)
+    ('gas_used', ctypes.c_uint64) # Note: not cumulative
   )
 
 register_event('BLOCK_END', block_exec_result,
@@ -56,9 +59,11 @@ register_event('BLOCK_FINALIZE', None,
 
 class txn_header(ctypes.Structure):
   _fields_ = (
+    ('tx_hash', bytes32),
     ('nonce', ctypes.c_uint64),
     ('gas_limit', ctypes.c_uint64),
     ('max_fee_per_gas', uint256_ne),
+    ('max_priority_fee_per_gas', uint256_ne),
     ('value', uint256_ne),
     ('from', address),
     ('to', address),

@@ -46,10 +46,10 @@ MONAD_NAMESPACE_BEGIN
 
 static boost::fibers::fiber_specific_ptr<uint32_t> g_fss_txn_num;
 
-extern "C" uint32_t monad_event_get_txn_num()
+extern "C" uint32_t monad_event_get_txn_id()
 {
     return boost::fibers::context::active()
-               ? g_fss_txn_num.get() != nullptr ? *g_fss_txn_num : 0
+               ? g_fss_txn_num.get() != nullptr ? *g_fss_txn_num + 1 : 0
                : 0;
 }
 

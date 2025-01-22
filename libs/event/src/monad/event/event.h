@@ -49,7 +49,7 @@ struct monad_event_descriptor
     bool inline_payload;         ///< True -> payload stored inside descriptor
     uint8_t : 8;                 ///< Unused tail padding
     uint32_t length;             ///< Size of event payload
-    uint32_t txn_num;            ///< Transaction number within block
+    uint32_t txn_id;             ///< 0 == no txn, else ID == txn num + 1
     uint64_t epoch_nanos;        ///< Time event was recorded
     union
     {

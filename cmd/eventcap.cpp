@@ -37,29 +37,6 @@ namespace fs = std::filesystem;
 
 static sig_atomic_t g_should_exit = 0;
 
-constexpr bool is_txn_event(monad_event_type type)
-{
-    switch (type) {
-    case MONAD_EVENT_TXN_START:
-        [[fallthrough]];
-    case MONAD_EVENT_TXN_EXEC_ERROR:
-        [[fallthrough]];
-    case MONAD_EVENT_TXN_REJECT:
-        [[fallthrough]];
-    case MONAD_EVENT_TXN_LOG:
-        [[fallthrough]];
-    case MONAD_EVENT_TXN_RECEIPT:
-        [[fallthrough]];
-    case MONAD_EVENT_WR_ACCT_STATE_BALANCE:
-        [[fallthrough]];
-    case MONAD_EVENT_WR_ACCT_STATE_STORAGE:
-        return true;
-
-    default:
-        return false;
-    }
-}
-
 static void hexdump_event_payload(
     monad_event_iterator const *iter, monad_event_descriptor const *event,
     std::FILE *out)
@@ -144,8 +121,8 @@ static void print_event(
             block_exec_header->number,
             block_exec_header->round);
     }
-    if (is_txn_event(event->type)) {
-        o = std::format_to(o, " TXN: {}", event->txn_num);
+    if (event->txn_id != 0) {
+        o = std::format_to(o, " TXN: {}", event->txn_id - 1);
     }
     *o++ = '\n';
     std::fwrite(event_buf, static_cast<size_t>(o - event_buf), 1, out);

@@ -75,22 +75,17 @@ struct monad_event_ring
         *control;                      ///< Keeps track of ring state/status
 };
 
-/// Resource allocation within an event ring, i.e., the reserving of an event
-/// descriptor slot and payload buffer space to record an event, is tracked
-/// using this object
-struct monad_event_ring_writer_state
-{
-    alignas(16) uint64_t last_seqno; ///< Last sequence number allocated
-    uint64_t next_payload_byte;      ///< Next payload buffer byte to allocate
-};
-
 // clang-format on
 
-/// Control registers of the event ring, mapped in a shared memory page
+/// Control registers of the event ring, mapped in a shared memory page;
+/// resource allocation within an event ring, i.e., the reserving of an event
+/// descriptor slot and payload buffer space to record an event, is tracked
+/// using this object
 struct monad_event_ring_control
 {
-    alignas(64) struct monad_event_ring_writer_state wr_state;
-    alignas(64) uint64_t buffer_window_start;
+    alignas(64) uint64_t last_seqno; ///< Last sequence number allocated
+    uint64_t next_payload_byte; ///< Next payload buffer byte to allocate
+    alignas(64) uint64_t buffer_window_start; ///< See event.md documentation
 };
 
 /// Default location of the UNIX domain socket address for the event server

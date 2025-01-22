@@ -833,7 +833,7 @@ int monad_event_imported_ring_init_iter(
     iter->capacity_mask = import->ring.capacity - 1;
     iter->payload_buf = import->ring.payload_buf;
     iter->payload_buf_size = import->ring.payload_buf_size;
-    iter->write_last_seqno = &import->ring.control->wr_state.last_seqno;
+    iter->write_last_seqno = &import->ring.control->last_seqno;
     iter->buffer_window_start = &import->ring.control->buffer_window_start;
     (void)monad_event_iterator_reset(iter);
     return 0;

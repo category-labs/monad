@@ -256,7 +256,7 @@ event_loop(struct monad_event_imported_ring const *import, FILE *out)
         case MONAD_EVENT_GAP:
             fprintf(
                 stderr,
-                "event gap from %lu -> %lu, resetting\n",
+                "ERROR: event gap from %lu -> %lu, resetting\n",
                 iter.read_last_seqno,
                 event.seqno);
             monad_event_iterator_reset(&iter);

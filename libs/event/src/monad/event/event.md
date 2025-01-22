@@ -103,6 +103,7 @@ struct monad_event_txn_header
     uint64_t gas_limit;
     monad_event_uint256_ne max_fee_per_gas;
     monad_event_uint256_ne value;
+    monad_event_address from;
     monad_event_address to;
     uint8_t txn_type;
     monad_event_uint256_ne r;
@@ -250,7 +251,7 @@ struct monad_event_descriptor
     bool inline_payload;         ///< True -> payload is stored inline
     uint8_t : 8;                 ///< Unused tail padding
     uint32_t length;             ///< Size of event payload
-    uint32_t txn_num;            ///< Transaction number within block
+    uint32_t txn_id;             ///< 0 == no txn, else ID == txn num + 1
     uint64_t epoch_nanos;        ///< Time event was recorded
     union
     {
@@ -263,7 +264,7 @@ struct monad_event_descriptor
 #### Other fields in `struct monad_event_descriptor`
 
 The fields which have not been described yet are `pop_scope`, `source_id`,
-`block_flow_id`, `txn_num`, `inline_payload`, and the fixed-size `payload`
+`block_flow_id`, `txn_id`, `inline_payload`, and the fixed-size `payload`
 array.
 
 If `inline_payload` is true, the payload is stored directly in the
@@ -315,14 +316,19 @@ block. The two IDs have similar properties:
    example of how these are used, check how the `eventwatch` sample program
    prints the name of the thread that recorded an event.
 
-The `txn_num` field is self-explanatory. For events related to transactions,
-it gives the associated transaction number. This allows the reader to easily
+The `txn_id` field associates an event with the transaction that produced it.
+A value of zero indicates that the event is not associated with any
+transaction, e.g., the `BLOCK_START` event. A non-zero ID satisfies
+`id == <transaction-index> + 1`, i.e., subtracting one from the ID gives
+the zero-based index of the transaction within the block.
+
+Storing the transaction ID in the descriptor allows the reader to easily
 filter the large number of transaction events. For example, upon seeing the
-transaction header (the `TXN_START` event payload), a reader decides whether
-a transaction is interesting. Keeping the `txn_num` directly in the descriptor
-makes it easier to filter through only the interesting `TXN_LOG` events, as
-there is no need to look at the event payload (which if memcpy'd, can be
-somewhat large) if their ID is not an interesting one.
+transaction header (the `TXN_START` event payload), a reader may decide that
+a transaction is interesting. Keeping the `txn_id` in the descriptor of all
+subsequent events for that transaction makes it more efficient to examine
+only the interesting ones (e.g., `TXN_LOG` events), as there is no need to
+look at the event payload for uninteresting IDs.
 
 ### Reader and writer communication channels
 

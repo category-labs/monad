@@ -40,6 +40,8 @@ monad_statesync_client_context::monad_statesync_client_context(
     , sync{sync}
     , statesync_send_request{statesync_send_request}
 {
+    MONAD_ASSERT(
+        db.get_latest_block_id() == db.get_latest_finalized_block_id());
 }
 
 void monad_statesync_client_context::commit()

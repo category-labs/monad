@@ -594,7 +594,7 @@ int monad_event_init_local_iterator(
     return 0;
 }
 
-__attribute__((weak)) uint32_t monad_event_get_txn_num()
+__attribute__((weak)) uint32_t monad_event_get_txn_id()
 {
     return 0;
 }

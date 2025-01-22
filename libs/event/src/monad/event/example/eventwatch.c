@@ -101,29 +101,6 @@ void handle_signal(int)
     g_should_stop = 1;
 }
 
-static bool is_txn_event(enum monad_event_type type)
-{
-    switch (type) {
-    case MONAD_EVENT_TXN_START:
-        [[fallthrough]];
-    case MONAD_EVENT_TXN_EXEC_ERROR:
-        [[fallthrough]];
-    case MONAD_EVENT_TXN_REJECT:
-        [[fallthrough]];
-    case MONAD_EVENT_TXN_LOG:
-        [[fallthrough]];
-    case MONAD_EVENT_TXN_RECEIPT:
-        [[fallthrough]];
-    case MONAD_EVENT_WR_ACCT_STATE_BALANCE:
-        [[fallthrough]];
-    case MONAD_EVENT_WR_ACCT_STATE_STORAGE:
-        return true;
-
-    default:
-        return false;
-    }
-}
-
 static void hexdump_event_payload(
     struct monad_event_iterator const *iter,
     struct monad_event_descriptor const *event, FILE *out)
@@ -208,8 +185,8 @@ static void print_event(
             block_exec_header->number,
             block_exec_header->round);
     }
-    if (is_txn_event(event->type)) {
-        o += sprintf(o, " TXN: %u", event->txn_num);
+    if (event->txn_id != 0) {
+        o += sprintf(o, " TXN: %u", event->txn_id - 1);
     }
     *o++ = '\n';
     fwrite(event_buf, (size_t)(o - event_buf), 1, out);

@@ -221,7 +221,7 @@ inline void monad_event_record(
     struct monad_event_recorder *recorder, enum monad_event_type event_type,
     uint8_t flags, void const *payload, size_t payload_size)
 {
-    extern uint32_t monad_event_get_txn_num();
+    extern uint32_t monad_event_get_txn_id();
     struct monad_event_descriptor *event;
     struct monad_event_recorder_thr *thread_cache;
     uint64_t seqno;
@@ -247,7 +247,7 @@ inline void monad_event_record(
     event->block_flow_id = g_monad_event_recorder_shared_state.block_flow_id;
     event->source_id = thread_cache->source_id;
     event->pop_scope = flags & MONAD_EVENT_POP_SCOPE;
-    event->txn_num = monad_event_get_txn_num();
+    event->txn_id = monad_event_get_txn_id();
     event->epoch_nanos = event_time;
     __atomic_store_n(&event->seqno, seqno, __ATOMIC_RELEASE);
 }
@@ -256,7 +256,7 @@ inline void monad_event_recordv(
     struct monad_event_recorder *recorder, enum monad_event_type event_type,
     uint8_t flags, struct iovec const *iov, size_t iovlen)
 {
-    extern uint32_t monad_event_get_txn_num();
+    extern uint32_t monad_event_get_txn_id();
     struct monad_event_descriptor *event;
     struct monad_event_recorder_thr *thread_cache;
     uint64_t seqno;
@@ -285,7 +285,7 @@ inline void monad_event_recordv(
     event->block_flow_id = g_monad_event_recorder_shared_state.block_flow_id;
     event->source_id = thread_cache->source_id;
     event->pop_scope = flags & MONAD_EVENT_POP_SCOPE;
-    event->txn_num = monad_event_get_txn_num();
+    event->txn_id = monad_event_get_txn_id();
     event->epoch_nanos = event_time;
     __atomic_store_n(&event->seqno, seqno, __ATOMIC_RELEASE);
 }

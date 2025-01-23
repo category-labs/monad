@@ -4,10 +4,12 @@
 #include <monad/core/block.hpp>
 #include <monad/core/fmt/transaction_fmt.hpp>
 #include <monad/core/int.hpp>
+#include <monad/core/keccak.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/core/rlp/transaction_rlp.hpp>
+#include <monad/core/spinloop.h>
 #include <monad/core/withdrawal.hpp>
 #include <monad/event/event_recorder.h>
 #include <monad/event/event_types.h>
@@ -34,6 +36,8 @@
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 
+#include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -249,6 +253,7 @@ Result<std::vector<ExecutionResult>> execute_block(
         new boost::fibers::promise<void>[block.transactions.size() + 1]);
     promises[0].set_value();
 
+    std::atomic<size_t> tx_exec_finished = 0;
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         priority_pool.submit(
             i,
@@ -260,7 +265,8 @@ Result<std::vector<ExecutionResult>> execute_block(
              &sender = senders[i],
              &header = block.header,
              &block_hash_buffer = block_hash_buffer,
-             &block_state] {
+             &block_state,
+             &tx_exec_finished] {
                 g_fss_txn_num.reset(new uint32_t{i});
                 results[i] = execute<rev>(
                     chain,
@@ -274,11 +280,21 @@ Result<std::vector<ExecutionResult>> execute_block(
                 promises[i + 1].set_value();
                 record_txn_exec_result_events(*results[i]);
                 g_fss_txn_num.release();
+                tx_exec_finished.fetch_add(1, std::memory_order::relaxed);
             });
     }
 
     auto const last = static_cast<std::ptrdiff_t>(block.transactions.size());
     promises[last].get_future().wait();
+
+    // All transactions have released their merge-order synchronization
+    // primitive (promises[i + 1]) but some stragglers could still be running
+    // post-execution code that occurs immediately after that, e.g.
+    // `record_txn_exec_result_events`. This waits for everything to finish
+    // so that it's safe to assume we're the only ones using `results`.
+    while (tx_exec_finished.load() < block.transactions.size()) {
+        monad_spinloop_hint();
+    }
 
     std::vector<ExecutionResult> retvals;
     for (unsigned i = 0; i < block.transactions.size(); ++i) {

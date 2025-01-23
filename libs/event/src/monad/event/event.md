@@ -388,7 +388,7 @@ running a `monad` process at the same time), read the code.
 API | Purpose
 --- | -------
 `monad_event_iterator_try_next` | Copy the next event descriptor if one is available, and advance to the next descriptor
-`monad_event_iterator_try_full` | Copy both the event descriptor and payload as one atomic operation; easiest API to use, but see remark below
+`monad_event_iterator_try_copy_all` | Copy both the event descriptor and payload as one atomic operation; easiest API to use, but see remark below
 `monad_event_iterator_reset` | Reset the iterator to point to the most recently produced event descriptor; used for gap recovery
 
 ### Event Payload APIs
@@ -399,7 +399,7 @@ API | Purpose
 `monad_event_payload_check` | Check if an event payload has been overwritten
 `monad_event_payload_memcpy` | `memcpy` the event payload to a buffer, succeeding only if the payload copy is valid
 
-The simplest API is `monad_event_iterator_try_full`, which copies both
+The simplest API is `monad_event_iterator_try_copy_all`, which copies both
 the descriptor and payload, performs all validity checking, and advances the
 iterator if successful. However, the user must take care to provide a large
 enough buffer to hold any possible payload or the copied payload may be
@@ -411,8 +411,8 @@ void read_events(struct monad_iterator_reader *iter) {
     struct monad_event_descriptor event;
     uint8_t tiny_buf[64]; // This payload buffer is too small for most events
 
-    switch (monad_event_iterator_try_full(iter, &event, tiny_buf, sizeof tiny_buf)) {
-    case MONAD_EVENT_READY:
+    switch (monad_event_iterator_try_copy_all(iter, &event, tiny_buf, sizeof tiny_buf)) {
+    case MONAD_EVENT_SUCCESS:
         if (event.length > sizeof tiny_buf) {
             // Event payload has more data than could fit in our buffer, so we're
             // missing part of it. A size of 64 is far too small for many event

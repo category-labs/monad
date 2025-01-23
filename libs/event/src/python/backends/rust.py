@@ -52,10 +52,12 @@ def emit_enum_type(events: list[EventInfo], out: typing.TextIO):
   print(
 """/// Each type of event is assigned a unique value in this enumeration
 #[repr(u16)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub enum monad_event_type {""", file=out)
 
-  for event in events:
+  for event_no, event in enumerate(events):
+    if event_no == 0:
+        print(f'    #[default]', file=out)
     print(f'    {event.c_name},', file=out)
 
   print('}', file=out)

@@ -66,9 +66,15 @@ typedef struct monad_event_bytes32
 #endif
 }} monad_event_bytes32;
 
+// 256-bit integer stored in native endian byte order; the rationale for the
+// storage layout as `uint64_t[4]` instead of `uint8_t[32]` is that this
+// ensures the type is suitably-aligned to unsafely cast the underlying bits
+// into a type in an extended-precision integer library, if that library
+// internally uses a uint64_t[4] "limbs"-style representation. Both the C++
+// intx library and Rust's ruint package use this representation.
 typedef struct monad_event_uint256_ne
 {{
-    uint8_t bytes[32];
+    uint64_t limbs[4];
 
 #ifdef __cplusplus
     monad_event_uint256_ne &operator=(evmc_bytes32 const &rhs)

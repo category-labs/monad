@@ -539,5 +539,5 @@ follows:
   the export interface to export shared memory segments from a static,
   on-disk file format. This is mostly used by Rust, so that it doesn't
   require an external process to act as the server
-- `cmd/exportshm.cpp` is a utility that generates the shared memory
-  snapshots used by `event_server_test.c`
+- `cmd/exportrsm.cpp` is a utility that saves a snapshot of event ring
+  shared memory segments to file; this is used by `event_server_test.c`

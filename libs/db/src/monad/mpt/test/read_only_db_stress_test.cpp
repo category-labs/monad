@@ -30,6 +30,20 @@
 using namespace monad::mpt;
 using namespace monad::test;
 
+inline std::unordered_map<std::string, quill::LogLevel> const log_level_map = {
+    {"tracel3", quill::LogLevel::TraceL3},
+    {"trace_l3", quill::LogLevel::TraceL3},
+    {"tracel2", quill::LogLevel::TraceL2},
+    {"trace_l2", quill::LogLevel::TraceL2},
+    {"tracel1", quill::LogLevel::TraceL1},
+    {"trace_l1", quill::LogLevel::TraceL1},
+    {"debug", quill::LogLevel::Debug},
+    {"info", quill::LogLevel::Info},
+    {"warning", quill::LogLevel::Warning},
+    {"error", quill::LogLevel::Error},
+    {"critical", quill::LogLevel::Critical},
+    {"none", quill::LogLevel::None}};
+
 sig_atomic_t volatile g_done = 0;
 
 static_assert(std::atomic<bool>::is_always_lock_free); // async signal safe
@@ -72,6 +86,7 @@ int main(int argc, char *const argv[])
     bool enable_compaction = true;
     uint32_t timeout_seconds = std::numeric_limits<uint32_t>::max();
     std::vector<std::filesystem::path> dbname_paths;
+    auto log_level = quill::LogLevel::Info;
     CLI::App cli(
         "Tool for stress testing concurrent RO DB instances",
         "read_only_db_stress_test");
@@ -115,9 +130,13 @@ int main(int argc, char *const argv[])
                dbname_paths,
                "A comma-separated list of previously created database paths")
             ->required();
+        cli.add_option("--log_level", log_level, "level of logging")
+            ->transform(
+                CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
         cli.parse(argc, argv);
 
         quill::start(true);
+        quill::get_root_logger()->set_log_level(log_level);
 
         struct sigaction sig;
         sig.sa_handler = &on_signal;

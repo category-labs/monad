@@ -38,7 +38,7 @@ namespace fs = std::filesystem;
 
 constexpr size_t PAGE_2MB = 1UL << 21;
 
-struct test_file_writer
+struct file_writer
 {
     int fd;
     size_t segments_written;
@@ -46,12 +46,15 @@ struct test_file_writer
     size_t compress_buf_len;
 };
 
-// A test file is an array of these entries (terminated by an all-zero
-// sentinel) explaining where the various other segments in the file are
-// written and what they contain
-struct test_file_segment
+// An RSM ("ring shared memory") file is an array of these entries (terminated
+// by an all-zero sentinel) explaining where the compressed shared memory
+// segment contents are in the file plus any additional metadata about what
+// they contain. Taken together, these entries can be used to recreate a
+// snapshot of all the ring's shared memory segments, so they can be re-exported
+// by the fake event server.
+struct rsm_file_segment
 {
-    uint16_t type;
+    monad_event_msg_type type;
     uint64_t compressed_len;
     uint64_t segment_len;
     uint64_t offset;
@@ -70,83 +73,75 @@ static size_t monad_round_size_to_align(size_t size, size_t align)
     return bit_round_up(size, static_cast<unsigned>(std::countr_zero(align)));
 }
 
-static void
-init_test_file_writer(test_file_writer *tfw, int fd, size_t max_size)
+static void init_file_writer(file_writer *fw, int fd, size_t max_size)
 {
-    tfw->fd = fd;
-    tfw->segments_written = 0;
+    fw->fd = fd;
+    fw->segments_written = 0;
     // Skip over the first page, which will hold the segment directory.
     off_t const skip = static_cast<off_t>(getpagesize());
-    off_t o = ftruncate(tfw->fd, skip);
+    off_t o = ftruncate(fw->fd, skip);
     MONAD_ASSERT(o != -1);
-    o = lseek(tfw->fd, skip, SEEK_SET);
+    o = lseek(fw->fd, skip, SEEK_SET);
     MONAD_ASSERT(o != -1);
 
     // Allocate a buffer to hold the compressed data (given to zlib for
     // compress2 output)
-    tfw->compress_buf_len =
+    fw->compress_buf_len =
         monad_round_size_to_align(ZSTD_compressBound(max_size), PAGE_2MB);
-    tfw->compress_buf = mmap(
+    fw->compress_buf = mmap(
         nullptr,
-        tfw->compress_buf_len,
+        fw->compress_buf_len,
         PROT_READ | PROT_WRITE,
         MAP_ANONYMOUS | MAP_PRIVATE | MAP_HUGETLB,
         -1,
         0);
-    MONAD_ASSERT(tfw->compress_buf != MAP_FAILED);
+    MONAD_ASSERT(fw->compress_buf != MAP_FAILED);
 }
 
 static void save_mmap_region(
-    test_file_writer *tfw, test_file_segment *segment, void const *data,
-    size_t length)
+    file_writer *fw, rsm_file_segment *segment, void const *data, size_t length)
 {
     // Compress the memory segment
     size_t const compressed_len = ZSTD_compress(
-        tfw->compress_buf,
-        tfw->compress_buf_len,
-        data,
-        length,
-        ZSTD_maxCLevel());
+        fw->compress_buf, fw->compress_buf_len, data, length, ZSTD_maxCLevel());
     MONAD_ASSERT(ZSTD_isError(compressed_len) == 0);
 
     // Write the segment descriptor describing the memory segment we're dumping
     segment->segment_len = length;
     segment->compressed_len = static_cast<uint64_t>(compressed_len);
-    off_t curoff = lseek(tfw->fd, 0, SEEK_CUR);
+    off_t curoff = lseek(fw->fd, 0, SEEK_CUR);
     MONAD_ASSERT(curoff != -1);
     segment->offset = (uint64_t)curoff;
     ssize_t wr_bytes = pwrite(
-        tfw->fd,
+        fw->fd,
         segment,
         sizeof *segment,
-        static_cast<off_t>(sizeof(*segment) * tfw->segments_written++));
+        static_cast<off_t>(sizeof(*segment) * fw->segments_written++));
     MONAD_ASSERT(wr_bytes == sizeof(*segment));
 
     // Write the compressed segment data
-    wr_bytes = write(tfw->fd, tfw->compress_buf, segment->compressed_len);
+    wr_bytes = write(fw->fd, fw->compress_buf, segment->compressed_len);
     MONAD_ASSERT(wr_bytes == static_cast<ssize_t>(segment->compressed_len));
 }
 
-static void close_test_file_writer(test_file_writer *tfw)
+static void close_file_writer(file_writer *fw)
 {
-    test_file_segment s{};
+    rsm_file_segment s{};
 
     // The segment directory is terminated by an all zero segment (i.e.,
     // type == MONAD_EVENT_MSG_NONE) followed by the event metadata hash
     off_t const o = lseek(
-        tfw->fd,
-        static_cast<off_t>(sizeof(s) * tfw->segments_written),
-        SEEK_SET);
+        fw->fd, static_cast<off_t>(sizeof(s) * fw->segments_written), SEEK_SET);
     MONAD_ASSERT(o != -1);
-    ssize_t wr_bytes = write(tfw->fd, &s, sizeof s);
+    ssize_t wr_bytes = write(fw->fd, &s, sizeof s);
     MONAD_ASSERT(wr_bytes == sizeof s);
     wr_bytes = write(
-        tfw->fd,
+        fw->fd,
         g_monad_event_metadata_hash,
         sizeof g_monad_event_metadata_hash);
     MONAD_ASSERT(wr_bytes == sizeof g_monad_event_metadata_hash);
-    close(tfw->fd);
-    munmap(tfw->compress_buf, static_cast<size_t>(tfw->compress_buf_len));
+    close(fw->fd);
+    munmap(fw->compress_buf, static_cast<size_t>(fw->compress_buf_len));
 }
 
 static void wait_for_seqno(
@@ -170,7 +165,7 @@ static void wait_for_seqno(
             MONAD_ABORT("unexpected gap during last_seqno wait");
 
         case MONAD_EVENT_PAYLOAD_EXPIRED:
-            std::unreachable(); // Never actually returned by peek
+            std::unreachable(); // Never actually returned by try_next
 
         case MONAD_EVENT_NOT_READY:
             continue;
@@ -193,18 +188,18 @@ static void wait_for_seqno(
 
 void export_shm_segments(monad_event_imported_ring *import, int fd)
 {
-    test_file_writer tfw{};
-    test_file_segment segment{};
+    file_writer fw{};
+    rsm_file_segment segment{};
 
     // Setup the output structure and skip over the fixed-size segment
     // descriptor table
-    init_test_file_writer(&tfw, fd, import->ring.payload_buf_size);
+    init_file_writer(&fw, fd, import->ring.payload_buf_size);
 
     // Write the control page
     segment.type = MONAD_EVENT_MSG_MAP_RING_CONTROL;
     segment.ring_capacity = import->ring.capacity;
     save_mmap_region(
-        &tfw,
+        &fw,
         &segment,
         import->ring.control,
         static_cast<size_t>(getpagesize()));
@@ -212,7 +207,7 @@ void export_shm_segments(monad_event_imported_ring *import, int fd)
     // Write the descriptor array
     segment.type = MONAD_EVENT_MSG_MAP_DESCRIPTOR_ARRAY;
     save_mmap_region(
-        &tfw,
+        &fw,
         &segment,
         import->ring.descriptors,
         sizeof(struct monad_event_descriptor) * import->ring.capacity);
@@ -220,16 +215,13 @@ void export_shm_segments(monad_event_imported_ring *import, int fd)
     // Write the payload buffer
     segment.type = MONAD_EVENT_MSG_MAP_PAYLOAD_BUFFER;
     save_mmap_region(
-        &tfw,
-        &segment,
-        import->ring.payload_buf,
-        import->ring.payload_buf_size);
+        &fw, &segment, import->ring.payload_buf, import->ring.payload_buf_size);
 
     // Write the metadata page
     segment.type = MONAD_EVENT_MSG_MAP_METADATA_PAGE;
     monad_event_proc *const proc = import->proc;
     save_mmap_region(
-        &tfw, &segment, proc->metadata_page, proc->metadata_page_len);
+        &fw, &segment, proc->metadata_page, proc->metadata_page_len);
 
     // Export thread table and block table offset; we manually write these
     // metadata sections since there is no associated mmap region for them
@@ -243,10 +235,10 @@ void export_shm_segments(monad_event_imported_ring *import, int fd)
     segment.offset = static_cast<uint64_t>(
         thread_table_u8 - std::bit_cast<uint8_t const *>(proc->metadata_page));
     wr_bytes = pwrite(
-        tfw.fd,
+        fw.fd,
         &segment,
         sizeof(segment),
-        static_cast<off_t>(sizeof(segment) * tfw.segments_written++));
+        static_cast<off_t>(sizeof(segment) * fw.segments_written++));
     MONAD_ASSERT(wr_bytes == sizeof(segment));
 
     segment.metadata_type = MONAD_EVENT_METADATA_BLOCK_FLOW;
@@ -256,13 +248,13 @@ void export_shm_segments(monad_event_imported_ring *import, int fd)
         block_header_table_u8 -
         std::bit_cast<uint8_t const *>(proc->metadata_page));
     wr_bytes = pwrite(
-        tfw.fd,
+        fw.fd,
         &segment,
         sizeof(segment),
-        static_cast<off_t>(sizeof(segment) * tfw.segments_written++));
+        static_cast<off_t>(sizeof(segment) * fw.segments_written++));
     MONAD_ASSERT(wr_bytes == sizeof(segment));
 
-    close_test_file_writer(&tfw);
+    close_file_writer(&fw);
 }
 
 int main(int argc, char **argv)
@@ -275,7 +267,7 @@ int main(int argc, char **argv)
     // Defaults
     connect_opts.socket_timeout.tv_sec = 1;
 
-    CLI::App cli{"monad event export shared memory tool"};
+    CLI::App cli{"export event ring shared memory tool"};
     cli.add_option(
            "-s,--server", server_socket_file, "path to the server socket file")
         ->capture_default_str();

@@ -2,7 +2,8 @@
  * @file
  *
  * This file implements the EXPORT_RING message for a fake event server, when
- * it is opening a pre-recorded snapshot of some shared memory segments.
+ * it is opening a pre-recorded snapshot of some shared memory segments, as
+ * captured by the exportrsm utility.
  */
 
 #include <assert.h>
@@ -25,7 +26,6 @@
 #include <zstd.h>
 
 #include <monad/core/srcloc.h>
-#include <monad/event/event.h>
 #include <monad/event/event_protocol.h>
 #include <monad/event/event_server.h>
 #include <monad/event/event_server_internal.h>
@@ -57,8 +57,8 @@ static size_t round_size_to_align(size_t size, size_t align)
     return (size + (align - 1)) & ~(align - 1);
 }
 
-// Redefinition of structure from exportshm.cpp
-struct test_file_segment
+// Redefinition of structure from exportrsm.cpp
+struct rsm_file_segment
 {
     uint16_t type;
     uint64_t compressed_len;
@@ -81,7 +81,7 @@ struct mapped_test_segment
 
 struct test_server_context
 {
-    struct test_file_segment const *segments;
+    struct rsm_file_segment const *segments;
     size_t segment_count;
     size_t map_len;
     struct mapped_test_segment *mapped_segments;
@@ -149,8 +149,8 @@ static bool export_test_metadata(
 
     // Send the metadata offset messages
     for (size_t s = 0; s < test_context->segment_count; ++s) {
-        struct test_file_segment const *segment = &test_context->segments[s];
-        msg.msg_type = (enum monad_event_msg_type)segment->type;
+        struct rsm_file_segment const *segment = &test_context->segments[s];
+        msg.msg_type = segment->type;
         if (msg.msg_type != MONAD_EVENT_MSG_METADATA_OFFSET) {
             continue;
         }
@@ -225,11 +225,11 @@ static bool export_test_ring(
     memset(&msg, 0, sizeof msg);
     msg.ring_capacity = test_context->ring_capacity;
     for (size_t s = 0; s < test_context->segment_count; ++s) {
-        struct test_file_segment const *segment = &test_context->segments[s];
+        struct rsm_file_segment const *segment = &test_context->segments[s];
         struct mapped_test_segment const *mapped_seg =
             &test_context->mapped_segments[s];
 
-        msg.msg_type = (enum monad_event_msg_type)segment->type;
+        msg.msg_type = segment->type;
         switch (msg.msg_type) {
         case MONAD_EVENT_MSG_MAP_METADATA_PAGE:
             [[fallthrough]];
@@ -291,6 +291,14 @@ static struct shared_mem_export_ops s_export_ops = {
     .export_ring = export_test_ring,
     .heartbeat = nullptr};
 
+#define WR_INFO(...)                                                           \
+    write_log(                                                                 \
+        log_file,                                                              \
+        LOG_INFO,                                                              \
+        0,                                                                     \
+        &(monad_source_location_t){__FUNCTION__, __FILE__, __LINE__, 0},       \
+        __VA_ARGS__)
+
 #define WR_ERR(ERRNO, ...)                                                     \
     write_log(                                                                 \
         log_file,                                                              \
@@ -311,7 +319,7 @@ int monad_event_test_server_create_from_bytes(
     int saved_error;
     unsigned map_flags;
     struct test_server_context *test_context;
-    struct test_file_segment const *segment;
+    struct rsm_file_segment const *segment;
     size_t decompress_len;
     char segment_name[32];
 
@@ -395,11 +403,22 @@ int monad_event_test_server_create_from_bytes(
             ms->memfd,
             0);
         if (ms->map_base == MAP_FAILED) {
-            saved_error = WR_ERR(errno, "unable to mmap %s", segment_name);
+            saved_error = WR_ERR(
+                errno,
+                "unable to mmap %s (type=%hu, len=%lu)",
+                segment_name,
+                segment->type,
+                ms->map_len);
             test_context->segment_count = s;
             cleanup_test_server_resources(test_context);
             return saved_error;
         }
+        WR_INFO(
+            "mapped %s (type %hu) to %p, length %lu",
+            segment_name,
+            segment->type,
+            ms->map_base,
+            ms->map_len);
         decompress_len = ZSTD_decompress(
             ms->map_base,
             ms->map_len,

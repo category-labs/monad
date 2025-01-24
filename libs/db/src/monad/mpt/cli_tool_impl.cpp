@@ -992,7 +992,7 @@ public:
             // override the first insertion count
             aux.modify_metadata(
                 override_insertion_count,
-                monad::mpt::UpdateAuxImpl::chunk_list::slow,
+                monad::mpt::UpdateAuxImpl::chunk_list::fast,
                 fast_list_base_insertion_count);
         }
         MONAD_ASSERT(

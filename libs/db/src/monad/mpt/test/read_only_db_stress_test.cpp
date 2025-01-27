@@ -69,6 +69,10 @@ int main(int argc, char *const argv[])
     unsigned num_traverse_threads = 2;
     double prng_bias = 1.66;
     size_t num_nodes_per_version = 1;
+    auto const min_node_size = serialize_as_big_endian<sizeof(uint64_t)>(
+                                   std::numeric_limits<uint64_t>::max())
+                                   .size();
+    size_t node_size = min_node_size;
     bool enable_compaction = true;
     uint32_t timeout_seconds = std::numeric_limits<uint32_t>::max();
     std::vector<std::filesystem::path> dbname_paths;
@@ -107,6 +111,11 @@ int main(int argc, char *const argv[])
             num_nodes_per_version,
             "Number of nodes to upsert per version");
         cli.add_option(
+               "--node-size",
+               node_size,
+               "Size in bytes data contained in each node")
+            ->check(CLI::Range(min_node_size, 255ul * 1024 * 1024));
+        cli.add_option(
             "--timeout",
             timeout_seconds,
             "Teardown the stress test after N seconds");
@@ -125,6 +134,14 @@ int main(int argc, char *const argv[])
         sigaction(SIGINT, &sig, nullptr);
         sigaction(SIGALRM, &sig, nullptr);
 
+        std::vector<monad::byte_string> node_data;
+        node_data.resize(num_nodes_per_version);
+        for (auto &data : node_data) {
+            data.resize(node_size);
+            auto extradata = data.data() + min_node_size;
+            memset(extradata, 0xff, data.size() - min_node_size);
+        }
+
         auto const prefix = 0x00_hex;
 
         auto upsert_new_version = [&](Db &db, uint64_t const version) {
@@ -135,10 +152,14 @@ int main(int argc, char *const argv[])
             auto const version_bytes =
                 serialize_as_big_endian<sizeof(uint64_t)>(version);
             for (size_t k = 0; k < num_nodes_per_version; ++k) {
+                memcpy(
+                    node_data[k].data(),
+                    version_bytes.data(),
+                    version_bytes.size());
                 ul.push_front(update_alloc.emplace_back(make_update(
                     hash_alloc.emplace_back(
                         to_key(version * num_nodes_per_version + k)),
-                    version_bytes)));
+                    node_data[k])));
             }
 
             auto u_prefix = Update{
@@ -180,7 +201,9 @@ int main(int argc, char *const argv[])
                                 to_key(version * num_nodes_per_version + k)}),
                         version);
                     if (res.has_value()) {
-                        MONAD_ASSERT(res.value() == version_bytes);
+                        MONAD_ASSERT(
+                            res.value().substr(0, version_bytes.size()) ==
+                            version_bytes);
                         ++nsuccess;
                     }
                     else {
@@ -228,7 +251,9 @@ int main(int argc, char *const argv[])
                     monad::async::result<monad::byte_string> res)
                 {
                     if (res) {
-                        MONAD_ASSERT(res.value() == version_bytes);
+                        MONAD_ASSERT(
+                            res.value().substr(0, version_bytes.size()) ==
+                            version_bytes);
                         ++(*nsuccess);
                     }
                     else {
@@ -305,11 +330,14 @@ int main(int argc, char *const argv[])
             {
                 Nibbles path{};
                 size_t num_nodes;
+                monad::byte_string_view value;
                 sig_atomic_t volatile &done;
 
                 explicit VersionValidatorMachine(
-                    size_t num_nodes_, sig_atomic_t volatile &done_)
+                    size_t num_nodes_, monad::byte_string_view value_,
+                    sig_atomic_t volatile &done_)
                     : num_nodes(num_nodes_)
+                    , value(value_)
                     , done(done_)
                 {
                 }
@@ -326,7 +354,8 @@ int main(int argc, char *const argv[])
                     if (node.has_value()) {
                         MONAD_ASSERT(path.nibble_size() == KECCAK256_SIZE * 2);
                         uint64_t const version =
-                            deserialize_from_big_endian<uint64_t>(node.value());
+                            deserialize_from_big_endian<uint64_t>(
+                                node.value().substr(0, value.size()));
                         bool found = false;
                         for (size_t k = 0; k < num_nodes; ++k) {
                             if (path ==
@@ -369,10 +398,12 @@ int main(int argc, char *const argv[])
             auto rnd = monad::thread_local_prng();
             while (!g_done) {
                 auto const version = select_rand_version(ro_db, rnd, prng_bias);
+                auto const value =
+                    serialize_as_big_endian<sizeof(uint64_t)>(version);
                 if (auto cursor = ro_db.find(prefix, version);
                     cursor.has_value()) {
                     VersionValidatorMachine machine(
-                        num_nodes_per_version, g_done);
+                        num_nodes_per_version, value, g_done);
                     machine.num_nodes = num_nodes_per_version;
                     if (!ro_db.traverse(cursor.value(), machine, version)) {
                         auto const min_version = ro_db.get_earliest_block_id();
@@ -414,7 +445,7 @@ int main(int argc, char *const argv[])
                     version);
                 if (res.has_value()) {
                     ++nsuccess;
-                    MONAD_ASSERT(res.value() == value);
+                    MONAD_ASSERT(res.value().substr(0, value.size()) == value);
                 }
                 else {
                     ++nfailed;

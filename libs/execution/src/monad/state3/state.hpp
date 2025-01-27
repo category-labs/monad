@@ -463,12 +463,12 @@ public:
             if (it != code_.end()) {
                 auto const &code_analysis = it->second;
                 MONAD_ASSERT(code_analysis);
-                return code_analysis->executable_code.size();
+                return code_analysis->executable_code().size();
             }
         }
         auto const code_analysis = block_state_.read_code(code_hash);
         MONAD_ASSERT(code_analysis);
-        return code_analysis->executable_code.size();
+        return code_analysis->executable_code().size();
     }
 
     size_t copy_code(
@@ -491,7 +491,7 @@ public:
             }
         }
         MONAD_ASSERT(code_analysis);
-        auto const &code = code_analysis->executable_code;
+        auto const &code = code_analysis->executable_code();
         if (offset > code.size()) {
             return 0;
         }

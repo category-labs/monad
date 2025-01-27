@@ -281,7 +281,7 @@ TEST(Evm, deploy_contract_code)
             EXPECT_EQ(r2.gas_left, gas - 800); // G_codedeposit * size(code)
             EXPECT_EQ(r2.create_address, a);
             EXPECT_EQ(
-                s.get_code(a)->executable_code,
+                s.get_code(a)->executable_code(),
                 byte_string(code, sizeof(code)));
         }
 
@@ -313,7 +313,7 @@ TEST(Evm, deploy_contract_code)
             EXPECT_EQ(r2.gas_left,
                       gas - 800); // G_codedeposit * size(code)
             EXPECT_EQ(
-                s.get_code(a)->executable_code,
+                s.get_code(a)->executable_code(),
                 byte_string(code, sizeof(code)));
         }
 

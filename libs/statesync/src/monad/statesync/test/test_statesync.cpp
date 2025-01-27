@@ -264,12 +264,12 @@ TEST_F(StateSyncFixture, sync_from_empty)
     TrieDb ctdb{cdb};
     EXPECT_EQ(ctdb.get_block_number(), 1'000'000);
     EXPECT_TRUE(ctdb.read_account(ADDR_A).has_value());
-    EXPECT_EQ(ctdb.read_code(A_CODE_HASH)->executable_code, A_CODE);
-    EXPECT_EQ(ctdb.read_code(B_CODE_HASH)->executable_code, B_CODE);
-    EXPECT_EQ(ctdb.read_code(C_CODE_HASH)->executable_code, C_CODE);
-    EXPECT_EQ(ctdb.read_code(D_CODE_HASH)->executable_code, D_CODE);
-    EXPECT_EQ(ctdb.read_code(E_CODE_HASH)->executable_code, E_CODE);
-    EXPECT_EQ(ctdb.read_code(H_CODE_HASH)->executable_code, H_CODE);
+    EXPECT_EQ(ctdb.read_code(A_CODE_HASH)->executable_code(), A_CODE);
+    EXPECT_EQ(ctdb.read_code(B_CODE_HASH)->executable_code(), B_CODE);
+    EXPECT_EQ(ctdb.read_code(C_CODE_HASH)->executable_code(), C_CODE);
+    EXPECT_EQ(ctdb.read_code(D_CODE_HASH)->executable_code(), D_CODE);
+    EXPECT_EQ(ctdb.read_code(E_CODE_HASH)->executable_code(), E_CODE);
+    EXPECT_EQ(ctdb.read_code(H_CODE_HASH)->executable_code(), H_CODE);
 
     auto raw = cdb.get(concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), N);
     ASSERT_TRUE(raw.has_value());
@@ -612,7 +612,7 @@ TEST_F(StateSyncFixture, ignore_unused_code)
         machine,
         mpt::OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
     TrieDb ctdb{cdb};
-    EXPECT_TRUE(ctdb.read_code(code_hash)->executable_code.empty());
+    EXPECT_TRUE(ctdb.read_code(code_hash)->executable_code().empty());
 }
 
 TEST_F(StateSyncFixture, sync_one_account)

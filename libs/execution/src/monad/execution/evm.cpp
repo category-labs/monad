@@ -202,9 +202,8 @@ evmc::Result create(
     };
 
     auto const input_code_analysis =
-        evmone::baseline::analyze(rev, {msg.input_data, msg.input_size});
-    evmc::Result result =
-        baseline_execute(m_call, rev, host, input_code_analysis);
+        evmone::baseline::analyze({msg.input_data, msg.input_size}, false);
+    auto result = baseline_execute(m_call, rev, host, input_code_analysis);
 
     if (result.status_code == EVMC_SUCCESS) {
         result = deploy_contract_code<rev>(

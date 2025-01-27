@@ -85,7 +85,7 @@ struct fmt::formatter<monad::Code> : public monad::BasicFormatter
                 "Code Hash: {}, Code Value: 0x{:02x} ",
                 code_hash,
                 fmt::join(
-                    std::as_bytes(std::span{code_analysis->executable_code}),
+                    std::as_bytes(std::span{code_analysis->executable_code()}),
                     ""));
         }
         fmt::format_to(ctx.out(), "}}");

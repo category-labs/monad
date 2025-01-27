@@ -259,7 +259,7 @@ TYPED_TEST(DBTest, read_code)
         Code{{A_CODE_HASH, A_CODE_ANALYSIS}},
         BlockHeader{});
 
-    EXPECT_EQ(tdb.read_code(A_CODE_HASH)->executable_code, A_CODE);
+    EXPECT_EQ(tdb.read_code(A_CODE_HASH)->executable_code(), A_CODE);
 
     Account acct_b{.balance = 0, .code_hash = B_CODE_HASH, .nonce = 1};
     commit_sequential(
@@ -268,7 +268,7 @@ TYPED_TEST(DBTest, read_code)
         Code{{B_CODE_HASH, B_CODE_ANALYSIS}},
         BlockHeader{});
 
-    EXPECT_EQ(tdb.read_code(B_CODE_HASH)->executable_code, B_CODE);
+    EXPECT_EQ(tdb.read_code(B_CODE_HASH)->executable_code(), B_CODE);
 }
 
 TYPED_TEST(DBTest, ModifyStorageOfAccount)
@@ -670,23 +670,23 @@ TYPED_TEST(DBTest, load_from_binary)
         tdb.state_root(),
         0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);
     EXPECT_EQ(
-        tdb.read_code(A_CODE_HASH)->executable_code,
-        A_CODE_ANALYSIS->executable_code);
+        tdb.read_code(A_CODE_HASH)->executable_code(),
+        A_CODE_ANALYSIS->executable_code());
     EXPECT_EQ(
-        tdb.read_code(B_CODE_HASH)->executable_code,
-        B_CODE_ANALYSIS->executable_code);
+        tdb.read_code(B_CODE_HASH)->executable_code(),
+        B_CODE_ANALYSIS->executable_code());
     EXPECT_EQ(
-        tdb.read_code(C_CODE_HASH)->executable_code,
-        C_CODE_ANALYSIS->executable_code);
+        tdb.read_code(C_CODE_HASH)->executable_code(),
+        C_CODE_ANALYSIS->executable_code());
     EXPECT_EQ(
-        tdb.read_code(D_CODE_HASH)->executable_code,
-        D_CODE_ANALYSIS->executable_code);
+        tdb.read_code(D_CODE_HASH)->executable_code(),
+        D_CODE_ANALYSIS->executable_code());
     EXPECT_EQ(
-        tdb.read_code(E_CODE_HASH)->executable_code,
-        E_CODE_ANALYSIS->executable_code);
+        tdb.read_code(E_CODE_HASH)->executable_code(),
+        E_CODE_ANALYSIS->executable_code());
     EXPECT_EQ(
-        tdb.read_code(H_CODE_HASH)->executable_code,
-        H_CODE_ANALYSIS->executable_code);
+        tdb.read_code(H_CODE_HASH)->executable_code(),
+        H_CODE_ANALYSIS->executable_code());
 }
 
 TYPED_TEST(DBTest, commit_call_frames)

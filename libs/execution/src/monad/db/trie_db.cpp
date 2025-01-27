@@ -251,7 +251,7 @@ void TrieDb::commit(
         MONAD_ASSERT(code_analysis);
         code_updates.push_front(update_alloc_.emplace_back(Update{
             .key = NibblesView{to_byte_string_view(hash.bytes)},
-            .value = code_analysis->executable_code,
+            .value = code_analysis->executable_code(),
             .incarnation = false,
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));
@@ -655,7 +655,7 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
                 db.read_code(acct.value().second.code_hash);
             MONAD_ASSERT(code_analysis);
             json[key]["code"] =
-                "0x" + evmc::hex(code_analysis->executable_code);
+                "0x" + evmc::hex(code_analysis->executable_code());
 
             if (!json[key].contains("storage")) {
                 json[key]["storage"] = nlohmann::json::object();

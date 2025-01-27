@@ -12,7 +12,7 @@ using CodeAnalysis = ::evmone::baseline::CodeAnalysis;
 
 inline CodeAnalysis analyze(byte_string_view const &code)
 {
-    return evmone::baseline::analyze(EVMC_FRONTIER, code); // TODO rev
+    return evmone::baseline::analyze(code, false); // TODO eof
 }
 
 MONAD_NAMESPACE_END

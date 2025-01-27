@@ -109,7 +109,7 @@ std::shared_ptr<CodeAnalysis> BlockState::read_code(bytes32_t const &code_hash)
         auto const result = db_.read_code(code_hash);
         MONAD_ASSERT(result);
         MONAD_ASSERT(
-            code_hash == NULL_HASH || !result->executable_code.empty());
+            code_hash == NULL_HASH || !result->executable_code().empty());
         Code::const_accessor it{};
         code_.emplace(it, code_hash, result);
         return it->second;

@@ -980,11 +980,11 @@ TYPED_TEST(StateTest, get_code)
     {
         s.access_account(a);
         auto const c = s.get_code(a);
-        EXPECT_EQ(c->executable_code, contract);
+        EXPECT_EQ(c->executable_code(), contract);
     }
     { // non-existant account
         auto const c = s.get_code(b);
-        EXPECT_EQ(c->executable_code, byte_string{});
+        EXPECT_EQ(c->executable_code(), byte_string{});
     }
 }
 
@@ -998,8 +998,8 @@ TYPED_TEST(StateTest, set_code)
     s.set_code(a, code2);
     s.set_code(b, byte_string{});
 
-    EXPECT_EQ(s.get_code(a)->executable_code, code2);
-    EXPECT_EQ(s.get_code(b)->executable_code, byte_string{});
+    EXPECT_EQ(s.get_code(a)->executable_code(), code2);
+    EXPECT_EQ(s.get_code(b)->executable_code(), byte_string{});
 }
 
 TYPED_TEST(StateTest, can_merge_same_account_different_storage)

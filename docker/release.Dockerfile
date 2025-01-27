@@ -3,6 +3,11 @@
 FROM ubuntu:24.04 as base
 
 RUN apt update && apt upgrade -y
+
+RUN apt update && apt install -y apt-utils
+
+RUN apt update && apt install -y dialog
+
 RUN apt update && apt install -y \
   ca-certificates \
   curl \
@@ -36,6 +41,10 @@ RUN apt update && apt install -y \
   libtbb-dev \
   liburing-dev \
   libzstd-dev
+
+RUN apt update && apt install -y \
+  gdb \
+  valgrind
 
 FROM base as build
 

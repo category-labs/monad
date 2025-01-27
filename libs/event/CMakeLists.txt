@@ -13,6 +13,18 @@ add_library(monad_event_core STATIC
 target_include_directories(monad_event_core PUBLIC "src")
 target_compile_features(monad_event_core PUBLIC c_std_23)
 
+if (MONAD_EVENT_ALLOW_NO_MAP_HUGETLB)
+    # This is not a formally defined option; for performance reasons, we
+    # prefer that the system _must_ be configured to accept MAP_HUGETLB.
+    # However, the Rust CI pipeline runs on machines configured without
+    # support for it. The above option is only set manually on the cmake
+    # command line, by the C FFI test suites in Rust. These are correctness
+    # tests, and are not performance sensitive.
+    target_compile_definitions(monad_event_core
+            PUBLIC MONAD_EVENT_ALLOW_NO_MAP_HUGETLB)
+    message(WARNING "mmap(2) can succeed without MAP_HUGETLB")
+endif()
+
 # This library allows external clients to import shared memory rings into their
 # address space; it also links to the core library; it is meant to be shared with external clients, and should
 # not link (or otherwise depend on) anything else in the execution repository
@@ -49,6 +61,7 @@ if (MONAD_EVENT_BUILD_TEST_SERVER)
         "../core/src/monad/event/event_shared.c"
         "../core/src/monad/event/event_shared.h"
         "src/monad/event/test/event_server_test.c")
+
     target_include_directories(monad_event_test_server PUBLIC "../core/src" "src")
     target_compile_definitions(monad_event_test_server PUBLIC "_GNU_SOURCE")
     target_link_libraries(monad_event_test_server PRIVATE monad_event_core)

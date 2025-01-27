@@ -60,6 +60,19 @@ static void add_connect_option_defaults(
     }
 }
 
+static void *mmap_large_pages(
+    void *addr, size_t length, int prot, int flags, int fd, off_t offset)
+{
+    void *r = mmap(addr, length, prot, flags, fd, offset);
+#if MONAD_EVENT_ALLOW_NO_MAP_HUGETLB
+    if (r == MAP_FAILED && flags & MAP_HUGETLB) {
+        // We are allowed to retry without MAP_HUGETLB
+        r = mmap(addr, length, prot, flags & ~MAP_HUGETLB, fd, offset);
+    }
+#endif
+    return r;
+}
+
 static int
 map_ring_control(struct monad_event_ring *ring, struct msghdr const *mhdr)
 {
@@ -109,7 +122,7 @@ map_descriptor_array(struct monad_event_ring *ring, struct msghdr const *mhdr)
             "carry a memfd descriptor");
     }
     descriptor_array_fd = *(int *)CMSG_DATA(cmsg);
-    ring->descriptors = mmap(
+    ring->descriptors = mmap_large_pages(
         nullptr,
         desc_table_map_len,
         PROT_READ,
@@ -151,7 +164,7 @@ map_payload_buffer(struct monad_event_ring *ring, struct msghdr const *mhdr)
     assert(
         stdc_has_single_bit(ring->payload_buf_size) &&
         stdc_has_single_bit(MONAD_EVENT_MAX_PAYLOAD_BUF_SIZE));
-    ring->payload_buf = mmap(
+    ring->payload_buf = mmap_large_pages(
         nullptr,
         ring->payload_buf_size + MONAD_EVENT_MAX_PAYLOAD_BUF_SIZE,
         PROT_READ,
@@ -163,7 +176,7 @@ map_payload_buffer(struct monad_event_ring *ring, struct msghdr const *mhdr)
             errno, "mmap(2) unable to reserve payload buffer VM region");
         goto Done;
     }
-    if (mmap(
+    if (mmap_large_pages(
             ring->payload_buf,
             ring->payload_buf_size,
             PROT_READ,
@@ -173,7 +186,7 @@ map_payload_buffer(struct monad_event_ring *ring, struct msghdr const *mhdr)
         saved_error = format_errc(errno, "unable to remap payload buffer");
         goto Done;
     }
-    if (mmap(
+    if (mmap_large_pages(
             ring->payload_buf + ring->payload_buf_size,
             MONAD_EVENT_MAX_PAYLOAD_BUF_SIZE,
             PROT_READ,
@@ -213,7 +226,7 @@ static int map_metadata_page(
         return saved_error;
     }
     *page_len = (size_t)memfd_stat.st_size;
-    *page_p = mmap(
+    *page_p = mmap_large_pages(
         nullptr,
         *page_len,
         PROT_READ,

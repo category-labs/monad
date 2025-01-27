@@ -72,7 +72,7 @@ struct rsm_file_segment
     };
 };
 
-struct mapped_test_segment
+struct mapped_segment
 {
     void *map_base;
     size_t map_len;
@@ -84,8 +84,8 @@ struct test_server_context
     struct rsm_file_segment const *segments;
     size_t segment_count;
     size_t map_len;
-    struct mapped_test_segment *mapped_segments;
-    struct mapped_test_segment *metadata_page_segment;
+    struct mapped_segment *mapped_segments;
+    struct mapped_segment *metadata_page_segment;
     size_t ring_capacity;
     uint8_t const *metadata_hash;
     bool unmap_on_close;
@@ -94,12 +94,12 @@ struct test_server_context
 static void
 cleanup_test_server_resources(struct test_server_context *test_context)
 {
-    struct mapped_test_segment *mapped_seg;
+    struct mapped_segment *ms;
     assert(test_context != nullptr);
     for (size_t s = 0; s < test_context->segment_count; ++s) {
-        mapped_seg = &test_context->mapped_segments[s];
-        (void)munmap(mapped_seg->map_base, mapped_seg->map_len);
-        (void)close(mapped_seg->memfd);
+        ms = &test_context->mapped_segments[s];
+        (void)munmap(ms->map_base, ms->map_len);
+        (void)close(ms->memfd);
     }
     free(test_context->mapped_segments);
     if (test_context->unmap_on_close) {
@@ -226,8 +226,7 @@ static bool export_test_ring(
     msg.ring_capacity = test_context->ring_capacity;
     for (size_t s = 0; s < test_context->segment_count; ++s) {
         struct rsm_file_segment const *segment = &test_context->segments[s];
-        struct mapped_test_segment const *mapped_seg =
-            &test_context->mapped_segments[s];
+        struct mapped_segment const *ms = &test_context->mapped_segments[s];
 
         msg.msg_type = segment->type;
         switch (msg.msg_type) {
@@ -242,7 +241,7 @@ static bool export_test_ring(
         case MONAD_EVENT_MSG_MAP_PAYLOAD_BUFFER:
             msg.metadata_type = MONAD_EVENT_METADATA_NONE;
             msg.metadata_offset = 0;
-            *(int *)CMSG_DATA(&cmsg.hdr) = mapped_seg->memfd;
+            *(int *)CMSG_DATA(&cmsg.hdr) = ms->memfd;
             if (sendmsg(sock_fd, &mhdr, 0) == -1) {
                 close_fn(
                     client,
@@ -307,6 +306,53 @@ static struct shared_mem_export_ops s_export_ops = {
         &(monad_source_location_t){__FUNCTION__, __FILE__, __LINE__, 0},       \
         __VA_ARGS__)
 
+static int create_shared_mem_segment(
+    struct rsm_file_segment const *segment, char const *segment_name,
+    bool allow_hugetlb, FILE *log_file, struct mapped_segment *ms)
+{
+    int flags;
+
+    flags = 0;
+    if (segment->type != MONAD_EVENT_MSG_MAP_RING_CONTROL && allow_hugetlb) {
+        flags |= MFD_HUGETLB;
+    }
+    ms->memfd = memfd_create(segment_name, MFD_CLOEXEC | flags);
+    if (ms->memfd == -1) {
+        return WR_ERR(errno, "unable to memfd_create %s", segment_name);
+    }
+    flags = MAP_POPULATE;
+    if (segment->type != MONAD_EVENT_MSG_MAP_RING_CONTROL && allow_hugetlb) {
+        flags |= MAP_HUGETLB;
+    }
+    ms->map_len = segment->segment_len;
+    if (ftruncate(ms->memfd, (off_t)ms->map_len) == -1) {
+        return WR_ERR(
+            errno, "unable to ftruncate %s -> %lu", segment_name, ms->map_len);
+    }
+    ms->map_base = mmap(
+        nullptr,
+        ms->map_len,
+        PROT_READ | PROT_WRITE,
+        MAP_SHARED | flags,
+        ms->memfd,
+        0);
+    if (ms->map_base == MAP_FAILED) {
+        return WR_ERR(
+            errno,
+            "unable to mmap %s (type=%hu, len=%lu)",
+            segment_name,
+            segment->type,
+            ms->map_len);
+    }
+    WR_INFO(
+        "mapped %s (type %hu) to %p, length %lu",
+        segment_name,
+        segment->type,
+        ms->map_base,
+        ms->map_len);
+    return 0;
+}
+
 /// Creates a "fake" server, used only for testing the event client libraries
 /// with static test data that is present in memory; the static test data is
 /// typically embedded into the test binary using #embed directive in C or the
@@ -317,7 +363,6 @@ int monad_event_test_server_create_from_bytes(
     struct monad_event_server **server_p)
 {
     int saved_error;
-    unsigned map_flags;
     struct test_server_context *test_context;
     struct rsm_file_segment const *segment;
     size_t decompress_len;
@@ -363,62 +408,29 @@ int monad_event_test_server_create_from_bytes(
     // For all segments, create and map a memfd, and decompress the saved data
     // into it.
     for (size_t s = 0; s < test_context->segment_count; ++s) {
-        struct mapped_test_segment *ms = &test_context->mapped_segments[s];
+        struct mapped_segment *ms = &test_context->mapped_segments[s];
         segment = &test_context->segments[s];
         if (segment->segment_len == 0) {
             ms->memfd = -1;
             continue;
         }
         snprintf(segment_name, sizeof segment_name, "tes-%lu", s);
-        map_flags =
-            segment->type == MONAD_EVENT_MSG_MAP_RING_CONTROL ? 0 : MFD_HUGETLB;
-        ms->memfd = memfd_create(segment_name, MFD_CLOEXEC | map_flags);
-        if (ms->memfd == -1) {
-            saved_error =
-                WR_ERR(errno, "unable to memfd_create %s", segment_name);
+        saved_error = create_shared_mem_segment(
+            segment, segment_name, /*allow_hugetlb*/ true, log_file, ms);
+#if MONAD_EVENT_ALLOW_NO_MAP_HUGETLB
+        if (saved_error != 0) {
+            WR_INFO(
+                "will re-attempt segment %s mapping without MAP_HUGETLB",
+                segment_name);
+            saved_error = create_shared_mem_segment(
+                segment, segment_name, /*allow_hugetlb*/ false, log_file, ms);
+        }
+#endif
+        if (saved_error != 0) {
             test_context->segment_count = s;
             cleanup_test_server_resources(test_context);
             return saved_error;
         }
-        ms->map_len = segment->segment_len;
-        map_flags = 0;
-        if (segment->type != MONAD_EVENT_MSG_MAP_RING_CONTROL) {
-            ms->map_len = round_size_to_align(segment->segment_len, 1UL << 21);
-            map_flags = MAP_HUGETLB;
-        }
-        if (ftruncate(ms->memfd, (off_t)ms->map_len) == -1) {
-            saved_error = WR_ERR(
-                errno,
-                "unable to ftruncate %s -> %lu",
-                segment_name,
-                ms->map_len);
-            cleanup_test_server_resources(test_context);
-            return saved_error;
-        }
-        ms->map_base = mmap(
-            nullptr,
-            ms->map_len,
-            PROT_READ | PROT_WRITE,
-            MAP_SHARED | (int)map_flags,
-            ms->memfd,
-            0);
-        if (ms->map_base == MAP_FAILED) {
-            saved_error = WR_ERR(
-                errno,
-                "unable to mmap %s (type=%hu, len=%lu)",
-                segment_name,
-                segment->type,
-                ms->map_len);
-            test_context->segment_count = s;
-            cleanup_test_server_resources(test_context);
-            return saved_error;
-        }
-        WR_INFO(
-            "mapped %s (type %hu) to %p, length %lu",
-            segment_name,
-            segment->type,
-            ms->map_base,
-            ms->map_len);
         decompress_len = ZSTD_decompress(
             ms->map_base,
             ms->map_len,

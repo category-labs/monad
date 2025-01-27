@@ -339,6 +339,10 @@ void TrieDb::commit(
         .incarnation = false,
         .next = std::move(tx_hash_updates),
         .version = static_cast<int64_t>(block_number_)};
+    auto block_header_erase = Update{
+        .key = block_header_nibbles,
+        .value = std::nullopt,
+        .next = UpdateList{}};
     updates.push_front(state_update);
     updates.push_front(code_update);
     updates.push_front(receipt_update);
@@ -346,6 +350,15 @@ void TrieDb::commit(
     updates.push_front(transaction_update);
     updates.push_front(ommer_update);
     updates.push_front(tx_hash_update);
+    if (db_.get(concat(prefix_, BLOCKHEADER_NIBBLE), block_number_)
+            .has_value()) {
+        LOG_INFO(
+            "found stale block header for round {} at block {}, erase it in "
+            "the first db upsert",
+            round_number_,
+            block_number_);
+        updates.push_front(block_header_erase);
+    }
     UpdateList withdrawal_updates;
     if (withdrawals.has_value()) {
         // only commit withdrawals when the optional has value
@@ -378,6 +391,7 @@ void TrieDb::commit(
         .version = static_cast<int64_t>(block_number_)}));
 
     db_.upsert(std::move(ls), block_number_);
+    MONAD_ASSERT(db_.get(block_header_nibbles, block_number_).has_error());
 
     BlockHeader complete_header = header;
     if (MONAD_LIKELY(header.receipts_root == NULL_ROOT)) {

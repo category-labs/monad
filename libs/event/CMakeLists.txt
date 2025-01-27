@@ -49,6 +49,10 @@ if (MONAD_EVENT_BUILD_TEST_SERVER)
         "../core/src/monad/event/event_shared.c"
         "../core/src/monad/event/event_shared.h"
         "src/monad/event/test/event_server_test.c")
+    if (MONAD_EVENT_SERVER_DISABLE_MAP_HUGETLB)
+        target_compile_definitions(monad_event_test_server
+            PUBLIC MONAD_EVENT_SERVER_DISABLE_MAP_HUGETLB)
+    endif()
     target_include_directories(monad_event_test_server PUBLIC "../core/src" "src")
     target_compile_definitions(monad_event_test_server PUBLIC "_GNU_SOURCE")
     target_link_libraries(monad_event_test_server PRIVATE monad_event_core)

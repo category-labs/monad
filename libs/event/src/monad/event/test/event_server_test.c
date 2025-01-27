@@ -382,10 +382,11 @@ int monad_event_test_server_create_from_bytes(
         }
         ms->map_len = segment->segment_len;
         map_flags = 0;
+#if MONAD_EVENT_SERVER_DISABLE_MAP_HUGETLB
         if (segment->type != MONAD_EVENT_MSG_MAP_RING_CONTROL) {
-            ms->map_len = round_size_to_align(segment->segment_len, 1UL << 21);
             map_flags = MAP_HUGETLB;
         }
+#endif
         if (ftruncate(ms->memfd, (off_t)ms->map_len) == -1) {
             saved_error = WR_ERR(
                 errno,

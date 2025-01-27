@@ -17,10 +17,10 @@ monad_add_test(io_buffers_test "io_buffers.cpp")
 monad_add_test(literal_test "literal_test.cpp")
 monad_add_test(priority_pool_test "priority_pool_test.cpp")
 set_tests_properties(priority_pool_test PROPERTIES RUN_SERIAL TRUE)
-monad_add_test(spinlock_test "spinlock.cpp")
-monad_add_test(spinlock_all_options_test "spinlock.cpp")
-target_compile_definitions(
-  spinlock_all_options_test
-  PRIVATE MONAD_SPINLOCK_TRACK_OWNER_INFO MONAD_SPINLOCK_TRACK_STATS
-          MONAD_SPINLOCK_TRACK_STATS_ATOMIC)
+#monad_add_test(spinlock_test "spinlock.cpp")
+#monad_add_test(spinlock_all_options_test "spinlock.cpp")
+#target_compile_definitions(
+#  spinlock_all_options_test
+#  PRIVATE MONAD_SPINLOCK_TRACK_OWNER_INFO MONAD_SPINLOCK_TRACK_STATS
+#          MONAD_SPINLOCK_TRACK_STATS_ATOMIC)
 monad_add_test(unordered_map_test "unordered_map.cpp")

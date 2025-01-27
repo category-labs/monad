@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <mutex>
 
 using namespace monad;
 using namespace monad::mpt;
@@ -32,14 +33,14 @@ void on_commit(
     if (MONAD_UNLIKELY(it != proposals.end())) {
         proposals.erase(it);
     }
-    auto &deletion = proposals
-                         .emplace_back(ProposedDeletions{
-                             .block_number = n, .round = round, .deletion = {}})
-                         .deletion;
+    auto &deletions =
+        proposals
+            .emplace_back(ProposedDeletions{
+                .block_number = n, .round = round, .deletions = {}})
+            .deletions;
 
     for (auto const &[addr, delta] : state_deltas) {
         auto const &account = delta.account.second;
-        std::vector<bytes32_t> storage;
         if (account.has_value()) {
             for (auto const &[key, delta] : delta.storage) {
                 if (delta.first != delta.second &&
@@ -49,20 +50,17 @@ void on_commit(
                         n,
                         addr,
                         key);
-                    storage.emplace_back(key);
+                    deletions.emplace_back(addr, key);
                 }
             }
         }
 
-        if (!storage.empty() || delta.account.first != account) {
+        if (delta.account.first != account) {
             bool const incarnation =
                 account.has_value() && delta.account.first.has_value() &&
                 delta.account.first->incarnation != account->incarnation;
             if (incarnation || !account.has_value()) {
-                deletion.emplace_back(addr, std::vector<bytes32_t>{});
-            }
-            if (!storage.empty()) {
-                deletion.emplace_back(addr, std::move(storage));
+                deletions.emplace_back(addr, std::nullopt);
             }
         }
     }
@@ -79,16 +77,17 @@ void on_finalize(
             return p.round == round_number;
         });
 
-    if (MONAD_LIKELY(winner_it != proposals.end())) {
-        MONAD_ASSERT(winner_it->block_number == block_number);
-        FinalizedDeletions::accessor finalized_it;
-        MONAD_ASSERT(ctx.deleted.emplace(
-            finalized_it, block_number, std::move(winner_it->deletion)));
+    if (MONAD_UNLIKELY(winner_it == proposals.end())) {
+        return;
     }
 
-    constexpr auto HISTORY_LENGTH = 1200; // 20 minutes with 1s block times
-    if (ctx.deleted.size() > HISTORY_LENGTH) {
-        MONAD_ASSERT(ctx.deleted.erase(block_number - HISTORY_LENGTH));
+    MONAD_ASSERT(winner_it->block_number == block_number);
+
+    {
+        auto &entry = ctx.deleted[block_number % ctx.deleted.size()];
+        std::lock_guard const lock{entry.mutex};
+        entry.block_number = block_number;
+        entry.deletions = std::move(winner_it->deletions);
     }
 
     // gc old rounds

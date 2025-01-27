@@ -111,7 +111,9 @@ namespace
     void statesync_server_send_done(
         monad_statesync_server_network *const net, monad_sync_done const done)
     {
-        monad_statesync_client_handle_done(net->cctx, done);
+        if (done.success) {
+            monad_statesync_client_handle_done(net->cctx, done);
+        }
     }
 
     struct StateSyncFixture : public ::testing::Test
@@ -164,7 +166,6 @@ namespace
             while (!client.rqs.empty()) {
                 monad_statesync_server_run_once(server);
             }
-            EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
         }
 
         ~StateSyncFixture()
@@ -1220,4 +1221,41 @@ TEST_F(StateSyncFixture, benchmark)
     handle_target(cctx, hdr);
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+}
+
+TEST_F(StateSyncFixture, expire_deletions_history_length)
+{
+    load_header(sdb, BlockHeader{.number = 0});
+    stdb.set_block_and_round(0);
+
+    constexpr auto ADDRESS = 0x007f4a23ca00cd043d25c2888c1aa5688f81a344_address;
+    stdb.commit(
+        StateDeltas{
+            {ADDRESS, {.account = {std::nullopt, Account{.nonce = 10}}}}},
+        {},
+        BlockHeader{.number = 1});
+    stdb.set_block_and_round(1);
+    auto header = stdb.read_eth_header();
+    ASSERT_NE(header.state_root, NULL_ROOT);
+    init();
+
+    handle_target(cctx, header);
+    run();
+    EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
+
+    for (uint64_t i = 2; i < 50'000; ++i) {
+        sctx.commit(
+            StateDeltas{
+                {Address{i}, {.account = {std::nullopt, Account{.nonce = i}}}}},
+            {},
+            BlockHeader{.number = i});
+        sctx.set_block_and_round(i);
+    }
+
+    EXPECT_EQ(sctx.deleted[0].block_number, sctx.deleted.size());
+
+    handle_target(cctx, sctx.read_eth_header());
+    run();
+    EXPECT_FALSE(monad_statesync_client_has_reached_target(cctx));
+    EXPECT_FALSE(monad_statesync_client_finalize(cctx));
 }

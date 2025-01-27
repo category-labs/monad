@@ -5,26 +5,46 @@
 #include <monad/db/db.hpp>
 #include <monad/mpt/db.hpp>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#include <oneapi/tbb/concurrent_hash_map.h>
-#pragma GCC diagnostic pop
-
+#include <array>
 #include <deque>
+#include <mutex>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
-using Deletions = std::vector<std::pair<Address, std::vector<bytes32_t>>>;
-using FinalizedDeletions =
-    oneapi::tbb::concurrent_hash_map<uint64_t, Deletions>;
+struct Deletion
+{
+    Address address;
+    std::optional<bytes32_t> key;
+};
+
+static_assert(sizeof(Deletion) == 53);
+static_assert(alignof(Deletion) == 1);
+
+struct FinalizedDeletionsEntry
+{
+    std::mutex mutex{};
+    uint64_t block_number{mpt::INVALID_BLOCK_ID};
+    std::vector<Deletion> deletions{};
+};
+
+static_assert(sizeof(FinalizedDeletionsEntry) == 72);
+static_assert(alignof(FinalizedDeletionsEntry) == 8);
+
+using FinalizedDeletions = std::array<FinalizedDeletionsEntry, 43'200>;
+
+static_assert(sizeof(FinalizedDeletions) == 3110400);
+static_assert(alignof(FinalizedDeletions) == 8);
 
 struct ProposedDeletions
 {
     uint64_t block_number;
     uint64_t round;
-    Deletions deletion;
+    std::vector<Deletion> deletions;
 };
+
+static_assert(sizeof(ProposedDeletions) == 40);
+static_assert(alignof(ProposedDeletions) == 8);
 
 struct CallFrame;
 class TrieDb;

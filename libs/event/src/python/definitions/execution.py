@@ -35,12 +35,13 @@ register_event('BLOCK_START', block_exec_header,
 
 class block_exec_result(ctypes.Structure):
   _fields_ = (
+    ('hash', bytes32),
     ('logs_bloom', ctypes.c_uint8 * 256),
     ('state_root', bytes32),
     ('transactions_root', bytes32),
     ('receipts_root', bytes32),
     ('withdrawals_root', bytes32),
-    ('gas_used', ctypes.c_uint64) # Note: not cumulative
+    ('gas_used', ctypes.c_uint64)
   )
 
 register_event('BLOCK_END', block_exec_result,
@@ -122,7 +123,7 @@ register_event('TXN_LOG', txn_log,
 class txn_receipt(ctypes.Structure):
   _fields_ = (
     ('status', ctypes.c_uint64),
-    ('gas_used', ctypes.c_uint64),
+    ('gas_used', ctypes.c_uint64), # Note: not cumulative
   )
 
 register_event('TXN_RECEIPT', txn_receipt,

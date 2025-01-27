@@ -104,17 +104,19 @@ static monad_event_block_exec_header *init_block_exec_header(
 }
 
 static monad_event_block_exec_result *init_block_exec_result(
-    Block const &block, monad_event_block_exec_result *exec_result)
+    bytes32_t const &hash, BlockHeader const &header,
+    monad_event_block_exec_result *exec_result)
 {
+    exec_result->hash = hash;
     memcpy(
         exec_result->logs_bloom,
-        data(block.header.logs_bloom),
+        data(header.logs_bloom),
         sizeof exec_result->logs_bloom);
-    exec_result->state_root = block.header.state_root;
-    exec_result->transactions_root = block.header.transactions_root;
-    exec_result->receipts_root = block.header.receipts_root;
-    if (block.header.withdrawals_root) {
-        exec_result->withdrawals_root = *block.header.withdrawals_root;
+    exec_result->state_root = header.state_root;
+    exec_result->transactions_root = header.transactions_root;
+    exec_result->receipts_root = header.receipts_root;
+    if (header.withdrawals_root) {
+        exec_result->withdrawals_root = *header.withdrawals_root;
     }
     else {
         memset(
@@ -122,7 +124,7 @@ static monad_event_block_exec_result *init_block_exec_result(
             0,
             sizeof exec_result->withdrawals_root);
     }
-    exec_result->gas_used = block.header.gas_used;
+    exec_result->gas_used = header.gas_used;
     return exec_result;
 }
 
@@ -254,7 +256,7 @@ Result<std::pair<uint64_t, uint64_t>> run_monad(
         // Record the termination of the block
         monad_event_block_exec_result exec_result;
         monad_event_recorder_end_block(
-            init_block_exec_result(block, &exec_result));
+            init_block_exec_result(h, output_header, &exec_result));
 
         ntxs += block.transactions.size();
         batch_num_txs += block.transactions.size();

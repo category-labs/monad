@@ -135,6 +135,7 @@ struct monad_event_block_exec_header
 /// Event payload for MONAD_EVENT_BLOCK_END
 struct monad_event_block_exec_result
 {
+    monad_event_bytes32 hash;
     uint8_t logs_bloom[256];
     monad_event_bytes32 state_root;
     monad_event_bytes32 transactions_root;

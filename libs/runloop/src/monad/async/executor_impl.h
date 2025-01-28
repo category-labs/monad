@@ -51,6 +51,7 @@ struct monad_async_executor_impl
     monad_context run_context;
     struct io_uring ring, wr_ring;
     unsigned wr_ring_ops_outstanding;
+    SORTED_RING_BUFFER_TYPE(monad_async_executor_impl_timeout) timeouts;
     LIST_DEFINE_P(tasks_running, struct monad_async_task_impl);
     LIST_DEFINE_P(
         tasks_suspended_submission_ring, struct monad_async_task_impl);
@@ -99,6 +100,8 @@ struct monad_async_executor_impl
     LIST_DEFINE_N(tasks_pending_launch, struct monad_async_task_impl);
     monad_c_result cause_run_to_return_value;
 };
+
+static_assert(sizeof(struct monad_async_executor_impl) == 1432);
 
 extern monad_c_result monad_async_executor_suspend_impl(
     struct monad_async_executor_impl *ex, struct monad_async_task_impl *task,
@@ -432,6 +435,12 @@ static inline monad_c_result monad_async_executor_create_impl(
     if (-1 == p->eventfd) {
         return monad_c_make_failure(errno);
     }
+    {
+        SORTED_RING_BUFFER_TYPE(monad_async_executor_impl_timeout)
+        timeouts =
+            SORTED_RING_BUFFER_INIT(monad_async_executor_impl_timeout, 4);
+        memcpy(&p->timeouts, &timeouts, sizeof(timeouts));
+    }
     if (attr->io_uring_ring.entries > 0) {
         int r = io_uring_queue_init_params(
             attr->io_uring_ring.entries, &p->ring, &attr->io_uring_ring.params);
@@ -724,6 +733,7 @@ monad_async_executor_destroy_impl(struct monad_async_executor_impl *ex)
         }
         io_uring_queue_exit(&ex->ring);
     }
+    SORTED_RING_BUFFER_DESTROY(ex->timeouts);
     if (ex->eventfd != -1) {
         close(ex->eventfd);
         ex->eventfd = -1;

@@ -9,7 +9,8 @@ extern "C" monad_cpu_ticks_count_t monad_get_ticks_count(std::memory_order rel)
     return get_ticks_count(rel);
 }
 
-extern "C" monad_cpu_ticks_count_t monad_ticks_per_second()
+extern "C" __attribute__((constructor)) monad_cpu_ticks_count_t
+monad_ticks_per_second()
 {
     static monad_cpu_ticks_count_t v;
     if (v != 0) {

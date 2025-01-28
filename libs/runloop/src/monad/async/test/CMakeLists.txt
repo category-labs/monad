@@ -23,4 +23,6 @@ monad_test(foreign_executor_test SOURCES "foreign_executor.cpp")
 
 monad_test(socket_io_test SOURCES "socket_io.cpp")
 
+monad_test(sorted_ring_buffer_test SOURCES "sorted_ring_buffer_test.cpp")
+
 monad_test(work_dispatcher_test SOURCES "work_dispatcher.cpp")

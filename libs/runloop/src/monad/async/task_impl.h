@@ -2,6 +2,8 @@
 
 #include "task.h"
 
+#include "sorted_ring_buffer.h"
+
 #include <monad/linked_list_impl_common.h>
 
 #include <assert.h>
@@ -22,6 +24,15 @@ struct max_concurrent_io_list_item_t
 {
     struct max_concurrent_io_list_item_t *prev, *next;
 };
+
+typedef struct monad_async_executor_impl_timeout
+{
+    monad_cpu_ticks_count_t key;
+    struct monad_async_task_impl *task;
+} monad_async_executor_impl_timeout;
+
+SORTED_RING_BUFFER_DECLARE(monad_async_executor_impl_timeout)
+
 struct monad_async_executor_impl;
 
 enum monad_async_task_impl_please_cancel_invoked_status : uint8_t
@@ -59,6 +70,7 @@ struct monad_async_task_impl
     {
         struct io_buffer_awaiting_list_item_t io_buffer_awaiting;
         struct max_concurrent_io_list_item_t max_concurrent_io_awaiting;
+        struct monad_async_executor_impl_timeout suspend_for_duration_awaiting;
     };
 
     monad_async_io_status **completed;

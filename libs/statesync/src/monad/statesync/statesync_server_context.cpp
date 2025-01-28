@@ -72,23 +72,18 @@ void on_finalize(
 {
     auto &proposals = ctx.proposals;
 
-    auto winner_it = std::find_if(
+    auto const it = std::find_if(
         proposals.begin(), proposals.end(), [round_number](auto const &p) {
             return p.round == round_number;
         });
 
-    if (MONAD_UNLIKELY(winner_it == proposals.end())) {
+    if (MONAD_UNLIKELY(it == proposals.end())) {
         return;
     }
 
-    MONAD_ASSERT(winner_it->block_number == block_number);
+    MONAD_ASSERT(it->block_number == block_number);
 
-    {
-        auto &entry = ctx.deletions[block_number % ctx.deletions.size()];
-        std::lock_guard const lock{entry.mutex};
-        entry.block_number = block_number;
-        entry.deletions = std::move(winner_it->deletions);
-    }
+    ctx.deletions.write(block_number, it->deletions);
 
     // gc old rounds
     proposals.erase(
@@ -102,6 +97,113 @@ void on_finalize(
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END
+
+MONAD_NAMESPACE_BEGIN
+
+void FinalizedDeletions::set_entry(
+    uint64_t const i, uint64_t const block_number,
+    std::vector<Deletion> const &deletions)
+{
+    auto &entry = entries_[i];
+    std::lock_guard const lock{entry.mutex};
+    MONAD_ASSERT(entry.block_number == INVALID_BLOCK_ID);
+    entry.block_number = block_number;
+    entry.idx = free_start_;
+    entry.size = deletions.size();
+    for (auto const &deletion : deletions) {
+        deletions_[free_start_++ % MAX_DELETIONS] = deletion;
+    }
+    LOG_INFO(
+        "deletions buffer write i={} "
+        "FinalizedDeletionsEntry{{block_number={} idx={} "
+        "size={}}}",
+        i,
+        entry.block_number,
+        entry.idx,
+        entry.size);
+}
+
+void FinalizedDeletions::clear_entry(uint64_t const i)
+{
+    auto &entry = entries_[i];
+    if (entry.block_number == INVALID_BLOCK_ID) {
+        return;
+    }
+    LOG_INFO(
+        "deletions buffer clear i={} "
+        "FinalizedDeletionsEntry{{block_number={} idx={} "
+        "size={}}}",
+        i,
+        entry.block_number,
+        entry.idx,
+        entry.size);
+    free_end_ += entry.size;
+    std::lock_guard const lock{entry.mutex};
+    entry.block_number = INVALID_BLOCK_ID;
+    entry.idx = 0;
+    entry.size = 0;
+}
+
+bool FinalizedDeletions::for_each(
+    uint64_t const block_number, std::function<void(Deletion const &)> const fn)
+{
+    auto &entry = entries_[block_number % MAX_ENTRIES];
+    std::lock_guard const lock{entry.mutex};
+    if (entry.block_number != block_number) {
+        return false;
+    }
+    for (size_t i = 0; i < entry.size; ++i) {
+        auto const idx = (entry.idx + i) % MAX_DELETIONS;
+        fn(deletions_[idx]);
+    }
+    return true;
+}
+
+void FinalizedDeletions::write(
+    uint64_t const block_number, std::vector<Deletion> const &deletions)
+{
+    MONAD_ASSERT(block_number != INVALID_BLOCK_ID);
+    MONAD_ASSERT(
+        end_block_number_ == INVALID_BLOCK_ID ||
+        (end_block_number_ + 1) == block_number);
+
+    auto const free_deletions = [this] { return free_end_ - free_start_; };
+
+    end_block_number_ = block_number;
+
+    if (MONAD_UNLIKELY(deletions.size() > MAX_DELETIONS)) { // blow away
+        LOG_WARNING(
+            "dropping deletions due to exessive size block_number={} size={}",
+            block_number,
+            deletions.size());
+        for (uint64_t i = 0; i < MAX_ENTRIES; ++i) {
+            clear_entry(i);
+        }
+        start_block_number_ = INVALID_BLOCK_ID;
+        MONAD_ASSERT(free_deletions() == MAX_DELETIONS);
+    }
+    else {
+        if (MONAD_UNLIKELY(start_block_number_ == INVALID_BLOCK_ID)) {
+            start_block_number_ = end_block_number_;
+        }
+        auto const target_idx = end_block_number_ % MAX_ENTRIES;
+        clear_entry(target_idx);
+        while (free_deletions() < deletions.size()) {
+            MONAD_ASSERT(start_block_number_ < end_block_number_);
+            clear_entry(start_block_number_ % MAX_ENTRIES);
+            ++start_block_number_;
+        }
+        set_entry(target_idx, end_block_number_, deletions);
+    }
+    LOG_INFO(
+        "deletions buffer range={} free_deletions={}",
+        start_block_number_ == INVALID_BLOCK_ID
+            ? "EMPTY"
+            : fmt::format("[{}, {}]", start_block_number_, end_block_number_),
+        free_deletions());
+}
+
+MONAD_NAMESPACE_END
 
 monad_statesync_server_context::monad_statesync_server_context(TrieDb &rw)
     : rw{rw}

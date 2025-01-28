@@ -7,15 +7,21 @@
 
 #include <array>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
+inline constexpr size_t MAX_ENTRIES = 43'200;
+inline constexpr size_t MAX_DELETIONS = 2'000'000;
+
 struct Deletion
 {
     Address address;
     std::optional<bytes32_t> key;
+
+    friend bool operator==(Deletion const &, Deletion const &) = default;
 };
 
 static_assert(sizeof(Deletion) == 53);
@@ -25,15 +31,32 @@ struct FinalizedDeletionsEntry
 {
     std::mutex mutex{};
     uint64_t block_number{mpt::INVALID_BLOCK_ID};
-    std::vector<Deletion> deletions{};
+    size_t idx{0};
+    size_t size{0};
 };
 
-static_assert(sizeof(FinalizedDeletionsEntry) == 72);
+static_assert(sizeof(FinalizedDeletionsEntry) == 64);
 static_assert(alignof(FinalizedDeletionsEntry) == 8);
 
-using FinalizedDeletions = std::array<FinalizedDeletionsEntry, 43'200>;
+class FinalizedDeletions
+{
+    uint64_t start_block_number_{mpt::INVALID_BLOCK_ID};
+    uint64_t end_block_number_{mpt::INVALID_BLOCK_ID};
+    std::array<FinalizedDeletionsEntry, MAX_ENTRIES> entries_{};
+    std::array<Deletion, MAX_DELETIONS> deletions_{};
+    size_t free_start_{0};
+    size_t free_end_{MAX_DELETIONS};
 
-static_assert(sizeof(FinalizedDeletions) == 3110400);
+    void
+    set_entry(uint64_t i, uint64_t block_number, std::vector<Deletion> const &);
+    void clear_entry(uint64_t i);
+
+public:
+    bool for_each(uint64_t block_number, std::function<void(Deletion const &)>);
+    void write(uint64_t block_number, std::vector<Deletion> const &);
+};
+
+static_assert(sizeof(FinalizedDeletions) == 108764832);
 static_assert(alignof(FinalizedDeletions) == 8);
 
 struct ProposedDeletions

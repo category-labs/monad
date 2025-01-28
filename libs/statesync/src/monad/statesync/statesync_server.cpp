@@ -63,39 +63,38 @@ bool send_deletion(
         return true;
     }
 
-    auto const prefix = from_prefix(rq.prefix, rq.prefix_bytes);
+    auto const fn = [sync, prefix = from_prefix(rq.prefix, rq.prefix_bytes)](
+                        Deletion const &deletion) {
+        auto const &[addr, key] = deletion;
+        auto const hash = keccak256(addr.bytes);
+        byte_string_view const view{hash.bytes, sizeof(hash.bytes)};
+        if (!view.starts_with(prefix)) {
+            return;
+        }
+        if (!key.has_value()) {
+            sync->statesync_server_send_upsert(
+                sync->net,
+                SYNC_TYPE_UPSERT_ACCOUNT_DELETE,
+                reinterpret_cast<unsigned char const *>(&addr),
+                sizeof(addr),
+                nullptr,
+                0);
+        }
+        else {
+            auto const skey = rlp::encode_bytes32_compact(key.value());
+            sync->statesync_server_send_upsert(
+                sync->net,
+                SYNC_TYPE_UPSERT_STORAGE_DELETE,
+                reinterpret_cast<unsigned char const *>(&addr),
+                sizeof(addr),
+                skey.data(),
+                skey.size());
+        }
+    };
 
     for (uint64_t i = rq.old_target + 1; i <= rq.target; ++i) {
-        auto &entry = ctx.deletions[i % ctx.deletions.size()];
-        std::lock_guard const lock{entry.mutex};
-        if (entry.block_number != i) {
+        if (!ctx.deletions.for_each(i, fn)) {
             return false;
-        }
-        for (auto const &[addr, key] : entry.deletions) {
-            auto const hash = keccak256(addr.bytes);
-            byte_string_view const view{hash.bytes, sizeof(hash.bytes)};
-            if (!view.starts_with(prefix)) {
-                continue;
-            }
-            if (!key.has_value()) {
-                sync->statesync_server_send_upsert(
-                    sync->net,
-                    SYNC_TYPE_UPSERT_ACCOUNT_DELETE,
-                    reinterpret_cast<unsigned char const *>(&addr),
-                    sizeof(addr),
-                    nullptr,
-                    0);
-            }
-            else {
-                auto const skey = rlp::encode_bytes32_compact(key.value());
-                sync->statesync_server_send_upsert(
-                    sync->net,
-                    SYNC_TYPE_UPSERT_STORAGE_DELETE,
-                    reinterpret_cast<unsigned char const *>(&addr),
-                    sizeof(addr),
-                    skey.data(),
-                    skey.size());
-            }
         }
     }
     return true;

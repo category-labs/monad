@@ -1097,41 +1097,156 @@ TEST_F(StateSyncFixture, benchmark)
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 }
 
-TEST_F(StateSyncFixture, expire_deletions_history_length)
+TEST(Deletions, history_length)
 {
-    load_header(sdb, BlockHeader{.number = 0});
-    stdb.set_block_and_round(0);
+    auto const deletions = std::make_unique<FinalizedDeletions>();
+    for (uint64_t i = 1; i <= MAX_ENTRIES + 1; ++i) {
+        Deletion const deletion{.address = Address{i}};
+        deletions->write(i, {deletion});
+        std::vector<Deletion> result;
+        auto const fn = [&result](auto const &deletion) {
+            result.push_back(deletion);
+        };
+        bool const success = deletions->for_each(i, fn);
+        EXPECT_TRUE(success);
+        ASSERT_EQ(result.size(), 1);
+        EXPECT_EQ(result[0], deletion);
+    }
+    bool const success = deletions->for_each(1, {});
+    EXPECT_FALSE(success);
+}
 
-    constexpr auto ADDRESS = 0x007f4a23ca00cd043d25c2888c1aa5688f81a344_address;
-    commit_sequential(
-        stdb,
-        StateDeltas{
-            {ADDRESS, {.account = {std::nullopt, Account{.nonce = 10}}}}},
-        {},
-        BlockHeader{.number = 1});
-    stdb.set_block_and_round(1);
-    auto header = stdb.read_eth_header();
-    ASSERT_NE(header.state_root, NULL_ROOT);
-    init();
+TEST(Deletions, max_deletions)
+{
+    auto const deletions = std::make_unique<FinalizedDeletions>();
+    deletions->write(1, {});
+    for (uint64_t i = 2; i <= 101; ++i) {
+        Deletion const deletion{.address = Address{i}};
+        deletions->write(i, {deletion});
+    }
+    std::vector<Deletion> to{MAX_DELETIONS - 100};
+    for (uint64_t i = 0; i < to.size(); ++i) {
+        to[i] = Deletion{.key = bytes32_t{i}};
+    }
+    deletions->write(102, to);
 
-    handle_target(cctx, header);
-    run();
-    EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
+    // Check that everything fits
+    std::vector<Deletion> result;
+    auto const fn = [&result](auto const &deletion) {
+        result.push_back(deletion);
+    };
+    bool success = deletions->for_each(1, fn);
+    EXPECT_TRUE(success);
+    EXPECT_TRUE(result.empty());
 
-    for (uint64_t i = 2; i < 50'000; ++i) {
-        commit_sequential(
-            sctx,
-            StateDeltas{
-                {Address{i}, {.account = {std::nullopt, Account{.nonce = i}}}}},
-            {},
-            BlockHeader{.number = i});
-        sctx.set_block_and_round(i);
+    for (uint64_t i = 2; i <= 101; ++i) {
+        result.clear();
+        success = deletions->for_each(i, fn);
+        EXPECT_TRUE(success);
+        ASSERT_EQ(result.size(), 1);
+        EXPECT_EQ(result[0], Deletion{.address = Address{i}});
     }
 
-    EXPECT_EQ(sctx.deletions[0].block_number, sctx.deletions.size());
+    result.clear();
+    success = deletions->for_each(102, fn);
+    EXPECT_TRUE(success);
+    EXPECT_EQ(result, to);
 
-    handle_target(cctx, sctx.read_eth_header());
-    run();
-    EXPECT_FALSE(monad_statesync_client_has_reached_target(cctx));
-    EXPECT_FALSE(monad_statesync_client_finalize(cctx));
+    // now exceed the max and check that history is pruned
+    std::vector<Deletion> to_103{10};
+    for (uint64_t i = 0; i < to_103.size(); ++i) {
+        to_103[i] = Deletion{.key = bytes32_t{i}};
+    }
+    deletions->write(103, to_103);
+
+    for (uint64_t i = 1; i <= 11; ++i) {
+        success = deletions->for_each(i, fn);
+        EXPECT_FALSE(success);
+    }
+
+    for (uint64_t i = 12; i <= 101; ++i) {
+        result.clear();
+        success = deletions->for_each(i, fn);
+        EXPECT_TRUE(success);
+        ASSERT_EQ(result.size(), 1);
+        EXPECT_EQ(result[0], Deletion{.address = Address{i}});
+    }
+
+    result.clear();
+    success = deletions->for_each(102, fn);
+    EXPECT_TRUE(success);
+    EXPECT_EQ(result, to);
+
+    result.clear();
+    success = deletions->for_each(103, fn);
+    EXPECT_TRUE(success);
+    EXPECT_EQ(result, to_103);
+
+    // now prune everything
+    std::vector<Deletion> to_104{MAX_DELETIONS};
+    for (uint64_t i = 0; i < to_104.size(); ++i) {
+        to_104[i] = Deletion{.address = Address{i}};
+    }
+    deletions->write(104, to_104);
+    for (uint64_t i = 1; i <= 103; ++i) {
+        success = deletions->for_each(i, fn);
+        EXPECT_FALSE(success);
+    }
+    result.clear();
+    success = deletions->for_each(104, fn);
+    EXPECT_TRUE(success);
+    EXPECT_EQ(result, to_104);
+}
+
+TEST(Deletions, max_deletions_replenish)
+{
+    auto const deletions = std::make_unique<FinalizedDeletions>();
+
+    // use 10 deletions
+    uint64_t i = 1;
+    for (; i <= 10; ++i) {
+        Deletion const deletion{.address = Address{i}};
+        deletions->write(i, {deletion});
+    }
+    for (; i <= MAX_ENTRIES; ++i) {
+        deletions->write(i, {});
+    }
+
+    // overwriting replenishes 10 deletions
+    for (; i <= MAX_ENTRIES + 10; ++i) {
+        deletions->write(i, {});
+    }
+
+    // should be able to write all without pruning
+    std::vector<Deletion> const to{MAX_DELETIONS};
+    deletions->write(i, to);
+
+    for (uint64_t j = i - MAX_ENTRIES + 1; j <= i; ++j) {
+        bool const success = deletions->for_each(j, [](auto const &) {});
+        EXPECT_TRUE(success);
+    }
+}
+
+TEST(Deletions, exceed_max_deletions)
+{
+    auto const deletions = std::make_unique<FinalizedDeletions>();
+    for (uint64_t i = 1; i <= 10; ++i) {
+        Deletion const deletion{.address = Address{i}};
+        deletions->write(i, {deletion});
+    }
+    std::vector<Deletion> const to{MAX_DELETIONS + 1};
+    deletions->write(11, to);
+
+    // everything blown away
+    for (uint64_t i = 1; i <= 11; ++i) {
+        bool const success = deletions->for_each(i, [](auto const &) {});
+        EXPECT_FALSE(success);
+    }
+
+    // write something
+    std::vector<Deletion> const to2{MAX_DELETIONS};
+    deletions->write(12, to2);
+
+    bool const success = deletions->for_each(12, [](auto const &) {});
+    EXPECT_TRUE(success);
 }

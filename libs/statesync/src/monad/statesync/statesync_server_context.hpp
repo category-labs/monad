@@ -56,7 +56,7 @@ struct monad_statesync_server_context final : public monad::Db
     monad::TrieDb &rw;
     monad::mpt::Db *ro;
     std::deque<monad::ProposedDeletions> proposals;
-    monad::FinalizedDeletions deleted;
+    monad::FinalizedDeletions deletions;
 
     explicit monad_statesync_server_context(monad::TrieDb &rw);
 

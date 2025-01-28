@@ -1128,7 +1128,7 @@ TEST_F(StateSyncFixture, expire_deletions_history_length)
         sctx.set_block_and_round(i);
     }
 
-    EXPECT_EQ(sctx.deleted[0].block_number, sctx.deleted.size());
+    EXPECT_EQ(sctx.deletions[0].block_number, sctx.deletions.size());
 
     handle_target(cctx, sctx.read_eth_header());
     run();

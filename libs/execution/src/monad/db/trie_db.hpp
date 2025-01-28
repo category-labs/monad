@@ -4,12 +4,11 @@
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/keccak.hpp>
-#include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/db/db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/code_analysis.hpp>
-#include <monad/execution/trace/call_frame.hpp>
+#include <monad/execution/execute_transaction.hpp>
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
@@ -50,10 +49,8 @@ public:
         std::optional<uint64_t> round_number = std::nullopt) override;
     virtual void commit(
         StateDeltas const &, Code const &, MonadConsensusBlockHeader const &,
-        std::vector<Receipt> const & = {},
-        std::vector<std::vector<CallFrame>> const & = {},
-        std::vector<Address> const & = {},
         std::vector<Transaction> const & = {},
+        std::vector<ExecutionResult> const & = {},
         std::vector<BlockHeader> const &ommers = {},
         std::optional<std::vector<Withdrawal>> const & = std::nullopt) override;
     virtual void

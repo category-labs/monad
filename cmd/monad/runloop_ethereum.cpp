@@ -1,14 +1,21 @@
 #include "runloop_ethereum.hpp"
+#include "event.hpp"
 
 #include <monad/chain/chain.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/blake3.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/keccak.hpp>
 #include <monad/core/monad_block.hpp>
+#include <monad/core/result.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
+#include <monad/core/rlp/monad_block_rlp.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/db/db.hpp>
+#include <monad/event/event.h>
+#include <monad/event/event_recorder.h>
+#include <monad/event/event_types.h>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
@@ -20,8 +27,15 @@
 #include <boost/outcome/try.hpp>
 #include <quill/Quill.h>
 
-#include <algorithm>
+#include <bit>
 #include <chrono>
+#include <csignal>
+#include <cstdint>
+#include <filesystem>
+#include <iterator>
+#include <limits>
+#include <optional>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -58,7 +72,61 @@ namespace
     };
 
 #pragma GCC diagnostic pop
+}
 
+// Execute a single block; the generic term "process" is used to avoid using
+// the overloaded term "execute" again; encompasses all the following actions:
+//
+//   1. block header input validation
+//   2. "core" execution: transaction-level EVM execution that tracks state
+//      changes, but does not commit them)
+//   3. database commit of state changes (incl. Merkle root calculations)
+//   4. post-commit validation of header, with Merkle root fields filled in
+//   5. computation of block hash, appending it to the circular hash buffer
+static Result<BlockExecOutput> process_ethereum_block(
+    Chain const &chain, Db &db, BlockHashBufferFinalized &block_hash_buffer,
+    fiber::PriorityPool &priority_pool,
+    MonadConsensusBlockHeader const &consensus_header, Block &block,
+    std::optional<uint64_t> round_number)
+{
+    BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
+
+    evmc_revision const rev =
+        chain.get_revision(block.header.number, block.header.timestamp);
+
+    BOOST_OUTCOME_TRY(static_validate_block(rev, block));
+
+    // Ethereum: always execute off of the parent proposal round, commit to
+    // `round = block_number`, and finalize immediately after that.
+    db.set_block_and_round(block.header.number - 1, round_number);
+
+    BlockExecOutput exec_output;
+    BlockState block_state(db);
+    BOOST_OUTCOME_TRY(
+        exec_output.tx_exec_results,
+        execute_block(
+            chain, rev, block, block_state, block_hash_buffer, priority_pool));
+
+    block_state.log_debug();
+    block_state.commit(
+        consensus_header,
+        block.transactions,
+        exec_output.tx_exec_results,
+        block.ommers,
+        block.withdrawals);
+    exec_output.eth_header = db.read_eth_header();
+    BOOST_OUTCOME_TRY(
+        chain.validate_output_header(block.header, exec_output.eth_header));
+
+    db.finalize(block.header.number, block.header.number);
+    db.update_verified_block(block.header.number);
+
+    exec_output.eth_block_hash =
+        to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
+    block_hash_buffer.set(
+        exec_output.eth_header.number, exec_output.eth_block_hash);
+
+    return exec_output;
 }
 
 Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
@@ -85,60 +153,44 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
             "Could not query %lu from blockdb",
             block_num);
 
-        BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
-
-        evmc_revision const rev =
-            chain.get_revision(block.header.number, block.header.timestamp);
-
-        BOOST_OUTCOME_TRY(static_validate_block(rev, block));
-
-        // Ethereum: always execute off of the parent proposal round, commit to
-        // `round = block_number`, and finalize immediately after that.
-        db.set_block_and_round(
-            block.header.number - 1,
-            (block.header.number == start_block_num)
+        std::optional<uint64_t> const round_number =
+            block.header.number == start_block_num
                 ? std::nullopt
-                : std::make_optional(block.header.number - 1));
-        BlockState block_state(db);
+                : std::make_optional(block.header.number - 1);
+
+        // First derive a MonadConsensusBlockHeader for this Ethereum block
+        // immediately, since the event recording protocol expects one.
+        auto const consensus_header =
+            MonadConsensusBlockHeader::from_eth_header(block.header);
+        auto const consensus_header_rlp =
+            rlp::encode_consensus_block_header(consensus_header);
+        bytes32_t const bft_block_id =
+            std::bit_cast<bytes32_t>(blake3(consensus_header_rlp));
+
+        monad_event_block_exec_header *exec_header =
+            monad_event_recorder_alloc_block_exec_header();
+        init_block_exec_header(
+            bft_block_id,
+            consensus_header,
+            size(block.transactions),
+            exec_header);
+        monad_event_recorder_start_block(exec_header);
+
+        // Call the main block execution subroutine and record the results
         BOOST_OUTCOME_TRY(
-            auto results,
-            execute_block(
+            BlockExecOutput const exec_output,
+            try_record_block_exec_output(process_ethereum_block(
                 chain,
-                rev,
-                block,
-                block_state,
+                db,
                 block_hash_buffer,
-                priority_pool));
+                priority_pool,
+                consensus_header,
+                block,
+                round_number)));
 
-        std::vector<Receipt> receipts(results.size());
-        std::vector<std::vector<CallFrame>> call_frames(results.size());
-        std::vector<Address> senders(results.size());
-        for (unsigned i = 0; i < results.size(); ++i) {
-            auto &result = results[i];
-            receipts[i] = std::move(result.receipt);
-            call_frames[i] = (std::move(result.call_frames));
-            senders[i] = result.sender;
-        }
-
-        block_state.log_debug();
-        block_state.commit(
-            MonadConsensusBlockHeader::from_eth_header(block.header),
-            receipts,
-            call_frames,
-            senders,
-            block.transactions,
-            block.ommers,
-            block.withdrawals);
-        auto const output_header = db.read_eth_header();
-        BOOST_OUTCOME_TRY(
-            chain.validate_output_header(block.header, output_header));
-
-        db.finalize(block.header.number, block.header.number);
-        db.update_verified_block(block.header.number);
-
-        auto const h =
-            to_bytes(keccak256(rlp::encode_block_header(output_header)));
-        block_hash_buffer.set(block_num, h);
+        // runloop_ethereum is only used for historical replay, so blocks are
+        // finalized immediately
+        MONAD_EVENT_EXPR(MONAD_EVENT_BLOCK_FINALIZE, 0, bft_block_id);
 
         ntxs += block.transactions.size();
         batch_num_txs += block.transactions.size();

@@ -235,17 +235,18 @@ event_loop(struct monad_event_imported_ring const *import, FILE *out)
                 stderr,
                 "ERROR: event gap from %lu -> %lu, resetting\n",
                 iter.read_last_seqno,
-                event.seqno);
+                __atomic_load_n(iter.write_last_seqno, __ATOMIC_ACQUIRE));
             monad_event_iterator_reset(&iter);
+            not_ready_count = 0;
             continue;
 
         case MONAD_EVENT_SUCCESS:
+            not_ready_count = 0;
             break; // Handled in the main loop body
 
         case MONAD_EVENT_PAYLOAD_EXPIRED:
             unreachable(); // Never returned by monad_event_iterator_try_next
         }
-        not_ready_count = 0;
         print_event(
             &iter,
             &event,

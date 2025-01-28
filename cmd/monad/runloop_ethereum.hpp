@@ -13,6 +13,7 @@ MONAD_NAMESPACE_BEGIN
 
 struct Chain;
 struct Db;
+class BlockHeader;
 class BlockHashBufferFinalized;
 
 namespace fiber

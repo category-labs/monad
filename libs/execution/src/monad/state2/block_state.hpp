@@ -3,11 +3,10 @@
 #include <monad/config.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
-#include <monad/execution/trace/call_tracer.hpp>
+#include <monad/execution/execute_transaction.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/types/incarnation.hpp>
 
@@ -40,10 +39,9 @@ public:
     // TODO: remove round_number parameter, retrieve it from header instead once
     // we add the monad fields in BlockHeader
     void commit(
-        MonadConsensusBlockHeader const &, std::vector<Receipt> const & = {},
-        std::vector<std::vector<CallFrame>> const & = {},
-        std::vector<Address> const & = {},
+        MonadConsensusBlockHeader const &,
         std::vector<Transaction> const & = {},
+        std::vector<ExecutionResult> const & = {},
         std::vector<BlockHeader> const &ommers = {},
         std::optional<std::vector<Withdrawal>> const & = {});
 

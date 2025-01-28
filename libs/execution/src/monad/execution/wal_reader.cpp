@@ -8,6 +8,7 @@
 
 #include <evmc/hex.hpp>
 
+#include <bit>
 #include <sstream>
 
 using std::ios;
@@ -81,7 +82,8 @@ std::optional<WalReader::Result> WalReader::next()
         return Result{
             .action = entry.action,
             .header = std::move(header_res.value()),
-            .body = std::move(body_res.value())};
+            .body = std::move(body_res.value()),
+            .bft_block_id = checksum_header};
     }
     else {
         // execution got ahead

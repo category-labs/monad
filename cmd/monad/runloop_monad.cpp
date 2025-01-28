@@ -1,4 +1,5 @@
 #include "runloop_monad.hpp"
+#include "event.hpp"
 
 #include <monad/chain/chain.hpp>
 #include <monad/core/assert.h>
@@ -7,9 +8,13 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/keccak.hpp>
 #include <monad/core/monad_block.hpp>
+#include <monad/core/result.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/db/db.hpp>
 #include <monad/db/util.hpp>
+#include <monad/event/event.h>
+#include <monad/event/event_recorder.h>
+#include <monad/event/event_types.h>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
@@ -24,10 +29,10 @@
 #include <quill/Quill.h>
 #include <quill/detail/LogMacros.h>
 
-#include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
-#include <fstream>
+#include <iterator>
 #include <optional>
 #include <thread>
 #include <vector>
@@ -82,7 +87,7 @@ namespace
 
 }
 
-Result<std::pair<bytes32_t, uint64_t>> on_proposal_event(
+Result<BlockExecOutput> on_proposal_event(
     MonadConsensusBlockHeader const &consensus_header, Block block,
     BlockHashBuffer const &block_hash_buffer, Chain const &chain, Db &db,
     fiber::PriorityPool &priority_pool, bool const is_first_block)
@@ -100,37 +105,27 @@ Result<std::pair<bytes32_t, uint64_t>> on_proposal_event(
                        : std::make_optional(consensus_header.parent_round()));
 
     BlockState block_state(db);
+    BlockExecOutput exec_output;
     BOOST_OUTCOME_TRY(
-        auto results,
+        exec_output.tx_exec_results,
         execute_block(
             chain, rev, block, block_state, block_hash_buffer, priority_pool));
-
-    std::vector<Receipt> receipts(results.size());
-    std::vector<std::vector<CallFrame>> call_frames(results.size());
-    std::vector<Address> senders(results.size());
-    for (unsigned i = 0; i < results.size(); ++i) {
-        auto &result = results[i];
-        receipts[i] = std::move(result.receipt);
-        call_frames[i] = (std::move(result.call_frames));
-        senders[i] = result.sender;
-    }
 
     block_state.log_debug();
     block_state.commit(
         consensus_header,
-        receipts,
-        call_frames,
-        senders,
         block.transactions,
+        exec_output.tx_exec_results,
         block.ommers,
         block.withdrawals);
-    auto const output_header = db.read_eth_header();
+    exec_output.eth_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(
-        chain.validate_output_header(block.header, output_header));
+        chain.validate_output_header(block.header, exec_output.eth_header));
 
-    return {
-        to_bytes(keccak256(rlp::encode_block_header(output_header))),
-        output_header.gas_used};
+    exec_output.eth_block_hash =
+        to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
+
+    return exec_output;
 }
 
 bool validate_delayed_execution_results(
@@ -193,7 +188,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             continue;
         }
 
-        auto [action, consensus_header, consensus_body] = reader_res.value();
+        auto [action, consensus_header, consensus_body, bft_block_id] = reader_res.value();
         auto const block_number = consensus_header.execution_inputs.number;
         if (action == WalAction::PROPOSE) {
             auto const block_time_start = std::chrono::steady_clock::now();
@@ -201,9 +196,22 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             auto const ntxns = consensus_body.transactions.size();
             auto const &block_hash_buffer =
                 block_hash_chain.find_chain(consensus_header.parent_round());
+
+            // Initialize and record the BLOCK_START event; the matching end
+            // event is recorded by the try_record_block_exec_output helper
+            // function
+            monad_event_block_exec_header *exec_header =
+                monad_event_recorder_alloc_block_exec_header();
+            init_block_exec_header(
+                bft_block_id,
+                consensus_header,
+                size(consensus_body.transactions),
+                exec_header);
+            monad_event_recorder_start_block(exec_header);
+
             BOOST_OUTCOME_TRY(
-                auto const proposal_output,
-                on_proposal_event(
+                BlockExecOutput const exec_output,
+                try_record_block_exec_output(on_proposal_event(
                     consensus_header,
                     Block{
                         .header = consensus_header.execution_inputs,
@@ -214,10 +222,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     chain,
                     db,
                     priority_pool,
-                    block_number == start_block_num));
-            auto const &[output_header, gas_used] = proposal_output;
+                    block_number == start_block_num)));
             block_hash_chain.propose(
-                output_header,
+                exec_output.eth_block_hash,
                 consensus_header.round,
                 consensus_header.parent_round());
 
@@ -225,7 +232,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 block_number,
                 consensus_header.round,
                 ntxns,
-                gas_used,
+                exec_output.eth_header.gas_used,
                 block_time_start);
         }
         else if (action == WalAction::FINALIZE) {
@@ -242,6 +249,11 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 validate_delayed_execution_results(db, verified_blocks));
             if (MONAD_LIKELY(!verified_blocks.empty())) {
                 db.update_verified_block(verified_blocks.back().number);
+                monad_event_block_finalize const finalize_info = {
+                    .bft_block_id =
+                        std::bit_cast<monad_event_bytes32>(bft_block_id),
+                    .consensus_seqno = consensus_header.seqno};
+                MONAD_EVENT_EXPR(MONAD_EVENT_BLOCK_FINALIZE, 0, finalize_info);
             }
             finalized_block_num = block_number;
         }

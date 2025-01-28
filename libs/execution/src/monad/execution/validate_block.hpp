@@ -45,7 +45,7 @@ enum class BlockError
 struct Block;
 struct BlockHeader;
 
-Receipt::Bloom compute_bloom(std::vector<Receipt> const &);
+Receipt::Bloom &bloom_combine(Receipt::Bloom &, Receipt::Bloom const &);
 
 bytes32_t compute_ommers_hash(std::vector<BlockHeader> const &);
 

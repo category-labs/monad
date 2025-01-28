@@ -325,17 +325,7 @@ inline void monad_event_recorder_start_block(
         sizeof *block_exec_header);
 }
 
-inline void monad_event_recorder_end_block(
-    struct monad_event_block_exec_result const *block_exec_result)
+inline void monad_event_recorder_end_block()
 {
-    struct monad_event_recorder_shared_state *const rss =
-        &g_monad_event_recorder_shared_state;
-    MONAD_EVENT_MEMCPY(
-        MONAD_EVENT_BLOCK_END,
-        MONAD_EVENT_POP_SCOPE,
-        block_exec_result,
-        sizeof *block_exec_result);
-    // TODO(ken): this is only for the moment, before Kevin's stuff lands
-    MONAD_EVENT(MONAD_EVENT_BLOCK_FINALIZE, 0);
-    rss->block_flow_id = 0;
+    g_monad_event_recorder_shared_state.block_flow_id = 0;
 }

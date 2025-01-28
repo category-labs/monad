@@ -20,7 +20,6 @@ register_event('RING_INIT', None,
 
 class thread_info(ctypes.Structure):
   _fields_ = (
-    ('seqno', ctypes.c_uint64),
     ('epoch_nanos', ctypes.c_uint64),
     ('process_id', ctypes.c_uint64),
     ('thread_id', ctypes.c_uint64),

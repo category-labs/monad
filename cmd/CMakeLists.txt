@@ -5,7 +5,7 @@ find_package(CLI11 REQUIRED)
 add_executable(
   monad
   monad/main.cpp
-  monad/event_init.cpp
+  monad/event.cpp
   monad/runloop_ethereum.cpp
   monad/runloop_ethereum.hpp
   monad/runloop_monad.cpp

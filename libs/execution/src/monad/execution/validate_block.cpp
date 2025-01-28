@@ -34,15 +34,12 @@ MONAD_NAMESPACE_BEGIN
 
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
-Receipt::Bloom compute_bloom(std::vector<Receipt> const &receipts)
+Receipt::Bloom &bloom_combine(Receipt::Bloom &lhs, Receipt::Bloom const &rhs)
 {
-    Receipt::Bloom bloom{};
-    for (auto const &receipt : receipts) {
-        for (unsigned i = 0; i < bloom.size(); ++i) {
-            bloom[i] |= receipt.bloom[i];
-        }
+    for (unsigned i = 0; i < lhs.size(); ++i) {
+        lhs[i] |= rhs[i];
     }
-    return bloom;
+    return lhs;
 }
 
 bytes32_t compute_ommers_hash(std::vector<BlockHeader> const &ommers)

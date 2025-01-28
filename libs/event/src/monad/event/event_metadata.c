@@ -60,7 +60,17 @@ struct monad_event_metadata const g_monad_event_metadata[] = {
     [MONAD_EVENT_BLOCK_FINALIZE] =
         {.type = MONAD_EVENT_BLOCK_FINALIZE,
          .c_name = "BLOCK_FINALIZE",
-         .description = "Block with this flow ID is commited as the canonical block on the chain"},
+         .description = "Block is committed on the canonical blockchain"},
+
+    [MONAD_EVENT_BLOCK_REJECT] =
+        {.type = MONAD_EVENT_BLOCK_REJECT,
+         .c_name = "BLOCK_REJECT",
+         .description = "Block failed validation and was rejected"},
+
+    [MONAD_EVENT_BLOCK_EXEC_ERROR] =
+        {.type = MONAD_EVENT_BLOCK_EXEC_ERROR,
+         .c_name = "BLOCK_EXEC_ERROR",
+         .description = "Block execution failed due to error in the EVM, not due to it being invalid"},
 
     [MONAD_EVENT_TXN_START] =
         {.type = MONAD_EVENT_TXN_START,
@@ -98,13 +108,13 @@ struct monad_event_metadata const g_monad_event_metadata[] = {
          .description = "Account storage updated by transaction commit"},
 };
 
-size_t const g_monad_event_metadata_size = 16;
+size_t const g_monad_event_metadata_size = 18;
 
 uint8_t const g_monad_event_metadata_hash[32] = {
-    0xfb, 0x42, 0x6b, 0x7c, 0x15, 0xad, 0x20, 0xf4,
-    0x26, 0x06, 0xc2, 0x33, 0x3f, 0x37, 0xe1, 0xd9,
-    0x40, 0x52, 0xff, 0x43, 0xe8, 0x75, 0x72, 0xb0,
-    0x8f, 0x56, 0x90, 0xcc, 0x76, 0x24, 0x22, 0xc5,
+    0x10, 0xd2, 0x65, 0x13, 0x5e, 0x07, 0xad, 0xe9,
+    0xff, 0x7b, 0x34, 0xc4, 0xd4, 0xf4, 0x73, 0x57,
+    0x6b, 0x0f, 0x95, 0x34, 0x09, 0x04, 0xc5, 0x52,
+    0xba, 0x86, 0xcb, 0x5c, 0x82, 0x29, 0x89, 0x2b,
 };
 
 #ifdef __cplusplus

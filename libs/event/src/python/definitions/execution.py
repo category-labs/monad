@@ -8,6 +8,7 @@ class block_exec_header(ctypes.Structure):
   _fields_ = (
     ('bft_block_id', bytes32),
     ('round', ctypes.c_uint64),
+    ('consensus_seqno', ctypes.c_uint64),
     ('parent_hash', bytes32),
     ('ommers_hash', bytes32),
     ('beneficiary', address),
@@ -41,7 +42,7 @@ class block_exec_result(ctypes.Structure):
     ('transactions_root', bytes32),
     ('receipts_root', bytes32),
     ('withdrawals_root', bytes32),
-    ('gas_used', ctypes.c_uint64)
+    ('gas_used', ctypes.c_uint64),
   )
 
 register_event('BLOCK_END', block_exec_result,
@@ -51,8 +52,37 @@ register_event('BLOCK_END', block_exec_result,
 # BLOCK_FINALIZE
 #
 
-register_event('BLOCK_FINALIZE', None,
-    "Block with this flow ID is commited as the canonical block on the chain")
+class block_finalize(ctypes.Structure):
+  _fields_ = (
+    ('bft_block_id', bytes32),
+    ('consensus_seqno', ctypes.c_uint64),
+  )
+
+register_event('BLOCK_FINALIZE', block_finalize,
+    "Block is committed on the canonical blockchain")
+
+#
+# BLOCK_REJECT
+#
+
+# "long" payload value is the integral constant of the enum value of type
+# `enum class BlockError` from validate_block.hpp
+
+register_event('BLOCK_REJECT', ctypes.c_long,
+    "Block failed validation and was rejected")
+
+#
+# BLOCK_EXEC_ERROR
+#
+
+class block_exec_error(ctypes.Structure):
+  _fields_ = (
+    ('domain_id', ctypes.c_uint64),
+    ('status_code', ctypes.c_long),
+  )
+
+register_event('BLOCK_EXEC_ERROR', block_exec_error,
+    "Block execution failed due to error in the EVM, not due to it being invalid")
 
 #
 # TXN_START

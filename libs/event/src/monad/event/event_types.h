@@ -82,6 +82,8 @@ enum monad_event_type : uint16_t
     MONAD_EVENT_BLOCK_START,
     MONAD_EVENT_BLOCK_END,
     MONAD_EVENT_BLOCK_FINALIZE,
+    MONAD_EVENT_BLOCK_REJECT,
+    MONAD_EVENT_BLOCK_EXEC_ERROR,
     MONAD_EVENT_TXN_START,
     MONAD_EVENT_TXN_REJECT,
     MONAD_EVENT_TXN_EXEC_ERROR,
@@ -94,7 +96,6 @@ enum monad_event_type : uint16_t
 /// Event payload for MONAD_EVENT_THREAD_CREATE
 struct monad_event_thread_info
 {
-    uint64_t seqno;
     uint64_t epoch_nanos;
     uint64_t process_id;
     uint64_t thread_id;
@@ -114,6 +115,7 @@ struct monad_event_block_exec_header
 {
     monad_event_bytes32 bft_block_id;
     uint64_t round;
+    uint64_t consensus_seqno;
     monad_event_bytes32 parent_hash;
     monad_event_bytes32 ommers_hash;
     monad_event_address beneficiary;
@@ -142,6 +144,20 @@ struct monad_event_block_exec_result
     monad_event_bytes32 receipts_root;
     monad_event_bytes32 withdrawals_root;
     uint64_t gas_used;
+};
+
+/// Event payload for MONAD_EVENT_BLOCK_FINALIZE
+struct monad_event_block_finalize
+{
+    monad_event_bytes32 bft_block_id;
+    uint64_t consensus_seqno;
+};
+
+/// Event payload for MONAD_EVENT_BLOCK_EXEC_ERROR
+struct monad_event_block_exec_error
+{
+    uint64_t domain_id;
+    long status_code;
 };
 
 /// Event payload for MONAD_EVENT_TXN_START

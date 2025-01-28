@@ -24,6 +24,10 @@
     #include <sanitizer/asan_interface.h>
 #endif
 
+#ifdef __GNUC__
+    #pragma GCC diagnostic ignored "-Wpedantic"
+#endif
+
 static inline monad_c_result
 monad_async_task_claim_registered_io_write_buffer_resume_with_error_no_buffers_remaining(
     struct monad_async_executor_impl *ex, bool const is_for_write,
@@ -36,6 +40,24 @@ static inline monad_cpu_ticks_count_t ticks_per_sec()
         v = monad_ticks_per_second();
     }
     return v;
+}
+
+static inline long ticks_to_ns(monad_cpu_ticks_count_t ticks)
+{
+    static double v;
+    if (v == 0.0) {
+        v = 1000000000.0 / (double)ticks_per_sec();
+    }
+    return (long)((double)ticks * v);
+}
+
+static inline monad_cpu_ticks_count_t ns_to_ticks(uint64_t ns)
+{
+    static double v;
+    if (v == 0.0) {
+        v = (double)ticks_per_sec() / 1000000000.0;
+    }
+    return (monad_cpu_ticks_count_t)((double)ns * v);
 }
 
 monad_c_result monad_async_executor_create(
@@ -376,6 +398,102 @@ static inline monad_c_result monad_async_executor_run_impl(
         monad_cpu_ticks_count_t const launch_end =
             get_ticks_count(memory_order_relaxed);
         ex->head.total_ticks_in_task_launch += launch_end - launch_begin;
+
+        struct timespec duration_until_next_timeout = {
+            .tv_sec = 0, .tv_nsec = 0};
+        if (ex->timeouts.size > 0) {
+            struct monad_async_executor_impl_timeout *front =
+                SORTED_RING_BUFFER_FRONT(ex->timeouts);
+            while (front != nullptr && front->key <= launch_end) {
+                // Schedule all expired timeouts for resumption
+                struct monad_async_task_impl *const task = front->task;
+                if (task == nullptr) {
+                    SORTED_RING_BUFFER_POP_FRONT(ex->timeouts);
+                    front = SORTED_RING_BUFFER_FRONT(ex->timeouts);
+                    continue;
+                }
+                assert(0 == memcmp(task->magic, "MNASTASK", 8));
+                assert(atomic_load_explicit(
+                    &task->head.is_suspended_awaiting, memory_order_acquire));
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+                printf(
+                    "*** Executor %p resumes suspended for duration task "
+                    "%p (cpu priority=%d, i/o priority=%d) as it expired at "
+                    "%lu and now is %lu\n",
+                    (void *)ex,
+                    (void *)task,
+                    (int)monad_async_task_effective_cpu_priority(task),
+                    (int)task->head.priority.io,
+                    front->key,
+                    launch_end);
+                fflush(stdout);
+#endif
+                task->head.ticks_when_suspended_completed =
+                    get_ticks_count(memory_order_relaxed);
+                task->head.derived.result = monad_c_make_success(ETIME);
+                atomic_store_explicit(
+                    &task->head.is_suspended_awaiting,
+                    false,
+                    memory_order_release);
+                LIST_REMOVE(
+                    ex->tasks_suspended_awaiting
+                        [monad_async_task_effective_cpu_priority(task)],
+                    task,
+                    (size_t *)nullptr);
+                atomic_store_explicit(
+                    &task->head.is_suspended_completed,
+                    true,
+                    memory_order_release);
+                LIST_APPEND(
+                    ex->tasks_suspended_completed
+                        [monad_async_task_effective_cpu_priority(task)],
+                    task,
+                    (size_t *)nullptr);
+                timeout = &no_waiting;
+                timeout_ = nullptr;
+                SORTED_RING_BUFFER_POP_FRONT(ex->timeouts);
+                front = SORTED_RING_BUFFER_FRONT(ex->timeouts);
+            }
+            while (front != nullptr && front->task == nullptr) {
+                SORTED_RING_BUFFER_POP_FRONT(ex->timeouts);
+                front = SORTED_RING_BUFFER_FRONT(ex->timeouts);
+            }
+            if (front != nullptr) {
+                monad_cpu_ticks_count_t const ticks_to_next_timeout =
+                    front->key - launch_end;
+                long const ns_to_next_timeout =
+                    ticks_to_ns(ticks_to_next_timeout);
+                if (timeout == nullptr ||
+                    timespec_to_ns(timeout) > ns_to_next_timeout) {
+                    duration_until_next_timeout.tv_sec =
+                        ns_to_next_timeout / 1000000000;
+                    duration_until_next_timeout.tv_nsec =
+                        ns_to_next_timeout % 1000000000;
+                    timeout = &duration_until_next_timeout;
+                    timeout_ = nullptr;
+                }
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+                printf(
+                    "*** Executor %p sees first suspended for duration task "
+                    "%p (cpu priority=%d, i/o priority=%d) which must resume "
+                    "in %lu ns\n",
+                    (void *)ex,
+                    (void *)front->task,
+                    (int)monad_async_task_effective_cpu_priority(front->task),
+                    (int)front->task->head.priority.io,
+                    ns_to_next_timeout);
+                fflush(stdout);
+#endif
+            }
+            else {
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+                printf(
+                    "*** Executor %p sees no suspended for durations tasks.\n",
+                    (void *)ex);
+                fflush(stdout);
+#endif
+            }
+        }
 
         if (ex->ring.ring_fd != 0) {
             monad_cpu_ticks_count_t const io_uring_begin =
@@ -2076,10 +2194,43 @@ monad_async_io_status *monad_async_task_completed_io(monad_async_task task_)
 static inline monad_c_result monad_async_task_suspend_for_duration_cancel(
     struct monad_async_executor_impl *ex, struct monad_async_task_impl *task)
 {
-    struct io_uring_sqe *sqe = get_sqe_for_cancellation(ex);
-    io_uring_prep_timeout_remove(
-        sqe, (__u64)io_uring_mangle_into_data(task), 0);
-    sqe->user_data = (__u64)io_uring_mangle_into_data(task);
+    assert(atomic_load_explicit(
+        &task->head.is_suspended_awaiting, memory_order_acquire));
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+    printf(
+        "*** Executor %p resumes suspended task "
+        "%p due to suspend for duration cancel (cpu priority=%d, i/o "
+        "priority=%d)\n",
+        (void *)ex,
+        (void *)task,
+        (int)monad_async_task_effective_cpu_priority(task),
+        (int)task->head.priority.io);
+    fflush(stdout);
+#endif
+    if (task->suspend_for_duration_awaiting.key != 0) {
+        struct monad_async_executor_impl_timeout *const found =
+            SORTED_RING_BUFFER_FIND(
+                ex->timeouts, task->suspend_for_duration_awaiting);
+        if (found != nullptr) {
+            found->task = nullptr;
+        }
+    }
+    task->head.ticks_when_suspended_completed =
+        get_ticks_count(memory_order_relaxed);
+    atomic_store_explicit(
+        &task->head.is_suspended_awaiting, false, memory_order_release);
+    LIST_REMOVE(
+        ex->tasks_suspended_awaiting[monad_async_task_effective_cpu_priority(
+            task)],
+        task,
+        (size_t *)nullptr);
+    atomic_store_explicit(
+        &task->head.is_suspended_completed, true, memory_order_release);
+    LIST_APPEND(
+        ex->tasks_suspended_completed[monad_async_task_effective_cpu_priority(
+            task)],
+        task,
+        (size_t *)nullptr);
     return monad_c_make_failure(EAGAIN); // Canceller needs to wait
 }
 
@@ -2100,41 +2251,46 @@ monad_c_result monad_async_task_suspend_for_duration(
     if (ex == nullptr) {
         return monad_c_make_failure(EINVAL);
     }
-    // timespec must live until resumption
-    struct __kernel_timespec ts;
-    if (ns != monad_async_duration_infinite_non_cancelling ||
-        completed == nullptr) {
-        struct get_sqe_suspending_if_necessary_flags const flags = {
-            .is_cancellation_point = true,
-            .max_concurrent_io_pacing_already_done = false};
-        struct io_uring_sqe *sqe =
-            get_sqe_suspending_if_necessary(ex, task, flags);
-        if (sqe == nullptr) {
-            assert(task->please_cancel_status != please_cancel_not_invoked);
-            return monad_c_make_failure(ECANCELED);
-        }
-        if (ns == 0) {
-            io_uring_prep_nop(sqe);
-        }
-        else {
-            ts.tv_sec = (long long)(ns / 1000000000);
-            ts.tv_nsec = (long long)(ns % 1000000000);
-            io_uring_prep_timeout(sqe, &ts, 0, 0);
-        }
-        io_uring_sqe_set_data(sqe, task, task, nullptr);
-    }
-
+    task->suspend_for_duration_awaiting.key = 0;
+    task->suspend_for_duration_awaiting.task = task;
+    if (ns < monad_async_duration_infinite_cancelling) {
+        monad_cpu_ticks_count_t const now =
+            get_ticks_count(memory_order_relaxed);
+        task->suspend_for_duration_awaiting.key = now + ns_to_ticks(ns);
 #if MONAD_ASYNC_EXECUTOR_PRINTING
-    printf(
-        "*** Task %p running on executor %p initiates "
-        "suspend_for_duration ns=%lu completed=%p *completed=%p\n",
-        (void *)task,
-        (void *)ex,
-        ns,
-        (void *)completed,
-        completed ? (void *)*completed : nullptr);
-    fflush(stdout);
+        printf(
+            "*** Task %p running on executor %p initiates "
+            "suspend_for_duration ns=%lu completed=%p *completed=%p now=%lu "
+            "will expire at %lu\n",
+            (void *)task,
+            (void *)ex,
+            ns,
+            (void *)completed,
+            completed ? (void *)*completed : nullptr,
+            now,
+            task->suspend_for_duration_awaiting.key);
+        fflush(stdout);
 #endif
+        bool const successful = SORTED_RING_BUFFER_INSERT(
+            ex->timeouts, task->suspend_for_duration_awaiting, true);
+        if (!successful) {
+            // Probably out of memory
+            return monad_c_make_failure(ENOMEM);
+        }
+    }
+    else {
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+        printf(
+            "*** Task %p running on executor %p initiates "
+            "suspend_for_duration ns=%lu completed=%p *completed=%p\n",
+            (void *)task,
+            (void *)ex,
+            ns,
+            (void *)completed,
+            completed ? (void *)*completed : nullptr);
+        fflush(stdout);
+#endif
+    }
     atomic_store_explicit(
         &task->head.is_suspended_for_io, true, memory_order_release);
     monad_c_result ret = monad_async_executor_suspend_impl(
@@ -2157,9 +2313,26 @@ monad_c_result monad_async_task_suspend_for_duration(
         completed ? (void *)*completed : nullptr);
     fflush(stdout);
 #endif
+    if (ns < monad_async_duration_infinite_cancelling) {
+        struct monad_async_executor_impl_timeout *const found =
+            SORTED_RING_BUFFER_FIND(
+                ex->timeouts, task->suspend_for_duration_awaiting);
+        if (found != nullptr) {
+            found->task = nullptr;
+        }
+    }
+    task->suspend_for_duration_awaiting.key = 0;
+    task->suspend_for_duration_awaiting.task = nullptr;
+    if (ns != monad_async_duration_infinite_non_cancelling &&
+        task->please_cancel_status != please_cancel_not_invoked) {
+        if (task->please_cancel_status < please_cancel_invoked_seen) {
+            task->please_cancel_status = please_cancel_invoked_seen;
+        }
+        return monad_c_make_failure(ECANCELED);
+    }
     if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(ret)) {
-        if (ns > 0 && outcome_status_code_equal_generic(&ret.error, ETIME)) {
-            // io_uring returns timeouts as failure with ETIME, so
+        if (outcome_status_code_equal_generic(&ret.error, ETIME)) {
+            // executor returns timeouts as failure with ETIME, so
             // filter those out
             return monad_c_make_success(0);
         }

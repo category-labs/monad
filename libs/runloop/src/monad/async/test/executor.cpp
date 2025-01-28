@@ -202,6 +202,20 @@ TEST(executor, works)
                 EXPECT_TRUE(t1->is_suspended_awaiting);
                 EXPECT_FALSE(t1->is_suspended_completed);
                 r = monad_async_executor_run(
+                    ex.get(),
+                    1,
+                    &ts); // returns early when next timeout would fire
+                EXPECT_EQ(did_run, 1);
+                EXPECT_EQ(ex->tasks_pending_launch, 0);
+                EXPECT_EQ(ex->tasks_running, 0);
+                EXPECT_EQ(ex->tasks_suspended, 1);
+                CHECK_RESULT(r);
+                EXPECT_EQ(r.value, 0);
+                EXPECT_FALSE(t1->is_pending_launch);
+                EXPECT_FALSE(t1->is_running);
+                EXPECT_TRUE(t1->is_suspended_awaiting);
+                EXPECT_FALSE(t1->is_suspended_completed);
+                r = monad_async_executor_run(
                     ex.get(), 1, &ts); // resumes and exits
                 EXPECT_EQ(did_run, 2);
                 EXPECT_EQ(ex->tasks_pending_launch, 0);

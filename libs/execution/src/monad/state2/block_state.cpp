@@ -27,6 +27,10 @@ MONAD_NAMESPACE_BEGIN
 
 BlockState::BlockState(Db &db)
     : db_{db}
+#if MMM_DIFF
+    , state_(new StateDeltas)
+    , code_(new Code)
+#endif
 {
 }
 
@@ -35,7 +39,12 @@ std::optional<Account> BlockState::read_account(Address const &address)
     // block state
     {
         StateDeltas::const_accessor it{};
+#if MMM_DIFF
+        MONAD_ASSERT(state_);
+        if (MONAD_LIKELY(state_->find(it, address))) {
+#else
         if (MONAD_LIKELY(state_.find(it, address))) {
+#endif
             return it->second.account.second;
         }
     }
@@ -43,7 +52,12 @@ std::optional<Account> BlockState::read_account(Address const &address)
     {
         auto const result = db_.read_account(address);
         StateDeltas::const_accessor it{};
+#if MMM_DIFF
+        MONAD_ASSERT(state_);
+        state_->emplace(
+#else
         state_.emplace(
+#endif
             it,
             address,
             StateDelta{.account = {result, result}, .storage = {}});
@@ -58,7 +72,12 @@ bytes32_t BlockState::read_storage(
     // block state
     {
         StateDeltas::const_accessor it{};
+#if MMM_DIFF
+        MONAD_ASSERT(state_);
+        MONAD_ASSERT(state_->find(it, address));
+#else
         MONAD_ASSERT(state_.find(it, address));
+#endif
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return {};
@@ -81,7 +100,12 @@ bytes32_t BlockState::read_storage(
                                 ? db_.read_storage(address, incarnation, key)
                                 : bytes32_t{};
         StateDeltas::accessor it{};
+#if MMM_DIFF
+        MONAD_ASSERT(state_);
+        MONAD_ASSERT(state_->find(it, address));
+#else
         MONAD_ASSERT(state_.find(it, address));
+#endif
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return result;
@@ -100,7 +124,12 @@ std::shared_ptr<CodeAnalysis> BlockState::read_code(bytes32_t const &code_hash)
     // block state
     {
         Code::const_accessor it{};
+#if MMM_DIFF
+        MONAD_ASSERT(code_);
+        if (MONAD_LIKELY(code_->find(it, code_hash))) {
+#else
         if (MONAD_LIKELY(code_.find(it, code_hash))) {
+#endif
             return it->second;
         }
     }
@@ -111,7 +140,12 @@ std::shared_ptr<CodeAnalysis> BlockState::read_code(bytes32_t const &code_hash)
         MONAD_ASSERT(
             code_hash == NULL_HASH || !result->executable_code.empty());
         Code::const_accessor it{};
+#if MMM_DIFF
+        MONAD_ASSERT(code_);
+        code_->emplace(it, code_hash, result);
+#else
         code_.emplace(it, code_hash, result);
+#endif
         return it->second;
     }
 }
@@ -122,7 +156,12 @@ bool BlockState::can_merge(State const &state)
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
         StateDeltas::const_accessor it{};
+#if MMM_DIFF
+        MONAD_ASSERT(state_);
+        MONAD_ASSERT(state_->find(it, address));
+#else
         MONAD_ASSERT(state_.find(it, address));
+#endif
         if (account != it->second.account.second) {
             return false;
         }
@@ -163,7 +202,12 @@ void BlockState::merge(State const &state)
         if (it == state.code_.end()) {
             continue;
         }
+#if MMM_DIFF
+        MONAD_ASSERT(code_);
+        code_->emplace(code_hash, it->second); // TODO try_emplace
+#else
         code_.emplace(code_hash, it->second); // TODO try_emplace
+#endif
     }
 
     for (auto const &[address, stack] : state.current_) {
@@ -171,7 +215,12 @@ void BlockState::merge(State const &state)
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
         StateDeltas::accessor it{};
+#if MMM_DIFF
+        MONAD_ASSERT(state_);
+        MONAD_ASSERT(state_->find(it, address));
+#else
         MONAD_ASSERT(state_.find(it, address));
+#endif
         it->second.account.second = account;
         if (account.has_value()) {
             for (auto const &[key, value] : storage) {
@@ -215,8 +264,13 @@ void BlockState::commit(
 
 void BlockState::log_debug()
 {
+#if MMM_DIFF
+    LOG_DEBUG("State Deltas: {}", *state_);
+    LOG_DEBUG("Code Deltas: {}", *code_);
+#else
     LOG_DEBUG("State Deltas: {}", state_);
     LOG_DEBUG("Code Deltas: {}", code_);
+#endif
 }
 
 MONAD_NAMESPACE_END

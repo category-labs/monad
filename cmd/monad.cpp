@@ -12,6 +12,7 @@
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/db/block_db.hpp>
+#include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/event/append_only_log_emitter.hpp>
@@ -569,11 +570,18 @@ int main(int const argc, char const *argv[])
             block_db, start_block_num, block_hash_buffer));
     }
 
+#if MMM_DIFF
+    DbCache db_cache = ctx ? DbCache{*ctx} : DbCache{triedb};
+#endif
     BlockHashChain block_hash_chain(block_hash_buffer);
     uint64_t block_num = start_block_num;
     auto const result = run_monad(
         *chain,
+#if MMM_DIFF
+        db_cache,
+#else
         ctx ? static_cast<Db &>(*ctx) : static_cast<Db &>(triedb),
+#endif
         block_hash_chain,
         slurp_block,
         *emitter,

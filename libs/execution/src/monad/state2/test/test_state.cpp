@@ -1,6 +1,7 @@
 #include <monad/core/account.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/code_analysis.hpp>
@@ -1286,3 +1287,254 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
     this->tdb.set_block_and_round(11, 8);
     EXPECT_EQ(state_root_round8, this->tdb.state_root());
 }
+
+#if MMM_DIFF
+TEST_F(OnDiskTrieDbFixture, proposal_basics)
+{
+    load_header(this->db, BlockHeader{.number = 9});
+    Db &db = this->tdb;
+    db.set_block_and_round(9);
+    db.commit(
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 30'000}}}}},
+        Code{},
+        BlockHeader{.number = 10},
+        {},
+        {},
+        {},
+        {},
+        {},
+        std::nullopt,
+        100);
+    db.set_block_and_round(10, 100);
+    EXPECT_EQ(db.read_account(a).value().balance, 30'000);
+
+    DbCache db_cache(db);
+    db_cache.set_block_and_round(10, 100);
+    BlockState bs1(db_cache);
+    EXPECT_EQ(bs1.read_account(a).value().balance, 30'000);
+    bs1.commit(BlockHeader{.number = 11}, {}, {}, {}, {}, {}, {}, 101);
+    db_cache.finalize(11, 101);
+
+    db_cache.set_block_and_round(11, 101);
+    BlockState bs2(db_cache);
+    State as{bs2, Incarnation{1, 1}};
+    EXPECT_TRUE(as.account_exists(a));
+    as.add_to_balance(a, 10'000);
+    EXPECT_TRUE(bs2.can_merge(as));
+    bs2.merge(as);
+    EXPECT_EQ(db_cache.read_account(a).value().balance, 30'000);
+    bs2.commit({.number = 12}, {}, {}, {}, {}, {}, std::nullopt, 102);
+    EXPECT_EQ(db_cache.read_account(a).value().balance, 40'000);
+    db_cache.finalize(12, 102);
+    EXPECT_EQ(db_cache.read_account(a).value().balance, 40'000);
+}
+
+TEST_F(OnDiskTrieDbFixture, undecided_proposals)
+{
+    load_header(this->db, BlockHeader{.number = 9});
+    DbCache db_cache(this->tdb);
+
+    // b10 r100        a 10   b 20 v1 v2   c 30 v1 v2
+    // b11 r111 r100           +40 v2 --
+    // b12 r121 r111                        +10    v1
+    // b11 r112 r100    +20        --           --
+    // b12 r122 r112           +20 v3
+    // b13 r131 r121    +30    +20    v1        v2 __
+    // b13 r132 r122                  --        v3
+    // b11 r113 r100    +70    +70 v3 v3    +70 v3 v3
+    // finalize r111 r121 r131
+
+    LOG_INFO("block 10 round 100");
+    // b10 r100        a 10   b 20 v1 v2   c 30 v1 v2
+    std::unique_ptr<StateDeltas> state_deltas{new StateDeltas{
+        {a, StateDelta{.account = {std::nullopt, Account{.balance = 10'000}}}},
+        {b,
+         StateDelta{
+             .account = {std::nullopt, Account{.balance = 20'000}},
+             .storage =
+                 {{key1, {bytes32_t{}, value1}},
+                  {key2, {bytes32_t{}, value2}}}}},
+        {c,
+         StateDelta{
+             .account = {std::nullopt, Account{.balance = 30'000}},
+             .storage = {
+                 {key1, {bytes32_t{}, value1}},
+                 {key2, {bytes32_t{}, value2}}}}}}};
+    std::unique_ptr<Code> code{new Code{}};
+    db_cache.set_block_and_round(9);
+    db_cache.commit(
+        state_deltas,
+        code,
+        BlockHeader{.number = 10},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        100);
+    db_cache.finalize(10, 100);
+    EXPECT_TRUE(db_cache.read_account(a).has_value());
+    EXPECT_TRUE(db_cache.read_account(b).has_value());
+    EXPECT_TRUE(db_cache.read_account(c).has_value());
+    EXPECT_EQ(db_cache.read_account(a).value().balance, uint256_t{10'000});
+    EXPECT_EQ(db_cache.read_account(b).value().balance, uint256_t{20'000});
+    EXPECT_EQ(db_cache.read_account(c).value().balance, uint256_t{30'000});
+    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key1), value1);
+    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key2), value2);
+    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key1), value1);
+    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), value2);
+
+    LOG_INFO("block 11 round 111 on block 10 round 100");
+    db_cache.set_block_and_round(10, 100);
+    BlockState bs_111(db_cache);
+    // b11 r111 r100           +40 v2 --
+    {
+        State as{bs_111, Incarnation{11, 1}};
+        as.add_to_balance(b, 40'000);
+        EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
+        EXPECT_EQ(as.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
+        EXPECT_TRUE(bs_111.can_merge(as));
+        bs_111.merge(as);
+    }
+    bs_111.commit({.number = 11}, {}, {}, {}, {}, {}, std::nullopt, 111);
+    auto const state_root_round_111 = db_cache.state_root();
+    db_cache.set_block_and_round(11, 111);
+    EXPECT_TRUE(db_cache.read_account(a).has_value());
+    EXPECT_TRUE(db_cache.read_account(b).has_value());
+    EXPECT_TRUE(db_cache.read_account(c).has_value());
+    EXPECT_EQ(db_cache.read_account(a).value().balance, uint256_t{10'000});
+    EXPECT_EQ(db_cache.read_account(b).value().balance, uint256_t{60'000});
+    EXPECT_EQ(db_cache.read_account(c).value().balance, uint256_t{30'000});
+    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key1), value2);
+    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key2), bytes32_t{});
+    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key1), value1);
+    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), value2);
+
+    LOG_INFO("block 12 round 121 on block 11 round 111");
+    db_cache.set_block_and_round(11, 111);
+    BlockState bs_121(db_cache);
+    // b12 r121 r111                        +10    v1
+    {
+        State as{bs_121, Incarnation{12, 1}};
+        as.add_to_balance(c, 10'000);
+        EXPECT_EQ(as.set_storage(c, key2, value1), EVMC_STORAGE_MODIFIED);
+        EXPECT_TRUE(bs_121.can_merge(as));
+        bs_121.merge(as);
+    }
+    bs_121.commit({.number = 12}, {}, {}, {}, {}, {}, std::nullopt, 121);
+    db_cache.set_block_and_round(12, 121);
+    EXPECT_TRUE(db_cache.read_account(a).has_value());
+    EXPECT_TRUE(db_cache.read_account(b).has_value());
+    EXPECT_TRUE(db_cache.read_account(c).has_value());
+    EXPECT_EQ(db_cache.read_account(a).value().balance, uint256_t{10'000});
+    EXPECT_EQ(db_cache.read_account(b).value().balance, uint256_t{60'000});
+    EXPECT_EQ(db_cache.read_account(c).value().balance, uint256_t{40'000});
+    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key1), value2);
+    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key2), bytes32_t{});
+    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key1), value1);
+    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), value1);
+
+    LOG_INFO("block 11 round 112 on block 10 round 100");
+    db_cache.set_block_and_round(10, 100);
+    BlockState bs_112(db_cache);
+    // b11 r112 r100    +20        --           --
+    {
+        State as{bs_112, Incarnation{11, 1}};
+        as.add_to_balance(a, 20'000);
+        EXPECT_EQ(as.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
+        EXPECT_TRUE(bs_112.can_merge(as));
+        bs_112.merge(as);
+    }
+    bs_112.commit({.number = 11}, {}, {}, {}, {}, {}, std::nullopt, 112);
+
+    LOG_INFO("block 12 round 122 on block 11 round 112");
+    db_cache.set_block_and_round(11, 112);
+    BlockState bs_122(db_cache);
+    //  b12 r122 r112           +20 v3              v1
+    {
+        State as{bs_122, Incarnation{12, 1}};
+        as.add_to_balance(b, 20'000);
+        EXPECT_EQ(as.set_storage(b, key1, value3), EVMC_STORAGE_ADDED);
+        EXPECT_TRUE(bs_122.can_merge(as));
+        bs_122.merge(as);
+    }
+    bs_122.commit({.number = 12}, {}, {}, {}, {}, {}, std::nullopt, 122);
+
+    LOG_INFO("block 13 round 131 on block 12 round 121");
+    db_cache.set_block_and_round(12, 121);
+    BlockState bs_131(db_cache);
+    //  b13 r131 r121    +30    +20    v1        v2 __
+    {
+        State as{bs_131, Incarnation{13, 1}};
+        as.add_to_balance(a, 30'000);
+        as.add_to_balance(b, 20'000);
+        EXPECT_EQ(as.set_storage(b, key2, value1), EVMC_STORAGE_ADDED);
+        EXPECT_EQ(as.set_storage(c, key1, value2), EVMC_STORAGE_MODIFIED);
+        EXPECT_EQ(as.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
+        EXPECT_TRUE(bs_131.can_merge(as));
+        bs_131.merge(as);
+    }
+    bs_131.commit({.number = 13}, {}, {}, {}, {}, {}, std::nullopt, 131);
+    auto const state_root_round_131 = db_cache.state_root();
+
+    LOG_INFO("block 13 round 132 on block 12 round 122");
+    db_cache.set_block_and_round(12, 122);
+    BlockState bs_132(db_cache);
+    // b13 r132 r122                  --        v3
+    {
+        State as{bs_132, Incarnation{13, 1}};
+        EXPECT_EQ(as.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(c, key1, value3), EVMC_STORAGE_ADDED);
+        EXPECT_TRUE(bs_132.can_merge(as));
+        bs_132.merge(as);
+    }
+    bs_132.commit({.number = 13}, {}, {}, {}, {}, {}, std::nullopt, 132);
+
+    //  b10 r100        a 10   b 20 v1 v2   c 30 v1 v2
+    //  b11 r111 r100           +40 v2 --
+    //  b12 r121 r111                        +10    v1
+    //  b13 r131 r121    +30    +20    v1        v2 --
+    //                  a 40   b 80 v2 v1   c 40 v2 --
+    //  finalize r111 r121 r131
+    db_cache.finalize(11, 111);
+    db_cache.finalize(12, 121);
+    db_cache.finalize(13, 131);
+
+    db_cache.set_block_and_round(13, 131);
+    EXPECT_TRUE(db_cache.read_account(a).has_value());
+    EXPECT_TRUE(db_cache.read_account(b).has_value());
+    EXPECT_TRUE(db_cache.read_account(c).has_value());
+    EXPECT_EQ(db_cache.read_account(a).value().balance, 40'000);
+    EXPECT_EQ(db_cache.read_account(b).value().balance, 80'000);
+    EXPECT_EQ(db_cache.read_account(c).value().balance, 40'000);
+    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key1), value2);
+    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key2), value1);
+    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key1), value2);
+    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), bytes32_t{});
+
+    // check state root of previous rounds
+    auto const data_111 = this->db.get_data(
+        mpt::concat(
+            PROPOSAL_NIBBLE,
+            mpt::NibblesView{
+                mpt::serialize_as_big_endian<sizeof(uint64_t)>(111ull)},
+            STATE_NIBBLE),
+        11);
+    ASSERT_TRUE(data_111.has_value());
+    EXPECT_EQ(state_root_round_111, to_bytes(data_111.value()));
+    auto const data_131 = this->db.get_data(
+        mpt::concat(
+            PROPOSAL_NIBBLE,
+            mpt::NibblesView{
+                mpt::serialize_as_big_endian<sizeof(uint64_t)>(131ull)},
+            STATE_NIBBLE),
+        13);
+    ASSERT_TRUE(data_131.has_value());
+    EXPECT_EQ(state_root_round_131, to_bytes(data_131.value()));
+}
+#endif

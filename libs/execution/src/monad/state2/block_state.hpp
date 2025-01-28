@@ -21,8 +21,13 @@ class State;
 class BlockState final
 {
     Db &db_;
+#if MMM_DIFF
+    std::unique_ptr<StateDeltas> state_;
+    std::unique_ptr<Code> code_;
+#else
     StateDeltas state_{};
     Code code_{};
+#endif
 
 public:
     BlockState(Db &);

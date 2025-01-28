@@ -135,6 +135,7 @@ add_library(
   "src/monad/state2/block_state.cpp"
   "src/monad/state2/block_state.hpp"
   "src/monad/state2/fmt/state_deltas_fmt.hpp"
+  "src/monad/state2/proposal_state.hpp"
   "src/monad/state2/state_deltas.hpp"
   # state 3
   "src/monad/state3/account_state.cpp"

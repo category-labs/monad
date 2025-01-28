@@ -17,6 +17,8 @@
 #include <memory>
 #include <optional>
 
+#define MMM_DIFF 1
+
 MONAD_NAMESPACE_BEGIN
 
 struct Db
@@ -48,6 +50,29 @@ struct Db
         std::vector<BlockHeader> const &ommers = {},
         std::optional<std::vector<Withdrawal>> const & = std::nullopt,
         std::optional<uint64_t> round_number = std::nullopt) = 0;
+
+    virtual void commit(
+        std::unique_ptr<StateDeltas> &state_deltas, std::unique_ptr<Code> &code,
+        BlockHeader const &header, std::vector<Receipt> const &receipts,
+        bytes32_t const &bft_block_id,
+        std::vector<std::vector<CallFrame>> const &call_frames,
+        std::vector<Transaction> const &transactions,
+        std::vector<BlockHeader> const &ommers,
+        std::optional<std::vector<Withdrawal>> const &withdrawals,
+        std::optional<uint64_t> const round_number)
+    {
+        commit(
+            *state_deltas,
+            *code,
+            header,
+            receipts,
+            bft_block_id,
+            call_frames,
+            transactions,
+            ommers,
+            withdrawals,
+            round_number);
+    }
 
     virtual std::string print_stats()
     {

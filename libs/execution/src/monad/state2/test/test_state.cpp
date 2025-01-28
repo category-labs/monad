@@ -493,7 +493,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
         bs.merge(s2);
     }
     {
-        bs.commit({}, {}, {}, {}, {}, std::nullopt);
+        bs.commit({}, {}, {}, {}, {}, {}, std::nullopt);
         this->tdb.finalize(0, 0);
         this->tdb.set_block_and_round(0);
         EXPECT_EQ(
@@ -535,7 +535,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
         bs.merge(s2);
     }
     {
-        bs.commit({}, {}, {}, {}, {}, std::nullopt);
+        bs.commit({}, {}, {}, {}, {}, {}, std::nullopt);
         this->tdb.finalize(0, 0);
         this->tdb.set_block_and_round(0);
         EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key1), value1);
@@ -570,7 +570,7 @@ TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
         bs.merge(s2);
     }
     {
-        bs.commit({}, {}, {}, {}, {}, std::nullopt);
+        bs.commit({}, {}, {}, {}, {}, {}, std::nullopt);
         this->tdb.finalize(0, 0);
         this->tdb.set_block_and_round(0);
         EXPECT_EQ(
@@ -1125,7 +1125,7 @@ TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
     as.set_storage(a, key1, value1);
 
     bs.merge(as);
-    bs.commit({}, {}, {}, {}, {}, std::nullopt);
+    bs.commit({}, {}, {}, {}, {}, {}, std::nullopt);
     this->tdb.finalize(0, 0);
     this->tdb.set_block_and_round(0);
 
@@ -1144,7 +1144,7 @@ TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
     EXPECT_EQ(as.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
     EXPECT_EQ(as.set_storage(a, key1, null), EVMC_STORAGE_ADDED_DELETED);
     bs.merge(as);
-    bs.commit({}, {}, {}, {}, {}, std::nullopt);
+    bs.commit({}, {}, {}, {}, {}, {}, std::nullopt);
 
     EXPECT_EQ(
         this->tdb.read_storage(a, Incarnation{1, 1}, key1), monad::bytes32_t{});
@@ -1195,6 +1195,7 @@ TYPED_TEST(StateTest, commit_twice)
             {},
             {},
             {},
+            {},
             {});
         this->tdb.finalize(10, 5);
 
@@ -1215,6 +1216,7 @@ TYPED_TEST(StateTest, commit_twice)
         bs.merge(cs);
         bs.commit(
             MonadConsensusBlockHeader::from_eth_header({.number = 11}, 6),
+            {},
             {},
             {},
             {},
@@ -1263,6 +1265,7 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
             BlockHeader{.number = 10}, 5),
         {},
         {},
+        {},
         {});
     {
         // set to block 10 round 5
@@ -1280,6 +1283,7 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
         // Commit block 11 round 8 on top of block 10 round 5
         bs.commit(
             MonadConsensusBlockHeader::from_eth_header({.number = 11}, 8),
+            {},
             {},
             {},
             {},
@@ -1312,6 +1316,7 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
             {},
             {},
             {},
+            {},
             {});
 
         EXPECT_EQ(this->tdb.read_account(b).value().balance, 84'000);
@@ -1339,6 +1344,7 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
         // Commit block 11 round 7 on top of block 10 round 5
         bs.commit(
             MonadConsensusBlockHeader::from_eth_header({.number = 11}, 7),
+            {},
             {},
             {},
             {},

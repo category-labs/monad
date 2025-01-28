@@ -92,6 +92,7 @@ struct monad_statesync_server_context final : public monad::Db
         monad::MonadConsensusBlockHeader const &,
         std::vector<monad::Receipt> const &receipts = {},
         std::vector<std::vector<monad::CallFrame>> const & = {},
+        std::vector<monad::Address> const & = {},
         std::vector<monad::Transaction> const &transactions = {},
         std::vector<monad::BlockHeader> const &ommers = {},
         std::optional<std::vector<monad::Withdrawal>> const & =

@@ -73,9 +73,11 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
             chain, block, block_state, block_hash_buffer, *pool_));
     std::vector<Receipt> receipts(results.size());
     std::vector<std::vector<CallFrame>> call_frames(results.size());
+    std::vector<Address> senders(results.size());
     for (unsigned i = 0; i < results.size(); ++i) {
         receipts[i] = std::move(results[i].receipt);
         call_frames[i] = std::move(results[i].call_frames);
+        senders[i] = results[i].sender;
     }
 
     block_state.log_debug();
@@ -83,6 +85,7 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
         MonadConsensusBlockHeader::from_eth_header(block.header),
         receipts,
         call_frames,
+        senders,
         block.transactions,
         block.ommers,
         block.withdrawals);
@@ -233,6 +236,7 @@ void BlockchainTest::TestBody()
                 MonadConsensusBlockHeader::from_eth_header(header),
                 {} /* receipts */,
                 {} /* call frames */,
+                {} /* senders */,
                 {} /* transactions */,
                 {} /* ommers */,
                 withdrawals);

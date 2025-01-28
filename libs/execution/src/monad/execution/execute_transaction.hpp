@@ -29,6 +29,7 @@ struct EvmcHost;
 struct ExecutionResult
 {
     Receipt receipt;
+    Address sender;
     std::vector<CallFrame> call_frames;
 };
 

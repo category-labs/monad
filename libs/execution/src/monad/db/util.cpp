@@ -14,6 +14,8 @@
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
 #include <monad/core/rlp/receipt_rlp.hpp>
+#include <monad/core/rlp/transaction_rlp.hpp>
+#include <monad/core/transaction.hpp>
 #include <monad/core/unaligned.hpp>
 #include <monad/db/util.hpp>
 #include <monad/mpt/compute.hpp>
@@ -351,6 +353,24 @@ namespace
         }
     };
 
+    Result<byte_string_view>
+    parse_encoded_transaction_ignore_sender(byte_string_view &enc)
+    {
+        BOOST_OUTCOME_TRY(enc, rlp::parse_list_metadata(enc));
+        return rlp::decode_string(enc);
+    }
+
+    struct TransactionLeafProcess
+    {
+        static byte_string_view process(byte_string_view enc)
+        {
+            auto const enc_transaction =
+                parse_encoded_transaction_ignore_sender(enc);
+            MONAD_ASSERT(!enc_transaction.has_error());
+            return enc_transaction.value();
+        }
+    };
+
     using AccountMerkleCompute = MerkleComputeBase<ComputeAccountLeaf>;
     using StorageMerkleCompute = MerkleComputeBase<ComputeStorageLeaf>;
 
@@ -435,6 +455,9 @@ mpt::Compute &MachineBase::get_compute() const
 
     static VarLenMerkleCompute<ReceiptLeafProcessor> receipt_compute;
     static RootVarLenMerkleCompute<ReceiptLeafProcessor> receipt_root_compute;
+    static VarLenMerkleCompute<TransactionLeafProcess> transaction_compute;
+    static RootVarLenMerkleCompute<TransactionLeafProcess>
+        transaction_root_compute;
 
     auto const prefix_length = prefix_len();
     if (MONAD_LIKELY(table == TableType::State)) {
@@ -455,8 +478,11 @@ mpt::Compute &MachineBase::get_compute() const
     else if (table == TableType::Receipt) {
         return depth == prefix_length ? receipt_root_compute : receipt_compute;
     }
-    else if (
-        table == TableType::Transaction || table == TableType::Withdrawal) {
+    else if (table == TableType::Transaction) {
+        return depth == prefix_length ? transaction_root_compute
+                                      : transaction_compute;
+    }
+    else if (table == TableType::Withdrawal) {
         return depth == prefix_length ? generic_root_merkle_compute
                                       : generic_merkle_compute;
     }
@@ -585,6 +611,20 @@ Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &enc)
         return rlp::DecodeError::InputTooLong;
     }
     return std::make_pair(receipt, log_index_begin);
+}
+
+Result<std::pair<Transaction, Address>>
+decode_transaction_db(byte_string_view &enc)
+{
+    BOOST_OUTCOME_TRY(
+        auto encoded_tx, parse_encoded_transaction_ignore_sender(enc));
+    BOOST_OUTCOME_TRY(
+        auto const transaction, rlp::decode_transaction(encoded_tx));
+    BOOST_OUTCOME_TRY(auto const sender, rlp::decode_address(enc));
+    if (MONAD_UNLIKELY(!enc.empty())) {
+        return rlp::DecodeError::InputTooLong;
+    }
+    return {transaction, sender};
 }
 
 byte_string encode_account_db(Address const &address, Account const &account)

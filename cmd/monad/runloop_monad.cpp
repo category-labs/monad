@@ -122,10 +122,12 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
 
         std::vector<Receipt> receipts(results.size());
         std::vector<std::vector<CallFrame>> call_frames(results.size());
+        std::vector<Address> senders(results.size());
         for (unsigned i = 0; i < results.size(); ++i) {
             auto &result = results[i];
             receipts[i] = std::move(result.receipt);
             call_frames[i] = (std::move(result.call_frames));
+            senders[i] = result.sender;
         }
 
         block_state.log_debug();
@@ -134,6 +136,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 block.header), // TODO: remove when we parse consensus blocks
             receipts,
             call_frames,
+            senders,
             block.transactions,
             block.ommers,
             block.withdrawals);

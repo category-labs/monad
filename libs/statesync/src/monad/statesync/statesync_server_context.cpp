@@ -176,6 +176,7 @@ void monad_statesync_server_context::commit(
     MonadConsensusBlockHeader const &consensus_header,
     std::vector<Receipt> const &receipts,
     std::vector<std::vector<CallFrame>> const &call_frames,
+    std::vector<Address> const &senders,
     std::vector<Transaction> const &transactions,
     std::vector<BlockHeader> const &ommers,
     std::optional<std::vector<Withdrawal>> const &withdrawals)
@@ -189,6 +190,7 @@ void monad_statesync_server_context::commit(
         consensus_header,
         receipts,
         call_frames,
+        senders,
         transactions,
         ommers,
         withdrawals);

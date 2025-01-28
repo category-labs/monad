@@ -125,6 +125,8 @@ Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &);
 Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &);
 
 Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &);
+Result<std::pair<Transaction, Address>>
+decode_transaction_db(byte_string_view &);
 
 void write_to_file(
     nlohmann::json const &, std::filesystem::path const &,

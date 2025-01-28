@@ -243,6 +243,7 @@ Result<ExecutionResult> execute_impl(
             auto const frames = call_tracer.get_frames();
             return ExecutionResult{
                 .receipt = receipt,
+                .sender = sender,
                 .call_frames = {frames.begin(), frames.end()}};
         }
     }
@@ -276,7 +277,9 @@ Result<ExecutionResult> execute_impl(
 
         auto const frames = call_tracer.get_frames();
         return ExecutionResult{
-            .receipt = receipt, .call_frames = {frames.begin(), frames.end()}};
+            .receipt = receipt,
+            .sender = sender,
+            .call_frames = {frames.begin(), frames.end()}};
     }
 }
 

@@ -91,6 +91,7 @@ inline void commit_sequential(
     Db &db, StateDeltas const &deltas, Code const &code,
     BlockHeader const &eth_header, std::vector<Receipt> const &receipts = {},
     std::vector<std::vector<CallFrame>> const &call_frames = {},
+    std::vector<Address> const &senders = {},
     std::vector<Transaction> const &txns = {},
     std::vector<BlockHeader> const &ommers = {},
     std::optional<std::vector<Withdrawal>> const &withdrawals = std::nullopt)
@@ -103,6 +104,7 @@ inline void commit_sequential(
         consensus_header,
         receipts,
         call_frames,
+        senders,
         txns,
         ommers,
         withdrawals);

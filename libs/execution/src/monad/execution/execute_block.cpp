@@ -182,7 +182,7 @@ Result<std::vector<ExecutionResult>> execute_block(
 
     // YP eq. 22
     uint64_t cumulative_gas_used = 0;
-    for (auto &[receipt, call_frame] : retvals) {
+    for (auto &[receipt, _, call_frame] : retvals) {
         cumulative_gas_used += receipt.gas_used;
         receipt.gas_used = cumulative_gas_used;
     }

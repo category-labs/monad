@@ -52,6 +52,7 @@ public:
         StateDeltas const &, Code const &, MonadConsensusBlockHeader const &,
         std::vector<Receipt> const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
+        std::vector<Address> const & = {},
         std::vector<Transaction> const & = {},
         std::vector<BlockHeader> const &ommers = {},
         std::optional<std::vector<Withdrawal>> const & = std::nullopt) override;

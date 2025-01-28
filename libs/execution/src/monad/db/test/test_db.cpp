@@ -133,6 +133,19 @@ namespace
         MONAD_ASSERT(!storage.has_error());
         return storage.value();
     }
+
+    std::vector<Address>
+    recover_senders(std::vector<Transaction> const &transactions)
+    {
+        std::vector<Address> senders;
+        senders.reserve(transactions.size());
+        for (auto const &tx : transactions) {
+            auto const sender = recover_sender(tx);
+            MONAD_ASSERT(sender.has_value());
+            senders.emplace_back(sender.value());
+        }
+        return senders;
+    }
 }
 
 template <typename TDB>
@@ -436,6 +449,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     std::vector<std::vector<CallFrame>> call_frames;
     call_frames.resize(receipts.size());
     constexpr uint64_t first_block = 0;
+    std::vector<Address> senders = recover_senders(transactions);
     commit_sequential(
         tdb,
         StateDeltas{},
@@ -443,6 +457,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         BlockHeader{.number = first_block},
         receipts,
         call_frames,
+        senders,
         transactions);
     EXPECT_EQ(
         tdb.receipts_root(),
@@ -469,12 +484,28 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
             log_i += receipt.logs.size();
         }
     };
+
+    auto verify_read_and_parse_transaction = [&](uint64_t const block_id) {
+        for (unsigned i = 0; i < transactions.size(); ++i) {
+            auto res = this->db.get(
+                mpt::concat(
+                    FINALIZED_NIBBLE,
+                    TRANSACTION_NIBBLE,
+                    mpt::NibblesView{rlp::encode_unsigned<unsigned>(i)}),
+                block_id);
+            ASSERT_TRUE(res.has_value());
+            auto const decode_res = decode_transaction_db(res.value());
+            ASSERT_TRUE(decode_res.has_value());
+            auto const [tx, sender] = decode_res.value();
+            EXPECT_EQ(tx, transactions[i]) << i;
+            EXPECT_EQ(sender, senders[i]) << i;
+        }
+    };
     auto verify_tx_hash = [&](hash256 const &tx_hash,
                               uint64_t const block_id,
                               unsigned const tx_idx) {
         auto const res = this->db.get(
-            concat(
-                finalized_nibbles, tx_hash_nibbles, mpt::NibblesView{tx_hash}),
+            concat(FINALIZED_NIBBLE, TX_HASH_NIBBLE, mpt::NibblesView{tx_hash}),
             this->db.get_latest_block_id());
         EXPECT_TRUE(res.has_value());
         EXPECT_EQ(
@@ -486,6 +517,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     verify_tx_hash(tx_hash[1], first_block, 1);
     verify_tx_hash(tx_hash[2], first_block, 2);
     verify_read_and_parse_receipt(first_block);
+    verify_read_and_parse_transaction(first_block);
 
     // A new receipt trie with eip1559 transaction type
     constexpr uint64_t second_block = 1;
@@ -503,6 +535,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         keccak256(rlp::encode_transaction(transactions.emplace_back(t2))));
     ASSERT_EQ(receipts.size(), transactions.size());
     call_frames.resize(receipts.size());
+    senders = recover_senders(transactions);
     commit_sequential(
         tdb,
         StateDeltas{},
@@ -510,6 +543,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         BlockHeader{.number = second_block},
         receipts,
         call_frames,
+        senders,
         transactions);
     EXPECT_EQ(
         tdb.receipts_root(),
@@ -523,6 +557,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     verify_tx_hash(tx_hash[3], second_block, 0);
     verify_tx_hash(tx_hash[4], second_block, 1);
     verify_read_and_parse_receipt(second_block);
+    verify_read_and_parse_transaction(second_block);
 }
 
 TYPED_TEST(DBTest, to_json)
@@ -690,9 +725,9 @@ TYPED_TEST(DBTest, commit_call_frames)
     std::vector<CallFrame> const call_frame{call_frame1, call_frame2};
     std::vector<std::vector<CallFrame>> call_frames;
     call_frames.emplace_back(call_frame);
-    std::vector<Receipt> receipts(call_frames.size());
-    std::vector<Transaction> transactions(call_frames.size());
-
+    std::vector<Receipt> const receipts(call_frames.size());
+    std::vector<Transaction> const transactions(call_frames.size());
+    std::vector<Address> const senders{call_frames.size()};
     commit_sequential(
         tdb,
         StateDeltas{},
@@ -700,6 +735,7 @@ TYPED_TEST(DBTest, commit_call_frames)
         BlockHeader{},
         receipts,
         call_frames,
+        senders,
         transactions);
 
     auto const &res = read_call_frame(this->db, tdb.get_block_number(), 0);
@@ -776,12 +812,13 @@ TYPED_TEST(DBTest, call_frames_stress_test)
         receipts.emplace_back(std::move(result.receipt));
         call_frames.emplace_back(std::move(result.call_frames));
     }
-
+    auto const &transactions = block.value().transactions;
     bs.commit(
         MonadConsensusBlockHeader::from_eth_header(BlockHeader{.number = 1}),
         receipts,
         call_frames,
-        block.value().transactions,
+        recover_senders(transactions),
+        transactions,
         {},
         {});
     tdb.finalize(1, 1);
@@ -874,11 +911,13 @@ TYPED_TEST(DBTest, call_frames_refund)
         call_frames.emplace_back(std::move(result.call_frames));
     }
 
+    auto const &transactions = block.value().transactions;
     bs.commit(
         MonadConsensusBlockHeader::from_eth_header(block.value().header),
         receipts,
         call_frames,
-        block.value().transactions,
+        recover_senders(transactions),
+        transactions,
         {},
         std::nullopt);
     tdb.finalize(1, 1);

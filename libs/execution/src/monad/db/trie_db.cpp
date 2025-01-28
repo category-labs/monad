@@ -10,6 +10,7 @@
 #include <monad/core/keccak.h>
 #include <monad/core/keccak.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/core/rlp/address_rlp.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
@@ -79,6 +80,12 @@ namespace
             rlp::encode_unsigned(log_index_begin));
     }
 
+    byte_string encode_transaction_db(
+        byte_string_view const encoded_tx, Address const &sender)
+    {
+        return rlp::encode_list2(
+            rlp::encode_string2(encoded_tx), rlp::encode_address(sender));
+    }
 }
 
 TrieDb::TrieDb(mpt::Db &db)
@@ -164,6 +171,7 @@ void TrieDb::commit(
     MonadConsensusBlockHeader const &consensus_header,
     std::vector<Receipt> const &receipts,
     std::vector<std::vector<CallFrame>> const &call_frames,
+    std::vector<Address> const &senders,
     std::vector<Transaction> const &transactions,
     std::vector<BlockHeader> const &ommers,
     std::optional<std::vector<Withdrawal>> const &withdrawals)
@@ -254,6 +262,7 @@ void TrieDb::commit(
     UpdateList tx_hash_updates;
     UpdateList call_frame_updates;
     MONAD_ASSERT(receipts.size() == transactions.size());
+    MONAD_ASSERT(transactions.size() == senders.size());
     MONAD_ASSERT(receipts.size() == call_frames.size());
     auto const &encoded_block_number =
         bytes_alloc_.emplace_back(rlp::encode_unsigned(header.number));
@@ -276,15 +285,14 @@ void TrieDb::commit(
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));
 
-        auto const &encoded_tx =
-            bytes_alloc_.emplace_back(rlp::encode_transaction(transactions[i]));
+        auto const encoded_tx = rlp::encode_transaction(transactions[i]);
         transaction_updates.push_front(update_alloc_.emplace_back(Update{
             .key = NibblesView{rlp_index},
-            .value = encoded_tx,
+            .value = bytes_alloc_.emplace_back(
+                encode_transaction_db(encoded_tx, senders[i])),
             .incarnation = false,
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));
-
         tx_hash_updates.push_front(update_alloc_.emplace_back(Update{
             .key = NibblesView{hash_alloc_.emplace_back(keccak256(encoded_tx))},
             .value = bytes_alloc_.emplace_back(

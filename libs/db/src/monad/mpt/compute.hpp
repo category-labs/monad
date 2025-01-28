@@ -224,7 +224,7 @@ concept leaf_processor = requires {
 
 struct NoopProcessor
 {
-    static byte_string_view process(byte_string_view in)
+    static byte_string_view process(byte_string_view const in)
     {
         return in;
     }

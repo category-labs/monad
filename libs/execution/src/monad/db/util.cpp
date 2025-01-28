@@ -6,12 +6,14 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
+#include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/core/rlp/account_rlp.hpp>
 #include <monad/core/rlp/address_rlp.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
+#include <monad/core/rlp/receipt_rlp.hpp>
 #include <monad/core/unaligned.hpp>
 #include <monad/db/util.hpp>
 #include <monad/mpt/compute.hpp>
@@ -331,6 +333,23 @@ namespace
         }
     };
 
+    Result<byte_string_view>
+    decode_receipt_db_ignore_log_index(byte_string_view &enc)
+    {
+        BOOST_OUTCOME_TRY(enc, rlp::parse_list_metadata(enc));
+        return rlp::decode_string(enc);
+    }
+
+    struct ReceiptLeafProcessor
+    {
+        static byte_string_view process(byte_string_view enc)
+        {
+            auto const enc_receipt = decode_receipt_db_ignore_log_index(enc);
+            MONAD_ASSERT(!enc_receipt.has_error());
+            return enc_receipt.value();
+        }
+    };
+
     using AccountMerkleCompute = MerkleComputeBase<ComputeAccountLeaf>;
     using StorageMerkleCompute = MerkleComputeBase<ComputeStorageLeaf>;
 
@@ -413,6 +432,9 @@ mpt::Compute &MachineBase::get_compute() const
     static VarLenMerkleCompute generic_merkle_compute;
     static RootVarLenMerkleCompute generic_root_merkle_compute;
 
+    static VarLenMerkleCompute<ReceiptLeafProcessor> receipt_compute;
+    static RootVarLenMerkleCompute<ReceiptLeafProcessor> receipt_root_compute;
+
     auto const prefix_length = prefix_len();
     if (MONAD_LIKELY(table == TableType::State)) {
         MONAD_ASSERT(depth >= prefix_length);
@@ -429,9 +451,11 @@ mpt::Compute &MachineBase::get_compute() const
             return storage_compute;
         }
     }
+    else if (table == TableType::Receipt) {
+        return depth == prefix_length ? receipt_root_compute : receipt_compute;
+    }
     else if (
-        table == TableType::Receipt || table == TableType::Transaction ||
-        table == TableType::Withdrawal) {
+        table == TableType::Transaction || table == TableType::Withdrawal) {
         return depth == prefix_length ? generic_root_merkle_compute
                                       : generic_merkle_compute;
     }
@@ -547,6 +571,27 @@ bool OnDiskMachine::auto_expire() const
 std::unique_ptr<StateMachine> OnDiskMachine::clone() const
 {
     return std::make_unique<OnDiskMachine>(*this);
+}
+
+byte_string
+encode_receipt_db(Receipt const &receipt, size_t const log_index_begin)
+{
+    return rlp::encode_list2(
+        rlp::encode_string2(rlp::encode_receipt(receipt)),
+        rlp::encode_unsigned(log_index_begin));
+}
+
+Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &enc)
+{
+    BOOST_OUTCOME_TRY(
+        auto encoded_receipt, decode_receipt_db_ignore_log_index(enc));
+    BOOST_OUTCOME_TRY(auto const receipt, rlp::decode_receipt(encoded_receipt));
+    BOOST_OUTCOME_TRY(
+        auto const log_index_begin, rlp::decode_unsigned<size_t>(enc));
+    if (MONAD_UNLIKELY(!enc.empty())) {
+        return rlp::DecodeError::InputTooLong;
+    }
+    return std::make_pair(receipt, log_index_begin);
 }
 
 byte_string encode_account_db(Address const &address, Account const &account)

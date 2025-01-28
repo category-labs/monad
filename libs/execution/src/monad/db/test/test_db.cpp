@@ -451,6 +451,24 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         tdb.transactions_root(),
         0xfb4fce4331706502d2893deafe470d4cc97b4895294f725ccb768615a5510801_bytes32);
 
+    auto verify_read_and_parse_receipt = [&](uint64_t const block_id) {
+        size_t log_i = 0;
+        for (unsigned i = 0; i < receipts.size(); ++i) {
+            auto res = this->db.get(
+                mpt::concat(
+                    FINALIZED_NIBBLE,
+                    RECEIPT_NIBBLE,
+                    mpt::NibblesView{rlp::encode_unsigned<unsigned>(i)}),
+                block_id);
+            ASSERT_TRUE(res.has_value());
+            auto const decode_res = decode_receipt_db(res.value());
+            ASSERT_TRUE(decode_res.has_value());
+            auto const [receipt, log_index_begin] = decode_res.value();
+            EXPECT_EQ(receipt, receipts[i]) << i;
+            EXPECT_EQ(log_index_begin, log_i);
+            log_i += receipt.logs.size();
+        }
+    };
     auto verify_tx_hash = [&](hash256 const &tx_hash,
                               uint64_t const block_id,
                               unsigned const tx_idx) {
@@ -467,6 +485,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     verify_tx_hash(tx_hash[0], first_block, 0);
     verify_tx_hash(tx_hash[1], first_block, 1);
     verify_tx_hash(tx_hash[2], first_block, 2);
+    verify_read_and_parse_receipt(first_block);
 
     // A new receipt trie with eip1559 transaction type
     constexpr uint64_t second_block = 1;
@@ -503,6 +522,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     verify_tx_hash(tx_hash[2], first_block, 2);
     verify_tx_hash(tx_hash[3], second_block, 0);
     verify_tx_hash(tx_hash[4], second_block, 1);
+    verify_read_and_parse_receipt(second_block);
 }
 
 TYPED_TEST(DBTest, to_json)

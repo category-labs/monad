@@ -117,12 +117,15 @@ inline mpt::Nibbles const finalized_nibbles = mpt::concat(FINALIZED_NIBBLE);
 
 byte_string encode_account_db(Address const &, Account const &);
 byte_string encode_storage_db(bytes32_t const &, bytes32_t const &);
+byte_string encode_receipt_db(Receipt const &, size_t log_start_index);
 
 Result<std::pair<Address, Account>> decode_account_db(byte_string_view &);
 Result<Account> decode_account_db_ignore_address(byte_string_view &);
 
 Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &);
 Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &);
+
+Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &);
 
 void write_to_file(
     nlohmann::json const &, std::filesystem::path const &,

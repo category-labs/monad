@@ -252,13 +252,17 @@ void TrieDb::commit(
     index_alloc.reserve(std::max(
         receipts.size(),
         withdrawals.transform(&std::vector<Withdrawal>::size).value_or(0)));
+    size_t log_index_begin = 0;
     for (size_t i = 0; i < receipts.size(); ++i) {
         auto const &rlp_index =
             index_alloc.emplace_back(rlp::encode_unsigned(i));
+        auto const &receipt = receipts[i];
+        auto const &encoded_receipt = bytes_alloc_.emplace_back(
+            encode_receipt_db(receipt, log_index_begin));
+        log_index_begin += receipt.logs.size();
         receipt_updates.push_front(update_alloc_.emplace_back(Update{
             .key = NibblesView{rlp_index},
-            .value =
-                bytes_alloc_.emplace_back(rlp::encode_receipt(receipts[i])),
+            .value = encoded_receipt,
             .incarnation = false,
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));

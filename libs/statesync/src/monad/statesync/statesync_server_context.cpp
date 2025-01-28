@@ -84,7 +84,7 @@ void on_finalize(
     MONAD_ASSERT(winner_it->block_number == block_number);
 
     {
-        auto &entry = ctx.deleted[block_number % ctx.deleted.size()];
+        auto &entry = ctx.deletions[block_number % ctx.deletions.size()];
         std::lock_guard const lock{entry.mutex};
         entry.block_number = block_number;
         entry.deletions = std::move(winner_it->deletions);

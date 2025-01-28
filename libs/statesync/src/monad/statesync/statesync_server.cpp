@@ -66,7 +66,7 @@ bool send_deletion(
     auto const prefix = from_prefix(rq.prefix, rq.prefix_bytes);
 
     for (uint64_t i = rq.old_target + 1; i <= rq.target; ++i) {
-        auto &entry = ctx.deleted[i % ctx.deleted.size()];
+        auto &entry = ctx.deletions[i % ctx.deletions.size()];
         std::lock_guard const lock{entry.mutex};
         if (entry.block_number != i) {
             return false;

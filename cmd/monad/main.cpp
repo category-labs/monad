@@ -233,13 +233,13 @@ int main(int const argc, char const *argv[])
         return triedb.get_block_number();
     }();
 
-    std::optional<monad_statesync_server_context> ctx;
+    std::unique_ptr<monad_statesync_server_context> ctx;
     std::jthread sync_thread;
     monad_statesync_server *sync = nullptr;
     if (!statesync.empty()) {
-        ctx.emplace(triedb);
+        ctx = std::make_unique<monad_statesync_server_context>(triedb);
         sync = monad_statesync_server_create(
-            &ctx.value(),
+            ctx.get(),
             &net.value(),
             &statesync_server_recv,
             &statesync_server_send_upsert,

@@ -262,9 +262,10 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
     mpt::Db sdb{
         machine, OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}};
     TrieDb stdb{sdb};
-    monad_statesync_server_context sctx{stdb};
+    std::unique_ptr<monad_statesync_server_context> sctx =
+        std::make_unique<monad_statesync_server_context>(stdb);
     mpt::Db ro{ReadOnlyOnDiskDbConfig{.dbname_paths{sdbname}}};
-    sctx.ro = &ro;
+    sctx->ro = &ro;
     monad_statesync_server_network net{
         .client = &client, .cctx = cctx, .buf = {}};
     for (size_t i = 0; i < monad_statesync_client_prefixes(); ++i) {
@@ -272,7 +273,7 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
             cctx, i, monad_statesync_version());
     }
     monad_statesync_server *const server = monad_statesync_server_create(
-        &sctx,
+        sctx.get(),
         &net,
         &statesync_server_recv,
         &statesync_server_send_upsert,
@@ -282,9 +283,9 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
     State state{};
 
     BlockHeader hdr{.number = 0};
-    sctx.commit(
+    sctx->commit(
         StateDeltas{}, Code{}, MonadConsensusBlockHeader::from_eth_header(hdr));
-    sctx.finalize(0, 0);
+    sctx->finalize(0, 0);
     while (raw.size() >= sizeof(uint64_t)) {
         StateDeltas deltas;
         uint64_t const n = unaligned_load<uint64_t>(raw.data());
@@ -315,11 +316,11 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
                           : n;
         hdr.number = stdb.get_block_number() + 1;
         MONAD_ASSERT(hdr.number > 0);
-        sctx.set_block_and_round(hdr.number - 1);
-        sctx.commit(
+        sctx->set_block_and_round(hdr.number - 1);
+        sctx->commit(
             deltas, {}, MonadConsensusBlockHeader::from_eth_header(hdr));
-        sctx.finalize(hdr.number, hdr.number);
-        auto const rlp = rlp::encode_block_header(sctx.read_eth_header());
+        sctx->finalize(hdr.number, hdr.number);
+        auto const rlp = rlp::encode_block_header(sctx->read_eth_header());
         monad_statesync_client_handle_target(cctx, rlp.data(), rlp.size());
         while (!client.rqs.empty()) {
             monad_statesync_server_run_once(server);

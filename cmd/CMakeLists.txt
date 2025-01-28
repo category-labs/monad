@@ -2,7 +2,16 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 find_package(CLI11 REQUIRED)
 
-add_executable(monad monad.cpp)
+add_executable(
+  monad
+  monad/main.cpp
+  monad/runloop_ethereum.cpp
+  monad/runloop_ethereum.hpp
+  monad/runloop_monad.cpp
+  monad/runloop_monad.hpp
+  monad/util.cpp
+  monad/util.hpp)
+
 monad_compile_options(monad)
 
 target_link_libraries(monad PRIVATE monad_execution monad_statesync

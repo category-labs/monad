@@ -219,7 +219,7 @@ namespace monad::test
 
     using StateMachineAlwaysEmpty = StateMachineAlways<EmptyCompute>;
     using StateMachineAlwaysMerkle = StateMachineAlways<MerkleCompute>;
-    using StateMachineAlwaysVarLen = StateMachineAlways<VarLenMerkleCompute>;
+    using StateMachineAlwaysVarLen = StateMachineAlways<VarLenMerkleCompute<>>;
 
     Node::UniquePtr upsert_vector(
         UpdateAuxImpl &aux, StateMachine &sm, Node::UniquePtr old,

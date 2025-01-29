@@ -28,7 +28,8 @@ struct MonadSignerMap
     uint32_t num_bits;
     byte_string bitmap;
 
-    friend bool operator==(MonadSignerMap const &, MonadSignerMap const &) = default;
+    friend bool
+    operator==(MonadSignerMap const &, MonadSignerMap const &) = default;
 };
 
 struct MonadSignatures
@@ -36,7 +37,8 @@ struct MonadSignatures
     MonadSignerMap signer_map;
     byte_string_fixed<96> aggregate_signature;
 
-    friend bool operator==(MonadSignatures const &, MonadSignatures const &) = default;
+    friend bool
+    operator==(MonadSignatures const &, MonadSignatures const &) = default;
 };
 
 struct MonadQuorumCertificate
@@ -44,8 +46,9 @@ struct MonadQuorumCertificate
     MonadVote vote;
     MonadSignatures signatures;
 
-    friend bool
-    operator==(MonadQuorumCertificate const &, MonadQuorumCertificate const &) = default;
+    friend bool operator==(
+        MonadQuorumCertificate const &,
+        MonadQuorumCertificate const &) = default;
 };
 
 struct MonadConsensusBlockHeader
@@ -61,11 +64,50 @@ struct MonadConsensusBlockHeader
     BlockHeader execution_inputs;
     bytes32_t block_body_id;
 
-    bytes32_t parent_id() const noexcept { return qc.vote.id; }
-    uint64_t parent_round() const noexcept { return qc.vote.round; }
+    bytes32_t parent_id() const noexcept
+    {
+        return qc.vote.id;
+    }
+
+    uint64_t parent_round() const noexcept
+    {
+        return qc.vote.round;
+    }
+
+    static MonadConsensusBlockHeader
+    from_eth_header(BlockHeader const &eth_header)
+    {
+        uint64_t const round = eth_header.number;
+        uint64_t const parent_round = round - std::min(round, 1ul);
+        uint64_t const grandparent_round = round - std::min(round, 2ul);
+
+        return MonadConsensusBlockHeader{
+            .round = round,
+            .epoch = 0,
+            .qc =
+                MonadQuorumCertificate{
+                    .vote =
+                        MonadVote{
+                            .id = bytes32_t{parent_round},
+                            .round = parent_round,
+                            .epoch = 0,
+                            .parent_id = bytes32_t{grandparent_round},
+                            .parent_round = grandparent_round,
+                        },
+                    .signatures = {}},
+            .author = {},
+            .seqno = eth_header.number,
+            .timestamp_ns = eth_header.timestamp,
+            .round_signature = {},
+            .delayed_execution_results = std::vector<BlockHeader>{BlockHeader{
+                .number = grandparent_round}},
+            .execution_inputs = eth_header,
+            .block_body_id = {}};
+    }
 
     friend bool operator==(
-        MonadConsensusBlockHeader const &, MonadConsensusBlockHeader const &) = default;
+        MonadConsensusBlockHeader const &,
+        MonadConsensusBlockHeader const &) = default;
 };
 
 static_assert(sizeof(MonadConsensusBlockHeader) == 1184);
@@ -78,7 +120,8 @@ struct MonadConsensusBlockBody
     std::vector<Withdrawal> withdrawals{};
 
     friend bool operator==(
-        MonadConsensusBlockBody const &, MonadConsensusBlockBody const &) = default;
+        MonadConsensusBlockBody const &,
+        MonadConsensusBlockBody const &) = default;
 };
 
 static_assert(sizeof(MonadConsensusBlockBody) == 72);
@@ -89,8 +132,8 @@ struct MonadConsensusBlock
     MonadConsensusBlockHeader header;
     MonadConsensusBlockBody body;
 
-    friend bool
-    operator==(MonadConsensusBlock const &, MonadConsensusBlock const &) = default;
+    friend bool operator==(
+        MonadConsensusBlock const &, MonadConsensusBlock const &) = default;
 };
 
 static_assert(sizeof(MonadConsensusBlock) == 1256);

@@ -48,16 +48,13 @@ public:
     virtual void set_block_and_round(
         uint64_t block_number,
         std::optional<uint64_t> round_number = std::nullopt) override;
-    // TODO: remove round_number parameter, retrieve it from header instead once
-    // we add the monad fields in BlockHeader
     virtual void commit(
-        StateDeltas const &, Code const &, BlockHeader const &,
+        StateDeltas const &, Code const &, MonadConsensusBlockHeader const &,
         std::vector<Receipt> const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
         std::vector<Transaction> const & = {},
         std::vector<BlockHeader> const &ommers = {},
-        std::optional<std::vector<Withdrawal>> const & = std::nullopt,
-        std::optional<uint64_t> round_number = std::nullopt) override;
+        std::optional<std::vector<Withdrawal>> const & = std::nullopt) override;
     virtual void
     finalize(uint64_t block_number, uint64_t round_number) override;
     virtual void update_verified_block(uint64_t) override;

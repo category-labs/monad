@@ -155,14 +155,16 @@ TEST(DBTest, read_only)
         TrieDb rw(db);
 
         Account const acct1{.nonce = 1};
-        rw.commit(
+        commit_sequential(
+            rw,
             StateDeltas{
                 {ADDR_A,
                  StateDelta{.account = {std::nullopt, acct1}, .storage = {}}}},
             Code{},
-            BlockHeader{});
+            BlockHeader{.number = 0});
         Account const acct2{.nonce = 2};
-        rw.commit(
+        commit_sequential(
+            rw,
             StateDeltas{
                 {ADDR_A, StateDelta{.account = {acct1, acct2}, .storage = {}}}},
             Code{},
@@ -176,7 +178,8 @@ TEST(DBTest, read_only)
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 1});
 
         Account const acct3{.nonce = 3};
-        rw.commit(
+        commit_sequential(
+            rw,
             StateDeltas{
                 {ADDR_A, StateDelta{.account = {acct2, acct3}, .storage = {}}}},
             Code{},
@@ -200,7 +203,8 @@ TYPED_TEST(DBTest, read_storage)
 {
     Account acct{.nonce = 1};
     TrieDb tdb{this->db};
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -236,7 +240,8 @@ TYPED_TEST(DBTest, read_code)
 {
     Account acct_a{.balance = 1, .code_hash = A_CODE_HASH, .nonce = 1};
     TrieDb tdb{this->db};
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{{ADDR_A, StateDelta{.account = {std::nullopt, acct_a}}}},
         Code{{A_CODE_HASH, A_CODE_ANALYSIS}},
         BlockHeader{});
@@ -244,7 +249,8 @@ TYPED_TEST(DBTest, read_code)
     EXPECT_EQ(tdb.read_code(A_CODE_HASH)->executable_code, A_CODE);
 
     Account acct_b{.balance = 0, .code_hash = B_CODE_HASH, .nonce = 1};
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{{ADDR_B, StateDelta{.account = {std::nullopt, acct_b}}}},
         Code{{B_CODE_HASH, B_CODE_ANALYSIS}},
         BlockHeader{});
@@ -256,7 +262,8 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
 {
     Account acct{.balance = 1'000'000, .code_hash = {}, .nonce = 1337};
     TrieDb tdb{this->db};
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -268,7 +275,8 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
         BlockHeader{});
 
     acct = tdb.read_account(ADDR_A).value();
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -285,7 +293,8 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
 TYPED_TEST(DBTest, touch_without_modify_regression)
 {
     TrieDb tdb{this->db};
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A, StateDelta{.account = {std::nullopt, std::nullopt}}}},
         Code{},
@@ -299,7 +308,8 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
 {
     Account acct{.balance = 1'000'000, .code_hash = {}, .nonce = 1337};
     TrieDb tdb{this->db};
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -310,7 +320,8 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
         Code{},
         BlockHeader{});
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -330,7 +341,8 @@ TYPED_TEST(DBTest, storage_deletion)
     Account acct{.balance = 1'000'000, .code_hash = {}, .nonce = 1337};
 
     TrieDb tdb{this->db};
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -342,7 +354,8 @@ TYPED_TEST(DBTest, storage_deletion)
         BlockHeader{});
 
     acct = tdb.read_account(ADDR_A).value();
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -363,7 +376,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
 
     TrieDb tdb{this->db};
     // empty receipts
-    tdb.commit(StateDeltas{}, Code{}, BlockHeader{});
+    commit_sequential(tdb, StateDeltas{}, Code{}, BlockHeader{});
     EXPECT_EQ(tdb.receipts_root(), NULL_ROOT);
 
     std::vector<Receipt> receipts;
@@ -423,7 +436,8 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     std::vector<std::vector<CallFrame>> call_frames;
     call_frames.resize(receipts.size());
     constexpr uint64_t first_block = 0;
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{},
         Code{},
         BlockHeader{.number = first_block},
@@ -470,7 +484,8 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         keccak256(rlp::encode_transaction(transactions.emplace_back(t2))));
     ASSERT_EQ(receipts.size(), transactions.size());
     call_frames.resize(receipts.size());
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{},
         Code{},
         BlockHeader{.number = second_block},
@@ -658,7 +673,8 @@ TYPED_TEST(DBTest, commit_call_frames)
     std::vector<Receipt> receipts(call_frames.size());
     std::vector<Transaction> transactions(call_frames.size());
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{},
         Code{},
         BlockHeader{},
@@ -685,7 +701,8 @@ TYPED_TEST(DBTest, call_frames_stress_test)
     auto const to = 0xbbbf5374fce5edbc8e2a8697c15331677e6ebf0b_address;
     auto const ca = 0xaaaf5374fce5edbc8e2a8697c15331677e6ebf0b_address;
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {from,
              StateDelta{
@@ -708,7 +725,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
                      {std::nullopt,
                       Account{.balance = 0x1b58, .code_hash = NULL_HASH}}}}},
         Code{{STRESS_TEST_CODE_HASH, STRESS_TEST_CODE_ANALYSIS}},
-        BlockHeader{});
+        BlockHeader{.number = 0});
 
     // clang-format off
     byte_string const block_rlp = evmc::from_hex("0xf90283f90219a0d2472bbb9c83b0e7615b791409c2efaccd5cb7d923741bbc44783bf0d063f5b6a01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d4934794b94f5374fce5edbc8e2a8697c15331677e6ebf0ba0644bb1009c2332d1532062fe9c28cae87169ccaab2624aa0cfb4f0a0e59ac3aaa0cc2a2a77bb0d7a07b12d7e1d13b9f5dfff4f4bc53052b126e318f8b27b7ab8f9a027408083641cf20cfde86cd87cd57bf10c741d7553352ca96118e31ab8ceb9ceb901000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080018433428f00840ee6b2808203e800a000000000000000000000000000000000000000000000000000000000000200008800000000000000000aa056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421f863f861800a840ee6b28094bbbf5374fce5edbc8e2a8697c15331677e6ebf0b0a801ba0462186579a4be0ad8a63224059a11693b4c0684b9939f6c2394d1fbe045275f2a059d73f99e037295a5f8c0e656acdb5c8b9acd28ec73c320c277df61f2e2d54f9c0c0")
@@ -741,12 +758,14 @@ TYPED_TEST(DBTest, call_frames_stress_test)
     }
 
     bs.commit(
-        BlockHeader{.number = 1},
+        MonadConsensusBlockHeader::from_eth_header(BlockHeader{.number = 1}),
         receipts,
         call_frames,
         block.value().transactions,
         {},
         {});
+    tdb.finalize(1, 1);
+    tdb.set_block_and_round(1);
 
     auto const actual_call_frames =
         read_call_frame(this->db, tdb.get_block_number(), 0);
@@ -769,7 +788,8 @@ TYPED_TEST(DBTest, call_frames_refund)
     auto const to = 0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba_address;
     auto const ca = 0x095e7baea6a6c7c4c2dfeb977efac326af552d87_address;
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {from,
              StateDelta{
@@ -801,7 +821,7 @@ TYPED_TEST(DBTest, call_frames_refund)
                       {bytes32_t{0x04}, {bytes32_t{}, bytes32_t{0x01}}},
                       {bytes32_t{0x05}, {bytes32_t{}, bytes32_t{0x01}}}}}}},
         Code{{REFUND_TEST_CODE_HASH, REFUND_TEST_CODE_ANALYSIS}},
-        BlockHeader{});
+        BlockHeader{.number = 0});
 
     // clang-format off
     byte_string const block_rlp = evmc::from_hex("0xf9025ff901f7a01e736f5755fc7023588f262b496b6cbc18aa9062d9c7a21b1c709f55ad66aad3a01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347942adc25665018aa1fe0e6bc666dac8fc2697ff9baa096841c0823ec823fdb0b0b8ea019c8dd6691b9f335e0433d8cfe59146e8b884ca0f0f9b1e10ec75d9799e3a49da5baeeab089b431b0073fb05fa90035e830728b8a06c8ab36ec0629c97734e8ac823cdd8397de67efb76c7beb983be73dcd3c78141b90100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008302000001830f42408259e78203e800a00000000000000000000000000000000000000000000000000000000000000000880000000000000000f862f860800a830186a094095e7baea6a6c7c4c2dfeb977efac326af552d8780801ba0eac92a424c1599d71b1c116ad53800caa599233ea91907e639b7cb98fa0da3bba06be40f001771af85bfba5e6c4d579e038e6465af3f55e71b9490ab48fcfa5b1ec0")
@@ -835,12 +855,14 @@ TYPED_TEST(DBTest, call_frames_refund)
     }
 
     bs.commit(
-        block.value().header,
+        MonadConsensusBlockHeader::from_eth_header(block.value().header),
         receipts,
         call_frames,
         block.value().transactions,
         {},
         std::nullopt);
+    tdb.finalize(1, 1);
+    tdb.set_block_and_round(1);
 
     auto const actual_call_frames =
         read_call_frame(this->db, tdb.get_block_number(), 0);

@@ -2,12 +2,14 @@
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/keccak.hpp>
+#include <monad/core/monad_block.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
+#include <test_resource_data.h>
 
 #include <gtest/gtest.h>
 #include <stdlib.h>
@@ -16,6 +18,7 @@
 #include <filesystem>
 
 using namespace monad;
+using namespace monad::test;
 
 TEST(BlockHashBuffer, simple_chain)
 {
@@ -188,8 +191,7 @@ TEST(BlockHashBufferTest, init_from_db)
 
     BlockHashBufferFinalized expected;
     for (uint64_t i = 0; i < 256; ++i) {
-        BlockHeader const hdr{.number = i};
-        tdb.commit({}, {}, hdr, {}, {}, {}, {}, std::nullopt);
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
         expected.set(
             i,
             to_bytes(

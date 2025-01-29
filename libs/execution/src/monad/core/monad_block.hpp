@@ -74,10 +74,12 @@ struct MonadConsensusBlockHeader
         return qc.vote.round;
     }
 
-    static MonadConsensusBlockHeader
-    from_eth_header(BlockHeader const &eth_header)
+    static MonadConsensusBlockHeader from_eth_header(
+        BlockHeader const &eth_header,
+        std::optional<uint64_t> const round_number = std::nullopt)
     {
-        uint64_t const round = eth_header.number;
+        uint64_t const round =
+            round_number.has_value() ? round_number.value() : eth_header.number;
         uint64_t const parent_round = round - std::min(round, 1ul);
         uint64_t const grandparent_round = round - std::min(round, 2ul);
 

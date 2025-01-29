@@ -10,6 +10,7 @@
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/state3/state.hpp>
+#include <test_resource_data.h>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -25,6 +26,7 @@
 #include <utility>
 
 using namespace monad;
+using namespace monad::test;
 
 using db_t = TrieDb;
 
@@ -41,7 +43,8 @@ TEST(Evm, create_with_insufficient)
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {from,
              StateDelta{
@@ -81,7 +84,8 @@ TEST(Evm, eip684_existing_code)
     static constexpr auto code_hash{
         0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {from,
              StateDelta{
@@ -121,7 +125,8 @@ TEST(Evm, transfer_call_balances)
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {to, StateDelta{.account = {std::nullopt, Account{}}}},
             {from,
@@ -159,7 +164,8 @@ TEST(Evm, transfer_call_balances_to_self)
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
     static constexpr auto to = from;
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {from,
              StateDelta{
@@ -197,7 +203,8 @@ TEST(Evm, dont_transfer_on_delegatecall)
     static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {to, StateDelta{.account = {std::nullopt, Account{}}}},
             {from,
@@ -237,7 +244,8 @@ TEST(Evm, dont_transfer_on_staticcall)
     static constexpr auto to{
         0xdac17f958d2ee523a2206206994597c13d831ec7_address};
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {to, StateDelta{.account = {std::nullopt, Account{}}}},
             {from,
@@ -282,7 +290,8 @@ TEST(Evm, create_nonce_out_of_range)
     NoopCallTracer call_tracer;
     evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {from,
              StateDelta{
@@ -325,7 +334,8 @@ TEST(Evm, static_precompile_execution)
     NoopCallTracer call_tracer;
     evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {code_address,
              StateDelta{.account = {std::nullopt, Account{.nonce = 4}}}},
@@ -374,7 +384,8 @@ TEST(Evm, out_of_gas_static_precompile_execution)
     NoopCallTracer call_tracer;
     evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {code_address,
              StateDelta{.account = {std::nullopt, Account{.nonce = 6}}}},
@@ -409,7 +420,8 @@ TEST(Evm, deploy_contract_code)
     InMemoryMachine machine;
     mpt::Db db{machine};
     db_t tdb{db};
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{},
         BlockHeader{});

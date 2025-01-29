@@ -3,6 +3,7 @@
 #include <monad/config.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/keccak.hpp>
+#include <monad/core/monad_block.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/test/config.hpp>
 
@@ -86,9 +87,33 @@ inline auto const H_CODE_HASH = to_bytes(keccak256(H_CODE));
 inline auto const H_CODE_ANALYSIS =
     std::make_shared<CodeAnalysis>(analyze(H_CODE));
 
+inline void commit_sequential(
+    Db &db, StateDeltas const &deltas, Code const &code,
+    BlockHeader const &eth_header, std::vector<Receipt> const &receipts = {},
+    std::vector<std::vector<CallFrame>> const &call_frames = {},
+    std::vector<Transaction> const &txns = {},
+    std::vector<BlockHeader> const &ommers = {},
+    std::optional<std::vector<Withdrawal>> const &withdrawals = std::nullopt)
+{
+    auto const consensus_header =
+        MonadConsensusBlockHeader::from_eth_header(eth_header);
+    db.commit(
+        deltas,
+        code,
+        consensus_header,
+        receipts,
+        call_frames,
+        txns,
+        ommers,
+        withdrawals);
+    db.finalize(eth_header.number, consensus_header.round);
+    db.set_block_and_round(eth_header.number);
+}
+
 inline void load_db(TrieDb &db, uint64_t const n)
 {
-    db.commit(
+    commit_sequential(
+        db,
         StateDeltas{
             {ADDR_A,
              StateDelta{

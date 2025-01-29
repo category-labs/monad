@@ -6,6 +6,7 @@
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/keccak.hpp>
+#include <monad/core/monad_block.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/db/db.hpp>
@@ -86,13 +87,12 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
 
         block_state.log_debug();
         block_state.commit(
-            block.header,
+            MonadConsensusBlockHeader::from_eth_header(block.header),
             receipts,
             call_frames,
             block.transactions,
             block.ommers,
-            block.withdrawals,
-            block.header.number);
+            block.withdrawals);
         auto const output_header = db.read_eth_header();
         BOOST_OUTCOME_TRY(
             chain.validate_output_header(block.header, output_header));

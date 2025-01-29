@@ -80,12 +80,13 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
 
     block_state.log_debug();
     block_state.commit(
-        block.header,
+        MonadConsensusBlockHeader::from_eth_header(block.header),
         receipts,
         call_frames,
         block.transactions,
         block.ommers,
         block.withdrawals);
+    db.finalize(block.header.number, block.header.number);
 
     auto output_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(
@@ -229,13 +230,13 @@ void BlockchainTest::TestBody()
             load_state_from_json(j_contents.at("pre"), state);
             bs.merge(state);
             bs.commit(
-                header,
+                MonadConsensusBlockHeader::from_eth_header(header),
                 {} /* receipts */,
                 {} /* call frames */,
                 {} /* transactions */,
                 {} /* ommers */,
-                withdrawals,
-                std::nullopt);
+                withdrawals);
+            tdb.finalize(0, 0);
             ASSERT_EQ(
                 to_bytes(
                     keccak256(rlp::encode_block_header(tdb.read_eth_header()))),

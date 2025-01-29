@@ -7,6 +7,7 @@
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/monad_block.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/db/db.hpp>
 #include <monad/state2/state_deltas.hpp>
@@ -133,15 +134,15 @@ read_genesis(std::filesystem::path const &genesis_file, Db &db)
 {
     std::ifstream ifile(genesis_file.c_str());
     auto const genesis_json = nlohmann::json::parse(ifile);
-    auto block_header = read_genesis_blockheader(genesis_json);
 
     StateDeltas state_deltas;
     read_genesis_state(genesis_json, state_deltas);
-    db.commit(state_deltas, Code{}, block_header);
 
-    block_header.state_root = db.state_root();
-
-    return block_header;
+    MonadConsensusBlockHeader consensus_header{};
+    consensus_header.execution_inputs = read_genesis_blockheader(genesis_json);
+    db.commit(state_deltas, Code{}, consensus_header);
+    db.finalize(0, 0);
+    return db.read_eth_header();
 }
 
 inline void verify_genesis(BlockDb &block_db, BlockHeader const &block_header)

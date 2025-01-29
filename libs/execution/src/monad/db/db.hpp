@@ -6,6 +6,7 @@
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/monad_block.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/core/withdrawal.hpp>
@@ -41,13 +42,12 @@ struct Db
     virtual void update_verified_block(uint64_t block_number) = 0;
 
     virtual void commit(
-        StateDeltas const &, Code const &, BlockHeader const &,
+        StateDeltas const &, Code const &, MonadConsensusBlockHeader const &,
         std::vector<Receipt> const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
         std::vector<Transaction> const & = {},
         std::vector<BlockHeader> const &ommers = {},
-        std::optional<std::vector<Withdrawal>> const & = std::nullopt,
-        std::optional<uint64_t> round_number = std::nullopt) = 0;
+        std::optional<std::vector<Withdrawal>> const & = std::nullopt) = 0;
 
     virtual std::string print_stats()
     {

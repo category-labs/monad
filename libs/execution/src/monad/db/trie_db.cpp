@@ -13,6 +13,7 @@
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
+#include <monad/core/rlp/monad_block_rlp.hpp>
 #include <monad/core/rlp/receipt_rlp.hpp>
 #include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/core/rlp/withdrawal_rlp.hpp>
@@ -151,13 +152,14 @@ std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
 
 void TrieDb::commit(
     StateDeltas const &state_deltas, Code const &code,
-    BlockHeader const &header, std::vector<Receipt> const &receipts,
+    MonadConsensusBlockHeader const &consensus_header,
+    std::vector<Receipt> const &receipts,
     std::vector<std::vector<CallFrame>> const &call_frames,
     std::vector<Transaction> const &transactions,
     std::vector<BlockHeader> const &ommers,
-    std::optional<std::vector<Withdrawal>> const &withdrawals,
-    std::optional<uint64_t> const round_number)
+    std::optional<std::vector<Withdrawal>> const &withdrawals)
 {
+    auto const &header = consensus_header.execution_inputs;
     MONAD_ASSERT(header.number <= std::numeric_limits<int64_t>::max());
 
     auto const parent_hash = [&]() {
@@ -173,18 +175,14 @@ void TrieDb::commit(
         }
     }();
 
-    if (db_.is_on_disk() &&
-        (round_number != round_number_ || header.number != block_number_)) {
-        // only copy_trie if round number or block number has changed for
-        // commit, and db is not empty
-        auto const dest_prefix = round_number.has_value()
-                                     ? proposal_prefix(round_number.value())
-                                     : finalized_nibbles;
+    if (db_.is_on_disk() && (consensus_header.round != round_number_ ||
+                             header.number != block_number_)) {
+        auto const dest_prefix = proposal_prefix(consensus_header.round);
         if (db_.get_latest_block_id() != INVALID_BLOCK_ID) {
             db_.copy_trie(
                 block_number_, prefix_, header.number, dest_prefix, false);
         }
-        round_number_ = round_number;
+        round_number_ = consensus_header.round;
         block_number_ = header.number;
         prefix_ = dest_prefix;
     }
@@ -445,10 +443,6 @@ void TrieDb::commit(
     bool const enable_compaction = false;
     db_.upsert(std::move(ls2), block_number_, enable_compaction);
 
-    if (!round_number_.has_value()) {
-        db_.update_finalized_block(block_number_);
-    }
-
     update_alloc_.clear();
     bytes_alloc_.clear();
     hash_alloc_.clear();
@@ -474,10 +468,12 @@ void TrieDb::finalize(uint64_t const block_number, uint64_t const round_number)
 {
     // no re-finalization
     if (db_.is_on_disk()) {
+#if 0 // TODO: re-enable this when we remove double finalization
         auto const latest_finalized = db_.get_latest_finalized_block_id();
         MONAD_ASSERT(
             latest_finalized == INVALID_BLOCK_ID ||
             block_number == latest_finalized + 1);
+#endif
         auto const src_prefix = proposal_prefix(round_number);
         MONAD_ASSERT(db_.find(src_prefix, block_number).has_value());
         db_.copy_trie(
@@ -490,10 +486,12 @@ void TrieDb::update_verified_block(uint64_t const block_number)
 {
     // no re-verification
     if (db_.is_on_disk()) {
+#if 0 // TODO: re-enable this when we remove double finalization
         auto const latest_verified = db_.get_latest_verified_block_id();
         MONAD_ASSERT(
             latest_verified == INVALID_BLOCK_ID ||
             block_number == latest_verified + 1);
+#endif
         db_.update_verified_block(block_number);
     }
 }

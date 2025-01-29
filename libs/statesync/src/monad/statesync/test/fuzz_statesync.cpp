@@ -282,7 +282,9 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
     State state{};
 
     BlockHeader hdr{.number = 0};
-    sctx.commit(StateDeltas{}, Code{}, hdr);
+    sctx.commit(
+        StateDeltas{}, Code{}, MonadConsensusBlockHeader::from_eth_header(hdr));
+    sctx.finalize(0, 0);
     while (raw.size() >= sizeof(uint64_t)) {
         StateDeltas deltas;
         uint64_t const n = unaligned_load<uint64_t>(raw.data());
@@ -314,7 +316,9 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
         hdr.number = stdb.get_block_number() + 1;
         MONAD_ASSERT(hdr.number > 0);
         sctx.set_block_and_round(hdr.number - 1);
-        sctx.commit(deltas, {}, hdr);
+        sctx.commit(
+            deltas, {}, MonadConsensusBlockHeader::from_eth_header(hdr));
+        sctx.finalize(hdr.number, hdr.number);
         auto const rlp = rlp::encode_block_header(sctx.read_eth_header());
         monad_statesync_client_handle_target(cctx, rlp.data(), rlp.size());
         while (!client.rqs.empty()) {

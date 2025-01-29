@@ -8,12 +8,14 @@
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/rpc/eth_call.hpp>
+#include <test_resource_data.h>
 
 #include <gtest/gtest.h>
 
 #include <vector>
 
 using namespace monad;
+using namespace monad::test;
 
 namespace
 {
@@ -61,8 +63,7 @@ namespace
 TEST_F(EthCallFixture, simple_success_call)
 {
     for (uint64_t i = 0; i < 256; ++i) {
-        BlockHeader hdr{.number = i};
-        tdb.commit({}, {}, hdr);
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
     }
 
     static constexpr auto from{
@@ -74,8 +75,7 @@ TEST_F(EthCallFixture, simple_success_call)
         .gas_limit = 100000u, .to = to, .type = TransactionType::eip1559};
     BlockHeader header{.number = 256};
 
-    tdb.set_block_and_round(header.number - 1);
-    tdb.commit({}, {}, header);
+    commit_sequential(tdb, {}, {}, header);
 
     auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
@@ -100,9 +100,9 @@ TEST_F(EthCallFixture, failed_to_read)
 {
     // missing 256 previous blocks
     load_header(db, BlockHeader{.number = 1199});
+    tdb.set_block_and_round(1199);
     for (uint64_t i = 1200; i < 1256; ++i) {
-        tdb.set_block_and_round(i - 1);
-        tdb.commit({}, {}, BlockHeader{.number = i});
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
     }
 
     static constexpr auto from{
@@ -114,8 +114,7 @@ TEST_F(EthCallFixture, failed_to_read)
         .gas_limit = 100000u, .to = to, .type = TransactionType::eip1559};
     BlockHeader header{.number = 1256};
 
-    tdb.set_block_and_round(header.number - 1);
-    tdb.commit({}, {}, header);
+    commit_sequential(tdb, {}, {}, header);
 
     auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
     auto const rlp_header = to_vec(rlp::encode_block_header(header));

@@ -22,4 +22,6 @@ target_compile_definitions(
   spinlock_all_options_test
   PRIVATE MONAD_SPINLOCK_TRACK_OWNER_INFO MONAD_SPINLOCK_TRACK_STATS
           MONAD_SPINLOCK_TRACK_STATS_ATOMIC)
+set_tests_properties(spinlock_test spinlock_all_options_test
+                     PROPERTIES RUN_SERIAL TRUE)
 monad_add_test(unordered_map_test "unordered_map.cpp")

@@ -155,7 +155,7 @@ map_payload_buffer(struct monad_event_ring *ring, struct msghdr const *mhdr)
         nullptr,
         ring->payload_buf_size + MONAD_EVENT_MAX_PAYLOAD_BUF_SIZE,
         PROT_READ,
-        MAP_ANONYMOUS | MAP_SHARED | MAP_HUGETLB,
+        MAP_SHARED | MAP_ANONYMOUS | MAP_HUGETLB,
         -1,
         0);
     if (ring->payload_buf == MAP_FAILED) {
@@ -174,10 +174,10 @@ map_payload_buffer(struct monad_event_ring *ring, struct msghdr const *mhdr)
         goto Done;
     }
     if (mmap(
-            (uint8_t *)ring->payload_buf + ring->payload_buf_size,
+            ring->payload_buf + ring->payload_buf_size,
             MONAD_EVENT_MAX_PAYLOAD_BUF_SIZE,
             PROT_READ,
-            MAP_FIXED | MAP_SHARED | MAP_HUGETLB,
+            MAP_FIXED | MAP_SHARED | MAP_HUGETLB | MAP_POPULATE,
             payload_buf_fd,
             0) == MAP_FAILED) {
         saved_error = format_errc(

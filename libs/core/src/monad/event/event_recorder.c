@@ -227,7 +227,7 @@ static int init_event_ring(
             ring->payload_buf,
             ring->payload_buf_size,
             PROT_READ | PROT_WRITE,
-            MAP_SHARED | MAP_FIXED | MAP_HUGETLB | MAP_POPULATE,
+            MAP_FIXED | MAP_SHARED | MAP_HUGETLB | MAP_POPULATE,
             fds->payload_buf_fd,
             0) == MAP_FAILED) {
         saved_error = FORMAT_ERRC(
@@ -245,11 +245,10 @@ static int init_event_ring(
     // the end of the buffer, and it will wrap around in memory without needing
     // to do any error-prone index massaging.
     if (mmap(
-            (uint8_t *)ring->payload_buf_size +
-                MONAD_EVENT_MAX_PAYLOAD_BUF_SIZE,
+            ring->payload_buf + ring->payload_buf_size,
             MONAD_EVENT_MAX_PAYLOAD_BUF_SIZE,
             PROT_READ | PROT_WRITE,
-            MAP_SHARED | MAP_FIXED | MAP_HUGETLB | MAP_POPULATE,
+            MAP_FIXED | MAP_SHARED | MAP_HUGETLB | MAP_POPULATE,
             fds->payload_buf_fd,
             0) == MAP_FAILED) {
         saved_error = FORMAT_ERRC(

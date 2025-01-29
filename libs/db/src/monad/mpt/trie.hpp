@@ -532,7 +532,7 @@ public:
     Node::UniquePtr do_update(
         Node::UniquePtr prev_root, StateMachine &, UpdateList &&,
         uint64_t version, bool compaction = false,
-        bool can_write_to_fast = true);
+        bool can_write_to_fast = true, bool write_root = true);
 
     void adjust_history_length_based_on_disk_usage();
     void move_trie_version_forward(uint64_t src, uint64_t dest);
@@ -998,7 +998,7 @@ void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
 // batch upsert, updates can be nested
 Node::UniquePtr upsert(
     UpdateAuxImpl &, uint64_t, StateMachine &, Node::UniquePtr old,
-    UpdateList &&);
+    UpdateList &&, bool write_root = true);
 
 // Performs a deep copy of a subtrie from `src_root` trie at
 // `src_prefix` to the `dest_root` trie at `dest_prefix`.

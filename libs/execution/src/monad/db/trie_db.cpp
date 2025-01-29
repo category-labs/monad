@@ -377,7 +377,7 @@ void TrieDb::commit(
         .next = std::move(updates),
         .version = static_cast<int64_t>(block_number_)}));
 
-    db_.upsert(std::move(ls), block_number_);
+    db_.upsert(std::move(ls), block_number_, true, true, false);
 
     BlockHeader complete_header = header;
     if (MONAD_LIKELY(header.receipts_root == NULL_ROOT)) {

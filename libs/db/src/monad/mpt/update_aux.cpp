@@ -963,7 +963,8 @@ the middle of a continuous history.
 */
 Node::UniquePtr UpdateAuxImpl::do_update(
     Node::UniquePtr prev_root, StateMachine &sm, UpdateList &&updates,
-    uint64_t const version, bool const compaction, bool const can_write_to_fast)
+    uint64_t const version, bool const compaction, bool const can_write_to_fast,
+    bool const write_root)
 {
     auto g(unique_lock());
     auto g2(set_current_upsert_tid());
@@ -1018,7 +1019,12 @@ Node::UniquePtr UpdateAuxImpl::do_update(
 
     auto upsert_begin = std::chrono::steady_clock::now();
     auto root = upsert(
-        *this, version, sm, std::move(prev_root), std::move(root_updates));
+        *this,
+        version,
+        sm,
+        std::move(prev_root),
+        std::move(root_updates),
+        write_root);
     set_auto_expire_version_metadata(curr_upsert_auto_expire_version);
 
     auto const duration = std::chrono::duration_cast<std::chrono::microseconds>(

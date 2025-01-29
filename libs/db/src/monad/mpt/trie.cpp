@@ -96,11 +96,12 @@ struct async_write_node_result
 };
 
 // invoke at the end of each block upsert
+void flush_buffered_writes(UpdateAuxImpl &);
 chunk_offset_t write_new_root_node(UpdateAuxImpl &, Node &, uint64_t);
 
 Node::UniquePtr upsert(
     UpdateAuxImpl &aux, uint64_t const version, StateMachine &sm,
-    Node::UniquePtr old, UpdateList &&updates)
+    Node::UniquePtr old, UpdateList &&updates, bool const write_root)
 {
     auto impl = [&] {
         aux.reset_stats();
@@ -126,9 +127,12 @@ Node::UniquePtr upsert(
                 aux, sm, sentinel->version, entry, std::move(updates));
         }
         auto root = std::move(entry.ptr);
-        if (aux.is_on_disk()) {
-            if (root) {
+        if (aux.is_on_disk() && root) {
+            if (write_root) {
                 write_new_root_node(aux, *root, version);
+            }
+            else {
+                flush_buffered_writes(aux);
             }
         }
         return root;
@@ -1879,11 +1883,8 @@ async_write_node_set_spare(UpdateAuxImpl &aux, Node &node, bool write_to_fast)
     return off;
 }
 
-// return root physical offset
-chunk_offset_t
-write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
+void flush_buffered_writes(UpdateAuxImpl &aux)
 {
-    auto const offset_written_to = async_write_node_set_spare(aux, root, true);
     // Round up with all bits zero
     auto replace = [&](node_writer_unique_ptr_type &node_writer) {
         auto *sender = &node_writer->sender();
@@ -1911,8 +1912,15 @@ write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
         // replace slow node writer
         replace(aux.node_writer_slow);
     }
-    // flush async write root and slow writer
     aux.io->flush();
+}
+
+// return root physical offset
+chunk_offset_t
+write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
+{
+    auto const offset_written_to = async_write_node_set_spare(aux, root, true);
+    flush_buffered_writes(aux);
     // advance fast and slow ring's latest offset in db metadata
     aux.advance_db_offsets_to(
         aux.node_writer_fast->sender().offset(),

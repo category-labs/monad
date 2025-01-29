@@ -690,6 +690,38 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_concurrent)
               << db.get_earliest_block_id() << std::endl;
 }
 
+TEST_F(OnDiskDbWithFileFixture, upsert_but_not_write_root)
+{
+    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+    Db ro_db{ro_config};
+
+    // upsert not write root, rodb reads nothing
+    auto const k1 = 0x12345678_hex;
+    auto const k2 = 0x22345678_hex;
+    auto u1 = make_update(k1, k1);
+    UpdateList ul;
+    ul.push_front(u1);
+
+    constexpr uint64_t block_id = 0;
+    // upsert disable write root
+    this->db.upsert(std::move(ul), block_id, true, true, false);
+
+    EXPECT_TRUE(ro_db.get(NibblesView{k1}, block_id).has_error());
+
+    ul.clear();
+    auto u2 = make_update(k2, k2);
+    ul.push_front(u2);
+    this->db.upsert(std::move(ul), block_id); // write root to disk
+
+    auto const res1 = ro_db.get(NibblesView{k1}, block_id);
+    ASSERT_TRUE(res1.has_value());
+    EXPECT_EQ(res1.value(), k1);
+
+    auto const res2 = ro_db.get(NibblesView{k2}, block_id);
+    ASSERT_TRUE(res2.has_value());
+    EXPECT_EQ(res2.value(), k2);
+}
+
 TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_concurrent)
 {
     EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);

@@ -65,7 +65,7 @@ public:
 
     void upsert(
         UpdateList, uint64_t block_id, bool enable_compaction = true,
-        bool can_write_to_fast = true);
+        bool can_write_to_fast = true, bool write_root = true);
 
     void update_finalized_block(uint64_t);
     void update_verified_block(uint64_t);

@@ -121,6 +121,8 @@ add_library(
   "src/monad/execution/validate_block.hpp"
   "src/monad/execution/validate_transaction.cpp"
   "src/monad/execution/validate_transaction.hpp"
+  "src/monad/execution/wal_reader.cpp"
+  "src/monad/execution/wal_reader.hpp"
   # rlp
   "src/monad/rlp/config.hpp"
   "src/monad/rlp/decode.hpp"

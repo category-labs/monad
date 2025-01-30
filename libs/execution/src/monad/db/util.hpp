@@ -4,6 +4,7 @@
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/state_machine.hpp>

@@ -1,7 +1,5 @@
 #pragma once
 
-#include "util.hpp"
-
 #include <monad/config.hpp>
 #include <monad/core/result.hpp>
 
@@ -17,13 +15,18 @@ struct Chain;
 struct Db;
 class BlockHashBufferFinalized;
 
+namespace mpt
+{
+    class Db;
+}
+
 namespace fiber
 {
     class PriorityPool;
 }
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
-    Chain const &, std::filesystem::path const &, Db &,
+    Chain const &, std::filesystem::path const &, mpt::Db const &, Db &,
     BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t,
     sig_atomic_t const volatile &);
 

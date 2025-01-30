@@ -1,7 +1,5 @@
 #pragma once
 
-#include "util.hpp"
-
 #include <monad/config.hpp>
 #include <monad/core/result.hpp>
 

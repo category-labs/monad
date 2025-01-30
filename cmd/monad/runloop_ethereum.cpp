@@ -1,5 +1,4 @@
 #include "runloop_ethereum.hpp"
-#include "util.hpp"
 
 #include <monad/chain/chain.hpp>
 #include <monad/core/assert.h>
@@ -15,23 +14,61 @@
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
+#include <monad/procfs/statm.h>
 #include <monad/state2/block_state.hpp>
 
 #include <boost/outcome/try.hpp>
+#include <quill/Quill.h>
 
 #include <algorithm>
 #include <chrono>
 
 MONAD_NAMESPACE_BEGIN
 
+namespace
+{
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
+    void log_tps(
+        uint64_t const block_num, uint64_t const nblocks, uint64_t const ntxs,
+        uint64_t const gas, std::chrono::steady_clock::time_point const begin)
+    {
+        auto const now = std::chrono::steady_clock::now();
+        auto const elapsed = std::max(
+            static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    now - begin)
+                    .count()),
+            1UL); // for the unlikely case that elapsed < 1 mic
+        uint64_t const tps = (ntxs) * 1'000'000 / elapsed;
+        uint64_t const gps = gas / elapsed;
+
+        LOG_INFO(
+            "Run {:4d} blocks to {:8d}, number of transactions {:6d}, "
+            "tps = {:5d}, gps = {:4d} M, rss = {:6d} MB",
+            nblocks,
+            block_num,
+            ntxs,
+            tps,
+            gps,
+            monad_procfs_self_resident() / (1L << 20));
+    };
+
+#pragma GCC diagnostic pop
+
+}
+
 Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     Chain const &chain, std::filesystem::path const &ledger_dir, Db &db,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
-    uint64_t const nblocks, sig_atomic_t const volatile &stop)
+    uint64_t const end_block_num, sig_atomic_t const volatile &stop)
 {
     uint64_t const batch_size =
-        nblocks == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
+        end_block_num == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
     uint64_t batch_num_blocks = 0;
     uint64_t batch_num_txs = 0;
     uint64_t total_gas = 0;
@@ -39,11 +76,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     auto batch_begin = std::chrono::steady_clock::now();
     uint64_t ntxs = 0;
 
-    uint64_t const end_block_num =
-        (std::numeric_limits<uint64_t>::max() - block_num + 1) <= nblocks
-            ? std::numeric_limits<uint64_t>::max()
-            : block_num + nblocks - 1;
-    uint64_t const init_block_num = block_num;
+    uint64_t const start_block_num = block_num;
     BlockDb block_db(ledger_dir);
     while (block_num <= end_block_num && stop == 0) {
         Block block;
@@ -63,12 +96,12 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
         // `round = block_number`, and finalize immediately after that.
         db.set_block_and_round(
             block.header.number - 1,
-            (block.header.number == init_block_num)
+            (block.header.number == start_block_num)
                 ? std::nullopt
                 : std::make_optional(block.header.number - 1));
         BlockState block_state(db);
         BOOST_OUTCOME_TRY(
-            auto const results,
+            auto results,
             execute_block(
                 chain,
                 rev,

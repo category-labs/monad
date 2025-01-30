@@ -1,6 +1,5 @@
 #include "runloop_ethereum.hpp"
 #include "runloop_monad.hpp"
-#include "util.hpp"
 
 #include <monad/chain/chain_config.h>
 #include <monad/chain/ethereum_mainnet.hpp>
@@ -40,6 +39,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -313,6 +313,10 @@ int main(int const argc, char const *argv[])
     stop = 0;
 
     uint64_t block_num = start_block_num;
+    uint64_t const end_block_num =
+        (std::numeric_limits<uint64_t>::max() - block_num + 1) <= nblocks
+            ? std::numeric_limits<uint64_t>::max()
+            : block_num + nblocks - 1;
 
     DbCache db_cache = ctx ? DbCache{*ctx} : DbCache{triedb};
     auto const result = [&] {
@@ -325,18 +329,19 @@ int main(int const argc, char const *argv[])
                 block_hash_buffer,
                 priority_pool,
                 block_num,
-                nblocks,
+                end_block_num,
                 stop);
         case CHAIN_CONFIG_MONAD_DEVNET:
         case CHAIN_CONFIG_MONAD_TESTNET:
             return runloop_monad(
                 *chain,
                 block_db_path,
+                db,
                 db_cache,
                 block_hash_buffer,
                 priority_pool,
                 block_num,
-                nblocks,
+                end_block_num,
                 stop);
         }
         MONAD_ABORT_PRINTF("Unsupported chain");

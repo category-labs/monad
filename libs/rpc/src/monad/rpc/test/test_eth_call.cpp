@@ -133,3 +133,51 @@ TEST_F(EthCallFixture, failed_to_read)
         state_override);
     EXPECT_EQ(result.status_code, EVMC_REJECTED);
 }
+
+TEST_F(EthCallFixture, contract_deployment_success)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    static constexpr auto from = Address{};
+
+    std::string tx_data =
+        "0x604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffff"
+        "ffffffffffffffffffffffffe03601600081602082378035828234f580151560395781"
+        "82fd5b8082525050506014600cf3";
+
+    Transaction tx{.gas_limit = 100000u, .data = from_hex(tx_data)};
+    BlockHeader header{.number = 256};
+
+    commit_sequential(tdb, {}, {}, header);
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+
+    monad_state_override_set state_override;
+
+    auto const result = eth_call(
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx,
+        rlp_header,
+        rlp_sender,
+        256u,
+        dbname,
+        state_override);
+
+    std::string deployed_code =
+        "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe036"
+        "01600081602082378035828234f58015156039578182fd5b8082525050506014600cf"
+        "3";
+    byte_string deployed_code_bytes = from_hex(deployed_code);
+
+    std::vector<uint8_t> deployed_code_vec = {
+        deployed_code_bytes.data(),
+        deployed_code_bytes.data() + deployed_code_bytes.size()};
+
+    EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
+    EXPECT_EQ(result.output_data, deployed_code_vec);
+}

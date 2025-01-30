@@ -131,7 +131,10 @@ evmc::Result execute_impl_no_validation(
     }
 
     auto const msg = to_message<rev>(tx, sender);
-    return host.call(msg);
+
+    return (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
+               ? ::monad::create<rev>(&host, state, msg)
+               : ::monad::call(&host, state, msg);
 }
 
 EXPLICIT_EVMC_REVISION(execute_impl_no_validation);

@@ -146,14 +146,21 @@ evmc::Result create(
 {
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
 
+    auto &call_tracer = host->get_call_tracer();
+    call_tracer.on_enter(msg);
+
     if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
-        return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
+        evmc::Result result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
+        call_tracer.on_exit(result);
+        return result;
     }
 
     auto const nonce = state.get_nonce(msg.sender);
     if (nonce == std::numeric_limits<decltype(nonce)>::max()) {
         // overflow
-        return evmc::Result{EVMC_ARGUMENT_OUT_OF_RANGE, msg.gas};
+        evmc::Result result{EVMC_ARGUMENT_OUT_OF_RANGE, msg.gas};
+        call_tracer.on_exit(result);
+        return result;
     }
     state.set_nonce(msg.sender, nonce + 1);
 
@@ -173,7 +180,9 @@ evmc::Result create(
     // Prevent overwriting contracts - EIP-684
     if (state.get_nonce(contract_address) != 0 ||
         state.get_code_hash(contract_address) != NULL_HASH) {
-        return evmc::Result{EVMC_INVALID_INSTRUCTION};
+        evmc::Result result{EVMC_INVALID_INSTRUCTION};
+        call_tracer.on_exit(result);
+        return result;
     }
 
     state.push();
@@ -226,14 +235,7 @@ evmc::Result create(
         }
     }
 
-    // eip-211, eip-140
-    if (result.status_code != EVMC_REVERT) {
-        result = evmc::Result{
-            result.status_code,
-            result.gas_left,
-            result.gas_refund,
-            result.create_address};
-    }
+    call_tracer.on_exit(result);
 
     return result;
 }
@@ -248,7 +250,11 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
         msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
         msg.kind == EVMC_CALL);
 
+    auto &call_tracer = host->get_call_tracer();
+    call_tracer.on_enter(msg);
+
     if (auto result = pre_call<rev>(msg, state); result.has_value()) {
+        call_tracer.on_exit(result.value());
         return std::move(result.value());
     }
 
@@ -263,6 +269,7 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
     }
 
     post_call(state, result);
+    call_tracer.on_exit(result);
     return result;
 }
 

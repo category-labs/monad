@@ -95,13 +95,22 @@ struct EvmcHost final : public EvmcHostBase
 
     virtual evmc::Result call(evmc_message const &msg) noexcept override
     {
-        call_tracer_.on_enter(msg);
-        auto result =
-            (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
-                ? ::monad::create<rev>(this, state_, msg)
-                : ::monad::call<rev>(this, state_, msg);
-        call_tracer_.on_exit(result);
-        return result;
+        if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
+            auto result = ::monad::create<rev>(this, state_, msg);
+
+            // EIP-211
+            if (result.status_code != EVMC_REVERT) {
+                result = evmc::Result{
+                    result.status_code,
+                    result.gas_left,
+                    result.gas_refund,
+                    result.create_address};
+            }
+            return result;
+        }
+        else {
+            return ::monad::call(this, state_, msg);
+        }
     }
 
     virtual evmc_access_status
@@ -111,6 +120,11 @@ struct EvmcHost final : public EvmcHostBase
             return EVMC_ACCESS_WARM;
         }
         return state_.access_account(address);
+    }
+
+    CallTracerBase &get_call_tracer() noexcept
+    {
+        return call_tracer_;
     }
 };
 

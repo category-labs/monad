@@ -1183,4 +1183,7 @@ TEST(Rlp_Block, MonadConsensusBlock)
     EXPECT_EQ(to_bytes(blake3(encoded_body)), res.value().block_body_id);
     auto const res2 = rlp::decode_consensus_block_body(encoded_body);
     EXPECT_FALSE(res2.has_error());
+    EXPECT_EQ(
+        to_byte_string_view(body),
+        rlp::encode_consensus_block_body(res2.value()));
 }

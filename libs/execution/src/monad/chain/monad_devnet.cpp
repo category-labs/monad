@@ -15,7 +15,7 @@ uint256_t MonadDevnet::get_chain_id() const
 
 evmc_revision MonadDevnet::get_revision(uint64_t const, uint64_t const) const
 {
-    return EVMC_SHANGHAI;
+    return EVMC_CANCUN;
 }
 
 MONAD_NAMESPACE_END

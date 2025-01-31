@@ -143,7 +143,7 @@ static void print_event(
     struct monad_event_thread_info const *thr_info,
     struct monad_event_block_exec_header const *block_exec_header, FILE *out)
 {
-    static char timebuf[32];
+    static char time_buf[32];
     static time_t last_second = 0;
 
     ldiv_t time_parts;
@@ -153,12 +153,15 @@ static void print_event(
     struct monad_event_metadata const *event_md =
         &g_monad_event_metadata[event->type];
 
+    // An optimization to only do the string formatting of the %H:%M:%S part
+    // of the time each second when it changes; this is a slow operation
     time_parts = ldiv(event->epoch_nanos, 1'000'000'000L);
     if (time_parts.quot != last_second) {
         // A new second has ticked. Reformat the per-second time buffer.
         struct tm;
         last_second = time_parts.quot;
-        strftime(timebuf, sizeof timebuf, "%H:%M:%S", localtime(&last_second));
+        strftime(
+            time_buf, sizeof time_buf, "%H:%M:%S", localtime(&last_second));
     }
 
     // Print a summary line of this event
@@ -168,7 +171,7 @@ static void print_event(
     o += sprintf(
         event_buf,
         "%s.%09ld: %s [%hu 0x%hx] SEQ: %lu LEN: %u SRC: %u [%s (%lu)]",
-        timebuf,
+        time_buf,
         time_parts.rem,
         event_md->c_name,
         event->type,

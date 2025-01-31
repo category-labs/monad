@@ -6,8 +6,6 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
-#include <bit>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -88,15 +86,31 @@ static void print_event(
     monad_event_thread_info const *thr_info,
     monad_event_block_exec_header const *block_exec_header, std::FILE *out)
 {
-    using std::chrono::nanoseconds;
+    using std::chrono::seconds, std::chrono::nanoseconds;
+    static std::chrono::sys_time<seconds> last_second{};
+    static std::chrono::sys_time<nanoseconds> last_second_nanos;
+
     char event_buf[256];
+    char time_buf[32];
 
     monad_event_metadata const &event_md = g_monad_event_metadata[event->type];
 
     std::chrono::sys_time<nanoseconds> const event_time{
         nanoseconds{event->epoch_nanos}};
-    std::chrono::zoned_time const event_time_tz{
-        std::chrono::current_zone(), event_time};
+
+    // An optimization to only do the string formatting of the %H:%M:%S part
+    // of the time each second when it changes; this is a slow operation
+    if (auto const cur_second = std::chrono::floor<seconds>(event_time);
+        cur_second != last_second) {
+        // The below should, but std::format formats the local time in the
+        // UTC zone
+        std::chrono::zoned_time const event_time_tz{
+            std::chrono::current_zone(), cur_second};
+        *std::format_to(time_buf, "{:%T}", event_time_tz) = '\0';
+        last_second = cur_second;
+        last_second_nanos =
+            std::chrono::time_point_cast<nanoseconds>(last_second);
+    }
 
     // Print a summary line of this event
     // <HH:MM::SS.nanos> <event-c-name> [<event-type> <event-type-hex>]
@@ -104,8 +118,9 @@ static void print_event(
     //     SRC: <source-id> [<thread-name> <thread-id>]
     char *o = std::format_to(
         event_buf,
-        "{:%H:%M:%S}: {} [{} {:#x}] SEQ: {} LEN: {} SRC: {} [{} ({})]",
-        event_time_tz,
+        "{}.{:09}: {} [{} {:#x}] SEQ: {} LEN: {} SRC: {} [{} ({})]",
+        time_buf,
+        (event_time - last_second_nanos).count(),
         event_md.c_name,
         std::to_underlying(event->type),
         std::to_underlying(event->type),
@@ -114,12 +129,15 @@ static void print_event(
         event->source_id,
         thr_info->thread_name,
         thr_info->thread_id);
+    if (!event->inline_payload) {
+        o = std::format_to(o, " BUF_OFF: {}", event->payload_buf_offset);
+    }
     if (event->block_flow_id) {
         o = std::format_to(
             o,
-            " BLK: {} [R: {}]",
+            " BLK: {} [CSN: {}]",
             block_exec_header->number,
-            block_exec_header->round);
+            block_exec_header->consensus_seqno);
     }
     if (event->txn_id != 0) {
         o = std::format_to(o, " TXN: {}", event->txn_id - 1);

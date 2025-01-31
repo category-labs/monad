@@ -334,7 +334,7 @@ namespace
     };
 
     Result<byte_string_view>
-    decode_receipt_db_ignore_log_index(byte_string_view &enc)
+    parse_encoded_receipt_ignore_log_index(byte_string_view &enc)
     {
         BOOST_OUTCOME_TRY(enc, rlp::parse_list_metadata(enc));
         return rlp::decode_string(enc);
@@ -344,7 +344,8 @@ namespace
     {
         static byte_string_view process(byte_string_view enc)
         {
-            auto const enc_receipt = decode_receipt_db_ignore_log_index(enc);
+            auto const enc_receipt =
+                parse_encoded_receipt_ignore_log_index(enc);
             MONAD_ASSERT(!enc_receipt.has_error());
             return enc_receipt.value();
         }
@@ -573,18 +574,10 @@ std::unique_ptr<StateMachine> OnDiskMachine::clone() const
     return std::make_unique<OnDiskMachine>(*this);
 }
 
-byte_string
-encode_receipt_db(Receipt const &receipt, size_t const log_index_begin)
-{
-    return rlp::encode_list2(
-        rlp::encode_string2(rlp::encode_receipt(receipt)),
-        rlp::encode_unsigned(log_index_begin));
-}
-
 Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &enc)
 {
     BOOST_OUTCOME_TRY(
-        auto encoded_receipt, decode_receipt_db_ignore_log_index(enc));
+        auto encoded_receipt, parse_encoded_receipt_ignore_log_index(enc));
     BOOST_OUTCOME_TRY(auto const receipt, rlp::decode_receipt(encoded_receipt));
     BOOST_OUTCOME_TRY(
         auto const log_index_begin, rlp::decode_unsigned<size_t>(enc));

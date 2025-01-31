@@ -70,6 +70,15 @@ namespace
             NibblesView{
                 serialize_as_big_endian<sizeof(uint64_t)>(round_number)});
     }
+
+    byte_string
+    encode_receipt_db(Receipt const &receipt, size_t const log_index_begin)
+    {
+        return rlp::encode_list2(
+            rlp::encode_string2(rlp::encode_receipt(receipt)),
+            rlp::encode_unsigned(log_index_begin));
+    }
+
 }
 
 TrieDb::TrieDb(mpt::Db &db)

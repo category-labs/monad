@@ -117,7 +117,6 @@ inline mpt::Nibbles const finalized_nibbles = mpt::concat(FINALIZED_NIBBLE);
 
 byte_string encode_account_db(Address const &, Account const &);
 byte_string encode_storage_db(bytes32_t const &, bytes32_t const &);
-byte_string encode_receipt_db(Receipt const &, size_t log_start_index);
 
 Result<std::pair<Address, Account>> decode_account_db(byte_string_view &);
 Result<Account> decode_account_db_ignore_address(byte_string_view &);

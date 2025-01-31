@@ -30,16 +30,12 @@
 
 MONAD_NAMESPACE_BEGIN
 
-std::optional<evmc::Result>
-check_sender_balance(State &state, evmc_message const &msg) noexcept
+bool sender_has_balance(State &state, evmc_message const &msg) noexcept
 {
     auto const value = intx::be::load<uint256_t>(msg.value);
     auto const balance =
         intx::be::load<uint256_t>(state.get_balance(msg.sender));
-    if (balance < value) {
-        return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
-    }
-    return std::nullopt;
+    return balance >= value;
 }
 
 void transfer_balances(
@@ -53,9 +49,8 @@ void transfer_balances(
 evmc::Result transfer_call_balances(State &state, evmc_message const &msg)
 {
     if (msg.kind != EVMC_DELEGATECALL) {
-        if (auto result = check_sender_balance(state, msg);
-            result.has_value()) {
-            return std::move(result.value());
+        if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
+            return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
         }
         else if (msg.flags != EVMC_STATIC) {
             transfer_balances(state, msg, msg.recipient);
@@ -116,8 +111,8 @@ template <evmc_revision rev>
 std::optional<evmc::Result> pre_create_contract_account(
     State &state, evmc_message const &msg, evmc_message &call_msg) noexcept
 {
-    if (auto result = check_sender_balance(state, msg); result.has_value()) {
-        return std::move(result.value());
+    if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
+        return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
     }
 
     auto const nonce = state.get_nonce(msg.sender);

@@ -239,7 +239,7 @@ void post_call(State &state, evmc::Result const &result)
 }
 
 template <evmc_revision rev>
-evmc::Result create_contract_account(
+evmc::Result create(
     EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
 {
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
@@ -258,7 +258,7 @@ evmc::Result create_contract_account(
     return std::move(result);
 }
 
-EXPLICIT_EVMC_REVISION(create_contract_account);
+EXPLICIT_EVMC_REVISION(create);
 
 template <evmc_revision rev>
 evmc::Result

@@ -18,8 +18,7 @@ evmc::Result
 deploy_contract_code(State &, Address const &, evmc::Result) noexcept;
 
 template <evmc_revision rev>
-evmc::Result create_contract_account(
-    EvmcHost<rev> *, State &, evmc_message const &) noexcept;
+evmc::Result create(EvmcHost<rev> *, State &, evmc_message const &) noexcept;
 
 template <evmc_revision rev>
 evmc::Result call(EvmcHost<rev> *, State &, evmc_message const &) noexcept;

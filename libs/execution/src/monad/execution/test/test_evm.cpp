@@ -64,7 +64,7 @@ TEST(Evm, create_with_insufficient)
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
     evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
-    auto const result = create_contract_account<EVMC_SHANGHAI>(&h, s, m);
+    auto const result = create<EVMC_SHANGHAI>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
 }
@@ -109,7 +109,7 @@ TEST(Evm, eip684_existing_code)
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
     evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
-    auto const result = create_contract_account<EVMC_SHANGHAI>(&h, s, m);
+    auto const result = create<EVMC_SHANGHAI>(&h, s, m);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
 }
 
@@ -151,7 +151,7 @@ TEST(Evm, create_nonce_out_of_range)
     uint256_t const v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
-    auto const result = create_contract_account<EVMC_SHANGHAI>(&h, s, m);
+    auto const result = create<EVMC_SHANGHAI>(&h, s, m);
 
     EXPECT_FALSE(s.account_exists(new_addr));
     EXPECT_EQ(result.status_code, EVMC_ARGUMENT_OUT_OF_RANGE);

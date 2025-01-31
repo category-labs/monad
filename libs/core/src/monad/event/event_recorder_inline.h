@@ -325,7 +325,7 @@ inline void monad_event_recorder_start_block(
         sizeof *block_exec_header);
 }
 
-inline void monad_event_recorder_end_block()
+inline void monad_event_recorder_clear_block_id()
 {
     g_monad_event_recorder_shared_state.block_flow_id = 0;
 }

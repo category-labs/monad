@@ -20,9 +20,10 @@ MONAD_NAMESPACE_BEGIN
 // clang-format off
 
 struct EventRingConfig {
-    bool enabled;                  ///< This event ring is enabled
-    uint8_t ring_shift;            ///< Descriptor capacity == 2^(ring_shift)
-    uint8_t payload_buffer_shift;  ///< Buffer size == 2^(payload_buffer_shift)
+    monad_event_ring_type ring_type; ///< Config applies to this ring type
+    bool enabled;                    ///< True => enable the event ring
+    uint8_t ring_shift;              ///< Descriptor capacity == 2^(ring_shift)
+    uint8_t payload_buffer_shift;    ///< Buffer sz == 2^(payload_buffer_shift)
 };
 
 // clang-format on

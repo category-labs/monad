@@ -134,17 +134,17 @@ namespace
         return storage.value();
     }
 
-    std::vector<Address>
-    recover_senders(std::vector<Transaction> const &transactions)
+    void recover_senders(
+        std::vector<Transaction> const &transactions,
+        std::vector<ExecutionResult> &outputs)
     {
         std::vector<Address> senders;
         senders.reserve(transactions.size());
-        for (auto const &tx : transactions) {
-            auto const sender = recover_sender(tx);
-            MONAD_ASSERT(sender.has_value());
-            senders.emplace_back(sender.value());
+        for (size_t i = 0; auto const &tx : transactions) {
+            auto opt_addr = recover_sender(tx);
+            MONAD_ASSERT(opt_addr.has_value());
+            outputs[i++].sender = std::move(*opt_addr);
         }
-        return senders;
     }
 }
 
@@ -392,11 +392,11 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     commit_sequential(tdb, StateDeltas{}, Code{}, BlockHeader{});
     EXPECT_EQ(tdb.receipts_root(), NULL_ROOT);
 
-    std::vector<Receipt> receipts;
-    receipts.emplace_back(Receipt{
-        .status = 1, .gas_used = 21'000, .type = TransactionType::legacy});
-    receipts.emplace_back(Receipt{
-        .status = 1, .gas_used = 42'000, .type = TransactionType::legacy});
+    std::vector<ExecutionResult> txn_exec_outputs;
+    txn_exec_outputs.emplace_back().receipt = {
+        .status = 1, .gas_used = 21'000, .type = TransactionType::legacy};
+    txn_exec_outputs.emplace_back().receipt = {
+        .status = 1, .gas_used = 42'000, .type = TransactionType::legacy};
 
     // receipt with log
     Receipt rct{
@@ -410,7 +410,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         .topics =
             {0xf341246adaac6f497bc2a656f546ab9e182111d630394f0c57c710a59a2cb567_bytes32},
         .address = 0x8d12a197cb00d4747a1fe03395095ce2a5cc6819_address});
-    receipts.push_back(std::move(rct));
+    txn_exec_outputs.emplace_back().receipt = std::move(rct);
 
     std::vector<Transaction> transactions;
     std::vector<hash256> tx_hash;
@@ -444,21 +444,17 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         keccak256(rlp::encode_transaction(transactions.emplace_back(t2))));
     tx_hash.emplace_back(
         keccak256(rlp::encode_transaction(transactions.emplace_back(t3))));
-    ASSERT_EQ(receipts.size(), transactions.size());
+    ASSERT_EQ(txn_exec_outputs.size(), transactions.size());
 
-    std::vector<std::vector<CallFrame>> call_frames;
-    call_frames.resize(receipts.size());
     constexpr uint64_t first_block = 0;
-    std::vector<Address> senders = recover_senders(transactions);
+    recover_senders(transactions, txn_exec_outputs);
     commit_sequential(
         tdb,
         StateDeltas{},
         Code{},
         BlockHeader{.number = first_block},
-        receipts,
-        call_frames,
-        senders,
-        transactions);
+        transactions,
+        txn_exec_outputs);
     EXPECT_EQ(
         tdb.receipts_root(),
         0x7ea023138ee7d80db04eeec9cf436dc35806b00cc5fe8e5f611fb7cf1b35b177_bytes32);
@@ -468,7 +464,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
 
     auto verify_read_and_parse_receipt = [&](uint64_t const block_id) {
         size_t log_i = 0;
-        for (unsigned i = 0; i < receipts.size(); ++i) {
+        for (unsigned i = 0; i < txn_exec_outputs.size(); ++i) {
             auto res = this->db.get(
                 mpt::concat(
                     FINALIZED_NIBBLE,
@@ -479,7 +475,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
             auto const decode_res = decode_receipt_db(res.value());
             ASSERT_TRUE(decode_res.has_value());
             auto const [receipt, log_index_begin] = decode_res.value();
-            EXPECT_EQ(receipt, receipts[i]) << i;
+            EXPECT_EQ(receipt, txn_exec_outputs[i].receipt) << i;
             EXPECT_EQ(log_index_begin, log_i);
             log_i += receipt.logs.size();
         }
@@ -498,7 +494,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
             ASSERT_TRUE(decode_res.has_value());
             auto const [tx, sender] = decode_res.value();
             EXPECT_EQ(tx, transactions[i]) << i;
-            EXPECT_EQ(sender, senders[i]) << i;
+            EXPECT_EQ(sender, txn_exec_outputs[i].sender) << i;
         }
     };
     auto verify_tx_hash = [&](hash256 const &tx_hash,
@@ -521,11 +517,11 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
 
     // A new receipt trie with eip1559 transaction type
     constexpr uint64_t second_block = 1;
-    receipts.clear();
-    receipts.emplace_back(Receipt{
-        .status = 1, .gas_used = 34865, .type = TransactionType::eip1559});
-    receipts.emplace_back(Receipt{
-        .status = 1, .gas_used = 77969, .type = TransactionType::eip1559});
+    txn_exec_outputs.clear();
+    txn_exec_outputs.emplace_back().receipt = Receipt{
+        .status = 1, .gas_used = 34865, .type = TransactionType::eip1559};
+    txn_exec_outputs.emplace_back().receipt = Receipt{
+        .status = 1, .gas_used = 77969, .type = TransactionType::eip1559};
     transactions.clear();
     t1.nonce = 12;
     t2.nonce = 13;
@@ -533,18 +529,15 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         keccak256(rlp::encode_transaction(transactions.emplace_back(t1))));
     tx_hash.emplace_back(
         keccak256(rlp::encode_transaction(transactions.emplace_back(t2))));
-    ASSERT_EQ(receipts.size(), transactions.size());
-    call_frames.resize(receipts.size());
-    senders = recover_senders(transactions);
+    ASSERT_EQ(txn_exec_outputs.size(), transactions.size());
+    recover_senders(transactions, txn_exec_outputs);
     commit_sequential(
         tdb,
         StateDeltas{},
         Code{},
         BlockHeader{.number = second_block},
-        receipts,
-        call_frames,
-        senders,
-        transactions);
+        transactions,
+        txn_exec_outputs);
     EXPECT_EQ(
         tdb.receipts_root(),
         0x61f9b4707b28771a63c1ac6e220b2aa4e441dd74985be385eaf3cd7021c551e9_bytes32);
@@ -722,21 +715,16 @@ TYPED_TEST(DBTest, commit_call_frames)
     };
 
     static byte_string const encoded_txn = byte_string{0x1a, 0x1b, 0x1c};
-    std::vector<CallFrame> const call_frame{call_frame1, call_frame2};
-    std::vector<std::vector<CallFrame>> call_frames;
-    call_frames.emplace_back(call_frame);
-    std::vector<Receipt> const receipts(call_frames.size());
-    std::vector<Transaction> const transactions(call_frames.size());
-    std::vector<Address> const senders{call_frames.size()};
+    std::vector<ExecutionResult> txn_exec_outputs{
+        {Receipt{}, Address{}, {call_frame1, call_frame2}}};
+    std::vector<Transaction> transactions(txn_exec_outputs.size());
     commit_sequential(
         tdb,
         StateDeltas{},
         Code{},
         BlockHeader{},
-        receipts,
-        call_frames,
-        senders,
-        transactions);
+        transactions,
+        txn_exec_outputs);
 
     auto const &res = read_call_frame(this->db, tdb.get_block_number(), 0);
     ASSERT_TRUE(!res.empty());
@@ -799,26 +787,19 @@ TYPED_TEST(DBTest, call_frames_stress_test)
 
     fiber::PriorityPool pool{1, 1};
 
-    auto const results = execute_block<EVMC_SHANGHAI>(
+    auto results = execute_block<EVMC_SHANGHAI>(
         EthereumMainnet{}, block.value(), bs, block_hash_buffer, pool);
 
     ASSERT_TRUE(!results.has_error());
 
     bs.log_debug();
 
-    std::vector<Receipt> receipts;
-    std::vector<std::vector<CallFrame>> call_frames;
-    for (auto &result : results.value()) {
-        receipts.emplace_back(std::move(result.receipt));
-        call_frames.emplace_back(std::move(result.call_frames));
-    }
     auto const &transactions = block.value().transactions;
+    recover_senders(transactions, results.value());
     bs.commit(
         MonadConsensusBlockHeader::from_eth_header(BlockHeader{.number = 1}),
-        receipts,
-        call_frames,
-        recover_senders(transactions),
         transactions,
+        results.value(),
         {},
         {});
     tdb.finalize(1, 1);
@@ -897,27 +878,19 @@ TYPED_TEST(DBTest, call_frames_refund)
 
     fiber::PriorityPool pool{1, 1};
 
-    auto const results = execute_block<EVMC_SHANGHAI>(
+    auto results = execute_block<EVMC_SHANGHAI>(
         EthereumMainnet{}, block.value(), bs, block_hash_buffer, pool);
 
     ASSERT_TRUE(!results.has_error());
 
     bs.log_debug();
 
-    std::vector<Receipt> receipts;
-    std::vector<std::vector<CallFrame>> call_frames;
-    for (auto &result : results.value()) {
-        receipts.emplace_back(std::move(result.receipt));
-        call_frames.emplace_back(std::move(result.call_frames));
-    }
-
     auto const &transactions = block.value().transactions;
+    recover_senders(transactions, results.value());
     bs.commit(
         MonadConsensusBlockHeader::from_eth_header(block.value().header),
-        receipts,
-        call_frames,
-        recover_senders(transactions),
         transactions,
+        results.value(),
         {},
         std::nullopt);
     tdb.finalize(1, 1);

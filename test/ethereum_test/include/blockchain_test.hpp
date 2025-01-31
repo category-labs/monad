@@ -21,7 +21,7 @@ MONAD_NAMESPACE_BEGIN
 
 struct Block;
 class BlockHashBuffer;
-struct Receipt;
+struct ExecutionResult;
 
 MONAD_NAMESPACE_END
 
@@ -35,10 +35,10 @@ class BlockchainTest : public testing::Test
     std::optional<evmc_revision> const revision_;
 
     template <evmc_revision rev>
-    static Result<std::vector<Receipt>>
+    static Result<std::vector<ExecutionResult>>
     execute(Block &, test::db_t &, BlockHashBuffer const &);
 
-    static Result<std::vector<Receipt>> execute_dispatch(
+    static Result<std::vector<ExecutionResult>> execute_dispatch(
         evmc_revision, Block &, test::db_t &, BlockHashBuffer const &);
 
     static void

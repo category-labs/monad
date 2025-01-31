@@ -89,9 +89,15 @@ std::jthread init_event_system(
     std::span<EventRingConfig const, MONAD_EVENT_RING_COUNT> ring_configs,
     fs::path const &event_socket_path, monad_event_server **event_server)
 {
-    for (uint8_t i = 0; EventRingConfig const &c : ring_configs) {
-        monad_event_recorder_set_enabled(
-            static_cast<monad_event_ring_type>(i), c.enabled);
+    for (EventRingConfig const &c : ring_configs) {
+        if (monad_event_recorder_configure(
+                c.ring_type, c.ring_shift, c.payload_buffer_shift) != 0) {
+            LOG_ERROR(
+                "unable to configure event ring {}: {}",
+                std::to_underlying(c.ring_type),
+                monad_event_recorder_get_last_error());
+        }
+        monad_event_recorder_set_enabled(c.ring_type, c.enabled);
     }
 
     // Host an event server on a separate thread, so external clients can
@@ -199,8 +205,17 @@ Result<BlockExecOutput> try_record_block_exec_output(Result<BlockExecOutput> r)
         MONAD_EVENT_EXPR(
             MONAD_EVENT_BLOCK_END, MONAD_EVENT_POP_SCOPE, exec_ended_event);
     }
-    monad_event_recorder_end_block();
     return r;
 }
+
+EventRingConfig const DefaultEventRingConfig[] = {
+    {.ring_type = MONAD_EVENT_RING_EXEC,
+     .enabled = true,
+     .ring_shift = MONAD_EVENT_DEFAULT_EXEC_RING_SHIFT,
+     .payload_buffer_shift = MONAD_EVENT_DEFAULT_EXEC_PAYLOAD_BUF_SHIFT},
+    {.ring_type = MONAD_EVENT_RING_TRACE,
+     .enabled = false,
+     .ring_shift = MONAD_EVENT_DEFAULT_EXEC_RING_SHIFT,
+     .payload_buffer_shift = MONAD_EVENT_DEFAULT_EXEC_PAYLOAD_BUF_SHIFT}};
 
 MONAD_NAMESPACE_END

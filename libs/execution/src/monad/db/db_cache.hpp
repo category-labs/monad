@@ -7,7 +7,7 @@
 #include <monad/core/bytes_hash_compare.hpp>
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
-#include <monad/execution/trace/call_tracer.hpp>
+#include <monad/execution/execute_transaction.hpp>
 #include <monad/lru/lru_cache.hpp>
 #include <monad/state2/proposal_state.hpp>
 #include <monad/state2/state_deltas.hpp>
@@ -150,9 +150,7 @@ public:
 
     virtual void commit(
         StateDeltas const &, Code const &, MonadConsensusBlockHeader const &,
-        std::vector<Receipt> const &,
-        std::vector<std::vector<CallFrame>> const &,
-        std::vector<Address> const &, std::vector<Transaction> const &,
+        std::vector<Transaction> const &, std::vector<ExecutionResult> const &,
         std::vector<BlockHeader> const &,
         std::optional<std::vector<Withdrawal>> const &) override
     {
@@ -162,10 +160,8 @@ public:
     virtual void commit(
         std::unique_ptr<StateDeltas> state_deltas, std::unique_ptr<Code> code,
         MonadConsensusBlockHeader const &consensus_header,
-        std::vector<Receipt> const &receipts = {},
-        std::vector<std::vector<CallFrame>> const &call_frames = {},
-        std::vector<Address> const &senders = {},
         std::vector<Transaction> const &transactions = {},
+        std::vector<ExecutionResult> const &txn_execution_results = {},
         std::vector<BlockHeader> const &ommers = {},
         std::optional<std::vector<Withdrawal>> const &withdrawals = {}) override
     {
@@ -173,10 +169,8 @@ public:
             *state_deltas,
             *code,
             consensus_header,
-            receipts,
-            call_frames,
-            senders,
             transactions,
+            txn_execution_results,
             ommers,
             withdrawals);
         proposals_.commit(

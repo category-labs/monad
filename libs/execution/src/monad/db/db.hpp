@@ -50,10 +50,8 @@ struct Db
     virtual void commit(
         std::unique_ptr<StateDeltas> state_deltas, std::unique_ptr<Code> code,
         MonadConsensusBlockHeader const &consensus_header,
-        std::vector<Receipt> const &receipts = {},
-        std::vector<std::vector<CallFrame>> const &call_frames = {},
-        std::vector<Address> const &senders = {},
         std::vector<Transaction> const &transactions = {},
+        std::vector<ExecutionResult> const &txn_execution_results = {},
         std::vector<BlockHeader> const &ommers = {},
         std::optional<std::vector<Withdrawal>> const &withdrawals = {})
     {
@@ -61,10 +59,8 @@ struct Db
             *state_deltas,
             *code,
             consensus_header,
-            receipts,
-            call_frames,
-            senders,
             transactions,
+            txn_execution_results,
             ommers,
             withdrawals);
     }

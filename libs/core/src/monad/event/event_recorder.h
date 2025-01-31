@@ -110,14 +110,16 @@ static void monad_event_recordv(
 static struct monad_event_block_exec_header *
 monad_event_recorder_alloc_block_exec_header();
 
-/// Publish a BLOCK_START event with the given block execution header; sets
-/// the block flow ID as a side-effect
+/// Publish a BLOCK_START event with the given block execution header, which
+/// must have been returned by an earlier call to
+/// `monad_event_recorder_alloc_block_exec_header`; sets the block flow ID as a
+/// side-effect
 static void
 monad_event_recorder_start_block(struct monad_event_block_exec_header const *);
 
 /// Clears the active block flow ID set by monad_event_recorder_start_block;
 /// does not publish an event
-static void monad_event_recorder_end_block();
+static void monad_event_recorder_clear_block_id();
 
 /// Obtains information about the event ID metadata locations (used to
 /// implement the MONAD_EVENT_MSG_METADATA_OFFSET protocol message in the

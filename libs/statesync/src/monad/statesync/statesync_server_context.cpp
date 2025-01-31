@@ -276,10 +276,8 @@ void monad_statesync_server_context::update_verified_block(
 void monad_statesync_server_context::commit(
     StateDeltas const &state_deltas, Code const &code,
     MonadConsensusBlockHeader const &consensus_header,
-    std::vector<Receipt> const &receipts,
-    std::vector<std::vector<CallFrame>> const &call_frames,
-    std::vector<Address> const &senders,
     std::vector<Transaction> const &transactions,
+    std::vector<ExecutionResult> const &txn_exec_results,
     std::vector<BlockHeader> const &ommers,
     std::optional<std::vector<Withdrawal>> const &withdrawals)
 {
@@ -290,10 +288,8 @@ void monad_statesync_server_context::commit(
         state_deltas,
         code,
         consensus_header,
-        receipts,
-        call_frames,
-        senders,
         transactions,
+        txn_exec_results,
         ommers,
         withdrawals);
 }

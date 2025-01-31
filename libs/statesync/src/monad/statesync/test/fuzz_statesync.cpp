@@ -86,7 +86,7 @@ void statesync_server_send_done(
 
 MONAD_NAMESPACE_BEGIN
 
-namespace
+inline namespace fuzz
 {
     struct Range
     {
@@ -280,7 +280,7 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
         &statesync_server_send_done);
 
     std::span<uint8_t const> raw{data, size};
-    State state{};
+    monad::fuzz::State state{};
 
     BlockHeader hdr{.number = 0};
     sctx->commit(

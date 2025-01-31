@@ -29,6 +29,7 @@
 #include <quill/Quill.h>
 #include <quill/detail/LogMacros.h>
 
+#include <bit>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -188,7 +189,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             continue;
         }
 
-        auto [action, consensus_header, consensus_body, bft_block_id] = reader_res.value();
+        auto [action, consensus_header, consensus_body, bft_block_id] =
+            reader_res.value();
         auto const block_number = consensus_header.execution_inputs.number;
         if (action == WalAction::PROPOSE) {
             auto const block_time_start = std::chrono::steady_clock::now();
@@ -249,13 +251,15 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 validate_delayed_execution_results(db, verified_blocks));
             if (MONAD_LIKELY(!verified_blocks.empty())) {
                 db.update_verified_block(verified_blocks.back().number);
-                monad_event_block_finalize const finalize_info = {
-                    .bft_block_id =
-                        std::bit_cast<monad_event_bytes32>(bft_block_id),
-                    .consensus_seqno = consensus_header.seqno};
-                MONAD_EVENT_EXPR(MONAD_EVENT_BLOCK_FINALIZE, 0, finalize_info);
             }
             finalized_block_num = block_number;
+
+            monad_event_block_finalize const finalize_info = {
+                .bft_block_id =
+                    std::bit_cast<monad_event_bytes32>(bft_block_id),
+                .consensus_seqno = consensus_header.seqno};
+            MONAD_EVENT_EXPR(MONAD_EVENT_BLOCK_FINALIZE, 0, finalize_info);
+            monad_event_recorder_clear_block_id();
         }
         else {
             MONAD_ABORT_PRINTF(

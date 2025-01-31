@@ -5,6 +5,7 @@
 #include <monad/core/keccak.hpp>
 #include <monad/core/monad_block.hpp>
 #include <monad/db/trie_db.hpp>
+#include <monad/execution/execute_transaction.hpp>
 #include <monad/test/config.hpp>
 
 #include <evmc/evmc.h>
@@ -89,10 +90,8 @@ inline auto const H_CODE_ANALYSIS =
 
 inline void commit_sequential(
     Db &db, StateDeltas const &deltas, Code const &code,
-    BlockHeader const &eth_header, std::vector<Receipt> const &receipts = {},
-    std::vector<std::vector<CallFrame>> const &call_frames = {},
-    std::vector<Address> const &senders = {},
-    std::vector<Transaction> const &txns = {},
+    BlockHeader const &eth_header, std::vector<Transaction> const &txns = {},
+    std::vector<ExecutionResult> const &txn_exec_results = {},
     std::vector<BlockHeader> const &ommers = {},
     std::optional<std::vector<Withdrawal>> const &withdrawals = std::nullopt)
 {
@@ -102,10 +101,8 @@ inline void commit_sequential(
         deltas,
         code,
         consensus_header,
-        receipts,
-        call_frames,
-        senders,
         txns,
+        txn_exec_results,
         ommers,
         withdrawals);
     db.finalize(eth_header.number, consensus_header.round);

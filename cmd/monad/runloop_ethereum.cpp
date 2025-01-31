@@ -190,7 +190,11 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
 
         // runloop_ethereum is only used for historical replay, so blocks are
         // finalized immediately
-        MONAD_EVENT_EXPR(MONAD_EVENT_BLOCK_FINALIZE, 0, bft_block_id);
+        monad_event_block_finalize const finalize_info = {
+            .bft_block_id = std::bit_cast<monad_event_bytes32>(bft_block_id),
+            .consensus_seqno = consensus_header.seqno};
+        MONAD_EVENT_EXPR(MONAD_EVENT_BLOCK_FINALIZE, 0, finalize_info);
+        monad_event_recorder_clear_block_id();
 
         ntxs += block.transactions.size();
         batch_num_txs += block.transactions.size();

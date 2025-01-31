@@ -13,8 +13,6 @@ struct EvmcHost;
 
 class State;
 
-evmc::Result transfer_call_balances(State &, evmc_message const &);
-
 template <evmc_revision rev>
 evmc::Result
 deploy_contract_code(State &, Address const &, evmc::Result) noexcept;

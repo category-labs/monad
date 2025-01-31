@@ -46,19 +46,6 @@ void transfer_balances(
     state.add_to_balance(to, value);
 }
 
-evmc::Result transfer_call_balances(State &state, evmc_message const &msg)
-{
-    if (msg.kind != EVMC_DELEGATECALL) {
-        if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
-            return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
-        }
-        else if (msg.flags != EVMC_STATIC) {
-            transfer_balances(state, msg, msg.recipient);
-        }
-    }
-    return evmc::Result{EVMC_SUCCESS};
-}
-
 template <evmc_revision rev>
 evmc::Result deploy_contract_code(
     State &state, Address const &address, evmc::Result result) noexcept
@@ -210,10 +197,14 @@ std::optional<evmc::Result> pre_call(evmc_message const &msg, State &state)
 {
     state.push();
 
-    if (auto result = transfer_call_balances(state, msg);
-        result.status_code != EVMC_SUCCESS) {
-        state.pop_reject();
-        return result;
+    if (msg.kind != EVMC_DELEGATECALL) {
+        if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
+            state.pop_reject();
+            return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
+        }
+        else if (msg.flags != EVMC_STATIC) {
+            transfer_balances(state, msg, msg.recipient);
+        }
     }
 
     MONAD_ASSERT(

@@ -95,68 +95,6 @@ evmc::Result deploy_contract_code(
 EXPLICIT_EVMC_REVISION(deploy_contract_code);
 
 template <evmc_revision rev>
-std::optional<evmc::Result> pre_create_contract_account(
-    State &state, evmc_message const &msg, evmc_message &call_msg) noexcept
-{
-    if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
-        return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
-    }
-
-    auto const nonce = state.get_nonce(msg.sender);
-    if (nonce == std::numeric_limits<decltype(nonce)>::max()) {
-        // Match geth behavior - don't overflow nonce
-        return evmc::Result{EVMC_ARGUMENT_OUT_OF_RANGE, msg.gas};
-    }
-    state.set_nonce(msg.sender, nonce + 1);
-
-    auto const contract_address = [&] {
-        if (msg.kind == EVMC_CREATE) {
-            return create_contract_address(msg.sender, nonce); // YP Eqn. 85
-        }
-        else if (msg.kind == EVMC_CREATE2) {
-            auto const code_hash = keccak256({msg.input_data, msg.input_size});
-            return create2_contract_address(
-                msg.sender, msg.create2_salt, code_hash);
-        }
-        MONAD_ASSERT(false);
-    }();
-
-    state.access_account(contract_address);
-
-    // Prevent overwriting contracts - EIP-684
-    if (state.get_nonce(contract_address) != 0 ||
-        state.get_code_hash(contract_address) != NULL_HASH) {
-        return evmc::Result{EVMC_INVALID_INSTRUCTION};
-    }
-
-    state.push();
-
-    state.create_contract(contract_address);
-
-    // EIP-161
-    constexpr auto starting_nonce = rev >= EVMC_SPURIOUS_DRAGON ? 1 : 0;
-    state.set_nonce(contract_address, starting_nonce);
-    transfer_balances(state, msg, contract_address);
-
-    call_msg = evmc_message{
-        .kind = EVMC_CALL,
-        .flags = 0,
-        .depth = msg.depth,
-        .gas = msg.gas,
-        .recipient = contract_address,
-        .sender = msg.sender,
-        .input_data = nullptr,
-        .input_size = 0,
-        .value = msg.value,
-        .create2_salt = {},
-        .code_address = contract_address,
-        .code = nullptr, // TODO
-        .code_size = 0, // TODO
-    };
-    return std::nullopt;
-}
-
-template <evmc_revision rev>
 void post_create_contract_account(
     State &state, Address const &contract_address,
     evmc::Result &result) noexcept
@@ -244,11 +182,60 @@ evmc::Result create(
 {
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
 
-    evmc_message m_call;
-    if (auto result = pre_create_contract_account<rev>(state, msg, m_call);
-        result.has_value()) {
-        return std::move(result.value());
+    if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
+        return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
     }
+
+    auto const nonce = state.get_nonce(msg.sender);
+    if (nonce == std::numeric_limits<decltype(nonce)>::max()) {
+        // overflow
+        return evmc::Result{EVMC_ARGUMENT_OUT_OF_RANGE, msg.gas};
+    }
+    state.set_nonce(msg.sender, nonce + 1);
+
+    Address const contract_address = [&] {
+        if (msg.kind == EVMC_CREATE) {
+            return create_contract_address(msg.sender, nonce); // YP Eqn. 85
+        }
+        else { // msg.kind == EVMC_CREATE2
+            auto const code_hash = keccak256({msg.input_data, msg.input_size});
+            return create2_contract_address(
+                msg.sender, msg.create2_salt, code_hash);
+        }
+    }();
+
+    state.access_account(contract_address);
+
+    // Prevent overwriting contracts - EIP-684
+    if (state.get_nonce(contract_address) != 0 ||
+        state.get_code_hash(contract_address) != NULL_HASH) {
+        return evmc::Result{EVMC_INVALID_INSTRUCTION};
+    }
+
+    state.push();
+
+    state.create_contract(contract_address);
+
+    // EIP-161
+    constexpr auto starting_nonce = rev >= EVMC_SPURIOUS_DRAGON ? 1 : 0;
+    state.set_nonce(contract_address, starting_nonce);
+    transfer_balances(state, msg, contract_address);
+
+    evmc_message m_call{
+        .kind = EVMC_CALL,
+        .flags = 0,
+        .depth = msg.depth,
+        .gas = msg.gas,
+        .recipient = contract_address,
+        .sender = msg.sender,
+        .input_data = nullptr,
+        .input_size = 0,
+        .value = msg.value,
+        .create2_salt = {},
+        .code_address = contract_address,
+        .code = nullptr, // TODO
+        .code_size = 0, // TODO
+    };
 
     auto const input_code_analysis =
         evmone::baseline::analyze(rev, {msg.input_data, msg.input_size});

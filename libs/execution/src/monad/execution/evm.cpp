@@ -95,42 +95,6 @@ evmc::Result deploy_contract_code(
 EXPLICIT_EVMC_REVISION(deploy_contract_code);
 
 template <evmc_revision rev>
-void post_create_contract_account(
-    State &state, Address const &contract_address,
-    evmc::Result &result) noexcept
-{
-    if (result.status_code == EVMC_SUCCESS) {
-        result = deploy_contract_code<rev>(
-            state, contract_address, std::move(result));
-    }
-
-    if (result.status_code == EVMC_SUCCESS) {
-        state.pop_accept();
-    }
-    else {
-        result.gas_refund = 0;
-        if (result.status_code != EVMC_REVERT) {
-            result.gas_left = 0;
-        }
-        bool const ripemd_touched = state.is_touched(ripemd_address);
-        state.pop_reject();
-        if (MONAD_UNLIKELY(ripemd_touched)) {
-            // YP K.1. Deletion of an Account Despite Out-of-gas.
-            state.touch(ripemd_address);
-        }
-    }
-
-    // eip-211, eip-140
-    if (result.status_code != EVMC_REVERT) {
-        result = evmc::Result{
-            result.status_code,
-            result.gas_left,
-            result.gas_refund,
-            result.create_address};
-    }
-}
-
-template <evmc_revision rev>
 std::optional<evmc::Result> pre_call(evmc_message const &msg, State &state)
 {
     state.push();
@@ -221,7 +185,7 @@ evmc::Result create(
     state.set_nonce(contract_address, starting_nonce);
     transfer_balances(state, msg, contract_address);
 
-    evmc_message m_call{
+    evmc_message const m_call{
         .kind = EVMC_CALL,
         .flags = 0,
         .depth = msg.depth,
@@ -233,16 +197,46 @@ evmc::Result create(
         .value = msg.value,
         .create2_salt = {},
         .code_address = contract_address,
-        .code = nullptr, // TODO
-        .code_size = 0, // TODO
+        .code = nullptr,
+        .code_size = 0,
     };
 
     auto const input_code_analysis =
         evmone::baseline::analyze(rev, {msg.input_data, msg.input_size});
-    auto result = baseline_execute(m_call, rev, host, input_code_analysis);
+    evmc::Result result =
+        baseline_execute(m_call, rev, host, input_code_analysis);
 
-    post_create_contract_account<rev>(state, m_call.recipient, result);
-    return std::move(result);
+    if (result.status_code == EVMC_SUCCESS) {
+        result = deploy_contract_code<rev>(
+            state, contract_address, std::move(result));
+    }
+
+    if (result.status_code == EVMC_SUCCESS) {
+        state.pop_accept();
+    }
+    else {
+        result.gas_refund = 0;
+        if (result.status_code != EVMC_REVERT) {
+            result.gas_left = 0;
+        }
+        bool const ripemd_touched = state.is_touched(ripemd_address);
+        state.pop_reject();
+        if (MONAD_UNLIKELY(ripemd_touched)) {
+            // YP K.1. Deletion of an Account Despite Out-of-gas.
+            state.touch(ripemd_address);
+        }
+    }
+
+    // eip-211, eip-140
+    if (result.status_code != EVMC_REVERT) {
+        result = evmc::Result{
+            result.status_code,
+            result.gas_left,
+            result.gas_refund,
+            result.create_address};
+    }
+
+    return result;
 }
 
 EXPLICIT_EVMC_REVISION(create);

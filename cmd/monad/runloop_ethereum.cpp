@@ -34,8 +34,11 @@
 #include <filesystem>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <vector>
+
+extern std::filesystem::path event_rtt_export_path;
 
 MONAD_NAMESPACE_BEGIN
 
@@ -135,6 +138,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop)
 {
+    using event_round_trip_test::ExpectedDataRecorder;
+    std::unique_ptr<ExpectedDataRecorder> rtt_recorder;
     uint64_t const batch_size =
         end_block_num == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
     uint64_t batch_num_blocks = 0;
@@ -145,6 +150,12 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     uint64_t ntxs = 0;
 
     uint64_t const start_block_num = block_num;
+
+    if (!event_rtt_export_path.empty()) {
+        rtt_recorder =
+            std::make_unique<ExpectedDataRecorder>(event_rtt_export_path);
+    }
+
     BlockDb block_db(ledger_dir);
     while (block_num <= end_block_num && stop == 0) {
         Block block;
@@ -179,14 +190,19 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
         // Call the main block execution subroutine and record the results
         BOOST_OUTCOME_TRY(
             BlockExecOutput const exec_output,
-            try_record_block_exec_output(process_ethereum_block(
-                chain,
-                db,
-                block_hash_buffer,
-                priority_pool,
+            try_record_block_exec_output(
+                bft_block_id,
                 consensus_header,
-                block,
-                round_number)));
+                block.transactions,
+                process_ethereum_block(
+                    chain,
+                    db,
+                    block_hash_buffer,
+                    priority_pool,
+                    consensus_header,
+                    block,
+                    round_number),
+                rtt_recorder.get()));
 
         // runloop_ethereum is only used for historical replay, so blocks are
         // finalized immediately
@@ -195,6 +211,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
             .consensus_seqno = consensus_header.seqno};
         MONAD_EVENT_EXPR(MONAD_EVENT_BLOCK_FINALIZE, 0, finalize_info);
         monad_event_recorder_clear_block_id();
+        if (rtt_recorder) {
+            rtt_recorder->record_finalization(bft_block_id);
+        }
 
         ntxs += block.transactions.size();
         batch_num_txs += block.transactions.size();

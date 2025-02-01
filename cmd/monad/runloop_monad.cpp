@@ -34,11 +34,14 @@
 #include <cstdint>
 #include <filesystem>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <thread>
 #include <vector>
 
 namespace fs = std::filesystem;
+
+extern fs::path event_rtt_export_path;
 
 MONAD_NAMESPACE_BEGIN
 
@@ -166,7 +169,14 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop)
 {
+    using event_round_trip_test::ExpectedDataRecorder;
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
+    std::unique_ptr<ExpectedDataRecorder> rtt_recorder;
+
+    if (!event_rtt_export_path.empty()) {
+        rtt_recorder =
+            std::make_unique<ExpectedDataRecorder>(event_rtt_export_path);
+    }
 
     WalReader reader(ledger_dir);
     if (finalized_block_num > 1) { // no wal entry for genesis
@@ -182,6 +192,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     uint64_t total_gas = 0;
     uint64_t ntxs = 0;
     uint64_t const start_block_num = finalized_block_num;
+
     while (finalized_block_num <= end_block_num && stop == 0) {
         auto const reader_res = reader.next();
         if (!reader_res.has_value()) {
@@ -213,18 +224,24 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
 
             BOOST_OUTCOME_TRY(
                 BlockExecOutput const exec_output,
-                try_record_block_exec_output(on_proposal_event(
+                try_record_block_exec_output(
+                    bft_block_id,
                     consensus_header,
-                    Block{
-                        .header = consensus_header.execution_inputs,
-                        .transactions = std::move(consensus_body.transactions),
-                        .ommers = std::move(consensus_body.ommers),
-                        .withdrawals = std::move(consensus_body.withdrawals)},
-                    block_hash_buffer,
-                    chain,
-                    db,
-                    priority_pool,
-                    block_number == start_block_num)));
+                    consensus_body.transactions,
+                    on_proposal_event(
+                        consensus_header,
+                        Block{
+                            .header = consensus_header.execution_inputs,
+                            .transactions = consensus_body.transactions,
+                            .ommers = std::move(consensus_body.ommers),
+                            .withdrawals = std::move(consensus_body.withdrawals)},
+                        block_hash_buffer,
+                        chain,
+                        db,
+                        priority_pool,
+                        block_number == start_block_num),
+                    rtt_recorder.get()));
+
             block_hash_chain.propose(
                 exec_output.eth_block_hash,
                 consensus_header.round,
@@ -260,6 +277,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 .consensus_seqno = consensus_header.seqno};
             MONAD_EVENT_EXPR(MONAD_EVENT_BLOCK_FINALIZE, 0, finalize_info);
             monad_event_recorder_clear_block_id();
+            if (rtt_recorder) {
+                rtt_recorder->record_finalization(bft_block_id);
+            }
         }
         else {
             MONAD_ABORT_PRINTF(

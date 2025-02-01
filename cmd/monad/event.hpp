@@ -7,7 +7,9 @@
 #include <monad/event/event.h>
 #include <monad/execution/execute_transaction.hpp>
 
+#include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <span>
 #include <thread>
@@ -51,9 +53,38 @@ struct BlockExecOutput
     std::vector<ExecutionResult> tx_exec_results;
 };
 
+namespace event_round_trip_test
+{
+    class ExpectedDataRecorder;
+};
+
 // Record block execution output errors to the event system if it is present,
 // otherwise records an appropriate error event
-extern Result<BlockExecOutput>
-    try_record_block_exec_output(Result<BlockExecOutput>);
+extern Result<BlockExecOutput> try_record_block_exec_output(
+    bytes32_t const &bft_block_id, MonadConsensusBlockHeader const &,
+    std::span<Transaction const> txns, Result<BlockExecOutput>,
+    event_round_trip_test::ExpectedDataRecorder *);
+
+namespace event_round_trip_test
+{
+    class ExpectedDataRecorder
+    {
+    public:
+        explicit ExpectedDataRecorder(std::filesystem::path const &);
+        ~ExpectedDataRecorder();
+
+        void record_execution(
+            bytes32_t const &bft_block_id, bytes32_t const &eth_block_hash,
+            MonadConsensusBlockHeader const &input_header,
+            BlockHeader const &output_header, std::span<Transaction const>,
+            std::span<ExecutionResult const>);
+
+        void record_finalization(bytes32_t const &);
+
+    private:
+        std::FILE *file_;
+        size_t array_size_;
+    };
+} // namespace event_round_trip_test
 
 MONAD_NAMESPACE_END

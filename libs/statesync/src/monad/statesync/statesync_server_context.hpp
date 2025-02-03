@@ -1,13 +1,14 @@
 #pragma once
 
 #include <monad/config.hpp>
-#include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/db/db.hpp>
 #include <monad/mpt/db.hpp>
 
 #include <array>
 #include <deque>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN

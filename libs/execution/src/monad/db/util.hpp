@@ -11,11 +11,13 @@
 #include <nlohmann/json.hpp>
 
 #include <filesystem>
-#include <istream>
+#include <iosfwd>
 
 MONAD_NAMESPACE_BEGIN
 
 struct BlockHeader;
+struct Receipt;
+struct Transaction;
 
 struct MachineBase : public mpt::StateMachine
 {

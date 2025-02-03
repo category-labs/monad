@@ -1,13 +1,9 @@
 #pragma once
 
 #include <monad/config.hpp>
-#include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/core/receipt.hpp>
-#include <monad/core/transaction.hpp>
 #include <monad/db/db.hpp>
 #include <monad/execution/code_analysis.hpp>
-#include <monad/execution/trace/call_tracer.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/types/incarnation.hpp>
 
@@ -16,7 +12,10 @@
 
 MONAD_NAMESPACE_BEGIN
 
+struct BlockHeader;
 class State;
+struct Transaction;
+struct Withdrawal;
 
 class BlockState final
 {

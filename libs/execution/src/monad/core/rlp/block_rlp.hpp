@@ -1,11 +1,15 @@
 #pragma once
 
-#include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/result.hpp>
 #include <monad/rlp/config.hpp>
 
 #include <vector>
+
+MONAD_NAMESPACE_BEGIN
+struct BlockHeader;
+struct Block;
+MONAD_NAMESPACE_END
 
 MONAD_RLP_NAMESPACE_BEGIN
 

@@ -15,6 +15,7 @@
 #include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
+#include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/rpc/eth_call.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/state.hpp>

@@ -6,7 +6,7 @@
 #include <monad/core/int.hpp>
 
 #include <evmc/evmc.hpp>
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <optional>
 

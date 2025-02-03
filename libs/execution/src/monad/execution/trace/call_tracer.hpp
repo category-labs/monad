@@ -4,7 +4,7 @@
 #include <monad/core/address.hpp>
 
 #include <evmc/evmc.hpp>
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <optional>
 #include <span>

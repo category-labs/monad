@@ -4,6 +4,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/fmt/address_fmt.hpp>
 #include <monad/core/fmt/bytes_fmt.hpp>
+#include <monad/core/monad_block.hpp>
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/mpt/db.hpp>

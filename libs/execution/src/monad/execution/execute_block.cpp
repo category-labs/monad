@@ -15,6 +15,7 @@
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/switch_evmc_revision.hpp>
+#include <monad/execution/trace/call_frame.hpp>
 #include <monad/execution/trace/event_trace.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>

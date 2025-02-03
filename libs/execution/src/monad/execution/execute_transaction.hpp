@@ -19,7 +19,6 @@ class BlockHashBuffer;
 struct BlockHeader;
 class BlockState;
 struct Chain;
-struct Receipt;
 class State;
 struct Transaction;
 

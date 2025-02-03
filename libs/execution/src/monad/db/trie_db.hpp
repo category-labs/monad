@@ -1,30 +1,27 @@
 #pragma once
 
 #include <monad/config.hpp>
-#include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/keccak.hpp>
-#include <monad/core/receipt.hpp>
-#include <monad/core/transaction.hpp>
 #include <monad/db/db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/code_analysis.hpp>
-#include <monad/execution/trace/call_frame.hpp>
-#include <monad/mpt/compute.hpp>
 #include <monad/mpt/db.hpp>
-#include <monad/mpt/ondisk_db_config.hpp>
-#include <monad/mpt/state_machine.hpp>
 
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
+#include <atomic>
 #include <deque>
-#include <istream>
 #include <memory>
 #include <optional>
-#include <utility>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
+
+struct BlockHeader;
+struct CallFrame;
+struct Receipt;
+struct Transaction;
 
 class TrieDb final : public ::monad::Db
 {

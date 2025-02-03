@@ -6,7 +6,6 @@
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/core/monad_block.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/core/withdrawal.hpp>
@@ -19,6 +18,8 @@
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
+
+struct MonadConsensusBlockHeader;
 
 struct Db
 {

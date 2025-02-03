@@ -6,8 +6,7 @@
 
 #include <chrono>
 #include <cstdint>
-#include <ostream>
-#include <utility>
+#include <iosfwd>
 
 #ifdef ENABLE_EVENT_TRACING
     #include <monad/core/likely.h>

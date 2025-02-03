@@ -13,9 +13,10 @@
 
 #include <stdint.h>
 
+// clang-format off
 #ifdef __cplusplus
 
-    #include <string.h>
+#include <string.h>
 
 struct evmc_address;
 struct evmc_bytes32;
@@ -23,8 +24,6 @@ struct evmc_bytes32;
 extern "C"
 {
 #endif
-
-// clang-format off
 
 typedef struct monad_event_address
 {
@@ -52,9 +51,15 @@ typedef struct monad_event_bytes32
 #endif
 } monad_event_bytes32;
 
+// 256-bit integer stored in native endian byte order; the rationale for the
+// storage layout as `uint64_t[4]` instead of `uint8_t[32]` is that this
+// ensures the type is suitably-aligned to unsafely cast the underlying bits
+// into a type in an extended-precision integer library, if that library
+// internally uses a uint64_t[4] "limbs"-style representation. Both the C++
+// intx library and Rust's ruint package use this representation.
 typedef struct monad_event_uint256_ne
 {
-    uint8_t bytes[32];
+    uint64_t limbs[4];
 
 #ifdef __cplusplus
     monad_event_uint256_ne &operator=(evmc_bytes32 const &rhs)
@@ -77,6 +82,8 @@ enum monad_event_type : uint16_t
     MONAD_EVENT_BLOCK_START,
     MONAD_EVENT_BLOCK_END,
     MONAD_EVENT_BLOCK_FINALIZE,
+    MONAD_EVENT_BLOCK_REJECT,
+    MONAD_EVENT_BLOCK_EXEC_ERROR,
     MONAD_EVENT_TXN_START,
     MONAD_EVENT_TXN_REJECT,
     MONAD_EVENT_TXN_EXEC_ERROR,
@@ -89,7 +96,6 @@ enum monad_event_type : uint16_t
 /// Event payload for MONAD_EVENT_THREAD_CREATE
 struct monad_event_thread_info
 {
-    uint64_t seqno;
     uint64_t epoch_nanos;
     uint64_t process_id;
     uint64_t thread_id;
@@ -109,6 +115,7 @@ struct monad_event_block_exec_header
 {
     monad_event_bytes32 bft_block_id;
     uint64_t round;
+    uint64_t consensus_seqno;
     monad_event_bytes32 parent_hash;
     monad_event_bytes32 ommers_hash;
     monad_event_address beneficiary;
@@ -121,12 +128,16 @@ struct monad_event_block_exec_header
     monad_event_bytes32 mix_hash;
     uint8_t nonce[8];
     monad_event_uint256_ne base_fee_per_gas;
+    uint64_t blob_gas_used;
+    uint64_t excess_blob_gas;
+    monad_event_bytes32 parent_beacon_block_root;
     uint64_t txn_count;
 };
 
 /// Event payload for MONAD_EVENT_BLOCK_END
 struct monad_event_block_exec_result
 {
+    monad_event_bytes32 hash;
     uint8_t logs_bloom[256];
     monad_event_bytes32 state_root;
     monad_event_bytes32 transactions_root;
@@ -135,13 +146,30 @@ struct monad_event_block_exec_result
     uint64_t gas_used;
 };
 
+/// Event payload for MONAD_EVENT_BLOCK_FINALIZE
+struct monad_event_block_finalize
+{
+    monad_event_bytes32 bft_block_id;
+    uint64_t consensus_seqno;
+};
+
+/// Event payload for MONAD_EVENT_BLOCK_EXEC_ERROR
+struct monad_event_block_exec_error
+{
+    uint64_t domain_id;
+    long status_code;
+};
+
 /// Event payload for MONAD_EVENT_TXN_START
 struct monad_event_txn_header
 {
+    monad_event_bytes32 tx_hash;
     uint64_t nonce;
     uint64_t gas_limit;
     monad_event_uint256_ne max_fee_per_gas;
+    monad_event_uint256_ne max_priority_fee_per_gas;
     monad_event_uint256_ne value;
+    monad_event_address from;
     monad_event_address to;
     uint8_t txn_type;
     monad_event_uint256_ne r;
@@ -190,4 +218,6 @@ struct monad_event_account_storage
 
 #ifdef __cplusplus
 } // extern "C"
+
+// clang-format on
 #endif

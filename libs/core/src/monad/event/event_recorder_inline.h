@@ -139,16 +139,6 @@ inline uint64_t monad_event_get_epoch_nanos()
     return (uint64_t)(now.tv_sec * 1'000'000'000L + now.tv_nsec);
 }
 
-inline uint64_t monad_event_timestamp()
-{
-#if MONAD_EVENT_USE_RDTSC
-    #error cannot enable this yet; missing TSC HZ to ns mapping logic (use sysfs driver)
-    // return __builtin_ia32_rdtsc();
-#else
-    return monad_event_get_epoch_nanos();
-#endif
-}
-
 inline struct monad_event_recorder_thr *_monad_event_recorder_get_thread_cache()
 {
     // Init routine called the first time the thread recorder is accessed;
@@ -163,9 +153,16 @@ inline struct monad_event_recorder_thr *_monad_event_recorder_get_thread_cache()
     return &g_tls_monad_recorder_thread_cache;
 }
 
-// Reserve a slot in the descriptor array to hold a new event; this allocates
-// a sequence number for the event and space in the payload buffer for its
-// payload
+// Reserve the shared memory resources needed to record the next event; this
+// does the following:
+//
+//   - allocates a sequence number for the event; this also reserves a slot in
+//     the descriptor array for event's descriptor, since the array index and
+//     sequence number are related by `array_index = (seqno - 1) % capacity`
+//
+//   - allocates space in the payload buffer for the event payload
+//
+//   - fills in the event descriptor fields that relate to the payload
 static inline struct monad_event_descriptor *_monad_event_ring_reserve(
     struct monad_event_ring *event_ring, size_t payload_size, uint64_t *seqno,
     void **dst)
@@ -194,6 +191,8 @@ static inline struct monad_event_descriptor *_monad_event_ring_reserve(
     if (MONAD_UNLIKELY(
             payload_end - buffer_window_start >
             event_ring->payload_buf_size - WINDOW_INCR)) {
+        // Slide the buffer window over by `WINDOW_INCR`, see the
+        // "Sliding buffer window" section in `event_recorder.md`
         __atomic_compare_exchange_n(
             &event_ring->control->buffer_window_start,
             &buffer_window_start,
@@ -224,7 +223,7 @@ inline void monad_event_record(
     struct monad_event_descriptor *event;
     struct monad_event_recorder_thr *thread_cache;
     uint64_t seqno;
-    uint64_t event_time;
+    uint64_t event_epoch_nanos;
     void *dst;
 
     if (MONAD_UNLIKELY(
@@ -238,7 +237,7 @@ inline void monad_event_record(
     // backwards on the thread with respect to the THREAD_CREATE event, which
     // is emitted when this thread is recording its first event
     thread_cache = _monad_event_recorder_get_thread_cache();
-    event_time = monad_event_timestamp();
+    event_epoch_nanos = monad_event_get_epoch_nanos();
     event = _monad_event_ring_reserve(
         &recorder->event_ring, payload_size, &seqno, &dst);
     memcpy(dst, payload, payload_size);
@@ -247,7 +246,7 @@ inline void monad_event_record(
     event->source_id = thread_cache->source_id;
     event->pop_scope = flags & MONAD_EVENT_POP_SCOPE;
     event->txn_id = monad_event_get_txn_id();
-    event->epoch_nanos = event_time;
+    event->epoch_nanos = event_epoch_nanos;
     __atomic_store_n(&event->seqno, seqno, __ATOMIC_RELEASE);
 }
 
@@ -259,7 +258,7 @@ inline void monad_event_recordv(
     struct monad_event_descriptor *event;
     struct monad_event_recorder_thr *thread_cache;
     uint64_t seqno;
-    uint64_t event_time;
+    uint64_t event_epoch_nanos;
     void *dst;
     size_t payload_size = 0;
 
@@ -271,7 +270,7 @@ inline void monad_event_recordv(
     }
 
     thread_cache = _monad_event_recorder_get_thread_cache();
-    event_time = monad_event_timestamp();
+    event_epoch_nanos = monad_event_get_epoch_nanos();
     for (size_t i = 0; i < iovlen; ++i) {
         payload_size += iov[i].iov_len;
     }
@@ -285,6 +284,6 @@ inline void monad_event_recordv(
     event->source_id = thread_cache->source_id;
     event->pop_scope = flags & MONAD_EVENT_POP_SCOPE;
     event->txn_id = monad_event_get_txn_id();
-    event->epoch_nanos = event_time;
+    event->epoch_nanos = event_epoch_nanos;
     __atomic_store_n(&event->seqno, seqno, __ATOMIC_RELEASE);
 }

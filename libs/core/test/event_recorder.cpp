@@ -24,7 +24,7 @@
 constexpr uint64_t MaxPerfIterations = 1UL << 20;
 
 // Running the tests with the reader disabled is a good measure of how
-// expensive the multi-threaded lock-free recording in the writer is, without
+// expensive the multithreaded lock-free recording in the writer is, without
 // any potential synchronization effects of a reader.
 constexpr bool ENABLE_READER = true;
 constexpr bool DISPLAY_HISTOGRAMS = false;
@@ -124,9 +124,8 @@ static void writer_main(
             }
             ++available_histogram[avail_bucket];
 
-            // TODO(ken): should be monad_event_get_epoch_nanos(), when we
-            //   fix timestamp RDTSC support
-            auto const delay = monad_event_timestamp() - event.epoch_nanos;
+            auto const delay =
+                monad_event_get_epoch_nanos() - event.epoch_nanos;
             unsigned delay_bucket =
                 static_cast<unsigned>(std::bit_width(delay));
             if (delay_bucket >= std::size(delay_histogram)) {
@@ -152,7 +151,7 @@ static void writer_main(
     }
 
     if constexpr (DISPLAY_HISTOGRAMS) {
-        fprintf(stdout, "backpressure histogram:\n");
+        fprintf(stdout, "backpressure histogram (# waiting items):\n");
         for (size_t b = 0;
              uint64_t const v : std::span{available_histogram}.subspan(1)) {
             fprintf(
@@ -160,7 +159,7 @@ static void writer_main(
             ++b;
         }
 
-        fprintf(stdout, "delay histogram:\n");
+        fprintf(stdout, "delay histogram (nanoseconds):\n");
         for (size_t b = 0;
              uint64_t const v : std::span{delay_histogram}.subspan(1)) {
             fprintf(

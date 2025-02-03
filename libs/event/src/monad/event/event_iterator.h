@@ -18,13 +18,14 @@ struct monad_event_iterator;
 
 // clang-format off
 
-/// Result of trying to advance an event iterator to the next event
+/// Result of trying to atomically read the next available event and advance
+/// the iterator past it
 enum monad_event_next_result
 {
-    MONAD_EVENT_SUCCESS,          ///< Iterator advanced to next event
-    MONAD_EVENT_NOT_READY,        ///< Next event is not written yet
-    MONAD_EVENT_GAP,              ///< Sequence number gap; not advanced
-    MONAD_EVENT_PAYLOAD_EXPIRED   ///< Iterator advanced, but payload is expired
+    MONAD_EVENT_SUCCESS,         ///< Event read and iterator advanced
+    MONAD_EVENT_NOT_READY,       ///< No events are available right now
+    MONAD_EVENT_GAP,             ///< Sequence number gap detected; not advanced
+    MONAD_EVENT_PAYLOAD_EXPIRED  ///< Iterator advanced, but payload is expired
 };
 
 // clang-format on

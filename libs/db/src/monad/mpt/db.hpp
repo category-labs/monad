@@ -147,7 +147,7 @@ namespace detail
         uint64_t const block_id;
         uint8_t const cached_levels;
 
-        using find_bytes_result_type = std::pair<byte_string, find_result>;
+        using find_bytes_result_type = std::pair<byte_string, DbError>;
 
         find_result_type res_root;
         find_bytes_result_type res_bytes;

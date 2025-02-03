@@ -358,7 +358,7 @@ TYPED_TEST(PlainTrieTest, delete_with_incarnation)
         kv[3].second);
     EXPECT_EQ(
         find_blocking(this->aux, *this->root, kv[2].first).second,
-        find_result::key_mismatch_failure);
+        DbError::key_mismatch_failure);
 }
 
 TYPED_TEST(PlainTrieTest, large_values)
@@ -382,7 +382,7 @@ TYPED_TEST(PlainTrieTest, large_values)
     {
         auto [leaf_it, res] = find_blocking(this->aux, *this->root, key1);
         auto *leaf = leaf_it.node;
-        EXPECT_EQ(res, find_result::success);
+        EXPECT_EQ(res, DbError::success);
         EXPECT_NE(leaf, nullptr);
         EXPECT_TRUE(leaf->has_value());
         EXPECT_EQ(leaf->value(), value1);
@@ -392,7 +392,7 @@ TYPED_TEST(PlainTrieTest, large_values)
     {
         auto [leaf_it, res] = find_blocking(this->aux, *this->root, key2);
         auto *leaf = leaf_it.node;
-        EXPECT_EQ(res, find_result::success);
+        EXPECT_EQ(res, DbError::success);
         EXPECT_NE(leaf, nullptr);
         EXPECT_TRUE(leaf->has_value());
         EXPECT_EQ(leaf->value(), value2);
@@ -411,7 +411,7 @@ TYPED_TEST(PlainTrieTest, large_values)
         }
         auto [leaf_it, res] = fut.get();
         auto *leaf = leaf_it.node;
-        EXPECT_EQ(res, find_result::success);
+        EXPECT_EQ(res, DbError::success);
         EXPECT_NE(leaf, nullptr);
         EXPECT_TRUE(leaf->has_value());
         EXPECT_EQ(leaf->value(), value1);
@@ -430,7 +430,7 @@ TYPED_TEST(PlainTrieTest, large_values)
         }
         auto [leaf_it, res] = fut.get();
         auto *leaf = leaf_it.node;
-        EXPECT_EQ(res, find_result::success);
+        EXPECT_EQ(res, DbError::success);
         EXPECT_NE(leaf, nullptr);
         EXPECT_TRUE(leaf->has_value());
         EXPECT_EQ(leaf->value(), value2);
@@ -462,7 +462,7 @@ TYPED_TEST(PlainTrieTest, multi_level_find_blocking)
             make_update(prefix, top_value, false, std::move(updates)));
         // find blocking on multi-level trie
         auto [begin, errc] = find_blocking(this->aux, *this->root, prefix);
-        EXPECT_EQ(errc, find_result::success);
+        EXPECT_EQ(errc, DbError::success);
         EXPECT_EQ(begin.node->number_of_children(), 2);
         EXPECT_EQ(begin.node->value(), top_value);
 

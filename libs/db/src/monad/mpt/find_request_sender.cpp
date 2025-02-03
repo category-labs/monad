@@ -110,14 +110,13 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
              ++node_prefix_index, ++prefix_index) {
             if (prefix_index >= key_.nibble_size()) {
                 res_ = {
-                    byte_string{},
-                    find_result::key_ends_earlier_than_node_failure};
+                    byte_string{}, DbError::key_ends_earlier_than_node_failure};
                 io_state->completed(success());
                 return success();
             }
             if (key_.get(prefix_index) !=
                 get_nibble(node->path_data(), node_prefix_index)) {
-                res_ = {byte_string{}, find_result::key_mismatch_failure};
+                res_ = {byte_string{}, DbError::key_mismatch_failure};
                 io_state->completed(success());
                 return success();
             }
@@ -125,7 +124,7 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
         if (prefix_index == key_.nibble_size()) {
             res_ = {
                 byte_string{return_value_ ? node->value() : node->data()},
-                find_result::success};
+                DbError::success};
             io_state->completed(success());
             return success();
         }
@@ -145,8 +144,7 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
                 MONAD_ASSERT(aux_.io != nullptr);
                 if (aux_.io->owning_thread_id() != get_tl_tid()) {
                     res_ = {
-                        byte_string{},
-                        find_result::need_to_continue_in_io_thread};
+                        byte_string{}, DbError::need_to_continue_in_io_thread};
                     return success();
                 }
                 tid_checked_ = true;
@@ -171,7 +169,7 @@ find_request_sender::operator()(erased_connected_operation *io_state) noexcept
             return success();
         }
         else {
-            res_ = {byte_string{}, find_result::branch_not_exist_failure};
+            res_ = {byte_string{}, DbError::branch_not_exist_failure};
             io_state->completed(success());
             return success();
         }

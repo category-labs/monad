@@ -15,7 +15,14 @@ MONAD_MPT_NAMESPACE_BEGIN
 enum class DbError : uint8_t
 {
     unknown,
-    key_not_found
+    success,
+    root_node_is_null_failure,
+    key_mismatch_failure,
+    branch_not_exist_failure,
+    key_ends_earlier_than_node_failure,
+    version_no_longer_exist,
+    node_is_not_leaf_failure,
+    need_to_continue_in_io_thread
 };
 
 MONAD_MPT_NAMESPACE_END
@@ -34,7 +41,28 @@ struct quick_status_code_from_enum<MONAD_MPT_NAMESPACE::DbError>
     static std::initializer_list<mapping> const &value_mappings()
     {
         static std::initializer_list<mapping> const v = {
-            {MONAD_MPT_NAMESPACE::DbError::key_not_found, "key not found", {}},
+            {MONAD_MPT_NAMESPACE::DbError::success, "success", {}},
+            {MONAD_MPT_NAMESPACE::DbError::root_node_is_null_failure,
+             "root node is null",
+             {}},
+            {MONAD_MPT_NAMESPACE::DbError::key_mismatch_failure,
+             "key mismatch",
+             {}},
+            {MONAD_MPT_NAMESPACE::DbError::branch_not_exist_failure,
+             "branch node does not exist",
+             {}},
+            {MONAD_MPT_NAMESPACE::DbError::key_ends_earlier_than_node_failure,
+             "key ends in the middle of a node path",
+             {}},
+            {MONAD_MPT_NAMESPACE::DbError::version_no_longer_exist,
+             "version no longer exist in db",
+             {}},
+            {MONAD_MPT_NAMESPACE::DbError::node_is_not_leaf_failure,
+             "non-leaf node",
+             {}},
+            {MONAD_MPT_NAMESPACE::DbError::need_to_continue_in_io_thread,
+             "need to continue in io thread",
+             {}},
             {MONAD_MPT_NAMESPACE::DbError::unknown, "unknown", {}},
         };
         return v;

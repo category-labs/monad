@@ -214,7 +214,7 @@ struct cli_tool_fixture
 
                 for (auto &key : this->state()->keys) {
                     auto ret = monad::mpt::find_blocking(aux, root, key.first);
-                    EXPECT_EQ(ret.second, monad::mpt::find_result::success);
+                    EXPECT_EQ(ret.second, monad::mpt::DbError::success);
                 }
                 EXPECT_EQ(
                     this->state()->aux.db_history_min_valid_version(),
@@ -315,7 +315,7 @@ struct cli_tool_fixture
                     for (auto &key : this->state()->keys) {
                         auto ret =
                             monad::mpt::find_blocking(aux, root, key.first);
-                        EXPECT_EQ(ret.second, monad::mpt::find_result::success);
+                        EXPECT_EQ(ret.second, monad::mpt::DbError::success);
                     }
                     EXPECT_EQ(
                         this->state()->aux.db_history_min_valid_version(),

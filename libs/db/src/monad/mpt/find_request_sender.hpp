@@ -1,10 +1,11 @@
 #pragma once
 
+#include <monad/mpt/db_error.hpp>
 #include <monad/mpt/trie.hpp>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-using find_bytes_result_type = std::pair<byte_string, find_result>;
+using find_bytes_result_type = std::pair<byte_string, DbError>;
 
 using inflight_node_t = unordered_dense_map<
     chunk_offset_t,

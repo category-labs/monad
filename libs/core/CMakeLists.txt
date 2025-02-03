@@ -114,6 +114,10 @@ add_library(
   "src/monad/event/event_recorder.c"
   "src/monad/event/event_recorder.h"
   "src/monad/event/event_recorder_inline.h"
+  "src/monad/event/event_server.c"
+  "src/monad/event/event_server.h"
+  "src/monad/event/event_server_export.h"
+  "src/monad/event/event_server_export_recorder.c"
   "src/monad/event/event_shared.c"
   "src/monad/event/event_shared.h"
   # fiber

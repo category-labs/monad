@@ -29,6 +29,7 @@ extern "C"
 {
 #endif
 
+enum monad_event_metadata_type : uint8_t;
 struct monad_event_iterator;
 
 /// Special behavior flags used in the `MONAD_EVENT` family of recording
@@ -99,6 +100,12 @@ static void monad_event_record(
 static void monad_event_recordv(
     struct monad_event_recorder *recorder, enum monad_event_type event_type,
     uint8_t flags, struct iovec const *iov, size_t iovlen);
+
+/// Obtain the offset of the requested piece of metadata within the "metadata
+/// page" (see event.md); used to implement the MONAD_EVENT_MSG_METADATA_OFFSET
+/// protocol message in the event server
+int monad_event_recorder_export_metadata_section(
+    enum monad_event_metadata_type, uint32_t *offset);
 
 /// Initialize an event iterator in the same process as the recorder; external
 /// processes use a special library to obtain iterators, see libs/event/event.md

@@ -20,6 +20,7 @@
 #include <monad/core/tl_tid.h>
 #include <monad/event/event.h>
 #include <monad/event/event_iterator.h>
+#include <monad/event/event_protocol.h>
 #include <monad/event/event_recorder.h>
 #include <monad/event/event_shared.h>
 #include <monad/event/event_types.h>
@@ -537,6 +538,29 @@ void _monad_event_recorder_init_thread_cache(
 
     // Announce the creation of this thread
     MONAD_EVENT_EXPR(MONAD_EVENT_THREAD_CREATE, 0, *thread_info);
+}
+
+int monad_event_recorder_export_metadata_section(
+    enum monad_event_metadata_type type, uint32_t *offset)
+{
+    struct monad_event_recorder_shared_state *const rss =
+        &g_monad_event_recorder_shared_state;
+
+    MONAD_ASSERT(offset != nullptr);
+    switch (type) {
+    case MONAD_EVENT_METADATA_THREAD:
+        *offset = (uint32_t)((uint8_t *)rss->metadata_page.thread_info_table -
+                             (uint8_t *)rss->metadata_page.base_addr);
+        return 0;
+
+    case MONAD_EVENT_METADATA_BLOCK_FLOW:
+        *offset = (uint32_t)((uint8_t *)rss->metadata_page.block_header_table -
+                             (uint8_t *)rss->metadata_page.base_addr);
+        return 0;
+
+    default:
+        return FORMAT_ERRC(EINVAL, "unknown metadata type: %hhu", type);
+    }
 }
 
 int monad_event_init_local_iterator(

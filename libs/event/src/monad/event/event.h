@@ -88,6 +88,10 @@ struct monad_event_ring_control
     alignas(64) uint64_t buffer_window_start; ///< See event.md documentation
 };
 
+/// Default location of the UNIX domain socket address for the event server
+/// endpoint
+#define MONAD_EVENT_DEFAULT_SOCKET_PATH "/tmp/monad_event.sock"
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

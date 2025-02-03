@@ -26,10 +26,10 @@ monad_event_iterator_sync_wait(struct monad_event_iterator *iter)
         // TODO(ken): should it be an error if this happens? assert instead?
         return iter->read_last_seqno = 0;
     }
-    // `last_seqno` is the last sequence number the event ring writer has
-    // allocated. The writer may still be in the process of recording the event
-    // associated with the sequence number, so it may not be safe to read this
-    // event descriptor's fields yet.
+    // `last_seqno` is the last sequence number the writer has allocated. The
+    // writer may still be in the process of recording the event associated
+    // with that sequence number, so it may not be safe to read this event
+    // descriptor's fields yet.
     //
     // It is safe to read when the sequence number is atomically stored into
     // the associated descriptor array slot (which is `last_seqno - 1`)

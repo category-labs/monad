@@ -88,11 +88,6 @@ char const *monad_event_recorder_get_last_error();
 /// Take a timestamp, in nanoseconds since the UNIX epoch
 static uint64_t monad_event_get_epoch_nanos();
 
-/// Take a timestamp, using the best available performance clock; this clock
-/// might not directly measure nanoseconds, e.g., it may be a cycle counter
-/// that needs subsequent conversion
-static uint64_t monad_event_timestamp();
-
 /// Record an event; this function is not usually called directly, but via the
 /// `MONAD_EVENT_` or `MONAD_TRACE_` family of recording macros
 static void monad_event_record(
@@ -114,7 +109,8 @@ int monad_event_init_local_iterator(
 #define MONAD_EVENT_RECORDER_CTOR_PRIO 1000
 
 /*
- * Min, max, and default memory sizes
+ * Min, max, and default memory sizes -- the "shift" means the power of two
+ * exponent, e.g., a ring_shift of 20 means 2^20 (or 1 << 20)
  */
 
 #define MONAD_EVENT_DEFAULT_EXEC_RING_SHIFT (20)

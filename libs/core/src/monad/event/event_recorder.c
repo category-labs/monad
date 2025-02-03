@@ -46,8 +46,9 @@ __attribute__((format(printf, 3, 4))) static int format_errc(
  * Metadata page functions
  */
 
+// Create the memfd for the metadata page and mmap it into our address space
 static int
-mmap_metadata_page(struct monad_event_metadata_page *page, size_t size)
+create_metadata_page(struct monad_event_metadata_page *page, size_t size)
 {
     char name[32];
 
@@ -76,6 +77,8 @@ mmap_metadata_page(struct monad_event_metadata_page *page, size_t size)
     return 0;
 }
 
+// Allocate the requested number of bytes from the metadata page; also
+// returns (via `offset)` the offset in the page where the allocation begins
 static void *alloc_from_metadata_page(
     struct monad_event_metadata_page *page, size_t payload_size,
     uint32_t *offset)
@@ -101,6 +104,8 @@ static void *alloc_from_metadata_page(
  * Event ring functions
  */
 
+// Unmap all the memory segments of an event ring from our address space and
+// close all of its memfd file descriptors
 static void cleanup_event_ring(
     struct monad_event_ring *ring, struct monad_event_ring_fds *fds)
 {
@@ -125,6 +130,10 @@ static void cleanup_event_ring(
     }
 }
 
+// Create the memfd file descriptors for an event ring's shared memory
+// segments, set them to the requested size, mmap them into our address
+// space, and initialize a `struct monad_event_ring` that refers to the
+// newly constructed ring
 static int init_event_ring(
     struct monad_event_ring *ring, enum monad_event_ring_type ring_type,
     uint8_t ring_shift, uint8_t payload_buf_shift,
@@ -140,7 +149,8 @@ static int init_event_ring(
     fds->descriptor_array_fd = -1;
     fds->payload_buf_fd = -1;
 
-    // Map the ring control structure (a single, minimum-sized VM page)
+    // Create and map the ring control structure (a single, minimum-sized VM
+    // page)
     mmap_page_size = (size_t)getpagesize();
     snprintf(name, sizeof name, "evt_rc:%d:%hhu", getpid(), ring_type);
     fds->control_fd = memfd_create(name, MFD_CLOEXEC);
@@ -164,7 +174,7 @@ static int init_event_ring(
         goto Error;
     }
 
-    // Map the ring descriptor array
+    // Create and map the ring descriptor array
     ring->capacity = 1UL << ring_shift;
     MONAD_ASSERT(stdc_has_single_bit(ring->capacity));
     desc_table_map_len = ring->capacity * sizeof(struct monad_event_descriptor);
@@ -190,7 +200,7 @@ static int init_event_ring(
         goto Error;
     }
 
-    // Map the payload buffer
+    // Create and map the payload buffer
     ring->payload_buf_size = 1UL << payload_buf_shift;
     MONAD_ASSERT(stdc_has_single_bit(ring->payload_buf_size));
     snprintf(name, sizeof name, "evt_pbuf:%d:%hhu", getpid(), ring_type);
@@ -204,7 +214,8 @@ static int init_event_ring(
         goto Error;
     }
 
-    // First, reserve a single anonymous mapping whose size encompasses both
+    // The mmap step of the payload buffer is more complex than the others:
+    // first, reserve a single anonymous mapping whose size encompasses both
     // the nominal size of the payload buffer plus the size of the wrap-around
     // large pages. We'll remap the memfd into this reserved range later, using
     // MAP_FIXED.
@@ -270,6 +281,10 @@ struct monad_event_recorder_shared_state g_monad_event_recorder_shared_state;
 
 static void thread_cache_dtor(void *arg0);
 
+// Initialization of the event recording system that happens prior to the
+// process' `main` function being called. This makes the configuration API
+// implementation simpler, as we can rely on certain data structures already
+// being initialized.
 static void __attribute__((constructor(MONAD_EVENT_RECORDER_CTOR_PRIO)))
 init_event_recorders()
 {
@@ -289,10 +304,12 @@ init_event_recorders()
         rc == 0, "unable to create thread recorder pthread key, error: %d", rc);
 
     snprintf(name, sizeof name, "epp_meta_%d", getpid());
-    // Allocate a special page to hold fixed metadata, which is shared by
-    // all recorders and never recycled
-    rc = mmap_metadata_page(metadata_page, PAGE_2MB);
+    // Create a special shared memory segment to hold fixed metadata, which is
+    // shared by all recorders
+    rc = create_metadata_page(metadata_page, PAGE_2MB);
     MONAD_ASSERT_PRINTF(rc == 0, "unable to mmap metadata page, error: %d", rc);
+    // Allocate space for the fixed-size metadata arrays from the metadata
+    // page; the purpose of these is described in `event.md`
     metadata_page->thread_info_table = alloc_from_metadata_page(
         metadata_page,
         (UINT8_MAX + 1) * sizeof metadata_page->thread_info_table[0],
@@ -318,6 +335,8 @@ init_event_recorders()
     }
 }
 
+// Cleanup routine that runs automatically after `main` returns or libc
+// exit(3) is called; frees the resources taken in the above constructor
 static void __attribute__((destructor(MONAD_EVENT_RECORDER_CTOR_PRIO)))
 cleanup_event_recorders()
 {
@@ -360,6 +379,8 @@ struct ring_size_params
          .max_payload_buf_shift = MONAD_EVENT_MAX_EXEC_PAYLOAD_BUF_SHIFT},
 };
 
+// Configures and event recorder; can only be called with the initialization
+// mutex locked
 static int configure_recorder_locked(
     struct monad_event_recorder *recorder, uint8_t ring_shift,
     uint8_t payload_buf_shift)
@@ -427,6 +448,19 @@ int monad_event_recorder_configure(
     return rc;
 }
 
+// Called by the inlined `monad_event_recorder_set_enabled` function to handle
+// the "slow path": trying to operate on an uninitialized event recorder
+//
+// Enabling/disabling event recorders must be extremely fast for the
+// performance tracing use case: some performance traces produce huge amounts
+// of data, so they might only be enabled during the scope of one interesting
+// transaction or block. Once a recorder is already initialized, enabling and
+// disabling is just an atomic exchange.
+//
+// The set_enabled API is not allowed to fail, so if it is called on an
+// uninitialized event recorder, the slow path will first configure it with the
+// default configuration, then enable it. This requires locking the
+// initialization mutex, which only happens on the slow path.
 bool _monad_event_recorder_set_enabled_slow(
     struct monad_event_recorder *recorder, bool enabled)
 {
@@ -475,6 +509,8 @@ char const *monad_event_recorder_get_last_error()
 
 thread_local struct monad_event_recorder_thr g_tls_monad_recorder_thread_cache;
 
+// Destructor for thread_local `struct monad_event_recorder_thr` objects;
+// called when a thread exits or the process ends, whichever happens first
 static void thread_cache_dtor(void *arg0)
 {
     struct monad_event_recorder_thr *const thread_cache = arg0;
@@ -499,6 +535,14 @@ static void thread_cache_dtor(void *arg0)
     pthread_mutex_unlock(&rss->mtx);
 }
 
+// Constructor for thread_local `struct monad_event_recorder_thr` objects,
+// called when a thread records an event for the first time.
+//
+// This emits a MONAD_EVENT_THREAD_CREATE event with metadata about the thread,
+// allocates a "source id" that refers to this thread, and also copies the
+// thread metadata into the thread_info metadata array (indexed by the source
+// ID). This is done for the benefit of late-running utilities that import the
+// event ring after the original `MONAD_EVENT_THREAD_CREATE` has expired
 void _monad_event_recorder_init_thread_cache(
     struct monad_event_recorder_thr *thread_cache)
 {

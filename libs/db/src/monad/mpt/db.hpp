@@ -14,6 +14,7 @@
 #include <monad/mpt/find_request_sender.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/node.hpp>
+#include <monad/mpt/traverse.hpp>
 #include <monad/mpt/trie.hpp>
 #include <monad/mpt/update.hpp>
 
@@ -189,11 +190,24 @@ namespace detail
             async::erased_connected_operation *,
             async::result<void> res) noexcept;
     };
+}
 
+inline detail::TraverseSender make_traverse_sender(
+    AsyncContext *const context, Node::UniquePtr traverse_root,
+    std::unique_ptr<TraverseMachine> machine, uint64_t const block_id,
+    size_t const concurrency_limit = 4096)
+{
+    MONAD_ASSERT(context);
+    return {
+        context->aux,
+        std::move(traverse_root),
+        std::move(machine),
+        block_id,
+        concurrency_limit};
 }
 
 inline detail::DbGetSender<byte_string> make_get_sender(
-    AsyncContext *context, NibblesView const nv, uint64_t const block_id,
+    AsyncContext *const context, NibblesView const nv, uint64_t const block_id,
     uint8_t const cached_levels = 5)
 {
     MONAD_ASSERT(context);
@@ -206,7 +220,7 @@ inline detail::DbGetSender<byte_string> make_get_sender(
 }
 
 inline detail::DbGetSender<byte_string> make_get_data_sender(
-    AsyncContext *context, NibblesView const nv, uint64_t const block_id,
+    AsyncContext *const context, NibblesView const nv, uint64_t const block_id,
     uint8_t const cached_levels = 5)
 {
     MONAD_ASSERT(context);
@@ -219,7 +233,7 @@ inline detail::DbGetSender<byte_string> make_get_data_sender(
 }
 
 inline detail::DbGetSender<Node::UniquePtr> make_get_node_sender(
-    AsyncContext *context, NibblesView const nv, uint64_t const block_id,
+    AsyncContext *const context, NibblesView const nv, uint64_t const block_id,
     uint8_t const cached_levels = 5)
 {
     MONAD_ASSERT(context);

@@ -226,7 +226,13 @@ namespace
 
     struct DummyTraverseMachine : public TraverseMachine
     {
+        size_t &num_leaves;
         Nibbles path{};
+
+        explicit DummyTraverseMachine(size_t &num_leaves)
+            : num_leaves(num_leaves)
+        {
+        }
 
         virtual bool down(unsigned char branch, Node const &node) override
         {
@@ -236,6 +242,7 @@ namespace
             path = concat(NibblesView{path}, branch, node.path_nibble_view());
 
             if (node.has_value()) {
+                ++num_leaves;
                 EXPECT_EQ(path.nibble_size(), KECCAK256_SIZE * 2);
             }
             return true;
@@ -263,6 +270,11 @@ namespace
         virtual std::unique_ptr<TraverseMachine> clone() const override
         {
             return std::make_unique<DummyTraverseMachine>(*this);
+        }
+
+        void reset()
+        {
+            num_leaves = 0;
         }
     };
 
@@ -573,7 +585,10 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
     AsyncContext::TrieRootCache::ConstAccessor acc;
     ASSERT_TRUE(ctx->root_cache.find(acc, offset));
     auto root = acc->second->val;
-    ro_db.traverse(NodeCursor{*root}, traverse_machine, version);
+    // MUST use traverse_blocking() to check the in memory nodes as they are.
+    // The `Db::traverse()` API make a copy of traverse root which does not
+    // maintain the exact in memory trie
+    ro_db.traverse_blocking(NodeCursor{*root}, traverse_machine, version);
 }
 
 TEST_F(OnDiskDbWithFileAsyncFixture, root_cache_invalidation)
@@ -746,7 +761,8 @@ TEST_F(OnDiskDbWithFileFixture, upsert_but_not_write_root)
 TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_concurrent)
 {
     EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
-    auto [bytes_alloc, updates_alloc] = prepare_random_updates(20);
+    constexpr size_t nkeys = 20;
+    auto [bytes_alloc, updates_alloc] = prepare_random_updates(nkeys);
 
     uint64_t version = 0;
     auto upsert_once = [&] {
@@ -769,14 +785,17 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_concurrent)
     ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
     Db ro_db{ro_config};
     EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
-    DummyTraverseMachine traverse_machine;
+    size_t num_leaves_traversed = 0;
+    DummyTraverseMachine traverse_machine{num_leaves_traversed};
 
-    // read thread loop to traverse block 0 until it gets erased
     while (!ro_db.load_root_for_version(0).is_valid()) {
     } // first block data is written to db by writer thread
     auto const root_cursor = ro_db.load_root_for_version(0);
     ASSERT_TRUE(root_cursor.is_valid());
+    // read thread loop to traverse block 0 until it gets erased
     while (ro_db.traverse(root_cursor, traverse_machine, 0)) {
+        EXPECT_EQ(num_leaves_traversed, nkeys);
+        traverse_machine.reset();
     }
 
     done.store(true, std::memory_order_release);
@@ -788,7 +807,8 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_concurrent)
 
 TEST_F(OnDiskDbWithFileFixture, benchmark_blocking_parallel_traverse)
 {
-    auto [bytes_alloc, updates_alloc] = prepare_random_updates(2000);
+    constexpr size_t nkeys = 2000;
+    auto [bytes_alloc, updates_alloc] = prepare_random_updates(nkeys);
     UpdateList ls;
     for (auto &u : updates_alloc) {
         ls.push_front(u);
@@ -796,9 +816,11 @@ TEST_F(OnDiskDbWithFileFixture, benchmark_blocking_parallel_traverse)
     db.upsert(std::move(ls), 0);
 
     // benchmark traverse
-    DummyTraverseMachine traverse_machine{};
+    size_t num_leaves_traversed = 0;
+    DummyTraverseMachine traverse_machine{num_leaves_traversed};
     auto begin = std::chrono::steady_clock::now();
     ASSERT_TRUE(db.traverse(db.root(), traverse_machine, 0));
+    EXPECT_EQ(num_leaves_traversed, nkeys);
     auto end = std::chrono::steady_clock::now();
     auto const parallel_elapsed =
         std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
@@ -807,7 +829,9 @@ TEST_F(OnDiskDbWithFileFixture, benchmark_blocking_parallel_traverse)
               << " ms, ";
 
     begin = std::chrono::steady_clock::now();
+    traverse_machine.reset();
     ASSERT_TRUE(db.traverse_blocking(db.root(), traverse_machine, 0));
+    EXPECT_EQ(num_leaves_traversed, nkeys);
     end = std::chrono::steady_clock::now();
     auto const blocking_elapsed =
         std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
@@ -816,6 +840,114 @@ TEST_F(OnDiskDbWithFileFixture, benchmark_blocking_parallel_traverse)
               << std::endl;
 
     EXPECT_TRUE(parallel_elapsed < blocking_elapsed);
+}
+
+TEST_F(OnDiskDbWithFileAsyncFixture, async_get_node_then_async_traverse)
+{
+    // Insert keys
+    constexpr unsigned nkeys = 1000;
+    auto [kv_alloc, updates_alloc] = prepare_random_updates(nkeys);
+    uint64_t const block_id = 0;
+    UpdateList ls;
+    for (auto &u : updates_alloc) {
+        ls.push_front(u);
+    }
+    db.upsert(std::move(ls), block_id);
+
+    struct TraverseResult
+    {
+        bool traverse_success{false};
+        size_t num_leaves_traversed{0};
+    };
+
+    struct TraverseReceiver
+    {
+        TraverseResult &result;
+
+        explicit TraverseReceiver(TraverseResult &result)
+            : result(result)
+        {
+        }
+
+        void set_value(
+            monad::async::erased_connected_operation *traverse_state,
+            monad::async::result<bool> res)
+        {
+            ASSERT_TRUE(res);
+            result.traverse_success = res.assume_value();
+
+            delete traverse_state;
+        }
+    };
+
+    // async get traverse root
+    struct GetNodeReceiver
+    {
+        using ResultType = monad::async::result<Node::UniquePtr>;
+
+        detail::TraverseSender traverse_sender;
+        TraverseResult &result;
+
+        GetNodeReceiver(detail::TraverseSender &&sender, TraverseResult &result)
+            : traverse_sender(std::move(sender))
+            , result(result)
+        {
+        }
+
+        void set_value(
+            monad::async::erased_connected_operation *state, ResultType res)
+        {
+            if (!res) {
+                result.traverse_success = false;
+            }
+            else {
+                traverse_sender.traverse_root = std::move(res.assume_value());
+                // issue async traverse
+                auto *traverse_state = new auto(monad::async::connect(
+                    std::move(traverse_sender), TraverseReceiver{result}));
+                traverse_state->initiate();
+            }
+            delete state;
+        }
+    };
+
+    // async traverse on valid block
+    std::deque<TraverseResult> results;
+    for (auto i = 0; i < 10; ++i) {
+        auto &result_holder = results.emplace_back(TraverseResult{});
+        auto machine = std::make_unique<DummyTraverseMachine>(
+            result_holder.num_leaves_traversed);
+
+        auto *state = new auto(monad::async::connect(
+            make_get_node_sender(ctx.get(), NibblesView{}, block_id),
+            GetNodeReceiver{
+                make_traverse_sender(
+                    ctx.get(), {}, std::move(machine), block_id),
+                result_holder}));
+        state->initiate();
+    }
+    ctx->aux.io->wait_until_done();
+    for (auto &r : results) {
+        EXPECT_TRUE(r.traverse_success);
+        EXPECT_EQ(r.num_leaves_traversed, nkeys);
+    }
+
+    // look up invalid block
+    TraverseResult expect_failure;
+    auto *state = new auto(monad::async::connect(
+        make_get_node_sender(ctx.get(), NibblesView{}, block_id + 1),
+        GetNodeReceiver{
+            make_traverse_sender(
+                ctx.get(),
+                {},
+                std::make_unique<DummyTraverseMachine>(
+                    expect_failure.num_leaves_traversed),
+                block_id),
+            expect_failure}));
+    state->initiate();
+    ctx->aux.io->wait_until_done();
+    EXPECT_FALSE(expect_failure.traverse_success);
+    EXPECT_EQ(expect_failure.num_leaves_traversed, 0);
 }
 
 TEST_F(OnDiskDbWithFileFixture, load_correct_root_upon_reopen_nonempty_db)

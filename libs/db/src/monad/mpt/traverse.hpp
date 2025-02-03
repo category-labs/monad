@@ -32,12 +32,26 @@ struct TraverseMachine
     }
 };
 
+// TODO: move definitions out of header file
 namespace detail
 {
-    inline bool
-    verify_version_valid(UpdateAuxImpl &aux, uint64_t const block_id)
+    struct TraverseSender;
+
+    void async_parallel_preorder_traverse_init(
+        TraverseSender &, async::erased_connected_operation *traverse_state,
+        Node const &);
+
+    void async_parallel_preorder_traverse_impl(
+        TraverseSender &sender,
+        async::erased_connected_operation *traverse_state, Node const &node,
+        TraverseMachine &machine, unsigned char const branch);
+}
+
+namespace detail
+{
+    inline bool verify_version_valid(UpdateAuxImpl &aux, uint64_t const version)
     {
-        return aux.is_on_disk() ? aux.version_is_valid_ondisk(block_id) : true;
+        return aux.is_on_disk() ? aux.version_is_valid_ondisk(version) : true;
     }
 
     // current implementation does not contaminate triedb node caching
@@ -94,43 +108,28 @@ namespace detail
     cancellation, and we can test that feature when plugged in if really need.
   */
 
-    struct preorder_traverse_impl
+    struct TraverseSender
     {
-        struct receiver_t;
-
-        UpdateAuxImpl &aux;
-        uint64_t version;
-        bool stopping{false};
-        size_t const max_outstanding_reads{4096};
-        size_t outstanding_reads{0};
-        boost::container::deque<receiver_t> reads_to_initiate{};
-
-        explicit preorder_traverse_impl(
-            UpdateAuxImpl &aux, uint64_t const version,
-            size_t const concurrency_limit)
-            : aux(aux)
-            , version(version)
-            , max_outstanding_reads(concurrency_limit)
-        {
-        }
-
         struct receiver_t
         {
             static constexpr bool lifetime_managed_internally = true;
 
-            preorder_traverse_impl *impl;
-            std::unique_ptr<TraverseMachine> traverse;
+            TraverseSender *sender;
+            async::erased_connected_operation *const traverse_state;
+            std::unique_ptr<TraverseMachine> machine;
             chunk_offset_t rd_offset{0, 0};
             unsigned bytes_to_read;
             uint16_t buffer_off;
             unsigned char const branch;
 
             receiver_t(
-                preorder_traverse_impl *impl, unsigned char const branch,
-                chunk_offset_t const offset,
-                std::unique_ptr<TraverseMachine> traverse)
-                : impl(impl)
-                , traverse(std::move(traverse))
+                TraverseSender *sender,
+                async::erased_connected_operation *const traverse_state,
+                unsigned char const branch, chunk_offset_t const offset,
+                std::unique_ptr<TraverseMachine> machine)
+                : sender(sender)
+                , traverse_state(traverse_state)
+                , machine(std::move(machine))
                 , branch(branch)
             {
                 auto const num_pages_to_load_node =
@@ -150,32 +149,77 @@ namespace detail
                 monad::async::erased_connected_operation *io_state,
                 ResultType buffer_)
             {
-                --impl->outstanding_reads;
-                if (!buffer_ || impl->stopping ||
-                    !verify_version_valid(impl->aux, impl->version)) {
+                MONAD_ASSERT(buffer_);
+                --sender->outstanding_reads;
+                if (sender->version_expired_before_complete ||
+                    !verify_version_valid(sender->aux, sender->version)) {
                     // async read failure or stopping initiated
-                    impl->stopping = true;
-                    return;
+                    sender->version_expired_before_complete = true;
+                    sender->reads_to_initiate.clear();
                 }
-                try {
-                    auto next_disk =
-                        detail::deserialize_node_from_receiver_result(
+                else { // version is valid after reading the buffer
+                    auto next_node_on_disk =
+                        deserialize_node_from_receiver_result(
                             std::move(buffer_), buffer_off, io_state);
-                    // verify version after read is done
-                    if (!verify_version_valid(impl->aux, impl->version)) {
-                        impl->stopping = true;
-                        return;
-                    }
-                    impl->process(*next_disk, branch, *traverse);
+                    async_parallel_preorder_traverse_impl(
+                        *sender,
+                        traverse_state,
+                        *next_node_on_disk,
+                        *machine,
+                        branch);
                 }
-                catch (std::exception const &e) { // exception implies UB
-                    impl->stopping = true;
+                // complete async traverse if no outstanding ios
+                if (sender->reads_to_initiate.empty() &&
+                    sender->outstanding_reads == 0) {
+                    traverse_state->completed(async::success());
                 }
             }
         };
 
-        static_assert(sizeof(receiver_t) == 32);
+        static_assert(sizeof(receiver_t) == 40);
         static_assert(alignof(receiver_t) == 8);
+
+        using result_type = async::result<bool>;
+
+        UpdateAuxImpl &aux;
+        Node::UniquePtr traverse_root;
+        std::unique_ptr<TraverseMachine> machine;
+        uint64_t const version;
+        size_t const max_outstanding_reads;
+        size_t outstanding_reads{0};
+        size_t nreads{0};
+        boost::container::deque<receiver_t> reads_to_initiate{};
+        bool version_expired_before_complete{false};
+
+        TraverseSender(
+            UpdateAuxImpl &aux, Node::UniquePtr traverse_root,
+            std::unique_ptr<TraverseMachine> machine, uint64_t const version,
+            size_t const concurrency_limit)
+            : aux(aux)
+            , traverse_root(std::move(traverse_root))
+            , machine(std::move(machine))
+            , version(version)
+            , max_outstanding_reads(concurrency_limit)
+        {
+        }
+
+        async::result<void>
+        operator()(async::erased_connected_operation *traverse_state) noexcept
+        {
+            MONAD_ASSERT(traverse_root != nullptr);
+            async_parallel_preorder_traverse_init(
+                *this, traverse_state, *traverse_root);
+            return async::success();
+        }
+
+        // return whether traverse has completed successfully
+        async::result<bool> completed(
+            async::erased_connected_operation *,
+            async::result<void> res) noexcept
+        {
+            BOOST_OUTCOME_TRY(std::move(res));
+            return async::success(!version_expired_before_complete);
+        }
 
         void initiate_pending_reads()
         {
@@ -186,52 +230,72 @@ namespace detail
                 reads_to_initiate.pop_front();
             }
         }
-
-        void process(
-            Node const &node, unsigned char const branch,
-            TraverseMachine &traverse)
-        {
-            initiate_pending_reads();
-            if (!traverse.down(branch, node)) {
-                return;
-            }
-            for (unsigned i = 0, idx = 0, bit = 1;
-                 idx < node.number_of_children();
-                 ++i, bit <<= 1) {
-                if (node.mask & bit) {
-                    if (traverse.should_visit(node, (unsigned char)i)) {
-                        auto const *const next = node.next(idx);
-                        if (next == nullptr) {
-                            MONAD_ASSERT(aux.is_on_disk());
-                            // verify version before read
-                            if (!verify_version_valid(aux, version)) {
-                                stopping = true;
-                                return;
-                            }
-                            receiver_t receiver(
-                                this,
-                                (unsigned char)i,
-                                node.fnext(idx),
-                                traverse.clone());
-                            if (outstanding_reads >= max_outstanding_reads) {
-                                reads_to_initiate.emplace_back(
-                                    std::move(receiver));
-                                ++idx;
-                                continue;
-                            }
-                            ++outstanding_reads;
-                            async_read(aux, std::move(receiver));
-                        }
-                        else {
-                            process(*next, (unsigned char)i, traverse);
-                        }
-                    }
-                    ++idx;
-                }
-            }
-            traverse.up(branch, node);
-        }
     };
+
+    inline void async_parallel_preorder_traverse_init(
+        TraverseSender &sender,
+        async::erased_connected_operation *traverse_state, Node const &node)
+    {
+        async_parallel_preorder_traverse_impl(
+            sender, traverse_state, node, *sender.machine, INVALID_BRANCH);
+
+        // complete async traverse if no outstanding ios
+        if (sender.reads_to_initiate.empty() && sender.outstanding_reads == 0) {
+            traverse_state->completed(async::success());
+        }
+    }
+
+    inline void async_parallel_preorder_traverse_impl(
+        TraverseSender &sender,
+        async::erased_connected_operation *traverse_state, Node const &node,
+        TraverseMachine &machine, unsigned char const branch)
+    {
+        sender.initiate_pending_reads();
+        if (!machine.down(branch, node)) {
+            return;
+        }
+        for (unsigned i = 0, idx = 0, bit = 1; idx < node.number_of_children();
+             ++i, bit <<= 1) {
+            if (node.mask & bit) {
+                if (machine.should_visit(node, (unsigned char)i)) {
+                    auto const *const next = node.next(idx);
+                    if (next == nullptr) {
+                        MONAD_ASSERT(sender.aux.is_on_disk());
+                        // verify version before read
+                        if (!verify_version_valid(sender.aux, sender.version)) {
+                            sender.version_expired_before_complete = true;
+                            return;
+                        }
+                        TraverseSender::receiver_t receiver(
+                            &sender,
+                            traverse_state,
+                            (unsigned char)i,
+                            node.fnext(idx),
+                            machine.clone());
+                        if (sender.outstanding_reads >=
+                            sender.max_outstanding_reads) {
+                            sender.reads_to_initiate.emplace_back(
+                                std::move(receiver));
+                            ++idx;
+                            continue;
+                        }
+                        async_read(sender.aux, std::move(receiver));
+                        ++sender.outstanding_reads;
+                        ++sender.nreads;
+                    }
+                    else {
+                        async_parallel_preorder_traverse_impl(
+                            sender,
+                            traverse_state,
+                            *next,
+                            machine,
+                            (unsigned char)i);
+                    }
+                }
+                ++idx;
+            }
+        }
+    }
 }
 
 // return value indicates if we have done the full traversal or not
@@ -243,25 +307,46 @@ inline bool preorder_traverse_blocking(
         aux, INVALID_BRANCH, node, traverse, version);
 }
 
-// parallel traversal using async i/o
-inline bool preorder_traverse(
-    UpdateAuxImpl &aux, Node const &node, TraverseMachine &traverse,
+inline bool preorder_traverse_ondisk(
+    UpdateAuxImpl &aux, Node const &node, TraverseMachine &machine,
     uint64_t const version, size_t const concurrency_limit = 4096)
 {
-    if (aux.io) {
-        MONAD_ASSERT(aux.io->owning_thread_id() == get_tl_tid());
-    }
-    detail::preorder_traverse_impl impl(aux, version, concurrency_limit);
-    impl.process(node, INVALID_BRANCH, traverse);
-    if (aux.io) {
-        aux.io->wait_until_done();
-        while (!impl.reads_to_initiate.empty()) {
-            impl.initiate_pending_reads();
-            aux.io->wait_until_done();
+    MONAD_ASSERT(aux.is_on_disk());
+
+    struct TraverseReceiver
+    {
+        bool &version_expired_before_traverse_complete_;
+
+        explicit TraverseReceiver(
+            bool &version_expired_before_traverse_complete)
+            : version_expired_before_traverse_complete_(
+                  version_expired_before_traverse_complete)
+        {
         }
-    }
-    MONAD_ASSERT(impl.outstanding_reads == 0);
-    return !impl.stopping;
+
+        void set_value(
+            async::erased_connected_operation *traverse_state,
+            async::result<bool> traverse_completed)
+        {
+            MONAD_ASSERT(traverse_completed);
+            version_expired_before_traverse_complete_ =
+                !traverse_completed.assume_value();
+            delete traverse_state;
+        }
+    };
+
+    bool version_expired_before_traverse_complete;
+
+    auto *const state = new auto(async::connect(
+        detail::TraverseSender(
+            aux, copy_node(&node), machine.clone(), version, concurrency_limit),
+        TraverseReceiver{version_expired_before_traverse_complete}));
+    state->initiate();
+
+    aux.io->wait_until_done();
+
+    // return traversal succeeds or not
+    return !version_expired_before_traverse_complete;
 }
 
 MONAD_MPT_NAMESPACE_END

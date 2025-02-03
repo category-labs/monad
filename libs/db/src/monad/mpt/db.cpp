@@ -211,7 +211,7 @@ struct Db::ROOnDisk final : public Db::Impl
         Node &node, TraverseMachine &machine, uint64_t const version,
         size_t const concurrency_limit) override
     {
-        return preorder_traverse(
+        return preorder_traverse_ondisk(
             aux(), node, machine, version, concurrency_limit);
     }
 
@@ -307,10 +307,10 @@ struct Db::InMemory final : public Db::Impl
     }
 
     virtual bool traverse_fiber_blocking(
-        Node &node, TraverseMachine &machine, uint64_t const version,
+        Node &node, TraverseMachine &machine, uint64_t const block_id,
         size_t) override
     {
-        return preorder_traverse(aux(), node, machine, version);
+        return preorder_traverse_blocking(aux_, node, machine, block_id);
     }
 
     virtual void move_trie_version_fiber_blocking(uint64_t, uint64_t) override
@@ -536,7 +536,7 @@ struct Db::RWOnDisk final : public Db::Impl
                         req->promise = &traverse_promises.back();
                         // verify version is valid
                         if (aux.version_is_valid_ondisk(req->version)) {
-                            req->promise->set_value(preorder_traverse(
+                            req->promise->set_value(preorder_traverse_ondisk(
                                 aux,
                                 req->root,
                                 req->machine,

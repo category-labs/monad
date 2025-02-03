@@ -34,11 +34,16 @@ struct TraverseMachine
 
 namespace detail
 {
+    inline bool
+    verify_version_valid(UpdateAuxImpl &aux, uint64_t const block_id)
+    {
+        return aux.is_on_disk() ? aux.version_is_valid_ondisk(block_id) : true;
+    }
+
     // current implementation does not contaminate triedb node caching
-    template <typename VerifyVersionFunc>
     inline bool preorder_traverse_blocking_impl(
         UpdateAuxImpl &aux, unsigned char const branch, Node const &node,
-        TraverseMachine &traverse, VerifyVersionFunc &&verify_func)
+        TraverseMachine &traverse, uint64_t const version)
     {
         if (!traverse.down(branch, node)) {
             return true;
@@ -50,12 +55,12 @@ namespace detail
                     auto const *const next = node.next(idx);
                     if (next) {
                         preorder_traverse_blocking_impl(
-                            aux, i, *next, traverse, verify_func);
+                            aux, i, *next, traverse, version);
                         continue;
                     }
                     MONAD_ASSERT(aux.is_on_disk());
                     // verify version before read
-                    if (!verify_func()) {
+                    if (!verify_version_valid(aux, version)) {
                         return false;
                     }
                     Node::UniquePtr next_disk{};
@@ -67,7 +72,7 @@ namespace detail
                         return false;
                     }
                     preorder_traverse_blocking_impl(
-                        aux, i, *next_disk, traverse, verify_func);
+                        aux, i, *next_disk, traverse, version);
                 }
             }
         }
@@ -89,23 +94,22 @@ namespace detail
     cancellation, and we can test that feature when plugged in if really need.
   */
 
-    template <typename VerifyVersionFunc>
     struct preorder_traverse_impl
     {
         struct receiver_t;
 
         UpdateAuxImpl &aux;
-        VerifyVersionFunc verify_func;
+        uint64_t version;
         bool stopping{false};
         size_t const max_outstanding_reads{4096};
         size_t outstanding_reads{0};
         boost::container::deque<receiver_t> reads_to_initiate{};
 
         explicit preorder_traverse_impl(
-            UpdateAuxImpl &aux, VerifyVersionFunc verify_func,
+            UpdateAuxImpl &aux, uint64_t const version,
             size_t const concurrency_limit)
             : aux(aux)
-            , verify_func(verify_func)
+            , version(version)
             , max_outstanding_reads(concurrency_limit)
         {
         }
@@ -148,8 +152,8 @@ namespace detail
             {
                 --impl->outstanding_reads;
                 if (!buffer_ || impl->stopping ||
-                    !impl->verify_func()) { // async read failure or stopping
-                                            // initiated
+                    !verify_version_valid(impl->aux, impl->version)) {
+                    // async read failure or stopping initiated
                     impl->stopping = true;
                     return;
                 }
@@ -158,7 +162,7 @@ namespace detail
                         detail::deserialize_node_from_receiver_result(
                             std::move(buffer_), buffer_off, io_state);
                     // verify version after read is done
-                    if (!impl->verify_func()) {
+                    if (!verify_version_valid(impl->aux, impl->version)) {
                         impl->stopping = true;
                         return;
                     }
@@ -200,7 +204,7 @@ namespace detail
                         if (next == nullptr) {
                             MONAD_ASSERT(aux.is_on_disk());
                             // verify version before read
-                            if (!verify_func()) {
+                            if (!verify_version_valid(aux, version)) {
                                 stopping = true;
                                 return;
                             }
@@ -231,26 +235,23 @@ namespace detail
 }
 
 // return value indicates if we have done the full traversal or not
-template <typename VerifyVersionFunc>
 inline bool preorder_traverse_blocking(
     UpdateAuxImpl &aux, Node const &node, TraverseMachine &traverse,
-    VerifyVersionFunc &&verify_func)
+    uint64_t const version)
 {
     return detail::preorder_traverse_blocking_impl(
-        aux, INVALID_BRANCH, node, traverse, verify_func);
+        aux, INVALID_BRANCH, node, traverse, version);
 }
 
 // parallel traversal using async i/o
-template <typename VerifyVersionFunc>
 inline bool preorder_traverse(
     UpdateAuxImpl &aux, Node const &node, TraverseMachine &traverse,
-    VerifyVersionFunc verify_func, size_t const concurrency_limit = 4096)
+    uint64_t const version, size_t const concurrency_limit = 4096)
 {
     if (aux.io) {
         MONAD_ASSERT(aux.io->owning_thread_id() == get_tl_tid());
     }
-    detail::preorder_traverse_impl<VerifyVersionFunc> impl(
-        aux, verify_func, concurrency_limit);
+    detail::preorder_traverse_impl impl(aux, version, concurrency_limit);
     impl.process(node, INVALID_BRANCH, traverse);
     if (aux.io) {
         aux.io->wait_until_done();

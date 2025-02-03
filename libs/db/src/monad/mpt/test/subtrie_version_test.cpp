@@ -143,7 +143,10 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
         TraverseVerifyVersions traverse{node_records};
         // Must traverse in order
         preorder_traverse_blocking(
-            this->aux, *this->root, traverse, [] { return true; });
+            this->aux,
+            *this->root,
+            traverse,
+            this->aux.db_history_max_version());
         EXPECT_EQ(traverse.records.empty(), true);
     }
 
@@ -183,7 +186,10 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
         TraverseVerifyVersions traverse{node_records, true};
         // Must traverse in order
         preorder_traverse_blocking(
-            this->aux, *this->root, traverse, [] { return true; });
+            this->aux,
+            *this->root,
+            traverse,
+            this->aux.db_history_max_version());
         EXPECT_EQ(traverse.records.empty(), true);
     }
 }

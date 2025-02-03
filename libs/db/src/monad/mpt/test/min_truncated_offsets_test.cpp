@@ -32,6 +32,7 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
     this->aux.alternate_slow_fast_node_writer_unit_testing_only(true);
     constexpr size_t const eightMB = 8 * 1024 * 1024;
 
+    uint64_t const block_id = 0;
     // ensure total bytes written on both fast and slow lists
     auto ensure_total_bytes_written = [&](size_t fast_chunks,
                                           size_t chunk_inner_offset_fast,
@@ -59,7 +60,8 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
                     make_update(keys.back().first, keys.back().first));
                 update_ls.push_front(updates.back());
             }
-            root = upsert(aux, 0, *sm, std::move(root), std::move(update_ls));
+            root = upsert(
+                aux, block_id, *sm, std::move(root), std::move(update_ls));
             size_t count_fast = 0;
             for (auto const *ci = aux.db_metadata()->fast_list_begin();
                  ci != nullptr;
@@ -194,8 +196,8 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
     } traverse{this->aux};
 
     // WARNING: test will fail and there are memory leak using parallel traverse
-    ASSERT_TRUE(preorder_traverse_blocking(
-        this->aux, *this->root, traverse, [] { return true; }));
+    ASSERT_TRUE(
+        preorder_traverse_blocking(this->aux, *this->root, traverse, block_id));
     EXPECT_EQ(traverse.level, 0);
     EXPECT_EQ(traverse.root_to_node_records.empty(), true);
 }

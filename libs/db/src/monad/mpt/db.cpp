@@ -212,13 +212,7 @@ struct Db::ROOnDisk final : public Db::Impl
         size_t const concurrency_limit) override
     {
         return preorder_traverse(
-            aux(),
-            node,
-            machine,
-            [this, version]() -> bool {
-                return aux().version_is_valid_ondisk(version);
-            },
-            concurrency_limit);
+            aux(), node, machine, version, concurrency_limit);
     }
 
     virtual NodeCursor load_root_for_version(uint64_t const version) override
@@ -313,9 +307,10 @@ struct Db::InMemory final : public Db::Impl
     }
 
     virtual bool traverse_fiber_blocking(
-        Node &node, TraverseMachine &machine, uint64_t, size_t) override
+        Node &node, TraverseMachine &machine, uint64_t const version,
+        size_t) override
     {
-        return preorder_traverse(aux(), node, machine, [] { return true; });
+        return preorder_traverse(aux(), node, machine, version);
     }
 
     virtual void move_trie_version_fiber_blocking(uint64_t, uint64_t) override
@@ -545,7 +540,7 @@ struct Db::RWOnDisk final : public Db::Impl
                                 aux,
                                 req->root,
                                 req->machine,
-                                [&] { return true; },
+                                req->version,
                                 req->concurrency_limit));
                         }
                         else {
@@ -1057,11 +1052,7 @@ bool Db::traverse_blocking(
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(cursor.is_valid());
     return preorder_traverse_blocking(
-        impl_->aux(), *cursor.node, machine, [this, block_id] {
-            return impl_->aux().is_on_disk()
-                       ? impl_->aux().version_is_valid_ondisk(block_id)
-                       : true;
-        });
+        impl_->aux(), *cursor.node, machine, block_id);
 }
 
 NodeCursor Db::root() const noexcept

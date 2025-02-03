@@ -55,11 +55,6 @@ add_subdirectory(third_party/BLAKE3/c)
 # cli11
 find_package(CLI11 REQUIRED)
 
-# compiler
-set(MONAD_COMPILER_STANDALONE OFF)
-set(MONAD_COMPILER_TESTING OFF)
-add_subdirectory("third_party/compiler")
-
 # ethash
 set(ETHASH_TESTING NO)
 add_subdirectory("third_party/ethash")
@@ -67,18 +62,10 @@ add_subdirectory("third_party/ethash")
 # intx
 add_subdirectory(third_party/intx)
 
-# evmone
-set(ethash_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake/dummy")
-set(intx_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake/dummy")
-add_subdirectory(third_party/evmone)
-unset(ethash_DIR)
-unset(intx_DIR)
-target_link_libraries(evmone_precompiles PUBLIC ethash::keccak)
-target_include_directories(evmone PUBLIC "third_party/evmone/lib")
-# always compile baseline with optimization due to stack size of dispatch_cgoto
-set_source_files_properties(
-  third_party/evmone/lib/evmone/baseline.cpp TARGET_DIRECTORY evmone
-  PROPERTIES COMPILE_OPTIONS -O2)
+# compiler
+set(MONAD_COMPILER_STANDALONE OFF)
+set(MONAD_COMPILER_TESTING OFF)
+add_subdirectory("third_party/compiler")
 
 # komihash
 add_library(komihash INTERFACE)

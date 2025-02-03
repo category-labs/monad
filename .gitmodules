@@ -26,9 +26,6 @@
 [submodule "ethash"]
 	path = third_party/ethash
 	url = https://github.com/chfast/ethash.git
-[submodule "evmone"]
-	path = third_party/evmone
-	url = https://github.com/ethereum/evmone.git
 [submodule "core/third_party/nanobench"]
 	path = libs/core/third_party/nanobench
 	url = https://github.com/martinus/nanobench.git

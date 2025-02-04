@@ -14,6 +14,7 @@
 #include <monad/core/log_level_map.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/db/block_db.hpp>
+#include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/genesis.hpp>
@@ -313,13 +314,14 @@ int main(int const argc, char const *argv[])
 
     uint64_t block_num = start_block_num;
 
+    DbCache db_cache = ctx ? DbCache{*ctx} : DbCache{triedb};
     auto const result = [&] {
         switch (chain_config) {
         case CHAIN_CONFIG_ETHEREUM_MAINNET:
             return runloop_ethereum(
                 *chain,
                 block_db_path,
-                ctx ? static_cast<Db &>(*ctx) : static_cast<Db &>(triedb),
+                db_cache,
                 block_hash_buffer,
                 priority_pool,
                 block_num,
@@ -330,7 +332,7 @@ int main(int const argc, char const *argv[])
             return runloop_monad(
                 *chain,
                 block_db_path,
-                ctx ? static_cast<Db &>(*ctx) : static_cast<Db &>(triedb),
+                db_cache,
                 block_hash_buffer,
                 priority_pool,
                 block_num,

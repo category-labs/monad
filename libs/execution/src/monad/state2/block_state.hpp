@@ -21,8 +21,8 @@ class State;
 class BlockState final
 {
     Db &db_;
-    StateDeltas state_{};
-    Code code_{};
+    std::unique_ptr<StateDeltas> state_;
+    std::unique_ptr<Code> code_;
 
 public:
     BlockState(Db &);
@@ -40,11 +40,12 @@ public:
     // TODO: remove round_number parameter, retrieve it from header instead once
     // we add the monad fields in BlockHeader
     void commit(
-        MonadConsensusBlockHeader const &, std::vector<Receipt> const &,
-        std::vector<std::vector<CallFrame>> const &,
-        std::vector<Address> const &, std::vector<Transaction> const &,
-        std::vector<BlockHeader> const &ommers,
-        std::optional<std::vector<Withdrawal>> const &);
+        MonadConsensusBlockHeader const &, std::vector<Receipt> const & = {},
+        std::vector<std::vector<CallFrame>> const & = {},
+        std::vector<Address> const & = {},
+        std::vector<Transaction> const & = {},
+        std::vector<BlockHeader> const &ommers = {},
+        std::optional<std::vector<Withdrawal>> const & = {});
 
     void log_debug();
 };

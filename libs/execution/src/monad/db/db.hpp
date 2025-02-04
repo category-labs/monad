@@ -50,6 +50,28 @@ struct Db
         std::vector<BlockHeader> const &ommers = {},
         std::optional<std::vector<Withdrawal>> const & = std::nullopt) = 0;
 
+    virtual void commit(
+        std::unique_ptr<StateDeltas> state_deltas, std::unique_ptr<Code> code,
+        MonadConsensusBlockHeader const &consensus_header,
+        std::vector<Receipt> const &receipts = {},
+        std::vector<std::vector<CallFrame>> const &call_frames = {},
+        std::vector<Address> const &senders = {},
+        std::vector<Transaction> const &transactions = {},
+        std::vector<BlockHeader> const &ommers = {},
+        std::optional<std::vector<Withdrawal>> const &withdrawals = {})
+    {
+        commit(
+            *state_deltas,
+            *code,
+            consensus_header,
+            receipts,
+            call_frames,
+            senders,
+            transactions,
+            ommers,
+            withdrawals);
+    }
+
     virtual std::string print_stats()
     {
         return {};

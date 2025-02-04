@@ -49,8 +49,14 @@ public:
     Db &operator=(Db &&) = delete;
     ~Db();
 
-    // May wait on a fiber future
-    //  The `block_id` parameter is used for version control validation
+    // The find, get, and get_data API calls return non-owning references.
+    // The result lifetime ends when a subsequent operation reloads the trie
+    // root. This can happen due to an RWDb upsert, an RODb reading a different
+    // version, or an RODb reading the same version that has been updated by an
+    // RWDb in another process.
+    // The `block_id` parameter specify the version to read from, and is also
+    // used for version control validation. These calls may wait on a fiber
+    // future.
     Result<NodeCursor> find(NodeCursor, NibblesView, uint64_t block_id) const;
     Result<NodeCursor> find(NibblesView prefix, uint64_t block_id) const;
     Result<byte_string_view> get(NibblesView, uint64_t block_id) const;

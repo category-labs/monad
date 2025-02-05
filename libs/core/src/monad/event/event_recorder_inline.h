@@ -118,18 +118,15 @@ inline bool monad_event_recorder_set_enabled(
         &g_monad_event_recorders[ring_type];
 
     // The common case, which must be fast: we're enabling/disabling after
-    // all initialization has been performed
+    // ring initialization has been performed
     if (MONAD_LIKELY(atomic_load_explicit(
             &recorder->initialized, memory_order_relaxed))) {
-        return atomic_exchange_explicit(
-            &recorder->enabled, enabled, memory_order_acq_rel);
+        atomic_store_explicit(
+            &recorder->enabled, enabled, memory_order_release);
+        return enabled;
     }
-    // The slow, rare case: the recorder is not explicitly initialized, so
-    // enabling will also trigger initialization with the default parameters;
-    // see event_recorder.c
-    extern bool _monad_event_recorder_set_enabled_slow(
-        struct monad_event_recorder *, bool);
-    return _monad_event_recorder_set_enabled_slow(recorder, enabled);
+    // Ring is not initialized; we can't be enabled
+    return false;
 }
 
 inline uint64_t monad_event_get_epoch_nanos()

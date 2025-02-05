@@ -74,11 +74,11 @@ struct monad_event_recorder;
 /// called prior to the recorder being enabled, otherwise it will have no
 /// effect and will return EBUSY
 int monad_event_recorder_configure(
-    enum monad_event_ring_type ring_type, uint8_t ring_shift,
-    uint8_t payload_buf_shift);
+    enum monad_event_ring_type, uint8_t ring_shift, uint8_t payload_buf_shift);
 
 /// Start or stop the recorder for the given event ring type; disabling a
-/// recorder will allow monad_event_recorder_configure to be called again
+/// recorder allows monad_event_recorder_configure to be called again; the
+/// recorder must already be configured for enablement to succeed
 static bool
 monad_event_recorder_set_enabled(enum monad_event_ring_type, bool enabled);
 

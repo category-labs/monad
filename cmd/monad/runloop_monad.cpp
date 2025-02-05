@@ -171,6 +171,10 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
         }
         ++block_num;
     }
+    if (block_num > end_block_num) {
+        MONAD_ASSERT(block_num == end_block_num + 1);
+        block_num = end_block_num;
+    }
     if (batch_num_blocks > 0) {
         log_tps(
             block_num, batch_num_blocks, batch_num_txs, batch_gas, batch_begin);

@@ -285,11 +285,11 @@ namespace
         return ret;
     }
 
-    std::pair<std::vector<monad::byte_string>, std::vector<Update>>
+    std::pair<std::deque<monad::byte_string>, std::deque<Update>>
     prepare_random_updates(unsigned size)
     {
-        std::vector<monad::byte_string> bytes_alloc;
-        std::vector<Update> updates_alloc;
+        std::deque<monad::byte_string> bytes_alloc;
+        std::deque<Update> updates_alloc;
         for (size_t i = 0; i < size; ++i) {
             auto &kv = bytes_alloc.emplace_back(keccak_int_to_string(i));
             updates_alloc.push_back(Update{
@@ -848,16 +848,27 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_get_node_then_async_traverse)
     constexpr unsigned nkeys = 1000;
     auto [kv_alloc, updates_alloc] = prepare_random_updates(nkeys);
     uint64_t const block_id = 0;
+    std::vector<Nibbles> expected_keys;
+    Nibbles const prefix = concat((unsigned char)0);
+
     UpdateList ls;
     for (auto &u : updates_alloc) {
+        expected_keys.emplace_back(Nibbles{u.key});
         ls.push_front(u);
     }
-    db.upsert(std::move(ls), block_id);
+    Update top_level_update{
+        .key = prefix,
+        .value = monad::byte_string_view{},
+        .next = std::move(ls),
+        .version = static_cast<int64_t>(block_id)};
+    UpdateList updates;
+    updates.push_front(top_level_update);
+    db.upsert(std::move(updates), block_id);
 
     struct TraverseResult
     {
         bool traverse_success{false};
-        size_t num_leaves_traversed{0};
+        std::vector<Nibbles> keys;
     };
 
     struct TraverseReceiver
@@ -911,15 +922,53 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_get_node_then_async_traverse)
         }
     };
 
+    class Traverse final : public TraverseMachine
+    {
+        monad::mpt::Nibbles path_;
+        std::vector<Nibbles> &keys_;
+
+    public:
+        explicit Traverse(std::vector<Nibbles> &keys)
+            : keys_{keys}
+        {
+        }
+
+        virtual bool
+        down(unsigned char const branch, monad::mpt::Node const &node) override
+        {
+            if (branch == INVALID_BRANCH) {
+                return true;
+            }
+            path_ = concat(
+                monad::mpt::NibblesView{path_},
+                branch,
+                node.path_nibble_view());
+
+            if (node.has_value()) { // node is a leaf
+                keys_.push_back(path_);
+            }
+
+            return true;
+        }
+
+        virtual void up(unsigned char const, monad::mpt::Node const &) override
+        {
+        }
+
+        virtual std::unique_ptr<TraverseMachine> clone() const override
+        {
+            return std::make_unique<Traverse>(*this);
+        }
+    };
+
     // async traverse on valid block
     std::deque<TraverseResult> results;
     for (auto i = 0; i < 10; ++i) {
         auto &result_holder = results.emplace_back(TraverseResult{});
-        auto machine = std::make_unique<DummyTraverseMachine>(
-            result_holder.num_leaves_traversed);
+        auto machine = std::make_unique<Traverse>(result_holder.keys);
 
         auto *state = new auto(monad::async::connect(
-            make_get_node_sender(ctx.get(), NibblesView{}, block_id),
+            make_get_node_sender(ctx.get(), prefix, block_id),
             GetNodeReceiver{
                 make_traverse_sender(
                     ctx.get(), {}, std::move(machine), block_id),
@@ -927,27 +976,69 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_get_node_then_async_traverse)
         state->initiate();
     }
     ctx->aux.io->wait_until_done();
+
+    struct
+    {
+        bool operator()(Nibbles const &k, Nibbles const &k1)
+        {
+            std::ostringstream oss;
+            oss << k;
+
+            std::ostringstream oss1;
+            oss1 << k1;
+            return oss.str() > oss1.str();
+        };
+    } nibble_sort;
+
+    std::sort(expected_keys.begin(), expected_keys.end(), nibble_sort);
     for (auto &r : results) {
         EXPECT_TRUE(r.traverse_success);
-        EXPECT_EQ(r.num_leaves_traversed, nkeys);
+        ASSERT_EQ(r.keys.size(), nkeys);
+        std::sort(r.keys.begin(), r.keys.end(), nibble_sort);
+        EXPECT_EQ(expected_keys, r.keys);
     }
 
-    // look up invalid block
-    TraverseResult expect_failure;
-    auto *state = new auto(monad::async::connect(
-        make_get_node_sender(ctx.get(), NibblesView{}, block_id + 1),
-        GetNodeReceiver{
-            make_traverse_sender(
-                ctx.get(),
-                {},
-                std::make_unique<DummyTraverseMachine>(
-                    expect_failure.num_leaves_traversed),
-                block_id),
-            expect_failure}));
-    state->initiate();
-    ctx->aux.io->wait_until_done();
-    EXPECT_FALSE(expect_failure.traverse_success);
-    EXPECT_EQ(expect_failure.num_leaves_traversed, 0);
+    { // traverse an invalid block
+        TraverseResult expect_failure;
+        auto *state = new auto(monad::async::connect(
+            make_get_node_sender(ctx.get(), prefix, block_id + 1),
+            GetNodeReceiver{
+                make_traverse_sender(
+                    ctx.get(),
+                    {},
+                    std::make_unique<Traverse>(expect_failure.keys),
+                    block_id),
+                expect_failure}));
+        state->initiate();
+        ctx->aux.io->wait_until_done();
+        EXPECT_FALSE(expect_failure.traverse_success);
+        EXPECT_EQ(expect_failure.keys.size(), 0);
+    }
+    { // traverse valid but empty trie
+        Update u{
+            .key = prefix,
+            .value = monad::byte_string_view{},
+            .incarnation = true,
+            .next = UpdateList{},
+            .version = static_cast<int64_t>(block_id + 1)};
+        UpdateList updates2;
+        updates2.push_front(u);
+        db.upsert(std::move(updates2), block_id + 1);
+        TraverseResult expect_empty;
+        auto *state = new auto(monad::async::connect(
+            make_get_node_sender(ctx.get(), prefix, block_id + 1),
+            GetNodeReceiver{
+                make_traverse_sender(
+                    ctx.get(),
+                    {},
+                    std::make_unique<Traverse>(expect_empty.keys),
+                    block_id),
+                expect_empty}));
+        state->initiate();
+        ctx->aux.io->wait_until_done();
+        EXPECT_TRUE(expect_empty.traverse_success);
+        EXPECT_EQ(expect_empty.keys.size(), 0);
+    }
 }
 
 TEST_F(OnDiskDbWithFileFixture, load_correct_root_upon_reopen_nonempty_db)

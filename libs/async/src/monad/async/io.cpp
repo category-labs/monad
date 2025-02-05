@@ -108,22 +108,13 @@ namespace detail
 
     static struct AsyncIO_rlimit_raiser_impl
     {
-#ifndef NDEBUG
-        std::set<int> fd_reservation;
-#endif
         AsyncIO_rlimit_raiser_impl()
         {
-            size_t n = 4096;
-            for (; n >= 1024; n >>= 1) {
-                struct rlimit const r{n, n};
-                int const ret = setrlimit(RLIMIT_NOFILE, &r);
-                if (ret >= 0) {
-                    break;
-                }
-            }
-            if (n < 4096) {
-                std::cerr << "WARNING: maximum hard file descriptor kimit is "
-                          << n
+            struct rlimit r = {0, 0};
+            getrlimit(RLIMIT_NOFILE, &r);
+            if (r.rlim_cur < 4096) {
+                std::cerr << "WARNING: maximum file descriptor limit is "
+                          << r.rlim_cur
                           << " which is less than 4096. 'Too many open files' "
                              "errors may result. You can increase the hard "
                              "file descriptor limit for a given user by adding "
@@ -131,26 +122,6 @@ namespace detail
                              "nofile 16384'."
                           << std::endl;
             }
-#ifndef NDEBUG
-            /* If in debug, reserve the first 1024 file descriptor numbers
-            in order to better reveal software which is not >= 1024 fd number
-            safe, which is still some third party dependencies on Linux. */
-            else {
-                for (int fd = ::dup(0); fd > 0 && fd < 1024; fd = ::dup(0)) {
-                    fd_reservation.insert(fd);
-                }
-            }
-#endif
-        }
-
-        ~AsyncIO_rlimit_raiser_impl()
-        {
-#ifndef NDEBUG
-            while (!fd_reservation.empty()) {
-                (void)::close(*fd_reservation.begin());
-                fd_reservation.erase(fd_reservation.begin());
-            }
-#endif
         }
     } AsyncIO_rlimit_raiser;
 

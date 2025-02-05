@@ -379,31 +379,6 @@ struct ring_size_params
          .max_payload_buf_shift = MONAD_EVENT_MAX_EXEC_PAYLOAD_BUF_SHIFT},
 };
 
-// Configures and event recorder; can only be called with the initialization
-// mutex locked
-static int configure_recorder_locked(
-    struct monad_event_recorder *recorder, uint8_t ring_shift,
-    uint8_t payload_buf_shift)
-{
-    if (atomic_load_explicit(&recorder->enabled, memory_order_acquire)) {
-        return FORMAT_ERRC(
-            EBUSY, "event recorder already running; cannot configure");
-    }
-    if (recorder->event_ring.control != nullptr) {
-        // Reconfiguring; tear everything down and do it again
-        cleanup_event_ring(&recorder->event_ring, &recorder->event_ring_fds);
-    }
-    if (ring_shift == 0) {
-        ring_shift = s_ring_size_params[recorder->ring_type].default_ring_shift;
-    }
-    return init_event_ring(
-        &recorder->event_ring,
-        recorder->ring_type,
-        ring_shift,
-        payload_buf_shift,
-        &recorder->event_ring_fds);
-}
-
 int monad_event_recorder_configure(
     enum monad_event_ring_type ring_type, uint8_t ring_shift,
     uint8_t payload_buf_shift)
@@ -443,59 +418,35 @@ int monad_event_recorder_configure(
 
     recorder = &g_monad_event_recorders[ring_type];
     pthread_mutex_lock(&recorder->init_mtx);
-    rc = configure_recorder_locked(recorder, ring_shift, payload_buf_shift);
+    if (atomic_load_explicit(&recorder->enabled, memory_order_acquire)) {
+        rc = FORMAT_ERRC(
+            EBUSY, "event recorder already running; cannot configure");
+        goto UnlockReturn;
+    }
+    if (recorder->event_ring.control != nullptr) {
+        // Reconfiguring; tear everything down and do it again
+        cleanup_event_ring(&recorder->event_ring, &recorder->event_ring_fds);
+    }
+    if (ring_shift == 0) {
+        ring_shift = s_ring_size_params[recorder->ring_type].default_ring_shift;
+    }
+    rc = init_event_ring(
+        &recorder->event_ring,
+        recorder->ring_type,
+        ring_shift,
+        payload_buf_shift,
+        &recorder->event_ring_fds);
+    if (rc == 0) {
+        // The initialization flag is an atomic, so that the initialization
+        // check in `monad_event_recorder_set_enabled` won't have to lock
+        // init_mtx. Now that we're initialized, set this atomic.
+        atomic_store_explicit(
+            &recorder->initialized, true, memory_order_release);
+    }
+
+UnlockReturn:
     pthread_mutex_unlock(&recorder->init_mtx);
     return rc;
-}
-
-// Called by the inlined `monad_event_recorder_set_enabled` function to handle
-// the "slow path": trying to operate on an uninitialized event recorder
-//
-// Enabling/disabling event recorders must be extremely fast for the
-// performance tracing use case: some performance traces produce huge amounts
-// of data, so they might only be enabled during the scope of one interesting
-// transaction or block. Once a recorder is already initialized, enabling and
-// disabling is just an atomic exchange.
-//
-// The set_enabled API is not allowed to fail, so if it is called on an
-// uninitialized event recorder, the slow path will first configure it with the
-// default configuration, then enable it. This requires locking the
-// initialization mutex, which only happens on the slow path.
-bool _monad_event_recorder_set_enabled_slow(
-    struct monad_event_recorder *recorder, bool enabled)
-{
-    int rc;
-    if (!enabled) {
-        // Not initialized but still not being enabled, just do nothing
-        return false;
-    }
-    // The initialization flag itself is indicated by an atomic, but the
-    // initialization process itself is protected by init_mtx -- the mutex
-    // must be held to change the value of the `initialized` atomic, and to
-    // touch any of the configurable objects
-    pthread_mutex_lock(&recorder->init_mtx);
-    if (atomic_load_explicit(&recorder->initialized, memory_order_acquire)) {
-        // Lost a lock race to become the initializer. Skip to Initialized
-        goto Initialized;
-    }
-    if (recorder->event_ring.control == nullptr) {
-        rc = configure_recorder_locked(
-            recorder,
-            s_ring_size_params[recorder->ring_type].default_ring_shift,
-            s_ring_size_params[recorder->ring_type].default_payload_buf_shift);
-        MONAD_ASSERT_PRINTF(
-            rc == 0 || rc == EBUSY,
-            "monad_event_recorder_configure failed for %hhu with error: %d",
-            recorder->ring_type,
-            rc);
-    }
-    atomic_store_explicit(&recorder->initialized, true, memory_order_release);
-Initialized:
-    pthread_mutex_unlock(&recorder->init_mtx);
-    enabled = atomic_exchange_explicit(
-        &recorder->enabled, true, memory_order_acq_rel);
-    monad_event_record(recorder, MONAD_EVENT_RING_INIT, 0, nullptr, 0);
-    return enabled;
 }
 
 char const *monad_event_recorder_get_last_error()

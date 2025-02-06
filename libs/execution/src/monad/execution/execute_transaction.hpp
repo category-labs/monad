@@ -26,6 +26,10 @@ struct Transaction;
 template <evmc_revision rev>
 struct EvmcHost;
 
+uint64_t g_star(
+    evmc_revision, Transaction const &, uint64_t gas_remaining,
+    uint64_t refund);
+
 struct ExecutionResult
 {
     Receipt receipt;

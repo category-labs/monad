@@ -18,4 +18,10 @@ evmc_revision MonadDevnet::get_revision(uint64_t const, uint64_t const) const
     return EVMC_CANCUN;
 }
 
+uint64_t MonadDevnet::compute_gas_refund(
+    evmc_revision, Transaction const &, uint64_t, uint64_t) const
+{
+    return 0;
+}
+
 MONAD_NAMESPACE_END

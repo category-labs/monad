@@ -11,6 +11,7 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
+#include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/trace/call_frame.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
 #include <monad/execution/trace/event_trace.hpp>
@@ -60,6 +61,14 @@ constexpr uint64_t g_star(
         (tx.gas_limit - gas_remaining) / max_refund_quotient;
 
     return gas_remaining + std::min(refund_allowance, refund);
+}
+
+uint64_t g_star(
+    evmc_revision const rev, Transaction const &tx,
+    uint64_t const gas_remaining, uint64_t const refund)
+{
+    SWITCH_EVMC_REVISION(g_star, tx, gas_remaining, refund);
+    MONAD_ASSERT(false);
 }
 
 template <evmc_revision rev>
@@ -126,16 +135,17 @@ EXPLICIT_EVMC_REVISION(execute_impl_no_validation);
 
 template <evmc_revision rev>
 Receipt execute_final(
-    State &state, Transaction const &tx, Address const &sender,
-    uint256_t const &base_fee_per_gas, evmc::Result const &result,
-    Address const &beneficiary)
+    State &state, Chain const &chain, Transaction const &tx,
+    Address const &sender, uint256_t const &base_fee_per_gas,
+    evmc::Result const &result, Address const &beneficiary)
 {
     MONAD_ASSERT(result.gas_left >= 0);
     MONAD_ASSERT(result.gas_refund >= 0);
     MONAD_ASSERT(tx.gas_limit >= static_cast<uint64_t>(result.gas_left));
 
     // refund and priority, Eqn. 73-76
-    auto const gas_refund = g_star<rev>(
+    auto const gas_refund = chain.compute_gas_refund(
+        rev,
         tx,
         static_cast<uint64_t>(result.gas_left),
         static_cast<uint64_t>(result.gas_refund));
@@ -222,6 +232,7 @@ Result<ExecutionResult> execute_impl(
             }
             auto const receipt = execute_final<rev>(
                 state,
+                chain,
                 tx,
                 sender,
                 hdr.base_fee_per_gas.value_or(0),
@@ -257,6 +268,7 @@ Result<ExecutionResult> execute_impl(
         }
         auto const receipt = execute_final<rev>(
             state,
+            chain,
             tx,
             sender,
             hdr.base_fee_per_gas.value_or(0),

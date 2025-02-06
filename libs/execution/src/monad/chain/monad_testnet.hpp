@@ -14,6 +14,10 @@ struct MonadTestnet : MonadChain
 
     virtual evmc_revision
     get_revision(uint64_t block_number, uint64_t timestamp) const override;
+
+    virtual uint64_t compute_gas_refund(
+        evmc_revision, Transaction const &, uint64_t gas_remaining,
+        uint64_t refund) const override;
 };
 
 MONAD_NAMESPACE_END

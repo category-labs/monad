@@ -25,6 +25,10 @@ struct EthereumMainnet : Chain
 
     virtual Result<void> validate_output_header(
         BlockHeader const &input, BlockHeader const &output) const override;
+
+    virtual uint64_t compute_gas_refund(
+        evmc_revision, Transaction const &, uint64_t gas_remaining,
+        uint64_t refund) const override;
 };
 
 MONAD_NAMESPACE_END

@@ -181,3 +181,51 @@ TEST_F(EthCallFixture, contract_deployment_success)
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
     EXPECT_EQ(result.output_data, deployed_code_vec);
 }
+
+TEST_F(EthCallFixture, from_contract_account)
+{
+    using namespace intx;
+
+    auto const code =
+        evmc::from_hex("0x6000600155600060025560006003556000600455600060055500")
+            .value();
+    auto const code_hash = to_bytes(keccak256(code));
+    auto const code_analysis = std::make_shared<CodeAnalysis>(analyze(code));
+
+    auto const ca = 0xaaaf5374fce5edbc8e2a8697c15331677e6ebf0b_address;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ca,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0x1b58, .code_hash = code_hash}}}}},
+        Code{{code_hash, code_analysis}},
+        BlockHeader{.number = 0});
+
+    std::string tx_data = "0x60025560";
+
+    Transaction tx{.gas_limit = 100000u, .to = ca, .data = from_hex(tx_data)};
+
+    BlockHeader header{.number = 0};
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender = to_vec(rlp::encode_address(std::make_optional(ca)));
+
+    monad_state_override_set state_override;
+
+    auto const result = eth_call(
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx,
+        rlp_header,
+        rlp_sender,
+        0,
+        dbname,
+        state_override);
+
+    EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
+    EXPECT_EQ(result.output_data, std::vector<uint8_t>{});
+}

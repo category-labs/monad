@@ -40,7 +40,10 @@ namespace
     {
         Transaction enriched_txn{txn};
 
-        // SignatureAndChain validation hacks
+        // static_validate_transaction checks sender's signature and chain_id.
+        // However, eth_call doesn't have signature (it can be simulated from
+        // any account). Solving this issue by setting chain_id and signature to
+        // complied values
         enriched_txn.sc.chain_id = chain.get_chain_id();
         enriched_txn.sc.r = 1;
         enriched_txn.sc.s = 1;
@@ -127,11 +130,24 @@ namespace
             }
         }
 
-        // nonce validation hack
+        // validate_transaction expects nonce to match.
+        // However, eth_call doesn't take a nonce parameter.
+        // Solving the issue by manually setting nonce to match with the
+        // expected nonce
         auto const &acct = state.recent_account(sender);
         enriched_txn.nonce = acct.has_value() ? acct.value().nonce : 0;
 
-        BOOST_OUTCOME_TRY(validate_transaction(enriched_txn, acct));
+        // validate_transaction expects the sender of a transaction is EOA, not
+        // CA. However, eth_call allows the sender to be CA to simulate a
+        // subroutine. Solving this issue by manually setting account to be EOA
+        // for validation
+        std::optional<Account> eoa = acct;
+        if (eoa.has_value()) {
+            eoa.value().code_hash = NULL_HASH;
+        }
+
+        BOOST_OUTCOME_TRY(validate_transaction(enriched_txn, eoa));
+
         auto const tx_context = get_tx_context<rev>(
             enriched_txn, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer;

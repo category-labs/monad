@@ -168,10 +168,7 @@ Node::SharedPtr upsert(
         auto root = entry.ptr;
         if (aux.is_on_disk() && root) {
             if (write_root) {
-                write_new_root_node(aux, *root, version);
-            }
-            else {
-                flush_buffered_writes(aux);
+                write_new_root_node(aux, *root, version); // this flushes writes
             }
         }
         return root;

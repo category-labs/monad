@@ -158,8 +158,11 @@ struct DbStateMachine
     void set_version(uint64_t const version)
     {
         if (state != DbState::unset) {
-            fmt::println("Error setting version use 'back' to move the cursor "
-                         "back up and try again");
+            MONAD_ASSERT(version != INVALID_BLOCK_ID);
+            fmt::println(
+                "Error: already at version {}, use 'back' to move cursor "
+                "up and try again",
+                curr_version);
             return;
         }
 
@@ -276,9 +279,12 @@ void print_db_version_info(Db &db)
     auto const max_version = db.get_latest_block_id();
     if (min_version != INVALID_BLOCK_ID && max_version != INVALID_BLOCK_ID) {
         fmt::println(
-            "Database is open with minimum version {} and maximum version {}",
+            "Database is open with minimum version {} and maximum version {},\n"
+            "latest finalized version {}, latest verified version {}",
             min_version,
-            max_version);
+            max_version,
+            db.get_latest_finalized_block_id(),
+            db.get_latest_verified_block_id());
     }
     else {
         throw std::runtime_error("This is an empty Db that contains no valid "
@@ -460,13 +466,13 @@ void do_get_receipt(DbStateMachine &sm, std::string_view const receipt)
         return;
     }
     auto receipt_encoded = receipt_query_res.value().node->value();
-    auto const receipt_res = rlp::decode_receipt(receipt_encoded);
+    auto const receipt_res = decode_receipt_db(receipt_encoded);
     if (!receipt_res) {
         fmt::println(
             "Could not decode receipt -- {}",
             receipt_res.error().message().c_str());
     }
-    auto const decoded = receipt_res.value();
+    auto const decoded = receipt_res.value().first;
     print_receipt(decoded);
 }
 
@@ -488,7 +494,7 @@ void do_node_stats(DbStateMachine &sm)
         TrieMetadata &metadata;
         unsigned nibble_depth;
         unsigned depth;
-        monad::mpt::NibblesView const root;
+        NibblesView const root;
 
         Traverse(TrieMetadata &metadata_, NibblesView const root_ = {})
             : metadata{metadata_}
@@ -544,7 +550,12 @@ void do_node_stats(DbStateMachine &sm)
         }
     } traverse(metadata, concat(sm.curr_table_id));
 
-    sm.db.traverse(sm.cursor, traverse, sm.curr_version);
+    if (!sm.db.traverse(sm.cursor, traverse, sm.curr_version)) {
+        fmt::println(
+            "WARNING: Traverse finished early because version {} got "
+            "pruned from db history",
+            sm.curr_version);
+    }
 
     auto agg_stats = [](std::vector<uint32_t> const &data)
         -> std::tuple<size_t, double, double> {
@@ -620,7 +631,8 @@ int interactive_impl(Db &db)
                 do_version(state_machine, tokens[1]);
             }
             else {
-                fmt::println("No version number provided.");
+                fmt::println(
+                    "Wrong format to set version, type 'version [number]'");
             }
         }
         else if (tokens[0] == "table") {
@@ -628,7 +640,8 @@ int interactive_impl(Db &db)
                 do_table(state_machine, tokens[1]);
             }
             else {
-                fmt::println("No table number provided.");
+                fmt::println("Wrong format to set table, type 'table "
+                             "[state/code/receipt]'");
             }
         }
         else if (tokens[0] == "get") {

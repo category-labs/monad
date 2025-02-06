@@ -35,6 +35,7 @@
 
 #include <test_resource_data.h>
 
+#include <algorithm>
 #include <bit>
 #include <cstdint>
 #include <filesystem>
@@ -279,6 +280,61 @@ TYPED_TEST(DBTest, read_code)
         BlockHeader{});
 
     EXPECT_EQ(tdb.read_code(B_CODE_HASH)->executable_code(), B_CODE);
+}
+
+TEST_F(OnDiskTrieDbFixture, get_proposal_rounds)
+{
+    TrieDb tdb{db};
+    load_header(db, BlockHeader{.number = 8});
+    EXPECT_TRUE(get_proposal_rounds(db, 8).empty());
+
+    tdb.set_block_and_round(8);
+    commit_sequential(tdb, StateDeltas{}, Code{}, BlockHeader{.number = 9});
+    EXPECT_EQ(db.get_latest_finalized_block_id(), 9);
+    {
+        auto proposals = get_proposal_rounds(db, 9);
+        EXPECT_EQ(proposals.size(), 1);
+        EXPECT_EQ(proposals.front(), 9);
+    }
+
+    std::vector<uint64_t> rounds;
+    tdb.set_block_and_round(9);
+    tdb.commit(
+        StateDeltas{},
+        Code{},
+        MonadConsensusBlockHeader::from_eth_header(
+            {.number = 10}, rounds.emplace_back(0)));
+    {
+        auto proposals = get_proposal_rounds(db, 10);
+        std::sort(proposals.begin(), proposals.end());
+        EXPECT_EQ(proposals, rounds);
+    }
+    tdb.set_block_and_round(9);
+    tdb.commit(
+        StateDeltas{},
+        Code{},
+        MonadConsensusBlockHeader::from_eth_header(
+            {.number = 10}, rounds.emplace_back(1)));
+    {
+        auto proposals = get_proposal_rounds(db, 10);
+        std::sort(proposals.begin(), proposals.end());
+        EXPECT_EQ(proposals, rounds);
+    }
+
+    tdb.set_block_and_round(9);
+    tdb.commit(
+        StateDeltas{},
+        Code{},
+        MonadConsensusBlockHeader::from_eth_header(
+            {.number = 10}, rounds.emplace_back(2)));
+
+    tdb.finalize(10, rounds[0]);
+    EXPECT_EQ(db.get_latest_finalized_block_id(), 10);
+    {
+        auto proposals = get_proposal_rounds(db, 10);
+        std::sort(proposals.begin(), proposals.end());
+        EXPECT_EQ(proposals, rounds);
+    }
 }
 
 TYPED_TEST(DBTest, ModifyStorageOfAccount)

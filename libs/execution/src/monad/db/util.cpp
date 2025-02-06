@@ -24,6 +24,7 @@
 #include <monad/mpt/node.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/mpt/state_machine.hpp>
+#include <monad/mpt/traverse.hpp>
 #include <monad/mpt/update.hpp>
 #include <monad/mpt/util.hpp>
 #include <monad/rlp/decode.hpp>
@@ -53,6 +54,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -757,6 +759,75 @@ void load_header(mpt::Db &db, BlockHeader const &header)
     ls.push_front(u);
     db.upsert(
         std::move(ls), n, false /* compaction */, true /* write_to_fast */);
+}
+
+std::vector<uint64_t>
+get_proposal_rounds(mpt::Db &db, uint64_t const block_number)
+{
+    static constexpr uint64_t PROPOSAL_PREFIX_LEN = 1 + sizeof(uint64_t) * 2;
+
+    class ProposalTraverseMachine final : public TraverseMachine
+    {
+        std::vector<uint64_t> &rounds_;
+        Nibbles path_;
+
+    public:
+        explicit ProposalTraverseMachine(std::vector<uint64_t> &rounds)
+            : rounds_(rounds)
+        {
+        }
+
+        ProposalTraverseMachine(ProposalTraverseMachine const &other) = default;
+
+        virtual bool down(unsigned char const branch, Node const &node) override
+        {
+            if (branch == INVALID_BRANCH) {
+                MONAD_ASSERT(path_.nibble_size() == 0);
+                path_ = node.path_nibble_view();
+                return true;
+            }
+
+            Nibbles const new_path =
+                concat(NibblesView{path_}, branch, node.path_nibble_view());
+            if (new_path.nibble_size() == PROPOSAL_PREFIX_LEN) {
+                MONAD_ASSERT(node.has_value());
+                MONAD_ASSERT(new_path.get(0) == PROPOSAL_NIBBLE);
+                rounds_.push_back(
+                    deserialize_from_big_endian<uint64_t>(new_path.substr(1)));
+                return false;
+            }
+            path_ = new_path;
+            return true;
+        }
+
+        virtual void up(unsigned char const branch, Node const &node) override
+        {
+            auto const path_view = monad::mpt::NibblesView{path_};
+            unsigned const prefix_size =
+                branch == monad::mpt::INVALID_BRANCH
+                    ? 0
+                    : path_view.nibble_size() - node.path_nibbles_len() - 1;
+            path_ = path_view.substr(0, prefix_size);
+        }
+
+        virtual bool should_visit(Node const &, unsigned char branch) override
+        {
+            if (path_.nibble_size() == 0) {
+                return branch == PROPOSAL_NIBBLE;
+            }
+            return true;
+        }
+
+        virtual std::unique_ptr<TraverseMachine> clone() const override
+        {
+            return std::make_unique<ProposalTraverseMachine>(*this);
+        }
+    };
+
+    std::vector<uint64_t> rounds;
+    ProposalTraverseMachine traverse(rounds);
+    db.traverse(db.load_root_for_version(block_number), traverse, block_number);
+    return rounds;
 }
 
 MONAD_NAMESPACE_END

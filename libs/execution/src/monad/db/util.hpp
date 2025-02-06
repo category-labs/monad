@@ -140,6 +140,8 @@ void load_from_binary(
 
 void load_header(mpt::Db &, BlockHeader const &);
 
+mpt::Nibbles proposal_prefix(uint64_t);
+
 std::vector<uint64_t> get_proposal_rounds(mpt::Db &, uint64_t block_number);
 
 MONAD_NAMESPACE_END

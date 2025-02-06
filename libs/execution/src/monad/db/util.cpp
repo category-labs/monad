@@ -761,6 +761,13 @@ void load_header(mpt::Db &db, BlockHeader const &header)
         std::move(ls), n, false /* compaction */, true /* write_to_fast */);
 }
 
+mpt::Nibbles proposal_prefix(uint64_t const round_number)
+{
+    return mpt::concat(
+        PROPOSAL_NIBBLE,
+        NibblesView{serialize_as_big_endian<sizeof(uint64_t)>(round_number)});
+}
+
 std::vector<uint64_t>
 get_proposal_rounds(mpt::Db &db, uint64_t const block_number)
 {

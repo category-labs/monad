@@ -139,16 +139,20 @@ namespace
 struct DbStateMachine
 {
     Db &db;
+
     uint64_t curr_version{INVALID_BLOCK_ID};
+    std::optional<uint64_t> curr_round{}; // nullopt means finalized
+    Nibbles curr_section_prefix{};
     unsigned char curr_table_id{INVALID_NIBBLE};
+
     enum class DbState
     {
         unset = 0,
         version_number,
+        proposal_or_finalize,
         table,
         invalid
     } state{DbState::unset};
-    NodeCursor cursor;
 
     explicit DbStateMachine(Db &db)
         : db(db)
@@ -157,14 +161,16 @@ struct DbStateMachine
 
     void set_version(uint64_t const version)
     {
+        MONAD_ASSERT(version != INVALID_BLOCK_ID);
         if (state != DbState::unset) {
-            MONAD_ASSERT(version != INVALID_BLOCK_ID);
             fmt::println(
                 "Error: already at version {}, use 'back' to move cursor "
                 "up and try again",
                 curr_version);
             return;
         }
+        MONAD_ASSERT(curr_version == INVALID_BLOCK_ID);
+        MONAD_ASSERT(curr_section_prefix.nibble_size() == 0);
 
         auto const min_version = db.get_earliest_block_id();
         auto const max_version = db.get_latest_block_id();
@@ -177,30 +183,94 @@ struct DbStateMachine
                 max_version);
             return;
         }
-        auto const res = db.find(finalized_nibbles, version);
-        if (!res.has_value()) {
-            fmt::println(
-                "Error: version {} is valid, but can't find finalized nibble "
-                "on it -- {}",
-                version,
-                res.error().message().c_str());
-            return;
-        }
-        fmt::println(
-            "Version {} contains finalized nibble, setting version to {}...",
-            version,
-            version);
+
         curr_version = version;
         state = DbState::version_number;
+
+        fmt::println("Success! Set version to {}\n", curr_version);
+        if (list_finalized_and_proposals(version)) {
+            fmt::println("Type \"proposal [round]\" or "
+                         "\"finalized\" to set section");
+        }
+        else {
+            fmt::println(
+                "WARNING: version {} has no proposals or finalized section",
+                curr_version);
+        }
+    }
+
+    // Returns `true` if at least one finalized or proposal section exists,
+    // otherwise `false`.
+    bool list_finalized_and_proposals(uint64_t const version)
+    {
+        if (version == INVALID_BLOCK_ID) {
+            fmt::println("Error: invalid version to list sections, set to a "
+                         "valid version and try again");
+            return false;
+        }
+        auto const finalized_res = db.find(finalized_nibbles, version);
+        auto rounds = get_proposal_rounds(db, version);
+        if (finalized_res.has_error() && rounds.empty()) {
+            return false;
+        }
+        std::sort(rounds.begin(), rounds.end());
+        fmt::println("List sections of version {}: ", version);
+        if (finalized_res.has_value()) {
+            fmt::println("    finalized : yes ", version);
+        }
+        else {
+            fmt::println("    finalized : no ", version);
+        }
+        fmt::println("    proposals : {}\n", rounds);
+        return true;
+    }
+
+    void set_proposal_or_finalized(std::optional<uint64_t> const round)
+    {
+        if (state != DbState::version_number) {
+            fmt::println("Error: at wrong part of trie, only allow set section "
+                         "when cursor is set to a version.");
+            return;
+        }
+        MONAD_ASSERT(curr_section_prefix.nibble_size() == 0);
+        if (round.has_value()) { // set proposal
+            auto const prefix = proposal_prefix(round.value());
+            if (db.find(prefix, curr_version).has_value()) {
+                curr_section_prefix = prefix;
+                curr_round = round;
+                state = DbState::proposal_or_finalize;
+                fmt::println(
+                    "Success! Set to proposal {} of version {}",
+                    round.value(),
+                    curr_version);
+            }
+            else {
+                fmt::println("Could not locate round {}", round.value());
+            }
+        }
+        else {
+            if (db.find(finalized_nibbles, curr_version).has_value()) {
+                curr_section_prefix = finalized_nibbles;
+                state = DbState::proposal_or_finalize;
+                fmt::println(
+                    "Success! Set to finalized of version {}", curr_version);
+            }
+            else {
+                fmt::println(
+                    "Version {} does not contain finalized section",
+                    curr_version);
+            }
+        }
     }
 
     void set_table(unsigned char table_id)
     {
-        if (state != DbState::version_number) {
+        if (state != DbState::proposal_or_finalize) {
             fmt::println("Error: at wrong part of trie, only allow set table "
                          "when cursor is set to a specific version number.");
             return;
         }
+        MONAD_ASSERT(curr_section_prefix.nibble_size() > 0);
 
         if (table_id == STATE_NIBBLE || table_id == CODE_NIBBLE ||
             table_id == RECEIPT_NIBBLE) {
@@ -209,9 +279,9 @@ struct DbStateMachine
                 curr_version,
                 table_as_string(table_id));
             auto const res =
-                db.find(concat(FINALIZED_NIBBLE, table_id), curr_version);
+                db.find(concat(curr_section_prefix, table_id), curr_version);
             if (res.has_value()) {
-                cursor = res.assume_value();
+                NodeCursor const cursor = res.assume_value();
                 state = DbState::table;
                 curr_table_id = table_id;
                 if (curr_table_id != CODE_NIBBLE) {
@@ -244,21 +314,41 @@ struct DbStateMachine
             fmt::println("Error: at wrong part of trie, please navigate cursor "
                          "to a table before lookup.");
         }
+        MONAD_ASSERT(!curr_section_prefix.empty());
+        MONAD_ASSERT(curr_table_id != INVALID_NIBBLE);
         fmt::println(
             "Looking up key {} \nat version {} on table {} ... ",
             key,
             curr_version,
             table_as_string(curr_table_id));
-        return db.find(cursor, key, curr_version);
+        return db.find(
+            concat(curr_section_prefix, curr_table_id, key), curr_version);
     }
 
     void back()
     {
         switch (state) {
         case DbState::table:
+            state = DbState::proposal_or_finalize;
+            if (curr_round.has_value()) {
+                fmt::println(
+                    "At proposal round {} of version {}",
+                    curr_round.value(),
+                    curr_version);
+            }
+            else {
+                fmt::println(
+                    "At finalized section of version {}", curr_version);
+            }
+            break;
+        case DbState::proposal_or_finalize:
             state = DbState::version_number;
-            cursor = NodeCursor{};
-            fmt::println("At version {}.", curr_version);
+            curr_section_prefix = {};
+            curr_round = std::nullopt;
+            fmt::println(
+                "At version {}. Type \"proposal [round]\" or "
+                "\"finalized\" to set section",
+                curr_version);
             break;
         case DbState::version_number:
             curr_version = INVALID_BLOCK_ID;
@@ -267,7 +357,6 @@ struct DbStateMachine
             break;
         default:
             curr_version = INVALID_BLOCK_ID;
-            fmt::println("Cursor is unset.");
         }
         curr_table_id = INVALID_NIBBLE;
     }
@@ -301,7 +390,10 @@ void print_help()
     fmt::print(
         "List of commands:\n\n"
         "version [version_number]     -- Set the database version\n"
-        "table [state/receipt/code]   -- Set the trie to query\n"
+        "proposal [round_number] or finalized -- Set the section to query\n"
+        "list sections                -- List any proposal or finalized "
+        "section in current version\n"
+        "table [state/receipt/code]   -- Set the table to query\n"
         "get [key [extradata]]        -- Get the value for the given key\n"
         "node_stats                   -- Print node statistics for the given "
         "table\n"
@@ -323,6 +415,19 @@ void do_version(DbStateMachine &sm, std::string_view const version)
     }
     else {
         sm.set_version(v);
+    }
+}
+
+void do_proposal(DbStateMachine &sm, std::string_view const round)
+{
+    uint64_t r{};
+    auto [_, ec] =
+        std::from_chars(round.data(), round.data() + round.size(), r);
+    if (ec != std::errc()) {
+        fmt::println("Invalid round: please input a number.");
+    }
+    else {
+        sm.set_proposal_or_finalized(r);
     }
 }
 
@@ -550,10 +655,21 @@ void do_node_stats(DbStateMachine &sm)
         }
     } traverse(metadata, concat(sm.curr_table_id));
 
-    if (!sm.db.traverse(sm.cursor, traverse, sm.curr_version)) {
+    auto cursor_res = sm.db.find(
+        concat(sm.curr_section_prefix, sm.curr_table_id), sm.curr_version);
+    if (cursor_res.has_value()) {
+        if (sm.db.traverse(cursor_res.value(), traverse, sm.curr_version) ==
+            false) {
+            fmt::println(
+                "WARNING: Traverse finished early because version {} got "
+                "pruned from db history",
+                sm.curr_version);
+        }
+    }
+    else {
         fmt::println(
-            "WARNING: Traverse finished early because version {} got "
-            "pruned from db history",
+            "Error: can't start traverse because current version {} already "
+            "got pruned from db history",
             sm.curr_version);
     }
 
@@ -634,6 +750,22 @@ int interactive_impl(Db &db)
                 fmt::println(
                     "Wrong format to set version, type 'version [number]'");
             }
+        }
+        else if (tokens[0] == "list") {
+            state_machine.list_finalized_and_proposals(
+                state_machine.curr_version);
+        }
+        else if (tokens[0] == "proposal") {
+            if (tokens.size() == 2) {
+                do_proposal(state_machine, tokens[1]);
+            }
+            else {
+                fmt::println("Wrong format to set proposal, type 'proposal "
+                             "[round number]'");
+            }
+        }
+        else if (tokens[0] == "finalized") {
+            state_machine.set_proposal_or_finalized(std::nullopt);
         }
         else if (tokens[0] == "table") {
             if (tokens.size() == 2) {

@@ -65,6 +65,8 @@ void signal_handler(int)
 using namespace monad;
 namespace fs = std::filesystem;
 
+fs::path event_cvt_export_path;
+
 int main(int const argc, char const *argv[])
 {
 
@@ -128,6 +130,10 @@ int main(int const argc, char const *argv[])
         "--event-socket-path",
         event_socket_path,
         "path to the socket file used by the event server");
+    cli.add_option(
+        "--event-cvt-export-path",
+        event_cvt_export_path,
+        "path to the event cross-validation test export file path");
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
     group->add_option("--genesis", genesis, "genesis file")

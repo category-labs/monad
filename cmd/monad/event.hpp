@@ -7,6 +7,7 @@
  */
 
 #include <monad/config.hpp>
+#include <monad/core/address.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/result.hpp>
@@ -15,10 +16,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <span>
 #include <string_view>
 #include <thread>
 #include <variant>
+#include <vector>
 
 struct monad_event_server;
 extern "C" void monad_event_server_destroy(monad_event_server *);
@@ -72,5 +75,32 @@ struct BlockExecOutput
 /// Record block execution output (or execution error) to the event system
 /// and clear the active block flow ID
 Result<BlockExecOutput> record_block_exec_result(Result<BlockExecOutput>);
+
+struct Receipt;
+struct Transaction;
+
+namespace event_cross_validation_test
+{
+    class ExpectedDataRecorder
+    {
+    public:
+        explicit ExpectedDataRecorder(std::filesystem::path const &);
+        ~ExpectedDataRecorder();
+
+        void record_execution(
+            bytes32_t const &bft_block_id, bytes32_t const &eth_block_hash,
+            MonadConsensusBlockHeader const &input_header,
+            BlockHeader const &output_header, std::span<Transaction const>,
+            std::span<Receipt const>, std::span<Address const> senders);
+
+        void record_finalization(
+            uint64_t consensus_seqno, bytes32_t const &bft_block_id);
+
+    private:
+        std::FILE *file_;
+        size_t array_size_;
+        std::map<uint64_t, std::vector<bytes32_t>> pending_blocks_;
+    };
+} // namespace event_round_trip_test
 
 MONAD_NAMESPACE_END

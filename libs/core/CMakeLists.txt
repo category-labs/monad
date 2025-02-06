@@ -111,6 +111,7 @@ add_library(
   "src/monad/mem/batch_mem_pool.hpp"
   "src/monad/synchronization/spin_lock.hpp"
   # event
+  "src/monad/event/event_cxx.hpp"
   "src/monad/event/event_recorder.c"
   "src/monad/event/event_recorder.h"
   "src/monad/event/event_recorder_inline.h"

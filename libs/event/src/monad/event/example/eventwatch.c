@@ -140,7 +140,8 @@ static void hexdump_event_payload(
 static void print_event(
     struct monad_event_iterator *iter,
     struct monad_event_descriptor const *event,
-    struct monad_event_thread_info const *thr_info, FILE *out)
+    struct monad_event_thread_info const *thr_info,
+    struct monad_event_block_exec_header const *block_exec_header, FILE *out)
 {
     static char time_buf[32];
     static time_t last_second = 0;
@@ -180,6 +181,16 @@ static void print_event(
         event->source_id,
         thr_info->thread_name,
         thr_info->thread_id);
+    if (event->block_flow_id) {
+        o += sprintf(
+            o,
+            " BLK: %lu [R: %lu]",
+            block_exec_header->number,
+            block_exec_header->round);
+    }
+    if (event->txn_id != 0) {
+        o += sprintf(o, " TXN: %u", event->txn_id - 1);
+    }
     *o++ = '\n';
     fwrite(event_buf, (size_t)(o - event_buf), 1, out);
 
@@ -206,6 +217,8 @@ event_loop(struct monad_event_imported_ring const *import, FILE *out)
     struct monad_event_iterator iter;
     struct monad_event_thread_info const *const thread_table =
         import->proc->thread_table;
+    struct monad_event_block_exec_header const *const block_header_table =
+        import->proc->block_header_table;
     uint64_t not_ready_count = 0;
 
     monad_event_imported_ring_init_iter(import, &iter);
@@ -237,7 +250,12 @@ event_loop(struct monad_event_imported_ring const *import, FILE *out)
         case MONAD_EVENT_PAYLOAD_EXPIRED:
             unreachable(); // Never returned by monad_event_iterator_try_next
         }
-        print_event(&iter, &event, &thread_table[event.source_id], out);
+        print_event(
+            &iter,
+            &event,
+            &thread_table[event.source_id],
+            &block_header_table[event.block_flow_id],
+            out);
     }
 }
 

@@ -101,6 +101,16 @@ static void monad_event_recordv(
     struct monad_event_recorder *recorder, enum monad_event_type event_type,
     uint8_t flags, struct iovec const *iov, size_t iovlen);
 
+/// Return the next block flow ID and activate it in all recorders; subsequent
+/// recorded events will carry this block flow ID until it is explicitly
+/// cleared; also return the block execution header array slot (in the metadata
+/// page) that corresponds to this ID
+static uint16_t
+monad_event_next_block_flow_id(struct monad_event_block_exec_header **);
+
+/// Clear the active block flow ID set by `monad_event_alloc_block_flow_id`
+static void monad_event_clear_block_flow_id();
+
 /// Obtain the offset of the requested piece of metadata within the "metadata
 /// page" (see event.md); used to implement the MONAD_EVENT_MSG_METADATA_OFFSET
 /// protocol message in the event server

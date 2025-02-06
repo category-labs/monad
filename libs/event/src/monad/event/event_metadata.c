@@ -47,15 +47,74 @@ struct monad_event_metadata const g_monad_event_metadata[] = {
          .c_name = "TEST_COUNTER",
          .description = "A special event emitted only by the test suite"},
 
+    [MONAD_EVENT_BLOCK_START] =
+        {.type = MONAD_EVENT_BLOCK_START,
+         .c_name = "BLOCK_START",
+         .description = "Started execution of a proposed block"},
+
+    [MONAD_EVENT_BLOCK_END] =
+        {.type = MONAD_EVENT_BLOCK_END,
+         .c_name = "BLOCK_END",
+         .description = "Proposed block with this flow ID has completed execution (may not be finalized)"},
+
+    [MONAD_EVENT_BLOCK_FINALIZE] =
+        {.type = MONAD_EVENT_BLOCK_FINALIZE,
+         .c_name = "BLOCK_FINALIZE",
+         .description = "Block is committed on the canonical blockchain"},
+
+    [MONAD_EVENT_BLOCK_REJECT] =
+        {.type = MONAD_EVENT_BLOCK_REJECT,
+         .c_name = "BLOCK_REJECT",
+         .description = "Block failed validation and was rejected"},
+
+    [MONAD_EVENT_BLOCK_EXEC_ERROR] =
+        {.type = MONAD_EVENT_BLOCK_EXEC_ERROR,
+         .c_name = "BLOCK_EXEC_ERROR",
+         .description = "Block execution failed due to error in the EVM, not due to it being invalid"},
+
+    [MONAD_EVENT_TXN_START] =
+        {.type = MONAD_EVENT_TXN_START,
+         .c_name = "TXN_START",
+         .description = "Started execution of new transaction"},
+
+    [MONAD_EVENT_TXN_REJECT] =
+        {.type = MONAD_EVENT_TXN_REJECT,
+         .c_name = "TXN_REJECT",
+         .description = "Transaction failed validation and was rejected - no receipt, not in block"},
+
+    [MONAD_EVENT_TXN_EXEC_ERROR] =
+        {.type = MONAD_EVENT_TXN_EXEC_ERROR,
+         .c_name = "TXN_EXEC_ERROR",
+         .description = "Transaction execution failed due to error in the EVM, not due to it being invalid"},
+
+    [MONAD_EVENT_TXN_LOG] =
+        {.type = MONAD_EVENT_TXN_LOG,
+         .c_name = "TXN_LOG",
+         .description = "Transaction emitted a log during speculative execution"},
+
+    [MONAD_EVENT_TXN_RECEIPT] =
+        {.type = MONAD_EVENT_TXN_RECEIPT,
+         .c_name = "TXN_RECEIPT",
+         .description = "Transaction execution finished (merged into proposed block"},
+
+    [MONAD_EVENT_WR_ACCT_STATE_BALANCE] =
+        {.type = MONAD_EVENT_WR_ACCT_STATE_BALANCE,
+         .c_name = "WR_ACCT_STATE_BALANCE",
+         .description = "Account balance updated by transaction commit"},
+
+    [MONAD_EVENT_WR_ACCT_STATE_STORAGE] =
+        {.type = MONAD_EVENT_WR_ACCT_STATE_STORAGE,
+         .c_name = "WR_ACCT_STATE_STORAGE",
+         .description = "Account storage updated by transaction commit"},
 };
 
-size_t const g_monad_event_metadata_size = 5;
+size_t const g_monad_event_metadata_size = 18;
 
 uint8_t const g_monad_event_metadata_hash[32] = {
-    0x10, 0xd2, 0x65, 0x13, 0x5e, 0x07, 0xad, 0xe9,
-    0xff, 0x7b, 0x34, 0xc4, 0xd4, 0xf4, 0x73, 0x57,
-    0x6b, 0x0f, 0x95, 0x34, 0x09, 0x04, 0xc5, 0x52,
-    0xba, 0x86, 0xcb, 0x5c, 0x82, 0x29, 0x89, 0x2b,
+    0xaf, 0x62, 0xca, 0x8a, 0xd2, 0x5f, 0xb7, 0xca,
+    0x65, 0xb3, 0xb6, 0x75, 0x29, 0x9c, 0x5f, 0x80,
+    0x70, 0xdc, 0x11, 0x80, 0x74, 0x38, 0xb4, 0xa0,
+    0xbc, 0xbb, 0x0c, 0x5b, 0x3e, 0xf2, 0xbd, 0xb3,
 };
 
 #ifdef __cplusplus

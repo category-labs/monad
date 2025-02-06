@@ -284,3 +284,30 @@ inline void monad_event_recordv(
     event->epoch_nanos = event_epoch_nanos;
     __atomic_store_n(&event->seqno, seqno, __ATOMIC_RELEASE);
 }
+
+inline uint16_t monad_event_next_block_flow_id(
+    struct monad_event_block_exec_header **exec_header)
+{
+    struct monad_event_recorder_shared_state *const rss =
+        &g_monad_event_recorder_shared_state;
+    unsigned long block_count =
+        atomic_fetch_add_explicit(
+            &rss->block_flow_count, 1, memory_order_relaxed) +
+        1;
+    uint16_t block_id = block_count & 0xFFF;
+    if (block_id == 0) {
+        // 0 is not a valid block id; take another one
+        block_count = atomic_fetch_add_explicit(
+                          &rss->block_flow_count, 1, memory_order_relaxed) +
+                      1;
+        block_id = block_count & 0xFFF;
+    }
+    *exec_header = &rss->metadata_page.block_header_table[block_id];
+    rss->block_flow_id = block_id;
+    return block_id;
+}
+
+inline void monad_event_clear_block_flow_id()
+{
+    g_monad_event_recorder_shared_state.block_flow_id = 0;
+}

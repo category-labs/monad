@@ -7,8 +7,12 @@
  */
 
 #include <monad/config.hpp>
+#include <monad/core/block.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/core/result.hpp>
 #include <monad/event/event.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <span>
@@ -50,5 +54,23 @@ std::variant<EventRingConfig, std::string>
 std::jthread init_event_system(
     std::span<EventRingConfig const>,
     std::filesystem::path const &event_socket_path, monad_event_server **);
+
+struct MonadConsensusBlockHeader;
+
+/// Record the start of block execution: emits a BLOCK_START event and sets
+/// the global block flow ID in the recording system
+void record_block_exec_start(
+    bytes32_t const &bft_block_id, MonadConsensusBlockHeader const &,
+    size_t txn_count);
+
+struct BlockExecOutput
+{
+    BlockHeader eth_header;
+    bytes32_t eth_block_hash;
+};
+
+/// Record block execution output (or execution error) to the event system
+/// and clear the active block flow ID
+Result<BlockExecOutput> record_block_exec_result(Result<BlockExecOutput>);
 
 MONAD_NAMESPACE_END

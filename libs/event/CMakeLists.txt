@@ -43,3 +43,31 @@ if (MONAD_EVENT_BUILD_EXAMPLE)
     add_executable(eventwatch "src/monad/event/example/eventwatch.c")
     target_link_libraries(eventwatch PRIVATE monad_event_client)
 endif()
+
+# Build a fake test server to connect to. This is off by default, because in
+# the interest of code reuse it shares some code with the main execution
+# repository, which we are not supposed to depend on. We break this rule
+# here because this is only testing infrastructure: it is not needed to use
+# the library, only to test the correctness of it.
+option(MONAD_EVENT_BUILD_TEST_SERVER
+    "Build a fake event server for running event client tests" OFF)
+
+if (MONAD_EVENT_BUILD_TEST_SERVER)
+    add_library(
+        monad_event_test_server STATIC
+        "../core/src/monad/core/assert.c"
+        "../core/src/monad/event/event_server.c"
+        "../core/src/monad/event/event_server.h"
+        "../core/src/monad/event/event_shared.c"
+        "../core/src/monad/event/event_shared.h"
+        "src/monad/event/test/event_server_test.c")
+
+    target_include_directories(monad_event_test_server PUBLIC "../core/src" "src")
+    target_compile_definitions(monad_event_test_server PUBLIC "_GNU_SOURCE")
+    target_link_libraries(monad_event_test_server PRIVATE monad_event_core)
+    target_link_libraries(monad_event_test_server PUBLIC -lzstd)
+
+    add_executable(event_test_server_driver "src/monad/event/test/driver.c")
+    target_compile_features(event_test_server_driver PRIVATE c_std_23)
+    target_link_libraries(event_test_server_driver PRIVATE monad_event_test_server)
+endif()

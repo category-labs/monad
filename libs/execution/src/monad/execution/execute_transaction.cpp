@@ -63,21 +63,6 @@ constexpr uint64_t g_star(
 }
 
 template <evmc_revision rev>
-constexpr auto refund_gas(
-    State &state, Transaction const &tx, Address const &sender,
-    uint256_t const &base_fee_per_gas, uint64_t const gas_leftover,
-    uint64_t const refund)
-{
-    // refund and priority, Eqn. 73-76
-    auto const gas_remaining = g_star<rev>(tx, gas_leftover, refund);
-    auto const gas_cost = gas_price<rev>(tx, base_fee_per_gas);
-
-    state.add_to_balance(sender, gas_cost * gas_remaining);
-
-    return gas_remaining;
-}
-
-template <evmc_revision rev>
 constexpr evmc_message to_message(Transaction const &tx, Address const &sender)
 {
     auto const to_address = [&tx] {
@@ -148,14 +133,16 @@ Receipt execute_final(
     MONAD_ASSERT(result.gas_left >= 0);
     MONAD_ASSERT(result.gas_refund >= 0);
     MONAD_ASSERT(tx.gas_limit >= static_cast<uint64_t>(result.gas_left));
-    auto const gas_remaining = refund_gas<rev>(
-        state,
+
+    // refund and priority, Eqn. 73-76
+    auto const gas_refund = g_star<rev>(
         tx,
-        sender,
-        base_fee_per_gas,
         static_cast<uint64_t>(result.gas_left),
         static_cast<uint64_t>(result.gas_refund));
-    auto const gas_used = tx.gas_limit - gas_remaining;
+    auto const gas_cost = gas_price<rev>(tx, base_fee_per_gas);
+    state.add_to_balance(sender, gas_cost * gas_refund);
+
+    auto const gas_used = tx.gas_limit - gas_refund;
     auto const reward =
         calculate_txn_award<rev>(tx, base_fee_per_gas, gas_used);
     state.add_to_balance(beneficiary, reward);

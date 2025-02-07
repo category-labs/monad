@@ -70,13 +70,15 @@ namespace
 
 #pragma GCC diagnostic pop
 
-    bytes32_t
+    std::optional<bytes32_t>
     bft_id_for_finalized_block(mpt::Db const &db, uint64_t const block_id)
     {
 
         auto encoded_bft_header =
             db.get(mpt::concat(FINALIZED_NIBBLE, BFT_BLOCK_NIBBLE), block_id);
-        MONAD_ASSERT(encoded_bft_header.has_value());
+        if (!encoded_bft_header.has_value()) {
+            return std::nullopt;
+        }
         return to_bytes(blake3(encoded_bft_header.value()));
     }
 
@@ -176,9 +178,12 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     if (finalized_block_num > 1) { // no wal entry for genesis
         auto const bft_block_id =
             bft_id_for_finalized_block(raw_db, finalized_block_num - 1);
-        WalEntry const entry{.action = WalAction::PROPOSE, .id = bft_block_id};
-        if (reader.rewind_to(entry)) {
-            reader.next(); // skip proposal
+        if (bft_block_id.has_value()) {
+            WalEntry const entry{
+                .action = WalAction::PROPOSE, .id = bft_block_id.value()};
+            if (reader.rewind_to(entry)) {
+                reader.next(); // skip proposal
+            }
         }
     }
     BlockHashChain block_hash_chain(block_hash_buffer);

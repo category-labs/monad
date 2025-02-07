@@ -141,22 +141,31 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
         // The write ring must have at least as many submission entries as there
         // are write i/o buffers
         auto const [sqes, cqes] = io_uring_ring_entries_left(true);
-        MONAD_ASSERT(rwbuf.get_write_count() <= sqes);
+        MONAD_ASSERT_PRINTF(
+            rwbuf.get_write_count() <= sqes,
+            "rwbuf write count %zu sqes %u",
+            rwbuf.get_write_count(),
+            sqes);
     }
 
     auto &ts = detail::AsyncIO_per_thread_state();
-    MONAD_ASSERT(ts.instance == nullptr); // currently cannot create more than
-                                          // one AsyncIO per thread at a time
+    MONAD_ASSERT_PRINTF(
+        ts.instance == nullptr,
+        "currently cannot create more than one AsyncIO per thread at a time");
     ts.instance = this;
 
     // create and register the message type pipe for threadsafe communications
     // read side is nonblocking, write side is blocking
     auto *ring = const_cast<io_uring *>(&uring_.get_ring());
     if (!(ring->flags & IORING_SETUP_IOPOLL)) {
-        MONAD_ASSERT(
-            ::pipe2((int *)&fds_, O_NONBLOCK | O_DIRECT | O_CLOEXEC) != -1);
-        MONAD_ASSERT(
-            ::fcntl(fds_.msgwrite, F_SETFL, O_DIRECT | O_CLOEXEC) != -1);
+        MONAD_ASSERT_PRINTF(
+            ::pipe2((int *)&fds_, O_NONBLOCK | O_DIRECT | O_CLOEXEC) != -1,
+            "failed due to %s",
+            strerror(errno));
+        MONAD_ASSERT_PRINTF(
+            ::fcntl(fds_.msgwrite, F_SETFL, O_DIRECT | O_CLOEXEC) != -1,
+            "failed due to %s",
+            strerror(errno));
         struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
         MONAD_ASSERT(sqe);
         io_uring_prep_poll_multishot(sqe, fds_.msgread, POLLIN);
@@ -185,8 +194,12 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
             std::static_pointer_cast<storage_pool::seq_chunk>(
                 pool.activate_chunk(
                     storage_pool::seq, static_cast<uint32_t>(n))));
-        MONAD_ASSERT(
-            seq_chunks_.back().ptr->capacity() >= MONAD_IO_BUFFERS_WRITE_SIZE);
+        MONAD_ASSERT_PRINTF(
+            seq_chunks_.back().ptr->capacity() >= MONAD_IO_BUFFERS_WRITE_SIZE,
+            "sequential chunk capacity %llu must equal or exceed i/o buffer "
+            "size %zu",
+            seq_chunks_.back().ptr->capacity(),
+            MONAD_IO_BUFFERS_WRITE_SIZE);
         MONAD_ASSERT(
             (seq_chunks_.back().ptr->capacity() %
              MONAD_IO_BUFFERS_WRITE_SIZE) == 0);
@@ -257,9 +270,9 @@ AsyncIO::~AsyncIO()
     wait_until_done();
 
     auto &ts = detail::AsyncIO_per_thread_state();
-    MONAD_ASSERT(
-        ts.instance ==
-        this); // this is being destructed not from its thread, bad idea
+    MONAD_ASSERT_PRINTF(
+        ts.instance == this,
+        "this is being destructed not from its thread, bad idea");
     ts.instance = nullptr;
 
     if (wr_uring_ != nullptr) {
@@ -382,7 +395,13 @@ void AsyncIO::submit_request_(
     /* Do sanity check to ensure initiator is definitely appending where
     they are supposed to be appending.
     */
-    MONAD_ASSERT((chunk_and_offset.offset & 0xffff) == (offset & 0xffff));
+    MONAD_ASSERT_PRINTF(
+        (chunk_and_offset.offset & 0xffff) == (offset & 0xffff),
+        "where we are appending %u is not where we are supposed to be "
+        "appending %llu. Chunk id is %u",
+        (chunk_and_offset.offset & 0xffff),
+        (offset & 0xffff),
+        chunk_and_offset.id);
 
     auto *const wr_ring = (wr_uring_ != nullptr)
                               ? const_cast<io_uring *>(&wr_uring_->get_ring())
@@ -810,7 +829,7 @@ unsigned char *AsyncIO::poll_uring_while_no_io_buffers_(bool is_write)
                 << " within_completions_count = "
                 << detail::AsyncIO_per_thread_state().within_completions_count
                 << std::endl;
-            MONAD_ASSERT("no i/o buffers remaining" == nullptr);
+            MONAD_ABORT("no i/o buffers remaining");
         }
         // Reap completions until a buffer frees up, only reaping completions
         // for the write or other ring exclusively.

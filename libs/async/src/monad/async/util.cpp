@@ -5,6 +5,7 @@
 
 #include <cerrno>
 #include <cstdlib> // for mkstemp
+#include <cstring>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -129,7 +130,7 @@ int make_temporary_inode() noexcept
             unlink(buffer.c_str());
         }
     }
-    MONAD_ASSERT(fd != -1);
+    MONAD_ASSERT_PRINTF(fd != -1, "failed due to %s", strerror(errno));
     return fd;
 }
 

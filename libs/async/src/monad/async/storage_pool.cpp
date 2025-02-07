@@ -152,11 +152,15 @@ storage_pool::chunk::write_fd(size_t bytes_which_shall_be_written) noexcept
                       std::memory_order_acq_rel)
                 : chunk_bytes_used[chunkid_within_device_].load(
                       std::memory_order_acquire);
-        MONAD_ASSERT(
-            size + bytes_which_shall_be_written <= metadata->chunk_capacity);
+        MONAD_ASSERT_PRINTF(
+            size + bytes_which_shall_be_written <= metadata->chunk_capacity,
+            "size %u bytes which shall be written %zu chunk capacity %u",
+            size,
+            bytes_which_shall_be_written,
+            metadata->chunk_capacity);
         return std::pair<int, file_offset_t>{write_fd_, offset_ + size};
     }
-    MONAD_ASSERT("zonefs support isn't implemented yet" == nullptr);
+    MONAD_ABORT("zonefs support isn't implemented yet");
 }
 
 file_offset_t storage_pool::chunk::size() const
@@ -197,17 +201,20 @@ uint32_t storage_pool::chunk::clone_contents_into(chunk &other, uint32_t bytes)
         copy_file_range(rdfd.first, &off_in, wrfd.first, &off_out, bytes, 0);
     if (bytescopied == -1) {
         auto *p = aligned_alloc(DISK_PAGE_SIZE, bytes);
-        MONAD_ASSERT(p != nullptr);
+        MONAD_ASSERT_PRINTF(p != nullptr, "failed due to %s", strerror(errno));
         auto unp = make_scope_exit([&]() noexcept { ::free(p); });
         bytescopied =
             ::pread(rdfd.first, p, bytes, static_cast<off_t>(rdfd.second));
-        MONAD_ASSERT(-1 != bytescopied);
-        MONAD_ASSERT(
+        MONAD_ASSERT_PRINTF(
+            -1 != bytescopied, "failed due to %s", strerror(errno));
+        MONAD_ASSERT_PRINTF(
             -1 != ::pwrite(
                       wrfd.first,
                       p,
                       static_cast<size_t>(bytescopied),
-                      static_cast<off_t>(wrfd.second)));
+                      static_cast<off_t>(wrfd.second)),
+            "failed due to %s",
+            strerror(errno));
     }
     return uint32_t(bytescopied);
 }
@@ -430,18 +437,22 @@ storage_pool::device storage_pool::make_device_(
                                    chunk_capacity * sizeof(uint32_t))));
                  offset2 < static_cast<off_t>(offset);
                  offset2 += DISK_PAGE_SIZE) {
-                MONAD_ASSERT(
-                    ::pwrite(readwritefd, buffer, DISK_PAGE_SIZE, offset2) > 0);
+                MONAD_ASSERT_PRINTF(
+                    ::pwrite(readwritefd, buffer, DISK_PAGE_SIZE, offset2) > 0,
+                    "failed due to %s",
+                    strerror(errno));
             }
             memcpy(metadata_footer->magic, "MND0", 4);
             metadata_footer->chunk_capacity =
                 static_cast<uint32_t>(chunk_capacity);
-            MONAD_ASSERT(
+            MONAD_ASSERT_PRINTF(
                 ::pwrite(
                     readwritefd,
                     buffer,
                     static_cast<size_t>(bytesread),
-                    static_cast<off_t>(offset)) > 0);
+                    static_cast<off_t>(offset)) > 0,
+                "failed due to %s",
+                strerror(errno));
         }
         total_size =
             metadata_footer->total_size(static_cast<size_t>(stat.st_size));

@@ -58,9 +58,7 @@ struct Compute
     //! node's branches, return hash data length
     virtual unsigned compute_branch(unsigned char *buffer, Node *node) = 0;
     //! compute data of a trie rooted at node, put data to first argument and
-    //! return data length. 3rd parameter is the branch nibble of node, it's
-    //! present only when node is the single child of its parent, which is a
-    //! leaf node
+    //! return data length
     virtual unsigned compute(unsigned char *buffer, Node *node) = 0;
 };
 

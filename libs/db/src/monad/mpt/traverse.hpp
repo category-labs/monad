@@ -161,15 +161,21 @@ namespace detail
                     auto next_node_on_disk =
                         deserialize_node_from_receiver_result(
                             std::move(buffer_), buffer_off, io_state);
+                    sender->within_recursion_count++;
                     async_parallel_preorder_traverse_impl(
                         *sender,
                         traverse_state,
                         *next_node_on_disk,
                         *machine,
                         branch);
+                    sender->within_recursion_count--;
                 }
-                // complete async traverse if no outstanding ios
-                if (sender->reads_to_initiate.empty() &&
+                // complete async traverse if no outstanding io AND there is no
+                // recursive traverse call
+                // `async_parallel_preorder_traverse_impl()` in current stack,
+                // which means traverse is still in progress
+                if (sender->within_recursion_count == 0 &&
+                    sender->reads_to_initiate.empty() &&
                     sender->outstanding_reads == 0) {
                     traverse_state->completed(async::success());
                 }
@@ -187,6 +193,7 @@ namespace detail
         uint64_t const version;
         size_t const max_outstanding_reads;
         size_t outstanding_reads{0};
+        size_t within_recursion_count{0};
         boost::container::deque<receiver_t> reads_to_initiate{};
         bool version_expired_before_complete{false};
 
@@ -217,6 +224,7 @@ namespace detail
             async::result<void> res) noexcept
         {
             BOOST_OUTCOME_TRY(std::move(res));
+            MONAD_ASSERT(within_recursion_count == 0);
             return async::success(!version_expired_before_complete);
         }
 
@@ -235,8 +243,11 @@ namespace detail
         TraverseSender &sender,
         async::erased_connected_operation *traverse_state, Node const &node)
     {
+        sender.within_recursion_count++;
         async_parallel_preorder_traverse_impl(
             sender, traverse_state, node, *sender.machine, INVALID_BRANCH);
+        sender.within_recursion_count--;
+        MONAD_ASSERT(sender.within_recursion_count == 0);
 
         // complete async traverse if no outstanding ios
         if (sender.reads_to_initiate.empty() && sender.outstanding_reads == 0) {

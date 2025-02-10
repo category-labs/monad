@@ -187,7 +187,6 @@ namespace detail
         uint64_t const version;
         size_t const max_outstanding_reads;
         size_t outstanding_reads{0};
-        size_t nreads{0};
         boost::container::deque<receiver_t> reads_to_initiate{};
         bool version_expired_before_complete{false};
 
@@ -264,6 +263,7 @@ namespace detail
                         // verify version before read
                         if (!verify_version_valid(sender.aux, sender.version)) {
                             sender.version_expired_before_complete = true;
+                            sender.reads_to_initiate.clear();
                             return;
                         }
                         TraverseSender::receiver_t receiver(
@@ -281,7 +281,6 @@ namespace detail
                         }
                         async_read(sender.aux, std::move(receiver));
                         ++sender.outstanding_reads;
-                        ++sender.nreads;
                     }
                     else {
                         async_parallel_preorder_traverse_impl(
@@ -290,6 +289,9 @@ namespace detail
                             *next,
                             machine,
                             (unsigned char)i);
+                        if (sender.version_expired_before_complete) {
+                            return;
+                        }
                     }
                 }
                 ++idx;

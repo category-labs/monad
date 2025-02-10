@@ -1073,6 +1073,12 @@ void Db::update_verified_block(uint64_t const block_id)
     impl_->update_verified_block(block_id);
 }
 
+void Db::update_voted_metadata(uint64_t const block_id, uint64_t const round)
+{
+    MONAD_ASSERT(impl_);
+    impl_->aux().set_latest_voted(block_id, round);
+}
+
 uint64_t Db::get_latest_finalized_block_id() const
 {
     MONAD_ASSERT(impl_);
@@ -1083,6 +1089,18 @@ uint64_t Db::get_latest_verified_block_id() const
 {
     MONAD_ASSERT(impl_);
     return impl_->get_latest_verified_block_id();
+}
+
+uint64_t Db::get_latest_voted_round() const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->aux().get_latest_voted_round();
+}
+
+uint64_t Db::get_latest_voted_block_id() const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->aux().get_latest_voted_version();
 }
 
 uint64_t Db::get_latest_block_id() const

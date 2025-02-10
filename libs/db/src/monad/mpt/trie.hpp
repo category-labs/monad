@@ -710,10 +710,13 @@ public:
     void fast_forward_next_version(uint64_t version) noexcept;
 
     void update_history_length_metadata(uint64_t history_len) noexcept;
-    void set_latest_finalized_version(uint64_t) noexcept;
-    void set_latest_verified_version(uint64_t) noexcept;
+    void set_latest_finalized_version(uint64_t version) noexcept;
+    void set_latest_verified_version(uint64_t version) noexcept;
+    void set_latest_voted(uint64_t version, uint64_t round) noexcept;
     uint64_t get_latest_finalized_version() const noexcept;
     uint64_t get_latest_verified_version() const noexcept;
+    uint64_t get_latest_voted_round() const noexcept;
+    uint64_t get_latest_voted_version() const noexcept;
 
     int64_t get_auto_expire_version_metadata() const noexcept;
 

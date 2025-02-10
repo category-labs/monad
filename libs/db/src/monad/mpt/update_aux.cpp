@@ -247,6 +247,22 @@ uint64_t UpdateAuxImpl::get_latest_verified_version() const noexcept
         ->load(std::memory_order_acquire);
 }
 
+uint64_t UpdateAuxImpl::get_latest_voted_version() const noexcept
+{
+    MONAD_ASSERT(is_on_disk());
+    return start_lifetime_as<std::atomic_uint64_t const>(
+               &db_metadata()->latest_voted_version)
+        ->load(std::memory_order_acquire);
+}
+
+uint64_t UpdateAuxImpl::get_latest_voted_round() const noexcept
+{
+    MONAD_ASSERT(is_on_disk());
+    return start_lifetime_as<std::atomic_uint64_t const>(
+               &db_metadata()->latest_voted_round)
+        ->load(std::memory_order_acquire);
+}
+
 void UpdateAuxImpl::set_latest_finalized_version(
     uint64_t const version) noexcept
 {
@@ -270,6 +286,20 @@ void UpdateAuxImpl::set_latest_verified_version(uint64_t const version) noexcept
     };
     do_(db_metadata_[0].main);
     do_(db_metadata_[1].main);
+}
+
+void UpdateAuxImpl::set_latest_voted(
+    uint64_t const version, uint64_t const round) noexcept
+{
+    MONAD_ASSERT(is_on_disk());
+    for (auto const i : {0, 1}) {
+        auto *const m = db_metadata_[i].main;
+        auto g = m->hold_dirty();
+        reinterpret_cast<std::atomic_uint64_t *>(&m->latest_voted_version)
+            ->store(version, std::memory_order_release);
+        reinterpret_cast<std::atomic_uint64_t *>(&m->latest_voted_round)
+            ->store(round, std::memory_order_release);
+    }
 }
 
 int64_t UpdateAuxImpl::get_auto_expire_version_metadata() const noexcept
@@ -399,6 +429,7 @@ void UpdateAuxImpl::clear_ondisk_db()
     do_(db_metadata_[1].main);
     set_latest_finalized_version(INVALID_BLOCK_ID);
     set_latest_verified_version(INVALID_BLOCK_ID);
+    set_latest_voted(INVALID_BLOCK_ID, INVALID_ROUND_NUM);
     set_auto_expire_version_metadata(0);
 
     advance_db_offsets_to(
@@ -429,6 +460,7 @@ void UpdateAuxImpl::rewind_to_version(uint64_t const version)
         latest_verified != INVALID_BLOCK_ID && latest_verified > version) {
         set_latest_verified_version(version);
     }
+    set_latest_voted(INVALID_BLOCK_ID, INVALID_ROUND_NUM);
     auto last_written_offset = root_offsets()[version];
     bool const last_written_offset_is_in_fast_list =
         db_metadata()->at(last_written_offset.id)->in_fast_list;
@@ -834,7 +866,17 @@ void UpdateAuxImpl::set_io(
         }
         set_latest_finalized_version(INVALID_BLOCK_ID);
         set_latest_verified_version(INVALID_BLOCK_ID);
+        set_latest_voted(INVALID_BLOCK_ID, INVALID_ROUND_NUM);
         set_auto_expire_version_metadata(0);
+
+        for (auto const i : {0, 1}) {
+            auto *const m = db_metadata_[i].main;
+            auto g = m->hold_dirty();
+            memset(
+                m->future_variables_unused,
+                0xff,
+                sizeof(m->future_variables_unused));
+        }
 
         // Set history length
         if (history_len.has_value()) {

@@ -40,6 +40,8 @@ struct Db
         std::optional<uint64_t> round_number = std::nullopt) = 0;
     virtual void finalize(uint64_t block_number, uint64_t round_number) = 0;
     virtual void update_verified_block(uint64_t block_number) = 0;
+    virtual void
+    update_voted_metadata(uint64_t block_number, uint64_t round) = 0;
 
     virtual void commit(
         StateDeltas const &, Code const &, MonadConsensusBlockHeader const &,

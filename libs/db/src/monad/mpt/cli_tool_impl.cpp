@@ -837,6 +837,10 @@ public:
                             old_metadata->latest_finalized_version;
                         metadata->latest_verified_version =
                             old_metadata->latest_verified_version;
+                        metadata->latest_voted_version =
+                            old_metadata->latest_voted_version;
+                        metadata->latest_voted_round =
+                            old_metadata->latest_voted_round;
                         metadata->auto_expire_version =
                             old_metadata->auto_expire_version;
                     });
@@ -1541,8 +1545,10 @@ opened.
                  << aux.db_history_min_valid_version() << " latest is "
                  << aux.db_history_max_version()
                  << ".\n     It has been configured to retain no more than "
-                 << aux.version_history_length()
-                 << ".\n     Latest finalized is "
+                 << aux.version_history_length() << ".\n     Latest voted is ("
+                 << aux.get_latest_finalized_version() << ", "
+                 << aux.get_latest_voted_round()
+                 << ").\n     Latest finalized is "
                  << aux.get_latest_finalized_version()
                  << ", latest verified is " << aux.get_latest_verified_version()
                  << ", auto expire version is "

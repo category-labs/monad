@@ -13,17 +13,17 @@
 MONAD_NAMESPACE_BEGIN
 
 struct Block;
-class BlockHashBuffer;
+class BlockHash;
 class BlockState;
 struct ExecutionResult;
 
 template <evmc_revision rev>
 Result<std::vector<ExecutionResult>> execute_block(
-    Chain const &, Block &, BlockState &, BlockHashBuffer const &,
+    Chain const &, Block &, BlockState &, BlockHash const &,
     fiber::PriorityPool &);
 
 Result<std::vector<ExecutionResult>> execute_block(
-    Chain const &, evmc_revision, Block &, BlockState &,
-    BlockHashBuffer const &, fiber::PriorityPool &);
+    Chain const &, evmc_revision, Block &, BlockState &, BlockHash const &,
+    fiber::PriorityPool &);
 
 MONAD_NAMESPACE_END

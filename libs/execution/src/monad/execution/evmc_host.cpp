@@ -3,7 +3,7 @@
 #include <monad/core/assert.h>
 #include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
-#include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/block_hash.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
 #include <monad/state3/state.hpp>
@@ -19,9 +19,9 @@ MONAD_NAMESPACE_BEGIN
 
 EvmcHostBase::EvmcHostBase(
     CallTracerBase &call_tracer, evmc_tx_context const &tx_context,
-    BlockHashBuffer const &block_hash_buffer, State &state) noexcept
+    BlockHash const &block_hash, State &state) noexcept
     : tx_context_{tx_context}
-    , block_hash_buffer_{block_hash_buffer}
+    , block_hash_{block_hash}
     , state_{state}
     , call_tracer_{call_tracer}
 {
@@ -74,7 +74,7 @@ bytes32_t
 EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
 {
     MONAD_ASSERT(block_number >= 0);
-    return block_hash_buffer_.get(static_cast<uint64_t>(block_number));
+    return block_hash_.get(static_cast<uint64_t>(block_number));
 };
 
 void EvmcHostBase::emit_log(

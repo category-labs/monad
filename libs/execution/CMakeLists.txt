@@ -83,6 +83,8 @@ add_library(
   # execution
   "src/monad/execution/block_hash_buffer.cpp"
   "src/monad/execution/block_hash_buffer.hpp"
+  "src/monad/execution/block_hash_chain.cpp"
+  "src/monad/execution/block_hash_chain.hpp"
   "src/monad/execution/block_reward.cpp"
   "src/monad/execution/block_reward.hpp"
   "src/monad/execution/create_contract_address.cpp"

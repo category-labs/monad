@@ -15,7 +15,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-class BlockHashBuffer;
+class BlockHash;
 struct BlockHeader;
 class BlockState;
 struct Chain;
@@ -42,13 +42,13 @@ evmc::Result execute_impl_no_validation(
 template <evmc_revision rev>
 Result<ExecutionResult> execute_impl(
     Chain const &, uint64_t i, Transaction const &, Address const &sender,
-    BlockHeader const &, BlockHashBuffer const &, BlockState &,
+    BlockHeader const &, BlockHash const &, BlockState &,
     boost::fibers::promise<void> &prev);
 
 template <evmc_revision rev>
 Result<ExecutionResult> execute(
     Chain const &, uint64_t i, Transaction const &,
-    std::optional<Address> const &, BlockHeader const &,
-    BlockHashBuffer const &, BlockState &, boost::fibers::promise<void> &prev);
+    std::optional<Address> const &, BlockHeader const &, BlockHash const &,
+    BlockState &, boost::fibers::promise<void> &prev);
 
 MONAD_NAMESPACE_END

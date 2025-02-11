@@ -18,12 +18,12 @@
 
 MONAD_NAMESPACE_BEGIN
 
-class BlockHashBuffer;
+class BlockHash;
 
 class EvmcHostBase : public evmc::Host
 {
     evmc_tx_context const &tx_context_;
-    BlockHashBuffer const &block_hash_buffer_;
+    BlockHash const &block_hash_;
 
 protected:
     State &state_;
@@ -31,7 +31,7 @@ protected:
 
 public:
     EvmcHostBase(
-        CallTracerBase &, evmc_tx_context const &, BlockHashBuffer const &,
+        CallTracerBase &, evmc_tx_context const &, BlockHash const &,
         State &) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;

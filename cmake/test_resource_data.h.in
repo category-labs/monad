@@ -88,7 +88,7 @@ inline auto const H_CODE_ANALYSIS =
     std::make_shared<CodeAnalysis>(analyze(H_CODE));
 
 inline void commit_sequential(
-    Db &db, StateDeltas const &deltas, Code const &code,
+    ::monad::Db &db, StateDeltas const &deltas, Code const &code,
     BlockHeader const &eth_header, std::vector<Receipt> const &receipts = {},
     std::vector<std::vector<CallFrame>> const &call_frames = {},
     std::vector<Address> const &senders = {},

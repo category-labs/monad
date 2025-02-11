@@ -167,15 +167,15 @@ Receipt execute_final(
 template <evmc_revision rev>
 Result<evmc::Result> execute_impl2(
     CallTracerBase &call_tracer, Chain const &chain, Transaction const &tx,
-    Address const &sender, BlockHeader const &hdr,
-    BlockHashBuffer const &block_hash_buffer, State &state)
+    Address const &sender, BlockHeader const &hdr, BlockHash const &block_hash,
+    State &state)
 {
     auto const sender_account = state.recent_account(sender);
     BOOST_OUTCOME_TRY(validate_transaction(tx, sender_account));
 
     auto const tx_context =
         get_tx_context<rev>(tx, sender, hdr, chain.get_chain_id());
-    EvmcHost<rev> host{call_tracer, tx_context, block_hash_buffer, state};
+    EvmcHost<rev> host{call_tracer, tx_context, block_hash, state};
 
     return execute_impl_no_validation<rev>(
         state,
@@ -189,9 +189,8 @@ Result<evmc::Result> execute_impl2(
 template <evmc_revision rev>
 Result<ExecutionResult> execute_impl(
     Chain const &chain, uint64_t const i, Transaction const &tx,
-    Address const &sender, BlockHeader const &hdr,
-    BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
-    boost::fibers::promise<void> &prev)
+    Address const &sender, BlockHeader const &hdr, BlockHash const &block_hash,
+    BlockState &block_state, boost::fibers::promise<void> &prev)
 {
     BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
         tx, hdr.base_fee_per_gas, chain.get_chain_id()));
@@ -209,7 +208,7 @@ Result<ExecutionResult> execute_impl(
 #endif
 
         auto result = execute_impl2<rev>(
-            call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);
+            call_tracer, chain, tx, sender, hdr, block_hash, state);
 
         {
             TRACE_TXN_EVENT(StartStall);
@@ -249,7 +248,7 @@ Result<ExecutionResult> execute_impl(
 #endif
 
         auto result = execute_impl2<rev>(
-            call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);
+            call_tracer, chain, tx, sender, hdr, block_hash, state);
 
         MONAD_ASSERT(block_state.can_merge(state));
         if (result.has_error()) {
@@ -279,7 +278,7 @@ template <evmc_revision rev>
 Result<ExecutionResult> execute(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     std::optional<Address> const &sender, BlockHeader const &hdr,
-    BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
+    BlockHash const &block_hash, BlockState &block_state,
     boost::fibers::promise<void> &prev)
 {
     TRACE_TXN_EVENT(StartTxn);
@@ -289,14 +288,7 @@ Result<ExecutionResult> execute(
     }
 
     return execute_impl<rev>(
-        chain,
-        i,
-        tx,
-        sender.value(),
-        hdr,
-        block_hash_buffer,
-        block_state,
-        prev);
+        chain, i, tx, sender.value(), hdr, block_hash, block_state, prev);
 }
 
 EXPLICIT_EVMC_REVISION(execute);

@@ -129,7 +129,7 @@ TEST(CallTrace, execute_success)
     auto const &beneficiary = ADDR_A;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBuffer buffer{};
     CallTracer call_tracer{tx};
     EvmcHost<EVMC_SHANGHAI> host(call_tracer, tx_context, buffer, s);
 
@@ -196,7 +196,7 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
     auto const &beneficiary = ADDR_A;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBuffer buffer{};
     CallTracer call_tracer{tx};
     EvmcHost<EVMC_SHANGHAI> host(call_tracer, tx_context, buffer, s);
 

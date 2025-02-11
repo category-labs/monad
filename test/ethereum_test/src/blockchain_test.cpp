@@ -59,7 +59,7 @@ MONAD_TEST_NAMESPACE_BEGIN
 
 template <evmc_revision rev>
 Result<std::vector<Receipt>> BlockchainTest::execute(
-    Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
+    Block &block, test::db_t &db, BlockHash const &block_hash)
 {
     using namespace monad::test;
 
@@ -69,8 +69,7 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
     EthereumMainnet const chain;
     BOOST_OUTCOME_TRY(
         auto const results,
-        execute_block<rev>(
-            chain, block, block_state, block_hash_buffer, *pool_));
+        execute_block<rev>(chain, block, block_state, block_hash, *pool_));
     std::vector<Receipt> receipts(results.size());
     std::vector<std::vector<CallFrame>> call_frames(results.size());
     std::vector<Address> senders(results.size());
@@ -100,10 +99,10 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
 
 Result<std::vector<Receipt>> BlockchainTest::execute_dispatch(
     evmc_revision const rev, Block &block, test::db_t &db,
-    BlockHashBuffer const &block_hash_buffer)
+    BlockHash const &block_hash)
 {
     MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
-    SWITCH_EVMC_REVISION(execute, block, db, block_hash_buffer);
+    SWITCH_EVMC_REVISION(execute, block, db, block_hash);
     MONAD_ASSERT(false);
 }
 
@@ -250,7 +249,7 @@ void BlockchainTest::TestBody()
         }
         auto db_post_state = tdb.to_json();
 
-        BlockHashBufferFinalized block_hash_buffer;
+        BlockHashBuffer block_hash_buffer;
         for (auto const &j_block : j_contents.at("blocks")) {
 
             auto const block_rlp = j_block.at("rlp").get<byte_string>();

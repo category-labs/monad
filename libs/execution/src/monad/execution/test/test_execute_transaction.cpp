@@ -59,7 +59,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     };
 
     BlockHeader const header{.beneficiary = bene};
-    BlockHashBufferFinalized const block_hash_buffer;
+    BlockHashBuffer const block_hash_buffer;
 
     boost::fibers::promise<void> prev{};
     prev.set_value();

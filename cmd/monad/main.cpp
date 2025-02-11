@@ -15,7 +15,6 @@
 #include <monad/db/block_db.hpp>
 #include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
-#include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/genesis.hpp>
 #include <monad/execution/trace/event_trace.hpp>
 #include <monad/fiber/priority_pool.hpp>
@@ -219,9 +218,15 @@ int main(int const argc, char const *argv[])
             // load the eth header for snapshot
             BlockDb block_db{block_db_path};
             Block block;
-            MONAD_ASSERT_PRINTF(
-                block_db.get(n, block), "FATAL: Could not load block %lu", n);
-            load_header(db, block.header);
+            for (uint64_t b = n < 256 ? 0 : n - 256; b <= n; ++b) {
+                Block block;
+                MONAD_ASSERT_PRINTF(
+                    block_db.get(b, block),
+                    "FATAL: Could not load block %lu",
+                    n);
+                load_header(db, block.header);
+            }
+
             return n;
         }
         else if (!db.root().is_valid()) {
@@ -293,22 +298,6 @@ int main(int const argc, char const *argv[])
         MONAD_ASSERT(false);
     }();
 
-    BlockHashBufferFinalized block_hash_buffer;
-    bool initialized_headers_from_triedb = false;
-
-    if (!db_in_memory) {
-        mpt::Db rodb{mpt::ReadOnlyOnDiskDbConfig{
-            .sq_thread_cpu = ro_sq_thread_cpu, .dbname_paths = dbname_paths}};
-        initialized_headers_from_triedb = init_block_hash_buffer_from_triedb(
-            rodb, start_block_num, block_hash_buffer);
-    }
-    if (!initialized_headers_from_triedb) {
-        BlockDb block_db{block_db_path};
-        MONAD_ASSERT(chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET);
-        MONAD_ASSERT(init_block_hash_buffer_from_blockdb(
-            block_db, start_block_num, block_hash_buffer));
-    }
-
     signal(SIGINT, signal_handler);
     stop = 0;
 
@@ -325,8 +314,8 @@ int main(int const argc, char const *argv[])
             return runloop_ethereum(
                 *chain,
                 block_db_path,
+                db,
                 db_cache,
-                block_hash_buffer,
                 priority_pool,
                 block_num,
                 end_block_num,
@@ -338,7 +327,6 @@ int main(int const argc, char const *argv[])
                 block_db_path,
                 db,
                 db_cache,
-                block_hash_buffer,
                 priority_pool,
                 block_num,
                 end_block_num,

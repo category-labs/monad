@@ -140,4 +140,6 @@ void load_from_binary(
 
 void load_header(mpt::Db &, BlockHeader const &);
 
+mpt::Nibbles proposal_prefix(uint64_t);
+
 MONAD_NAMESPACE_END

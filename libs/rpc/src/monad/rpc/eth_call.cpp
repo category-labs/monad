@@ -35,8 +35,7 @@ namespace
     Result<evmc::Result> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, Address const &sender, TrieDb &tdb,
-        BlockHashBufferFinalized &buffer,
-        monad_state_override_set const &state_overrides)
+        BlockHash &block_hash, monad_state_override_set const &state_overrides)
     {
         Transaction enriched_txn{txn};
 
@@ -151,7 +150,7 @@ namespace
         auto const tx_context = get_tx_context<rev>(
             enriched_txn, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer;
-        EvmcHost<rev> host{call_tracer, tx_context, buffer, state};
+        EvmcHost<rev> host{call_tracer, tx_context, block_hash, state};
         return execute_impl_no_validation<rev>(
             state,
             host,
@@ -164,7 +163,7 @@ namespace
     Result<evmc::Result> eth_call_impl(
         Chain const &chain, evmc_revision const rev, Transaction const &txn,
         BlockHeader const &header, uint64_t const block_number,
-        Address const &sender, TrieDb &tdb, BlockHashBufferFinalized &buffer,
+        Address const &sender, TrieDb &tdb, BlockHash &block_hash,
         monad_state_override_set const &state_overrides)
     {
         SWITCH_EVMC_REVISION(
@@ -175,7 +174,7 @@ namespace
             block_number,
             sender,
             tdb,
-            buffer,
+            block_hash,
             state_overrides);
         MONAD_ASSERT(false);
     }
@@ -307,7 +306,7 @@ monad_evmc_result eth_call(
     thread_local TrieDb tdb{db};
 
     monad_evmc_result ret{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBuffer buffer{};
     if (!init_block_hash_buffer_from_triedb(db, block_number, buffer)) {
         ret.status_code = EVMC_REJECTED;
         ret.message = "failure to initialize block hash buffer";

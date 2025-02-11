@@ -62,10 +62,10 @@ namespace
 }
 
 Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
-    Chain const &chain, std::filesystem::path const &ledger_dir, Db &db,
-    BlockHashBufferFinalized &block_hash_buffer,
-    fiber::PriorityPool &priority_pool, uint64_t &block_num,
-    uint64_t const end_block_num, sig_atomic_t const volatile &stop)
+    Chain const &chain, std::filesystem::path const &ledger_dir,
+    mpt::Db &raw_db, Db &db, fiber::PriorityPool &priority_pool,
+    uint64_t &block_num, uint64_t const end_block_num,
+    sig_atomic_t const volatile &stop)
 {
     uint64_t const batch_size =
         end_block_num == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
@@ -75,6 +75,10 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     uint64_t batch_gas = 0;
     auto batch_begin = std::chrono::steady_clock::now();
     uint64_t ntxs = 0;
+
+    BlockHashBuffer block_hash_buffer;
+    MONAD_ASSERT(init_block_hash_buffer_from_triedb(
+        raw_db, block_num, block_hash_buffer));
 
     uint64_t const start_block_num = block_num;
     BlockDb block_db(ledger_dir);

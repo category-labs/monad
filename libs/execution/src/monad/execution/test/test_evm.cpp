@@ -61,7 +61,7 @@ TEST(Evm, create_with_insufficient)
     uint256_t const v{70'000'000'000'000'000}; // too much
     intx::be::store(m.value.bytes, v);
 
-    BlockHashBufferFinalized const block_hash_buffer;
+    BlockHashBuffer const block_hash_buffer;
     NoopCallTracer call_tracer;
     evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
     auto const result = create<EVMC_SHANGHAI>(&h, s, m);
@@ -106,7 +106,7 @@ TEST(Evm, eip684_existing_code)
     uint256_t const v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
-    BlockHashBufferFinalized const block_hash_buffer;
+    BlockHashBuffer const block_hash_buffer;
     NoopCallTracer call_tracer;
     evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
     auto const result = create<EVMC_SHANGHAI>(&h, s, m);
@@ -126,7 +126,7 @@ TEST(Evm, create_nonce_out_of_range)
     static constexpr auto new_addr{
         0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
 
-    BlockHashBufferFinalized const block_hash_buffer;
+    BlockHashBuffer const block_hash_buffer;
     NoopCallTracer call_tracer;
     evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
@@ -170,7 +170,7 @@ TEST(Evm, static_precompile_execution)
     static constexpr auto code_address{
         0x0000000000000000000000000000000000000004_address};
 
-    BlockHashBufferFinalized const block_hash_buffer;
+    BlockHashBuffer const block_hash_buffer;
     NoopCallTracer call_tracer;
     evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
@@ -220,7 +220,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
     static constexpr auto code_address{
         0x0000000000000000000000000000000000000001_address};
 
-    BlockHashBufferFinalized const block_hash_buffer;
+    BlockHashBuffer const block_hash_buffer;
     NoopCallTracer call_tracer;
     evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 

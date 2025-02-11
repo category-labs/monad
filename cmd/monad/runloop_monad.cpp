@@ -10,7 +10,7 @@
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/db/db.hpp>
 #include <monad/db/util.hpp>
-#include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/block_hash_chain.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/validate_block.hpp>
@@ -84,9 +84,9 @@ namespace
 
 }
 
-Result<std::pair<bytes32_t, uint64_t>> on_proposal_event(
+Result<uint64_t> on_proposal_event(
     MonadConsensusBlockHeader const &consensus_header, Block block,
-    BlockHashBuffer const &block_hash_buffer, Chain const &chain, Db &db,
+    BlockHashChain &block_hash_chain, Chain const &chain, Db &db,
     fiber::PriorityPool &priority_pool, bool const is_first_block)
 {
     BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
@@ -96,16 +96,17 @@ Result<std::pair<bytes32_t, uint64_t>> on_proposal_event(
 
     BOOST_OUTCOME_TRY(static_validate_block(rev, block));
 
-    db.set_block_and_round(
-        block.header.number - 1,
+    auto const parent_round =
         is_first_block ? std::nullopt
-                       : std::make_optional(consensus_header.parent_round()));
+                       : std::make_optional(consensus_header.parent_round());
+    db.set_block_and_round(block.header.number - 1, parent_round);
+    block_hash_chain.set_block_and_round(block.header.number - 1, parent_round);
 
     BlockState block_state(db);
     BOOST_OUTCOME_TRY(
         auto results,
         execute_block(
-            chain, rev, block, block_state, block_hash_buffer, priority_pool));
+            chain, rev, block, block_state, block_hash_chain, priority_pool));
 
     std::vector<Receipt> receipts(results.size());
     std::vector<std::vector<CallFrame>> call_frames(results.size());
@@ -130,9 +131,7 @@ Result<std::pair<bytes32_t, uint64_t>> on_proposal_event(
     BOOST_OUTCOME_TRY(
         chain.validate_output_header(block.header, output_header));
 
-    return {
-        to_bytes(keccak256(rlp::encode_block_header(output_header))),
-        output_header.gas_used};
+    return output_header.gas_used;
 }
 
 bool validate_delayed_execution_results(
@@ -168,9 +167,9 @@ bool validate_delayed_execution_results(
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     Chain const &chain, std::filesystem::path const &ledger_dir,
-    mpt::Db &raw_db, Db &db, BlockHashBufferFinalized &block_hash_buffer,
-    fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
-    uint64_t const end_block_num, sig_atomic_t const volatile &stop)
+    mpt::Db &raw_db, Db &db, fiber::PriorityPool &priority_pool,
+    uint64_t &finalized_block_num, uint64_t const end_block_num,
+    sig_atomic_t const volatile &stop)
 {
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
 
@@ -188,7 +187,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             }
         }
     }
-    BlockHashChain block_hash_chain(block_hash_buffer);
+    BlockHashChain block_hash_chain(raw_db);
 
     uint64_t total_gas = 0;
     uint64_t ntxs = 0;
@@ -206,10 +205,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             auto const block_time_start = std::chrono::steady_clock::now();
 
             auto const ntxns = consensus_body.transactions.size();
-            auto const &block_hash_buffer =
-                block_hash_chain.find_chain(consensus_header.parent_round());
             BOOST_OUTCOME_TRY(
-                auto const proposal_output,
+                auto const gas_used,
                 on_proposal_event(
                     consensus_header,
                     Block{
@@ -217,16 +214,11 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                         .transactions = std::move(consensus_body.transactions),
                         .ommers = std::move(consensus_body.ommers),
                         .withdrawals = std::move(consensus_body.withdrawals)},
-                    block_hash_buffer,
+                    block_hash_chain,
                     chain,
                     db,
                     priority_pool,
                     block_number == start_block_num));
-            auto const &[output_header, gas_used] = proposal_output;
-            block_hash_chain.propose(
-                output_header,
-                consensus_header.round,
-                consensus_header.parent_round());
             db.update_voted_metadata(
                 consensus_header.seqno - 1, consensus_header.qc.vote.round);
 
@@ -243,7 +235,6 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 block_number,
                 consensus_header.round);
             db.finalize(block_number, consensus_header.round);
-            block_hash_chain.finalize(consensus_header.round);
 
             auto const &verified_blocks =
                 consensus_header.delayed_execution_results;

@@ -57,6 +57,25 @@
 
 MONAD_TEST_NAMESPACE_BEGIN
 
+namespace
+{
+    struct EthereumMainnetRev : EthereumMainnet
+    {
+        evmc_revision const rev;
+
+        EthereumMainnetRev(evmc_revision const rev)
+            : rev{rev}
+        {
+        }
+
+        virtual evmc_revision
+        get_revision(uint64_t, uint64_t) const override
+        {
+            return rev;
+        }
+    };
+}
+
 template <evmc_revision rev>
 Result<std::vector<Receipt>> BlockchainTest::execute(
     Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
@@ -66,7 +85,7 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
     BOOST_OUTCOME_TRY(static_validate_block<rev>(block));
 
     BlockState block_state(db);
-    EthereumMainnet const chain;
+    EthereumMainnetRev const chain{rev};
     BOOST_OUTCOME_TRY(
         auto const results,
         execute_block<rev>(

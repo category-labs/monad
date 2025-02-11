@@ -75,6 +75,14 @@ namespace
     constexpr auto value2 =
         0x0000000000000000000000000000000000000000000000000000000000000007_bytes32;
 
+    struct ShanghaiEthereumMainnet : EthereumMainnet
+    {
+        virtual evmc_revision get_revision(uint64_t, uint64_t) const override
+        {
+            return EVMC_SHANGHAI;
+        }
+    };
+
     struct InMemoryTrieDbFixture : public ::testing::Test
     {
         static constexpr bool on_disk = false;
@@ -898,7 +906,7 @@ TYPED_TEST(DBTest, call_frames_refund)
     fiber::PriorityPool pool{1, 1};
 
     auto const results = execute_block<EVMC_SHANGHAI>(
-        EthereumMainnet{}, block.value(), bs, block_hash_buffer, pool);
+        ShanghaiEthereumMainnet{}, block.value(), bs, block_hash_buffer, pool);
 
     ASSERT_TRUE(!results.has_error());
 

@@ -7,6 +7,7 @@
 #include <monad/core/likely.h>
 #include <monad/core/result.hpp>
 #include <monad/execution/ethereum/dao.hpp>
+#include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/validate_block.hpp>
 
 #include <evmc/evmc.h>
@@ -119,6 +120,15 @@ Result<void> EthereumMainnet::validate_output_header(
     }
 
     return success();
+}
+
+uint64_t EthereumMainnet::compute_gas_refund(
+    uint64_t const block_number, uint64_t const timestamp,
+    Transaction const &tx, uint64_t const gas_remaining,
+    uint64_t const refund) const
+{
+    auto const rev = get_revision(block_number, timestamp);
+    return g_star(rev, tx, gas_remaining, refund);
 }
 
 MONAD_NAMESPACE_END

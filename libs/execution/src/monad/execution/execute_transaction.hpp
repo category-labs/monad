@@ -33,6 +33,10 @@ struct ExecutionResult
     std::vector<CallFrame> call_frames;
 };
 
+uint64_t g_star(
+    evmc_revision, Transaction const &, uint64_t gas_remaining,
+    uint64_t refund);
+
 template <evmc_revision rev>
 evmc::Result execute_impl_no_validation(
     State &state, EvmcHost<rev> &host, Transaction const &tx,

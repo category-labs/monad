@@ -3,6 +3,7 @@
 #include <monad/core/block.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/result.hpp>
+#include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/validate_block.hpp>
 
 MONAD_NAMESPACE_BEGIN
@@ -35,6 +36,20 @@ evmc_revision MonadChain::get_revision(
     switch (get_monad_revision(block_number, timestamp)) {
     case MONAD_ZERO:
         return EVMC_CANCUN;
+    }
+    MONAD_ABORT("bad revision");
+}
+
+uint64_t MonadChain::compute_gas_refund(
+    uint64_t const block_number, uint64_t const timestamp,
+    Transaction const &tx, uint64_t const gas_remaining,
+    uint64_t const refund) const
+{
+    switch (get_monad_revision(block_number, timestamp)) {
+    case MONAD_ZERO: {
+        auto const evmc_rev = get_revision(block_number, timestamp);
+        return g_star(evmc_rev, tx, gas_remaining, refund);
+    }
     }
     MONAD_ABORT("bad revision");
 }

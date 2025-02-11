@@ -123,7 +123,7 @@ public:
 
     bool try_read_code(
         bytes32_t const &code_hash, std::shared_ptr<CodeAnalysis> &result,
-        bool truncated) const
+        bool &truncated) const
     {
         auto const fn = [&code_hash, &result](ProposalState const &ps) {
             return ps.try_read_code(code_hash, result);

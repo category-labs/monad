@@ -29,4 +29,14 @@ Result<void> MonadChain::validate_output_header(
     return success();
 }
 
+evmc_revision MonadChain::get_revision(
+    uint64_t const block_number, uint64_t const timestamp) const
+{
+    switch (get_monad_revision(block_number, timestamp)) {
+    case MONAD_ZERO:
+        return EVMC_CANCUN;
+    }
+    MONAD_ABORT("bad revision");
+}
+
 MONAD_NAMESPACE_END

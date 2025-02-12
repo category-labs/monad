@@ -10,6 +10,16 @@ MONAD_NAMESPACE_BEGIN
 
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
+evmc_revision MonadChain::get_revision(
+    uint64_t const block_number, uint64_t const timestamp) const
+{
+    switch (get_monad_revision(block_number, timestamp)) {
+    case MONAD_ZERO:
+        return EVMC_CANCUN;
+    }
+    MONAD_ABORT("bad revision");
+}
+
 Result<void> MonadChain::validate_output_header(
     BlockHeader const &input, BlockHeader const &output) const
 {
@@ -28,16 +38,6 @@ Result<void> MonadChain::validate_output_header(
         return BlockError::GasAboveLimit;
     }
     return success();
-}
-
-evmc_revision MonadChain::get_revision(
-    uint64_t const block_number, uint64_t const timestamp) const
-{
-    switch (get_monad_revision(block_number, timestamp)) {
-    case MONAD_ZERO:
-        return EVMC_CANCUN;
-    }
-    MONAD_ABORT("bad revision");
 }
 
 uint64_t MonadChain::compute_gas_refund(

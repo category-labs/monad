@@ -89,7 +89,48 @@ TEST_F(EthCallFixture, simple_success_call)
         rlp_tx,
         rlp_header,
         rlp_sender,
-        256u,
+        header.number,
+        mpt::INVALID_ROUND_NUM,
+        dbname,
+        state_override);
+
+    EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
+}
+
+TEST_F(EthCallFixture, on_proposed_block)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    static constexpr auto from{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto to{
+        0x5353535353535353535353535353535353535353_address};
+
+    Transaction tx{
+        .gas_limit = 100000u, .to = to, .type = TransactionType::eip1559};
+    BlockHeader header{.number = 256};
+
+    auto const consensus_header =
+        MonadConsensusBlockHeader::from_eth_header(header);
+    tdb.commit({}, {}, consensus_header);
+    tdb.set_block_and_round(header.number, consensus_header.round);
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+
+    monad_state_override_set state_override;
+
+    auto const result = eth_call(
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx,
+        rlp_header,
+        rlp_sender,
+        header.number,
+        consensus_header.round,
         dbname,
         state_override);
 
@@ -128,7 +169,8 @@ TEST_F(EthCallFixture, failed_to_read)
         rlp_tx,
         rlp_header,
         rlp_sender,
-        1256u,
+        header.number,
+        mpt::INVALID_ROUND_NUM,
         dbname,
         state_override);
     EXPECT_EQ(result.status_code, EVMC_REJECTED);
@@ -164,7 +206,8 @@ TEST_F(EthCallFixture, contract_deployment_success)
         rlp_tx,
         rlp_header,
         rlp_sender,
-        256u,
+        header.number,
+        mpt::INVALID_ROUND_NUM,
         dbname,
         state_override);
 
@@ -222,7 +265,8 @@ TEST_F(EthCallFixture, from_contract_account)
         rlp_tx,
         rlp_header,
         rlp_sender,
-        0,
+        header.number,
+        mpt::INVALID_ROUND_NUM,
         dbname,
         state_override);
 

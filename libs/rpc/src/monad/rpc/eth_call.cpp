@@ -34,8 +34,8 @@ namespace
     template <evmc_revision rev>
     Result<evmc::Result> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
-        uint64_t const block_number, Address const &sender, TrieDb &tdb,
-        BlockHashBufferFinalized &buffer,
+        uint64_t const block_number, uint64_t const block_round,
+        Address const &sender, TrieDb &tdb, BlockHashBufferFinalized &buffer,
         monad_state_override_set const &state_overrides)
     {
         Transaction enriched_txn{txn};
@@ -51,7 +51,11 @@ namespace
         BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
             enriched_txn, header.base_fee_per_gas, chain.get_chain_id()));
 
-        tdb.set_block_and_round(block_number, std::nullopt);
+        std::optional<uint64_t> maybe_round;
+        if (block_round != mpt::INVALID_ROUND_NUM) {
+            maybe_round.emplace(block_round);
+        }
+        tdb.set_block_and_round(block_number, maybe_round);
         BlockState block_state{tdb};
         // avoid conflict with block reward txn
         Incarnation incarnation{block_number, Incarnation::LAST_TX - 1u};
@@ -164,7 +168,8 @@ namespace
     Result<evmc::Result> eth_call_impl(
         Chain const &chain, evmc_revision const rev, Transaction const &txn,
         BlockHeader const &header, uint64_t const block_number,
-        Address const &sender, TrieDb &tdb, BlockHashBufferFinalized &buffer,
+        uint64_t const block_round, Address const &sender, TrieDb &tdb,
+        BlockHashBufferFinalized &buffer,
         monad_state_override_set const &state_overrides)
     {
         SWITCH_EVMC_REVISION(
@@ -173,6 +178,7 @@ namespace
             txn,
             header,
             block_number,
+            block_round,
             sender,
             tdb,
             buffer,
@@ -270,7 +276,7 @@ monad_evmc_result eth_call(
     monad_chain_config const chain_config, std::vector<uint8_t> const &rlp_tx,
     std::vector<uint8_t> const &rlp_header,
     std::vector<uint8_t> const &rlp_sender, uint64_t const block_number,
-    std::string const &triedb_path,
+    uint64_t const block_round, std::string const &triedb_path,
     monad_state_override_set const &state_overrides)
 {
     byte_string_view rlp_tx_view(rlp_tx.begin(), rlp_tx.end());
@@ -335,6 +341,7 @@ monad_evmc_result eth_call(
         tx,
         block_header,
         block_number,
+        block_round,
         sender,
         tdb,
         buffer,

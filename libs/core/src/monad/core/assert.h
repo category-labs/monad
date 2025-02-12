@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/core/likely.h>
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C"

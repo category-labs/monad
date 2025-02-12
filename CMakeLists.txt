@@ -6,8 +6,6 @@ project(monad)
 
 option(HUNTER_ENABLED OFF)
 
-option(EVMONE_TRACING
-       "Enable instruction-level tracing for the evmone interpreter" OFF)
 option(ENABLE_CALL_TRACING "Enable call tracer" ON)
 option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(BUILD_SHARED_LIBS OFF)
@@ -41,10 +39,6 @@ function(monad_compile_options target)
   # currently available to us
   # https://gcc.gnu.org/bugzilla//show_bug.cgi?id=109647
   target_compile_definitions(${target} PUBLIC "JSON_HAS_RANGES=0")
-
-  if(EVMONE_TRACING)
-    target_compile_definitions(${target} PUBLIC EVMONE_TRACING=1)
-  endif()
 
   if(ENABLE_CALL_TRACING)
     target_compile_definitions(${target} PUBLIC "ENABLE_CALL_TRACING=1")

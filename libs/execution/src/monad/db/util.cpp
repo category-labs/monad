@@ -582,9 +582,10 @@ std::unique_ptr<StateMachine> InMemoryMachine::clone() const
 bool OnDiskMachine::cache() const
 {
     constexpr uint64_t CACHE_DEPTH_IN_TABLE = 5;
-    return (depth <= prefix_len() + CACHE_DEPTH_IN_TABLE) &&
-           (table == TableType::State || table == TableType::Code ||
-            table == TableType::TxHash || table == TableType::BlockHash);
+    return table == TableType::Prefix ||
+           ((depth <= prefix_len() + CACHE_DEPTH_IN_TABLE) &&
+            (table == TableType::State || table == TableType::Code ||
+             table == TableType::TxHash || table == TableType::BlockHash));
 }
 
 bool OnDiskMachine::compact() const

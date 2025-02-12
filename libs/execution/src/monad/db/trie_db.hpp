@@ -58,7 +58,9 @@ public:
         std::optional<std::vector<Withdrawal>> const & = std::nullopt) override;
     virtual void
     finalize(uint64_t block_number, uint64_t round_number) override;
-    virtual void update_verified_block(uint64_t) override;
+    virtual void update_verified_block(uint64_t block_number) override;
+    virtual void
+    update_voted_metadata(uint64_t block_number, uint64_t round) override;
 
     virtual BlockHeader read_eth_header() override;
     virtual bytes32_t state_root() override;

@@ -143,9 +143,15 @@ public:
         db_.finalize(block_number, round_number);
     }
 
-    virtual void update_verified_block(uint64_t block_number) override
+    virtual void update_verified_block(uint64_t const block_number) override
     {
         db_.update_verified_block(block_number);
+    }
+
+    virtual void update_voted_metadata(
+        uint64_t const block_number, uint64_t const round) override
+    {
+        db_.update_voted_metadata(block_number, round);
     }
 
     virtual void commit(

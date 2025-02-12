@@ -273,6 +273,12 @@ void monad_statesync_server_context::update_verified_block(
     rw.update_verified_block(block_number);
 }
 
+void monad_statesync_server_context::update_voted_metadata(
+    uint64_t const block_number, uint64_t const round)
+{
+    rw.update_voted_metadata(block_number, round);
+}
+
 void monad_statesync_server_context::commit(
     StateDeltas const &state_deltas, Code const &code,
     MonadConsensusBlockHeader const &consensus_header,

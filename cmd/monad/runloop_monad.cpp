@@ -168,7 +168,7 @@ bool validate_delayed_execution_results(
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     Chain const &chain, std::filesystem::path const &ledger_dir,
-    mpt::Db const &raw_db, Db &db, BlockHashBufferFinalized &block_hash_buffer,
+    mpt::Db &raw_db, Db &db, BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop)
 {
@@ -176,6 +176,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
 
     WalReader reader(ledger_dir);
     if (finalized_block_num > 1) { // no wal entry for genesis
+        raw_db.update_voted_metadata(
+            mpt::INVALID_BLOCK_ID, mpt::INVALID_ROUND_NUM);
         auto const bft_block_id =
             bft_id_for_finalized_block(raw_db, finalized_block_num - 1);
         if (bft_block_id.has_value()) {
@@ -225,6 +227,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 output_header,
                 consensus_header.round,
                 consensus_header.parent_round());
+            db.update_voted_metadata(
+                consensus_header.seqno - 1, consensus_header.qc.vote.round);
 
             log_tps(
                 block_number,

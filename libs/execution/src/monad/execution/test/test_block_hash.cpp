@@ -72,8 +72,21 @@ class BlockHashFixtureDeathTest : public BlockHashFixture
 {
 };
 
-TEST_F(BlockHashFixture, simple)
+template <typename BlockHashType>
+class BlockHashTest : public BlockHashFixture
+{
+};
 
+template <typename BlockHashType>
+class BlockHashDeathTest : public BlockHashFixtureDeathTest
+{
+};
+
+using BlockHashTypes = ::testing::Types<BlockHashChain, BlockHashChainCached>;
+TYPED_TEST_SUITE(BlockHashTest, BlockHashTypes);
+TYPED_TEST_SUITE(BlockHashDeathTest, BlockHashTypes);
+
+TYPED_TEST(BlockHashTest, simple)
 {
     std::vector<bytes32_t> finalized;
     finalized.emplace_back(this->commit(0, 0, 0));
@@ -82,10 +95,12 @@ TEST_F(BlockHashFixture, simple)
     finalized.emplace_back(this->commit(2, 2, 1));
     finalized.emplace_back(this->commit(3, 3, 2));
 
-    BlockHashChain chain(this->db());
+    TypeParam chain(this->db());
     chain.set_block_and_round(3, 3);
     for (uint64_t i = 0; i < finalized.size(); ++i) {
-        EXPECT_EQ(finalized[i], chain.get(i));
+        for (uint64_t reads = 0; reads < 5; ++reads) {
+            EXPECT_EQ(finalized[i], chain.get(i));
+        }
     }
 
     // and again with all finalized
@@ -94,13 +109,15 @@ TEST_F(BlockHashFixture, simple)
     }
     chain.set_block_and_round(3, 3);
     for (uint64_t i = 0; i < finalized.size(); ++i) {
-        EXPECT_EQ(finalized[i], chain.get(i));
+        for (uint64_t reads = 0; reads < 5; ++reads) {
+            EXPECT_EQ(finalized[i], chain.get(i));
+        }
     }
 }
 
-TEST_F(BlockHashFixture, fork)
+TYPED_TEST(BlockHashTest, fork)
 {
-    BlockHashChain chain(this->db());
+    TypeParam chain(this->db());
     std::vector<bytes32_t> finalized;
     std::vector<bytes32_t> fork;
 
@@ -128,9 +145,9 @@ TEST_F(BlockHashFixture, fork)
     }
 }
 
-TEST_F(BlockHashFixture, keep_latest_duplicate)
+TYPED_TEST(BlockHashTest, keep_latest_duplicate)
 {
-    BlockHashChain chain(this->db());
+    TypeParam chain(this->db());
     std::vector<bytes32_t> finalized;
     finalized.emplace_back(this->commit(0, 0, 0)); // genesis
     this->finalize(0, 0);
@@ -147,9 +164,9 @@ TEST_F(BlockHashFixture, keep_latest_duplicate)
     }
 }
 
-TEST_F(BlockHashFixtureDeathTest, out_of_bounds)
+TYPED_TEST(BlockHashDeathTest, out_of_bounds)
 {
-    BlockHashChain chain(this->db());
+    TypeParam chain(this->db());
     this->commit(0, 0, 0); // genesis
     this->finalize(0, 0);
     for (uint64_t i = 1; i <= 256; ++i) {
@@ -169,6 +186,23 @@ TEST_F(BlockHashFixtureDeathTest, out_of_bounds)
     EXPECT_TRUE(chain.get(1));
     EXPECT_DEATH(chain.get(0), ".*");
     EXPECT_DEATH(chain.get(257), ".*");
+}
+
+TYPED_TEST(BlockHashTest, bench)
+{
+    TypeParam chain(this->db());
+    this->commit(0, 0, 0); // genesis
+    this->finalize(0, 0);
+    for (uint64_t i = 1; i <= 253; ++i) {
+        this->commit(i, i, i - 1);
+        this->finalize(i, i);
+    }
+    this->commit(254, 254, 253);
+    this->commit(255, 255, 254);
+    chain.set_block_and_round(255, 255);
+    for (unsigned i = 0; i < 100'000; ++i) {
+        (void)chain.get(i % 256);
+    }
 }
 
 TEST_F(BlockHashFixture, init_from_db)

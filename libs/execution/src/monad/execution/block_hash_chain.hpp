@@ -3,6 +3,7 @@
 #include <monad/config.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/execution/block_hash.hpp>
+#include <monad/lru/lru_cache.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -24,6 +25,19 @@ class BlockHashChain : public BlockHash
 public:
     BlockHashChain(mpt::Db const &);
     bytes32_t get(uint64_t) const override;
+    void set_block_and_round(uint64_t block, std::optional<uint64_t> round);
+};
+
+class BlockHashChainCached : public BlockHash
+{
+    using Cache = LruCache<uint64_t, bytes32_t>;
+
+    BlockHashChain chain_;
+    mutable Cache cache_;
+
+public:
+    BlockHashChainCached(mpt::Db const &);
+    bytes32_t get(uint64_t block_number) const override;
     void set_block_and_round(uint64_t block, std::optional<uint64_t> round);
 };
 

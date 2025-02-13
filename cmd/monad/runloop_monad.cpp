@@ -86,7 +86,7 @@ namespace
 
 Result<uint64_t> on_proposal_event(
     MonadConsensusBlockHeader const &consensus_header, Block block,
-    BlockHashChain &block_hash_chain, Chain const &chain, Db &db,
+    BlockHashChainCached &block_hash_chain, Chain const &chain, Db &db,
     fiber::PriorityPool &priority_pool, bool const is_first_block)
 {
     BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
@@ -187,7 +187,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             }
         }
     }
-    BlockHashChain block_hash_chain(raw_db);
+    BlockHashChainCached block_hash_chain(raw_db);
 
     uint64_t total_gas = 0;
     uint64_t ntxs = 0;

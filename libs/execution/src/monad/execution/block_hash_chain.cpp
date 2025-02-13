@@ -77,4 +77,29 @@ void BlockHashChain::set_block_and_round(
     round_ = round.value_or(0);
 }
 
+BlockHashChainCached::BlockHashChainCached(mpt::Db const &db)
+    : chain_{db}
+    , cache_{N}
+{
+}
+
+bytes32_t BlockHashChainCached::get(uint64_t const block) const
+{
+    Cache::ConstAccessor it{};
+    if (cache_.find(it, block)) {
+        return it->second.value_;
+    }
+
+    auto const hash = chain_.get(block);
+    cache_.insert(block, hash);
+    return hash;
+}
+
+void BlockHashChainCached::set_block_and_round(
+    uint64_t block, std::optional<uint64_t> round)
+{
+    cache_.clear();
+    chain_.set_block_and_round(block, round);
+}
+
 MONAD_NAMESPACE_END

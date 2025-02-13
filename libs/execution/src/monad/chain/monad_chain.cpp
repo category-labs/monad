@@ -15,9 +15,10 @@ evmc_revision MonadChain::get_revision(
 {
     switch (get_monad_revision(block_number, timestamp)) {
     case MONAD_ZERO:
+    case MONAD_ONE:
         return EVMC_CANCUN;
     }
-    MONAD_ABORT("bad revision");
+    MONAD_ABORT("invalid revision");
 }
 
 Result<void> MonadChain::validate_output_header(
@@ -47,11 +48,13 @@ uint64_t MonadChain::compute_gas_refund(
 {
     switch (get_monad_revision(block_number, timestamp)) {
     case MONAD_ZERO: {
-        auto const evmc_rev = get_revision(block_number, timestamp);
-        return g_star(evmc_rev, tx, gas_remaining, refund);
+        auto const rev = get_revision(block_number, timestamp);
+        return g_star(rev, tx, gas_remaining, refund);
     }
+    case MONAD_ONE:
+        return 0;
     }
-    MONAD_ABORT("bad revision");
+    MONAD_ABORT("invalid revision");
 }
 
 MONAD_NAMESPACE_END

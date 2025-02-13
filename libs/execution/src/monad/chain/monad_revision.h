@@ -8,6 +8,7 @@ extern "C"
 enum monad_revision
 {
     MONAD_ZERO = 0,
+    MONAD_ONE = 1,
 };
 
 #ifdef __cplusplus

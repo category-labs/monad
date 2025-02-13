@@ -8,7 +8,7 @@ MONAD_NAMESPACE_BEGIN
 monad_revision MonadTestnet::get_monad_revision(
     uint64_t /* block_number */, uint64_t const timestamp) const
 {
-    if (timestamp >= 1739559600) {
+    if (MONAD_LIKELY(timestamp >= 1739559600)) {
         return MONAD_ONE;
     }
     return MONAD_ZERO;

@@ -27,7 +27,7 @@ uint256_t EthereumMainnet::get_chain_id() const
 evmc_revision EthereumMainnet::get_revision(
     uint64_t const block_number, uint64_t const timestamp) const
 {
-    if (timestamp >= 1710338135) {
+    if (MONAD_LIKELY(timestamp >= 1710338135)) {
         return EVMC_CANCUN;
     }
     else if (timestamp >= 1681338455) {

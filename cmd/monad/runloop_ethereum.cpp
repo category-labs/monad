@@ -10,6 +10,7 @@
 #include <monad/db/block_db.hpp>
 #include <monad/db/db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/block_hash_chain.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/validate_block.hpp>
@@ -76,9 +77,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     auto batch_begin = std::chrono::steady_clock::now();
     uint64_t ntxs = 0;
 
-    BlockHashBuffer block_hash_buffer;
-    MONAD_ASSERT(init_block_hash_buffer_from_triedb(
-        raw_db, block_num, block_hash_buffer));
+    BlockHashChain block_hash_chain(raw_db);
 
     uint64_t const start_block_num = block_num;
     BlockDb block_db(ledger_dir);
@@ -98,11 +97,13 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
 
         // Ethereum: always execute off of the parent proposal round, commit to
         // `round = block_number`, and finalize immediately after that.
-        db.set_block_and_round(
-            block.header.number - 1,
+        auto const parent_round =
             (block.header.number == start_block_num)
                 ? std::nullopt
-                : std::make_optional(block.header.number - 1));
+                : std::make_optional(block.header.number - 1);
+        db.set_block_and_round(block.header.number - 1, parent_round);
+        block_hash_chain.set_block_and_round(
+            block.header.number - 1, parent_round);
         BlockState block_state(db);
         BOOST_OUTCOME_TRY(
             auto results,
@@ -111,7 +112,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 rev,
                 block,
                 block_state,
-                block_hash_buffer,
+                block_hash_chain,
                 priority_pool));
 
         std::vector<Receipt> receipts(results.size());
@@ -139,10 +140,6 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
 
         db.finalize(block.header.number, block.header.number);
         db.update_verified_block(block.header.number);
-
-        auto const h =
-            to_bytes(keccak256(rlp::encode_block_header(output_header)));
-        block_hash_buffer.set(block_num, h);
 
         ntxs += block.transactions.size();
         batch_num_txs += block.transactions.size();

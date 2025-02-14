@@ -1546,7 +1546,7 @@ opened.
                  << aux.db_history_max_version()
                  << ".\n     It has been configured to retain no more than "
                  << aux.version_history_length() << ".\n     Latest voted is ("
-                 << aux.get_latest_finalized_version() << ", "
+                 << aux.get_latest_voted_version() << ", "
                  << aux.get_latest_voted_round()
                  << ").\n     Latest finalized is "
                  << aux.get_latest_finalized_version()

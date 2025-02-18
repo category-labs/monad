@@ -35,7 +35,8 @@ RUN apt update && apt install -y \
   libtbb-dev \
   libzstd-dev
 
-FROM base as build_and_test
+
+FROM base AS configure
 
 COPY . src
 
@@ -45,7 +46,26 @@ ARG CMAKE_BUILD_TYPE
 
 RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" ./scripts/configure.sh
 
+
+FROM configure AS build_and_test
+
+ARG CC
+ARG CXX
+ARG CMAKE_BUILD_TYPE
+
 RUN cd src && ./scripts/build.sh
 
 # security=insecure for tests which use io_uring
 RUN --security=insecure cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} ./scripts/test.sh
+
+
+FROM configure AS clang_tidy
+
+ARG CC
+ARG CXX
+ARG CMAKE_BUILD_TYPE
+
+RUN apt update && apt install -y \
+  clang-tidy-18
+
+RUN cd src && ./scripts/clang-tidy.sh

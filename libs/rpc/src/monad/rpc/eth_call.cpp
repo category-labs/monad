@@ -53,11 +53,10 @@ namespace
         BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
             enriched_txn, header.base_fee_per_gas, chain.get_chain_id()));
 
-        std::optional<uint64_t> maybe_round;
-        if (round != mpt::INVALID_ROUND_NUM) {
-            maybe_round.emplace(round);
-        }
-        tdb.set_block_and_round(block_number, maybe_round);
+        tdb.set_block_and_round(
+            block_number,
+            round == mpt::INVALID_ROUND_NUM ? std::nullopt
+                                            : std::make_optional(round));
         BlockState block_state{tdb};
         // avoid conflict with block reward txn
         Incarnation incarnation{block_number, Incarnation::LAST_TX - 1u};

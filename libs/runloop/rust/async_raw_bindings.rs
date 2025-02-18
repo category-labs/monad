@@ -590,6 +590,7 @@ pub struct monad_async_io_status {
         unsafe extern "C" fn(
             arg1: monad_async_task,
             arg2: *mut monad_async_io_status,
+            arg3: bool,
         ) -> monad_c_result,
     >,
     pub __bindgen_anon_1: monad_async_io_status__bindgen_ty_1,
@@ -608,8 +609,8 @@ pub struct monad_async_io_status__bindgen_ty_1 {
 #[derive(Debug)]
 pub struct monad_async_io_status__bindgen_ty_1__bindgen_ty_1 {
     pub task_: monad_async_task,
-    pub flags_: ::std::os::raw::c_uint,
     pub tofill_: *mut monad_async_task_registered_io_buffer,
+    pub file_or_sock_: *mut ::std::os::raw::c_void,
 }
 impl Default for monad_async_io_status__bindgen_ty_1__bindgen_ty_1 {
     fn default() -> Self {
@@ -765,7 +766,7 @@ unsafe extern "C" {
 #[doc = "! \\brief Cancellable infinity duration"]
 pub const monad_async_duration_infinite_cancelling: u64 = 31536000000000000;
 unsafe extern "C" {
-    #[doc = " \\brief OPTIONAL CANCELLATION POINT Suspend execution of a task for a given\nduration, which can be zero (which equates \"yield\"). If `completed` is not\nnull, if any i/o which the task has initiated completes during the\nsuspension, resume the task setting `completed` to which i/o has just\ncompleted.\n\nIf `ns` is the special duration `monad_async_duration_infinite_non_cancelling`,\nthat makes this function (and all those based upon it) not a cancellation\npoint. This lets you tear down any initiated i/o etc before exiting your task.\nIf you want infinity but it should be a cancellation point, use\n`monad_async_duration_infinite_cancelling`."]
+    #[doc = " \\brief OPTIONAL CANCELLATION POINT Suspend execution of a task for a given\nduration, which can be zero (which equates \"yield\"). If `completed` is not\nnull, if any i/o which the task has initiated completes during the\nsuspension, resume the task setting `completed` to which i/o has just\ncompleted. This i/o is NOT REAPED, you must separately call\n`monad_async_task_completed_io()` to reap that i/o.\n\nIf `ns` is the special duration `monad_async_duration_infinite_non_cancelling`,\nthat makes this function (and all those based upon it) not a cancellation\npoint. This lets you tear down any initiated i/o etc before exiting your task.\nIf you want infinity but it should be a cancellation point, use\n`monad_async_duration_infinite_cancelling`."]
     pub fn monad_async_task_suspend_for_duration(
         completed: *mut *mut monad_async_io_status,
         task: monad_async_task,
@@ -882,7 +883,7 @@ impl monad_async_task_claim_registered_io_buffer_flags {
     }
 }
 unsafe extern "C" {
-    #[doc = " \\brief CANCELLATION POINT Claim an unused registered **write** buffer for\nfile i/o, suspending if none currently available.\n\nThere are two sizes of registered i/o write buffer, small and large which are\nthe page size of the host platform (e.g. 4Kb and 2Mb if on Intel x64). Through\nbeing always whole page sizes, DMA using registered i/o buffers has the lowest\npossible overhead.\n\nIt is important to note that these buffers can ONLY be used for write operations\non the write ring. For read operations, it is io_uring which allocates the\nbuffers."]
+    #[doc = " \\brief CANCELLATION POINT Claim an unused registered **write** buffer for\nfile i/o, suspending if none currently available unless the `fail_dont_suspend`\nflag is set.\n\nThere are two sizes of registered i/o write buffer, small and large which are\nthe page size of the host platform (e.g. 4Kb and 2Mb if on Intel x64). Through\nbeing always whole page sizes, DMA using registered i/o buffers has the lowest\npossible overhead.\n\nIt is important to note that these buffers can ONLY be used for write operations\non the write ring. For read operations, it is io_uring which allocates the\nbuffers.\n\nBecause it is you the user who claims write buffers, it is on you to detect\nand avoid write buffer deadlock where that might occur. Generally, you should\nallocate more write buffers than extant write i/o could ever occur, but if\nthat isn't feasible then you ought to set the `fail_dont_suspend` flag and\nthen either schedule the write i/o for later, or use a non-registered buffer,\nor some other strategy. The error returned will be equivalent to `ENOBUFS`."]
     pub fn monad_async_task_claim_registered_file_io_write_buffer(
         buffer: *mut monad_async_task_registered_io_buffer,
         task: monad_async_task,
@@ -891,7 +892,7 @@ unsafe extern "C" {
     ) -> monad_c_result;
 }
 unsafe extern "C" {
-    #[doc = " \\brief CANCELLATION POINT Claim an unused registered **write** buffer for\nsocket i/o, suspending if none currently available.\n\nThere are two sizes of registered i/o write buffer, small and large which are\nthe page size of the host platform (e.g. 4Kb and 2Mb if on Intel x64). Through\nbeing always whole page sizes, DMA using registered i/o buffers has the lowest\npossible overhead.\n\nIt is important to note that these buffers can ONLY be used for write operations\non the write ring. For read operations, it is io_uring which allocates the\nbuffers."]
+    #[doc = " \\brief CANCELLATION POINT Claim an unused registered **write** buffer for\nsocket i/o, suspending if none currently available unless the\n`fail_dont_suspend` flag is set.\n\nThere are two sizes of registered i/o write buffer, small and large which are\nthe page size of the host platform (e.g. 4Kb and 2Mb if on Intel x64). Through\nbeing always whole page sizes, DMA using registered i/o buffers has the lowest\npossible overhead.\n\nIt is important to note that these buffers can ONLY be used for write operations\non the write ring. For read operations, it is io_uring which allocates the\nbuffers.\n\nBecause it is you the user who claims write buffers, it is on you to detect\nand avoid write buffer deadlock where that might occur. Generally, you should\nallocate more buffers than extant i/o could ever occur (as for socket i/o, read\nand write buffers come from the same pool), but if that isn't feasible then you\nought to set the `fail_dont_suspend` flag and then either schedule the write i/o\nfor later, or use a non-registered buffer, or some other strategy. The error\nreturned will be equivalent to `ENOBUFS`."]
     pub fn monad_async_task_claim_registered_socket_io_write_buffer(
         buffer: *mut monad_async_task_registered_io_buffer,
         task: monad_async_task,
@@ -1025,6 +1026,8 @@ pub type monad_async_file_offset = u64;
 #[derive(Debug)]
 pub struct monad_async_file_head {
     pub executor: *mut monad_async_executor_head,
+    pub total_io_submitted: u32,
+    pub total_io_completed: u32,
 }
 impl Default for monad_async_file_head {
     fn default() -> Self {
@@ -1135,6 +1138,8 @@ pub struct monad_async_socket_head {
     pub addr: sockaddr,
     pub addr_len: socklen_t,
     pub executor: *mut monad_async_executor_head,
+    pub total_io_submitted: u32,
+    pub total_io_completed: u32,
 }
 impl Default for monad_async_socket_head {
     fn default() -> Self {

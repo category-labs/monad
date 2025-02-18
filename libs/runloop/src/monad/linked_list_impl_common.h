@@ -41,7 +41,7 @@ extern "C"
     #define LIST_CHECK(list, item)                                             \
         {                                                                      \
             typeof((list).front) _item_ = (list).front;                        \
-            bool found = false;                                                \
+            bool found1 = false;                                               \
             for (size_t _n_ = 0; _n_ < (list).count; _n_++) {                  \
                 assert(                                                        \
                     (_n_ + 1 == (list).count && _item_->next == nullptr) ||    \
@@ -50,13 +50,12 @@ extern "C"
                     (_n_ == 0 && _item_->prev == nullptr) ||                   \
                     _item_->prev != nullptr);                                  \
                 if ((item) == _item_) {                                        \
-                    found = true;                                              \
+                    found1 = true;                                             \
                 }                                                              \
                 _item_ = _item_->next;                                         \
             }                                                                  \
-            assert((item) == nullptr || found);                                \
             _item_ = (list).back;                                              \
-            found = false;                                                     \
+            bool found2 = false;                                               \
             for (size_t _n_ = 0; _n_ < (list).count; _n_++) {                  \
                 assert(                                                        \
                     (_n_ + 1 == (list).count && _item_->prev == nullptr) ||    \
@@ -65,11 +64,20 @@ extern "C"
                     (_n_ == 0 && _item_->next == nullptr) ||                   \
                     _item_->next != nullptr);                                  \
                 if ((item) == _item_) {                                        \
-                    found = true;                                              \
+                    found2 = true;                                             \
                 }                                                              \
                 _item_ = _item_->prev;                                         \
             }                                                                  \
-            assert((item) == nullptr || found);                                \
+            assert(                                                            \
+                found1 || found2 || (item) == nullptr ||                       \
+                ("item not found in both forward and backwards lists" ==       \
+                 nullptr));                                                    \
+            assert(                                                            \
+                found1 || (item) == nullptr ||                                 \
+                ("item not found in forward list" == nullptr));                \
+            assert(                                                            \
+                found2 || (item) == nullptr ||                                 \
+                ("item not found in backward list" == nullptr));               \
         }
 #endif
 #define LIST_PREPEND2(list, item, counter, inc, dec)                           \

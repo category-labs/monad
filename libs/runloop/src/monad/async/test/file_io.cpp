@@ -100,9 +100,8 @@ TEST(file_io, unregistered_buffers)
             // Wait until both reads have completed
             while (monad_async_io_in_progress(iostatus, 2) > 0) {
                 monad_async_io_status *completed = nullptr;
-                to_result(monad_async_task_suspend_for_duration(
-                              &completed, task, (uint64_t)-1))
-                    .value();
+                CHECK_RESULT(monad_async_task_suspend_for_duration(
+                    &completed, task, (uint64_t)-1));
                 EXPECT_TRUE(
                     completed == &iostatus[0] || completed == &iostatus[1]);
             }
@@ -251,9 +250,8 @@ TEST(file_io, registered_buffers)
             // Wait until both reads have completed
             while (monad_async_io_in_progress(iostatus, 2) > 0) {
                 monad_async_io_status *completed = nullptr;
-                to_result(monad_async_task_suspend_for_duration(
-                              &completed, task, (uint64_t)-1))
-                    .value();
+                CHECK_RESULT(monad_async_task_suspend_for_duration(
+                    &completed, task, (uint64_t)-1));
                 EXPECT_TRUE(
                     completed == &iostatus[0] || completed == &iostatus[1]);
             }
@@ -574,11 +572,14 @@ TEST(file_io, benchmark)
                     0);
                 ops++;
             }
-            while (task->io_submitted + task->io_completed_not_reaped > 0) {
+            for (;;) {
                 monad_async_io_status *completed;
                 if (to_result(monad_async_task_suspend_until_completed_io(
                                   &completed, task, 0))
                         .value() == 0) {
+                    break;
+                }
+                if (completed == nullptr) {
                     continue;
                 }
                 auto idx =
@@ -899,11 +900,14 @@ TEST(file_io, max_io_concurrency)
                     0);
                 ops++;
             }
-            while (task->io_submitted + task->io_completed_not_reaped > 0) {
+            for (;;) {
                 monad_async_io_status *completed;
                 if (to_result(monad_async_task_suspend_until_completed_io(
                                   &completed, task, 0))
                         .value() == 0) {
+                    break;
+                }
+                if (completed == nullptr) {
                     continue;
                 }
                 auto idx =

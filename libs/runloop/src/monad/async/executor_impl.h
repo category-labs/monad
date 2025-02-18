@@ -119,6 +119,9 @@ static uintptr_t const EXECUTOR_EVENTFD_READY_IO_URING_DATA_MAGIC =
 static uintptr_t const CANCELLED_OP_IO_URING_DATA_MAGIC =
     (uintptr_t)0x00000000deadbeef;
 
+// Ensure bottom three bits will be available
+static_assert(sizeof(max_align_t) >= 8);
+
 // Cannot exceed three bits
 enum io_uring_user_data_type : uint8_t
 {
@@ -145,7 +148,7 @@ enum io_uring_user_data_type : uint8_t
             uintptr_t: (void *)(((uintptr_t)(value)) |                              \
                                 io_uring_user_data_type_magic))
 
-    #define io_uring_sqe_set_data(sqe, value, task, tofill)                    \
+    #define io_uring_sqe_set_data(sqe, value, task, tofill, file_or_sock)      \
         io_uring_sqe_set_data((sqe), io_uring_mangle_into_data(value));        \
         assert(((sqe)->user_data & 7) != 0);                                   \
         assert(                                                                \
@@ -158,7 +161,8 @@ enum io_uring_user_data_type : uint8_t
                                               (struct monad_async_io_status    \
                                                    *)(value),                  \
                                               (task),                          \
-                                              (tofill)))
+                                              (tofill),                        \
+                                              (file_or_sock)))
 
     #define io_uring_cqe_get_data(task, iostatus, magic, cqe)                  \
         switch (((uintptr_t)io_uring_cqe_get_data(cqe)) & 7) {                 \
@@ -197,12 +201,13 @@ enum io_uring_user_data_type : uint8_t
 
 static inline void io_uring_set_up_io_status(
     struct monad_async_io_status *iostatus, struct monad_async_task_impl *task,
-    struct monad_async_task_registered_io_buffer *tofill)
+    struct monad_async_task_registered_io_buffer *tofill, void *file_or_sock)
 {
     iostatus->prev = iostatus->next = nullptr;
     iostatus->task_ = &task->head;
-    iostatus->flags_ = (unsigned)-1;
     iostatus->tofill_ = tofill;
+    iostatus->file_or_sock_ = file_or_sock;
+    iostatus->ticks_when_completed = 1; // it has been initiated
 }
 
 static inline void atomic_lock(atomic_int *lock)
@@ -284,7 +289,8 @@ static inline int infer_buffer_index_if_possible(
                  [(ex->registered_buffers[is_write].buffer[0].count > 0)
                       ? (ex->registered_buffers[is_write].buffer[0].count - 1)
                       : 0];
-        if (iovecs[0].iov_base >= begin_small->iov_base &&
+        if (end_small->iov_len != 0 &&
+            iovecs[0].iov_base >= begin_small->iov_base &&
             (char *)iovecs[0].iov_base <
                 (char *)end_small->iov_base + end_small->iov_len) {
             int idx = (int)(((char *)iovecs[0].iov_base -
@@ -301,7 +307,8 @@ static inline int infer_buffer_index_if_possible(
         const struct iovec *end_large =
             &ex->registered_buffers[is_write]
                  .buffers[ex->registered_buffers[is_write].size - 1];
-        if (iovecs[0].iov_base >= begin_large->iov_base &&
+        if (end_large->iov_len != 0 &&
+            iovecs[0].iov_base >= begin_large->iov_base &&
             (char *)iovecs[0].iov_base <
                 (char *)end_large->iov_base + end_large->iov_len) {
             int idx = (int)(((char *)iovecs[0].iov_base -
@@ -418,7 +425,11 @@ monad_async_executor_setup_eventfd_polling(struct monad_async_executor_impl *p)
     // Do NOT increment total_io_submitted here!
     io_uring_prep_poll_multishot(sqe, p->eventfd, POLLIN);
     io_uring_sqe_set_data(
-        sqe, EXECUTOR_EVENTFD_READY_IO_URING_DATA_MAGIC, nullptr, nullptr);
+        sqe,
+        EXECUTOR_EVENTFD_READY_IO_URING_DATA_MAGIC,
+        nullptr,
+        nullptr,
+        nullptr);
     int r = io_uring_submit(&p->ring);
     if (r < 0) {
         return monad_c_make_failure(-r);
@@ -832,6 +843,10 @@ static inline monad_c_result suspend_task_if_max_concurrent_io(
                 atomic_load_explicit(
                     &task_to_resume->head.is_suspended_awaiting,
                     memory_order_acquire) == true);
+            assert(
+                atomic_load_explicit(
+                    &task_to_resume->head.is_suspended_max_concurrency,
+                    memory_order_acquire) == true);
             task_to_resume->head.derived.result = monad_c_make_success(0);
             // Unlike anywhere else, tasks suspended due to max_concurrent_io
             // aren't suspended for any other reason so migrate them to the
@@ -842,7 +857,7 @@ static inline monad_c_result suspend_task_if_max_concurrent_io(
                 memory_order_release);
             LIST_REMOVE(
                 ex->tasks_suspended_awaiting
-                    [monad_async_task_effective_cpu_priority(task)],
+                    [monad_async_task_effective_cpu_priority(task_to_resume)],
                 task_to_resume,
                 (size_t *)nullptr);
             atomic_store_explicit(
@@ -851,7 +866,7 @@ static inline monad_c_result suspend_task_if_max_concurrent_io(
                 memory_order_release);
             LIST_APPEND(
                 ex->tasks_suspended_completed
-                    [monad_async_task_effective_cpu_priority(task)],
+                    [monad_async_task_effective_cpu_priority(task_to_resume)],
                 task_to_resume,
                 (size_t *)nullptr);
         }
@@ -1027,7 +1042,7 @@ static inline struct io_uring_sqe *get_sqe_suspending_if_necessary_impl(
             // CANCELLED_OP_IO_URING_DATA_MAGIC
             io_uring_prep_nop(sqe);
             io_uring_sqe_set_data(
-                sqe, CANCELLED_OP_IO_URING_DATA_MAGIC, task, nullptr);
+                sqe, CANCELLED_OP_IO_URING_DATA_MAGIC, task, nullptr, nullptr);
             if (ring == &ex->wr_ring) {
                 // This line took a few hours to figure out
                 ex->wr_ring_ops_outstanding++;
@@ -1114,6 +1129,9 @@ static inline struct io_uring_sqe *get_wrsqe_suspending_if_necessary(
     }
     assert(ex->within_run == true);
     assert(ex->wr_ring.ring_fd != 0); // was the write ring created?
+    // Need to increment this now to cause checking of write ring SQE exhaustion
+    // lists
+    ex->wr_ring_ops_outstanding++;
     struct io_uring_sqe *sqe = get_sqe_suspending_if_necessary_impl(
         &ex->wr_ring,
         ex->tasks_suspended_submission_wr_ring,
@@ -1122,6 +1140,7 @@ static inline struct io_uring_sqe *get_wrsqe_suspending_if_necessary(
         task,
         flags);
     if (sqe == nullptr) {
+        ex->wr_ring_ops_outstanding--;
         return nullptr;
     }
     switch (task->head.priority.io) {
@@ -1137,7 +1156,6 @@ static inline struct io_uring_sqe *get_wrsqe_suspending_if_necessary(
     // The write ring must always complete the preceding operation before it
     // initiates the next operation
     sqe->flags |= IOSQE_IO_DRAIN;
-    ex->wr_ring_ops_outstanding++;
     return sqe;
 }
 

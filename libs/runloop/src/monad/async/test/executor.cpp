@@ -596,16 +596,13 @@ TEST(executor, registered_io_buffers)
         auto *task = ((monad_async_task)task_);
         shared->waiting_for_buffer.insert(task);
         monad_async_task_registered_io_buffer buffer{};
-        to_result(monad_async_task_claim_registered_file_io_write_buffer(
-                      &buffer, task, 1, {}))
-            .value();
+        CHECK_RESULT(monad_async_task_claim_registered_file_io_write_buffer(
+            &buffer, task, 1, {}));
         shared->waiting_for_buffer.erase(task);
         shared->have_buffer.insert(task);
-        to_result(monad_async_task_suspend_for_duration(nullptr, task, 0))
-            .value();
-        to_result(
-            monad_async_task_release_registered_io_buffer(task, buffer.index))
-            .value();
+        CHECK_RESULT(monad_async_task_suspend_for_duration(nullptr, task, 0));
+        CHECK_RESULT(
+            monad_async_task_release_registered_io_buffer(task, buffer.index));
         shared->have_buffer.erase(task);
         return monad_c_make_success(0);
     };
@@ -616,14 +613,13 @@ TEST(executor, registered_io_buffers)
         tasks.push_back(make_task(switcher.get(), t_attr));
         tasks.back()->derived.user_code = task_impl;
         tasks.back()->derived.user_ptr = (void *)&shared;
-        to_result(
-            monad_async_task_attach(ex.get(), tasks.back().get(), nullptr))
-            .value();
+        CHECK_RESULT(
+            monad_async_task_attach(ex.get(), tasks.back().get(), nullptr));
     }
-    to_result(monad_async_executor_run(ex.get(), 10, nullptr)).value();
+    CHECK_RESULT(monad_async_executor_run(ex.get(), 10, nullptr));
     bool have_buffer = true;
     do {
-        to_result(monad_async_executor_run(ex.get(), 1, nullptr)).value();
+        CHECK_RESULT(monad_async_executor_run(ex.get(), 1, nullptr));
         std::cout << "have_buffer=" << shared.have_buffer.size()
                   << " waiting_for_buffer=" << shared.waiting_for_buffer.size()
                   << std::endl;

@@ -51,7 +51,7 @@ typedef struct monad_async_io_status
     struct monad_async_io_status *MONAD_CONTEXT_PUBLIC_CONST prev,
         *MONAD_CONTEXT_PUBLIC_CONST next;
     monad_c_result (*MONAD_CONTEXT_PUBLIC_CONST cancel_)(
-        monad_async_task, struct monad_async_io_status *);
+        monad_async_task, struct monad_async_io_status *, bool);
 
     union
     {
@@ -63,9 +63,8 @@ typedef struct monad_async_io_status
         struct
         {
             monad_async_task task_;
-            unsigned flags_; // set to all bits one to cause Outcome's Result to
-                             // blow up if misused
             struct monad_async_task_registered_io_buffer *tofill_;
+            void *file_or_sock_;
         };
     };
 
@@ -106,7 +105,7 @@ static_assert(alignof(monad_async_io_status) == 8);
 static inline bool
 monad_async_is_io_in_progress(monad_async_io_status const *iostatus)
 {
-    return iostatus->flags_ == (unsigned)-1;
+    return iostatus->ticks_when_completed == 1;
 }
 
 //! \brief Number of the i/o is currently in progress
@@ -325,7 +324,8 @@ static uint64_t const monad_async_duration_infinite_cancelling =
 duration, which can be zero (which equates "yield"). If `completed` is not
 null, if any i/o which the task has initiated completes during the
 suspension, resume the task setting `completed` to which i/o has just
-completed.
+completed. This i/o is NOT REAPED, you must separately call
+`monad_async_task_completed_io()` to reap that i/o.
 
 If `ns` is the special duration `monad_async_duration_infinite_non_cancelling`,
 that makes this function (and all those based upon it) not a cancellation
@@ -341,15 +341,17 @@ monad_async_task_suspend_for_duration(
 //! \brief CANCELLATION POINT Combines `monad_async_task_completed_io()` and
 //! `monad_async_task_suspend_for_duration()` to conveniently reap completed
 //! i/o, suspending the task until more i/o completes. Returns zero when no more
-//! i/o, otherwise returns i/o completed not reaped including i/o
-//! returned.
+//! i/o, otherwise returns i/o initiated plus i/o completed not reaped including
+//! i/o returned i.e. how much i/o work remains before the task, and when it
+//! becomes zero there is none remaining.
 static inline monad_c_result monad_async_task_suspend_until_completed_io(
     monad_async_io_status **completed, monad_async_task task, uint64_t ns)
 {
     *completed = monad_async_task_completed_io(task);
     if (*completed != NULL) {
         return monad_c_make_success(
-            1 + (intptr_t)task->io_completed_not_reaped);
+            (intptr_t)task->io_submitted +
+            (intptr_t)task->io_completed_not_reaped + 1);
     }
     if (task->io_submitted == 0) {
         return monad_c_make_success(0);
@@ -361,7 +363,8 @@ static inline monad_c_result monad_async_task_suspend_until_completed_io(
     }
     *completed = monad_async_task_completed_io(task);
     return monad_c_make_success(
-        (*completed != NULL) + (intptr_t)task->io_completed_not_reaped);
+        (intptr_t)task->io_submitted + (intptr_t)task->io_completed_not_reaped +
+        (*completed != NULL));
 }
 
 //! \brief A registered i/o buffer
@@ -384,7 +387,8 @@ struct monad_async_task_claim_registered_io_buffer_flags
 };
 
 /*! \brief CANCELLATION POINT Claim an unused registered **write** buffer for
-file i/o, suspending if none currently available.
+file i/o, suspending if none currently available unless the `fail_dont_suspend`
+flag is set.
 
 There are two sizes of registered i/o write buffer, small and large which are
 the page size of the host platform (e.g. 4Kb and 2Mb if on Intel x64). Through
@@ -394,6 +398,13 @@ possible overhead.
 It is important to note that these buffers can ONLY be used for write operations
 on the write ring. For read operations, it is io_uring which allocates the
 buffers.
+
+Because it is you the user who claims write buffers, it is on you to detect
+and avoid write buffer deadlock where that might occur. Generally, you should
+allocate more write buffers than extant write i/o could ever occur, but if
+that isn't feasible then you ought to set the `fail_dont_suspend` flag and
+then either schedule the write i/o for later, or use a non-registered buffer,
+or some other strategy. The error returned will be equivalent to `ENOBUFS`.
 */
 BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_task_claim_registered_file_io_write_buffer(
@@ -403,7 +414,8 @@ monad_async_task_claim_registered_file_io_write_buffer(
         flags); // implemented in executor.c
 
 /*! \brief CANCELLATION POINT Claim an unused registered **write** buffer for
-socket i/o, suspending if none currently available.
+socket i/o, suspending if none currently available unless the
+`fail_dont_suspend` flag is set.
 
 There are two sizes of registered i/o write buffer, small and large which are
 the page size of the host platform (e.g. 4Kb and 2Mb if on Intel x64). Through
@@ -413,6 +425,14 @@ possible overhead.
 It is important to note that these buffers can ONLY be used for write operations
 on the write ring. For read operations, it is io_uring which allocates the
 buffers.
+
+Because it is you the user who claims write buffers, it is on you to detect
+and avoid write buffer deadlock where that might occur. Generally, you should
+allocate more buffers than extant i/o could ever occur (as for socket i/o, read
+and write buffers come from the same pool), but if that isn't feasible then you
+ought to set the `fail_dont_suspend` flag and then either schedule the write i/o
+for later, or use a non-registered buffer, or some other strategy. The error
+returned will be equivalent to `ENOBUFS`.
 */
 BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_task_claim_registered_socket_io_write_buffer(

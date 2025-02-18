@@ -41,12 +41,16 @@ be:
 ```c
 for (;;) {
     monad_async_io_status *completed = nullptr;
-    CHECK_RESULT(monad_async_task_suspend_until_completed_io(
+    monad_c_result r = monad_async_task_suspend_until_completed_io(
         &completed,
         task,
         monad_async_duration_infinite_non_cancelling));
-    if (completed == nullptr) {
+    CHECK_RESULT(r);
+    if(r.value == 0) {
         break;
+    }
+    if (completed == nullptr) {
+        continue;
     }
     process_completion(completed);
 }

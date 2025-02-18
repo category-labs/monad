@@ -19,6 +19,9 @@ typedef struct monad_async_socket_head
 
     // The following are not user modifiable
     struct monad_async_executor_head *MONAD_CONTEXT_PUBLIC_CONST executor;
+
+    MONAD_CONTEXT_PUBLIC_CONST uint32_t total_io_submitted;
+    MONAD_CONTEXT_PUBLIC_CONST uint32_t total_io_completed; // only in debug
 } *monad_async_socket;
 
 /*! \brief EXPENSIVE Create a socket. See `man socket` to explain parameters.

@@ -114,6 +114,20 @@ mod tests {
                     }
                     r = unsafe {
                         to_result(monad_async_executor_run(ex.head, 1, &mut ts)).unwrap()
+                    }; // returns early when next timeout would fire
+                    assert_eq!(did_run, 1);
+                    unsafe {
+                        assert_eq!((*ex.head).tasks_pending_launch, 0);
+                        assert_eq!((*ex.head).tasks_running, 0);
+                        assert_eq!((*ex.head).tasks_suspended, 1);
+                        assert_eq!(r, 0);
+                        assert_eq!((*task.head).is_pending_launch, false);
+                        assert_eq!((*task.head).is_running, false);
+                        assert_eq!((*task.head).is_suspended_awaiting, true);
+                        assert_eq!((*task.head).is_suspended_completed, false);
+                    }
+                    r = unsafe {
+                        to_result(monad_async_executor_run(ex.head, 1, &mut ts)).unwrap()
                     }; // resumes and exits
                     assert_eq!(did_run, 2);
                     unsafe {

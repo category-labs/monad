@@ -318,12 +318,16 @@ monad_evmc_result eth_call(
         last_triedb_path = triedb_path;
     }
 
-    monad_evmc_result ret{};
-    BlockHashBufferFinalized buffer{};
-    if (!init_block_hash_buffer_from_triedb(*db, block_number, buffer)) {
-        ret.status_code = EVMC_REJECTED;
-        ret.message = "failure to initialize block hash buffer";
-        return ret;
+    thread_local std::unique_ptr<BlockHashBufferFinalized> buffer{};
+    thread_local std::optional<uint64_t> last_block_number{};
+    if (!last_block_number || *last_block_number != block_number) {
+        buffer.reset(new BlockHashBufferFinalized{});
+        if (!init_block_hash_buffer_from_triedb(*db, block_number, *buffer)) {
+            return {
+                .status_code = EVMC_REJECTED,
+                .message = "failure to initialize block hash buffer"};
+        }
+        last_block_number = block_number;
     }
 
     auto chain = [chain_config] -> std::unique_ptr<Chain> {
@@ -350,18 +354,18 @@ monad_evmc_result eth_call(
         block_round,
         sender,
         *tdb,
-        buffer,
+        *buffer,
         state_overrides);
     if (MONAD_UNLIKELY(result.has_error())) {
-        ret.status_code = EVMC_REJECTED;
-        ret.message = result.error().message().c_str();
+        return {
+            .status_code = EVMC_REJECTED,
+            .message = result.error().message().c_str()};
     }
-    else {
-        auto const &res = result.assume_value();
-        ret.status_code = res.status_code;
-        ret.output_data = {res.output_data, res.output_data + res.output_size};
-        ret.gas_used = static_cast<int64_t>(tx.gas_limit) - res.gas_left;
-        ret.gas_refund = res.gas_refund;
-    }
-    return ret;
+    auto const &res = result.assume_value();
+    return {
+        .status_code = res.status_code,
+        .output_data = {res.output_data, res.output_data + res.output_size},
+        .gas_used = static_cast<int64_t>(tx.gas_limit) - res.gas_left,
+        .gas_refund = res.gas_refund,
+    };
 }

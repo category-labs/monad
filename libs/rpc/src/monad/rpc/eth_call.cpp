@@ -297,24 +297,30 @@ monad_evmc_result eth_call(
     MONAD_ASSERT(!sender_result.has_error());
     auto const sender = sender_result.value();
 
-    std::vector<std::filesystem::path> paths;
-    if (std::filesystem::is_directory(triedb_path)) {
-        for (auto const &file :
-             std::filesystem::directory_iterator(triedb_path)) {
-            paths.emplace_back(file.path());
+    thread_local std::unique_ptr<mpt::Db> db{};
+    thread_local std::unique_ptr<TrieDb> tdb{};
+    thread_local std::optional<std::string> last_triedb_path{};
+    if (!last_triedb_path || *last_triedb_path != triedb_path) {
+        std::vector<std::filesystem::path> paths;
+        if (std::filesystem::is_directory(triedb_path)) {
+            for (auto const &file :
+                 std::filesystem::directory_iterator(triedb_path)) {
+                paths.emplace_back(file.path());
+            }
         }
+        else {
+            paths.emplace_back(triedb_path);
+        }
+        tdb.reset(); // reset in reverse order
+        db.reset(
+            new mpt::Db{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = paths}});
+        tdb.reset(new TrieDb{*db});
+        last_triedb_path = triedb_path;
     }
-    else {
-        paths.emplace_back(triedb_path);
-    }
-
-    // rodb is not thread safe
-    thread_local mpt::Db db{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = paths}};
-    thread_local TrieDb tdb{db};
 
     monad_evmc_result ret{};
     BlockHashBufferFinalized buffer{};
-    if (!init_block_hash_buffer_from_triedb(db, block_number, buffer)) {
+    if (!init_block_hash_buffer_from_triedb(*db, block_number, buffer)) {
         ret.status_code = EVMC_REJECTED;
         ret.message = "failure to initialize block hash buffer";
         return ret;
@@ -343,7 +349,7 @@ monad_evmc_result eth_call(
         block_number,
         block_round,
         sender,
-        tdb,
+        *tdb,
         buffer,
         state_overrides);
     if (MONAD_UNLIKELY(result.has_error())) {

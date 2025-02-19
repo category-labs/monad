@@ -82,7 +82,7 @@ public:
     }
 
     virtual bytes32_t read_storage(
-        Address const &address, Incarnation incarnation,
+        Address const &address, Incarnation const incarnation,
         bytes32_t const &key) override
     {
         bool truncated = false;
@@ -119,8 +119,8 @@ public:
     }
 
     virtual void set_block_and_round(
-        uint64_t block_number,
-        std::optional<uint64_t> round_number = {}) override
+        uint64_t const block_number,
+        std::optional<uint64_t> const round_number = {}) override
     {
         proposals_.set_block_and_round(block_number, round_number);
         db_.set_block_and_round(block_number, round_number);

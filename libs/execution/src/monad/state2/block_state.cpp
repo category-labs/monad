@@ -27,8 +27,8 @@ MONAD_NAMESPACE_BEGIN
 
 BlockState::BlockState(Db &db)
     : db_{db}
-    , state_(new StateDeltas)
-    , code_(new Code)
+    , state_(std::make_unique<StateDeltas>())
+    , code_(std::make_unique<Code>())
 {
 }
 

@@ -11,11 +11,11 @@
 
 struct monad_evmc_result
 {
-    int status_code;
-    std::vector<uint8_t> output_data;
-    std::string message;
-    int64_t gas_used;
-    int64_t gas_refund;
+    int status_code{};
+    std::vector<uint8_t> output_data{};
+    std::string message{};
+    int64_t gas_used{};
+    int64_t gas_refund{};
 
     int get_status_code() const;
     std::vector<uint8_t> get_output_data() const;

@@ -15,6 +15,8 @@
 #include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
+#include <monad/lru/static_lru_cache.hpp>
+#include <monad/mpt/util.hpp>
 #include <monad/rpc/eth_call.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/state.hpp>
@@ -300,6 +302,8 @@ monad_evmc_result eth_call(
     thread_local std::unique_ptr<mpt::Db> db{};
     thread_local std::unique_ptr<TrieDb> tdb{};
     thread_local std::optional<std::string> last_triedb_path{};
+    using BlockHashCache = static_lru_cache<uint64_t, bytes32_t>;
+    thread_local BlockHashCache blockhash_cache{7200};
     if (!last_triedb_path || *last_triedb_path != triedb_path) {
         std::vector<std::filesystem::path> paths;
         if (std::filesystem::is_directory(triedb_path)) {
@@ -322,10 +326,31 @@ monad_evmc_result eth_call(
     thread_local std::optional<uint64_t> last_block_number{};
     if (!last_block_number || *last_block_number != block_number) {
         buffer.reset(new BlockHashBufferFinalized{});
-        if (!init_block_hash_buffer_from_triedb(*db, block_number, *buffer)) {
-            return {
-                .status_code = EVMC_REJECTED,
-                .message = "failure to initialize block hash buffer"};
+        BlockHashCache::ConstAccessor acc;
+        for (uint64_t b = block_number < 256 ? 0 : block_number - 256;
+             b < block_number;
+             ++b) {
+            if (blockhash_cache.find(acc, b)) {
+                buffer->set(b, acc->second->val);
+                continue;
+            }
+
+            auto const header = db->get(
+                mpt::concat(
+                    FINALIZED_NIBBLE, mpt::NibblesView{block_header_nibbles}),
+                b);
+            if (!header.has_value()) {
+                LOG_WARNING(
+                    "Could not query block header {} from TrieDb -- {}",
+                    b,
+                    header.error().message().c_str());
+                return {
+                    .status_code = EVMC_REJECTED,
+                    .message = "failure to initialize block hash buffer"};
+            }
+            auto const h = to_bytes(keccak256(header.value()));
+            buffer->set(b, h);
+            blockhash_cache.insert(b, h);
         }
         last_block_number = block_number;
     }

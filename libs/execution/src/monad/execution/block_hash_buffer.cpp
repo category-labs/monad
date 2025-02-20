@@ -27,7 +27,7 @@ uint64_t BlockHashBufferFinalized::n() const
     return n_;
 };
 
-bytes32_t const &BlockHashBufferFinalized::get(uint64_t const n) const
+bytes32_t BlockHashBufferFinalized::get(uint64_t const n) const
 {
     MONAD_ASSERT(n < n_ && n + N >= n_);
     return b_[n % N];
@@ -64,7 +64,7 @@ uint64_t BlockHashBufferProposal::n() const
     return n_;
 }
 
-bytes32_t const &BlockHashBufferProposal::get(uint64_t const n) const
+bytes32_t BlockHashBufferProposal::get(uint64_t const n) const
 {
     MONAD_ASSERT(n < n_ && n + N >= n_);
     size_t const idx = n_ - n - 1;

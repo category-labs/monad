@@ -64,14 +64,6 @@ using namespace monad::mpt;
 
 namespace
 {
-    Nibbles proposal_prefix(uint64_t const round_number)
-    {
-        return concat(
-            PROPOSAL_NIBBLE,
-            NibblesView{
-                serialize_as_big_endian<sizeof(uint64_t)>(round_number)});
-    }
-
     byte_string
     encode_receipt_db(Receipt const &receipt, size_t const log_index_begin)
     {

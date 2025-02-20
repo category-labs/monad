@@ -759,4 +759,11 @@ void load_header(mpt::Db &db, BlockHeader const &header)
         std::move(ls), n, false /* compaction */, true /* write_to_fast */);
 }
 
+mpt::Nibbles proposal_prefix(uint64_t const round)
+{
+    return mpt::concat(
+        PROPOSAL_NIBBLE,
+        NibblesView{serialize_as_big_endian<sizeof(uint64_t)>(round)});
+}
+
 MONAD_NAMESPACE_END

@@ -9,7 +9,7 @@
 #include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/db/trie_db.hpp>
-#include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/block_hash_chain_on_disk.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/switch_evmc_revision.hpp>
@@ -35,7 +35,7 @@ namespace
     Result<evmc::Result> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, uint64_t const block_round,
-        Address const &sender, TrieDb &tdb, BlockHashBufferFinalized &buffer,
+        Address const &sender, TrieDb &tdb, BlockHashChainOnDisk &buffer,
         monad_state_override_set const &state_overrides)
     {
         Transaction enriched_txn{txn};
@@ -55,6 +55,7 @@ namespace
         if (block_round != mpt::INVALID_ROUND_NUM) {
             maybe_round.emplace(block_round);
         }
+        buffer.set_block_and_round(block_number, maybe_round);
         tdb.set_block_and_round(block_number, maybe_round);
         BlockState block_state{tdb};
         // avoid conflict with block reward txn
@@ -169,7 +170,7 @@ namespace
         Chain const &chain, evmc_revision const rev, Transaction const &txn,
         BlockHeader const &header, uint64_t const block_number,
         uint64_t const block_round, Address const &sender, TrieDb &tdb,
-        BlockHashBufferFinalized &buffer,
+        BlockHashChainOnDisk &buffer,
         monad_state_override_set const &state_overrides)
     {
         SWITCH_EVMC_REVISION(
@@ -318,17 +319,7 @@ monad_evmc_result eth_call(
         last_triedb_path = triedb_path;
     }
 
-    thread_local std::unique_ptr<BlockHashBufferFinalized> buffer{};
-    thread_local std::optional<uint64_t> last_block_number{};
-    if (!last_block_number || *last_block_number != block_number) {
-        buffer.reset(new BlockHashBufferFinalized{});
-        if (!init_block_hash_buffer_from_triedb(*db, block_number, *buffer)) {
-            return {
-                .status_code = EVMC_REJECTED,
-                .message = "failure to initialize block hash buffer"};
-        }
-        last_block_number = block_number;
-    }
+    BlockHashChainOnDisk block_hash(*db);
 
     auto chain = [chain_config] -> std::unique_ptr<Chain> {
         switch (chain_config) {
@@ -354,7 +345,7 @@ monad_evmc_result eth_call(
         block_round,
         sender,
         *tdb,
-        *buffer,
+        block_hash,
         state_overrides);
     if (MONAD_UNLIKELY(result.has_error())) {
         return {

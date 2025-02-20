@@ -22,7 +22,7 @@ public:
     static constexpr unsigned N = 256;
 
     virtual uint64_t n() const = 0;
-    virtual bytes32_t const &get(uint64_t) const = 0;
+    virtual bytes32_t get(uint64_t) const = 0;
     virtual ~BlockHashBuffer() = default;
 };
 
@@ -35,7 +35,7 @@ public:
     BlockHashBufferFinalized();
 
     uint64_t n() const override;
-    bytes32_t const &get(uint64_t) const override;
+    bytes32_t get(uint64_t) const override;
 
     void set(uint64_t, bytes32_t const &);
 };
@@ -52,7 +52,7 @@ public:
     BlockHashBufferProposal(bytes32_t const &, BlockHashBufferProposal const &);
 
     uint64_t n() const override;
-    bytes32_t const &get(uint64_t) const override;
+    bytes32_t get(uint64_t) const override;
 };
 
 class BlockHashChain

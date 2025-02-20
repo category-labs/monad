@@ -121,15 +121,17 @@ std::shared_ptr<CodeAnalysis> BlockState::read_code(bytes32_t const &code_hash)
     }
 }
 
-bool BlockState::can_merge(State const &state)
+bool BlockState::can_merge(State &state) const
 {
     MONAD_ASSERT(state_);
-    for (auto const &[address, account_state] : state.original_) {
+    for (auto &[address, account_state] : state.original_) {
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_->find(it, address));
-        if (account != it->second.account.second) {
+        auto const &actual = it->second.account.second;
+        if ((account != actual) &&
+            !fix_account_mismatch(state, address, account_state, actual)) {
             return false;
         }
         // TODO account.has_value()???
@@ -226,6 +228,76 @@ void BlockState::log_debug()
     MONAD_ASSERT(code_);
     LOG_DEBUG("State Deltas: {}", *state_);
     LOG_DEBUG("Code Deltas: {}", *code_);
+}
+
+bool BlockState::fix_account_mismatch(
+    State &state, Address const &address, AccountState &original_state,
+    std::optional<Account> const &actual) const
+{
+    auto &original = original_state.account_;
+    if (is_dead(original)) {
+        return false;
+    }
+    if (is_dead(actual)) {
+        return false;
+    }
+    if (original->code_hash != actual->code_hash) {
+        return false;
+    }
+    if (original->incarnation != actual->incarnation) {
+        return false;
+    }
+    bool const nonce_mismatch = original->nonce != actual->nonce;
+    if (nonce_mismatch) {
+        if (!state.relaxed_validation()) {
+            return false;
+        }
+        if (original_state.validate_exact_nonce()) {
+            return false;
+        }
+    }
+    bool const balance_mismatch = original->balance != actual->balance;
+    if (balance_mismatch) {
+        if (!state.relaxed_validation()) {
+            return false;
+        }
+        if (original_state.validate_exact_balance()) {
+            return false;
+        }
+        if (actual->balance < original_state.min_balance()) {
+            return false;
+        }
+    }
+    MONAD_DEBUG_ASSERT(nonce_mismatch || balance_mismatch);
+    auto it = state.current_.find(address);
+    if (it != state.current_.end()) {
+        MONAD_ASSERT(it->second.size() == 1);
+        auto &local_state = it->second.recent();
+        auto &local = local_state.account_;
+        if (nonce_mismatch) {
+            MONAD_ASSERT(original->nonce < actual->nonce);
+            auto const diff = actual->nonce - original->nonce;
+            local->nonce += diff;
+        }
+        if (balance_mismatch) {
+            if (original->balance > actual->balance) {
+                auto const diff = original->balance - actual->balance;
+                MONAD_ASSERT(local->balance >= diff);
+                local->balance -= diff;
+            }
+            else {
+                auto const diff = actual->balance - original->balance;
+                local->balance += diff;
+            }
+        }
+    }
+    if (nonce_mismatch) {
+        original->nonce = actual->nonce;
+    }
+    if (balance_mismatch) {
+        original->balance = actual->balance;
+    }
+    return true;
 }
 
 MONAD_NAMESPACE_END

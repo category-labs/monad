@@ -52,6 +52,9 @@ class State
 
     unsigned version_{0};
 
+    bool relaxed_validation_{false};
+
+public:
     AccountState &original_account_state(Address const &address)
     {
         auto it = original_.find(address);
@@ -63,6 +66,7 @@ class State
         return it->second;
     }
 
+private:
     AccountState const &recent_account_state(Address const &address)
     {
         // current
@@ -145,6 +149,16 @@ public:
         --version_;
     }
 
+    [[nodiscard]] bool relaxed_validation() const
+    {
+        return relaxed_validation_;
+    }
+
+    void set_relaxed_validation()
+    {
+        relaxed_validation_ = true;
+    }
+
     ////////////////////////////////////////
 
     std::optional<Account> const &recent_account(Address const &address)
@@ -152,7 +166,9 @@ public:
         return recent_account_state(address).account_;
     }
 
-    void set_original_nonce(Address const &address, uint64_t const nonce)
+    void set_original_nonce_and_balance(
+        Address const &address, uint64_t const nonce,
+        uint256_t const &min_balance)
     {
         auto &account_state = original_account_state(address);
         auto &account = account_state.account_;
@@ -160,6 +176,11 @@ public:
             account = Account{};
         }
         account->nonce = nonce;
+        account_state.set_validate_exact_nonce();
+        if (account->balance < min_balance) {
+            account->balance = min_balance;
+        }
+        account_state.set_min_balance(min_balance);
     }
 
     ////////////////////////////////////////
@@ -177,6 +198,7 @@ public:
     uint64_t get_nonce(Address const &address)
     {
         auto const &account = recent_account(address);
+        original_account_state(address).set_validate_exact_nonce();
         if (MONAD_LIKELY(account.has_value())) {
             return account.value().nonce;
         }
@@ -187,6 +209,7 @@ public:
     {
         auto const &account = recent_account(address);
         if (MONAD_LIKELY(account.has_value())) {
+            original_account_state(address).set_validate_exact_balance();
             return intx::be::store<bytes32_t>(account.value().balance);
         }
         return {};
@@ -260,6 +283,21 @@ public:
     }
 
     ////////////////////////////////////////
+
+    bool increment_nonce(Address const &address)
+    {
+        auto &account = current_account(address);
+        auto const nonce = account.has_value() ? account->nonce : 0;
+        if (nonce == std::numeric_limits<decltype(nonce)>::max()) {
+            // Match geth behavior - don't overflow nonce
+            return false;
+        }
+        if (MONAD_UNLIKELY(!account.has_value())) {
+            account = Account{.incarnation = incarnation_};
+        }
+        account->nonce = nonce + 1;
+        return true;
+    }
 
     void set_nonce(Address const &address, uint64_t const nonce)
     {
@@ -372,12 +410,14 @@ public:
         if constexpr (rev < EVMC_CANCUN) {
             add_to_balance(beneficiary, account.value().balance);
             account.value().balance = 0;
+            original_account_state(address).set_validate_exact_balance();
         }
         else {
             if (address != beneficiary ||
                 account->incarnation == incarnation_) {
                 add_to_balance(beneficiary, account.value().balance);
                 account.value().balance = 0;
+                original_account_state(address).set_validate_exact_balance();
             }
         }
 

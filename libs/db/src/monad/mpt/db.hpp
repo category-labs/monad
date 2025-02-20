@@ -94,7 +94,6 @@ public:
         size_t concurrency_limit = 4096);
     // Blocking traverse never wait on a fiber future.
     bool traverse_blocking(NodeCursor, TraverseMachine &, uint64_t block_id);
-    NodeCursor root() const noexcept;
     uint64_t get_latest_block_id() const;
     uint64_t get_earliest_block_id() const;
     uint64_t get_history_length() const;

@@ -634,7 +634,6 @@ TEST_F(OnDiskDbWithFileFixture, open_emtpy_rodb)
     ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
     // RODb root is invalid
     Db const ro_db{ro_config};
-    EXPECT_FALSE(ro_db.root().is_valid());
     EXPECT_EQ(ro_db.get_latest_block_id(), INVALID_BLOCK_ID);
     EXPECT_EQ(ro_db.get_earliest_block_id(), INVALID_BLOCK_ID);
     // RODb get() from any block will fail
@@ -814,12 +813,13 @@ TEST_F(OnDiskDbWithFileFixture, benchmark_blocking_parallel_traverse)
         ls.push_front(u);
     }
     db.upsert(std::move(ls), 0);
+    auto const root_cursor = db.load_root_for_version(0);
 
     // benchmark traverse
     size_t num_leaves_traversed = 0;
     DummyTraverseMachine traverse_machine{num_leaves_traversed};
     auto begin = std::chrono::steady_clock::now();
-    ASSERT_TRUE(db.traverse(db.root(), traverse_machine, 0));
+    ASSERT_TRUE(db.traverse(root_cursor, traverse_machine, 0));
     EXPECT_EQ(num_leaves_traversed, nkeys);
     auto end = std::chrono::steady_clock::now();
     auto const parallel_elapsed =
@@ -830,7 +830,7 @@ TEST_F(OnDiskDbWithFileFixture, benchmark_blocking_parallel_traverse)
 
     begin = std::chrono::steady_clock::now();
     traverse_machine.reset();
-    ASSERT_TRUE(db.traverse_blocking(db.root(), traverse_machine, 0));
+    ASSERT_TRUE(db.traverse_blocking(root_cursor, traverse_machine, 0));
     EXPECT_EQ(num_leaves_traversed, nkeys);
     end = std::chrono::steady_clock::now();
     auto const blocking_elapsed =
@@ -959,11 +959,9 @@ TEST_F(OnDiskDbWithFileFixture, load_correct_root_upon_reopen_nonempty_db)
     {
         Db const db{machine, config};
         // db is init to empty
-        EXPECT_FALSE(db.root().is_valid());
         EXPECT_EQ(db.get_latest_block_id(), INVALID_BLOCK_ID);
 
         Db const ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
-        EXPECT_FALSE(ro_db.root().is_valid());
         EXPECT_EQ(ro_db.get_latest_block_id(), INVALID_BLOCK_ID);
     }
 
@@ -971,7 +969,6 @@ TEST_F(OnDiskDbWithFileFixture, load_correct_root_upon_reopen_nonempty_db)
         config.append = true;
         Db db{machine, config};
         // db is still empty
-        EXPECT_FALSE(db.root().is_valid());
         EXPECT_EQ(db.get_latest_block_id(), INVALID_BLOCK_ID);
 
         auto u1 = make_update(kv[2].first, kv[2].second);
@@ -995,12 +992,10 @@ TEST_F(OnDiskDbWithFileFixture, load_correct_root_upon_reopen_nonempty_db)
     { // reopen the same db again, this time we will have a valid root loaded
         config.append = true;
         Db const db{machine, config};
-        EXPECT_TRUE(db.root().is_valid());
         EXPECT_EQ(db.get_latest_block_id(), block_id);
         EXPECT_EQ(db.get_earliest_block_id(), block_id);
 
         Db const ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
-        EXPECT_TRUE(db.root().is_valid());
         EXPECT_EQ(db.get_latest_block_id(), block_id);
         EXPECT_EQ(db.get_earliest_block_id(), block_id);
     }
@@ -1234,7 +1229,10 @@ TYPED_TEST(DbTest, simple_with_same_prefix)
         this->db.get_data(root_under_prefix, {}, block_id).value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
     EXPECT_EQ(
-        this->db.get_data(this->db.root(), prefix, block_id).value(),
+        this->db
+            .get_data(
+                this->db.load_root_for_version(block_id), prefix, block_id)
+            .value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
 
     EXPECT_FALSE(this->db.get(0x01_hex, block_id).has_value());
@@ -1295,7 +1293,11 @@ TYPED_TEST(DbTest, simple_with_increasing_block_id_prefix)
         this->db.get_data(root_under_prefix, {}, block_id).value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
     EXPECT_EQ(
-        this->db.get_data(this->db.root(), NibblesView{prefix}, block_id)
+        this->db
+            .get_data(
+                this->db.load_root_for_version(block_id),
+                NibblesView{prefix},
+                block_id)
             .value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
 
@@ -1414,19 +1416,19 @@ TYPED_TEST(DbTraverseTest, traverse)
         }
     };
 
+    auto const root_cursor = this->db.load_root_for_version(this->block_id);
     {
         size_t num_leaves = 0;
         SimpleTraverse traverse{num_leaves};
-        ASSERT_TRUE(
-            this->db.traverse(this->db.root(), traverse, this->block_id));
+        ASSERT_TRUE(this->db.traverse(root_cursor, traverse, this->block_id));
         EXPECT_EQ(num_leaves, 4);
     }
 
     {
         size_t num_leaves = 0;
         SimpleTraverse traverse{num_leaves};
-        ASSERT_TRUE(this->db.traverse_blocking(
-            this->db.root(), traverse, this->block_id));
+        ASSERT_TRUE(
+            this->db.traverse_blocking(root_cursor, traverse, this->block_id));
         EXPECT_EQ(traverse.num_up, 7);
         EXPECT_EQ(num_leaves, 4);
     }

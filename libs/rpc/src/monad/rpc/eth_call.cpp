@@ -316,6 +316,7 @@ monad_evmc_result eth_call(
             paths.emplace_back(triedb_path);
         }
         tdb.reset(); // reset in reverse order
+        db.reset(); // cannot create more than one rodb per thread at a time
         db.reset(
             new mpt::Db{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = paths}});
         tdb.reset(new TrieDb{*db});

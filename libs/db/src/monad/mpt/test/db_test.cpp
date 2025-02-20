@@ -582,9 +582,9 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
     auto const offset = ctx->aux.get_root_offset_at_version(version);
     ASSERT_NE(offset, INVALID_OFFSET);
 
-    AsyncContext::TrieRootCache::ConstAccessor acc;
-    ASSERT_TRUE(ctx->root_cache.find(acc, offset));
-    auto root = acc->second->val;
+    TrieRootCache::ConstAccessor acc;
+    ASSERT_TRUE(ctx->root_cache.find(acc, version));
+    auto root = acc->second->val.second;
     // MUST use traverse_blocking() to check the in memory nodes as they are.
     // The `Db::traverse()` API make a copy of traverse root which does not
     // maintain the exact in memory trie
@@ -610,6 +610,12 @@ TEST_F(OnDiskDbWithFileAsyncFixture, root_cache_invalidation)
     poll_until(1);
 
     ASSERT_EQ(ctx.get()->root_cache.size(), 1);
+    chunk_offset_t first_root_offset{chunk_offset_t::invalid_value()};
+    {
+        TrieRootCache::ConstAccessor acc;
+        EXPECT_TRUE(ctx.get()->root_cache.find(acc, block_id));
+        first_root_offset = acc->second->val.first;
+    }
 
     // Copy trie to new prefix. This rewrites the root offset in memory
     db.copy_trie(block_id, prefix0, block_id, final_prefix, true);
@@ -623,9 +629,13 @@ TEST_F(OnDiskDbWithFileAsyncFixture, root_cache_invalidation)
         });
     poll_until(2);
 
-    // There should be 2 elements in the root cache because the offset in memory
-    // has changed.
-    EXPECT_EQ(ctx.get()->root_cache.size(), 2);
+    // There should still be 1 element but root offset should be updated
+    ASSERT_EQ(ctx.get()->root_cache.size(), 1);
+    {
+        TrieRootCache::ConstAccessor acc;
+        EXPECT_TRUE(ctx.get()->root_cache.find(acc, block_id));
+        EXPECT_NE(acc->second->val.first, first_root_offset);
+    }
 }
 
 TEST_F(OnDiskDbWithFileFixture, open_emtpy_rodb)

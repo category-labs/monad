@@ -13,7 +13,6 @@
 #include <monad/core/result.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
-#include <monad/lru/static_lru_cache.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/db_error.hpp>
 #include <monad/mpt/detail/boost_fiber_workarounds.hpp>
@@ -100,10 +99,6 @@ struct Db::Impl
 // owns the RODb instance
 struct Db::ROOnDisk final : public Db::Impl
 {
-    // version -> {root_offset, root}
-    using TrieRootCache = static_lru_cache<
-        uint64_t, std::pair<chunk_offset_t, std::shared_ptr<Node>>>;
-
     async::storage_pool pool_;
     io::Ring ring_;
     io::Buffers rwbuf_;
@@ -1148,7 +1143,9 @@ uint64_t Db::get_history_length() const
 
 AsyncContext::AsyncContext(Db &db, size_t lru_size)
     : aux(db.impl_->aux())
-    , root_cache(lru_size, chunk_offset_t::invalid_value())
+    , root_cache(
+          lru_size, INVALID_BLOCK_ID,
+          {chunk_offset_t::invalid_value(), nullptr})
 {
 }
 
@@ -1216,12 +1213,14 @@ namespace detail
                     sender->res_root = {
                         NodeCursor{*sender->root.get()}, find_result::success};
                     {
-                        AsyncContext::TrieRootCache::ConstAccessor acc;
+                        TrieRootCache::ConstAccessor acc;
                         MONAD_ASSERT(
-                            sender->context.root_cache.find(acc, offset) ==
-                            false);
+                            sender->context.root_cache.find(
+                                acc, sender->block_id) == false ||
+                            acc->second->val.first != offset);
                     }
-                    sender->context.root_cache.insert(offset, sender->root);
+                    sender->context.root_cache.insert(
+                        sender->block_id, {offset, sender->root});
                 }
                 catch (std::exception const &) {
                     sender->res_root = {
@@ -1292,11 +1291,12 @@ namespace detail
         case op_t::op_get_node1: {
             chunk_offset_t const offset =
                 context.aux.get_root_offset_at_version(block_id);
-            AsyncContext::TrieRootCache::ConstAccessor acc;
-            if (context.root_cache.find(acc, offset)) {
+            TrieRootCache::ConstAccessor acc;
+            if (context.root_cache.find(acc, block_id) &&
+                acc->second->val.first == offset) {
                 // found in LRU - no IO necessary
-                root = acc->second->val;
-                res_root = {NodeCursor{*root.get()}, find_result::success};
+                root = acc->second->val.second;
+                res_root = {NodeCursor{*root}, find_result::success};
                 io_state->completed(async::success());
                 return async::success();
             }

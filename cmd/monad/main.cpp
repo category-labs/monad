@@ -325,6 +325,7 @@ int main(int const argc, char const *argv[])
             return runloop_ethereum(
                 *chain,
                 block_db_path,
+                db,
                 db_cache,
                 block_hash_buffer,
                 priority_pool,

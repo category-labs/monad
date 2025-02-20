@@ -10,6 +10,7 @@
 #include <monad/db/block_db.hpp>
 #include <monad/db/db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/block_hash_chain_on_disk.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/validate_block.hpp>
@@ -62,11 +63,12 @@ namespace
 }
 
 Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
-    Chain const &chain, std::filesystem::path const &ledger_dir, Db &db,
-    BlockHashBufferFinalized &block_hash_buffer,
+    Chain const &chain, std::filesystem::path const &ledger_dir,
+    mpt::Db &raw_db, Db &db, BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop)
 {
+    (void)block_hash_buffer;
     uint64_t const batch_size =
         end_block_num == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
     uint64_t batch_num_blocks = 0;
@@ -78,6 +80,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
 
     uint64_t const start_block_num = block_num;
     BlockDb block_db(ledger_dir);
+    BlockHashChainOnDisk block_hash_chain(raw_db);
     while (block_num <= end_block_num && stop == 0) {
         Block block;
         MONAD_ASSERT_PRINTF(
@@ -99,6 +102,11 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
             (block.header.number == start_block_num)
                 ? std::nullopt
                 : std::make_optional(block.header.number - 1));
+        block_hash_chain.set_block_and_round(
+            block.header.number - 1,
+            (block.header.number == start_block_num)
+                ? std::nullopt
+                : std::make_optional(block.header.number - 1));
         BlockState block_state(db);
         BOOST_OUTCOME_TRY(
             auto results,
@@ -107,7 +115,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 rev,
                 block,
                 block_state,
-                block_hash_buffer,
+                block_hash_chain,
                 priority_pool));
 
         std::vector<Receipt> receipts(results.size());
@@ -136,9 +144,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
         db.finalize(block.header.number, block.header.number);
         db.update_verified_block(block.header.number);
 
-        auto const h =
-            to_bytes(keccak256(rlp::encode_block_header(output_header)));
-        block_hash_buffer.set(block_num, h);
+        // auto const h =
+        //     to_bytes(keccak256(rlp::encode_block_header(output_header)));
+        // block_hash_buffer.set(block_num, h);
 
         ntxs += block.transactions.size();
         batch_num_txs += block.transactions.size();

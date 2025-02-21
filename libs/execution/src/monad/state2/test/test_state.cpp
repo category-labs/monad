@@ -1824,12 +1824,12 @@ namespace
             db2_.set_block_and_round(block - 1, parent);
             BlockState bs1(db1_);
             BlockState bs2(db2_);
-            Incarnation inc{block, 1};
+            Incarnation const inc{block, 1};
             State st1(bs1, inc);
             State st2(bs2, inc);
             uint64_t const num = random9();
             for (uint64_t i = 0; i < num; ++i) {
-                Address addr(random_addr());
+                Address const addr(random_addr());
                 uint64_t const action = random100();
                 if (action < RANDOM_ADD) {
                     uint256_t const delta = 10 * random9();
@@ -1877,7 +1877,7 @@ namespace
             MONAD_ASSERT(bs2.can_merge(st2));
             bs1.merge(st1);
             bs2.merge(st2);
-            MonadConsensusBlockHeader hdr(
+            MonadConsensusBlockHeader const hdr(
                 MonadConsensusBlockHeader::from_eth_header(
                     {.number = block}, round));
             bs1.commit(hdr);
@@ -1954,7 +1954,7 @@ namespace
         void check()
         {
             for (uint8_t const i : ADDR) {
-                Address addr(i);
+                Address const addr(i);
                 auto account1 = db1_.read_account(addr);
                 auto account2 = db2_.read_account(addr);
                 if (account1) {
@@ -1966,7 +1966,7 @@ namespace
                 }
                 MONAD_ASSERT(account1 == account2);
                 if (account1) {
-                    Incarnation incarnation = account1->incarnation;
+                    Incarnation const incarnation = account1->incarnation;
                     for (uint8_t const j : KEYS) {
                         bytes32_t key(j);
                         auto const val1 =

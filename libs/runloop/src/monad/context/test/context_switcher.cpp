@@ -91,7 +91,7 @@ TEST(context_switcher, works)
     auto test_creation_destruction = [](monad_context_switcher switcher,
                                         char const *desc,
                                         bool run_switching_test) {
-        monad_context_task_attr attr{
+        monad_context_task_attr const attr{
 #if MONAD_CONTEXT_HAVE_ASAN || MONAD_CONTEXT_HAVE_TSAN
             .stack_size = 4096 * 4
 #else
@@ -231,7 +231,7 @@ TEST(context_switcher, scaling)
 #endif
     auto test_scaling = [](monad_context_switcher switcher, char const *desc) {
         {
-            monad_context_task_attr attr{.stack_size = 512};
+            monad_context_task_attr const attr{.stack_size = 512};
             std::vector<context_ptr> contexts(16384);
             for (;;) {
                 std::cout << "\n   Testing " << desc << " with "
@@ -305,7 +305,7 @@ TEST(context_switcher, recursion)
             .user_code = task_->user_code, .user_ptr = task_->user_ptr,
             .detach = +[](monad_context_task) {}
         };
-        monad_context_task_attr attr{
+        monad_context_task_attr const attr{
 #if MONAD_CONTEXT_HAVE_ASAN || MONAD_CONTEXT_HAVE_TSAN
             .stack_size = 4096 * 4
 #else

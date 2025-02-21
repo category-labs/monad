@@ -73,10 +73,10 @@ inline void set_beacon_root(BlockState &block_state, Block &block)
 
     State state{block_state, Incarnation{block.header.number, 0}};
     if (state.account_exists(BEACON_ROOTS_ADDRESS)) {
-        uint256_t timestamp{block.header.timestamp};
-        bytes32_t k1{
+        uint256_t const timestamp{block.header.timestamp};
+        bytes32_t const k1{
             to_bytes(to_big_endian(timestamp % HISTORY_BUFFER_LENGTH))};
-        bytes32_t k2{to_bytes(to_big_endian(
+        bytes32_t const k2{to_bytes(to_big_endian(
             timestamp % HISTORY_BUFFER_LENGTH + HISTORY_BUFFER_LENGTH))};
         state.set_storage(
             BEACON_ROOTS_ADDRESS, k1, to_bytes(to_big_endian(timestamp)));

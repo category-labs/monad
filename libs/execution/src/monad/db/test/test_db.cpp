@@ -938,7 +938,7 @@ TYPED_TEST(DBTest, call_frames_refund)
 
 #ifdef ENABLE_CALL_TRACING
     ASSERT_EQ(actual_call_frames.size(), 1);
-    CallFrame expected{
+    CallFrame const expected{
         .type = CallType::CALL,
         .flags = 0,
         .from = from,

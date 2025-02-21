@@ -349,7 +349,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
 
     ReadOnlyOnDiskDbConfig const ro_config{
         .dbname_paths = this->config.dbname_paths};
-    Db ro_db{ro_config};
+    Db const ro_db{ro_config};
 
     // Verify RO
     EXPECT_EQ(
@@ -565,7 +565,7 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
         virtual bool
         should_visit(Node const &node, unsigned char branch) override
         {
-            bool next_is_in_memory =
+            bool const next_is_in_memory =
                 node.next(node.to_child_index(branch)) != nullptr;
             EXPECT_EQ(next_is_in_memory, curr_level <= expected_cache_level);
             return next_is_in_memory;
@@ -669,7 +669,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_concurrent)
     auto keep_query = [&]() {
         // construct RODb
         ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
-        Db ro_db{ro_config};
+        Db const ro_db{ro_config};
 
         uint64_t read_version = 0;
         auto start_version_bytes = serialize_as_big_endian<6>(read_version);
@@ -729,7 +729,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_concurrent)
 TEST_F(OnDiskDbWithFileFixture, upsert_but_not_write_root)
 {
     ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
-    Db ro_db{ro_config};
+    Db const ro_db{ro_config};
 
     // upsert not write root, rodb reads nothing
     auto const k1 = 0x12345678_hex;
@@ -1012,7 +1012,7 @@ TEST(DbTest, out_of_order_upserts_to_nonexist_earlier_version)
     auto undb = monad::make_scope_exit(
         [&]() noexcept { std::filesystem::remove(dbname); });
     StateMachineAlwaysEmpty machine{};
-    OnDiskDbConfig config{
+    OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
@@ -1020,7 +1020,7 @@ TEST(DbTest, out_of_order_upserts_to_nonexist_earlier_version)
     Db db{machine, config};
 
     ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
-    Db rodb{ro_config};
+    Db const rodb{ro_config};
 
     constexpr size_t total_keys = 10000;
     auto [bytes_alloc, updates_alloc] = prepare_random_updates(total_keys);
@@ -1073,14 +1073,14 @@ TEST(DbTest, out_of_order_upserts_with_compaction)
     auto undb = monad::make_scope_exit(
         [&]() noexcept { std::filesystem::remove(dbname); });
     StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig config{
+    OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
         .fixed_history_length = DBTEST_HISTORY_LENGTH};
     Db db{machine, config};
     ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
-    Db rodb{ro_config};
+    Db const rodb{ro_config};
 
     auto get_release_offsets = [](monad::byte_string_view const bytes)
         -> std::pair<uint32_t, uint32_t> {
@@ -1550,7 +1550,7 @@ TEST(DbTest, auto_expire_large_set)
         StateMachineConfig{.expire = true, .cache_depth = 3}>
         machine{};
     constexpr auto history_len = 20;
-    OnDiskDbConfig config{
+    OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
@@ -1560,7 +1560,7 @@ TEST(DbTest, auto_expire_large_set)
     auto const prefix = 0x00_hex;
     monad::byte_string const value(256 * 1024, 0);
     std::vector<monad::byte_string> keys;
-    std::vector<monad::byte_string> values;
+    std::vector<monad::byte_string> const values;
     constexpr unsigned keys_per_block = 5;
     constexpr uint64_t blocks = 1000;
     keys.reserve(blocks * keys_per_block);
@@ -1613,7 +1613,7 @@ TEST(DbTest, auto_expire)
         EmptyCompute,
         StateMachineConfig{.expire = true, .cache_depth = 3}>
         machine{};
-    OnDiskDbConfig config{
+    OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
@@ -1841,7 +1841,7 @@ TEST_F(OnDiskDbWithFileFixture, copy_trie_to_different_version_modify_state)
 TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
 {
     EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
-    Db ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db const ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
     EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
 
     // continuous upsert() and move_trie_version_forward() leads to
@@ -1933,7 +1933,7 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
     EXPECT_EQ(ro_db.get_latest_block_id(), max_block_id);
 
     // Jump way far ahead, which erases all histories
-    uint64_t far_dest_block_id = ro_db.get_history_length() * 3;
+    uint64_t const far_dest_block_id = ro_db.get_history_length() * 3;
     db.move_trie_version_forward(db.get_latest_block_id(), far_dest_block_id);
 
     EXPECT_EQ(
@@ -2006,7 +2006,7 @@ TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
     config.append = true;
     while (config.fixed_history_length > end_history_length) {
         config.fixed_history_length = *config.fixed_history_length - 1;
-        Db new_db{machine, config};
+        Db const new_db{machine, config};
         EXPECT_EQ(new_db.get_history_length(), config.fixed_history_length);
         EXPECT_EQ(new_db.get_latest_block_id(), DBTEST_HISTORY_LENGTH - 1);
     }
@@ -2045,7 +2045,7 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
     EXPECT_EQ(db.get_earliest_block_id(), min_block_num_before);
     EXPECT_TRUE(db.get(prefix + kv[1].first, min_block_num_before).has_value());
 
-    Db ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db const ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
     EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
     EXPECT_TRUE(ro_db.get(prefix + kv[1].first, 0).has_error());
     EXPECT_TRUE(ro_db.get(prefix + kv[1].first, max_block_id).has_value());
@@ -2059,7 +2059,7 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
     config.fixed_history_length = DBTEST_HISTORY_LENGTH / 2;
     config.append = true;
     {
-        Db new_rw{machine, config};
+        Db const new_rw{machine, config};
         EXPECT_EQ(new_rw.get_history_length(), config.fixed_history_length);
         EXPECT_EQ(new_rw.get_latest_block_id(), max_block_id);
     }
@@ -2078,7 +2078,7 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
 
     // Reopen rwdb with a longer history length
     config.fixed_history_length = DBTEST_HISTORY_LENGTH;
-    Db new_rw{machine, config};
+    Db const new_rw{machine, config};
     EXPECT_EQ(new_rw.get_history_length(), config.fixed_history_length);
     EXPECT_EQ(new_rw.get_earliest_block_id(), min_block_num_after);
     EXPECT_EQ(ro_db.get_history_length(), config.fixed_history_length);

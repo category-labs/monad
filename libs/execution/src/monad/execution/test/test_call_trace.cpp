@@ -37,7 +37,7 @@ namespace
 
 TEST(CallFrame, to_json)
 {
-    CallFrame call_frame{
+    CallFrame const call_frame{
         .type = CallType::CALL,
         .from = a,
         .to = std::make_optional(b),
@@ -129,7 +129,7 @@ TEST(CallTrace, execute_success)
     auto const &beneficiary = ADDR_A;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     CallTracer call_tracer{tx};
     EvmcHost<EVMC_SHANGHAI> host(call_tracer, tx_context, buffer, s);
 
@@ -141,7 +141,7 @@ TEST(CallTrace, execute_success)
 
     ASSERT_TRUE(call_frames.size() == 1);
 
-    CallFrame expected{
+    CallFrame const expected{
         .type = CallType::CALL,
         .flags = 0,
         .from = sender,
@@ -196,7 +196,7 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
     auto const &beneficiary = ADDR_A;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     CallTracer call_tracer{tx};
     EvmcHost<EVMC_SHANGHAI> host(call_tracer, tx_context, buffer, s);
 
@@ -208,7 +208,7 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
 
     ASSERT_TRUE(call_frames.size() == 1);
 
-    CallFrame expected{
+    CallFrame const expected{
         .type = CallType::CALL,
         .flags = 0,
         .from = sender,

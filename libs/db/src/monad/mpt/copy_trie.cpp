@@ -26,8 +26,8 @@ Node::UniquePtr create_node_add_new_branch(
         static_cast<uint16_t>(node->mask | (1u << new_branch));
     allocators::inline_owning_span<
         ChildData,
-        sizeof(ChildData) * Node::max_number_of_children>
-        children{static_cast<uint8_t>(std::popcount(mask))};
+        sizeof(ChildData) * Node::max_number_of_children> const children{
+        static_cast<uint8_t>(std::popcount(mask))};
     for (unsigned i = 0, j = 0, old_j = 0, bit = 1; i < 16; ++i, bit <<= 1) {
         if (i == new_branch) {
             auto &child = children[j];

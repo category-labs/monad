@@ -20,7 +20,7 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
 {
     // Make a new empty DB
     monad::test::UpdateAux<void> aux{&state()->io};
-    monad::test::StateMachineAlwaysMerkle sm;
+    monad::test::StateMachineAlwaysMerkle const sm;
     // Load its root
     monad::mpt::Node::UniquePtr root{monad::mpt::read_node_blocking(
         state()->pool, aux.get_latest_root_offset())};

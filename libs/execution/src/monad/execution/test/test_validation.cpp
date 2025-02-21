@@ -222,7 +222,7 @@ TEST(Validation, base_fee_per_gas_existence)
 
 TEST(Validation, withdrawal_root_existence)
 {
-    EthereumMainnet chain;
+    EthereumMainnet const chain;
 
     static BlockHeader const header1{
         .ommers_hash = NULL_LIST_HASH,

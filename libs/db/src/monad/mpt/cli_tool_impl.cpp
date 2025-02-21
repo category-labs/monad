@@ -1021,7 +1021,7 @@ public:
             aux.db_metadata()->slow_list.begin == slow_list_begin_index);
         MONAD_ASSERT(aux.db_metadata()->slow_list.end == slow_list_end_index);
 
-        for (unsigned int &chunk : chunks) {
+        for (unsigned int const &chunk : chunks) {
             if (chunk != UINT32_MAX) {
                 aux.append(monad::mpt::UpdateAuxImpl::chunk_list::free, chunk);
             }

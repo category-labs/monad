@@ -60,7 +60,7 @@ namespace
         tdb.set_block_and_round(block_number, maybe_round);
         BlockState block_state{tdb};
         // avoid conflict with block reward txn
-        Incarnation incarnation{block_number, Incarnation::LAST_TX - 1u};
+        Incarnation const incarnation{block_number, Incarnation::LAST_TX - 1u};
         State state{block_state, incarnation};
 
         for (auto const &[addr, state_delta] : state_overrides.override_sets) {

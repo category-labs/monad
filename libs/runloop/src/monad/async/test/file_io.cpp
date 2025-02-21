@@ -27,7 +27,7 @@ TEST(file_io, unregistered_buffers)
 
         shared_state_t()
         {
-            int fd = monad_async_make_temporary_file(
+            int const fd = monad_async_make_temporary_file(
                 tempfilepath, sizeof(tempfilepath));
             close(fd);
         }
@@ -55,7 +55,7 @@ TEST(file_io, unregistered_buffers)
             // Write to the file
             {
                 monad_async_io_status iostatus{};
-                struct iovec iov[] = {
+                struct iovec const iov[] = {
                     {.iov_base = (void *)"hello world", .iov_len = 11}};
                 EXPECT_FALSE(monad_async_is_io_in_progress(&iostatus));
                 monad_async_task_file_write(
@@ -85,7 +85,7 @@ TEST(file_io, unregistered_buffers)
             monad_async_io_status iostatus[2]{};
             EXPECT_FALSE(monad_async_is_io_in_progress(&iostatus[0]));
             EXPECT_FALSE(monad_async_is_io_in_progress(&iostatus[1]));
-            struct iovec iov[] = {
+            struct iovec const iov[] = {
                 {.iov_base = buffer, .iov_len = 6},
                 {.iov_base = buffer + 6, .iov_len = 6}};
             monad_async_task_file_readv(
@@ -171,7 +171,7 @@ TEST(file_io, registered_buffers)
 
         shared_state_t()
         {
-            int fd = monad_async_make_temporary_file(
+            int const fd = monad_async_make_temporary_file(
                 tempfilepath, sizeof(tempfilepath));
             close(fd);
         }
@@ -206,7 +206,7 @@ TEST(file_io, registered_buffers)
                 monad_async_io_status iostatus{};
                 memcpy(buffer.iov->iov_base, "hello world", 11);
                 EXPECT_FALSE(monad_async_is_io_in_progress(&iostatus));
-                struct iovec iov[] = {
+                struct iovec const iov[] = {
                     {.iov_base = buffer.iov[0].iov_base, .iov_len = 11}};
                 monad_async_task_file_write(
                     &iostatus, task, fh.get(), buffer.index, &iov[0], 1, 0, 0);
@@ -336,7 +336,7 @@ TEST(file_io, misc_ops)
 
         shared_state_t()
         {
-            int fd = monad_async_make_temporary_file(
+            int const fd = monad_async_make_temporary_file(
                 tempfilepath, sizeof(tempfilepath));
             close(fd);
         }
@@ -372,7 +372,7 @@ TEST(file_io, misc_ops)
 
             // Write to the file
             monad_async_io_status iostatus{};
-            struct iovec iov[] = {
+            struct iovec const iov[] = {
                 {.iov_base = (void *)"hello world", .iov_len = 11}};
             EXPECT_FALSE(monad_async_is_io_in_progress(&iostatus));
             monad_async_task_file_write(
@@ -490,7 +490,7 @@ TEST(file_io, benchmark)
 
         shared_state_t()
         {
-            int fd = monad_async_make_temporary_file(
+            int const fd = monad_async_make_temporary_file(
                 tempfilepath, sizeof(tempfilepath));
             static constexpr std::string_view text(
                 R"(Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
@@ -698,7 +698,7 @@ TEST(file_io, sqe_exhaustion_does_not_reorder_writes)
         {
             if (!fh) {
                 monad_async_file file;
-                int fd = monad_async_make_temporary_inode();
+                int const fd = monad_async_make_temporary_inode();
                 to_result(monad_async_task_file_create_from_existing_fd(
                               &file, task, fd))
                     .value();

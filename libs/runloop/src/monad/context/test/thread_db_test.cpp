@@ -282,7 +282,7 @@ TEST(context_switcher_thread_db, enumerates_context)
         });
         l.wait();
         {
-            std::unique_lock g(lock);
+            std::unique_lock const g(lock);
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             enumerate_contexts("Main and second system threads");
             cond.notify_all();

@@ -26,7 +26,7 @@ protected:
 
     bytes32_t write_dummy_block(uint64_t const round)
     {
-        MonadConsensusBlockBody body;
+        MonadConsensusBlockBody const body;
         MonadConsensusBlockHeader header;
         header.block_body_id =
             to_bytes(blake3(rlp::encode_consensus_block_body(body)));

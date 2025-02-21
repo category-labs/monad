@@ -167,7 +167,7 @@ namespace
         MONAD_ASSERT(orig.has_value());
         StateDeltas::accessor it;
         bytes32_t const end{state.storage[addr].end++};
-        bool success = deltas.emplace(
+        bool const success = deltas.emplace(
             it,
             Address{addr},
             StateDelta{

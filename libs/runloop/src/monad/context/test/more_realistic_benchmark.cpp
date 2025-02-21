@@ -79,7 +79,7 @@ TEST(context_switcher, more_realistic_benchmark)
             .user_ptr = (void *)&shared, .detach = +[](monad_context_task) {}
         };
         if (switcher) {
-            monad_context_task_attr attr{
+            monad_context_task_attr const attr{
 #if MONAD_CONTEXT_HAVE_ASAN || MONAD_CONTEXT_HAVE_TSAN
                 .stack_size = 4096 * 4
 #else

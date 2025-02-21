@@ -1089,7 +1089,7 @@ TEST_F(StateSyncFixture, benchmark)
         .state_root =
             0x50510e4f9ecc40a8cc5819bdc589a0e09c172ed268490d5f755dba939f7e8997_bytes32,
         .number = N};
-    StateDeltas deltas{v.begin(), v.end()};
+    StateDeltas const deltas{v.begin(), v.end()};
     commit_sequential(stdb, deltas, Code{}, hdr);
     init();
     handle_target(cctx, hdr);

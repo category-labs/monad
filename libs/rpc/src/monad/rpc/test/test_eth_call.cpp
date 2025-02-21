@@ -71,9 +71,9 @@ TEST_F(EthCallFixture, simple_success_call)
     static constexpr auto to{
         0x5353535353535353535353535353535353535353_address};
 
-    Transaction tx{
+    Transaction const tx{
         .gas_limit = 100000u, .to = to, .type = TransactionType::eip1559};
-    BlockHeader header{.number = 256};
+    BlockHeader const header{.number = 256};
 
     commit_sequential(tdb, {}, {}, header);
 
@@ -82,7 +82,7 @@ TEST_F(EthCallFixture, simple_success_call)
     auto const rlp_sender =
         to_vec(rlp::encode_address(std::make_optional(from)));
 
-    monad_state_override_set state_override;
+    monad_state_override_set const state_override;
 
     auto const result = eth_call(
         CHAIN_CONFIG_MONAD_DEVNET,
@@ -108,9 +108,9 @@ TEST_F(EthCallFixture, on_proposed_block)
     static constexpr auto to{
         0x5353535353535353535353535353535353535353_address};
 
-    Transaction tx{
+    Transaction const tx{
         .gas_limit = 100000u, .to = to, .type = TransactionType::eip1559};
-    BlockHeader header{.number = 256};
+    BlockHeader const header{.number = 256};
 
     auto const consensus_header =
         MonadConsensusBlockHeader::from_eth_header(header);
@@ -122,7 +122,7 @@ TEST_F(EthCallFixture, on_proposed_block)
     auto const rlp_sender =
         to_vec(rlp::encode_address(std::make_optional(from)));
 
-    monad_state_override_set state_override;
+    monad_state_override_set const state_override;
 
     auto const result = eth_call(
         CHAIN_CONFIG_MONAD_DEVNET,
@@ -151,9 +151,9 @@ TEST_F(EthCallFixture, failed_to_read)
     static constexpr auto to{
         0x5353535353535353535353535353535353535353_address};
 
-    Transaction tx{
+    Transaction const tx{
         .gas_limit = 100000u, .to = to, .type = TransactionType::eip1559};
-    BlockHeader header{.number = 1256};
+    BlockHeader const header{.number = 1256};
 
     commit_sequential(tdb, {}, {}, header);
 
@@ -162,7 +162,7 @@ TEST_F(EthCallFixture, failed_to_read)
     auto const rlp_sender =
         to_vec(rlp::encode_address(std::make_optional(from)));
 
-    monad_state_override_set state_override;
+    monad_state_override_set const state_override;
 
     auto const result = eth_call(
         CHAIN_CONFIG_MONAD_DEVNET,
@@ -184,13 +184,13 @@ TEST_F(EthCallFixture, contract_deployment_success)
 
     static constexpr auto from = Address{};
 
-    std::string tx_data =
+    std::string const tx_data =
         "0x604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffff"
         "ffffffffffffffffffffffffe03601600081602082378035828234f580151560395781"
         "82fd5b8082525050506014600cf3";
 
-    Transaction tx{.gas_limit = 100000u, .data = from_hex(tx_data)};
-    BlockHeader header{.number = 256};
+    Transaction const tx{.gas_limit = 100000u, .data = from_hex(tx_data)};
+    BlockHeader const header{.number = 256};
 
     commit_sequential(tdb, {}, {}, header);
 
@@ -199,7 +199,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
     auto const rlp_sender =
         to_vec(rlp::encode_address(std::make_optional(from)));
 
-    monad_state_override_set state_override;
+    monad_state_override_set const state_override;
 
     auto const result = eth_call(
         CHAIN_CONFIG_MONAD_DEVNET,
@@ -211,13 +211,13 @@ TEST_F(EthCallFixture, contract_deployment_success)
         dbname,
         state_override);
 
-    std::string deployed_code =
+    std::string const deployed_code =
         "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe036"
         "01600081602082378035828234f58015156039578182fd5b8082525050506014600cf"
         "3";
     byte_string deployed_code_bytes = from_hex(deployed_code);
 
-    std::vector<uint8_t> deployed_code_vec = {
+    std::vector<uint8_t> const deployed_code_vec = {
         deployed_code_bytes.data(),
         deployed_code_bytes.data() + deployed_code_bytes.size()};
 
@@ -248,17 +248,18 @@ TEST_F(EthCallFixture, from_contract_account)
         Code{{code_hash, code_analysis}},
         BlockHeader{.number = 0});
 
-    std::string tx_data = "0x60025560";
+    std::string const tx_data = "0x60025560";
 
-    Transaction tx{.gas_limit = 100000u, .to = ca, .data = from_hex(tx_data)};
+    Transaction const tx{
+        .gas_limit = 100000u, .to = ca, .data = from_hex(tx_data)};
 
-    BlockHeader header{.number = 0};
+    BlockHeader const header{.number = 0};
 
     auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_sender = to_vec(rlp::encode_address(std::make_optional(ca)));
 
-    monad_state_override_set state_override;
+    monad_state_override_set const state_override;
 
     auto const result = eth_call(
         CHAIN_CONFIG_MONAD_DEVNET,

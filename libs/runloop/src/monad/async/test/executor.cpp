@@ -60,10 +60,7 @@ TEST(executor, works)
     ex_attr.io_uring_ring.entries = 64;
     auto ex = make_executor(ex_attr);
 
-    struct timespec ts
-    {
-        0, 0
-    };
+    struct timespec const ts{0, 0};
 
     auto r = monad_async_executor_run(ex.get(), 1, &ts);
     try {

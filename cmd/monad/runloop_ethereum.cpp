@@ -77,7 +77,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     uint64_t ntxs = 0;
 
     uint64_t const start_block_num = block_num;
-    BlockDb block_db(ledger_dir);
+    BlockDb const block_db(ledger_dir);
     while (block_num <= end_block_num && stop == 0) {
         Block block;
         MONAD_ASSERT_PRINTF(

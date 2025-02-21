@@ -160,7 +160,7 @@ monad_async_memory_accounting()
     if (v != monad_async_memory_accounting_kind_unknown) {
         return v;
     }
-    int fd = ::open("/proc/sys/vm/overcommit_memory", O_RDONLY);
+    int const fd = ::open("/proc/sys/vm/overcommit_memory", O_RDONLY);
     if (fd != -1) {
         char buffer[8];
         if (::read(fd, buffer, 8) > 0) {

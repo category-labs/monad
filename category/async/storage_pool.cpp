@@ -53,10 +53,9 @@ std::filesystem::path storage_pool::device::current_path() const
     // Linux keeps a symlink at /proc/self/fd/n
     char in[64];
     snprintf(in, sizeof(in), "/proc/self/fd/%d", cached_readwritefd_);
-    ssize_t len;
-    if ((len = ::readlink(in, out, 32768)) == -1) {
-        throw std::system_error(errno, std::system_category());
-    }
+    ssize_t const len = ::readlink(in, out, 32768);
+    MONAD_ASSERT_PRINTF(
+        len != -1, "readlink failed due to %s", strerror(errno));
     ret.resize(static_cast<size_t>(len));
     // Linux prepends or appends a " (deleted)" when a fd is nameless
     if (ret.size() >= 10 &&
@@ -69,9 +68,7 @@ std::filesystem::path storage_pool::device::current_path() const
 
 size_t storage_pool::device::chunks() const
 {
-    if (is_zoned_device()) {
-        throw std::runtime_error("zonefs support isn't implemented yet");
-    }
+    MONAD_ASSERT(!is_zoned_device(), "zonefs support isn't implemented yet");
     return metadata_->chunks(size_of_file_);
 }
 
@@ -80,9 +77,10 @@ std::pair<file_offset_t, file_offset_t> storage_pool::device::capacity() const
     switch (type_) {
     case device::type_t_::file: {
         struct stat stat;
-        if (-1 == ::fstat(cached_readwritefd_, &stat)) {
-            throw std::system_error(errno, std::system_category());
-        }
+        MONAD_ASSERT_PRINTF(
+            -1 != ::fstat(cached_readwritefd_, &stat),
+            "failed due to %s",
+            strerror(errno));
         return {
             file_offset_t(stat.st_size), file_offset_t(stat.st_blocks) * 512};
     }
@@ -93,12 +91,13 @@ std::pair<file_offset_t, file_offset_t> storage_pool::device::capacity() const
             round_up_align<CPU_PAGE_BITS>(metadata_->total_size(size_of_file_));
         // Add the capacity of the cnv chunk
         used += metadata_->chunk_capacity;
-        if (ioctl(
+        MONAD_ASSERT_PRINTF(
+            !ioctl(
                 cached_readwritefd_,
                 _IOR(0x12, 114, size_t) /*BLKGETSIZE64*/,
-                &capacity)) {
-            throw std::system_error(errno, std::system_category());
-        }
+                &capacity),
+            "failed due to %s",
+            strerror(errno));
         auto const chunks = this->chunks();
         auto const useds = metadata_->chunk_bytes_used(size_of_file_);
         for (size_t n = 0; n < chunks; n++) {
@@ -107,9 +106,9 @@ std::pair<file_offset_t, file_offset_t> storage_pool::device::capacity() const
         return {capacity, used};
     }
     case device::type_t_::zoned_device:
-        throw std::runtime_error("zonefs support isn't implemented yet");
+        MONAD_ABORT("zonefs support isn't implemented yet");
     default:
-        abort();
+        MONAD_ABORT();
     }
 }
 
@@ -176,20 +175,20 @@ file_offset_t storage_pool::chunk::size() const
         return chunk_bytes_used[chunkid_within_device_].load(
             std::memory_order_acquire);
     }
-    throw std::runtime_error("zonefs support isn't implemented yet");
+    MONAD_ABORT("zonefs support isn't implemented yet");
 }
 
 void storage_pool::chunk::destroy_contents()
 {
     if (!try_trim_contents(0)) {
-        throw std::runtime_error("zonefs support isn't implemented yet");
+        MONAD_ABORT("zonefs support isn't implemented yet");
     }
 }
 
 uint32_t storage_pool::chunk::clone_contents_into(chunk &other, uint32_t bytes)
 {
     if (other.is_sequential_write() && other.size() != 0) {
-        throw std::runtime_error(
+        MONAD_ABORT(
             "Append only destinations must be empty before content clone");
     }
     bytes = std::min(uint32_t(size()), bytes);
@@ -225,13 +224,14 @@ bool storage_pool::chunk::try_trim_contents(uint32_t bytes)
     MONAD_DEBUG_ASSERT(capacity_ <= std::numeric_limits<off_t>::max());
     MONAD_DEBUG_ASSERT(offset_ <= std::numeric_limits<off_t>::max());
     if (device().is_file()) {
-        if (-1 == ::fallocate(
+        MONAD_ASSERT_PRINTF(
+            -1 != ::fallocate(
                       write_fd_,
                       FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE,
                       static_cast<off_t>(offset_ + bytes),
-                      static_cast<off_t>(capacity_ - bytes))) {
-            throw std::system_error(errno, std::system_category());
-        }
+                      static_cast<off_t>(capacity_ - bytes)),
+            "failed due to %s",
+            strerror(errno));
         if (append_only_) {
             auto const *metadata = device().metadata_;
             auto chunk_bytes_used =
@@ -267,9 +267,8 @@ bool storage_pool::chunk::try_trim_contents(uint32_t bytes)
                                          buffer,
                                          DISK_PAGE_SIZE,
                                          static_cast<off_t>(range[0]));
-        if (-1 == bytesread) {
-            throw std::system_error(errno, std::system_category());
-        }
+        MONAD_ASSERT_PRINTF(
+            bytesread != -1, "pread failed due to %s", strerror(errno));
         // As writes must be in DISK_PAGE_SIZE units, no point in TRIMing a
         // block only to immediately overwrite it
         if (remainder > 0) {
@@ -281,21 +280,23 @@ bool storage_pool::chunk::try_trim_contents(uint32_t bytes)
                 range[0] >= offset_ && range[0] < offset_ + capacity_);
             MONAD_DEBUG_ASSERT(range[1] <= capacity_);
             MONAD_DEBUG_ASSERT((range[1] & (DISK_PAGE_SIZE - 1)) == 0);
-            if (ioctl(write_fd_, _IO(0x12, 119) /*BLKDISCARD*/, &range)) {
-                throw std::system_error(errno, std::system_category());
-            }
+            MONAD_ASSERT_PRINTF(
+                !ioctl(write_fd_, _IO(0x12, 119) /*BLKDISCARD*/, &range),
+                "failed due to %s",
+                strerror(errno));
         }
         if (remainder > 0) {
             // Overwrite the final DISK_PAGE_SIZE unit with all bits after
             // truncation point set to zero
             memset(buffer + remainder, 0, DISK_PAGE_SIZE - remainder);
-            if (-1 == ::pwrite(
+            MONAD_ASSERT_PRINTF(
+                -1 != ::pwrite(
                           write_fd_,
                           buffer,
                           DISK_PAGE_SIZE,
-                          static_cast<off_t>(range[0]))) {
-                throw std::system_error(errno, std::system_category());
-            }
+                          static_cast<off_t>(range[0])),
+                "failed due to %s",
+                strerror(errno));
         }
         if (append_only_) {
             auto const *metadata = device().metadata_;
@@ -335,38 +336,37 @@ storage_pool::device storage_pool::make_device_(
                  ? O_RDONLY
                  : O_RDWR) |
                 O_CLOEXEC);
-        if (-1 == readwritefd) {
-            throw std::system_error(errno, std::system_category());
-        }
+        MONAD_ASSERT_PRINTF(
+            readwritefd != -1, "open failed due to %s", strerror(errno));
     }
     struct stat stat;
     memset(&stat, 0, sizeof(stat));
     switch (type) {
     case device::type_t_::file:
-        if (-1 == ::fstat(readwritefd, &stat)) {
-            throw std::system_error(errno, std::system_category());
-        }
+        MONAD_ASSERT_PRINTF(
+            -1 != ::fstat(readwritefd, &stat),
+            "failed due to %s",
+            strerror(errno));
         break;
     case device::type_t_::block_device:
-        if (ioctl(
+        MONAD_ASSERT_PRINTF(
+            !ioctl(
                 readwritefd,
                 _IOR(0x12, 114, size_t) /*BLKGETSIZE64*/,
-                &stat.st_size)) {
-            throw std::system_error(errno, std::system_category());
-        }
+                &stat.st_size),
+            "failed due to %s",
+            strerror(errno));
         break;
     case device::type_t_::zoned_device:
-        throw std::runtime_error("zonefs support isn't implemented yet");
+        MONAD_ABORT("zonefs support isn't implemented yet");
     default:
         abort();
     }
     if (stat.st_size < CPU_PAGE_SIZE) {
-        std::stringstream str;
-        str << "Storage pool source " << path
-            << " must be at least 4Kb long to be used with "
-               "storage "
-               "pool";
-        throw std::runtime_error(std::move(str).str());
+        MONAD_ABORT_PRINTF(
+            "Storage pool source %s must be at least 4Kb long to be used with "
+            "storage pool",
+            path.string().c_str());
     }
     fnv1a_hash<uint32_t>::add(unique_hash, uint32_t(stat.st_size));
     size_t total_size = 0;
@@ -383,48 +383,48 @@ storage_pool::device storage_pool::make_device_(
             buffer,
             static_cast<size_t>(stat.st_size) - offset,
             static_cast<off_t>(offset));
-        if (-1 == bytesread) {
-            throw std::system_error(errno, std::system_category());
-        }
+        MONAD_ASSERT_PRINTF(
+            bytesread != -1, "pread failed due to %s", strerror(errno));
         auto *metadata_footer = start_lifetime_as<device::metadata_t>(
             buffer + bytesread - sizeof(device::metadata_t));
         if (memcmp(metadata_footer->magic, "MND0", 4) != 0 ||
             op == mode::truncate) {
             // Uninitialised
             if (op == mode::open_existing) {
-                std::stringstream str;
-                str << "Storage pool source " << path
-                    << " has not been initialised for use with storage pool";
-                throw std::runtime_error(std::move(str).str());
+                MONAD_ABORT_PRINTF(
+                    "Storage pool source %s has not been initialised "
+                    "for use with storage pool",
+                    path.string().c_str());
             }
             if (stat.st_size < (1LL << flags.chunk_capacity) + CPU_PAGE_SIZE) {
-                std::stringstream str;
-                str << "Storage pool source " << path
-                    << " must be at least chunk_capacity + 4Kb long to be "
-                       "initialised "
-                       "for use with storage pool";
-                throw std::runtime_error(std::move(str).str());
+                MONAD_ABORT_PRINTF(
+                    "Storage pool source %s must be at least chunk_capacity + "
+                    "4Kb long to be "
+                    "initialised for use with storage pool",
+                    path.string().c_str());
             }
             // Throw away all contents
             switch (type) {
             case device::type_t_::file:
-                if (-1 == ::ftruncate(readwritefd, 0)) {
-                    throw std::system_error(errno, std::system_category());
-                }
-                if (-1 == ::ftruncate(readwritefd, stat.st_size)) {
-                    throw std::system_error(errno, std::system_category());
-                }
+                MONAD_ASSERT_PRINTF(
+                    ::ftruncate(readwritefd, 0) != -1,
+                    "failed due to %s",
+                    strerror(errno));
+                MONAD_ASSERT_PRINTF(
+                    ::ftruncate(readwritefd, stat.st_size) != -1,
+                    "failed due to %s",
+                    strerror(errno));
                 break;
             case device::type_t_::block_device: {
                 uint64_t range[2] = {0, uint64_t(stat.st_size)};
                 if (ioctl(readwritefd, _IO(0x12, 119) /*BLKDISCARD*/, &range)) {
-                    throw std::system_error(errno, std::system_category());
+                    MONAD_ABORT_PRINTF(
+                        "ioctl failed due to %s", strerror(errno));
                 }
                 break;
             }
             case device::type_t_::zoned_device:
-                throw std::runtime_error(
-                    "zonefs support isn't implemented yet");
+                MONAD_ABORT("zonefs support isn't implemented yet");
             default:
                 abort();
             }
@@ -470,9 +470,8 @@ storage_pool::device storage_pool::make_device_(
         flags.open_read_only_allow_dirty ? MAP_PRIVATE : MAP_SHARED,
         readwritefd,
         static_cast<off_t>(offset));
-    if (MAP_FAILED == addr) {
-        throw std::system_error(errno, std::system_category());
-    }
+    MONAD_ASSERT_PRINTF(
+        MAP_FAILED != addr, "mmap failed due to %s", strerror(errno));
     auto *metadata = start_lifetime_as<device::metadata_t>(
         reinterpret_cast<std::byte *>(addr) + stat.st_size - offset -
         sizeof(device::metadata_t));
@@ -503,13 +502,11 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
     for (auto const &device : devices_) {
         if (device.is_file() || device.is_block_device()) {
             auto const devicechunks = device.chunks();
-            if (devicechunks < 4) {
-                throw std::runtime_error(
-                    std::format(
-                        "Device {} has {} chunks the minimum allowed is four.",
-                        device.current_path().c_str(),
-                        devicechunks));
-            }
+            MONAD_ASSERT_PRINTF(
+                devicechunks >= 4,
+                "Device %s has %zu chunks the minimum allowed is four.",
+                device.current_path().c_str(),
+                devicechunks);
             MONAD_DEBUG_ASSERT(
                 devicechunks <= std::numeric_limits<uint32_t>::max());
             // Take off three for the cnv chunks
@@ -521,7 +518,7 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
                 hashshouldbe, device.metadata_->chunk_capacity);
         }
         else {
-            throw std::runtime_error("zonefs support isn't implemented yet");
+            MONAD_ABORT("zonefs support isn't implemented yet");
         }
     }
     for (auto const &device : devices_) {
@@ -531,26 +528,26 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
         else if (device.metadata_->config_hash != uint32_t(hashshouldbe)) {
             std::stringstream str;
             if (!flags.disable_mismatching_storage_pool_check) {
-                str << "Storage pool source " << device.current_path()
-                    << " was initialised with a configuration different to "
-                       "this storage pool. Is a device missing or is there an "
-                       "extra device from when the pool was first "
-                       "created?\n\nYou should use the monad_mpt tool to copy "
-                       "and move databases around, NOT by copying partition "
-                       "contents!";
-                throw std::runtime_error(std::move(str).str());
+                MONAD_ABORT_PRINTF(
+                    "Storage pool source %s was initialised with a "
+                    "configuration different to this storage pool. Is a device "
+                    "missing or is there an extra device from when the pool "
+                    "was first created?\n\nYou should use the monad_mpt tool "
+                    "to copy and move databases around, NOT by copying "
+                    "partition contents!",
+                    device.current_path().c_str());
             }
             else {
-                str << "Storage pool source " << device.current_path()
-                    << " was initialised with a configuration different to "
-                       "this storage pool. Is a device missing or is there an "
-                       "extra device from when the pool was first "
-                       "created?\n\nYou should use the monad_mpt tool to copy "
-                       "and move databases around, NOT by copying partition "
-                       "contents\n\nSince the monad_mpt tool was added, the "
-                       "flag disable_mismatching_storage_pool_check is no "
-                       "longer needed and has been disabled.";
-                throw std::runtime_error(std::move(str).str());
+                MONAD_ABORT_PRINTF(
+                    "Storage pool source %s was initialised with a "
+                    "configuration different to this storage pool. Is a device "
+                    "missing or is there an extra device from when the pool "
+                    "was first created?\n\nYou should use the monad_mpt tool "
+                    "to copy and move databases around, NOT by copying "
+                    "partition contents!\n\nSince the monad_mpt tool was "
+                    "added, the flag disable_mismatching_storage_pool_check is "
+                    "no longer needed and has been disabled.",
+                    device.current_path().c_str());
             }
         }
     }
@@ -633,9 +630,8 @@ storage_pool::storage_pool(storage_pool const *src, clone_as_read_only_tag_)
                     path, "/proc/self/fd/%d", src_device.cached_readwritefd_);
                 return ::open(path, O_RDONLY | O_CLOEXEC);
             }();
-            if (-1 == fd) {
-                throw std::system_error(errno, std::system_category());
-            }
+            MONAD_ASSERT_PRINTF(
+                fd != -1, "open failed due to %s", strerror(errno));
             auto unfd = make_scope_exit([fd]() noexcept { ::close(fd); });
             if (path.empty()) {
                 unfd.release();
@@ -659,10 +655,9 @@ storage_pool::storage_pool(storage_pool const *src, clone_as_read_only_tag_)
                     flags);
             }
             if (src_device.is_zoned_device()) {
-                throw std::runtime_error(
-                    "zonefs support isn't actually implemented yet");
+                MONAD_ABORT("zonefs support isn't actually implemented yet");
             }
-            abort();
+            MONAD_ABORT();
         }());
     }
     fill_chunks_(flags);
@@ -679,22 +674,20 @@ storage_pool::storage_pool(
     for (auto const &source : sources) {
         devices_.push_back([&] {
             int const fd = ::open(source.c_str(), O_PATH | O_CLOEXEC);
-            if (-1 == fd) {
-                throw std::system_error(errno, std::system_category());
-            }
+            MONAD_ASSERT_PRINTF(
+                fd != -1, "open failed due to %s", strerror(errno));
             auto unfd = make_scope_exit([fd]() noexcept { ::close(fd); });
             struct statfs statfs;
-            if (-1 == ::fstatfs(fd, &statfs)) {
-                throw std::system_error(errno, std::system_category());
-            }
-            if (statfs.f_type == 0x5a4f4653 /*ZONEFS_MAGIC*/) {
-                throw std::runtime_error(
-                    "zonefs support isn't actually implemented yet");
-            }
+            MONAD_ASSERT_PRINTF(
+                -1 != ::fstatfs(fd, &statfs),
+                "failed due to %s",
+                strerror(errno));
+            MONAD_ASSERT(
+                statfs.f_type != 0x5a4f4653 /*ZONEFS_MAGIC*/,
+                "zonefs support isn't actually implemented yet");
             struct stat stat;
-            if (-1 == ::fstat(fd, &stat)) {
-                throw std::system_error(errno, std::system_category());
-            }
+            MONAD_ASSERT_PRINTF(
+                -1 != ::fstat(fd, &stat), "failed due to %s", strerror(errno));
             if ((stat.st_mode & S_IFMT) == S_IFBLK) {
                 return make_device_(
                     mode,
@@ -713,10 +706,10 @@ storage_pool::storage_pool(
                     stat.st_ino,
                     flags);
             }
-            std::stringstream str;
-            str << "Storage pool source " << source
-                << " has unknown file entry type = " << (stat.st_mode & S_IFMT);
-            throw std::runtime_error(std::move(str).str());
+            MONAD_ABORT_PRINTF(
+                "Storage pool source %s has unknown file entry type = %u",
+                source.string().c_str(),
+                stat.st_mode & S_IFMT);
         }());
     }
     fill_chunks_(flags);
@@ -737,9 +730,8 @@ storage_pool::storage_pool(
 {
     int const fd = make_temporary_inode();
     auto unfd = make_scope_exit([fd]() noexcept { ::close(fd); });
-    if (-1 == ::ftruncate(fd, len)) {
-        throw std::system_error(errno, std::system_category());
-    }
+    MONAD_ASSERT_PRINTF(
+        -1 != ::ftruncate(fd, len), "failed due to %s", strerror(errno));
     devices_.push_back(make_device_(
         mode::truncate, device::type_t_::file, {}, fd, uint64_t(0), flags));
     unfd.release();
@@ -812,7 +804,7 @@ storage_pool::chunk(chunk_type which, uint32_t id) const
 {
     std::unique_lock const g(lock_);
     if (id >= chunks_[which].size()) {
-        throw std::runtime_error("Requested chunk which does not exist");
+        MONAD_ABORT("Requested chunk which does not exist");
     }
     return chunks_[which][id].chunk.lock();
 }
@@ -825,8 +817,7 @@ storage_pool::activate_chunk(chunk_type const which, uint32_t const id)
 #endif
     std::unique_lock g(lock_);
     if (id >= chunks_[which].size()) {
-        throw std::runtime_error(
-            "Requested to activate chunk which does not exist");
+        MONAD_ABORT("Requested to activate chunk which does not exist");
     }
     auto ret = chunks_[which][id].chunk.lock();
     if (ret) {
@@ -858,16 +849,14 @@ storage_pool::activate_chunk(chunk_type const which, uint32_t const id)
             if (!devicepath.empty()) {
                 fds[0] = chunkinfo.device.uncached_readfd_ =
                     ::open(devicepath.c_str(), O_RDONLY | O_DIRECT | O_CLOEXEC);
-                if (-1 == fds[0]) {
-                    throw std::system_error(errno, std::system_category());
-                }
+                MONAD_ASSERT_PRINTF(
+                    fds[0] != -1, "open failed due to %s", strerror(errno));
                 fds[1] = chunkinfo.device.uncached_writefd_ = ::open(
                     devicepath.c_str(),
                     (is_read_only() ? O_RDONLY : O_WRONLY) | O_DIRECT |
                         O_CLOEXEC);
-                if (-1 == fds[1]) {
-                    throw std::system_error(errno, std::system_category());
-                }
+                MONAD_ASSERT_PRINTF(
+                    fds[1] != -1, "open failed due to %s", strerror(errno));
             }
             else {
                 fds[0] = fds[1] = chunkinfo.device.cached_readwritefd_;
@@ -890,7 +879,7 @@ storage_pool::activate_chunk(chunk_type const which, uint32_t const id)
     }
     MONAD_ASSERT(ret);
     if (ret->device().is_zoned_device()) {
-        throw std::runtime_error("zonefs support isn't implemented yet");
+        MONAD_ABORT("zonefs support isn't implemented yet");
     }
     g.lock();
     auto ret2 = chunks_[which][id].chunk.lock();

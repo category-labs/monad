@@ -606,15 +606,12 @@ void UpdateAuxImpl::set_io(
                      db_metadata_[1].main->magic,
                      detail::db_metadata::MAGIC,
                      detail::db_metadata::MAGIC_STRING_LEN)) {
-            if (can_write_to_map) {
-                // Overwrite the front copy with the backup copy
-                db_copy(db_metadata_[0].main, db_metadata_[1].main, map_size);
-            }
-            else {
-                // We don't have writable maps, so can't forward progress
-                throw std::runtime_error("First copy of metadata corrupted, "
-                                         "but not opened for healing");
-            }
+            // Can't make forward progress if we don't have writable maps
+            MONAD_ASSERT(
+                can_write_to_map,
+                "First copy of metadata corrupted, but not opened for healing");
+            // Overwrite the front copy with the backup copy
+            db_copy(db_metadata_[0].main, db_metadata_[1].main, map_size);
         }
     }
     constexpr unsigned magic_version_len = 3;
@@ -628,12 +625,11 @@ void UpdateAuxImpl::set_io(
             db_metadata_[0].main->magic + magic_prefix_len,
             detail::db_metadata::MAGIC + magic_prefix_len,
             magic_version_len)) {
-        std::stringstream ss;
-        ss << "DB was generated with version " << db_metadata_[0].main->magic
-           << ". The current code base is on version "
-           << monad::mpt::detail::db_metadata::MAGIC
-           << ". Please regenerate with the new DB version.";
-        throw std::runtime_error(ss.str());
+        MONAD_ABORT_PRINTF(
+            "DB was generated with version %s. The current code base is on "
+            "version %s. Please regenerate with the new DB version.",
+            db_metadata_[0].main->magic + magic_prefix_len,
+            detail::db_metadata::MAGIC + magic_prefix_len);
     }
     // Replace any dirty copy with the non-dirty copy
     if (0 == memcmp(
@@ -678,10 +674,9 @@ void UpdateAuxImpl::set_io(
                 /* If after one second a dirty bit remains set, and we don't
                 have writable maps, can't forward progress.
                 */
-                if (dirty) {
-                    throw std::runtime_error("DB metadata was closed dirty, "
-                                             "but not opened for healing");
-                }
+                MONAD_ASSERT(
+                    !dirty,
+                    "DB metadata was closed dirty, but not opened for healing");
             }
         }
     }
@@ -754,19 +749,17 @@ void UpdateAuxImpl::set_io(
                  db_metadata_[0].main->magic,
                  detail::db_metadata::MAGIC,
                  detail::db_metadata::MAGIC_STRING_LEN)) {
-        if (!can_write_to_map) {
-            // We don't have writable maps, so can't forward progress
-            throw std::runtime_error(
-                "Neither copy of the DB metadata is valid, and not opened for "
-                "writing so stopping now.");
-        }
+        // Can't make forward progress if We don't have writable maps
+        MONAD_ASSERT(
+            can_write_to_map,
+            "Neither copy of the DB metadata is valid, and not opened for "
+            "writing so stopping now.");
         for (uint32_t n = 0; n < chunk_count; n++) {
             auto chunk = io->storage_pool().chunk(storage_pool::seq, n);
-            if (chunk->size() != 0) {
-                throw std::runtime_error(
-                    "Trying to initialise new DB but storage pool contains "
-                    "existing data, stopping now to prevent data loss.");
-            }
+            MONAD_ASSERT(
+                chunk->size() == 0,
+                "Trying to initialise new DB but storage pool contains "
+                "existing data, stopping now to prevent data loss.");
         }
         memset(db_metadata_[0].main, 0, map_size);
         MONAD_DEBUG_ASSERT((chunk_count & ~0xfffffU) == 0);

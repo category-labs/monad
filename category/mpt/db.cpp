@@ -132,14 +132,14 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
             if (!std::filesystem::exists(dbname_path)) {
                 int const fd = ::open(
                     dbname_path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
-                if (-1 == fd) {
-                    throw std::system_error(errno, std::system_category());
-                }
+                MONAD_ASSERT_PRINTF(
+                    fd != -1, "open failed due to %s", strerror(errno));
                 auto unfd =
                     monad::make_scope_exit([fd]() noexcept { ::close(fd); });
-                if (-1 == ::ftruncate(fd, len)) {
-                    throw std::system_error(errno, std::system_category());
-                }
+                MONAD_ASSERT_PRINTF(
+                    ::ftruncate(fd, len) != -1,
+                    "ftruncate failed due to %s",
+                    strerror(errno));
             }
         }
         return async::storage_pool{

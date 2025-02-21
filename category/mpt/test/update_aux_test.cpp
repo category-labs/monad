@@ -111,10 +111,12 @@ TEST(update_aux_test, set_io_reader_dirty)
     monad::async::AsyncIO testio(pool_ro, testrobuf);
 
     // This should throw. Dirty bit stays set.
-    monad::mpt::UpdateAux<> aux_reader_throw{};
-    EXPECT_THROW(
-        aux_reader_throw.set_io(&testio, AUX_TEST_HISTORY_LENGTH),
-        std::runtime_error);
+    ASSERT_DEATH(
+        ({
+            monad::mpt::UpdateAux<> aux_reader{};
+            aux_reader.set_io(&testio, AUX_TEST_HISTORY_LENGTH);
+        }),
+        "DB metadata was closed dirty, but not opened for healing");
 
     // TestAux adds instrumentation to turn off the dirty bit. Should not throw.
     TestAux aux_reader(aux_writer);

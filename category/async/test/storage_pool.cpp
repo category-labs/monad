@@ -1,3 +1,4 @@
+#include "gtest/gtest-death-test.h"
 #include "gtest/gtest.h"
 
 #include <category/async/config.hpp>
@@ -243,18 +244,13 @@ namespace
 
     TEST(StoragePool, raw_partitions)
     {
-        std::filesystem::path const devs[] = {
-            "/dev/mapper/raid0-rawblk0", "/dev/mapper/raid0-rawblk1"};
-        try {
-            storage_pool pool(devs, storage_pool::mode::truncate);
-            run_tests(pool);
-        }
-        catch (std::system_error const &e) {
-            if (e.code() != std::errc::no_such_file_or_directory &&
-                e.code() != std::errc::permission_denied) {
-                throw;
-            }
-        }
+        ASSERT_DEATH(
+            ({
+                std::filesystem::path const devs[] = {
+                    "/dev/mapper/raid0-rawblk0", "/dev/mapper/raid0-rawblk1"};
+                storage_pool pool(devs, storage_pool::mode::truncate);
+            }),
+            "open failed");
     }
 
     TEST(StoragePool, device_interleaving)
@@ -403,7 +399,10 @@ namespace
             storage_pool const _{devs};
         }
         std::filesystem::path const devs2[] = {devs[0], devs[1]};
-        EXPECT_THROW(storage_pool{devs2}, std::runtime_error);
+        ASSERT_DEATH(
+            storage_pool{devs2},
+            "was initialised with a configuration different to this storage "
+            "pool");
         storage_pool{devs2, storage_pool::mode::truncate};
     }
 

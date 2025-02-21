@@ -7,10 +7,10 @@
 #include <category/async/erased_connected_operation.hpp>
 #include <category/async/storage_pool.hpp>
 #include <category/core/assert.h>
-#include <category/core/tl_tid.h>
-#include <category/core/unordered_map.hpp>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
+#include <category/core/tl_tid.h>
+#include <category/core/unordered_map.hpp>
 
 #include <atomic>
 #include <cassert>
@@ -55,7 +55,7 @@
                 if (strerror_r(-unique, buffer, 256) != nullptr) {             \
                     buffer[255] = 0;                                           \
                 }                                                              \
-                throw std::runtime_error(std::string("FATAL: ") + buffer);     \
+                MONAD_ABORT_PRINTF("FATAL: %s", buffer)                        \
             }                                                                  \
             break;                                                             \
         }                                                                      \
@@ -124,7 +124,6 @@ namespace detail
             }
         }
     } AsyncIO_rlimit_raiser;
-
 }
 
 AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
@@ -755,9 +754,7 @@ AsyncIO::io_uring_ring_entries_left(bool for_wr_ring) const noexcept
 void AsyncIO::dump_fd_to(size_t which, std::filesystem::path const &path)
 {
     int const tofd = ::creat(path.c_str(), 0600);
-    if (tofd == -1) {
-        throw std::system_error(std::error_code(errno, std::system_category()));
-    }
+    MONAD_ASSERT_PRINTF(tofd != -1, "creat failed due to %s", strerror(errno));
     auto untodfd = make_scope_exit([tofd]() noexcept { ::close(tofd); });
     auto fromfd = seq_chunks_[which].ptr->read_fd();
     MONAD_ASSERT(fromfd.second <= std::numeric_limits<off64_t>::max());
@@ -770,9 +767,8 @@ void AsyncIO::dump_fd_to(size_t which, std::filesystem::path const &path)
         &off_out,
         seq_chunks_[which].ptr->size(),
         0);
-    if (copied == -1) {
-        throw std::system_error(std::error_code(errno, std::system_category()));
-    }
+    MONAD_ASSERT_PRINTF(
+        copied != -1, "copy_file_range failed due to %s", strerror(errno));
 }
 
 unsigned char *AsyncIO::poll_uring_while_no_io_buffers_(bool is_write)

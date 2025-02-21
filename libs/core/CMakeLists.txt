@@ -46,21 +46,12 @@ check_if_boost_fiber_needs_ucontext_macro()
 
 find_package(TBB REQUIRED)
 
-add_subdirectory("third_party/nanobench")
-
-add_subdirectory("third_party/nlohmann_json" SYSTEM)
-
-add_subdirectory("third_party/unordered_dense")
-
-add_subdirectory("third_party/quill" SYSTEM)
-
-add_library(openssl_sha3 OBJECT)
-target_include_directories(openssl_sha3 PRIVATE "third_party/openssl")
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
   target_sources(openssl_sha3 PRIVATE "src/monad/core/keccak_impl.S")
 else()
+  get_target_property(PORTABLE_SHA3 openssl_sha3 PORTABLE_SHA3_IMPLEMENTATION)
   target_sources(openssl_sha3
-                 PRIVATE "third_party/openssl/crypto/sha/keccak1600.c")
+                 PRIVATE "${PORTABLE_SHA3}")
 endif()
 
 # ##############################################################################
@@ -170,6 +161,7 @@ else()
 endif()
 
 target_link_libraries(monad_core PUBLIC openssl_sha3 Boost::fiber TBB::tbb)
+target_link_libraries(monad_core PUBLIC ankerl_robinhood)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC blake3)
 target_link_libraries(monad_core PUBLIC ethash::keccak)

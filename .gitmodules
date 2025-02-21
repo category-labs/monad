@@ -27,19 +27,19 @@
 	path = third_party/ethash
 	url = https://github.com/chfast/ethash.git
 [submodule "core/third_party/nanobench"]
-	path = libs/core/third_party/nanobench
+	path = third_party/nanobench
 	url = https://github.com/martinus/nanobench.git
 [submodule "core/third_party/nlohmann_json"]
-	path = libs/core/third_party/nlohmann_json
+	path = third_party/nlohmann_json
 	url = https://github.com/nlohmann/json.git
 [submodule "core/third_party/quill"]
-	path = libs/core/third_party/quill
+	path = third_party/quill
 	url = https://github.com/odygrd/quill.git
 [submodule "core/third_party/unordered_dense"]
-	path = libs/core/third_party/unordered_dense
+	path = third_party/unordered_dense
 	url = https://github.com/martinus/unordered_dense.git
 [submodule "libs/runloop/third_party/binutils-gdb"]
-	path = libs/runloop/third_party/binutils-gdb
+	path = third_party/binutils-gdb
 	url = git@github.com:category-labs/binutils-gdb.git
 [submodule "third_party/BLAKE3"]
 	path = third_party/BLAKE3

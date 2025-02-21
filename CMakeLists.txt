@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.27)
 
 cmake_policy(SET CMP0144 NEW) # find_package uses upper-case _ROOT variables
 
-project(monad)
+project(monad LANGUAGES C CXX ASM)
 
 option(HUNTER_ENABLED OFF)
 
@@ -49,6 +49,15 @@ find_package(Boost REQUIRED COMPONENTS fiber json)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 
+# ankerl robin hood
+add_library(ankerl_robinhood INTERFACE)
+target_include_directories(ankerl_robinhood
+                           INTERFACE "third_party/ankerl")
+
+# binutils-gdb
+add_library(monad_context_c-custom-binutils-gdb INTERFACE IMPORTED)
+target_include_directories(monad_context_c-custom-binutils-gdb INTERFACE "third_party/binutils-gdb")
+
 # BLAKE3
 add_subdirectory(third_party/BLAKE3/c)
 
@@ -67,9 +76,34 @@ set(MONAD_COMPILER_STANDALONE OFF)
 set(MONAD_COMPILER_TESTING OFF)
 add_subdirectory("third_party/compiler")
 
+# concurrentqueue
+add_library(concurrentqueue INTERFACE)
+target_include_directories(concurrentqueue
+                           INTERFACE "third_party/concurrentqueue")
+
 # komihash
 add_library(komihash INTERFACE)
 target_include_directories(komihash INTERFACE "third_party/komihash")
+
+# monad-boost-context
+add_subdirectory("third_party/monad-boost-context")
+
+# nanobench
+add_subdirectory("third_party/nanobench")
+
+# nlohmann_json
+add_subdirectory("third_party/nlohmann_json" SYSTEM)
+
+# openssl
+add_library(openssl_sha3 OBJECT)
+target_include_directories(openssl_sha3 PRIVATE "third_party/openssl")
+set_target_properties(openssl_sha3
+  PROPERTIES
+    PORTABLE_SHA3_IMPLEMENTATION
+    "${PROJECT_SOURCE_DIR}/third_party/openssl/crypto/sha/keccak1600.c")
+
+# quill
+add_subdirectory("third_party/quill" SYSTEM)
 
 # silkpre
 set(OPTIONAL_BUILD_TESTS OFF)
@@ -85,6 +119,9 @@ find_package(TBB REQUIRED)
 add_library(thread_safe_lru INTERFACE)
 target_include_directories(thread_safe_lru
                            INTERFACE "third_party/thread-safe-lru")
+
+# unordered_dense
+add_subdirectory("third_party/unordered_dense")
 
 # ##############################################################################
 # unit tests

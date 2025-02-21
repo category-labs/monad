@@ -32,6 +32,7 @@
 #include <utility>
 #include <vector>
 
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -508,6 +509,51 @@ void UpdateAuxImpl::set_io(
     auto cnv_chunk = io->storage_pool().activate_chunk(storage_pool::cnv, 0);
     auto fdr = cnv_chunk->read_fd();
     auto fdw = cnv_chunk->write_fd(0);
+    /* We keep accidentally running MPT on 4Kb min granularity storage, so
+    error out on that early to save everybody time and hassle.
+
+    Linux is unique amongst major OS kernels that it'll let you do 512 byte
+    granularity i/o on a device with a higher granularity. Unfortunately, its
+    implementation is buggy, and as we've seen in production it _nearly_ works
+    but doesn't.
+
+    Therefore just point blank refuse to run on storage which isn't truly 512
+    byte addressable.
+    */
+    {
+        unsigned int logical_block_size = 0;
+        unsigned int physical_block_size = 0;
+        unsigned int minimum_io_size = 0;
+        // Filesystems will error on ioctl syscall, so ignore zeros. We don't
+        // run production on filesystems, only the test suite and our own
+        // debugging so we don't care about i/o granularity for our own dev
+        // systems.
+        (void)ioctl(fdr.first, BLKSSZGET, &logical_block_size);
+        (void)ioctl(fdr.first, BLKPBSZGET, &physical_block_size);
+        (void)ioctl(fdr.first, BLKIOMIN, &minimum_io_size);
+        MONAD_ASSERT_PRINTF(
+            logical_block_size == 0 || logical_block_size == 512,
+            "MPT requires storage to be addressable in 512 byte granularity. "
+            "This storage has %u granularity.",
+            logical_block_size);
+        if (physical_block_size != 0 && physical_block_size != 512) {
+            std::cerr << "WARNING: MPT storage has physical block size "
+                      << physical_block_size
+                      << " which is not 512 bytes. This will cause performance "
+                         "issues due to wasting "
+                      << ((100 * (physical_block_size - 512)) /
+                          physical_block_size)
+                      << "% of i/o capacity!" << std::endl;
+        }
+        if (minimum_io_size != 0 && minimum_io_size != 512) {
+            std::cerr << "WARNING: MPT storage has minimum i/o size "
+                      << minimum_io_size
+                      << " which is not 512 bytes. This will cause performance "
+                         "issues due to wasting "
+                      << ((100 * (minimum_io_size - 512)) / minimum_io_size)
+                      << "% of i/o capacity!" << std::endl;
+        }
+    }
     /* If writable, can map maps writable. If read only but allowing
     dirty, maps are made copy-on-write so writes go into RAM and don't
     affect the original. This lets us heal any metadata and make forward

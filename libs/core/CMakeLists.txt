@@ -14,8 +14,6 @@ option(MONAD_CORE_FORCE_DEBUG_ASSERT
 # deps
 # ##############################################################################
 
-include("cmake/find_our_dependency.cmake")
-
 find_package(
   Boost REQUIRED
   COMPONENTS context fiber stacktrace_basic

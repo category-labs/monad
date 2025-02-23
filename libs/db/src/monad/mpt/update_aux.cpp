@@ -1649,7 +1649,6 @@ void UpdateAuxImpl::collect_compacted_nodes_stats(
 {
 #if MONAD_MPT_COLLECT_STATS
     if (copy_node_for_fast) {
-        MONAD_ASSERT(node_offset.in_fast_list());
         if (rewrite_to_fast) {
             ++stats.nodes_copied_fast_to_fast_for_fast;
         }

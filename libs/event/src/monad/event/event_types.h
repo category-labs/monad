@@ -79,6 +79,17 @@ enum monad_event_type : uint16_t
     MONAD_EVENT_THREAD_EXIT,
     MONAD_EVENT_TEST_COUNTER,
     MONAD_EVENT_BLOCK_START,
+    MONAD_EVENT_BLOCK_END,
+    MONAD_EVENT_BLOCK_FINALIZE,
+    MONAD_EVENT_BLOCK_REJECT,
+    MONAD_EVENT_BLOCK_EXEC_ERROR,
+    MONAD_EVENT_TXN_START,
+    MONAD_EVENT_TXN_REJECT,
+    MONAD_EVENT_TXN_EXEC_ERROR,
+    MONAD_EVENT_TXN_LOG,
+    MONAD_EVENT_TXN_RECEIPT,
+    MONAD_EVENT_WR_ACCT_STATE_BALANCE,
+    MONAD_EVENT_WR_ACCT_STATE_STORAGE,
 };
 
 /// Event payload for MONAD_EVENT_THREAD_CREATE
@@ -120,6 +131,89 @@ struct monad_event_block_exec_header
     uint64_t excess_blob_gas;
     monad_event_bytes32 parent_beacon_block_root;
     uint64_t txn_count;
+};
+
+/// Event payload for MONAD_EVENT_BLOCK_END
+struct monad_event_block_exec_result
+{
+    monad_event_bytes32 hash;
+    monad_event_bytes32 parent_hash;
+    uint8_t logs_bloom[256];
+    monad_event_bytes32 state_root;
+    monad_event_bytes32 transactions_root;
+    monad_event_bytes32 receipts_root;
+    monad_event_bytes32 withdrawals_root;
+    uint64_t gas_used;
+};
+
+/// Event payload for MONAD_EVENT_BLOCK_FINALIZE
+struct monad_event_block_finalize
+{
+    monad_event_bytes32 bft_block_id;
+    uint64_t consensus_seqno;
+};
+
+/// Event payload for MONAD_EVENT_BLOCK_EXEC_ERROR
+struct monad_event_block_exec_error
+{
+    uint64_t domain_id;
+    long status_code;
+};
+
+/// Event payload for MONAD_EVENT_TXN_START
+struct monad_event_txn_header
+{
+    monad_event_bytes32 tx_hash;
+    uint64_t nonce;
+    uint64_t gas_limit;
+    monad_event_uint256_ne max_fee_per_gas;
+    monad_event_uint256_ne max_priority_fee_per_gas;
+    monad_event_uint256_ne value;
+    monad_event_address from;
+    monad_event_address to;
+    uint8_t txn_type;
+    monad_event_uint256_ne r;
+    monad_event_uint256_ne s;
+    uint8_t y_parity;
+    monad_event_uint256_ne chain_id;
+    uint32_t data_length;
+};
+
+/// Event payload for MONAD_EVENT_TXN_EXEC_ERROR
+struct monad_event_txn_exec_error
+{
+    uint64_t domain_id;
+    long status_code;
+};
+
+/// Event payload for MONAD_EVENT_TXN_LOG
+struct monad_event_txn_log
+{
+    monad_event_address address;
+    uint8_t topic_count;
+    uint32_t data_length;
+};
+
+/// Event payload for MONAD_EVENT_TXN_RECEIPT
+struct monad_event_txn_receipt
+{
+    uint64_t status;
+    uint64_t gas_used;
+};
+
+/// Event payload for MONAD_EVENT_WR_ACCT_STATE_BALANCE
+struct monad_event_account_balance
+{
+    monad_event_address address;
+    monad_event_uint256_ne balance;
+};
+
+/// Event payload for MONAD_EVENT_WR_ACCT_STATE_STORAGE
+struct monad_event_account_storage
+{
+    monad_event_address address;
+    monad_event_bytes32 storage_key;
+    monad_event_bytes32 storage_value;
 };
 
 #ifdef __cplusplus

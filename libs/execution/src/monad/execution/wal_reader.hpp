@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/config.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/monad_block.hpp>
 
 #include <evmc/evmc.h>
@@ -40,6 +41,7 @@ public:
         WalAction action;
         MonadConsensusBlockHeader header;
         MonadConsensusBlockBody body;
+        bytes32_t bft_block_id;
     };
 
     WalReader(std::filesystem::path const &ledger_dir);

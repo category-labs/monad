@@ -3,13 +3,15 @@
 /**
  * @file
  *
- * Event recorder interface. There are two things in this file:
+ * Event recorder interface. There are three things in this file:
  *
  *   1. The macros and functions used for recording events and taking
  *      timestamps. These are needed by any file that wishes to record events
  *
  *   2. Functions to configure and enable/disable the event ring recorder
  *      objects
+ *
+ *   3. Functions for managing the block flow ID
  */
 
 #include <stddef.h>
@@ -130,6 +132,20 @@ char const *monad_event_recorder_get_last_error();
 #define MONAD_EVENT_DEFAULT_EXEC_PAYLOAD_BUF_SHIFT (28)
 #define MONAD_EVENT_MIN_EXEC_PAYLOAD_BUF_SHIFT (27)
 #define MONAD_EVENT_MAX_EXEC_PAYLOAD_BUF_SHIFT (40)
+
+/*
+ * Block flow ID management functions
+ */
+
+/// Return the next block flow ID and activate it in all recorders; subsequent
+/// recorded events will carry this block flow ID until it is explicitly
+/// cleared; also return the block execution header array slot (in the metadata
+/// page) that corresponds to this ID
+static uint16_t
+monad_event_next_block_flow_id(struct monad_event_block_exec_header **);
+
+/// Clear the active block flow ID set by `monad_event_alloc_block_flow_id`
+static void monad_event_clear_block_flow_id();
 
 #define MONAD_EVENT_RECORDER_INTERNAL
 #include "event_recorder_inline.h"

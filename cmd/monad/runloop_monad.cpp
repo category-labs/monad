@@ -1,4 +1,5 @@
 #include "runloop_monad.hpp"
+#include "event.hpp"
 
 #include <monad/chain/chain.hpp>
 #include <monad/core/assert.h>
@@ -7,9 +8,12 @@
 #include <monad/core/bytes.hpp>
 #include <monad/core/keccak.hpp>
 #include <monad/core/monad_block.hpp>
+#include <monad/core/result.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/db/db.hpp>
 #include <monad/db/util.hpp>
+#include <monad/event/event_cxx.hpp>
+#include <monad/event/event_types.h>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
@@ -84,7 +88,7 @@ namespace
 
 }
 
-Result<std::pair<bytes32_t, uint64_t>> on_proposal_event(
+Result<BlockExecOutput> on_proposal_event(
     MonadConsensusBlockHeader const &consensus_header, Block block,
     BlockHashBuffer const &block_hash_buffer, Chain const &chain, Db &db,
     fiber::PriorityPool &priority_pool, bool const is_first_block)
@@ -102,6 +106,7 @@ Result<std::pair<bytes32_t, uint64_t>> on_proposal_event(
                        : std::make_optional(consensus_header.parent_round()));
 
     BlockState block_state(db);
+    BlockExecOutput exec_output;
     BOOST_OUTCOME_TRY(
         auto results,
         execute_block(
@@ -126,13 +131,14 @@ Result<std::pair<bytes32_t, uint64_t>> on_proposal_event(
         block.transactions,
         block.ommers,
         block.withdrawals);
-    auto const output_header = db.read_eth_header();
+    exec_output.eth_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(
-        chain.validate_output_header(block.header, output_header));
+        chain.validate_output_header(block.header, exec_output.eth_header));
 
-    return {
-        to_bytes(keccak256(rlp::encode_block_header(output_header))),
-        output_header.gas_used};
+    exec_output.eth_block_hash =
+        to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
+
+    return exec_output;
 }
 
 bool validate_delayed_execution_results(
@@ -200,7 +206,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             continue;
         }
 
-        auto [action, consensus_header, consensus_body] = reader_res.value();
+        auto [action, consensus_header, consensus_body, bft_block_id] =
+            reader_res.value();
         auto const block_number = consensus_header.execution_inputs.number;
         if (action == WalAction::PROPOSE) {
             auto const block_time_start = std::chrono::steady_clock::now();
@@ -209,8 +216,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             auto const &block_hash_buffer =
                 block_hash_chain.find_chain(consensus_header.parent_round());
             BOOST_OUTCOME_TRY(
-                auto const proposal_output,
-                on_proposal_event(
+                BlockExecOutput const exec_output,
+                record_block_exec_result(on_proposal_event(
                     consensus_header,
                     Block{
                         .header = consensus_header.execution_inputs,
@@ -221,10 +228,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     chain,
                     db,
                     priority_pool,
-                    block_number == start_block_num));
-            auto const &[output_header, gas_used] = proposal_output;
+                    block_number == start_block_num)));
             block_hash_chain.propose(
-                output_header,
+                exec_output.eth_block_hash,
                 consensus_header.round,
                 consensus_header.parent_round());
             db.update_voted_metadata(
@@ -234,7 +240,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 block_number,
                 consensus_header.round,
                 ntxns,
-                gas_used,
+                exec_output.eth_header.gas_used,
                 block_time_start);
         }
         else if (action == WalAction::FINALIZE) {
@@ -253,6 +259,13 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 db.update_verified_block(verified_blocks.back().number);
             }
             finalized_block_num = block_number;
+
+            monad_event_block_finalize const finalize_info = {
+                .bft_block_id =
+                    std::bit_cast<monad_event_bytes32>(bft_block_id),
+                .consensus_seqno = consensus_header.seqno};
+            record_event_expr(MONAD_EVENT_BLOCK_FINALIZE, finalize_info);
+            monad_event_clear_block_flow_id();
         }
         else {
             MONAD_ABORT_PRINTF(

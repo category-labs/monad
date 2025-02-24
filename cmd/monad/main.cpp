@@ -1,3 +1,4 @@
+#include "event.hpp"
 #include "runloop_ethereum.hpp"
 #include "runloop_monad.hpp"
 
@@ -15,6 +16,7 @@
 #include <monad/db/block_db.hpp>
 #include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
+#include <monad/event/event_ring_db.h>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/genesis.hpp>
 #include <monad/execution/trace/event_trace.hpp>
@@ -76,6 +78,8 @@ int main(int const argc, char const *argv[])
     unsigned nthreads = 4;
     unsigned nfibers = 256;
     bool no_compaction = false;
+    std::vector<std::string> event_ring_config_specs;
+    bool no_events = false;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);
     std::vector<fs::path> dbname_paths;
@@ -83,6 +87,7 @@ int main(int const argc, char const *argv[])
     fs::path snapshot;
     fs::path dump_snapshot;
     std::string statesync;
+    std::string event_shm_name = MONAD_EVENT_DEFAULT_RING_DB_SHM_NAME;
     auto log_level = quill::LogLevel::Info;
 
     std::unordered_map<std::string, monad_chain_config> const CHAIN_CONFIG_MAP =
@@ -120,6 +125,10 @@ int main(int const argc, char const *argv[])
         "--dump_snapshot",
         dump_snapshot,
         "directory to dump state to at the end of run");
+    cli.add_option(
+        "--event-shm",
+        event_shm_name,
+        "name of the shared memory object used for the event ring db");
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
     group->add_option("--genesis", genesis, "genesis file")
@@ -140,6 +149,21 @@ int main(int const argc, char const *argv[])
     group->add_option(
         "--statesync", statesync, "socket for statesync communication");
     group->require_option(1);
+    cli.add_option(
+           "--event-ring",
+           event_ring_config_specs,
+           "event ring config: <name>:<enabled>:<ring-shift>:<buf-shift>")
+        ->check([](std::string const &s) {
+            auto r = try_parse_event_ring_config(s);
+            if (std::holds_alternative<std::string>(r)) {
+                return std::get<std::string>(r);
+            }
+            return std::string{};
+        });
+    cli.add_flag(
+        "--no-events",
+        no_events,
+        "disable all event recorders and the ring db");
 #ifdef ENABLE_EVENT_TRACING
     fs::path trace_log = fs::absolute("trace");
     cli.add_option("--trace_log", trace_log, "path to output trace file");
@@ -167,6 +191,29 @@ int main(int const argc, char const *argv[])
     quill::start(true);
     quill::get_root_logger()->set_log_level(log_level);
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
+
+    // Initialize the event system near the start of the initialization process,
+    // so it has a chance to record trace information during startup
+    monad_event_ring_db *event_ring_db = nullptr;
+    if (!no_events) {
+        std::vector<EventRingConfig> event_ring_configs;
+        for (auto const &s : event_ring_config_specs) {
+            auto r = try_parse_event_ring_config(s);
+            MONAD_ASSERT(
+                std::holds_alternative<EventRingConfig>(r),
+                "not validated by CLI11?");
+            event_ring_configs.emplace_back(
+                std::move(std::get<EventRingConfig>(r)));
+        }
+        if (empty(event_ring_configs)) {
+            // User didn't provide any --event-ring configuration options; in
+            // this case, they get the default values
+            event_ring_configs.assign(
+                std::begin(DefaultEventRingConfig),
+                std::end(DefaultEventRingConfig));
+        }
+        init_event_system(event_ring_configs, event_shm_name.c_str(), &event_ring_db);
+    }
 
 #ifdef ENABLE_EVENT_TRACING
     quill::FileHandlerConfig handler_cfg;

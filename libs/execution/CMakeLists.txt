@@ -166,7 +166,6 @@ target_link_libraries(
   PUBLIC nlohmann_json::nlohmann_json
   PUBLIC quill::quill
   PUBLIC silkpre
-  PUBLIC thread_safe_lru
   PUBLIC unordered_dense
   PUBLIC TBB::tbb)
 monad_compile_options(monad_execution)

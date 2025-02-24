@@ -14,8 +14,6 @@
 
 #include <evmc/evmc.hpp>
 
-#include <thread-safe-lru/lru-cache.h>
-
 #include <memory>
 #include <optional>
 
@@ -51,8 +49,7 @@ class DbCache final : public Db
     using AccountsCache =
         LruCache<Address, std::optional<Account>, AddressHashCompare>;
     using StorageCache = LruCache<StorageKey, bytes32_t, StorageKeyHashCompare>;
-    using CodeCache =
-        tstarling::ThreadSafeLRUCache<bytes32_t, std::shared_ptr<CodeAnalysis>>;
+    using CodeCache = LruCache<bytes32_t, std::shared_ptr<CodeAnalysis>>;
 
     AccountsCache accounts_{10'000'000};
     StorageCache storage_{10'000'000};
@@ -112,7 +109,7 @@ public:
         if (!truncated) {
             CodeCache::ConstAccessor it{};
             if (code_.find(it, code_hash)) {
-                return *it;
+                return it->second.value_;
             }
         }
         return db_.read_code(code_hash);

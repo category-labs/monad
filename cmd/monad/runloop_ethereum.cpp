@@ -26,7 +26,14 @@
 #include <quill/Quill.h>
 
 #include <algorithm>
+#include <bit>
 #include <chrono>
+#include <filesystem>
+#include <memory>
+
+namespace fs = std::filesystem;
+
+extern fs::path event_cvt_export_path;
 
 MONAD_NAMESPACE_BEGIN
 
@@ -78,7 +85,8 @@ static Result<BlockExecOutput> process_ethereum_block(
     Chain const &chain, Db &db, BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool,
     MonadConsensusBlockHeader const &consensus_header, Block &block,
-    std::optional<uint64_t> round_number)
+    std::optional<uint64_t> round_number, bytes32_t const &bft_block_id,
+    event_cross_validation_test::ExpectedDataRecorder *cvt_recorder)
 {
     BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
 
@@ -129,15 +137,28 @@ static Result<BlockExecOutput> process_ethereum_block(
     block_hash_buffer.set(
         exec_output.eth_header.number, exec_output.eth_block_hash);
 
+    if (cvt_recorder != nullptr) {
+        cvt_recorder->record_execution(
+            bft_block_id,
+            exec_output.eth_block_hash,
+            consensus_header,
+            exec_output.eth_header,
+            block.transactions,
+            receipts,
+            senders);
+    }
+
     return exec_output;
 }
 
 Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
-    Chain const &chain, std::filesystem::path const &ledger_dir, Db &db,
+    Chain const &chain, fs::path const &ledger_dir, Db &db,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop)
 {
+    using event_cross_validation_test::ExpectedDataRecorder;
+    std::unique_ptr<ExpectedDataRecorder> cvt_recorder;
     uint64_t const batch_size =
         end_block_num == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
     uint64_t batch_num_blocks = 0;
@@ -148,6 +169,12 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     uint64_t ntxs = 0;
 
     uint64_t const start_block_num = block_num;
+
+    if (!event_cvt_export_path.empty()) {
+        cvt_recorder =
+            std::make_unique<ExpectedDataRecorder>(event_cvt_export_path);
+    }
+
     BlockDb block_db(ledger_dir);
     while (block_num <= end_block_num && stop == 0) {
         Block block;
@@ -181,7 +208,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 priority_pool,
                 consensus_header,
                 block,
-                round_number)));
+                round_number,
+                bft_block_id,
+                cvt_recorder.get())));
 
         // runloop_ethereum is only used for historical replay, so blocks are
         // finalized immediately
@@ -190,6 +219,10 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
             .consensus_seqno = consensus_header.seqno};
         record_event_expr(MONAD_EVENT_BLOCK_FINALIZE, finalize_info);
         monad_event_clear_block_flow_id();
+        if (cvt_recorder) {
+            cvt_recorder->record_finalization(
+                consensus_header.seqno, bft_block_id);
+        }
 
         ntxs += block.transactions.size();
         batch_num_txs += block.transactions.size();

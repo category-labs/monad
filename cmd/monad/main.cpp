@@ -56,11 +56,11 @@ quill::Logger *event_tracer = nullptr;
 
 MONAD_NAMESPACE_END
 
-sig_atomic_t volatile stop;
+sig_atomic_t volatile g_monad_exit_signaled;
 
 void signal_handler(int)
 {
-    stop = 1;
+    g_monad_exit_signaled = 1;
 }
 
 using namespace monad;
@@ -363,7 +363,6 @@ int main(int const argc, char const *argv[])
     }
 
     signal(SIGINT, signal_handler);
-    stop = 0;
 
     uint64_t block_num = start_block_num;
     uint64_t const end_block_num =
@@ -382,8 +381,7 @@ int main(int const argc, char const *argv[])
                 block_hash_buffer,
                 priority_pool,
                 block_num,
-                end_block_num,
-                stop);
+                end_block_num);
         case CHAIN_CONFIG_MONAD_DEVNET:
         case CHAIN_CONFIG_MONAD_TESTNET:
             return runloop_monad(
@@ -394,8 +392,7 @@ int main(int const argc, char const *argv[])
                 block_hash_buffer,
                 priority_pool,
                 block_num,
-                end_block_num,
-                stop);
+                end_block_num);
         }
         MONAD_ABORT_PRINTF("Unsupported chain");
     }();

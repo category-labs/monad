@@ -22,7 +22,6 @@ namespace fiber
 
 Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     Chain const &, std::filesystem::path const &, Db &,
-    BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t,
-    sig_atomic_t const volatile &);
+    BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t);
 
 MONAD_NAMESPACE_END

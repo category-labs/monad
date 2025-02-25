@@ -3,8 +3,14 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 find_package(CLI11 REQUIRED)
 
 add_executable(
-  monad monad/main.cpp monad/runloop_ethereum.cpp monad/runloop_ethereum.hpp
-        monad/runloop_monad.cpp monad/runloop_monad.hpp)
+  monad
+  monad/main.cpp
+  monad/file_io.hpp
+  monad/file_io.cpp
+  monad/runloop_ethereum.cpp
+  monad/runloop_ethereum.hpp
+  monad/runloop_monad.cpp
+  monad/runloop_monad.hpp)
 
 monad_compile_options(monad)
 

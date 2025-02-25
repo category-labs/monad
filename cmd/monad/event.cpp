@@ -35,10 +35,13 @@
 #include <nlohmann/json.hpp>
 #include <quill/LogLevel.h>
 #include <quill/Quill.h>
+#include <signal.h>
 
 #include "event.hpp"
 
 namespace fs = std::filesystem;
+
+extern sig_atomic_t volatile g_monad_exit_signaled;
 
 template <typename T, size_t Extent>
 static std::string as_hex_string(std::span<T const, Extent> s)
@@ -323,6 +326,9 @@ namespace event_cross_validation_test
     {
         nlohmann::json eth_header_json;
 
+        if (g_monad_exit_signaled == 1) {
+            return;
+        }
         eth_header_json["parentHash"] =
             fmt::to_string(output_header.parent_hash);
         eth_header_json["sha3Uncles"] =
@@ -460,6 +466,10 @@ namespace event_cross_validation_test
     void ExpectedDataRecorder::record_finalization(
         uint64_t consensus_seqno, bytes32_t const &bft_block_id)
     {
+        if (g_monad_exit_signaled == 1) {
+            return;
+        }
+
         auto const i_pending = pending_blocks_.find(consensus_seqno);
         if (i_pending != end(pending_blocks_)) {
             MONAD_ASSERT(array_size_ > 0);

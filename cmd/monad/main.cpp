@@ -206,7 +206,7 @@ int main(int const argc, char const *argv[])
     // Note: in memory db block number is always zero
     uint64_t const init_block_num = [&] {
         if (!snapshot.empty()) {
-            if (db.root().is_valid()) {
+            if (db.get_latest_block_id() != mpt::INVALID_BLOCK_ID) {
                 throw std::runtime_error(
                     "can not load checkpoint into non-empty database");
             }
@@ -224,7 +224,7 @@ int main(int const argc, char const *argv[])
             load_header(db, block.header);
             return n;
         }
-        else if (!db.root().is_valid()) {
+        else if (db.get_latest_block_id() == mpt::INVALID_BLOCK_ID) {
             MONAD_ASSERT(statesync.empty());
             LOG_INFO("loading from genesis {}", genesis);
             TrieDb tdb{db};

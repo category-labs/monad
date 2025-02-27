@@ -724,7 +724,7 @@ void load_from_binary(
     mpt::Db &db, std::istream &accounts, std::istream &code,
     uint64_t const init_block_number, size_t const buf_size)
 {
-    if (db.root().is_valid()) {
+    if (db.get_latest_block_id() != INVALID_BLOCK_ID) {
         throw std::runtime_error(
             "Unable to load snapshot to an existing db, truncate the "
             "existing db to empty and try again");

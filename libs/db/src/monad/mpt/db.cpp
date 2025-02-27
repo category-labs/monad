@@ -71,7 +71,7 @@ struct Db::Impl
 {
     virtual ~Impl() = default;
 
-    virtual Node::UniquePtr &root() = 0;
+    virtual void update_pinned_version_rodb(uint64_t) {};
     virtual UpdateAux<> &aux() = 0;
     virtual void upsert_fiber_blocking(
         UpdateList &&, uint64_t, bool enable_compaction, bool can_write_to_fast,
@@ -96,6 +96,8 @@ struct Db::Impl
     virtual uint64_t get_latest_verified_block_id() const = 0;
 };
 
+// Read-only Db is not thread safe. Must call methods from the same thread that
+// owns the RODb instance
 struct Db::ROOnDisk final : public Db::Impl
 {
     async::storage_pool pool_;
@@ -103,8 +105,11 @@ struct Db::ROOnDisk final : public Db::Impl
     io::Buffers rwbuf_;
     async::AsyncIO io_;
     UpdateAux<> aux_;
-    chunk_offset_t last_loaded_root_offset_;
-    Node::UniquePtr root_;
+    uint64_t pinned_version_{INVALID_BLOCK_ID};
+    chunk_offset_t last_loaded_pinned_root_offset_{INVALID_OFFSET};
+    chunk_offset_t last_loaded_secondary_root_offset_{INVALID_OFFSET};
+    Node::UniquePtr pinned_version_root_{};
+    Node::UniquePtr secondary_version_root_{};
 
     explicit ROOnDisk(ReadOnlyOnDiskDbConfig const &options)
         : pool_{[&] -> async::storage_pool {
@@ -125,12 +130,6 @@ struct Db::ROOnDisk final : public Db::Impl
               async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)}
         , io_{pool_, rwbuf_}
         , aux_{&io_}
-        , last_loaded_root_offset_{aux_.get_root_offset_at_version(
-              aux_.db_history_max_version())}
-        , root_{
-              last_loaded_root_offset_ == INVALID_OFFSET
-                  ? Node::UniquePtr{}
-                  : read_node_blocking(pool_, last_loaded_root_offset_)}
     {
         io_.set_capture_io_latencies(options.capture_io_latencies);
         io_.set_concurrent_read_io_limit(options.concurrent_read_io_limit);
@@ -144,9 +143,9 @@ struct Db::ROOnDisk final : public Db::Impl
         aux_.unset_io();
     }
 
-    virtual Node::UniquePtr &root() override
+    virtual void update_pinned_version_rodb(uint64_t const version) override
     {
-        return root_;
+        pinned_version_ = version;
     }
 
     virtual UpdateAux<> &aux() override
@@ -219,15 +218,25 @@ struct Db::ROOnDisk final : public Db::Impl
     {
         auto const root_offset = aux().get_root_offset_at_version(version);
         if (root_offset == INVALID_OFFSET) {
-            root_ = nullptr;
-            last_loaded_root_offset_ = root_offset;
             return NodeCursor{};
         }
-        if (last_loaded_root_offset_ != root_offset) {
-            last_loaded_root_offset_ = root_offset;
-            root_ = read_node_blocking(pool_, root_offset);
+        if (root_offset == last_loaded_pinned_root_offset_) {
+            return NodeCursor{*pinned_version_root_};
         }
-        return root_ ? NodeCursor{*root_} : NodeCursor{};
+        else if (root_offset == last_loaded_secondary_root_offset_) {
+            return NodeCursor{*secondary_version_root_};
+        }
+        auto node = read_node_blocking(pool_, root_offset);
+        if (version == pinned_version_) {
+            pinned_version_root_ = std::move(node);
+            last_loaded_pinned_root_offset_ = root_offset;
+            return NodeCursor{*pinned_version_root_};
+        }
+        else {
+            secondary_version_root_ = std::move(node);
+            last_loaded_secondary_root_offset_ = root_offset;
+            return NodeCursor{*secondary_version_root_};
+        }
     }
 
     virtual void update_finalized_block(uint64_t) override
@@ -261,11 +270,6 @@ struct Db::InMemory final : public Db::Impl
         : aux_{nullptr}
         , machine_{machine}
     {
-    }
-
-    virtual Node::UniquePtr &root() override
-    {
-        return root_;
     }
 
     virtual UpdateAux<> &aux() override
@@ -318,9 +322,9 @@ struct Db::InMemory final : public Db::Impl
         MONAD_ASSERT(false);
     }
 
-    virtual NodeCursor load_root_for_version(uint64_t) override
+    virtual NodeCursor load_root_for_version(uint64_t const) override
     {
-        return root() ? NodeCursor{*root()} : NodeCursor{};
+        return root_ ? NodeCursor{*root_} : NodeCursor{};
     }
 
     virtual void update_verified_block(uint64_t) override {}
@@ -707,11 +711,6 @@ struct Db::RWOnDisk final : public Db::Impl
         worker_thread_.join();
     }
 
-    virtual Node::UniquePtr &root() override
-    {
-        return root_;
-    }
-
     virtual UpdateAux<> &aux() override
     {
         return aux_;
@@ -802,11 +801,16 @@ struct Db::RWOnDisk final : public Db::Impl
     // threadsafe
     virtual size_t prefetch_fiber_blocking() override
     {
-        MONAD_ASSERT(root());
+        auto const db_max_version = aux_.db_history_max_version();
+        if (db_max_version == INVALID_BLOCK_ID) {
+            return 0;
+        }
+        auto const root_cursor = load_root_for_version(db_max_version);
+        MONAD_ASSERT(root_cursor.is_valid());
         threadsafe_boost_fibers_promise<size_t> promise;
         auto fut = promise.get_future();
         comms_.enqueue(FiberLoadAllFromBlockRequest{
-            .promise = &promise, .root = *root(), .sm = machine_});
+            .promise = &promise, .root = root_cursor, .sm = machine_});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -862,7 +866,7 @@ struct Db::RWOnDisk final : public Db::Impl
             root_ = fut.get();
             root_version_ = version;
         }
-        return root() ? NodeCursor{*root()} : NodeCursor{};
+        return root_ ? NodeCursor{*root_} : NodeCursor{};
     }
 
     virtual void copy_trie_fiber_blocking(
@@ -947,6 +951,12 @@ Db::Db(ReadOnlyOnDiskDbConfig const &config)
 
 Db::~Db() = default;
 
+void Db::update_pinned_version_rodb(uint64_t const version)
+{
+    MONAD_ASSERT(impl_);
+    impl_->update_pinned_version_rodb(version);
+}
+
 Result<NodeCursor>
 Db::find(NodeCursor root, NibblesView const key, uint64_t const block_id) const
 {
@@ -969,9 +979,7 @@ NodeCursor Db::load_root_for_version(uint64_t const block_id) const
 Result<NodeCursor>
 Db::find(NibblesView const key, uint64_t const block_id) const
 {
-    MONAD_ASSERT(impl_);
-    auto cursor = impl_->load_root_for_version(block_id);
-    return find(cursor, key, block_id);
+    return find(load_root_for_version(block_id), key, block_id);
 }
 
 Result<byte_string_view>
@@ -1055,12 +1063,6 @@ bool Db::traverse_blocking(
         impl_->aux(), *cursor.node, machine, block_id);
 }
 
-NodeCursor Db::root() const noexcept
-{
-    MONAD_ASSERT(impl_);
-    return impl_->root() ? NodeCursor{*impl_->root()} : NodeCursor{};
-}
-
 void Db::update_finalized_block(uint64_t const block_id)
 {
     MONAD_ASSERT(impl_);
@@ -1110,7 +1112,9 @@ uint64_t Db::get_latest_block_id() const
         return impl_->aux().db_history_max_version();
     }
     else {
-        return impl_->root() ? 0 : INVALID_BLOCK_ID;
+        // input version is ignored by in memory db
+        return impl_->load_root_for_version(0).is_valid() ? 0
+                                                          : INVALID_BLOCK_ID;
     }
 }
 
@@ -1121,16 +1125,15 @@ uint64_t Db::get_earliest_block_id() const
         return impl_->aux().db_history_min_valid_version();
     }
     else {
-        return impl_->root() ? 0 : INVALID_BLOCK_ID;
+        // input version is ignored by in memory db
+        return impl_->load_root_for_version(0).is_valid() ? 0
+                                                          : INVALID_BLOCK_ID;
     }
 }
 
 size_t Db::prefetch()
 {
     MONAD_ASSERT(impl_);
-    if (get_latest_block_id() == INVALID_BLOCK_ID) {
-        return 0;
-    }
     return impl_->prefetch_fiber_blocking();
 }
 

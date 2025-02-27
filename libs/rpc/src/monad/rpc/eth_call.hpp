@@ -62,4 +62,4 @@ monad_evmc_result eth_call(
     std::vector<uint8_t> const &rlp_header,
     std::vector<uint8_t> const &rlp_sender, uint64_t const block_number,
     uint64_t const block_round, std::string const &triedb_path,
-    monad_state_override_set const &state_overrides);
+    monad_state_override_set const &state_overrides, bool is_latest);

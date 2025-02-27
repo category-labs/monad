@@ -278,7 +278,7 @@ monad_evmc_result eth_call(
     std::vector<uint8_t> const &rlp_header,
     std::vector<uint8_t> const &rlp_sender, uint64_t const block_number,
     uint64_t const round, std::string const &triedb_path,
-    monad_state_override_set const &state_overrides)
+    monad_state_override_set const &state_overrides, bool const is_latest)
 {
     byte_string_view rlp_tx_view(rlp_tx.begin(), rlp_tx.end());
     auto const tx_result = rlp::decode_transaction(rlp_tx_view);
@@ -320,6 +320,10 @@ monad_evmc_result eth_call(
             new mpt::Db{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = paths}});
         tdb.reset(new TrieDb{*db});
         last_triedb_path = triedb_path;
+    }
+
+    if (is_latest) { // pin the latest version in db cache
+        db->update_pinned_version_rodb(block_number);
     }
 
     thread_local std::unique_ptr<BlockHashBufferFinalized> buffer{};

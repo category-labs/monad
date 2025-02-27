@@ -92,7 +92,8 @@ TEST_F(EthCallFixture, simple_success_call)
         header.number,
         mpt::INVALID_ROUND_NUM,
         dbname,
-        state_override);
+        state_override,
+        true);
 
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
 }
@@ -132,7 +133,8 @@ TEST_F(EthCallFixture, on_proposed_block)
         header.number,
         consensus_header.round,
         dbname,
-        state_override);
+        state_override,
+        true);
 
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
 }
@@ -172,7 +174,8 @@ TEST_F(EthCallFixture, failed_to_read)
         header.number,
         mpt::INVALID_ROUND_NUM,
         dbname,
-        state_override);
+        state_override,
+        true);
     EXPECT_EQ(result.status_code, EVMC_REJECTED);
 }
 
@@ -209,7 +212,8 @@ TEST_F(EthCallFixture, contract_deployment_success)
         header.number,
         mpt::INVALID_ROUND_NUM,
         dbname,
-        state_override);
+        state_override,
+        true);
 
     std::string deployed_code =
         "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe036"
@@ -268,7 +272,8 @@ TEST_F(EthCallFixture, from_contract_account)
         header.number,
         mpt::INVALID_ROUND_NUM,
         dbname,
-        state_override);
+        state_override,
+        true);
 
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
     EXPECT_EQ(result.output_data, std::vector<uint8_t>{});

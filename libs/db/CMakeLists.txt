@@ -48,6 +48,7 @@ add_library(
   "src/monad/mpt/read_node_blocking.cpp"
   "src/monad/mpt/state_machine.hpp"
   "src/monad/mpt/traverse.hpp"
+  "src/monad/mpt/traverse_util.hpp"
   "src/monad/mpt/trie.cpp"
   "src/monad/mpt/trie.hpp"
   "src/monad/mpt/update.hpp"

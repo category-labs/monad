@@ -18,7 +18,10 @@
 #include <monad/execution/trace/rlp/call_frame_rlp.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/mpt/nibbles_view.hpp>
+#include <monad/mpt/node.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
+#include <monad/mpt/traverse.hpp>
+#include <monad/mpt/traverse_util.hpp>
 #include <monad/rlp/encode2.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state_deltas.hpp>
@@ -106,22 +109,51 @@ namespace
     // DB Getters
     ///////////////////////////////////////////
     std::vector<CallFrame> read_call_frame(
-        mpt::Db const &db, uint64_t const block_number, uint64_t const idx)
+        mpt::Db &db, uint64_t const block_number, uint64_t const txn_idx)
     {
-        auto const value = db.get(
-            mpt::concat(
-                FINALIZED_NIBBLE,
-                CALL_FRAME_NIBBLE,
-                mpt::NibblesView{rlp::encode_unsigned(idx)}),
-            block_number);
-        if (!value.has_value()) {
-            return {};
-        }
+        using namespace mpt;
 
-        auto encoded_call_frame = value.value();
-        auto const call_frame = rlp::decode_call_frames(encoded_call_frame);
+        using KeyedChunk = std::pair<Nibbles, byte_string>;
+
+        Nibbles const min = mpt::concat(
+            FINALIZED_NIBBLE,
+            CALL_FRAME_NIBBLE,
+            NibblesView{serialize_as_big_endian<sizeof(uint32_t)>(txn_idx)});
+        Nibbles const max = mpt::concat(
+            FINALIZED_NIBBLE,
+            CALL_FRAME_NIBBLE,
+            NibblesView{
+                serialize_as_big_endian<sizeof(uint32_t)>(txn_idx + 1)});
+
+        std::vector<KeyedChunk> chunks;
+        RangedGetMachine machine{
+            min,
+            max,
+            [&chunks](NibblesView const path, byte_string_view const value) {
+                chunks.emplace_back(path, value);
+            }};
+        db.traverse(db.root(), machine, block_number);
+        MONAD_ASSERT(!chunks.empty());
+
+        std::sort(
+            chunks.begin(),
+            chunks.end(),
+            [](KeyedChunk const &c, KeyedChunk const &c2) {
+                return c.first < NibblesView{c2.first};
+            });
+
+        byte_string const call_frames_encoded = std::accumulate(
+            std::make_move_iterator(chunks.begin()),
+            std::make_move_iterator(chunks.end()),
+            byte_string{},
+            [](byte_string const acc, KeyedChunk const chunk) {
+                return std::move(acc) + std::move(chunk.second);
+            });
+
+        byte_string_view view{call_frames_encoded};
+        auto const call_frame = rlp::decode_call_frames(view);
         MONAD_ASSERT(!call_frame.has_error());
-        MONAD_ASSERT(encoded_call_frame.empty());
+        MONAD_ASSERT(view.empty());
         return call_frame.value();
     }
 
@@ -905,8 +937,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
         read_call_frame(this->db, tdb.get_block_number(), 0);
 
 #ifdef ENABLE_CALL_TRACING
-    // original size: 35799, after truncate, size is 100
-    EXPECT_EQ(actual_call_frames.size(), 100);
+    EXPECT_EQ(actual_call_frames.size(), 35799);
 #else
     EXPECT_EQ(actual_call_frames.size(), 0);
 #endif

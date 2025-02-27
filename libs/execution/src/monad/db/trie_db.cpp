@@ -256,6 +256,7 @@ void TrieDb::commit(
     MONAD_ASSERT(receipts.size() == transactions.size());
     MONAD_ASSERT(transactions.size() == senders.size());
     MONAD_ASSERT(receipts.size() == call_frames.size());
+    MONAD_ASSERT(receipts.size() <= std::numeric_limits<uint32_t>::max());
     auto const &encoded_block_number =
         bytes_alloc_.emplace_back(rlp::encode_unsigned(header.number));
     std::vector<byte_string> index_alloc;
@@ -263,7 +264,7 @@ void TrieDb::commit(
         receipts.size(),
         withdrawals.transform(&std::vector<Withdrawal>::size).value_or(0)));
     size_t log_index_begin = 0;
-    for (size_t i = 0; i < receipts.size(); ++i) {
+    for (uint32_t i = 0; i < static_cast<uint32_t>(receipts.size()); ++i) {
         auto const &rlp_index =
             index_alloc.emplace_back(rlp::encode_unsigned(i));
         auto const &receipt = receipts[i];
@@ -293,17 +294,27 @@ void TrieDb::commit(
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));
 
+        // Call frames
         std::span<CallFrame const> frames{call_frames[i]};
-        // TODO: a better way to ensure node size is <= 256 MB
-        if (frames.size() > 100) {
-            frames = frames.first(100);
+        byte_string_view frame_view =
+            bytes_alloc_.emplace_back(rlp::encode_call_frames(frames));
+        uint8_t chunk_index = 0;
+        auto const call_frame_prefix =
+            serialize_as_big_endian<sizeof(uint32_t)>(i);
+        while (!frame_view.empty()) {
+            byte_string_view chunk =
+                frame_view.substr(0, mpt::MAX_VALUE_LEN_OF_LEAF);
+            frame_view.remove_prefix(chunk.size());
+            byte_string const chunk_key =
+                byte_string{&chunk_index, sizeof(uint8_t)};
+            call_frame_updates.push_front(update_alloc_.emplace_back(Update{
+                .key = bytes_alloc_.emplace_back(call_frame_prefix + chunk_key),
+                .value = chunk,
+                .incarnation = false,
+                .next = UpdateList{},
+                .version = static_cast<int64_t>(block_number_)}));
+            ++chunk_index;
         }
-        call_frame_updates.push_front(update_alloc_.emplace_back(Update{
-            .key = NibblesView{rlp_index},
-            .value = bytes_alloc_.emplace_back(rlp::encode_call_frames(frames)),
-            .incarnation = false,
-            .next = UpdateList{},
-            .version = static_cast<int64_t>(block_number_)}));
     }
 
     UpdateList updates;

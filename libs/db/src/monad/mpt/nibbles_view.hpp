@@ -94,6 +94,7 @@ public:
     substr(unsigned const pos, unsigned const count = npos) const;
 
     inline constexpr bool operator==(NibblesView const &other) const;
+    inline constexpr auto operator<=>(NibblesView const &other) const;
 
     [[nodiscard]] unsigned char get(unsigned const i) const
     {
@@ -234,6 +235,17 @@ public:
         return true;
     }
 
+    constexpr auto operator<=>(NibblesView const &other) const
+    {
+        unsigned const min_size = std::min(nibble_size(), other.nibble_size());
+        for (unsigned i = 0; i < min_size; ++i) {
+            if (get(i) != other.get(i)) {
+                return get(i) <=> other.get(i);
+            }
+        }
+        return nibble_size() <=> other.nibble_size();
+    }
+
     [[nodiscard]] unsigned char get(unsigned const i) const
     {
         MONAD_ASSERT(i < nibble_size());
@@ -264,6 +276,11 @@ Nibbles::substr(unsigned const pos, unsigned const count) const
 inline constexpr bool Nibbles::operator==(NibblesView const &other) const
 {
     return NibblesView(*this) == other;
+}
+
+inline constexpr auto Nibbles::operator<=>(NibblesView const &other) const
+{
+    return NibblesView(*this) <=> other;
 }
 
 template <class... Args>

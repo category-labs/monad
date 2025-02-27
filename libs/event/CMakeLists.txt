@@ -8,7 +8,9 @@ add_library(monad_event STATIC
     "src/monad/event/event_error.c"
     "src/monad/event/event_error.h"
     "src/monad/event/event_iterator.h"
-    "src/monad/event/event_iterator_inline.h")
+    "src/monad/event/event_iterator_inline.h"
+    "src/monad/event/event_metadata.c"
+    "src/monad/event/event_metadata.h")
 
 target_include_directories(monad_event PUBLIC "src")
 target_compile_features(monad_event PUBLIC c_std_23)

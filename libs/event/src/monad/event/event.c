@@ -6,11 +6,13 @@
 
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
 #include <monad/event/event.h>
 #include <monad/event/event_error.h>
+#include <monad/event/event_metadata.h>
 
 static thread_local char g_error_buf[1024];
 static size_t const PAGE_2MB = 1UL << 21;
@@ -30,6 +32,92 @@ __attribute__((format(printf, 3, 4))) static int format_errc(
 
 #define FORMAT_ERRC(...)                                                       \
     format_errc(&MONAD_EVENT_SOURCE_LOCATION_CURRENT(), __VA_ARGS__)
+
+static int import_ring_data_fd(
+    pid_t owner, int owner_fd, char const *error_name, int *our_fd)
+{
+    char proc_fd_path[32];
+
+    snprintf(
+        proc_fd_path, sizeof proc_fd_path, "/proc/%d/fd/%d", owner, owner_fd);
+    *our_fd = open(proc_fd_path, O_RDONLY);
+    if (*our_fd == -1) {
+        return FORMAT_ERRC(
+            errno,
+            "open of event ring `%s` foreign memfd %d failed",
+            error_name,
+            owner_fd);
+    }
+
+    return 0;
+}
+
+// Given an open ring_fd, try to mmap a view of the header structure and
+// validate it. Validate means that it appears to be a correct header and its
+// contents are compatible with our version of the event library. This also
+// opens a pidfd to the execution process that owns the event ring file.
+//
+// Although this function is primarily meant for readers, it has external
+// linkage because the writer calls it. If the writer fails to obtain an
+// exclusive flock(2) on the shared memory file, it uses this function to
+// report the pid of the process that owns the lock.
+int _monad_event_ring_mmap_header(
+    int ring_fd, char const *error_name, int *pidfd,
+    struct monad_event_ring_header **header_p)
+{
+    int rc;
+    struct monad_event_ring_header *header;
+
+    *header_p = header =
+        mmap(nullptr, PAGE_2MB, PROT_READ, MAP_SHARED, ring_fd, 0);
+    if (header == MAP_FAILED) {
+        return FORMAT_ERRC(
+            errno, "mmap of event ring `%s` header failed", error_name);
+    }
+    // Perform various ABI compatibility checks
+    if (memcmp(
+            header->version,
+            MONAD_EVENT_RING_HEADER_VERSION,
+            sizeof MONAD_EVENT_RING_HEADER_VERSION) != 0) {
+        rc = FORMAT_ERRC(
+            EPROTO,
+            "wrong magic number in event ring`%s`; not a ring db file",
+            error_name);
+        goto Error;
+    }
+    if (memcmp(
+            header->metadata_hash,
+            g_monad_event_metadata_hash,
+            sizeof g_monad_event_metadata_hash) != 0) {
+        rc = FORMAT_ERRC(
+            EPROTO,
+            "event ring `%s` metadata hash does not match "
+            "loaded library version",
+            error_name);
+        goto Error;
+    }
+    *pidfd = (int)syscall(SYS_pidfd_open, header->writer_pid, 0);
+    if (*pidfd == -1) {
+        if (errno == ESRCH) {
+            rc = FORMAT_ERRC(
+                EOWNERDEAD, "writer of event ring `%s` is gone", error_name);
+        }
+        else {
+            rc = FORMAT_ERRC(
+                errno,
+                "pidfd_open error on event ring `%s` pid %d",
+                error_name,
+                header->writer_pid);
+        }
+        goto Error;
+    }
+    return 0;
+
+Error:
+    munmap(header, PAGE_2MB);
+    *header_p = nullptr;
+    return rc;
+}
 
 // This helper function will mmap the non-header parts of the event ring file;
 // it is used by both the reader and writer code. The normal event ring file
@@ -57,7 +145,8 @@ int _monad_event_ring_mmap_data(
     size_t descriptor_map_len;
     off_t base_ring_data_offset;
     struct monad_event_ring_header const *const header = event_ring->header;
-    int const mmap_prot = PROT_READ | PROT_WRITE;
+    bool const is_writer = header->writer_pid == getpid();
+    int const mmap_prot = is_writer ? PROT_READ | PROT_WRITE : PROT_READ;
 
     // Set `ring_data_fd` to a file descriptor that contains the data
     // structures of an event ring. There are three cases:
@@ -79,11 +168,21 @@ int _monad_event_ring_mmap_data(
         ring_data_fd = ring_fd;
         base_ring_data_offset = (off_t)PAGE_2MB;
     }
-    else {
-        // Cases 2 and 3: header is a "discovery only" file
-        // TODO(ken): we don't distinguish between the reader and writer yet;
-        //   that happens in PR 2
+    else if (is_writer) {
+        // Case 2: header is a "discovery only" file, and we're the writer;
+        // header->data_fd has the data, and is our own fd
         ring_data_fd = header->data_fd;
+        base_ring_data_offset = 0;
+    }
+    else {
+        // Case 3: like case 2, but header->data_fd is a file descriptor in the
+        // writer's file descriptor table, not in our own; we need to open it
+        // ourselves using helper function
+        rc = import_ring_data_fd(
+            header->writer_pid, header->data_fd, error_name, &ring_data_fd);
+        if (rc != 0) {
+            return rc;
+        }
         base_ring_data_offset = 0;
     }
 
@@ -161,11 +260,55 @@ int _monad_event_ring_mmap_data(
         goto Error;
     }
 
+    if (!is_writer && ring_data_fd != ring_fd) {
+        (void)close(ring_data_fd);
+    }
     return 0;
 
 Error:
     monad_event_ring_unmap(event_ring);
+    if (!is_writer && ring_data_fd != ring_fd) {
+        (void)close(ring_data_fd);
+    }
     return rc;
+}
+
+int monad_event_ring_map(
+    struct monad_event_ring *event_ring, char const *file_path, int *pidfd)
+{
+    int ring_fd;
+    int rc;
+    int local_pidfd;
+
+    if (event_ring == nullptr) {
+        return FORMAT_ERRC(EFAULT, "event_ring cannot be nullptr");
+    }
+    if (file_path == nullptr) {
+        return FORMAT_ERRC(EFAULT, "file_path cannot be nullptr");
+    }
+    memset(event_ring, 0, sizeof *event_ring);
+    ring_fd = open(file_path, O_RDONLY);
+    if (ring_fd == -1) {
+        return FORMAT_ERRC(errno, "open of event ring `%s` failed", file_path);
+    }
+    rc = _monad_event_ring_mmap_header(
+        ring_fd, file_path, &local_pidfd, &event_ring->header);
+    if (rc != 0) {
+        monad_event_ring_unmap(event_ring);
+        return rc;
+    }
+    rc = _monad_event_ring_mmap_data(event_ring, ring_fd, file_path);
+    if (rc != 0) {
+        monad_event_ring_unmap(event_ring);
+        return rc;
+    }
+    if (pidfd != nullptr) {
+        *pidfd = local_pidfd;
+    }
+    else {
+        (void)close(local_pidfd);
+    }
+    return 0;
 }
 
 void monad_event_ring_unmap(struct monad_event_ring *event_ring)

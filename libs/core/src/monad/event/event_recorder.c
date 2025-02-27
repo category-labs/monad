@@ -20,6 +20,7 @@
 #include <monad/core/likely.h>
 #include <monad/event/event.h>
 #include <monad/event/event_error.h>
+#include <monad/event/event_metadata.h>
 #include <monad/event/event_recorder.h>
 
 static thread_local char g_error_buf[1024];
@@ -41,9 +42,13 @@ __attribute__((format(printf, 3, 4))) static int format_errc(
 #define FORMAT_ERRC(...)                                                       \
     format_errc(&MONAD_EVENT_SOURCE_LOCATION_CURRENT(), __VA_ARGS__)
 
-// Reuse an internal function from event.c
+// Reuse internal functions from event.c
 extern int _monad_event_ring_mmap_data(
     struct monad_event_ring *, int ring_fd, char const *error_name);
+
+extern int _monad_event_ring_mmap_header(
+    int ring_fd, char const *error_name, int *pidfd,
+    struct monad_event_ring_header **header_p);
 
 /*
  * Event ring setup functions
@@ -67,26 +72,43 @@ static int open_event_ring_file(char const *file_path, int *ring_fd)
     // succeeds, we're the new owner, otherwise `file_path` is taken
     rc = flock(*ring_fd, LOCK_EX | LOCK_NB);
     if (rc == -1) {
-        rc = FORMAT_ERRC(rc, "flock of event ring `%s` failed", file_path);
+        rc = errno;
+        struct monad_event_ring_header *header = nullptr;
+        int pidfd;
+        if (rc == EWOULDBLOCK) {
+            // Someone else owns this; load the header as a reader, so we
+            // can report who the owner is in our error message
+            _monad_event_ring_mmap_header(*ring_fd, file_path, &pidfd, &header);
+
+            // Explicitly clear ring_fd, so that later failure logic won't try
+            // to unlink(2) the file
+            *ring_fd = -1;
+        }
+        if (header != nullptr) {
+            FORMAT_ERRC(
+                rc,
+                "event ring `%s` already owned by pid %d",
+                file_path,
+                header->writer_pid);
+            munmap(header, PAGE_2MB);
+        }
+        else {
+            FORMAT_ERRC(rc, "flock of event ring `%s` failed", file_path);
+        }
         goto Error;
     }
     return 0;
 
 Error:
     (void)close(*ring_fd);
-    if (rc == EWOULDBLOCK) {
-        // Someone else owns this; explicitly clear ring_fd so that later
-        // cleanup logic will know it's not ours, and won't try to unlink(2)
-        // its name from the files system
-        *ring_fd = -1;
-    }
     return rc;
 }
 
 // Given a description of the memory resources needed for an event ring,
 // "allocate" that memory and set up the ring. This will ftruncate(2) the event
 // ring file to the appropriate size, mmap the first page, and fill out the
-// header structure
+// header structure. This is effectively the writer's version of
+// _monad_event_ring_mmap_header.
 static int init_event_ring_file(
     struct monad_event_recorder_config const *ring_config, int ring_fd,
     struct monad_event_ring_header **header_p)
@@ -109,8 +131,17 @@ static int init_event_ring_file(
             "mmap of event ring `%s` header page failed",
             ring_config->file_path);
     }
+    memcpy(
+        header->version,
+        MONAD_EVENT_RING_HEADER_VERSION,
+        sizeof MONAD_EVENT_RING_HEADER_VERSION);
+    memcpy(
+        header->metadata_hash,
+        g_monad_event_metadata_hash,
+        sizeof g_monad_event_metadata_hash);
     header->ring_capacity = 1UL << ring_config->ring_shift;
     header->payload_buf_size = 1UL << ring_config->payload_buf_shift;
+    header->writer_pid = getpid();
     memset(&header->control, 0, sizeof header->control);
 
     // Until we have hugetlbfs, this file is just a discovery mechanism that

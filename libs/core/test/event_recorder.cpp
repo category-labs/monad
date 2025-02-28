@@ -149,7 +149,8 @@ TEST_P(EventRecorderBulkTest, )
     monad_event_recorder_config const ring_config = {
         .file_path = SHARED_MEM_FILE,
         .ring_shift = 20,
-        .payload_buf_shift = 28};
+        .payload_buf_shift = 28,
+        .is_primary = true};
 
     ASSERT_EQ(0, monad_event_recorder_create(&recorder, &ring_config));
 

@@ -18,6 +18,7 @@ extern "C"
 #endif
 
 enum monad_event_type : uint16_t;
+struct monad_event_block_exec_header;
 struct monad_event_ring_header;
 
 // clang-format off
@@ -55,6 +56,7 @@ struct monad_event_ring
     struct monad_event_descriptor *descriptors; ///< Event descriptor ring array
     uint8_t *payload_buf;                       ///< Payload buffer base address
     struct monad_event_ring_header *header;     ///< Event ring metadata
+    struct monad_event_block_exec_header *blocks; ///< Optional block metadata
 };
 
 /// Control registers of the event ring; resource allocation within an event
@@ -75,6 +77,7 @@ struct monad_event_ring_header
     uint8_t metadata_hash[32];   ///< Checks that event_types.h matches
     size_t ring_capacity;        ///< # entries in event descriptor array
     size_t payload_buf_size;     ///< Byte size of payload buffer
+    bool is_primary;             ///< True -> id tables follow payload buffer
     pid_t writer_pid;            ///< Process writing to the ring
     struct monad_event_ring_control control; ///< Tracks ring's state/status
 };

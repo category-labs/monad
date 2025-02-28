@@ -4,6 +4,7 @@
  * Execution event capture utility
  */
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -29,6 +30,7 @@
 #include <monad/event/event.h>
 #include <monad/event/event_iterator.h>
 #include <monad/event/event_metadata.h>
+#include <monad/event/event_types.h>
 
 static sig_atomic_t g_should_exit = 0;
 
@@ -43,11 +45,11 @@ static void print_event_ring_header(
 {
     std::fprintf(out, "event ring %s: pid=%d\n", filename, h->writer_pid);
     // Print the ring db entries as>
-    // <enabled> <capacity> <desc bytes> <payload buf bytes>
+    // <primary> <enabled> <capacity> <desc bytes> <payload buf bytes>
     //    <last write seqno> <next payload buf byte> <pbuf window start>
     std::fprintf(
         out,
-        "%9s %10s %10s %12s %14s %14s\n",
+        "P %9s %10s %10s %12s %14s %14s\n",
         "CAPACITY",
         "DESC_SZ",
         "PBUF_SZ",
@@ -56,7 +58,8 @@ static void print_event_ring_header(
         "PBUF_WIN");
     std::fprintf(
         out,
-        "%9lu %10lu %10lu %12lu %14lu %14lu\n",
+        "%c %9lu %10lu %10lu %12lu %14lu %14lu\n",
+        h->is_primary ? 'Y' : 'N',
         h->ring_capacity,
         h->ring_capacity * sizeof(monad_event_descriptor),
         h->payload_buf_size,
@@ -113,7 +116,8 @@ static void hexdump_event_payload(
 
 static void print_event(
     monad_event_iterator *iter, monad_event_descriptor const *event,
-    bool dump_payload, std::FILE *out)
+    monad_event_block_exec_header const *block_exec_header, bool dump_payload,
+    std::FILE *out)
 {
     using std::chrono::seconds, std::chrono::nanoseconds;
     static std::chrono::sys_time<seconds> last_second{};
@@ -157,6 +161,16 @@ static void print_event(
     if (!event->inline_payload) {
         o = std::format_to(o, " BUF_OFF: {}", event->payload_buf_offset);
     }
+    if (event->block_flow_id) {
+        o = std::format_to(
+            o,
+            " BLK: {} [CSN: {}]",
+            block_exec_header->number,
+            block_exec_header->consensus_seqno);
+    }
+    if (event->txn_id != 0) {
+        o = std::format_to(o, " TXN: {}", event->txn_id - 1);
+    }
     *o++ = '\n';
     std::fwrite(event_buf, static_cast<size_t>(o - event_buf), 1, out);
 
@@ -177,6 +191,9 @@ static void follow_thread_main(
     std::span<monad_event_iterator> const iters =
         std::span{iter_bufs, size(event_rings)};
     size_t not_ready_count = 0;
+
+    monad_event_block_exec_header const *block_header_table =
+        event_rings[0].blocks;
 
     for (size_t i = 0; auto const &event_ring : event_rings) {
         monad_event_iterator_init(&iters[i++], &event_ring);
@@ -216,7 +233,12 @@ static void follow_thread_main(
             case MONAD_EVENT_PAYLOAD_EXPIRED:
                 std::unreachable(); // Never returned by the zero-copy API
             }
-            print_event(&iter, &event, dump_payload, out);
+            print_event(
+                &iter,
+                &event,
+                &block_header_table[event.block_flow_id],
+                dump_payload,
+                out);
         }
     }
 }
@@ -270,6 +292,10 @@ int main(int argc, char **argv)
             print_event_ring_header(path.c_str(), r.header, stdout);
         }
     }
+    // Ensure the primary event ring is listed first
+    std::ranges::partition(event_rings, [](monad_event_ring const &r) {
+        return r.header->is_primary;
+    });
 
     if (follow) {
         follow_thread = std::thread{

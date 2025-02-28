@@ -20,9 +20,11 @@
 #include <sys/types.h>
 #include <sys/uio.h>
 
+#include <monad/core/assert.h>
 #include <monad/core/bit_util.h>
 #include <monad/core/likely.h>
 #include <monad/event/event.h>
+#include <monad/event/event_types.h>
 
 // TODO(ken): supposed to come from mem/align.h but the PR hasn't landed yet
 [[gnu::always_inline]] static inline size_t
@@ -36,6 +38,9 @@ struct monad_event_recorder_shared_state
 {
     alignas(64) pthread_mutex_t mtx;
     TAILQ_HEAD(, monad_event_recorder) recorders;
+    struct monad_event_recorder *primary_recorder;
+    uint64_t block_flow_count;
+    uint16_t block_flow_id;
 };
 
 extern struct monad_event_recorder_shared_state
@@ -126,6 +131,7 @@ inline void monad_event_record(
     struct monad_event_recorder *recorder, enum monad_event_type event_type,
     void const *payload, size_t payload_size)
 {
+    extern uint32_t monad_event_get_txn_id();
     struct monad_event_descriptor *event;
     uint64_t seqno;
     uint64_t event_epoch_nanos;
@@ -142,8 +148,8 @@ inline void monad_event_record(
     event = _monad_event_ring_reserve(recorder, payload_size, &seqno, &dst);
     memcpy(dst, payload, payload_size);
     event->type = event_type;
-    event->block_flow_id = 0; // Set in PR3
-    event->txn_id = 0; // Set in PR3
+    event->block_flow_id = g_monad_event_recorder_shared_state.block_flow_id;
+    event->txn_id = monad_event_get_txn_id();
     event->epoch_nanos = event_epoch_nanos;
     __atomic_store_n(&event->seqno, seqno, __ATOMIC_RELEASE);
 }
@@ -152,6 +158,7 @@ inline void monad_event_recordv(
     struct monad_event_recorder *recorder, enum monad_event_type event_type,
     struct iovec const *iov, size_t iovlen)
 {
+    extern uint32_t monad_event_get_txn_id();
     struct monad_event_descriptor *event;
     uint64_t seqno;
     uint64_t event_epoch_nanos;
@@ -173,8 +180,36 @@ inline void monad_event_recordv(
         dst = mempcpy(dst, iov[i].iov_base, iov[i].iov_len);
     }
     event->type = event_type;
-    event->block_flow_id = 0;
-    event->txn_id = 0;
+    event->block_flow_id = g_monad_event_recorder_shared_state.block_flow_id;
+    event->txn_id = monad_event_get_txn_id();
     event->epoch_nanos = event_epoch_nanos;
     __atomic_store_n(&event->seqno, seqno, __ATOMIC_RELEASE);
+}
+
+inline uint16_t monad_event_next_block_flow_id(
+    struct monad_event_block_exec_header **exec_header)
+{
+    struct monad_event_recorder_shared_state *const rss =
+        &g_monad_event_recorder_shared_state;
+    unsigned long block_count =
+        __atomic_fetch_add(&rss->block_flow_count, 1, __ATOMIC_RELAXED) + 1;
+    uint16_t block_id = block_count & 0xFFF;
+    if (block_id == 0) {
+        // 0 is not a valid block id; take another one
+        block_count =
+            __atomic_fetch_add(&rss->block_flow_count, 1, __ATOMIC_RELAXED) + 1;
+        block_id = block_count & 0xFFF;
+    }
+    // TODO(ken): we used to have `enabled` giving us some protection from a
+    // non-primary ring racing against the primary one; do something better
+    // here or remove the primary concept
+    MONAD_ASSERT(rss->primary_recorder != nullptr);
+    *exec_header = &rss->primary_recorder->event_ring.blocks[block_id];
+    rss->block_flow_id = block_id;
+    return block_id;
+}
+
+inline void monad_event_clear_block_flow_id()
+{
+    g_monad_event_recorder_shared_state.block_flow_id = 0;
 }

@@ -132,6 +132,7 @@ static int init_event_ring_file(
         sizeof g_monad_event_metadata_hash);
     header->ring_capacity = 1UL << ring_config->ring_shift;
     header->payload_buf_size = 1UL << ring_config->payload_buf_shift;
+    header->is_primary = ring_config->is_primary;
     header->writer_pid = getpid();
     memset(&header->control, 0, sizeof header->control);
 
@@ -140,7 +141,7 @@ static int init_event_ring_file(
     size_t const ring_file_size =
         header_size +
         header->ring_capacity * sizeof(struct monad_event_descriptor) +
-        header->payload_buf_size;
+        header->payload_buf_size + (ring_config->is_primary ? PAGE_2MB : 0);
     if (ftruncate(ring_fd, (off_t)ring_file_size) == -1) {
         return FORMAT_ERRC(
             errno,
@@ -241,6 +242,16 @@ int monad_event_recorder_create(
     recorder = *recorder_p;
     memset(recorder, 0, sizeof *recorder);
     recorder->ring_fd = -1;
+    pthread_mutex_lock(&rss->mtx);
+    if (rss->primary_recorder && ring_config->is_primary) {
+        rc = FORMAT_ERRC(
+            EALREADY,
+            "event ring `%s` wants to be the primary ring, but event system "
+            "already has one: `%s`",
+            ring_config->file_path,
+            rss->primary_recorder->file_path);
+        goto Error;
+    }
     recorder->file_path = strdup(ring_config->file_path);
     if (recorder->file_path == nullptr) {
         rc = FORMAT_ERRC(
@@ -274,10 +285,12 @@ int monad_event_recorder_create(
         recorder->event_ring.header->payload_buf_size - 1;
 
     // Add the recorder to the global list
-    pthread_mutex_lock(&rss->mtx);
     TAILQ_INSERT_TAIL(&rss->recorders, recorder, next);
-    pthread_mutex_unlock(&rss->mtx);
+    if (ring_config->is_primary) {
+        rss->primary_recorder = recorder;
+    }
 
+    pthread_mutex_unlock(&rss->mtx);
     return 0;
 
 Error:
@@ -291,6 +304,7 @@ Error:
     free((void *)recorder->file_path);
     free(recorder);
     *recorder_p = nullptr;
+    pthread_mutex_unlock(&rss->mtx);
     return rc;
 }
 
@@ -310,4 +324,9 @@ void monad_event_recorder_destroy(struct monad_event_recorder *recorder)
     unlink(recorder->file_path);
     free((void *)recorder->file_path);
     free(recorder);
+}
+
+__attribute__((weak)) uint32_t monad_event_get_txn_id()
+{
+    return 0;
 }

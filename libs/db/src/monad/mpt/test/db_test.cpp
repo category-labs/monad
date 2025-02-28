@@ -131,16 +131,15 @@ namespace
         template <return_type T>
         using result_t = monad::Result<T>;
 
+        AsyncIOContext io_ctx;
         Db ro_db;
         AsyncContextUniquePtr ctx;
         std::atomic<size_t> cbs{0}; // callbacks when found
 
         OnDiskDbWithFileAsyncFixture()
-            : ro_db([&] {
-                ReadOnlyOnDiskDbConfig const ro_config{
-                    .dbname_paths = this->config.dbname_paths};
-                return Db{ro_config};
-            }())
+            : io_ctx(ReadOnlyOnDiskDbConfig{
+                  .dbname_paths = this->config.dbname_paths})
+            , ro_db(io_ctx)
             , ctx(async_context_create(ro_db))
         {
         }
@@ -313,6 +312,40 @@ struct DbTest : public TFixture
 using DbTypes = ::testing::Types<InMemoryDbFixture, OnDiskDbFixture>;
 TYPED_TEST_SUITE(DbTest, DbTypes);
 
+TEST_F(OnDiskDbWithFileFixture, multiple_read_only_db_share_one_asyncio)
+{
+    auto const &kv = fixed_updates::kv;
+
+    auto const prefix = 0x00_hex;
+    uint64_t const starting_block_id = 0x0;
+
+    upsert_updates_flat_list(
+        db,
+        prefix,
+        starting_block_id,
+        make_update(kv[0].first, kv[0].second),
+        make_update(kv[1].first, kv[1].second));
+
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db rodb1{io_ctx};
+    Db rodb2{io_ctx};
+
+    auto verify_read = [&prefix, &starting_block_id](Db &db) {
+        EXPECT_EQ(db.get_latest_block_id(), starting_block_id);
+        EXPECT_EQ(
+            db.get(prefix + kv[0].first, starting_block_id).value(),
+            kv[0].second);
+        EXPECT_EQ(
+            db.get(prefix + kv[1].first, starting_block_id).value(),
+            kv[1].second);
+        EXPECT_EQ(
+            db.get_data(prefix, starting_block_id).value(),
+            0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+    };
+    verify_read(rodb1);
+    verify_read(rodb2);
+}
+
 TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
 {
     auto const &kv = fixed_updates::kv;
@@ -321,23 +354,12 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
     uint64_t const first_block_id = 0x123;
     uint64_t const second_block_id = first_block_id + 1;
 
-    {
-        auto u1 = make_update(kv[0].first, kv[0].second);
-        auto u2 = make_update(kv[1].first, kv[1].second);
-        UpdateList ul;
-        ul.push_front(u1);
-        ul.push_front(u2);
-
-        auto u_prefix = Update{
-            .key = prefix,
-            .value = monad::byte_string_view{},
-            .incarnation = false,
-            .next = std::move(ul)};
-        UpdateList ul_prefix;
-        ul_prefix.push_front(u_prefix);
-
-        this->db.upsert(std::move(ul_prefix), first_block_id);
-    }
+    upsert_updates_flat_list(
+        db,
+        prefix,
+        first_block_id,
+        make_update(kv[0].first, kv[0].second),
+        make_update(kv[1].first, kv[1].second));
 
     // Verify RW
     EXPECT_EQ(
@@ -350,9 +372,8 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
         this->db.get_data(prefix, first_block_id).value(),
         0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
 
-    ReadOnlyOnDiskDbConfig const ro_config{
-        .dbname_paths = this->config.dbname_paths};
-    Db ro_db{ro_config};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db ro_db{io_ctx};
 
     // Verify RO
     EXPECT_EQ(
@@ -363,23 +384,12 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
         ro_db.get_data(prefix, first_block_id).value(),
         0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
 
-    {
-        auto u1 = make_update(kv[2].first, kv[2].second);
-        auto u2 = make_update(kv[3].first, kv[3].second);
-        UpdateList ul;
-        ul.push_front(u1);
-        ul.push_front(u2);
-
-        auto u_prefix = Update{
-            .key = prefix,
-            .value = monad::byte_string_view{},
-            .incarnation = false,
-            .next = std::move(ul)};
-        UpdateList ul_prefix;
-        ul_prefix.push_front(u_prefix);
-
-        this->db.upsert(std::move(ul_prefix), second_block_id);
-    }
+    upsert_updates_flat_list(
+        db,
+        prefix,
+        second_block_id,
+        make_update(kv[2].first, kv[2].second),
+        make_update(kv[3].first, kv[3].second));
 
     // Verify RW database can read new data
     EXPECT_EQ(
@@ -634,9 +644,9 @@ TEST_F(OnDiskDbWithFileAsyncFixture, root_cache_invalidation)
 TEST_F(OnDiskDbWithFileFixture, open_emtpy_rodb)
 {
     // construct RODb
-    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db ro_db{io_ctx};
     // RODb root is invalid
-    Db const ro_db{ro_config};
     EXPECT_FALSE(ro_db.root().is_valid());
     EXPECT_EQ(ro_db.get_latest_block_id(), INVALID_BLOCK_ID);
     EXPECT_EQ(ro_db.get_earliest_block_id(), INVALID_BLOCK_ID);
@@ -671,8 +681,8 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_concurrent)
 
     auto keep_query = [&]() {
         // construct RODb
-        ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
-        Db ro_db{ro_config};
+        AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+        Db ro_db{io_ctx};
 
         uint64_t read_version = 0;
         auto start_version_bytes = serialize_as_big_endian<6>(read_version);
@@ -731,8 +741,8 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_concurrent)
 
 TEST_F(OnDiskDbWithFileFixture, upsert_but_not_write_root)
 {
-    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
-    Db ro_db{ro_config};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db ro_db{io_ctx};
 
     // upsert not write root, rodb reads nothing
     auto const k1 = 0x12345678_hex;
@@ -796,8 +806,8 @@ TEST(DbTest, history_length_adjustment_never_under_min)
     monad::io::Ring read_ring{128};
     monad::io::Buffers read_buffers = monad::io::make_buffers_for_read_only(
         read_ring, 128, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
-    monad::async::AsyncIO ro_io(pool, read_buffers);
-    UpdateAux aux_reader{&ro_io};
+    monad::async::AsyncIO io_ctx(pool, read_buffers);
+    UpdateAux aux_reader{&io_ctx};
 
     auto batch_upsert_once = [&](uint64_t const version) {
         UpdateList ls;
@@ -847,8 +857,8 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_concurrent)
         }
     });
 
-    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
-    Db ro_db{ro_config};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db ro_db{io_ctx};
     EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
     size_t num_leaves_traversed = 0;
     DummyTraverseMachine traverse_machine{num_leaves_traversed};
@@ -1021,13 +1031,14 @@ TEST_F(OnDiskDbWithFileFixture, load_correct_root_upon_reopen_nonempty_db)
     auto const prefix = 0x00_hex;
     uint64_t const block_id = 0x123;
 
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db ro_db{io_ctx};
     {
         Db const db{machine, config};
         // db is init to empty
         EXPECT_FALSE(db.root().is_valid());
         EXPECT_EQ(db.get_latest_block_id(), INVALID_BLOCK_ID);
 
-        Db const ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
         EXPECT_FALSE(ro_db.root().is_valid());
         EXPECT_EQ(ro_db.get_latest_block_id(), INVALID_BLOCK_ID);
     }
@@ -1064,7 +1075,6 @@ TEST_F(OnDiskDbWithFileFixture, load_correct_root_upon_reopen_nonempty_db)
         EXPECT_EQ(db.get_latest_block_id(), block_id);
         EXPECT_EQ(db.get_earliest_block_id(), block_id);
 
-        Db const ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
         EXPECT_TRUE(db.root().is_valid());
         EXPECT_EQ(db.get_latest_block_id(), block_id);
         EXPECT_EQ(db.get_earliest_block_id(), block_id);
@@ -1084,8 +1094,8 @@ TEST(DbTest, out_of_order_upserts_to_nonexist_earlier_version)
         .fixed_history_length = DBTEST_HISTORY_LENGTH};
     Db db{machine, config};
 
-    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
-    Db rodb{ro_config};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db rodb{io_ctx};
 
     constexpr size_t total_keys = 10000;
     auto [bytes_alloc, updates_alloc] = prepare_random_updates(total_keys);
@@ -1144,8 +1154,8 @@ TEST(DbTest, out_of_order_upserts_with_compaction)
         .dbname_paths = {dbname},
         .fixed_history_length = DBTEST_HISTORY_LENGTH};
     Db db{machine, config};
-    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
-    Db rodb{ro_config};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db rodb{io_ctx};
 
     auto get_release_offsets = [](monad::byte_string_view const bytes)
         -> std::pair<uint32_t, uint32_t> {
@@ -1830,8 +1840,8 @@ TEST_F(OnDiskDbWithFileFixture, copy_trie_to_different_version_modify_state)
     upsert_updates_flat_list(
         db, prefix, block_id, make_update(kv_alloc[0], kv_alloc[0]));
 
-    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
-    Db rodb{ro_config};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db rodb{io_ctx};
 
     // copy trie to a new version
     // read: can't read new dest version until upserting
@@ -1906,7 +1916,8 @@ TEST_F(OnDiskDbWithFileFixture, copy_trie_to_different_version_modify_state)
 TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
 {
     EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
-    Db ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db ro_db{io_ctx};
     EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
 
     // continuous upsert() and move_trie_version_forward() leads to
@@ -2017,7 +2028,8 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
 TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
 {
     std::atomic<bool> done{false};
-    Db ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db ro_db{io_ctx};
     auto const prefix = 0x00_hex;
 
     // fille rwdb with some blocks
@@ -2110,7 +2122,8 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
     EXPECT_EQ(db.get_earliest_block_id(), min_block_num_before);
     EXPECT_TRUE(db.get(prefix + kv[1].first, min_block_num_before).has_value());
 
-    Db ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db ro_db{io_ctx};
     EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
     EXPECT_TRUE(ro_db.get(prefix + kv[1].first, 0).has_error());
     EXPECT_TRUE(ro_db.get(prefix + kv[1].first, max_block_id).has_value());

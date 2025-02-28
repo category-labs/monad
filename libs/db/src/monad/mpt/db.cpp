@@ -96,35 +96,81 @@ struct Db::Impl
     virtual uint64_t get_latest_verified_block_id() const = 0;
 };
 
+AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
+    : pool{[&] -> async::storage_pool {
+        async::storage_pool::creation_flags pool_options;
+        pool_options.open_read_only = true;
+        pool_options.disable_mismatching_storage_pool_check =
+            options.disable_mismatching_storage_pool_check;
+        MONAD_ASSERT(!options.dbname_paths.empty());
+        return async::storage_pool{
+            options.dbname_paths,
+            async::storage_pool::mode::open_existing,
+            pool_options};
+    }()}
+    , read_ring{monad::io::RingConfig{
+          options.uring_entries, false, options.sq_thread_cpu}}
+    , buffers{io::make_buffers_for_read_only(
+          read_ring, options.rd_buffers,
+          async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)}
+    , io{pool, buffers}
+{
+    io.set_capture_io_latencies(options.capture_io_latencies);
+    io.set_concurrent_read_io_limit(options.concurrent_read_io_limit);
+    io.set_eager_completions(options.eager_completions);
+}
+
+AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
+    : pool{[&] -> async::storage_pool {
+        if (options.dbname_paths.empty()) {
+            return async::storage_pool{async::use_anonymous_inode_tag{}};
+        }
+        // initialize db file on disk
+        for (auto const &dbname_path : options.dbname_paths) {
+            if (!std::filesystem::exists(dbname_path)) {
+                int const fd = ::open(
+                    dbname_path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
+                if (-1 == fd) {
+                    throw std::system_error(errno, std::system_category());
+                }
+                auto unfd =
+                    monad::make_scope_exit([fd]() noexcept { ::close(fd); });
+                if (-1 ==
+                    ::ftruncate(
+                        fd,
+                        options.file_size_db * 1024 * 1024 * 1024 + 24576)) {
+                    throw std::system_error(errno, std::system_category());
+                }
+            }
+        }
+        return async::storage_pool{
+            options.dbname_paths,
+            options.append ? async::storage_pool::mode::open_existing
+                           : async::storage_pool::mode::truncate};
+    }()}
+    , read_ring{{options.uring_entries, options.enable_io_polling, options.sq_thread_cpu}}
+    , write_ring{options.wr_buffers}
+    , buffers{io::make_buffers_for_segregated_read_write(
+          read_ring, *write_ring, options.rd_buffers, options.wr_buffers,
+          async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+          async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE)}
+    , io{pool, buffers}
+{
+    io.set_capture_io_latencies(options.capture_io_latencies);
+    io.set_concurrent_read_io_limit(options.concurrent_read_io_limit);
+    io.set_eager_completions(options.eager_completions);
+}
+
 struct Db::ROOnDisk final : public Db::Impl
 {
-    async::storage_pool pool_;
-    io::Ring ring_;
-    io::Buffers rwbuf_;
-    async::AsyncIO io_;
+    AsyncIOContext &io_ctx_;
     UpdateAux<> aux_;
     chunk_offset_t last_loaded_root_offset_;
     Node::UniquePtr root_;
 
-    explicit ROOnDisk(ReadOnlyOnDiskDbConfig const &options)
-        : pool_{[&] -> async::storage_pool {
-            async::storage_pool::creation_flags pool_options;
-            pool_options.open_read_only = true;
-            pool_options.disable_mismatching_storage_pool_check =
-                options.disable_mismatching_storage_pool_check;
-            MONAD_ASSERT(!options.dbname_paths.empty());
-            return async::storage_pool{
-                options.dbname_paths,
-                async::storage_pool::mode::open_existing,
-                pool_options};
-        }()}
-        , ring_{monad::io::RingConfig{
-              options.uring_entries, false, options.sq_thread_cpu}}
-        , rwbuf_{io::make_buffers_for_read_only(
-              ring_, options.rd_buffers,
-              async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)}
-        , io_{pool_, rwbuf_}
-        , aux_{&io_}
+    explicit ROOnDisk(AsyncIOContext &io_ctx)
+        : io_ctx_(io_ctx)
+        , aux_(&io_ctx.io)
         , last_loaded_root_offset_{aux_.get_root_offset_at_version(
               aux_.db_history_max_version())}
         , root_{
@@ -134,9 +180,6 @@ struct Db::ROOnDisk final : public Db::Impl
                         aux_, last_loaded_root_offset_,
                         aux_.db_history_max_version())}
     {
-        io_.set_capture_io_latencies(options.capture_io_latencies);
-        io_.set_concurrent_read_io_limit(options.concurrent_read_io_limit);
-        io_.set_eager_completions(options.eager_completions);
     }
 
     ~ROOnDisk()
@@ -405,11 +448,7 @@ struct Db::RWOnDisk final : public Db::Impl
     {
         RWOnDisk *parent;
         UpdateAuxImpl &aux;
-
-        async::storage_pool pool;
-        io::Ring ring1, ring2;
-        io::Buffers rwbuf;
-        async::AsyncIO io;
+        AsyncIOContext async_io;
         bool const compaction;
         std::atomic<bool> sleeping{false}, done{false};
 
@@ -417,51 +456,9 @@ struct Db::RWOnDisk final : public Db::Impl
             RWOnDisk *parent, UpdateAuxImpl &aux, OnDiskDbConfig const &options)
             : parent(parent)
             , aux(aux)
-            , pool{[&] -> async::storage_pool {
-                if (options.dbname_paths.empty()) {
-                    return async::storage_pool{
-                        async::use_anonymous_inode_tag{}};
-                }
-                // initialize db file on disk
-                for (auto const &dbname_path : options.dbname_paths) {
-                    if (!std::filesystem::exists(dbname_path)) {
-                        int const fd = ::open(
-                            dbname_path.c_str(),
-                            O_CREAT | O_RDWR | O_CLOEXEC,
-                            0600);
-                        if (-1 == fd) {
-                            throw std::system_error(
-                                errno, std::system_category());
-                        }
-                        auto unfd = monad::make_scope_exit(
-                            [fd]() noexcept { ::close(fd); });
-                        if (-1 ==
-                            ::ftruncate(
-                                fd,
-                                options.file_size_db * 1024 * 1024 * 1024 +
-                                    24576)) {
-                            throw std::system_error(
-                                errno, std::system_category());
-                        }
-                    }
-                }
-                return async::storage_pool{
-                    options.dbname_paths,
-                    options.append ? async::storage_pool::mode::open_existing
-                                   : async::storage_pool::mode::truncate};
-            }()}
-            , ring1{{options.uring_entries, options.enable_io_polling, options.sq_thread_cpu}}
-            , ring2{options.wr_buffers}
-            , rwbuf{io::make_buffers_for_segregated_read_write(
-                  ring1, ring2, options.rd_buffers, options.wr_buffers,
-                  async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
-                  async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE)}
-            , io{pool, rwbuf}
+            , async_io(options)
             , compaction{options.compaction}
         {
-            io.set_capture_io_latencies(options.capture_io_latencies);
-            io.set_concurrent_read_io_limit(options.concurrent_read_io_limit);
-            io.set_eager_completions(options.eager_completions);
         }
 
         // Runs in the triedb worker thread
@@ -584,12 +581,12 @@ struct Db::RWOnDisk final : public Db::Impl
                     }
                     did_nothing = false;
                 }
-                io.poll_nonblocking(1);
+                async_io.io.poll_nonblocking(1);
                 boost::this_fiber::yield();
                 if (boost::fibers::has_ready_fibers()) {
                     did_nothing = false;
                 }
-                if (did_nothing && io.io_in_flight() > 0) {
+                if (did_nothing && async_io.io.io_in_flight() > 0) {
                     did_nothing = false;
                 }
                 while (!find_promises.empty() &&
@@ -659,8 +656,8 @@ struct Db::RWOnDisk final : public Db::Impl
                 // This bit is unfortunately nasty, but we have to initialise
                 // aux_ from this thread
                 aux_.~UpdateAux<>();
-                new (&aux_)
-                    UpdateAux<>{&worker_->io, options.fixed_history_length};
+                new (&aux_) UpdateAux<>{
+                    &worker_->async_io.io, options.fixed_history_length};
                 if (options.rewind_to_latest_finalized) {
                     auto const latest_block_id =
                         aux_.get_latest_finalized_version();
@@ -943,8 +940,8 @@ Db::Db(StateMachine &machine, OnDiskDbConfig const &config)
     MONAD_DEBUG_ASSERT(impl_->aux().is_on_disk());
 }
 
-Db::Db(ReadOnlyOnDiskDbConfig const &config)
-    : impl_{std::make_unique<ROOnDisk>(config)}
+Db::Db(AsyncIOContext &io_ctx)
+    : impl_{std::make_unique<ROOnDisk>(io_ctx)}
 {
 }
 

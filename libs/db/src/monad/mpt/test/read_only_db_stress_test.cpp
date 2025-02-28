@@ -155,7 +155,8 @@ int main(int argc, char *const argv[])
         auto random_sync_read = [&]() {
             ReadOnlyOnDiskDbConfig const ro_config{
                 .dbname_paths = {dbname_paths}};
-            Db ro_db{ro_config};
+            AsyncIOContext io_ctx{ro_config};
+            Db ro_db{io_ctx};
 
             while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID && !g_done) {
             }
@@ -202,7 +203,8 @@ int main(int argc, char *const argv[])
         auto random_async_read = [&]() {
             ReadOnlyOnDiskDbConfig const ro_config{
                 .dbname_paths = {dbname_paths}};
-            Db ro_db{ro_config};
+            AsyncIOContext io_ctx{ro_config};
+            Db ro_db{io_ctx};
             auto async_ctx = async_context_create(ro_db);
 
             unsigned nsuccess = 0;
@@ -290,7 +292,8 @@ int main(int argc, char *const argv[])
         auto random_traverse = [&]() {
             ReadOnlyOnDiskDbConfig const ro_config{
                 .dbname_paths = {dbname_paths}};
-            Db ro_db{ro_config};
+            AsyncIOContext io_ctx{ro_config};
+            Db ro_db{io_ctx};
 
             unsigned nsuccess = 0;
             unsigned nfailed = 0;
@@ -403,7 +406,8 @@ int main(int argc, char *const argv[])
             while (!g_done) {
                 ReadOnlyOnDiskDbConfig const ro_config{
                     .dbname_paths = dbname_paths};
-                Db ro_db{ro_config};
+                AsyncIOContext io_ctx{ro_config};
+                Db ro_db{io_ctx};
                 auto const version = ro_db.get_earliest_block_id() + 1;
                 auto const value =
                     serialize_as_big_endian<sizeof(uint64_t)>(version);

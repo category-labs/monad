@@ -370,6 +370,7 @@ struct monad_eth_call_executor
 
     fiber::PriorityPool pool_;
 
+    std::shared_ptr<mpt::AsyncIOContext> async_io_{};
     std::shared_ptr<mpt::Db> db_{};
     std::shared_ptr<TrieDb> tdb_{};
 
@@ -396,9 +397,15 @@ struct monad_eth_call_executor
         // local storage gets instantiated on the one thread its used
         auto promise = std::make_shared<boost::fibers::promise<void>>();
         pool_.submit(
-            0, [&paths = paths, &db = db_, &tdb = tdb_, promise = promise] {
-                db.reset(new mpt::Db{
+            0,
+            [&paths = paths,
+             &async_io = async_io_,
+             &db = db_,
+             &tdb = tdb_,
+             promise = promise] {
+                async_io.reset(new mpt::AsyncIOContext{
                     mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = paths}});
+                db.reset(new mpt::Db{*async_io});
                 tdb.reset(new TrieDb{*db});
                 promise->set_value();
             });
@@ -415,11 +422,14 @@ struct monad_eth_call_executor
     ~monad_eth_call_executor()
     {
         auto promise = std::make_shared<boost::fibers::promise<void>>();
-        pool_.submit(0, [&db = db_, &tdb = tdb_, promise = promise] {
-            tdb.reset();
-            db.reset();
-            promise->set_value();
-        });
+        pool_.submit(
+            0,
+            [&async_io = async_io_, &db = db_, &tdb = tdb_, promise = promise] {
+                tdb.reset();
+                db.reset();
+                async_io.reset();
+                promise->set_value();
+            });
         promise->get_future().get();
     }
 

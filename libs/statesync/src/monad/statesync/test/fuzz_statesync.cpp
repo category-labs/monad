@@ -270,7 +270,8 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
     TrieDb stdb{sdb};
     std::unique_ptr<monad_statesync_server_context> sctx =
         std::make_unique<monad_statesync_server_context>(stdb);
-    mpt::Db ro{ReadOnlyOnDiskDbConfig{.dbname_paths{sdbname}}};
+    mpt::AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths{sdbname}}};
+    mpt::Db ro{io_ctx};
     sctx->ro = &ro;
     monad_statesync_server_network net{
         .client = &client, .cctx = cctx, .buf = {}};

@@ -129,6 +129,7 @@ namespace
         mpt::Db sdb;
         TrieDb stdb;
         monad_statesync_server_context sctx;
+        mpt::AsyncIOContext io_ctx;
         mpt::Db ro;
         monad_statesync_server_network net;
         monad_statesync_server *server{};
@@ -141,7 +142,8 @@ namespace
                   OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}}
             , stdb{sdb}
             , sctx{stdb}
-            , ro{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {sdbname}}}
+            , io_ctx{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {sdbname}}}
+            , ro{io_ctx}
         {
             sctx.ro = &ro;
         }

@@ -226,8 +226,10 @@ TEST(DBTest, read_only)
             Code{},
             BlockHeader{.number = 1});
 
-        mpt::Db db2(mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {name}});
-        TrieDb ro{db2};
+        mpt::AsyncIOContext io_ctx{
+            mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {name}}};
+        mpt::Db ro_db{io_ctx};
+        TrieDb ro{ro_db};
         ASSERT_EQ(ro.get_block_number(), 1);
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 2});
         ro.set_block_and_round(0);
@@ -660,6 +662,8 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
 
 TYPED_TEST(DBTest, to_json)
 {
+    // TODO: typed test doesn't really make sense here, split to two different
+    // tests
     std::filesystem::path dbname{};
     if (this->on_disk) {
         dbname = {
@@ -746,14 +750,16 @@ TYPED_TEST(DBTest, to_json)
   }
 })");
 
-    if (this->on_disk) {
-        // also test to_json from a read only db
-        mpt::Db db2{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
-        auto ro_db = TrieDb{db2};
-        EXPECT_EQ(expected_payload, ro_db.to_json());
-    }
+    // RWDb or in memory Db
     EXPECT_EQ(expected_payload, tdb.to_json());
     if (this->on_disk) {
+        // also test to_json from a read only db
+        mpt::AsyncIOContext io_ctx{
+            mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+        mpt::Db ro_db{io_ctx};
+        TrieDb ro{ro_db};
+        EXPECT_EQ(expected_payload, ro.to_json());
+
         std::filesystem::remove(dbname);
     }
 }

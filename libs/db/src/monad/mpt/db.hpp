@@ -26,6 +26,18 @@ struct StateMachine;
 struct TraverseMachine;
 struct AsyncContext;
 
+struct AsyncIOContext
+{
+    async::storage_pool pool;
+    io::Ring read_ring;
+    std::optional<io::Ring> write_ring;
+    io::Buffers buffers;
+    async::AsyncIO io;
+
+    explicit AsyncIOContext(ReadOnlyOnDiskDbConfig const &options);
+    explicit AsyncIOContext(OnDiskDbConfig const &options);
+};
+
 class Db
 {
 private:
@@ -41,7 +53,7 @@ private:
 public:
     Db(StateMachine &); // In-memory mode
     Db(StateMachine &, OnDiskDbConfig const &);
-    Db(ReadOnlyOnDiskDbConfig const &);
+    Db(AsyncIOContext &);
 
     Db(Db const &) = delete;
     Db(Db &&) = delete;
@@ -116,6 +128,7 @@ public:
 // thread.
 
 struct AsyncContext
+
 {
     using inflight_root_t = unordered_dense_map<
         uint64_t, std::vector<std::function<void(std::shared_ptr<Node>)>>>;

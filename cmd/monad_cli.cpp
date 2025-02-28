@@ -818,8 +818,8 @@ int main(int argc, char *argv[])
 
     ReadOnlyOnDiskDbConfig const ro_config{
         .sq_thread_cpu = sq_thread_cpu, .dbname_paths = dbname_paths};
-
-    Db ro_db{ro_config};
+    AsyncIOContext io_ctx{ro_config};
+    Db ro_db{io_ctx};
 
     fmt::print("Opening read only database ");
     for (auto const &dbname : dbname_paths) {

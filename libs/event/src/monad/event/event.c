@@ -131,6 +131,10 @@ Error:
 //  .------------------.
 //  |  Payload buffer  |
 //  .------------------.
+//  |   Primary ring   |
+//  |     metadata     |
+//  |     (optional)   |
+//  .------------------.
 //
 // Until we have hugetlbfs support, a second format is supported: the header
 // is in a small file by itself, and it describes how to load the real event
@@ -260,6 +264,26 @@ int _monad_event_ring_mmap_data(
         goto Error;
     }
 
+    if (header->is_primary) {
+        // The primary event ring is the one whose shared memory file hosts
+        // the metadata referred in the event descriptor's "ID" fields
+        event_ring->blocks = mmap(
+            nullptr,
+            PAGE_2MB,
+            mmap_prot,
+            MAP_SHARED | MAP_POPULATE | MAP_HUGETLB,
+            ring_data_fd,
+            base_ring_data_offset + (off_t)descriptor_map_len +
+                (off_t)header->payload_buf_size);
+        if (event_ring->blocks == MAP_FAILED) {
+            rc = FORMAT_ERRC(
+                errno,
+                "mmap of event ring `%s` ID metadata failed",
+                error_name);
+            goto Error;
+        }
+    }
+
     if (!is_writer && ring_data_fd != ring_fd) {
         (void)close(ring_data_fd);
     }
@@ -323,6 +347,11 @@ void monad_event_ring_unmap(struct monad_event_ring *event_ring)
         if (event_ring->payload_buf) {
             munmap(event_ring->payload_buf, 2 * header->payload_buf_size);
         }
+        if (event_ring->blocks) {
+            munmap(event_ring->blocks, PAGE_2MB);
+        }
+        // We don't do anything with `event_ring->blocks`, it's on the same
+        // PAGE_2MB-sized mapping as the thread metadata
         munmap((void *)header, PAGE_2MB);
     }
     memset(event_ring, 0, sizeof *event_ring);

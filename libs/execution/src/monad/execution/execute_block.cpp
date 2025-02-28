@@ -2,12 +2,17 @@
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
+#include <monad/core/cpu_relax.h>
+#include <monad/core/exec_event.hpp>
 #include <monad/core/fmt/transaction_fmt.hpp>
 #include <monad/core/int.hpp>
+#include <monad/core/keccak.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
+#include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/core/withdrawal.hpp>
+#include <monad/event/event_types.h>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/block_reward.hpp>
 #include <monad/execution/ethereum/dao.hpp>
@@ -17,25 +22,115 @@
 #include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/trace/event_trace.hpp>
 #include <monad/execution/validate_block.hpp>
+#include <monad/execution/validate_transaction.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
+#include <sys/uio.h>
 
 #include <intx/intx.hpp>
 
+#include <boost/fiber/fss.hpp>
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <utility>
 #include <vector>
 
+// Will remain nullptr unless the frontend configure it
+monad_event_recorder *monad::g_monad_execution_recorder;
+
 MONAD_NAMESPACE_BEGIN
+
+static boost::fibers::fiber_specific_ptr<uint32_t> g_fss_txn_num;
+
+extern "C" uint32_t monad_event_get_txn_id()
+{
+    return boost::fibers::context::active()
+               ? g_fss_txn_num.get() != nullptr ? *g_fss_txn_num + 1 : 0
+               : 0;
+}
+
+static std::span<iovec const> init_txn_header_iovec(
+    Transaction const &txn, std::optional<Address> const &opt_sender,
+    iovec (&iov)[2])
+{
+    size_t iovlen = 1;
+    auto *const header = static_cast<monad_event_txn_header *>(iov[0].iov_base);
+    header->tx_hash = to_bytes(keccak256(rlp::encode_transaction(txn)));
+    header->nonce = txn.nonce;
+    header->gas_limit = txn.gas_limit;
+    header->max_fee_per_gas = to_bytes(txn.max_fee_per_gas);
+    header->max_priority_fee_per_gas = to_bytes(txn.max_priority_fee_per_gas);
+    header->value = to_bytes(txn.value);
+    header->from = opt_sender ? *opt_sender : Address{};
+    header->to = txn.to ? *txn.to : Address{};
+    header->txn_type = static_cast<uint8_t>(txn.type);
+    header->r = to_bytes(txn.sc.r);
+    header->s = to_bytes(txn.sc.s);
+    header->y_parity = txn.sc.odd_y_parity ? 1 : 0;
+    header->chain_id = to_bytes(txn.sc.chain_id.value_or(0));
+    header->data_length = static_cast<uint32_t>(size(txn.data));
+    if (header->data_length > 0) {
+        ++iovlen;
+        iov[1].iov_base = (void *)data(txn.data);
+        iov[1].iov_len = header->data_length;
+    }
+    return {iov, iovlen};
+}
+
+static void record_txn_exec_result_events(Result<ExecutionResult> const &r)
+{
+    if (r.has_error()) {
+        // Create a reference error so we can extract its domain with
+        // `ref_txn_error.domain()`, for the purpose of checking if the
+        // r.error() domain is a TransactionError
+        static Result<ExecutionResult>::error_type const ref_txn_error =
+            TransactionError::InsufficientBalance;
+        static auto const &txn_err_domain = ref_txn_error.domain();
+        auto const &error_domain = r.error().domain();
+        auto const error_value = r.error().value();
+        if (error_domain == txn_err_domain) {
+            record_exec_event(MONAD_EVENT_TXN_REJECT, error_value);
+        }
+        else {
+            monad_event_txn_exec_error ee;
+            ee.domain_id = error_domain.id();
+            ee.status_code = error_value;
+            record_exec_event(MONAD_EVENT_TXN_EXEC_ERROR, ee);
+        }
+        return;
+    }
+
+    auto const &receipt = r.value().receipt;
+    for (auto const &log : receipt.logs) {
+        iovec iov[3];
+        monad_event_txn_log log_event;
+
+        log_event.address = log.address;
+        log_event.topic_count = static_cast<uint8_t>(size(log.topics));
+        log_event.data_length = static_cast<uint32_t>(size(log.data));
+        iov[0] = {.iov_base = &log_event, .iov_len = sizeof log_event};
+        iov[1] = {
+            .iov_base = const_cast<bytes32_t *>(log.topics.data()),
+            .iov_len = log_event.topic_count * sizeof(bytes32_t)};
+        iov[2] = {
+            .iov_base = const_cast<uint8_t *>(log.data.data()),
+            .iov_len = log_event.data_length};
+        record_exec_event_iov(MONAD_EVENT_TXN_LOG, iov);
+    }
+    monad_event_txn_receipt const receipt_event = {
+        .status = receipt.status, .gas_used = receipt.gas_used};
+    record_exec_event(MONAD_EVENT_TXN_RECEIPT, receipt_event);
+}
 
 // EIP-4895
 constexpr void process_withdrawal(
@@ -124,6 +219,15 @@ Result<std::vector<ExecutionResult>> execute_block(
              &transaction = block.transactions[i]] {
                 senders[i] = recover_sender(transaction);
                 promises[i].set_value();
+                monad_event_txn_header txn_header;
+                iovec iov[2] = {
+                    {.iov_base = &txn_header, .iov_len = sizeof txn_header},
+                };
+                g_fss_txn_num.reset(new uint32_t{i});
+                record_exec_event_iov(
+                    MONAD_EVENT_TXN_START,
+                    init_txn_header_iovec(transaction, senders[i], iov));
+                g_fss_txn_num.release();
             });
     }
 
@@ -138,6 +242,7 @@ Result<std::vector<ExecutionResult>> execute_block(
         new boost::fibers::promise<void>[block.transactions.size() + 1]);
     promises[0].set_value();
 
+    std::atomic<size_t> tx_exec_finished = 0;
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         priority_pool.submit(
             i,
@@ -149,7 +254,9 @@ Result<std::vector<ExecutionResult>> execute_block(
              &sender = senders[i],
              &header = block.header,
              &block_hash_buffer = block_hash_buffer,
-             &block_state] {
+             &block_state,
+             &tx_exec_finished] {
+                g_fss_txn_num.reset(new uint32_t{i});
                 results[i] = execute<rev>(
                     chain,
                     i,
@@ -160,11 +267,23 @@ Result<std::vector<ExecutionResult>> execute_block(
                     block_state,
                     promises[i]);
                 promises[i + 1].set_value();
+                record_txn_exec_result_events(*results[i]);
+                g_fss_txn_num.release();
+                tx_exec_finished.fetch_add(1, std::memory_order::relaxed);
             });
     }
 
     auto const last = static_cast<std::ptrdiff_t>(block.transactions.size());
     promises[last].get_future().wait();
+
+    // All transactions have released their merge-order synchronization
+    // primitive (promises[i + 1]) but some stragglers could still be running
+    // post-execution code that occurs immediately after that, e.g.
+    // `record_txn_exec_result_events`. This waits for everything to finish
+    // so that it's safe to assume we're the only ones using `results`.
+    while (tx_exec_finished.load() < block.transactions.size()) {
+        cpu_relax();
+    }
 
     std::vector<ExecutionResult> retvals;
     for (unsigned i = 0; i < block.transactions.size(); ++i) {

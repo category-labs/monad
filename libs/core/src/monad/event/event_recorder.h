@@ -16,6 +16,7 @@
 #include <monad/event/event.h>
 
 struct iovec;
+struct monad_event_block_exec_header;
 struct monad_event_recorder;
 
 #ifdef __cplusplus
@@ -52,6 +53,7 @@ struct monad_event_recorder_config
     char const *file_path;     ///< Event ring's shared memory file
     uint8_t ring_shift;        ///< # of event ring descriptors == 1 << shift
     uint8_t payload_buf_shift; ///< Payload buffer size == 1 << shift
+    bool is_primary;           ///< True -> will be the "primary" recorder
 };
 
 // clang-format on
@@ -79,6 +81,20 @@ char const *monad_event_recorder_get_last_error();
 
 /// __attribute__((constructor)) priority of the static constructor
 #define MONAD_EVENT_RECORDER_CTOR_PRIO 1000
+
+/*
+ * Block flow ID management functions
+ */
+
+/// Return the next block flow ID and activate it in all recorders; subsequent
+/// recorded events will carry this block flow ID until it is explicitly
+/// cleared; also return the block execution header array slot (in the metadata
+/// page) that corresponds to this ID
+static uint16_t
+monad_event_next_block_flow_id(struct monad_event_block_exec_header **);
+
+/// Clear the active block flow ID set by `monad_event_alloc_block_flow_id`
+static void monad_event_clear_block_flow_id();
 
 struct monad_event_recorder
 {

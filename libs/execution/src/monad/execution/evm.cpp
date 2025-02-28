@@ -47,7 +47,8 @@ void transfer_balances(
 
 template <evmc_revision rev>
 evmc::Result deploy_contract_code(
-    State &state, Address const &address, evmc::Result result) noexcept
+    State &state, Address const &address, evmc::Result result,
+    size_t const max_code_size) noexcept
 {
     MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
 
@@ -59,7 +60,7 @@ evmc::Result deploy_contract_code(
     }
     // EIP-170
     if constexpr (rev >= EVMC_SPURIOUS_DRAGON) {
-        if (result.output_size > 0x6000) {
+        if (result.output_size > max_code_size) {
             return evmc::Result{EVMC_OUT_OF_GAS};
         }
     }
@@ -141,7 +142,8 @@ void post_call(State &state, evmc::Result const &result)
 
 template <evmc_revision rev>
 evmc::Result create(
-    EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
+    EvmcHost<rev> *const host, State &state, evmc_message const &msg,
+    size_t const max_code_size) noexcept
 {
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
 
@@ -214,7 +216,7 @@ evmc::Result create(
 
     if (result.status_code == EVMC_SUCCESS) {
         result = deploy_contract_code<rev>(
-            state, contract_address, std::move(result));
+            state, contract_address, std::move(result), max_code_size);
     }
 
     if (result.status_code == EVMC_SUCCESS) {

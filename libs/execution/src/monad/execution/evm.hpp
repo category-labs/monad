@@ -14,11 +14,13 @@ struct EvmcHost;
 class State;
 
 template <evmc_revision rev>
-evmc::Result
-deploy_contract_code(State &, Address const &, evmc::Result) noexcept;
+evmc::Result deploy_contract_code(
+    State &, Address const &, evmc::Result, size_t max_code_size) noexcept;
 
 template <evmc_revision rev>
-evmc::Result create(EvmcHost<rev> *, State &, evmc_message const &) noexcept;
+evmc::Result create(
+    EvmcHost<rev> *, State &, evmc_message const &,
+    size_t max_code_size) noexcept;
 
 template <evmc_revision rev>
 evmc::Result call(EvmcHost<rev> *, State &, evmc_message const &) noexcept;

@@ -7,7 +7,6 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/tx_context.hpp>
-#include <monad/execution/validate_transaction.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/state.hpp>
 

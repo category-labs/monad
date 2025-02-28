@@ -41,7 +41,7 @@ template <evmc_revision rev>
 evmc::Result execute_impl_no_validation(
     State &state, EvmcHost<rev> &host, Transaction const &tx,
     Address const &sender, uint256_t const &base_fee_per_gas,
-    Address const &beneficiary);
+    Address const &beneficiary, uint64_t max_code_size);
 
 template <evmc_revision rev>
 Result<ExecutionResult> execute_impl(

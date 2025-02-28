@@ -38,7 +38,7 @@ using BOOST_OUTCOME_V2_NAMESPACE::success;
 template <evmc_revision rev>
 Result<void> static_validate_transaction(
     Transaction const &tx, std::optional<uint256_t> const &base_fee_per_gas,
-    uint256_t const &chain_id)
+    uint256_t const &chain_id, size_t const max_code_size)
 {
     // EIP-155
     if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {
@@ -83,7 +83,8 @@ Result<void> static_validate_transaction(
 
     // EIP-3860
     if constexpr (rev >= EVMC_SHANGHAI) {
-        if (MONAD_UNLIKELY(!tx.to.has_value() && tx.data.size() > 2 * 0x6000)) {
+        if (MONAD_UNLIKELY(
+                !tx.to.has_value() && tx.data.size() > 2 * max_code_size)) {
             return TransactionError::InitCodeLimitExceeded;
         }
     }

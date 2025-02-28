@@ -28,11 +28,12 @@ class EvmcHostBase : public evmc::Host
 protected:
     State &state_;
     CallTracerBase &call_tracer_;
+    size_t const max_code_size_;
 
 public:
     EvmcHostBase(
         CallTracerBase &, evmc_tx_context const &, BlockHashBuffer const &,
-        State &) noexcept;
+        State &, size_t max_code_size) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
 
@@ -96,7 +97,8 @@ struct EvmcHost final : public EvmcHostBase
     virtual evmc::Result call(evmc_message const &msg) noexcept override
     {
         if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
-            auto result = ::monad::create<rev>(this, state_, msg);
+            auto result =
+                ::monad::create<rev>(this, state_, msg, max_code_size_);
 
             // EIP-211
             if (result.status_code != EVMC_REVERT) {

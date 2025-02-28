@@ -15,6 +15,8 @@
 #include <boost/outcome/config.hpp>
 #include <boost/outcome/success_failure.hpp>
 
+#include <limits>
+
 MONAD_NAMESPACE_BEGIN
 
 using BOOST_OUTCOME_V2_NAMESPACE::success;
@@ -129,6 +131,14 @@ uint64_t EthereumMainnet::compute_gas_refund(
 {
     auto const rev = get_revision(block_number, timestamp);
     return g_star(rev, tx, gas_remaining, refund);
+}
+
+size_t EthereumMainnet::get_max_code_size(
+    uint64_t const block_number, uint64_t const timestamp) const
+{
+    return get_revision(block_number, timestamp) >= EVMC_SPURIOUS_DRAGON
+               ? MAX_CODE_SIZE_EIP170
+               : std::numeric_limits<size_t>::max();
 }
 
 MONAD_NAMESPACE_END

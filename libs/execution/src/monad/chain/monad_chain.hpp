@@ -26,6 +26,9 @@ struct MonadChain : Chain
 
     virtual monad_revision
     get_monad_revision(uint64_t block_number, uint64_t timestamp) const = 0;
+
+    virtual size_t
+    get_max_code_size(uint64_t block_number, uint64_t timestamp) const override;
 };
 
 MONAD_NAMESPACE_END

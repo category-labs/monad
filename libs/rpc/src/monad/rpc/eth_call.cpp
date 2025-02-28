@@ -50,8 +50,14 @@ namespace
         enriched_txn.sc.r = 1;
         enriched_txn.sc.s = 1;
 
+        size_t const max_code_size =
+            chain.get_max_code_size(header.number, header.timestamp);
+
         BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
-            enriched_txn, header.base_fee_per_gas, chain.get_chain_id()));
+            enriched_txn,
+            header.base_fee_per_gas,
+            chain.get_chain_id(),
+            max_code_size));
 
         tdb.set_block_and_round(
             block_number,
@@ -156,14 +162,16 @@ namespace
         auto const tx_context = get_tx_context<rev>(
             enriched_txn, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer;
-        EvmcHost<rev> host{call_tracer, tx_context, buffer, state};
+        EvmcHost<rev> host{
+            call_tracer, tx_context, buffer, state, max_code_size};
         return execute_impl_no_validation<rev>(
             state,
             host,
             enriched_txn,
             sender,
             header.base_fee_per_gas.value_or(0),
-            header.beneficiary);
+            header.beneficiary,
+            max_code_size);
     }
 
     Result<evmc::Result> eth_call_impl(

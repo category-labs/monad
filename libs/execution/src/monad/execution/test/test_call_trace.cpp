@@ -1,3 +1,4 @@
+#include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/int.hpp>
@@ -131,10 +132,11 @@ TEST(CallTrace, execute_success)
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized buffer{};
     CallTracer call_tracer{tx};
-    EvmcHost<EVMC_SHANGHAI> host(call_tracer, tx_context, buffer, s);
+    EvmcHost<EVMC_SHANGHAI> host(
+        call_tracer, tx_context, buffer, s, MAX_CODE_SIZE_EIP170);
 
     auto const result = execute_impl_no_validation<EVMC_SHANGHAI>(
-        s, host, tx, sender, 1, beneficiary);
+        s, host, tx, sender, 1, beneficiary, MAX_CODE_SIZE_EIP170);
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
 
     auto const &call_frames = call_tracer.get_frames();
@@ -198,10 +200,11 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized buffer{};
     CallTracer call_tracer{tx};
-    EvmcHost<EVMC_SHANGHAI> host(call_tracer, tx_context, buffer, s);
+    EvmcHost<EVMC_SHANGHAI> host(
+        call_tracer, tx_context, buffer, s, MAX_CODE_SIZE_EIP170);
 
     auto const result = execute_impl_no_validation<EVMC_SHANGHAI>(
-        s, host, tx, sender, 1, beneficiary);
+        s, host, tx, sender, 1, beneficiary, MAX_CODE_SIZE_EIP170);
     EXPECT_TRUE(result.status_code == EVMC_INSUFFICIENT_BALANCE);
 
     auto const &call_frames = call_tracer.get_frames();

@@ -14,6 +14,8 @@ struct BlockHeader;
 struct Receipt;
 struct Transaction;
 
+inline constexpr size_t MAX_CODE_SIZE_EIP170 = 24 * 1024; // 0x6000
+
 struct EthereumMainnet : Chain
 {
     virtual uint256_t get_chain_id() const override;
@@ -30,6 +32,9 @@ struct EthereumMainnet : Chain
     virtual uint64_t compute_gas_refund(
         uint64_t block_number, uint64_t timestamp, Transaction const &,
         uint64_t gas_remaining, uint64_t refund) const override;
+
+    virtual size_t
+    get_max_code_size(uint64_t block_number, uint64_t timestamp) const override;
 };
 
 MONAD_NAMESPACE_END

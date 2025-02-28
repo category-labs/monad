@@ -2,6 +2,7 @@
 #include <from_json.hpp>
 #include <transaction_test.hpp>
 
+#include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/rlp/transaction_rlp.hpp>
@@ -36,8 +37,8 @@ MONAD_TEST_NAMESPACE_BEGIN
 template <evmc_revision rev>
 void process_transaction(Transaction const &txn, nlohmann::json const &expected)
 {
-    if (auto const result =
-            static_validate_transaction<rev>(txn, std::nullopt, 1);
+    if (auto const result = static_validate_transaction<rev>(
+            txn, std::nullopt, 1, MAX_CODE_SIZE_EIP170);
         result.has_error()) {
         EXPECT_TRUE(expected.contains("exception"));
     }

@@ -46,18 +46,22 @@ static uint64_t monad_event_get_epoch_nanos();
 
 // clang-format off
 
-/// Event ring configuration parameters; passed at event recorder creation
+/// Event recorder configuration parameters; passed at event recorder creation
 struct monad_event_recorder_config
 {
     char const *file_path;     ///< Event ring's shared memory file
-    uint8_t ring_shift;        ///< # of event ring descriptors == 1 << shift
+    off_t ring_file_offset;    ///< Offset in file where we create event ring
+    int open_flags;            ///< open(2) flags for ring fd
+    mode_t create_mode;        ///< open(2) mode for ring fd
+    bool unlink_after_close;   ///< True -> unlink(2) file_path when we die
+    uint8_t descriptors_shift; ///< # of event ring descriptors == 1 << shift
     uint8_t payload_buf_shift; ///< Payload buffer size == 1 << shift
 };
 
 // clang-format on
 
-#define MONAD_EVENT_MIN_RING_SHIFT (16)
-#define MONAD_EVENT_MAX_RING_SHIFT (32)
+#define MONAD_EVENT_MIN_DESCRIPTORS_SHIFT (16)
+#define MONAD_EVENT_MAX_DESCRIPTORS_SHIFT (32)
 
 #define MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT (27)
 #define MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT (40)
@@ -72,16 +76,23 @@ void monad_event_recorder_destroy(struct monad_event_recorder *);
 /// __attribute__((constructor)) priority of the static constructor
 #define MONAD_EVENT_RECORDER_CTOR_PRIO 1000
 
+// clang-format off
+
 struct monad_event_recorder
 {
-    struct monad_event_ring event_ring;
-    struct monad_event_ring_control *control;
-    size_t capacity_mask;
-    size_t payload_buf_mask;
-    char const *file_path;
-    int ring_fd;
-    TAILQ_ENTRY(monad_event_recorder) next;
+    struct monad_event_ring event_ring;  ///< Event ring owned by recorder
+    struct monad_event_ring_control *control; ///< Cached ring control pointer
+    size_t desc_capacity_mask;           ///< Event descriptor capacity - 1
+    size_t payload_buf_mask;             ///< Payload buffer size - 1
+    char const *file_path;               ///< Path to event ring file
+    int ring_fd;                         ///< Open fd; holds OFD lock in place
+    bool unlink_file_at_close;           ///< True -> unlink(file_path) at death
+    off_t ring_file_offset;              ///< Event ring at this offset in file
+    size_t total_ring_bytes;             ///< Total size of ring in file
+    TAILQ_ENTRY(monad_event_recorder) next; ///< Linkage for all recorders list
 };
+
+// clang-format on
 
 #define MONAD_EVENT_RECORDER_INTERNAL
 #include "event_recorder_inline.h"

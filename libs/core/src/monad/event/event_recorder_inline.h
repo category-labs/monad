@@ -88,7 +88,7 @@ static inline struct monad_event_descriptor *_monad_event_ring_reserve(
     // sequence number to zero, in case this slot is occupied by an older event
     // and that older event is currently being examined by a reading thread.
     // This ensures the reader can always detect that fields are invalidated.
-    event = &event_ring->descriptors[last_seqno & recorder->capacity_mask];
+    event = &event_ring->descriptors[last_seqno & recorder->desc_capacity_mask];
     __atomic_store_n(&event->seqno, 0, __ATOMIC_RELEASE);
     payload_end = payload_begin + alloc_size;
     buffer_window_start =

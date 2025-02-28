@@ -35,17 +35,17 @@ static size_t const PAGE_2MB = 1UL << 21;
 //  |  Payload buffer  |
 //  .------------------.
 int _monad_event_ring_mmap_data(
-    struct monad_event_ring *event_ring, int ring_fd, char const *error_name)
+    struct monad_event_ring *event_ring, int ring_fd, off_t ring_offset,
+    char const *error_name)
 {
     int rc;
-    size_t descriptor_map_len;
-    off_t const base_ring_data_offset = (off_t)PAGE_2MB;
+    off_t const base_ring_data_offset = ring_offset + (off_t)PAGE_2MB;
     struct monad_event_ring_header const *const header = event_ring->header;
     int const mmap_prot = PROT_READ | PROT_WRITE;
 
     // Map the ring descriptor array from the ring fd
-    descriptor_map_len =
-        header->ring_capacity * sizeof(struct monad_event_descriptor);
+    size_t const descriptor_map_len =
+        header->descriptor_capacity * sizeof(struct monad_event_descriptor);
     event_ring->descriptors = mmap(
         nullptr,
         descriptor_map_len,
@@ -124,6 +124,13 @@ Error:
     return rc;
 }
 
+size_t
+monad_event_ring_calculate_size(size_t ring_capacity, size_t payload_buf_size)
+{
+    return PAGE_2MB + ring_capacity * sizeof(struct monad_event_descriptor) +
+           payload_buf_size;
+}
+
 void monad_event_ring_unmap(struct monad_event_ring *event_ring)
 {
     struct monad_event_ring_header const *const header = event_ring->header;
@@ -131,7 +138,8 @@ void monad_event_ring_unmap(struct monad_event_ring *event_ring)
         if (event_ring->descriptors) {
             munmap(
                 event_ring->descriptors,
-                header->ring_capacity * sizeof(struct monad_event_descriptor));
+                header->descriptor_capacity *
+                    sizeof(struct monad_event_descriptor));
         }
         if (event_ring->payload_buf) {
             munmap(event_ring->payload_buf, 2 * header->payload_buf_size);

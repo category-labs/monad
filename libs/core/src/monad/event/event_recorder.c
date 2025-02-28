@@ -11,7 +11,6 @@
 #include <unistd.h>
 
 #include <fcntl.h>
-#include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/queue.h>
 #include <sys/types.h>
@@ -23,7 +22,7 @@
 #include <monad/event/event_recorder.h>
 
 extern thread_local char _g_monad_event_error_buf[1024]; // Defined in event.c
-static size_t const PAGE_2MB = 1UL << 21;
+static size_t const PAGE_2MB = 1UL << 21, HEADER_SIZE = PAGE_2MB;
 
 #define FORMAT_ERRC(...)                                                       \
     monad_format_err(                                                          \
@@ -34,90 +33,97 @@ static size_t const PAGE_2MB = 1UL << 21;
 
 // Reuse an internal function from event.c
 extern int _monad_event_ring_mmap_data(
-    struct monad_event_ring *, int ring_fd, char const *error_name);
+    struct monad_event_ring *, int ring_fd, off_t ring_offset,
+    char const *error_name);
 
 /*
  * Event ring setup functions
  */
 
-// Try to open the event ring file and place an exclusive lock on it
-static int open_event_ring_file(char const *file_path, int *ring_fd)
+// Try to open the event ring file and place an exclusive lock on the range
+// that will hold the event ring data
+static int open_event_ring_file(
+    struct monad_event_recorder *recorder, int open_flags, mode_t mode)
 {
-    mode_t const create_mode = S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP | S_IROTH;
-    int rc;
+    struct flock lock = {
+        .l_type = F_WRLCK,
+        .l_whence = SEEK_SET,
+        .l_start = recorder->ring_file_offset,
+        .l_len = (off_t)recorder->total_ring_bytes,
+        .l_pid = 0,
+    };
 
-    // Open the event ring file; we're not using O_EXCL or O_TRUNC, so we may
-    // open an event ring file that is actively used by another process, or a
-    // zombie one from a dead process
-    *ring_fd = open(file_path, O_RDWR | O_CREAT, create_mode);
-    if (*ring_fd == -1) {
-        return FORMAT_ERRC(errno, "open of event ring `%s` failed", file_path);
+    // Open the event ring file; this may open a file that is actively used by
+    // another process, or a zombie one from a dead process
+    recorder->ring_fd = open(recorder->file_path, O_RDWR | open_flags, mode);
+    if (recorder->ring_fd == -1) {
+        return FORMAT_ERRC(
+            errno,
+            "open of event ring `%s` with flags=%d, mode=%d failed",
+            recorder->file_path,
+            open_flags,
+            mode);
     }
 
-    // Try to place a BSD-style exclusive lock on the event ring; if this
-    // succeeds, we're the new owner, otherwise `file_path` is taken
-    rc = flock(*ring_fd, LOCK_EX | LOCK_NB);
-    if (rc == -1) {
-        rc = FORMAT_ERRC(rc, "flock of event ring `%s` failed", file_path);
-        goto Error;
+    // Try to place an OFD range lock on the event ring; if this succeeds,
+    // we're the new owner, otherwise this range of `file_path` is taken
+    if (fcntl(recorder->ring_fd, F_OFD_SETLK, &lock) == -1) {
+        if (errno == EALREADY) {
+            // Someone else owns this; this is not ours to unlink, no matter
+            // what the configuration says
+            recorder->unlink_file_at_close = false;
+        }
+        return FORMAT_ERRC(
+            errno,
+            "OFD wr_lock on event ring `%s` at [%ld:%ld] failed",
+            recorder->file_path,
+            lock.l_start,
+            lock.l_len);
     }
+
+    // TODO(ken): just because we got an advisory lock here doesn't mean we're
+    //   not stomping on a completely unrelated file that was accidentally
+    //   opened; later in PR2, when we have the function to read the header
+    //   easily, sanity check that we're not overwriting someone else's file
     return 0;
-
-Error:
-    (void)close(*ring_fd);
-    if (rc == EWOULDBLOCK) {
-        // Someone else owns this; explicitly clear ring_fd so that later
-        // cleanup logic will know it's not ours, and won't try to unlink(2)
-        // its name from the files system
-        *ring_fd = -1;
-    }
-    return rc;
 }
 
 // Given a description of the memory resources needed for an event ring,
-// "allocate" that memory and set up the ring. This will ftruncate(2) the event
-// ring file to the appropriate size, mmap the first page, and fill out the
-// header structure
+// set up the ring file. This will fallocate(2) the event ring file to the
+// appropriate size, mmap the header, and fill out the header structure
 static int init_event_ring_file(
-    struct monad_event_recorder_config const *ring_config, int ring_fd,
-    struct monad_event_ring_header **header_p)
+    struct monad_event_recorder_config const *config,
+    struct monad_event_recorder *recorder)
 {
-    struct monad_event_ring_header *header;
-    size_t const header_size = PAGE_2MB; // First large page is for the header
-
-    // Map the header structure into memory and fill it out
-    if (ftruncate(ring_fd, (off_t)header_size) == -1) {
+    if (fallocate(
+            recorder->ring_fd,
+            0,
+            recorder->ring_file_offset,
+            (off_t)recorder->total_ring_bytes) == -1) {
         return FORMAT_ERRC(
             errno,
-            "ftruncate of event ring `%s` to header size failed",
-            ring_config->file_path);
+            "fallocate of event ring `%s` to total size %lu failed",
+            recorder->file_path,
+            recorder->total_ring_bytes);
     }
-    *header_p = header =
-        mmap(nullptr, PAGE_2MB, PROT_WRITE, MAP_SHARED, ring_fd, 0);
+
+    // Map the header and fill it out
+    struct monad_event_ring_header *header = recorder->event_ring.header = mmap(
+        nullptr,
+        HEADER_SIZE,
+        PROT_WRITE,
+        MAP_SHARED,
+        recorder->ring_fd,
+        recorder->ring_file_offset);
     if (header == MAP_FAILED) {
         return FORMAT_ERRC(
             errno,
             "mmap of event ring `%s` header page failed",
-            ring_config->file_path);
+            recorder->file_path);
     }
-    header->ring_capacity = 1UL << ring_config->ring_shift;
-    header->payload_buf_size = 1UL << ring_config->payload_buf_shift;
+    header->descriptor_capacity = 1UL << config->descriptors_shift;
+    header->payload_buf_size = 1UL << config->payload_buf_shift;
     memset(&header->control, 0, sizeof header->control);
-
-    // Resize the shared memory file to hold the event ring data; it will be
-    // mapped later, by common code shared with the reader
-    size_t const ring_file_size =
-        header_size +
-        header->ring_capacity * sizeof(struct monad_event_descriptor) +
-        header->payload_buf_size;
-    if (ftruncate(ring_fd, (off_t)ring_file_size) == -1) {
-        return FORMAT_ERRC(
-            errno,
-            "ftruncate of event ring `%s` to size %lu failed",
-            ring_config->file_path,
-            ring_file_size);
-    }
-
     return 0;
 }
 
@@ -162,7 +168,7 @@ event_system_dtor()
 
 int monad_event_recorder_create(
     struct monad_event_recorder **recorder_p,
-    struct monad_event_recorder_config const *ring_config)
+    struct monad_event_recorder_config const *config)
 {
     int rc;
     struct monad_event_recorder *recorder;
@@ -173,29 +179,31 @@ int monad_event_recorder_create(
         return FORMAT_ERRC(EFAULT, "recorder_p cannot be nullptr");
     }
     *recorder_p = nullptr;
-    if (ring_config == nullptr) {
+    if (config == nullptr) {
         return FORMAT_ERRC(EFAULT, "ring_config cannot be nullptr");
     }
-    if (ring_config->file_path == nullptr) {
+    if (config->file_path == nullptr) {
         return FORMAT_ERRC(EFAULT, "ring_config file_path cannot be nullptr");
     }
-    if (ring_config->ring_shift < MONAD_EVENT_MIN_RING_SHIFT ||
-        ring_config->ring_shift > MONAD_EVENT_MAX_RING_SHIFT) {
+    if (config->descriptors_shift < MONAD_EVENT_MIN_DESCRIPTORS_SHIFT ||
+        config->descriptors_shift > MONAD_EVENT_MAX_DESCRIPTORS_SHIFT) {
         return FORMAT_ERRC(
             ERANGE,
-            "ring_shift outside allowed range [%hhu, %hhu]: "
+            "descriptors_shift %hhu outside allowed range [%hhu, %hhu]: "
             "(ring sizes: [%lu, %lu])",
-            MONAD_EVENT_MIN_RING_SHIFT,
-            MONAD_EVENT_MAX_RING_SHIFT,
-            (1UL << MONAD_EVENT_MIN_RING_SHIFT),
-            (1UL << MONAD_EVENT_MAX_RING_SHIFT));
+            config->descriptors_shift,
+            MONAD_EVENT_MIN_DESCRIPTORS_SHIFT,
+            MONAD_EVENT_MAX_DESCRIPTORS_SHIFT,
+            (1UL << MONAD_EVENT_MIN_DESCRIPTORS_SHIFT),
+            (1UL << MONAD_EVENT_MAX_DESCRIPTORS_SHIFT));
     }
-    if (ring_config->payload_buf_shift < MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT ||
-        ring_config->payload_buf_shift > MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT) {
+    if (config->payload_buf_shift < MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT ||
+        config->payload_buf_shift > MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT) {
         return FORMAT_ERRC(
             ERANGE,
-            "payload_buf_shift outside allowed range [%hhu, %hhu]: "
+            "payload_buf_shift %hhu outside allowed range [%hhu, %hhu]: "
             "(buffer sizes: [%lu, %lu])",
+            config->payload_buf_shift,
             MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT,
             MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT,
             (1UL << MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT),
@@ -210,26 +218,34 @@ int monad_event_recorder_create(
     recorder = *recorder_p;
     memset(recorder, 0, sizeof *recorder);
     recorder->ring_fd = -1;
-    recorder->file_path = strdup(ring_config->file_path);
+    recorder->unlink_file_at_close = config->unlink_after_close;
+    recorder->ring_file_offset = config->ring_file_offset;
+    recorder->total_ring_bytes = monad_event_ring_calculate_size(
+        1UL << config->descriptors_shift, 1UL << config->payload_buf_shift);
+
+    recorder->file_path = strdup(config->file_path);
     if (recorder->file_path == nullptr) {
         rc = FORMAT_ERRC(
-            errno, "strdup failed for file_path `%s`", ring_config->file_path);
+            errno, "strdup failed for file_path `%s`", config->file_path);
         goto Error;
     }
 
     // Open the event ring file, initialize it, and map the event ring into
     // our address space
-    rc = open_event_ring_file(ring_config->file_path, &recorder->ring_fd);
+    rc =
+        open_event_ring_file(recorder, config->open_flags, config->create_mode);
     if (rc != 0) {
         goto Error;
     }
-    rc = init_event_ring_file(
-        ring_config, recorder->ring_fd, &recorder->event_ring.header);
+    rc = init_event_ring_file(config, recorder);
     if (rc != 0) {
         goto Error;
     }
     rc = _monad_event_ring_mmap_data(
-        &recorder->event_ring, recorder->ring_fd, recorder->file_path);
+        &recorder->event_ring,
+        recorder->ring_fd,
+        recorder->ring_file_offset,
+        recorder->file_path);
     if (rc != 0) {
         goto Error;
     }
@@ -238,7 +254,8 @@ int monad_event_recorder_create(
     // shared memory file; we place them all on the same cache line in the
     // recorder, for the sake of hot path performance
     recorder->control = &recorder->event_ring.header->control;
-    recorder->capacity_mask = recorder->event_ring.header->ring_capacity - 1;
+    recorder->desc_capacity_mask =
+        recorder->event_ring.header->descriptor_capacity - 1;
     recorder->payload_buf_mask =
         recorder->event_ring.header->payload_buf_size - 1;
 
@@ -250,15 +267,7 @@ int monad_event_recorder_create(
     return 0;
 
 Error:
-    if (recorder->ring_fd != -1) {
-        // This implies we took the lock; explicitly unlock it (in case other
-        // fd's to this file are open) and unlink its name from the file system
-        unlink(recorder->file_path);
-        (void)flock(recorder->ring_fd, LOCK_UN);
-        close(recorder->ring_fd);
-    }
-    free((void *)recorder->file_path);
-    free(recorder);
+    monad_event_recorder_destroy(recorder);
     *recorder_p = nullptr;
     return rc;
 }
@@ -271,12 +280,26 @@ void monad_event_recorder_destroy(struct monad_event_recorder *recorder)
     if (recorder == nullptr) {
         return;
     }
-    pthread_mutex_lock(&rss->mtx);
-    TAILQ_REMOVE(&rss->recorders, recorder, next);
-    pthread_mutex_unlock(&rss->mtx);
-    (void)close(recorder->ring_fd);
-    monad_event_ring_unmap(&recorder->event_ring);
-    unlink(recorder->file_path);
+    if (recorder->next.tqe_prev != nullptr) {
+        pthread_mutex_lock(&rss->mtx);
+        TAILQ_REMOVE(&rss->recorders, recorder, next);
+        pthread_mutex_unlock(&rss->mtx);
+    }
+    if (recorder->ring_fd != -1) {
+        // This implies we took the lock; explicitly unlock it (in case other
+        // fd's to this file are open)
+        struct flock unlock = {
+            .l_type = F_UNLCK,
+            .l_whence = SEEK_SET,
+            .l_start = recorder->ring_file_offset,
+            .l_len = (off_t)recorder->total_ring_bytes,
+            .l_pid = 0};
+        (void)fcntl(recorder->ring_fd, F_OFD_SETLK, &unlock);
+        (void)close(recorder->ring_fd);
+    }
+    if (recorder->unlink_file_at_close && recorder->file_path != nullptr) {
+        (void)unlink(recorder->file_path);
+    }
     free((void *)recorder->file_path);
     free(recorder);
 }

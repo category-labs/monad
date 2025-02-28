@@ -36,7 +36,7 @@ monad_event_iterator_sync_wait(struct monad_event_iterator *iter)
     // the associated descriptor array slot (which is `last_seqno - 1`)
     // with release memory ordering. This waits for that to happen, if it
     // hasn't yet.
-    event = &iter->descriptors[(last_seqno - 1) & iter->capacity_mask];
+    event = &iter->descriptors[(last_seqno - 1) & iter->desc_capacity_mask];
     while (__atomic_load_n(&event->seqno, __ATOMIC_ACQUIRE) < last_seqno) {
 #if defined(__x86_64__)
         __builtin_ia32_pause();
@@ -51,7 +51,7 @@ inline void monad_event_iterator_init(
 {
     memset(iter, 0, sizeof *iter);
     iter->descriptors = event_ring->descriptors;
-    iter->capacity_mask = event_ring->header->ring_capacity - 1;
+    iter->desc_capacity_mask = event_ring->header->descriptor_capacity - 1;
     iter->payload_buf = event_ring->payload_buf;
     iter->payload_buf_size = event_ring->header->payload_buf_size;
     iter->write_last_seqno = &event_ring->header->control.last_seqno;
@@ -64,7 +64,7 @@ inline enum monad_event_next_result monad_event_iterator_try_next(
     struct monad_event_iterator *iter, struct monad_event_descriptor *event)
 {
     struct monad_event_descriptor const *const ring_event =
-        &iter->descriptors[iter->read_last_seqno & iter->capacity_mask];
+        &iter->descriptors[iter->read_last_seqno & iter->desc_capacity_mask];
     uint64_t const seqno =
         __atomic_load_n(&ring_event->seqno, __ATOMIC_ACQUIRE);
     if (__builtin_expect(seqno == iter->read_last_seqno + 1, 1)) {

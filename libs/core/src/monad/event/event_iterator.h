@@ -76,7 +76,7 @@ struct monad_event_iterator
 {
     struct monad_event_descriptor const
         *descriptors;                    ///< Event descriptor ring array
-    size_t capacity_mask;                ///< Descriptor array capacity - 1
+    size_t desc_capacity_mask;           ///< Descriptor array capacity - 1
     uint64_t read_last_seqno;            ///< Seq. number of last event we read
     uint8_t *payload_buf;                ///< Event payload byte buffer
     size_t payload_buf_size;             ///< Size of payload buffer

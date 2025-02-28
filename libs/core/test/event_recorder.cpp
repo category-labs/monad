@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <format>
 #include <latch>
 #include <span>
 #include <thread>
@@ -13,6 +14,7 @@
 #include <pthread.h>
 #include <sched.h>
 #include <sys/mman.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include <gtest/gtest.h>
@@ -144,14 +146,24 @@ TEST_P(EventRecorderBulkTest, )
         0,
         pthread_getaffinity_np(pthread_self(), sizeof avail_cpus, &avail_cpus));
 
-    constexpr char const SHARED_MEM_FILE[] =
-        "/dev/hugepages/event_recorder_test";
-    monad_event_recorder_config const ring_config = {
-        .file_path = SHARED_MEM_FILE,
-        .ring_shift = 20,
+    int const ring_fd =
+        memfd_create("event_recorder_test", MFD_CLOEXEC | MFD_HUGETLB);
+    std::string const ring_fd_path = std::format("/proc/self/fd/{}", ring_fd);
+    monad_event_recorder_config const recorder_config = {
+        .file_path = ring_fd_path.c_str(),
+        .ring_file_offset = 0,
+        .open_flags = 0, // library adds O_RDWR
+        .create_mode = 0,
+        .unlink_after_close = false,
+        .descriptors_shift = 20,
         .payload_buf_shift = 28};
+    size_t const total_ring_bytes = monad_event_ring_calculate_size(
+        1UL << recorder_config.descriptors_shift,
+        1UL << recorder_config.payload_buf_shift);
+    ASSERT_EQ(0, ftruncate(ring_fd, static_cast<off_t>(total_ring_bytes)));
 
-    ASSERT_EQ(0, monad_event_recorder_create(&recorder, &ring_config));
+    ASSERT_EQ(0, monad_event_recorder_create(&recorder, &recorder_config));
+    (void)close(ring_fd);
 
     for (uint8_t t = 0; t < writer_thread_count; ++t) {
         char name[16];

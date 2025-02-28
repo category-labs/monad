@@ -69,12 +69,17 @@ struct monad_event_ring_control
 /// describing the layout of the event ring
 struct monad_event_ring_header
 {
-    size_t ring_capacity;        ///< # entries in event descriptor array
+    size_t descriptor_capacity;  ///< # entries in event descriptor array
     size_t payload_buf_size;     ///< Byte size of payload buffer
     struct monad_event_ring_control control; ///< Tracks ring's state/status
 };
 
 // clang-format on
+
+/// Given the size parameters of an event ring, return the total required
+/// memory; can be used to fallocate(2) a file to store an event ring
+size_t
+monad_event_ring_calculate_size(size_t ring_capacity, size_t payload_buf_size);
 
 /// Remove an event ring's shared memory mappings from our process' address
 /// space

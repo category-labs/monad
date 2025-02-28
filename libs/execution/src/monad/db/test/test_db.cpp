@@ -787,12 +787,20 @@ TYPED_TEST(DBTest, commit_call_frames)
         .depth = 1,
     };
 
+    constexpr uint64_t NUM_TXNS = 10;
+
     static byte_string const encoded_txn = byte_string{0x1a, 0x1b, 0x1c};
     std::vector<CallFrame> const call_frame{call_frame1, call_frame2};
     std::vector<std::vector<CallFrame>> call_frames;
-    call_frames.emplace_back(call_frame);
+    for (uint64_t txn = 0; txn < NUM_TXNS; ++txn) {
+        call_frames.emplace_back(call_frame);
+    }
     std::vector<Receipt> const receipts(call_frames.size());
-    std::vector<Transaction> const transactions(call_frames.size());
+    // need to increment the nonce of transactions
+    std::vector<Transaction> transactions;
+    for (uint64_t nonce = 0; nonce < call_frames.size(); ++nonce) {
+        transactions.push_back(Transaction{.nonce = nonce});
+    }
     std::vector<Address> const senders{call_frames.size()};
     commit_sequential(
         tdb,
@@ -804,11 +812,14 @@ TYPED_TEST(DBTest, commit_call_frames)
         senders,
         transactions);
 
-    auto const &res = read_call_frame(this->db, tdb.get_block_number(), 0);
-    ASSERT_TRUE(!res.empty());
-    ASSERT_TRUE(res.size() == 2);
-    EXPECT_EQ(res[0], call_frame1);
-    EXPECT_EQ(res[1], call_frame2);
+    for (uint64_t txn = 0; txn < NUM_TXNS; ++txn) {
+        auto const &res =
+            read_call_frame(this->db, tdb.get_block_number(), txn);
+        ASSERT_TRUE(!res.empty());
+        ASSERT_TRUE(res.size() == 2);
+        EXPECT_EQ(res[0], call_frame1);
+        EXPECT_EQ(res[1], call_frame2);
+    }
 }
 
 // test referenced from :
